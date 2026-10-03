@@ -4,7 +4,7 @@ import json
 import pathlib
 import subprocess
 
-_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
 
 
 def test_project_launch_preserves_cwd_and_uses_plugin_environment(tmp_path: pathlib.Path) -> None:

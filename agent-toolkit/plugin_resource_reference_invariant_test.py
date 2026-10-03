@@ -12,6 +12,7 @@ import pytest
 
 pytestmark = pytest.mark.repo_invariant
 
+
 _PREFIX = "${CLAUDE_PLUGIN_ROOT}/"
 _REFERENCE_PATTERN = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9_./-]*[A-Za-z0-9_/]")
 
@@ -49,7 +50,7 @@ def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
 
 def test_plugin_root_references_resolve() -> None:
     """配布物のplugin root参照が全て実体へ解決する。"""
-    root = pathlib.Path(__file__).resolve().parents[1]
+    root = pathlib.Path(__file__).resolve().parent
     assert _collect_references(root)
     unresolved = _unresolved_references(root)
     assert not unresolved, _format_unresolved(unresolved)

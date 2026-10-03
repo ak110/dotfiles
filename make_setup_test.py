@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-_REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent
 _STUB_COMMANDS = ("uv", "sudo", "apt-get", "dpkg", "wget", "pwsh", "rm")
 
 

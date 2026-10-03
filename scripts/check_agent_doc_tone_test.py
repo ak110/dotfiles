@@ -176,6 +176,7 @@ def test_cli_rejects_inflected_expressions(tmp_path: pathlib.Path, body: str) ->
         ("doc.md", "是正本文を読む。\n起動経路を記録する。\n| 利用者と入口 |\n| --- |\n| CLI |\n"),
         ("app.py", '既定 = 4\ndefault_route = 1\nprint("是正本文")\n'),
         ("app.py", 'fields = ("起動経路", "利用者と入口", "計画検査完了")\n'),
+        ("doc.md", "```text\n書込対象の検査: 終了コード0\n```\n"),
         ("app.py", 'fields = ("正本ファイル名", "選択肢と帰結")\n'),
         ("doc.md", "第2走査は「前提を疑う観点」とし、採用案の前提を確かめる。\n"),
         ("app.py", 'import re\npattern = re.compile("正本")\n'),
@@ -208,6 +209,11 @@ def test_cli_preserves_data_and_structural_names(tmp_path: pathlib.Path, name: s
 def test_cli_rejects_other_uses_of_doubt_beside_defined_viewpoint_name(tmp_path: pathlib.Path, body: str) -> None:
     """定義済みの名前だけを除き、同じ行と別の行にある同じ動詞の他の用法は検出する。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 1
+
+
+def test_picker_result_label_preserves_checks_on_explanations(tmp_path: pathlib.Path) -> None:
+    """返却欄の名前を保持し、同じ行の説明は従来の対象として確認する。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, "書込対象の検査: 未検査の出力を返す。\n"))]) == 1
 
 
 def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> None:

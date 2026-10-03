@@ -11,6 +11,7 @@ from agent_toolkit._atk import run_script
 
 pytestmark = pytest.mark.repo_invariant
 
+
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 _REQUIRED_INPUT_PREFIX = "必須入力名:"
 _NAME_CONTINUATION = r"0-9A-Za-z_\u30a0-\u30ff\u3400-\u9fff"
@@ -199,7 +200,7 @@ def _parent_body(*, marker: str = "起動対象: task.subagent.md", after_marker
 
 def test_distributed_delegation_contract_is_complete() -> None:
     """配布する全ての`<役割名>.parent.md`と`<役割名>.subagent.md`が起動契約を満たす。"""
-    share = pathlib.Path(__file__).resolve().parents[1] / "share"
+    share = pathlib.Path(__file__).resolve().parent / "share"
 
     errors = _contract_errors(share)
 
@@ -208,7 +209,7 @@ def test_distributed_delegation_contract_is_complete() -> None:
 
 def test_launch_target_occurrences_match_parent_document_set() -> None:
     """起動対象の全出現箇所を`<役割名>.parent.md`の集合と本文内の参照から導出する。"""
-    share = pathlib.Path(__file__).resolve().parents[1] / "share"
+    share = pathlib.Path(__file__).resolve().parent / "share"
     parents = sorted(share.glob("*.parent.md"))
     markdown_files = sorted(share.glob("*.md"))
     parent_names = {path.name for path in parents}
@@ -231,7 +232,7 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
 
     軽量種別の`<役割名>.subagent.md`の委譲先はファイルを書けない1工程の担当であり、引き継ぎ記録を持たないため集合から除く。
     """
-    share = pathlib.Path(__file__).resolve().parents[1] / "share"
+    share = pathlib.Path(__file__).resolve().parent / "share"
     markdown = {path.name: path.read_text(encoding="utf-8") for path in sorted(share.glob("*.md"))}
     lightweight = {
         path.name for path in share.glob("*.subagent.md") if _declaration(path).launch_kind in ("explore", "write", "shell")
@@ -251,7 +252,7 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
 
 def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> None:
     """WI鮮度は選定、計画起草および計画なしレビューへ到達する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     lane = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
@@ -270,7 +271,7 @@ def test_picker_explanation_contract_covers_questions_without_state_changes() ->
     説明の手順が選定担当の文書に残ると、`start`は選定担当の必須入力を要求して説明担当を起動できない。
     説明担当の文書が状態を変える`atk wi`の操作を含むと、軽量起動の読み取り専用の契約と衝突する。
     """
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     share = plugin_root / "share"
     explain = share / "pick-wi-explain.subagent.md"
     declaration = _declaration(explain)
@@ -302,7 +303,7 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
     宣言外の項目を渡す委譲元の手順は、`agents_server`の`start`が起動を拒否するため成立しない。
     全ての`<役割名>.subagent.md`の宣言が読めること（不正な`mode:`を含まないこと）も同時に確かめる。
     """
-    share = pathlib.Path(__file__).resolve().parents[1] / "share"
+    share = pathlib.Path(__file__).resolve().parent / "share"
     errors: list[str] = []
     for parent in sorted(share.glob("*.parent.md")):
         targets, _ = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
@@ -318,7 +319,7 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
 
 def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
     """既存の先行レーン欄を読め、新規の生成・受領・実行は同一レーンの依存順で一致する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
@@ -346,7 +347,7 @@ def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
 
 def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     """選定で列挙した書込対象を受領側が比較できる。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
     output = _h2_section(picker, "出力")
@@ -364,11 +365,20 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     assert "`書き込まない反映先`" in output
     assert "atk run-script pick-wi-check" in output and "atk run-script pick-wi-check" in receipt
     assert "pick-wi-check" in run_script.SCRIPT_PATHS
+    reply = next(block for _, block in _text_blocks(output.splitlines()) if block[0].startswith("状態:"))
+    reply_fields = {line.partition(":")[0] for line in reply}
+    receiver_fields = set(re.findall(r"`([^`]+)`", receipt))
+    assert "書込対象の検査" in reply_fields
+    assert reply_fields <= receiver_fields
+    # 実行結果は委譲の返却へ渡し、選定YAMLのWI属性へ複製しない。
+    assert "書込対象の検査" not in fields
+    assert "終了コード0" in output and "終了コード0" in receipt
+    assert "3行だけの返却では結果不明" in receipt
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:
     """省略値を含む割当条件が生成・受領・上流分岐で一致し、一律の非実装除外を拒否する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share/pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share/pick-wi.parent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills/process-wi/references/run-lanes.md").read_text(encoding="utf-8")
@@ -394,7 +404,7 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
 
 def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
     """委譲先の確認事項は標識へ保存せず確定時点でメインへ通知する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
@@ -406,7 +416,7 @@ def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
 
 def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
     """計画スキルはレーンの非待機通知を無条件の報告・待機で上書きしない。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     plan = (plugin_root / "skills" / "plan-mode" / "SKILL.md").read_text(encoding="utf-8")
     executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     plan_steps = _h2_section(plan, "進め方")
@@ -429,7 +439,7 @@ def _h2_section(content: str, heading: str) -> str:
 
 def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:
     """history-rewrite.mdの規定が参照するphase名は、レーン担当の契約がphase表で定義する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     rewrite = (plugin_root / "skills" / "commit" / "references" / "history-rewrite.md").read_text(encoding="utf-8")
     executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     failure = _h2_section(rewrite, "失敗時の扱い")
@@ -442,7 +452,7 @@ def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:
 
 def test_review_fix_completion_values_match_receiver() -> None:
     """実行レビューの委譲元が分岐に使う返却値を、レビュー修正の担当が返却値として定める。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     review_parent = (plugin_root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
     executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     expected = set(re.findall(r"`(対応完了[^`]*)`", review_parent))
@@ -454,7 +464,7 @@ def test_review_fix_completion_values_match_receiver() -> None:
 
 def test_lane_contract_section_references_exist() -> None:
     """レーン担当の契約の節を指す参照は、実在するH2見出しを指す。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     headings = set(re.findall(r"^## (.+)$", executor, flags=re.MULTILINE))
     referenced: set[str] = set()
@@ -467,7 +477,7 @@ def test_lane_contract_section_references_exist() -> None:
 
 def test_lane_launch_inputs_reach_lane_owner() -> None:
     """レーン担当の起動で渡す名前付き入力は、全てレーン担当の契約が扱う。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plugin_root = pathlib.Path(__file__).resolve().parent
     parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
     executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     inputs = re.findall(r"^- `([^`]+)`: ", _h2_section(parent, "入力"), flags=re.MULTILINE)

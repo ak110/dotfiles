@@ -11,7 +11,7 @@ subprojectへ分割する検査は`agent-toolkit/pyproject.toml`とそのcwdの�
    意図的な差異は`_INTENTIONAL_DIFFERENCES`に理由付きで列挙したものに限る
 
 分割の有無はpyfltrの公開された判定（`resolve_subproject_aware`）で直下の設定から求める。
-設定の方針と却下した代替案は`docs/development/design.md`「pyfltrのsubproject分割とチェック設定の置き場所」が持つ。
+設定の方針と却下した代替案は`docs/development/design-packages.md`「pyfltrのsubproject分割とチェック設定の置き場所」が持つ。
 """
 
 from __future__ import annotations
@@ -25,7 +25,9 @@ from typing import Any
 import pytest
 from pyfltr.config import config as pyfltr_config
 
-_ROOT = pathlib.Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.repo_invariant
+
+_ROOT = pathlib.Path(__file__).resolve().parent
 _SUBPROJECT = pathlib.PurePosixPath("agent-toolkit")
 # 分割実行するPython系の検査が読む`[tool.*]`節。`[tool.pyfltr]`は別に扱う。
 _SHARED_SECTIONS: tuple[tuple[str, ...], ...] = (

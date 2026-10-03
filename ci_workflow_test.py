@@ -149,6 +149,7 @@ def test_statusline_version_develop_push_reaches_version_check(
     assert expected_output in result.stdout + result.stderr
 
 
+@pytest.mark.repo_invariant
 def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
     """workflowのpytestコマンドが直接指定するリポジトリ内の対象は実在する。"""
     targets = _direct_pytest_targets(workflow_data)
@@ -163,6 +164,7 @@ def _flag_options(tokens: list[str]) -> set[str]:
     return {token for token in tokens if token.startswith("--") and token != "--project"}
 
 
+@pytest.mark.repo_invariant
 def test_windows_launcher_environment_is_built_before_boundary_tests(workflow_data: dict[str, object]) -> None:
     """実ランチャー到達テストより前に、ランチャーと同じ指定でagent-toolkit環境を構築する。
 

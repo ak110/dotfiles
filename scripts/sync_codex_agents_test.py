@@ -83,6 +83,7 @@ def test_sync_is_idempotent(tmp_path: Path) -> None:
     assert (root / subject.TARGET).stat().st_mtime_ns == mtime
 
 
+@pytest.mark.repo_invariant
 def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
     source = (subject.REPO_ROOT / "agent-toolkit/share/rules-main.codex.md").read_text(encoding="utf-8")
     reference = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/codex-runtime.md").read_text(encoding="utf-8")
@@ -199,6 +200,7 @@ def test_config_template_removes_reasoning_overrides(reasoning_config: str) -> N
     assert rendered["features"]["user_feature"] is True
 
 
+@pytest.mark.repo_invariant
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:
     """共有ルールの参照資料が両配布経路のplugin rootから解決できることを固定する。"""
     skill_pattern = re.compile(r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`")

@@ -60,7 +60,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 `scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の自動チェックの被覆が失われるためである。
 同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportを失敗として報告する。
 モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名とは異なる名前を選ぶ。
-テストは対象モジュールと同じディレクトリへ`<モジュール名>_test.py`として置く。
+テストは`pytools-edit`「テスト配置」に従い、対象モジュールの動作テストを同居させ、実物の文書や設定を読むテストをその近くへ置く。
 
 ### atkの実行結果出力
 
@@ -70,7 +70,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 出力する行は実行したコマンドの結果と、失敗・警告およびその次の操作に限る。結果と無関係な状況の通知、対処を要しない付随処理の報告、毎回同じ固定の案内、同じ内容の反復は加えず、人向けの補足として環境判定で振り分けない。
 リーフを登録する場合と区分を変える場合は、実行した結果行がその区分の出力先と順序を満たすことをテストで確かめ、子プロセスの標準出力が成功行より前に出る場合も同じ変更単位で検証する。
 区分表と実在するリーフの対応は`agent-toolkit/agent_toolkit/atk_help_test.py`が検証する。
-規約の目的、区分の意味、却下した代替案は`docs/development/design.md`「atkサブコマンドの実行結果出力」が持つ。
+規約の目的、区分の意味、却下した代替案は`docs/development/design-cli.md`「atkサブコマンドの実行結果出力」が持つ。
 
 ### agents_serverの共有状態
 
@@ -162,14 +162,15 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
-整合性は`agent-toolkit/agent_toolkit/manifest_ssot_test.py`が確かめ、不整合があれば`uv run --frozen pyfltr run`が自動的に失敗する。
+整合性は`manifest_ssot_invariant_test.py`が確かめ、不整合があれば`uv run --frozen pyfltr run`が自動的に失敗する。
 Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
 `agent-toolkit/.mcp.json`をもとに`scripts/sync_codex_plugin_manifests.py`が生成する。
 Agent Plugins・Codex向け生成物を手動編集してはならない。変更は生成元の更新と生成器の実行で行う。
 
 ## 同期先ドキュメント
 
-複数ファイルへまたがる機構または委譲構造を新設または変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界および却下した代替案を追加または更新する（努力目標。構造の理由と却下した案を残すと、後の変更で同じ検討を繰り返さずに済む）。
+複数ファイルへまたがる機構または委譲構造を新設または変更する実装では、`docs/development/design.md`の索引で該当主題の本文と節を選び、目的、構造の理由、知識境界および却下した代替案を追加・更新する（努力目標。構造の理由と却下した案を残すと後の変更で同じ検討を繰り返さずに済む）。
+既存の主題はその本文の節へ追記する。独立した新しい主題は主題別ファイルへ置き、索引の対応表と各節へのリンク付き見出しを追加する。索引には機構の詳細を追記せず、分類の具体は索引の対応表を参照する。
 
 `agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」の一方で、運用形態、WIの登録方法、回答の流れのいずれかを変更した場合は、他方も同じ変更単位でそろえる。
 
@@ -182,7 +183,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・
   `agent-toolkit/rules/`配下のmdファイル一覧は完全一致を保つ
-  （整合性は`install_script_ssot_test.py`が検証し、`scripts/gen-install-files.py`を含む`uv run python scripts/sync_generated_files.py`が一覧を自動同期する）
+  （整合性は`install_script_ssot_invariant_test.py`が検証し、`scripts/gen-install-files.py`を含む`uv run python scripts/sync_generated_files.py`が一覧を自動同期する）
 - 配布物スキル本体の外部インターフェース（判定区分・出力フォーマット・後始末コマンド分岐・サマリー表現など）へ
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
@@ -195,7 +196,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
   対象は同ファイルが構造定数として名称を持つものとする。
   改訂時は同ファイルの構造定数を変更する。
   `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`、`agent-toolkit/share/`配下の`<役割名>.subagent.md`、
-  `docs/development/design.md`、`docs/development/concepts.md`および`docs/guide/claude-code-guide.md`のうち、同じ名称を持つ記述も同じ変更単位でそろえる。
+  `docs/development/design.md`の索引から選ぶ該当主題の資料、`docs/development/concepts.md`および`docs/guide/claude-code-guide.md`のうち、同じ名称を持つ記述も同じ変更単位でそろえる。
   改訂前の名称は読み取り互換用の構造定数として残し、新規作成や改訂の処理でだけ拒否する
 - 構造定数を持たず`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`だけが必須とする見出しは、同ファイルの記述に従う。
   稼働中の計画を自動チェックで不合格にする変更を避ける必要がある場合に選び、選んだ理由を計画へ記録する

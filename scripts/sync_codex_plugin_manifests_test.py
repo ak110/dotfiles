@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 import sync_codex_plugin_manifests as subject
-import yaml
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._testing import isolation
 
@@ -393,18 +392,6 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
             assert not managed_path.exists()
 
     assert observed == [expected, expected]
-
-
-def test_openai_interface_display_name_matches_skill_directory() -> None:
-    """Codexの入力補助へスキルのディレクトリ名を表示する。"""
-    manifests = sorted((subject.REPO_ROOT / "agent-toolkit/skills").glob("*/agents/openai.yaml"))
-
-    assert manifests, "検査対象のagents/openai.yamlが存在しない"
-    for manifest in manifests:
-        data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-        assert data["interface"]["display_name"] == manifest.parents[1].name, (
-            f"Codexの入力補助はinterface.display_nameを候補名として表示するため、スキルのディレクトリ名と一致させる: {manifest}"
-        )
 
 
 @pytest.mark.skipif(

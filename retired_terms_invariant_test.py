@@ -20,7 +20,8 @@ import pytest
 
 pytestmark = pytest.mark.repo_invariant
 
-_ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+_ROOT = pathlib.Path(__file__).resolve().parent
 
 
 @dataclasses.dataclass(frozen=True)
@@ -57,7 +58,7 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
             "agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py", '"証拠行 {source}"'
         ),
         _AllowedLocation("agent-toolkit/share/exec-review.subagent.md", "`証拠行`"),
-        _AllowedLocation("docs/development/design.md", "「証拠行」"),
+        _AllowedLocation("docs/development/design-review-evidence.md", "「証拠行」"),
     ),
     "計画レビュー": (
         # 旧形式の計画と計画レビュー表を読む互換の実装とそのテスト
@@ -108,7 +109,7 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     ),
     "振り返り担当": (
         # 撤去した担当を説明する設計の記録
-        _AllowedLocation("docs/development/design.md", "振り返り担当"),
+        _AllowedLocation("docs/development/design-session-review.md", "振り返り担当"),
     ),
 }
 
@@ -164,7 +165,7 @@ _RETIRED_TERMS = (
             replacement=replacement,
             allowed=(
                 # 登録した語の不在を確かめる本テスト
-                _AllowedLocation("scripts/retired_terms_test.py"),
+                _AllowedLocation("retired_terms_invariant_test.py"),
                 *extra_allowed,
             ),
         )
@@ -200,7 +201,7 @@ _RETIRED_TERMS = (
                 _AllowedLocation("docs/development/incidents*.md"),
                 _AllowedLocation("docs/development/audit-records.md"),
                 # 登録した語の不在を確かめる本テスト
-                _AllowedLocation("scripts/retired_terms_test.py"),
+                _AllowedLocation("retired_terms_invariant_test.py"),
                 *_NAMING_EXTRA_ALLOWED.get(term, ()),
             ),
         )
@@ -490,3 +491,30 @@ def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -
     )
 
     assert not _find_violations(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("relative", "body", "rejected"),
+    [
+        ("docs/development/design-review-evidence.md", "過去の標識「証拠行」を読む。\n", False),
+        ("docs/development/design-review-evidence.md", "証拠行を新たに記す。\n", True),
+        ("docs/development/design-review-evidence.md", "振り返り担当を起動する。\n", True),
+        ("docs/development/design-session-review.md", "撤去した振り返り担当の経緯。\n", False),
+        ("docs/development/design-session-review.md", "起草担当を追加する。\n", True),
+        ("docs/development/design-cli.md", "標識「証拠行」を読む。\n", True),
+        ("docs/development/design.md", "標識「証拠行」を読む。\n", True),
+        ("docs/development/design.md", "振り返り担当の経緯。\n", True),
+    ],
+)
+def test_moved_design_records_preserve_allowed_line_scope(
+    tmp_path: pathlib.Path, relative: str, body: str, rejected: bool
+) -> None:
+    """歴史説明の移動先でも、行条件と語ごとの許容を保ち、索引への再使用を拒否する。"""
+    _init_repo(tmp_path, {relative: body})
+
+    violations = _find_violations(tmp_path)
+
+    assert bool(violations) == rejected
+    if rejected:
+        assert len(violations) == 1
+        assert violations[0].startswith(f"{relative}:1:")

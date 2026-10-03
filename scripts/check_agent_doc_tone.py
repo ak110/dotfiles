@@ -92,7 +92,15 @@ _TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, pattern in _DENIED_
 # 計画の列・メタ情報と担当の返却値として保存する名称。周辺の説明も判定する。
 # 「前提を疑う観点」は利用者が確認で選んだ定義済みの名前（`reviewer.md`のレビュー観点）であるため、この完全一致だけを除く。
 # 名前の一部ではない同じ動詞の用法は引き続き検出する。
-_STRUCTURAL_LABELS = ("利用者と入口", "起動経路", "計画検査完了", "正本ファイル名", "選択肢と帰結", "前提を疑う観点")
+_STRUCTURAL_LABELS = (
+    "利用者と入口",
+    "起動経路",
+    "計画検査完了",
+    "書込対象の検査",
+    "正本ファイル名",
+    "選択肢と帰結",
+    "前提を疑う観点",
+)
 _QUOTED_DATA_PATTERN = re.compile(r"「[^」]*」|`[^`]*`")
 # 選定結果の欄`プロジェクト固有の公開後の操作の順序`（旧欄名`terminal_order`）の値`既定`は保存形式の値として扱う。
 _TERMINAL_ORDER_VALUE_PATTERN = re.compile(

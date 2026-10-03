@@ -3,7 +3,8 @@ name: pytools-edit
 user-invocable: false
 description: >
   `pytools/`・`scripts/`・`bin/`・`rust/`配下のコマンドラインツール・スクリプト・hookスクリプトを
-  新規作成・編集するときに使う。配置規約・テスト配置・PEP 723・wheel設定・cmdエンコーディングを扱う。
+  新規作成・編集するとき、および本リポジトリのテストの配置を決めるとき、テストを新規作成・編集するときに使う。
+  配置規約・テスト配置・PEP 723・wheel設定・cmdエンコーディングを扱う。
 ---
 
 # pytools・scripts・bin の編集
@@ -45,8 +46,16 @@ description: >
 
 ## テスト配置
 
-- Pythonテストコードはソースモジュールと同一ディレクトリに`<name>_test.py`として配置する
-  （`pytools/`・`scripts/`・`agent-toolkit/`配下いずれも同方式）
+- テストを置く場所は、確かめる対象のできるだけ近くから選ぶ。Pythonモジュールの動作を確かめるテストは、
+  そのモジュールと同じディレクトリの`<name>_test.py`とする。文書・設定・スクリプトの実物を読むテストは、
+  その実物と同じディレクトリか、対象群を包含する最も近いディレクトリへ置く。
+  fixtureで文書などの入力を作成して実装を呼ぶテストは、実装の動作テストとして実装の近くへ残す。
+  収集や配布の制約で近くへ置けない場合は、成立する最も近い場所を選び、その理由を記録する
+- 複数領域の既存成果物の不変条件を確かめるPythonテストは、`repo_invariant`マーカーで識別する。
+  ファイル全体が該当する場合は`pytestmark = pytest.mark.repo_invariant`、通常の動作テストと混在する場合は
+  該当するテストだけに`@pytest.mark.repo_invariant`を付ける。変更ファイルだけからはたどれないテストを選ぶためであり、
+  通常の動作テストを一律にこのマーカーへ含めない。検証対象の探索は`agent-toolkit:check-execution`の
+  `references/verification-scope.md`に従い、個々のテストと編集対象の対応表を規範へ増やさない
 - テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`へ集約する。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
   共通化が必要な場合は`agent-toolkit-edit`スキル「scripts配下の配置」節が定めるテスト専用パッケージへ置く

@@ -93,6 +93,7 @@ def test_stderr_warn_offenders_detects_indirect_binding() -> None:
     assert _stderr_warn_offenders(source) == [expected_lineno]
 
 
+@pytest.mark.repo_invariant
 def test_pretooluse_matcher_covers_agents_server_tool_names() -> None:
     """PreToolUse matcherが実装側のagents_serverツール名集合全体を被覆する。
 

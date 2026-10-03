@@ -1,23 +1,28 @@
-"""`<役割名>.subagent.md`を指す委譲プロンプトを、宣言済みの入力だけへ限る。
+"""`<役割名>.subagent.md`の実行命令を持つ委譲プロンプトを、宣言済みの入力だけへ限る。
 
 `share/<役割名>.subagent.md`を持つ委譲では、委譲先の手順、権限、検証方法、返却形式は
 `<役割名>.subagent.md`と委譲先が読む規範が定める。委譲プロンプトへそれらを書き足すと、委譲の費用が増え、指示の重複や
 委譲元の先入観が委譲先へ混入する。本モジュールは次の2つを遮断する。
 
-- `agents_server`の`start`のうち、自由本文を渡すmode（`delegate`・`explore`・`write`）の本文が`<役割名>.subagent.md`を指す起動。
+- `agents_server`の`start`のうち、自由本文を渡すmode（`delegate`・`explore`・`write`）の本文が
+  `<役割名>.subagent.md`の実行を命じる起動。
   `<役割名>.subagent.md`を指定する起動は`start`のtaskへ`subagent_md_path`と`extra_params`で渡す
-- `Agent`ツールの本文が`<役割名>.subagent.md`を指し、1行目の`<.subagent.mdの絶対パス>の手順を実行せよ。`と
+- `Agent`ツールの本文が`<役割名>.subagent.md`の実行を命じ、1行目の`<.subagent.mdの絶対パス>の手順を実行せよ。`と
   宣言済みの入力名の行（字下げした続きの行を含む）以外を含む起動
 
 遮断の根拠: 委譲の起動は委譲プロンプトを委譲先のコンテキストへ取り込ませるため、通した後に結果を復元できない。
 実行主体は同じターンで、通知が示す`start`の呼び出しまたは宣言済みの行だけの本文へ組み直して再実行できる。
 宣言を読めない`<役割名>.subagent.md`は入力との一致を確かめられないため遮断しない（`agents_server`の`start`も警告だけで起動を続ける）。
 宣言の解析は`agents_server`の`start`と`agent_toolkit._agents_server.task_documents`を共有する。
+読解・比較の参照と、コードや引用に載せた命令の例は通す。命令を確定できない参照も通し、会話の意味を推定しない。
 """
 
 from __future__ import annotations
 
+import pathlib
 import re
+
+import markdown_it
 
 from agent_toolkit._agents_server import task_documents
 from agent_toolkit._agents_server import tool_names as _tool_names
@@ -38,6 +43,7 @@ AGENT_TOOL_NAMES: frozenset[str] = frozenset({"Agent", "Task"})
 
 _INPUT_LINE_PATTERN = re.compile(r"^(?P<name>[^\s:：][^:：]*?):(?: (?P<value>.*))?$")
 _CONTINUATION_PREFIX = "  "
+_MARKDOWN = markdown_it.MarkdownIt("commonmark")
 
 
 def check_task_document_launch(tool_name: str, tool_input: dict) -> str | None:
@@ -55,25 +61,24 @@ def check_task_document_launch(tool_name: str, tool_input: dict) -> str | None:
 
 
 def _check_free_text_start(mode: str, prompt: str) -> str | None:
-    documents = task_documents.find_task_documents(prompt)
-    if not documents:
+    document = _execution_document(prompt)
+    if document is None:
         return None
     return _block_notice(
-        f"blocked: `start`の`{mode}`で渡した`prompt`が`{documents[0]}`を指している。"
+        f"blocked: `start`の`{mode}`で渡した`prompt`が`{document}`の手順を実行する命令を持つ。"
         "`<役割名>.subagent.md`を持つ委譲は自由本文の起動の対象外である。",
         fix=(
-            f"`agents_server`の`start`へ`mode`を指定せず、`subagent_md_path={documents[0]}`と、"
+            f"`agents_server`の`start`へ`mode`を指定せず、`subagent_md_path={document}`と、"
             "`<役割名>.subagent.md`が宣言した入力名だけを持つ`extra_params`を渡して起動する。"
         ),
     )
 
 
 def _check_agent_prompt(prompt: str) -> str | None:
-    documents = task_documents.find_task_documents(prompt)
-    if not documents:
+    document = _execution_document(prompt)
+    if document is None:
         return None
     lines = prompt.rstrip().splitlines()
-    document = documents[0]
     expected_first = f"{document}の手順を実行せよ。"
     declaration = task_documents.read_declaration(document)
     if isinstance(declaration, str):
@@ -102,3 +107,25 @@ def _check_agent_prompt(prompt: str) -> str | None:
             f"受理する入力名: {', '.join(sorted(accepted))}。手順、権限、返却形式は`<役割名>.subagent.md`が定めるため書かない。"
         ),
     )
+
+
+def _execution_document(prompt: str) -> pathlib.Path | None:
+    """引用の外にある定型の実行命令から、命令の対象文書を求める。"""
+    documents = task_documents.find_task_documents(prompt)
+    if not documents:
+        return None
+    quote_depth = 0
+    for token in _MARKDOWN.parse(prompt):
+        if token.type == "blockquote_open":
+            quote_depth += 1
+        elif token.type == "blockquote_close":
+            quote_depth -= 1
+        elif token.type == "inline" and not quote_depth:
+            # 命令全体がインラインコードにある例は、実行の指示ではない。
+            if not any(child.type == "text" and "の手順を実行せよ。" in child.content for child in token.children or []):
+                continue
+            for line in token.content.splitlines():
+                for document in documents:
+                    if line.strip() in (f"{document}の手順を実行せよ。", f"`{document}`の手順を実行せよ。"):
+                        return document
+    return None

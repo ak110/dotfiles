@@ -35,7 +35,7 @@ description: >
     初回の変更範囲の検証ではMCPの`commands`とCLIの`--commands`を指定しない。
     修正後に失敗したチェックだけを再実行する場合は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を、CLIでは`--commands=mypy,ruff-check`を渡す
   - 変更範囲の検証の対象は`agent-toolkit:check-execution`の`references/verification-scope.md`の類型で選ぶ。本リポジトリで使う値は次のとおり
-    - 横断テスト: `repo_invariant`マーカーで識別し、`uv run --frozen pytest -p no:cacheprovider -m repo_invariant agent-toolkit/agent_toolkit scripts`で実行する。新しい横断テストにも`pytestmark = pytest.mark.repo_invariant`を付ける
+    - 横断テスト: `repo_invariant`マーカーで識別し、`uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex .`で実行する。マーカーの付け方は`pytools-edit`「テスト配置」に従う
     - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`の利用者向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
     - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。
       共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。内部のコメント・空白だけの変更は含めない
@@ -52,7 +52,7 @@ description: >
     - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version`
     - レーンをまたぐ重複実装の検出: `uv run --frozen pyfltr run --commands=arid`
     - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`
-    - 全追跡ファイルと全ソースの不変条件: `uv run --frozen pytest -p no:cacheprovider -m repo_invariant agent-toolkit/agent_toolkit scripts`
+    - 全追跡ファイルと全ソースの不変条件: `uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex .`
   - `make test`が実行するツール集合とCIの`python-lint (3.14)`ジョブの差は、同ジョブが`pyfltr ci --disable=`で無効化するチェックであり、対象は`.github/workflows/ci.yaml`の同ジョブの定義が定める。
     次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
     - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト

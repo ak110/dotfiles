@@ -138,6 +138,7 @@ def _build_fixture(
     return payload, env, managed_temp
 
 
+@pytest.mark.repo_invariant
 def test_fixture_table_covers_every_registered_hook() -> None:
     assert set(_FIXTURES) == _registered_hooks()
     assert set(HOOK_OUTPUT_SCHEMAS) == {event_name for event_name, _ in _registered_hooks()}

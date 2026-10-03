@@ -54,7 +54,7 @@ dev = [
 # pyfltrは`agent-toolkit/`をsubprojectとして分離する。Pythonを使うチェックだけが独立した仮想環境で
 # 本ファイルの値を読み、ほかのチェックはリポジトリ直下の`pyproject.toml`を使って全体を1回で確認する。
 # ここにはPythonを使うチェックの設定と全体に作用するキーだけを置き、直下と同じ値を指定する。
-# 本subproject固有の値を指定するキーでは理由を書く。両側の対応は`scripts/pyfltr_subproject_config_test.py`が確認する。
+# 本subproject固有の値を指定するキーでは理由を書く。両側の対応は`pyfltr_subproject_config_invariant_test.py`が確認する。
 [tool.pyfltr]
 preset = "latest"
 python = true
@@ -153,7 +153,7 @@ addopts = [
 ]
 markers = [
     "browser: Chromiumを使う実ブラウザー統合テスト",
-    "repo_invariant: 変更ファイルと無関係に全追跡ファイルまたは全ソースを走査する不変条件テスト",
+    "repo_invariant: 変更ファイルと無関係に既存成果物の不変条件を確かめるテスト（全追跡ファイル・全ソースの走査と複数領域の契約の整合）",
 ]
 log_level = "DEBUG"
 xfail_strict = true

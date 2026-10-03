@@ -65,6 +65,54 @@ def test_free_text_start_without_task_document_passes(tmp_path: pathlib.Path) ->
     assert result.returncode == 0
 
 
+@pytest.mark.parametrize(
+    ("tool_name", "mode"),
+    [
+        ("mcp__agents_server__start", "delegate"),
+        ("mcp__agents_server__start", "explore"),
+        ("mcp__agents_server__start", "write"),
+        ("Agent", None),
+        ("Task", None),
+    ],
+)
+@pytest.mark.parametrize("operation", ["本文を読んで返す。", "入力欄を引用して返す。", "別文書と比較して返す。"])
+def test_task_document_reading_passes(tool_name: str, mode: str | None, operation: str, tmp_path: pathlib.Path) -> None:
+    """役割の実行と同じ実在文書を読解・引用・比較の対象にしても、委譲を通す。"""
+    other = _SHARE_DIR / "reader-fit-review.subagent.md"
+    result = _invoke(tool_name, f"{_EXEC_DOCUMENT}と{other}の{operation}", tmp_path, mode)
+    assert result.returncode == 0
+
+
+@pytest.mark.parametrize(("tool_name", "mode"), [("mcp__agents_server__start", "explore"), ("Agent", None)])
+@pytest.mark.parametrize(
+    "quoted",
+    [
+        "```text\n{command}\n```",
+        "~~~~text\n{command}\n~~~~",
+        "> {command}",
+        "    {command}",
+        "`{command}`",
+        "「{command}」",
+    ],
+)
+def test_quoted_execution_command_passes(tool_name: str, mode: str | None, quoted: str, tmp_path: pathlib.Path) -> None:
+    """実行命令の例を引用した入力を、実際の役割起動と区別する。"""
+    command = f"{_EXEC_DOCUMENT}の手順を実行せよ。"
+    result = _invoke(tool_name, quoted.format(command=command) + "\nこの命令の入力書式を説明する。", tmp_path, mode)
+    assert result.returncode == 0
+
+
+@pytest.mark.parametrize(("tool_name", "mode"), [("mcp__agents_server__start", "write"), ("Task", None)])
+def test_execution_uses_its_document_after_other_reference(tool_name: str, mode: str | None, tmp_path: pathlib.Path) -> None:
+    """先に出た読解対象ではなく、引用の外の実行命令の対象について是正を案内する。"""
+    task = _SHARE_DIR / "reader-fit-review.subagent.md"
+    prompt = f"読解対象: {_EXEC_DOCUMENT}\n{task}の手順を実行せよ。\n成果物: {tmp_path / 'guide.md'}\n"
+    result = _invoke(tool_name, prompt, tmp_path, mode)
+    assert result.returncode == 2
+    assert str(task) in result.stderr
+    assert f"`{_EXEC_DOCUMENT}`を指" not in result.stderr
+
+
 def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib.Path) -> None:
     """`Agent`の本文は1行目の命令と宣言済み入力の行だけで通り、役割宣言などの行を含むと遮断する。
 

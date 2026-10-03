@@ -14,7 +14,8 @@ import pytest
 
 pytestmark = pytest.mark.repo_invariant
 
-_ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+_ROOT = pathlib.Path(__file__).resolve().parent
 _LIST_PATH = pathlib.PurePosixPath("agent-toolkit/skills/writing-standards/references/defined-names.md")
 _LIST_HEADING = "## 一覧"
 _HEADER = ("名前", "指示対象", "定義元")

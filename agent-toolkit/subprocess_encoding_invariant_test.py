@@ -11,7 +11,8 @@ from agent_toolkit._git import command as git_command
 
 pytestmark = pytest.mark.repo_invariant
 
-_PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+
+_PACKAGE_ROOT = Path(__file__).resolve().parent
 _SOURCE_ROOTS = (_PACKAGE_ROOT / "agent_toolkit", _PACKAGE_ROOT / "scripts", _PACKAGE_ROOT / "skills")
 _SUBPROCESS_CALLS = {"run", "Popen", "call", "check_call", "check_output"}
 

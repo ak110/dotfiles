@@ -104,7 +104,7 @@
 ## セキュリティと環境
 
 現行の規定はルールファイルの「委譲時の厳守事項」、`agent-toolkit:writing-standards`の各参照資料および
-[design.md](design.md)の「管理対象一時領域」にある。
+[design-storage.md](design-storage.md#managed-temp)の「managed-temp」にある。
 
 - codex呼び出しの`sandbox: danger-full-access`指定を弱めない（障害対策）。
   他の値では相手プロセスが承認待ちから復帰せず完了を検知できない。
@@ -149,7 +149,7 @@
   秘匿値が現れ得ることを理由に、ツール呼び出しの引数、コマンド文字列その他の入力を表示から除かない
   （2026年9月15日、利用者指示）。
   `agents_server`のstatusline表示がツール名だけを載せ、同じツールを繰り返す区間で稼働と停止を区別できなかった観測に由来する。
-  現行の実装契約は[design.md](design.md)の「agents_server sessionのstatusline表示」にある
+  現行の実装契約は[design-agents-runtime.md](design-agents-runtime.md#agents_server-sessionのstatusline表示)の「agents_server sessionのstatusline表示」にある
 - Claude Codeの確認ダイアログはPermissionRequestフックで無条件に許可し、許可した要求の記録だけを残す
   （2026年9月、利用者指示。auto modeでの運用を前提とし、承認の往復を無くすことを優先する）
 - auto modeの許可ルールは、操作の種別と除外条件で対象を決める。remoteのホスト、由来（AWI処理かどうか）および所有者による限定は条件として置かない

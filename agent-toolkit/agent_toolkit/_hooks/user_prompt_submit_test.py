@@ -304,15 +304,6 @@ class TestMachineInjectedTurn:
         assert _EXPECTED_VERIFICATION_NOTICE_BODY in bodies
 
 
-def test_periodic_recheck_marker_matches_the_runtime_document() -> None:
-    """フックの標識と`claude-code-runtime.md`の記述が同じリテラルを持つ。
-
-    標識を2箇所が保持するため、片方だけの改訂で機械注入判定が成立しなくなる状態を検出する。
-    """
-    document = pathlib.Path(__file__).resolve().parents[2] / "skills" / "delegation" / "references" / "claude-code-runtime.md"
-    assert f"`{user_prompt_submit.PERIODIC_RECHECK_MARKER}`" in document.read_text(encoding="utf-8")
-
-
 class TestSlashCommandDetection:
     """ホストごとの手動起動でセッション状態フラグが実際の起動と一致することを検証する。"""
 

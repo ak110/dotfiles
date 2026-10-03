@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-_HELPER_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "atk_serve_plans_remote_helper.py"
+_HELPER_PATH = pathlib.Path(__file__).resolve().with_name("atk_serve_plans_remote_helper.py")
 _SPEC = importlib.util.spec_from_file_location("atk_serve_plans_remote_helper", _HELPER_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 helper = importlib.util.module_from_spec(_SPEC)
