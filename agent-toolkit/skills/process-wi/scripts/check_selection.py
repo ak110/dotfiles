@@ -3,20 +3,24 @@
 pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と反映先`から手で書き写すため、
 反映先の一部を欠いた値や、個別ファイルの代わりに上位ディレクトリだけを書いた値がレーン分けへ渡り得る。
 本スクリプトは`レーン`が`なし`でない各項目について、同節のインラインコードから反映先パスを抽出し、
-`書込対象`と`書き込まない反映先`の双方に照らして次の3区分の違反を報告する。
+`書込対象`と`書き込まない反映先`の双方に照らして次の4区分の違反を報告する。
 旧欄名（`decisions`、`awi`、`lane`、`write_files`、`excluded_paths`）で書かれた選定結果も同じ意味で読む。
 
 - 未被覆: 反映先パスが`書込対象`の同じパスにも、`書込対象`のディレクトリ範囲の配下にも、`書き込まない反映先`にも無い
 - 広すぎる範囲: `書込対象`のディレクトリ範囲の配下に反映先パスがあるのに、反映先がその範囲自身もそれを含む範囲も挙げていない
 - `書き込まない反映先`の不正: 反映先パスに無いパスを`書き込まない反映先`が含む
 
-3区分はいずれも、レーン分けと重なりの判定が実際の書込対象と異なる結果になるため、違反として終了コード1を返す。
+- 別レーンの重複根拠不足: 共通ファイルまたは狭い方の範囲が双方のレーンの根拠に無い
+
+4区分はいずれも、レーン分けと重なりの判定が実際の書込対象と異なる結果になるため、違反として終了コード1を返す。
+分類と定義の独立性の意味判断はpickerとメインの読解へ委ねる。
 入力を読めない場合はチェックを開始できないため終了コード2を返し、内容の違反と区別する。
 """
 
 from __future__ import annotations
 
 import argparse
+import itertools
 import pathlib
 import re
 import subprocess
@@ -181,6 +185,44 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"AWI本文を読み込めない: {source}: {error}") from error
         errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, excluded_paths))
+    errors.extend(_check_lane_overlaps(items, _selection.lane_costs(selection) or []))
+    return errors
+
+
+def _check_lane_overlaps(items: list[object], costs: list[object]) -> list[str]:
+    """別レーンの重複パスが双方の根拠にあるか確かめ、意味の独立性は担当の読解へ残す。"""
+    rationales = {
+        row[_selection.LANE_KEY]: row.get(_selection.RATIONALE_KEY, "")
+        for row in costs
+        if isinstance(row, dict) and isinstance(row.get(_selection.LANE_KEY), str)
+    }
+    assigned = [
+        item
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get(_selection.LANE_KEY), str) and item[_selection.LANE_KEY] != _LANE_NONE
+    ]
+    errors: list[str] = []
+    for left, right in itertools.combinations(assigned, 2):
+        lanes = (left[_selection.LANE_KEY], right[_selection.LANE_KEY])
+        if lanes[0] == lanes[1]:
+            continue
+        overlaps = {
+            second if _covers(first, second) else first
+            for first in _string_list(left, _selection.WRITE_FILES_KEY)
+            for second in _string_list(right, _selection.WRITE_FILES_KEY)
+            if _covers(first, second) or _covers(second, first)
+        }
+        for path in sorted(overlaps):
+            pattern = re.compile(r"(?<![A-Za-z0-9_./-])" + re.escape(path) + r"(?![A-Za-z0-9_./-])")
+            missing = [
+                lane for lane in lanes if not isinstance(rationales.get(lane), str) or not pattern.search(rationales[lane])
+            ]
+            if missing:
+                errors.append(
+                    f"{left[_selection.WI_KEY]}（{lanes[0]}）と{right[_selection.WI_KEY]}（{lanes[1]}）: "
+                    f"重複パスの根拠不足: {path}（{', '.join(missing)}）。"
+                    "双方のレーンの根拠へ共通パスと交わらない定義を記し、交わる場合は同じレーンへまとめる"
+                )
     return errors
 
 

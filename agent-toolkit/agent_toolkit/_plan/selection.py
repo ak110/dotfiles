@@ -15,6 +15,8 @@ WI_KEY = "WI"
 LANE_KEY = "レーン"
 WRITE_FILES_KEY = "書込対象"
 EXCLUDED_PATHS_KEY = "書き込まない反映先"
+LANE_COSTS_KEY = "レーンの所要時間"
+RATIONALE_KEY = "根拠"
 
 _LEGACY_DECISIONS_KEY = "decisions"
 
@@ -45,15 +47,25 @@ def decisions(selection: object) -> list[object] | None:
     items = selection.get(DECISIONS_KEY, selection.get(_LEGACY_DECISIONS_KEY))
     if not isinstance(items, list):
         return None
-    return [_normalize(item) for item in items]
+    return [_normalize(item, _LEGACY_DECISION_KEYS) for item in items]
 
 
-def _normalize(item: object) -> object:
+def lane_costs(selection: object) -> list[object] | None:
+    """レーンの所要時間の列を読み、旧lane_costs・lane・rationaleを現在の欄名へそろえる。"""
+    if not isinstance(selection, dict):
+        return None
+    items = selection.get(LANE_COSTS_KEY, selection.get("lane_costs"))
+    if not isinstance(items, list):
+        return None
+    return [_normalize(item, {"lane": LANE_KEY, "rationale": RATIONALE_KEY}) for item in items]
+
+
+def _normalize(item: object, keys: dict[str, str]) -> object:
     """1件の項目の旧欄名を新しい欄名へ置き換える。"""
     if not isinstance(item, dict):
         return item
-    normalized = {key: value for key, value in item.items() if key not in _LEGACY_DECISION_KEYS}
-    for legacy, current in _LEGACY_DECISION_KEYS.items():
+    normalized = {key: value for key, value in item.items() if key not in keys}
+    for legacy, current in keys.items():
         if legacy in item and current not in item:
             normalized[current] = item[legacy]
     return normalized
