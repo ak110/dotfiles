@@ -204,7 +204,12 @@ Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各�
 `updatedInput`による入力書き換えの効果は入力値の変更までとし、確認ダイアログの発生はそのまま残る。
 ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う。
 `agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新および一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
-PreToolUseの処理は、`send_message`・`kill`の保存済みsessionのチェックと、`start`の`delegate`・`explore`・`write`の本文が`<役割名>.subagent.md`を指す起動の遮断までとする。`start`の入力妥当性検証（`mode`ごとの欠落と混在を含む）は実行基盤へ委ねる。`Agent`ツールの本文が`<役割名>.subagent.md`を指す起動は、1行目の命令と宣言済みの入力以外の行を遮断する。入力の実行権限値はそのまま渡す。
+PreToolUseは`send_message`・`kill`の保存済みsessionと、`<役割名>.subagent.md`の実行命令を持つ起動を確認する。
+`start`の`delegate`・`explore`・`write`へ引用の外で`<役割名>.subagent.md`の手順を実行する命令を渡した場合は、タスク起動へ直すよう遮断する。
+`Agent`・`Task`の実行命令では、1行目の正式な命令と宣言済み入力以外の行を遮断する。
+文書の読解・引用・比較の対象への参照と、引用に載せた実行命令の例は通す。
+参照だけから用途を確定できない場合も通し、会話の意味を推定する遮断・警告を加えない。
+`start`の入力妥当性検証（`mode`ごとの欠落と混在を含む）は実行基盤へ委ね、入力の実行権限値はそのまま渡す。
 `wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseのチェック対象へ含めず通過させる。
 PostToolUseは成功した開始ツール`start`（全`mode`。統合前の旧名で記録された開始も含む）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
 
