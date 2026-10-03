@@ -17,7 +17,7 @@ import qrcode
 
 from pytools._internal import claude_common
 from pytools._internal.cli import enable_completion
-from pytools.media_remote import _app, _token
+from pytools.media_remote import _app, _token, _window_move
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,8 @@ async def _serve(app: object, host: str, port: int) -> None:
     config = hypercorn.config.Config()
     config.bind = [f"{host}:{port}"]
     config.accesslog = None
-    await hypercorn.asyncio.serve(app, config)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+    with _window_move.WindowMover():
+        await hypercorn.asyncio.serve(app, config)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 def _serve_command(args: argparse.Namespace) -> int:
