@@ -53,6 +53,7 @@ def test_output_file_saves_events_and_prints_path_and_line_count(
 
     assert json.loads(output_path.read_text(encoding="utf-8")) == {
         "kind": "user",
+        "runtime_inserted": False,
         "text": "入力",
         "line": 1,
         "timestamp": None,
@@ -208,6 +209,7 @@ def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_pa
         {
             "kind": "user",
             "text": "質問: 最初の質問\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答",
+            "runtime_inserted": False,
             "line": 1,
             "timestamp": None,
             "sequence": 1,
@@ -472,8 +474,22 @@ def test_claude_matches_multiple_question_ids_and_ignores_repeated_result(tmp_pa
     )
 
     assert evidence.load_and_extract(str(transcript)) == [
-        {"kind": "user", "text": "質問: 質問\n回答: 回答", "line": 1, "timestamp": None, "sequence": 1},
-        {"kind": "user", "text": "質問: 別の質問\n回答: 別の回答", "line": 1, "timestamp": None, "sequence": 2},
+        {
+            "kind": "user",
+            "text": "質問: 質問\n回答: 回答",
+            "runtime_inserted": False,
+            "line": 1,
+            "timestamp": None,
+            "sequence": 1,
+        },
+        {
+            "kind": "user",
+            "text": "質問: 別の質問\n回答: 別の回答",
+            "runtime_inserted": False,
+            "line": 1,
+            "timestamp": None,
+            "sequence": 2,
+        },
     ]
 
 
@@ -501,6 +517,7 @@ def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
     assert len(lines) == 1
     assert json.loads(lines[0]) == {
         "kind": "user",
+        "runtime_inserted": False,
         "text": "入力",
         "line": 1,
         "timestamp": None,
@@ -529,7 +546,14 @@ def test_main_resolves_codex_transcript_from_thread_id(
     assert evidence.main(["--codex-thread-id", thread_id, "--codex-home", str(codex_home)]) == 0
 
     assert _read_jsonl(capsys) == [
-        {"kind": "user", "text": "thread IDから解決した記録", "line": 1, "timestamp": None, "sequence": 1}
+        {
+            "kind": "user",
+            "text": "thread IDから解決した記録",
+            "runtime_inserted": False,
+            "line": 1,
+            "timestamp": None,
+            "sequence": 1,
+        }
     ]
 
 
@@ -1150,6 +1174,7 @@ def test_codex_question_output_becomes_user_event_at_output_position(tmp_path: p
         {
             "kind": "user",
             "text": "質問: 最初の質問\n選択肢: 提示した選択肢\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答1\n次の回答2",
+            "runtime_inserted": False,
             "line": 1,
             "timestamp": None,
             "sequence": 2,
@@ -2521,6 +2546,80 @@ def test_user_events_keeps_long_text(tmp_path: pathlib.Path, capsys: pytest.Capt
     events = _user_events([str(transcript)], capsys)
 
     assert [event["text"] for event in events if event["kind"] == "user"] == [long_text]
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_user_events_excludes_generated_inputs_without_losing_human_text(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str
+) -> None:
+    """原文と構造標識で生成本文を除き、人間の長文・手動起動・是正の位置を保持する。"""
+    texts = [
+        "<skill>" + "本文" * 1600 + "</skill>",
+        "実行環境の挿入",
+        "会話に添えた生成本文",
+        "最初の依頼",
+        "/agent-toolkit:plan-mode" if host == "claude" else "$agent-toolkit:plan-mode",
+        "人間の長文" * 600,
+        '<atk-auto source="runtime" kind="rules">規範</atk-auto>',
+        "# AGENTS.md instructions\n環境と規範",
+        "後続の訂正",
+    ]
+    entries: list[dict] = []
+    for index, text in enumerate(texts):
+        timestamp = f"2026-09-01T00:00:{index + 1:02d}Z"
+        entry = (
+            _timestamped_entry(timestamp, text)
+            if host == "claude"
+            else {
+                "type": "response_item",
+                "timestamp": timestamp,
+                "payload": {"type": "message", "role": "user", "content": text},
+            }
+        )
+        if index == 1:
+            entry["isMeta"] = True
+        elif index == 2:
+            entry["turnCompanion"] = True
+        entries.append(entry)
+    transcript = _write_transcript(tmp_path, entries)
+    events = _user_events([str(transcript)], capsys)
+    assert [(event["line"], event["text"]) for event in events if event["kind"] == "user"] == [
+        (4, texts[3]),
+        (5, texts[4]),
+        (6, texts[5]),
+        (9, texts[8]),
+    ]
+    assert events[-1] == {"kind": "summary", "count": 4}
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_long_injection_is_classified_before_display_shortening(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str
+) -> None:
+    """2000文字より後の閉タグが表示から消えても、初期要求と介入候補を変えない。"""
+    texts = ["<skill>" + "規範" * 1600 + "</skill>", "最初の依頼", "後続の訂正"]
+    entries = [
+        _timestamped_entry("2026-09-01T00:00:01Z", text)
+        if host == "claude"
+        else {
+            "type": "response_item",
+            "timestamp": "2026-09-01T00:00:01Z",
+            "payload": {"type": "message", "role": "user", "content": text},
+        }
+        for text in texts
+    ]
+    transcript = _write_transcript(tmp_path, entries)
+    displayed = evidence.load_and_extract(str(transcript))
+    first = next(event for event in displayed if event["kind"] == "user")
+    assert "</skill>" not in first["text"]
+    assert first["runtime_inserted"] is True
+    records, _ = _bundle_candidates_and_evidence(tmp_path, capsys, entries)
+    assert [locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]] == [3]
+    assert records[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1}
+    conversation = [
+        json.loads(line) for line in (tmp_path / "bundle/conversation.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [event["text"] for event in conversation if event.get("role") == "user"] == texts[1:]
 
 
 def test_user_events_includes_offered_options_claude(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -7287,6 +7386,7 @@ def test_explicit_codex_home_applies_to_parent_and_delegate_records(
         {
             "kind": "user",
             "text": "明示先の委譲記録",
+            "runtime_inserted": False,
             "line": 1,
             "timestamp": None,
             "sequence": 1,

@@ -6,7 +6,9 @@
 `--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補および会話の流れの抽出を
 1回の記録読み込みでまとめて行い、走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
 対象の記録はtranscriptの絶対パス、Claude Codeのセッション識別子、Codex thread IDおよびカタログ走査のいずれか1つで指定する。
-`--user-events`は逐語引用の原文として使うため、本文を切り詰めず、確認回答には提示した全選択肢を含める。
+ユーザーイベントの由来は原文と生成標識から判定し、その結果を保持してから通常表示の本文を短縮する。
+`--user-events`は人間の発話と確認回答だけを逐語引用の原文として返す。
+本文を切り詰めず、確認回答には提示した全選択肢を含め、スキル展開と実行環境の生成本文は除く。
 
 本スクリプトはデータ抽出を目的とし、合否を判定しないため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -309,13 +311,26 @@ def _codex_text_blocks(content: Any) -> list[str]:
 
 
 def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] | None:
+    runtime_inserted = kind == "user" and _is_runtime_inserted_text(text)
     clipped = _clip(text)
     if not clipped:
         return None
     event: dict[str, Any] = {"kind": kind, "text": clipped}
+    if kind == "user":
+        event["runtime_inserted"] = runtime_inserted
     if tool:
         event["tool"] = tool
     return event
+
+
+def _generated_user_event(event: dict[str, Any]) -> bool:
+    """原文から得た由来を消費し、保存済み旧イベントは既存の本文判定で読む。"""
+    if event.get("runtime_generated") is True:
+        return True
+    classified = event.get("runtime_inserted")
+    if isinstance(classified, bool):
+        return classified
+    return _is_runtime_inserted_text(str(event.get("text", "")))
 
 
 _OfferedOption = tuple[str, str]
@@ -777,6 +792,8 @@ def _codex_entry_events(
             for text in _codex_text_blocks(payload.get("content")):
                 event = _event(kind, text)
                 if event:
+                    if kind == "user" and _is_runtime_generated(entry):
+                        event["runtime_generated"] = True
                     phase = payload.get("phase")
                     if isinstance(phase, str):
                         event["phase"] = phase
@@ -3124,7 +3141,9 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
             timestamp = _record_timestamp(record)
             if timestamp is not None and timestamp > since:
                 selected_events.extend(record_events)
-        user_events = [event for event in _finalize(selected_events) if event["kind"] == "user"]
+        user_events = [
+            event for event in _finalize(selected_events) if event["kind"] == "user" and not _generated_user_event(event)
+        ]
         events.extend(_events_with_record(user_events, item.record_id))
         break
     events.append({"kind": "summary", "count": len(events)})
@@ -3184,7 +3203,7 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
             )
             continue
         if kind == "user":
-            if event.get("runtime_generated") is True or _is_runtime_inserted_text(text):
+            if _generated_user_event(event):
                 continue
             role = "user"
         elif kind in {"assistant", "final-result"}:
@@ -4080,7 +4099,7 @@ def _user_candidate_exclusion(
         return "initial-skill-request"
     if initial_skill_body == (record, line):
         return "initial-skill-body"
-    if _is_runtime_inserted_text(text):
+    if _generated_user_event(event):
         return "runtime-inserted"
     if text.startswith("質問:") and "回答:" in text:
         return None if event.get("answer_intervention") is True else "question-answer"
@@ -5096,7 +5115,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--user-events",
         action="store_true",
-        help="`--since`より後から観測境界までのメイン記録にある利用者イベントだけを照会する。`--since`が必須。",
+        help="`--since`より後から観測境界までのメイン記録にある人間の発話と確認回答を全文で照会する。"
+        "スキル展開と実行環境の生成本文は除く。`--since`が必須。",
     )
     parser.add_argument(
         "--since",
