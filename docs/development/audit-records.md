@@ -119,6 +119,18 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月25日、Claude Code 2.1.282で`agent-toolkit/skills/wi-standards/SKILL.md`の309行・52,347バイトを`Read`の`offset=1, limit=309`で取得すると、末尾まで届いた。同じファイルを`cat <絶対パス> | cat`で取得すると、Bashは表示上限を超えた全量をセッション内のファイルへ保存した。保存物は309行・52,347バイトで原本と一致した。Claude Codeの[tools仕様](https://code.claude.com/docs/en/tools.md)の「Read tool behavior」は、上限超過時に`PARTIAL view`と先頭ページを返し、`offset`と`limit`で続きを取得する方式を説明する。同仕様の「Bash」は、表示上限を超えた結果をセッション内のファイルへ保存してパスを返す。2026年9月21日のCodexでは、複数文書の全文取得を1つの実行セルへ集約した結果、15,105トークンで出力が切り詰められ、個別再取得を要した。この観測時のCodexのホスト版番号は記録されていない。再検証では両ホストへ同一の大容量エージェント向け文書を与えて全文読取とBashの単純全文読取を実行する。hook通知、ホストの部分取得通知、保存物の末尾および容量を比較する。
 
+## agent-toolkit/skills/check-execution/SKILL.md：検証結果の診断と警告の判定：2026年10月3日
+
+2026年10月3日、pyfltr 3.19.9でJSONLの要約と診断の粒度を確認した。
+`uv run --frozen pyfltr run --commands=textlint --no-fix agent-toolkit/share/add-wi.parent.md`は終了コード0だった。
+診断レコードはseverity=warningのメッセージを1件持ち、コマンド結果はsucceeded・diagnostics=1、要約の`commands_summary.needs_action.warning`は0、`diagnostics`は1だった。
+導入済みパッケージの`pyfltr.output.jsonl._build_summary_record`も、各コマンドのstatusを数える処理と診断を集計する処理を分けていた。
+
+再検証では導入版を取得し、warningの診断を持つMarkdownへ同じtextlintの起動形を適用する。
+JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`commands_summary.needs_action.warning`を比較する。
+出力の集計は同じ保存ファイルを使い、件数0だけから診断の不在を判断しない。
+導入済みパッケージの同関数も読み、要約が数える値と診断の生成を確かめる。
+
 ## agent-toolkit/skills/commit/references/git-identifier.md：revision件数とshell引用：2026年9月20日
 
 2026年9月20日、Git 2.43.0で`git rev-parse --short=7 HEAD HEAD~1`が標準エラーへ`fatal: Needed a single revision`を書いて終了コード128となることを確認した。PowerShell 7.6.0では、未引用の`git rev-parse --verify HEAD^{commit}`が同じエラーと終了コード128を返し、単一引用符で囲んだ`git rev-parse --verify 'HEAD^{commit}'`が完全OIDと終了コード0を返した。再検証は同じrepositoryで1件と2件のrevisionを渡した`--short=7`の終了状態を比較し、PowerShellでpeel式の引用有無によるGitの受理結果を比較する。
