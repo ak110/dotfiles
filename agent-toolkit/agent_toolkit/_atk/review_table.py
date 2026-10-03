@@ -175,6 +175,11 @@ def _read(path: Path) -> list[list[str]]:
     return [row for _, row in _parse_text(_read_table_text(path))]
 
 
+def read_rows(path: str | Path) -> list[list[str]]:
+    """レビュー指摘管理表の各行をデコード済みのセル列として返す。読み込めない場合は理由と次の操作を持つ例外を送出する。"""
+    return _read(Path(path))
+
+
 def _normalized(value: str) -> str:
     """複合キー用にUnicode、前後空白および連続空白を正規化する。"""
     return _WHITESPACE_RE.sub(" ", unicodedata.normalize("NFC", value).strip())

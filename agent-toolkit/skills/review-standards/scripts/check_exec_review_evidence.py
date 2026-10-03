@@ -39,6 +39,11 @@ PATH_START = re.compile(r"[A-Za-z]:[\\/]|/")
 BRACKETED_TITLE = re.compile(r"「([^」]+)」")
 WHOLE_REQUEST = "分割元の依頼全体"
 ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
+BACKGROUND = "背景"
+REVIEW_TABLE_SUFFIX = ".exec-review.tsv"
+# 背景の記録が原文の範囲を中略して引用するときの省略記号。
+ELLIPSIS = re.compile(r"…+|\.{3,}")
+WHITESPACE = re.compile(r"\s+")
 LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 WI_HEADER = re.compile(r"^### (\d{8}-\d{6}-\d{3}\.md) \[[^]]+\]$")
 # 全角の終止記号は位置によらず文末とする。ASCIIの終止記号は直後が空白か段落末の場合だけ文末とし、
@@ -711,8 +716,32 @@ def _plan_files(source: str) -> list[pathlib.Path]:
     return plans
 
 
-def _assignment_record(source: str, repository: pathlib.Path, wi_outputs: dict[str, str]) -> tuple[list[str] | None, str]:
-    """割当外行のsourceが指す割当の記録の節を返す。節を特定できない場合は理由を返す。"""
+def _review_tables(source: str) -> list[pathlib.Path]:
+    """sourceの文字列から、実在するレビュー指摘管理表の絶対パスを出現順に返す。"""
+    starts = [match.start() for match in PATH_START.finditer(source)]
+    tables: list[pathlib.Path] = []
+    for end in (match.end() for match in re.finditer(re.escape(REVIEW_TABLE_SUFFIX), source)):
+        candidate = next(
+            (
+                path
+                for path in (pathlib.Path(source[start:end]) for start in starts if start < end)
+                if path.is_absolute() and _is_file(path)
+            ),
+            None,
+        )
+        if candidate is not None and candidate not in tables:
+            tables.append(candidate)
+    return tables
+
+
+def _record_section(
+    source: str, repository: pathlib.Path, wi_outputs: dict[str, str], *, review_table_allowed: bool = False
+) -> tuple[list[str] | None, str]:
+    """免除行のsourceが指す記録の節を返す。節を特定できない場合は理由を返す。
+
+    記録はWI本文の`## 反映内容と反映先`か計画の`## 実施内容`とし、`review_table_allowed`のときは
+    実装着手後に分類を記録したレビュー指摘管理表の全行も受け付ける。
+    """
     reasons: list[str] = []
     if "反映内容と反映先" in source:
         for reference in dict.fromkeys(WI_FILENAME.findall(source)):
@@ -735,9 +764,18 @@ def _assignment_record(source: str, repository: pathlib.Path, wi_outputs: dict[s
             if section is not None:
                 return section, ""
             reasons.append(f"{plan}に『実施内容』節がありません")
+    if review_table_allowed:
+        for table in _review_tables(source):
+            try:
+                rows = review_table.read_rows(table)
+            except (OSError, UnicodeError, ValueError) as exc:
+                reasons.append(f"レビュー指摘管理表を読めません: {exc}")
+                continue
+            return [" ".join(row) for row in rows], ""
     if not reasons:
         reasons.append(
             "WIファイル名と節名『反映内容と反映先』、または実在する計画ファイルの絶対パスと節名『実施内容』がありません"
+            + ("（実装着手後はレビュー指摘管理表の絶対パスも可）" if review_table_allowed else "")
         )
     return None, "、".join(reasons)
 
@@ -751,7 +789,7 @@ def _unassigned_source_error(
     割当先の表記が割当を示す記録行に現れるかを行単位で比べる。意味上の対応はレビューと統合時の読解に残す。
     """
     label = f"{row['awi'] or '計画由来'}: {section}[{index}]"
-    record, reason = _assignment_record(row["source"], repository, wi_outputs)
+    record, reason = _record_section(row["source"], repository, wi_outputs)
     if record is None:
         return (
             f"{label}.source: 割当外の根拠となる割当の記録を特定できません（{reason}）。"
@@ -777,13 +815,107 @@ def _unassigned_source_error(
     )
 
 
+def _compact(text: str) -> str:
+    """空白の有無と改行位置の違いで原文との対応が崩れないよう、空白を全て除いた文字列を返す。"""
+    return WHITESPACE.sub("", text)
+
+
+def _original_text(row: dict[str, str], repository: pathlib.Path, wi_outputs: dict[str, str]) -> str | None:
+    """行の原文要求を含む原文（WI本文、計画だけの行では`origin`が指す計画）を返す。"""
+    if row["awi"]:
+        try:
+            _, body = _load_wi(row["awi"], repository, wi_outputs)
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return None
+        return "\n".join(body)
+    for plan in _plan_files(row["origin"]):
+        try:
+            return plan.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+    return None
+
+
+def _quote_spans(quote: str, original: str) -> list[tuple[int, int]]:
+    """中略を含み得る引用が原文上で覆い得る範囲を全て返す。
+
+    記録自身も原文と同じ本文に含まれ得るため、最初の出現だけでなく全ての出現から範囲を求める。
+    """
+    pieces = [piece for piece in (_compact(part) for part in ELLIPSIS.split(quote)) if piece]
+    spans: list[tuple[int, int]] = []
+    start = original.find(pieces[0]) if pieces else -1
+    while start >= 0:
+        end = start + len(pieces[0])
+        for piece in pieces[1:]:
+            found = original.find(piece, end)
+            if found < 0:
+                break
+            end = found + len(piece)
+        else:
+            spans.append((start, end))
+        start = original.find(pieces[0], start + 1)
+    return spans
+
+
+def _covered_by_background(requirement: str, record: list[str], original: str) -> bool:
+    """「背景」を含む記録行のいずれかの引用が、原文上で要求単位の位置を覆うかを返す。"""
+    unit = _compact(requirement)
+    positions = [index for index in range(len(original)) if original.startswith(unit, index)] if unit else []
+    for line in record:
+        if BACKGROUND not in line:
+            continue
+        for quote in BRACKETED_TITLE.findall(line):
+            for start, end in _quote_spans(quote, original):
+                if any(start <= position and position + len(unit) <= end for position in positions):
+                    return True
+    return False
+
+
+def _background_source_error(
+    row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
+) -> str | None:
+    """背景行について、分類の記録の所在、原文の範囲との対応、要求を含まない理由の記述を確かめる。
+
+    要求を含むかの意味判断は実行レビュー担当と統合時に判定するメインが担い、本関数は「背景」の語だけで免除しない。
+    記録の所在と、記録が「」で引用した原文の範囲が行の要求単位を覆うことを機械で確かめる。
+    """
+    label = f"{row['awi'] or '計画由来'}: {section}[{index}]"
+    record, reason = _record_section(row["source"], repository, wi_outputs, review_table_allowed=True)
+    if record is None:
+        return (
+            f"{label}.source: 背景の根拠となる分類の記録を特定できません（{reason}）。"
+            "背景とした原文の範囲と理由を記録したWIのファイル名と節名『反映内容と反映先』、"
+            "計画ファイルの絶対パスと節名『実施内容』、または実装着手後に記録したレビュー指摘管理表の絶対パスをsourceへ書く。"
+            "記録が無い単位は記録を補ってから背景とするか、達成・未達・証拠不足のいずれかで判定する"
+        )
+    original = _original_text(row, repository, wi_outputs)
+    if original is None or not _covered_by_background(row["requirement"], record, _compact(original)):
+        return (
+            f"{label}.source: 記録の「背景」を含む行が、この要求単位を覆う原文の範囲を「」で引用していません。"
+            "背景とした原文の範囲を「」で囲んで記録へ書く（中略は…で示す）。"
+            "要求を含む文は背景にせず、達成・未達・証拠不足のいずれかで判定する"
+        )
+    evidence = row["evidence"].strip()
+    if not evidence or _is_reference_only(evidence, repository):
+        return (
+            f"{label}.evidence: 要求を含まない理由がありません。"
+            "分類の記録を指し、その単位が要求・制約・採否・選好・回答を求める問いを含まない理由をevidenceへ書く"
+        )
+    return None
+
+
 ExemptionCheck = typing.Callable[[dict[str, str], str, int, pathlib.Path, dict[str, str]], "str | None"]
 # 達成を求めずに行を受理させる判定値は、その根拠の記録を確かめる関数と対にして登録する。
 # 検証関数を持たない免除の判定値を受理値へ加えると、根拠の無い行が確認を通過するためである。
 # 割当外は分割起票で他のWIへ割り当てた原文要求と分割元の依頼全体の単位にだけ使うため、完成条件の行では受理しない。
+# 背景は原文要求のうち要求を含まない過去の観測や経緯の文にだけ使う。完成条件はWI自身の達成対象であるため受理しない。
 EXEMPTIONS: dict[str, dict[str, ExemptionCheck]] = {
     "wi_conditions": {"失効": _expired_source_error},
-    "user_requirements": {"失効": _expired_source_error, "割当外": _unassigned_source_error},
+    "user_requirements": {
+        "失効": _expired_source_error,
+        "割当外": _unassigned_source_error,
+        BACKGROUND: _background_source_error,
+    },
 }
 SECTION_OUTCOMES = {section: JUDGMENT_OUTCOMES | set(checks) for section, checks in EXEMPTIONS.items()}
 

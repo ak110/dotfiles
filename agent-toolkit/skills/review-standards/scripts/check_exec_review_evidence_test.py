@@ -1710,3 +1710,146 @@ def test_input_record_saved_outside_repository_is_resolved_by_template_and_retur
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table, "--input-record", str(record))) == 0
     assert capsys.readouterr().out == f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+
+
+_OBSERVATION = "リリース直後はAPIエラー？"
+_OBSERVATION_TAIL = "が頻発して手動で再開させてた（「止まってたので再開して」と送ってた）けど、最近は減った。"
+_REQUEST = "過負荷なら自動で再試行してほしい。"
+_BACKGROUND_REASON = "過去の観測を伝える文で、要求・制約・選好・回答を求める問いを含まない"
+
+
+def _background_awi(record: str) -> str:
+    """過去の観測2文と要求1文を逐語引用し、`## 反映内容と反映先`へ分類の記録を持つAWI本文を返す。"""
+    return (
+        "type: awi\nsource: process-wi\n---\n# WI\n"
+        f"## 反映内容と反映先\n\n- 「{_REQUEST}」は本AWIで扱う\n{record}\n"
+        "## 完成条件\n- 過負荷の後に同じsessionで続く\n"
+        "## ユーザー指摘の逐語引用\n出所: 会話\n\n"
+        f"```text\n{_OBSERVATION}{_OBSERVATION_TAIL}{_REQUEST}\n```\n"
+    )
+
+
+_ELIDED_RECORD = (
+    f"- 「{_OBSERVATION}が頻発して手動で再開させてた（…）けど、最近は減った。」は背景の観測。本AWIの完成条件に含めない\n"
+)
+
+
+def _background_rows(source: str, evidence: str = f"分類の記録どおり、{_BACKGROUND_REASON}") -> list[dict[str, str]]:
+    return [
+        {**_requirement(FIRST_WI, unit), "outcome": "背景", "source": source, "evidence": evidence}
+        for unit in (_OBSERVATION, _OBSERVATION_TAIL)
+    ] + [_requirement(FIRST_WI, _REQUEST)]
+
+
+def test_background_rows_from_template_are_accepted_while_request_stays_judged(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """雛形は観測文も原文行として残し、分類の記録が中略付きで覆う観測文を背景として受理する。
+
+    要求の行は通常の判定に残り、証拠不足なら未解決0件の返却は従来どおり拒否される。
+    """
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _background_awi(_ELIDED_RECORD)})
+    path = tmp_path / "evidence.json"
+    assert _template(path, FIRST_WI) == 0
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert [row["requirement"] for row in data["user_requirements"]] == [_OBSERVATION, _OBSERVATION_TAIL, _REQUEST]
+    source = f"{FIRST_WI} ## 反映内容と反映先"
+    _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], _background_rows(source))
+    capsys.readouterr()
+    assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
+
+    table = tmp_path / "plan.exec-review.tsv"
+    review_table.init(table)
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table)) == 0, capsys.readouterr().err
+    assert "未解決の指摘数: 0" in capsys.readouterr().out
+
+    rows = _background_rows(source)
+    rows[2].update(outcome="証拠不足", evidence="自動再試行の観測をまだ得ていない")
+    _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], rows)
+    assert run_script.dispatch(_return_args(path, table)) == 1
+    assert "user_requirements[3]" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("record", "source", "evidence", "diagnostic"),
+    [
+        # 分類の記録の所在を持たない行。
+        (_ELIDED_RECORD, "WI本文", None, "分類の記録を特定できません"),
+        # 存在しないレビュー指摘管理表を指す行。
+        (_ELIDED_RECORD, "/nonexistent/plan.exec-review.tsv", None, "分類の記録を特定できません"),
+        # 記録の背景の引用が観測の文だけを覆い、背景とした要求の文を覆っていない行。
+        (f"- 「{_OBSERVATION}」は背景の観測\n", "{wi} ## 反映内容と反映先", None, "原文の範囲を「」で引用していません"),
+        # 記録の行に「背景」が無く、割当などの別の扱いを記録した行。
+        (
+            f"- 「{_OBSERVATION}」は別AWIへ割当\n",
+            "{wi} ## 反映内容と反映先",
+            None,
+            "原文の範囲を「」で引用していません",
+        ),
+        # 記録を指す参照だけで、要求を含まない理由を持たない行。
+        (_ELIDED_RECORD, "{wi} ## 反映内容と反映先", "{record_file}", "要求を含まない理由がありません"),
+    ],
+)
+def test_background_without_record_range_or_reason_is_rejected(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    record: str,
+    source: str,
+    evidence: str | None,
+    diagnostic: str,
+) -> None:
+    """記録の所在、原文の範囲との対応、理由のいずれかを欠く背景行を、対象行と直し方を伴って拒否する。
+
+    受理すると、要求の文や根拠の無い文まで達成の要求から外れ、統合時の読解まで残る。
+    """
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _background_awi(record)})
+    path = tmp_path / "evidence.json"
+    rows = _background_rows(source.format(wi=FIRST_WI))
+    if evidence is not None:
+        record_file = tmp_path / "record.md"
+        record_file.write_text(record, encoding="utf-8")
+        rows[0]["evidence"] = evidence.format(record_file=record_file)
+    if "引用していません" in diagnostic:
+        rows[0]["requirement"] = _REQUEST
+        rows[0]["outcome"] = "背景"
+        rows[2] = _requirement(FIRST_WI, _OBSERVATION)
+    _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], rows)
+    assert _check(path, FIRST_WI) == 1
+    line = next(line for line in capsys.readouterr().err.splitlines() if "user_requirements[1]" in line)
+    assert line.startswith(f"失敗: {FIRST_WI}: user_requirements[1].") and diagnostic in line
+
+
+def test_background_condition_is_rejected(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """完成条件はWI自身の達成対象であるため、背景を受理値に含めない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _background_awi(_ELIDED_RECORD)})
+    path = tmp_path / "evidence.json"
+    condition = {**_condition(FIRST_WI, "過負荷の後に同じsessionで続く"), "outcome": "背景"}
+    _write_evidence(path, [condition], _background_rows(f"{FIRST_WI} ## 反映内容と反映先"))
+    assert _check(path, FIRST_WI) == 1
+    assert "wi_conditions[1].outcome: 未知の判定です: 背景（受理する値: " in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("route", ["plan", "review-table"])
+def test_background_record_in_plan_or_review_table_is_accepted(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], route: str
+) -> None:
+    """起草時の記録が無い古いAWIでも、計画の実施内容か実装着手後のレビュー指摘管理表へ補った記録で受理する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _background_awi("")})
+    record = _ELIDED_RECORD.removeprefix("- ").strip()
+    if route == "plan":
+        plan = tmp_path / "計画 レーン01.md"
+        plan.write_text(f"## 実施内容\n\n| 実施 | 由来 | 採否 | {record} |\n\n## 検証\n", encoding="utf-8")
+        source = f"{plan} の ## 実施内容"
+    else:
+        table = tmp_path / "plan.exec-review.tsv"
+        review_table.init(table)
+        review_table.add(table, "1", "exec-review", "逐語引用ブロック1", record, "詳細")
+        source = f"{table} round 1"
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], _background_rows(source))
+    capsys.readouterr()
+    assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
