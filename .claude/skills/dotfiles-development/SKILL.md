@@ -6,12 +6,13 @@ description: >
   実行するとき、pyfltr・MCPの`run`・`pytest`の直接実行を選ぶとき、
   専用worktreeや回収予定の検証用複製の環境を準備するとき、mise trustを要する作業ツリーと状態ディレクトリを扱うとき、専用worktreeの変更を`atk`で動かすとき、
   画面を実描画で確かめるとき、commit typeを判定するとき、
+  Claude Code本体やCodex本体のバイナリを検索してホスト機能の挙動を確かめるとき、
   `agent-toolkit:session-review`の参照文書の位置を確認するときに起動する。
 ---
 
 # dotfilesの開発手順
 
-本スキルは本リポジトリの自動チェック、コード整形、依存更新および振り返りの参照文書の位置を提供する。
+本スキルは本リポジトリの自動チェック、コード整形、依存更新、ホスト本体のバイナリの検索手順および振り返りの参照文書の位置を提供する。
 リリース運用は`dotfiles-release`、配布元と配布先の対応は`dotfiles-repo-layout`が扱う。
 
 ## 開発手順
@@ -89,6 +90,28 @@ description: >
 - 画面の実描画には、ブラウザー操作ツールに加えて、リポジトリ直下の`pyproject.toml`が依存に持つPython版Playwright（`uv run --frozen python`から`playwright`を使うスクリプト）を使える。
   ブラウザー本体は`make setup-browser`が導入し、導入済みの版は`~/.cache/ms-playwright`で確かめる
 - コミットメッセージtypeの判定例: [commit-types.md](../../../docs/development/commit-types.md)
+
+## ホスト本体のバイナリの検索
+
+Claude Code本体は`B=$(readlink -f "$(command -v claude)")`、Codex本体は
+`C=$(readlink -f "$(command -v codex)")`で実体パスを解決する。
+特定のClaude Code版を調べる場合は`~/.local/share/claude/versions/<版>`を指定する。
+
+最初に`timeout 60 rg -a -c -F -- '<語>' "$B"`で一致行数を得る。
+文脈は`timeout 60 rg -a -o -- '.{0,200}<語>.{0,200}' "$B"`を使い、標準出力と標準エラーを
+managed-tempのファイルへ保存してから必要な範囲を読む。Codexには同じ形で`"$C"`を渡す。
+文脈を得る式の語は正規表現として引用し、語に含まれる正規表現の記号をエスケープする。
+両操作の終了コードと所要時間も保持し、上限による打切りを該当なしと判定しない。
+
+`-m`は一致行数を限定する。ファイルの先頭側は文字列表の断片で、JSソースの一致は後ろにも現れる。
+一致行数が少なければ`-m`を付けず全件を保存する。`.`は改行と不正なUTF-8バイトで止まるため、
+文字列表の一致では文脈が指定長より短くなることがある。
+
+この用途の標準は`rg`とする。Claude CodeのBashツールでは`grep`が組込みugrepを呼ぶシェル関数に
+置き換わる。WI起草時の観測ではugrepとGNU grepの両方で、UTF-8ロケールの`.{0,N}`による
+文脈取得が30秒で終わらなかった。固定長の`.\{N\}`は前後の文脈がN文字に満たない一致を除き、
+終了まで約2秒の回と120秒を超える回があったため、件数・文脈の取得と上限を上記へそろえる。
+観測と再検証手段は`docs/development/audit-records.md`の「dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日」にある。
 
 ## 振り返りの参照文書
 
