@@ -294,6 +294,8 @@ args = [
     "--term-root", "scripts/check_agent_doc_tone.py",
     "--term-root", "scripts/check_agent_doc_tone_test.py",
 ]
+# 終了コードに影響しない語の警告も、位置付きの診断として表示する。
+error-pattern = '^(?P<file>.+?):(?P<line>\d+): (?P<message>.+)$'
 targets = [
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "AGENTS.md",

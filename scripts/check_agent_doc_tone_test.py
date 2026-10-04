@@ -354,8 +354,15 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             0,
             [],
         ),
+        (
+            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "# 入力を検査する。\nprint(1)\n",
+            "",
+            0,
+            ['"kind": "diagnostic"', "new_module.py", '"line": 1', "警告: 「検査」"],
+        ),
     ],
-    ids=["violations", "compliant"],
+    ids=["violations", "compliant", "caution"],
 )
 # 子処理の時間上限（120秒）より大きいテスト単位の上限を置き、停止時は子処理の時間切れとして報告させる。
 # CIで全チェックを並行して実行するジョブでは子処理に約40秒を要したため、子処理の上限は観測値の約3倍とする。
@@ -368,7 +375,7 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
     expected_returncode: int,
     expected_output: list[str],
 ) -> None:
-    """通常の登録対象を通るチェックが、例の良い文と新しいコードの説明へ到達する。"""
+    """通常の登録対象を通るチェックが、例の良い文と新しいコードの説明へ到達し、警告の語を位置付きの診断として表示する。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
     settings = tomllib.loads((repository / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["pyfltr"]
     command = settings["custom-commands"]["agent-doc-tone"]
@@ -380,6 +387,7 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
         f"path = {json.dumps(sys.executable)}\n"
         f"args = {json.dumps(arguments_for_check)}\n"
         f"targets = {json.dumps(command['targets'])}\n"
+        f"error-pattern = {json.dumps(command['error-pattern'])}\n"
     )
     (tmp_path / "pyproject.toml").write_text(config, encoding="utf-8")
     example = tmp_path / "agent-toolkit/skills/writing-standards/references/tone-examples.md"
