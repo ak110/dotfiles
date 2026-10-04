@@ -6,7 +6,7 @@
 
 自分の作業で導入していない既存不良を見つけ、AWIを投入せずに見つけた主体が元の文脈で直す場合に、本書を全文読み、調査担当の起動、入力の受け渡しおよび返却値の検収へ適用する。
 元の作業と文脈を分けるのは調査だけとし、修正は見つけた主体が行う。
-調査をAWIとして投入する用途（`agent-toolkit:process-wi`の即時対応、公開工程の開始後に次のセッションへ回す不良など）は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`を使う。`add-wi.subagent.md`はAWIの投入までを完了条件とするため、投入せずにその場で直す用途に使わない。
+調査をAWIとして投入する用途（`agent-toolkit:process-wi`の即時対応、公開工程の開始後に次のセッションへ回す不良など）は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`を使う。`add-wi.subagent.md`は原稿・証拠の返却、親検収と同じ担当への保存継続を通してAWIの投入まで担うため、投入せずにその場で直す用途に使わない。
 委譲先の作業手順と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/defect-investigation.subagent.md`が定め、本書の記載対象から外す。
 
 ## 起動方法
