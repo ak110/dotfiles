@@ -336,11 +336,16 @@ def _unregistered_candidates(prefix: str | None) -> list[pathlib.Path]:
     with os.scandir(root) as entries:
         names = sorted(entry.name for entry in entries if entry.is_dir(follow_symlinks=False))
     candidates: list[pathlib.Path] = []
+    state_root: pathlib.Path | None = None
     for name in names:
         if prefix is not None and not name.startswith(f"{prefix}-"):
             continue
         child = root / name
-        if not os.path.lexists(child / _MARKER_NAME) or os.path.lexists(_registry_path(child)):
+        if not os.path.lexists(child / _MARKER_NAME):
+            continue
+        if state_root is None:
+            state_root = _state_root()
+        if os.path.lexists(state_root / _registry_name(child)):
             continue
         candidates.append(child.absolute())
     return candidates
@@ -349,32 +354,6 @@ def _unregistered_candidates(prefix: str | None) -> list[pathlib.Path]:
 def count_unregistered_candidates(prefix: str | None = None) -> int:
     """登録を持たない管理対象の件数を返す。"""
     return len(_unregistered_candidates(prefix))
-
-
-def list_unregistered_candidates(
-    prefix: str | None = None,
-    *,
-    stale_at: datetime.datetime | None = None,
-    max_age_days: int = MAX_AGE_DAYS,
-) -> tuple[pathlib.Path, ...]:
-    """登録を持たない管理対象の絶対パスを安定順で返す。
-
-    `stale_at`を指定した場合は、その時点で最終更新から`max_age_days`を超えた候補だけを返す。
-    自動削除の掃引の後に呼ぶと、使用中と判定されて残った候補と削除に失敗した候補だけが残る。
-    """
-    candidates = _unregistered_candidates(prefix)
-    if stale_at is None:
-        return tuple(candidates)
-    cutoff_ns = _cutoff_ns(stale_at, max_age_days)
-    stale: list[pathlib.Path] = []
-    for path in candidates:
-        try:
-            latest_mtime_ns, _git_paths = _latest_update_and_git_paths(path)
-        except OSError:
-            continue
-        if latest_mtime_ns < cutoff_ns:
-            stale.append(path)
-    return tuple(stale)
 
 
 def _marker_recovery_is_accepted(path_arg: pathlib.Path | str) -> bool:
@@ -453,68 +432,80 @@ def list_managed_temp(
         raise _invalid_prefix_error(prefix)
     entries: list[_ManagedTempEntry] = []
     for registry_path in _state_root().glob("*.json"):
-        recorded_path: object = None
-        try:
-            record = _load_private_json(registry_path)
-            recorded_path = record["path"]
-            if not isinstance(recorded_path, str):
-                raise ManagedTempError("管理情報のpathが文字列ではない")
-            path = pathlib.Path(recorded_path)
-            if _registry_name(path) != registry_path.name:
-                raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
-            schema_version = record.get("schema_version")
-            item_prefix = record.get("prefix") if schema_version in (2, 3, 4, 5, 6) else None
-            created_at = record.get("created_at") if schema_version in (2, 3, 4, 5, 6) else None
-            awis = record.get("awis") if schema_version in (4, 5, 6) else record.get("feedbacks") if schema_version == 3 else []
-            item_session_id = record.get("session_id") if schema_version in (5, 6) else None
-            if (
-                not (item_prefix is None or isinstance(item_prefix, str))
-                or not (created_at is None or isinstance(created_at, str))
-                or not _awis_are_valid(awis)
-                or not (item_session_id is None or isinstance(item_session_id, str))
-            ):
-                raise ManagedTempError("管理情報のprefix、created_at、awisまたはsession_idが不正")
-            if prefix is not None and item_prefix != prefix:
-                continue
-            if session_id is not None and item_session_id != session_id:
-                continue
-            if not os.path.lexists(path):
-                if _entity_absence_is_confirmed(record, path):
-                    registry_path.unlink(missing_ok=True)
-                    _outcome.report_warning(
-                        f"実体が失われた管理対象の登録を回収した: {path}", next_action="対応不要（処理は継続した）"
-                    )
-                elif report_recovery_candidates:
-                    _outcome.report_warning(
-                        f"実体へ到達できないため登録を保持した: {path}",
-                        next_action="同じ絶対パスへ到達できる実行文脈で atk managed-temp list を実行すると回収する",
-                    )
-                continue
-            validate_managed_temp(path)
-            entries.append(
-                {
-                    "path": str(path),
-                    "prefix": item_prefix,
-                    "created_at": created_at,
-                    "awis": typing.cast(list[str], awis),
-                    "session_id": item_session_id,
-                }
-            )
-        except (KeyError, OSError, ValueError, ManagedTempError) as error:
-            if report_recovery_candidates:
-                recorded_target = f": {recorded_path}" if isinstance(recorded_path, str) else ""
-                recovery = (
-                    f"後始末する場合は atk managed-temp cleanup --path {recorded_path} を実行する。"
-                    "実体を削除した場合は、次回の atk managed-temp list で登録を回収する"
-                    if isinstance(recorded_path, str)
-                    else f"登録ファイル{registry_path}の内容を確認し、自分で直せない場合はユーザーへ報告する"
-                )
-                _outcome.report_warning(
-                    f"管理対象を列挙できない: {registry_path}{recorded_target}: {error}", next_action=recovery
-                )
+        entry = _load_listed_entry(
+            registry_path, prefix=prefix, session_id=session_id, report_recovery_candidates=report_recovery_candidates
+        )
+        if entry is not None:
+            entries.append(entry)
     if report_recovery_candidates:
         _report_unregistered_candidates(prefix)
     return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
+
+
+def _load_listed_entry(
+    registry_path: pathlib.Path,
+    *,
+    prefix: str | None,
+    session_id: str | None,
+    report_recovery_candidates: bool,
+) -> _ManagedTempEntry | None:
+    """1件の登録を`list_managed_temp`と同じ条件で検証し、列挙対象なら項目を返す。"""
+    recorded_path: object = None
+    try:
+        record = _load_private_json(registry_path)
+        recorded_path = record["path"]
+        if not isinstance(recorded_path, str):
+            raise ManagedTempError("管理情報のpathが文字列ではない")
+        path = pathlib.Path(recorded_path)
+        if _registry_name(path) != registry_path.name:
+            raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
+        schema_version = record.get("schema_version")
+        item_prefix = record.get("prefix") if schema_version in (2, 3, 4, 5, 6) else None
+        created_at = record.get("created_at") if schema_version in (2, 3, 4, 5, 6) else None
+        awis = record.get("awis") if schema_version in (4, 5, 6) else record.get("feedbacks") if schema_version == 3 else []
+        item_session_id = record.get("session_id") if schema_version in (5, 6) else None
+        if (
+            not (item_prefix is None or isinstance(item_prefix, str))
+            or not (created_at is None or isinstance(created_at, str))
+            or not _awis_are_valid(awis)
+            or not (item_session_id is None or isinstance(item_session_id, str))
+        ):
+            raise ManagedTempError("管理情報のprefix、created_at、awisまたはsession_idが不正")
+        if prefix is not None and item_prefix != prefix:
+            return None
+        if session_id is not None and item_session_id != session_id:
+            return None
+        if not os.path.lexists(path):
+            if _entity_absence_is_confirmed(record, path):
+                registry_path.unlink(missing_ok=True)
+                _outcome.report_warning(
+                    f"実体が失われた管理対象の登録を回収した: {path}", next_action="対応不要（処理は継続した）"
+                )
+            elif report_recovery_candidates:
+                _outcome.report_warning(
+                    f"実体へ到達できないため登録を保持した: {path}",
+                    next_action="同じ絶対パスへ到達できる実行文脈で atk managed-temp list を実行すると回収する",
+                )
+            return None
+        validate_managed_temp(path)
+        return {
+            "path": str(path),
+            "prefix": item_prefix,
+            "created_at": created_at,
+            "awis": typing.cast(list[str], awis),
+            "session_id": item_session_id,
+        }
+    except (KeyError, OSError, ValueError, ManagedTempError) as error:
+        if report_recovery_candidates:
+            recorded_target = f": {recorded_path}" if isinstance(recorded_path, str) else ""
+            recovery = (
+                f"後始末する場合は atk managed-temp cleanup --path {recorded_path} を実行する。"
+                "実体を削除した場合は、次回の atk managed-temp list で登録を回収する"
+                if isinstance(recorded_path, str)
+                else f"登録ファイル{registry_path}の内容を確認し、自分で直せない場合はユーザーへ報告する"
+            )
+            _outcome.report_warning(f"管理対象を列挙できない: {registry_path}{recorded_target}: {error}", next_action=recovery)
+    return None
 
 
 def _sweep_cleanup_completed_elsewhere(
@@ -587,12 +578,131 @@ def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
     return target.is_dir()
 
 
+_SWEEP_SCHEDULE_NAME = ".sweep-schedule"
+"""掃引の期限判定記録のファイル名。登録ファイルの`*.json`と区別するため拡張子を付けない。"""
+_SWEEP_SCHEDULE_VERSION = 1
+
+_ScheduledRegistered = tuple[str, int, int]
+"""登録済み候補の記録。管理対象のpath、記録時の領域自身の最終更新、観測した配下を含む最終更新（ナノ秒）。"""
+_ScheduledUnregistered = tuple[int, int]
+"""登録を失った候補の記録。記録時の領域自身の最終更新と、観測した配下を含む最終更新（ナノ秒）。"""
+
+
+class SweepResult(typing.NamedTuple):
+    """`sweep_managed_temp`の結果。"""
+
+    deleted: list[pathlib.Path]
+    """自動削除したパス。"""
+    stale_unregistered: tuple[pathlib.Path, ...]
+    """掃引の後も残った、最終更新から期限を超えた登録を持たない管理対象。"""
+    unregistered_error: ManagedTempError | OSError | None
+    """登録を持たない管理対象を探索できなかった場合の原因。"""
+
+
+class _SweepSchedule(typing.NamedTuple):
+    registered: dict[str, _ScheduledRegistered]
+    unregistered: dict[str, _ScheduledUnregistered]
+
+
+def _is_nanoseconds(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _load_sweep_schedule(state_root: pathlib.Path, temp_root: pathlib.Path, max_age_days: int) -> _SweepSchedule | None:
+    """期限判定記録を読む。欠落・破損・前提の不一致では`None`を返し、呼び出し元は全件の掃引へ戻る。"""
+    path = state_root / _SWEEP_SCHEDULE_NAME
+    if not os.path.lexists(path):
+        return None
+    try:
+        value = _load_private_json(path)
+    except ManagedTempError:
+        return None
+    if (
+        value.get("version") != _SWEEP_SCHEDULE_VERSION
+        or value.get("state_root") != str(state_root)
+        or value.get("temp_root") != str(temp_root)
+        or value.get("max_age_days") != max_age_days
+    ):
+        return None
+    raw_registered = value.get("registered")
+    raw_unregistered = value.get("unregistered")
+    if not isinstance(raw_registered, dict) or not isinstance(raw_unregistered, dict):
+        return None
+    registered: dict[str, _ScheduledRegistered] = {}
+    for name, item in raw_registered.items():
+        if not (
+            isinstance(item, list)
+            and len(item) == 3
+            and isinstance(item[0], str)
+            and _is_nanoseconds(item[1])
+            and _is_nanoseconds(item[2])
+        ):
+            return None
+        registered[name] = (item[0], item[1], item[2])
+    unregistered: dict[str, _ScheduledUnregistered] = {}
+    for name, item in raw_unregistered.items():
+        if not (isinstance(item, list) and len(item) == 2 and _is_nanoseconds(item[0]) and _is_nanoseconds(item[1])):
+            return None
+        unregistered[name] = (item[0], item[1])
+    return _SweepSchedule(registered, unregistered)
+
+
+def _save_sweep_schedule(
+    state_root: pathlib.Path, temp_root: pathlib.Path, max_age_days: int, schedule: _SweepSchedule
+) -> None:
+    """期限判定記録を置き換える。書けない場合は次回の起動が全件の掃引へ戻るだけなので、失敗を報告しない。"""
+    path = state_root / _SWEEP_SCHEDULE_NAME
+    temporary = state_root / f"{_SWEEP_SCHEDULE_NAME}.{secrets.token_hex(8)}.tmp"
+    value = {
+        "version": _SWEEP_SCHEDULE_VERSION,
+        "state_root": str(state_root),
+        "temp_root": str(temp_root),
+        "max_age_days": max_age_days,
+        "registered": {name: list(item) for name, item in schedule.registered.items()},
+        "unregistered": {name: list(item) for name, item in schedule.unregistered.items()},
+    }
+    try:
+        _write_private_json(temporary, value)
+        os.replace(temporary, path)
+    except (OSError, ManagedTempError):
+        with contextlib.suppress(OSError):
+            temporary.unlink(missing_ok=True)
+
+
+def _scheduled_item_is_current(path: pathlib.Path, top_mtime_ns: int, latest_mtime_ns: int, cutoff_ns: int) -> bool:
+    """記録した候補が期限前で、記録後に領域自身が変わっていない場合だけ真を返す。
+
+    配下の更新は最終更新を後ろへ移すだけなので、記録した最終更新が期限前なら実際の最終更新も期限前である。
+    領域自身の最終更新が変わった場合と消えた場合は、記録を信用せず従来の検証へ戻す。
+    """
+    if latest_mtime_ns < cutoff_ns:
+        return False
+    try:
+        return os.stat(path).st_mtime_ns == top_mtime_ns
+    except OSError:
+        return False
+
+
+def _registry_names(state_root: pathlib.Path) -> set[str]:
+    with os.scandir(state_root) as entries:
+        return {entry.name for entry in entries if entry.name.endswith(".json")}
+
+
 def sweep_expired_managed_temp(
     *,
     now: datetime.datetime,
     max_age_days: int = MAX_AGE_DAYS,
 ) -> list[pathlib.Path]:
-    """最終更新から`max_age_days`を超えたmanaged-tempのディレクトリを削除し、削除したパスを返す。
+    """最終更新から`max_age_days`を超えたmanaged-tempのディレクトリを削除し、削除したパスを返す。"""
+    return sweep_managed_temp(now=now, max_age_days=max_age_days).deleted
+
+
+def sweep_managed_temp(
+    *,
+    now: datetime.datetime,
+    max_age_days: int = MAX_AGE_DAYS,
+) -> SweepResult:
+    """最終更新から`max_age_days`を超えたmanaged-tempのディレクトリを削除し、削除結果と残存候補を返す。
 
     登録済み領域は`.git`を含むものを除いて削除する。続いて、一時rootを指定しない場合に使う場所の直下で
     登録を失った領域（マーカーだけを持つ領域）も、他の作業が使用中と判定できるもの以外を削除する。
@@ -600,10 +710,37 @@ def sweep_expired_managed_temp(
     ユーザーのディレクトリを巻き込まないというユーザーの判断（2026年10月2日）に基づく。
     使用中の判定は、配下を含む最終更新が`max_age_days`以内であることと、git worktreeとして
     登録が残る`.git`を含むことの2つとする。
+
+    本関数は`atk`の共通起動から毎回呼ばれる。期限前の候補を起動ごとに検証しないため、候補ごとに
+    観測した最終更新を外部状態ディレクトリの期限判定記録へ残し、記録が期限前で領域自身が変わっていない
+    候補だけを検証から外す。新規の候補、期限到来、領域自身の変化と消失、記録の欠落・破損では
+    従来の検証と削除判定を行う。記録は検証を省く範囲を決めるだけで、削除は従来の判定を通った候補に限る。
     """
     cutoff_ns = _cutoff_ns(now, max_age_days)
+    state_root = _state_root()
+    temp_root: pathlib.Path | None = None
+    temp_root_error: ManagedTempError | OSError | None = None
+    try:
+        temp_root = _temp_root()
+    except (OSError, ManagedTempError) as error:
+        temp_root_error = error
+    schedule = None if temp_root is None else _load_sweep_schedule(state_root, temp_root, max_age_days)
+    next_schedule = _SweepSchedule({}, {})
     deleted: list[pathlib.Path] = []
-    for entry in list_managed_temp():
+
+    if schedule is None:
+        entries = list_managed_temp()
+    else:
+        entries = []
+        for name in sorted(_registry_names(state_root)):
+            known = schedule.registered.get(name)
+            if known is not None and _scheduled_item_is_current(pathlib.Path(known[0]), known[1], known[2], cutoff_ns):
+                next_schedule.registered[name] = known
+                continue
+            entry = _load_listed_entry(state_root / name, prefix=None, session_id=None, report_recovery_candidates=False)
+            if entry is not None:
+                entries.append(entry)
+    for entry in entries:
         path = pathlib.Path(entry["path"])
         registry_path = _registry_path(path)
         nonce: str | None = None
@@ -611,10 +748,13 @@ def sweep_expired_managed_temp(
             record = _load_private_json(registry_path)
             recorded_nonce = record.get("nonce")
             nonce = recorded_nonce if isinstance(recorded_nonce, str) else None
-            if path.stat().st_mtime_ns >= cutoff_ns:
+            top_mtime_ns = path.stat().st_mtime_ns
+            if top_mtime_ns >= cutoff_ns:
+                next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, top_mtime_ns)
                 continue
             latest_mtime_ns, git_paths = _latest_update_and_git_paths(path)
             if latest_mtime_ns >= cutoff_ns or git_paths:
+                next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, latest_mtime_ns)
                 continue
             cleanup_managed_temp(path)
         except (ManagedTempError, OSError) as error:
@@ -626,30 +766,60 @@ def sweep_expired_managed_temp(
             )
             continue
         deleted.append(path)
+
+    if temp_root is None:
+        # `atk`の共通起動は探索できなかった原因を警告する（委譲先セッションと`atk managed-temp`を除く）。
+        return SweepResult(deleted, (), temp_root_error)
     try:
-        unregistered = _unregistered_candidates(None)
-    except (OSError, ManagedTempError):
-        # `atk`の共通起動は続けて同じ探索で残存件数を数え、失敗を警告する（委譲先セッションと`atk managed-temp`を除く）。
-        return deleted
-    for path in unregistered:
-        if path.name.startswith(".agent-toolkit-cleanup-"):
-            # 中断した後始末の隔離先はマーカーを持つが、元の領域の登録か消費途中状態が後始末の再開を担う。
+        registry_names = _registry_names(state_root)
+        with os.scandir(temp_root) as children:
+            names = sorted(child.name for child in children if child.is_dir(follow_symlinks=False))
+    except OSError as error:
+        return SweepResult(deleted, (), error)
+    stale: list[pathlib.Path] = []
+    for name in names:
+        child = temp_root / name
+        if _registry_name(child) in registry_names:
             continue
+        known_unregistered = None if schedule is None else schedule.unregistered.get(name)
+        if known_unregistered is not None and _scheduled_item_is_current(child, *known_unregistered, cutoff_ns):
+            next_schedule.unregistered[name] = known_unregistered
+            continue
+        if not os.path.lexists(child / _MARKER_NAME):
+            continue
+        path = child.absolute()
+        candidate_latest_ns: int | None = None
         try:
-            latest_mtime_ns, git_paths = _latest_update_and_git_paths(path)
-            if latest_mtime_ns >= cutoff_ns or any(_is_registered_git_worktree(git_path) for git_path in git_paths):
+            candidate_top_ns = path.stat().st_mtime_ns
+            candidate_latest_ns, git_paths = _latest_update_and_git_paths(path)
+            if name.startswith(".agent-toolkit-cleanup-"):
+                # 中断した後始末の隔離先はマーカーを持つが、元の領域の登録か消費途中状態が後始末の再開を担う。
+                next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns)
+                if candidate_latest_ns < cutoff_ns:
+                    stale.append(path)
+                continue
+            if candidate_latest_ns >= cutoff_ns or any(_is_registered_git_worktree(git_path) for git_path in git_paths):
+                next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns)
+                if candidate_latest_ns < cutoff_ns:
+                    stale.append(path)
                 continue
             cleanup_managed_temp(path, recover_registry=True, force_remove=True, force_reason="自動削除")
         except (ManagedTempError, OSError) as error:
+            if name.startswith(".agent-toolkit-cleanup-"):
+                continue
             if _sweep_cleanup_completed_elsewhere(path, _registry_path(path), None):
                 continue
             _outcome.report_warning(
                 f"登録を失ったmanaged-tempのディレクトリを自動削除できない: {path}: {error}",
                 next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} --force-remove で回収する",
             )
+            if candidate_latest_ns is not None and candidate_latest_ns < cutoff_ns and os.path.lexists(path):
+                stale.append(path)
             continue
         deleted.append(path)
-    return deleted
+    if schedule != next_schedule:
+        _save_sweep_schedule(state_root, temp_root, max_age_days, next_schedule)
+    return SweepResult(deleted, tuple(stale), None)
 
 
 def _clear_directory(descriptor: int) -> None:

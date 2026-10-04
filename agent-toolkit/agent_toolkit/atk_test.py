@@ -381,11 +381,11 @@ class TestWaitScheduleParser:
         """任意のサブコマンドに共通する実行処理でmanaged-tempを整理する。"""
         calls: list[datetime.datetime] = []
 
-        def fake_sweep(*, now: datetime.datetime) -> list[pathlib.Path]:
+        def fake_sweep(*, now: datetime.datetime) -> _managed_temp.SweepResult:
             calls.append(now)
-            return []
+            return _managed_temp.SweepResult([], (), None)
 
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", fake_sweep)
+        monkeypatch.setattr(_managed_temp, "sweep_managed_temp", fake_sweep)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
@@ -409,11 +409,10 @@ class TestWaitScheduleParser:
             return "fixed-subcommand-output"
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
         monkeypatch.setattr(
             _managed_temp,
-            "list_unregistered_candidates",
-            lambda **_kwargs: tuple(tmp_path / f"orphan-{index}" for index in range(count)),
+            "sweep_managed_temp",
+            lambda *, now: _managed_temp.SweepResult([], tuple(tmp_path / f"orphan-{index}" for index in range(count)), None),
         )
 
         with pytest.raises(SystemExit) as exc_info:
@@ -447,8 +446,9 @@ class TestWaitScheduleParser:
     ) -> None:
         """未登録領域の警告は値が1の委譲先だけで抑止する。"""
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda **_kwargs: (tmp_path / "orphan",))
+        monkeypatch.setattr(
+            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        )
         if delegated_session is None:
             monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         else:
@@ -476,12 +476,11 @@ class TestWaitScheduleParser:
             return "fixed-subcommand-output"
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-
-        def fail_count(**_kwargs: object) -> tuple[pathlib.Path, ...]:
-            raise _managed_temp.ManagedTempError("走査失敗")
-
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", fail_count)
+        monkeypatch.setattr(
+            _managed_temp,
+            "sweep_managed_temp",
+            lambda *, now: _managed_temp.SweepResult([], (), _managed_temp.ManagedTempError("走査失敗")),
+        )
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
@@ -505,8 +504,9 @@ class TestWaitScheduleParser:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda **_kwargs: (tmp_path / "orphan",))
+        monkeypatch.setattr(
+            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        )
         state: dict = {}
 
         def update_state(_session_id: str, mutator):
@@ -537,8 +537,9 @@ class TestWaitScheduleParser:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda **_kwargs: (tmp_path / "orphan",))
+        monkeypatch.setattr(
+            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        )
 
         def fail_update(_session_id: str, _mutator) -> bool:
             return False
@@ -648,6 +649,46 @@ class TestWaitScheduleParser:
         assert [line for line in err_lines if "登録を持たない管理対象が" in line] == [
             "警告: 自動削除されずに残った、登録を持たない管理対象が1件ある"
         ]
+
+    def test_startup_does_not_revalidate_pending_managed_temp(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """期限前の管理対象は2回目以降の共通起動で検証せず、期限の到来後に回収する。
+
+        起動ごとに登録件数に比例する真正性検証と未登録探索を繰り返すと、管理対象が多い環境で
+        全サブコマンドの応答が遅れる。
+        """
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        pending_ns = int((now - datetime.timedelta(days=6)).timestamp() * 1_000_000_000)
+        targets = [_managed_temp.create_managed_temp(f"pending-{index}") for index in range(10)]
+        for target in targets:
+            for path in (target, *target.rglob("*")):
+                os.utime(path, ns=(pending_ns, pending_ns), follow_symlinks=False)
+        validated: list[pathlib.Path] = []
+        original_validate = _managed_temp.validate_managed_temp
+
+        def record_validate(path: pathlib.Path | str) -> object:
+            validated.append(pathlib.Path(path))
+            return original_validate(path)
+
+        monkeypatch.setattr(_managed_temp, "validate_managed_temp", record_validate)
+
+        for moment in (now, now):
+            with pytest.raises(SystemExit) as exc_info:
+                atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=moment)
+            assert exc_info.value.code == 0
+        assert sorted(validated) == sorted(targets)
+        assert all(target.exists() for target in targets)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now + datetime.timedelta(days=2))
+        assert exc_info.value.code == 0
+        assert not any(target.exists() for target in targets)
+        assert "警告" not in capsys.readouterr().err
 
     @pytest.mark.parametrize("path_form", ["canonical", "parent-reference"])
     def test_explicit_cleanup_succeeds_after_automatic_cleanup(

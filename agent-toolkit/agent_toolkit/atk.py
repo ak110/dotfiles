@@ -1413,21 +1413,23 @@ def main(
     if now is None:
         now = datetime.datetime.now()
     automatically_cleaned: list[pathlib.Path] = []
+    sweep_result: _managed_temp.SweepResult | None = None
     try:
-        automatically_cleaned = _managed_temp.sweep_expired_managed_temp(now=now)
+        sweep_result = _managed_temp.sweep_managed_temp(now=now)
+        automatically_cleaned = sweep_result.deleted
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
         _outcome.report_warning(
             f"managed-tempのディレクトリの自動削除に失敗した: {error}",
             next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
         )
     is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
-    if args.command != "managed-temp" and not is_delegated_session:
-        try:
-            # 最終更新から7日以内の候補は使用中として自動削除から外れ、対処を要しないため数えない。
-            unregistered_candidates = _managed_temp.list_unregistered_candidates(stale_at=now)
-        except Exception as error:  # noqa: BLE001  # 件数取得の失敗で本来のサブコマンドを失敗させない
+    if sweep_result is not None and args.command != "managed-temp" and not is_delegated_session:
+        # 掃引が同じ起動で探索した結果を使い、未登録候補を再探索しない。
+        # 最終更新から7日以内の候補は使用中として自動削除から外れ、対処を要しないため数えない。
+        unregistered_candidates = sweep_result.stale_unregistered
+        if sweep_result.unregistered_error is not None:
             _outcome.report_warning(
-                f"登録を持たない管理対象を探索できなかった: {error}",
+                f"登録を持たない管理対象を探索できなかった: {sweep_result.unregistered_error}",
                 next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
             )
         else:
