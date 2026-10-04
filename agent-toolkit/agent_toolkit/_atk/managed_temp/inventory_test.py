@@ -1186,3 +1186,51 @@ class TestSweepSchedule:
             result = subject.sweep_managed_temp(now=self._NOW)
             assert result.deleted == []
             assert result.stale_unregistered == (live.absolute(),)
+
+    def test_kept_by_exclusion_basis_skips_scan_until_basis_disappears(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """`.git`と使用中worktreeを理由に残した期限超過の候補は、根拠が残る間は走査せず、根拠が消えた掃引で再判定する。"""
+        old_ns = _ns(self._NOW - datetime.timedelta(days=8))
+        with_git = subject.create_managed_temp("with-git")
+        (with_git / "repo" / ".git").mkdir(parents=True)
+        repository_admin = tmp_path / "repository" / ".git" / "worktrees" / "lane"
+        repository_admin.mkdir(parents=True)
+        live = subject.create_managed_temp("live-worktree")
+        subject._registry_path(live).unlink()
+        (live / "wt").mkdir()
+        (live / "wt" / ".git").write_text(f"gitdir: {repository_admin}\n", encoding="utf-8")
+        for target in (with_git, live):
+            _set_tree_mtime(target, old_ns)
+        first = subject.sweep_managed_temp(now=self._NOW)
+        assert first == subject.SweepResult([], (live.absolute(),), None)
+
+        observed = _record_validations(monkeypatch)
+        assert subject.sweep_managed_temp(now=self._NOW) == first
+        assert not observed
+
+        (with_git / "repo" / ".git").rmdir()
+        _set_tree_mtime(with_git, old_ns)
+        repository_admin.rmdir()
+        result = subject.sweep_managed_temp(now=self._NOW)
+
+        assert sorted(result.deleted) == sorted([with_git, live.absolute()])
+        assert result.stale_unregistered == ()
+        assert with_git in observed
+        assert live.absolute() in observed
+
+    def test_exclusion_basis_outside_candidate_falls_back_to_full_sweep(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """候補の外を指す除外根拠を持つ記録は信用せず、全件の掃引で期限超過の候補を回収する。"""
+        holder = subject.create_managed_temp("holder")
+        (holder / ".git").mkdir()
+        expired = subject.create_managed_temp("expired")
+        _set_tree_mtime(expired, _ns(self._NOW - datetime.timedelta(days=6)))
+        assert subject.sweep_managed_temp(now=self._NOW).deleted == []
+        schedule = subject._state_root() / subject._SWEEP_SCHEDULE_NAME
+        value = json.loads(schedule.read_text(encoding="utf-8"))
+        value["registered"][subject._registry_path(expired).name][3] = [f"../{holder.name}/.git"]
+        schedule.write_text(json.dumps(value), encoding="utf-8")
+        observed = _record_validations(monkeypatch)
+
+        assert subject.sweep_managed_temp(now=self._NOW + datetime.timedelta(days=2)).deleted == [expired]
+        assert expired in observed

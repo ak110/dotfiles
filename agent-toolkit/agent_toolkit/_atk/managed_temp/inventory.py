@@ -11,6 +11,7 @@ import contextlib
 import ctypes
 import datetime
 import enum
+import functools
 import hashlib
 import json
 import ntpath
@@ -580,12 +581,21 @@ def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
 
 _SWEEP_SCHEDULE_NAME = ".sweep-schedule"
 """掃引の期限判定記録のファイル名。登録ファイルの`*.json`と区別するため拡張子を付けない。"""
-_SWEEP_SCHEDULE_VERSION = 1
+_SWEEP_SCHEDULE_VERSION = 2
 
-_ScheduledRegistered = tuple[str, int, int]
-"""登録済み候補の記録。管理対象のpath、記録時の領域自身の最終更新、観測した配下を含む最終更新（ナノ秒）。"""
-_ScheduledUnregistered = tuple[int, int]
-"""登録を失った候補の記録。記録時の領域自身の最終更新と、観測した配下を含む最終更新（ナノ秒）。"""
+_ScheduledRegistered = tuple[str, int, int, tuple[str, ...]]
+"""登録済み候補の記録。
+
+管理対象のpath、記録時の領域自身の最終更新、観測した配下を含む最終更新（ナノ秒）、
+期限を超えても`.git`を理由に残した場合の`.git`の領域からの相対パス（それ以外は空）。
+"""
+_ScheduledUnregistered = tuple[int, int, tuple[str, ...]]
+"""登録を失った候補の記録。
+
+記録時の領域自身の最終更新、観測した配下を含む最終更新（ナノ秒）、
+期限を超えても使用中のgit worktreeを理由に残した場合のその`.git`の領域からの相対パス（それ以外は空）。
+"""
+_CLEANUP_QUARANTINE_PREFIX = ".agent-toolkit-cleanup-"
 
 
 class SweepResult(typing.NamedTuple):
@@ -606,6 +616,33 @@ class _SweepSchedule(typing.NamedTuple):
 
 def _is_nanoseconds(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _exclusion_basis_or_none(value: object) -> tuple[str, ...] | None:
+    """記録した除外根拠を検証し、領域の外を指し得る値では`None`を返す。"""
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None
+    for item in value:
+        relative = pathlib.PurePath(item)
+        if relative.is_absolute() or relative.anchor or ".." in relative.parts or relative.name != ".git":
+            return None
+    return tuple(value)
+
+
+def _exclusion_basis(path: pathlib.Path, git_paths: typing.Iterable[pathlib.Path]) -> tuple[str, ...]:
+    return tuple(sorted(str(git_path.relative_to(path)) for git_path in git_paths))
+
+
+def _registered_exclusion_holds(path: pathlib.Path, basis: tuple[str, ...]) -> bool:
+    """登録済み候補を残した理由の`.git`が1つでも残るかを返す。"""
+    return any(os.path.lexists(path / relative) for relative in basis)
+
+
+def _unregistered_exclusion_holds(path: pathlib.Path, basis: tuple[str, ...]) -> bool:
+    """登録を失った候補を残した理由（後始末の隔離先の名前、使用中のgit worktree）が残るかを返す。"""
+    return path.name.startswith(_CLEANUP_QUARANTINE_PREFIX) or any(
+        _is_registered_git_worktree(path / relative) for relative in basis
+    )
 
 
 def _load_sweep_schedule(state_root: pathlib.Path, temp_root: pathlib.Path, max_age_days: int) -> _SweepSchedule | None:
@@ -632,18 +669,24 @@ def _load_sweep_schedule(state_root: pathlib.Path, temp_root: pathlib.Path, max_
     for name, item in raw_registered.items():
         if not (
             isinstance(item, list)
-            and len(item) == 3
+            and len(item) == 4
             and isinstance(item[0], str)
             and _is_nanoseconds(item[1])
             and _is_nanoseconds(item[2])
         ):
             return None
-        registered[name] = (item[0], item[1], item[2])
+        basis = _exclusion_basis_or_none(item[3])
+        if basis is None:
+            return None
+        registered[name] = (item[0], item[1], item[2], basis)
     unregistered: dict[str, _ScheduledUnregistered] = {}
     for name, item in raw_unregistered.items():
-        if not (isinstance(item, list) and len(item) == 2 and _is_nanoseconds(item[0]) and _is_nanoseconds(item[1])):
+        if not (isinstance(item, list) and len(item) == 3 and _is_nanoseconds(item[0]) and _is_nanoseconds(item[1])):
             return None
-        unregistered[name] = (item[0], item[1])
+        basis = _exclusion_basis_or_none(item[2])
+        if basis is None:
+            return None
+        unregistered[name] = (item[0], item[1], basis)
     return _SweepSchedule(registered, unregistered)
 
 
@@ -658,8 +701,8 @@ def _save_sweep_schedule(
         "state_root": str(state_root),
         "temp_root": str(temp_root),
         "max_age_days": max_age_days,
-        "registered": {name: list(item) for name, item in schedule.registered.items()},
-        "unregistered": {name: list(item) for name, item in schedule.unregistered.items()},
+        "registered": {name: [*item[:3], list(item[3])] for name, item in schedule.registered.items()},
+        "unregistered": {name: [*item[:2], list(item[2])] for name, item in schedule.unregistered.items()},
     }
     try:
         _write_private_json(temporary, value)
@@ -669,13 +712,21 @@ def _save_sweep_schedule(
             temporary.unlink(missing_ok=True)
 
 
-def _scheduled_item_is_current(path: pathlib.Path, top_mtime_ns: int, latest_mtime_ns: int, cutoff_ns: int) -> bool:
-    """記録した候補が期限前で、記録後に領域自身が変わっていない場合だけ真を返す。
+def _scheduled_item_is_current(
+    path: pathlib.Path,
+    top_mtime_ns: int,
+    latest_mtime_ns: int,
+    cutoff_ns: int,
+    exclusion_holds: typing.Callable[[], bool],
+) -> bool:
+    """記録した候補が期限前か除外根拠を保ち、記録後に領域自身が変わっていない場合だけ真を返す。
 
     配下の更新は最終更新を後ろへ移すだけなので、記録した最終更新が期限前なら実際の最終更新も期限前である。
+    期限を超えても除外根拠（`.git`、使用中のgit worktree）を理由に残した候補は、その根拠が残る間は
+    同じ判定で残るため、配下を走査し直さない。根拠が消えた場合は従来の検証へ戻して再判定する。
     領域自身の最終更新が変わった場合と消えた場合は、記録を信用せず従来の検証へ戻す。
     """
-    if latest_mtime_ns < cutoff_ns:
+    if latest_mtime_ns < cutoff_ns and not exclusion_holds():
         return False
     try:
         return os.stat(path).st_mtime_ns == top_mtime_ns
@@ -713,7 +764,9 @@ def sweep_managed_temp(
 
     本関数は`atk`の共通起動から毎回呼ばれる。期限前の候補を起動ごとに検証しないため、候補ごとに
     観測した最終更新を外部状態ディレクトリの期限判定記録へ残し、記録が期限前で領域自身が変わっていない
-    候補だけを検証から外す。新規の候補、期限到来、領域自身の変化と消失、記録の欠落・破損では
+    候補だけを検証から外す。期限を超えても`.git`か使用中のgit worktreeを理由に残した候補は、その除外根拠を
+    記録し、根拠が残る間は配下の走査と真正性検証を省き、根拠が消えた起動で再判定する。
+    新規の候補、期限到来、除外根拠の消失、領域自身の変化と消失、記録の欠落・破損では
     従来の検証と削除判定を行う。記録は検証を省く範囲を決めるだけで、削除は従来の判定を通った候補に限る。
     """
     cutoff_ns = _cutoff_ns(now, max_age_days)
@@ -734,9 +787,17 @@ def sweep_managed_temp(
         entries = []
         for name in sorted(_registry_names(state_root)):
             known = schedule.registered.get(name)
-            if known is not None and _scheduled_item_is_current(pathlib.Path(known[0]), known[1], known[2], cutoff_ns):
-                next_schedule.registered[name] = known
-                continue
+            if known is not None:
+                known_path = pathlib.Path(known[0])
+                if _scheduled_item_is_current(
+                    known_path,
+                    known[1],
+                    known[2],
+                    cutoff_ns,
+                    functools.partial(_registered_exclusion_holds, known_path, known[3]),
+                ):
+                    next_schedule.registered[name] = known
+                    continue
             entry = _load_listed_entry(state_root / name, prefix=None, session_id=None, report_recovery_candidates=False)
             if entry is not None:
                 entries.append(entry)
@@ -750,11 +811,15 @@ def sweep_managed_temp(
             nonce = recorded_nonce if isinstance(recorded_nonce, str) else None
             top_mtime_ns = path.stat().st_mtime_ns
             if top_mtime_ns >= cutoff_ns:
-                next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, top_mtime_ns)
+                next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, top_mtime_ns, ())
                 continue
             latest_mtime_ns, git_paths = _latest_update_and_git_paths(path)
-            if latest_mtime_ns >= cutoff_ns or git_paths:
-                next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, latest_mtime_ns)
+            if latest_mtime_ns >= cutoff_ns:
+                next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, latest_mtime_ns, ())
+                continue
+            if git_paths:
+                basis = _exclusion_basis(path, git_paths)
+                next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, latest_mtime_ns, basis)
                 continue
             cleanup_managed_temp(path)
         except (ManagedTempError, OSError) as error:
@@ -782,9 +847,19 @@ def sweep_managed_temp(
         if _registry_name(child) in registry_names:
             continue
         known_unregistered = None if schedule is None else schedule.unregistered.get(name)
-        if known_unregistered is not None and _scheduled_item_is_current(child, *known_unregistered, cutoff_ns):
-            next_schedule.unregistered[name] = known_unregistered
-            continue
+        if known_unregistered is not None:
+            known_top_ns, known_latest_ns, known_basis = known_unregistered
+            if _scheduled_item_is_current(
+                child,
+                known_top_ns,
+                known_latest_ns,
+                cutoff_ns,
+                functools.partial(_unregistered_exclusion_holds, child, known_basis),
+            ):
+                next_schedule.unregistered[name] = known_unregistered
+                if known_latest_ns < cutoff_ns:
+                    stale.append(child.absolute())
+                continue
         if not os.path.lexists(child / _MARKER_NAME):
             continue
         path = child.absolute()
@@ -792,20 +867,25 @@ def sweep_managed_temp(
         try:
             candidate_top_ns = path.stat().st_mtime_ns
             candidate_latest_ns, git_paths = _latest_update_and_git_paths(path)
-            if name.startswith(".agent-toolkit-cleanup-"):
+            if name.startswith(_CLEANUP_QUARANTINE_PREFIX):
                 # 中断した後始末の隔離先はマーカーを持つが、元の領域の登録か消費途中状態が後始末の再開を担う。
-                next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns)
+                # 名前が除外根拠であり、名前が変われば別の候補として扱われるため、記録する根拠は持たない。
+                next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, ())
                 if candidate_latest_ns < cutoff_ns:
                     stale.append(path)
                 continue
-            if candidate_latest_ns >= cutoff_ns or any(_is_registered_git_worktree(git_path) for git_path in git_paths):
-                next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns)
-                if candidate_latest_ns < cutoff_ns:
-                    stale.append(path)
+            if candidate_latest_ns >= cutoff_ns:
+                next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, ())
+                continue
+            live_worktrees = [git_path for git_path in git_paths if _is_registered_git_worktree(git_path)]
+            if live_worktrees:
+                basis = _exclusion_basis(path, live_worktrees)
+                next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, basis)
+                stale.append(path)
                 continue
             cleanup_managed_temp(path, recover_registry=True, force_remove=True, force_reason="自動削除")
         except (ManagedTempError, OSError) as error:
-            if name.startswith(".agent-toolkit-cleanup-"):
+            if name.startswith(_CLEANUP_QUARANTINE_PREFIX):
                 continue
             if _sweep_cleanup_completed_elsewhere(path, _registry_path(path), None):
                 continue
