@@ -317,7 +317,7 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
 def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
     """候補内の依存は生成・受領・実行とも同一レーンの依存順で一致し、別レーンの統合完了を待つ欄を持たない。
 
-    撤去した欄が形式や受領手順に残ると、pickerが空の欄を出力し続け、受領側が使わない形式検査を読む。
+    撤去した欄が形式や受領手順に残ると、pickerが空の欄を出力し続け、受領側が使わない形式の確認手順を読む。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
