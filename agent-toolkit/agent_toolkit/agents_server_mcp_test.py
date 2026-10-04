@@ -3721,6 +3721,8 @@ async def test_send_message_previous_and_stopped_results_relay_improvements(
     assert previous["agent_message"] == message
     action = previous["next_action"]
     assert action.count(state.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
+    assert "メインエージェントは次のユーザーへの発話へ" in action
+    assert "委譲先は自身の返却の末尾へ" in action
     assert (state.REVIEW_RESULT_NEXT_ACTION in action) is (status == "completed" and label.endswith("-review"))
 
 

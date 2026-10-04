@@ -252,8 +252,12 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
     assert (state.IMPROVEMENT_RESULT_NEXT_ACTION in action) is marked
     if marked:
         assert action.count(state.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
-        assert "メインエージェント" in action
-        assert "`agent-toolkit/share/rules-main.md`「協調と自律」" in action
+        for fragment in (
+            "メインエージェントは次のユーザーへの発話へ",
+            "委譲先は自身の返却の末尾へ",
+            "`agent-toolkit:delegation`「受領と検収」",
+        ):
+            assert fragment in action
     if status == "completed" and label.endswith("-review"):
         assert state.REVIEW_RESULT_NEXT_ACTION in action
     elif status == "failed":

@@ -177,10 +177,11 @@ REVIEW_RESULT_NEXT_ACTION = (
 )
 
 
+# 結果はメインと委譲先の双方が受け取るため、両者が実行できる操作を受け取った主体の役割ごとに示す。
 IMPROVEMENT_RESULT_NEXT_ACTION = (
-    "メインエージェントは`agent_message`の`気付いた改善点:`で始まる全行を、"
-    "次のユーザーへの発話へ逐語で転記する。"
-    "`agent-toolkit/share/rules-main.md`「協調と自律」に従い、出所と必要な確認も添える"
+    "`agent_message`の`気付いた改善点:`で始まる全行を上流へ渡す。"
+    "メインエージェントは次のユーザーへの発話へ転記し、委譲先は自身の返却の末尾へ逐語で引き継ぐ。"
+    "報告元と確認した範囲の添え方は`agent-toolkit:delegation`「受領と検収」に従う"
 )
 
 
