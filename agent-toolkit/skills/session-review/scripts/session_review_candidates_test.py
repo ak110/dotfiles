@@ -13,7 +13,7 @@ def test_candidate_events_excludes_non_interventions_and_reports_counts() -> Non
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "agent-1", "line": 1, "text": "委譲入力"},
-        {"kind": "user", "record": "main", "line": 2, "text": "<normative-context>規範"},
+        {"kind": "user", "record": "main", "line": 2, "text": "<normative-context>規範", "runtime_inserted": True},
         {"kind": "user", "record": "main", "line": 3, "text": "質問: 選択\n回答: 推奨"},
         {"kind": "user", "record": "main", "line": 4, "text": "実際の是正要求"},
     ]
@@ -64,10 +64,34 @@ def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
     """process-loopの通知、定時promptおよび実行環境が挿入した本文をユーザー介入から除く。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
-        {"kind": "user", "record": "main", "line": 2, "text": "Goal check-in: «目標» is still active"},
-        {"kind": "user", "record": "main", "line": 3, "text": "Stop hook feedback:\n[目標]: incomplete evidence"},
-        {"kind": "user", "record": "main", "line": 4, "text": "<local-command-stdout>Goal set</local-command-stdout>"},
-        {"kind": "user", "record": "main", "line": 5, "text": "A session-scoped Stop hook is now active with条件"},
+        {
+            "kind": "user",
+            "record": "main",
+            "line": 2,
+            "text": "Goal check-in: «目標» is still active",
+            "runtime_inserted": True,
+        },
+        {
+            "kind": "user",
+            "record": "main",
+            "line": 3,
+            "text": "Stop hook feedback:\n[目標]: incomplete evidence",
+            "runtime_inserted": True,
+        },
+        {
+            "kind": "user",
+            "record": "main",
+            "line": 4,
+            "text": "<local-command-stdout>Goal set</local-command-stdout>",
+            "runtime_inserted": True,
+        },
+        {
+            "kind": "user",
+            "record": "main",
+            "line": 5,
+            "text": "A session-scoped Stop hook is now active with条件",
+            "runtime_inserted": True,
+        },
         {"kind": "user", "record": "main", "line": 6, "text": "実際の是正要求"},
     ]
 
@@ -586,8 +610,15 @@ def test_candidate_events_counts_only_identical_candidate_identity_as_duplicate(
 
 
 def test_first_human_request_after_automated_start_is_initial_request() -> None:
+    """process-loop以外の自動挿入で始まる記録では、最初の人間の発話を初期要求として除く。"""
     timeline = [
-        {"kind": "user", "record": "main", "line": 1, "text": "<agent-toolkit-auto-inserted>自動起動"},
+        {
+            "kind": "user",
+            "record": "main",
+            "line": 1,
+            "text": "<agent-toolkit-auto-inserted>自動起動",
+            "runtime_inserted": True,
+        },
         {"kind": "user", "record": "main", "line": 2, "text": "最初の人間の依頼"},
         {"kind": "user", "record": "main", "line": 3, "text": "後続の人間の指摘"},
     ]
@@ -1039,3 +1070,48 @@ def test_candidate_keeps_improvement_in_every_normal_return(body: str, shell: bo
     assert candidates[0]["candidate_kind"] == "delegate-return"
     assert candidates[0]["text"] == text
     assert candidates[-1]["excluded"].get("normal-delegate-return", 0) == 0
+
+
+@pytest.mark.parametrize(
+    ("goal_event", "expected_excluded"),
+    [
+        # Claude Codeはスラッシュコマンドを生成本文として記録し、`_event`が実行環境の挿入へ分類する。
+        (
+            {
+                "text": "<command-name>/goal</command-name>\n"
+                "<command-args>`agent-toolkit:process-wi`を完遂してください。</command-args>",
+                "runtime_inserted": True,
+            },
+            {"runtime-inserted": 2},
+        ),
+        # Codexは前置きのない本文として記録し、起動の目的文を初期要求として除く。
+        (
+            {"text": "/goal `agent-toolkit:process-wi`を完遂してください。", "runtime_inserted": False},
+            {"runtime-inserted": 1, "initial-request": 1},
+        ),
+    ],
+    ids=["claude", "codex"],
+)
+def test_human_intervention_after_process_loop_start_remains_candidate(
+    goal_event: dict[str, object], expected_excluded: dict[str, int]
+) -> None:
+    """process-loopが自動起動した記録では、最初の人間の発話を初期要求へ除かず介入の候補に残す。"""
+    timeline = [
+        {"kind": "user", "record": "main", "line": 1, "text": "<atk-auto>規範", "runtime_inserted": True},
+        {"kind": "user", "record": "main", "line": 2, **goal_event},
+        {"kind": "user", "record": "main", "line": 3, "text": "途中で割り込んだ人間の指摘"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
+    assert candidates[-1]["excluded"] == expected_excluded
+
+
+def test_process_loop_goal_matches_launch_prompt_body() -> None:
+    """起動の判定に使う目的文が、process-loopが子セッションへ渡す目的文と一致する。"""
+    from agent_toolkit._atk.wi import process_loop  # pylint: disable=import-outside-toplevel
+
+    prompt = process_loop._build_process_loop_prompt()  # pylint: disable=protected-access
+
+    assert evidence._PROCESS_WI_GOAL_BODY in prompt  # pylint: disable=protected-access

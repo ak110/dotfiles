@@ -214,6 +214,46 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert not list(work_dir.glob("*material*"))
 
 
+@pytest.mark.parametrize(
+    ("first_text", "expected_candidates", "expected_initial_request"),
+    [
+        (
+            "<command-name>/goal</command-name>\n"
+            '<command-args><atk-auto source="process-loop" kind="goal">'
+            "`agent-toolkit:process-wi`を完遂してください。</atk-auto></command-args>",
+            {"user-intervention": 2},
+            None,
+        ),
+        ("この変更を実装して", {"user-intervention": 2}, 1),
+    ],
+    ids=["process-loop-start", "human-request"],
+)
+def test_prepare_keeps_first_human_intervention_after_process_loop_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    first_text: str,
+    expected_candidates: dict[str, int],
+    expected_initial_request: int | None,
+) -> None:
+    """process-loopの起動後に続く人間の発話は候補へ残し、人間の依頼で始まる記録では初期依頼を除く。"""
+    monkeypatch.setenv("PATH", str(tmp_path / "no-atk"))
+    entries = [
+        {"type": "user", "timestamp": "2026-09-06T12:00:00Z", "message": {"role": "user", "content": first_text}},
+        {"type": "user", "timestamp": "2026-09-06T12:00:30Z", "message": {"role": "user", "content": "対象を絞らないで"}},
+        {"type": "user", "timestamp": "2026-09-06T12:01:00Z", "message": {"role": "user", "content": "それも直して"}},
+    ]
+    transcript = tmp_path / "11111111-2222-3333-4444-666666666666.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+
+    exit_code = prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW)
+
+    assert exit_code == 0
+    record = json.loads(capsys.readouterr().out)
+    assert record["candidate_counts"] == expected_candidates
+    assert record["excluded_counts"].get("initial-request") == expected_initial_request
+
+
 def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """1000字を超える発話の省略区間にある`気付いた改善点:`の行を、会話の流れへ全て残す。
 
