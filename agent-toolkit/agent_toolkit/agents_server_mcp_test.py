@@ -1603,7 +1603,7 @@ async def test_success_response_key_sets_for_all_tools(
     terminal_id = str(explored["session_id"])
     terminal = manager.sessions[terminal_id]
     _complete(terminal, message="完了")
-    assert (await manager.wait()).keys() == {"session_id", "status", "agent_message"}
+    assert (await manager.wait()).keys() == {"session_id", "status", "agent_message", "engine", "model", "effort", "model_type"}
     assert await manager.stop(terminal_id) == {}
 
     listed = manager.list_sessions(include_terminated=True)
@@ -2955,6 +2955,10 @@ async def test_wait_does_not_redeliver_only_terminal_result_at_timeout(tmp_path:
         "status": "failed",
         "agent_message": "最終結果",
         "error": {"message": "補足"},
+        "engine": "codex",
+        "model": None,
+        "effort": None,
+        "model_type": None,
     }
     assert second["session_id"] == session.session_id
     assert second["status"] == "running"
@@ -3372,6 +3376,10 @@ async def test_kill_waits_for_terminal_result_and_preserves_request_marker(tmp_p
         "status": "completed",
         "agent_message": "中断結果",
         "kill_requested": True,
+        "engine": "codex",
+        "model": None,
+        "effort": None,
+        "model_type": None,
     }
 
 
@@ -3389,6 +3397,10 @@ async def test_kill_terminal_session_is_idempotent_without_backend_request(tmp_p
         "status": "completed",
         "agent_message": "既存結果",
         "kill_requested": False,
+        "engine": "codex",
+        "model": None,
+        "effort": None,
+        "model_type": None,
     }
     assert backend.interrupt_calls == 0
 
@@ -3527,10 +3539,12 @@ async def test_send_message_timeout_covers_resume(tmp_path: pathlib.Path) -> Non
     manager.sessions[session.session_id] = session
 
     try:
+        manager._start_resume(state.SessionResumeState.from_session(session), "準備指示", None)  # pylint: disable=protected-access
+        await asyncio.wait_for(backend.resume_started.wait(), timeout=1)
         with pytest.raises(TimeoutError, match="send_message timed out: claude-expired"):
             await manager.send_message(session.session_id, "追加指示", timeout=0.01)
 
-        assert backend.resume_started.is_set()
+        assert not backend.resume_calls
     finally:
         await manager.close()
 
@@ -3556,6 +3570,8 @@ async def test_kill_cancels_pending_resume_without_followup_message(
     manager.sessions[session.session_id] = session
 
     try:
+        manager._start_resume(state.SessionResumeState.from_session(session), "準備指示", None)  # pylint: disable=protected-access
+        await asyncio.wait_for(backend.resume_started.wait(), timeout=1)
         with pytest.raises(TimeoutError, match=f"send_message timed out: {session_id}"):
             await manager.send_message(session.session_id, "追加指示", timeout=0.01)
 
@@ -4195,6 +4211,36 @@ class NaturallyCompletingTurnStartClient(FakeCodexClient):
         )
 
 
+def _pending_codex_manager[PendingCodexClient: (HoldingTurnStartClient, NaturallyCompletingTurnStartClient)](
+    monkeypatch: pytest.MonkeyPatch, client_type: type[PendingCodexClient]
+) -> tuple[subject.AgentsServerManager, codex_backend.AppServerManager, PendingCodexClient]:
+    """保留したturn/start応答を持つCodex再開テストの共通入力を作成する。"""
+    manager = subject.AgentsServerManager()
+    backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
+    client = client_type(backend)
+
+    async def ensure_client() -> PendingCodexClient:
+        return client
+
+    monkeypatch.setattr(backend, "_ensure_client", ensure_client)
+    backend.client = cast(Any, client)
+    manager._codex = backend
+    return manager, backend, client
+
+
+async def _start_blocked_codex_resume(
+    manager: subject.AgentsServerManager,
+    client: HoldingTurnStartClient | NaturallyCompletingTurnStartClient,
+    session_id: str,
+) -> None:
+    """turn開始を確認した後、別の継続要求の短い期限切れを起こす。"""
+    manager._start_resume(manager.expired_sessions[session_id], "準備指示", None)  # pylint: disable=protected-access
+    await asyncio.wait_for(client.turn_start_received.wait(), timeout=1)
+    with pytest.raises(TimeoutError, match=f"send_message timed out: {session_id}"):
+        await manager.send_message(session_id, "再開指示", timeout=0.01)
+    assert client.active_turn is True
+
+
 @pytest.mark.asyncio
 async def test_concurrent_kills_preserve_shared_request_when_turn_completes_before_lock_handoff(
     tmp_path: pathlib.Path,
@@ -4686,16 +4732,7 @@ async def test_codex_kill_interrupts_turn_with_pending_start_response(
     tmp_path: pathlib.Path,
 ) -> None:
     """再開turnの応答待ちでもkillだけでApp Server側作業を終える。"""
-    manager = subject.AgentsServerManager()
-    backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
-    client = HoldingTurnStartClient(backend)
-
-    async def ensure_client() -> HoldingTurnStartClient:
-        return client
-
-    monkeypatch.setattr(backend, "_ensure_client", ensure_client)
-    backend.client = cast(Any, client)
-    manager._codex = backend
+    manager, backend, client = _pending_codex_manager(monkeypatch, HoldingTurnStartClient)
     manager.expired_sessions[session_id] = state.SessionResumeState(
         session_id=session_id,
         cwd=str(tmp_path),
@@ -4705,10 +4742,7 @@ async def test_codex_kill_interrupts_turn_with_pending_start_response(
     )
 
     try:
-        with pytest.raises(TimeoutError, match=f"send_message timed out: {session_id}"):
-            await manager.send_message(session_id, "再開指示", timeout=0.01)
-        assert client.turn_start_received.is_set()
-        assert client.active_turn is True
+        await _start_blocked_codex_resume(manager, client, session_id)
 
         response = await manager.kill(session_id, timeout=1)
 
@@ -4737,16 +4771,7 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
     tmp_path: pathlib.Path,
 ) -> None:
     """保留resumeの取消中に自然終了したturnへ中断要求済みと報告しない。"""
-    manager = subject.AgentsServerManager()
-    backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
-    client = NaturallyCompletingTurnStartClient(backend)
-
-    async def ensure_client() -> NaturallyCompletingTurnStartClient:
-        return client
-
-    monkeypatch.setattr(backend, "_ensure_client", ensure_client)
-    backend.client = cast(Any, client)
-    manager._codex = backend
+    manager, backend, client = _pending_codex_manager(monkeypatch, NaturallyCompletingTurnStartClient)
     manager.expired_sessions[session_id] = state.SessionResumeState(
         session_id=session_id,
         cwd=str(tmp_path),
@@ -4756,10 +4781,7 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
     )
 
     try:
-        with pytest.raises(TimeoutError, match=f"send_message timed out: {session_id}"):
-            await manager.send_message(session_id, "再開指示", timeout=0.01)
-        assert client.turn_start_received.is_set()
-        assert client.active_turn is True
+        await _start_blocked_codex_resume(manager, client, session_id)
         pending = manager._pending_resumes[session_id]
 
         kill_task = asyncio.create_task(manager.kill(session_id, timeout=1))
@@ -5040,6 +5062,22 @@ class BlockingResumeClaudeClient(FakeClaudeClient):
         return stream()
 
 
+def _blocking_resume_claude_manager(
+    monkeypatch: pytest.MonkeyPatch, client: BlockingResumeClaudeClient
+) -> tuple[subject.AgentsServerManager, claude_backend.ClaudeServerManager]:
+    """保留したClaude queryを持つ再開テストの共通入力を作成する。"""
+    manager = subject.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(
+        manager.sessions,
+        manager._condition,
+        client_factory=lambda _options: client,
+        expire_session=manager._expire_session,
+    )
+    manager._claude = backend
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    return manager, backend
+
+
 class BlockingResultClaudeClient(FakeClaudeClient):
     """init後の結果を明示イベントまで保留する偽クライアント。"""
 
@@ -5160,21 +5198,15 @@ async def test_send_message_timeout_reports_undetermined_delivery(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("query_started_before_timeout", [False, True])
 async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
+    query_started_before_timeout: bool,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Claude再開のtimeout後に旧promptを配送せず、後続入力で再開を重複しない。"""
+    """query開始の前後で期限切れになっても旧promptを配送せず、再開を重複しない。"""
     client = BlockingResumeClaudeClient()
-    manager = subject.AgentsServerManager()
-    backend = claude_backend.ClaudeServerManager(
-        manager.sessions,
-        manager._condition,
-        client_factory=lambda _options: client,
-        expire_session=manager._expire_session,
-    )
-    manager._claude = backend
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    manager, _ = _blocking_resume_claude_manager(monkeypatch, client)
     session_id = "claude-pending"
     manager.expired_sessions[session_id] = state.SessionResumeState(
         session_id=session_id,
@@ -5184,12 +5216,34 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
         engine="claude",
     )
 
+    pending = None
+    initial_ticket = 0
+    release_connect = asyncio.Event()
     try:
+        if query_started_before_timeout:
+            resume_state = manager.expired_sessions[session_id]
+            pending, initial_ticket = manager._start_resume(resume_state, "準備指示", None)  # pylint: disable=protected-access
+            await asyncio.wait_for(client.query_started.wait(), timeout=1)
+        else:
+            original_connect = client.connect
+
+            async def blocked_connect() -> None:
+                await release_connect.wait()
+                await original_connect()
+
+            monkeypatch.setattr(client, "connect", blocked_connect)
+
         with pytest.raises(TimeoutError, match="send_message timed out: claude-pending"):
             await manager.send_message(session_id, "再開指示", timeout=0.01)
 
-        assert client.query_started.is_set()
-        await asyncio.wait_for(client.query_cancelled.wait(), timeout=0.1)
+        if query_started_before_timeout:
+            assert pending is not None
+            pending.prompt.cancel(initial_ticket)
+            await asyncio.wait_for(client.query_cancelled.wait(), timeout=1)
+        else:
+            assert not client.query_started.is_set()
+            release_connect.set()
+            client.release_query.set()
         assert not client.queries
         response = await manager.wait()
         assert set(response) == {"session_id", "status", "progress", "elapsed_seconds"}
@@ -5203,7 +5257,6 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
 
         assert response["delivery"] == "reply_started"
         assert client.connect_calls == 1
-        assert client.query_calls == 2
         assert [delivery_payload(value) for value in client.queries] == ["後続指示"]
     finally:
         client.release_query.set()
@@ -5218,15 +5271,7 @@ async def test_claude_kill_cleans_owned_pending_resume(
 ) -> None:
     """保留resumeのkillは応答前にClaude所有taskとclientを回収する。"""
     client = BlockingResumeClaudeClient()
-    manager = subject.AgentsServerManager()
-    backend = claude_backend.ClaudeServerManager(
-        manager.sessions,
-        manager._condition,
-        client_factory=lambda _options: client,
-        expire_session=manager._expire_session,
-    )
-    manager._claude = backend
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    manager, backend = _blocking_resume_claude_manager(monkeypatch, client)
     session_id = "claude-pending"
     manager.expired_sessions[session_id] = state.SessionResumeState(
         session_id=session_id,
@@ -5237,6 +5282,8 @@ async def test_claude_kill_cleans_owned_pending_resume(
     )
 
     try:
+        manager._start_resume(manager.expired_sessions[session_id], "準備指示", None)  # pylint: disable=protected-access
+        await asyncio.wait_for(client.query_started.wait(), timeout=1)
         with pytest.raises(TimeoutError, match="send_message timed out: claude-pending"):
             await manager.send_message(session_id, "再開指示", timeout=0.01)
 
@@ -5259,15 +5306,7 @@ async def test_claude_pending_resume_retains_previous_result_after_retention_dea
 ) -> None:
     """再開待機中に保持期限を越えた直前結果を後続応答へ含める。"""
     client = BlockingResumeClaudeClient()
-    manager = subject.AgentsServerManager()
-    backend = claude_backend.ClaudeServerManager(
-        manager.sessions,
-        manager._condition,
-        client_factory=lambda _options: client,
-        expire_session=manager._expire_session,
-    )
-    manager._claude = backend
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    manager, _ = _blocking_resume_claude_manager(monkeypatch, client)
     session_id = "claude-pending"
     session = state.SessionState(session_id, str(tmp_path), engine="claude")
     session.status = "completed"
@@ -5279,9 +5318,14 @@ async def test_claude_pending_resume_retains_previous_result_after_retention_dea
     manager.sessions[session_id] = session
 
     try:
+        pending, initial_ticket = manager._start_resume(  # pylint: disable=protected-access
+            state.SessionResumeState.from_session(session), "準備指示", session.previous_result()
+        )
+        await asyncio.wait_for(client.query_started.wait(), timeout=1)
         with pytest.raises(TimeoutError, match="send_message timed out: claude-pending"):
             await manager.send_message(session_id, "期限前指示", timeout=0.01)
 
+        pending.prompt.cancel(initial_ticket)
         await asyncio.wait_for(client.query_cancelled.wait(), timeout=0.1)
         await asyncio.sleep(max(0.0, original_deadline - asyncio.get_running_loop().time()) + 0.01)
         response = await manager.send_message(session_id, "期限後指示", timeout=1)
@@ -5289,7 +5333,6 @@ async def test_claude_pending_resume_retains_previous_result_after_retention_dea
         assert asyncio.get_running_loop().time() >= original_deadline
         assert response["previous_result"]["agent_message"] == "期限付き結果"
         assert client.connect_calls == 1
-        assert client.query_calls == 2
         assert [delivery_payload(value) for value in client.queries] == ["期限後指示"]
     finally:
         client.release_query.set()
@@ -6106,6 +6149,10 @@ async def test_recovered_session_restores_persisted_result_once(
         "status": "failed",
         "agent_message": "永続結果",
         "error": {"message": "失敗結果"},
+        "engine": "codex",
+        "model": None,
+        "effort": None,
+        "model_type": None,
     }
     assert second == {"status": "failed", "recovery": "result_unavailable", "kill_requested": False}
     assert not result_path.exists()
@@ -6643,6 +6690,10 @@ async def test_stop_releases_wait_target_before_waiting_for_new_result(
         "session_id": "new-session",
         "status": "completed",
         "agent_message": "新しい結果",
+        "engine": "codex",
+        "model": None,
+        "effort": None,
+        "model_type": None,
     }
     await manager.close()
 

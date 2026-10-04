@@ -217,6 +217,39 @@ def test_public_name_runs_selection_check(
     assert "a.md: 未被覆: src/model.py" in capsys.readouterr().err
 
 
+def test_public_check_rejects_missing_stage(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開名から、先行レーンが正しくても段階2の欠番を拒否する。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`src/model.py`を変える。")
+    _awi(notes, "b.md", "`docs/development/design.md`を変える。")
+    selection = tmp_path / "selection.yaml"
+    selection.write_text(
+        yaml.safe_dump(
+            {
+                "選定": [
+                    {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+                    {"WI": "b.md", "レーン": "lane-02", "書込対象": ["docs/development/design.md"]},
+                ],
+                "レーンの所要時間": [
+                    {"レーン": "lane-01", "段階": 1},
+                    {"レーン": "lane-02", "段階": 3, "先行レーン": ["lane-01"]},
+                ],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    code = run_script.dispatch(
+        argparse.Namespace(script_name="pick-wi-check", script_args=["--", "--work-dir", str(repo), str(selection)])
+    )
+
+    assert code == 1
+    assert "段階は1から連続する正整数を指定する: 段階2がない" in capsys.readouterr().err
+
+
 def test_public_check_resolves_abbreviated_paths_and_classification(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -402,3 +435,31 @@ def test_public_check_accepts_zero_candidate_selection(
     path.write_text(yaml.safe_dump({"選定": [], "レーンの所要時間": []}, allow_unicode=True), encoding="utf-8")
     monkeypatch.setattr(check_selection._plan_file, "private_notes_root", lambda: notes)  # pylint: disable=protected-access
     assert check_selection.main([str(path), "--work-dir", str(tmp_path)]) == 0, capsys.readouterr().err
+
+
+def test_model_and_stage_selection_contract() -> None:
+    """担当別モデルと後段の先行統合条件を同じ選定で確かめる。"""
+    items: list[object] = [
+        {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"], "担当モデル": {"実装担当": "claude:opus/high"}},
+        {
+            "WI": "b.md",
+            "レーン": "lane-02",
+            "書込対象": ["src/model.py"],
+            "担当モデル": {"実行レビュー担当": "codex:gpt-6-sol/medium"},
+        },
+    ]
+    costs: list[object] = [
+        {"レーン": "lane-01", "段階": 1, "根拠": "先行"},
+        {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"], "根拠": "後段"},
+    ]
+    assert not check_selection._check_lane_models(items)  # pylint: disable=protected-access
+    assert not check_selection._check_lane_stages(items, costs)  # pylint: disable=protected-access
+    assert not check_selection._check_lane_overlaps(items, costs)  # pylint: disable=protected-access
+
+    typing.cast(dict[str, object], costs[1])["先行レーン"] = []
+    assert any("先行レーン" in value for value in check_selection._check_lane_stages(items, costs))  # pylint: disable=protected-access
+    assert check_selection._check_lane_overlaps(items, costs)  # pylint: disable=protected-access
+
+    typing.cast(dict[str, object], items[1])["レーン"] = "lane-01"
+    typing.cast(dict[str, object], items[1])["担当モデル"] = {"実装担当": "codex:gpt-6-sol/medium"}
+    assert "モデル指定が衝突" in check_selection._check_lane_models(items)[0]  # pylint: disable=protected-access

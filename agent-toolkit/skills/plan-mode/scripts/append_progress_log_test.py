@@ -107,6 +107,16 @@ def test_public_cli_records_and_reads_commit_mapping(
         ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "example"],
     ]:
         subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, timeout=30)
+    previous_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True, timeout=30
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "recorded"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
     oid = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True, timeout=30
     ).stdout.strip()
@@ -123,16 +133,46 @@ def test_public_cli_records_and_reads_commit_mapping(
     common = [str(path), "--worktree", str(repo), "--awi", wi]
     if handoff:
         common += ["--handoff", "--allowed-awi", wi]
-    assert append_progress_log.main([*common, "--commit", "HEAD", "--completed-step", "実装", "--result", "成功"]) == 0
+    assert (
+        append_progress_log.main(
+            [*common, "--commit", "HEAD", "--previous-head", previous_head, "--completed-step", "実装", "--result", "成功"]
+        )
+        == 0
+    )
     assert path.read_text(encoding="utf-8").startswith(original)
     assert append_progress_log.main([*common, "--get-commits"]) == 0
     assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [oid]}
     saved = path.read_bytes()
     assert (
-        append_progress_log.main([*common, "--commit", "missing-commit", "--completed-step", "実装", "--result", "成功"]) == 1
+        append_progress_log.main(
+            [
+                *common,
+                "--commit",
+                "missing-commit",
+                "--previous-head",
+                previous_head,
+                "--completed-step",
+                "実装",
+                "--result",
+                "成功",
+            ]
+        )
+        == 1
     )
     assert path.read_bytes() == saved
     assert "次の操作:" in capsys.readouterr().err
+    with pytest.raises(SystemExit, match="2"):
+        append_progress_log.main([*common, "--commit", oid, "--completed-step", "実装", "--result", "失敗"])
+    assert path.read_bytes() == saved
+    capsys.readouterr()
+    assert (
+        append_progress_log.main(
+            [*common, "--commit", oid, "--previous-head", oid, "--completed-step", "実装", "--result", "失敗"]
+        )
+        == 1
+    )
+    assert path.read_bytes() == saved
+    capsys.readouterr()
 
     subprocess.run(
         [
@@ -259,6 +299,16 @@ def test_get_commits_reads_unique_saved_plan_from_removed_working_path(
         capture_output=True,
         timeout=30,
     )
+    previous_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True, timeout=30
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "recorded"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
     wi = "20261004-044311-001.md"
     working = tmp_path / ".claude" / "plans" / "04-example-1a2b.md"
     saved = notes / "plans" / "2026" / "10" / working.name
@@ -267,7 +317,20 @@ def test_get_commits_reads_unique_saved_plan_from_removed_working_path(
         "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n  - " + wi + ": 対応\n\n" + _plan().removeprefix("# 計画\n\n")
     )
     saved.write_text(content, encoding="utf-8")
-    record_args = ["--worktree", str(repo), "--awi", wi, "--commit", "HEAD", "--completed-step", "実装", "--result", "成功"]
+    record_args = [
+        "--worktree",
+        str(repo),
+        "--awi",
+        wi,
+        "--commit",
+        "HEAD",
+        "--previous-head",
+        previous_head,
+        "--completed-step",
+        "実装",
+        "--result",
+        "成功",
+    ]
     assert append_progress_log.main([str(saved), *record_args]) == 1
     working.parent.mkdir(parents=True)
     working.write_text(content, encoding="utf-8")

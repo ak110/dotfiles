@@ -1368,7 +1368,12 @@ class TestListJson:
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((40, 24)))
+
+        def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
+            del args, kwargs
+            return os.terminal_size((40, 24))
+
+        monkeypatch.setattr(shutil, "get_terminal_size", get_terminal_size)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "list", "--jsonl"], home=tmp_path)
@@ -1698,7 +1703,12 @@ class TestListNonTtyTargetRepo:
         body = "本文" * 80
         _write_awi_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body=body)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((terminal_columns, 24)))
+
+        def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
+            del args, kwargs
+            return os.terminal_size((terminal_columns, 24))
+
+        monkeypatch.setattr(shutil, "get_terminal_size", get_terminal_size)
         monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
 
         with pytest.raises(SystemExit) as exc_info:

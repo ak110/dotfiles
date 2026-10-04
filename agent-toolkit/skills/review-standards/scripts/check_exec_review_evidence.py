@@ -64,7 +64,11 @@ ANSWER_LABELS = ("質問: ", "選択肢: ", "回答: ", "自由記述: ")
 USER_ANSWER_LABELS = ("回答: ", "自由記述: ")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 FENCE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
-EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\(([^)]+)\)|`([^`]+)`|([^\s`\[\]（）「」、。]+)")
+EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|(?P<plain>[^\s`\[\]（）「」、。]+)")
+JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
+ATTACHED_ASCII_REFERENCE = re.compile(
+    r"(?P<plain>[/A-Za-z0-9_.-][^\s`\[\]（）「」、。:]*?\.[A-Za-z][A-Za-z0-9_-]*(?::[0-9]+(?:-[0-9]+)?|#[^\s`\[\]（）「」、。]+)?)"
+)
 # ファイル参照を除いた残りがこれらの区切りと接続語だけなら、行ごとの説明を持たない参照だけの根拠とみなす。
 REFERENCE_SEPARATORS = re.compile(r"[\s、。，,.;；:：・()（）「」\[\]<>`]+|および|及び|と|や")
 # 参照の直前に置いたコロン付きの見出し語（`検証: <パス>`など）は所在の標識であり、行ごとの説明に数えない。
@@ -436,6 +440,14 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
     """
     matches = []
     for match in EVIDENCE_REFERENCE.finditer(evidence):
+        if match.group("plain") is not None:
+            original, _ = _reference_parts(match)
+            if not _is_file(repository / original):
+                for boundary in JAPANESE_ASCII_PATH_BOUNDARY.finditer(original):
+                    suffix = ATTACHED_ASCII_REFERENCE.match(evidence, match.start("plain") + boundary.start())
+                    if suffix is not None:
+                        match = suffix
+                        break
         candidate, location = _reference_parts(match)
         if "://" in candidate or candidate.startswith("~") or candidate == "/" or candidate in NON_FILE_PAIRS:
             continue
@@ -448,7 +460,7 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
         # インラインコードにはコマンドも現れる。パスの前に複数の語が続く値を丸ごとパスにしない。
         # 絶対パス、リンク先、空白を含むファイル名は保持し、パスより前の引数列とオプションを区別する。
         if (
-            match[2] is not None
+            _reference_group(match, "code") is not None
             and re.match(r"[^/\\\s]+\s+.*[/\\]|\S+\s+--?(?:\s|[A-Za-z])", candidate)
             and not re.match(r"[A-Za-z]:[\\/]", candidate)
         ):
@@ -458,7 +470,7 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
         has_separator = "/" in candidate or "\\" in candidate
         has_extension = re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
         explicit = (
-            match[1] is not None
+            _reference_group(match, "link") is not None
             or WI_FILENAME.fullmatch(candidate) is not None
             or (has_separator and has_extension)
             or (bool(location) and (has_separator or has_extension))
@@ -475,12 +487,17 @@ def _reference_parts(match: re.Match[str]) -> tuple[str, str]:
         closing = candidate.find(">")
         if closing >= 0:
             candidate = candidate[1:closing] + candidate[closing + 1 :]
-    if match[3] is not None:
+    if _reference_group(match, "plain") is not None:
         candidate = candidate.rstrip(".,;)")
     separator = re.search(r"::|#|:(?=[+-]?\d)", candidate)
     if separator is None:
         return candidate, ""
     return candidate[: separator.start()], candidate[separator.start() :]
+
+
+def _reference_group(match: re.Match[str], name: str) -> str | None:
+    """候補形式に存在する名前付きグループだけを返す。"""
+    return match.group(name) if name in match.re.groupindex else None
 
 
 def _reference_content(path: pathlib.Path, repository: pathlib.Path, head: str) -> bytes:

@@ -27,11 +27,12 @@ def git_repo(tmp_path: pathlib.Path) -> pathlib.Path:
 
 def test_many_to_many_roundtrip_and_rewrite(repo: pathlib.Path) -> None:
     """複数AWIのcommitと複数commitのAWIを保ち、amend後は新OIDだけを取得する。"""
-    first = git(repo, "rev-parse", "HEAD")
-    content = commit_mapping.encode_event(commit_mapping.commit_event(repo, first, [WI_A, WI_B], {WI_A, WI_B}))
+    base = git(repo, "rev-parse", "HEAD")
+    first = _commit(repo, "first-recorded")
+    content = commit_mapping.encode_event(commit_mapping.commit_event(repo, first, base, [WI_A, WI_B], {WI_A, WI_B}))
     git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "second")
     old = git(repo, "rev-parse", "HEAD")
-    content += "\n" + commit_mapping.encode_event(commit_mapping.commit_event(repo, old, [WI_A], {WI_A, WI_B}))
+    content += "\n" + commit_mapping.encode_event(commit_mapping.commit_event(repo, old, first, [WI_A], {WI_A, WI_B}))
     assert commit_mapping.get_commits(repo, content, [WI_A, WI_B], {WI_A, WI_B}) == {WI_A: [first, old], WI_B: [first]}
     git(
         repo,
@@ -72,8 +73,9 @@ def test_rejects_incomplete_records(repo: pathlib.Path, failure: str) -> None:
 
 def test_rejects_unrecorded_rewrite_even_if_old_object_exists(repo: pathlib.Path) -> None:
     """旧OIDがobjectとして残っていても現在のHEADのcommitへ代用しない。"""
-    old = git(repo, "rev-parse", "HEAD")
-    content = commit_mapping.encode_event(commit_mapping.commit_event(repo, old, [WI_A], {WI_A}))
+    base = git(repo, "rev-parse", "HEAD")
+    old = _commit(repo, "old")
+    content = commit_mapping.encode_event(commit_mapping.commit_event(repo, old, base, [WI_A], {WI_A}))
     git(
         repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--amend", "--allow-empty", "-m", "new"
     )
@@ -98,6 +100,16 @@ def _commit(repo: pathlib.Path, message: str) -> str:
     return git(repo, "rev-parse", "HEAD")
 
 
+def test_commit_event_requires_new_head_and_its_previous_parent(repo: pathlib.Path) -> None:
+    """旧HEADや前HEADの取り違えをWIの実装commitとして記録しない。"""
+    base = git(repo, "rev-parse", "HEAD")
+    current = _commit(repo, "recorded")
+    assert commit_mapping.commit_event(repo, current, base, [WI_A], {WI_A}) == {"commit": current, "awi": [WI_A]}
+    for revision, previous in ((base, base), (current, current), (current, "a" * 40), (current, "missing")):
+        with pytest.raises(commit_mapping.CommitMappingError):
+            commit_mapping.commit_event(repo, revision, previous, [WI_A], {WI_A})
+
+
 def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:
     """WI対応のないcommitを含むrebaseでは、記録済み旧OIDだけの対応表で継承し、記録外OIDと記録済みOIDの欠落を失敗にする。
 
@@ -106,9 +118,9 @@ def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:
     """
     base = git(repo, "rev-parse", "HEAD")
     recorded = _commit(repo, "recorded")
+    content = commit_mapping.encode_event(commit_mapping.commit_event(repo, recorded, base, [WI_A], {WI_A}))
     _commit(repo, "unrecorded")
     unrecorded = git(repo, "rev-parse", "HEAD")
-    content = commit_mapping.encode_event(commit_mapping.commit_event(repo, recorded, [WI_A], {WI_A}))
     git(repo, "reset", "--hard", base)
     _commit(repo, "upstream")
     rebased_recorded = _commit(repo, "recorded")

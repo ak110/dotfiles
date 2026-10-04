@@ -17,6 +17,9 @@ WRITE_FILES_KEY = "書込対象"
 EXCLUDED_PATHS_KEY = "書き込まない反映先"
 LANE_COSTS_KEY = "レーンの所要時間"
 RATIONALE_KEY = "根拠"
+MODEL_TYPES_KEY = "担当モデル"
+STAGE_KEY = "段階"
+PRIOR_LANES_KEY = "先行レーン"
 
 _LEGACY_DECISIONS_KEY = "decisions"
 
@@ -32,6 +35,7 @@ _LEGACY_DECISION_KEYS: typing.Final[dict[str, str]] = {
     "upstream_submission": "上流投入",
     "upstream_target_repo": "上流投入先",
     "upstream_request": "上流要求",
+    "model_types": MODEL_TYPES_KEY,
 }
 
 
@@ -57,7 +61,10 @@ def lane_costs(selection: object) -> list[object] | None:
     items = selection.get(LANE_COSTS_KEY, selection.get("lane_costs"))
     if not isinstance(items, list):
         return None
-    return [_normalize(item, {"lane": LANE_KEY, "rationale": RATIONALE_KEY}) for item in items]
+    return [
+        _normalize(item, {"lane": LANE_KEY, "rationale": RATIONALE_KEY, "stage": STAGE_KEY, "prior_lanes": PRIOR_LANES_KEY})
+        for item in items
+    ]
 
 
 def _normalize(item: object, keys: dict[str, str]) -> object:

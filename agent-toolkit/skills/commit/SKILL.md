@@ -47,10 +47,10 @@ commit時に本来実行されるGit hookまたはhook管理ツール内の対�
 
 WIを入力に持つ実装commitとAWIの対応は、計画の進捗ログ（計画なしでは引き継ぎ記録）だけへ構造化して残し、記録・取得・履歴変更の各操作を本節の手段で行う。各工程の文書は、操作する時点、使う記録とworktree、工程固有の入力だけを持ち、手順は本節を参照する。
 
-記録: 実装commitの作成前に対応AWI集合を確定し、commit後に対象worktreeで取得した完全OIDを記録する。通常実装・レビュー修正・CI修正の各commitへ同じ手段を使う。計画がある場合は次の形で記録する。計画とworktreeは絶対パス、OIDは完全OID、AWIはファイル名を渡し、全対応AWIを`--awi`で反復指定する。
+記録: 実装commitの作成前に対応AWI集合と現在のHEADの完全OIDを取得する。`git commit`を単独で実行して終了コード0を確認し、成功後に新しいHEADの完全OIDを取得する。前HEADを`--previous-head`、新HEADを`--commit`へ渡して記録する。通常実装・レビュー修正・CI修正の各commitへ同じ手段を使う。計画がある場合は次の形で記録する。計画とworktreeは絶対パス、OIDは完全OID、AWIはファイル名を渡し、全対応AWIを`--awi`で反復指定する。commitが失敗したときは記録へ進まない。
 
 ```text
-atk run-script plan-progress -- <計画> --completed-step <工程> --result <結果> --worktree <worktree> --commit <OID> --awi <AWI>
+atk run-script plan-progress -- <計画> --completed-step <工程> --result <結果> --worktree <worktree> --previous-head <作成前HEADの完全OID> --commit <新HEADの完全OID> --awi <AWI>
 ```
 
 計画なしでは引き継ぎ記録を対象にし、`--handoff`と対象集合全件の`--allowed-awi`を加える。

@@ -364,6 +364,18 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     assert "3行の返却は結果不明" in receipt
 
 
+def test_staged_lane_contract_reaches_selection_and_execution() -> None:
+    """後段の開始条件が選定、受領、実行へ届く。"""
+    plugin_root = pathlib.Path(__file__).resolve().parent
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    assert "  段階:" in picker and "  先行レーン:" in picker
+    assert "先行統合条件" in parent
+    assert "現行HEADを基点" in lanes
+    assert "統合完了を受領" in lanes
+
+
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:
     """省略値を含む割当条件が生成・受領・上流分岐で一致し、一律の非実装除外を拒否する。"""
     plugin_root = pathlib.Path(__file__).resolve().parent

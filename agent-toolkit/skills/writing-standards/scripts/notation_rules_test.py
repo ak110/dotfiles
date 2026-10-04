@@ -6,6 +6,8 @@ import pathlib
 import subprocess
 import sys
 
+import pytest
+
 
 def _run_pyfltr(target: pathlib.Path, *, cwd: pathlib.Path, extra: list[str]) -> list[dict[str, object]]:
     """指定した起動条件でpyfltrを実行し、JSONLレコードを返す。"""
@@ -39,11 +41,34 @@ def _assert_all_commands_reach_one_file(records: list[dict[str, object]]) -> Non
     """要求した2コマンドが対象1件へ到達し、警告とskipが無いことを確認する。"""
     header = next(record for record in records if record.get("kind") == "header")
     assert header["files"] == 1
-    commands = [record for record in records if record.get("kind") == "command"]
+    commands = [record for record in records if record.get("kind") == "command" and record.get("status") != "running"]
     assert {record["command"] for record in commands} == {"textlint", "colloquial-check"}
     assert all(record.get("files") == 1 for record in commands)
     assert all(record.get("status") != "skipped" for record in commands)
     assert not any(record.get("kind") == "warning" for record in records)
+
+
+def test_running_command_does_not_change_completed_reachability() -> None:
+    """進捗行が完了結果の対象数、skip、警告の判定を変えない。"""
+    records: list[dict[str, object]] = [
+        {"kind": "header", "files": 1},
+        {"kind": "command", "command": "textlint", "status": "running"},
+        {"kind": "command", "command": "textlint", "status": "success", "files": 1},
+        {"kind": "command", "command": "colloquial-check", "status": "success", "files": 1},
+    ]
+    _assert_all_commands_reach_one_file(records)
+
+    invalid_records: list[dict[str, object]] = [
+        {"kind": "command", "command": "colloquial-check", "status": "success", "files": 0},
+        {"kind": "command", "command": "colloquial-check", "status": "skipped", "files": 1},
+        {"kind": "warning", "source": "test"},
+    ]
+    for invalid in invalid_records:
+        changed = records[:-1] + [invalid]
+        if invalid["kind"] == "warning":
+            changed = records + [invalid]
+        with pytest.raises(AssertionError):
+            _assert_all_commands_reach_one_file(changed)
 
 
 def test_pyfltr_reaches_an_external_markdown_file(tmp_path: pathlib.Path) -> None:

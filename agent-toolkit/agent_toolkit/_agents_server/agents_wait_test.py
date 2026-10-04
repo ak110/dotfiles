@@ -111,6 +111,24 @@ def test_agents_wait_outputs_every_retained_result(
     assert not (wait_environment / "session-2.json").exists()
 
 
+def test_wait_result_preserves_started_model() -> None:
+    """終端回収でモデル指定と実際の起動属性を保持する。"""
+    session = state.SessionState(
+        "session-1", "/workspace", engine="claude", model="opus", effort="high", model_type="claude:opus/high"
+    )
+    session.status = "completed"
+    session.agent_message = "完了"
+    payload = state.terminal_result_payload(session)
+    assert agents_wait._public_wait_response(payload) == {  # pylint: disable=protected-access
+        "status": "completed",
+        "agent_message": "完了",
+        "engine": "claude",
+        "model": "opus",
+        "effort": "high",
+        "model_type": "claude:opus/high",
+    }
+
+
 def test_agents_wait_rows_carry_launch_label_and_body_file(
     monkeypatch: pytest.MonkeyPatch,
     wait_environment: pathlib.Path,
