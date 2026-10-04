@@ -29,7 +29,7 @@ description: >
 
 | 成果物 | 全文読む資料 |
 | --- | --- |
-| 人間が読む文章（Markdown・README・技術文書・API文書、コメント、AWI・UWIの本文） | `references/writing.md` |
+| 人間が読む文章（Markdown・README・技術文書・API文書、業務・仕様文書、体験を述べる文章、コメント、AWI・UWIの本文） | `references/writing.md` |
 | コード・テストコード | `references/writing.md` |
 | エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`） | 後掲「エージェント向け文書の編集時に読む資料」に従う |
 
