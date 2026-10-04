@@ -189,6 +189,27 @@ def test_worktree_stash_help_covers_save_restore_and_drop() -> None:
     assert "atk worktree-stash drop refs/worktree/<ラベル>" in help_text
 
 
+def test_worktree_stash_drop_help_describes_resolved_oid_and_deletion_by_kind() -> None:
+    """dropは期待OIDの入力を求めず、現在のOIDを解決してworktree refとstashで削除方法を分けると説明する。"""
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    drop = commands["atk worktree-stash drop"]
+
+    assert drop.description is not None
+    assert "現在指すOIDを解決" in drop.description
+    assert "worktree固有refは解決したOIDを条件に削除" in drop.description
+    assert "共有stashは`git stash drop`で削除" in drop.description
+    assert "期待" not in drop.description
+
+
+def test_review_audit_pending_help_names_default_branch_source() -> None:
+    """review-audit pendingの説明は、マニフェストを確かめるbranchをGitHub APIの`default_branch`で示す。"""
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    description = commands["atk review-audit pending"].description
+
+    assert description is not None
+    assert "GitHub APIの`default_branch`で指定されたbranch" in description
+
+
 def test_wait_schedule_help_explains_request_bucket_resolution() -> None:
     """wait-scheduleはbucket指定がTTLとcron式の解決に必要な理由を示す。"""
     commands = {command: parser for command, parser, _summary in _walk_commands()}

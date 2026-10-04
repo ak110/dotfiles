@@ -232,7 +232,7 @@ class TestUserConfirmationSkillPrompt:
 class TestMachineInjectedTurn:
     """ユーザーが発話していないターンでの注記と時刻記録の抑止。
 
-    実ユーザー発話が受け取るべき現物との比較を求める注記を機械注入ターンが消費しないようにする。
+    実ユーザー発話が受け取るべき発話の内容を現物で確かめる手順を示す注記を機械注入ターンが消費しないようにする。
     """
 
     @staticmethod
@@ -291,7 +291,7 @@ class TestMachineInjectedTurn:
 
     @staticmethod
     def test_normal_prompt_after_machine_turn_receives_verification_notice(tmp_path: pathlib.Path) -> None:
-        """機械注入ターンの後でも、直前の通常発話から閾値以上離れた発話は現物との比較を求める注記を受け取る。"""
+        """機械注入ターンの後でも、直前の通常発話から閾値以上離れた発話は発話の内容を現物で確かめる手順を示す注記を受け取る。"""
         sid = "machine-then-user"
         state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_path.write_text(json.dumps({"last_user_prompt_at": time.time() - 600.0}), encoding="utf-8")
@@ -548,7 +548,7 @@ class TestRealignNoticeInjection:
 
 
 class TestVerificationNoticeInjection:
-    """通常発話へ現物との比較を求める注記を返す契約を検証する。"""
+    """通常発話へ発話の内容を現物で確かめる手順を示す注記を返す契約を検証する。"""
 
     @staticmethod
     def _write_state(tmp_path: pathlib.Path, session_id: str, state: dict) -> None:

@@ -43,7 +43,7 @@ def test_collect_gitlab_ci_failures_only_when_latest_failed() -> None:
 
 
 def test_resolve_target_branch_paths() -> None:
-    """追跡先を優先し、失敗時はGitHubで標準の参照先に指定されたブランチへ退避する。"""
+    """追跡先を優先し、失敗時は`origin/HEAD`が指すbranchへ退避する。"""
 
     def upstream_git(_path: pathlib.Path, args: list[str]) -> str | None:
         if args[0] == "rev-parse":

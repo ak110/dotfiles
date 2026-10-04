@@ -304,8 +304,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk worktree-stash save --label=before-rebase",
     },
     "atk worktree-stash drop": {
-        "summary": "退避識別子が期待するOIDを指すことを確認して削除する",
-        "description": "目的: worktree固有refまたは共有stashの退避物を、現在指しているOIDが期待値と一致することを確認して削除する。\n利用場面: 復元済み、または不要と判断した退避物を取り除くとき。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、指定した識別子が現在指すOIDを確認してから削除する。削除した識別子を標準出力へ書く。\n前提: 識別子は`refs/worktree/<ラベル>`か`stash@{<番号>}`の形式で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: 削除した退避物は復元できない。復元が必要な内容は、削除の前に`git stash apply`で取り出す。",
+        "summary": "退避識別子が現在指すOIDを固定ロック下で解決して削除する",
+        "description": "目的: worktree固有refまたは共有stashの退避物を、固定ロック下で現在指しているOIDを解決してから削除する。\n利用場面: 復元済み、または不要と判断した退避物を取り除くとき。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、指定した識別子が現在指すOIDを解決する。worktree固有refは解決したOIDを条件に削除し、その間に他の処理がrefを書き換えていた場合は削除せず失敗する。共有stashは`git stash drop`で削除する。削除した識別子を標準出力へ書く。識別子が存在しない場合は終了コード2を返す。\n前提: 識別子は`refs/worktree/<ラベル>`か`stash@{<番号>}`の形式で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: 削除した退避物は復元できない。復元が必要な内容は、削除の前に`git stash apply`で取り出す。",
         "epilog": "実行例:\n\n  atk worktree-stash drop refs/worktree/before-rebase",
     },
     "atk watch": {
@@ -365,7 +365,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-audit pending": {
         "summary": "未処置のCopilot review・未解決threadがあるPRと未判定のDependabotアラートを取得する",
-        "description": "目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadと、openで未判定のDependabotアラートを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、merge-prで対象PRを判定する前、またはatk wi process-loopの待機中確認。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、dependabot、各件数（counts.reviews・counts.threads・counts.dependabot）を持つJSONを1行で出力する。dependabotはstatus（available・disabled・unauthorized）とalertsを持ち、各アラートは番号、manifest_path、パッケージ、エコシステム、修正版（無い場合はnull）、判定区分categoryを持つ。categoryはマニフェストがGitHubで標準の参照先に指定されたブランチに実在しなければinaccurate（誤検知）、実在すればmanifest_presentとする。Dependabotアラート機能が無効なリポジトリはstatus=disabled、権限不足の403はstatus=unauthorizedと応答本文のmessageを出力し、いずれも件数0で終了コード0とする。その他の取得失敗、応答の不正とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadと、openで未判定のDependabotアラートを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、merge-prで対象PRを判定する前、またはatk wi process-loopの待機中確認。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、dependabot、各件数（counts.reviews・counts.threads・counts.dependabot）を持つJSONを1行で出力する。dependabotはstatus（available・disabled・unauthorized）とalertsを持ち、各アラートは番号、manifest_path、パッケージ、エコシステム、修正版（無い場合はnull）、判定区分categoryを持つ。categoryはマニフェストがGitHub APIの`default_branch`で指定されたbranchに実在しなければinaccurate（誤検知）、実在すればmanifest_presentとする。Dependabotアラート機能が無効なリポジトリはstatus=disabled、権限不足の403はstatus=unauthorizedと応答本文のmessageを出力し、いずれも件数0で終了コード0とする。その他の取得失敗、応答の不正とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-audit pending --repo=ak110/dotfiles",
     },
     "atk review-audit mark": {

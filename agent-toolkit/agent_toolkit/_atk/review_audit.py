@@ -244,7 +244,8 @@ def dependabot_pending(repository: str) -> dict[str, Any]:
     """未判定のopenなDependabotアラートを判定区分付きで返す。
 
     戻り値の`status`は`available`・`disabled`（機能が無効）・`unauthorized`（権限不足。`message`に応答本文）のいずれかとする。
-    `category`はマニフェストがGitHubで標準の参照先に指定されたブランチに実在しなければ`inaccurate`、実在すれば`manifest_present`とする。
+    `category`はマニフェストがGitHub APIの`default_branch`で指定されたbranchに実在しなければ`inaccurate`、
+    実在すれば`manifest_present`とする。
     機能無効と権限不足以外の取得失敗は`ActionableError`を送出する。
     """
     _validate_repository(repository)
@@ -297,19 +298,19 @@ def dependabot_pending(repository: str) -> dict[str, Any]:
 
 def _default_branch(repository: str) -> str:
     try:
-        response = _gh_rest(f"repos/{repository}", operation="GitHubで標準の参照先に指定されたブランチの取得")
+        response = _gh_rest(f"repos/{repository}", operation="GitHub APIの`default_branch`で指定されたbranchの取得")
     except _Forbidden as forbidden:
         raise _dependabot_error(
-            f"GitHubで標準の参照先に指定されたブランチの取得が拒否された: {forbidden.message}"
+            f"GitHub APIの`default_branch`で指定されたbranchの取得が拒否された: {forbidden.message}"
         ) from forbidden
     branch = response.get("default_branch") if isinstance(response, dict) else None
     if not isinstance(branch, str) or not branch:
-        raise _dependabot_error("GitHubで標準の参照先に指定されたブランチを応答から取得できない")
+        raise _dependabot_error("GitHub APIの`default_branch`で指定されたbranchを応答から取得できない")
     return branch
 
 
 def _manifest_exists(repository: str, manifest_path: str, branch: str) -> bool:
-    """GitHubで標準の参照先に指定されたブランチにマニフェストが実在するかを返す。
+    """GitHub APIの`default_branch`で指定されたbranchにマニフェストが実在するかを返す。
 
     HTTP 404だけを不在とし、他の失敗は例外にする。
     """

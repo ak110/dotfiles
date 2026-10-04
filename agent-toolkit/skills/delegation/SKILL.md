@@ -163,7 +163,7 @@ PreToolUseフックは、`start`の`delegate`・`explore`・`write`の本文が`
   送信する本文は、担当する作業の内容を含むものに限る
 - 識別子の再利用と新規起動の選択は継続条件（`references/runtime-routing.md`「工程別モデル設定」手順6。Agentツールで起動した担当は`references/claude-code-runtime.md`「稼働状態の観測と継続依頼」）に従う
 - 計画ファイルなどを反復編集する工程は、整合確認と修正を同じ委譲先へまとめる
-- ユーザーの介入が生じた場合はまず強制停止・再起動を選ぶのではなく、`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」が定める
+- ユーザーの介入が生じた場合は、強制停止・再起動を前提とせず、`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」が定める
   比較と採否を終えた差分だけを追加指示として伝えて委譲先自身に反映させる。停止するのは介入により対象範囲・前提が無効化され、
   続行が誤った成果物を生む場合に限る。
   この場合も停止の前に、介入の実施を稼働中の作業の完了後まで遅らせられるかを判定する

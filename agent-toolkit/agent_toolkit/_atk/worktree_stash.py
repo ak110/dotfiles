@@ -211,7 +211,10 @@ def drop(
     cwd: pathlib.Path | None = None,
     private_notes: pathlib.Path | None = None,
 ) -> int:
-    """固定ロック下で退避識別子が指すOIDと期待値の一致を確かめてから削除する。"""
+    """固定ロック下で退避識別子が現在指すOIDを解決して削除する。
+
+    worktree固有refは解決したOIDを条件に`git update-ref -d`で削除し、共有stashは`git stash drop`で削除する。
+    """
     worktree = (cwd or pathlib.Path.cwd()).resolve()
     if _is_queue_repository(worktree, private_notes):
         _outcome.report_failure(_QUEUE_REPOSITORY_ERROR, next_action=_QUEUE_REPOSITORY_NEXT_ACTION)
