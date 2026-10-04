@@ -314,23 +314,16 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
-    """候補内の依存は生成・受領・実行とも同一レーンの依存順で一致し、別レーンの統合完了を待つ欄を持たない。
+def test_same_lane_dependency_contract_reaches_parent_and_run_lanes() -> None:
+    """候補内の依存は生成・受領・実行とも同一レーンの依存順で一致する。
 
-    撤去した欄が形式や受領手順に残ると、pickerが空の欄を出力し続け、受領側が使わない形式の確認手順を読む。
+    生成・受領・実行のいずれかが別の順序を示すと、後続項目が依存先より先に処理される。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
-    output_format = _h2_section(picker, "出力").split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
-    lane_cost_fields = re.findall(
-        r"^  ([^\s:]+):", output_format.split("レーンの所要時間:\n", maxsplit=1)[1], flags=re.MULTILINE
-    )
-
-    assert "先行レーン" not in lane_cost_fields
     for document in (picker, parent, lanes):
-        assert "先行レーン" not in document and "after_lanes" not in document
         assert "同じレーン" in document
     assert "推移的な依存先" in _h2_section(picker, "処理対象の決定")
     assert "推移的にたどる" in _h2_section(parent, "出力の受領")

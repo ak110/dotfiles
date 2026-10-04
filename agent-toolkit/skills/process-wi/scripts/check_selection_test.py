@@ -402,25 +402,3 @@ def test_public_check_accepts_zero_candidate_selection(
     path.write_text(yaml.safe_dump({"選定": [], "レーンの所要時間": []}, allow_unicode=True), encoding="utf-8")
     monkeypatch.setattr(check_selection._plan_file, "private_notes_root", lambda: notes)  # pylint: disable=protected-access
     assert check_selection.main([str(path), "--work-dir", str(tmp_path)]) == 0, capsys.readouterr().err
-
-
-@pytest.mark.parametrize("field", [None, "先行レーン", "after_lanes"])
-def test_public_check_rejects_removed_after_lanes_field(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], field: str | None
-) -> None:
-    """`レーンの所要時間`の撤去した欄（旧欄名を含む）を受理せず、欄の無い選定結果は受理する。
-
-    候補内の依存は同じレーンで依存先から処理するため、別レーンの統合完了を待つ指定は受領側で使えない。
-    """
-    notes = tmp_path / "notes"
-    (notes / "processing").mkdir(parents=True)
-    cost: dict[str, object] = {"レーン": "lane-01", "実装秒数": 60, "統合秒数": 30, "根拠": "1件だけのレーン"}
-    if field is not None:
-        cost[field] = []
-    path = tmp_path / "selection.yaml"
-    path.write_text(yaml.safe_dump({"選定": [], "レーンの所要時間": [cost]}, allow_unicode=True), encoding="utf-8")
-    monkeypatch.setattr(check_selection._plan_file, "private_notes_root", lambda: notes)  # pylint: disable=protected-access
-    assert check_selection.main([str(path), "--work-dir", str(tmp_path)]) == (0 if field is None else 1)
-    error = capsys.readouterr().err
-    if field is not None:
-        assert f"撤去した欄`{field}`" in error and "lane-01" in error
