@@ -159,6 +159,12 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_delegated_session", {})
         return "approve", ""
 
+    raw_path = payload.get("transcript_path", "")
+    path_for_async = raw_path if isinstance(raw_path, str) else ""
+    if is_pending_async_work(path_for_async, session_id, background_tasks=payload.get("background_tasks")):
+        append_stop_log(session_id, "approve_pending_async", {})
+        return "approve", ""
+
     available = termination_evidence.observe_reports(payload)
     pending = termination_evidence.pending_work(payload) if available else []
     violations = [
@@ -199,14 +205,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     if not transcript_path or not pathlib.Path(transcript_path).is_file():
         append_stop_log(session_id, "approve_transcript_unreadable", {"reason": "起動順を確認できない"})
-        return "approve", ""
-
-    if is_pending_async_work(
-        transcript_path,
-        session_id,
-        background_tasks=payload.get("background_tasks"),
-    ):
-        append_stop_log(session_id, "approve_pending_async", {})
         return "approve", ""
 
     entries = read_transcript_entries_cached(transcript_path)

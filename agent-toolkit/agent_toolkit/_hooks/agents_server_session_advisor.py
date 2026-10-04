@@ -79,7 +79,7 @@ def _pending_session_ids(state: dict, owner_agent_id: str) -> list[str]:
     )
 
 
-def _actively_waited_session_ids(session_ids: list[str]) -> set[str]:
+def actively_waited_session_ids(session_ids: list[str]) -> set[str]:
     """待機中の主体が待機対象としているsession識別子を返す。
 
     待機所有権は待機主体を単位とし、`atk agents wait`は
@@ -185,7 +185,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     owner_agent_id = resolve_hook_agent_id(payload)
     pending_session_ids = _pending_session_ids(read_state(session_id), owner_agent_id)
-    observed = _actively_waited_session_ids(pending_session_ids)
+    observed = actively_waited_session_ids(pending_session_ids)
     declared = _declared_waiting_target_ids(payload.get("last_assistant_message")) & set(pending_session_ids)
     if declared:
         _resolve_declared_sessions(session_id, owner_agent_id, declared)

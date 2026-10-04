@@ -400,3 +400,27 @@ def test_failed_completion_report_does_not_satisfy_termination(
 
     assert decision == "block"
     assert "agent-toolkit:completion-report" in body
+
+
+@pytest.mark.parametrize("reentrant", [False, True])
+def test_pending_background_work_precedes_missing_reports(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reentrant: bool
+) -> None:
+    """実際のバックグラウンドタスク入力がある間は不足より先に許可し、終了後は不足へ戻る。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text(
+        json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "## 作業完了報告\n成果。"}]}}) + "\n",
+        encoding="utf-8",
+    )
+    payload = {
+        "session_id": "background-missing",
+        "transcript_path": str(trace),
+        "stop_hook_active": reentrant,
+        "background_tasks": [{"id": "running-task", "type": "bash"}],
+    }
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+    payload["background_tasks"] = []
+    decision, reason = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "block" and "review-result" in reason

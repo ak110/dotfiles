@@ -18,7 +18,7 @@ from agent_toolkit._atk.wi import uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._common import automated_prompt, next_action, runtime_inserted
-from agent_toolkit._hooks import agent_id, report_validation, session_state
+from agent_toolkit._hooks import agent_id, agents_server_session_advisor, report_validation, session_state
 from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 from agent_toolkit._hooks.stop_gate import append_stop_log
 
@@ -418,12 +418,18 @@ def record_decision(document: dict[str, Any]) -> str:
             target = document.get("target_session_id")
             child = state.get("agents_server_sessions", {}).get(target)
             work_for_wait = data["works"].get(document.get("work_id"), {})
-            if (
-                target in work_for_wait.get("async_targets", {})
-                and isinstance(child, dict)
-                and child.get("owner_agent_id") == "main"
-                and child.get("pending_observation") is True
-            ):
+            if target is not None:
+                if not isinstance(target, str) or target not in work_for_wait.get("async_targets", {}):
+                    raise ValueError(f"委譲先待機の対象が作業に対応しません: {target}。実際のwork_idと対象sessionを指定する")
+                if not isinstance(child, dict) or child.get("owner_agent_id") != "main":
+                    raise ValueError(
+                        f"委譲先待機の対象を所有していません: {target}。この作業が起動した所有済みの対象を指定する"
+                    )
+                active = agents_server_session_advisor.actively_waited_session_ids([target])
+                if child.get("pending_observation") is not True and target not in active:
+                    raise ValueError(
+                        f"対象sessionの有効なCLI待機がありません: {target}。実際の待機を開始するか回収後の残工程へ戻る"
+                    )
                 evidence["target_session_id"] = target
             else:
                 evidence["uwi_file"] = str(_waiting_uwi(document.get("uwi_file"), session_id, document.get("quote")))
@@ -480,7 +486,16 @@ def pending_work(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
             decision = work["decisions"][-1]
             target = decision.get("target_session_id")
             child = state.get("agents_server_sessions", {}).get(target)
-            if isinstance(child, dict) and child.get("pending_observation") is True:
+            if (
+                isinstance(target, str)
+                and target in work.get("async_targets", {})
+                and isinstance(child, dict)
+                and child.get("owner_agent_id") == "main"
+                and (
+                    child.get("pending_observation") is True
+                    or target in agents_server_session_advisor.actively_waited_session_ids([target])
+                )
+            ):
                 continue
             path = decision.get("uwi_file")
             if isinstance(path, str):
