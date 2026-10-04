@@ -215,3 +215,136 @@ def test_public_name_runs_selection_check(
 
     assert code == 1
     assert "a.md: 未被覆: src/model.py" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize(
+    ("paths", "same_lane", "rationale", "expected"),
+    [
+        (("src/model.py", "src/model.py"), False, "src/model.pyの異なる定義", 0),
+        (("src/model.py", "src/model.py"), False, "別の対象", 1),
+        (("src/", "src/model.py"), False, "src/model.pyの異なる定義", 0),
+        (("src/", "src/model.py"), False, "src/の異なる定義", 1),
+        (("src/", "src/models/"), False, "src/models/の異なる定義", 0),
+        (("src/", "src/models/"), False, "src/models-old/の定義", 1),
+        (("src/", "src-old/model.py"), False, "別対象", 0),
+        (("src/model.py", "src/model.py"), True, "同じレーンで直列化", 0),
+    ],
+)
+def test_public_check_requires_shared_path_in_both_lane_rationales(
+    legacy: bool,
+    paths: tuple[str, str],
+    same_lane: bool,
+    rationale: str,
+    expected: int,
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """公開名から新旧入力のパス包含と双方の根拠を確かめ、似た名前と同じレーンを区別する。"""
+    repo, notes = env
+    for name, path in zip(("a.md", "b.md"), paths, strict=True):
+        _awi(notes, name, f"`{path}`を書き込む。")
+    decisions_key, wi_key, lane_key, files_key, costs_key, rationale_key = (
+        ("decisions", "awi", "lane", "write_files", "lane_costs", "rationale")
+        if legacy
+        else ("選定", "WI", "レーン", "書込対象", "レーンの所要時間", "根拠")
+    )
+    selection = tmp_path / "selection.yaml"
+    selection.write_text(
+        yaml.safe_dump(
+            {
+                decisions_key: [
+                    {wi_key: "a.md", lane_key: "lane-01", files_key: [paths[0]]},
+                    {wi_key: "b.md", lane_key: "lane-01" if same_lane else "lane-02", files_key: [paths[1]]},
+                ],
+                costs_key: [
+                    {lane_key: "lane-01", rationale_key: rationale},
+                    {lane_key: "lane-02", rationale_key: rationale},
+                ],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        run_script.dispatch(
+            argparse.Namespace(
+                script_name="pick-wi-check",
+                script_args=["--", "--work-dir", str(repo), str(selection)],
+            )
+        )
+        == expected
+    )
+
+    err = capsys.readouterr().err
+    if expected:
+        assert "a.md（lane-01）とb.md（lane-02）" in err
+        assert "重複パスの根拠不足" in err
+        assert paths[1] in err
+        assert "次の操作:" in err
+        assert "同じレーンへまとめる" in err
+    else:
+        assert not err
+
+
+@pytest.mark.parametrize("missing_lane", ["lane-01", "lane-02"])
+def test_overlap_rejects_rationale_missing_on_either_side(
+    missing_lane: str,
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """片方の根拠だけが共通パスを持つ場合も、根拠が不足するレーンを示す。"""
+    repo, notes = env
+    for name in ("a.md", "b.md"):
+        _awi(notes, name, "`src/model.py`を書き込む。")
+    selection = tmp_path / "selection.yaml"
+    selection.write_text(
+        yaml.safe_dump(
+            {
+                "選定": [
+                    {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+                    {"WI": "b.md", "レーン": "lane-02", "書込対象": ["src/model.py"]},
+                ],
+                "レーンの所要時間": [
+                    {"レーン": lane, "根拠": "別対象" if lane == missing_lane else "src/model.pyの異なる定義"}
+                    for lane in ("lane-01", "lane-02")
+                ],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    assert check_selection.main(["--work-dir", str(repo), str(selection)]) == 1
+    assert f"src/model.py（{missing_lane}）" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failure", [None, "overlap", "missing-normal", "duplicate", "invalid-condition"])
+def test_public_check_separates_observation_wait(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str | None
+) -> None:
+    """通常候補0件と観測待ちの別集合を受理し、重複・不正な条件・候補不一致を拒否する。"""
+    notes = tmp_path / "notes"
+    (notes / "processing").mkdir(parents=True)
+    name = "20260930-175957-001.md"
+    waiting = {"WI": name, "条件": "selection-empty", "計画ファイル": "30-1849_process-wi_レーン02.md", "実装commit": "a" * 40}
+    selection: dict[str, object] = {"通常候補": [], "観測待ち": [waiting], "選定": [], "レーンの所要時間": []}
+    if failure == "overlap":
+        selection["通常候補"] = [name]
+        selection["選定"] = [{"WI": name, "レーン": "なし", "書込対象": []}]
+    elif failure == "missing-normal":
+        selection["通常候補"] = [name]
+    elif failure == "duplicate":
+        selection["観測待ち"] = [waiting, waiting]
+    elif failure == "invalid-condition":
+        waiting["条件"] = "time-passed"
+    path = tmp_path / "selection.yaml"
+    path.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
+    monkeypatch.setattr(check_selection._plan_file, "private_notes_root", lambda: notes)  # pylint: disable=protected-access
+    result = check_selection.main([str(path), "--work-dir", str(tmp_path)])
+    assert result == (0 if failure is None else 1)
+    if failure:
+        assert capsys.readouterr().err

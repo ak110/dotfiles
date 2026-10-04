@@ -155,14 +155,14 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
         ["review-audit", "list", "--repo=owner/repo"],
     ],
 )
-def test_output_file_option_is_accepted_by_listing_commands(argv: list[str], tmp_path: pathlib.Path) -> None:
+def test_output_file_option_is_rejected_by_listing_commands(argv: list[str], tmp_path: pathlib.Path) -> None:
     output_path = tmp_path / "output.txt"
 
-    args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
-        [*argv, "--output-file", str(output_path)]
-    )
-
-    assert args.output_file == output_path
+    with pytest.raises(SystemExit, match="2"):
+        atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
+            [*argv, "--output-file", str(output_path)]
+        )
+    assert not output_path.exists()
 
 
 def test_output_file_rejects_relative_path(tmp_path: pathlib.Path) -> None:
@@ -195,7 +195,7 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
     # `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、系列名を含まない値を与える。
     for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
-        env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = "claude:opus/medium"
+        env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = "false" if key == "codex_fast_mode" else "claude:opus/medium"
     # Gitの作業ツリー外で起動し、`--target-repo`を省略した場合も対象を限定しない状態にする。
     with subprocess.Popen(  # noqa: S603
         ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],
@@ -1343,19 +1343,20 @@ class TestAddTargetRepoOptionParser:
 
 
 @pytest.mark.parametrize("subcommand", ["adopt", "reject"])
-def test_transition_commit_help_describes_resolution_and_warning(
+def test_transition_commit_help_describes_worktree_resolution_before_mutation(
     subcommand: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """採否のcommit案内が対象リポジトリでの解決と対応不能時の警告継続を説明する。"""
+    """採否のcommit案内がworktreeの指定と、解決不能時の状態変更前の停止を説明する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(["wi", subcommand, "--help"])
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
-    assert "対象リポジトリで解決できるrevision" in output
-    assert "記録時に対象リポジトリで解決" in output
-    assert "対応付けできない場合は警告" in output
+    assert "ローカルworktreeとrevisionを検証" in output
+    assert "終了コード2で状態変更前に停止" in output
+    assert "対象worktreeの絶対パスを--target-repoへ指定" in output
+    assert "対応付けできない場合は警告" not in output
 
 
 def test_process_loop_abort_commands_report_and_transition_state(

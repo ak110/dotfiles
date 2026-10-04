@@ -30,8 +30,10 @@ _NOTICE_PATTERN = re.compile(
 _NOTICE_BOUNDARY_PATTERN = re.compile(r"</?atk-auto\b[^>]*>")
 _EXPECTED_VERIFICATION_NOTICE_BODY = (
     "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙し、"
-    "それぞれの内容を現物（原文・実装・規範・実行結果）と比べて確かめてから応答する。"
+    "それぞれの内容を現物（原文・実装・規範・実行結果・対象の目的を定める仕様・設計記録）と比べて確かめてから応答する。"
     "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動する。"
+    "不具合の有無・原因・直し方を述べるか確認で提案する場合も、述べる前に起動する。"
+    "対処を委譲先やAWIへ委ねる場合も含む。"
     "現物と比べて確かめられない場合は同意も変更もしない。"
     "いずれも含まないと判定した発話では、現物との比較を要さないと判断して次の工程へ進む。"
     "稼働中の依頼がある場合は、未完了工程が元の依頼の目的に対応するか確かめてから次に実行する工程を確定する。"
@@ -362,7 +364,7 @@ class TestNonMatchingPrompts:
         assert set(state) == {"last_user_prompt_at", "termination_evidence"}
         evidence = state["termination_evidence"]
         assert not evidence["works"]
-        assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True}
+        assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True, "offset": 0}
 
     @pytest.mark.parametrize(
         ("prompt", "expected_keys"),

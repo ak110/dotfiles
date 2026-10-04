@@ -146,7 +146,7 @@ def test_child_session_collected_by_agents_wait_leaves_auto_resume_targets() -> 
 
 
 def test_child_session_collected_by_agents_wait_output_file(tmp_path: pathlib.Path) -> None:
-    """`--output-file`で保存した待機結果も回収の根拠として読む。"""
+    """生成側が自動保存した待機結果も回収の根拠として読む。"""
     session = state.SessionState("parent-1", "/tmp")
     _start_child(session, "toolu_1", "child-1")
     output = tmp_path / "wait.jsonl"
@@ -154,7 +154,7 @@ def test_child_session_collected_by_agents_wait_output_file(tmp_path: pathlib.Pa
 
     state.consume_claude_agents_server_message(
         session,
-        {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": f"atk agents wait --output-file {output}"}}]},
+        {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": "atk agents wait"}}]},
     )
     state.consume_claude_agents_server_message(
         session,
@@ -388,3 +388,15 @@ async def test_terminal_transition_logs_safe_fields_once(caplog: pytest.LogCaptu
     assert caplog.text.count("session_transition event=terminal") == 1
     assert "session_id=session-1 writer=state status=completed turn_seq=0" in caplog.text
     assert "秘密の結果本文" not in caplog.text
+
+
+def test_stderr_saved_jsonl_is_not_wait_collection(tmp_path: pathlib.Path) -> None:
+    """stderrの保存先が終端JSONを含んでも、stdoutの回収結果へ混ぜない。"""
+    session = state.SessionState("parent-1", str(tmp_path))
+    session.live_child_session_ids.add("child-1")
+    output = tmp_path / "stderr.jsonl"
+    output.write_text('{"session_id":"child-1","status":"completed"}\n', encoding="utf-8")
+    state.consume_agents_wait_output(session, f"標準エラー保存先: {output}\n標準エラー行数: 1\n")
+    assert session.live_child_session_ids == {"child-1"}
+    state.consume_agents_wait_output(session, f"保存先: {output}\n行数: 1\n")
+    assert not session.live_child_session_ids

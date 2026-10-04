@@ -1,7 +1,9 @@
 """計画の進捗ログ追記処理を検証する。"""
 
 import datetime
+import json
 import pathlib
+import subprocess
 
 import append_progress_log
 import pytest
@@ -91,6 +93,78 @@ def test_rejects_invalid_structure_without_changes(tmp_path: pathlib.Path, conte
     # 構造の不正は、置くべき見出しと固定表か、構造を確かめるコマンドを次の操作として示す。
     next_action = raised.value.next_action
     assert "`atk run-script plan-check --" in next_action or "の列）だけの固定表を置いてから再実行する" in next_action
+
+
+@pytest.mark.parametrize("handoff", [False, True])
+def test_public_cli_records_and_reads_commit_mapping(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
+) -> None:
+    """同じ公開CLIで計画と引継ぎの生成・取得を確認し、既存本文を保持する。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for args in [
+        ["init"],
+        ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "example"],
+    ]:
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, timeout=30)
+    oid = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True, timeout=30
+    ).stdout.strip()
+    wi = "20261004-044311-001.md"
+    path = tmp_path / "record.md"
+    original = (
+        "# 引継ぎ\n\n既存の判断。\n"
+        if handoff
+        else (
+            "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n  - " + wi + ": 対応\n\n" + _plan().removeprefix("# 計画\n\n")
+        )
+    )
+    path.write_text(original, encoding="utf-8")
+    common = [str(path), "--worktree", str(repo), "--awi", wi]
+    if handoff:
+        common += ["--handoff", "--allowed-awi", wi]
+    assert append_progress_log.main([*common, "--commit", "HEAD", "--completed-step", "実装", "--result", "成功"]) == 0
+    assert path.read_text(encoding="utf-8").startswith(original)
+    assert append_progress_log.main([*common, "--get-commits"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [oid]}
+    saved = path.read_bytes()
+    assert (
+        append_progress_log.main([*common, "--commit", "missing-commit", "--completed-step", "実装", "--result", "成功"]) == 1
+    )
+    assert path.read_bytes() == saved
+    assert "次の操作:" in capsys.readouterr().err
+
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "--amend",
+            "--allow-empty",
+            "-m",
+            "new",
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    new_oid = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True, timeout=30
+    ).stdout.strip()
+    replacements = tmp_path / "rewrite.json"
+    replacements.write_text(json.dumps({oid: new_oid}), encoding="utf-8")
+    assert (
+        append_progress_log.main(
+            [*common, "--rewrite-map", str(replacements), "--completed-step", "履歴検収", "--result", "成功"]
+        )
+        == 0
+    )
+    assert append_progress_log.main([*common, "--get-commits"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [new_oid]}
 
 
 def test_cli_structure_error_reports_next_action(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -53,7 +53,7 @@ class TestConfigShow:
         assert "private_notes:" in out
         for key in config_module._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
             assert f"{key}: {config_module.resolve_mutable_setting(key)}" in out
-        assert len(out.splitlines()) == 9
+        assert len(out.splitlines()) == 10
         assert ".resolved:" not in out
         assert "execute_model:" not in out
         assert "execute_fix_model:" not in out
@@ -140,6 +140,62 @@ class TestConfigShow:
         for key in ("explore_model", "explore_fast_model", "pick_wi_model", "execute_model", "execute_review_model"):
             assert f"{key}:" not in captured.out
         assert not captured.err
+
+
+class TestCodexFastMode:
+    """公開config操作で速度の実効値・保存値・環境変数と既存プリセットの独立性を確かめる。"""
+
+    @pytest.mark.parametrize("value", ["true", "false"])
+    def test_public_round_trip_and_preset_preservation(
+        self, value: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["config", "get", "codex_fast_mode"], home=tmp_path)
+        assert capsys.readouterr().out == "false\n"
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["config", "set", "codex_fast_mode", value], home=tmp_path)
+        assert not capsys.readouterr().err
+        path = tmp_path / "config" / "config.json"
+        assert json.loads(path.read_text(encoding="utf-8"))["codex_fast_mode"] == value
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["config", "apply-preset", "codex-primary"], home=tmp_path)
+        capsys.readouterr()
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["config", "get", "codex_fast_mode"], home=tmp_path)
+        assert capsys.readouterr().out == f"{value}\n"
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["config", "show"], home=tmp_path)
+        shown = capsys.readouterr()
+        assert f"codex_fast_mode: {value}\n" in shown.out
+        assert not shown.err
+
+    @pytest.mark.parametrize("value", ["TRUE", "False", "1", "0", "yes", "", "codex:gpt-6-sol/medium"])
+    def test_rejects_other_values_without_writing(
+        self, value: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / "config" / "config.json"
+        path.parent.mkdir(parents=True)
+        path.write_text('{"codex_fast_mode": "true"}\n', encoding="utf-8")
+        original = path.read_bytes()
+        with pytest.raises(SystemExit, match="2"):
+            atk.main(["config", "set", "codex_fast_mode", value], home=tmp_path)
+        assert "true, false" in capsys.readouterr().err
+        assert path.read_bytes() == original
+
+    def test_environment_overrides_saved_value_and_warns_on_set(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "true")
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["config", "set", "codex_fast_mode", "false"], home=tmp_path)
+        assert "AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODEが優先" in capsys.readouterr().err
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["config", "get", "codex_fast_mode"], home=tmp_path)
+        assert capsys.readouterr().out == "true\n"
+        monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE")
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["config", "get", "codex_fast_mode"], home=tmp_path)
+        assert capsys.readouterr().out == "false\n"
 
 
 class TestConfigGet:

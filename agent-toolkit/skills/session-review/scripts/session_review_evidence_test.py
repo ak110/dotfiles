@@ -11,6 +11,7 @@ import pytest
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit import agents_server_mcp  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._atk import outcome
 from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -42,16 +43,14 @@ def _execution_result_transcript(tmp_path: pathlib.Path, *contents: str) -> path
     )
 
 
-def test_output_file_saves_events_and_prints_path_and_line_count(
+def test_direct_cli_returns_events_for_stream_redirection(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
-    output_path = tmp_path / "events.jsonl"
+    assert evidence.main([str(transcript)]) == 0
 
-    assert evidence.main([str(transcript), "--output-file", str(output_path)]) == 0
-
-    assert json.loads(output_path.read_text(encoding="utf-8")) == {
+    assert json.loads(capsys.readouterr().out) == {
         "kind": "user",
         "runtime_inserted": False,
         "text": "入力",
@@ -60,16 +59,12 @@ def test_output_file_saves_events_and_prints_path_and_line_count(
         "sequence": 1,
         "record": "main",
     }
-    assert capsys.readouterr().out == f"保存先: {output_path.resolve()}\n行数: 1\n"
 
 
-def test_output_file_rejects_relative_path(capsys: pytest.CaptureFixture[str]) -> None:
-    assert evidence.main(["unused.jsonl", "--output-file", "relative.jsonl"]) == 2
-    assert json.loads(capsys.readouterr().out) == {
-        "kind": "error",
-        "text": "--output-fileには絶対パスを指定してください。",
-        "next_action": "`--output-file`へ絶対パスを渡して再実行する",
-    }
+def test_output_file_option_is_removed(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        evidence.main(["unused.jsonl", "--output-file", "relative.jsonl"])
+    assert "--output-file" in capsys.readouterr().err
 
 
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:
@@ -8382,3 +8377,150 @@ def test_context_at_rejects_invalid_input(tmp_path: pathlib.Path, capsys, argume
     (event,) = _read_jsonl(capsys)
     assert event["kind"] == "error"
     assert message in event["text"]
+
+
+def test_bundle_excludes_atk_no_match_without_hiding_real_failures(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """結果行の契約を持つ終了1を除き、警告・失敗・連結・別コード・切り詰めは候補へ残す。"""
+    no_match = outcome.NO_MATCH_PREFIX + "検索は正常に完了した"
+    cases = [
+        (["atk", "wi", "grep", "needle"], 1, no_match),
+        (["atk", "managed-temp", "list"], 1, no_match),
+        (
+            ["/repo/agent-toolkit/bin/atk", "wi", "grep", "needle", "--output-file=/file"],
+            1,
+            no_match + "\n保存先: /file\n行数: 0",
+        ),
+        (["timeout", "60", "env", "KEY=VALUE", "uv", "run", "--frozen", "bash", "-lc", "atk wi grep 'a|b'"], 1, no_match),
+        (["atk", "wi", "grep", "|"], 1, no_match),
+        (["atk", "wi", "grep", "needle"], 1, no_match + "\n" + outcome.WARNING_PREFIX + "要確認"),
+        (["atk", "wi", "grep", "needle"], 1, no_match + "\n" + outcome.FAILURE_PREFIX + "入力が不正"),
+        (["atk", "wi", "grep", "needle"], 2, no_match),
+        (["other", "wi", "grep", "needle"], 1, no_match),
+        (["bash", "-lc", "atk wi grep needle; false"], 1, no_match),
+        (["bash", "-lc", "bash -lc 'atk wi grep needle' && false"], 1, no_match),
+        (["bash", "-lc", "atk wi grep needle\nfalse"], 1, no_match),
+        (["atk", "wi", "grep", "needle"], 1, no_match + "\n" + "出力" * 1500 + "\n" + outcome.WARNING_PREFIX + "末尾警告"),
+    ]
+    records = _bundle_failed_codex_commands(tmp_path, capsys, cases)
+    lines = {locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]}
+    assert lines == set(range(6, 14))
+    assert records[-1]["excluded"]["normal-negative-result"] == 5
+
+
+def test_bundle_excludes_atk_no_match_of_claude_bash(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """引用した検索語と包装を保ち、Bashの終了1と結果行を公開bundleで同じ区分へ数える。"""
+    no_match = outcome.NO_MATCH_PREFIX + "検索は正常に完了した"
+    commands = [
+        "atk wi grep 'a|b'",
+        "atk managed-temp list",
+        "timeout 60 env KEY=VALUE uv run --frozen atk wi grep ';' --output-file=/file",
+        "bash -lc \"atk wi grep '&&'\"",
+        "atk wi grep needle && false",
+        "atk wi grep needle | cat",
+        "bash -lc 'atk wi grep needle' && false",
+        "atk wi grep needle\nfalse",
+    ]
+    entries = []
+    for index, command in enumerate(commands):
+        call_id = f"no-match-{index}"
+        entries.extend(
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}}],
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": call_id,
+                                "is_error": True,
+                                "content": "Exit code 1\n" + no_match + "\n保存先: /file\n行数: 0",
+                            }
+                        ],
+                    },
+                },
+            ]
+        )
+    transcript = _write_transcript(tmp_path, entries)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    _read_jsonl(capsys)
+    records = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    lines = {locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]}
+    assert lines == {10, 12, 14, 16}
+    assert records[-1]["excluded"]["normal-negative-result"] == 4
+
+
+@pytest.mark.parametrize("runtime", ["claude", "handback", "codex", "agy"])
+@pytest.mark.parametrize("long_body", [False, True])
+def test_bundle_preserves_improvement_lines_of_every_runtime(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str, long_body: bool
+) -> None:
+    """未転記の改善点を、各記録形式の短い返却と境界・末尾を含む長い返却から候補まで通す。"""
+    notes = ["気付いた改善点: 同じ操作を繰り返した。", "  気付いた改善点: 手順に不要な回避があった。"]
+    body = "状態: completed\n未解決の指摘数: 0\n"
+    if long_body:
+        boundary_note = "気付いた改善点: 短縮境界をまたぐ行も全文で保持する。"
+        body += "x" * (1994 - len(body)) + "\n" + boundary_note + "\n" + "後続" * 400 + "\n"
+        notes.insert(0, boundary_note)
+    body += "\n".join(notes[-2:])
+    entries: list[dict[str, object]]
+    if runtime == "claude":
+        entries = [_assistant_text(body)]
+    elif runtime == "handback":
+        entries = [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "SubagentHandback", "id": "handback", "input": {"message": body}}],
+                },
+            },
+            _assistant_text("返却を渡した。"),
+        ]
+    elif runtime == "codex":
+        entries = [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "final",
+                    "content": [{"type": "output_text", "text": body}],
+                },
+            }
+        ]
+    else:
+        entries = [{"event": "result", "result": {"status": "SUCCESS", "response": body}}]
+    texts = _bundle_delegate_return_texts(tmp_path, entries)
+    capsys.readouterr()
+    assert len(texts) == 1
+    for note in notes:
+        assert note in texts[0]
+    assert texts[0].count("気付いた改善点:") == len(notes)
+    if long_body:
+        assert "…[省略]" in texts[0]
+
+
+def test_assistant_clipping_without_improvement_and_main_record_separation() -> None:
+    """標識の無い本文は元の短縮を使い、メインの標識は保持しても委譲返却候補にはしない。"""
+    body = "本文" * 1500
+    event = evidence._event("assistant", body)  # pylint: disable=protected-access
+    assert event is not None
+    assert event["text"] == body[:2000] + "…[省略]"
+    note = "気付いた改善点: メインの改善点。"
+    event = evidence._event("assistant", body + "\n" + note)  # pylint: disable=protected-access
+    assert event is not None and note in event["text"]
+    event.update(kind="final-result", record="main", line=1)
+    candidates = evidence._candidate_events([event], [], [])  # pylint: disable=protected-access
+    assert not candidates[:-1]

@@ -52,9 +52,10 @@ description: >
   fixtureで文書などの入力を作成して実装を呼ぶテストは、実装の動作テストとして実装の近くへ残す。
   収集や配布の制約で近くへ置けない場合は、成立する最も近い場所を選び、その理由を記録する
 - 複数領域の既存成果物の不変条件を確かめるPythonテストは、`repo_invariant`マーカーで識別する。
-  ファイル全体が該当する場合は`pytestmark = pytest.mark.repo_invariant`、通常の動作テストと混在する場合は
-  該当するテストだけに`@pytest.mark.repo_invariant`を付ける。変更ファイルだけからはたどれないテストを選ぶためであり、
-  通常の動作テストを一律にこのマーカーへ含めない。検証対象の探索は`agent-toolkit:check-execution`の
+  ファイルは`*_invariant_test.py`とし、全体が該当する場合は`pytestmark = pytest.mark.repo_invariant`を付ける。
+  通常の動作テストと混在するときは、マーカー対象だけを近接する専用ファイルへ分離し、両projectの
+  `pytest-fast-targets`が通常テストを収集せず同じ集合を選ぶようにする。検証用のヘルパーの入力を確かめるテストも
+  元から同じマーカー対象だった場合は保持する。検証対象の探索は`agent-toolkit:check-execution`の
   `references/verification-scope.md`に従い、個々のテストと編集対象の対応表を規範へ増やさない
 - テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`へ集約する。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、

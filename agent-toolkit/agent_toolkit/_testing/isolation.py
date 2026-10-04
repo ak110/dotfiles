@@ -10,7 +10,7 @@
 - ホームディレクトリと設定ディレクトリの環境変数
 - private-notes（`AGENT_TOOLKIT_PRIVATE_NOTES`）
 - 一時ディレクトリ
-- Gitのglobal・system設定
+- Gitのglobal・system設定と、呼び出し元のrepo・indexの指定
 - 開発セッションの環境変数（エージェント環境の判定、委譲先とprocess-loopの標識）
 - PATH上の開発機専用のエージェントCLI（`codex`・`claude`・`agy`）
 
@@ -55,6 +55,25 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
 )
 _GIT_IDENTITY_NAME = "test"
 _GIT_IDENTITY_EMAIL = "test@example.invalid"
+# `git rev-parse --local-env-vars`が示す呼び出し元のGit指定を、設定の差し替えより先に解除する。
+# commit hookのGIT_DIRを残すと、一時repoのinitが元repoの設定を書き換える。
+_GIT_LOCAL_ENVIRONMENT_NAMES = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+)
 _HOST_RESTORED_ENVIRONMENT_NAMES = (*HOME_ENVIRONMENT_NAMES, *CONFIG_DIRECTORY_ENVIRONMENT_NAMES, "PATH")
 # 隔離する前の値。fixture適用後の`os.environ`からは取得できないため、conftestが本モジュールを
 # 読み込む時点（どのfixtureよりも先）で控える。`host_environ`と`restore_host_environment`が復元に使う。
@@ -112,6 +131,8 @@ def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     for name in ("TMPDIR", "TEMP", "TMP"):
         monkeypatch.setenv(name, str(tmp_path))
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    for name in _GIT_LOCAL_ENVIRONMENT_NAMES:
+        monkeypatch.delenv(name, raising=False)
     # 識別情報を環境変数で与え、global・system設定を遮断する。テストが生成した作業ツリーを所有者差で
     # 拒否しないよう、`safe.directory=*`をコマンドスコープの設定として与える。
     # 環境変数は`git config user.*`より優先されるため、既存のリポジトリ生成箇所の設定は残してよい。
@@ -178,6 +199,9 @@ def assert_development_state_isolated(tmp_path: pathlib.Path) -> None:
     assert tempfile.gettempdir() == str(tmp_path)
     assert os.environ["GIT_CONFIG_GLOBAL"] == os.devnull
     assert os.environ["GIT_CONFIG_SYSTEM"] == os.devnull
+    for name in _GIT_LOCAL_ENVIRONMENT_NAMES:
+        if name != "GIT_CONFIG_COUNT":
+            assert name not in os.environ, name
     for name in DEVELOPMENT_SESSION_ENVIRONMENT_NAMES:
         assert name not in os.environ, name
     for name in AGENT_CLI_NAMES:

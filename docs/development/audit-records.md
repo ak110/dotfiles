@@ -542,3 +542,63 @@ uv run --frozen pytest -p no:cacheprovider ci_workflow_test.py custom_linters_in
 AWI `20261003-134122-001.md`と`20261003-110859-001.md`の起草時に、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
 実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。確認した範囲は判定器の契約テストまでである。対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。
+
+## dotfiles-development：不変条件テストのfast自動実行：2026年10月4日
+
+pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。変更前のマーカー収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。ファイル名だけで件数を確認すると、この対象が外れても通常のfastは成功するため、各nodeの対応を比較する。
+
+再検証はrootで次を個別に実行する。
+
+```sh
+uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex . --collect-only -q
+uv run --frozen pyfltr fast --commands=pytest
+uv run --frozen prek run pyfltr --files docs/development/design-packages.md
+```
+
+収集結果の各nodeが専用ファイルへ一度ずつ対応し、通常の動作nodeを追加していないことを確認する。Markdownだけを渡した既存hookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
+
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：動的なwatch対象の指定：2026年10月4日
+
+HEAD `80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。
+保持記録から解決した値を`atk watch --worktree "$worktree_path"`と
+`atk watch --file "$artifact_path"`へ個別に渡し、両方の終了コード0を確認した。
+前者は作業ツリーのdirty件数とHEAD、後者はファイルのlinesとageを返した。
+Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状態と完了通知を用いる既存契約を保つ。
+再検証は同じ公開ヘルプを取得し、その回の読み取り可能な作業ツリーと通常ファイルを保持記録から解決して、
+上記の各コマンドへ渡す。cwd、コマンド、標準出力、標準エラーと終了コードを保存し、項目と受理形式を比べる。
+
+## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月3日
+
+AWI `20261004-002450-001.md`の起草時の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、
+`showThinkingSummaries=false`だった。transcriptの`thinking`ブロックに保存された文がユーザーの画面へ
+通常の応答文と同じ見た目で表示された。原本は同WIが記すtranscriptの88行目と、
+ユーザーが貼った画面表示である。続くStopはtext本文の欠落を遮断したが、思考の非表示を述べる理由は画面と一致しなかった。
+2026年9月28日の記録（Claude Code 2.1.283）では思考の文が表示されなかった。当時の記録は保持する。
+表示の有無はエージェントが応答時に確かめられないため、規範と通知は表示されないものとして発話本文へ書くよう求める。
+再検証ではホスト版、モデルと同設定を保持し、ユーザーの画面表示をtranscriptの同一messageのtext・thinkingへ対応付ける。
+transcriptだけの取得を画面表示の観測として扱わず、画面へ届いた内容とhookが述べる理由を比べる。
+
+## dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日
+
+AWI `20261004-004442-001.md`の起草時の測定はClaude Code 2.1.288、codex-cli 0.160.0、
+ripgrep 15.2.0、GNU grep 3.11、Claude Code組込みugrep 7.8.4で、UTF-8ロケールだった。
+Claude CodeのBashツールでgrepはugrepを呼ぶシェル関数として観測された。
+
+| 対象とコマンド | 起草時の測定 |
+| --- | --- |
+| Claude本体、`rg -a -c -F showThinkingSummaries` | 7行、0.11〜0.22秒 |
+| 同本体、`rg -a -o '.{0,80}showThinkingSummaries.{0,80}'` | 11件、0.04秒、JSソースの前後80文字まで取得 |
+| 同本体、`rg -a -o -m 2 '.{0,200}showThinkingSummaries.{0,200}'` | 文字列表の2件、74バイト。JSソースを含まない |
+| 同本体、`rg -a -o '.{0,300}showThinkingSummaries.{0,300}'` | 9件、0.11秒 |
+| 同本体、`rg -a -o '.{300}showThinkingSummaries.{300}'` | 7件、0.12秒 |
+| 同本体、UTF-8のugrep・GNU grepで`-a -o -E '.{0,300}showThinkingSummaries.{0,300}'` | 30秒で打切り、終了124。GNU grepの`LC_ALL=C`では1.33秒 |
+| 同本体、`grep -a -o '.\{300\}showThinkingSummaries.\{300\}'` | 7件、1.4〜2.7秒。120秒を超えた回もあり、差を生む条件は未特定 |
+| 同本体、`strings -n 6`をファイルへ保存 | 1.72秒、55311970バイト |
+| Codex本体、`rg -a -c -F fork_turns`と`rg -a -o '.{0,80}fork_turns.{0,80}'` | それぞれ0.73秒と0.12秒 |
+
+実装時は`command -v`と`readlink -f`でClaude Code 2.1.289とcodex-cli 0.160.0の実体を解決した。
+同じripgrep 15.2.0で、60秒上限の`-a -c -F`はClaudeが7行・0.04秒、Codexが9行・0.05秒だった。
+`-a -o`の前後0〜200文字の文脈はそれぞれ0.04秒・0.05秒で、全て終了0・stderr空。
+ClaudeではJSの設定説明、Codexではfork_turnsのヘルプ文を含む全出力をファイルへ保存した。
+再検証は実体を同じ解決形で取得し、上記の語をdotfiles-developmentの一致行数と文脈取得の各コマンドへ渡す。
+ホスト版、検索ツール版、ロケール、所要時間と一致行数を保持し、文字列表より後ろにある文脈も使って判断する。

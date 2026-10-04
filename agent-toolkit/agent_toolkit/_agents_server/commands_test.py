@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import commands, state
-from agent_toolkit._atk import config, environment
+from agent_toolkit._atk import config, environment, managed_temp
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 
 status_file = commands.status_file
@@ -37,7 +37,7 @@ def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureF
         "結果を保持しない`stop`とsession登録簿での喪失確定",
         "待機対象登録が破損している場合",
         "終端statusでは追加の結果受領操作は不要",
-        "`--output-file`を指定した場合",
+        "エージェント環境では出力するJSON Linesを生成側の保存先へ全量で保存",
         "通知件数と送信元session ID",
         "回収した本文はその保存先に残る",
         "MCPの`list`を1回呼び出してから同じコマンドを再実行",
@@ -63,6 +63,28 @@ def test_agents_wait_passes_explicit_root_to_waiter(
         atk.main(["agents", "wait", "--root-session-id", "mcp-root"])
 
     assert received == ["mcp-root"]
+
+
+@pytest.mark.usefixtures("session_environment")
+def test_public_wait_save_failure_keeps_unreceived_result(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開waitの保存先を開けない場合、実際の未回収結果を消費しない。"""
+    monkeypatch.setenv("CLAUDECODE", "1")
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(parents=True, exist_ok=True)
+    result_file = results / "session-1.json"
+    original = json.dumps({"status": "completed", "owner_status_file": "root.json", "agent_message": "保持する結果"})
+    result_file.write_text(original, encoding="utf-8")
+
+    def fail(_prefix: str) -> pathlib.Path:
+        raise OSError("保存準備に失敗")
+
+    monkeypatch.setattr(managed_temp, "create_managed_temp", fail)
+    with pytest.raises(SystemExit, match="1"):
+        atk.main(["agents", "wait"])
+    assert result_file.read_text(encoding="utf-8") == original
+    assert "呼び出しを開始しない" in capsys.readouterr().err
 
 
 def _without_wrapping(text: str) -> str:
@@ -144,16 +166,12 @@ def test_agents_list_returns_diagnostic_fields_without_prompt(
 
 
 @pytest.mark.usefixtures("session_environment")
-def test_agents_wait_saves_collected_lines_to_the_output_file(
+def test_agents_wait_saves_small_result_without_output_option(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保存先を指定した待機は、終端行ごとの依頼名と本文ファイルを標準出力に示し、JSON Linesを指定したファイルへ残す。
-
-    保存先を持たない待機では、回収と同時に原本が削除されて本文が標準出力にだけ現れ、
-    後続の工程や後続のセッションがその本文を取得できない。要約行が依頼名と本文ファイルを示さないと、
-    呼び出し元はsession_idから依頼名への対応表と、保存先を開いて本文を取り出す処理を自前で持つことになる。
-    """
+    """短い回収結果も生成側のファイルへ残し、内訳とJSON Linesの内容を一致させる。"""
     results = status_file.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -163,12 +181,14 @@ def test_agents_wait_saves_collected_lines_to_the_output_file(
         "session": {"session_id": "session-1", "label": "調査レーンA"},
     }
     (results / "session-1.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    destination = tmp_path / "wait-result.jsonl"
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents", "wait", f"--output-file={destination}"])
+        atk.main(["agents", "wait"])
 
     output_lines = capsys.readouterr().out.splitlines()
+    destination = pathlib.Path(output_lines[0].removeprefix("保存先: "))
     saved = json.loads(destination.read_text(encoding="utf-8").strip())
     body_path = pathlib.Path(saved["agent_message_path"])
     assert output_lines == [
@@ -235,7 +255,9 @@ def test_agents_wait_auto_saves_long_result_for_agent_and_keeps_collection_reada
 
 
 @pytest.mark.usefixtures("session_environment")
-def test_agents_wait_saves_notice_summary(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_agents_wait_saves_notice_summary(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """通知だけの待機では、送信元と通知件数を保存先を読む前に示す。"""
     notices = status_file.notices_directory("root-session", tmp_path)
     notices.mkdir(parents=True)
@@ -243,12 +265,15 @@ def test_agents_wait_saves_notice_summary(tmp_path: pathlib.Path, capsys: pytest
         json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-28T00:00:00Z", "body": "警告"}),
         encoding="utf-8",
     )
-    destination = tmp_path / "notice.jsonl"
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents", "wait", f"--output-file={destination}"])
+        atk.main(["agents", "wait"])
 
-    assert capsys.readouterr().out.splitlines() == [
+    output_lines = capsys.readouterr().out.splitlines()
+    destination = pathlib.Path(output_lines[0].removeprefix("保存先: "))
+    assert output_lines == [
         f"保存先: {destination}",
         "行数: 1",
         "通知: 1件（session_id: session-1）",
@@ -259,7 +284,9 @@ def test_agents_wait_saves_notice_summary(tmp_path: pathlib.Path, capsys: pytest
 
 
 @pytest.mark.usefixtures("session_environment")
-def test_agents_wait_saves_notice_and_terminal_summary(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_agents_wait_saves_notice_and_terminal_summary(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """通知を伴う終端結果では、通知数と終端数をともに示す。"""
     results = status_file.results_directory("root-session", tmp_path)
     results.mkdir(parents=True)
@@ -274,13 +301,16 @@ def test_agents_wait_saves_notice_and_terminal_summary(tmp_path: pathlib.Path, c
             json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-28T00:00:00Z", "body": f"通知{sequence}"}),
             encoding="utf-8",
         )
-    destination = tmp_path / "both.jsonl"
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents", "wait", f"--output-file={destination}"])
+        atk.main(["agents", "wait"])
 
+    output_lines = capsys.readouterr().out.splitlines()
+    destination = pathlib.Path(output_lines[0].removeprefix("保存先: "))
     saved = json.loads(destination.read_text(encoding="utf-8"))
-    assert capsys.readouterr().out.splitlines() == [
+    assert output_lines == [
         f"保存先: {destination}",
         "行数: 1",
         "通知: 2件（session_id: session-1）",
@@ -358,6 +388,57 @@ def test_agents_show_finds_uncollected_result_after_status_expires(
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "show", "nested"])
     assert capsys.readouterr().err.startswith(f"unknown session: nested\n{NEXT_ACTION_PREFIX}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("session_environment")
+@pytest.mark.parametrize("engine", ["codex", "claude", "agy"])
+@pytest.mark.parametrize("fast_mode", [True, False, None])
+async def test_public_show_preserves_latest_speed_in_live_and_retained_results(
+    engine: str,
+    fast_mode: bool | None,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """実際の共有状態と保持結果を公開showへ渡し、他engineと旧形式へ速度項目を加えない。"""
+    session = state.SessionState(
+        "fast-session",
+        str(tmp_path),
+        engine=engine,
+        model="model",
+        effort="medium",
+        model_type="high_tier",
+        fast_mode=fast_mode,
+        announced=True,
+    )
+    writer = status_file.StatusFileWriter(
+        {session.session_id: session},
+        status_file.StatusFileIdentity("root-session", "fast.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    writer.activate()
+    try:
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["agents", "show", session.session_id])
+        visible = json.loads(capsys.readouterr().out)
+        if engine == "codex" and fast_mode is not None:
+            assert visible["fast_mode"] is fast_mode
+        else:
+            assert "fast_mode" not in visible
+        session.status = "completed"
+        session.turn_completed = True
+        session.agent_message = "完了"
+        session.touch()
+        writer.flush()
+        writer.deactivate()
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["agents", "show", session.session_id])
+        retained = json.loads(capsys.readouterr().out)
+        assert retained.get("fast_mode") == visible.get("fast_mode")
+        assert retained["agent_message"] == "完了"
+    finally:
+        writer.deactivate()
 
 
 @pytest.mark.usefixtures("session_environment")

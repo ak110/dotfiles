@@ -177,14 +177,32 @@ REVIEW_RESULT_NEXT_ACTION = (
 )
 
 
-def with_review_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
-    """labelが`-review`で終わるsessionの`completed`結果へ、指摘の採否を確定する手順を次の操作として加える。
+IMPROVEMENT_RESULT_NEXT_ACTION = (
+    "メインエージェントは`agent_message`の`気付いた改善点:`で始まる全行を、"
+    "次のユーザーへの発話へ逐語で転記する。"
+    "`agent-toolkit/share/rules-main.md`「協調と自律」に従い、出所と必要な確認も添える"
+)
 
-    受領した主体が参照できるのは受け取った結果だけであるため、採否確定の工程へ入る手掛かりを結果へ載せる。
-    失敗と中断の結果、レビュー以外のsessionの結果は変えない。
-    """
+
+def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[str, Any]:
+    """既存の案内を保持して次の操作を併記し、複数の返却処理で同じ案内を重ねない。"""
+    result = dict(result)
+    existing = result.get("next_action")
+    if isinstance(existing, str) and existing:
+        if next_action not in existing:
+            result["next_action"] = f"{existing}\n{next_action}"
+    else:
+        result["next_action"] = next_action
+    return result
+
+
+def with_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
+    """受領時に必要なレビューの採否確定と改善点の転記を、既存の次の操作に併記する。"""
     if result.get("status") == "completed" and isinstance(label, str) and label.endswith(REVIEW_LABEL_SUFFIX):
-        result["next_action"] = REVIEW_RESULT_NEXT_ACTION
+        result = append_result_next_action(result, REVIEW_RESULT_NEXT_ACTION)
+    message = result.get("agent_message")
+    if isinstance(message, str) and any(line.lstrip().startswith("気付いた改善点:") for line in message.splitlines()):
+        result = append_result_next_action(result, IMPROVEMENT_RESULT_NEXT_ACTION)
     return result
 
 
@@ -438,6 +456,7 @@ class SessionState:
     model: str | None = None
     effort: str | None = None
     engine: str = "codex"
+    fast_mode: bool | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     label: str = ""
@@ -526,6 +545,7 @@ class SessionState:
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
     _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
+    _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
 
     @property
@@ -643,6 +663,7 @@ class SessionState:
                 or self.turn_seq != self._published_registry_turn_seq
                 or self.status != self._published_registry_status
                 or self.launcher_session_id != self._published_registry_launcher
+                or self.fast_mode != self._published_registry_fast_mode
             )
         ):
             session_registry.publish(
@@ -652,6 +673,7 @@ class SessionState:
                 cwd=self.cwd,
                 model=self.model,
                 effort=self.effort,
+                fast_mode=self.fast_mode,
                 model_type=self.model_type,
                 launch_kind=self.launch_kind,
                 turn_seq=self.turn_seq,
@@ -666,6 +688,7 @@ class SessionState:
             self._published_registry_terminal = registry_terminal
             self._published_registry_turn_seq = self.turn_seq
             self._published_registry_status = self.status
+            self._published_registry_fast_mode = self.fast_mode
         if not registry_terminal:
             self._terminal_notified = False
         elif not self._terminal_notified:
@@ -702,7 +725,7 @@ class SessionState:
         }
         if _nonempty_error(self.error):
             result["error"] = self.error
-        return with_review_result_next_action(result, self.label)
+        return with_result_next_action(result, self.label)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -714,6 +737,7 @@ class SessionResumeState:
     model: str | None
     effort: str | None
     engine: str
+    fast_mode: bool | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     label: str = ""
@@ -751,6 +775,7 @@ class SessionResumeState:
             model=session.model,
             effort=session.effort,
             engine=session.engine,
+            fast_mode=session.fast_mode,
             status=session.status,
             agent_message=session.agent_message,
             error=session.error,
@@ -758,6 +783,11 @@ class SessionResumeState:
             result_delivered=session.result_delivered,
             retention_deadline=session.retention_deadline,
         )
+
+
+def fast_mode_fields(engine: str | None, fast_mode: object) -> dict[str, bool]:
+    """Codexの既知の速度だけを公開し、旧形式と他engineの表示を保持する。"""
+    return {"fast_mode": fast_mode} if engine == "codex" and isinstance(fast_mode, bool) else {}
 
 
 def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandidate | None:
@@ -901,7 +931,7 @@ def consume_agents_server_tool_result(
 # 委譲先がBashで実行した`atk agents wait`の呼び出しを`child_tool_uses`で識別する名前。
 # agents_serverのツール名と衝突しない値とする。
 _AGENTS_WAIT_TOOL_USE = "atk agents wait"
-# `atk agents wait`が`--output-file`の指定時とエージェント環境の自動保存時に標準出力へ書く保存先の行。
+# `atk agents wait`がエージェント環境の自動保存時に標準出力へ書く保存先の行。
 _AGENTS_WAIT_SAVED_PREFIX = "保存先: "
 
 
@@ -946,7 +976,7 @@ def consume_agents_wait_output(session: SessionState, text: str) -> None:
 
     回収済みの結果は再配送されないため、そのsessionの終端を理由に委譲先を再開させると、
     委譲先は受け取り済みの結果について同じ報告を返し直すだけのturnを費やす。
-    回収の根拠は待機コマンドが返したJSON Linesとし、`--output-file`の指定時と長い結果の自動保存時は標準出力が示す保存先を読む。
+    回収の根拠は待機コマンドが返したJSON Linesとし、エージェント環境の自動保存時は標準出力が示す保存先を読む。
     結果ファイルの不在は公開前の状態と区別できないため、回収の根拠に用いない。
     ホストが待機を背景実行へ移した場合は結果本文が出力ファイルへ書かれるため、そのパスを記録し、
     `consume_agents_wait_background_outputs`が判定の直前に読む。
@@ -972,7 +1002,7 @@ def consume_agents_wait_background_outputs(session: SessionState) -> None:
 def _collected_from_wait_output(text: str) -> set[str]:
     """`atk agents wait`の標準出力から、終端結果を回収したsession識別子を返す。
 
-    標準出力はJSON Linesか、`--output-file`の指定時と長い結果の自動保存時に保存先の行だけを持つ。
+    標準出力はJSON Linesか、エージェント環境の自動保存時に保存先の行だけを持つ。
     ツール結果の本文と背景実行の出力ファイルはどちらも標準出力そのものであるため、同じ規則で読む。
     """
     collected = _collected_session_ids(text)

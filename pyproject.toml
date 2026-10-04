@@ -96,7 +96,7 @@ dev = [
     "filelock>=3.30",
     "jsonschema>=4.26",
     "playwright>=1.61.0",
-    "pyfltr[python]>=3.17.7",
+    "pyfltr[python]>=3.20.0",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
@@ -201,6 +201,7 @@ textlint-packages = [
     "textlint-rule-prh",
     "textlint-rule-preset-ai-words-ja",
 ]
+pytest-fast-targets = ["*_invariant_test.py"]
 
 [tool.pyfltr.custom-commands.sync-generated-files]
 type = "formatter"

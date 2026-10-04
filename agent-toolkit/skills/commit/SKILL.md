@@ -43,6 +43,18 @@ commit直前に次を実施する。
 
 commit時に本来実行されるGit hookまたはhook管理ツール内の対象チェックを省略・迂回する操作には、同じ適用条件を課す。対象には`--no-verify`と`-n`、必要なhookが実行されなくなる`core.hooksPath`の指定（`-c core.hooksPath=/dev/null`など）、`SKIP=<hook名>`などの環境変数による対象チェックの省略を含む。適用条件はpre-commitのstashが競合し、かつ対象ファイルを正式な手順で検証済みであることとする。検証省略やhook失敗の回避は、この適用条件に含めない。プロジェクト規範が個別に認める`SKIP=<hook名>`の運用はその規範に従う。条件を満たして迂回した場合は、その手段と理由をcommit後の報告へ記す。
 
+## WI実装commitの対応
+
+WIを入力に持つ実装commitでは、作成前に対応AWI集合を確定し、commit後に対象worktreeで取得した完全OIDを既存の進捗記録へ残す。通常実装・レビュー修正・CI修正へ同じ記録を使う。計画がある場合は次の形で記録する。計画とworktreeは絶対パス、OIDは完全OID、AWIはファイル名を渡し、全対応AWIを`--awi`で反復指定する。
+
+```text
+atk run-script plan-progress -- <計画> --completed-step <工程> --result <結果> --worktree <worktree> --commit <OID> --awi <AWI>
+```
+
+計画なしでは引き継ぎ記録を対象にし、`--handoff`と対象集合全件の`--allowed-awi`を加える。
+
+終端担当は`atk run-script plan-commits -- <記録> --worktree <worktree> --awi <AWI>`へ同じ記録と対象を渡す。記録とworktreeは絶対パスを使い、JSON Linesの`awi`・`commits`から現在の完全OID集合を取得する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。記録の欠落・対象外AWI・Gitで解決できないOIDは生成側が補完してから再取得する。実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、既存の根拠記録とcommit省略を使う。公開メッセージへWI識別子を追加せず、計画保存は既存の`atk plans commit`を使う。
+
 ## 条件付き手順
 
 - 本スキルの起動時に`agent-toolkit/skills/commit/references/git-identifier.md`を全文読む

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import pathlib
 import sys
 from collections.abc import Callable
@@ -16,6 +17,7 @@ try:
     from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._common.atomic_file import atomic_write
     from agent_toolkit._common.markdown_headings import top_level_atx_headings
+    from agent_toolkit._plan import commit_mapping
     from agent_toolkit._plan import locations as _plan_locations
     from agent_toolkit._plan import structure as _plan_format
 except ImportError as _import_error:
@@ -133,14 +135,62 @@ def append_progress_log(
     writer(path, "".join(lines))
 
 
+def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -> bool:
+    """対応の記録・取得を処理し、取得だけで終了する場合は真を返す。"""
+    if not (args.commit or args.rewrite_map or args.get_commits or args.handoff or args.awi or args.allowed_awi):
+        return False
+    if args.worktree is None or not args.worktree.is_absolute():
+        parser.error("commit対応には絶対パスの--worktreeが必要です")
+    content = args.plan_file.read_text(encoding="utf-8")
+    if args.handoff:
+        allowed = commit_mapping.validate_wis(args.allowed_awi or [])
+    else:
+        metadata, errors = _plan_format.parse_plan_metadata(content)
+        if metadata is None or errors:
+            raise ProgressLogError("計画の関連WIを確定できません", next_action=_CHECK_STRUCTURE)
+        allowed = {wi for wi, _summary in metadata.related_wi}
+    if args.get_commits:
+        result = commit_mapping.get_commits(args.worktree, content, args.awi or [], allowed)
+        for wi, commits in result.items():
+            print(json.dumps({"awi": wi, "commits": commits}, ensure_ascii=False))
+        return True
+    if args.commit:
+        event = commit_mapping.commit_event(args.worktree, args.commit, args.awi or [], allowed)
+    elif args.rewrite_map:
+        mapping = commit_mapping.read_mapping(content, allowed)
+        event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping)
+    else:
+        parser.error("--handoffには--commit、--rewrite-mapまたは--get-commitsが必要です")
+        return False
+    args.result = args.result + " " + commit_mapping.encode_event(event)
+    if args.handoff:
+        _plan_locations.reject_saved_plans_root_write(args.plan_file)
+        separator = "\n" if content.endswith("\n") else "\n\n"
+        atomic_write(args.plan_file, content + separator + args.completed_step + ": " + args.result + "\n")
+        return True
+    return False
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLIから進捗ログの追記を開始する。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("plan_file", type=pathlib.Path, help="更新する計画ファイル")
-    parser.add_argument("--completed-step", required=True, help="完了した工程")
-    parser.add_argument("--result", required=True, help="結果・特記事項")
+    parser.add_argument("--completed-step", help="完了した工程（記録時は必須）")
+    parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
+    operation = parser.add_mutually_exclusive_group()
+    operation.add_argument("--commit", help="対応を記録する実装commit。完全OIDへ解決する")
+    operation.add_argument("--rewrite-map", type=pathlib.Path, help="検収済みの旧完全OIDから新OIDへのJSON対応")
+    operation.add_argument("--get-commits", action="store_true", help="対象AWIの現在のcommit対応をJSON Linesで取得する")
+    parser.add_argument("--awi", action="append", help="対応する、または取得するAWIファイル名。反復指定")
+    parser.add_argument("--worktree", type=pathlib.Path, help="実装commitを確認する対象worktreeの絶対パス")
+    parser.add_argument("--handoff", action="store_true", help="計画なしの引き継ぎ記録へ同じ対応を記録・取得する")
+    parser.add_argument("--allowed-awi", action="append", help="引き継ぎ記録の対象AWI全件。--handoffでは反復指定が必須")
     args = parser.parse_args(argv)
+    if not args.get_commits and (args.completed_step is None or args.result is None):
+        parser.error("記録には--completed-stepと--resultが必要です")
     try:
+        if _record_mapping(args, parser):
+            return 0
         append_progress_log(args.plan_file, args.completed_step, args.result)
     except _next_action.ActionableError as error:
         # 保存済み計画の直接更新（`_plan.locations`）もこの型で次の操作を持って届く。

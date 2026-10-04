@@ -1,14 +1,18 @@
 """pytools.media_remoteのテスト。"""
 
+import asyncio
+import contextlib
 import ctypes
 import pathlib
+import queue
 import subprocess
+import threading
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 
-from pytools.media_remote import _app, _assets, _cli, _keys, _token
+from pytools.media_remote import _app, _assets, _cli, _keys, _token, _window_api, _window_move
 
 # token_urlsafe(32)が生成する形式（43字、URL-safe base64）に合致する固定値。
 VALID_TOKEN = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ-_0123A"
@@ -185,6 +189,289 @@ def test_serve_subcommand_rejects_non_windows(tmp_path: pathlib.Path, monkeypatc
     monkeypatch.setattr(_cli.sys, "platform", "linux")
     token_path = tmp_path / "token.txt"
     assert _cli.main(["serve", "--token-file", str(token_path)]) == 1
+
+
+class _WindowBackend:
+    """決定論的なイベント配送とWindows境界をserveへ与える。"""
+
+    def __init__(self) -> None:
+        self.events: queue.Queue[Any] = queue.Queue()
+        self.stopped = threading.Event()
+        self.mouse: Any = None
+        self.window: Any = None
+        self.key: Any = None
+        self.click_interval_ms = 500
+        self.moves: list[tuple[int, tuple[int, int]]] = []
+        self.targets = {100: (10, 20), 200: (11, 21)}
+        self.uia_active = False
+        self.failure = False
+
+    def physical_coordinates(self) -> Any:
+        return contextlib.nullcontext()
+
+    @contextlib.contextmanager
+    def uia(self) -> Any:
+        self.uia_active = True
+        try:
+            yield self
+        finally:
+            self.uia_active = False
+
+    def is_task_selection(self, point: tuple[int, int], root: str) -> bool:
+        return root in ("Shell_TrayWnd", "TaskListThumbnailWnd") and point == (10, 10)
+
+    def run_hooks(self, mouse: Any, window: Any, key: Any, ready: Any) -> None:
+        self.mouse, self.window = mouse, window
+        self.key = key
+        ready()
+        assert self.stopped.wait(10)
+
+    def stop_hooks(self) -> None:
+        self.stopped.set()
+
+    def identity(self, hwnd: int) -> tuple[int, int] | None:
+        return self.targets.get(hwnd)
+
+    def move(self, hwnd: int, identity: tuple[int, int], point: tuple[int, int]) -> None:
+        if self.failure or self.targets.get(hwnd) != identity:
+            raise OSError("対象は移動できない")
+        self.moves.append((hwnd, point))
+
+    def click(self, root: str = "Shell_TrayWnd", point: tuple[int, int] = (10, 10), time: int = 50) -> None:
+        assert not self.mouse(_window_api.WM_LBUTTONDOWN, point, time, root)
+        self.events.join()
+
+    def select(self, hwnd: int = 100, event: int = _window_api.EVENT_SYSTEM_FOREGROUND, time: int = 51) -> None:
+        self.window(event, hwnd, time)
+        self.events.join()
+
+    def middle(self, point: tuple[int, int] = (-400, 250), time: int = 52) -> tuple[bool, bool]:
+        down = self.mouse(_window_api.WM_MBUTTONDOWN, point, time, "")
+        up = self.mouse(_window_api.WM_MBUTTONUP, point, time + 1, "")
+        self.events.join()
+        return down, up
+
+
+@pytest.fixture(name="window_serve")
+def _window_serve(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> Any:
+    backend = _WindowBackend()
+    original = _window_move.WindowMover
+    monkeypatch.setattr(_cli.sys, "platform", "win32")
+
+    def create_monitor(**kwargs: Any) -> Any:
+        del kwargs
+        return original(api=backend, uia_factory=backend.uia, events=backend.events)
+
+    monkeypatch.setattr(_window_move, "WindowMover", create_monitor)
+
+    def run(scenario: Any, *, omitted: bool = False) -> None:
+        backend.stopped.clear()
+
+        async def server(app: Any, config: Any, **kwargs: Any) -> None:
+            del config, kwargs
+            assert backend.uia_active
+            await scenario(backend, app)
+
+        monkeypatch.setattr(_cli.hypercorn.asyncio, "serve", server)
+        args = [] if omitted else ["serve", "--token-file", str(tmp_path / "token")]
+        try:
+            assert _cli.main(args) == 0
+        finally:
+            assert backend.stopped.is_set()
+            assert not backend.uia_active
+            assert not _cli.default_pid_path().exists()
+            assert backend.middle() == (False, False)
+
+    return run
+
+
+def test_serve_moves_taskbar_selection_once(window_serve: Any) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click()
+        backend.select()
+        assert backend.middle() == (True, True)
+        assert backend.moves == [(100, (-400, 250))]
+        assert backend.middle() == (False, False)
+        assert len(backend.moves) == 1
+
+    window_serve(scenario, omitted=True)
+
+
+@pytest.mark.parametrize(
+    "root,point", [("Application", (10, 10)), ("Shell_TrayWnd", (20, 10)), ("NotifyIconOverflowWindow", (10, 10))]
+)
+def test_serve_passes_unselected_middle_click(window_serve: Any, root: str, point: tuple[int, int]) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click(root, point)
+        backend.select()
+        assert backend.middle() == (False, False)
+        assert not backend.moves
+
+    window_serve(scenario)
+
+
+@pytest.mark.parametrize("root,event", [("TaskListThumbnailWnd", 3), ("Shell_TrayWnd", 0x16)])
+def test_serve_tracks_selected_window_events(window_serve: Any, root: str, event: int) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click(root)
+        backend.select(999)  # Shell側HWNDをアプリとして採らない。
+        backend.select(100, event)
+        backend.select(200)  # 最小化後の別の前面を使わない。
+        assert backend.middle() == (True, True)
+        assert backend.moves == [(100, (-400, 250))]
+
+    window_serve(scenario)
+
+
+def test_serve_consumes_failed_selection(window_serve: Any) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click()
+        backend.select()
+        backend.targets.pop(100)
+        assert backend.middle() == (True, True)
+        assert not backend.moves
+        assert backend.middle() == (False, False)
+
+    window_serve(scenario)
+
+
+def test_serve_consumes_api_failure(window_serve: Any) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click()
+        backend.select()
+        backend.failure = True
+        assert backend.middle() == (True, True)
+        assert not backend.moves
+        assert backend.middle() == (False, False)
+
+    window_serve(scenario)
+
+
+def test_serve_rejects_old_events_and_previous_selection(window_serve: Any) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click()
+        backend.select(time=49)
+        assert backend.middle() == (False, False)
+        backend.click()
+        backend.select()
+        backend.click(point=(20, 10))
+        assert backend.middle() == (False, False)
+        assert not backend.moves
+
+    window_serve(scenario)
+
+
+@pytest.mark.parametrize("event", [_window_api.EVENT_SYSTEM_FOREGROUND, _window_api.EVENT_SYSTEM_MINIMIZESTART])
+def test_serve_passes_delayed_unrelated_window_event(window_serve: Any, event: int) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click(time=50)
+        backend.select(200, event=event, time=1000)
+        assert backend.middle(time=1001) == (False, False)
+        assert not backend.moves
+
+    window_serve(scenario)
+
+
+def test_serve_keyboard_interrupt_cannot_select_another_window(window_serve: Any) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click()
+        backend.key()  # Alt+Tab等の新しい操作。
+        backend.select(200, time=51)
+        assert backend.middle() == (False, False)
+        assert not backend.moves
+
+    window_serve(scenario)
+
+
+def test_serve_selected_window_survives_later_keyboard_input(window_serve: Any) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click()
+        backend.select()
+        backend.key()
+        backend.select(200, time=2000)
+        assert backend.middle(time=2001) == (True, True)
+        assert backend.moves == [(100, (-400, 250))]
+
+    window_serve(scenario)
+
+
+def test_serve_long_button_hold_uses_release_time(window_serve: Any) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click(time=50)
+        assert not backend.mouse(_window_api.WM_LBUTTONUP, (10, 10), 1000, "")
+        backend.events.join()
+        backend.select(time=1001)
+        assert backend.middle(time=1002) == (True, True)
+        assert backend.moves == [(100, (-400, 250))]
+
+    window_serve(scenario)
+
+
+@pytest.mark.parametrize("click_time,event_time", [(50, 550), (0xFFFFFFFA, 2)])
+def test_serve_accepts_click_interval_boundary_and_tick_wrap(window_serve: Any, click_time: int, event_time: int) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click(time=click_time)
+        backend.select(time=event_time)
+        assert backend.middle(time=event_time + 1) == (True, True)
+        assert backend.moves == [(100, (-400, 250))]
+
+    window_serve(scenario)
+
+
+@pytest.mark.parametrize("error", [RuntimeError("server failed"), asyncio.CancelledError()])
+def test_serve_releases_monitor_on_failure_or_cancellation(window_serve: Any, error: BaseException) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click()
+        backend.select()
+        raise error
+
+    with pytest.raises(type(error)):
+        window_serve(scenario)
+
+
+def test_serve_restart_does_not_keep_selection(window_serve: Any) -> None:
+    async def select_scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click()
+        backend.select()
+
+    async def restart_scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        assert backend.middle() == (False, False)
+        assert not backend.moves
+
+    window_serve(select_scenario)
+    window_serve(restart_scenario)
+
+
+def test_serve_stops_monitor_and_keeps_media_api(window_serve: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    keys: list[str] = []
+    monkeypatch.setattr(_keys, "send_key", keys.append)
+
+    # 認証値を生成する境界だけを固定し、HTTPから送信までの実装を通す。
+    monkeypatch.setattr(_token, "load_or_create_token", lambda *args, **kwargs: VALID_TOKEN)
+
+    async def authenticated_scenario(backend: _WindowBackend, app: Any) -> None:
+        backend.click()
+        backend.select()
+        client = app.test_client()
+        response = await client.post("/api/key/play_pause", query_string={"t": VALID_TOKEN})
+        assert response.status_code == 204
+        assert keys == ["play_pause"]
+
+    window_serve(authenticated_scenario)
 
 
 def test_doctor_subcommand_rejects_non_windows(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):

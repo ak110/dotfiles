@@ -1,55 +1,55 @@
-"""CLIの標準出力を指定ファイルへ保存する共通処理と、エージェント環境での長い出力の自動退避。"""
+"""エージェント環境の出力保存を生成側で判断し、両ストリームを分けて保持する。"""
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import io
 import pathlib
 import sys
 from collections.abc import Callable, Iterator
+from typing import TextIO
 
-from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._atk import outcome
 
 AUTO_SAVE_THRESHOLD_BYTES = 16 * 1024
-"""エージェント環境で標準出力を自動退避するUTF-8のバイト数の閾値。
-
-Codexのシェル出力上限への対策としてPreToolUseフックが大きな読取を遮断する閾値
-（`_hooks/pretooluse/large_reads.py`の`_DEFAULT_BYTE_THRESHOLD`）と同じ値とし、
-エージェントが1回のツール結果として受け取れる量に合わせる。
-"""
-
-_AUTO_SAVE_FILE_NAME = "output.txt"
+"""通常出力を自動保存するUTF-8バイト数の境界。短い出力は直接表示する。"""
 
 
-def add_output_file_arg(parser: argparse.ArgumentParser) -> None:
-    """標準出力の保存先を受け取る共通オプションを追加する。"""
-    parser.add_argument(
-        "--output-file",
-        metavar="PATH",
-        type=pathlib.Path,
-        default=None,
-        help="標準出力を指定した絶対パスのファイルへ保存し、保存先パスと保存した行数を表示する。"
-        "エージェント環境で本オプションを省略した場合、標準出力がUTF-8で16384バイトを超えると"
-        "全量を新しいmanaged-tempのディレクトリへ自動で保存し、同じ形式で保存先と行数だけを表示する。",
-    )
-    parser.set_defaults(subparser=parser)
+def save_text(text: str, create_directory: Callable[[], pathlib.Path], *, filename: str) -> pathlib.Path:
+    """生成側が選んだ新規ファイルへ全量を保存し、その絶対パスを返す。"""
+    saved = create_directory() / filename
+    with saved.open("x", encoding="utf-8", newline="") as stream:
+        stream.write(text)
+    return saved.resolve()
 
 
-@contextlib.contextmanager
-def redirect(path: pathlib.Path, *, after_save: Callable[[pathlib.Path], None] | None = None) -> Iterator[None]:
-    """標準出力をUTF-8ファイルへ保存し、離脱時に保存先、行数および指定された内訳を報告する。"""
-    resolved = path.resolve(strict=False)
-    stream = resolved.open("w", encoding="utf-8", newline="")
+def _report_saved(path: pathlib.Path, *, stderr: bool = False) -> None:
+    """標準出力と標準エラーの保存先・行数を別の標識で表示する。"""
+    with path.open(encoding="utf-8", newline="") as stream:
+        lines = sum(1 for _line in stream)
+    destination = sys.stderr if stderr else sys.stdout
+    print(f"{'標準エラー保存先' if stderr else '保存先'}: {path}", file=destination)
+    print(f"{'標準エラー行数' if stderr else '行数'}: {lines}", file=destination)
+
+
+def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bool) -> pathlib.Path | None:
+    """短い出力は保持したストリームへ、長い出力はファイルへ渡す。"""
+    stream = sys.stderr if stderr else sys.stdout
+    if len(text.encode("utf-8")) <= AUTO_SAVE_THRESHOLD_BYTES:
+        stream.write(text)
+        return None
     try:
-        with stream, contextlib.redirect_stdout(stream):
-            yield
-    finally:
-        if not stream.closed:
-            stream.flush()
-            stream.close()
-        _report_saved(resolved, after_save)
+        saved = save_text(text, create_directory, filename="stderr.txt" if stderr else "output.txt")
+    except Exception as error:  # noqa: BLE001  # 保存の失敗でも本来の全量と終了を保持する
+        outcome.report_warning(
+            f"出力を自動保存できなかったため全量を表示する: {error}",
+            next_action="表示した全量と終了コードを使い、保存先の権限・空き容量を確認する",
+        )
+        stream.write(text)
+    else:
+        _report_saved(saved, stderr=stderr)
+        return saved
+    return None
 
 
 @contextlib.contextmanager
@@ -57,47 +57,37 @@ def auto_save(
     create_directory: Callable[[], pathlib.Path],
     *,
     after_save: Callable[[pathlib.Path], None] | None = None,
+    force_stdout: bool = False,
 ) -> Iterator[None]:
-    """標準出力を受け取り、閾値を超える場合だけ全量を新しいファイルへ保存して要約行を書く。
+    """有限終了の両出力を保持し、ファイル消費のあるstdoutは実行前に保存先を開く。
 
-    エージェントが長い出力の保存先を毎回組み立てずに済むよう、`--output-file`の指定時と同じ要約行へ置き換える。
-    保存先のディレクトリは実行ごとに`create_directory`が新しく作成する。作成または書き込みに失敗した場合は
-    出力を失わないよう、警告を標準エラーへ書いて全量を標準出力へ書く。
-    サブコマンドが`SystemExit`や例外で終わる場合も、それまでの出力を同じ規則で書いてから元の終了を伝える。
+    waitの結果を消費する前に保存を準備し、保存不能なら本体を開始しない。
+    例外とSystemExitでもそれまでの出力と元の終了状態を保持する。
     """
-    buffer = io.StringIO()
+    stdout_buffer, stderr_buffer = io.StringIO(), io.StringIO()
+    saved: pathlib.Path | None = None
+    stdout_stream: TextIO = stdout_buffer
+    if force_stdout:
+        try:
+            saved = (create_directory() / "output.txt").resolve()
+            stdout_stream = saved.open("x", encoding="utf-8", newline="", buffering=1)
+        except Exception as error:  # noqa: BLE001  # 未受領の結果を消費する前に停止する
+            outcome.report_failure(
+                f"出力保存の準備に失敗したため呼び出しを開始しない: {error}",
+                next_action="managed-tempの権限・空き容量を確認して同じコマンドを再実行する",
+            )
+            raise SystemExit(1) from error
     try:
-        with contextlib.redirect_stdout(buffer):
+        with contextlib.redirect_stdout(stdout_stream), contextlib.redirect_stderr(stderr_buffer):
             yield
     finally:
-        text = buffer.getvalue()
-        if len(text.encode("utf-8")) <= AUTO_SAVE_THRESHOLD_BYTES:
-            sys.stdout.write(text)
+        if saved is not None:
+            stdout_stream.close()
+            _report_saved(saved)
+            if after_save is not None:
+                after_save(saved)
         else:
-            try:
-                saved = create_directory() / _AUTO_SAVE_FILE_NAME
-                with saved.open("x", encoding="utf-8", newline="") as stream:
-                    stream.write(text)
-            except Exception as error:  # noqa: BLE001  # 保存の失敗で本来の出力を失わない
-                _outcome.report_warning(
-                    f"長い出力を自動で保存できなかったため全量を表示する: {error}",
-                    next_action="対応不要（処理は継続した）。全量は標準出力にある",
-                )
-                sys.stdout.write(text)
-            else:
-                _report_saved(saved.resolve(), after_save)
-                # 標準出力の要約行は形式を固定して読む消費側があるため、次の操作は標準エラーへ書く。
-                _next_action.report(
-                    "標準出力が長いため全量をファイルへ保存した",
-                    next_action="全量は`保存先:`の行のファイルにある。必要な範囲を読む",
-                )
-
-
-def _report_saved(resolved: pathlib.Path, after_save: Callable[[pathlib.Path], None] | None) -> None:
-    """保存先、行数および指定された内訳を標準出力へ書く。"""
-    with resolved.open(encoding="utf-8", newline="") as saved_stream:
-        line_count = sum(1 for _line in saved_stream)
-    print(f"保存先: {resolved}")
-    print(f"行数: {line_count}")
-    if after_save is not None:
-        after_save(resolved)
+            emitted = _emit(stdout_buffer.getvalue(), create_directory, stderr=False)
+            if emitted is not None and after_save is not None:
+                after_save(emitted)
+        _emit(stderr_buffer.getvalue(), create_directory, stderr=True)

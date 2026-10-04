@@ -229,6 +229,7 @@ def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
         public["engine"] = response["engine"]
         public["model"] = response["model"]
         public["effort"] = response["effort"]
+        public.update(state.fast_mode_fields(response.get("engine"), response.get("fast_mode")))
     if response["status"] == "failed":
         public["next_action"] = _START_FAILED_NEXT_ACTION
     return public
@@ -887,6 +888,7 @@ class AgentsServerManager:
             session_id,
             terminal=True,
             engine=info.engine,
+            fast_mode=info.fast_mode,
             cwd=info.cwd,
             model=info.model,
             effort=info.effort,
@@ -952,6 +954,7 @@ class AgentsServerManager:
             model=info.model,
             effort=info.effort,
             engine=info.engine,
+            fast_mode=info.fast_mode,
             model_type=info.model_type,
             launch_kind=info.launch_kind,
             created_at=info.created_at,
@@ -978,7 +981,7 @@ class AgentsServerManager:
         }
         if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
             response["error"] = resume_state.error
-        return state.with_review_result_next_action(response, resume_state.label)
+        return state.with_result_next_action(response, resume_state.label)
 
     def _take_stopped_result(
         self,
@@ -1233,6 +1236,7 @@ class AgentsServerManager:
                 updated_at=session.updated_at,
                 output_updated_at=session.output_updated_at,
             )
+            response.update(state.fast_mode_fields(session.engine, session.fast_mode))
             if self._status_writer is not None:
                 response["root_session_id"] = self._status_writer.root_session_id
         return response
@@ -1506,6 +1510,7 @@ class AgentsServerManager:
                 "model": model,
                 "effort": effort,
             }
+            response.update(state.fast_mode_fields(session.engine, session.fast_mode))
             if excluded:
                 response["excluded_candidates"] = _excluded_candidate_payload(excluded, excluded_session_ids)
             if self._status_writer is not None:
@@ -2085,6 +2090,7 @@ class AgentsServerManager:
         backend = self._backend(resume_state.engine)
         try:
             await _check_plugin_commands(resume_state.cwd)
+            resume_options: dict[str, Any] = {"fast_mode": resume_state.fast_mode} if resume_state.engine == "codex" else {}
             session = await backend.resume(
                 session_id,
                 prompt,
@@ -2095,6 +2101,7 @@ class AgentsServerManager:
                 launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
                 turn_seq=resume_state.turn_seq,
+                **resume_options,
             )
             if resume_state.created_at is not None:
                 session.created_at = resume_state.created_at

@@ -774,6 +774,7 @@ class ClaudeServerManager:
                                 session.touch()
                                 await self._notify_waiters()
                         elif name == "ResultMessage" and session is not None:
+                            shared_state.consume_agents_wait_background_outputs(session)
                             result = self._result_values(session, message)
                             # Weekly limitか5時間の利用上限による失敗は公開せず保留し、MCP層の常駐監視が
                             # 解除予定時刻に同じsessionへ継続を送る。以後のメッセージは継続のturnで読む。

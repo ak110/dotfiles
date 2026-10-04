@@ -921,3 +921,40 @@ def test_candidate_events_excludes_wi_body_style_diagnostics() -> None:
 
     assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
     assert candidates[-1]["excluded"] == {"wi-style-diagnostic": 2}
+
+
+@pytest.mark.parametrize(
+    ("body", "shell"),
+    [
+        ("状態: completed\n未解決の指摘数: 0", False),
+        ("status: completed\nunresolved: 0", False),
+        ("統合完了", False),
+        ("実装完了\n検証結果: 成功", False),
+        ("判定: 合格", False),
+        ("判定1: 適合\n判定2: 適合", False),
+        ("終了コード: 0\n警告なし", True),
+    ],
+)
+def test_candidate_keeps_improvement_in_every_normal_return(body: str, shell: bool) -> None:
+    """完了・適合・成功したshellの返却でも、字下げ付き改善点を正常除外より先に保持する。"""
+    note = "  気付いた改善点: CLIの回避操作を繰り返した。"
+    text = body + "\n" + note
+    timeline = [{"kind": "final-result", "record": "agent-case", "line": 2, "text": text}]
+    if shell:
+        timeline.insert(
+            0,
+            {
+                "kind": "user",
+                "record": "agent-case",
+                "line": 1,
+                "text": (
+                    "<agent-toolkit-auto-inserted> 次のコマンドを実行し、結果を報告せよ。"
+                    " 実行するコマンド: make test </agent-toolkit-auto-inserted>"
+                ),
+            },
+        )
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    assert len(candidates[:-1]) == 1
+    assert candidates[0]["candidate_kind"] == "delegate-return"
+    assert candidates[0]["text"] == text
+    assert candidates[-1]["excluded"].get("normal-delegate-return", 0) == 0

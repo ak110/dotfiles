@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._agents_server import codex as subject
 from agent_toolkit._agents_server import state as shared_state
 
@@ -26,6 +27,76 @@ class _ThreadStartClient:
         assert method == "thread/start"
         self.params = params
         return {"thread": {"id": "inner-thread"}}
+
+
+class _TierClient:
+    """実際のbackendが送る要求と送信通知を再現し、モデルの実行を伴わずtierを確かめる。"""
+
+    closed = False
+    reader_failure = None
+
+    def __init__(self) -> None:
+        self.requests: list[tuple[str, dict[str, Any]]] = []
+
+    async def request(self, method: str, params: dict[str, Any], *, on_sent: Any = None) -> dict[str, Any]:
+        self.requests.append((method, dict(params)))
+        if on_sent is not None:
+            on_sent()
+        if method in {"thread/start", "thread/resume"}:
+            return {"thread": {"id": "tier-thread"}}
+        assert method == "turn/start"
+        return {"turn": {"id": f"turn-{len(self.requests)}"}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("initial", [True, False])
+async def test_config_changes_apply_to_new_reply_and_restored_turns(
+    initial: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開configの変更が3RPCへ明示され、実際に送った最新turnの速度を保持する。"""
+    monkeypatch.setattr(subject._atk_config, "_config_dir", lambda: tmp_path / "config")
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", raising=False)
+
+    def set_fast(enabled: bool) -> None:
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["config", "set", "codex_fast_mode", str(enabled).lower()], home=tmp_path)
+        assert not capsys.readouterr().err
+
+    set_fast(initial)
+    client = _TierClient()
+    manager = subject.AppServerManager({}, asyncio.Condition(), publish_registry=True)
+    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+    session = await manager.start("開始", str(tmp_path), "gpt-6-sol", "medium")
+    tier = "priority" if initial else "default"
+    assert [method for method, _params in client.requests] == ["thread/start", "turn/start"]
+    assert all(params["serviceTier"] == tier for _method, params in client.requests)
+    assert session.fast_mode is initial
+    session.status = "completed"
+    session.turn_completed = True
+    session.touch()
+    set_fast(not initial)
+    client.requests.clear()
+    reply = await manager.send_message(session, "続行")
+    assert reply["delivery"] == "reply_started"
+    assert all(params["serviceTier"] == ("default" if initial else "priority") for _method, params in client.requests)
+    assert session.fast_mode is (not initial)
+
+    set_fast(initial)
+    restored_client = _TierClient()
+    restarted = subject.AppServerManager({}, asyncio.Condition())
+    monkeypatch.setattr(restarted, "_ensure_client", AsyncMock(return_value=restored_client))
+    restored = await restarted.resume(
+        session.session_id,
+        shared_state.ResumePrompt("再開"),
+        str(tmp_path),
+        session.model,
+        session.effort,
+        turn_seq=session.turn_seq,
+        fast_mode=session.fast_mode,
+    )
+    assert [method for method, _params in restored_client.requests] == ["thread/resume", "turn/start"]
+    assert all(params["serviceTier"] == tier for _method, params in restored_client.requests)
+    assert restored.fast_mode is initial
 
 
 class _SilentClient:
@@ -212,13 +283,13 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
         output = result
     command = "atk agents wait"
     if delivery in {"output-file", "shell-output-file"}:
-        command = "timeout 300 atk agents wait --output-file " + str(tmp_path / "wait-results.jsonl")
+        command = "timeout 300 atk agents wait"
     if delivery == "unrelated":
         command = "printf 'unrelated command'"
     if delivery == "shell-stdout":
         command = '/bin/bash -lc "atk agents wait"'
     if delivery == "shell-output-file":
-        command = f'/bin/sh -c "timeout 300 atk agents wait --output-file {tmp_path / "wait-results.jsonl"}"'
+        command = '/bin/sh -c "timeout 300 atk agents wait"'
     if delivery == "shell-unrelated":
         command = '/bin/bash -lc "printf unrelated"'
     item = {

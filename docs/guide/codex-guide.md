@@ -143,7 +143,7 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 信頼後の`PreToolUse`は`apply_patch`が`uv.lock`などのlockfileを直接編集する場合、
 `uv add`などのパッケージ管理ツールでの更新を促す通知を返す。
 動作を確かめる場合は、`uv.lock`へ1行を加える変更を`apply_patch`で適用し、通知の有無を確認する。
-Stopは終了工程の証拠だけを判定する。報告の構造確認や振り返りの準備の後に残る報告段階と、確認に合格した報告本文を発話していない停止を遮断し、`decision: "block"`と`reason`で同じターンを続けさせる。対処と中止・待機の判断の記録は`agent-toolkit:completion-report`に従う。Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
+Stopは終了工程の証拠だけを判定する。振り返りの準備と直接発話の報告見出しから不足段階と4判定の違反を示し、`decision: "block"`と`reason`で同じターンを続けさせる。対処と中止・待機の判断の記録は`agent-toolkit:completion-report`に従う。Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
 
 ## Codex CLI本体
 

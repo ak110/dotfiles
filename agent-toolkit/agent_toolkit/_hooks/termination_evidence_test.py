@@ -1,4 +1,4 @@
-"""公開の報告構造確認の実出力が供給イベントから初回Stopへ届くことを確かめる。"""
+"""可視発話と準備結果・判断記録が同じ作業のStop判定へ届くことを確かめる。"""
 
 import argparse
 import contextlib
@@ -9,9 +9,11 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._atk import run_script
+from agent_toolkit._agents_server import status_file
+from agent_toolkit._atk import config, run_script
+from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import (
-    completion_report_delivery_advisor,
+    agents_server_session_advisor,
     posttooluse,
     pretooluse,
     session_state,
@@ -34,41 +36,19 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     monkeypatch.setenv("TMP", str(tmp_path))
 
 
-def supply_report(
-    directory: pathlib.Path,
-    text: str,
-    stage: str,
-    call_id: str,
-    *,
-    before_only: bool = False,
-) -> dict:
-    """登録済みの報告構造確認コマンドを実行し、その両出力と終了状態をPostへ渡す。"""
-    report = directory / "report.md"
-    report.write_text(text, encoding="utf-8")
+def supply_report(directory: pathlib.Path, text: str, stage: str, call_id: str) -> None:
+    """報告をClaude形式の可視発話として記録し、初回Stopから取り込む。"""
+    del stage
     transcript = directory / "transcript.jsonl"
-    transcript.touch(exist_ok=True)
-    arguments = [str(report), "--stage", stage]
-    if stage == "review-result":
-        arguments += ["--review-state", "not-run"]
-    payload = {
-        "session_id": "evidence-test",
-        "tool_name": "Bash",
-        "tool_use_id": call_id,
-        "turn_id": "turn-1",
-        "transcript_path": str(transcript),
-        "tool_input": {"command": "atk run-script completion-report-check -- " + " ".join(arguments)},
-    }
-    with contextlib.redirect_stdout(io.StringIO()):
-        assert pretooluse.main(json.dumps(payload)) == 0
-    if before_only:
-        return payload
-    stdout, stderr = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        status = run_script.dispatch(argparse.Namespace(script_name="completion-report-check", script_args=arguments))
-    payload["tool_response"] = {"stdout": stdout.getvalue(), "stderr": stderr.getvalue(), "exit_code": status}
-    with contextlib.redirect_stdout(io.StringIO()):
-        assert posttooluse.main(json.dumps(payload)) == 0
-    return payload
+    with transcript.open("a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps(
+                {"uuid": call_id, "type": "assistant", "message": {"content": [{"type": "text", "text": text}]}},
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    termination_order_advisor.evaluate(stop_payload(directory, ""))
 
 
 def stop_payload(directory: pathlib.Path, visible: str) -> str:
@@ -82,42 +62,13 @@ def stop_payload(directory: pathlib.Path, visible: str) -> str:
     )
 
 
-def test_first_stop_requires_result_and_visible_report(tmp_path: pathlib.Path) -> None:
+def test_first_stop_requires_following_visible_result(tmp_path: pathlib.Path) -> None:
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
-    payload = stop_payload(tmp_path, "登録した。")
-    assert termination_order_advisor.evaluate(payload)[0] == "block"
-    decision, reason = completion_report_delivery_advisor.evaluate(payload)
-    assert decision == "block" and WORK_COMPLETE in reason
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "作業を終えた。"))
+    assert decision == "block" and "review-result" in reason
+    assert "completion-report-check" not in reason
     supply_report(tmp_path, REVIEW_RESULT, "review-result", "call-2")
-    payload = stop_payload(tmp_path, WORK_COMPLETE + "\n" + REVIEW_RESULT)
-    assert termination_order_advisor.evaluate(payload)[0] == "approve"
-    assert completion_report_delivery_advisor.evaluate(payload)[0] == "approve"
-
-
-def test_invocation_without_result_is_not_accepted(tmp_path: pathlib.Path) -> None:
-    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1", before_only=True)
-    works = termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "")))
-    assert len(works) == 1 and not works[0][1]["reports"]
-
-
-def test_invalid_recheck_does_not_reuse_previous_result(tmp_path: pathlib.Path) -> None:
-    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
-    supply_report(tmp_path, REVIEW_RESULT, "review-result", "call-2")
-    supply_report(tmp_path, "構造がない本文", "review-result", "call-3")
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE + REVIEW_RESULT))[0] == "block"
-
-
-def test_same_body_keeps_visible_origin_but_changed_body_requires_new_speech(tmp_path: pathlib.Path) -> None:
-    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text(
-        json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": WORK_COMPLETE}]}}) + "\n",
-        encoding="utf-8",
-    )
-    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-2")
-    assert completion_report_delivery_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "approve"
-    supply_report(tmp_path, WORK_COMPLETE.replace("変更した", "変更して検証した"), "work-complete", "call-3")
-    assert completion_report_delivery_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "block"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "終了する。"))[0] == "approve"
 
 
 def test_generated_input_cannot_cancel_work(tmp_path: pathlib.Path) -> None:
@@ -142,7 +93,14 @@ def test_cancel_and_new_start_do_not_share_same_path_results(tmp_path: pathlib.P
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
     with contextlib.redirect_stdout(io.StringIO()):
         user_prompt_submit.main(
-            json.dumps({"session_id": "evidence-test", "turn_id": "human", "prompt": "この作業を中止し、次の作業を始める"})
+            json.dumps(
+                {
+                    "session_id": "evidence-test",
+                    "turn_id": "human",
+                    "prompt": "この作業を中止し、次の作業を始める",
+                    "transcript_path": str(tmp_path / "transcript.jsonl"),
+                }
+            )
         )
     document = {
         "session_id": "evidence-test",
@@ -155,23 +113,7 @@ def test_cancel_and_new_start_do_not_share_same_path_results(tmp_path: pathlib.P
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-2")
     works = termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "")))
     assert [work_id for work_id, _ in works] == [new_id]
-    assert completion_report_delivery_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "block"
-
-
-def test_current_evidence_reclaims_old_attempts(tmp_path: pathlib.Path) -> None:
-    for index in range(12):
-        supply_report(tmp_path, WORK_COMPLETE, "work-complete", f"call-{index}")
-    data = session_state.read_state("evidence-test")[termination_evidence.STATE_KEY]
-    assert list(data["calls"]) == ["call-11"]
-
-
-def test_late_response_cannot_replace_newer_failed_attempt(tmp_path: pathlib.Path) -> None:
-    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
-    late = supply_report(tmp_path, REVIEW_RESULT, "review-result", "late", before_only=True)
-    supply_report(tmp_path, "構造がない本文", "review-result", "newer")
-    late["tool_response"] = {"stdout": REVIEW_RESULT, "stderr": "", "exit_code": 0}
-    termination_evidence.observe_tool(json.dumps(late), after=True)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE + REVIEW_RESULT))[0] == "block"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "block"
 
 
 def test_waiting_for_answer_is_scoped_and_returns_to_remaining_work(
@@ -202,7 +144,7 @@ def test_waiting_for_answer_is_scoped_and_returns_to_remaining_work(
 
 def test_unrelated_or_invented_wait_target_does_not_clear_remaining_work(tmp_path: pathlib.Path) -> None:
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
-    with pytest.raises(ValueError, match="未回答UWI"):
+    with pytest.raises(ValueError, match="作業に対応しません"):
         termination_evidence.record_decision(
             {
                 "session_id": "evidence-test",
@@ -226,7 +168,7 @@ def test_nonvisible_or_other_actor_text_does_not_deliver_report(tmp_path: pathli
                 "type": "message",
                 "role": "assistant",
                 "channel": "final",
-                "content": [{"type": "output_text", "text": WORK_COMPLETE}],
+                "content": [{"type": "output_text", "text": REVIEW_RESULT}],
             },
         }
         if kind == "thinking":
@@ -238,7 +180,7 @@ def test_nonvisible_or_other_actor_text_does_not_deliver_report(tmp_path: pathli
         else:
             event["agent_id"] = "child"
     else:
-        event = {"type": "assistant", "message": {"content": [{"type": "text", "text": WORK_COMPLETE}]}}
+        event = {"type": "assistant", "message": {"content": [{"type": "text", "text": REVIEW_RESULT}]}}
         if kind in {"thinking", "tool"}:
             event["message"]["content"][0]["type"] = "thinking" if kind == "thinking" else "tool_result"
         elif kind == "user":
@@ -246,15 +188,15 @@ def test_nonvisible_or_other_actor_text_does_not_deliver_report(tmp_path: pathli
         else:
             event["isSidechain"] = True
     (tmp_path / "transcript.jsonl").write_text(json.dumps(event) + "\n", encoding="utf-8")
-    assert completion_report_delivery_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "block"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "block"
 
 
 def test_corrupt_or_missing_observation_does_not_repeat_block(tmp_path: pathlib.Path) -> None:
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
     (tmp_path / "transcript.jsonl").write_text("{\n", encoding="utf-8")
-    assert completion_report_delivery_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "approve"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "approve"
     (tmp_path / "transcript.jsonl").unlink()
-    assert completion_report_delivery_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "approve"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "approve"
 
 
 def test_search_term_or_quoted_name_is_not_an_invocation(tmp_path: pathlib.Path) -> None:
@@ -279,15 +221,6 @@ def test_search_term_or_quoted_name_is_not_an_invocation(tmp_path: pathlib.Path)
             posttooluse.main(json.dumps(payload))
     assert termination_evidence.STATE_KEY not in session_state.read_state("evidence-test")
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "検索した。"))[0] == "approve"
-
-
-def test_failed_check_keeps_stage_missing(tmp_path: pathlib.Path) -> None:
-    payload = supply_report(tmp_path, WORK_COMPLETE, "work-complete", "failed", before_only=True)
-    payload["hook_event_name"] = "PostToolUseFailure"
-    payload["tool_response"] = {"stdout": WORK_COMPLETE, "stderr": "構造の不足", "exit_code": 1}
-    termination_evidence.observe_tool(json.dumps(payload), after=True)
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))
-    assert decision == "block" and "work-complete" in reason
 
 
 def test_prepare_requires_following_result(tmp_path: pathlib.Path) -> None:
@@ -316,7 +249,16 @@ def test_finished_work_is_not_reused_after_new_input(tmp_path: pathlib.Path) -> 
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
     supply_report(tmp_path, REVIEW_RESULT, "review-result", "call-2")
     with contextlib.redirect_stdout(io.StringIO()):
-        user_prompt_submit.main(json.dumps({"session_id": "evidence-test", "turn_id": "next", "prompt": "次の作業を頼む"}))
+        user_prompt_submit.main(
+            json.dumps(
+                {
+                    "session_id": "evidence-test",
+                    "turn_id": "next",
+                    "prompt": "次の作業を頼む",
+                    "transcript_path": str(tmp_path / "transcript.jsonl"),
+                }
+            )
+        )
     supply_report(tmp_path, WORK_COMPLETE.replace("変更した", "次を変更した"), "work-complete", "call-3")
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))
     assert decision == "block" and ": review-result" in reason and "work-1" not in reason
@@ -398,3 +340,114 @@ def test_notice_gives_identifiers_needed_for_decision(tmp_path: pathlib.Path) ->
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
     reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))[1]
     assert "evidence-test" in reason and "human-1" in reason and "review-result" in reason
+
+
+def test_old_cli_accepted_body_does_not_replace_visible_report(tmp_path: pathlib.Path) -> None:
+    """旧確認コマンドの受理本文が保存されていても未発話の段階へ使わない。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+
+    def add_old_receipt(state: dict) -> dict:
+        state[termination_evidence.STATE_KEY]["works"]["work-1"]["reports"]["review-result"] = {
+            "text": REVIEW_RESULT,
+            "call_id": "old-check",
+            "delivered": True,
+        }
+        return state
+
+    session_state.update_state("evidence-test", add_old_receipt)
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "終了する。"))
+    assert decision == "block" and "review-result" in reason
+
+
+def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """委譲開始とPostToolUseの観測更新を経て、CLIの待機所有権で公開wait判断を受理する。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path / "state")
+    start = {
+        "session_id": "evidence-test",
+        "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+        "tool_use_id": "start-test",
+        "tool_input": {"prompt": "独立した調査"},
+        "tool_response": {"structuredContent": {"session_id": "child-test", "status": "running"}},
+    }
+    termination_evidence.observe_tool(json.dumps(start), after=False)
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert posttooluse.main(json.dumps(start)) == 0
+    wait = {
+        "session_id": "evidence-test",
+        "tool_name": "Bash",
+        "tool_use_id": "wait-test",
+        "tool_input": {"command": "atk agents wait", "run_in_background": True},
+        "tool_response": {"stdout": "継続中の待機", "stderr": "", "exit_code": 0},
+    }
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert posttooluse.main(json.dumps(wait)) == 0
+    child = session_state.read_state("evidence-test")["agents_server_sessions"]["child-test"]
+    assert child["pending_observation"] is False
+    root = status_file.status_directory("evidence-test", tmp_path / "state")
+    lock_path = root / "wait-locks" / "root.json.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    targets = status_file.wait_targets_directory("evidence-test", "root.json", tmp_path / "state")
+    targets.mkdir(parents=True, exist_ok=True)
+    (targets / "child-test.json").write_text('{"version":1,"session_id":"child-test"}', encoding="utf-8")
+    document = tmp_path / "wait-decision.json"
+    document.write_text(
+        json.dumps(
+            {
+                "session_id": "evidence-test",
+                "action": "wait",
+                "work_id": "work-1",
+                "target_session_id": "child-test",
+                "reason": "調査結果を待つ",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with lock_path.open("a+b") as stream:
+        acquire_lock(stream, blocking=False)
+        try:
+            assert agents_server_session_advisor.actively_waited_session_ids(["child-test"]) == {"child-test"}
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert (
+                    run_script.dispatch(
+                        argparse.Namespace(script_name="termination-evidence", script_args=["--decision-file", str(document)])
+                    )
+                    == 0
+                )
+            assert not termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "待機中")))
+        finally:
+            release_lock(stream)
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った。"))
+    assert decision == "block" and "review-result" in reason
+
+
+@pytest.mark.parametrize("kind", ["unrelated", "other-owner", "finished"])
+def test_explicit_child_wait_rejection_is_not_uwi_guidance(tmp_path: pathlib.Path, kind: str) -> None:
+    """作業不一致・所有者違い・待機解消を対象ごとの理由で拒否する。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+
+    def register(state: dict) -> dict:
+        work = state[termination_evidence.STATE_KEY]["works"]["work-1"]
+        if kind != "unrelated":
+            work["async_targets"]["child-x"] = "call-x"
+        state["agents_server_sessions"] = {
+            "child-x": {"owner_agent_id": "another" if kind == "other-owner" else "main", "pending_observation": False}
+        }
+        return state
+
+    session_state.update_state("evidence-test", register)
+    with pytest.raises(ValueError) as error:
+        termination_evidence.record_decision(
+            {
+                "session_id": "evidence-test",
+                "action": "wait",
+                "work_id": "work-1",
+                "target_session_id": "child-x",
+                "reason": "対象の結果を待つ",
+            }
+        )
+    assert "child-x" in str(error.value) and "UWI" not in str(error.value)

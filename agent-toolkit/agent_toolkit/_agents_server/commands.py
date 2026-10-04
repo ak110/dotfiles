@@ -14,7 +14,6 @@ from typing import Any
 from agent_toolkit._agents_server import agents_wait, logs_export, record_paths, state, status_file
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
-from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.serve import sessions as session_records
 from agent_toolkit._common.next_action import report, with_next_action
@@ -24,9 +23,8 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     """`agents`配下のサブコマンドを登録する。"""
     sub = _help.add_subcommands(parser, dest="agents_subcommand", required=False, show_help_when_missing=True)
     wait = _help.add_command(sub, "wait", **_help.HELP["atk agents wait"])
-    # 保存先は待機の巡回より前に開く。`atk`のmainが`--output-file`を解決してからこのサブコマンドを
-    # 実行するため、保存できない指定では結果ファイルと通知ファイルを削除せずに終わる。
-    _output_file.add_output_file_arg(wait)
+    # エージェントの保存先はatkの共通処理が回収より先に開き、保存不能なら本体を開始しない。
+    wait.set_defaults(subparser=wait)
     wait.add_argument(
         "--root-session-id",
         help="agents_serverの起動応答が返した待機ルート。環境からルートを解決できない場合に指定する。",
@@ -231,6 +229,8 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
     if detailed:
         fields += ("cwd", "engine", "model", "effort", "model_type", "launch_kind", "prompt", "progress", "agent_message")
     result = {key: session[key] for key in fields if key in session}
+    if detailed:
+        result.update(state.fast_mode_fields(session.get("engine"), session.get("fast_mode")))
     if isinstance(result.get("api_error"), dict):
         result["api_error"] = {
             key: result["api_error"][key] for key in state.API_ERROR_PUBLIC_KEYS if key in result["api_error"]

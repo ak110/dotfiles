@@ -12,7 +12,7 @@ import sys
 import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._hooks.output_contract import HOOK_OUTPUT_SCHEMAS, validate_hook_output
+from agent_toolkit._hooks.output_contract import validate_hook_output
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -136,12 +136,6 @@ def _build_fixture(
         payload["prompt"] = "続行します"
         env.update({"HOME": str(home), "USERPROFILE": str(home)})
     return payload, env, managed_temp
-
-
-@pytest.mark.repo_invariant
-def test_fixture_table_covers_every_registered_hook() -> None:
-    assert set(_FIXTURES) == _registered_hooks()
-    assert set(HOOK_OUTPUT_SCHEMAS) == {event_name for event_name, _ in _registered_hooks()}
 
 
 @pytest.mark.parametrize(("event_name", "subcommand"), sorted(_FIXTURES))

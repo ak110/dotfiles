@@ -495,7 +495,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="picker向けにtarget_commit以後の履歴の鮮度情報をJSONへ加える。",
     )
     _add_mq_read_sync_args(list_)
-    _output_file.add_output_file_arg(list_)
+    list_.set_defaults(subparser=list_)
 
     show = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk wi show"])
     show.add_argument(
@@ -515,7 +515,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         allow_all=True,
         help_extra="FILENAME指定時は明示的照会として扱い、省略時の限定を適用しない。",
     )
-    _output_file.add_output_file_arg(show)
+    show.set_defaults(subparser=show)
     show.add_argument(
         "--summary-only",
         action="store_true",
@@ -704,8 +704,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="SHA",
         default=None,
         help=(
-            "対象リポジトリで解決できるrevision。対応するローカル作業ツリーが判明した場合は、"
-            "記録時に対象リポジトリで解決する。対応付けできない場合は警告し、指定値を記録する。"
+            "ローカルworktreeとrevisionを検証してcommit情報を記録する。"
+            "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
+            "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
             "--commit=VALUE形式で渡すことを推奨。"
         ),
     )
@@ -738,8 +739,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="SHA",
         default=None,
         help=(
-            "対象リポジトリで解決できるrevision。対応するローカル作業ツリーが判明した場合は、"
-            "記録時に対象リポジトリで解決する。対応付けできない場合は警告し、指定値を記録する。"
+            "ローカルworktreeとrevisionを検証してcommit情報を記録する。"
+            "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
+            "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
             "--commit=VALUE形式で渡すことを推奨。"
         ),
     )
@@ -847,6 +849,15 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     )
     _add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
 
+    observation = _atk_help.add_command(sub, "set-observation-wait", **_atk_help.HELP["atk wi set-observation-wait"])
+    observation.add_argument("filename", metavar="FILENAME", help="processingの観測待ちAWIファイル名")
+    observation.add_argument("--condition", choices=("selection-empty",), help="残る観測が成立するprocess-wiの実行条件")
+    observation.add_argument("--plan-file", help="既存計画ファイルのbasename")
+    observation.add_argument("--commit", help="検収済みの既存実装commit。完全OIDへ解決する")
+    observation.add_argument("--clear", action="store_true", help="観測待ちのメタデータだけを解除する")
+    observation.add_argument("--target-repo", required=True, help="実装commitを確認できるworktreeの絶対パス")
+    observation.set_defaults(subparser=observation)
+
 
 def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     """検索・回答・外部差分コミットサブコマンドを登録する。"""
@@ -873,7 +884,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     _add_source_arg(grep, multiple=True)
     _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
-    _output_file.add_output_file_arg(grep)
+    grep.set_defaults(subparser=grep)
     grep.set_defaults(subparser=grep)
 
     answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk wi answer"])
@@ -1337,7 +1348,7 @@ def main(
     *,
     home: pathlib.Path | None = None,
     now: datetime.datetime | None = None,
-    _output_file_active: bool = False,
+    _output_capture_active: bool = False,
 ) -> None:
     """エントリポイント。"""
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
@@ -1351,7 +1362,25 @@ def main(
     raw_argv = argv if argv is not None else sys.argv[1:]
     raw_argv = _resolve_legacy_top_level_command(raw_argv)
     raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
+    if not _output_capture_active and is_agent_environment() and any(flag in raw_argv for flag in ("--help", "-h")):
+        with _output_file.auto_save(lambda: _managed_temp.create_managed_temp("atk-output")):
+            main(argv, home=home, now=now, _output_capture_active=True)
+        return
     args = parser.parse_args(raw_argv)
+    if not _output_capture_active and _auto_saves_output(args):
+        is_wait = args.command == "agents" and args.agents_subcommand == "wait" and args._help_parser is None
+        force = args._help_parser is None and (
+            is_wait
+            or (args.command == "wi" and args.wi_subcommand == "show" and not args.summary_only)
+            or (args.command == "run-script" and args.script_name == "session-review-evidence")
+        )
+        with _output_file.auto_save(
+            lambda: _managed_temp.create_managed_temp("atk-output"),
+            after_save=_agents.summarize_saved_wait if is_wait else None,
+            force_stdout=force,
+        ):
+            main(argv, home=home, now=now, _output_capture_active=True)
+        return
     if args._help_parser is not None:
         args._help_parser.print_help()
         return
@@ -1365,18 +1394,6 @@ def main(
     _normalize_repeatable_wi_filters(args)
     _resolve_wi_target_repo(args, parser)
     _resolve_note_file(args, parser)
-    output_path = getattr(args, "output_file", None)
-    after_save = _agents.summarize_saved_wait if args.command == "agents" and args.agents_subcommand == "wait" else None
-    if output_path is not None and not _output_file_active:
-        if not output_path.is_absolute():
-            args.subparser.error("--output-fileには絶対パスを指定してください。")
-        with _output_file.redirect(output_path, after_save=after_save):
-            main(argv, home=home, now=now, _output_file_active=True)
-        return
-    if output_path is None and not _output_file_active and _auto_saves_output(args):
-        with _output_file.auto_save(lambda: _managed_temp.create_managed_temp("atk-output"), after_save=after_save):
-            main(argv, home=home, now=now, _output_file_active=True)
-        return
     if now is None:
         now = datetime.datetime.now()
     automatically_cleaned: list[pathlib.Path] = []
@@ -1539,6 +1556,7 @@ def main(
         "rm": lambda: _mutations._cmd_rm(args, private_notes),
         "edit": lambda: _mutations._cmd_edit(args, private_notes),
         "set-dependencies": lambda: _mutations._cmd_set_dependencies(args, private_notes),
+        "set-observation-wait": lambda: _mutations._cmd_set_observation_wait(args, private_notes),
         "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _uwi._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),

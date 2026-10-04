@@ -6,7 +6,7 @@ r"""多段終了手順の起動順が要求を満たすかStopフックで確か
 本フックは対象スキルの最新の起動以後に、要求される終了工程が要求順で実行されたかを
 transcriptのSkillの成功結果とBashツール起動記録から判定する。
 
-実際の報告構造確認・振り返り準備の結果が供給された作業は、初回Stopから不足を判定する。
+実際の報告の可視発話・振り返り準備の結果が供給された作業は、初回Stopから不足を判定する。
 対象スキルの起動が無く、工程証拠も無いセッションではapproveする。
 最新の対象スキル起動より前の終了工程の起動は充足の判定へ流用しない。
 終了工程の起動順が要求と逆である場合も未充足として扱う。
@@ -159,9 +159,25 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_delegated_session", {})
         return "approve", ""
 
+    raw_path = payload.get("transcript_path", "")
+    path_for_async = raw_path if isinstance(raw_path, str) else ""
+    if is_pending_async_work(path_for_async, session_id, background_tasks=payload.get("background_tasks")):
+        append_stop_log(session_id, "approve_pending_async", {})
+        return "approve", ""
+
+    available = termination_evidence.observe_reports(payload)
+    pending = termination_evidence.pending_work(payload) if available else []
+    violations = [
+        f"作業 {work_id}: {error}" for work_id, work in pending for error in termination_evidence.report_violations(work)
+    ]
+    if violations:
+        return "block", _block_notice(
+            "報告本文の要求を満たしていない。\n" + "\n".join(violations),
+            fix="列挙した行の根拠・対策の対応・実際の投入結果を直し、報告を直接発話する。",
+        )
     missing_evidence = [
         f"作業 {work_id}: {', '.join(termination_evidence.missing_stages(work))}"
-        for work_id, work in termination_evidence.pending_work(payload)
+        for work_id, work in pending
         if termination_evidence.missing_stages(work)
     ]
     if missing_evidence:
@@ -172,7 +188,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             + "\n"
             + termination_evidence.decision_hint(payload),
             fix=(
-                "不足する段階の報告を書き、`atk run-script completion-report-check`で構造を確かめる。"
+                "不足する段階の報告を可視の発話本文へ直接書く。"
                 "中止・置換・待機・技術的不成立は原証拠と対象の`work_id`を"
                 "`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ渡す。"
             ),
@@ -189,14 +205,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     if not transcript_path or not pathlib.Path(transcript_path).is_file():
         append_stop_log(session_id, "approve_transcript_unreadable", {"reason": "起動順を確認できない"})
-        return "approve", ""
-
-    if is_pending_async_work(
-        transcript_path,
-        session_id,
-        background_tasks=payload.get("background_tasks"),
-    ):
-        append_stop_log(session_id, "approve_pending_async", {})
         return "approve", ""
 
     entries = read_transcript_entries_cached(transcript_path)

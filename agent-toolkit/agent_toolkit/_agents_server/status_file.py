@@ -36,11 +36,12 @@ from agent_toolkit._agents_server.state import (
     TERMINAL_STATUSES,
     SessionResumeState,
     SessionState,
+    fast_mode_fields,
     has_uncollected_result,
     public_notice,
     public_result,
     terminal_result_payload,
-    with_review_result_next_action,
+    with_result_next_action,
 )
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.atomic_file import atomic_write
@@ -609,7 +610,7 @@ def take_result(
             label = session.get("label") if isinstance(session, dict) else None
             if isinstance(label, str) and label:
                 payload["label"] = label
-            return with_review_result_next_action(public_result(payload), label), None
+            return with_result_next_action(public_result(payload), label), None
         finally:
             release_lock(lock_file)
 
@@ -1298,6 +1299,7 @@ def _serialize_retained_session(session: SessionState | SessionResumeState) -> d
         "engine": session.engine,
         "model": session.model,
         "effort": session.effort,
+        **fast_mode_fields(session.engine, session.fast_mode),
         "model_type": session.model_type,
         "launch_kind": session.launch_kind,
         "prompt": session.prompt,

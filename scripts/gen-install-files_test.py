@@ -54,17 +54,6 @@ def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
     return _Env(module=module, rules_dir=rules_dir, install_sh=install_sh, install_ps1=install_ps1)
 
 
-@pytest.mark.repo_invariant
-def test_current_repo_files_are_synced() -> None:
-    """リポジトリ実体のrules一覧と両install scriptのマーカーブロックが一致する。"""
-    names = sorted(path.name for path in (_REPO_ROOT / "agent-toolkit" / "rules").glob("*.md"))
-    sh_block = _extract_block((_REPO_ROOT / "install-claude.sh").read_text(encoding="utf-8"))
-    ps1_block = _extract_block((_REPO_ROOT / "install-claude.ps1").read_text(encoding="utf-8-sig"))
-
-    assert sh_block == _expected_sh_block(names)
-    assert ps1_block == _expected_ps1_block(names)
-
-
 def test_regenerate_with_added_rule(_env: _Env) -> None:
     """模擬rules配下のmdファイル一覧が両install scriptのブロックへ反映される。"""
     (_env.rules_dir / "02-collaboration.md").write_text("", encoding="utf-8")

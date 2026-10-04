@@ -18,7 +18,7 @@ from agent_toolkit._atk.wi.constants import (
     unrepairable_entry_next_action,
 )
 from agent_toolkit._atk.wi.formatters import _parse_target_repo
-from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+from agent_toolkit._atk.wi.frontmatter import observation_wait_metadata, parse_frontmatter
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
 from agent_toolkit._git import remote as _git_remote
 
@@ -40,6 +40,7 @@ class QueueEntry:
     legacy_dependency: dict[str, object] | None
     repair_target_filename: str | None
     repair_kind: RepairKind | None
+    state: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -62,6 +63,8 @@ class ReadinessResult:
     cooldown_pending: tuple[str, ...] = ()
     invalid_cooldowns: tuple[str, ...] = ()
     cooldown_values: tuple[tuple[str, str], ...] = ()
+    observation_waiting: tuple[str, ...] = ()
+    invalid_observation_waits: tuple[str, ...] = ()
 
     @property
     def actionable_count(self) -> int:
@@ -73,6 +76,7 @@ class ReadinessResult:
             *self.self_dependencies,
             *self.cyclic_dependencies,
             *self.invalid_cooldowns,
+            *self.invalid_observation_waits,
         }
         return len(set(self.ready) | repair_targets)
 
@@ -187,6 +191,7 @@ def _queue_entry(
         legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
         repair_target_filename=repair_target if isinstance(repair_target, str) else None,
         repair_kind=repair_kind,
+        state=path.parent.name,
     )
 
 
@@ -428,6 +433,21 @@ def calculate_readiness(
     active_pairs = {(entry.filename, entry.target_repo) for entry in all_active}
     target_pairs = {(entry.filename, entry.target_repo) for entry in active}
     cooldown_values: dict[str, str] = {}
+    observation_waiting: set[str] = set()
+    invalid_observation_waits: set[str] = set()
+    for entry in active:
+        parsed = parse_frontmatter(entry.text)
+        if parsed is None or "observation_wait" not in parsed[0]:
+            continue
+        try:
+            observation_wait_metadata(parsed[0])
+            if entry.kind != WI_TYPE_AWI or entry.state != "processing":
+                raise ValueError("観測待ちはprocessingのAWIが対象です")
+        except ValueError:
+            invalid_observation_waits.add(entry.filename)
+        else:
+            observation_waiting.add(entry.filename)
+    target_pairs = {(entry.filename, entry.target_repo) for entry in active if entry.filename not in observation_waiting}
     invalid_cooldowns: set[str] = set()
     cooldown_pending: set[str] = set()
     for entry in active:
@@ -485,11 +505,16 @@ def calculate_readiness(
     )
     all_graph = {name: dependencies for name, dependencies in all_dependency_map.items() if dependencies is not None}
     cyclic = tuple(sorted((set(_cycle_members(all_graph)) & set(dependency_map)) - cooldown_pending))
-    permanently_blocked = set((*broken, *invalid, *self_dependencies, *missing_dependencies, *cyclic, *invalid_cooldowns))
+    permanently_blocked = set(
+        (*broken, *invalid, *self_dependencies, *missing_dependencies, *cyclic, *invalid_cooldowns, *invalid_observation_waits)
+    )
     ready: list[str] = []
     blocked: list[str] = []
     internal_waits: list[str] = []
     for entry in active:
+        if entry.filename in observation_waiting:
+            blocked.append(entry.filename)
+            continue
         if entry.filename in cooldown_pending:
             blocked.append(entry.filename)
             continue
@@ -535,4 +560,6 @@ def calculate_readiness(
         cooldown_pending=tuple(sorted(cooldown_pending)),
         invalid_cooldowns=tuple(sorted(invalid_cooldowns)),
         cooldown_values=tuple(sorted(cooldown_values.items())),
+        observation_waiting=tuple(sorted(observation_waiting)),
+        invalid_observation_waits=tuple(sorted(invalid_observation_waits)),
     )

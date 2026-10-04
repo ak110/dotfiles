@@ -87,7 +87,7 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 セッション記録から本文を取得する場合は、`atk run-script session-review-evidence -- <引数>`を用いる。
 対象はClaude CodeとCodexの記録に含まれるユーザー発話、ツール結果、警告と委譲記録とする。
 Claude Codeの記録はtranscriptの絶対パスを位置引数へ渡すか、セッション識別子を`--claude-session-id <セッション識別子>`へ渡す。Codexの記録は`--codex-thread-id <thread ID>`へ渡す。
-検索語から該当箇所を探す場合は`--grep <Pythonの正規表現>`、位置が確定している記録の本文を読む場合は`--detail <記録>:<行番号>`、出力を保存する場合は`--output-file <絶対パス>`を付ける。
+検索語から該当箇所を探す場合は`--grep <Pythonの正規表現>`、位置が確定している記録の本文を読む場合は`--detail <記録>:<行番号>`を付ける。生成側が返す`保存先:`の絶対パスから全量を読み、出所の引き渡しにも同じファイルを使う。
 本節の手段は`atk run-script session-review-evidence`に限り、検索対象を限定しないJSONLファイル群への汎用CLIによる検索と、セッション記録および`candidates.md`の標準出力への全量表示は対象としない。
 記録は行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を適用するとマッチングの上限に達するためである。
 `atk run-script session-review-evidence`が受理しない調査には、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。

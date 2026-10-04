@@ -461,8 +461,8 @@ def _check_bash_atk_output_loss(command: str) -> bool:
                 fix=(
                     "`atk agents wait`は`&`と標準出力の破棄を外して単独で発行する。"
                     "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領する。"
-                    "`atk`の出力量はサブコマンドが公開する対象限定で減らす。保存先を指定する必要がある場合は"
-                    "`--output-file`を使い、保存した本文の選別は別の呼び出しで行う。"
+                    "`atk`はパイプを外して単独で発行し、生成側が返す標準出力・標準エラーの保存先から全量を読む。"
+                    "保存した本文の選別は別の呼び出しで行う。"
                 ),
             ),
             file=sys.stderr,

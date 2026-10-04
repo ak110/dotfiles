@@ -34,6 +34,8 @@
 | `adopted`または`rejected`→`inbox` | `atk wi return-to-inbox --state=<終端状態>` | 誤って終端した項目を再処理へ戻す主体が、旧処理結果を除いて再開する |
 | `adopted`または`rejected`→`hold` | `atk wi hold --state=<終端状態>` | 誤って終端した項目を確認や修正の間は自動処理から除外する主体が、旧処理結果を除いて保留する |
 
+adoptの実装commit対応は、実装担当がcommitスキルの公開記録手段で計画の進捗ログまたは引き継ぎ記録へ保存し、終端担当が`plan-progress --get-commits`で対象worktreeの現在の完全OIDを取得する。複数commitは同じ取得結果から全対応をnoteへ記録する。対応の欠落は生成側で補完してから終端し、実装差分なしの充足と回答だけのUWIでは既存の根拠記録とcommit省略を使う。
+
 回答済みUWIが指す元項目が既に`inbox`で`ready=true`なら、pickerは`unhold`せず開始時の候補を使う。`hold`の元項目だけを`unhold`で戻し、いずれの場合もUWIと元項目を同じレーンへ一度ずつ割り当てる。
 
 エージェントは`inbox`と`hold`の項目を`atk wi rm`で削除できる。ユーザーはブラウザーUIから終端項目も削除できる。本文の編集は`inbox`、`processing`、`hold`の各状態で行える。
@@ -43,6 +45,10 @@
 状態を確かめてから`atk wi hold`を実行するまでの間に他主体が`processing`へ移した場合、`atk wi hold`は失敗する。この場合は状態を確かめ直して処理中の項目の扱いへ進む。既に`hold`の項目は保留を保ったまま調査・修正・検収を進め、保存本文の一致確認の後に`atk wi unhold`で戻す。
 
 `adopt`または`reject`で項目を終端する主体は、コマンドの実行直前に`--note`または`--note-file`へ渡す処理結果の事実を確認する。
+`--commit`を渡す採否操作では、指定revisionを解決でき、originがWIの対象リポジトリと一致する
+worktreeの絶対パスを`--target-repo`へ渡す。リポジトリの識別だけを要する操作は、保存済みの
+正規化URLを使える。commit検証はローカルのGit実体を必要とする。
+対応するworktreeかrevisionを解決できない場合は、終了コード2で状態変更前に停止する。
 事実はその主張が対象とするplatform、runtimeおよび実行した呼び出し手段と処理の流れで観測したものを用いる。別環境の観測を用いる場合は、対象環境との同等性を直接確認できた範囲に限る。
 処理結果が参照するcommit、PR、CI run、外部操作その他の処理は、終了状態を定める主体で完了を観測し、後続の主体が解決できる識別子を同じ処理結果へ保持する。未完了または未観測の処理は完了形で記録せず、終端前に本文を修正する。
 
@@ -72,3 +78,14 @@
 エージェントが自身の誤りで投入した項目は、`atk wi rm`で削除するか`atk wi edit`で本文を正しい要求へ書き直して再利用する。`rejected`は要求として成立する項目の不採用だけに使う。
 `atk wi rm`による削除はprivate-notesのGit履歴へ残るため、復旧手段を保つ。
 この削除は確認の対象から外れる。
+
+## 候補0件の観測待ち
+
+実装・統合・反映が済み、残る完成条件が選定候補0件のprocess-wiの1回の実行に依存するAWIはprocessingを維持する。メインが次の公開操作で、既存計画のbasenameと実装commitの完全OIDをobservation_waitへ記録する。
+
+```text
+atk wi set-observation-wait <FILE> --condition selection-empty --plan-file <PLAN> --commit <OID> --target-repo <WORKTREE>
+```
+
+本文置換保護を保ち、解除は同じ公開操作の`--clear`を使う。
+readinessは同じ区分を候補・起動件数・一覧へ返し、pickerは観測待ちを別集合でメインへ渡す。通常候補0件と監査・公開対象なしの短絡をメインが直接観測してから既存commitで終端し、計画を保存する。不成立なら状態・計画・commitを保持する。新しい保存状態、時間経過待ち、ユーザー回答待ちへ置き換えない。

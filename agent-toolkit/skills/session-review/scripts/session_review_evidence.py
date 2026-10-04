@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import collections
-import contextlib
 import contextvars
 import datetime
 import json
@@ -36,6 +35,7 @@ try:
     from agent_toolkit._agents_server import record_paths as _record_paths
     from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
     from agent_toolkit._atk import config as _atk_config
+    from agent_toolkit._atk import outcome as _outcome
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
     from agent_toolkit._hooks import response_language_check as _response_language_check
@@ -53,6 +53,7 @@ except ImportError as _import_error:
 _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
+_IMPROVEMENT_MARKER = "気付いた改善点:"
 # Claude Codeのサブエージェントが報告本文を委譲元へ渡すツールの名前。
 _HANDBACK_TOOL = "SubagentHandback"
 _WARNING_LINE_PATTERN = re.compile(
@@ -249,6 +250,28 @@ def _clip(text: str, limit: int | None = None) -> str:
     return normalized[:effective] + _OMISSION_MARK
 
 
+def _clip_assistant_text(text: str) -> str:
+    """本文の先頭を短縮し、省略区間にある改善点の標識行は全文で保持する。"""
+    normalized = text.strip()
+    clipped = _clip(normalized)
+    if clipped == normalized:
+        return clipped
+    boundary = len(clipped) - len(_OMISSION_MARK)
+    prefix = normalized[:boundary]
+    kept: list[str] = []
+    start = 0
+    for line in normalized.splitlines(keepends=True):
+        end = start + len(line)
+        if line.lstrip().startswith(_IMPROVEMENT_MARKER) and end > boundary:
+            if start < boundary:
+                prefix = normalized[:start]
+            kept.append(line.rstrip("\r\n"))
+        start = end
+    if not kept:
+        return clipped
+    return prefix + _OMISSION_MARK + "\n" + "\n".join(kept)
+
+
 class _DetailBudget:
     """1エントリの詳細出力が共有する残り文字数と、省略の発生有無。
 
@@ -311,8 +334,9 @@ def _codex_text_blocks(content: Any) -> list[str]:
 
 
 def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] | None:
+    """共通イベントを生成し、アシスタント本文の省略区間の改善点を候補判定まで保つ。"""
     runtime_inserted = kind == "user" and _is_runtime_inserted_text(text)
-    clipped = _clip(text)
+    clipped = _clip_assistant_text(text) if kind == "assistant" else _clip(text)
     if not clipped:
         return None
     event: dict[str, Any] = {"kind": kind, "text": clipped}
@@ -3525,7 +3549,7 @@ _DELEGATE_COMPLETION_VALUES = frozenset(
 """`<役割名>.subagent.md`が成功の返却値として定める固定の先頭行。各値が`agent-toolkit/share/`の`<役割名>.subagent.md`に現れることをテストが確かめる。"""
 _UNEXPECTED_EVENT_PREFIXES = ("想定外事象:", "想定外事象：")
 _VERDICT_LINE = re.compile(r"^(?:#+\s*)?(?:\*\*)?\s*判定[^:：]{0,30}[:：]\s*(?:\*\*)?\s*(?P<value>\S.*)$")
-_SHELL_OPERATOR_CHARS = frozenset(";&|<>()")
+_SHELL_OPERATOR_CHARS = frozenset(";&|<>()\n")
 _SHELL_DELEGATION_MARKER = "次のコマンドを実行し、結果を報告せよ。"
 """`agents_server`の`start`のshellが委譲先へ渡す指示本文の冒頭の文。値が同サーバーの指示本文と一致することをテストが確かめる。"""
 _REPORTED_EXIT_CODE = re.compile(r"(?:終了コード|exit(?:[_ ]?code)?|(?<![A-Za-z])rc)[^0-9\n]{0,15}?(\d+)", re.IGNORECASE)
@@ -3547,7 +3571,6 @@ _CHECK_COMMANDS = frozenset(
         ("make", "test"),
         ("atk", "plan-check"),
         ("atk", "exec-review-evidence-check"),
-        ("atk", "completion-report-check"),
         ("atk", "validate"),
         ("gh", "watch"),
         ("wait_ci.py", ""),
@@ -3710,6 +3733,9 @@ def _candidate_events(
                 excluded["hook-notice-represented"] += 1
                 continue
             if candidate_kind == "tool-failure" and _is_normal_negative_tool_failure(event):
+                excluded["normal-negative-result"] += 1
+                continue
+            if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_atk_no_match(event):
                 excluded["normal-negative-result"] += 1
                 continue
             if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_nonterminal_result(event):
@@ -4203,6 +4229,34 @@ def _is_normal_negative_result(event: dict[str, Any]) -> bool:
     return exit_code == 1 and _is_negative_predicate(args)
 
 
+def _is_normal_atk_no_match(event: dict[str, Any]) -> bool:
+    """単独のatkが結果行と終了1で表す該当0件を、生成側の契約から判定する。"""
+    if event.get("tool") != "CommandExecution" and event.get("tool_name") != "Bash":
+        return False
+    if _failure_exit_code(event) != 1:
+        return False
+    executable, _subcommand, command, _args = _failure_command_parts(event)
+    if executable != "atk":
+        return False
+    # 包装の外側の連結も、解除したshellの内部の連結も、終了コードをatkへ帰属できない。
+    operation = _json_object(str(event.get("operation", "")))
+    original_command = operation.get("command") if operation is not None else None
+    commands = [command]
+    if isinstance(original_command, str):
+        commands.append(original_command)
+    for source in commands:
+        tokens = _shell_command_tokens(source)
+        if tokens is None or any(token.operator for token in tokens):
+            return False
+    output = event.get("diagnostic") if event.get("tool") == "CommandExecution" else event.get("text")
+    if not isinstance(output, str) or _OMISSION_MARK in output:
+        return False
+    lines = [line.lstrip() for line in output.splitlines()]
+    return any(line.startswith(_outcome.NO_MATCH_PREFIX) for line in lines) and not any(
+        line.startswith((_outcome.FAILURE_PREFIX, _outcome.WARNING_PREFIX)) for line in lines
+    )
+
+
 def _is_normal_negative_tool_failure(event: dict[str, Any]) -> bool:
     """Claude CodeのBashで、読取専用の述語または検索が出力なしで偽を返した事象を区分する。
 
@@ -4264,7 +4318,9 @@ def _shell_command_tokens(command: str) -> list[_ShellToken] | None:
             scanner.enter_quote(char)
             continue
         scanner.index += 1
-        if char.isspace():
+        if char == "\n":
+            pieces.append((char, True))
+        elif char.isspace():
             pieces.append(None)
         elif char in _SHELL_OPERATOR_CHARS:
             pieces.append((char, True))
@@ -4358,7 +4414,7 @@ def _is_negative_predicate(args: list[str]) -> bool:
 
 
 def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, resumed: bool = False) -> bool:
-    """想定外事象を持たず、正常な完了だけを示す委譲返却であるかを返す。
+    """想定外事象や改善点を持たず、正常な完了だけを示す委譲返却であるかを返す。
 
     正常な完了は、`状態: completed`（旧形式の`status: completed`を含む）の行を持ち未解決の指摘が0件の返却、
     `<役割名>.subagent.md`が定める返却値で始まる返却、
@@ -4368,11 +4424,14 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
     再開された委譲先（`resumed`）の前置きは、受け取り済みの報告の返し直しのような異常を述べる場合があるためである。
     委譲先は想定外の事象を`想定外事象:`行で返すため、この行を持つ返却と、調査結果のような
     自由記述の返却は、本文の意味の判断を要するため候補に残す。
+    改善点の標識行は、完了・適合・shellの各正常分岐より先に候補へ保持する。
     """
     text = event.get("text")
     if not isinstance(text, str):
         return False
     lines = [line.strip() for line in text.splitlines()]
+    if any(line.startswith(_IMPROVEMENT_MARKER) for line in lines):
+        return False
     if any(line.startswith(_UNEXPECTED_EVENT_PREFIXES) for line in lines):
         return False
     body = [line for line in lines if line and not line.startswith("```")]
@@ -4543,7 +4602,10 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
     else:
         value = command.get("command") if command is not None else None
         args = _shell_tokens(value) if isinstance(value, str) else []
-    display = " ".join(args)
+    # Bashの引用と演算子は原文で保ち、直接渡されたargvでは引用してデータとして扱う。
+    value = command.get("command") if command is not None else None
+    display = value if not isinstance(raw, str) and isinstance(value, str) else shlex.join(args)
+    shell_unwrapped = False
     for _ in range(5):
         if not args:
             break
@@ -4556,7 +4618,9 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
                 index += 1
             args = args[index:]
         elif name in _SHELL_NAMES and len(args) >= 3 and args[1] in {"-c", "-lc"}:
-            display = args[2]
+            if not shell_unwrapped:
+                display = args[2]
+                shell_unwrapped = True
             args = _shell_tokens(args[2])
         elif name == "uv" and len(args) >= 3 and args[1] == "run":
             index = 2
@@ -5134,34 +5198,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "集計と通知の走査の全量は保存先のファイルから読む。"
         "指定するディレクトリは実在していることを要する。他の照会オプションとは併用しない。",
     )
-    parser.add_argument(
-        "--output-file",
-        metavar="PATH",
-        help="全てのモードの標準出力を指定した絶対パスのファイルへ保存し、標準出力へは保存先パスと保存した行数だけを書く。",
-    )
     return parser
 
 
-def main(argv: list[str] | None = None, *, _output_file_active: bool = False) -> int:
+def main(argv: list[str] | None = None) -> int:
     """証拠または照会結果を1イベント1 JSONのJSONLとして標準出力へ書く。"""
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
-    if args.output_file is not None and not _output_file_active:
-        output_path = Path(args.output_file)
-        if not output_path.is_absolute():
-            return _print_error(
-                "--output-fileには絶対パスを指定してください。", next_action="`--output-file`へ絶対パスを渡して再実行する"
-            )
-        resolved = output_path.resolve(strict=False)
-        with resolved.open("w", encoding="utf-8", newline="") as stream, contextlib.redirect_stdout(stream):
-            exit_code = main(argv, _output_file_active=True)
-        with resolved.open(encoding="utf-8", newline="") as stream:
-            line_count = sum(1 for _line in stream)
-        print(f"保存先: {resolved}")
-        print(f"行数: {line_count}")
-        return exit_code
     if (
         sum(
             (

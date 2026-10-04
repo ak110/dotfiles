@@ -224,6 +224,47 @@ def test_agents_wait_guides_review_result_before_deciding_findings(
         assert next_action != state.REVIEW_RESULT_NEXT_ACTION
 
 
+@pytest.mark.parametrize("label", ["add-wi", "lane-01-exec-review"])
+@pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
+@pytest.mark.parametrize(
+    "message", ["完了", "本文中の気付いた改善点: は標識ではない", "完了\n  気付いた改善点: 反復した\n気付いた改善点: 再読した"]
+)
+def test_agents_wait_relays_improvements_with_existing_guidance(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    label: str,
+    status: str,
+    message: str,
+) -> None:
+    """公開waitの出力が標識行の案内と既存の案内を保持し、結果本文と保存本文を変えない。"""
+    wait_environment.mkdir(parents=True)
+    payload = {"status": status, "agent_message": message, "next_action": "既存の案内", "session": {"label": label}}
+    (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    action = result["next_action"]
+    assert "既存の案内" in action
+    marked = message.startswith("完了\n")
+    assert (state.IMPROVEMENT_RESULT_NEXT_ACTION in action) is marked
+    if marked:
+        assert action.count(state.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
+        assert "メインエージェント" in action
+        assert "`agent-toolkit/share/rules-main.md`「協調と自律」" in action
+    if status == "completed" and label.endswith("-review"):
+        assert state.REVIEW_RESULT_NEXT_ACTION in action
+    elif status == "failed":
+        assert "失敗の種類を確かめる" in action
+    elif status == "interrupted":
+        assert "中断を要求していない場合" in action
+    assert result["agent_message"] == message
+    assert pathlib.Path(result["agent_message_path"]).read_text(encoding="utf-8") == message
+    assert not captured.err
+
+
 def test_agents_wait_uses_explicit_root_without_environment(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1799,7 +1840,12 @@ def _observe_cli_wait_limit(
         atk.main(["agents", "wait"])
 
     assert sleeps == [1.0, 0.5]
-    timed_out = json.loads(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    assert not captured.err
+    output = captured.out
+    if output.startswith("保存先: "):
+        output = pathlib.Path(output.splitlines()[0].removeprefix("保存先: ")).read_text(encoding="utf-8")
+    timed_out = json.loads(output)
     # 待機上限で終わった行は、待機を続ける操作を次の操作として持つ。
     assert "atk agents wait" in timed_out.pop("next_action")
     assert timed_out == {"session_id": "session-1", "status": "running"}

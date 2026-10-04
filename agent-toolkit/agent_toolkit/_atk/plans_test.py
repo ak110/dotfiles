@@ -1,5 +1,6 @@
 """`atk plans checkout`・`commit`と旧計画root移行の実Git検証。"""
 
+import argparse
 import datetime
 import os
 import pathlib
@@ -13,7 +14,9 @@ from agent_toolkit import atk
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import plans as _atk_plans
 from agent_toolkit._atk import review_table as _review_table
+from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import common as _common
+from agent_toolkit._plan import fixture as _plan_fixture
 from agent_toolkit._plan import locations as _plan_file
 
 
@@ -1540,3 +1543,44 @@ def test_finalize_keeps_working_file_when_content_changed_after_check(tmp_path: 
     assert exc_info.value.next_action == _atk_plans._CHANGED_DURING_SAVE_NEXT_ACTION  # pylint: disable=protected-access
     assert source.read_text(encoding="utf-8") == "書き換えた本文\n"
     assert not destination.exists()
+
+
+def test_public_save_all_then_restore_unfinished_plan(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """順序付きの全計画保存を終えてから、未終端だけをcheckoutで再開できる場所へ戻す。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+    working = _plan_file.working_plans_root(home)
+    working.mkdir(parents=True)
+    names = ["04-0100_first-abcd.md", "04-0200_second-bcde.md"]
+    original = {}
+    for name, wi in zip(names, ("20260930-175957-001.md", "20261004-044541-001.md"), strict=True):
+        path = working / name
+        text = _plan_fixture.current_plan(related_wi=((wi, name),))
+        path.write_text(text, encoding="utf-8")
+        args = argparse.Namespace(
+            script_name="plan-progress",
+            script_args=[str(path), "--completed-step", "観測の再開", "--result", "反映後の観測だけが残る"],
+        )
+        assert run_script.dispatch(args) == 0
+        original[name] = path.read_bytes()
+    saved = []
+    for name in names:
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["plans", "commit", name, "--skip-push"], home=home)
+        assert not (working / name).exists()
+        output = capsys.readouterr().out
+        assert name in output
+        matches = list((notes / "plans").rglob(name))
+        assert len(matches) == 1 and matches[0].read_bytes() == original[name]
+        saved.append(matches[0].relative_to(notes / "plans").as_posix())
+    assert [pathlib.Path(item).name for item in saved] == names
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["plans", "checkout", saved[0]], home=home)
+    assert (working / names[0]).read_bytes() == original[names[0]]
+    assert not (working / names[1]).exists()
+    assert "20260930-175957-001.md" in (working / names[0]).read_text(encoding="utf-8")
+    assert "反映後の観測だけが残る" in (working / names[0]).read_text(encoding="utf-8")

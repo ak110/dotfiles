@@ -32,6 +32,8 @@
 11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず`needs_escalation`で返す。
 12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
+手順8の履歴検収後に、旧完全OIDから新完全OIDへの対応をcommitスキルの`--rewrite-map`で各計画または引き継ぎ記録へ追記する。AWI集合を継承し、統合前後とも`--get-commits`で現在のOIDを取得できる状態にする。
+
 ### 検証結果の警告の判定
 
 手順9と10の検証後は、`agent-toolkit:check-execution`のSKILL.md「検証結果の診断と警告の判定」を読む。
@@ -45,6 +47,8 @@
 ## マージなしの統合
 
 実装commitを作成せず、統合先branchを統合開始時の状態のまま保つ。統合開始時の統合先branchの7文字以上の一意な短縮OIDを`統合後のHEAD`とする。
+
+未終端項目の計画を作業領域へ残す指示も、全計画保存後の復元として扱う。入力の全計画を保存し、保存後の復元はセッション終了時のメインへ渡す。今回通常レーンへ渡さなかった観測待ちの既存計画は本レーンの保存一覧へ加えない。
 
 ## 計画最終化
 
@@ -60,7 +64,11 @@
 
 計画または計画なしの引き継ぎ記録に確定した採否と、受領した終端区分を適用する。採用した項目と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終端する。adoptではAWIごとに実装差分を確かめ、adoptのcommit対応付け（`agent-toolkit:wi-standards`「状態と依存」の遷移表）に従う。複数commitのメモは`--note-file`へ記録する。開始時と統合時のHEADを全項目へ機械的に複製しない。プロジェクト固有の公開後の操作後へadoptを延期する項目は、AWIファイル名と対応する実装commitを対応付けて返し、状態変更は延期先の工程へ委ねる。`終端しない`と受領した項目は状態を変更せず、`adopted`と`rejected`のいずれにも含めない。`混在`の項目はメインが`inbox`へ戻す。観測のみの再開で残った項目は`processing`のまま残し、メインがセッション終了工程で扱う。
 
+実装差分のあるAWIの対応commitは、commitスキルの`plan-progress --get-commits`で計画の進捗ログ・引き継ぎ記録から取得する。統合後のworktreeを`--worktree`へ渡し、計画なしでは`--handoff`と対象全件の`--allowed-awi`を加える。取得した完全OIDを単一の`adopt --commit`へ渡す。複数commitでは全対応を`--note-file`へ記録し、延期adoptの返却では対応するAWIとOIDの組を全件残す。対応不足は生成側で補完してから終端する。説明文や件名から推定せず、実装差分なしの項目は既存の根拠記録とcommit省略を保つ。
+
 各状態変更コマンドは単独実行し、成功の報告、対象の完全識別子および警告の不在で完了を判定する。同じ状態を別コマンドで取得し直さない。`atk`の成功の報告を完了の根拠とし、報告と保存状態の不一致は`atk`側で是正するためである。
+commitを記録する採否操作は`agent-toolkit:wi-standards`「状態と依存」の共通前提に従い、
+統合後の実装commitを解決できる受領済みの統合先worktreeの絶対パスを`--target-repo`へ渡す。
 
 ## 出力
 
