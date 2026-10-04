@@ -159,7 +159,7 @@ def test_public_cli_records_and_reads_commit_mapping(
     replacements.write_text(json.dumps({oid: new_oid}), encoding="utf-8")
     assert (
         append_progress_log.main(
-            [*common, "--rewrite-file", str(replacements), "--completed-step", "履歴検収", "--result", "成功"]
+            [*common, "--rewrite-map", str(replacements), "--completed-step", "履歴検収", "--result", "成功"]
         )
         == 0
     )

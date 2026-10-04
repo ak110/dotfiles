@@ -137,7 +137,7 @@ def append_progress_log(
 
 def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -> bool:
     """対応の記録・取得を処理し、取得だけで終了する場合は真を返す。"""
-    if not (args.commit or args.rewrite_file or args.get_commits or args.handoff or args.awi or args.allowed_awi):
+    if not (args.commit or args.rewrite_map or args.get_commits or args.handoff or args.awi or args.allowed_awi):
         return False
     if args.worktree is None or not args.worktree.is_absolute():
         parser.error("commit対応には絶対パスの--worktreeが必要です")
@@ -156,11 +156,11 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         return True
     if args.commit:
         event = commit_mapping.commit_event(args.worktree, args.commit, args.awi or [], allowed)
-    elif args.rewrite_file:
+    elif args.rewrite_map:
         mapping = commit_mapping.read_mapping(content, allowed)
-        event = commit_mapping.rewrite_event(args.worktree, args.rewrite_file, mapping)
+        event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping)
     else:
-        parser.error("--handoffには--commit、--rewrite-fileまたは--get-commitsが必要です")
+        parser.error("--handoffには--commit、--rewrite-mapまたは--get-commitsが必要です")
         return False
     args.result = args.result + " " + commit_mapping.encode_event(event)
     if args.handoff:
@@ -179,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
     operation = parser.add_mutually_exclusive_group()
     operation.add_argument("--commit", help="対応を記録する実装commit。完全OIDへ解決する")
-    operation.add_argument("--rewrite-file", type=pathlib.Path, help="検収済みの旧完全OIDから新OIDへのJSON対応")
+    operation.add_argument("--rewrite-map", type=pathlib.Path, help="検収済みの旧完全OIDから新OIDへのJSON対応")
     operation.add_argument("--get-commits", action="store_true", help="対象AWIの現在のcommit対応をJSON Linesで取得する")
     parser.add_argument("--awi", action="append", help="対応する、または取得するAWIファイル名。反復指定")
     parser.add_argument("--worktree", type=pathlib.Path, help="実装commitを確認する対象worktreeの絶対パス")

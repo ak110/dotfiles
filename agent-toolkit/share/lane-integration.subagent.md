@@ -32,7 +32,7 @@
 11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず`needs_escalation`で返す。
 12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
-手順8の履歴検収後に、旧完全OIDから新完全OIDへの対応をcommitスキルの`--rewrite-file`で各計画または引き継ぎ記録へ追記する。AWI集合を継承し、統合前後とも`--get-commits`で現在のOIDを取得できる状態にする。
+手順8の履歴検収後に、旧完全OIDから新完全OIDへの対応をcommitスキルの`--rewrite-map`で各計画または引き継ぎ記録へ追記する。AWI集合を継承し、統合前後とも`--get-commits`で現在のOIDを取得できる状態にする。
 
 ### 検証結果の警告の判定
 

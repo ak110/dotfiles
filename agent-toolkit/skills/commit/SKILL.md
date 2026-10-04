@@ -53,7 +53,7 @@ atk run-script plan-progress -- <計画> --completed-step <工程> --result <結
 
 計画なしでは引き継ぎ記録を対象にし、`--handoff`と対象集合全件の`--allowed-awi`を加える。
 
-終端担当は同じ記録へ`--get-commits --worktree <対象worktreeの絶対パス> --awi <AWIファイル名>`を渡し、JSON Linesの`awi`・`commits`から現在の完全OID集合を取得する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。記録の欠落・対象外AWI・Gitで解決できないOIDは生成側が補完してから再取得する。実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、既存の根拠記録とcommit省略を使う。公開メッセージへWI識別子を追加せず、計画保存は既存の`atk plans commit`を使う。
+終端担当は`atk run-script plan-commits -- <記録> --worktree <worktree> --awi <AWI>`へ同じ記録と対象を渡す。記録とworktreeは絶対パスを使い、JSON Linesの`awi`・`commits`から現在の完全OID集合を取得する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。記録の欠落・対象外AWI・Gitで解決できないOIDは生成側が補完してから再取得する。実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、既存の根拠記録とcommit省略を使う。公開メッセージへWI識別子を追加せず、計画保存は既存の`atk plans commit`を使う。
 
 ## 条件付き手順
 
