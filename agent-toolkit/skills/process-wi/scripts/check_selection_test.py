@@ -217,6 +217,73 @@ def test_public_name_runs_selection_check(
     assert "a.md: 未被覆: src/model.py" in capsys.readouterr().err
 
 
+def test_public_check_resolves_abbreviated_paths_and_classification(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """文章・インラインコードのディレクトリ省略表記を公開コマンドの被覆判定へ渡す。"""
+    repo, notes = env
+    fresh_path = "agent-toolkit/agent_toolkit/_agents_server/" + "fresh.py"
+    _awi(
+        notes,
+        "short.md",
+        "src/のmodel.py・new_module.pyと、`docs/development/design.md`・`new.md`を変更する。"
+        "次に`agent-toolkit/agent_toolkit/_agents_server/status_file.py`と`fresh.py`を変更する。",
+    )
+    selection = tmp_path / "selection.yaml"
+    selection.write_text(
+        yaml.safe_dump({"選定": [{"WI": "short.md", "レーン": "lane-01", "書込対象": []}]}, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(script_name="pick-wi-check", script_args=["--", "--work-dir", str(repo), str(selection)])
+    assert run_script.dispatch(args) == 1
+    err = capsys.readouterr().err
+    for path in (
+        "src/model.py",
+        "src/new_module.py",
+        "docs/development/design.md",
+        "docs/development/new.md",
+        "agent-toolkit/agent_toolkit/_agents_server/status_file.py",
+        fresh_path,
+    ):
+        assert f"short.md: 未被覆: {path}" in err
+
+    selection.write_text(
+        yaml.safe_dump(
+            {
+                "選定": [
+                    {
+                        "WI": "short.md",
+                        "レーン": "lane-01",
+                        "書込対象": [
+                            "src/",
+                            "docs/development/design.md",
+                            "docs/development/new.md",
+                            "agent-toolkit/agent_toolkit/_agents_server/status_file.py",
+                            fresh_path,
+                        ],
+                    }
+                ]
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    assert run_script.dispatch(args) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_abbreviated_paths_require_directory_context_and_existing_parent(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """孤立した名前、コマンド、存在しない親を反映先として誤診断しない。"""
+    repo, notes = env
+    _awi(notes, "isolated.md", "model.pyと`atk wi add`、https://example.com/x.py、missing/dir/x.py・other.pyは対象外。")
+
+    assert _run(tmp_path, repo, [{"awi": "isolated.md", "lane": "lane-01", "write_files": []}]) == 0
+    assert capsys.readouterr().err == ""
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 @pytest.mark.parametrize(
     ("paths", "same_lane", "rationale", "expected"),

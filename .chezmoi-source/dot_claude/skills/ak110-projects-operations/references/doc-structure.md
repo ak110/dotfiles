@@ -72,7 +72,7 @@ development.md・architecture.md・concept.md等、docs/development/配下の全
 ## docs/guide/index.mdの扱い
 
 ドキュメント生成ツールの自動生成ナビ（nav・sidebar）でガイド一覧を提示できる場合、guide/index.mdは任意配置とする。
-配置する場合は見出しを「エンドユーザー向けガイド」で揃える。docs/development/index.mdの見出しは「開発者向けガイド」で揃える。
+配置する場合は見出しを「利用者向けガイド」で揃える。docs/development/index.mdの見出しは「開発者向けガイド」で揃える。
 
 ## バッジ記法
 

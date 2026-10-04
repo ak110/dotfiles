@@ -34,6 +34,9 @@ REQUIRED_FIELDS = {
     "user_requirements": ("awi", "requirement", "origin", "outcome", "source", "evidence"),
 }
 WI_FILENAME = re.compile(r"\d{8}-\d{6}-\d{3}\.md")
+NON_FILE_PAIRS = frozenset(
+    {"False/True", "True/False", "false/true", "true/false", "yes/no", "no/yes", "on/off", "off/on", "0/1", "1/0"}
+)
 # 絶対パスの開始位置（POSIXの`/`かWindowsのドライブ文字）。計画ファイル名は空白を含み得るため、終端は`.md`で探す。
 PATH_START = re.compile(r"[A-Za-z]:[\\/]|/")
 BRACKETED_TITLE = re.compile(r"「([^」]+)」")
@@ -429,7 +432,7 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
     matches = []
     for match in EVIDENCE_REFERENCE.finditer(evidence):
         candidate, _ = _reference_parts(match)
-        if "://" in candidate or candidate.startswith("~"):
+        if "://" in candidate or candidate.startswith("~") or candidate == "/" or candidate in NON_FILE_PAIRS:
             continue
         reference = pathlib.Path(candidate)
         # 単位の標識はWIの識別子であり、根拠ファイルへの参照ではない。
@@ -507,7 +510,7 @@ def _reference_location_error(content: bytes, location: str, headings: set[str])
 
 
 def _check_reference_locations(payload: dict[str, object], repository: pathlib.Path, expected_head: str) -> list[str]:
-    """両配列の全達成行で、明示されたファイル・見出し・行を対象版から確認する。"""
+    """両配列の全達成行で、WIまたは明示されたファイルの見出し・行を確認する。"""
     head = _commit_oid(repository, expected_head)
     contents: dict[pathlib.Path, bytes | str] = {}
     headings: dict[pathlib.Path, set[str]] = {}
@@ -520,11 +523,16 @@ def _check_reference_locations(payload: dict[str, object], repository: pathlib.P
                 continue
             for match in _file_references(_evidence_body(row, field), repository):
                 candidate, location = _reference_parts(match)
+                is_wi = WI_FILENAME.fullmatch(candidate) is not None
                 # abspathは..を整理するが、現在のリンク先で対象commitのパスを変えない。
                 path = pathlib.Path(os.path.abspath(repository / candidate))
                 if path not in contents:
                     try:
-                        contents[path] = _reference_content(path, repository, head)
+                        if is_wi:
+                            _, wi_body = _wi_body(_show_wi(candidate, repository), candidate)
+                            contents[path] = "\n".join(wi_body).encode("utf-8")
+                        else:
+                            contents[path] = _reference_content(path, repository, head)
                     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
                         contents[path] = str(exc)
                 content = contents[path]
@@ -537,8 +545,12 @@ def _check_reference_locations(payload: dict[str, object], repository: pathlib.P
                                 title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)
                             }
                         reason = _reference_location_error(content, location, headings.get(path, set()))
+                        if reason is not None and is_wi:
+                            reason = f"WIの節または行を確かめてください: {reason}"
                     except UnicodeError as exc:
                         reason = f"参照先をUTF-8として読めません: {exc}"
+                if reason is not None and is_wi and "WIの節または行" not in reason:
+                    reason = f"WI名または節を確かめてください: {reason}"
                 if reason is not None:
                     errors.append(
                         f"{row['awi'] or '計画由来'}: {section}[{index}].evidence: "
@@ -1031,6 +1043,8 @@ def _referenced_records(row: dict[str, str], records: dict[pathlib.Path, str], r
     found: list[str] = []
     for match in _file_references(row["source"] + " " + row["evidence"], repository):
         candidate, location = _reference_parts(match)
+        if WI_FILENAME.fullmatch(candidate):
+            continue
         text = records.get((repository / candidate).resolve())
         if text is not None:
             headings = {title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)}

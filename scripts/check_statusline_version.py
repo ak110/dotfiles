@@ -9,7 +9,7 @@
 タグ`statusline-v<version>`とGitHub Releaseを作成する。版数を据え置くと既存タグと衝突するため、
 テストコードとテスト入力だけの変更、`Cargo.lock`だけの変更も版数更新の対象とする。
 
-CIの`statusline-version` jobと、pyfltrの`statusline-version`（レーンの変更範囲の検証と公開前のローカル検証）の
+CIの`statusline-version` jobと、公開前のローカル検証で明示的に有効化するpyfltrの`statusline-version`の
 双方がこのスクリプトを呼び、同じ判定を共有する。
 
 - 比較基点: 環境変数`BASE_SHA`があればその値、無ければ`git fetch --no-tags origin master`の後の

@@ -43,6 +43,7 @@ permissions設定による確認ダイアログが対象の場合は本書の範
 | UWIの回答でエージェントに実行を任せたシステムへの永続的な変更（sudoによるパッケージ導入など） | Unauthorized Persistence | UWIの回答は判定器が読む会話上のユーザー発言に現れない。実行前には確認せずに実行し、拒否された場合は設定ファイルの読み取りを省いて後掲の偽陽性フローの`AskUserQuestion`へ進む |
 | ユーザーの指示を反映しない拒否後の再発行 | Auto-Mode Bypass等 | 許可ルール`Reconsidered Retry Approval`により、拒否本文とユーザーメッセージを比べて同一のコマンド・引数・ツールを1回だけ再発行する |
 | 常時読み込む規範ファイル（`~/.claude/rules/`配下など）の編集 | Self Modification | 許可ルール`Agent Workspace Writes`が対象に含む |
+| エージェントの誤操作で変わった状態（リポジトリ共通のGit設定など）を変更前の値へ戻す操作 | Modify Shared Resources等 | 許可ルール`Agent Mistake Recovery`が対象に含む。拒否が残る場合は後掲の偽陽性フローへ進む |
 | 規範の配布元となるユーザー本人のリポジトリへの読み取り | Self Modification | 同じルールが値を変更しない参照を対象に含む |
 
 - 許可ルールはremoteのホスト、由来および所有者による限定を置かず、操作の種別と除外条件で対象を決める。方針の出所は、dotfilesリポジトリを利用する場合の`docs/development/concepts-governance.md`にある

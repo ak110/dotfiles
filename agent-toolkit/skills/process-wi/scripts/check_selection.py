@@ -2,7 +2,7 @@
 
 pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と反映先`から手で書き写すため、
 反映先の一部を欠いた値や、個別ファイルの代わりに上位ディレクトリだけを書いた値がレーン分けへ渡り得る。
-本スクリプトは`レーン`が`なし`でない各項目について、同節のインラインコードから反映先パスを抽出し、
+本スクリプトは`レーン`が`なし`でない各項目について、同節の文章とインラインコードから反映先パスを抽出し、
 `書込対象`と`書き込まない反映先`の双方に照らして次の4区分の違反を報告する。
 旧欄名（`decisions`、`awi`、`lane`、`write_files`、`excluded_paths`）で書かれた選定結果も同じ意味で読む。
 
@@ -53,6 +53,11 @@ _LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
 _NON_PATH_PREFIXES = ("/", "~", "$", "<")
 # ワイルドカードとURLは個別のパスを指さない。
 _NON_PATH_FRAGMENTS = ("*", "://")
+_PATH_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_./:$~<\-])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]*"
+    r"|(?<![A-Za-z0-9_./:$~<\-])[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+"
+)
+_LIST_GAP_RE = re.compile(r"(?:\s*(?:の|と|および|ならびに|、|・|,))+\s*")
 
 
 class InputError(Exception):
@@ -65,22 +70,40 @@ def reflected_paths(body: str, work_dir: pathlib.Path) -> set[str]:
     `/`を含む候補は、`work_dir`からの相対パスとして実在するか、親ディレクトリが実在する場合に採る。
     親ディレクトリだけの実在で採るのは、反映先が挙げる新設ファイルを含めるためである。
     `/`を含まない候補は、`work_dir`直下に実在するファイルの場合だけ採る。
-    `/`を含まない語はコマンド名や識別子であることが多く、実在するファイルだけをパスとみなすためである。
+    ディレクトリに続き区切り記号で列挙されたファイル名だけは、そのディレクトリ内の実在または新設先として採る。
+    孤立した語はコマンド名や識別子であることが多く、作業ツリー直下の実在ファイルだけを採用する。
     """
     section = _section_text(body, _TARGET_SECTION)
     if section is None:
         return set()
     paths: set[str] = set()
-    for candidate in _inline_codes(section):
-        path = _normalize_candidate(candidate)
-        if path is None:
-            continue
-        target = work_dir / path
-        if "/" in path:
-            if target.exists() or target.parent.is_dir():
-                paths.add(path)
-        elif target.is_file():
-            paths.add(path)
+    for run in _inline_runs(section):
+        directory: str | None = None
+        last_end = 0
+        for match in _PATH_TOKEN_RE.finditer(run):
+            candidate = _normalize_candidate(match.group())
+            gap = run[last_end : match.start()]
+            if directory is not None and not _LIST_GAP_RE.fullmatch(gap):
+                directory = None
+            last_end = match.end()
+            if candidate is None:
+                directory = None
+                continue
+            if "/" in candidate:
+                target = work_dir / candidate
+                if target.exists() or target.parent.is_dir():
+                    paths.add(candidate)
+                    directory = candidate if candidate.endswith("/") else candidate.rsplit("/", 1)[0] + "/"
+                else:
+                    directory = None
+                continue
+            if (work_dir / candidate).is_file():
+                paths.add(candidate)
+            elif directory is not None:
+                contextual = directory + candidate
+                target = work_dir / contextual
+                if target.is_file() or target.parent.is_dir():
+                    paths.add(contextual)
     return paths
 
 
@@ -99,14 +122,14 @@ def _section_text(body: str, heading: str) -> str | None:
     return None
 
 
-def _inline_codes(text: str) -> list[str]:
-    """コードフェンスの外にあるインラインコードの内容を出現順で返す。"""
-    codes: list[str] = []
+def _inline_runs(text: str) -> list[str]:
+    """コードフェンスの外にある文章とインラインコードを段落ごとに連結する。"""
+    runs: list[str] = []
     for token in _MARKDOWN.parse(text):
         if token.type != "inline" or not token.children:
             continue
-        codes.extend(child.content for child in token.children if child.type == "code_inline")
-    return codes
+        runs.append("".join(child.content for child in token.children if child.type in {"text", "code_inline"}))
+    return runs
 
 
 def _normalize_candidate(candidate: str) -> str | None:
