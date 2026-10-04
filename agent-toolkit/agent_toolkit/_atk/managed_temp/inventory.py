@@ -800,7 +800,12 @@ def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _Tre
                 ) from error
         if not attributes & stat.FILE_ATTRIBUTE_READONLY:
             raise error
-        os.chmod(path, stat.S_IWRITE, follow_symlinks=False)
+        # WindowsのPython 3.12の`os.chmod`は`follow_symlinks`を受け付けない。
+        # 対応版ではリンクを辿らず、非対応版では直前の通常ファイルとreparse pointの検証に委ねる。
+        if os.chmod in os.supports_follow_symlinks:
+            os.chmod(path, stat.S_IWRITE, follow_symlinks=False)
+        else:
+            os.chmod(path, stat.S_IWRITE)
         function(raw_path)
 
     shutil.rmtree(root, onexc=retry_readonly_file)

@@ -42,6 +42,24 @@ def _make_junction(link: pathlib.Path, target: pathlib.Path) -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+@pytest.fixture(params=["native", "python312"])
+def windows_chmod(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Readonly解除を実環境の`os.chmod`と、WindowsのPython 3.12相当の代役の両方で確かめる。
+
+    代役はCPython 3.12のWindows版と同じく`follow_symlinks=False`の指定を`NotImplementedError`で拒否する。
+    """
+    if request.param == "native":
+        return
+    original_chmod = os.chmod
+
+    def chmod_without_follow_symlinks(path: typing.Any, mode: int, *, follow_symlinks: bool = True) -> None:
+        if not follow_symlinks:
+            raise NotImplementedError("chmod: follow_symlinks unavailable on this platform")
+        original_chmod(path, mode)
+
+    monkeypatch.setattr(os, "chmod", chmod_without_follow_symlinks)
+
+
 def test_windows_ctypes_structures_match_sdk_layout() -> None:
     """Windows APIへ渡す固定幅structureのsizeとSID offsetを確認する。"""
     assert ctypes.sizeof(subject._AceHeader) == 4
@@ -272,6 +290,7 @@ class TestManagedTempWindows:
         assert not subject._registry_path(target).exists()
         assert not consuming.exists()
 
+    @pytest.mark.usefixtures("windows_chmod")
     def test_cleanup_removes_readonly_files(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """通常ファイルを変えずに、Readonlyを含む管理対象を公開CLIから回収する。"""
         target = subject.create_managed_temp("windows-readonly")
@@ -298,6 +317,7 @@ class TestManagedTempWindows:
         assert not registry.exists()
         assert changed == ["readonly.txt"]
 
+    @pytest.mark.usefixtures("windows_chmod")
     def test_cleanup_resumes_quarantine_with_readonly_files(self) -> None:
         """Readonlyを含む隔離途中状態も公開CLIから回収する。"""
         target = subject.create_managed_temp("windows-readonly-resume")
@@ -313,6 +333,7 @@ class TestManagedTempWindows:
         assert not subject._registry_path(target).exists()
         assert not consuming.exists()
 
+    @pytest.mark.usefixtures("windows_chmod")
     @pytest.mark.parametrize(("mode", "winerror"), [(stat.S_IWRITE, 5), (stat.S_IREAD, 32)])
     def test_cleanup_keeps_attributes_for_other_delete_failures(
         self,
@@ -344,6 +365,7 @@ class TestManagedTempWindows:
         assert getattr(content.lstat(), "st_file_attributes", 0) == before_attributes
         assert "同じcleanupを再試行" in capsys.readouterr().err
 
+    @pytest.mark.usefixtures("windows_chmod")
     def test_cleanup_preserves_readonly_replacement_during_delete(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
