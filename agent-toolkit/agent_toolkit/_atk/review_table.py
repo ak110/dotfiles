@@ -656,7 +656,6 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         "summaryは--roundで指定したラウンドの登録数・未応答数・応答済み数を1件のJSONで返す。"
         "summaryのtrack省略時はexec-review。",
     )
-    show_parser.set_defaults(subparser=show_parser)
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
     validate_parser.add_argument(
         "--allow-unanswered",

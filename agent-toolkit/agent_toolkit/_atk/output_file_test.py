@@ -106,30 +106,73 @@ def run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[object
 
 
 @pytest.mark.parametrize("agent", [False, True])
-def test_evidence_receives_file_without_size_prediction(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], agent: bool
+@pytest.mark.parametrize(
+    ("query", "passes_file"),
+    [
+        (["--detail", "1"], False),
+        (["--grep", "検索語"], False),
+        (["--user-events", "--since", "2026-09-01T00:00:00Z"], True),
+    ],
+)
+def test_evidence_saves_only_output_passed_as_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    agent: bool,
+    query: list[str],
+    passes_file: bool,
 ) -> None:
-    """短い証拠でもエージェントは新規ファイルを受け取り、人の端末は直接本文を読む。"""
+    """エージェントは逐語引用の出所として渡す`--user-events`だけを新規ファイルで受け取り、短い単発照会は直接読む。
+
+    単発照会まで保存すると短い結果を読むたびに往復が増え、`--user-events`を直接表示すると
+    WI投入担当へ渡す出所ファイルが無くなる。人の端末はどの照会も直接本文を読む。
+    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     if agent:
         monkeypatch.setenv("CLAUDECODE", "1")
     trace = tmp_path / "trace.jsonl"
-    trace.write_text(json.dumps({"type": "user", "message": {"content": "検索語"}}) + "\n", encoding="utf-8")
-    argv = ["run-script", "session-review-evidence", "--", str(trace), "--grep", "検索語"]
-    code, output, error = run_atk(argv, capsys)
+    entry = {"type": "user", "timestamp": "2026-10-01T00:00:00Z", "message": {"role": "user", "content": "検索語"}}
+    trace.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+    code, output, error = run_atk(["run-script", "session-review-evidence", "--", str(trace), *query], capsys)
     assert code == 0, error
-    if agent:
+    assert output.startswith("保存先: ") is (agent and passes_file)
+    if agent and passes_file:
         path = pathlib.Path(output.splitlines()[0].removeprefix("保存先: "))
-        output = path.read_text(encoding="utf-8")
         assert path.is_absolute()
-    assert '"kind": "match"' in output
+        output = path.read_text(encoding="utf-8")
+    assert "検索語" in output
+
+
+def test_forced_save_without_result_discards_only_failed_call(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """結果を書かずに非0で終わった強制保存は保存先を片付けて要約を出力せず、成功した空の結果は保存先を返す。"""
+    discarded: list[pathlib.Path] = []
+    failed_directory = tmp_path / "failed"
+    failed_directory.mkdir()
+    with (
+        pytest.raises(SystemExit) as raised,
+        output_file.auto_save(lambda: failed_directory, force_stdout=True, discard_directory=discarded.append),
+    ):
+        raise SystemExit(10)
+    assert raised.value.code == 10
+    assert discarded == [failed_directory.resolve()]
+    assert not (failed_directory / "output.txt").exists()
+    assert not capsys.readouterr().out
+
+    succeeded_directory = tmp_path / "succeeded"
+    succeeded_directory.mkdir()
+    with output_file.auto_save(lambda: succeeded_directory, force_stdout=True, discard_directory=discarded.append):
+        pass
+    assert discarded == [failed_directory.resolve()]
+    assert capsys.readouterr().out.startswith("保存先: ")
 
 
 @pytest.mark.parametrize("argv", [["--help"], ["info"], ["commit", "--help"], ["setup-project", "--help"]])
 def test_help_and_early_returns_use_same_capture(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], argv: list[str]
 ) -> None:
-    """有限終了のヘルプ・診断の実出力を小さい境界で保存し、早期returnを含める。"""
+    """有限終了のヘルプと、結果を表示して終わるサブコマンドの実出力も、小さい境界で同じく保存する。"""
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(output_file, "AUTO_SAVE_THRESHOLD_BYTES", 32)

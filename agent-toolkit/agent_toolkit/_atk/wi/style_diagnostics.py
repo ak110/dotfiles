@@ -56,6 +56,6 @@ def report_warnings(warnings: list[str], *, next_action: str) -> None:
                 f"表記診断を保存できないため全量を表示する: {error}\n警告: {details}", next_action=next_action
             )
         else:
-            outcome.report_warning(f"{_SUMMARY_PREFIX}{len(warnings)}件\n標準エラー詳細保存先: {path}", next_action=next_action)
+            outcome.report_warning(f"{_SUMMARY_PREFIX}{len(warnings)}件\n標準エラー保存先: {path}", next_action=next_action)
     else:
         outcome.report_warning(details, next_action=next_action)

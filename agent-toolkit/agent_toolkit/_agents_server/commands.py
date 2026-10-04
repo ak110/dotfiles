@@ -23,8 +23,6 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     """`agents`配下のサブコマンドを登録する。"""
     sub = _help.add_subcommands(parser, dest="agents_subcommand", required=False, show_help_when_missing=True)
     wait = _help.add_command(sub, "wait", **_help.HELP["atk agents wait"])
-    # エージェントの保存先はatkの共通処理が回収より先に開き、保存不能なら本体を開始しない。
-    wait.set_defaults(subparser=wait)
     wait.add_argument(
         "--root-session-id",
         help="agents_serverの起動応答が返した待機ルート。環境からルートを解決できない場合に指定する。",

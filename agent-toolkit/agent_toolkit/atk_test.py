@@ -146,35 +146,6 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["wi", "list"],
-        ["wi", "show", "--all"],
-        ["wi", "grep", "."],
-        ["plans", "list"],
-        ["managed-temp", "list"],
-        ["review-table", "show", "review.tsv"],
-        ["review-audit", "list", "--repo=owner/repo"],
-    ],
-)
-def test_output_file_option_is_rejected_by_listing_commands(argv: list[str], tmp_path: pathlib.Path) -> None:
-    output_path = tmp_path / "output.txt"
-
-    with pytest.raises(SystemExit, match="2"):
-        atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
-            [*argv, "--output-file", str(output_path)]
-        )
-    assert not output_path.exists()
-
-
-def test_output_file_rejects_relative_path(tmp_path: pathlib.Path) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["plans", "list", "--output-file", "relative.txt"], home=tmp_path)
-
-    assert exc_info.value.code == 2
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
         ["wi", "list", "--skip-pull"],
         ["wi", "show", "--all", "--skip-pull"],
         ["wi", "grep", ".", "--skip-pull"],

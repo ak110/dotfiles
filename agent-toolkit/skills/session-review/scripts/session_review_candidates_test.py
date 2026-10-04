@@ -943,7 +943,7 @@ def test_candidate_events_excludes_wi_body_style_diagnostics() -> None:
             "kind": "warning",
             "record": "main",
             "line": 3,
-            "text": "警告: WI本文の表記診断: 2件\n標準エラー詳細保存先: /tmp/diagnostics/stderr.txt",
+            "text": "警告: WI本文の表記診断: 2件\n標準エラー保存先: /tmp/diagnostics/stderr.txt",
         },
         {"kind": "warning", "record": "main", "line": 4, "text": "警告: 設定キー`model`の候補はありません。本文:1:1の口語表現"},
     ]

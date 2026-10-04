@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk import output_file as _output_file
 
 if TYPE_CHECKING:
     from agent_toolkit._atk.managed_temp.creation import (
@@ -228,7 +227,6 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     )
     list_parser = _atk_help.add_command(subparsers, "list", **_atk_help.HELP["atk managed-temp list"])
     list_parser.add_argument("--prefix", help="列挙する領域を用途識別子で限定する。")
-    list_parser.set_defaults(subparser=list_parser)
 
 
 def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:

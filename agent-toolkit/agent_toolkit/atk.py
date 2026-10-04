@@ -515,7 +515,6 @@ def _add_mq_read_parsers(sub: Any) -> None:
         allow_all=True,
         help_extra="FILENAME指定時は明示的照会として扱い、省略時の限定を適用しない。",
     )
-    show.set_defaults(subparser=show)
     show.add_argument(
         "--summary-only",
         action="store_true",
@@ -887,7 +886,6 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     _add_source_arg(grep, multiple=True)
     _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
-    grep.set_defaults(subparser=grep)
     grep.set_defaults(subparser=grep)
 
     answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk wi answer"])
@@ -1346,6 +1344,25 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
     return not (args.command == "agents" and args.agents_subcommand == "logs" and getattr(args, "follow", False))
 
 
+def _passes_output_as_file(args: argparse.Namespace) -> bool:
+    """結果をファイルとして消費する呼び出しで、量によらず標準出力を保存するかを返す。
+
+    `agents wait`は回収前に保存先を開き、保存できない場合に未受領の結果を消費しないために保存する。
+    複数件の`wi show`は一括取得の消費側が保存ファイルの全見出しと本文を読み、
+    `session-review-evidence`の`--user-events`は逐語引用の出所ファイルとしてWI投入担当へ渡す。
+    単発の`wi show`と他の証拠照会はその場で読むため、通常の量の判定に従う。
+    """
+    if args._help_parser is not None:
+        return False
+    if args.command == "agents" and args.agents_subcommand == "wait":
+        return True
+    if args.command == "wi" and args.wi_subcommand == "show":
+        return not args.summary_only and (args.all or len(set(args.filenames)) > 1)
+    return (
+        args.command == "run-script" and args.script_name == "session-review-evidence" and "--user-events" in args.script_args
+    )
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -1372,15 +1389,11 @@ def main(
     args = parser.parse_args(raw_argv)
     if not _output_capture_active and _auto_saves_output(args):
         is_wait = args.command == "agents" and args.agents_subcommand == "wait" and args._help_parser is None
-        force = args._help_parser is None and (
-            is_wait
-            or (args.command == "wi" and args.wi_subcommand == "show" and not args.summary_only)
-            or (args.command == "run-script" and args.script_name == "session-review-evidence")
-        )
         with _output_file.auto_save(
             lambda: _managed_temp.create_managed_temp("atk-output"),
             after_save=_agents.summarize_saved_wait if is_wait else None,
-            force_stdout=force,
+            force_stdout=_passes_output_as_file(args),
+            discard_directory=_managed_temp.cleanup_managed_temp,
         ):
             main(argv, home=home, now=now, _output_capture_active=True)
         return

@@ -52,21 +52,38 @@ def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bo
     return None
 
 
+def _discard_unused(saved: pathlib.Path, discard_directory: Callable[[pathlib.Path], None] | None) -> None:
+    """結果を書かずに失敗した呼び出しの空の保存先と、その生成領域を片付ける。"""
+    try:
+        saved.unlink()
+        if discard_directory is not None:
+            discard_directory(saved.parent)
+    except Exception as error:  # noqa: BLE001  # 片付けの失敗で本来の終了状態を変えない
+        outcome.report_warning(
+            f"結果の無い出力保存先を片付けられなかった: {saved.parent}: {error}",
+            next_action="対応不要（終了状態は変えていない）。残った領域は最終更新から7日で自動削除される",
+        )
+
+
 @contextlib.contextmanager
 def auto_save(
     create_directory: Callable[[], pathlib.Path],
     *,
     after_save: Callable[[pathlib.Path], None] | None = None,
     force_stdout: bool = False,
+    discard_directory: Callable[[pathlib.Path], None] | None = None,
 ) -> Iterator[None]:
     """有限終了の両出力を保持し、ファイル消費のあるstdoutは実行前に保存先を開く。
 
     waitの結果を消費する前に保存を準備し、保存不能なら本体を開始しない。
     例外とSystemExitでもそれまでの出力と元の終了状態を保持する。
+    実行前に開いた保存先へ何も書かずに非0で終わった場合は、空の保存先と`discard_directory`へ渡す
+    生成領域を片付け、保存先と行数を表示しない。読む結果が無い保存先を受信側へ渡さないためである。
     """
     stdout_buffer, stderr_buffer = io.StringIO(), io.StringIO()
     saved: pathlib.Path | None = None
     stdout_stream: TextIO = stdout_buffer
+    failed = False
     if force_stdout:
         try:
             saved = (create_directory() / "output.txt").resolve()
@@ -80,12 +97,22 @@ def auto_save(
     try:
         with contextlib.redirect_stdout(stdout_stream), contextlib.redirect_stderr(stderr_buffer):
             yield
+    except SystemExit as error:
+        failed = error.code not in (None, 0)
+        raise
+    except BaseException:
+        failed = True
+        raise
     finally:
         if saved is not None:
+            empty = stdout_stream.tell() == 0
             stdout_stream.close()
-            _report_saved(saved)
-            if after_save is not None:
-                after_save(saved)
+            if failed and empty:
+                _discard_unused(saved, discard_directory)
+            else:
+                _report_saved(saved)
+                if after_save is not None:
+                    after_save(saved)
         else:
             emitted = _emit(stdout_buffer.getvalue(), create_directory, stderr=False)
             if emitted is not None and after_save is not None:

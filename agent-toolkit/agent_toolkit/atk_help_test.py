@@ -301,6 +301,49 @@ def test_agents_wait_help_states_own_limit_and_standalone_invocation() -> None:
     assert "--output-file" not in description
 
 
+@pytest.mark.parametrize(
+    ("argv", "help_command", "condition", "root_fragment"),
+    [
+        (["wi", "show", "fb-001.md"], "atk wi show", "FILENAMEが1件の場合", None),
+        (
+            ["wi", "show", "fb-001.md", "fb-002.md"],
+            "atk wi show",
+            "FILENAMEを2件以上指定した場合",
+            "FILENAMEを2件以上指定するか",
+        ),
+        (["wi", "show", "--all"], "atk wi show", "`--all`を指定した場合", "`--all`を指定した`atk wi show`"),
+        (
+            ["run-script", "session-review-evidence", "--", "t.jsonl", "--detail", "1"],
+            "atk run-script",
+            "長さを超える場合",
+            None,
+        ),
+        (
+            ["run-script", "session-review-evidence", "--", "t.jsonl", "--user-events"],
+            "atk run-script",
+            "`--user-events`",
+            "`atk run-script session-review-evidence`の`--user-events`",
+        ),
+        (["agents", "wait"], "atk agents wait", "量によらず回収結果を保存", "`atk agents wait`、"),
+    ],
+)
+def test_output_saving_help_matches_cli_condition(
+    argv: list[str], help_command: str, condition: str, root_fragment: str | None
+) -> None:
+    """個別ヘルプとルートの説明が、呼び出しごとの実際の保存条件を同じ区分で説明する。
+
+    説明が実装と異なると、呼び出し元は短い単発照会でも保存先を探すか、ファイルとして渡す結果を直接表示と誤認する。
+    """
+    args = atk._build_parser().parse_args(argv)  # pylint: disable=protected-access  # noqa: SLF001
+    assert atk._passes_output_as_file(args) is (root_fragment is not None)  # pylint: disable=protected-access  # noqa: SLF001
+    commands = {name: parser for name, parser, _summary in _walk_commands()}
+    description = commands[help_command].description
+    assert description is not None
+    assert condition in description
+    if root_fragment is not None:
+        assert root_fragment in _atk_help.ROOT_DESCRIPTION
+
+
 def _leaf_commands() -> set[str]:
     """それ自体を実行できるコマンドを返す。
 

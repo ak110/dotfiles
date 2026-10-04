@@ -166,6 +166,35 @@ def test_agents_list_returns_diagnostic_fields_without_prompt(
 
 
 @pytest.mark.usefixtures("session_environment")
+def test_agents_wait_without_target_returns_no_empty_saved_summary(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """待機対象の無い非0終了では、標準出力へ空の保存先と行数を返さず、生成した保存先の領域も残さない。
+
+    空の要約を返すと、呼び出し元はヘルプが示す対象不在の動作と異なる出力を受け取り、
+    読む結果の無いファイルを開いてから委譲元の応答の確認へ進む。
+    """
+    root = status_file.status_directory("root-session", tmp_path) / "root.json"
+    document = json.loads(root.read_text(encoding="utf-8"))
+    document["sessions"] = []
+    root.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+
+    with pytest.raises(SystemExit) as raised:
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert raised.value.code == 10
+    assert not captured.out
+    assert "待機対象の登録が0件" in captured.err
+    assert not managed_temp.list_managed_temp("atk-output")
+
+
+@pytest.mark.usefixtures("session_environment")
 def test_agents_wait_saves_small_result_without_output_option(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

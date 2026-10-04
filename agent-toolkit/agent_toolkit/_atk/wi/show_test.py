@@ -419,6 +419,49 @@ class TestShowSummary:
         assert not captured.err
 
 
+class TestShowOutputSaving:
+    """エージェント環境の本文表示は、単発なら直接読め、複数件ならファイルとして受け取れる。"""
+
+    @pytest.mark.parametrize(
+        ("selection", "saved"),
+        [
+            (["fb-001.md"], False),
+            (["fb-001.md", "fb-002.md"], True),
+            (["--all"], True),
+        ],
+    )
+    def test_single_show_is_direct_and_multiple_show_is_saved(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        selection: list[str],
+        saved: bool,
+    ) -> None:
+        """短い単発の本文はその場で読め、複数件は保存先のファイルから全見出しと本文を読める。
+
+        単発まで保存すると短い本文を読むたびに往復が増え、複数件を直接表示すると
+        一括取得の消費側が渡された保存ファイルから全見出しを確かめられない。
+        """
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "fb-001.md", body="# 表題1\n\n本文1")
+        _write_awi_file(notes, "fb-002.md", body="# 表題2\n\n本文2")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setenv("CLAUDECODE", "1")
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+        with pytest.raises(SystemExit) as exit_info:
+            atk.main(["wi", "show", *selection, "--target-repo=all", "--skip-pull"], home=tmp_path)
+        assert exit_info.value.code == 0
+        output = capsys.readouterr().out
+        assert output.startswith("保存先: ") is saved
+        if saved:
+            output = pathlib.Path(output.splitlines()[0].removeprefix("保存先: ")).read_text(encoding="utf-8")
+        bodies = {"fb-001.md": "本文1", "fb-002.md": "本文2"} if saved else {"fb-001.md": "本文1"}
+        assert [line for line in output.splitlines() if line.startswith("### ")] == [f"### {name} [inbox]" for name in bodies]
+        assert all(body in output for body in bodies.values())
+
+
 class TestShowStatusAll:
     """showサブコマンド `--all --status=all`: 全状態（adopted・rejected含む）を出力する。"""
 

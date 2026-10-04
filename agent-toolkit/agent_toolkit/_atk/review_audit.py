@@ -410,7 +410,6 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     )
     list_parser = _atk_help.add_command(subcommands, "list", **_atk_help.HELP["atk review-audit list"])
     list_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
-    list_parser.set_defaults(subparser=list_parser)
     pending_parser = _atk_help.add_command(subcommands, "pending", **_atk_help.HELP["atk review-audit pending"])
     pending_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
     mark_parser = _atk_help.add_command(subcommands, "mark", **_atk_help.HELP["atk review-audit mark"])
