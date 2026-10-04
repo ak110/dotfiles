@@ -1779,13 +1779,18 @@ def test_background_rows_from_template_are_accepted_while_request_stays_judged(
         # 存在しないレビュー指摘管理表を指す行。
         (_ELIDED_RECORD, "/nonexistent/plan.exec-review.tsv", None, "分類の記録を特定できません"),
         # 記録の背景の引用が観測の文だけを覆い、背景とした要求の文を覆っていない行。
-        (f"- 「{_OBSERVATION}」は背景の観測\n", "{wi} ## 反映内容と反映先", None, "原文の範囲を「」で引用していません"),
+        (
+            f"- 「{_OBSERVATION}」は背景の観測\n",
+            "{wi} ## 反映内容と反映先",
+            None,
+            "原文の範囲を位置参照または旧引用で示していません",
+        ),
         # 記録の行に「背景」が無く、割当などの別の扱いを記録した行。
         (
             f"- 「{_OBSERVATION}」は別AWIへ割当\n",
             "{wi} ## 反映内容と反映先",
             None,
-            "原文の範囲を「」で引用していません",
+            "原文の範囲を位置参照または旧引用で示していません",
         ),
         # 記録を指す参照だけで、要求を含まない理由を持たない行。
         (_ELIDED_RECORD, "{wi} ## 反映内容と反映先", "{record_file}", "要求を含まない理由がありません"),
@@ -1811,7 +1816,7 @@ def test_background_without_record_range_or_reason_is_rejected(
         record_file = tmp_path / "record.md"
         record_file.write_text(record, encoding="utf-8")
         rows[0]["evidence"] = evidence.format(record_file=record_file)
-    if "引用していません" in diagnostic:
+    if "原文の範囲" in diagnostic:
         rows[0]["requirement"] = _REQUEST
         rows[0]["outcome"] = "背景"
         rows[2] = _requirement(FIRST_WI, _OBSERVATION)
@@ -1831,6 +1836,67 @@ def test_background_condition_is_rejected(
     _write_evidence(path, [condition], _background_rows(f"{FIRST_WI} ## 反映内容と反映先"))
     assert _check(path, FIRST_WI) == 1
     assert "wi_conditions[1].outcome: 未知の判定です: 背景（受理する値: " in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("bad_reference", [None, "block", "range", "zero", "reverse", "overflow", "malformed", "reason"])
+def test_background_quote_position_resolves_original_scope(
+    bad_reference: str | None,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """原文を再掲せず公開チェックへ参照を渡し、存在・範囲・理由を検証する。"""
+    observed = _OBSERVATION + _OBSERVATION_TAIL
+    reference = f"逐語引用 text[1] 文字1-{len(observed)}"
+    if bad_reference == "block":
+        reference = f"逐語引用 text[3] 文字1-{len(observed)}"
+    elif bad_reference == "range":
+        reference = f"逐語引用 text[1] 文字{len(observed) + 1}-{len(observed + _REQUEST)}"
+    elif bad_reference == "zero":
+        reference = f"逐語引用 text[1] 文字0-{len(observed)}"
+    elif bad_reference == "reverse":
+        reference = "逐語引用 text[1] 文字2-1"
+    elif bad_reference == "overflow":
+        reference = "逐語引用 text[1] 文字1-9999"
+    elif bad_reference == "malformed":
+        reference += "と逐語引用 text[1] 文字不明"
+    record = f"- `{reference}`は背景。{_BACKGROUND_REASON}。本AWIの完成条件に含めない\n"
+    other = "昨日のログを取得した。"
+    body = _background_awi(record).replace(f"- 「{_REQUEST}」は本AWIで扱う", "- 継続要求は本AWIで扱う")
+    body += f"\n```text\n{other}\n```\n"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
+    source = f"{FIRST_WI} ## 反映内容と反映先"
+    rows = _background_rows(source)
+    for row in rows:
+        row["origin"] = f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック1"
+    rows.append({**_requirement(FIRST_WI, other), "origin": f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック2"})
+    if bad_reference == "reason":
+        rows[0]["evidence"] = ""
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], rows)
+
+    assert _check(path, FIRST_WI) == (0 if bad_reference is None else 1)
+    diagnostic = capsys.readouterr().err
+    if bad_reference:
+        assert "user_requirements[1]" in diagnostic
+    else:
+        assert not diagnostic
+
+
+def test_quote_position_does_not_cover_identical_text_in_other_block(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同じ文字列でも異なる発話ブロックへの参照を、その行の背景根拠として受理しない。"""
+    record = f"- `逐語引用 text[2] 文字1-{len(_OBSERVATION)}`は背景。{_BACKGROUND_REASON}\n"
+    body = _background_awi(record) + f"\n```text\n{_OBSERVATION}\n```\n"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
+    rows = _background_rows(f"{FIRST_WI} ## 反映内容と反映先")
+    rows[0]["origin"] = f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック1"
+    rows.append({**_requirement(FIRST_WI, _OBSERVATION), "origin": f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック2"})
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], rows)
+    assert _check(path, FIRST_WI) == 1
+    assert "user_requirements[1]" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("route", ["plan", "review-table"])

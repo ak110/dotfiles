@@ -40,6 +40,8 @@ BRACKETED_TITLE = re.compile(r"「([^」]+)」")
 WHOLE_REQUEST = "分割元の依頼全体"
 ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
 BACKGROUND = "背景"
+# 引用節内のtextブロック番号と、改行も1文字として数える1始まりの文字範囲。
+QUOTE_POSITION = re.compile(r"逐語引用\s+text\[(\d+)\]\s+文字(\d+)-(\d+)")
 REVIEW_TABLE_SUFFIX = ".exec-review.tsv"
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
@@ -857,15 +859,36 @@ def _quote_spans(quote: str, original: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _covered_by_background(requirement: str, record: list[str], original: str) -> bool:
+def _covered_by_background(requirement: str, record: list[str], original: str, origin: str) -> bool:
     """「背景」を含む記録行のいずれかの引用が、原文上で要求単位の位置を覆うかを返す。"""
     unit = _compact(requirement)
-    positions = [index for index in range(len(original)) if original.startswith(unit, index)] if unit else []
+    compact_original = _compact(original)
+    positions = [index for index in range(len(compact_original)) if compact_original.startswith(unit, index)] if unit else []
+    section = _section(original.splitlines(), "## ユーザー指摘の逐語引用") or []
+    blocks = ["\n".join(section[start + 1 : end]) for start, end, info in _fenced_blocks(section) if info == "text"]
+    source_block = re.search(r"#ユーザー指摘の逐語引用 ブロック(\d+)$", origin)
     for line in record:
         if BACKGROUND not in line:
             continue
+        if "逐語引用 text[" in line:
+            references = list(QUOTE_POSITION.finditer(line))
+            if not references or len(references) != line.count("逐語引用 text[") or source_block is None:
+                continue
+            resolved: list[tuple[int, str]] = []
+            for reference in references:
+                number, start, end = map(int, reference.groups())
+                if not 1 <= number <= len(blocks):
+                    break
+                text = blocks[number - 1]
+                if not 1 <= start <= end <= len(text):
+                    break
+                resolved.append((number, _compact(text[start - 1 : end])))
+            else:
+                if unit and any(number == int(source_block[1]) and unit in text for number, text in resolved):
+                    return True
+            continue
         for quote in BRACKETED_TITLE.findall(line):
-            for start, end in _quote_spans(quote, original):
+            for start, end in _quote_spans(quote, compact_original):
                 if any(start <= position and position + len(unit) <= end for position in positions):
                     return True
     return False
@@ -889,10 +912,12 @@ def _background_source_error(
             "記録が無い単位は記録を補ってから背景とするか、達成・未達・証拠不足のいずれかで判定する"
         )
     original = _original_text(row, repository, wi_outputs)
-    if original is None or not _covered_by_background(row["requirement"], record, _compact(original)):
+    if original is None or not _covered_by_background(row["requirement"], record, original, row["origin"]):
         return (
-            f"{label}.source: 記録の「背景」を含む行が、この要求単位を覆う原文の範囲を「」で引用していません。"
-            "背景とした原文の範囲を「」で囲んで記録へ書く（中略は…で示す）。"
+            f"{label}.source: 記録の「背景」を含む行が、この要求単位を覆う原文の範囲を位置参照または旧引用で示していません。"
+            "背景とした原文の範囲を`逐語引用 text[N] 文字A-B`で記録へ参照する。"
+            "Nは同じWIの引用節のtextブロック番号、A-Bは改行も数える1始まりの文字範囲である。"
+            "保存済みの「」による引用（中略は…）も読める。"
             "要求を含む文は背景にせず、達成・未達・証拠不足のいずれかで判定する"
         )
     evidence = row["evidence"].strip()
