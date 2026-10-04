@@ -15,8 +15,9 @@ Claude Codeの旧版の起動順判定は、工程結果が未供給の場合の
 CodexではClaude Code形式のSkill記録を根拠へ使わない。
 
 報告段階が残る作業は、その作業が待つ非同期対象が生存している場合だけ遮断しない。
-待機対象は作業が起動したagents_serverのsessionと、作業の開始以後に起動した背景Bash・背景Agent・MCPの
-バックグラウンドタスク・未配送の完了通知とし、作業の開始より前から動く無関係なタスクは報告不足を免除しない。
+待機対象は作業が起動したagents_serverのsessionと、作業の開始以後に起動した結果待ちの背景Bash（`atk agents wait`・
+`wait_ci.py`）・背景Agent・MCPのバックグラウンドタスク・未配送の完了通知とする。作業の開始より前から動く無関係なタスクと、
+作業内で起動した待機コマンドでない背景Bash（開発サーバーなどの常駐コマンド）は報告不足を免除しない。
 報告段階の不足が無い場合は`is_pending_async_work`の判定を維持し、継続中の非同期作業があれば起動順を判定しない。
 現在の作業を中止・置換・技術的不成立と記録しても、他の作業に残る報告段階は判定する。
 セッション記録（transcript）を読み取れない場合は遮断せず、Stop判定ログへ確かめられないことを記録する。
@@ -27,7 +28,7 @@ CodexではClaude Code形式のSkill記録を根拠へ使わない。
 import json
 import pathlib
 
-from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
+from agent_toolkit._common.shell_tokens import is_agents_exit_session_command, is_agents_wait_command
 from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
@@ -164,11 +165,51 @@ def _work_order(work_id: str, work: dict) -> tuple[int, int]:
     )
 
 
+def _is_wait_command(command: str) -> bool:
+    """Bashのコマンドが、結果を待つ公開の待機コマンド（`atk agents wait`・`wait_ci.py`）を含むかを返す。"""
+    return any(
+        segment.resolved
+        and (
+            is_agents_wait_command(segment.tokens)
+            or any(pathlib.PurePath(token.replace("\\", "/")).name == "wait_ci.py" for token in segment.tokens)
+        )
+        for segment in extract_execution_segments(command)
+    )
+
+
+def _non_wait_bash_ids(entries: list[dict]) -> set[str]:
+    """待機コマンドを含まないBash起動の`tool_use_id`と、その起動結果の`backgroundTaskId`を返す。
+
+    常駐コマンドは終了しないため完了通知による再開が来ず、その生存を作業の待機として扱うと報告不足が残る。
+    """
+    identifiers: set[str] = set()
+    for block in _iter_assistant_blocks(entries):
+        if block.get("type") != "tool_use" or block.get("name") != "Bash":
+            continue
+        tool_input = block.get("input")
+        command = tool_input.get("command") if isinstance(tool_input, dict) else None
+        tool_use_id = block.get("id")
+        if isinstance(tool_use_id, str) and not (isinstance(command, str) and _is_wait_command(command)):
+            identifiers.add(tool_use_id)
+    for entry in entries:
+        if entry.get("type") != "user" or not _entry_in_scan_scope(entry, include_sidechain=False):
+            continue
+        tool_use_result = entry.get("toolUseResult")
+        task_id = tool_use_result.get("backgroundTaskId") if isinstance(tool_use_result, dict) else None
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(task_id, str) or not isinstance(content, list):
+            continue
+        if any(isinstance(block, dict) and block.get("tool_use_id") in identifiers for block in content):
+            identifiers.add(task_id)
+    return identifiers
+
+
 def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work_ids: set[str]) -> set[str]:
     """`work_ids`のうち、その作業が待つ非同期対象が生存している作業の識別子を返す。
 
     agents_serverのsessionは作業の起動記録で対応付ける。バックグラウンドタスクと未配送の完了通知は、起動を記録した
-    transcriptの位置より前に開始した作業のうち最も新しいものへ対応付ける。
+    transcriptの位置より前に開始した作業のうち最も新しいものへ対応付ける。待機コマンドを含まないBashの起動は対応付けない。
     """
     works = termination_evidence.session_works(payload)
     waiting = {
@@ -182,8 +223,9 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
     if not live:
         return waiting
     offsets = async_launch_offsets(transcript_path)
+    resident = _non_wait_bash_ids(read_transcript_entries_cached(transcript_path))
     ordered = sorted(works, key=lambda item: _work_order(*item))
-    for identifier in live:
+    for identifier in live - resident:
         launched_at = offsets.get(identifier)
         if launched_at is None:
             continue

@@ -404,7 +404,7 @@ def test_failed_completion_report_does_not_satisfy_termination(
     assert "agent-toolkit:completion-report" in body
 
 
-def _background_bash_entries(tool_use_id: str, task_id: str) -> list[dict]:
+def _background_bash_entries(tool_use_id: str, task_id: str, command: str = "atk agents wait") -> list[dict]:
     """背景Bashの起動と、`backgroundTaskId`を持つ起動結果のエントリを返す。"""
     return [
         {
@@ -415,7 +415,7 @@ def _background_bash_entries(tool_use_id: str, task_id: str) -> list[dict]:
                         "type": "tool_use",
                         "id": tool_use_id,
                         "name": "Bash",
-                        "input": {"command": "atk agents wait", "run_in_background": True},
+                        "input": {"command": command, "run_in_background": True},
                     }
                 ]
             },
@@ -505,6 +505,60 @@ def test_background_wait_of_work_allows_turn_end_until_collected(
     _clear_caches()
     decision, reason = termination_order_advisor.evaluate(json.dumps(payload))
     assert decision == "block" and "review-result" in reason
+
+
+@pytest.mark.parametrize("command", ["atk serve --port 8000", "pnpm run dev", "cd /repo && make watch"])
+def test_resident_background_command_of_work_does_not_exempt_missing_reports(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """作業内で背景起動した常駐コマンドは待機対象ではなく、報告不足を免除しない。
+
+    常駐コマンドは終了せず完了通知による再開も来ないため、免除すると報告が欠けたまま終了する。
+    """
+    _set_state_directory(monkeypatch, tmp_path)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    _clear_caches()
+    trace = tmp_path / "trace.jsonl"
+    _human_input("background-resident", trace, "request", "開発サーバーを起動して確かめる")
+    _append_entries(
+        trace, [_report_entry("## 作業完了報告\n成果。"), *_background_bash_entries("toolu_server", "server", command)]
+    )
+    payload = {
+        "session_id": "background-resident",
+        "transcript_path": str(trace),
+        "stop_hook_active": False,
+        "background_tasks": [{"id": "server", "type": "shell"}],
+    }
+    decision, reason = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "block" and "review-result" in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/plugin/agent-toolkit/agent_toolkit/atk.py agents wait",
+        "uv run --project /plugin --locked --no-default-groups /plugin/agent_toolkit/wait_ci.py --baseline /tmp/b.json",
+    ],
+)
+def test_background_wait_command_variants_allow_turn_end(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """パスで起動した`atk agents wait`と`wait_ci.py`の背景待機は、作業の待機として終了を許す。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    _clear_caches()
+    trace = tmp_path / "trace.jsonl"
+    _human_input("background-wait-variant", trace, "request", "結果を待つ")
+    _append_entries(
+        trace, [_report_entry("## 作業完了報告\n成果。"), *_background_bash_entries("toolu_wait", "wait-task", command)]
+    )
+    payload = {
+        "session_id": "background-wait-variant",
+        "transcript_path": str(trace),
+        "stop_hook_active": False,
+        "background_tasks": [{"id": "wait-task", "type": "shell"}],
+    }
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
 
 
 def test_background_wait_exempts_only_work_that_started_it(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

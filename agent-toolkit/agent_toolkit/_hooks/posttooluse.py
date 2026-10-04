@@ -53,7 +53,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
-from agent_toolkit._common.shell_tokens import is_agents_exit_session_command  # noqa: E402
+from agent_toolkit._common.shell_tokens import is_agents_exit_session_command, is_agents_wait_command  # noqa: E402
 from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     background_task_outputs as _background_task_outputs,
 )
@@ -531,14 +531,6 @@ def _record_agents_server_observation_attempt(
     update_state(session_id, _mutator)
 
 
-def _is_agents_wait_invocation(tokens: tuple[str, ...]) -> bool:
-    """実行トークン列が`atk agents wait`の起動であるかを返す。"""
-    if len(tokens) < 3:
-        return False
-    executable = tokens[0].replace("\\", "/")
-    return executable.rsplit("/", 1)[-1] in {"atk", "atk.py"} and tokens[1:3] == ("agents", "wait")
-
-
 def _response_texts(value: object) -> list[str]:
     """Bash応答から標準出力相当の文字列を再帰的に抽出する。"""
     if isinstance(value, str):
@@ -604,9 +596,7 @@ def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment],
 
 def _record_agents_wait_observation_attempt(session_id: str, command: str, owner_agent_id: str) -> None:
     """成功したBash入力内の`atk agents wait`を観測の試みとして記録する。"""
-    if not any(
-        segment.resolved and _is_agents_wait_invocation(segment.tokens) for segment in extract_execution_segments(command)
-    ):
+    if not any(segment.resolved and is_agents_wait_command(segment.tokens) for segment in extract_execution_segments(command)):
         return
     _clear_agents_server_pending_observation(session_id, owner_agent_id)
 
