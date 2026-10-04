@@ -42,6 +42,8 @@
 
 ## [WIキューの運用](concepts-workflows.md#WIキューの運用)
 
+## [多数の単純作業の分担](concepts-workflows.md#多数の単純作業の分担)
+
 ## [計画ファイルの体裁の扱い](concepts-workflows.md#計画ファイルの体裁の扱い)
 
 ## [フックのホスト間共通化](concepts-runtime.md#フックのホスト間共通化)
