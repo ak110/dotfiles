@@ -51,7 +51,7 @@ def test_main_rejects_invalid_structure_with_next_action(
 
 
 def test_main_rejects_removed_target_repo_option(tmp_path: pathlib.Path) -> None:
-    """撤去した`--target-repo`は受理せず、構造検査は`--contract`だけで完結する。"""
+    """撤去した`--target-repo`は受理せず、構造の確認は`--contract`だけで完結する。"""
     contract_path = tmp_path / "review-contract.yaml"
     contract_path.write_text(yaml.safe_dump(_contract(), allow_unicode=True, sort_keys=False), encoding="utf-8")
     with pytest.raises(SystemExit) as raised:
