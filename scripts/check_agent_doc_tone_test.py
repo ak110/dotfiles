@@ -210,7 +210,7 @@ def test_cli_fails_on_denied_term_beside_caution_term(tmp_path: pathlib.Path, ca
         ("app.py", '既定 = 4\ndefault_route = 1\nprint("是正本文")\n'),
         ("app.py", 'fields = ("起動経路", "利用者と入口", "計画検査完了")\n'),
         ("doc.md", "```text\n書込対象の検査: 終了コード0\n```\n"),
-        ("app.py", 'fields = ("正本ファイル名", "選択肢と帰結")\n'),
+        ("app.py", 'fields = ("選択肢と帰結",)\n'),
         ("doc.md", "第2走査は「前提を疑う観点」とし、採用案の前提を確かめる。\n"),
         ("app.py", 'import re\npattern = re.compile("正本")\n'),
         ("doc.md", "`terminal_order`が`既定`の項目を読む。\n"),
