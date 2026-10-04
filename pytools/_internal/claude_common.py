@@ -144,7 +144,7 @@ def run_subprocess(
     タイムアウト・OSError・SubprocessError を吸収して None を返す。非ゼロ終了は
     そのまま呼び出し元に返す。`tag` を指定すると失敗時のログラベルに使用する。
 
-    Windowsでは `text=True` の既定エンコーディングがcp932となり、CLIのUTF-8出力で
+    Windowsでは `text=True` で `encoding` を指定しないとロケールのエンコーディング（cp932）を使い、CLIのUTF-8出力で
     UnicodeDecodeErrorが発生するため、エンコーディングをUTF-8に明示し、
     不正バイトが混入しても例外が発生しないよう `errors="replace"` を併用する。
 
@@ -152,7 +152,7 @@ def run_subprocess(
     CLIがプロンプト表示により無応答状態に陥る事象を防ぐ。
 
     `env_overrides` を指定したときは現プロセスの環境をベースに該当キーを
-    上書きしたdictを `env` として渡す（`None` の既定では現プロセスの環境を継承する）。
+    上書きしたdictを `env` として渡す（`None` を渡すと現プロセスの環境を継承する）。
     """
     env: dict[str, str] | None = None
     if env_overrides is not None:
@@ -188,7 +188,7 @@ def run_claude(
 
     タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
     `cwd` を指定すると project scope など cwd 依存のサブコマンドに対応できる。
-    `timeout`の既定は30秒とし、長時間を要する操作だけ呼び出し元が上書きする。
+    `timeout`を省略した場合は30秒とし、長時間を要する操作だけ呼び出し元が上書きする。
     原因追跡のため、実行コマンドと戻り値を永続ログに残す。ユーザーの判断には使わないため、
     post-applyの画面へは出力しない。
     """

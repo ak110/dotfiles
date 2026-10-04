@@ -16,7 +16,7 @@ H2見出しは索引元の条文が指す文字列と一致させる。索引元
 
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：起動パラメーター：2026年9月27日
 
-2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>で、forkの背景実行、完了通知、forkからの再委譲制限とfork modeの既定値を確認した。同版の対話セッションで`Agent`を`subagent_type: "fork"`として起動した観測では、`SubagentStart`が委譲先規範を追加した。再検証は対話と`-p`のそれぞれでfork modeを確認し、forkの起動結果、規範の配送および完了通知を比べる。
+2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>で、forkの背景実行、完了通知、forkからの再委譲制限とfork modeを設定しない場合の値を確認した。同版の対話セッションで`Agent`を`subagent_type: "fork"`として起動した観測では、`SubagentStart`が委譲先規範を追加した。再検証は対話と`-p`のそれぞれでfork modeを確認し、forkの起動結果、規範の配送および完了通知を比べる。
 
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日
 
@@ -60,7 +60,7 @@ Claude Code 2.1.241で検証した設定は、対象キーを含まない一時J
 
 ## プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日
 
-2026年9月26日、Claude Codeの公式文書<https://code.claude.com/docs/en/memory.md>で、既定の設定では`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まないことを確認した。
+2026年9月26日、Claude Codeの公式文書<https://code.claude.com/docs/en/memory.md>で、設定を変えていない状態では`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まないことを確認した。
 該当する記載は次のとおりである。
 
 ```text
@@ -86,8 +86,8 @@ Because `CLAUDE.local.md` counts, adding one to keep your own uncommitted instru
 このうち233件は起動された子sessionの記録と対応付けられた。各件について、呼び出しのtool_useの時刻から子sessionの記録の先頭エントリの時刻までの差を求めた。
 中位値は1.34秒、90%点は7.12秒、99%点は36.76秒であり、232件が47.65秒以内に収まった。残る1件は604.22秒であった。
 同じ489件のうち7件は、tool_useから応答までの経過が1800.4秒から1800.5秒であり、ホストがMCPツール呼び出しを打ち切った回であった。
-ホスト側の上限は、Claude Codeが`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`の既定として1800秒を課し、
-Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_sec`の既定として60秒を課す。
+ホスト側の上限は、Claude Codeが`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`が未設定の場合に1800秒を課し、
+Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_sec`が未設定の場合に60秒を課す。
 再検証は同じ記録へ同じ集計を適用し、tool_useの時刻と子sessionの記録の先頭エントリの時刻の差の分布と、応答の打ち切りに達した件数を対比する。
 上限値はこの分布に加えて、ホストがMCPツール呼び出しを背景タスクへ移す閾値を制約に持つ。背景移行の閾値を測定した記録は「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月」にある。
 
@@ -358,7 +358,7 @@ Read不足で拒否された場合だけ、その担当がReadで現在の対象
 
 ## agent-toolkit/skills/writing-standards/references/sqlalchemy.md：autoflushと問い合わせ順序：2026年9月14日
 
-2026年9月14日、SQLAlchemy 2.0.52の公式文書で、既定構成の`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。
+2026年9月14日、SQLAlchemy 2.0.52の公式文書で、`autoflush`を無効にしていない`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。
 2026年9月13日のAWIは、SQLAlchemy 2.0.51を使うアプリケーションで、保留中のUPDATEが一意制約へ違反するケースと、保留中のINSERTが`NOT NULL`制約へ違反するケースを確認した記録を持つ。
 同記録ではautoflushの無効化が同じ処理単位で追加した設定を読むテストを失敗させ、入力検証前の無条件な問い合わせが`Session`未開始のテストを失敗させた。
 再検証ではSQLAlchemy 2.0系の公式文書にある`Session Basics`の`Flushing`節と`Session.flush()`のAPI説明を確認する。
@@ -412,7 +412,7 @@ error: invalid model selection (--model "gemini-3.8-flash" --effort ""): --model
 再検証は`agy models`の出力から完全スラッグの接尾辞の有無を確認し、`agy -p 'reply with OK only' --model <ベース名>`を`--effort`の有無で1回ずつ実行して終了コードと標準エラーを比べる。
 
 2026年9月23日、Antigravity CLI 1.2.9で非対話実行の時間指定を確認した。
-`agy --help`の`--print-timeout`は既定値を`0s`と示す。`--print-timeout 3600`は単位不足として拒否された。
+`agy --help`の`--print-timeout`は指定しない場合の値を`0s`と示す。`--print-timeout 3600`は単位不足として拒否された。
 次のコマンドは終了コード0となり、`init`、`step_update`、`result`のイベントを返した。
 
 ```sh

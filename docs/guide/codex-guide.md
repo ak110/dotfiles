@@ -47,7 +47,7 @@ Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、`agen
 生成に失敗した場合はpost-applyが非0で終了し、失敗したstep名と詳細を更新logへ記録する。
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
-euryaleの既定の更新では、同じユーザーのCodexが稼働中なら、導入済みagent-toolkitへの追加・更新を延期する。
+euryaleで`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定せずに更新する場合は、同じユーザーのCodexが稼働中なら、導入済みagent-toolkitへの追加・更新を延期する。
 app-server daemonも稼働判定に含むため、セッションとdaemonを停止してから次の`update-dotfiles`で反映する。
 延期中も旧版のスキル・MCP実体と有効状態を保持し、dotfiles本体、snapshot生成、Claude Codeと`atk-serve`の更新は続行する。
 ウォームアップは導入済みの有効版を使い、disabledのまま延期した場合はCodex分を除く。
@@ -89,7 +89,7 @@ Codex hookはPATH上の`~/.local/bin/atk-hook`（Windowsでは`atk-hook.cmd`）�
 インストーラーは`codex plugin add`より先にこのコマンドを配置し、導入後に現行版のhook実体を確認する。
 初回切替時に限り、更新前の版付きhookコマンドを保持したセッションのために旧キャッシュを一時退避し、CLIが削除した場合は復元する。以降の更新に旧版保存台帳は設けない。
 プラグインの通常のversion別cache管理はCodex公式CLIへ委ねる。
-既定動作では更新中のセッションを作業完了後に終了し、再起動案内が表示された場合はdaemonを再起動して新versionを利用する。
+`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定しない場合は、更新中のセッションを作業完了後に終了し、再起動案内が表示された場合はdaemonを再起動して新versionを利用する。
 
 再起動案内は、ローカルと外部のいずれかのプラグインを実際に追加または更新し、daemonの稼働状態を確認できた場合だけ表示される。
 daemonの未起動、状態確認の失敗、マーケットプレイスの登録だけの変化、公開インストーラーでの導入前後の状態の一致、
@@ -101,14 +101,14 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 
 `agents_server`はCodex pluginから利用できる共有MCPである。起動は`start`の1つで行い、`mode`で入力の形を選ぶ。`start`は`model_type`に対応する工程別モデル設定からengine、modelおよびeffortを解決する。
 CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値のengine部が`claude`ならサーバーがClaude backendを選ぶ。調査専用の軽量起動には`mode`を`explore`として`prompt`と`cwd`を渡し、出力量が大きいコマンドの実行には`mode`を`shell`として`command`、`cwd`、`summary_policy`を渡す。
-`explore`で`model_type`を省略すると`low_tier`を使う。所在の特定や該当箇所の列挙のように結論だけで後続の判断が成立する調査は既定のまま使い、軽量な探索では判断材料が不足する調査だけ`model_type="medium_tier"`を指定する。
+`explore`で`model_type`を省略すると`low_tier`を使う。所在の特定や該当箇所の列挙のように結論だけで後続の判断が成立する調査は`model_type`を省略したまま使い、軽量な探索では判断材料が不足する調査だけ`model_type="medium_tier"`を指定する。
 MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
 公開ツールは`start`、`send_message`、`kill`、`list`、`show`、`stop`の6つであり、終端と結果の受領は`atk agents wait`が担う。`start`の`cwd`は全`mode`で既存ディレクトリの絶対パスとし、
 完了を待たず`session_id`を返す。`atk agents wait`は引数を受け取らず、登録済みのsessionの終端を待ち、回収できた終端結果を全件返す。待機上限は実行ホストの1回のツール呼び出しの上限からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。`wait`を再発行する前に、`list`で待機対象のsessionの`status`を確認する。
 `start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionについては、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。作業の観測を試みずにターンを終えると、その作業を観測する主体が残らない。
-`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。
-`kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
+`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。
+`kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 timeout超過時もsessionを保持し、`wait`または終端後の`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。`kill`の`kill_requested`、
 `send_message`の`delivery`および`wait`の終端応答で要求・配送・結果を確認する。
 `list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。`stop(session_id)`は保持中で終端済みのsessionを破棄し、実行中turnを持つsessionは拒否する。`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。`wait`は引数を受け取らないため、受領した終端結果のsessionを破棄する場合は`stop`を発行する。破棄したsessionへの`send_message`は暗黙再開する。
@@ -150,7 +150,7 @@ Stopは終了工程の証拠だけを判定する。振り返りの準備と直�
 dotfilesユーザーでは、`chezmoi apply`後の処理がCodexの公式インストーラーを非対話で実行する。
 未導入時はスタンドアローン版を導入し、導入済みの場合は最新版へ更新する。
 管理対象パッケージは`~/.codex/packages/standalone/`へ配置される。
-可視コマンドの既定配置先はLinuxとmacOSで`~/.local/bin`、Windowsで`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`である。
+配置先を指定しない場合の可視コマンドの配置先はLinuxとmacOSで`~/.local/bin`、Windowsで`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`である。
 `CODEX_HOME`を設定した場合、パッケージは`$CODEX_HOME/packages/standalone`へ配置される。
 `CODEX_HOME`に指定するディレクトリは、インストーラーの実行前に作成する必要がある。
 `CODEX_INSTALL_DIR`を設定した場合、可視コマンドはそのディレクトリへ配置される。
@@ -165,7 +165,7 @@ PATH外の非アクティブNode環境は自動削除しない。
 WindowsでCodexが実行中の場合は停止せず、導入、更新、旧版の整理を次回へ延期する。
 
 旧版の整理を`chezmoi apply`後の処理が担うのは、公式インストーラーが非対話実行時に競合するnpm版を残すためである。
-公式インストーラーは競合版を検出したうえで削除の可否を対話で確認し、非対話実行では否定を既定値とする。
+公式インストーラーは競合版を検出したうえで削除の可否を対話で確認し、非対話実行では削除しない側を選ぶ。
 競合版を検出した実行では、シェルの起動ファイルへPATH設定が追記される場合がある。
 起動ファイルはchezmoiの配布対象であるため、追記された内容は次回の`chezmoi apply`で配布内容へ戻る。
 

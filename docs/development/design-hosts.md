@@ -33,7 +33,7 @@ dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLI�
 `install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
 実際のaddまたはupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
-既定は手動再起動案内を維持し、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を明示した更新だけ`codex app-server daemon restart`を自動実行する。
+環境変数を指定しない更新では手動再起動の案内を表示し、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を明示した更新だけ`codex app-server daemon restart`を自動実行する。
 自動再起動の成功と失敗は終了コードとともにupdate-dotfilesログへ記録し、失敗時はplugin導入を巻き戻さず手動案内へ戻す。
 無変更、marketplace登録だけの変更、daemon停止中および不要pluginの除去は自動再起動の対象に含めない。
 `atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
@@ -132,9 +132,9 @@ remote広告refの直積証跡・replace ref・graft・shallow複製への追加
 再判定不能や対象OIDのpush済み検出を含む履歴書換え開始後の失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を基準とし、本書へ転記しない。
 
-ユーザーの認証情報ファイルは既定の認証解決手段に留め、委譲の作業領域へ移さない。
+ユーザーの認証情報ファイルは、設定ディレクトリを変えない場合にホストが読む位置に残し、委譲の作業領域へ移さない。
 配布設定はClaude Codeの組み込み`Read`を拒否し、常時規範は委譲元と委譲先による再配置を禁止する。
-委譲手順は認証を要する検証で既定の認証解決手段を維持する。
+委譲手順は認証を要する検証で設定ディレクトリを変えず、ホストが通常読む認証情報を使う。
 組み込み`Read`の拒否はBash経由の複製を遮断しないため、本設計は配布設定・常時規範・委譲手順の3層へ防止の役割を分担させる。
 
 認証を要するauto mode検証では、`auto-mode config`が現在の設定反映を確認する。
@@ -260,7 +260,7 @@ WI処理の運用形態、登録と回答、振り返りからの投入の流れ
 
 委譲元は割当と認可を知り、委譲先は自身の実行手順と出力を知る。この知識境界を維持するため、同じ契約を`<役割名>.parent.md`とagent定義へ複製しない。定義元の指定と本文複製を併存させる案は同期の抜けを残すため採用しない。共通文書を契約ごとに新設する案も参照段数を増やすため、既存の責務所有者へ集約できる場合は採用しない。
 
-委譲の名前付き入力は、`agents_server`の`start`、委譲先での取得結果、`<役割名>.subagent.md`が定める権限と入力および他の受領値から導出できない状態だけを持つ。既定値と不在時の解釈は`<役割名>.subagent.md`が定め、`<役割名>.parent.md`は既定値と異なる場合だけ送信する。この分離は値の二重所有を避けるための契約であり、`start`の`cwd`や委譲先がGitから得る値を送信一覧へ再掲しない。
+委譲の名前付き入力は、`agents_server`の`start`、委譲先での取得結果、`<役割名>.subagent.md`が定める権限と入力および他の受領値から導出できない状態だけを持つ。省略時の値と行が無い場合の解釈は`<役割名>.subagent.md`が定め、`<役割名>.parent.md`はその省略時の値と異なる場合だけ送信する。この分離は値の二重所有を避けるための契約であり、`start`の`cwd`や委譲先がGitから得る値を送信一覧へ再掲しない。
 
 委譲の継続可否条件は`agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」だけで定め、他の文書へ再掲しない。
 `agent-toolkit/share/exec.parent.md`は工程順と渡す入力だけを定め、判定条件は同節を参照する。

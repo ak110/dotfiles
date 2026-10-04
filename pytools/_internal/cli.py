@@ -8,7 +8,7 @@ def setup_logging(verbose: bool = False, *, fmt: str = "%(message)s") -> None:
     """pytools配下のCLIエントリ共通のロガー設定。
 
     `verbose=True`のときログレベルを`DEBUG`に、それ以外は`INFO`にする。
-    書式は既定で`"%(message)s"`だが、`fmt`で上書きできる（例: `"%(levelname)s: %(message)s"`）。
+    書式は`fmt`を省略すると`"%(message)s"`となり、`fmt`で上書きできる（例: `"%(levelname)s: %(message)s"`）。
     """
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, format=fmt)
 

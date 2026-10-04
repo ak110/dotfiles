@@ -141,7 +141,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `stop`は再開する予定の無いsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。破棄したsessionへの`send_message`は暗黙再開するため、再開の余地は残る。実行中turnを持つsessionは破棄できない。`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。`atk agents wait`は対象を指定する引数を受け取らないため、受領した終端結果のsessionを破棄する場合は`stop`を発行する。
 `atk agents wait`は対象と待機上限を指定する引数を受け取らず、起動中のsessionと未回収の結果の全体を対象とする。1回の巡回で回収できた終端結果と通知を全件、1件1行のJSON Linesで返す。複数のsessionが同時に終端した場合も1回の応答で全件を受け取るため、各行を処理してから、残る待機対象があれば同じコマンドを再発行する。待機の完了は、待機対象の`session_id`を持つ終端行が応答に含まれるかで判定する。通知だけを回収したsessionは`status`が`running`の行で返る。待機上限は実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間から同コマンドが導出し、委譲先として起動されたセッションでは240秒とする。待機せずに現状態と停滞の印を得る場合は`list`を発行する。
 終端結果は配送した時点で回収済みとなり、同じ結果を再び返さない。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
-同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`atk agents wait`か`show`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
+同じsessionでreplyを開始する。`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`atk agents wait`か`show`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`atk agents wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。
 成功応答の`kill_requested`は中断要求の受理事実を示し、自然終端を中断成功へ置き換えない。MCP内部で承認・一覧操作は公開しない。
 
@@ -154,10 +154,10 @@ Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は�
 | --- | --- |
 | `high_tier_model` | 計画・実装・修正・AWI投入・公開工程の終端・自動コードレビュー監査 |
 | `medium_tier_model` | WI選定・実行レビュー・`model_type="medium_tier"`を指定した`start`の`explore` |
-| `low_tier_model` | `start`の`explore`と`shell`の既定・軽量な`mode:`を宣言した`<役割名>.subagent.md`の`task` |
+| `low_tier_model` | `model_type`を省略した`start`の`explore`と`shell`・軽量な`mode:`を宣言した`<役割名>.subagent.md`の`task` |
 | `write_model` | `start`の`write` |
 | `orchestrate_model` | `atk wi process-loop` |
-| `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、既定は`false`） |
+| `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、未設定時は`false`） |
 
 `atk config show`はパス4行、モデル設定5行と`codex_fast_mode`の1行を表示し、`atk config get`は設定値をそのまま返す。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
@@ -168,7 +168,7 @@ Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`
 `atk config apply-preset <プリセット名>`は`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`の4キーを1回の実行で一括保存する。`write_model`と`codex_fast_mode`はプリセットの対象外とする。
 受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
 プリセット名を省略した実行と未知の名前を指定した実行は終了コード2で終わり、利用できるプリセット名を表示する。
-設定を保存していない環境の既定値は`codex-balanced`と同じ候補列とする。
+設定を保存していない環境では`codex-balanced`と同じ候補列を使う。
 
 ## Claude Codeの推奨設定
 
@@ -231,7 +231,7 @@ AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼した�
 UWIへの回答は後述の「UWIへの回答と状態確認」の操作で行う。
 
 オーケストレーター・モデル・effortは`atk config`の`orchestrate_model`へ設定する。
-書式は`<claude|codex>:<model>[/<effort>]`、既定値は`claude:opus[1m]/medium`（Claude Code）である。
+書式は`<claude|codex>:<model>[/<effort>]`、設定していない場合は`claude:opus[1m]/medium`（Claude Code）を使う。
 Claude Codeを使う場合は設定を変更せず、次のコマンドを実行する。
 
 ```bash

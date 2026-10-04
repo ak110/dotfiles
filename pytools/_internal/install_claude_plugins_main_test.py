@@ -76,7 +76,7 @@ class TestPrerequisites:
 def _disable_file_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     """初回はCLIフォールバックを通し、最終検証では導入後の状態を返す。
 
-    ``is_directory_type_registered`` は既定で False (= 旧 GitHub 型残存環境の挙動)。
+    本フィクスチャは ``is_directory_type_registered`` を False に差し替える (= 旧 GitHub 型残存環境の挙動)。
     directory 型経路を検証したい個別テストが必要に応じて上書きする。
     """
     read_count = 0
@@ -121,7 +121,7 @@ def _disable_auto_managed_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestRunFlow:
     """メインフローのテスト (前提条件は満たしている状態、CLIフォールバックパス)。
 
-    既定で ``is_directory_type_registered`` は False (旧 GitHub 型残存環境)。
+    ``disable_file_reads`` により ``is_directory_type_registered`` は False となる (旧 GitHub 型残存環境)。
     directory 型経路の追加検証は ``TestRunFlowDirectoryType`` で行う。
     """
 
@@ -456,7 +456,7 @@ class TestRunFlow:
 def _directory_type_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """directory 型登録が健全な環境を模擬する。
 
-    ``disable_file_reads`` は既定で ``is_directory_type_registered`` を False に差し替えるため、
+    ``disable_file_reads`` は ``is_directory_type_registered`` を False に差し替えるため、
     directory 型経路を検証したい個別テストではこのフィクスチャで True に上書きする。
     ``disable_file_reads`` より後に適用される必要があるため、``usefixtures`` の列挙順に注意する。
     """

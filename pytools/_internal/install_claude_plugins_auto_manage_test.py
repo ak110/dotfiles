@@ -67,7 +67,7 @@ class TestComputeRecommendedCommands:
         assert not _install_claude_plugins.compute_recommended_commands(raw_data, {self._ENABLE_TARGET: True})
 
     def test_no_recommendation_when_key_missing(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みかつ `enabledPlugins` に対象キーが無い (既定で有効) なら提案しない。"""
+        """インストール済みかつ `enabledPlugins` に対象キーが無い (設定が無ければ有効) なら提案しない。"""
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
             _install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._ENABLE_TARGET})
         )
@@ -155,7 +155,7 @@ class TestAutoDisablePlugins:
         assert ["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope=user"] in calls
 
     def test_disable_called_when_settings_missing(self, monkeypatch: pytest.MonkeyPatch):
-        """settings.json 自体が無い (enabled_map=None) 環境でも disable CLI を発行する (既定で有効扱いのため)。"""
+        """settings.json 自体が無い (enabled_map=None) 環境でも disable CLI を発行する (設定が無ければ有効として扱うため)。"""
         calls = self._setup_run(
             monkeypatch,
             disable_target=self._DISABLE_TARGET,

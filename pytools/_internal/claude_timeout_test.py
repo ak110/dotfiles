@@ -9,7 +9,7 @@ from pytools._internal import claude_common, claude_marketplace, install_claude_
 
 
 def test_run_claude_uses_short_timeout_by_default(monkeypatch) -> None:
-    """一般のClaude CLI呼び出しは30秒を既定とする。"""
+    """一般のClaude CLI呼び出しはtimeoutを省略すると30秒を使う。"""
     observed: list[float | None] = []
     monkeypatch.setattr(claude_common, "resolve_executable", lambda *args, **kwargs: Path("/claude"))
 
@@ -27,7 +27,7 @@ def test_run_claude_uses_short_timeout_by_default(monkeypatch) -> None:
 
 
 def test_plugin_install_and_update_use_extended_timeout(monkeypatch) -> None:
-    """pluginのinstallとupdateを300秒へ延長し、disableは既定値を保つ。"""
+    """pluginのinstallとupdateを300秒へ延長し、disableは30秒のまま保つ。"""
     observed: list[tuple[list[str], dict[str, object]]] = []
 
     def fake_run_claude(args, **kwargs):
@@ -45,7 +45,7 @@ def test_plugin_install_and_update_use_extended_timeout(monkeypatch) -> None:
 
 
 def test_marketplace_write_operations_use_extended_timeout(monkeypatch, tmp_path) -> None:
-    """marketplaceのadd/updateだけを300秒へ延長し、list/removeは既定値を保つ。"""
+    """marketplaceのadd/updateだけを300秒へ延長し、list/removeは30秒のまま保つ。"""
     observed: list[tuple[list[str], dict[str, object]]] = []
 
     def fake_run_claude(args, **kwargs):

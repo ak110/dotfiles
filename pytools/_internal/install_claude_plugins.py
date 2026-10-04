@@ -30,7 +30,7 @@ _PLUGIN_OPERATION_TIMEOUT_SEC = claude_common.PLUGIN_OPERATION_TIMEOUT
 # 解決できず、対象 plugin の入口が import に失敗する。
 _PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("pyproject.toml", "uv.lock", ".claude-plugin/plugin.json")
 
-# インストール済みかつ既定で有効なものを `run()` 中に `claude plugin disable` で無効化する。
+# インストール済みかつ`enabledPlugins`で`false`にされておらず有効なものを `run()` 中に `claude plugin disable` で無効化する。
 _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     {
         "serena@claude-plugins-official",
@@ -329,7 +329,7 @@ def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] 
 def _auto_disable_plugins(raw_data: object, enabled_map: dict[str, bool] | None) -> tuple[int, int]:
     """``_AUTO_DISABLED_PLUGIN_IDS`` のうち有効状態のものを自動で無効化する。
 
-    インストール済みかつ ``enabledPlugins[id]`` が ``false`` でない（既定で有効な）対象に対し、
+    インストール済みかつ ``enabledPlugins[id]`` が ``false`` でない（設定が無ければ有効として扱う）対象に対し、
     ``claude plugin disable <id> --scope=user`` を発行する。失敗しても他対象を続行する。
 
     Returns:
@@ -639,7 +639,7 @@ def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
 
     ファイル不在・解析失敗・`enabledPlugins` が非dictの場合は、有効・無効の状態を
     実体から取得できなかったことを表す `None` を返す。`None` の扱いは呼び出し元ごとに異なり、
-    自動無効化と推奨コマンド算出は既定有効として扱い、install後の状態検証は未確認として失敗扱いとする。
+    自動無効化と推奨コマンド算出は有効とみなし、install後の状態検証は未確認として失敗扱いとする。
     """
     data = claude_common.load_json_dict(claude_common.SETTINGS_JSON_PATH)
     if data is None:

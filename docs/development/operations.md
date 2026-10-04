@@ -19,7 +19,7 @@
 ## SSH対話ログイン時のtmux自動アタッチ
 
 ホスト単位でSSH対話ログイン時の`tmux`自動アタッチを有効化できる。
-既定は無効で、`~/.config/dotfiles/tmux-auto-attach`の有無で切り替える。
+`~/.config/dotfiles/tmux-auto-attach`が存在するホストだけで有効になり、存在しないホストでは無効となる。
 
 - 有効化: `autotmux on`／無効化: `autotmux off`／状態確認: `autotmux status`（有効時0・無効時1で終了）
 
@@ -39,7 +39,7 @@ tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終�
 
 Linuxでは、Claude Codeの入力待ち時に端末ベルを送出するフックを
 `share/claude_settings_json_managed.posix.json`で配布する。
-tmux内では`monitor-bell`（既定有効）がwindowへベルフラグを設定し、
+tmux内では`monitor-bell`（tmuxの初期値は有効）がwindowへベルフラグを設定し、
 catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベルアイコンが表示される。
 
 - フックは制御端末のない独立セッションで実行され`/dev/tty`を開けないため、JSON出力の
@@ -57,7 +57,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   背景稼働の判定は他のStop系フックと同じ`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の判定を用いる。
   他のStop系フックがターン継続をblockした場合は、ターンが終了する前にベルが鳴る
 - Windowsはtmux運用外のため、ベルの各設定は`share/claude_settings_json_managed.win32.json`へ追加しない
-- `icon`の既定書式はcurrent・lastなど全フラグをアイコン化するため、
+- catppuccinが提供する`icon`の書式はcurrent・lastなど全フラグをアイコン化するため、
   `@catppuccin_window_flags_icon_format`をベル分岐だけへ上書きし、表示対象をベルアイコンに限定する
 - tmux本体はアタッチ済みセッションの現在のwindowへベルフラグを設定しないため、
   アクティブなwindow自身ではベルアイコンが増えない（仕様どおりの挙動であり是正対象ではない）
@@ -99,13 +99,13 @@ bridgeが接続すると、ダイアログの内部表現が持つ`hasExternalRa
 `~/.claude/settings.json`は`remoteControlAtStartup`が真であり、対話TUIのセッションはこの条件へ該当する。
 armedされた場合の中止条件はタイマー発火以降のユーザー操作と端末フォーカスの保持であり、端末とtmuxのアクティブペインにフォーカスが当たっている間は自動継続しない。
 `dialogExpiry`は対話TUIが描画する`AskUserQuestion`を対象にしない。
-既定値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3箇所だけである。
+`dialogExpiry`が未設定の場合の値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3箇所だけである。
 `AskUserQuestion`の転送はこの3箇所のいずれにも該当しない。
 このため`atk wi process-loop`のClaude起動は`--settings`へ`remoteControlAtStartup`の偽を渡し、常駐実行のセッションでbridgeを接続しない。
 常駐実行のセッションでは別端末からの回答ができなくなるが、質問待ちに上限を与える利益を優先する。
 本節の記述は2026年9月7日にClaude Code 2.1.263のバイナリを実読して確定した。
 再検証ではバイナリから`hasExternalRacer`を設定する箇所と、自動継続のarmed条件でこの値が偽であることを要求する箇所を読む。
-続けて`dialogExpiry`の既定値を解決する関数の呼び出し元を列挙し、`AskUserQuestion`の転送が含まれないことを確認する。
+続けて`dialogExpiry`が未設定の場合の値を解決する関数の呼び出し元を列挙し、`AskUserQuestion`の転送が含まれないことを確認する。
 
 本節が記録する配布の事実が規範の判断へ及ぼす影響は、[concepts.md](concepts.md)の「確認・合意の運用」が保持する。
 
@@ -114,7 +114,7 @@ armedされた場合の中止条件はタイマー発火以降のユーザー操
 上限を超えるとキャンセルまたは拒否付きのdropへ解決するため、エージェントは期限切れとユーザー本人の拒否を区別できない。
 リモートクライアントが接続していないローカル専用の権限プロンプトは影響を受けない。
 `~/.claude/settings.json`は`remoteControlAtStartup`が真であり、権限ダイアログが転送されるため、
-既定値の`5m`のままでは離席が5分を超えた時点で自動キャンセルされる。
+`dialogExpiry`を設定せず`5m`のままでは離席が5分を超えた時点で自動キャンセルされる。
 環境変数`CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS`を設定した環境では、設定ファイルよりも環境変数の値を優先する。
 
 `atk wi process-loop`のClaude起動だけが`--settings`で両設定の値と`remoteControlAtStartup`を明示する。
@@ -125,7 +125,7 @@ TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔�
 ユーザーが`~/.claude/settings.json`の`promptCacheTtl`でTTLを明示した環境では、明示されたTTLを判定に用いる。
 CLI設定はユーザー設定より優先されるため、常駐実行ではこの値が適用される。
 Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。`API_TIMEOUT_MS`、
-`CLAUDE_STREAM_IDLE_TIMEOUT_MS`および`CLAUDE_CODE_MAX_RETRIES`はprocess-loopの既定値として設定しない。
+`CLAUDE_STREAM_IDLE_TIMEOUT_MS`および`CLAUDE_CODE_MAX_RETRIES`はprocess-loopが子プロセス環境へ常に設定する値に含めない。
 該当する障害を確認した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
 
 ## mise latestの非ログイン再評価
@@ -160,8 +160,8 @@ working treeにだけ定義したツールが更新を繰り返しても未導�
 
 process-loopと後処理の`mise install`へは環境変数`MISE_LOCKED=1`と`MISE_LOCKED_SCOPES=project`を与える。
 これにより、プロジェクトの`mise.lock`に記録済みの解決結果から導入するlockedモードで動かす。
-既定動作の`mise install`は実行位置のlockfileを書き戻し、書き戻す内容は実行ホストのプラットフォームで変わる。
-このため既定動作では、dotfilesの作業ツリーの`mise.lock`に差分が残る（Windowsで`mise.toml`がLinux x64だけに指定した配布物のエントリが消えた）。
+`MISE_LOCKED`を与えない`mise install`は実行位置のlockfileを書き戻し、書き戻す内容は実行ホストのプラットフォームで変わる。
+このため`MISE_LOCKED`を与えない場合は、dotfilesの作業ツリーの`mise.lock`に差分が残る（Windowsで`mise.toml`がLinux x64だけに指定した配布物のエントリが消えた）。
 global設定は`npm:`系などlockにURLを持たないツールを含むため、`MISE_LOCKED_SCOPES=project`でlockedの対象から外す。
 lockedモードの`install`が失敗しても、lockを書き戻すlockedなしの再実行はしない。
 `mise.toml`にあってlockに無いツールによる失敗はlockの更新不足であり、`make update-mise-locks`で解消する。
@@ -253,7 +253,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
     転送する構成を前提とする。Web UI側は`pytilpack.quart.ProxyFix`でこれを解釈する
   - ホスト固有の待受設定と、計画ファイル・セッションの参照元はunitへ書かず
     `~/.config/agent-toolkit/serve.toml`で与える
-- unitは`Environment=PATH`で`%h/.local/bin`、miseのshims、systemdの既定PATHをこの順に指定する
+- unitは`Environment=PATH`で`%h/.local/bin`、miseのshims、systemdが設定するPATHをこの順に指定する
   - `ExecStart`を絶対パスで書いても、起動されたプログラムが実行ファイル名で解決する外部コマンドには及ばない
   - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する
 - Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する
@@ -299,7 +299,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 - systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
   導入時に解決した`uv`の絶対パスとスクリプトの絶対パスを埋め込む。あわせて`Environment=PATH`を指定する
   - `update-dotfiles`が実行ファイル名で起動する`chezmoi`は`~/.local/bin`にあり、PATH指定が無いと1段目で失敗する
-  - 指定順は`~/.local/bin`、miseのshims、systemdの既定PATHとし、実体を持つコマンドをshimより優先する
+  - 指定順は`~/.local/bin`、miseのshims、systemdが設定するPATHとし、実体を持つコマンドをshimより優先する
 - GitHubへの接続失敗、対象refの欠落、branchまたはupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
   systemdのjournalへ残る。次回のタイマー起動で再試行する
 - dotfilesの作業ツリーの未コミット差分は、`update-dotfiles`がpullの前に退避して後に復元する。ルート`mise.lock`の差分は保持せず破棄する。
@@ -318,7 +318,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 ## post-applyテンプレートのキャッシュ
 
 `.chezmoi-source/`配下のpost-applyテンプレートはハッシュキャッシュで再実行を抑制し、外部CLIを呼び出す構成をとる。
-`dotfiles-post-apply`は主作業ツリーからの実行を既定とする。linked worktreeから起動すると、OSアカウント全体の設定が複製を指さないよう、どの後処理も始めず終了コード2で停止する。
+`dotfiles-post-apply`は主作業ツリーから実行する。linked worktreeから起動すると、OSアカウント全体の設定が複製を指さないよう、どの後処理も始めず終了コード2で停止する。
 複製からの実行が必要な場合は`dotfiles-post-apply --allow-non-canonical-root`で明示的に解除する。この指定ではOSアカウント全体の設定が実行した複製を参照する。
 
 - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する
