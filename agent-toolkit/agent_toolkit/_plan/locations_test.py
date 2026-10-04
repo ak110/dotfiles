@@ -528,3 +528,34 @@ def test_record_plan_owner_writes_nothing_without_session_identifier(tmp_path: p
 
     assert _plan_file.record_plan_owner(main) is None
     assert not _plan_file.owner_record_path(main).exists()
+
+
+@pytest.mark.usefixtures("_owner_environment")
+@pytest.mark.parametrize(
+    ("owner", "own", "expected"),
+    [
+        ("mcp-0123456789abcdef0123456789abcdef", "delegate-session", None),
+        ("conversation-session", "delegate-session", "conversation-session"),
+        (None, "own-session", "own-session"),
+    ],
+    ids=["process-root", "conversation", "own-session"],
+)
+def test_record_plan_owner_excludes_process_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, owner: str | None, own: str, expected: str | None
+) -> None:
+    """`agents_server`のプロセス専用のrootは会話へ対応しないため所有記録を書かず、実在する会話の識別子は記録する。
+
+    プロセス専用のrootを記録すると、計画の一覧が会話として存在しない所有者を表示する。
+    委譲先自身の識別子は委譲元の会話を表さないため、プロセス専用のrootを除いた後もそちらへ戻らない。
+    """
+    if owner is not None:
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", owner)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", own)
+    main = tmp_path / "30-所有判定-a1b2.md"
+    main.write_text("# main\n", encoding="utf-8")
+
+    written = _plan_file.record_plan_owner(main)
+
+    assert _plan_file.resolve_conversation_session_id() == expected
+    assert (written is None) is (expected is None)
+    assert _plan_file.read_owner_session_id(main) == expected

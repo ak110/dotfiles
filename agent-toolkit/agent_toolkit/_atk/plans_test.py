@@ -1379,6 +1379,34 @@ def test_dispatch_list_prints_owner_and_update_time_per_plan(
     assert capsys.readouterr().out == f"{plan}\tなし\t{entries[0]['updated_at']}\n"
 
 
+@pytest.mark.parametrize(
+    ("owner", "shown"),
+    [("mcp-0123456789abcdef0123456789abcdef", "なし"), ("conversation-session", "conversation-session")],
+    ids=["process-root", "conversation"],
+)
+def test_dispatch_list_shows_only_conversation_owner(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    owner: str,
+    shown: str,
+) -> None:
+    """`agents_server`のプロセス専用のrootの環境で作成した計画は所有者なしと表示し、実在する会話はその会話を表示する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", owner)
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    working_root = _plan_file.working_plans_root(home)
+    working_root.mkdir(parents=True)
+    plan = working_root / "30-所有者表示-a1b2.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    _plan_file.record_plan_owner(plan)
+
+    assert _atk_plans.dispatch(types.SimpleNamespace(plans_subcommand="list"), notes, home) == 0
+
+    assert capsys.readouterr().out.split("\t")[1] == shown
+
+
 _PROGRESS_PLAN_TEMPLATE = """# plan
 
 ## 進捗ログ（実行時）

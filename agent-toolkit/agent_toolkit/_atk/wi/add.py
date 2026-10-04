@@ -373,23 +373,14 @@ CLIが管理する識別情報、依存、修復UWI、旧形式の内部metadata
 """
 
 
-_PROCESS_ROOT_SESSION_PREFIX = "mcp-"
-"""`_agents_server.status_file.create_process_root_identity`が生成するプロセス専用の識別子の接頭辞。
-
-この識別子は会話のセッションではないため、回答通知の宛先を表さない。
-"""
-
-
 def _resolve_submitter_session() -> str | None:
     """UWIを投入したセッションの識別子を環境から解決する。
 
     委譲先は委譲元のセッションを返すため、委譲先が投入したUWIも委譲元のセッションへ通知される。
     解決できない場合と、会話へ対応しないプロセス専用の識別子だった場合は`None`を返す。
+    計画の所有会話と同じ判定を使う。
     """
-    session_id = _plan_file.resolve_owner_session_id()
-    if session_id is None or session_id.startswith(_PROCESS_ROOT_SESSION_PREFIX):
-        return None
-    return session_id
+    return _plan_file.resolve_conversation_session_id()
 
 
 def _add_entries_locked(
