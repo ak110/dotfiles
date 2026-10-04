@@ -340,7 +340,9 @@ def _state_root_path() -> pathlib.Path:
             raise ManagedTempError("LOCALAPPDATAが設定されていない")
         return pathlib.Path(base) / "agent-toolkit" / "managed-temp"
     base = os.environ.get("XDG_STATE_HOME")
-    state_home = pathlib.Path(base) if base else pathlib.Path.home() / ".local" / "state"
+    # 相対パスのXDG_STATE_HOMEは作業ディレクトリごとに別の場所を指すため、XDG Base Directory仕様どおり無視する。
+    # `atk config get state_dir`と`agents_server`の状態ディレクトリも同じ扱いにしている。
+    state_home = pathlib.Path(base) if base and pathlib.Path(base).is_absolute() else pathlib.Path.home() / ".local" / "state"
     return state_home / "agent-toolkit" / "managed-temp"
 
 
