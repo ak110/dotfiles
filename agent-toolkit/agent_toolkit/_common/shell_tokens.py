@@ -36,6 +36,12 @@ def strip_redirections(tokens: Sequence[str]) -> tuple[str, ...]:
     return tuple(arguments)
 
 
+def is_agents_wait_command(tokens: Sequence[str]) -> bool:
+    """トークン列が`atk agents wait`の起動であるかを返す。"""
+    executable = pathlib.PurePath(tokens[0].replace("\\", "/")).name if tokens else ""
+    return executable in {"atk", "atk.py"} and tuple(tokens[1:3]) == ("agents", "wait")
+
+
 def is_agents_exit_session_command(tokens: Sequence[str]) -> bool:
     """トークン列が引数を伴わない`atk agents-exit-session`の起動であるかを返す。
 

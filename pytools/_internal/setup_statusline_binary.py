@@ -159,7 +159,7 @@ def _download_release(client: httpx.Client | None = None) -> bool:
     バイナリを破損状態へ置換しない。
 
     Args:
-        client: テスト注入用。省略時は既定タイムアウトの`httpx.Client`を生成する。
+        client: テスト注入用。省略時は`_HTTP_TIMEOUT`をタイムアウトとする`httpx.Client`を生成する。
 
     Returns:
         新規ダウンロードを行った場合True。304（未更新）または失敗時はFalse。

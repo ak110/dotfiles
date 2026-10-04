@@ -510,6 +510,8 @@ class TestProcessLoopPromptAndEnv:
                 closed_descriptors.append(descriptor)
             real_close(descriptor)
 
+        # 共通起動の掃引も`os.fchmod`で期限判定記録を書くため、掃引を外してhook診断ログの記述子だけを数える。
+        monkeypatch.setattr(_managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (), None))
         monkeypatch.setattr(_process_loop.os, "fchmod", record_fchmod)
         monkeypatch.setattr(_process_loop.os, "close", record_close)
 
@@ -783,6 +785,8 @@ class TestProcessLoopPromptAndEnv:
                 closed_descriptors.append(descriptor)
             real_close(descriptor)
 
+        # 共通起動の掃引も`os.fchmod`で期限判定記録を書くため、掃引を外してhook診断ログの記述子だけを数える。
+        monkeypatch.setattr(_managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (), None))
         monkeypatch.setattr(_process_loop.os, "fchmod", fail_fchmod)
         monkeypatch.setattr(_process_loop.os, "close", record_close)
 
@@ -3736,75 +3740,3 @@ def test_instruction_is_consumed_only_when_a_session_launches(
     assert launch_env[_PROCESS_LOOP_INSTRUCTION_ENV] == "既存のテストコードを先に読む"
     assert held_during_wait[1] == []
     assert process_loop_log.read_instructions() == []
-
-
-def _write_observation_wait_entry(notes: pathlib.Path) -> pathlib.Path:
-    """同じ候補0件の観測待ち入力を制御キューへ書く。"""
-    processing = notes / "processing"
-    processing.mkdir()
-    waiting = processing / "20260930-175957-001.md"
-    waiting.write_text(
-        "---\ntype: awi\ntarget_repo: github.com/example/myrepo\nobservation_wait:\n"
-        "  condition: selection-empty\n  plan_file: 30-1849_process-wi_レーン02.md\n  commit: '"
-        + "a" * 40
-        + "'\n---\n元の完成条件\n",
-        encoding="utf-8",
-    )
-    return waiting
-
-
-@pytest.mark.parametrize("normal_work", [False, True])
-def test_observation_wait_does_not_reenter_normal_processing(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], normal_work: bool
-) -> None:
-    """制御キューの通常作業だけを起動し、観測待ちだけでは変更待機へ進む。"""
-    notes = _setup_notes(tmp_path)
-    waiting = _write_observation_wait_entry(notes)
-    original = waiting.read_bytes()
-    if normal_work:
-        (notes / "inbox" / "20261004-044541-001.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/myrepo\n---\n通常作業\n", encoding="utf-8"
-        )
-    target = tmp_path / "myrepo"
-    target.mkdir()
-    child_calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(target, child_calls, 2))
-    waits = []
-
-    def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
-        waits.append("waiting")
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(_process_loop, "_wait_for_changes", stop_wait)
-    with pytest.raises(SystemExit):
-        atk.main(["wi", "process-loop", f"--target-repo={target}", "--no-update", "--no-alerts"], home=tmp_path)
-    assert waiting.read_bytes() == original
-    assert len(child_calls) == int(normal_work)
-    assert bool(waits) is not normal_work
-    output = capsys.readouterr().out
-    if normal_work:
-        assert "1件のAWI/回答済みUWIを検知" in output
-
-
-def test_observation_wait_only_allows_alert_zero_candidate_session(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """観測待ちを数えず、未判定アラートの既存起動だけで候補0件のprocess-wiへ進む。"""
-    notes = _setup_notes(tmp_path)
-    waiting = _write_observation_wait_entry(notes)
-    target = tmp_path / "myrepo"
-    target.mkdir()
-    child_calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(target, child_calls, 2))
-    monkeypatch.setattr(
-        _process_loop._review_audit,  # pylint: disable=protected-access
-        "dependabot_pending",
-        lambda _repository: {"status": "available", "alerts": [{"number": 48, "category": "inaccurate"}]},
-    )
-    with pytest.raises(SystemExit):
-        atk.main(["wi", "process-loop", f"--target-repo={target}", "--no-update"], home=tmp_path)
-    assert len(child_calls) == 1 and waiting.is_file()
-    assert not list((notes / "inbox").iterdir())
-    log = (tmp_path / "state" / "agent-toolkit" / "process-wi.log").read_text(encoding="utf-8")
-    assert "event=loop_iter_start count=0" in log
-    assert "dependabot_pending=1 session_started=True" in log

@@ -107,12 +107,12 @@ dev = [
 [tool.pyfltr]
 preset = "latest"
 python = true
-# Python 3.14はテストsuiteの実行時間が3.12/3.13に比べ25%程度長く、既定の600秒では境界を超えるためCIタイムアウトを延伸する
+# Python 3.14はテストsuiteの実行時間が3.12/3.13に比べ25%程度長く、`command-timeout`を指定しない場合の600秒では境界を超えるためCIタイムアウトを延伸する
 command-timeout = 900
 ty = true
 # scripts/とagent-toolkit/skills/plan-mode/scripts/のモジュールを解決するため追加する
 ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
-# pyfltrの既定では`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
+# pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
 # formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは
 # lintの自動修正を止められない。検査だけを行う`make test`が担当範囲外のファイルを
 # 書き換えないよう、`ruff-format`のlint自動修正を無効にする。
@@ -294,6 +294,8 @@ args = [
     "--term-root", "scripts/check_agent_doc_tone.py",
     "--term-root", "scripts/check_agent_doc_tone_test.py",
 ]
+# 終了コードに影響しない語の警告も、位置付きの診断として表示する。
+error-pattern = '^(?P<file>.+?):(?P<line>\d+): (?P<message>.+)$'
 targets = [
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "AGENTS.md",
@@ -440,7 +442,6 @@ addopts = [
 ]
 markers = [
     "browser: Chromiumを使う実ブラウザー統合テスト",
-    "repo_invariant: 変更ファイルと無関係に既存成果物の不変条件を確かめるテスト（全追跡ファイル・全ソースの走査と複数領域の契約の整合）",
 ]
 log_level = "DEBUG"
 xfail_strict = true

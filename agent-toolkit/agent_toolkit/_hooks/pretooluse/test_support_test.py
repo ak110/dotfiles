@@ -40,9 +40,6 @@ _SHARE_DIR = pathlib.Path(__file__).resolve().parents[3] / "share"
 _SECRETS_COPY_GUIDANCE = "Bashの`cp`で原本を複製"
 
 
-_SECRETS_VALUE_EDIT_GUIDANCE = "Bashの`echo ... >>`または`sed -i`"
-
-
 _EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("exec-review.subagent.md",)
 
 
@@ -171,7 +168,7 @@ def _read_session_state(state_dir: pathlib.Path, session_id: str) -> dict:
 
 
 def _home_path() -> str:
-    """判定を実行するプロセスが解決するホームディレクトリを実行時に返す。
+    """テストが起動するフックのプロセスが解決するホームディレクトリを実行時に返す。
 
     `_run`が起動するフックは呼び出し時点の環境変数からホームを解決するため、
     テスト側も同じ時点で解決する。収集時に評価したクラス変数は、実行環境のホームを
@@ -381,7 +378,6 @@ __all__ = [
     "_PLUGIN_MANIFEST",
     "_SCRIPT",
     "_SECRETS_COPY_GUIDANCE",
-    "_SECRETS_VALUE_EDIT_GUIDANCE",
     "_SHARE_DIR",
     "_VALID_H2_PLAN_CONTENT",
     "_additional_context",

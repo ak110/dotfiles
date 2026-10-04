@@ -356,7 +356,7 @@ fn parse_start_time(value: &Value) -> Option<DateTime<Utc>> {
             if let Ok(dt) = DateTime::parse_from_rfc3339(&normalized) {
                 return Some(dt.with_timezone(&Utc));
             }
-            // オフセット省略のnaive ISO 8601も許容する（Python fromisoformatの既定UTC解釈に合わせる）。
+            // オフセット省略のnaive ISO 8601も許容する（オフセットを省略した値をUTCとして扱うPython側のfromisoformatの解釈に合わせる）。
             NaiveDateTime::parse_from_str(&normalized, "%Y-%m-%dT%H:%M:%S%.f")
                 .ok()
                 .map(|naive| naive.and_utc())

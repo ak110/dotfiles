@@ -359,7 +359,10 @@ _ALERTS_PATH = "repos/owner/repo/dependabot/alerts?state=open&per_page=100"
 def test_pending_classifies_dependabot_alerts_by_default_branch_manifest(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """全ページのopenアラートを、GitHubで標準の参照先に指定されたブランチにマニフェストが無ければ誤検知、あれば実在として区分して出力する。"""
+    """全ページのopenアラートを区分して出力する。
+
+    GitHub APIの`default_branch`で指定されたbranchにマニフェストが無ければ誤検知、あれば実在とする。
+    """
     pages = [[_alert(40, "old/uv.lock", "2.14.0"), _alert(7, "uv.lock", "2.14.0")], [_alert(41, "old/uv.lock", None)]]
     calls = _fake_gh(
         monkeypatch,
@@ -497,3 +500,16 @@ def test_pending_fails_when_dependabot_state_cannot_be_determined(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "次の操作:" in captured.err
+
+
+def test_pending_failure_names_default_branch_when_repository_lookup_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """リポジトリ情報の取得が拒否された失敗は、対象をGitHub APIの`default_branch`で指定されたbranchとして示す。"""
+    pages = json.dumps([[_alert(40, "old/uv.lock", "2.14.0")]])
+    forbidden = json.dumps({"message": "Must have admin rights to Repository.", "status": "403"})
+    _fake_gh(monkeypatch, {_ALERTS_PATH: (0, pages), "repos/owner/repo": (1, forbidden)})
+
+    assert _dispatch("pending", "owner/repo") != 0
+
+    assert "GitHub APIの`default_branch`で指定されたbranchの取得が拒否された" in capsys.readouterr().err

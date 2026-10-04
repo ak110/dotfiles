@@ -117,6 +117,12 @@ winget install jdx.mise
 update-dotfiles
 ```
 
+更新が失敗したときや、直近の更新で何が実行されたかを確認したいときは、直近1回の実行の保存ログを表示する。
+
+```bash
+update-dotfiles logs
+```
+
 ### Antigravity CLI
 
 `update-dotfiles`はAntigravity CLI（`agy`）も導入する。

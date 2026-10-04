@@ -11,13 +11,15 @@ _ACCESS_DENIED = object()
 _CODEX_LABEL_SUBCOMMANDS = frozenset({"app-server", "exec", "exec-server", "mcp-server", "remote-control"})
 # `node <package entry point>`形式でCodexを起動する実行体の名前。
 _NODE_EXECUTABLE_NAMES = frozenset({"node", "nodejs"})
+# 終了済みで、ログやplugin実体を参照し得ないプロセスの状態。
+_TERMINATED_STATUSES = frozenset({psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD})
 
 
 def running_codex_processes() -> tuple[str, ...]:
     """稼働中と判定したCodexプロセスの表示ラベルを走査順に返し、空タプルで停止中を表す。
 
-    判定対象は自ユーザー所有プロセスに限る。利用側が保護する自ユーザーの
-    Codexログとプラグイン実体は、他ユーザーのプロセスの参照対象に含めない。
+    判定対象は自ユーザー所有で、ゾンビなどの終了済みでないプロセスに限る。利用側が保護する自ユーザーの
+    Codexログとプラグイン実体は、他ユーザーのプロセスと終了済みのプロセスの参照対象に含めない。
     自ユーザー所有プロセスに限り、判定素材を1つも取得できない場合だけ安全側で稼働中と扱う。
 
     判定素材は役割で分ける。実行名、実行ファイルパス、command line第1要素は実行体を表す値であり
@@ -27,12 +29,12 @@ def running_codex_processes() -> tuple[str, ...]:
     """
     uid = os.getuid()
     labels: list[str] = []
-    for process in psutil.process_iter(["name", "exe", "cmdline", "uids"], ad_value=_ACCESS_DENIED):
+    for process in psutil.process_iter(["name", "exe", "cmdline", "uids", "status"], ad_value=_ACCESS_DENIED):
         try:
             info = process.info
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             continue
-        if getattr(info.get("uids"), "real", None) != uid:
+        if getattr(info.get("uids"), "real", None) != uid or info.get("status") in _TERMINATED_STATUSES:
             continue
         cmdline, name_value, exe_value = info.get("cmdline"), info.get("name"), info.get("exe")
         cmdline_items = cmdline if isinstance(cmdline, (list, tuple)) else []

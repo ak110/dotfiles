@@ -77,10 +77,10 @@ def test_main_rejects_nondefault_arguments_before_side_effects(
 def test_main_help_without_runner_skips_default_steps(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], sync_report_path: Path
 ) -> None:
-    """公開CLIと同じ引数形で既定ステップを起動しない。"""
+    """公開CLIと同じ引数形で、工程を指定しない場合の`_DEFAULT_STEPS`を起動しない。"""
 
     def unexpected_run() -> tuple[list[post_apply._StepResult], list[str]]:  # noqa: SLF001
-        pytest.fail("--helpで既定ステップへ到達した")
+        pytest.fail("--helpで_DEFAULT_STEPSの実行へ到達した")
 
     monkeypatch.setattr(post_apply, "run", unexpected_run)
     with pytest.raises(SystemExit) as exc_info:
@@ -98,7 +98,7 @@ def test_linked_worktree_is_rejected_before_any_step_or_record(
     capsys: pytest.CaptureFixture[str],
     sync_report_path: Path,
 ) -> None:
-    """複製作業ツリーの既定実行は全段と永続記録へ到達しない。"""
+    """複製作業ツリーで工程を指定せずに実行しても、全段と永続記録へ到達しない。"""
     root = tmp_path / "linked"
     canonical_root = tmp_path / "main"
     monkeypatch.setattr(post_apply.claude_common, "find_dotfiles_root", lambda: root)
@@ -109,7 +109,7 @@ def test_linked_worktree_is_rejected_before_any_step_or_record(
         return subprocess.CompletedProcess(cmd, 0, f"{canonical_root / '.git'}\n", "")
 
     def unexpected_run() -> tuple[list[post_apply._StepResult], list[str]]:  # noqa: SLF001
-        pytest.fail("linked worktreeで既定ステップへ到達した")
+        pytest.fail("linked worktreeで_DEFAULT_STEPSの実行へ到達した")
 
     monkeypatch.setattr(post_apply.claude_common, "run_subprocess", fake_git)
     monkeypatch.setattr(post_apply, "run", unexpected_run)
@@ -947,7 +947,7 @@ class TestSubstitutedHome:
     )
 
     def _default_steps_with_recorders(self, calls: list[str]) -> list[post_apply._StepSpec]:  # noqa: SLF001
-        """既定の3ステップの宣言を保ったまま、`run`だけを呼び出しの記録へ差し替える。"""
+        """`_DEFAULT_STEPS`にある3ステップの宣言を保ったまま、`run`だけを呼び出しの記録へ差し替える。"""
         steps = [step for step in post_apply._DEFAULT_STEPS if step.name in self._HOST_RESOURCE_STEPS]  # noqa: SLF001
         assert [step.name for step in steps] == list(self._HOST_RESOURCE_STEPS)
         return [dataclasses.replace(step, after=(), run=_make_step(step.name, calls)) for step in steps]

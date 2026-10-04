@@ -5,9 +5,9 @@
 # ///
 """agent-toolkitプラグインのバージョンbumpツール。
 
-Claude Code向け正本である`agent-toolkit/.claude-plugin/plugin.json`と
+Claude Code向けの版数を定める`agent-toolkit/.claude-plugin/plugin.json`と
 `.claude-plugin/marketplace.json`の`version`を同時に更新する。
-Codex向け派生manifestは同期スクリプトで生成する。
+Codex向けmanifestはこの2ファイルから同期スクリプトで生成する。
 
 使い方:
     scripts/agent_toolkit_bump.py [patch|minor|major]
@@ -134,7 +134,7 @@ BASE_VERSION_REFS: tuple[str, ...] = ("@{u}", "origin/HEAD")
 """基準版の解決に試す参照。先頭から順に試し、最初に解決できたものを採用する。
 
 作業用の複製（git worktree等）では追跡先が失われて`@{u}`が解決できないため、
-公開済みの既定ブランチを指す`origin/HEAD`を次に試す。
+リモートのデフォルトブランチを指す`origin/HEAD`を次に試す。
 """
 
 

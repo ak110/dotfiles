@@ -235,7 +235,7 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
 
 @pytest.mark.parametrize("use_environment", [False, True])
 def test_nvm_bin_directories_use_existing_version_directories(monkeypatch, tmp_path: Path, use_environment: bool) -> None:
-    """NVM_DIRまたは既定の.nvmから、実在するバージョン別binだけを返す。"""
+    """NVM_DIR、未設定ならホーム直下の.nvmから、実在するバージョン別binだけを返す。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     nvm_dir = tmp_path / "configured" if use_environment else tmp_path / "home" / ".nvm"
     if use_environment:

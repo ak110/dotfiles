@@ -182,14 +182,29 @@ def test_registered_callbacks_keep_pointer_width_and_pass_unhandled_input(deskto
         assert system.mouse(-1, 0x207, address) == 0x123456789
         data.flags = 1
         assert system.mouse(0, 0x207, address) == 0x123456789
+        data.flags = 0
+        # 右押下、サイドボタン押下と縦横のホイールは、選択を解除する通常操作として配送する。
+        for message in (0x204, 0x20B, 0x20A, 0x20E):
+            assert system.mouse(0, message, address) == 0x123456789
+        assert system.mouse(0, 0x200, address) == 0x123456789  # カーソル移動は配送しない。
         system.window_event(0x123456782, 3, 0x123456799, 0, 0, 1, 93)
         system.window_event(0x123456782, 3, 0x123456799, -4, 0, 1, 93)
-        assert system.key(0, 0x0104, address) == 0x123456789
-        assert system.key(-1, 0x0104, address) == 0x123456789
+        key = _window_api.KeyboardInput(vkCode=0x41)
+        key_address = ctypes.addressof(key)
+        assert system.key(0, 0x0104, key_address) == 0x123456789
+        assert system.key(-1, 0x0104, key_address) == 0x123456789
+        key.flags = 0x10  # serveが送出するメディアキーなどの注入入力。
+        assert system.key(0, 0x0100, key_address) == 0x123456789
 
     system.dispatch = dispatch
     api.run_hooks(mouse, lambda *args: windows.append(args), lambda: keys.append(True), lambda: None)
-    assert observed == [(0x207, (-500, 400), 91, "")]
+    assert observed == [
+        (0x207, (-500, 400), 91, ""),
+        (0x204, (-500, 400), 91, ""),
+        (0x20B, (-500, 400), 91, ""),
+        (0x20A, (-500, 400), 91, ""),
+        (0x20E, (-500, 400), 91, ""),
+    ]
     assert windows == [(3, 0x123456799, 93)]
     assert keys == [True]
     assert system.unhooked == [0x123456784, 0x123456783, 0x123456782, 0x12345678A, 0x123456781]

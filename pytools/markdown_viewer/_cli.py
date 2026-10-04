@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """コマンドライン引数を解析する。"""
     parser = argparse.ArgumentParser(
-        description="Markdownファイルを既定ブラウザで表示する。",
+        description="MarkdownファイルをOSの標準ブラウザで表示する。",
     )
     parser.add_argument(
         "file",

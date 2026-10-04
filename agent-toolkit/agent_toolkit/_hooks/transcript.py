@@ -155,7 +155,7 @@ def assistant_text(message: typing.Any) -> str:
     テキストを取得できない場合は空文字列を返す。
 
     引数はtranscript JSON由来の任意値を扱うため`Any`型とする
-    （`object`をisinstanceでdictへ限定すると型チェッカーtyが型引数を`Never`と誤推論するため）。
+    （`object`をisinstanceでdictへ限定すると型検査器tyが型引数を`Never`と誤推論するため）。
     """
     if not isinstance(message, dict):
         return ""

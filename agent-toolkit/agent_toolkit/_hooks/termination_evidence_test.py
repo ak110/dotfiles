@@ -116,6 +116,33 @@ def test_cancel_and_new_start_do_not_share_same_path_results(tmp_path: pathlib.P
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "登録した。"))[0] == "block"
 
 
+def test_cancelling_current_work_keeps_remaining_stage_of_other_work(tmp_path: pathlib.Path) -> None:
+    """後から始めた作業の中止は、先の作業に残る振り返り結果報告の不足を判定の対象に残す。
+
+    中止を報告の取得不能と同じに扱うと、先の作業の不足を判定せずにターンが終わり、振り返りの報告が欠ける。
+    """
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
+    prompt = "別の作業を始めたが、それは中止する"
+    with contextlib.redirect_stdout(io.StringIO()):
+        user_prompt_submit.main(
+            json.dumps(
+                {
+                    "session_id": "evidence-test",
+                    "turn_id": "switch",
+                    "prompt": prompt,
+                    "transcript_path": str(tmp_path / "transcript.jsonl"),
+                }
+            )
+        )
+    document = {"session_id": "evidence-test", "input_id": "switch", "quote": prompt, "reason": "後の作業の中止"}
+    later_id = termination_evidence.record_decision({**document, "action": "start"})
+    termination_evidence.record_decision({**document, "action": "cancel", "work_id": later_id})
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "中止した。"))
+    assert decision == "block"
+    assert "作業 work-1: review-result" in reason
+    assert later_id not in reason
+
+
 def test_waiting_for_answer_is_scoped_and_returns_to_remaining_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1,8 +1,6 @@
 """sync_codex_agentsのテスト。"""
 
 import re
-import subprocess
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -123,93 +121,6 @@ def test_sync_rejects_out_of_range_warn_ratio(tmp_path: Path, warn_ratio: float)
     root = _root(tmp_path, warn_ratio=warn_ratio)
     with pytest.raises(ValueError, match="0より大きく1以下"):
         subject.sync(root)
-
-
-def test_config_template_applies_shared_limits_and_preserves_existing_values() -> None:
-    """chezmoiの実行結果へ共有設定を反映し、無関係なユーザー設定を保持する。"""
-    template = subject.REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
-    result = subprocess.run(
-        [
-            "chezmoi",
-            "execute-template",
-            "--file",
-            str(template),
-            "--with-stdin",
-            "--working-tree",
-            str(subject.REPO_ROOT),
-        ],
-        input=('model = "gpt-test"\nproject_doc_max_bytes = 1\ntool_output_token_limit = 2\n[features]\nuser_feature = true\n'),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    rendered = tomllib.loads(result.stdout)
-    assert rendered["project_doc_max_bytes"] == 262144
-    assert rendered["tool_output_token_limit"] == 20000
-    assert rendered["suppress_unstable_features_warning"] is True
-    assert rendered["model"] == "gpt-test"
-    assert rendered["features"]["reasoning_effort_override"] is True
-    assert rendered["features"]["user_feature"] is True
-
-
-@pytest.mark.parametrize(
-    "context_config",
-    [
-        "",
-        "model_context_window = 1000000\nmodel_auto_compact_token_limit = 900000\n",
-    ],
-    ids=["absent", "present"],
-)
-def test_config_template_removes_context_overrides(context_config: str) -> None:
-    """コンテキスト設定の有無によらず固定を解除し、無関係なユーザー設定を保つ。"""
-    template = subject.REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
-    result = subprocess.run(
-        ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(subject.REPO_ROOT)],
-        input=context_config + 'model = "gpt-test"\n[features]\nuser_feature = true\n',
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stderr
-    rendered = tomllib.loads(result.stdout)
-    assert "model_context_window" not in rendered
-    assert "model_auto_compact_token_limit" not in rendered
-    assert rendered["model"] == "gpt-test"
-    assert rendered["features"]["user_feature"] is True
-
-
-@pytest.mark.parametrize(
-    "reasoning_config",
-    [
-        "",
-        'model_reasoning_summary = "auto"\nhide_agent_reasoning = false\n',
-        'model_reasoning_summary = "none"\nhide_agent_reasoning = true\n',
-    ],
-)
-def test_config_template_removes_reasoning_overrides(reasoning_config: str) -> None:
-    """既存設定の有無と値によらず固定を解除し、無関係なユーザー設定を保つ。"""
-    template = subject.REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
-    result = subprocess.run(
-        ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(subject.REPO_ROOT)],
-        input=reasoning_config + 'model = "gpt-test"\n[features]\nuser_feature = true\n',
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stderr
-    rendered = tomllib.loads(result.stdout)
-    assert "model_reasoning_summary" not in rendered
-    assert "hide_agent_reasoning" not in rendered
-    assert rendered["model"] == "gpt-test"
-    assert rendered["features"]["user_feature"] is True
 
 
 @pytest.mark.parametrize(

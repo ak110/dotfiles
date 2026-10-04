@@ -176,3 +176,83 @@ def test_agent_prompt_with_role_preface_before_command_is_blocked(tmp_path: path
 
     assert result.returncode == 2
     assert "あなたは実装担当である。" in result.stderr
+
+
+_LAUNCHERS = [
+    ("mcp__agents_server__start", "delegate"),
+    ("mcp__agents_server__start", "explore"),
+    ("Agent", None),
+    ("Task", None),
+]
+
+
+@pytest.mark.parametrize(("tool_name", "mode"), _LAUNCHERS)
+@pytest.mark.parametrize(
+    "command",
+    [
+        "{document} の手順を実行せよ。\n担当種別: レーン担当\n追加の指示: 全件を見直す\n",
+        "{document}に従って作業せよ。\n担当種別: レーン担当\n",
+        "{document}の手順を実行せよ。あわせて全ファイルを整形する。\n担当種別: レーン担当\n",
+        "`{document}`の手順を実行して結果を返して。\n",
+        "参考資料: {other}\n{document}の手順で作業して。\n",
+        "{document}に従い作業せよ。\n",
+        "{document}を読み、その手順を実行せよ。\n",
+        "{document}の手順を実行し、結果を返せ。\n",
+    ],
+    ids=[
+        "path-trailing-space",
+        "rephrased",
+        "same-line-continuation",
+        "code-path",
+        "after-reference",
+        "continuative-form",
+        "read-then-execute",
+        "continuative-verb",
+    ],
+)
+def test_rephrased_execution_command_is_blocked(tool_name: str, mode: str | None, command: str, tmp_path: pathlib.Path) -> None:
+    """定型行から表記を変えた引用外の実行命令も、宣言外の指示を伴う役割起動として遮断する。
+
+    定型行との完全一致だけで判定すると、パスの後の空白、言い回し、同じ行の続きを持つ命令が遮断の判定を経ずに委譲先へ届く。
+    """
+    other = _SHARE_DIR / "reader-fit-review.subagent.md"
+    result = _invoke(tool_name, command.format(document=_EXEC_DOCUMENT, other=other), tmp_path, mode)
+
+    assert result.returncode == 2
+    assert str(_EXEC_DOCUMENT) in result.stderr
+
+
+@pytest.mark.parametrize(("tool_name", "mode"), _LAUNCHERS)
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "{document}の手順を比較して差分を返す。",
+        "{document}の手順に従っているかをレビューして返す。",
+        "{document}を読んで要点を返す。",
+        "{document}を読み、その手順の要点を返す。",
+        "{document}を読み、その指示に従っているかをレビューして返す。",
+        "「{document}に従って作業せよ」という命令例の書式を説明する。",
+        "`{document}に従って作業せよ。`の書式を説明する。",
+    ],
+    ids=[
+        "compare",
+        "review-conformance",
+        "read",
+        "read-summarize-steps",
+        "read-review-conformance",
+        "bracket-quote",
+        "inline-code-example",
+    ],
+)
+def test_reading_and_command_examples_pass(tool_name: str, mode: str | None, prompt: str, tmp_path: pathlib.Path) -> None:
+    """役割文書の読解・比較・適合確認と、括弧やコードに載せた命令例は実行の命令として扱わない。"""
+    result = _invoke(tool_name, prompt.format(document=_EXEC_DOCUMENT), tmp_path, mode)
+
+    assert result.returncode == 0
+
+
+def test_agent_accepts_spacing_variant_with_declared_inputs_only(tmp_path: pathlib.Path) -> None:
+    """パスの後に空白を置いた定型の命令と宣言済みの入力だけの本文は、宣言外の指示を持たないため通す。"""
+    prompt = f"{_EXEC_DOCUMENT} の手順を実行せよ。\n担当種別: レーン担当\n"
+
+    assert _invoke("Agent", prompt, tmp_path).returncode == 0

@@ -7977,7 +7977,7 @@ def test_catalog_rejects_an_unclassifiable_root_and_reversed_period(
 def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() -> None:
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},
-        {"kind": "user", "record": "main", "line": 2, "text": "<skill>\n本文\n</skill>"},
+        {"kind": "user", "record": "main", "line": 2, "text": "<skill>\n本文\n</skill>", "runtime_inserted": True},
         {"kind": "user", "record": "main", "line": 3, "text": "最初の依頼"},
         {"kind": "user", "record": "main", "line": 4, "text": "後続の訂正"},
         {"kind": "user", "record": "main", "line": 5, "text": "通常文中の <skill> という表記"},
@@ -7997,8 +7997,8 @@ def test_candidates_exclude_boundary_marked_injections() -> None:
         '<agent-toolkit-hook-message source="agent-toolkit/rules_context" kind="notice">\n注記\n</agent-toolkit-hook-message>'
     )
     timeline = [
-        {"kind": "user", "record": "main", "line": 1, "text": normative},
-        {"kind": "user", "record": "main", "line": 2, "text": hook_notice},
+        {"kind": "user", "record": "main", "line": 1, "text": normative, "runtime_inserted": True},
+        {"kind": "user", "record": "main", "line": 2, "text": hook_notice, "runtime_inserted": True},
         {"kind": "user", "record": "main", "line": 3, "text": "最初の依頼"},
         {"kind": "user", "record": "main", "line": 4, "text": "後続の訂正"},
     ]

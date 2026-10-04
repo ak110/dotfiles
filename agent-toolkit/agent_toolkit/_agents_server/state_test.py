@@ -57,7 +57,7 @@ def test_all_launch_system_prompts_include_language_condition() -> None:
 
     委譲プロンプトから言語の指定を外しても委譲先が日本語で返すことを、委譲元の記述に依存せず保証する。
     通常委譲の`agents-server-delegate.md`が条件を欠くと、Claude以外のbackendでは常時規範の言語条項も届かず、
-    実行環境が英語で挿入した指示に引きずられた応答が応答言語のチェックで遮断される。
+    実行環境が英語で挿入した指示に引きずられて英語で書いた応答は、応答言語を判定するPreToolUse hookに遮断される。
     """
     for kind, prompt in state.LAUNCH_SYSTEM_PROMPTS.items():
         assert "日本語" in prompt, kind

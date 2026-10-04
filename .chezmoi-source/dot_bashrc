@@ -4,7 +4,7 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
-# 既定の作成パーミッションを644/755相当にする
+# 新しく作成するファイルを644、ディレクトリを755相当のパーミッションにする
 umask 022
 
 # VSCode が最近 Remote SSH で `c:\Users\...;` のような値を PATH に混入させる事象への暫定対処。単純に ; を : に置換して無害化する。
@@ -370,7 +370,7 @@ if [ -e "$(which code)" ]; then
 fi
 
 # Claude本体の引数と終了コードを保持するラッパー関数。
-# Anthropic公式ネイティブ版の既定配置を絶対パスで呼び出す。
+# Anthropic公式ネイティブ版のインストーラーが置く`~/.local/bin/claude`を絶対パスで呼び出す。
 # 関数と同名の実体をPATH検索せず、npm版など別経路への切り替わりを防ぐ。
 if [ -x "$HOME/.local/bin/claude" ]; then
     claude() {

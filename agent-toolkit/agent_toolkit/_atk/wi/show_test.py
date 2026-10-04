@@ -367,15 +367,20 @@ class TestShowAll:
         assert "本文2" in captured.out
 
 
+_SUMMARY_TITLE = "要約照会でも省略せずに表示する長いAWIの表題" * 4
+_SUMMARY_AWI = ["### fb-001.md [inbox]", _SUMMARY_TITLE]
+_SUMMARY_UWI = ["### uwi-001.md [inbox/answered]", "表示する質問の先頭行"]
+
+
 class TestShowSummary:
-    """状態だけの照会を単件・複数・全件の両環境で直接表示する。"""
+    """状態と表題・質問の照会を単件・複数・全件の両環境で直接表示する。"""
 
     @pytest.mark.parametrize(
         ("selection", "expected"),
         [
-            (["fb-001.md"], ["### fb-001.md [inbox]"]),
-            (["uwi-001.md", "fb-001.md"], ["### uwi-001.md [inbox/answered]", "### fb-001.md [inbox]"]),
-            (["--all"], ["### fb-001.md [inbox]", "### uwi-001.md [inbox/answered]"]),
+            (["fb-001.md"], _SUMMARY_AWI),
+            (["uwi-001.md", "fb-001.md"], [*_SUMMARY_UWI, *_SUMMARY_AWI]),
+            (["--all"], [*_SUMMARY_AWI, *_SUMMARY_UWI]),
         ],
     )
     @pytest.mark.parametrize("agent_environment", [False, True])
@@ -388,10 +393,13 @@ class TestShowSummary:
         expected: list[str],
         agent_environment: bool,
     ) -> None:
-        """公開CLIの選択順と回答状態を保持し、本文・frontmatterを出力しない。"""
+        """選択順と回答状態の状態行の直後に、AWIのH1表題かUWIの質問の先頭行を置き、他の本文を出力しない。
+
+        状態行を変えると状態を読む既存の手順が状態を得られなくなり、表題行が無いと完了報告が投入WIの表示名を得られない。
+        """
         notes = _setup_notes(tmp_path)
-        _write_awi_file(notes, "fb-001.md", body="表示を省くAWI本文")
-        _write_uwi_file(notes, "uwi-001.md", question="表示を省く質問", answer="表示を省く回答")
+        _write_awi_file(notes, "fb-001.md", body=f"# {_SUMMARY_TITLE}\n\n表示を省くAWI本文")
+        _write_uwi_file(notes, "uwi-001.md", question="表示する質問の先頭行\n表示を省く質問の続き", answer="表示を省く回答")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         if agent_environment:
             monkeypatch.setenv("CLAUDECODE", "1")
@@ -401,11 +409,57 @@ class TestShowSummary:
         captured = capsys.readouterr()
         output = captured.out
         assert not output.startswith("保存先: ")
-        assert [line for line in output.splitlines() if line.startswith("### ")] == expected
+        lines = output.splitlines()
+        assert [
+            line for index, line in enumerate(lines) if line.startswith("### ") or lines[index - 1].startswith("### ")
+        ] == expected
         assert "## target_repo:" in output
         assert "表示を省く" not in output
         assert "---" not in output
         assert not captured.err
+
+
+class TestShowOutputSaving:
+    """エージェント環境の本文表示は、単発なら直接読め、複数件ならファイルとして受け取れる。"""
+
+    @pytest.mark.parametrize(
+        ("selection", "saved"),
+        [
+            (["fb-001.md"], False),
+            (["fb-001.md", "fb-002.md"], True),
+            (["--all"], True),
+        ],
+    )
+    def test_single_show_is_direct_and_multiple_show_is_saved(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        selection: list[str],
+        saved: bool,
+    ) -> None:
+        """短い単発の本文はその場で読め、複数件は保存先のファイルから全見出しと本文を読める。
+
+        単発まで保存すると短い本文を読むたびに往復が増え、複数件を直接表示すると
+        一括取得の消費側が渡された保存ファイルから全見出しを確かめられない。
+        """
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "fb-001.md", body="# 表題1\n\n本文1")
+        _write_awi_file(notes, "fb-002.md", body="# 表題2\n\n本文2")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setenv("CLAUDECODE", "1")
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+        with pytest.raises(SystemExit) as exit_info:
+            atk.main(["wi", "show", *selection, "--target-repo=all", "--skip-pull"], home=tmp_path)
+        assert exit_info.value.code == 0
+        output = capsys.readouterr().out
+        assert output.startswith("保存先: ") is saved
+        if saved:
+            output = pathlib.Path(output.splitlines()[0].removeprefix("保存先: ")).read_text(encoding="utf-8")
+        bodies = {"fb-001.md": "本文1", "fb-002.md": "本文2"} if saved else {"fb-001.md": "本文1"}
+        assert [line for line in output.splitlines() if line.startswith("### ")] == [f"### {name} [inbox]" for name in bodies]
+        assert all(body in output for body in bodies.values())
 
 
 class TestShowStatusAll:

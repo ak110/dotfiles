@@ -489,7 +489,7 @@ class TestRun:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Windows\System32",
         )
-        # 既定の Path.exists() は Linux 上で常に False を返すため、ここで明示的に False 固定する。
+        # 差し替えない Path.exists() は Linux 上で常に False を返すため、ここで明示的に False 固定する。
         monkeypatch.setattr(
             cleanup_user_path,
             "_find_missing_paths",
@@ -576,6 +576,6 @@ def _stub_winutils(
         lambda: broadcast_calls.append(True),
     )
     if stub_find_missing:
-        # 既定では存在チェック警告を抑止する (テストごとに必要なら明示的に差し替える)。
+        # stub_find_missing を省略した場合は存在チェック警告を抑止する (テストごとに必要なら明示的に差し替える)。
         monkeypatch.setattr(cleanup_user_path, "_find_missing_paths", lambda entries: ([], []))
     return write_calls, broadcast_calls

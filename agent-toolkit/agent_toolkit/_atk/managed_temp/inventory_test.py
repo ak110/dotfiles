@@ -42,6 +42,24 @@ def _make_junction(link: pathlib.Path, target: pathlib.Path) -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+@pytest.fixture(params=["native", "python312"])
+def windows_chmod(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Readonly解除を実環境の`os.chmod`と、WindowsのPython 3.12相当の代役の両方で確かめる。
+
+    代役はCPython 3.12のWindows版と同じく`follow_symlinks=False`の指定を`NotImplementedError`で拒否する。
+    """
+    if request.param == "native":
+        return
+    original_chmod = os.chmod
+
+    def chmod_without_follow_symlinks(path: typing.Any, mode: int, *, follow_symlinks: bool = True) -> None:
+        if not follow_symlinks:
+            raise NotImplementedError("chmod: follow_symlinks unavailable on this platform")
+        original_chmod(path, mode)
+
+    monkeypatch.setattr(os, "chmod", chmod_without_follow_symlinks)
+
+
 def test_windows_ctypes_structures_match_sdk_layout() -> None:
     """Windows APIへ渡す固定幅structureのsizeとSID offsetを確認する。"""
     assert ctypes.sizeof(subject._AceHeader) == 4
@@ -272,6 +290,7 @@ class TestManagedTempWindows:
         assert not subject._registry_path(target).exists()
         assert not consuming.exists()
 
+    @pytest.mark.usefixtures("windows_chmod")
     def test_cleanup_removes_readonly_files(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """通常ファイルを変えずに、Readonlyを含む管理対象を公開CLIから回収する。"""
         target = subject.create_managed_temp("windows-readonly")
@@ -298,6 +317,7 @@ class TestManagedTempWindows:
         assert not registry.exists()
         assert changed == ["readonly.txt"]
 
+    @pytest.mark.usefixtures("windows_chmod")
     def test_cleanup_resumes_quarantine_with_readonly_files(self) -> None:
         """Readonlyを含む隔離途中状態も公開CLIから回収する。"""
         target = subject.create_managed_temp("windows-readonly-resume")
@@ -313,6 +333,7 @@ class TestManagedTempWindows:
         assert not subject._registry_path(target).exists()
         assert not consuming.exists()
 
+    @pytest.mark.usefixtures("windows_chmod")
     @pytest.mark.parametrize(("mode", "winerror"), [(stat.S_IWRITE, 5), (stat.S_IREAD, 32)])
     def test_cleanup_keeps_attributes_for_other_delete_failures(
         self,
@@ -344,6 +365,7 @@ class TestManagedTempWindows:
         assert getattr(content.lstat(), "st_file_attributes", 0) == before_attributes
         assert "同じcleanupを再試行" in capsys.readouterr().err
 
+    @pytest.mark.usefixtures("windows_chmod")
     def test_cleanup_preserves_readonly_replacement_during_delete(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -1032,3 +1054,183 @@ class TestManagedTempWindows:
         else:
             assert displaced.read_text(encoding="utf-8") == "original"
             assert child.read_text(encoding="utf-8") == "replacement"
+
+
+def _ns(moment: datetime.datetime) -> int:
+    return int(moment.timestamp() * 1_000_000_000)
+
+
+def _record_validations(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
+    """登録済み候補の真正性検証と配下の走査の対象を記録する。"""
+    observed: list[pathlib.Path] = []
+    original_validate = subject.validate_managed_temp
+    original_walk = subject._latest_update_and_git_paths
+
+    def record_validate(path: pathlib.Path | str) -> typing.Any:
+        observed.append(pathlib.Path(path))
+        return original_validate(path)
+
+    def record_walk(path: pathlib.Path) -> tuple[int, list[pathlib.Path]]:
+        observed.append(path)
+        return original_walk(path)
+
+    monkeypatch.setattr(subject, "validate_managed_temp", record_validate)
+    monkeypatch.setattr(subject, "_latest_update_and_git_paths", record_walk)
+    return observed
+
+
+class TestSweepSchedule:
+    """期限判定記録による掃引の省略と、記録を信用しない場合の従来の掃引を確認する。"""
+
+    _NOW = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+
+    def test_second_sweep_before_deadline_skips_validation_and_scan(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """期限前の登録済み候補と登録を失った候補を、2回目の掃引で検証も走査もしない。"""
+        registered = [subject.create_managed_temp(f"pending-{index}") for index in range(5)]
+        orphan = subject.create_managed_temp("pending-orphan")
+        subject._registry_path(orphan).unlink()
+        nested = registered[0] / "nested"
+        nested.mkdir()
+        (nested / "recent.txt").write_text("recent", encoding="utf-8")
+        for target in (*registered, orphan):
+            _set_tree_mtime(target, _ns(self._NOW - datetime.timedelta(days=6)))
+        os.utime(nested / "recent.txt", ns=(_ns(self._NOW), _ns(self._NOW)))
+
+        assert subject.sweep_managed_temp(now=self._NOW) == subject.SweepResult([], (), None)
+        observed = _record_validations(monkeypatch)
+        assert subject.sweep_managed_temp(now=self._NOW) == subject.SweepResult([], (), None)
+
+        assert not observed
+        assert all(target.exists() for target in (*registered, orphan))
+
+    def test_due_candidates_are_validated_and_swept(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """期限が到来した候補だけを従来どおり検証し、`.git`と直近の更新を持つ領域を残す。"""
+        expiring = subject.create_managed_temp("expiring")
+        recent = subject.create_managed_temp("recent")
+        with_git = subject.create_managed_temp("with-git")
+        (with_git / "repo" / ".git").mkdir(parents=True)
+        orphan = subject.create_managed_temp("expiring-orphan")
+        subject._registry_path(orphan).unlink()
+        for target in (expiring, with_git, orphan):
+            _set_tree_mtime(target, _ns(self._NOW - datetime.timedelta(days=6)))
+        _set_tree_mtime(recent, _ns(self._NOW))
+        assert subject.sweep_managed_temp(now=self._NOW).deleted == []
+
+        observed = _record_validations(monkeypatch)
+        result = subject.sweep_managed_temp(now=self._NOW + datetime.timedelta(days=2))
+
+        assert sorted(result.deleted) == sorted([expiring, orphan.absolute()])
+        assert result.stale_unregistered == ()
+        assert not expiring.exists()
+        assert not orphan.exists()
+        assert recent.exists()
+        assert with_git.exists()
+        assert recent not in observed
+
+    def test_new_registration_after_recording_is_swept(self) -> None:
+        """記録の後に登録された期限超過の候補も、次の掃引で回収する。"""
+        kept = subject.create_managed_temp("kept")
+        assert subject.sweep_managed_temp(now=self._NOW).deleted == []
+        added = subject.create_managed_temp("added")
+        _set_tree_mtime(added, _ns(self._NOW - datetime.timedelta(days=8)))
+
+        assert subject.sweep_managed_temp(now=self._NOW).deleted == [added]
+        assert kept.exists()
+
+    def test_changed_root_is_validated_again(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """記録後に領域自身の最終更新が変わった候補は記録を信用せず、期限超過なら回収する。"""
+        target = subject.create_managed_temp("rewound")
+        assert subject.sweep_managed_temp(now=self._NOW).deleted == []
+        _set_tree_mtime(target, _ns(self._NOW - datetime.timedelta(days=8)))
+        observed = _record_validations(monkeypatch)
+
+        assert subject.sweep_managed_temp(now=self._NOW).deleted == [target]
+        assert target in observed
+
+    @pytest.mark.parametrize("damage", ["missing", "corrupt", "other-root"])
+    def test_untrusted_schedule_falls_back_to_full_sweep(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, damage: str
+    ) -> None:
+        """記録の欠落・破損・前提の不一致では全登録を検証し、期限超過の候補を回収する。"""
+        kept = subject.create_managed_temp("kept")
+        expired = subject.create_managed_temp("expired")
+        _set_tree_mtime(expired, _ns(self._NOW - datetime.timedelta(days=6)))
+        assert subject.sweep_managed_temp(now=self._NOW).deleted == []
+        schedule = subject._state_root() / subject._SWEEP_SCHEDULE_NAME
+        assert schedule.exists()
+        if damage == "missing":
+            schedule.unlink()
+        elif damage == "corrupt":
+            schedule.write_text("{", encoding="utf-8")
+        else:
+            value = json.loads(schedule.read_text(encoding="utf-8"))
+            value["temp_root"] = str(tmp_path / "other")
+            schedule.write_text(json.dumps(value), encoding="utf-8")
+        observed = _record_validations(monkeypatch)
+
+        assert subject.sweep_managed_temp(now=self._NOW + datetime.timedelta(days=2)).deleted == [expired]
+        assert kept in observed
+        assert kept.exists()
+
+    def test_stale_unregistered_candidates_are_returned(self, tmp_path: pathlib.Path) -> None:
+        """使用中のgit worktreeを含むため残した期限超過の候補を、掃引の結果として返す。"""
+        repository_admin = tmp_path / "repository" / ".git" / "worktrees" / "lane"
+        repository_admin.mkdir(parents=True)
+        live = subject.create_managed_temp("live-worktree")
+        subject._registry_path(live).unlink()
+        (live / "wt").mkdir()
+        (live / "wt" / ".git").write_text(f"gitdir: {repository_admin}\n", encoding="utf-8")
+        _set_tree_mtime(live, _ns(self._NOW - datetime.timedelta(days=8)))
+
+        for _ in range(2):
+            result = subject.sweep_managed_temp(now=self._NOW)
+            assert result.deleted == []
+            assert result.stale_unregistered == (live.absolute(),)
+
+    def test_kept_by_exclusion_basis_skips_scan_until_basis_disappears(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """`.git`と使用中worktreeを理由に残した期限超過の候補は、根拠が残る間は走査せず、根拠が消えた掃引で再判定する。"""
+        old_ns = _ns(self._NOW - datetime.timedelta(days=8))
+        with_git = subject.create_managed_temp("with-git")
+        (with_git / "repo" / ".git").mkdir(parents=True)
+        repository_admin = tmp_path / "repository" / ".git" / "worktrees" / "lane"
+        repository_admin.mkdir(parents=True)
+        live = subject.create_managed_temp("live-worktree")
+        subject._registry_path(live).unlink()
+        (live / "wt").mkdir()
+        (live / "wt" / ".git").write_text(f"gitdir: {repository_admin}\n", encoding="utf-8")
+        for target in (with_git, live):
+            _set_tree_mtime(target, old_ns)
+        first = subject.sweep_managed_temp(now=self._NOW)
+        assert first == subject.SweepResult([], (live.absolute(),), None)
+
+        observed = _record_validations(monkeypatch)
+        assert subject.sweep_managed_temp(now=self._NOW) == first
+        assert not observed
+
+        (with_git / "repo" / ".git").rmdir()
+        _set_tree_mtime(with_git, old_ns)
+        repository_admin.rmdir()
+        result = subject.sweep_managed_temp(now=self._NOW)
+
+        assert sorted(result.deleted) == sorted([with_git, live.absolute()])
+        assert result.stale_unregistered == ()
+        assert with_git in observed
+        assert live.absolute() in observed
+
+    def test_exclusion_basis_outside_candidate_falls_back_to_full_sweep(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """候補の外を指す除外根拠を持つ記録は信用せず、全件の掃引で期限超過の候補を回収する。"""
+        holder = subject.create_managed_temp("holder")
+        (holder / ".git").mkdir()
+        expired = subject.create_managed_temp("expired")
+        _set_tree_mtime(expired, _ns(self._NOW - datetime.timedelta(days=6)))
+        assert subject.sweep_managed_temp(now=self._NOW).deleted == []
+        schedule = subject._state_root() / subject._SWEEP_SCHEDULE_NAME
+        value = json.loads(schedule.read_text(encoding="utf-8"))
+        value["registered"][subject._registry_path(expired).name][3] = [f"../{holder.name}/.git"]
+        schedule.write_text(json.dumps(value), encoding="utf-8")
+        observed = _record_validations(monkeypatch)
+
+        assert subject.sweep_managed_temp(now=self._NOW + datetime.timedelta(days=2)).deleted == [expired]
+        assert expired in observed

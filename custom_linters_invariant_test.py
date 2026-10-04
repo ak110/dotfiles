@@ -8,9 +8,6 @@ from pathlib import Path
 
 import pyfltr.command.targets
 import pyfltr.config.config
-import pytest
-
-pytestmark = pytest.mark.repo_invariant
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -40,7 +37,7 @@ def test_custom_linter_paths_and_filename_contracts() -> None:
 
 
 # 各rootについて、母集団に実在する全ての深さの代表を1件ずつ挙げる。
-# agent-doc-toneの対象は静かに欠けやすい。pyfltrはtargetsをpathlib.Path.matchで照合して
+# agent-doc-toneの対象は欠けても失敗として現れにくい。pyfltrはtargetsとパスの一致をpathlib.Path.matchで判定して
 # `**`を任意階層として扱わず、サブプロジェクト配下を別設定で実行し、symlink越しに同一実体へ
 # 到達する2つのパスのうち片方だけを残す。いずれが崩れてもlinterは登録されたまま成功し続ける。
 AGENT_DOC_TONE_REPRESENTATIVES = (

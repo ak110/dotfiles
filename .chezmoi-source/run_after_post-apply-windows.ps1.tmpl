@@ -62,7 +62,7 @@ function Get-PytoolsEnvLockingProcess {
     }
 }
 # uv tool venvの場所はOSと環境変数（UV_TOOL_DIR等）で変動する。
-# `uv tool dir`の出力を一次情報源とし、取得失敗時はWindows既定配置へフォールバックする。
+# `uv tool dir`の出力を一次情報源とし、取得失敗時はuvがWindowsで使う`%APPDATA%\uv\tools`へフォールバックする。
 $uvToolBaseDir = $null
 try {
     $uvToolBaseDir = (& uv tool dir 2>$null | Select-Object -First 1)

@@ -27,6 +27,12 @@ update-mise-locks:
 	rm -rf .chezmoi-source/dot_config/mise/dot_mise/locks
 	mv .chezmoi-source/dot_config/mise/.mise/locks .chezmoi-source/dot_config/mise/dot_mise/locks
 	rmdir .chezmoi-source/dot_config/mise/.mise
+	# 各ツールのロック用ディレクトリへ`exact_`を付け、版の更新で配布元から消えた旧版を配布先からも除く。
+	for dir in .chezmoi-source/dot_config/mise/dot_mise/locks/*/; do \
+		[ -d "$$dir" ] || continue; \
+		name=$$(basename "$$dir"); \
+		mv "$$dir" ".chezmoi-source/dot_config/mise/dot_mise/locks/exact_$$name"; \
+	done
 
 # GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:

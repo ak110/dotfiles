@@ -173,6 +173,14 @@ def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: d
     assert stop_step.get("shell") == "pwsh"
 
 
+def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]) -> None:
+    """Windowsジョブが公開入口ランチャーのテストを実行し、`.cmd`の分岐をWindowsで確かめる。"""
+    _, step = _windows_step(_steps(_mapping(_jobs(workflow_data)["test-windows"])), "公開入口ランチャーの動作確認")
+    targets = _direct_pytest_targets({"jobs": {"test-windows": {"steps": [step]}}})
+    assert "bin/atk_launcher_test.py" in targets
+    assert "bin/update_dotfiles_launcher_test.py" in targets
+
+
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
 @pytest.mark.parametrize(
     ("tasks", "expected_lines", "unexpected"),

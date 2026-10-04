@@ -185,8 +185,8 @@ def _registry_recovery_is_accepted(target: pathlib.Path) -> bool:
 def _set_tree_mtime(path: pathlib.Path, timestamp_ns: int) -> None:
     """対象ツリー全体の最終更新日時を同じ値へ固定する。"""
     for entry in path.rglob("*"):
-        os.utime(entry, ns=(timestamp_ns, timestamp_ns), follow_symlinks=False)
-    os.utime(path, ns=(timestamp_ns, timestamp_ns), follow_symlinks=False)
+        os.utime(entry, ns=(timestamp_ns, timestamp_ns))
+    os.utime(path, ns=(timestamp_ns, timestamp_ns))
 
 
 def _isolated_cli_environment(tmp_path: pathlib.Path) -> tuple[dict[str, str], pathlib.Path]:

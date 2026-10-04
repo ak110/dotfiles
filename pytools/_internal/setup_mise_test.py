@@ -82,7 +82,7 @@ def _ls_response(payload: object) -> subprocess.CompletedProcess[str]:
 
 @pytest.fixture(name="mise_stub")
 def _mise_stub(monkeypatch: pytest.MonkeyPatch) -> _MiseSubprocessStub:
-    """既定で mise バイナリ検出済み・非 Windows・CHEZMOI_WORKING_TREE 未設定とする。"""
+    """個々のテストが差し替えない限り、mise バイナリ検出済み・非 Windows・CHEZMOI_WORKING_TREE 未設定とする。"""
     stub = _MiseSubprocessStub()
     stub.install(monkeypatch)
     monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: Path("/fake/mise"))

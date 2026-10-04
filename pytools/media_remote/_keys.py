@@ -90,7 +90,7 @@ def send_key(name: str, *, user32: Any | None = None) -> None:
     Args:
         name: `VK_CODES`に登録されたキー名。
         user32: `user32.dll`相当のオブジェクトを差し替える注入点（テスト用）。
-            既定の`None`では実Windowsの`user32`をロードする。
+            省略時の`None`では実Windowsの`user32`をロードする。
 
     Raises:
         RuntimeError: 非Windowsで`user32`未指定のとき。

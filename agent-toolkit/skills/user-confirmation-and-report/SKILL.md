@@ -186,10 +186,13 @@ Claude Codeメインが利用上限の猶予通知を受けた場合は、ユー
 
 | 工程 | 協調モード | 自律モード |
 | --- | --- | --- |
-| ユーザー確認（事前承認と、回答を待つ通常の確認） | 実行環境の構造化質問。Claude Codeは`AskUserQuestion`（制約は`agent-toolkit/share/rules-main.claude-code.md`）、Codexは`agent-toolkit/share/rules-main.codex.md`の手段を使い、適合するものが無ければ`references/codex-format.md`の固定形式で提示する | 質問を発行できるメインは、その場でホスト契約に適合する構造化質問を使う。回答を得られない場合は`references/main-behavior.md`「未確定判断の保留と暫定判断」へ進む。回答期限を持たないCodex Default modeは`agent-toolkit/share/rules-main.codex.md`の例外に従う |
-| ユーザー確認（事後承認） | その場で構造化質問を使う | 質問を発行できるメインは、その場でホスト契約に適合する構造化質問を使う。回答なしの切替とCodex Default modeの例外は前行と同じ参照先に従う |
+| ユーザー確認（事前承認） | 実行環境の構造化質問。Claude Codeは`AskUserQuestion`（制約は`agent-toolkit/share/rules-main.claude-code.md`）、Codexは`agent-toolkit/share/rules-main.codex.md`の手段を使い、適合するものが無ければ`references/codex-format.md`の固定形式で提示する | 実行環境が実際に働く回答期限を持ち、ホスト契約に適合する構造化質問を発行できるメインだけが、その場で質問する。期限を超えて回答が無い場合は`references/main-behavior.md`「未確定判断の保留と暫定判断」へ進む。期限が無い実行環境と、期限の設定値があっても期限を無効化する条件が成立する実行環境では、質問を発行せず最初から事前承認型UWIへ記録し、回答を要する元項目だけを保留する。回答期限を持たないCodex Default modeは`agent-toolkit/share/rules-main.codex.md`の例外に従い、同じ結果になる |
+| ユーザー確認（事前承認以外の、回答を待つ通常の確認） | 事前承認の行と同じ手段を使う | 回答期限の有無によらずその場の質問を発行せず、事前承認型UWIへ記録して`references/main-behavior.md`「未確定判断の保留と暫定判断」に従う |
+| ユーザー確認（事後承認） | その場で構造化質問を使う | 回答を待たずに事後承認型UWIへ記録し、元の作業を続ける |
 | ユーザーへの報告 | 発話本文。作業完了報告は`agent-toolkit:completion-report`の書式に従う | `agent-toolkit:completion-report`の報告用UWI（セッションに1件） |
 
+自律モードで実際に働く回答期限を持つのは、`atk wi process-loop`のように起動時に有限の期限を与える実行環境である。回答期限を無期限とする設定で起動したセッションは、期限を持たない実行環境として扱う。
+`agent-toolkit:realign-with-user`の認識合わせの質問は本表の対象外とする。自律モードでの発行、回答期限と回答が無い場合の扱いは同スキルが実行環境ごとに定める。
 回答なしで終わった確認のUWIへの切替は`references/main-behavior.md`「未確定判断の保留と暫定判断」が定める。
 有効な回答期限の超過、回答なしで終了した後の同一セッションの確認、事前承認を要する元項目の保留は同節へ接続する。
 実際の回答を得た場合は、その合意に沿って続行する。ユーザー接点を持たない委譲先は、後段の確認通知の手段で委譲元へ返す。

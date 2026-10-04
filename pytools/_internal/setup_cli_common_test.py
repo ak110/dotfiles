@@ -20,7 +20,7 @@ from pytools._internal import setup_cli_common
 def test_official_installer_uses_platform_trust_and_explicit_ca(
     monkeypatch: pytest.MonkeyPatch, platform: str, explicit_ca: bool, uses_system_store: bool
 ) -> None:
-    """Windowsの既定信頼源と明示CAを分け、取得後の実行経路を維持する。"""
+    """CAの指定がないWindowsで使うOSの信頼済みCAと、環境変数で指定したCAを分け、取得後の実行経路を維持する。"""
     monkeypatch.setattr(setup_cli_common, "sys", types.SimpleNamespace(platform=platform))
     if explicit_ca:
         monkeypatch.setenv("SSL_CERT_FILE", "/example/custom-ca.pem")

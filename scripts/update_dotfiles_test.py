@@ -858,7 +858,10 @@ class TestCapturedStderr:
         assert update_dotfiles.main() == 2
         captured = capsys.readouterr()
         assert "fatal: pull failed" not in captured.out
-        assert captured.err == f"fatal: pull failed\n永続ログ: {update_dotfiles._LOG_PATH}\n"  # noqa: SLF001
+        assert captured.err == (
+            f"fatal: pull failed\n永続ログ: {update_dotfiles._LOG_PATH}\n"  # noqa: SLF001
+            "失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。\n"
+        )
         assert len(calls) == 1
 
     def test_successful_status_stderr_is_forwarded(

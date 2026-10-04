@@ -149,12 +149,13 @@ jobs:
           agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
           agent-toolkit/agent_toolkit/_plan/structure
           agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py::test_public_command_runs_platform_launcher
-      - name: update-dotfiles ランチャーの動作確認
+      - name: 公開入口ランチャーの動作確認
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
           uv run --frozen --python 3.14 pytest -v -p no:cacheprovider
+          bin/atk_launcher_test.py
           bin/update_dotfiles_launcher_test.py
       - name: chezmoi インストール
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
@@ -216,7 +217,7 @@ jobs:
     container:
       image: ghcr.io/ak110/pyfltr:latest
       # repack-archive の PDF 入力テストで pdftoppm を使うため、apt 導入用に root で実行する
-      # （既定ユーザーは非 root・sudo 無し）
+      # （イメージが指定する実行ユーザーは非 root・sudo 無し）
       options: --user root
     defaults:
       run:
@@ -326,7 +327,7 @@ jobs:
     container:
       image: ghcr.io/ak110/pyfltr:latest
       # Playwrightのシステム依存をaptで導入するため root で実行する
-      # （既定ユーザーは非 root・sudo 無し）
+      # （イメージが指定する実行ユーザーは非 root・sudo 無し）
       options: --user root
     defaults:
       run:

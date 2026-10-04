@@ -6,8 +6,6 @@ import pytest
 
 from agent_toolkit._plan import structure as _plan_format
 
-pytestmark = pytest.mark.repo_invariant
-
 _ROOT_CAUSE_ANALYSIS = pathlib.Path(__file__).resolve().with_name("root-cause-analysis.md")
 
 

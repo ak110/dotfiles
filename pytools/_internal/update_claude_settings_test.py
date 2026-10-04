@@ -152,7 +152,7 @@ class TestUpdateClaudeSettings:
         assert result["env"] == {"FOO": "bar", "CLAUDE_CODE_NO_FLICKER": "1"}
 
     def test_managed_project_files_environment_merges_with_existing_rules(self, tmp_path: Path) -> None:
-        """作業ツリーの環境宣言が、既定ルールとユーザーの独自設定を保持して届く。"""
+        """作業ツリーの環境宣言が、Claude Code組み込みの規則を示す`$defaults`とユーザーの独自設定を保持して届く。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         declaration = next(item for item in managed["autoMode"]["environment"] if item.startswith("Project files: "))
         existing = {
@@ -1087,7 +1087,7 @@ class TestStripRemovedHooks:
         assert result["hooks"]["PreToolUse"][0]["matcher"] == "Write"
 
     def test_legacy_windows_common_entry_is_dropped_from_existing(self, tmp_path: Path):
-        """旧Windows共通入口が既存設定に残っていても既定の更新で除去する。"""
+        """旧Windows共通入口が既存設定に残っていても、除去対象の引数を省略した更新で除去する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -1110,7 +1110,7 @@ class TestStripRemovedHooks:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """実ホーム絶対パスへ置換された旧Windows自律終了入口を既定の更新で除去する。"""
+        """実ホーム絶対パスへ置換された旧Windows自律終了入口を、除去対象の引数を省略した更新で除去する。"""
         home = Path("C:/Users/Aki User")
         monkeypatch.setattr(sys, "platform", "win32")
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
@@ -1314,7 +1314,7 @@ class TestStripRemovedHooks:
         ],
     )
     def test_no_project_substrings_default(self, tmp_path: Path, command: str, should_be_removed: bool):
-        """既定の除去パターンが廃止形式を除去し、現行の共通エントリポイントを保持する。"""
+        """`removed_hook_substrings`を省略した場合の除去パターンが廃止形式を除去し、現行の共通エントリポイントを保持する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -1463,7 +1463,7 @@ class TestStripRemovedEnvKeys:
         assert result["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"
 
     def test_default_removed_env_key_is_removed(self, tmp_path: Path):
-        """既定の廃止キー一覧に含まれる環境変数を既存設定から除去する。"""
+        """`removed_env_keys`を省略した場合の廃止キー一覧に含まれる環境変数を既存設定から除去する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps({"env": {"CLAUDE_CODE_NO_FLICKER": "1"}}, ensure_ascii=False),
@@ -1830,7 +1830,7 @@ class TestStripStaleLabeledListItems:
         ]
 
     def test_empty_paths_is_noop(self, tmp_path: Path):
-        """`stale_labeled_list_paths`が空タプルの場合は何もしない（既定値の安全性、再発防止テスト）。"""
+        """`stale_labeled_list_paths`が空タプルの場合は何もしない（省略時の値で設定を変えないことを確かめる再発防止テスト）。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps({"autoMode": {"allow": ["Label: 現行文面"]}}, ensure_ascii=False),
@@ -1929,7 +1929,7 @@ class TestStripStaleLabeledListItems:
 
 
 class TestManagedAutoModeSchema:
-    """配布原本の`autoMode`サブキーを公式スキーマの許容集合と照合する。"""
+    """配布原本の`autoMode`サブキーが公式スキーマの許容集合に含まれるか確かめる。"""
 
     def test_subkeys_match_official_schema_snapshot(self) -> None:
         """配布原本3ファイルの`autoMode`サブキーは公式スキーマの許容集合に含まれる。"""

@@ -260,7 +260,7 @@ def update_claude_settings(
     現行の管理対象フックもイベント別に一度除去してから再追加し、管理対象側のグループ
     構造を変更した場合に旧構造が残るのを防ぐ。
 
-    `removed_list_item_substrings` の既定値は空タプル。settings.json 専用の配列項目を
+    `removed_list_item_substrings` は省略すると空タプルになる。settings.json 専用の配列項目を
     対象とする場合は呼び出し元で明示指定する（managed JSON がその配列を管理していない
     .claude.json などで誤削除が起きるのを防ぐため）。
 
@@ -268,7 +268,7 @@ def update_claude_settings(
     （`_LABELED_LIST_ITEM_PATTERN`が捕捉する`ラベル: `形式の接頭辞）を抽出し、
     `settings_path` 側の同一配列からラベルが一致する要素をマージ前に全件除去する。
     配布元でラベル本文を改訂した場合に、通常のunionマージ（文字列完全一致判定）では
-    残り続ける旧文面をラベル単位で自動除去するために使う。既定値は空タプルで、
+    残り続ける旧文面をラベル単位で自動除去するために使う。省略すると空タプルになり、
     `removed_list_item_substrings`と同じ理由で呼び出し元が明示指定する。
 
     Returns:
@@ -587,7 +587,7 @@ def _strip_stale_labeled_list_items(data: dict, managed: dict, paths: tuple[str,
     ラベル単位で旧文面を自動除去する。ラベルを持たない要素（ユーザー独自エントリ）は
     除去対象にならず保護される。
 
-    `paths` の既定値は空タプル。settings.json 専用の配列項目を対象とする場合は呼び出し元で
+    `paths` は省略すると空タプルになる。settings.json 専用の配列項目を対象とする場合は呼び出し元で
     明示指定する（managed JSON がその配列を管理していない .claude.json などで誤削除が
     起きるのを防ぐため。`removed_list_item_substrings` と同じ設計とする）。
     """

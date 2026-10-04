@@ -26,6 +26,8 @@ from agent_toolkit._atk import managed_temp as subject
 from agent_toolkit._atk.managed_temp import registry as registry_subject
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
+_ORIGINAL_STATE_ROOT_PATH = registry_subject._state_root_path
+"""自動適用fixtureが差し替える前の外部状態ディレクトリの解決関数。"""
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 
 
@@ -55,6 +57,19 @@ def test_default_root_path_uses_local_app_data_without_cache_on_windows(
     )
 
     assert registry_subject._temp_root_path() == local_app_data / "agent-toolkit" / "managed-temp"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのXDG_STATE_HOMEの解決")
+@pytest.mark.parametrize(("configured", "relative"), [("absolute-state", False), ("relative-state", True)])
+def test_state_root_path_ignores_relative_xdg_state_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, configured: str, relative: bool
+) -> None:
+    """相対パスのXDG_STATE_HOMEは無視してHOME配下を使い、作業ディレクトリへ外部状態を書かない。"""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_STATE_HOME", configured if relative else str(tmp_path / configured))
+    base = tmp_path / "home" / ".local" / "state" if relative else tmp_path / configured
+
+    assert _ORIGINAL_STATE_ROOT_PATH() == base / "agent-toolkit" / "managed-temp"
 
 
 def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

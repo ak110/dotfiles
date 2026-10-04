@@ -24,9 +24,8 @@ def _nonempty(value: Any, field: str) -> str:
     return value.strip()
 
 
-def validate(contract: Any, target_repo: pathlib.Path) -> None:
+def validate(contract: Any) -> None:
     """配送する条項の構造を検証する。"""
-    del target_repo
     if not isinstance(contract, dict) or set(contract) != {"version", "clauses"}:
         raise ContractError(
             "review_contractのトップレベルキーが不正である",
@@ -52,7 +51,6 @@ def validate(contract: Any, target_repo: pathlib.Path) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", type=pathlib.Path, required=True, help="review_contract YAMLの絶対パス")
-    parser.add_argument("--target-repo", type=pathlib.Path, required=True, help="対象リポジトリの絶対パス")
     return parser
 
 
@@ -60,18 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     """review_contractを検証し、適合時に終了コード0を返す。"""
     args = _parser().parse_args(argv)
     try:
-        if not args.contract.is_absolute() or not args.target_repo.is_absolute():
-            raise ContractError(
-                "contractとtarget-repoは絶対パスで指定する",
-                next_action="`--contract`と`--target-repo`へ絶対パスを渡して再実行する",
-            )
-        if not args.target_repo.is_dir():
-            raise ContractError(
-                "target-repoがディレクトリではない",
-                next_action="`--target-repo`へ対象リポジトリのディレクトリを渡して再実行する",
-            )
+        if not args.contract.is_absolute():
+            raise ContractError("contractは絶対パスで指定する", next_action="`--contract`へ絶対パスを渡して再実行する")
         contract = yaml.safe_load(args.contract.read_text(encoding="utf-8"))
-        validate(contract, args.target_repo)
+        validate(contract)
     except ContractError as error:
         _next_action.report(error.reason, next_action=error.next_action)
         return 2

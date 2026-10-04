@@ -36,7 +36,7 @@ description: >
     初回の変更範囲の検証ではMCPの`commands`とCLIの`--commands`を指定しない。
     修正後に失敗したチェックだけを再実行する場合は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を、CLIでは`--commands=mypy,ruff-check`を渡す
   - 変更範囲の検証の対象は`agent-toolkit:check-execution`の`references/verification-scope.md`の類型で選ぶ。本リポジトリで使う値は次のとおり
-    - 横断テスト: `repo_invariant`マーカーと`*_invariant_test.py`で識別する。両projectの`pytest-fast-targets`の指定に従い、既存のprekが起動する`pyfltr fast`で自動実行する。通常のcommitではこの自動実行の結果を使う。配置は`pytools-edit`「テスト配置」に従う
+    - 横断テスト: ファイル名`*_invariant_test.py`で識別する。rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこのファイル名で対象を選び、commit時にprekが起動する`pyfltr fast`で自動実行する。通常のcommitではこの自動実行の結果を使う。配置は`pytools-edit`「テスト配置」に従う。fastの前提と再検証の手段は`docs/development/audit-records.md`「dotfiles-development：不変条件テストのfast自動実行：2026年10月4日」が持つ
     - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
     - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。
       共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。内部のコメント・空白だけの変更は含めない
@@ -45,7 +45,7 @@ description: >
     - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
   - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
-    `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
+    `pytest`へ`-o addopts=''`を渡して`pyproject.toml`の`addopts`を解除する場合は、`-p no:cacheprovider`を併記する
   - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新またはその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
@@ -60,7 +60,7 @@ description: >
     - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
     - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
     - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
-  - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、既定と異なる状態ディレクトリでmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
+  - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、`XDG_STATE_HOME`などで状態ディレクトリを差し替えてmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
     - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない
     - 検証用の複製では、複製先の`mise.toml`の絶対パスを指定して`mise trust`を実行する
     - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、自動チェックへ与えるのと同じ環境変数を与えて`mise trust`を実行する
@@ -71,7 +71,10 @@ description: >
     `.chezmoi-source/dot_claude/`・`.claude/skills/`）とする。
     文体の密度を測り、閾値を超えたファイルを指標付きで報告する。
     測る指標と閾値は`scripts/check_agent_doc_tone.py`のdocstringが定める。
-    `agent-toolkit/`の説明文はMarkdownの本文・見出し・表に加え、コードのコメント・docstring・表示文・注入文へ指定された語が戻った場合に、ファイルと行を示して非0で終える。
+    `agent-toolkit/`の説明文はMarkdownの本文・見出し・表に加え、コードのコメント・docstring・表示文・注入文を語の判定の対象とする。
+    `agent-toolkit:writing-standards`の`references/notation-rules.md`が説明に使わないと定める3語が戻った場合は、ファイルと行を示して非0で終える。
+    文脈によって対象と動作が伝わりにくい語（判定する語は同スクリプトの`_CAUTION_PATTERNS`が定める）は、ファイルと行を示す警告を標準エラーへ出力する。警告だけの場合は終了コード0で終える。
+    警告は文脈で対象と動作が伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。
     引用、意図的な悪い例、検出用データと保存形式の名称は説明文と区別し、良い例と通常の説明は判定する。
     報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で
     指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換えて密度を下げる。
@@ -81,12 +84,15 @@ description: >
 - エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
 - `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
   実ブラウザーテストを変更した場合は`make test-browser`を実行する
-- 専用worktreeの変更を`atk`で動かす場合（`atk serve`で画面を確かめる場合を含む）は、
-  `<worktreeの絶対パス>/agent-toolkit/bin/atk`を絶対パスで起動する。
-  `agent-toolkit`は`atk`のconsole scriptを持たないため、`uv run atk`とPATH上の`atk`は複製元の
-  `<複製元の絶対パス>/agent-toolkit/bin/atk`へ解決され、複製元のコードが動く。
-  uvが`VIRTUAL_ENV=... does not match the project environment path <複製元の絶対パス>/agent-toolkit/.venv`と警告した場合は、
-  この取り違えが起きている
+- 専用worktreeの変更を`atk`で動かす場合（`atk serve`で画面を確かめる場合を含む）は、起動時のcwdで動く版が決まる。
+  PATH上の`atk`は複製元の`bin/atk`であり、cwdが同じリポジトリのworktree（その配下のディレクトリを含む）にあれば、
+  そのworktreeの`agent-toolkit/bin/atk`へ委譲する。
+  `agent-toolkit`は`atk`のconsole scriptを持たないため、`uv run atk`もPATH上の`atk`へ解決され、同じ選択になる。
+  cwdがGit外か別リポジトリにある場合は複製元の`agent-toolkit/bin/atk`が動くため、
+  対象worktreeの外から改修版を動かすときは`<worktreeの絶対パス>/agent-toolkit/bin/atk`を絶対パスで起動する。
+  `uv run`の中から起動すると、uvが`VIRTUAL_ENV=... does not match the project environment path <パス>/agent-toolkit/.venv`と警告する。
+  この警告は動作を妨げず、`<パス>`（cwd配下なら相対パス）は実際に動く`agent-toolkit`の位置を示す。
+  改修版を動かすつもりで複製元の絶対パスが表示された場合は、cwdか起動パスを直して起動し直す
 - 画面の実描画には、ブラウザー操作ツールに加えて、リポジトリ直下の`pyproject.toml`が依存に持つPython版Playwright（`uv run --frozen python`から`playwright`を使うスクリプト）を使える。
   ブラウザー本体は`make setup-browser`が導入し、導入済みの版は`~/.cache/ms-playwright`で確かめる
 - コミットメッセージtypeの判定例: [commit-types.md](../../../docs/development/commit-types.md)

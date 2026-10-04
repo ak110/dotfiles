@@ -428,10 +428,15 @@ def _unit_markers(source: str) -> tuple[str, str]:
 
 
 def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[str]]:
-    """根拠からファイル参照の候補を取り出し、不在の参照も対象版で確認する。"""
+    """根拠から明示されたファイル参照を取り出し、不在の参照も対象版で確認する。
+
+    明示された参照は、Markdownリンク、WI名、実在するファイル、拡張子付きのパス、行・見出し位置付きのファイル名とする。
+    画面やAPIのパス（`/settings`、`/api/items`）と製品名（`Node.js`、`ASP.NET`）はファイルを指さないため候補にしない。
+    これらを候補にすると、正当な達成根拠が不在ファイルへの参照として拒否される。
+    """
     matches = []
     for match in EVIDENCE_REFERENCE.finditer(evidence):
-        candidate, _ = _reference_parts(match)
+        candidate, location = _reference_parts(match)
         if "://" in candidate or candidate.startswith("~") or candidate == "/" or candidate in NON_FILE_PAIRS:
             continue
         reference = pathlib.Path(candidate)
@@ -448,15 +453,17 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
             and not re.match(r"[A-Za-z]:[\\/]", candidate)
         ):
             continue
-        # 自由文の単語やパスのないテスト名は候補にしない。明示されたパスは実在に依存させない。
-        looks_like_path = (
-            reference.is_absolute()
-            or (match[3] is None and ("/" in candidate or "\\" in candidate))
-            or re.fullmatch(r"[A-Za-z0-9_.-]+(?:[/\\][A-Za-z0-9_.-]+)+", candidate) is not None
-            or re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
-            or candidate in {"Makefile", "Dockerfile", "LICENSE"}
+        # 自由文の単語、パスのないテスト名、拡張子のない画面・APIのパス、製品名は候補にしない。
+        # 明示された参照は実在に依存させず、不在なら対象版の確認で拒否する。
+        has_separator = "/" in candidate or "\\" in candidate
+        has_extension = re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
+        explicit = (
+            match[1] is not None
+            or WI_FILENAME.fullmatch(candidate) is not None
+            or (has_separator and has_extension)
+            or (bool(location) and (has_separator or has_extension))
         )
-        if candidate and (looks_like_path or _is_file(repository / reference)):
+        if candidate and (explicit or _is_file(repository / reference)):
             matches.append(match)
     return matches
 
@@ -599,22 +606,22 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
     """両配列の全達成行を要求単位で区別し、所在のない共用と、説明のない参照だけの共用を報告する。
 
     同じ検証記録のパスだけを多数の行へ写すと、各行の条件を判定せずに空欄を埋めた証拠と区別できない。
-    行情報の再掲だけによる文字列の違いを、観測内容の違いとして扱わない。
-    異なるWIの原文が異なる行どうしの共用は、説明を添えていても受理しない。同じ1文が別々のWIの異なる要求を
-    それぞれ直接満たす箇所を示すことはできず、汎用的な説明を添えた写しと区別できないためである。
+    共用の比較は、行と一致する識別情報（`_unit_markers`の標識と要件原文の再掲）を除いた根拠で行う。
+    同じWIの中では、完全一致の共用と識別情報だけを添えた共用を同じ条件で判定し、説明付きの参照を受理する。
+    各行への意味上の適合は実行レビュー担当が判定する。
+    異なるWIの原文が異なる行どうしの共用は、識別情報の有無や説明の有無によらず受理しない。同じ1文が別々のWIの
+    異なる要求をそれぞれ直接満たす箇所を示すことはできず、汎用的な説明を添えた写しと区別できないためである。
     分割起票した兄弟WIが同じ原文の行を同じ根拠で記録する共用と、具体的なテスト名と成功結果を持つ共用は受理する。
     """
     groups: dict[str, list[tuple[str, int, str, str]]] = collections.defaultdict(list)
-    body_groups: dict[str, list[tuple[str, int, str, str, str]]] = collections.defaultdict(list)
     test_results: dict[tuple[str, int], bool] = {}
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         rows = payload[section]
         assert isinstance(rows, list)
         for index, row in enumerate(rows, start=1):
             if row["outcome"] == "達成":
-                groups[row["evidence"].strip()].append((section, index, row["awi"], row[field]))
                 body = re.sub(r"\s+", " ", _evidence_body(row, field)).strip()
-                body_groups[body].append((section, index, row["awi"], row[field], row["evidence"].strip()))
+                groups[body].append((section, index, row["awi"], row[field]))
                 test_results[section, index] = bool(TEST_RESULT.search(body))
     errors: list[str] = []
     for evidence, rows in groups.items():
@@ -641,17 +648,6 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
         errors.extend(
             f"{awi or '計画由来'}: {section}[{index}].evidence: {reason}。条件を観測できていない場合は証拠不足へ再判定する"
             for section, index, awi, _ in rows
-        )
-    for body, rows in body_groups.items():
-        if len({text for _, _, _, text, _ in rows}) < 2 or len({evidence for _, _, _, _, evidence in rows}) < 2:
-            continue
-        if TEST_RESULT.search(body):
-            continue
-        errors.extend(
-            f"{awi or '計画由来'}: {section}[{index}].evidence: "
-            "異なる原文の達成根拠が単位名・行標識・原文引用だけで異なります。"
-            "各行の要求を満たす箇所と観測した内容を記入する。条件を観測できていない場合は証拠不足へ再判定する"
-            for section, index, awi, _, _ in rows
         )
     return list(dict.fromkeys(errors))
 
@@ -920,7 +916,7 @@ def _background_source_error(
     if original is None or not _covered_by_background(row["requirement"], record, original, row["origin"]):
         return (
             f"{label}.source: 記録の「背景」を含む行が、この要求単位を覆う原文の範囲を位置参照または旧引用で示していません。"
-            "背景とした原文の範囲を`逐語引用 text[N] 文字A-B`で記録へ参照する。"
+            "背景とした原文の範囲を`逐語引用 text[N] 文字A-B`で記録へ参照し、読み手が箇所を特定できる短い抜粋か要約を添える。"
             "Nは同じWIの引用節のtextブロック番号、A-Bは改行も数える1始まりの文字範囲である。"
             "保存済みの「」による引用（中略は…）も読める。"
             "要求を含む文は背景にせず、達成・未達・証拠不足のいずれかで判定する"

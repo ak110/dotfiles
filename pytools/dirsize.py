@@ -20,7 +20,7 @@ _MIB = 1024 * 1024
 def main() -> None:
     """ディレクトリサイズを集計表示するエントリポイント。"""
     parser = argparse.ArgumentParser(description="ディレクトリサイズを集計する")
-    parser.add_argument("-r", "--recursive", nargs="?", const=1, type=int, default=0, help="再帰深度 (既定 0: 直下のみ)")
+    parser.add_argument("-r", "--recursive", nargs="?", const=1, type=int, default=0, help="再帰深度 (省略時 0: 直下のみ)")
     parser.add_argument("-e", "--progress", action="store_true", help="進捗を stderr に表示する")
     parser.add_argument("-a", "--all", action="store_true", help="1 MiB 未満も表示する")
     parser.add_argument("target", nargs="?", type=pathlib.Path, default=pathlib.Path.cwd())

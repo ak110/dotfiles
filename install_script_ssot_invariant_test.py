@@ -11,8 +11,6 @@ from collections.abc import Callable
 
 import pytest
 
-pytestmark = pytest.mark.repo_invariant
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _RULES_DIR = _REPO_ROOT / "agent-toolkit" / "rules"
 _INSTALL_SH = _REPO_ROOT / "install-claude.sh"

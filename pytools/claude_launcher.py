@@ -1,5 +1,5 @@
 # PYTHON_ARGCOMPLETE_OK
-"""モデル別の既定引数でClaude CodeまたはCodexを起動する。"""
+"""モデルごとに決めた引数を付けてClaude CodeまたはCodexを起動する。"""
 
 import argparse
 import os

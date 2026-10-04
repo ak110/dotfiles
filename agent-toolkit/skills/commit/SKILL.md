@@ -45,7 +45,9 @@ commit時に本来実行されるGit hookまたはhook管理ツール内の対�
 
 ## WI実装commitの対応
 
-WIを入力に持つ実装commitでは、作成前に対応AWI集合を確定し、commit後に対象worktreeで取得した完全OIDを既存の進捗記録へ残す。通常実装・レビュー修正・CI修正へ同じ記録を使う。計画がある場合は次の形で記録する。計画とworktreeは絶対パス、OIDは完全OID、AWIはファイル名を渡し、全対応AWIを`--awi`で反復指定する。
+WIを入力に持つ実装commitとAWIの対応は、計画の進捗ログ（計画なしでは引き継ぎ記録）だけへ構造化して残し、記録・取得・履歴変更の各操作を本節の手段で行う。各工程の文書は、操作する時点、使う記録とworktree、工程固有の入力だけを持ち、手順は本節を参照する。
+
+記録: 実装commitの作成前に対応AWI集合を確定し、commit後に対象worktreeで取得した完全OIDを記録する。通常実装・レビュー修正・CI修正の各commitへ同じ手段を使う。計画がある場合は次の形で記録する。計画とworktreeは絶対パス、OIDは完全OID、AWIはファイル名を渡し、全対応AWIを`--awi`で反復指定する。
 
 ```text
 atk run-script plan-progress -- <計画> --completed-step <工程> --result <結果> --worktree <worktree> --commit <OID> --awi <AWI>
@@ -53,7 +55,11 @@ atk run-script plan-progress -- <計画> --completed-step <工程> --result <結
 
 計画なしでは引き継ぎ記録を対象にし、`--handoff`と対象集合全件の`--allowed-awi`を加える。
 
-終端担当は`atk run-script plan-commits -- <記録> --worktree <worktree> --awi <AWI>`へ同じ記録と対象を渡す。記録とworktreeは絶対パスを使い、JSON Linesの`awi`・`commits`から現在の完全OID集合を取得する。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら読取りに使える。候補が複数ある場合は保存済み計画の実在パスを指定する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。記録の欠落・対象外AWI・Gitで解決できないOIDは生成側が補完してから再取得する。実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、既存の根拠記録とcommit省略を使う。公開メッセージへWI識別子を追加せず、計画保存は既存の`atk plans commit`を使う。
+取得: 終端担当などAWIを終端する主体は、`atk run-script plan-commits -- <記録> --worktree <worktree> --awi <AWI>`へ同じ記録と対象を渡す。記録とworktreeは絶対パスを使い、JSON Linesの`awi`・`commits`から現在の完全OID集合を取得する。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら読取りに使える。候補が複数ある場合は保存済み計画の実在パスを指定する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。取得した完全OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。記録の欠落・対象外AWI・Gitで解決できないOIDは生成側が補完してから再取得し、説明文や件名から対応を推定しない。
+
+履歴変更: rebase・autosquash・amendでWI実装commitのOIDが変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従い、旧完全OIDから新完全OIDへの対応を`--rewrite-map`で同じ記録へ追記する。対応表へ入れる旧OIDは、記録済みの対応を持つものに限る。`git range-diff`などで検収した全commitのうちWI対応を持たないcommitを入れると、追記が失敗する。記録済みの旧OIDが対応表に無いと、取得時に現在のHEADにないOIDとして失敗する。
+
+対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、計画の進捗ログまたは引き継ぎ記録に残した根拠を使い、commitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は`atk plans commit`で保存する。
 
 ## 条件付き手順
 
@@ -131,7 +137,7 @@ atk run-script plan-progress -- <計画> --completed-step <工程> --result <結
     `commit.template`はエンドユーザーが操作しない内部キーであるため、「コミットメッセージ雛形」へ言い換える
 - 計画ファイルにコミットメッセージ案を書く時点でも上記基準でセルフチェックする
 - 本文（body）は任意。記載する場合の読み手、粒度、分量および構造は`agent-toolkit:writing-standards`の`references/writing.md`「人間向け文章の共通規定」に従う
-- `Co-Authored-By:`の値はユーザーの明示指示、明文化されたプロジェクト方針、
-  実行環境が提示する指定なしの場合の優先順で観測できる最初の定義から決定する。
-  観測できる定義が無い場合は`Co-Authored-By: <実行中のモデルの表示名> <noreply@<モデル提供元のドメイン>>`を通常の選択とする。Codexのドメインは`openai.com`とする。空文字列の指定は帰属の明示的な無効化として扱う。
+- `Co-Authored-By:`の値はユーザーの明示指示、明文化されたプロジェクト方針、実行環境が提示する帰属の指定の3つの取得元をこの順に確かめ、
+  最初に観測できた定義から決定する。
+  いずれの取得元にも定義が無い場合は`Co-Authored-By: <実行中のモデルの表示名> <noreply@<モデル提供元のドメイン>>`を付ける。Codexのドメインは`openai.com`とする。空文字列の指定は帰属の明示的な無効化として扱う。
   `Co-Authored-By:`は最終コミットメッセージへ1回だけ付け、既存の異なるtrailerを保持する

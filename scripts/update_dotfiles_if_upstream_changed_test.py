@@ -302,7 +302,7 @@ def test_subprocess_exception_returns_1(
 
 
 def test_unknown_argument_exits_2() -> None:
-    """未知引数はargparseの既定終了コード2で拒否する。"""
+    """未知引数はargparseが引数エラーで返す終了コード2で拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
         upstream_update.main(["--unknown"])
     assert exc_info.value.code == 2

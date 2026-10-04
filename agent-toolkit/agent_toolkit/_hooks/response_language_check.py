@@ -86,7 +86,7 @@ _DISCOURSE_MARKER_PATTERN = re.compile(
 
 
 class CheckOutcome(enum.Enum):
-    """文字列が日本語であるかの判定結果。"""
+    """記述言語の判定結果。"""
 
     WARN = "warn"
     PASS = "pass"

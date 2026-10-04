@@ -2,11 +2,7 @@
 
 import shlex
 
-import pytest
-
 from agent_toolkit._atk import run_script
-
-pytestmark = pytest.mark.repo_invariant
 
 
 def test_session_review_documents_use_public_script_entries() -> None:

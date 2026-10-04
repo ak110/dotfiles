@@ -37,6 +37,7 @@ try:
     from agent_toolkit._atk import config as _atk_config
     from agent_toolkit._atk import outcome as _outcome
     from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
+    from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY as _PROCESS_WI_GOAL_BODY
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
     from agent_toolkit._hooks import response_language_check as _response_language_check
@@ -349,13 +350,8 @@ def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] |
 
 
 def _generated_user_event(event: dict[str, Any]) -> bool:
-    """原文から得た由来を消費し、保存済み旧イベントは既存の本文判定で読む。"""
-    if event.get("runtime_generated") is True:
-        return True
-    classified = event.get("runtime_inserted")
-    if isinstance(classified, bool):
-        return classified
-    return _is_runtime_inserted_text(str(event.get("text", "")))
+    """`_event`が原文から付けた由来の標識で、実行環境が生成したユーザーイベントかを返す。"""
+    return event.get("runtime_generated") is True or event.get("runtime_inserted") is True
 
 
 _OfferedOption = tuple[str, str]
@@ -3683,19 +3679,7 @@ def _candidate_events(
     ]
     initial_skill_request, initial_skill_body = _initial_skill_input_locators(timeline)
     shell_records, resumed_records = _delegation_record_kinds(timeline)
-    first_main_user: tuple[str, int] | None = None
-    for event in timeline:
-        line = event.get("line")
-        text = event.get("text")
-        if (
-            event.get("kind") == "user"
-            and event.get("record") == "main"
-            and isinstance(line, int)
-            and isinstance(text, str)
-            and _user_candidate_exclusion(event, "main", line, " ".join(text.split()), None) is None
-        ):
-            first_main_user = ("main", line)
-            break
+    first_main_user = _initial_request_locator(timeline)
     sources = (
         ("hook-notice", (event for event in hook_notices if event.get("kind") == "hook-notice")),
         ("user-intervention", (event for event in timeline if event.get("kind") == "user")),
@@ -4094,6 +4078,27 @@ def _is_response_language_notice(event: dict[str, Any]) -> bool:
         if text[:length] == expected[:length]:
             return True
     return False
+
+
+def _initial_request_locator(timeline: list[dict[str, Any]]) -> tuple[str, int] | None:
+    """メイン記録の初期要求の位置を返す。
+
+    人間の依頼で始まるセッションでは、最初の人間の発話を初期要求とする。
+    `atk wi process-loop`が自動起動したセッションでは、起動の目的文を持つ入力を初期要求とし、
+    その後の人間の発話は作業中の介入として候補に残す。起動の目的文は記録で前置きが付くため、包含で判定する。
+    """
+    for event in timeline:
+        line = event.get("line")
+        text = event.get("text")
+        if event.get("kind") != "user" or event.get("record") != "main" or not isinstance(line, int):
+            continue
+        if not isinstance(text, str):
+            continue
+        if _PROCESS_WI_GOAL_BODY in text:
+            return ("main", line)
+        if _user_candidate_exclusion(event, "main", line, " ".join(text.split()), None) is None:
+            return ("main", line)
+    return None
 
 
 def _user_candidate_exclusion(

@@ -21,7 +21,13 @@ from agent_toolkit._atk.wi.common import (
     _require_type,
     _validate_filename,
 )
-from agent_toolkit._atk.wi.formatters import _parse_source, _parse_target_repo, _source_matches
+from agent_toolkit._atk.wi.formatters import (
+    _body_summary,
+    _parse_source,
+    _parse_target_repo,
+    _source_matches,
+    _uwi_body_summary,
+)
 from agent_toolkit._atk.wi.listing import _select_entries
 from agent_toolkit._atk.wi.repo import _resolve_repo_id
 
@@ -43,6 +49,18 @@ def _state_prefixed_filename_hint(filename: str) -> str | None:
 
 
 _STATE_PREFIX_REASON = "状態名付きのファイル名は受理しない"
+
+
+def _summary_line(text: str, kind: str | None) -> str:
+    """`--summary-only`で状態行の次に置く要約として、AWIはH1表題、UWIは質問本文の先頭行を省略せずに返す。
+
+    `atk wi list --summary-only`と同じ要約を使い、AWIでは見出し記号を除いて表題だけを返す。
+    状態行の後の行を`#`で始めないため、`--all`の種別見出しと区別できる。
+    """
+    if kind == WI_TYPE_UWI:
+        return _uwi_body_summary(text, sys.maxsize)
+    summary = _body_summary(text, sys.maxsize)
+    return summary.removeprefix("# ") if summary.startswith("# ") else summary
 
 
 def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -125,8 +143,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 label = f" [{state}/{'answered' if answered else 'unanswered'}]"
             print(f"## target_repo: {target_repo}")
             print(f"### {path.name}{label}")
-            if not summary_only:
-                print(text)
+            print(_summary_line(text, kind) if summary_only else text)
             if len(selected_by_name) > 1:
                 print()
         return
@@ -155,6 +172,5 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     if header_type == WI_TYPE_UWI:
                         label = f" [{state}/{'answered' if _is_uwi_answered(text) else 'unanswered'}]"
                     print(f"### {name}{label}")
-                    if not summary_only:
-                        print(text)
+                    print(_summary_line(text, header_type) if summary_only else text)
                     print()

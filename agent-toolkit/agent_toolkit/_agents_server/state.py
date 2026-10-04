@@ -177,10 +177,11 @@ REVIEW_RESULT_NEXT_ACTION = (
 )
 
 
+# 結果はメインと委譲先の双方が受け取るため、両者が実行できる操作を受け取った主体の役割ごとに示す。
 IMPROVEMENT_RESULT_NEXT_ACTION = (
-    "メインエージェントは`agent_message`の`気付いた改善点:`で始まる全行を、"
-    "次のユーザーへの発話へ逐語で転記する。"
-    "`agent-toolkit/share/rules-main.md`「協調と自律」に従い、出所と必要な確認も添える"
+    "`agent_message`の`気付いた改善点:`で始まる全行を上流へ渡す。"
+    "メインエージェントは次のユーザーへの発話へ転記し、委譲先は自身の返却の末尾へ逐語で引き継ぐ。"
+    "報告元と確認した範囲の添え方は`agent-toolkit:delegation`「受領と検収」に従う"
 )
 
 
@@ -508,6 +509,14 @@ class SessionState:
     # statuslineが、テキスト出力の無い区間でも稼働を表示するための射影元とする。
     last_action: str = ""
     awaiting_auto_resume: bool = False
+    # Claude Code CLIが`session_state_changed`で報告した最新のturn状態（`running`・`idle`・`requires_action`）。
+    # 一度も報告を受けていないsession（Codex backendと、報告を発行しないCLI）では`None`とし、
+    # `has_pending_auto_resume_targets`は従来どおり追跡集合だけで判定する。
+    # turnをまたいで最新の報告を保持し、turnの開始時に初期化しない（次のturnの開始はCLIが`running`で報告する）。
+    cli_turn_state: str | None = None
+    # 状態の報告を受け取らずに`ResultMessage`を受け取り、従来の判定へ戻ったことを警告ログへ記録済みか。
+    # sessionごとに1回だけ記録する。
+    cli_turn_state_fallback_logged: bool = False
     # `auto_resume_consumed`を真にするのは、Claude backendのタスク完了通知による再開と、
     # MCP層が孫sessionの終端を検出して発行する再開の2つの処理だけである。
     # Codex backendは孫sessionが残るturnの結果を保留し、後者の再開だけに到達する。
@@ -797,12 +806,30 @@ def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandi
     return session.engine, session.model, session.effort
 
 
+def cli_turn_may_continue(session: SessionState) -> bool:
+    """Claude Code CLIが次のturnを開始し得る状態と報告しているかを返す。
+
+    CLIは`session_state_changed`の`idle`を、保留した結果の送出と背景エージェントの待機を終えて
+    次のturnが発生しないと確定した時点で発行する（Claude Code 2.1.289のスキーマ記述
+    「authoritative turn-over signal」）。turnの終了前にキューへ入った完了通知は、`ResultMessage`の
+    後に`idle`を送らず次のturnを開始させるため、`ResultMessage`の受信時点の最新の報告は`running`のままとなる。
+    報告を一度も受けていないsessionでは判定に使わない。
+    """
+    return session.cli_turn_state is not None and session.cli_turn_state != "idle"
+
+
 def has_pending_auto_resume_targets(session: SessionState) -> bool:
-    """自動再開が追跡する子sessionまたはClaude taskが残るかを返す。
+    """自動再開が追跡する子session、Claude taskまたはCLIの次のturnが残るかを返す。
 
     Claude・Codex backendとMCP層は、開始、解除、再開の全条件で本述語だけを使う。
+    追跡集合（`live_tasks`・`live_child_session_ids`）だけでは、Stop hookの実行中などturnの最終応答から
+    `ResultMessage`までの間にバックグラウンドタスクが終わった場合を判別できない。その完了通知で集合は空になるが、
+    CLIは`ResultMessage`の後に完了通知の再開turnを開始する。このためCLIのturn状態の報告も判定へ加える。
+    一方、シェルのバックグラウンドタスクが動いている間もCLIは`idle`を報告するため、追跡集合も残す。
+    観測した版と順序は`docs/development/audit-records.md`
+    「agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日」にある。
     """
-    return bool(session.live_tasks or session.live_child_session_ids)
+    return bool(session.live_tasks or session.live_child_session_ids) or cli_turn_may_continue(session)
 
 
 def has_uncollected_result(session: SessionState | SessionResumeState, result_consumed: bool | None) -> bool:

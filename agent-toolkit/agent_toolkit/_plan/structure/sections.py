@@ -1906,8 +1906,8 @@ def check_plan_single_file_structure(
     parsed, _parse_errors = parse_plan_metadata(content)
     parsed_work_type = parsed.values.get("作業種別") if parsed is not None else None
     expected_metadata = PLAN_METADATA_CURRENT_FIELDS
-    # 関連WIの`## 原因分析`を参照するバグ対応計画は計画ファイル（バグ）を持たない。
-    # 入力WIが無い計画は原因分析を参照するWIが他に無いため、同行を必須とする。
+    # 関連WIの`## 原因分析`が原因分析の記録先となるバグ対応計画は計画ファイル（バグ）を持たない。
+    # 入力WIが無い計画は原因分析の記録先が他に無いため、計画内の同行を必須とする。
     if (
         parsed is not None
         and parsed_work_type == "バグ対応"

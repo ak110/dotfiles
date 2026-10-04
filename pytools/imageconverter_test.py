@@ -22,7 +22,7 @@ def _make_png(path: pathlib.Path, size: tuple[int, int] = (100, 100)) -> None:
 def _make_corrupt_text_png(path: pathlib.Path) -> None:
     """tEXt チャンクの CRC を意図的に破損させた PNG を生成する。
 
-    Pillow 既定モード（``LOAD_TRUNCATED_IMAGES = False``）では
+    Pillow 通常モード（``LOAD_TRUNCATED_IMAGES = False``）では
     ``UnidentifiedImageError`` が送出されるが、寛容モードでは画像本体を
     読み込めるという、`open_image_with_exif` の 2 段構え動作確認用の入力。
     """
@@ -83,7 +83,7 @@ def test_open_image_with_exif_truncated_fallback(tmp_path: pathlib.Path) -> None
     """tEXt チャンクの CRC 不整合 PNG は寛容モードで読み込まれフラグが立つ。"""
     path = tmp_path / "corrupt.png"
     _make_corrupt_text_png(path)
-    # 既定モードでは Pillow が読み込みに失敗することを事前確認する
+    # 通常モード（LOAD_TRUNCATED_IMAGES = False）では Pillow が読み込みに失敗することを事前確認する
     PIL.ImageFile.LOAD_TRUNCATED_IMAGES = False
     with pytest.raises(PIL.UnidentifiedImageError), PIL.Image.open(path) as img:
         img.load()
@@ -301,7 +301,7 @@ _TARGET_MODES = ("L", "LA", "RGB", "RGBA")
 """PNGとWebPの出力で保存を許す画像モード。"""
 
 _LOSSY_COLOR_TOLERANCE = 8
-"""非可逆圧縮の出力で許す画素値の差。JPEGとWebPは既定の品質で再符号化する。"""
+"""非可逆圧縮の出力で許す画素値の差。JPEGは`jpeg_quality`の省略時の値、WebPはPillowへ品質を指定しない保存で再符号化する。"""
 
 _UNIFORM_LUMINANCE = {"1": 1, "I;16": 76, "F": 76.0}
 """輝度だけを持つモードの単色画像に与える値。

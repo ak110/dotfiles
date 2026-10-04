@@ -32,7 +32,7 @@ description: >
   `atomic_write_*()`等）を提供する。新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける（努力目標。共通基盤を使うと実装の分岐を防げる）
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている。書込ツールで扱う手段は`agent-toolkit:writing-standards`の
   `references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCIIのみの修正は`sed -i`で対応する
-- 非ASCIIを標準出力または標準エラーへ書くPython CLIは、開始時に`io.TextIOWrapper`の両ストリームをUTF-8・`errors="replace"`へ再構成する。英語版Windowsなどのランタイム既定エンコーディングへ依存すると、日本語の最初の出力でCLIが停止するためである
+- 非ASCIIを標準出力または標準エラーへ書くPython CLIは、開始時に`io.TextIOWrapper`の両ストリームをUTF-8・`errors="replace"`へ再構成する。英語版Windowsなどで、エンコーディングを指定せずにランタイムがロケールから選ぶ値へ依存すると、日本語の最初の出力でCLIが停止するためである
 - ストリームの再構成を経由しないログと標準出力のメッセージは、WindowsのCP932で符号化できる範囲に収める。可否は`str.encode("cp932")`の成否で判定する。漢字にもU+20BB7のように符号化できないものがあり、em dash・en dash・`✓`・`•`も符号化できない
 - `pytools/post_apply.py`のステップが外部ツールの不在でそのステップ全体をスキップする場合は、そのツールを同じステップまたは先行するステップが導入するか、`README.md`が復旧手順を持つかのいずれかを満たす。
   dotfilesユーザーが導入先を選ぶアプリケーションは、この対象から外す
@@ -50,13 +50,12 @@ description: >
   そのモジュールと同じディレクトリの`<name>_test.py`とする。文書・設定・スクリプトの実物を読むテストは、
   その実物と同じディレクトリか、対象群を包含する最も近いディレクトリへ置く。
   fixtureで文書などの入力を作成して実装を呼ぶテストは、実装の動作テストとして実装の近くへ残す。
-  収集や配布の制約で近くへ置けない場合は、成立する最も近い場所を選び、その理由を記録する
-- 複数領域の既存成果物の不変条件を確かめるPythonテストは、`repo_invariant`マーカーで識別する。
-  ファイルは`*_invariant_test.py`とし、全体が該当する場合は`pytestmark = pytest.mark.repo_invariant`を付ける。
-  通常の動作テストと混在するときは、マーカー対象だけを近接する専用ファイルへ分離し、両projectの
-  `pytest-fast-targets`が通常テストを収集せず同じ集合を選ぶようにする。検証用のヘルパーの入力を確かめるテストも
-  元から同じマーカー対象だった場合は保持する。検証対象の探索は`agent-toolkit:check-execution`の
-  `references/verification-scope.md`に従い、個々のテストと編集対象の対応表を規範へ増やさない
+  収集や配布の制約で近くへ置けない場合は、成立する最も近い場所を選び、その理由を対象テストファイルのモジュールdocstringへ記す
+- 複数領域の既存成果物の不変条件を確かめるPythonテストは、ファイル名を`*_invariant_test.py`として識別する。
+  rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこのファイル名で対象を選び、`pyfltr fast`が実行する。
+  通常の動作テストと混在するときは、不変条件のテストだけを近接する`*_invariant_test.py`へ分離し、通常テストをfastの対象に含めない。
+  検証対象の探索は`agent-toolkit:check-execution`の`references/verification-scope.md`に従い、
+  個々のテストと編集対象の対応表を規範へ増やさない
 - テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`へ集約する。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
   共通化が必要な場合は`agent-toolkit-edit`スキル「scripts配下の配置」節が定めるテスト専用パッケージへ置く

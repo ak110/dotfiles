@@ -756,7 +756,7 @@ def _resolve_uv_execution_index(tokens: list[str], uv_index: int) -> int | None:
 
 
 def _is_agent_toolkit_script_invocation(tokens: Sequence[str], uv_index: int, execution_index: int) -> bool:
-    """pluginプロジェクトを起動するコマンドと、独立したリモート補助スクリプトを識別する。"""
+    """pluginプロジェクト配下のスクリプトの起動と、独立したリモート補助スクリプトの起動を識別する。"""
     index, state = _scan_uv_options(list(tokens), uv_index + 1, _UV_GLOBAL_OPTIONS_WITH_VALUE, _UV_GLOBAL_OPTIONS_WITHOUT_VALUE)
     if state != "reached" or index >= len(tokens) or tokens[index] != "run":
         return False

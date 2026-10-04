@@ -2,10 +2,7 @@
 
 from pathlib import Path
 
-import pytest
 import yaml
-
-pytestmark = pytest.mark.repo_invariant
 
 
 def test_openai_interface_display_name_matches_skill_directory() -> None:

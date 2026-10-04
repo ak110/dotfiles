@@ -318,8 +318,8 @@ def _finalize_candidate(
 def _check_bug_input(metadata: _plan_format.PlanMetadata, *, has_bug_input: bool) -> None:
     """バグ対応計画の`計画ファイル（バグ）`行と入力の有無が一致するか確かめる。
 
-    関連WIの`## 原因分析`を参照する計画は計画ファイル（バグ）を持たない。
-    関連WIが無い計画は原因分析を参照するWIが他に無いため、同行と入力を必須とする。
+    関連WIの`## 原因分析`が原因分析の記録先となる計画は計画ファイル（バグ）を持たない。
+    関連WIが無い計画は原因分析の記録先が他に無いため、計画内の同行と入力を必須とする。
     """
     has_bug_field = _plan_format.PLAN_METADATA_BUG_FIELD in metadata.values
     if has_bug_field and not has_bug_input:

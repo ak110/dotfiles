@@ -26,7 +26,7 @@ def test_main_accepts_clause_references_without_separate_declarations(tmp_path: 
     """参照は条項を読む担当へ配送し、別配列への同期を要求しない。"""
     contract_path = tmp_path / "review-contract.yaml"
     contract_path.write_text(yaml.safe_dump(_contract(), allow_unicode=True, sort_keys=False), encoding="utf-8")
-    assert review_contract.main(["--contract", str(contract_path), "--target-repo", str(tmp_path)]) == 0
+    assert review_contract.main(["--contract", str(contract_path)]) == 0
 
 
 @pytest.mark.parametrize(
@@ -46,5 +46,5 @@ def test_main_rejects_invalid_structure_with_next_action(
     """構造不正の配送を非0と修正操作で差し戻す。"""
     contract_path = tmp_path / "review-contract.yaml"
     contract_path.write_text(yaml.safe_dump(contract, allow_unicode=True), encoding="utf-8")
-    assert review_contract.main(["--contract", str(contract_path), "--target-repo", str(tmp_path)]) == 2
+    assert review_contract.main(["--contract", str(contract_path)]) == 2
     assert "次の操作:" in capsys.readouterr().err

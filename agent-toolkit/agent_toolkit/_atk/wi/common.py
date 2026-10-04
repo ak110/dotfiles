@@ -478,18 +478,23 @@ def _push_pending_commits(private_notes: pathlib.Path) -> int | None:
 
 
 def _notify_unpushed_commits_if_any(private_notes: pathlib.Path) -> bool:
-    """未pushのcommitが残る場合に対応手順を表示する。"""
-    count = _atk_git_sync.pending_commit_count(private_notes)
-    if count is None or count == 0:
-        return False
-    if _atk_git_sync.push_was_deferred(private_notes):
+    """未pushのcommitが残る場合に対応手順を表示する。
+
+    件数の取得から報告までを`_repo_lock`の排他区間で行う。別プロセスがロック内でcommitしてから
+    pushするまでの一時的な状態を、同期未達として報告しないためである。呼び出し元はロックを保持しない。
+    """
+    with _repo_lock(private_notes):
+        count = _atk_git_sync.pending_commit_count(private_notes)
+        if count is None or count == 0:
+            return False
+        if _atk_git_sync.push_was_deferred(private_notes):
+            return True
+        resolved = private_notes.resolve()
+        _outcome.report_warning(
+            f"private-notesに未pushのcommitが{count}件残る。操作自体は完了している。",
+            next_action=f"`git -C {resolved} status`で差分を確認し、cleanにしてから`atk wi commit`でpushする。",
+        )
         return True
-    resolved = private_notes.resolve()
-    _outcome.report_warning(
-        f"private-notesに未pushのcommitが{count}件残る。操作自体は完了している。",
-        next_action=f"`git -C {resolved} status`で差分を確認し、cleanにしてから`atk wi commit`でpushする。",
-    )
-    return True
 
 
 def _stamp_result(

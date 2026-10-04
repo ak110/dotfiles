@@ -39,12 +39,16 @@ def _wait_with_timeout(manager: subject.AgentsServerManager, timeout: float) -> 
 
 
 class SystemMessage:
-    """Claude SDKの初期化メッセージを再現する。"""
+    """Claude SDKのシステムメッセージ（初期化とturn状態の報告）を再現する。"""
 
-    subtype = "init"
+    def __init__(self, session_id: str | None = None, *, subtype: str = "init", data: dict[str, Any] | None = None) -> None:
+        self.subtype = subtype
+        self.data = {"session_id": session_id} if data is None else data
 
-    def __init__(self, session_id: str) -> None:
-        self.data = {"session_id": session_id}
+
+def _session_state(value: str) -> SystemMessage:
+    """CLIのturn状態の報告（`session_state_changed`）を再現する。"""
+    return SystemMessage(subtype="session_state_changed", data={"state": value})
 
 
 class TaskStartedMessage:
@@ -104,8 +108,16 @@ class UserMessage(AssistantMessage):
 class ControlledClaudeClient:
     """メッセージの到着時機をテストから制御するSDKクライアント。"""
 
-    def __init__(self, session_id: str = "claude-auto") -> None:
+    def __init__(self, session_id: str = "claude-auto", *, report_state: bool = False, state_before_init: bool = False) -> None:
         self.messages: asyncio.Queue[Any] = asyncio.Queue()
+        # 真の場合は実CLIと同じ順序でturn状態を報告する。turnの開始で`running`、
+        # 次のturnがキューに無い`ResultMessage`の直後に`idle`を発行する（`finish_turn`）。
+        self.report_state = report_state
+        # 真の場合は最初のturnの`running`を初期化メッセージより先に送る。CLIはコマンドループの先頭で
+        # `running`を発行するため、初期化メッセージとの前後は固定されない。
+        self._skip_next_running = state_before_init
+        if state_before_init:
+            self.messages.put_nowait(_session_state("running"))
         self.messages.put_nowait(SystemMessage(session_id))
         self.queries: list[str] = []
         self.interrupts = 0
@@ -119,6 +131,9 @@ class ControlledClaudeClient:
     async def query(self, prompt: str) -> None:
         self.queries.append(prompt)
         self.turn_active = True
+        if self.report_state and not self._skip_next_running:
+            self.messages.put_nowait(_session_state("running"))
+        self._skip_next_running = False
 
     async def interrupt(self) -> None:
         """実行中のturnだけを中断する。
@@ -150,6 +165,21 @@ class ControlledClaudeClient:
 
     def end_stream(self) -> None:
         self.messages.put_nowait(_STREAM_END)
+
+    def finish_turn(self, result: ResultMessage, *, next_turn_queued: bool = False) -> None:
+        """turnの結果を送り、実CLIと同じ順序でturn状態を報告する。
+
+        Claude Code 2.1.289とClaude Agent SDK 0.2.163の観測では、キューに完了通知が残らない場合は
+        `ResultMessage`の直後に`idle`が届く。turnの終了前に完了通知がキューへ入った場合は`idle`を間に送らず
+        次のturnを開始し、そのturnの`ResultMessage`の後に`idle`が届く。
+        """
+        self.emit(result)
+        if not self.report_state:
+            return
+        if next_turn_queued:
+            self.turn_active = True
+        else:
+            self.emit(_session_state("idle"))
 
 
 def _manager(
@@ -1055,5 +1085,129 @@ async def test_new_reply_can_auto_resume_after_prior_auto_resume(
         result = await _wait_with_timeout(manager, 1)
 
         assert result["agent_message"] == "次の再開結果"
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state_before_init", [False, True])
+@pytest.mark.parametrize("task_type", ["local_bash", "local_agent"])
+@pytest.mark.parametrize("notification", ["before_result", "after_result"])
+async def test_wait_returns_resumed_result_regardless_of_notification_order(
+    notification: str,
+    task_type: str,
+    state_before_init: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """完了通知が待機表明の結果より先に届いても、再開turnの結果を返し待機表明を返さない。
+
+    Stop hookの実行中にバックグラウンドタスクが終わると、完了通知が`ResultMessage`より先に届いて追跡集合が空になる。
+    追跡集合だけで判定すると待機表明を公開し、CLIが続けて開始する再開turnの結果を失う。
+    到着順だけを変えた対照として、完了通知が結果の後に届く順序も同じ結果になることを確かめる。
+    """
+    client = ControlledClaudeClient(
+        f"claude-order-{notification}-{task_type}-{state_before_init}", report_state=True, state_before_init=state_before_init
+    )
+    manager, backend = _manager(client, monkeypatch)
+    caplog.set_level("WARNING", logger="agent-toolkit.agents-server.claude")
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        client.emit(TaskStartedMessage("bg-1", task_type=task_type))
+        if notification == "before_result":
+            client.emit(TaskNotificationMessage("bg-1", "completed"))
+            client.finish_turn(ResultMessage("待機中: bg-1"), next_turn_queued=True)
+            await _await_state(lambda: session.awaiting_auto_resume)
+            assert wait_task.done() is False
+        else:
+            client.finish_turn(ResultMessage("待機中: bg-1"))
+            await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+            assert wait_task.done() is False
+            client.emit(TaskNotificationMessage("bg-1", "completed"))
+            client.emit(_session_state("running"))
+        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        result = await wait_task
+
+        assert result["status"] == "completed"
+        assert result["agent_message"] == "RESUMED"
+        assert session.auto_resume_consumed is True
+        assert not [record for record in caplog.records if "claude_turn_state_unreported" in record.getMessage()]
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_result_without_background_task_is_published_on_idle(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """バックグラウンドタスクの無いturnは、結果の直後に届く`idle`で従来どおり公開する。"""
+    client = ControlledClaudeClient("claude-idle", report_state=True)
+    manager, backend = _manager(client, monkeypatch)
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        client.finish_turn(ResultMessage("通常結果"))
+        result = await _wait_with_timeout(manager, 1)
+
+        assert result["agent_message"] == "通常結果"
+        assert session.cli_turn_state == "idle"
+        assert session.auto_resume_consumed is False
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_idle_with_live_shell_task_keeps_result_pending(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """シェルのバックグラウンドタスクが動いている間に届く`idle`では確定せず、そのタスクの再開turnの結果を返す。"""
+    client = ControlledClaudeClient("claude-idle-live-task", report_state=True)
+    manager, backend = _manager(client, monkeypatch)
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        client.emit(TaskStartedMessage("shell-1"))
+        client.finish_turn(ResultMessage("待機中: shell-1"))
+        await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+        await asyncio.sleep(0.05)
+        assert wait_task.done() is False
+        assert session.pending_result is not None
+
+        client.emit(TaskNotificationMessage("shell-1", "completed"))
+        client.emit(_session_state("running"))
+        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        result = await wait_task
+
+        assert result["agent_message"] == "RESUMED"
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_unreported_turn_state_falls_back_with_single_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """CLIがturn状態を報告しない場合は追跡集合だけの従来判定で公開し、警告を1回だけ記録する。"""
+    client = ControlledClaudeClient("claude-unreported")
+    manager, backend = _manager(client, monkeypatch)
+    caplog.set_level("WARNING", logger="agent-toolkit.agents-server.claude")
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        client.emit(TaskStartedMessage("task-1"))
+        client.emit(ResultMessage("初回結果"))
+        await _await_state(lambda: session.awaiting_auto_resume)
+        client.emit(TaskNotificationMessage("task-1", "completed"))
+        client.emit(ResultMessage("再開結果", origin={"kind": "task-notification"}))
+        result = await _wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT)
+
+        assert result["agent_message"] == "再開結果"
+        assert session.cli_turn_state is None
+        warnings = [record for record in caplog.records if "claude_turn_state_unreported" in record.getMessage()]
+        assert len(warnings) == 1
     finally:
         await backend.close()

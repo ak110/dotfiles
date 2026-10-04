@@ -18,6 +18,10 @@ WM_LBUTTONDOWN = 0x0201
 WM_LBUTTONUP = 0x0202
 WM_MBUTTONDOWN = 0x0207
 WM_MBUTTONUP = 0x0208
+WM_RBUTTONDOWN = 0x0204
+WM_MOUSEWHEEL = 0x020A
+WM_XBUTTONDOWN = 0x020B
+WM_MOUSEHWHEEL = 0x020E
 EVENT_SYSTEM_FOREGROUND = 0x0003
 EVENT_SYSTEM_MINIMIZESTART = 0x0016
 EVENT_OBJECT_DESTROY = 0x8001
@@ -35,6 +39,18 @@ class MouseInput(ctypes.Structure):
     _fields_ = [
         ("pt", _window_uia.Point),
         ("mouseData", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class KeyboardInput(ctypes.Structure):
+    """WH_KEYBOARD_LLが渡すKBDLLHOOKSTRUCT。"""
+
+    _fields_ = [
+        ("vkCode", ctypes.c_uint32),
+        ("scanCode", ctypes.c_uint32),
         ("flags", ctypes.c_uint32),
         ("time", ctypes.c_uint32),
         ("dwExtraInfo", ctypes.c_size_t),
@@ -202,7 +218,16 @@ class WindowsAPI:
         event_hooks: list[int] = []
 
         def mouse(code: int, message: int, data: int) -> int:
-            if code >= 0 and message in (WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP):
+            if code >= 0 and message in (
+                WM_LBUTTONDOWN,
+                WM_LBUTTONUP,
+                WM_MBUTTONDOWN,
+                WM_MBUTTONUP,
+                WM_RBUTTONDOWN,
+                WM_MOUSEWHEEL,
+                WM_XBUTTONDOWN,
+                WM_MOUSEHWHEEL,
+            ):
                 event = ctypes.cast(data, ctypes.POINTER(MouseInput)).contents
                 # LLフックの注入入力を、dotfilesユーザーの選択操作と混ぜない。
                 if not event.flags & 1:
@@ -213,7 +238,12 @@ class WindowsAPI:
             return self.user32.CallNextHookEx(mouse_hook, code, message, data)
 
         def keyboard(code: int, message: int, data: int) -> int:
-            if code >= 0 and message in (0x0100, 0x0104):  # KEYDOWN / SYSKEYDOWN
+            # KEYDOWN / SYSKEYDOWN。serveが送出するメディアキーなどの注入入力は、dotfilesユーザーの操作として扱わない。
+            if (
+                code >= 0
+                and message in (0x0100, 0x0104)
+                and not ctypes.cast(data, ctypes.POINTER(KeyboardInput)).contents.flags & 0x10
+            ):
                 on_key()
             return self.user32.CallNextHookEx(keyboard_hook, code, message, data)
 

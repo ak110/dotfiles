@@ -24,7 +24,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 - `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範。Codex委譲先の固有差分が必要になった場合は`rules-subagent.codex.md`を追加する
   振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
-  （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
+  （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot。未設定時は`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
   `<plugin root>/skills/writing-standards/references/claude-hooks.md`が扱う
 
@@ -100,7 +100,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 
 `agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`AGENTS.md`、`.claude/skills/`などのエージェント向け文書の記述を削除または縮小する編集では、目的にかかわらずベースcommitとの差分を確認する。削除した価値、適用範囲、条件、例外を特定し、削除の理由をcommit本文へ残す。統合を理由とする場合は、統合先の適用範囲が元の範囲を含むことを確認する。含まない場合は統合先を整えるか、削除を取りやめる。
 
-削除・縮小する行の初出は、文面の微修正をまたいで一致する部分文字列を選び、`git log --follow -S '<本文の部分文字列>' -- <ファイル>`かパスを限定しない`git log -S`で調べる。`git blame`は最後に行へ触れたcommitを示し、パスを限定した`git log -S`は改名前の履歴を含まないため、どちらも単独で初出の判定に使わない。検索結果の最古の導入commitと、その行を復元したcommitのいずれかに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、同じ対象リポジトリの終端済みキュー項目を`atk wi grep --state all`で探す。検索には特徴的な語や反映先パスを使う。候補の`adopt`記録が導入commitのOIDを持つか、そのOIDを進捗ログに持つ計画の`関連WI`が候補を挙げる場合だけ対応を裏付ける。対応する要求単位が`agent-toolkit:wi-standards`「由来と承認」によりエージェント由来と確定したときは、項目名、OID対応および由来の根拠をcommit本文へ記録して保護の対象から外す。対応を裏付けられない場合、人間由来を含む場合、または由来を分離できない場合は作者を確定できない規範としてユーザーが書いた規範と同じく保護する。編集前にユーザー確認（事前承認）する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、由来を裏付けられない場合は確認が余分に増えても保護を優先する。
+削除・縮小する行の初出は、文面の微修正をまたいで一致する部分文字列を選び、`git log --follow -S '<本文の部分文字列>' -- <ファイル>`かパスを限定しない`git log -S`で調べる。`git blame`は最後に行へ触れたcommitを示し、パスを限定した`git log -S`は改名前の履歴を含まないため、どちらも単独で初出の判定に使わない。検索結果の最古の導入commitと、その行を復元したcommitのいずれかに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、同じ対象リポジトリの終端済みキュー項目を`atk wi grep --state all`で探す。検索には特徴的な語や反映先パスを使う。候補の`adopt`記録が導入commitのOIDを持つか、そのOIDを進捗ログに持つ計画の`関連WI`が候補を挙げる場合だけ対応を裏付ける。対応する要求単位が`agent-toolkit:wi-standards`「由来と承認」によりエージェント由来と確定したときは、項目名、OID対応および由来の根拠を計画の進捗ログ（計画なしでは引き継ぎ記録、どちらも無い作業ではユーザーへの報告）へ記録して保護の対象から外す。commit本文には前段のとおり削除・縮小の理由を書き、キュー項目のファイル名などの内部識別子は書かない。対応を裏付けられない場合、人間由来を含む場合、または由来を分離できない場合は作者を確定できない規範としてユーザーが書いた規範と同じく保護する。編集前にユーザー確認（事前承認）する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、由来を裏付けられない場合は確認が余分に増えても保護を優先する。
 trailerの有無だけでは作者を確定できないため、報告、AWI本文および判断の根拠では、そのcommitをユーザーのcommitと結論づけない。
 
 ## 配布物としての記述方針
@@ -170,7 +170,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 ## 同期先ドキュメント
 
 複数ファイルへまたがる機構または委譲構造を新設または変更する実装では、`docs/development/design.md`の索引で該当主題の本文と節を選び、目的、構造の理由、知識境界および却下した代替案を追加・更新する（努力目標。構造の理由と却下した案を残すと後の変更で同じ検討を繰り返さずに済む）。
-既存の主題はその本文の節へ追記する。独立した新しい主題は主題別ファイルへ置き、索引の対応表と各節へのリンク付き見出しを追加する。索引には機構の詳細を追記せず、分類の具体は索引の対応表を参照する。
+既存の主題はその本文の節へ追記する。独立した新しい主題は主題別ファイルへ置き、索引の対応表へ行を追加する。索引には節の見出しや機構の詳細を追記せず、分類の具体は索引の対応表を参照する。
 
 `agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」の一方で、運用形態、WIの登録方法、回答の流れのいずれかを変更した場合は、他方も同じ変更単位でそろえる。
 

@@ -189,6 +189,27 @@ def test_worktree_stash_help_covers_save_restore_and_drop() -> None:
     assert "atk worktree-stash drop refs/worktree/<ラベル>" in help_text
 
 
+def test_worktree_stash_drop_help_describes_resolved_oid_and_deletion_by_kind() -> None:
+    """dropは期待OIDの入力を求めず、現在のOIDを解決してworktree refとstashで削除方法を分けると説明する。"""
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    drop = commands["atk worktree-stash drop"]
+
+    assert drop.description is not None
+    assert "現在指すOIDを解決" in drop.description
+    assert "worktree固有refは解決したOIDを条件に削除" in drop.description
+    assert "共有stashは`git stash drop`で削除" in drop.description
+    assert "期待" not in drop.description
+
+
+def test_review_audit_pending_help_names_default_branch_source() -> None:
+    """review-audit pendingの説明は、マニフェストを確かめるbranchをGitHub APIの`default_branch`で示す。"""
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    description = commands["atk review-audit pending"].description
+
+    assert description is not None
+    assert "GitHub APIの`default_branch`で指定されたbranch" in description
+
+
 def test_wait_schedule_help_explains_request_bucket_resolution() -> None:
     """wait-scheduleはbucket指定がTTLとcron式の解決に必要な理由を示す。"""
     commands = {command: parser for command, parser, _summary in _walk_commands()}
@@ -299,6 +320,49 @@ def test_agents_wait_help_states_own_limit_and_standalone_invocation() -> None:
     assert "単独で発行する" in description
     assert "エージェント環境では量によらず回収結果を保存" in description
     assert "--output-file" not in description
+
+
+@pytest.mark.parametrize(
+    ("argv", "help_command", "condition", "root_fragment"),
+    [
+        (["wi", "show", "fb-001.md"], "atk wi show", "FILENAMEが1件の場合", None),
+        (
+            ["wi", "show", "fb-001.md", "fb-002.md"],
+            "atk wi show",
+            "FILENAMEを2件以上指定した場合",
+            "FILENAMEを2件以上指定するか",
+        ),
+        (["wi", "show", "--all"], "atk wi show", "`--all`を指定した場合", "`--all`を指定した`atk wi show`"),
+        (
+            ["run-script", "session-review-evidence", "--", "t.jsonl", "--detail", "1"],
+            "atk run-script",
+            "長さを超える場合",
+            None,
+        ),
+        (
+            ["run-script", "session-review-evidence", "--", "t.jsonl", "--user-events"],
+            "atk run-script",
+            "`--user-events`",
+            "`atk run-script session-review-evidence`の`--user-events`",
+        ),
+        (["agents", "wait"], "atk agents wait", "量によらず回収結果を保存", "`atk agents wait`、"),
+    ],
+)
+def test_output_saving_help_matches_cli_condition(
+    argv: list[str], help_command: str, condition: str, root_fragment: str | None
+) -> None:
+    """個別ヘルプとルートの説明が、呼び出しごとの実際の保存条件を同じ区分で説明する。
+
+    説明が実装と異なると、呼び出し元は短い単発照会でも保存先を探すか、ファイルとして渡す結果を直接表示と誤認する。
+    """
+    args = atk._build_parser().parse_args(argv)  # pylint: disable=protected-access  # noqa: SLF001
+    assert atk._passes_output_as_file(args) is (root_fragment is not None)  # pylint: disable=protected-access  # noqa: SLF001
+    commands = {name: parser for name, parser, _summary in _walk_commands()}
+    description = commands[help_command].description
+    assert description is not None
+    assert condition in description
+    if root_fragment is not None:
+        assert root_fragment in _atk_help.ROOT_DESCRIPTION
 
 
 def _leaf_commands() -> set[str]:

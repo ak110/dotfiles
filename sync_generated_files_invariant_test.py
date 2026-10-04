@@ -3,10 +3,6 @@
 import pathlib
 import tomllib
 
-import pytest
-
-pytestmark = pytest.mark.repo_invariant
-
 
 def test_sync_targets_cover_agent_toolkit_skills_and_share() -> None:
     """skillsとshareの各実在階層を生成同期の起動対象に含める。"""

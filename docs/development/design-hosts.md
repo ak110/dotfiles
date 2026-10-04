@@ -33,7 +33,7 @@ dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLI�
 `install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
 実際のaddまたはupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
-既定は手動再起動案内を維持し、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を明示した更新だけ`codex app-server daemon restart`を自動実行する。
+環境変数を指定しない更新では手動再起動の案内を表示し、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を明示した更新だけ`codex app-server daemon restart`を自動実行する。
 自動再起動の成功と失敗は終了コードとともにupdate-dotfilesログへ記録し、失敗時はplugin導入を巻き戻さず手動案内へ戻す。
 無変更、marketplace登録だけの変更、daemon停止中および不要pluginの除去は自動再起動の対象に含めない。
 `atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
@@ -52,7 +52,7 @@ cache version台帳、全過去versionの保持、POSIXの原本接続、Windows
 Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plugin.json`より優先し、同一rootから導入した場合は`hooks/list`が0件となる。
 また、相対シンボリックリンクを含むCodex専用wrapperを公式CLIで導入すると、snapshotには`.codex-plugin`だけが残り、リンク先のhook・skill・実行資源が含まれない。
 そのため、`agent-toolkit-codex/`は全資源を通常ファイルとして生成し、公式CLIへsnapshotと版数別cacheの管理を委ねる。
-検証条件と再検証手順は「[docs/development/design.md：Claude CodeとCodexの規範配置：2026年9月13日](audit-records.md#docsdevelopmentdesignmdclaude-codeとcodexの規範配置2026年9月13日)」を参照する。
+検証条件と再検証手順は「[docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日](audit-records.md#docsdevelopmentdesign-hostsmdclaude-codeとcodexの規範配置2026年9月13日)」を参照する。
 共有ルールをCodex固有条件で分岐する案は、Claude Codeへ不要な差分を配布して共通契約を曖昧にするため採用しない。
 共有文書をCodex用に複製する案は、原本・生成器・自動テストの同期対象を増やすため採用しない。
 Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホスト固有の挙動を波及させるため採用しない。
@@ -132,9 +132,9 @@ remote広告refの直積証跡・replace ref・graft・shallow複製への追加
 再判定不能や対象OIDのpush済み検出を含む履歴書換え開始後の失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を基準とし、本書へ転記しない。
 
-ユーザーの認証情報ファイルは既定の認証解決手段に留め、委譲の作業領域へ移さない。
+ユーザーの認証情報ファイルは、設定ディレクトリを変えない場合にホストが読む位置に残し、委譲の作業領域へ移さない。
 配布設定はClaude Codeの組み込み`Read`を拒否し、常時規範は委譲元と委譲先による再配置を禁止する。
-委譲手順は認証を要する検証で既定の認証解決手段を維持する。
+委譲手順は認証を要する検証で設定ディレクトリを変えず、ホストが通常読む認証情報を使う。
 組み込み`Read`の拒否はBash経由の複製を遮断しないため、本設計は配布設定・常時規範・委譲手順の3層へ防止の役割を分担させる。
 
 認証を要するauto mode検証では、`auto-mode config`が現在の設定反映を確認する。
@@ -238,7 +238,7 @@ Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/
 協調・自律の両モードを対象とし、ホストの質問機能と期限の差を共通の確認経路で扱う。
 
 認識合わせについて、UserPromptSubmitは実ユーザー発話の全角`！！`から起動を促す注記だけを返す。
-既存の機械注入判定と単一JSONへの合成を使い、照合注記の時間条件とは独立に動作する。
+既存の機械注入判定と単一JSONへの合成を使い、発話の内容を現物で確かめる手順を示す注記の時間条件とは独立に動作する。
 記号から感情や認識の一致を判定する責務は持たない。
 叱責回数の計数や分類器は、記号がない場面でも必要となる認識合わせの判断を代替できず、
 状態と判定の保守を増やすため採らない。descriptionと手動起動を保つことで、hookの検出外でも使える。
@@ -260,7 +260,7 @@ WI処理の運用形態、登録と回答、振り返りからの投入の流れ
 
 委譲元は割当と認可を知り、委譲先は自身の実行手順と出力を知る。この知識境界を維持するため、同じ契約を`<役割名>.parent.md`とagent定義へ複製しない。定義元の指定と本文複製を併存させる案は同期の抜けを残すため採用しない。共通文書を契約ごとに新設する案も参照段数を増やすため、既存の責務所有者へ集約できる場合は採用しない。
 
-委譲の名前付き入力は、`agents_server`の`start`、委譲先での取得結果、`<役割名>.subagent.md`が定める権限と入力および他の受領値から導出できない状態だけを持つ。既定値と不在時の解釈は`<役割名>.subagent.md`が定め、`<役割名>.parent.md`は既定値と異なる場合だけ送信する。この分離は値の二重所有を避けるための契約であり、`start`の`cwd`や委譲先がGitから得る値を送信一覧へ再掲しない。
+委譲の名前付き入力は、`agents_server`の`start`、委譲先での取得結果、`<役割名>.subagent.md`が定める権限と入力および他の受領値から導出できない状態だけを持つ。省略時の値と行が無い場合の解釈は`<役割名>.subagent.md`が定め、`<役割名>.parent.md`はその省略時の値と異なる場合だけ送信する。この分離は値の二重所有を避けるための契約であり、`start`の`cwd`や委譲先がGitから得る値を送信一覧へ再掲しない。
 
 委譲の継続可否条件は`agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」だけで定め、他の文書へ再掲しない。
 `agent-toolkit/share/exec.parent.md`は工程順と渡す入力だけを定め、判定条件は同節を参照する。

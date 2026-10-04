@@ -34,7 +34,7 @@
 | `adopted`または`rejected`→`inbox` | `atk wi return-to-inbox --state=<終端状態>` | 誤って終端した項目を再処理へ戻す主体が、旧処理結果を除いて再開する |
 | `adopted`または`rejected`→`hold` | `atk wi hold --state=<終端状態>` | 誤って終端した項目を確認や修正の間は自動処理から除外する主体が、旧処理結果を除いて保留する |
 
-adoptの実装commit対応は、実装担当がcommitスキルの公開記録手段で計画の進捗ログまたは引き継ぎ記録へ保存し、終端担当が`plan-progress --get-commits`で対象worktreeの現在の完全OIDを取得する。複数commitは同じ取得結果から全対応をnoteへ記録する。対応の欠落は生成側で補完してから終端し、実装差分なしの充足と回答だけのUWIでは既存の根拠記録とcommit省略を使う。
+adoptの実装commit対応は、実装担当が計画の進捗ログまたは引き継ぎ記録へ保存し、終端担当が対象worktreeの現在の完全OIDを取得してadoptへ渡す。記録、取得、複数commitのnote、欠落の補完および対応記録の対象外は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。
 
 回答済みUWIが指す元項目が既に`inbox`で`ready=true`なら、pickerは`unhold`せず開始時の候補を使う。`hold`の元項目だけを`unhold`で戻し、いずれの場合もUWIと元項目を同じレーンへ一度ずつ割り当てる。
 
@@ -78,14 +78,3 @@ worktreeの絶対パスを`--target-repo`へ渡す。リポジトリの識別だ
 エージェントが自身の誤りで投入した項目は、`atk wi rm`で削除するか`atk wi edit`で本文を正しい要求へ書き直して再利用する。`rejected`は要求として成立する項目の不採用だけに使う。
 `atk wi rm`による削除はprivate-notesのGit履歴へ残るため、復旧手段を保つ。
 この削除は確認の対象から外れる。
-
-## 候補0件の観測待ち
-
-実装・統合・反映が済み、残る完成条件が選定候補0件のprocess-wiの1回の実行に依存するAWIはprocessingを維持する。メインが次の公開操作で、既存計画のbasenameと実装commitの完全OIDをobservation_waitへ記録する。
-
-```text
-atk wi set-observation-wait <FILE> --condition selection-empty --plan-file <PLAN> --commit <OID> --target-repo <WORKTREE>
-```
-
-本文置換保護を保ち、解除は同じ公開操作の`--clear`を使う。
-readinessは同じ区分を候補・起動件数・一覧へ返し、pickerは観測待ちを別集合でメインへ渡す。通常候補0件と監査・公開対象なしの短絡をメインが直接観測してから既存commitで終端し、計画を保存する。不成立なら状態・計画・commitを保持する。新しい保存状態、時間経過待ち、ユーザー回答待ちへ置き換えない。

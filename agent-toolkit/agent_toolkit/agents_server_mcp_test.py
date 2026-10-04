@@ -732,7 +732,7 @@ async def test_session_label_prefers_argument_over_generated_value(
 async def test_start_resolves_codex_family_from_existing_backend_catalog(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """委譲起動へ系列名を渡さず、既存のApp Serverが解決した完全IDを使う。"""
+    """委譲起動へ系列名を渡さず、既存のbackendが持つモデル一覧から解決した完全IDを使う。"""
     monkeypatch.setattr(
         subject._atk_config,
         "parse_unresolved_model_candidates",
@@ -3721,6 +3721,8 @@ async def test_send_message_previous_and_stopped_results_relay_improvements(
     assert previous["agent_message"] == message
     action = previous["next_action"]
     assert action.count(state.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
+    assert "メインエージェントは次のユーザーへの発話へ" in action
+    assert "委譲先は自身の返却の末尾へ" in action
     assert (state.REVIEW_RESULT_NEXT_ACTION in action) is (status == "completed" and label.endswith("-review"))
 
 
@@ -5337,6 +5339,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
     assert options.permission_mode == "auto"
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "AGENT_TOOLKIT_OWNER_SESSION": "owner-session",
         "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL": "1h",
     }
@@ -5359,6 +5362,7 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_pa
     assert options.skills == []
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     }
@@ -5385,6 +5389,7 @@ def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_pa
     assert options.skills == []
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     }

@@ -79,8 +79,7 @@ def build_parser(parser) -> None:
         action="store_true",
         help="`private-notes/plans/`へ対象限定commitを作成し、pushは行わない",
     )
-    list_parser = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
-    list_parser.set_defaults(subparser=list_parser)
+    _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
     _atk_help.add_command(sub, "rewrite-references", **_atk_help.HELP["atk plans rewrite-references"])
 
 

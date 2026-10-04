@@ -2,8 +2,6 @@
 
 import shlex
 
-import pytest
-
 from ci_workflow_test import (  # pylint: disable=unused-import  # 共有fixtureをpytestへ登録する
     _REPOSITORY_ROOT,
     _direct_pytest_targets,
@@ -15,7 +13,6 @@ from ci_workflow_test import (  # pylint: disable=unused-import  # 共有fixture
 )
 
 
-@pytest.mark.repo_invariant
 def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
     """workflowのpytestコマンドが直接指定するリポジトリ内の対象は実在する。"""
     targets = _direct_pytest_targets(workflow_data)
@@ -25,7 +22,6 @@ def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
         assert (_REPOSITORY_ROOT / target.split("::", maxsplit=1)[0]).exists(), target
 
 
-@pytest.mark.repo_invariant
 def test_windows_launcher_environment_is_built_before_boundary_tests(workflow_data: dict[str, object]) -> None:
     """実ランチャー到達テストより前に、ランチャーと同じ指定でagent-toolkit環境を構築する。
 

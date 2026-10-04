@@ -26,7 +26,7 @@ DEFAULT_PORT = 29123
 
 
 def default_pid_path() -> pathlib.Path:
-    r"""既定のPIDファイル保存先（`%LOCALAPPDATA%\\dotfiles\\media-remote\\pid`）。"""
+    r"""serveが書き込み、doctorが読むPIDファイルの保存先（`%LOCALAPPDATA%\\dotfiles\\media-remote\\pid`）。"""
     local = os.environ.get("LOCALAPPDATA")
     base = pathlib.Path(local) if local else pathlib.Path.home() / "AppData" / "Local"
     return base / "dotfiles" / "media-remote" / "pid"
@@ -69,36 +69,36 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     serve = sub.add_parser("serve", help="HTTPサーバーを起動する（Windows専用）")
-    serve.add_argument("--host", default=DEFAULT_HOST, help=f"bindアドレス（既定: {DEFAULT_HOST}）")
-    serve.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"ポート（既定: {DEFAULT_PORT}）")
+    serve.add_argument("--host", default=DEFAULT_HOST, help=f"bindアドレス（省略時: {DEFAULT_HOST}）")
+    serve.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"ポート（省略時: {DEFAULT_PORT}）")
     serve.add_argument(
         "--token-file",
         type=pathlib.Path,
         default=None,
-        help="トークン保存先パス（既定: %%LOCALAPPDATA%%/dotfiles/media-remote/token.txt）",
+        help="トークン保存先パス（省略時: %%LOCALAPPDATA%%/dotfiles/media-remote/token.txt）",
     )
 
     url_cmd = sub.add_parser("url", help="アクセスURLとQRコードを表示する")
-    url_cmd.add_argument("--host", default=None, help="表示するホスト名/IP（既定: ローカルIP自動検出）")
-    url_cmd.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"ポート（既定: {DEFAULT_PORT}）")
+    url_cmd.add_argument("--host", default=None, help="表示するホスト名/IP（省略時: ローカルIP自動検出）")
+    url_cmd.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"ポート（省略時: {DEFAULT_PORT}）")
     url_cmd.add_argument(
         "--token-file",
         type=pathlib.Path,
         default=None,
-        help="トークン保存先パス（既定: %%LOCALAPPDATA%%/dotfiles/media-remote/token.txt）",
+        help="トークン保存先パス（省略時: %%LOCALAPPDATA%%/dotfiles/media-remote/token.txt）",
     )
 
     doctor = sub.add_parser(
         "doctor",
         help="listen状態・FW規則・プロファイル・URL等を一括診断する（Windows専用）",
     )
-    doctor.add_argument("--host", default=None, help="アクセスURL表示用ホスト名/IP（既定: ローカルIP自動検出）")
-    doctor.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"ポート（既定: {DEFAULT_PORT}）")
+    doctor.add_argument("--host", default=None, help="アクセスURL表示用ホスト名/IP（省略時: ローカルIP自動検出）")
+    doctor.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"ポート（省略時: {DEFAULT_PORT}）")
     doctor.add_argument(
         "--token-file",
         type=pathlib.Path,
         default=None,
-        help="トークン保存先パス（既定: %%LOCALAPPDATA%%/dotfiles/media-remote/token.txt）",
+        help="トークン保存先パス（省略時: %%LOCALAPPDATA%%/dotfiles/media-remote/token.txt）",
     )
 
     enable_completion(parser)
@@ -286,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command is None:
-        # サブコマンド省略時はserveの既定引数で起動する（スタートアップ自動起動経路と整合させる）。
+        # サブコマンド省略時はserveを各引数の省略時の値で起動する（スタートアップ自動起動経路と整合させる）。
         args = argparse.Namespace(command="serve", host=DEFAULT_HOST, port=DEFAULT_PORT, token_file=None)
     if args.command == "serve":
         return _serve_command(args)

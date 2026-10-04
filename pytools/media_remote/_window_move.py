@@ -2,6 +2,8 @@
 
 フックは短い入力記録だけを行い、UI Automationと位置変更はワーカーへ渡す。
 クリックとWinEventの時刻を対応付け、中クリック時の前面を推測しない。
+選択後に通常操作（左押下・右押下・サイドボタン押下・ホイール・キー押下）を受けたら選択を解除し、
+その後の中クリックはアプリへ渡す。
 """
 
 import logging
@@ -70,18 +72,21 @@ class WindowMover:
             if not self.running.is_set():
                 return False
             if message == _window_api.WM_LBUTTONDOWN:
-                self.click_generation += 1
-                self.pending_click = None
-                if root in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd", "TaskListThumbnailWnd"):
-                    self.selection = None
+                # タスクバーの別選択は、ワーカーが新しい対象を選択へ設定する。
+                self._cancel_selection()
                 self.events.put(("click", self.click_generation, time, point, root))
             elif message == _window_api.WM_LBUTTONUP:
                 self.events.put(("release", self.click_generation, time))
+            elif message in (
+                _window_api.WM_RBUTTONDOWN,
+                _window_api.WM_XBUTTONDOWN,
+                _window_api.WM_MOUSEWHEEL,
+                _window_api.WM_MOUSEHWHEEL,
+            ):
+                self._cancel_selection()
             elif message == _window_api.WM_MBUTTONDOWN:
-                self.click_generation += 1
-                self.pending_click = None
                 selected = self.selection
-                self.selection = None
+                self._cancel_selection()
                 self.suppress_release = selected is not None
                 if selected is not None:
                     self.events.put(("move", selected, point))
@@ -93,10 +98,15 @@ class WindowMover:
         return False
 
     def on_key(self) -> None:
-        """キー操作による前面変更を未解決のタスクバークリックへ結び付けない。"""
+        """キー操作を通常操作として扱い、選択と未解決のタスクバークリックを解除する。"""
         with self.lock:
-            self.click_generation += 1
-            self.pending_click = None
+            self._cancel_selection()
+
+    def _cancel_selection(self) -> None:
+        """lockの下で、選択と未解決のクリックを以降の中クリックから外す。"""
+        self.click_generation += 1
+        self.pending_click = None
+        self.selection = None
 
     def on_window(self, event: int, hwnd: int, time: int) -> None:
         """登録されたWinEventから対象の情報だけをワーカーへ渡す。"""

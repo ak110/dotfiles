@@ -25,8 +25,6 @@ from typing import Any
 import pytest
 from pyfltr.config import config as pyfltr_config
 
-pytestmark = pytest.mark.repo_invariant
-
 _ROOT = pathlib.Path(__file__).resolve().parent
 _SUBPROJECT = pathlib.PurePosixPath("agent-toolkit")
 # 分割実行するPython系の検査が読む`[tool.*]`節。`[tool.pyfltr]`は別に扱う。

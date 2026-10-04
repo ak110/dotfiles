@@ -31,7 +31,7 @@ _NPM_GLOBAL_LOCK = threading.Lock()
 
 
 def installer_ssl_verify(*, windows: bool) -> ssl.SSLContext | bool:
-    """明示CAを優先し、Windowsの既定ではOSの信頼済みCAを使う。"""
+    """`SSL_CERT_FILE`か`SSL_CERT_DIR`で指定したCAを優先し、指定がないWindowsではOSの信頼済みCAを使う。"""
     explicit_ca = os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR")
     return ssl.create_default_context() if windows and not explicit_ca else True
 

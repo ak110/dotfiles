@@ -67,15 +67,28 @@ def _repositories(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> It
         yield {"main": main, "worktree": worktree, "other": other, "outside": outside}
     finally:
         _git(main, "worktree", "remove", "--force", str(worktree))
-        shutil.rmtree(main)
-        shutil.rmtree(other)
+
+
+def _decode_output(output: bytes) -> str:
+    """PythonのUTF-8出力とcmd.exeのCP932診断をそれぞれ復号する。"""
+    try:
+        return output.decode("utf-8")
+    except UnicodeDecodeError:
+        return output.decode("cp932")
 
 
 def _run(main: pathlib.Path, cwd: pathlib.Path, arguments: list[str]) -> subprocess.CompletedProcess[str]:
     entry = main / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
-    command = ["cmd.exe", "/d", "/c", str(entry), *arguments] if os.name == "nt" else [str(entry), *arguments]
-    return subprocess.run(
-        command, cwd=cwd, check=False, capture_output=True, encoding="cp932" if os.name == "nt" else "utf-8", timeout=120
+    command = (
+        f'cmd.exe /d /s /c "{subprocess.list2cmdline([str(entry), *arguments])}"'
+        if os.name == "nt"
+        else [str(entry), *arguments]
+    )
+    result = subprocess.run(command, cwd=cwd, check=False, capture_output=True, timeout=120)
+    assert isinstance(result.stdout, bytes)
+    assert isinstance(result.stderr, bytes)
+    return subprocess.CompletedProcess(
+        result.args, result.returncode, _decode_output(result.stdout), _decode_output(result.stderr)
     )
 
 
@@ -131,15 +144,19 @@ def test_path_lookup_reaches_worktree_version_before_plugin_entry(repositories: 
     worktree = repositories["worktree"]
     environment = dict(os.environ)
     environment["PATH"] = os.pathsep.join([str(main / "bin"), str(main / "agent-toolkit" / "bin"), environment["PATH"]])
-    command = ["cmd.exe", "/d", "/c", "atk", "review-table", "show"] if os.name == "nt" else ["atk", "review-table", "show"]
-    result = subprocess.run(
+    command = 'cmd.exe /d /s /c "atk review-table show"' if os.name == "nt" else ["atk", "review-table", "show"]
+    completed = subprocess.run(
         command,
         cwd=worktree,
         env=environment,
         check=False,
         capture_output=True,
-        encoding="cp932" if os.name == "nt" else "utf-8",
         timeout=120,
+    )
+    assert isinstance(completed.stdout, bytes)
+    assert isinstance(completed.stderr, bytes)
+    result = subprocess.CompletedProcess(
+        completed.args, completed.returncode, _decode_output(completed.stdout), _decode_output(completed.stderr)
     )
     assert result.returncode == 23
     assert json.loads(result.stdout) == {"entry": "changed", "cwd": str(worktree), "args": ["review-table", "show"]}

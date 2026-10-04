@@ -10,6 +10,10 @@
 - `Agent`ツールの本文が`<役割名>.subagent.md`の実行を命じ、1行目の`<.subagent.mdの絶対パス>の手順を実行せよ。`と
   宣言済みの入力名の行（字下げした続きの行を含む）以外を含む起動
 
+実行の命令は、引用とコードの外で文書の絶対パスの直後に実行を求める述語が続く文として判定する。
+定型の`<.subagent.mdの絶対パス>の手順を実行せよ。`に限らず、パスの後の空白、`に従って作業せよ`・`に従い作業せよ`などの言い回し、
+`を読み、その手順を実行せよ`のように文書を読む指示へ実行を続ける文、同じ行に続く指示を持つ命令も対象とする。
+
 遮断の根拠: 委譲の起動は委譲プロンプトを委譲先のコンテキストへ取り込ませるため、通した後に結果を復元できない。
 実行主体は同じターンで、通知が示す`start`の呼び出しまたは宣言済みの行だけの本文へ組み直して再実行できる。
 宣言を読めない`<役割名>.subagent.md`は入力との一致を確かめられないため遮断しない（`agents_server`の`start`も警告だけで起動を続ける）。
@@ -23,6 +27,7 @@ import pathlib
 import re
 
 import markdown_it
+from markdown_it.token import Token
 
 from agent_toolkit._agents_server import task_documents
 from agent_toolkit._agents_server import tool_names as _tool_names
@@ -42,6 +47,29 @@ AGENT_TOOL_NAMES: frozenset[str] = frozenset({"Agent", "Task"})
 """Claude Codeのサブエージェント起動ツール名（旧名`Task`を含む）。"""
 
 _INPUT_LINE_PATTERN = re.compile(r"^(?P<name>[^\s:：][^:：]*?):(?: (?P<value>.*))?$")
+_DOCUMENT_STEPS = r"(?:の(?:手順|工程|指示)|を(?:読み|読んで)\s*[、,]?\s*(?:(?:その|同書の)?(?:手順|工程|指示)|それ))"
+"""パスの直後で文書の手順を指す句。文書を読む指示に続けて「その手順」「それ」で手順を指す形を含める。"""
+_EXECUTION_AFTER_PATH = re.compile(
+    rf"""`?\s*(?:
+        (?:{_DOCUMENT_STEPS}\s*)?に従(?:え|うこと)
+      | (?:
+            {_DOCUMENT_STEPS}\s*(?:を|に(?:従って|従い|沿って|沿い)|どおりに?|で)?
+          | に(?:従って|従い|沿って|沿い)
+          | を
+          | どおりに?
+        )?\s*
+        (?:
+            (?:実行|実施|遂行|作業|処理)(?:せよ|しろ|しなさい|して|すること|し[、,]|する(?:[。.]|$))
+          | 進め(?:よ|て|ること|[、,]|る(?:[。.]|$))
+        )
+    )""",
+    re.VERBOSE,
+)
+"""文書の絶対パスの直後に続き、その文書の手順の実行を求める述語。読解・引用・比較の述語は含めない。"""
+_QUOTE_OPENERS = ("「", "『", "“", '"', "'")
+"""直前にあると、続く命令を引用した文として扱う開き括弧と引用符。"""
+_MASKED_CODE = "\x00"
+"""文書の絶対パス以外を内容とするインラインコードの置き換え。コード中の命令例を実行の命令と区別する。"""
 _CONTINUATION_PREFIX = "  "
 _MARKDOWN = markdown_it.MarkdownIt("commonmark")
 
@@ -85,7 +113,7 @@ def _check_agent_prompt(prompt: str) -> str | None:
         return None
     accepted = declaration.accepted
     violations: list[str] = []
-    if not lines or lines[0].strip() != expected_first:
+    if not lines or not _is_canonical_first_line(lines[0], document):
         violations.append(lines[0] if lines else "")
     in_value = False
     for line in lines[1:]:
@@ -109,11 +137,18 @@ def _check_agent_prompt(prompt: str) -> str | None:
     )
 
 
+def _is_canonical_first_line(line: str, document: pathlib.Path) -> bool:
+    """1行目が定型の実行命令だけからなるかを返す。パスの前後の空白とパスを囲むバッククォートの有無は区別しない。"""
+    pattern = rf"`?{re.escape(str(document))}`?\s*の手順を実行せよ。?"
+    return re.fullmatch(pattern, line.strip()) is not None
+
+
 def _execution_document(prompt: str) -> pathlib.Path | None:
-    """引用の外にある定型の実行命令から、命令の対象文書を求める。"""
+    """引用とコードの外にある実行命令から、最初に命令の対象となった文書を求める。"""
     documents = task_documents.find_task_documents(prompt)
     if not documents:
         return None
+    paths = {str(document): document for document in documents}
     quote_depth = 0
     for token in _MARKDOWN.parse(prompt):
         if token.type == "blockquote_open":
@@ -121,11 +156,34 @@ def _execution_document(prompt: str) -> pathlib.Path | None:
         elif token.type == "blockquote_close":
             quote_depth -= 1
         elif token.type == "inline" and not quote_depth:
-            # 命令全体がインラインコードにある例は、実行の指示ではない。
-            if not any(child.type == "text" and "の手順を実行せよ。" in child.content for child in token.children or []):
-                continue
-            for line in token.content.splitlines():
-                for document in documents:
-                    if line.strip() in (f"{document}の手順を実行せよ。", f"`{document}`の手順を実行せよ。"):
-                        return document
+            for line in _plain_text(token, paths).splitlines():
+                document = _commanded_document(line, paths)
+                if document is not None:
+                    return document
+    return None
+
+
+def _plain_text(token: Token, paths: dict[str, pathlib.Path]) -> str:
+    """インライン要素の本文を、改行を保ち、文書パス以外のインラインコードを伏せて返す。"""
+    parts: list[str] = []
+    for child in token.children or []:
+        if child.type == "text":
+            parts.append(child.content)
+        elif child.type in ("softbreak", "hardbreak"):
+            parts.append("\n")
+        elif child.type == "code_inline":
+            parts.append(f"`{child.content}`" if child.content.strip() in paths else _MASKED_CODE)
+    return "".join(parts)
+
+
+def _commanded_document(line: str, paths: dict[str, pathlib.Path]) -> pathlib.Path | None:
+    """行の中で、引用符の外にあり直後に実行の述語が続く文書パスを返す。"""
+    for text, document in paths.items():
+        start = line.find(text)
+        while start >= 0:
+            before = line[:start].rstrip("`").rstrip()
+            quoted = before.endswith(_QUOTE_OPENERS)
+            if not quoted and _EXECUTION_AFTER_PATH.match(line, start + len(text)) is not None:
+                return document
+            start = line.find(text, start + 1)
     return None

@@ -16,6 +16,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 import types
 from collections.abc import Callable
 from typing import Any
@@ -141,35 +142,6 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
 
     assert (notes / "inbox/remote.md").exists()
     assert capsys.readouterr().out == f"成功: private-notesをremoteと同期した: {notes.resolve()}\n" * 2
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["wi", "list"],
-        ["wi", "show", "--all"],
-        ["wi", "grep", "."],
-        ["plans", "list"],
-        ["managed-temp", "list"],
-        ["review-table", "show", "review.tsv"],
-        ["review-audit", "list", "--repo=owner/repo"],
-    ],
-)
-def test_output_file_option_is_rejected_by_listing_commands(argv: list[str], tmp_path: pathlib.Path) -> None:
-    output_path = tmp_path / "output.txt"
-
-    with pytest.raises(SystemExit, match="2"):
-        atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
-            [*argv, "--output-file", str(output_path)]
-        )
-    assert not output_path.exists()
-
-
-def test_output_file_rejects_relative_path(tmp_path: pathlib.Path) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["plans", "list", "--output-file", "relative.txt"], home=tmp_path)
-
-    assert exc_info.value.code == 2
 
 
 @pytest.mark.parametrize(
@@ -410,11 +382,11 @@ class TestWaitScheduleParser:
         """任意のサブコマンドに共通する実行処理でmanaged-tempを整理する。"""
         calls: list[datetime.datetime] = []
 
-        def fake_sweep(*, now: datetime.datetime) -> list[pathlib.Path]:
+        def fake_sweep(*, now: datetime.datetime) -> _managed_temp.SweepResult:
             calls.append(now)
-            return []
+            return _managed_temp.SweepResult([], (), None)
 
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", fake_sweep)
+        monkeypatch.setattr(_managed_temp, "sweep_managed_temp", fake_sweep)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
@@ -438,11 +410,10 @@ class TestWaitScheduleParser:
             return "fixed-subcommand-output"
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
         monkeypatch.setattr(
             _managed_temp,
-            "list_unregistered_candidates",
-            lambda **_kwargs: tuple(tmp_path / f"orphan-{index}" for index in range(count)),
+            "sweep_managed_temp",
+            lambda *, now: _managed_temp.SweepResult([], tuple(tmp_path / f"orphan-{index}" for index in range(count)), None),
         )
 
         with pytest.raises(SystemExit) as exc_info:
@@ -476,8 +447,9 @@ class TestWaitScheduleParser:
     ) -> None:
         """未登録領域の警告は値が1の委譲先だけで抑止する。"""
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda **_kwargs: (tmp_path / "orphan",))
+        monkeypatch.setattr(
+            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        )
         if delegated_session is None:
             monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         else:
@@ -505,12 +477,11 @@ class TestWaitScheduleParser:
             return "fixed-subcommand-output"
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-
-        def fail_count(**_kwargs: object) -> tuple[pathlib.Path, ...]:
-            raise _managed_temp.ManagedTempError("走査失敗")
-
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", fail_count)
+        monkeypatch.setattr(
+            _managed_temp,
+            "sweep_managed_temp",
+            lambda *, now: _managed_temp.SweepResult([], (), _managed_temp.ManagedTempError("走査失敗")),
+        )
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
@@ -534,8 +505,9 @@ class TestWaitScheduleParser:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda **_kwargs: (tmp_path / "orphan",))
+        monkeypatch.setattr(
+            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        )
         state: dict = {}
 
         def update_state(_session_id: str, mutator):
@@ -566,8 +538,9 @@ class TestWaitScheduleParser:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
-        monkeypatch.setattr(_managed_temp, "list_unregistered_candidates", lambda **_kwargs: (tmp_path / "orphan",))
+        monkeypatch.setattr(
+            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        )
 
         def fail_update(_session_id: str, _mutator) -> bool:
             return False
@@ -677,6 +650,46 @@ class TestWaitScheduleParser:
         assert [line for line in err_lines if "登録を持たない管理対象が" in line] == [
             "警告: 自動削除されずに残った、登録を持たない管理対象が1件ある"
         ]
+
+    def test_startup_does_not_revalidate_pending_managed_temp(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """期限前の管理対象は2回目以降の共通起動で検証せず、期限の到来後に回収する。
+
+        起動ごとに登録件数に比例する真正性検証と未登録探索を繰り返すと、管理対象が多い環境で
+        全サブコマンドの応答が遅れる。
+        """
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        pending_ns = int((now - datetime.timedelta(days=6)).timestamp() * 1_000_000_000)
+        targets = [_managed_temp.create_managed_temp(f"pending-{index}") for index in range(10)]
+        for target in targets:
+            for path in (target, *target.rglob("*")):
+                os.utime(path, ns=(pending_ns, pending_ns), follow_symlinks=False)
+        validated: list[pathlib.Path] = []
+        original_validate = _managed_temp.validate_managed_temp
+
+        def record_validate(path: pathlib.Path | str) -> object:
+            validated.append(pathlib.Path(path))
+            return original_validate(path)
+
+        monkeypatch.setattr(_managed_temp, "validate_managed_temp", record_validate)
+
+        for moment in (now, now):
+            with pytest.raises(SystemExit) as exc_info:
+                atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=moment)
+            assert exc_info.value.code == 0
+        assert sorted(validated) == sorted(targets)
+        assert all(target.exists() for target in targets)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now + datetime.timedelta(days=2))
+        assert exc_info.value.code == 0
+        assert not any(target.exists() for target in targets)
+        assert "警告" not in capsys.readouterr().err
 
     @pytest.mark.parametrize("path_form", ["canonical", "parent-reference"])
     def test_explicit_cleanup_succeeds_after_automatic_cleanup(
@@ -854,8 +867,8 @@ def _write_awi_file(
     return path
 
 
-def _setup_notes_with_pending_commit(tmp_path: pathlib.Path) -> pathlib.Path:
-    """upstreamより1件先行したprivate-notesのテスト用cloneを作成する。"""
+def _setup_notes_with_pending_commit(tmp_path: pathlib.Path, *, pending: bool = True) -> pathlib.Path:
+    """upstreamより1件先行したprivate-notesのテスト用cloneを作成する。`pending=False`ではupstreamと一致させる。"""
     origin = tmp_path / "origin.git"
     origin.mkdir()
     subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(origin)], check=True, capture_output=True)
@@ -868,6 +881,8 @@ def _setup_notes_with_pending_commit(tmp_path: pathlib.Path) -> pathlib.Path:
     subprocess.run(["git", "-C", str(notes), "commit", "-m", "base"], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(notes), "remote", "add", "origin", str(origin)], check=True)
     subprocess.run(["git", "-C", str(notes), "push", "-u", "origin", "main"], check=True, capture_output=True)
+    if not pending:
+        return notes
     marker = notes / "pending.txt"
     marker.write_text("pending\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True)
@@ -875,30 +890,50 @@ def _setup_notes_with_pending_commit(tmp_path: pathlib.Path) -> pathlib.Path:
     return notes
 
 
+_SYNC_MUTATION_ENTRIES = ("wi start-processing", "wi add --dry-run", "plans rewrite-references")
+"""終了時に未pushを判定する同期対象操作のコマンド。`wi add --dry-run`は自身でcommitしない操作として含める。"""
+
+_DRY_RUN_SUCCESS = "成功: 投入前の検証が成立した（--dry-runのため保存していない）"
+
+
+def _prepare_sync_mutation(entry: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """同期対象操作のコマンドごとに外部への作用を差し替え、`atk.main`へ渡す引数を返す。"""
+    atk_members = vars(atk)
+    if entry == "wi start-processing":
+        monkeypatch.setattr(atk_members["_mutations"], "_cmd_start_processing", lambda *_args: None)
+        return ["wi", "start-processing", "awi.md"]
+    if entry == "wi add --dry-run":
+        monkeypatch.setattr(atk_members["_add"], "resolve_add_target", lambda _value: ("github.com/example/repo", None))
+        body = tmp_path / "body.md"
+        body.write_text("本文\n", encoding="utf-8")
+        return ["wi", "add", "--dry-run", "--target-repo", "github.com/example/repo", "--body-file", str(body)]
+    monkeypatch.setattr(atk_members["_plans"], "dispatch", lambda *_args: 0)
+    return ["plans", "rewrite-references"]
+
+
+@pytest.mark.parametrize("entry", _SYNC_MUTATION_ENTRIES)
 def test_main_reports_pending_commit_only_for_sync_mutations(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    entry: str,
 ) -> None:
-    """同期対象操作だけが未pushを終了コード3で通知する。"""
+    """同期対象操作だけが、処理の終了後に残る未pushを終了コード3で通知する。"""
     notes = _setup_notes_with_pending_commit(tmp_path)
     atk_members = vars(atk)
-    common_module = atk_members["_common"]
-    mutations_module = atk_members["_mutations"]
-    list_module = atk_members["_list"]
-    plans_module = atk_members["_plans"]
-    monkeypatch.setattr(common_module, "_ensure_environment", lambda _home: notes)
-    monkeypatch.setattr(mutations_module, "_cmd_start_processing", lambda *_args: None)
-    monkeypatch.setattr(list_module, "_cmd_list", lambda *_args: None)
-    monkeypatch.setattr(plans_module, "dispatch", lambda *_args: 0)
+    monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(atk_members["_list"], "_cmd_list", lambda *_args: None)
+    argv = _prepare_sync_mutation(entry, tmp_path, monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "start-processing", "awi.md"], home=tmp_path)
+        atk.main(argv, home=tmp_path)
     assert exc_info.value.code == 3
-    stderr = capsys.readouterr().err
-    assert "警告: private-notesに未pushのcommitが1件残る" in stderr
+    output = capsys.readouterr()
+    if entry == "wi add --dry-run":
+        assert _DRY_RUN_SUCCESS in output.out
+    assert "警告: private-notesに未pushのcommitが1件残る" in output.err
     # pushの手順は警告行に続く次の操作の行へ置く。
-    next_action = next(line for line in stderr.splitlines() if line.startswith("次の操作: "))
+    next_action = next(line for line in output.err.splitlines() if line.startswith("次の操作: "))
     assert f"`git -C {notes.resolve()} status`" in next_action
     assert "atk wi commit" in next_action
 
@@ -906,6 +941,64 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
         atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
     assert exc_info.value.code == 0
     assert "未pushのcommit" not in capsys.readouterr().err
+
+
+_CONCURRENT_PUSH_SCRIPT = """
+import pathlib
+import subprocess
+import sys
+import time
+
+from agent_toolkit._atk import git_sync
+
+notes = pathlib.Path(sys.argv[1])
+ready = pathlib.Path(sys.argv[2])
+with git_sync.repo_lock(notes):
+    (notes / "concurrent.txt").write_text("concurrent\\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", "concurrent.txt"], check=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-q", "-m", "concurrent"], check=True)
+    ready.write_text("committed", encoding="utf-8")
+    time.sleep(2)
+    subprocess.run(["git", "-C", str(notes), "push", "-q"], check=True)
+"""
+
+
+@pytest.mark.parametrize("entry", _SYNC_MUTATION_ENTRIES)
+def test_main_does_not_report_commit_pushed_by_concurrent_process(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    entry: str,
+) -> None:
+    """別プロセスがロック内でcommitしてからpushする間に終えた同期対象操作は、未pushを通知しない。
+
+    commit後・push前の一時状態を読むと、同期が完了する途中の状態を同期未達として終了コード3で報告する。
+    """
+    notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
+    atk_members = vars(atk)
+    monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: notes)
+    argv = _prepare_sync_mutation(entry, tmp_path, monkeypatch)
+    script = tmp_path / "concurrent_push.py"
+    script.write_text(_CONCURRENT_PUSH_SCRIPT, encoding="utf-8")
+    ready = tmp_path / "ready"
+    environ = os.environ.copy()
+    environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(_PROJECT_ROOT), environ.get("PYTHONPATH")]))
+    with subprocess.Popen([sys.executable, str(script), str(notes), str(ready)], env=environ) as writer:
+        deadline = time.monotonic() + 30
+        while not ready.exists():
+            assert writer.poll() is None, "別プロセスがcommit前に終了した"
+            assert time.monotonic() < deadline, "別プロセスのcommitを観測できない"
+            time.sleep(0.05)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(argv, home=tmp_path)
+        assert writer.wait(timeout=30) == 0
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr()
+    if entry == "wi add --dry-run":
+        assert _DRY_RUN_SUCCESS in output.out
+    assert "未pushのcommit" not in output.err
 
 
 class TestMutationTargetRepoParserOption:

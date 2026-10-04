@@ -1,7 +1,7 @@
 # PYTHON_ARGCOMPLETE_OK
 """GitHub Actionsのrelease.yamlを安全に起動するreleaserコマンド。
 
-引数として`patch`/`minor`/`major`を渡すと、未コミット検査・既定ブランチ確認・
+引数として`patch`/`minor`/`major`を渡すと、未コミット検査・デフォルトブランチ確認・
 push・CI完了待機を経てrelease.yamlをworkflow_dispatchで起動する。
 省略時はヘルプと未リリースコミット一覧を表示する。
 """
@@ -173,11 +173,11 @@ def _get_latest_release_tag() -> str | None:
 
 
 def _ensure_default_branch() -> None:
-    """既定ブランチ（origin/HEADが指すブランチ）で実行されていることを確認する。"""
+    """デフォルトブランチ（origin/HEADが指すブランチ）で実行されていることを確認する。"""
     current = _get_current_branch()
     default = _get_default_branch()
     if current != default:
-        raise _ReleaserError(f"既定ブランチ '{default}' で実行してください（現在: '{current}'）。")
+        raise _ReleaserError(f"デフォルトブランチ '{default}' で実行してください（現在: '{current}'）。")
 
 
 def _get_current_branch() -> str:
@@ -191,12 +191,12 @@ def _get_current_branch() -> str:
     )
     branch = result.stdout.strip()
     if not branch:
-        raise _ReleaserError("HEADが分離されています。既定ブランチへチェックアウトしてください。")
+        raise _ReleaserError("HEADが分離されています。デフォルトブランチへチェックアウトしてください。")
     return branch
 
 
 def _get_default_branch() -> str:
-    """origin/HEADが指す既定ブランチ名を返す（例: 'master'）。"""
+    """origin/HEADが指すデフォルトブランチ名を返す（例: 'master'）。"""
     result = subprocess.run(
         ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
         capture_output=True,

@@ -68,7 +68,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     _write_fake_systemctl(local_bin / "systemctl")
 
     # 3. tmuxプラグインのclone元をローカルミラーへ差し替える（実GitHub依存を回避）。
-    # 戻り値のコミットSHAは末尾のアサーションで実際のclone結果と照合する。
+    # 戻り値のコミットSHAは末尾のアサーションで実際のclone結果と一致するか確かめる。
     mirror_base = tmp_path / "git-mirrors"
     tpm_sha = _make_git_mirror(mirror_base, "tmux-plugins/tpm.git", tag=None)
     catppuccin_sha = _make_git_mirror(mirror_base, "catppuccin/tmux.git", tag="v2.3.0")
@@ -117,7 +117,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     )
 
     # 5. ルールファイルがデプロイされていること。
-    # rules側の配布対象は生成一覧を正本とし、POSIX版とWindows版の完全一致を検査する。
+    # rules側の配布対象は生成した一覧で決まり、POSIX版とWindows版の一覧が完全に一致することを確かめる。
     # その他の規約はagent-toolkitプラグインのスキルが担う。
     # 代表として01-agent.mdの存在のみを検証する（ファイル一覧の一致は install_script_ssot_invariant_test.py が担う）。
     rules_dir = fake_home / ".claude" / "rules" / "agent-toolkit"
@@ -239,7 +239,7 @@ def _make_git_mirror(base: pathlib.Path, rel_path: str, *, tag: str | None) -> s
     """`base/rel_path`へ最小構成のgitリポジトリを作成し、コミットSHAを返す。
 
     戻り値は`setup_tmux_plugins`経由でcloneされた配置先が同一コミットを指すことを
-    検証するための照合値として使う（ディレクトリの存在確認だけでは
+    検証する際に比べる値として使う（ディレクトリの存在確認だけでは
     clone失敗を見逃すため、実際のコミット内容一致まで確認する）。
     """
     repo = base / rel_path
@@ -270,7 +270,7 @@ def _external_reachability_env() -> dict[str, str]:
 
 
 def _rev_parse_head(repo: pathlib.Path) -> str:
-    """`repo`のHEADコミットSHAを返す（clone先が期待コミットと一致するかの照合に使う）。"""
+    """`repo`のHEADコミットSHAを返す（clone先が期待コミットと一致するかの確認に使う）。"""
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
     ).stdout.strip()
@@ -279,7 +279,7 @@ def _rev_parse_head(repo: pathlib.Path) -> str:
 class _QuietHandler(http.server.BaseHTTPRequestHandler):
     """statuslineバイナリ代替を返す最小HTTPハンドラ。ログは抑止する。"""
 
-    def do_GET(self) -> None:  # noqa: N802 -- http.server既定APIの命名規約
+    def do_GET(self) -> None:  # noqa: N802 -- http.serverが呼ぶメソッド名の命名規約
         payload = b"FAKE_STATUSLINE_BINARY"
         self.send_response(200)
         self.send_header("Content-Length", str(len(payload)))

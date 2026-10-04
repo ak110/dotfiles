@@ -67,12 +67,12 @@ CODEX_SESSION_END_TIMEOUT_SECONDS = 3
 class CodexHookProjection(NamedTuple):
     """Codexへ射影するhandlerと、ホスト差に合わせた上書き値。
 
-    `matcher`が`None`の場合は正本のmatcherをそのまま引き継ぐ。
+    `matcher`が`None`の場合は`agent-toolkit/hooks/hooks.json`のmatcherをそのまま引き継ぐ。
     Claude向けの空matcher（全ツール対象）をそのまま配布すると、
     入力契約を確認していないCodexのツールでもhandlerが起動するため、
     ツール名を限定する場合は明示する。
 
-    Codexは既定でおよそ2,500トークンを超える`additionalContext`を退避する。
+    Codexは上限を指定しない場合、およそ2,500トークンを超える`additionalContext`を退避する。
     条文全文を渡す射影は`additional_context_limit=0`で無効化する。この指定は、
     handlerの出力量が条文ファイルで固定され、`rules_context_test.py`の上限検査で
     拘束される場合に限る。
@@ -85,7 +85,7 @@ class CodexHookProjection(NamedTuple):
     additional_context_limit: int | None = None
 
     def project(self, group: dict[str, Any], handlers: list[dict[str, Any]]) -> dict[str, Any]:
-        """正本のmatcher groupへ上書き値を適用した射影結果を返す。"""
+        """`hooks.json`のmatcher groupへ上書き値を適用した射影結果を返す。"""
         chosen = []
         for handler in handlers:
             projected_handler = dict(handler)
@@ -184,7 +184,7 @@ def _load(root: Path, relative: Path) -> dict[str, Any]:
 
 def _agent_mcp(source: dict[str, Any]) -> dict[str, Any]:
     if set(source) != {"mcpServers"} or not isinstance(source["mcpServers"], dict):
-        raise ValueError("MCP正本はmcpServersだけを持つJSON objectである必要がある")
+        raise ValueError("agent-toolkit/.mcp.jsonはmcpServersだけを持つJSON objectである必要がある")
 
     servers: dict[str, dict[str, Any]] = {}
     for name, value in source["mcpServers"].items():
@@ -272,7 +272,7 @@ def _outputs(root: Path) -> dict[Path, str]:
     entry = entries[0]
     for key in ("version", "description"):
         if entry.get(key) != plugin.get(key):
-            raise ValueError(f"正本間で{key}が一致しない")
+            raise ValueError(f"plugin.jsonとmarketplace.jsonで{key}が一致しない")
 
     selected: dict[str, list[dict[str, Any]]] = {}
     if (root / HOOKS_SOURCE).exists():
@@ -289,7 +289,7 @@ def _outputs(root: Path) -> dict[Path, str]:
                     continue
                 projected.append(projection.project(group, chosen))
             if not projected:
-                raise ValueError(f"許可済みハンドラーが正本に存在しない: {event}")
+                raise ValueError(f"許可済みハンドラーがhooks.jsonに存在しない: {event}")
             selected[event] = projected
 
     metadata = {key: plugin[key] for key in PLUGIN_METADATA_FIELDS}
@@ -334,12 +334,12 @@ def _outputs(root: Path) -> dict[Path, str]:
     }
     if (root / MCP_SOURCE).exists():
         source = _load(root, MCP_SOURCE)
-        # 正本全体のschemaを先に検証する。Codex向けへ射影しないClaude専用serverも
+        # `.mcp.json`全体のschemaを先に検証する。Codex向けへ射影しないClaude専用serverも
         # 不正な定義を残したままにしないため、allowlist適用前に検査する。
         _agent_mcp(source)
         servers = source.get("mcpServers")
         if not isinstance(servers, dict):
-            raise ValueError("MCP正本はmcpServers objectを持つ必要がある")
+            raise ValueError("agent-toolkit/.mcp.jsonはmcpServers objectを持つ必要がある")
         shared = {name: value for name, value in servers.items() if name in SHARED_MCP_SERVER_NAMES}
         shared_source = {"mcpServers": shared}
         result[MCP_CODEX_TARGET] = json.dumps(_codex_mcp(shared_source), ensure_ascii=False, indent=2) + "\n"

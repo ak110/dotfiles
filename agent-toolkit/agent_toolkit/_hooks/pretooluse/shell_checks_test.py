@@ -58,7 +58,7 @@ class TestAgentsServerInputChecks:
         tool_input: dict,
         remote_session_id: str | None,
     ) -> None:
-        """専用スキルの起動記録が無くても入力の妥当性を独立して確かめて通過すれば許可する。"""
+        """専用スキルの起動記録が無くても、起動記録とは独立した入力の妥当性の判定を通過すれば許可する。"""
         session_id = f"without-skill-{tool_suffix}"
         if remote_session_id is not None:
             _write_session_state(
@@ -612,7 +612,7 @@ class TestBashHeredocLiteralExclusion:
     """ヒアドキュメント本文のリテラルを実行コマンドとして誤検出しない。
 
     区間分割と実行位置解析はヒアドキュメント本文も実行コマンド列として扱うため、
-    本文へ書き込む字面だけでは判定できないことを検証する。
+    本文へ書き込む字面だけでは遮断の条件に当たらないことを検証する。
     """
 
     def test_pattern_kill_in_heredoc_body_is_not_blocked(self, tmp_path: pathlib.Path) -> None:

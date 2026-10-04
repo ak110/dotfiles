@@ -10,11 +10,6 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
-import pytest
-
-pytestmark = pytest.mark.repo_invariant
-
-
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
 
 # 本ファイル自身を検出しないよう、禁止する語を2つの部分文字列の連結で持つ。

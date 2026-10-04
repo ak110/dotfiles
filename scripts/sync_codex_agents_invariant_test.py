@@ -2,13 +2,11 @@
 
 import re
 
-import pytest
 import sync_codex_agents as subject
 
 from scripts.sync_codex_agents_test import _TWO_LAYER_WAIT_HEADING, _section
 
 
-@pytest.mark.repo_invariant
 def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
     source = (subject.REPO_ROOT / "agent-toolkit/share/rules-main.codex.md").read_text(encoding="utf-8")
     reference = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/codex-runtime.md").read_text(encoding="utf-8")
@@ -25,7 +23,6 @@ def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
     assert "先行CLIが稼働中にlock競合した後発待機だけが、先行runの本文を1回回収する" in section
 
 
-@pytest.mark.repo_invariant
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:
     """共有ルールの参照資料が両配布経路のplugin rootから解決できることを固定する。"""
     skill_pattern = re.compile(r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`")

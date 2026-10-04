@@ -515,11 +515,13 @@ def _add_mq_read_parsers(sub: Any) -> None:
         allow_all=True,
         help_extra="FILENAME指定時は明示的照会として扱い、省略時の限定を適用しない。",
     )
-    show.set_defaults(subparser=show)
     show.add_argument(
         "--summary-only",
         action="store_true",
-        help="target_repoとファイル名・状態の見出しだけを表示し、frontmatterと本文を省く。",
+        help=(
+            "target_repoとファイル名・状態の見出しに続けて、AWIはH1表題、UWIは質問本文の先頭行だけを"
+            "省略せずに1行で表示し、frontmatterと他の本文を省く。"
+        ),
     )
     show.add_argument(
         "--type",
@@ -849,15 +851,6 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     )
     _add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
 
-    observation = _atk_help.add_command(sub, "set-observation-wait", **_atk_help.HELP["atk wi set-observation-wait"])
-    observation.add_argument("filename", metavar="FILENAME", help="processingの観測待ちAWIファイル名")
-    observation.add_argument("--condition", choices=("selection-empty",), help="残る観測が成立するprocess-wiの実行条件")
-    observation.add_argument("--plan-file", help="既存計画ファイルのbasename")
-    observation.add_argument("--commit", help="検収済みの既存実装commit。完全OIDへ解決する")
-    observation.add_argument("--clear", action="store_true", help="観測待ちのメタデータだけを解除する")
-    observation.add_argument("--target-repo", required=True, help="実装commitを確認できるworktreeの絶対パス")
-    observation.set_defaults(subparser=observation)
-
 
 def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     """検索・回答・外部差分コミットサブコマンドを登録する。"""
@@ -884,7 +877,6 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     _add_source_arg(grep, multiple=True)
     _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
-    grep.set_defaults(subparser=grep)
     grep.set_defaults(subparser=grep)
 
     answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk wi answer"])
@@ -1343,6 +1335,25 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
     return not (args.command == "agents" and args.agents_subcommand == "logs" and getattr(args, "follow", False))
 
 
+def _passes_output_as_file(args: argparse.Namespace) -> bool:
+    """結果をファイルとして消費する呼び出しで、量によらず標準出力を保存するかを返す。
+
+    `agents wait`は回収前に保存先を開き、保存できない場合に未受領の結果を消費しないために保存する。
+    複数件の`wi show`は一括取得の消費側が保存ファイルの全見出しと本文を読み、
+    `session-review-evidence`の`--user-events`は逐語引用の出所ファイルとしてWI投入担当へ渡す。
+    単発の`wi show`と他の証拠照会はその場で読むため、通常の量の判定に従う。
+    """
+    if args._help_parser is not None:
+        return False
+    if args.command == "agents" and args.agents_subcommand == "wait":
+        return True
+    if args.command == "wi" and args.wi_subcommand == "show":
+        return not args.summary_only and (args.all or len(set(args.filenames)) > 1)
+    return (
+        args.command == "run-script" and args.script_name == "session-review-evidence" and "--user-events" in args.script_args
+    )
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -1369,15 +1380,11 @@ def main(
     args = parser.parse_args(raw_argv)
     if not _output_capture_active and _auto_saves_output(args):
         is_wait = args.command == "agents" and args.agents_subcommand == "wait" and args._help_parser is None
-        force = args._help_parser is None and (
-            is_wait
-            or (args.command == "wi" and args.wi_subcommand == "show" and not args.summary_only)
-            or (args.command == "run-script" and args.script_name == "session-review-evidence")
-        )
         with _output_file.auto_save(
             lambda: _managed_temp.create_managed_temp("atk-output"),
             after_save=_agents.summarize_saved_wait if is_wait else None,
-            force_stdout=force,
+            force_stdout=_passes_output_as_file(args),
+            discard_directory=_managed_temp.cleanup_managed_temp,
         ):
             main(argv, home=home, now=now, _output_capture_active=True)
         return
@@ -1397,21 +1404,23 @@ def main(
     if now is None:
         now = datetime.datetime.now()
     automatically_cleaned: list[pathlib.Path] = []
+    sweep_result: _managed_temp.SweepResult | None = None
     try:
-        automatically_cleaned = _managed_temp.sweep_expired_managed_temp(now=now)
+        sweep_result = _managed_temp.sweep_managed_temp(now=now)
+        automatically_cleaned = sweep_result.deleted
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
         _outcome.report_warning(
             f"managed-tempのディレクトリの自動削除に失敗した: {error}",
             next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
         )
     is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
-    if args.command != "managed-temp" and not is_delegated_session:
-        try:
-            # 最終更新から7日以内の候補は使用中として自動削除から外れ、対処を要しないため数えない。
-            unregistered_candidates = _managed_temp.list_unregistered_candidates(stale_at=now)
-        except Exception as error:  # noqa: BLE001  # 件数取得の失敗で本来のサブコマンドを失敗させない
+    if sweep_result is not None and args.command != "managed-temp" and not is_delegated_session:
+        # 掃引が同じ起動で探索した結果を使い、未登録候補を再探索しない。
+        # 最終更新から7日以内の候補は使用中として自動削除から外れ、対処を要しないため数えない。
+        unregistered_candidates = sweep_result.stale_unregistered
+        if sweep_result.unregistered_error is not None:
             _outcome.report_warning(
-                f"登録を持たない管理対象を探索できなかった: {error}",
+                f"登録を持たない管理対象を探索できなかった: {sweep_result.unregistered_error}",
                 next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
             )
         else:
@@ -1556,7 +1565,6 @@ def main(
         "rm": lambda: _mutations._cmd_rm(args, private_notes),
         "edit": lambda: _mutations._cmd_edit(args, private_notes),
         "set-dependencies": lambda: _mutations._cmd_set_dependencies(args, private_notes),
-        "set-observation-wait": lambda: _mutations._cmd_set_observation_wait(args, private_notes),
         "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _uwi._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),

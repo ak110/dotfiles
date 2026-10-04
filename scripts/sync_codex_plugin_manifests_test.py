@@ -36,7 +36,7 @@ def _plugin_data() -> dict[str, Any]:
 
 @pytest.fixture(name="manifest_root")
 def manifest_root_fixture(tmp_path: Path) -> Path:
-    """最小正本fixtureを作成する。"""
+    """同期の入力となるplugin.json、marketplace.jsonなどの最小fixtureを作成する。"""
     plugin = _plugin_data()
     marketplace = {"name": "ak110-dotfiles", "plugins": [{**plugin, "source": "./agent-toolkit"}]}
     fixtures: tuple[tuple[Path, dict[str, Any]], ...] = (
@@ -313,7 +313,8 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Codex 0.154.0は`agent-toolkit-codex/`から9イベントを登録し、project trustで集合を変えない。"""
-    # 実機のCLIを起動するため、既定で隔離されるホームとPATHを戻す。CLIの有無はモジュール読込時にホストのPATHで判定済み。
+    # 実機のCLIを起動するため、テストの共通設定が隔離するホームとPATHを戻す。
+    # CLIの有無はモジュール読込時にホストのPATHで判定済み。
     isolation.restore_host_environment(monkeypatch)
     version = subprocess.run(  # noqa: S603
         ["codex", "--version"], capture_output=True, check=True, text=True
@@ -461,7 +462,7 @@ def test_codex_projection_preserves_command_without_replacement() -> None:
 
 
 def test_codex_projection_omits_events_without_allowlisted_handler(manifest_root: Path) -> None:
-    """許可表に無いイベントは正本にあってもCodexへ配布しない。"""
+    """許可表に無いイベントはhooks.jsonにあってもCodexへ配布しない。"""
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
     hooks["hooks"]["PreCompact"] = [{"hooks": [{"type": "command", "command": "uv run --no-project --script other.py"}]}]
     (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
@@ -483,7 +484,7 @@ def test_codex_projection_sets_additional_context_limit() -> None:
 
 
 def test_sync_reads_all_json_as_utf8(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """同期中の全JSON読取が既定ロケールを使用しないことを確認する。"""
+    """同期中の全JSON読取がロケールで決まる文字コードを使用しないことを確認する。"""
     subject.sync(manifest_root)
     original_read_text = Path.read_text
     encodings: list[str | None] = []
@@ -550,7 +551,7 @@ def test_accepts_agent_plugin_cwd_patterns(manifest_root: Path, cwd: str) -> Non
 @pytest.mark.parametrize("source", [{"mcpServers": []}, {"mcpServers": {}, "unknown": True}])
 def test_rejects_unportable_mcp_root(manifest_root: Path, source: dict[str, Any]) -> None:
     (manifest_root / subject.MCP_SOURCE).write_text(json.dumps(source), encoding="utf-8")
-    with pytest.raises(ValueError, match="MCP正本はmcpServersだけ"):
+    with pytest.raises(ValueError, match="agent-toolkit/.mcp.jsonはmcpServersだけ"):
         subject.sync(manifest_root)
 
 

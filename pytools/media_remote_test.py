@@ -391,15 +391,47 @@ def test_serve_keyboard_interrupt_cannot_select_another_window(window_serve: Any
     window_serve(scenario)
 
 
-def test_serve_selected_window_survives_later_keyboard_input(window_serve: Any) -> None:
+@pytest.mark.parametrize("operation", ["left", "key", "right", "side", "wheel", "horizontal_wheel"])
+def test_serve_normal_operation_cancels_selection(window_serve: Any, operation: str) -> None:
     async def scenario(backend: _WindowBackend, app: Any) -> None:
         del app
         backend.click()
         backend.select()
-        backend.key()
+        # 切り替え先での通常操作。前面の変化を伴わない入力も選択を解除する。
+        if operation == "left":
+            backend.click("Application", (300, 300), time=2000)
+        elif operation == "key":
+            backend.key()
+        else:
+            message = {
+                "right": _window_api.WM_RBUTTONDOWN,
+                "side": _window_api.WM_XBUTTONDOWN,
+                "wheel": _window_api.WM_MOUSEWHEEL,
+                "horizontal_wheel": _window_api.WM_MOUSEHWHEEL,
+            }[operation]
+            assert not backend.mouse(message, (300, 300), 2000, "")
+            backend.events.join()
         backend.select(200, time=2000)
-        assert backend.middle(time=2001) == (True, True)
-        assert backend.moves == [(100, (-400, 250))]
+        assert backend.middle(time=2001) == (False, False)
+        assert not backend.moves
+        # 改めてタスクバーで選んだ対象は呼び寄せられる。
+        backend.click(time=3000)
+        backend.select(200, time=3001)
+        assert backend.middle(time=3002) == (True, True)
+        assert backend.moves == [(200, (-400, 250))]
+
+    window_serve(scenario)
+
+
+def test_serve_taskbar_reselection_replaces_target(window_serve: Any) -> None:
+    async def scenario(backend: _WindowBackend, app: Any) -> None:
+        del app
+        backend.click()
+        backend.select()
+        backend.click("TaskListThumbnailWnd", time=60)
+        backend.select(200, time=61)
+        assert backend.middle(time=62) == (True, True)
+        assert backend.moves == [(200, (-400, 250))]
 
     window_serve(scenario)
 

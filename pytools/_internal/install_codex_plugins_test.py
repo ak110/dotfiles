@@ -315,7 +315,7 @@ def test_running_codex_updates_outside_default_euryale_policy(
 def test_post_apply_deferral_continues_with_installed_warmup_version(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool
 ) -> None:
-    """既定工程の順序で更新延期後も後続へ進み、snapshotでなく旧有効版をwarmupへ渡す。"""
+    """工程を指定しない場合に実行する`_DEFAULT_STEPS`の順序で、更新延期後も後続へ進み、snapshotでなく旧有効版をwarmupへ渡す。"""
     monkeypatch.setattr(post_apply.sys, "platform", "linux")
     state = _installed_state(version="1.2.2", enabled=enabled)
     monkeypatch.setattr(claude_common, "is_euryale", lambda: True)

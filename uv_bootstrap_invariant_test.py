@@ -3,10 +3,6 @@
 import pathlib
 import tomllib
 
-import pytest
-
-pytestmark = pytest.mark.repo_invariant
-
 _ROOT = pathlib.Path(__file__).resolve().parent
 
 

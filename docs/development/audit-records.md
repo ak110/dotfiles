@@ -1,6 +1,6 @@
 # 監査記録
 
-本ファイルは、`agent-toolkit`の規範文書とタスク文書が持つ条文のうち、対象の挙動を現物で観測して確かめたものについて、確認した日付、観測した版数および再検証の手段を保持する。
+本ファイルは、`agent-toolkit`の規範文書・タスク文書と本リポジトリのプロジェクトスキル（`.claude/skills/`配下）が持つ条文のうち、対象の挙動を現物で観測して確かめたものについて、確認した日付、観測した版数および再検証の手段を保持する。
 条文の側には観測事象だけを置き、本ファイルのH2見出しで索引する。
 条文が前提とする挙動と異なる観測を得た場合は、その条文が指すH2見出しを読む。記載された手段で再検証してから、条文の失効を判定する。
 H2見出しは索引元の条文が指す文字列と一致させる。索引元の条文を移設し、または索引元の節名を改める改訂では、同じ改訂で本ファイルのH2見出しと索引元の参照を併せて改める。
@@ -16,7 +16,7 @@ H2見出しは索引元の条文が指す文字列と一致させる。索引元
 
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：起動パラメーター：2026年9月27日
 
-2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>で、forkの背景実行、完了通知、forkからの再委譲制限とfork modeの既定値を確認した。同版の対話セッションで`Agent`を`subagent_type: "fork"`として起動した観測では、`SubagentStart`が委譲先規範を追加した。再検証は対話と`-p`のそれぞれでfork modeを確認し、forkの起動結果、規範の配送および完了通知を比べる。
+2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>で、forkの背景実行、完了通知、forkからの再委譲制限とfork modeを設定しない場合の値を確認した。同版の対話セッションで`Agent`を`subagent_type: "fork"`として起動した観測では、`SubagentStart`が委譲先規範を追加した。再検証は対話と`-p`のそれぞれでfork modeを確認し、forkの起動結果、規範の配送および完了通知を比べる。
 
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日
 
@@ -60,7 +60,7 @@ Claude Code 2.1.241で検証した設定は、対象キーを含まない一時J
 
 ## プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日
 
-2026年9月26日、Claude Codeの公式文書<https://code.claude.com/docs/en/memory.md>で、既定の設定では`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まないことを確認した。
+2026年9月26日、Claude Codeの公式文書<https://code.claude.com/docs/en/memory.md>で、設定を変えていない状態では`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まないことを確認した。
 該当する記載は次のとおりである。
 
 ```text
@@ -72,9 +72,7 @@ Because `CLAUDE.local.md` counts, adding one to keep your own uncommitted instru
 `claudize`が置く`# CLAUDE.md`と`@AGENTS.md`の2行のアダプターを加えると、合言葉を答えた。
 再検証は同じ構成の一時ディレクトリで、アダプターの有無ごとに`claude -p`へ合言葉を尋ねる。
 
-## docs/development/design.md：Claude CodeとCodexの規範配置：2026年9月13日
-
-この観測の現在の設計本文は[design-hosts.md「Claude CodeとCodexの規範配置」](design-hosts.md#claude-codeとcodexの規範配置)にある。見出しは観測当時の記録名を保持する。
+## docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日
 
 2026年9月13日、Codex CLI 0.154.0でローカルmarketplaceを隔離`CODEX_HOME`へ導入して検証した。`agent-toolkit/`直下にAgent Plugins用`plugin.json`がある構成では、`.codex-plugin/plugin.json`のhook定義よりroot manifestが優先され、app-serverの`hooks/list`は0件を返した。root manifestを除いたwrapperから相対シンボリックリンクでhook・skill・実行資源へ接続した構成では、公式CLIのsnapshotに`.codex-plugin`だけが残り、リンク先は含まれなかった。全資源を通常ファイルとして含む`agent-toolkit-codex/`では、`hooks/list`が8イベントを返した。対象は`sessionStart`、`subagentStart`、`preToolUse`、`postToolUse`、`permissionRequest`、`userPromptSubmit`、`subagentStop`、`sessionEnd`である。project trustの有無で登録集合は変わらなかった。再検証ではCodex CLI 0.154.0で`scripts/sync_codex_plugin_manifests_test.py::test_codex_0154_registers_all_hooks_independent_of_project_trust`を実行する。隔離した2つの`CODEX_HOME`における登録集合、SessionStartの管理一時領域生成、SessionEndの回収を確認する。
 
@@ -88,8 +86,8 @@ Because `CLAUDE.local.md` counts, adding one to keep your own uncommitted instru
 このうち233件は起動された子sessionの記録と対応付けられた。各件について、呼び出しのtool_useの時刻から子sessionの記録の先頭エントリの時刻までの差を求めた。
 中位値は1.34秒、90%点は7.12秒、99%点は36.76秒であり、232件が47.65秒以内に収まった。残る1件は604.22秒であった。
 同じ489件のうち7件は、tool_useから応答までの経過が1800.4秒から1800.5秒であり、ホストがMCPツール呼び出しを打ち切った回であった。
-ホスト側の上限は、Claude Codeが`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`の既定として1800秒を課し、
-Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_sec`の既定として60秒を課す。
+ホスト側の上限は、Claude Codeが`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`が未設定の場合に1800秒を課し、
+Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_sec`が未設定の場合に60秒を課す。
 再検証は同じ記録へ同じ集計を適用し、tool_useの時刻と子sessionの記録の先頭エントリの時刻の差の分布と、応答の打ち切りに達した件数を対比する。
 上限値はこの分布に加えて、ホストがMCPツール呼び出しを背景タスクへ移す閾値を制約に持つ。背景移行の閾値を測定した記録は「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月」にある。
 
@@ -115,7 +113,7 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 ## agent-toolkit/rules/02-agent-operations.md：testの終了状態の表示：2026年9月24日
 
-2026年9月24日、Claude Code 2.1.280のBashツールでは、実在するパスと存在しないパスへの`test -e`がともに`(Bash completed with no output)`を返した。同日のAWI `20260924-032304-001`が両呼び出しを記録する。bash 5.2.15で`test -e /dev/null; echo "test_e_rc=$?"`は標準出力へ`test_e_rc=0`を返し、存在しない`/dev/__agent_toolkit_audit_absent__`では`test_e_rc=1`を返した。再検証はClaude CodeのBashツールで同じ2種類のパスへ`test -e`と表示付きの起動形をそれぞれ渡し、ツール表示と標準出力の値を対比する。
+2026年9月24日、Claude Code 2.1.280のBashツールでは、実在するパスと存在しないパスへの`test -e`がともに`(Bash completed with no output)`を返した。両呼び出しの一次記録はリポジトリ外のセッション記録にあり、本節は観測内容と再検証手段を保持する。bash 5.2.15で`test -e /dev/null; echo "test_e_rc=$?"`は標準出力へ`test_e_rc=0`を返し、存在しない`/dev/__agent_toolkit_audit_absent__`では`test_e_rc=1`を返した。再検証はClaude CodeのBashツールで同じ2種類のパスへ`test -e`と表示付きの起動形をそれぞれ渡し、ツール表示と標準出力の値を対比する。
 
 ## agent-toolkit/rules/02-agent-operations.md：規範の全文取得：2026年9月25日
 
@@ -360,7 +358,7 @@ Read不足で拒否された場合だけ、その担当がReadで現在の対象
 
 ## agent-toolkit/skills/writing-standards/references/sqlalchemy.md：autoflushと問い合わせ順序：2026年9月14日
 
-2026年9月14日、SQLAlchemy 2.0.52の公式文書で、既定構成の`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。
+2026年9月14日、SQLAlchemy 2.0.52の公式文書で、`autoflush`を無効にしていない`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。
 2026年9月13日のAWIは、SQLAlchemy 2.0.51を使うアプリケーションで、保留中のUPDATEが一意制約へ違反するケースと、保留中のINSERTが`NOT NULL`制約へ違反するケースを確認した記録を持つ。
 同記録ではautoflushの無効化が同じ処理単位で追加した設定を読むテストを失敗させ、入力検証前の無条件な問い合わせが`Session`未開始のテストを失敗させた。
 再検証ではSQLAlchemy 2.0系の公式文書にある`Session Basics`の`Flushing`節と`Session.flush()`のAPI説明を確認する。
@@ -414,7 +412,7 @@ error: invalid model selection (--model "gemini-3.8-flash" --effort ""): --model
 再検証は`agy models`の出力から完全スラッグの接尾辞の有無を確認し、`agy -p 'reply with OK only' --model <ベース名>`を`--effort`の有無で1回ずつ実行して終了コードと標準エラーを比べる。
 
 2026年9月23日、Antigravity CLI 1.2.9で非対話実行の時間指定を確認した。
-`agy --help`の`--print-timeout`は既定値を`0s`と示す。`--print-timeout 3600`は単位不足として拒否された。
+`agy --help`の`--print-timeout`は指定しない場合の値を`0s`と示す。`--print-timeout 3600`は単位不足として拒否された。
 次のコマンドは終了コード0となり、`init`、`step_update`、`result`のイベントを返した。
 
 ```sh
@@ -490,72 +488,37 @@ pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Py
 - 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。全ツールの引数に説明が無い。`run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。`show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。説明の言語が日本語と英語で混在する。instructionsは未設定である
 - 仕様上の是正: 確定した該当なし。未確定として、workerプロセスからの結果JSONの読取に例外処理が無く、外部ツールがファイル記述子1へ直接書いた場合は汎用のエラー本文になる可能性がある（プロトコル違反ではない）。子プロセスの標準出力が常に取り込まれるかは確認していない
 
-## テストの近接配置と横断選択の再検証：2026年10月3日
-
-配置変更前の554312ce7では、リポジトリ直下から`--ignore=agent-toolkit-codex`を指定したpytestの収集が8092件、repo_invariantの選択が80件であった。
-ここで「旧node」は、554312ce7で収集された`<ファイル>::<クラス>::<関数>[パラメーター]`の識別子を指す。
-クラスとパラメーターが無い識別子も含む。基準版と再検証する版は独立した作業ツリーへ用意し、
-`dotfiles-development`の環境準備を終えてから、それぞれのリポジトリ直下で次の2つのコマンドで収集する。
-
-全nodeの収集:
-
-```sh
-uv run --frozen pytest -p no:cacheprovider -p no:xdist -o addopts='' --collect-only -q --ignore=agent-toolkit-codex .
-```
-
-repo_invariantの選択結果の収集:
-
-```sh
-uv run --frozen pytest -p no:cacheprovider -p no:xdist -o addopts='' --collect-only -q -m repo_invariant --ignore=agent-toolkit-codex .
-```
-
-再検証する版でのrepo_invariantの実行:
-
-```sh
-uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex .
-```
-
-移動の対応は`git diff --find-renames 554312ce7..HEAD -- '*_test.py'`と、両版の収集出力から復元する。
-ファイル全体の改名はrenameの組、部分分離は同名のクラス・関数とパラメーターで対応させる。
-収集結果が合格となるのは、全ての旧nodeが移動先か維持する場所で一度ずつ収集され、欠落・重複が無い場合である。
-元のassert・パラメーター・対象集合を維持し、旧80選択の各nodeも保持する。
-追加した横断nodeが選ばれ、通常の動作nodeを一律に選択へ含めず、選択したテストの実行が終了0であることも確かめる。
-今回の変更後の確認値は、全8092node、横断130nodeの選択と130件成功、担当範囲の通常614nodeの非選択である。
-将来の追加や改訂では件数だけを固定値と比べず、各nodeの対応と選択を比べ、意図した増減の理由を記録する。
-
-生成・参照・設定の追随は、再検証する版のリポジトリ直下で次を実行する。
-
-```sh
-uv run --frozen python scripts/sync_generated_files.py
-uv run --frozen python scripts/sync_codex_plugin_manifests.py --check
-uv run --frozen pytest -p no:cacheprovider ci_workflow_test.py custom_linters_invariant_test.py sync_generated_files_invariant_test.py scripts/sync_codex_plugin_manifests_test.py scripts/gen-install-files_test.py
-```
-
-生成と設定の追随が合格となるのは、同期後の`--check`が終了0で、上記のテストが前提を満たす環境で成功する場合である。
-通常ファイルの投影、wheelのテスト除外と隔離の契約も保持する。
-`test_agent_doc_tone_covers_every_population_root`はpyfltrの公開APIのexpand_all_files・filter_by_globsで実際に届く対象を確かめる。
-`test_sync_targets_cover_agent_toolkit_skills_and_share`は新配置を含む各階層の同期対象を確かめる。
-両テストで既存の代表を保持し、新配置7階層も対象へ加えた。自動実行や処理速度はこの配置変更の検証対象へ含めない。
-
 ## agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日
 
-AWI `20261003-134122-001.md`と`20261003-110859-001.md`の起草時に、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
+Stopで報告の不足を判定する変更（`4862700e1`）の要求を起草した時点で、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
 実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。確認した範囲は判定器の契約テストまでである。対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。
 
 ## dotfiles-development：不変条件テストのfast自動実行：2026年10月4日
 
-pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。変更前のマーカー収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。ファイル名だけで件数を確認すると、この対象が外れても通常のfastは成功するため、各nodeの対応を比較する。
+pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。指定した時点では横断テストをpytestのマーカー`repo_invariant`でも識別しており、マーカーでの収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。その後、fastがマーカーを選択に使わないため、マーカーを撤去してファイル名だけで識別する形にした。撤去後の確認では、fastのpytestが受け取ったファイルは33件で、`git ls-files`が返す`*_invariant_test.py`の33件と一致した。
 
 再検証はrootで次を個別に実行する。
 
 ```sh
-uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex . --collect-only -q
+git ls-files -- '*_invariant_test.py'
 uv run --frozen pyfltr fast --commands=pytest
+uv run --frozen pyfltr fast --commands=pytest --pytest-args='--collect-only -q' --output-format=jsonl
+uv run --frozen pyfltr show-run <run_id> --commands pytest --output --output-format=json
 uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 ```
 
-収集結果の各nodeが専用ファイルへ一度ずつ対応し、通常の動作nodeを追加していないことを確認する。Markdownだけを渡した既存hookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
+3行目の出力の1行目（`"kind":"header"`）が示す`run_id`を4行目へ渡す。4行目が返すJSONの`output`に、pyfltrのsubprojectごとの`# subproject: <ディレクトリ>`の行と、収集したテストの`<ファイル>::<テスト名>`の行が並ぶ。各行のファイルへsubprojectのディレクトリ（`.`はroot）を前置した集合が、fastのpytestが受け取ったファイルの集合である。
+この集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象のファイルが別のファイルへ置き換わった場合を見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
+
+## agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日
+
+2026年10月4日、Claude Code 2.1.289とClaude Agent SDK 0.2.163で、turn状態の報告を受け取れることを確かめた。
+`ClaudeAgentOptions(env={"CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1"})`を与えたsessionでは、`ClaudeSDKClient.receive_messages()`へ`SystemMessage`が届く。その`subtype`は`session_state_changed`、`data["state"]`は`running`・`idle`・`requires_action`のいずれかである。この変数が無い場合、SDKは`CLAUDE_CODE_SDK_READS_SESSION_STATE=1`を設定して報告を呼び出し側から除く。
+haikuの委譲先に`sleep 2`を背景実行させて直ちにturnを終えさせ、Stop hookの待機時間を変えて到着順を比べた。
+待機0秒では次の順に届いた。`ResultMessage`、`idle`、`task_notification`、`running`、再開turnの`ResultMessage`（`origin.kind`が`task-notification`）、`idle`である。待機5秒では`task_notification`（Stop hookの実行中）、`ResultMessage`、再開turnの`ResultMessage`、`idle`の順に届き、最初の結果の後に`idle`は届かなかった。どちらも再開turnが実行された。CLIのスキーマ記述は`idle`を、保留した結果の送出と背景エージェントの待機の後に発行するturnの終了の信号と説明する。
+再検証では、同じ版の組で上記の環境変数を与えた委譲先へ背景実行の`sleep 2`と即時のturn終了を指示して行う。
+Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の全メッセージの種別、`subtype`、`state`、`origin`を到着順に保存して比べる。
 
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：動的なwatch対象の指定：2026年10月4日
 
@@ -569,10 +532,10 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 
 ## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月3日
 
-AWI `20261004-002450-001.md`の起草時の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、
+拡張思考の表示に関する変更（`31a598fd5`）の要求を起草した時点の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、
 `showThinkingSummaries=false`だった。transcriptの`thinking`ブロックに保存された文がユーザーの画面へ
-通常の応答文と同じ見た目で表示された。原本は同WIが記すtranscriptの88行目と、
-ユーザーが貼った画面表示である。続くStopはtext本文の欠落を遮断したが、思考の非表示を述べる理由は画面と一致しなかった。
+通常の応答文と同じ見た目で表示された。一次記録（当時のセッション記録とユーザーが貼った画面表示）はリポジトリ外にあり、
+本節は観測内容だけを保持する。続くStopはtext本文の欠落を遮断したが、思考の非表示を述べる理由は画面と一致しなかった。
 2026年9月28日の記録（Claude Code 2.1.283）では思考の文が表示されなかった。当時の記録は保持する。
 表示の有無はエージェントが応答時に確かめられないため、規範と通知は表示されないものとして発話本文へ書くよう求める。
 再検証ではホスト版、モデルと同設定を保持し、ユーザーの画面表示をtranscriptの同一messageのtext・thinkingへ対応付ける。
@@ -580,7 +543,7 @@ transcriptだけの取得を画面表示の観測として扱わず、画面へ�
 
 ## dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日
 
-AWI `20261004-004442-001.md`の起草時の測定はClaude Code 2.1.288、codex-cli 0.160.0、
+ホスト本体の検索手順の変更（`a896a6d06`）の要求を起草した時点の測定はClaude Code 2.1.288、codex-cli 0.160.0、
 ripgrep 15.2.0、GNU grep 3.11、Claude Code組込みugrep 7.8.4で、UTF-8ロケールだった。
 Claude CodeのBashツールでgrepはugrepを呼ぶシェル関数として観測された。
 

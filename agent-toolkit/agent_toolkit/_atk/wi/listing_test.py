@@ -404,7 +404,7 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """frontmatterを解析できない項目も対象から外さず、既存の修復処理で扱えるよう残す。"""
+        """frontmatterを解析できない項目は移行せず、既存の修復処理で扱えるよう元の内容のまま残す。"""
         notes = _setup_notes(tmp_path)
         path = notes / "inbox/broken.md"
         original = "---\ntarget_repo: [broken\nreservation: forged\n---\n本文\n"

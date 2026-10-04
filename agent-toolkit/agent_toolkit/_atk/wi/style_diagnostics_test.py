@@ -22,7 +22,7 @@ def test_report_preserves_every_warning_and_distinguishes_stderr(
     assert "投入は続行する" in captured.err
     if agent:
         assert "表記診断: 2件" in captured.err
-        path = pathlib.Path(captured.err.split("標準エラー詳細保存先: ", 1)[1].splitlines()[0])
+        path = pathlib.Path(captured.err.split("標準エラー保存先: ", 1)[1].splitlines()[0])
         assert path.is_absolute()
         details = path.read_text(encoding="utf-8")
     else:

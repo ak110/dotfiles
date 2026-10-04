@@ -2,11 +2,7 @@
 
 import pathlib
 
-import pytest
-
 from agent_toolkit._hooks import user_prompt_submit
-
-pytestmark = pytest.mark.repo_invariant
 
 
 def test_periodic_recheck_marker_matches_the_runtime_document() -> None:

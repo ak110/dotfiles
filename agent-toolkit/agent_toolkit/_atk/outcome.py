@@ -44,7 +44,6 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk wi rm",
         "atk wi edit",
         "atk wi set-dependencies",
-        "atk wi set-observation-wait",
         "atk wi answer",
         "atk wi commit",
         "atk wi pull",

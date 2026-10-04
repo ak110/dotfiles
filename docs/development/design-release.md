@@ -5,7 +5,7 @@
 
 ## developとmasterのbranch・リリース設計
 
-`develop`を開発用branch、`master`をリリース用branchおよびGitHubの既定branchとする。
+`develop`を開発用branch、`master`をリリース用branchおよびGitHubのdefault branchとする。
 `master`への更新はPRのマージコミットだけに限定し、直接pushを許可しない。
 PRの作成は、条件が成立する`agent-toolkit:process-wi`の実行ではエージェントが実施し、それ以外では手動で行う。
 実施可否と条件の判定は`dotfiles-release`スキルが定める。
@@ -13,7 +13,7 @@ head branchの機械的な限定は設けない。
 
 repository設定ではマージコミットを有効にし、squash merge、rebase mergeおよびauto-mergeを無効にする。
 マージ後のbranch自動削除も無効にし、エージェントが同期状態を検収した後にだけ次の工程へ進める。
-既定branchは`master`のまま維持する。
+GitHubのdefault branchは`master`のまま維持する。
 
 `master-release-pr`という固定名のactiveなbranch rulesetを1件だけ使用する。
 rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の7必須check、削除禁止およびforce push禁止を設定する。
@@ -47,7 +47,7 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 同一repositoryのheadが`develop`、baseが`master`のpull requestでは、共通jobの先頭で非所有markerだけを成功させ、checkoutを含む既存実処理を実行しない。
 このrelease pull request以外の同一repository pull requestとfork pull requestでは、非所有markerをskipして既存実処理を実行する。
 非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、`test-windows`は`pwsh`、その他の共通jobは`bash`を明示する。
-`rust-lint`の既存job既定作業場所は維持し、非所有markerだけがworkspace rootを明示して既定を上書きする。
+`rust-lint`は既存jobの`defaults.run.working-directory`を維持し、非所有markerだけがworkspace rootを明示してその指定を上書きする。
 
 job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の6件の表示名を保証できない。
 共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。
@@ -63,7 +63,7 @@ statuslineのCargo versionとbase・head versionおよびtagの確認は、共�
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branchおよびrelease条件を追加の限定に使わない。
 比較基点はpull request起点では`github.event.pull_request.base.sha`、push起点では`git fetch --no-tags origin master`の後の`git merge-base`が返す`master`との共通祖先とする。
 push起点を加えるのは、版数更新の抜けをrelease pull requestの必須check一式が実行される前に検出するためである。
-判定は`scripts/check_statusline_version.py`へ集約し、CIの同jobとpyfltrのcustom-command`statusline-version`の双方から呼ぶ。レーン担当は版数更新の根拠を渡し、終端担当が版数を更新する。pyfltr側は既定で無効にし、終端担当が公開前のローカル検証で明示的に有効化する。比較先は作業ツリーとしてcommit前の変更も判定し、push前に版数の更新忘れを見つける。pre-commitの`pyfltr fast`で版数更新前の途中commitを遮断しないよう非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。
+判定は`scripts/check_statusline_version.py`へ集約し、CIの同jobとpyfltrのcustom-command`statusline-version`の双方から呼ぶ。レーン担当は版数更新の根拠を渡し、終端担当が版数を更新する。pyfltr側は`pyproject.toml`で無効にしておき、終端担当が公開前のローカル検証で明示的に有効化する。比較先は作業ツリーとしてcommit前の変更も判定し、push前に版数の更新忘れを見つける。pre-commitの`pyfltr fast`で版数更新前の途中commitを遮断しないよう非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。
 同一repositoryのreleaseおよびnon-release pull requestとfork pull requestが同じ検証対象となり、`rust-lint`というrequired名の重複を生成しない。
 ruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
 ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを確認する。確認した完全IDは、送信前後の個別GETとPUTのURLパス`repos/ak110/dotfiles/rulesets/21524717`へ固定する。

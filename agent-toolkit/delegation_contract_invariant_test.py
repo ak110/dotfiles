@@ -9,9 +9,6 @@ import pytest
 from agent_toolkit._agents_server import task_documents
 from agent_toolkit._atk import run_script
 
-pytestmark = pytest.mark.repo_invariant
-
-
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 _REQUIRED_INPUT_PREFIX = "必須入力名:"
 _NAME_CONTINUATION = r"0-9A-Za-z_\u30a0-\u30ff\u3400-\u9fff"
@@ -317,25 +314,16 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
-    """既存の先行レーン欄を読め、新規の生成・受領・実行は同一レーンの依存順で一致する。"""
+def test_same_lane_dependency_contract_reaches_parent_and_run_lanes() -> None:
+    """候補内の依存は生成・受領・実行とも同一レーンの依存順で一致する。
+
+    生成・受領・実行のいずれかが別の順序を示すと、後続項目が依存先より先に処理される。
+    """
     plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
-    output_format = _h2_section(picker, "出力").split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
-    lane_cost_fields = re.findall(
-        r"^  ([^\s:]+):", output_format.split("レーンの所要時間:\n", maxsplit=1)[1], flags=re.MULTILINE
-    )
-
-    assert "先行レーン" in lane_cost_fields
-    assert "`先行レーン`" in _h2_section(parent, "出力の受領")
-    assert "`先行レーン`" in _h2_section(lanes, "レーンと資源")
-    # 旧欄名で書かれた既存の選定結果を読む互換は、生成と受領の双方に残す。
-    assert "`after_lanes`" in _h2_section(picker, "出力") and "`after_lanes`" in _h2_section(parent, "出力の受領")
     for document in (picker, parent, lanes):
-        assert "既存出力の読取互換" in document
-        assert "新しい選定では省略または空列" in document or "新しい選定の`先行レーン`は省略または空列" in document
         assert "同じレーン" in document
     assert "推移的な依存先" in _h2_section(picker, "処理対象の決定")
     assert "推移的にたどる" in _h2_section(parent, "出力の受領")
@@ -373,7 +361,7 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     # 実行結果は委譲の返却へ渡し、選定YAMLのWI属性へ複製しない。
     assert "書込対象の検査" not in fields
     assert "終了コード0" in output and "終了コード0" in receipt
-    assert "3行だけの返却では結果不明" in receipt
+    assert "3行の返却は結果不明" in receipt
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:
