@@ -605,7 +605,7 @@ def start_remote_watchers(context: PlansContext) -> None:
     context.state.loop = asyncio.get_running_loop()
     for host in context.remote_hosts:
         watcher = RemoteWatcher(host, context.state)
-        # 本文取得が常駐watch接続のRPCからも本文を取得できるよう、同じ参照を渡す。
+        # 本文の取得処理が常駐watch接続のRPCを使えるよう、同じ参照を共有する。
         context.state.remote_watchers[host] = watcher
         context.state.remote_tasks.append(asyncio.create_task(watcher.run()))
 

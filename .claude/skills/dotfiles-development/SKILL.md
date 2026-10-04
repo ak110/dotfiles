@@ -45,7 +45,7 @@ description: >
     - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
   - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
-    `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
+    `pytest`へ`-o addopts=''`を渡して`pyproject.toml`の`addopts`を解除する場合は、`-p no:cacheprovider`を併記する
   - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新またはその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
@@ -60,7 +60,7 @@ description: >
     - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
     - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
     - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
-  - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、既定と異なる状態ディレクトリでmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
+  - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、`XDG_STATE_HOME`などで状態ディレクトリを差し替えてmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
     - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない
     - 検証用の複製では、複製先の`mise.toml`の絶対パスを指定して`mise trust`を実行する
     - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、自動チェックへ与えるのと同じ環境変数を与えて`mise trust`を実行する

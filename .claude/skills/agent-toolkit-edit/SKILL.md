@@ -24,7 +24,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 - `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範。Codex委譲先の固有差分が必要になった場合は`rules-subagent.codex.md`を追加する
   振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
-  （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
+  （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot。未設定時は`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
   `<plugin root>/skills/writing-standards/references/claude-hooks.md`が扱う
 
