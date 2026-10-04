@@ -264,6 +264,44 @@ def test_finished_work_is_not_reused_after_new_input(tmp_path: pathlib.Path) -> 
     assert decision == "block" and ": review-result" in reason and "work-1" not in reason
 
 
+@pytest.mark.parametrize(
+    ("section", "invalid_item", "corrected_item"),
+    [
+        ("対策を見送った問題", "- 判定済み: 問題", "- 判定済み: 問題; 根拠: 既存操作で解決できる"),
+        ("確定した問題と対策", "- 問題: 対策", "- 問題: 対策（同一セッションで実装済み: 変更commit）"),
+    ],
+)
+def test_invalid_report_can_be_corrected_after_new_input(
+    tmp_path: pathlib.Path, section: str, invalid_item: str, corrected_item: str
+) -> None:
+    """本文違反が残る作業には、後続入力後の訂正も同じ作業へ取り込む。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
+    invalid = f"## 振り返り結果報告\n\n### {section}\n\n{invalid_item}\n"
+    supply_report(tmp_path, invalid, "review-result", "call-2")
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, invalid))
+    assert decision == "block" and ("根拠" in reason or "対策" in reason)
+    with contextlib.redirect_stdout(io.StringIO()):
+        user_prompt_submit.main(
+            json.dumps(
+                {
+                    "session_id": "evidence-test",
+                    "turn_id": "correction",
+                    "prompt": "振り返り報告を訂正する",
+                    "transcript_path": str(tmp_path / "transcript.jsonl"),
+                }
+            )
+        )
+    corrected = invalid.replace(invalid_item, corrected_item)
+    with (tmp_path / "transcript.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": corrected}]}}, ensure_ascii=False)
+            + "\n"
+        )
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, corrected))[0] == "approve"
+    state = session_state.read_state("evidence-test")[termination_evidence.STATE_KEY]
+    assert len(state["works"]) == 1
+
+
 def test_async_wait_is_scoped_to_real_child_and_returns_after_end(tmp_path: pathlib.Path) -> None:
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
     start = {

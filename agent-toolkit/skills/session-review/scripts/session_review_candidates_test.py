@@ -939,13 +939,69 @@ def test_candidate_events_excludes_wi_body_style_diagnostics() -> None:
             "text": "警告: 本文:80:88: 口語表現 例示語（候補: 置換語）",
         },
         {"kind": "warning", "record": "main", "line": 2, "text": "警告: 本文:3:5: ダッシュ —"},
-        {"kind": "warning", "record": "main", "line": 3, "text": "警告: 設定キー`model`の候補はありません。本文:1:1の口語表現"},
+        {
+            "kind": "warning",
+            "record": "main",
+            "line": 3,
+            "text": "警告: WI本文の表記診断: 2件\n標準エラー詳細保存先: /tmp/diagnostics/stderr.txt",
+        },
+        {"kind": "warning", "record": "main", "line": 4, "text": "警告: 設定キー`model`の候補はありません。本文:1:1の口語表現"},
     ]
 
     candidates = evidence._candidate_events([], warnings, [])  # pylint: disable=protected-access
 
-    assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
-    assert candidates[-1]["excluded"] == {"wi-style-diagnostic": 2}
+    assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 4}]]
+    assert candidates[-1]["excluded"] == {"wi-style-diagnostic": 3}
+
+
+def test_codex_record_excludes_wi_style_summary_but_keeps_other_warning(tmp_path: pathlib.Path) -> None:
+    """Codexの実行結果を経由しても、WI表記診断だけを候補から除く。"""
+    entries = [
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call-1",
+                "arguments": json.dumps({"cmd": "atk wi add --dry-run"}),
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call_output",
+                "call_id": "call-1",
+                "output": json.dumps({"stderr": "警告: WI本文の表記診断: 2件"}, ensure_ascii=False),
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call-2",
+                "arguments": json.dumps({"cmd": "other-command"}),
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call_output",
+                "call_id": "call-2",
+                "output": json.dumps({"stderr": "警告: 別の警告"}, ensure_ascii=False),
+            },
+        },
+    ]
+    transcript = tmp_path / "codex.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+
+    assert not any("WI本文の表記診断" in candidate.get("text", "") for candidate in candidates)
+    assert any("別の警告" in candidate.get("text", "") for candidate in candidates)
 
 
 @pytest.mark.parametrize(

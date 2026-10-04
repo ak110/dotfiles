@@ -10,6 +10,15 @@ from agent_toolkit._atk.environment import is_agent_environment
 _DASH = re.compile("—|―|──")
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
 _URL = re.compile(r"(?:[a-zA-Z][a-zA-Z0-9+.\-]*://|www\.)[^\s)]+")
+_DETAIL_PREFIX = "本文:"
+_SUMMARY_PREFIX = "WI本文の表記診断: "
+_BODY_WARNING = re.compile(r"^警告: " + re.escape(_DETAIL_PREFIX) + r"\d+:\d+: (?:口語表現|ダッシュ) ")
+_BODY_WARNING_SUMMARY = re.compile(r"^警告: " + re.escape(_SUMMARY_PREFIX) + r"[1-9]\d*件(?:\s|$)")
+
+
+def is_body_style_diagnostic_warning(text: str) -> bool:
+    """保存前に処置するWI本文の表記診断かを表示文言から判定する。"""
+    return bool(_BODY_WARNING.match(text) or _BODY_WARNING_SUMMARY.match(text))
 
 
 def warnings_for_body(body: str) -> list[str]:
@@ -21,14 +30,14 @@ def warnings_for_body(body: str) -> list[str]:
     allow = colloquial.load_patterns(colloquial.ALLOW_PATH)
     for line, column, matched, _snippet, replacement in colloquial.scan_text(body, deny, allow):
         suggestion = f"（候補: {replacement}）" if replacement else ""
-        warnings.append(f"本文:{line}:{column}: 口語表現 {matched}{suggestion}")
+        warnings.append(f"{_DETAIL_PREFIX}{line}:{column}: 口語表現 {matched}{suggestion}")
 
     masked = colloquial.mask_fenced_code_blocks(body)
     for line, raw in enumerate(masked.splitlines(), start=1):
         searchable = _INLINE_CODE.sub(lambda match: " " * len(match.group()), raw)
         searchable = _URL.sub(lambda match: " " * len(match.group()), searchable)
         for match in _DASH.finditer(searchable):
-            warnings.append(f"本文:{line}:{match.start() + 1}: ダッシュ {match.group()}")
+            warnings.append(f"{_DETAIL_PREFIX}{line}:{match.start() + 1}: ダッシュ {match.group()}")
     return sorted(warnings, key=lambda warning: tuple(int(value) for value in warning.split(":")[1:3]))
 
 
@@ -47,8 +56,6 @@ def report_warnings(warnings: list[str], *, next_action: str) -> None:
                 f"表記診断を保存できないため全量を表示する: {error}\n警告: {details}", next_action=next_action
             )
         else:
-            outcome.report_warning(
-                f"WI本文の表記診断: {len(warnings)}件\n標準エラー詳細保存先: {path}", next_action=next_action
-            )
+            outcome.report_warning(f"{_SUMMARY_PREFIX}{len(warnings)}件\n標準エラー詳細保存先: {path}", next_action=next_action)
     else:
         outcome.report_warning(details, next_action=next_action)
