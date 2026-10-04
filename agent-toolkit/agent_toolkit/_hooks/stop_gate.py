@@ -343,6 +343,85 @@ def is_pending_async_work(
     return pending
 
 
+def pending_async_task_ids(transcript_path: str, session_id: str, *, background_tasks: object = None) -> set[str]:
+    """`is_pending_async_work`が継続の根拠とする非同期対象を、識別子の集合で返す。
+
+    根拠の採否は`is_pending_async_work`と同じとし、agents_serverの未回収結果だけはセッション全体の
+    状態に属して起動の位置を持たないため含めない。識別子は起動`tool_use_id`、背景Bashの`backgroundTaskId`、
+    背景Agentの`agentId`、MCPのタスクIDおよびStop入力の`background_tasks`の`id`の混在とし、
+    `async_launch_offsets`で起動の位置へ対応付ける。
+    """
+    entries = read_transcript_entries_cached(transcript_path)
+    identifiers: set[str] = set()
+    last_tool_use = _get_last_tool_use_block(entries)
+    if _last_tool_use_is_async_wait(last_tool_use) and last_tool_use is not None:
+        last_id = last_tool_use.get("id")
+        if isinstance(last_id, str) and last_id:
+            identifiers.add(last_id)
+    launched, completed, host_reported_launched = _describe_pending_background_entries(
+        entries,
+        session_id,
+        transcript_path=transcript_path,
+    )
+    remainder = launched - completed
+    host_reported_remainder = host_reported_launched - completed
+    identifiers.update(remainder - host_reported_remainder)
+    _payload_valid, _payload_non_teammate, payload_authoritative = _describe_background_tasks(background_tasks)
+    if not payload_authoritative:
+        identifiers.update(host_reported_remainder)
+    identifiers.update(
+        task["id"] for task in active_non_teammate_tasks(background_tasks) if isinstance(task.get("id"), str) and task["id"]
+    )
+    for content in queued_task_notification_contents(entries):
+        identifiers.update(_TOOL_USE_ID_RE.findall(content))
+        identifiers.update(_TASK_ID_RE.findall(content))
+    return identifiers
+
+
+def async_launch_offsets(transcript_path: str) -> dict[str, int]:
+    """非sidechainの記録に現れる非同期対象の識別子ごとに、最初に現れた行の開始バイト位置を返す。
+
+    対象はassistantの`tool_use`の`id`、`tool_result`の`tool_use_id`、`toolUseResult`の
+    `backgroundTaskId`・`agentId`・`resumedAgentId`およびバックグラウンドタスクへの移行通知のタスクIDとする。
+    バイト位置はUserPromptSubmit時点のtranscriptの大きさと比べるために返す。読み取れない場合は空を返す。
+    """
+    try:
+        raw_lines = pathlib.Path(transcript_path).read_bytes().splitlines(keepends=True)
+    except OSError:
+        return {}
+    offsets: dict[str, int] = {}
+    position = 0
+    for raw in raw_lines:
+        start = position
+        position += len(raw)
+        try:
+            entry = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(entry, dict) or not _entry_in_scan_scope(entry, include_sidechain=False):
+            continue
+        identifiers: list[object] = []
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                identifiers.append(block.get("id"))
+            elif block.get("type") == "tool_result":
+                identifiers.append(block.get("tool_use_id"))
+                identifiers.extend(
+                    background_task_id_from_notice(text) for text in _tool_result_text_blocks(block.get("content"))
+                )
+        tool_use_result = entry.get("toolUseResult")
+        if isinstance(tool_use_result, dict):
+            identifiers.extend(tool_use_result.get(key) for key in ("backgroundTaskId", "agentId", "resumedAgentId"))
+        for identifier in identifiers:
+            if isinstance(identifier, str) and identifier:
+                offsets.setdefault(identifier, start)
+    return offsets
+
+
 def _stop_log_path(session_id: str) -> pathlib.Path:
     """常時ログの出力先パスを返す。
 

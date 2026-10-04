@@ -4,13 +4,15 @@
 各非遮断条件を検証する。
 """
 
+import contextlib
+import io
 import json
 import pathlib
 
 import pytest
 
 from agent_toolkit._hooks import stop_gate as _stop_gate
-from agent_toolkit._hooks import termination_order_advisor
+from agent_toolkit._hooks import termination_evidence, termination_order_advisor, user_prompt_submit
 from agent_toolkit._testing.helpers import _write_transcript
 
 
@@ -402,25 +404,129 @@ def test_failed_completion_report_does_not_satisfy_termination(
     assert "agent-toolkit:completion-report" in body
 
 
+def _background_bash_entries(tool_use_id: str, task_id: str) -> list[dict]:
+    """背景Bashの起動と、`backgroundTaskId`を持つ起動結果のエントリを返す。"""
+    return [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": tool_use_id,
+                        "name": "Bash",
+                        "input": {"command": "atk agents wait", "run_in_background": True},
+                    }
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": "started"}]},
+            "toolUseResult": {"backgroundTaskId": task_id},
+        },
+    ]
+
+
+def _report_entry(text: str) -> dict:
+    """報告を可視発話として持つアシスタントエントリを返す。"""
+    return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+
+
+def _append_entries(trace: pathlib.Path, entries: list[dict]) -> None:
+    with trace.open("a", encoding="utf-8") as stream:
+        for entry in entries:
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _human_input(session_id: str, trace: pathlib.Path, turn_id: str, prompt: str) -> None:
+    """UserPromptSubmitへ人間の入力を渡し、その時点のtranscriptの位置を作業の開始位置として記録させる。"""
+    with contextlib.redirect_stdout(io.StringIO()):
+        user_prompt_submit.main(
+            json.dumps({"session_id": session_id, "turn_id": turn_id, "prompt": prompt, "transcript_path": str(trace)})
+        )
+
+
 @pytest.mark.parametrize("reentrant", [False, True])
-def test_pending_background_work_precedes_missing_reports(
+def test_unrelated_background_task_does_not_exempt_missing_reports(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reentrant: bool
 ) -> None:
-    """実際のバックグラウンドタスク入力がある間は不足より先に許可し、終了後は不足へ戻る。"""
+    """作業の開始より前から動く常駐タスクだけでは、振り返り結果報告の不足を免除しない。
+
+    セッション全体のバックグラウンドタスクの有無で許可すると、無関係な常駐Bashがある間は報告が欠けたまま終了する。
+    """
     _set_state_directory(monkeypatch, tmp_path)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    _clear_caches()
     trace = tmp_path / "trace.jsonl"
-    trace.write_text(
-        json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "## 作業完了報告\n成果。"}]}}) + "\n",
-        encoding="utf-8",
-    )
+    _append_entries(trace, _background_bash_entries("toolu_server", "resident"))
+    _human_input("background-unrelated", trace, "request", "作業を進める")
+    _append_entries(trace, [_report_entry("## 作業完了報告\n成果。")])
     payload = {
-        "session_id": "background-missing",
+        "session_id": "background-unrelated",
         "transcript_path": str(trace),
         "stop_hook_active": reentrant,
-        "background_tasks": [{"id": "running-task", "type": "bash"}],
+        "background_tasks": [{"id": "resident", "type": "shell"}],
     }
-    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
-    payload["background_tasks"] = []
     decision, reason = termination_order_advisor.evaluate(json.dumps(payload))
     assert decision == "block" and "review-result" in reason
+
+
+@pytest.mark.parametrize("reentrant", [False, True])
+def test_background_wait_of_work_allows_turn_end_until_collected(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reentrant: bool
+) -> None:
+    """作業が起動した背景CLIの待機中は終了を許し、回収後は残る報告段階を示す。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    _clear_caches()
+    trace = tmp_path / "trace.jsonl"
+    _human_input("background-owned", trace, "request", "委譲して結果を待つ")
+    _append_entries(trace, [_report_entry("## 作業完了報告\n成果。"), *_background_bash_entries("toolu_wait", "wait-task")])
+    payload = {
+        "session_id": "background-owned",
+        "transcript_path": str(trace),
+        "stop_hook_active": reentrant,
+        "background_tasks": [{"id": "wait-task", "type": "shell"}],
+    }
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+    notification = (
+        "<task-notification><tool-use-id>toolu_wait</tool-use-id><task-id>wait-task</task-id>"
+        "<status>completed</status></task-notification>"
+    )
+    _append_entries(
+        trace,
+        [
+            {"type": "user", "message": {"content": [{"type": "text", "text": notification}]}},
+            _report_entry("委譲先の結果を受け取った。"),
+        ],
+    )
+    payload["background_tasks"] = []
+    _clear_caches()
+    decision, reason = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "block" and "review-result" in reason
+
+
+def test_background_wait_exempts_only_work_that_started_it(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """後の作業が起動した待機は後の作業だけを免除し、先の作業の不足は遮断の理由に残す。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    _clear_caches()
+    session_id = "background-two-works"
+    trace = tmp_path / "trace.jsonl"
+    _human_input(session_id, trace, "first", "最初の作業")
+    _append_entries(trace, [_report_entry("## 作業完了報告\n最初の成果。")])
+    payload = {"session_id": session_id, "transcript_path": str(trace), "stop_hook_active": False, "background_tasks": []}
+    assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "block"
+    prompt = "次の作業を始める"
+    _human_input(session_id, trace, "second", prompt)
+    second = termination_evidence.record_decision(
+        {"session_id": session_id, "action": "start", "input_id": "second", "quote": prompt, "reason": "次の作業"}
+    )
+    _append_entries(trace, [_report_entry("## 作業完了報告\n次の成果。"), *_background_bash_entries("toolu_wait", "wait-task")])
+    payload["background_tasks"] = [{"id": "wait-task", "type": "shell"}]
+    _clear_caches()
+    decision, reason = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "block"
+    assert "作業 work-1: review-result" in reason
+    assert f"作業 {second}" not in reason

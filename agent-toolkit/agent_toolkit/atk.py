@@ -519,7 +519,10 @@ def _add_mq_read_parsers(sub: Any) -> None:
     show.add_argument(
         "--summary-only",
         action="store_true",
-        help="target_repoとファイル名・状態の見出しだけを表示し、frontmatterと本文を省く。",
+        help=(
+            "target_repoとファイル名・状態の見出しに続けて、AWIはH1表題、UWIは質問本文の先頭行だけを"
+            "省略せずに1行で表示し、frontmatterと他の本文を省く。"
+        ),
     )
     show.add_argument(
         "--type",

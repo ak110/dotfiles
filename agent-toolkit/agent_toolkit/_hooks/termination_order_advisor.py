@@ -14,8 +14,12 @@ transcriptのSkillの成功結果とBashツール起動記録から判定する�
 Claude Codeの旧版の起動順判定は、工程結果が未供給の場合の再入回へ維持する。
 CodexではClaude Code形式のSkill記録を根拠へ使わない。
 
-継続中の非同期作業がある場合は`is_pending_async_work`の判定を維持し、遮断しない。
-セッション記録（transcript）を読み取れない場合も遮断せず、Stop判定ログへ起動順を確かめられないことを記録する。
+報告段階が残る作業は、その作業が待つ非同期対象が生存している場合だけ遮断しない。
+待機対象は作業が起動したagents_serverのsessionと、作業の開始以後に起動した背景Bash・背景Agent・MCPの
+バックグラウンドタスク・未配送の完了通知とし、作業の開始より前から動く無関係なタスクは報告不足を免除しない。
+報告段階の不足が無い場合は`is_pending_async_work`の判定を維持し、継続中の非同期作業があれば起動順を判定しない。
+現在の作業を中止・置換・技術的不成立と記録しても、他の作業に残る報告段階は判定する。
+セッション記録（transcript）を読み取れない場合は遮断せず、Stop判定ログへ確かめられないことを記録する。
 
 委譲先での実行可否: 委譲先は最上位セッションが起動する終了手順の起動順を確かめる対象ではないため、hook入力と環境印で除外する。
 """
@@ -32,7 +36,9 @@ from agent_toolkit._hooks.stop_gate import (
     _entry_in_scan_scope,  # noqa: E402  # pylint: disable=protected-access
     _iter_assistant_blocks,  # noqa: E402  # pylint: disable=protected-access
     append_stop_log,
+    async_launch_offsets,
     is_pending_async_work,
+    pending_async_task_ids,
     read_transcript_entries_cached,
 )
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
@@ -148,6 +154,45 @@ def _missing_step_index(
     return pointer
 
 
+def _work_order(work_id: str, work: dict) -> tuple[int, int]:
+    """作業を開始位置と記録順で並べる鍵を返す。"""
+    offset = work.get("offset")
+    sequence = work_id.removeprefix("work-")
+    return (
+        offset if isinstance(offset, int) and not isinstance(offset, bool) else 0,
+        int(sequence) if sequence.isdigit() else 0,
+    )
+
+
+def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work_ids: set[str]) -> set[str]:
+    """`work_ids`のうち、その作業が待つ非同期対象が生存している作業の識別子を返す。
+
+    agents_serverのsessionは作業の起動記録で対応付ける。バックグラウンドタスクと未配送の完了通知は、起動を記録した
+    transcriptの位置より前に開始した作業のうち最も新しいものへ対応付ける。
+    """
+    works = termination_evidence.session_works(payload)
+    waiting = {
+        work_id
+        for work_id, work in works
+        if work_id in work_ids and termination_evidence.waits_on_delegated_session(payload, work)
+    }
+    if waiting == work_ids or not transcript_path:
+        return waiting
+    live = pending_async_task_ids(transcript_path, session_id, background_tasks=payload.get("background_tasks"))
+    if not live:
+        return waiting
+    offsets = async_launch_offsets(transcript_path)
+    ordered = sorted(works, key=lambda item: _work_order(*item))
+    for identifier in live:
+        launched_at = offsets.get(identifier)
+        if launched_at is None:
+            continue
+        owners = [work_id for work_id, work in ordered if _work_order(work_id, work)[0] <= launched_at]
+        if owners and owners[-1] in work_ids:
+            waiting.add(owners[-1])
+    return waiting
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
     """終了手順順序の判定結果と、遮断する場合の理由を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
@@ -161,12 +206,23 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     raw_path = payload.get("transcript_path", "")
     path_for_async = raw_path if isinstance(raw_path, str) else ""
-    if is_pending_async_work(path_for_async, session_id, background_tasks=payload.get("background_tasks")):
+    available = termination_evidence.observe_reports(payload)
+    pending = termination_evidence.pending_work(payload) if available else []
+    deficient = {
+        work_id
+        for work_id, work in pending
+        if termination_evidence.report_violations(work) or termination_evidence.missing_stages(work)
+    }
+    if deficient:
+        waiting = _waiting_work_ids(payload, session_id, path_for_async, deficient)
+        if waiting == deficient:
+            append_stop_log(session_id, "approve_pending_async_for_work", {"count": len(waiting)})
+            return "approve", ""
+        pending = [(work_id, work) for work_id, work in pending if work_id in deficient - waiting]
+    elif is_pending_async_work(path_for_async, session_id, background_tasks=payload.get("background_tasks")):
         append_stop_log(session_id, "approve_pending_async", {})
         return "approve", ""
 
-    available = termination_evidence.observe_reports(payload)
-    pending = termination_evidence.pending_work(payload) if available else []
     violations = [
         f"作業 {work_id}: {error}" for work_id, work in pending for error in termination_evidence.report_violations(work)
     ]

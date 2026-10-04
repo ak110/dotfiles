@@ -1,4 +1,4 @@
-"""報告の直接発話をStopへ与え、4判定だけが遮断に作用することを確かめる。"""
+"""報告の直接発話をStopへ与え、報告本文の判定だけが遮断に作用することを確かめる。"""
 
 import json
 import pathlib
@@ -105,6 +105,6 @@ def test_code_fence_heading_is_not_report() -> None:
 
 
 def test_markdown_heading_and_bullet_variants_preserve_evidence_check() -> None:
-    """見出しの閉じ記号・別の箇条書き記号でも同じ意味の4判定を適用する。"""
+    """見出しの閉じ記号・別の箇条書き記号でも同じ意味の報告本文の判定を適用する。"""
     text = "## 振り返り結果報告\n### 対策を見送った問題 ###\n* 判定済み: 問題; 根拠: 未確定\n"
     assert report_validation.validate_report(text, "review-result")

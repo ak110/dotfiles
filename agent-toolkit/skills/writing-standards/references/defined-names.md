@@ -67,6 +67,7 @@
 | 説明担当 | 選定結果の包含、除外または構成の理由を説明する読み取り専用の委譲先 | `agent-toolkit/share/pick-wi-explain.parent.md` |
 | ユーザー確認 | エージェントがユーザーへ判断を求める行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | ユーザーへの報告 | ユーザーの判断を求めずに成果、事実、未達などを届ける行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
+| 報告本文の判定 | Stop hookが作業完了報告・振り返り結果報告・AWI投入結果報告の本文へ適用する、対策の対応・見送りの根拠・未確定の観測・最終報告の確定の判定 | `agent-toolkit/skills/completion-report/SKILL.md`「工程」 |
 | 3段判定 | 新しい対象、操作、設計を許容性、必要性、実装品質の順に判定すること | `agent-toolkit/rules/01-agent.md`「QCDと3段判定」 |
 | 委譲の要否判定 | 委譲するかと委譲の単位を決める判定 | `agent-toolkit/skills/delegation/references/routing.md` |
 | 元担当 | 同じ作業のために既に起動した委譲先 | `agent-toolkit/skills/delegation/references/runtime-routing.md`「Codex後続操作の共通先行条件」 |

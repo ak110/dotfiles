@@ -336,7 +336,11 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
 
 
 def observe_reports(payload: dict[str, Any]) -> bool:
-    """現在の作業に属する可視発話の報告だけを取り込み、言い回しで段階を判定しない。"""
+    """現在の作業に属する可視発話の報告だけを取り込み、言い回しで段階を判定しない。
+
+    偽を返すのはtranscriptを読み取れない場合だけとする。現在の作業を中止・置換・技術的不成立と
+    記録した場合は報告を取り込まずに真を返し、他の作業に残る報告段階の判定を呼び出し元へ続けさせる。
+    """
     available = False
 
     def update(state: dict[str, Any]) -> dict[str, Any]:
@@ -344,6 +348,7 @@ def observe_reports(payload: dict[str, Any]) -> bool:
         data = _data(state, payload["session_id"])
         current = _current_work(data)
         if current is not None and _last_decision(current[1]) in {"cancel", "replace", "blocked"}:
+            available = True
             return state
         reference = data.get("last_input", payload["session_id"])
         if current is None or _finished(data, current[1]):
@@ -371,7 +376,7 @@ def observe_reports(payload: dict[str, Any]) -> bool:
 
 
 def report_violations(work: dict[str, Any]) -> list[str]:
-    """同じ作業の発話本文へ、人間由来の4判定だけを適用する。"""
+    """同じ作業の発話本文へ、completion-reportが定める報告本文の判定だけを適用する。"""
     return [
         error
         for stage, report in work.get("reports", {}).items()
@@ -477,30 +482,52 @@ def record_decision(document: dict[str, Any]) -> str:
     return selected
 
 
+def _session_works(state: dict[str, Any], session_id: str) -> dict[str, Any]:
+    """現在の会話が記録した作業を返し、別会話の継承値と旧版の状態は空とする。"""
+    data = state.get(STATE_KEY)
+    if not isinstance(data, dict) or data.get("session_id") != session_id or data.get("version") != 1:
+        return {}
+    works = data.get("works")
+    return works if isinstance(works, dict) else {}
+
+
+def _async_target_alive(state: dict[str, Any], work: dict[str, Any], target: object) -> bool:
+    """作業が起動して所有する委譲先が、実行中か未回収の結果を持つ場合に真を返す。"""
+    child = state.get("agents_server_sessions", {}).get(target)
+    return (
+        isinstance(target, str)
+        and target in work.get("async_targets", {})
+        and isinstance(child, dict)
+        and child.get("owner_agent_id") == "main"
+        and (
+            child.get("pending_observation") is True
+            or target in agents_server_session_advisor.actively_waited_session_ids([target])
+        )
+    )
+
+
+def session_works(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """現在の会話の全作業を、中止・置換した作業も含めて記録順に返す。"""
+    works = _session_works(session_state.read_state(payload["session_id"]), payload["session_id"])
+    return [(work_id, work) for work_id, work in works.items() if isinstance(work, dict)]
+
+
+def waits_on_delegated_session(payload: dict[str, Any], work: dict[str, Any]) -> bool:
+    """作業が起動したagents_serverのsessionのうち、実行中か未回収の結果を持つものがあれば真を返す。"""
+    state = session_state.read_state(payload["session_id"])
+    return any(_async_target_alive(state, work, target) for target in work.get("async_targets", {}))
+
+
 def pending_work(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     """現在の会話の観測済み作業を返し、別会話の継承値を流用しない。"""
     state = session_state.read_state(payload["session_id"])
-    data = state.get(STATE_KEY)
-    if not isinstance(data, dict) or data.get("session_id") != payload["session_id"] or data.get("version") != 1:
-        return []
     pending: list[tuple[str, dict[str, Any]]] = []
-    for work_id, work in data.get("works", {}).items():
+    for work_id, work in _session_works(state, payload["session_id"]).items():
         if not isinstance(work, dict) or _last_decision(work) in {"cancel", "replace", "blocked"}:
             continue
         if _last_decision(work) == "wait":
             decision = work["decisions"][-1]
-            target = decision.get("target_session_id")
-            child = state.get("agents_server_sessions", {}).get(target)
-            if (
-                isinstance(target, str)
-                and target in work.get("async_targets", {})
-                and isinstance(child, dict)
-                and child.get("owner_agent_id") == "main"
-                and (
-                    child.get("pending_observation") is True
-                    or target in agents_server_session_advisor.actively_waited_session_ids([target])
-                )
-            ):
+            if _async_target_alive(state, work, decision.get("target_session_id")):
                 continue
             path = decision.get("uwi_file")
             if isinstance(path, str):
