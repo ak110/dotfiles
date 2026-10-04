@@ -81,12 +81,15 @@ description: >
 - エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
 - `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
   実ブラウザーテストを変更した場合は`make test-browser`を実行する
-- 専用worktreeの変更を`atk`で動かす場合（`atk serve`で画面を確かめる場合を含む）は、
-  `<worktreeの絶対パス>/agent-toolkit/bin/atk`を絶対パスで起動する。
-  `agent-toolkit`は`atk`のconsole scriptを持たないため、`uv run atk`とPATH上の`atk`は複製元の
-  `<複製元の絶対パス>/agent-toolkit/bin/atk`へ解決され、複製元のコードが動く。
-  uvが`VIRTUAL_ENV=... does not match the project environment path <複製元の絶対パス>/agent-toolkit/.venv`と警告した場合は、
-  この取り違えが起きている
+- 専用worktreeの変更を`atk`で動かす場合（`atk serve`で画面を確かめる場合を含む）は、起動時のcwdで動く版が決まる。
+  PATH上の`atk`は複製元の`bin/atk`であり、cwdが同じリポジトリのworktree（その配下のディレクトリを含む）にあれば、
+  そのworktreeの`agent-toolkit/bin/atk`へ委譲する。
+  `agent-toolkit`は`atk`のconsole scriptを持たないため、`uv run atk`もPATH上の`atk`へ解決され、同じ選択になる。
+  cwdがGit外か別リポジトリにある場合は複製元の`agent-toolkit/bin/atk`が動くため、
+  対象worktreeの外から改修版を動かすときは`<worktreeの絶対パス>/agent-toolkit/bin/atk`を絶対パスで起動する。
+  `uv run`の中から起動すると、uvが`VIRTUAL_ENV=... does not match the project environment path <パス>/agent-toolkit/.venv`と警告する。
+  この警告は動作を妨げず、`<パス>`（cwd配下なら相対パス）は実際に動く`agent-toolkit`の位置を示す。
+  改修版を動かすつもりで複製元の絶対パスが表示された場合は、cwdか起動パスを直して起動し直す
 - 画面の実描画には、ブラウザー操作ツールに加えて、リポジトリ直下の`pyproject.toml`が依存に持つPython版Playwright（`uv run --frozen python`から`playwright`を使うスクリプト）を使える。
   ブラウザー本体は`make setup-browser`が導入し、導入済みの版は`~/.cache/ms-playwright`で確かめる
 - コミットメッセージtypeの判定例: [commit-types.md](../../../docs/development/commit-types.md)
