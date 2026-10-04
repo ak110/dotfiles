@@ -112,7 +112,12 @@ def _last_decision(work: dict[str, Any]) -> str:
 
 def _finished(data: dict[str, Any], work: dict[str, Any]) -> bool:
     """全段階を満たした作業の後に新しい入力が届いたかを返し、後続の仕事へ古い充足を流用しない。"""
-    return bool(work.get("reports")) and not missing_stages(work) and data.get("last_input") != work.get("input_at_last_call")
+    return (
+        bool(work.get("reports"))
+        and not missing_stages(work)
+        and not report_violations(work)
+        and data.get("last_input") != work.get("input_at_last_call")
+    )
 
 
 def _position(payload: dict[str, Any]) -> int:

@@ -38,6 +38,8 @@ description: >
 文章を書く時と表記をチェックする時は、まず`references/notation-rules.md`を全文読む。
 同資料は表記規則の目次とチェック手段を持つ。該当する節が、textlint違反、`lint-relax-criteria.md`、`tone-examples.md`・`tone-examples-llm-tone.md`の各資料への条件付きの参照を示す。
 
+人間向け文書の役割と残す内容を選ぶ時は、`references/document-types.md`を全文読む。コードとテストコードの執筆には「コードの編集時に読む資料」を適用する。
+
 新しい概念名または識別子を導入する時は、併せて`references/referent-table.md`を全文読む。
 既存の対象を名前で指す時と新しい名前を付ける時は、併せて`references/defined-names.md`を全文読む。
 

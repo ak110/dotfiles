@@ -141,7 +141,22 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         return False
     if args.worktree is None or not args.worktree.is_absolute():
         parser.error("commit対応には絶対パスの--worktreeが必要です")
-    content = args.plan_file.read_text(encoding="utf-8")
+    read_path = args.plan_file
+    if args.get_commits and not args.handoff and not read_path.is_file():
+        working_root = _plan_locations.working_plans_root().resolve()
+        if read_path.resolve().parent != working_root:
+            raise ProgressLogError(
+                f"計画ファイルが存在しません: {read_path}",
+                next_action="実在する計画ファイルの絶対パスを指定する",
+            )
+        candidates = sorted(path for path in _plan_locations.new_plans_root().rglob(read_path.name) if path.is_file())
+        if len(candidates) != 1:
+            raise ProgressLogError(
+                f"保存済み計画を一意に特定できません（同名={len(candidates)}件）: {read_path.name}",
+                next_action="実在する保存済み計画ファイルの絶対パスを指定する",
+            )
+        read_path = candidates[0]
+    content = read_path.read_text(encoding="utf-8")
     if args.handoff:
         allowed = commit_mapping.validate_wis(args.allowed_awi or [])
     else:

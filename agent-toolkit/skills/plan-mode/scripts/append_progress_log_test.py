@@ -240,3 +240,49 @@ def test_main_rejects_saved_plan_root(
     assert "`atk plans checkout 2026/09/28-example-1a2b.md`" in error
     assert "`atk plans commit 2026/09/28-example-1a2b.md`" in error
     assert path.read_bytes() == original
+
+
+def test_get_commits_reads_unique_saved_plan_from_removed_working_path(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """旧作業パスから一意な保存先を読み、曖昧な保存先は選ばない。"""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    notes = tmp_path / "private-notes"
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=30)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "example"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    wi = "20261004-044311-001.md"
+    working = tmp_path / ".claude" / "plans" / "04-example-1a2b.md"
+    saved = notes / "plans" / "2026" / "10" / working.name
+    saved.parent.mkdir(parents=True)
+    content = (
+        "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n  - " + wi + ": 対応\n\n" + _plan().removeprefix("# 計画\n\n")
+    )
+    saved.write_text(content, encoding="utf-8")
+    record_args = ["--worktree", str(repo), "--awi", wi, "--commit", "HEAD", "--completed-step", "実装", "--result", "成功"]
+    assert append_progress_log.main([str(saved), *record_args]) == 1
+    working.parent.mkdir(parents=True)
+    working.write_text(content, encoding="utf-8")
+    assert append_progress_log.main([str(working), *record_args]) == 0
+    saved.write_bytes(working.read_bytes())
+    working.unlink()
+    assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 0
+    assert json.loads(capsys.readouterr().out)["awi"] == wi
+    duplicate = notes / "plans" / "2025" / "10" / working.name
+    duplicate.parent.mkdir(parents=True)
+    duplicate.write_bytes(saved.read_bytes())
+    assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 1
+    assert "一意に特定できません" in capsys.readouterr().err
+    assert append_progress_log.main([str(saved), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 0
+    saved.unlink()
+    duplicate.unlink()
+    assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 1
+    assert "同名=0件" in capsys.readouterr().err

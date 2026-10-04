@@ -36,6 +36,7 @@ try:
     from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
     from agent_toolkit._atk import config as _atk_config
     from agent_toolkit._atk import outcome as _outcome
+    from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
     from agent_toolkit._hooks import response_language_check as _response_language_check
@@ -3557,8 +3558,6 @@ _REPORTED_NONZERO_COUNT = re.compile(
     r"(?:(?:failed|warnings?|diagnostics)[\"'`]*\s*[:=]\s*[1-9])|(?:(?:失敗|警告|診断)[^0-9\n]{0,10}?[1-9][0-9]*\s*件)",
     re.IGNORECASE,
 )
-_WI_STYLE_DIAGNOSTIC = re.compile(r"^警告: 本文:\d+:\d+: (?:口語表現|ダッシュ) ")
-"""`atk wi add`・`atk wi edit`が保存前に表示する本文の表記診断の書式。起草者が保存前の本文で処置する警告に当たる。"""
 _TRANSIENT_CLASSIFIER_ERROR = "The server-side auto mode classifier gave no verdict (error)"
 _FAILURE_PATH = re.compile(r"(?<!\w)(?:~?/|[A-Za-z]:[\\/])[^\s'\"`]+")
 _FAILURE_QUOTED = re.compile(r"(['\"`]).*?\1")
@@ -3746,7 +3745,7 @@ def _candidate_events(
             ):
                 excluded["normal-delegate-return"] += 1
                 continue
-            if candidate_kind == "warning" and _WI_STYLE_DIAGNOSTIC.match(normalized_text):
+            if candidate_kind == "warning" and _style_diagnostics.is_body_style_diagnostic_warning(normalized_text):
                 excluded["wi-style-diagnostic"] += 1
                 continue
             event_kind = candidate_kind
