@@ -7,7 +7,10 @@ import datetime
 import json
 import os
 import pathlib
+import shutil
+import sys
 import time
+import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
@@ -17,6 +20,16 @@ from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.serve import sessions as session_records
 from agent_toolkit._common.next_action import report, with_next_action
+
+_WATCH_INTERVAL_SECONDS = 2.0
+"""`atk agents list --watch`が一覧を描き替える間隔（秒）。"""
+_COLUMN_GAP = 2
+"""一覧の列の間に置く最小の空白数。statusLineの行と同じ値にする。"""
+_MIN_DESCRIPTION_WIDTH = 20
+"""狭い端末でも行動・進捗の欄へ残す表示幅。名前の欄はこの幅を残すよう先に短くする。"""
+_RIGHT_SEPARATOR = " · "
+_ELLIPSIS = "…"
+_CLEAR_SCREEN = "\x1b[H\x1b[2J"
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
@@ -33,7 +46,13 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     notification_body.add_argument("--body", help="委譲元へ送る本文。")
     notification_body.add_argument("--body-file", type=pathlib.Path, help="委譲元へ送る本文を保持するUTF-8ファイルの絶対パス。")
     list_ = _help.add_command(sub, "list", **_help.HELP["atk agents list"])
+    list_.set_defaults(error_parser=list_)
     list_.add_argument("--include-terminated", action="store_true", help="未回収結果を持たない終端済みsessionも含める。")
+    list_.add_argument(
+        "--watch",
+        action="store_true",
+        help=f"人が端末で一覧の変化を追跡するため、約{_WATCH_INTERVAL_SECONDS:g}秒ごとに画面を描き替える。Ctrl-Cで終了する。",
+    )
     show = _help.add_command(sub, "show", **_help.HELP["atk agents show"])
     show.add_argument("session_id", help="表示するsession識別子。")
     logs = _help.add_command(sub, "logs", **_help.HELP["atk agents logs"])
@@ -127,13 +146,23 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
     root_session_id = None if root_resolution is None else root_resolution.root_session_id
     if args.agents_subcommand == "list":
         human = not is_agent_environment(env)
-        root_ids = status_file.list_root_session_ids() if human else ([root_session_id] if root_session_id else [])
-        groups = [(root_id, _load_sessions(root_id)) for root_id in root_ids]
-        if not args.include_terminated:
-            groups = [
-                (root_id, [s for s in sessions if s.get("status") == "running" or s.get("result_available") is True])
-                for root_id, sessions in groups
-            ]
+        if args.watch:
+            if not human:
+                args.error_parser.error(
+                    with_next_action(
+                        "--watchは人が端末で一覧の変化を追跡するための表示で、エージェント環境では使えない",
+                        "--watchを外した`atk agents list`で一覧を1回取得する",
+                    )
+                )
+            if not sys.stdout.isatty():
+                args.error_parser.error(
+                    with_next_action(
+                        "--watchは端末へ出力する場合だけ使える",
+                        "端末で実行するか、--watchを外した`atk agents list`で一覧を1回取得する",
+                    )
+                )
+            return _watch_list(include_terminated=args.include_terminated)
+        groups = _list_groups(human=human, root_session_id=root_session_id, include_terminated=args.include_terminated)
         if (
             not human
             and not any(sessions for _, sessions in groups)
@@ -144,8 +173,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             report(reason, next_action=next_action)
             return 4
         if human:
-            # 選べるsessionを持たないrootの見出しは端末の一覧を埋めるだけなので除く
-            print(_human_tree([(root_id, sessions) for root_id, sessions in groups if sessions]))
+            print(_human_tree(groups, columns=shutil.get_terminal_size().columns, now=datetime.datetime.now(datetime.UTC)))
         else:
             print(_dump({"sessions": [_public_session(session) for _, sessions in groups for session in sessions]}, env))
         return 0
@@ -238,24 +266,88 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
     return result
 
 
-def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]]) -> str:
-    """ルートと委譲先の関係を、端末で選択しやすい一覧にする。"""
-    lines: list[str] = []
+def _list_groups(
+    *, human: bool, root_session_id: str | None, include_terminated: bool
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """一覧の対象sessionをrootごとに返す。人の端末では全root、エージェント環境では現在の会話のrootを読む。"""
+    root_ids = status_file.list_root_session_ids() if human else ([root_session_id] if root_session_id else [])
+    groups = [(root_id, _load_sessions(root_id)) for root_id in root_ids]
+    if not include_terminated:
+        groups = [
+            (root_id, [s for s in sessions if s.get("status") == "running" or s.get("result_available") is True])
+            for root_id, sessions in groups
+        ]
+    return groups
+
+
+def _watch_list(*, include_terminated: bool) -> int:
+    """人の端末で一覧を定期的に取得し、画面を描き替える。Ctrl-Cで終了コード0を返す。"""
+    command = "atk agents list --include-terminated" if include_terminated else "atk agents list"
+    try:
+        while True:
+            now = datetime.datetime.now(datetime.UTC)
+            groups = _list_groups(human=True, root_session_id=None, include_terminated=include_terminated)
+            columns = shutil.get_terminal_size().columns
+            header = f"{_WATCH_INTERVAL_SECONDS:g}秒ごとに更新: {command}  {now.astimezone():%H:%M:%S}  Ctrl-Cで終了"
+            sys.stdout.write(f"{_CLEAR_SCREEN}{header}\n\n{_human_tree(groups, columns=columns, now=now)}\n")
+            sys.stdout.flush()
+            time.sleep(_WATCH_INTERVAL_SECONDS)
+    except KeyboardInterrupt:
+        sys.stdout.write("\n")
+        return 0
+
+
+def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]], *, columns: int, now: datetime.datetime) -> str:
+    """ルートと委譲先の関係を端末で選択しやすいツリーにし、session IDの右側へstatusLine相当の状況を並べる。
+
+    session IDは端末幅によらず省略しない。右側の状況は端末幅に収まるよう、行動・進捗の欄へ
+    `_MIN_DESCRIPTION_WIDTH`を残すまで名前の欄を先に短くし、残りを説明の切り詰めで合わせる。
+    選べるsessionを持たないrootの見出しは端末の一覧を埋めるだけなので除く。
+    """
+    rows: list[str | tuple[str, dict[str, Any]]] = []
     for root_id, sessions in groups:
-        lines.append(f"root {root_id}")
+        if not sessions:
+            continue
+        rows.append(f"root {root_id}")
         children: dict[str, list[dict[str, Any]]] = {}
         attached: set[str] = set()
         for session in sessions:
             owner = str(session.get("owner_status_file", "root.json")).removesuffix(".json")
             children.setdefault(owner, []).append(session)
 
-        _append_children(children, "root", "", set(), attached, lines)
+        _append_children(children, "root", "", set(), attached, rows)
         for session in sessions:
             if session["session_id"] not in attached:
-                label = session.get("label") or "session"
-                model = session.get("model") or "不明"
-                lines.append(f"  {session['session_id']}  {label}  {model}  {session.get('status', '不明')}")
-    return "\n".join(lines) if lines else "sessionはありません"
+                rows.append((f"  {session['session_id']}", session))
+    if not rows:
+        return "sessionはありません"
+    session_rows = [row for row in rows if isinstance(row, tuple)]
+    left_width = max(_display_width(left) for left, _ in session_rows)
+    names = {id(session): _session_name(session) for _, session in session_rows}
+    parts = {id(session): _status_parts(session, now) for _, session in session_rows}
+    available = columns - left_width - _COLUMN_GAP
+    right_width = max(_display_width(right_text) for _, right_text in parts.values())
+    # 名前・説明・右端の3欄の間の空白を除いた幅を、説明へ下限幅を残して名前へ配る。
+    # 下限幅を残せないほど狭い端末では名前へ3分の1を配り、ラベルの先頭を読めるようにする。
+    shared = available - right_width - 2 * _COLUMN_GAP
+    name_width = min(
+        max(_display_width(name) for name in names.values()),
+        max(shared - _MIN_DESCRIPTION_WIDTH, shared // 3, 0),
+    )
+    lines: list[str] = []
+    for row in rows:
+        if isinstance(row, str):
+            lines.append(row)
+            continue
+        left, session = row
+        description, right_text = parts[id(session)]
+        status = _status_line(names[id(session)], description, right_text, available, name_width)
+        if not status:
+            lines.append(left)
+            continue
+        padding = " " * (left_width - _display_width(left) + _COLUMN_GAP)
+        lines.append(f"{left}{padding}{status}")
+    return "\n".join(lines)
 
 
 def _append_children(
@@ -264,7 +356,7 @@ def _append_children(
     prefix: str,
     visited: set[str],
     attached: set[str],
-    lines: list[str],
+    rows: list[str | tuple[str, dict[str, Any]]],
 ) -> None:
     """所有関係をたどり、訪問済みsessionを重複表示せずに追加する。"""
     entries = children.get(owner, [])
@@ -274,12 +366,124 @@ def _append_children(
             continue
         attached.add(session_id)
         marker = "└─ " if index == len(entries) - 1 else "├─ "
-        label = session.get("label") or session.get("launch_kind") or "session"
-        model = session.get("model") or session.get("model_type") or "不明"
-        lines.append(f"{prefix}{marker}{session_id}  {label}  {model}  {session.get('status', '不明')}")
+        rows.append((f"{prefix}{marker}{session_id}", session))
         if session_id not in visited:
             next_prefix = prefix + ("   " if index == len(entries) - 1 else "│  ")
-            _append_children(children, session_id, next_prefix, visited | {session_id}, attached, lines)
+            _append_children(children, session_id, next_prefix, visited | {session_id}, attached, rows)
+
+
+def _session_name(session: Mapping[str, Any]) -> str:
+    """statusLineと同じく、ラベルと`engine:model/effort`を1列にした名前を返す。"""
+    label = session.get("label") or session.get("launch_kind") or "session"
+    engine = session.get("engine") or ""
+    model = session.get("model") or ""
+    effort = session.get("effort") or ""
+    speed = "@fast" if engine == "codex" and session.get("fast_mode") is True else ""
+    if model:
+        detail = f"{engine}:{model}" if engine else str(model)
+        if effort:
+            detail += f"/{effort}"
+        detail += speed
+    elif engine:
+        detail = f"{engine}{speed}"
+    else:
+        detail = str(session.get("model_type") or "")
+    return f"{label} ({detail})" if detail else str(label)
+
+
+def _status_parts(session: Mapping[str, Any], now: datetime.datetime) -> tuple[str, str]:
+    """statusLineの1行のうち、直近の行動または進捗の説明と、右端に置く経過時間と状態を返す。
+
+    実行中のsessionに利用上限の解除待ちまたはAPI再試行の記録があれば、通常の進捗より優先して示す。
+    """
+    status = str(session.get("status") or "")
+    raw_error = session.get("api_error") if status == "running" else None
+    api_error = raw_error if isinstance(raw_error, dict) and raw_error.get("type") else None
+    right: list[str] = []
+    if api_error is not None and api_error.get("type") == state.USAGE_LIMIT_ERROR_TYPE:
+        description = f"利用上限の解除待ち {api_error.get('limit_type') or '?'}"
+        remaining = _elapsed(now, api_error.get("resets_at"))
+        right.append(f"解除まで{remaining}" if remaining is not None else "解除時刻確認中")
+        right.append(_elapsed(api_error.get("first_at"), now) or "?")
+    elif api_error is not None:
+        description = f"API再試行 {api_error['type']}"
+        right.append(f"HTTP {api_error.get('http_status') or '?'}")
+        right.append(_elapsed(api_error.get("first_at"), now) or "?")
+        if api_error.get("count"):
+            right.append(f"{api_error['count']}回")
+    else:
+        description = str(session.get("last_action") or session.get("progress") or "")
+        elapsed = _elapsed(session.get("started_at"), now)
+        if elapsed is not None:
+            right.append(elapsed)
+        if status:
+            right.append(status)
+    return " ".join(description.split()), _RIGHT_SEPARATOR.join(right)
+
+
+def _status_line(name: str, description: str, right_text: str, width: int, name_width: int) -> str:
+    """statusLineの1行と同じ構成で、名前、直近の行動または進捗、経過時間と状態を`width`以内に並べる。"""
+    if width <= 0:
+        return ""
+    fitted_name = _truncate(name, name_width)
+    padded_name = fitted_name + " " * (name_width - _display_width(fitted_name))
+    reserved = _display_width(padded_name) + (_COLUMN_GAP + _display_width(right_text) if right_text else 0)
+    if description:
+        reserved += _COLUMN_GAP
+    fitted_description = _truncate(description, width - reserved)
+    left = (" " * _COLUMN_GAP).join(part for part in (padded_name, fitted_description) if part)
+    if right_text:
+        gap = max(width - _display_width(left) - _display_width(right_text), _COLUMN_GAP if left else 0)
+        line = f"{left}{' ' * gap}{right_text}"
+    else:
+        line = left
+    return _truncate(line.rstrip(), width)
+
+
+def _elapsed(start: object, end: object) -> str | None:
+    """2つのISO 8601時刻の差をstatusLineと同じ`1h2m`・`3m4s`・`5s`の形で返す。解釈できない場合と負の差は`None`。"""
+    moments: list[datetime.datetime] = []
+    for value in (start, end):
+        if isinstance(value, datetime.datetime):
+            moment = value
+        elif isinstance(value, str):
+            try:
+                moment = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        else:
+            return None
+        moments.append(moment if moment.tzinfo is not None else moment.replace(tzinfo=datetime.UTC))
+    seconds = int((moments[1] - moments[0]).total_seconds())
+    if seconds < 0:
+        return None
+    if seconds >= 3600:
+        return f"{seconds // 3600}h{seconds % 3600 // 60}m"
+    if seconds >= 60:
+        return f"{seconds // 60}m{seconds % 60}s"
+    return f"{seconds}s"
+
+
+def _display_width(text: str) -> int:
+    """端末での表示幅を返す。statusLineと同じく全角文字を2セル、曖昧幅を含むほかの文字を1セルとして数える。"""
+    return sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in text)
+
+
+def _truncate(text: str, budget: int) -> str:
+    """`text`を表示幅`budget`以内へ、超える場合は末尾を省略記号に置き換えて切り詰める。"""
+    if budget <= 0:
+        return ""
+    if _display_width(text) <= budget:
+        return text
+    kept: list[str] = []
+    used = 0
+    for char in text:
+        char_width = _display_width(char)
+        if used + char_width > budget - _display_width(_ELLIPSIS):
+            break
+        kept.append(char)
+        used += char_width
+    return "".join(kept) + _ELLIPSIS
 
 
 def _show_logs(session_id: str, *, follow: bool) -> int:

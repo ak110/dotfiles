@@ -239,8 +239,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを識別・活動情報とともに一覧表示する",
-        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。エージェント向け一覧は識別子、状態、ラベル、直近操作、結果保留、初回とturnの開始時刻、活動の経過とAPI失敗の診断を返す。実行条件と委譲プロンプトは`atk agents show`が返す。\n前提: オプション省略時は未回収結果を持たない終端済みsessionを除く。エージェント環境でルートsessionとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated",
+        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示し、各session IDの右側へラベルと`engine:model/effort`、直近の行動または進捗（利用上限の解除待ちとAPI再試行はその状態）、経過時間と状態を並べる。端末幅が狭い場合はsession IDを省略せず右側の説明を短くする。`--watch`は人の端末で約2秒ごとに一覧を描き替え、Ctrl-Cで終了する。エージェント環境と端末以外への出力では`--watch`を拒否する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。エージェント向け一覧は識別子、状態、ラベル、直近操作、結果保留、初回とturnの開始時刻、活動の経過とAPI失敗の診断を返す。実行条件と委譲プロンプトは`atk agents show`が返す。\n前提: オプション省略時は未回収結果を持たない終端済みsessionを除く。エージェント環境でルートsessionとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated\n  atk agents list --watch",
     },
     "atk agents show": {
         "summary": "指定した委譲sessionの詳しい状態を表示する",
