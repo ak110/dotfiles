@@ -45,6 +45,8 @@ pickerの文書は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`とする。
 - 拡張原因分析を要さず1箇所で是正が完結する軽微な不良は、`agent-toolkit:bugfix`の`references/response.md`に従ってメインがその場で直す
 - 公開の開始後に見つけた不良のうち、公開を妨げるもの（CI失敗など）は公開の手順の中で直す。公開を妨げないものは、同じ委譲で不良ごとにAWIを`source: process-wi`で投入し、次の実行へ回す
 
+WI実装commitの完了ごとに、commitスキルの公開記録手段で完全OIDと対応AWI集合を計画の進捗ログへ残す。直接実装では引き継ぎ記録を用意し、同じ`plan-progress --handoff`で記録する。レビュー修正・CI修正と履歴変更後も同じ対応を継続し、実行順8の終端前に`--get-commits`で対象worktreeの現在の対応を取得する。記録不足は生成側で補ってから再取得し、取得したOIDを既存のadopt・複数commitのnoteへ渡す。実装差分なしの充足は既存の根拠とcommit省略を使う。
+
 ## 実行順
 
 1. processable一覧と各WI本文を取得する。同じ時点で`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス>`を実行し、回答済みUWIを取得する。取得した回答済みUWIは、実装へ着手する前に`agent-toolkit:wi-standards`「状態と依存」の回答済みUWIの取り込みに従って終端するか処理対象WIへ加える。残る全項目を直接実装または計画へ分ける。処理対象に依存が未達の項目が含まれる場合は、依存元の状態を確かめる。依存元がprocessableで同じ`target_repo`なら、依存元を同じ実行の処理対象WIへ加えて報告する。依存元の状態を変える必要がある場合（保留中やcooldownなど）は、依存元を加えるかを「確認を要する事項」としてユーザー確認へ回す。依存未達の項目を集合から外す場合も、同じユーザー確認を経る。各WIについて、WIのファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パスおよびそのworktreeで解決した処理開始時のHEADの7文字以上の一意な短縮OIDを対応付ける。対象を`atk wi start-processing <ファイル名>... --target-repo=<対応付けたtarget_repo>`で`processing`へ移し、対応表と集合を固定する。

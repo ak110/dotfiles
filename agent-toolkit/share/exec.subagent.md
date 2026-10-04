@@ -154,6 +154,8 @@ CI修正担当は修正前のHEADを同じ記録へ残す。
 画面差分: <あり（変更した画面資産の相対パスの列挙）|なし>
 ```
 
+WI実装commitの対応はcommitスキルの記録手順に従い、計画の進捗ログまたは引き継ぎ記録へ完全OIDと対応AWI全件を構造化して残す。実装・レビュー修正・CI修正の各commit後に同じ手段を使い、自由記述の検証結果も保持する。
+
 ## レビュー修正の履歴統合
 
 レビュー指摘への修正方法（fixupの作成、元commitへの対応付けおよびautosquashの単位と回数）は`agent-toolkit:commit`の`references/history-rewrite.md`「修正方法の選択」に従い、autosquashはラウンドごとに実行する。
@@ -168,7 +170,7 @@ autosquashは同`references/history-rewrite.md`「fixupの実行上の制約」�
 
 ラウンドごとのautosquashにより、次のラウンドを開始する時点のrebase範囲には、件名の先頭が`fixup!`・`squash!`・`amend!`のcommitが残らない。同`references/history-rewrite.md`「fixupの実行上の制約」はその件名のcommitが範囲内にある場合にfixupの作成を遮断するため、2ラウンド目以降の修正も本節の手順のままfixupとして作成できる。
 
-履歴書換えの前後ではrewrite対象を操作直前に解決したOID、tree、親OIDおよび件名を比較用に保持し、`rewrite_guard`の要求に合致するか確かめる。レビュー指摘管理表へ、指摘、採否、修正commit、検証結果、書換え前後の7文字以上の一意な短縮OIDの対応、一致確認結果を証拠として保存する。履歴統合後の変更範囲の検証結果を`atk run-script plan-progress --`で`## 進捗ログ`へ追記する。
+履歴書換えの前後ではrewrite対象を操作直前に解決したOID、tree、親OIDおよび件名を比較用に保持し、`rewrite_guard`の要求に合致するか確かめる。レビュー指摘管理表へ、指摘、採否、修正commit、検証結果、書換え前後の7文字以上の一意な短縮OIDの対応、一致確認結果を証拠として保存する。検収済みの完全OID対応はcommitスキルの`--rewrite-file`で同じ進捗記録へ追記し、AWI集合を現在の実装commitへ継承する。履歴統合後の変更範囲の検証結果を`atk run-script plan-progress --`で`## 進捗ログ`へ追記する。
 
 `agent-toolkit:commit`の`references/history-rewrite.md`が用いる各phaseの対象は次のとおりとする。
 
