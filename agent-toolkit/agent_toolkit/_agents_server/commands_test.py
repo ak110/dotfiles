@@ -360,6 +360,57 @@ def test_agents_show_finds_uncollected_result_after_status_expires(
     assert capsys.readouterr().err.startswith(f"unknown session: nested\n{NEXT_ACTION_PREFIX}")
 
 
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("session_environment")
+@pytest.mark.parametrize("engine", ["codex", "claude", "agy"])
+@pytest.mark.parametrize("fast_mode", [True, False, None])
+async def test_public_show_preserves_latest_speed_in_live_and_retained_results(
+    engine: str,
+    fast_mode: bool | None,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """実際の共有状態と保持結果を公開showへ渡し、他engineと旧形式へ速度項目を加えない。"""
+    session = state.SessionState(
+        "fast-session",
+        str(tmp_path),
+        engine=engine,
+        model="model",
+        effort="medium",
+        model_type="high_tier",
+        fast_mode=fast_mode,
+        announced=True,
+    )
+    writer = status_file.StatusFileWriter(
+        {session.session_id: session},
+        status_file.StatusFileIdentity("root-session", "fast.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    writer.activate()
+    try:
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["agents", "show", session.session_id])
+        visible = json.loads(capsys.readouterr().out)
+        if engine == "codex" and fast_mode is not None:
+            assert visible["fast_mode"] is fast_mode
+        else:
+            assert "fast_mode" not in visible
+        session.status = "completed"
+        session.turn_completed = True
+        session.agent_message = "完了"
+        session.touch()
+        writer.flush()
+        writer.deactivate()
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["agents", "show", session.session_id])
+        retained = json.loads(capsys.readouterr().out)
+        assert retained.get("fast_mode") == visible.get("fast_mode")
+        assert retained["agent_message"] == "完了"
+    finally:
+        writer.deactivate()
+
+
 @pytest.mark.usefixtures("session_environment")
 def test_agents_list_shows_tree_outside_agent_environment(
     monkeypatch: pytest.MonkeyPatch,

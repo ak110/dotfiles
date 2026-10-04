@@ -195,6 +195,7 @@ class FakeBackend:
         launch_kind: state.LaunchKind = "delegate",
         excluded_candidates: frozenset[state.ModelCandidate] = frozenset(),
         turn_seq: int = 0,
+        fast_mode: bool | None = None,
     ) -> subject.SessionState:
         async def accept_prompt(value: str) -> None:
             del value
@@ -210,6 +211,7 @@ class FakeBackend:
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
             turn_seq=turn_seq + 1,
+            fast_mode=fast_mode,
         )
         self.sessions[session_id] = session
         state._initialize_turn(session)
@@ -2169,6 +2171,55 @@ async def test_authentication_failure_switches_to_next_candidate(
     assert public["engine"] == "codex"
     assert public["model"] == "second"
     assert public["effort"] == "medium"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fast_mode", [True, False, None])
+async def test_fallback_start_and_verbose_show_publish_codex_speed(
+    fast_mode: bool | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """候補切替の起動応答と詳細showが送信した速度を返し、通常の一覧は既存の項目を保つ。"""
+    manager = subject.AgentsServerManager()
+    monkeypatch.setattr(
+        subject._atk_config,
+        "parse_unresolved_model_candidates",
+        lambda _kind: [
+            ("claude", "first", "high"),
+            ("codex", "second", "medium"),
+        ],
+    )
+    _install_backend(manager, "claude", UnavailableStartBackend(manager.sessions, "claude"))
+    backend = FakeBackend(manager.sessions, "codex")
+    original_start = backend.start
+
+    async def start_with_speed(*args: Any, **kwargs: Any) -> subject.SessionState:
+        session = await original_start(*args, **kwargs)
+        session.fast_mode = fast_mode
+        return session
+
+    monkeypatch.setattr(backend, "start", start_with_speed)
+    _install_backend(manager, "codex", backend)
+    raw = await manager.start("plan", "調査", str(tmp_path))
+    public = subject._public_start_response(raw)
+    shown = manager.show_session(raw["session_id"], verbose=True)
+    assert public["engine"] == "codex"
+    if fast_mode is None:
+        assert "fast_mode" not in public
+        assert "fast_mode" not in shown
+    else:
+        assert public["fast_mode"] is fast_mode
+        assert shown["fast_mode"] is fast_mode
+    assert "fast_mode" not in manager.show_session(raw["session_id"])
+    await manager.close()
+
+
+@pytest.mark.parametrize("engine", ["claude", "agy"])
+def test_verbose_show_omits_speed_for_other_engines(engine: str, tmp_path: pathlib.Path) -> None:
+    """他engineの構造化出力はCodexの速度項目を持たない。"""
+    manager = subject.AgentsServerManager()
+    session = subject.SessionState("other-speed", str(tmp_path), engine=engine, fast_mode=True)
+    manager.sessions[session.session_id] = session
+    assert "fast_mode" not in manager.show_session(session.session_id, verbose=True)
 
 
 @pytest.mark.asyncio
@@ -4513,6 +4564,7 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
         "model_type": "plan",
         "model": "gpt-test",
         "effort": "high",
+        "fast_mode": False,
     }
     backend.client = cast(Any, client)
     steered = await manager.send_message("thread-codex", "追加指示")
@@ -4560,6 +4612,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
             "cwd": str(tmp_path),
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
+            "serviceTier": "default",
             "model": "gpt-test",
             "config": {"bypass_hook_trust": True},
             "developerInstructions": f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",

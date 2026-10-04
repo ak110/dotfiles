@@ -69,6 +69,7 @@ def _preset_settings(preset: str) -> dict[str, str]:
 _MUTABLE_KEY_DEFAULTS = {
     **_preset_settings("codex-balanced"),
     "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
+    "codex_fast_mode": "false",
 }
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
@@ -144,6 +145,15 @@ def _validate_stage_model_candidates(value: str) -> None:
         raise ValueError("受理可能書式: <claude|codex|agy>:<model>[/<effort>]（複数候補はASCIIカンマ区切り）")
 
 
+def _validate_mutable_setting(key: str, value: str) -> None:
+    """Codexの速度は真偽値、それ以外の変更可能設定は既存のモデル候補書式で確かめる。"""
+    if key == "codex_fast_mode":
+        if value not in {"true", "false"}:
+            raise ValueError("受理可能値: true, false")
+    else:
+        _validate_stage_model_candidates(value)
+
+
 def resolve_mutable_setting(key: str) -> str:
     """変更可能な設定は環境変数を優先し、無ければ保存値、どちらも無ければ初期値を使う。"""
     if key not in _MUTABLE_KEY_DEFAULTS:
@@ -152,7 +162,7 @@ def resolve_mutable_setting(key: str) -> str:
     env_value = os.environ.get(env_name, "")
     value = env_value or _load_config().get(key, _MUTABLE_KEY_DEFAULTS[key])
     try:
-        _validate_stage_model_candidates(value)
+        _validate_mutable_setting(key, value)
     except ValueError as error:
         source = f"環境変数{env_name}" if env_value else f"設定キー{key}"
         next_action = (
@@ -187,6 +197,8 @@ _UNKNOWN_CANDIDATE_NEXT_ACTION = "利用可否は実行時に各engineが判定�
 def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
     """参考一覧外の工程別モデル候補を警告の本文へ変換する。接頭辞は`report_warning`が付ける。"""
     warnings: list[str] = []
+    if key == "codex_fast_mode":
+        return warnings
     for candidate in value.split(","):
         engine, model, effort = _parse_stage_model(candidate)
         models = ", ".join(sorted(_KNOWN_MODELS[engine]))
@@ -242,7 +254,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
         )
         sys.exit(2)
     try:
-        _validate_stage_model_candidates(args.value)
+        _validate_mutable_setting(args.key, args.value)
     except ValueError as error:
         _outcome.report_failure(
             f"設定値の書式が不正である。{error}",

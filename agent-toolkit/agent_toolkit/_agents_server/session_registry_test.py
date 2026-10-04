@@ -125,6 +125,24 @@ async def test_session_state_publishes_state_transitions(
 
 
 @pytest.mark.asyncio
+async def test_speed_change_is_published_without_status_or_turn_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """送信時に変わった速度が登録簿へ届き、再開状態も同じ値を保持する。"""
+    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    session = state.SessionState("speed-session", str(tmp_path), publish_registry=True)
+    session.touch()
+    initial = subject.resolve(session.session_id).resume_info
+    assert initial is not None and initial.fast_mode is None
+    for fast in (False, True, False):
+        session.fast_mode = fast
+        session.touch()
+        info = subject.resolve(session.session_id).resume_info
+        assert info is not None and info.fast_mode is fast
+        assert state.SessionResumeState.from_session(session).fast_mode is fast
+
+
+@pytest.mark.asyncio
 async def test_observing_wait_keeps_record_and_stop_releases_it(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

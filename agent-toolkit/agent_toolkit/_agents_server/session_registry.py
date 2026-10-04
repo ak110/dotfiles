@@ -54,6 +54,7 @@ class ResumeInfo:
     # 最後に公開した時点のturnを表すengine固有の識別子（Codexのturn id）。
     # 再起動後に残存記録の終端を委譲先CLIの記録と照らすために使う。項目を持たない記録とCodex以外では`None`とする。
     turn_id: str | None = None
+    fast_mode: bool | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -80,6 +81,7 @@ def publish(
     cwd: str = "",
     model: str | None = None,
     effort: str | None = None,
+    fast_mode: bool | None = None,
     model_type: str | None = None,
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     turn_seq: int = 0,
@@ -125,6 +127,8 @@ def publish(
         payload["session_updated_at"] = session_updated_at
     if turn_id:
         payload["turn_id"] = turn_id
+    if engine == "codex" and fast_mode is not None:
+        payload["fast_mode"] = fast_mode
     path = registry_directory(state_root) / f"{session_id}.json"
     launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
     if launcher is not None:
@@ -225,4 +229,7 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         started_at=payload.get("started_at") if isinstance(payload.get("started_at"), str) else None,
         session_updated_at=payload.get("session_updated_at") if isinstance(payload.get("session_updated_at"), str) else None,
         turn_id=payload.get("turn_id") if isinstance(payload.get("turn_id"), str) and payload.get("turn_id") else None,
+        fast_mode=payload.get("fast_mode")
+        if payload["engine"] == "codex" and isinstance(payload.get("fast_mode"), bool)
+        else None,
     )

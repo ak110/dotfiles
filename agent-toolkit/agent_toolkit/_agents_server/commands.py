@@ -231,6 +231,8 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
     if detailed:
         fields += ("cwd", "engine", "model", "effort", "model_type", "launch_kind", "prompt", "progress", "agent_message")
     result = {key: session[key] for key in fields if key in session}
+    if detailed:
+        result.update(state.fast_mode_fields(session.get("engine"), session.get("fast_mode")))
     if isinstance(result.get("api_error"), dict):
         result["api_error"] = {
             key: result["api_error"][key] for key in state.API_ERROR_PUBLIC_KEYS if key in result["api_error"]

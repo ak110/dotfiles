@@ -34,6 +34,7 @@ struct Session {
     engine: String,
     model: Option<String>,
     effort: Option<String>,
+    fast_mode: Option<bool>,
     launch_kind: String,
     status: String,
     progress: String,
@@ -237,6 +238,7 @@ fn parse_session(value: &Value) -> Option<Session> {
         engine: required_string(object, "engine")?,
         model,
         effort,
+        fast_mode: object.get("fast_mode").and_then(Value::as_bool),
         launch_kind: required_string(object, "launch_kind")?,
         status: required_string(object, "status")?,
         progress: required_string(object, "progress")?,
@@ -437,12 +439,17 @@ fn display_name(session: &Session, depth: usize) -> String {
     } else {
         &session.label
     };
+    let speed = if session.engine == "codex" && session.fast_mode == Some(true) {
+        "@fast"
+    } else {
+        ""
+    };
     let base = match session.model.as_deref().filter(|value| !value.is_empty()) {
         Some(model) => match session.effort.as_deref().filter(|value| !value.is_empty()) {
-            Some(effort) => format!("{name} ({}:{model}/{effort})", session.engine),
-            None => format!("{name} ({}:{model})", session.engine),
+            Some(effort) => format!("{name} ({}:{model}/{effort}{speed})", session.engine),
+            None => format!("{name} ({}:{model}{speed})", session.engine),
         },
-        None => format!("{name} ({})", session.engine),
+        None => format!("{name} ({}{speed})", session.engine),
     };
     if depth == 0 {
         base
@@ -530,6 +537,60 @@ mod tests {
             "label": label,
             "started_at": started_at,
         })
+    }
+
+    #[test]
+    fn speed_suffix_follows_codex_state_and_preserves_legacy_rows() {
+        for (engine, fast, effort, expected) in [
+            (
+                "codex",
+                Some(true),
+                Some("medium"),
+                "label (codex:model/medium@fast)",
+            ),
+            ("codex", Some(true), None, "label (codex:model@fast)"),
+            (
+                "codex",
+                Some(false),
+                Some("medium"),
+                "label (codex:model/medium)",
+            ),
+            ("codex", None, Some("medium"), "label (codex:model/medium)"),
+            (
+                "claude",
+                Some(true),
+                Some("medium"),
+                "label (claude:model/medium)",
+            ),
+            (
+                "agy",
+                Some(true),
+                Some("medium"),
+                "label (agy:model/medium)",
+            ),
+        ] {
+            let mut row = session(
+                "speed",
+                engine,
+                Value::String("model".into()),
+                ("high_tier", "delegate"),
+                ("", "label"),
+                "2025-12-31T23:59:30+00:00",
+            );
+            row["effort"] = serde_json::json!(effort);
+            if let Some(enabled) = fast {
+                row["fast_mode"] = serde_json::json!(enabled);
+            }
+            let parsed = parse_session(&row).unwrap();
+            assert_eq!(display_name(&parsed, 0), expected);
+            let file = state_file("root.json", Value::Null, serde_json::json!([row]));
+            let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+                .unwrap()
+                .with_timezone(&Utc);
+            let rendered = render_state_files(&[file], DEFAULT_COLUMNS, now);
+            assert_eq!(rendered.len(), 1);
+            assert!(rendered[0].contains(expected));
+        }
     }
 
     #[test]

@@ -46,6 +46,7 @@ from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import
     _validate_prompt,
     consume_agents_server_tool_result,
 )
+from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp  # pylint: disable=wrong-import-position
 from agent_toolkit._common import codex_models
 from agent_toolkit._common.next_action import ActionableError
@@ -73,6 +74,11 @@ STABLE_PLUGIN_ROOT_EXCLUDED = (".venv", "__pycache__", ".git")
 _NON_MODEL_OUTPUT_ITEM_TYPES = frozenset({"userMessage", "hookPrompt", "contextCompaction"})
 
 _stable_plugin_roots: dict[Path, Path] = {}
+
+
+def _current_service_tier() -> str:
+    """turnの開始時の実効設定を読み、Codex側の設定を継承せず速度を明示する。"""
+    return "priority" if _atk_config.resolve_mutable_setting("codex_fast_mode") == "true" else "default"
 
 
 def _plugin_root_is_versioned(plugin_root: Path) -> bool:
@@ -636,6 +642,7 @@ class AppServerManager:
             "cwd": cwd,
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
+            "serviceTier": _current_service_tier(),
         }
         if model is not None:
             params["model"] = model
@@ -702,6 +709,7 @@ class AppServerManager:
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
         turn_seq: int = 0,
+        fast_mode: bool | None = None,
     ) -> SessionState:
         """保存済みthreadを再開して新しいturnを開始する。"""
         _validate_cwd(cwd)
@@ -717,6 +725,7 @@ class AppServerManager:
             effort=effort,
             engine="codex",
             turn_seq=turn_seq + 1,
+            fast_mode=fast_mode,
             publish_registry=self._publish_registry,
         )
         self.sessions[session_id] = session
@@ -908,6 +917,7 @@ class AppServerManager:
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
+            "serviceTier": _current_service_tier(),
         }
         if session.model is not None:
             resume_params["model"] = session.model
@@ -1033,6 +1043,7 @@ class AppServerManager:
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandboxPolicy": {"type": "dangerFullAccess"},
+            "serviceTier": _current_service_tier(),
         }
         if session.model is not None:
             params["model"] = session.model
@@ -1041,7 +1052,7 @@ class AppServerManager:
         response = await client.request(
             "turn/start",
             params,
-            on_sent=lambda: self._mark_turn_start_sent(session),
+            on_sent=lambda: self._mark_turn_start_sent(session, fast_mode=params["serviceTier"] == "priority"),
         )
         turn = response.get("turn")
         turn_id = turn.get("id") if isinstance(turn, dict) else None
@@ -1054,9 +1065,10 @@ class AppServerManager:
         await self._notify_waiters()
 
     @staticmethod
-    def _mark_turn_start_sent(session: SessionState) -> None:
+    def _mark_turn_start_sent(session: SessionState, *, fast_mode: bool) -> None:
         """turn/startの送信完了を応答待ちより先に記録する。"""
         session.turn_start_sent = True
+        session.fast_mode = fast_mode
         session.touch()
 
     async def _notify_waiters(self) -> None:

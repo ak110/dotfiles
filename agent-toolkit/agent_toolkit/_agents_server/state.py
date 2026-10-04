@@ -456,6 +456,7 @@ class SessionState:
     model: str | None = None
     effort: str | None = None
     engine: str = "codex"
+    fast_mode: bool | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     label: str = ""
@@ -544,6 +545,7 @@ class SessionState:
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
     _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
+    _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
 
     @property
@@ -661,6 +663,7 @@ class SessionState:
                 or self.turn_seq != self._published_registry_turn_seq
                 or self.status != self._published_registry_status
                 or self.launcher_session_id != self._published_registry_launcher
+                or self.fast_mode != self._published_registry_fast_mode
             )
         ):
             session_registry.publish(
@@ -670,6 +673,7 @@ class SessionState:
                 cwd=self.cwd,
                 model=self.model,
                 effort=self.effort,
+                fast_mode=self.fast_mode,
                 model_type=self.model_type,
                 launch_kind=self.launch_kind,
                 turn_seq=self.turn_seq,
@@ -684,6 +688,7 @@ class SessionState:
             self._published_registry_terminal = registry_terminal
             self._published_registry_turn_seq = self.turn_seq
             self._published_registry_status = self.status
+            self._published_registry_fast_mode = self.fast_mode
         if not registry_terminal:
             self._terminal_notified = False
         elif not self._terminal_notified:
@@ -732,6 +737,7 @@ class SessionResumeState:
     model: str | None
     effort: str | None
     engine: str
+    fast_mode: bool | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     label: str = ""
@@ -769,6 +775,7 @@ class SessionResumeState:
             model=session.model,
             effort=session.effort,
             engine=session.engine,
+            fast_mode=session.fast_mode,
             status=session.status,
             agent_message=session.agent_message,
             error=session.error,
@@ -776,6 +783,11 @@ class SessionResumeState:
             result_delivered=session.result_delivered,
             retention_deadline=session.retention_deadline,
         )
+
+
+def fast_mode_fields(engine: str | None, fast_mode: object) -> dict[str, bool]:
+    """Codexの既知の速度だけを公開し、旧形式と他engineの表示を保持する。"""
+    return {"fast_mode": fast_mode} if engine == "codex" and isinstance(fast_mode, bool) else {}
 
 
 def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandidate | None:

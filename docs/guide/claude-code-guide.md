@@ -163,13 +163,15 @@ Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は�
 | `low_tier_model` | `start`の`explore`と`shell`の既定・軽量な`mode:`を宣言した`<役割名>.subagent.md`の`task` |
 | `write_model` | `start`の`write` |
 | `orchestrate_model` | `atk wi process-loop` |
+| `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、既定は`false`） |
 
-`atk config show`はパス4行とモデル設定5行を表示し、`atk config get`はモデル設定値をそのまま返す。
+`atk config show`はパス4行、モデル設定5行と`codex_fast_mode`の1行を表示し、`atk config get`は設定値をそのまま返す。
+`atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
 Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`agents_server`の`show`で確認できる。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数に空でない値を設定すると、`atk config show`と`atk config get`は環境変数の値を返す。
 委譲の起動にもこの値を使う。環境変数は保存済みの設定より優先し、変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
-`atk config apply-preset <プリセット名>`は`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`の4キーを1回の実行で一括保存する。`write_model`はプリセットの対象外とする。
+`atk config apply-preset <プリセット名>`は`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`の4キーを1回の実行で一括保存する。`write_model`と`codex_fast_mode`はプリセットの対象外とする。
 受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
 プリセット名を省略した実行と未知の名前を指定した実行は終了コード2で終わり、利用できるプリセット名を表示する。
 設定を保存していない環境の既定値は`codex-balanced`と同じ候補列とする。
