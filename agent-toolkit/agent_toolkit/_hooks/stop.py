@@ -31,12 +31,11 @@ CHECK_MODULE_NAMES = (
     "pending_question_advisor",
     "user_response_advisor",
     "termination_order_advisor",
-    "completion_report_delivery_advisor",
     "queued_notification_advisor",
 )
 
 # CodexのStopは終了工程の証拠だけを判定する。他の判定はClaude Codeの記録形式と通知手段を前提とするため適用しない。
-CODEX_CHECK_MODULE_NAMES = ("termination_order_advisor", "completion_report_delivery_advisor")
+CODEX_CHECK_MODULE_NAMES = ("termination_order_advisor",)
 
 _CONSECUTIVE_BLOCK_LIMIT = 7
 _CONSECUTIVE_BLOCK_STATE_KEY = "stop_consecutive_block_count"

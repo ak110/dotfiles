@@ -3572,7 +3572,6 @@ _CHECK_COMMANDS = frozenset(
         ("make", "test"),
         ("atk", "plan-check"),
         ("atk", "exec-review-evidence-check"),
-        ("atk", "completion-report-check"),
         ("atk", "validate"),
         ("gh", "watch"),
         ("wait_ci.py", ""),

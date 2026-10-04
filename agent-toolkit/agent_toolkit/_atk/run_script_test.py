@@ -52,7 +52,7 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
     assert observed == [str(run_script.registered_script_path("session-review-evidence")), *script_args]
 
 
-@pytest.mark.parametrize("script_name", ["session-review-decisions", "session-review-report"])
+@pytest.mark.parametrize("script_name", ["session-review-decisions", "session-review-report", "completion-report-check"])
 def test_removed_session_review_entries_are_rejected(script_name: str, capsys: pytest.CaptureFixture[str]) -> None:
     """振り返りの判定入力と報告の生成器として撤去したコマンドを指定すると、未知の公開名として拒否する。"""
     parser = argparse.ArgumentParser()
@@ -66,8 +66,8 @@ def test_removed_session_review_entries_are_rejected(script_name: str, capsys: p
     assert "session-review-prepare" in run_script.SCRIPT_PATHS
 
 
-def test_dispatch_forwards_completion_report_stage_and_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    """報告段階と振り返り状態を判定するスクリプトへ同じ順序で渡す。"""
+def test_dispatch_forwards_termination_decision_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存の終了判断記録へファイル引数を同じ順序で渡す。"""
     observed: list[str] = []
 
     def capture_argv(_target: str, *, run_name: str) -> None:
@@ -75,11 +75,11 @@ def test_dispatch_forwards_completion_report_stage_and_state(monkeypatch: pytest
         observed.extend(sys.argv)
 
     monkeypatch.setattr(run_script.runpy, "run_path", capture_argv)
-    script_args = ["/tmp/report.md", "--stage", "review-result", "--review-state", "failed"]
+    script_args = ["--decision-file", "/tmp/decision.json"]
 
-    assert run_script.dispatch(argparse.Namespace(script_name="completion-report-check", script_args=["--", *script_args])) == 0
+    assert run_script.dispatch(argparse.Namespace(script_name="termination-evidence", script_args=["--", *script_args])) == 0
 
-    assert observed == [str(run_script.registered_script_path("completion-report-check")), *script_args]
+    assert observed == [str(run_script.registered_script_path("termination-evidence")), *script_args]
 
 
 def test_dispatch_runs_review_contract_validator(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -1,38 +1,28 @@
 """終了工程の実際の入力・本文の適合結果を保持し、同じ作業の不足を導出する。
 
 各イベントはこの所有モジュールへ観測を渡す。完了の自己申告は受理せず、
-報告本文の受理は公開の構造確認コマンドと同じ判定を使う。意味上の中止・開始はメインが
+報告段階はメインの可視発話から取得する。意味上の中止・開始はメインが
 原入力と対象を結び付け、ここでは由来、引用、対象の一致を確かめる。
 """
 
 from __future__ import annotations
 
 import argparse
-import functools
 import json
 import os
 import pathlib
-import runpy
-from collections.abc import Callable
 from typing import Any, cast
 
 from agent_toolkit._agents_server import tool_names
-from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._common import automated_prompt, next_action, runtime_inserted
-from agent_toolkit._hooks import agent_id, session_state
+from agent_toolkit._hooks import agent_id, report_validation, session_state
 from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 from agent_toolkit._hooks.stop_gate import append_stop_log
 
 STATE_KEY = "termination_evidence"
-_REPORT_STAGES = ("work-complete", "review-result", "review-submission")
-
-
-@functools.cache
-def _report_contract() -> dict[str, Any]:
-    return runpy.run_path(str(run_script.registered_script_path("completion-report-check")))
 
 
 def _parse(payload_text: str) -> dict[str, Any] | None:
@@ -58,6 +48,11 @@ def _data(state: dict[str, Any], session_id: str) -> dict[str, Any]:
             append_stop_log(session_id, "termination_evidence_unavailable", {"reason": "状態の版または形式が異なる"})
         current = {"version": 1, "session_id": session_id, "sequence": 0, "works": {}, "calls": {}, "inputs": {}}
         state[STATE_KEY] = current
+    works = current["works"]
+    assert isinstance(works, dict)
+    for work in works.values():
+        reports = work.get("reports", {})
+        work["reports"] = {stage: report for stage, report in reports.items() if "call_id" not in report}
     return current
 
 
@@ -70,7 +65,7 @@ def _compact(data: dict[str, Any]) -> None:
             work["decisions"] = decisions[-1:]
             referenced.add(decisions[-1].get("input_id", ""))
         referenced.add(work["reference"])
-        retained = {report["call_id"] for report in work["reports"].values()} | set(work.get("attempts", {}).values())
+        retained = set(work.get("attempts", {}).values())
         retained.update(item["call_id"] for item in work.get("prepare", [])[-1:])
         if decisions:
             retained.add(decisions[-1].get("call_id", ""))
@@ -96,6 +91,8 @@ def _new_work(data: dict[str, Any], reference: str) -> tuple[str, dict[str, Any]
         "decisions": [],
         "prepare": [],
         "async_targets": {},
+        "offset": data["inputs"].get(reference, {}).get("offset", 0),
+        "input_at_last_call": data.get("last_input"),
     }
     data["works"][work_id] = work
     data["current_work"] = work_id
@@ -126,15 +123,6 @@ def _position(payload: dict[str, Any]) -> int:
         return 0
 
 
-def _option(arguments: list[str], name: str) -> str | None:
-    for index, value in enumerate(arguments):
-        if value.startswith(name + "="):
-            return value[len(name) + 1 :]
-        if value == name and index + 1 < len(arguments):
-            return arguments[index + 1]
-    return None
-
-
 def _invocations(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if payload.get("tool_name") in {
         namespace + operation for namespace in tool_names.MCP_NAMESPACES for operation in tool_names.RECORDED_START_OPERATIONS
@@ -156,8 +144,6 @@ def _invocations(payload: dict[str, Any]) -> list[dict[str, Any]]:
         arguments: list[str]
         if name in {"atk", "atk.cmd", "atk.py"} and tokens[1:2] == ["run-script"] and len(tokens) > 2:
             operation, arguments = tokens[2], tokens[3:]
-        elif name == "check_completion_report.py":
-            operation, arguments = "completion-report-check", tokens[1:]
         elif name == "session_review_prepare.py":
             operation, arguments = "session-review-prepare", tokens[1:]
         else:
@@ -168,11 +154,6 @@ def _invocations(payload: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         if operation == "session-review-prepare":
             calls.append({"kind": "prepare"})
-        elif operation == "completion-report-check":
-            stage = _option(arguments, "--stage")
-            if stage not in _REPORT_STAGES:
-                continue
-            calls.append({"kind": stage, "review_state": _option(arguments, "--review-state")})
     return calls
 
 
@@ -194,7 +175,7 @@ def _response_text(response: object) -> str | None:
 
 
 def _returned_text(text: str) -> str:
-    # atk自身の全量保存を消費し、本文の欠落したpreviewを受理本文の代用にしない。
+    # atk自身の全量保存を消費し、欠落したpreviewを準備結果の代用にしない。
     paths = [line.removeprefix("保存先: ").strip() for line in text.splitlines() if line.startswith("保存先: ")]
     if len(paths) == 1:
         path = pathlib.Path(paths[0])
@@ -229,7 +210,7 @@ def observe_user(payload_text: str) -> None:
         if not isinstance(reference, str) or not reference:
             data["sequence"] += 1
             reference = f"input-{data['sequence']}"
-        data["inputs"][reference] = {"text": prompt, "human": human}
+        data["inputs"][reference] = {"text": prompt, "human": human, "offset": _position(payload)}
         data["last_input"] = reference
         _compact(data)
         return state
@@ -343,22 +324,54 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
                 else:
                     record["invalid"] = True
                 continue
-            validator = cast(Callable[[str, str, str | None], list[str]], _report_contract()["validate_report"])
-            if failed or validator(text, record["kind"], record.get("review_state")):
-                record["invalid"] = True
-                work["reports"].pop(record["kind"], None)
-                continue
-            previous = work["reports"].get(record["kind"])
-            report = {"text": text, "call_id": tool_id, "offset": record["offset"], "turn_id": record["turn_id"]}
-            if isinstance(previous, dict) and previous.get("text") == text:
-                report["offset"] = previous["offset"]
-                if previous.get("delivered") is True:
-                    report["delivered"] = True
-            work["reports"][record["kind"]] = report
         _compact(data)
         return state
 
     session_state.update_state(payload["session_id"], update)
+
+
+def observe_reports(payload: dict[str, Any]) -> bool:
+    """現在の作業に属する可視発話の報告だけを取り込み、言い回しで段階を判定しない。"""
+    available = False
+
+    def update(state: dict[str, Any]) -> dict[str, Any]:
+        nonlocal available
+        data = _data(state, payload["session_id"])
+        current = _current_work(data)
+        if current is not None and _last_decision(current[1]) in {"cancel", "replace", "blocked"}:
+            return state
+        reference = data.get("last_input", payload["session_id"])
+        if current is None or _finished(data, current[1]):
+            offset = data["inputs"].get(reference, {}).get("offset", 0)
+        else:
+            offset = current[1].get("offset", 0)
+        messages = visible_messages(payload, offset)
+        if messages is None:
+            append_stop_log(payload["session_id"], "termination_reports_unavailable", {})
+            return state
+        available = True
+        reports = report_validation.reports_from_messages(messages)
+        if not reports:
+            return state
+        if current is None or _finished(data, current[1]):
+            current = _new_work(data, reference)
+        work = current[1]
+        work["reports"] = {stage: report for stage, report in work["reports"].items() if "call_id" not in report}
+        work["reports"].update({stage: {"text": text} for stage, text in reports.items()})
+        _compact(data)
+        return state
+
+    session_state.update_state(payload["session_id"], update)
+    return available
+
+
+def report_violations(work: dict[str, Any]) -> list[str]:
+    """同じ作業の発話本文へ、人間由来の4判定だけを適用する。"""
+    return [
+        error
+        for stage, report in work.get("reports", {}).items()
+        for error in report_validation.validate_report(report["text"], stage)
+    ]
 
 
 def _waiting_uwi(path_text: object, session_id: str, quote: object) -> pathlib.Path:
@@ -495,17 +508,15 @@ def decision_hint(payload: dict[str, Any]) -> str:
 
 
 def missing_stages(work: dict[str, Any]) -> list[str]:
-    """実際の呼び出しと受理本文から残る報告段階を導出する。"""
+    """実際の準備結果と可視発話から残る報告段階を導出する。"""
     data_calls = work.get("prepare", [])
     reports = work.get("reports", {})
-    if not data_calls and not reports and not work.get("attempts"):
+    if not data_calls and not reports:
         return []
-    if "work-complete" in work.get("attempts", {}) and "work-complete" not in reports:
-        return ["work-complete"]
     result = reports.get("review-result")
     if not isinstance(result, dict):
         return ["review-result"]
-    marker = _report_contract()["_SCHEDULED_MARKER"]
+    marker = report_validation.SCHEDULED_MARKER
     return ["review-submission"] if marker in result["text"] and "review-submission" not in reports else []
 
 
@@ -561,34 +572,6 @@ def visible_messages(payload: dict[str, Any], offset: int) -> list[str] | None:
     if isinstance(last, str):
         texts.append(last)
     return texts if not incomplete and (texts or isinstance(last, str)) else None
-
-
-def report_is_visible(payload: dict[str, Any], report: dict[str, Any]) -> bool | None:
-    """改行と外側空白以外の省略を許さず、実際の発話に受理本文があるか返す。"""
-
-    def normalize(text):
-        return text.replace("\r\n", "\n").strip()
-
-    last = payload.get("last_assistant_message")
-    if isinstance(last, str) and normalize(report["text"]) in normalize(last):
-        return True
-    messages = visible_messages(payload, report["offset"])
-    if messages is None:
-        return None
-    return normalize(report["text"]) in normalize("\n".join(messages))
-
-
-def mark_delivered(session_id: str, work_id: str, stage: str, call_id: str) -> None:
-    """可視発話で観測した受理本文を記録し、以後のStopで同じ本文の記録を読み直さない。"""
-
-    def update(state: dict[str, Any]) -> dict[str, Any]:
-        data = state.get(STATE_KEY)
-        report = data.get("works", {}).get(work_id, {}).get("reports", {}).get(stage) if isinstance(data, dict) else None
-        if isinstance(report, dict) and report.get("call_id") == call_id:
-            report["delivered"] = True
-        return state
-
-    session_state.update_state(session_id, update)
 
 
 def main(argv: list[str] | None = None) -> int:

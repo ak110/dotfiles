@@ -320,13 +320,13 @@ Claude Codeはassistantの`text`要素、Codexは`response_item`の`message`の�
 
 終了工程の証拠は、`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が判定と保持の責務を所有する。
 PreToolUseとPostToolUse（Claude CodeではPostToolUseFailureを含む）が実際の呼び出しと応答を、UserPromptSubmitが人間の入力を供給する。
-Stopの`termination_order_advisor`と`completion_report_delivery_advisor`は同じ証拠を消費する。
-証拠とする呼び出しは、`atk run-script completion-report-check`の段階指定と`atk run-script session-review-prepare`であり、既存のシェル実行位置の解析で実行位置にある場合だけ識別する。検索語や引用の中のコマンド名は呼び出しとして扱わない。
-報告本文の受理は構造確認コマンドと同じ`validate_report`で判定する。CodexのBashの`tool_response`は終了コードを含まない出力文字列であるため、終了コードの存在を前提にせず本文の判定で受理する。失敗と取得不能から受理を導かない。
-報告ファイルのパスは成果物の所在であり、作業の同一性には使わない。作業はユーザーの入力、呼び出しの単位、開始と判断記録で区切り、全段階を満たした作業の後に新しい入力が届いてから始まった呼び出しは新しい作業へ割り当てる。
+Stopの`termination_order_advisor`は同じ証拠とメインの可視発話を消費する。
+証拠とする呼び出しは`atk run-script session-review-prepare`であり、既存のシェル実行位置の解析で実行位置にある場合だけ識別する。検索語や引用の中のコマンド名は呼び出しとして扱わない。
+報告段階はStop入力の`last_assistant_message`とtranscriptのassistant可視本文のH2から取得する。作業完了・振り返り結果・AWI投入結果の見出しで段階を区別し、本文にはcompletion-reportが定める4判定だけを適用する。取得不能は診断を残して非遮断とする。
+報告は直接発話し、起草ファイルや確認コマンドの出力を送達の証拠へ使わない。作業はユーザーの入力、呼び出しの単位、開始と判断記録で区切り、全段階を満たした作業の後に新しい入力が届いてから始まった呼び出しは新しい作業へ割り当てる。
 中止・置換・開始・再開・確認待ち・委譲先の待機・技術的不成立は、メインが`atk run-script termination-evidence`で記録する判断として扱う。判断の意味はメインが決め、記録処理は原入力の由来と全文の一致、対象の実在と主体を確かめる。Stopの継続入力、`atk-auto`、構造上の生成標識を持つ入力と`source`が`user`以外の入力は、人間の根拠として受理しない。完了の申告を記録する操作は設けない。
 証拠を読めない場合（状態の破損、旧版の未供給、期限回収後）は完了とも未完了とも扱わず、Stop判定ログへ診断を残して遮断しない。証拠の再供給で回復できる。
-CodexのStopは終了工程の証拠を扱う2つの判定だけを実行する。他のStop判定はClaude Codeの記録形式と通知手段を前提とするため、Codexへ適用しない。
+CodexのStopは`termination_order_advisor`だけを実行する。他のStop判定はClaude Codeの記録形式と通知手段を前提とするため、Codexへ適用しない。
 
 ## 環境変数の一覧
 
