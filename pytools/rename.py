@@ -50,7 +50,7 @@ def main() -> None:
         "--target-dir",
         type=pathlib.Path,
         default=pathlib.Path.cwd(),
-        help="処理対象ディレクトリ (既定: カレント)",
+        help="処理対象ディレクトリ (省略時: カレント)",
     )
     parser.add_argument("-P", "--make-parents", action="store_true", help="改名先ディレクトリを作成する")
     parser.add_argument("-O", "--overwrite", action="store_true", help="既存ファイル/ディレクトリを上書き許可する")

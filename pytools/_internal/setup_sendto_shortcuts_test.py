@@ -97,7 +97,7 @@ class TestRunShortcutCreation:
         assert setup_sendto_shortcuts.run() is True
         cmd_strings = [" ".join(c) for c in calls]
         # .lnk 不在のため読み取りは行われず、Save() を含む生成コマンドのみ呼ばれる。
-        # 既定の `_SHORTCUTS` (TouchFile.lnk) のターゲットと .lnk パスが
+        # 差し替えていないモジュール定義の `_SHORTCUTS` (TouchFile.lnk) のターゲットと .lnk パスが
         # PowerShell コマンドに正しく組み込まれることもここで担保される。
         assert any("Save()" in s for s in cmd_strings)
         assert any(str(target) in s for s in cmd_strings)

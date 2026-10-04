@@ -71,7 +71,7 @@ def _git_answers(arguments: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def test_cli_outputs_japanese_when_default_stream_encoding_is_not_utf8() -> None:
-    """非UTF-8の既定ストリームでも日本語のCLI出力を維持する。"""
+    """標準ストリームの文字コードがUTF-8でない環境でも日本語のCLI出力を維持する。"""
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "cp1252"
     result = subprocess.run(

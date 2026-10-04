@@ -291,7 +291,7 @@ def _warn_conflict(
             "codex-logs",
             "復元未完了: ホームディレクトリと共有メモリーの内容が一致しないため自動変更を停止。"
             f"home=[{home_paths}] target=[{target_paths}] snapshot={snapshot}。"
-            "Codexを停止したままSQLiteのDB・WAL・SHMを一組として照合し、ホームディレクトリへ復旧する。"
+            "Codexを停止したまま`~/.codex/`、`/dev/shm/codex-<UID>-*`、競合スナップショットの3集合を比べ、SQLiteのDB・WAL・SHMを一組としてホームディレクトリへ復旧する。"
             "復旧後に内容を検証し、共有メモリー側targetと競合snapshotを手動で回収する。"
             f"home directory={codex_dir}",
         )

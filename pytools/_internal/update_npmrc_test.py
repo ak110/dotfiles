@@ -12,7 +12,7 @@ from pytools._internal.update_npmrc import run
 
 @pytest.fixture(name="pnpm_calls", autouse=True)
 def _pnpm_calls(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
-    """既定ではpnpmを未検出とし、開発者の実環境のpnpm設定へ書き込まないようにする。"""
+    """個々のテストが差し替えない限りpnpmを未検出とし、開発者の実環境のpnpm設定へ書き込まないようにする。"""
     monkeypatch.setattr(update_npmrc.shutil, "which", _which_none)
     return []
 

@@ -56,9 +56,10 @@ class ConvertSummary:
 def open_image_with_exif(path: pathlib.Path) -> tuple[PIL.Image.Image, bool]:
     """EXIF情報に従い回転補正した画像と寛容モードフラグを返す。
 
-    Pillow 12.xはPNG補助チャンク（tEXt等）のCRCが不整合だと既定で`UnidentifiedImageError`を
-    送出して`Image.open`が失敗するが、ImageMagick等の他ツールでは警告レベルで読み込めるケースがある。
-    まず既定モードで`PIL.Image.open`を試み、シグネチャ判定または本体読み込みで失敗した場合のみ
+    Pillow 12.xはPNG補助チャンク（tEXt等）のCRCが不整合だと、`LOAD_TRUNCATED_IMAGES`が初期値の`False`のとき
+    `UnidentifiedImageError`を送出して`Image.open`が失敗するが、ImageMagick等の他ツールでは警告レベルで読み込めるケースがある。
+    まず通常モード（`LOAD_TRUNCATED_IMAGES = False`）で`PIL.Image.open`を試み、
+    シグネチャ判定または本体読み込みで失敗した場合のみ
     `PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True`へ切り替えて再試行する。再試行で成功した場合は
     第2戻り値を`True`として返す。
 
@@ -73,7 +74,7 @@ def open_image_with_exif(path: pathlib.Path) -> tuple[PIL.Image.Image, bool]:
 
     Returns:
         `(image, used_truncated_fallback)`のタプル。第2要素が`True`のとき、
-        Pillowが既定モードで読み込みに失敗し寛容モードへフォールバックしたことを示す。
+        Pillowが通常モードで読み込みに失敗し寛容モードへフォールバックしたことを示す。
     """
     used_fallback = False
     try:

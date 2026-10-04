@@ -32,7 +32,7 @@ _MISE_TIMEOUT = 300
 _MISE_INSTALL_TIMEOUT = 600
 
 # 無人セットアップではネットワークの一時的な遅延で版一覧取得が失敗しないよう、
-# mise内部の既定値より長い上限を全mise呼び出しへ適用する。
+# miseが設定のない場合に使う値より長い上限を全mise呼び出しへ適用する。
 _MISE_FETCH_REMOTE_VERSIONS_TIMEOUT = "120s"
 
 # Windows 上で mise の shims ディレクトリを指し示す値。レジストリ上は

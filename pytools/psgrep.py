@@ -21,7 +21,7 @@ def main() -> None:
     """実行中プロセスのパスを検索するエントリポイント。"""
     parser = argparse.ArgumentParser(description="プロセスの実行ファイルパスを検索する")
     parser.add_argument("pattern", type=str, help="検索パターン")
-    parser.add_argument("--regex", action="store_true", help="正規表現マッチ (既定は部分一致/ワイルドカード)")
+    parser.add_argument("--regex", action="store_true", help="正規表現マッチ (省略時は部分一致/ワイルドカード)")
     parser.add_argument("-i", "--ignore-case", action="store_true")
     enable_completion(parser)
     args = parser.parse_args()

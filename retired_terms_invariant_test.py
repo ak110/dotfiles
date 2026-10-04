@@ -26,7 +26,7 @@ class _AllowedLocation:
     """撤去語が残ってよい箇所。"""
 
     path_pattern: str
-    """リポジトリ相対パスへ`PurePosixPath.match`で照合するパターン。"""
+    """リポジトリ相対パスへ`PurePosixPath.match`で一致を判定するパターン。"""
     line_substring: str | None = None
     """指定した場合は、この文字列を含む行だけを許容する。"""
     line_exact: str | None = None

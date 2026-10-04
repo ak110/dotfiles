@@ -49,18 +49,18 @@ def main() -> None:
     p_dtc = sub.add_parser("DisposeTCBookmarks", help="ブックマークを接頭辞ごとに整理する。")
     p_dtc.add_argument("path", help="対象フォルダー。")
 
-    p_rl = sub.add_parser("RandomList", help="ランダム抽出してリストを出力する（既定cp932）。")
+    p_rl = sub.add_parser("RandomList", help="ランダム抽出してリストを出力する（省略時はcp932）。")
     p_rl.add_argument("dir", help="対象フォルダー。")
     p_rl.add_argument("list_path", help="出力先リストファイル。")
-    p_rl.add_argument("--encoding", default="cp932", help="出力エンコーディング（既定: cp932）。")
+    p_rl.add_argument("--encoding", default="cp932", help="出力エンコーディング（省略時: cp932）。")
 
-    p_rm = sub.add_parser("RandomM3U8", help="ランダム抽出してm3u8を出力する（既定BOM付きUTF-8）。")
+    p_rm = sub.add_parser("RandomM3U8", help="ランダム抽出してm3u8を出力する（省略時はBOM付きUTF-8）。")
     p_rm.add_argument("dir", help="対象フォルダー。")
     p_rm.add_argument("list_path", help="出力先リストファイル。")
-    p_rm.add_argument("--encoding", default="utf-8-sig", help="出力エンコーディング（既定: utf-8-sig）。")
+    p_rm.add_argument("--encoding", default="utf-8-sig", help="出力エンコーディング（省略時: utf-8-sig）。")
 
     p_dc = sub.add_parser("DownloadCustom", help="設定ファイルに従いサイトをクロールしてダウンロードする。")
-    p_dc.add_argument("sites_file", nargs="?", default="Sites.xml", help="サイト設定XML（既定: Sites.xml）。")
+    p_dc.add_argument("sites_file", nargs="?", default="Sites.xml", help="サイト設定XML（省略時: Sites.xml）。")
 
     enable_completion(parser)
     args = parser.parse_args()

@@ -128,7 +128,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="アーカイブ・PDF を gv 向けに前処理する")
     parser.add_argument("-c", "--config", type=pathlib.Path, help="YAML 設定ファイル")
     parser.add_argument(
-        "-b", "--backup-dir", type=pathlib.Path, help="バックアップ先 (既定: 対象ファイルのあるディレクトリ/bk)"
+        "-b", "--backup-dir", type=pathlib.Path, help="バックアップ先 (省略時: 対象ファイルのあるディレクトリ/bk)"
     )
     parser.add_argument("--no-trash", action="store_true", help="バックアップをゴミ箱送りしない")
     parser.add_argument("--dry-run", action="store_true")
@@ -199,9 +199,9 @@ def _resolve_config_path(explicit: pathlib.Path | None, targets: list[pathlib.Pa
 
 
 def _load_config(path: pathlib.Path | None) -> RepackConfig:
-    """YAML設定ファイルを読み込む。未指定なら既定値のみ。"""
+    """YAML設定ファイルを読み込む。未指定なら`RepackConfig`の各項目の初期値を使う。"""
     if path is None:
-        logger.info("設定ファイル未指定。既定値で実行する")
+        logger.info("設定ファイル未指定。各設定項目の初期値で実行する")
         return RepackConfig()
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return RepackConfig.model_validate(raw)

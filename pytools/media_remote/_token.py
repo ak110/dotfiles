@@ -13,7 +13,7 @@ _TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
 
 def default_token_path() -> pathlib.Path:
-    r"""既定のトークン保存先（`%LOCALAPPDATA%\\dotfiles\\media-remote\\token.txt`）。
+    r"""`--token-file`を省略した場合のトークン保存先（`%LOCALAPPDATA%\\dotfiles\\media-remote\\token.txt`）。
 
     `LOCALAPPDATA`未設定時は`~/AppData/Local`へフォールバックする。
     """

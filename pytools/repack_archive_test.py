@@ -401,7 +401,7 @@ def _png_bytes(size: tuple[int, int] = (50, 50), color: tuple[int, int, int] = (
 def _png_bytes_with_corrupt_text() -> bytes:
     """tEXt チャンクの CRC を意図的に破損させた PNG バイト列を返す。
 
-    Pillow 既定モードでは UnidentifiedImageError が発生するが、寛容モードでは
+    Pillow 通常モード（LOAD_TRUNCATED_IMAGES = False）では UnidentifiedImageError が発生するが、寛容モードでは
     画像本体が読み込まれる。imageconverter の 2 段構え動作確認用。
     """
     data = _png_bytes()
@@ -656,9 +656,9 @@ class TestFilenameEncoding:
         """
         archive = tmp_path / "mixed.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
-            # ASCII 名: zipfile 既定動作で bit 11 未設定
+            # ASCII 名: zipfile へフラグを指定しない書き込みで bit 11 未設定
             zf.writestr("README.txt", b"readme")
-            # 日本語名: zipfile 既定動作で UTF-8 + bit 11 設定
+            # 日本語名: zipfile へフラグを指定しない書き込みで UTF-8 + bit 11 設定
             zf.writestr("日本語.txt", b"ja")
         exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
         assert exit_code == 0
@@ -1017,7 +1017,7 @@ class TestProcessPdf:
         assert output.exists()
         with zipfile.ZipFile(output) as zf:
             ordered = [info.filename for info in zf.infolist()]
-        # 既定の出力形式は jpeg。ページはゼロ埋め連番で自然順に並ぶ
+        # 出力形式を指定しない場合は jpeg。ページはゼロ埋め連番で自然順に並ぶ
         assert ordered == ["0001.jpg", "0002.jpg"]
         # バックアップは元の PDF 名のまま保持される
         assert (tmp_path / "bk" / "book.pdf").exists()
