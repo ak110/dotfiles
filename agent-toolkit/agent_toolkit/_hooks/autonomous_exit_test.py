@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py のテスト。
 
-agent-toolkit pluginが提供するStopフックを各判定を集約する関数から起動し、環境変数・再帰呼び出し・
+agent-toolkit pluginが提供するStopフックを共通のhook起動スクリプト`hook.py`から起動し、環境変数・再帰呼び出し・
 非同期待機・呼び出し済み状態・blockの各契約を検証する。
 """
 

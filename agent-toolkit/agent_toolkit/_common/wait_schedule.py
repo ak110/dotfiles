@@ -44,7 +44,7 @@ _WAIT_TIMEOUT_FOR_5M_TTL = 270.0
 _WAIT_TIMEOUT_FOR_1H_TTL = 1740.0
 # Claude Codeを確認できないホスト向けの上限。Codexは1回のツール呼び出しへ300秒の上限を課し、
 # これを超える待機は`timed out awaiting tools/call after 300s`で失敗するため、この上限より短い値とする。
-# 誤判定の影響は対象ホストによって異なり、Claude Codeを誤って対象ホストと判定した場合は待機の再発行が増えるだけで、
+# 誤判定の影響は誤りの向きによって異なり、Claude Codeを誤って対象ホストと判定した場合は待機の再発行が増えるだけで、
 # 逆の誤りだけがタイムアウト失敗を残す。このため`CLAUDECODE`を確認できない場合も同様のホストとして扱う。
 _WAIT_TIMEOUT_FOR_UNKNOWN_HOST = 270.0
 _WAIT_TIMEOUT_FOR_DELEGATED_SESSION = 240.0

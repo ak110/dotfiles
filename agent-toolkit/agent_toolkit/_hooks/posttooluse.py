@@ -176,7 +176,7 @@ def _set_process_wi_invoked(state: dict) -> dict | None:
     """process-wiスキル起動フラグを常時Trueへ上書きする。
 
     新規process-wiラン開始時に前ランの残置フラグを無視して確実にTrueへ強制上書きするため冪等スキップを廃止する。
-    リセットする処理は`_reset_process_wi_invoked`（exit-session起動検知）と併用する。
+    フラグのリセットは`_reset_process_wi_invoked`（exit-session起動検知）が担い、本関数と対で使う。
     """
     state["process_wi_skill_invoked"] = True
     return state
