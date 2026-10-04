@@ -6,10 +6,6 @@ import re
 import subprocess
 from pathlib import Path
 
-import pytest
-
-pytestmark = pytest.mark.repo_invariant
-
 REPO_ROOT = Path(__file__).resolve().parent
 FORBIDDEN_TOKEN = "duplicate-code"
 PYLINT_DIRECTIVE = re.compile(r"#\s*pylint:\s*(?:disable|enable)\s*=\s*(?P<messages>[^#\r\n]*)")

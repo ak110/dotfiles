@@ -5,12 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from agent_toolkit._git import command as git_command
-
-pytestmark = pytest.mark.repo_invariant
-
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent
 _SOURCE_ROOTS = (_PACKAGE_ROOT / "agent_toolkit", _PACKAGE_ROOT / "scripts", _PACKAGE_ROOT / "skills")

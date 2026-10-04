@@ -1,10 +1,6 @@
 """起動経路の回帰テストコードと実際の役割文書の対応を検証する。"""
 
-import pytest
-
 from agent_toolkit._hooks.pretooluse.test_support_test import _EXECUTE_REVIEW_TASK_NAMES, _SHARE_DIR
-
-pytestmark = pytest.mark.repo_invariant
 
 
 class TestExecuteReviewAlternateRouteAllowed:

@@ -4,12 +4,9 @@ import importlib
 import json
 import shlex
 
-import pytest
-
 from agent_toolkit._hooks.stop_test import _HOOKS_PATH
 
 
-@pytest.mark.repo_invariant
 def test_registered_stop_checks_document_delegated_execution() -> None:
     manifest = json.loads(_HOOKS_PATH.read_text(encoding="utf-8"))
     module_names: list[str] = []

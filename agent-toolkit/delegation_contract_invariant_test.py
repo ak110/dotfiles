@@ -9,9 +9,6 @@ import pytest
 from agent_toolkit._agents_server import task_documents
 from agent_toolkit._atk import run_script
 
-pytestmark = pytest.mark.repo_invariant
-
-
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 _REQUIRED_INPUT_PREFIX = "必須入力名:"
 _NAME_CONTINUATION = r"0-9A-Za-z_\u30a0-\u30ff\u3400-\u9fff"

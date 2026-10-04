@@ -50,13 +50,12 @@ description: >
   そのモジュールと同じディレクトリの`<name>_test.py`とする。文書・設定・スクリプトの実物を読むテストは、
   その実物と同じディレクトリか、対象群を包含する最も近いディレクトリへ置く。
   fixtureで文書などの入力を作成して実装を呼ぶテストは、実装の動作テストとして実装の近くへ残す。
-  収集や配布の制約で近くへ置けない場合は、成立する最も近い場所を選び、その理由を記録する
-- 複数領域の既存成果物の不変条件を確かめるPythonテストは、`repo_invariant`マーカーで識別する。
-  ファイルは`*_invariant_test.py`とし、全体が該当する場合は`pytestmark = pytest.mark.repo_invariant`を付ける。
-  通常の動作テストと混在するときは、マーカー対象だけを近接する専用ファイルへ分離し、両projectの
-  `pytest-fast-targets`が通常テストを収集せず同じ集合を選ぶようにする。検証用のヘルパーの入力を確かめるテストも
-  元から同じマーカー対象だった場合は保持する。検証対象の探索は`agent-toolkit:check-execution`の
-  `references/verification-scope.md`に従い、個々のテストと編集対象の対応表を規範へ増やさない
+  収集や配布の制約で近くへ置けない場合は、成立する最も近い場所を選び、その理由を対象テストファイルのモジュールdocstringへ記す
+- 複数領域の既存成果物の不変条件を確かめるPythonテストは、ファイル名を`*_invariant_test.py`として識別する。
+  rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこのファイル名で対象を選び、`pyfltr fast`が実行する。
+  通常の動作テストと混在するときは、不変条件のテストだけを近接する`*_invariant_test.py`へ分離し、通常テストをfastの対象に含めない。
+  検証対象の探索は`agent-toolkit:check-execution`の`references/verification-scope.md`に従い、
+  個々のテストと編集対象の対応表を規範へ増やさない
 - テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`へ集約する。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
   共通化が必要な場合は`agent-toolkit-edit`スキル「scripts配下の配置」節が定めるテスト専用パッケージへ置く

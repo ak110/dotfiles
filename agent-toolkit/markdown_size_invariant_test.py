@@ -6,8 +6,6 @@ import pytest
 
 from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read
 
-pytestmark = pytest.mark.repo_invariant
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
@@ -15,7 +13,6 @@ def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
     return check_large_bash_read(command, str(cwd), is_codex=True)
 
 
-@pytest.mark.repo_invariant
 def test_agent_toolkit_markdown_fits_full_read_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
     """agent-toolkitの規範Markdownは、Codexが遮断されずに1回の全文取得で読める容量に収める。
 

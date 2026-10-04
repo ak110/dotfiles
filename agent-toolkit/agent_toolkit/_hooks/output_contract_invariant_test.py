@@ -1,11 +1,7 @@
 """登録されたhookと出力スキーマ・テストコードの対応を検証する。"""
 
-import pytest
-
 from agent_toolkit._hooks import output_contract_test as cases
 from agent_toolkit._hooks.output_contract import HOOK_OUTPUT_SCHEMAS
-
-pytestmark = pytest.mark.repo_invariant
 
 
 def test_fixture_table_covers_every_registered_hook() -> None:

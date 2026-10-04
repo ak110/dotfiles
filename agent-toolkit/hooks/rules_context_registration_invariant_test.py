@@ -5,10 +5,6 @@ from __future__ import annotations
 import json
 import pathlib
 
-import pytest
-
-pytestmark = pytest.mark.repo_invariant
-
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 

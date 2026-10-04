@@ -1,6 +1,6 @@
 # 監査記録
 
-本ファイルは、`agent-toolkit`の規範文書とタスク文書が持つ条文のうち、対象の挙動を現物で観測して確かめたものについて、確認した日付、観測した版数および再検証の手段を保持する。
+本ファイルは、`agent-toolkit`の規範文書・タスク文書と本リポジトリのプロジェクトスキル（`.claude/skills/`配下）が持つ条文のうち、対象の挙動を現物で観測して確かめたものについて、確認した日付、観測した版数および再検証の手段を保持する。
 条文の側には観測事象だけを置き、本ファイルのH2見出しで索引する。
 条文が前提とする挙動と異なる観測を得た場合は、その条文が指すH2見出しを読む。記載された手段で再検証してから、条文の失効を判定する。
 H2見出しは索引元の条文が指す文字列と一致させる。索引元の条文を移設し、または索引元の節名を改める改訂では、同じ改訂で本ファイルのH2見出しと索引元の参照を併せて改める。
@@ -490,53 +490,6 @@ pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Py
 - 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。全ツールの引数に説明が無い。`run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。`show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。説明の言語が日本語と英語で混在する。instructionsは未設定である
 - 仕様上の是正: 確定した該当なし。未確定として、workerプロセスからの結果JSONの読取に例外処理が無く、外部ツールがファイル記述子1へ直接書いた場合は汎用のエラー本文になる可能性がある（プロトコル違反ではない）。子プロセスの標準出力が常に取り込まれるかは確認していない
 
-## テストの近接配置と横断選択の再検証：2026年10月3日
-
-配置変更前の554312ce7では、リポジトリ直下から`--ignore=agent-toolkit-codex`を指定したpytestの収集が8092件、repo_invariantの選択が80件であった。
-ここで「旧node」は、554312ce7で収集された`<ファイル>::<クラス>::<関数>[パラメーター]`の識別子を指す。
-クラスとパラメーターが無い識別子も含む。基準版と再検証する版は独立した作業ツリーへ用意し、
-`dotfiles-development`の環境準備を終えてから、それぞれのリポジトリ直下で次の2つのコマンドで収集する。
-
-全nodeの収集:
-
-```sh
-uv run --frozen pytest -p no:cacheprovider -p no:xdist -o addopts='' --collect-only -q --ignore=agent-toolkit-codex .
-```
-
-repo_invariantの選択結果の収集:
-
-```sh
-uv run --frozen pytest -p no:cacheprovider -p no:xdist -o addopts='' --collect-only -q -m repo_invariant --ignore=agent-toolkit-codex .
-```
-
-再検証する版でのrepo_invariantの実行:
-
-```sh
-uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex .
-```
-
-移動の対応は`git diff --find-renames 554312ce7..HEAD -- '*_test.py'`と、両版の収集出力から復元する。
-ファイル全体の改名はrenameの組、部分分離は同名のクラス・関数とパラメーターで対応させる。
-収集結果が合格となるのは、全ての旧nodeが移動先か維持する場所で一度ずつ収集され、欠落・重複が無い場合である。
-元のassert・パラメーター・対象集合を維持し、旧80選択の各nodeも保持する。
-追加した横断nodeが選ばれ、通常の動作nodeを一律に選択へ含めず、選択したテストの実行が終了0であることも確かめる。
-今回の変更後の確認値は、全8092node、横断130nodeの選択と130件成功、担当範囲の通常614nodeの非選択である。
-将来の追加や改訂では件数だけを固定値と比べず、各nodeの対応と選択を比べ、意図した増減の理由を記録する。
-
-生成・参照・設定の追随は、再検証する版のリポジトリ直下で次を実行する。
-
-```sh
-uv run --frozen python scripts/sync_generated_files.py
-uv run --frozen python scripts/sync_codex_plugin_manifests.py --check
-uv run --frozen pytest -p no:cacheprovider ci_workflow_test.py custom_linters_invariant_test.py sync_generated_files_invariant_test.py scripts/sync_codex_plugin_manifests_test.py scripts/gen-install-files_test.py
-```
-
-生成と設定の追随が合格となるのは、同期後の`--check`が終了0で、上記のテストが前提を満たす環境で成功する場合である。
-通常ファイルの投影、wheelのテスト除外と隔離の契約も保持する。
-`test_agent_doc_tone_covers_every_population_root`はpyfltrの公開APIのexpand_all_files・filter_by_globsで実際に届く対象を確かめる。
-`test_sync_targets_cover_agent_toolkit_skills_and_share`は新配置を含む各階層の同期対象を確かめる。
-両テストで既存の代表を保持し、新配置7階層も対象へ加えた。自動実行や処理速度はこの配置変更の検証対象へ含めない。
-
 ## agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日
 
 AWI `20261003-134122-001.md`と`20261003-110859-001.md`の起草時に、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
@@ -545,17 +498,17 @@ AWI `20261003-134122-001.md`と`20261003-110859-001.md`の起草時に、両ホ�
 
 ## dotfiles-development：不変条件テストのfast自動実行：2026年10月4日
 
-pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。変更前のマーカー収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。ファイル名だけで件数を確認すると、この対象が外れても通常のfastは成功するため、各nodeの対応を比較する。
+pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。指定した時点では横断テストをpytestのマーカー`repo_invariant`でも識別しており、マーカーでの収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。その後、fastがマーカーを選択に使わないため、マーカーを撤去してファイル名だけで識別する形にした。撤去後の確認では、fastのpytestが受け取ったファイルは33件で、`git ls-files`が返す`*_invariant_test.py`の33件と一致した。
 
 再検証はrootで次を個別に実行する。
 
 ```sh
-uv run --frozen pytest -p no:cacheprovider -m repo_invariant --ignore=agent-toolkit-codex . --collect-only -q
+git ls-files -- '*_invariant_test.py'
 uv run --frozen pyfltr fast --commands=pytest
 uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 ```
 
-収集結果の各nodeが専用ファイルへ一度ずつ対応し、通常の動作nodeを追加していないことを確認する。Markdownだけを渡した既存hookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
+fastのpytestが受け取ったファイルの集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象の入れ替わりを見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
 
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：動的なwatch対象の指定：2026年10月4日
 

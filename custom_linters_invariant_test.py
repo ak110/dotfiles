@@ -8,9 +8,6 @@ from pathlib import Path
 
 import pyfltr.command.targets
 import pyfltr.config.config
-import pytest
-
-pytestmark = pytest.mark.repo_invariant
 
 REPO_ROOT = Path(__file__).resolve().parent
 

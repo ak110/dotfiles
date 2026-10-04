@@ -440,7 +440,6 @@ addopts = [
 ]
 markers = [
     "browser: Chromiumを使う実ブラウザー統合テスト",
-    "repo_invariant: 変更ファイルと無関係に既存成果物の不変条件を確かめるテスト（全追跡ファイル・全ソースの走査と複数領域の契約の整合）",
 ]
 log_level = "DEBUG"
 xfail_strict = true

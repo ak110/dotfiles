@@ -4,11 +4,7 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from agent_toolkit._hooks import rules_context
-
-pytestmark = pytest.mark.repo_invariant
 
 
 def test_share_task_documents_have_no_bare_return_line_examples() -> None:

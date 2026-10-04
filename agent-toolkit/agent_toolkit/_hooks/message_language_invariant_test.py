@@ -13,8 +13,6 @@ import pytest
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
-pytestmark = pytest.mark.repo_invariant
-
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _ALLOWED_BARE_IDENTIFIERS = frozenset(
     {

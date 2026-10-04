@@ -2,11 +2,7 @@
 
 import importlib
 
-import pytest
-
 cases = importlib.import_module("gen-install-files_test")
-
-pytestmark = pytest.mark.repo_invariant
 
 
 def test_current_repo_files_are_synced() -> None:

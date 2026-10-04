@@ -4,11 +4,7 @@ import json
 import pathlib
 import re
 
-import pytest
-
 from agent_toolkit._hooks.pretooluse import agent_checks
-
-pytestmark = pytest.mark.repo_invariant
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 

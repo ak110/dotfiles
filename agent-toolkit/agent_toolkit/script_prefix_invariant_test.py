@@ -5,8 +5,6 @@ from __future__ import annotations
 import ast
 import pathlib
 
-import pytest
-
 _EXEMPT_ENTRIES = frozenset({"_managed_temp.py"})
 
 
@@ -52,7 +50,6 @@ def _standalone_private_prefixed_scripts(paths: list[pathlib.Path]) -> list[str]
     ]
 
 
-@pytest.mark.repo_invariant
 def test_standalone_scripts_do_not_use_private_prefix() -> None:
     """単独実行される非テストスクリプトには非公開接頭辞を許さない。"""
     scripts_dir = pathlib.Path(__file__).resolve().parent

@@ -9,10 +9,6 @@ Codex向け派生manifestは`scripts/sync_codex_plugin_manifests.py`が検証す
 import json
 import pathlib
 
-import pytest
-
-pytestmark = pytest.mark.repo_invariant
-
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent / "agent-toolkit"
 _PLUGIN_MANIFEST = _PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
 _MARKETPLACE_MANIFEST = _PLUGIN_ROOT.parent / ".claude-plugin" / "marketplace.json"
