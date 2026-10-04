@@ -97,8 +97,6 @@ def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> s
     """一覧表示用の状態別着手可否を返す。"""
     if state not in WI_PROCESSABLE_STATES:
         return "complete"
-    if filename in readiness.observation_waiting:
-        return "observation-wait"
     return "ready" if filename in readiness.ready else "blocked"
 
 
@@ -111,8 +109,6 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
     そのprocess-wiの実行で着手できない項目が選定の候補へ入る。
     """
     reasons = (
-        ("invalid-observation-wait", readiness.invalid_observation_waits),
-        ("observation-wait", readiness.observation_waiting),
         ("frontmatter-broken", readiness.frontmatter_broken),
         ("invalid-cooldown", readiness.invalid_cooldowns),
         ("invalid-dependency", readiness.invalid_dependencies),
@@ -161,7 +157,7 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 display_repo = target_repo
             reason = (
                 _blocked_reason(readiness, path.name)
-                if state_readiness in {"blocked", "observation-wait"} and (entry_type != WI_TYPE_UWI or answered)
+                if state_readiness == "blocked" and (entry_type != WI_TYPE_UWI or answered)
                 else None
             )
             reason_suffix = f" blocked_reason={reason}" if reason is not None and reason != "frontmatter-broken" else ""
@@ -216,7 +212,7 @@ def _print_json_entries(
         answered = entry_type == WI_TYPE_UWI and _is_uwi_answered(text)
         reason = (
             _blocked_reason(readiness, path.name)
-            if state_readiness in {"blocked", "observation-wait"} and (entry_type != WI_TYPE_UWI or answered)
+            if state_readiness == "blocked" and (entry_type != WI_TYPE_UWI or answered)
             else None
         )
         summary = _uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
@@ -230,10 +226,6 @@ def _print_json_entries(
             "source": _parse_source(text),
             "summary": summary,
         }
-        if path.name in readiness.observation_waiting:
-            parsed = parse_frontmatter(text)
-            assert parsed is not None
-            record["observation_wait"] = parsed[0]["observation_wait"]
         if include_staleness:
             record["staleness"] = _staleness(text, target_repo, now)
         print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))

@@ -30,7 +30,6 @@ import markdown_it
 import yaml
 
 try:
-    from agent_toolkit._atk.wi.frontmatter import observation_wait_metadata as _observation_wait_metadata
     from agent_toolkit._common import markdown_headings as _markdown_headings
     from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._plan import locations as _plan_file
@@ -209,45 +208,7 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"AWI本文を読み込めない: {source}: {error}") from error
         errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, excluded_paths))
-    errors.extend(_check_waiting_selection(selection, items))
     errors.extend(_check_lane_overlaps(items, _selection.lane_costs(selection) or []))
-    return errors
-
-
-def _check_waiting_selection(selection: object, items: list[object]) -> list[str]:
-    """通常候補と選定の一致、別に返す観測待ちの形式と非重複を確かめる。"""
-    assert isinstance(selection, dict)
-    selected = [item[_selection.WI_KEY] for item in items if isinstance(item, dict)]
-    errors: list[str] = []
-    normal = selection.get("通常候補")
-    if normal is not None:
-        if not isinstance(normal, list) or any(not isinstance(name, str) for name in normal):
-            raise InputError("通常候補にはWIファイル名の列が必要です")
-        if len(normal) != len(set(normal)) or set(normal) != set(selected):
-            errors.append("通常候補と選定のWI集合が一致しない、または候補が重複している")
-    waiting = selection.get("観測待ち", [])
-    if not isinstance(waiting, list):
-        raise InputError("観測待ちには項目の列が必要です")
-    names: set[str] = set()
-    for item in waiting:
-        if not isinstance(item, dict) or not isinstance(item.get("WI"), str):
-            raise InputError("観測待ちの各項目にはWIファイル名が必要です")
-        name = item["WI"]
-        try:
-            _observation_wait_metadata(
-                {
-                    "observation_wait": {
-                        "condition": item.get("条件"),
-                        "plan_file": item.get("計画ファイル"),
-                        "commit": item.get("実装commit"),
-                    }
-                }
-            )
-        except ValueError as error:
-            errors.append(f"{name}: 観測待ちの形式が不正: {error}")
-        if name in names or name in selected:
-            errors.append(f"{name}: 観測待ちが重複、または通常選定へ含まれている")
-        names.add(name)
     return errors
 
 

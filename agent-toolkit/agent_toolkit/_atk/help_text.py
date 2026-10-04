@@ -22,11 +22,6 @@ ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、�
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 
 HELP: dict[str, dict[str, str]] = {
-    "atk wi set-observation-wait": {
-        "summary": "反映済みAWIの残る観測条件を記録する",
-        "description": "目的: 候補0件のprocess-wiの1回の実行を待つ反映済みAWIを通常の実行候補から分ける。\n利用場面: メインが実装・反映と残る条件を確定したとき。\n対象と出力: processingのAWIのobservation_waitだけを更新し、条件・既存計画・実装完全OIDを保持する。本文と保存状態は変えない。成功は標準出力、失敗は理由と次の操作を標準エラーへ返す。\n前提: 設定時はcondition・plan-file・commitを指定する。target-repoは実装commitを解決できるworktreeの絶対パス。\n復元・後始末: --clearで観測待ちだけを解除できる。",
-        "epilog": "実行例:\n\n  atk wi set-observation-wait <FILE> --condition selection-empty --plan-file <PLAN> --commit <OID> --target-repo <WORKTREE>",
-    },
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",
         "description": "目的: atkが参照する実行環境を診断する。\n利用場面: 起動したディレクトリ、pluginの版または設定の所在を確かめるとき。\n対象と出力: 現在ディレクトリ、実行ファイル、plugin rootと版、設定ファイルと状態ディレクトリの所在を標準出力へ書く。\n前提: なし。\n復元・後始末: 読み取りだけを行うため不要。",

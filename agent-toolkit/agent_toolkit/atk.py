@@ -851,15 +851,6 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     )
     _add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
 
-    observation = _atk_help.add_command(sub, "set-observation-wait", **_atk_help.HELP["atk wi set-observation-wait"])
-    observation.add_argument("filename", metavar="FILENAME", help="processingの観測待ちAWIファイル名")
-    observation.add_argument("--condition", choices=("selection-empty",), help="残る観測が成立するprocess-wiの実行条件")
-    observation.add_argument("--plan-file", help="既存計画ファイルのbasename")
-    observation.add_argument("--commit", help="検収済みの既存実装commit。完全OIDへ解決する")
-    observation.add_argument("--clear", action="store_true", help="観測待ちのメタデータだけを解除する")
-    observation.add_argument("--target-repo", required=True, help="実装commitを確認できるworktreeの絶対パス")
-    observation.set_defaults(subparser=observation)
-
 
 def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     """検索・回答・外部差分コミットサブコマンドを登録する。"""
@@ -1574,7 +1565,6 @@ def main(
         "rm": lambda: _mutations._cmd_rm(args, private_notes),
         "edit": lambda: _mutations._cmd_edit(args, private_notes),
         "set-dependencies": lambda: _mutations._cmd_set_dependencies(args, private_notes),
-        "set-observation-wait": lambda: _mutations._cmd_set_observation_wait(args, private_notes),
         "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _uwi._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),
