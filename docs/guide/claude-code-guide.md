@@ -236,14 +236,15 @@ AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼した�
 UWIへの回答は後述の「UWIへの回答と状態確認」の操作で行う。
 
 オーケストレーター・モデル・effortは`atk config`の`orchestrate_model`へ設定する。
-書式は`<claude|codex>:<model>[/<effort>]`、設定していない場合は`claude:opus[1m]/medium`（Claude Code）を使う。
+書式は`<claude|codex>:<model>[/<effort>]`をASCIIカンマで区切った候補列で、前述の工程別モデル設定と同じく先頭の候補から順に起動を試す。
+設定していない場合は`claude:opus[1m]/medium,codex:sol/medium`を使う。
 Claude Codeを使う場合は設定を変更せず、次のコマンドを実行する。
 
 ```bash
 atk wi process-loop
 ```
 
-Codexへ切り替える場合は、設定を保存してから起動する。設定は以後の起動へ適用される。
+Codexへ切り替える場合は、設定を保存してから起動する。常駐中に保存した設定は、次のセッションの起動前に反映される。
 
 ```bash
 atk config set orchestrate_model codex:gpt-6-sol/medium
