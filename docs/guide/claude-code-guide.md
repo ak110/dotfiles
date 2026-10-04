@@ -172,13 +172,6 @@ Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`
 
 ## Claude Codeの推奨設定
 
-UserPromptSubmitの起動促進は、実ユーザー発話の全角`！！`を対象とする。
-両ホストで`agent-toolkit:realign-with-user`の起動を促し、半角`!!`だけの本文と機械注入は対象から除く。
-セッションの開始（新規と`/clear`）と会話圧縮の後は、`agent-toolkit:user-confirmation-and-report`がまだ起動されていない間に届いた実ユーザー発話へ、同スキルの起動を促す注記も返す。
-Claude Codeでは同スキルが起動されるまで発話ごとに返し、Codexでは開始・圧縮のたびに最初の実ユーザー発話へ1回だけ返す。
-委譲先のセッション、`resume`と`fork`による再開・分岐、機械注入のターンは対象から除く。
-入力と記録の一致を求める既存の注記と同じ出力にまとめ、初回や短い間隔の発話でも届く。
-
 以下の設定を適用することを推奨する。
 
 ### `~/.claude/settings.json`
@@ -383,13 +376,6 @@ agent-toolkitプラグインはpyfltrのMCPサーバーを同梱する。
 lintやテストの実行・横断検索・横断置換・実行履歴の参照をシェルを経由せずに呼び出せる。
 サーバーは`uvx`でpyfltrを取得して起動するため、pyfltr自体の事前インストールは要らない。
 
-`atk agents wait`はシェルの`&`と標準出力の破棄を外して単独で発行する。
-Claude Codeで背景で待つ場合はBashの`run_in_background`を使い、返されたtask識別子で結果を受領する。
-出力量はサブコマンドの対象限定で減らし、生成側が返す標準出力・標準エラーの保存先から全量を読む。エージェント環境で量によらず保存されるのは、`atk agents wait`の回収結果と複数件の`atk wi show`、`atk run-script session-review-evidence`の`--user-events`であり、短い単発の照会は直接表示される。表記診断の詳細は`標準エラー保存先:`が示す別のファイルに保持される。人の端末は直接表示と各ストリームのリダイレクトを使える。
-保存した本文の選別は別の呼び出しで行う。
-判定は静的に分かるatkの実行位置と出力接続に限り、検索語やheredoc本文、ホスト管理の背景実行を通す。
-この限定と、一般の検証コマンドの出力切り詰めチェックを復元しなかった理由は、[フックの責務境界](../development/design-hooks.md#フックの責務境界)を参照。
-
 agent-toolkitは以下のフックを常時有効化する。
 識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
 `個人設定`はdotfilesユーザーの`~/.claude/settings.json`へ配布される分を指す。
@@ -404,13 +390,23 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する。報告段階が残る作業は、その作業が起動した委譲先や背景のコマンドを待つ間だけ終了を許す。作業を始める前から動いている無関係なバックグラウンドタスクは、報告の不足を免除しない。それ以外は直接発話の報告見出しと準備結果から、足りない報告段階と報告本文の不備（対策行にAWIのファイル名・投入予定・同一セッションの実装根拠が無い、見送りの判定済み行に根拠が無いか根拠が未確定、未確定行に照会・再現・残る理由が欠ける、AWI投入結果報告に投入予定が残る）を示す | 対応 | 対応。`termination_order_advisor`だけを実行し、`decision`と`reason`だけを返す |
-| plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じて入力と記録の一致を求める注記、実ユーザー発話の全角`！！`から`agent-toolkit:realign-with-user`の起動を促す注記、セッション開始後と会話圧縮後に`agent-toolkit:user-confirmation-and-report`の起動を促す注記を返す | 対応 | 対応 |
+| plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じて入力と記録の一致を求める注記を返す。実ユーザー発話に全角`！！`がある場合は`agent-toolkit:realign-with-user`の起動を促す注記を返し、半角`!!`だけの本文と機械注入は対象から除く。セッションの開始（新規と`/clear`）と会話圧縮の後は、`agent-toolkit:user-confirmation-and-report`が起動されていない間に届いた実ユーザー発話へ同スキルの起動を促す注記を返す。委譲先のセッション、`resume`と`fork`による再開・分岐、機械注入のターンは対象から除く。これらの注記は入力と記録の一致を求める注記と同じ出力にまとめ、初回や短い間隔の発話でも届く | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、同スキルが起動されるまで発話ごとに返す | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、開始・圧縮のたびに最初の実ユーザー発話へ1回だけ返す |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した応答にもタスク識別子が含まれる場合は、バックグラウンドタスクの所有記録へ保存する。失敗を成功済み検証として記録しない | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `StopFailure/stopfailure_notifier` | APIエラーでのターン終了をベルとデスクトップ通知で知らせ、発生種別をログへ記録する | 対応 | 非対応。対応するイベントが存在しない |
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前のチェック | 対応 | 非対応。dotfiles固有の配布構成に依存するため、プラグインへ移さない |
+
+plugin `PreToolUse/pretooluse`がatkの呼び出しを遮断するのは、静的に分かるatkの実行位置と出力の接続先に限る。
+検索語やheredoc本文に現れたatkと、ホストが管理する背景実行は遮断しない。
+この限定と、一般の検証コマンドの出力切り詰めチェックを復元しなかった理由は、[フックの責務境界](../development/design-hooks.md#フックの責務境界)を参照。
+遮断されたときは、次の操作で同じ目的を達成できる。
+
+- `atk agents wait`はシェルの`&`と標準出力の破棄を外して単独で発行する。
+  Claude Codeで背景で待つ場合はBashの`run_in_background`を使い、返されたtask識別子で結果を受領する。
+- atkの出力をパイプで後段へ渡さず、出力量はサブコマンドの対象限定で減らす。生成側が返す標準出力・標準エラーの保存先から全量を読む。エージェント環境で量によらず保存されるのは、`atk agents wait`の回収結果と複数件の`atk wi show`、`atk run-script session-review-evidence`の`--user-events`であり、短い単発の照会は直接表示される。表記診断の詳細は`標準エラー保存先:`が示す別のファイルに保持される。人の端末は直接表示と各ストリームのリダイレクトを使える。
+  保存した本文の選別は別の呼び出しで行う。
 
 Codexの`SessionStart`は`startup`・`resume`・`clear`・`compact`の全てで条文を追加し、`compact`では`QUALITY_CHECKPOINT_NOTICE`も追加する。
 pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする9イベントの定義を確認して信頼する。
@@ -468,12 +464,6 @@ Claude Codeで有効化する。
 
 該当作業に着手したときエージェントが起動する。Claude Codeで`/`を付けて手動起動できるのは、`user-invocable: false`を持たないスキルだけである。Codexの`$`による手動起動はこの設定の対象外とする。
 
-認識が一致していない可能性のある場面では、`agent-toolkit:realign-with-user`が目標と解決したい問題を
-エージェント自身の言葉で提示し、その理解をその場で確認する。
-モデルの判断でも手動でも起動でき、協調・自律の両モードを対象とする。
-実ユーザー発話に全角`！！`が含まれる場合は、hookからも起動を促す。
-この注記は感情の判定ではなく、認識を確かめるきっかけである。
-
 - `agent-toolkit:writing-standards`: ドキュメントとコード内コメント、コードとテストコード、エージェント向け文書の品質基準。成果物の種別ごとに`references/`配下の資料を読み分ける
 - `agent-toolkit:refine-prompt`: プロンプトの指摘を独立した実行者から集め、共通の文書基準で改善案を組み立てる
 - `agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
@@ -492,6 +482,8 @@ Claude Codeで有効化する。
 - `agent-toolkit:wi-standards`: AWIとUWIの本文、由来、状態、承認および投入の共通規範
 - `agent-toolkit:workflow-overview`: 対話型、自律型、まとめ処理型をまたぐWI運用の全体像と、運用変更時に確認する主体・操作・適用先
 - `agent-toolkit:add-awi-by-user`: ユーザーの要件を対話で確定し、AWIまたはUWIを手動投入する
+- `agent-toolkit:realign-with-user`: 認識が一致していない可能性のある場面で、目標と解決したい問題をエージェント自身の言葉で提示し、その理解をその場で確認する。
+  モデルの判断でも手動でも起動でき、協調・自律の両モードを対象とする。実ユーザー発話に全角`！！`が含まれる場合は、`UserPromptSubmit/user_prompt_submit`も起動を促す。この注記は感情の判定ではなく、認識を確かめるきっかけである
 - `agent-toolkit:single-lane-process`: AWIをレーンへ分けずに、1回の起動で対応する作業ツリーへ実装して終端する。計画を要する項目は同じセッションの中で計画の作成から実装まで進め、複数リポジトリでは計画と実行レビューを対象worktreeごとに分ける
 - `agent-toolkit:process-wi`: 選定工程（選定とレーン分け）、レーン工程（並列レーン実行）、公開工程（全レーン後のpush・CI・終了）の3段階でAWIを処理する。
   処理中にユーザーが追加を明示したAWIは別の選定結果で検収して同じ実行へ加える。指示の無い新着はprocess-wiの次の実行で扱う。
