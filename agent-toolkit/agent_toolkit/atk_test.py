@@ -16,6 +16,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 import types
 from collections.abc import Callable
 from typing import Any
@@ -866,8 +867,8 @@ def _write_awi_file(
     return path
 
 
-def _setup_notes_with_pending_commit(tmp_path: pathlib.Path) -> pathlib.Path:
-    """upstreamより1件先行したprivate-notesのテスト用cloneを作成する。"""
+def _setup_notes_with_pending_commit(tmp_path: pathlib.Path, *, pending: bool = True) -> pathlib.Path:
+    """upstreamより1件先行したprivate-notesのテスト用cloneを作成する。`pending=False`ではupstreamと一致させる。"""
     origin = tmp_path / "origin.git"
     origin.mkdir()
     subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(origin)], check=True, capture_output=True)
@@ -880,6 +881,8 @@ def _setup_notes_with_pending_commit(tmp_path: pathlib.Path) -> pathlib.Path:
     subprocess.run(["git", "-C", str(notes), "commit", "-m", "base"], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(notes), "remote", "add", "origin", str(origin)], check=True)
     subprocess.run(["git", "-C", str(notes), "push", "-u", "origin", "main"], check=True, capture_output=True)
+    if not pending:
+        return notes
     marker = notes / "pending.txt"
     marker.write_text("pending\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True)
@@ -887,30 +890,50 @@ def _setup_notes_with_pending_commit(tmp_path: pathlib.Path) -> pathlib.Path:
     return notes
 
 
+_SYNC_MUTATION_ENTRIES = ("wi start-processing", "wi add --dry-run", "plans rewrite-references")
+"""終了時に未pushを判定する同期対象操作のコマンド。`wi add --dry-run`は自身でcommitしない操作として含める。"""
+
+_DRY_RUN_SUCCESS = "成功: 投入前の検証が成立した（--dry-runのため保存していない）"
+
+
+def _prepare_sync_mutation(entry: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """同期対象操作のコマンドごとに外部への作用を差し替え、`atk.main`へ渡す引数を返す。"""
+    atk_members = vars(atk)
+    if entry == "wi start-processing":
+        monkeypatch.setattr(atk_members["_mutations"], "_cmd_start_processing", lambda *_args: None)
+        return ["wi", "start-processing", "awi.md"]
+    if entry == "wi add --dry-run":
+        monkeypatch.setattr(atk_members["_add"], "resolve_add_target", lambda _value: ("github.com/example/repo", None))
+        body = tmp_path / "body.md"
+        body.write_text("本文\n", encoding="utf-8")
+        return ["wi", "add", "--dry-run", "--target-repo", "github.com/example/repo", "--body-file", str(body)]
+    monkeypatch.setattr(atk_members["_plans"], "dispatch", lambda *_args: 0)
+    return ["plans", "rewrite-references"]
+
+
+@pytest.mark.parametrize("entry", _SYNC_MUTATION_ENTRIES)
 def test_main_reports_pending_commit_only_for_sync_mutations(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    entry: str,
 ) -> None:
-    """同期対象操作だけが未pushを終了コード3で通知する。"""
+    """同期対象操作だけが、処理の終了後に残る未pushを終了コード3で通知する。"""
     notes = _setup_notes_with_pending_commit(tmp_path)
     atk_members = vars(atk)
-    common_module = atk_members["_common"]
-    mutations_module = atk_members["_mutations"]
-    list_module = atk_members["_list"]
-    plans_module = atk_members["_plans"]
-    monkeypatch.setattr(common_module, "_ensure_environment", lambda _home: notes)
-    monkeypatch.setattr(mutations_module, "_cmd_start_processing", lambda *_args: None)
-    monkeypatch.setattr(list_module, "_cmd_list", lambda *_args: None)
-    monkeypatch.setattr(plans_module, "dispatch", lambda *_args: 0)
+    monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(atk_members["_list"], "_cmd_list", lambda *_args: None)
+    argv = _prepare_sync_mutation(entry, tmp_path, monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "start-processing", "awi.md"], home=tmp_path)
+        atk.main(argv, home=tmp_path)
     assert exc_info.value.code == 3
-    stderr = capsys.readouterr().err
-    assert "警告: private-notesに未pushのcommitが1件残る" in stderr
+    output = capsys.readouterr()
+    if entry == "wi add --dry-run":
+        assert _DRY_RUN_SUCCESS in output.out
+    assert "警告: private-notesに未pushのcommitが1件残る" in output.err
     # pushの手順は警告行に続く次の操作の行へ置く。
-    next_action = next(line for line in stderr.splitlines() if line.startswith("次の操作: "))
+    next_action = next(line for line in output.err.splitlines() if line.startswith("次の操作: "))
     assert f"`git -C {notes.resolve()} status`" in next_action
     assert "atk wi commit" in next_action
 
@@ -918,6 +941,64 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
         atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
     assert exc_info.value.code == 0
     assert "未pushのcommit" not in capsys.readouterr().err
+
+
+_CONCURRENT_PUSH_SCRIPT = """
+import pathlib
+import subprocess
+import sys
+import time
+
+from agent_toolkit._atk import git_sync
+
+notes = pathlib.Path(sys.argv[1])
+ready = pathlib.Path(sys.argv[2])
+with git_sync.repo_lock(notes):
+    (notes / "concurrent.txt").write_text("concurrent\\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", "concurrent.txt"], check=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-q", "-m", "concurrent"], check=True)
+    ready.write_text("committed", encoding="utf-8")
+    time.sleep(2)
+    subprocess.run(["git", "-C", str(notes), "push", "-q"], check=True)
+"""
+
+
+@pytest.mark.parametrize("entry", _SYNC_MUTATION_ENTRIES)
+def test_main_does_not_report_commit_pushed_by_concurrent_process(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    entry: str,
+) -> None:
+    """別プロセスがロック内でcommitしてからpushする間に終えた同期対象操作は、未pushを通知しない。
+
+    commit後・push前の一時状態を読むと、同期が完了する途中の状態を同期未達として終了コード3で報告する。
+    """
+    notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
+    atk_members = vars(atk)
+    monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: notes)
+    argv = _prepare_sync_mutation(entry, tmp_path, monkeypatch)
+    script = tmp_path / "concurrent_push.py"
+    script.write_text(_CONCURRENT_PUSH_SCRIPT, encoding="utf-8")
+    ready = tmp_path / "ready"
+    environ = os.environ.copy()
+    environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(_PROJECT_ROOT), environ.get("PYTHONPATH")]))
+    with subprocess.Popen([sys.executable, str(script), str(notes), str(ready)], env=environ) as writer:
+        deadline = time.monotonic() + 30
+        while not ready.exists():
+            assert writer.poll() is None, "別プロセスがcommit前に終了した"
+            assert time.monotonic() < deadline, "別プロセスのcommitを観測できない"
+            time.sleep(0.05)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(argv, home=tmp_path)
+        assert writer.wait(timeout=30) == 0
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr()
+    if entry == "wi add --dry-run":
+        assert _DRY_RUN_SUCCESS in output.out
+    assert "未pushのcommit" not in output.err
 
 
 class TestMutationTargetRepoParserOption:
