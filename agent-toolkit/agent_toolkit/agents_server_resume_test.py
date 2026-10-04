@@ -552,7 +552,7 @@ async def test_wait_response_keys_are_unchanged_with_child_sessions(
 
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
 
-        assert set(result) == {"session_id", "agent_message", "status"}
+        assert set(result) == {"session_id", "agent_message", "status", "engine", "model", "effort", "model_type"}
     finally:
         await backend.close()
 
