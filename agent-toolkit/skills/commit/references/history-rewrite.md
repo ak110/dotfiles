@@ -48,13 +48,15 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
   - コード差分を含めずメッセージだけを変更する場合は`git commit --fixup=reword:<sha>`を使う
 - 上記の例外に該当しない独立した変更目的を持つ修正、または統合先に適する未プッシュコミットがない修正は新規コミットを作成する。`agent-toolkit/rules/01-agent.md`が定める付帯作業は、関連する開発のcommitへ含めても独立した変更目的として数えない
 
-WI実装commitの履歴を変更した担当は、既存の履歴検収を終えた旧完全OIDから新完全OIDへの対応をJSONオブジェクトとしてmanaged-tempへ保存する。各旧commitのAWI集合を継承するため、元commitとfixupが同じ新commitへ統合される場合も全旧OIDを含める。次の形で同じ進捗記録へ追記する。記録・worktree・JSONは絶対パスを渡す。
+## WI実装commitの対応の継承
+
+WI実装commitの履歴を変更した担当は、既存の履歴検収を終えた旧完全OIDから新完全OIDへの対応をJSONオブジェクトとしてmanaged-tempへ保存する。対応表の旧OIDは、進捗記録にWI対応を持つものに限る。各旧commitのAWI集合を継承するため、元commitとfixupが同じ新commitへ統合される場合も、記録済みの旧OIDは全て含める。WI対応を持たないcommitは、履歴検収で比較した対象であっても対応表へ入れない。次の形で同じ進捗記録へ追記する。記録・worktree・JSONは絶対パスを渡す。
 
 ```text
 atk run-script plan-progress -- <記録> --completed-step <工程> --result <結果> --worktree <worktree> --rewrite-map <JSON>
 ```
 
-計画なしでは`--handoff`と対象集合全件の`--allowed-awi`を加える。旧対応の欠落や新OIDの不在は生成側で補い、終端前に`--get-commits`で現在の対応を取得する。
+計画なしでは`--handoff`と対象集合全件の`--allowed-awi`を加える。旧対応の欠落や新OIDの不在は生成側で補う。現在の対応の取得は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。
 
 ## fixupの実行上の制約
 

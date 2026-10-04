@@ -91,3 +91,39 @@ def test_squash_inherits_union_of_wis(repo: pathlib.Path) -> None:
     ]
     content = "\n".join(commit_mapping.encode_event(event) for event in events)
     assert commit_mapping.get_commits(repo, content, [WI_A, WI_B], {WI_A, WI_B}) == {WI_A: [new], WI_B: [new]}
+
+
+def _commit(repo: pathlib.Path, message: str) -> str:
+    git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", message)
+    return git(repo, "rev-parse", "HEAD")
+
+
+def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:
+    """WI対応のないcommitを含むrebaseでは、記録済み旧OIDだけの対応表で継承し、記録外OIDと記録済みOIDの欠落を失敗にする。
+
+    統合手順は`git range-diff`で全commitを検収するが、`--rewrite-map`へ渡すのは進捗記録にWI対応を持つ旧OIDに限る。
+    記録外OIDを含めると対応を確定できず失敗し、記録済み旧OIDが対応表に無いと終端前の取得が失敗する。
+    """
+    base = git(repo, "rev-parse", "HEAD")
+    recorded = _commit(repo, "recorded")
+    _commit(repo, "unrecorded")
+    unrecorded = git(repo, "rev-parse", "HEAD")
+    content = commit_mapping.encode_event(commit_mapping.commit_event(repo, recorded, [WI_A], {WI_A}))
+    git(repo, "reset", "--hard", base)
+    _commit(repo, "upstream")
+    rebased_recorded = _commit(repo, "recorded")
+    rebased_unrecorded = _commit(repo, "unrecorded")
+    mapping = commit_mapping.read_mapping(content, {WI_A})
+
+    with_outside = repo / "with-outside.json"
+    with_outside.write_text(json.dumps({recorded: rebased_recorded, unrecorded: rebased_unrecorded}), encoding="utf-8")
+    with pytest.raises(commit_mapping.CommitMappingError, match="履歴変更前の対応がありません"):
+        commit_mapping.rewrite_event(repo, with_outside, mapping)
+
+    with pytest.raises(commit_mapping.CommitMappingError, match="現在のHEAD"):
+        commit_mapping.get_commits(repo, content, [WI_A], {WI_A})
+
+    recorded_only = repo / "recorded-only.json"
+    recorded_only.write_text(json.dumps({recorded: rebased_recorded}), encoding="utf-8")
+    content += "\n" + commit_mapping.encode_event(commit_mapping.rewrite_event(repo, recorded_only, mapping))
+    assert commit_mapping.get_commits(repo, content, [WI_A], {WI_A}) == {WI_A: [rebased_recorded]}

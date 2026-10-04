@@ -46,7 +46,7 @@ pickerの文書は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`とする。
 - 拡張原因分析を要さず1箇所で是正が完結する軽微な不良は、`agent-toolkit:bugfix`の`references/response.md`に従ってメインがその場で直す
 - 公開の開始後に見つけた不良のうち、公開を妨げるもの（CI失敗など）は公開の手順の中で直す。公開を妨げないものは、同じ委譲で不良ごとにAWIを`source: process-wi`で投入し、次の実行へ回す
 
-WI実装commitの完了ごとに、commitスキルの公開記録手段で完全OIDと対応AWI集合を計画の進捗ログへ残す。直接実装では引き継ぎ記録を用意し、同じ`plan-progress --handoff`で記録する。レビュー修正・CI修正と履歴変更後も同じ対応を継続し、実行順8の終端前に`--get-commits`で対象worktreeの現在の対応を取得する。計画が保存されて作業パスが消えても、その旧作業パスを渡して一意な保存済み計画から取得できる。記録不足は生成側で補ってから再取得し、取得したOIDを既存のadopt・複数commitのnoteへ渡す。実装差分なしの充足は既存の根拠とcommit省略を使う。
+WI実装commitの完了ごとに、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の記録の手段で完全OIDと対応AWI集合を計画の進捗ログへ残す。直接実装では引き継ぎ記録を用意して同じ手段で記録する。レビュー修正・CI修正と履歴変更後も同節に従って対応を継続し、実行順8の終端前に同節の取得の手段で対象worktreeの現在の対応を取得してadoptへ渡す。
 
 ## 実行順
 
