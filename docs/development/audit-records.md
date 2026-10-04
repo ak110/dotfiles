@@ -503,10 +503,13 @@ pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。�
 ```sh
 git ls-files -- '*_invariant_test.py'
 uv run --frozen pyfltr fast --commands=pytest
+uv run --frozen pyfltr fast --commands=pytest --pytest-args='--collect-only -q' --output-format=jsonl
+uv run --frozen pyfltr show-run <run_id> --commands pytest --output --output-format=json
 uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 ```
 
-fastのpytestが受け取ったファイルの集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象のファイルが別のファイルへ置き換わった場合を見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
+3行目の出力の1行目（`"kind":"header"`）が示す`run_id`を4行目へ渡す。4行目のJSONの`output`は、pyfltrのsubprojectごとに`# subproject: <ディレクトリ>`の行と、収集したテストの`<ファイル>::<テスト名>`の行を並べる。各行のファイルへsubprojectのディレクトリ（`.`はroot）を前置した集合が、fastのpytestが受け取ったファイルの集合である。
+この集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象のファイルが別のファイルへ置き換わった場合を見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
 
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：動的なwatch対象の指定：2026年10月4日
 
