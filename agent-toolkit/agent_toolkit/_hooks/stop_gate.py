@@ -1018,7 +1018,7 @@ def _is_direct_subagent_metadata(metadata: object) -> bool:
 
 
 def _log_unresolved_completion(session_id: str | None, detail: str) -> None:
-    """完了と判定できなかった処理を既存の通知未解決ログ形式で記録する。"""
+    """起動記録へ対応付けられなかった完了通知または停止結果を、既存の通知未解決ログ形式で記録する。"""
     if session_id is None:
         return
     append_stop_log(
