@@ -126,12 +126,6 @@ claude plugin list
 `claude mcp get codex`は旧User scope定義の有無を確認する診断である。`agents_server` MCPは
 Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
 
-dotfilesリポジトリの開発時は、`uv run --frozen pyfltr run --commands=agent-doc-tone`で文章を確認する。
-Markdownの文体の密度に加え、本文・見出しと、コードのコメント・docstring・表示文・注入文への指定された語の再使用を調べる。
-未対応の説明文があればファイルと行を示して非0で終わる。
-引用、意図的な悪い例と保存形式の名称は、その役割を確認して保持する。
-文の書き直し方針は`agent-toolkit:writing-standards`の`references/textlint-violations.md`を参照してください。
-
 委譲と起動したsessionの管理には、`start`・`send_message`・`kill`・`list`・`show`・`stop`の各ツールと、結果を受け取る`atk agents wait`を使う。
 `start`は`mode`で入力の形を選び、全`mode`で既存ディレクトリの絶対`cwd`を受け取って、完了を待たず`session_id`を返す。`mode`が必要とする入力の欠落と受理しない入力の混在は、委譲先を起動せずに拒否する。
 `task`（省略時）は専用の`share/<役割名>.subagent.md`の絶対パスと、その`<役割名>.subagent.md`が`## 入力`で宣言した入力名だけを持つ`extra_params`を受け取る。宣言外の入力名を渡すと委譲先を起動せず、宣言外の項目名と受理する項目名を返す。`<役割名>.subagent.md`が`mode:`で`explore`・`write`・`shell`を宣言した場合は、同名の`mode`と同じ軽量な起動条件で開始する。

@@ -163,11 +163,44 @@ def test_cli_rejects_terms_in_explanations(
 
 
 @pytest.mark.parametrize(
-    "body", ["見落とした。", "突き合わせた。", "混ざった。", "切り分けた。", "焼き込んだ。", "崩した。", "疑った。"]
+    ("body", "term"),
+    [
+        ("経路を記録する。\n", "経路"),
+        ("見落とした。\n", "見落とす"),
+        ("混ざった。\n", "混ざる"),
+        ("切り分けた。\n", "切り分ける"),
+        ("焼き込んだ。\n", "焼く"),
+        ("崩した。\n", "崩す"),
+        ("疑った。\n", "疑う"),
+    ],
 )
-def test_cli_rejects_inflected_expressions(tmp_path: pathlib.Path, body: str) -> None:
-    """辞書形以外の説明文でも、以前に書き直した表現を検出する。"""
-    assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 1
+def test_cli_warns_caution_terms_without_failing(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str, term: str
+) -> None:
+    """注意を促す語は活用形でも位置付きの警告を出力し、その語だけでは終了コードを0のまま保つ。"""
+    path = _write(tmp_path, body)
+
+    assert check_agent_doc_tone.main([str(path)]) == 0
+
+    output = capsys.readouterr()
+    assert f"{path}:1: 警告: 「{term}」" in output.err
+
+
+def test_cli_ignores_approved_replacement_term(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """承認済みの置換先「突き合わせる」は失敗にも警告にもしない。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, "記録と入力を突き合わせた。\n"))]) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_cli_fails_on_denied_term_beside_caution_term(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """失敗対象の語と警告対象の語が並ぶ場合は、両方を報告して失敗する。"""
+    path = _write(tmp_path, "既定の経路を使う。\n")
+
+    assert check_agent_doc_tone.main([str(path)]) == 1
+
+    output = capsys.readouterr().err
+    assert f"{path}:1: 「既定」" in output
+    assert f"{path}:1: 警告: 「経路」" in output
 
 
 @pytest.mark.parametrize(
@@ -206,14 +239,26 @@ def test_cli_preserves_data_and_structural_names(tmp_path: pathlib.Path, name: s
 
 
 @pytest.mark.parametrize("body", ["「前提を疑う観点」で実装を疑う。\n", "「前提を疑う観点」を使う。\n前提を疑う。\n"])
-def test_cli_rejects_other_uses_of_doubt_beside_defined_viewpoint_name(tmp_path: pathlib.Path, body: str) -> None:
-    """定義済みの名前だけを除き、同じ行と別の行にある同じ動詞の他の用法は検出する。"""
-    assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 1
+def test_cli_warns_other_uses_of_doubt_beside_defined_viewpoint_name(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """定義済みの名前だけを除き、同じ行と別の行にある同じ動詞の他の用法は警告する。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 0
+    assert "警告: 「疑う」" in capsys.readouterr().err
 
 
-def test_picker_result_label_preserves_checks_on_explanations(tmp_path: pathlib.Path) -> None:
-    """返却欄の名前を保持し、同じ行の説明は従来の対象として確認する。"""
-    assert check_agent_doc_tone.main([str(_write(tmp_path, "書込対象の検査: 未検査の出力を返す。\n"))]) == 1
+def test_cli_does_not_warn_defined_viewpoint_name_alone(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """定義済みの名前「前提を疑う観点」だけの行は警告しない。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, "「前提を疑う観点」を使う。\n"))]) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_picker_result_label_preserves_checks_on_explanations(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """返却欄の名前を保持し、同じ行の説明は警告対象として確認する。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, "書込対象の検査: 未検査の出力を返す。\n"))]) == 0
+    assert "警告: 「検査」" in capsys.readouterr().err
 
 
 def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> None:

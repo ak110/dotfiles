@@ -18,7 +18,9 @@ r"""文体の密度と、説明に使用しない語の再使用を確認する�
 閾値は、Codexを使う前のClaude由来commitが追加した文の水準に置く。
 否定形終端率は8%、「当該」の出現率（出現数÷文数）は3%とし、文数が20以上のファイルへ適用する。
 
-説明文の語は文数によらず判定し、未対応なら要求を満たしていないため終了コード1を返す。
+説明文の語は文数によらず判定する。`notation-rules.md`が説明に使わないと定める語は、
+未対応なら要求を満たしていないため終了コード1を返す。文脈によって対象と動作が伝わりにくい語は
+位置付きの警告として報告し、その語だけでは終了コードを変えない。
 密度の判定はMarkdownだけに適用する。引用・悪い例・検出データと構造名は文章と区別する。
 """
 
@@ -61,10 +63,14 @@ EXCLUDED_PATHS = (
 """意図的な違反例を収録するため密度の判定から除くファイル。"""
 
 # 語そのものを扱う判定用データ。説明文の同義語をここでは定めない。
+# 失敗させる語は`notation-rules.md`「日本語の表記ルール」が説明に使わないと定める語に限る。
 _DENIED_PATTERNS = {
     "正本": r"(?<!是)正本|正本(?!文)",
     "既定": r"既定",
     "照合": r"照合",
+}
+# 文脈によって対象と動作が伝わりにくい語。正確な専門語や承認済みの呼称として使う場合もあるため警告に留める。
+_CAUTION_PATTERNS = {
     "経路": r"経路",
     "入口": r"入口",
     "検査": r"検査",
@@ -74,7 +80,6 @@ _DENIED_PATTERNS = {
     "帰結": r"帰結",
     "部品": r"部品",
     "見落とす": r"見落と",
-    "突き合わせる": r"突き合わ",
     "断定": r"断定",
     "事故": r"事故",
     "混ざる": r"混ざ",
@@ -88,6 +93,7 @@ _DENIED_PATTERNS = {
     "ゲート": r"ゲート",
 }
 _TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, pattern in _DENIED_PATTERNS.items())
+_CAUTION_TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, pattern in _CAUTION_PATTERNS.items())
 
 # 計画の列・メタ情報と担当の返却値として保存する名称。周辺の説明も判定する。
 # 「前提を疑う観点」はユーザーが確認で選んだ定義済みの名前（`reviewer.md`のレビュー観点）であるため、この完全一致だけを除く。
@@ -292,7 +298,8 @@ def _python_fragments(text: str, *, detector_data: bool = False) -> Iterator[tup
     if detector_data:
         for node in tree.body:
             if isinstance(node, ast.Assign) and any(
-                isinstance(target, ast.Name) and target.id == "_DENIED_PATTERNS" for target in node.targets
+                isinstance(target, ast.Name) and target.id in {"_DENIED_PATTERNS", "_CAUTION_PATTERNS"}
+                for target in node.targets
             ):
                 consumed.update(id(child) for child in ast.walk(node.value))
     for node in ast.walk(tree):
@@ -352,7 +359,17 @@ def _toml_fragments(text: str) -> Iterator[tuple[int, str]]:
 
 
 def term_violations(path: pathlib.Path, text: str) -> list[tuple[int, str]]:
-    """説明文へ戻った語を行番号とともに返す。"""
+    """説明文へ戻った失敗対象の語を行番号とともに返す。"""
+    return _term_matches(path, text, _TERM_PATTERNS)
+
+
+def term_cautions(path: pathlib.Path, text: str) -> list[tuple[int, str]]:
+    """説明文にある警告対象の語を行番号とともに返す。"""
+    return _term_matches(path, text, _CAUTION_TERM_PATTERNS)
+
+
+def _term_matches(path: pathlib.Path, text: str, patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> list[tuple[int, str]]:
+    """説明文の断片から指定した語に一致する箇所を行番号とともに返す。"""
     if path.suffix == ".md":
         fragments = _markdown_fragments(text)
     elif path.suffix == ".py":
@@ -370,7 +387,7 @@ def term_violations(path: pathlib.Path, text: str) -> list[tuple[int, str]]:
         {
             (line, name)
             for line, fragment in fragments
-            for name, pattern in _TERM_PATTERNS
+            for name, pattern in patterns
             if pattern.search(_without_structural_labels(fragment))
         }
     )
@@ -489,7 +506,7 @@ def _print_report(metrics: list[Metrics]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """説明文の語と文体指標を確認し、未対応があれば1を返す。"""
+    """説明文の語と文体指標を確認し、失敗対象の語か閾値超過があれば1を返す。"""
     parser = argparse.ArgumentParser(description="説明文の語と文体の密度を確認する。")
     parser.add_argument("paths", metavar="PATH", nargs="+", type=pathlib.Path, help="確認する文書またはコードのファイル。")
     parser.add_argument("--report", action="store_true", help="判定を行わず、全ファイルの指標を表で出力する。")
@@ -519,6 +536,12 @@ def main(argv: list[str] | None = None) -> int:
                 for line, term in term_violations(path, text):
                     failed = True
                     print(f"{path}:{line}: 「{term}」を説明に使用している。対象と動作が分かる文へ書き直す。", file=sys.stderr)
+                for line, term in term_cautions(path, text):
+                    print(
+                        f"{path}:{line}: 警告: 「{term}」を説明に使用している。"
+                        "文脈から対象と動作が伝わるか確かめ、伝わらない場合だけ書き直す（終了コードには影響しない）。",
+                        file=sys.stderr,
+                    )
     except (SyntaxError, tokenize.TokenError, json.JSONDecodeError, tomllib.TOMLDecodeError) as error:
         print(f"入力の構文を読み取れない: {error}。入力の構文を修正して再実行する。", file=sys.stderr)
         return 2

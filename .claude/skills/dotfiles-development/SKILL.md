@@ -71,7 +71,10 @@ description: >
     `.chezmoi-source/dot_claude/`・`.claude/skills/`）とする。
     文体の密度を測り、閾値を超えたファイルを指標付きで報告する。
     測る指標と閾値は`scripts/check_agent_doc_tone.py`のdocstringが定める。
-    `agent-toolkit/`の説明文はMarkdownの本文・見出し・表に加え、コードのコメント・docstring・表示文・注入文へ指定された語が戻った場合に、ファイルと行を示して非0で終える。
+    `agent-toolkit/`の説明文はMarkdownの本文・見出し・表に加え、コードのコメント・docstring・表示文・注入文を語の判定の対象とする。
+    `agent-toolkit:writing-standards`の`references/notation-rules.md`が説明に使わないと定める3語が戻った場合は、ファイルと行を示して非0で終える。
+    文脈によって対象と動作が伝わりにくい語（判定する語は同スクリプトの`_CAUTION_PATTERNS`が定める）は、ファイルと行を示す警告を標準エラーへ出力する。警告だけの場合は終了コード0で終える。
+    警告は文脈で対象と動作が伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。
     引用、意図的な悪い例、検出用データと保存形式の名称は説明文と区別し、良い例と通常の説明は判定する。
     報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で
     指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換えて密度を下げる。
