@@ -86,7 +86,7 @@ def test_dispatch_runs_review_contract_validator(tmp_path: pathlib.Path, capsys:
     登録が無い場合や登録パスが誤っている場合は起動できず、依存（yaml）を解決できない起動環境では検証へ到達しない。
     """
     contract = tmp_path / "review-contract.yaml"
-    arguments = ["--", "--contract", str(contract), "--target-repo", str(tmp_path)]
+    arguments = ["--", "--contract", str(contract)]
     contract.write_text(
         "version: 1\nclauses:\n  - clause: 対象\n    content: commit abc1234の契約\n    source: 20260921-204636-005.md\n",
         encoding="utf-8",

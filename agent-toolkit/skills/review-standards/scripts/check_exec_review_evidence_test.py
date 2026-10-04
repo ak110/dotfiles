@@ -513,32 +513,19 @@ def test_public_command_accepts_sibling_or_test_result_shared_across_wi(
     assert run_script.dispatch(args) == 0, capsys.readouterr().err
 
 
-@pytest.mark.parametrize(
-    ("section", "other_wi"),
-    [("wi_conditions", FIRST_WI), ("wi_conditions", SECOND_WI), ("user_requirements", FIRST_WI), ("user_requirements", "")],
-)
-@pytest.mark.parametrize(
-    "marker",
-    ["（対象単位: {source}）", "証拠行 {source}", "要件原文「{text}」", "(対象単位: {source}) | 要件原文「{text}」"],
-)
-def test_public_command_rejects_row_markers_disguising_shared_observation(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    section: str,
-    other_wi: str,
-    marker: str,
-) -> None:
-    """単位名と原文引用だけが異なる定型を、WI内外・配列間・計画由来の全達成行で拒否する。"""
+def _marked_rows(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, section: str, other_wi: str, marker: str
+) -> pathlib.Path:
+    """2行へ同じ観測を記入し、行ごとの識別情報（単位名・行の標識・要件原文）を添えた証拠を用意する。"""
     first_text, second_text = "保存（「設定」）", "再読込（「保持」）"
     record = tmp_path / "verification.md"
-    record.write_text("# 観測\n保存と再読込。\n", encoding="utf-8")
+    record.write_text("# 観測\n" + "保存と再読込。\n" * 20, encoding="utf-8")
     first = _condition(FIRST_WI, first_text)
     second = {"wi_conditions": _condition, "user_requirements": _requirement}[section](other_wi, second_text)
     for index, row in enumerate((first, second), 1):
         row["source"] = f"{row['awi'] or '計画'}#原文 {index}"
         suffix = marker.format(source=row["source"], text=(first_text, second_text)[index - 1])
-        row["evidence"] = f"{record}:12-16 の該当箇所を確認した {suffix}"
+        row["evidence"] = f"{record}:12-16 の該当箇所を確認した {suffix}".strip()
     _mock_wi(
         monkeypatch,
         tmp_path,
@@ -551,11 +538,46 @@ def test_public_command_rejects_row_markers_disguising_shared_observation(
     _write_evidence(
         path, [first, second] if section == "wi_conditions" else [first], [second] if section == "user_requirements" else []
     )
+    return path
+
+
+_ROW_MARKERS = ["（対象単位: {source}）", "証拠行 {source}", "要件原文「{text}」", "(対象単位: {source}) | 要件原文「{text}」"]
+
+
+@pytest.mark.parametrize(("section", "other_wi"), [("wi_conditions", SECOND_WI), ("user_requirements", "")])
+@pytest.mark.parametrize("marker", ["", *_ROW_MARKERS])
+def test_public_command_rejects_shared_observation_across_wi_regardless_of_row_markers(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    section: str,
+    other_wi: str,
+    marker: str,
+) -> None:
+    """異なるWI（計画由来を含む）の異なる原文へ同じ観測を写した根拠は、識別情報を添えても添えなくても拒否する。
+
+    識別情報の再掲だけを変えた汎用根拠を受理すると、各行の要求を判定せずに空欄を埋めた証拠が統合へ渡る。
+    """
+    path = _marked_rows(tmp_path, monkeypatch, section, other_wi, marker)
     assert _check(path, FIRST_WI) == 1
     diagnostic = capsys.readouterr().err
     assert "wi_conditions[1].evidence" in diagnostic
     assert f"{section}[{2 if section == 'wi_conditions' else 1}].evidence" in diagnostic
-    assert "単位名・行標識・原文引用だけ" in diagnostic and "証拠不足へ再判定" in diagnostic
+    assert "異なるWIの異なる要求単位で同じ達成根拠を共用しています" in diagnostic and "証拠不足へ再判定" in diagnostic
+
+
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+@pytest.mark.parametrize("marker", ["", *_ROW_MARKERS])
+def test_public_command_accepts_same_wi_shared_observation_with_or_without_row_markers(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], section: str, marker: str
+) -> None:
+    """同じWIの中では、説明付きの同一ファイル根拠を完全一致で共用しても、識別情報を添えて共用しても同じく受理する。
+
+    識別情報の有無で判定が変わると、同じ観測へ行の標識を足しただけで正当な根拠が拒否される。
+    各行への意味上の適合は実行レビュー担当が判定する。
+    """
+    path = _marked_rows(tmp_path, monkeypatch, section, FIRST_WI, marker)
+    assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -1376,7 +1398,8 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
         ("`git diff -- docs/record.md`で観測。docs/missing.md:1 を参照", 1),
         ("[記録](docs/absent file.md)で確認", 1),
         ("`docs/absent file.md`で確認", 1),
-        ("`absent file.md`で確認", 1),
+        ("`absent file.md`で確認", 0),
+        ("`absent file.md:2`で確認", 1),
         ("20260928-192559-001.md の完成条件を確認", 0),
         ("20260928-192559-001.md#完成条件 の結果を確認", 0),
         ("20260928-192559-001.md#存在しない節 の結果を確認", 1),
@@ -1388,7 +1411,14 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
         ("docs/record.md#偽見出し で確認", 1),
         ("docs/record.md#設定 で確認", 1),
         ("docs/record.md#setting-save で確認", 1),
-        ("missing.md で確認", 1),
+        # 区切りも位置も持たないファイル名は、実在しない限り明示の参照として扱わない。
+        ("missing.md で確認", 0),
+        ("missing.md:3 で確認", 1),
+        ("[記録](missing.md)で確認", 1),
+        ("`/settings`画面と`/api/items`の応答を確認", 0),
+        ("/settings 画面と /api/items の応答を確認", 0),
+        ("Node.jsとASP.NETの両実装で確認", 0),
+        ("`Node.js`と`ASP.NET`の両実装で確認", 0),
         ("docs/missing.md で確認", 1),
         ("docs/record.md:0 で確認", 1),
         ("docs/record.md:-1 で確認", 1),
