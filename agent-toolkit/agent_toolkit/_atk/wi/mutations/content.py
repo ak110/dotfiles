@@ -126,6 +126,7 @@ _EDITABLE_STATE_NEXT_ACTION = (
 )
 _COOLDOWN_FORMAT_NEXT_ACTION = "--cooldown-untilへタイムゾーン付きISO 8601日時（例: 2026-10-01T09:00:00+09:00）を指定する"
 _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
+    "observation_wait": "観測条件は`atk wi set-observation-wait`で設定・解除する",
     "depends_on": "frontmatterからdepends_onを除き、依存は`atk wi set-dependencies`で更新する",
     "target_commit": "frontmatterからtarget_commitを除いて再実行する（target_commitはatkが記録する）",
     "cooldown_until": "frontmatterからcooldown_untilを除き、期限は`atk wi edit <FILE> --cooldown-until`で設定する",
@@ -653,3 +654,69 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: 
         path,
         expected_body=finalized_content["content"],
     )
+
+
+def set_entry_observation_wait(
+    private_notes: pathlib.Path,
+    *,
+    filename: str,
+    target_repo: str,
+    condition: str | None = None,
+    plan_file: str | None = None,
+    commit: str | None = None,
+    clear: bool = False,
+) -> pathlib.Path:
+    """processingのAWIの観測条件だけを更新し、要求本文と保存状態を保持する。"""
+    if not pathlib.Path(target_repo).is_absolute():
+        raise WebInputError("--target-repoにはworktreeの絶対パスが必要です", next_action="対象worktreeの絶対パスを指定する")
+    _validate_filenames_only([filename], private_notes / WI_STATE_INBOX)
+    with _repo_lock(private_notes):
+        _push_pending_commits(private_notes)
+        _pull(private_notes)
+        path = private_notes / WI_STATE_PROCESSING / filename
+        if not path.is_file():
+            raise WebInputError("観測待ちはprocessingのAWIだけ設定できます", next_action="対象の保存状態を確認する")
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None or _require_type(path, text) != WI_TYPE_AWI:
+            raise WebInputError("AWIのfrontmatterを取得できません", next_action=f"`atk wi show {filename}`で保存内容を確認する")
+        data, body = parsed
+        _verify_target_repo_content(path, text, _resolve_repo_id(target_repo))
+        if clear:
+            data.pop("observation_wait", None)
+        else:
+            worktree = _candidate_local_worktree(target_repo)
+            if worktree is None or not isinstance(commit, str):
+                raise WebInputError(
+                    "既存実装commitを確認するworktreeが必要です", next_action="--target-repoへworktree絶対パスを指定する"
+                )
+            oid = _resolve_commit(worktree, commit).oid
+            data["observation_wait"] = {"condition": condition, "plan_file": plan_file, "commit": oid}
+            _frontmatter.observation_wait_metadata(data)
+        updated = _frontmatter.serialize_frontmatter(data, body)
+        if updated != text:
+            _atomic_write_text(path, updated)
+            _commit_and_push(private_notes, "chore: update awi observation wait", [str(path.relative_to(private_notes))])
+        saved = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        if saved is None or saved[1] != body or saved[0].get("observation_wait") != data.get("observation_wait"):
+            raise WebInputError("観測待ちの保存結果が一致しません", next_action="保存内容を確認してから再実行する")
+    return path
+
+
+def _cmd_set_observation_wait(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """観測待ちの設定・解除を公開CLIから開始する。"""
+    supplied = (args.condition, args.plan_file, args.commit)
+    if args.clear and any(value is not None for value in supplied):
+        args.subparser.error("--clearは条件・計画・commitの指定と併用できません")
+    if not args.clear and any(value is None for value in supplied):
+        args.subparser.error("設定には--condition・--plan-file・--commitが必要です")
+    path = set_entry_observation_wait(
+        private_notes,
+        filename=args.filename,
+        target_repo=args.target_repo,
+        condition=args.condition,
+        plan_file=args.plan_file,
+        commit=args.commit,
+        clear=args.clear,
+    )
+    _outcome.report_success(f"観測待ちを{'解除' if args.clear else '設定'}した: {path.resolve()}")

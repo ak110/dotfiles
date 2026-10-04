@@ -78,3 +78,14 @@ worktreeの絶対パスを`--target-repo`へ渡す。リポジトリの識別だ
 エージェントが自身の誤りで投入した項目は、`atk wi rm`で削除するか`atk wi edit`で本文を正しい要求へ書き直して再利用する。`rejected`は要求として成立する項目の不採用だけに使う。
 `atk wi rm`による削除はprivate-notesのGit履歴へ残るため、復旧手段を保つ。
 この削除は確認の対象から外れる。
+
+## 候補0件の観測待ち
+
+実装・統合・反映が済み、残る完成条件が選定候補0件のprocess-wiの1回の実行に依存するAWIはprocessingを維持する。メインが次の公開操作で、既存計画のbasenameと実装commitの完全OIDをobservation_waitへ記録する。
+
+```text
+atk wi set-observation-wait <FILE> --condition selection-empty --plan-file <PLAN> --commit <OID> --target-repo <WORKTREE>
+```
+
+本文置換保護を保ち、解除は同じ公開操作の`--clear`を使う。
+readinessは同じ区分を候補・起動件数・一覧へ返し、pickerは観測待ちを別集合でメインへ渡す。通常候補0件と監査・公開対象なしの短絡をメインが直接観測してから既存commitで終端し、計画を保存する。不成立なら状態・計画・commitを保持する。新しい保存状態、時間経過待ち、ユーザー回答待ちへ置き換えない。

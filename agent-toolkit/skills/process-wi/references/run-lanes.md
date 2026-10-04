@@ -17,7 +17,7 @@ pickerが固定した集合を、選定結果のレーン割当と依存順に�
 移す方式は計画ファイルの分割と書込所有権の移譲を要し、計画凍結（`agent-toolkit:plan-mode`の`references/plan-file-standards.md`）と両立しない。
 単独稼働の区間は、選定工程が1レーンの見込みの上限を守ることで短くする。
 
-レーン担当の起動前に`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`を全文読み、同書所定の入力を渡す。新規レーンの`再開位置`は`なし`とする。
+レーン担当の起動前に`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`を全文読み、同書所定の入力を渡す。初回起動の各AWIの再開位置は選定結果から読む。担当全体の`再開位置`は中断した同じ担当の再開にだけ渡す。
 
 ## 上流投入
 

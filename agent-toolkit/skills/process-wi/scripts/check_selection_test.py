@@ -320,3 +320,31 @@ def test_overlap_rejects_rationale_missing_on_either_side(
 
     assert check_selection.main(["--work-dir", str(repo), str(selection)]) == 1
     assert f"src/model.py（{missing_lane}）" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failure", [None, "overlap", "missing-normal", "duplicate", "invalid-condition"])
+def test_public_check_separates_observation_wait(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str | None
+) -> None:
+    """通常候補0件と観測待ちの別集合を受理し、重複・不正な条件・候補不一致を拒否する。"""
+    notes = tmp_path / "notes"
+    (notes / "processing").mkdir(parents=True)
+    name = "20260930-175957-001.md"
+    waiting = {"WI": name, "条件": "selection-empty", "計画ファイル": "30-1849_process-wi_レーン02.md", "実装commit": "a" * 40}
+    selection: dict[str, object] = {"通常候補": [], "観測待ち": [waiting], "選定": [], "レーンの所要時間": []}
+    if failure == "overlap":
+        selection["通常候補"] = [name]
+        selection["選定"] = [{"WI": name, "レーン": "なし", "書込対象": []}]
+    elif failure == "missing-normal":
+        selection["通常候補"] = [name]
+    elif failure == "duplicate":
+        selection["観測待ち"] = [waiting, waiting]
+    elif failure == "invalid-condition":
+        waiting["条件"] = "time-passed"
+    path = tmp_path / "selection.yaml"
+    path.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
+    monkeypatch.setattr(check_selection._plan_file, "private_notes_root", lambda: notes)  # pylint: disable=protected-access
+    result = check_selection.main([str(path), "--work-dir", str(tmp_path)])
+    assert result == (0 if failure is None else 1)
+    if failure:
+        assert capsys.readouterr().err

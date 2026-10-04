@@ -6,6 +6,7 @@
 """
 
 import pathlib
+import re
 import typing
 
 import yaml
@@ -122,3 +123,21 @@ def serialize_frontmatter(data: typing.Mapping[str, typing.Any], body: str) -> s
     """
     dumped = yaml.safe_dump(dict(data), sort_keys=False, allow_unicode=True, default_flow_style=False)
     return f"---\n{dumped}---\n{body}"
+
+
+def observation_wait_metadata(data: typing.Mapping[str, object]) -> dict[str, str] | None:
+    """既存WIの観測条件・計画basename・実装完全OIDを検証して返す。"""
+    if "observation_wait" not in data:
+        return None
+    value = data["observation_wait"]
+    if not isinstance(value, dict) or set(value) != {"condition", "plan_file", "commit"}:
+        raise ValueError("observation_waitにはcondition・plan_file・commitが必要です")
+    if value["condition"] != "selection-empty":
+        raise ValueError("observation_wait.conditionはselection-emptyが必要です")
+    plan = value["plan_file"]
+    commit = value["commit"]
+    if not isinstance(plan, str) or not plan.endswith(".md") or "/" in plan or "\\" in plan or pathlib.Path(plan).name != plan:
+        raise ValueError("observation_wait.plan_fileには計画ファイルのbasenameが必要です")
+    if not isinstance(commit, str) or re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
+        raise ValueError("observation_wait.commitには実装commitの完全OIDが必要です")
+    return {"condition": "selection-empty", "plan_file": plan, "commit": commit}

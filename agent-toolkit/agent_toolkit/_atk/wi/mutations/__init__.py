@@ -33,6 +33,8 @@ for _source in _MODULES:
             globals().setdefault(_name, _value)
 
 from agent_toolkit._atk.wi.mutations.content import (
+    _cmd_set_observation_wait,
+    set_entry_observation_wait,
     _build_noninteractive_edit_content,
     _cmd_append,
     _cmd_edit,
