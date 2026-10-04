@@ -52,7 +52,7 @@ cache version台帳、全過去versionの保持、POSIXの原本接続、Windows
 Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plugin.json`より優先し、同一rootから導入した場合は`hooks/list`が0件となる。
 また、相対シンボリックリンクを含むCodex専用wrapperを公式CLIで導入すると、snapshotには`.codex-plugin`だけが残り、リンク先のhook・skill・実行資源が含まれない。
 そのため、`agent-toolkit-codex/`は全資源を通常ファイルとして生成し、公式CLIへsnapshotと版数別cacheの管理を委ねる。
-検証条件と再検証手順は「[docs/development/design.md：Claude CodeとCodexの規範配置：2026年9月13日](audit-records.md#docsdevelopmentdesignmdclaude-codeとcodexの規範配置2026年9月13日)」を参照する。
+検証条件と再検証手順は「[docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日](audit-records.md#docsdevelopmentdesign-hostsmdclaude-codeとcodexの規範配置2026年9月13日)」を参照する。
 共有ルールをCodex固有条件で分岐する案は、Claude Codeへ不要な差分を配布して共通契約を曖昧にするため採用しない。
 共有文書をCodex用に複製する案は、原本・生成器・自動テストの同期対象を増やすため採用しない。
 Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホスト固有の挙動を波及させるため採用しない。

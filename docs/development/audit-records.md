@@ -72,9 +72,7 @@ Because `CLAUDE.local.md` counts, adding one to keep your own uncommitted instru
 `claudize`が置く`# CLAUDE.md`と`@AGENTS.md`の2行のアダプターを加えると、合言葉を答えた。
 再検証は同じ構成の一時ディレクトリで、アダプターの有無ごとに`claude -p`へ合言葉を尋ねる。
 
-## docs/development/design.md：Claude CodeとCodexの規範配置：2026年9月13日
-
-この観測の現在の設計本文は[design-hosts.md「Claude CodeとCodexの規範配置」](design-hosts.md#claude-codeとcodexの規範配置)にある。見出しは観測当時の記録名を保持する。
+## docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日
 
 2026年9月13日、Codex CLI 0.154.0でローカルmarketplaceを隔離`CODEX_HOME`へ導入して検証した。`agent-toolkit/`直下にAgent Plugins用`plugin.json`がある構成では、`.codex-plugin/plugin.json`のhook定義よりroot manifestが優先され、app-serverの`hooks/list`は0件を返した。root manifestを除いたwrapperから相対シンボリックリンクでhook・skill・実行資源へ接続した構成では、公式CLIのsnapshotに`.codex-plugin`だけが残り、リンク先は含まれなかった。全資源を通常ファイルとして含む`agent-toolkit-codex/`では、`hooks/list`が8イベントを返した。対象は`sessionStart`、`subagentStart`、`preToolUse`、`postToolUse`、`permissionRequest`、`userPromptSubmit`、`subagentStop`、`sessionEnd`である。project trustの有無で登録集合は変わらなかった。再検証ではCodex CLI 0.154.0で`scripts/sync_codex_plugin_manifests_test.py::test_codex_0154_registers_all_hooks_independent_of_project_trust`を実行する。隔離した2つの`CODEX_HOME`における登録集合、SessionStartの管理一時領域生成、SessionEndの回収を確認する。
 
@@ -492,7 +490,7 @@ pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Py
 
 ## agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日
 
-AWI `20261003-134122-001.md`と`20261003-110859-001.md`の起草時に、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
+Stopで報告の不足を判定する変更（`4862700e1`）の要求を起草した時点で、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
 実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。確認した範囲は判定器の契約テストまでである。対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。
 
@@ -522,9 +520,9 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 
 ## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月3日
 
-AWI `20261004-002450-001.md`の起草時の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、
+拡張思考の表示に関する変更（`31a598fd5`）の要求を起草した時点の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、
 `showThinkingSummaries=false`だった。transcriptの`thinking`ブロックに保存された文がユーザーの画面へ
-通常の応答文と同じ見た目で表示された。原本は同WIが記すtranscriptの88行目と、
+通常の応答文と同じ見た目で表示された。観測の根拠は当時のセッション記録の該当messageと、
 ユーザーが貼った画面表示である。続くStopはtext本文の欠落を遮断したが、思考の非表示を述べる理由は画面と一致しなかった。
 2026年9月28日の記録（Claude Code 2.1.283）では思考の文が表示されなかった。当時の記録は保持する。
 表示の有無はエージェントが応答時に確かめられないため、規範と通知は表示されないものとして発話本文へ書くよう求める。
@@ -533,7 +531,7 @@ transcriptだけの取得を画面表示の観測として扱わず、画面へ�
 
 ## dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日
 
-AWI `20261004-004442-001.md`の起草時の測定はClaude Code 2.1.288、codex-cli 0.160.0、
+ホスト本体の検索手順の変更（`a896a6d06`）の要求を起草した時点の測定はClaude Code 2.1.288、codex-cli 0.160.0、
 ripgrep 15.2.0、GNU grep 3.11、Claude Code組込みugrep 7.8.4で、UTF-8ロケールだった。
 Claude CodeのBashツールでgrepはugrepを呼ぶシェル関数として観測された。
 

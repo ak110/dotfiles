@@ -40,9 +40,6 @@ _SHARE_DIR = pathlib.Path(__file__).resolve().parents[3] / "share"
 _SECRETS_COPY_GUIDANCE = "Bashの`cp`で原本を複製"
 
 
-_SECRETS_VALUE_EDIT_GUIDANCE = "Bashの`echo ... >>`または`sed -i`"
-
-
 _EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("exec-review.subagent.md",)
 
 
@@ -381,7 +378,6 @@ __all__ = [
     "_PLUGIN_MANIFEST",
     "_SCRIPT",
     "_SECRETS_COPY_GUIDANCE",
-    "_SECRETS_VALUE_EDIT_GUIDANCE",
     "_SHARE_DIR",
     "_VALID_H2_PLAN_CONTENT",
     "_additional_context",
