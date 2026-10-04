@@ -12,15 +12,32 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._plan import commit_mapping
 
 
+def _prepare_two_commits(worktree: pathlib.Path) -> str:
+    """対応記録の親確認に使う連続した2 commitを作成し、変更前HEADを返す。"""
+    subprocess.run(["git", "init"], cwd=worktree, check=True, capture_output=True, timeout=30)
+
+    def commit(message: str) -> None:
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", message],
+            cwd=worktree,
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+
+    commit("base")
+    previous_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=worktree, check=True, capture_output=True, text=True, timeout=30
+    ).stdout.strip()
+    commit("change")
+    return previous_head
+
+
 def test_public_plan_commits_reads_existing_handoff(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """記録済みの対応を公開登録から取得し、実在する完全OIDを返す。"""
-    for args in [
-        ["init"],
-        ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "test"],
-    ]:
-        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, timeout=30)
+    previous_head = _prepare_two_commits(tmp_path)
     wi = "20261004-044311-001.md"
-    event = commit_mapping.commit_event(tmp_path, "HEAD", [wi], {wi})
+    event = commit_mapping.commit_event(tmp_path, "HEAD", previous_head, [wi], {wi})
     record = tmp_path / "handoff.md"
     record.write_text(commit_mapping.encode_event(event), encoding="utf-8")
     args = argparse.Namespace(
@@ -37,11 +54,7 @@ def test_public_plan_commits_reads_saved_plan_by_old_working_path(
     """保存後も公開別名から旧作業パスで対応commitを取得できる。"""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
-    for command in [
-        ["init"],
-        ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "test"],
-    ]:
-        subprocess.run(["git", *command], cwd=tmp_path, check=True, capture_output=True, timeout=30)
+    previous_head = _prepare_two_commits(tmp_path)
     wi = "20261004-044311-001.md"
     working = tmp_path / ".claude" / "plans" / "04-example-1a2b.md"
     working.parent.mkdir(parents=True)
@@ -55,16 +68,12 @@ def test_public_plan_commits_reads_saved_plan_by_old_working_path(
         append_progress_log.main(
             [
                 str(working),
-                "--worktree",
-                str(tmp_path),
-                "--awi",
-                wi,
-                "--commit",
-                "HEAD",
-                "--completed-step",
-                "実装",
-                "--result",
-                "成功",
+                f"--worktree={tmp_path}",
+                f"--awi={wi}",
+                "--commit=HEAD",
+                f"--previous-head={previous_head}",
+                "--completed-step=実装",
+                "--result=成功",
             ]
         )
         == 0

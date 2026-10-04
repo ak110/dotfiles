@@ -137,8 +137,20 @@ def append_progress_log(
 
 def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -> bool:
     """対応の記録・取得を処理し、取得だけで終了する場合は真を返す。"""
-    if not (args.commit or args.rewrite_map or args.get_commits or args.handoff or args.awi or args.allowed_awi):
+    if not (
+        args.commit
+        or args.previous_head
+        or args.rewrite_map
+        or args.get_commits
+        or args.handoff
+        or args.awi
+        or args.allowed_awi
+    ):
         return False
+    if args.commit and args.previous_head is None:
+        parser.error("--commitには作成前のHEADを--previous-headで渡す必要があります")
+    if args.previous_head is not None and not args.commit:
+        parser.error("--previous-headは--commitと組で指定します")
     if args.worktree is None or not args.worktree.is_absolute():
         parser.error("commit対応には絶対パスの--worktreeが必要です")
     read_path = args.plan_file
@@ -170,7 +182,8 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
             print(json.dumps({"awi": wi, "commits": commits}, ensure_ascii=False))
         return True
     if args.commit:
-        event = commit_mapping.commit_event(args.worktree, args.commit, args.awi or [], allowed)
+        assert isinstance(args.previous_head, str)
+        event = commit_mapping.commit_event(args.worktree, args.commit, args.previous_head, args.awi or [], allowed)
     elif args.rewrite_map:
         mapping = commit_mapping.read_mapping(content, allowed)
         event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping)
@@ -194,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
     operation = parser.add_mutually_exclusive_group()
     operation.add_argument("--commit", help="対応を記録する実装commit。完全OIDへ解決する")
+    parser.add_argument("--previous-head", help="実装commitの作成直前に取得したHEADの完全OID。--commitでは必須")
     operation.add_argument("--rewrite-map", type=pathlib.Path, help="検収済みの旧完全OIDから新OIDへのJSON対応")
     operation.add_argument("--get-commits", action="store_true", help="対象AWIの現在のcommit対応をJSON Linesで取得する")
     parser.add_argument("--awi", action="append", help="対応する、または取得するAWIファイル名。反復指定")

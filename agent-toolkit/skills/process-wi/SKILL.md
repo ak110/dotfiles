@@ -66,7 +66,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 1. 直前の同期結果を読み、このセッションでAWIの処理を完遂できるかを判定する。判定の手順は`## 直前の同期結果の検分`が定める。
 2. 対象リポジトリが個人プロジェクトに該当するかの判定手段は`ak110-projects-operations`が定める。該当する場合は同スキルを起動し、同期と依存更新の要否を確定する。
 3. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`を全文読み、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って未処置対象を取得し、必要な場合に監査担当を起動する。
-4. `references/run-lanes.md`を全文読み、選定結果から専用worktreeとレーンを作成し、レーン担当を起動する。
+4. `references/run-lanes.md`を全文読み、選定結果の段階と先行レーンに従って専用worktreeとレーンを作成し、レーン担当を起動する。後段は先行レーンの統合と資源解放を受領してから現行HEADを基点に作成する。
 5. 各レーンの計画または計画なしの準備結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「計画準備の受領」に従って受け取り、判断を要する場合だけ`実装開始`または`実装なし`を返す。
 6. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
 7. ユーザーが明示して追加した処理対象WIは`references/run-lanes.md`に従って割り当て、実装とレビューを収束させる。同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。

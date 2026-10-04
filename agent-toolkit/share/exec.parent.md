@@ -11,6 +11,8 @@
 
 ## 入力
 
+起動時の`model_type`は選定結果の当該レーンの`担当モデル.実装担当`から決める。同じレーンの明示指定が異なるときはWIと指定値を示して起動を止める。指定が無ければ工程別設定を使う。明示指定の起動値と終端結果の`model_type`、実際の`engine`、`model`、`effort`を突き合わせて確認し、WIとともに引き継ぎ記録へ残す。
+
 `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を指定してレーン担当を起動する。起動の形は`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」に従い、`cwd`は対象worktreeの絶対パスとする。
 必須入力の項目名は`担当種別`と`引き継ぎ記録先`とする。
 各項目の値は次のとおり確定する。

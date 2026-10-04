@@ -64,7 +64,7 @@ Read履歴を持つEditとの区別を保ち、Codexのapply_patchは現在本�
 <pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --output-format=jsonl <対象ファイルの絶対パス>
 ```
 
-チェック完了と判定できるのは、単一ファイルを指定したJSONLの`header`レコードの`files`が1であり、指定したコマンドのうち対象拡張子を`targets`へ持つものが1件以上あり、そのコマンドの対象ファイル数が1である場合だけとする。`missing_targets`、`fully_excluded_files`、skip、除外が現れる対象は未到達として扱う。対象到達済みの判定にはこの3条件を用い、終了コード0、診断0件、指摘0件の成功件数は到達後の結果として扱う。
+チェック完了と判定できるのは、単一ファイルを指定したJSONLの`header`レコードの`files`が1であり、指定したコマンドのうち対象拡張子を`targets`へ持つものが1件以上あり、完了した`command`レコードの対象ファイル数が1である場合だけとする。`status=running`の進捗レコードは到達判定の完了結果に数えない。`missing_targets`、`fully_excluded_files`、skip、除外が現れる対象は未到達として扱う。対象到達済みの判定にはこの3条件を用い、終了コード0、診断0件、指摘0件の成功件数は到達後の結果として扱う。
 
 検出範囲は`.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`とする。Markdown引用ブロックとフェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象とする。
 
@@ -87,7 +87,7 @@ uv run --frozen python -c 'print(__import__("pyfltr.colloquial.check", fromlist=
 <pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --allow-external-paths --work-dir <チェックする内容を設定したプロジェクトの絶対パス> <外部対象ファイルの絶対パス>
 ```
 
-この手順でも、JSONLの`header`レコードと各commandレコードで対象ファイルへの到達を判定する。
+この手順でも、JSONLの`header`レコードと完了した`command`レコードで対象ファイルへの到達を判定する。
 外部パスを理由とする警告、skipまたは対象除外が現れた結果はチェック完了と判定しない。
 
 ## ダッシュチェック

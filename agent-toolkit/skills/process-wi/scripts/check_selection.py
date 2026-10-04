@@ -209,7 +209,78 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
             raise InputError(f"AWI本文を読み込めない: {source}: {error}") from error
         errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, excluded_paths))
     costs = _selection.lane_costs(selection) or []
+    errors.extend(_check_lane_models(items))
+    errors.extend(_check_lane_stages(items, costs))
     errors.extend(_check_lane_overlaps(items, costs))
+    return errors
+
+
+def _model_types(item: dict[str, object]) -> dict[str, str]:
+    """WIの担当別モデルの書式を確認し、明示指定だけを返す。"""
+    value = item.get(_selection.MODEL_TYPES_KEY, {})
+    if not isinstance(value, dict) or any(
+        role not in {"実装担当", "実行レビュー担当"}
+        or not isinstance(model_type, str)
+        or not re.fullmatch(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+", model_type)
+        for role, model_type in value.items()
+    ):
+        raise InputError(
+            f"{item.get(_selection.WI_KEY)}の`{_selection.MODEL_TYPES_KEY}`は担当別のengine:model/effortではない: {value!r}"
+        )
+    return value
+
+
+def _check_lane_models(items: list[object]) -> list[str]:
+    """同一レーンで両立しない実装モデル指定を拒否する。"""
+    assigned: dict[str, tuple[str, str]] = {}
+    errors: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        models = _model_types(item)
+        lane = item.get(_selection.LANE_KEY)
+        model = models.get("実装担当")
+        if not isinstance(lane, str) or lane == _LANE_NONE or model is None:
+            continue
+        previous = assigned.setdefault(lane, (str(item[_selection.WI_KEY]), model))
+        if previous[1] != model:
+            errors.append(f"{lane}: 実装担当のモデル指定が衝突: {previous[0]}={previous[1]}、{item[_selection.WI_KEY]}={model}")
+    return errors
+
+
+def _check_lane_stages(items: list[object], costs: list[object]) -> list[str]:
+    """後段の開始条件が先行レーンの統合順序を守るか確かめる。"""
+    lanes = {
+        item[_selection.LANE_KEY]
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get(_selection.LANE_KEY), str) and item[_selection.LANE_KEY] != _LANE_NONE
+    }
+    rows: dict[str, tuple[int, list[str]]] = {}
+    errors: list[str] = []
+    for row in costs:
+        if not isinstance(row, dict) or not isinstance(row.get(_selection.LANE_KEY), str):
+            continue
+        lane = row[_selection.LANE_KEY]
+        stage = row.get(_selection.STAGE_KEY, 1)
+        prior = row.get(_selection.PRIOR_LANES_KEY, [])
+        if not isinstance(stage, int) or isinstance(stage, bool) or stage < 1:
+            errors.append(f"{lane}: 段階は1以上の整数を指定する")
+            continue
+        if not isinstance(prior, list) or not all(isinstance(value, str) for value in prior) or len(prior) != len(set(prior)):
+            errors.append(f"{lane}: 先行レーンは重複のない文字列の列を指定する")
+            continue
+        rows[lane] = (stage, prior)
+    ordered_stages = sorted({stage for stage, _ in rows.values()})
+    for expected, stage in enumerate(ordered_stages, start=1):
+        if stage != expected:
+            errors.append(f"段階は1から連続する正整数を指定する: 段階{expected}がない")
+            break
+    for lane, (stage, prior) in rows.items():
+        if stage > 1 and not prior:
+            errors.append(f"{lane}: 後段には先行レーンを指定する")
+        for predecessor in prior:
+            if predecessor not in lanes or predecessor not in rows or rows[predecessor][0] >= stage:
+                errors.append(f"{lane}: 先行レーン{predecessor}は前の段階の対象レーンでなければならない")
     return errors
 
 
@@ -220,6 +291,14 @@ def _check_lane_overlaps(items: list[object], costs: list[object]) -> list[str]:
         for row in costs
         if isinstance(row, dict) and isinstance(row.get(_selection.LANE_KEY), str)
     }
+    stages = {
+        row[_selection.LANE_KEY]: (row.get(_selection.STAGE_KEY, 1), row.get(_selection.PRIOR_LANES_KEY, []))
+        for row in costs
+        if isinstance(row, dict)
+        and isinstance(row.get(_selection.LANE_KEY), str)
+        and isinstance(row.get(_selection.STAGE_KEY, 1), int)
+        and isinstance(row.get(_selection.PRIOR_LANES_KEY, []), list)
+    }
     assigned = [
         item
         for item in items
@@ -229,6 +308,12 @@ def _check_lane_overlaps(items: list[object], costs: list[object]) -> list[str]:
     for left, right in itertools.combinations(assigned, 2):
         lanes = (left[_selection.LANE_KEY], right[_selection.LANE_KEY])
         if lanes[0] == lanes[1]:
+            continue
+        left_stage, left_prior = stages.get(lanes[0], (1, []))
+        right_stage, right_prior = stages.get(lanes[1], (1, []))
+        if left_stage != right_stage and (
+            (left_stage < right_stage and lanes[0] in right_prior) or (right_stage < left_stage and lanes[1] in left_prior)
+        ):
             continue
         overlaps = {
             second if _covers(first, second) else first

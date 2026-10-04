@@ -418,7 +418,18 @@ def public_result(payload: Mapping[str, Any]) -> dict[str, Any]:
     """内部の結果保存項目を含めず、回収と継続に使う結果だけを返す。"""
     result = {
         key: payload[key]
-        for key in ("session_id", "status", "label", "agent_message", "next_action", "recovery")
+        for key in (
+            "session_id",
+            "status",
+            "label",
+            "agent_message",
+            "next_action",
+            "recovery",
+            "engine",
+            "model",
+            "effort",
+            "model_type",
+        )
         if key in payload
     }
     if _nonempty_error(payload.get("error")):
@@ -720,6 +731,7 @@ class SessionState:
             result["progress"] = self.progress
         if include_result and self.result_available:
             result["agent_message"] = self.agent_message
+            result.update(engine=self.engine, model=self.model, effort=self.effort, model_type=self.model_type)
             if _nonempty_error(self.error):
                 result["error"] = self.error
         return result
@@ -852,6 +864,10 @@ def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[
         "agent_message": session.agent_message,
         "turn_seq": session.turn_seq,
         "finalized_at": session.finalized_at,
+        "engine": session.engine,
+        "model": session.model,
+        "effort": session.effort,
+        "model_type": session.model_type,
     }
     if _nonempty_error(session.error):
         result["error"] = session.error

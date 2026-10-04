@@ -92,12 +92,23 @@ def read_mapping(content: str, allowed_wis: set[str]) -> dict[str, set[str]]:
     return mapping
 
 
-def commit_event(worktree: pathlib.Path, revision: str, wis: list[str], allowed_wis: set[str]) -> dict[str, object]:
-    """Git実体と対象集合を確認して生成するイベントを返す。"""
+def commit_event(
+    worktree: pathlib.Path, revision: str, previous_head: str, wis: list[str], allowed_wis: set[str]
+) -> dict[str, object]:
+    """前HEADの直後に作成された現在のHEADだけを記録するイベントを返す。"""
     names = validate_wis(wis)
     if outside := names - allowed_wis:
         raise _fail(f"commitの対象外AWI: {sorted(outside)}")
-    return {"commit": resolve_commit(worktree, revision), "awi": sorted(names)}
+    if _OID.fullmatch(previous_head) is None:
+        raise _fail(f"commit作成前のHEADは完全OIDが必要です: {previous_head}")
+    oid = resolve_commit(worktree, revision)
+    try:
+        parents = command.output(["rev-list", "--parents", "-n", "1", "HEAD"], worktree).split()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise _fail(f"現在のHEADの親を確認できません: {error}") from error
+    if len(parents) != 2 or oid != parents[0] or previous_head != parents[1]:
+        raise _fail(f"指定commitが前HEADの直後に作成された現在のHEADではありません: {revision}")
+    return {"commit": oid, "awi": sorted(names)}
 
 
 def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[str, set[str]]) -> dict[str, object]:

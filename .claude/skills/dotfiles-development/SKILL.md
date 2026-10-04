@@ -38,9 +38,9 @@ description: >
   - 変更範囲の検証の対象は`agent-toolkit:check-execution`の`references/verification-scope.md`の類型で選ぶ。本リポジトリで使う値は次のとおり
     - 横断テスト: ファイル名`*_invariant_test.py`で識別する。rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこのファイル名で対象を選び、commit時にprekが起動する`pyfltr fast`で自動実行する。通常のcommitではこの自動実行の結果を使う。配置は`pytools-edit`「テスト配置」に従う。fastの前提と再検証の手段は`docs/development/audit-records.md`「dotfiles-development：不変条件テストのfast自動実行：2026年10月4日」が持つ
     - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
-    - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。
+    - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。
       共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。内部のコメント・空白だけの変更は含めない
-    - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -p no:cacheprovider pytools scripts`
+    - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`
     - 名前の削除・改名の全体静的検査: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
     - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
   - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。

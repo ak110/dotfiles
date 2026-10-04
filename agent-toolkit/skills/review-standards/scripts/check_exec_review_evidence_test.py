@@ -1354,10 +1354,11 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     (repository / "docs").mkdir(parents=True)
     (notes / "inbox").mkdir(parents=True)
     (repository / "docs/record.md").write_text(_REFERENCE_MARKDOWN, encoding="utf-8")
+    (repository / "docs/日本語名.md").write_text("# 日本語名\n", encoding="utf-8")
     for command in (
         ["init", "-q"],
         ["remote", "add", "origin", "https://github.com/example/foo.git"],
-        ["add", "docs/record.md"],
+        ["add", "docs/record.md", "docs/日本語名.md"],
         ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "観測記録"],
     ):
         subprocess.run(["git", "-C", str(repository), *command], capture_output=True, check=True, timeout=30)
@@ -1382,6 +1383,11 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     ("reference", "expected"),
     [
         ("docs/record.md の結果を読んだ", 0),
+        ("原因をdocs/record.md:1で確認", 0),
+        ("原因をdocs/missing.md:1で確認", 1),
+        ("原因をdocs/record.md:15で確認", 1),
+        ("通常文のdocs/日本語名.md:1を確認", 0),
+        ("docs/日本語名.md:1 を確認", 0),
         ("`docs/record.md#設定  保存`の結果を読んだ", 0),
         ("`docs/record.md#括弧 (完了)`の結果を読んだ", 0),
         ("[記録](docs/record.md#Setext *見出し*)の結果を読んだ", 0),
@@ -1453,6 +1459,8 @@ def test_public_command_resolves_evidence_references(
     if expected:
         assert "wi_conditions[1].evidence" in error
         assert "参照『" in error and "証拠不足へ再判定" in error
+        if reference.startswith("原因をdocs/"):
+            assert "参照『docs/" in error
         if "202609" in reference:
             assert "WI名または節" in error or "WIの節または行" in error
         if ":1-2,5-7" in reference:
