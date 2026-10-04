@@ -50,7 +50,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 
 ## WI実装commitの対応の継承
 
-WI実装commitの履歴を変更した担当は、既存の履歴検収を終えた旧完全OIDから新完全OIDへの対応をJSONオブジェクトとしてmanaged-tempへ保存する。対応表の旧OIDは、進捗記録にWI対応を持つものに限る。各旧commitのAWI集合を継承するため、元commitとfixupが同じ新commitへ統合される場合も、記録済みの旧OIDは全て含める。WI対応を持たないcommitは、履歴検収で比較した対象であっても対応表へ入れない。次の形で同じ進捗記録へ追記する。記録・worktree・JSONは絶対パスを渡す。
+WI実装commitの履歴を変更した担当は、`## 操作前後の確認`の検収を終えた旧完全OIDから新完全OIDへの対応をJSONオブジェクトとしてmanaged-tempへ保存する。対応表の旧OIDは、進捗記録にWI対応を持つものに限る。各旧commitのAWI集合を継承するため、元commitとfixupが同じ新commitへ統合される場合も、記録済みの旧OIDは全て含める。WI対応を持たないcommitは、履歴検収で比較した対象であっても対応表へ入れない。次の形で同じ進捗記録へ追記する。記録・worktree・JSONは絶対パスを渡す。
 
 ```text
 atk run-script plan-progress -- <記録> --completed-step <工程> --result <結果> --worktree <worktree> --rewrite-map <JSON>

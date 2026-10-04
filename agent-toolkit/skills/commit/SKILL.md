@@ -59,7 +59,7 @@ atk run-script plan-progress -- <計画> --completed-step <工程> --result <結
 
 履歴変更: rebase・autosquash・amendでWI実装commitのOIDが変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従い、旧完全OIDから新完全OIDへの対応を`--rewrite-map`で同じ記録へ追記する。対応表へ入れる旧OIDは、記録済みの対応を持つものに限る。`git range-diff`などで検収した全commitのうちWI対応を持たないcommitを入れると、追記が失敗する。記録済みの旧OIDが対応表に無いと、取得時に現在のHEADにないOIDとして失敗する。
 
-対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、既存の根拠記録とcommit省略を使う。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画保存は既存の`atk plans commit`を使う。
+対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、計画の進捗ログまたは引き継ぎ記録に残した根拠を使い、commitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は`atk plans commit`で保存する。
 
 ## 条件付き手順
 
