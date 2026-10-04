@@ -5339,6 +5339,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
     assert options.permission_mode == "auto"
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "AGENT_TOOLKIT_OWNER_SESSION": "owner-session",
         "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL": "1h",
     }
@@ -5361,6 +5362,7 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_pa
     assert options.skills == []
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     }
@@ -5387,6 +5389,7 @@ def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_pa
     assert options.skills == []
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     }

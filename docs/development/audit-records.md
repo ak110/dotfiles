@@ -511,6 +511,15 @@ uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 3行目の出力の1行目（`"kind":"header"`）が示す`run_id`を4行目へ渡す。4行目が返すJSONの`output`に、pyfltrのsubprojectごとの`# subproject: <ディレクトリ>`の行と、収集したテストの`<ファイル>::<テスト名>`の行が並ぶ。各行のファイルへsubprojectのディレクトリ（`.`はroot）を前置した集合が、fastのpytestが受け取ったファイルの集合である。
 この集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象のファイルが別のファイルへ置き換わった場合を見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
 
+## agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日
+
+2026年10月4日、Claude Code 2.1.289とClaude Agent SDK 0.2.163で、turn状態の報告を受け取れることを確かめた。
+`ClaudeAgentOptions(env={"CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1"})`を与えたsessionでは、`ClaudeSDKClient.receive_messages()`へ`SystemMessage`が届く。その`subtype`は`session_state_changed`、`data["state"]`は`running`・`idle`・`requires_action`のいずれかである。この変数が無い場合、SDKは`CLAUDE_CODE_SDK_READS_SESSION_STATE=1`を設定して報告を呼び出し側から除く。
+haikuの委譲先に`sleep 2`を背景実行させて直ちにturnを終えさせ、Stop hookの待機時間を変えて到着順を比べた。
+待機0秒では次の順に届いた。`ResultMessage`、`idle`、`task_notification`、`running`、再開turnの`ResultMessage`（`origin.kind`が`task-notification`）、`idle`である。待機5秒では`task_notification`（Stop hookの実行中）、`ResultMessage`、再開turnの`ResultMessage`、`idle`の順に届き、最初の結果の後に`idle`は届かなかった。どちらも再開turnが実行された。CLIのスキーマ記述は`idle`を、保留した結果の送出と背景エージェントの待機の後に発行するturnの終了の信号と説明する。
+再検証では、同じ版の組で上記の環境変数を与えた委譲先へ背景実行の`sleep 2`と即時のturn終了を指示して行う。
+Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の全メッセージの種別、`subtype`、`state`、`origin`を到着順に保存して比べる。
+
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：動的なwatch対象の指定：2026年10月4日
 
 HEAD `80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。

@@ -40,6 +40,7 @@ from agent_toolkit._common import claude_usage_limit
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
+_ENV_EMIT_SESSION_STATE_EVENTS = "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _ENV_OWNER_SESSION = "AGENT_TOOLKIT_OWNER_SESSION"
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
@@ -256,6 +257,10 @@ def _build_options(
     from claude_agent_sdk import ClaudeAgentOptions
 
     env = {_ENV_DELEGATED_SESSION: "1"}
+    # CLIのturn状態の報告（`SystemMessage`のsubtype `session_state_changed`）を受け取る。
+    # Claude Agent SDKはこの変数が無い場合だけ報告を自身の判定用に要求し、呼び出し側のストリームから除く。
+    # 結果の公開の判定に`idle`を使うため、全起動区分で有効にする（`_run`の`ResultMessage`の分岐を参照）。
+    env[_ENV_EMIT_SESSION_STATE_EVENTS] = "1"
     if root_session_id is not None:
         env[_ENV_OWNER_SESSION] = root_session_id
     # 委譲先のプロンプトキャッシュ保持期間を`mode`ごとに固定する。評価順序は`_wait_schedule.py`のdocstringが定める。
@@ -618,6 +623,12 @@ class ClaudeServerManager:
         active_future: asyncio.Future[_DeliveryResult] | None = None
         # `SystemMessage(init)`より前に届いた利用枠の報告。sessionの作成時に引き継ぐ。
         early_usage_limit: claude_usage_limit.UsageLimitState | None = None
+        # 保留中の結果が完了通知による再開turnのものか。`idle`で確定するときに、`ResultMessage`の分岐で
+        # 直接確定した場合と同じく`auto_resume_consumed`へ反映する。
+        held_from_task_notification = False
+        # `SystemMessage(init)`より前に届いたturn状態の報告。CLIはコマンドループの先頭で最初のturnの`running`を
+        # 発行するため、initより先に届き得る。捨てると最初のturnが従来判定へ戻るため、sessionの作成時に引き継ぐ。
+        early_cli_turn_state: str | None = None
         try:
             diagnostic.stage = "creating_client"
             client = self._client_factory(options)
@@ -728,6 +739,7 @@ class ClaudeServerManager:
                                 )
                                 self.sessions[session_id] = session
                                 session.usage_limit = early_usage_limit
+                                session.cli_turn_state = early_cli_turn_state
                                 session.status = "starting" if expected_session_id is None else "running"
                                 session.touch()
                                 self._channels[session_id] = channel
@@ -738,6 +750,30 @@ class ClaudeServerManager:
                                     initialized.set_result(session)
                             elif session_id != session.session_id:
                                 raise shared_state.DelegateBackendError("Claude init message reported a different session_id")
+                        elif name == "SystemMessage" and getattr(message, "subtype", None) == "session_state_changed":
+                            # CLIのturn状態の報告。`idle`は次のturnが発生しないことを示すため、保留中の結果を
+                            # 確定してよい時点になる。ただしシェルのバックグラウンドタスクの稼働中も`idle`が届くため、
+                            # 追跡集合が残る間は確定せず、そのタスクの完了通知による再開turnの結果を待つ。
+                            data = getattr(message, "data", {})
+                            reported = data.get("state") if isinstance(data, dict) else None
+                            if not isinstance(reported, str) or not reported:
+                                reported = None
+                            if session is None:
+                                if reported is not None:
+                                    early_cli_turn_state = reported
+                            elif reported is not None:
+                                session.cli_turn_state = reported
+                            if (
+                                session is not None
+                                and reported == "idle"
+                                and session.awaiting_auto_resume
+                                and not shared_state.has_pending_auto_resume_targets(session)
+                            ):
+                                if held_from_task_notification:
+                                    session.auto_resume_consumed = True
+                                self._finalize_pending_result(session)
+                                iterator = None
+                                await self._notify_waiters()
                         elif name == "RateLimitEvent":
                             # 利用枠の報告はモデル活動ではないため活動時刻を進めない。
                             usage_limit = claude_usage_limit.from_event(message)
@@ -783,10 +819,22 @@ class ClaudeServerManager:
                             # 自動再開したturnもバックグラウンドタスクを残して待機を表明し得るため、
                             # `origin`によらず保留を判定する。
                             # 確定後は以後のメッセージを読まないため、ここで確定すると後続の自動再開turnの結果を失う。
-                            elif shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
+                            # 完了通知は`ResultMessage`より前にも届く。Stop hookの実行中にバックグラウンドタスクが終わると、
+                            # その通知で追跡集合は空になるが、CLIは`ResultMessage`の後に通知の再開turnを開始する。
+                            # 次のturnの有無はCLIの`idle`の報告だけが確定できるため、報告が`idle`になるまで保留し、
+                            # `session_state_changed`の分岐で確定する。この判定はMCP層の再開済みsessionにも適用する。
+                            # 根拠とした版と順序は`docs/development/audit-records.md`の次の節にある。
+                            # 「agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：
+                            # 2026年10月4日」
+                            elif shared_state.has_pending_auto_resume_targets(session) and (
+                                not session.auto_resume_consumed or shared_state.cli_turn_may_continue(session)
+                            ):
+                                self._log_turn_state_fallback(session)
+                                held_from_task_notification = getattr(message, "origin", None) == {"kind": "task-notification"}
                                 shared_state.begin_auto_resume_wait(session, result)
                                 session.touch()
                             else:
+                                self._log_turn_state_fallback(session)
                                 if getattr(message, "origin", None) == {"kind": "task-notification"}:
                                     session.auto_resume_consumed = True
                                 self._finalize_turn(session, result)
@@ -948,6 +996,21 @@ class ClaudeServerManager:
         session.turn_completed = True
         session.turn_start_ambiguous = False
         session.touch()
+
+    @staticmethod
+    def _log_turn_state_fallback(session: SessionState) -> None:
+        """CLIのturn状態の報告を受けないまま結果を判定したことを、sessionごとに1回だけ警告する。
+
+        報告が無い場合は追跡集合だけで判定する従来の方法へ戻り、`ResultMessage`より前に終わったバックグラウンドタスクの
+        再開turnを判別できない。CLIが報告をやめても判定の弱まりを検出できるようにログへ残す。
+        """
+        if session.cli_turn_state is not None or session.cli_turn_state_fallback_logged:
+            return
+        session.cli_turn_state_fallback_logged = True
+        _LOG.warning(
+            "claude_turn_state_unreported session_id=%s: CLIのturn状態の報告が無いため、結果の保留を追跡集合だけで判定する",
+            session.session_id,
+        )
 
     @classmethod
     def _finalize_pending_result(
