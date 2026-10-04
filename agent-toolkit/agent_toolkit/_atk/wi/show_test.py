@@ -368,7 +368,7 @@ class TestShowAll:
 
 
 class TestShowSummary:
-    """状態だけの照会を単件・複数・全件とファイル保存で完遂する。"""
+    """状態だけの照会を単件・複数・全件の両環境で直接表示する。"""
 
     @pytest.mark.parametrize(
         ("selection", "expected"),
@@ -378,30 +378,29 @@ class TestShowSummary:
             (["--all"], ["### fb-001.md [inbox]", "### uwi-001.md [inbox/answered]"]),
         ],
     )
-    @pytest.mark.parametrize("save_output", [False, True])
-    def test_state_only_lookup_and_save(
+    @pytest.mark.parametrize("agent_environment", [False, True])
+    def test_state_only_lookup_uses_direct_output(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
         selection: list[str],
         expected: list[str],
-        save_output: bool,
+        agent_environment: bool,
     ) -> None:
         """公開CLIの選択順と回答状態を保持し、本文・frontmatterを出力しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="表示を省くAWI本文")
         _write_uwi_file(notes, "uwi-001.md", question="表示を省く質問", answer="表示を省く回答")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        output_path = tmp_path / "summary.txt"
-        output_args = ["--output-file", str(output_path)] if save_output else []
+        if agent_environment:
+            monkeypatch.setenv("CLAUDECODE", "1")
         with pytest.raises(SystemExit) as exit_info:
-            atk.main(
-                ["wi", "show", *selection, "--summary-only", "--target-repo=all", "--skip-pull", *output_args], home=tmp_path
-            )
+            atk.main(["wi", "show", *selection, "--summary-only", "--target-repo=all", "--skip-pull"], home=tmp_path)
         assert exit_info.value.code == 0
         captured = capsys.readouterr()
-        output = output_path.read_text(encoding="utf-8") if save_output else captured.out
+        output = captured.out
+        assert not output.startswith("保存先: ")
         assert [line for line in output.splitlines() if line.startswith("### ")] == expected
         assert "## target_repo:" in output
         assert "表示を省く" not in output

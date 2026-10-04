@@ -88,36 +88,29 @@ def _repository_root() -> pathlib.Path:
 
 
 def _show_wi(filename: str, repository: pathlib.Path) -> str:
-    """WI本文を`atk wi show`の保存先ファイルから全量で取得する。
-
-    エージェント環境の`atk`は長い標準出力を要約行へ置き換えるため、本文を解析する本処理は
-    出力の大きさによらず`--output-file`で全量を受け取る。
-    """
+    """生成側が返す保存先または非エージェントの直接本文からWIを取得する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[3]
-    # WindowsはPOSIX用の`bin/atk`を直接起動できないため、同じplugin rootのOS別ランチャーを選ぶ。
     launcher = plugin_root / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
-    with tempfile.TemporaryDirectory() as directory:
-        output = pathlib.Path(directory) / "wi-show.txt"
-        result = subprocess.run(
-            [
-                str(launcher),
-                "wi",
-                "show",
-                filename,
-                f"--target-repo={repository}",
-                "--skip-pull",
-                f"--output-file={output}",
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=30,
-        )
-        if result.returncode != 0:
-            raise ValueError(f"{filename}: WI本文を取得できません: {result.stderr.strip()}")
-        return output.read_text(encoding="utf-8")
+    result = subprocess.run(
+        [str(launcher), "wi", "show", filename, f"--target-repo={repository}", "--skip-pull"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"{filename}: WI本文を取得できません: {result.stderr.strip()}")
+    saved = [line.removeprefix("保存先: ").strip() for line in result.stdout.splitlines() if line.startswith("保存先: ")]
+    if not saved:
+        return result.stdout
+    if len(saved) != 1 or not pathlib.Path(saved[0]).is_absolute():
+        raise ValueError(f"{filename}: WI本文の保存先を確定できません: {result.stdout}")
+    try:
+        return pathlib.Path(saved[0]).read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ValueError(f"{filename}: WI本文の保存先を読めません: {saved[0]}: {error}") from error
 
 
 def _wi_body(output: str, filename: str) -> tuple[dict[str, str], list[str]]:

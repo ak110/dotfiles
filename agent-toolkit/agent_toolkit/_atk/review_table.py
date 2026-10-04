@@ -20,7 +20,6 @@ from pathlib import Path
 
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import next_action as _next_action
@@ -657,7 +656,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         "summaryは--roundで指定したラウンドの登録数・未応答数・応答済み数を1件のJSONで返す。"
         "summaryのtrack省略時はexec-review。",
     )
-    _output_file.add_output_file_arg(show_parser)
+    show_parser.set_defaults(subparser=show_parser)
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
     validate_parser.add_argument(
         "--allow-unanswered",

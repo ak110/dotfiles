@@ -67,7 +67,8 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
         requested.append(filename)
         if filename not in bodies:
             return subprocess.CompletedProcess(args, 1, stdout="", stderr=f"失敗: {filename}はありません")
-        output = pathlib.Path(next(arg for arg in args if arg.startswith("--output-file=")).removeprefix("--output-file="))
+        assert not any(arg.startswith("--output-file") for arg in args)
+        output = tmp_path / (filename + ".stdout")
         output.write_text(f"## target_repo: example\n### {filename} [processing]\n---\n{bodies[filename]}", encoding="utf-8")
         # エージェント環境の`atk`は長い本文を標準出力へ書かないため、証拠を確かめる処理は保存先だけを読む必要がある。
         return subprocess.CompletedProcess(args, 0, stdout=f"保存先: {output}\n行数: 1\n", stderr="")
@@ -1100,7 +1101,8 @@ def test_public_command_rejects_partly_updated_review_heads(
         if args[0] == "git":
             check = kwargs.pop("check", False)
             return real_run(args, check=check, **kwargs)
-        output = pathlib.Path(next(arg.removeprefix("--output-file=") for arg in args if arg.startswith("--output-file=")))
+        assert not any(arg.startswith("--output-file") for arg in args)
+        output = tmp_path / "generated-wi.stdout"
         output.write_text(
             f"### {FIRST_WI} [processing]\n---\ntype: awi\nsource: agent\n---\n## 完成条件\n- 完成\n",
             encoding="utf-8",

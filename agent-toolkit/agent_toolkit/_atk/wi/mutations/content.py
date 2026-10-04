@@ -532,8 +532,8 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             frontmatter, body = parsed
             style_warnings = _style_diagnostics.warnings_for_body(body)
             if style_warnings:
-                _outcome.report_warning(
-                    "\n警告: ".join(style_warnings),
+                _style_diagnostics.report_warnings(
+                    style_warnings,
                     next_action=(
                         f"編集は続行する。直す場合は反映後にatk wi edit {path.name} --body-file <PATH>で本文を置き換える"
                     ),

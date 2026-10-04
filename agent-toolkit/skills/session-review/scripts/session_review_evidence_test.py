@@ -43,16 +43,14 @@ def _execution_result_transcript(tmp_path: pathlib.Path, *contents: str) -> path
     )
 
 
-def test_output_file_saves_events_and_prints_path_and_line_count(
+def test_direct_cli_returns_events_for_stream_redirection(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
-    output_path = tmp_path / "events.jsonl"
+    assert evidence.main([str(transcript)]) == 0
 
-    assert evidence.main([str(transcript), "--output-file", str(output_path)]) == 0
-
-    assert json.loads(output_path.read_text(encoding="utf-8")) == {
+    assert json.loads(capsys.readouterr().out) == {
         "kind": "user",
         "runtime_inserted": False,
         "text": "入力",
@@ -61,16 +59,12 @@ def test_output_file_saves_events_and_prints_path_and_line_count(
         "sequence": 1,
         "record": "main",
     }
-    assert capsys.readouterr().out == f"保存先: {output_path.resolve()}\n行数: 1\n"
 
 
-def test_output_file_rejects_relative_path(capsys: pytest.CaptureFixture[str]) -> None:
-    assert evidence.main(["unused.jsonl", "--output-file", "relative.jsonl"]) == 2
-    assert json.loads(capsys.readouterr().out) == {
-        "kind": "error",
-        "text": "--output-fileには絶対パスを指定してください。",
-        "next_action": "`--output-file`へ絶対パスを渡して再実行する",
-    }
+def test_output_file_option_is_removed(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        evidence.main(["unused.jsonl", "--output-file", "relative.jsonl"])
+    assert "--output-file" in capsys.readouterr().err
 
 
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:

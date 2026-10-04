@@ -803,7 +803,8 @@ class TestBashAtkOutputLoss:
         assert auto_message_opening_attributes(result.stderr)["source"] == "pretooluse"
         assert "結果と終了状態を直接受領できない入力" in result.stderr
         assert "run_in_background" in result.stderr
-        assert "--output-file" in result.stderr
+        assert "生成側が返す標準出力・標準エラーの保存先" in result.stderr
+        assert "--output-file" not in result.stderr
         assert "別の呼び出し" in result.stderr
 
     @pytest.mark.parametrize(
@@ -819,7 +820,7 @@ class TestBashAtkOutputLoss:
             "printf data | atk wi add --body-file body.md",
             "printf data | atk agents wait",
             "atk agents list --count=1",
-            "atk agents list --output-file=output.jsonl",
+            "atk wi show 20261004-004833-001.md --skip-pull",
             "head -c 3000 output.jsonl",
             "atk agents list && printf done",
             "atk agents list || printf failed",

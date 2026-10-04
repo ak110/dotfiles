@@ -19,7 +19,6 @@ from typing import Any
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._common import next_action as _next_action
@@ -411,7 +410,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     )
     list_parser = _atk_help.add_command(subcommands, "list", **_atk_help.HELP["atk review-audit list"])
     list_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
-    _output_file.add_output_file_arg(list_parser)
+    list_parser.set_defaults(subparser=list_parser)
     pending_parser = _atk_help.add_command(subcommands, "pending", **_atk_help.HELP["atk review-audit pending"])
     pending_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
     mark_parser = _atk_help.add_command(subcommands, "mark", **_atk_help.HELP["atk review-audit mark"])

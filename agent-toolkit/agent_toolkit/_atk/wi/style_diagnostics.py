@@ -4,6 +4,9 @@ import re
 
 from pyfltr.colloquial import check as colloquial
 
+from agent_toolkit._atk import managed_temp, outcome, output_file
+from agent_toolkit._atk.environment import is_agent_environment
+
 _DASH = re.compile("—|―|──")
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
 _URL = re.compile(r"(?:[a-zA-Z][a-zA-Z0-9+.\-]*://|www\.)[^\s)]+")
@@ -27,3 +30,25 @@ def warnings_for_body(body: str) -> list[str]:
         for match in _DASH.finditer(searchable):
             warnings.append(f"本文:{line}:{match.start() + 1}: ダッシュ {match.group()}")
     return sorted(warnings, key=lambda warning: tuple(int(value) for value in warning.split(":")[1:3]))
+
+
+def report_warnings(warnings: list[str], *, next_action: str) -> None:
+    """エージェントには診断の全量を保存し、件数・保存先・続行可否を返す。"""
+    if not warnings:
+        return
+    details = "\n警告: ".join(warnings)
+    if is_agent_environment():
+        try:
+            path = output_file.save_text(
+                details + "\n", lambda: managed_temp.create_managed_temp("atk-diagnostics"), filename="stderr.txt"
+            )
+        except Exception as error:  # noqa: BLE001  # 診断保存の失敗でも本来の詳細と結果を保持する
+            outcome.report_warning(
+                f"表記診断を保存できないため全量を表示する: {error}\n警告: {details}", next_action=next_action
+            )
+        else:
+            outcome.report_warning(
+                f"WI本文の表記診断: {len(warnings)}件\n標準エラー詳細保存先: {path}", next_action=next_action
+            )
+    else:
+        outcome.report_warning(details, next_action=next_action)

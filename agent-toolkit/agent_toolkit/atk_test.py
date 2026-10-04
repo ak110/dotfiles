@@ -155,14 +155,14 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
         ["review-audit", "list", "--repo=owner/repo"],
     ],
 )
-def test_output_file_option_is_accepted_by_listing_commands(argv: list[str], tmp_path: pathlib.Path) -> None:
+def test_output_file_option_is_rejected_by_listing_commands(argv: list[str], tmp_path: pathlib.Path) -> None:
     output_path = tmp_path / "output.txt"
 
-    args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
-        [*argv, "--output-file", str(output_path)]
-    )
-
-    assert args.output_file == output_path
+    with pytest.raises(SystemExit, match="2"):
+        atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
+            [*argv, "--output-file", str(output_path)]
+        )
+    assert not output_path.exists()
 
 
 def test_output_file_rejects_relative_path(tmp_path: pathlib.Path) -> None:

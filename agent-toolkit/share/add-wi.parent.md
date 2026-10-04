@@ -46,10 +46,10 @@ WI投入担当は`add-wi.subagent.md`を指定して起動し（`agent-toolkit:d
   - 出所は委譲元が自身のトランスクリプトから`atk run-script session-review-evidence`で取り出した出力ファイルの絶対パスと、引用する発話・確認回答の記録位置（出力の`record`と`line`）とする。抽出は委譲元が次のコマンドで行う。Codexでは`--claude-session-id "$CLAUDE_CODE_SESSION_ID"`の代わりに`--codex-thread-id "$CODEX_THREAD_ID"`を使う
 
     ```sh
-    atk run-script session-review-evidence -- --claude-session-id "$CLAUDE_CODE_SESSION_ID" --user-events --since <引用する最初の発話より前の時刻> --output-file <managed-tempの中のファイルの絶対パス>
+    atk run-script session-review-evidence -- --claude-session-id "$CLAUDE_CODE_SESSION_ID" --user-events --since <引用する最初の発話より前の時刻>
     ```
 
-    この出力は本文を切り詰めず、確認回答には質問、提示した全選択肢、選ばれた選択肢および自由記述が入る。`agent-toolkit:session-review`の`session-review-prepare`が出力する`conversation.md`も`atk run-script session-review-evidence`由来の原文であり、そのまま出所に使える
+    `保存先:`の絶対パスを出所として渡し、保存された全量を読む。この出力は本文を切り詰めず、確認回答には質問、提示した全選択肢、選ばれた選択肢および自由記述が入る。`agent-toolkit:session-review`の`session-review-prepare`が出力する`conversation.md`も`atk run-script session-review-evidence`由来の原文であり、そのまま出所に使える
   - `確定済みの観測`は観測ごとの内容、手段（実行したコマンドと入力）、時点および記録位置（transcriptの絶対パスと`<記録>:<行番号>`、または出力を保存したファイルの絶対パス）とする。再実行の要否は委譲先が判定するため、委譲プロンプトで再確認を促さない
   - 範囲語か開放列挙と、例示か理由を併せ持つユーザーの依頼を起点とする要求では、例示の語形やその近傍を起点に検索した観測にそのことを書き、対象集合の全体を表す観測として渡さない。WI投入担当は例示を含む逐語本文を受け取るため、例示を伏せた調査を担えない。対象集合の観測には、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`の同じ依頼を扱う項が定める独立した調査の結果を含める。対象集合の確定を投入前に確定すべき事項として渡す場合も、その調査は委譲元が受け渡しの前に済ませる。調査せずに渡す場合は、観測が例示の近傍に限られることを`確定済みの観測`へ書く
   - 投入済みAWIを更新する要求と失敗後に再開する要求では、更新または修復する項目の`ファイル名`も渡す。対象は「起動前の前提」の保留を終えた項目に限る

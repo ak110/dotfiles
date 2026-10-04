@@ -283,13 +283,13 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
         output = result
     command = "atk agents wait"
     if delivery in {"output-file", "shell-output-file"}:
-        command = "timeout 300 atk agents wait --output-file " + str(tmp_path / "wait-results.jsonl")
+        command = "timeout 300 atk agents wait"
     if delivery == "unrelated":
         command = "printf 'unrelated command'"
     if delivery == "shell-stdout":
         command = '/bin/bash -lc "atk agents wait"'
     if delivery == "shell-output-file":
-        command = f'/bin/sh -c "timeout 300 atk agents wait --output-file {tmp_path / "wait-results.jsonl"}"'
+        command = '/bin/sh -c "timeout 300 atk agents wait"'
     if delivery == "shell-unrelated":
         command = '/bin/bash -lc "printf unrelated"'
     item = {

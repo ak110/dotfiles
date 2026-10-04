@@ -22,7 +22,6 @@ import platformdirs
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.wi import common as _common
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._git import command as _git_command
@@ -81,7 +80,7 @@ def build_parser(parser) -> None:
         help="`private-notes/plans/`へ対象限定commitを作成し、pushは行わない",
     )
     list_parser = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
-    _output_file.add_output_file_arg(list_parser)
+    list_parser.set_defaults(subparser=list_parser)
     _atk_help.add_command(sub, "rewrite-references", **_atk_help.HELP["atk plans rewrite-references"])
 
 

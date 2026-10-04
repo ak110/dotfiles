@@ -297,7 +297,8 @@ def test_agents_wait_help_states_own_limit_and_standalone_invocation() -> None:
     assert "3600秒" not in description
     assert "終了コード3" in description
     assert "単独で発行する" in description
-    assert "`--output-file`は保存先を指定する必要がある場合だけ使う" in description
+    assert "エージェント環境では量によらず回収結果を保存" in description
+    assert "--output-file" not in description
 
 
 def _leaf_commands() -> set[str]:

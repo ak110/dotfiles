@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import collections
-import contextlib
 import contextvars
 import datetime
 import json
@@ -5199,34 +5198,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "集計と通知の走査の全量は保存先のファイルから読む。"
         "指定するディレクトリは実在していることを要する。他の照会オプションとは併用しない。",
     )
-    parser.add_argument(
-        "--output-file",
-        metavar="PATH",
-        help="全てのモードの標準出力を指定した絶対パスのファイルへ保存し、標準出力へは保存先パスと保存した行数だけを書く。",
-    )
     return parser
 
 
-def main(argv: list[str] | None = None, *, _output_file_active: bool = False) -> int:
+def main(argv: list[str] | None = None) -> int:
     """証拠または照会結果を1イベント1 JSONのJSONLとして標準出力へ書く。"""
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
-    if args.output_file is not None and not _output_file_active:
-        output_path = Path(args.output_file)
-        if not output_path.is_absolute():
-            return _print_error(
-                "--output-fileには絶対パスを指定してください。", next_action="`--output-file`へ絶対パスを渡して再実行する"
-            )
-        resolved = output_path.resolve(strict=False)
-        with resolved.open("w", encoding="utf-8", newline="") as stream, contextlib.redirect_stdout(stream):
-            exit_code = main(argv, _output_file_active=True)
-        with resolved.open(encoding="utf-8", newline="") as stream:
-            line_count = sum(1 for _line in stream)
-        print(f"保存先: {resolved}")
-        print(f"行数: {line_count}")
-        return exit_code
     if (
         sum(
             (

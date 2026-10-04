@@ -495,7 +495,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="picker向けにtarget_commit以後の履歴の鮮度情報をJSONへ加える。",
     )
     _add_mq_read_sync_args(list_)
-    _output_file.add_output_file_arg(list_)
+    list_.set_defaults(subparser=list_)
 
     show = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk wi show"])
     show.add_argument(
@@ -515,7 +515,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         allow_all=True,
         help_extra="FILENAME指定時は明示的照会として扱い、省略時の限定を適用しない。",
     )
-    _output_file.add_output_file_arg(show)
+    show.set_defaults(subparser=show)
     show.add_argument(
         "--summary-only",
         action="store_true",
@@ -875,7 +875,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     _add_source_arg(grep, multiple=True)
     _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
-    _output_file.add_output_file_arg(grep)
+    grep.set_defaults(subparser=grep)
     grep.set_defaults(subparser=grep)
 
     answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk wi answer"])
@@ -1339,7 +1339,7 @@ def main(
     *,
     home: pathlib.Path | None = None,
     now: datetime.datetime | None = None,
-    _output_file_active: bool = False,
+    _output_capture_active: bool = False,
 ) -> None:
     """エントリポイント。"""
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
@@ -1353,7 +1353,25 @@ def main(
     raw_argv = argv if argv is not None else sys.argv[1:]
     raw_argv = _resolve_legacy_top_level_command(raw_argv)
     raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
+    if not _output_capture_active and is_agent_environment() and any(flag in raw_argv for flag in ("--help", "-h")):
+        with _output_file.auto_save(lambda: _managed_temp.create_managed_temp("atk-output")):
+            main(argv, home=home, now=now, _output_capture_active=True)
+        return
     args = parser.parse_args(raw_argv)
+    if not _output_capture_active and _auto_saves_output(args):
+        is_wait = args.command == "agents" and args.agents_subcommand == "wait" and args._help_parser is None
+        force = args._help_parser is None and (
+            is_wait
+            or (args.command == "wi" and args.wi_subcommand == "show" and not args.summary_only)
+            or (args.command == "run-script" and args.script_name == "session-review-evidence")
+        )
+        with _output_file.auto_save(
+            lambda: _managed_temp.create_managed_temp("atk-output"),
+            after_save=_agents.summarize_saved_wait if is_wait else None,
+            force_stdout=force,
+        ):
+            main(argv, home=home, now=now, _output_capture_active=True)
+        return
     if args._help_parser is not None:
         args._help_parser.print_help()
         return
@@ -1367,18 +1385,6 @@ def main(
     _normalize_repeatable_wi_filters(args)
     _resolve_wi_target_repo(args, parser)
     _resolve_note_file(args, parser)
-    output_path = getattr(args, "output_file", None)
-    after_save = _agents.summarize_saved_wait if args.command == "agents" and args.agents_subcommand == "wait" else None
-    if output_path is not None and not _output_file_active:
-        if not output_path.is_absolute():
-            args.subparser.error("--output-fileには絶対パスを指定してください。")
-        with _output_file.redirect(output_path, after_save=after_save):
-            main(argv, home=home, now=now, _output_file_active=True)
-        return
-    if output_path is None and not _output_file_active and _auto_saves_output(args):
-        with _output_file.auto_save(lambda: _managed_temp.create_managed_temp("atk-output"), after_save=after_save):
-            main(argv, home=home, now=now, _output_file_active=True)
-        return
     if now is None:
         now = datetime.datetime.now()
     automatically_cleaned: list[pathlib.Path] = []

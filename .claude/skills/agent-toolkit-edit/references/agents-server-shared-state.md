@@ -23,7 +23,8 @@ Codex CLIが起動するMCPサーバープロセスが受け取る環境変数�
 配送するルートはManagerが持つ`StatusFileWriter.root_session_id`である。環境にownerが無くManagerが生成したルートも、Codex App Serverの子環境、threadの開始・再開のMCP環境とhost索引、Claude SDKの新規・再開環境、Antigravityの子環境へ同じ入力として渡す。backendはこの入力から通知先の所有者を決める。Antigravityではルート配送だけを保証し、固有の通知元識別子の解決と通知成功は別の課題として扱う。計画の所有記録の解決はこの配送と別の契約である。
 CodexのPostToolUseフックは、所有session識別子があり環境変数から書込主体を解決できない場合、入力JSONの検証済み現行session識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当として補完する。PostToolUseフックと`atk agents wait`は`hosts`索引が存在する場合は委譲元のthreadから書込主体を逆引きし、状態ファイルと待機対象登録を同じ名前空間で扱う。索引が無い場合は補完した識別子をそのまま書込主体として使う。
 Codex backendは、子sessionを起動した委譲先から`atk agents wait`に成功した`commandExecution`を受け取る。
-標準出力、または`--output-file`の指定時と長い結果の自動保存時に保存先の行が示す保存結果の終端識別子を、`state.py`の`consume_agents_wait_output`で追跡集合から外す。
+人の端末の標準出力、またはエージェント環境で量によらず自動保存した`stdout`の`保存先:`が示す保存結果の終端識別子を、`state.py`の`consume_agents_wait_output`で追跡集合から外す。
+標準エラーの保存先は別の標識で返し、待機のJSON Linesとして読まない。保存先は結果回収より先に開き、準備できなければ結果を消費しない。
 待機失敗と読取不能の結果は追跡集合へ残す。
 
 ## 共有状態ごとの保持先と読み書きの担当

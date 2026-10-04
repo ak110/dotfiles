@@ -43,8 +43,6 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
         "2026-09-21T20:00:00Z",
         "--observation-boundary",
         "2026-09-21T20:05:00Z",
-        "--output-file",
-        "/tmp/additional-events.jsonl",
     ]
 
     assert run_script.dispatch(argparse.Namespace(script_name="session-review-evidence", script_args=["--", *script_args])) == 0
