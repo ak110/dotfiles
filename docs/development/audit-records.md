@@ -506,7 +506,7 @@ uv run --frozen pyfltr fast --commands=pytest
 uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 ```
 
-fastのpytestが受け取ったファイルの集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象の入れ替わりを見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
+fastのpytestが受け取ったファイルの集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象のファイルが別のファイルへ置き換わった場合を見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
 
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：動的なwatch対象の指定：2026年10月4日
 
