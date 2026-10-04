@@ -732,7 +732,7 @@ async def test_session_label_prefers_argument_over_generated_value(
 async def test_start_resolves_codex_family_from_existing_backend_catalog(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """委譲起動へ系列名を渡さず、既存のApp Serverが解決した完全IDを使う。"""
+    """委譲起動へ系列名を渡さず、既存のbackendが持つモデル一覧から解決した完全IDを使う。"""
     monkeypatch.setattr(
         subject._atk_config,
         "parse_unresolved_model_candidates",
