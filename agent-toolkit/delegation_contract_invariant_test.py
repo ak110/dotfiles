@@ -315,7 +315,10 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
 
 
 def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
-    """既存の先行レーン欄を読め、新規の生成・受領・実行は同一レーンの依存順で一致する。"""
+    """候補内の依存は生成・受領・実行とも同一レーンの依存順で一致し、別レーンの統合完了を待つ欄を持たない。
+
+    撤去した欄が形式や受領手順に残ると、pickerが空の欄を出力し続け、受領側が使わない形式検査を読む。
+    """
     plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
@@ -325,14 +328,9 @@ def test_after_lanes_contract_reaches_parent_and_run_lanes() -> None:
         r"^  ([^\s:]+):", output_format.split("レーンの所要時間:\n", maxsplit=1)[1], flags=re.MULTILINE
     )
 
-    assert "先行レーン" in lane_cost_fields
-    assert "`先行レーン`" in _h2_section(parent, "出力の受領")
-    assert "`先行レーン`" in _h2_section(lanes, "レーンと資源")
-    # 旧欄名で書かれた既存の選定結果を読む互換は、生成と受領の双方に残す。
-    assert "`after_lanes`" in _h2_section(picker, "出力") and "`after_lanes`" in _h2_section(parent, "出力の受領")
+    assert "先行レーン" not in lane_cost_fields
     for document in (picker, parent, lanes):
-        assert "既存出力の読取互換" in document
-        assert "新しい選定では省略または空列" in document or "新しい選定の`先行レーン`は省略または空列" in document
+        assert "先行レーン" not in document and "after_lanes" not in document
         assert "同じレーン" in document
     assert "推移的な依存先" in _h2_section(picker, "処理対象の決定")
     assert "推移的にたどる" in _h2_section(parent, "出力の受領")
@@ -370,7 +368,7 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     # 実行結果は委譲の返却へ渡し、選定YAMLのWI属性へ複製しない。
     assert "書込対象の検査" not in fields
     assert "終了コード0" in output and "終了コード0" in receipt
-    assert "3行だけの返却では結果不明" in receipt
+    assert "3行の返却は結果不明" in receipt
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:

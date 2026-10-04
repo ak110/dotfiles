@@ -208,8 +208,26 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"AWI本文を読み込めない: {source}: {error}") from error
         errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, excluded_paths))
-    errors.extend(_check_lane_overlaps(items, _selection.lane_costs(selection) or []))
+    costs = _selection.lane_costs(selection) or []
+    errors.extend(_check_removed_lane_fields(costs))
+    errors.extend(_check_lane_overlaps(items, costs))
     return errors
+
+
+# 候補内の依存は同じレーンへ置くため、別レーンの統合完了を待つ欄は選定結果の形式に無い。
+_REMOVED_LANE_FIELDS = ("先行レーン", "after_lanes")
+
+
+def _check_removed_lane_fields(costs: list[object]) -> list[str]:
+    """`レーンの所要時間`に撤去した欄が残っていないか確かめる。"""
+    return [
+        f"{row.get(_selection.LANE_KEY, '?')}: `レーンの所要時間`に撤去した欄`{field}`がある。"
+        "候補内の依存は同じレーンへ置いて依存先から処理し、この欄を出力から除く"
+        for row in costs
+        if isinstance(row, dict)
+        for field in _REMOVED_LANE_FIELDS
+        if field in row
+    ]
 
 
 def _check_lane_overlaps(items: list[object], costs: list[object]) -> list[str]:
