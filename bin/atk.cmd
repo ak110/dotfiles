@@ -1,16 +1,18 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-rem 同じGitリポジトリのcwdから呼んだ場合だけ、対象worktreeの入口へ移る。
+rem 同じGit管理下のcwdから呼んだ場合だけ、対象worktreeの入口へ移る。
 for %%I in ("%~dp0..") do set "INSTALL_ROOT=%%~fI"
 set "INSTALL_COMMON="
-for /f "delims=" %%I in ('git -C "%INSTALL_ROOT%" rev-parse --path-format=absolute --git-common-dir') do set "INSTALL_COMMON=%%I"
+pushd "%INSTALL_ROOT%" || exit /b 127
+for /f "delims=" %%I in ('git rev-parse --git-common-dir') do for %%J in ("%%I") do set "INSTALL_COMMON=%%~fJ"
+popd
 if not defined INSTALL_COMMON (
-    echo atkの所属リポジトリを解決できません。Gitの導入とdotfilesの配置を確かめて再実行してください。 1>&2
+    echo atkの所属Git管理先を解決できません。Gitの導入とdotfilesの配置を確かめて再実行してください。 1>&2
     exit /b 127
 )
 set "TARGET_ROOT=%INSTALL_ROOT%"
 set "CWD_COMMON="
-for /f "delims=" %%I in ('git rev-parse --path-format=absolute --git-common-dir 2^>nul') do set "CWD_COMMON=%%I"
+for /f "delims=" %%I in ('git rev-parse --git-common-dir 2^>nul') do for %%J in ("%%I") do set "CWD_COMMON=%%~fJ"
 if /i not "%INSTALL_COMMON%"=="%CWD_COMMON%" goto dispatch
 for /f "delims=" %%I in ('git rev-parse --show-toplevel') do set "TARGET_ROOT=%%I"
 :dispatch
