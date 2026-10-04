@@ -32,12 +32,16 @@ class _AllowedLocation:
     """リポジトリ相対パスへ`PurePosixPath.match`で照合するパターン。"""
     line_substring: str | None = None
     """指定した場合は、この文字列を含む行だけを許容する。"""
+    line_exact: str | None = None
+    """指定した場合は、この行だけを許容する。"""
 
     def allows(self, path: str, line: str) -> bool:
         """指定の行を許容するかを返す。"""
         if not pathlib.PurePosixPath(path).match(self.path_pattern):
             return False
-        return self.line_substring is None or self.line_substring in line
+        return (self.line_substring is None or self.line_substring in line) and (
+            self.line_exact is None or self.line_exact == line
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -149,6 +153,29 @@ _RETIRED_TERMS = (
             # 呼称の使用停止を定める規定と、その方針記録
             _AllowedLocation("agent-toolkit/skills/writing-standards/references/notation-rules.md", "新しい説明文に使わない"),
             _AllowedLocation("docs/development/concepts-principles.md", "新しい説明文に使わず"),
+            _AllowedLocation(
+                "README.md",
+                line_exact=(
+                    "- [docs/guide/index.md](docs/guide/index.md): "
+                    "利用者向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）"
+                ),
+            ),
+            _AllowedLocation("docs/index.md", line_exact="- [docs/guide/index.md](guide/index.md): 利用者向け"),
+            _AllowedLocation("docs/guide/index.md", line_exact="# 利用者向けガイド"),
+            _AllowedLocation(
+                ".chezmoi-source/dot_claude/skills/ak110-projects-operations/references/doc-structure.md",
+                line_exact=(
+                    "配置する場合は見出しを「利用者向けガイド」で揃える。"
+                    "docs/development/index.mdの見出しは「開発者向けガイド」で揃える。"
+                ),
+            ),
+            _AllowedLocation(
+                "docs/development/concepts-principles.md",
+                line_exact=(
+                    "- 利用者向け文書の誤記または適用対象のスタイル違反は"
+                    "実害ありとして必ず是正し、低頻度リスクの費用比較から除外する"
+                ),
+            ),
             # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
@@ -480,6 +507,13 @@ def test_retired_terms_absent_outside_allowed_locations() -> None:
     """リポジトリのGit追跡ファイルに、許容箇所の外の撤去語が無い。"""
     violations = _find_violations(_ROOT)
     assert not violations, "\n".join(violations)
+
+
+def test_reader_documents_do_not_use_end_user_term() -> None:
+    """成果物を使う人が読む案内に内部の役割名を置かない。"""
+    files = [_ROOT / "README.md", _ROOT / "docs/index.md", *(_ROOT / "docs/guide").rglob("*.md")]
+    violations = [str(path.relative_to(_ROOT)) for path in files if "エンドユーザー" in path.read_text(encoding="utf-8")]
+    assert not violations, violations
 
 
 def test_retired_term_outside_allowed_location_is_reported(tmp_path: pathlib.Path) -> None:

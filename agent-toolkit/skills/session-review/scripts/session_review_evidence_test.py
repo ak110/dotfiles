@@ -7225,6 +7225,19 @@ def test_bundle_keeps_final_text_of_finished_delegate(
             "統合完了\nmerged_head: abc1234\n想定外事象: 統合後の検査が1件失敗した",
             ["統合完了\nmerged_head: abc1234\n想定外事象: 統合後の検査が1件失敗した"],
         ),
+        *[
+            (f"状態: completed\n未解決の指摘数: 0\n{role}: 指摘なし", [])
+            for role in ("読者別探索", "一括置換後レビュー", "投稿前レビュー")
+        ],
+        *[
+            (text, [text])
+            for role in ("読者別探索", "一括置換後レビュー", "投稿前レビュー")
+            for text in (
+                f"状態: completed\n未解決の指摘数: 1\n{role}: 指摘あり",
+                f"状態: needs_escalation\n未解決の指摘数: 0\n続行できない理由: {role}の入力不足",
+                f"状態: completed\n未解決の指摘数: 0\n{role}: 指摘なし\n想定外事象: 検証に失敗",
+            )
+        ],
     ],
 )
 def test_bundle_excludes_delegate_returns_that_only_report_success(

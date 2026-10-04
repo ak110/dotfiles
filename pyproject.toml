@@ -145,6 +145,7 @@ agent-doc-tone-subproject-aware = false
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
 # サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
 statusline-version-subproject-aware = false
+statusline-version = false
 # 配布先で常時読み込まれる規範は、配送境界を示すXML要素で本文全体を囲む。
 # この要素が先頭行と末尾行を占め、先頭行を見出しに限る規則とインラインHTMLを禁じる規則へ抵触する。
 markdownlint-exclude = [
@@ -341,7 +342,7 @@ type = "linter"
 path = "scripts/check_statusline_version.py"
 pass-filenames = false
 # prekのpre-commitが実行する`pyfltr fast`で版数更新前の途中commitを遮断しないよう、fastにしない。
-# レーンの変更範囲の検証（`pyfltr run <変更ファイル>`）と公開前の「CIのpyfltr実行が無効化するチェック」で起動する。
+# 終端担当が公開前のローカル検証で`--enable=statusline-version`を指定して起動する。
 # pyfltrのPath.matchは`**`を任意階層として扱わないため、Git管理下にある深さを明示する。
 targets = ["rust/claude-statusline/*", "rust/claude-statusline/src/*"]
 

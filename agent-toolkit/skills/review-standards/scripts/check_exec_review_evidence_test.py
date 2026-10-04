@@ -1377,7 +1377,13 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
         ("[記録](docs/absent file.md)で確認", 1),
         ("`docs/absent file.md`で確認", 1),
         ("`absent file.md`で確認", 1),
-        ("20260929-120000-001.md を根拠ファイルとして確認", 1),
+        ("20260928-192559-001.md の完成条件を確認", 0),
+        ("20260928-192559-001.md#完成条件 の結果を確認", 0),
+        ("20260928-192559-001.md#存在しない節 の結果を確認", 1),
+        ("20260928-192559-001.md:7 の結果を確認", 1),
+        ("20260929-120000-001.md を根拠として確認", 1),
+        (" / で区切った出力を確認", 0),
+        ("False/True の両値を確認", 0),
         ("docs/record.md:1-2,5-7 で確認", 1),
         ("docs/record.md#偽見出し で確認", 1),
         ("docs/record.md#設定 で確認", 1),
@@ -1417,6 +1423,8 @@ def test_public_command_resolves_evidence_references(
     if expected:
         assert "wi_conditions[1].evidence" in error
         assert "参照『" in error and "証拠不足へ再判定" in error
+        if "202609" in reference:
+            assert "WI名または節" in error or "WIの節または行" in error
         if ":1-2,5-7" in reference:
             assert "範囲ごとにパスを再記載" in error
     else:
