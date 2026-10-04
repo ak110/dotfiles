@@ -4,7 +4,7 @@ import shlex
 
 import pytest
 
-from ci_workflow_test import (
+from ci_workflow_test import (  # pylint: disable=unused-import  # 共有fixtureをpytestへ登録する
     _REPOSITORY_ROOT,
     _direct_pytest_targets,
     _flag_options,

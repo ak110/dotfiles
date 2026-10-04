@@ -364,7 +364,7 @@ class TestNonMatchingPrompts:
         assert set(state) == {"last_user_prompt_at", "termination_evidence"}
         evidence = state["termination_evidence"]
         assert not evidence["works"]
-        assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True}
+        assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True, "offset": 0}
 
     @pytest.mark.parametrize(
         ("prompt", "expected_keys"),

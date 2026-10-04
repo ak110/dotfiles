@@ -1840,7 +1840,12 @@ def _observe_cli_wait_limit(
         atk.main(["agents", "wait"])
 
     assert sleeps == [1.0, 0.5]
-    timed_out = json.loads(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    assert not captured.err
+    output = captured.out
+    if output.startswith("保存先: "):
+        output = pathlib.Path(output.splitlines()[0].removeprefix("保存先: ")).read_text(encoding="utf-8")
+    timed_out = json.loads(output)
     # 待機上限で終わった行は、待機を続ける操作を次の操作として持つ。
     assert "atk agents wait" in timed_out.pop("next_action")
     assert timed_out == {"session_id": "session-1", "status": "running"}
