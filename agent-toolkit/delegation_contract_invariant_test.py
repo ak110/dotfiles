@@ -15,6 +15,8 @@ _NAME_CONTINUATION = r"0-9A-Za-z_\u30a0-\u30ff\u3400-\u9fff"
 _BULLET_PREFIX = "- "
 _LABEL_DELIMITER_PATTERN = re.compile("[:\uff1a\u3002\uff08\uff09\u3001,\\s]")
 _INPUT_BULLET_PATTERN = re.compile(r"^- `(?P<name>[^`]+)`: ", flags=re.MULTILINE)
+# 固定の返却形式を持つ`<役割名>.subagent.md`が、返却をその形式の行に限ることを示す語。
+_FIXED_REPLY_LIMIT = "だけを返す"
 
 
 def _text_blocks(lines: list[str]) -> list[tuple[int, list[str]]]:
@@ -362,6 +364,40 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     assert "書込対象の検査" not in fields
     assert "終了コード0" in output and "終了コード0" in receipt
     assert "3行の返却は結果不明" in receipt
+
+
+def _fixed_reply_errors(share: pathlib.Path) -> list[str]:
+    """`## 出力`節に`text`ブロックで固定の返却形式を示しながら、返却をその形式に限る語を持たない文書を返す。"""
+    errors: list[str] = []
+    for path in sorted(share.glob("*.subagent.md")):
+        content = path.read_text(encoding="utf-8")
+        if "\n## 出力\n" not in content:
+            continue
+        output = _h2_section(content, "出力")
+        if _text_blocks(output.splitlines()) and _FIXED_REPLY_LIMIT not in output:
+            errors.append(path.name)
+    return errors
+
+
+def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Path) -> None:
+    """固定の返却形式を持つ全`<役割名>.subagent.md`は、`## 出力`節で返却をその形式の行に限る。
+
+    限定の語が無いと、委譲先が規定行の前後へ要約などを加え、受領側が返却形式だけの再送を求める往復が増える。
+    `text`ブロックを持たない`## 出力`節は自由な形で返す設計であり、判定の対象から外す。
+    """
+    share = pathlib.Path(__file__).resolve().parent / "share"
+
+    assert not _fixed_reply_errors(share), "「だけを返す」を欠く固定返却形式: " + ", ".join(_fixed_reply_errors(share))
+
+    (tmp_path / "limited.subagent.md").write_text(
+        "# 委譲先\n\n## 出力\n\n次の形式だけを返す。\n\n```text\n状態: completed\n```\n", encoding="utf-8"
+    )
+    (tmp_path / "unlimited.subagent.md").write_text(
+        "# 委譲先\n\n## 出力\n\n次の形式で返す。\n\n```text\n状態: completed\n```\n\n## 後始末\n\nだけを返す\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "free.subagent.md").write_text("# 委譲先\n\n## 出力\n\n指摘を返す。\n", encoding="utf-8")
+    assert _fixed_reply_errors(tmp_path) == ["unlimited.subagent.md"]
 
 
 def test_staged_lane_contract_reaches_selection_and_execution() -> None:
