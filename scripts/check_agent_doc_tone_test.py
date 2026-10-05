@@ -86,7 +86,7 @@ def test_main_reports_violation_and_returns_one(tmp_path: pathlib.Path, capsys: 
 
     assert check_agent_doc_tone.main([str(path)]) == 1
 
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert str(path) in captured
     assert "否定形終端率" in captured
 
@@ -186,6 +186,39 @@ def test_cli_warns_caution_terms_without_failing(
     assert f"{path}:1: 警告: 「{term}」" in output.err
 
 
+@pytest.mark.parametrize(
+    ("term", "category", "reason", "direction"),
+    [
+        (
+            term,
+            category,
+            *check_agent_doc_tone._CAUTION_MESSAGES[category].split("。", maxsplit=1),  # pylint: disable=protected-access
+        )
+        for term, (_pattern, category) in check_agent_doc_tone._CAUTION_PATTERNS.items()  # pylint: disable=protected-access
+    ],
+)
+def test_cli_explains_every_caution_term(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    term: str,
+    category: str,
+    reason: str,
+    direction: str,
+) -> None:
+    """全注意語の警告が分類に対応する理由と書き換え方向を伝える。"""
+    path = _write(tmp_path, f"{term}を説明する。\n")
+
+    assert check_agent_doc_tone.main([str(path)]) == 0
+
+    warning = capsys.readouterr().err
+    assert category in {  # pylint: disable=protected-access
+        check_agent_doc_tone._METAPHORICAL,  # pylint: disable=protected-access
+        check_agent_doc_tone._ABSTRACT,  # pylint: disable=protected-access
+    }
+    assert reason in warning
+    assert direction in warning
+
+
 def test_cli_ignores_approved_replacement_term(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """承認済みの置換先「突き合わせる」は失敗にも警告にもしない。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, "記録と入力を突き合わせた。\n"))]) == 0
@@ -279,7 +312,26 @@ def test_term_scope_preserves_existing_density_check(tmp_path: pathlib.Path, cap
     scope.mkdir()
 
     assert check_agent_doc_tone.main(["--term-root", str(scope), str(path)]) == 1
-    assert "否定形終端率" in capsys.readouterr().out
+    assert "否定形終端率" in capsys.readouterr().err
+
+
+def test_read_error_is_a_positioned_diagnostic(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """読み取れない入力は対象パスと代替位置を持つ診断で終了コード2を返す。"""
+    path = tmp_path / "missing.md"
+
+    assert check_agent_doc_tone.main([str(path)]) == 2
+
+    assert capsys.readouterr().err.startswith(f"{path}:1: 入力を読み取れない:")
+
+
+def test_parse_error_is_a_positioned_diagnostic(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """構文不正は対象パスと利用可能な位置を持つ診断で終了コード2を返す。"""
+    path = _write(tmp_path, "{\n", name="config.json")
+
+    assert check_agent_doc_tone.main([str(path)]) == 2
+
+    diagnostic = capsys.readouterr().err
+    assert diagnostic.startswith(f"{path}:2: 入力の構文を読み取れない:")
 
 
 def test_fixture_values_are_data_but_comments_are_explanations(tmp_path: pathlib.Path) -> None:
@@ -338,12 +390,24 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
 
 
 @pytest.mark.parametrize(
-    ("example_body", "application_body", "helper_tail", "expected_returncode", "expected_output"),
+    (
+        "example_body",
+        "application_body",
+        "helper_tail",
+        "density_body",
+        "config_body",
+        "invalid_application_encoding",
+        "expected_returncode",
+        "expected_output",
+    ),
     [
         (
             "```text\n悪い例: 正本を読む。\n書き換え: 正本を読む。\n```\n",
             '# 既定の値を使う。\nprint("照合する値")\n',
             'raise RuntimeError("既定の値を照合できない")\n',
+            "",
+            '{"input_path": "照合.md"}',
+            False,
             1,
             ["正本", "既定", "照合", "tone-examples.md", "new_module.py", "helper.py"],
         ),
@@ -351,6 +415,9 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
             'from pathlib import Path\npath = Path("照合.md")\nprint("是正本文")\n',
             "",
+            "",
+            '{"input_path": "照合.md"}',
+            False,
             0,
             [],
         ),
@@ -358,11 +425,44 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
             "# 入力を検査する。\nprint(1)\n",
             "",
+            "",
+            '{"input_path": "照合.md"}',
+            False,
             0,
             ['"kind": "diagnostic"', "new_module.py", '"line": 1', "警告: 「検査」"],
         ),
+        (
+            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            'print("是正本文")\n',
+            "",
+            "入口を確認しない。" * 20,
+            '{"input_path": "照合.md"}',
+            False,
+            1,
+            ["警告: 「入口」", "否定形終端率", '"line": 1'],
+        ),
+        (
+            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            'print("是正本文")\n',
+            "",
+            "",
+            "{\n",
+            False,
+            1,
+            ["入力の構文を読み取れない", "config.json", '"line": 2', '"rc": 2'],
+        ),
+        (
+            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            'print("是正本文")\n',
+            "",
+            "",
+            '{"input_path": "照合.md"}',
+            True,
+            1,
+            ["入力を読み取れない", "new_module.py", '"line": 1', '"rc": 2'],
+        ),
     ],
-    ids=["violations", "compliant", "caution"],
+    ids=["violations", "compliant", "caution", "caution-and-density", "parse-error", "read-error"],
 )
 # 子処理の時間上限（120秒）より大きいテスト単位の上限を置き、停止時は子処理の時間切れとして報告させる。
 # CIで全チェックを並行して実行するジョブでは子処理に約40秒を要したため、子処理の上限は観測値の約3倍とする。
@@ -372,6 +472,9 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
     example_body: str,
     application_body: str,
     helper_tail: str,
+    density_body: str,
+    config_body: str,
+    invalid_application_encoding: bool,
     expected_returncode: int,
     expected_output: list[str],
 ) -> None:
@@ -394,14 +497,19 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
     application = tmp_path / "agent-toolkit" / "agent_toolkit" / "new_module.py"
     helper = application.parent / "_testing" / "helper.py"
     path_config = tmp_path / "agent-toolkit" / "config.json"
+    density = tmp_path / "agent-toolkit" / "share" / "density.md"
     example.parent.mkdir(parents=True)
     application.parent.mkdir(parents=True)
     helper.parent.mkdir(parents=True)
+    density.parent.mkdir(parents=True)
     example.write_text(example_body, encoding="utf-8")
     application.write_text(application_body, encoding="utf-8")
     fixture_data = '# agent-doc-tone: test-data\nsample = "既定の値を照合する。"\n'
     helper.write_text(fixture_data + helper_tail, encoding="utf-8")
-    path_config.write_text('{"input_path": "照合.md"}', encoding="utf-8")
+    path_config.write_text(config_body, encoding="utf-8")
+    density.write_text(density_body, encoding="utf-8")
+    if invalid_application_encoding:
+        application.write_bytes(b"\xff")
     arguments = [
         sys.executable,
         "-m",
@@ -417,6 +525,7 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
         str(application),
         str(helper),
         str(path_config),
+        str(density),
     ]
 
     result = subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
