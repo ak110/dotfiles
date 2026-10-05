@@ -36,6 +36,21 @@ def test_custom_linter_paths_and_filename_contracts() -> None:
             assert os.access(path, os.X_OK)
 
 
+def test_custom_commands_declare_fast() -> None:
+    # pyfltrは`fast`の省略を許し、省略した定義は何も表示せずにcommit時の`pyfltr fast`から外れる。
+    # 登録時にcommit時の実行可否を判断させるため、全定義へ真偽値の明示を求める。
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    commands = config["tool"]["pyfltr"]["custom-commands"]
+
+    undecided = sorted(name for name, definition in commands.items() if not isinstance(definition.get("fast"), bool))
+    assert not undecided, (
+        f"pyproject.tomlのカスタムコマンド{undecided}が`fast`を真偽値で明示していない。"
+        "変更したファイルだけで判定でき数秒以内で終わるチェックは`fast = true`とし、commit時のpre-commitで実行する。"
+        "全体を走査するチェックや、途中のcommitを止めてはならない事情があるチェックは`fast = false`とし、"
+        "その理由をコメントに書く。"
+    )
+
+
 # 各rootについて、母集団に実在する全ての深さの代表を1件ずつ挙げる。
 # agent-doc-toneの対象は欠けても失敗として現れにくい。pyfltrはtargetsとパスの一致をpathlib.Path.matchで判定して
 # `**`を任意階層として扱わず、サブプロジェクト配下を別設定で実行し、symlink越しに同一実体へ
