@@ -590,10 +590,16 @@ class TestWaitScheduleParser:
         for path in (target, *target.rglob("*")):
             os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
 
-        def fail_cleanup(path: pathlib.Path) -> None:
+        def fail_cleanup(
+            path: pathlib.Path,
+            *,
+            recover_registry: bool = False,
+            blocking: bool = True,
+        ) -> bool:
+            del recover_registry, blocking
             raise _managed_temp.ManagedTempError(f"後始末失敗: {path}")
 
-        monkeypatch.setattr(_managed_temp, "cleanup_managed_temp", fail_cleanup)
+        monkeypatch.setattr(_managed_temp, "_cleanup_managed_temp", fail_cleanup)  # noqa: SLF001
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now)
