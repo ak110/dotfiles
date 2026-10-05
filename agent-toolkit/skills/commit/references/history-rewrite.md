@@ -42,7 +42,7 @@ autosquash成功後に、開始済みの同じ実装担当が書換え後HEADへ
 autosquash成功後に`git rev-parse --short=7 HEAD`で書換え後HEADの7文字以上の一意な短縮OIDを取得し、書換え前後の実装単位を履歴検収用に対応付ける。tree、親およびcommitの厳密な比較では、各短縮OIDを比較の直前に対象リポジトリで解決する。
 autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換する。
 
-同じ実装単位で変更目的が同じ修正は、同じ件名のcommitを範囲内へ増やさず、次の順で統合先commitへまとめる。統合先が直前のcommitならamend、それより前のcommitで件名が範囲内で一意なら通常のfixupを選ぶ。件名が範囲内で重複し、各commitを独立に保つ必要がある場合だけ、`## fixupの実行上の制約`が定める完全OIDを件名にしたfixupを使う。
+同じ実装単位で変更目的が同じ修正は、同じ件名のcommitを範囲内へ増やさず、次の順で統合先commitへまとめる。統合先が直前のcommitならamend、それより前のcommitで件名が範囲内で一意なら通常のfixupを選ぶ。統合先の件名が範囲内で重複する場合は、`## fixupの実行上の制約`が定める完全OIDを件名にしたfixupを使う。
 
 - 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`git commit --amend --no-edit`を使う。
   実行の直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独のBash呼び出しで実行し、履歴と対象コミットの公開状態を確認する
@@ -78,16 +78,16 @@ atk run-script plan-progress -- <記録> --completed-step <工程> --result <結
   `git rev-list --first-parent --merges <最古fixup対象>^..<元HEAD>`でmerge commitが無いことを確認する。
   この範囲のfirst-parent全OIDについて、fixup作成前に下記の「プッシュ済み判定」で公開済み判定を完了する。
   `git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`で範囲内のOIDと件名を列挙する。
-  各fixup対象コミットの件名が範囲内で一意であることをfixup作成前に確認する。
+  各fixup対象コミットの件名が範囲内で一意かをfixup作成前に判定する。
   件名が範囲内で一意でない対象への通常のfixupは、`git commit --fixup=<sha>`ではなく`git commit -m 'fixup! <対象の完全OID>'`で作成する。`git rebase --autosquash`は`fixup!`の後の語をcommitのハッシュとしても解決するため、件名の重複によらず統合先が1件に定まる。`amend:`・`reword:`の対象件名が範囲内で一意でない場合は、fixupを作成せず`## 失敗時の扱い`に従う。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。遮断条件は件名先頭の完全一致とし、部分一致と件名途中の一致は対象から外れる。
-  範囲列挙、merge確認、元HEADの確定、公開済み判定、OIDと件名の列挙または件名の一意性確認のいずれかに失敗した場合は、fixupを作成せずautosquashを中止し、`## 失敗時の扱い`に従う。
+  範囲列挙、merge確認、元HEADの確定、公開済み判定、OIDと件名の列挙または件名の一意性の判定のいずれかの実行に失敗した場合は、fixupを作成せずautosquashを中止し、`## 失敗時の扱い`に従う。
   範囲にmergeが含まれる場合も同じ扱いとする。
   この事前判定後も、autosquash直前の再判定をTOCTOU対策として実行する
 - fixup作成直後は、対象OIDから得た統合先件名と生成commitの制御件名を`git log -1 --format=%s`で比較する。
   通常の`--fixup=<sha>`では`fixup! <統合先の件名>`を確認する。
   完全OIDを件名にしたfixupでは`fixup! <対象の完全OID>`を確認する。
   `amend:`・`reword:`では`amend! <統合先の件名>`を確認する。
-  いずれも対象OIDから得た統合先件名との完全一致を確認する。
+  いずれも前記の期待件名との完全一致を確認する。
   autosquashを実行するのは、期待件名と一致した場合に限る。一致しない場合は`## 失敗時の扱い`に従う
 - 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash --no-update-refs <base>`で行う
   （`<base>`は対象コミットの親以前を指す）。
@@ -124,6 +124,6 @@ amendとfixupの対象は、プッシュ未了のコミットに限る。公開�
 - 操作直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して対象commitの件名と差分を再特定し、
   `git blame -- <修正したファイルのリポジトリ相対パス>`または`git log -p -n 20 -- <修正したファイルのリポジトリ相対パス>`と
   `git show --stat <sha>`で統合先を確定する
-- autosquash後は、件名の形式によらず次の3点を確認する。書換え前の元HEADと書換え後HEADの`git rev-parse <OID>^{tree}`が一致する。first-parentのcommit件数が元の件数からfixupの件数を引いた値である。範囲内に件名先頭が`fixup!`・`squash!`・`amend!`のcommitが0件である。いずれかが満たされない場合は`## 失敗時の扱い`に従う
+- autosquash後は、件名の形式によらず次の4点を確認する。比較の基準はfixupを全て作成した後のautosquash直前のHEADとする。基準と書換え後HEADの`git rev-parse <OID>^{tree}`が一致する。`<最古fixup対象>^`から数えたfirst-parentのcommit件数が、基準の件数からfixupの件数を引いた値である。範囲内に件名先頭が`fixup!`・`squash!`・`amend!`のcommitが0件である。基準の範囲から件名が制御語で始まるcommitを除いた列と書換え後の範囲の列を先頭から順に対応付け、`git show <OID> | git patch-id --stable`の値を比べると、fixupを帰属させたcommitだけが異なり、それ以外が一致する。差分を変えない`reword:`の統合先はこの比較から外す。最後の確認は、件名で統合先を決めたfixupが別の同名commitへ統合された誤りを検出する。いずれかが満たされない場合は`## 失敗時の扱い`に従う
 - 書き換え後は各中間`HEAD`へ変更範囲の検証を再実行し、`git log -1 --format=%B <統合後sha>`で
   最終メッセージと`Co-Authored-By:`を確認し、stage状態と`git show HEAD:<path>`で未反映差分が残らないことを確認する
