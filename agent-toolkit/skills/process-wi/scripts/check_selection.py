@@ -13,8 +13,9 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
 - `書き込まない反映先`の不正: 反映先パスに無いパスを`書き込まない反映先`が含む
 
 - 別レーンの重複根拠不足: 共通ファイルまたは狭い方の範囲が双方のレーンの根拠に無い
+- 同じ再開計画の別レーン割当: pickerが出力した通常中断または観測のみの再開位置が同じ計画を指す項目を別レーンへ置いた
 
-4区分はいずれも、レーン分けと重なりの判定が実際の書込対象と異なる結果になるため、違反として終了コード1を返す。
+5区分はいずれも、レーン分けと重なりの判定が実際の共有書込対象と異なる結果になるため、違反として終了コード1を返す。
 分類と定義の独立性の意味判断はpickerとメインの読解へ委ねる。
 
 被覆を比べる前に、選定結果をYAMLとして読み、`pick-wi.subagent.md`「出力」が定める欄名、必須の欄と値の型を確かめる。
@@ -112,6 +113,8 @@ _LANE_COST_KEYS = frozenset(
 _TOP_LEVEL_KEYS = frozenset({_selection.DECISIONS_KEY, "decisions", _selection.LANE_COSTS_KEY, "lane_costs", _BLOCKERS_KEY})
 _MODEL_ROLES = ("実装担当", "実行レビュー担当")
 _MODEL_TYPE_RE = re.compile(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+")
+_OBSERVATION_PLAN_RE = re.compile(r"計画:\s*([^）]+)")
+_ABSOLUTE_PLAN_RE = re.compile(r"(?<!\S)(/\S+?\.md)(?=$|[\s、。）])")
 
 _FIX_PATHS = "位置引数へpickerが保存した選定結果YAMLの絶対パスを、`--work-dir`へ対象リポジトリの絶対パスを渡して再実行する"
 _FIX_PRIVATE_NOTES = "`atk config get private_notes`が返す場所が実在し読み取れることを確かめてから、同じコマンドを再実行する"
@@ -279,6 +282,7 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
         errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, excluded_paths))
     errors.extend(_check_lane_models(items))
+    errors.extend(_check_resume_plan_lanes(items))
     errors.extend(_check_lane_stages(items, costs))
     errors.extend(_check_lane_overlaps(items, costs))
     return errors
@@ -409,6 +413,43 @@ def _check_lane_models(items: list[dict[str, object]]) -> list[str]:
         previous = assigned.setdefault(lane, (str(item[_selection.WI_KEY]), model))
         if previous[1] != model:
             errors.append(f"{lane}: 実装担当のモデル指定が衝突: {previous[0]}={previous[1]}、{item[_selection.WI_KEY]}={model}")
+    return errors
+
+
+def _resume_plan_id(value: object) -> str | None:
+    """pickerが出力した再開位置から同一計画を表す値だけを正規化して返す。"""
+    if not isinstance(value, str) or not value.strip() or value.strip() in {_LANE_NONE, "計画なし"}:
+        return None
+    observation = _OBSERVATION_PLAN_RE.search(value)
+    candidate = observation.group(1).strip() if observation is not None else None
+    if candidate == "計画なし":
+        return None
+    if candidate is None:
+        matched = _ABSOLUTE_PLAN_RE.search(value)
+        candidate = matched.group(1) if matched is not None else None
+    if candidate is None:
+        return None
+    # 通常中断の`~/.claude/plans`と観測のみの`private-notes/plans/`は親ディレクトリが異なるため、
+    # 両方が保持する計画ファイル名を同一計画の識別値にする。
+    return pathlib.PurePosixPath(candidate).name
+
+
+def _check_resume_plan_lanes(items: list[dict[str, object]]) -> list[str]:
+    """同じ再開計画を指す項目が複数レーンへ分かれた選定を拒否する。"""
+    assigned: dict[str, tuple[str, str]] = {}
+    errors: list[str] = []
+    for item in items:
+        lane = item.get(_selection.LANE_KEY)
+        plan = _resume_plan_id(item.get("再開位置"))
+        if not isinstance(lane, str) or lane == _LANE_NONE or plan is None:
+            continue
+        awi = str(item[_selection.WI_KEY])
+        previous = assigned.setdefault(plan, (awi, lane))
+        if previous[1] != lane:
+            errors.append(
+                f"同じ再開計画を別レーンへ割り当てている: {plan}: "
+                f"{previous[0]}（{previous[1]}）と{awi}（{lane}）。同じレーンへまとめる"
+            )
     return errors
 
 

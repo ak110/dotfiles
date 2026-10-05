@@ -630,7 +630,30 @@ def _evidence_body(row: dict[str, str], field: str) -> str:
         # 原文の全文を使うので、原文内の閉じ括弧・引用符で途中を切り出さない。
         wrapped = rf"(?:（\s*{marker}\s*）|\(\s*{marker}\s*\)|{marker}(?=$|[\s、,;；。|）)]))"
         evidence = re.sub(rf"[\s、,;；|]*{wrapped}[\s、,;；|]*", " ", evidence)
+    # 条件番号だけを行別の識別標識として末尾へ足した根拠も、同じ本文として比較する。
+    # 説明付きの括弧、範囲・件数・入力値などの数字は観測内容なので保持する。
+    evidence = re.sub(r"[\s。．]*(?:（\s*条件\d+\s*）|\(\s*条件\d+\s*\))\s*[。．]?\s*$", "", evidence)
     return evidence.strip()
+
+
+def _review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list[str]:
+    """明示WIと計画の実施内容がWI由来として挙げる項目を、出現順を保った和集合として返す。"""
+    filenames = list(explicit)
+    for plan in plans:
+        section = _section(plan.read_text(encoding="utf-8").splitlines(), "## 実施内容")
+        if section is None:
+            continue
+        for table in extract_tables(list(enumerate(section, start=1))):
+            if "由来" not in table.header:
+                continue
+            origin_index = table.header.index("由来")
+            for row in table.rows:
+                if len(row) != len(table.header):
+                    continue
+                origin = row[origin_index]
+                if origin.startswith(("人間由来のWI (", "エージェント由来のWI (")):
+                    filenames.extend(WI_FILENAME.findall(origin))
+    return list(dict.fromkeys(filenames))
 
 
 def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path) -> list[str]:
@@ -1380,12 +1403,16 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("対象WIの無い証拠には--planか--input-recordでレビュー入力を指定する")
     if any(not path.is_absolute() or not path.is_file() for path in [*args.plan, *args.input_record]):
         parser.error("--planと--input-recordには実在する通常ファイルの絶対パスを指定する")
+    try:
+        filenames = _review_wi_filenames(args.wi, args.plan)
+    except (OSError, UnicodeError, ValueError) as error:
+        parser.error(str(error))
     if args.template:
         if gate_requested:
             parser.error("--templateは返却生成と別に実行する。雛形を記入してから返却の整合を確かめる")
         if args.expected_head is not None:
             parser.error("--templateと--expected-headは同時に指定できません。雛形の出力後に--expected-headだけを付けて判定する")
-        errors, added, kept = write_template(args.evidence, args.wi)
+        errors, added, kept = write_template(args.evidence, filenames)
         if errors:
             for error in errors:
                 print(f"失敗: {error}", file=sys.stderr)
@@ -1401,7 +1428,7 @@ def main(argv: list[str] | None = None) -> int:
             f"成功: `完成条件証拠`へ雛形を書き込みました（追加 {added} 行、既存 {kept} 行を保持）: {args.evidence}\n"
             + _next_action.next_action_line(
                 "空欄のoutcome・evidence・reviewed_headを各行で判定して記入し、"
-                f"`atk run-script exec-review-evidence-check -- {args.evidence} {' '.join(args.wi)} "
+                f"`atk run-script exec-review-evidence-check -- {args.evidence} {' '.join(filenames)} "
                 "--expected-head <レビュー対象HEAD>`で証拠を確かめる"
             )
         )
@@ -1413,14 +1440,14 @@ def main(argv: list[str] | None = None) -> int:
         assert args.review_table is not None and args.round is not None
         errors, unanswered = check_return_result(
             None if no_evidence else args.evidence,
-            args.wi,
+            filenames,
             expected_head=args.expected_head,
             table_path=args.review_table,
             round_value=args.round,
             input_paths=[*args.plan, *args.input_record],
         )
     else:
-        errors = check_evidence(args.evidence, args.wi, expected_head=args.expected_head)
+        errors = check_evidence(args.evidence, filenames, expected_head=args.expected_head)
     for error in errors:
         print(f"失敗: {error}", file=sys.stderr)
     if errors:
@@ -1440,7 +1467,7 @@ def main(argv: list[str] | None = None) -> int:
         if not no_evidence:
             print(f"完成条件証拠のパス: {args.evidence}")
     else:
-        print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(args.wi)} 件）")
+        print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(filenames)} 件）")
     return 0
 
 

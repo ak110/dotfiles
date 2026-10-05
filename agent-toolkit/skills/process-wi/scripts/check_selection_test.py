@@ -90,7 +90,7 @@ def test_reports_uncovered_broad_and_invalid_exclusion(
     _awi(notes, "a.md", "`src/model.py`と`docs/development/design.md`を変える。")
     _awi(notes, "b.md", "`src/model.py`を変える。")
     _awi(notes, "c.md", "`src/model.py`を変える。`README.md`は変更しない。")
-    decisions = [
+    decisions: list[dict[str, typing.Any]] = [
         {"awi": "a.md", "lane": "lane-01", "write_files": ["src/model.py"]},
         {"awi": "b.md", "lane": "lane-01", "write_files": ["src/"]},
         {"awi": "c.md", "lane": "lane-02", "write_files": ["src/model.py"], "excluded_paths": ["README.md", "LICENSE"]},
@@ -149,6 +149,74 @@ def test_accepts_covered_selection_and_skips_out_of_scope_decisions(
 
     assert _run(tmp_path, repo, decisions) == 0
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    ("first_resume", "second_resume"),
+    [
+        (
+            "/home/aki/.claude/plans/05-1200_example.md の実装から再開する",
+            "/home/aki/.claude/plans/05-1200_example.md のレビューから再開する",
+        ),
+        (
+            "反映後の観測だけが残る（再開記録: AWI本文、計画: private-notes/plans/2026/10/05-1200_example.md）",
+            "反映後の観測だけが残る（再開記録: AWI本文、計画: private-notes/plans/2026/10/05-1200_example.md）",
+        ),
+        (
+            "/home/aki/.claude/plans/05-1200_example.md の実装から再開する",
+            "反映後の観測だけが残る（再開記録: AWI本文、計画: private-notes/plans/2026/10/05-1200_example.md）",
+        ),
+    ],
+)
+def test_rejects_same_resume_plan_in_different_lanes(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    first_resume: str,
+    second_resume: str,
+) -> None:
+    """通常中断と観測のみのどちらでも、同じ再開計画を複数レーンへ割り当てた選定を拒否する。"""
+    repo, notes = env
+    for name in ("a.md", "b.md"):
+        _awi(notes, name, "反映先のパスを持たない説明。")
+    decisions = [
+        {"WI": "a.md", "レーン": "lane-01", "書込対象": [], "再開位置": first_resume},
+        {"WI": "b.md", "レーン": "lane-02", "書込対象": [], "再開位置": second_resume},
+    ]
+
+    assert _run(tmp_path, repo, decisions) == 1
+    error = capsys.readouterr().err
+    assert "同じ再開計画を別レーンへ割り当てている" in error
+    assert "a.md（lane-01）とb.md（lane-02）" in error
+
+
+@pytest.mark.parametrize(
+    ("first_resume", "second_resume"),
+    [
+        ("/home/aki/.claude/plans/05-1200_example.md の実装", "/home/aki/.claude/plans/05-1200_example.md のレビュー"),
+        ("なし", "なし"),
+        ("反映後の観測だけが残る（再開記録: AWI本文、計画: 計画なし）", "なし"),
+        ("/home/aki/.claude/plans/05-1200_a.md の実装", "/home/aki/.claude/plans/05-1201_b.md の実装"),
+    ],
+)
+def test_accepts_resume_plan_boundaries(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    first_resume: str,
+    second_resume: str,
+) -> None:
+    """同じ計画の同一レーン、計画なし、再開なし、異なる計画は計画所有の条件で拒否しない。"""
+    repo, notes = env
+    for name in ("a.md", "b.md"):
+        _awi(notes, name, "反映先のパスを持たない説明。")
+    same_plan = first_resume.endswith(" の実装") and second_resume.endswith(" のレビュー")
+    decisions: list[dict[str, typing.Any]] = [
+        {"WI": "a.md", "レーン": "lane-01", "書込対象": [], "再開位置": first_resume},
+        {"WI": "b.md", "レーン": "lane-01" if same_plan else "lane-02", "書込対象": [], "再開位置": second_resume},
+    ]
+
+    assert _run(tmp_path, repo, decisions) == 0, capsys.readouterr().err
 
 
 def test_uwi_paths_in_answer_and_materials_require_classification(

@@ -113,6 +113,25 @@ def _no_evidence_return_args(table: pathlib.Path, *extra: str) -> argparse.Names
     )
 
 
+def _plan_return_args(path: pathlib.Path, table: pathlib.Path, plan: pathlib.Path) -> argparse.Namespace:
+    """位置引数のWIを持たない計画レビューの返却引数を返す。"""
+    return argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[
+            str(path),
+            "--plan",
+            str(plan),
+            "--expected-head",
+            REVIEWED_HEAD,
+            "--review-table",
+            str(table),
+            "--round",
+            "2",
+            "--return-result",
+        ],
+    )
+
+
 def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_after_registration(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -256,21 +275,7 @@ def test_plan_only_template_and_return_keep_existing_rows(
     assert json.loads(path.read_text(encoding="utf-8"))["user_requirements"] == [row]
     review_table.init(table)
     capsys.readouterr()
-    args = argparse.Namespace(
-        script_name="exec-review-evidence-check",
-        script_args=[
-            str(path),
-            "--plan",
-            str(plan),
-            "--expected-head",
-            REVIEWED_HEAD,
-            "--review-table",
-            str(table),
-            "--round",
-            "2",
-            "--return-result",
-        ],
-    )
+    args = _plan_return_args(path, table, plan)
     assert run_script.dispatch(args) == 0
     assert "未解決の指摘数: 0" in capsys.readouterr().out
     assert json.loads(before) == json.loads(path.read_bytes())
@@ -577,6 +582,61 @@ def test_public_command_accepts_same_wi_shared_observation_with_or_without_row_m
     各行への意味上の適合は実行レビュー担当が判定する。
     """
     path = _marked_rows(tmp_path, monkeypatch, section, FIRST_WI, marker)
+    assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("section", "suffixes"),
+    [
+        ("wi_conditions", ("（条件1）", "（条件2）")),
+        ("user_requirements", ("(条件3)", " (条件4)。")),
+    ],
+)
+def test_public_command_rejects_shared_evidence_with_only_terminal_condition_number_changed(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    section: str,
+    suffixes: tuple[str, str],
+) -> None:
+    """配列をまたぐ場合を含め、末尾の条件番号だけを変えた同じ達成根拠を拒否する。"""
+    rows = [_condition(FIRST_WI, "保存"), _condition(SECOND_WI, "再読込")]
+    rows[1] = _requirement("", "計画の再読込要求") if section == "user_requirements" else rows[1]
+    for row, suffix in zip(rows, suffixes, strict=True):
+        row["evidence"] = f"設定保存の同じ観測{suffix}"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows if section == "wi_conditions" else rows[:1], rows[1:] if section == "user_requirements" else [])
+
+    assert _check(path, FIRST_WI) == 1
+    assert "異なるWIの異なる要求単位で同じ達成根拠を共用しています" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("first_evidence", "second_evidence"),
+    [
+        ("入力値1を観測", "入力値2を観測"),
+        ("3件を確認", "4件を確認"),
+        ("test_case_1: 成功", "test_case_2: 成功"),
+        ("観測した（試行1の結果）", "観測した（試行2の結果）"),
+        ("観測した（条件1)", "観測した（条件2)"),
+        ("観測した(条件1）", "観測した(条件2）"),
+    ],
+)
+def test_public_command_preserves_meaningful_numbers_in_evidence(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    first_evidence: str,
+    second_evidence: str,
+) -> None:
+    """末尾の独立した条件番号以外の数値差は観測内容として保持する。"""
+    rows = [_condition(FIRST_WI, "保存"), _condition(SECOND_WI, "再読込")]
+    rows[0]["evidence"], rows[1]["evidence"] = first_evidence, second_evidence
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
+
     assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
 
 
@@ -1845,6 +1905,42 @@ def test_wi_template_from_uncreated_output_reaches_return_result(
     review_table.init(table)
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table, *plan_args)) == 0
+    assert "未解決の指摘数: 0" in capsys.readouterr().out
+
+
+def test_plan_related_wi_requires_and_generates_evidence_without_positional_wi(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """計画だけを引数へ渡したレビューでも関連WIを対象集合に含め、証拠なしを拒否し、記入済み証拠を受理する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n"
+        f"- 関連WI:\n  - {FIRST_WI}: 保存を扱う\n\n"
+        "## 実施内容\n\n| 実施内容 | 由来 | 採否 | 根拠 |\n| --- | --- | --- | --- |\n"
+        f"| 保存する | エージェント由来のWI ({FIRST_WI}) | 採用 | - |\n",
+        encoding="utf-8",
+    )
+    table = tmp_path / "plan.exec-review.tsv"
+    review_table.init(table)
+    capsys.readouterr()
+
+    assert run_script.dispatch(_no_evidence_return_args(table, "--plan", str(plan))) == 1
+    assert "対象WIがあるレビューには完成条件証拠を作成する" in capsys.readouterr().err
+
+    path = tmp_path / "evidence.json"
+    template = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--template", str(path), "--plan", str(plan)]
+    )
+    assert run_script.dispatch(template) == 0, capsys.readouterr().err
+    rows = json.loads(path.read_text(encoding="utf-8"))["wi_conditions"]
+    assert [row["condition"] for row in rows] == ["保存"]
+    filled = _condition(FIRST_WI, "保存")
+    filled.update(source=rows[0]["source"], evidence="test_save_settings 成功")
+    _write_evidence(path, [filled])
+    args = _plan_return_args(path, table, plan)
+    capsys.readouterr()
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
     assert "未解決の指摘数: 0" in capsys.readouterr().out
 
 
