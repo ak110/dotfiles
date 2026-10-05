@@ -410,6 +410,8 @@ class _FakeProcess:
 _OWN_UID = os.getuid()
 _OTHER_UID = _OWN_UID + 1
 _DENIED = object()
+_DAEMON_EXE = "/home/user/.codex/packages/app-server-daemon/current/bin/codex"
+_DAEMON_INFO: dict[str, object] = {"name": "codex", "exe": _DAEMON_EXE, "uids": SimpleNamespace(real=_OWN_UID)}
 
 
 def _uids(uid: int) -> SimpleNamespace:
@@ -504,6 +506,31 @@ def _patch_process_iter(monkeypatch: pytest.MonkeyPatch, processes: list[_FakePr
             ],
             True,
             id="own-process-with-codex-package-argument",
+        ),
+        pytest.param(
+            [_FakeProcess({**_DAEMON_INFO, "cmdline": [_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"]})],
+            True,
+            id="own-daemon-update-loop-only",
+        ),
+        pytest.param(
+            [
+                _FakeProcess({**_DAEMON_INFO, "cmdline": [_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"]}, pid=1),
+                _FakeProcess(
+                    {**_DAEMON_INFO, "cmdline": [_DAEMON_EXE, "app-server", "--listen", "unix://", "--managed-daemon"]}, pid=2
+                ),
+            ],
+            False,
+            id="own-managed-daemon",
+        ),
+        pytest.param(
+            [
+                _FakeProcess({**_DAEMON_INFO, "cmdline": [_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"]}, pid=1),
+                _FakeProcess(
+                    {**_DAEMON_INFO, "name": "codex", "exe": "/bin/codex", "cmdline": ["codex", "app-server", "--stdio"]}, pid=3
+                ),
+            ],
+            False,
+            id="own-agents-server-stdio",
         ),
     ],
 )

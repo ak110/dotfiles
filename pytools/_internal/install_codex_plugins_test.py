@@ -9,6 +9,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -17,6 +18,8 @@ from pytools import post_apply
 from pytools._internal import claude_common, codex_processes, install_codex_plugins, plugin_warmup
 
 from ._test_helpers import _FakeResult
+
+_REAL_RUNNING_CODEX_PROCESSES = codex_processes.running_codex_processes
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 # 生成器の許可表と同じ9イベント。install_codex_pluginsはこの集合が全て登録済みかを判定する。
@@ -309,6 +312,46 @@ def test_running_codex_updates_outside_default_euryale_policy(
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
     assert install_codex_plugins.run().changed is True
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
+
+
+_DAEMON_EXE = "/home/user/.codex/packages/app-server-daemon/current/bin/codex"
+_UPDATE_LOOP_CMDLINE = [_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"]
+
+
+@pytest.mark.parametrize(
+    ("cmdlines", "updated"),
+    [
+        pytest.param([_UPDATE_LOOP_CMDLINE], True, id="update-loop-only"),
+        pytest.param(
+            [_UPDATE_LOOP_CMDLINE, [_DAEMON_EXE, "app-server", "--listen", "unix://", "--managed-daemon"]],
+            False,
+            id="managed-daemon",
+        ),
+        pytest.param([_UPDATE_LOOP_CMDLINE, ["codex", "app-server", "--stdio"]], False, id="agents-server-stdio"),
+    ],
+)
+def test_euryale_update_is_deferred_only_by_codex_using_plugins(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, cmdlines: list[list[str]], updated: bool
+) -> None:
+    """管理daemonの停止後に残る更新ループだけでは延期せず、管理daemonと委譲用app-serverでは旧版を保つ。"""
+    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(codex_processes, "running_codex_processes", _REAL_RUNNING_CODEX_PROCESSES)
+    uid = 1000
+    monkeypatch.setattr(codex_processes.os, "getuid", lambda: uid, raising=False)
+    processes = [
+        SimpleNamespace(
+            pid=index + 10,
+            info={"name": "codex", "exe": cmdline[0], "cmdline": cmdline, "uids": SimpleNamespace(real=uid), "ppid": 1},
+        )
+        for index, cmdline in enumerate(cmdlines)
+    ]
+    monkeypatch.setattr(codex_processes.psutil, "process_iter", lambda *_args, **_kwargs: processes)
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
+
+    assert install_codex_plugins.run().changed is updated
+    assert (["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls) is updated
 
 
 @pytest.mark.parametrize("enabled", [True, False])
