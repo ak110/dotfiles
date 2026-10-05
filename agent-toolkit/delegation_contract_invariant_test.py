@@ -364,6 +364,9 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     assert "書込対象の検査" not in fields
     assert "終了コード0" in output and "終了コード0" in receipt
     assert "3行の返却は結果不明" in receipt
+    # 入力誤りの終了コード2は、選定結果の修正と引数・パスの修正を`次の操作:`で区別し、生成側と受領側が同じ案内に従う。
+    for document in (output, receipt):
+        assert "YAML" in document and "終了コード2" in document and "`次の操作:`" in document
 
 
 def _fixed_reply_errors(share: pathlib.Path) -> list[str]:

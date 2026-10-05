@@ -16,7 +16,14 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
 
 4区分はいずれも、レーン分けと重なりの判定が実際の書込対象と異なる結果になるため、違反として終了コード1を返す。
 分類と定義の独立性の意味判断はpickerとメインの読解へ委ねる。
-入力を読めない場合はチェックを開始できないため終了コード2を返し、内容の違反と区別する。
+
+被覆を比べる前に、選定結果をYAMLとして読み、`pick-wi.subagent.md`「出力」が定める欄名、必須の欄と値の型を確かめる。
+pickerの保存直後とメインの受領時はどちらも本スクリプトを実行するため、両者は同じ構造を受理する。
+チェックを開始できない入力には終了コード2を返し、内容の違反と区別する。
+終了コード2の失敗は原因で2群に分かれ、次の操作も群ごとに異なる。
+選定結果のYAML構文、欄名、必須の欄および値の型の誤りは、選定結果を直して同じコマンドを再実行する。
+選定結果のファイル、`--work-dir`およびprivate-notesを解決できない失敗は、パスや引数を直すか、その場所を確かめる。
+次の操作は原因が分かる送出側で`InputError`へ渡し、捕捉側では固定の案内を付けない。
 
 UWIの本文がリポジトリ相対パスを明示しない場合、比べるパスが無いため違反を報告しない。
 この成功はUWIの書込範囲を検証した結果ではない。パスを明示しない回答の書込範囲は、
@@ -26,11 +33,13 @@ pickerの限定調査とメインの読解による検収が確かめる。
 from __future__ import annotations
 
 import argparse
+import collections.abc
 import itertools
 import pathlib
 import re
 import subprocess
 import sys
+import typing
 
 import markdown_it
 import yaml
@@ -66,9 +75,55 @@ _PATH_TOKEN_RE = re.compile(
 )
 _LIST_GAP_RE = re.compile(r"(?:\s*(?:の|と|および|ならびに|、|・|,))+\s*")
 
+_STALENESS_KEY = "鮮度"
+_UPSTREAM_TARGETS_KEY = "上流投入先"
+_IMPLEMENTATION_SECONDS_KEY = "実装秒数"
+_INTEGRATION_SECONDS_KEY = "統合秒数"
+_BLOCKERS_KEY = "続行できない理由"
+_DECISION_STRING_KEYS = ("再開位置", "プロジェクト固有の公開後の操作の順序", "プロジェクト規範の指定", "上流投入", "上流要求")
+_DECISION_KEYS = frozenset(
+    {
+        _selection.WI_KEY,
+        _selection.LANE_KEY,
+        _STALENESS_KEY,
+        _selection.WRITE_FILES_KEY,
+        _selection.MODEL_TYPES_KEY,
+        _selection.EXCLUDED_PATHS_KEY,
+        _UPSTREAM_TARGETS_KEY,
+        *_DECISION_STRING_KEYS,
+    }
+)
+_DECISION_REQUIRED_KEYS = (_selection.WI_KEY, _selection.LANE_KEY, _STALENESS_KEY, _selection.WRITE_FILES_KEY)
+# 旧形式の選定結果は秒数と先行レーンを英字の欄名で持つ。`_selection.lane_costs`が新しい欄名へそろえない欄名も、
+# 版の異なるpickerが書いた選定結果を未知の欄として拒否しないよう既知の欄に含める。
+_LEGACY_SECONDS_KEYS = {"implementation_seconds": _IMPLEMENTATION_SECONDS_KEY, "integration_seconds": _INTEGRATION_SECONDS_KEY}
+_LANE_COST_KEYS = frozenset(
+    {
+        _selection.LANE_KEY,
+        _selection.STAGE_KEY,
+        _selection.PRIOR_LANES_KEY,
+        _IMPLEMENTATION_SECONDS_KEY,
+        _INTEGRATION_SECONDS_KEY,
+        _selection.RATIONALE_KEY,
+        "after_lanes",
+        *_LEGACY_SECONDS_KEYS,
+    }
+)
+_TOP_LEVEL_KEYS = frozenset({_selection.DECISIONS_KEY, "decisions", _selection.LANE_COSTS_KEY, "lane_costs", _BLOCKERS_KEY})
+_MODEL_ROLES = ("実装担当", "実行レビュー担当")
+_MODEL_TYPE_RE = re.compile(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+")
 
-class InputError(Exception):
-    """チェックを開始できない入力の問題。"""
+_FIX_PATHS = "位置引数へpickerが保存した選定結果YAMLの絶対パスを、`--work-dir`へ対象リポジトリの絶対パスを渡して再実行する"
+_FIX_PRIVATE_NOTES = "`atk config get private_notes`が返す場所が実在し読み取れることを確かめてから、同じコマンドを再実行する"
+_FIX_YAML = (
+    "選定結果のYAML構文を直す。文字列の値を単一引用符で囲み、値の中の`'`は`''`と重ねて書き直してから、同じコマンドを再実行する"
+)
+_FIX_CONTENT = "選定結果の該当する欄を`pick-wi.subagent.md`「出力」の欄名と型へ直してから、同じコマンドを再実行する"
+_FIX_MODEL = "`担当モデル`は`実装担当`か`実行レビュー担当`のキーごとに`<claude|codex|agy>:<model>/<effort>`の値へ直す"
+
+
+class InputError(_next_action.ActionableError):
+    """チェックを開始できない入力の問題。送出側が原因に合う次の操作を持つ。"""
 
 
 def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
@@ -197,66 +252,156 @@ def check_decision(
 
 def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: pathlib.Path) -> list[str]:
     """選定結果の全項目を確かめ、違反の行を返す。"""
-    try:
-        selection = yaml.safe_load(selection_file.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
-        raise InputError(f"選定結果を読み込めない: {selection_file}: {error}") from error
-    items = _selection.decisions(selection)
-    if items is None:
-        raise InputError(f"選定結果に`{_selection.DECISIONS_KEY}`の列がない: {selection_file}")
+    selection = load_selection(selection_file)
+    items = typing.cast(list[dict[str, object]], _selection.decisions(selection))
+    costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
     if not private_notes.is_dir():
-        raise InputError(f"private-notesが実在しない: {private_notes}")
+        raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
     errors: list[str] = []
     for decision in items:
-        if not isinstance(decision, dict) or not isinstance(decision.get(_selection.WI_KEY), str):
-            raise InputError(f"`{_selection.WI_KEY}`を持たない項目がある: {decision!r}")
-        awi = decision[_selection.WI_KEY]
-        if decision.get(_selection.LANE_KEY) == _LANE_NONE:
+        awi = typing.cast(str, decision[_selection.WI_KEY])
+        if decision[_selection.LANE_KEY] == _LANE_NONE:
             continue
         write_files = _string_list(decision, _selection.WRITE_FILES_KEY)
         excluded_paths = _string_list(decision, _selection.EXCLUDED_PATHS_KEY)
         try:
             source = _plan_file.find_wi_source(awi, private_notes)
         except OSError as error:
-            raise InputError(f"private-notesを走査できない: {private_notes}: {error}") from error
+            raise InputError(
+                f"private-notesを走査できない: {private_notes}: {error}", next_action=_FIX_PRIVATE_NOTES
+            ) from error
         if source is None:
             errors.append(f"{awi}: 本文を特定できない: private-notes（{private_notes}）の状態ディレクトリに無い")
             continue
         try:
             body = source.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
-            raise InputError(f"WI本文を読み込めない: {source}: {error}") from error
+            raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
         errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, excluded_paths))
-    costs = _selection.lane_costs(selection) or []
     errors.extend(_check_lane_models(items))
     errors.extend(_check_lane_stages(items, costs))
     errors.extend(_check_lane_overlaps(items, costs))
     return errors
 
 
-def _model_types(item: dict[str, object]) -> dict[str, str]:
-    """WIの担当別モデルの書式を確認し、明示指定だけを返す。"""
-    value = item.get(_selection.MODEL_TYPES_KEY, {})
-    if not isinstance(value, dict) or any(
-        role not in {"実装担当", "実行レビュー担当"}
-        or not isinstance(model_type, str)
-        or not re.fullmatch(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+", model_type)
-        for role, model_type in value.items()
-    ):
+def load_selection(selection_file: pathlib.Path) -> dict[str, object]:
+    """選定結果を読み、YAML構文、欄名、必須の欄および値の型を確かめて返す。
+
+    ファイルを開けない失敗はパスの誤りとして、読めた内容の誤りは選定結果の修正として、別の次の操作を付けて送出する。
+    """
+    try:
+        text = selection_file.read_text(encoding="utf-8")
+    except OSError as error:
+        raise InputError(f"選定結果を読み込めない: {selection_file}: {error}", next_action=_FIX_PATHS) from error
+    except UnicodeDecodeError as error:
         raise InputError(
-            f"{item.get(_selection.WI_KEY)}の`{_selection.MODEL_TYPES_KEY}`は担当別のengine:model/effortではない: {value!r}"
+            f"選定結果がUTF-8ではない: {selection_file}: {error}",
+            next_action="選定結果をUTF-8で保存し直してから、同じコマンドを再実行する",
+        ) from error
+    try:
+        selection = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        raise InputError(f"選定結果のYAML構文が不正: {selection_file}: {error}", next_action=_FIX_YAML) from error
+    errors, model_errors = _structure_errors(selection)
+    if errors or model_errors:
+        next_action = f"{_FIX_MODEL}。{_FIX_CONTENT}" if model_errors else _FIX_CONTENT
+        raise InputError(
+            "\n".join([f"選定結果の内容が不正: {selection_file}", *model_errors, *errors]), next_action=next_action
         )
-    return value
+    return typing.cast(dict[str, object], selection)
 
 
-def _check_lane_models(items: list[object]) -> list[str]:
+def _structure_errors(selection: object) -> tuple[list[str], list[str]]:
+    """選定結果の構造の誤りを、`担当モデル`以外の誤りと`担当モデル`の誤りに分けて返す。
+
+    1回の実行で全ての誤りを返し、直すたびに次の誤りが現れる往復を避ける。
+    """
+    if not isinstance(selection, dict):
+        return ["最上位が写像ではない"], []
+    errors = [f"未知の欄: {key}" for key in selection if key not in _TOP_LEVEL_KEYS]
+    model_errors: list[str] = []
+    items = _selection.decisions(selection)
+    if items is None:
+        errors.append(f"`{_selection.DECISIONS_KEY}`の列がない")
+        items = []
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            errors.append(f"`{_selection.DECISIONS_KEY}`の{index}件目が写像ではない")
+            continue
+        label = item.get(_selection.WI_KEY) if isinstance(item.get(_selection.WI_KEY), str) else f"{index}件目"
+        errors.extend(f"{label}: 未知の欄: {key}" for key in item if key not in _DECISION_KEYS)
+        errors.extend(f"{label}: 必須の欄がない: {key}" for key in _DECISION_REQUIRED_KEYS if key not in item)
+        errors.extend(
+            f"{label}: `{key}`が文字列ではない: {item[key]!r}"
+            for key in (_selection.WI_KEY, _selection.LANE_KEY, *_DECISION_STRING_KEYS)
+            if key in item and not isinstance(item[key], str)
+        )
+        if _STALENESS_KEY in item and not isinstance(item[_STALENESS_KEY], dict):
+            errors.append(f"{label}: `{_STALENESS_KEY}`が写像ではない: {item[_STALENESS_KEY]!r}")
+        errors.extend(
+            f"{label}: `{key}`が文字列の列ではない: {item[key]!r}"
+            for key in (_selection.WRITE_FILES_KEY, _selection.EXCLUDED_PATHS_KEY)
+            if key in item and not _is_string_list(item[key])
+        )
+        upstream_targets = item.get(_UPSTREAM_TARGETS_KEY, _LANE_NONE)
+        if upstream_targets != _LANE_NONE and not _is_string_list(upstream_targets):
+            errors.append(f"{label}: `{_UPSTREAM_TARGETS_KEY}`が文字列の列ではない: {upstream_targets!r}")
+        model_types = item.get(_selection.MODEL_TYPES_KEY, {})
+        if not isinstance(model_types, dict) or any(
+            role not in _MODEL_ROLES or not isinstance(value, str) or not _MODEL_TYPE_RE.fullmatch(value)
+            for role, value in model_types.items()
+        ):
+            model_errors.append(
+                f"{label}: `{_selection.MODEL_TYPES_KEY}`が担当別のengine:model/effortではない: {model_types!r}"
+            )
+    costs = _selection.lane_costs(selection)
+    if costs is None:
+        errors.append(f"`{_selection.LANE_COSTS_KEY}`の列がない")
+        costs = []
+    for index, row in enumerate(costs, start=1):
+        if not isinstance(row, dict):
+            errors.append(f"`{_selection.LANE_COSTS_KEY}`の{index}件目が写像ではない")
+            continue
+        label = row.get(_selection.LANE_KEY) if isinstance(row.get(_selection.LANE_KEY), str) else f"{index}件目"
+        errors.extend(f"{label}: 未知の欄: {key}" for key in row if key not in _LANE_COST_KEYS)
+        if not isinstance(row.get(_selection.LANE_KEY), str):
+            errors.append(f"{label}: `{_selection.LANE_KEY}`が文字列ではない")
+        stage = row.get(_selection.STAGE_KEY, 1)
+        if not isinstance(stage, int) or isinstance(stage, bool) or stage < 1:
+            errors.append(f"{label}: `{_selection.STAGE_KEY}`が1以上の整数ではない: {stage!r}")
+        prior = row.get(_selection.PRIOR_LANES_KEY, [])
+        if not _is_string_list(prior) or len(prior) != len(set(prior)):
+            errors.append(f"{label}: `{_selection.PRIOR_LANES_KEY}`が重複のない文字列の列ではない: {prior!r}")
+        for key in (_IMPLEMENTATION_SECONDS_KEY, _INTEGRATION_SECONDS_KEY):
+            legacy = next(name for name, current in _LEGACY_SECONDS_KEYS.items() if current == key)
+            value = row.get(key, row.get(legacy))
+            if not _is_non_negative_number(value):
+                errors.append(f"{label}: `{key}`が0以上の数値ではない: {value!r}")
+        rationale = row.get(_selection.RATIONALE_KEY)
+        if not isinstance(rationale, str) or not rationale.strip():
+            errors.append(f"{label}: `{_selection.RATIONALE_KEY}`が空でない文字列ではない: {rationale!r}")
+    blockers = selection.get(_BLOCKERS_KEY, [])
+    if not _is_string_list(blockers):
+        errors.append(f"`{_BLOCKERS_KEY}`が文字列の列ではない: {blockers!r}")
+    return errors, model_errors
+
+
+def _is_string_list(value: object) -> typing.TypeGuard[list[str]]:
+    """値が文字列だけの列かを返す。"""
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _is_non_negative_number(value: object) -> bool:
+    """値が真偽値以外の0以上の数値かを返す。"""
+    return isinstance(value, int | float) and not isinstance(value, bool) and value >= 0
+
+
+def _check_lane_models(items: list[dict[str, object]]) -> list[str]:
     """同一レーンで両立しない実装モデル指定を拒否する。"""
     assigned: dict[str, tuple[str, str]] = {}
     errors: list[str] = []
     for item in items:
-        if not isinstance(item, dict):
-            continue
-        models = _model_types(item)
+        models = typing.cast(dict[str, str], item.get(_selection.MODEL_TYPES_KEY, {}))
         lane = item.get(_selection.LANE_KEY)
         model = models.get("実装担当")
         if not isinstance(lane, str) or lane == _LANE_NONE or model is None:
@@ -267,7 +412,7 @@ def _check_lane_models(items: list[object]) -> list[str]:
     return errors
 
 
-def _check_lane_stages(items: list[object], costs: list[object]) -> list[str]:
+def _check_lane_stages(items: collections.abc.Sequence[object], costs: collections.abc.Sequence[object]) -> list[str]:
     """後段の開始条件が先行レーンの統合順序を守るか確かめる。"""
     lanes = {
         item[_selection.LANE_KEY]
@@ -280,15 +425,10 @@ def _check_lane_stages(items: list[object], costs: list[object]) -> list[str]:
         if not isinstance(row, dict) or not isinstance(row.get(_selection.LANE_KEY), str):
             continue
         lane = row[_selection.LANE_KEY]
-        stage = row.get(_selection.STAGE_KEY, 1)
-        prior = row.get(_selection.PRIOR_LANES_KEY, [])
-        if not isinstance(stage, int) or isinstance(stage, bool) or stage < 1:
-            errors.append(f"{lane}: 段階は1以上の整数を指定する")
-            continue
-        if not isinstance(prior, list) or not all(isinstance(value, str) for value in prior) or len(prior) != len(set(prior)):
-            errors.append(f"{lane}: 先行レーンは重複のない文字列の列を指定する")
-            continue
-        rows[lane] = (stage, prior)
+        rows[lane] = (
+            typing.cast(int, row.get(_selection.STAGE_KEY, 1)),
+            typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])),
+        )
     ordered_stages = sorted({stage for stage, _ in rows.values()})
     for expected, stage in enumerate(ordered_stages, start=1):
         if stage != expected:
@@ -303,7 +443,7 @@ def _check_lane_stages(items: list[object], costs: list[object]) -> list[str]:
     return errors
 
 
-def _check_lane_overlaps(items: list[object], costs: list[object]) -> list[str]:
+def _check_lane_overlaps(items: collections.abc.Sequence[object], costs: collections.abc.Sequence[object]) -> list[str]:
     """別レーンの重複パスが双方の根拠にあるか確かめ、意味の独立性は担当の読解へ残す。"""
     rationales = {
         row[_selection.LANE_KEY]: row.get(_selection.RATIONALE_KEY, "")
@@ -355,26 +495,21 @@ def _check_lane_overlaps(items: list[object], costs: list[object]) -> list[str]:
 
 
 def _string_list(decision: dict[str, object], key: str) -> list[str]:
-    """項目の列の欄を文字列の一覧で返す。行の不在は空列として扱う。"""
-    value = decision.get(key, [])
-    if value is None:
-        return []
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise InputError(f"{decision.get(_selection.WI_KEY)}の`{key}`が文字列の列ではない: {value!r}")
-    return value
+    """`load_selection`で型を確かめた項目の列の欄を返す。行の不在は空列として扱う。"""
+    return typing.cast(list[str], decision.get(key, []))
 
 
 def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
     """`--work-dir`の値か、現在のディレクトリが属するGitルートを返す。"""
     if value is not None:
         if not value.is_dir():
-            raise InputError(f"`--work-dir`がディレクトリではない: {value}")
+            raise InputError(f"`--work-dir`がディレクトリではない: {value}", next_action=_FIX_PATHS)
         return value.resolve()
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
     )
     if result.returncode != 0 or not result.stdout.strip():
-        raise InputError(f"現在のディレクトリからGitルートを解決できない: {result.stderr.strip()}")
+        raise InputError(f"現在のディレクトリからGitルートを解決できない: {result.stderr.strip()}", next_action=_FIX_PATHS)
     return pathlib.Path(result.stdout.strip())
 
 
@@ -388,21 +523,15 @@ def main(argv: list[str] | None = None) -> int:
         work_dir = _resolve_work_dir(args.work_dir)
         errors = check(args.selection_file, work_dir, _plan_file.private_notes_root())
     except InputError as error:
-        _next_action.report(
-            str(error),
-            next_action=(
-                "位置引数へpickerが保存した選定結果YAMLの絶対パスを、`--work-dir`へ対象リポジトリの絶対パスを渡して再実行する。"
-                "private-notesが実在しない場合は`atk config get private_notes`が返す場所を確かめる"
-            ),
-        )
+        _next_action.report(error.reason, next_action=error.next_action)
         return 2
     for error in errors:
         print(error, file=sys.stderr)
     if errors:
         print(
             _next_action.next_action_line(
-                "未被覆のパスは`write_files`へ加えるか、書き込まない場合は`excluded_paths`へ加える。"
-                "広すぎる範囲は反映先が挙げる個別のパスへ置き換える。不正な`excluded_paths`は除く。"
+                "未被覆のパスは`書込対象`へ加えるか、書き込まない場合は`書き込まない反映先`へ加える。"
+                "広すぎる範囲は反映先が挙げる個別のパスへ置き換える。不正な`書き込まない反映先`は除く。"
                 "直した後に同じコマンドで確かめる"
             ),
             file=sys.stderr,

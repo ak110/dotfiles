@@ -47,11 +47,39 @@ def _awi(notes: pathlib.Path, name: str, reflected: str, *, state: str = "proces
     (notes / state / name).write_text(body, encoding="utf-8")
 
 
+def _write_selection(
+    path: pathlib.Path, decisions: list[dict[str, typing.Any]], costs: list[dict[str, typing.Any]] | None = None
+) -> pathlib.Path:
+    """被覆の判定に関係しない必須の欄を補って選定結果を保存し、そのパスを返す。
+
+    旧欄名（`awi`）で書いた項目は旧形式の最上位の欄名と`staleness`で補い、旧形式の読み取りも同じ判定へ通す。
+    `costs`を省くと、`なし`でない各レーンの行を補う。
+    """
+    legacy = any("awi" in decision for decision in decisions)
+    for decision in decisions:
+        decision.setdefault("staleness" if "awi" in decision else "鮮度", {"status": "current", "later_commit_count": 0})
+    if costs is None:
+        lanes = {str(decision.get("lane", decision.get("レーン"))) for decision in decisions} - {"なし"}
+        costs = [{"レーン": lane} for lane in sorted(lanes)]
+    for row in costs:
+        row.setdefault("実装秒数", 600)
+        row.setdefault("統合秒数", 60)
+        if "rationale" not in row:
+            row.setdefault("根拠", "検査用の根拠")
+    selection = {"decisions" if legacy else "選定": decisions, "レーンの所要時間": costs}
+    path.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
+    return path
+
+
 def _run(tmp_path: pathlib.Path, repo: pathlib.Path, decisions: list[dict[str, typing.Any]]) -> int:
     """選定結果を保存して検証を実行し、終了コードを返す。"""
-    selection = tmp_path / "selection.yaml"
-    selection.write_text(yaml.safe_dump({"decisions": decisions}, allow_unicode=True), encoding="utf-8")
+    selection = _write_selection(tmp_path / "selection.yaml", decisions)
     return check_selection.main(["--work-dir", str(repo), str(selection)])
+
+
+def _dispatch(*args: str) -> int:
+    """`atk run-script pick-wi-check`の公開名から検証を実行し、終了コードを返す。"""
+    return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
 
 
 def test_reports_uncovered_broad_and_invalid_exclusion(
@@ -86,22 +114,13 @@ def test_reads_current_field_names_like_legacy_ones(
     _awi(notes, "a.md", "`src/model.py`と`docs/development/design.md`を変える。")
     _awi(notes, "c.md", "`src/model.py`を変える。`README.md`は変更しない。")
     _awi(notes, "d.md", "`docs/development/design.md`を変える。")
-    selection = tmp_path / "selection.yaml"
-    selection.write_text(
-        yaml.safe_dump(
-            {
-                "選定": [
-                    {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
-                    {"WI": "c.md", "レーン": "lane-02", "書込対象": ["src/model.py"], "書き込まない反映先": ["LICENSE"]},
-                    {"WI": "d.md", "レーン": "なし", "書込対象": []},
-                ]
-            },
-            allow_unicode=True,
-        ),
-        encoding="utf-8",
-    )
+    decisions = [
+        {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+        {"WI": "c.md", "レーン": "lane-02", "書込対象": ["src/model.py"], "書き込まない反映先": ["LICENSE"]},
+        {"WI": "d.md", "レーン": "なし", "書込対象": []},
+    ]
 
-    assert check_selection.main(["--work-dir", str(repo), str(selection)]) == 1
+    assert _run(tmp_path, repo, decisions) == 1
 
     err = capsys.readouterr().err
     assert "a.md: 未被覆: docs/development/design.md" in err
@@ -198,32 +217,191 @@ def test_detects_observed_selection_defects(
     assert "update.md: 未被覆: scripts/update_dotfiles.py" in err
 
 
-def test_reports_missing_body_and_rejects_unreadable_input(
-    tmp_path: pathlib.Path,
-    env: tuple[pathlib.Path, pathlib.Path],
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+def test_reports_missing_body_as_violation(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """本文を特定できないdecisionは違反として、private-notesの不在と読めない選定結果は入力エラーとして返す。"""
+    """private-notesに本文が無い項目は、入力の解決失敗ではなく項目の違反として返す。"""
     repo, _notes = env
 
     assert _run(tmp_path, repo, [{"awi": "absent.md", "lane": "lane-01", "write_files": []}]) == 1
     assert "absent.md: 本文を特定できない" in capsys.readouterr().err
 
-    missing_root = tmp_path / "missing-notes"
-    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(missing_root))
-    assert _run(tmp_path, repo, [{"awi": "a.md", "lane": "lane-01", "write_files": []}]) == 2
+
+def test_selection_values_with_yaml_syntax_characters_round_trip(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """書式例どおり単一引用符で囲んだ値は、コロン・括弧・引用符・改行を含んでも同じ構造で読める。
+
+    pickerの保存直後とメインの受領時は同じ公開コマンドで同じ欄と型を受理するため、
+    ここで受理した選定結果は双方で同じ値として読まれる。
+    """
+    repo, notes = env
+    _awi(notes, "a.md", "`src/model.py`を変える。")
+    selection = tmp_path / "selection.yaml"
+    selection.write_text(
+        "選定:\n"
+        "- WI: 'a.md'\n"
+        "  レーン: 'lane-01'\n"
+        "  鮮度: {status: current, later_commit_count: 0}\n"
+        "  書込対象: ['src/model.py']\n"
+        "  担当モデル: {実装担当: 'claude:opus[1m]/medium'}\n"
+        "  プロジェクト規範の指定: '観点群: 実装漏れと横展開 # 見出し, [括弧] {波括弧} と ''引用符'' の値'\n"
+        "レーンの所要時間:\n"
+        "- レーン: 'lane-01'\n"
+        "  実装秒数: 600\n"
+        "  統合秒数: 60\n"
+        "  根拠: '同一レーン案: 3000秒\n"
+        "\n"
+        "    分割案: 2000秒'\n"
+        "続行できない理由:\n"
+        "- 'なし'\n",
+        encoding="utf-8",
+    )
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0, capsys.readouterr().err
+    loaded = check_selection.load_selection(selection)
+    decision = typing.cast(list[dict[str, object]], loaded["選定"])[0]
+    assert decision["担当モデル"] == {"実装担当": "claude:opus[1m]/medium"}
+    assert decision["プロジェクト規範の指定"] == "観点群: 実装漏れと横展開 # 見出し, [括弧] {波括弧} と '引用符' の値"
+    assert typing.cast(list[dict[str, object]], loaded["レーンの所要時間"])[0]["根拠"] == "同一レーン案: 3000秒\n分割案: 2000秒"
+
+
+_FIX_SELECTION = "同じコマンドを再実行する"
+_FIX_ARGUMENTS = "`--work-dir`へ対象リポジトリの絶対パスを渡して再実行する"
+
+
+@pytest.mark.parametrize(
+    ("text", "reason", "action"),
+    [
+        pytest.param(
+            "選定:\n- WI: a.md\n  レーン: lane-01\n  鮮度: {status: current}\n  書込対象: [src/model.py]\n"
+            "レーンの所要時間:\n- レーン: lane-01\n  実装秒数: 1\n  統合秒数: 1\n  根拠: 観点群: 実装漏れと横展開\n",
+            "YAML構文が不正",
+            "単一引用符で囲み",
+            id="yaml-syntax",
+        ),
+        pytest.param(
+            "選定:\n- WI: 'a.md'\n  レーン: 'lane-01'\n  鮮度: {status: current}\n  書込対象: ['src/model.py']\n"
+            "  担当モデル: {実装担当: 'agents_server:claude:opus[1m]/medium'}\n"
+            "レーンの所要時間:\n- レーン: 'lane-01'\n  実装秒数: 1\n  統合秒数: 1\n  根拠: '根拠'\n",
+            "agents_server:claude:opus[1m]/medium",
+            "`<claude|codex|agy>:<model>/<effort>`の値へ直す",
+            id="model-type",
+        ),
+        pytest.param(
+            "選定:\n- WI: 'a.md'\n  レーン: 'lane-01'\n  鮮度: {status: current}\n  書込対象: ['src/model.py']\n"
+            "  担当モデル: {計画担当: 'claude:opus/high'}\n"
+            "レーンの所要時間:\n- レーン: 'lane-01'\n  実装秒数: 1\n  統合秒数: 1\n  根拠: '根拠'\n",
+            "計画担当",
+            "`<claude|codex|agy>:<model>/<effort>`の値へ直す",
+            id="unknown-model-role",
+        ),
+        pytest.param(
+            "選定:\n- WI: 'a.md'\n  レーン: 'lane-01'\n  鮮度: {status: current}\n  書込対象: ['src/model.py']\n"
+            "  書込対象の候補: ['src/']\n"
+            "レーンの所要時間:\n- レーン: 'lane-01'\n  実装秒数: 1\n  統合秒数: 1\n  根拠: '根拠'\n",
+            "a.md: 未知の欄: 書込対象の候補",
+            "「出力」の欄名と型へ直して",
+            id="unknown-key",
+        ),
+        pytest.param(
+            "選定:\n- WI: 'a.md'\n  レーン: 'lane-01'\n  鮮度: {status: current}\n  書込対象: 'src/model.py'\n"
+            "レーンの所要時間:\n- レーン: 'lane-01'\n  実装秒数: '1'\n  統合秒数: 1\n  根拠: '根拠'\n",
+            "a.md: `書込対象`が文字列の列ではない",
+            "「出力」の欄名と型へ直して",
+            id="field-type",
+        ),
+        pytest.param(
+            "選定:\n- WI: 'a.md'\n  レーン: 'lane-01'\n  書込対象: ['src/model.py']\n",
+            "a.md: 必須の欄がない: 鮮度",
+            "「出力」の欄名と型へ直して",
+            id="missing-field",
+        ),
+    ],
+)
+def test_content_errors_guide_selection_fix(
+    text: str,
+    reason: str,
+    action: str,
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """引数が正しく選定結果の内容が誤る場合は、終了コード2と、引数ではなく選定結果を直す次の操作を返す。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`src/model.py`を変える。")
+    selection = tmp_path / "selection.yaml"
+    selection.write_text(text, encoding="utf-8")
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 2
+
     err = capsys.readouterr().err
-    assert f"private-notesが実在しない: {missing_root}" in err
-    assert "次の操作: " in err
+    assert reason in err
+    next_action = next(line for line in err.splitlines() if line.startswith("次の操作: "))
+    assert action in next_action
+    assert _FIX_SELECTION in next_action
+    assert _FIX_ARGUMENTS not in next_action
     assert "Traceback" not in err
 
-    broken = tmp_path / "broken.yaml"
-    broken.write_text("decisions: [\n", encoding="utf-8")
-    assert check_selection.main(["--work-dir", str(repo), str(broken)]) == 2
+
+def test_field_type_errors_are_reported_together(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """1回の実行で全ての内容の誤りを返し、直すたびに次の誤りが現れる往復を生じさせない。"""
+    repo, _notes = env
+    selection = tmp_path / "selection.yaml"
+    selection.write_text(
+        "選定:\n- WI: 'a.md'\n  レーン: 'lane-01'\n  鮮度: {status: current}\n  書込対象: 'src/model.py'\n"
+        "  担当モデル: {実装担当: 'claude:opus'}\n"
+        "レーンの所要時間:\n- レーン: 'lane-01'\n  段階: 0\n  実装秒数: -1\n  統合秒数: 1\n  根拠: ''\n",
+        encoding="utf-8",
+    )
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 2
+
     err = capsys.readouterr().err
-    assert "選定結果を読み込めない" in err
-    assert "次の操作: " in err
+    for reason in (
+        "a.md: `担当モデル`が担当別のengine:model/effortではない",
+        "a.md: `書込対象`が文字列の列ではない",
+        "lane-01: `段階`が1以上の整数ではない",
+        "lane-01: `実装秒数`が0以上の数値ではない",
+        "lane-01: `根拠`が空でない文字列ではない",
+    ):
+        assert reason in err
+
+
+def test_path_errors_guide_argument_fix(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """選定結果のファイル、`--work-dir`、private-notesを解決できない場合は、終了コード2とその場所を直す次の操作を返す。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`src/model.py`を変える。")
+    selection = _write_selection(
+        tmp_path / "selection.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}]
+    )
+    missing_root = tmp_path / "missing-notes"
+
+    def next_action(*args: str) -> str:
+        assert _dispatch(*args) == 2
+        err = capsys.readouterr().err
+        assert "Traceback" not in err
+        return next(line for line in err.splitlines() if line.startswith("次の操作: "))
+
+    for args in (
+        ("--work-dir", str(repo), str(tmp_path / "absent.yaml")),
+        ("--work-dir", str(tmp_path / "absent-repo"), str(selection)),
+    ):
+        action = next_action(*args)
+        assert _FIX_ARGUMENTS in action
+        assert "pick-wi.subagent.md" not in action
+
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(missing_root))
+    action = next_action("--work-dir", str(repo), str(selection))
+    assert "`atk config get private_notes`" in action
+    assert _FIX_ARGUMENTS not in action
 
 
 def test_public_name_runs_selection_check(
@@ -232,16 +410,9 @@ def test_public_name_runs_selection_check(
     """`atk run-script pick-wi-check`の公開名から同じ検証へ到達する。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
-    selection = tmp_path / "selection.yaml"
-    selection.write_text(
-        yaml.safe_dump({"decisions": [{"awi": "a.md", "lane": "lane-01", "write_files": []}]}), encoding="utf-8"
-    )
+    selection = _write_selection(tmp_path / "selection.yaml", [{"awi": "a.md", "lane": "lane-01", "write_files": []}])
 
-    code = run_script.dispatch(
-        argparse.Namespace(script_name="pick-wi-check", script_args=["--", "--work-dir", str(repo), str(selection)])
-    )
-
-    assert code == 1
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
     assert "a.md: 未被覆: src/model.py" in capsys.readouterr().err
 
 
@@ -252,29 +423,16 @@ def test_public_check_rejects_missing_stage(
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
     _awi(notes, "b.md", "`docs/development/design.md`を変える。")
-    selection = tmp_path / "selection.yaml"
-    selection.write_text(
-        yaml.safe_dump(
-            {
-                "選定": [
-                    {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
-                    {"WI": "b.md", "レーン": "lane-02", "書込対象": ["docs/development/design.md"]},
-                ],
-                "レーンの所要時間": [
-                    {"レーン": "lane-01", "段階": 1},
-                    {"レーン": "lane-02", "段階": 3, "先行レーン": ["lane-01"]},
-                ],
-            },
-            allow_unicode=True,
-        ),
-        encoding="utf-8",
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": ["docs/development/design.md"]},
+        ],
+        [{"レーン": "lane-01", "段階": 1}, {"レーン": "lane-02", "段階": 3, "先行レーン": ["lane-01"]}],
     )
 
-    code = run_script.dispatch(
-        argparse.Namespace(script_name="pick-wi-check", script_args=["--", "--work-dir", str(repo), str(selection)])
-    )
-
-    assert code == 1
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
     assert "段階は1から連続する正整数を指定する: 段階2がない" in capsys.readouterr().err
 
 
@@ -290,14 +448,9 @@ def test_public_check_resolves_abbreviated_paths_and_classification(
         "src/のmodel.py・new_module.pyと、`docs/development/design.md`・`new.md`を変更する。"
         "次に`agent-toolkit/agent_toolkit/_agents_server/status_file.py`と`fresh.py`を変更する。",
     )
-    selection = tmp_path / "selection.yaml"
-    selection.write_text(
-        yaml.safe_dump({"選定": [{"WI": "short.md", "レーン": "lane-01", "書込対象": []}]}, allow_unicode=True),
-        encoding="utf-8",
-    )
+    selection = _write_selection(tmp_path / "selection.yaml", [{"WI": "short.md", "レーン": "lane-01", "書込対象": []}])
 
-    args = argparse.Namespace(script_name="pick-wi-check", script_args=["--", "--work-dir", str(repo), str(selection)])
-    assert run_script.dispatch(args) == 1
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
     err = capsys.readouterr().err
     for path in (
         "src/model.py",
@@ -309,28 +462,23 @@ def test_public_check_resolves_abbreviated_paths_and_classification(
     ):
         assert f"short.md: 未被覆: {path}" in err
 
-    selection.write_text(
-        yaml.safe_dump(
+    _write_selection(
+        selection,
+        [
             {
-                "選定": [
-                    {
-                        "WI": "short.md",
-                        "レーン": "lane-01",
-                        "書込対象": [
-                            "src/",
-                            "docs/development/design.md",
-                            "docs/development/new.md",
-                            "agent-toolkit/agent_toolkit/_agents_server/status_file.py",
-                            fresh_path,
-                        ],
-                    }
-                ]
-            },
-            allow_unicode=True,
-        ),
-        encoding="utf-8",
+                "WI": "short.md",
+                "レーン": "lane-01",
+                "書込対象": [
+                    "src/",
+                    "docs/development/design.md",
+                    "docs/development/new.md",
+                    "agent-toolkit/agent_toolkit/_agents_server/status_file.py",
+                    fresh_path,
+                ],
+            }
+        ],
     )
-    assert run_script.dispatch(args) == 0
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
     assert capsys.readouterr().err == ""
 
 
@@ -378,17 +526,22 @@ def test_public_check_requires_shared_path_in_both_lane_rationales(
         if legacy
         else ("選定", "WI", "レーン", "書込対象", "レーンの所要時間", "根拠")
     )
+    staleness_key, seconds = ("staleness", "implementation_seconds") if legacy else ("鮮度", "実装秒数")
     selection = tmp_path / "selection.yaml"
     selection.write_text(
         yaml.safe_dump(
             {
                 decisions_key: [
-                    {wi_key: "a.md", lane_key: "lane-01", files_key: [paths[0]]},
-                    {wi_key: "b.md", lane_key: "lane-01" if same_lane else "lane-02", files_key: [paths[1]]},
+                    {wi_key: "a.md", lane_key: "lane-01", files_key: [paths[0]], staleness_key: {"status": "current"}},
+                    {
+                        wi_key: "b.md",
+                        lane_key: "lane-01" if same_lane else "lane-02",
+                        files_key: [paths[1]],
+                        staleness_key: {"status": "current"},
+                    },
                 ],
                 costs_key: [
-                    {lane_key: "lane-01", rationale_key: rationale},
-                    {lane_key: "lane-02", rationale_key: rationale},
+                    {lane_key: lane, rationale_key: rationale, seconds: 600, "統合秒数": 60} for lane in ("lane-01", "lane-02")
                 ],
             },
             allow_unicode=True,
@@ -396,15 +549,7 @@ def test_public_check_requires_shared_path_in_both_lane_rationales(
         encoding="utf-8",
     )
 
-    assert (
-        run_script.dispatch(
-            argparse.Namespace(
-                script_name="pick-wi-check",
-                script_args=["--", "--work-dir", str(repo), str(selection)],
-            )
-        )
-        == expected
-    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == expected
 
     err = capsys.readouterr().err
     if expected:
@@ -428,22 +573,16 @@ def test_overlap_rejects_rationale_missing_on_either_side(
     repo, notes = env
     for name in ("a.md", "b.md"):
         _awi(notes, name, "`src/model.py`を書き込む。")
-    selection = tmp_path / "selection.yaml"
-    selection.write_text(
-        yaml.safe_dump(
-            {
-                "選定": [
-                    {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
-                    {"WI": "b.md", "レーン": "lane-02", "書込対象": ["src/model.py"]},
-                ],
-                "レーンの所要時間": [
-                    {"レーン": lane, "根拠": "別対象" if lane == missing_lane else "src/model.pyの異なる定義"}
-                    for lane in ("lane-01", "lane-02")
-                ],
-            },
-            allow_unicode=True,
-        ),
-        encoding="utf-8",
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": ["src/model.py"]},
+        ],
+        [
+            {"レーン": lane, "根拠": "別対象" if lane == missing_lane else "src/model.pyの異なる定義"}
+            for lane in ("lane-01", "lane-02")
+        ],
     )
 
     assert check_selection.main(["--work-dir", str(repo), str(selection)]) == 1
@@ -465,29 +604,41 @@ def test_public_check_accepts_zero_candidate_selection(
     assert check_selection.main([str(path), "--work-dir", str(tmp_path)]) == 0, capsys.readouterr().err
 
 
-def test_model_and_stage_selection_contract() -> None:
-    """担当別モデルと後段の先行統合条件を同じ選定で確かめる。"""
-    items: list[object] = [
-        {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"], "担当モデル": {"実装担当": "claude:opus/high"}},
-        {
-            "WI": "b.md",
-            "レーン": "lane-02",
-            "書込対象": ["src/model.py"],
-            "担当モデル": {"実行レビュー担当": "codex:gpt-6-sol/medium"},
-        },
-    ]
-    costs: list[object] = [
-        {"レーン": "lane-01", "段階": 1, "根拠": "先行"},
-        {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"], "根拠": "後段"},
-    ]
-    assert not check_selection._check_lane_models(items)  # pylint: disable=protected-access
-    assert not check_selection._check_lane_stages(items, costs)  # pylint: disable=protected-access
-    assert not check_selection._check_lane_overlaps(items, costs)  # pylint: disable=protected-access
+def test_public_check_model_and_stage_selection_contract(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """担当別モデルと後段の先行統合条件を、公開コマンドから同じ選定で確かめる。"""
+    repo, notes = env
+    for name in ("a.md", "b.md"):
+        _awi(notes, name, "`src/model.py`を書き込む。")
 
-    typing.cast(dict[str, object], costs[1])["先行レーン"] = []
-    assert any("先行レーン" in value for value in check_selection._check_lane_stages(items, costs))  # pylint: disable=protected-access
-    assert check_selection._check_lane_overlaps(items, costs)  # pylint: disable=protected-access
+    def run(second_lane: str, second_models: dict[str, str], prior: list[str]) -> tuple[int, str]:
+        selection = _write_selection(
+            tmp_path / "selection.yaml",
+            [
+                {
+                    "WI": "a.md",
+                    "レーン": "lane-01",
+                    "書込対象": ["src/model.py"],
+                    "担当モデル": {"実装担当": "claude:opus/high"},
+                },
+                {"WI": "b.md", "レーン": second_lane, "書込対象": ["src/model.py"], "担当モデル": second_models},
+            ],
+            [
+                {"レーン": "lane-01", "段階": 1, "根拠": "先行"},
+                {"レーン": "lane-02", "段階": 2, "先行レーン": prior, "根拠": "後段"},
+            ],
+        )
+        code = _dispatch("--work-dir", str(repo), str(selection))
+        return code, capsys.readouterr().err
 
-    typing.cast(dict[str, object], items[1])["レーン"] = "lane-01"
-    typing.cast(dict[str, object], items[1])["担当モデル"] = {"実装担当": "codex:gpt-6-sol/medium"}
-    assert "モデル指定が衝突" in check_selection._check_lane_models(items)[0]  # pylint: disable=protected-access
+    assert run("lane-02", {"実行レビュー担当": "codex:gpt-6-sol/medium"}, ["lane-01"]) == (0, "")
+
+    code, err = run("lane-02", {"実行レビュー担当": "codex:gpt-6-sol/medium"}, [])
+    assert code == 1
+    assert "lane-02: 後段には先行レーンを指定する" in err
+    assert "重複パスの根拠不足" in err
+
+    code, err = run("lane-01", {"実装担当": "codex:gpt-6-sol/medium"}, ["lane-01"])
+    assert code == 1
+    assert "lane-01: 実装担当のモデル指定が衝突" in err
