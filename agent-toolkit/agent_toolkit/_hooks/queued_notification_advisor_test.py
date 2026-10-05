@@ -225,6 +225,44 @@ def test_editable_pop_then_delivery(tmp_path: pathlib.Path, operation: str, deli
     assert _evaluate(transcript)[0] == expected
 
 
+def _delivered_user(content: str) -> dict:
+    """キューから配送された入力を本文とするユーザーメッセージを生成する。"""
+    return {"type": "user", "message": {"role": "user", "content": content}}
+
+
+def test_notification_delivered_after_reclaimed_input_is_silent(tmp_path: pathlib.Path) -> None:
+    """取り戻した入力の後に通知が配送された記録では、案内せず残る非同期作業としても扱わない。"""
+    entries = [
+        _queue("enqueue", "送信待ちの入力"),
+        _queue("popAll", "送信待ちの入力"),
+        _queue("enqueue", _notification()),
+        _queue("dequeue"),
+        _delivered_user(_notification()),
+    ]
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert _evaluate(transcript) == ("approve", "")
+    assert not _stop_gate.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
+
+
+def test_notification_stays_when_agent_message_is_dequeued_first(tmp_path: pathlib.Path) -> None:
+    """後ろの`<agent-message>`が先に配送された記録では、前の通知を未配送として案内する。"""
+    agent_message = "<agent-message>委譲先からの途中報告</agent-message>"
+    entries = [
+        _queue("enqueue", _notification()),
+        _queue("enqueue", agent_message),
+        _queue("dequeue"),
+        _delivered_user(agent_message),
+    ]
+    assert _stop_gate.queued_task_notification_contents(entries) == [_notification()]
+    transcript = _write_transcript(tmp_path, entries)
+
+    decision, body = _evaluate(transcript)
+
+    assert decision == "notify"
+    assert "b6n4gipz5" in body
+
+
 def test_missing_transcript_path_is_silent() -> None:
     """transcriptを持たない入力では案内しない。"""
     assert subject.evaluate(json.dumps({"session_id": "queued-session"})) == ("approve", "")

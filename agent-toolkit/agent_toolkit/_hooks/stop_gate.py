@@ -923,23 +923,77 @@ def _has_queued_task_notification(entries: list[dict]) -> bool:
 def queued_task_notification_contents(entries: list[dict]) -> list[str]:
     """最上位transcriptのキューに残る配送待ちの完了通知の`content`を投入順に返す。
 
-    `enqueue`で投入し、`dequeue`で先頭から、`remove`・`popAll`・`popOne`で同じ本文の要素を1件取り除く。
+    `enqueue`で投入し、`remove`・`popAll`・`popOne`で同じ本文の要素を1件取り除く。
+    `dequeue`は取り出した要素を記録しないため、その後に最初に現れる最上位の`user`エントリのうち
+    `tool_result`を含まないものの本文と比べて決める。本文と等しい要素、無ければ本文に含まれる要素を
+    1件取り除き、どちらも無い場合と比べる対象の`user`エントリが無い場合は先頭を取り除く。
+    ホストは先頭以外の要素を先に取り出すことがあり、常に先頭を除くと配送済みの通知を残し、
+    未配送の通知を配送済みと誤る。
     Stop判定の入力待ち判定と、未配送の完了通知を案内する判定が同じ規則を共有する。
     """
+    scoped = [entry for entry in entries if _entry_in_scan_scope(entry, include_sidechain=False)]
+    delivered_bodies = _next_delivered_user_bodies(scoped)
     queue: deque[object] = deque()
-    for entry in entries:
-        if entry.get("type") != "queue-operation" or not _entry_in_scan_scope(entry, include_sidechain=False):
+    for index, entry in enumerate(scoped):
+        if entry.get("type") != "queue-operation":
             continue
         operation = entry.get("operation")
         if operation == "enqueue":
             queue.append(entry.get("content"))
         elif operation == "dequeue":
-            if queue:
-                queue.popleft()
+            _dequeue_delivered(queue, delivered_bodies[index])
         elif operation in {"remove", "popAll", "popOne"}:
             with contextlib.suppress(ValueError):
                 queue.remove(entry.get("content"))
     return [content for content in queue if isinstance(content, str) and "<task-notification>" in content]
+
+
+def _next_delivered_user_bodies(entries: list[dict]) -> list[str | None]:
+    """各位置より後に最初に現れる、`tool_result`を含まない`user`エントリの本文を返す。"""
+    result: list[str | None] = [None] * len(entries)
+    following: str | None = None
+    for index in range(len(entries) - 1, -1, -1):
+        result[index] = following
+        body = _delivered_user_body(entries[index])
+        if body is not None:
+            following = body
+    return result
+
+
+def _delivered_user_body(entry: dict) -> str | None:
+    """キューから配送された入力として比べる対象の`user`エントリの本文を返す。
+
+    `message.content`が文字列ならそのまま、リストなら`text`要素を連結する。
+    `tool_result`を含むエントリはツールの応答であり配送された入力ではないため対象外とする。
+    """
+    if entry.get("type") != "user":
+        return None
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return None
+    blocks = [block for block in content if isinstance(block, dict)]
+    if any(block.get("type") == "tool_result" for block in blocks):
+        return None
+    texts = [block["text"] for block in blocks if block.get("type") == "text" and isinstance(block.get("text"), str)]
+    return "".join(texts) if texts else None
+
+
+def _dequeue_delivered(queue: deque[object], delivered_body: str | None) -> None:
+    """`dequeue`で取り出された要素を配送された本文から決めてキューから除く。"""
+    if not queue:
+        return
+    if delivered_body is not None:
+        candidates = [item for item in queue if isinstance(item, str)]
+        delivered = next((item for item in candidates if item == delivered_body), None)
+        if delivered is None:
+            delivered = next((item for item in candidates if item and item in delivered_body), None)
+        if delivered is not None:
+            queue.remove(delivered)
+            return
+    queue.popleft()
 
 
 def is_agent_task_notification(notification: str, entries: list[dict]) -> bool:
