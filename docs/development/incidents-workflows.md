@@ -32,7 +32,9 @@
   直接原因: 指摘された見逃し問題の採否とレビュー担当が示した完全待機手段の採否を分離せず、
   `対応要否=yes`を修正方針の採用として扱った。
   対策: レビュー指摘は検討材料であって追加要件、変更認可または手段指定ではないことを
-  `agent-toolkit:reviewee-standards`の受領時契約へ集約し、Codexでは成果物変更またはレビュー表応答より先に同契約を適用する
+  `agent-toolkit:reviewee-standards`の受領時契約へ集約し、Codexでは成果物変更またはレビュー表応答より先に同契約を適用する。
+  現行の参照先（2026年9月6日に当時のスキルを統合）: `agent-toolkit:review-standards`の`references/reviewee.md`が受領時の判断を定める。
+  指摘と修正手段の採否は「レビュー指摘の位置付け」、成果物を変更する前の確認は「指摘発生時の扱い」にある
 - 2026年9月5日: push直後には未着だったGitHub Copilotレビューを終了前に再取得せず、過去PRのreview本文と未解決threadも残した。
   直接原因: 自動レビュー監査をsession-reviewと並列実行し、監査対象を未解決threadだけに限定した。
   対策: `agent-toolkit:process-wi`ではsession-review後に能動的に待機せず1回監査し、

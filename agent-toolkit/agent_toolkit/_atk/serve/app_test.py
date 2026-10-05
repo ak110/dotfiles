@@ -775,6 +775,63 @@ async def test_answer_api_auto_adopts_affirmative_post_approval(
 
 
 @pytest.mark.asyncio
+async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeout(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回答APIは定期同期の待機上限を超えて保持されたロックの解放を待ち、競合で失敗しない。
+
+    低速な環境では定期同期のfetch・pushが数秒に及ぶため、その間の保存を409で失敗させない。
+    """
+    lock_path = tmp_path / "repo.lock"
+
+    def lock(_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
+        return filelock.FileLock(str(lock_path), timeout=timeout)
+
+    monkeypatch.setattr(serve_app.uwi_mutations, "_repo_lock", lock)
+    monkeypatch.setattr(serve_app.uwi_mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(serve_app.uwi_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    for state_name in common.WI_STATES:
+        (tmp_path / state_name).mkdir()
+    content = (
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\n---\n\n"
+        "## 質問\n\n進めますか。\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+    )
+    inbox = tmp_path / "inbox" / "question.md"
+    inbox.write_text(content, encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+    acquired = threading.Event()
+    release = threading.Event()
+
+    def hold_lock() -> None:
+        with filelock.FileLock(str(lock_path)):
+            acquired.set()
+            release.wait(timeout=30)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    try:
+        assert acquired.wait(timeout=5)
+        threading.Timer(serve_app._BACKGROUND_SYNC_LOCK_TIMEOUT + 0.5, release.set).start()
+        response = await client.post(
+            "/api/entries/answer",
+            json={"filename": inbox.name, "state": "inbox", "answer": "はい", "expected_content": content},
+        )
+    finally:
+        release.set()
+        holder.join()
+
+    assert response.status_code == 200
+    assert "はい" in inbox.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
 async def test_remove_api_uses_user_permissions_for_terminal_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -53,7 +53,14 @@ _CREATED_AT_RE = re.compile(r"(\d{8}-\d{6})-")
 """WIファイル名の先頭にある作成日時。`atk wi add`がローカル時刻で付ける。"""
 _ENTRY_PAGE_SIZE = 100
 _DECIMAL_INTEGER_RE = re.compile(r"[0-9]+")
-_WEB_LOCK_TIMEOUT = 2.0
+_WEB_LOCK_TIMEOUT = 30.0
+"""画面の操作（変更・明示的な同期）がprivate-notesのロックを待つ上限秒数。
+
+定期同期のfetch・pushや他の`atk`プロセスが保持する区間は、低速な環境では数秒から十数秒に及ぶ。
+待機を短くすると、競合しただけの保存が「別の操作が進行中です」で失敗するため長めに取る。
+"""
+_BACKGROUND_SYNC_LOCK_TIMEOUT = 2.0
+"""定期同期がロックを待つ上限秒数。取得できない周期は見送り、画面の操作を待たせない。"""
 _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
 _RECENT_REPO_RETENTION = datetime.timedelta(days=7)
 """定期バックグラウンド更新の間隔。
@@ -676,7 +683,7 @@ class Operations:
         その周期を見送り、次周期で再試行する。
         """
         try:
-            return common.synchronize(self.private_notes, only_if_stale=True, lock_timeout=_WEB_LOCK_TIMEOUT)
+            return common.synchronize(self.private_notes, only_if_stale=True, lock_timeout=_BACKGROUND_SYNC_LOCK_TIMEOUT)
         except filelock.Timeout:
             return False
 

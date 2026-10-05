@@ -1,4 +1,4 @@
-"""選定結果の`書込対象`がAWI本文の反映先パスを覆うかの検証を確かめる。"""
+"""選定結果の`書込対象`がWI本文の反映先パスを覆うかの検証を確かめる。"""
 
 import argparse
 import pathlib
@@ -113,7 +113,7 @@ def test_reads_current_field_names_like_legacy_ones(
 def test_accepts_covered_selection_and_skips_out_of_scope_decisions(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """全反映先を覆う選定結果、`lane: なし`、節を持たない本文は違反なしで0を返す。"""
+    """全反映先を覆う選定結果、`lane: なし`、パスを明示しないUWIは違反なしで0を返す。"""
     repo, notes = env
     reflected = (
         "`src/model.py:12-20`と新設の`src/new_module.py`、範囲`src/`を変える。"
@@ -129,6 +129,34 @@ def test_accepts_covered_selection_and_skips_out_of_scope_decisions(
     ]
 
     assert _run(tmp_path, repo, decisions) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_uwi_paths_in_answer_and_materials_require_classification(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """UWIの判断材料と回答に明示されたパスは、書込対象か書き込まない反映先のどちらかへ分類しないと違反になる。
+
+    UWIは`## 反映内容と反映先`を持たないため、同節だけからパスを抽出すると回答で求められた変更が空集合として合格し、
+    レーン分けへ書込対象の欠けた選定が渡る。
+    """
+    repo, notes = env
+    body = (
+        "---\ntype: uwi\nsource: process-wi\n---\n\n## 質問\n\nこの対応で問題無いか？\n\n"
+        "## 判断材料\n\n`docs/development/design.md`の記述に従って対応した。\n\n"
+        "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n`src/model.py`の判定も直して。\n"
+    )
+    (notes / "processing" / "u.md").write_text(body, encoding="utf-8")
+
+    assert _run(tmp_path, repo, [{"WI": "u.md", "レーン": "lane-01", "書込対象": []}]) == 1
+    err = capsys.readouterr().err
+    assert "u.md: 未被覆: src/model.py" in err
+    assert "u.md: 未被覆: docs/development/design.md" in err
+
+    classified = [
+        {"WI": "u.md", "レーン": "lane-01", "書込対象": ["src/model.py"], "書き込まない反映先": ["docs/development/design.md"]}
+    ]
+    assert _run(tmp_path, repo, classified) == 0
     assert capsys.readouterr().err == ""
 
 
