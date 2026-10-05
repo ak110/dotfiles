@@ -206,6 +206,27 @@ def test_distributed_delegation_contract_is_complete() -> None:
     assert not errors, "\n".join(errors)
 
 
+def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> None:
+    """未判定記録の直接配送と完成条件証拠の単一所有者を固定する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    review = (root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
+    parent = (root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
+    recording = (root / "skills" / "review-standards" / "references" / "exec-review-recording.md").read_text(encoding="utf-8")
+    launchers = [
+        root / "share" / "exec.parent.md",
+        root / "skills" / "plan-mode" / "SKILL.md",
+        root / "skills" / "single-lane-process" / "SKILL.md",
+        root / "share" / "session-termination.subagent.md",
+    ]
+
+    assert "必須入力名: レビュー基準,引き継ぎ記録先,未判定検証記録,完成条件証拠" in review
+    assert "引き継ぎ再レビューでも初回値を保持" in parent
+    assert all("未判定検証記録" in path.read_text(encoding="utf-8") for path in launchers)
+    for content in (review, recording):
+        assert all(name in content for name in ("outcome", "evidence", "reviewed_head"))
+        assert "レビュー担当だけ" in content or "実行レビュー担当だけ" in content
+
+
 def test_launch_target_occurrences_match_parent_document_set() -> None:
     """起動対象の全出現箇所を`<役割名>.parent.md`の集合と本文内の参照から導出する。"""
     share = pathlib.Path(__file__).resolve().parent / "share"

@@ -102,6 +102,9 @@ def test_dry_run_passes_forwarded_prompt_without_committing(
     assert "forwarded-user-input" in calls[0][-1]
     assert "背景を説明して" in calls[0][-1]
     assert "コミットはしない" in calls[0][-1]
+    assert "commitを実行するturnでホストが観測したmodelとeffort" in calls[0][-1]
+    assert "起動候補、alias、設定値または自己申告を観測値として使わない" in calls[0][-1]
+    assert "gpt-6-sol / high" not in calls[0][-1]
     assert original_run(["git", "-C", str(repository), "rev-parse", "HEAD"], capture_output=True, check=False).returncode != 0
 
 

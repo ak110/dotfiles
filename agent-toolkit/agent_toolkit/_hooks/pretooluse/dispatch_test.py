@@ -36,6 +36,113 @@ _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hook
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
 
 
+def _claude_commit_payload(tmp_path: pathlib.Path, project: pathlib.Path) -> dict[str, object]:
+    """Claude Codeの観測identityとprojectを持つ通常commit入力を返す。"""
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text(
+        json.dumps({"type": "assistant", "message": {"model": "Claude Opus 4.1", "effort": "HIGH"}}) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "tool_name": "Bash",
+        "tool_input": {"command": "git commit -m '変更'"},
+        "cwd": str(project),
+        "transcript_path": str(transcript),
+    }
+
+
+def test_codex_commit_uses_observed_identity_from_hook_payload(capsys: pytest.CaptureFixture[str]) -> None:
+    """Codexの通常commitはhook payloadの観測model・effortに一致するtrailerを要求する。"""
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": "git commit -m '変更'"},
+        "turn_id": "codex-turn",
+        "model": "gpt-6.1-sol",
+        "reasoning_effort": "medium",
+    }
+
+    assert pretooluse.main(json.dumps(payload)) == 2
+    assert "Co-Authored-By: GPT-6.1 Sol / Medium <noreply@openai.com>" in capsys.readouterr().err
+
+
+def test_claude_commit_uses_observed_identity_from_transcript(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: pathlib.Path,
+) -> None:
+    """Claude Codeの通常commitはtranscript中の最後の観測identityへ接続する。"""
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text(
+        json.dumps({"type": "assistant", "message": {"model": "Claude Opus 4.1", "effort": "HIGH"}}) + "\n",
+        encoding="utf-8",
+    )
+    trailer = "Co-Authored-By: Claude Opus 4.1 / HIGH <noreply@anthropic.com>"
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": f"git commit -m '変更' -m '{trailer}'"},
+        "transcript_path": str(transcript),
+    }
+
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_commit_without_observed_identity_remains_unblocked(capsys: pytest.CaptureFixture[str]) -> None:
+    """agent session外相当の観測identityがない入力は推測で遮断しない。"""
+    payload = {"tool_name": "Bash", "tool_input": {"command": "git commit -m '変更'"}}
+
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_claude_commit_respects_explicit_empty_attribution_setting(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """最上位の観測可能な`attribution.commit`が空文字なら、通常commitを誤遮断しない。"""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text(
+        json.dumps({"attribution": {"commit": ""}}),
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+    payload = _claude_commit_payload(tmp_path, project)
+
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_project_attribution_setting_overrides_user_disable(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """project設定が帰属を再指定した場合は、低優先度のuser空文字を無効化として扱わない。"""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text(
+        json.dumps({"attribution": {"commit": ""}}),
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.json").write_text(
+        json.dumps({"attribution": {"commit": "Co-Authored-By: {model} / {effort}"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+    payload = _claude_commit_payload(tmp_path, project)
+
+    assert pretooluse.main(json.dumps(payload)) == 2
+    assert "Co-Authored-By: Claude Opus 4.1 / HIGH <noreply@anthropic.com>" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
 def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
     """exit 0で届かないstderrへwarn通知を出力する実装の再混入を検出する。"""

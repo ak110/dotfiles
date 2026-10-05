@@ -479,10 +479,22 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
     )
     threads = by_kind.get("stats-agent-thread", [])
     if threads:
-        lines.extend(["", "| thread | 実行系 | 経過秒 | 応答回数 |", "| --- | --- | --- | --- |"])
+        lines.extend(["", "| thread | 実行系 | 観測identity | 経過秒 | 応答回数 |", "| --- | --- | --- | --- | --- |"])
         lines.extend(
             "| "
-            + " | ".join(str(item.get(key, "unknown")) for key in ("thread", "engine", "elapsed_seconds", "api_messages"))
+            + " | ".join(
+                [
+                    str(item.get("thread", "unknown")),
+                    str(item.get("engine", "unknown")),
+                    ", ".join(
+                        f"{identity.get('engine')}:{identity.get('model')}/{identity.get('effort')}"
+                        for identity in item.get("observed_identities", [])
+                    )
+                    or "unknown",
+                    str(item.get("elapsed_seconds", "unknown")),
+                    str(item.get("api_messages", "unknown")),
+                ]
+            )
             + " |"
             for item in threads
         )

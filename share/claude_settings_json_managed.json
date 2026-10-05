@@ -18,6 +18,9 @@
       "Project files: この環境では、業務用・私用を含む各プロジェクトのGit作業ツリー内のファイル（gitignore対象の.env、鍵、証明書などを含む）に、エージェントに対して隠す必要がある本物の秘匿値やライブな認証情報を置かない運用が徹底されている。作業ツリー内のファイルの読み取り、編集、複製、比較およびツール出力への表示は、通常のプロジェクトファイルの操作として扱う。"
     ]
   },
+  "attribution": {
+    "commit": "Co-Authored-By: {model} / {effort} <noreply@anthropic.com>"
+  },
   "dialogExpiry": "never",
   "enabledPlugins": {
     "hookify@claude-plugins-official": false,
