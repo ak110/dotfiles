@@ -48,11 +48,43 @@ Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、`agen
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 euryaleで`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定せずに更新する場合は、同じユーザーのCodexが稼働中なら、導入済みagent-toolkitへの追加・更新を延期する。
-app-server daemonも稼働判定に含むため、セッションとdaemonを停止してから次の`update-dotfiles`で反映する。
+Linuxでは、Codexの診断ログDBを共有メモリーから通常ストレージへ戻す復元も、同じユーザーのCodexが稼働中なら延期する。
+稼働判定の対象は、通常のCodexセッション、`agents_server`が委譲用に起動する`codex app-server --stdio`、およびapp-server daemon（`codex app-server daemon start`が起動する管理daemon）とその補助プロセスである。
+管理daemonの停止後も残る更新ループ`codex app-server daemon pid-update-loop`はpluginと診断ログDBを開かないため、対象に含めない。
+未導入plugin、他ホストの更新と、後述の自動再起動を明示した更新は、plugin更新の延期の対象に含めない。
+
+### 管理daemonだけが残る場合の一時停止
+
+Codexを使っていなくても、管理daemonは自動で起動して残ることがある。
+次の条件をすべて満たす場合、Linuxの`update-dotfiles`は`chezmoi apply`の直前に`codex app-server daemon stop`で管理daemonを一時停止する。
+
+- 通常のCodexセッションと`agents_server`の`codex app-server --stdio`が無い
+- 管理daemonの遠隔接続機能（remote control）の状態が`disabled`である
+- `DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定していない
+
+`atk wi process-loop`の待機中と子セッション開始前の更新は通常この条件に当たり、Codexを手動で停止しなくてもpluginと診断ログを更新する。
+一時停止した管理daemonは、更新の成否にかかわらず終了前に`codex app-server daemon start`で起動し直す。
+更新前から管理daemonが停止していた場合は起動しない。
+一時停止と再起動の結果は`update-dotfiles`の出力と`update-dotfiles logs`で確認できる。
+停止または再起動に失敗した場合は`update-dotfiles`が非0で終了し、標準エラーと`update-dotfiles logs`に失敗の内容を表示する。
+再起動に失敗した場合は、次のコマンドで管理daemonを起動する。
+
+```bash
+codex app-server daemon start
+```
+
+### Codexの利用中に延期した更新の反映
+
+Codexのセッションまたは`agents_server`の委譲が残る場合、遠隔接続機能が`disabled`以外か状態を確認できない場合、および`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定した場合は、管理daemonを停止しない。
+このとき`update-dotfiles`は停止しない理由を表示し、post-applyはplugin更新と診断ログ復元の延期を更新ログへ記録する。
 延期中も旧版のスキル・MCP実体と有効状態を保持し、dotfiles本体、snapshot生成、Claude Codeと`atk-serve`の更新は続行する。
 ウォームアップは導入済みの有効版を使い、disabledのまま延期した場合はCodex分を除く。
+
+延期した更新は、Codexのセッションと委譲を終了してから次の`update-dotfiles`を実行すると反映される。
+遠隔接続機能を使っている場合は、遠隔クライアントの作業を終えてから`codex app-server daemon stop`で管理daemonを停止し、`update-dotfiles`の実行後に`codex app-server daemon start`で起動し直す。
 自動更新タイマーは上流変更が無ければpost-applyを実行しないため、停止後の次の周期に必ず反映されるわけではない。
-未導入plugin、他ホストの更新と、後述の自動再起動を明示した更新は延期の対象に含めない。
+
+### プラグイン更新後のdaemonの再起動
 
 ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
 `codex app-server daemon version`が成功した場合に限り、次の再起動コマンドを案内する。
