@@ -28,7 +28,7 @@
 
 ## 出力
 
-調査を終えてから、次の形式で返す。
+調査を終えてから、次の形式だけを返す。
 
 ```text
 状態: completed | needs_escalation

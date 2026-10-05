@@ -21,6 +21,13 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 実ユーザー発話へ同スキルの起動を促す注記を返す（Codexでは文脈1つにつき1回）。
 通常発話へ返す発話の内容を現物で確かめる手順を示す注記は、直前の通常発話からの経過時間が閾値以上の場合に返す。
 全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず`agent-toolkit:realign-with-user`の起動を促す。
+例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ
+実ユーザー発話では、経過時間と状態によらず、`agent-toolkit:user-confirmation-and-report`の
+`references/user-utterance.md`のうち範囲語か開放列挙と例示を併せた調査依頼の項と、
+`agent-toolkit:delegation`の`references/routing.md`の所在を示す。判定はコードブロック、インラインコードおよび
+引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（「など」「とか」のような
+一般的な語に頼り、条件に加えても発火がほとんど減らないため）。発話がその項に当たるかの判断は受領側に残し、
+本フックは発話の意味を判断しない。
 成立した注記を1つの`additionalContext`へまとめる。
 
 注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
@@ -56,6 +63,7 @@ from agent_toolkit._common.process_loop_session import (
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks import background_task_outputs as _background_task_outputs  # noqa: E402
+from agent_toolkit._hooks import plugin_resources as _plugin_resources
 from agent_toolkit._hooks import termination_evidence
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -136,6 +144,30 @@ _REALIGN_NOTICE_BODY = (
     "ユーザー発話に全角の連続した「！！」が含まれている。"
     "次の操作: `agent-toolkit:realign-with-user`を起動し、目標と解決したい問題の理解を確かめる。"
 )
+_EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
+_INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出し", "洗い出す", "探し", "チェック", "レビュー")
+# フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、ユーザー自身の依頼文ではなく
+# 貼り付けた素材であるため、例示の語と調査を求める語の判定から外す。
+_QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
+
+
+def _example_investigation_notice(prompt: str) -> str | None:
+    """例示の語と調査を求める語を併せ持つ発話へ、範囲語と例示を併せた依頼の項の所在を示す注記を返す。
+
+    該当する発話が範囲語か開放列挙を伴う調査の依頼かは受領側が判断し、本フックは字面の一致だけで返す。
+    """
+    text = _QUOTED_MATERIAL_RE.sub("", prompt)
+    if not any(word in text for word in _EXAMPLE_WORDS) or not any(word in text for word in _INVESTIGATION_WORDS):
+        return None
+    utterance = _plugin_resources.skill_reference("user-confirmation-and-report", "references/user-utterance.md")
+    routing = _plugin_resources.skill_reference("delegation", "references/routing.md")
+    body = (
+        "この発話は例示の語と、調査・確認を求める語を含む。"
+        "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に"
+        f"{utterance}の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用する。"
+        f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従う。"
+    )
+    return _llm_notice(body, tag="notice")
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -310,6 +342,8 @@ def main(payload_text: str) -> int:
         notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
     if is_normal_prompt and "！！" in prompt:
         notices.append(_llm_notice(_REALIGN_NOTICE_BODY, tag="notice"))
+    if is_normal_prompt and (example_notice := _example_investigation_notice(prompt)) is not None:
+        notices.append(example_notice)
     additional_context = "\n".join(notices) if notices else None
 
     if first_line.startswith(command_prefix):

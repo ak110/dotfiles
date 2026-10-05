@@ -362,6 +362,12 @@ def _queue_operation_task_notification_entry(
     }
 
 
+# キューへ並ぶ要素の本文。`<agent-message>`は完了通知ではないため、残っても結果に現れない。
+_NOTICE_A = _task_notification_body("toolu_a", task_id="task-a")
+_NOTICE_B = _task_notification_body("toolu_b", task_id="task-b")
+_AGENT_MESSAGE = "<agent-message>委譲先からの途中報告</agent-message>"
+
+
 def _write_nested_subagent_fixture(
     directory: pathlib.Path,
     entries: list[dict],
@@ -1002,6 +1008,51 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "queued-source", background_tasks=[]) is True
         log_path = tmp_path / "claude-agent-toolkit-stop-queued-source.log"
         assert "source=queued_notification" in log_path.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize(
+        ("contents", "delivered", "expected"),
+        [
+            pytest.param([], [_user_entry("続き")], [], id="empty"),
+            pytest.param([_NOTICE_A], [_user_entry(_NOTICE_A)], [], id="single"),
+            pytest.param([_NOTICE_A, _NOTICE_B], [_user_entry(_NOTICE_B)], [_NOTICE_A], id="non-head-notification"),
+            pytest.param([_NOTICE_A, _AGENT_MESSAGE], [_user_entry(_AGENT_MESSAGE)], [_NOTICE_A], id="non-head-agent-message"),
+            pytest.param(
+                [_NOTICE_A, _NOTICE_B],
+                [
+                    {
+                        "type": "user",
+                        "message": {"content": [{"type": "text", "text": "前置き\n"}, {"type": "text", "text": _NOTICE_B}]},
+                    }
+                ],
+                [_NOTICE_A],
+                id="contained-in-text-blocks",
+            ),
+            pytest.param([_NOTICE_A, _NOTICE_B], [_user_entry("どちらでもない")], [_NOTICE_B], id="mismatch-removes-head"),
+            pytest.param([_NOTICE_A, _NOTICE_B], [], [_NOTICE_B], id="no-user-removes-head"),
+            pytest.param(
+                [_NOTICE_A, _NOTICE_B],
+                [
+                    {
+                        "type": "user",
+                        "message": {"content": [{"type": "tool_result", "tool_use_id": "t", "content": _NOTICE_A}]},
+                    },
+                    {"type": "user", "isSidechain": True, "message": {"content": _NOTICE_A}},
+                    {"type": "attachment", "attachment": {"prompt": _NOTICE_A}},
+                    _user_entry(_NOTICE_B),
+                ],
+                [_NOTICE_A],
+                id="skips-tool-result-sidechain-attachment",
+            ),
+        ],
+    )
+    def test_dequeue_removes_element_matching_delivered_user_message(
+        self, contents: list[str], delivered: list[dict], expected: list[str]
+    ) -> None:
+        """`dequeue`はその後に配送されたユーザーメッセージの本文に該当する1件を除き、該当が無ければ先頭を除く。"""
+        entries = [{"type": "queue-operation", "operation": "enqueue", "content": content} for content in contents]
+        entries.append({"type": "queue-operation", "operation": "dequeue"})
+        entries.extend(delivered)
+        assert _stop_gate.queued_task_notification_contents(entries) == expected
 
     def test_missing_child_transcript_preserves_top_level_decision(self, tmp_path: pathlib.Path) -> None:
         """サブエージェント記録ディレクトリが無い場合も、最上位の起動・完了判定を維持する。"""

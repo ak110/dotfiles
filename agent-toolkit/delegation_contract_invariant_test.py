@@ -15,6 +15,8 @@ _NAME_CONTINUATION = r"0-9A-Za-z_\u30a0-\u30ff\u3400-\u9fff"
 _BULLET_PREFIX = "- "
 _LABEL_DELIMITER_PATTERN = re.compile("[:\uff1a\u3002\uff08\uff09\u3001,\\s]")
 _INPUT_BULLET_PATTERN = re.compile(r"^- `(?P<name>[^`]+)`: ", flags=re.MULTILINE)
+# 固定の返却形式を持つ`<役割名>.subagent.md`が、返却をその形式の行に限ることを示す語。
+_FIXED_REPLY_LIMIT = "だけを返す"
 
 
 def _text_blocks(lines: list[str]) -> list[tuple[int, list[str]]]:
@@ -362,6 +364,86 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     assert "書込対象の検査" not in fields
     assert "終了コード0" in output and "終了コード0" in receipt
     assert "3行の返却は結果不明" in receipt
+    # 入力誤りの終了コード2は、選定結果の修正と引数・パスの修正を`次の操作:`で区別し、生成側と受領側が同じ案内に従う。
+    for document in (output, receipt):
+        assert "YAML" in document and "終了コード2" in document and "`次の操作:`" in document
+
+
+def _fixed_reply_errors(share: pathlib.Path) -> list[str]:
+    """`## 出力`節に`text`ブロックで固定の返却形式を示しながら、返却をその形式に限る語を持たない文書を返す。"""
+    errors: list[str] = []
+    for path in sorted(share.glob("*.subagent.md")):
+        content = path.read_text(encoding="utf-8")
+        if "\n## 出力\n" not in content:
+            continue
+        output = _h2_section(content, "出力")
+        if _text_blocks(output.splitlines()) and _FIXED_REPLY_LIMIT not in output:
+            errors.append(path.name)
+    return errors
+
+
+def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Path) -> None:
+    """固定の返却形式を持つ全`<役割名>.subagent.md`は、`## 出力`節で返却をその形式の行に限る。
+
+    限定の語が無いと、委譲先が規定行の前後へ要約などを加え、受領側が返却形式だけの再送を求める往復が増える。
+    `text`ブロックを持たない`## 出力`節は自由な形で返す設計であり、判定の対象から外す。
+    """
+    share = pathlib.Path(__file__).resolve().parent / "share"
+
+    assert not _fixed_reply_errors(share), "「だけを返す」を欠く固定返却形式: " + ", ".join(_fixed_reply_errors(share))
+
+    (tmp_path / "limited.subagent.md").write_text(
+        "# 委譲先\n\n## 出力\n\n次の形式だけを返す。\n\n```text\n状態: completed\n```\n", encoding="utf-8"
+    )
+    (tmp_path / "unlimited.subagent.md").write_text(
+        "# 委譲先\n\n## 出力\n\n次の形式で返す。\n\n```text\n状態: completed\n```\n\n## 後始末\n\nだけを返す\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "free.subagent.md").write_text("# 委譲先\n\n## 出力\n\n指摘を返す。\n", encoding="utf-8")
+    assert _fixed_reply_errors(tmp_path) == ["unlimited.subagent.md"]
+
+
+def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
+    """反映後の観測だけが残る項目の再開記録を、送信側と受信側が同じ節名と項目で扱う。
+
+    セッション終了でメインがAWI本文へ追記する節を、pickerとメインの受領、レーン担当が同じ節名で読まないと、
+    計画が`~/.claude/plans`に無い項目は再開位置を失い、`needs_escalation`か再実装へ進む。
+    """
+    plugin_root = pathlib.Path(__file__).resolve().parent
+    finish = (plugin_root / "skills" / "process-wi" / "references" / "finish-session.md").read_text(encoding="utf-8")
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+
+    record = finish.split("```markdown\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
+    heading = record.splitlines()[0]
+    fields = re.findall(r"^- ([^:]+): ", record, flags=re.MULTILINE)
+    prefix = "反映後の観測だけが残る"
+    assert heading.startswith("## ")
+    assert f"- 再開区分: {prefix}" in record
+    assert {"実装commit", "残る完成条件", "観測手段", "観測できる最も早い時刻", "計画"} <= set(fields)
+    assert "--append" in finish and "return-to-inbox" in finish and "--cooldown-until" in finish
+
+    template = _h2_section(picker, "出力").split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
+    resume_line = next(line for line in template.splitlines() if line.startswith("  再開位置:"))
+    observation = resume_line.split("観測のみの書式は「", maxsplit=1)[1]
+    assert observation.startswith(prefix)
+    assert f"`{heading}`" in observation and "計画: " in observation and "計画なし" in observation
+    assert f"`{heading}`" in _h2_section(picker, "処理対象の決定")
+    assert f"`{heading}`" in _h2_section(parent, "出力の受領") and f"`{prefix}`" in _h2_section(parent, "出力の受領")
+    lane_resume = _h2_section(executor, "計画の起草")
+    assert f"`{heading}`" in lane_resume and f"`{prefix}`" in lane_resume
+    assert all(field in lane_resume for field in ("実装commit", "残る完成条件", "観測手段"))
+    assert "`計画なし`" in lane_resume and "マージなし" in lane_resume
+    assert "再開記録" in _h2_section(lanes, "中断レーンの再開")
+    # 計画パスの再開位置の検収は観測のみの値へ当てはめず、観測のみの書式は再開記録を読んだ項目だけに使う。
+    receipt = _h2_section(parent, "出力の受領")
+    assert f"再開位置が`{prefix}`で始まらない項目では" in receipt
+    assert "前文の計画ファイルの確認に代えて" in receipt
+    progress_only = _h2_section(picker, "処理対象の決定")
+    assert "計画ファイルの絶対パスと残る工程の書式で`再開位置`へ記す" in progress_only
+    assert "観測のみの書式は、AWI本文の再開記録を読んだ項目だけに使う" in progress_only
 
 
 def test_staged_lane_contract_reaches_selection_and_execution() -> None:

@@ -547,6 +547,95 @@ class TestRealignNoticeInjection:
         assert "agent-toolkit:realign-with-user" in bodies[1]
 
 
+class TestExampleInvestigationNotice:
+    """例示の語と調査を求める語を併せ持つ実ユーザー発話へ、範囲語と例示を併せた依頼の項の所在を示す。
+
+    注記が欠けると、例示の対象から自ら直列に調べ始め、例示を除いた独立した調査を委ねないまま結論へ進む。
+    注記が過剰だと、貼り付けた素材や実行指示の発話にも毎回同じ本文が載る。
+    """
+
+    _PROMPT = (
+        "チャット画面の消費CRのバッジの数値とクレジット詳細の数値が一致しないという報告があった。"
+        "何か計上されないものがあるバグとか無いか確認して。\n"
+        "例えばアプリ呼び出しの分がチャット画面の消費CRのバッジに表示されないとか？\n"
+        "（報告者の勘違いの可能性もあるのでそれも含めて調査して。）"
+    )
+    _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "user-confirmation-and-report" / "references" / "user-utterance.md"
+    _ROUTING_PATH = _SCRIPTS_DIR.parent / "skills" / "delegation" / "references" / "routing.md"
+
+    @classmethod
+    def _example_bodies(cls, result: subprocess.CompletedProcess[str]) -> list[str]:
+        assert result.returncode == 0, result.stderr
+        if not result.stdout:
+            return []
+        context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
+        return [body for body in _notice_bodies(context) if str(cls._UTTERANCE_PATH) in body] if context else []
+
+    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+    def test_example_with_investigation_request_receives_notice(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
+        """両ホストで、両資料の絶対パスと着手前の適用を求める注記を返す。"""
+        result = _run({"session_id": "example-notice", "prompt": self._PROMPT, **host_fields}, state_dir=tmp_path)
+        bodies = self._example_bodies(result)
+        assert len(bodies) == 1
+        assert str(self._ROUTING_PATH) in bodies[0]
+        assert "「コンテキスト消費が大きい調査の切り出し」" in bodies[0]
+        assert "自ら調査へ着手する前に" in bodies[0]
+
+    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            pytest.param("例えば見出しを太字にして", id="example-only"),
+            pytest.param("何か計上されないものが無いか確認して", id="investigation-only"),
+            pytest.param("例えば`make test`を実行して", id="execution-instruction"),
+            pytest.param("このエラーを確認して\n```text\n例えば次のように表示される\n```", id="fenced-code"),
+            pytest.param("`例えば`という語の扱いを確認して", id="inline-code"),
+            pytest.param("> 例えば旧版ではこう書いていた\n上の引用の出典を確認して", id="quote"),
+        ],
+    )
+    def test_other_prompts_do_not_receive_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
+        """例示か調査の語の片方だけを持つ発話と、語が貼り付けた素材の中だけにある発話には返さない。"""
+        result = _run({"session_id": "example-negative", "prompt": prompt, **host_fields}, state_dir=tmp_path)
+        assert not self._example_bodies(result)
+
+    @pytest.mark.parametrize(
+        ("extra", "prompt_prefix", "env"),
+        [
+            pytest.param({"source": "system"}, "", {}, id="source"),
+            pytest.param({}, f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n", {}, id="periodic-recheck"),
+            pytest.param({}, "", {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}, id="delegated"),
+            pytest.param({}, "<task-notification>", {}, id="task-notification"),
+            pytest.param({}, '<atk-auto source="test" kind="goal">\n', {}, id="automated-prompt"),
+        ],
+    )
+    def test_machine_injected_turn_does_not_receive_notice(
+        self, tmp_path: pathlib.Path, extra: dict, prompt_prefix: str, env: dict[str, str]
+    ) -> None:
+        """機械注入の5系統と委譲先のセッションには返さない。"""
+        payload = {"session_id": "example-machine", "prompt": prompt_prefix + self._PROMPT, **extra}
+        result = _run_subcommand("user_prompt_submit", payload, state_dir=tmp_path, extra_env=env)
+        assert not self._example_bodies(result)
+
+    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+    def test_other_notices_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
+        """同じターンで成立した他の3つの注記と1つの`additionalContext`へ結合する。"""
+        sid = "example-combined"
+        state = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        state.write_text(
+            json.dumps({"last_user_prompt_at": time.time() - 600, user_prompt_submit.USER_CONFIRMATION_PENDING_KEY: True}),
+            encoding="utf-8",
+        )
+        result = _run({"session_id": sid, "prompt": self._PROMPT + "！！", **host_fields}, state_dir=tmp_path)
+        assert result.returncode == 0, result.stderr
+        output = json.loads(result.stdout)
+        bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
+        assert len(bodies) == 4
+        assert "agent-toolkit:user-confirmation-and-report`をスキル機能で起動する" in bodies[0]
+        assert bodies[1] == _EXPECTED_VERIFICATION_NOTICE_BODY
+        assert "agent-toolkit:realign-with-user" in bodies[2]
+        assert str(self._UTTERANCE_PATH) in bodies[3]
+
+
 class TestVerificationNoticeInjection:
     """通常発話へ発話の内容を現物で確かめる手順を示す注記を返す契約を検証する。"""
 

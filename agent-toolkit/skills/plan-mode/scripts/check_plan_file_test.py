@@ -756,19 +756,34 @@ def _run_lane_check_with_resumed(
 
 _NEW_AWI = _plan_fixture.WI_FILES[0][0]
 _RESUMED_AWI = "20260831-000000-002.md"
-_RESUMED_DECISION = {"awi": _RESUMED_AWI, "lane": "lane-01", "再開位置": "/tmp/plans/prior.md の反映後の観測だけが残る"}
+# pickerがAWI本文の再開記録から返す観測のみの再開位置（`pick-wi.subagent.md`「出力」の書式）。
+_OBSERVATION_RESUME = "反映後の観測だけが残る（再開記録: AWI本文の最後の`## 反映後の観測の再開記録`、計画: {plan}）"
+_RESUMED_DECISION = {
+    "awi": _RESUMED_AWI,
+    "lane": "lane-01",
+    "再開位置": _OBSERVATION_RESUME.format(plan="2026/10/01-1526_process-wi_レーン01.md"),
+}
+_UNPLANNED_RESUMED_DECISION = {**_RESUMED_DECISION, "再開位置": _OBSERVATION_RESUME.format(plan="計画なし")}
 
 
+@pytest.mark.parametrize("resumed", [_RESUMED_DECISION, _UNPLANNED_RESUMED_DECISION], ids=["planned", "unplanned"])
 @pytest.mark.parametrize("new_resume_value", [None, "なし"], ids=["omitted", "explicit-none"])
 def test_lane_selection_excludes_resumed_decisions(
-    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, new_resume_value: str | None
+    repo: tuple[pathlib.Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    new_resume_value: str | None,
+    resumed: dict[str, str],
 ) -> None:
-    """再開位置あり・なしが混在するレーンでも、再開位置なしの集合と一致する新規計画を受理する。"""
+    """観測のみの再開位置を持つ項目は、計画の有無によらず新しい計画の対象から外れる。
+
+    再開位置なしの集合と一致する新規計画を受理する。再開項目を新しい計画の対象に含めると、
+    実装済みの項目を新しい計画で再実装することになる。
+    """
     work_dir, _base = repo
     new_decision = {"awi": _NEW_AWI, "lane": "lane-01"}
     if new_resume_value is not None:
         new_decision["再開位置"] = new_resume_value
-    code, stderr = _run_lane_check_with_resumed(work_dir, monkeypatch, (_NEW_AWI,), [new_decision, _RESUMED_DECISION])
+    code, stderr = _run_lane_check_with_resumed(work_dir, monkeypatch, (_NEW_AWI,), [new_decision, resumed])
     assert code == 0, stderr
     assert not stderr
 
