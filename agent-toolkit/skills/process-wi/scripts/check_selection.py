@@ -1,9 +1,11 @@
-"""選定結果の`書込対象`がAWI本文の反映先パスを覆うか確かめる。
+"""選定結果の`書込対象`がWI本文の反映先パスを覆うか確かめる。
 
-pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と反映先`から手で書き写すため、
-反映先の一部を欠いた値や、個別ファイルの代わりに上位ディレクトリだけを書いた値がレーン分けへ渡り得る。
-本スクリプトは`レーン`が`なし`でない各項目について、同節の文章とインラインコードから反映先パスを抽出し、
+pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と反映先`、または作業を求める回答済みUWIの
+質問と回答から手で書き写すため、反映先の一部を欠いた値や、個別ファイルの代わりに上位ディレクトリだけを書いた値がレーン分けへ渡り得る。
+本スクリプトは`レーン`が`なし`でない各項目について、反映先パスを文章とインラインコードから抽出し、
 `書込対象`と`書き込まない反映先`の双方に照らして次の4区分の違反を報告する。
+抽出の対象は、AWIでは`## 反映内容と反映先`、frontmatterの`type`が`uwi`の項目ではfrontmatterを除く本文全体
+（質問、選択肢と帰結、判断材料、回答）とする。UWIは反映先の節を持たず、作業範囲が回答と判断材料に現れるためである。
 旧欄名（`decisions`、`awi`、`lane`、`write_files`、`excluded_paths`）で書かれた選定結果も同じ意味で読む。
 
 - 未被覆: 反映先パスが`書込対象`の同じパスにも、`書込対象`のディレクトリ範囲の配下にも、`書き込まない反映先`にも無い
@@ -15,6 +17,10 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
 4区分はいずれも、レーン分けと重なりの判定が実際の書込対象と異なる結果になるため、違反として終了コード1を返す。
 分類と定義の独立性の意味判断はpickerとメインの読解へ委ねる。
 入力を読めない場合はチェックを開始できないため終了コード2を返し、内容の違反と区別する。
+
+UWIの本文がリポジトリ相対パスを明示しない場合、比べるパスが無いため違反を報告しない。
+この成功はUWIの書込範囲を検証した結果ではない。パスを明示しない回答の書込範囲は、
+pickerの限定調査とメインの読解による検収が確かめる。
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ import markdown_it
 import yaml
 
 try:
+    from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
     from agent_toolkit._common import markdown_headings as _markdown_headings
     from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._plan import locations as _plan_file
@@ -45,6 +52,7 @@ except ImportError as _import_error:
 
 _TARGET_SECTION = "反映内容と反映先"
 _LANE_NONE = "なし"
+_UWI_TYPE = "uwi"
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
 # 末尾の`:<行番号>`と`:<行番号>-<行番号>`は参照位置の付記であり、パスの一部ではない。
 _LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
@@ -63,8 +71,22 @@ class InputError(Exception):
     """チェックを開始できない入力の問題。"""
 
 
-def reflected_paths(body: str, work_dir: pathlib.Path) -> set[str]:
-    """AWI本文の`## 反映内容と反映先`から反映先パスの集合を返す。
+def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
+    """WIファイルの全文から反映先パスの集合を返す。
+
+    UWIはfrontmatterを除く本文全体、それ以外は`## 反映内容と反映先`の節を抽出の対象にする。
+    """
+    parsed = _wi_frontmatter.parse_frontmatter(_markdown_headings.normalize_newlines(text))
+    if parsed is not None and parsed[0].get("type") == _UWI_TYPE:
+        return _explicit_paths(parsed[1], work_dir)
+    section = _section_text(text, _TARGET_SECTION)
+    if section is None:
+        return set()
+    return _explicit_paths(section, work_dir)
+
+
+def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
+    """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
 
     `/`を含む候補は、`work_dir`からの相対パスとして実在するか、親ディレクトリが実在する場合に採る。
     親ディレクトリだけの実在で採るのは、反映先が挙げる新設ファイルを含めるためである。
@@ -72,11 +94,8 @@ def reflected_paths(body: str, work_dir: pathlib.Path) -> set[str]:
     ディレクトリに続き区切り記号で列挙されたファイル名だけは、そのディレクトリ内の実在または新設先として採る。
     孤立した語はコマンド名や識別子であることが多く、作業ツリー直下の実在ファイルだけを採用する。
     """
-    section = _section_text(body, _TARGET_SECTION)
-    if section is None:
-        return set()
     paths: set[str] = set()
-    for run in _inline_runs(section):
+    for run in _inline_runs(text):
         directory: str | None = None
         last_end = 0
         for match in _PATH_TOKEN_RE.finditer(run):
@@ -206,7 +225,7 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
         try:
             body = source.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
-            raise InputError(f"AWI本文を読み込めない: {source}: {error}") from error
+            raise InputError(f"WI本文を読み込めない: {source}: {error}") from error
         errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, excluded_paths))
     costs = _selection.lane_costs(selection) or []
     errors.extend(_check_lane_models(items))
