@@ -253,7 +253,7 @@ def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> Non
     """WI鮮度は選定、計画起草および計画なしレビューへ到達する。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    lane = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    lane = _lane_planning_contract(plugin_root)
     review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
     criteria = (plugin_root / "skills" / "review-standards" / "references" / "reviewer.md").read_text(encoding="utf-8")
 
@@ -335,6 +335,39 @@ def test_same_lane_dependency_contract_reaches_parent_and_run_lanes() -> None:
     assert "後続を依存待ち" in lanes
 
 
+def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
+    """処理中の追加でも同じ再開計画を既存レーンから分離しない。"""
+    plugin_root = pathlib.Path(__file__).resolve().parent
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    addition = _h2_section(parent, "処理対象WIの追加")
+
+    assert "既存レーンのAWI、レーン識別子、`再開位置`" in picker
+    assert "後段の分割不能条件と同じ規則で`再開位置`の計画識別を比較" in picker
+    assert "同じ計画を持つ既存レーンの識別子と計画識別" in picker
+    assert "その既存レーンへの割当を費用比較より先に確定" in addition
+    assert "追記後の`選定結果の出力先ファイル`へ`atk run-script pick-wi-check`を再実行" in addition
+    assert "そのレーンへの割当を分割不能条件として費用比較より先に確定" in lanes
+    assert "その計画を別レーンへ割り当てず" in lanes
+
+
+def test_phase_specific_contract_layout_names_the_task_document() -> None:
+    """工程固有の参照へ分ける基準は、配置元の文書種別と実行主体を本文だけで特定できる。"""
+    plugin_root = pathlib.Path(__file__).resolve().parent
+    guideline = (plugin_root / "skills" / "writing-standards" / "references" / "agent-documents-additions.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "委譲元が委譲先を動かして結果を利用するまでの工程" in guideline
+    assert "入力の組み立て、起動、待機、返却の受領、検収、採否、統合など" in guideline
+    assert "委譲先が入力を受領してから結果を返すまでの工程" in guideline
+    assert "両者が使う契約は定義の所有者を1つ" in guideline
+    assert "いずれの文書も複数工程を扱う場合" in guideline
+    assert "その文書の全工程に必要な役割と分岐を同じ文書へ置く" in guideline
+    assert "その工程で起動するスキルの`references/`へ置く" in guideline
+
+
 def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     """選定で列挙した書込対象を受領側が比較できる。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
@@ -413,7 +446,6 @@ def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
     finish = (plugin_root / "skills" / "process-wi" / "references" / "finish-session.md").read_text(encoding="utf-8")
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
-    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
 
     record = finish.split("```markdown\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
@@ -432,7 +464,7 @@ def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
     assert f"`{heading}`" in observation and "計画: " in observation and "計画なし" in observation
     assert f"`{heading}`" in _h2_section(picker, "処理対象の決定")
     assert f"`{heading}`" in _h2_section(parent, "出力の受領") and f"`{prefix}`" in _h2_section(parent, "出力の受領")
-    lane_resume = _h2_section(executor, "計画の起草")
+    lane_resume = _lane_planning_contract(plugin_root)
     assert f"`{heading}`" in lane_resume and f"`{prefix}`" in lane_resume
     assert all(field in lane_resume for field in ("実装commit", "残る完成条件", "観測手段"))
     assert "`計画なし`" in lane_resume and "マージなし" in lane_resume
@@ -500,10 +532,9 @@ def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
     """計画スキルはレーンの非待機通知を無条件の報告・待機で上書きしない。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
     plan = (plugin_root / "skills" / "plan-mode" / "SKILL.md").read_text(encoding="utf-8")
-    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     plan_steps = _h2_section(plan, "進め方")
     lane_row = next(line for line in plan_steps.splitlines() if line.startswith("| `agent-toolkit:process-wi`"))
-    lane_steps = _h2_section(executor, "計画の起草")
+    lane_steps = _lane_planning_contract(plugin_root)
 
     assert "exec.subagent.md" in lane_row and "待機条件" in lane_row
     assert "計画作成完了" not in lane_row
@@ -517,6 +548,15 @@ def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
 def _h2_section(content: str, heading: str) -> str:
     """指定したH2見出しの本文を次のH2見出しの直前まで返す。"""
     return content.split(f"\n## {heading}\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+
+
+def _lane_planning_contract(plugin_root: pathlib.Path) -> str:
+    """exec.subagent.mdの「計画の起草」節と工程別の参照文書をひとつの契約として返す。"""
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    entry = _h2_section(executor, "計画の起草")
+    reference = plugin_root / "skills" / "process-wi" / "references" / "lane-planning.md"
+    assert "references/lane-planning.md" in entry
+    return entry + "\n" + reference.read_text(encoding="utf-8")
 
 
 def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:

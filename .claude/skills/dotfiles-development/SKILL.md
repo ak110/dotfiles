@@ -66,6 +66,7 @@ description: >
     - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、自動チェックへ与えるのと同じ環境変数を与えて`mise trust`を実行する
     - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
   - `make test`はlinter`agent-doc-tone`を含む。
+    commit時のpre-commitも、ステージした変更ファイルのうち対象に当たるものへ`agent-doc-tone`を実行し、3語の検出でcommitを止める。
     単独では`uv run --frozen pyfltr run --commands=agent-doc-tone`で起動する。
     対象はエージェントが実行時に読むMarkdown（`AGENTS.md`・`agent-toolkit/`のrules・skills・share・
     `.chezmoi-source/dot_claude/`・`.claude/skills/`）とする。

@@ -8,10 +8,8 @@
 import json
 import os
 import pathlib
-import socket
 import subprocess
 import sys
-import threading
 import time
 from typing import Any, cast
 
@@ -1342,14 +1340,12 @@ class TestCodexDaemonPause:
 
     @pytest.fixture(name="codex_env")
     def _codex_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> list[list[str]]:
-        """Linuxで管理daemonと更新ループだけが稼働し、遠隔接続機能が無効な状態を既定とする。"""
+        """Linuxで管理daemonと更新ループだけが稼働する状態を既定とする。"""
         calls: list[list[str]] = []
         monkeypatch.setattr(update_dotfiles.sys, "platform", "linux")
         monkeypatch.delenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", raising=False)
         monkeypatch.setattr(update_dotfiles.shutil, "which", lambda name, path=None: _FAKE_CODEX if name == "codex" else None)
         monkeypatch.setattr(update_dotfiles.codex_processes, "codex_processes", lambda: (_DAEMON, _DAEMON_HELPER, _UPDATE_LOOP))
-        monkeypatch.setattr(update_dotfiles, "_codex_daemon_socket", lambda _codex: "/fake/control.sock")
-        monkeypatch.setattr(update_dotfiles, "_read_remote_control_status", lambda _socket: "disabled")
         monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
         return calls
@@ -1361,7 +1357,7 @@ class TestCodexDaemonPause:
     def test_daemon_only_is_stopped_before_apply_and_restarted(
         self, monkeypatch: pytest.MonkeyPatch, codex_env: list[list[str]], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """利用セッションが無く遠隔接続機能が無効なら、apply前に停止しapply後に起動する。"""
+        """利用セッションが無ければ、apply前に停止しapply後に起動する。"""
         monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env))
 
         assert update_dotfiles.main() == 0
@@ -1386,13 +1382,11 @@ class TestCodexDaemonPause:
         assert "Codex管理daemon" not in capsys.readouterr().out
 
     @pytest.mark.parametrize(
-        ("processes", "remote_status", "auto_restart", "reason"),
+        ("processes", "auto_restart", "reason"),
         [
-            pytest.param((_DAEMON, _STDIO_DELEGATION), "disabled", None, "利用セッションが稼働中", id="delegation"),
-            pytest.param((_DAEMON, _codex(14, "codex", "session")), "disabled", None, "codex (1件)", id="interactive-session"),
-            pytest.param((_DAEMON,), "connected", None, "状態がconnected", id="remote-connected"),
-            pytest.param((_DAEMON,), None, None, "状態が判定不能", id="remote-unknown"),
-            pytest.param((_DAEMON,), "disabled", "1", "DOTFILES_CODEX_DAEMON_AUTO_RESTART=1", id="auto-restart"),
+            pytest.param((_DAEMON, _STDIO_DELEGATION), None, "利用セッションが稼働中", id="delegation"),
+            pytest.param((_DAEMON, _codex(14, "codex", "session")), None, "codex (1件)", id="interactive-session"),
+            pytest.param((_DAEMON,), "1", "DOTFILES_CODEX_DAEMON_AUTO_RESTART=1", id="auto-restart"),
         ],
     )
     def test_daemon_is_kept_when_use_cannot_be_excluded(  # noqa: PLR0913  # pylint: disable=too-many-arguments
@@ -1401,13 +1395,11 @@ class TestCodexDaemonPause:
         codex_env: list[list[str]],
         capsys: pytest.CaptureFixture[str],
         processes: tuple[Any, ...],
-        remote_status: str | None,
         auto_restart: str | None,
         reason: str,
     ) -> None:
-        """利用セッション、遠隔接続機能の有効・不明、明示設定のいずれかでは停止せず、理由を表示する。"""
+        """利用セッションか明示設定があれば停止せず、理由を表示する。"""
         monkeypatch.setattr(update_dotfiles.codex_processes, "codex_processes", lambda: processes)
-        monkeypatch.setattr(update_dotfiles, "_read_remote_control_status", lambda _socket: remote_status)
         if auto_restart is not None:
             monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", auto_restart)
         monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env))
@@ -1496,99 +1488,3 @@ class TestCodexDaemonPause:
         assert report["failed_stage"] == "Codex管理daemonの一時停止と再起動"
         assert "codex app-server daemon start" in report["stderr_tail"]
         assert "codex app-server daemon start" in update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
-
-
-@pytest.mark.parametrize(
-    ("returncode", "stdout", "expected"),
-    [
-        pytest.param(0, '{"status":"running","socketPath":"/run/codex.sock"}', "/run/codex.sock", id="running"),
-        pytest.param(0, '{"status":"stopped","socketPath":"/run/codex.sock"}', None, id="stopped"),
-        pytest.param(0, "not json", None, id="invalid-json"),
-        pytest.param(1, "", None, id="command-failed"),
-    ],
-)
-def test_codex_daemon_socket_requires_running_status(
-    monkeypatch: pytest.MonkeyPatch, returncode: int, stdout: str, expected: str | None
-) -> None:
-    """`daemon version`のJSONが稼働中と制御socketを示す場合だけ、照会先を返す。"""
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda argv, **_kwargs: subprocess.CompletedProcess(argv, returncode=returncode, stdout=stdout, stderr=""),
-    )
-
-    assert update_dotfiles._codex_daemon_socket(_FAKE_CODEX) == expected
-
-
-def _serve_websocket_once(server: socket.socket, responses: list[dict[str, Any]], received: list[Any]) -> None:
-    """1接続だけWebSocketへ切り替え、受け取った要求を記録し、固定のJSON-RPC応答を返す。"""
-    connection, _ = server.accept()
-    with connection:
-        reader = connection.makefile("rb")
-        while reader.readline() not in (b"\r\n", b""):
-            pass
-        connection.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
-        # 状態通知とpingを先に送り、応答の識別とpongの返送を確かめる。
-        connection.sendall(b"\x89\x00")
-        for _ in range(3):
-            text = update_dotfiles._read_websocket_text(connection, reader)
-            received.append(None if text is None else json.loads(text))
-        # クライアントはpingを応答待ちの読み取りで受け取り、マスク付きの空のpongを返す。
-        received.append(reader.read(6))
-        for response in responses:
-            payload = json.dumps(response).encode()
-            connection.sendall(bytes([0x81, 126]) + len(payload).to_bytes(2, "big") + payload)
-        # 応答を返した場合はクライアントが接続を閉じるまで待ち、未読データを残した切断で応答が失われないようにする。
-        if any(response.get("id") == 2 for response in responses):
-            reader.read()
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="Unix domain socketの制御socketはLinux専用の経路で使う")
-@pytest.mark.parametrize(
-    ("responses", "expected"),
-    [
-        pytest.param(
-            [
-                {"id": 1, "result": {"userAgent": "codex/0.160.0"}},
-                {"method": "remoteControl/status/changed", "params": {}},
-                {"id": 2, "result": {"status": "disabled", "serverName": "s", "installationId": "i"}},
-            ],
-            "disabled",
-            id="disabled",
-        ),
-        pytest.param(
-            [{"id": 1, "result": {}}, {"id": 2, "result": {"status": "connected"}}],
-            "connected",
-            id="connected",
-        ),
-        pytest.param(
-            [{"id": 1, "result": {}}, {"id": 2, "error": {"code": -32601, "message": "unknown"}}],
-            None,
-            id="rpc-error",
-        ),
-        pytest.param([{"id": 1, "result": {}}], None, id="closed-without-response"),
-    ],
-)
-def test_read_remote_control_status_over_websocket(
-    tmp_path: pathlib.Path, responses: list[dict[str, Any]], expected: str | None
-) -> None:
-    """制御socketへinitializeと`remoteControl/status/read`を送り、応答の状態だけを返す。"""
-    socket_path = tmp_path / "control.sock"
-    received: list[Any] = []
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
-        server.bind(str(socket_path))
-        server.listen(1)
-        thread = threading.Thread(target=_serve_websocket_once, args=(server, responses, received))
-        thread.start()
-        try:
-            assert update_dotfiles._read_remote_control_status(str(socket_path)) == expected
-        finally:
-            thread.join(timeout=10)
-    assert [message.get("method") for message in received[:3]] == ["initialize", "initialized", "remoteControl/status/read"]
-    assert received[0]["params"]["capabilities"] == {"experimentalApi": True}
-    assert received[3] == b"\x8a\x80\x00\x00\x00\x00"
-
-
-def test_read_remote_control_status_rejects_non_websocket_socket(tmp_path: pathlib.Path) -> None:
-    """接続先が存在しない場合は状態不明として扱う。"""
-    assert update_dotfiles._read_remote_control_status(str(tmp_path / "missing.sock")) is None

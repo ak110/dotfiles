@@ -74,6 +74,11 @@ REFERENCE_SEPARATORS = re.compile(r"[\s、。，,.;；:：・()（）「」\[\]<
 # 参照の直前に置いたコロン付きの見出し語（`検証: <パス>`など）は所在の標識であり、行ごとの説明に数えない。
 REFERENCE_MARK = "\0"
 REFERENCE_LABEL = re.compile(r"[^\s、。，,.;；:：\0]{1,20}[:：]\s*(?=\0)")
+# 失効根拠の会話中の発話: `atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと、
+# その直後の`<record>:<line>`（例: `main:625`）。パスは空白を含まない保存先を想定し、記録位置までを最短で区切る。
+USER_EVENT_SOURCE = re.compile(
+    r"(?P<path>(?:[A-Za-z]:[\\/]|/)[^\s`「」]+?)`?\s*(?P<record>[A-Za-z][\w.-]*):(?P<line>\d+)(?!\d)"
+)
 TEST_RESULT = re.compile(
     r"(?<!\w)test_[\w]+(?:\[[^\]\n]+\])?(?:`)?\s*(?::|：|=|は|が|\s)\s*(?:成功|合格|PASS(?:ED)?|passed)(?!\w)"
 )
@@ -265,7 +270,19 @@ def _requirement_units(content: list[str]) -> list[str]:
 
 
 def _answer_record_units(content: list[str]) -> list[str] | None:
-    """確認回答の記録を含む容器から、記録より前の地の文と、回答・自由記述の値を要求単位として返す。
+    """確認回答の記録を含む容器から、記録より前の地の文と、回答・自由記述の値を要求単位として返す。"""
+    parsed = _answer_record_values(content)
+    if parsed is None:
+        return None
+    start, values = parsed
+    units = _requirement_units(content[:start])
+    for value in values:
+        units.extend(_requirement_units(value))
+    return units
+
+
+def _answer_record_values(content: list[str]) -> tuple[int, list[list[str]]] | None:
+    """確認回答の記録の開始行と、ユーザーの回答として扱う回答・自由記述の値を返す。
 
     行頭`質問: `の行の後に行頭`回答: `の行を持たない容器は確認回答の記録ではないため`None`を返す。
     ラベルの値は次のラベル行の直前まで複数行に続く（回答は選んだ案を改行で並べる）。
@@ -273,23 +290,20 @@ def _answer_record_units(content: list[str]) -> list[str] | None:
     start = next((index for index, line in enumerate(content) if line.startswith("質問: ")), None)
     if start is None or not any(line.startswith("回答: ") for line in content[start + 1 :]):
         return None
-    units = _requirement_units(content[:start])
+    values: list[list[str]] = []
     label: str | None = None
     value: list[str] = []
-
-    def flush() -> None:
-        if label in USER_ANSWER_LABELS:
-            units.extend(_requirement_units(value))
-
     for line in content[start:]:
         current = next((candidate for candidate in ANSWER_LABELS if line.startswith(candidate)), None)
         if current is None:
             value.append(line)
             continue
-        flush()
+        if label in USER_ANSWER_LABELS:
+            values.append(value)
         label, value = current, [line.removeprefix(current)]
-    flush()
-    return units
+    if label in USER_ANSWER_LABELS:
+        values.append(value)
+    return start, values
 
 
 def _quoted_requirements(body: list[str], filename: str) -> list[tuple[str, str]]:
@@ -616,7 +630,30 @@ def _evidence_body(row: dict[str, str], field: str) -> str:
         # 原文の全文を使うので、原文内の閉じ括弧・引用符で途中を切り出さない。
         wrapped = rf"(?:（\s*{marker}\s*）|\(\s*{marker}\s*\)|{marker}(?=$|[\s、,;；。|）)]))"
         evidence = re.sub(rf"[\s、,;；|]*{wrapped}[\s、,;；|]*", " ", evidence)
+    # 条件番号だけを行別の識別標識として末尾へ足した根拠も、同じ本文として比較する。
+    # 説明付きの括弧、範囲・件数・入力値などの数字は観測内容なので保持する。
+    evidence = re.sub(r"[\s。．]*(?:（\s*条件\d+\s*）|\(\s*条件\d+\s*\))\s*[。．]?\s*$", "", evidence)
     return evidence.strip()
+
+
+def _review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list[str]:
+    """明示WIと計画の実施内容がWI由来として挙げる項目を、出現順を保った和集合として返す。"""
+    filenames = list(explicit)
+    for plan in plans:
+        section = _section(plan.read_text(encoding="utf-8").splitlines(), "## 実施内容")
+        if section is None:
+            continue
+        for table in extract_tables(list(enumerate(section, start=1))):
+            if "由来" not in table.header:
+                continue
+            origin_index = table.header.index("由来")
+            for row in table.rows:
+                if len(row) != len(table.header):
+                    continue
+                origin = row[origin_index]
+                if origin.startswith(("人間由来のWI (", "エージェント由来のWI (")):
+                    filenames.extend(WI_FILENAME.findall(origin))
+    return list(dict.fromkeys(filenames))
 
 
 def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path) -> list[str]:
@@ -679,7 +716,11 @@ def _load_wi(reference: str, repository: pathlib.Path, wi_outputs: dict[str, str
 def _expired_source_error(
     row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
 ) -> str | None:
-    """失効行のsourceから、記入済みユーザー判断の参照先を確認する。"""
+    """失効行のsourceから、ユーザー判断の参照先を確認する。
+
+    受け付ける参照先は、対象AWIの記入済みユーザーコメント、回答済みUWIの回答、および会話中のユーザー発話
+    （`_user_event_reasons`）である。
+    """
     source = row["source"]
     references = dict.fromkeys(WI_FILENAME.findall(source))
     reasons: list[str] = []
@@ -702,12 +743,89 @@ def _expired_source_error(
             reasons.append(f"{reference}: UWIの回答が空です")
         else:
             reasons.append(f"{reference}: 記入済みユーザーコメントか回答済みUWIの参照ではありません")
+    event_reasons = _user_event_reasons(source)
+    if event_reasons is not None:
+        if not event_reasons:
+            return None
+        reasons.extend(event_reasons)
     detail = f"（{'、'.join(reasons)}）" if reasons else ""
     return (
         f"{row['awi'] or '計画由来'}: {section}[{index}].source: 失効のユーザー判断を確認できません{detail}。"
-        "対象AWIの記入済みユーザーコメントか関連する回答済みUWIのファイル名と所在を記録する。"
-        "ユーザーの回答がない場合は、その判断を得てから同じ証拠をもう一度確かめる"
+        "対象AWIの記入済みユーザーコメント、関連する回答済みUWIのファイル名と所在、"
+        "または会話中の発話を抽出した`atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと"
+        "`<record>:<line>`に、否定した要求単位の「」による逐語を添えて記録する。"
+        "記録位置は出力ファイルの`record`と`line`で確かめ、逐語は発話本文（確認回答では回答と自由記述の値）から写す。"
+        "ユーザーの判断がない場合は、その判断を得てから同じ証拠をもう一度確かめる"
     )
+
+
+def _user_event_reasons(source: str) -> list[str] | None:
+    """sourceが指す会話中のユーザー発話を確かめ、満たさなかった条件を返す。
+
+    発話の記録位置を持たないsourceは`None`、記録位置のいずれかが全条件を満たせば空の一覧を返す。
+    発話主体は`kind`と2つの標識で確かめる。通常表示など別のモードの出力を渡された場合に、
+    実行環境の挿入本文と委譲の配送をユーザーの判断として受け付けないためである。
+    """
+    matches = list(USER_EVENT_SOURCE.finditer(source))
+    if not matches:
+        return None
+    quotes = BRACKETED_TITLE.findall(source)
+    reasons: list[str] = []
+    for match in matches:
+        path = pathlib.Path(match["path"])
+        location = f"{path} {match['record']}:{match['line']}"
+        if not _is_file(path):
+            reasons.append(f"{location}: 出力ファイルがありません")
+            continue
+        try:
+            events = _user_events_at(path, match["record"], int(match["line"]))
+        except (OSError, UnicodeError, ValueError) as exc:
+            reasons.append(f"{location}: 出力ファイルをJSON Linesとして読めません（{exc}）")
+            continue
+        if len(events) != 1:
+            reasons.append(f"{location}: 記録位置の行が{len(events)}件です（1件の行を指す必要があります）")
+            continue
+        event = events[0]
+        text = event.get("text")
+        if event.get("kind") != "user" or not isinstance(text, str):
+            reasons.append(f"{location}: ユーザー発話の行ではありません（kind={event.get('kind')!r}）")
+            continue
+        if event.get("runtime_inserted") is True or event.get("runtime_generated") is True:
+            reasons.append(f"{location}: 実行環境の挿入本文か委譲の配送の行です")
+            continue
+        if not quotes:
+            reasons.append(f"{location}: 否定した要求単位の「」による逐語がsourceにありません")
+            continue
+        utterance = _compact(_user_utterance_text(text))
+        missing = [quote for quote in quotes if _compact(quote) not in utterance]
+        if missing:
+            reasons.append(
+                f"{location}: 引用（{_quoted_units(missing)}）が発話本文（確認回答では回答と自由記述の値）にありません"
+            )
+            continue
+        return []
+    return reasons
+
+
+def _user_events_at(path: pathlib.Path, record: str, line: int) -> list[dict[str, typing.Any]]:
+    """`--user-events`の出力から、指定した`record`と`line`を持つ行を全て返す。"""
+    events: list[dict[str, typing.Any]] = []
+    with path.open(encoding="utf-8") as stream:
+        for raw in stream:
+            if not raw.strip():
+                continue
+            event = json.loads(raw)
+            if isinstance(event, dict) and event.get("record") == record and event.get("line") == line:
+                events.append(event)
+    return events
+
+
+def _user_utterance_text(text: str) -> str:
+    """発話本文のうちユーザーの判断として比べる部分を返す。確認回答の書式では回答と自由記述の値だけとする。"""
+    parsed = _answer_record_values(text.splitlines())
+    if parsed is None:
+        return text
+    return "\n".join("\n".join(value) for value in parsed[1])
 
 
 def _is_file(path: pathlib.Path) -> bool:
@@ -1285,12 +1403,16 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("対象WIの無い証拠には--planか--input-recordでレビュー入力を指定する")
     if any(not path.is_absolute() or not path.is_file() for path in [*args.plan, *args.input_record]):
         parser.error("--planと--input-recordには実在する通常ファイルの絶対パスを指定する")
+    try:
+        filenames = _review_wi_filenames(args.wi, args.plan)
+    except (OSError, UnicodeError, ValueError) as error:
+        parser.error(str(error))
     if args.template:
         if gate_requested:
             parser.error("--templateは返却生成と別に実行する。雛形を記入してから返却の整合を確かめる")
         if args.expected_head is not None:
             parser.error("--templateと--expected-headは同時に指定できません。雛形の出力後に--expected-headだけを付けて判定する")
-        errors, added, kept = write_template(args.evidence, args.wi)
+        errors, added, kept = write_template(args.evidence, filenames)
         if errors:
             for error in errors:
                 print(f"失敗: {error}", file=sys.stderr)
@@ -1306,7 +1428,7 @@ def main(argv: list[str] | None = None) -> int:
             f"成功: `完成条件証拠`へ雛形を書き込みました（追加 {added} 行、既存 {kept} 行を保持）: {args.evidence}\n"
             + _next_action.next_action_line(
                 "空欄のoutcome・evidence・reviewed_headを各行で判定して記入し、"
-                f"`atk run-script exec-review-evidence-check -- {args.evidence} {' '.join(args.wi)} "
+                f"`atk run-script exec-review-evidence-check -- {args.evidence} {' '.join(filenames)} "
                 "--expected-head <レビュー対象HEAD>`で証拠を確かめる"
             )
         )
@@ -1318,14 +1440,14 @@ def main(argv: list[str] | None = None) -> int:
         assert args.review_table is not None and args.round is not None
         errors, unanswered = check_return_result(
             None if no_evidence else args.evidence,
-            args.wi,
+            filenames,
             expected_head=args.expected_head,
             table_path=args.review_table,
             round_value=args.round,
             input_paths=[*args.plan, *args.input_record],
         )
     else:
-        errors = check_evidence(args.evidence, args.wi, expected_head=args.expected_head)
+        errors = check_evidence(args.evidence, filenames, expected_head=args.expected_head)
     for error in errors:
         print(f"失敗: {error}", file=sys.stderr)
     if errors:
@@ -1345,7 +1467,7 @@ def main(argv: list[str] | None = None) -> int:
         if not no_evidence:
             print(f"完成条件証拠のパス: {args.evidence}")
     else:
-        print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(args.wi)} 件）")
+        print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(filenames)} 件）")
     return 0
 
 

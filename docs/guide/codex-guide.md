@@ -59,12 +59,13 @@ Codexを使っていなくても、管理daemonは自動で起動して残るこ
 次の条件をすべて満たす場合、Linuxの`update-dotfiles`は`chezmoi apply`の直前に`codex app-server daemon stop`で管理daemonを一時停止する。
 
 - 通常のCodexセッションと`agents_server`の`codex app-server --stdio`が無い
-- 管理daemonの遠隔接続機能（remote control）の状態が`disabled`である
 - `DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定していない
 
 `atk wi process-loop`の待機中と子セッション開始前の更新は通常この条件に当たり、Codexを手動で停止しなくてもpluginと診断ログを更新する。
 一時停止した管理daemonは、更新の成否にかかわらず終了前に`codex app-server daemon start`で起動し直す。
 更新前から管理daemonが停止していた場合は起動しない。
+遠隔接続機能（remote control）の状態は条件に含めないため、遠隔クライアントが管理daemon経由で利用中の作業も一時停止の間は中断され得る。
+`codex app-server daemon enable-remote-control`で有効にした遠隔接続機能の設定は、再起動した管理daemonにも引き継がれる。
 一時停止と再起動の結果は`update-dotfiles`の出力と`update-dotfiles logs`で確認できる。
 停止または再起動に失敗した場合は`update-dotfiles`が非0で終了し、標準エラーと`update-dotfiles logs`に失敗の内容を表示する。
 再起動に失敗した場合は、次のコマンドで管理daemonを起動する。
@@ -75,13 +76,12 @@ codex app-server daemon start
 
 ### Codexの利用中に延期した更新の反映
 
-Codexのセッションまたは`agents_server`の委譲が残る場合、遠隔接続機能が`disabled`以外か状態を確認できない場合、および`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定した場合は、管理daemonを停止しない。
+Codexのセッションまたは`agents_server`の委譲が残る場合と、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定した場合は、管理daemonを停止しない。
 このとき`update-dotfiles`は停止しない理由を表示し、post-applyはplugin更新と診断ログ復元の延期を更新ログへ記録する。
 延期中も旧版のスキル・MCP実体と有効状態を保持し、dotfiles本体、snapshot生成、Claude Codeと`atk-serve`の更新は続行する。
 ウォームアップは導入済みの有効版を使い、disabledのまま延期した場合はCodex分を除く。
 
 延期した更新は、Codexのセッションと委譲を終了してから次の`update-dotfiles`を実行すると反映される。
-遠隔接続機能を使っている場合は、遠隔クライアントの作業を終えてから`codex app-server daemon stop`で管理daemonを停止し、`update-dotfiles`の実行後に`codex app-server daemon start`で起動し直す。
 自動更新タイマーは上流変更が無ければpost-applyを実行しないため、停止後の次の周期に必ず反映されるわけではない。
 
 ### プラグイン更新後のdaemonの再起動

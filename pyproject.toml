@@ -262,6 +262,7 @@ pass-filenames = false
 type = "linter"
 path = "scripts/check-templates.sh"
 targets = ["*.sh.tmpl", "**/*.sh.tmpl", "*.ps1.tmpl", "**/*.ps1.tmpl"]
+fast = true
 
 [tool.pyfltr.custom-commands.require-ps1-bom]
 type = "linter"
@@ -273,6 +274,7 @@ fast = true
 type = "linter"
 path = "scripts/run-psscriptanalyzer.sh"
 targets = ["*.ps1", "**/*.ps1"]
+fast = true
 
 [tool.pyfltr.custom-commands.claude-plugin-validate]
 type = "linter"
@@ -283,6 +285,7 @@ targets = [
     "**/.claude-plugin/plugin.json",
     "**/.claude-plugin/marketplace.json",
 ]
+fast = true
 
 [tool.pyfltr.custom-commands.agent-doc-tone]
 type = "linter"
@@ -338,6 +341,7 @@ targets = [
     ".agents/skills/*/*.md",
     ".agents/skills/*/*/*.md",
 ]
+fast = true
 
 [tool.pyfltr.custom-commands.statusline-version]
 type = "linter"
@@ -347,6 +351,7 @@ pass-filenames = false
 # 終端担当が公開前のローカル検証で`--enable=statusline-version`を指定して起動する。
 # pyfltrのPath.matchは`**`を任意階層として扱わないため、Git管理下にある深さを明示する。
 targets = ["rust/claude-statusline/*", "rust/claude-statusline/src/*"]
+fast = false
 
 [tool.pylint."messages control"]
 disable = [

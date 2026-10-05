@@ -297,7 +297,7 @@ def test_cli_creates_process_lane_plan_with_generated_name(
 
 def _lane_plan_creation_step() -> str:
     """レーン担当が読む計画作成手順の本文を返す。"""
-    task_path = pathlib.Path(__file__).resolve().parents[3] / "share/exec.subagent.md"
+    task_path = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
     content = task_path.read_text(encoding="utf-8")
     steps = re.split(r"\n(?=\d+\. )", content)
     matches = [step for step in steps if re.match(r"\d+\. ", step) and "plan-create" in step]
@@ -312,7 +312,7 @@ def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
     capsys: pytest.CaptureFixture[str],
     bug: bool,
 ) -> None:
-    """手順5が指示する引数名を現行CLIへそのまま渡して受理されることを確認する。"""
+    """手順4が指示する引数名を現行CLIへそのまま渡して受理されることを確認する。"""
     step = _lane_plan_creation_step()
     source, bug_source = _source(repo, tmp_path, bug=bug)
     placeholders = {
@@ -323,7 +323,7 @@ def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
         placeholders["--bugs-source"] = str(bug_source)
     argv: list[str] = []
     for option, value in placeholders.items():
-        assert f"{option} <" in step, f"手順5が{option}を指示していない"
+        assert f"{option} <" in step, f"手順4が{option}を指示していない"
         argv.extend([option, value])
     argv.extend(["--home", str(tmp_path / "home"), "--work-dir", str(repo)])
 

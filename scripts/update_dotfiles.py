@@ -42,30 +42,26 @@ git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定
 完遂できるかを判定するための記録であり、失敗の内容を人間の目視に頼らず残す。
 取得した段の標準エラーは、表示のために親の標準エラーへ転送したうえで末尾を記録へ残す。
 
-Linuxでは`chezmoi apply`の直前に、Codexの管理daemonだけが稼働し、利用セッションが無く、
-daemonの遠隔接続機能が`disabled`の場合に限り、公開CLI`codex app-server daemon stop`で管理daemonを
-一時停止する。post-applyのplugin更新と診断ログ復元が、利用セッションの無い管理daemonを理由に延期されないためである。
+Linuxでは`chezmoi apply`の直前に、Codexの管理daemonだけが稼働し、利用セッションが無い場合に限り、
+公開CLI`codex app-server daemon stop`で管理daemonを一時停止する。
+post-applyのplugin更新と診断ログ復元が、利用セッションの無い管理daemonを理由に延期されないためである。
 停止を試みた場合は`chezmoi apply`の成否にかかわらず`codex app-server daemon start`で起動状態を戻し、
-停止または再起動の失敗を終了コードと同期結果へ反映する。利用セッションが残る場合、遠隔接続機能の状態が
-`disabled`以外か判定できない場合、および`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`の場合は停止しない。
+停止または再起動の失敗を終了コードと同期結果へ反映する。利用セッションが残る場合と
+`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`の場合は停止しない。
 """
 
 # pylint: disable=global-statement
 
 import argparse
-import base64
 import contextlib
 import dataclasses
 import io
-import json
 import logging
 import logging.handlers
 import os
 import pathlib
 import re
 import shutil
-import socket
-import struct
 import subprocess
 import sys
 import time
@@ -96,7 +92,6 @@ _CODEX_AUTO_RESTART_ENV = "DOTFILES_CODEX_DAEMON_AUTO_RESTART"
 # 公式READMEが定める停止猶予`shutdownGraceSeconds`の上限300秒に、強制終了と応答の余裕を加える。
 _CODEX_DAEMON_STOP_TIMEOUT_SEC = 360
 _CODEX_DAEMON_COMMAND_TIMEOUT_SEC = 120
-_CODEX_RPC_TIMEOUT_SEC = 10
 _CODEX_DAEMON_START_COMMAND = "codex app-server daemon start"
 _CODEX_DAEMON_STAGE_TITLE = "Codex管理daemonの一時停止と再起動"
 
@@ -545,11 +540,6 @@ def _pause_codex_daemon() -> _CodexDaemonPause | None:
         reason = f"Codexの利用セッションが稼働中: {codex_processes.format_running_processes(sessions)}"
     elif codex is None:
         reason = "codex CLIが見つからない"
-    else:
-        socket_path = _codex_daemon_socket(codex)
-        status = None if socket_path is None else _read_remote_control_status(socket_path)
-        if status != "disabled":
-            reason = f"管理daemonの遠隔接続機能の状態が{status or '判定不能'}"
     if reason is not None or codex is None:
         message = (
             f"Codex管理daemonを停止せずに更新します（{reason}）。"
@@ -610,130 +600,6 @@ def _run_codex_daemon_command(codex: str, action: str, timeout: int) -> str | No
         detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else ""
         return f"exit {result.returncode}" + (f": {detail}" if detail else "")
     return None
-
-
-def _codex_daemon_socket(codex: str) -> str | None:
-    """`codex app-server daemon version`のJSONから、稼働中の管理daemonの制御socketを返す。"""
-    try:
-        result = subprocess.run(
-            [codex, "app-server", "daemon", "version"],
-            cwd=_DOTFILES_ROOT,
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            env=_child_env(),
-            timeout=_CODEX_DAEMON_COMMAND_TIMEOUT_SEC,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        logger.exception("codex app-server daemon versionの実行に失敗")
-        return None
-    if result.returncode != 0:
-        logger.info("codex app-server daemon version: exit=%d stderr=%s", result.returncode, result.stderr.strip())
-        return None
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        logger.info("codex app-server daemon versionの出力がJSONでない: %s", result.stdout.strip())
-        return None
-    if not isinstance(data, dict) or data.get("status") != "running" or not isinstance(data.get("socketPath"), str):
-        logger.info("codex app-server daemon versionが稼働中の制御socketを示さない: %s", result.stdout.strip())
-        return None
-    return data["socketPath"]
-
-
-def _read_remote_control_status(socket_path: str) -> str | None:
-    """管理daemonの制御socketへApp Serverの`remoteControl/status/read`を送り、状態を返す。
-
-    制御socketはUnix domain socket上のWebSocketでJSON-RPCを受ける（公式`app-server-daemon`の
-    クライアント実装と同じ接続形）。照会は読み取りだけで、daemonの状態を変えない。
-    接続、応答、形式のいずれかが想定と異なる場合は`None`を返し、呼び出し側は停止しない。
-    """
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-            connection.settimeout(_CODEX_RPC_TIMEOUT_SEC)
-            connection.connect(socket_path)
-            key = base64.b64encode(os.urandom(16)).decode("ascii")
-            connection.sendall(
-                (
-                    "GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-                    f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
-                ).encode("ascii")
-            )
-            reader = connection.makefile("rb")
-            if b" 101 " not in reader.readline():
-                logger.info("Codex管理daemonの制御socketがWebSocketへ切り替わらない: %s", socket_path)
-                return None
-            while reader.readline() not in (b"\r\n", b""):
-                pass
-            initialize = {
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "clientInfo": {"name": "dotfiles-update", "version": "1"},
-                    "capabilities": {"experimentalApi": True},
-                },
-            }
-            for message in (initialize, {"method": "initialized"}, {"id": 2, "method": "remoteControl/status/read"}):
-                _send_websocket_text(connection, json.dumps(message))
-            while (payload := _read_websocket_text(connection, reader)) is not None:
-                try:
-                    response = json.loads(payload)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(response, dict) or response.get("id") not in (1, 2):
-                    continue
-                if "error" in response:
-                    logger.info("Codex管理daemonがJSON-RPCの要求を拒否: %s", payload)
-                    return None
-                if response["id"] == 2:
-                    result = response.get("result")
-                    status = result.get("status") if isinstance(result, dict) else None
-                    return status if isinstance(status, str) else None
-    except OSError:
-        logger.exception("Codex管理daemonの遠隔接続機能の状態を取得できない: %s", socket_path)
-    return None
-
-
-def _send_websocket_text(connection: socket.socket, text: str) -> None:
-    """クライアントからのWebSocketテキストフレームをマスク付きで送る。"""
-    payload = text.encode("utf-8")
-    mask = os.urandom(4)
-    length = len(payload)
-    if length < 126:
-        header = struct.pack("!BB", 0x81, 0x80 | length)
-    elif length < 65536:
-        header = struct.pack("!BBH", 0x81, 0x80 | 126, length)
-    else:
-        header = struct.pack("!BBQ", 0x81, 0x80 | 127, length)
-    connection.sendall(header + mask + bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload)))
-
-
-def _read_websocket_text(connection: socket.socket, reader: io.BufferedIOBase) -> str | None:
-    """次のテキストメッセージを返し、接続の終了時は`None`を返す。pingにはpongで応じる。"""
-    fragments: list[bytes] = []
-    while True:
-        header = reader.read(2)
-        if len(header) < 2:
-            return None
-        opcode, length = header[0] & 0x0F, header[1] & 0x7F
-        if length == 126:
-            length = struct.unpack("!H", reader.read(2))[0]
-        elif length == 127:
-            length = struct.unpack("!Q", reader.read(8))[0]
-        mask = reader.read(4) if header[1] & 0x80 else b""
-        payload = reader.read(length)
-        if mask:
-            payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
-        if opcode == 0x8:
-            return None
-        if opcode == 0x9:
-            connection.sendall(struct.pack("!BB", 0x8A, 0x80 | len(payload)) + b"\0\0\0\0" + payload)
-            continue
-        if opcode in (0x0, 0x1):
-            fragments.append(payload)
-            if header[0] & 0x80:
-                return b"".join(fragments).decode("utf-8", errors="replace")
 
 
 def _filter_apply_pending(status_output: str) -> list[str]:
