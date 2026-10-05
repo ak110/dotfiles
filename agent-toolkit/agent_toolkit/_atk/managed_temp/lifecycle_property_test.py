@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import tempfile
 
@@ -18,6 +19,15 @@ from agent_toolkit._atk.managed_temp.test_support_test import _interrupt_cleanup
 _OPERATIONS = ("create", "write", "cleanup", "tamper-marker", "tamper-registry")
 
 
+def _prepare_explicit_root(path: pathlib.Path) -> pathlib.Path:
+    """明示rootを実行OSの所有者・権限契約へ適合させる。"""
+    if os.name == "nt":
+        managed_temp._windows_secure_path(path, directory=True)
+    else:
+        path.chmod(0o700)
+    return path
+
+
 def _replace_nonce(path: pathlib.Path, nonce: str) -> None:
     value = json.loads(path.read_text(encoding="utf-8"))
     value["nonce"] = nonce
@@ -28,8 +38,7 @@ def _replace_nonce(path: pathlib.Path, nonce: str) -> None:
 @given(operations=st.lists(st.sampled_from(_OPERATIONS), min_size=1, max_size=15))
 def test_lifecycle_sequences_match_reference_model(operations: list[str], tmp_path: pathlib.Path) -> None:
     """作成、内容追加、真正性不一致と後始末の操作列で安全な収束を確かめる。"""
-    root = pathlib.Path(tempfile.mkdtemp(prefix="lifecycle-", dir=tmp_path))
-    root.chmod(0o700)
+    root = _prepare_explicit_root(pathlib.Path(tempfile.mkdtemp(prefix="lifecycle-", dir=tmp_path)))
     target: pathlib.Path | None = None
     valid = False
     payload = b""
@@ -71,6 +80,7 @@ def test_cleanup_in_one_namespace_preserves_other_registration(tmp_path: pathlib
     """既知事例: 別の名前空間の登録と実体は指定対象の後始末で削除しない。"""
     root = tmp_path / "root"
     root.mkdir(mode=0o700)
+    _prepare_explicit_root(root)
     first = managed_temp.create_managed_temp("first", root=root)
     second = managed_temp.create_managed_temp("second", root=root)
     second_registry = managed_temp._registry_path(second)
@@ -84,6 +94,7 @@ def test_missing_marker_failure_keeps_target_and_registry_for_retry(tmp_path: pa
     """既知事例: marker欠落後の失敗は対象と登録を残し、非破壊として報告する。"""
     root = tmp_path / "root"
     root.mkdir(mode=0o700)
+    _prepare_explicit_root(root)
     target = managed_temp.create_managed_temp("missing-marker", root=root)
     registry = managed_temp._registry_path(target)
     (target / managed_temp._MARKER_NAME).unlink()
@@ -102,8 +113,7 @@ def test_interrupted_cleanup_converges_from_consuming_and_quarantine(
 ) -> None:
     """登録消費直後と隔離直後の中断は、同じcleanupの再試行で残存なしへ収束する。"""
     with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
-        root = pathlib.Path(directory)
-        root.chmod(0o700)
+        root = _prepare_explicit_root(pathlib.Path(directory))
         target = managed_temp.create_managed_temp("interrupted", root=root)
         (target / "payload").write_bytes(b"x" * payload_size)
         registry = managed_temp._registry_path(target)

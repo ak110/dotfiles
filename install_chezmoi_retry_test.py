@@ -24,7 +24,7 @@ def test_all_chezmoi_install_paths_share_bounded_retry_contract() -> None:
     workflow_functions = _extract_install_functions(workflow)
     install_functions = _extract_install_functions(install_script)
 
-    assert len(workflow_functions) == 3
+    assert len(workflow_functions) == 4
     assert len(install_functions) == 1
     functions = [*workflow_functions, *install_functions]
     for function in functions:
@@ -32,7 +32,7 @@ def test_all_chezmoi_install_paths_share_bounded_retry_contract() -> None:
         assert function.count(INSTALL_COMMAND) == 1
         assert function.count(ATTEMPT_LIMIT) == 1
         assert function.count(RETRY_DELAY) == 1
-    assert sum(function.count(WINDOWS_DOWNLOAD_COMMAND) for function in workflow_functions) == 1
+    assert sum(function.count(WINDOWS_DOWNLOAD_COMMAND) for function in workflow_functions) == 2
     assert sum(function.count(DOWNLOAD_COMMAND) for function in functions) == 3
 
 
