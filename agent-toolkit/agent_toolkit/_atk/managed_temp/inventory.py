@@ -28,6 +28,7 @@ import unicodedata
 from ctypes import wintypes
 from typing import TYPE_CHECKING
 
+from agent_toolkit._common import file_lock
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 
@@ -821,7 +822,8 @@ def sweep_managed_temp(
                 basis = _exclusion_basis(path, git_paths)
                 next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, latest_mtime_ns, basis)
                 continue
-            cleanup_managed_temp(path)
+            if not _cleanup_managed_temp(path, blocking=False):
+                continue
         except (ManagedTempError, OSError) as error:
             if _sweep_cleanup_completed_elsewhere(path, registry_path, nonce):
                 continue
@@ -883,7 +885,11 @@ def sweep_managed_temp(
                 next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, basis)
                 stale.append(path)
                 continue
-            cleanup_managed_temp(path, recover_registry=True, force_remove=True, force_reason="自動削除")
+            try:
+                if not _cleanup_managed_temp(path, recover_registry=True, blocking=False):
+                    continue
+            except ManagedTempError as error:
+                _force_remove_managed_temp(path, error, reason="自動削除")
         except (ManagedTempError, OSError) as error:
             if name.startswith(_CLEANUP_QUARANTINE_PREFIX):
                 continue
@@ -1247,7 +1253,12 @@ def _cleanup_windows(
         raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
 
 
-def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: bool = False) -> None:
+def _cleanup_managed_temp(
+    path_arg: pathlib.Path | str,
+    *,
+    recover_registry: bool = False,
+    blocking: bool = True,
+) -> bool:
     """検証済みの管理対象一時ディレクトリだけを後始末する。
 
     実体を失った管理対象は、登録ファイルの削除だけで整合させる。ただし元pathの不在が
@@ -1264,6 +1275,38 @@ def _cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: boo
     """
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     registry_path = _registry_path(path)
+    consuming_before_lock = _consuming_registry_path(registry_path)
+    existed_before_lock = os.path.lexists(path) or os.path.lexists(registry_path) or consuming_before_lock is not None
+    lock_path = registry_path.with_name(f"{registry_path.name}.cleanup.lock")
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        try:
+            file_lock.acquire_lock(lock_file, blocking=blocking)
+        except OSError:
+            if not blocking:
+                return False
+            raise
+        try:
+            if (
+                existed_before_lock
+                and not os.path.lexists(path)
+                and not os.path.lexists(registry_path)
+                and _consuming_registry_path(registry_path) is None
+            ):
+                return True
+            _cleanup_managed_temp_locked(root, path, registry_path, recover_registry=recover_registry)
+        finally:
+            file_lock.release_lock(lock_file)
+    return True
+
+
+def _cleanup_managed_temp_locked(
+    root: pathlib.Path,
+    path: pathlib.Path,
+    registry_path: pathlib.Path,
+    *,
+    recover_registry: bool,
+) -> None:
+    """対象別ロックを所有する呼び出し元のために後始末の状態遷移を実行する。"""
     if _restore_interrupted_consume(registry_path):
         _outcome.report_warning(f"中断した後始末の登録を復元した: {registry_path}", next_action="対応不要（処理は継続した）")
     judgement = _classify_quarantine(root, path)

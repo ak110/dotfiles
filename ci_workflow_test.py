@@ -165,7 +165,7 @@ _MOZILLA_STEP = "Mozilla予約タスクの停止"
 
 def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: dict[str, object]) -> None:
     """更新検証の通常profile監視より前に、同じ実行条件でMozilla予約タスクを止める。"""
-    steps = _steps(_mapping(_jobs(workflow_data)["test-windows"]))
+    steps = _steps(_mapping(_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
     stop_index, stop_step = _windows_step(steps, _MOZILLA_STEP)
     check_index, check_step = _windows_step(steps, "約3日前からの update-dotfiles 更新検証")
     assert stop_index < check_index
@@ -179,6 +179,51 @@ def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]
     targets = _direct_pytest_targets({"jobs": {"test-windows": {"steps": [step]}}})
     assert "bin/atk_launcher_test.py" in targets
     assert "bin/update_dotfiles_launcher_test.py" in targets
+
+
+def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[str, object]) -> None:
+    """更新検証とWindows固有検査は依存関係のない別jobが所有する。"""
+    jobs = _jobs(workflow_data)
+    upgrade = _mapping(jobs["update-dotfiles-upgrade-windows"])
+    windows = _mapping(jobs["test-windows"])
+    assert "needs" not in upgrade
+    assert "needs" not in windows
+    assert all(step.get("name") != "約3日前からの update-dotfiles 更新検証" for step in _steps(windows))
+    assert any(step.get("name") == "公開入口ランチャーの動作確認" for step in _steps(windows))
+
+
+def test_python_314_pytest_is_an_independent_matrix_job(workflow_data: dict[str, object]) -> None:
+    """Python 3.14のpytestとそれ以外の検査は、表示名とcache keyの異なるmatrix要素で実行する。"""
+    job = _mapping(_jobs(workflow_data)["python-lint"])
+    strategy = _mapping(job["strategy"])
+    matrix = _mapping(strategy["matrix"])
+    include = [_mapping(value) for value in typing.cast(list[object], matrix["include"])]
+    assert include == [
+        {"python-version": "3.13", "check": "pytest", "check-name": "python-lint (3.13)"},
+        {"python-version": "3.14", "check": "lint", "check-name": "python-lint (3.14)"},
+        {"python-version": "3.14", "check": "pytest", "check-name": "pytest (3.14)"},
+    ]
+    steps = _steps(job)
+    lint = next(step for step in steps if step.get("name") == "Python 3.14 pytest以外の検査")
+    pytest_step = next(step for step in steps if step.get("name") == "Python 3.14 pytest")
+    assert lint["run"] == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version"
+    assert pytest_step["run"] == "pyfltr ci --commands=pytest"
+    cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))
+    cache_with = _mapping(cache["with"])
+    assert "${{ matrix.python-version }}" in str(cache_with["key"])
+    assert "${{ matrix.check }}" in str(cache_with["key"])
+
+
+@pytest.mark.parametrize("job_name", ["update-dotfiles-upgrade-windows", "python-lint"])
+def test_new_parallel_jobs_keep_release_pr_non_owner_path(workflow_data: dict[str, object], job_name: str) -> None:
+    """新しい実行単位はrelease PRで非所有markerだけを成功させる。"""
+    job = _mapping(_jobs(workflow_data)[job_name])
+    marker = next(step for step in _steps(job) if step.get("name") == "共通CI非所有経路")
+    marker_if = str(marker["if"])
+    assert "github.head_ref == 'develop'" in marker_if
+    assert "github.base_ref == 'master'" in marker_if
+    real_steps = [step for step in _steps(job) if step is not marker]
+    assert all(step.get("if") != marker_if for step in real_steps)
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
@@ -204,7 +249,7 @@ def test_windows_mozilla_step_disables_only_mozilla_tasks(
     unexpected: str,
 ) -> None:
     """ステップ本体は`\\Mozilla\\`配下だけを停止・無効化して結果を出力し、0件でも成功する。"""
-    steps = _steps(_mapping(_jobs(workflow_data)["test-windows"]))
+    steps = _steps(_mapping(_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
     script = _windows_step(steps, _MOZILLA_STEP)[1]["run"]
     assert isinstance(script, str)
     # Windowsの予約タスクcmdletは他のOSに無いため、同名の関数で置き換えて分岐と出力を確かめる。

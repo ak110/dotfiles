@@ -109,7 +109,13 @@ def _prompt(
                 "ステージングの組み替えには `git add` / `git restore --staged` を使ってください。",
             ]
         )
-    lines.extend(["", f"# フォーマット\n{format_instructions}"])
+    lines.extend(
+        [
+            "",
+            "commitを実行するturnでホストが観測したmodelとeffortから帰属trailerを1回だけ生成してください。起動候補、alias、設定値または自己申告を観測値として使わないでください。",
+            f"# フォーマット\n{format_instructions}",
+        ]
+    )
     if amend:
         lines.append(f"# 既存のコミットメッセージ\n{head_message}")
     if staged_stat:

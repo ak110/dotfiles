@@ -136,7 +136,7 @@ def test_response_language_notices_are_excluded_from_candidates(
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     assert "response-language-notice 2件" in candidates
     assert "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取った" in candidates
-    assert "  - 記録位置: main:6" in candidates
+    assert "  - 記録位置: claude:22222222-3333-4444-5555-666666666666:6" in candidates
     assert "累計2回以上" not in candidates
 
 
@@ -200,7 +200,7 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
 
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     assert "- 候補: 2件（hook-notice 1件、user-intervention 1件）" in candidates
-    assert "  - 記録位置: main:3" in candidates
+    assert "  - 記録位置: claude:11111111-2222-3333-4444-555555555555:3" in candidates
     assert "## 単発の失敗（件数のみ）" in candidates
     assert "make lint" in candidates
     # hook通知の是非は通知が判定した応答を読まないと判断できないため、直前のアシスタント発話を添える。
@@ -469,7 +469,9 @@ def test_prepare_counts_wait_continuations_without_repeated_failure_signature(
         assert "normal-nonterminal-result 2件" in document
         bundle = [json.loads(line) for line in (work / "bundle" / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
         assert bundle[-1]["excluded"]["normal-nonterminal-result"] == 2
-        assert [item["locators"] for item in bundle if item["kind"] == "candidate"] == [[{"record": "main", "line": 4}]]
+        assert [item["locators"] for item in bundle if item["kind"] == "candidate"] == [
+            [{"record": f"codex:{session}", "line": 4}]
+        ]
     assert result["candidate_counts"] == {"command-failure": 1}
     ledger = (tmp_path / "state" / "session-review" / "failure-signatures.jsonl").read_text(encoding="utf-8")
     assert len(ledger.splitlines()) == 2

@@ -18,10 +18,12 @@ import pathlib
 import stat
 import subprocess
 import sys
+import threading
 import typing
 
 import pytest
 
+from agent_toolkit._common import file_lock
 from agent_toolkit._atk import managed_temp as subject
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
@@ -169,6 +171,264 @@ def test_force_remove_preserves_non_directory_replacement_and_registry(
         assert target.read_text(encoding="utf-8") == "keep"
     assert sentinel.read_text(encoding="utf-8") == "keep"
     assert registry.read_text(encoding="utf-8") == registry_body
+
+
+@pytest.mark.parametrize(
+    "stage",
+    ("before-consume", "after-consume") + (("after-quarantine",) if os.name == "posix" else ()),
+)
+def test_sweep_skips_a_target_owned_by_explicit_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    stage: str,
+) -> None:
+    """自動掃引は明示cleanupが所有中の各状態へ介入せず警告しない。"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    (tmp_path / "temp").mkdir()
+    target = subject.create_managed_temp(f"parallel-{stage}")
+    now = datetime.datetime(2026, 10, 6, tzinfo=datetime.UTC)
+    _set_tree_mtime(target, _ns(now - datetime.timedelta(days=8)))
+    paused = threading.Event()
+    resume = threading.Event()
+    sweep_finished = threading.Event()
+    failures: list[BaseException] = []
+    results: list[subject.SweepResult] = []
+
+    if stage in {"before-consume", "after-consume"}:
+        original_consume = subject._consume_registry
+
+        def pause_consume(validated: subject._ValidatedTemp) -> pathlib.Path:
+            if stage == "before-consume":
+                paused.set()
+                assert resume.wait(timeout=10)
+            consuming = original_consume(validated)
+            if stage == "after-consume":
+                paused.set()
+                assert resume.wait(timeout=10)
+            return consuming
+
+        monkeypatch.setattr(subject, "_consume_registry", pause_consume)
+    else:
+        original_clear = subject._clear_directory
+
+        def pause_clear(descriptor: int) -> None:
+            paused.set()
+            assert resume.wait(timeout=10)
+            original_clear(descriptor)
+
+        monkeypatch.setattr(subject, "_clear_directory", pause_clear)
+
+    def owner() -> None:
+        try:
+            subject.cleanup_managed_temp(target)
+        except BaseException as error:  # noqa: BLE001
+            failures.append(error)
+
+    thread = threading.Thread(target=owner)
+    thread.start()
+    assert paused.wait(timeout=10)
+
+    def sweep() -> None:
+        try:
+            results.append(subject.sweep_managed_temp(now=now))
+        except BaseException as error:  # noqa: BLE001
+            failures.append(error)
+        finally:
+            sweep_finished.set()
+
+    competitor = threading.Thread(target=sweep)
+    competitor.start()
+    completed_without_wait = sweep_finished.wait(timeout=2)
+
+    resume.set()
+    thread.join(timeout=10)
+    competitor.join(timeout=10)
+    assert completed_without_wait
+    assert not thread.is_alive()
+    assert not competitor.is_alive()
+    assert not failures
+    assert results and not results[0].deleted
+    assert not target.exists()
+    assert not subject._registry_path(target).exists()
+    assert capsys.readouterr().err == ""
+
+
+def test_explicit_cleanup_waits_for_the_current_owner_and_accepts_its_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """同じ対象への明示cleanupは所有者の完了後に状態を読み直して正常終了する。"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    (tmp_path / "temp").mkdir()
+    target = subject.create_managed_temp("parallel-explicit")
+    paused = threading.Event()
+    resume = threading.Event()
+    second_waiting = threading.Event()
+    failures: list[BaseException] = []
+    original_consume = subject._consume_registry
+    original_acquire = file_lock.acquire_lock
+
+    def pause_after_consume(validated: subject._ValidatedTemp) -> pathlib.Path:
+        consuming = original_consume(validated)
+        paused.set()
+        assert resume.wait(timeout=10)
+        return consuming
+
+    monkeypatch.setattr(subject, "_consume_registry", pause_after_consume)
+
+    def record_acquire(lock_file: typing.TextIO, *, blocking: bool = True) -> None:
+        if threading.current_thread().name == "cleanup-competitor":
+            second_waiting.set()
+        original_acquire(lock_file, blocking=blocking)
+
+    monkeypatch.setattr(file_lock, "acquire_lock", record_acquire)
+
+    def run_cleanup() -> None:
+        try:
+            subject.cleanup_managed_temp(target)
+        except BaseException as error:  # noqa: BLE001
+            failures.append(error)
+
+    owner = threading.Thread(target=run_cleanup)
+    owner.start()
+    assert paused.wait(timeout=10)
+    competitor = threading.Thread(target=run_cleanup, name="cleanup-competitor")
+    competitor.start()
+    assert second_waiting.wait(timeout=10)
+    resume.set()
+    owner.join(timeout=10)
+    competitor.join(timeout=10)
+
+    assert not owner.is_alive()
+    assert not competitor.is_alive()
+    assert not failures
+    assert not target.exists()
+    assert capsys.readouterr().err == ""
+
+
+def test_explicit_cleanup_waits_for_sweep_owner_and_accepts_its_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """明示cleanupは自動掃引の完了後に状態を読み直して正常終了する。"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    (tmp_path / "temp").mkdir()
+    target = subject.create_managed_temp("parallel-sweep-owner")
+    now = datetime.datetime(2026, 10, 6, tzinfo=datetime.UTC)
+    _set_tree_mtime(target, _ns(now - datetime.timedelta(days=8)))
+    paused = threading.Event()
+    resume = threading.Event()
+    explicit_waiting = threading.Event()
+    failures: list[BaseException] = []
+    results: list[subject.SweepResult] = []
+    original_consume = subject._consume_registry
+    original_acquire = file_lock.acquire_lock
+
+    def pause_sweep_after_consume(validated: subject._ValidatedTemp) -> pathlib.Path:
+        consuming = original_consume(validated)
+        paused.set()
+        assert resume.wait(timeout=10)
+        return consuming
+
+    monkeypatch.setattr(subject, "_consume_registry", pause_sweep_after_consume)
+
+    def record_acquire(lock_file: typing.TextIO, *, blocking: bool = True) -> None:
+        if threading.current_thread().name == "explicit-cleanup":
+            explicit_waiting.set()
+        original_acquire(lock_file, blocking=blocking)
+
+    monkeypatch.setattr(file_lock, "acquire_lock", record_acquire)
+
+    def sweep() -> None:
+        try:
+            results.append(subject.sweep_managed_temp(now=now))
+        except BaseException as error:  # noqa: BLE001
+            failures.append(error)
+
+    def explicit_cleanup() -> None:
+        try:
+            subject.cleanup_managed_temp(target)
+        except BaseException as error:  # noqa: BLE001
+            failures.append(error)
+
+    owner = threading.Thread(target=sweep)
+    owner.start()
+    assert paused.wait(timeout=10)
+    competitor = threading.Thread(target=explicit_cleanup, name="explicit-cleanup")
+    competitor.start()
+    assert explicit_waiting.wait(timeout=10)
+
+    resume.set()
+    owner.join(timeout=10)
+    competitor.join(timeout=10)
+
+    assert not owner.is_alive()
+    assert not competitor.is_alive()
+    assert not failures
+    assert results and results[0].deleted == [target]
+    assert not target.exists()
+    assert not subject._registry_path(target).exists()
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIXの後始末状態を決定的に停止する検証")
+def test_cleanup_of_another_target_proceeds_while_one_target_is_owned(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """一つの対象が所有中でも別対象のcleanupは待たずに完了する。"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    (tmp_path / "temp").mkdir()
+    owned = subject.create_managed_temp("parallel-owned")
+    independent = subject.create_managed_temp("parallel-independent")
+    paused = threading.Event()
+    resume = threading.Event()
+    independent_finished = threading.Event()
+    failures: list[BaseException] = []
+    original_consume = subject._consume_registry
+
+    def pause_owned(validated: subject._ValidatedTemp) -> pathlib.Path:
+        consuming = original_consume(validated)
+        if validated.path == owned:
+            paused.set()
+            assert resume.wait(timeout=10)
+        return consuming
+
+    monkeypatch.setattr(subject, "_consume_registry", pause_owned)
+
+    def cleanup(path: pathlib.Path, finished: threading.Event | None = None) -> None:
+        try:
+            subject.cleanup_managed_temp(path)
+            if finished is not None:
+                finished.set()
+        except BaseException as error:  # noqa: BLE001
+            failures.append(error)
+
+    owner = threading.Thread(target=cleanup, args=(owned,))
+    owner.start()
+    assert paused.wait(timeout=10)
+    competitor = threading.Thread(target=cleanup, args=(independent, independent_finished))
+    competitor.start()
+    completed_in_parallel = independent_finished.wait(timeout=2)
+    resume.set()
+    owner.join(timeout=10)
+    competitor.join(timeout=10)
+
+    assert completed_in_parallel
+    assert not owner.is_alive()
+    assert not competitor.is_alive()
+    assert not failures
+    for target in (owned, independent):
+        assert not target.exists()
+        assert not subject._registry_path(target).exists()
 
 
 @pytest.mark.parametrize("directory", [False, True])

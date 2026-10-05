@@ -40,9 +40,13 @@ UWIを起草する場合は[references/uwi-format.md](references/uwi-format.md)�
 
 ### 起草完了の条件
 
+投入前の読み直しでは、一度だけ現れる文も含めて本文の全節を`references/awi-body.md`の要求固有性の基準で点検する。要求固有でない原稿は固定語で拒否せず、同じWI投入担当へ戻して除去または要求との関係を明確にする。
+
 通常AWIを起草する場合は[references/drafting-completion.md](references/drafting-completion.md)を全文読み、投入前に採否と実現方式を同書の条件で確定する。同書は対象集合の仕分け、原因と実現方式の確定、確定の判定および受領時の宣言を定める。
 
 ## 由来と承認
+
+構造化確認を由来に使う場合、逐語一致の対象は`session-review-evidence --user-events`が出力する`text`と`user_response`の回答・自由記述だけとする。質問と選択肢を持つ`assistant_context`は意味、対象、除外および認可の解釈にだけ使い、JSONL一行全体の部分一致は証拠から除外する。
 
 `source`は本文全体の初期値としての由来を示す。`source`の欠落だけを初期値で人間由来とし、値を持つ項目は全て明示由来が無い限りエージェント由来とする。保存済みの値をそのまま保持し、過去の項目は保存時の形式で扱う。
 

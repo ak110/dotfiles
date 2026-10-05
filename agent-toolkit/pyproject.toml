@@ -42,6 +42,7 @@ exclude = ["agent_toolkit/**/*_test.py"]
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.168.3",
     "jsonschema>=4.26",
     "playwright>=1.61.0",
     "pyfltr[python]>=3.20.0",

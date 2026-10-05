@@ -796,7 +796,7 @@ def _user_event_reasons(source: str) -> list[str] | None:
         if not quotes:
             reasons.append(f"{location}: 否定した要求単位の「」による逐語がsourceにありません")
             continue
-        utterance = _compact(_user_utterance_text(text))
+        utterance = _compact(_user_event_utterance(event, text))
         missing = [quote for quote in quotes if _compact(quote) not in utterance]
         if missing:
             reasons.append(
@@ -826,6 +826,24 @@ def _user_utterance_text(text: str) -> str:
     if parsed is None:
         return text
     return "\n".join("\n".join(value) for value in parsed[1])
+
+
+def _user_event_utterance(event: dict[str, typing.Any], text: str) -> str:
+    """新形式ではユーザー値だけを、旧形式では行頭ラベルからユーザー値だけを返す。"""
+    responses = event.get("user_response")
+    if not isinstance(responses, list):
+        return _user_utterance_text(text)
+    values: list[str] = []
+    for response in responses:
+        if not isinstance(response, dict):
+            continue
+        answers = response.get("answers")
+        if isinstance(answers, list):
+            values.extend(answer for answer in answers if isinstance(answer, str))
+        notes = response.get("notes")
+        if isinstance(notes, str):
+            values.append(notes)
+    return "\n".join(values)
 
 
 def _is_file(path: pathlib.Path) -> bool:

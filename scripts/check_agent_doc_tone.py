@@ -70,30 +70,43 @@ _DENIED_PATTERNS = {
     "照合": r"照合",
 }
 # 文脈によって対象と動作が伝わりにくい語。正確な専門語や承認済みの呼称として使う場合もあるため警告に留める。
+_METAPHORICAL = "metaphorical"
+_ABSTRACT = "abstract"
 _CAUTION_PATTERNS = {
-    "経路": r"経路",
-    "入口": r"入口",
-    "検査": r"検査",
-    "実測": r"実測",
-    "黙って": r"黙って",
-    "漏れ": r"漏[れら]",
-    "帰結": r"帰結",
-    "部品": r"部品",
-    "見落とす": r"見落と",
-    "断定": r"断定",
-    "事故": r"事故",
-    "混ざる": r"混ざ",
-    "素通り": r"素通り",
-    "切り分ける": r"切[り]分",
-    "焼く": r"焼(?:く|か|き|け|い)",
-    "崩す": r"崩(?:す|さ|し|せ|そ)",
-    "疑う": r"疑(?:う|わ|い|え|っ)",
-    "線引き": r"線引き",
-    "破綻": r"破綻",
-    "ゲート": r"ゲート",
+    "経路": (r"経路", _ABSTRACT),
+    "入口": (r"入口", _METAPHORICAL),
+    "検査": (r"検査", _ABSTRACT),
+    "実測": (r"実測", _ABSTRACT),
+    "黙って": (r"黙って", _METAPHORICAL),
+    "漏れ": (r"漏[れら]", _ABSTRACT),
+    "帰結": (r"帰結", _ABSTRACT),
+    "部品": (r"部品", _METAPHORICAL),
+    "見落とす": (r"見落と", _METAPHORICAL),
+    "断定": (r"断定", _ABSTRACT),
+    "事故": (r"事故", _ABSTRACT),
+    "混ざる": (r"混ざ", _METAPHORICAL),
+    "素通り": (r"素通り", _METAPHORICAL),
+    "切り分ける": (r"切[り]分", _ABSTRACT),
+    "焼く": (r"焼(?:く|か|き|け|い)", _METAPHORICAL),
+    "崩す": (r"崩(?:す|さ|し|せ|そ)", _METAPHORICAL),
+    "疑う": (r"疑(?:う|わ|い|え|っ)", _ABSTRACT),
+    "線引き": (r"線引き", _METAPHORICAL),
+    "破綻": (r"破綻", _ABSTRACT),
+    "ゲート": (r"ゲート", _METAPHORICAL),
+}
+_CAUTION_MESSAGES = {
+    _METAPHORICAL: (
+        "比喩や擬人化として使うと、実際の対象、状態または動作が曖昧になる。"
+        "字義どおりの用法または定義済みの名称でなければ、別の比喩へ置き換えず、"
+        "指している実体、状態または動作を直接書く"
+    ),
+    _ABSTRACT: (
+        "文脈によって、実際の操作、判定対象、条件または結果が変わり得る。"
+        "正確な専門語または定義済みの名称でなければ、実際の操作、判定対象、条件または結果を書き分ける"
+    ),
 }
 _TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, pattern in _DENIED_PATTERNS.items())
-_CAUTION_TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, pattern in _CAUTION_PATTERNS.items())
+_CAUTION_TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, (pattern, _category) in _CAUTION_PATTERNS.items())
 
 # 計画の列・メタ情報と担当の返却値として保存する名称。周辺の説明も判定する。
 # 「前提を疑う観点」はユーザーが確認で選んだ定義済みの名前（`reviewer.md`のレビュー観点）であるため、この完全一致だけを除く。
@@ -504,6 +517,11 @@ def _print_report(metrics: list[Metrics]) -> None:
         )
 
 
+def _emit_diagnostic(path: pathlib.Path, line: int, message: str) -> None:
+    """pyfltrが解析する位置付き診断を標準エラーへ書く。"""
+    print(f"{path}:{max(1, line)}: {message}", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     """説明文の語と文体指標を確認し、失敗対象の語か閾値超過があれば1を返す。"""
     parser = argparse.ArgumentParser(description="説明文の語と文体の密度を確認する。")
@@ -518,37 +536,44 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    try:
-        contents = [(path, path.read_text(encoding="utf-8")) for path in args.paths]
-        metrics = [Metrics(path, text) for path, text in contents if path.suffix == ".md" and not _is_excluded(path)]
-    except (OSError, UnicodeError) as error:
-        print(f"入力を読み取れない: {error}。指定したファイルと文字コードを確認する。", file=sys.stderr)
-        return 2
+    contents: list[tuple[pathlib.Path, str]] = []
+    for path in args.paths:
+        try:
+            contents.append((path, path.read_text(encoding="utf-8")))
+        except (OSError, UnicodeError) as error:
+            _emit_diagnostic(path, 1, f"入力を読み取れない: {error}。指定したファイルと文字コードを確認する。")
+            return 2
+    metrics = [Metrics(path, text) for path, text in contents if path.suffix == ".md" and not _is_excluded(path)]
     if args.report:
         _print_report(metrics)
         return 0
 
     failed = False
-    try:
-        for path, text in contents:
+    for path, text in contents:
+        try:
             if _term_target(path, args.term_root or []):
                 for line, term in term_violations(path, text):
                     failed = True
-                    print(f"{path}:{line}: 「{term}」を説明に使用している。対象と動作が分かる文へ書き直す。", file=sys.stderr)
+                    _emit_diagnostic(path, line, f"「{term}」を説明に使用している。対象と動作が分かる文へ書き直す。")
                 for line, term in term_cautions(path, text):
-                    print(
-                        f"{path}:{line}: 警告: 「{term}」を説明に使用している。"
-                        "文脈から対象と動作が伝わるか確かめ、伝わらない場合だけ書き直す（終了コードには影響しない）。",
-                        file=sys.stderr,
+                    _emit_diagnostic(
+                        path,
+                        line,
+                        f"警告: 「{term}」を説明に使用している。{_CAUTION_MESSAGES[_CAUTION_PATTERNS[term][1]]}"
+                        "（終了コードには影響しない）。",
                     )
-    except (SyntaxError, tokenize.TokenError, json.JSONDecodeError, tomllib.TOMLDecodeError) as error:
-        print(f"入力の構文を読み取れない: {error}。入力の構文を修正して再実行する。", file=sys.stderr)
-        return 2
+        except (SyntaxError, tokenize.TokenError, json.JSONDecodeError, tomllib.TOMLDecodeError) as error:
+            _emit_diagnostic(
+                path,
+                getattr(error, "lineno", 1) or 1,
+                f"入力の構文を読み取れない: {error}。入力の構文を修正して再実行する。",
+            )
+            return 2
     for metric in metrics:
         problems = metric.violations()
         if problems:
             failed = True
-            print(f"{metric.path}: {'、'.join(problems)}")
+            _emit_diagnostic(metric.path, 1, "、".join(problems))
     return 1 if failed else 0
 
 

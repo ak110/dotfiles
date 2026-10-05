@@ -24,6 +24,8 @@
 
 ## 検証またはCIの失敗
 
+この節から実行レビューを起動する場合、計画ありでは対応する未判定検証記録の絶対パス、計画なしのCIレビューでは`なし`を名前付き入力`未判定検証記録`として渡す。
+
 最初の失敗からCI成功または本タスクの終端までを1つの修正系列（`agent-toolkit:bugfix`の`references/ci-failure-handling.md`）として扱う。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装および期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
 
 修正が必要な場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。原因commitに対応する計画が保存済みの場合は、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める`入力計画`の取得と修正系列の終端での再保存は終端担当が行う。取得した計画の`private-notes/plans/`からの相対パスと再保存の結果は引き継ぎ記録へ残す。同じworktreeへ別の書込主体を並存させず、書込主体はこの修正担当1つとする。CI修正担当から修正commitと検証結果を受領し、版数、manifest、生成同期、pushおよびCI確認を再判定する。

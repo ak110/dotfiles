@@ -118,6 +118,23 @@ def _complete(session: subject.SessionState, *, message: str = "完了", error: 
     session.touch()
 
 
+def _default_identity_fields(engine: str = "codex") -> dict[str, object]:
+    """起動候補だけが確定したsessionの公開identity項目を返す。"""
+    return {
+        "engine": engine,
+        "model": None,
+        "effort": None,
+        "model_type": None,
+        "launch_identity": {
+            "engine": engine,
+            "model": None,
+            "effort": None,
+            "source": "launch_candidate",
+        },
+        "observed_identity": None,
+    }
+
+
 def _write_notice(directory: pathlib.Path, session_id: str, sequence: int, sent_at: str, body: str) -> None:
     """待機テスト用の未回収通知を保存する。"""
     directory.mkdir(parents=True, exist_ok=True)
@@ -1234,29 +1251,71 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
     )
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
+    identity_fields = {
+        "launch_identity": {
+            "engine": "codex",
+            "model": "model",
+            "effort": "medium",
+            "source": "launch_candidate",
+        },
+        "observed_identity": None,
+    }
+
     assert await subject.start(str(tmp_path), mode="delegate", prompt="本文", model_type="high_tier") == {
         "session_id": "session",
         "status": "running",
         "root_session_id": "root",
+        **identity_fields,
     }
     assert await subject.start(str(tmp_path), mode="explore", prompt="探索") == {
         "session_id": "session",
         "status": "running",
         "root_session_id": "root",
+        **identity_fields,
     }
     assert await subject.start(str(tmp_path), mode="write", prompt="定型変更") == {
         "session_id": "session",
         "status": "running",
         "root_session_id": "root",
+        **identity_fields,
     }
     assert await subject.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態") == {
         "session_id": "session",
         "status": "running",
         "root_session_id": "root",
+        **identity_fields,
     }
     assert await subject.send_message("session", "続行") == {
         "delivery": "replied",
         "previous_result": {"status": "completed"},
+    }
+
+
+def test_observed_session_identity_uses_last_identity_from_unique_physical_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """終端応答の観測identityは一意な物理記録の最後の観測値を使う。"""
+    record = tmp_path / "session.jsonl"
+    entries = [
+        {"type": "event_msg", "payload": {"type": "turn_context", "model": "gpt-6-sol", "effort": "high"}},
+        {
+            "type": "event_msg",
+            "payload": {"type": "turn_context", "model": "gpt-6.1-sol", "effort": "medium"},
+        },
+    ]
+    record.write_text("".join(f"{json.dumps(entry)}\n" for entry in entries), encoding="utf-8")
+    monkeypatch.setattr(
+        subject.record_paths,
+        "find_session_record",
+        lambda _session_id: subject.record_paths.SessionRecord("codex", (record,)),
+    )
+
+    assert subject._observed_session_identity("session") == {
+        "engine": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "source": "observed",
     }
 
 
@@ -1267,6 +1326,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
         return [
             "レビュー基準: 計画",
             f"計画: {root / 'plan.md'}",
+            "未判定検証記録: なし",
             f"完成条件証拠: {root / 'completion-evidence.json'}",
             handoff,
         ]
@@ -1603,7 +1663,17 @@ async def test_success_response_key_sets_for_all_tools(
     terminal_id = str(explored["session_id"])
     terminal = manager.sessions[terminal_id]
     _complete(terminal, message="完了")
-    assert (await manager.wait()).keys() == {"session_id", "status", "agent_message", "engine", "model", "effort", "model_type"}
+    assert (await manager.wait()).keys() == {
+        "session_id",
+        "status",
+        "agent_message",
+        "engine",
+        "model",
+        "effort",
+        "model_type",
+        "launch_identity",
+        "observed_identity",
+    }
     assert await manager.stop(terminal_id) == {}
 
     listed = manager.list_sessions(include_terminated=True)
@@ -2955,10 +3025,7 @@ async def test_wait_does_not_redeliver_only_terminal_result_at_timeout(tmp_path:
         "status": "failed",
         "agent_message": "最終結果",
         "error": {"message": "補足"},
-        "engine": "codex",
-        "model": None,
-        "effort": None,
-        "model_type": None,
+        **_default_identity_fields(),
     }
     assert second["session_id"] == session.session_id
     assert second["status"] == "running"
@@ -3376,10 +3443,7 @@ async def test_kill_waits_for_terminal_result_and_preserves_request_marker(tmp_p
         "status": "completed",
         "agent_message": "中断結果",
         "kill_requested": True,
-        "engine": "codex",
-        "model": None,
-        "effort": None,
-        "model_type": None,
+        **_default_identity_fields(),
     }
 
 
@@ -3397,10 +3461,7 @@ async def test_kill_terminal_session_is_idempotent_without_backend_request(tmp_p
         "status": "completed",
         "agent_message": "既存結果",
         "kill_requested": False,
-        "engine": "codex",
-        "model": None,
-        "effort": None,
-        "model_type": None,
+        **_default_identity_fields(),
     }
     assert backend.interrupt_calls == 0
 

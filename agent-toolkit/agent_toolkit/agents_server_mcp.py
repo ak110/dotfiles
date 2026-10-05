@@ -33,7 +33,15 @@ from pydantic import Field
 from agent_toolkit._agents_server import antigravity as antigravity_backend
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
-from agent_toolkit._agents_server import logging_config, session_registry, state, status_file, task_documents, tool_names
+from agent_toolkit._agents_server import (
+    logging_config,
+    record_paths,
+    session_registry,
+    state,
+    status_file,
+    task_documents,
+    tool_names,
+)
 from agent_toolkit._agents_server.state import (
     TERMINAL_STATUSES,
     ActionableRuntimeError,
@@ -70,6 +78,7 @@ from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 from agent_toolkit._common.next_action import ActionableError, with_next_action
+from agent_toolkit._common.runtime_identity import distinct_identities
 
 try:
     from pydantic_settings.exceptions import IncompleteFieldDefinitionWarning
@@ -81,6 +90,27 @@ DEFAULT_KILL_TIMEOUT = 270.0
 DEFAULT_SEND_MESSAGE_TIMEOUT = 270.0
 SUPPORTED_ENGINES = frozenset({"claude", "codex", "agy"})
 REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"})
+
+
+def _observed_session_identity(session_id: str) -> dict[str, str] | None:
+    """一意に解決した物理記録の最後の観測identityを返す。"""
+    found = record_paths.find_session_record(session_id)
+    if found is None or len(found.paths) != 1:
+        return None
+    entries: list[dict[str, Any]] = []
+    try:
+        with found.paths[0].open(encoding="utf-8") as stream:
+            for raw in stream:
+                if raw.strip():
+                    value = json.loads(raw)
+                    if isinstance(value, dict):
+                        entries.append(value)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    identities = distinct_identities(entries, found.engine)
+    return identities[-1].public() if identities else None
+
+
 # 起動直後の可用性失敗を確定するために`start`が終端を待つ上限秒数。
 # Codex CLI 0.152.0で利用上限に達した状態のturnは、backendの起動応答から3.84〜4.27秒後に
 # `turn/completed`で失敗した（2026-09-02、`explore_fast`候補`gpt-5.6-terra/medium`で3回測定）。
@@ -222,6 +252,14 @@ def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
     起動直後に失敗で終端した応答は、委譲元が状態値だけで次の行動を決められるよう`next_action`を加える。
     """
     public: dict[str, Any] = {key: response[key] for key in ("session_id", "status")}
+    if all(key in response for key in ("engine", "model", "effort")):
+        public["launch_identity"] = {
+            "engine": response["engine"],
+            "model": response["model"],
+            "effort": response["effort"],
+            "source": "launch_candidate",
+        }
+        public["observed_identity"] = None
     if "root_session_id" in response:
         public["root_session_id"] = response["root_session_id"]
     if response.get("excluded_candidates"):
@@ -2053,6 +2091,14 @@ class AgentsServerManager:
         最終活動時刻と停滞の印は`list`が返すため、本応答へは載せない。
         """
         response = session.public_status(include_result=session.result_available)
+        if response.get("status") in TERMINAL_STATUSES:
+            response["launch_identity"] = {
+                "engine": session.engine,
+                "model": session.model,
+                "effort": session.effort,
+                "source": "launch_candidate",
+            }
+            response["observed_identity"] = _observed_session_identity(session.session_id)
         if response.get("status") == "running":
             elapsed_seconds = _elapsed_seconds(session.started_at)
             if elapsed_seconds is not None:

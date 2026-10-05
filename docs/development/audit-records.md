@@ -330,7 +330,7 @@ Agentツールで前景起動した実際のサブエージェントでも、cat
 主セッションとサブエージェントは別に観測し、いずれもCLIが終了コード0、標準エラー空で完了した。
 成功した初回Editを、Read不足とRead後の回復の対照としては扱わない。
 
-再検証には、管理対象一時領域の通知された絶対パスに内容alphaの1行のファイルを準備する。
+管理対象一時領域の通知された絶対パスに内容alphaの1行のファイルを準備して再検証する。
 新しいClaude Code主セッションと、Agentツールで前景起動するサブエージェントで、同じ手順を別のファイルへ実施する。
 Bashで対象をcat取得し、Readをまだ呼ばず、Editでalphaからbetaへの置換を指定する。
 Read不足で拒否された場合だけ、その担当がReadで現在の対象を取得して同じEditを再実行し、最後にBashで結果を読む。
@@ -459,7 +459,7 @@ APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力
 
 2026年10月1日、uv 0.12.21を使い、専用worktreeのrootで`env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras`を実行した。終了コードは0で、標準エラーには135パッケージの解決と133パッケージの確認が記録された。続く`uv run --frozen python`でpytools、agent_toolkit、pytestのimportが成功した。
 同期の前後で、`uv tool dir`配下の導入記録と共有ツールのPythonから取得したeditable導入元を比較し、変更が無いことを確認した。Git共通dirのhookの内容・実行権限・リンク先と、`git config --local --get commit.template`の値も変わらなかった。アクセス時刻は比較対象へ含めていない。
-再検証では、共有ツールの導入記録とeditable導入元、Git共通dirのhook、commit.templateを保存した後、回収予定の作業場所で上記の同期を1回実行する。importの成功と登録内容の一致を確認する。恒久作業ツリーの初期導入を検証用に再実行する必要は無い。
+共有ツールの導入記録とeditable導入元、Git共通dirのhook、commit.templateを保存した後、回収予定の作業場所で上記の同期を1回実行して再検証する。importの成功と登録内容の一致を確認する。恒久作業ツリーの初期導入を検証用に再実行する必要は無い。
 
 ## agent-toolkit/agent_toolkit/_agents_server/codex.py：孫sessionの待機表明と自動再開：2026年10月1日
 
@@ -517,7 +517,7 @@ uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 `ClaudeAgentOptions(env={"CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1"})`を与えたsessionでは、`ClaudeSDKClient.receive_messages()`へ`SystemMessage`が届く。その`subtype`は`session_state_changed`、`data["state"]`は`running`・`idle`・`requires_action`のいずれかである。この変数が無い場合、SDKは`CLAUDE_CODE_SDK_READS_SESSION_STATE=1`を設定して報告を呼び出し側から除く。
 haikuの委譲先に`sleep 2`を背景実行させて直ちにturnを終えさせ、Stop hookの待機時間を変えて到着順を比べた。
 待機0秒では次の順に届いた。`ResultMessage`、`idle`、`task_notification`、`running`、再開turnの`ResultMessage`（`origin.kind`が`task-notification`）、`idle`である。待機5秒では`task_notification`（Stop hookの実行中）、`ResultMessage`、再開turnの`ResultMessage`、`idle`の順に届き、最初の結果の後に`idle`は届かなかった。どちらも再開turnが実行された。CLIのスキーマ記述は`idle`を、保留した結果の送出と背景エージェントの待機の後に発行するturnの終了の信号と説明する。
-再検証では、同じ版の組で上記の環境変数を与えた委譲先へ背景実行の`sleep 2`と即時のturn終了を指示して行う。
+同じ版の組で上記の環境変数を与えた委譲先へ背景実行の`sleep 2`と即時のturn終了を指示して再検証する。
 Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の全メッセージの種別、`subtype`、`state`、`origin`を到着順に保存して比べる。
 
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：動的なwatch対象の指定：2026年10月4日
@@ -565,3 +565,9 @@ Claude CodeのBashツールでgrepはugrepを呼ぶシェル関数として観�
 ClaudeではJSの設定説明、Codexではfork_turnsのヘルプ文を含む全出力をファイルへ保存した。
 再検証は実体を同じ解決形で取得し、上記の語をdotfiles-developmentの一致行数と文脈取得の各コマンドへ渡す。
 ホスト版、検索ツール版、ロケール、所要時間と一致行数を保持し、文字列表より後ろにある文脈も使って判断する。
+
+## .claude/skills/merge-pr/SKILL.md：マージ前の確認：2026年10月5日
+
+2026年10月5日、GitHub CLI 2.101.0でPR #138のcheck登録順を確認した。run `37327087407`は同じPR headの`push`起点CIであり、run `37329129743`は`pull_request`起点CIであった。後者の`statusline-version`は先行するcheckの観測後に非同期で登録された。同じheadとcheck名だけでは起点を識別できず、PR起点checkの登録前に必須checkの集合を完全と判定できない。
+
+再検証では`gh version`を取得し、PR番号とその`headRefOid`を保持する。`gh pr checks <PR番号> --json event,workflow,name`でcheckを取得し、`event=pull_request`、`workflow=CI`、`name=statusline-version`の組合せを探す。run `37327087407`と`37329129743`を個別に取得し、event、head SHA、workflowとjob名を比較する。次に同じPRの必須check終端後の`headRefOid`と`mergeStateStatus`を取得し、headが不変でGitHubの評価が`CLEAN`になることを確認する。対象runが保持期限で取得できない場合は、新しいrelease PRで同じJSON項目を使って登録順を観測する。

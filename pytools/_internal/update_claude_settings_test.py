@@ -90,6 +90,16 @@ class TestUpdateClaudeSettings:
         result = _run(tmp_path, managed, {"dialogExpiry": "5m"})
         assert result["dialogExpiry"] == "never"
 
+    def test_managed_commit_attribution_uses_host_identity_without_enabling_other_attribution(self, tmp_path: Path):
+        """commit帰属だけを配布し、session URLとPRの既定動作は変更しない。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        result = _run(tmp_path, managed, {"attribution": {"sessionUrl": True}})
+
+        assert result["attribution"]["commit"] == ("Co-Authored-By: {model} / {effort} <noreply@anthropic.com>")
+        assert result["attribution"]["sessionUrl"] is True
+        assert "sessionUrl" not in managed["attribution"]
+        assert "pr" not in managed["attribution"]
+
     def test_managed_env_keeps_bash_working_dir_at_project(self, tmp_path: Path):
         """配布原本はBash呼び出し間の作業ディレクトリ持ち越しを止める環境変数を既存のenvへ加える。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))

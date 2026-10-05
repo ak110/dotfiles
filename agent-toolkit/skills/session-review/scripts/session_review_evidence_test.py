@@ -57,7 +57,7 @@ def test_direct_cli_returns_events_for_stream_redirection(
         "line": 1,
         "timestamp": None,
         "sequence": 1,
-        "record": "main",
+        "record": "claude:transcript",
     }
 
 
@@ -203,8 +203,13 @@ def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_pa
     assert events == [
         {
             "kind": "user",
-            "text": "質問: 最初の質問\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答",
+            "text": "最初の回答\n次の回答",
             "runtime_inserted": False,
+            "assistant_context": [
+                {"question": "最初の質問", "options": []},
+                {"question": "次の質問", "options": []},
+            ],
+            "user_response": [{"answers": ["最初の回答"]}, {"answers": ["次の回答"]}],
             "line": 1,
             "timestamp": None,
             "sequence": 1,
@@ -273,7 +278,7 @@ def test_claude_answer_intervention_marks_answers_outside_offered_choices(
     assert (event.get("answer_intervention") is True) is expected
 
 
-def _claude_answer_event(tmp_path: pathlib.Path, result: dict[str, object]) -> dict[str, str | int]:
+def _claude_answer_event(tmp_path: pathlib.Path, result: dict[str, object]) -> dict[str, object]:
     """AskUserQuestionの回答記録から抽出した単一イベントを返す。"""
     transcript = _write_transcript(
         tmp_path,
@@ -307,7 +312,8 @@ def test_claude_answer_includes_annotation_notes(tmp_path: pathlib.Path) -> None
         {"answers": {"質問": "回答"}, "annotations": {"質問": {"notes": "自由記述"}}},
     )
 
-    assert event["text"] == "質問: 質問\n回答: 回答\n自由記述: 自由記述"
+    assert event["text"] == "回答\n自由記述"
+    assert event["user_response"] == [{"answers": ["回答"], "notes": "自由記述"}]
 
 
 def test_claude_answer_with_notes_only_keeps_recorded_answer(tmp_path: pathlib.Path) -> None:
@@ -317,7 +323,7 @@ def test_claude_answer_with_notes_only_keeps_recorded_answer(tmp_path: pathlib.P
         {"answers": {"質問": "(notes only)"}, "annotations": {"質問": {"notes": "自由記述"}}},
     )
 
-    assert event["text"] == "質問: 質問\n回答: (notes only)\n自由記述: 自由記述"
+    assert event["text"] == "(notes only)\n自由記述"
 
 
 @pytest.mark.parametrize("annotations", [{"質問": {"preview": "選択肢"}}, None])
@@ -329,7 +335,7 @@ def test_claude_answer_without_notes_is_unchanged(tmp_path: pathlib.Path, annota
 
     event = _claude_answer_event(tmp_path, result)
 
-    assert event["text"] == "質問: 質問\n回答: 回答"
+    assert event["text"] == "回答"
     assert isinstance(event["text"], str)
     assert "自由記述" not in event["text"]
 
@@ -471,16 +477,20 @@ def test_claude_matches_multiple_question_ids_and_ignores_repeated_result(tmp_pa
     assert evidence.load_and_extract(str(transcript)) == [
         {
             "kind": "user",
-            "text": "質問: 質問\n回答: 回答",
+            "text": "回答",
             "runtime_inserted": False,
+            "assistant_context": [{"question": "質問", "options": []}],
+            "user_response": [{"answers": ["回答"]}],
             "line": 1,
             "timestamp": None,
             "sequence": 1,
         },
         {
             "kind": "user",
-            "text": "質問: 別の質問\n回答: 別の回答",
+            "text": "別の回答",
             "runtime_inserted": False,
+            "assistant_context": [{"question": "別の質問", "options": []}],
+            "user_response": [{"answers": ["別の回答"]}],
             "line": 1,
             "timestamp": None,
             "sequence": 2,
@@ -517,7 +527,7 @@ def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
         "line": 1,
         "timestamp": None,
         "sequence": 1,
-        "record": "main",
+        "record": "claude:transcript",
     }
 
 
@@ -792,7 +802,7 @@ def test_observation_boundary_does_not_apply_to_delegate_records(
     assert evidence.main(base) == 0
 
     events = _read_jsonl(capsys, raw=True)
-    assert [event["text"] for event in events if event["record"] == "agent-child"] == [
+    assert [event["text"] for event in events if event["record"] == "claude:transcript/agent-child"] == [
         "境界前の委譲先記録",
         "境界後の委譲先結果",
     ]
@@ -803,7 +813,9 @@ def test_observation_boundary_does_not_apply_to_delegate_records(
     assert evidence.main([*base, "--grep", "後発"]) == 0
     assert _read_jsonl(capsys)[-1] == {"kind": "summary", "count": 0}
     assert evidence.main([*base, "--stats"]) == 0
-    assert [event["agent"] for event in _events_by_kind(_read_jsonl(capsys), "stats-subagent")] == ["agent-child"]
+    assert [event["agent"] for event in _events_by_kind(_read_jsonl(capsys), "stats-subagent")] == [
+        "claude:transcript/agent-child"
+    ]
 
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
@@ -982,8 +994,8 @@ def test_default_events_separate_main_user_message_from_subagent_task_prompt(
 
     user_events = [event for event in _read_jsonl(capsys, raw=True) if event["kind"] == "user"]
     assert [(event["record"], event["text"]) for event in user_events] == [
-        ("main", "人間の入力"),
-        ("agent-child", "タスク入力"),
+        ("claude:transcript", "人間の入力"),
+        ("claude:transcript/agent-child", "タスク入力"),
     ]
 
 
@@ -1021,7 +1033,9 @@ def test_reconciliation_repeats_until_no_main_user_intervention_is_added(
         additional_users = [
             event
             for event in _read_jsonl(capsys, raw=True)
-            if event["kind"] == "user" and event["record"] == "main" and (event["record"], event["line"]) not in known_locators
+            if event["kind"] == "user"
+            and event["record"] == "claude:transcript"
+            and (event["record"], event["line"]) not in known_locators
         ]
         additions_by_reconciliation.append([event["text"] for event in additional_users])
         known_locators.update((event["record"], event["line"]) for event in additional_users)
@@ -1168,8 +1182,19 @@ def test_codex_question_output_becomes_user_event_at_output_position(tmp_path: p
         {"kind": "final-result", "text": "回答待ち", "line": 2, "timestamp": None, "sequence": 1},
         {
             "kind": "user",
-            "text": "質問: 最初の質問\n選択肢: 提示した選択肢\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答1\n次の回答2",
+            "text": "最初の回答\n次の回答1\n次の回答2",
             "runtime_inserted": False,
+            "assistant_context": [
+                {
+                    "question": "最初の質問",
+                    "options": [{"label": "提示した選択肢", "description": ""}],
+                },
+                {"question": "次の質問", "options": []},
+            ],
+            "user_response": [
+                {"answers": ["最初の回答"]},
+                {"answers": ["次の回答1", "次の回答2"]},
+            ],
             "line": 1,
             "timestamp": None,
             "sequence": 2,
@@ -1207,7 +1232,7 @@ def test_codex_question_call_ids_keep_local_question_identity(tmp_path: pathlib.
 
     events = evidence.load_and_extract(str(transcript))
 
-    assert [event["text"] for event in events] == ["質問: 二つ目\n回答: 回答2", "質問: 一つ目\n回答: 回答1"]
+    assert [event["text"] for event in events] == ["回答2", "回答1"]
 
 
 @pytest.mark.parametrize(
@@ -1519,7 +1544,9 @@ def test_bundle_excludes_negative_results_and_checks_without_hiding_argument_err
     ]
     records = _bundle_failed_codex_commands(tmp_path, capsys, cases)
 
-    assert [item["locators"] for item in records if item["kind"] == "candidate"] == [[{"record": "main", "line": 6}]]
+    assert [item["locators"] for item in records if item["kind"] == "candidate"] == [
+        [{"record": "codex:transcript", "line": 6}]
+    ]
     assert records[-1]["excluded"]["normal-negative-result"] == 3
     assert records[-1]["excluded"]["check-detected"] == 2
 
@@ -2332,10 +2359,37 @@ def test_user_events_returns_main_user_events_in_range(
 
     events = _read_jsonl(capsys, raw=True)
     assert [(event["record"], event["line"], event["text"]) for event in events[:-1]] == [
-        ("main", 3, "区間内1"),
-        ("main", 6, "区間内2"),
+        ("claude:transcript", 3, "区間内1"),
+        ("claude:transcript", 6, "区間内2"),
     ]
     assert events[-1] == {"kind": "summary", "count": 2}
+
+
+def _assert_boundary_question_events(
+    transcript: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """開始前の質問に対する区間内回答を回答時刻順で確認する。"""
+    assert (
+        evidence.main(
+            [
+                str(transcript),
+                "--user-events",
+                "--since",
+                "2026-09-01T12:00:01Z",
+                "--observation-boundary",
+                "2026-09-01T12:00:02Z",
+            ]
+        )
+        == 0
+    )
+    events = _read_jsonl(capsys, raw=True)
+    assert [(event["line"], event["text"]) for event in events[:-1]] == [
+        (4, "回答2"),
+        (5, "回答3"),
+        (3, "回答1"),
+    ]
+    assert events[-1] == {"kind": "summary", "count": 3}
 
 
 def test_user_events_keeps_claude_question_state_across_start_boundary(
@@ -2381,28 +2435,7 @@ def test_user_events_keeps_claude_question_state_across_start_boundary(
     add_question("2026-09-01T12:00:01.600Z", "future")
     add_answer("2026-09-01T12:00:02.100Z", "future", "終了後", "対象外")
     transcript = _write_transcript(tmp_path, entries)
-
-    assert (
-        evidence.main(
-            [
-                str(transcript),
-                "--user-events",
-                "--since",
-                "2026-09-01T12:00:01Z",
-                "--observation-boundary",
-                "2026-09-01T12:00:02Z",
-            ]
-        )
-        == 0
-    )
-
-    events = _read_jsonl(capsys, raw=True)
-    assert [(event["line"], event["text"]) for event in events[:-1]] == [
-        (4, "質問: 境界越え2\n回答: 回答2"),
-        (5, "質問: 区間内\n回答: 回答3"),
-        (3, "質問: 境界越え1\n回答: 回答1"),
-    ]
-    assert events[-1] == {"kind": "summary", "count": 3}
+    _assert_boundary_question_events(transcript, capsys)
 
 
 def test_user_events_keeps_codex_question_state_across_start_boundary(
@@ -2450,28 +2483,7 @@ def test_user_events_keeps_codex_question_state_across_start_boundary(
     add_question("2026-09-01T12:00:01.600Z", "future", "future-question", "終了後")
     add_answer("2026-09-01T12:00:02.100Z", "future", "future-question", "対象外")
     transcript = _write_transcript(tmp_path, entries)
-
-    assert (
-        evidence.main(
-            [
-                str(transcript),
-                "--user-events",
-                "--since",
-                "2026-09-01T12:00:01Z",
-                "--observation-boundary",
-                "2026-09-01T12:00:02Z",
-            ]
-        )
-        == 0
-    )
-
-    events = _read_jsonl(capsys, raw=True)
-    assert [(event["line"], event["text"]) for event in events[:-1]] == [
-        (4, "質問: 境界越え2\n回答: 回答2"),
-        (5, "質問: 区間内\n回答: 回答3"),
-        (3, "質問: 境界越え1\n回答: 回答1"),
-    ]
-    assert events[-1] == {"kind": "summary", "count": 3}
+    _assert_boundary_question_events(transcript, capsys)
 
 
 def _user_events(argv: list[str], capsys: pytest.CaptureFixture[str]) -> list[dict]:
@@ -2663,12 +2675,17 @@ def test_user_events_includes_offered_options_claude(tmp_path: pathlib.Path, cap
 
     events = _user_events([str(transcript)], capsys)
 
-    assert [event["text"] for event in events if event["kind"] == "user"] == [
-        f"質問: {question}\n"
-        "選択肢: 既存節へ追記: 既存の節の末尾へ加える\n"
-        "選択肢: 新しい節: 独立した節を設ける\n"
-        "選択肢: 説明なし\n"
-        "回答: 新しい節"
+    user_event = next(event for event in events if event["kind"] == "user")
+    assert user_event["text"] == "新しい節"
+    assert user_event["assistant_context"] == [
+        {
+            "question": question,
+            "options": [
+                {"label": "既存節へ追記", "description": "既存の節の末尾へ加える"},
+                {"label": "新しい節", "description": "独立した節を設ける"},
+                {"label": "説明なし", "description": ""},
+            ],
+        }
     ]
 
 
@@ -2713,9 +2730,9 @@ def test_user_events_includes_offered_options_codex(tmp_path: pathlib.Path, caps
 
     events = _user_events([str(transcript)], capsys)
 
-    assert [event["text"] for event in events if event["kind"] == "user"] == [
-        "質問: 対象範囲\n選択肢: 全体: リポジトリ全体を対象にする\n選択肢: 一部: 指定したディレクトリだけにする\n回答: 全体"
-    ]
+    user_event = next(event for event in events if event["kind"] == "user")
+    assert user_event["text"] == "全体"
+    assert user_event["user_response"] == [{"answers": ["全体"]}]
 
 
 def test_user_events_requires_since(
@@ -4465,7 +4482,10 @@ def test_stats_collects_all_subagents_without_exclusion(tmp_path: pathlib.Path, 
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    assert sorted(event["agent"] for event in _events_by_kind(events, "stats-subagent")) == ["agent-normal", "agent-other"]
+    assert sorted(event["agent"] for event in _events_by_kind(events, "stats-subagent")) == [
+        "claude:transcript/agent-normal",
+        "claude:transcript/agent-other",
+    ]
     total = _events_by_kind(events, "stats-subagent-total")[0]
     assert total["count"] == 2
     assert "excluded_review_agents" not in total
@@ -5017,7 +5037,7 @@ def test_collect_reports_unresolved_delegation(
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     assert _events_by_kind(_read_jsonl(capsys, raw=True), "unresolved-delegation") == [
-        {"kind": "unresolved-delegation", "record": "main", "line": 2}
+        {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 2}
     ]
 
 
@@ -5044,7 +5064,7 @@ def test_collect_reports_unresolved_event_msg_delegation(tmp_path: pathlib.Path,
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     assert _events_by_kind(_read_jsonl(capsys, raw=True), "unresolved-delegation") == [
-        {"kind": "unresolved-delegation", "record": "main", "line": 1}
+        {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 1}
     ]
 
 
@@ -5486,7 +5506,7 @@ def test_stats_outputs_every_subagent_without_limit(tmp_path: pathlib.Path, caps
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
     rows = _events_by_kind(events, "stats-subagent")
-    assert [row["agent"] for row in rows] == [f"agent-{index:02d}" for index in range(20, -1, -1)]
+    assert [row["agent"] for row in rows] == [f"claude:transcript/agent-{index:02d}" for index in range(20, -1, -1)]
     total = _events_by_kind(events, "stats-subagent-total")[0]
     assert total["count"] == 21
     assert total["tokens"] == _usage(sum(range(1, 22)))
@@ -5562,8 +5582,8 @@ def test_stats_collects_thread_ids_from_every_subagent(tmp_path: pathlib.Path, m
     threads = _events_by_kind(events, "stats-agent-thread")
     assert sorted(event["thread"] for event in threads) == sorted([normal_thread, other_thread])
     assert {event["thread"]: event["agent"] for event in threads} == {
-        normal_thread: "agent-normal",
-        other_thread: "agent-other",
+        normal_thread: "claude:transcript/agent-normal",
+        other_thread: "claude:transcript/agent-other",
     }
 
 
@@ -5608,7 +5628,7 @@ def test_stats_thread_line_only_for_main_transcript_threads(tmp_path: pathlib.Pa
     threads = {event["thread"]: event for event in _events_by_kind(events, "stats-agent-thread")}
     assert threads[main_thread]["line"] == 3
     assert "agent" not in threads[main_thread]
-    assert threads[sub_thread]["agent"] == "agent-sub"
+    assert threads[sub_thread]["agent"] == "claude:transcript/agent-sub"
     assert "line" not in threads[sub_thread]
 
     assert evidence.main([str(transcript), "--detail", "3"]) == 0
@@ -6020,16 +6040,7 @@ def test_stats_reports_compaction_events_for_both_runtimes(tmp_path: pathlib.Pat
     assert _events_by_kind(events, "stats-compaction") == [
         {
             "kind": "stats-compaction",
-            "record": "agent-child",
-            "line": 1,
-            "engine": "claude",
-            "timestamp": "2026-09-02T00:03:00Z",
-            "trigger": "auto",
-            "duration_seconds": 1.3,
-        },
-        {
-            "kind": "stats-compaction",
-            "record": "main",
+            "record": "claude:transcript",
             "line": 2,
             "engine": "claude",
             "timestamp": "2026-09-02T00:01:00Z",
@@ -6040,22 +6051,31 @@ def test_stats_reports_compaction_events_for_both_runtimes(tmp_path: pathlib.Pat
         },
         {
             "kind": "stats-compaction",
-            "record": "main",
+            "record": "claude:transcript",
             "line": 3,
             "engine": "claude",
             "timestamp": "2026-09-02T00:02:00Z",
             "trigger": "manual",
+        },
+        {
+            "kind": "stats-compaction",
+            "record": "claude:transcript/agent-child",
+            "line": 1,
+            "engine": "claude",
+            "timestamp": "2026-09-02T00:03:00Z",
+            "trigger": "auto",
+            "duration_seconds": 1.3,
         },
     ]
     total = _events_by_kind(events, "stats-compaction-total")[0]
     assert total == {
         "kind": "stats-compaction-total",
         "count": 3,
-        "by_record": {"main": 2, "agent-child": 1},
+        "by_record": {"claude:transcript": 2, "claude:transcript/agent-child": 1},
         "total_duration_seconds": 203.0,
         "duration_unknown_count": 1,
     }
-    assert list(total["by_record"]) == ["main", "agent-child"]
+    assert list(total["by_record"]) == ["claude:transcript", "claude:transcript/agent-child"]
 
 
 def test_stats_reports_codex_compaction_records(tmp_path: pathlib.Path, capsys) -> None:
@@ -6077,7 +6097,7 @@ def test_stats_reports_codex_compaction_records(tmp_path: pathlib.Path, capsys) 
     assert _events_by_kind(events, "stats-compaction") == [
         {
             "kind": "stats-compaction",
-            "record": "main",
+            "record": "codex:transcript",
             "line": 2,
             "engine": "codex",
             "timestamp": "2026-09-02T00:01:00Z",
@@ -6086,7 +6106,7 @@ def test_stats_reports_codex_compaction_records(tmp_path: pathlib.Path, capsys) 
     assert _events_by_kind(events, "stats-compaction-total")[0] == {
         "kind": "stats-compaction-total",
         "count": 1,
-        "by_record": {"main": 1},
+        "by_record": {"codex:transcript": 1},
         "total_duration_seconds": 0.0,
         "duration_unknown_count": 1,
     }
@@ -6133,7 +6153,7 @@ def test_stats_assigns_codex_compaction_measurements_in_occurrence_order(
     assert _events_by_kind(events, "stats-compaction-total")[0] == {
         "kind": "stats-compaction-total",
         "count": 2,
-        "by_record": {"main": 2},
+        "by_record": {f"codex:{thread_id}": 2},
         "total_duration_seconds": 2.2,
         "duration_unknown_count": 1,
     }
@@ -6676,8 +6696,8 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     candidate_items = [item for item in candidates if item["kind"] == "candidate"]
     assert [item["candidate_id"] for item in candidate_items] == ["c0001", "c0002"]
     assert [(item["locators"], item["candidate_kind"]) for item in candidate_items] == [
-        ([{"record": "main", "line": 5}], "tool-failure"),
-        ([{"record": "main", "line": 6}], "warning"),
+        ([{"record": "claude:transcript", "line": 5}], "tool-failure"),
+        ([{"record": "claude:transcript", "line": 6}], "warning"),
     ]
     assert candidates[-1]["excluded"] == {"hook-notice-informational": 1, "initial-request": 1}
     assert candidates[-1]["included_locator_count"] == 2
@@ -6720,10 +6740,28 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     assert "Base directory for this skill" not in serialized
     locators = [event for event in bundle_events if event["kind"] == "bundle-locator"]
     assert [{key: value for key, value in event.items() if key != "timestamp"} for event in locators] == [
-        {"kind": "bundle-locator", "event_kind": "user", "record": "main", "line": 1},
-        {"kind": "bundle-locator", "event_kind": "failed-tool", "record": "main", "line": 5, "text": "失敗の詳細"},
-        {"kind": "bundle-locator", "event_kind": "agent-completion", "record": "main", "line": 8, "text": "agent-1: 完了報告"},
-        {"kind": "bundle-locator", "event_kind": "final-result", "record": "main", "line": 11, "text": "最終結果"},
+        {"kind": "bundle-locator", "event_kind": "user", "record": "claude:transcript", "line": 1},
+        {
+            "kind": "bundle-locator",
+            "event_kind": "failed-tool",
+            "record": "claude:transcript",
+            "line": 5,
+            "text": "失敗の詳細",
+        },
+        {
+            "kind": "bundle-locator",
+            "event_kind": "agent-completion",
+            "record": "claude:transcript",
+            "line": 8,
+            "text": "agent-1: 完了報告",
+        },
+        {
+            "kind": "bundle-locator",
+            "event_kind": "final-result",
+            "record": "claude:transcript",
+            "line": 11,
+            "text": "最終結果",
+        },
     ]
     # 区間の境界の時刻を`--detail`の追加照会なしで確定できるよう、全イベントが`timestamp`を持つ。
     assert all("timestamp" in event for event in locators)
@@ -6732,7 +6770,7 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
             "kind": "bundle-warning-group",
             "text": "warning: 警告が出た",
             "count": 1,
-            "samples": [{"record": "main", "line": 6}],
+            "samples": [{"record": "claude:transcript", "line": 6}],
         }
     ]
     assert [event for event in bundle_events if str(event["kind"]).startswith("stats-")] == []
@@ -6833,7 +6871,11 @@ def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
             "kind": "bundle-warning-group",
             "text": ("warning: " + "い" * 130)[:120],
             "count": 3,
-            "samples": [{"record": "main", "line": 3}, {"record": "main", "line": 4}, {"record": "main", "line": 5}],
+            "samples": [
+                {"record": "claude:transcript", "line": 3},
+                {"record": "claude:transcript", "line": 4},
+                {"record": "claude:transcript", "line": 5},
+            ],
         }
     ]
 
@@ -7104,6 +7146,62 @@ def test_claude_subagent_record_keeps_normal_entries(tmp_path: pathlib.Path) -> 
     events = evidence.load_and_extract(str(transcript))
 
     assert [event["text"] for event in events] == ["委譲された依頼", "実装を完了した"]
+
+
+# pylint: disable=protected-access
+def test_claude_child_keeps_same_canonical_id_when_opened_directly_or_from_parent(tmp_path: pathlib.Path) -> None:
+    """同じ物理記録は収集元の指定に依存せず同じ正規IDを持ち、収集元固有名は別名としてだけ残す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "message": {"role": "user", "content": "親の依頼"}}],
+    )
+    child_dir = transcript.with_suffix("") / "subagents"
+    _write_subagent(
+        child_dir,
+        "agent-child",
+        [{"type": "user", "message": {"role": "user", "content": "子の依頼"}}],
+    )
+    child_path = child_dir / "agent-child.jsonl"
+    parent_records = evidence._load_records(str(transcript))
+    child_records = evidence._load_records(str(child_path))
+    assert parent_records is not None
+    assert child_records is not None
+
+    collected_from_parent, _ = evidence._collect_records(str(transcript), parent_records)
+    collected_directly, _ = evidence._collect_records(str(child_path), child_records)
+    nested = next(item for item in collected_from_parent if item.path == child_path)
+    direct = collected_directly[0]
+
+    assert nested.record_id == direct.record_id == "claude:transcript/agent-child"
+    assert nested.aliases == ("agent-child",)
+    assert direct.aliases == ("main",)
+
+
+def test_detail_rejects_ambiguous_legacy_record_alias(tmp_path: pathlib.Path) -> None:
+    """同名の旧サブエージェントIDが複数ある場合は誤った記録を選ばず拒否する。"""
+    record = evidence._Record(1, "", {"type": "user", "message": {"role": "user", "content": "依頼"}})
+    collected = [
+        evidence._CollectedRecord(
+            f"claude:parent-{index}/agent-child",
+            tmp_path / f"parent-{index}" / "subagents" / "agent-child.jsonl",
+            [record],
+            "claude",
+            f"claude:parent-{index}",
+            None,
+            None,
+            "subagent",
+            ("agent-child",),
+        )
+        for index in (1, 2)
+    ]
+
+    events, exit_code = evidence._detail_collection_events(collected, ["agent-child:1"])
+
+    assert exit_code == 2
+    assert events[0]["text"] == "記録別名が曖昧: agent-child"
+
+
+# pylint: enable=protected-access
 
 
 def test_claude_subagent_handback_message_becomes_final_result(tmp_path: pathlib.Path) -> None:
@@ -7626,8 +7724,8 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
     assert evidence.main([str(transcript)]) == 0
     default_events = _read_jsonl(capsys, raw=True)
     assert {event["record"] for event in default_events if event["kind"] != "unresolved-record"} == {
-        "main",
-        "agent-root",
+        "claude:transcript",
+        "claude:transcript/agent-root",
         f"codex:{codex_a}",
         f"claude:{claude_b}",
         f"claude:{claude_b}/agent-child",
@@ -7639,7 +7737,7 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
     assert evidence.main([str(transcript), "--warn"]) == 0
     warning_events = _read_jsonl(capsys, raw=True)
     assert [event["record"] for event in warning_events if event["kind"] == "warning"] == [
-        "agent-root",
+        "claude:transcript/agent-root",
         f"claude:{claude_b}",
         f"claude:{claude_b}/agent-child",
     ]
@@ -7647,13 +7745,13 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
     assert evidence.main([str(transcript), "--grep", "needle"]) == 0
     grep_events = _read_jsonl(capsys, raw=True)
     assert {event["record"] for event in grep_events if event["kind"] == "match"} == {
-        "main",
+        "claude:transcript",
         f"codex:{codex_a}",
         f"claude:{claude_b}",
         f"codex:{codex_c}",
     }
     assert [event["record"] for event in grep_events if event["kind"] == "summary" and "record" in event] == [
-        "main",
+        "claude:transcript",
         f"codex:{codex_a}",
         f"claude:{claude_b}",
         f"codex:{codex_c}",
@@ -7674,7 +7772,7 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
     assert evidence.main([str(transcript), "--stats"]) == 0
     stats_events = _read_jsonl(capsys, raw=True)
     assert {event["agent"] for event in stats_events if event["kind"] == "stats-subagent"} == {
-        "agent-root",
+        "claude:transcript/agent-root",
         f"claude:{claude_b}/agent-child",
     }
     assert {event["session_id"] for event in stats_events if event["kind"] == "stats-agent-thread"} == {
@@ -8092,7 +8190,9 @@ def test_bundle_selects_initial_skill_after_runtime_injections(
         [{"type": "response_item", "payload": {"type": "message", "role": "user", "content": text}} for text in texts],
     )
 
-    assert [item["locators"] for item in records if item["kind"] == "candidate"] == [[{"record": "main", "line": 5}]]
+    assert [item["locators"] for item in records if item["kind"] == "candidate"] == [
+        [{"record": "codex:transcript", "line": 5}]
+    ]
     assert records[-1]["excluded"] == {"initial-skill-body": 1, "initial-skill-request": 1, "runtime-inserted": 2}
 
 
@@ -8137,7 +8237,7 @@ def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, ca
     tool_uses = [event for event in items[hook_candidates[0]["candidate_id"]]["events"] if event["kind"] == "tool-use"]
     assert tool_uses == [
         {
-            "record": "main",
+            "record": "claude:transcript",
             "kind": "tool-use",
             "line": 2,
             "timestamp": "2026-09-25T00:00:01Z",
@@ -8188,7 +8288,7 @@ def test_context_hook_output_is_excluded(tmp_path: pathlib.Path, capsys: pytest.
     )
 
     hook_candidates = [item for item in candidates if item.get("candidate_kind") == "hook-notice"]
-    assert [item["locators"] for item in hook_candidates] == [[{"record": "main", "line": 4}]]
+    assert [item["locators"] for item in hook_candidates] == [[{"record": "claude:transcript", "line": 4}]]
     assert candidates[-1]["excluded"]["hook-notice-context"] == 2
 
 

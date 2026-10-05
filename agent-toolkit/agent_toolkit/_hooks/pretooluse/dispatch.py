@@ -65,6 +65,8 @@ Write / Edit / MultiEdit / apply_patch:
 from __future__ import annotations
 
 import json
+import os
+import pathlib
 import sys
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -91,6 +93,7 @@ from agent_toolkit._hooks import (
 from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id  # noqa: E402
 
 from agent_toolkit._hooks.session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common.runtime_identity import RuntimeIdentity, distinct_identities  # noqa: E402
 from agent_toolkit._hooks.pretooluse.warning_context import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     format_warning_context,
 )
@@ -128,6 +131,7 @@ if TYPE_CHECKING:
         _check_bash_process_kill_by_pattern,
         _check_bash_option_after_terminator,
         _check_bash_atk_output_loss,
+        _git_commit_attribution_error,
         _warn_git_rev_parse_short_multiple,
         _warn_windows_drive_letter_path,
     )
@@ -141,6 +145,38 @@ _extract_execution_segments = _bash_command_parser.extract_execution_segments
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
+
+
+def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
+    """設定ファイルが`attribution.commit`を文字列として定義するかと、その値を返す。"""
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return False, None
+    if not isinstance(settings, dict):
+        return False, None
+    attribution = settings.get("attribution")
+    if not isinstance(attribution, dict) or not isinstance(attribution.get("commit"), str):
+        return False, None
+    return True, attribution["commit"]
+
+
+def _claude_commit_attribution_disabled(cwd: str) -> bool:
+    """フックから観測できる設定範囲で、最上位の明示的な空文字設定を判定する。"""
+    config_dir = pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR", pathlib.Path.home() / ".claude"))
+    project_raw = os.environ.get("CLAUDE_PROJECT_DIR") or cwd
+    paths = [config_dir / "settings.json"]
+    if project_raw:
+        project_dir = pathlib.Path(project_raw)
+        paths.extend((project_dir / ".claude" / "settings.json", project_dir / ".claude" / "settings.local.json"))
+    effective: str | None = None
+    defined = False
+    for path in paths:
+        current_defined, current = _settings_commit_attribution(path)
+        if current_defined:
+            defined = True
+            effective = current
+    return defined and effective == ""
 
 
 def _is_plan_file_or_adjunct(file_path: str) -> bool:
@@ -344,6 +380,17 @@ def _handle_bash_tool(
         return 2
     if _check_bash_atk_output_loss(command):
         return 2
+    identity = _hook_observed_identity(payload, is_codex=is_codex)
+    attribution_disabled = not is_codex and _claude_commit_attribution_disabled(cwd)
+    if (
+        attribution_error := _git_commit_attribution_error(
+            command,
+            identity,
+            attribution_disabled=attribution_disabled,
+        )
+    ) is not None:
+        print(attribution_error, file=sys.stderr)
+        return 2
     warnings: list[str] = []
     rev_parse_warning = _warn_git_rev_parse_short_multiple(command)
     if rev_parse_warning is not None:
@@ -382,6 +429,34 @@ def _handle_bash_tool(
     else:
         flush_warning()
     return 0
+
+
+def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity | None:
+    """Hook payloadまたは一意なtranscriptから、このturnの観測identityを返す。"""
+    runtime = "codex" if is_codex else "claude"
+    model = payload.get("model")
+    effort = payload.get("effort") or payload.get("reasoning_effort")
+    if isinstance(model, str) and model and isinstance(effort, str) and effort:
+        return RuntimeIdentity(runtime, model, effort, "observed")
+    transcript_path = payload.get("transcript_path")
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    entries: list[dict] = []
+    try:
+        with open(transcript_path, encoding="utf-8") as stream:
+            for raw in stream:
+                if not raw.strip():
+                    continue
+                try:
+                    entry = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(entry, dict):
+                    entries.append(entry)
+    except (OSError, UnicodeError):
+        return None
+    identities = distinct_identities(entries, runtime)
+    return identities[-1] if identities else None
 
 
 def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:

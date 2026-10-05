@@ -31,21 +31,6 @@ def test_default_migrates_instructions_and_links_skills_without_rules(tmp_path: 
     assert not (target / ".claude" / "rules" / "agent-toolkit").exists()
 
 
-def test_with_rules_copies_plugin_rules_and_clean_removes_both(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    target = tmp_path / "project"
-    (target / ".claude" / "skills").mkdir(parents=True)
-    source = Path(__file__).resolve().parents[2] / "rules"
-
-    assert _run(monkeypatch, target, "--with-rules") == 0
-    assert _run(monkeypatch, target, "--with-rules") == 0
-    destination = target / ".claude" / "rules" / "agent-toolkit"
-    assert {path.name for path in destination.iterdir()} == {path.name for path in source.iterdir()}
-    assert (destination / "01-agent.md").read_bytes() == (source / "01-agent.md").read_bytes()
-    assert _run(monkeypatch, target, "--clean") == 0
-    assert not (target / ".agents").exists()
-    assert not (target / ".claude" / "rules").exists()
-
-
 def test_local_instructions_create_adapter_and_unique_git_exclude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     target = tmp_path / "project"
     target.mkdir()

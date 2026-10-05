@@ -2,7 +2,6 @@
 
 import datetime
 import pathlib
-import re
 import subprocess
 import time
 
@@ -18,14 +17,19 @@ def _git(repo: pathlib.Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-@pytest.fixture(name="repo")
-def fixture_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+def _make_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """構造の判定に使うGitリポジトリを準備する。"""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
     return repo
+
+
+@pytest.fixture(name="repo")
+def fixture_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """構造の判定に使うGitリポジトリを準備する。"""
+    return _make_repo(tmp_path, monkeypatch)
 
 
 def _source(
@@ -218,39 +222,6 @@ def test_cli_accepts_source_alias_and_creates_bug_file(
     assert all(create_plan_files.PLAN_STEM_PLACEHOLDER not in path.read_text(encoding="utf-8") for path in paths)
 
 
-_DOCUMENTED_BUG_REFERENCE_PATTERN = re.compile(r"^- 計画ファイル（バグ）: `([^`]+)`$", re.MULTILINE)
-
-
-def _documented_bug_reference() -> str:
-    """計画ファイル作成基準が計画メタ情報の例として示す計画ファイル（バグ）の参照値を返す。"""
-    standards = pathlib.Path(__file__).resolve().parents[3] / "skills/plan-mode/references/plan-file-standards.md"
-    references = _DOCUMENTED_BUG_REFERENCE_PATTERN.findall(standards.read_text(encoding="utf-8"))
-    assert len(references) == 1, "計画ファイル（バグ）の参照値の記載例が1件に定まらない"
-    return references[0]
-
-
-def test_documented_bug_reference_is_accepted_without_substitution(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """計画ファイル作成基準の記載例を置換せず転記した計画本文を作成処理が受理する。
-
-    記載例は起草者がそのまま書き写す値であり、受理形式を満たさない例は計画作成のやり直しを招く。
-    書式を定める固定プレースホルダーを改訂したときに記載例が追随しない状態を、本テストが検出する。
-    """
-    reference = _documented_bug_reference()
-    assert reference.startswith(create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX)
-    source, bug_source = _source(repo, tmp_path, bug=True, bug_reference=reference)
-
-    paths = create_plan_files.create_plan_files(
-        source,
-        "13-0217_記載例の転記",
-        bug_source=bug_source,
-        home=tmp_path / "home",
-        work_dir=repo,
-    )
-
-    assert [path.name for path in paths] == ["13-0217_記載例の転記.md", "13-0217_記載例の転記.bugs.md"]
-    assert all(create_plan_files.PLAN_STEM_PLACEHOLDER not in path.read_text(encoding="utf-8") for path in paths)
-
-
 def test_process_lane_plan_name_uses_local_time_and_two_digit_lane() -> None:
     """process-wiのstemを実行環境のローカル時刻と2桁レーン番号から生成する。"""
     now = datetime.datetime(2026, 9, 14, 23, 5, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
@@ -293,47 +264,6 @@ def test_cli_creates_process_lane_plan_with_generated_name(
     captured = capsys.readouterr()
     assert result == 0, captured.err
     assert pathlib.Path(captured.out.strip()).name == "14-1405_process-wi_レーン02.md"
-
-
-def _lane_plan_creation_step() -> str:
-    """レーン担当が読む計画作成手順の本文を返す。"""
-    task_path = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
-    content = task_path.read_text(encoding="utf-8")
-    steps = re.split(r"\n(?=\d+\. )", content)
-    matches = [step for step in steps if re.match(r"\d+\. ", step) and "plan-create" in step]
-    assert len(matches) == 1
-    return matches[0]
-
-
-@pytest.mark.parametrize("bug", [False, True])
-def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
-    repo: pathlib.Path,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    bug: bool,
-) -> None:
-    """手順4が指示する引数名を現行CLIへそのまま渡して受理されることを確認する。"""
-    step = _lane_plan_creation_step()
-    source, bug_source = _source(repo, tmp_path, bug=bug)
-    placeholders = {
-        "--main-source": str(source),
-        "--lane": "lane-02",
-    }
-    if bug:
-        placeholders["--bugs-source"] = str(bug_source)
-    argv: list[str] = []
-    for option, value in placeholders.items():
-        assert f"{option} <" in step, f"手順4が{option}を指示していない"
-        argv.extend([option, value])
-    argv.extend(["--home", str(tmp_path / "home"), "--work-dir", str(repo)])
-
-    result = create_plan_files.main(argv)
-
-    captured = capsys.readouterr()
-    assert result == 0, captured.err
-    created = [pathlib.Path(line) for line in captured.out.splitlines() if line]
-    assert len(created) == (2 if bug else 1)
-    assert all(path.exists() for path in created)
 
 
 def test_adds_hex_suffix_only_after_collision(

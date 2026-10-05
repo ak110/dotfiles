@@ -1,5 +1,7 @@
 # Codex利用ガイド
 
+agents_serverでは起動候補と終端後の観測identityを分ける。Codexの観測元は`turn_context`とし、表示名はモデルカタログを優先し、無い完全IDだけを決定論的に変換する。取得不能値を推測しない。
+
 Codexはagent-toolkitの標準構成に含まれる。単体インストーラーはCodexプラグインと共有スキルを設定する。
 `agents_server` MCPはClaude CodeとCodexの双方へ共有され、工程別モデル設定の`model_type`で委譲先を選択する。
 

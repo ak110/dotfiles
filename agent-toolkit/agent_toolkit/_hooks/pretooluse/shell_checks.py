@@ -22,6 +22,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     split_bash_segments,
 )
 from agent_toolkit._common.shell_tokens import strip_redirections
+from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
 
 
 if TYPE_CHECKING:
@@ -261,6 +262,61 @@ def _git_subcommand_tokens(segment: _ExecutionSegment) -> tuple[str, tuple[str, 
             index += 1
             continue
         return None
+    return None
+
+
+def _git_commit_attribution_error(
+    command: str,
+    identity: RuntimeIdentity | None,
+    *,
+    attribution_disabled: bool = False,
+) -> str | None:
+    """確定済みの通常commitメッセージが観測identityのtrailerをちょうど1件持つか確認する。"""
+    if attribution_disabled or identity is None or identity.source != "observed":
+        return None
+    expected = co_author_trailer(identity)
+    for invocation in extract_bash_invocations(command):
+        if not invocation.arguments_known:
+            continue
+        parsed = _git_subcommand_tokens(invocation.segment)
+        if parsed is None or parsed[0] != "commit":
+            continue
+        arguments = parsed[1]
+        if (
+            "--fixup" in arguments
+            or "--squash" in arguments
+            or any(token.startswith(("--fixup=", "--squash=")) for token in arguments)
+        ):
+            continue
+        if "--amend" in arguments and "--no-edit" in arguments:
+            continue
+        messages: list[str] = []
+        index = 0
+        unknown = False
+        while index < len(arguments):
+            token = arguments[index]
+            if token in {"-m", "--message"}:
+                if index + 1 >= len(arguments):
+                    unknown = True
+                    break
+                messages.append(arguments[index + 1])
+                index += 2
+                continue
+            if token.startswith("--message="):
+                messages.append(token.split("=", 1)[1])
+            elif token.startswith("-m") and len(token) > 2:
+                messages.append(token[2:])
+            elif token in {"-F", "--file", "-C", "--reuse-message", "-c", "--reedit-message"} or token.startswith(
+                ("--file=", "--reuse-message=", "--reedit-message=")
+            ):
+                unknown = True
+                break
+            index += 1
+        if unknown or not messages:
+            continue
+        trailers = [line for line in "\n\n".join(messages).splitlines() if line.startswith("Co-Authored-By:")]
+        if trailers != [expected]:
+            return f"通常commitの帰属trailerが実行turnの観測identityと一致しません。必要なtrailer: {expected}"
     return None
 
 

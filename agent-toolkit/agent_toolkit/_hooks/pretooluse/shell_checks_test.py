@@ -1,5 +1,5 @@
 # ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
+# pylint: disable=protected-access,unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
@@ -699,6 +699,67 @@ class TestBashGitRevParseShortMultiple:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "git rev-parse --short" not in result.stdout
+
+
+class TestGitCommitAttribution:
+    """実行位置と最終メッセージを確定できる通常commitだけの帰属確認。"""
+
+    _identity = shell_checks.RuntimeIdentity("codex", "gpt-6.1-sol", "medium", "observed")
+    _trailer = "Co-Authored-By: GPT-6.1 Sol / Medium <noreply@openai.com>"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            f"git commit -m '変更' -m '{_trailer}'",
+            f"git -C /work commit --message=変更 --message='{_trailer}'",
+            f"git commit -m変更 -m'{_trailer}'",
+        ],
+    )
+    def test_accepts_exactly_one_observed_identity_trailer(self, command: str) -> None:
+        assert shell_checks._git_commit_attribution_error(command, self._identity) is None
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git commit -m '変更'",
+            "git commit -m '変更' -m 'Co-Authored-By: GPT-6.1 Sol / High <noreply@openai.com>'",
+            "git commit -m '変更' -m 'Co-Authored-By: GPT-6 Sol / Medium <noreply@openai.com>'",
+            f"git commit -m '変更' -m '{_trailer}' -m '{_trailer}'",
+        ],
+    )
+    def test_rejects_missing_mismatched_or_duplicate_trailer(self, command: str) -> None:
+        error = shell_checks._git_commit_attribution_error(command, self._identity)
+        assert error is not None
+        assert self._trailer in error
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git commit --amend --no-edit",
+            "git commit --fixup HEAD",
+            "git commit --squash=HEAD",
+            "git commit -F message.txt",
+            "git commit --reuse-message HEAD",
+            "rg -F -- 'git commit -m 変更' docs",
+            "printf '%s' 'git commit -m 変更'",
+            "cat <<'EOF'\ngit commit -m 変更\nEOF",
+        ],
+    )
+    def test_skips_non_new_or_unresolved_messages_and_literals(self, command: str) -> None:
+        assert shell_checks._git_commit_attribution_error(command, self._identity) is None
+
+    def test_skips_when_host_identity_is_unobserved(self) -> None:
+        assert shell_checks._git_commit_attribution_error("git commit -m '変更'", None) is None
+
+    def test_skips_when_commit_attribution_is_explicitly_disabled(self) -> None:
+        assert (
+            shell_checks._git_commit_attribution_error(
+                "git commit -m '変更'",
+                self._identity,
+                attribution_disabled=True,
+            )
+            is None
+        )
 
 
 class TestBashOptionAfterTerminator:

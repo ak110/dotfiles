@@ -38,6 +38,8 @@ try:
     from agent_toolkit._atk import outcome as _outcome
     from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
     from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY as _PROCESS_WI_GOAL_BODY
+    from agent_toolkit._common.runtime_identity import distinct_identities as _distinct_identities
+    from agent_toolkit._common.runtime_identity import latest_identity as _latest_identity
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
     from agent_toolkit._hooks import response_language_check as _response_language_check
@@ -226,6 +228,7 @@ class _CollectedRecord(NamedTuple):
     source_line: int | None
     agent_type: str | None
     role: Literal["main", "subagent", "session"]
+    aliases: tuple[str, ...] = ()
 
 
 class _UnresolvedRecord(NamedTuple):
@@ -371,20 +374,31 @@ class _AnsweredQuestion(NamedTuple):
 
 
 def _question_answers_event(pairs: list[_AnsweredQuestion]) -> dict[str, Any] | None:
-    """質問と回答を共通書式の単一userイベントへ変換する。
-
-    確認回答に依存する対象・除外・認可を記録から判定できるよう、提示した全選択肢を質問文の直後へ並べる。
-    """
-    sections: list[str] = []
+    """質問側の文面とユーザーが入力した値を由来別に分けたuserイベントへ変換する。"""
+    user_text: list[str] = []
+    assistant_context: list[dict[str, Any]] = []
+    user_response: list[dict[str, Any]] = []
     for pair in pairs:
-        lines = [f"質問: {_clip(pair.question)}"]
-        for label, description in pair.options:
-            lines.append(f"選択肢: {_clip(label)}: {_clip(description)}" if description else f"選択肢: {_clip(label)}")
-        lines.append("回答: " + "\n".join(_clip(answer) for answer in pair.answers))
+        answers = [_clip(answer) for answer in pair.answers if _clip(answer)]
+        notes = _clip(pair.notes) if pair.notes else ""
+        user_text.extend(answers)
+        if notes:
+            user_text.append(notes)
+        assistant_context.append(
+            {
+                "question": _clip(pair.question),
+                "options": [{"label": _clip(label), "description": _clip(description)} for label, description in pair.options],
+            }
+        )
+        response: dict[str, Any] = {"answers": answers}
         if pair.notes:
-            lines.append(f"自由記述: {_clip(pair.notes)}")
-        sections.append("\n".join(lines))
-    return _event("user", "\n".join(sections))
+            response["notes"] = notes
+        user_response.append(response)
+    event = _event("user", "\n".join(user_text))
+    if event is not None:
+        event["assistant_context"] = assistant_context
+        event["user_response"] = user_response
+    return event
 
 
 class _PendingQuestion(NamedTuple):
@@ -1314,6 +1328,9 @@ def _turn_completion_data(
 def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, Any]:
     timestamps = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
     summary: dict[str, Any] = {}
+    identities = [identity.public() for identity in _distinct_identities(records, runtime)]
+    if identities:
+        summary["observed_identities"] = identities
     if timestamps:
         first_record, first_timestamp = min(timestamps, key=lambda item: item[1])
         last_record, last_timestamp = max(timestamps, key=lambda item: item[1])
@@ -1588,7 +1605,8 @@ def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
         except (OSError, json.JSONDecodeError, ValueError):
             raw_meta = {}
         agent_type = raw_meta.get("agentType") if isinstance(raw_meta, dict) else None
-        record_id = path.stem if source.record_id == "main" else f"{source.record_id}/{path.stem}"
+        record_id = f"{source.record_id}/{path.stem}"
+        legacy_id = path.stem if source.role == "main" else record_id
         selected.append(
             _CollectedRecord(
                 record_id,
@@ -1599,6 +1617,7 @@ def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
                 None,
                 agent_type if isinstance(agent_type, str) else None,
                 "subagent",
+                (legacy_id,) if legacy_id != record_id else (),
             )
         )
     return selected
@@ -1612,16 +1631,19 @@ def _collect_records(
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
     """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
     main_path = Path(transcript_path)
+    main_runtime = _detect_runtime([record.entry for record in main_records])
+    main_id = _physical_record_id(main_path, main_records, main_runtime)
     collected = [
         _CollectedRecord(
-            "main",
+            main_id,
             main_path,
             main_records,
-            _detect_runtime([record.entry for record in main_records]),
+            main_runtime,
             None,
             None,
             None,
             "main",
+            ("main",),
         )
     ]
     seen_paths = {main_path.resolve()}
@@ -1679,6 +1701,7 @@ def _collect_records(
                         record.line,
                         None,
                         "session",
+                        (),
                     )
                 )
     return collected, unresolved
@@ -1872,13 +1895,9 @@ def _compaction_event(record: _Record, record_id: str) -> dict[str, Any] | None:
     return event
 
 
-def _codex_record_thread_id(item: _CollectedRecord) -> str | None:
-    """Codex記録が属するthread IDを収集時の識別子またはsession metadataから返す。"""
-    if item.runtime != "codex":
-        return None
-    if item.record_id.startswith("codex:"):
-        return item.record_id.split(":", 1)[1]
-    for record in item.records:
+def _codex_thread_id_from_records(records: list[_Record]) -> str | None:
+    """Codex記録の物理metadataからthread IDを返す。"""
+    for record in records:
         entry = record.entry
         payload = entry.get("payload")
         if entry.get("type") == "session_meta" and isinstance(payload, dict):
@@ -1886,6 +1905,26 @@ def _codex_record_thread_id(item: _CollectedRecord) -> str | None:
             if isinstance(thread_id, str) and thread_id:
                 return thread_id
     return None
+
+
+def _physical_record_id(path: Path, records: list[_Record], runtime: _Runtime | None) -> str:
+    """収集元の指定ではなく物理記録のmetadataから正規record IDを返す。"""
+    if runtime == "codex":
+        return f"codex:{_codex_thread_id_from_records(records) or path.stem.removeprefix('rollout-')}"
+    if runtime == "claude":
+        if path.parent.name == "subagents":
+            return f"claude:{path.parent.parent.name}/{path.stem}"
+        return f"claude:{path.stem}"
+    if runtime == "agy":
+        return f"agy:{path.stem}"
+    return f"record:{path.stem}"
+
+
+def _codex_record_thread_id(item: _CollectedRecord) -> str | None:
+    """Codex記録が属するthread IDを物理metadataから返す。"""
+    if item.runtime != "codex":
+        return None
+    return _codex_thread_id_from_records(item.records)
 
 
 def _compaction_durations(directory: Path, thread_id: str) -> list[float]:
@@ -2093,7 +2132,7 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
             "thread": thread.record_id.split(":", 1)[1],
             **thread_summary,
         }
-        if thread.source_record != "main":
+        if thread.source_record != main_record.record_id:
             thread_event["agent"] = thread.source_record
         elif thread.source_line is not None:
             thread_event["line"] = thread.source_line
@@ -3142,7 +3181,7 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
     """`_user_events_since`の抽出本体。"""
     events: list[dict[str, Any]] = []
     for item in collected:
-        if item.record_id != "main":
+        if item.role != "main":
             continue
         runtime = _detect_runtime([record.entry for record in item.records])
         if runtime is None:
@@ -3187,7 +3226,7 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
     確認への回答（`質問: … 回答: …`）と初期要求はユーザーの入力として残す。
     委譲先の内部は問題候補の側で扱うため、メイン記録だけを対象とする。
     """
-    main_record = next((item for item in collected if item.record_id == "main"), None)
+    main_record = next((item for item in collected if item.role == "main"), None)
     if main_record is None:
         return []
     token = _TEXT_LIMIT.set(None)
@@ -3330,8 +3369,18 @@ def _grep_collection_events(
     return events
 
 
+def _resolve_record_alias(collected: list[_CollectedRecord], record_id: str) -> tuple[_CollectedRecord | None, bool]:
+    """正規IDまたは一意な旧IDを解決し、旧IDが曖昧なら印を返す。"""
+    canonical = [item for item in collected if item.record_id == record_id]
+    if canonical:
+        return canonical[0], False
+    matches = [item for item in collected if record_id in item.aliases]
+    if len(matches) == 1:
+        return matches[0], False
+    return None, len(matches) > 1
+
+
 def _detail_collection_events(collected: list[_CollectedRecord], locators: list[str]) -> tuple[list[dict[str, Any]], int]:
-    by_id = {item.record_id: item for item in collected}
     events: list[dict[str, Any]] = []
     for locator in locators:
         if ":" in locator:
@@ -3340,13 +3389,15 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
             record_id, raw_line = "main", locator
         if not record_id or not raw_line.isdecimal():
             return [_error_event(f"詳細位置が不正: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
-        selected = by_id.get(record_id)
+        selected, ambiguous = _resolve_record_alias(collected, record_id)
+        if ambiguous:
+            return [_error_event(f"記録別名が曖昧: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
         if selected is None:
             return [_error_event(f"記録が不明: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
         record_events, exit_code = _detail_events(selected.records, [int(raw_line)])
         if exit_code:
             return record_events, exit_code
-        events.extend(_events_with_record(record_events, record_id))
+        events.extend(_events_with_record(record_events, selected.record_id))
     return events, 0
 
 
@@ -3365,9 +3416,12 @@ def _context_at_events(collected: list[_CollectedRecord], locator: str, phrases:
         record_id, raw_line = "main", locator
     if not record_id or not raw_line.isdecimal():
         return [_error_event(f"記録位置が不正: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
-    selected = next((item for item in collected if item.record_id == record_id), None)
+    selected, ambiguous = _resolve_record_alias(collected, record_id)
+    if ambiguous:
+        return [_error_event(f"記録別名が曖昧: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
     if selected is None:
         return [_error_event(f"記録が不明: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
+    record_id = selected.record_id
     target_line = int(raw_line)
     if not selected.records or not 1 <= target_line <= max(record.line for record in selected.records):
         return [_error_event(f"行番号が記録の範囲外: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
@@ -3385,6 +3439,7 @@ def _context_at_events(collected: list[_CollectedRecord], locator: str, phrases:
         None,
     )
     channels = _context_channels(preceding)
+    latest = _latest_identity(selected.records, selected.runtime, before_line=target_line - 1) if selected.runtime else None
     events: list[dict[str, Any]] = []
     for phrase in phrases:
         pattern = re.compile(re.escape(phrase))
@@ -3416,6 +3471,8 @@ def _context_at_events(collected: list[_CollectedRecord], locator: str, phrases:
                 "match_count": len(matches),
                 "last_match_line": matches[-1]["line"] if matches else None,
                 "last_match_timestamp": matches[-1]["timestamp"] if matches else None,
+                "observed_identity": latest[1].public() if latest is not None else None,
+                "identity_locator": {"record": record_id, "line": latest[0]} if latest is not None else None,
             }
         )
         events.extend(matches)
@@ -3602,7 +3659,12 @@ def _bundle_events(
     warnings = _warning_collection_events(collected, [])
     stats = _stats_events(collected, compaction_record_dir)
     hook_notices = _hook_notice_events([record for item in collected for record in item.records])
-    candidates = _candidate_events(timeline, warnings, _hook_notice_candidate_events(collected))
+    candidates = _candidate_events(
+        timeline,
+        warnings,
+        _hook_notice_candidate_events(collected),
+        main_record_id=next(item.record_id for item in collected if item.role == "main"),
+    )
 
     candidate_evidence = _write_candidate_evidence_files(
         resolved, _candidate_evidence_events(collected, candidates, timeline, warnings, hook_notices)
@@ -3642,6 +3704,8 @@ def _candidate_events(
     timeline: list[dict[str, Any]],
     warnings: list[dict[str, Any]],
     hook_notices: list[dict[str, Any]],
+    *,
+    main_record_id: str = "main",
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
@@ -3677,9 +3741,9 @@ def _candidate_events(
         for notice in hook_notices
         if notice.get("kind") == "hook-notice" and notice.get("tag") in _HOOK_NOTICE_CANDIDATE_TAGS
     ]
-    initial_skill_request, initial_skill_body = _initial_skill_input_locators(timeline)
-    shell_records, resumed_records = _delegation_record_kinds(timeline)
-    first_main_user = _initial_request_locator(timeline)
+    initial_skill_request, initial_skill_body = _initial_skill_input_locators(timeline, main_record_id=main_record_id)
+    shell_records, resumed_records = _delegation_record_kinds(timeline, main_record_id=main_record_id)
+    first_main_user = _initial_request_locator(timeline, main_record_id=main_record_id)
     sources = (
         ("hook-notice", (event for event in hook_notices if event.get("kind") == "hook-notice")),
         ("user-intervention", (event for event in timeline if event.get("kind") == "user")),
@@ -3694,7 +3758,10 @@ def _candidate_events(
         ),
         ("warning", (event for event in warnings if event.get("kind") == "warning")),
         ("escalation", (event for event in timeline if _is_escalation_return(event))),
-        ("delegate-return", (event for event in timeline if _is_delegate_return(event))),
+        (
+            "delegate-return",
+            (event for event in timeline if _is_delegate_return(event, main_record_id=main_record_id)),
+        ),
     )
     for candidate_kind, events in sources:
         for event in events:
@@ -3747,6 +3814,7 @@ def _candidate_events(
                     first_main_user,
                     initial_skill_request=initial_skill_request,
                     initial_skill_body=initial_skill_body,
+                    main_record_id=main_record_id,
                 )
                 if exclusion is not None:
                     excluded[exclusion] += 1
@@ -4013,7 +4081,7 @@ def _is_permission_denial(event: dict[str, Any]) -> bool:
     return isinstance(text, str) and _PERMISSION_DENIAL_MARKER in text
 
 
-def _is_delegate_return(event: dict[str, Any]) -> bool:
+def _is_delegate_return(event: dict[str, Any], *, main_record_id: str = "main") -> bool:
     """委譲先の空でない最終返却のうち、明示的なエスカレーション以外を返す。
 
     `final-result`は記録ごとの最後の非commentaryのアシスタントイベントであり、
@@ -4021,7 +4089,7 @@ def _is_delegate_return(event: dict[str, Any]) -> bool:
     成功の定型形式だけの返却の除外は、`_is_normal_delegate_return`が候補の集約時に行う。
     メイン記録の最終出力は委譲返却ではない。明示的なエスカレーションは独立した候補へ送る。
     """
-    if event.get("kind") != "final-result" or event.get("record") == "main":
+    if event.get("kind") != "final-result" or event.get("record") == main_record_id:
         return False
     text = event.get("text")
     return isinstance(text, str) and bool(text.strip()) and not _is_escalation_return(event)
@@ -4080,7 +4148,7 @@ def _is_response_language_notice(event: dict[str, Any]) -> bool:
     return False
 
 
-def _initial_request_locator(timeline: list[dict[str, Any]]) -> tuple[str, int] | None:
+def _initial_request_locator(timeline: list[dict[str, Any]], *, main_record_id: str = "main") -> tuple[str, int] | None:
     """メイン記録の初期要求の位置を返す。
 
     人間の依頼で始まるセッションでは、最初の人間の発話を初期要求とする。
@@ -4090,14 +4158,17 @@ def _initial_request_locator(timeline: list[dict[str, Any]]) -> tuple[str, int] 
     for event in timeline:
         line = event.get("line")
         text = event.get("text")
-        if event.get("kind") != "user" or event.get("record") != "main" or not isinstance(line, int):
+        if event.get("kind") != "user" or event.get("record") != main_record_id or not isinstance(line, int):
             continue
         if not isinstance(text, str):
             continue
         if _PROCESS_WI_GOAL_BODY in text:
-            return ("main", line)
-        if _user_candidate_exclusion(event, "main", line, " ".join(text.split()), None) is None:
-            return ("main", line)
+            return (main_record_id, line)
+        if (
+            _user_candidate_exclusion(event, main_record_id, line, " ".join(text.split()), None, main_record_id=main_record_id)
+            is None
+        ):
+            return (main_record_id, line)
     return None
 
 
@@ -4110,6 +4181,7 @@ def _user_candidate_exclusion(
     *,
     initial_skill_request: tuple[str, int] | None = None,
     initial_skill_body: tuple[str, int] | None = None,
+    main_record_id: str = "main",
 ) -> str | None:
     """構造と固定接頭辞だけでユーザー介入ではない入力を分類する。
 
@@ -4121,7 +4193,7 @@ def _user_candidate_exclusion(
     確認への回答のうち`answer_intervention`を持つものは、選択肢をそのまま選んだ回答ではなく
     従来の判断を是正した介入であるため、除外せず候補として残す。
     """
-    if record != "main":
+    if record != main_record_id:
         return "delegated-record"
     if event.get("runtime_generated") is True:
         return "runtime-meta"
@@ -4140,13 +4212,15 @@ def _user_candidate_exclusion(
 
 def _initial_skill_input_locators(
     timeline: list[dict[str, Any]],
+    *,
+    main_record_id: str = "main",
 ) -> tuple[tuple[str, int] | None, tuple[str, int] | None]:
     """Codexの先頭スキル要求と、直後に挿入された対応本文の位置を返す。"""
     main_users = [
         event
         for event in timeline
         if event.get("kind") == "user"
-        and event.get("record") == "main"
+        and event.get("record") == main_record_id
         and isinstance(event.get("line"), int)
         and isinstance(event.get("text"), str)
         and event.get("runtime_generated") is not True
@@ -4155,7 +4229,15 @@ def _initial_skill_input_locators(
         (
             index
             for index, event in enumerate(main_users)
-            if _user_candidate_exclusion(event, "main", int(event["line"]), " ".join(str(event["text"]).split()), None) is None
+            if _user_candidate_exclusion(
+                event,
+                main_record_id,
+                int(event["line"]),
+                " ".join(str(event["text"]).split()),
+                None,
+                main_record_id=main_record_id,
+            )
+            is None
         ),
         None,
     )
@@ -4174,7 +4256,7 @@ def _initial_skill_input_locators(
     body_text = str(body["text"]).lstrip()
     if not body_text.startswith("<skill>") or f"<name>{skill_name}</name>" not in body_text:
         return None, None
-    return ("main", int(request["line"])), ("main", int(body["line"]))
+    return (main_record_id, int(request["line"])), (main_record_id, int(body["line"]))
 
 
 def _is_help_command_failure(event: dict[str, Any]) -> bool:
@@ -4455,7 +4537,7 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
     return all(value.startswith(("適合", "合格")) for value in verdicts)
 
 
-def _delegation_record_kinds(timeline: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
+def _delegation_record_kinds(timeline: list[dict[str, Any]], *, main_record_id: str = "main") -> tuple[set[str], set[str]]:
     """コマンド実行の委譲（`start`のshell）を受け取った委譲先と、再開された委譲先の記録IDを返す。
 
     実行環境が先に注入したユーザーロールの本文を除き、最初の配送本文で
@@ -4467,7 +4549,7 @@ def _delegation_record_kinds(timeline: list[dict[str, Any]]) -> tuple[set[str], 
         if (
             event.get("kind") == "user"
             and isinstance(record, str)
-            and record != "main"
+            and record != main_record_id
             and isinstance(text, str)
             and not text.startswith("# AGENTS.md instructions")
         ):

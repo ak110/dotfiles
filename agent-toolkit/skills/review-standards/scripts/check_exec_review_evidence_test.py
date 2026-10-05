@@ -1054,7 +1054,9 @@ def _user_events(tmp_path: pathlib.Path) -> pathlib.Path:
         },
         {
             "kind": "user",
-            "text": "質問: 条件6を外しますか？\n選択肢: 外す / 残す\n回答: 外す\n自由記述: 条件6は不要。",
+            "text": "外す\n条件6は不要。",
+            "assistant_context": [{"question": "条件6を外しますか？", "options": [{"label": "外す"}, {"label": "残す"}]}],
+            "user_response": [{"answers": ["外す"], "notes": "条件6は不要。"}],
             "runtime_inserted": False,
             "line": 20,
             "record": "main",

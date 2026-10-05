@@ -23,6 +23,7 @@ import typing
 import pytest
 
 from agent_toolkit._atk import managed_temp as subject
+from agent_toolkit._atk.managed_temp import inventory as inventory_subject
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
@@ -488,14 +489,14 @@ class TestManagedTempPosix:
         old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
         _set_tree_mtime(failed, old_ns)
         _set_tree_mtime(deleted, old_ns)
-        original_cleanup = subject.cleanup_managed_temp
+        original_cleanup = inventory_subject._cleanup_managed_temp
 
-        def cleanup_with_one_failure(path: pathlib.Path) -> None:
+        def cleanup_with_one_failure(path: pathlib.Path, *, blocking: bool) -> bool:
             if path == failed:
                 raise subject.ManagedTempError("想定した後始末失敗")
-            original_cleanup(path)
+            return original_cleanup(path, blocking=blocking)
 
-        monkeypatch.setattr(subject, "cleanup_managed_temp", cleanup_with_one_failure)
+        monkeypatch.setattr(inventory_subject, "_cleanup_managed_temp", cleanup_with_one_failure)
 
         assert subject.sweep_expired_managed_temp(now=now) == [deleted]
         assert failed.exists()
@@ -519,7 +520,7 @@ class TestManagedTempPosix:
         old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
         _set_tree_mtime(target, old_ns)
         entries = subject.list_managed_temp()
-        original_cleanup = subject.cleanup_managed_temp
+        original_cleanup = inventory_subject._cleanup_managed_temp
         triggered = False
 
         def finish_elsewhere() -> None:
@@ -548,7 +549,11 @@ class TestManagedTempPosix:
 
             monkeypatch.setattr(subject.os, "scandir", concurrent_scandir)
         else:
-            monkeypatch.setattr(subject, "cleanup_managed_temp", lambda _path: finish_elsewhere())
+            monkeypatch.setattr(
+                inventory_subject,
+                "_cleanup_managed_temp",
+                lambda _path, *, blocking: finish_elsewhere(),
+            )
 
         assert subject.sweep_expired_managed_temp(now=now) == []
         assert triggered
