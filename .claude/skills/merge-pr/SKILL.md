@@ -54,7 +54,7 @@ git -C <develop worktreeの絶対パス> merge-base --is-ancestor HEAD <基準re
 
 ## マージ前の確認
 
-`git fetch origin develop master`でremote-tracking refを更新し、`origin/develop`とPR番号から操作直前に取得した`headRefOid`が同じcommitを指すことを確認する。
+`git fetch origin develop master`でremote-tracking refを更新し、`origin/develop`とPR番号から操作直前に取得した`headRefOid`が同じcommitを指すことを確認する。この`headRefOid`を確認対象として保持する。
 PRはopenかつdraftでなく、baseが`master`、headが`develop`で、mergeableが成立していなければならない。
 マージの前提と続行の判定はこれらのリモート側の条件だけで行い、作業ツリーのclean、現在branchおよびローカル`develop`の位置はこの前提から外す。
 
@@ -63,9 +63,15 @@ PRはopenかつdraftでなく、baseが`master`、headが`develop`で、mergeabl
 成立しない場合は、対象worktreeとローカル`develop`に加え、既存の未コミット差分も変更せず保持する。リモートだけでリリースを完遂する。
 この判定はマージ前時点の見込みであり、同期を実行してよいかはマージ後に同じ条件を再取得して確定する。
 
-必須checkは`gh`が返す対象PRの終了状態まで待つ。待機と必須checkの指定形式は実行直前のヘルプで確定する。
+最初に`gh pr checks`のJSON出力を上限付きで反復取得し、同じPRに`event=pull_request`、`workflow=CI`、`name=statusline-version`のcheckが登録されるまで待つ。JSON項目は`event`、`workflow`、`name`を使い、実行直前のヘルプで受理形式を確定する。登録前に存在する同じhead・同名の`push`起点checkは登録完了に数えない。各照会後にPRの`headRefOid`を再取得し、保持したheadから変化した場合は停止する。
 
-必須checkの失敗は該当runの終端とログを確認して「失敗時の共通規定」を適用する。mergeableでない状態、PR head OIDの変化または確認対象の曖昧さがある場合は、外部状態と再開点を報告して停止する。
+PR起点checkの登録後だけ、`gh pr checks --required --watch`で必須checkの終端まで待つ。待機と必須checkの指定形式は実行直前のヘルプで確定する。
+
+必須check成功後はPRの`headRefOid`と`mergeStateStatus`を上限付きで再取得し、保持したheadと一致したまま`mergeStateStatus=CLEAN`になるまで待つ。GitHubのマージ可否評価が`CLEAN`となった場合だけ「PRのマージ」へ進む。
+
+登録待機または`CLEAN`待機の上限到達、照会失敗、対象の曖昧さ、check失敗、head変更および`CLEAN`以外の状態ではマージしない。必須checkの失敗は該当runの終端とログを確認して「失敗時の共通規定」を適用する。その他の停止では、観測した外部状態と再開点を報告する。
+
+PR #138では、同じheadの`push`起点check成功後に`pull_request`起点の`statusline-version`が非同期に登録された。観測版と再検証手順は`docs/development/audit-records.md`の「.claude/skills/merge-pr/SKILL.md：マージ前の確認：2026年10月5日」を参照する。
 
 ## レビューコメントの確認
 
@@ -84,11 +90,11 @@ PRはopenかつdraftでなく、baseが`master`、headが`develop`で、mergeabl
 
 ## PRのマージ
 
-レビューコメントの確認と必須checkが完了した後にPR番号から`headRefOid`を再取得し、確認対象のcommitと一致することを確認する。
+レビューコメントの確認と必須checkが完了した後にPR番号から`headRefOid`と`mergeStateStatus`を再取得し、確認対象のcommitと一致し、`mergeStateStatus=CLEAN`であることを確認する。
 一致しない場合は外部状態と再開点を報告して停止する。
 マージ操作では操作直前に取得したhead OIDを原子的な一致条件に使い、明示的なマージコミットを作成する。自動マージとbranch削除は指定しない。`gh`がこの条件を受理する形式は実行直前のヘルプで確定する。条件を保証できない場合はマージを実行しない。
 
-マージコマンドが失敗した場合は、出力された失敗理由と再開点を報告する。
+マージコマンドは1回だけ実行する。失敗した場合は再試行せず、出力された失敗理由と再開点を報告する。
 
 ## マージ後のbranch同期とCI
 

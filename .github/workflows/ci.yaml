@@ -76,8 +76,8 @@ jobs:
           # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEをシェル変数ではなく文字列リテラルとして検索する
           grep -qF '$HOME/dotfiles/bin' ~/.bashrc
 
-  test-windows:
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'test-windows (non-owner)' || 'test-windows' }}
+  update-dotfiles-upgrade-windows:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'update-dotfiles-upgrade (windows) (non-owner)' || 'update-dotfiles-upgrade (windows)' }}
     runs-on: windows-latest
     steps:
       - name: 共通CI非所有経路
@@ -88,8 +88,7 @@ jobs:
       - name: Mozilla予約タスクの停止
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         # ランナーイメージのFirefox Default Browser Agentなどの予約タスクは、runneradminとしてジョブと無関係な時刻に
-        # 通常profile（LOCALAPPDATA・APPDATA直下のMozilla）へ書き込む。「約3日前からの update-dotfiles 更新検証」の
-        # 通常profile監視と衝突し隔離漏れと誤判定されるため、VM起動後の実行時刻より前となるジョブ冒頭で止める。
+        # 通常profile（LOCALAPPDATA・APPDATA直下のMozilla）へ書き込む。更新検証の通常profile監視と衝突するため、ジョブ冒頭で止める。
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -106,6 +105,63 @@ jobs:
             Write-Output "TaskPath=$($disabled.TaskPath) TaskName=$($disabled.TaskName) State=$($disabled.State)"
             if ("$($disabled.State)" -ne 'Disabled') { throw "予約タスクを無効化できなかった: $($task.TaskPath)$($task.TaskName)" }
           }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        with:
+          fetch-depth: 0
+          path: dotfiles
+      - name: ~/dotfiles に配置
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        shell: pwsh
+        run: |
+          $src = "$env:GITHUB_WORKSPACE\dotfiles"
+          $dst = "$env:USERPROFILE\dotfiles"
+          robocopy $src $dst /E /SL /COPY:DAT /NFL /NDL /NJH /NJS
+          $rc = $LASTEXITCODE
+          if ($rc -ge 8) { exit $rc }
+          Remove-Item -Recurse -Force $src
+          "DOTFILES_DIR=$dst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          exit 0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        with:
+          working-directory: ${{ env.DOTFILES_DIR }}
+      - name: chezmoi インストール
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_chezmoi() {
+            local attempt=1
+            local installer
+            until installer=$(curl -fsSL --ssl-revoke-best-effort --connect-timeout 10 --max-time 30 get.chezmoi.io) &&
+              sh -c "$installer" -- -b "$HOME/.local/bin"; do
+              if [ "$attempt" -ge 3 ]; then
+                return 1
+              fi
+              attempt=$((attempt + 1))
+              sleep 2
+            done
+          }
+          install_chezmoi
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: 約3日前からの update-dotfiles 更新検証
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        shell: pwsh
+        working-directory: ${{ env.DOTFILES_DIR }}
+        run: |
+          $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+          uv run --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR"
+
+  test-windows:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'test-windows (non-owner)' || 'test-windows' }}
+    runs-on: windows-latest
+    steps:
+      - name: 共通CI非所有経路
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: Write-Output "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
@@ -176,13 +232,6 @@ jobs:
           }
           install_chezmoi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: 約3日前からの update-dotfiles 更新検証
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
-        shell: pwsh
-        working-directory: ${{ env.DOTFILES_DIR }}
-        run: |
-          $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
-          uv run --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR"
       - name: chezmoi 適用
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: bash
@@ -212,7 +261,7 @@ jobs:
           if ($pathKind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) { exit 1 }
 
   python-lint:
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && format('python-lint ({0}) (non-owner)', matrix.python-version) || format('python-lint ({0})', matrix.python-version) }}
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && format('{0} (non-owner)', matrix.check-name) || matrix.check-name }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ak110/pyfltr:latest
@@ -226,7 +275,16 @@ jobs:
       # 1つの版が失敗しても他の版の結果を取得し、失敗が版固有かを切り分けられるようにする
       fail-fast: false
       matrix:
-        python-version: ["3.13", "3.14"]
+        include:
+          - python-version: "3.13"
+            check: pytest
+            check-name: python-lint (3.13)
+          - python-version: "3.14"
+            check: lint
+            check-name: python-lint (3.14)
+          - python-version: "3.14"
+            check: pytest
+            check-name: pytest (3.14)
     env:
       # 開発モード: DeprecationWarning などの隠れた問題を早期検出する
       PYTHONDEVMODE: "1"
@@ -245,7 +303,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
       - name: ユーザー設定から隔離したlockfile検証
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14' && matrix.check == 'lint'
         run: |
           set -euo pipefail
           config_dir="$(mktemp -d)"
@@ -294,19 +352,19 @@ jobs:
           # 新しいキーで保存して次の実行へ引き継ぐ。
           # run_idは再実行（Re-run）で変化しないため、run_attemptを併記する。
           # run_idだけでは再実行時にキーが完全一致し、その再実行中に変化した/cacheの内容が保存されない。
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
+          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.check }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.check }}-
 
       - name: Install dependencies
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: uv sync --all-groups --all-extras
 
       - name: Python 3.13 pytest
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.13'
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.13' && matrix.check == 'pytest'
         run: pyfltr ci --commands=pytest
 
-      - name: Python 3.14全検査
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'
+      - name: Python 3.14 pytest以外の検査
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14' && matrix.check == 'lint'
         env:
           # cargo-fmt/cargo-clippy はrust-lint jobで専用実行するため python-lint 側では
           # 除外する（ccを含むRustビルドツールチェーンをcontainer imageに追加せずに済む）
@@ -315,7 +373,11 @@ jobs:
         # Claude plugin manifest検査を無効化する。
         # statusline-versionは浅いcheckoutではmasterとの共通祖先を解決できず、同じ判定を
         # statusline-version jobが所有するため無効化する。
-        run: pyfltr ci --disable=claude-plugin-validate,statusline-version
+        run: pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version
+
+      - name: Python 3.14 pytest
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14' && matrix.check == 'pytest'
+        run: pyfltr ci --commands=pytest
 
       - name: Prune uv cache for CI
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
@@ -390,7 +452,7 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
@@ -414,7 +476,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
       - name: statuslineの版数とタグを検査
         working-directory: ${{ github.workspace }}
         env:

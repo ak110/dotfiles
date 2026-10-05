@@ -41,7 +41,7 @@ description: >
     - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。`agents_server`のMCPツールと`atk agents wait`が公開する応答の変更も対象に含める。
       共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。公開する応答の変更は、応答の項目の内容・書式・条件・有無の変更を指す。同じ応答の項目をMCP層、CLIの待機および自動再開後の応答のテストが別々のファイルで確かめるためである。いずれも内部のコメント・空白だけの変更は含めない
     - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`
-    - 名前の削除・改名の全体静的検査: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
+    - 名前の削除・改名の全体静的確認: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
     - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
   - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
@@ -53,11 +53,13 @@ description: >
     - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version --enable=statusline-version`
     - レーンをまたぐ重複実装の検出: `uv run --frozen pyfltr run --commands=arid`
     - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`
-  - `make test`が実行するツール集合とCIの`python-lint (3.14)`ジョブの差は、同ジョブが`pyfltr ci --disable=`で無効化するチェックであり、対象は`.github/workflows/ci.yaml`の同ジョブの定義が定める。
+  - `make test`が実行するツール集合とCIの`python-lint (3.14)`ジョブの差は、同ジョブが`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version`で無効化するチェックである。Python 3.14のpytestは`pytest (3.14)`ジョブが所有する。
     次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
-    - `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト
+    - `test-windows`ジョブ: Windows実機でのchezmoi適用、Windows固有のテストと公開ランチャー確認
+    - `update-dotfiles-upgrade (windows)`ジョブ: Windows旧版からのupdate-dotfiles更新検証
     - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
     - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
+    - `pytest (3.14)`ジョブ: Python 3.14でのpytest
     - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
     - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
   - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、`XDG_STATE_HOME`などで状態ディレクトリを差し替えてmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
