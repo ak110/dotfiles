@@ -403,6 +403,42 @@ def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Pat
     assert _fixed_reply_errors(tmp_path) == ["unlimited.subagent.md"]
 
 
+def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
+    """反映後の観測だけが残る項目の再開記録を、送信側と受信側が同じ節名と項目で扱う。
+
+    セッション終了でメインがAWI本文へ追記する節を、pickerとメインの受領、レーン担当が同じ節名で読まないと、
+    計画が`~/.claude/plans`に無い項目は再開位置を失い、`needs_escalation`か再実装へ進む。
+    """
+    plugin_root = pathlib.Path(__file__).resolve().parent
+    finish = (plugin_root / "skills" / "process-wi" / "references" / "finish-session.md").read_text(encoding="utf-8")
+    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+
+    record = finish.split("```markdown\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
+    heading = record.splitlines()[0]
+    fields = re.findall(r"^- ([^:]+): ", record, flags=re.MULTILINE)
+    prefix = "反映後の観測だけが残る"
+    assert heading.startswith("## ")
+    assert f"- 再開区分: {prefix}" in record
+    assert {"実装commit", "残る完成条件", "観測手段", "観測できる最も早い時刻", "計画"} <= set(fields)
+    assert "--append" in finish and "return-to-inbox" in finish and "--cooldown-until" in finish
+
+    template = _h2_section(picker, "出力").split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
+    resume_line = next(line for line in template.splitlines() if line.startswith("  再開位置:"))
+    observation = resume_line.split("観測のみの書式は「", maxsplit=1)[1]
+    assert observation.startswith(prefix)
+    assert f"`{heading}`" in observation and "計画: " in observation and "計画なし" in observation
+    assert f"`{heading}`" in _h2_section(picker, "処理対象の決定")
+    assert f"`{heading}`" in _h2_section(parent, "出力の受領") and f"`{prefix}`" in _h2_section(parent, "出力の受領")
+    lane_resume = _h2_section(executor, "計画の起草")
+    assert f"`{heading}`" in lane_resume and f"`{prefix}`" in lane_resume
+    assert all(field in lane_resume for field in ("実装commit", "残る完成条件", "観測手段"))
+    assert "`計画なし`" in lane_resume and "マージなし" in lane_resume
+    assert "再開記録" in _h2_section(lanes, "中断レーンの再開")
+
+
 def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     """後段の開始条件が選定、受領、実行へ届く。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
