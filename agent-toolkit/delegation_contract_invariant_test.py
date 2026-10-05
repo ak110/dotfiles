@@ -437,6 +437,13 @@ def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
     assert all(field in lane_resume for field in ("実装commit", "残る完成条件", "観測手段"))
     assert "`計画なし`" in lane_resume and "マージなし" in lane_resume
     assert "再開記録" in _h2_section(lanes, "中断レーンの再開")
+    # 計画パスの再開位置の検収は観測のみの値へ当てはめず、観測のみの書式は再開記録を読んだ項目だけに使う。
+    receipt = _h2_section(parent, "出力の受領")
+    assert f"再開位置が`{prefix}`で始まらない項目では" in receipt
+    assert "前文の計画ファイルの確認に代えて" in receipt
+    progress_only = _h2_section(picker, "処理対象の決定")
+    assert "計画ファイルの絶対パスと残る工程の書式で`再開位置`へ記す" in progress_only
+    assert "観測のみの書式は、AWI本文の再開記録を読んだ項目だけに使う" in progress_only
 
 
 def test_staged_lane_contract_reaches_selection_and_execution() -> None:
