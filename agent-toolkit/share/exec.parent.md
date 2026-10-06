@@ -87,7 +87,7 @@
 
 ## 統合の指示と受領
 
-検証結果の診断と警告は、`agent-toolkit:check-execution`のSKILL.md「検証結果の診断と警告の判定」を基準に受領する。
+検証結果の診断と警告は、`agent-toolkit:check-execution`の`references/diagnostics.md`を基準に受領する。
 統合前HEADを使う比較と統合固有の是正・返却は、`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「検証結果の警告の判定」に従う。
 
 `マージあり`のレーンでは、計画ごとの収束した実行レビューの`完成条件証拠のパス`を受け取る。対象worktreeで次のコマンドを単独実行する。

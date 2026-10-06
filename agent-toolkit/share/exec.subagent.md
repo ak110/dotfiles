@@ -11,7 +11,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) |
-| 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-toolkit:check-execution`のSKILL.md「検証結果の診断と警告の判定」 |
+| 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-toolkit:check-execution`の`references/diagnostics.md` |
 | `実装なし`またはレビュー収束後にメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` |
 
 ## 入力
@@ -72,7 +72,7 @@
 
 メインの判断を待って`実装開始`を受領した`レーン担当`、非待機の`計画検査完了`を通知した`レーン担当`、または修正入力を受領した他の担当種別が実施する。
 
-レーン担当は初回実装に着手する直前に、`agent-toolkit:check-execution`のSKILL.md「検証結果の診断と警告の判定」が定める基準版の完全OIDを、計画の進捗ログ（計画なしでは引き継ぎ記録）へ記録する。CI修正担当は修正に着手する直前に同じ記録を残す。
+レーン担当は初回実装に着手する直前に、`agent-toolkit:check-execution`の`references/diagnostics.md`が定める基準版の完全OIDを、計画の進捗ログ（計画なしでは引き継ぎ記録）へ記録する。CI修正担当は修正に着手する直前に同じ記録を残す。
 レビュー修正担当への切替と履歴統合の後は、記録済みの基準版をそのまま使う。
 各検証の実行後は、同節で診断と警告を判定する。
 診断本文と担当差分を対応付け、比較した版、残す診断の意味・影響・理由を検証結果へ残す。同じ内容を計画の進捗ログへ、計画なしでは引き継ぎ記録へ保存する。
@@ -130,7 +130,7 @@ WI実装commitの対応は、実装・レビュー修正・CI修正の各commit�
 
 レビュー指摘への修正方法（fixupの作成、元commitへの対応付けおよびautosquashの単位と回数）は`agent-toolkit:commit`の`references/history-rewrite.md`「修正方法の選択」に従い、autosquashはラウンドごとに実行する。
 
-履歴統合後に変更範囲を再検証した結果は、`agent-toolkit:check-execution`のSKILL.md「検証結果の診断と警告の判定」で判定する。
+履歴統合後に変更範囲を再検証した結果は、`agent-toolkit:check-execution`の`references/diagnostics.md`で判定する。
 基準版は記録済みの値を引き継ぎ、診断本文と累積差分から結果を判定して進捗ログへ残す。
 
 autosquashの前に、対象worktreeがcleanであり、rewrite対象がpushされておらず、rewrite対象を操作直前に解決したOID集合がそのレーンのcommitだけであることを確認する。この確認はラウンドごとに行う。

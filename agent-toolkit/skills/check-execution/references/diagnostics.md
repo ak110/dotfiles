@@ -5,7 +5,7 @@
 検証した主体は、終了コードと要約に加え、診断本文、実行時警告、未到達・未適用・未完了を示す出力を読む。
 pyfltrの`commands_summary.needs_action.warning`はコマンド結果の区分の件数であり、個々の診断のwarning件数ではない。
 この値が0でも診断本文を読み、変更行への指摘の有無を確かめる。
-出力契約の確認記録は`docs/development/audit-records.md`の「agent-toolkit/skills/check-execution/SKILL.md：検証結果の診断と警告の判定：2026年10月3日」にある。
+出力契約の確認記録は`docs/development/audit-records.md`の「agent-toolkit/skills/check-execution/references/diagnostics.md：検証結果の診断と警告の判定：2026年10月3日」にある。
 
 変更行への帰属を判定する基準版と検証対象版を、検証結果・進捗ログまたは引き継ぎ記録へ残す。
 通常の変更では、実装に着手する直前のHEADを基準版として記録する。

@@ -193,4 +193,4 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 
 ## コミットメッセージ方針と.gitmessage
 
-`<plugin root>/skills/commit/SKILL.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化しない。
+`<plugin root>/skills/commit/references/message.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化しない。
