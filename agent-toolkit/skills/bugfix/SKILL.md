@@ -14,22 +14,32 @@ description: >
 ユーザー要求を満たさずに完了した未対応と、過去に成立した機能または規範が失われたデグレードも不具合として扱い、同じ初動から原因分析、類似見直しおよび再発防止策の判定へ進める。
 実装方式、計画形式、レビュー一般、pushとCI監視はそれぞれ`agent-toolkit:writing-standards`、`agent-toolkit:plan-mode`、`agent-toolkit:review-standards`、`agent-toolkit:commit`へ委ねる。
 
+## 読込表
+
+次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 問題を発見し、対処に着手する前 | `references/response.md` |
+| 拡張原因分析の条件に該当し、対策と再発防止策を選ぶ前 | `references/root-cause-analysis.md` |
+| 局所不良でも、AWIの`## 原因分析`を起草する、計画ファイル（バグ）を作成する、または事象単位の調査を委譲する前 | `references/root-cause-analysis.md`のうちその工程を定める節 |
+| CI失敗を扱う前 | `references/ci-failure-handling.md` |
+| CI通過の確認へ入る前 | `agent-toolkit:commit`の`references/push-and-ci.md` |
+| 履歴を扱う実装単位へ入る前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md` |
+| 実装担当の委譲先を確定する前 | `agent-toolkit:delegation`を起動し、同スキルの`references/runtime-routing.md` |
+| `agent-toolkit:writing-standards`の`references/testing.md`「分岐条件の効果の裏付け」による検証へ入る前 | 同スキルを起動し、`references/testing.md` |
+
+`references/root-cause-analysis.md`が定める2つの判断は対策の選定を左右する。不在を原因へ採る前に事項が既存の上位規範から導かれるかを確かめる判断と、条文の追加より除去・緩和・一般化を先に評価する選定順である。
+
 ## 適用手順
 
-問題を発見した時点で、対処に着手する前に`references/response.md`を全文読む。
 事象がWI処理の工程や運用に関わる場合は、対策を選ぶ前に`agent-toolkit:workflow-overview`を起動する。
 
-1. 後述の「初動と拡張原因分析の判定」を読む
-2. 拡張原因分析の条件に該当する場合だけ、`references/root-cause-analysis.md`を全文読む。
-   同書は対策の選定に関わる2つの判断を定める。不在を原因へ採る前に事項が既存の上位規範から導かれるかを確かめる判断と、条文の追加より除去・緩和・一般化を先に評価する選定順である。対策と再発防止策を選ぶ前に読む
-   局所不良でも、AWIの`## 原因分析`を起草する場合、計画ファイル（バグ）を作成する場合と事象単位の調査を委譲する場合は、同書の該当節を読む
-3. CI失敗を扱う時は`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
+1. 後述の「初動と拡張原因分析の判定」を適用する
+2. 拡張原因分析の条件に該当する場合は、読込表の`references/root-cause-analysis.md`に従って原因分析と処置を確定する
+3. CI失敗を扱う時は、読込表の`references/ci-failure-handling.md`に従って帰属と原因を分類する
 4. 計画、実装、レビューのいずれでも同じ判定と原因分析の段階を用いる
 
-CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.md`を全文読む。
-履歴を扱う実装単位へ入る前は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を全文読む。
-実装担当の委譲先を確定する前は`agent-toolkit:delegation`を起動し、同スキルの`delegation/references/runtime-routing.md`を全文読む。
-`references/testing.md`「分岐条件の効果の裏付け」による検証へ入る前は`agent-toolkit:writing-standards`を起動し、同スキルの`references/testing.md`を全文読む。
 文書・規範・出力文面を変える対策の直し方をユーザーへ提案するか委譲先へ渡す前は、`agent-toolkit:writing-standards`を起動し、受け取る主体が観測できる条件で方向を評価する。
 
 ## 初動と拡張原因分析の判定
@@ -54,7 +64,7 @@ CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.m
     - 設計判断、代替手段の選択、誤ったテスト期待値の固定が不具合へ関与する
     - 現行コードだけでは意図を説明できず、コメント・文書・履歴の確認を要する
     - 同じ原因が別の箇所ですでに成立するか、同じ判断・工程が反復される箇所を現行の実装・手順・履歴から観測できる
-    - push後のCI失敗で、原因が自セッションに帰属するか、セッション帰属が未確定
+    - push後のCI失敗で、原因が自セッションに帰属するか、セッション帰属が未確定（自セッションで導入したlint違反などの自明な単純失敗を含む）
     - エージェント向け文書の欠陥、判定条件の抜けや矛盾
     - ツールの使い勝手の悪さ、ツールが出力するメッセージの分かりにくさ
     - 公開インターフェース・コマンド体系・配置規約の一貫性の逸脱

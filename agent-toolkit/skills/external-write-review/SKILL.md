@@ -11,6 +11,14 @@ description: >
 投稿する主体が対象の判定、レビューの依頼、指摘の採否および投稿を担う。
 投稿操作の認可は`agent-toolkit:user-confirmation-and-report`に従って判定する。
 
+## 読込表
+
+次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対象の文面を確定し、レビュー担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/external-write-review.parent.md` |
+
 ## 対象と入力
 
 第三者が読む外部サービスへエージェントが起草または加筆した人間向け文面を対象とする。
@@ -21,5 +29,5 @@ git pushとコミットメッセージは`agent-toolkit:commit`、WI本文は`ag
 
 ## 起動と受領
 
-投稿する主体は`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.parent.md`を全文読み、同書に従ってレビュー担当を起動し、結果を受領する。
+投稿する主体は読込表の`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.parent.md`に従ってレビュー担当を起動し、結果を受領する。
 レビュー担当の観点、読者像および返却形式は`external-write-review.subagent.md`が定めるため、委譲プロンプトへ書かない。

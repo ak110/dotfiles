@@ -13,13 +13,25 @@ description: >
 
 本スキルはgit commitの操作手順とコミットメッセージの記述規約を提供する。
 
+## 読込表
+
+次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本スキルを起動した時点 | `references/git-identifier.md` |
+| 公開工程に着手する前 | `references/publish.md` |
+| amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `references/history-rewrite.md` |
+| 実際にpushする前、またはリリース操作に着手する前 | `references/push-and-ci.md` |
+| 実行工程（`exec.subagent.md`の手順）のcommit履歴を扱う前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md` |
+
+push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルの`references/ci-failure-handling.md`で原因を分析する。
+
 ## 検証
 
 全コミットの完了後に計画全体を対象に変更範囲を検証し、レビューへ進む。
 
 ## 通常commit
-
-モデル設定、aliasおよび起動候補は起動用の値として扱う。commit担当はcommitを実行するturnのホスト記録から観測したmodelとeffortを使い、最終メッセージへ対応する`Co-Authored-By:` trailerを1回だけ生成する。観測値を取得できる場合にだけ生成する。
 
 コミット数はセッションや計画ごとに固定せず、変更目的、依存関係、レビュー、revert時の理解しやすさを
 基準に境界を決める。計画の想定commit単位がある場合はその単位を起点とし、各単位で実装、変更範囲の検証、
@@ -49,28 +61,13 @@ commit時に本来実行されるGit hookまたはhook管理ツール内の対�
 
 WIを入力に持つ実装commitとAWIの対応は、計画の進捗ログ（計画なしでは引き継ぎ記録）だけへ構造化して残し、記録・取得・履歴変更の各操作を本節の手段で行う。各工程の文書は、操作する時点、使う記録とworktree、工程固有の入力だけを持ち、手順は本節を参照する。
 
-記録: 実装commitの作成前に対応AWI集合と現在のHEADの完全OIDを取得する。`git commit`を単独で実行して終了コード0を確認し、成功後に新しいHEADの完全OIDを取得する。前HEADを`--previous-head`、新HEADを`--commit`へ渡して記録する。通常実装・レビュー修正・CI修正の各commitへ同じ手段を使う。計画がある場合は次の形で記録する。計画とworktreeは絶対パス、OIDは完全OID、AWIはファイル名を渡し、全対応AWIを`--awi`で反復指定する。commitが失敗したときは記録へ進まない。
-
-```text
-atk run-script plan-progress -- <計画> --completed-step <工程> --result <結果> --worktree <worktree> --previous-head <作成前HEADの完全OID> --commit <新HEADの完全OID> --awi <AWI>
-```
-
-計画なしでは引き継ぎ記録を対象にし、`--handoff`と対象集合全件の`--allowed-awi`を加える。
+記録: 実装commitの作成前に対応AWI集合と現在のHEADの完全OIDを取得する。`git commit`を単独で実行して終了コード0を確認し、成功後に新しいHEADの完全OIDを取得する。commitが失敗したときは記録へ進まない。通常実装・レビュー修正・CI修正の各commitで、作成前HEAD、新HEAD、worktreeと全対応AWIを`atk run-script plan-progress`で計画（計画なしでは引き継ぎ記録）へ記録する。各値を渡すオプションと計画なしの場合の指定は同コマンドの`--help`に従い、計画とworktreeは絶対パス、AWIはファイル名で渡す。
 
 取得: 終端担当などAWIを終端する主体は、`atk run-script plan-commits -- <記録> --worktree <worktree> --awi <AWI>`へ同じ記録と対象を渡す。記録とworktreeは絶対パスを使い、JSON Linesの`awi`・`commits`から現在の完全OID集合を取得する。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら読取りに使える。候補が複数ある場合は保存済み計画の実在パスを指定する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。取得した完全OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。記録の欠落・対象外AWI・Gitで解決できないOIDは生成側が補完してから再取得し、説明文や件名から対応を推定しない。
 
 履歴変更: rebase・autosquash・amendでWI実装commitのOIDが変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従い、旧完全OIDから新完全OIDへの対応を`--rewrite-map`で同じ記録へ追記する。対応表へ入れる旧OIDは、記録済みの対応を持つものに限る。`git range-diff`などで検収した全commitのうちWI対応を持たないcommitを入れると、追記が失敗する。記録済みの旧OIDが対応表に無いと、取得時に現在のHEADにないOIDとして失敗する。
 
 対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、計画の進捗ログまたは引き継ぎ記録に残した根拠を使い、commitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は`atk plans commit`で保存する。
-
-## 条件付き手順
-
-- 本スキルの起動時に`agent-toolkit/skills/commit/references/git-identifier.md`を全文読む
-- 公開工程に着手する時点で`references/publish.md`を全文読む
-- amend、fixup、autosquash、rebaseまたはpush済み判定の直前に`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む
-- 実際にpushする直前またはリリース操作に着手する時点で`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む
-- 実行工程（`exec.subagent.md`の手順）のcommit履歴を扱う時は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を全文読む
-- push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルの`references/ci-failure-handling.md`で原因を分析する
 
 ## 作業用ブランチと退避物の削除
 
@@ -142,4 +139,5 @@ atk run-script plan-progress -- <計画> --completed-step <工程> --result <結
 - `Co-Authored-By:`の値はユーザーの明示指示、明文化されたプロジェクト方針、実行環境が提示する帰属の指定の3つの取得元をこの順に確かめ、
   最初に観測できた定義から決定する。
   いずれの取得元にも定義が無い場合は`Co-Authored-By: <実行中のモデルの表示名> <noreply@<モデル提供元のドメイン>>`を付ける。Codexのドメインは`openai.com`とする。空文字列の指定は帰属の明示的な無効化として扱う。
+  帰属の指定と前記の形へ入れるモデルと推論量（effort）は、commitを実行するturnのホスト記録から観測した値とし、モデル設定、aliasおよび起動候補は起動用の値として扱う。trailerを付けるのは入れる値を観測できた場合だけとする。
   `Co-Authored-By:`は最終コミットメッセージへ1回だけ付け、既存の異なるtrailerを保持する

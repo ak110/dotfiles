@@ -10,6 +10,15 @@ description: >
 
 本スキルはGitLab CI設定に関する知識を提供する。
 
+## 読込表
+
+次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーを返したとき | `references/self-hosted-tls.md` |
+| 私設GitLabのCI通過確認を行う前 | `agent-toolkit:commit`の`references/push-and-ci.md` |
+
 ## 基本方針
 
 `.gitlab-ci.yml`のキーワード仕様は改訂頻度が高く、訓練データ由来の記憶で書くと、既に非推奨となったサブキーをそのまま採用する。公式ドキュメントの取得は非推奨のサブキーの採用を防ぐが、基礎的なキーワードで毎回取得すると費用が便益を上回る場合もある。新規に使うキーワード、改訂の多いキーワードおよび記憶が確かでない構文では、公式ドキュメントを直接WebFetchし、該当キーワードのページを取得してから構文を決める。
@@ -78,6 +87,5 @@ GitLab本体のlintは`include`や`workflow`の評価まで実行するため、
 
 ## 私設ホスト（自己署名のTLS証明書）でのCI通過確認
 
-自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーになる場合の対処は、
-`references/self-hosted-tls.md`を読む。
-私設GitLabのCI通過確認を行う時は、`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む。
+自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーになる場合の対処は`references/self-hosted-tls.md`が、
+CI通過確認の手順は`agent-toolkit:commit`の`references/push-and-ci.md`が定める。どちらも読込表の行に従って読む。
