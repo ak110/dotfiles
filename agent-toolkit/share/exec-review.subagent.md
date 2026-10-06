@@ -86,11 +86,10 @@ plugin rootの配置からPython実行ファイルの絶対パスを組み立て
 
 レビュー観点は`agent-toolkit:review-standards`の`references/reviewer.md`「実行レビューの判定」を適用する。
 種類8の走査では、変更した契約と変更ファイルを読む主体、通常操作中の状態遷移から、`agent-toolkit:check-execution`の`references/verification-scope.md`の類型を基準に直接影響範囲の範囲を独立に求め、提出された探索記録と検証結果と比べる。脱落した対象はレビュー指摘管理表へ記録する。
-文章成果物がある場合は、`${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md`に従って読者別探索担当を起動する。この起動は`references/reviewer.md`「初回レビュー」の手順6の走査と並行させる。
+文章成果物がある場合は、`${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md`に従って読者別探索担当を起動する。起動を省ける差分も同書が定める。この起動は`references/reviewer.md`「初回レビュー」の手順6の走査と並行させる。
 初回は全体探索とし、再レビューでは前回確認版から現行版への修正差分と変更した契約の直接影響範囲、未走査・証拠不足の範囲を読者ごとに確定して`修正範囲`へ渡す。
 レビュー指摘管理表の前回指摘と応答から当該読者の`未解決事項`を生成し、該当事項が無い場合は`なし`を渡す。
 再レビューの`レビュー種別`は`再レビュー`とし、`reader-fit-review.parent.md`の再点検対象が無い場合の省略と受領手順に従う。
-コードコメントは通常の走査で扱う。
 ユーザーがAWIの`## ユーザーコメント`またはUWIの`## 回答`へ処理側に宛てて直接記入した質問への回答を記録したUWIは、private-notesにあり差分へ現れないが、文章成果物として同じ探索へ含める。AWI本文へ転記された質問は`source`の値を問わず回答対象から外す。計画の検証結果が示すファイル名とその取得コマンド（`atk wi show <ファイル名> --skip-pull`）を成果物、種別を質問への回答、読者を質問したユーザーとして渡す。読者別探索担当が報告した欠落は種類1として指摘する。
 画面差分では並列画面レビュー（`${CLAUDE_PLUGIN_ROOT}/share/usability-review.parent.md`）としてユーザビリティレビューが並行する。統合時点だけに適用する`reviewer.md`の指摘の種類5（完了条件を満たしていない）を先取りして登録しない。
 
