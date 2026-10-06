@@ -96,10 +96,9 @@ __all__ = [
 
 @dataclasses.dataclass(frozen=True)
 class _CommitMetadata:
-    """WIの処理結果へ保存するcommit識別情報。"""
+    """WIの処理結果へ保存するcommit識別情報。`short_oid`は記録時に一意な長さの短縮OID。"""
 
-    oid: str
-    author_date: str
+    short_oid: str
     subject: str
 
 
@@ -523,8 +522,7 @@ def _stamp_result(
     if commit:
         lines.extend(
             (
-                f"- 対応commit: {commit.oid}",
-                f"- 対応commit作成者日時: {commit.author_date}",
+                f"- 対応commit: {commit.short_oid}",
                 f"- 対応commit件名: {commit.subject}",
             )
         )

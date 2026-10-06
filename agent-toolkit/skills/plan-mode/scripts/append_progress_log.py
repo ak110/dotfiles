@@ -2,6 +2,8 @@
 
 保存済み計画の領域（private-notesの`plans`配下）の計画は変更せずに失敗する。
 保存済み計画へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから追記し、`atk plans commit`で保存する。
+`--commit`と`--rewrite-map`の対応は、計画（`--handoff`では引き継ぎ記録）と同じディレクトリで同じstemの
+`<stem>.wi-commits.jsonl`へ短縮OIDで記録し、本文には進捗の行だけを追記する。
 """
 
 from __future__ import annotations
@@ -176,8 +178,9 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         if metadata is None or errors:
             raise ProgressLogError("計画の関連WIを確定できません", next_action=_CHECK_STRUCTURE)
         allowed = {wi for wi, _summary in metadata.related_wi}
+    events = commit_mapping.read_events(read_path, content)
     if args.get_commits:
-        result = commit_mapping.get_commits(args.worktree, content, args.awi or [], allowed)
+        result = commit_mapping.get_commits(args.worktree, events, args.awi or [], allowed)
         for wi, commits in result.items():
             print(json.dumps({"awi": wi, "commits": commits}, ensure_ascii=False))
         return True
@@ -185,18 +188,20 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         assert isinstance(args.previous_head, str)
         event = commit_mapping.commit_event(args.worktree, args.commit, args.previous_head, args.awi or [], allowed)
     elif args.rewrite_map:
-        mapping = commit_mapping.read_mapping(content, allowed)
+        mapping = commit_mapping.read_mapping(args.worktree, events, allowed)
         event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping)
     else:
         parser.error("--handoffには--commit、--rewrite-mapまたは--get-commitsが必要です")
         return False
-    args.result = args.result + " " + commit_mapping.encode_event(event)
+    # 進捗の行を先に追記し、構造の不正で失敗した場合は対応記録ファイルも変えない。
     if args.handoff:
         _plan_locations.reject_saved_plans_root_write(args.plan_file)
         separator = "\n" if content.endswith("\n") else "\n\n"
         atomic_write(args.plan_file, content + separator + args.completed_step + ": " + args.result + "\n")
-        return True
-    return False
+    else:
+        append_progress_log(args.plan_file, args.completed_step, args.result)
+    commit_mapping.append_event(args.plan_file, event)
+    return True
 
 
 def main(argv: list[str] | None = None, *, description: str | None = None) -> int:
@@ -206,18 +211,20 @@ def main(argv: list[str] | None = None, *, description: str | None = None) -> in
     parser.add_argument("--completed-step", help="完了した工程（記録時は必須）")
     parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
     operation = parser.add_mutually_exclusive_group()
-    operation.add_argument("--commit", help="対応を記録する実装commit。完全OIDへ解決する")
-    parser.add_argument("--previous-head", help="実装commitの作成直前に取得したHEADの完全OID。--commitでは必須")
+    operation.add_argument("--commit", help="対応を記録する実装commit。短縮OIDで記録する")
+    parser.add_argument("--previous-head", help="実装commitの作成直前に取得したHEAD。短縮OIDか完全OID。--commitでは必須")
     operation.add_argument(
         "--rewrite-map",
         type=pathlib.Path,
         metavar="PATH",
-        help="検収済みの旧完全OIDから新完全OIDへの対応をJSONオブジェクトで保存したファイルの絶対パス（JSON文字列そのものは受け取らない）",
+        help="検収済みの旧OIDから新OIDへの対応をJSONオブジェクトで保存したファイルの絶対パス。OIDは短縮OIDか完全OID（JSON文字列そのものは受け取らない）",
     )
-    operation.add_argument("--get-commits", action="store_true", help="対象AWIの現在のcommit対応をJSON Linesで取得する")
+    operation.add_argument(
+        "--get-commits", action="store_true", help="対象AWIの現在のcommit対応を短縮OIDのJSON Linesで取得する"
+    )
     parser.add_argument("--awi", action="append", help="対応する、または取得するAWIファイル名。反復指定")
     parser.add_argument("--worktree", type=pathlib.Path, metavar="DIR", help="実装commitを確認する対象worktreeの絶対パス")
-    parser.add_argument("--handoff", action="store_true", help="計画なしの引き継ぎ記録へ同じ対応を記録・取得する")
+    parser.add_argument("--handoff", action="store_true", help="計画なしの引き継ぎ記録について同じ対応を記録・取得する")
     parser.add_argument("--allowed-awi", action="append", help="引き継ぎ記録の対象AWI全件。--handoffでは反復指定が必須")
     args = parser.parse_args(argv)
     if not args.get_commits and (args.completed_step is None or args.result is None):

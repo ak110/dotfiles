@@ -1,4 +1,4 @@
-"""進捗記録からAWIごとの現在の実装commitをJSON Linesで取得する。"""
+"""計画または引き継ぎ記録と同じstemの対応記録ファイルから、AWIごとの現在の実装commitを短縮OIDのJSON Linesで取得する。"""
 
 import sys
 

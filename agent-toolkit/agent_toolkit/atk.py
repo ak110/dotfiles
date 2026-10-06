@@ -719,7 +719,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="SHA",
         default=None,
         help=(
-            "ローカルworktreeとrevisionを検証してcommit情報を記録する。"
+            "ローカルworktreeとrevisionを検証し、一意な長さの短縮OIDと件名を記録する。短縮OIDと完全OIDのどちらも受理する。"
             "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
             "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
             "--commit=VALUE形式で渡すことを推奨。"
@@ -754,7 +754,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="SHA",
         default=None,
         help=(
-            "ローカルworktreeとrevisionを検証してcommit情報を記録する。"
+            "ローカルworktreeとrevisionを検証し、一意な長さの短縮OIDと件名を記録する。短縮OIDと完全OIDのどちらも受理する。"
             "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
             "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
             "--commit=VALUE形式で渡すことを推奨。"

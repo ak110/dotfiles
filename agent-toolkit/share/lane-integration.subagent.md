@@ -49,7 +49,7 @@
 11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず続行できない理由を返す。
 12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
-手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で、旧完全OIDから新完全OIDへの対応を各計画または引き継ぎ記録へ追記する。対応表へ入れる旧OIDは、`git range-diff`で検収した全commitのうち、その計画の進捗ログ（計画なしでは引き継ぎ記録）にWI対応を持つものに限り、記録済みの旧OIDは全て含める。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
+手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で、旧OIDから新OIDへの対応を各計画または引き継ぎ記録と同じstemの対応記録ファイルへ追記する。対応表へ入れる旧OIDは、`git range-diff`で検収した全commitのうち、その対応記録ファイル（読み取り互換として本文に残る旧形式の記録を含む）にWI対応を持つものに限り、記録済みの旧OIDは全て含める。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
 
 ### 検証結果の警告の判定
 
@@ -82,7 +82,7 @@
 
 計画または計画なしの引き継ぎ記録に確定した採否と、受領した終端区分を適用する。採用した項目と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終端する。adoptではAWIごとに実装差分を確かめ、adoptのcommit対応付け（`agent-toolkit:wi-standards`「状態と依存」の遷移表）に従う。複数commitのメモは`--note-file`へ記録する。開始時と統合時のHEADを全項目へ機械的に複製しない。プロジェクト固有の公開後の操作後へadoptを延期する項目は、AWIファイル名と対応する実装commitを対応付けて返し、状態変更は延期先の工程へ委ねる。`終端しない`と受領した項目は状態を変更せず、`adopted`と`rejected`のいずれにも含めない。`混在`の項目はメインが`inbox`へ戻す。観測のみの再開で残った項目は状態を保ち、確認と保留か`processing`での再開かはメインがセッション終了工程で確定する。
 
-実装差分のあるAWIの対応commitは、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の取得の手段で、計画の進捗ログまたは引き継ぎ記録から取得し、同節に従って`adopt`へ渡す。`--worktree`へは統合後のworktreeを渡す。延期adoptの返却では、取得した結果から対応するAWIとOIDの組を全件残す。
+実装差分のあるAWIの対応commitは、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の取得の手段で、計画または引き継ぎ記録と同じstemの対応記録ファイルから短縮OIDで取得し、同節に従って`adopt`へ渡す。`--worktree`へは統合後のworktreeを渡す。延期adoptの返却では、取得した結果から対応するAWIとOIDの組を全件残す。
 
 各状態変更コマンドは単独実行し、成功の報告、対象の完全識別子および警告の不在で完了を判定する。同じ状態を別コマンドで取得し直さない。`atk`の成功の報告を完了の根拠とし、報告と保存状態の不一致は`atk`側で是正するためである。
 commitを記録する採否操作は`agent-toolkit:wi-standards`「状態と依存」の共通前提に従い、

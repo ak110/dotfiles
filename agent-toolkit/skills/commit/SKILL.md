@@ -61,15 +61,15 @@ commit時に本来実行されるGit hookまたはhook管理ツール内の対�
 
 ## WI実装commitの対応
 
-WIを入力に持つ実装commitとAWIの対応は、計画の進捗ログ（計画なしでは引き継ぎ記録）だけへ構造化して残し、記録・取得・履歴変更の各操作を本節の手段で行う。各工程の文書は、操作する時点、使う記録とworktree、工程固有の入力だけを持ち、手順は本節を参照する。
+WIを入力に持つ実装commitとAWIの対応は、計画（計画なしでは引き継ぎ記録）と同じディレクトリで同じstemを持つ対応記録ファイル`<stem>.wi-commits.jsonl`だけへ構造化して残し、記録・取得・履歴変更の各操作を本節の手段で行う。対応記録ファイルは`atk run-script plan-progress`が書き、`atk run-script plan-commits`が読む。commitは記録時と取得時に対象worktreeで一意な長さの短縮OIDで表し、入力には短縮OIDと完全OIDのどちらも渡せる。各工程の文書は、操作する時点、使う記録とworktree、工程固有の入力だけを持ち、手順は本節を参照する。
 
-記録: 実装commitの作成前に対応AWI集合と現在のHEADの完全OIDを取得する。`git commit`を単独で実行して終了コード0を確認し、成功後に新しいHEADの完全OIDを取得する。記録へ進むのはcommitが成功した場合に限る。通常実装・レビュー修正・CI修正の各commitで、作成前HEAD、新HEAD、worktreeと全対応AWIを`atk run-script plan-progress`で計画（計画なしでは引き継ぎ記録）へ記録する。各値を渡すオプションと計画なしの場合の指定は同コマンドの`--help`に従い、計画とworktreeは絶対パス、AWIはファイル名で渡す。
+記録: 実装commitの作成前に対応AWI集合と現在のHEADのOIDを取得する。`git commit`を単独で実行して終了コード0を確認し、成功後に新しいHEADのOIDを取得する。記録へ進むのはcommitが成功した場合に限る。通常実装・レビュー修正・CI修正の各commitで、作成前HEAD、新HEAD、worktreeと全対応AWIを`atk run-script plan-progress`へ渡し、計画（計画なしでは引き継ぎ記録）の対応記録ファイルへ記録する。各値を渡すオプションと計画なしの場合の指定は同コマンドの`--help`に従い、計画とworktreeは絶対パス、AWIはファイル名で渡す。
 
-取得: 終端担当などAWIを終端する主体は、`atk run-script plan-commits -- <記録> --worktree <worktree> --awi <AWI>`へ同じ記録と対象を渡す。記録とworktreeは絶対パスを使い、JSON Linesの`awi`・`commits`から現在の完全OID集合を取得する。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら読取りに使える。候補が複数ある場合は保存済み計画の実在パスを指定する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。取得した完全OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。記録の欠落・対象外AWI・Gitで解決できないOIDは生成側が補完してから再取得し、説明文や件名から対応を推定しない。
+取得: 終端担当などAWIを終端する主体は、`atk run-script plan-commits -- <記録> --worktree <worktree> --awi <AWI>`へ同じ記録と対象を渡す。記録とworktreeは絶対パスを使い、JSON Linesの`awi`・`commits`から現在のcommit集合を取得時点で一意な長さの短縮OIDで取得する。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら、その計画と同じstemの対応記録ファイルの読取りに使える。候補が複数ある場合は保存済み計画の実在パスを指定する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。取得した短縮OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。記録の欠落・対象外AWI・Gitで解決できないOID（一意に解決できない短縮OIDを含む）は生成側が補完してから再取得し、説明文や件名から対応を推定しない。
 
-履歴変更: rebase・autosquash・amendでWI実装commitのOIDが変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従い、旧完全OIDから新完全OIDへの対応を`--rewrite-map`で同じ記録へ追記する。対応表へ入れる旧OIDは、記録済みの対応を持つものに限る。`git range-diff`などで検収した全commitのうちWI対応を持たないcommitを入れると、追記が失敗する。記録済みの旧OIDが対応表に無いと、取得時に現在のHEADにないOIDとして失敗する。
+履歴変更: rebase・autosquash・amendでWI実装commitのOIDが変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従い、旧OIDから新OIDへの対応を`--rewrite-map`で同じ対応記録ファイルへ追記する。対応表へ入れる旧OIDは、記録済みの対応を持つものに限る。`git range-diff`などで検収した全commitのうちWI対応を持たないcommitを入れると、追記が失敗する。記録済みの旧OIDが対応表に無いと、取得時に現在のHEADにないOIDとして失敗する。
 
-対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、計画の進捗ログまたは引き継ぎ記録に残した根拠を使い、commitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は`atk plans commit`で保存する。
+対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、計画の進捗ログまたは引き継ぎ記録に残した根拠を使い、commitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は対応記録ファイルと共に`atk plans commit`で保存する。
 
 ## 作業用ブランチと退避物の削除
 

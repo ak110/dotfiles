@@ -28,7 +28,7 @@ from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import structure as _plan_format
 
-_CURRENT_ATTACHMENT_SUFFIXES = (".bugs.md", ".exec-review.tsv")
+_CURRENT_ATTACHMENT_SUFFIXES = (".bugs.md", ".exec-review.tsv", ".wi-commits.jsonl")
 _CI_REVIEW_DIRECTORY = pathlib.Path("ci")
 _CI_REVIEW_NAME_RE = re.compile(r"^ci-[0-9a-f]{7,64}\.exec-review\.tsv$")
 _SAVED_BUNDLE_CONFLICT_MESSAGE = "保存先に内容の異なる計画ファイルがあります: {destination}"

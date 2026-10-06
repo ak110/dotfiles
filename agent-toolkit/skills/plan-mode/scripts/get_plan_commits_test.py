@@ -34,24 +34,28 @@ def _prepare_two_commits(worktree: pathlib.Path) -> str:
 
 
 def test_public_plan_commits_reads_existing_handoff(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """記録済みの対応を公開登録から取得し、実在する完全OIDを返す。"""
+    """引き継ぎ記録と同じstemの対応記録ファイルを公開登録から取得し、取得時点で一意な長さの短縮OIDを返す。"""
     previous_head = _prepare_two_commits(tmp_path)
     wi = "20261004-044311-001.md"
     event = commit_mapping.commit_event(tmp_path, "HEAD", previous_head, [wi], {wi})
     record = tmp_path / "handoff.md"
-    record.write_text(commit_mapping.encode_event(event), encoding="utf-8")
+    record.write_text("# 引き継ぎ\n", encoding="utf-8")
+    commit_mapping.append_event(record, event)
     args = argparse.Namespace(
         script_name="plan-commits",
         script_args=[str(record), "--worktree", str(tmp_path), "--awi", wi, "--handoff", "--allowed-awi", wi],
     )
     assert run_script.dispatch(args) == 0
-    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [event["commit"]]}
+    short = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True, timeout=30
+    ).stdout.strip()
+    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [short]}
 
 
 def test_public_plan_commits_reads_saved_plan_by_old_working_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """保存後も公開別名から旧作業パスで対応commitを取得できる。"""
+    """保存後も公開別名から旧作業パスで、保存済み計画と同じstemの対応記録ファイルを読んで対応commitを取得できる。"""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     previous_head = _prepare_two_commits(tmp_path)
@@ -81,6 +85,8 @@ def test_public_plan_commits_reads_saved_plan_by_old_working_path(
     saved = tmp_path / "private-notes" / "plans" / "2026" / "10" / working.name
     saved.parent.mkdir(parents=True)
     working.rename(saved)
+    attachment = working.with_name(working.stem + ".wi-commits.jsonl")
+    attachment.rename(saved.with_name(attachment.name))
     args = argparse.Namespace(
         script_name="plan-commits",
         script_args=[str(working), "--worktree", str(tmp_path), "--awi", wi],
