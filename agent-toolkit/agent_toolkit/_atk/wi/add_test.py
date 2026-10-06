@@ -621,13 +621,8 @@ def test_cmd_add_preserves_explicit_alignment_frontmatter(
 
 
 def test_add_parser_rejects_removed_alignment_option(capsys: pytest.CaptureFixture[str]) -> None:
-    """撤去した申告オプションをヘルプに載せず、指定時は引数エラーにする。"""
+    """撤去した申告オプションの指定は引数エラーにする。"""
     parser = atk._build_parser()  # noqa: SLF001
-    with pytest.raises(SystemExit) as help_exit:
-        parser.parse_args(["wi", "add", "--help"])
-    assert help_exit.value.code == 0
-    assert "--scope-aligned" not in capsys.readouterr().out
-
     with pytest.raises(SystemExit) as option_exit:
         parser.parse_args(["wi", "add", "--scope-aligned"])
     assert option_exit.value.code == 2

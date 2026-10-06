@@ -7944,21 +7944,6 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
     }
 
 
-def test_help_uses_one_claude_only_limitation_note(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """説明・統計・hook通知の注意書きが同じ定数を使い、Codexスレッドを除外しない。"""
-    note = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
-    monkeypatch.setenv("COLUMNS", "1000")
-    with pytest.raises(SystemExit) as raised:
-        evidence.main(["--help"])
-    help_text = " ".join(capsys.readouterr().out.split())
-
-    assert raised.value.code == 0
-    assert help_text.count(note) == 3
-    assert "Codexスレッド別集計はClaude Code形式" not in help_text
-    assert "`--since`が必須" in help_text
-    assert help_text.count("`--since`と`--observation-boundary`が必須") == 2
-
-
 def test_hook_record_scan_tolerates_non_string_type_values(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

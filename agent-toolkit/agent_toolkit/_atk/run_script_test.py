@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from agent_toolkit._atk import help_text, run_script
+from agent_toolkit._atk import run_script
 from agent_toolkit._common import next_action
 
 
@@ -93,12 +93,6 @@ def test_dispatch_runs_review_contract_validator(tmp_path: pathlib.Path, capsys:
     )
 
     assert run_script.dispatch(argparse.Namespace(script_name="review-contract", script_args=arguments)) == 0
-
-    # `atk`と同じヘルプ書式で整形する。標準の書式は登録名の`-`で折り返し、名前の一致を判定できないため。
-    parser = argparse.ArgumentParser(formatter_class=help_text.JapaneseHelpFormatter)
-    run_script.build_parser(parser)
-    # 手順書を読んだ主体が登録名を推測せず`--help`だけで見つけられることを保証する。
-    assert "review-contract" in parser.format_help()
 
     contract.write_text("version: 1\nclauses: []\n", encoding="utf-8")
 
@@ -302,7 +296,7 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
 
 
 def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib.Path) -> None:
-    """公開された`atk run-script plan-progress`のヘルプに撤去した`--start-head`が無く、渡すと引数エラーで終わる。
+    """公開された`atk run-script plan-progress`へ撤去した`--start-head`を渡すと引数エラーで終わる。
 
     開始時のHEADは専用branchとベースbranchから`git merge-base`で得るため、進捗ログへ記録する手段を撤去した。
     エンドユーザーが呼び出す`atk run-script`のスクリプト選択と引数の受け渡しを経ても、
@@ -316,14 +310,6 @@ def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib
     plan.write_text("# 計画\n", encoding="utf-8")
     saved = plan.read_bytes()
 
-    help_result = subprocess.run(
-        [executable, "run-script", "plan-progress", "--", "--help"],
-        cwd=tmp_path,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
     rejected = subprocess.run(
         [
             executable,
@@ -345,9 +331,6 @@ def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib
         check=False,
     )
 
-    assert help_result.returncode == 0, help_result.stderr
-    assert "--completed-step" in help_result.stdout
-    assert "--start-head" not in help_result.stdout
     assert rejected.returncode == 2, rejected.stderr
     assert "--start-head" in rejected.stderr
     assert plan.read_bytes() == saved

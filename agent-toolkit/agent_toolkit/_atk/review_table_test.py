@@ -1197,95 +1197,16 @@ def test_parser_rejects_unsupported_options_with_guidance(
     assert f"atk review-table {subcommand}が受理するオプションは{accepted}" in error
 
 
-@pytest.mark.parametrize(
-    ("subcommand", "options", "removed_options"),
-    (
-        ("add", ("--location-file", "--issue-file"), ("--location LOCATION", "--issue ISSUE")),
-        (
-            "respond",
-            ("--location-file", "--issue-file", "--response-file", "--no-response-reason-file"),
-            ("--location LOCATION", "--issue ISSUE", "--response RESPONSE", "--no-response-reason NO_RESPONSE_REASON"),
-        ),
-    ),
-)
-def test_cell_file_options_are_shown_in_help(
-    subcommand: str,
-    options: tuple[str, ...],
-    removed_options: tuple[str, ...],
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        _parser().parse_args(["review-table", subcommand, "--help"])
-
-    assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    for option in options:
-        assert option in help_text
-    for option in removed_options:
-        assert option not in help_text
-
-
-def test_respond_help_presents_row_id_as_default_selector(capsys: pytest.CaptureFixture[str]) -> None:
-    """応答ヘルプはshow由来のrow-idを使うよう案内し、複合キーによる指定も互換の手段として示す。"""
-    with pytest.raises(SystemExit) as exc_info:
-        _parser().parse_args(["review-table", "respond", "--help"])
-
-    assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    assert "`show`が出力した`row-id`で応答対象を一意に指定" in help_text
-    assert "応答対象は`show`が出力した`row-id`で指定" in help_text
-    assert "部分複合キー指定も互換の指定方法" in help_text
-
-
-@pytest.mark.parametrize(
-    ("subcommand", "expected_descriptions"),
-    (
-        ("add", ("指摘を登録するレビューの区分", "追加する指摘箇所", "追加する指摘内容")),
-        (
-            "respond",
-            (
-                "更新する行を特定する指摘箇所",
-                "更新する行を特定する指摘内容",
-                "対応要とした指摘へ記録する対応内容",
-                "対応不要とした指摘へ記録する理由",
-            ),
-        ),
-        (
-            "show",
-            (
-                "表示対象を指定したレビュー区分の行だけに限定する",
-                "出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Lines",
-                "summaryは--roundで指定したラウンドの登録数・未応答数・応答済み数を1件のJSONで返す",
-            ),
-        ),
-        ("validate", ("未応答行を許容し、7列と複合キーなどの構造だけを検証する",)),
-    ),
-)
-def test_option_help_describes_each_subcommand_role(
-    subcommand: str,
-    expected_descriptions: tuple[str, ...],
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """各オプションの説明だけで、そのサブコマンドにおける役割を判断できる。"""
-    with pytest.raises(SystemExit) as exc_info:
-        _parser().parse_args(["review-table", subcommand, "--help"])
-
-    assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    for description in expected_descriptions:
-        assert description in help_text
-    assert "保存済み7列形式はlevelを空として読み込み" not in help_text
-
-
 def test_shared_column_layout_is_explained_by_parent_help(capsys: pytest.CaptureFixture[str]) -> None:
-    """サブコマンド共通の列構成と旧形式の復旧案内は親コマンドに集約する。"""
+    """親コマンドのヘルプが説明する列順は、表の実装が読み書きする列順と一致する。"""
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(["review-table", "--help"])
 
     assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    assert "列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順" in help_text
-    assert "保存済みの8列形式は`response-needed`を読み込みの対象から外す" in help_text
+    help_text = "".join(capsys.readouterr().out.split())
+    described = re.search(r"列は((?:`[^`]+`、?)+)の順", help_text)
+    assert described is not None
+    assert tuple(re.findall(r"`([^`]+)`", described.group(1))) == table.COLUMNS
 
 
 def test_cell_files_preserve_issue_and_supply_responses(

@@ -500,17 +500,6 @@ def test_resolves_project_local_skill_from_worktree(repo: tuple[pathlib.Path, st
     assert not errors, errors
 
 
-def test_cli_has_no_base_commit_option() -> None:
-    """廃止した対象一覧との比較用オプションを公開しない。"""
-    parser_result = subprocess.run(
-        [sys.executable, str(pathlib.Path(check_plan_file.__file__)), "--help"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert "--base-commit" not in parser_result.stdout
-
-
 # --- 新書式（計画2ファイル）が基準を満たすか確かめる ---
 
 

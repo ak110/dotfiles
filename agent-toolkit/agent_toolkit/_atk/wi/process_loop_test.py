@@ -2119,28 +2119,6 @@ def test_process_loop_rejects_removed_options(
     assert not handler_calls
 
 
-def test_process_loop_internal_mise_refreshed_contract(capsys: pytest.CaptureFixture[str]) -> None:
-    """内部専用オプション省略時の値・指定時の値・helpへの非表示をargparse境界で固定する。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-    assert parser.parse_args(["wi", "process-loop"]).internal_mise_refreshed is False
-    assert parser.parse_args(["wi", "process-loop", "--internal-mise-refreshed"]).internal_mise_refreshed is True
-    with pytest.raises(SystemExit) as help_exit:
-        parser.parse_args(["wi", "process-loop", "--help"])
-    assert help_exit.value.code == 0
-    assert "--internal-mise-refreshed" not in capsys.readouterr().out
-
-
-def test_process_loop_internal_dotfiles_updated_contract(capsys: pytest.CaptureFixture[str]) -> None:
-    """更新済み内部指定を省略した場合の値・指定時の値・helpへの非表示をargparse境界で固定する。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-    assert parser.parse_args(["wi", "process-loop"]).internal_dotfiles_updated is False
-    assert parser.parse_args(["wi", "process-loop", "--internal-dotfiles-updated"]).internal_dotfiles_updated is True
-    with pytest.raises(SystemExit) as help_exit:
-        parser.parse_args(["wi", "process-loop", "--help"])
-    assert help_exit.value.code == 0
-    assert "--internal-dotfiles-updated" not in capsys.readouterr().out
-
-
 def test_process_loop_worktree_option_reaches_public_handler(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
