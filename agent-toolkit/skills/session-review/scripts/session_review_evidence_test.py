@@ -4124,6 +4124,148 @@ def test_grep_mode_rejects_invalid_regular_expression(
     assert "正規表現が不正" in events[0]["text"]
 
 
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_fixed_string_mode_reports_each_query_without_bodies(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    runtime: str,
+) -> None:
+    """固定文字列を結合せず、entry単位の件数と位置だけを両実行系で返す。"""
+    text = "値 [.*] と同じ値 [.*]"
+    entry = (
+        {"type": "user", "timestamp": "2026-10-06T00:00:00Z", "message": {"role": "user", "content": text}}
+        if runtime == "claude"
+        else {
+            "type": "response_item",
+            "timestamp": "2026-10-06T00:00:00Z",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+        }
+    )
+    transcript = _write_transcript(tmp_path, [entry])
+
+    assert evidence.main([str(transcript), "--fixed-string", "[.*]", "--fixed-string", "不在"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert events == [
+        {
+            "kind": "fixed-string-summary",
+            "query": "[.*]",
+            "count": 1,
+            "locators": [{"record": f"{runtime}:transcript", "line": 1, "timestamp": "2026-10-06T00:00:00Z"}],
+        },
+        {"kind": "fixed-string-summary", "query": "不在", "count": 0, "locators": []},
+    ]
+    assert text not in json.dumps(events, ensure_ascii=False)
+
+
+def test_record_schema_reports_paths_and_types_without_values(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """複数locatorのobject・arrayを再帰し、値を出力しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "message": {"role": "user", "content": "secret-text"},
+                "nested": {"items": [{"flag": True, "count": 42}, {"flag": None}]},
+            },
+            {"type": "assistant", "message": {"role": "assistant", "content": "second-secret"}},
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--record-schema", "1", "--record-schema", "main:2"]) == 0
+
+    events = _read_jsonl(capsys)
+    first = [event for event in events if event["line"] == 1]
+    paths = {event["path"]: event["types"] for event in first}
+    expected = {
+        "$": ["object"],
+        "$.nested": ["object"],
+        "$.nested.items": ["array"],
+        "$.nested.items[]": ["object"],
+        "$.nested.items[].count": ["number"],
+        "$.nested.items[].flag": ["boolean", "null"],
+    }
+    assert all(paths[path] == types for path, types in expected.items())
+    serialized = json.dumps(events, ensure_ascii=False)
+    assert "secret-text" not in serialized
+    assert "second-secret" not in serialized
+    assert "42" not in serialized
+
+
+def test_record_schema_reports_codex_paths_and_types_without_values(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codex形式の元JSONも入れ子と配列を射影し、値を出力しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "codex-secret"},
+                        {"type": "input_text", "text": "second-secret"},
+                    ],
+                    "nested": {"flags": [True, None], "count": 73},
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--record-schema", "1"]) == 0
+
+    events = _read_jsonl(capsys)
+    paths = {event["path"]: event["types"] for event in events}
+    assert paths["$.payload"] == ["object"]
+    assert paths["$.payload.content"] == ["array"]
+    assert paths["$.payload.content[]"] == ["object"]
+    assert paths["$.payload.nested.flags[]"] == ["boolean", "null"]
+    assert paths["$.payload.nested.count"] == ["number"]
+    serialized = json.dumps(events, ensure_ascii=False)
+    assert "codex-secret" not in serialized
+    assert "second-secret" not in serialized
+    assert "73" not in serialized
+
+
+def test_record_schema_uses_detail_locator_errors(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+
+    assert evidence.main([str(transcript), "--record-schema", "unknown:1"]) == 2
+
+    events = _read_jsonl(capsys)
+    assert events[0]["kind"] == "error"
+    assert "記録が不明" in events[0]["text"]
+
+
+@pytest.mark.parametrize(
+    ("locator", "message"),
+    [("9", "行番号9は範囲外"), ("abc", "構造照会位置が不正")],
+)
+def test_record_schema_rejects_out_of_range_and_invalid_locators(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    locator: str,
+    message: str,
+) -> None:
+    """範囲外の行と不正なlocatorを終了コード2で拒否する。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+
+    assert evidence.main([str(transcript), "--record-schema", locator]) == 2
+
+    events = _read_jsonl(capsys)
+    assert events[0]["kind"] == "error"
+    assert message in events[0]["text"]
+
+
 def test_query_modes_are_mutually_exclusive(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -4136,6 +4278,14 @@ def test_query_modes_are_mutually_exclusive(
     events = _read_jsonl(capsys)
     assert [event["kind"] for event in events] == ["error"]
     assert "併用できない" in events[0]["text"]
+
+
+def test_new_query_modes_are_mutually_exclusive(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+
+    assert evidence.main([str(transcript), "--fixed-string", "依頼", "--record-schema", "1"]) == 2
+
+    assert "併用できない" in _read_jsonl(capsys)[0]["text"]
 
 
 def _events_by_kind(events: list[dict], kind: str) -> list[dict]:
@@ -7110,7 +7260,15 @@ def test_bundle_rejects_output_that_is_not_an_existing_directory(
 
 @pytest.mark.parametrize(
     "conflicting",
-    [["--warn"], ["--grep", "依頼"], ["--detail", "1"], ["--stats"], ["--hook-notices"]],
+    [
+        ["--warn"],
+        ["--grep", "依頼"],
+        ["--detail", "1"],
+        ["--fixed-string", "依頼"],
+        ["--record-schema", "1"],
+        ["--stats"],
+        ["--hook-notices"],
+    ],
 )
 def test_bundle_is_exclusive_with_other_query_modes(
     tmp_path: pathlib.Path,

@@ -3116,7 +3116,7 @@ def _print_events(events: list[dict[str, Any]]) -> None:
 
 
 _RECORD_LOCATOR_NEXT_ACTION = (
-    "`--detail`・`--context-at`へ`<記録ID>:<行番号>`の形で、"
+    "`--detail`・`--record-schema`・`--context-at`へ`<記録ID>:<行番号>`の形で、"
     "オプションを指定しないときの出力が示す記録IDと行番号を渡して再実行する"
 )
 _CATALOG_ROOT_NEXT_ACTION = (
@@ -3369,6 +3369,30 @@ def _grep_collection_events(
     return events
 
 
+def _fixed_string_collection_events(
+    collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord], phrases: list[str]
+) -> list[dict[str, Any]]:
+    """固定文字列ごとに一致entry数とlocatorだけを返す。"""
+    events: list[dict[str, Any]] = []
+    for phrase in phrases:
+        locators: list[dict[str, Any]] = []
+        pattern = re.compile(re.escape(phrase))
+        for item in collected:
+            for record in _scannable_records(item.records):
+                if not _matched_lines(record.entry, pattern):
+                    continue
+                locators.append(
+                    {
+                        "record": item.record_id,
+                        "line": record.line,
+                        "timestamp": _entry_timestamp(record.entry),
+                    }
+                )
+        events.append({"kind": "fixed-string-summary", "query": phrase, "count": len(locators), "locators": locators})
+    events.extend(_unresolved_events(unresolved))
+    return events
+
+
 def _resolve_record_alias(collected: list[_CollectedRecord], record_id: str) -> tuple[_CollectedRecord | None, bool]:
     """正規IDまたは一意な旧IDを解決し、旧IDが曖昧なら印を返す。"""
     canonical = [item for item in collected if item.record_id == record_id]
@@ -3380,24 +3404,90 @@ def _resolve_record_alias(collected: list[_CollectedRecord], record_id: str) -> 
     return None, len(matches) > 1
 
 
+def _resolve_record_locator(
+    collected: list[_CollectedRecord], locator: str, *, label: str
+) -> tuple[_CollectedRecord | None, int | None, list[dict[str, Any]] | None]:
+    """公開locatorを正規IDと行番号へ解決する。"""
+    if ":" in locator:
+        record_id, raw_line = locator.rsplit(":", 1)
+    else:
+        record_id, raw_line = "main", locator
+    if not record_id or not raw_line.isdecimal():
+        return None, None, [_error_event(f"{label}位置が不正: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)]
+    selected, ambiguous = _resolve_record_alias(collected, record_id)
+    if ambiguous:
+        return None, None, [_error_event(f"記録別名が曖昧: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)]
+    if selected is None:
+        return None, None, [_error_event(f"記録が不明: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)]
+    line = int(raw_line)
+    if not any(record.line == line for record in selected.records):
+        return None, None, [_error_event(f"行番号{line}は範囲外", next_action=_RECORD_LOCATOR_NEXT_ACTION)]
+    return selected, line, None
+
+
 def _detail_collection_events(collected: list[_CollectedRecord], locators: list[str]) -> tuple[list[dict[str, Any]], int]:
     events: list[dict[str, Any]] = []
     for locator in locators:
-        if ":" in locator:
-            record_id, raw_line = locator.rsplit(":", 1)
-        else:
-            record_id, raw_line = "main", locator
-        if not record_id or not raw_line.isdecimal():
-            return [_error_event(f"詳細位置が不正: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
-        selected, ambiguous = _resolve_record_alias(collected, record_id)
-        if ambiguous:
-            return [_error_event(f"記録別名が曖昧: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
-        if selected is None:
-            return [_error_event(f"記録が不明: {record_id}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
-        record_events, exit_code = _detail_events(selected.records, [int(raw_line)])
+        selected, line, error_events = _resolve_record_locator(collected, locator, label="詳細")
+        if error_events is not None:
+            return error_events, 2
+        assert selected is not None and line is not None
+        record_events, exit_code = _detail_events(selected.records, [line])
         if exit_code:
             return record_events, exit_code
         events.extend(_events_with_record(record_events, selected.record_id))
+    return events, 0
+
+
+def _json_type(value: Any) -> str:
+    """JSON値の型名を値そのものを含めずに返す。"""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    return "object"
+
+
+def _schema_paths(value: Any, path: str, paths: dict[str, set[str]]) -> None:
+    """値を含めず、JSON pathごとの観測型を集約する。"""
+    paths.setdefault(path, set()).add(_json_type(value))
+    if isinstance(value, dict):
+        for key in sorted(value):
+            _schema_paths(value[key], f"{path}.{key}", paths)
+    elif isinstance(value, list):
+        for item in value:
+            _schema_paths(item, f"{path}[]", paths)
+
+
+def _record_schema_collection_events(
+    collected: list[_CollectedRecord], locators: list[str]
+) -> tuple[list[dict[str, Any]], int]:
+    """locator先の元JSON entryからkey pathとJSON型だけを返す。"""
+    events: list[dict[str, Any]] = []
+    for locator in locators:
+        selected, line, error_events = _resolve_record_locator(collected, locator, label="構造照会")
+        if error_events is not None:
+            return error_events, 2
+        assert selected is not None and line is not None
+        entry = next(record.entry for record in selected.records if record.line == line)
+        paths: dict[str, set[str]] = {}
+        _schema_paths(entry, "$", paths)
+        events.extend(
+            {
+                "kind": "record-schema",
+                "record": selected.record_id,
+                "line": line,
+                "path": path,
+                "types": sorted(types),
+            }
+            for path, types in sorted(paths.items())
+        )
     return events, 0
 
 
@@ -5230,6 +5320,22 @@ def _build_parser() -> argparse.ArgumentParser:
         "出力量の上限で本文を省略したエントリのイベントには`omitted`を付ける。",
     )
     parser.add_argument(
+        "--fixed-string",
+        action="append",
+        default=None,
+        metavar="TEXT",
+        help="大小文字を区別する固定文字列ごとに、既存`--grep`と同じ論理entryの一致件数と全locatorだけを返す。"
+        "本文は返さず、0件も文字列ごとに明示する。複数指定ではオプションを繰り返す。",
+    )
+    parser.add_argument(
+        "--record-schema",
+        action="append",
+        default=None,
+        metavar="RECORD:LINE",
+        help="指定したlocatorの元JSON recordについてkey pathと観測したJSON型だけを返す。"
+        "record由来の値と本文は返さない。複数指定ではオプションを繰り返す。locator解決とエラーは`--detail`と共通とする。",
+    )
+    parser.add_argument(
         "--stats",
         action="store_true",
         help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。"
@@ -5287,49 +5393,40 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _single_transcript_query_modes(args: argparse.Namespace) -> tuple[bool, ...]:
+    """単一transcriptの照会モードを返す。"""
+    return (
+        args.warn,
+        args.grep is not None,
+        args.detail is not None,
+        args.fixed_string is not None,
+        args.record_schema is not None,
+        args.stats,
+        args.hook_notices,
+        args.bundle is not None,
+        args.elapsed_until is not None,
+        args.user_events,
+        args.context_at is not None,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """証拠または照会結果を1イベント1 JSONのJSONLとして標準出力へ書く。"""
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
-    if (
-        sum(
-            (
-                args.warn,
-                args.grep is not None,
-                args.detail is not None,
-                args.stats,
-                args.hook_notices,
-                args.bundle is not None,
-                args.elapsed_until is not None,
-                args.user_events,
-                args.context_at is not None,
-            )
-        )
-        > 1
-    ):
+    query_modes = _single_transcript_query_modes(args)
+    if sum(query_modes) > 1:
         return _print_error(
-            "--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-until・--user-events・--context-atは併用できない",
+            "--warn・--grep・--detail・--fixed-string・--record-schema・--stats・--hook-notices・--bundle・--elapsed-until・--user-events・--context-atは併用できない",
             next_action="`--warn`・`--grep`などの照会の指定を1回に1つだけにして、照会ごとに別々に実行する",
         )
     catalog_root = args.catalog_claude_project or args.catalog_codex_history
     catalog_runtime: _Runtime | None = (
         "claude" if args.catalog_claude_project else "codex" if args.catalog_codex_history else None
     )
-    if catalog_root is not None and any(
-        (
-            args.warn,
-            args.grep is not None,
-            args.detail is not None,
-            args.stats,
-            args.hook_notices,
-            args.bundle is not None,
-            args.elapsed_until is not None,
-            args.user_events,
-            args.context_at is not None,
-        )
-    ):
+    if catalog_root is not None and any(query_modes):
         return _print_error(
             "カタログ走査は単一transcriptの照会モードと併用できない",
             next_action="カタログ走査（`--catalog-claude-project`・`--catalog-codex-history`）と単一transcriptの照会を別々に実行する",
@@ -5337,6 +5434,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.phrase is not None and args.context_at is None:
         return _print_error(
             "--phraseは--context-atと併用する", next_action="`--context-at <記録ID>:<行番号>`を付けて再実行する"
+        )
+    if args.fixed_string is not None and any(not phrase for phrase in args.fixed_string):
+        return _print_error(
+            "--fixed-stringへ空でない固定文字列を指定する",
+            next_action="`--fixed-string=<固定文字列>`を1件以上付けて再実行する",
         )
     if args.since is not None and not args.user_events and catalog_root is None:
         return _print_error(
@@ -5462,6 +5564,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.detail is not None:
         events, exit_code = _detail_collection_events(collected, args.detail)
+        _print_events(events)
+        return exit_code
+    if args.fixed_string is not None:
+        _print_events(_fixed_string_collection_events(collected, unresolved, args.fixed_string))
+        return 0
+    if args.record_schema is not None:
+        events, exit_code = _record_schema_collection_events(collected, args.record_schema)
         _print_events(events)
         return exit_code
     if args.context_at is not None:
