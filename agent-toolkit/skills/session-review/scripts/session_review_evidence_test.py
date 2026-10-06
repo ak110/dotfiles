@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
+import time
+from collections.abc import Iterator
 from typing import Literal
 
 import pytest
@@ -998,6 +1001,94 @@ def test_elapsed_until_conflicts_with_other_query_options(
     (event,) = _read_jsonl(capsys)
     assert event["kind"] == "error"
     assert "併用できない" in event["text"]
+
+
+@pytest.fixture(name="local_time_jst")
+def _local_time_jst() -> Iterator[None]:
+    """ローカルタイムゾーンをUTC以外のJST（UTC+9）へ固定し、テスト後に元へ戻す。
+
+    タイムゾーンを省いた時刻の解釈を、テストを実行するホストのタイムゾーン設定に依存させないため。
+    """
+    previous = os.environ.get("TZ")
+    os.environ["TZ"] = "JST-9"
+    time.tzset()
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        time.tzset()
+
+
+def _local_time_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
+    """JSTの10月7日0時をまたぐ発話を持つ記録を書く。"""
+    return _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-10-06T14:59:00Z", "JSTの10月6日23時59分の発話"),
+            _timestamped_entry("2026-10-06T15:01:13Z", "JSTの10月7日0時1分の発話"),
+        ],
+    )
+
+
+@pytest.mark.usefixtures("local_time_jst")
+@pytest.mark.parametrize("since", ["2026-10-07T00:00:00", "2026-10-07"])
+def test_since_without_timezone_is_local_time(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    since: str,
+) -> None:
+    """タイムゾーンを省いた`--since`は、ローカルタイムゾーンのオフセットを付けた値と同じ結果を返す。"""
+    transcript = _local_time_transcript(tmp_path)
+
+    assert evidence.main([str(transcript), "--user-events", "--since", since]) == 0
+    naive = _read_jsonl(capsys)
+    assert evidence.main([str(transcript), "--user-events", "--since", "2026-10-07T00:00:00+09:00"]) == 0
+
+    assert naive == _read_jsonl(capsys)
+    assert [event["text"] for event in naive if event["kind"] == "user"] == ["JSTの10月7日0時1分の発話"]
+
+
+@pytest.mark.usefixtures("local_time_jst")
+def test_observation_boundary_without_timezone_is_local_time(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """タイムゾーンを省いた`--observation-boundary`は、単一transcriptとカタログ走査の双方でローカル時刻として扱う。"""
+    transcript = _local_time_transcript(tmp_path)
+
+    assert evidence.main([str(transcript), "--observation-boundary", "2026-10-07T00:00:00"]) == 0
+    naive = _read_jsonl(capsys)
+    assert evidence.main([str(transcript), "--observation-boundary", "2026-10-07T00:00:00+09:00"]) == 0
+    assert naive == _read_jsonl(capsys)
+    assert [event["text"] for event in naive] == ["JSTの10月6日23時59分の発話"]
+
+    root = tmp_path / "project"
+    _write_jsonl(root / "later-session.jsonl", [_timestamped_entry("2026-10-06T15:01:13Z", "境界後に始まるセッション")])
+    catalog = ["--catalog-claude-project", str(root), "--since", "2026-10-06T00:00:00Z", "--observation-boundary"]
+    assert evidence.main([*catalog, "2026-10-07T00:00:00"]) == 0
+    naive_catalog = _read_jsonl(capsys, raw=True)
+    assert evidence.main([*catalog, "2026-10-07T00:00:00+09:00"]) == 0
+    assert naive_catalog == _read_jsonl(capsys, raw=True)
+    assert [event["kind"] for event in naive_catalog] == ["catalog-summary"]
+
+
+@pytest.mark.usefixtures("local_time_jst")
+def test_elapsed_until_without_timezone_is_local_time(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """タイムゾーンを省いた`--elapsed-until`は、ローカルタイムゾーンのオフセットを付けた値と同じ経過秒数を返す。"""
+    transcript = _local_time_transcript(tmp_path)
+
+    assert evidence.main([str(transcript), "--elapsed-until", "2026-10-07T00:01:00"]) == 0
+    (naive,) = _read_jsonl(capsys)
+    assert evidence.main([str(transcript), "--elapsed-until", "2026-10-07T00:01:00+09:00"]) == 0
+    (offset,) = _read_jsonl(capsys)
+
+    assert naive["elapsed_seconds"] == offset["elapsed_seconds"] == 120
 
 
 def test_default_events_separate_main_user_message_from_subagent_task_prompt(

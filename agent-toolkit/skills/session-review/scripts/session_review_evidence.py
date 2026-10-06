@@ -137,6 +137,8 @@ _FALLBACK_TEXT = (
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
 )
 _CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
+_LOCAL_TIME_NOTE = "タイムゾーン（`Z`や`+09:00`など）を省いた値は実行ホストのローカルタイムゾーンの時刻として扱う。"
+"""時刻を受け取る引数の説明へ加える、タイムゾーンを省いた値の解釈。"""
 _HOOK_RECORD_NOTE = (
     "Claude Codeの記録は、出力（標準出力、標準エラー、追加コンテキスト）を返さなかったhookの実行を残さない。"
     "このためhookの記録が無いことや一致0件は、そのhookが発火しなかったことを示さない。"
@@ -1113,9 +1115,24 @@ _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?
 
 
 def _parse_timestamp(value: str) -> datetime.datetime:
-    """ISO 8601の時刻を解析し、タイムゾーン無しの値をUTCとして返す。"""
+    """記録の`timestamp`などの内部データのISO 8601の時刻を解析し、タイムゾーン無しの値をUTCとして返す。
+
+    ホストは記録の時刻を`Z`付きのUTCで書くため、タイムゾーン無しの値もUTCとみなす。
+    CLI引数で受け取る時刻は`_parse_cli_timestamp`で解析する。
+    """
     parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.UTC)
+
+
+def _parse_cli_timestamp(value: str) -> datetime.datetime:
+    """CLI引数で受け取ったISO 8601の時刻を解析し、タイムゾーン無しの値を実行ホストのローカル時刻として返す。
+
+    人やエージェントが手で書く境界は同じホストの`date`などで得たローカル時刻から書かれるため、
+    記録向けの`_parse_timestamp`と同じくUTCとみなすと、ローカルタイムゾーンとUTCの差だけ境界がずれ、
+    該当0件の結果と区別できない。日付だけの値はその日のローカル時刻0時とする。
+    """
+    parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else parsed.astimezone()
 
 
 def _record_timestamp(record: _Record) -> datetime.datetime | None:
@@ -1143,7 +1160,7 @@ def _started_after_boundary(records: list[_Record], boundary: datetime.datetime)
 def _elapsed_until_event(records: list[_Record], until_text: str) -> dict[str, Any] | str:
     """最初の記録から指定時刻までの経過時間イベントまたはエラー文を返す。"""
     try:
-        until = _parse_timestamp(until_text)
+        until = _parse_cli_timestamp(until_text)
     except ValueError:
         return f"経過時間の終端が不正: {until_text}"
     timestamps = [
@@ -3194,9 +3211,17 @@ _CATALOG_ROOT_NEXT_ACTION = (
     "Claude Codeは`--catalog-claude-project`へ`~/.claude/projects/<プロジェクト>`の絶対パスを、"
     "Codexは`--catalog-codex-history`へCodexの記録ディレクトリの絶対パスを渡して再実行する"
 )
-_SINCE_NEXT_ACTION = "`--since`へISO 8601形式の時刻（例: `2026-09-30T00:00:00+09:00`）を渡して再実行する"
+_SINCE_NEXT_ACTION = (
+    "`--since`へISO 8601形式の時刻（例: `2026-09-30T00:00:00+09:00`。"
+    "タイムゾーンを省くと実行ホストのローカル時刻として扱う）を渡して再実行する"
+)
 _BOUNDARY_NEXT_ACTION = (
-    "`--observation-boundary`へ`--since`以後のISO 8601形式の時刻（例: `2026-09-30T12:00:00+09:00`）を渡して再実行する"
+    "`--observation-boundary`へ`--since`以後のISO 8601形式の時刻（例: `2026-09-30T12:00:00+09:00`。"
+    "タイムゾーンを省くと実行ホストのローカル時刻として扱う）を渡して再実行する"
+)
+_ELAPSED_UNTIL_NEXT_ACTION = (
+    "`--elapsed-until`へ記録の最初のレコード以後の時刻をISO 8601形式（例: `2026-09-30T12:00:00+09:00`。"
+    "タイムゾーンを省くと実行ホストのローカル時刻として扱う）で渡すか、時刻を持つ記録を対象にして再実行する"
 )
 
 
@@ -5374,14 +5399,14 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="TIMESTAMP",
         help="ISO 8601の時刻を観測境界とし、メイン記録のうちその時刻より後の`timestamp`を持つレコードを"
         "全モードの対象外にする。委譲先の記録へは適用しない。`--detail`の行番号は元ファイルの行番号を維持する。"
-        "解析できない値はエラーイベントを出力して終了コード2を返す。",
+        "解析できない値はエラーイベントを出力して終了コード2を返す。" + _LOCAL_TIME_NOTE,
     )
     parser.add_argument(
         "--elapsed-until",
         metavar="TIMESTAMP",
         help="ISO 8601の時刻を経過時間の終端とし、メイン記録の最初のレコードからその時刻までの経過秒数を返す。"
         "解析できない値、算出できる記録が無い場合およびその時刻が最初のレコードより前の場合は"
-        "エラーイベントを出力して終了コード2を返す。",
+        "エラーイベントを出力して終了コード2を返す。" + _LOCAL_TIME_NOTE,
     )
     parser.add_argument(
         "--warn",
@@ -5467,7 +5492,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--since",
         metavar="TIMESTAMP",
         help="`--user-events`またはカタログ走査の開始境界をISO 8601の時刻で指定する。"
-        "カタログ走査では必須、`--user-events`では省略すると記録の最初からを対象とする。",
+        "カタログ走査では必須、`--user-events`では省略すると記録の最初からを対象とする。" + _LOCAL_TIME_NOTE,
     )
     parser.add_argument(
         "--bundle",
@@ -5542,7 +5567,7 @@ def main(argv: list[str] | None = None) -> int:
     since = None
     if args.since is not None:
         try:
-            since = _parse_timestamp(args.since)
+            since = _parse_cli_timestamp(args.since)
         except ValueError:
             return _print_error(f"開始境界が不正: {args.since}", next_action=_SINCE_NEXT_ACTION)
 
@@ -5570,7 +5595,7 @@ def main(argv: list[str] | None = None) -> int:
     if catalog_root is not None:
         assert since is not None and catalog_runtime is not None and args.observation_boundary is not None
         try:
-            catalog_boundary = _parse_timestamp(args.observation_boundary)
+            catalog_boundary = _parse_cli_timestamp(args.observation_boundary)
         except ValueError:
             return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
         if catalog_boundary < since:
@@ -5612,16 +5637,14 @@ def main(argv: list[str] | None = None) -> int:
     boundary = None
     if args.observation_boundary is not None:
         try:
-            boundary = _parse_timestamp(args.observation_boundary)
+            boundary = _parse_cli_timestamp(args.observation_boundary)
         except ValueError:
             return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
     if args.elapsed_until is not None:
         event = _elapsed_until_event(records, args.elapsed_until)
         if isinstance(event, str):
             message = event or f"経過時間を算出できる記録が無い: {transcript_path}"
-            return _print_error(
-                message, next_action="`--elapsed-until`へ記録に存在する時刻か位置を渡すか、時刻を持つ記録を対象にして再実行する"
-            )
+            return _print_error(message, next_action=_ELAPSED_UNTIL_NEXT_ACTION)
         _print_events([event])
         return 0
     if boundary is not None:
