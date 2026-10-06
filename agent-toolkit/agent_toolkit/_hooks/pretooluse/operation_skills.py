@@ -127,9 +127,34 @@ def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
     return fields is not None and any(_ROOT_CAUSE_HEADING.search(value) for _, value in fields)
 
 
+def _is_managed_temp_create(tool_name: str, tool_input: dict) -> bool:
+    """`agent-toolkit:managed-temp`の起動の契機とする`atk managed-temp create`の実行かを返す。
+
+    区間のトークン列にある`managed-temp`・`create`の連続を、直前のトークンが`atk`（パスを伴う形を含む）である場合と、
+    `managed-temp`が区間の先頭である場合に対象とする。`extract_execution_pipelines`は`for … ; do atk …`の`do`を
+    区間の先頭に残し、`d=$(atk …)`では`d=$(atk`を前置語として除くため、先頭のトークンだけでは両方の形を判定できない。
+    検索語として1つの引数に含めた文字列はトークンが分かれないため対象にならない。`cleanup`と`list`は対象外とする。
+    """
+    if tool_name != "Bash":
+        return False
+    command = tool_input.get("command")
+    if not isinstance(command, str):
+        return False
+    for pipeline in _bash_command_parser.extract_execution_pipelines(command):
+        for segment in pipeline:
+            tokens = segment.tokens
+            for index in range(len(tokens) - 1):
+                if tokens[index] != "managed-temp" or tokens[index + 1] != "create":
+                    continue
+                if index == 0 or pathlib.PurePath(tokens[index - 1]).name == "atk":
+                    return True
+    return False
+
+
 OPERATION_SKILLS: tuple[OperationSkill, ...] = (
     OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),
     OperationSkill("agent-toolkit:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
+    OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別のmanaged-temp領域の作成", _is_managed_temp_create),
 )
 """操作を起動の契機とするスキルの表。"""
 

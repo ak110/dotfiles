@@ -188,3 +188,58 @@ def test_writing_without_root_cause_heading_does_not_warn(tmp_path: pathlib.Path
     result = _run(payload, _plan_file_state_env(tmp_path))
     assert result.returncode == 0
     assert _bugfix_warnings(_additional_context(result)) == 0
+
+
+_MANAGED_TEMP_SKILL = "agent-toolkit:managed-temp"
+
+
+def _managed_temp_warnings(context: str) -> int:
+    return context.count(f"`{_MANAGED_TEMP_SKILL}`を起動しないまま")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "atk managed-temp create --prefix lane-02-grp-a",
+        "/home/u/dotfiles/agent-toolkit/bin/atk managed-temp create --prefix x",
+        "cd /repo && atk managed-temp create --prefix x",
+        "for l in a b; do atk managed-temp create --prefix $l; done",
+        "cd /repo && d=$(atk managed-temp create --prefix y)",
+    ],
+)
+def test_managed_temp_create_without_skill_warns_once_per_context(tmp_path: pathlib.Path, command: str) -> None:
+    """`agent-toolkit:managed-temp`を起動しないまま個別の領域を作成すると、文脈ごとに1回だけ警告する。
+
+    作成の時点に未起動を示す手掛かりが無いと、置き場所の規定を読まずに参照される保存物を個別の領域へ置き、
+    領域の回収で保存物が失われる。
+    """
+    env = _plan_file_state_env(tmp_path)
+    first = _run(_bash(command, "managed-temp"), env)
+    assert first.returncode == 0
+    assert _managed_temp_warnings(_additional_context(first)) == 1
+    second = _run(_bash(command, "managed-temp"), env)
+    assert _managed_temp_warnings(_additional_context(second)) == 0
+
+
+@pytest.mark.parametrize("skill", [_MANAGED_TEMP_SKILL, "managed-temp"])
+def test_managed_temp_create_after_skill_does_not_warn(tmp_path: pathlib.Path, skill: str) -> None:
+    env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "managed-temp", skill)
+    result = _run(_bash("atk managed-temp create --prefix x", "managed-temp"), env)
+    assert _managed_temp_warnings(_additional_context(result)) == 0
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "atk managed-temp cleanup --path /tmp/x",
+        "atk managed-temp list",
+        "git grep -F 'atk managed-temp create'",
+        "printf '%s' 'atk managed-temp create'",
+        "atk wi list",
+    ],
+)
+def test_other_commands_do_not_warn_managed_temp(tmp_path: pathlib.Path, command: str) -> None:
+    result = _run(_bash(command, "s"), _plan_file_state_env(tmp_path))
+    assert result.returncode == 0
+    assert _managed_temp_warnings(_additional_context(result)) == 0
