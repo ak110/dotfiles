@@ -16,6 +16,15 @@ from ._test_helpers import _FakeResult, command_matches
 
 _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
 _CODEX_ROOT = pathlib.Path("codex") / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
+# 配布するMCP定義の実物。warm-upが両ホストの定義から同じ要求指定を解決することを確かめるために読む。
+_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2] / "agent-toolkit"
+_REAL_CLAUDE_DEFINITION = _PLUGIN_ROOT / ".mcp.json"
+_REAL_CODEX_DEFINITION = _PLUGIN_ROOT / ".mcp.codex.json"
+
+
+def _real_pyfltr_arguments() -> list[str]:
+    data = json.loads(_REAL_CLAUDE_DEFINITION.read_text(encoding="utf-8"))
+    return list(data["mcpServers"]["pyfltr"]["args"])
 
 
 def _definition(args: list[str], *, command: str = "uvx", stdio: bool = False) -> dict[str, object]:
@@ -38,9 +47,12 @@ class _Env:
         self.uvx_result: _FakeResult | None = _FakeResult(stdout="pyfltr 3.19.5\n")
         self.claude_definition = tmp_path / "claude" / ".mcp.json"
         self.codex_definition = tmp_path / _CODEX_ROOT / ".mcp.codex.json"
-        requirement = ["--from", "pyfltr>=3.17.8", "pyfltr", "mcp"]
-        _write(self.claude_definition, _definition(requirement))
-        _write(self.codex_definition, _definition(requirement, stdio=True))
+        for source, target in (
+            (_REAL_CLAUDE_DEFINITION, self.claude_definition),
+            (_REAL_CODEX_DEFINITION, self.codex_definition),
+        ):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
         installed = tmp_path / "installed_plugins.json"
         _write(installed, {"plugins": {_PLUGIN_ID: [{"installPath": str(tmp_path / "claude")}]}})
         monkeypatch.setattr(_warmup, "_INSTALLED_PLUGINS_PATH", installed)
@@ -66,12 +78,12 @@ def _env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> _Env:
 
 
 def test_same_launch_from_both_hosts_runs_once(env: _Env, caplog: pytest.LogCaptureFixture) -> None:
-    """Claude Code・Codexの両定義から同じ起動形を導出し、`mcp`を`--version`へ置き換えて1回だけ起動する。"""
+    """配布するClaude Code・Codexの両定義から同じ起動形を導出し、`mcp`を`--version`へ置き換えて1回だけ起動する。"""
     caplog.set_level(logging.INFO)
 
     assert _warmup.run() is False
 
-    assert [cmd[1:] for cmd in env.uvx_calls()] == [["--from", "pyfltr>=3.17.8", "pyfltr", "--version"]]
+    assert [cmd[1:] for cmd in env.uvx_calls()] == [[*_real_pyfltr_arguments()[:-1], "--version"]]
     assert "環境構築を確認 (exit 0、" in caplog.text
     assert ".mcp.json" in caplog.text
     assert ".mcp.codex.json" in caplog.text
@@ -83,7 +95,7 @@ def test_changed_requirement_is_used_for_each_definition(env: _Env) -> None:
 
     _warmup.run()
 
-    assert sorted(cmd[2] for cmd in env.uvx_calls()) == ["pyfltr>=3.17.8", "pyfltr>=9.9.9"]
+    assert sorted(cmd[2] for cmd in env.uvx_calls()) == sorted([_real_pyfltr_arguments()[1], "pyfltr>=9.9.9"])
     assert all(cmd[-1] == "--version" for cmd in env.uvx_calls())
 
 
