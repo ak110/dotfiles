@@ -1,8 +1,14 @@
 # ユーザビリティレビュータスク
 
 変更された画面を独立した担当として描画・操作し、エンドユーザーが画面の意味を理解して作業を迷わず終えられるかを、自動テストが判定しないUXの観点で評価する。UXには配置、状態の表示、文言、フォーカス、操作の分かりやすさ、狭幅・拡大・キーボード操作時の使いやすさを含む。期待結果との一致、データの反映、操作の成否といった機能の正しさの検証は担当範囲の外であり、Playwrightを含むE2Eテストと実行レビューが扱う。
-最初に`agent-toolkit:review-standards`と`agent-toolkit:writing-standards`を起動し、前者の`references/reviewer.md`と、画面に該当する後者の資料を全文読む。担当範囲は描画・操作と判定に限る。
+最初に`agent-toolkit:review-standards`と`agent-toolkit:writing-standards`を起動し、次の読込表の資料を読む。担当範囲は描画・操作と判定に限る。
 完了報告と記録は日本語で書く。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md`、`agent-toolkit:writing-standards`の`references/ui-ux.md` |
+| `変更画面`がWeb画面である | `agent-toolkit:writing-standards`の`references/ui-ux-web-rules.md` |
+| `変更画面`がフォーム、一覧、検索、通知、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-toolkit:writing-standards`の`references/ui-ux-patterns.md` |
 
 ## 入力
 
@@ -26,9 +32,12 @@
 
 ## 判定と記録
 
-`agent-toolkit:writing-standards`の`references/ui-ux.md`「完了前の実描画確認」を使い、主要シナリオと操作後に現れる状態へ到達する。Web画面では`references/ui-ux-web-rules.md`も、該当する主題がある場合は`references/ui-ux-patterns.md`も読む。指摘の確定基準は`agent-toolkit:review-standards`の`references/reviewer.md`「ユーザビリティレビューの判定」に、指摘の範囲と内容は同書の「基本方針」と「指摘内容」に従う。
+`agent-toolkit:writing-standards`の`references/ui-ux.md`「完了前の実描画確認」を使い、主要シナリオと操作後に現れる状態へ到達する。指摘の確定基準は`agent-toolkit:review-standards`の`references/reviewer.md`「ユーザビリティレビューの判定」に、指摘の範囲と内容は同書の「基本方針」と「指摘内容」に従う。
 
-`agent-toolkit:delegation`の`references/handoff-record.md`が定める記録項目に加えて、対象HEADの7文字以上の一意な短縮OID、`round`、完遂を試みたシナリオ、観測した状態、画面キャプチャーの絶対パス、指摘を引き継ぎ記録先へ保存する。判定は`合格`、`不合格`、`未確定`のいずれかとする。`references/ui-ux.md`「完了前の実描画確認」が挙げる描画手段（対象プロジェクトのE2E環境、Playwright、ブラウザー操作ツール）をいずれも利用できない場合に限り、判定を`未確定`とする。ブラウザー操作ツールが起動しなくても、PlaywrightのライブラリやE2E環境で描画できれば、その手段で判定する。`未確定`とする場合は手段ごとに試したコマンドと出力、利用できなかった理由を記録し、キャプチャーの代わりとする。3つの手段のいずれかを試していない状態で`未確定`を返すと、判定の得られないレビューが受理されるため、全手段を試してから返す。`不合格`の場合は修正後に同じシナリオと直接影響範囲を再判定する。
+`agent-toolkit:delegation`の`references/handoff-record.md`が定める記録項目に加えて、対象HEADの7文字以上の一意な短縮OID、`round`、完遂を試みたシナリオ、観測した状態、画面キャプチャーの絶対パス、指摘を引き継ぎ記録先へ保存する。判定は`合格`、`不合格`、`未確定`のいずれかとし、次のとおり選ぶ。
+
+- `合格`・`不合格`: `references/ui-ux.md`「完了前の実描画確認」が挙げる描画手段（対象プロジェクトのE2E環境、Playwright、ブラウザー操作ツール）のいずれかで描画して判定する。ブラウザー操作ツールが起動しなくても、PlaywrightのライブラリやE2E環境で描画できれば、その手段で判定する。`不合格`の場合は修正後に同じシナリオと直接影響範囲を再判定する
+- `未確定`: 3つの描画手段をいずれも利用できない場合に限る。手段ごとに試したコマンドと出力、利用できなかった理由を記録し、キャプチャーの代わりとする。3つの手段のいずれかを試していない状態で`未確定`を返すと、判定の得られないレビューが受理されるため、全手段を試してから返す
 
 ## 出力
 
