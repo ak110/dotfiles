@@ -97,7 +97,7 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
   `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
   サブエージェント名は起動指示・地の文とも短縮せず完全名称で書く
 - 配布物内の記述が参照するSSOTは配布物内に配置する。参照先はdotfiles固有ファイルと非配布対象ファイルの外から選ぶ
-  - 例外: 実際に測った値を根拠とする条文が指す監査記録（`docs/development/audit-records.md`）は本規定の対象外とする。この記録は条文の失効判定でだけ読むため、判断のたびに読む条文から分離して配布物の外へ置く。記録先は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」が定める
+  - 例外: 実際に測った値を根拠とする条文が指す監査記録（`docs/development/audit-records.md`）は本規定の対象外とする。この記録は条文の失効判定でだけ読むため、判断のたびに読む条文から分離して配布物の外へ置く。記録先は`agent-toolkit:writing-standards`の`references/investigation.md`が定める
 - 配布物文面は実ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名チェックを適用し、
   検出した個人環境固有の識別子を一般化表現へ置き換える
 - 配布物スキル本文では、hookの挙動をエンドユーザーが観測できる結果（特定操作がブロックされる・警告が返る等）として提示する。

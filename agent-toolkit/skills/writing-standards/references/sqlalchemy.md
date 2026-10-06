@@ -31,3 +31,5 @@ NULLチェックには`.is_(None)`を使う。
   読み取り側でautoflushを無効にする方法へ置き換えない。
   本規定は原則として適用する。
   autoflushを無効にすると、同じ処理単位で追加または更新した行を問い合わせる呼び出し元が古いDB状態を受け取るためである。
+
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/sqlalchemy.md：問い合わせと属性代入の順序：2026年9月14日」にある。

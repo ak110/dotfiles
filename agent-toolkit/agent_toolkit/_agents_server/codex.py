@@ -1150,6 +1150,8 @@ class AppServerManager:
             shared_state.consume_agents_wait_background_outputs(session)
             if shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                 # 未観測の孫sessionが残るturnは、待機表明を完了報告として公開せずに結果を保留する。
+                # 監査記録は`docs/development/audit-records.md`の
+                # 「agent-toolkit/agent_toolkit/_agents_server/codex.py：孫sessionの待機表明と自動再開：2026年10月1日」にある。
                 # MCP層の常駐監視（`_monitor_auto_resume`）が孫の終端を観測し、同じsessionを一度だけ再開する。
                 # 期限到来・追跡先の喪失・再開失敗の確定と未観測識別子の記録も、同じ監視が既存の診断で行う。
                 shared_state.begin_auto_resume_wait(

@@ -26,6 +26,7 @@ Agent機能を使う条件は`agent-toolkit:delegation`の`references/runtime-ro
 agent定義の`tools`は許可の上限を示す。`ListAgents`の許可と実行時提供は別々に判定する。
 
 `agents_server`の通常起動と軽量起動では、読み込む設定と利用できるツールが異なる。起動前に公開ツールの説明と実際の起動条件を確認し、委譲先の判断に必要なプロジェクト規範が自動で届かない起動形態では委譲プロンプトへ渡す。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：実行時能力と通信scope：2026年9月4日」にある。
 通常起動のClaude委譲先には、`agents_server`が`agent-toolkit/share/rules-subagent.md`と`agent-toolkit/share/rules-subagent.claude-code.md`をシステム指示へ連結する。
 `Agent`ツールのサブエージェントには、`SubagentStart`フックが同じ2ファイルを文脈へ追加する。
 
@@ -192,6 +193,7 @@ Claude Codeで未完了の委譲または背景処理を待つ実行主体は、
 その回の保持記録からGit作業ツリーの絶対パスを`worktree_path`へ解決した場合は
 `atk watch --worktree "$worktree_path"`を使う。通常の成果物ファイルを`artifact_path`へ解決した場合は
 `atk watch --file "$artifact_path"`を使う。対象の種類ごとの受理形式は`atk watch --help`で確認する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：Cronによる定期再確認：2026年10月4日」にある。
 変数の値は実行する回の保持記録から取得し、例を定期promptへ使う際も実在の固定パスや待機対象IDを埋め込まない。
 この観測は成果物の状況を補い、委譲sessionの終端は待機対象ごとの終了状態（`atk agents wait`の結果やバックグラウンドタスクの終了状態）と完了通知から判定する。
 

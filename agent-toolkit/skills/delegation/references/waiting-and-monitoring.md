@@ -62,7 +62,8 @@
   そのセッションが別の`agents_server` sessionを起動した場合は、ClaudeとCodexの両backendがツール結果の識別子を追跡する。
   managerの常駐監視は全ての追跡対象が終端するまで最初の結果を保留し、終端した識別子を示す継続指示で同じsessionをそのターンにつき一度だけ自動的に再開する。
   Claude backendでは、背景実行したシェルのコマンド、背景で起動したAgent委譲、および背景へ移行したMCPツールの呼び出しも、Claude Codeの完了通知による自動再開の対象になる。
-  自動再開が働くのはバックグラウンドタスクを起動した場合に限る。バックグラウンドタスクを起動せずに待機を表明した場合の待機対象の完了確認と再開指示は、委譲元が行う
+  自動再開が働くのはバックグラウンドタスクを起動した場合に限る。バックグラウンドタスクを起動せずに待機を表明した場合の待機対象の完了確認と再開指示は、委譲元が行う。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月3日」にある
 - 委譲元は、前項の自動再開について再開の要否を判断せず、再開の実行を自動再開へ委ねる。
   `atk agents wait`は再開したturnの終端まで待ち、その結果を返す。
   待機表明かどうかの判別にも、委譲先の最終メッセージの文面に代えてこのCLIの応答を用いる。
@@ -71,7 +72,8 @@
   その結果は再開したturnの最終の返却とは別に扱い、残った待機対象の状態を確かめてから同じsessionへ続きを依頼する
 - `atk agents wait`が待機上限の終了コード3で終わった場合の扱いは同CLIの`--help`に従い、`status`が`running`の応答と同じく同じコマンドを再発行して待機を継続する
 - `atk agents wait`の終了コード10は、委譲元の状態へ待機対象が登録されていないことを示し、委譲先の実行失敗を示さない。
-  委譲元が受け取った起動応答と`atk agents list`で`agents_server`のsessionが存在するかを確認し、実行ホストの組み込み委譲として起動した対象はそのホストの委譲一覧と指定成果物で終端を観測する
+  委譲元が受け取った起動応答と`atk agents list`で`agents_server`のsessionが存在するかを確認し、実行ホストの組み込み委譲として起動した対象はそのホストの委譲一覧と指定成果物で終端を観測する。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月20日」にある
 - 実行ホストの上限により`atk agents wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。
   `atk agents list`でそのsessionの`status`を確認し、CLIを再実行して待機を継続する。
   停滞、中断および再起動の判定は、この`status`の確認で行う
@@ -128,6 +130,7 @@ CIの完了、デプロイの反映など、外部サービスの状態が変わ
   実行中のバックグラウンドタスクを空出力だけで終端と誤認する事態を防ぐためである
 - バックグラウンドタスクの終了状態と出力は、起動結果が返す出力ファイルの絶対パスから取得する。
   そのファイルは実行識別子から独立して残り、出力の全量と`[exited with code <整数>]`形式の終了状態行を保持する。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月2日」にある。同じ文の記録は「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月4日」にもある。
   観測手段には、実行識別子を入力とするものに加えて、この絶対パスからの取得を含める。
   待機が別のセッションまたは別の実行主体へ渡る場合は、その絶対パスを引き継ぐ対象へ含める。
   実行識別子は実行環境の再起動で失効し、失効後はその識別子から終了状態と出力を取得できなくなる

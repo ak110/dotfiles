@@ -397,6 +397,12 @@ _PLUGIN_ROOT_VARIABLES = ("${CLAUDE_PLUGIN_ROOT}/", "${PLUGIN_ROOT}/", "<plugin 
 _HEADING_REFERENCE_PATTERN = re.compile(
     rf"(?:{_PLUGIN_PREFIX}:(?P<skill>[A-Za-z0-9_-]+)`?の)?`(?P<path>[^`\s]+?\.md)`(?:の)?「(?P<name>[^」\n]+)」"
 )
+# `` `<パス>.md`の`### <見出し>` ``のように見出し記号付きで節を指す記法。
+_HEADING_SYMBOL_REFERENCE_PATTERN = re.compile(
+    rf"(?:{_PLUGIN_PREFIX}:(?P<skill>[A-Za-z0-9_-]+)`?の)?`(?P<path>[^`\s]+?\.md)`の`#{{2,6}} (?P<name>[^`\n]+)`"
+)
+# 規範Markdownに加えて見出し名参照を検査する設計文書。
+_EXTENDED_HEADING_REFERENCE_DOCS = re.compile(r"docs/development/(?:design[^/]*|architecture|operations)\.md")
 
 
 def _normative_markdown_paths(sources: list[pathlib.Path]) -> list[pathlib.Path]:
@@ -405,6 +411,20 @@ def _normative_markdown_paths(sources: list[pathlib.Path]) -> list[pathlib.Path]
         path
         for path in sources
         if path.suffix == ".md" and (path.as_posix() == "AGENTS.md" or path.as_posix().startswith(_NORMATIVE_MARKDOWN_PREFIXES))
+    ]
+
+
+def _extended_heading_reference_sources(sources: list[pathlib.Path]) -> list[pathlib.Path]:
+    """規範Markdownの外で見出し名参照を検査する追跡ファイル（テスト以外のPythonと設計文書）を返す。
+
+    テストは欠落した参照をfixtureとして意図的に含み、方針記録（`concepts*.md`）と障害記録（`incidents*.md`）は
+    当時の節名を記録として保持するため、検査の対象から外す。
+    """
+    return [
+        path
+        for path in sources
+        if (path.suffix == ".py" and not path.name.endswith("_test.py"))
+        or _EXTENDED_HEADING_REFERENCE_DOCS.fullmatch(path.as_posix())
     ]
 
 
@@ -441,7 +461,8 @@ def _unresolved_heading_references(
     unresolved: list[tuple[str, pathlib.Path]] = []
     for source in sources:
         content = (root / source).read_text(encoding="utf-8")
-        for match in _HEADING_REFERENCE_PATTERN.finditer(content):
+        matches = [*_HEADING_REFERENCE_PATTERN.finditer(content), *_HEADING_SYMBOL_REFERENCE_PATTERN.finditer(content)]
+        for match in matches:
             target = _resolve_heading_reference_target(root, source, match.group("skill"), match.group("path"), markdown_paths)
             if target is None:
                 continue
@@ -459,6 +480,99 @@ def test_normative_heading_references_resolve() -> None:
     assert any(path.as_posix().startswith(".claude/skills/") for path in sources)
     unresolved = _unresolved_heading_references(root, sources, markdown_paths)
     assert not unresolved, _format_unresolved(unresolved)
+
+
+def test_code_and_design_heading_references_resolve() -> None:
+    """テスト以外のPythonと設計文書の見出し名参照が、参照先に残る見出しまたは本文の文字列へ解決する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    tracked = _tracked_source_paths(root)
+    markdown_paths = [path for path in tracked if path.suffix == ".md"]
+    sources = _extended_heading_reference_sources(tracked)
+    assert any(path.suffix == ".py" for path in sources)
+    assert any(path.as_posix().startswith("docs/development/design") for path in sources)
+    unresolved = _unresolved_heading_references(root, sources, markdown_paths)
+    assert not unresolved, _format_unresolved(unresolved)
+
+
+def test_heading_symbol_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -> None:
+    """見出し記号付きで節を指す参照も、参照先から節が消えると未解決として報告する。"""
+    standard = tmp_path / "docs" / "standard.md"
+    standard.parent.mkdir(parents=True)
+    standard.write_text("# 基準\n\n### 受入シナリオ\n", encoding="utf-8")
+    source = pathlib.Path("tool.py")
+    (tmp_path / source).write_text(
+        'MESSAGE = "`docs/standard.md`の`### 受入シナリオ`と`docs/standard.md`の`### 消えた節`"\n', encoding="utf-8"
+    )
+    markdown_paths = [standard.relative_to(tmp_path)]
+
+    assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [("docs/standard.md「消えた節」", source)]
+
+
+def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
+    """テスト、方針記録および障害記録を見出し名参照の拡大範囲から外し、コードと設計文書を含める。"""
+    paths = [
+        pathlib.Path("src/sample.py"),
+        pathlib.Path("src/sample_test.py"),
+        pathlib.Path("docs/development/design-hosts.md"),
+        pathlib.Path("docs/development/architecture.md"),
+        pathlib.Path("docs/development/operations.md"),
+        pathlib.Path("docs/development/concepts-runtime.md"),
+        pathlib.Path("docs/development/incidents-validation.md"),
+    ]
+
+    assert _extended_heading_reference_sources(paths) == [paths[0], paths[2], paths[3], paths[4]]
+
+
+# 監査記録の見出しを、索引元の条文またはコードが同じ文字列で指すことを検査する。
+_AUDIT_HEADING_PATTERN = re.compile(r"^## (?P<heading>.+)$", re.MULTILINE)
+_AUDIT_REFERENCE_EXCLUDED_PREFIX = "docs/development/norm-restructure/"
+
+
+def _comment_joined(content: str) -> str:
+    """行頭の空白とコメント記号`#`を除いて各行を連結し、コメントの改行で分かれた参照を1つの文字列にする。"""
+    return "".join(line.strip().lstrip("#").strip() for line in content.splitlines())
+
+
+def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]) -> list[str]:
+    """監査記録のH2見出しのうち、監査記録自身と判定台帳を除く追跡ファイルのどこにも現れないものを返す。"""
+    headings = [
+        match.group("heading") for match in _AUDIT_HEADING_PATTERN.finditer((root / _AUDIT_RECORDS).read_text(encoding="utf-8"))
+    ]
+    texts: list[str] = []
+    for source in sources:
+        if source == _AUDIT_RECORDS or source.as_posix().startswith(_AUDIT_REFERENCE_EXCLUDED_PREFIX):
+            continue
+        content = (root / source).read_text(encoding="utf-8")
+        texts.extend((content, _comment_joined(content)))
+    corpus = "\n".join(texts)
+    return [heading for heading in headings if heading not in corpus]
+
+
+def test_audit_record_headings_are_referenced() -> None:
+    """監査記録の各H2見出しを、索引元の条文またはコードが同じ文字列で指す。"""
+    root = pathlib.Path(__file__).resolve().parent
+    unreferenced = _unreferenced_audit_headings(root, _tracked_source_paths(root))
+    assert not unreferenced, (
+        "参照元を持たない監査記録の見出し（索引元へ索引の1文を置くか、索引先の無い記録を削除する）:\n" + "\n".join(unreferenced)
+    )
+
+
+def test_unreferenced_audit_heading_detector_joins_wrapped_comments(tmp_path: pathlib.Path) -> None:
+    """コメントの改行で分かれた参照を参照ありとし、どこにも現れない見出しだけを報告する。"""
+    audit = tmp_path / _AUDIT_RECORDS
+    audit.parent.mkdir(parents=True)
+    audit.write_text(
+        "# 監査記録\n\n## a.py：節：2026年1月1日\n\n記録。\n\n## b.md：節：2026年1月2日\n\n記録。\n", encoding="utf-8"
+    )
+    source = pathlib.Path("a.py")
+    (tmp_path / source).write_text(
+        "# 監査記録は`docs/development/audit-records.md`の\n# 「a.py：節：2026年1月1日」にある。\n", encoding="utf-8"
+    )
+    ledger = pathlib.Path(_AUDIT_REFERENCE_EXCLUDED_PREFIX, "ledger.md")
+    (tmp_path / ledger).parent.mkdir(parents=True)
+    (tmp_path / ledger).write_text("b.md：節：2026年1月2日\n", encoding="utf-8")
+
+    assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, source, ledger]) == ["b.md：節：2026年1月2日"]
 
 
 def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -> None:

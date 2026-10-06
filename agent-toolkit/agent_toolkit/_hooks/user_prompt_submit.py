@@ -174,6 +174,8 @@ def _is_machine_injected(payload: dict, prompt: str) -> bool:
     5. `prompt`の1行目が機械生成の本文を示す`atk-auto`（旧形式を含む）の開始タグを含むこと
 
     Claude Code 2.1.274の時点で`source`は配送されないため、残る4系統で判定する。
+    監査記録は`docs/development/audit-records.md`の
+    「agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py：UserPromptSubmitの出所欄：2026年9月17日」にある。
     出所を判定入力に持たないと、機械が投入したターンが通常発話として処理され、
     実ユーザー発話が受け取るべき発話の内容を現物で確かめる手順を示す注記をそのターンが消費する。
     第5の系統は、process-loopが子セッションの最初の入力として渡す本文を対象とする。

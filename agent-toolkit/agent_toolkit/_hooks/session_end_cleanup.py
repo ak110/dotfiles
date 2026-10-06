@@ -14,6 +14,9 @@
 SessionStartが作成するセッションのmanaged-tempも、同じ理由でSessionEndでは削除しない。
 `agents_server`経由のsessionはturnごとにSessionEndが発火し、後続のturnと委譲先が同じ領域の成果物を読む。
 回収は`atk`の実行時に最終更新から7日を超えた登録済み領域を削除する掃引へ委ねる。
+
+本処理は`agent-toolkit/hooks/hooks.json`で非同期（`"async": true`）に登録する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/hooks/hooks.json：SessionEndの非同期化：2026年9月24日」にある。
 """
 
 from __future__ import annotations

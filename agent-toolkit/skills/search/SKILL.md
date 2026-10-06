@@ -12,14 +12,15 @@ description: >
 検索手段は対象の性質から次の順で決める。
 
 1. ファイル名、種類、更新時刻およびディレクトリ構造などの属性探索は、対象を限定した`find`を使う
-2. 現在のGit作業ツリー内の管理対象に限定した内容検索と追跡ファイル全体の残存確認は`git grep`を使う
-3. 現在のGit作業ツリー外の明示パス、Git管理外の対象、正規表現を使う内容検索および除外設定に従う内容検索には`rg`を使う。作業ツリー外の明示パスが別のGitリポジトリに属する場合も`rg`を選ぶ。隠し対象を母集団に含める場合は`--hidden`を付ける
+2. 現在のGit作業ツリー内の管理対象に限定した内容検索と追跡ファイル全体の残存確認は`git grep`を使う。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（1）」にある
+3. 現在のGit作業ツリー外の明示パス、Git管理外の対象、正規表現を使う内容検索および除外設定に従う内容検索には`rg`を使う。作業ツリー外の明示パスが別のGitリポジトリに属する場合も`rg`を選ぶ。隠し対象を母集団に含める場合は`--hidden`を付ける。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（2）」にある
 4. 除外設定を反映したファイル一覧は`rg --files`、構造化した集計と全体件数の上限を要する検索はMCPまたはCLIの`pyfltr grep`等を使う
 
 利用中のホストで手段を利用できない場合も同じ対象性質から代替を選ぶ。
 `rg`と`git grep`のいずれかを利用できる場合は、再帰内容検索にその手段を使う。双方を利用できない場合は、`--include`・`--exclude`・`--exclude-dir`で対象を限定した`grep`を用い、出力先ファイルへ保存してから必要な範囲だけを読む。
 
 `git grep`では、固定文字列の`-F`、拡張正規表現の`-E`またはPerl互換正規表現の`-P`を検索意図に応じて明示する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月7日」にある。
 オプション、pattern、`--`、pathspecの順で引数を置き、patternの解釈を明示したオプションで固定して、`grep.patternType`などのホスト設定から独立させる。
 grepとrgの単語境界指定（`-w`・`\b`）は日本語文字を単語構成文字として扱い（GNU grepでは日本語ロケールの場合）、日本語に隣接する英単語へ一致しない。日本語文書の語検索では単語境界指定を使わず、必要な境界はパターン側で表現する。
 `grep.lineNumber=true`の下で`-h`を指定しても行番号が残り、`--no-line-number`で抑止される。観測結果は`docs/development/audit-records.md`の「agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月14日」にある。
