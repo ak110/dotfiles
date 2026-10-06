@@ -239,6 +239,10 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 
 2026年9月8日、Claude Code 2.1.263で次を確認した。存在しないリポジトリを指す`git -C /tmp log --oneline -1`は終了コード128で終わり、セッションの状態ファイルの`git_log_checked`は未設定のままだった。続けて実在するworktreeを指す同じ形の`git log`を実行すると、そのcwdのキーが真になった。再検証はこの2つのコマンドを単独で順に実行し、`{tempdir}/claude-agent-toolkit-<session_id>.json`の`git_log_checked`を前後で比較する。
 
+## agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年10月7日
+
+2026年10月7日、Claude Code 2.1.292の環境で公式ドキュメント<https://code.claude.com/docs/en/hooks.md>を取得し、`PostToolUseFailure`節と`PermissionDenied`節を確認した。前者は実行を始めたツールの失敗で発火し、`additionalContext`を受理する。未知のツール名、入力検証の失敗と権限拒否では発火しない。後者はauto modeの拒否だけで発火し、手動の拒否、`PreToolUse`の遮断とdeny規則の一致では発火しない。出力は`hookSpecificOutput.retry`だけを受理する。再検証は同ドキュメントの両節を読み、発火条件と受理する出力を確かめる。
+
 ## agent-toolkit/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日
 
 2026年9月4日、Claude Code 2.1.260の実行ファイルへ埋め込まれたパターンマッチ関数を確認した。この関数は値が空文字列と`"*"`のいずれかのときに正規表現へ変換せず一致を返す。同ドキュメントにも同じ3分類が記載されていた。再検証は同ドキュメントの`Matcher patterns`節を取得し、`strings`で抽出した関数が空値と`"*"`を短絡することを確認する。

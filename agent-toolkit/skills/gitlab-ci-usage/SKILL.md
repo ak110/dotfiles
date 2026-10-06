@@ -87,5 +87,4 @@ GitLab本体のlintは`include`や`workflow`の評価まで実行するため、
 
 ## 私設ホスト（自己署名のTLS証明書）でのCI通過確認
 
-自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーになる場合の対処は`references/self-hosted-tls.md`が、
-CI通過確認の手順は`agent-toolkit:commit`の`references/push-and-ci.md`が定める。どちらも読込表の行に従って読む。
+CI通過確認の手順は`agent-toolkit:commit`の`references/push-and-ci.md`が定め、読込表の行に従って読む。

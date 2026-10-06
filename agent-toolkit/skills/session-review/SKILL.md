@@ -16,6 +16,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| 工程1の`atk run-script session-review-prepare`が0以外で終了したか、標準出力が1行のJSONでない場合 | `references/analysis-failure.md` |
 | 工程2で`atk run-script session-review-prepare`の`reference_document`が値を持つ場合 | `reference_document`が示す対象リポジトリ固有の振り返り参照文書 |
 | 工程3で問題を選別する前 | `references/analysis.md` |
 | 工程4で問題ごとに`agent-toolkit:bugfix`を起動した時点（`references/analysis.md`「原因と対策」がユーザー介入を拡張原因分析の条件に当たるものとして扱うため） | `agent-toolkit:bugfix`の`references/root-cause-analysis.md` |
@@ -35,9 +36,9 @@ description: >
    atk run-script session-review-prepare -- --codex-thread-id <thread ID> --work-dir <作業ディレクトリの絶対パス> --target-repo <対象リポジトリの絶対パス>
    ```
 
-   このコマンドは証拠bundleを抽出し、作業ディレクトリへ会話の流れ（`conversation.md`。メイン記録の発話、ツール呼び出しおよび失敗したツール結果の標識を時系列で並べる）、問題候補（`candidates.md`）、セッション統計（`stats.md`）を書く。`stats.md`は律速となったagent threadごとの内訳の節を含む。キューは変更しない。
+   このコマンドは証拠bundleを抽出し、作業ディレクトリへ会話の流れ（`conversation.md`。メイン記録の発話、ツール呼び出しおよび失敗したツール結果の標識を時系列で並べる）、問題候補（`candidates.md`）、セッション統計（`stats.md`）を書く。`stats.md`は律速となったagent threadごとの内訳の節を含む。キューはそのまま保つ。
    標準出力の1行JSONは、3つの文書の所在（`conversation_path`、`candidates_path`、`stats_path`）と、対象リポジトリ固有の振り返り参照文書（`reference_document`。無ければnull）を持つ。また、準備時刻（`prepared_at`）と発話件数（`utterance_counts`）を持つ。候補件数（`candidate_total`と種別ごとの`candidate_counts`）、除外件数（`excluded_counts`）、発生記録の読飛ばし行数（`failure_ledger_skipped`）も含む。経過秒（`elapsed_seconds`）とコンパクション回数（`compaction_count`）は所要時間の分析へ使う。
-   終了コードが0でない場合と、標準出力が1行のJSONではない場合は`## 分析失敗`へ進む。
+   終了コードが0でない場合と、標準出力が1行のJSONではない場合は`references/analysis-failure.md`の手順へ進む。
 2. `candidates.md`より先に`conversation.md`を全範囲読み、観点を限定せずにセッション全体から問題を列挙する。遠回り、手戻り、同じ論点の反復、ユーザーによる是正、時間を費やした工程はその例である。
    - 推測で組んだコマンドの試行錯誤、同じ資料の読み直し、採用した設計の書き直し、規範の解釈へ費やした工程、委譲先への指示不足による手戻り、関連ファイルや定義元へ到達するまでの遠回り、現行に合わない資料を根拠にした判断は標識を残さず候補に現れないため、会話の流れのツール呼び出しと前後の発話から探す。ツール出力をその場のコードや`jq`・`cut`・`sed`で取り出し直す呼び出しと、同じ目的のコマンドの組を続けて実行する反復も同じく探す。検索語や探索場所を変える反復、定義元の探し直し、参照先への案内不足で別の文書をたどる遠回りなども、この観点で扱う。
    - 手順書やスキルが人または処理主体に求める作業を、managed-tempへ作成したスクリプトで代替した箇所も標識を残さないため、会話の流れのツール呼び出しから探す。委譲先の内部は会話の流れに現れないため、委譲先の記録は`atk run-script session-review-evidence --`の`--grep`でmanaged-tempのスクリプトのパスを検索して探す。判定は`references/analysis.md`「一次選別」に従う。
@@ -74,8 +75,3 @@ description: >
 検証コマンドの引数誤りやコマンド不在は除外の対象外とする。単独の`atk`と`atk agents wait`の除外では`失敗:`か`警告:`の行を伴う結果、別の終了コードおよび`&&`やパイプで連結したコマンドを対象外とする。連結全体の終了コードは単独のコマンドの結果と区別できないためである。各区分の判定条件は`scripts/session_review_evidence.py`の判定関数のdocstringが定める。
 `気付いた改善点:`で始まる行を持つ委譲返却は、正常な完了の形式や本文長によらず`delegate-return`候補へ残す。
 アシスタント本文の表示用短縮でも、省略区間の標識行を全文で保持する。メインが転記していない改善点も分析の入力となる。
-
-## 分析失敗
-
-`atk run-script session-review-prepare`が失敗した場合は、診断が一時的な原因を示すなら同じ入力で再実行する。同じ診断での再失敗を確かめた場合と、診断が一時的な原因を示さない場合は`agent-toolkit:wi-standards`に従い、セッションID、失敗事象、原因、解除条件および再現手順を持つ欠陥AWIを登録する。再開工程は「そのセッションをresumeしてsession-reviewを再実行する」とし、transcriptパスは記録の対象から外す。全記録をメインのコンテキストへ読み込んで分析すると、以降の判断へ回す容量が尽きる。
-手動起動では分析未完了を報告できる。`agent-toolkit:completion-report`から起動した場合は、分析未完了と欠陥AWIを同スキルへ返し、元作業はそのまま完了させる。

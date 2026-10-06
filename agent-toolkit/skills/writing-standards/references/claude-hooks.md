@@ -27,9 +27,11 @@ payload設計は、上記の一次資料が示す仕様から確定する。
   直近の地の文を対象とする判定では、テキストブロックを持たないターンを走査の対象から除いて遡る。
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」にある
 - フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
-  例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
-  auto modeでのブロック等はPermissionDeniedフックが処理する。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある
+  例えばPostToolUseはツール成功時のみ発火する。
+  PostToolUseFailureは実行を始めたツールが失敗したときに発火し、`additionalContext`を受理する。入力検証による拒否と権限拒否は、実行前に退けられるためPostToolUseFailureの発火の対象外である。
+  PermissionDeniedの発火はauto modeの拒否に限られ、deny規則への一致、手動の拒否と`PreToolUse`の遮断は対象外である。出力は`hookSpecificOutput.retry`だけを受理するため、失敗時の回復手順の本文は別の手段で届ける。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある。
+  PostToolUseFailureとPermissionDeniedの発火条件の記録は同ファイルの「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年10月7日」にある
 - CodexのPostToolUseは`tool_response`を任意のJSON値として渡す。シェル実行では終了コードを含まず
   出力文字列だけが届くため、状態記録の条件からコマンドの成否を外す。
   `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる

@@ -216,7 +216,7 @@ def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> Non
         root / "share" / "exec.parent.md",
         root / "skills" / "plan-mode" / "SKILL.md",
         root / "skills" / "single-lane-process" / "SKILL.md",
-        root / "share" / "session-termination.subagent.md",
+        root / "skills" / "process-wi" / "references" / "termination-ci-failure.md",
     ]
 
     assert "必須入力名: レビュー基準,引き継ぎ記録先,未判定検証記録,完成条件証拠" in review
