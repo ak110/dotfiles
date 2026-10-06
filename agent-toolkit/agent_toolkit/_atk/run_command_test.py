@@ -7,7 +7,9 @@ import json
 import os
 import pathlib
 import signal
+import subprocess
 import sys
+import time
 
 import pytest
 
@@ -71,6 +73,19 @@ def test_nonzero_child_exit_code_is_propagated(
 def test_timeout_returns_124_and_keeps_partial_output(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    stdout_path = tmp_path / "managed" / "stdout.bin"
+
+    class _PopenAfterFirstOutput(subprocess.Popen):  # type: ignore[type-arg]
+        """子が最初の出力を書いてから上限付きの待機を始め、上限をPython起動時間から切り離す。"""
+
+        def wait(self, timeout: float | None = None) -> int:
+            if timeout is not None:
+                deadline = time.monotonic() + 60
+                while not stdout_path.read_bytes() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+            return super().wait(timeout=timeout)
+
+    monkeypatch.setattr(run_command.subprocess, "Popen", _PopenAfterFirstOutput)
     result, metadata, _stderr = _run(
         monkeypatch,
         tmp_path,
