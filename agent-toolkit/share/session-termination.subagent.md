@@ -3,6 +3,14 @@
 `agent-toolkit:process-wi`の公開工程のうち、版数更新、生成物同期、全体検証、push、CI確認、検証失敗時の修正、プロジェクト固有の公開後の操作、延期`adopt`を完遂する。選定、レーンの計画と実装、振り返り、完了報告は担当せず、いずれも委譲元が担う。
 完了報告と成果物は日本語で書く。返却値は指定どおりに返す。
 
+## 読込表
+
+次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 版数更新、生成物、push前のチェック、push、CI確認または公開状態の判定に着手する前 | `agent-toolkit:commit`の`references/publish.md` |
+
 ## 入力
 
 ```text
@@ -20,7 +28,7 @@
 
 ## 生成物とpush
 
-版数更新、生成物、push前に実行するチェックの選定と実行、push、CI確認、公開状態の判定は、`agent-toolkit:commit`を起動し、同スキルの`references/publish.md`を全文読んで実行する。受領した`bump種別`をその工程の入力に使い、CIの成功まで確認する。
+版数更新、生成物、push前に実行するチェックの選定と実行、push、CI確認、公開状態の判定は、`agent-toolkit:commit`を起動し、読込表の同スキルの`references/publish.md`に従って実行する。受領した`bump種別`をその工程の入力に使い、CIの成功まで確認する。
 
 ## 検証またはCIの失敗
 
@@ -58,4 +66,4 @@ CIの結果: <成功または失敗>
 延期後にadoptしたAWI: <実際にadoptしたAWIファイル名のJSON文字列配列。反映後の新プロセスでしか観測できない条件が残る項目を含めない。無い場合は[]>
 ```
 
-続行不能時はエスカレーション内容だけを返す。完了報告はツール戻り値で1回返す。委譲元への`SendMessage`での送信は行わない。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
+続行不能時は`agent-toolkit:delegation`の`references/mandatory-rules.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。完了報告はツール戻り値で1回返す。委譲元への`SendMessage`での送信は行わない。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

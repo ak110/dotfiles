@@ -1,8 +1,20 @@
 # 実行レビュータスク
 
-実装済み差分を要件・外部仕様の水準で1段階レビューする。最初に`agent-toolkit:review-standards`を起動し、同スキルの`references/reviewer.md`を全文読み、同書の「実行レビューの判定」を適用する。続けて`agent-toolkit:writing-standards`を起動し、変更ファイルの成果物種別ごとに同スキルが定める資料を全文読んでから判定する。テストコードを含む差分では`references/testing.md`を読む資料に含める。読んだ資料は`reviewer.md`の指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠とする。担う範囲はレビューに限る。実装と修正は委譲元が別の主体へ委ねる。
+実装済み差分を要件・外部仕様の水準で1段階レビューする。最初に`agent-toolkit:review-standards`と`agent-toolkit:writing-standards`を起動し、読込表の資料を読んでから判定する。`reviewer.md`の「実行レビューの判定」を適用し、`agent-toolkit:writing-standards`の資料は`reviewer.md`の指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠とする。担う範囲はレビューに限る。実装と修正は委譲元が別の主体へ委ねる。
 実行レビューの入力、責務と出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 完了報告とレビュー指摘管理表は日本語で書く。固定された識別子と返却値は指定どおりに扱う。
+
+## 読込表
+
+次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md` |
+| 差分を判定する前 | `agent-toolkit:writing-standards`が変更ファイルの成果物種別ごとに定める資料。テストコードを含む差分では同スキルの`references/testing.md`を含める |
+| `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` |
+| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/managed-temp-bulk-show.md` |
+| 指摘を登録するか完成条件証拠へ記入する直前 | `agent-toolkit:review-standards`の[references/exec-review-recording.md](../skills/review-standards/references/exec-review-recording.md) |
 
 ## 入力
 
@@ -19,7 +31,7 @@
 `前回確認版`は引き継ぎ再レビューで受領する記録の絶対パスとし、前回レビューしたHEADと、Git管理外の文章成果物ごとの識別子・前回本文の複製パスを取得する。
 同じthreadでは後掲「出力」で保存した同じ記録を継続する。
 再レビューの比較元を解決できない場合は、不足するHEADや本文の取得先を続行できない理由として返す。
-`計画`では計画ファイルの絶対パスだけを追加で受領し、`agent-toolkit:plan-mode`の`references/plan-file-standards.md`を全文読んで各節の意味を解釈する基準とする。
+`計画`では計画ファイルの絶対パスだけを追加で受領し、読込表の`agent-toolkit:plan-mode`の`references/plan-file-standards.md`を各節の意味を解釈する基準とする。
 計画ファイルの`## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`と`## 変更履歴`、開始時点の実体から、ユーザー目的、現行の公開契約、ユーザー合意、認可の範囲、除外・保持、通常入力、対象外入力、誤許可と誤拒否の消費主体への影響を、出典付きの独立した条項として生成する。変更成果物に適用する作成規範とプロジェクト規範も出典付きで条項へ加える。出典から対象を判定できる集合は条件で示し、件数そのものが合否条件のときだけ実際に計測した値と時点を記録する。条件を一意に記述できない条項は独立して判定できる単位へ分ける。各観点の条項と出典の欠落がないか確認してから差分と比較する。
 計画ファイル（バグ）、レビュー指摘管理表、検証結果は計画ファイルの記載と同じstemの成果物から解決する。検証結果は実装した主体が`## 進捗ログ`へ記録した行とする（レーン工程では`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」が記録を定める）。実装担当の記録は検証資料であり、自身の完成条件証拠とは別の入力として読む。
 `未判定検証記録`は全ての起動で受領する。証拠要求ありでは実装担当かメインが作成したJSONの絶対パスを受領する。受領直後に値が絶対パスであること、実在、読取可能性、要求単位、根拠への到達可能性を確認する。通常配送を進捗ログや引き継ぎ記録から補わない。読み取れない場合と要求単位が不足する場合は、影響する単位をround 1の指摘として登録する。根拠へ到達できない場合も同じ処置とし、定型の証拠不足で全行を埋めない。証拠要求なしでは値`なし`を受領する。再レビューと引き継ぎ再レビューでは初回値を保持する。
@@ -58,7 +70,7 @@ plugin rootの配置からPython実行ファイルの絶対パスを組み立て
 対象WI集合は、委譲プロンプトで受領したWI記録と、`計画`を併せて受領した場合に計画の`## 実施内容`でWI由来として挙げる関連WIの和集合とする。WI由来は`人間由来のWI`と`エージェント由来のWI`を指す。
 計画が挙げるWIは、`## 実施内容`の`由来`が`人間由来のWI`または`エージェント由来のWI`である行の全てからWIのファイル名を抽出して特定する。由来と採否も同じ行が持つ値を用いる。
 対象集合にWIがある場合は、計画の有無にかかわらず対象worktreeから`atk wi show`で本文を取得する。
-複数件を取得する場合は`agent-toolkit:wi-standards`の`references/managed-temp-bulk-show.md`を読む。
+複数件の取得は読込表の`agent-toolkit:wi-standards`の`references/managed-temp-bulk-show.md`に従う。
 `atk wi show <ファイル名...> --skip-pull`を単独で発行し、生成側が返す`保存先:`の絶対パスから取得結果を読む。
 終了コード0と、要求した全ファイル名の`### <ファイル名> [<状態>]`見出しを保存ファイルで確かめてから本文を読む。見出しが欠けたWIだけを単数で再取得する。非0終了の部分出力は採用せず、要求したWIを単数で再取得する。
 1件だけの取得と保存ファイルを読めない場合の扱いも同参照文書に従う。
@@ -84,7 +96,7 @@ plugin rootの配置からPython実行ファイルの絶対パスを組み立て
 
 ## 指摘の記録
 
-指摘を登録するか完成条件証拠へ記入する直前に、`agent-toolkit:review-standards`の[references/exec-review-recording.md](../skills/review-standards/references/exec-review-recording.md)を全文読む。同書が表への登録、走査記録、証拠の生成・判定・記入および根拠の境界を定める。
+表への登録、走査記録、証拠の生成・判定・記入および根拠の境界は、読込表の時点で読む`agent-toolkit:review-standards`の`references/exec-review-recording.md`が定める。
 
 ## 再レビュー
 
