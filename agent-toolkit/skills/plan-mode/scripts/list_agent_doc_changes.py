@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--repo",
         type=pathlib.Path,
+        metavar="DIR",
         default=pathlib.Path.cwd(),
         help="対象リポジトリのパス（省略すると現在のディレクトリを使う）",
     )

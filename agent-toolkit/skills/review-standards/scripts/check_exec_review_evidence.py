@@ -1605,17 +1605,28 @@ def main(argv: list[str] | None = None) -> int:
     """`完成条件証拠`と対象WI名を受け取り、基準を満たすか判定するか雛形を書き込んで結果を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "evidence", type=pathlib.Path, help="`完成条件証拠`（JSON）の絶対パス。証拠要求なしの返却生成では『なし』"
+        "evidence",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="`完成条件証拠`（JSON）の絶対パス。証拠要求なしの返却生成では『なし』",
     )
     parser.add_argument("wi", nargs="*", help="対象WIのファイル名。計画だけのレビューでは省略する")
-    parser.add_argument("--review-table", type=pathlib.Path, help="返却の件数を取得するレビュー指摘管理表の絶対パス")
+    parser.add_argument(
+        "--review-table", type=pathlib.Path, metavar="PATH", help="返却の件数を取得するレビュー指摘管理表の絶対パス"
+    )
     parser.add_argument("--round", type=int, help="今回のexec-reviewのラウンド番号")
     parser.add_argument(
-        "--plan", type=pathlib.Path, action="append", default=[], help="採否を持つ計画の絶対パス。複数計画では反復する"
+        "--plan",
+        type=pathlib.Path,
+        metavar="PATH",
+        action="append",
+        default=[],
+        help="採否を持つ計画の絶対パス。複数計画では反復する",
     )
     parser.add_argument(
         "--input-record",
         type=pathlib.Path,
+        metavar="PATH",
         action="append",
         default=[],
         help="採否と後続工程を持つWI・CI・引き継ぎ記録の絶対パス。反復できる",

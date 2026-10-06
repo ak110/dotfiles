@@ -154,7 +154,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
 
     抽出結果は、作業ツリーに実在するパスか、親ディレクトリが実在する完全なファイル名の新設先に限る。
-    `/`を含む候補のうち、末尾が`/`のディレクトリ範囲は実在するディレクトリだけを採る。
+    `/`を含む候補のうち、末尾が`/`のディレクトリ範囲は実在するディレクトリだけを採用する。
     実在しないファイルの候補は、追跡ファイルのパス末尾と1件だけ一致すればその追跡ファイルへ読み替え、
     それ以外は`_new_file_path`の新設先の条件で採る。
     `/`を含まない候補は、`work_dir`直下に実在するファイルの場合だけ採る。
@@ -652,8 +652,8 @@ def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
 def main(argv: list[str] | None = None) -> int:
     """コマンドライン引数を解析し、選定結果を確かめる。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("selection_file", type=pathlib.Path, help="pickerが保存した選定結果の絶対パス")
-    parser.add_argument("--work-dir", type=pathlib.Path, default=None, help="対象リポジトリの絶対パス")
+    parser.add_argument("selection_file", type=pathlib.Path, metavar="PATH", help="pickerが保存した選定結果の絶対パス")
+    parser.add_argument("--work-dir", type=pathlib.Path, metavar="DIR", default=None, help="対象リポジトリの絶対パス")
     args = parser.parse_args(argv)
     try:
         work_dir = _resolve_work_dir(args.work_dir)

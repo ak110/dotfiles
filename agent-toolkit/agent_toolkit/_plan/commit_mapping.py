@@ -112,8 +112,19 @@ def commit_event(
 
 
 def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[str, set[str]]) -> dict[str, object]:
-    """検収済みの旧完全OIDから新OIDへのJSON対応を現在のGit実体へ結び付ける。"""
-    replacements = json.loads(source.read_text(encoding="utf-8"))
+    """検収済みの旧完全OIDから新OIDへのJSON対応を保存したファイルを読み、現在のGit実体へ結び付ける。
+
+    `source`は`plan-progress`の`--rewrite-map`が受け取るファイルのパスである。読めない場合は、
+    計画ファイルの失敗と区別できるよう、その引数の値を読めなかったことを理由へ書く。
+    """
+    try:
+        replacements = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise CommitMappingError(
+            f"--rewrite-mapの値をJSONファイルとして読めません: {source}: {error}",
+            next_action="旧完全OIDから新完全OIDへのJSONオブジェクトをmanaged-tempのファイルへ保存し、"
+            "その絶対パスを--rewrite-mapへ渡して同じコマンドを再実行する",
+        ) from error
     if not isinstance(replacements, dict) or not replacements:
         raise _fail("履歴変更の対応は非空のJSONオブジェクトが必要です")
     resolved: dict[str, str] = {}

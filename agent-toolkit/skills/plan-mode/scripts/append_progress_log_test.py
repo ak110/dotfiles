@@ -195,6 +195,19 @@ def test_public_cli_records_and_reads_commit_mapping(
     new_oid = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True, timeout=30
     ).stdout.strip()
+    # JSON文字列そのもの、存在しないパス、JSONとして読めないファイルは、計画ファイルの失敗ではなく
+    # `--rewrite-map`の値の誤りとして返し、記録を変えない。
+    malformed = tmp_path / "malformed.json"
+    malformed.write_text("{", encoding="utf-8")
+    saved = path.read_bytes()
+    for value in [json.dumps({oid: new_oid}), str(tmp_path / "missing.json"), str(malformed)]:
+        assert (
+            append_progress_log.main([*common, "--rewrite-map", value, "--completed-step", "履歴検収", "--result", "失敗"]) == 1
+        )
+        error = capsys.readouterr().err
+        assert "--rewrite-map" in error
+        assert "計画ファイル" not in error
+        assert path.read_bytes() == saved
     replacements = tmp_path / "rewrite.json"
     replacements.write_text(json.dumps({oid: new_oid}), encoding="utf-8")
     assert (

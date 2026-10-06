@@ -202,16 +202,21 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
 def main(argv: list[str] | None = None, *, description: str | None = None) -> int:
     """CLIから進捗ログの追記を開始する。`description`は別名の公開コマンドのヘルプ説明。"""
     parser = argparse.ArgumentParser(description=description or __doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("plan_file", type=pathlib.Path, help="更新する計画ファイル")
+    parser.add_argument("plan_file", type=pathlib.Path, metavar="PATH", help="更新する計画ファイルのパス")
     parser.add_argument("--completed-step", help="完了した工程（記録時は必須）")
     parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
     operation = parser.add_mutually_exclusive_group()
     operation.add_argument("--commit", help="対応を記録する実装commit。完全OIDへ解決する")
     parser.add_argument("--previous-head", help="実装commitの作成直前に取得したHEADの完全OID。--commitでは必須")
-    operation.add_argument("--rewrite-map", type=pathlib.Path, help="検収済みの旧完全OIDから新OIDへのJSON対応")
+    operation.add_argument(
+        "--rewrite-map",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="検収済みの旧完全OIDから新完全OIDへの対応をJSONオブジェクトで保存したファイルの絶対パス（JSON文字列そのものは受け取らない）",
+    )
     operation.add_argument("--get-commits", action="store_true", help="対象AWIの現在のcommit対応をJSON Linesで取得する")
     parser.add_argument("--awi", action="append", help="対応する、または取得するAWIファイル名。反復指定")
-    parser.add_argument("--worktree", type=pathlib.Path, help="実装commitを確認する対象worktreeの絶対パス")
+    parser.add_argument("--worktree", type=pathlib.Path, metavar="DIR", help="実装commitを確認する対象worktreeの絶対パス")
     parser.add_argument("--handoff", action="store_true", help="計画なしの引き継ぎ記録へ同じ対応を記録・取得する")
     parser.add_argument("--allowed-awi", action="append", help="引き継ぎ記録の対象AWI全件。--handoffでは反復指定が必須")
     args = parser.parse_args(argv)

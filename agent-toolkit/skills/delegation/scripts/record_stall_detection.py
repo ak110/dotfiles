@@ -20,8 +20,10 @@ def _identifier(value: str) -> str:
 def main() -> int:
     """引数を検証し、対象タスクの停滞検知完了を記録する。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--session-id", required=True, type=_identifier)
-    parser.add_argument("--task-id", required=True, type=_identifier)
+    parser.add_argument("--session-id", required=True, type=_identifier, help="停滞検知を記録するセッションのID")
+    parser.add_argument(
+        "--task-id", required=True, type=_identifier, help="停滞検知を完了したバックグラウンドタスクのID（TaskStopの対象）"
+    )
     args = parser.parse_args()
     if not record_completion(args.session_id, args.task_id):
         _next_action.report(

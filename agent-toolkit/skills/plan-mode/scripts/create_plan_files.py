@@ -423,9 +423,26 @@ def main(argv: list[str] | None = None) -> int:
     """CLIから内部の作成処理を開始する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     source_group = parser.add_mutually_exclusive_group(required=True)
-    source_group.add_argument("--main-source", dest="main_source", type=pathlib.Path)
-    source_group.add_argument("--source", dest="main_source", type=pathlib.Path)
-    parser.add_argument("--bugs-source", type=pathlib.Path)
+    source_group.add_argument(
+        "--main-source",
+        dest="main_source",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="計画ファイルの本文を保存したファイルのパス（本文そのものは受け取らない）",
+    )
+    source_group.add_argument(
+        "--source",
+        dest="main_source",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="`--main-source`の別名。計画ファイルの本文を保存したファイルのパス",
+    )
+    parser.add_argument(
+        "--bugs-source",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="計画ファイル（バグ）の本文を保存したファイルのパス（本文そのものは受け取らない）",
+    )
     name_group = parser.add_mutually_exclusive_group(required=True)
     name_group.add_argument(
         "--name",
@@ -435,9 +452,25 @@ def main(argv: list[str] | None = None) -> int:
         "--lane",
         help="lane-NN形式のレーン識別子。実行環境のローカル時刻の日時を含むprocess-wi用stemを生成する。",
     )
-    parser.add_argument("--private-notes", type=pathlib.Path)
-    parser.add_argument("--home", type=pathlib.Path)
-    parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
+    parser.add_argument(
+        "--private-notes",
+        type=pathlib.Path,
+        metavar="DIR",
+        help="計画本文が参照する保存済み計画を解決するprivate-notesのパス（省略すると`AGENT_TOOLKIT_PRIVATE_NOTES`、既存の`~/private-notes`、OSのデータディレクトリの順に解決する）",
+    )
+    parser.add_argument(
+        "--home",
+        type=pathlib.Path,
+        metavar="DIR",
+        help="`.claude/plans`を置くホームディレクトリのパス（省略すると実行ユーザーのホームを使う）",
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=pathlib.Path,
+        metavar="DIR",
+        default=pathlib.Path.cwd(),
+        help="計画構造の自動チェックで`対象リポジトリ`と一致するかを確かめるGit作業ツリーのパス（省略すると現在のディレクトリを使う）",
+    )
     args = parser.parse_args(argv)
     try:
         plan_name = named_plan_name(args.name) if args.name is not None else process_lane_plan_name(args.lane)
