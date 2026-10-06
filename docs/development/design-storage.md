@@ -5,6 +5,9 @@
 
 ## managed-temp
 
+一時ファイルの配置、個別領域の作成および回収に実行時に適用する規範は、[`agent-toolkit:managed-temp`](../../agent-toolkit/skills/managed-temp/SKILL.md)が定める。
+本節の`identity`はPOSIXではデバイス番号とinode番号、Windowsではボリューム識別値とファイル識別値の組を指す。実装上の定義元はPOSIX側が[`registry.py::_path_identity`](../../agent-toolkit/agent_toolkit/_atk/managed_temp/registry.py)、Windows側が[`windows_security.py::_windows_information_identity`](../../agent-toolkit/agent_toolkit/_atk/managed_temp/windows_security.py)である。
+
 エージェントのmanaged-tempは、`atk managed-temp`が作成し、返した絶対パスを同じ作業の間だけ保持する。
 呼び出し元は、領域内のマーカーファイルとOSアカウント専用領域の登録情報が一致するか確かめ、`atk managed-temp`が所有する同一領域であることを確認してから検収して後始末する。
 この構造により、一時成果物の寿命を明示しながら、ユーザーの既存ファイルを一時領域と誤認して削除することを防ぐ。
@@ -67,6 +70,8 @@ Windowsのreparse pointは一律に拒否せず、リンクオブジェクトの
 `atk managed-temp`は領域の真正性と更新時刻だけを知り、キューの処理状況は知らない。対応AWIのファイル名は登録情報へ記録するが、削除判定には使わない。キューの状態を判定へ持ち込むと、キューに依存しない現行構成が崩れるためである。削除の実行を明示指定に限る案は、呼び忘れによる蓄積という観測事象を解消しないため採用しない。
 
 ## MQ管理リポジトリの分岐回復
+
+private-notesのGit操作と分岐回復に実行時に適用する規範は、[`agent-toolkit:wi-standards`の`repository-scope.md`](../../agent-toolkit/skills/wi-standards/references/repository-scope.md)が定める。
 
 `atk wi`の更新は管理リポジトリの同じGit common directoryに属するプロセス間だけを
 共通ロックで直列化する。別cloneは同じロックを共有しないため、複数主体が同じ項目を近接して終端した場合、
