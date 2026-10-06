@@ -97,3 +97,15 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 本節の手段は`atk run-script session-review-evidence`に限り、検索対象を限定しないJSONLファイル群への汎用CLIによる検索と、セッション記録および`candidates.md`の標準出力への全量表示は対象としない。
 記録は行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を適用するとマッチングの上限に達するためである。
 `atk run-script session-review-evidence`が受理しない調査には、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。
+
+## 暗号化された値
+
+次の値は提供元が暗号化して返す値であり、`investigation.md`が裏付けと判別の手段からデコードと内部構造の解析を外す対象に当たる。
+
+- Claude Codeの記録の`thinking`ブロックの`signature`と`redacted_thinking`ブロックの`data`
+- Codexの記録で`payload.type`が`reasoning`のレコードの`encrypted_content`
+
+ツール呼び出しの間の進捗更新（公式文書の「progress update」。Claude Code本体の内部名は`narration`）を判別する場合は、公式文書「Thinking」の節「Progress updates between tool calls」が定める条件を使う。
+リクエストの`display`が`"updates"`の応答では文面が空でない`thinking`ブロックを進捗更新とする。
+記録はリクエストの`display`の値を持たない。このため値を設定やホストの送信条件から確かめた範囲だけを判別済みとし、残りは判別不能として件数を分ける。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：暗号化された値：2026年10月7日」にある。
