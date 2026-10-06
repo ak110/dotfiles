@@ -1,5 +1,6 @@
 import type { Register } from "claude-code";
 
+import { register as registerPeriodicRecheck } from "./periodic_recheck.ts";
 import { register as registerSendToUser, SEND_TO_USER_TOOL } from "./send_to_user.tsx";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
 
@@ -24,4 +25,5 @@ export const register: Register = (on) => {
   });
   registerSessionExit(on);
   registerSendToUser(on);
+  registerPeriodicRecheck(on);
 };

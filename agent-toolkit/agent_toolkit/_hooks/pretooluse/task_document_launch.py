@@ -6,7 +6,7 @@
 
 - `agents_server`の`start`のうち、自由本文を渡すmode（`delegate`・`explore`・`write`）の本文が
   `<役割名>.subagent.md`の実行を命じる起動。
-  `<役割名>.subagent.md`を指定する起動は`start`のtaskへ`subagent_md_path`と`extra_params`で渡す
+  `<役割名>.subagent.md`を指定する起動は`start`のtaskへ`subagent_md_path`（役割名）と`extra_params`で渡す
 - `Agent`ツールの本文が`<役割名>.subagent.md`の実行を命じ、1行目の`<.subagent.mdの絶対パス>の手順を実行せよ。`と
   宣言済みの入力名の行（字下げした続きの行を含む）以外を含む起動
 
@@ -92,12 +92,14 @@ def _check_free_text_start(mode: str, prompt: str) -> str | None:
     document = _execution_document(prompt)
     if document is None:
         return None
+    role_name = document.name.removesuffix(task_documents.TASK_DOCUMENT_SUFFIX)
     return _block_notice(
         f"blocked: `start`の`{mode}`で渡した`prompt`が`{document}`の手順を実行する命令を持つ。"
         "`<役割名>.subagent.md`を持つ委譲は自由本文の起動の対象外である。",
         fix=(
-            f"`agents_server`の`start`へ`mode`を指定せず、`subagent_md_path={document}`と、"
+            f"`agents_server`の`start`へ`mode`を指定せず、役割名の`subagent_md_path={role_name}`と、"
             "`<役割名>.subagent.md`が宣言した入力名だけを持つ`extra_params`を渡して起動する。"
+            f"サーバー自身のプラグインルートと別の版の文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡す。"
         ),
     )
 

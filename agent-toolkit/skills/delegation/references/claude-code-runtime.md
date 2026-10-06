@@ -179,7 +179,15 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
 
 Claude Codeで未完了の委譲または背景処理を待つ実行主体は、機械的な完了通知を待機を解除するために通常使う手段としたまま、`CronCreate`、`CronList`および`CronDelete`が現在の実行主体へ公開される場合だけ定期再確認を併用する。一般の委譲待機では`/loop`専用の`ScheduleWakeup`を使用しない。
 
-装着の時点は、そのセッションで最初の委譲先またはバックグラウンドタスクを起動する直前とする。メインは`atk wait-schedule --request-bucket main`、サブエージェントは`atk wait-schedule --request-bucket subagent`を1回実行する。標準出力のcron式を変更せず`CronCreate`へ渡す。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行とする。この行はUserPromptSubmitフックが機械注入ターンを判定する入力であり、リテラルをそのまま保つ。resume後の所有taskの確認も、この標識の完全一致を判定手段とする。待機対象を記録側（保持元）から列挙する手段、対象ごとの成果物を決める方法および動的に解決したパスを渡す`atk watch`のコマンド形も含める。待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程をpromptへ埋め込まず、`recur=true`で1件だけ作成する。作成結果のtask IDはprompt外で保持し、同じ実行主体に未完了対象が1件以上ある間は同じtaskを再利用する。新しい待機対象が加わった場合も同じtaskを再利用する。
+`agents_server`の`start`では、agent-toolkitのmodが実行主体ごとに最初の`start`の処理の中でtaskを作成する。作成したtask IDか装着できなかった事実と理由は、その`start`の結果の後に会話へ届く。既に定期再確認のtaskを持つ実行主体の`start`では作成も通知もしない。実行主体が自ら装着するのは次の場合である。
+
+- 装着できなかった通知を受けた場合
+- `start`の結果の後に装着の通知が無く、`CronList`に後述の標識を1行目に持つtaskも無い場合（modが読み込まれない環境など）
+- `Agent`ツールの委譲先かバックグラウンドタスクを、そのセッションで最初に起動する直前
+
+自ら装着する場合、メインは`atk wait-schedule --request-bucket main`、サブエージェントは`atk wait-schedule --request-bucket subagent`を1回実行し、標準出力のcron式を変更せず`CronCreate`へ渡す。promptは`${CLAUDE_PLUGIN_ROOT}/hooks/periodic_recheck_prompt.ts`の`PERIODIC_RECHECK_PROMPT_LINES`の各要素を改行で連結した本文とし、modと同じ本文を使う。`recurring: true`で1件だけ作成する。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行である。この行はUserPromptSubmitフックが機械注入ターンを判定する入力であり、resume後の所有taskの確認もこの標識の完全一致を判定手段とする。定期promptは待機対象を記録側（保持元）から列挙する手段、対象ごとの成果物を決める方法および動的に解決したパスを渡す`atk watch`のコマンド形を持ち、待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程を持たない。
+
+作成結果のtask IDはprompt外で保持し、同じ実行主体に未完了対象が1件以上ある間は同じtaskを再利用する。新しい待機対象が加わった場合も同じtaskを再利用する。modの通知で受け取ったtask IDにも、保持、再利用、resumeとcompaction後の確認および全対象の終端後の`CronDelete`を同じく適用する。
 
 その回の保持記録からGit作業ツリーの絶対パスを`worktree_path`へ解決した場合は
 `atk watch --worktree "$worktree_path"`を使う。通常の成果物ファイルを`artifact_path`へ解決した場合は
@@ -191,7 +199,7 @@ Claude Codeで未完了の委譲または背景処理を待つ実行主体は、
 
 定期promptは、保持した待機対象のうちblocking waitとそのバックグラウンドタスクのいずれにも所有されていない対象について、記録側の状態と完了通知を再確認し、完了対象があれば既存の受領手順へ進むよう命令する。所有されている対象へは状態照会を発行せず、そのblocking waitの終端応答と完了通知のいずれかで受け取るよう命令する。所有の判定と例外は`references/waiting-and-monitoring.md`「完了通知を待ってターンを終える場合」に従う。全対象が未完了なら、経過の測定値が判定閾値へ到達した経過時間起動の義務を実行し、到達した義務が無ければユーザー向け報告を出力せず待機を継続する。完了と停滞の判定は記録側の状態と完了通知で行い、定期起動の発火はその判定の入力に含めない。
 
-定期再確認を装着する時点で、そのセッションに適用される定期報告、cooldown解除、期限監視などの経過時間起動の義務を列挙し、各義務の経過を実際に測定するコマンドと判定閾値を定期promptへ含める。該当する義務が無い場合は含めない。委譲先の起動より前に確定できない義務がある場合は、その義務が確定した時点でpromptを更新する。
+定期promptは全ての実行主体に共通の本文であり、そのセッションに適用される定期報告、cooldown解除、期限監視などの経過時間起動の義務を含めない。発火の各回でそのセッションの記録と規範から義務を列挙し、各義務の経過を実際に測定するコマンドと判定閾値で判定する。
 
 会話のresumeまたはcompaction後は、保持したtask IDを`CronList`の実在taskと比べる。IDを保持していない場合は、promptに含めた固定の役割標識の完全一致から所有taskを一意に確認できる場合だけ再利用か削除へ進む。一意に確認できないtaskを推測して操作せず、新しいtaskも重複作成しない。
 

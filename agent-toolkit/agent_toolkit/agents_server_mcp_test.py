@@ -932,6 +932,71 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("form", ["role-name", "absolute-path"])
+async def test_start_resolves_role_name_to_own_plugin_root(
+    form: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """役割名はサーバー自身のplugin rootの`share/<役割名>.subagent.md`へ解決し、絶対パスと同じ起動になる。
+
+    役割名を受理しないと、委譲元はplugin rootを探してから起動する必要がある。
+    委譲プロンプトの1行目の出所が別のrootを指すと、委譲元と委譲先が別の版の文書を使う。
+    """
+    task_document = (subject._SHARE_DIRECTORY / "add-wi.subagent.md").resolve()
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    subagent_md_path = "add-wi" if form == "role-name" else str(task_document)
+
+    response = await subject.start(
+        str(tmp_path), subagent_md_path=subagent_md_path, extra_params=_observed_input_params(task_document.name, tmp_path)
+    )
+
+    assert response == {"session_id": "session", "status": "running"}
+    manager.start.assert_awaited_once()
+    task_prompt = manager.start.await_args.args[1]
+    assert task_prompt.splitlines()[0] == f"次の文書の手順を実行せよ（出所: {task_document}）。"
+    assert manager.start.await_args.kwargs["label"] == "add-wi"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("subagent_md_path", "reason"),
+    [
+        ("missing-role", "対応する文書が無い"),
+        ("share/add-wi", "区切り文字"),
+        ("share\\add-wi", "区切り文字"),
+        ("add-wi.subagent.md", "区切り文字"),
+        ("", "対応する文書が無い"),
+    ],
+    ids=["unknown-role", "slash", "backslash", "suffix", "empty"],
+)
+async def test_start_rejects_unresolvable_role_name_with_accepted_roles(
+    subagent_md_path: str,
+    reason: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """解決先の無い役割名と区切り文字か接尾辞を含む相対の値は起動せず、受理する役割名の一覧と次の操作を返す。
+
+    受理すると、`share/`直下の外の文書や作業ディレクトリ相対の文書を委譲先へ渡せてしまう。
+    """
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    with pytest.raises(ValueError) as raised:
+        await subject.start(str(tmp_path), subagent_md_path=subagent_md_path, extra_params={})
+
+    message = _actionable_message(raised.value)
+    body, next_action = message.split(NEXT_ACTION_PREFIX, 1)
+    assert reason in body
+    accepted = body.split("受理する役割名: ", 1)[1]
+    assert "add-wi" in accepted
+    assert "exec-review" in accepted
+    assert "役割名" in next_action
+    assert "`delegate`" in next_action
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_start_reports_missing_model_type_mapping_as_defect(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
