@@ -45,6 +45,8 @@ BRACKETED_TITLE = re.compile(r"「([^」]+)」")
 WHOLE_REQUEST = "分割元の依頼全体"
 ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
 BACKGROUND = "背景"
+# 失効の根拠とするメインの技術判断を、レビュー指摘管理表の行で識別する文字列。
+TECHNICAL_JUDGMENT = "メインの技術判断"
 # `evidence`のファイル参照の受理形式。雛形の次の操作と、参照を解決できない診断の双方がこの説明を示す。
 FILE_REFERENCE_FORM = (
     "`evidence`のファイル参照は、対象worktreeのルートからの相対パスか絶対パスで書き、"
@@ -712,10 +714,11 @@ def _load_wi(reference: str, repository: pathlib.Path, wi_outputs: dict[str, str
 def _expired_source_error(
     row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
 ) -> str | None:
-    """失効行のsourceから、ユーザー判断の参照先を確認する。
+    """失効行のsourceから、ユーザー判断かメインの技術判断の記録の参照先を確認する。
 
-    受け付ける参照先は、対象AWIの記入済みユーザーコメント、回答済みUWIの回答、および会話中のユーザー発話
-    （`_user_event_reasons`）である。
+    受け付けるユーザー判断の参照先は、対象AWIの記入済みユーザーコメント、回答済みUWIの回答、および会話中のユーザー発話
+    （`_user_event_reasons`）である。`wi_conditions`の行に限り、メインの技術判断を記録したレビュー指摘管理表の行
+    （`_technical_judgment_reasons`）も受け付ける。技術判断で外せる条件かの意味の判定は、判断したメインと統合時の読解に残す。
     """
     source = row["source"]
     references = dict.fromkeys(WI_FILENAME.findall(source))
@@ -744,13 +747,58 @@ def _expired_source_error(
         if not event_reasons:
             return None
         reasons.extend(event_reasons)
+    technical_reasons = _technical_judgment_reasons(row, section, repository, wi_outputs)
+    if technical_reasons is not None:
+        if not technical_reasons:
+            return None
+        reasons.extend(technical_reasons)
     detail = f"（{'、'.join(reasons)}）" if reasons else ""
+    judgment = (
+        "ユーザー判断か、エージェント由来のAWIの完成条件についてのメインの技術判断の記録"
+        if section == "wi_conditions"
+        else "ユーザー判断"
+    )
     return (
-        f"{_row_label(row, section, index)}.source: 失効のユーザー判断を確認できません{detail}。"
+        f"{_row_label(row, section, index)}.source: 失効の根拠となる{judgment}を確認できません{detail}。"
         f"{_source_location(section, '失効')}をsourceへ記録する。"
         "記録位置は出力ファイルの`record`と`line`で確かめ、逐語は発話本文（確認回答では回答と自由記述の値）から写す。"
-        "ユーザーの判断がない場合は、その判断を得てから同じ証拠をもう一度確かめる"
+        f"{judgment}がない場合は、委譲元へ失効の判断を求め、記録を得てから同じ証拠をもう一度確かめる"
     )
+
+
+def _technical_judgment_reasons(
+    row: dict[str, str], section: str, repository: pathlib.Path, wi_outputs: dict[str, str]
+) -> list[str] | None:
+    """sourceが指すレビュー指摘管理表に、メインの技術判断の記録があるかを確かめ、満たさなかった条件を返す。
+
+    レビュー指摘管理表の絶対パスを持たないsourceは`None`、記録が条件を満たせば空の一覧を返す。
+    技術判断で受理するのは、frontmatterに`source`を持つエージェント由来のAWIの`wi_conditions`の行だけとする。
+    人間由来のWIの条件と原文要求の不採用には、ユーザーの明示承認が要るためである。
+    """
+    tables = _review_tables(row["source"])
+    if not tables:
+        return None
+    if section != "wi_conditions":
+        return ["原文要求の失効はメインの技術判断の記録では受理しません（ユーザー判断が必要です）"]
+    try:
+        frontmatter, _ = _load_wi(row["awi"], repository, wi_outputs)
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        return [str(exc)]
+    if "source" not in frontmatter:
+        return [
+            f"{row['awi']}はfrontmatterに`source`を持たない人間由来のWIのため、技術判断の記録では受理しません（ユーザー判断が必要です）"
+        ]
+    reasons: list[str] = []
+    for table in tables:
+        try:
+            rows = review_table.read_rows(table)
+        except (OSError, UnicodeError, ValueError) as exc:
+            reasons.append(f"レビュー指摘管理表を読めません: {exc}")
+            continue
+        if any(row["awi"] in text and TECHNICAL_JUDGMENT in text for text in (" ".join(cells) for cells in rows)):
+            return []
+        reasons.append(f"{table}に{row['awi']}のファイル名と`{TECHNICAL_JUDGMENT}`の文字列を含む行がありません")
+    return reasons
 
 
 def _user_event_reasons(source: str) -> list[str] | None:
@@ -1074,20 +1122,25 @@ class Exemption:
             raise ValueError("免除の判定値にはsourceへ書く所在の説明が必要です")
 
 
-_EXPIRED = Exemption(
-    _expired_source_error,
+_USER_JUDGMENT_LOCATION = (
     "対象AWIの記入済みユーザーコメント、関連する回答済みUWIのファイル名と所在、"
     "または会話中の発話を抽出した`atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと"
-    "`<record>:<line>`（例: `claude:<セッションID>:625`）に、否定した要求単位の「」による逐語を添えたもの",
+    "`<record>:<line>`（例: `claude:<セッションID>:625`）に、否定した要求単位の「」による逐語を添えたもの"
+)
+_EXPIRED_REQUIREMENT = Exemption(_expired_source_error, _USER_JUDGMENT_LOCATION)
+_EXPIRED_CONDITION = Exemption(
+    _expired_source_error,
+    f"{_USER_JUDGMENT_LOCATION}か、frontmatterに`source`を持つAWIの完成条件に限り、"
+    f"対象AWIのファイル名と`{TECHNICAL_JUDGMENT}`の文字列を含む行を持つレビュー指摘管理表の絶対パス",
 )
 # 達成を求めずに行を受理させる判定値は、その根拠の記録を確かめる関数と所在の説明を組にして登録する。
 # 検証関数を持たない免除の判定値を受理値へ加えると、根拠の無い行が確認を通過するためである。
 # 割当外は分割起票で他のWIへ割り当てた原文要求と分割元の依頼全体の単位にだけ使うため、完成条件の行では受理しない。
 # 背景は原文要求のうち要求を含まない過去の観測や経緯の文にだけ使う。完成条件はWI自身の達成対象であるため受理しない。
 EXEMPTIONS: dict[str, dict[str, Exemption]] = {
-    "wi_conditions": {"失効": _EXPIRED},
+    "wi_conditions": {"失効": _EXPIRED_CONDITION},
     "user_requirements": {
-        "失効": _EXPIRED,
+        "失効": _EXPIRED_REQUIREMENT,
         "割当外": Exemption(
             _unassigned_source_error,
             "割当を記録したWIのファイル名と節名『反映内容と反映先』、または計画ファイルの絶対パスと節名『実施内容』",
@@ -1109,17 +1162,16 @@ def _source_location(section: str, outcome: str) -> str:
 
 def template_guidance() -> str:
     """雛形の記入規則を、免除の判定値の登録とファイル参照の受理形式から組み立てて返す。"""
-    sections: dict[str, list[str]] = {}
-    locations: dict[str, str] = {}
+    # 同じ判定値でも配列ごとに所在が異なる場合があるため、判定値と所在の組ごとに使える配列をまとめる。
+    sections: dict[tuple[str, str], list[str]] = {}
     for section, exemptions in EXEMPTIONS.items():
         for outcome, exemption in exemptions.items():
-            sections.setdefault(outcome, []).append(section)
-            locations[outcome] = exemption.source_location
+            sections.setdefault((outcome, exemption.source_location), []).append(section)
     rules = [
         f"outcomeを{'・'.join(JUDGMENT_ORDER)}とする行は、雛形のsourceのままでよい",
         *(
-            f"outcomeを{outcome}とする行（{'と'.join(sections[outcome])}で使える）は、sourceを{location}へ書き換える"
-            for outcome, location in locations.items()
+            f"outcomeを{outcome}とする行（{'と'.join(names)}で使える）は、sourceを{location}へ書き換える"
+            for (outcome, location), names in sections.items()
         ),
         FILE_REFERENCE_FORM,
     ]

@@ -1242,7 +1242,10 @@ def test_expired_requirement_also_checks_user_answer_source(
         script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
     )
     assert run_script.dispatch(args) == 1
-    assert f"失敗: {FIRST_WI}: user_requirements[1].source: 失効のユーザー判断を確認できません" in capsys.readouterr().err
+    assert (
+        f"失敗: {FIRST_WI}: user_requirements[1].source: 失効の根拠となるユーザー判断を確認できません"
+        in capsys.readouterr().err
+    )
 
 
 @pytest.mark.parametrize("awi", [FIRST_WI, SECOND_WI])
@@ -1305,6 +1308,63 @@ def test_expired_condition_checks_own_user_comment(
         script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI],
     )
     assert run_script.dispatch(args) == (0 if valid else 1)
+
+
+@pytest.mark.parametrize(
+    ("frontmatter", "section", "recorded", "diagnostic"),
+    [
+        ("type: awi\nsource: process-wi", "wi_conditions", True, None),
+        ("type: awi", "wi_conditions", True, "人間由来のWI"),
+        ("type: awi\nsource: process-wi", "user_requirements", True, "原文要求の失効はメインの技術判断の記録では受理しません"),
+        ("type: awi\nsource: process-wi", "wi_conditions", False, "の文字列を含む行がありません"),
+    ],
+    ids=["agent-condition", "human-wi", "user-requirement", "no-record"],
+)
+def test_expired_row_accepts_main_technical_judgment_only_for_agent_awi_conditions(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    frontmatter: str,
+    section: str,
+    recorded: bool,
+    diagnostic: str | None,
+) -> None:
+    """メインの技術判断を記録したレビュー指摘管理表の行を、エージェント由来のAWIの完成条件の失効根拠としてだけ受理する。
+
+    技術的に決まる条件の失効をユーザー判断の記録だけで受理すると、メインが技術判断で決まる事項をユーザーへ確認する。
+    一方、人間由来のWIの条件と原文要求の不採用にはユーザーの明示承認が要り、技術判断の記録で受理すると承認を経ずに外れる。
+    """
+    own = "設定画面を直して。"
+    body = f"{frontmatter}\n---\n# WI\n## 完成条件\n- 旧形式の回答も除外する\n## ユーザーコメント\n\n{own}\n"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
+    table = tmp_path / "plan.exec-review.tsv"
+    review_table.init(table)
+    review_table.add(table, "1", "exec-review", f"{FIRST_WI} 完成条件1", "旧形式の生成元が現行に無い", "詳細")
+    if recorded:
+        review_table.respond(
+            table,
+            "1",
+            "exec-review",
+            f"{FIRST_WI} 完成条件1",
+            "",
+            "",
+            f"根拠の所在: メインの技術判断。{FIRST_WI}の完成条件1を外す。旧形式を生成する処理が現行に無い",
+        )
+    capsys.readouterr()
+    expired = {"outcome": "失効", "source": f"{table} round 1"}
+    conditions = [_condition(FIRST_WI, "旧形式の回答も除外する")]
+    requirements = [_requirement(FIRST_WI, own)]
+    if section == "wi_conditions":
+        conditions[0].update(expired)
+    else:
+        requirements[0].update(expired)
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, conditions, requirements)
+    assert _check(path, FIRST_WI) == (0 if diagnostic is None else 1)
+    error = capsys.readouterr().err
+    if diagnostic is not None:
+        line = next(line for line in error.splitlines() if f"{section}[0].source" in line)
+        assert diagnostic in line and "委譲元へ失効の判断を求め" in line
 
 
 def _user_events(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -1378,7 +1438,7 @@ def test_expired_condition_accepts_located_user_utterance(
     assert run_script.dispatch(args) == (0 if diagnostic is None else 1)
     error = capsys.readouterr().err
     if diagnostic is not None:
-        assert "wi_conditions[0].source: 失効のユーザー判断を確認できません" in error
+        assert "wi_conditions[0].source: 失効の根拠となるユーザー判断か、" in error
         assert diagnostic in error and "`<record>:<line>`" in error
 
 
