@@ -905,6 +905,20 @@ def _split_awi(own: str, other: str, record: str) -> str:
         ),
         # evidenceの割当先が記録の行に無い行。
         (f"- 引用の後半は「{_OTHER_TITLE}」へ割当\n", "{wi} ## 反映内容と反映先", f"{SECOND_WI}", "割当を示す行にありません"),
+        # 割当先のWIファイル名が、割当の語も引用位置も持たない依存の言及にだけ現れる行。
+        (
+            f"- 設定画面の変更は{SECOND_WI}の担当範囲と重ならない\n",
+            "{wi} ## 反映内容と反映先",
+            SECOND_WI,
+            "割当を示す行にありません",
+        ),
+        # 引用位置と「」の抜粋だけを持ち割当の語が無い行。背景の記録は位置の後に原文の抜粋を「」で添える。
+        (
+            f"- 逐語引用 text[1] 文字10-20（「{_OTHER_TITLE}」）は過去の経緯を示す\n",
+            "{wi} ## 反映内容と反映先",
+            f"「{_OTHER_TITLE}」",
+            "割当を示す行にありません",
+        ),
     ],
 )
 def test_unassigned_requirement_without_matching_record_is_rejected(
@@ -939,6 +953,45 @@ def test_unassigned_requirement_without_matching_record_is_rejected(
     line = next(line for line in error.splitlines() if "user_requirements[2]" in line)
     assert line.startswith(f"失敗: {FIRST_WI}: user_requirements[2].") and diagnostic in line
     assert "sourceへ書く" in line or "evidenceへ" in line
+    if diagnostic == "割当を示す行にありません":
+        # 拒否された担当が記録をどの形へ直せば受理されるかを判断できるよう、受理される2つの形を示す。
+        assert "割当の語" in line and "引用位置" in line
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        f"- 逐語引用text[1]文字10-20の移行は、処理中のAWI `{SECOND_WI}`が担う。\n",
+        f"- 逐語引用 text[1] 文字10-20と文字21-31は{SECOND_WI}で扱う\n",
+        f"- `逐語引用text[1]文字10-20`の移行は{SECOND_WI}へ委ねる\n",
+    ],
+)
+def test_unassigned_record_with_quote_position_and_wi_filename_is_accepted(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    record: str,
+) -> None:
+    """割当の語を持たない記録行も、引用位置と割当先のWIファイル名を同じ行に持てば割当の記録として受理する。
+
+    起草規範は割当の記録へ引用位置と割当先のファイル名を求め、述語や位置表記の空白を定めない。
+    語や空白入りの表記だけを記録と認めると、規範どおりに書いた単位が証拠不足となって統合が止まる。
+    """
+    own = "設定画面を直して。"
+    other = "旧設定も一括で移して。"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _split_awi(own, other, record)})
+    unassigned = {
+        **_requirement(FIRST_WI, other),
+        "outcome": "割当外",
+        "source": f"{FIRST_WI} ## 反映内容と反映先",
+        "evidence": SECOND_WI,
+    }
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, [_condition(FIRST_WI, "設定画面で保存できる")], [_requirement(FIRST_WI, own), unassigned])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
 
 
 def test_unassigned_requirement_matching_record_is_accepted(
@@ -2137,28 +2190,37 @@ def test_background_condition_is_rejected(
     assert "wi_conditions[1].outcome: 未知の判定です: 背景（受理する値: " in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("separator", [" ", ""], ids=["spaced", "compact"])
 @pytest.mark.parametrize("bad_reference", [None, "block", "range", "zero", "reverse", "overflow", "malformed", "reason"])
 def test_background_quote_position_resolves_original_scope(
     bad_reference: str | None,
+    separator: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """原文を再掲せず公開チェックへ参照を渡し、存在・範囲・理由を検証する。"""
+    """原文を再掲せず公開チェックへ参照を渡し、存在・範囲・理由を検証する。
+
+    位置表記の語の間の空白は起草規範が定めないため、空白を省いた参照も空白入りと同じ範囲解決で判定する。
+    """
     observed = _OBSERVATION + _OBSERVATION_TAIL
-    reference = f"逐語引用 text[1] 文字1-{len(observed)}"
+
+    def position(block: int, span: str) -> str:
+        return f"逐語引用{separator}text[{block}]{separator}文字{span}"
+
+    reference = position(1, f"1-{len(observed)}")
     if bad_reference == "block":
-        reference = f"逐語引用 text[3] 文字1-{len(observed)}"
+        reference = position(3, f"1-{len(observed)}")
     elif bad_reference == "range":
-        reference = f"逐語引用 text[1] 文字{len(observed) + 1}-{len(observed + _REQUEST)}"
+        reference = position(1, f"{len(observed) + 1}-{len(observed + _REQUEST)}")
     elif bad_reference == "zero":
-        reference = f"逐語引用 text[1] 文字0-{len(observed)}"
+        reference = position(1, f"0-{len(observed)}")
     elif bad_reference == "reverse":
-        reference = "逐語引用 text[1] 文字2-1"
+        reference = position(1, "2-1")
     elif bad_reference == "overflow":
-        reference = "逐語引用 text[1] 文字1-9999"
+        reference = position(1, "1-9999")
     elif bad_reference == "malformed":
-        reference += "と逐語引用 text[1] 文字不明"
+        reference += "と" + position(1, "不明")
     record = f"- `{reference}`は背景。{_BACKGROUND_REASON}。本AWIの完成条件に含めない\n"
     other = "昨日のログを取得した。"
     body = _background_awi(record).replace(f"- 「{_REQUEST}」は本AWIで扱う", "- 継続要求は本AWIで扱う")

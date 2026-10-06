@@ -44,7 +44,9 @@ WHOLE_REQUEST = "分割元の依頼全体"
 ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
 BACKGROUND = "背景"
 # 引用節内のtextブロック番号と、改行も1文字として数える1始まりの文字範囲。
-QUOTE_POSITION = re.compile(r"逐語引用\s+text\[(\d+)\]\s+文字(\d+)-(\d+)")
+# 起草規範は語の間の空白を定めないため、`逐語引用text[1]文字1-83`のように空白を省いた表記も同じ参照として読む。
+QUOTE_POSITION = re.compile(r"逐語引用\s*text\[(\d+)\]\s*文字(\d+)-(\d+)")
+QUOTE_POSITION_PREFIX = re.compile(r"逐語引用\s*text\[")
 REVIEW_TABLE_SUFFIX = ".exec-review.tsv"
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
@@ -943,6 +945,10 @@ def _unassigned_source_error(
 
     記録は要求単位を言い換えて複数の単位を1行で覆うため、要求単位の原文と記録行の一致は求めず、
     割当先の表記が割当を示す記録行に現れるかを行単位で比べる。意味上の対応はレビューと統合時の読解に残す。
+    割当を示す行は、割当の語を持つ行と、引用位置と割当先のWIファイル名を同じ行に持つ行の2つの形とする。
+    後者は起草規範が割当の記録に求める要素であり、「が担う」「で扱う」のように述語が異なっても割当を示す。
+    「」で囲んだタイトルとWIファイル名だけの行へは広げない。背景の記録は位置の後に原文の抜粋を「」で添え、
+    WIファイル名は依存や担当範囲の言及にも現れるため、語なしで受理すると割当でない行まで根拠になる。
     """
     label = f"{row['awi'] or '計画由来'}: {section}[{index}]"
     record, reason = _record_section(row["source"], repository, wi_outputs)
@@ -962,11 +968,15 @@ def _unassigned_source_error(
             f"{label}.evidence: 割当先の表記がありません。"
             f"記録に書かれたとおりの割当先（WIファイル名、「」で囲んだタイトル、または{WHOLE_REQUEST}）をevidenceへ書く"
         )
-    lines = [line for line in record if any(word in line for word in ASSIGNMENT_WORDS)]
-    if any(assignee in line for assignee in assignees for line in lines):
-        return None
+    for line in record:
+        if any(word in line for word in ASSIGNMENT_WORDS) and any(assignee in line for assignee in assignees):
+            return None
+        if QUOTE_POSITION.search(line) and any(WI_FILENAME.fullmatch(assignee) and assignee in line for assignee in assignees):
+            return None
     return (
         f"{label}.evidence: 割当先（{_quoted_units(assignees)}）がsourceの節の割当を示す行にありません。"
+        "割当を示す行は、割当の語（割当・割り当て・分割元の依頼全体）を持つ行か、"
+        "引用位置（逐語引用 text[N] 文字A-B）と割当先のWIファイル名を同じ行に持つ行である。"
         "記録に書かれたとおりの割当先をevidenceへ写すか、記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
     )
 
@@ -1024,9 +1034,9 @@ def _covered_by_background(requirement: str, record: list[str], original: str, o
     for line in record:
         if BACKGROUND not in line:
             continue
-        if "逐語引用 text[" in line:
+        if QUOTE_POSITION_PREFIX.search(line):
             references = list(QUOTE_POSITION.finditer(line))
-            if not references or len(references) != line.count("逐語引用 text[") or source_block is None:
+            if not references or len(references) != len(QUOTE_POSITION_PREFIX.findall(line)) or source_block is None:
                 continue
             resolved: list[tuple[int, str]] = []
             for reference in references:
