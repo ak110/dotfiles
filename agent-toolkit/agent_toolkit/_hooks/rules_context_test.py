@@ -5,12 +5,13 @@ from __future__ import annotations
 import datetime
 import json
 import pathlib
+from collections.abc import Callable
 
 import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log
-from agent_toolkit._hooks import rules_context, rules_context_codex, session_state
+from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_context_codex, session_state
 
 
 def _output(capsys: pytest.CaptureFixture[str]) -> str:
@@ -385,3 +386,56 @@ def test_session_start_resets_language_reinjection_count(
 
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in _output(capsys)
     assert session_state.read_state("reset-target")[rules_context.LANGUAGE_REINJECTION_COUNT_KEY] == 0
+
+
+@pytest.mark.parametrize(
+    ("source", "delegated", "main_warns"),
+    [("clear", False, True), ("compact", False, True), ("compact", True, True), ("resume", False, False)],
+)
+def test_session_start_resets_operation_skill_ready_for_main(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    delegated: bool,
+    main_warns: bool,
+) -> None:
+    """`clear`・`compact`の後はメインの検索で再び警告し、サブエージェントの記録と`resume`の後の判定は変えない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    else:
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+
+    def _no_session_temp(*_args: object, **_kwargs: object) -> pathlib.Path:
+        raise OSError("テストではセッションのmanaged-tempを作成しない")
+
+    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", _no_session_temp)
+
+    def _hook_context(handler: Callable[[str], int], payload: dict) -> str:
+        handler(json.dumps(payload))
+        out = capsys.readouterr().out
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+
+    def _search(agent_id: str | None) -> str:
+        payload = {"tool_name": "Bash", "tool_input": {"command": "rg x"}, "session_id": "reset-skill"}
+        if agent_id is not None:
+            payload["agent_id"] = agent_id
+        return _hook_context(pretooluse.main, payload)
+
+    for agent_id in (None, "sub-1"):
+        skill_payload: dict[str, object] = {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Skill",
+            "tool_input": {"skill": "agent-toolkit:search"},
+            "session_id": "reset-skill",
+        }
+        if agent_id is not None:
+            skill_payload["agent_id"] = agent_id
+        _hook_context(posttooluse.main, skill_payload)
+
+    _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
+
+    assert (_search(None) != "") is main_warns
+    assert _search("sub-1") == ""

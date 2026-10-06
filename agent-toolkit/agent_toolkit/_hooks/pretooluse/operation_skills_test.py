@@ -1,0 +1,127 @@
+"""agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py のテスト。
+
+PreToolUseとPostToolUseの統合フックをsubprocessで起動し、セッション状態を経由した警告の有無を検証する。
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+
+import pytest
+
+from agent_toolkit._hooks.pretooluse import operation_skills
+from agent_toolkit._hooks.pretooluse.test_support_test import (
+    _additional_context,
+    _plan_file_state_env,
+    _run,
+    _run_posttooluse,
+)
+
+_SEARCH_SKILL = operation_skills.OPERATION_SKILLS[0].skill_name
+_SEARCH_SKILL_MD = pathlib.Path(__file__).resolve().parents[3] / "skills" / "search" / "SKILL.md"
+_WARN_OPENING = '<atk-auto source="pretooluse" kind="warn">'
+
+
+def _bash(command: str, session_id: str, **extra: object) -> dict:
+    return {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id, **extra}
+
+
+def _record_skill(env: dict[str, str], session_id: str, skill: str, **extra: object) -> None:
+    result = _run_posttooluse(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Skill",
+            "tool_input": {"skill": skill},
+            "session_id": session_id,
+            **extra,
+        },
+        env,
+    )
+    assert result.returncode == 0
+
+
+def _search_warning(payload: dict, env: dict[str, str]) -> str:
+    result = _run(payload, env)
+    assert result.returncode == 0
+    return _additional_context(result)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _bash("rg -l x .", "s"),
+        _bash("git grep -n -F x", "s"),
+        _bash("git -C sub grep x", "s"),
+        _bash("grep -rn x .", "s"),
+        _bash("egrep --recursive x .", "s"),
+        _bash("grep -e x -R .", "s"),
+        _bash("find . -name x", "s"),
+        _bash("cd sub && rg x", "s"),
+        _bash("timeout 10 rg x", "s"),
+        _bash("bash -c 'rg x | head'", "s"),
+        {"tool_name": "Grep", "tool_input": {"pattern": "x"}, "session_id": "s"},
+        {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}, "session_id": "s"},
+    ],
+    ids=lambda payload: payload["tool_input"].get("command") or payload["tool_name"],
+)
+def test_search_without_skill_warns_once_per_context(tmp_path: pathlib.Path, payload: dict) -> None:
+    env = _plan_file_state_env(tmp_path)
+    first = _search_warning(payload, env)
+    assert first.startswith(_WARN_OPENING)
+    assert f"`{_SEARCH_SKILL}`" in first
+    assert _search_warning(payload, env) == ""
+
+
+@pytest.mark.parametrize("skill", [_SEARCH_SKILL, operation_skills.OPERATION_SKILLS[0].short_name])
+def test_search_after_skill_use_does_not_warn(tmp_path: pathlib.Path, skill: str) -> None:
+    env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "s", skill)
+    assert _search_warning(_bash("rg x", "s"), env) == ""
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat f | rg x",
+        "git log --oneline | grep -r x",
+        "grep x file",
+        "grep -er file",
+        "grep -e -r file",
+        "grep -- -r file",
+        "echo rg x",
+        "git log -S rg",
+        "ls -la",
+    ],
+)
+def test_non_search_commands_do_not_warn(tmp_path: pathlib.Path, command: str) -> None:
+    assert _search_warning(_bash(command, "s"), _plan_file_state_env(tmp_path)) == ""
+
+
+def test_subagent_context_is_separate_from_main(tmp_path: pathlib.Path) -> None:
+    env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "s", _SEARCH_SKILL)
+    assert _search_warning(_bash("rg x", "s", agent_id="sub-1"), env).startswith(_WARN_OPENING)
+    assert _search_warning(_bash("rg x", "s"), env) == ""
+
+    _record_skill(env, "t", _SEARCH_SKILL, agent_id="sub-2")
+    assert _search_warning(_bash("rg x", "t", agent_id="sub-2"), env) == ""
+    assert _search_warning(_bash("rg x", "t"), env).startswith(_WARN_OPENING)
+
+
+def test_codex_search_warning_points_to_skill_md(tmp_path: pathlib.Path) -> None:
+    env = _plan_file_state_env(tmp_path)
+    payload = _bash("rg x", "codex-search", turn_id="turn-1")
+    first = _search_warning(payload, env)
+    assert first.startswith(_WARN_OPENING)
+    assert str(_SEARCH_SKILL_MD) in first
+    assert _search_warning(payload, env) == ""
+
+
+def test_search_warning_joins_other_warnings(tmp_path: pathlib.Path) -> None:
+    result = _run(_bash("git rev-parse --short A B; rg x", "s"), _plan_file_state_env(tmp_path))
+    assert result.returncode == 0
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert context.count(_WARN_OPENING) == 2
+    assert f"`{_SEARCH_SKILL}`" in context
+    assert "`git rev-parse --short`" in context

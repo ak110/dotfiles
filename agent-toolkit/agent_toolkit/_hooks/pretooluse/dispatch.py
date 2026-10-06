@@ -36,6 +36,11 @@ Bash:
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - atkから後段への出力パイプと、`atk agents wait`のシェル背景化・標準出力破棄の遮断 (block)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
+- 操作を起動の契機とするスキル（`agent-toolkit:search`）が未起動のままの検索の、文脈ごとに1回の警告 (warn)
+
+Grep / Glob:
+
+- `agent-toolkit:search`が未起動のままの検索の、文脈ごとに1回の警告 (warn)
 
 Skill:
 
@@ -98,6 +103,7 @@ from agent_toolkit._common.runtime_identity import RuntimeIdentity, distinct_ide
 from agent_toolkit._hooks.pretooluse.warning_context import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     format_warning_context,
 )
+from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings  # noqa: E402
 from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
     is_plan_component_file,
@@ -187,6 +193,7 @@ def _is_plan_file_or_adjunct(file_path: str) -> bool:
 
 
 _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
+_SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
 
 
 def main(payload_text: str) -> int:
@@ -317,6 +324,11 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return exit_with(0)
 
+    if tool_name in _SEARCH_TOOL_NAMES:
+        pending_notices.extend(operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex))
+        flush_pending_notices()
+        return exit_with(0)
+
     return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices))
 
 
@@ -364,7 +376,7 @@ def _handle_bash_tool(
     """Bashコマンドの遮断と警告を処理する。
 
     Codexの大量読取の遮断、引用符なしheredoc本文の置換の遮断、パターン一致によるプロセス終了の遮断、
-    未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
+    未起動のスキルの操作の警告、未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
     """
     command = tool_input.get("command")
     if not isinstance(command, str):
@@ -395,7 +407,7 @@ def _handle_bash_tool(
     ) is not None:
         print(attribution_error, file=sys.stderr)
         return 2
-    warnings: list[str] = []
+    warnings: list[str] = operation_skill_warnings(payload, "Bash", tool_input, session_id, is_codex=is_codex)
     rev_parse_warning = _warn_git_rev_parse_short_multiple(command)
     if rev_parse_warning is not None:
         warnings.append(rev_parse_warning)

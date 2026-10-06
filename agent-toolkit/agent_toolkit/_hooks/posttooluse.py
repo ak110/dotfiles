@@ -17,7 +17,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
 5. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)、
-   `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)
+   `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)、
+   操作を起動の契機とするスキルの起動による`operation_skill_ready_agents`の記録 (Skill)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの`sessionTitle`出力が計画名の解決に使用）
 7. Bashの背景実行、バックグラウンドタスクへの移行通知およびAgent・Taskの背景起動が返した識別子を、
@@ -80,6 +81,7 @@ from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
+from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
     update_state,
@@ -828,6 +830,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     # Skill: plan-modeスキル呼び出し検出とprocess-wi起動検出
     if tool_name == "Skill":
         _record_skill_use(session_id, tool_input.get("skill"))
+        _operation_skills.record_skill_ready(session_id, tool_input.get("skill"), resolve_hook_agent_id(payload))
         return 0
 
     # AgentとTask: 背景起動の応答が返した`agentId`だけをバックグラウンドタスクの所有記録へ残す。後続の分岐は対象としない

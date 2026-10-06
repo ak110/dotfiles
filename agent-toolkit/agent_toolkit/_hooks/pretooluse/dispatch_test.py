@@ -972,6 +972,8 @@ class TestRemovedChecksAreSilent:
         ],
     )
     def test_bash_input_passes_without_output(self, tmp_path: pathlib.Path, command: str) -> None:
+        # 検索コマンドは`agent-toolkit:search`の未起動の警告を返すため、起動済みの文脈で撤去済みの判定だけを確かめる。
+        _write_session_state(tmp_path, "removed-bash", {"operation_skill_ready_agents": {"agent-toolkit:search": ["main"]}})
         result = _run(
             {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "removed-bash", "cwd": str(tmp_path)},
             env_overrides=_plan_file_state_env(tmp_path),
