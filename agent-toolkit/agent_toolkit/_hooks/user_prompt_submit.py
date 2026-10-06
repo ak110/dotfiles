@@ -20,7 +20,7 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 セッション開始後と会話圧縮後で`agent-toolkit:user-confirmation-and-report`がまだ起動されていない間は、
 実ユーザー発話へ同スキルの起動を促す注記を返す（Codexでは文脈1つにつき1回）。
 通常発話へ返す発話の内容を現物で確かめる手順を示す注記は、直前の通常発話からの経過時間が閾値以上の場合に返す。
-全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず`agent-toolkit:realign-with-user`の起動を促す。
+全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す。
 例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ
 実ユーザー発話では、経過時間と状態によらず、`agent-toolkit:user-confirmation-and-report`の
 `references/user-utterance.md`のうち範囲語か開放列挙と例示を併せた調査依頼の項と、
@@ -142,7 +142,7 @@ _USER_CONFIRMATION_NOTICE_BODY = (
 _USER_CONFIRMATION_NOTICE_FIX = "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動する。"
 _REALIGN_NOTICE_BODY = (
     "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "次の操作: `agent-toolkit:realign-with-user`を起動し、目標と解決したい問題の理解を確かめる。"
+    "次の操作: `agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめる。"
 )
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出し", "洗い出す", "探し", "チェック", "レビュー")

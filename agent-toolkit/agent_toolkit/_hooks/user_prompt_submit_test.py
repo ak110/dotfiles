@@ -505,7 +505,7 @@ class TestRealignNoticeInjection:
             output = json.loads(result.stdout)["hookSpecificOutput"]
             bodies = _notice_bodies(output["additionalContext"])
             assert len(bodies) == 1
-            assert "agent-toolkit:realign-with-user" in bodies[0]
+            assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[0]
             assert "次の操作:" in bodies[0]
             assert set(_read_state(tmp_path, sid)) == {"last_user_prompt_at", "termination_evidence"}
 
@@ -544,7 +544,7 @@ class TestRealignNoticeInjection:
         bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
         assert len(bodies) == 2
         assert bodies[0] == _EXPECTED_VERIFICATION_NOTICE_BODY
-        assert "agent-toolkit:realign-with-user" in bodies[1]
+        assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[1]
 
 
 class TestExampleInvestigationNotice:
@@ -632,7 +632,7 @@ class TestExampleInvestigationNotice:
         assert len(bodies) == 4
         assert "agent-toolkit:user-confirmation-and-report`をスキル機能で起動する" in bodies[0]
         assert bodies[1] == _EXPECTED_VERIFICATION_NOTICE_BODY
-        assert "agent-toolkit:realign-with-user" in bodies[2]
+        assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[2]
         assert str(self._UTTERANCE_PATH) in bodies[3]
 
 

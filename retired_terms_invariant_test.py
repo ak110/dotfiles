@@ -446,7 +446,7 @@ _RETIRED_TERMS = (
             ("鮮度情報", "選定結果の欄`鮮度`または`atk wi list`の`staleness`"),
             ("境界標識", "`atk-auto`"),
             ("AWI処理スキル", "`agent-toolkit:process-wi`"),
-            ("認識合わせスキル", "`agent-toolkit:realign-with-user`"),
+            ("認識合わせスキル", "`agent-toolkit:user-confirmation-and-report`「認識合わせ」"),
             ("編集スキル", "スキル名"),
             ("担当スキル", "個別のスキル名"),
             ("外部依存未達", "`dependency-unmet-external`"),

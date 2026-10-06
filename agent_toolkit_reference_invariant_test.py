@@ -30,6 +30,8 @@ _INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-runtime.md")
 _INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-validation.md")
 _INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-workflows.md")
 _AUDIT_RECORDS = pathlib.Path("docs/development/audit-records.md")
+_CONCEPTS_GOVERNANCE = pathlib.Path("docs/development/concepts-governance.md")
+_DESIGN_HOSTS = pathlib.Path("docs/development/design-hosts.md")
 _SESSION_RECORDS = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records.py")
 _SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records_test.py")
 _PROCESS_LOOP_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py")
@@ -47,6 +49,9 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
     (f"{_PLUGIN_PREFIX}:exit-session", _PROCESS_LOOP_TEST): 1,
+    # 廃止したスキルの経緯を記す方針・設計の記録
+    (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_GOVERNANCE): 2,
+    (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS): 2,
 }
 
 
