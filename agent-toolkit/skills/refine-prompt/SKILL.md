@@ -14,7 +14,7 @@ description: >
 ## 使用条件
 
 frontmatterの発火条件に加えて、頻繁に使うskillや自動化の中核プロンプトを堅牢化したい場合にも使う。
-挙動の不一致を起点にする場合は、指示文の追記へ進む前に`agent-toolkit/rules/01-agent.md`「規定の区分と標示」に従い、工程の変更と機械化を評価する。
+挙動の不一致を起点にする場合は、指示文の追記へ進む前に`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従い、工程の変更と機械化を評価する。
 
 ## 使用しない条件
 
