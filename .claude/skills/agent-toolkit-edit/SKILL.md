@@ -10,7 +10,22 @@ description: >
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex）
 
-WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する場合は、編集前に`agent-toolkit:workflow-overview`を起動する。あわせて`docs/guide/claude-code-guide.md`のうち編集対象と同期する節（少なくとも「推奨ワークフロー」）を読む。
+本スキルは`agent-toolkit/`配下の配布物と`.claude-plugin/marketplace.json`を編集する主体へ、ファイル構成と参照方向、規範を削除・縮小するときの消失確認、版数更新、配布と同期の手順を提供する。
+
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集する主体が自身で全文を読む。要約、見出し一覧、部分読取および別主体の読取結果は全文読了に当たらない |
+| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する前 | `docs/guide/claude-code-guide.md`のうち編集対象と同期する節（少なくとも「推奨ワークフロー」） |
+| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下または`rust/claude-statusline/src/agents_server.rs`の実装を変更または調査する前 | `references/agents-server-shared-state.md` |
+| `agents_server`が起動した委譲先が動かない事象（起動の失敗、初期化の未到達、委譲先の無応答、委譲先が返す結果の欠落）を調査する前 | `references/agents-server-investigation.md` |
+| `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` |
+| 次のいずれかを変更する前と、作業ツリーで改訂した配布物の挙動を確かめる前: `agent-toolkit/agent_toolkit/`・`agent-toolkit/scripts/`の配置とimport、`atk`のサブコマンドと出力、MCPサーバー識別子とツール名、hookの実装と登録、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` |
+| `agent-toolkit/`配下を変更対象に含む計画を起草する前 | `references/version-bump.md`の「plan modeでの取り扱い」節 |
+| 全レーン後に版数を更新する時点と、`references/version-bump.md`の手順へ入る前 | `agent-toolkit/skills/process-wi/references/finish-session.md` |
+
+WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する場合は、編集前に`agent-toolkit:workflow-overview`を起動する。
 
 ## ファイル構成と参照方向
 
@@ -38,72 +53,33 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 
 ### 付帯作業の扱い
 
-`agent-toolkit/rules/01-agent.md`が定める付帯作業のうち、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`配下のエージェント向け文書の改訂は主作業とする。これらの文書はルール、`SKILL.md`、`references/`、`<役割名>.parent.md`と`<役割名>.subagent.md`であり、エンドユーザーへ配布する成果物そのものである。変更目的ごとにcommitとWIを扱い、変更が必要にした整理、テスト、CI、コメント整備も同じ計画、WIおよびcommitで完了する。開発完了後の振り返りが独立に発見した作業だけは別の作業として扱う。
-
-### scripts配下の配置
-
-`agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置く。
-対象とする公開スクリプトは`hook.py`・`atk.py`・`agents_server_mcp.py`・`wait_ci.py`・`_managed_temp.py`とする。
-リモートホスト上で読み込んで実行する`atk_serve_plans_remote_helper.py`と`atk_serve_sessions_remote_helper.py`は
-`agent-toolkit/scripts/`直下に置く。これらも公開スクリプトとする。
-実装モジュールは責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ置く。
-この6つを依存の層とし、この並び順を層の順序とする。
-後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
-同じ層の中のimportは制限しない。
-テスト専用の共有ヘルパーは`_testing`へ置く。
-`_testing`は層の順序に含めない例外とし、`*_test.py`だけがimportできる。
-新しいモジュールの追加先は、そのモジュールを読み込む主体が属するサブパッケージで判定する。
-直下の公開スクリプトは接頭辞`_`を付けずに命名する。
-`_managed_temp.py`だけは外部の許可判定がそのパスを解決するため名前を維持し、`agent-toolkit/agent_toolkit/script_prefix_invariant_test.py`がこの1件を除外する。
-
-サブパッケージ内のimportには絶対importを使う。
-`scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の自動チェックの被覆が失われるためである。
-同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportを失敗として報告する。
-モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名とは異なる名前を選ぶ。
-テストは`pytools-edit`「テスト配置」に従い、対象モジュールの動作テストを同居させ、実物の文書や設定を読むテストをその近くへ置く。
-
-### atkの実行結果出力
-
-`atk`のサブコマンドを追加する場合と、出力の行を追加または変更する場合は、
-`agent-toolkit/agent_toolkit/_atk/outcome.py`が定める接頭辞と区分を使う。
-接頭辞の文字列を各出力箇所へ直接書かず、新しいリーフサブコマンドは同モジュールの区分表へ加える。
-出力する行は実行したコマンドの結果と、失敗・警告およびその次の操作に限る。結果と無関係な状況の通知、対処を要しない付随処理の報告、毎回同じ固定の案内、同じ内容の反復は加えず、人向けの補足として環境判定で振り分けない。
-リーフを登録する場合と区分を変える場合は、実行した結果行がその区分の出力先と順序を満たすことをテストで確かめ、子プロセスの標準出力が成功行より前に出る場合も同じ変更単位で検証する。
-区分表と実在するリーフの対応は`agent-toolkit/agent_toolkit/atk_help_test.py`が検証する。
-規約の目的、区分の意味、却下した代替案は`docs/development/design-cli.md`「atkサブコマンドの実行結果出力」が持つ。
+`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`配下のエージェント向け文書は、エンドユーザーへ配布する成果物そのものである。対象はルール、`SKILL.md`、`references/`、`<役割名>.parent.md`と`<役割名>.subagent.md`である。これらの改訂そのものを目的とする作業は主作業として扱い、変更目的ごとにcommitとWIを分ける。他の開発が必要にしたこれらの文書の改訂と整理は`agent-toolkit/rules/01-agent.md`の付帯作業に当たり、関連する開発と同じ計画、WIおよびcommitで完了する。開発完了後の振り返りが独立に発見した作業だけは別の作業として扱う。
 
 ### agents_serverの共有状態
 
-agents_serverの実装を変更する場合と調査する場合は、着手前に`references/agents-server-shared-state.md`を全文読む。
-対象は`agent-toolkit/agent_toolkit/agents_server_mcp.py`と`agent-toolkit/agent_toolkit/_agents_server/`配下とする。
-`rust/claude-statusline/src/agents_server.rs`も同じ対象とする。
-同書は共有状態ごとに正とする保存先と、読む主体・更新できる主体の対応を保持する。
+読込表の同じ行が挙げる実装の共有状態ごとに正とする保存先と、読む主体・更新できる主体の対応は`references/agents-server-shared-state.md`が保持する。
 状態を正とする保存先、更新できる主体または状態ディレクトリ配下のファイル種別を変える実装では、同書を同じ変更単位で更新する。
 
 ### agents_serverの委譲不具合の調査
 
-`agents_server`が起動した委譲先が動かない事象を調査する場合は、着手前に`references/agents-server-investigation.md`を全文読む。
-対象は起動の失敗、初期化の未到達、委譲先の無応答、および委譲先が返す結果の欠落とする。
-同書は観測できる記録の所在、切り分けの順序、外部プロセスでの再現手順を保持する。
+`references/agents-server-investigation.md`は観測できる記録の所在、切り分けの順序、外部プロセスでの再現手順を保持する。
 記録の所在、`agents_server`の診断項目または委譲先CLIへ与える引数を変える実装では、同書を同じ変更単位で更新する。
-
-### atk serveの静的資産
-
-`agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する場合は、着手前に`references/atk-serve-static.md`を全文読む。
-
-### MCPサーバー識別子とホスト別ツール名
-
-- MCPサーバー識別子にはハイフンを使わず、アンダースコアで構成する。MCPツール名はホストごとの修飾規則が異なるため、片方の綴りを別ホストへ流用しない
-- Claude CodeのMCPツール名は`mcp__plugin_<plugin-name>_<server-key>__<tool>`、CodexのMCPツール名は`mcp__<server-key>__<tool>`で修飾する。hook matcher・権限設定・文書の列挙は対象ホストの綴りへそろえる
 
 ## 規範を削除・縮小するときの消失確認
 
 `agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`AGENTS.md`、`.claude/skills/`などのエージェント向け文書の記述を削除または縮小する編集では、目的にかかわらずベースcommitとの差分を確認する。削除した価値、適用範囲、条件、例外を特定し、削除の理由をcommit本文へ残す。統合を理由とする場合は、統合先の適用範囲が元の範囲を含むことを確認する。含まない場合は統合先を整えるか、削除を取りやめる。
 
-削除・縮小する行の初出は、文面の微修正をまたいで一致する部分文字列を選び、`git log --follow -S '<本文の部分文字列>' -- <ファイル>`かパスを限定しない`git log -S`で調べる。`git blame`は最後に行へ触れたcommitを示し、パスを限定した`git log -S`は改名前の履歴を含まないため、どちらも単独で初出の判定に使わない。検索結果の最古の導入commitと、その行を復元したcommitのいずれかに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、同じ対象リポジトリの終端済みキュー項目を`atk wi grep --state all`で探す。検索には特徴的な語や反映先パスを使う。候補の`adopt`記録が導入commitのOIDを持つか、そのOIDを進捗ログに持つ計画の`関連WI`が候補を挙げる場合だけ対応を裏付ける。対応する要求単位が`agent-toolkit:wi-standards`「由来と承認」によりエージェント由来と確定したときは、項目名、OID対応および由来の根拠を計画の進捗ログ（計画なしでは引き継ぎ記録、どちらも無い作業ではユーザーへの報告）へ記録して保護の対象から外す。commit本文には前段のとおり削除・縮小の理由を書き、キュー項目のファイル名などの内部識別子は書かない。対応を裏付けられない場合、人間由来を含む場合、または由来を分離できない場合は作者を確定できない規範としてユーザーが書いた規範と同じく保護する。編集前にユーザー確認（事前承認）する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、由来を裏付けられない場合は確認が余分に増えても保護を優先する。
+削除・縮小する行の由来は次の順に調べる。
+
+1. 文面の微修正をまたいで一致する部分文字列を選び、`git log --follow -S '<本文の部分文字列>' -- <ファイル>`かパスを限定しない`git log -S`で初出を調べる。`git blame`は最後に行へ触れたcommitを示し、パスを限定した`git log -S`は改名前の履歴を含まないため、どちらも単独で初出の判定に使わない
+2. 検索結果の最古の導入commitと、その行を復元したcommitのいずれかに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、同じ対象リポジトリの終端済みキュー項目を`atk wi grep --state all`で探す。検索には特徴的な語や反映先パスを使う
+3. 候補の`adopt`記録が導入commitのOIDを持つか、そのOIDを進捗ログに持つ計画の`関連WI`が候補を挙げる場合だけ、候補との対応を裏付ける
+4. 対応する要求単位が`agent-toolkit:wi-standards`「由来と承認」によりエージェント由来と確定したときは、項目名、OID対応および由来の根拠を計画の進捗ログ（計画なしでは引き継ぎ記録、どちらも無い作業ではユーザーへの報告）へ記録して保護の対象から外す。commit本文には第1段落のとおり削除・縮小の理由を書き、キュー項目のファイル名などの内部識別子は書かない
+5. 対応を裏付けられない場合、人間由来を含む場合、または由来を分離できない場合は、作者を確定できない規範としてユーザーが書いた規範と同じく保護し、編集前にユーザー確認（事前承認）する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、由来を裏付けられない場合は確認が余分に増えても保護を優先する
+
 trailerの有無だけでは作者を確定できないため、報告、AWI本文および判断の根拠では、そのcommitをユーザーのcommitと結論づけない。
 
-事前承認で守る対象は、削除・縮小によって行の価値、適用範囲、条件または例外のいずれかが失われる編集である。作者を確定できない行でも、次のいずれかを確かめた削除・縮小は事前承認を求めず、確かめた内容を第1段落の削除の理由と同じcommit本文へ書く。対応するキュー項目が人間由来の要求単位を含むなど人間由来と確定した行と、次のいずれも確かめられない行は、前段のとおり編集前に事前承認する。
+事前承認で守る対象は、削除・縮小によって行の価値、適用範囲、条件または例外のいずれかが失われる編集である。作者を確定できない行でも、次のいずれかを確かめた削除・縮小は事前承認を求めず、確かめた内容を第1段落の削除の理由と同じcommit本文へ書く。対応するキュー項目が人間由来の要求単位を含むなど人間由来と確定した行と、次のいずれも確かめられない行は、前掲の手順5のとおり編集前に事前承認する。
 
 - 移設・統合: 変更後の文書の移設先または統合先の箇所（パスと節）が、削除する行の価値、適用範囲、条件および例外を全て含む。第1段落の統合先の包含の確認でこれを判定し、commit本文へ移設先の箇所と要素ごとの対応を書く
 - 失効: 削除する行が説明または規定する実装、機能、工程またはファイルが現行のリポジトリに無いことを、その識別子の固定文字列検索で確かめた。その対象を撤去したcommitが既にあるか、撤去が処理中の要求の認可の範囲で同じ変更に含まれる。commit本文へ失効した対象、検索の内容と撤去したcommitを書く
@@ -118,7 +94,6 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
 - 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述する。
   エンドユーザー環境側の連携設計（個人フックとの優先順序など）は記述の対象から外す
 - 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く（努力目標。素のスキル名は同名スキルの探索を招く）。
-  修飾のない素のスキル名は、同名のスキルを探索する無駄な工程を招く。
   `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
   サブエージェント名は起動指示・地の文とも短縮せず完全名称で書く
 - 配布物内の記述が参照するSSOTは配布物内に配置する。参照先はdotfiles固有ファイルと非配布対象ファイルの外から選ぶ
@@ -136,20 +111,11 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
   `agent-toolkit/skills/writing-standards/references/agent-skills.md`を適用する
 - 委譲元の専用の参照文書を起動契約、agent定義を委譲先の恒常手順としてペアで更新する
 - 委譲元のスキルと参照文書からagent定義をReadする手順を除外する
-- 独立に読み込まれる文書間の重複は、参照だけでは実行判断に必要な情報が欠ける場合に許容する
-  （努力目標。重複は保守の手間を増やす）
+- 独立に読み込まれる文書間の重複の採否は、`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」の定義の所有者の箇条に従う
 - 相互参照が発生する共通観点は横断スキル配下`references/`へ集約してよい
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様」「具体例」は再発リスクと影響度を踏まえて保持判断する
 - 実行レビューの契約を変更する場合は、`agent-toolkit:process-wi`側と、`agent-toolkit:plan-mode`でメインが委譲元となる側の双方を同じ変更単位で更新する。両系統は共通化しておらず、片方だけの改訂は運用差を生む
-
-### プラグイン内リソースの参照書式
-
-エンドユーザー環境で実行される実行時パス（`hooks.json`の`command`・エージェント/スキル本文の実行コマンド例）は`${CLAUDE_PLUGIN_ROOT}/<相対パス>`形式に統一する。
-プラグイン配布物のルートはインストール先で動的に解決されるため、dotfilesリポジトリ相対パスはエンドユーザー環境で実行不能となる。
-エージェント向け文書内で役割を説明する言及（「〜は`agent-toolkit/agent_toolkit/<name>.py`が担う」等）はリポジトリ相対表記のままでよい。
-判定基準はそのパスをエンドユーザー環境で実行するか否かとする。
-Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`env`の各値に含まれる`${CLAUDE_PLUGIN_ROOT}`を`${PLUGIN_ROOT}`へ変換する。Claude Code側の実行時パスは前項の形式を維持する。
 
 ## スキル間の連携
 
@@ -159,8 +125,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
-全レーン後に版数を更新する時点と`references/version-bump.md`の手順へ入る前には、`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
-`agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に`references/version-bump.md`の「plan modeでの取り扱い」節を読み、
+`agent-toolkit/`配下を変更対象に含む計画では、読込表の行が挙げる「plan modeでの取り扱い」節に従い、
 `## 要件・外部仕様`へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
 `version`／`description`は以下の箇所で完全に同一文字列に保つ。
@@ -179,10 +144,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 `agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」の一方で、運用形態、WIの登録方法、回答の流れのいずれかを変更した場合は、他方も同じ変更単位でそろえる。
 
-- エージェント向け文書を編集する主体は、編集前に`docs/development/concepts.md`と
-  `docs/development/incidents.md`を自身で全文読み、確定済みの方針・障害対策との整合を確認する。
-  要約、見出し一覧、部分読取および別主体の読取結果は全文読了に当たらない。全文取得の手段は
-  `agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に従う。
+- エージェント向け文書を編集する主体は、読込表の行が挙げる方針と障害対策の記録との整合を、編集前に確認する。
+  全文取得の手段は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に従う。
   編集中に新たな障害または確定した意向が生じた場合は、対応する文書を更新する
 - `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
@@ -214,46 +177,6 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 hookの実装・編集とセッション状態の設計・変更では`agent-toolkit:writing-standards`を起動する。
 
-## 権限設定の配置
-
-権限設定を変更する場合は、対象が全エンドユーザー向けかを先に判定する。
-全エンドユーザー向けの内容は配布原本`share/claude_settings_json_managed*.json`へ置く
-（`pytools/_internal/update_claude_settings.py`が`~/.claude/settings.json`へ反映する）。
-特定ホスト・本リポジトリ限定の内容はリポジトリ直下の`.claude/settings.local.json`（バージョン管理対象外）へ置く。
-読み取り専用コマンドには、引数なしの`Bash`許可を適用する。
-
-秘匿ファイルの読み取りを禁止する`permissions.deny`は配布原本へ置かず、そのファイルを持つプロジェクトのリポジトリ直下の`.claude/settings.json`へ置く。
-`Read(*.key)`のようにディレクトリを含まないグロブを配布原本へ置くと、gitignore構文で任意の深さに一致するため、全プロジェクトのディレクトリ走査が確認ダイアログの対象となる。
-
-プラグインの有効・無効は、永続的な設定値だけで再現できる場合に
-`share/claude_settings_json_managed*.json`の`enabledPlugins`へ置く。設定反映前に
-インストール済みプラグインへCLI遷移が必要な場合だけ
-`pytools/_internal/install_claude_plugins.py`のauto一覧を使う。新規登録は前段の判定で置き場所を決め、既存の歴史的重複はその判定の入力から外す。
-
-## worktreeでの編集時の注意
-
-作業用の複製（git worktree等）で配布物（`agent-toolkit/`配下等）を改訂しても、
-実行中のhookや自動チェックにはそのセッションでは反映されない。稼働中の版は
-`~/.claude/plugins/installed_plugins.json`の`installPath`で確認する。
-保持済みのplugin rootが失効した場合は同ファイルから現行の導入版と`installPath`を再解決し、利用する資源の実在を確認する。
-plugin本体の展開先は`installPath`が示す位置とし、`~/.claude/plugins/data/`配下はその対象から外す。
-hookに新規にブロックされた場合は、まず作業ツリーと稼働中の版に差異がないか確認し、
-そのhookが参照する配布先のファイルを`diff`等で比較してから対応する。
-
-常駐するMCPサーバープロセス（`agent-toolkit/agent_toolkit/agents_server_mcp.py`等）は起動時に読み込んだ
-Pythonモジュールを保持し続ける。このため、`agent-toolkit/agent_toolkit/`配下の修正はそのプロセスの再起動後に反映される。
-修正の確定後も同じ事象を観測した場合は、修正が無効であると結論する前にそのプロセスが読み込んだ版を確定する。
-確定には次の順の観測を用い、起動時刻だけの比較はその根拠から外す。別の作業ツリーや別のplugin rootから起動したプロセスは、
-修正commitより後に起動していてもその修正を含まないファイルを読み込み得るためである。
-
-1. `ps -eo pid,cmd`で稼働プロセスのPIDと起動スクリプトの絶対パスを取得し、そのパスが対象の配布先であることを確認する
-2. `stat -c %Y /proc/<PID>`でプロセス起動時刻を、`stat -c %Y <そのパス配下の対象ファイル>`でファイル更新時刻を取得する
-   （`ps -o lstart=`の出力は実行環境のロケールにより`date -d`が解釈できないため、時刻の比較には用いない）
-3. ファイル更新時刻がプロセス起動時刻より後であれば、そのプロセスは修正前の版を保持している
-
-過去に終了したプロセスについては同じ証拠を回収できない。
-当時の起動スクリプトのパスと起動時刻を保持していない場合は、版差を原因と決めつけず、現行の配布先での再現可否を現物で確かめた範囲だけを結論とする。
-
 ## 編集手順
 
 push前にbumpが必須（同じバージョンでは`claude plugin update`が「最新です」と返しエンドユーザーへ配信されないため）。
@@ -267,71 +190,6 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 5. `dotfiles-development`「開発手順」の特定ファイルに限定する実行形で、SSOTテストを含むテストが成功することを確認する
 6. 変更をコミットする
 
-## フック実装の配置先（個人フックと配布物）
-
-自動化手段の選定は`agent-toolkit:writing-standards`の振り分け規定と本節に従う。
-
-PreToolUseフックの配置先は複数ある。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
-類似チェックが既に片方に存在する場合は、そちらへ統合する（努力目標。定義を1か所にすると改訂も1か所で済む）。
-両方に該当すると判断した場合は、そのチェックがdotfiles固有の運用前提（配布先ディレクトリ構成・個人の命名規約など）へ
-依存するかで判定し、依存しないものをプラグインへ置く。
-
-- `pytools/claude_hook/pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる。
-  dotfiles固有の運用前提（`~/.claude/`がchezmoi配布先、個人の命名規約など）に依存するチェック向け。
-  配置した場合は`share/claude_settings_json_managed.posix.json`および同`win32.json`の
-  `matcher`に新しいツール名を追加する必要があるか確認する
-- `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`経由で他者にも配布される。
-  汎用的な制約・自動化（一般的な文字化け検出、PowerShell互換性チェックなど）向け。
-  配置した場合は「バージョン更新」節の手順に従う
-- agent-toolkitの公開スクリプトは`uv run --project <plugin root> --locked --no-default-groups <対象>`形式で呼び出す。
-  対象は`agent-toolkit/hooks/hooks.json`、MCP manifest、`agent-toolkit/bin/atk`および`agent-toolkit/skills/*/scripts/`配下のスクリプトである。
-  SSH先で動く`agent-toolkit/scripts/atk_serve_*_remote_helper.py`だけは独立したPEP 723スクリプトとして起動する
-- `agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、
-  `agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める互換スクリプトの残置に従う。
-  残置した互換スクリプトはバージョン管理の対象へ含める。
-  撤去は新しいエントリーポイントを含む版をbumpして配布した後の版数更新以降であり、かつ旧定義を読み込んだセッションが全て終了したことを
-  確認できた場合だけ行う。確認できない場合は残置を維持する
-- `agent-toolkit/pyproject.toml`の`dependencies`へパッケージを追加・更新する場合、
-  同projectの`uv.lock`も更新する。`agent-toolkit/scripts/`に残す`atk_serve_*_remote_helper.py`だけはPEP 723宣言を維持する
-- 同じイベントへフックを追加する場合は、`agent-toolkit/hooks/hooks.json`と
-  `share/claude_settings_json_managed.*.json`のいずれでも、そのイベントの既存のエントリーポイントへ相乗りさせることを推奨する。
-  登録を並べるとプロセスの起動が増え、ツール呼び出しのたびに遅延が加わる。
-  入力契約の違いなどで相乗りできない場合は、その理由を残して登録を並べてよい。
-  matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。
-  イベントごとのエントリーポイントの実装契約は`agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める
-
-agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_hook/pretooluse.py`の専用チェックがブロックする。
-個人プロジェクト名固定リストはそのスクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
-スキル名・pytoolsコマンド名・scripts名は、`pytools/claude_hook/pretooluse.py`がhook実行時にディレクトリをスキャンして動的に取得する。
-外部CLI参照は`_EXTERNAL_CLI_ALLOWED`登録識別子に限り`command -v`等による存在確認を経て許容する。
-
-## 複数hook共存時の識別子
-
-agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
-自身のhookメッセージを他hookから判別するため、`atk-auto`要素の`source`へagent-toolkitでは接頭辞の無い生成元名を置く。agent-toolkit以外の生成元は`<所有者>/<生成元>`の形で区別する。
-XML境界と属性の規約は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
-「コーディングエージェント宛てメッセージの標識」節に従う。
-
-## marketplace管理
-
-`update-dotfiles`（`chezmoi apply`後処理）はClaude Code向けagent-toolkitプラグインを自動インストール・更新する。
-処理は`pytools/_internal/install_claude_plugins.py`が担う。
-`agent-toolkit/rules/`は`post_apply`の`sync_agent_toolkit_rules`が配布先へ同期し、Codex向けのdotfiles固有スキルと`docs`は`setup_codex_links`が原本へリンクする。
-生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する
-（`python`の明示が必須。起動形の詳細は`docs/development/operations.md`を参照）。
-marketplaceの配布方式は次のとおり。
-
-- bootstrap: `install-claude.sh`/`install-claude.ps1`がGitHub型として登録する
-- chezmoi apply: 後処理がdirectory型（絶対パス直接参照）で維持し、GitHub型登録残存時は自動でマイグレーションする
-- ローカル編集の反映: `chezmoi apply`（または`update-dotfiles`）でデプロイし、
-  Claude Code再起動か`/reload-plugins`で反映する（version bumpは不要）
-
-Codex向け生成物は`agent-toolkit/.codex-plugin/plugin.json`と`.agents/plugins/marketplace.json`とする。
-生成器と生成元の関係は「バージョン更新」節に従う。
-prek経由のpyfltr（書き込みモード）が`sync-generated-files`でCodex向け生成物を毎回再生成する。
-Codex hookの定義は、`scripts/sync_codex_plugin_manifests.py`がイベント名、matcher、入力契約を確認した許可表の分だけを生成する。
-`chezmoi apply`後処理はCodex marketplaceを登録し、agent-toolkit pluginを導入・更新する。
-
 ## コミットメッセージ方針と.gitmessage
 
-`<plugin root>/skills/commit/SKILL.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化しない。
+`<plugin root>/skills/commit/references/message.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化しない。

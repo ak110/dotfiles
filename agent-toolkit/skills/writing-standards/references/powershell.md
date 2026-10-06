@@ -4,9 +4,7 @@
 
 - Claude Codeツールの挙動と注意点
   - 書込ツールごとの改行・BOMの扱いは`encoding.md`「書込ツールの改行・BOM保全」に従う。PS1ファイルはCRLFとBOMを要するため、既存ファイルはEditで編集し、Writeを使わない
-    - agent-toolkitプラグインはPS1へのLF-only書き込みへ警告を返すが書き込み自体は成立するため、Writeで書いた場合はBOMとCRLFを別途復元する
-  - 新規ファイル作成時はBashツールでBOM付きCRLFファイルを書く
-    - 例: `printf '\xEF\xBB\xBF' > file.ps1 && cat <<'ENDOFPS1' | sed 's/$/\r/' >> file.ps1`
+    - agent-toolkitプラグインはPS1へのLF-only書き込みへ警告を返すが、書き込み自体は成立する
 - Windows PowerShell 5.1互換性
   - `.gitattributes`で`*.ps1 text eol=crlf`を設定し、改行をgit側で管理する
   - 非ASCII文字を含むスクリプトはUTF-8 BOM付きで保存する

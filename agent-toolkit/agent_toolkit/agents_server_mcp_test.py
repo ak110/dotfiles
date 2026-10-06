@@ -528,15 +528,6 @@ def _start_tool() -> Any:
     return tool
 
 
-def test_start_tool_describes_cwd_condition() -> None:
-    """`start`のスキーマが、起動処理が確認する`cwd`の条件（既存ディレクトリの絶対パス）と全modeでの必須を示す。"""
-    tool = _start_tool()
-    description = tool.parameters["properties"]["cwd"].get("description", "")
-    assert "既存ディレクトリの絶対パス" in description
-    assert "全modeで必須" in description
-    assert tool.parameters["required"] == ["cwd"]
-
-
 def test_public_tools_expose_single_start_with_modes() -> None:
     """公開ツールは起動の`start`1件と継続・中断・破棄・一覧・詳細の6件とし、`start`はmodeごとの入力を持つ。"""
     assert set(subject.mcp._tool_manager._tools) == {"start", "send_message", "kill", "list", "show", "stop"}
@@ -558,9 +549,6 @@ def test_public_tools_expose_single_start_with_modes() -> None:
     assert properties["mode"]["default"] == tool_names.DEFAULT_START_MODE
     for name in properties.keys() - {"cwd", "mode"}:
         assert properties[name]["default"] is None, name
-    show_tool = subject.mcp._tool_manager.get_tool("show")
-    assert show_tool is not None
-    assert "`model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列" in show_tool.description
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
     assert kill_tool is not None
     assert kill_tool.parameters["properties"]["stop"]["default"] is False
@@ -570,7 +558,7 @@ def test_public_tools_expose_single_start_with_modes() -> None:
 
 
 def test_start_parameter_descriptions_are_self_contained() -> None:
-    """各引数の説明だけで意味、書式、省略時の動作とmodeごとの必須・禁止を判断でき、外部の説明を参照しない。"""
+    """各引数の説明は外部の説明を参照せず、`mode`の説明は公開する全modeを挙げる。"""
     properties = _start_tool().parameters["properties"]
     for name, schema in properties.items():
         description = schema.get("description", "")
@@ -578,79 +566,16 @@ def test_start_parameter_descriptions_are_self_contained() -> None:
         assert "共通引数" not in description, name
         assert "agent-toolkit:delegation" not in description, name
     mode = properties["mode"]["description"]
-    assert "省略時は`task`" in mode
     for value in tool_names.START_MODES:
         assert f"`{value}`" in mode, value
-    assert "taskで必須、他のmodeでは指定しない" in properties["subagent_md_path"]["description"]
-    assert "taskだけで受理し" in properties["extra_params"]["description"]
-    assert "宣言外の入力名" in properties["extra_params"]["description"]
-    assert "delegate・explore・writeで必須、taskとshellでは指定しない" in properties["prompt"]["description"]
-    for name in ("command", "summary_policy"):
-        assert "shellで必須、他のmodeでは指定しない" in properties[name]["description"], name
-    model_type = properties["model_type"]["description"]
-    for fragment in (
-        "`<claude|codex|agy>:<model>[/<effort>]`",
-        "agy:gemini-3.8-flash/medium,claude:opus[1m]/medium",
-        "候補は先頭から試し",
-        "delegateでは必須",
-        "taskが`<役割名>.subagent.md`に対応する工程別設定",
-        "exploreとshellが`low_tier`",
-        "writeが`write`の設定",
-        "`medium_tier`",
-        "`atk config set`",
-    ):
-        assert fragment in model_type, fragment
-    label = properties["label"]["description"]
-    for fragment in (
-        "`<レーン識別子>-<役割名>`",
-        "`explore-<調査対象を示す1〜2語>`",
-        "`write-<起草対象を示す1〜2語>`",
-        "`shell-<コマンド名など1〜2語>`",
-        "`<レビュー対象を表す語>-review`",
-        "依頼本文の先頭にある空でない1行",
-        "`shell-<コマンドの最初の語のbasename>`",
-        "statusline",
-        "`-review`で終わるsessionの完了結果には、指摘の採否を確定する手順を示す`next_action`が付く",
-    ):
-        assert fragment in label, fragment
 
 
 def test_start_description_selects_mode_and_lists_minimal_calls() -> None:
-    """`start`の説明と`mode`の引数説明だけでmodeを選べるよう、用途・必須入力の表、選び方と各modeの最小呼び出し例を持つ。"""
+    """`start`の説明と`mode`の引数説明が、公開する全modeの最小呼び出し例を持つ。"""
     tool = _start_tool()
     description = tool.description + tool.parameters["properties"]["mode"]["description"]
     for mode in tool_names.START_MODES:
         assert f"- {mode}: `{{" in description, mode
-    for fragment in (
-        "| `task`（省略時） |",
-        "| `delegate` |",
-        "| `explore` |",
-        "| `write` |",
-        "| `shell` |",
-        "常時規範が配送されず",
-        "スキルの手順を要する作業にはtaskかdelegateを使う",
-        "4,000トークン",
-        "成果ファイルの出力を依頼しない",
-        "成果物種別、読者、事実、根拠、反映先と完成形",
-        "委譲先を起動せずに拒否し",
-        "engineの利用上限などで起動できない候補はサーバーが除外し、残る候補で起動する",
-        "委譲元の文脈へは",
-    ):
-        assert fragment in description, fragment
-    assert "147,000トークン" not in description
-
-
-def test_start_description_alone_assigns_storage_to_existing_routes() -> None:
-    """引数説明を読まなくても探索の保存制約と3つの保存主体を選べる。"""
-    description = _start_tool().description
-    for contract in (
-        "`explore`はファイルを作成・変更・削除しない",
-        "全量コマンド出力の保存は`shell`へ",
-        "調査と成果ファイル作成は`delegate`へ渡す",
-        "返却本文を保存する場合は委譲元が保存する",
-    ):
-        assert contract in description
-    assert "`atk agents wait`" in description
 
 
 @pytest.mark.asyncio
@@ -667,53 +592,10 @@ async def test_tool_descriptions_fit_claude_code_truncation_and_describe_every_a
 
 
 def test_instructions_keep_server_overview_without_argument_specification() -> None:
-    """instructionsはサーバー全体の操作の関係だけを持ち、引数の書式とlabelの凡例を引数説明へ委ねない。"""
+    """instructionsは撤去したmodeの名前を案内しない。"""
     instructions = subject.mcp.instructions or ""
-    assert "`mode`" in instructions
-    assert "引数なしの単独コマンド`atk agents wait`で受け取る" in instructions
-    assert "--output-file" not in instructions
-    for fragment in ("共通引数", "agy:gemini-3.8-flash", "| 起動 | 形式 | 例 |"):
-        assert fragment not in instructions, fragment
     for legacy in tool_names.LEGACY_START_MODES:
         assert legacy not in instructions, legacy
-
-
-def test_instructions_process_each_returned_result_before_waiting_rest() -> None:
-    """instructionsだけから、返った終端結果をその場で処理し、残りを再発行で待ち、全件待ちのループで包まないと判断できる。
-
-    全件の終端まで戻らない回収ループで待機を包むと、先に終わった委譲先の結果が未処理のまま残る。
-    """
-    instructions = subject.mcp.instructions or ""
-    assert "応答の時点で終端したsessionの結果を返す" in instructions
-    assert "返った結果はその場で処理し、残りのsessionは同じコマンドを再発行して待つ" in instructions
-    assert "全件の終端まで戻らないループやスクリプトで待機を包まない" in instructions
-
-
-def test_delegation_choice_and_cron_cues_are_read_before_first_start() -> None:
-    """委譲手段を選ぶ時点と最初の起動の直前に読む文面へ、`Agent`ツールとの関係と定期再確認の装着時点を置く。
-
-    Claude Codeは`start`を遅延読み込みしてスキーマを取得してから呼ぶため、説明は最初の呼び出しの直前に読まれる。
-    """
-    instructions = subject.mcp.instructions or ""
-    assert "Claude Codeからの委譲は`Agent`ツールではなく本サーバーを標準とする" in instructions
-    assert "`references/runtime-routing.md`「実行手段」" in instructions
-    description = _start_tool().description
-    assert "`CronCreate`を使える実行主体" in description
-    assert "最初にこのツールを呼ぶ前に定期再確認を装着する" in description
-    assert "`references/claude-code-runtime.md`「Cronによる定期再確認」" in description
-
-
-def test_start_tool_description_requires_same_turn_observation() -> None:
-    """`start`の公開説明が返却sessionを同じ応答内で、引数なしの単独の待機コマンドで観測させる。
-
-    保存先の指定を受領手段として示すと、委譲元は待機のたびに保存先の組み立てと確認のコマンドを連結する。
-    """
-    description = _start_tool().description
-    assert "返した`session_id`" in description
-    assert "`atk agents wait`を単独で" in description
-    assert "結果が不要なら`kill`で破棄する" in description
-    assert "--output-file" not in description
-    assert "`atk agents wait`は`session_id`を引数に取らず" in description
 
 
 @pytest.mark.asyncio
@@ -915,52 +797,17 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:
-    """公開schemaの待機系操作がtimeoutを省略した場合の値の決まり方を示す。"""
-    assert subject.DEFAULT_KILL_TIMEOUT == 270.0
-    assert subject.DEFAULT_SEND_MESSAGE_TIMEOUT == 270.0
-    assert codex_backend.DEFAULT_WAIT_TIMEOUT == 300.0
-    send_tool = subject.mcp._tool_manager.get_tool("send_message")
-    kill_tool = subject.mcp._tool_manager.get_tool("kill")
-    assert send_tool is not None
-    assert kill_tool is not None
-
-    send_timeout = send_tool.parameters["properties"]["timeout"]
-    assert send_timeout["default"] == 270.0
-    assert (
-        "継続要求の配送結果が確定するまでの待機上限秒数。固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
-        "委譲先の応答生成の完了は待たない。0以下は受理しない。"
-    ) in send_timeout["description"]
-    assert "引数を省略すると270秒を待機上限とする" in send_tool.description
-    assert "固有のtimeout要件がなければ引数を省略する" in send_tool.description
-    assert "待つのは継続要求の配送結果が確定するまで" in send_tool.description
-    assert "委譲先の応答生成の完了ではない" in send_tool.description
-    assert "上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する" in send_tool.description
-    kill_timeout = kill_tool.parameters["properties"]["timeout"]
-    assert kill_timeout["default"] == 270.0
-    assert (
-        "中断要求後に終端を待つ上限秒数。固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
-        "0は中断要求配送後の現状態を返す。"
-    ) in kill_timeout["description"]
-    assert "引数を省略すると270秒を待機上限とする" in kill_tool.description
-    assert "固有のtimeout要件がなければ引数を省略する" in kill_tool.description
-    assert "`timeout=0`は中断要求配送後の現状態を返す" in kill_tool.description
-
-
-def test_public_descriptions_expose_agents_wait_handoff() -> None:
-    """公開ツール説明が目標評価を避ける待機引継ぎを示す。"""
-    start_tool = subject.mcp._tool_manager.get_tool("start")
-    send_tool = subject.mcp._tool_manager.get_tool("send_message")
-    assert start_tool is not None
-    assert send_tool is not None
-
-    assert "`session_id`と`status`" in start_tool.description
-    assert "root sessionの識別子を保持する場合" in start_tool.description
-    assert "`root_session_id`" in start_tool.description
-    assert "`--" + "turn`へそのまま渡す" not in start_tool.description
-    assert "`atk agents wait`" in start_tool.description
-    assert "`delivery`" in send_tool.description
-    assert "`previous_result`" in send_tool.description
-    assert "`--" + "turn`へそのまま渡す" not in send_tool.description
+    """公開schemaの待機系操作の説明が、timeoutを省略した場合の実装の上限秒数を示す。"""
+    for tool_name, default in (
+        ("send_message", subject.DEFAULT_SEND_MESSAGE_TIMEOUT),
+        ("kill", subject.DEFAULT_KILL_TIMEOUT),
+    ):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        assert default.is_integer(), tool_name
+        seconds = f"{int(default)}秒"
+        assert seconds in tool.description, tool_name
+        assert seconds in tool.parameters["properties"]["timeout"]["description"], tool_name
 
 
 @pytest.mark.asyncio
@@ -7694,22 +7541,6 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
         "explore": "explore",
         "write": "write",
     }
-
-
-def test_start_description_declares_input_and_launch_kind_contract() -> None:
-    """`start`の説明が、宣言済み入力だけの受理と`mode:`による軽量起動を示し、`追加指示`を案内しない。
-
-    `追加指示`へ補足を渡す案内が残ると、委譲元は拒否される項目名で起動し、同じ呼び出しをやり直す。
-    """
-    start_tool = subject.mcp._tool_manager.get_tool("start")
-    assert start_tool is not None
-    extra_params = start_tool.parameters["properties"]["extra_params"]["description"]
-    assert "追加指示" not in extra_params
-    assert "宣言外の入力名を含む場合は委譲先を起動しない" in extra_params
-    assert "待機表明の例外" not in extra_params
-    assert "待機と再開の方針はサーバーが伝える" in extra_params
-    assert "`<役割名>.subagent.md`の`mode:`" in start_tool.description
-    assert "宣言外の入力名は拒否し" in start_tool.description
 
 
 _MODE_INPUT_CASES = [

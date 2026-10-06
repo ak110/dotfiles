@@ -6,6 +6,23 @@ import pathlib
 import pytest
 import session_review_evidence as evidence
 
+from agent_toolkit._testing.helpers import _write_transcript
+
+
+def _answer_event(line: int, answers: list[str], *, intervention: bool = False) -> dict[str, object]:
+    """生成側が出力する形（回答値の本文、`user_response`、`assistant_context`）の回答イベントを返す。"""
+    event: dict[str, object] = {
+        "kind": "user",
+        "record": "main",
+        "line": line,
+        "text": "\n".join(answers),
+        "assistant_context": [{"question": "方針", "options": [{"label": "推奨", "description": ""}]}],
+        "user_response": [{"answers": answers}],
+    }
+    if intervention:
+        event["answer_intervention"] = True
+    return event
+
 
 def test_candidate_events_excludes_non_interventions_and_reports_counts() -> None:
     """委譲入力、環境挿入、回答および初期要求を決定的に除外する。"""
@@ -13,7 +30,7 @@ def test_candidate_events_excludes_non_interventions_and_reports_counts() -> Non
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "agent-1", "line": 1, "text": "委譲入力"},
         {"kind": "user", "record": "main", "line": 2, "text": "<normative-context>規範", "runtime_inserted": True},
-        {"kind": "user", "record": "main", "line": 3, "text": "質問: 選択\n回答: 推奨"},
+        _answer_event(3, ["推奨"]),
         {"kind": "user", "record": "main", "line": 4, "text": "実際の是正要求"},
     ]
 
@@ -43,20 +60,114 @@ def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
     """選択肢の外の回答と自由記述を伴う回答を問題候補として残し、選択肢どおりの回答だけを除く。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
-        {"kind": "user", "record": "main", "line": 2, "text": "質問: 方針\n回答: 既存機構へ統合"},
-        {
-            "kind": "user",
-            "record": "main",
-            "line": 3,
-            "text": "質問: 方針\n回答: 対象範囲を広げる",
-            "answer_intervention": True,
-        },
+        _answer_event(2, ["推奨"]),
+        _answer_event(3, ["対象範囲を広げる"], intervention=True),
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
     assert candidates[-1]["excluded"] == {"initial-request": 1, "question-answer": 1}
+
+
+_OFFERED = [{"label": "既存機構へ統合"}, {"label": "新機構を追加"}]
+_ORDINARY_UTTERANCE = "質問: 方針はどうしますか\n回答: 既存機構へ統合で進めて"
+
+
+def _claude_question(question_id: str, answer: str, notes: str | None) -> list[dict[str, object]]:
+    """AskUserQuestionの質問と回答の2行を返す。notesは選択肢の外へ書いた自由記述とする。"""
+    annotations = {"方針": {"notes": notes}} if notes is not None else {}
+    return [
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "AskUserQuestion",
+                        "id": question_id,
+                        "input": {"questions": [{"question": "方針", "options": _OFFERED}]},
+                    }
+                ],
+            },
+        },
+        {
+            "type": "user",
+            "toolUseResult": {"answers": {"方針": answer}, "annotations": annotations},
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": question_id, "content": "回答"}]},
+        },
+    ]
+
+
+def _codex_question(call_id: str, answer: str) -> list[dict[str, object]]:
+    """request_user_inputの質問と回答の2行を返す。"""
+    arguments = {"questions": [{"id": "scope", "question": "方針", "options": _OFFERED}]}
+    return [
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "request_user_input",
+                "call_id": call_id,
+                "arguments": json.dumps(arguments, ensure_ascii=False),
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": json.dumps({"answers": {"scope": {"answers": [answer]}}}, ensure_ascii=False),
+            },
+        },
+    ]
+
+
+def _extracted_candidates(transcript: pathlib.Path) -> tuple[list[str], dict[str, int]]:
+    """生成側の抽出結果を候補抽出へ通し、ユーザー介入候補の本文と除外件数を返す。"""
+    events = [{**event, "record": "main"} for event in evidence.load_and_extract(str(transcript))]
+    candidates = evidence._candidate_events(events, [], [])  # pylint: disable=protected-access
+    texts = [candidate["text"] for candidate in candidates[:-1] if candidate["candidate_kind"] == "user-intervention"]
+    return texts, candidates[-1]["excluded"]
+
+
+def test_claude_answers_from_transcript_are_classified_by_offered_choices(tmp_path: pathlib.Path) -> None:
+    """生成側が出力した回答イベントを、選択肢どおりなら除外し、是正を含めばユーザー介入候補に残す。
+
+    回答イベントの本文は表示用の回答値であり、候補抽出が本文の書式で回答を推定すると、
+    書式の変更で選択肢どおりの回答が候補に残るか、同じ書式の通常の発話が回答として除外される。
+    """
+    entries: list[dict[str, object]] = [
+        {"type": "user", "message": {"role": "user", "content": "初期要求"}},
+        *_claude_question("q1", "既存機構へ統合", None),
+        *_claude_question("q2", "既存機構へ統合, 新機構を追加", None),
+        *_claude_question("q3", "対象範囲を全件へ広げる", None),
+        *_claude_question("q4", "既存機構へ統合", "ただし対象は全件とする"),
+        {"type": "user", "message": {"role": "user", "content": _ORDINARY_UTTERANCE}},
+    ]
+
+    texts, excluded = _extracted_candidates(_write_transcript(tmp_path, entries))
+
+    assert texts == ["対象範囲を全件へ広げる", "既存機構へ統合\nただし対象は全件とする", _ORDINARY_UTTERANCE]
+    assert excluded == {"initial-request": 1, "question-answer": 2}
+
+
+def test_codex_answers_from_transcript_are_classified_by_offered_choices(tmp_path: pathlib.Path) -> None:
+    """Codexの回答も、選択肢どおりなら除外し、選択肢と一致しなければユーザー介入候補に残す。"""
+    entries: list[dict[str, object]] = [
+        {
+            "type": "response_item",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "初期要求"}]},
+        },
+        *_codex_question("call-1", "既存機構へ統合"),
+        *_codex_question("call-2", "対象範囲を全件へ広げる"),
+    ]
+
+    texts, excluded = _extracted_candidates(_write_transcript(tmp_path, entries))
+
+    assert texts == ["対象範囲を全件へ広げる"]
+    assert excluded == {"initial-request": 1, "question-answer": 1}
 
 
 def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
@@ -241,7 +352,10 @@ def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
 
 
 def test_candidate_events_separates_escalations_from_unsuccessful_delegate_returns() -> None:
-    """上位判断を求める返却だけをエスカレーションとし、通常の不成功返却から分離する。"""
+    """上位判断を求める返却だけをエスカレーションとし、通常の不成功返却から分離する。
+
+    `続行できない理由:`の行を持つ返却に加え、過去の記録に残る旧形式の状態値の返却も読み取り互換としてエスカレーションとする。
+    """
     timeline = [
         {"kind": "final-result", "record": "agent-1", "line": 20, "text": "status: needs_escalation\nreason: 認可の不足"},
         {
@@ -257,16 +371,23 @@ def test_candidate_events_separates_escalations_from_unsuccessful_delegate_retur
             "line": 50,
             "text": "状態: needs_escalation\n続行できない理由: 入力の欠落",
         },
+        {
+            "kind": "final-result",
+            "record": "agent-5",
+            "line": 60,
+            "text": "未解決の指摘数: 0\n続行できない理由: 認可範囲の外にある不良",
+        },
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert sorted(candidate["candidate_kind"] for candidate in candidates[:-1]) == ["delegate-return"] * 2 + ["escalation"] * 2
+    assert sorted(candidate["candidate_kind"] for candidate in candidates[:-1]) == ["delegate-return"] * 2 + ["escalation"] * 3
     assert candidates[-1]["included_locators"] == [
         {"record": "agent-1", "line": 20},
         {"record": "agent-2", "line": 30},
         {"record": "agent-3", "line": 40},
         {"record": "agent-4", "line": 50},
+        {"record": "agent-5", "line": 60},
     ]
 
 
@@ -405,19 +526,19 @@ def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None
             "kind": "final-result",
             "record": "agent-1",
             "line": 20,
-            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}認可の不足",
+            "text": f"続行できない理由: {shared_prefix}認可の不足",
         },
         {
             "kind": "final-result",
             "record": "agent-2",
             "line": 30,
-            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}認可の不足",
+            "text": f"続行できない理由: {shared_prefix}認可の不足",
         },
         {
             "kind": "final-result",
             "record": "agent-3",
             "line": 40,
-            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}入力の欠落",
+            "text": f"続行できない理由: {shared_prefix}入力の欠落",
         },
     ]
 

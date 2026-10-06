@@ -10,6 +10,13 @@ description: 「PRをマージして」などの明示依頼を受領したと�
 条件は`dotfiles-release`スキルの「developとmasterのリリース運用」が定める。
 PRが存在するという観測を起動の契機から外し、前記2つの場合だけ起動する。
 
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-toolkit:bugfix`の`references/ci-failure-handling.md` |
+| マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` |
+
 ## 失敗時の共通規定
 
 CIとRelease以外の工程が失敗した場合は、成立済みの外部状態を保持し、失敗した工程、外部状態、run URLおよび再開点を報告して停止する。PR作成・マージ操作の再試行とauto-merge、自動修復、自動rollbackは行わない。
@@ -71,7 +78,7 @@ PR起点checkの登録後だけ、`gh pr checks --required --watch`で必須chec
 
 登録待機または`CLEAN`待機の上限到達、照会失敗、対象の曖昧さ、check失敗、head変更および`CLEAN`以外の状態ではマージしない。必須checkの失敗は該当runの終端とログを確認して「失敗時の共通規定」を適用する。その他の停止では、観測した外部状態と再開点を報告する。
 
-PR #138では、同じheadの`push`起点check成功後に`pull_request`起点の`statusline-version`が非同期に登録された。観測版と再検証手順は`docs/development/audit-records.md`の「.claude/skills/merge-pr/SKILL.md：マージ前の確認：2026年10月5日」を参照する。
+同じheadの`push`起点checkが成功した後に`pull_request`起点の`statusline-version`が非同期に登録されることがあるため、登録を待ってから必須checkを待つ。観測版と再検証手順は`docs/development/audit-records.md`の「.claude/skills/merge-pr/SKILL.md：マージ前の確認：2026年10月5日」を参照する。
 
 ## レビューコメントの確認
 

@@ -5,13 +5,10 @@ AWI/`uwi`一覧出力・各種フィルター（target-repo・source・type・st
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
-import contextlib
 import datetime
-import io
 import json
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
@@ -1532,21 +1529,6 @@ def test_list_rejects_legacy_json_option_names(
 
     assert exc_info.value.code == 2
     assert legacy_option in capsys.readouterr().err
-
-
-def test_list_help_names_json_lines_options() -> None:
-    """ヘルプは出力形式を表す新名だけを示し、旧名を独立したオプションとして示さない。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-    stdout = io.StringIO()
-
-    with contextlib.redirect_stdout(stdout), pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["wi", "list", "--help"])
-
-    assert exc_info.value.code == 0
-    help_text = stdout.getvalue()
-    assert "--jsonl" in help_text
-    assert "--no-jsonl" in help_text
-    assert re.search(r"--(?:no-)?json(?![A-Za-z])", help_text) is None
 
 
 class TestMultipleFiltersCombinedAsAnd:

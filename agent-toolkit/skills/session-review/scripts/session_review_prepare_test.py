@@ -214,6 +214,57 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert not list(work_dir.glob("*material*"))
 
 
+def test_prepare_excludes_answer_that_selects_offered_choice(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """選択肢のlabelをそのまま選び自由記述の無い確認回答を、ユーザー介入候補ではなく確認回答として数える。
+
+    候補に残すと、振り返りを行う主体が是正を含まない回答まで介入として分析し、実際の介入件数を過大に扱う。
+    """
+    monkeypatch.setenv("PATH", str(tmp_path / "no-atk"))
+    work_dir = _work_dir(tmp_path)
+    entries = [
+        {"type": "user", "timestamp": "2026-09-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-06T12:00:10Z",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "AskUserQuestion",
+                        "id": "toolu_question",
+                        "input": {
+                            "questions": [
+                                {"question": "方針", "options": [{"label": "既存機構へ統合"}, {"label": "新機構を追加"}]}
+                            ]
+                        },
+                    }
+                ],
+            },
+        },
+        {
+            "type": "user",
+            "timestamp": "2026-09-06T12:00:20Z",
+            "toolUseResult": {"answers": {"方針": "既存機構へ統合"}, "annotations": {}},
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "toolu_question", "content": "回答"}],
+            },
+        },
+    ]
+    transcript = tmp_path / "11111111-2222-3333-4444-555555555555.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir)], now=_FIXED_NOW) == 0
+
+    record = json.loads(capsys.readouterr().out)
+    assert "user-intervention" not in record["candidate_counts"]
+    assert record["excluded_counts"]["question-answer"] == 1
+    assert "既存機構へ統合" not in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize(
     ("first_text", "expected_candidates", "expected_initial_request"),
     [

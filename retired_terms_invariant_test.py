@@ -446,7 +446,8 @@ _RETIRED_TERMS = (
             ("鮮度情報", "選定結果の欄`鮮度`または`atk wi list`の`staleness`"),
             ("境界標識", "`atk-auto`"),
             ("AWI処理スキル", "`agent-toolkit:process-wi`"),
-            ("認識合わせスキル", "`agent-toolkit:realign-with-user`"),
+            ("認識合わせスキル", "`agent-toolkit:user-confirmation-and-report`「認識合わせ」"),
+            ("即時報告", "即時通知（`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」）"),
             ("編集スキル", "スキル名"),
             ("担当スキル", "個別のスキル名"),
             ("外部依存未達", "`dependency-unmet-external`"),
@@ -462,7 +463,33 @@ _RETIRED_TERMS = (
             ("従来の取得と判定", "説明へ"),
         )
     ),
+    # 委譲先の返却形式の状態値（2026年10月6日に廃止）。続行不能は`続行できない理由:`の行だけで表す。
+    # 定義は`agent-toolkit/skills/delegation/references/mandatory-rules.md`「返却形式の受け渡し」を正とする。
+    _RetiredTerm(
+        term="needs_escalation",
+        replacement="`続行できない理由:`の行（地の文では「続行できない理由を返す」）",
+        allowed=(
+            # 過去のセッション記録に残る旧形式の返却を読む定数と、その読み取り互換を確かめるテスト
+            _AllowedLocation(
+                "agent-toolkit/skills/session-review/scripts/session_review_evidence.py",
+                line_exact='_ESCALATION_RETURN_STATUS = "needs_escalation"',
+            ),
+            _AllowedLocation("agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py", "needs_escalation"),
+            _AllowedLocation(
+                "agent-toolkit/skills/session-review/scripts/session_review_candidates_test.py", "needs_escalation"
+            ),
+            # 日付の付いた過去の障害記録
+            _AllowedLocation("docs/development/incidents*.md"),
+            # 登録した語の不在を確かめる本テスト
+            _AllowedLocation("retired_terms_invariant_test.py"),
+        ),
+    ),
 )
+
+
+# 規範の再構築の判定台帳は、基準commitの条文の先頭を逐語で抜粋した記録であり、撤去前の名称を含む。
+# 撤去語ごとの許容箇所ではなく、全ての撤去語に共通する許容箇所として扱う。
+_VERBATIM_RECORD_LOCATIONS = (_AllowedLocation("docs/development/norm-restructure/*.tsv"),)
 
 
 def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = _RETIRED_TERMS) -> list[str]:
@@ -482,7 +509,7 @@ def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = 
         assert proc.returncode == 0, proc.stderr
         for record in proc.stdout.splitlines():
             path, line_number, line = record.split("\0", 2)
-            if any(location.allows(path, line) for location in retired.allowed):
+            if any(location.allows(path, line) for location in (*retired.allowed, *_VERBATIM_RECORD_LOCATIONS)):
                 continue
             violations.append(
                 f"{path}:{line_number}: 撤去した名称「{retired.term}」が残っている。正式名「{retired.replacement}」へ置き換える"

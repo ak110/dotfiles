@@ -11,6 +11,14 @@ description: >
 
 本スキルは本リポジトリのコマンドラインツールと開発スクリプトの配置規約・実装規約を提供する。
 
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `bin/`配下の`*.cmd`を書込ツールで扱う前 | `agent-toolkit:writing-standards`の`references/encoding.md` |
+| `rust/`配下のクレートを編集する前 | `agent-toolkit:writing-standards`の`references/rust.md` |
+| 不変条件のテストの検証対象を探索する時 | `agent-toolkit:check-execution`の`references/verification-scope.md` |
+
 ## 配置規約
 
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュール
@@ -58,7 +66,7 @@ description: >
   個々のテストと編集対象の対応表を規範へ増やさない
 - テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`へ集約する。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
-  共通化が必要な場合は`agent-toolkit-edit`スキル「scripts配下の配置」節が定めるテスト専用パッケージへ置く
+  共通化が必要な場合は`agent-toolkit-edit`スキルの`references/distribution-and-hooks.md`「scripts配下の配置」が定めるテスト専用パッケージへ置く
 - `pytools`パッケージ配布物にテストコードを含めないため、
   `[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を除外する
 - `scripts/`配下はpytestのprependモードで`sys.path`へ自動追加されるためテストから直接importできる。

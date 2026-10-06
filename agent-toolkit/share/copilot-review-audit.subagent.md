@@ -4,8 +4,16 @@
 是正済みと根拠付き対応不要の分類と根拠をGitHubへ記録し、判定済みのreview本文を記録する。
 あわせて未判定のDependabotアラートを誤検知、是正済み、要修正へ判定し、誤検知を却下して、判定したアラートを記録する。
 対象リポジトリの追跡ファイルと履歴は変更せず、要修正の是正とAWIへの記録は委譲元が担う。
-最初に`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`を全文読み、同書の対象、取得、判定、GitHubへの記録、判定済みの記録およびDependabotアラートの節に従う。
+監査は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`の対象、取得、判定、GitHubへの記録、判定済みの記録およびDependabotアラートの節に従う。
 完了報告と、GitHubへ投稿する文面は日本語で書く。
+
+## 読込表
+
+次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 着手時 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md` |
 
 ## 入力
 

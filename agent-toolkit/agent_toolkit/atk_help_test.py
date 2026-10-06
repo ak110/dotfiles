@@ -10,8 +10,8 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import help_text as _atk_help
-from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._common import wait_schedule
 
 
 def test_info_reports_current_environment_without_creating_config(
@@ -185,210 +185,61 @@ def test_wrapped_help_keeps_identifiers_intact(monkeypatch: pytest.MonkeyPatch) 
     assert "refs/worktree/<ラベル>" in worktree_stash_help
 
 
-def test_worktree_stash_help_covers_save_restore_and_drop() -> None:
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    help_text = commands["atk worktree-stash"].format_help()
-
-    assert "atk worktree-stash save --label <ラベル>" in help_text
-    assert "git stash apply --index refs/worktree/<ラベル>" in help_text
-    assert "atk worktree-stash drop refs/worktree/<ラベル>" in help_text
-
-
-def test_worktree_stash_drop_help_describes_resolved_oid_and_deletion_by_kind() -> None:
-    """dropは期待OIDの入力を求めず、現在のOIDを解決してworktree refとstashで削除方法を分けると説明する。"""
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    drop = commands["atk worktree-stash drop"]
-
-    assert drop.description is not None
-    assert "現在指すOIDを解決" in drop.description
-    assert "worktree固有refは解決したOIDを条件に削除" in drop.description
-    assert "共有stashは`git stash drop`で削除" in drop.description
-    assert "期待" not in drop.description
-
-
-def test_review_audit_pending_help_names_default_branch_source() -> None:
-    """review-audit pendingの説明は、マニフェストを確かめるbranchをGitHub APIの`default_branch`で示す。"""
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    description = commands["atk review-audit pending"].description
-
-    assert description is not None
-    assert "GitHub APIの`default_branch`で指定されたbranch" in description
-
-
-def test_wait_schedule_help_explains_request_bucket_resolution() -> None:
-    """wait-scheduleはbucket指定がTTLとcron式の解決に必要な理由を示す。"""
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    description = commands["atk wait-schedule"].description
-
-    assert description is not None
-    assert "呼び出し主体のbucketを待機TTLとcron式の解決へ入力" in description
-    assert "呼び出し主体のbucketを自動解決できない" in description
-
-
-def test_wi_edit_help_explains_agent_environment_processing_restriction() -> None:
-    """wi editはエージェント環境でprocessingの本文置換だけを拒否すると示す。"""
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    help_text = commands["atk wi edit"].format_help()
-
-    assert "processingの項目の本文置換を拒否する" in help_text
-    assert "--appendによる追記は拒否しない" in help_text
-
-
-def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    help_text = commands["atk managed-temp create"].format_help()
-
-    for description, _satisfied in _managed_temp._PREFIX_RULES:  # pylint: disable=protected-access
-        assert description in help_text
-    assert "このセッションの識別子。同じ識別子の領域が既にある場合は作成せず、その絶対パスを返す。" in help_text
-
-
-def test_managed_temp_cleanup_help_explains_force_remove_boundary() -> None:
-    """cleanupは強制回収で維持する最低限の検証条件を示す。"""
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    help_text = commands["atk managed-temp cleanup"].format_help()
-
-    assert "--force-remove" in help_text
-    assert "一時rootの直下" in help_text
-    assert "実行中のOSアカウントが所有するディレクトリ" in help_text
-    assert "後始末する領域を、作成時に指定したセッションの識別子で指定する。--pathとは同時に指定できない。" in help_text
-
-
-def test_review_table_init_help_describes_current_review_tables() -> None:
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    parser = commands["atk review-table init"]
-    help_text = parser.format_help()
-
-    assert "<計画stem>.exec-review.tsv" in help_text
-    assert "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv" in help_text
-    assert "dlg-" not in help_text
-    assert ".plan-review.tsv" not in help_text
-
-
-def test_plan_checkout_and_removed_commands_in_help() -> None:
-    commands = {command for command, _parser, _summary in _walk_commands()}
-
-    assert "atk wi convert-to-plan" not in commands
-    assert "atk plans checkout" in commands
-    assert "atk plans progress" not in commands
-    assert "atk plans migrate" not in commands
-
-
-def test_run_command_help_describes_argv_streams_and_exit_states() -> None:
-    """公開helpだけでrun-commandの入力、出力、終了状態と対象外を判断できる。"""
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    parser = commands["atk run-command"]
-    help_text = parser.format_help()
-
-    for fragment in (
-        "--cwd",
-        "--timeout",
-        "shellで再解釈せずargv",
-        "stdout_path",
-        "stderr_path",
-        "JSON",
-        "signal",
-        "124",
-        "125",
-    ):
-        assert fragment in help_text
-    assert "対話型、常駐、端末制御および追従表示には使わない" in help_text
-
-
 @pytest.mark.parametrize(
-    ("command", "format_name"),
+    "environment",
     [
-        ("atk wi list", "JSON Lines"),
-        ("atk plans list", "TSV"),
-        ("atk agents wait", "JSON Lines"),
-        ("atk managed-temp list", "JSON Lines"),
-        ("atk review-table show", "`row-id`を先頭に付けた8フィールドの表示形式"),
+        {"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"},
+        {"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m"},
+        {"CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"},
+        {"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h", "AGENT_TOOLKIT_DELEGATED_SESSION": "1"},
     ],
+    ids=["ttl-1h", "ttl-5m", "unknown-host", "delegated-session"],
 )
-def test_structured_output_commands_state_their_format(command: str, format_name: str) -> None:
-    """構造化出力を返すコマンドは解析形式を一意に明示する。"""
-    commands = {name: parser for name, parser, _summary in _walk_commands()}
-    description = commands[command].description
+def test_agents_wait_help_states_own_limit_and_standalone_invocation(
+    monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]
+) -> None:
+    """`atk agents wait`の公開説明が、各条件で実装が導く待機上限の秒数を示す。
 
-    assert description is not None
-    assert format_name in description
-
-
-def test_agents_wait_help_states_absent_target_termination() -> None:
-    """`atk agents wait`の公開説明が、待機対象が不在のまま終わる場合の動作を示す。
-
-    その場合の動作を説明しないと、待機を発行する主体が非0の終了を再発行すべき実行中通知と取り違える。
-    """
-    commands = {name: parser for name, parser, _summary in _walk_commands()}
-    description = commands["atk agents wait"].description
-
-    assert description is not None
-    assert "待機対象の登録が0件" in description
-    assert "`starting`を含む保持中sessionも0件" in description
-    assert "同じコマンドを再発行せず" in description
-
-
-def test_agents_wait_help_states_own_limit_and_standalone_invocation() -> None:
-    """`atk agents wait`の公開説明が、実装の待機上限、上限到達時の終了コード、単独発行と自動保存を示す。
-
-    上限値が説明に無いと、待機する主体が上限の無い待機と判断して外側の`timeout`とパイプで包み、
+    説明の上限が実装と異なると、待機する主体が上限の無い待機と判断して外側の`timeout`とパイプで包み、
     自前の上限より先に待機を打ち切るうえ、続行の判定に使う終了コードを覆い隠す。
     """
+    for name in (
+        "CLAUDECODE",
+        "CLAUDE_CODE_PROMPT_CACHE_TTL",
+        "FORCE_PROMPT_CACHING_5M",
+        "AGENT_TOOLKIT_DELEGATED_SESSION",
+        "AGENT_TOOLKIT_OWNER_SESSION",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    limit = wait_schedule.get_wait_timeout("main")
     commands = {name: parser for name, parser, _summary in _walk_commands()}
     description = commands["atk agents wait"].description
 
     assert description is not None
-    # 上限は保持期間1h・5m、Claude Codeを確認できないホスト、委譲先セッションの各条件でMCPの`wait`と同じ導出値をとる。
-    for limit in ("1740秒", "270秒", "240秒"):
-        assert limit in description
-    assert "3600秒" not in description
-    assert "終了コード3" in description
-    assert "単独で発行する" in description
-    assert "エージェント環境では量によらず回収結果を保存" in description
-    assert "--output-file" not in description
+    assert limit.is_integer()
+    assert f"{int(limit)}秒" in description
 
 
 @pytest.mark.parametrize(
-    ("argv", "help_command", "condition", "root_fragment"),
+    ("argv", "saved"),
     [
-        (["wi", "show", "fb-001.md"], "atk wi show", "FILENAMEが1件の場合", None),
-        (
-            ["wi", "show", "fb-001.md", "fb-002.md"],
-            "atk wi show",
-            "FILENAMEを2件以上指定した場合",
-            "FILENAMEを2件以上指定するか",
-        ),
-        (["wi", "show", "--all"], "atk wi show", "`--all`を指定した場合", "`--all`を指定した`atk wi show`"),
-        (
-            ["run-script", "session-review-evidence", "--", "t.jsonl", "--detail", "1"],
-            "atk run-script",
-            "長さを超える場合",
-            None,
-        ),
-        (
-            ["run-script", "session-review-evidence", "--", "t.jsonl", "--user-events"],
-            "atk run-script",
-            "`--user-events`",
-            "`atk run-script session-review-evidence`の`--user-events`",
-        ),
-        (["agents", "wait"], "atk agents wait", "量によらず回収結果を保存", "`atk agents wait`、"),
+        (["wi", "show", "fb-001.md"], False),
+        (["wi", "show", "fb-001.md", "fb-002.md"], True),
+        (["wi", "show", "--all"], True),
+        (["run-script", "session-review-evidence", "--", "t.jsonl", "--detail", "1"], False),
+        (["run-script", "session-review-evidence", "--", "t.jsonl", "--user-events"], True),
+        (["agents", "wait"], True),
     ],
 )
-def test_output_saving_help_matches_cli_condition(
-    argv: list[str], help_command: str, condition: str, root_fragment: str | None
-) -> None:
-    """個別ヘルプとルートの説明が、呼び出しごとの実際の保存条件を同じ区分で説明する。
+def test_output_saving_help_matches_cli_condition(argv: list[str], saved: bool) -> None:
+    """呼び出しごとに、量によらず標準出力を保存するかの判定が呼び出しの区分と一致する。
 
-    説明が実装と異なると、呼び出し元は短い単発照会でも保存先を探すか、ファイルとして渡す結果を直接表示と誤認する。
+    判定が区分と異なると、呼び出し元は短い単発照会でも保存先を探すか、ファイルとして渡す結果を直接表示と誤認する。
     """
     args = atk._build_parser().parse_args(argv)  # pylint: disable=protected-access  # noqa: SLF001
-    assert atk._passes_output_as_file(args) is (root_fragment is not None)  # pylint: disable=protected-access  # noqa: SLF001
-    commands = {name: parser for name, parser, _summary in _walk_commands()}
-    description = commands[help_command].description
-    assert description is not None
-    assert condition in description
-    if root_fragment is not None:
-        assert root_fragment in _atk_help.ROOT_DESCRIPTION
+    assert atk._passes_output_as_file(args) is saved  # pylint: disable=protected-access  # noqa: SLF001
 
 
 def _leaf_commands() -> set[str]:

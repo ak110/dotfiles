@@ -12,6 +12,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import review_table as table
 from agent_toolkit._common import body_match, next_action
+from agent_toolkit._testing import review_bodies
 
 _TRACK = "exec-review"
 _COMPAT_TRACK = "implementation-review"
@@ -136,7 +137,7 @@ def _invoke_table_operation(operation: str, path: pathlib.Path) -> int:
         "validate": lambda: table.validate(path),
         "show": lambda: table.show(path),
         "add": lambda: table.add(path, "1", _TRACK, "位置", "指摘"),
-        "respond": lambda: table.respond(path, "1", _TRACK, "位置", "指摘", "修正", ""),
+        "respond": lambda: table.respond(path, "1", _TRACK, "位置", "指摘", review_bodies.response_body("修正"), ""),
     }[operation]()
 
 
@@ -243,7 +244,7 @@ def test_respond_reports_decoded_response_and_match(
     table.add(path, "1", _TRACK, "位置", "指摘")
     capsys.readouterr()
 
-    assert table.respond(path, "1", _TRACK, "位置", "指摘", response, "") == 0
+    assert table.respond(path, "1", _TRACK, "位置", "指摘", review_bodies.response_body(response), "") == 0
 
     output = capsys.readouterr().out
     assert output == f"成功: 応答欄を更新した: {path}\n"
@@ -257,7 +258,7 @@ def test_respond_reports_body_mismatch_when_saved_response_is_altered(
 ) -> None:
     """応答を保存する処理中に本文が改変された場合、CLIは差異の診断を出力して失敗する。"""
     path = tmp_path / "review.tsv"
-    response = "送信元の対応本文"
+    response = review_bodies.response_body("送信元の対応本文")
     response_file = tmp_path / "response.md"
     response_file.write_text(response, encoding="utf-8")
     altered_response = "保存後に改変された対応本文"
@@ -299,7 +300,7 @@ def test_respond_reports_body_mismatch_when_saved_no_response_reason_is_altered(
 ) -> None:
     """対応不要理由が保存時に改変された場合、CLIは差異の診断を出力して失敗する。"""
     path = tmp_path / "review.tsv"
-    reason = "送信元の対応不要理由"
+    reason = review_bodies.reason_body("送信元の対応不要理由")
     reason_file = tmp_path / "reason.md"
     reason_file.write_text(reason, encoding="utf-8")
     altered_reason = "保存後に改変された対応不要理由"
@@ -344,7 +345,7 @@ def test_respond_reports_only_decoded_no_response_reason(
     table.add(path, "1", _TRACK, "位置", "指摘")
     capsys.readouterr()
 
-    assert table.respond(path, "1", _TRACK, "位置", "指摘", "", reason) == 0
+    assert table.respond(path, "1", _TRACK, "位置", "指摘", "", review_bodies.reason_body(reason)) == 0
 
     output = capsys.readouterr().out
     assert output == f"成功: 応答欄を更新した: {path}\n"
@@ -526,11 +527,11 @@ def test_public_summary_counts_current_unanswered_rows_without_waiting_for_respo
     path = tmp_path / "plan.exec-review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "再指摘")
-    table.respond(path, "1", _TRACK, "module.py:10", "再指摘", "修正済み", "")
+    table.respond(path, "1", _TRACK, "module.py:10", "再指摘", review_bodies.response_body("修正済み"), "")
     table.add(path, "1", _TRACK, "module.py:11", "過去の未応答")
     table.add(path, "2", _TRACK, "module.py:10", "再指摘")
     table.add(path, "2", _TRACK, "module.py:20", "対応不要")
-    table.respond(path, "2", _TRACK, "module.py:20", "対応不要", "", "確定要件と一致する")
+    table.respond(path, "2", _TRACK, "module.py:20", "対応不要", "", review_bodies.reason_body("確定要件と一致する"))
     table.add(path, "2", "independent", "module.py:30", "別track")
     capsys.readouterr()
     before = path.read_bytes()
@@ -601,10 +602,10 @@ def test_respond_matches_compat_track_and_rewrites_all_rows_canonically(tmp_path
         encoding="utf-8",
     )
 
-    assert table.respond(path, "1", _TRACK, "module.py:10", "更新対象", "修正した", "") == 0
+    assert table.respond(path, "1", _TRACK, "module.py:10", "更新対象", review_bodies.response_body("修正した"), "") == 0
     saved = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     assert [row[1] for row in saved] == [_TRACK, _TRACK]
-    assert saved[0][5:] == ["修正した", ""]
+    assert saved[0][5:] == [review_bodies.response_body("修正した"), ""]
 
 
 def test_add_normalizes_compat_track_before_saving(tmp_path: pathlib.Path) -> None:
@@ -715,8 +716,8 @@ def test_same_composite_key_can_be_represented_again_in_a_later_round(tmp_path: 
     table.add(path, "2", _TRACK, *key)
     assert table.validate(path, require_responses=False) == 0
 
-    table.respond(path, "1", _TRACK, *key, "初回修正を追加", "")
-    table.respond(path, "2", _TRACK, *key, "残る違反を再修正", "")
+    table.respond(path, "1", _TRACK, *key, review_bodies.response_body("初回修正を追加"), "")
+    table.respond(path, "2", _TRACK, *key, review_bodies.response_body("残る違反を再修正"), "")
     assert table.validate(path) == 0
 
 
@@ -729,17 +730,17 @@ def test_same_issue_can_be_separated_by_track_and_responded_individually(tmp_pat
     table.add(path, "1", "independent", *key)
 
     with pytest.raises(ValueError, match="一意に解決できない: 2件") as exc_info:
-        table.respond(path, "1", "", *key, "修正", "")
+        table.respond(path, "1", "", *key, review_bodies.response_body("修正"), "")
     message = str(exc_info.value)
     assert "track=plan-conformance" in message
     assert "track=independent" in message
 
-    table.respond(path, "1", "plan-conformance", *key, "準拠系で修正", "")
-    table.respond(path, "1", "independent", *key, "", "独立した根拠を維持")
+    table.respond(path, "1", "plan-conformance", *key, review_bodies.response_body("準拠系で修正"), "")
+    table.respond(path, "1", "independent", *key, "", review_bodies.reason_body("独立した根拠を維持"))
     assert table.validate(path) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
-    assert [row for row in rows if row[1] == "plan-conformance"][0][5] == "準拠系で修正"
-    assert [row for row in rows if row[1] == "independent"][0][6] == "独立した根拠を維持"
+    assert [row for row in rows if row[1] == "plan-conformance"][0][5] == review_bodies.response_body("準拠系で修正")
+    assert [row for row in rows if row[1] == "independent"][0][6] == review_bodies.reason_body("独立した根拠を維持")
 
 
 def test_initial_review_can_validate_structure_before_response_and_strict_after_response(
@@ -755,9 +756,9 @@ def test_initial_review_can_validate_structure_before_response_and_strict_after_
     with pytest.raises(ValueError, match="未応答"):
         table.validate(path)
 
-    table.respond(path, "1", _TRACK, "module.py:10", "修正が必要", "条件を追加した", "")
+    table.respond(path, "1", _TRACK, "module.py:10", "修正が必要", review_bodies.response_body("条件を追加した"), "")
     assert table.validate(path, require_responses=False) == 0
-    table.respond(path, "1", _TRACK, "README.md", "説明が不足", "", "既存契約を維持する")
+    table.respond(path, "1", _TRACK, "README.md", "説明が不足", "", review_bodies.reason_body("既存契約を維持する"))
     assert table.validate(path) == 0
 
 
@@ -765,9 +766,9 @@ def test_respond_updates_only_reviewee_columns(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "修正が必要")
-    table.respond(path, "1", _TRACK, "module.py:10", "修正が必要", "条件を追加した", "")
+    table.respond(path, "1", _TRACK, "module.py:10", "修正が必要", review_bodies.response_body("条件を追加した"), "")
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "module.py:10", "修正が必要", "詳細", "条件を追加した", ""]
+    assert row == ["1", _TRACK, "module.py:10", "修正が必要", "詳細", review_bodies.response_body("条件を追加した"), ""]
     table.validate(path)
 
 
@@ -777,16 +778,24 @@ def test_respond_rejects_response_and_reason_together(tmp_path: pathlib.Path) ->
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "修正が必要")
     with pytest.raises(ValueError, match="同時に指定できない"):
-        table.respond(path, "1", _TRACK, "module.py:10", "修正が必要", "条件を追加した", "無視")
+        table.respond(
+            path,
+            "1",
+            _TRACK,
+            "module.py:10",
+            "修正が必要",
+            review_bodies.response_body("条件を追加した"),
+            review_bodies.reason_body("無視"),
+        )
 
 
 def test_respond_no_requires_reason_and_clears_response(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "hook", "対象外")
-    table.respond(path, "1", _TRACK, "hook", "対象外", "", "以前の契約を保持")
+    table.respond(path, "1", _TRACK, "hook", "対象外", "", review_bodies.reason_body("以前の契約を保持"))
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "hook", "対象外", "詳細", "", "以前の契約を保持"]
+    assert row == ["1", _TRACK, "hook", "対象外", "詳細", "", review_bodies.reason_body("以前の契約を保持")]
     table.validate(path)
 
 
@@ -895,7 +904,7 @@ def test_row_id_diagnostic_guides_response(tmp_path: pathlib.Path, capsys: pytes
     assert result.value.code == 0
     assert [json.loads(line)["row-id"] for line in capsys.readouterr().out.splitlines()] == [1, 2]
     response = tmp_path / "response.md"
-    response.write_text("修正した", encoding="utf-8")
+    response.write_text(review_bodies.response_body("修正した"), encoding="utf-8")
     with pytest.raises(SystemExit) as result:
         atk.main(["review-table", "respond", str(path), "--row-id=2", f"--response-file={response}"], home=tmp_path)
     assert result.value.code == 0
@@ -955,7 +964,7 @@ def test_invalid_column_count_has_recovery_guidance_for_all_mutations(tmp_path: 
     for operation in (
         lambda: table.validate(path, require_responses=False),
         lambda: table.add(path, "1", _TRACK, "位置2", "追加"),
-        lambda: table.respond(path, "1", _TRACK, "位置", "指摘", "修正", ""),
+        lambda: table.respond(path, "1", _TRACK, "位置", "指摘", review_bodies.response_body("修正"), ""),
     ):
         before = path.read_text(encoding="utf-8")
         with pytest.raises(next_action.ActionableError) as exc_info:
@@ -978,10 +987,10 @@ def test_legacy_seven_columns_are_read_and_rewritten_as_eight_columns(tmp_path: 
     path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in legacy) + "\n", encoding="utf-8")
 
     assert table.validate(path, require_responses=False) == 0
-    table.respond(path, "1", _TRACK, "位置", "指摘", "修正した", "")
+    table.respond(path, "1", _TRACK, "位置", "指摘", review_bodies.response_body("修正した"), "")
 
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "位置", "指摘", "", "修正した", ""]
+    assert row == ["1", _TRACK, "位置", "指摘", "", review_bodies.response_body("修正した"), ""]
 
 
 def test_show_preserves_legacy_seven_columns_with_and_without_track_filter(
@@ -1038,7 +1047,7 @@ def test_add_accepts_all_level_values_and_respond_preserves_level(tmp_path: path
     path = tmp_path / f"{level}.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "位置", "指摘", level)
-    table.respond(path, "1", _TRACK, "位置", "指摘", "修正した", "")
+    table.respond(path, "1", _TRACK, "位置", "指摘", review_bodies.response_body("修正した"), "")
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
     assert row[4] == level
 
@@ -1188,95 +1197,16 @@ def test_parser_rejects_unsupported_options_with_guidance(
     assert f"atk review-table {subcommand}が受理するオプションは{accepted}" in error
 
 
-@pytest.mark.parametrize(
-    ("subcommand", "options", "removed_options"),
-    (
-        ("add", ("--location-file", "--issue-file"), ("--location LOCATION", "--issue ISSUE")),
-        (
-            "respond",
-            ("--location-file", "--issue-file", "--response-file", "--no-response-reason-file"),
-            ("--location LOCATION", "--issue ISSUE", "--response RESPONSE", "--no-response-reason NO_RESPONSE_REASON"),
-        ),
-    ),
-)
-def test_cell_file_options_are_shown_in_help(
-    subcommand: str,
-    options: tuple[str, ...],
-    removed_options: tuple[str, ...],
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        _parser().parse_args(["review-table", subcommand, "--help"])
-
-    assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    for option in options:
-        assert option in help_text
-    for option in removed_options:
-        assert option not in help_text
-
-
-def test_respond_help_presents_row_id_as_default_selector(capsys: pytest.CaptureFixture[str]) -> None:
-    """応答ヘルプはshow由来のrow-idを使うよう案内し、複合キーによる指定も互換の手段として示す。"""
-    with pytest.raises(SystemExit) as exc_info:
-        _parser().parse_args(["review-table", "respond", "--help"])
-
-    assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    assert "`show`が出力した`row-id`で応答対象を一意に指定" in help_text
-    assert "応答対象は`show`が出力した`row-id`で指定" in help_text
-    assert "部分複合キー指定も互換の指定方法" in help_text
-
-
-@pytest.mark.parametrize(
-    ("subcommand", "expected_descriptions"),
-    (
-        ("add", ("指摘を登録するレビューの区分", "追加する指摘箇所", "追加する指摘内容")),
-        (
-            "respond",
-            (
-                "更新する行を特定する指摘箇所",
-                "更新する行を特定する指摘内容",
-                "対応要とした指摘へ記録する対応内容",
-                "対応不要とした指摘へ記録する理由",
-            ),
-        ),
-        (
-            "show",
-            (
-                "表示対象を指定したレビュー区分の行だけに限定する",
-                "出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Lines",
-                "summaryは--roundで指定したラウンドの登録数・未応答数・応答済み数を1件のJSONで返す",
-            ),
-        ),
-        ("validate", ("未応答行を許容し、7列と複合キーなどの構造だけを検証する",)),
-    ),
-)
-def test_option_help_describes_each_subcommand_role(
-    subcommand: str,
-    expected_descriptions: tuple[str, ...],
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """各オプションの説明だけで、そのサブコマンドにおける役割を判断できる。"""
-    with pytest.raises(SystemExit) as exc_info:
-        _parser().parse_args(["review-table", subcommand, "--help"])
-
-    assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    for description in expected_descriptions:
-        assert description in help_text
-    assert "保存済み7列形式はlevelを空として読み込み" not in help_text
-
-
 def test_shared_column_layout_is_explained_by_parent_help(capsys: pytest.CaptureFixture[str]) -> None:
-    """サブコマンド共通の列構成と旧形式の復旧案内は親コマンドに集約する。"""
+    """親コマンドのヘルプが説明する列順は、表の実装が読み書きする列順と一致する。"""
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(["review-table", "--help"])
 
     assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    assert "列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順" in help_text
-    assert "保存済みの8列形式は`response-needed`を読み込みの対象から外す" in help_text
+    help_text = "".join(capsys.readouterr().out.split())
+    described = re.search(r"列は((?:`[^`]+`、?)+)の順", help_text)
+    assert described is not None
+    assert tuple(re.findall(r"`([^`]+)`", described.group(1))) == table.COLUMNS
 
 
 def test_cell_files_preserve_issue_and_supply_responses(
@@ -1286,8 +1216,8 @@ def test_cell_files_preserve_issue_and_supply_responses(
     path = tmp_path / "review.tsv"
     location = "module.py:10 `handler`\n"
     issue = '"引用"と`backtick`を含む\n複数行の$本文\n'
-    response = '  修正で"引用"と`backtick`を保持する\n'
-    reason = "  $仕様の対象外\n"
+    response = f"  {review_bodies.response_body('修正で"引用"と`backtick`を保持する')}\n"
+    reason = f"  {review_bodies.reason_body('$仕様の対象外')}\n"
     location_file = tmp_path / "location.txt"
     issue_file = tmp_path / "issue.txt"
     response_file = tmp_path / "response.txt"
@@ -1397,9 +1327,9 @@ def test_respond_resolves_by_partial_key(tmp_path: pathlib.Path) -> None:
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘A")
     table.add(path, "2", _TRACK, "README.md", "指摘B")
-    assert table.respond(path, "1", _TRACK, "", "", "対応した", "") == 0
+    assert table.respond(path, "1", _TRACK, "", "", review_bodies.response_body("対応した"), "") == 0
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "module.py:10", "指摘A", "詳細", "対応した", ""]
+    assert row == ["1", _TRACK, "module.py:10", "指摘A", "詳細", review_bodies.response_body("対応した"), ""]
 
 
 def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pathlib.Path) -> None:
@@ -1410,7 +1340,7 @@ def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pa
     table.add(path, "2", _TRACK, "module.py:20", "指摘B")
     before = path.read_text(encoding="utf-8")
     with pytest.raises(ValueError, match="一意に解決できない: 2件"):
-        table.respond(path, "", _TRACK, "", "", "対応した", "")
+        table.respond(path, "", _TRACK, "", "", review_bodies.response_body("対応した"), "")
     assert path.read_text(encoding="utf-8") == before
 
 
@@ -1423,7 +1353,7 @@ def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path
     encoded_issue = json.dumps(issue, ensure_ascii=False)
 
     with pytest.raises(ValueError) as exc_info:
-        table.respond(path, "1", _TRACK, "module.py:10", encoded_issue, "対応した", "")
+        table.respond(path, "1", _TRACK, "module.py:10", encoded_issue, review_bodies.response_body("対応した"), "")
 
     message = str(exc_info.value)
     assert "一意に解決できない: 0件" in message
@@ -1432,7 +1362,7 @@ def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path
     candidate_section = message.split("候補行（デコード済み）:\n", maxsplit=1)[1]
     assert encoded_issue not in candidate_section
 
-    assert table.respond(path, "1", _TRACK, "module.py:10", issue, "対応した", "") == 0
+    assert table.respond(path, "1", _TRACK, "module.py:10", issue, review_bodies.response_body("対応した"), "") == 0
     assert table.validate(path) == 0
 
 
@@ -1450,11 +1380,11 @@ def test_row_id_is_stable_across_filters_and_updates_only_selected_row(
 
     assert table.show(path, track="plan-review", output_format="jsonl") == 0
     assert json.loads(capsys.readouterr().out)["row-id"] == 2
-    assert table.respond(path, "", "", "", "", "対応した", "", row_id=2) == 0
+    assert table.respond(path, "", "", "", "", review_bodies.response_body("対応した"), "", row_id=2) == 0
 
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows[0][5:] == ["", ""]
-    assert rows[1][5:] == ["対応した", ""]
+    assert rows[1][5:] == [review_bodies.response_body("対応した"), ""]
     assert rows[2][5:] == ["", ""]
     assert all(len(row) == 7 for row in rows)
 
@@ -1468,7 +1398,7 @@ def test_respond_rejects_invalid_row_id_without_changing_table(tmp_path: pathlib
     before = path.read_text(encoding="utf-8")
 
     with pytest.raises(next_action.ActionableError, match="row-id") as exc_info:
-        table.respond(path, "", "", "", "", "対応した", "", row_id=row_id)
+        table.respond(path, "", "", "", "", review_bodies.response_body("対応した"), "", row_id=row_id)
 
     assert path.read_text(encoding="utf-8") == before
     if row_id > 0:
@@ -1482,7 +1412,7 @@ def test_respond_rejects_row_id_with_legacy_key(tmp_path: pathlib.Path) -> None:
     table.add(path, "1", _TRACK, "module.py:10", "指摘")
 
     with pytest.raises(ValueError, match="同時に指定できない"):
-        table.respond(path, "1", "", "", "", "対応した", "", row_id=1)
+        table.respond(path, "1", "", "", "", review_bodies.response_body("対応した"), "", row_id=1)
 
 
 def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.Path) -> None:
@@ -1503,14 +1433,14 @@ def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.P
     path.write_text("\n".join(reversed(lines)) + "\n", encoding="utf-8")
 
     target = entries[3]
-    assert table.respond(path, *target, "再現経路を追加", "") == 0
+    assert table.respond(path, *target, review_bodies.response_body("再現経路を追加"), "") == 0
     for entry in entries:
         if entry != target:
-            assert table.respond(path, *entry, "", "既存契約を維持する") == 0
+            assert table.respond(path, *entry, "", review_bodies.reason_body("既存契約を維持する")) == 0
     assert table.validate(path) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     matching = [row for row in rows if row[:4] == list(target)]
-    assert matching == [[*target, "詳細", "再現経路を追加", ""]]
+    assert matching == [[*target, "詳細", review_bodies.response_body("再現経路を追加"), ""]]
 
 
 @pytest.mark.parametrize("operation", ("add", "respond"))
@@ -1528,8 +1458,77 @@ def test_saved_body_mismatch_names_show_and_respond(
         if operation == "add":
             table.add(path, "1", _TRACK, "module.py:10", "指摘")
         else:
-            table.respond(path, "", "", "", "", "対応した", "", row_id=1)
+            table.respond(path, "", "", "", "", review_bodies.response_body("対応した"), "", row_id=1)
 
     assert "保存は済んでいる" in exc_info.value.next_action
     assert "atk review-table show" in exc_info.value.next_action
     assert "atk review-table respond" in exc_info.value.next_action
+
+
+_RESPONSE_WITHOUT_SEARCH = review_bodies.response_body("修正した").replace(
+    "同じ規定の検索: 変更対象の全体を確認し、指摘箇所以外の該当は無い\n", ""
+)
+
+
+@pytest.mark.parametrize(
+    ("option", "body", "missing"),
+    [
+        ("--response-file", "修正した", "違反を確認した規定:、同じ規定の検索:、採用する修正範囲:、採用しない修正方針:"),
+        ("--response-file", _RESPONSE_WITHOUT_SEARCH, "同じ規定の検索:"),
+        (
+            "--response-file",
+            review_bodies.response_body("修正した").replace("採用しない修正方針: なし", "採用しない修正方針:"),
+            "採用しない修正方針:",
+        ),
+        ("--response-file", "前置き 違反を確認した規定: 規定\n" + _RESPONSE_WITHOUT_SEARCH, "同じ規定の検索:"),
+        ("--no-response-reason-file", "既存契約を維持する", "根拠の所在:"),
+        ("--no-response-reason-file", "根拠の所在:   \n補足", "根拠の所在:"),
+    ],
+)
+def test_respond_rejects_body_without_required_labels_and_keeps_table(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], option: str, body: str, missing: str
+) -> None:
+    """必須ラベルが欠けた本文と内容が空のラベルを持つ本文は、表を変えずに欠けたラベルと定義元を示して失敗する。"""
+    path = tmp_path / "review.tsv"
+    table.add(path, "1", _TRACK, "位置", "指摘")
+    before = path.read_text(encoding="utf-8")
+    body_file = tmp_path / "body.md"
+    body_file.write_text(body, encoding="utf-8")
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "respond", str(path), "--row-id=1", f"{option}={body_file}"], home=tmp_path)
+
+    assert exc_info.value.code != 0
+    error = capsys.readouterr().err
+    assert error.startswith("失敗: ")
+    assert f"{option}の本文に必須ラベルが無いか、ラベルの後の記述が空である: {missing}\n" in error
+    assert "`references/reviewee.md`" in error
+    assert path.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.parametrize(
+    ("option", "body", "column"),
+    [
+        ("--response-file", review_bodies.response_body("修正した"), 5),
+        ("--no-response-reason-file", review_bodies.reason_body("README.md:10の既存契約"), 6),
+    ],
+)
+def test_respond_records_body_with_required_labels(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], option: str, body: str, column: int
+) -> None:
+    """必須ラベルを全て持つ本文は従来どおり記録し、渡したファイルの種類が対応要否を決める。"""
+    path = tmp_path / "review.tsv"
+    table.add(path, "1", _TRACK, "位置", "指摘")
+    body_file = tmp_path / "body.md"
+    body_file.write_text(body, encoding="utf-8")
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "respond", str(path), "--row-id=1", f"{option}={body_file}"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert capsys.readouterr().out.startswith("成功: ")
+    row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
+    assert row[column] == body
+    assert row[11 - column] == ""

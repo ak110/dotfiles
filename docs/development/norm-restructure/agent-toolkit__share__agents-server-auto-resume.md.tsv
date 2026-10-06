@@ -1,0 +1,2 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/agents-server-auto-resume.md#委譲先完了後の自動再開#1	この実行環境は、あなたが`agents_server`で起動したsessionが	維持	自動再開の事実と待機表明でターンを終えてよいことを、自動再開がある`agents_server`の委譲先へ伝える配送文。I127で主体ごとの1文として維持すると判断済み。C01はagents-server-delegate-notice.md側の条件付けで解消済み	Q悪化（自動再開がある環境で前景待機を続け、時間上限で打ち切られる）、C変化なし、D悪化（待機の空転）		方針: `docs/development/concepts-runtime.md`「委譲の運用」	エージェント由来（C01の記録: 52bae8056と544e68c25、Claude trailerあり。`待機中:`の表記の最古の一致はb1a512946で、元は未確定）	不要（削除・縮小なし）	なし

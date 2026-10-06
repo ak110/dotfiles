@@ -31,8 +31,7 @@
 - テスト（inline, 最低限）
   - 単体テストは対象モジュール末尾の`#[cfg(test)] mod tests { ... }`に配置する
   - 統合テストはクレートルート直下の`tests/`に置く（後述の統合テスト節を参照）
-  - ポーリング + `thread::sleep`を避け、`crossbeam-channel::recv_timeout`などの確定待機を使う
-   （sleepループはflakyテストの主要因となるため）
+  - 同期点の待機（`testing.md`「安定性: flakyテスト防止」）には、`thread::sleep`のポーリングではなく`crossbeam-channel::recv_timeout`などの確定待機を使う
   - `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`（Rust 1.79+）でcompile-timeに行う
    （努力目標。実行時テストより早いビルド時に検出できるため）
 

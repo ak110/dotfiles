@@ -36,6 +36,10 @@ def test_subagent_outputs_have_recognized_first_lines() -> None:
         body = path.read_text(encoding="utf-8")
         output = body.split("\n## 出力\n", 1)[1].split("\n## ", 1)[0]
         match = re.search(r"```text\n([^\n]+)", output)
+        if match is None:
+            # `## 出力`が続行不能の形式を委譲時の厳守事項へ委ね、返却値を工程の節で定める担当は、
+            # 入力の宣言を除く本文中の最初の返却値で判定する。
+            match = re.search(r"```text\n((?!必須入力名:)[^\n]+)", body)
         assert match is not None, path
         first = match.group(1)
         assert (

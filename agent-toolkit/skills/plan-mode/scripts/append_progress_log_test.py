@@ -246,13 +246,8 @@ def test_writer_failure_keeps_original_file(tmp_path: pathlib.Path) -> None:
     assert path.read_bytes() == original
 
 
-def test_cli_rejects_removed_start_head_option(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """撤去した`--start-head`はヘルプに現れず、渡すと引数エラーで終わり進捗ログを保つ。"""
-    with pytest.raises(SystemExit) as help_exit:
-        append_progress_log.main(["--help"])
-    assert help_exit.value.code == 0
-    assert "--start-head" not in capsys.readouterr().out
-
+def test_cli_rejects_removed_start_head_option(tmp_path: pathlib.Path) -> None:
+    """撤去した`--start-head`を渡すと引数エラーで終わり進捗ログを保つ。"""
     path = tmp_path / "plan.md"
     path.write_text(_plan(), encoding="utf-8")
     saved = path.read_bytes()

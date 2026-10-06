@@ -25,7 +25,7 @@ Codexネイティブ委譲は`spawn_agent`で起動し、`send_message`は稼働
 
 agents_serverの`start`（全`mode`）はCodexネイティブ委譲とは別の仕組みであり、対応する`model_type`からengine、modelおよびeffortを解決する。通常起動の`start`（`task`の通常起動と`delegate`）は`_agents_server/state.py`が共通の`rules-subagent.md`をsystem promptへ加える。軽量な探索・書込・shell実行は常時規範を注入せず、委譲プロンプトが必要な制約を持つ。可用性失敗時の候補切替はサーバーへ委ね、委譲元の起動は最初の1回に限る。継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start`の`shell`、読取専用探索は`start`の`explore`を使い、`start`の説明が示す採算の目安に従う。
 
-工程別モデル設定のキーを持つ工程は`runtime-routing.md`でengineを解決する。`engine=claude`をCodexの`spawn_agent`へ置換せず、CodexからClaudeへは対応する`model_type`でagents_serverを使う。指定engineの実行手段がなければ同書の未完了または`needs_escalation`で返す。
+工程別モデル設定のキーを持つ工程は`runtime-routing.md`でengineを解決する。`engine=claude`をCodexの`spawn_agent`へ置換せず、CodexからClaudeへは対応する`model_type`でagents_serverを使う。指定engineの実行手段がなければ同書の未完了として返すか、続行できない理由を返す。
 
 ## agents_serverの二層待機
 

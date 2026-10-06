@@ -1207,24 +1207,6 @@ def test_note_file_rejects_relative_path_before_environment_changes(
     assert not (tmp_path / "private-notes").exists()
 
 
-@pytest.mark.parametrize("subcommand", ("adopt", "reject", "rm"))
-def test_note_file_help_describes_safe_absolute_path_use(
-    subcommand: str,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """3コマンドのヘルプは長文メモを安全な絶対パスで渡す用途を示す。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["wi", subcommand, "--help"])
-
-    assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    assert "引用符・改行・バッククォート" in help_text
-    assert "シェルのエスケープを介さず" in help_text
-    assert "UTF-8ファイルの絶対パス" in help_text
-
-
 def test_wi_pull_uses_lock_and_suppresses_entry_notification(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1294,60 +1276,6 @@ class TestLegacyTopLevelCommandAlias:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == current_output
         assert "fb-001.md" in current_output
-
-    def test_alias_is_absent_from_help_and_completion_choices(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """トップレベルのhelpと補完候補が現行名だけを示す。"""
-        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-
-        with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["--help"])
-        assert exc_info.value.code == 0
-        root_help = capsys.readouterr().out
-        assert "atk mq" not in root_help
-        assert "{info,commit,setup-project,wi," in root_help
-
-        with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["wi", "--help"])
-        assert exc_info.value.code == 0
-        assert "atk mq" not in capsys.readouterr().out
-
-        command_action = next(
-            action
-            for action in parser._actions  # pylint: disable=protected-access  # noqa: SLF001
-            if action.dest == "command"
-        )
-        assert command_action.choices is not None
-        assert "mq" not in list(command_action.choices)
-
-
-@pytest.mark.parametrize("command", ["add", "edit"])
-def test_body_text_arguments_are_absent_from_wi_help(
-    command: str,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """WI本文をコマンドライン文字列で渡す旧受理形式をhelpへ表示しない。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["wi", command, "--help"])
-
-    assert exc_info.value.code == 0
-    output = capsys.readouterr().out
-    assert "MESSAGE" not in output
-    assert "--message" not in output
-
-
-@pytest.mark.parametrize("command", ("add", "edit"))
-def test_plan_file_option_is_absent_from_wi_help(command: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """計画型AWIを生成する旧plan-fileオプションを公開helpへ表示しない。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["wi", command, "--help"])
-
-    assert exc_info.value.code == 0
-    output = capsys.readouterr().out
-    assert "--plan-file" not in output
 
 
 def test_set_dependencies_parser_accepts_repeated_dependencies() -> None:
@@ -1446,36 +1374,6 @@ class TestAddTargetRepoOptionParser:
         args = parser.parse_args(["wi", "add", *type_option, "--target-repo", "github.com/foo/bar"])
         assert args.target_repo == "github.com/foo/bar"
 
-    def test_add_help_describes_explicit_worktree_resolution(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """addの案内がREPO_PATHとtarget_repo指定の解決先を区別する。"""
-        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-
-        with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["wi", "add", "--help"])
-
-        assert exc_info.value.code == 0
-        output = capsys.readouterr().out
-        normalized_output = "".join(output.split())
-        assert "ローカルパス指定時は指定worktree" in normalized_output
-        assert "正規化リモートURL指定時はローカルHEADを持たない" in normalized_output
-
-
-@pytest.mark.parametrize("subcommand", ["adopt", "reject"])
-def test_transition_commit_help_describes_worktree_resolution_before_mutation(
-    subcommand: str,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """採否のcommit案内がworktreeの指定と、解決不能時の状態変更前の停止を説明する。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["wi", subcommand, "--help"])
-    assert exc_info.value.code == 0
-    output = capsys.readouterr().out
-    assert "ローカルworktreeとrevisionを検証" in output
-    assert "終了コード2で状態変更前に停止" in output
-    assert "対象worktreeの絶対パスを--target-repoへ指定" in output
-    assert "対応付けできない場合は警告" not in output
-
 
 def test_process_loop_abort_commands_report_and_transition_state(
     tmp_path: pathlib.Path,
@@ -1516,24 +1414,6 @@ def test_process_loop_instruction_commands_complete_storage_cycle(
             atk.main(["wi", "process-loop", *argv], home=tmp_path)
         assert exc_info.value.code == 0
         assert expected in capsys.readouterr().out
-
-
-@pytest.mark.parametrize(
-    "subcommand",
-    ["abort", "abort-cancel", "status", "instruct", "instruct-cancel"],
-)
-def test_process_loop_subcommand_help_is_available(
-    subcommand: str,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """process-loopの各サブコマンドが個別のヘルプを表示する。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["wi", "process-loop", subcommand, "--help"])
-
-    assert exc_info.value.code == 0
-    assert f"atk wi process-loop {subcommand}" in capsys.readouterr().out
 
 
 def test_add_output_reloads_saved_metadata(
@@ -1784,18 +1664,6 @@ class TestSpaceSeparatedOptionWithoutWarning:
         assert exc_info.value.code == 0
         assert "VALUE形式" not in capsys.readouterr().err
 
-    @pytest.mark.parametrize("subcommand", ("adopt", "reject"))
-    def test_help_keeps_recommended_equals_form(self, subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
-        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-
-        with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["wi", subcommand, "--help"])
-
-        assert exc_info.value.code == 0
-        help_text = capsys.readouterr().out
-        assert "--note=VALUE形式で渡すことを推奨" in help_text
-        assert "--commit=VALUE形式で渡すことを推奨" in help_text
-
 
 @pytest.mark.parametrize("agent_environment", [False, True], ids=["human", "agent"])
 def test_wi_commands_report_only_their_results_with_pending_questions(
@@ -1885,18 +1753,6 @@ class TestPrivateNotesMissing:
         assert "WI保存ディレクトリが見つからない" in captured.err
         assert "\n次の操作: " in captured.err
         assert "AGENT_TOOLKIT_PRIVATE_NOTES" in captured.err.split("\n次の操作: ", 1)[1]
-
-
-class TestNoSubcommand:
-    """サブコマンド未指定時にコマンド一覧を標準出力へ表示すること。"""
-
-    def test_prints_help(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """サブコマンド未指定の場合はhelpを表示して正常終了する。"""
-        atk.main([])
-
-        captured = capsys.readouterr()
-        assert "使い方: atk" in captured.out
-        assert captured.err == ""
 
 
 class TestAddSingleMessage:

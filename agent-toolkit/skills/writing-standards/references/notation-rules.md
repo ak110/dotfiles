@@ -21,7 +21,7 @@ textlintの`preset-jtf-style`でチェックされる項目は同プリセット
 ```
 
 - 人を指す呼称は`agent-toolkit/rules/01-agent.md`「役割分担」の定義に従う。要求・指示・回答・合意・承認を与える人は「ユーザー」、成果物を使う人は「エンドユーザー」（ユーザーを含む）と書く。特定の成果物を使う人は「dotfilesユーザー」「agent-toolkitユーザー」のように対象を添えた呼称で書く。開発者やエージェントが読む説明では「利用者」を対象の範囲があいまいな呼称として新しい説明文に使わない。成果物を使う人自身が読むガイドの見出しや案内では、読み手に自然な「利用者向け」を使う。人以外も含む対象は「消費主体」、OS上の所有者や権限の主体は「実行中のOSアカウント」、コードやプロセスの利用は「呼び出し元」「消費側」のように実体に合う語で書く。旧形式の読み取り互換、検出用データと他者の逐語引用は、その役割を明示して原文を保持する
-- 恒久的な成果物の文面案を執筆する前に`textlint-violations.md`を確認する。textlintの指摘へ対応するときは同文書の`textlint指摘への修正方針`に従う
+- textlintの指摘へ対応するときは`textlint-violations.md`の`textlint指摘への修正方針`に従う。同文書を読む時点は`SKILL.md`の読込表が定める
 - 計画ファイルは、文章lint、口語表現チェック、ダッシュチェックの必須対象から除外する。読み手がその計画を処理する実行主体に限られ、表記の統一が対象の特定と完成条件の判定を変えないためである
 - `atk wi add`・`atk wi edit`の`--body-file`へ渡すWI本文は文章lintの必須対象から除外する。口語表現とダッシュは保存前の診断で行番号付き警告として一括表示する。表記警告の処置は起草者が判断し、構造エラーの有無で保存の可否を決める。計画とWI本文から転記する文面は、転記先の基準でチェックして整形する
 
@@ -58,13 +58,26 @@ Read履歴を持つEditとの区別を保ち、Codexのapply_patchは現在本�
 
 ## 口語表現チェック
 
-恒久成果物にはpyfltrの有効なチェック定義が持つ`targets`を確認し、対象ファイルの拡張子へ到達するコマンドを選んで実行する。Markdownでは`textlint,colloquial-check`、それ以外の対応拡張子では`colloquial-check`を指定する。次のCLI形式で通常の除外を解除し、指定したファイルへ到達したかをJSONLから判定する。`<pyfltrの起動形>`は`agent-toolkit:check-execution`の「pyfltrの起動形」に従って解決する。
+恒久成果物は、現在のホストに公開されたserver key `pyfltr`の`run`ツールでチェックする。ツールの完全修飾名はClaude CodeとCodexで異なるため、一方の名前を他方へ流用しない。引数は次のとおりとする。
+
+- `paths`: 対象ファイルの絶対パス1件
+- `work_dir`: チェック設定を持つプロジェクトの絶対パス
+- `commands`: Markdownでは`["textlint", "colloquial-check"]`、それ以外の対応拡張子では`["colloquial-check"]`
+- `enable`: `["colloquial-check"]`
+- `no_exclude`と`no_fix`: `true`
+- `allow_external_paths`: 対象ファイルが`work_dir`のプロジェクトの外側にある場合だけ`true`
+
+チェック完了と判定できるのは、応答の`completion`が`completed`、`files_reached`が1であり、指定した全コマンドが`completed_commands`にあり、`incomplete_commands`が空である場合だけとする。`completion`が`incomplete`または`not_reached`の結果はチェック完了と扱わず、`incomplete_commands`、`missing_targets`、`fully_excluded_files`、`skipped_reason`および`warnings`から未完了の理由を特定して対処する。外部ファイルで`allow_external_paths`を指定し忘れた場合も、この判定で未完了として現れる。
+
+完了を確定した後に`commands`の各コマンドの診断件数を読む。診断の本文が必要な場合は、同じ応答の`run_id`をMCPの`show_run_diagnostics`へ渡して取得する。終了コード、診断件数および指摘件数は、到達と完了を確定した後のチェック結果として扱う。
+
+MCPの`run`を現在のホストで利用できない場合だけ、`agent-toolkit:check-execution`が選ぶCLIで同じ対象と制約を指定する。`<pyfltrの起動形>`は同スキルの「pyfltrの起動形」に従って解決する。外部ファイルでは`--allow-external-paths`を加える。
 
 ```sh
-<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --output-format=jsonl <対象ファイルの絶対パス>
+<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --work-dir <チェック設定を持つプロジェクトの絶対パス> <対象ファイルの絶対パス>
 ```
 
-チェック完了と判定できるのは、単一ファイルを指定したJSONLの`header`レコードの`files`が1であり、指定したコマンドのうち対象拡張子を`targets`へ持つものが1件以上あり、完了した`command`レコードの対象ファイル数が1である場合だけとする。`status=running`の進捗レコードは到達判定の完了結果に数えない。`missing_targets`、`fully_excluded_files`、skip、除外が現れる対象は未到達として扱う。対象到達済みの判定にはこの3条件を用い、終了コード0、診断0件、指摘0件の成功件数は到達後の結果として扱う。
+CLIでは、JSONL最終行の`summary`レコードが持つ`completion`、`files_reached`、`completed_commands`および`incomplete_commands`だけを使い、MCPと同じ条件で完了を判定する。
 
 検出範囲は`.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`とする。Markdown引用ブロックとフェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象とする。
 
@@ -76,19 +89,9 @@ uv run --frozen python -c 'print(__import__("pyfltr.colloquial.check", fromlist=
 
 依存に持たない場合は、同じPythonの式を`uvx --from pyfltr python -c`へ渡して解決する。環境ごとに変わる`site-packages`の絶対パスを規範へ固定しない。
 
-起草の後に前掲のCLI形式でチェックして検出箇所を解消する。
+起草の後に前掲の手順でチェックして検出箇所を解消する。
 チェックは読みやすさを保つための手段であり、警告を解消するために読者が得る情報を減らす書き換えはしない。
 他者の原文（記事や発表のタイトル、発言の引用、固有名詞など）にある検出は、原文のまま残して別の表現へ置き換えず、残した検出とその理由を完了報告で示す。
-
-対象ファイルがチェック設定を持つプロジェクトの外側にある場合は、設定を持つプロジェクトの絶対パスを
-`--work-dir`へ渡し、`--allow-external-paths`を併用する。
-
-```sh
-<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --allow-external-paths --work-dir <チェックする内容を設定したプロジェクトの絶対パス> <外部対象ファイルの絶対パス>
-```
-
-この手順でも、JSONLの`header`レコードと完了した`command`レコードで対象ファイルへの到達を判定する。
-外部パスを理由とする警告、skipまたは対象除外が現れた結果はチェック完了と判定しない。
 
 ## ダッシュチェック
 

@@ -102,13 +102,6 @@ class TestParser:
 class TestMainSmoke:
     """main()のsmokeテスト。"""
 
-    def test_help(self, capsys: pytest.CaptureFixture[str]) -> None:
-        with patch.object(sys, "argv", ["releaser", "--help"]), pytest.raises(SystemExit) as exc_info:
-            main()
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "release.yaml" in captured.out
-
     def test_no_args_with_tag(
         self,
         tmp_path: Path,

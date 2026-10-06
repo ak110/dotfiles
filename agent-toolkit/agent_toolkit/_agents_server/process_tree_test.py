@@ -6,6 +6,7 @@
 
 import contextlib
 import os
+import pathlib
 import subprocess
 import sys
 import time
@@ -16,7 +17,18 @@ import pytest
 from agent_toolkit._agents_server import process_tree
 
 _CHILD_SOURCE = "import time; time.sleep(120)"
-_STUBBORN_CHILD_SOURCE = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(120)"
+
+
+def _stubborn_child_source(ready_marker: pathlib.Path) -> str:
+    """SIGTERMの無視を設定してから準備完了の印を書き、待機する子プロセスのソースを返す。
+
+    印は設定の完了を示す同期点であり、テストは印を確かめてから終了を要求する。
+    設定より先に終了要求が届くと子は終了要求で終わり、強制終了の分岐を通らないまま合格するためである。
+    """
+    return (
+        "import pathlib, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        f"pathlib.Path({str(ready_marker)!r}).touch(); time.sleep(120)"
+    )
 
 
 def _parent_source(child_source: str) -> str:
@@ -77,11 +89,13 @@ def test_descendants_are_reclaimed_after_the_starting_point_ends(spawn_parent):
     assert not _still_holding_resources(descendants)
 
 
-def test_descendants_ignoring_termination_are_force_stopped(spawn_parent):
+def test_descendants_ignoring_termination_are_force_stopped(spawn_parent, tmp_path: pathlib.Path):
     """終了要求へ応じない子孫は、上限の経過後に強制終了される。"""
     if os.name == "nt":
         pytest.skip("SIGTERMの無視はPOSIX固有の前提")
-    parent = spawn_parent(_STUBBORN_CHILD_SOURCE)
+    ready_marker = tmp_path / "sigterm-ignored"
+    parent = spawn_parent(_stubborn_child_source(ready_marker))
+    _wait_for_ready_marker(ready_marker)
     descendants = process_tree.collect_descendants(parent.pid)
     assert descendants
 
@@ -118,6 +132,15 @@ def _unused_pid() -> int:
         if not psutil.pid_exists(candidate):
             return candidate
     raise AssertionError("未使用のPIDを見つけられませんでした")
+
+
+def _wait_for_ready_marker(ready_marker: pathlib.Path) -> None:
+    """子孫が準備完了の印を書くまで待つ。上限までに現れない場合は失敗させる。"""
+    deadline = time.monotonic() + 30.0
+    while not ready_marker.exists():
+        if time.monotonic() >= deadline:
+            raise AssertionError("子孫プロセスがSIGTERMの無視を設定したことを確認できませんでした")
+        time.sleep(0.05)
 
 
 def _still_holding_resources(descendants: list[psutil.Process]) -> list[int]:

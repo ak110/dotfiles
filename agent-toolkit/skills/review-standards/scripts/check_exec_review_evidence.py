@@ -44,7 +44,9 @@ WHOLE_REQUEST = "分割元の依頼全体"
 ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
 BACKGROUND = "背景"
 # 引用節内のtextブロック番号と、改行も1文字として数える1始まりの文字範囲。
-QUOTE_POSITION = re.compile(r"逐語引用\s+text\[(\d+)\]\s+文字(\d+)-(\d+)")
+# 起草規範は語の間の空白を定めないため、`逐語引用text[1]文字1-83`のように空白を省いた表記も同じ参照として読む。
+QUOTE_POSITION = re.compile(r"逐語引用\s*text\[(\d+)\]\s*文字(\d+)-(\d+)")
+QUOTE_POSITION_PREFIX = re.compile(r"逐語引用\s*text\[")
 REVIEW_TABLE_SUFFIX = ".exec-review.tsv"
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
@@ -66,8 +68,13 @@ HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 FENCE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|(?P<plain>[^\s`\[\]（）「」、。]+)")
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
-ATTACHED_ASCII_REFERENCE = re.compile(
-    r"(?P<plain>[/A-Za-z0-9_.-][^\s`\[\]（）「」、。:]*?\.[A-Za-z][A-Za-z0-9_-]*(?::[0-9]+(?:-[0-9]+)?|#[^\s`\[\]（）「」、。]+)?)"
+# 地の文の1語から切り出す参照。パスは最後の拡張子までとし、拡張子の直後がASCIIのパス文字でない位置で終える。
+# 行位置などの所在は`:`に続くASCIIの並びとし、最初の非ASCII文字（日本語の助詞・述語、`・`など）で終える。
+# ASCIIの並びは切り詰めずに行位置の書式の判定へ渡し、`:1-2,5-7`や`:1-`を正しい範囲として受理しない。
+# 見出しは日本語を含むため、文字種で終わりを決められず、従来どおり区切り記号までを見出しとする。
+PLAIN_REFERENCE = re.compile(
+    r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_./\\-])"
+    r"(?::[!-~]+|#[^\s`\[\]（）「」、。]+)?)"
 )
 # ファイル参照を除いた残りがこれらの区切りと接続語だけなら、行ごとの説明を持たない参照だけの根拠とみなす。
 REFERENCE_SEPARATORS = re.compile(r"[\s、。，,.;；:：・()（）「」\[\]<>`]+|および|及び|と|や")
@@ -453,45 +460,78 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
     これらを候補にすると、正当な達成根拠が不在ファイルへの参照として拒否される。
     """
     matches = []
-    for match in EVIDENCE_REFERENCE.finditer(evidence):
-        if match.group("plain") is not None:
-            original, _ = _reference_parts(match)
-            if not _is_file(repository / original):
-                for boundary in JAPANESE_ASCII_PATH_BOUNDARY.finditer(original):
-                    suffix = ATTACHED_ASCII_REFERENCE.match(evidence, match.start("plain") + boundary.start())
-                    if suffix is not None:
-                        match = suffix
-                        break
-        candidate, location = _reference_parts(match)
-        if "://" in candidate or candidate.startswith("~") or candidate == "/" or candidate in NON_FILE_PAIRS:
-            continue
-        reference = pathlib.Path(candidate)
-        # 単位の標識はWIの識別子であり、根拠ファイルへの参照ではない。
-        if WI_FILENAME.fullmatch(candidate) and any(
-            re.search(f"{marker}$", evidence[: match.start()]) for marker in _unit_markers("")
-        ):
-            continue
-        # インラインコードにはコマンドも現れる。パスの前に複数の語が続く値を丸ごとパスにしない。
-        # 絶対パス、リンク先、空白を含むファイル名は保持し、パスより前の引数列とオプションを区別する。
-        if (
-            _reference_group(match, "code") is not None
-            and re.match(r"[^/\\\s]+\s+.*[/\\]|\S+\s+--?(?:\s|[A-Za-z])", candidate)
-            and not re.match(r"[A-Za-z]:[\\/]", candidate)
-        ):
-            continue
-        # 自由文の単語、パスのないテスト名、拡張子のない画面・APIのパス、製品名は候補にしない。
-        # 明示された参照は実在に依存させず、不在なら対象版の確認で拒否する。
-        has_separator = "/" in candidate or "\\" in candidate
-        has_extension = re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
-        explicit = (
-            _reference_group(match, "link") is not None
-            or WI_FILENAME.fullmatch(candidate) is not None
-            or (has_separator and has_extension)
-            or (bool(location) and (has_separator or has_extension))
-        )
-        if candidate and (explicit or _is_file(repository / reference)):
-            matches.append(match)
+    for word in EVIDENCE_REFERENCE.finditer(evidence):
+        for match in _plain_references(evidence, word, repository) if word.group("plain") is not None else [word]:
+            if _is_explicit_reference(match, evidence, repository):
+                matches.append(match)
     return matches
+
+
+def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Path) -> list[re.Match[str]]:
+    """地の文の1語から参照を全て切り出す。
+
+    参照の終わりは`PLAIN_REFERENCE`の1つの規則で決め、前置きの有無と語の先頭の実在で変えない。
+    終わりの規則を前置きの有無や実在ごとに別々に持つと、同じ参照が前置きの有無で受理と拒否に分かれるためである。
+    参照の始まりは語の先頭とし、先頭からのパスが実在せず、その途中に日本語の直後から始まるパスがある場合は
+    その位置とする（`原因をdocs/record.md:1で確認`）。日本語でつないだ2件目以降の参照（`A.md:1・B.md:2が`）も
+    日本語の直後から同じ規則で切り出し、全ての参照の所在を確かめる。
+    拡張子で終わるパスを持たない語は、語全体を候補として返す。
+    """
+    start, end = word.span("plain")
+    first = PLAIN_REFERENCE.match(evidence, start, end)
+    references: list[re.Match[str]] = []
+    position = start
+    if first is not None:
+        path, _ = _reference_parts(first)
+        path_end = start + len(path)
+        if _is_file(repository / path) or JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, start + 1, path_end) is None:
+            references.append(first)
+            position = first.end()
+    while True:
+        reference = next(
+            (
+                found
+                for boundary in JAPANESE_ASCII_PATH_BOUNDARY.finditer(evidence, max(position, start + 1), end)
+                if (found := PLAIN_REFERENCE.match(evidence, boundary.start(), end)) is not None
+            ),
+            None,
+        )
+        if reference is None:
+            break
+        references.append(reference)
+        position = reference.end()
+    return references or [word]
+
+
+def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path) -> bool:
+    """切り出した候補が、所在を確かめるファイル参照として明示されているかを返す。"""
+    candidate, location = _reference_parts(match)
+    if "://" in candidate or candidate.startswith("~") or candidate == "/" or candidate in NON_FILE_PAIRS:
+        return False
+    # 単位の標識はWIの識別子であり、根拠ファイルへの参照ではない。
+    if WI_FILENAME.fullmatch(candidate) and any(
+        re.search(f"{marker}$", evidence[: match.start()]) for marker in _unit_markers("")
+    ):
+        return False
+    # インラインコードにはコマンドも現れる。パスの前に複数の語が続く値を丸ごとパスにしない。
+    # 絶対パス、リンク先、空白を含むファイル名は保持し、パスより前の引数列とオプションを区別する。
+    if (
+        _reference_group(match, "code") is not None
+        and re.match(r"[^/\\\s]+\s+.*[/\\]|\S+\s+--?(?:\s|[A-Za-z])", candidate)
+        and not re.match(r"[A-Za-z]:[\\/]", candidate)
+    ):
+        return False
+    # 自由文の単語、パスのないテスト名、拡張子のない画面・APIのパス、製品名は候補にしない。
+    # 明示された参照は実在に依存させず、不在なら対象版の確認で拒否する。
+    has_separator = "/" in candidate or "\\" in candidate
+    has_extension = re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
+    explicit = (
+        _reference_group(match, "link") is not None
+        or WI_FILENAME.fullmatch(candidate) is not None
+        or (has_separator and has_extension)
+        or (bool(location) and (has_separator or has_extension))
+    )
+    return bool(candidate) and (explicit or _is_file(repository / candidate))
 
 
 def _reference_parts(match: re.Match[str]) -> tuple[str, str]:
@@ -943,6 +983,10 @@ def _unassigned_source_error(
 
     記録は要求単位を言い換えて複数の単位を1行で覆うため、要求単位の原文と記録行の一致は求めず、
     割当先の表記が割当を示す記録行に現れるかを行単位で比べる。意味上の対応はレビューと統合時の読解に残す。
+    割当を示す行は、割当の語を持つ行と、引用位置と割当先のWIファイル名を同じ行に持つ行の2つの形とする。
+    後者は起草規範が割当の記録に求める要素であり、「が担う」「で扱う」のように述語が異なっても割当を示す。
+    「」で囲んだタイトルとWIファイル名だけの行へは広げない。背景の記録は位置の後に原文の抜粋を「」で添え、
+    WIファイル名は依存や担当範囲の言及にも現れるため、語なしで受理すると割当でない行まで根拠になる。
     """
     label = f"{row['awi'] or '計画由来'}: {section}[{index}]"
     record, reason = _record_section(row["source"], repository, wi_outputs)
@@ -962,11 +1006,15 @@ def _unassigned_source_error(
             f"{label}.evidence: 割当先の表記がありません。"
             f"記録に書かれたとおりの割当先（WIファイル名、「」で囲んだタイトル、または{WHOLE_REQUEST}）をevidenceへ書く"
         )
-    lines = [line for line in record if any(word in line for word in ASSIGNMENT_WORDS)]
-    if any(assignee in line for assignee in assignees for line in lines):
-        return None
+    for line in record:
+        if any(word in line for word in ASSIGNMENT_WORDS) and any(assignee in line for assignee in assignees):
+            return None
+        if QUOTE_POSITION.search(line) and any(WI_FILENAME.fullmatch(assignee) and assignee in line for assignee in assignees):
+            return None
     return (
         f"{label}.evidence: 割当先（{_quoted_units(assignees)}）がsourceの節の割当を示す行にありません。"
+        "割当を示す行は、割当の語（割当・割り当て・分割元の依頼全体）を持つ行か、"
+        "引用位置（逐語引用 text[N] 文字A-B）と割当先のWIファイル名を同じ行に持つ行である。"
         "記録に書かれたとおりの割当先をevidenceへ写すか、記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
     )
 
@@ -1024,9 +1072,9 @@ def _covered_by_background(requirement: str, record: list[str], original: str, o
     for line in record:
         if BACKGROUND not in line:
             continue
-        if "逐語引用 text[" in line:
+        if QUOTE_POSITION_PREFIX.search(line):
             references = list(QUOTE_POSITION.finditer(line))
-            if not references or len(references) != line.count("逐語引用 text[") or source_block is None:
+            if not references or len(references) != len(QUOTE_POSITION_PREFIX.findall(line)) or source_block is None:
                 continue
             resolved: list[tuple[int, str]] = []
             for reference in references:

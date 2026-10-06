@@ -1,6 +1,6 @@
 """pyfltr MCPサーバーの`uvx`ツール環境を事前構築する。
 
-Claude CodeとCodexはagent-toolkit pluginのMCP定義から`uvx --from <要求指定> pyfltr mcp`を起動する。
+Claude CodeとCodexはagent-toolkit pluginのMCP定義から`uvx --from <要求指定> [uvxのオプション] pyfltr mcp`を起動する。
 ツール環境が未構築だと初回起動でパッケージの取得と環境構築が起動時間に加わり、
 MCPクライアントの起動上限を超えるとpyfltr MCPを利用できない状態でセッションが始まる。
 MCP定義の起動形の末尾`mcp`を`--version`へ置き換えて1回起動し、MCP起動が再利用する同じツール環境を構築する。

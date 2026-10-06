@@ -119,7 +119,7 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月25日、Claude Code 2.1.282で`agent-toolkit/skills/wi-standards/SKILL.md`の309行・52,347バイトを`Read`の`offset=1, limit=309`で取得すると、末尾まで届いた。同じファイルを`cat <絶対パス> | cat`で取得すると、Bashは表示上限を超えた全量をセッション内のファイルへ保存した。保存物は309行・52,347バイトで原本と一致した。Claude Codeの[tools仕様](https://code.claude.com/docs/en/tools.md)の「Read tool behavior」は、上限超過時に`PARTIAL view`と先頭ページを返し、`offset`と`limit`で続きを取得する方式を説明する。同仕様の「Bash」は、表示上限を超えた結果をセッション内のファイルへ保存してパスを返す。2026年9月21日のCodexでは、複数文書の全文取得を1つの実行セルへ集約した結果、15,105トークンで出力が切り詰められ、個別再取得を要した。この観測時のCodexのホスト版番号は記録されていない。再検証では両ホストへ同一の大容量エージェント向け文書を与えて全文読取とBashの単純全文読取を実行する。hook通知、ホストの部分取得通知、保存物の末尾および容量を比較する。
 
-## agent-toolkit/skills/check-execution/SKILL.md：検証結果の診断と警告の判定：2026年10月3日
+## agent-toolkit/skills/check-execution/references/diagnostics.md：検証結果の診断と警告の判定：2026年10月3日
 
 2026年10月3日、pyfltr 3.19.9でJSONLの要約と診断の粒度を確認した。
 `uv run --frozen pyfltr run --commands=textlint --no-fix agent-toolkit/share/add-wi.parent.md`は終了コード0だった。
@@ -291,7 +291,9 @@ Claude Code 2.1.281を`--plugin-dir`で作業ツリーのプラグインから2�
 
 2026年9月16日、参考実利用バージョンの取得元を確認した。`~/glatasks/package.json`は`drizzle-orm`を`^0.45.2`、`drizzle-kit`を`^0.31.10`で指定する。再検証は同ファイルから、この2つの依存の版指定を取得する。いずれかの依存が更新されたときに再検証する。
 
-## agent-toolkit/skills/writing-standards/references/llm-characteristics.md：知識の想起：2026年9月16日
+## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年9月16日
+
+条文は2026年10月6日まで`llm-characteristics.md`「知識の想起」にあり、同ファイルの撤去に伴って`agent-documents-basics.md`「語調と現行規則の表現」の理由へ移った。
 
 2026年9月16日、本リポジトリのHEAD `2ee94027`でコーパス分析とA/B実験を実施した。
 
@@ -494,7 +496,7 @@ Stopで報告の不足を判定する変更（`4862700e1`）の要求を起草�
 実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。確認した範囲は判定器の契約テストまでである。対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。
 
-## dotfiles-development：不変条件テストのfast自動実行：2026年10月4日
+## .claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日
 
 pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。指定した時点では横断テストをpytestのマーカー`repo_invariant`でも識別しており、マーカーでの収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。その後、fastがマーカーを選択に使わないため、マーカーを撤去してファイル名だけで識別する形にした。撤去後の確認では、fastのpytestが受け取ったファイルは33件で、`git ls-files`が返す`*_invariant_test.py`の33件と一致した。
 

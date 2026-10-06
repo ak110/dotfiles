@@ -15,8 +15,6 @@
 
 - `差分ファイル`: 保存した差分ファイルの絶対パスと行数
 
-観点と返却形式は`bulk-replace-review.subagent.md`が定めるため、委譲プロンプトで再掲しない。
-
 ## 受領
 
-結果は引数なしの`atk agents wait`で受け取る。問題が報告された文と候補外の文は、同書の手順4に従って書き直す。
+結果は引数なしの`atk agents wait`で受け取る。問題が報告された文と候補外の文は、`agent-toolkit:writing-standards`の`references/notation-rules.md`「表記の一括置換」の手順4に従って書き直す。

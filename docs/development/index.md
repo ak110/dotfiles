@@ -9,3 +9,4 @@
 - [docs/development/architecture.md](architecture.md): リポジトリ構成・プラットフォーム対応・補完運用
 - [docs/development/operations.md](operations.md): 運用機能のホスト固有事項と詳細仕様
 - [docs/development/audit-records.md](audit-records.md): 規範の条文が根拠とする実際に検証した日付・版数・再検証手段
+- [docs/development/norm-restructure/README.md](norm-restructure/README.md): 規範の全体の再構築で全条文を判定した台帳と、守る障害・方針の逆引き表

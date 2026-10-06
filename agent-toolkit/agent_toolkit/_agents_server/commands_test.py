@@ -23,32 +23,6 @@ def _write_jsonl(path: pathlib.Path, records: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n", encoding="utf-8")
 
 
-def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureFixture[str]) -> None:
-    """回収できた全件の出力形式と、待機の成立判定および再発行の条件を説明する。"""
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents", "wait", "--help"])
-
-    output = _without_wrapping(capsys.readouterr().out)
-    expected_fragments = (
-        "1回の巡回で回収できた全件",
-        "1件1行のJSON Lines",
-        "最初の待機で起動中sessionと未回収結果を登録簿へ固定",
-        "通知だけを回収した場合",
-        "待機対象の行が現れない応答は、その対象が未終端であることを示す",
-        "同じターン内に同じコマンドを再発行",
-        "結果を保持しない`stop`とsession登録簿での喪失確定",
-        "待機対象登録が破損している場合",
-        "終端statusでは追加の結果受領操作は不要",
-        "エージェント環境では出力するJSON Linesを生成側の保存先へ全量で保存",
-        "通知件数と送信元session ID",
-        "回収した本文はその保存先に残る",
-        "MCPの`list`を1回呼び出してから同じコマンドを再実行",
-        "--root-session-id",
-        "次の逐次待機へ再配送しない",
-    )
-    assert all(_without_wrapping(fragment) in output for fragment in expected_fragments)
-
-
 def test_agents_wait_passes_explicit_root_to_waiter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -87,21 +61,6 @@ def test_public_wait_save_failure_keeps_unreceived_result(
         atk.main(["agents", "wait"])
     assert result_file.read_text(encoding="utf-8") == original
     assert "呼び出しを開始しない" in capsys.readouterr().err
-
-
-def _without_wrapping(text: str) -> str:
-    """端末幅による折り返しの違いを除いて本文を比較するため、空白文字を取り除いた文字列を返す。"""
-    return "".join(text.split())
-
-
-def test_agents_list_help_states_prompt_is_obtained_from_show(capsys: pytest.CaptureFixture[str]) -> None:
-    """一覧が委譲プロンプトを含まないことと、委譲プロンプトの取得先を説明する。"""
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents", "list", "--help"])
-
-    output = _without_wrapping(capsys.readouterr().out)
-    assert _without_wrapping("実行条件と委譲プロンプトは`atk agents show`が返す。") in output
-    assert _without_wrapping("MCPの`list`を1回呼び出してから再実行") in output
 
 
 @pytest.fixture

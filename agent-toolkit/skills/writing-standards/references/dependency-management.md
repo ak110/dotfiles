@@ -7,15 +7,18 @@
 
 - バージョン固定は管理コスト増大のため原則採用せず、公開直後の新バージョンを一定期間（目安1日）待つ設定で代替する
  （ツール例: uvの`exclude-newer`、pnpmの`minimum-release-age`）。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日」にある
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日」にある。
+  本項はパッケージマネージャーが解決する依存を対象とする。コンテナーのベースイメージとCIの外部actionの参照は本項の対象外とし、`dockerfiles.md`と`github-actions.md`の固定と自動更新の規定に従う
 - 公開直後の版を一定期間解決対象から外すパッケージマネージャーの設定（uvの`exclude-newer`、pnpmの`minimum-release-age`、miseの`minimum_release_age`など）を「公開待機設定」と呼ぶ。
   公開待機設定が有効な環境では、自パッケージを含む直近版を解決できない。待機期間を満たさない版を下限として要求すると依存解決が失敗し、
   自リポジトリの直近リリースをビルドやCIで取り込む処理（イメージ内の`uv tool install`、リリース直後の自パッケージ参照など）も失敗する。
   対処は次のいずれかとする
-  - パッケージ単位の除外（uvでは`exclude-newer-package = { 自パッケージ名 = false }`）
+  - プロジェクトの設定でのパッケージ単位の除外（uvでは`pyproject.toml`の`exclude-newer-package = { 自パッケージ名 = false }`）
   - 対象工程（Dockerfileの対象RUNなど）だけ環境変数で公開待機設定を無効化する
   - ローカルで生成した成果物（wheel等）を直接渡す
   - 待機期間とパッケージインデックスの伝播（CDN反映の遅延など）の経過を待ってから解決を確認する。配布物の依存下限を公開直後の版へ引き上げる場合はこの対処を選ぶ
+  - 配布物の作者自身が公開するパッケージを、配布物がプロジェクトの外で起動するコマンド（`uvx`など）で要求する場合は、待機に代えてその起動のコマンドライン引数でそのパッケージだけを除外してよい（uvでは`--exclude-newer-package <パッケージ名>=false`）。除外したパッケージが依存するパッケージには公開待機設定が引き続き適用される
+- パッケージ単位の除外をユーザー単位のグローバル設定（uvでは`~/.config/uv/uv.toml`）へ置かない。uvはグローバル設定の除外を各プロジェクトの`uv.lock`（`[options.exclude-newer-package]`）へ記録するため、そのパッケージと無関係なプロジェクトのロックファイルまで変わる
 - 依存追加時はメンテナンス状況・代替の有無を確認する。使われていない依存は削除する
 - 依存更新コマンドが対象パッケージを更新せずエラーも返さない場合、目的のバージョンを明示指定して
   再実行し、解決失敗の出力から制約元の依存パッケージを特定する

@@ -163,10 +163,14 @@ textlint-exclude = [
 colloquial-check-exclude = [
     "agent-toolkit/skills/writing-standards/references/tone-examples.md",
     "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+    # 規範の再構築の判定台帳。基準commitの条文の逐語抜粋を記録として保持するため対象から外す。
+    "docs/development/norm-restructure/*.tsv",
 ]
 typos-exclude = [
     "agent-toolkit/skills/writing-standards/references/tone-examples.md",
     "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+    # 規範の再構築の判定台帳。条文の先頭40字の抜粋と検索語が語の途中で終わるため対象から外す。
+    "docs/development/norm-restructure/*.tsv",
 ]
 prek-exclude = [
     "agent-toolkit/skills/writing-standards/references/tone-examples.md",

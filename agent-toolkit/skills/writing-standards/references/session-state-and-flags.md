@@ -102,8 +102,12 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `last_user_prompt_at`: `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
   同フックが、直前の通常発話からの経過時間を読み、発話の内容を現物で確かめる手順を示す注記を注入するか判定する。
   記録と注入の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力したスラッシュコマンドも対象に含め、機械注入ターンは対象外とする。
-  機械注入ターンの判定入力は5系統とする。第1にpayloadの`source`が`user`以外であること。第2に`prompt`の1行目が`<atk-auto source="periodic-recheck" kind="periodic-recheck">`か旧標識だけの行であること。第3に委譲先として起動されていること。第4に`prompt`が`<task-notification`か旧形式の`<cross-session-message`で始まること。第5に`prompt`の1行目が新旧の自動挿入要素の開始タグを含むこと。
-  セッション終了まで保持し、リセット処理は設けない
+  セッション終了まで保持し、リセット処理は設けない。機械注入ターンの判定入力は次の5系統とし、いずれかに当たる発話を機械注入ターンとする
+  1. payloadの`source`が`user`以外である
+  2. `prompt`の1行目が`<atk-auto source="periodic-recheck" kind="periodic-recheck">`か旧標識だけの行である
+  3. 委譲先として起動されている
+  4. `prompt`が`<task-notification`か旧形式の`<cross-session-message`で始まる
+  5. `prompt`の1行目が新旧の自動挿入要素の開始タグを含む
 - `user_confirmation_skill_pending`: `agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態を記録する（真偽値）。
   `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`startup`・`clear`・`compact`で委譲先でない場合に真にし、`resume`と`fork`では変えない。
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が実ユーザー発話の受領時に読み、真なら同スキルの起動を促す注記を返す。機械注入ターンでは読まず、状態も変えない。
@@ -114,8 +118,9 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   中身は作業ごとの可視発話の報告、振り返りの準備結果、呼び出し、判断記録、遅れて返る応答を元の作業へ対応付けるための未完了の呼び出しと、判断の根拠となる人間の入力である。
   PreToolUse・PostToolUse・UserPromptSubmitが呼び出しと人間の入力を更新し、Stopの`termination_order_advisor`が可視発話を取得して報告段階と報告本文の判定の違反を読む。構造確認の受理本文と送達フラグは保持しない。
   解決して参照が不要になった呼び出しと入力は更新のたびに除き、保持量を未完了の作業と現在の本文の大きさに対応させる。版や形式が異なる値は破棄してStop判定ログへ診断を残す。
-  報告段階が残る作業が待つ非同期対象（作業が起動したagents_serverのsessionと、作業の開始以後に起動したバックグラウンドタスク・未配送の完了通知）が生存する間はStopが待機を許可し、回収後に残工程を再判定する。作業の開始位置はUserPromptSubmitが記録したtranscriptの大きさを使う。委譲先へのwait判断はasync_targetsと所有者を確認し、観測義務とは別に有効なCLI待機所有権・対象登録を共通の読取処理で確認する。pending_observationが偽でも待機が有効なら保持し、両方が終わると不足判定へ戻る
   寿命と継承はセッション状態ファイルと同じとし、別会話から継承した値は`session_id`の一致を確かめてから使う
+  - 待機の許可: 報告段階が残る作業が待つ非同期対象（作業が起動したagents_serverのsessionと、作業の開始以後に起動したバックグラウンドタスク・未配送の完了通知）が生存する間はStopが待機を許可し、回収後に残工程を再判定する。作業の開始位置はUserPromptSubmitが記録したtranscriptの大きさを使う
+  - 委譲先へのwait判断: `async_targets`と所有者を確認し、観測義務とは別に有効なCLI待機所有権・対象登録を共通の読取処理で確認する。`pending_observation`が偽でも待機が有効なら保持し、両方が終わると不足判定へ戻る
 
 ## 通知反復系
 
@@ -129,8 +134,15 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 ## agents_server連携系
 
 - `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`と`kill`の事前判定および各ツールのPostToolUse状態更新に使う。`show`の応答が返す稼働中の子sessionの識別子と`cwd`の対も同じキーへ記録し、委譲元がその子sessionへ追送と打ち切りを発行できる状態にする
-- `agents_server_sessions`: `session_id`ごとに公開状態と内部状態を記録する。公開状態はそのsessionの`session_id`・`status`・`kill_requested`・`pending_observation`・`owner_agent_id`・`model_type`・`error`・`agent_message`とする。`pending_observation`は観測を試みていない作業の有無を示し、`owner_agent_id`はその作業を発生させた主体を示す。`model_type`は起動入力の`model_type`を優先し、省略時は`start`の`task`では`<役割名>.subagent.md`のファイル名、他の`mode`では`mode`ごとの省略時の種別から解決する。統合前の旧名で記録された開始は対応する`mode`として扱う。`error`と`agent_message`は終端時の値とする。内部状態は`turn_id`とする。記録は`start`の成功応答で生成し、`send_message`・`kill`・`wait`の応答境界と、Bash経由の`atk agents wait`実行時に更新する。`pending_observation`は各開始操作の成功応答で真になる。`send_message`の応答では`delivery`が`reply_started`または`reply_ambiguous`である場合だけ真にする。真にした呼出主体はhook payloadの`agent_id`から`owner_agent_id`へ記録する。`delivery`が`steered`である応答では真にしない。steerは実行中のturnへ追加指示を配送するだけで`turn_seq`を変えず、そのturnの終端はそのturnに対する既存の観測が待つためである。`agent_id`を持たないメイン会話は`main`とする。呼出主体の判別に`transcript_path`を使わない扱いは`claude-hooks.md`「hookスクリプトの基本プロトコル」の呼出主体の判別の項に従う。`kill`の成功応答、Bash経由の`atk agents wait`完了時および、Stop時に直前の応答の`待機中:`表明がそのsessionを指す場合は`pending_observation`を偽にし、`owner_agent_id`は次の作業発生まで保持する。終了工程の委譲先wait判断も同じ待機所有権・対象登録の読取を使い、観測義務の有無と有効な待機の有無を区別する。CLI待機中はルートセッションが所有する待機所有権の生存をStopフックが確認し、`pending_observation`が真でも未観測警告の対象から除外する。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する全sessionを観測済みにする。更新の対象は、既存の記録を持つsessionに限る。呼び出しが受理された時点で観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。警告の対象は、責任主体を記録した形式の記録に限る。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
-`status`が`running`である記録の件数は、待機の遮断の入力の外にある。`stop`の成功応答を受領した場合は、その`session_id`のエントリーを本キーから除去する。`stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、その応答はそのsessionが終端済み、期限切れまたは既破棄のいずれかであることを含意し、除去により未終端のsessionの記録が失われることはない。
+- `agents_server_sessions`: `session_id`ごとに公開状態と内部状態を記録する。寿命はセッション状態ファイルと同じとする
+  - 記録する値: 公開状態はそのsessionの`session_id`・`status`・`kill_requested`・`pending_observation`・`owner_agent_id`・`model_type`・`error`・`agent_message`とし、内部状態は`turn_id`とする。`pending_observation`は観測を試みていない作業の有無を示し、`owner_agent_id`はその作業を発生させた主体を示す。`error`と`agent_message`は終端時の値とする
+  - `model_type`の解決: 起動入力の`model_type`を優先し、省略時は`start`の`task`では`<役割名>.subagent.md`のファイル名、他の`mode`では`mode`ごとの省略時の種別から解決する。統合前の旧名で記録された開始は対応する`mode`として扱う
+  - 生成と更新の契機: 記録は`start`の成功応答で生成し、`send_message`・`kill`・`wait`の応答境界と、Bash経由の`atk agents wait`実行時に更新する
+  - `pending_observation`を真にする契機: 各開始操作の成功応答と、`delivery`が`reply_started`または`reply_ambiguous`である`send_message`の応答とし、`delivery`が`steered`である応答は対象から外す。steerは実行中のturnへ追加指示を配送するだけで`turn_seq`を変えず、そのturnの終端はそのturnに対する既存の観測が待つためである。真にした呼出主体はhook payloadの`agent_id`から`owner_agent_id`へ記録し、`agent_id`を持たないメイン会話は`main`とする。呼出主体の判別に`transcript_path`を使わない扱いは`claude-hooks.md`「hookスクリプトの基本プロトコル」の呼出主体の判別の項に従う
+  - `pending_observation`を偽にする契機: `kill`の成功応答、Bash経由の`atk agents wait`完了時、およびStop時に直前の応答の`待機中:`表明がそのsessionを指す場合とする。`owner_agent_id`は次の作業発生まで保持する。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する全sessionを観測済みにする。更新の対象は、既存の記録を持つsessionに限る。呼び出しが受理された時点で観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる
+  - 利用先: Stop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。警告の対象は、責任主体を記録した形式の記録に限る。CLI待機中はルートセッションが所有する待機所有権の生存をStopフックが確認し、`pending_observation`が真でも未観測警告の対象から除外する。終了工程の委譲先wait判断も同じ待機所有権・対象登録の読取を使い、観測義務の有無と有効な待機の有無を区別する。`status`が`running`である記録の件数は、待機の遮断の入力の外にある
+  - 除去の契機: `stop`の成功応答を受領した場合は、その`session_id`のエントリーを本キーから除去する。`stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、その応答はそのsessionが終端済み、期限切れまたは既破棄のいずれかであることを含意し、除去により未終端のsessionの記録が失われることはない
+  - 持たない状態: 結果を回収済みであることを示す状態と、thread IDをハッシュ化した状態ファイル
 
 ## バックグラウンドタスク系
 

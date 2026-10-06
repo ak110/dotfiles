@@ -35,7 +35,7 @@
 | --- | --- | --- |
 | 計画の条項とWIの明示条件の衝突 | WIの明示条件から契約が一意に定まる場合はWIを優先して確定し、同じレビューイーへ返す。人間由来の要求の解釈が分かれる場合はユーザー確認で確定してから返す | 不要 |
 | 選定結果の`担当モデル`とAWI本文のモデル指定の不一致 | AWI本文の記述を確かめ、選定結果の出力先ファイルの当該項目の`担当モデル`を本文の組へ直し、`pick-wi-check`の終了コード0を確かめる。`実装担当`の値が変わった場合は返却したレーン担当のsessionを破棄し、`agent-toolkit:process-wi`の`references/run-lanes.md`の手順で、直した値を`model_type`としてレーン担当を起動し直す。`実行レビュー担当`の値だけが変わった場合は同じthreadへ続行を返す | 不要 |
-| 完成条件を外して残りをadoptする判断要請 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」の失効を受理できる条件に当てはまるか確かめる。否定したユーザー判断（`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」の失効行の`source`の所在）がある場合は、否定された要求単位に不採用の根拠が対応するか確かめて同じ担当へ返す。メイン自身の会話に対象の完成条件を否定するユーザー発話がある場合は、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の出所の抽出と同じ`atk run-script session-review-evidence -- ... --user-events --since <時刻>`で出力を保存し、その絶対パスと`<record>:<line>`を同じ担当へ返す。どちらも無い場合は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に従ってユーザー確認する | 必要 |
+| 完成条件を外して残りをadoptする判断要請 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合時の完成条件判定」の失効を受理できる条件に当てはまるか確かめる。否定したユーザー判断（`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」の失効行の`source`の所在）がある場合は、否定された要求単位に不採用の根拠が対応するか確かめて同じ担当へ返す。メイン自身の会話に対象の完成条件を否定するユーザー発話がある場合は、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の出所の抽出と同じ`atk run-script session-review-evidence -- ... --user-events --since <時刻>`で出力を保存し、その絶対パスと`<record>:<line>`を同じ担当へ返す。どちらも無い場合は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に従ってユーザー確認する | 必要 |
 | ユーザーの選好、要件または認可範囲の変更 | ユーザー確認で回答を得て同じレビューイーへ返す | 不要 |
 | 外部状態または権限の不足 | 回復手段を確認し、ユーザー操作が必要ならユーザー確認する | 必要 |
 | 同じ論点の2回目以降の差し替え | 意図を確認してから修正する | 必要 |

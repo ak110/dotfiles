@@ -11,6 +11,17 @@ description: >
 
 # 作者個人のプロジェクト運用
 
+本スキルは作者個人のプロジェクト群について、ツールチェインとドキュメント構成の同期、追従作業、着手時の依存更新およびリリース運用の手順を提供する。
+
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ドキュメント構成を変更・同期する前 | [references/doc-structure.md](references/doc-structure.md) |
+| 他プロジェクト向けの追従提案を複数リポジトリへ投入する前 | `agent-toolkit:wi-standards`の`references/cross-repository-submission.md` |
+| lint違反への対応か推奨設定の緩和を判断する前 | `agent-toolkit:writing-standards`の`references/implementation-time.md`「lintと機械チェック」 |
+| gv・lcをLinuxから編集・検証する前、prek・pyfltr・文書lintの呼び出しを変更する前、またはCI workflow（`.github/workflows/**`）を編集する前 | [references/ci-and-tooling.md](references/ci-and-tooling.md) |
+
 ## 前提
 
 姉妹プロジェクト群は、共通化対象のツールチェインを同じコマンド名・設定キーで揃える。
@@ -18,7 +29,18 @@ description: >
 意図的に維持している差異に該当しないコメント表現・項目順・未指定時に使われる設定値は、同一文面または同等の設定へ揃える。
 1プロジェクトで変更した場合、後述のマトリクスに基づいて他プロジェクトへの波及要否を確認し、必要ならユーザーへ提案する。
 
-対象プロジェクトの一覧と絶対パスはセッション開始時にコンテキストへロードされるローカル指示から得る。
+対象プロジェクトの一覧と絶対パスはセッション開始時にコンテキストへロードされるローカル指示から得る。各プロジェクトの属性は次の表が定め、本スキルの各節はこの表を参照する。
+
+| プロジェクト | 一括更新コマンド | リリース運用の対象 |
+| --- | --- | --- |
+| `dotfiles` | `make update` | 対象外（リリースworkflowなし。`develop`から`master`へのマージは`dotfiles-release`が扱う） |
+| `pyfltr` | `make update` | 対象 |
+| `pytilpack` | `make update` | 対象 |
+| `smpr` | `make update` | 対象外（リリースworkflowなし） |
+| `glatasks` | `make update` | 対象 |
+| `gv` | `mise run update` | 対象 |
+| `lc` | `mise run update` | 対象 |
+
 個別プロジェクトのパスはそのコンテキスト経由で参照する。
 
 対象リポジトリが本スキルの対象に該当するかは、そのリポジトリの絶対パスが前段のプロジェクト一覧に現れるかで判定する。
@@ -98,7 +120,7 @@ description: >
 
 ユーザーからの要求または採用済みのAWIによる明示的な更新要求が一括更新コマンドの生成範囲に属する場合は、
 ロックファイルの最終コミット日時にかかわらず、対象プロジェクトの一括更新コマンドを1回実行する。
-一括更新コマンドは、各プロジェクトが正式に定義したコマンドを使う。`Makefile`が`update`ターゲットを持つ`dotfiles`・`pyfltr`・`pytilpack`・`smpr`・`glatasks`では`make update`、`Makefile`を持たず`mise.toml`が`[tasks.update]`を持つ`gv`・`lc`では`mise run update`を使う。
+一括更新コマンドは、各プロジェクトが正式に定義したコマンド（「前提」の属性表。`Makefile`の`update`ターゲットか、`Makefile`を持たないプロジェクトでは`mise.toml`の`[tasks.update]`）を使う。
 実行後はコマンドが生成した差分全体を検収し、同一のコミットへ含める。
 
 明示的な更新要求がない個人プロジェクトのAWI処理では、一括更新コマンドの実処理が更新対象とする
@@ -138,7 +160,7 @@ Cargoで演算子を省略した版数指定（キャレット要件として扱
 
 `gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは、ユーザーの恒常的な認可に基づき、エージェントが要否とバージョン区分を判断して実施する。
 この認可は`agent-toolkit:process-wi`の手動起動、`atk wi process-loop`による自動常駐起動、協調モードで公開範囲を「既存の判断基準どおり」と回答した作業に適用し、リリースのたびのユーザー確認とUWIは省く。
-リリースworkflowを持たない`dotfiles`（`develop`から`master`へのマージは`dotfiles-release`が扱う）と`smpr`は対象外とし、リリースworkflowを持ったプロジェクトは対象へ加える。
+リリースworkflowを持たないプロジェクトは対象外とし（「前提」の属性表）、リリースworkflowを持ったプロジェクトは属性表で対象へ加える。
 
 ### 実施時機と前提
 
@@ -240,7 +262,6 @@ default branchで実行しているかと未コミット変更の有無を確認
 
 README.md・AGENTS.md・docs/development/development.mdの標準章構成・共通文面・記述基準・バッジ記法は
 [references/doc-structure.md](references/doc-structure.md)が定める。
-ドキュメント構成を変更・同期する場合は同ファイルを読む。
 
 ## 補足事項
 
@@ -248,63 +269,3 @@ README.md・AGENTS.md・docs/development/development.mdの標準章構成・共�
 
 - 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:*`スキルの問題を
   発見したらdotfiles側を修正する（マスター）
-
-### gv / lc（Windows用プロジェクト）の特殊事情
-
-- Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能
-- Makefileではなく`mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
-- cargo-denyの導入は`taiki-e/install-action@v2`と`with: tool: cargo-deny`を用い、
-  actionをpinactのハッシュピン対象にする。
-  `taiki-e/install-action@cargo-deny`のshort-handを維持する場合だけ、そのactionを`.pinact.yaml`の
-  ハッシュ固定対象から除外する（ツール名タグのSHA固定は更新後に参照不能となり得るため
-  公式に強く非推奨であることによる）
-
-`~/gv`の`mise.toml`は`LOCALAPPDATA`を参照しない。
-`~/lc`の`mise.toml`による参照はWindows用タスクの内側だけにあり、Linuxでの設定読み込みには影響しない。
-両リポジトリでは、Linuxからmiseを起動するための`LOCALAPPDATA`の付与は不要である。
-
-加えて`~/gv`のRustコードは、`windows-future`等のWindows専用クレートが依存ツリーに含まれるため、
-Linux環境で`cargo check`・`cargo clippy`・`cargo test`がビルド段階で失敗する。
-Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで対処する。
-
-- Windows実機で`cargo`系チェックを実行してからpushする
-- `SKIP=pyfltr`でcargo系チェックを含むhookを無効化してコミットし、cargo対象外の変更パスへ`uvx --exclude-newer-package pyfltr=false pyfltr run`を実行する
-- 該当コードを`#[cfg(windows)]`ガードで囲み、Linux向けビルド対象外にする
-
-### prek / pyfltr / ビルド関連
-
-- 全プロジェクトでprekフレームワークにより`pyfltr fast`が実行される
-  - `markdownlint-fast`／`textlint-fast`によりmd変更時のlintが軽量に実行される
-  - `~/dotfiles`はdev依存へ固定した`uv run --frozen pyfltr fast`を、`~/pyfltr`は自身を`uv run`で呼び出す。
-    その他のプロジェクトは`uvx --exclude-newer-package pyfltr=false pyfltr fast`を呼び出す。
-    公開直後のpyfltrを公開待機の対象から外して使うための作者個人の対処であり、pyfltrの推奨ガイドが示す呼び出し形はそのまま保つ。
-    例外の指定先はコマンドラインに限り、グローバルのuv設定（`~/.config/uv/uv.toml`）は対象外とする。ユーザー設定の例外は各プロジェクトの`uv.lock`（`[options.exclude-newer-package]`）へ入り、
-    追跡ロックの再現性を損なうためである。コマンドラインで指定した例外は`uvx`の一時環境だけに適用され、プロジェクトの`uv.lock`は元のまま残る
-- 文書lint（textlint、markdownlint、prettier）はpyfltr経由（miseタスク、prekのhook、CI）で行い、`AGENTS.md`を含む文書をpyfltrの対象集合でチェックする
-  - `package.json`の`scripts`へ、pyfltrと別に文書lintを動かすスクリプト（`lint`、`lint:fix`など）を置かない。
-    起動するコマンドごとに対象集合が分かれ、一方の結果だけでは他方の対象にある警告が漏れるためである
-  - 新規Node系プロジェクトでも同じとする。pyfltrがlintツールを`node_modules/.bin/`から起動する設定では、`devDependencies`のlintパッケージは残す
-
-### CI / リリース関連
-
-- CI workflowのLinuxジョブはpyfltr公式イメージの`container:`実行を方針とし、
-  container適用対象・キャッシュ方式の具体は各リポジトリの`.github/workflows/**`をSSOTとして揃える
-
-以下4点はworkflow編集時の確認観点であり、実値は各リポジトリの`.github/workflows/**`に従う。
-
-- container化ジョブではuv / pnpm / Node.js / miseのセットアップステップを省く。
-  GitHub Actionsのピン留め確認には独立したstepを置かず、pyfltrの組み込みlinter`pinact`へ任せる。
-  `pinact`は`pyproject.toml`の`[tool.pyfltr]`が持つ`preset = "latest"`で有効になり、CIの`ci.yaml`が実行する`pyfltr ci`と、push前に実行する`pyfltr run`・`pyfltr fast`（prekのpre-commitを含む）のいずれにも含まれるため、独立したstepは同じ確認の重複になる。
-  Pythonバージョンマトリクスは
-  `env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
-  `defaults.run.shell: bash`の指定が必須（GitHub Actionsは`container:`のジョブで`shell`の指定が無い`run`を`sh`で実行するため）
-- `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
-- `release.yaml`のCI待機は、対象コミットを指定してCIワークフロー（`ci.yaml`）の実行を直接照会し、
-  その結論で判定する方式とする。`check-suites` APIの先頭suiteを判定に使う方式は、
-  リリースワークフロー自身のsuiteを拾い、CIが成功していても待機がタイムアウトするため、前段の直接照会を用いる。
-  各リポジトリが用いる照会コマンドは`.github/workflows/`配下をSSOTとし、本文へ写さない
-- `container:`実行ジョブのstepへ新しいコマンド呼び出しを追加する場合は、先行stepで導入されることを確認するか、
-  ジョブが宣言する`image`上でそのコマンドの存在を確認する
-  - どちらでも利用可能と確認できないコマンドは、呼び出す前に同じジョブで導入する
-  - `ENTRYPOINT`がシェル以外のimageでは、
-    `docker run --rm --entrypoint sh <image> -c 'command -v <command>'`でimage内の存在を確認する

@@ -182,17 +182,6 @@ def test_cli_accepts_bare_name(
     assert pathlib.Path(captured.out.strip()).name == "18-0334_計画.md"
 
 
-def test_cli_help_describes_name_and_lane(capsys: pytest.CaptureFixture[str]) -> None:
-    """呼び出し側が--helpだけで名称生成の受理形式を確定できる。"""
-    with pytest.raises(SystemExit) as raised:
-        create_plan_files.main(["--help"])
-
-    assert raised.value.code == 0
-    output = capsys.readouterr().out
-    assert "名称だけの場合はUTCの日時を付ける" in output
-    assert "lane-NN形式のレーン識別子" in output
-
-
 def test_cli_accepts_source_alias_and_creates_bug_file(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

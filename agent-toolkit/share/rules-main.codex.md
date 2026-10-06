@@ -5,7 +5,7 @@ Codex固有の公開能力と常時規範との差分を扱う。「メインエ
 
 ## Codex固有の入出力
 
-- ファイルの全文は範囲を指定しない取得で読み、事前の総行数や容量の計測を省く（努力目標。遮断された場合の分割取得で十分である）。hookが全文取得を遮断した場合は、通知が示す連続した行範囲を全て取得したときに全文を読了したものとする。複数ファイルの全文取得は別々のセルで実行する
+- ファイルの全文は範囲を指定しない取得で読み、事前の総行数や容量の計測を省く（努力目標。遮断された場合の分割取得で十分である）。hookが全文取得を遮断した場合は、通知が示す連続した行範囲を全て取得したときに全文を読了したものとする。複数ファイルの全文取得は、1セルの出力上限で本文が切り詰められないよう、`02-agent-operations.md`の複数対象をまとめる規定によらず別々のセルで実行する
 - 最大出力量を確定できない検索、全件取得、全文取得は、それぞれを単独のセルで実行する
 - `functions.exec`から`exec_command`を呼ぶ場合は、返却オブジェクトの`exit_code`と`session_id`を出力本文とともに確認する。`output`だけを転送して終了状態を失わない。`session_id`がある起動は継続セッションを終端まで観測し、終了コードの無い結果を完了として扱わない
 - 明示指示がないOfficeファイルは原本を直接変更せず、CSVは消費側の要求に従い、要求が不明な場合はUTF-8 BOM付きで保存する
@@ -31,7 +31,7 @@ Codexのsystem、developer、userの命令階層は、user側の`AGENTS.md`や�
 
 Codexの`list_agents`が対象を`running`と返す間の待機と、`interrupt_agent`による中断を許す条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「Codex後続操作の共通先行条件」に従う。
 
-Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_agent`がある場合は終端を観測してからturnを終え、完了通知だけを提供するホストでは常時規範の再開手順を使う。
+Codexの組み込み委譲（`spawn_agent`で起動したthread）の待機はホストの`wait_agent`で終端を観測する。`wait_agent`がある場合は終端を観測してからturnを終え、完了通知だけを提供するホストでは常時規範の再開手順を使う。`agents_server`で起動したsessionの観測は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。
 
 ## メインエージェントだけに適用する規範
 
@@ -46,6 +46,6 @@ Codexの委譲待機はホストの`wait_agent`で終端を観測する。`wait_
 
 ユーザー確認の手段が構造化質問である場合は、実行環境が公開する構造化質問のうち、公開スキーマ、モード制限、用途制限およびホスト命令へ適合する機能を使う。Plan modeで同期型の`request_user_input`を利用できる場合は回答まで待つ。同期型を利用できず非同期型の`request_user_input_async`を利用できる場合は、質問を発行し、後続のユーザーメッセージとして届く実際の回答を元の質問へ対応付ける。発行の成功と選択肢の初期選択は回答または承認として扱わない。適合する構造化質問が無い場合だけ、`agent-toolkit:user-confirmation-and-report`の`references/codex-format.md`を使う。
 
-回答期限を提供しないDefault modeでは、協調モードの確認を前段の手順で提示して回答を待つ。自律モードでは質問を発行せずUWIへ記録して暫定判断で続行する。権限設定またはauto mode classifierの拒否への確認は、`agent-toolkit:user-confirmation-and-report`が定める例外を適用する。
+回答期限を提供しないDefault modeでは、協調モードの確認を前段の手順で提示して回答を待つ。自律モードは回答期限の無い実行環境として`agent-toolkit:user-confirmation-and-report`「手段の選択」の表に従う。権限設定またはauto mode classifierの拒否への確認は、`agent-toolkit:user-confirmation-and-report`が定める例外を適用する。
 
 `atk agents-exit-session`が現在のCodex本体を停止できる場合は、そのツール呼び出しをsession終端とする。停止後の`final`の返却は終端の判定条件から外す。

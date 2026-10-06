@@ -1,7 +1,7 @@
 # 定義済みの名前の一覧
 
 本書はagent-toolkitの規範が定義し、複数の文書で使う名前を、指示対象と定義元とともに1行ずつ並べる。
-名前を書く全ての主体（規範、設計文書、WI、計画、コミットメッセージおよびコードの書き手）が、既存の対象を名前で指す時と新しい名前を付ける時に本書を全文読む。
+本書の読み手は名前を書く全ての主体（規範、設計文書、WI、計画、コミットメッセージおよびコードの書き手）であり、本書を読む時点（既存の対象を名前で指す時と新しい名前を付ける時）は`SKILL.md`の読込表が定める。
 定義そのものは定義元だけに置き、本書は名前から定義元へ至る索引とする（`agent-documents-basics.md`「主要用語の初出定義先」）。
 
 ## 命名の方針
@@ -17,10 +17,16 @@
 6. 返却形式の欄名も日本語名にする
 7. 用例の多さや既存の定義の有無を、名前を残す根拠にしない
 
-対象を指す時は、識別子があれば識別子を、無ければ本書の名前を使い、名前を新たに作成しない。
+対象を指す時は、識別子があれば識別子を、無ければ本書の名前を使う。
 識別子も本書の名前も無い対象へ繰り返し参照する名前が要る場合は、自然な語を選び、定義元へ1文の定義を置いて本書へ行を加えてから使う。
-`agent-documents-basics.md`「主要用語の初出定義先」の「定義を読まなくても指示対象を推測できる一般的な語を優先」は方針1と同じ向きであり、方針2と合わせて読む。
-`agent-toolkit/share/rules-main.md`と`writing.md`の「実在する名前が無い対象は説明で書く」規定は名前が要らない対象に適用し、繰り返し参照する工程などの名前では本節の方針を優先する。
+名前の候補は次の手順で作成し、候補の順位は方針1と方針7に従う。
+
+1. 候補は本書の一覧だけでなく、同じ指示対象を既存成果物がすでに呼んでいる語（本書の一覧に無い語を含む）からも作成する
+2. 候補語ごとに、対象リポジトリの全追跡ファイルを固定文字列で検索する。範囲には変更予定のディレクトリの外にある設計文書、経緯記録、エンドユーザー向け文書と隠しディレクトリを含める。既存の用例があれば、その意味と新しい概念との異同を確かめる
+3. 別の意味の用例がある語は対象を一意に指さないため、候補から外す。ユーザーが指定した語も同じく推奨する候補から外し、その語を変える案は方針5に従ってユーザー確認する。既存の用例を書き換えて衝突を解消する案でも語は両方の意味に読めるまま残るため、その語は候補から外したままとする
+
+規範、設計、計画、WI、確認の本文に新しく導入する概念名へこの手順を適用し、1つの文書の中だけで定義する語と、質問の説明のために作成した語も含める。既存の語を候補に入れた後の順位は、他の候補と同じ方針1と方針7で決める。候補を一覧だけから選ぶと、一覧に無い既存の呼び方が候補に挙がらず、別の意味で使われている語を新しい概念へ割り当てることになる。
+本節の手順で定義元と本書へ行を加えた名前は、`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」と`writing.md`がいう実在する名前に当たる。定義を置く前の対象は、両規定に従い説明で書く。
 
 ## 一覧
 
@@ -51,8 +57,9 @@
 | 全体検証 | リポジトリ全体を対象にした自動チェックとテストの実行 | `agent-toolkit/share/workflow-phases.md`の工程表の直後 |
 | 受入シナリオ検証 | 計画の受入シナリオを公開された呼び出し手段から検証する結合・E2Eテストを、変更範囲の検証で実行すること | `agent-toolkit/share/workflow-phases.md` |
 | 公開工程判定 | リポジトリ全体の自動チェックとCIの成功を述べる完成条件を、公開工程で判定すること | `agent-toolkit/share/workflow-phases.md` |
-| 変更範囲の検証 | 変更するファイルとその直接消費側に限った検証 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と終端工程」 |
-| 統合時の完成条件判定 | 統合指示の前に、完成条件証拠の各行がWIの完成条件と原文要求に過不足なく対応するかを確かめる確認 | `agent-toolkit/share/exec.parent.md`「統合の指示と受領」 |
+| 直接影響範囲 | 変更した定義、文言、パスを参照、呼び出し、生成または期待値として持ち、合わせて直す必要がある箇所の全体 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
+| 変更範囲の検証 | 変更するファイルとその直接影響範囲に限った検証 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と終端工程」 |
+| 統合時の完成条件判定 | 統合指示の前に、完成条件証拠の各行がWIの完成条件と原文要求に過不足なく対応するかを確かめる確認 | `agent-toolkit/share/exec.parent.md`「統合時の完成条件判定」 |
 | 初回レビュー | 実行レビュー担当が最初に行う実行レビュー | `agent-toolkit/share/exec-review.subagent.md` |
 | 再レビュー | 指摘の修正後に同じ実行レビュー担当が行う実行レビュー | `agent-toolkit/share/exec-review.subagent.md` |
 | 引き継ぎ再レビュー | 継続できなくなった実行レビュー担当に代わり、新しい担当が引き継いで行う再レビュー | `agent-toolkit/share/exec-review.subagent.md` |
@@ -67,6 +74,7 @@
 | 説明担当 | 選定結果の包含、除外または構成の理由を説明する読み取り専用の委譲先 | `agent-toolkit/share/pick-wi-explain.parent.md` |
 | ユーザー確認 | エージェントがユーザーへ判断を求める行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | ユーザーへの報告 | ユーザーの判断を求めずに成果、事実、未達などを届ける行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
+| 要件・意図の曖昧さ | 目的、対象範囲、期待結果、制約、外部から観測できる挙動など、ユーザーしか答えを持たない事項の解釈が、原文、先行発話、現物の調査を経ても1つに定まらない状態 | `agent-toolkit/skills/user-confirmation-and-report/SKILL.md`「確認要否の判定」 |
 | 報告本文の判定 | Stop hookが作業完了報告・振り返り結果報告・AWI投入結果報告の本文へ適用する、対策の対応・見送りの根拠・未確定の観測・最終報告の確定の判定 | `agent-toolkit/skills/completion-report/SKILL.md`「工程」 |
 | 3段判定 | 新しい対象、操作、設計を許容性、必要性、実装品質の順に判定すること | `agent-toolkit/rules/01-agent.md`「QCDと3段判定」 |
 | 委譲の要否判定 | 委譲するかと委譲の単位を決める判定 | `agent-toolkit/skills/delegation/references/routing.md` |
@@ -77,6 +85,8 @@
 | 委譲プロンプト | 委譲先を起動するときに渡す指示の本文 | `agent-toolkit/skills/delegation/references/base-contract.md` |
 | 返却値 | 委譲先が`<役割名>.subagent.md`の`## 出力`に従って返す値 | `agent-toolkit/skills/delegation/references/base-contract.md` |
 | エージェント向け文書 | コーディングエージェントが直接読み込む文書 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
+| 読込表 | スキル本体と`<役割名>.parent.md`・`<役割名>.subagent.md`の冒頭に置き、時点または条件と、その時点で全文読む参照資料を対応付ける表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
+| 配送範囲表 | 常時規範と配送文がどの主体へ届くかを示す表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | 常時規範 | agent-toolkitが読み手へ常に配送する規範（`rules/`配下と`share/rules-main*.md`・`rules-subagent*.md`） | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | プロジェクト規範 | 対象リポジトリが規範として定める指示 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | プロジェクト方針 | プロジェクト規範に加え、規範化されていない記述に書かれた方針 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |

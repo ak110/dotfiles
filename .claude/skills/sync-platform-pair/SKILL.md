@@ -8,6 +8,16 @@ description: >
 
 # Linux/Windowsペアファイル編集支援
 
+本スキルはLinux/Windowsのペアファイルを両側そろえて編集する手順を提供する。
+
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前 | `<plugin root>/skills/writing-standards/references/powershell.md` |
+| Bash（`.sh`・`.sh.tmpl`）側を編集する前 | `<plugin root>/skills/writing-standards/references/bash.md` |
+| Linux側とWindows側で分岐するコードを変更する前 | `<plugin root>/skills/writing-standards/references/testing.md`の「プラットフォーム分岐の検証」 |
+
 ## 適用条件
 
 本リポジトリでLinux/Windowsのペアファイルのいずれかを編集するときに適用する。該当の判定は後掲のファイル名規則で行う。
@@ -43,7 +53,7 @@ description: >
 
 ## ローカルで実行するlintとCIジョブの対応
 
-ローカルの`make test`で実行されないCIジョブは`dotfiles-development`「開発手順」の全体検証の項が挙げる。
+ローカルの`make test`で実行されないCIジョブは`dotfiles-development`の`references/verification-values.md`「push前のチェックとCIだけが実行するチェック」が挙げる。
 
 Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されず、CIの`test-windows`ジョブが検証する。
 `agent-toolkit:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
