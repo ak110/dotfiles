@@ -200,7 +200,9 @@ REVIEW_RESULT_NEXT_ACTION = (
 IMPROVEMENT_RESULT_NEXT_ACTION = (
     "`agent_message`の`気付いた改善点:`で始まる全行を上流へ渡す。"
     "メインエージェントは次のユーザーへの発話へ転記し、委譲先は自身の返却の末尾へ逐語で引き継ぐ。"
-    "報告元と確認した範囲の添え方は`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」に従う"
+    "転記する各行は字下げを除く行頭に`気付いた改善点:`を原文のまま置き、標識の前と、標識とコロンの間へ報告元などの語を入れない。"
+    "報告元と確かめた範囲は標識行の原文の後ろか別の行に添える。"
+    "未確認の主張の扱いなど残りの細則は`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」に従う"
 )
 
 
