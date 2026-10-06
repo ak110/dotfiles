@@ -9,7 +9,15 @@ user-invocable: false
 # WI処理の運用概要
 
 本スキルは複数のセッションとユーザーの操作にまたがるWI処理の全体像を提供する知識スキルである。
-個々の工程の実行契約は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`と各工程のスキルを読む。スキルには`agent-toolkit:plan-mode`、`agent-toolkit:process-wi`、`agent-toolkit:single-lane-process`などがある。
+個々の工程の実行契約は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`と各工程のスキルが定める。スキルには`agent-toolkit:plan-mode`、`agent-toolkit:process-wi`、`agent-toolkit:single-lane-process`などがある。
+
+## 読込表
+
+次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` |
 
 ## 利用形態と起動主体
 

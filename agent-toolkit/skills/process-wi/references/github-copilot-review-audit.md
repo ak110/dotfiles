@@ -124,7 +124,7 @@ gh pr comment <PR> --repo <OWNER>/<REPO> --body-file <BODY_FILE>
 
 「判定結果のGitHubへの記録」の書き込みが成功したreview本文のdatabaseIdと、指摘なしと分類したreview本文のdatabaseIdを、`atk review-audit mark --repo <OWNER>/<REPO> <ID>...`で記録する。
 指摘なしの本文を記録すると、その本文が以降の監査で判定の対象から外れ、同じ本文の読解の反復を避けられる。
-要修正と分類したreview本文のdatabaseIdは、その指摘を記録したAWIが終端するまで判定の対象に残す。
+要修正と分類したreview本文のdatabaseIdは、その指摘を記録したAWIが終端するまで判定の対象に残す。是正後の監査でその本文を是正済みと判定し、分類と根拠をGitHubへ記録するためである。
 記録するdatabaseIdはreview本文のものに限る。inline commentは未解決threadの解決状態が同じ役割を果たす。
 記録の読み書きは`atk review-audit`だけで行う。記録ファイルのパス解決と保存形式をこのコマンドが定め、別の手段で同じファイルを読み書きすると形式が分岐するためである。
 記録先は対象GitHubリポジトリの外にある状態ディレクトリであり、本記録は成果物を変更しない制約の対象に当たらない。
@@ -193,3 +193,4 @@ PRレビュー指摘を拾うスクリプトにそっちもチェックして拾
 却下が成功したアラート、是正済みと判定したアラート、要修正として返したアラートの番号を、`atk review-audit mark --repo <OWNER>/<REPO> dependabot:<番号>...`で記録する。
 記録したアラートは以降のpendingから除かれ、`atk wi process-loop`の待機中確認も同じアラートを理由にprocess-wiの実行を起動しない。
 要修正のアラートは、委譲元が同じセッションで是正するかAWIへ記録して扱う。
+要修正のアラートも記録するのは、是正が`default_branch`で指定されたbranchへ反映されるとGitHubがアラートを`fixed`にするため再判定を要さず、記録しないと`atk wi process-loop`が同じアラートを理由にprocess-wiの実行を起動し続けるためである。要修正のreview本文を判定対象に残す「判定済みの記録」の扱いは、GitHubへの記録を監査担当が行うreview本文に限る。

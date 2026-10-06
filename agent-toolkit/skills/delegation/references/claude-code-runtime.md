@@ -1,11 +1,11 @@
 # Claude Codeでの委譲の実装
 
-Claude Codeから委譲を起動する直前に本文書を全文読む。
-共通の送信・受領契約は`agent-toolkit:delegation`のSKILL.md、委譲先選定とworktreeの一般規定は同スキルの`references/runtime-routing.md`「実行手段の選択」に従う。
+本書はClaude Codeから委譲するときの実装上の取り決めを定め、読む時点は`agent-toolkit:delegation`の読込表が定める。
+共通の送信・受領契約は`agent-toolkit:delegation`のSKILL.md、委譲先選定とworktreeの一般規定は同スキルの`references/runtime-routing.md`「実行手段」と「実装担当とworktree」に従う。
 
 ## 起動パラメーター
 
-Agent機能を使う条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段の選択」に従う。専用agent定義が必要な工程ではその役割を、横断調査では調査に適した役割を選ぶ。モデル、推論の深さ、背景実行および省略時の値は、起動時に公開されたスキーマと定義のfrontmatterから確定する。
+Agent機能を使う条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。専用agent定義が必要な工程ではその役割を、横断調査では調査に適した役割を選ぶ。モデル、推論の深さ、背景実行および省略時の値は、起動時に公開されたスキーマと定義のfrontmatterから確定する。
 
 `routing.md`「会話を引き継ぐ委譲」がforkを選び、fork modeが有効なときは`Agent`へ`subagent_type: "fork"`を渡す。forkは親のモデルと会話履歴を引き継ぎ、背景で実行され、通常の`Agent`の子と同じ完了通知で結果を返す。forkの起動は親からの1階層で完結する。対話セッションのfork modeは初期状態で有効だが、`-p`の非対話実行とAgent SDKでは初期状態で無効である。無効な環境では`agents_server`の新規起動を使う。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：起動パラメーター：2026年9月27日」にある。
 
@@ -74,7 +74,7 @@ agent定義の`tools`は許可の上限を示す。`ListAgents`の許可と実�
 ## 検証コマンドの実行形態
 
 委譲先が実行する検証コマンド（テスト実行・lint実行など）の前景実行と分割は`references/waiting-and-monitoring.md`「背景ジョブの起動形（Claude Code）」に従う。
-背景実行へ移ったコマンドを同じターンの中で回収してから終端報告を返す規定は、`agent-toolkit/share/agents-server-delegate-notice.md`と`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が定める。
+背景実行へ移ったコマンドの終了状態を確定してから終端報告を返す規定は、`agent-toolkit/share/agents-server-delegate-notice.md`と`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が定める。
 
 Bashツールで`run_in_background=true`により起動したコマンドと、前景起動から実行環境の判断で背景へ移行したコマンドを停止する場合は、起動結果または移行通知が返したタスクIDを`TaskStop`へ渡す。
 `TaskStop`が遅延提示される環境ではツールスキーマを取得してから呼び出し、停止対象は保持したタスクIDだけで指定する。

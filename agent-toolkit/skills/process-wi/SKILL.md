@@ -9,6 +9,18 @@ description: >
 選定時に固定したAWIをレーンへ分け、各レーンの同じ担当threadが計画を要する場合の起草から統合までを担う。メインは選定、判断が要る計画境界の確認、実行レビューの調整、公開工程およびセッション終端を担う。
 AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手順は`agent-toolkit:user-confirmation-and-report`に従う。本スキルの実行中は自律モードとする。
 
+## 読込表
+
+次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| pickerによる対象選定を開始する前（実行順3）と、処理対象WIをpickerへ追加する前 | `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md` |
+| 専用worktreeとレーンを作成する前（実行順4） | `references/run-lanes.md` |
+| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
+| 公開工程を開始する前（実行順8） | `references/finish-session.md` |
+| 終端担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` |
+
 ## 用語
 
 本スキルが扱う主要用語を次のとおり定める。詳細は各用語が参照する規定が定める。
@@ -65,12 +77,12 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 
 1. 直前の同期結果を読み、このセッションでAWIの処理を完遂できるかを判定する。判定の手順は`## 直前の同期結果の検分`が定める。
 2. 対象リポジトリが個人プロジェクトに該当するかの判定手段は`ak110-projects-operations`が定める。該当する場合は同スキルを起動し、同期と依存更新の要否を確定する。
-3. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`を全文読み、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って未処置対象を取得し、必要な場合に監査担当を起動する。
-4. `references/run-lanes.md`を全文読み、選定結果の段階と先行レーンに従って専用worktreeとレーンを作成し、レーン担当を起動する。後段は先行レーンの統合と資源解放を受領してから現行HEADを基点に作成する。
+3. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`に従い、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って未処置対象を取得し、必要な場合に監査担当を起動する。
+4. `references/run-lanes.md`に従い、選定結果の段階と先行レーンに従って専用worktreeとレーンを作成し、レーン担当を起動する。後段は先行レーンの統合と資源解放を受領してから現行HEADを基点に作成する。
 5. 各レーンの計画または計画なしの準備結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「計画準備の受領」に従って受け取り、判断を要する場合だけ`実装開始`または`実装なし`を返す。
 6. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
 7. ユーザーが明示して追加した処理対象WIは`references/run-lanes.md`に従って割り当て、実装とレビューを収束させる。同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
-8. 全レーンの終端および起動した監査の処置確定後、`references/finish-session.md`を全文読み、公開とセッション終端を完遂する。
+8. 全レーンの終端および起動した監査の処置確定後、`references/finish-session.md`に従って公開とセッション終端を完遂する。
 
 ## 直前の同期結果の検分
 
