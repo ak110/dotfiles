@@ -415,6 +415,73 @@ def test_prepare_reads_codex_thread(
     assert "候補として残す問題は無かった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
 
 
+def test_prepare_lists_adhoc_processing_per_record_without_failure_selection(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """その場のコードによる加工は記録ごとの件数と記録位置・代表入力の一覧で載り、失敗署名の選別を受けない。
+
+    失敗した加工の呼び出しも、単発の失敗として件数表へ送られる失敗の候補とは別に加工の候補へ残る。
+    """
+    saved_output = "/home/u/.cache/agent-toolkit/managed-temp/atk-output-abc/output.txt"
+    entries = [
+        {"type": "user", "timestamp": "2026-09-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-06T12:00:01Z",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "name": "Bash", "id": "toolu_sed", "input": {"command": f"sed -n 2p {saved_output}"}}
+                ],
+            },
+        },
+        {
+            "type": "user",
+            "timestamp": "2026-09-06T12:00:02Z",
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_sed", "content": "2行目"}]},
+        },
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-06T12:00:03Z",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Bash",
+                        "id": "toolu_py",
+                        "input": {"command": "python3 -c 'import sys; sys.exit(3)'"},
+                    }
+                ],
+            },
+        },
+        {
+            "type": "user",
+            "timestamp": "2026-09-06T12:00:04Z",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "toolu_py", "is_error": True, "content": "Exit code 3"}],
+            },
+        },
+    ]
+    transcript = tmp_path / "11111111-2222-3333-4444-555555555555.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+
+    exit_code = prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW)
+
+    assert exit_code == 0, capsys.readouterr().err
+    record = json.loads(capsys.readouterr().out)
+    assert record["candidate_counts"] == {"adhoc-processing": 1}
+    assert record["excluded_counts"]["single-session-failure"] == 1
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    record_id = "claude:11111111-2222-3333-4444-555555555555"
+    assert (
+        f"- c0001 adhoc-processing（発生2件）: 記録{record_id}のその場のコードによる加工\n"
+        f"  - {record_id}:2: sed -n 2p {saved_output}\n"
+        f"  - {record_id}:4: python3 -c 'import sys; sys.exit(3)'\n"
+    ) in candidates
+
+
 def test_prepare_writes_breakdown_of_rate_limiting_threads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

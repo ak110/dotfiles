@@ -3879,6 +3879,22 @@ _CHECK_COMMANDS = frozenset(
         ("wait-ci", ""),
     }
 )
+_ADHOC_SHELL_TOOLS = frozenset({"bash", "exec", "exec_command", "shell", "local_shell", "shell_command"})
+"""シェルのコマンドを実行するツール名の末尾部分。Codexの`exec`はJavaScript本文から`exec_command`を呼ぶ形でコマンドを渡す。"""
+_ADHOC_PYTHON = r"(?<![\w.-])python(?:\d+(?:\.\d+)*)?"
+_ADHOC_INLINE_CODE = re.compile(
+    _ADHOC_PYTHON + r"(?:\s+-[A-Za-z]+)*?\s+-c(?![\w-])"
+    r"|" + _ADHOC_PYTHON + r"(?:\s+-[A-Za-z]+)*(?:\s+-)?\s*<<"
+    r"|(?<![\w.-])(?:python(?:\d+(?:\.\d+)*)?|uv\s+run)(?:\s+-\S+)*\s+\S*managed-temp/\S+\.py(?!\w)"
+    r"|(?<![\w.-])node(?:\s+-\S+)*?\s+(?:-e|--eval)(?![\w-])"
+)
+"""インタプリタへその場で書いたコードを渡す実行（`-c`、ヒアドキュメントの標準入力、managed-tempのスクリプト、`node -e`）。"""
+_ADHOC_SAVED_OUTPUT = re.compile(r"atk-output-|agents-wait-|/tool-results/|/tasks/[^\s'\"]*\.output(?!\w)")
+"""`atk`が標準出力の代わりに示す保存先、`atk agents wait`の結果ファイル、
+ホストが退避したツール結果とバックグラウンドタスクの出力。
+"""
+_ADHOC_OUTPUT_PROCESSOR = re.compile(r"(?<![\w.-])(?:jq|awk|gawk|cut|sed|python(?:\d+(?:\.\d+)*)?)(?![\w.-])")
+"""保存された出力の後加工に使うコマンド。読むだけの`cat`・`rg`・`head`は含めない。"""
 
 
 def _bundle_events(
@@ -3914,6 +3930,7 @@ def _bundle_events(
         warnings,
         _hook_notice_candidate_events(collected),
         main_record_id=next(item.record_id for item in collected if item.role == "main"),
+        adhoc_processing=_adhoc_processing_events(collected),
     )
 
     candidate_evidence = _write_candidate_evidence_files(
@@ -3950,18 +3967,68 @@ def _bundle_events(
     return events, 0
 
 
+def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """メイン記録と全ての委譲先の記録から、その場のコードによる加工に当たるシェル呼び出しを返す。
+
+    会話の流れはメイン記録だけを対象とするため、委譲先の成功した呼び出しは候補の側でしか振り返りの入力に届かない。
+    代表入力は会話の流れと同じく空白を詰めた1行を`_BUNDLE_BODY_LENGTH`字までとする。
+    """
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        for call in _record_tool_calls(item.records):
+            if not _is_adhoc_processing(call.tool, call.text):
+                continue
+            events.append(
+                {
+                    "kind": "adhoc-processing",
+                    "record": item.record_id,
+                    "line": call.line,
+                    "timestamp": call.timestamp,
+                    "tool": call.tool,
+                    "text": _clip(" ".join(call.text.split()), _BUNDLE_BODY_LENGTH),
+                }
+            )
+    return events
+
+
+def _is_adhoc_processing(tool: str, command: str) -> bool:
+    """シェル呼び出しが、その場のコードによる加工に当たるかを判定する。
+
+    対象はシェルのコマンドを実行するツール（Claude Codeの`Bash`、Codexのコマンド実行）の呼び出しとし、
+    終了コードによらず成功した呼び出しも含む。次のいずれかに当たるコマンドを加工とする。
+
+    - インタプリタへその場で書いたコードを渡す実行: `python`・`python3`・`uv run … python`への`-c`の引数または
+      ヒアドキュメントの標準入力、managed-tempへ書いたスクリプトファイルの`python`・`uv run`による実行、`node -e`
+    - 保存されたツール出力の後加工: `atk`が標準出力の代わりに示す保存先（`atk-output-`を含むパス）、
+      `atk agents wait`の結果ファイル（`agents-wait-`を含むパス）、ホストが退避したツール結果（`/tool-results/`）と
+      バックグラウンドタスクの出力（`/tasks/`配下の`.output`）を、`jq`・`awk`・`cut`・`sed`・Pythonで加工する呼び出し
+
+    リポジトリのファイルや保存出力を`cat`・`rg`で読むだけの呼び出しと、保存出力を含まないパイプラインの
+    `cut`・`sed`（検索結果の整形など）は含めない。
+    """
+    leaf = tool.casefold().rsplit("__", maxsplit=1)[-1].rsplit(".", maxsplit=1)[-1]
+    if leaf not in _ADHOC_SHELL_TOOLS:
+        return False
+    if _ADHOC_INLINE_CODE.search(command):
+        return True
+    return bool(_ADHOC_SAVED_OUTPUT.search(command) and _ADHOC_OUTPUT_PROCESSOR.search(command))
+
+
 def _candidate_events(
     timeline: list[dict[str, Any]],
     warnings: list[dict[str, Any]],
     hook_notices: list[dict[str, Any]],
     *,
     main_record_id: str = "main",
+    adhoc_processing: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
-    母集団はhook通知、ユーザー介入、失敗したツール実行、警告および工程の返却値とする。
+    母集団はhook通知、ユーザー介入、失敗したツール実行、警告、工程の返却値およびその場のコードによる加工とする。
     返却値を含めるのは、本文に誤りがある委譲結果が他の事象には現れず、本文の判定前に候補集合に含まれなくなるためである。
     正常な完了だけを示し、想定外事象を持たない返却は、判定すべき本文を持たないため除外する。
+    その場のコードによる加工（`adhoc-processing`）は成功した呼び出しも含み、記録ごとに1件の候補へまとめ、
+    呼び出しごとの記録位置と代表入力を`calls`へ保持する。判定条件は`_is_adhoc_processing`が定める。
 
     同じ位置の同一hook発火は構造化されたhook通知を代表とする。それ以外は、同じ位置でも候補種別またはhookタグが異なる事象を別候補として保持する。同じ位置、候補種別およびhookタグの
     組だけを重複として除外する。`permission-denial`は`failed-tool`の一部でもあるため、同じ位置の
@@ -4012,6 +4079,7 @@ def _candidate_events(
             "delegate-return",
             (event for event in timeline if _is_delegate_return(event, main_record_id=main_record_id)),
         ),
+        ("adhoc-processing", iter(adhoc_processing or ())),
     )
     for candidate_kind, events in sources:
         for event in events:
@@ -4148,6 +4216,12 @@ def _candidate_events(
         if _is_bounded_hook_group(key):
             candidate["occurrence_count"] = occurrence_count
             candidate["omitted_locator_count"] = omitted_locator_count
+        if key and key[0] == "adhoc-processing":
+            ordered = sorted(events, key=lambda event: (str(event["record"]), int(event["line"])))
+            candidate["calls"] = [
+                {"record": str(event["record"]), "line": int(event["line"]), "text": str(event.get("text", ""))}
+                for event in ordered
+            ]
         candidates.append(candidate)
     included_locators.sort(key=lambda locator: (locator["record"], locator["line"]))
     return [
@@ -5059,6 +5133,9 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
         return candidate_kind, _failure_signature(candidate_kind, event)[0]
     if candidate_kind == "escalation":
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
+    if candidate_kind == "adhoc-processing":
+        # 記録（thread）ごとに1件へまとめ、委譲先が多い実行でも候補の件数が呼び出しの件数に比例しないようにする。
+        return candidate_kind, str(event["record"])
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
 
 

@@ -8888,6 +8888,118 @@ def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys:
     assert "併用できない" in event["text"]
 
 
+_ADHOC_THREAD = "77777777-7777-4777-8777-777777777777"
+_CODEX_EXEC_INPUT = (
+    'const r=await tools.exec_command({cmd:"python3 -c \'print(open(\\"draft.md\\").read().count(\\"x\\"))\'"});'
+)
+
+
+def test_bundle_collects_adhoc_processing_per_record_including_delegates(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """委譲先を含む記録ごとに、その場のコードによる加工を1件の候補へまとめ、読むだけの呼び出しを含めない。
+
+    Codex形式の委譲先記録は、Codex CLIのrollout（2026年10月4日の記録）の`exec`ツールがJavaScript本文から
+    `exec_command`を呼ぶ形を写した。
+    """
+    root = tmp_path / "project"
+    transcript = root / "parent-session.jsonl"
+    saved_output = "/home/u/.cache/agent-toolkit/managed-temp/atk-output-abc/output.txt"
+    _write_jsonl(
+        transcript,
+        [
+            {"type": "user", "timestamp": "2026-10-06T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _claude_call("2026-10-06T00:00:01Z", "jq-1", "Bash", {"command": f"jq -r '.line' {saved_output}"}),
+            _claude_result("2026-10-06T00:00:02Z", "jq-1", "12"),
+            _claude_call("2026-10-06T00:00:03Z", "cat-1", "Bash", {"command": "cat agent-toolkit/README.md"}),
+            _claude_result("2026-10-06T00:00:04Z", "cat-1", "本文"),
+            _claude_call("2026-10-06T00:00:05Z", "rg-1", "Bash", {"command": "rg -n needle . | cut -c1-200"}),
+            _claude_result("2026-10-06T00:00:06Z", "rg-1", "a.py:1:needle"),
+            _claude_call("2026-10-06T00:00:07Z", "sed-1", "Bash", {"command": "sed -n 1,20p agent-toolkit/x.py"}),
+            _claude_result("2026-10-06T00:00:08Z", "sed-1", "本文"),
+            _codex_tool_use_entry("2026-10-06T00:00:09Z", "call-codex", _ADHOC_THREAD),
+            _codex_tool_result_entry("2026-10-06T00:00:10Z", "call-codex", _ADHOC_THREAD),
+        ],
+    )
+    heredoc = "python3 - <<'EOF'\nimport json\nprint(json.dumps({'start': 1, 'end': 48}))\nEOF"
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [
+            _claude_call("2026-10-06T00:00:02Z", "heredoc-1", "Bash", {"command": heredoc}),
+            _claude_result("2026-10-06T00:00:03Z", "heredoc-1", '{"start": 1, "end": 48}'),
+            _claude_call("2026-10-06T00:00:04Z", "inline-1", "Bash", {"command": "uv run --frozen python -c 'print(1)'"}),
+        ],
+    )
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    _write_jsonl(
+        codex_home / "sessions" / "2026" / "10" / "06" / f"rollout-2026-10-06T00-00-09-{_ADHOC_THREAD}.jsonl",
+        [
+            {"timestamp": "2026-10-06T00:00:09Z", "type": "session_meta", "payload": {"id": _ADHOC_THREAD}},
+            _codex_item(
+                "2026-10-06T00:00:11Z",
+                {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "c-exec",
+                    "input": _CODEX_EXEC_INPUT,
+                },
+            ),
+            _codex_item("2026-10-06T00:00:12Z", {"type": "custom_tool_call_output", "call_id": "c-exec", "output": "1"}),
+            _codex_item(
+                "2026-10-06T00:00:13Z",
+                {"type": "function_call", "name": "exec_command", "call_id": "c-rg", "arguments": '{"cmd": "rg needle"}'},
+            ),
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    _read_jsonl(capsys, raw=True)
+
+    candidates = [
+        json.loads(line)
+        for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()
+        if json.loads(line).get("candidate_kind") == "adhoc-processing"
+    ]
+    assert [(item["analysis_group_hint"], item["count"], item["calls"]) for item in candidates] == [
+        (
+            ["claude:parent-session"],
+            1,
+            [{"record": "claude:parent-session", "line": 2, "text": f"jq -r '.line' {saved_output}"}],
+        ),
+        (
+            ["claude:parent-session/agent-child"],
+            2,
+            [
+                {
+                    "record": "claude:parent-session/agent-child",
+                    "line": 1,
+                    "text": "python3 - <<'EOF' import json print(json.dumps({'start': 1, 'end': 48})) EOF",
+                },
+                {
+                    "record": "claude:parent-session/agent-child",
+                    "line": 3,
+                    "text": "uv run --frozen python -c 'print(1)'",
+                },
+            ],
+        ),
+        (
+            [f"codex:{_ADHOC_THREAD}"],
+            1,
+            [
+                {
+                    "record": f"codex:{_ADHOC_THREAD}",
+                    "line": 2,
+                    "text": _CODEX_EXEC_INPUT,
+                }
+            ],
+        ),
+    ]
+
+
 def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() -> None:
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},

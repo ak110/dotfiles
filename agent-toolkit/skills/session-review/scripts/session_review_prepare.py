@@ -297,9 +297,19 @@ def _candidate_lines(candidate: dict[str, Any], evidence: dict[str, Any], timeli
     """候補1件を、1行の要約、記録位置および判断に要る補足で組み立てる。
 
     hook通知は通知が判定した入力を読まないと是非を判断できないため、直前のアシスタント発話を添える。
+    その場のコードによる加工は、記録ごとの件数と、呼び出しごとの記録位置と代表入力の一覧で示す。
+    加工の目的と反復は呼び出しの列を見比べて判定するため、代表の1件だけでは判断できない。
     """
     kind = str(candidate["candidate_kind"])
     occurrence = candidate.get("occurrence_count", candidate.get("count", 1))
+    if kind == "adhoc-processing":
+        record = candidate["locators"][0]["record"]
+        lines = [f"- {candidate['candidate_id']} {kind}（発生{occurrence}件）: 記録{record}のその場のコードによる加工"]
+        lines.extend(
+            f"  - {call['record']}:{call['line']}: {_one_line(str(call.get('text', ''))) or '（入力なし）'}"
+            for call in candidate.get("calls", [])
+        )
+        return lines
     events = evidence.get("events", [])
     bodies = [
         _readable_entry_text(str(event["text"]))
