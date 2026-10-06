@@ -2345,7 +2345,7 @@ def _warning_tool_names(records: list[_Record]) -> dict[str, str]:
 def _warning_result_values(entry: dict[str, Any], tool_names: dict[str, str]) -> list[tuple[Any, bool, bool]]:
     """警告を抽出できる結果値、hook由来および非構造化本文の走査可否を返す。"""
     values: list[tuple[Any, bool, bool]] = []
-    tool_use_result = entry.get("toolUseResult")
+    tool_use_result = _persisted_result(entry.get("toolUseResult"))
     is_read_result = isinstance(tool_use_result, dict) and "file" in tool_use_result
 
     message = entry.get("message")
@@ -3021,17 +3021,36 @@ def _entry_timestamp(entry: dict[str, Any]) -> str | None:
     return timestamp if isinstance(timestamp, str) else None
 
 
+def _persisted_result(result: Any) -> Any:
+    """退避した実行結果の`stdout`を、保存先のファイルの内容へ置き換えた写しを返す。
+
+    agent-toolkitのPostToolUseは、退避したシェル出力の`stdout`を未読の通知へ置き換え、元の出力は
+    `persistedOutputPath`のファイルだけが持つ。保存先が実在するファイルならその内容を実体とし、
+    無い場合（回収済みなど）は記録の値をそのまま返す。
+    """
+    if not isinstance(result, dict):
+        return result
+    path = result.get("persistedOutputPath")
+    if not isinstance(path, str) or not path.strip():
+        return result
+    try:
+        content = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return result
+    return {**result, "stdout": content}
+
+
 def _tool_result_body(block: dict[str, Any], entry: dict[str, Any]) -> str:
     """tool_resultブロックの実体本文を取得する。
 
     大きなツール出力は退避先ファイルへ移され、message側のcontentには退避通知だけが残る。
     この形態ではmessage側から実際の出力を取得できないため、
-    同エントリのツール実行結果が持つ標準出力・標準エラーを本文とする。
+    同エントリのツール実行結果が持つ標準出力・標準エラー（保存先が実在すればその内容）を本文とする。
     """
     body = "\n".join(_text_blocks(block.get("content")))
     if body.strip() and not body.lstrip().startswith(_PERSISTED_OUTPUT_PREFIX):
         return body
-    result = entry.get("toolUseResult")
+    result = _persisted_result(entry.get("toolUseResult"))
     if isinstance(result, str):
         return result or body
     if not isinstance(result, dict):
@@ -3069,6 +3088,11 @@ def _entry_texts(entry: dict[str, Any]) -> list[str]:
     """
     texts: list[str] = []
     _collect_texts(entry, texts)
+    # 退避した実行結果の実体は保存先のファイルだけが持つため、記録の値に加えてその内容も検索の対象にする。
+    result = entry.get("toolUseResult")
+    persisted = _persisted_result(result)
+    if persisted is not result:
+        _collect_texts(persisted.get("stdout"), texts)
     return texts
 
 

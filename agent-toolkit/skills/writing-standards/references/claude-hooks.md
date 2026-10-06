@@ -152,9 +152,7 @@ Codexのシェル実行は、matcher上で`Bash`に一致する。
 
 ## 出力フィールドの使い分け
 
-各フィールドのスキーマとイベント別の対応可否は公式ドキュメント
-<https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
-本節は出力先の選択方針だけを定める。
+本節は出力先の選択方針だけを定め、各フィールドのスキーマとイベント別の対応可否は冒頭の公式ドキュメントに従う。
 
 イベントごとの出力契約は`agent-toolkit/agent_toolkit/_hooks/output_contract.py`が定める。
 同ファイルは公式のHooksリファレンスが定める契約をJSON Schemaで保持する。
@@ -176,6 +174,7 @@ Stop/SubagentStopでそのターン継続を強制する用途は、エラーと
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
 | `hookSpecificOutput.additionalContext` | コーディングエージェント | 行動を促す主要な通知手段。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
+| `hookSpecificOutput.updatedToolOutput` | コーディングエージェント | PostToolUseでモデルへ渡すツール結果の置き換え。同じイベントの複数のhookは元の出力に並行して動き、最後に返った置き換えが採られる |
 | `reason` | コーディングエージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
 | `permissionDecisionReason` | deny時はコーディングエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
 | `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
@@ -185,7 +184,7 @@ deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`は
 
 `decision: "block"`の挙動はイベント別に異なる。
 Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
-PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。継続強制の有無は前掲の表に従う。
+PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。
 
 - block通知は`_hooks.notice`のblock専用整形関数（`block_formatter`）で生成し、解消手段の`fix`を渡す。`warn`通知も同モジュールの整形関数へ解消手段を`fix`として渡す。いずれも`fix`を省くか空文字列または空白文字だけにすると`ValueError`となり、整形関数は本文の後へ`次の操作: <fix>`の行を置く
 - block・warn本文の構成はこれらの整形関数に限る（独自の整形関数では解消手段の欠落を機械的に検出できなくなるため）。解消手段は本文へ混ぜず`fix`へ渡す。文面の基準は`writing.md`「読み手別の追加注意点」のプログラムが出力するメッセージの項目に従う

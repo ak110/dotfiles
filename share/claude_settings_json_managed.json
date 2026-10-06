@@ -21,6 +21,7 @@
   "attribution": {
     "commit": "Co-Authored-By: {model} / {effort} <noreply@anthropic.com>"
   },
+  "bashOutputMaxChars": 62000,
   "dialogExpiry": "never",
   "enabledPlugins": {
     "hookify@claude-plugins-official": false,

@@ -29,6 +29,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
     （編集ツールの操作記録と`create_plan_files.py`または`atk run-script plan-create`のBash標準出力）
 11. `AskUserQuestion`の自由記述の回答へ、UserPromptSubmitと同じ現物確認の注記を返す (AskUserQuestion)
+12. ホストの上限を超えて退避した出力の抜粋を、未読と保存先、次の操作を示す本文へ置き換える
+    `updatedToolOutput` (Bash / PowerShell。`persisted_output`が判定する)
 """
 
 import json
@@ -59,6 +61,7 @@ from agent_toolkit._common.shell_tokens import is_agents_exit_session_command, i
 from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     background_task_outputs as _background_task_outputs,
 )
+from agent_toolkit._hooks import persisted_output as _persisted_output
 from agent_toolkit._hooks import stop_gate as _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._hooks import (
@@ -1032,7 +1035,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _handle_edit_tool(session_id, tool_name, tool_input, cwd, notices)
         return 0
 
-    # Bash以外はここで終了
+    # Bash以外はここで終了する。PowerShellは退避した出力の置き換え（`main`）だけを対象とする
+    if tool_name == "PowerShell":
+        return 0
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
         return 0
@@ -1062,22 +1067,21 @@ def main(payload_text: str) -> int:
         termination_evidence.observe_tool(payload_text, after=True)
     except (OSError, ValueError, TypeError, KeyError) as error:
         print(f"終了工程の実行結果を取得できない: {error}", file=sys.stderr)
-    if notices:
-        try:
-            event_name = json.loads(payload_text).get("hook_event_name", "PostToolUse")
-        except (json.JSONDecodeError, ValueError, AttributeError):
-            event_name = "PostToolUse"
+    try:
+        payload = json.loads(payload_text)
+    except (json.JSONDecodeError, ValueError):
+        payload = None
+    if not isinstance(payload, dict):
+        payload = {}
+    updated_output = _persisted_output.replacement(payload)
+    if notices or updated_output is not None:
+        event_name = payload.get("hook_event_name", "PostToolUse")
         if event_name not in {"PostToolUse", "PostToolUseFailure"}:
             event_name = "PostToolUse"
-        print(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": event_name,
-                        "additionalContext": "\n".join(notices),
-                    }
-                },
-                ensure_ascii=False,
-            )
-        )
+        hook_specific: dict[str, object] = {"hookEventName": event_name}
+        if notices:
+            hook_specific["additionalContext"] = "\n".join(notices)
+        if updated_output is not None:
+            hook_specific["updatedToolOutput"] = updated_output
+        print(json.dumps({"hookSpecificOutput": hook_specific}, ensure_ascii=False))
     return exit_code

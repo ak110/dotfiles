@@ -4040,6 +4040,63 @@ def test_detail_mode_returns_persisted_body_from_tool_use_result(
     ]
 
 
+def test_replaced_persisted_output_is_read_from_saved_file(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """PostToolUseが退避した出力の`stdout`を通知へ置き換えた記録でも、保存先の内容を検索・詳細・警告の実体とする。
+
+    置き換え後の記録は元の出力を`persistedOutputPath`のファイルだけに持つ。記録の`stdout`だけを読むと、
+    保存先の末尾にだけある文字列が検索で見つからず、振り返りが出力の不在を誤って結論づける。
+    記録の形は、Claude Code 2.1.291でPostToolUseの`updatedToolOutput`が`stdout`を置き換えたときのtranscriptの
+    `toolUseResult`（置き換えた`stdout`と元の`persistedOutputPath`・`persistedOutputSize`）から写した。
+    """
+    saved = tmp_path / "tool-results" / "b1.txt"
+    saved.parent.mkdir()
+    saved.write_text("先頭の行\n" * 3000 + "warning: tail-only-marker\n", encoding="utf-8")
+    notice = f"このコマンドの出力はホストの上限を超えたため保存先へ退避された。保存先: {saved}"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {"command": "cat large.md"}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "c1",
+                            "content": f"<persisted-output>\nOutput too large (48.8KB). Full output saved to: {saved}\n\n"
+                            f"Preview (first 2KB):\n{notice}\n</persisted-output>",
+                        }
+                    ],
+                },
+                "toolUseResult": {
+                    "stdout": notice,
+                    "stderr": "",
+                    "persistedOutputPath": str(saved),
+                    "persistedOutputSize": saved.stat().st_size,
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--fixed-string", "tail-only-marker"]) == 0
+    assert _read_jsonl(capsys)[0]["count"] == 1
+    assert evidence.main([str(transcript), "--detail", "2"]) == 0
+    # 詳細は出力量の上限で末尾を省くため、通知ではなく保存先の内容を返したことを先頭で確かめる。
+    assert _read_jsonl(capsys)[0]["text"].startswith("先頭の行")
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert "tail-only-marker" in capsys.readouterr().out
+
+
 def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
