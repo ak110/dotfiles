@@ -199,9 +199,9 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
     return False
 
 
-def main(argv: list[str] | None = None) -> int:
-    """CLIから進捗ログの追記を開始する。"""
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv: list[str] | None = None, *, description: str | None = None) -> int:
+    """CLIから進捗ログの追記を開始する。`description`は別名の公開コマンドのヘルプ説明。"""
+    parser = argparse.ArgumentParser(description=description or __doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("plan_file", type=pathlib.Path, help="更新する計画ファイル")
     parser.add_argument("--completed-step", help="完了した工程（記録時は必須）")
     parser.add_argument("--result", help="結果・特記事項（記録時は必須）")

@@ -6,6 +6,7 @@ import pathlib
 import subprocess
 
 import append_progress_log
+import get_plan_commits
 import pytest
 
 from agent_toolkit._atk import run_script
@@ -87,3 +88,14 @@ def test_public_plan_commits_reads_saved_plan_by_old_working_path(
     )
     assert run_script.dispatch(args) == 0
     assert json.loads(capsys.readouterr().out)["awi"] == wi
+
+
+def test_help_describes_retrieval(capsys: pytest.CaptureFixture[str]) -> None:
+    """取得コマンドの--helpは追記ではなく取得の用途を説明する。"""
+    with pytest.raises(SystemExit) as raised:
+        get_plan_commits.main(["--help"])
+
+    assert raised.value.code == 0
+    output = capsys.readouterr().out
+    assert "AWIごとの現在の実装commitをJSON Linesで取得する" in output
+    assert "進捗ログへ実行時刻を含む1行を追記する" not in output

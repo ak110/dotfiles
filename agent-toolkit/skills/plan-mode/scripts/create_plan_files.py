@@ -433,7 +433,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     name_group.add_argument(
         "--lane",
-        help="lane-NN形式のレーン識別子。UTCの日時を含むprocess-wi用stemを生成する。",
+        help="lane-NN形式のレーン識別子。実行環境のローカル時刻の日時を含むprocess-wi用stemを生成する。",
     )
     parser.add_argument("--private-notes", type=pathlib.Path)
     parser.add_argument("--home", type=pathlib.Path)

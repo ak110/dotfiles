@@ -190,7 +190,7 @@ def test_cli_help_describes_name_and_lane(capsys: pytest.CaptureFixture[str]) ->
     assert raised.value.code == 0
     output = capsys.readouterr().out
     assert "名称だけの場合はUTCの日時を付ける" in output
-    assert "lane-NN形式のレーン識別子" in output
+    assert "lane-NN形式のレーン識別子。実行環境のローカル時刻の日時を含む" in output
 
 
 def test_cli_accepts_source_alias_and_creates_bug_file(
