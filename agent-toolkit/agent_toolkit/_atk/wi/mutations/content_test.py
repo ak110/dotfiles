@@ -19,6 +19,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 
 import pytest
 
@@ -36,6 +37,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
+    _setup_notes_with_pending_commit,
     _write_awi_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY  # noqa: E402  # pylint: disable=wrong-import-position
@@ -1551,3 +1553,197 @@ def test_terminal_state_edit_rejection_guides_to_accepted_hold_form(tmp_path: pa
     # 値を省いた`--state`は受理されないため、案内は値付きの形でなければならない。
     with pytest.raises(SystemExit):
         parser.parse_args(["wi", "hold", "20260930-000000-001.md", "--state"])
+
+
+_DRY_RUN_SUCCESS = "成功: 編集前の検証が成立した（--dry-runのため保存していない）"
+
+
+def _git_output(directory: pathlib.Path, *args: str) -> str:
+    """隔離したprivate-notesまたはremoteでGitを実行して標準出力を返す。"""
+    return subprocess.run(
+        ["git", "-C", str(directory), *args], check=True, capture_output=True, text=True, timeout=30
+    ).stdout.strip()
+
+
+def test_edit_dry_run_validates_without_changing_notes_or_remote(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """受理される本文では成功の1行だけを書き、private-notesのcommit、remoteのbranch、対象ファイルを変えない。"""
+    notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setenv("CLAUDECODE", "1")
+    filename = "20261007-010614-901.md"
+    path = _write_awi_file(notes, filename, body=AGENT_AWI_BODY, source="test")
+    _git_output(notes, "add", ".")
+    _git_output(notes, "-c", "user.name=atk-test", "-c", "user.email=atk-test@example.invalid", "commit", "-m", "awi")
+    _git_output(notes, "push", "origin", "main")
+    origin = tmp_path / "origin.git"
+    before = (_git_output(notes, "rev-parse", "HEAD"), _git_output(origin, "rev-parse", "main"), path.read_bytes())
+    args = [*_edit_body_args(tmp_path, filename, AGENT_AWI_BODY + "\n補足の段落。"), "--target-repo=github.com/example/foo"]
+
+    with pytest.raises(SystemExit) as dry_run:
+        atk.main([*args, "--dry-run"], home=tmp_path)
+
+    output = capsys.readouterr()
+    assert dry_run.value.code == 0, output.err
+    assert output.out.splitlines() == [f"{_DRY_RUN_SUCCESS}: {filename}"]
+    assert (_git_output(notes, "rev-parse", "HEAD"), _git_output(origin, "rev-parse", "main"), path.read_bytes()) == before
+    assert _git_output(notes, "status", "--porcelain=v1") == ""
+
+    # 同じ本文は保存でも受理される。
+    with pytest.raises(SystemExit) as saved:
+        atk.main(args, home=tmp_path)
+    assert saved.value.code == 0, capsys.readouterr().err
+    assert "補足の段落。" in path.read_text(encoding="utf-8")
+    assert _git_output(origin, "rev-parse", "main") != before[1]
+
+
+def _prepare_reserved_key(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    del monkeypatch
+    _write_awi_file(notes, "fb-001.md")
+    return "fb-001.md", f"---\ntarget_commit: {'b' * 40}\n---\n\n編集後"
+
+
+def _prepare_type_change(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    del monkeypatch
+    _write_awi_file(notes, "fb-001.md")
+    return "fb-001.md", "---\ntype: uwi\n---\n\n編集後"
+
+
+def _prepare_user_comment(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    monkeypatch.setenv("AI_AGENT", "1")
+    _write_awi_file(notes, "fb-001.md", source="test")
+    return "fb-001.md", "編集後\n\n## ユーザーコメント\n\nコメント\n"
+
+
+def _prepare_missing_sections(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    monkeypatch.setenv("AI_AGENT", "1")
+    _write_awi_file(notes, "fb-001.md", body=AGENT_AWI_BODY, source="test")
+    return "fb-001.md", "必須節を持たない本文"
+
+
+def _prepare_undetermined_cause(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    monkeypatch.setenv("AI_AGENT", "1")
+    _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
+    return "fb-001.md", "編集後\n\n| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | 調査中 |\n"
+
+
+def _prepare_processing(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    monkeypatch.setenv("AI_AGENT", "1")
+    processing = notes / "processing"
+    processing.mkdir()
+    (processing / "fb-001.md").write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n", encoding="utf-8"
+    )
+    return "fb-001.md", "編集後"
+
+
+def _prepare_legacy_body(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    monkeypatch.setenv("AI_AGENT", "1")
+    _write_awi_file(notes, "fb-001.md", body="必須節を持たない旧書式の本文", source="test")
+    return "fb-001.md", "旧書式のまま直した本文"
+
+
+def _prepare_style_warning(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    del monkeypatch
+    _write_awi_file(notes, "fb-001.md")
+    return "fb-001.md", "説明—補足\n口語っぽいけど直す"
+
+
+def _run_edit(
+    home: pathlib.Path, argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> tuple[int | str | None, str, list[str]]:
+    with pytest.raises(SystemExit) as result:
+        atk.main(argv, home=home)
+    output = capsys.readouterr()
+    return result.value.code, output.err.replace(str(home), "<HOME>"), output.out.splitlines()
+
+
+@pytest.mark.parametrize(
+    ("prepare", "expected_code"),
+    [
+        (_prepare_reserved_key, 1),
+        (_prepare_type_change, 2),
+        (_prepare_user_comment, 1),
+        (_prepare_missing_sections, 1),
+        (_prepare_undetermined_cause, 1),
+        (_prepare_processing, 2),
+        (_prepare_legacy_body, 0),
+        (_prepare_style_warning, 0),
+    ],
+)
+def test_edit_dry_run_matches_save_judgement(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    prepare: Callable[[pathlib.Path, pytest.MonkeyPatch], tuple[str, str]],
+    expected_code: int,
+) -> None:
+    """拒否の種類ごとに`--dry-run`と保存へ同じ入力を渡し、終了コード、理由、次の操作、表記の警告が一致する。
+
+    受理される旧書式の本文と表記の警告を持つ本文では、保存が本文を書き換え、`--dry-run`は書き換えない。
+    `--dry-run`のための検証を別に書き起こすと、保存側だけに加えた検証との差がここで現れる。
+    """
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    results = {}
+    for mode in ("save", "dry-run"):
+        home = tmp_path / mode
+        home.mkdir()
+        notes = _setup_notes(home)
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+        filename, message = prepare(notes, monkeypatch)
+        target = next(notes.glob(f"*/{filename}"))
+        original = target.read_bytes()
+        argv = _edit_body_args(home, filename, message)
+        code, error, output = _run_edit(home, [*argv, "--dry-run"] if mode == "dry-run" else argv, capsys)
+        results[mode] = (code, error)
+        if mode == "dry-run" or code != 0:
+            assert target.read_bytes() == original
+        if mode == "dry-run" and code == 0:
+            assert output == [f"{_DRY_RUN_SUCCESS}: {filename}"]
+
+    assert results["save"][0] == expected_code
+    assert results["dry-run"] == results["save"]
+    if expected_code:
+        assert "次の操作: " in results["save"][1]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--dry-run", "--append"],
+        ["--dry-run", "--cooldown-until", "2026-10-08T00:00:00+09:00"],
+    ],
+)
+def test_edit_dry_run_rejects_unsupported_combinations(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    extra: list[str],
+) -> None:
+    """`--append`・`--cooldown-until`との併用と`--body-file`なしの指定はusage errorで終了し、何も保存しない。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "fb-001.md")
+    original = path.read_bytes()
+    calls: list[_GitCall] = []
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
+
+    for argv in ([*_edit_body_args(tmp_path, "fb-001.md", "編集後"), *extra], ["wi", "edit", "fb-001.md", "--dry-run"]):
+        with pytest.raises(SystemExit) as result:
+            atk.main(argv, home=tmp_path)
+        assert result.value.code == 2
+        assert "--dry-run" in capsys.readouterr().err
+    assert path.read_bytes() == original
+    assert not [call for call in calls if {"commit", "push"} & set(call["cmd"])]
+
+
+def test_edit_help_describes_dry_run(capsys: pytest.CaptureFixture[str]) -> None:
+    """`atk wi edit --help`が`--dry-run`と、検証だけを行いprivate-notesとremoteを変えないことを示す。"""
+    with pytest.raises(SystemExit):
+        atk.main(["wi", "edit", "--help"])
+    output = "".join(capsys.readouterr().out.split())
+    assert "--dry-run" in output
+    assert "保存と同じ検証にかけ、保存せずに結果を返す" in output
+    assert "private-notesとremoteを変えない" in output

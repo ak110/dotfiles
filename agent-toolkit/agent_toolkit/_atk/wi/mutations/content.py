@@ -427,7 +427,13 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """editサブコマンド: `--body-file`または$EDITORで対象を編集しcommit・pushする。
 
     無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
+    `--dry-run`では保存と同じ取り込みと検証を同じ順で通し、保存の直前で止める。
     """
+    if args.dry_run:
+        if args.append or args.cooldown_until is not None:
+            args.subparser.error("--dry-runは--appendおよび--cooldown-untilと併用できません。")
+        if args.filename is None or args.body_file is None:
+            args.subparser.error("--dry-runではFILENAMEと--body-fileを指定してください。")
     message = _resolve_edit_message(args)
     if args.cooldown_until is not None:
         if args.filename is None:
@@ -568,6 +574,10 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     except WebInputError as error:
                         _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
                         sys.exit(1)
+    if args.dry_run:
+        # 未pushのcommitの送信、対象ファイルの書き換え、commitとpushは保存の処理（edit_entry_content）だけが行う。
+        _outcome.report_success(f"編集前の検証が成立した（--dry-runのため保存していない）: {path.name}")
+        return
     finalized_content: dict[str, str] = {}
     try:
         edit_entry_content(

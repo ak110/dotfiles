@@ -846,6 +846,14 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         default=None,
         help="inbox・holdの再処理抑制期限をタイムゾーン付きISO 8601日時で設定する。空文字列で解除する。",
     )
+    edit.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "FILENAMEと--body-fileによる本文置換を保存と同じ検証にかけ、保存せずに結果を返す。"
+            "private-notesとremoteを変えない。--append・--cooldown-untilとは併用できない。"
+        ),
+    )
     _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
 
