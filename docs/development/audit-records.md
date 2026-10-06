@@ -307,8 +307,8 @@ Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`A
 `~/.codex/AGENTS.md`は`scripts/sync_codex_agents.py`が生成し、Codex単体のインストーラーは配置しない（`docs/guide/codex-guide.md`冒頭）。
 `Agent`ツールのサブエージェントとCodexの組み込み委譲先のスキルの列は観測していないため「未確認」とした。
 
-再検証では、`start`の`model_type`へ`codex:<model>`、`agy:<model>`、`claude:<model>`を指定し、ツールを使わない指示とともに同じ問いを渡す。
-問いは、初期コンテキストの文書一覧と、次の各見出しの直後の1文である。
+再検証では`start`の`model_type`へ`codex:<model>`、`agy:<model>`、`claude:<model>`を指定し、ツールを使わない指示とともに同じ問いを渡す。
+問いは初期コンテキストの文書一覧と、次の各見出しの直後の1文である。
 見出しは`01-agent.md`「QCDと3段判定」、`02-agent-operations.md`「ツール・コマンド運用」、`rules-subagent.md`「確認事項の即時通知」である。
 ほかに`rules-main.codex.md`「メインエージェントだけに適用する規範」と作業ディレクトリの`AGENTS.md`「詳細の参照先」を使う。
 
