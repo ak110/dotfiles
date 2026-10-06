@@ -639,6 +639,99 @@ class TestBashHeredocLiteralExclusion:
         )
         assert result.returncode == 2
 
+    @pytest.mark.parametrize("delimiter", ["\\EOF", 'E"OF"', "'EOF'"])
+    def test_quoted_delimiter_heredoc_keeps_following_commands_checked(self, tmp_path: pathlib.Path, delimiter: str) -> None:
+        """bashは区切り語の引用を除いた語で終端行を比べるため、heredoc以降のコマンドも遮断の対象になる。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": f"cat <<{delimiter}\ntext\nEOF\npkill -f worker"},
+                "session_id": "heredoc-quoted-delimiter",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "pkill" in result.stderr
+
+
+# bashのheredocの展開規則: 区切り語のどこかに引用（`'`・`"`・`\`）があれば本文を展開せず、
+# 無ければ本文のバッククォートと`$(...)`をコマンド置換として実行する。`$VAR`・`${VAR}`・`$((...))`は
+# コマンドを実行せず、`\``・`\$(`はリテラルとして残る。`<<-`は行頭のtabを除くだけで展開の有無を変えない。
+_HEREDOC_DELIMITERS = [
+    pytest.param("<<EOF", "EOF", True, id="unquoted"),
+    pytest.param("<<'EOF'", "EOF", False, id="single-quoted"),
+    pytest.param('<<"EOF"', "EOF", False, id="double-quoted"),
+    pytest.param("<<\\EOF", "EOF", False, id="backslash"),
+    pytest.param('<<E"OF"', "EOF", False, id="partially-quoted"),
+    pytest.param("<<-EOF", "\tEOF", True, id="strip-tabs"),
+]
+_HEREDOC_BODIES = [
+    pytest.param("`echo RAN`", "`echo RAN`", id="backtick"),
+    pytest.param("see $(echo RAN) here", "$(echo RAN)", id="dollar-paren"),
+    pytest.param("\\`echo RAN\\` and \\$(echo RAN)", None, id="escaped"),
+    pytest.param("$HOME and ${HOME}", None, id="variable"),
+    pytest.param("$((1 + 2))", None, id="arithmetic"),
+]
+
+
+class TestBashUnquotedHeredocSubstitution:
+    """区切り語を引用しないheredocの本文にある能動的なコマンド置換の遮断（block）。"""
+
+    @pytest.mark.parametrize(("operator", "terminator", "expands"), _HEREDOC_DELIMITERS)
+    @pytest.mark.parametrize(("body", "substitution"), _HEREDOC_BODIES)
+    def test_unquoted_heredoc_substitution_is_blocked(
+        self,
+        tmp_path: pathlib.Path,
+        operator: str,
+        terminator: str,
+        expands: bool,
+        body: str,
+        substitution: str | None,
+    ) -> None:
+        indent = "\t" if operator.startswith("<<-") else ""
+        command = f"cat > out.md {operator}\n{indent}{body}\n{terminator}\necho done"
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "heredoc-substitution"},
+            _plan_file_state_env(tmp_path),
+        )
+        if expands and substitution is not None:
+            assert result.returncode == 2
+            assert substitution in result.stderr
+        else:
+            assert result.returncode == 0
+            assert _additional_context(result) == ""
+
+    @pytest.mark.parametrize(
+        ("command", "substitution"),
+        [
+            pytest.param(
+                "D=/tmp/x\ncat > $D/handoff.md <<EOF\n- 保存は`atk wi add --type=awi --body-file=$D/r1-draft.md`で行う\nEOF",
+                "`atk wi add --type=awi --body-file=$D/r1-draft.md`",
+                id="incident",
+            ),
+            pytest.param("bash -c 'cat <<EOF\n`date`\nEOF'", "`date`", id="bash-c"),
+            pytest.param("x=$(cat <<EOF\n$(date)\nEOF\n)", "$(date)", id="command-substitution"),
+            pytest.param("cat <<EOF\nline\n$(date)", "$(date)", id="unterminated"),
+        ],
+    )
+    def test_substitution_in_nested_or_unterminated_heredoc_is_blocked(
+        self, tmp_path: pathlib.Path, command: str, substitution: str
+    ) -> None:
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "heredoc-substitution-nested"},
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert substitution in result.stderr
+
+    def test_here_string_substitution_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
+        """here-stringの語は外側の置換として既存の解析が扱うため、本判定の対象外とする。"""
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": 'cat <<< "$(date)"'}, "session_id": "here-string"},
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+
 
 class TestBashGitRevParseShortMultiple:
     """`git rev-parse --short`へ複数のrevisionを渡すコマンドの警告（warn）。"""

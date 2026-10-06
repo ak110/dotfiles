@@ -32,6 +32,7 @@ Agent / Task:
 Bash:
 
 - Codexで48KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)。通知は閾値以下の連続した行範囲を示す
+- 区切り語を引用しないheredocの本文にあるコマンド置換の遮断 (block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - atkから後段への出力パイプと、`atk agents wait`のシェル背景化・標準出力破棄の遮断 (block)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
@@ -131,6 +132,7 @@ if TYPE_CHECKING:
         _check_bash_process_kill_by_pattern,
         _check_bash_option_after_terminator,
         _check_bash_atk_output_loss,
+        _check_bash_unquoted_heredoc_substitution,
         _git_commit_attribution_error,
         _warn_git_rev_parse_short_multiple,
         _warn_windows_drive_letter_path,
@@ -361,7 +363,7 @@ def _handle_bash_tool(
 ) -> int:
     """Bashコマンドの遮断と警告を処理する。
 
-    Codexの大量読取の遮断、パターン一致によるプロセス終了の遮断、
+    Codexの大量読取の遮断、引用符なしheredoc本文の置換の遮断、パターン一致によるプロセス終了の遮断、
     未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
     """
     command = tool_input.get("command")
@@ -373,6 +375,8 @@ def _handle_bash_tool(
     large_read_notice = check_large_bash_read(command, cwd, is_codex=is_codex)
     if large_read_notice is not None:
         print(large_read_notice, file=sys.stderr)
+        return 2
+    if _check_bash_unquoted_heredoc_substitution(command):
         return 2
     if _check_bash_process_kill_by_pattern(command):
         return 2

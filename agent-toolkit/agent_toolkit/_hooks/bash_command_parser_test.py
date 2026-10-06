@@ -180,6 +180,33 @@ class TestSplitBashSegments:
         comment = "echo ok # <<EOF\nnext command"
         assert mask_heredoc_bodies(comment) == comment
 
+    @pytest.mark.parametrize(
+        ("operator", "terminator"),
+        [
+            ("<<EOF", "EOF"),
+            ("<<'EOF'", "EOF"),
+            ('<<"EOF"', "EOF"),
+            ("<<\\EOF", "EOF"),
+            ('<<E"OF"', "EOF"),
+            ("<<'E'OF", "EOF"),
+            ("<<-EOF", "\tEOF"),
+            ("<<-\\EOF", "\tEOF"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "body",
+        ["`pkill -f a`", "$(pkill -f a)", "\\`pkill\\` \\$(pkill)", "$HOME ${HOME}", "$((1 + 2))"],
+    )
+    def test_heredoc_delimiter_quoting_matrix(self, operator: str, terminator: str, body: str) -> None:
+        """bashは区切り語の引用を除いた語で終端行を比べるため、区切り語の形と本文によらずheredoc以降が区間になる。
+
+        本文はheredocの範囲として区間へ現れず、終端行の後ろのコマンドは独立した区間として返る。
+        """
+        indent = "\t" if operator.startswith("<<-") else ""
+        command = f"cat {operator}\n{indent}{body}\n{terminator}\npkill -f worker"
+        assert split_bash_segments(command) == [f"cat {operator}", "pkill -f worker"]
+        assert [segment.tokens[0] for segment in extract_execution_segments(command)] == ["cat", "pkill"]
+
     def test_unescaped_newlines_split_top_level_commands(self) -> None:
         command = "atk review-table --help\necho add\natk review-table add --help"
         assert split_bash_segments(command) == [
