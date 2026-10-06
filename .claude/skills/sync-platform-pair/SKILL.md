@@ -53,7 +53,7 @@ description: >
 
 ## ローカルで実行するlintとCIジョブの対応
 
-ローカルの`make test`で実行されないCIジョブは`dotfiles-development`「開発手順」の全体検証の項が挙げる。
+ローカルの`make test`で実行されないCIジョブは`dotfiles-development`の`references/verification-values.md`「push前のチェックとCIだけが実行するチェック」が挙げる。
 
 Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されず、CIの`test-windows`ジョブが検証する。
 `agent-toolkit:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。

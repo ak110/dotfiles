@@ -66,7 +66,7 @@ description: >
   個々のテストと編集対象の対応表を規範へ増やさない
 - テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`へ集約する。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
-  共通化が必要な場合は`agent-toolkit-edit`スキル「scripts配下の配置」節が定めるテスト専用パッケージへ置く
+  共通化が必要な場合は`agent-toolkit-edit`スキルの`references/distribution-and-hooks.md`「scripts配下の配置」が定めるテスト専用パッケージへ置く
 - `pytools`パッケージ配布物にテストコードを含めないため、
   `[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を除外する
 - `scripts/`配下はpytestのprependモードで`sys.path`へ自動追加されるためテストから直接importできる。

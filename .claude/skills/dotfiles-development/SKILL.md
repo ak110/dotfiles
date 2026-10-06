@@ -20,6 +20,7 @@ description: >
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | `make update`を実行の候補にする前 | 現行`Makefile`の`update` targetと、それが呼び出す子target |
+| 変更範囲の検証の対象を選ぶ前、push前の全体検証を行う前、ローカルの`make test`が実行しないチェックを確かめる時、または`agent-doc-tone`の報告へ対処する前 | [references/verification-values.md](references/verification-values.md) |
 | コミットメッセージのtypeを判定する時 | [commit-types.md](../../../docs/development/commit-types.md)（判定例） |
 
 ## 開発手順
@@ -42,53 +43,17 @@ description: >
     MCPを利用できない場合は`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。
     初回の変更範囲の検証ではMCPの`commands`とCLIの`--commands`を指定しない。
     修正後に失敗したチェックだけを再実行する場合は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を、CLIでは`--commands=mypy,ruff-check`を渡す
-  - 変更範囲の検証の対象は`agent-toolkit:check-execution`の`references/verification-scope.md`の類型で選ぶ。本リポジトリで使う値は次のとおり
-    - 横断テスト: ファイル名`*_invariant_test.py`で識別する。rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこのファイル名で対象を選び、commit時にprekが起動する`pyfltr fast`で自動実行する。通常のcommitではこの自動実行の結果を使う。配置は`pytools-edit`「テスト配置」に従う。fastの前提と再検証の手段は`docs/development/audit-records.md`「dotfiles-development：不変条件テストのfast自動実行：2026年10月4日」が持つ
-    - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
-    - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。`agents_server`のMCPツールと`atk agents wait`が公開する応答の変更も対象に含める。
-      共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。公開する応答の変更は、応答の項目の内容・書式・条件・有無の変更を指す。同じ応答の項目をMCP層、CLIの待機および自動再開後の応答のテストが別々のファイルで確かめるためである。いずれも内部のコメント・空白だけの変更は含めない
-    - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`
-    - 名前の削除・改名の全体静的確認: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
-    - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
   - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
     `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
     `pytest`へ`-o addopts=''`を渡して`pyproject.toml`の`addopts`を解除する場合は、`-p no:cacheprovider`を併記する
   - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新またはその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
-  - 公開前の全体検証は`agent-toolkit:commit`の`references/publish.md`「検証とCI」に従う。本リポジトリでpush前に実行するCI非実行のチェックと全体走査のチェックは次の3件である
-    - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version --enable=statusline-version`
-    - レーンをまたぐ重複実装の検出: `uv run --frozen pyfltr run --commands=arid`
-    - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`
-  - `make test`が実行するツール集合とCIの`python-lint (3.14)`ジョブの差は、同ジョブが`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version`で無効化するチェックである。Python 3.14のpytestは`pytest (3.14)`ジョブが所有する。
-    次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
-    - `test-windows`ジョブ: Windows実機でのchezmoi適用、Windows固有のテストと公開ランチャー確認
-    - `update-dotfiles-upgrade (windows)`ジョブ: Windows旧版からのupdate-dotfiles更新検証
-    - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
-    - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
-    - `pytest (3.14)`ジョブ: Python 3.14でのpytest
-    - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
-    - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
   - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、`XDG_STATE_HOME`などで状態ディレクトリを差し替えてmiseを起動する作業場所は、その作業場所を作成した主体が検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
     - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない
     - 検証用の複製では、複製先の`mise.toml`の絶対パスを指定して`mise trust`を実行する
     - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、自動チェックへ与えるのと同じ環境変数を与えて`mise trust`を実行する
     - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
-  - `make test`はlinter`agent-doc-tone`を含む。
-    commit時のpre-commitも、ステージした変更ファイルのうち対象に当たるものへ`agent-doc-tone`を実行し、3語の検出でcommitを止める。
-    単独では`uv run --frozen pyfltr run --commands=agent-doc-tone`で起動する。
-    対象はエージェントが実行時に読むMarkdown（`AGENTS.md`・`agent-toolkit/`のrules・skills・share・
-    `.chezmoi-source/dot_claude/`・`.claude/skills/`）とする。
-    文体の密度を測り、閾値を超えたファイルを指標付きで報告する。
-    測る指標と閾値は`scripts/check_agent_doc_tone.py`のdocstringが定める。
-    `agent-toolkit/`の説明文はMarkdownの本文・見出し・表に加え、コードのコメント・docstring・表示文・注入文を語の判定の対象とする。
-    `agent-toolkit:writing-standards`の`references/notation-rules.md`が説明に使わないと定める3語が戻った場合は、ファイルと行を示して非0で終える。
-    文脈によって対象と動作が伝わりにくい語（判定する語は同スクリプトの`_CAUTION_PATTERNS`が定める）は、ファイルと行を示す警告を標準エラーへ出力する。警告だけの場合は終了コード0で終える。
-    警告は文脈で対象と動作が伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。
-    引用、意図的な悪い例、検出用データと保存形式の名称は説明文と区別し、良い例と通常の説明は判定する。
-    報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で
-    指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換えて密度を下げる。
-    語の再使用は`agent-toolkit:writing-standards`の`references/textlint-violations.md`に従って文全体を書き直す
 - 新規Linux環境では、ユーザーが自分の端末から`make setup-browser`でChromiumとシステム依存を初期導入する。
   Ubuntu/DebianでPowerShell検証が必要な場合も、ユーザーが自分の端末から`make setup-pwsh`で初期導入する
 - エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
@@ -116,7 +81,7 @@ Claude Code本体は`B=$(readlink -f "$(command -v claude)")`、Codex本体は
 文脈は`timeout 60 rg -a -o -- '.{0,200}<語>.{0,200}' "$B"`を使い、標準出力と標準エラーを
 managed-tempのファイルへ保存してから必要な範囲を読む。Codexには同じ形で`"$C"`を渡す。
 文脈を得る式の語は正規表現として引用し、語に含まれる正規表現の記号をエスケープする。
-両操作の終了コードと所要時間も保持し、上限による打切りを該当なしと判定しない。
+両操作の終了コードと所要時間も保持し、上限による打切りは該当なしと区別して扱う。
 
 `-m`は一致行数を限定する。ファイルの先頭側は文字列表の断片で、JSソースの一致は後ろにも現れる。
 一致行数が少なければ`-m`を付けず全件を保存する。`.`は改行と不正なUTF-8バイトで止まるため、
