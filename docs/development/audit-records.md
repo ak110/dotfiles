@@ -496,7 +496,7 @@ Stopで報告の不足を判定する変更（`4862700e1`）の要求を起草�
 実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。確認した範囲は判定器の契約テストまでである。対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。
 
-## dotfiles-development：不変条件テストのfast自動実行：2026年10月4日
+## .claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日
 
 pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。指定した時点では横断テストをpytestのマーカー`repo_invariant`でも識別しており、マーカーでの収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。その後、fastがマーカーを選択に使わないため、マーカーを撤去してファイル名だけで識別する形にした。撤去後の確認では、fastのpytestが受け取ったファイルは33件で、`git ls-files`が返す`*_invariant_test.py`の33件と一致した。
 

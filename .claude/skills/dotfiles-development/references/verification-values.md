@@ -5,7 +5,7 @@
 ## 変更範囲の検証の値
 
 - 変更範囲の検証の対象は`agent-toolkit:check-execution`が定める変更範囲の検証の類型で選ぶ。本リポジトリで使う値は次のとおり
-  - 横断テスト: ファイル名`*_invariant_test.py`で識別する。rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこのファイル名で対象を選び、commit時にprekが起動する`pyfltr fast`で自動実行する。通常のcommitではこの自動実行の結果を使う。配置は`pytools-edit`「テスト配置」に従う。fastの前提と再検証の手段は`docs/development/audit-records.md`「dotfiles-development：不変条件テストのfast自動実行：2026年10月4日」が持つ
+  - 横断テスト: ファイル名`*_invariant_test.py`で識別する。rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこのファイル名で対象を選び、commit時にprekが起動する`pyfltr fast`で自動実行する。通常のcommitではこの自動実行の結果を使う。配置は`pytools-edit`「テスト配置」に従う。fastの前提と再検証の手段は`docs/development/audit-records.md`「.claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日」が持つ
   - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
   - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。`agents_server`のMCPツールと`atk agents wait`が公開する応答の変更も対象に含める。
     共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。公開する応答の変更は、応答の項目の内容・書式・条件・有無の変更を指す。同じ応答の項目をMCP層、CLIの待機および自動再開後の応答のテストが別々のファイルで確かめるためである。いずれも内部のコメント・空白だけの変更は含めない
