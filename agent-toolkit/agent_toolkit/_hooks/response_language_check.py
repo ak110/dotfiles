@@ -12,7 +12,7 @@
 import enum
 import re
 
-from agent_toolkit._hooks.transcript import iter_latest_assistant_text_messages
+from agent_toolkit._hooks.transcript import iter_latest_assistant_text_messages, visible_text_blocks
 
 # プレーンテキストがこの文字数に満たない場合は語数比の判定をスキップする。
 # 「OK」「了解」程度の短文応答で英語化検出を行わないようにするための下限。
@@ -159,7 +159,7 @@ def _warning_excerpt(plain_text: str) -> str:
 def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]:
     """直前のメインエージェント応答の記述言語を判定し、3値で結果を返す。
 
-    判定対象テキストはアシスタントターン内の`type == "text"`ブロックのみで、
+    判定対象テキストはアシスタントターン内の`type == "text"`ブロックと`send_to_user`の`message`で、
     フェンス付きコードブロック・インラインコード・URL・機械可読な返却行を除外する。
     長さ下限を適用しない2条件（英語だけの地の文、先頭の談話標識）を先に判定し、
     どちらにも該当しない場合だけ長さ下限付きの語数比判定へ進む。
@@ -207,17 +207,7 @@ def _collect_raw_text(transcript_path: str) -> tuple[str, str]:
         raw_id = message.get("id", "")
         if not msg_id:
             msg_id = raw_id if isinstance(raw_id, str) else ""
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") != "text":
-                continue
-            text = block.get("text", "")
-            if isinstance(text, str) and text:
-                texts.append(text)
+        texts.extend(text for text in visible_text_blocks(message.get("content")) if text)
     if not texts:
         return ("", "")
     return ("\n".join(texts), msg_id)

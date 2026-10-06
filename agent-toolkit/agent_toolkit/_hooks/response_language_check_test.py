@@ -216,6 +216,21 @@ class TestDetailedCheck:
         assert excerpt == "The process [2J finished."
         assert not any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in excerpt)
 
+    def test_warn_for_english_send_to_user_message(self, tmp_path: pathlib.Path) -> None:
+        """send_to_userの`message`はユーザーへ届く本文であり、言語判定の対象に含める。"""
+        call = {
+            "type": "tool_use",
+            "id": "toolu_1",
+            "name": "mcp__agent-toolkit__send_to_user",
+            "input": {"message": "The investigation is finished and the root cause was identified."},
+        }
+        path = _write_assistant_transcript(tmp_path, [call])
+        outcome, body, msg_id = detailed_check(path)
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+        assert "The investigation is finished" in body
+        assert msg_id == "m1"
+
     def test_pass_with_japanese_text(self, tmp_path: pathlib.Path):
         """日本語テキスト50文字以上で比率≧0.30のときPASSを返す。"""
         path = _write_assistant_transcript(tmp_path, [_text_block("あ" * 50)])

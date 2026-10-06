@@ -68,6 +68,27 @@ def test_output_file_option_is_removed(capsys: pytest.CaptureFixture[str]) -> No
     assert "--output-file" in capsys.readouterr().err
 
 
+def test_send_to_user_message_is_assistant_event(tmp_path: pathlib.Path) -> None:
+    """send_to_userの`message`はユーザーへ届いた本文として、assistantの出来事にする。"""
+    call = {"type": "tool_use", "id": "toolu_1", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": "途中の報告"}}
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [call]}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "最終結果"}]}},
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [(event["kind"], event["text"]) for event in events] == [
+        ("user", "依頼"),
+        ("assistant", "途中の報告"),
+        ("final-result", "最終結果"),
+    ]
+
+
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,

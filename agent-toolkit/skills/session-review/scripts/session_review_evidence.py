@@ -43,6 +43,7 @@ try:
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
     from agent_toolkit._hooks import response_language_check as _response_language_check
+    from agent_toolkit._hooks import transcript as _transcript
     from agent_toolkit._hooks.bash_command_parser import QuotingScanner as _QuotingScanner
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
@@ -691,7 +692,9 @@ def _claude_entry_events(
                     for call_id, options in _claude_question_options(message.get("content")).items()
                 }
             )
-            for text in _text_blocks(message.get("content")):
+            # ユーザーへ届いた本文として、`text`ブロックに加えて`send_to_user`の呼び出しの`message`も出来事にする。
+            content = message.get("content")
+            for text in [content] if isinstance(content, str) else _transcript.visible_text_blocks(content):
                 event = _event("assistant", text)
                 if event:
                     events.append(event)

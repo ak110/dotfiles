@@ -42,7 +42,7 @@ description: >
    反映しない場合は、その理由と、ユーザーが自分で反映するために必要な操作を報告へ含める。反映した場合は、再反映の有無と稼働確認の結果を報告する。
 2. メイン自身が`atk managed-temp create`で個別に作成した`.git`を含む領域（`agent-toolkit:managed-temp`の例外用途）があれば、`atk managed-temp cleanup`で回収する。セッションのmanaged-tempとその中のファイルは回収しない。
 3. そのセッションで確定した人間由来の判断を`agent-toolkit/rules/01-agent.md`「協調と自律」の保存対象と比較し、保存されていない判断は保存またはAWIの投入を完了させる。保存の前に`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`の、程度の限定と確度を保持する箇条と確度を伴う発話の保存を扱う箇条を適用する。
-4. 協調モードで対象リポジトリへcommitした成果があり、確認済みの公開範囲がcommitより先へ及ぶ場合は、`agent-toolkit:commit`の`references/publish.md`に従ってその範囲の公開を完了する。`agent-toolkit:process-wi`と`agent-toolkit:single-lane-process`は自身の工程で公開するため、この分岐を重ねない。`references/report-formats.md`「作業完了報告のフォーマット」に従って実施した公開範囲とリリース判定の結果を含む作業完了報告を可視の発話本文へ直接1回書く。可視出力は実行環境がターンの終端として扱うため、出力だけで応答を終えず、同じ応答で手順5の起動へ進む。
+4. 協調モードで対象リポジトリへcommitした成果があり、確認済みの公開範囲がcommitより先へ及ぶ場合は、`agent-toolkit:commit`の`references/publish.md`に従ってその範囲の公開を完了する。`agent-toolkit:process-wi`と`agent-toolkit:single-lane-process`は自身の工程で公開するため、この分岐を重ねない。`references/report-formats.md`「作業完了報告のフォーマット」に従って実施した公開範囲とリリース判定の結果を含む作業完了報告を可視の発話本文へ直接1回書く。可視出力は実行環境がターンの終端として扱うため、出力だけで応答を終えず、同じ応答で手順5の起動へ進む。報告に同じ応答のツール呼び出しが続くため、実行環境の規範がツール呼び出しより前の本文の届け方を定める場合はそれに従う（Claude Codeでは`rules-main.claude-code.md`「ツールAPIと権限」）。
 5. `agent-toolkit:session-review`を起動する。
 
    そのセッションの振り返りを既に実施している場合は、前回の準備時刻（`atk run-script session-review-prepare`のJSONの`prepared_at`）と現在のセッションの記録の終端を比べる。

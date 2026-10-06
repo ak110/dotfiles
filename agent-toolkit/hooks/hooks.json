@@ -127,5 +127,5 @@
       }
     ]
   },
-  "modules": ["./session_exit.ts"]
+  "modules": ["./register.ts"]
 }

@@ -1,7 +1,9 @@
 """人間の発話の後に可視の応答本文が無いStopを遮断する。
 
-判定情報はtranscriptの要素種別とtextブロックの有無から確定する。
-拡張思考の表示をエージェントから観測できないため、応答はtext本文の有無で判定する。
+判定情報はtranscriptの要素種別と、textブロックと`send_to_user`の`message`の有無から確定する。
+拡張思考の表示をエージェントから観測できないため、応答はユーザーへ届く本文の有無で判定する。
+ツール呼び出しより前の地の文が要約へ置き換わる事象をこの判定で検出することはしない。発話したつもりで届いていない事象は
+発話を契機とする判定では捉えられず、原文を`send_to_user`で運ぶ規範とツールで扱う（2026年10月6日、ユーザーの判断）。
 回答の意味を判定せず、拡張思考とツール呼び出しは本文へ数えない。
 同じターンで可視本文を出力すれば解除できる。通知は伝える予定だった内容の再出力を求める。
 Stopの連続遮断上限は共通のStop処理に任せ、独自の状態や上限を持たない。
@@ -54,7 +56,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             elif not entry.get("isMeta") and not _is_hook_input(prompt):
                 needs_response = True
         elif entry.get("type") == "assistant":
-            text = transcript.assistant_text(entry.get("message"))
+            text = transcript.visible_assistant_text(entry.get("message"))
             if any(not char.isspace() and char != "…" for char in text):
                 needs_response = False
 

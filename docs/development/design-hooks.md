@@ -96,7 +96,7 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `queued_notification_advisor.py` `evaluate` | 未配送通知の発生元のツールの種別を確かめ、Agent・Taskは返却メッセージの利用を、Bashと不明種別は出力ファイルの読取を案内する | X | 維持（常駐運用の終端保証）：完了通知を待ってツールを呼ばずにターンを終える反復が、目標評価と継続を空転させる。キューの残存と案内済み記録を比べる処理を実装・テストで確認 |
 | `subagent_stop_advisor.py` `main` | '停止する前に、そのターンで返すつもりだった内容を含む完了報告を出力する。委譲元は遮断された報告本文を保持しない。' | D | 維持（常駐運用の終端保証）：空の完了報告で停止すると委譲元に結果が届かない。出力本文の有無を実装で確認 |
 | `termination_order_advisor.py` `evaluate` | '\n\n'.join(missing_bodies) | D | 維持（常駐運用の終端保証）：終端順序の未実行で外部処理と記録が未完となる。順序入力と実行済み記録を比べる処理を実装で確認 |
-| `user_response_advisor.py` `evaluate` | 人間の発話の後に可視の本文が無いメインのStopの遮断 | H | 復元（明らかな行動誤り・低費用、2026年10月2日再評価）：拡張思考へ置いた回答は表示されたかをエージェントが確かめられず、届かない場合にユーザーが問い直す往復が生じる。2026年9月28日に規範を加えた後も9月30日に再発した。判定はtranscriptの要素種別とtextの有無から確定でき、本文の出力だけで解除できる。旧基準と、9月28日にユーザーがStop hookを否定した手段の方針によって一度撤去したが、ユーザーの事後承認を得て復元した。判定と委譲先・サブエージェントの除外を`user_response_advisor_test.py`で確認 |
+| `user_response_advisor.py` `evaluate` | 人間の発話の後に可視の本文が無いメインのStopの遮断 | H | 復元（明らかな行動誤り・低費用、2026年10月2日再評価）：拡張思考へ置いた回答は表示されたかをエージェントが確かめられず、届かない場合にユーザーが問い直す往復が生じる。2026年9月28日に規範を加えた後も9月30日に再発した。判定はtranscriptの要素種別とtextの有無から確定でき、本文の出力だけで解除できる。旧基準と、9月28日にユーザーがStop hookを否定した手段の方針によって一度撤去したが、ユーザーの事後承認を得て復元した。可視の本文には`send_to_user`の`message`を含める（2026年10月6日）。この判定をツール呼び出しより前の地の文が要約へ置き換わる事象の検出へ広げない。発話したつもりで実際には届いていない事象は発話を契機とする判定では捉えられないため、とユーザーが判断した（2026年10月6日）。判定と委譲先・サブエージェントの除外を`user_response_advisor_test.py`で確認 |
 
 Stopの登録は共通ハンドラー1件とする。
 共通ハンドラーから、`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ちを判定する。
@@ -107,7 +107,7 @@ Stopの登録は共通ハンドラー1件とする。
 続いて、`autonomous_exit.py`による常駐ループの`atk agents-exit-session`実行忘れを判定する。同モジュールは入力待ちの判定より先に、終了要求が`requested`でStop入力に有効な非`teammate`のバックグラウンドタスクが残る場合の取り下げを判定する。Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
 続いて、`plan_save_advisor.py`で`~/.claude/plans`に残る計画バンドルの保存を確認し、`agents_server_session_advisor.py`で観測を試みていない作業が残るsessionを警告する。
 続いて、`pending_question_advisor.py`で地の文の問いかけによる終了を遮断し、`termination_order_advisor.py`で終端順序の未実行を判定する。
-両判定の間に、`user_response_advisor.py`が最新の人間の発話の後に可視の本文が無い終了を遮断する。開始時の文字列入力と途中配送のqueued_commandを扱い、thinking・ツール結果・空白・待機記号を本文へ数えない。task-notificationを最新入力とする待機の回と委譲先は除く。回答が質問に答えているかは判断せず、同じターンで本文を出力すれば解除できる。
+両判定の間に、`user_response_advisor.py`が最新の人間の発話の後に可視の本文が無い終了を遮断する。開始時の文字列入力と途中配送のqueued_commandを扱い、thinking・ツール結果・空白・待機記号を本文へ数えない。`send_to_user`の呼び出しの`message`はユーザーの画面へ届く本文として数える。task-notificationを最新入力とする待機の回と委譲先は除く。回答が質問に答えているかは判断せず、同じターンで本文を出力すれば解除できる。
 最後に、`queued_notification_advisor.py`で最上位transcriptのキューに残る未配送の完了通知を案内する。
 共通ハンドラーは判定の順序、例外の隔離、応答の集約および連続blockの上限管理だけを持つ。判定条件と通知本文は各判定モジュールが持つ。
 これら以外を扱わず、ユーザーの意図、作業完了、振り返り要否、Git変更件数、managed-temp回収要否を判定しない。
@@ -421,6 +421,33 @@ CodexはAskUserQuestionを持たず、確認を本文の固定形式でも提示
 | 2資料をスキル本体へ戻す | 同スキルはほぼ全てのセッションで起動するため、`AskUserQuestion`を使わないセッションにも約2.3万バイトの読込を課す。ユーザーも選ばなかった |
 | 読込の指示を「確認要否の判定」節などの本文へ戻す | 条件付きの読込指示を読込表へ集め本文へ散在させない規定（`agent-documents-basics.md`「責務と構成」）に反する |
 | UserPromptSubmitで注記する | 確認を組む時点は発話の受領より複数のツール呼び出しだけ後にあり、発行の時点の手掛かりにならない |
+
+### send_to_userツール（2026年10月6日）
+
+Claude Codeでは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIがモデルの原文ではなく要約（progress updateの要約）へ置き換えて返す。原文は画面にもtranscriptにも残らず、メインは届いたとみなして作業を続ける。根拠は`audit-records.md`の「agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月6日」、事象は`incidents-validation.md`の2026年10月6日の項にある。
+
+ツールの入力は要約されないため、ターンの途中で原文どおり届ける内容をツールの入力で運ぶ。Function hooks module（`agent-toolkit/hooks/send_to_user.tsx`、`register.ts`から登録）は次を行う。
+
+- `session.start`で`$.tool.register`により`send_to_user`（入力は必須の文字列`message`だけ）を登録する。モデルは`mcp__agent-toolkit__send_to_user`の名前で呼ぶ
+- `tool.check`でこのツールの呼び出しを許可する。途中の報告のたびに権限確認の画面が出ると作業が止まるためである
+- `tool.call`で短い確認応答を返す
+- `ui.render`の`ToolUse`でこのツールの行を`message`の`Markdown`要素で描き、他のツールの行は後続へ渡して描き替えない
+
+ツールの登録と表示を同じmoduleに置くため、moduleを読み込まないClaude Code（管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が無い環境）とCodexにはツールが現れない。その環境のメインは`rules-main.claude-code.md`「ツールAPIと権限」に従い、届ける内容をターンを終える応答の本文へ書く。
+Claude Code 2.1.292では、hooks.jsonの`modules`は1件だけを受け付け、同じイベントで条件を持たないhookは1回だけ登録できる。`$`を渡せるのは同じファイルで宣言した関数に限られる。このため`register.ts`が唯一のmoduleとして`session.start`を1つにまとめ、`session_exit.ts`と`send_to_user.tsx`の`register`を呼ぶ。両ファイルが共有する値はツールの定義と`$`を受け取らない関数に限る。
+transcriptからユーザーへ届いた本文を数える処理は4つある。`user_response_advisor.py`、`termination_evidence.py`の`visible_messages`、`response_language_check.py`、`session_review_evidence.py`の`assistant`の出来事である。これらは`transcript.visible_text_blocks`で`send_to_user`の`message`を本文に含める。名前の前置部分はmoduleの登録が決めるため、末尾の`__send_to_user`で判定する。
+
+却下した代替案は次のとおりである。
+
+| 案 | 採らない理由 |
+| --- | --- |
+| `agents_server`へツールを置く | MCPサーバーは画面へ描く手段を持たない。moduleを読み込まない環境でも成功を返し、原文を描かないまま届いたことになる。2026年10月6日にユーザーがmoduleへ置く選択肢を選んだ |
+| 本体の組込み`SendUserMessage`を`--brief`か`CLAUDE_CODE_PEWTER_OWL_TOOL`で有効にする | `--brief`は通常の本文を画面から隠し全ての返答をツールへ求める。環境変数は公開された契約ではない |
+| `$.ui.log`で本文を通知として表示する | 試作の画面で改行が崩れた薄い表示になった |
+| `showThinkingSummaries`を`true`にする | ユーザーの設定を変え、表示されるのも原文ではなく要約である |
+| 報告でターンを終え、後続を次の応答で再開する | 2026年10月6日の確認でユーザーが選ばなかった |
+| `CLAUDE_CODE_THINKING_DISPLAY_UPDATES=false`か`CLAUDE_CODE_TURN_UPDATES`を設定する | 公開ドキュメントで記載を確認していない。前者はprogress updateが文面の空のまま返る側になり、後者は最後の本文の要約を促すだけで途中の原文を届けない |
+| 署名を解析して要約を検出するStop hook | 署名を読む手順を使わない方針（2026年10月7日）と、要約への置換をhookで検出しない判断（2026年10月6日、ユーザー）に反する |
 
 ### hook出力契約の自動チェック
 

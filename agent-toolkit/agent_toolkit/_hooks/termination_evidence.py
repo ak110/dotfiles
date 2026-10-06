@@ -19,6 +19,7 @@ from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._common import automated_prompt, next_action, runtime_inserted
 from agent_toolkit._hooks import agent_id, agents_server_session_advisor, report_validation, session_state
+from agent_toolkit._hooks import transcript as _transcript
 from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 from agent_toolkit._hooks.stop_gate import append_stop_log
 
@@ -568,7 +569,10 @@ def missing_stages(work: dict[str, Any]) -> list[str]:
 
 
 def visible_messages(payload: dict[str, Any], offset: int) -> list[str] | None:
-    """現在の形式のassistant可視本文だけを取り出す。工程完了の推定には使わない。"""
+    """現在の形式のassistant可視本文だけを取り出す。工程完了の推定には使わない。
+
+    Claude Codeの記録では`text`ブロックに加えて`send_to_user`の呼び出しの`message`を可視本文とする。
+    """
     path = payload.get("transcript_path")
     texts: list[str] = []
     incomplete = False
@@ -608,11 +612,7 @@ def visible_messages(payload: dict[str, Any], offset: int) -> list[str] | None:
                         )
                     elif entry.get("type") == "assistant":
                         message = entry.get("message", {})
-                        texts.extend(
-                            part["text"]
-                            for part in message.get("content", [])
-                            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
-                        )
+                        texts.extend(_transcript.visible_text_blocks(message.get("content")))
         except OSError:
             return None
     last = payload.get("last_assistant_message")

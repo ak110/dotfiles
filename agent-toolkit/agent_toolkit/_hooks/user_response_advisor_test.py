@@ -55,6 +55,21 @@ def test_stop_accepts_visible_response_after_human_input(
     assert output.get("decision") != "block"
 
 
+@pytest.mark.parametrize("human", [_HUMAN, _QUEUED])
+def test_stop_accepts_send_to_user_message_after_human_input(
+    human: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """send_to_userの`message`はユーザーの画面へ届く本文であり、応答として数える。"""
+    call = {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "mcp__agent-toolkit__send_to_user",
+        "input": {"message": "原因はAだった。"},
+    }
+    output = _stop([human, {"type": "assistant", "message": {"content": [call]}}, _assistant("…")], tmp_path, capsys)
+    assert output.get("decision") != "block"
+
+
 @pytest.mark.parametrize(
     "notification",
     [
