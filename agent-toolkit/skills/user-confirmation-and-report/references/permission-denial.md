@@ -39,6 +39,7 @@ permissions設定による確認ダイアログが対象の場合は本書の範
 | コンテナーまたはサービスの再作成 | Interfere With Workloads等 | 許可ルール`Reversible Change Approval`が、ユーザー本人の環境で変更前の構成を復元できる再作成を対象に含む |
 | 承認条件の緩和・規範改訂・設定原本変更を含むコミット | Self Modification | 許可ルール`Agent Workspace Writes`が対象に含む |
 | `atk agents-exit-session`による本人確認済みPIDの停止 | Interfere With Workloads | 許可ルール`Session And Delegation Control`が対象に含む |
+| 委譲先の状態・終端・通知・結果の観測と受領（`atk agents wait`・`list`・`show`等） | Self Modification | 許可ルール`Session And Delegation Control`が、委譲内容にかかわらず受領済み化と結果・通知ファイルの削除を含めて対象にする |
 | 自ら新規に作成したtmuxセッションでの対話CLIの起動し直し、キー入力の送信、画面の取得 | Tmux Self Drive | 許可ルール`Session And Delegation Control`が対象に含む。拒否が残る場合は後掲の偽陽性フローへ進む |
 | UWIの回答でエージェントに実行を任せたシステムへの永続的な変更（sudoによるパッケージ導入など） | Unauthorized Persistence | UWIの回答は判定器が読む会話上のユーザー発言に現れない。実行前には確認せずに実行し、拒否された場合は設定ファイルの読み取りを省いて後掲の偽陽性フローの`AskUserQuestion`へ進む |
 | ユーザーの指示を反映しない拒否後の再発行 | Auto-Mode Bypass等 | 許可ルール`Reconsidered Retry Approval`により、拒否本文とユーザーメッセージを比べて同一のコマンド・引数・ツールを1回だけ再発行する |
