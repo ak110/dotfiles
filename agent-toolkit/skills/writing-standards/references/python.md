@@ -157,8 +157,7 @@
 - 関数名: `_`で始める、テストから参照する場合は`name`で別名指定
 - scope: 可能な限り広いスコープ（session → package → module → function）
 - autouse: モジュール単位は積極的に使い、package／session単位は副作用に注意する
-- 型ヒント: fixture関数の引数・戻り値に書く（努力目標。型チェックの網羅と読み手の理解を保つため）。
-  複数値を返すfixtureでは型エイリアスまたはdataclassを定義する
+- 型ヒント: 書く範囲は「import・型・docstring」の型ヒントの項に従う。複数値を返すfixtureでは型エイリアスまたはdataclassを定義する
 
 ### 非同期テスト
 

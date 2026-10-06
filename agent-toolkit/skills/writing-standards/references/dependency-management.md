@@ -7,7 +7,8 @@
 
 - バージョン固定は管理コスト増大のため原則採用せず、公開直後の新バージョンを一定期間（目安1日）待つ設定で代替する
  （ツール例: uvの`exclude-newer`、pnpmの`minimum-release-age`）。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日」にある
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日」にある。
+  本項はパッケージマネージャーが解決する依存を対象とする。コンテナーのベースイメージとCIの外部actionの参照は本項の対象外とし、`dockerfiles.md`と`github-actions.md`の固定と自動更新の規定に従う
 - 公開直後の版を一定期間解決対象から外すパッケージマネージャーの設定（uvの`exclude-newer`、pnpmの`minimum-release-age`、miseの`minimum_release_age`など）を「公開待機設定」と呼ぶ。
   公開待機設定が有効な環境では、自パッケージを含む直近版を解決できない。待機期間を満たさない版を下限として要求すると依存解決が失敗し、
   自リポジトリの直近リリースをビルドやCIで取り込む処理（イメージ内の`uv tool install`、リリース直後の自パッケージ参照など）も失敗する。
