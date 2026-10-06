@@ -21,6 +21,9 @@ PREFIX = "<!-- wi-commits: "
 SUFFIX = " -->"
 _WI = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+_RETRY_PREVIOUS_HEAD = (
+    "取り込みやcommit作成の操作の直前に取得したHEADを--previous-headへ渡し、操作後のHEADを--commitへ渡して再実行する"
+)
 
 
 class CommitMappingError(next_action.ActionableError):
@@ -32,6 +35,10 @@ def _fail(reason: str) -> CommitMappingError:
         reason,
         next_action="対象AWIと実装commit・履歴変更の対応を実装担当が補い、`atk run-script plan-progress`で再記録する",
     )
+
+
+def _range_fail(reason: str, action: str = _RETRY_PREVIOUS_HEAD) -> CommitMappingError:
+    return CommitMappingError(reason, next_action=action)
 
 
 def mapping_path(record: pathlib.Path) -> pathlib.Path:
@@ -184,22 +191,44 @@ def read_mapping(worktree: pathlib.Path, events: list[dict[str, object]], allowe
 def commit_event(
     worktree: pathlib.Path, revision: str, previous_head: str, wis: list[str], allowed_wis: set[str]
 ) -> dict[str, object]:
-    """前HEADの直後に作成された現在のHEADだけを記録するイベントを返す。"""
+    """前HEADから現在のHEADまでに加わった全commitを記録するイベントを返す。
+
+    `revision`は現在のHEADを指し、前HEADから現在のHEADまでのfirst-parentの履歴がマージcommitを含まない
+    1件以上のcommitの直列である場合だけ記録する。
+    """
     names = validate_wis(wis)
     if outside := names - allowed_wis:
         raise _fail(f"commitの対象外AWI: {sorted(outside)}")
     try:
         previous = _full_oid(worktree, previous_head)
     except CommitMappingError as error:
-        raise _fail(f"commit作成前のHEADを一意なcommitへ解決できません: {previous_head}") from error
+        raise _range_fail(f"前HEADを一意なcommitへ解決できません: {previous_head}") from error
     oid = resolve_commit(worktree, revision)
     try:
-        parents = command.output(["rev-list", "--parents", "-n", "1", "HEAD"], worktree).split()
+        head = command.output(["rev-parse", "--verify", "HEAD"], worktree)
+        ancestor = command.run(["merge-base", "--is-ancestor", previous, head], worktree, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError) as error:
-        raise _fail(f"現在のHEADの親を確認できません: {error}") from error
-    if len(parents) != 2 or oid != parents[0] or previous != parents[1]:
-        raise _fail(f"指定commitが前HEADの直後に作成された現在のHEADではありません: {revision}")
-    return {"commits": [short_oid(worktree, oid)], "awi": sorted(names)}
+        raise _fail(f"現在のHEADを確認できません: {error}") from error
+    if oid != head:
+        raise _range_fail(f"指定commitが現在のHEADではありません: {revision}")
+    if previous == head:
+        raise _range_fail(f"前HEADから現在のHEADまでに加わったcommitがありません（範囲が空）: {previous_head}")
+    if ancestor.returncode != 0:
+        raise _range_fail(f"前HEADが現在のHEADのfirst-parentの祖先ではありません: {previous_head}")
+    try:
+        lines = command.output(["rev-list", "--first-parent", "--parents", f"{previous}..{head}"], worktree).splitlines()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise _fail(f"前HEADから現在のHEADまでのcommitを列挙できません: {error}") from error
+    chain = [line.split() for line in lines]
+    if len(chain[-1]) < 2 or chain[-1][1] != previous:
+        raise _range_fail(f"前HEADが現在のHEADのfirst-parentの祖先ではありません: {previous_head}")
+    if any(len(parts) != 2 for parts in chain):
+        raise _range_fail(
+            f"前HEADから現在のHEADまでの範囲にマージcommitが含まれます: {previous_head}..{revision}",
+            "マージを使わずにcherry-pickかfast-forwardで取り込み直し、取り込み直前のHEADを--previous-headへ渡して再実行する",
+        )
+    commits = [short_oid(worktree, parts[0]) for parts in reversed(chain)]
+    return {"commits": commits, "awi": sorted(names)}
 
 
 def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[str, set[str]]) -> dict[str, object]:

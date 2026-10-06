@@ -63,7 +63,7 @@ commit時に本来実行されるGit hookまたはhook管理ツール内の対�
 
 WIを入力に持つ実装commitとAWIの対応は、計画（計画なしでは引き継ぎ記録）と同じディレクトリで同じstemを持つ対応記録ファイル`<stem>.wi-commits.jsonl`だけへ構造化して残し、記録・取得・履歴変更の各操作を本節の手段で行う。対応記録ファイルは`atk run-script plan-progress`が書き、`atk run-script plan-commits`が読む。commitは記録時と取得時に対象worktreeで一意な長さの短縮OIDで表し、入力には短縮OIDと完全OIDのどちらも渡せる。各工程の文書は、操作する時点、使う記録とworktree、工程固有の入力だけを持ち、手順は本節を参照する。
 
-記録: 実装commitの作成前に対応AWI集合と現在のHEADのOIDを取得する。`git commit`を単独で実行して終了コード0を確認し、成功後に新しいHEADのOIDを取得する。記録へ進むのはcommitが成功した場合に限る。通常実装・レビュー修正・CI修正の各commitで、作成前HEAD、新HEAD、worktreeと全対応AWIを`atk run-script plan-progress`へ渡し、計画（計画なしでは引き継ぎ記録）の対応記録ファイルへ記録する。各値を渡すオプションと計画なしの場合の指定は同コマンドの`--help`に従い、計画とworktreeは絶対パス、AWIはファイル名で渡す。
+記録: 実装commitの作成前に対応AWI集合と現在のHEADのOIDを取得する。`git commit`を単独で実行して終了コード0を確認し、成功後に新しいHEADのOIDを取得する。記録へ進むのはcommitが成功した場合に限る。通常実装・レビュー修正・CI修正の各commitで、作成前HEAD、新HEAD、worktreeと全対応AWIを`atk run-script plan-progress`へ渡し、計画（計画なしでは引き継ぎ記録）の対応記録ファイルへ記録する。1回の操作（範囲指定のcherry-pickやfast-forwardマージなど）で複数のcommitを加えた場合は、操作の直前のHEADを作成前HEAD、操作後のHEADを新HEADとして渡すと、その間に加わった全commitを1回で記録できる。範囲内のcommitが異なるAWI集合に対応する場合は、AWI集合ごとに取り込みの操作を分け、それぞれの操作の前後のHEADで記録する。マージcommitを含む範囲は記録できないため、マージを使わずに取り込む。各値を渡すオプションと計画なしの場合の指定は同コマンドの`--help`に従い、計画とworktreeは絶対パス、AWIはファイル名で渡す。
 
 取得: 終端担当などAWIを終端する主体は、`atk run-script plan-commits -- <記録> --worktree <worktree> --awi <AWI>`へ同じ記録と対象を渡す。記録とworktreeは絶対パスを使い、JSON Linesの`awi`・`commits`から現在のcommit集合を取得時点で一意な長さの短縮OIDで取得する。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら、その計画と同じstemの対応記録ファイルの読取りに使える。候補が複数ある場合は保存済み計画の実在パスを指定する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。取得した短縮OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。記録の欠落・対象外AWI・Gitで解決できないOID（一意に解決できない短縮OIDを含む）は生成側が補完してから再取得し、説明文や件名から対応を推定しない。
 

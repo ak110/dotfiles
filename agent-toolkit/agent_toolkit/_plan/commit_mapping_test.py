@@ -144,8 +144,62 @@ def test_commit_event_requires_new_head_and_its_previous_parent(repo: pathlib.Pa
         "awi": [WI_A],
     }
     for revision, previous in ((base, base), (current, current), (current, "a" * 40), (current, "missing")):
-        with pytest.raises(commit_mapping.CommitMappingError):
+        with pytest.raises(commit_mapping.CommitMappingError) as raised:
             commit_mapping.commit_event(repo, revision, previous, [WI_A], {WI_A})
+        assert "--previous-head" in raised.value.next_action
+
+
+def _branch_with_two_commits(repo: pathlib.Path) -> tuple[str, list[str]]:
+    """別branchへ2件のcommitを作成し、mainへ戻って取り込み前のHEADと群のcommitを返す。"""
+    base = git(repo, "rev-parse", "HEAD")
+    git(repo, "switch", "-c", "group")
+    group = [_commit(repo, "group-1"), _commit(repo, "group-2")]
+    git(repo, "switch", "main")
+    return base, group
+
+
+def test_records_range_added_by_cherry_pick_in_one_event(repo: pathlib.Path) -> None:
+    """範囲指定のcherry-pickで加えた全commitを1回の記録で同じAWI集合へ対応付け、1件の置き換えを継承する。"""
+    _branch_with_two_commits(repo)
+    _commit(repo, "lane")
+    previous = git(repo, "rev-parse", "HEAD")
+    git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "cherry-pick", "--allow-empty", "main..group")
+    picked = git(repo, "rev-list", "--reverse", f"{previous}..HEAD").splitlines()
+    assert len(picked) == 2
+    event = commit_mapping.commit_event(repo, "HEAD", previous, [WI_A, WI_B], {WI_A, WI_B})
+    assert event == {"commits": [_short(repo, oid) for oid in picked], "awi": sorted([WI_A, WI_B])}
+    expected = sorted(_short(repo, oid) for oid in picked)
+    result = commit_mapping.get_commits(repo, [event], [WI_A, WI_B], {WI_A, WI_B})
+    assert {wi: sorted(commits) for wi, commits in result.items()} == {WI_A: expected, WI_B: expected}
+
+    git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--amend", "--allow-empty", "-m", "re")
+    new = git(repo, "rev-parse", "HEAD")
+    replacements = repo / "rewrite.json"
+    replacements.write_text(json.dumps({_short(repo, picked[1]): new}), encoding="utf-8")
+    rewrite = commit_mapping.rewrite_event(repo, replacements, commit_mapping.read_mapping(repo, [event], {WI_A, WI_B}))
+    result = commit_mapping.get_commits(repo, [event, rewrite], [WI_A], {WI_A, WI_B})
+    assert sorted(result[WI_A]) == sorted([_short(repo, picked[0]), _short(repo, new)])
+
+
+def test_records_range_added_by_fast_forward(repo: pathlib.Path) -> None:
+    """fast-forwardマージで加えた範囲もcherry-pickと同じく全commitを記録する。"""
+    base, group = _branch_with_two_commits(repo)
+    git(repo, "merge", "--ff-only", "group")
+    event = commit_mapping.commit_event(repo, "HEAD", base, [WI_A], {WI_A})
+    assert event == {"commits": [_short(repo, oid) for oid in group], "awi": [WI_A]}
+    assert commit_mapping.get_commits(repo, [event], [WI_A], {WI_A}) == {WI_A: [_short(repo, oid) for oid in group]}
+
+
+def test_rejects_range_with_merge_or_non_ancestor(repo: pathlib.Path) -> None:
+    """マージcommitを含む範囲と、前HEADがfirst-parentの祖先でない場合を理由と次の操作を示して拒否する。"""
+    base, group = _branch_with_two_commits(repo)
+    _commit(repo, "lane")
+    git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "merge", "--no-ff", "-m", "merge", "group")
+    with pytest.raises(commit_mapping.CommitMappingError, match="マージcommit") as merged:
+        commit_mapping.commit_event(repo, "HEAD", base, [WI_A], {WI_A})
+    assert "cherry-pick" in merged.value.next_action
+    with pytest.raises(commit_mapping.CommitMappingError, match="first-parentの祖先ではありません"):
+        commit_mapping.commit_event(repo, "HEAD", group[1], [WI_A], {WI_A})
 
 
 def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:

@@ -211,8 +211,15 @@ def main(argv: list[str] | None = None, *, description: str | None = None) -> in
     parser.add_argument("--completed-step", help="完了した工程（記録時は必須）")
     parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
     operation = parser.add_mutually_exclusive_group()
-    operation.add_argument("--commit", help="対応を記録する実装commit。短縮OIDで記録する")
-    parser.add_argument("--previous-head", help="実装commitの作成直前に取得したHEAD。短縮OIDか完全OID。--commitでは必須")
+    operation.add_argument(
+        "--commit",
+        help="対応を記録する実装commit。現在のHEADを指定し、--previous-headから現在のHEADまでに加わった全commitを"
+        "同じAWI集合へ対応付けて記録する。マージcommitを含む範囲は受け付けない",
+    )
+    parser.add_argument(
+        "--previous-head",
+        help="commit作成や取り込みの操作の直前に取得したHEAD。短縮OIDか完全OID。--commitでは必須",
+    )
     operation.add_argument(
         "--rewrite-map",
         type=pathlib.Path,
