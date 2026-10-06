@@ -273,7 +273,7 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
         for fragment in (
             "メインエージェントは次のユーザーへの発話へ",
             "委譲先は自身の返却の末尾へ",
-            "`agent-toolkit:delegation`「受領と検収」",
+            "`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」",
         ):
             assert fragment in action
     if status == "completed" and label.endswith("-review"):

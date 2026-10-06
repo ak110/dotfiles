@@ -16,7 +16,7 @@
 
 この行を添えた改善の機会は、その場で`agent-toolkit:bugfix`を起動せずAWIも登録せずに、原因分析と、直すかAWIへ回すかの判断を`agent-toolkit:session-review`へ委ねる。同スキルがこの行を拾ってまとめて分析し、この扱いが`agent-toolkit/rules/01-agent.md`「完遂と先送り」の独立した既存不良へのその場の是正に代わる。作業の続行を妨げる欠陥は同節のとおりその場で直す。
 
-委譲先の返却が同じ行を持つ場合は、モードによらず次のユーザーへの発話へ`agent-toolkit:delegation`「受領と検収」に従って転記する。
+委譲先の返却が同じ行を持つ場合は、モードによらず次のユーザーへの発話へ`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」に従って転記する。
 
 ### ユーザー発話の解釈
 
