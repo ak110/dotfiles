@@ -56,7 +56,8 @@ def test_all_launch_system_prompts_include_language_condition() -> None:
     """全modeのシステム指示が完了報告の言語を定め、通常委譲は英語の挿入指示を引き継がない条件も持つ。
 
     委譲プロンプトから言語の指定を外しても委譲先が日本語で返すことを、委譲元の記述に依存せず保証する。
-    通常委譲の`agents-server-delegate.md`が条件を欠くと、Claude以外のbackendでは常時規範の言語条項も届かず、
+    通常委譲の`agents-server-delegate.md`が条件を欠くと、`01-agent.md`「使用言語」が届かない委譲先
+    （`~/.codex/AGENTS.md`を配置していないCodexと、Antigravity）では言語の条件が無くなり、
     実行環境が英語で挿入した指示に引きずられて英語で書いた応答は、応答言語を判定するPreToolUse hookに遮断される。
     """
     for kind, prompt in state.LAUNCH_SYSTEM_PROMPTS.items():

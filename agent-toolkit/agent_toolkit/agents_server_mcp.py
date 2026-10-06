@@ -383,8 +383,9 @@ _MODE_DESCRIPTION = _parameter_description(
     "選び方: `<役割名>.subagent.md`がある作業はtaskで渡す。"
     "手順、権限、検証方法、返却形式は同ファイルが定めるため、委譲プロンプトへ書き足さない。"
     "`<役割名>.subagent.md`を読み、同ファイルが宣言した入力名と`extra_params`が一致するか確かめてから起動する。"
-    "explore・write・shellの委譲先へは常時規範が配送されず、スキルを使える保証も無い"
-    "（Claude Codeの委譲先ではスキルを起動できない）。作業に必要な指示は全て`prompt`へ書く。"
+    "explore・write・shellの委譲先へは委譲先向けの規範（`share/rules-subagent.md`）が配送されず、"
+    "ClaudeとCodexの委譲先では作業ディレクトリのプロジェクト規範（`AGENTS.md`など）も読み込まれず、"
+    "スキルを使える保証も無い（Claude Codeの委譲先ではスキルを起動できない）。作業に必要な指示は全て`prompt`へ書く。"
     "読み取り専用、応答言語、担当の範囲は各modeの`share/agents-server-*.md`が既に定めるため書かない。"
     "スキルの手順を要する作業にはtaskかdelegateを使う。\n"
     "explore: 読み取りが数回で確定する調査は自ら実行し、多数のファイルを横断する調査や大量の本文を読む調査を委譲する。"
@@ -409,7 +410,8 @@ _EXTRA_PARAMS_DESCRIPTION = _parameter_description(
 )
 _PROMPT_DESCRIPTION = _parameter_description(
     "delegate・explore・writeで必須、taskとshellでは指定しない。委譲先へ渡す依頼本文。"
-    "explore・writeの委譲先は常時規範を受け取らないため、作業に必要な指示を全て書く。"
+    "explore・writeの委譲先は委譲先向けの規範（`share/rules-subagent.md`）を受け取らず、"
+    "ClaudeとCodexでは作業ディレクトリのプロジェクト規範も読まないため、作業に必要な指示を全て書く。"
     "`<役割名>.subagent.md`を指す本文は渡さず、taskで起動する。"
 )
 _COMMAND_DESCRIPTION = _parameter_description("shellで必須、他のmodeでは指定しない。委譲先がシェルで実行するコマンド。")
@@ -2839,21 +2841,22 @@ _START_DESCRIPTION = "\n".join(
         "返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、"
         "結果が不要なら`kill`で破棄する。`atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
         "`explore`はファイルを作成・変更・削除しない。全量コマンド出力の保存は`shell`へ、"
-        "調査と成果ファイル作成は`delegate`へ渡す。返却本文を保存する場合は委譲元が保存する。",
+        "成果ファイルを作成する調査は`delegate`へ渡し、返却本文は委譲元が保存する。",
         "",
         "| mode | 用途 | 必須の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
-        "| `task`（省略時） | agent-toolkitの`share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path` | "
+        "| `task`（省略時） | `share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path` | "
         "`<役割名>.subagent.md`の`mode:`、同ファイルに対応する工程別設定 |",
         "| `delegate` | `<役割名>.subagent.md`の無い単発の作業を自由本文で委譲する | `prompt`・`model_type` | "
-        "通常起動。委譲先は常時規範を受け取りスキルを使える |",
+        "通常起動。委譲先向けの規範が届き、ClaudeとCodexではスキルを使える。"
+        "Antigravityへは`rules/`配下とagent-toolkitのスキルが届かない |",
         "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`low_tier` |",
         "| `write` | 確定済みの文章起草と小規模な定型書込 | `prompt` | 軽量起動、`write` |",
         "| `shell` | コマンドを実行して結果を要約する | `command`・`summary_policy` | 軽量起動、`low_tier` |",
         "",
         "modeごとの選び方は`mode`、受理しない入力は各引数の説明が示す。"
-        "入力の欠落とmodeが受理しない入力の混在は、委譲先を起動せずに拒否し、受理する入力と次の呼び出し方を返す。"
-        "taskでは`<役割名>.subagent.md`の必須入力の欠落と宣言外の入力名は拒否し、欠けた項目名または宣言外の項目名と受理する項目名を返す。",
+        "入力の欠落とmodeが受理しない入力の混在は委譲先を起動せずに拒否し、受理する入力と次の呼び出し方を返す。"
+        "taskでは`<役割名>.subagent.md`の必須入力の欠落と宣言外の入力名も拒否し、該当する項目名と受理する項目名を返す。",
         "",
         "最小の呼び出し例（`cwd`は全modeで必須）:",
         '- task: `{"cwd": "/repo", "subagent_md_path": "<plugin root>/share/exec-review.subagent.md", '
@@ -2865,8 +2868,8 @@ _START_DESCRIPTION = "\n".join(
         '- shell: `{"cwd": "/repo", "mode": "shell", "command": "make test", '
         '"summary_policy": "終了コードと失敗したテスト名"}`',
         "",
-        "起動前の準備: Claude Codeで`CronCreate`を使える実行主体が待機のためにターンを終える場合は、"
-        "そのセッションで最初にこのツールを呼ぶ前に定期再確認を装着する"
+        "起動前の準備: Claude Codeで`CronCreate`を使える実行主体が待機でターンを終える場合は、"
+        "最初にこのツールを呼ぶ前に定期再確認を装着する"
         "（`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」）。",
         "",
         "応答は`session_id`と`status`を含み、サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。"

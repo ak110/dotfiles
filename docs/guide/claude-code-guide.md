@@ -141,7 +141,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `explore`は`prompt`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`model_type`の省略時は`low_tier_model`、`medium_tier`の指定時は`medium_tier_model`の設定を使う。`write`は確定済みの文章起草を`write_model`の候補列で開始する。
 `delegate`以外の`mode`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
 `shell`は`command`と`summary_policy`を受け取り、`explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検証コマンドなど対象を変更する実行を受け付ける。`start`の説明は`mode`の選び方、各`mode`の最小呼び出し例と、`explore`・`shell`で委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
-軽量化はプロジェクト規範とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は、対象を変更しないよう`prompt`で指示する。
+ClaudeとCodexのbackendでは、軽量化はプロジェクト規範とスキルの読込を省くものであり、書込の禁止ではない。Antigravityのbackendは軽量起動を区別せず、委譲先は作業ディレクトリの`AGENTS.md`を読む。対象を変更させない場合は、対象を変更しないよう`prompt`で指示する。
 `send_message`は起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、委譲元は検収済み状態を渡して新規起動する。
 `start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`atk agents wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みずにターンを終えると、残した作業の結果を受け取る主体がいなくなる。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
 `list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。保持していた`session_id`の回復と、並行する委譲先の残作業の把握に使う。

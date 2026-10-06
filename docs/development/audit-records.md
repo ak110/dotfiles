@@ -291,6 +291,27 @@ Claude Code 2.1.281を`--plugin-dir`で作業ツリーのプラグインから2�
 
 2026年9月16日、参考実利用バージョンの取得元を確認した。`~/glatasks/package.json`は`drizzle-orm`を`^0.45.2`、`drizzle-kit`を`^0.31.10`で指定する。再検証は同ファイルから、この2つの依存の版指定を取得する。いずれかの依存が更新されたときに再検証する。
 
+## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日
+
+配送範囲表のAntigravityの2列、作業ディレクトリのプロジェクト規範の行、agent-toolkitのスキルの行、Codexの列の`~/.codex/AGENTS.md`の配置条件の根拠である。
+
+2026年10月6日、`agents_server`の`start`でツールを使わせない委譲先を起動し、初期コンテキストにある文書を答えさせて、各見出しの直後の1文の逐語引用を現物と比べた。
+版はClaude Code 2.1.291（claude-agent-sdk 0.2.163）、codex-cli 0.160.1、agy 1.3.0である。
+Claudeの`explore`は`rules/`配下だけが届き、`rules-subagent.md`、作業ディレクトリの`AGENTS.md`、スキル（`skills=[]`）は届かなかった。
+Claudeの`delegate`は`rules/`配下、`rules-subagent.md`と`rules-subagent.claude-code.md`、作業ディレクトリの`AGENTS.md`、スキルが届いた。
+Codexの`explore`は`~/.codex/AGENTS.md`経由で`rules/`配下と`rules-main.codex.md`、およびスキルが届き、`rules-subagent.md`と作業ディレクトリの`AGENTS.md`は届かなかった。`delegate`はこれらに加えて`rules-subagent.md`と作業ディレクトリの`AGENTS.md`が届いた。
+Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`AGENTS.md`が届き、`rules/`配下は届かなかった。`rules-subagent.md`は`delegate`だけに届き、`delegate`のスキル一覧は作業ディレクトリの`.agents/skills`配下などだけでagent-toolkitのスキルを含まなかった。`explore`のスキルは確かめていない。
+実装の根拠は次の3つである。`_agents_server/claude.py`の`_build_options`は軽量起動で`setting_sources=["user"]`と`skills=[]`を渡す。
+`codex.py`の`_base_thread_config`は軽量起動で`project_doc_max_bytes=0`を渡す。
+`antigravity.py`の`_system_prompt`は起動区分ごとの指示を本文の先頭へ置くだけで、読込範囲を変えない。
+`~/.codex/AGENTS.md`は`scripts/sync_codex_agents.py`が生成し、Codex単体のインストーラーは配置しない（`docs/guide/codex-guide.md`冒頭）。
+`Agent`ツールのサブエージェントとCodexの組み込み委譲先のスキルの列は観測していないため「未確認」とした。
+
+再検証では、`start`の`model_type`へ`codex:<model>`、`agy:<model>`、`claude:<model>`を指定し、ツールを使わない指示とともに同じ問いを渡す。
+問いは、初期コンテキストの文書一覧と、次の各見出しの直後の1文である。
+見出しは`01-agent.md`「QCDと3段判定」、`02-agent-operations.md`「ツール・コマンド運用」、`rules-subagent.md`「確認事項の即時通知」である。
+ほかに`rules-main.codex.md`「メインエージェントだけに適用する規範」と作業ディレクトリの`AGENTS.md`「詳細の参照先」を使う。
+
 ## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年9月16日
 
 条文は2026年10月6日まで`llm-characteristics.md`「知識の想起」にあり、同ファイルの撤去に伴って`agent-documents-basics.md`「語調と現行規則の表現」の理由へ移った。
