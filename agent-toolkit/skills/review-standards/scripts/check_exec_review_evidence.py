@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import dataclasses
 import json
 import os
 import pathlib
@@ -28,7 +29,8 @@ from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan.structure.markdown import extract_tables, markdown_body_text
 
 # 達成・未達・証拠不足は行そのものの判定であり、根拠の記録を別に確かめない。
-JUDGMENT_OUTCOMES = frozenset({"達成", "未達", "証拠不足"})
+JUDGMENT_ORDER = ("達成", "未達", "証拠不足")
+JUDGMENT_OUTCOMES = frozenset(JUDGMENT_ORDER)
 REQUIRED_FIELDS = {
     "wi_conditions": ("awi", "condition", "outcome", "source", "evidence"),
     "user_requirements": ("awi", "requirement", "origin", "outcome", "source", "evidence"),
@@ -43,6 +45,12 @@ BRACKETED_TITLE = re.compile(r"「([^」]+)」")
 WHOLE_REQUEST = "分割元の依頼全体"
 ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
 BACKGROUND = "背景"
+# `evidence`のファイル参照の受理形式。雛形の次の操作と、参照を解決できない診断の双方がこの説明を示す。
+FILE_REFERENCE_FORM = (
+    "`evidence`のファイル参照は、対象worktreeのルートからの相対パスか絶対パスで書き、"
+    "リポジトリの外のファイル（managed-tempの検証記録など）は絶対パスで書く。"
+    "ファイル名だけや途中からのパスは、対象commitの追跡ファイルとパス末尾が1件に一致する場合だけ受理される"
+)
 # 引用節内のtextブロック番号と、改行も1文字として数える1始まりの文字範囲。
 # 起草規範は語の間の空白を定めないため、`逐語引用text[1]文字1-83`のように空白を省いた表記も同じ参照として読む。
 QUOTE_POSITION = re.compile(r"逐語引用\s*text\[(\d+)\]\s*文字(\d+)-(\d+)")
@@ -643,14 +651,14 @@ def _unresolved_reference(repository: pathlib.Path, head: str, candidates: list[
     if not candidates:
         return (
             f"{basis}。パス末尾が一致する追跡ファイルもなく、略記など別の名前の短縮をファイル参照として書いた可能性があります。"
-            f"実際に読んだファイルの完全なパス（ルートからの相対パスか絶対パス）へ書き換えるか、観測が不足する行を証拠不足へ再判定する。{keep}"
+            f"{FILE_REFERENCE_FORM}。実際に読んだファイルをこの形で書き換えるか、観測が不足する行を証拠不足へ再判定する。{keep}"
         )
     shown = "、".join(candidates[:REFERENCE_CANDIDATE_LIMIT])
     rest = len(candidates) - REFERENCE_CANDIDATE_LIMIT
     more = f"ほか{rest}件" if rest > 0 else ""
     return (
         f"{basis}。パス末尾が一致する追跡ファイルが{len(candidates)}件あり、1件に決まりません（候補: {shown}{more}）。"
-        f"候補のうち実際に読んだファイルをルートからの相対パスか絶対パスで書くか、観測が不足する行を証拠不足へ再判定する。{keep}"
+        f"{FILE_REFERENCE_FORM}。候補のうち実際に読んだファイルをこの形で書くか、観測が不足する行を証拠不足へ再判定する。{keep}"
     )
 
 
@@ -907,9 +915,7 @@ def _expired_source_error(
     detail = f"（{'、'.join(reasons)}）" if reasons else ""
     return (
         f"{_row_label(row, section, index)}.source: 失効のユーザー判断を確認できません{detail}。"
-        "対象AWIの記入済みユーザーコメント、関連する回答済みUWIのファイル名と所在、"
-        "または会話中の発話を抽出した`atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと"
-        "`<record>:<line>`に、否定した要求単位の「」による逐語を添えて記録する。"
+        f"{_source_location(section, '失効')}をsourceへ記録する。"
         "記録位置は出力ファイルの`record`と`line`で確かめ、逐語は発話本文（確認回答では回答と自由記述の値）から写す。"
         "ユーザーの判断がない場合は、その判断を得てから同じ証拠をもう一度確かめる"
     )
@@ -1109,8 +1115,7 @@ def _unassigned_source_error(
     if record is None:
         return (
             f"{label}.source: 割当外の根拠となる割当の記録を特定できません（{reason}）。"
-            "割当を記録したWIのファイル名と節名『反映内容と反映先』、"
-            "または計画ファイルの絶対パスと節名『実施内容』をsourceへ書く。"
+            f"{_source_location(section, '割当外')}をsourceへ書く。"
             "割当の記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
         )
     evidence = row["evidence"]
@@ -1225,8 +1230,7 @@ def _background_source_error(
     if record is None:
         return (
             f"{label}.source: 背景の根拠となる分類の記録を特定できません（{reason}）。"
-            "背景とした原文の範囲と理由を記録したWIのファイル名と節名『反映内容と反映先』、"
-            "計画ファイルの絶対パスと節名『実施内容』、または実装着手後に記録したレビュー指摘管理表の絶対パスをsourceへ書く。"
+            f"{_source_location(section, BACKGROUND)}をsourceへ書く。"
             "記録が無い単位は記録を補ってから背景とするか、達成・未達・証拠不足のいずれかで判定する"
         )
     original = _original_text(row, repository, wi_outputs)
@@ -1248,19 +1252,75 @@ def _background_source_error(
 
 
 ExemptionCheck = typing.Callable[[dict[str, str], str, int, pathlib.Path, dict[str, str]], "str | None"]
-# 達成を求めずに行を受理させる判定値は、その根拠の記録を確かめる関数と対にして登録する。
+
+
+@dataclasses.dataclass(frozen=True)
+class Exemption:
+    """達成を求めずに行を受理させる判定値の、根拠の記録を確かめる関数と`source`へ書く所在の説明。
+
+    雛形の次の操作と、根拠を確認できない行の診断は、同じ`source_location`から所在の文面を得る。
+    説明を欠いた判定値を登録できないようにし、受理条件と案内が別々に変わることを防ぐ。
+    """
+
+    check: ExemptionCheck
+    source_location: str
+
+    def __post_init__(self) -> None:
+        """所在の説明を持たない登録を拒否する。"""
+        if not self.source_location.strip():
+            raise ValueError("免除の判定値にはsourceへ書く所在の説明が必要です")
+
+
+_EXPIRED = Exemption(
+    _expired_source_error,
+    "対象AWIの記入済みユーザーコメント、関連する回答済みUWIのファイル名と所在、"
+    "または会話中の発話を抽出した`atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと"
+    "`<record>:<line>`（例: `claude:<セッションID>:625`）に、否定した要求単位の「」による逐語を添えたもの",
+)
+# 達成を求めずに行を受理させる判定値は、その根拠の記録を確かめる関数と所在の説明を組にして登録する。
 # 検証関数を持たない免除の判定値を受理値へ加えると、根拠の無い行が確認を通過するためである。
 # 割当外は分割起票で他のWIへ割り当てた原文要求と分割元の依頼全体の単位にだけ使うため、完成条件の行では受理しない。
 # 背景は原文要求のうち要求を含まない過去の観測や経緯の文にだけ使う。完成条件はWI自身の達成対象であるため受理しない。
-EXEMPTIONS: dict[str, dict[str, ExemptionCheck]] = {
-    "wi_conditions": {"失効": _expired_source_error},
+EXEMPTIONS: dict[str, dict[str, Exemption]] = {
+    "wi_conditions": {"失効": _EXPIRED},
     "user_requirements": {
-        "失効": _expired_source_error,
-        "割当外": _unassigned_source_error,
-        BACKGROUND: _background_source_error,
+        "失効": _EXPIRED,
+        "割当外": Exemption(
+            _unassigned_source_error,
+            "割当を記録したWIのファイル名と節名『反映内容と反映先』、または計画ファイルの絶対パスと節名『実施内容』",
+        ),
+        BACKGROUND: Exemption(
+            _background_source_error,
+            "背景とした原文の範囲と理由を記録したWIのファイル名と節名『反映内容と反映先』、"
+            "計画ファイルの絶対パスと節名『実施内容』、または実装着手後に記録したレビュー指摘管理表の絶対パス",
+        ),
     },
 }
 SECTION_OUTCOMES = {section: JUDGMENT_OUTCOMES | set(checks) for section, checks in EXEMPTIONS.items()}
+
+
+def _source_location(section: str, outcome: str) -> str:
+    """登録した免除の判定値の、`source`へ書く所在の説明を返す。"""
+    return EXEMPTIONS[section][outcome].source_location
+
+
+def template_guidance() -> str:
+    """雛形の記入規則を、免除の判定値の登録とファイル参照の受理形式から組み立てて返す。"""
+    sections: dict[str, list[str]] = {}
+    locations: dict[str, str] = {}
+    for section, exemptions in EXEMPTIONS.items():
+        for outcome, exemption in exemptions.items():
+            sections.setdefault(outcome, []).append(section)
+            locations[outcome] = exemption.source_location
+    rules = [
+        f"outcomeを{'・'.join(JUDGMENT_ORDER)}とする行は、雛形のsourceのままでよい",
+        *(
+            f"outcomeを{outcome}とする行（{'と'.join(sections[outcome])}で使える）は、sourceを{location}へ書き換える"
+            for outcome, location in locations.items()
+        ),
+        FILE_REFERENCE_FORM,
+    ]
+    return "。".join(rules)
 
 
 def _check_exemptions(payload: dict[str, typing.Any], repository: pathlib.Path, wi_outputs: dict[str, str]) -> list[str]:
@@ -1268,8 +1328,8 @@ def _check_exemptions(payload: dict[str, typing.Any], repository: pathlib.Path, 
     errors: list[str] = []
     for section, checks in EXEMPTIONS.items():
         for index, row in enumerate(payload[section]):
-            check = checks.get(row["outcome"])
-            if check is not None and (error := check(row, section, index, repository, wi_outputs)) is not None:
+            exemption = checks.get(row["outcome"])
+            if exemption is not None and (error := exemption.check(row, section, index, repository, wi_outputs)) is not None:
                 errors.append(error)
     return errors
 
@@ -1678,7 +1738,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"成功: `完成条件証拠`へ雛形を書き込みました（追加 {added} 行、既存 {kept} 行を保持）: {args.evidence}\n"
             + _next_action.next_action_line(
-                "空欄のoutcome・evidence・reviewed_headを各行で判定して記入し、"
+                "空欄のoutcome・evidence・reviewed_headを各行で判定して記入する。"
+                f"{template_guidance()}。記入後に"
                 f"`atk run-script exec-review-evidence-check -- {args.evidence} {' '.join(filenames)} "
                 "--expected-head <レビュー対象HEAD>`で証拠を確かめる"
             )

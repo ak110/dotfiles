@@ -10,6 +10,7 @@ import re
 import subprocess
 import typing
 
+import check_exec_review_evidence  # pylint: disable=import-error
 import pytest
 
 from agent_toolkit._atk import review_table, run_script
@@ -2311,6 +2312,66 @@ def test_template_writes_every_expected_row(
     ]
     for row in [*data["wi_conditions"], *data["user_requirements"]]:
         assert (row["outcome"], row["evidence"], row["reviewed_head"]) == ("", "", "")
+
+
+def test_template_guides_every_registered_exemption_and_reference_form(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """雛形の次の操作が、登録した全ての免除の判定値の`source`の所在と、ファイル参照の受理形式を示す。
+
+    雛形が値を埋めた`source`も判定値によって書き換えが要る。案内が登録と別に書かれていると、判定値を加えたときに
+    実行レビュー担当は記入規則を判定の失敗で初めて知る。期待値は判定値の登録と受理形式の定義から導く。
+    """
+    _mock_wi(monkeypatch, tmp_path, _TEMPLATE_BODIES)
+    assert _template(tmp_path / "evidence.json", *_TEMPLATE_BODIES) == 0
+    output = capsys.readouterr().out
+    for section, exemptions in check_exec_review_evidence.EXEMPTIONS.items():
+        for outcome, exemption in exemptions.items():
+            assert outcome in output and section in output
+            assert exemption.source_location in output
+    assert check_exec_review_evidence.FILE_REFERENCE_FORM in output
+    with pytest.raises(ValueError, match="所在の説明"):
+        check_exec_review_evidence.Exemption(lambda *_: None, " ")
+
+
+def test_rows_filled_as_template_guides_pass_source_and_reference_checks(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """雛形の案内どおりに割当外と背景の`source`を書き換え、リポジトリ外の記録を絶対パスで参照した証拠を受理する。
+
+    managed-tempの検証記録を相対パスで書くと対象commitの追跡ファイルとして解決できず、判定が拒否する。
+    """
+    own = "設定画面を直して。"
+    other = "旧設定も一括で移して。"
+    bodies = {
+        FIRST_WI: _background_awi(_ELIDED_RECORD),
+        SECOND_WI: _split_awi(own, other, f"- 引用の後半は「{_OTHER_TITLE}」へ割当\n"),
+    }
+    _mock_wi(monkeypatch, tmp_path, bodies)
+    record = tmp_path.parent / f"{tmp_path.name}-managed-temp" / "OBSERVATION.md"
+    record.parent.mkdir()
+    record.write_text("# 観測\n過負荷の後も同じsessionで続いた。\n", encoding="utf-8")
+    path = tmp_path / "evidence.json"
+    assert _template(path, *bodies) == 0
+    capsys.readouterr()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for index, row in enumerate([*data["wi_conditions"], *data["user_requirements"]], start=1):
+        row.update(outcome="達成", evidence=f"{index}件目: 観測記録 {record}#観測 の結果", reviewed_head=REVIEWED_HEAD)
+    for row in data["user_requirements"]:
+        if row["awi"] == FIRST_WI and row["requirement"] in {_OBSERVATION, _OBSERVATION_TAIL}:
+            row.update(
+                outcome="背景", source=f"{FIRST_WI} ## 反映内容と反映先", evidence=f"分類の記録どおり、{_BACKGROUND_REASON}"
+            )
+        elif row["awi"] == SECOND_WI and row["requirement"] == other:
+            row.update(outcome="割当外", source=f"{SECOND_WI} ## 反映内容と反映先", evidence=f"「{_OTHER_TITLE}」")
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    assert _check(path, *bodies) == 0, capsys.readouterr().err
+
+    for index, row in enumerate(data["wi_conditions"], start=1):
+        row["evidence"] = f"{index}件目: 観測記録 {record.parent.name}/{record.name}#観測 の結果"
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    assert _check(path, *bodies) == 1
+    assert check_exec_review_evidence.FILE_REFERENCE_FORM in capsys.readouterr().err
 
 
 def test_unfilled_template_is_rejected_until_each_row_is_judged(
