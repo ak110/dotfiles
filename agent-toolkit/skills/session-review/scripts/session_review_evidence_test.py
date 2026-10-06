@@ -2631,6 +2631,37 @@ def test_long_injection_is_classified_before_display_shortening(
     assert [event["text"] for event in conversation if event.get("role") == "user"] == texts[1:]
 
 
+def test_user_events_without_since_starts_at_first_record(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--since`を省略すると記録の最初から、指定すると指定時刻より後だけを、同じ形の行で返す。
+
+    省略時に開始境界を推測で補うと最初の発話が欠け、指定時の範囲が変わると既存の呼び出しの出所が変わる。
+    """
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-09-01T00:00:00Z", "最初の発話"),
+            _timestamped_entry(None, "時刻なし"),
+            _timestamped_entry("2026-09-01T00:00:02Z", "後の発話"),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--user-events"]) == 0
+    without_since = _read_jsonl(capsys, raw=True)
+    assert evidence.main([str(transcript), "--user-events", "--since", "2026-09-01T00:00:01Z"]) == 0
+    with_since = _read_jsonl(capsys, raw=True)
+
+    assert [(event["line"], event["text"]) for event in without_since[:-1]] == [
+        (1, "最初の発話"),
+        (2, "時刻なし"),
+        (3, "後の発話"),
+    ]
+    assert [(event["line"], event["text"]) for event in with_since[:-1]] == [(3, "後の発話")]
+    assert with_since[-1] == {"kind": "summary", "count": 1}
+
+
 def test_user_events_includes_offered_options_claude(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """AskUserQuestionの回答イベントは、提示した全選択肢のlabelとdescriptionを質問文の直後に持つ。
 
@@ -2737,18 +2768,17 @@ def test_user_events_includes_offered_options_codex(tmp_path: pathlib.Path, caps
     assert user_event["user_response"] == [{"answers": ["全体"]}]
 
 
-def test_user_events_requires_since(
+def test_user_events_rejects_misused_since(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """照会開始境界の欠落・誤用・不正値と他モード併用を拒否する。"""
+    """照会開始境界の誤用・不正値と他モード併用を拒否する。`--since`の省略は受理する。"""
     transcript = _write_transcript(
         tmp_path,
         [_timestamped_entry("2026-09-01T00:00:01Z", "入力")],
     )
 
     invocations = (
-        [str(transcript), "--user-events"],
         [str(transcript), "--since", "2026-09-01T00:00:00Z"],
         [str(transcript), "--user-events", "--since", "不正な時刻"],
         [str(transcript), "--user-events", "--since", "2026-09-01T00:00:00Z", "--warn"],
@@ -2756,6 +2786,8 @@ def test_user_events_requires_since(
     for arguments in invocations:
         assert evidence.main(arguments) == 2
         assert _read_jsonl(capsys)[0]["kind"] == "error"
+    assert evidence.main([str(transcript), "--user-events"]) == 0
+    assert [event["text"] for event in _read_jsonl(capsys) if event["kind"] == "user"] == ["入力"]
 
 
 def test_warn_mode_reports_matching_entries_with_line_and_tool(

@@ -3169,9 +3169,10 @@ def _warning_collection_events(collected: list[_CollectedRecord], unresolved: li
     return events
 
 
-def _user_events_since(collected: list[_CollectedRecord], since: datetime.datetime) -> list[dict[str, Any]]:
+def _user_events_since(collected: list[_CollectedRecord], since: datetime.datetime | None) -> list[dict[str, Any]]:
     """メイン記録の状態を保ち、指定時刻より後に成立したユーザーイベントだけを返す。
 
+    `since`が`None`の場合はメイン記録の最初から返す。
     出力は逐語引用と文字列比較する原文として使うため、本文を切り詰めない。
     """
     token = _TEXT_LIMIT.set(None)
@@ -3181,7 +3182,7 @@ def _user_events_since(collected: list[_CollectedRecord], since: datetime.dateti
         _TEXT_LIMIT.reset(token)
 
 
-def _collect_user_events_since(collected: list[_CollectedRecord], since: datetime.datetime) -> list[dict[str, Any]]:
+def _collect_user_events_since(collected: list[_CollectedRecord], since: datetime.datetime | None) -> list[dict[str, Any]]:
     """`_user_events_since`の抽出本体。"""
     events: list[dict[str, Any]] = []
     for item in collected:
@@ -3203,7 +3204,7 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
             for event in record_events:
                 event.setdefault("line", record.line)
             timestamp = _record_timestamp(record)
-            if timestamp is not None and timestamp > since:
+            if since is None or (timestamp is not None and timestamp > since):
                 selected_events.extend(record_events)
         user_events = [
             event for event in _finalize(selected_events) if event["kind"] == "user" and not _generated_user_event(event)
@@ -5379,13 +5380,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--user-events",
         action="store_true",
-        help="`--since`より後から観測境界までのメイン記録にある人間の発話と確認回答を全文で照会する。"
-        "スキル展開と実行環境の生成本文は除く。`--since`が必須。",
+        help="メイン記録にある人間の発話と確認回答を、観測境界まで全文で照会する。"
+        "`--since`を指定した場合はその時刻より後だけを、省略した場合は記録の最初からを対象とする。"
+        "スキル展開と実行環境の生成本文は除く。",
     )
     parser.add_argument(
         "--since",
         metavar="TIMESTAMP",
-        help="`--user-events`またはカタログ走査の開始境界をISO 8601の時刻で指定する。",
+        help="`--user-events`またはカタログ走査の開始境界をISO 8601の時刻で指定する。"
+        "カタログ走査では必須、`--user-events`では省略すると記録の最初からを対象とする。",
     )
     parser.add_argument(
         "--bundle",
@@ -5453,8 +5456,6 @@ def main(argv: list[str] | None = None) -> int:
             "--sinceは--user-eventsまたはカタログ走査と併用する",
             next_action="`--user-events`かカタログ走査の引数を付けるか、`--since`を外して再実行する",
         )
-    if args.user_events and args.since is None:
-        return _print_error("--user-eventsには--sinceが必要", next_action=_SINCE_NEXT_ACTION)
     if catalog_root is not None and args.since is None:
         return _print_error("カタログ走査には--sinceが必要", next_action=_SINCE_NEXT_ACTION)
     if catalog_root is not None and args.observation_boundary is None:
@@ -5594,7 +5595,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.user_events:
-        assert since is not None
         _print_events(_user_events_since(collected, since))
         return 0
 
