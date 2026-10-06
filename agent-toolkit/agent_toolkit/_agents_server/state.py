@@ -995,6 +995,10 @@ def consume_agents_server_tool_result(
 _AGENTS_WAIT_TOOL_USE = "atk agents wait"
 # `atk agents wait`がエージェント環境の自動保存時に標準出力へ書く保存先の行。
 _AGENTS_WAIT_SAVED_PREFIX = "保存先: "
+WAIT_BODY_START_PREFIX = "本文開始: session_id="
+"""`atk agents wait`の要約が結果本文と通知本文の直前に置く行の接頭辞。後ろへsession識別子を続ける。"""
+WAIT_BODY_END_PREFIX = "本文終了: session_id="
+"""`atk agents wait`の要約が結果本文と通知本文の直後に置く行の接頭辞。後ろへsession識別子を続ける。"""
 
 
 def _is_agents_wait_command(tool_input: Any) -> bool:
@@ -1064,11 +1068,14 @@ def consume_agents_wait_background_outputs(session: SessionState) -> None:
 def _collected_from_wait_output(text: str) -> set[str]:
     """`atk agents wait`の標準出力から、終端結果を回収したsession識別子を返す。
 
-    標準出力はJSON Linesか、エージェント環境の自動保存時に保存先の行だけを持つ。
+    標準出力はJSON Linesか、エージェント環境の自動保存時に保存先の行と要約を持つ。
     ツール結果の本文と背景実行の出力ファイルはどちらも標準出力そのものであるため、同じ規則で読む。
+    要約が表示する委譲先の本文は待機の出力を引用して終端行や保存先の行と同じ形の行を含み得るため、
+    本文の範囲の行は回収の根拠から外す。
     """
-    collected = _collected_session_ids(text)
-    for line in text.splitlines():
+    lines = _lines_outside_wait_bodies(text)
+    collected = _collected_session_ids("\n".join(lines))
+    for line in lines:
         if not line.startswith(_AGENTS_WAIT_SAVED_PREFIX):
             continue
         with contextlib.suppress(OSError, UnicodeError):
@@ -1076,6 +1083,25 @@ def _collected_from_wait_output(text: str) -> set[str]:
                 pathlib.Path(line.removeprefix(_AGENTS_WAIT_SAVED_PREFIX).strip()).read_text(encoding="utf-8")
             )
     return collected
+
+
+def _lines_outside_wait_bodies(text: str) -> list[str]:
+    """`本文開始:`の行から同じsession識別子の`本文終了:`の行までを除いた行を返す。
+
+    終了の行が無い範囲は末尾まで本文として扱い、本文の行を回収の根拠へ混ぜない。
+    """
+    lines: list[str] = []
+    end_line: str | None = None
+    for line in text.splitlines():
+        if end_line is not None:
+            if line == end_line:
+                end_line = None
+            continue
+        if line.startswith(WAIT_BODY_START_PREFIX):
+            end_line = WAIT_BODY_END_PREFIX + line.removeprefix(WAIT_BODY_START_PREFIX)
+            continue
+        lines.append(line)
+    return lines
 
 
 def _discard_collected(session: SessionState, collected: set[str]) -> None:

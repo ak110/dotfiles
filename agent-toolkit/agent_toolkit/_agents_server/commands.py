@@ -17,6 +17,7 @@ from typing import Any
 from agent_toolkit._agents_server import agents_wait, logs_export, record_paths, state, status_file
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
+from agent_toolkit._atk import output_file
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.serve import sessions as session_records
 from agent_toolkit._common.next_action import report, with_next_action
@@ -82,20 +83,28 @@ def _dump(payload: Any, environment: Mapping[str, str]) -> str:
 
 
 def summarize_saved_wait(path: pathlib.Path) -> None:
-    """保存した待機結果に含まれる通知と終端の内訳を表示する。
+    """保存した待機結果に含まれる通知と終端の内訳を、直接表示できる量の本文とともに表示する。
 
     終端行ごとに`label`、`status`および`agent_message_path`を1行ずつ示し、呼び出し元が保存先を開かずに
     どの依頼が終端したかと結果本文のファイルの所在を得られるようにする。
     保留した結果を待機対象が残ったまま確定した終端結果は、`unfinished_waits`へ残った待機対象の件数を加える。
     結果本文はその時点の待機表明であり再開したturnの結果ではないことを、委譲元が終端行だけから判別できるようにする。
     行頭は`保存先:`以外とし、保存先の行を読む既存の処理と競合させない。
+
+    `通知:`の行の後には通知の本文を、各終端行の直後には`agent_message_path`の本文を、
+    `本文開始:`と`本文終了:`の行で囲んで続ける。委譲元が待機の出力を1回読むだけで本文まで受け取れるようにするためである。
+    本文を加えた標準出力全体（先に表示した`保存先:`と`行数:`の行を含む）が直接表示の上限を超える本文と、
+    読めない本文ファイルは表示せず、従来どおり`agent_message_path`と保存したJSON Linesから読ませる。
     """
     notice_count = 0
     notice_session_ids: set[str] = set()
+    notice_bodies: list[tuple[str, str]] = []
     terminal_count = 0
-    terminal_lines: list[str] = []
+    terminal_lines: list[tuple[str, tuple[str, str] | None]] = []
+    saved_line_count = 0
     with path.open(encoding="utf-8", newline="") as stream:
         for line in stream:
+            saved_line_count += 1
             try:
                 result = json.loads(line)
             except json.JSONDecodeError:
@@ -108,6 +117,11 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
                 session_id = result.get("session_id")
                 if isinstance(session_id, str):
                     notice_session_ids.add(session_id)
+                    notice_bodies.extend(
+                        (session_id, notice["body"])
+                        for notice in notices
+                        if isinstance(notice, dict) and isinstance(notice.get("body"), str)
+                    )
             if result.get("status") in state.TERMINAL_STATUSES:
                 terminal_count += 1
                 fields = [
@@ -119,13 +133,62 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
                 unfinished_waits = _unfinished_wait_count(result.get("error"))
                 if unfinished_waits:
                     fields.append(f"unfinished_waits={unfinished_waits}")
-                terminal_lines.append(f"終端行: {' '.join(fields)}")
+                terminal_lines.append((f"終端行: {' '.join(fields)}", _terminal_body(result)))
+    summary: list[str] = []
     if notice_count:
-        print(f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）")
+        summary.append(f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）")
+    if terminal_count:
+        summary.append(f"終端: {terminal_count}件")
+        summary.extend(line for line, _body in terminal_lines)
+    # 保存先と行数の行は`output_file`が要約より先に表示しており、同じ形で数えて上限の内訳へ含める。
+    remaining = (
+        output_file.AUTO_SAVE_THRESHOLD_BYTES
+        - _utf8_size(f"保存先: {path}\n行数: {saved_line_count}\n")
+        - sum(_utf8_size(f"{line}\n") for line in summary)
+    )
+    if notice_count:
+        print(summary[0])
+        for session_id, body in notice_bodies:
+            remaining = _print_body_within(session_id, body, remaining)
     if terminal_count:
         print(f"終端: {terminal_count}件")
-        for line in terminal_lines:
+        for line, body_entry in terminal_lines:
             print(line)
+            if body_entry is not None:
+                remaining = _print_body_within(*body_entry, remaining)
+
+
+def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:
+    """終端行の直後に表示する本文を`agent_message_path`のファイルから読み、session識別子と組にして返す。
+
+    本文ファイルが無いか読めない場合は`None`を返し、終端行は`agent_message_path`だけを示す。
+    """
+    session_id = result.get("session_id")
+    body_path = result.get("agent_message_path")
+    if not isinstance(session_id, str) or not isinstance(body_path, str):
+        return None
+    try:
+        with pathlib.Path(body_path).open(encoding="utf-8", newline="") as stream:
+            return session_id, stream.read()
+    except (OSError, UnicodeError):
+        return None
+
+
+def _print_body_within(session_id: str, body: str, remaining: int) -> int:
+    """本文を区切りの行で囲んで表示できる場合だけ表示し、残りのバイト数を返す。"""
+    block = f"{state.WAIT_BODY_START_PREFIX}{session_id}\n{body}"
+    if body and not body.endswith("\n"):
+        block += "\n"
+    block += f"{state.WAIT_BODY_END_PREFIX}{session_id}\n"
+    size = _utf8_size(block)
+    if size > remaining:
+        return remaining
+    sys.stdout.write(block)
+    return remaining - size
+
+
+def _utf8_size(text: str) -> int:
+    return len(text.encode("utf-8"))
 
 
 def _unfinished_wait_count(error: object) -> int:

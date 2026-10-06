@@ -11,7 +11,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import commands, state
-from agent_toolkit._atk import config, environment, managed_temp
+from agent_toolkit._atk import config, environment, managed_temp, output_file
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 
 status_file = commands.status_file
@@ -186,6 +186,11 @@ def test_agents_wait_saves_small_result_without_output_option(
         "行数: 1",
         "終端: 1件",
         f"終端行: session_id=session-1 label=調査レーンA status=completed agent_message_path={body_path}",
+        "本文開始: session_id=session-1",
+        "完了",
+        "",
+        "- 詳細は`報告.md`",
+        "本文終了: session_id=session-1",
     ]
     assert saved["session_id"] == "session-1"
     assert saved["label"] == "調査レーンA"
@@ -267,6 +272,9 @@ def test_agents_wait_saves_notice_summary(
         f"保存先: {destination}",
         "行数: 1",
         "通知: 1件（session_id: session-1）",
+        "本文開始: session_id=session-1",
+        "警告",
+        "本文終了: session_id=session-1",
     ]
     saved = json.loads(destination.read_text(encoding="utf-8"))
     assert saved["status"] == "running"
@@ -304,8 +312,17 @@ def test_agents_wait_saves_notice_and_terminal_summary(
         f"保存先: {destination}",
         "行数: 1",
         "通知: 2件（session_id: session-1）",
+        "本文開始: session_id=session-1",
+        "通知1",
+        "本文終了: session_id=session-1",
+        "本文開始: session_id=session-1",
+        "通知2",
+        "本文終了: session_id=session-1",
         "終端: 1件",
         f"終端行: session_id=session-1 label=なし status=completed agent_message_path={saved['agent_message_path']}",
+        "本文開始: session_id=session-1",
+        "完了",
+        "本文終了: session_id=session-1",
     ]
     assert saved["status"] == "completed"
     assert len(saved["notices"]) == 2
@@ -352,9 +369,73 @@ def test_agents_wait_terminal_line_marks_result_finalized_with_remaining_waits(
 
     output_lines = capsys.readouterr().out.splitlines()
     saved = json.loads(pathlib.Path(output_lines[0].removeprefix("保存先: ")).read_text(encoding="utf-8"))
-    assert output_lines[-1] == (
+    assert output_lines[3] == (
         f"終端行: session_id=session-1 label=なし status=completed agent_message_path={saved['agent_message_path']}{suffix}"
     )
+
+
+@pytest.mark.parametrize(("excess", "shown"), [pytest.param(0, True, id="at-limit"), pytest.param(1, False, id="over-limit")])
+def test_summarize_saved_wait_shows_body_only_within_direct_output_limit(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], excess: int, shown: bool
+) -> None:
+    """本文を加えた標準出力全体が直接表示の上限に収まる場合だけ本文を続け、超える場合は終端行だけを示す。
+
+    上限は要約より先に表示される`保存先:`と`行数:`の行も含めて数える。含めないと、上限を超えた出力を
+    エージェント環境へ直接表示し、長い出力を保存先へ移す方針が崩れる。
+    """
+    body_path = tmp_path / "body.md"
+    saved = tmp_path / "output.txt"
+    _write_jsonl(saved, [{"session_id": "session-1", "status": "completed", "agent_message_path": str(body_path)}])
+    terminal_line = f"終端行: session_id=session-1 label=なし status=completed agent_message_path={body_path}"
+    header = f"保存先: {saved}\n行数: 1\n"
+    # 本文以外の出力。本文の末尾に改行が無いため、表示時に補う改行も含める。
+    fixed = f"{header}終端: 1件\n{terminal_line}\n本文開始: session_id=session-1\n\n本文終了: session_id=session-1\n"
+    body = "x" * (output_file.AUTO_SAVE_THRESHOLD_BYTES - len(fixed.encode("utf-8")) + excess)
+    body_path.write_text(body, encoding="utf-8")
+
+    commands.summarize_saved_wait(saved)
+
+    output = capsys.readouterr().out
+    assert output.splitlines()[:2] == ["終端: 1件", terminal_line]
+    assert (body in output) is shown
+    assert len((header + output).encode("utf-8")) <= output_file.AUTO_SAVE_THRESHOLD_BYTES
+
+
+def test_summarize_saved_wait_keeps_earlier_bodies_and_skips_oversized_or_unreadable(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """上限に収まらない本文と読めない本文ファイルだけを省き、前後の本文は区切りの行とともに表示する。"""
+    long_body = tmp_path / "long.md"
+    long_body.write_text("長" * output_file.AUTO_SAVE_THRESHOLD_BYTES, encoding="utf-8")
+    short_body = tmp_path / "short.md"
+    short_body.write_text("短い本文\n", encoding="utf-8")
+    missing_body = tmp_path / "missing.md"
+    saved = tmp_path / "output.txt"
+    _write_jsonl(
+        saved,
+        [
+            {"session_id": "session-0", "status": "running", "notices": [{"body": "通知本文"}]},
+            {"session_id": "session-1", "status": "completed", "agent_message_path": str(long_body)},
+            {"session_id": "session-2", "status": "failed", "label": "検証", "agent_message_path": str(short_body)},
+            {"session_id": "session-3", "status": "completed", "agent_message_path": str(missing_body)},
+        ],
+    )
+
+    commands.summarize_saved_wait(saved)
+
+    assert capsys.readouterr().out.splitlines() == [
+        "通知: 1件（session_id: session-0）",
+        "本文開始: session_id=session-0",
+        "通知本文",
+        "本文終了: session_id=session-0",
+        "終端: 3件",
+        f"終端行: session_id=session-1 label=なし status=completed agent_message_path={long_body}",
+        f"終端行: session_id=session-2 label=検証 status=failed agent_message_path={short_body}",
+        "本文開始: session_id=session-2",
+        "短い本文",
+        "本文終了: session_id=session-2",
+        f"終端行: session_id=session-3 label=なし status=completed agent_message_path={missing_body}",
+    ]
 
 
 @pytest.mark.usefixtures("session_environment")

@@ -166,6 +166,37 @@ def test_child_session_collected_by_agents_wait_output_file(tmp_path: pathlib.Pa
     assert not state.has_pending_auto_resume_targets(session)
 
 
+def test_agents_wait_body_lines_are_not_collection_evidence(tmp_path: pathlib.Path) -> None:
+    """要約が表示する本文の範囲にある終端行と保存先の行は、その行のsessionを回収済みにしない。
+
+    委譲先の本文は自身の待機の出力を引用し得る。本文の行を根拠にすると、未回収の孫sessionを追跡から外し、
+    その終端を理由とする自動再開が起きなくなる。本文の範囲の外にある保存先は従来どおり読む。
+    """
+    session = state.SessionState("parent-1", "/tmp")
+    for index, child_id in enumerate(("child-1", "child-2", "child-3"), start=1):
+        _start_child(session, f"toolu_{index}", child_id)
+    saved = tmp_path / "saved.jsonl"
+    saved.write_text('{"session_id": "child-1", "status": "completed", "agent_message_path": "/body.md"}\n', encoding="utf-8")
+    quoted = tmp_path / "quoted.jsonl"
+    quoted.write_text('{"session_id": "child-3", "status": "completed"}\n', encoding="utf-8")
+    output = (
+        f"保存先: {saved}\n行数: 1\n終端: 1件\n"
+        "終端行: session_id=child-1 label=なし status=completed agent_message_path=/body.md\n"
+        "本文開始: session_id=child-1\n"
+        '{"session_id": "child-2", "status": "completed"}\n'
+        f"保存先: {quoted}\n"
+        "本文終了: session_id=child-1\n"
+    )
+
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "toolu_4", "name": "Bash", "input": {"command": "atk agents wait"}}]},
+    )
+    state.consume_claude_agents_server_message(session, {"content": [{"tool_use_id": "toolu_4", "content": output}]})
+
+    assert session.live_child_session_ids == {"child-2", "child-3"}
+
+
 def _background_agents_wait(session: state.SessionState, tool_use_id: str, output: pathlib.Path) -> None:
     """委譲先が`atk agents wait`を背景実行し、ホストが起動の通知だけを返した状態を再現する。"""
     state.consume_claude_agents_server_message(
