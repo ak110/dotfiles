@@ -193,7 +193,7 @@ Claude Codeメインが利用上限の猶予通知を受けた場合は、ユー
 
 回答の到達は、投入済みで未回答のUWIを保持している間、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が定める経過時間起動の各回で`atk wi`により確認する。この確認も本節の起点とする。
 
-`agent-toolkit:process-wi`の起動中は`agent-toolkit:wi-standards`「状態と依存」の手順を適用する。それ以外で回答済みUWIの通知を受け取った主体は、自セッション（委譲先を含む）が投入したUWIだけについて、次を同じ作業の連続した工程として完了する。他のセッションが投入したUWIは、通知を受けた時点では読まずに無視し、投入したprocess-wiの実行かその次の実行の選定工程に任せる。WIの投入前と投入済みWIへの着手前に回答済みUWIを読んで両立を確かめる工程は、この通知の扱いと別に`agent-toolkit:wi-standards`「投入と取得」に従う。
+`agent-toolkit:process-wi`の起動中は`agent-toolkit:wi-standards`「状態と依存」の手順を適用する。それ以外で回答済みUWIの通知を受け取った主体は、自セッション（委譲先を含む）が投入したUWIだけについて、次を同じ作業の連続した工程として完了する。他のセッションが投入したUWIは、ユーザーが働きかけていない自動の通知を受けた時点では読まずに無視し、投入したprocess-wiの実行かその次の実行の選定工程に任せる。通知のたびに無関係なセッションが他のセッションのUWIを読んで処置を検討すると、ユーザーへ判断を仰ぐ往復が生じるためである。ユーザーが現在のセッションへ回答を告げたUWIは通知ではなく明示指示であり、`agent-toolkit:process-wi`の起動中は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`「処理対象WIの追加」へ渡す。WIの投入前と投入済みWIへの着手前に回答済みUWIを読んで両立を確かめる工程は、この通知の扱いと別に`agent-toolkit:wi-standards`「投入と取得」に従う。
 
 標準2択の事後承認型UWIへの肯定回答後の遷移は`agent-toolkit:wi-standards`「状態と依存」に従う。この分岐では回答を読み取って了承済みの判断を確認し、同じUWIへの再度の`adopt`や是正処理を実行しない。問題を示す回答と事前承認型UWIは、以下の手順で元の作業へ反映する。
 
