@@ -429,7 +429,7 @@ plugin `PreToolUse/pretooluse`がatkの呼び出しを遮断するのは、静�
 
 - `atk agents wait`はシェルの`&`と標準出力の破棄を外して単独で発行する。
   Claude Codeで背景で待つ場合はBashの`run_in_background`を使い、返されたtask識別子で結果を受領する。
-- atkの出力をパイプで後段へ渡さず、出力量はサブコマンドの対象限定で減らす。生成側が返す標準出力・標準エラーの保存先から全量を読む。エージェント環境で量によらず保存されるのは、`atk agents wait`の回収結果と複数件の`atk wi show`、`atk run-script session-review-evidence`の`--user-events`であり、短い単発の照会は直接表示される。表記診断の詳細は`標準エラー保存先:`が示す別のファイルに保持される。人の端末は直接表示と各ストリームのリダイレクトを使える。
+- atkの出力をパイプで後段へ渡さず、出力量はサブコマンドの対象限定で減らす。生成側が返す標準出力・標準エラーの保存先から全量を読む。エージェント環境で量によらず保存されるのは、`atk agents wait`の回収結果と複数件の`atk wi show`、`atk run-script session-review-evidence`の`--user-events`であり、短い単発の照会は直接表示される。保存後の標準出力には、`atk agents wait`では通知・終端の内訳と直接表示できる量の本文が、`--user-events`では発話ごとの記録位置と本文の冒頭を示す`発話:`行が続く。表記診断の詳細は`標準エラー保存先:`が示す別のファイルに保持される。人の端末は直接表示と各ストリームのリダイレクトを使える。
   保存した本文の選別は別の呼び出しで行う。
 
 Codexの`SessionStart`は`startup`・`resume`・`clear`・`compact`の全てで条文を追加し、`compact`では`QUALITY_CHECKPOINT_NOTICE`も追加する。

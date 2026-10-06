@@ -37,6 +37,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 """
 
 import argparse
+import dataclasses
 import datetime
 import hashlib
 import importlib
@@ -47,6 +48,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from typing import Any
 
 # pylint: disable=wrong-import-position,protected-access
@@ -66,6 +68,7 @@ from agent_toolkit._atk import run_command as _run_command  # noqa: E402
 from agent_toolkit._atk import run_script as _run_script  # noqa: E402
 from agent_toolkit._atk import run_skill as _run_skill  # noqa: E402
 from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
+from agent_toolkit._atk import user_events_summary as _user_events_summary  # noqa: E402
 from agent_toolkit._atk import watch as _watch  # noqa: E402
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
 from agent_toolkit._atk.environment import is_agent_environment  # noqa: E402
@@ -1352,23 +1355,53 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
     return not (args.command == "agents" and args.agents_subcommand == "logs" and getattr(args, "follow", False))
 
 
-def _passes_output_as_file(args: argparse.Namespace) -> bool:
-    """結果をファイルとして消費する呼び出しで、量によらず標準出力を保存するかを返す。
+@dataclasses.dataclass(frozen=True)
+class _OutputAsFile:
+    """量によらず標準出力を保存する呼び出しと、保存後に表示する内容の対応。
 
-    `agents wait`は回収前に保存先を開き、保存できない場合に未受領の結果を消費しないために保存する。
-    複数件の`wi show`は一括取得の消費側が保存ファイルの全見出しと本文を読み、
-    `session-review-evidence`の`--user-events`は逐語引用の出所ファイルとしてWI投入担当へ渡す。
-    単発の`wi show`と他の証拠照会はその場で読むため、通常の量の判定に従う。
+    保存する呼び出しを加えるときに、呼び出し元が保存先を開かずに次の判断へ使う値を同じ箇所で決めるため、
+    判定と保存後の表示関数（表示を持たない場合はその理由）を1つの定義に持つ。
     """
+
+    applies: Callable[[argparse.Namespace], bool]
+    after_save: Callable[[pathlib.Path], None] | None
+    reason: str
+
+
+_OUTPUT_AS_FILE_CALLS = (
+    _OutputAsFile(
+        applies=lambda args: args.command == "agents" and args.agents_subcommand == "wait",
+        after_save=_agents.summarize_saved_wait,
+        reason="回収前に保存先を開き、保存できない場合に未受領の結果を消費しない。保存後は通知・終端の内訳と本文を表示する",
+    ),
+    _OutputAsFile(
+        applies=lambda args: (
+            args.command == "wi"
+            and args.wi_subcommand == "show"
+            and not args.summary_only
+            and (args.all or len(set(args.filenames)) > 1)
+        ),
+        after_save=None,
+        reason="一括取得の消費側が保存ファイルの全見出しと本文を読むため、保存後の表示を持たない",
+    ),
+    _OutputAsFile(
+        applies=lambda args: (
+            args.command == "run-script"
+            and args.script_name == "session-review-evidence"
+            and "--user-events" in args.script_args
+        ),
+        after_save=_user_events_summary.summarize_saved_user_events,
+        reason="逐語引用の出所ファイルとしてWI投入担当へ渡す。保存後は発話ごとの記録位置と本文の冒頭を表示する",
+    ),
+)
+"""結果をファイルとして消費する呼び出しの一覧。単発の`wi show`と他の証拠照会はその場で読むため、通常の量の判定に従う。"""
+
+
+def _output_as_file_call(args: argparse.Namespace) -> _OutputAsFile | None:
+    """量によらず標準出力を保存する呼び出しであれば、その対応を返す。`--help`の表示は保存しない。"""
     if args._help_parser is not None:
-        return False
-    if args.command == "agents" and args.agents_subcommand == "wait":
-        return True
-    if args.command == "wi" and args.wi_subcommand == "show":
-        return not args.summary_only and (args.all or len(set(args.filenames)) > 1)
-    return (
-        args.command == "run-script" and args.script_name == "session-review-evidence" and "--user-events" in args.script_args
-    )
+        return None
+    return next((call for call in _OUTPUT_AS_FILE_CALLS if call.applies(args)), None)
 
 
 def main(
@@ -1396,11 +1429,11 @@ def main(
         return
     args = parser.parse_args(raw_argv)
     if not _output_capture_active and _auto_saves_output(args):
-        is_wait = args.command == "agents" and args.agents_subcommand == "wait" and args._help_parser is None
+        output_as_file = _output_as_file_call(args)
         with _output_file.auto_save(
             lambda: _managed_temp.create_managed_temp("atk-output"),
-            after_save=_agents.summarize_saved_wait if is_wait else None,
-            force_stdout=_passes_output_as_file(args),
+            after_save=output_as_file.after_save if output_as_file is not None else None,
+            force_stdout=output_as_file is not None,
             discard_directory=_managed_temp.cleanup_managed_temp,
         ):
             main(argv, home=home, now=now, _output_capture_active=True)

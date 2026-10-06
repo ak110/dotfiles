@@ -136,10 +136,15 @@ def test_evidence_saves_only_output_passed_as_file(
     code, output, error = run_atk(["run-script", "session-review-evidence", "--", str(trace), *query], capsys)
     assert code == 0, error
     assert output.startswith("保存先: ") is (agent and passes_file)
+    assert ("発話: " in output) is (agent and passes_file)
     if agent and passes_file:
-        path = pathlib.Path(output.splitlines()[0].removeprefix("保存先: "))
+        summary = output.splitlines()
+        path = pathlib.Path(summary[0].removeprefix("保存先: "))
         assert path.is_absolute()
         output = path.read_text(encoding="utf-8")
+        # 保存後の表示は保存ファイルの発話行と同じ順・同じ記録位置を示し、呼び出し元は保存先を開かずに出所を選べる。
+        users = [event for event in map(json.loads, output.splitlines()) if event["kind"] == "user"]
+        assert summary[2:] == [f"発話: record={event['record']} line={event['line']} {event['text']}" for event in users]
     assert "検索語" in output
 
 

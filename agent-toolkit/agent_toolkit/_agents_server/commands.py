@@ -101,10 +101,8 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
     notice_bodies: list[tuple[str, str]] = []
     terminal_count = 0
     terminal_lines: list[tuple[str, tuple[str, str] | None]] = []
-    saved_line_count = 0
     with path.open(encoding="utf-8", newline="") as stream:
         for line in stream:
-            saved_line_count += 1
             try:
                 result = json.loads(line)
             except json.JSONDecodeError:
@@ -140,10 +138,10 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
     if terminal_count:
         summary.append(f"終端: {terminal_count}件")
         summary.extend(line for line, _body in terminal_lines)
-    # 保存先と行数の行は`output_file`が要約より先に表示しており、同じ形で数えて上限の内訳へ含める。
+    # 保存先と行数の行は`output_file`が要約より先に表示しており、同じ文字列を上限の内訳へ含める。
     remaining = (
         output_file.AUTO_SAVE_THRESHOLD_BYTES
-        - _utf8_size(f"保存先: {path}\n行数: {saved_line_count}\n")
+        - _utf8_size(output_file.saved_report_text(path))
         - sum(_utf8_size(f"{line}\n") for line in summary)
     )
     if notice_count:
