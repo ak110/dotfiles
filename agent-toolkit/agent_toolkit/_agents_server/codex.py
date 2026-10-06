@@ -58,9 +58,8 @@ APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
 # plugin更新で消失すると生存中のApp Serverが設定を読み込めないため継承しない。
 APP_SERVER_WORKING_DIRECTORY = str(Path.home())
 DEFAULT_WAIT_TIMEOUT = 300.0
-# App ServerのJSONL通知用StreamReader上限（バイト）。
-# asyncioは上限を指定しない場合に64KiBを使うため、turnのplan・diffなどの有効な通知が上限を超えると
-# readline()がValueErrorを送出してreaderが停止するため、8MiBまで読み取れるようにする。
+# App Serverのstdio用StreamReader buffer上限兼、stdoutを1回に読み取るchunk長（バイト）。
+# JSON-RPC recordの最大値には使わず、この長さを超える行もchunkを結合して復元する。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 APP_SERVER_STDERR_LIMIT_CHARS = 4000
 APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT = 1.0
@@ -130,6 +129,17 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None) -> Path:
     _LOG.info("版別ディレクトリの配布物rootを複製しました: source=%s destination=%s", root, destination)
     _stable_plugin_roots[root] = destination
     return destination
+
+
+def _developer_instructions(launch_kind: LaunchKind) -> str:
+    """委譲先の役割と、このprocessで安定化した配布物rootを一体で返す。"""
+    plugin_root = resolve_stable_plugin_root()
+    return (
+        f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}\n\n"
+        f"agent-toolkit plugin root: {plugin_root}\n"
+        "agent-toolkitのskillとplugin内部資源は、この実在する絶対パスを起点に読む。"
+        "`<役割名>.subagent.md`や別hostのcache版数から別のplugin rootを組み立てない。"
+    )
 
 
 class AppServerError(shared_state.DelegateBackendError):
@@ -358,37 +368,21 @@ class JsonRpcProcess:
 
     async def _read_stdout(self) -> None:
         assert self.process is not None and self.process.stdout is not None
+        buffer = bytearray()
         try:
             while True:
-                raw_line = await self.process.stdout.readline()
-                if not raw_line:
+                chunk = await self.process.stdout.read(APP_SERVER_STREAM_LIMIT_BYTES)
+                if not chunk:
+                    if buffer:
+                        await self._dispatch_stdout_line(bytes(buffer))
                     error = await self._stdout_closed_error()
                     _LOG.error("%s", error)
                     raise error
-                try:
-                    message = json.loads(raw_line.decode("utf-8"))
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise AppServerError(f"invalid Codex App Server JSON line: {exc}") from exc
-                if not isinstance(message, dict):
-                    continue
-                if "id" in message and ("result" in message or "error" in message):
-                    message_type = "response"
-                elif "id" in message and isinstance(message.get("method"), str):
-                    message_type = "server_request"
-                else:
-                    message_type = str(message.get("method", "notification"))
-                self._received_message_types[message_type] = self._received_message_types.get(message_type, 0) + 1
-                if "id" in message and ("result" in message or "error" in message):
-                    request_id = message.get("id")
-                    future = self._pending.get(request_id) if isinstance(request_id, int) else None
-                    if future is not None and not future.done():
-                        future.set_result(message)
-                    continue
-                if "id" in message and isinstance(message.get("method"), str):
-                    await self._on_server_request(message)
-                    continue
-                if isinstance(message.get("method"), str):
-                    await self._on_notification(message)
+                buffer.extend(chunk)
+                while (newline_index := buffer.find(b"\n")) >= 0:
+                    raw_line = bytes(buffer[:newline_index])
+                    del buffer[: newline_index + 1]
+                    await self._dispatch_stdout_line(raw_line)
         except asyncio.CancelledError:
             raise
         except BaseException as exc:
@@ -399,6 +393,33 @@ class JsonRpcProcess:
             if self._on_failure is not None:
                 with contextlib.suppress(Exception):
                     await self._on_failure(exc)
+
+    async def _dispatch_stdout_line(self, raw_line: bytes) -> None:
+        """復元済みの1 JSON-RPC recordを既存の応答・要求・通知処理へ渡す。"""
+        try:
+            message = json.loads(raw_line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AppServerError(f"invalid Codex App Server JSON line: {exc}") from exc
+        if not isinstance(message, dict):
+            return
+        if "id" in message and ("result" in message or "error" in message):
+            message_type = "response"
+        elif "id" in message and isinstance(message.get("method"), str):
+            message_type = "server_request"
+        else:
+            message_type = str(message.get("method", "notification"))
+        self._received_message_types[message_type] = self._received_message_types.get(message_type, 0) + 1
+        if "id" in message and ("result" in message or "error" in message):
+            request_id = message.get("id")
+            future = self._pending.get(request_id) if isinstance(request_id, int) else None
+            if future is not None and not future.done():
+                future.set_result(message)
+            return
+        if "id" in message and isinstance(message.get("method"), str):
+            await self._on_server_request(message)
+            return
+        if isinstance(message.get("method"), str):
+            await self._on_notification(message)
 
     async def _read_stderr(self) -> None:
         assert self.process is not None and self.process.stderr is not None
@@ -648,7 +669,7 @@ class AppServerManager:
             params["model"] = model
         config, owner_session_id, writer_session_id = self._thread_config(lightweight=launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
         params["config"] = config
-        params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
+        params["developerInstructions"] = _developer_instructions(launch_kind)
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
                 thread_response = await client.request("thread/start", params)
@@ -927,7 +948,7 @@ class AppServerManager:
             writer_session_id = writer_session_id or uuid.uuid4().hex
             config.update(AppServerManager._agents_server_config(owner_session_id, writer_session_id))
         resume_params["config"] = config
-        resume_params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[session.launch_kind]}\n{AUTO_RESUME_NOTICE}"
+        resume_params["developerInstructions"] = _developer_instructions(session.launch_kind)
         resume_response = await client.request("thread/resume", resume_params)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:

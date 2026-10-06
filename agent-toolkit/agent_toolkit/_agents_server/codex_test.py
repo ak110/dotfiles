@@ -111,6 +111,11 @@ class _SilentClient:
 class _HangingStream:
     """行を返さないまま待機し続けるストリームのスタブ。"""
 
+    async def read(self, limit: int) -> bytes:
+        assert limit > 0
+        await asyncio.Event().wait()
+        return b""  # pragma: no cover - 待機が解けないことを表す到達不能の分岐
+
     async def readline(self) -> bytes:
         await asyncio.Event().wait()
         return b""  # pragma: no cover - 待機が解けないことを表す到達不能の分岐
@@ -157,6 +162,32 @@ class _SilentProcess:
         return self.returncode if self.returncode is not None else 0
 
 
+class _ChunkStream:
+    """有限byte列を指定長以下のchunkで返し、返却後は接続を保つ。"""
+
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+        self.offset = 0
+
+    async def read(self, limit: int) -> bytes:
+        assert limit > 0
+        if self.offset < len(self.content):
+            end = min(self.offset + limit, len(self.content))
+            chunk = self.content[self.offset : end]
+            self.offset = end
+            return chunk
+        await asyncio.Event().wait()
+        return b""  # pragma: no cover - 接続を保つための到達不能の分岐
+
+
+class _ChunkProcess:
+    """stdoutだけをchunk readerへ渡す子プロセスのスタブ。"""
+
+    def __init__(self, content: bytes) -> None:
+        self.stdout = _ChunkStream(content)
+        self.returncode: int | None = None
+
+
 @pytest.mark.asyncio
 async def test_json_rpc_write_failure_preserves_bounded_diagnostics() -> None:
     """接続断は到達段階、子PIDおよび直前stderrを例外とログへ残す。"""
@@ -176,6 +207,36 @@ async def test_json_rpc_write_failure_preserves_bounded_diagnostics() -> None:
     assert "initialized_sent" in message
     assert "child_pid" in message
     assert "network unavailable" in message
+
+
+@pytest.mark.asyncio
+async def test_stdout_reader_frames_response_larger_than_stream_limit_and_following_notification() -> None:
+    """transportのchunk長を超える1 recordと直後のrecordを、ともに既存の通知処理へ渡す。"""
+    oversized = "x" * (subject.APP_SERVER_STREAM_LIMIT_BYTES + 1)
+    response = json.dumps({"id": 7, "result": {"value": oversized}}, separators=(",", ":"))
+    notification = json.dumps({"method": "test/notification", "params": {"value": "received"}}, separators=(",", ":"))
+    notifications: list[dict[str, Any]] = []
+    received = asyncio.Event()
+
+    async def on_notification(message: dict[str, Any]) -> None:
+        notifications.append(message)
+        received.set()
+
+    client = subject.JsonRpcProcess(on_notification, _ignore_message)
+    client.process = _ChunkProcess(f"{response}\n{notification}\n".encode())  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+    pending: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+    client._pending[7] = pending
+    reader = asyncio.create_task(client._read_stdout())
+
+    result = await asyncio.wait_for(pending, timeout=2)
+    await asyncio.wait_for(received.wait(), timeout=2)
+    reader.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await reader
+
+    assert result["result"]["value"] == oversized
+    assert notifications == [{"method": "test/notification", "params": {"value": "received"}}]
+    assert client.reader_failure is None
 
 
 async def _ignore_message(message: dict[str, Any]) -> None:
@@ -476,6 +537,32 @@ def test_agents_server_config_uses_the_stable_plugin_root() -> None:
     assert args[2] == str(expected_root)
     assert args[-1] == str(expected_root / "agent_toolkit" / "agents_server_mcp.py")
     assert pathlib.Path(args[-1]).is_file()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_kinds(
+    launch_kind: shared_state.LaunchKind, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """開始と再開の全役割へ、同じ実在plugin rootと再解決を禁じる契約を渡す。"""
+    plugin_root = tmp_path / "stable-plugin-root"
+    plugin_root.mkdir()
+    monkeypatch.setattr(subject, "resolve_stable_plugin_root", lambda: plugin_root)
+    client = _TierClient()
+    manager = subject.AppServerManager()
+    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+
+    await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
+    start_params = next(params for method, params in client.requests if method == "thread/start")
+    client.requests.clear()
+    await manager.resume("tier-thread", shared_state.ResumePrompt("再開"), str(tmp_path), launch_kind=launch_kind)
+    resume_params = next(params for method, params in client.requests if method == "thread/resume")
+
+    for params in (start_params, resume_params):
+        instructions = params["developerInstructions"]
+        assert str(plugin_root) in instructions
+        assert "別hostのcache版数から別のplugin rootを組み立てない" in instructions
+    assert start_params["developerInstructions"] == resume_params["developerInstructions"]
 
 
 async def _return(value: Any) -> Any:
