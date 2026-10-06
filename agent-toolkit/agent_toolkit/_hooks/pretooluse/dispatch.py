@@ -550,7 +550,7 @@ def _handle_user_facing_text_tool(
 
     ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
     遮断するとそのターンの入力と作業を失い、同じ確認を再発行する必要があるため、警告で返す。
-    判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
+    判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
     「遮断・警告フックの成立条件」が定める。2つの判定は互いの結果に依存せず、成立した警告を同じ追加コンテキストへ並べる。
     """
     warnings = [

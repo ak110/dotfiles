@@ -12,7 +12,7 @@ LLM宛て出力は生成主体、種別および配送単位を属性に持つXM
 hook以外の呼び出し元も同じ実装を使うため、包装の実装を層の順序で最も前にある`_common`へ置く。
 
 フィールドの詳細と規約の背景は
-`agent-toolkit/skills/writing-standards/references/claude-hooks.md`を参照する。
+`agent-toolkit/skills/writing-standards/references/claude-hooks-messages.md`を参照する。
 """
 
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, xml_message

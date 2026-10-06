@@ -7,7 +7,7 @@
 
 判定の結論は警告とし、遮断せず反復しても昇格させない。`AskUserQuestion`の入力はトークン数が多いことが多く、
 遮断して再発行させる損失が大きいためである（2026年10月6日、ユーザーの確認回答）。
-根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
+根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
 呼出主体がメインでない場合とtranscriptを読めない場合は判定しない。
 """
 

@@ -223,7 +223,7 @@ dotfilesリポジトリ内のagent-toolkit規範文書は、agent-toolkitユー�
   手順文書への記載で置き換えた事象に由来する）。
   同じ制約を`AskUserQuestion`の本文へ適用する処理が再び置かれたため撤去した（2026年9月16日、ユーザー指示）。
   受理形式の制約とユーザー向け提示本文の扱いは
-  `agent-toolkit/skills/writing-standards/references/claude-hooks.md`の「遮断・警告フックの成立条件」にある
+  `agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`の「遮断・警告フックの成立条件」にある
 
 ## 概念設計と最小実装の優先順位
 

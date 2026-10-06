@@ -11,7 +11,7 @@ Stopの連続遮断上限は共通のStop処理に任せ、独自の状態や上
 遮断とする根拠: 発話本文を可視の本文へ置く規範を加えた後も同じ欠落が再発した。
 本文の欠落はエージェントの明らかな行動誤りで、判定はtranscriptから機械的に確定でき、
 遮断で失うのは本文を出力し直す1回の応答だけである。基準は
-`agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
+`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
 
 委譲先での実行可否: ユーザーへの応答責務を持つメインだけを対象とし、
 agent_idと委譲先の環境印でサブエージェントと委譲先を除く。

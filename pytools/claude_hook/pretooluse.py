@@ -10,7 +10,7 @@
 2. agent-toolkit配布物へのdotfiles固有名混入検出（warn）
 
 本フックが扱う検査は、いずれも書き込んだファイルの再編集で結果を復元できるため遮断を用いない。
-判定基準は`agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」が定める。
+判定基準は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」が定める。
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
@@ -62,7 +62,7 @@ def main(payload_text: str) -> int:
 
     # --- warn 系 check ---
     # 本フックが扱う検査は、いずれも書き込んだファイルの再編集で結果を復元できる。
-    # `agent-toolkit:writing-standards`の`references/claude-hooks.md`
+    # `agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
     # 「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、遮断を用いない。
     # 本文と解消手段（warn通知の`fix`）の組を集める。
     warnings: list[tuple[str, str]] = []

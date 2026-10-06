@@ -65,7 +65,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 - フックのblockまたはwarnは、事前に防ぐ型と遮断後に対処する型の費用を比べて設計する。事前に防ぐ型は要求を事前に解釈できる規範と対にし、規範どおりの通常操作では発火させない。
   遮断後に対処する型の発火は規範どおりの通常操作に含め、規範には遮断時は通知に従う扱いだけを書く（2026年9月29日、ユーザー指示）。
   複数ホストへ同じ保護を設ける場合は、ホスト入力に依存しない判定を共有する（2026年9月14日、ユーザー指示）。
-  現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`にある
+  現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`にある
 - 遮断・警告するフックを置くかは、QCDでフックの費用と防ぐ手戻りの便益を比べて決める。
   何でもフックで遮断する設計も、フックで止めてよい誤りを無理に避ける設計も、同じくQCDを下げる。
   明らかなエージェントの行動誤りで、遮断してもトークンの無駄が多くない判定は、元へ戻せる誤りを防ぐものでも置く。
@@ -74,12 +74,12 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   2026年9月26日のユーザー指示は、フックを元へ戻せない結果を防ぐ判定と常駐運用の終端保証だけに置き、範囲の外はユーザーが例外として確定した場合だけ残すとしていた。
   2026年10月2日のユーザー指示（「hookは元へ戻せない結果を防ぐものだけ残すだけだと厳しすぎる」、基準はQCD）で、この範囲限定をQCDの費用比較へ改めた。
   経緯と全件確認の表は[design-hooks.md](design-hooks.md#warnblock判定の全件確認2026年9月26日)「warn・block判定の全件確認（2026年9月26日）」にある。
-  現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の「遮断・警告フックの成立条件」にある
+  現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`の「遮断・警告フックの成立条件」にある
 - フックのblockは、通した場合の結果を復元できない操作と、遮断で失うターンの入力と作業が小さい明らかな行動誤りに用いる。
   それ以外の再編集または再実行で是正できる操作にはwarnを用いる。
   blockを使うと、そのターンの入力と作業が失われ、同じ操作の再実行が必要になるためである。
   2026年9月15日のユーザー指示はblockを復元できない操作だけに限っていたが、2026年10月2日のユーザー指示で明らかな行動誤りへ広げた。
-  現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の「遮断・警告フックの成立条件」にある
+  現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`の「遮断・警告フックの成立条件」にある
 - ユーザーへ提示する本文そのものを入力とするフックの判定は、遮断せず警告で返す。
   ユーザーへ提示する本文には、`AskUserQuestion`の質問と選択肢、`ExitPlanMode`の計画本文が含まれる。
   ユーザーが読んで誤りを指摘できるため、遮断は是正の往復だけを増やす

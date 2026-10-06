@@ -47,7 +47,7 @@ def _collect_edit_operation_warnings(
     """1操作分の警告本文を順に集める。
 
     いずれも後続の編集で復元できる結果を対象とするため、`agent-toolkit:writing-standards`の
-    `references/claude-hooks.md`「遮断・警告フックの成立条件」により警告で返す。
+    `references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」により警告で返す。
     """
     fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
     display_path = operation.display_path

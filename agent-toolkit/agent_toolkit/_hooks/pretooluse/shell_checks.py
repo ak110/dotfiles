@@ -530,7 +530,7 @@ def _check_bash_option_after_terminator(command: str) -> bool:
     `--`の後ろは全てデータとして扱われるため、後ろへ置いた`--glob`などは`rg`・`grep`系・`git grep`では
     存在しないパスとして失敗し、`git log`・`git diff`・`git show`ではエラーを出力せずにパス指定として扱われ、誤った結果を返す。
     条文で配置を定めた後も同じ誤りが反復したため、実行の直前に判定する。
-    遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
+    遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
     外側に所属する既知の引数だけを判定し、置換内の語と展開結果が未確定の引数はオプションとして扱わない。
     遮断で失うのはコマンド1回の発行だけである。
     `rg`・`grep`系と`git grep`では、`-e`・`-f`を`--`より前に置かない場合に`--`の直後を検索パターンとみなして除くため、
@@ -655,7 +655,7 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> bool:
     外部への保存、プロセスの終了、ファイルの上書きなど復元できない結果が残るため、実行前に遮断する。
     判定はコマンド文字列だけから確定し、遮断された主体は区切り語の引用、事前の変数代入またはエスケープへ
     書き直して同じターンで再実行できる。遮断とする根拠は`agent-toolkit:writing-standards`の
-    `references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
+    `references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
     本文の範囲と展開の有無は`bash_command_parser.heredoc_bodies`の1つの定義から得る。
     """
     found = heredoc_command_substitutions(command)
@@ -736,7 +736,7 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
     Git Bash（MSYS2）のPATHはコロン区切りでドライブ文字形式を変換しないため、`C:/x`は`C`と`/x`の2要素に分かれ、
     意図したディレクトリが検索されない。その結果を根拠に結論を下す前に気付けるよう、実行の直前に判定する。
 
-    判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
+    判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
     「遮断・警告フックの成立条件」にある。誤ったPATHはコマンドを失敗させずに誤った結果を返し、
     その結果が誤った結論の根拠になる。判定はコマンド文字列から機械的に確定でき、実行を止めないため誤検出の費用も小さい。
     影響はそのコマンドのプロセス環境に閉じ、正しい形式で再実行すれば是正できるため遮断はしない。
