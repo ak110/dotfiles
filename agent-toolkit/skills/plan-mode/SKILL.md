@@ -21,7 +21,9 @@ description: >
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` |
-| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-structure-check.md` |
+| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-structure-check.md`、`references/plan-file-storage.md` |
+| 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` |
+| 保持、不変性、完全復元のいずれかを計画の契約か確認の選択肢へ書く前と、過去の契約へ戻す変更か過去の契約を撤去する変更を計画する前 | `references/plan-restoration-contracts.md` |
 | `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前 | `references/main-launch.md` |
 | 計画構造を検証する前 | `references/plan-structure-check.md` |
 | 旧単一ファイル形式または旧二ファイル形式の計画を読む前と、計画書式の読み取り互換の実装・自動チェックを変更する前 | `references/legacy-plan-file-standards.md` |

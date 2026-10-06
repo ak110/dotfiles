@@ -458,7 +458,7 @@ atk plans commit dd-HHmm_<名詞>.md
 
 `atk plans commit`は同じstemの計画、バグ調査ファイルおよびレビュー指摘管理表を、計画ファイルの作成日に対応する`private-notes/plans/yyyy/MM/`へ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
 pushを行わずローカルcommitまでで止める場合は`--skip-push`を指定する。この場合もローカルcommitの成功後に作業側を回収する。
-計画作成基準と可搬参照のチェックは`agent-toolkit:plan-mode`の`plan-file-standards.md`が定める。
+計画作成基準は`agent-toolkit:plan-mode`の`plan-file-standards.md`、可搬参照の書式は同スキルの`plan-file-storage.md`が定める。
 
 計画ファイルと計画運用に関するチェックは、上表の`PreToolUse`・`PostToolUse`が扱う。
 

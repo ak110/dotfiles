@@ -13,6 +13,7 @@
 | 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md` |
 | 差分を判定する前 | `agent-toolkit:writing-standards`が変更ファイルの成果物種別ごとに定める資料。テストコードを含む差分では同スキルの`references/testing.md`を含める |
 | `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:plan-mode`の`references/plan-restoration-contracts.md` |
 | 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/managed-temp-bulk-show.md` |
 | 指摘を登録するか完成条件証拠へ記入する直前 | `agent-toolkit:review-standards`の[references/exec-review-recording.md](../skills/review-standards/references/exec-review-recording.md) |
 

@@ -98,7 +98,7 @@
 | セッション記録 | Claude CodeとCodexが保存する会話の記録（transcript） | `agent-toolkit/skills/writing-standards/references/session-records.md`冒頭 |
 | メイン記録 | Claude Codeのセッション本体の記録（深さ2） | `agent-toolkit/skills/writing-standards/references/session-records.md`「Claude Codeの記録」 |
 | サブエージェント記録 | Claude Codeのサブエージェントの記録（`subagents/agent-<agentId>.jsonl`、深さ4） | `agent-toolkit/skills/writing-standards/references/session-records.md`「Claude Codeの記録」 |
-| 計画バンドル | 計画ファイルと、同じstemの付属ファイル（計画ファイル（バグ）、レビュー指摘管理表など）の組 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「計画ファイルの保存と参照」 |
-| 計画の所有記録 | 計画バンドルを所有するセッションを示す`~/.claude/plans`の局所状態 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「計画ファイルの保存と参照」 |
+| 計画バンドル | 計画ファイルと、同じstemの付属ファイル（計画ファイル（バグ）、レビュー指摘管理表など）の組 | `agent-toolkit/skills/plan-mode/references/plan-file-storage.md`「計画ファイルの保存と参照」 |
+| 計画の所有記録 | 計画バンドルを所有するセッションを示す`~/.claude/plans`の局所状態 | `agent-toolkit/skills/plan-mode/references/plan-file-storage.md`「計画ファイルの保存と参照」 |
 | バックグラウンドタスク | BashやAgentを背景で動かした非同期の処理 | `agent-toolkit/skills/writing-standards/references/session-state-and-flags.md` |
 | バックグラウンドタスクの所有記録 | 自セッションが起動したバックグラウンドタスクとAgent・Taskの識別子を、PostToolUseが保存した記録 | `agent-toolkit/skills/writing-standards/references/session-state-and-flags.md` |

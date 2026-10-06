@@ -1142,7 +1142,7 @@ def _rewritten_plan_text(text: str, stem: str) -> tuple[str, int]:
 
 
 def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> dict[str, object]:
-    """保存済み計画の可搬表記の付属ファイル参照を`plan-file-standards.md`の表記へそろえる。
+    """保存済み計画の可搬表記の付属ファイル参照を`plan-file-storage.md`の表記へそろえる。
 
     書き換えるのは、ファイル名がその計画のstemで始まる参照だけとする。
     stemが一致しない参照とキュー項目の本文は、参照先の計画が別であるため書き換えない。

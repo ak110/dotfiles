@@ -188,8 +188,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk plans list",
     },
     "atk plans rewrite-references": {
-        "summary": "保存済み計画の付属ファイル参照を`plan-file-standards.md`の表記へそろえる",
-        "description": "目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、`plan-file-standards.md`が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして`--skip-push`を指定しなければpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
+        "summary": "保存済み計画の付属ファイル参照を`plan-file-storage.md`の表記へそろえる",
+        "description": "目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、`plan-file-storage.md`が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして`--skip-push`を指定しなければpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
         "epilog": "実行例:\n\n  atk plans rewrite-references",
     },
     "atk serve": {
