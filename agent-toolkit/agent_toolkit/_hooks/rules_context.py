@@ -37,8 +37,7 @@ RESPONSE_LANGUAGE_REINJECTION_NOTICE = "ユーザーへ向けた地の文は、�
 # SessionStartが`RESPONSE_LANGUAGE_NOTICE`を注入した時点で0へ戻す。
 LANGUAGE_REINJECTION_COUNT_KEY = "language_reinjection_count"
 QUALITY_CHECKPOINT_NOTICE = (
-    "会話圧縮後は`01-agent.md`「行動と手順の目的」に従い、目的と承認状態を記録された計画やキュー項目から復元する。"
-    "会話限定の指示を成果物へ混入させない。"
+    "会話圧縮後の目的と承認状態の復元は`01-agent.md`「行動と手順の目的」に従う。会話限定の指示を成果物へ混入させない。"
 )
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
