@@ -9,7 +9,17 @@
 
 ## 起動
 
-元のpickerが終端していても、`pick-wi-explain.subagent.md`を指定して新しい担当を起動する（`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」）。`cwd`は元の選定対象リポジトリとし、`extra_params`には次の名前付き入力だけを渡す。
+元のpickerが終端していても、新しい担当を起動する。
+
+`agents_server`の`start`を次の引数で呼ぶ。起動の定型と適用する義務は`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」に従う。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 元の選定対象リポジトリの絶対パス |
+| `subagent_md_path` | `pick-wi-explain` |
+| `extra_params` | 次の名前付き入力だけ |
+| `mode` | 指定しない |
+| `model_type` | 指定しない（サーバーが工程別設定を使う） |
 
 - `説明対象の選定結果の出力先ファイル`: 元の`pick-wi.yaml`の絶対パス
 - `選定理由への質問`: ユーザーの問い

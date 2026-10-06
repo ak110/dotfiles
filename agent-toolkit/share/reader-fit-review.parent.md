@@ -11,7 +11,17 @@
 
 実行レビュー担当が対象WIの`担当モデル.実行レビュー担当`を受領した場合、読者別探索担当の起動にも同じ`model_type`を指定する。受領しない場合は工程別設定を使う。終端結果の指定値と実際のモデルを引き継ぎ記録へ残す。
 
-読者ごとに`reader-fit-review.subagent.md`を指定する起動（`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」）で1件ずつ読者別探索担当を起動し、並行させる。`cwd`は成果物を含む作業ツリーの絶対パスとし、`extra_params`には次の名前付き入力だけを渡す。
+読者ごとに1件ずつ読者別探索担当を起動し、並行させる。
+
+`agents_server`の`start`を次の引数で呼ぶ。起動の定型と適用する義務は`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」に従う。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 成果物を含む作業ツリーの絶対パス |
+| `subagent_md_path` | `reader-fit-review` |
+| `extra_params` | 次の名前付き入力だけ |
+| `mode` | 指定しない |
+| `model_type` | 前段の`担当モデル.実行レビュー担当`を受領した場合はその値、受領しない場合は指定しない |
 
 - `成果物`: 成果物の絶対パスと行数。private-notesにあるWIでは、ファイル名と取得コマンド
 - `種別`: 成果物の種別

@@ -266,6 +266,17 @@ Claude Codeはツールを遅延読み込みし、スキーマを取得する最
 PreToolUseで通知する案は、規範の想起を目的とするチェックをhookに置かない前節の方針に反する。
 この方針は2026年9月26日の旧基準（元へ戻せない結果を防ぐものだけを残す）に由来する。現行の判定は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の費用比較で行い、その比較による採否は「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」が示す。本節の判断そのものは見直していない。
 `agent-toolkit:delegation`のdescriptionへ起動の語を加える案は、descriptionを対象作業と発火条件に限る規定に反し、単発の委譲のたびにスキル本体と参照資料を読む費用を生む。
+
+2026年10月7日、`agents_server`の`start`での定期再確認の装着を、モデルが起動前に行う手順からClaude Codeのmod（`agent-toolkit/hooks/periodic_recheck.ts`）が`start`の処理の中で行う方式へ改めた。
+ユーザーが`<役割名>.parent.md`による起動までの手順の多さを指摘し、`start`の後の自動化を求めたためである。
+modは呼出主体が定期再確認のtaskを持たない場合に`atk wait-schedule`と同じcron式で`CronCreate`を作成し、task IDを`start`の結果の後に届ける。装着できない場合は、モデルが規範の手順で装着する案内を届ける。
+装着がモデルの遵守に依存しなくなり、起動前の`atk wait-schedule`、`ToolSearch`と`CronCreate`の呼び出しが不要になる。前段の`start`の公開説明の手掛かりは、装着できなかった場合と`Agent`ツールの委譲の手順への案内へ改めた。
+定期promptの本文は`agent-toolkit/hooks/periodic_recheck_prompt.ts`だけが持ち、modとモデルが同じ本文を使う。
+`hooks.json`の`modules`は1件だけを受理し、ツール名の条件を持たない同じイベントのhookは1回しか登録できない。このためmodのhookは`agent-toolkit/hooks/register.ts`から登録し、本体を別モジュールに置く。
+却下した代替案は3つある。
+PostToolUseのhookがcron式と`CronCreate`の引数を通知する案は、モデルの`ToolSearch`と`CronCreate`の呼び出しが残り、装着がモデルの遵守に依存する点を除けない。
+`start`の応答へcron式を同梱する案は、サーバーが呼出主体のrequest bucketとホストの`CronCreate`の有無を知らず、Codexへも同じ応答が返るため成立しない。
+modが`$.clock.every`と`$.prompt.submit`で定期再確認そのものを行い`CronCreate`を使わない案は採らない。`CronCreate`を前提とする既存の契約（Stopの非同期待機の判定、taskの再利用と削除、`/exit`前の削除）を再設計する必要があり、起動前の手順を減らす要求に対して変更が大きい。
 `agent-toolkit/share/rules-main.claude-code.md`へ追記する案は、常時規範への新しい規定の追記に当たり、メインだけへ配られるため委譲先が委譲する場合を覆わない。
 観測した事象では条文がセッション開始時の文脈にあったため、同じ層へ文を移しても想起の条件は変わらない。
 

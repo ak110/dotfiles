@@ -21,7 +21,16 @@
 
 起動時の`model_type`は選定結果の当該レーンの`担当モデル.実装担当`から決める。同じレーンの明示指定が異なるときはWIと指定値を示して起動を止める。指定が無ければ工程別設定を使う。明示指定の起動値と終端結果の`model_type`、実際の`engine`、`model`、`effort`を比較して一致を確認し、WIとともに引き継ぎ記録へ残す。
 
-`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を指定してレーン担当を起動する。起動の形は`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」に従い、`cwd`は対象worktreeの絶対パスとする。
+レーン担当は、`agents_server`の`start`を次の引数で呼んで起動する。起動の定型と適用する義務は`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」に従う。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 対象worktreeの絶対パス |
+| `subagent_md_path` | `exec` |
+| `extra_params` | 後掲の各項目 |
+| `mode` | 指定しない |
+| `model_type` | 前段の`担当モデル.実装担当`から決めた値。指定が無ければ指定しない |
+
 必須入力の項目名は`担当種別`と`引き継ぎ記録先`とする。
 各項目の値は次のとおり確定する。
 
@@ -35,7 +44,7 @@
   - 初回選定の項目別再開: 選定結果から担当が読むため、この行へ転記しない。pickerがAWI本文の再開記録から返す`反映後の観測だけが残る`で始まる観測のみの再開位置も項目別再開に含まれ、担当は計画の有無によらず既存の実装commitを再実装せず観測だけを行う
   - 初回起動: 再開項目と新規項目が混在してもこの行を送らない
 - `環境構築`: 専用worktreeの環境の準備状態。作成主体が`skills/process-wi/references/run-lanes.md`「レーンと資源」の環境構築を完了した場合は`完了済み`と、依存の一括更新などの準備を要しないと判定した場合はその判定を値へ書く。完了を確定できない場合と失敗した場合は`レーン担当が実行`とする
-- `引き継ぎ記録先`: 値は`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」が指す`引き継ぎ記録先`の書式に従う。`再開位置`を渡す再開と`担当種別`が`レビュー修正担当`である起動は、先行する担当の記録を引き継ぐため`（継続）`とする
+- `引き継ぎ記録先`: 初回起動では`（新規）`を省略してサーバーに用意させる（`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」）。`再開位置`を渡す再開と`担当種別`が`レビュー修正担当`である起動は、先行する担当の記録を引き継ぐため`（継続）`とする
 
 対象worktree、Git操作用worktree、複製元、linked worktree、プロジェクト規範は、委譲先が起動時の`cwd`とGitから解決する。作成規範は変更対象から解決し、起動方法と権限は`exec.subagent.md`が定める権限と入力を用いる。
 対象リポジトリへの直接pushは委譲元が担い、private-notesでの`atk plans commit`と`atk wi`の通常の保存・公開はレーン担当の終端工程に残す。両者を同じpush禁止として伝えると、WIの終端だけが未公開になる。
@@ -116,6 +125,7 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス|
 同じコマンドが所在と共用を確かめる範囲は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」が定める。コマンドが受理した行についても、参照した記録が各条件の入力と結果を直接満たすかを確かめる。原文との過不足と、非達成を許容する根拠と意味も確かめる。どちらも後掲の統合時の完成条件判定で行う。
 
 全計画の実装有無を確認し、採用する実装範囲が1件でもあるレーンを`マージあり`、無いレーンを`マージなし`と確定する。計画ごとの`マージなし`はその計画に対応付けたまま保持する。`マージあり`では実行レビューの収束と、画面差分がある場合はユーザビリティレビューの収束を確認した後、`マージなし`では実装が無いことの確定後に、そのレーンを担当してきた同じthreadへ統合を指示する。統合の手順は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`が定める。
+統合の指示は同じthreadへ`send_message`で送り、`start`を呼ばない。同じthreadを継続できず統合を担う担当を新しく起動する場合も`subagent_md_path`へ`exec`を渡し、委譲先は統合の手順を役割名`lane-integration`の`share/lane-integration.subagent.md`から読む。
 新規起動を伴わないため、`引き継ぎ記録先`は起動時に渡した値を継続し、この指示では省く。
 統合入力HEADは、収束したラウンドの`レビューしたHEAD`とする。収束後のレビュー修正で再レビューを省いた場合は、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「レビュー修正」が保持した修正後のHEADとする。
 指示の前に次の順で確認する。対象worktree、専用branch、全計画ファイルおよび統合先branchも同じ時点で確認する。

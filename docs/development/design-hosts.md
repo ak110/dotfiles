@@ -143,7 +143,7 @@ remote広告refの直積証跡・replace ref・graft・shallow複製への追加
 比較不能な総合出力または実在しないauto mode classifierのテストを必須にする案は、変更の成否を識別できないため採用しない。
 
 メインは委譲先専用の`<役割名>.subagent.md`および作成規範を読み込まず、その絶対パスを各担当へ渡す。
-agent-toolkitプラグイン内の`<役割名>.subagent.md`と作成規範の絶対パスは、メインが注入済みの`agent-toolkit:delegation`の所在から現行plugin rootを確定して解決する。
+agent-toolkitプラグイン内の`<役割名>.subagent.md`は、`agents_server`がメインから受け取った役割名を自身のplugin rootの`share/`直下へ解決する。作成規範の絶対パスは、メインが注入済みの`agent-toolkit:delegation`の所在から現行plugin rootを確定して解決する。
 委譲元は新規成果物の絶対パスを起動時に指定するか、委譲先から報告を受領してから観測する。
 AWI計画では、委譲元が既存ファイルと衝突しない保存先の絶対パスを確定する。
 通常型のAWIの下流主体は、担当ファイル名と対象リポジトリを受け取り、キューCLIから保存本文を独立に取得する。

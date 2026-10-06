@@ -16,12 +16,22 @@ process-wiのメインが、処理対象の選定、処理開始、および選�
 
 ## 起動
 
-メインはキュー一覧とAWI本文の取得をpickerへ委ね、`pick-wi.subagent.md`を指定してpickerを1件起動する（`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」）。
-`cwd`は対象リポジトリの絶対パスとし、`extra_params`には次の名前付き入力を渡す。
+メインはキュー一覧とAWI本文の取得をpickerへ委ね、pickerを1件起動する。
+
+`agents_server`の`start`を次の引数で呼ぶ。起動の定型と適用する義務は`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」に従う。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 対象リポジトリの絶対パス |
+| `subagent_md_path` | `pick-wi` |
+| `extra_params` | 次の名前付き入力 |
+| `mode` | 指定しない |
+| `model_type` | 指定しない（サーバーが工程別設定を使う） |
+
 セッションのmanaged-temp（`agent-toolkit:managed-temp`）の直下の`pick-wi.yaml`を出力先とする。
 
 - `選定結果の出力先ファイル`: 絶対パス
-- `引き継ぎ記録先`: 値は`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」が指す`引き継ぎ記録先`の書式に従う
+- `引き継ぎ記録先`: `（新規）`は省略してサーバーに用意させる。継続の扱いは`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」に従う
 - `WIファイル名一覧`: 「処理対象WIの追加」の候補差分のWIファイル名（AWIと回答済みUWI）の一覧。指定が無い場合は送らない
 
 ユーザー指定がある場合もpickerを起動する。本文取得、依存順、レーン分けおよび再開位置はpickerが担う。

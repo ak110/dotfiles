@@ -11,14 +11,22 @@
 
 ## 起動方法
 
-`agents_server`の`start`で`defect-investigation.subagent.md`を指定して起動する（`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」）。この指定により、調査に要る`agent-toolkit:bugfix`を起動できる主体を使う。
+この起動では、調査に要る`agent-toolkit:bugfix`を起動できる主体を使う。
 独立した不良が複数ある場合は、不良ごとに1件起動する（`agent-toolkit:delegation`の`references/routing.md`の独立した文脈による事実収集）。
-`cwd`は見つけた主体の作業ディレクトリの絶対パスとする。
+`agents_server`の`start`を次の引数で呼ぶ。起動の定型と適用する義務は`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」に従う。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 見つけた主体の作業ディレクトリの絶対パス |
+| `subagent_md_path` | `defect-investigation` |
+| `extra_params` | 「渡す入力」の各項目 |
+| `mode` | 指定しない |
+| `model_type` | 指定しない（サーバーが工程別設定を使う） |
 
 ## 渡す入力
 
 - `対象の不良`: `agent-toolkit:bugfix`の`references/root-cause-analysis.md`「事象単位の並列調査委譲」の7項目（事象、期待する契約、実際の結果、症状を観測した所在を含む発生条件、ログと資料の絶対パス、対象commit、再現手順）。実際の結果には観測した出力、エラー、差分などを含める。見つけた主体の仮説、原因の候補と考えた実装箇所、修正案は、同節に従い手元に残す
-- `引き継ぎ記録先`: 値は`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」が指す`引き継ぎ記録先`の書式に従う
+- `引き継ぎ記録先`: `（新規）`は省略してサーバーに用意させる。継続の扱いは`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」に従う
 
 ## 受領と検収
 

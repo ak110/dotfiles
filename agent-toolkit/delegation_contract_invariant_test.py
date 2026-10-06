@@ -632,6 +632,57 @@ def test_lane_launch_inputs_reach_lane_owner() -> None:
     assert not [name for name in inputs if name not in executor]
 
 
+# `<役割名>.parent.md`が起動の形を委ねていた旧来の共通節。役割名を本文へ書かず、委譲元に共通節を読ませて
+# plugin rootから絶対パスを組み立てさせる形であり、現行の`<役割名>.parent.md`には現れない。
+_RETIRED_LAUNCH_DELEGATION = "「`<役割名>.subagent.md`を指定する起動」"
+
+
+def _launch_role_errors(share: pathlib.Path) -> list[str]:
+    """`<役割名>.parent.md`が起動対象ごとに`subagent_md_path`へ渡す役割名を本文に書いていない箇所を返す。
+
+    役割名は起動対象のファイル名から`.subagent.md`を除いた名前とし、`subagent_md_path`と同じH2節に
+    コードスパンで現れることを求める。共通節へ起動の形を委ねる旧来の記述も報告する。
+    """
+    errors: list[str] = []
+    for parent in sorted(share.glob("*.parent.md")):
+        content = parent.read_text(encoding="utf-8")
+        sections = content.split("\n## ")
+        targets, _ = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
+        for target in targets:
+            role = target.removesuffix(".subagent.md")
+            if not any("`subagent_md_path`" in section and f"`{role}`" in section for section in sections):
+                errors.append(f"起動を述べる節に役割名が無い: {parent.name} -> {role}")
+        if _RETIRED_LAUNCH_DELEGATION in content:
+            errors.append(f"起動の形を共通節へ委ねている: {parent.name}")
+    return errors
+
+
+def test_parent_launch_sections_name_subagent_role() -> None:
+    """配布する全ての`<役割名>.parent.md`が、起動を述べる節で`subagent_md_path`へ渡す役割名を書く。"""
+    share = pathlib.Path(__file__).resolve().parent / "share"
+
+    errors = _launch_role_errors(share)
+
+    assert not errors, "\n".join(errors)
+
+
+def test_parent_launch_section_without_role_is_reported(tmp_path: pathlib.Path) -> None:
+    """役割名を書かず共通節へ起動の形を委ねる`<役割名>.parent.md`を報告し、役割名を書いた文書を受理する。"""
+    _write_pair(
+        tmp_path,
+        parent_body=_parent_body(
+            after_marker="\n`task.subagent.md`を指定する起動（共通節" + _RETIRED_LAUNCH_DELEGATION + "）で起動する。\n"
+        ),
+    )
+    assert _launch_role_errors(tmp_path) == [
+        "起動を述べる節に役割名が無い: task.parent.md -> task",
+        "起動の形を共通節へ委ねている: task.parent.md",
+    ]
+
+    _write_pair(tmp_path, parent_body=_parent_body(after_marker="\n| `subagent_md_path` | `task` |\n"))
+    assert not _launch_role_errors(tmp_path)
+
+
 def test_missing_launch_target_reports_parent(tmp_path: pathlib.Path) -> None:
     """起動対象を持たない`<役割名>.parent.md`をファイル名付きで報告する。"""
     _write_pair(tmp_path, parent_body="# 委譲元\n\n対象リポジトリ: 値\n")

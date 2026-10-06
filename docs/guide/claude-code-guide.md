@@ -135,7 +135,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 委譲と起動したsessionの管理には、`start`・`send_message`・`kill`・`list`・`show`・`stop`の各ツールと、結果を受け取る`atk agents wait`を使う。
 `start`は`mode`で入力の形を選び、全`mode`で既存ディレクトリの絶対`cwd`を受け取って、完了を待たず`session_id`を返す。`mode`が必要とする入力の欠落と受理しない入力の混在は、委譲先を起動せずに拒否する。
-`task`（省略時）は専用の`share/<役割名>.subagent.md`の絶対パスと、その`<役割名>.subagent.md`が`## 入力`で宣言した入力名だけを持つ`extra_params`を受け取る。宣言外の入力名を渡すと委譲先を起動せず、宣言外の項目名と受理する項目名を返す。`<役割名>.subagent.md`が`mode:`で`explore`・`write`・`shell`を宣言した場合は、同名の`mode`と同じ軽量な起動条件で開始する。
+`task`（省略時）は専用の`share/<役割名>.subagent.md`を指す役割名（ファイル名から`.subagent.md`を除いた名前。例: `add-wi`）か絶対パスと、その`<役割名>.subagent.md`が`## 入力`で宣言した入力名だけを持つ`extra_params`を受け取る。宣言外の入力名を渡すと委譲先を起動せず、宣言外の項目名と受理する項目名を返す。`<役割名>.subagent.md`が`mode:`で`explore`・`write`・`shell`を宣言した場合は、同名の`mode`と同じ軽量な起動条件で開始する。役割名はサーバー自身のplugin rootの`share/`直下へ解決する。Claude Codeでは、定期再確認のtaskを持たない実行主体が`start`を呼ぶと、agent-toolkitのmodが同じ処理の中で定期再確認を装着し、結果を会話へ届ける。
 `delegate`は工程別モデル設定のキー名から`_model`を除いた必須の`model_type`と`prompt`を受け取り、専用の`<役割名>.subagent.md`を用意できない単発の作業に使う。サーバーは`model_type`に対応する`atk config`の候補列からengine、modelおよびeffortを解決し、
 候補を切り替えた場合は採用した値を応答へ含める。可用性に起因する失敗を観測した委譲元は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
 `explore`は`prompt`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`model_type`の省略時は`low_tier_model`、`medium_tier`の指定時は`medium_tier_model`の設定を使う。`write`は確定済みの文章起草を`write_model`の候補列で開始する。
