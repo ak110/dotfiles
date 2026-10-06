@@ -8,7 +8,7 @@
 判断の入力は、`atk run-script session-review-prepare`が書いた会話の流れ、`candidates.md`、セッション統計と、メイン自身のコンテキストとする。会話の流れはメイン記録の発話、ツール呼び出しおよび失敗の標識を時系列で持ち、観点を限定せずに問題を探す起点とする。`candidates.md`は通読で見つけた問題との対応付けと、複数セッションの反復やhook通知の件数のように通読では得られない事象の追加に使う。
 `candidates.md`の要約と会話の流れで直接原因を確定できない候補に限り、次の手段で原因を確定する。会話圧縮はメインのコンテキストから区間を失わせるだけで、セッション記録には圧縮前のイベントが残る（Claude Codeの`compact_boundary`、Codexの`compacted`）。圧縮された区間の事象も分析の対象とし、`圧縮された区間を記録から確認できない`という判断を、原因を未確定とする根拠にしない。
 
-- `candidates.md`が示す記録位置を`atk run-script session-review-evidence --`の`--detail`へ渡し、全文を取得する。検索語から探す場合は`--grep`を使う。`atk run-script session-review-evidence`は委譲先（Claude Codeのサブエージェント記録と`agents_server`の子セッション記録）を再帰的に収集するため、委譲先の内部の事象もこの照会で参照できる
+- `candidates.md`が示す記録位置を`atk run-script session-review-evidence --`の`--detail`へ渡し、全文を取得する。検索語から探す場合は`--grep`を使い、委譲先を含むツール呼び出しを呼び出し単位で列挙する場合は`--tool-calls`を使う。`atk run-script session-review-evidence`は委譲先（Claude Codeのサブエージェント記録と`agents_server`の子セッション記録）を再帰的に収集するため、委譲先の内部の事象もこの照会で参照できる
 - 記録に理由の本文が無い事象（ツールの応答が本文を欠くなど）は、同じツール呼び出しやコマンドを再実行する再現と、実装の読解で原因を確定する
 
 照会と再現を試みても確定できない場合に限り原因を未確定とし、試みた照会と再現、およびそれでも確定できない理由を振り返り結果報告の「対策を見送った問題」へ書く。記録が実在しない場合（記録ファイルの削除、`atk run-script session-review-evidence`が`unresolved-delegation`として報告する委譲先）がこれに当たる。

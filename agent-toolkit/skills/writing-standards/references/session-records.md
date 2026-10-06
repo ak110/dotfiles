@@ -95,8 +95,9 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 - 位置が確定している記録の本文を読む: `--detail`
 - 複数の固定文字列を別々に数え、本文を含めず一致entry数と全locatorだけを得る: `--fixed-string`を文字列ごとに反復する。正規表現へ結合しない
 - 位置が確定したレコードの構造だけを調べる: `--record-schema`をlocatorごとに反復する。値が必要なら`--detail`を使う
+- ツール呼び出しを呼び出し単位で列挙し、ツール名と代表入力で選んで数える（複数セッションはカタログ走査と併用する）: `--tool-calls`。発話とツール呼び出しを混ぜた1セッションのメイン記録の時系列は、`--bundle`が書く`conversation.jsonl`で得る
 
-`--grep`、`--detail`、`--fixed-string`、`--record-schema`は照会modeとして互いに排他である。生成側が返す`保存先:`の絶対パスから全量を読み、出所の引き渡しにも同じファイルを使う。
+`--grep`、`--detail`、`--fixed-string`、`--record-schema`、`--tool-calls`は照会modeとして互いに排他である。生成側が返す`保存先:`の絶対パスから全量を読み、出所の引き渡しにも同じファイルを使う。
 本節の手段は`atk run-script session-review-evidence`に限り、検索対象を限定しないJSONLファイル群への汎用CLIによる検索と、セッション記録および`candidates.md`の標準出力への全量表示は対象としない。
 記録は行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を適用するとマッチングの上限に達するためである。
 `atk run-script session-review-evidence`が受理しない調査には、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。

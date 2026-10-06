@@ -8633,6 +8633,261 @@ def test_catalog_rejects_an_unclassifiable_root_and_reversed_period(
     assert _read_jsonl(capsys) == [{"kind": "error", "text": "観測境界は開始境界以後を指定する"}]
 
 
+_TOOL_CALL_THREAD = "66666666-6666-4666-8666-666666666666"
+_SELF_COMMAND = "atk run-script session-review-evidence -- transcript.jsonl --user-events"
+_EMBEDDED_COMMAND = "cat > note.md <<'EOF'\natk run-script session-review-evidence -- transcript.jsonl --user-events\nEOF"
+
+
+def _claude_call(timestamp: str, call_id: str, name: str, tool_input: dict) -> dict:
+    return {
+        "type": "assistant",
+        "timestamp": timestamp,
+        "message": {"role": "assistant", "content": [{"type": "tool_use", "id": call_id, "name": name, "input": tool_input}]},
+    }
+
+
+def _claude_result(timestamp: str, call_id: str, content: str) -> dict:
+    return {
+        "type": "user",
+        "timestamp": timestamp,
+        "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": content}]},
+    }
+
+
+def _codex_item(timestamp: str, payload: dict) -> dict:
+    return {"timestamp": timestamp, "type": "response_item", "payload": payload}
+
+
+def _tool_call_session(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, long_command: str) -> pathlib.Path:
+    """メイン記録、サブエージェント記録、走査rootの外のCodex委譲先記録にツール呼び出しを持つセッションを書く。
+
+    Codex形式の記録は、Codex CLIのrollout（2026年10月4日の記録）の`function_call`・`custom_tool_call`と
+    その出力の形を写した。
+    """
+    root = tmp_path / "project"
+    transcript = root / "parent-session.jsonl"
+    _write_jsonl(
+        transcript,
+        [
+            {"type": "user", "timestamp": "2026-10-06T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _claude_call("2026-10-06T00:00:01Z", "bash-self", "Bash", {"command": _SELF_COMMAND}),
+            _claude_result("2026-10-06T00:00:02Z", "bash-self", "自己呼び出しの結果"),
+            _claude_call("2026-10-06T00:00:03Z", "bash-embed", "Bash", {"command": _EMBEDDED_COMMAND}),
+            _claude_result("2026-10-06T00:00:04Z", "bash-embed", "埋め込みの結果"),
+            _codex_tool_use_entry("2026-10-06T00:00:05Z", "call-codex", _TOOL_CALL_THREAD),
+            _codex_tool_result_entry("2026-10-06T00:00:06Z", "call-codex", _TOOL_CALL_THREAD),
+            _claude_call("2026-10-06T00:00:11Z", "bash-long", "Bash", {"command": long_command}),
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [_claude_call("2026-10-06T00:00:03.500Z", "read-1", "Read", {"file_path": "/repo/a.py"})],
+    )
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    _write_jsonl(
+        codex_home / "sessions" / "2026" / "10" / "06" / f"rollout-2026-10-06T00-00-05-{_TOOL_CALL_THREAD}.jsonl",
+        [
+            {"timestamp": "2026-10-06T00:00:05Z", "type": "session_meta", "payload": {"id": _TOOL_CALL_THREAD}},
+            _codex_item(
+                "2026-10-06T00:00:07Z",
+                {"type": "function_call", "name": "exec_command", "call_id": "c-exec", "arguments": '{"cmd": "rg needle"}'},
+            ),
+            _codex_item("2026-10-06T00:00:08Z", {"type": "function_call_output", "call_id": "c-exec", "output": "一致なし"}),
+            _codex_item(
+                "2026-10-06T00:00:09Z",
+                {
+                    "type": "custom_tool_call",
+                    "name": "apply_patch",
+                    "call_id": "c-patch",
+                    "input": "*** Begin Patch\n*** Update File: b.py\n@@\n-x\n+y\n*** End Patch",
+                },
+            ),
+            _codex_item(
+                "2026-10-06T00:00:10Z", {"type": "custom_tool_call_output", "call_id": "c-patch", "output": "適用した"}
+            ),
+        ],
+    )
+    return transcript
+
+
+def test_tool_calls_lists_main_and_delegate_calls_in_time_order(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """メイン、サブエージェントおよびCodex委譲先の呼び出しを、自己呼び出しを含めて時刻順に切り詰めずに返す。"""
+    long_command = "echo " + "x" * 3000
+    transcript = _tool_call_session(tmp_path, monkeypatch, long_command)
+    codex_record = f"codex:{_TOOL_CALL_THREAD}"
+
+    assert evidence.main([str(transcript), "--tool-calls"]) == 0
+
+    *calls, summary = _read_jsonl(capsys, raw=True)
+    assert [(call["record"], call["line"], call["tool"], call["call_id"], call["result_line"]) for call in calls] == [
+        ("claude:parent-session", 2, "Bash", "bash-self", 3),
+        ("claude:parent-session", 4, "Bash", "bash-embed", 5),
+        ("claude:parent-session/agent-child", 1, "Read", "read-1", None),
+        ("claude:parent-session", 6, "mcp__agents_server__start", "call-codex", 7),
+        (codex_record, 2, "exec_command", "c-exec", 3),
+        (codex_record, 4, "apply_patch", "c-patch", 5),
+        ("claude:parent-session", 8, "Bash", "bash-long", None),
+    ]
+    assert all(call["kind"] == "tool-call" for call in calls)
+    assert [call["text"] for call in calls if call["tool"] in {"Bash", "exec_command", "apply_patch"}] == [
+        _SELF_COMMAND,
+        _EMBEDDED_COMMAND,
+        "rg needle",
+        "b.py",
+        long_command,
+    ]
+    assert summary == {
+        "kind": "tool-call-summary",
+        "count": 7,
+        "by_tool": {"Bash": 3, "Read": 1, "apply_patch": 1, "exec_command": 1, "mcp__agents_server__start": 1},
+        "by_record": {"claude:parent-session": 4, "claude:parent-session/agent-child": 1, codex_record: 2},
+    }
+
+
+def test_tool_calls_select_by_tool_and_whole_input_regex(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--tool`は完全一致のいずれか、`--input-regex`は代表入力全体への検索とし、`^`はヒアドキュメントへ埋め込んだ文字列を除く。"""
+    transcript = _tool_call_session(tmp_path, monkeypatch, "echo done")
+
+    assert (
+        evidence.main(
+            [str(transcript), "--tool-calls", "--tool", "Bash", "--input-regex", "^atk run-script session-review-evidence"]
+        )
+        == 0
+    )
+    *calls, summary = _read_jsonl(capsys, raw=True)
+    assert [call["call_id"] for call in calls] == ["bash-self"]
+    assert summary["count"] == 1
+
+    assert evidence.main([str(transcript), "--tool-calls", "--input-regex", "session-review-evidence"]) == 0
+    *calls, _ = _read_jsonl(capsys, raw=True)
+    assert [call["call_id"] for call in calls] == ["bash-self", "bash-embed"]
+
+    assert evidence.main([str(transcript), "--tool-calls", "--tool", "Read", "--tool", "exec_command", "--tool", "Bas"]) == 0
+    *calls, summary = _read_jsonl(capsys, raw=True)
+    assert [call["call_id"] for call in calls] == ["read-1", "c-exec"]
+    assert summary["by_tool"] == {"Read": 1, "exec_command": 1}
+
+
+def test_tool_call_locators_round_trip_to_detail(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`record`と`line`は呼び出しの入力全体、`record`と`result_line`は結果の本文を`--detail`で返す。"""
+    transcript = _tool_call_session(tmp_path, monkeypatch, "echo done")
+    assert evidence.main([str(transcript), "--tool-calls", "--tool", "Bash", "--tool", "exec_command"]) == 0
+    *calls, _ = _read_jsonl(capsys, raw=True)
+    embed = next(call for call in calls if call["call_id"] == "bash-embed")
+    codex_exec = next(call for call in calls if call["call_id"] == "c-exec")
+
+    for call, expected_input, expected_result in (
+        (embed, "atk run-script session-review-evidence -- transcript.jsonl --user-events", "埋め込みの結果"),
+        (codex_exec, "rg needle", "一致なし"),
+    ):
+        assert evidence.main([str(transcript), "--detail", f"{call['record']}:{call['line']}"]) == 0
+        assert expected_input in json.dumps(_read_jsonl(capsys, raw=True), ensure_ascii=False).replace("\\n", "\n")
+        assert evidence.main([str(transcript), "--detail", f"{call['record']}:{call['result_line']}"]) == 0
+        assert expected_result in json.dumps(_read_jsonl(capsys, raw=True), ensure_ascii=False)
+
+
+def test_tool_calls_with_catalog_include_delegates_outside_root_within_window(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """カタログ併用では窓の中の呼び出しを、走査rootの外の委譲先も含めて親セッションの`session_id`付きで返す。"""
+    transcript = _tool_call_session(tmp_path, monkeypatch, "echo done")
+    root = transcript.parent
+    _write_jsonl(
+        root / "outside-window.jsonl",
+        [_claude_call("2026-10-05T00:00:00Z", "early", "Bash", {"command": "echo early"})],
+    )
+
+    assert (
+        evidence.main(
+            [
+                "--catalog-claude-project",
+                str(root),
+                "--since",
+                "2026-10-06T00:00:02Z",
+                "--observation-boundary",
+                "2026-10-06T00:00:08Z",
+                "--tool-calls",
+            ]
+        )
+        == 0
+    )
+
+    *calls, summary = _read_jsonl(capsys, raw=True)
+    assert [(call["session_id"], call["record"], call["call_id"]) for call in calls] == [
+        ("parent-session", "claude:parent-session", "bash-embed"),
+        ("parent-session", "claude:parent-session/agent-child", "read-1"),
+        ("parent-session", "claude:parent-session", "call-codex"),
+        ("parent-session", f"codex:{_TOOL_CALL_THREAD}", "c-exec"),
+    ]
+    assert summary["count"] == 4
+    assert summary["by_session"] == {"parent-session": 4}
+    assert summary["scan_root"] == str(root.resolve())
+    assert summary["parent_record_count"] == 1
+    assert summary["since"] == "2026-10-06T00:00:02+00:00"
+    assert summary["observation_boundary"] == "2026-10-06T00:00:08+00:00"
+
+    session_id = calls[-1]["session_id"]
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    projects = tmp_path / "home" / ".claude" / "projects"
+    projects.mkdir(parents=True)
+    (projects / "project").symlink_to(root, target_is_directory=True)
+    assert evidence.main(["--claude-session-id", session_id, "--detail", f"{calls[-1]['record']}:{calls[-1]['line']}"]) == 0
+    assert "rg needle" in json.dumps(_read_jsonl(capsys, raw=True), ensure_ascii=False)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        pytest.param(["--tool", "Bash"], id="tool-without-tool-calls"),
+        pytest.param(["--input-regex", "x"], id="input-regex-without-tool-calls"),
+        pytest.param(["--tool-calls", "--input-regex", "("], id="invalid-regex"),
+        pytest.param(["--tool-calls", "--grep", "x"], id="other-query-mode"),
+    ],
+)
+def test_tool_calls_reject_invalid_arguments(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], arguments: list[str]
+) -> None:
+    """`--tool-calls`に関する引数の誤りは次の操作付きのエラーと終了コード2を返す。"""
+    transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-10-06T00:00:00Z", "記録")])
+
+    assert evidence.main([str(transcript), *arguments]) == 2
+
+    (event,) = _read_jsonl(capsys)
+    assert event["kind"] == "error"
+
+
+def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """`--tool-calls`以外の照会modeとカタログ走査の併用は従来どおり拒否する。"""
+    root = tmp_path / "project"
+    _write_jsonl(root / "session.jsonl", [_timestamped_entry("2026-10-06T00:00:00Z", "記録")])
+
+    assert (
+        evidence.main(
+            [
+                "--catalog-claude-project",
+                str(root),
+                "--since",
+                "2026-10-05T00:00:00Z",
+                "--observation-boundary",
+                "2026-10-07T00:00:00Z",
+                "--grep",
+                "記録",
+            ]
+        )
+        == 2
+    )
+    (event,) = _read_jsonl(capsys)
+    assert "併用できない" in event["text"]
+
+
 def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() -> None:
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},

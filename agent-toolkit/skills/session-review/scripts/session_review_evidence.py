@@ -1,7 +1,7 @@
 """Claude CodeとCodexのtranscript、および委譲先のAntigravityログから振り返り用の時系列証拠を抽出し、照会する。
 
 モードを指定しない場合はセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
-`--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`の照会モードは、抽出結果に無い詳細をtranscriptから
+`--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`・`--tool-calls`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 `--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補および会話の流れの抽出を
 1回の記録読み込みでまとめて行い、走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
@@ -3400,40 +3400,86 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
 
 def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
     """メイン記録のツール呼び出しを、ツール名、代表入力、呼び出し識別子および記録位置で返す。"""
-    calls: list[dict[str, Any]] = []
+    return [
+        {
+            "kind": "tool-call",
+            "record": "main",
+            "line": call.line,
+            "timestamp": call.timestamp,
+            "tool": call.tool,
+            "call_id": call.call_id,
+            "text": _clip(call.text, _CONVERSATION_INPUT_LIMIT),
+        }
+        for call in _record_tool_calls(records)
+    ]
+
+
+class _ToolCall(NamedTuple):
+    """記録にある1件のツール呼び出し。"""
+
+    line: int
+    timestamp: str | None
+    tool: str
+    call_id: str | None
+    text: str
+    """代表入力。`_claude_call_input`・`_codex_call_input`が返す値を切り詰めずに持つ。"""
+    result_line: int | None
+    """同じ呼び出し識別子を持つ最初の結果の記録行。結果の記録が無い場合は`None`。"""
+
+
+def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
+    """1つの記録のツール呼び出しを、記録位置、時刻、ツール名、呼び出し識別子、代表入力および結果の記録行で返す。
+
+    会話の流れ、`adhoc-processing`候補および`--tool-calls`が共有する抽出であり、
+    Claude Code形式の`tool_use`要素とCodex形式の`function_call`・`custom_tool_call`のpayloadを1件の呼び出しとする。
+    結果はClaude Code形式の`tool_result`の`tool_use_id`と、Codex形式の`function_call_output`・
+    `custom_tool_call_output`の`call_id`で対応付ける。
+    """
+    pending: list[tuple[int, str | None, str, str | None, str]] = []
+    result_lines: dict[str, list[int]] = {}
     for record in records:
-        timestamp = record.entry.get("timestamp")
+        raw_timestamp = record.entry.get("timestamp")
+        timestamp = raw_timestamp if isinstance(raw_timestamp, str) else None
         message = record.entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if isinstance(content, list):
             for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_use":
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use":
                     name = str(block.get("name", ""))
-                    calls.append(
-                        _conversation_call(
-                            record.line, timestamp, name, block.get("id"), _claude_call_input(name, block.get("input"))
+                    call_id = block.get("id")
+                    pending.append(
+                        (
+                            record.line,
+                            timestamp,
+                            name,
+                            call_id if isinstance(call_id, str) else None,
+                            _claude_call_input(name, block.get("input")),
                         )
                     )
+                elif block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
+                    result_lines.setdefault(block["tool_use_id"], []).append(record.line)
             continue
         payload = record.entry.get("payload")
-        if isinstance(payload, dict) and payload.get("type") in {"function_call", "custom_tool_call"}:
+        if not isinstance(payload, dict):
+            continue
+        payload_type = payload.get("type")
+        call_id = payload.get("call_id")
+        if payload_type in {"function_call", "custom_tool_call"}:
             name = str(payload.get("name", ""))
-            calls.append(
-                _conversation_call(record.line, timestamp, name, payload.get("call_id"), _codex_call_input(name, payload))
+            pending.append(
+                (record.line, timestamp, name, call_id if isinstance(call_id, str) else None, _codex_call_input(name, payload))
             )
+        elif payload_type in {"function_call_output", "custom_tool_call_output"} and isinstance(call_id, str):
+            result_lines.setdefault(call_id, []).append(record.line)
+    calls: list[_ToolCall] = []
+    for line, timestamp, name, call_id, text in pending:
+        result_line = (
+            next((value for value in result_lines.get(call_id, ()) if value >= line), None) if call_id is not None else None
+        )
+        calls.append(_ToolCall(line, timestamp, name, call_id, text, result_line))
     return calls
-
-
-def _conversation_call(line: int, timestamp: Any, name: str, call_id: Any, summary: str) -> dict[str, Any]:
-    return {
-        "kind": "tool-call",
-        "record": "main",
-        "line": line,
-        "timestamp": timestamp if isinstance(timestamp, str) else None,
-        "tool": name,
-        "call_id": call_id if isinstance(call_id, str) else None,
-        "text": _clip(summary, _CONVERSATION_INPUT_LIMIT),
-    }
 
 
 def _claude_call_input(name: str, block_input: Any) -> str:
@@ -5211,23 +5257,40 @@ def _catalog_agy_child(session_id: str) -> _CollectedRecord | None:
     return _CollectedRecord(session_id, found.paths[0], records, "agy", None, None, None, "session")
 
 
-def _catalog_events(
+class _CatalogParent(NamedTuple):
+    """カタログの窓の中の親セッションと、走査rootの中で組み立てた子孫を含む記録群。"""
+
+    item: _CollectedRecord
+    family: list[_CollectedRecord]
+    start_text: str | None
+    end_text: str | None
+
+
+class _CatalogScan(NamedTuple):
+    """カタログ走査の対象範囲と、窓の中の親セッション。"""
+
+    root: Path
+    parents: list[_CatalogParent]
+    unresolved_count: int
+
+
+def _catalog_scan(
     root: Path,
     runtime: _Runtime,
     since: datetime.datetime,
     boundary: datetime.datetime,
-) -> tuple[list[dict[str, Any]], int]:
-    """指定root内だけから比較用の親セッションカタログを生成する。"""
+) -> _CatalogScan | dict[str, Any]:
+    """指定root内だけから窓の中の親セッションを選ぶ。rootから記録を判別できない場合はエラーイベントを返す。"""
     if not root.is_dir():
-        return [_error_event(f"カタログrootが実在するディレクトリでない: {root}", next_action=_CATALOG_ROOT_NEXT_ACTION)], 2
+        return _error_event(f"カタログrootが実在するディレクトリでない: {root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
     resolved_root = root.resolve()
     paths = sorted(resolved_root.glob("**/*.jsonl"))
     if runtime == "codex":
         paths = [path for path in paths if path.name.startswith("rollout-")]
     if not paths:
-        return [
-            _error_event(f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
-        ], 2
+        return _error_event(
+            f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION
+        )
     loaded: dict[str, _CollectedRecord] = {}
     path_items: dict[Path, _CollectedRecord] = {}
     unresolved_loads = 0
@@ -5244,9 +5307,9 @@ def _catalog_events(
         loaded.setdefault(session_id, item)
         path_items[path.resolve()] = item
     if not loaded:
-        return [
-            _error_event(f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
-        ], 2
+        return _error_event(
+            f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION
+        )
 
     children: dict[str, list[str]] = {session_id: [] for session_id in loaded}
     referenced: set[str] = set()
@@ -5281,7 +5344,7 @@ def _catalog_events(
     else:
         parent_ids = [session_id for session_id in loaded if session_id not in referenced]
 
-    events: list[dict[str, Any]] = []
+    parents: list[_CatalogParent] = []
     for parent_id in sorted(set(parent_ids)):
         parent = loaded[parent_id]
         stats = _stats_summary_data(parent.records, runtime)
@@ -5301,22 +5364,44 @@ def _catalog_events(
                 continue
             descendant_ids.append(child_id)
             queue.extend(children.get(child_id, ()))
-        family = [parent, *(loaded[child_id] for child_id in descendant_ids)]
-        workflow, workflow_locator = _workflow_evidence(parent)
-        operations = [operation for item in family for operation in _successful_wi_operations(item)]
+        parents.append(
+            _CatalogParent(
+                parent,
+                [parent, *(loaded[child_id] for child_id in descendant_ids)],
+                start_text if isinstance(start_text, str) else None,
+                end_text if isinstance(end_text, str) else None,
+            )
+        )
+    return _CatalogScan(resolved_root, parents, unresolved_loads + len(unresolved_references))
+
+
+def _catalog_events(
+    root: Path,
+    runtime: _Runtime,
+    since: datetime.datetime,
+    boundary: datetime.datetime,
+) -> tuple[list[dict[str, Any]], int]:
+    """指定root内だけから比較用の親セッションカタログを生成する。"""
+    scan = _catalog_scan(root, runtime, since, boundary)
+    if isinstance(scan, dict):
+        return [scan], 2
+    events: list[dict[str, Any]] = []
+    for parent in scan.parents:
+        workflow, workflow_locator = _workflow_evidence(parent.item)
+        operations = [operation for item in parent.family for operation in _successful_wi_operations(item)]
         events.append(
             {
                 "kind": "catalog-parent",
                 "runtime": runtime,
-                "session_id": parent_id,
-                "started_at": start_text if isinstance(start_text, str) else "unknown",
-                "finished_at": end_text if isinstance(end_text, str) else "unknown",
-                "cwd": _catalog_value(parent.records, "cwd", "originalCwd"),
-                "branch": _catalog_value(parent.records, "gitBranch", "originalBranch", "branch"),
+                "session_id": parent.item.record_id,
+                "started_at": parent.start_text or "unknown",
+                "finished_at": parent.end_text or "unknown",
+                "cwd": _catalog_value(parent.item.records, "cwd", "originalCwd"),
+                "branch": _catalog_value(parent.item.records, "gitBranch", "originalBranch", "branch"),
                 "workflow": workflow,
                 "workflow_locator": workflow_locator,
-                "tokens": _catalog_family_tokens(family),
-                "descendant_count": len(descendant_ids),
+                "tokens": _catalog_family_tokens(parent.family),
+                "descendant_count": len(parent.family) - 1,
                 "successful_wi_operations": operations,
                 "successful_wi_operation_count": len(operations),
             }
@@ -5325,15 +5410,117 @@ def _catalog_events(
     events.append(
         {
             "kind": "catalog-summary",
-            "scan_root": str(resolved_root),
+            "scan_root": str(scan.root),
             "runtime": runtime,
             "since": since.isoformat(),
             "observation_boundary": boundary.isoformat(),
             "parent_record_count": len(events),
-            "unresolved_record_count": unresolved_loads + len(unresolved_references),
+            "unresolved_record_count": scan.unresolved_count,
         }
     )
     return events, 0
+
+
+def _tool_call_events(item: _CollectedRecord, tools: list[str] | None, pattern: re.Pattern[str] | None) -> list[dict[str, Any]]:
+    """1つの記録のツール呼び出しのうち、ツール名と代表入力の条件に一致するものを`tool-call`イベントで返す。
+
+    本スクリプト自身の呼び出しも含める。`--grep`のように自己呼び出しを除くと、本スクリプトの呼び出し回数を数えられない。
+    """
+    return [
+        {
+            "kind": "tool-call",
+            "record": item.record_id,
+            "line": call.line,
+            "timestamp": call.timestamp,
+            "tool": call.tool,
+            "call_id": call.call_id,
+            "text": call.text,
+            "result_line": call.result_line,
+        }
+        for call in _record_tool_calls(item.records)
+        if (tools is None or call.tool in tools) and (pattern is None or pattern.search(call.text))
+    ]
+
+
+def _sorted_tool_call_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`tool-call`イベントを時刻の昇順に並べる。同時刻と時刻を持たないイベントは収集順と行番号の順を保つ。
+
+    時刻を持たないイベントは最後に置く。入力のイベント列は記録の収集順と行番号の順に並んでいる前提とする。
+    """
+    timed: list[tuple[datetime.datetime, int, dict[str, Any]]] = []
+    untimed: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        try:
+            timestamp = _parse_timestamp(event["timestamp"]) if isinstance(event.get("timestamp"), str) else None
+        except ValueError:
+            timestamp = None
+        if timestamp is None:
+            untimed.append(event)
+        else:
+            timed.append((timestamp, index, event))
+    timed.sort(key=lambda item: (item[0], item[1]))
+    return [*(event for _, _, event in timed), *untimed]
+
+
+def _tool_call_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """`tool-call`イベントの件数と、ツール名ごと・記録ごとの件数を返す。"""
+    return {
+        "kind": "tool-call-summary",
+        "count": len(events),
+        "by_tool": dict(sorted(collections.Counter(str(event["tool"]) for event in events).items())),
+        "by_record": dict(sorted(collections.Counter(str(event["record"]) for event in events).items())),
+    }
+
+
+def _tool_call_collection_events(
+    collected: list[_CollectedRecord],
+    unresolved: list[_UnresolvedRecord],
+    tools: list[str] | None,
+    pattern: re.Pattern[str] | None,
+) -> list[dict[str, Any]]:
+    """単一transcriptのメイン記録と全ての委譲先の記録のツール呼び出しを時刻順に返し、末尾へ要約を置く。"""
+    events = _sorted_tool_call_events([event for item in collected for event in _tool_call_events(item, tools, pattern)])
+    return [*events, *_unresolved_events(unresolved), _tool_call_summary(events)]
+
+
+def _catalog_tool_call_events(
+    root: Path,
+    runtime: _Runtime,
+    since: datetime.datetime,
+    boundary: datetime.datetime,
+    tools: list[str] | None,
+    pattern: re.Pattern[str] | None,
+) -> tuple[list[dict[str, Any]], int]:
+    """カタログの窓の中の親セッションごとに、委譲先を含む記録の窓の中のツール呼び出しを返す。
+
+    委譲先は親の記録を起点として`_collect_records`で集める。カタログが走査rootの中だけで組み立てる子孫を使うと、
+    rootの外（別のプロジェクトディレクトリなど）に置かれた委譲先の呼び出しが数えられないためである。
+    窓は`timestamp`が`since`より後で`boundary`以前の呼び出しとし、時刻を持たない呼び出しは含めない。
+    """
+    scan = _catalog_scan(root, runtime, since, boundary)
+    if isinstance(scan, dict):
+        return [scan], 2
+    events: list[dict[str, Any]] = []
+    unresolved: list[_UnresolvedRecord] = []
+    for parent in scan.parents:
+        collected, parent_unresolved = _collect_records(str(parent.item.path), parent.item.records, None, boundary)
+        unresolved.extend(parent_unresolved)
+        for item in collected:
+            for event in _tool_call_events(item, tools, pattern):
+                try:
+                    timestamp = _parse_timestamp(event["timestamp"]) if isinstance(event["timestamp"], str) else None
+                except ValueError:
+                    timestamp = None
+                if timestamp is not None and since < timestamp <= boundary:
+                    events.append({**event, "session_id": parent.item.record_id})
+    events = _sorted_tool_call_events(events)
+    summary = _tool_call_summary(events)
+    summary["by_session"] = dict(sorted(collections.Counter(str(event["session_id"]) for event in events).items()))
+    summary["scan_root"] = str(scan.root)
+    summary["since"] = since.isoformat()
+    summary["observation_boundary"] = boundary.isoformat()
+    summary["parent_record_count"] = len(scan.parents)
+    return [*events, *_unresolved_events(unresolved), summary], 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -5495,6 +5682,32 @@ def _build_parser() -> argparse.ArgumentParser:
         "カタログ走査では必須、`--user-events`では省略すると記録の最初からを対象とする。" + _LOCAL_TIME_NOTE,
     )
     parser.add_argument(
+        "--tool-calls",
+        action="store_true",
+        help="メイン記録と全ての委譲先の記録（Claude Code形式とCodex形式）のツール呼び出しを、1件ずつ`tool-call`イベント"
+        "（`record`・`line`・`timestamp`・`tool`・`call_id`・切り詰めない代表入力`text`・結果の記録行`result_line`）で"
+        "時刻順に返し、末尾の`tool-call-summary`で件数、ツール名ごとと記録ごとの件数を返す。"
+        "`record`と`line`、または`record`と`result_line`を`--detail <記録>:<行番号>`へ渡すと入力と結果の全文を得られる。"
+        "本スクリプト自身の呼び出しも含める。カタログ走査と併用すると、窓の中の親セッションごとに、"
+        "走査rootの外の委譲先を含む記録から`timestamp`が`--since`より後で`--observation-boundary`以前の呼び出しを"
+        "`session_id`付きで返し、要約へ親セッションごとの件数と被覆範囲を加える。",
+    )
+    parser.add_argument(
+        "--tool",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help="`--tool-calls`で返す呼び出しを、記録上のツール名と完全一致するものに限る。"
+        "繰り返し指定するといずれかに一致した呼び出しを返す。",
+    )
+    parser.add_argument(
+        "--input-regex",
+        metavar="REGEX",
+        help="`--tool-calls`で返す呼び出しを、代表入力の文字列全体へ`re.search`で一致するものに限る。"
+        "行ごとには適用しないため、`^`は代表入力の先頭だけに一致し、ヒアドキュメントの本文などコマンドの途中に"
+        "埋め込まれた同じ文字列を除ける。`--tool`と併用すると両方に一致した呼び出しを返す。",
+    )
+    parser.add_argument(
         "--bundle",
         metavar="DIR",
         help="通常表示、`--warn`、`--stats`および`--hook-notices`の走査と、問題候補と会話の流れ"
@@ -5522,6 +5735,7 @@ def _single_transcript_query_modes(args: argparse.Namespace) -> tuple[bool, ...]
         args.elapsed_until is not None,
         args.user_events,
         args.context_at is not None,
+        args.tool_calls,
     )
 
 
@@ -5534,18 +5748,33 @@ def main(argv: list[str] | None = None) -> int:
     query_modes = _single_transcript_query_modes(args)
     if sum(query_modes) > 1:
         return _print_error(
-            "--warn・--grep・--detail・--fixed-string・--record-schema・--stats・--hook-notices・--bundle・--elapsed-until・--user-events・--context-atは併用できない",
+            "--warn・--grep・--detail・--fixed-string・--record-schema・--stats・--hook-notices・--bundle・--elapsed-until・"
+            "--user-events・--context-at・--tool-callsは併用できない",
             next_action="`--warn`・`--grep`などの照会の指定を1回に1つだけにして、照会ごとに別々に実行する",
         )
     catalog_root = args.catalog_claude_project or args.catalog_codex_history
     catalog_runtime: _Runtime | None = (
         "claude" if args.catalog_claude_project else "codex" if args.catalog_codex_history else None
     )
-    if catalog_root is not None and any(query_modes):
+    if catalog_root is not None and any(query_modes) and not args.tool_calls:
         return _print_error(
-            "カタログ走査は単一transcriptの照会モードと併用できない",
+            "カタログ走査は`--tool-calls`以外の単一transcriptの照会モードと併用できない",
             next_action="カタログ走査（`--catalog-claude-project`・`--catalog-codex-history`）と単一transcriptの照会を別々に実行する",
         )
+    if (args.tool is not None or args.input_regex is not None) and not args.tool_calls:
+        return _print_error(
+            "--toolと--input-regexは--tool-callsと併用する",
+            next_action="`--tool-calls`を付けるか、`--tool`・`--input-regex`を外して再実行する",
+        )
+    input_pattern = None
+    if args.input_regex is not None:
+        try:
+            input_pattern = re.compile(args.input_regex)
+        except re.error as error:
+            return _print_error(
+                f"正規表現が不正: {error}",
+                next_action="`--input-regex`の正規表現の構文（括弧の対応、エスケープ）を直して再実行する",
+            )
     if args.phrase is not None and args.context_at is None:
         return _print_error(
             "--phraseは--context-atと併用する", next_action="`--context-at <記録ID>:<行番号>`を付けて再実行する"
@@ -5600,7 +5829,12 @@ def main(argv: list[str] | None = None) -> int:
             return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
         if catalog_boundary < since:
             return _print_error("観測境界は開始境界以後を指定する", next_action=_BOUNDARY_NEXT_ACTION)
-        events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary)
+        if args.tool_calls:
+            events, exit_code = _catalog_tool_call_events(
+                Path(catalog_root), catalog_runtime, since, catalog_boundary, args.tool, input_pattern
+            )
+        else:
+            events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary)
         _print_events(events)
         return exit_code
     if args.claude_session_id is not None:
@@ -5698,6 +5932,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.user_events:
         _print_events(_user_events_since(collected, since))
+        return 0
+    if args.tool_calls:
+        _print_events(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern))
         return 0
 
     _print_events(_default_events(collected, unresolved))
