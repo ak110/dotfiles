@@ -33,14 +33,15 @@ let parentTrail = [];
 let eventSource = null;
 // 詳細の取得の世代。選択の切り替えや再取得の後に届いた古い応答を反映しないために使う。
 let detailGeneration = 0;
-// 右ペインへ描画済みのイベント件数。「さらに100件表示」で増え、追記の反映後も保つ。
+// 右ペインへ描画済みのイベント件数。描画済みの末尾まで読み進めると増え、追記の反映後も保つ。
 let renderedCount = 100;
 const DETAIL_PAGE_SIZE = 100;
-// 右ペインに表示中の記録と、エンドユーザーが末尾より上を読んでいる間に届いた未読のイベント件数。
+// 右ペインに表示中の記録。
 let currentDetail = null;
-let unseenEventCount = 0;
 // 末尾からこの距離以内を読んでいれば末尾を読んでいるとみなし、追記に合わせて末尾へ追従する。
 const FOLLOW_TAIL_PX = 48;
+// 描画済みの末尾からこの距離以内まで読み進めたら、続きのイベントを描画する。左ペインの番兵の`rootMargin`と同じ値とする。
+const RENDER_AHEAD_PX = 400;
 
 // 画面DOMの参照は初回の`init`で確定する。
 let listEl = null;
@@ -478,27 +479,26 @@ function renderDetail(detail, preserved = null) {
     if (open !== undefined) block.open = open;
     detailEl.append(block);
   });
-  if (detail.events.length > renderedCount) {
-    const more = document.createElement("button");
-    more.type = "button";
-    more.textContent = "さらに100件表示";
-    more.addEventListener("click", () => {
-      detail.events.slice(renderedCount, renderedCount + DETAIL_PAGE_SIZE).forEach((event, offset) => {
-        detailEl.insertBefore(renderEvent(event, renderedCount + offset), more);
-      });
-      renderedCount += DETAIL_PAGE_SIZE;
-      more.hidden = renderedCount >= detail.events.length;
-    });
-    detailEl.append(more);
-  }
+  detailScroller().scrollTop = preserved ? preserved.scrollTop : 0;
+  renderEventsNearEnd();
+}
 
-  if (detail.truncated_events > 0) {
-    const truncated = document.createElement("div");
-    truncated.className = "secondary-text";
-    truncated.textContent = `表示上限を超えた${detail.truncated_events}件は表示していません`;
-    detailEl.append(truncated);
+// 描画済みのイベントの末尾近くまで読み進めている間、続きを最大100件ずつ描画する。
+// 短い記録でスクロールが生じない場合も、末尾が近い限り続けて記録の最後まで描画する。
+// 追加の描画ではスクロール位置を動かさず、エンドユーザーが読んでいる位置を保つ。
+function renderEventsNearEnd() {
+  if (!currentDetail) return;
+  const scroller = detailScroller();
+  while (
+    renderedCount < currentDetail.events.length
+    && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= RENDER_AHEAD_PX
+  ) {
+    const start = renderedCount;
+    currentDetail.events.slice(start, start + DETAIL_PAGE_SIZE).forEach((event, offset) => {
+      detailEl.append(renderEvent(event, start + offset));
+    });
+    renderedCount += DETAIL_PAGE_SIZE;
   }
-  if (preserved) detailEl.parentElement.scrollTop = preserved.scrollTop;
 }
 
 function isSelected(host, engine, path) {
@@ -516,30 +516,9 @@ function isReadingTail() {
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= FOLLOW_TAIL_PX;
 }
 
-// 末尾より上を読んでいる間に届いたイベントを件数で知らせ、末尾へ移る操作を示す。
-function updateNewEventsNotice() {
-  const button = document.getElementById("sessions-new-events-btn");
-  button.hidden = unseenEventCount === 0;
-  button.textContent = unseenEventCount === 0 ? "" : `新しいイベントが${unseenEventCount}件あります。末尾へ移動`;
-}
-
-function clearNewEventsNotice() {
-  unseenEventCount = 0;
-  updateNewEventsNotice();
-}
-
-// 未描画のイベントも描画してから末尾へ移る。
-function jumpToLatestEvents() {
-  if (currentDetail && renderedCount < currentDetail.events.length) {
-    renderDetail(currentDetail, {...captureDetailState(), renderedCount: currentDetail.events.length});
-  }
-  const scroller = detailScroller();
-  scroller.scrollTop = scroller.scrollHeight;
-  clearNewEventsNotice();
-}
-
 // 選択中の記録を取り直し、表示状態を保ったまま描き直す。取得に失敗した場合は現在の表示を残す。
-// 末尾を読んでいた場合は追記の末尾へ追従し、それ以外は位置を保って新着の件数を通知欄へ表示する。
+// 末尾を読んでいた場合は追記の末尾へ追従し、それ以外は位置を保つ。末尾より上を読んでいる間に届いた追記は、
+// エンドユーザーが末尾まで読み進めた時点で`renderEventsNearEnd`が描画する。
 async function refreshSelectedDetail() {
   if (!selected) return;
   const {host, engine, path} = selected;
@@ -552,14 +531,9 @@ async function refreshSelectedDetail() {
     const previousCount = currentDetail ? currentDetail.events.length : detail.events.length;
     const readingTail = isReadingTail();
     renderDetail(detail, {...captureDetailState(), renderedCount: readingTail ? detail.events.length : renderedCount});
-    const added = detail.events.length - previousCount;
-    if (added <= 0) return;
-    if (readingTail) {
+    if (readingTail && detail.events.length > previousCount) {
       const scroller = detailScroller();
       scroller.scrollTop = scroller.scrollHeight;
-    } else {
-      unseenEventCount += added;
-      updateNewEventsNotice();
     }
   } catch (_) {
     // 一時的な取得失敗では現在の表示を残し、次の通知か再接続で取り直す。
@@ -576,7 +550,6 @@ async function openSession(host, engine, path, trail = [], updateUrl = true) {
   }
   parentTrail = trail;
   currentDetail = null;
-  clearNewEventsNotice();
   renderList();
   detailEl.replaceChildren();
   detailTitleEl.textContent = "読み込み中...";
@@ -588,7 +561,6 @@ async function openSession(host, engine, path, trail = [], updateUrl = true) {
     const detail = await (response.json());
     if (generation !== detailGeneration) return;
     renderDetail(detail);
-    detailEl.parentElement.scrollTop = 0;
   } catch (error) {
     if (generation !== detailGeneration) return;
     detailTitleEl.textContent = "";
@@ -688,10 +660,7 @@ async function init() {
     const entry = sessions.find(item => item.host === params.get("host") && item.engine === params.get("engine") && item.path === params.get("path"));
     if (entry) void openSession(entry.host, entry.engine, entry.path, [], false);
   });
-  document.getElementById("sessions-new-events-btn").addEventListener("click", jumpToLatestEvents);
-  detailScroller().addEventListener("scroll", () => {
-    if (unseenEventCount > 0 && isReadingTail()) clearNewEventsNotice();
-  }, {passive: true});
+  detailScroller().addEventListener("scroll", renderEventsNearEnd, {passive: true});
   document.getElementById("sessions-prev-btn").addEventListener("click", () => navigateRelative(-1));
   document.getElementById("sessions-next-btn").addEventListener("click", () => navigateRelative(1));
   await loadList();

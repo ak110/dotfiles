@@ -8,6 +8,7 @@ import datetime
 import functools
 import json
 import os
+import re
 import shutil
 import socket
 import threading
@@ -5015,18 +5016,25 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("opened_from", ["list", "subagent"])
 async def test_session_detail_follows_appended_events_and_keeps_view_state(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
+    opened_from: str,
 ) -> None:
-    """開いている記録への追記が右ペインへ現れ、開閉・表示件数・スクロール位置を保ち、一覧は再取得しない。"""
+    """右ペインは末尾まで読み進めるたびに続きを自動で描画して記録の最後まで到達し、追記で表示状態を保つ。
+
+    末尾より上を読んでいる間の追記では、開閉とスクロール位置を保ち、通知を表示せず、一覧も再取得しない。
+    その後に末尾まで読み進めると追記したイベントへ到達する。サブエージェントの記録も同じ右ペインの描画で開く。
+    続きの描画に操作が要ると、記録の後半と追記へ到達するたびにボタンを探す手間が生じる。
+    """
     page = screen_harness.page
     await page.set_viewport_size({"width": 1280, "height": 600})
-    path = tmp_path / "claude" / "projects" / "-home-aki-long" / "long.jsonl"
+    parent = tmp_path / "claude" / "projects" / "-home-aki-long" / "long.jsonl"
     records: list[dict[str, Any]] = [
         {"type": "user", "timestamp": "2026-09-04T00:00:00Z", "cwd": "/home/aki/long", "message": {"content": "開始"}}
     ]
-    for index in range(150):
+    for index in range(230):
         records.append(
             {
                 "type": "assistant",
@@ -5034,15 +5042,31 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
                 "message": {"content": [{"type": "thinking", "thinking": f"思考{index}"}]},
             }
         )
-    _append_jsonl(path, records)
+    if opened_from == "list":
+        path = parent
+        _append_jsonl(path, records)
+    else:
+        _append_jsonl(parent, records[:1])
+        subagents = parent.with_suffix("") / "subagents"
+        subagents.mkdir(parents=True, exist_ok=True)
+        (subagents / "agent-long.meta.json").write_text(
+            json.dumps({"agentType": "Explore", "description": "長い調査", "spawnDepth": 1}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        path = subagents / "agent-long.jsonl"
+        _append_jsonl(path, records)
     # 記録の作成による一覧の再取得の通知は、画面を開く前に配信を終えさせ、追記の検証へ混ぜない。
     await asyncio.sleep(1.5)
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
+    if opened_from == "subagent":
+        await page.locator(".subagent-item", has_text="長い調査").click()
     events = page.locator("#detail details.event")
     await playwright.async_api.expect(events).to_have_count(100)
-    await page.get_by_role("button", name="さらに100件表示").click()
-    await playwright.async_api.expect(events).to_have_count(151)
+    await playwright.async_api.expect(page.get_by_role("button", name="さらに100件表示")).to_have_count(0)
+    for expected in (200, 231):
+        await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
+        await playwright.async_api.expect(events).to_have_count(expected)
     # 最初から展開されるユーザー発話を閉じ、折りたたまれた思考を1件開く。
     await events.nth(0).locator("summary").click()
     await events.nth(120).locator("summary").click()
@@ -5064,20 +5088,22 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
         ],
     )
 
-    await playwright.async_api.expect(events).to_have_count(152, timeout=5000)
-    await playwright.async_api.expect(page.locator("#detail")).to_contain_text("追記されたイベント")
+    await playwright.async_api.expect(events).to_have_count(232, timeout=5000)
     assert not await events.nth(0).evaluate("element => element.open")
     assert await events.nth(120).evaluate("element => element.open")
     assert await page.evaluate("() => document.querySelector('#screen-sessions main').scrollTop") == scroll_top
+    await playwright.async_api.expect(page.get_by_role("button", name=re.compile("新しいイベント"))).to_have_count(0)
     await asyncio.sleep(1.0)
     assert _session_list_requests(screen_harness) == list_requests
 
-    # 末尾より上を読んでいる間に届いたイベントは件数で知らせ、その操作で末尾へ移る。
-    notice = page.get_by_role("button", name="新しいイベントが1件あります。末尾へ移動")
-    await playwright.async_api.expect(notice).to_be_visible()
-    await notice.click()
-    await playwright.async_api.expect(notice).to_be_hidden()
-    assert await page.evaluate(_DETAIL_DISTANCE_FROM_END_JS) <= 1
+    await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
+    await playwright.async_api.expect(page.locator("#detail").get_by_text("追記されたイベント")).to_be_in_viewport()
+
+
+# 右ペインを末尾までスクロールする。
+_SCROLL_DETAIL_TO_END_JS = (
+    "() => { const main = document.querySelector('#screen-sessions main'); main.scrollTop = main.scrollHeight; }"
+)
 
 
 # 右ペインのスクロール位置から末尾までの距離（px）を返す。
@@ -5092,7 +5118,7 @@ async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
 ) -> None:
-    """末尾を読んでいる間の追記では新着の通知を表示せず、追記した末尾へ追従する。"""
+    """末尾を読んでいる間の追記では通知を表示せず、追記した末尾へ追従する。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": 1280, "height": 600})
     path = tmp_path / "claude" / "projects" / "-home-aki-tail" / "tail.jsonl"
@@ -5117,7 +5143,7 @@ async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
 
     await playwright.async_api.expect(events).to_have_count(42, timeout=5000)
     await page.wait_for_function(f"({_DETAIL_DISTANCE_FROM_END_JS})() <= 1")
-    await playwright.async_api.expect(page.locator("#sessions-new-events-btn")).to_be_hidden()
+    await playwright.async_api.expect(page.get_by_role("button", name=re.compile("新しいイベント"))).to_have_count(0)
 
 
 @pytest.mark.asyncio
