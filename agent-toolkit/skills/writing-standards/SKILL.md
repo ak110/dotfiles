@@ -17,45 +17,47 @@ description: >
 # 成果物の品質基準
 
 本スキルはドキュメント、コードおよびエージェント向け文書を書く主体へ品質基準を提供する。hookの実装とセッション状態ファイルの設計も、コードを書くときの基準として扱う。エージェントが作業中に取る行動の規範は、実行主体別のルールと各作業のスキルが定める。
-着手する作業に該当する参照資料を全文読み、そのすべてを適用する。
-本スキルが「<条件>のとき: <参照先>」の形で挙げる参照先は、その条件が成立した時点で全文読む。条件は起動時だけでなく作業の途中でも成立するため、成立を判定してから読み、読む前にその条件が成立する操作へ着手しない。
-条件付きの参照先を読まずに操作へ進むと、その参照先が定める品質基準を適用できない。
 レビュー担当とレビューイーの判断基準は`agent-toolkit:review-standards`が定める。
 計画ファイルの成果物契約は`agent-toolkit:plan-mode`が定め、本スキルの対象外とする。
 
+以下の読込表の各行は、その行の時点または条件が成立したら、条件が対象とする操作の前に同じ行の資料を全文読み、そのすべてを適用することを示す。
+条件は起動時だけでなく作業の途中でも成立するため、成立を判定してから読む。
+条件付きの資料を読まずに操作へ進むと、その資料が定める品質基準を適用できない。
+
 ## 成果物種別ごとの必読資料
 
-成果物へ書く事実主張を調査する場合は`references/investigation.md`を全文読む。
-
-| 成果物 | 全文読む資料 |
+| 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 人間が読む文章（Markdown・README・技術文書・API文書、業務・仕様文書、体験を述べる文章、コメント、AWI・UWIの本文） | `references/writing.md` |
-| コード・テストコード | `references/writing.md` |
-| エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`） | 後掲「エージェント向け文書の編集時に読む資料」に従う |
+| 成果物へ書く事実主張を調査する時 | `references/investigation.md` |
+| 人間が読む文章（Markdown・README・技術文書・API文書、業務・仕様文書、体験を述べる文章、コメント、AWI・UWIの本文）を書く時 | `references/writing.md` |
+| コード・テストコードを書く時 | 「コードの編集時に読む資料」の各行 |
+| エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`）を書く時 | 「エージェント向け文書の編集時に読む資料」の各行 |
 
 ## 文章の作成時に読む資料
 
-文章を書く時と表記をチェックする時は、まず`references/notation-rules.md`を全文読む。
-同資料は表記規則の目次とチェック手段を持つ。該当する節が、textlint違反、`lint-relax-criteria.md`、`tone-examples.md`・`tone-examples-llm-tone.md`の各資料への条件付きの参照を示す。
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 文章を書く時と表記をチェックする時（他の行より先に読む） | `references/notation-rules.md` |
+| 恒久的な成果物の文面案を執筆する前と、textlintの指摘へ対応する時 | `references/textlint-violations.md` |
+| lint設定の緩和・無効化・除外指定を追加する時 | `references/lint-relax-criteria.md` |
+| `notation-rules.md`か`textlint-violations.md`が節名で指す口調例から書き換えの処置を選ぶ時 | `references/tone-examples.md`、`references/tone-examples-llm-tone.md`のうち指された資料 |
+| 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` |
+| 新しい概念名または識別子を導入する時 | `references/referent-table.md` |
+| 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` |
 
-人間向け文書の役割と残す内容を選ぶ時は、`references/document-types.md`を全文読む。コードとテストコードの執筆には「コードの編集時に読む資料」を適用する。
-
-新しい概念名または識別子を導入する時は、併せて`references/referent-table.md`を全文読む。
-既存の対象を名前で指す時と新しい名前を付ける時は、併せて`references/defined-names.md`を全文読む。
+コードとテストコードの執筆には「コードの編集時に読む資料」を適用する。
 
 ## コードの編集時に読む資料
 
-コード編集に着手する前に、次の3段を順に実施する。
+コード編集に着手する前と、コードとテストコードのレビューで判定に入る前に、次の3段を順に実施する。レビューではレビュー対象の差分へ同じ3段で資料を選ぶ。
 
 1. `references/writing.md`を全文読む。
-2. 編集対象で使う技術に対応する資料を後掲の対応表から選び、全文読む。
-3. 後掲の条件付き資料のうち、着手する工程と対象に該当するものを全文読む。
+2. 編集対象で使う技術に対応する行を後掲の技術別の読込表から選び、資料を全文読む。
+3. 後掲の工程別の読込表のうち、着手する工程と対象に該当する行の資料を全文読む。
 
-コードとテストコードをレビューする時も、判定に入る前に、レビュー対象の差分へ同じ3段で資料を選んで全文読む。
+技術別の読込表は次のとおりとする。
 
-手順2の対応表は次のとおりとする。
-
-| 対象の拡張子・ファイル名・パス・依存名 | 全文読む資料 |
+| 時点または条件（対象の拡張子・ファイル名・パス・依存名） | 全文読む資料 |
 | --- | --- |
 | `py` | `references/python.md` |
 | `ts`・`tsx` | `references/typescript.md` |
@@ -73,34 +75,36 @@ description: >
 | `drizzle-orm`・`drizzle-kit`（0.x系） | `references/drizzle.md` |
 | `svelte`・`@sveltejs/kit`（Svelte 5・SvelteKit 2） | `references/svelte.md` |
 
-手順3の条件付き資料は次のとおりとする。
+工程別の読込表は次のとおりとする。
 
-- 計画ファイルを作成する時点: `references/design-time.md`
-- コードを編集する時点、設計判断を確定する時、および依存の追加・更新をする時: `references/implementation-time.md`
-- 設計判断を確定する時、計画と実装を同じ主体が続けて実施する場合、およびコードレビューを実施する場合: `references/design-heuristics.md`
-- 依存の追加・更新をする時: `references/dependency-management.md`
-- MCPサーバーのツール、説明、応答を設計、実装、変更またはレビューする時: `references/mcp-server-design.md`
-- テストコードを書く時とレビューする時、および条件分岐と判定条件を新設または変更する時: `references/testing.md`
-- 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
-- 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時: `references/independent-html.md`
-- エンドユーザーが操作する画面（HTML、CSS、画面コンポーネント、単体HTML成果物など）の新設・変更、その計画またはレビューをする時: `references/ui-ux.md`
-- 前項の画面をHTML、CSS、JavaScriptで実装またはレビューする時: `references/ui-ux-web-rules.md`
-- 前々項の画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時: `references/ui-ux-patterns.md`
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 計画ファイルを作成する時点 | `references/design-time.md` |
+| コードを編集する時点、設計判断を確定する時、および依存の追加・更新をする時 | `references/implementation-time.md` |
+| 設計判断を確定する時、計画と実装を同じ主体が続けて実施する場合、およびコードレビューを実施する場合 | `references/design-heuristics.md` |
+| 依存の追加・更新をする時 | `references/dependency-management.md` |
+| MCPサーバーのツール、説明、応答を設計、実装、変更またはレビューする時 | `references/mcp-server-design.md` |
+| テストコードを書く時とレビューする時、および条件分岐と判定条件を新設または変更する時 | `references/testing.md` |
+| 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等） | `references/encoding.md` |
+| 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時 | `references/independent-html.md` |
+| エンドユーザーが操作する画面（HTML、CSS、画面コンポーネント、単体HTML成果物など）の新設・変更、その計画またはレビューをする時 | `references/ui-ux.md` |
+| 前行の画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` |
+| 前々行の画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` |
 
 ## エージェント向け文書の編集時に読む資料
 
 エージェント向け文書の編集に着手する前に、次の2段を順に実施する。
 
 1. `references/writing.md`と`references/agent-documents-basics.md`を全文読む。
-2. 後掲の対象別資料のうち、編集対象に該当するものを全文読む。
+2. 後掲の対象別の読込表のうち、編集対象に該当する行の資料を全文読む。
 
-手順2の対象別資料は次のとおりとする。
-
-- スキル編集（公式リファレンスの参照先を含む）: `references/agent-skills.md`
-- サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂: `references/sub-agents.md`
-- hook編集、およびhookのエンドユーザー向けメッセージの新設・改訂: `references/agent-skills.md`と`references/claude-hooks.md`。セッション状態ファイルまたはフラグを扱う場合は`references/session-state-and-flags.md`も読む
-- auto modeのカスタムルール編集: `references/auto-mode.md`と`references/agent-skills.md`。hookを編集する場合は`references/claude-hooks.md`も読む。権限拒否に遭遇した場面の手順は`agent-toolkit:user-confirmation-and-report`が扱う
-- セッション状態ファイルまたはフラグを扱う編集: `references/session-state-and-flags.md`。hookの実装も編集する場合は`references/claude-hooks.md`も読む
-- セッション記録の集計・分析: `references/session-records.md`
-- 機械チェックスクリプトの新設・改修: `references/check-script-design.md`
-- エージェント向け文書へ新しい規定を追記する場面、および文書の記述量を管理する場面: `references/agent-documents-additions.md`
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| スキル編集（公式リファレンスの参照先を含む） | `references/agent-skills.md` |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md` |
+| hook編集（auto modeのカスタムルール編集やセッション状態の編集に伴うものを含む）、およびhookのエンドユーザー向けメッセージの新設・改訂 | `references/agent-skills.md`、`references/claude-hooks.md` |
+| auto modeのカスタムルール編集 | `references/auto-mode.md`、`references/agent-skills.md`。権限拒否に遭遇した場面の手順は`agent-toolkit:user-confirmation-and-report`が扱う |
+| セッション状態ファイルまたはフラグを扱う編集（hook編集とauto modeのカスタムルール編集で扱う場合を含む） | `references/session-state-and-flags.md` |
+| セッション記録の集計・分析 | `references/session-records.md` |
+| 機械チェックスクリプトの新設・改修 | `references/check-script-design.md` |
+| エージェント向け文書へ新しい規定を追記する場面、および文書の記述量を管理する場面 | `references/agent-documents-additions.md` |
