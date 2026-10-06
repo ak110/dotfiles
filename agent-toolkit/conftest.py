@@ -10,3 +10,4 @@ from agent_toolkit._testing import isolation
 isolated_path_value = isolation.isolated_path_value
 isolate_development_state = isolation.isolate_development_state
 host_environ = isolation.host_environ
+share_package_caches = isolation.share_package_caches

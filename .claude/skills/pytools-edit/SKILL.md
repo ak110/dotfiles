@@ -67,6 +67,9 @@ description: >
 - テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`へ集約する。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
   共通化が必要な場合は`agent-toolkit-edit`スキルの`references/distribution-and-hooks.md`「scripts配下の配置」が定めるテスト専用パッケージへ置く
+- テストはリポジトリ直下と`agent-toolkit/`の`conftest.py`が適用する`agent-toolkit/agent_toolkit/_testing/isolation.py`の隔離の下で動き、ホームと設定ディレクトリはテストごとの一時ディレクトリを指す。
+  パッケージを取得して起動する外部ツール（pnpmの`dlx`、corepackなど）を実際に動かすテストは、同モジュールの`share_package_caches`で取得物の保存先だけをホストと共有する。
+  共有しないと、テストのたびに空の保存先へ取得し直して所要が延びる
 - `pytools`パッケージ配布物にテストコードを含めないため、
   `[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を除外する
 - `scripts/`配下はpytestのprependモードで`sys.path`へ自動追加されるためテストから直接importできる。

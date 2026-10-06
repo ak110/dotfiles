@@ -14,6 +14,9 @@ import sys
 import pyfltr.cli.mcp_server as pyfltr_mcp_server
 import pytest
 
+# textlintをpnpmの`dlx`経由で実際に動かすため、取得物の保存先をホストと共有して毎回の取得し直しを避ける。
+pytestmark = pytest.mark.usefixtures("share_package_caches")
+
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[4]
 _REPOSITORY_MARKDOWN = _PROJECT_ROOT / "agent-toolkit/skills/writing-standards/references/notation-rules.md"
 _REPOSITORY_PYTHON = pathlib.Path(__file__).resolve()
