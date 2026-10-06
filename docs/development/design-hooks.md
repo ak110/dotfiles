@@ -75,6 +75,7 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないpromptが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないsession_idが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}は、session_idに対応する絶対cwdが保存されていないため続行できない。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
+| `pretooluse/confirmation_reads.py` `unread_reference_warning` | メインが`agent-toolkit:user-confirmation-and-report`の`references/approval-scope.md`か`references/choice-construction.md`を、最後の会話圧縮より後に読まないまま`AskUserQuestion`を呼んだ場合の警告 | H | 新設（明らかな行動誤り・低費用、2026年10月6日）：判定はtranscriptの最後の`compact_boundary`より後に、`Read`の`file_path`か`Bash`のコマンドで2資料を読む操作があるかだけから確定し、読んだ内容の理解は判定しない。警告にとどめ反復しても昇格させないのは、2026年10月6日にユーザーが確認への回答で、`AskUserQuestion`の呼び出しはトークン数が多いことが多く遮断の無駄が大きいとしたためである。主な対策は読込表と常時規範の操作名の書換であり、本判定は補助である。経緯は「AskUserQuestion前に読む資料の未読の警告（2026年10月6日）」にある。未読の組合せ、会話圧縮、非遮断、主体の除外を`confirmation_reads_test.py`で確認 |
 | `pretooluse/content_checks.py` `_collect_edit_operation_warnings` | ファイル末尾のツール境界タグ混入を警告 | X | 維持（データ破損）：編集本文へツール境界タグが混入するとPythonまたは計画本文に制御文字列が残る。編集後の像と対象パスを比べる処理を実装で確認 |
 | `pretooluse/content_checks.py` `_warn_mojibake` | 本文`{body}`と、解消手段`{fix}`を渡した`次の操作:`の行 | X | 維持（データ破損）：編集行の文字化けは元の文字を復元できないままエンドユーザー向け本文へ配布される。文字列検出分岐を実装で確認 |
 | `pretooluse/content_checks.py` `_check_ps1_eol` | f'{tool_name}.{field}にLFだけの内容を検出した。この書き込みではUTF-8 BOMが失われて日本語が文字化けし、.gitattributesの*.p… | X | 維持（データ破損）：PowerShell配布ファイルのBOM・改行喪失で日本語と実行形式が変わる。書込対象と改行の判定を実装で確認 |
@@ -397,6 +398,29 @@ CodexのPostToolUseは`persistedOutputPath`を持たず（出力は退避では�
 | `large_reads.py`の全文取得の判定をClaude Codeへ広げる | 未読8件のうち`cat`へ複数ファイルを渡す単純な形の3件しか静的に判定できない |
 | Bashの退避を失敗として返す | 同じ版の設定スキーマにその設定が無い。置き換えでツール結果そのものが未読を示す形にする |
 | 上限を最大の128,000にする | 1回のツール出力が約41,000トークンとなり、Codexへ配布する上限（20,000トークン）と`Read`の上限（25,000トークン）を超える |
+
+### AskUserQuestion前に読む資料の未読の警告（2026年10月6日）
+
+2026年10月6日のClaude Codeのセッションで、メインは確認の前に全文読む2資料のどちらも読まずに`AskUserQuestion`を2回発行した。2資料は`agent-toolkit:user-confirmation-and-report`の読込表が定める`references/approval-scope.md`と`references/choice-construction.md`である。
+1回目は委譲先の未検証の件数を`共通前提:`行へ書き、ユーザーは回答でその前提を問い返した。
+読込表の2行の条件は工程名（「確認要否の判定」「確認の選択肢を組む手順」）だけで書かれ、同スキルの`description`も`AskUserQuestion`を名指ししていなかった。
+
+主な対策は名指しの書換である。読込表の2行と`description`、Claude Codeの`rules-main.claude-code.md`、Codexの`rules-main.codex.md`の確認の箇条を`AskUserQuestion`とCodexの構造化質問・固定形式の質問という操作の名前で書き、2資料を読む指示を持たせた。
+補助として`pretooluse/confirmation_reads.py`が、メインが最後の会話圧縮より後に2資料のどちらかを読まないまま`AskUserQuestion`を呼んだ場合に警告する。
+警告は読んでいない資料の絶対パスと、回答に依存する操作の前にその資料を読んで発行した質問の前提と選択肢を確かめる次の操作を示す。
+CodexはAskUserQuestionを持たず、確認を本文の固定形式でも提示するため、呼び出しを判定するhookで覆えず書換が対応する。
+
+「委譲手段の選択と待機の装着の手掛かり（2026年10月1日）」などの節は、規範の想起を目的とするチェックをhookに置かない方針を維持するとし、2026年10月5日の節は同方針の対象を「操作を判定して警告や遮断を返すチェック」と記す。本判定はこの文面に当たる。
+ユーザーは確認への回答で、方針から外れることを示されたうえで、警告までとする条件でhookを採用した（2026年10月6日）。判定は読取の操作の有無から機械的に確定し、2026年10月3日の節が置いた、実際の準備結果から確定する不足を判定するhookと同じ型である。
+
+却下した代替案は次のとおりである。
+
+| 案 | 採らない理由 |
+| --- | --- |
+| `AskUserQuestion`の呼び出しを遮断する | 呼び出しの入力はトークン数が多いことが多く、再発行の損失が大きいとユーザーが退けた |
+| 2資料をスキル本体へ戻す | 同スキルはほぼ全てのセッションで起動するため、`AskUserQuestion`を使わないセッションにも約2.3万バイトの読込を課す。ユーザーも選ばなかった |
+| 読込の指示を「確認要否の判定」節などの本文へ戻す | 条件付きの読込指示を読込表へ集め本文へ散在させない規定（`agent-documents-basics.md`「責務と構成」）に反する |
+| UserPromptSubmitで注記する | 確認を組む時点は発話の受領より複数のツール呼び出しだけ後にあり、発行の時点の手掛かりにならない |
 
 ### hook出力契約の自動チェック
 

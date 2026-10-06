@@ -167,6 +167,11 @@ def assistant_text(message: typing.Any) -> str:
     return ""
 
 
+def read_transcript_lines(transcript_path: str) -> list[str] | None:
+    """Transcript JSONLを行リストとして読み込み、読み取りに失敗した場合はNoneを返す。"""
+    return _read_transcript_lines(transcript_path)
+
+
 def _read_transcript_lines(transcript_path: str) -> list[str] | None:
     """Transcript JSONLを行リストとして読み込む。
 

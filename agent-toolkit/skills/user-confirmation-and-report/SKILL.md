@@ -4,7 +4,8 @@ user-invocable: false
 description: >
   本スキルの内容が文脈に無い状態でユーザー発話（自動的なプロンプトを除く）を受けたとき、
   応答を始める前に必ず起動する。セッションの最初の発話と、会話圧縮の後に最初に受けた発話がこれに当たる。
-  操作または判断の確認要否を判定するとき、ユーザー確認またはユーザーへの報告の手段を選ぶとき、UWIへ確認を退避するとき、
+  操作または判断の確認要否を判定するとき、ユーザー確認またはユーザーへの報告の手段を選ぶとき
+  （Claude Codeの`AskUserQuestion`とCodexの構造化質問を呼ぶ前を含む）、UWIへ確認を退避するとき、
   回答済みUWIを元の作業へ反映するとき、Claude Codeメインが利用上限の猶予通知を受けたとき、
   またはツール呼び出しが権限設定もしくはauto mode classifierに拒否されたとき、委譲先の返却がその拒否を報告したときにも起動する。
   ユーザーと自分の認識が一致していない可能性があるとき、行動を繰り返し咎められるときにも起動し、認識合わせを行う。
@@ -23,8 +24,8 @@ UWIの本文、投入、状態および依存関係の形式は`agent-toolkit:wi
 | --- | --- |
 | 本スキルを起動した時点 | `references/judgment.md`（確認要否の判定の細則、認可を要する操作、確認を要する事項の例、原文からの具体化を要する軸）、`references/main-behavior.md`（メインの未確定判断の保留、暫定判断、事前承認の合意判定、回答の受領、利用上限の猶予通知後の続行と再開） |
 | ユーザー発話を受領した場面 | `references/user-utterance.md`（発話の解釈の細則） |
-| 「確認要否の判定」を適用する前 | `references/approval-scope.md` |
-| 確認本文と選択肢を起草する前（「確認の選択肢を組む手順」へ入る時点） | `references/choice-construction.md` |
+| 「確認要否の判定」を適用する前（Claude Codeで`AskUserQuestion`を呼ぶ前、Codexで構造化質問か`references/codex-format.md`の固定形式の質問を発行する前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `references/approval-scope.md` |
+| 確認本文と選択肢を起草する前（「確認の選択肢を組む手順」へ入る時点。`AskUserQuestion`の`questions`、Codexの構造化質問または固定形式の質問を組む前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `references/choice-construction.md` |
 | Codexで条件に合う構造化質問が無く、固定形式で質問を提示する時点 | `references/codex-format.md` |
 | 起動元の工程が質問ラウンドを指定した時点と、自ら確定した判断を終了時報告の書式で書く時点 | `references/grilling.md` |
 | 規範どうしが矛盾する場合 | `references/conflict-resolution.md`（由来確定） |

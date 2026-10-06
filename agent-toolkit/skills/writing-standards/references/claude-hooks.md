@@ -81,6 +81,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 それ以外は警告とする。遮断はそのターンの入力と作業を失わせて同じ操作の再実行を要し、その損失が発火のたびに生じるため、失う量が大きい操作や誤検出の余地がある判定では警告の方が費用が小さい。
 復元できない結果の代表例は、実行主体のコンテキストへの取り込み、外部への公開、プロセスまたはタスクの終了、対象の上書きと削除とする。
 ユーザーへ提示する本文そのものを入力とする判定（`AskUserQuestion`の選択肢、`ExitPlanMode`の計画本文など）は、ユーザー自身が読んで指摘できるため警告で返す。
+`AskUserQuestion`の呼び出しを契機とする判定は、本文を入力としない判定も警告で返す。入力のトークン数が多く、遮断による再発行の損失が大きいためである。
 この判定は`PreToolUse`と`PostToolUse`の遮断を対象とし、`Stop`と`SubagentStop`には「Stop/SubagentStopフックの再帰呼び出し対策」が定める条件を適用する。
 判定ごとに結論と根拠をその判定モジュールのdocstringへ記録する（努力目標。判定を見直す読み手が根拠をたどれるようにするため）。
 
@@ -114,7 +115,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 
 ツール名で`matcher`を評価するイベントは`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`PermissionRequest`、`PermissionDenied`の5つとする。
 これらのイベントの`matcher`は3通りに解釈する。`"*"`、空文字列およびキーの省略は全ツールへ一致する。英数字、`_`、`-`、空白、`,`、`|`だけからなる値は、`|`または`,`で区切ったツール名の完全一致とする。それ以外の文字を含む値は、先頭と末尾を固定しないJavaScriptの正規表現として評価する。
-全ツールへ一致させる新規の登録には`"*"`を書く（努力目標。3通りの表記は同じ意味であり、表記をそろえると読み手が登録を比べやすいため）。ツール名で`matcher`を評価しないイベントでは`matcher`キーを省く。
+全ツールへ一致させる新規の登録には`"*"`を書く（努力目標。3通りの表記は同じ意味で、そろえると読み手が登録を比べやすいため）。ツール名で`matcher`を評価しないイベントでは`matcher`キーを省く。
 一次資料は公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Matcher patterns`節とする。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日」にある。
 
@@ -165,7 +166,7 @@ Claude Codeが表示する`Stop hook error: JSON validation failed`はプロン�
 `/goal`を設定したセッションでは、その表示がコマンド型hookの出力形式とは無関係に現れる。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：出力フィールドの使い分け：2026年9月4日」にある。
 
-PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一の通知手段として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。各フィールドがターン継続を強制するかは後掲の表に従う。
+PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一の通知手段として使う。各フィールドがターン継続を強制するかは後掲の表に従う。
 stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 `systemMessage`はユーザーの判断・操作に影響する情報通知に限って使う。決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象は通知の対象に含めない。
 Stop/SubagentStopでそのターン継続を強制する用途は、エラーとして遮断する場合（振り返り誘導等）に`decision: "block"`＋`reason`を、フックの想定内の助言に`hookSpecificOutput.additionalContext`を採用する。
@@ -356,10 +357,8 @@ CodexのStopは`termination_order_advisor`だけを実行する。他のStop判�
 自動生成であることは次節の標識だけが担う。
 
 hookメッセージ中で原本ファイル（`01-agent.md`・`CLAUDE.md`等）の章名・節名・キーワードを参照する場合は、
-原本表記をそのまま引用する。
-訳した参照名（例:「日本語」節を`Japanese section`と訳すなど）は
-原本の章名を変更したときに参照が追従しなくなるため、参照名は原本表記のまま用いる。
-hookメッセージの目的はコーディングエージェントが参照先を特定できることである。
+コーディングエージェントが参照先を特定できるよう原本表記をそのまま引用する。
+訳した参照名（例:「日本語」節を`Japanese section`と訳すなど）は、原本の章名を変更したときに参照が追従しなくなる。
 
 ## コーディングエージェント宛てメッセージの標識
 
@@ -393,7 +392,7 @@ detected ...
 
 ### ヘルパー関数
 
-共有formatterを発出箇所から呼び出す。hookごとの重複実装は置かない。
+共有formatterを発出箇所から呼び出し、hookごとに重複実装しない。
 
 ```python
 from agent_toolkit._hooks.notice import formatter

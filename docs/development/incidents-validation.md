@@ -451,6 +451,10 @@
 
 ## 規範の消失・陳腐化
 
+- 2026年10月6日: Claude Codeのメインが、確認の前に全文読む2資料のどちらも読まずに`AskUserQuestion`を2回発行した。2資料は`agent-toolkit:user-confirmation-and-report`の読込表が定める`references/approval-scope.md`と`references/choice-construction.md`である。1回目は委譲先の未検証の件数を`共通前提:`行へ書き、ユーザーは回答でその前提を問い返した。同日の`f17c75b4f`以後の記録では、`AskUserQuestion`4回のうち`choice-construction.md`の読取が先行したのは1回、`approval-scope.md`は0回だった。
+  直接原因: 2資料を読む時点を定める読込表の2行が工程名だけで書かれ、`AskUserQuestion`を名指ししないため、確認を組む場面で行が想起されなかった。同じ場面で読まれる`description`と常時規範の箇条も、2資料を`AskUserQuestion`の前に読む指示を持たなかった。`f17c75b4f`が読込の指示を「確認要否の判定」節の本文から読込表へ移した後に、読取が減っていた。
+  対策: 読込表の2行と`description`へ`AskUserQuestion`とCodexの構造化質問・固定形式の質問を名指しして会話圧縮後の読み直しを加え、`rules-main.claude-code.md`と`rules-main.codex.md`の確認の箇条へ2資料を全文読む指示を書いた。補助として、PreToolUseがメインの未読の`AskUserQuestion`を警告する。ユーザーの判断により遮断せず昇格もさせない
+
 - 2026年10月6日: Claude Codeのセッションで、メインは`agent-toolkit:search`を起動しないまま、対象を`agent-toolkit/`、`docs/`、`.claude/`へ狭めた`rg`で参照元を列挙した。一覧はリポジトリ直下のテストにある参照元を欠いたまま、確定済みの観測としてWI投入担当へ渡った。WI投入担当がリポジトリ全体を検索し直して欠けた参照元を補った。同スキルの説明と常時規範の参照文は配送されていたが、セッションを通じて起動されなかった。
   直接原因: 検索の範囲を狭める条件は同スキルの本文だけにあり、検索する時点に、同スキルが未起動であることを示す手掛かりが届かなかった。
   対策: PreToolUseで、呼び出し主体の文脈で`agent-toolkit:search`が未起動のまま検索（`Grep`・`Glob`、`rg`・`git grep`・`find`・再帰の`grep`）すると、文脈ごとに1回、同スキルを起動して検索の手段と範囲を確かめ直す警告を返す。遮断はしない
