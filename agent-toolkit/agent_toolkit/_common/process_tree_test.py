@@ -14,7 +14,7 @@ import time
 import psutil
 import pytest
 
-from agent_toolkit._agents_server import process_tree
+from agent_toolkit._common import process_tree
 
 _CHILD_SOURCE = "import time; time.sleep(120)"
 

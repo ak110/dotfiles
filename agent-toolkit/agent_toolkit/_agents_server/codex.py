@@ -24,7 +24,6 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     compaction_metrics,  # pylint: disable=wrong-import-position
-    process_tree,  # pylint: disable=wrong-import-position
     status_file,  # pylint: disable=wrong-import-position
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
@@ -48,7 +47,10 @@ from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import
 )
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp  # pylint: disable=wrong-import-position
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import (
+    codex_models,
+    process_tree,  # pylint: disable=wrong-import-position
+)
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")

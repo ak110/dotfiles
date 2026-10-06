@@ -58,7 +58,7 @@ Qualityは機能、使いやすさ、性能、信頼性、保守性、可用性�
 
 ## 協調と自律
 
-`agent-toolkit:process-wi`の起動中を自律モード、それ以外を協調モードとする。確認の要否、手段、UWI、回答後の遷移は`agent-toolkit:user-confirmation-and-report`が定める。確認の前にQCDと3段判定を適用する。
+`agent-toolkit:process-wi`の起動中と、`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`）を自律モード、それ以外を協調モードとする。確認の要否、手段、UWI、回答後の遷移は`agent-toolkit:user-confirmation-and-report`が定める。確認の前にQCDと3段判定を適用する。
 
 人間が確定した、別の作業でも使う方針や将来の案を制約する要件は、次にその判断を要する主体が読む成果物へ保存する。会話、WI、完了後に読まれない計画だけでは次の主体へ届かない。読み手、適用範囲、何を優先する判断か、競合する一般則との順位を記す。保存先を同じセッションで変更できない場合は、内容を備えたAWIへ渡す。
 

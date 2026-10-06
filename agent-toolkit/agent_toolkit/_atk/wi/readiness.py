@@ -20,6 +20,7 @@ from agent_toolkit._atk.wi.constants import (
 from agent_toolkit._atk.wi.formatters import _parse_target_repo
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
+from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._git import remote as _git_remote
 
 type RepairKind = Literal["frontmatter"]
@@ -40,6 +41,7 @@ class QueueEntry:
     legacy_dependency: dict[str, object] | None
     repair_target_filename: str | None
     repair_kind: RepairKind | None
+    source: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -187,6 +189,7 @@ def _queue_entry(
         legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
         repair_target_filename=repair_target if isinstance(repair_target, str) else None,
         repair_kind=repair_kind,
+        source=data.get("source") if isinstance(data.get("source"), str) else None,
     )
 
 
@@ -490,6 +493,10 @@ def calculate_readiness(
     blocked: list[str] = []
     internal_waits: list[str] = []
     for entry in active:
+        if entry.kind == WI_TYPE_UWI and entry.source == _automated_prompt.SOURCE_RUN_SKILL:
+            # `atk run-skill`のUWIは同じ対象リポジトリと同じスキルの次回の実行が扱い、process-wiは選定から除く。
+            # readyへ含めると、process-loopが選定で除かれるUWIのために子セッションの起動を繰り返す。
+            continue
         if entry.filename in cooldown_pending:
             blocked.append(entry.filename)
             continue

@@ -20,7 +20,7 @@ import shutil
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
-from agent_toolkit._agents_server import logging_config, process_tree
+from agent_toolkit._agents_server import logging_config
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.state import (
     AUTO_RESUME_NOTICE,
@@ -36,7 +36,7 @@ from agent_toolkit._agents_server.state import (
     _append_bounded,
     _begin_reply,
 )
-from agent_toolkit._common import claude_usage_limit
+from agent_toolkit._common import claude_usage_limit, process_tree
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")

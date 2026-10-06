@@ -134,3 +134,19 @@ AWIが0件で変更検知を待つ反復は起動へ到達しないため、本�
 `/goal`の目的文へ連結する案は、目的文がターンを終えるたびの目標評価の入力となるため採用しない。
 起動後のセッションが自ら状態ファイルを読む案は、全セッションへ読取の1工程を課し、
 かつセッションが手順を実行することに依存するため採用しない。
+
+## atk run-skill
+
+`atk run-skill`はcronなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。ユーザーは別環境のリポジトリに持つスキルを数日に1回、自律モードで実行したいと求めた。確認への回答では、WIキューを経由しない単発実行コマンドと毎回の報告用UWIを選んだ（2026年10月6日）。実装は`agent-toolkit/agent_toolkit/_atk/run_skill.py`が持つ。モデル候補の解決、可用性判定、利用上限の待機と正常終了の判定は、`atk wi process-loop`と共通の`agent-toolkit/agent_toolkit/_atk/orchestrator.py`が持つ。
+
+本作業のセッションは対話型ではなく非対話起動（Claudeは`claude -p`、Codexは`codex exec`）とする。定期実行には操作する端末が無く、対話型のCLIは入力を待ったまま止まるためである。Claudeでは最初の入力を`/goal`へ渡し、目標評価で報告用UWIの保存までターンを続けさせる。Codexの非対話起動は`/goal`の行を通常の入力として残し目標として扱わないため（Codex 0.160.1で観測）、`atk-auto`要素の目的文だけを渡し、セッションはモデルの最終応答で終わる。
+
+子セッションへはprocess-loop用の環境印（`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`と`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`）を渡さない。印はStopで`atk agents-exit-session`の実行記録を求めるhookを有効にし、そのコマンドは対話型のCLI本体だけを停止対象とするため、最終応答で終わる非対話セッションが時間上限まで終われなくなる。起動元がprocess-loopの子でも印を除く。
+
+報告用UWIは`atk`の後処理ではなく、セッション内の`agent-toolkit:completion-report`が作成する。報告の内容と保存の検収は同スキルが既に定めており、後処理で作成すると同じ報告の定義が2箇所に分かれる。保存に失敗したセッションは目標を満たせず時間上限の終了コード124で終わり、cronが非0の終了を通知する。
+
+過去の実行が投入したUWIは、次回の同じスキルの実行が`source`（`run-skill`）と`scope`（スキル名）で識別して扱う（`agent-toolkit/skills/user-confirmation-and-report/SKILL.md`「`atk run-skill`の過去の実行のUWI」）。process-wiは回答済みUWIの取得へ`--source=!run-skill`を付け、`calculate_readiness`もこれらのUWIをreadyへ含めない。含めると、process-wiの選定が除くUWIのためにprocess-loopが子セッションの起動を繰り返す。識別には既存の`source`と`scope`を使い、新しい状態や保存先は加えない。
+
+実行ごとのログは状態ディレクトリの`run-skill/`へ置き、各実行の開始時に最終更新から30日を超えたものを削除する。数日に1回の起動で同じ組の直近約10回分を調べられる長さとした。多重起動は同じディレクトリの`locks/`のファイルロックで防ぎ、対象リポジトリかスキルが異なる実行は並行して起動できる。
+
+却下した案は3つある。cronからAWIを定期投入し`atk wi process-loop`に処理させる案は、ユーザーが単発実行コマンドを選んだため採らない。対話型の`claude`をcronから起動する案は、端末が無いため採らない。Claude Codeのクラウド定期実行は社内のサーバーへ届かない見込みのため採らない（届くかは確かめていない）。

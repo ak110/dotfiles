@@ -154,7 +154,7 @@ ClaudeとCodexのbackendでは、軽量化はプロジェクト規範とスキ�
 
 工程別モデル設定の各キーは、`<engine>:<model>[/<effort>]`をASCIIカンマで区切った複数候補を受け取る。
 先頭の候補から順に起動を試み、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
-Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は次の候補へ進まず、解除まで待って同じClaudeで作業を続ける。`agents_server`、`atk wi process-loop`および`atk commit`のいずれも手動での再送は要らず、待機中は解除待ちの種類と解除予定時刻を`show`・`list`・statuslineまたは端末へ示す。待機を止める場合は`agents_server`では`kill`、CLIでは中断操作を使う。
+Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は次の候補へ進まず、解除まで待って同じClaudeで作業を続ける。`agents_server`、`atk wi process-loop`、`atk run-skill`および`atk commit`のいずれも手動での再送は要らず、待機中は解除待ちの種類と解除予定時刻を`show`・`list`・statuslineまたは端末へ示す。待機を止める場合は`agents_server`では`kill`、CLIでは中断操作を使う。
 変更できるキーと対応する起動は次のとおり。
 
 | キー | 対応する起動 |
@@ -163,7 +163,7 @@ Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は�
 | `medium_tier_model` | WI選定・実行レビュー・`model_type="medium_tier"`を指定した`start`の`explore` |
 | `low_tier_model` | `model_type`を省略した`start`の`explore`と`shell`・軽量な`mode:`を宣言した`<役割名>.subagent.md`の`task` |
 | `write_model` | `start`の`write` |
-| `orchestrate_model` | `atk wi process-loop` |
+| `orchestrate_model` | `atk wi process-loop`・`atk run-skill` |
 | `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、未設定時は`false`） |
 
 `atk config show`はパス4行、モデル設定5行と`codex_fast_mode`の1行を表示し、`atk config get`は設定値をそのまま返す。
@@ -218,7 +218,7 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 
 ## 推奨ワークフロー
 
-作業の進め方は次の3パターンを推奨する。要件がどこまで固まっているかと、AWIの発生頻度で選ぶ。
+作業の進め方は次の4パターンを推奨する。要件がどこまで固まっているかと、AWIの発生頻度で選ぶ。決まったスキルを定期的に実行したい場合は定期実行型を選ぶ。
 
 ### 対話型
 
@@ -267,6 +267,28 @@ AWIが常時発生しないリポジトリでは、常駐実行を起動せず�
 自律型とまとめ処理型は、AWIの発生頻度と常駐実行の要否で選ぶ。
 常駐実行を動かし続けるだけのAWIが継続して発生する場合は自律型を選ぶ。
 数日に数件の頻度でしか発生しない場合はまとめ処理型を選ぶ。
+
+### 定期実行型
+
+ログの点検のように、決まったスキルを数日に1回などの間隔で自律的に実行させたい場合は、cronなどの定期実行へ`atk run-skill`を登録する。
+`atk run-skill`はWIキューを経由せずに、指定した対象リポジトリで指定したスキルを自律モードのセッションとして1回実行し、終了コードを返す。
+モデルの選択、利用上限の解除待ち、同じスキルの多重起動の防止、時間上限（省略時6時間）とログの保存はコマンドが行う。
+
+cronへ登録する例を次に示す。cronは端末のシェルと異なる`PATH`で起動するため、`atk`・`claude`・`codex`の実行ファイルの場所を`PATH`へ含める。
+標準出力を`/dev/null`へ捨てると、成功時は何も届かず、失敗時だけ標準エラーの失敗行がcronのメール通知で届く。
+
+```bash
+PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
+0 3 */3 * * atk run-skill --target-repo /home/user/repo my-skill >/dev/null
+```
+
+毎回の結果は報告用UWIとして届く。
+破壊的な操作など判断が要る対応は、実施せずに事前承認型UWIとして届く。
+そのUWIへ回答すると、同じ対象リポジトリと同じスキルの次回の`atk run-skill`がその対応を実施してUWIを終端する。
+未回答の間は、同じ対応のUWIを重ねて投入せず、報告用UWIの要対応の欄へ既存のUWIを示す。
+これらのUWIは`atk wi process-loop`と`/agent-toolkit:single-lane-process`の処理対象にならない。
+実行ごとのログは`atk config get state_dir`が示すディレクトリの`run-skill/`に保存され、30日を過ぎたログは次の実行で削除される。
+オプションと終了コードは`atk run-skill --help`で確認する。
 
 ### 登録方法
 

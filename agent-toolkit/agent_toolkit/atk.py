@@ -4,7 +4,8 @@
 サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents <sub>`・
 `atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
-`atk review-audit <sub>`・`atk run-script <script> -- <引数>`・`atk run-command -- <argv>`形式とする。
+`atk review-audit <sub>`・`atk run-script <script> -- <引数>`・`atk run-command -- <argv>`・
+`atk run-skill <スキル名>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示。
@@ -28,6 +29,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - agents wait/notify/list/show: 委譲sessionの待機・通知・一覧・詳細表示
 - run-script: plugin内部スクリプトを安定した公開名で実行する
 - run-command: 有限終了する外部コマンドの両ストリームと終了状態を保持する
+- run-skill: 定期実行から任意のスキルを自律モードで1回実行する
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
 `_atk_wi_process_loop`・`_atk_wi_uwi`の各補助モジュールに分割し、
@@ -62,6 +64,7 @@ from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
 from agent_toolkit._atk import review_table as _review_table  # noqa: E402
 from agent_toolkit._atk import run_command as _run_command  # noqa: E402
 from agent_toolkit._atk import run_script as _run_script  # noqa: E402
+from agent_toolkit._atk import run_skill as _run_skill  # noqa: E402
 from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
 from agent_toolkit._atk import watch as _watch  # noqa: E402
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
@@ -1042,6 +1045,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _run_script.build_parser(run_script)
     run_command = _atk_help.add_command(top, "run-command", **_atk_help.HELP["atk run-command"])
     _run_command.build_parser(run_command)
+    run_skill = _atk_help.add_command(top, "run-skill", **_atk_help.HELP["atk run-skill"])
+    _run_skill.build_parser(run_skill)
     plans = _atk_help.add_command(top, "plans", **_atk_help.HELP["atk plans"])
     _plans.build_parser(plans)
     serve = _atk_help.add_command(top, "serve", **_atk_help.HELP["atk serve"])
@@ -1492,6 +1497,8 @@ def main(
             sys.exit(1)
     if args.command == "run-command":
         sys.exit(_run_command.run(args))
+    if args.command == "run-skill":
+        sys.exit(_run_skill.run(args))
     if home is None:
         home = pathlib.Path.home()
     if args.command == "serve":

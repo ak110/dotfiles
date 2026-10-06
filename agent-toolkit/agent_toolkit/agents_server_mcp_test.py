@@ -466,7 +466,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_agents_server/codex.py",
         "_agents_server/claude.py",
         "_agents_server/antigravity.py",
-        "_agents_server/process_tree.py",
+        "_common/process_tree.py",
         "_agents_server/state.py",
         "_agents_server/status_file.py",
         "_agents_server/session_registry.py",
