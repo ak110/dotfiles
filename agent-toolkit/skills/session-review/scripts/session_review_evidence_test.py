@@ -12,6 +12,7 @@ import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wron
 
 from agent_toolkit import agents_server_mcp  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._atk import outcome
+from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -5645,6 +5646,77 @@ def test_stats_resolves_runtime_unspecified_thread_once(
     events = _read_jsonl(capsys)
     assert not _events_by_kind(events, "unresolved-record")
     assert [event["session_id"] for event in _events_by_kind(events, "stats-agent-thread")] == [thread_id]
+
+
+def test_stats_reports_breakdown_of_each_agent_thread(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """各agent threadの記録へメイン記録と同じ内訳の集計を適用し、threadの識別子と記録位置を付けて返す。
+
+    内訳が無いと、律速区間となった委譲先の内部の工程を振り返りが追加の照会なしで読めない。
+    委譲先の呼び出しがメイン記録の`stats-tool`の件数へ加わると、メインの工程の所要時間を誤って読む。
+    記録位置は`--detail`へそのまま渡せる`<記録ID>:<行番号>`である必要がある。
+    """
+    threads = delegated_threads.write_delegated_threads(tmp_path)
+    monkeypatch.setenv("HOME", str(threads.home))
+    monkeypatch.setenv("CODEX_HOME", str(threads.codex_home))
+    claude_id = delegated_threads.CLAUDE_THREAD_ID
+    codex_id = delegated_threads.CODEX_THREAD_ID
+
+    assert evidence.main([str(threads.transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys, raw=True)
+
+    assert {event["tool"]: event["count"] for event in _events_by_kind(events, "stats-tool")} == {
+        "Bash": 1,
+        "mcp__agents_server__start": 2,
+    }
+    assert _events_by_kind(events, "stats-critical-path")[0]["segments"] == [
+        {"owner": claude_id, "exclusive_seconds": 175.0},
+        {"owner": codex_id, "exclusive_seconds": 59.0},
+    ]
+    claude_record = f"claude:{claude_id}"
+    codex_record = f"codex:{codex_id}"
+    assert _events_by_kind(events, "stats-thread-tool") == [
+        {"kind": "stats-thread-tool", "tool": "Bash", "count": 2, "total_seconds": 40.0, "thread": claude_id},
+        {"kind": "stats-thread-tool", "tool": "Read", "count": 1, "total_seconds": 1.0, "thread": claude_id},
+        {"kind": "stats-thread-tool", "tool": "exec_command", "count": 1, "total_seconds": 20.0, "thread": codex_id},
+    ]
+    assert _events_by_kind(events, "stats-thread-gap") == [
+        {
+            "kind": "stats-thread-gap",
+            "seconds": 80.0,
+            "thread": claude_id,
+            "before": f"{claude_record}:3",
+            "after": f"{claude_record}:4",
+        }
+    ]
+    assert _events_by_kind(events, "stats-thread-repeat") == [
+        {
+            "kind": "stats-thread-repeat",
+            "tool": "Bash",
+            "hint": "pytest",
+            "count": 2,
+            "thread": claude_id,
+            "locations": [f"{claude_record}:2", f"{claude_record}:4"],
+        }
+    ]
+    assert [
+        (event["thread"], event["tool"], event["seconds"], event["location"], event["hint"])
+        for event in _events_by_kind(events, "stats-thread-slow-call")
+    ] == [
+        (claude_id, "Bash", 30.0, f"{claude_record}:2", "pytest"),
+        (claude_id, "Bash", 10.0, f"{claude_record}:4", "pytest"),
+        (claude_id, "Read", 1.0, f"{claude_record}:6", "/repo/a.md"),
+        (codex_id, "exec_command", 20.0, f"{codex_record}:3", "make build"),
+    ]
+
+    # 記録位置を`--detail`へ渡すと、その呼び出しの記録が返る。
+    assert evidence.main([str(threads.transcript), "--detail", f"{codex_record}:3"]) == 0
+    detail = _read_jsonl(capsys, raw=True)
+    assert [(event["record"], event["line"]) for event in detail] == [(codex_record, 3)]
+    assert "make build" in detail[0]["text"]
 
 
 def test_stats_separates_turn_completion_from_trailing_records(

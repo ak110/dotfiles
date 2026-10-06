@@ -1987,6 +1987,98 @@ def _stats_compaction_events(
     return [*events, total]
 
 
+def _stats_breakdown_events(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
+    """1つの記録の記録間隔、ツール別、反復および遅い呼び出しの集計イベントを返す。
+
+    メイン記録と各agent threadの記録へ同じ集計を適用する。行番号はその記録の行番号である。
+    """
+    events: list[dict[str, Any]] = []
+    timestamped_records = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
+    gaps = sorted(
+        (
+            (after_timestamp - before_timestamp).total_seconds(),
+            before.line,
+            after.line,
+        )
+        for (before, before_timestamp), (after, after_timestamp) in zip(
+            timestamped_records, timestamped_records[1:], strict=False
+        )
+        if (after_timestamp - before_timestamp).total_seconds() >= 60
+    )
+    events.extend(
+        {"kind": "stats-gap", "seconds": round(seconds, 1), "before_line": before, "after_line": after}
+        for seconds, before, after in sorted(gaps, reverse=True)[:10]
+    )
+
+    calls = _stats_call_entries(records, runtime)
+    tool_groups: dict[str, list[dict[str, Any]]] = {}
+    for call in calls:
+        tool_groups.setdefault(call["tool"], []).append(call)
+    events.extend(
+        {
+            "kind": "stats-tool",
+            "tool": tool,
+            "count": len(items),
+            "total_seconds": round(sum(item["seconds"] for item in items), 1),
+        }
+        for tool, items in sorted(tool_groups.items(), key=lambda item: (-sum(call["seconds"] for call in item[1]), item[0]))[
+            :20
+        ]
+    )
+    # 入力ヒントを取れない呼び出しは対象が異なっても同じ組へ集まり、
+    # 反復照会の実態と異なる件数を報告する。集計対象から除く。
+    repeats: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for call in calls:
+        hint_key = call.get("hint_key")
+        if hint_key:
+            repeats.setdefault((call["tool"], hint_key), []).append(call)
+    events.extend(
+        {
+            "kind": "stats-repeat",
+            "tool": tool,
+            "hint": items[0]["hint"],
+            "count": len(items),
+            "lines": [item["line"] for item in items],
+        }
+        for (tool, _), items in sorted(
+            ((key, items) for key, items in repeats.items() if len(items) >= 2),
+            key=lambda item: (-len(item[1]), item[0]),
+        )[:10]
+    )
+    for call in sorted(calls, key=lambda item: (-item["seconds"], item["line"]))[:10]:
+        event = {"kind": "stats-slow-call", "tool": call["tool"], "seconds": round(call["seconds"], 1), "line": call["line"]}
+        if call.get("hint"):
+            event["hint"] = call["hint"]
+        events.append(event)
+    return events
+
+
+def _thread_breakdown_events(thread: _CollectedRecord, runtime: _Runtime) -> list[dict[str, Any]]:
+    """Agent threadの記録へメイン記録と同じ内訳の集計を適用し、threadの識別子と記録位置を付けて返す。
+
+    律速区間となった委譲先の内部の工程を、振り返りが追加の照会なしで読めるようにする。
+    種別はメイン記録の集計と区別するため`stats-thread-`で始め、行番号は`--detail`へそのまま渡せる
+    `<記録ID>:<行番号>`の記録位置へ置き換える。
+    """
+    thread_id = thread.record_id.split(":", 1)[1]
+
+    def locate(line: Any) -> str:
+        return f"{thread.record_id}:{line}"
+
+    events: list[dict[str, Any]] = []
+    for event in _stats_breakdown_events(thread.records, runtime):
+        item = {**event, "kind": "stats-thread-" + event["kind"].removeprefix("stats-"), "thread": thread_id}
+        if "before_line" in item:
+            item["before"] = locate(item.pop("before_line"))
+            item["after"] = locate(item.pop("after_line"))
+        if "line" in item:
+            item["location"] = locate(item.pop("line"))
+        if "lines" in item:
+            item["locations"] = [locate(line) for line in item.pop("lines")]
+        events.append(item)
+    return events
+
+
 def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path) -> list[dict[str, Any]]:
     """セッション全体を対象とした集計イベント列を返す。
 
@@ -2038,65 +2130,7 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
     events = [total_event]
     events.append({"kind": "stats-summary", **summary} if summary else {"kind": "stats-summary", "text": "集計対象なし"})
 
-    timestamped_records = [
-        (record, timestamp) for record in main_records if (timestamp := _record_timestamp(record)) is not None
-    ]
-    gaps = sorted(
-        (
-            (after_timestamp - before_timestamp).total_seconds(),
-            before.line,
-            after.line,
-        )
-        for (before, before_timestamp), (after, after_timestamp) in zip(
-            timestamped_records, timestamped_records[1:], strict=False
-        )
-        if (after_timestamp - before_timestamp).total_seconds() >= 60
-    )
-    events.extend(
-        {"kind": "stats-gap", "seconds": round(seconds, 1), "before_line": before, "after_line": after}
-        for seconds, before, after in sorted(gaps, reverse=True)[:10]
-    )
-
-    calls = _stats_call_entries(main_records, runtime)
-    tool_groups: dict[str, list[dict[str, Any]]] = {}
-    for call in calls:
-        tool_groups.setdefault(call["tool"], []).append(call)
-    events.extend(
-        {
-            "kind": "stats-tool",
-            "tool": tool,
-            "count": len(items),
-            "total_seconds": round(sum(item["seconds"] for item in items), 1),
-        }
-        for tool, items in sorted(tool_groups.items(), key=lambda item: (-sum(call["seconds"] for call in item[1]), item[0]))[
-            :20
-        ]
-    )
-    # 入力ヒントを取れない呼び出しは対象が異なっても同じ組へ集まり、
-    # 反復照会の実態と異なる件数を報告する。集計対象から除く。
-    repeats: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for call in calls:
-        hint_key = call.get("hint_key")
-        if hint_key:
-            repeats.setdefault((call["tool"], hint_key), []).append(call)
-    events.extend(
-        {
-            "kind": "stats-repeat",
-            "tool": tool,
-            "hint": items[0]["hint"],
-            "count": len(items),
-            "lines": [item["line"] for item in items],
-        }
-        for (tool, _), items in sorted(
-            ((key, items) for key, items in repeats.items() if len(items) >= 2),
-            key=lambda item: (-len(item[1]), item[0]),
-        )[:10]
-    )
-    for call in sorted(calls, key=lambda item: (-item["seconds"], item["line"]))[:10]:
-        event = {"kind": "stats-slow-call", "tool": call["tool"], "seconds": round(call["seconds"], 1), "line": call["line"]}
-        if call.get("hint"):
-            event["hint"] = call["hint"]
-        events.append(event)
+    events.extend(_stats_breakdown_events(main_records, runtime))
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
     events.extend(_stats_compaction_events(collected, compaction_record_dir))
 
@@ -2141,6 +2175,7 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
         elif thread.source_line is not None:
             thread_event["line"] = thread.source_line
         events.append(thread_event)
+        events.extend(_thread_breakdown_events(thread, thread_runtime))
     measured_threads = [event for event in events if event.get("kind") == "stats-agent-thread"]
     unmeasured_threads = [event["session_id"] for event in measured_threads if "start" not in event or "end" not in event]
     intervals: list[tuple[datetime.datetime, datetime.datetime, str]] = []
