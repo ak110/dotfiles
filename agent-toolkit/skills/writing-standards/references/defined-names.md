@@ -58,7 +58,8 @@
 | 全体検証 | リポジトリ全体を対象にした自動チェックとテストの実行 | `agent-toolkit/share/workflow-phases.md`の工程表の直後 |
 | 受入シナリオ検証 | 計画の受入シナリオを公開された呼び出し手段から検証する結合・E2Eテストを、変更範囲の検証で実行すること | `agent-toolkit/share/workflow-phases.md` |
 | 公開工程判定 | リポジトリ全体の自動チェックとCIの成功を述べる完成条件を、公開工程で判定すること | `agent-toolkit/share/workflow-phases.md` |
-| 変更範囲の検証 | 変更するファイルとその直接消費側に限った検証 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と終端工程」 |
+| 直接影響範囲 | 変更した定義、文言、パスを参照、呼び出し、生成または期待値として持ち、合わせて直す必要がある箇所の全体 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
+| 変更範囲の検証 | 変更するファイルとその直接影響範囲に限った検証 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と終端工程」 |
 | 統合時の完成条件判定 | 統合指示の前に、完成条件証拠の各行がWIの完成条件と原文要求に過不足なく対応するかを確かめる確認 | `agent-toolkit/share/exec.parent.md`「統合の指示と受領」 |
 | 初回レビュー | 実行レビュー担当が最初に行う実行レビュー | `agent-toolkit/share/exec-review.subagent.md` |
 | 再レビュー | 指摘の修正後に同じ実行レビュー担当が行う実行レビュー | `agent-toolkit/share/exec-review.subagent.md` |
@@ -85,6 +86,8 @@
 | 委譲プロンプト | 委譲先を起動するときに渡す指示の本文 | `agent-toolkit/skills/delegation/references/base-contract.md` |
 | 返却値 | 委譲先が`<役割名>.subagent.md`の`## 出力`に従って返す値 | `agent-toolkit/skills/delegation/references/base-contract.md` |
 | エージェント向け文書 | コーディングエージェントが直接読み込む文書 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
+| 読込表 | スキル本体と`<役割名>.parent.md`・`<役割名>.subagent.md`の冒頭に置き、時点または条件と、その時点で全文読む参照資料を対応付ける表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
+| 配送範囲表 | 常時規範と配送文がどの主体へ届くかを示す表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | 常時規範 | agent-toolkitが読み手へ常に配送する規範（`rules/`配下と`share/rules-main*.md`・`rules-subagent*.md`） | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | プロジェクト規範 | 対象リポジトリが規範として定める指示 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | プロジェクト方針 | プロジェクト規範に加え、規範化されていない記述に書かれた方針 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |

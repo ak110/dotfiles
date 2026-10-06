@@ -89,13 +89,12 @@ description: >
 
 ## エージェント向け文書の編集時に読む資料
 
-エージェント向け文書の編集に着手する前に、次の3段を順に実施する。
+エージェント向け文書の編集に着手する前に、次の2段を順に実施する。
 
-1. `references/llm-characteristics.md`を全文読む。同資料は後続2段の設計入力となる読者特性を扱う。
-2. `references/writing.md`と`references/agent-documents-basics.md`を全文読む。
-3. 後掲の対象別資料のうち、編集対象に該当するものを全文読む。
+1. `references/writing.md`と`references/agent-documents-basics.md`を全文読む。
+2. 後掲の対象別資料のうち、編集対象に該当するものを全文読む。
 
-手順3の対象別資料は次のとおりとする。
+手順2の対象別資料は次のとおりとする。
 
 - スキル編集（公式リファレンスの参照先を含む）: `references/agent-skills.md`
 - サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂: `references/sub-agents.md`

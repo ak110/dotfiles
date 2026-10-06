@@ -291,7 +291,9 @@ Claude Code 2.1.281を`--plugin-dir`で作業ツリーのプラグインから2�
 
 2026年9月16日、参考実利用バージョンの取得元を確認した。`~/glatasks/package.json`は`drizzle-orm`を`^0.45.2`、`drizzle-kit`を`^0.31.10`で指定する。再検証は同ファイルから、この2つの依存の版指定を取得する。いずれかの依存が更新されたときに再検証する。
 
-## agent-toolkit/skills/writing-standards/references/llm-characteristics.md：知識の想起：2026年9月16日
+## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年9月16日
+
+条文は2026年10月6日まで`llm-characteristics.md`「知識の想起」にあり、同ファイルの撤去に伴って`agent-documents-basics.md`「語調と現行規則の表現」の理由へ移った。
 
 2026年9月16日、本リポジトリのHEAD `2ee94027`でコーパス分析とA/B実験を実施した。
 

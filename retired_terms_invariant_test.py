@@ -447,6 +447,7 @@ _RETIRED_TERMS = (
             ("境界標識", "`atk-auto`"),
             ("AWI処理スキル", "`agent-toolkit:process-wi`"),
             ("認識合わせスキル", "`agent-toolkit:user-confirmation-and-report`「認識合わせ」"),
+            ("即時報告", "即時通知（`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」）"),
             ("編集スキル", "スキル名"),
             ("担当スキル", "個別のスキル名"),
             ("外部依存未達", "`dependency-unmet-external`"),
