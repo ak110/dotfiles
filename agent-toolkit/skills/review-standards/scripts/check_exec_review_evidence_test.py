@@ -153,7 +153,7 @@ def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_af
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table)) == 1
     result = capsys.readouterr()
-    assert not result.out and "wi_conditions[1]" in result.err and "現在round" in result.err
+    assert not result.out and "wi_conditions[0]" in result.err and "現在round" in result.err
     review_table.add(table, "2", "exec-review", "保存操作", "保存の証拠を補う", "仕様")
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table)) == 0
@@ -258,7 +258,111 @@ def test_return_result_does_not_use_unreferenced_section_as_permission(
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table, "--input-record", str(record))) == 1
     result = capsys.readouterr()
-    assert not result.out and "wi_conditions[1]" in result.err
+    assert not result.out and "wi_conditions[0]" in result.err
+
+
+def _insufficient_evidence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[pathlib.Path, pathlib.Path]:
+    """証拠不足の行を持つ完成条件証拠と、空のレビュー指摘管理表を用意する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    row = _condition(FIRST_WI, "保存")
+    row.update(outcome="証拠不足", evidence="保存操作の観測をまだ得ていない")
+    _write_evidence(path, [row])
+    review_table.init(table)
+    return path, table
+
+
+@pytest.mark.parametrize(
+    "location",
+    ["{path}", "{path}:3", "`{path}#wi_conditions`", "{parent}/sub/../{name}", "完成条件証拠 {path} の再判定"],
+    ids=["absolute", "line", "heading", "dot-dot", "in-sentence"],
+)
+def test_return_result_rejects_unanswered_issue_targeting_evidence(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], location: str
+) -> None:
+    """現在roundの未応答の指摘が完成条件証拠そのものを指す場合は、未解決の指摘として数えず非0で拒否する。
+
+    受理すると、レビュー担当が自身で記入すべき証拠の未判定を指摘へ置き換えるだけで、非達成行との整合確認を通過する。
+    """
+    path, table = _insufficient_evidence(tmp_path, monkeypatch)
+    review_table.add(
+        table, "2", "exec-review", location.format(path=path, parent=path.parent, name=path.name), "各行を再判定する", "仕様"
+    )
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table)) == 1
+    result = capsys.readouterr()
+    assert not result.out
+    assert "row-id 1" in result.err and str(path) in result.err and "--no-response-reason-file" in result.err
+
+
+@pytest.mark.parametrize(
+    ("location", "round_value", "answered"),
+    [
+        ("agent-toolkit/impl.py:3", "2", False),
+        ("{path}.bak", "2", False),
+        ("{path}", "1", False),
+        ("{path}", "2", True),
+    ],
+    ids=["implementation", "longer-name", "past-round", "answered"],
+)
+def test_return_result_accepts_unanswered_issue_targeting_implementation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    location: str,
+    round_value: str,
+    answered: bool,
+) -> None:
+    """実装成果物を指す未応答指摘、過去round、応答済みの行は従来どおり未解決件数を持つcompletedへ進める。"""
+    path, table = _insufficient_evidence(tmp_path, monkeypatch)
+    review_table.add(table, round_value, "exec-review", location.format(path=path), "保存の観測を補う", "仕様")
+    review_table.add(table, "2", "exec-review", "agent-toolkit/impl.py:9", "再読込の観測を補う", "仕様")
+    if answered:
+        review_table.respond(table, "2", "exec-review", str(path), "", "", "根拠の所在: 完成条件証拠へ記入済み")
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table)) == 0, capsys.readouterr().err
+    unresolved = 1 + (round_value == "2" and not answered)
+    assert f"未解決の指摘数: {unresolved}\n" in capsys.readouterr().out
+
+
+_DIAGNOSTIC_ROW = re.compile(r"^失敗: (\S+): (wi_conditions|user_requirements)\[(\d+)\]", re.MULTILINE)
+
+
+@pytest.mark.parametrize("kind", ["structure", "reviewed-head", "reference", "return-mismatch"])
+def test_diagnostic_indexes_select_the_reported_row(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    """診断の`<配列>[N]`で`完成条件証拠`から取り出した行の`awi`が、診断の先頭のWI名（空の`awi`では計画由来）と一致する。
+
+    番号が添字とずれると、読み手が`jq '.<配列>[N]'`で別のWIの行を直し、指摘された行が残る。
+    """
+    _mock_wi(
+        monkeypatch,
+        tmp_path,
+        {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n", SECOND_WI: "type: awi\n---\n## 完成条件\n- 再読込\n"},
+    )
+    conditions = [_condition(FIRST_WI, "保存"), _condition(SECOND_WI, "再読込")]
+    requirements = [_requirement(FIRST_WI, "保存して"), _requirement("", "計画だけの要求")]
+    section, index, field, value = {
+        "structure": ("wi_conditions", 1, "evidence", 1),
+        "reviewed-head": ("user_requirements", 1, "reviewed_head", ""),
+        "reference": ("wi_conditions", 1, "evidence", "docs/absent.md:1 の保存を確認"),
+        "return-mismatch": ("user_requirements", 1, "outcome", "証拠不足"),
+    }[kind]
+    target: dict[str, typing.Any] = (conditions if section == "wi_conditions" else requirements)[index]
+    target[field] = value
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    _write_evidence(path, conditions, requirements)
+    review_table.init(table)
+    args = _return_args(path, table)
+    args.script_args.insert(2, SECOND_WI)
+    capsys.readouterr()
+    assert run_script.dispatch(args) == 1
+    data = json.loads(path.read_text(encoding="utf-8"))
+    reported = list(_DIAGNOSTIC_ROW.finditer(capsys.readouterr().err))
+    assert {(found[2], int(found[3])) for found in reported} == {(section, index)}
+    for found in reported:
+        assert (data[found[2]][int(found[3])]["awi"] or "計画由来") == found[1]
 
 
 def test_plan_only_template_and_return_keep_existing_rows(
@@ -321,8 +425,8 @@ def test_public_command_rejects_shared_evidence_without_reference(
     )
     assert run_script.dispatch(args) == 1
     diagnostic = capsys.readouterr().err
-    assert "wi_conditions[1].evidence" in diagnostic
-    assert ("wi_conditions[2]" if layout in {"same-wi", "cross-wi"} else "user_requirements[1]") in diagnostic
+    assert "wi_conditions[0].evidence" in diagnostic
+    assert ("wi_conditions[1]" if layout in {"same-wi", "cross-wi"} else "user_requirements[0]") in diagnostic
     assert ("計画由来" if layout == "plan" else second["awi"]) in diagnostic
     assert evidence_text.strip() in diagnostic and "証拠不足へ再判定" in diagnostic
 
@@ -392,7 +496,7 @@ def test_public_command_rejects_shared_reference_without_explanation(
     )
     assert run_script.dispatch(args) == 1
     error = capsys.readouterr().err
-    assert "wi_conditions[1].evidence" in error and "wi_conditions[2].evidence" in error
+    assert "wi_conditions[0].evidence" in error and "wi_conditions[1].evidence" in error
     assert "行ごとの説明が無いファイル参照だけ" in error
 
 
@@ -496,7 +600,7 @@ def test_public_command_rejects_explained_reference_shared_across_wi_requirement
     assert run_script.dispatch(args) == 1
     error = capsys.readouterr().err
     assert error.count("異なるWIの異なる要求単位で同じ達成根拠を共用しています") == 5
-    assert f"{THIRD_WI}: user_requirements[5].evidence" in error
+    assert f"{THIRD_WI}: user_requirements[4].evidence" in error
 
 
 @pytest.mark.parametrize(
@@ -572,8 +676,8 @@ def test_public_command_rejects_shared_observation_across_wi_regardless_of_row_m
     path = _marked_rows(tmp_path, monkeypatch, section, other_wi, marker)
     assert _check(path, FIRST_WI) == 1
     diagnostic = capsys.readouterr().err
-    assert "wi_conditions[1].evidence" in diagnostic
-    assert f"{section}[{2 if section == 'wi_conditions' else 1}].evidence" in diagnostic
+    assert "wi_conditions[0].evidence" in diagnostic
+    assert f"{section}[{1 if section == 'wi_conditions' else 0}].evidence" in diagnostic
     assert "異なるWIの異なる要求単位で同じ達成根拠を共用しています" in diagnostic and "証拠不足へ再判定" in diagnostic
 
 
@@ -589,6 +693,108 @@ def test_public_command_accepts_same_wi_shared_observation_with_or_without_row_m
     """
     path = _marked_rows(tmp_path, monkeypatch, section, FIRST_WI, marker)
     assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
+
+
+_NINE_WI = [f"20260928-192559-{number:03d}.md" for number in range(1, 10)]
+# 共通の参照と説明へ行自身の条件文・要求原文を付け足す形。ラベル、括弧、区切りの違いを含む。
+_RESTATEMENTS = ["確認対象: {text}", "確認対象：「{text}」", "（{text}）", "| 対象 [{text}]", "、{text}"]
+
+
+@pytest.mark.parametrize("restatement", _RESTATEMENTS)
+def test_restated_conditions_do_not_make_shared_evidence_distinct(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], restatement: str
+) -> None:
+    """9件のWIの異なる完成条件と計画だけの要求へ、同じ参照と説明に各行の原文だけを付け足した根拠を拒否する。
+
+    受理すると、各行を判定せずに共通の参照を全行へ写した証拠が、行ごとの観測を持つ根拠として統合へ渡る。
+    """
+    record = tmp_path / "verification.md"
+    record.write_text("# 受入シナリオ\n全シナリオが成功した。\n", encoding="utf-8")
+    conditions = [f"{awi}の条件を満たす" for awi in _NINE_WI]
+    _mock_wi(
+        monkeypatch,
+        tmp_path,
+        {awi: f"type: awi\n---\n## 完成条件\n- {text}\n" for awi, text in zip(_NINE_WI, conditions, strict=True)},
+    )
+    shared = f"{record}#受入シナリオ で全シナリオの成功を確認した。"
+    rows = [
+        {**_condition(awi, text), "evidence": shared + restatement.format(text=text)}
+        for awi, text in zip(_NINE_WI, conditions, strict=True)
+    ]
+    plan_row = {**_requirement("", "計画だけの要求。"), "evidence": shared + restatement.format(text="計画だけの要求")}
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows, [plan_row])
+    assert _check(path, *_NINE_WI) == 1
+    error = capsys.readouterr().err
+    reported = {
+        (found[1], found[2], int(found[3])) for found in re.finditer(r"失敗: (\S+): (\w+)\[(\d+)\]\.evidence: 異なるWI", error)
+    }
+    expected = {(awi, "wi_conditions", index) for index, awi in enumerate(_NINE_WI)} | {("計画由来", "user_requirements", 0)}
+    assert reported == expected
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "texts", "awis"),
+    [
+        # 異なる行範囲、入力値、観測内容は、条件文を付け足していても行固有の観測として残る。
+        ("{record}:1 で保存を観測。確認対象: {text}", "{record}:2 で保存を観測。確認対象: {text}", ("保存", "再読込"), "cross"),
+        (
+            "入力値1で{record}#観測 を確認。確認対象: {text}",
+            "入力値2で{record}#観測 を確認。確認対象: {text}",
+            ("保存", "再読込"),
+            "cross",
+        ),
+        ("{record}#観測 で保存が成功（{text}）", "{record}#観測 で再読込後に保持（{text}）", ("保存", "再読込"), "cross"),
+        # 具体的なテスト名と成功結果は、異なるWIの要求へ共用できる。
+        (
+            "test_save_and_reload: 成功。確認対象: {text}",
+            "test_save_and_reload: 成功。確認対象: {text}",
+            ("保存", "再読込"),
+            "cross",
+        ),
+        # 同じ原文を持つ兄弟WIは、同じ根拠を共用できる。
+        (
+            "{record}#観測 で移行を確認。確認対象: {text}",
+            "{record}#観測 で移行を確認。確認対象: {text}",
+            ("移行", "移行"),
+            "cross",
+        ),
+        # 同じWIの中の説明付きの同一ファイル根拠は、条件文を付け足しても共用できる。
+        (
+            "{record}#観測 で保存と再読込を観測。確認対象: {text}",
+            "{record}#観測 で保存と再読込を観測。確認対象: {text}",
+            ("保存", "再読込"),
+            "same",
+        ),
+        # 文の一部として原文を含む語は観測内容として残る。
+        ("{record}#観測 で{text}が成功", "{record}#観測 で{text}が成功", ("保存", "再読込"), "cross"),
+    ],
+    ids=["line-range", "input-value", "observation", "test-result", "sibling", "same-wi", "embedded"],
+)
+def test_restated_condition_rule_keeps_legitimate_shared_evidence(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    first: str,
+    second: str,
+    texts: tuple[str, str],
+    awis: str,
+) -> None:
+    """条件文の再掲を除いても、行固有の観測、テスト結果、兄弟WI、同じWI内の説明付き共用は受理する。"""
+    record = tmp_path / "観測.md"
+    record.write_text("# 観測\n保存と再読込。\n", encoding="utf-8")
+    owners = (FIRST_WI, FIRST_WI if awis == "same" else SECOND_WI)
+    bodies: dict[str, str] = {}
+    for awi, text in zip(owners, texts, strict=True):
+        bodies[awi] = bodies.get(awi, "type: awi\n---\n## 完成条件\n") + f"- {text}\n"
+    _mock_wi(monkeypatch, tmp_path, bodies)
+    rows = [
+        {**_condition(awi, text), "evidence": template.format(record=record, text=text)}
+        for awi, text, template in zip(owners, texts, (first, second), strict=True)
+    ]
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
+    assert _check(path, *dict.fromkeys(owners)) == 0, capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -867,7 +1073,7 @@ def test_split_awi_accepts_unassigned_requirement_but_not_unassigned_condition(
     )
     assert run_script.dispatch(args) == 1
     stderr = capsys.readouterr().err
-    assert "wi_conditions[1].outcome: 未知の判定です: 割当外（受理する値: " in stderr
+    assert "wi_conditions[0].outcome: 未知の判定です: 割当外（受理する値: " in stderr
     assert "\n次の操作: " in stderr
 
 
@@ -952,8 +1158,8 @@ def test_unassigned_requirement_without_matching_record_is_rejected(
     )
     assert run_script.dispatch(args) == 1
     error = capsys.readouterr().err
-    line = next(line for line in error.splitlines() if "user_requirements[2]" in line)
-    assert line.startswith(f"失敗: {FIRST_WI}: user_requirements[2].") and diagnostic in line
+    line = next(line for line in error.splitlines() if "user_requirements[1]" in line)
+    assert line.startswith(f"失敗: {FIRST_WI}: user_requirements[1].") and diagnostic in line
     assert "sourceへ書く" in line or "evidenceへ" in line
     if diagnostic == "割当を示す行にありません":
         # 拒否された担当が記録をどの形へ直せば受理されるかを判断できるよう、受理される2つの形を示す。
@@ -1036,7 +1242,7 @@ def test_expired_requirement_also_checks_user_answer_source(
         script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
     )
     assert run_script.dispatch(args) == 1
-    assert f"失敗: {FIRST_WI}: user_requirements[2].source: 失効のユーザー判断を確認できません" in capsys.readouterr().err
+    assert f"失敗: {FIRST_WI}: user_requirements[1].source: 失効のユーザー判断を確認できません" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("awi", [FIRST_WI, SECOND_WI])
@@ -1074,7 +1280,7 @@ def test_expired_condition_checks_user_answer_source(
     assert run_script.dispatch(args) == (0 if valid else 1)
     error = capsys.readouterr().err
     if not valid:
-        assert awi in error and "wi_conditions[1].source" in error and "ユーザー" in error
+        assert awi in error and "wi_conditions[0].source" in error and "ユーザー" in error
 
 
 @pytest.mark.parametrize("comment", ["条件を外す。", "<!-- コメント案内 -->"])
@@ -1172,7 +1378,7 @@ def test_expired_condition_accepts_located_user_utterance(
     assert run_script.dispatch(args) == (0 if diagnostic is None else 1)
     error = capsys.readouterr().err
     if diagnostic is not None:
-        assert "wi_conditions[1].source: 失効のユーザー判断を確認できません" in error
+        assert "wi_conditions[0].source: 失効のユーザー判断を確認できません" in error
         assert diagnostic in error and "`<record>:<line>`" in error
 
 
@@ -1298,7 +1504,7 @@ def test_rejects_missing_required_wi_content(
     [
         ("{", "`完成条件証拠`を読めません"),
         ('{"wi_conditions": {}, "user_requirements": []}', "wi_conditions: 配列が必要"),
-        ('{"wi_conditions": [{"awi": 1}], "user_requirements": []}', "wi_conditions[1].awi: 文字列が必要"),
+        ('{"wi_conditions": [{"awi": 1}], "user_requirements": []}', "wi_conditions[0].awi: 文字列が必要"),
         (
             json.dumps(
                 {"wi_conditions": [{**_condition(FIRST_WI, "完成条件"), "outcome": "保留"}], "user_requirements": []},
@@ -1306,7 +1512,7 @@ def test_rejects_missing_required_wi_content(
             ),
             "未知の判定",
         ),
-        ('{"wi_conditions": [], "user_requirements": [{}]}', "user_requirements[1].requirement: 文字列が必要"),
+        ('{"wi_conditions": [], "user_requirements": [{}]}', "user_requirements[0].requirement: 文字列が必要"),
     ],
 )
 def test_rejects_invalid_json_schema_and_outcome(
@@ -1689,7 +1895,7 @@ def test_public_command_resolves_evidence_references(
     assert run_script.dispatch(args) == expected
     error = capsys.readouterr().err
     if expected:
-        assert "wi_conditions[1].evidence" in error
+        assert "wi_conditions[0].evidence" in error
         assert "参照『" in error and "証拠不足へ再判定" in error
         if reference.startswith("原因をdocs/"):
             assert "参照『docs/" in error
@@ -1761,7 +1967,7 @@ def test_plain_reference_ends_by_one_rule_regardless_of_prefix_and_existence(
         script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
     )
     expected: dict[int, set[str]] = {}
-    for index, (location, suffix) in enumerate(cases, start=1):
+    for index, (location, suffix) in enumerate(cases):
         rejected = set()
         if not (_ATTACHED_PATHS[path] and _ATTACHED_LOCATIONS[location]):
             rejected.add(f"{path}{location}")
@@ -1849,6 +2055,98 @@ def test_nonachieved_missing_reference_is_a_valid_reason(
         script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
     )
     assert run_script.dispatch(args) == 0
+
+
+def _commit_files(repository: pathlib.Path, files: dict[str, str]) -> str:
+    """テスト用リポジトリへファイルを追加してcommitし、そのHEADを返す。"""
+    for name, text in files.items():
+        (repository / name).parent.mkdir(parents=True, exist_ok=True)
+        (repository / name).write_text(text, encoding="utf-8")
+    for command in (
+        ["add", "--", *files],
+        ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "参照先"],
+    ):
+        subprocess.run(["git", "-C", str(repository), *command], capture_output=True, check=True, timeout=30)
+    return subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=30,
+    ).stdout.strip()
+
+
+def _check_reference(evidence: pathlib.Path, head: str, reference: str) -> int:
+    """1行の達成根拠へ参照を書き、公開コマンドで確かめた終了コードを返す。"""
+    _write_evidence(evidence, [{**_condition(FIRST_WI, "完成"), "reviewed_head": head, "evidence": reference}])
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
+    )
+    return run_script.dispatch(args)
+
+
+_SUFFIX_FILES = {
+    "agent-toolkit/agent_toolkit/_atk/run_command_test.py": "def test_timeout():\n    pass\n",
+    "docs/guide/手順.md": "# 手順\n本文。\n",
+}
+
+
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        ("run_command_test.py::test_timeout で成功を確認", 0),
+        ("run_command_test.py:2 で本体を確認", 0),
+        ("agent_toolkit/_atk/run_command_test.py:1 で定義を確認", 0),
+        ("`guide/手順.md#手順`で本文を確認", 0),
+        ("run_command_test.py:99 で確認", 1),
+        ("`guide/手順.md#無い節`で確認", 1),
+    ],
+)
+def test_reference_resolved_by_unique_path_suffix_is_accepted(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    reference: str,
+    expected: int,
+) -> None:
+    """ファイル名だけ、テスト識別子付き、サブプロジェクト起点の参照は、対象commitで1件に決まれば受理する。
+
+    行位置と見出しの誤りは、解決したファイルの内容で従来どおり報告する。
+    """
+    repository, _, evidence = reference_repository
+    head = _commit_files(repository, _SUFFIX_FILES)
+    assert _check_reference(evidence, head, reference) == expected
+    error = capsys.readouterr().err
+    assert ("行範囲" in error or "見出し" in error) if expected else not error
+
+
+@pytest.mark.parametrize(
+    ("reference", "candidates"),
+    [
+        ("SKILL.md:1 で確認", ["skills/first/SKILL.md", "skills/second/SKILL.md"]),
+        ("UCR/SKILL.md:1 で確認", []),
+    ],
+    ids=["ambiguous", "abbreviation"],
+)
+def test_unresolved_reference_reports_root_and_candidates(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    reference: str,
+    candidates: list[str],
+) -> None:
+    """1件に決まらない参照は、解決の基準、候補、直す欄を示して拒否し、候補の1件へ直した根拠は受理する。
+
+    基準と候補が無いと、担当はどのパスへ直せば通るかを判断できず、`condition`の原文まで書き換えて往復する。
+    """
+    repository, _, evidence = reference_repository
+    head = _commit_files(repository, {"skills/first/SKILL.md": "# 第一\n", "skills/second/SKILL.md": "# 第二\n"})
+    assert _check_reference(evidence, head, reference) == 1
+    error = capsys.readouterr().err
+    assert str(repository) in error and "`evidence`" in error and "`condition`" in error
+    assert all(candidate in error for candidate in candidates)
+    if not candidates:
+        assert "略記" in error
+    assert _check_reference(evidence, head, "skills/first/SKILL.md:1 で確認") == 0, capsys.readouterr().err
 
 
 def test_public_command_runs_platform_launcher(
@@ -2201,7 +2499,7 @@ def test_background_rows_from_template_are_accepted_while_request_stays_judged(
     rows[2].update(outcome="証拠不足", evidence="自動再試行の観測をまだ得ていない")
     _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], rows)
     assert run_script.dispatch(_return_args(path, table)) == 1
-    assert "user_requirements[3]" in capsys.readouterr().err
+    assert "user_requirements[2]" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -2255,8 +2553,8 @@ def test_background_without_record_range_or_reason_is_rejected(
         rows[2] = _requirement(FIRST_WI, _OBSERVATION)
     _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], rows)
     assert _check(path, FIRST_WI) == 1
-    line = next(line for line in capsys.readouterr().err.splitlines() if "user_requirements[1]" in line)
-    assert line.startswith(f"失敗: {FIRST_WI}: user_requirements[1].") and diagnostic in line
+    line = next(line for line in capsys.readouterr().err.splitlines() if "user_requirements[0]" in line)
+    assert line.startswith(f"失敗: {FIRST_WI}: user_requirements[0].") and diagnostic in line
 
 
 def test_background_condition_is_rejected(
@@ -2268,7 +2566,7 @@ def test_background_condition_is_rejected(
     condition = {**_condition(FIRST_WI, "過負荷の後に同じsessionで続く"), "outcome": "背景"}
     _write_evidence(path, [condition], _background_rows(f"{FIRST_WI} ## 反映内容と反映先"))
     assert _check(path, FIRST_WI) == 1
-    assert "wi_conditions[1].outcome: 未知の判定です: 背景（受理する値: " in capsys.readouterr().err
+    assert "wi_conditions[0].outcome: 未知の判定です: 背景（受理する値: " in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("separator", [" ", ""], ids=["spaced", "compact"])
@@ -2320,7 +2618,7 @@ def test_background_quote_position_resolves_original_scope(
     assert _check(path, FIRST_WI) == (0 if bad_reference is None else 1)
     diagnostic = capsys.readouterr().err
     if bad_reference:
-        assert "user_requirements[1]" in diagnostic
+        assert "user_requirements[0]" in diagnostic
     else:
         assert not diagnostic
 
@@ -2338,7 +2636,7 @@ def test_quote_position_does_not_cover_identical_text_in_other_block(
     path = tmp_path / "evidence.json"
     _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], rows)
     assert _check(path, FIRST_WI) == 1
-    assert "user_requirements[1]" in capsys.readouterr().err
+    assert "user_requirements[0]" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("route", ["plan", "review-table"])

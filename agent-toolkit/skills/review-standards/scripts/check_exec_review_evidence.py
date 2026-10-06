@@ -76,6 +76,17 @@ PLAIN_REFERENCE = re.compile(
     r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_./\\-])"
     r"(?::[!-~]+|#[^\s`\[\]（）「」、。]+)?)"
 )
+# 共用の比較で除く条件文・要求原文の再掲の境界。区切りは語の境界とし、ファイル名の`.`と`/`は含めない。
+# ラベルはコロンで終わる短い語（`確認対象: `など）とし、パスを飲み込まないよう`/`と区切りを含めない。
+RESTATEMENT_SEPARATORS = r"\s、。，,;；|・"
+RESTATEMENT_OPENING = "「『（(［[【<"
+RESTATEMENT_CLOSING = "」』）)］]】>"
+RESTATEMENT_LABEL = r"[^\s、。，,;；|・:：/\\「」『』（）()［］\[\]【】<>]{1,20}[:：]\s*"
+# レビュー指摘の`location`からパスを切り出す始点の直前の区切りと、ファイル名の後に続くと別名の一部になる文字。
+PATH_BOUNDARY = re.compile(r"[\s`'\"「」『』()（）<>\[\]]")
+PATH_CONTINUATION = re.compile(r"[\w-]|\.\w")
+# パス末尾の一致が2件以上の参照の診断へ並べる候補の上限。超えた件数は残りの数だけを示す。
+REFERENCE_CANDIDATE_LIMIT = 10
 # ファイル参照を除いた残りがこれらの区切りと接続語だけなら、行ごとの説明を持たない参照だけの根拠とみなす。
 REFERENCE_SEPARATORS = re.compile(r"[\s、。，,.;；:：・()（）「」\[\]<>`]+|および|及び|と|や")
 # 参照の直前に置いたコロン付きの見出し語（`検証: <パス>`など）は所在の標識であり、行ごとの説明に数えない。
@@ -362,6 +373,17 @@ def _expected_rows(output: str, filename: str) -> tuple[list[str], list[tuple[st
     return [], requirements
 
 
+def _row_label(row: object, section: str, index: int) -> str:
+    """診断の先頭に置く行の見出しを、対象WI名（空の`awi`では`計画由来`）と`<配列>[<添字>]`で組み立てる。
+
+    `index`は`完成条件証拠`の配列の0始まりの添字とし、読み手が`jq '.<配列>[<添字>]'`で同じ行を取り出せるようにする。
+    `awi`が文字列でない行（構造の不備）はWI名を付けない。
+    """
+    awi = row.get("awi") if isinstance(row, dict) else None
+    position = f"{section}[{index}]"
+    return f"{awi or '計画由来'}: {position}" if isinstance(awi, str) else position
+
+
 def _validate_structure(data: object) -> tuple[dict[str, typing.Any], list[str]]:
     """最上位、配列、行と必須項目の型を確かめる。判定値の内容は問わない。"""
     errors: list[str] = []
@@ -372,13 +394,12 @@ def _validate_structure(data: object) -> tuple[dict[str, typing.Any], list[str]]
         if not isinstance(rows, list):
             errors.append(f"{section}: 配列が必要です")
             continue
-        for index, row in enumerate(rows, start=1):
+        for index, row in enumerate(rows):
+            label = _row_label(row, section, index)
             if not isinstance(row, dict):
-                errors.append(f"{section}[{index}]: オブジェクトが必要です")
+                errors.append(f"{label}: オブジェクトが必要です")
                 continue
-            errors.extend(
-                f"{section}[{index}].{field}: 文字列が必要です" for field in fields if not isinstance(row.get(field), str)
-            )
+            errors.extend(f"{label}.{field}: 文字列が必要です" for field in fields if not isinstance(row.get(field), str))
     return data, errors
 
 
@@ -388,17 +409,17 @@ def _validate_schema(data: object) -> tuple[dict[str, typing.Any], list[str]]:
         return payload, errors
     for section in REQUIRED_FIELDS:
         accepted = "、".join(sorted(SECTION_OUTCOMES[section]))
-        for index, row in enumerate(payload[section], start=1):
+        for index, row in enumerate(payload[section]):
+            label = _row_label(row, section, index)
             outcome = row["outcome"]
             if not outcome.strip():
                 # 雛形の判定欄を埋めずに返した行を、未知の値ではなく未記入として示す。
-                errors.append(f"{section}[{index}].outcome: 判定が未記入です。その行を判定して{accepted}のいずれかを記入する")
+                errors.append(f"{label}.outcome: 判定が未記入です。その行を判定して{accepted}のいずれかを記入する")
             elif outcome not in SECTION_OUTCOMES[section]:
-                errors.append(f"{section}[{index}].outcome: 未知の判定です: {outcome}（受理する値: {accepted}）")
+                errors.append(f"{label}.outcome: 未知の判定です: {outcome}（受理する値: {accepted}）")
             if not row["evidence"].strip():
                 errors.append(
-                    f"{section}[{index}].evidence: 根拠が未記入です。"
-                    "その行を直接満たす根拠か、達成以外の判定とした理由を記入する"
+                    f"{label}.evidence: 根拠が未記入です。その行を直接満たす根拠か、達成以外の判定とした理由を記入する"
                 )
     return payload, errors
 
@@ -429,7 +450,7 @@ def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, 
     for section in REQUIRED_FIELDS:
         rows = payload[section]
         assert isinstance(rows, list)
-        for index, row in enumerate(rows, start=1):
+        for index, row in enumerate(rows):
             actual = row.get("reviewed_head")
             reason = "判定対象が未記入です"
             if isinstance(actual, str) and actual.strip():
@@ -440,7 +461,7 @@ def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, 
                 except ValueError as error:
                     reason = str(error)
             errors.append(
-                f"{row['awi'] or '計画由来'}: {section}[{index}].reviewed_head: {reason}"
+                f"{_row_label(row, section, index)}.reviewed_head: {reason}"
                 f"（期待: {expected}、実際: {actual!r}）。"
                 "その行の要求・判定・根拠を期待HEADで再判定してからreviewed_headを記録する"
             )
@@ -587,16 +608,88 @@ def _reference_location_error(content: bytes, location: str, headings: set[str])
     return None
 
 
+def _tracked_files(repository: pathlib.Path, head: str) -> list[str]:
+    """対象commitの追跡ファイルを、worktreeのルートからの相対パスで返す。"""
+    result = subprocess.run(
+        ["git", "-C", str(repository), "ls-tree", "-r", "-z", "--name-only", head],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"対象commit {head}の追跡ファイルを列挙できません: {result.stderr.strip()}")
+    return [name for name in result.stdout.split("\0") if name.strip()]
+
+
+def _suffix_matches(candidate: str, tracked: list[str]) -> list[str]:
+    """参照のパスと、パス要素の単位で末尾が一致する追跡ファイルを返す。
+
+    pytestのノードID、サブプロジェクトの作業ディレクトリからのパス、ファイル名だけの参照など、
+    worktreeのルート以外を起点に書いた参照を解決するためである。`..`を含む参照は起点を推定できないため扱わない。
+    """
+    suffix = candidate.replace("\\", "/").removeprefix("./")
+    if not suffix or suffix.startswith("/") or ".." in suffix.split("/"):
+        return []
+    return [name for name in tracked if name == suffix or name.endswith(f"/{suffix}")]
+
+
+def _unresolved_reference(repository: pathlib.Path, head: str, candidates: list[str]) -> str:
+    """ルートから解決できず、パス末尾でも1件に決まらない参照の理由と次の操作を、解決の基準・候補・直す欄で組み立てる。"""
+    basis = f"worktreeのルート{repository}からの相対パスとして読みましたが、対象commit {head}にありません"
+    keep = "直すのはその行の`evidence`だけとし、`condition`と`requirement`はWI原文のまま保つ"
+    if not candidates:
+        return (
+            f"{basis}。パス末尾が一致する追跡ファイルもなく、略記など別の名前の短縮をファイル参照として書いた可能性があります。"
+            f"実際に読んだファイルの完全なパス（ルートからの相対パスか絶対パス）へ書き換えるか、観測が不足する行を証拠不足へ再判定する。{keep}"
+        )
+    shown = "、".join(candidates[:REFERENCE_CANDIDATE_LIMIT])
+    rest = len(candidates) - REFERENCE_CANDIDATE_LIMIT
+    more = f"ほか{rest}件" if rest > 0 else ""
+    return (
+        f"{basis}。パス末尾が一致する追跡ファイルが{len(candidates)}件あり、1件に決まりません（候補: {shown}{more}）。"
+        f"候補のうち実際に読んだファイルをルートからの相対パスか絶対パスで書くか、観測が不足する行を証拠不足へ再判定する。{keep}"
+    )
+
+
+def _repository_reference(
+    candidate: str, path: pathlib.Path, repository: pathlib.Path, head: str, tracked: list[str]
+) -> bytes | str:
+    """リポジトリ内の参照の内容を対象commitから読み、読めない場合は次の操作を含む理由を返す。
+
+    ルートから解決できない相対参照は、追跡ファイルとのパス末尾の一致が1件ならそのファイルを読む。
+    """
+    try:
+        return _reference_content(path, repository, head)
+    except ValueError as error:
+        if pathlib.Path(candidate).is_absolute() or not path.is_relative_to(repository):
+            return f"{error}。実際に読んだ対象版の箇所へ参照を訂正するか、観測が不足する行を証拠不足へ再判定する"
+    if not tracked:
+        tracked.extend(_tracked_files(repository, head))
+    matches = _suffix_matches(candidate, tracked)
+    if len(matches) == 1:
+        return _reference_content(repository / matches[0], repository, head)
+    return _unresolved_reference(repository, head, matches)
+
+
 def _check_reference_locations(payload: dict[str, object], repository: pathlib.Path, expected_head: str) -> list[str]:
-    """両配列の全達成行で、WIまたは明示されたファイルの見出し・行を確認する。"""
+    """両配列の全達成行で、WIまたは明示されたファイルの見出し・行を確認する。
+
+    ルートから解決できないリポジトリ内の相対参照は、対象commitの追跡ファイルのうちパス末尾が一致するものを数え、1件に決まれば
+    そのファイルの見出し・行を確かめる。0件か2件以上なら、解決の基準と候補を診断へ示して拒否する。
+    """
     head = _commit_oid(repository, expected_head)
     contents: dict[pathlib.Path, bytes | str] = {}
     headings: dict[pathlib.Path, set[str]] = {}
+    tracked: list[str] = []
     errors: list[str] = []
+    retry = "実際に読んだ対象版の箇所へ参照を訂正するか、観測が不足する行を証拠不足へ再判定する"
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         rows = payload[section]
         assert isinstance(rows, list)
-        for index, row in enumerate(rows, start=1):
+        for index, row in enumerate(rows):
             if row["outcome"] != "達成":
                 continue
             for match in _file_references(_evidence_body(row, field), repository):
@@ -610,9 +703,9 @@ def _check_reference_locations(payload: dict[str, object], repository: pathlib.P
                             _, wi_body = _wi_body(_show_wi(candidate, repository), candidate)
                             contents[path] = "\n".join(wi_body).encode("utf-8")
                         else:
-                            contents[path] = _reference_content(path, repository, head)
+                            contents[path] = _repository_reference(candidate, path, repository, head, tracked)
                     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-                        contents[path] = str(exc)
+                        contents[path] = f"{exc}。{retry}"
                 content = contents[path]
                 reason: str | None = content if isinstance(content, str) else None
                 if isinstance(content, bytes):
@@ -627,14 +720,12 @@ def _check_reference_locations(payload: dict[str, object], repository: pathlib.P
                             reason = f"WIの節または行を確かめてください: {reason}"
                     except UnicodeError as exc:
                         reason = f"参照先をUTF-8として読めません: {exc}"
+                    if reason is not None:
+                        reason = f"{reason}。{retry}"
                 if reason is not None and is_wi and "WIの節または行" not in reason:
                     reason = f"WI名または節を確かめてください: {reason}"
                 if reason is not None:
-                    errors.append(
-                        f"{row['awi'] or '計画由来'}: {section}[{index}].evidence: "
-                        f"参照『{candidate}{location}』: {reason}。"
-                        "実際に読んだ対象版の箇所へ参照を訂正するか、観測が不足する行を証拠不足へ再判定する"
-                    )
+                    errors.append(f"{_row_label(row, section, index)}.evidence: 参照『{candidate}{location}』: {reason}")
     return errors
 
 
@@ -676,6 +767,31 @@ def _evidence_body(row: dict[str, str], field: str) -> str:
     return evidence.strip()
 
 
+def _shared_body(row: dict[str, str], field: str) -> str:
+    """共用の比較に使う根拠を、`_evidence_body`からその行の条件文・要求原文の再掲も除いて返す。
+
+    再掲は区切りか括弧で前後の語から切り離された原文とし、直前のコロン付きラベル（`確認対象: `など）、
+    囲む括弧と前後の区切りも含めて除く。文の一部として原文を含む語（`保存が成功`、`条件『保存』の観測`）は
+    観測内容として残す。除く語を列挙せず行自身の原文を使うのは、ラベル・括弧・区切りを変えるだけで
+    再掲が行固有の観測として残り、共通の参照を全行へ写した根拠を受理するためである。
+    参照の所在の確認は再掲を含む`_evidence_body`を使い、本関数は共用の比較だけに使う。
+    """
+    evidence = _evidence_body(row, field)
+    text = row[field].strip().rstrip("。．")
+    if not text:
+        return evidence
+    restated = r"\s+".join(re.escape(part) for part in text.split()) + r"\s*[。．]?"
+    separator = rf"[{RESTATEMENT_SEPARATORS}]"
+    opening = f"[{re.escape(RESTATEMENT_OPENING)}]"
+    closing = f"[{re.escape(RESTATEMENT_CLOSING)}]"
+    bracketed = rf"{opening}\s*(?:{RESTATEMENT_LABEL})?{restated}\s*{closing}"
+    pattern = (
+        rf"{separator}*(?:(?:^|(?<={separator}))(?:{RESTATEMENT_LABEL})?(?:{bracketed}|{restated})|{bracketed})"
+        rf"(?={separator}|$){separator}*"
+    )
+    return re.sub(pattern, " ", evidence).strip()
+
+
 def _review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list[str]:
     """明示WIと計画の実施内容がWI由来として挙げる項目を、出現順を保った和集合として返す。"""
     filenames = list(explicit)
@@ -700,7 +816,7 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
     """両配列の全達成行を要求単位で区別し、所在のない共用と、説明のない参照だけの共用を報告する。
 
     同じ検証記録のパスだけを多数の行へ写すと、各行の条件を判定せずに空欄を埋めた証拠と区別できない。
-    共用の比較は、行と一致する識別情報（`_unit_markers`の標識と要件原文の再掲）を除いた根拠で行う。
+    共用の比較は、行と一致する識別情報（`_unit_markers`の標識と、その行の条件文・要求原文の再掲）を除いた根拠で行う（`_shared_body`）。
     同じWIの中では、完全一致の共用と識別情報だけを添えた共用を同じ条件で判定し、説明付きの参照を受理する。
     各行への意味上の適合は実行レビュー担当が判定する。
     異なるWIの原文が異なる行どうしの共用は、識別情報の有無や説明の有無によらず受理しない。同じ1文が別々のWIの
@@ -712,9 +828,9 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         rows = payload[section]
         assert isinstance(rows, list)
-        for index, row in enumerate(rows, start=1):
+        for index, row in enumerate(rows):
             if row["outcome"] == "達成":
-                body = re.sub(r"\s+", " ", _evidence_body(row, field)).strip()
+                body = re.sub(r"\s+", " ", _shared_body(row, field)).strip()
                 groups[body].append((section, index, row["awi"], row[field]))
                 test_results[section, index] = bool(TEST_RESULT.search(body))
     errors: list[str] = []
@@ -740,7 +856,7 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
         else:
             continue
         errors.extend(
-            f"{awi or '計画由来'}: {section}[{index}].evidence: {reason}。条件を観測できていない場合は証拠不足へ再判定する"
+            f"{_row_label({'awi': awi}, section, index)}.evidence: {reason}。条件を観測できていない場合は証拠不足へ再判定する"
             for section, index, awi, _ in rows
         )
     return list(dict.fromkeys(errors))
@@ -790,7 +906,7 @@ def _expired_source_error(
         reasons.extend(event_reasons)
     detail = f"（{'、'.join(reasons)}）" if reasons else ""
     return (
-        f"{row['awi'] or '計画由来'}: {section}[{index}].source: 失効のユーザー判断を確認できません{detail}。"
+        f"{_row_label(row, section, index)}.source: 失効のユーザー判断を確認できません{detail}。"
         "対象AWIの記入済みユーザーコメント、関連する回答済みUWIのファイル名と所在、"
         "または会話中の発話を抽出した`atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと"
         "`<record>:<line>`に、否定した要求単位の「」による逐語を添えて記録する。"
@@ -988,7 +1104,7 @@ def _unassigned_source_error(
     「」で囲んだタイトルとWIファイル名だけの行へは広げない。背景の記録は位置の後に原文の抜粋を「」で添え、
     WIファイル名は依存や担当範囲の言及にも現れるため、語なしで受理すると割当でない行まで根拠になる。
     """
-    label = f"{row['awi'] or '計画由来'}: {section}[{index}]"
+    label = _row_label(row, section, index)
     record, reason = _record_section(row["source"], repository, wi_outputs)
     if record is None:
         return (
@@ -1104,7 +1220,7 @@ def _background_source_error(
     要求を含むかの意味判断は実行レビュー担当と統合時に判定するメインが担い、本関数は「背景」の語だけで免除しない。
     記録の所在と、記録が「」で引用した原文の範囲が行の要求単位を覆うことを機械で確かめる。
     """
-    label = f"{row['awi'] or '計画由来'}: {section}[{index}]"
+    label = _row_label(row, section, index)
     record, reason = _record_section(row["source"], repository, wi_outputs, review_table_allowed=True)
     if record is None:
         return (
@@ -1151,7 +1267,7 @@ def _check_exemptions(payload: dict[str, typing.Any], repository: pathlib.Path, 
     """両配列の全行のうち免除の判定値を持つ行について、登録した検証関数で根拠の記録を確かめる。"""
     errors: list[str] = []
     for section, checks in EXEMPTIONS.items():
-        for index, row in enumerate(payload[section], start=1):
+        for index, row in enumerate(payload[section]):
             check = checks.get(row["outcome"])
             if check is not None and (error := check(row, section, index, repository, wi_outputs)) is not None:
                 errors.append(error)
@@ -1317,6 +1433,57 @@ def _deferred_record(text: str, row: dict[str, str], field: str) -> bool:
     return False
 
 
+def _names_path(text: str, target: pathlib.Path, repository: pathlib.Path) -> bool:
+    """文字列が、`target`と正規化後に同じ実体を指すパスを含むかを返す。
+
+    絶対パス、位置表記（`:12`、`#節`）付きのパス、`..`を含む表記、worktreeのルートからの相対パスを同じ実体として扱う。
+    ファイル名が長い別名の一部である場合（`evidence.json.bak`）は含めない。
+    """
+    resolved = target.resolve()
+    starts = {
+        0,
+        *(match.start() for match in PATH_START.finditer(text)),
+        *(match.end() for match in PATH_BOUNDARY.finditer(text)),
+    }
+    for found in re.finditer(re.escape(target.name), text):
+        if PATH_CONTINUATION.match(text, found.end()):
+            continue
+        for start in sorted(position for position in starts if position <= found.start()):
+            candidate = pathlib.Path(text[start : found.end()])
+            path = candidate if candidate.is_absolute() else repository / candidate
+            try:
+                if pathlib.Path(os.path.abspath(path)).resolve() == resolved:
+                    return True
+            except (OSError, ValueError):
+                continue
+    return False
+
+
+def _circular_issue_errors(
+    table_path: pathlib.Path, round_value: int, evidence_path: pathlib.Path, repository: pathlib.Path
+) -> list[str]:
+    """現在roundの未応答のexec-review指摘のうち、今回確かめる完成条件証拠そのものを`location`にした行を報告する。
+
+    完成条件証拠の判定と根拠は実行レビュー担当が記入する出力であり、実装担当が直す対象ではない。
+    この行を未解決の指摘として数えると、証拠の非達成行と未解決0件の整合確認を、担当自身の未完了を
+    指摘へ置き換えるだけで通過できるため拒否する。指摘本文の語句ではなく`location`の構造で判定する。
+    """
+    errors: list[str] = []
+    for row_id, row in enumerate(review_table.read_rows(table_path), start=1):
+        if row[0].strip() != str(round_value) or row[1] != "exec-review" or row[5].strip() or row[6].strip():
+            continue
+        if not _names_path(row[2], evidence_path, repository):
+            continue
+        errors.append(
+            f"レビュー指摘管理表のround {round_value}の未応答の指摘（`atk review-table show`のrow-id {row_id}）が、"
+            f"今回確かめた完成条件証拠{evidence_path}を`location`にしています。完成条件証拠の判定と根拠は実行レビュー担当が"
+            "記入するため、この行を実装担当が直す未解決の指摘として数えない。実行レビュー担当が証拠の各行を判定して記入し、"
+            f"この行には`atk review-table respond`の`--row-id {row_id}`と`--no-response-reason-file`で証拠へ記入したことを"
+            "記録してから、同じコマンドを再実行する。実装成果物の欠陥を指摘する場合は、その成果物の箇所を`location`にした行を登録する"
+        )
+    return errors
+
+
 def check_return_result(
     evidence_path: pathlib.Path | None,
     filenames: list[str],
@@ -1330,6 +1497,7 @@ def check_return_result(
 
     指摘がある正常なレビューはcompletedとして渡せる。指摘0件の返却が達成必須の
     非達成行を隠す場合は後続の収束判断が成立しないためerrorとする。
+    完成条件証拠そのものを`location`にした未応答の指摘（`_circular_issue_errors`）もerrorとする。
     """
     try:
         repository = _repository_root()
@@ -1338,18 +1506,19 @@ def check_return_result(
             raise ValueError("レビュー指摘管理表には絶対パスを指定する")
         unanswered = int(review_table.summary(table_path, round_value)["unanswered_count"])
         records = _input_records(input_paths, repository, head)
+        circular = [] if evidence_path is None else _circular_issue_errors(table_path, round_value, evidence_path, repository)
     except (OSError, UnicodeError, subprocess.TimeoutExpired, ValueError) as error:
         return [str(error)], 0
     if evidence_path is None:
         if filenames:
             return ["対象WIがあるレビューには完成条件証拠を作成する。--templateで生成して各行を記入する"], unanswered
         return [], unanswered
-    errors = check_evidence(evidence_path, filenames, expected_head=head)
+    errors = [*check_evidence(evidence_path, filenames, expected_head=head), *circular]
     if errors or unanswered:
         return errors, unanswered
     payload = json.loads(evidence_path.read_text(encoding="utf-8"))
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
-        for index, row in enumerate(payload[section], start=1):
+        for index, row in enumerate(payload[section]):
             if row["outcome"] == "達成" or row["outcome"] in EXEMPTIONS[section]:
                 continue
             if section == "wi_conditions" and row["outcome"] == "証拠不足" and row[field].startswith("任意の判断材料"):
@@ -1358,7 +1527,7 @@ def check_return_result(
             if any(_reject_record(text, row["awi"]) or _deferred_record(text, row, field) for text in referred):
                 continue
             errors.append(
-                f"{row['awi'] or '計画由来'}: {section}[{index}]: 未解決の指摘数0件と{row['outcome']}が一致しません。"
+                f"{_row_label(row, section, index)}: 未解決の指摘数0件と{row['outcome']}が一致しません。"
                 "必要な証拠を補って再判定するか、実在の指摘を現在roundの表へ登録する。"
                 "許容される非達成なら、採否・後続工程の実在する記録をsourceとevidenceで指し、"
                 "その計画かWI・CI記録を--planまたは--input-recordで渡す"
