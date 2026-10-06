@@ -28,20 +28,27 @@
 </例>
 
 - 実行主体別規範は読み手と読込契機で配置する。全主体共通は`rules/`、メイン限定は`share/rules-main.md`、委譲先限定は`share/rules-subagent.md`、ホスト固有の差分は同じ接頭辞のホスト別ファイルへ置く。Claude CodeとCodexのhook、agents_serverの通常委譲および生成manifestが、その読み手へ同じ規範を配送するため、これらは常時ロードと同じ拘束力を持つ。委譲元と委譲先の双方が守る受け渡し規定は全主体共通として扱う。片側だけに適用する規定を`rules/`へ置くと、適用対象でない主体がその規定を自身へ適用する。軽量委譲へ共通規範を配送しない場合は、軽量委譲の起動契約へ必要な制約を置く。特定作業時だけ必要な内容はスキルか`references/`へ置く。agent-toolkitが読み手へ常に配送する規範（`rules/`配下と、読み手に応じて配送する`share/rules-main*.md`・`rules-subagent*.md`）を常時規範と呼ぶ
-- 配送範囲表とは、どの常時規範と配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）がどの主体へ届くかを示す次の表を指す。値は`agent_toolkit/_hooks/rules_context.py`、`agent_toolkit/_agents_server/state.py`、`claude.py`、`codex.py`と`scripts/sync_codex_agents.py`の実装から取る。規定を置く文書を選ぶときと、ある主体へ届く規範を確かめるときにこの表を使う。表の値と実装が一致しない場合は実装を正として表を直す
+- 配送範囲表とは、常時規範、配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどの主体へ届くかを示す次の表を指す。値は`agent_toolkit/_hooks/rules_context.py`、`agent_toolkit/_agents_server/state.py`、`claude.py`、`codex.py`、`antigravity.py`と`scripts/sync_codex_agents.py`の実装から取る。規定を置く文書を選ぶときと、ある主体へ届く規範を確かめるときにこの表を使う。表の値と実装が一致しない場合は実装を正として表を直す
 
-| 文書 | Claude Codeのメイン | Codexのメイン | `Agent`ツールのサブエージェント | `agents_server`の`task`・`delegate`（Claude） | `agents_server`の`task`・`delegate`（Codex） | `explore`・`write`・`shell`（Claude） | `explore`・`write`・`shell`（Codex） | Codexの組み込み委譲先 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `rules/`配下 | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届く（`~/.codex/AGENTS.md`） |
-| `share/rules-main.md` | 届く（SessionStart） | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
-| `share/rules-main.claude-code.md` | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
-| `share/rules-main.codex.md` | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） | 届く（`~/.codex/AGENTS.md`） |
-| `share/rules-subagent.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届く（developer指示） | 届かない | 届かない | 届く（SubagentStart） |
-| `share/rules-subagent.claude-code.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届かない | 届かない | 届かない | 届かない |
-| `share/agents-server-delegate-notice.md` | 届かない | 届かない | 届かない | 届く | 届く | 届く | 届く | 届かない |
-| `share/agents-server-delegate.md` | 届かない | 届かない | 届かない | 届く | 届く | 届かない | 届かない | 届かない |
-| `share/agents-server-explore.md`・`agents-server-write.md`・`agents-server-shell.md` | 届かない | 届かない | 届かない | 届かない | 届かない | 届く（同名のmodeだけ） | 届く（同名のmodeだけ） | 届かない |
-| `share/agents-server-auto-resume.md` | 届かない | 届かない | 届かない | 届く | 届く | 届く | 届く | 届かない |
+| 文書 | Claude Codeのメイン | Codexのメイン | `Agent`ツールのサブエージェント | `agents_server`の`task`・`delegate`（Claude） | `agents_server`の`task`・`delegate`（Codex） | `agents_server`の`task`・`delegate`（Antigravity） | `explore`・`write`・`shell`（Claude） | `explore`・`write`・`shell`（Codex） | `explore`・`write`・`shell`（Antigravity） | Codexの組み込み委譲先 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `rules/`配下 | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
+| `share/rules-main.md` | 届く（SessionStart） | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
+| `share/rules-main.claude-code.md` | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
+| `share/rules-main.codex.md` | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
+| `share/rules-subagent.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届く（developer指示） | 届く（指示の先頭） | 届かない | 届かない | 届かない | 届く（SubagentStart） |
+| `share/rules-subagent.claude-code.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
+| `share/agents-server-delegate-notice.md` | 届かない | 届かない | 届かない | 届く | 届く | 届く | 届く | 届く | 届く | 届かない |
+| `share/agents-server-delegate.md` | 届かない | 届かない | 届かない | 届く | 届く | 届く | 届かない | 届かない | 届かない | 届かない |
+| `share/agents-server-explore.md`・`agents-server-write.md`・`agents-server-shell.md` | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届く（同名のmodeだけ） | 届く（同名のmodeだけ） | 届く（同名のmodeだけ） | 届かない |
+| `share/agents-server-auto-resume.md` | 届かない | 届かない | 届かない | 届く | 届く | 届かない | 届く | 届く | 届かない | 届かない |
+| 作業ディレクトリのプロジェクト規範（`AGENTS.md`など） | 届く | 届く | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（プロジェクト設定の読込元） | 届く | 届く | 届かない | 届かない（`project_doc_max_bytes=0`） | 届く | 届く |
+| agent-toolkitのスキル | 届く | 届く | 未確認 | 届く | 届く | 届かない | 届かない（`skills=[]`） | 届く | 未確認 | 未確認 |
+
+Codexの列の`rules/`配下と`share/rules-main.codex.md`の値は`~/.codex/AGENTS.md`を配置した環境に限る（Codex単体のインストーラーはこのファイルを配置しない）。
+Antigravityの委譲先は起動区分によらず`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読む。
+Antigravityの列とプロジェクト規範・スキルの行は実機の観測から取った。
+観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日」にある。
 
 - プロジェクト規範は対象リポジトリが規範として定める指示（`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`、プロジェクトのスキルなど）を指す。プロジェクト方針はプロジェクト規範に加え、README、コードコメント、設定など規範化されていない記述に書かれた方針を指す
 - スキルとエージェントの責務配置は`agent-skills.md`と`sub-agents.md`に従う
@@ -69,7 +76,7 @@
 ### 条件と範囲の記述
 
 - ユーザー要求を規範や手順へ変換する前に、原文が示す目的、要件、対象範囲、例示の開放性、変更指示および論理関係を保持する。既存の分類や下位規範はその後に適用し、原文の意味を既存の分類へ収まる範囲へ縮めない
-- 判断条件、例外条件、許容条件では確認できる事実を根拠にする。作業量や所要時間の見込みは品質、費用および完了までの時間を比べる材料として扱い、単独で依頼を縮小する停止条件にしない
+- 判断条件、例外条件、許容条件では確認できる事実を根拠にする。作業量や所要時間の見込みは品質、費用および完了までの時間を比べる材料として扱い、単独で依頼を縮小する停止条件にしない。工程を省ける条件（独立した確認や委譲を省く条件を含む）も、その工程が検出または達成する対象に当たる変化が差分や対象にあるかで書き、行数、文の数、「局所的」「軽微」などの規模の印象を条件にしない。規模の印象を条件にすると、工程を省く主体が手元で数えられる行数で判断し、その工程が見つけるはずの変化を含む差分まで省く
 - 判断を要する条文では守る価値、そこから外れた場合の不利益、考慮する観点を示し、結論はそれらを踏まえた総合判断へ委ねる
 - 短い基本方針の後に手段を示す場合は、独立行の`<例>`と`</例>`で囲み、間へ1行1例の語句か`<条件>: <対応>`を書く。例示は開放集合であり、適用範囲は基本方針で決める。適用範囲、除外、前提の閉じた列挙は、`agent-toolkit/rules/01-agent.md`「規定の区分と標示」の硬い制約を守る条文で使う。硬い制約以外で判断材料を閉じる列挙や例外を増やすと、その場の目的に合う判断を妨げる
 
@@ -85,9 +92,9 @@
 - 代替が自明でない制限では、制限対象と代わりに行う行動を合わせて書く。代わりの行動が書かれていないと、実行主体が代替を探す工程を要する
 - 既存規定の表現形式を変える場合は、変更前後で実行時の振る舞いが変わらないことを確認する。条文を所有者への参照へ畳む改訂では、畳んだ条文が持っていた義務（判定、工程、契機）を参照先の節の本文が持つことを、その節を読んで確かめる（努力目標。細則を一般則へ畳む改訂まで仕様変更と同じ手続きを要すると、条文の整理が進まない）
 - 手順では各工程の後に続く工程と参照先の所在を示す（努力目標。次に進む先が分からないと、実行主体が手順の外から工程を組み立てる）
-- 読み手が対象を一意に同定できる語で書く。多義的な語は条文内で限定し、指示語は具体的な名称へ置き換える
+- 読み手が対象を一意に同定できる語で書く。多義的な語は条文内で限定し、指示語は具体的な名称へ置き換える。既存の段落へ文を挿入または移動する編集では、挿入した文と同じ段落の後続の文にある指示語の指す先も変わっていないかを確かめる。挿入した文が後続の指示語の先行詞の候補を増やすと、変えていない文の意味が変わる
 - 数値の上限は、その値が無いと成果物の品質または利用場面を守れないときに設ける。探索や判断を伴う出力では、重要度と除外理由を先に検討する
-- 規範と手順では達成すべき性質を規定する。特定のツールや実行順序を限定する場合は、その手段が必要不可欠である根拠を併記する
+- 規範と手順では達成すべき性質を規定する。特定のツールや実行順序を限定する場合と、検出や判定の候補を固定の検索語、正規表現、キーワードの一覧などで閉じる場合は、その手段が必要不可欠である根拠を併記する。固定の一覧で候補を閉じるときは、一覧が対象全体を被覆できる根拠も示す。被覆の根拠を示せない場合は、一覧の外も文脈から判定できる方法（対象を文脈ごと読むなど）と比べて手段を選ぶ。公開契約によって候補が有限かつ完全な場合と、一覧を候補の優先付けに使い別の工程で一覧の外も判定する場合は、その根拠を示して固定の一覧を使える。形式や語彙を事前に確定できない出力から未知の異常を探す手順で、既知の語の一覧だけを候補全体として扱うと、一覧に一致しない異常が確認の対象から外れる
 
 ### 語調と現行規則の表現
 

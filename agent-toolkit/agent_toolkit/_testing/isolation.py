@@ -14,16 +14,23 @@
 - 開発セッションの環境変数（エージェント環境の判定、委譲先とprocess-loopの標識）
 - PATH上の開発機専用のエージェントCLI（`codex`・`claude`・`agy`）
 
+パッケージを取得して起動するツール（pnpmの`dlx`、corepackなど）を実際に動かすテストは、
+`share_package_caches`で取得物の保存先だけをホストと共有する。ホームと設定ディレクトリを隔離したままだと、
+テストのたびに空の保存先へ取得し直し、1件あたり数秒から十数秒かかる。
+
 リポジトリ直下から`agent-toolkit/`配下を指定して起動すると両方のconftestが読まれるが、
 fixtureの名前が同じであるため、テストに近い側の定義だけが適用される。
 """
 
+import ntpath
 import os
 import pathlib
+import posixpath
 import shutil
 import subprocess
+import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 import pytest
 
@@ -79,6 +86,13 @@ _HOST_RESTORED_ENVIRONMENT_NAMES = (*HOME_ENVIRONMENT_NAMES, *CONFIG_DIRECTORY_E
 # 読み込む時点（どのfixtureよりも先）で控える。`host_environ`と`restore_host_environment`が復元に使う。
 _HOST_ENVIRON = {
     name: host_value for name in _HOST_RESTORED_ENVIRONMENT_NAMES if (host_value := os.environ.get(name)) is not None
+}
+# pnpmのキャッシュ・ストアとcorepackの保存先を指定する環境変数。`share_package_caches`がホストの位置へ向ける。
+PACKAGE_CACHE_ENVIRONMENT_NAMES = ("npm_config_cache_dir", "npm_config_store_dir", "COREPACK_HOME")
+_HOST_PACKAGE_CACHE_ENVIRON = {
+    name: host_value
+    for name in (*PACKAGE_CACHE_ENVIRONMENT_NAMES, "PNPM_HOME")
+    if (host_value := os.environ.get(name)) is not None
 }
 
 
@@ -170,6 +184,60 @@ def host_environ() -> Callable[[], dict[str, str]]:
         return environ
 
     return _build
+
+
+def package_cache_environ(environ: Mapping[str, str], platform: str) -> dict[str, str]:
+    """`environ`のホームと設定ディレクトリから、pnpmとcorepackが使う取得物の保存先を環境変数の形で返す。
+
+    `PACKAGE_CACHE_ENVIRONMENT_NAMES`の変数が`environ`にあればその値を使い、無ければ各ツールの規則で求める。
+    pnpmはキャッシュを`cacheDir`、ストアを`storeDir`の公式資料（https://pnpm.io/settings/other 、
+    https://pnpm.io/settings/store ）の順で決め、corepackは実装（`COREPACK_HOME`、`XDG_CACHE_HOME`、
+    `LOCALAPPDATA`、ホーム配下の順）で決める。`platform`は`sys.platform`の値を受け取る。
+    """
+    windows = platform == "win32"
+    path = ntpath if windows else posixpath
+    home = environ.get("USERPROFILE" if windows else "HOME", "")
+    local_app_data = environ.get("LOCALAPPDATA") or path.join(home, "AppData", "Local")
+    if "XDG_CACHE_HOME" in environ:
+        cache_dir = path.join(environ["XDG_CACHE_HOME"], "pnpm")
+    elif windows:
+        cache_dir = path.join(local_app_data, "pnpm-cache")
+    elif platform == "darwin":
+        cache_dir = path.join(home, "Library", "Caches", "pnpm")
+    else:
+        cache_dir = path.join(home, ".cache", "pnpm")
+    if "PNPM_HOME" in environ:
+        store_dir = path.join(environ["PNPM_HOME"], "store")
+    elif "XDG_DATA_HOME" in environ:
+        store_dir = path.join(environ["XDG_DATA_HOME"], "pnpm", "store")
+    elif windows:
+        store_dir = path.join(local_app_data, "pnpm", "store")
+    elif platform == "darwin":
+        store_dir = path.join(home, "Library", "pnpm", "store")
+    else:
+        store_dir = path.join(home, ".local", "share", "pnpm", "store")
+    corepack_base = (
+        environ.get("XDG_CACHE_HOME")
+        or environ.get("LOCALAPPDATA")
+        or path.join(home, *(("AppData", "Local") if windows else (".cache",)))
+    )
+    derived = {
+        "npm_config_cache_dir": cache_dir,
+        "npm_config_store_dir": store_dir,
+        "COREPACK_HOME": path.join(corepack_base, "node", "corepack"),
+    }
+    return {name: environ.get(name) or derived[name] for name in PACKAGE_CACHE_ENVIRONMENT_NAMES}
+
+
+@pytest.fixture(name="share_package_caches")
+def share_package_caches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pnpmとcorepackの取得物の保存先だけを、隔離前のホストの位置へ向ける。
+
+    ホーム、設定ディレクトリ、`XDG_CACHE_HOME`は隔離したまま保ち、pyfltrの実行記録などはテストの一時ディレクトリへ残る。
+    設定した環境変数はテストが起動する子プロセスへも継承される。
+    """
+    for name, value in package_cache_environ({**_HOST_ENVIRON, **_HOST_PACKAGE_CACHE_ENVIRON}, sys.platform).items():
+        monkeypatch.setenv(name, value)
 
 
 def restore_host_environment(monkeypatch: pytest.MonkeyPatch) -> None:

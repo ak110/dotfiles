@@ -38,8 +38,6 @@ MAX_LIST_ENTRIES = 2000
 MAX_RECORD_BYTES = 64 * 1024 * 1024
 # SSE購読者ごとの未配信通知の上限。超えた場合は一覧の再取得を促す1件へまとめる。
 SUBSCRIBER_QUEUE_SIZE = 16
-# 詳細が返すイベントの最大件数。上限を超えた分は応答へ含めず、除外した件数を別項目として返す。
-MAX_DETAIL_EVENTS = 5000
 
 # SSH接続時に共通付与するオプション。鍵認証失敗時にパスワードプロンプトでハングしないようにする。
 SSH_BASE_OPTIONS = ("-o", "BatchMode=yes")
@@ -457,13 +455,13 @@ def build_detail(
 
     `subagents_unavailable`は、サブエージェント記録の有無そのものを判定できなかったことを表す。
     サブエージェントが無いこと（`subagents`が`null`）と区別して画面へ示すために持たせる。
+    イベントは件数で切り詰めず全件を返す。記録の読み込み量は`MAX_RECORD_BYTES`が抑え、応答量は件数より
+    イベント本文の長さで決まるためである。画面は先頭から段階的に描画して初期表示の負荷を抑える。
     """
     events, totals = _claude_events(records) if engine == "claude" else _codex_events(records)
-    truncated = max(0, len(events) - MAX_DETAIL_EVENTS)
     return {
         "engine": engine,
-        "events": [event.to_json() for event in events[:MAX_DETAIL_EVENTS]],
-        "truncated_events": truncated,
+        "events": [event.to_json() for event in events],
         "usage": totals,
         "subagents": subagents,
         "subagents_unavailable": subagents_unavailable,

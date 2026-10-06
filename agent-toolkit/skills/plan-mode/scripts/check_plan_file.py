@@ -769,9 +769,15 @@ def _origin_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
 def main(argv: list[str] | None = None) -> int:
     """コマンドライン引数を解析し、計画が基準を満たすか確かめる。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("plan_file", type=pathlib.Path)
-    parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
-    parser.add_argument("--selection-file", type=pathlib.Path, help="pickerが保存した選定結果の絶対パス")
+    parser.add_argument("plan_file", type=pathlib.Path, metavar="PATH", help="検証する計画ファイル（`<計画名>.md`）の絶対パス")
+    parser.add_argument(
+        "--work-dir",
+        type=pathlib.Path,
+        metavar="DIR",
+        default=pathlib.Path.cwd(),
+        help="計画メタ情報の`対象リポジトリ`と一致するかを確かめるGit作業ツリーのパス（省略すると現在のディレクトリを使う）",
+    )
+    parser.add_argument("--selection-file", type=pathlib.Path, metavar="PATH", help="pickerが保存した選定結果の絶対パス")
     parser.add_argument("--lane", help="選定結果内のlane-NN形式のレーン識別子")
     parser.add_argument(
         "--agent-rule-path",
@@ -783,6 +789,7 @@ def main(argv: list[str] | None = None) -> int:
         "--prior-plan",
         action="append",
         type=pathlib.Path,
+        metavar="PATH",
         default=None,
         help="同じレーンで確認を終えた先行計画の絶対パス。全件を反復指定する",
     )

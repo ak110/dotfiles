@@ -43,7 +43,7 @@ pickerの文書は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`とする。
 - 作業ツリーへ書き込む主体はメインだけとする
 - 実行レビューは、実装を担当しない独立した担当が行う
 - 人間由来の不採用範囲は、ユーザーの確認を得てから終端する
-- 手順で固定した処理対象WIは、実行の終わりまでそのまま使う。`## 見つけた既存不良の扱い`で投入したAWIだけは例外として加える
+- 手順で固定した処理対象WIは、実行の終わりまでそのまま使う。`## 見つけた既存不良の扱い`で投入したAWIと、手順1のユーザーが処理中に告げた項目は例外として加える
 - 同じ対象worktreeの計画対象と直接実装対象は1件の実行レビューへまとめ、異なる対象worktreeの項目は同じ計画または実行レビューへ混在させない
 
 ## 見つけた既存不良の扱い
@@ -61,7 +61,7 @@ WI実装commitの完了ごとに、`agent-toolkit:commit`の`SKILL.md`「WI実�
 
 実行レビューの起動では、証拠要求ありなら対応する実装担当の未判定検証記録JSONの絶対パスを名前付き入力`未判定検証記録`として渡し、証拠要求なしなら`なし`を渡す。
 
-1. processable一覧と各WI本文を取得する。同じ時点で`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス>`を実行し、回答済みUWIを取得する。取得した回答済みUWIは、実装へ着手する前に`agent-toolkit:wi-standards`「状態と依存」の回答済みUWIの取り込みに従って終端するか処理対象WIへ加える。残る全項目を直接実装または計画へ分ける。処理対象に依存が未達の項目が含まれる場合は、依存元の状態を確かめる。依存元がprocessableで同じ`target_repo`なら、依存元を同じ実行の処理対象WIへ加えて報告する。依存元の状態を変える必要がある場合（保留中やcooldownなど）は、依存元を加えるかを「確認を要する事項」としてユーザー確認へ回す。依存未達の項目を集合から外す場合も、同じユーザー確認を経る。各WIについて、WIのファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パスおよびそのworktreeで解決した処理開始時のHEADの7文字以上の一意な短縮OIDを対応付ける。対象を`atk wi start-processing <ファイル名>... --target-repo=<対応付けたtarget_repo>`で`processing`へ移し、対応表と集合を固定する。
+1. processable一覧と各WI本文を取得する。同じ時点で`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`を実行し、回答済みUWIを取得する。`source`が`run-skill`のUWIは同じスキルの次回の`atk run-skill`の実行が扱うため、処理対象から外す。取得した回答済みUWIは、実装へ着手する前に`agent-toolkit:wi-standards`「状態と依存」の回答済みUWIの取り込みに従って終端するか処理対象WIへ加える。残る全項目を直接実装または計画へ分ける。処理対象に依存が未達の項目が含まれる場合は、依存元の状態を確かめる。依存元がprocessableで同じ`target_repo`なら、依存元を同じ実行の処理対象WIへ加えて報告する。依存元の状態を変える必要がある場合（保留中やcooldownなど）は、依存元を加えるかを「確認を要する事項」としてユーザー確認へ回す。依存未達の項目を集合から外す場合も、同じユーザー確認を経る。各WIについて、WIのファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パスおよびそのworktreeで解決した処理開始時のHEADの7文字以上の一意な短縮OIDを対応付ける。対象を`atk wi start-processing <ファイル名>... --target-repo=<対応付けたtarget_repo>`で`processing`へ移し、対応表と集合を固定する。固定した後も、ユーザーが処理中に告げた回答済みUWIとAWIは同じ実行の処理対象WIと対応表へ加え、回答済みUWIは同じ取り込みに従って終端するか元項目とともに加える。告げた発話を明示指示とする判断は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`「処理対象WIの追加」に従う。
 2. `atk wi`操作のうち`adopt`または`reject`へ`--commit`を渡す場合は、対応表の対象worktreeの絶対パスを`--target-repo`へ渡す。commit検証を伴わない操作は対応表の保存済み`target_repo`を使う。共通前提は`agent-toolkit:wi-standards`「状態と依存」に従う。Gitの起点比較、実装、検証、commitおよびレビューは対応表のworktreeと開始時のHEADを使う。別のworktreeまたは複製元のHEADを代用しない。
 3. 計画対象がある場合は読込表の行の資料に従い、対象worktreeごとの部分集合を各1つの計画ファイルへ起草する。計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはその部分集合のworktreeを使う。作成と計画構造の自動チェックは同基準が定める手順で行う。
 4. 対応表が示すworktreeで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。計画対象は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`の受入シナリオ検証で検証し、シナリオ別のテスト名と合否を記録する。直接実装対象もWIの消費主体と呼び出し手段から同じテストを選ぶ。`agent-toolkit:commit`に従ってcommitする。互いに依存しない対象worktreeの部分集合は並行してよいが、各worktreeへ書き込む主体はメイン1つのまま保つ。

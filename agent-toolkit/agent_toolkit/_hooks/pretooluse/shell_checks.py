@@ -16,9 +16,12 @@ from typing import TYPE_CHECKING
 
 
 from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    BashInvocation,
     _GLOBAL_OPTIONS_WITH_VALUE,
     _GLOBAL_OPTIONS_WITHOUT_VALUE,
     extract_bash_invocations,
+    heredoc_command_substitutions,
+    mask_heredoc_bodies,
     split_bash_segments,
 )
 from agent_toolkit._common.shell_tokens import strip_redirections
@@ -270,12 +273,22 @@ def _git_commit_attribution_error(
     identity: RuntimeIdentity | None,
     *,
     attribution_disabled: bool = False,
+    cwd: str = "",
 ) -> str | None:
-    """確定済みの通常commitメッセージが観測identityのtrailerをちょうど1件持つか確認する。"""
+    """確定済みの通常commitメッセージが観測identityのtrailerをちょうど1件持つか確認する。
+
+    メッセージは`-m`・`--message`に加え、`-F -`・`--file=-`へ同じコマンドのheredocで渡した本文と、
+    `-F <path>`・`--file=<path>`で指定したhookの時点で存在する通常ファイルからも読む。
+    エージェントのcommitの多くは`-F -`のheredocで作成されるため、この形を読めないと帰属行を確かめないまま通す。
+    相対パスは`git -C`とpayloadの`cwd`で解決し、同じコマンドの`cd`で基準が変わる場合は判定しない。
+    heredocを一意に対応付けられない場合、存在しないファイル、`-C`・`-c`・`--reuse-message`・`--reedit-message`、
+    `--amend --no-edit`、fixup、squashおよび帰属の設定が空文字の場合は判定しない。
+    """
     if attribution_disabled or identity is None or identity.source != "observed":
         return None
     expected = co_author_trailer(identity)
-    for invocation in extract_bash_invocations(command):
+    invocations = extract_bash_invocations(command)
+    for position, invocation in enumerate(invocations):
         if not invocation.arguments_known:
             continue
         parsed = _git_subcommand_tokens(invocation.segment)
@@ -291,33 +304,108 @@ def _git_commit_attribution_error(
         if "--amend" in arguments and "--no-edit" in arguments:
             continue
         messages: list[str] = []
+        message_files: list[str] = []
         index = 0
         unknown = False
         while index < len(arguments):
             token = arguments[index]
-            if token in {"-m", "--message"}:
+            if token in {"-m", "--message", "-F", "--file"}:
                 if index + 1 >= len(arguments):
                     unknown = True
                     break
-                messages.append(arguments[index + 1])
+                (messages if token in {"-m", "--message"} else message_files).append(arguments[index + 1])
                 index += 2
                 continue
             if token.startswith("--message="):
                 messages.append(token.split("=", 1)[1])
+            elif token.startswith("--file="):
+                message_files.append(token.split("=", 1)[1])
             elif token.startswith("-m") and len(token) > 2:
                 messages.append(token[2:])
-            elif token in {"-F", "--file", "-C", "--reuse-message", "-c", "--reedit-message"} or token.startswith(
-                ("--file=", "--reuse-message=", "--reedit-message=")
+            elif token.startswith("-F") and len(token) > 2:
+                message_files.append(token[2:])
+            elif token in {"-C", "--reuse-message", "-c", "--reedit-message"} or token.startswith(
+                ("--reuse-message=", "--reedit-message=")
             ):
                 unknown = True
                 break
             index += 1
+        if unknown:
+            continue
+        for message_file in message_files:
+            if message_file == "-":
+                body = _commit_heredoc_body(command)
+            else:
+                body = _read_commit_message_file(
+                    message_file,
+                    invocation.segment.tokens,
+                    cwd=cwd,
+                    changes_directory=_changes_directory_before(invocations, position),
+                )
+            if body is None:
+                unknown = True
+                break
+            messages.append(body)
         if unknown or not messages:
             continue
         trailers = [line for line in "\n\n".join(messages).splitlines() if line.startswith("Co-Authored-By:")]
         if trailers != [expected]:
             return f"通常commitの帰属trailerが実行turnの観測identityと一致しません。必要なtrailer: {expected}"
     return None
+
+
+def _commit_heredoc_body(command: str) -> str | None:
+    """`git commit`を宣言した行のheredoc本文を返す。対応するheredocが1件に定まらない場合は`None`を返す。
+
+    `mask_heredoc_bodies`が本文を空白へ、終端行の先頭を`;`へ置き換えた結果と元の行を比べて本文の範囲を求める。
+    """
+    original_lines = command.split("\n")
+    masked_lines = mask_heredoc_bodies(command).split("\n")
+    bodies: list[str] = []
+    for terminator, (original, masked) in enumerate(zip(original_lines, masked_lines, strict=True)):
+        if original == masked or not masked.startswith(";") or masked[1:].strip():
+            continue
+        # 本文は宣言行の直後から終端行の前までに連続し、置換後は空白だけの行になる。宣言行は空白だけにならない。
+        start = terminator
+        while start > 0 and not masked_lines[start - 1].strip():
+            start -= 1
+        declaration = masked_lines[start - 1] if start > 0 else ""
+        if any(
+            (parsed := _git_subcommand_tokens(item.segment)) is not None and parsed[0] == "commit"
+            for item in extract_bash_invocations(declaration)
+        ):
+            bodies.append("\n".join(original_lines[start:terminator]))
+    return bodies[0] if len(bodies) == 1 else None
+
+
+def _changes_directory_before(invocations: Sequence[BashInvocation], position: int) -> bool:
+    """同じコマンドで対象の呼び出しより前に`cd`・`pushd`があるかを返す。"""
+    return any(item.segment.tokens[:1] in (("cd",), ("pushd",)) for item in invocations[:position])
+
+
+def _read_commit_message_file(
+    path_text: str,
+    git_tokens: Sequence[str],
+    *,
+    cwd: str,
+    changes_directory: bool,
+) -> str | None:
+    """`git commit -F <path>`が読むファイルの本文を返す。解決できないか通常ファイルでない場合は`None`を返す。"""
+    path = pathlib.Path(path_text)
+    if not path.is_absolute():
+        if changes_directory or not cwd:
+            return None
+        base = pathlib.Path(cwd)
+        for index, token in enumerate(git_tokens[1:], start=1):
+            if token == "commit":
+                break
+            if token == "-C" and index + 1 < len(git_tokens):
+                base = base / git_tokens[index + 1]
+        path = base / path
+    try:
+        return path.read_text(encoding="utf-8") if path.is_file() else None
+    except (OSError, UnicodeError):
+        return None
 
 
 _GIT_GREP_PATTERN_OPTIONS: frozenset[str] = frozenset({"-e", "--regexp"})
@@ -495,6 +583,7 @@ def _check_bash_atk_output_loss(command: str) -> bool:
 
     Bashが返す出力から結果と終了状態を失う反復を、その場で書き直せる入力で止める。
     引数のリテラルやheredoc本文、未知の実行位置は判定せず、ホストが管理する背景実行は通す。
+    区切り語を引用しないheredocの本文にある置換は、`_check_bash_unquoted_heredoc_substitution`が実行前に遮断する。
     """
     for invocation in extract_bash_invocations(command):
         tokens = invocation.segment.tokens
@@ -525,6 +614,45 @@ def _check_bash_atk_output_loss(command: str) -> bool:
         )
         return True
     return False
+
+
+# --- Bash: 区切り語を引用しないheredocの本文にあるコマンド置換 ---
+
+_HEREDOC_SUBSTITUTION_DISPLAY_LIMIT = 120
+"""通知へ載せる置換1件あたりの最大文字数。置換の範囲を特定できる長さに収め、文脈の占有を抑える。"""
+
+
+def _check_bash_unquoted_heredoc_substitution(command: str) -> bool:
+    """区切り語を引用しないheredocの本文にある、エスケープされていないコマンド置換を遮断する。
+
+    bashは区切り語を引用しないheredoc（`<<EOF`・`<<-EOF`）の本文を展開し、本文のバッククォートと`$(...)`の中の
+    コマンドを実行する。Markdownのコード表記とシェルの置換は同じ記号であり、書き手が置換に気付かないまま
+    外部への保存、プロセスの終了、ファイルの上書きなど復元できない結果が残るため、実行前に遮断する。
+    判定はコマンド文字列だけから確定し、遮断された主体は区切り語の引用、事前の変数代入またはエスケープへ
+    書き直して同じターンで再実行できる。遮断とする根拠は`agent-toolkit:writing-standards`の
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
+    本文の範囲と展開の有無は`bash_command_parser.heredoc_bodies`の1つの定義から得る。
+    """
+    found = heredoc_command_substitutions(command)
+    if not found:
+        return False
+    shown = "、".join(
+        f"「{text if len(text) <= _HEREDOC_SUBSTITUTION_DISPLAY_LIMIT else text[:_HEREDOC_SUBSTITUTION_DISPLAY_LIMIT] + '…'}」"
+        for text in found
+    )
+    print(
+        _block_notice(
+            f"blocked: 区切り語を引用しないヒアドキュメントの本文にコマンド置換（{shown}）がある。"
+            "`bash`はこの本文を展開し、置換の中のコマンドを実行する。",
+            fix=(
+                "本文をそのまま書く場合は区切り語を引用する（`<<'EOF'`）。"
+                "置換の結果を本文へ入れる場合は、事前に変数へ代入して本文では`$VAR`で参照する。"
+                "リテラルのバッククォートと`$(`は直前に`\\`を置いてエスケープする（「\\`」・「\\$(」）。"
+            ),
+        ),
+        file=sys.stderr,
+    )
+    return True
 
 
 # --- Bash: WindowsのGit BashでPATHへ加えるドライブ文字形式の要素の検出 ---

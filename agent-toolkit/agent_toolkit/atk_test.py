@@ -2238,7 +2238,7 @@ class TestAddBatchOption:
             ["--target-repo=github.com/example/foo"],
             ["--source=session-review"],
             ["--scope=name"],
-            ["--question-type=free-form"],
+            ["--question-type=yes-no"],
             ["--choices=A,B"],
             ["--depends-on=other.md"],
         ],

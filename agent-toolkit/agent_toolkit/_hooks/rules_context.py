@@ -21,6 +21,7 @@ from typing import Any
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import message_format
 from agent_toolkit._common.delegated_session import is_delegated
+from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 from agent_toolkit._hooks.message_format import xml_message
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.session_state import update_state
@@ -36,9 +37,7 @@ RESPONSE_LANGUAGE_REINJECTION_NOTICE = "ユーザーへ向けた地の文は、�
 # PreToolUseが間隔に達した呼び出しで`RESPONSE_LANGUAGE_REINJECTION_NOTICE`を注入し、
 # SessionStartが`RESPONSE_LANGUAGE_NOTICE`を注入した時点で0へ戻す。
 LANGUAGE_REINJECTION_COUNT_KEY = "language_reinjection_count"
-QUALITY_CHECKPOINT_NOTICE = (
-    "会話圧縮後の目的と承認状態の復元は`01-agent.md`「行動と手順の目的」に従う。会話限定の指示を成果物へ混入させない。"
-)
+QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従う。会話限定の指示を成果物へ混入させない。"
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
@@ -101,6 +100,36 @@ USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
 """`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態を示すセッション状態のキー。"""
 _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 """会話の文脈を引き継がずに始まるSessionStartの`source`。`resume`と`fork`は文脈を引き継ぐため含めない。"""
+OPERATION_SKILL_READY_KEY = "operation_skill_ready_agents"
+"""操作を起動の契機とするスキルの名前から、起動済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
+
+PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点とPostToolUse(Skill)が記録し、同じ判定が読む。
+"""
+_OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
+"""メイン会話の起動済みの記録を除くSessionStartの`source`。新しいセッションの`startup`は記録を持たない。"""
+
+
+def reset_main_operation_skill_ready(session_id: str) -> None:
+    """メイン会話の起動済みの記録を除く。
+
+    `clear`と`compact`ではスキルの本文が文脈から外れるため、次の操作で再び警告して起動を促す。
+    サブエージェントの記録は親の会話圧縮と独立した文脈のため変えない。
+    """
+
+    def _reset(current: dict) -> dict | None:
+        recorded = current.get(OPERATION_SKILL_READY_KEY)
+        if not isinstance(recorded, dict):
+            return None
+        updated = {
+            name: [agent for agent in agents if agent != MAIN_AGENT_ID] if isinstance(agents, list) else agents
+            for name, agents in recorded.items()
+        }
+        if updated == recorded:
+            return None
+        current[OPERATION_SKILL_READY_KEY] = updated
+        return current
+
+    update_state(session_id, _reset)
 
 
 def mark_user_confirmation_pending(session_id: str) -> None:
@@ -212,6 +241,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         content = compose_session_start(source, delegated=delegated, host=host)
         session_id = payload.get("session_id")
         if isinstance(session_id, str) and session_id:
+            if source in _OPERATION_SKILL_RESET_SOURCES:
+                reset_main_operation_skill_ready(session_id)
             if not delegated:
                 reset_language_reinjection_count(session_id)
                 if source in _CONTEXT_LOSING_SOURCES:

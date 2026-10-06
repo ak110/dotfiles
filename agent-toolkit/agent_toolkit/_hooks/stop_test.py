@@ -240,7 +240,6 @@ def test_stop_reports_queued_task_notification_output_file(
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     plan_save_advisor = importlib.import_module("agent_toolkit._hooks.plan_save_advisor")
     monkeypatch.setattr(plan_save_advisor, "working_plans_root", lambda: tmp_path / "plans")
-    monkeypatch.setattr(_stop_gate, "_wait_for_end_turn", lambda _path: None)
     _stop_gate._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
     _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
     output_file = str(tmp_path / "tasks" / "b6n4gipz5.output")

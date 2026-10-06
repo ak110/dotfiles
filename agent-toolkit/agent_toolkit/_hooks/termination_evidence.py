@@ -624,7 +624,13 @@ def visible_messages(payload: dict[str, Any], offset: int) -> list[str] | None:
 def main(argv: list[str] | None = None) -> int:
     """判断記録用のJSONファイルを既存run-scriptから受理する。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--decision-file", required=True, type=pathlib.Path)
+    parser.add_argument(
+        "--decision-file",
+        required=True,
+        type=pathlib.Path,
+        metavar="PATH",
+        help="判断記録のJSONオブジェクトを保存したファイルのパス（JSON文字列そのものは受け取らない）",
+    )
     args = parser.parse_args(argv)
     try:
         document = json.loads(args.decision_file.read_text(encoding="utf-8"))

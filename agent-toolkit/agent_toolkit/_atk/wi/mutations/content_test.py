@@ -815,7 +815,7 @@ class TestEditBodyFile:
                     "--target-repo",
                     "github.com/example/foo",
                     "--type=uwi",
-                    "--question-type=free-form",
+                    "--question-type=yes-no",
                     "--body-file",
                     str(add_body),
                 ],
@@ -1442,6 +1442,43 @@ def test_uwi_invalid_question_metadata_names_accepted_values(
     assert len(next_actions) == 1
     for value in expected_values:
         assert value in next_actions[0]
+
+
+def test_edit_keeps_existing_free_form_and_rejects_new_free_form(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """保存済みのfree-formのUWIは本文編集を受理し、他の形式からfree-formへ変える編集は拒否する。
+
+    free-formの新規作成を廃止した後も、廃止前に保存した項目を編集できなくなるとユーザーの記録が扱えなくなる。
+    一方で選択肢形式のUWIをfree-formへ書き換えられると、作成時の拒否を編集で迂回できる。
+    """
+    notes = _setup_notes(tmp_path)
+    stored_free_form = _write_uwi_entry(notes, "uwi-free.md")
+    stored_choice = _write_uwi_entry(
+        notes,
+        "uwi-choice.md",
+        frontmatter="target_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\nchoices: [A, B]",
+    )
+    original_choice = stored_choice.read_text(encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as kept:
+        atk.main(_edit_body_args(tmp_path, "uwi-free.md", "変更後の質問ですか？"), home=tmp_path)
+    assert kept.value.code == 0
+    assert "変更後の質問ですか？" in stored_free_form.read_text(encoding="utf-8")
+    assert "question_type: free-form" in stored_free_form.read_text(encoding="utf-8")
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit) as rejected:
+        atk.main(
+            _edit_body_args(tmp_path, "uwi-choice.md", "---\nquestion_type: free-form\n---\n\n変更後の質問ですか？"),
+            home=tmp_path,
+        )
+    assert rejected.value.code == 1
+    assert "free-form" in capsys.readouterr().err
+    assert stored_choice.read_text(encoding="utf-8") == original_choice
 
 
 def test_uwi_edit_with_broken_stored_structure_points_to_show(

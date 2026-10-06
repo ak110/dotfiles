@@ -32,9 +32,15 @@ Agent / Task:
 Bash:
 
 - Codexで48KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)。通知は閾値以下の連続した行範囲を示す
+- 区切り語を引用しないheredocの本文にあるコマンド置換の遮断 (block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - atkから後段への出力パイプと、`atk agents wait`のシェル背景化・標準出力破棄の遮断 (block)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
+- 操作を起動の契機とするスキル（`agent-toolkit:search`）が未起動のままの検索の、文脈ごとに1回の警告 (warn)
+
+Grep / Glob:
+
+- `agent-toolkit:search`が未起動のままの検索の、文脈ごとに1回の警告 (warn)
 
 Skill:
 
@@ -93,10 +99,11 @@ from agent_toolkit._hooks import (
 from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id  # noqa: E402
 
 from agent_toolkit._hooks.session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._common.runtime_identity import RuntimeIdentity, distinct_identities  # noqa: E402
+from agent_toolkit._common.runtime_identity import RuntimeIdentity, identity_observations  # noqa: E402
 from agent_toolkit._hooks.pretooluse.warning_context import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     format_warning_context,
 )
+from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings  # noqa: E402
 from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
     is_plan_component_file,
@@ -131,6 +138,7 @@ if TYPE_CHECKING:
         _check_bash_process_kill_by_pattern,
         _check_bash_option_after_terminator,
         _check_bash_atk_output_loss,
+        _check_bash_unquoted_heredoc_substitution,
         _git_commit_attribution_error,
         _warn_git_rev_parse_short_multiple,
         _warn_windows_drive_letter_path,
@@ -185,6 +193,7 @@ def _is_plan_file_or_adjunct(file_path: str) -> bool:
 
 
 _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
+_SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
 
 
 def main(payload_text: str) -> int:
@@ -315,6 +324,11 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return exit_with(0)
 
+    if tool_name in _SEARCH_TOOL_NAMES:
+        pending_notices.extend(operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex))
+        flush_pending_notices()
+        return exit_with(0)
+
     return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices))
 
 
@@ -361,8 +375,8 @@ def _handle_bash_tool(
 ) -> int:
     """Bashコマンドの遮断と警告を処理する。
 
-    Codexの大量読取の遮断、パターン一致によるプロセス終了の遮断、
-    未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
+    Codexの大量読取の遮断、引用符なしheredoc本文の置換の遮断、パターン一致によるプロセス終了の遮断、
+    未起動のスキルの操作の警告、未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
     """
     command = tool_input.get("command")
     if not isinstance(command, str):
@@ -373,6 +387,8 @@ def _handle_bash_tool(
     large_read_notice = check_large_bash_read(command, cwd, is_codex=is_codex)
     if large_read_notice is not None:
         print(large_read_notice, file=sys.stderr)
+        return 2
+    if _check_bash_unquoted_heredoc_substitution(command):
         return 2
     if _check_bash_process_kill_by_pattern(command):
         return 2
@@ -387,11 +403,12 @@ def _handle_bash_tool(
             command,
             identity,
             attribution_disabled=attribution_disabled,
+            cwd=cwd,
         )
     ) is not None:
         print(attribution_error, file=sys.stderr)
         return 2
-    warnings: list[str] = []
+    warnings: list[str] = operation_skill_warnings(payload, "Bash", tool_input, session_id, is_codex=is_codex)
     rev_parse_warning = _warn_git_rev_parse_short_multiple(command)
     if rev_parse_warning is not None:
         warnings.append(rev_parse_warning)
@@ -432,18 +449,27 @@ def _handle_bash_tool(
 
 
 def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity | None:
-    """Hook payloadまたは一意なtranscriptから、このturnの観測identityを返す。"""
+    """Hook payloadとそのturnの実行主体の記録から、このturnの観測identityを返す。
+
+    Claude Codeの推論量はhook入力の`effort.level`（ホストがturnへ適用した値）、モデルは記録の最後の観測値から取る。
+    初出順に重複を除いた一覧の末尾は、turnの途中でモデルを切り替えて戻した記録で古い値を選ぶため使わない。
+    hook入力が`agent_id`を持つ場合は、`transcript_path`がメインの記録を指すため、そのsubagentの記録
+    （`<transcript_pathのディレクトリ>/<session_id>/subagents/agent-<agent_id>.jsonl`）を読む。
+    記録を一意に解決できない場合は判定しない。Codexはhook入力の`model`と`reasoning_effort`を優先し、
+    両方が無い場合は記録の`turn_context`の最後の観測値を使う。
+    """
     runtime = "codex" if is_codex else "claude"
     model = payload.get("model")
-    effort = payload.get("effort") or payload.get("reasoning_effort")
+    effort_input = payload.get("effort")
+    effort = effort_input.get("level") if isinstance(effort_input, dict) else effort_input or payload.get("reasoning_effort")
     if isinstance(model, str) and model and isinstance(effort, str) and effort:
         return RuntimeIdentity(runtime, model, effort, "observed")
-    transcript_path = payload.get("transcript_path")
-    if not isinstance(transcript_path, str) or not transcript_path:
+    record_path = _hook_record_path(payload)
+    if record_path is None:
         return None
     entries: list[dict] = []
     try:
-        with open(transcript_path, encoding="utf-8") as stream:
+        with open(record_path, encoding="utf-8") as stream:
             for raw in stream:
                 if not raw.strip():
                     continue
@@ -455,8 +481,28 @@ def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity
                     entries.append(entry)
     except (OSError, UnicodeError):
         return None
-    identities = distinct_identities(entries, runtime)
-    return identities[-1] if identities else None
+    observations = identity_observations(entries, runtime)
+    if not observations:
+        return None
+    latest = observations[-1][1]
+    if not is_codex and isinstance(effort, str) and effort:
+        return RuntimeIdentity(runtime, latest.model, effort, "observed")
+    return latest
+
+
+def _hook_record_path(payload: dict) -> str | None:
+    """hook入力を発した実行主体の記録のパスを返す。subagentの記録を一意に解決できない場合は`None`を返す。"""
+    transcript_path = payload.get("transcript_path")
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    agent_id = payload.get("agent_id")
+    if agent_id is None:
+        return transcript_path
+    session_id = payload.get("session_id")
+    if not isinstance(agent_id, str) or not agent_id or not isinstance(session_id, str) or not session_id:
+        return None
+    subagent_path = pathlib.Path(transcript_path).parent / session_id / "subagents" / f"agent-{agent_id}.jsonl"
+    return str(subagent_path) if subagent_path.is_file() else None
 
 
 def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:

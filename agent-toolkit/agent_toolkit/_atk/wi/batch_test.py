@@ -237,6 +237,31 @@ def test_import_keeps_original_names_and_raw_text(
     assert messages == ["chore: add 1 imported item"]
 
 
+def test_batch_restore_keeps_free_form_question_type(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新規作成で受理しないfree-formの回答形式も、移行・復元では保存済みの値のまま取り込む。
+
+    廃止前に保存したUWIを別環境へ移すと、取り込みで拒否された項目だけが失われる。
+    """
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    raw = (
+        "---\n"
+        "target_repo: github.com/example/foo\n"
+        "type: uwi\n"
+        "question_type: free-form\n"
+        "---\n\n## 質問\n\nログを貼ってもらえますか？\n\n## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n"
+    )
+    text = f"# uwi\n## target_repo: github.com/example/foo\n### legacy.md [inbox/unanswered]\n{raw}\n"
+
+    mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
+
+    assert mapping == [("legacy.md", "legacy.md")]
+    assert (notes / "inbox" / "legacy.md").read_text(encoding="utf-8") == raw
+
+
 def test_import_renumbers_only_colliding_names(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

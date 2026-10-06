@@ -267,6 +267,9 @@ Claude CodeのUserPromptSubmit payloadから現在のセッション名を取得
 成立した注記が複数ある場合は、1つの`additionalContext`へ結合して返す。
 この注入はホストを問わず有効であり、Codex payloadでも同じ`additionalContext`を返す。
 
+ユーザーが書いた文は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）としてPostToolUseにも届く。
+ユーザー発話の内容を判定材料とする注記は両hookで同じ定義の本文を使い、`AskUserQuestion`の自由記述へは、1回の質問につき1回しか生じないため経過時間の閾値を適用せず毎回返す。
+
 ## Stop/SubagentStopフックの再帰呼び出し対策
 
 Stopの集約エントリーポイントは連続blockの上限を管理し、上限へ到達した場合に遮断を打ち切る。

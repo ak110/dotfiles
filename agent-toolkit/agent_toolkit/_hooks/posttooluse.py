@@ -1,6 +1,6 @@
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態の記録とplan file書式の判定。
 
-Bash / Write / Edit / MultiEdit / apply_patch / Skill / Agent / Task / agents_server MCPの実行後に
+Bash / Write / Edit / MultiEdit / apply_patch / Skill / Agent / Task / AskUserQuestion / agents_server MCPの実行後に
 イベントを検出し、セッション状態ファイルに記録する。
 PreToolUse、UserPromptSubmitおよびStopフックが参照して判定に使う。
 本モジュールは実行後の観測と警告だけを行い、操作を遮断しない。
@@ -17,7 +17,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
 5. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)、
-   `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)
+   `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)、
+   操作を起動の契機とするスキルの起動による`operation_skill_ready_agents`の記録 (Skill)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの`sessionTitle`出力が計画名の解決に使用）
 7. Bashの背景実行、バックグラウンドタスクへの移行通知およびAgent・Taskの背景起動が返した識別子を、
@@ -27,6 +28,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
     （編集ツールの操作記録と`create_plan_files.py`または`atk run-script plan-create`のBash標準出力）
+11. `AskUserQuestion`の自由記述の回答へ、UserPromptSubmitと同じ現物確認の注記を返す (AskUserQuestion)
 """
 
 import json
@@ -80,6 +82,7 @@ from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
+from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
     update_state,
@@ -140,6 +143,43 @@ _PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 # 起動でUserPromptSubmitの起動促しを止めるスキル。フルネームと短縮名の両方を許容する。
 USER_CONFIRMATION_SKILL_NAMES = frozenset({"agent-toolkit:user-confirmation-and-report", "user-confirmation-and-report"})
 USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
+
+# --- ユーザーが書いた文への注記 ---
+
+VERIFICATION_NOTICE_BODY = (
+    "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙し、"
+    "それぞれの内容を現物（原文・実装・規範・実行結果・対象の目的を定める仕様・設計記録）と比べて確かめてから応答する。"
+    "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動する。"
+    "不具合の有無・原因・直し方を述べるか確認で提案する場合も、述べる前に起動する。"
+    "対処を委譲先やAWIへ委ねる場合も含む。"
+    "現物と比べて確かめられない場合は同意も変更もしない。"
+    "いずれも含まないと判定した発話では、現物との比較を要さないと判断して次の工程へ進む。"
+    "稼働中の依頼がある場合は、未完了工程が元の依頼の目的に対応するか確かめてから次に実行する工程を確定する。"
+    "同じ論点で修正が続く場合は意図と要件への影響を確かめ、確定できないときだけユーザー確認する。"
+)
+"""ユーザーが書いた文の内容を現物で確かめる手順を示す注記の本文。
+
+ユーザーが書いた文はUserPromptSubmitの`prompt`と、`AskUserQuestion`の自由記述の回答としてPostToolUseの
+`tool_response`の両方に届くため、両hookがこの1か所の定義を使う。`user_prompt_submit.py`は本モジュールを
+importするため、循環importを避けて本モジュールに置く。
+比べて確かめる対象は発話ごとに異なるため、対象の列挙を受領側の手順として本文に持たせる。
+その列挙をフック側の判定で代替しない。フックの入力は発話本文だけであり、
+規則による分類の誤りは、現物との比較を最も要する発話で注記を無音のまま欠落させるためである。
+"""
+
+_ASK_USER_QUESTION_TOOL = "AskUserQuestion"
+_FREE_TEXT_ANSWER_PROCEDURE = (
+    "この注記は`AskUserQuestion`への回答のうち、提示した選択肢と一致しない自由記述へ返している。"
+    "回答が質問の前提や推奨案の根拠を否定する場合は、その前提を現物（コミット件名、実装、規範、実行結果など）で確かめる。"
+    "確かめた結果が回答と一致すれば、前提が誤っていたことと確定した事実だけを伝え、"
+    "質問本文と先の報告で述べた前提や懸念を再掲しない。"
+    "一致しなければ、確かめた手段と結果を示して回答と一致しない点を伝える。"
+)
+"""`AskUserQuestion`の自由記述の回答への注記で、共通の本文に続ける手順。"""
+# Claude Codeが選択肢を選ばずに注記だけを残した質問へ入れる`answers`の値（2.1.283の記録で観測）。
+_NOTES_ONLY_ANSWER = "(notes only)"
+# 複数選択の質問の`answers`は、選んだ`label`と自由記述を`, `で連結した1つの文字列で届く（2.1.285の記録で観測）。
+_MULTI_SELECT_SEPARATOR = ", "
 
 _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
@@ -720,6 +760,49 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
         update_state(session_id, clear_user_confirmation_pending)
 
 
+def _has_free_text_answer(tool_response: object) -> bool:
+    """`AskUserQuestion`の回答が、提示した選択肢と一致しないユーザーの文を含むかを返す。
+
+    `answers`の値（複数選択では`, `で区切った各要素）がその質問のどの`label`とも一致しない場合、
+    `options`を持たない質問へ空でない回答がある場合、選択肢を選ばずに入力した`response`と
+    質問ごとの`annotations`の`notes`が空白以外の文字を持つ場合を自由記述とする。
+    ユーザーが応答せずに自動で閉じた結果（`afkTimeoutMs`を持つ）と、想定外の形の応答は対象外とする。
+    """
+    if not isinstance(tool_response, dict) or tool_response.get("afkTimeoutMs") is not None:
+        return False
+    response = tool_response.get("response")
+    if isinstance(response, str) and response.strip():
+        return True
+    labels_by_question: dict[str, tuple[set[str], bool]] = {}
+    questions = tool_response.get("questions")
+    for question in questions if isinstance(questions, list) else ():
+        if not isinstance(question, dict) or not isinstance(question.get("question"), str):
+            continue
+        options = question.get("options")
+        labels = {
+            option["label"]
+            for option in (options if isinstance(options, list) else ())
+            if isinstance(option, dict) and isinstance(option.get("label"), str)
+        }
+        labels_by_question[question["question"]] = (labels, question.get("multiSelect") is True)
+    answers = tool_response.get("answers")
+    for question_text, answer in (answers if isinstance(answers, dict) else {}).items():
+        if not isinstance(answer, str) or not answer.strip() or answer == _NOTES_ONLY_ANSWER:
+            continue
+        labels, multi_select = labels_by_question.get(question_text, (set(), False))
+        if not labels:
+            return True
+        parts = answer.split(_MULTI_SELECT_SEPARATOR) if multi_select else [answer]
+        if any(part not in labels for part in parts):
+            return True
+    annotations = tool_response.get("annotations")
+    for annotation in (annotations if isinstance(annotations, dict) else {}).values():
+        notes = annotation.get("notes") if isinstance(annotation, dict) else None
+        if isinstance(notes, str) and notes.strip():
+            return True
+    return False
+
+
 def clear_user_confirmation_pending(state: dict) -> dict | None:
     """`agent-toolkit:user-confirmation-and-report`の起動を待つ状態を解除する。既に解除済みならNoneを返す。"""
     if not state.get(USER_CONFIRMATION_PENDING_KEY, False):
@@ -825,9 +908,17 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))
 
+    # AskUserQuestion: ユーザーが書いた文はUserPromptSubmitを経ずにツール結果として届くため、同じ注記をここで返す。
+    # 1回の質問につき1回しか生じないため、UserPromptSubmitの経過時間の閾値は適用しない。
+    if tool_name == _ASK_USER_QUESTION_TOOL:
+        if _has_free_text_answer(payload.get("tool_response")):
+            notices.append(_llm_notice(f"{VERIFICATION_NOTICE_BODY}{_FREE_TEXT_ANSWER_PROCEDURE}", tag="notice"))
+        return 0
+
     # Skill: plan-modeスキル呼び出し検出とprocess-wi起動検出
     if tool_name == "Skill":
         _record_skill_use(session_id, tool_input.get("skill"))
+        _operation_skills.record_skill_ready(session_id, tool_input.get("skill"), resolve_hook_agent_id(payload))
         return 0
 
     # AgentとTask: 背景起動の応答が返した`agentId`だけをバックグラウンドタスクの所有記録へ残す。後続の分岐は対象としない

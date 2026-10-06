@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import collections.abc
+import functools
 import itertools
 import pathlib
 import re
@@ -76,6 +77,10 @@ _PATH_TOKEN_RE = re.compile(
     r"|(?<![A-Za-z0-9_./:$~<\-])[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+"
 )
 _LIST_GAP_RE = re.compile(r"(?:\s*(?:の|と|および|ならびに|、|・|,))+\s*")
+# 語の直後に続くと、その語がグロブや波括弧展開の途中で途切れたことを示す記号。
+_GLOB_CHARS = frozenset("*?[{")
+# 新設先として採るファイル名は、拡張子までそろった完全な名前に限る。
+_COMPLETE_FILE_NAME_RE = re.compile(r"[^/]*[^/.]\.[A-Za-z0-9]+")
 
 _STALENESS_KEY = "鮮度"
 _UPSTREAM_TARGETS_KEY = "上流投入先"
@@ -148,11 +153,14 @@ def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
 def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
 
-    `/`を含む候補は、`work_dir`からの相対パスとして実在するか、親ディレクトリが実在する場合に採る。
-    親ディレクトリだけの実在で採るのは、反映先が挙げる新設ファイルを含めるためである。
+    抽出結果は、作業ツリーに実在するパスか、親ディレクトリが実在する完全なファイル名の新設先に限る。
+    `/`を含む候補のうち、末尾が`/`のディレクトリ範囲は実在するディレクトリだけを採用する。
+    実在しないファイルの候補は、追跡ファイルのパス末尾と1件だけ一致すればその追跡ファイルへ読み替え、
+    それ以外は`_new_file_path`の新設先の条件で採る。
     `/`を含まない候補は、`work_dir`直下に実在するファイルの場合だけ採る。
-    ディレクトリに続き区切り記号で列挙されたファイル名だけは、そのディレクトリ内の実在または新設先として採る。
+    ディレクトリに続き区切り記号で列挙されたファイル名は、そのディレクトリ内の候補として同じ条件で採る。
     孤立した語はコマンド名や識別子であることが多く、作業ツリー直下の実在ファイルだけを採用する。
+    直後にグロブ記号が続く語は、グロブや波括弧展開の途中で途切れた断片であり個別のパスを指さないため採らない。
     """
     paths: set[str] = set()
     for run in _inline_runs(text):
@@ -164,25 +172,64 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
             if directory is not None and not _LIST_GAP_RE.fullmatch(gap):
                 directory = None
             last_end = match.end()
-            if candidate is None:
+            if candidate is None or run[match.end() : match.end() + 1] in _GLOB_CHARS:
                 directory = None
                 continue
             if "/" in candidate:
-                target = work_dir / candidate
-                if target.exists() or target.parent.is_dir():
-                    paths.add(candidate)
-                    directory = candidate if candidate.endswith("/") else candidate.rsplit("/", 1)[0] + "/"
-                else:
+                resolved = _repository_path(candidate, work_dir)
+                if resolved is None:
                     directory = None
+                    continue
+                paths.add(resolved)
+                directory = resolved if resolved.endswith("/") else resolved.rsplit("/", 1)[0] + "/"
                 continue
             if (work_dir / candidate).is_file():
                 paths.add(candidate)
-            elif directory is not None:
-                contextual = directory + candidate
-                target = work_dir / contextual
-                if target.is_file() or target.parent.is_dir():
-                    paths.add(contextual)
+            elif directory is not None and (resolved := _repository_path(directory + candidate, work_dir)) is not None:
+                paths.add(resolved)
     return paths
+
+
+def _repository_path(candidate: str, work_dir: pathlib.Path) -> str | None:
+    """`/`を含む候補を、実在するパス・読み替えた追跡ファイル・新設先のいずれかへ解決する。
+
+    いずれにも当たらない候補（不在のディレクトリ範囲、途切れた名前など）は`None`を返す。
+    """
+    target = work_dir / candidate
+    if candidate.endswith("/"):
+        return candidate if target.is_dir() else None
+    if target.exists():
+        return candidate
+    suffix = "/" + candidate
+    matches = [path for path in _tracked_files(work_dir) if path.endswith(suffix)]
+    if len(matches) == 1:
+        return matches[0]
+    return _new_file_path(candidate, work_dir)
+
+
+def _new_file_path(candidate: str, work_dir: pathlib.Path) -> str | None:
+    """拡張子までそろった完全なファイル名で親ディレクトリが実在する候補を、新設先として返す。"""
+    name = candidate.rsplit("/", 1)[-1]
+    if _COMPLETE_FILE_NAME_RE.fullmatch(name) and (work_dir / candidate).parent.is_dir():
+        return candidate
+    return None
+
+
+@functools.cache
+def _tracked_files(work_dir: pathlib.Path) -> tuple[str, ...]:
+    """`work_dir`の追跡ファイルのリポジトリ相対パスを返す。Gitで取得できない場合は空にする。"""
+    result = subprocess.run(
+        ["git", "-C", str(work_dir), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        return ()
+    return tuple(path for path in result.stdout.split("\0") if path)
 
 
 def _section_text(body: str, heading: str) -> str | None:
@@ -605,8 +652,8 @@ def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
 def main(argv: list[str] | None = None) -> int:
     """コマンドライン引数を解析し、選定結果を確かめる。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("selection_file", type=pathlib.Path, help="pickerが保存した選定結果の絶対パス")
-    parser.add_argument("--work-dir", type=pathlib.Path, default=None, help="対象リポジトリの絶対パス")
+    parser.add_argument("selection_file", type=pathlib.Path, metavar="PATH", help="pickerが保存した選定結果の絶対パス")
+    parser.add_argument("--work-dir", type=pathlib.Path, metavar="DIR", default=None, help="対象リポジトリの絶対パス")
     args = parser.parse_args(argv)
     try:
         work_dir = _resolve_work_dir(args.work_dir)

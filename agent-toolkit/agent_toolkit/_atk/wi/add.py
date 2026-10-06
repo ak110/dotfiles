@@ -15,6 +15,7 @@ import sys
 import markdown_it
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
@@ -564,10 +565,13 @@ def _validate_add_entries(
             normalized_target_repo = resolve_repo_id_or_raise(target_repo)
         except WebInputError as error:
             raise _target_repo_error(target_repo, error) from error
-    if entry_type != WI_TYPE_AWI and question_type not in {"choice", "yes-no", "free-form"}:
+    if entry_type != WI_TYPE_AWI and question_type not in _constants.NEW_QUESTION_TYPES:
         raise WebInputError(
-            f"question_typeが不正です: {question_type}",
-            next_action="question_typeへchoice・yes-no・free-formのいずれかを指定する（CLIでは`--question-type`）",
+            f"UWIの回答形式が不正か未指定です: {question_type}",
+            next_action=(
+                "問いごとに個別のUWIとし、選択肢から選ぶ問いは`--question-type=choice --choices <A,B,C>`、"
+                "2択の可否を問う問いは`--question-type=yes-no`で投入する。選択肢に無い回答は回答欄で受ける"
+            ),
         )
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
     for frontmatter, body in parsed_messages:

@@ -69,6 +69,7 @@ def main() -> int:
         "paths",
         nargs="+",
         type=pathlib.Path,
+        metavar="PATH",
         help="ダッシュ文字を判定するMarkdownファイルまたはディレクトリ（複数指定可）",
     )
     args = parser.parse_args()

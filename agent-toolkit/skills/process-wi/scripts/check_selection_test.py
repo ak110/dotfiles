@@ -2,6 +2,8 @@
 
 import argparse
 import pathlib
+import re
+import subprocess
 import typing
 
 import check_selection
@@ -637,6 +639,75 @@ def test_abbreviated_paths_require_directory_context_and_existing_parent(
 
     assert _run(tmp_path, repo, [{"awi": "isolated.md", "lane": "lane-01", "write_files": []}]) == 0
     assert capsys.readouterr().err == ""
+
+
+def _track(repo: pathlib.Path, *relatives: str) -> None:
+    """`relatives`を作成し、`repo`をGitリポジトリにして全ファイルを追跡対象へ加える。"""
+    for relative in relatives:
+        (repo / relative).parent.mkdir(parents=True, exist_ok=True)
+        (repo / relative).write_text("x\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True, timeout=30)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True, timeout=30)
+
+
+_PLUGIN_SHARE_FILES = ("agent-toolkit/share/pick-wi.parent.md", "agent-toolkit/share/rules-main.md", "share/README.md")
+
+
+def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short_path(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """グロブの途中で途切れた語と不在のディレクトリ範囲を違反にせず、略記を追跡ファイルとして被覆判定する。
+
+    作業ツリー直下にも`share/`があるため、途切れた語や略記を親ディレクトリの実在だけで採ると、
+    `書込対象`の`agent-toolkit/`では覆えない未被覆の違反になる。グロブの手前の実在ディレクトリ
+    （`docs/development/`）を範囲として採っても、同じく未被覆の違反になる。
+    """
+    repo, notes = env
+    _track(repo, *_PLUGIN_SHARE_FILES)
+    _awi(
+        notes,
+        "glob.md",
+        "`agent-toolkit/`配下のうち`share/rules-*.md`と`share/exec-review.{parent,subagent}.md`、"
+        "略記の`rules/`と`share/pick-wi.parent.md`を改める。`docs/development/*.md`の記述は変えない。あわせて`src/model.py`と`src/new_module.py`も変える。",
+    )
+    selection = _write_selection(
+        tmp_path / "selection.yaml", [{"WI": "glob.md", "レーン": "lane-01", "書込対象": ["agent-toolkit/", "src/model.py"]}]
+    )
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
+    errors = [line for line in capsys.readouterr().err.splitlines() if line.startswith("glob.md: ")]
+    assert errors == ["glob.md: 未被覆: src/new_module.py"]
+
+    _write_selection(
+        selection,
+        [{"WI": "glob.md", "レーン": "lane-01", "書込対象": ["agent-toolkit/", "src/model.py", "src/new_module.py"]}],
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_reflected_paths_exist_or_name_complete_new_files(env: tuple[pathlib.Path, pathlib.Path]) -> None:
+    """多様な表記を混ぜた反映先から抽出した全パスが、実在するか、親の実在する完全なファイル名である。
+
+    抽出の字句規則を変えてグロブの断片、不在の範囲、拡張子の欠けた名前を抽出するようになると失敗する。
+    """
+    repo, _notes = env
+    _track(repo, *_PLUGIN_SHARE_FILES)
+    body = (
+        "---\ntype: awi\nsource: test\n---\n\n# 題\n\n## 反映内容と反映先\n\n"
+        "変更対象はsrc/model.pyとdocs/development/design.mdである。"
+        "`share/rules-*.md`、`agent-toolkit/share/rules-*.md`、`share/exec-review.{parent,subagent}.md`、`src/*.py`を改める。"
+        "略記の`rules/`・`UCR/`・`share/pick-wi.parent.md`、範囲`src/`と`missing/`、"
+        "src/のmodel.py・new_module.py・draft、`docs/development/new.md`と`docs/development/new.`も扱う。\n"
+    )
+
+    paths = check_selection.reflected_paths(body, repo)
+
+    assert "agent-toolkit/share/pick-wi.parent.md" in paths
+    for path in paths:
+        target = repo / path
+        complete_new_file = re.fullmatch(r"[^/]*[^/.]\.[A-Za-z0-9]+", path.rsplit("/", 1)[-1]) and target.parent.is_dir()
+        assert target.exists() or complete_new_file, path
 
 
 @pytest.mark.parametrize("legacy", [False, True])

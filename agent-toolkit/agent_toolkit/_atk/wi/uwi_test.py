@@ -51,7 +51,7 @@ def _invoke_uwi_add(tmp_path: pathlib.Path, *args: str, body: str) -> SystemExit
     """本文ファイル経由でUWI投入を呼び出し、終了結果を返す。"""
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
-            ["wi", "add", "--type=uwi", *args, *_body_file_args(tmp_path, body)],
+            ["wi", "add", "--type=uwi", "--question-type=yes-no", *args, *_body_file_args(tmp_path, body)],
             home=tmp_path,
             now=_FIXED_DT,
         )
@@ -200,7 +200,7 @@ class TestUwiAdd:
         assert "target_repo: github.com/example/myrepo" in content
         assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
         assert "scope: theme1" in content
-        assert "question_type: free-form" in content
+        assert "question_type: yes-no" in content
         assert "created:" not in content.split("---\n\n", 1)[0]
         assert "## 質問\n\n未確認の挙動" in content
         assert "## 回答" in content
@@ -343,7 +343,7 @@ class TestUwiAddEditorBeforePull:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=uwi"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--type=uwi", "--question-type=yes-no"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         assert editor_calls
@@ -428,7 +428,7 @@ class TestUwiAddRepoPathOverrideCli:
         myrepo.mkdir()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=uwi", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--type=uwi", "--question-type=yes-no", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()

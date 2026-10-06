@@ -50,7 +50,7 @@ def validate(contract: Any) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--contract", type=pathlib.Path, required=True, help="review_contract YAMLの絶対パス")
+    parser.add_argument("--contract", type=pathlib.Path, metavar="PATH", required=True, help="review_contract YAMLの絶対パス")
     return parser
 
 

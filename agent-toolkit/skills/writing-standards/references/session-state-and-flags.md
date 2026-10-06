@@ -113,6 +113,12 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が実ユーザー発話の受領時に読み、真なら同スキルの起動を促す注記を返す。機械注入ターンでは読まず、状態も変えない。
   PostToolUse(Skill)が同スキルの起動で偽へ戻し、UserPromptSubmitもユーザーが同スキルをスラッシュコマンドで起動した発話で偽へ戻す。CodexではSkillの起動を観測できないため、UserPromptSubmitが注記を返した時点で偽へ戻す。
   寿命はセッション状態ファイルと同じとする
+- `operation_skill_ready_agents`: 操作を起動の契機とするスキル（現在は`agent-toolkit:search`）の完全名から、そのスキルを起動済みの呼び出し主体の一覧への対応を記録する。
+  呼び出し主体はhook payloadの`agent_id`とし、持たないメイン会話は`main`とする。
+  `agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が未起動のまま操作した呼び出しへ警告を返した時点と、PostToolUse(Skill)が表のスキルの起動を観測した時点で、その主体を加える。
+  同モジュールがPreToolUseで読み、記録の無い主体の操作にだけ警告する。CodexではSkillの起動を観測できないため、警告を返した時点の記録だけで再警告を止める。
+  `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`clear`・`compact`のときに`main`を除き、委譲先のセッションでも同じく除く。`resume`と`fork`では変えず、サブエージェントの記録も変えない。
+  寿命はセッション状態ファイルと同じとする
 
 - `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程の証拠を作業単位で保持する。
   中身は作業ごとの可視発話の報告、振り返りの準備結果、呼び出し、判断記録、遅れて返る応答を元の作業へ対応付けるための未完了の呼び出しと、判断の根拠となる人間の入力である。

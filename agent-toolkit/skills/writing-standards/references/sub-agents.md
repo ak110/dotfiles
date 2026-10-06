@@ -43,7 +43,7 @@ frontmatterの項目名と受理値は`https://code.claude.com/docs/ja/sub-agent
 
 同じコードブロックへ任意の`mode: <delegate|explore|write|shell>`行を置ける。行が無い場合は`delegate`（通常委譲）とする。
 `explore`・`write`・`shell`を宣言した`<役割名>.subagent.md`は、`start`が同名の`mode`と同じ軽量な起動条件で起動する。
-軽量な起動条件の委譲先はスキルと常時規範を読む手段を持たないため、判定基準と手順を`<役割名>.subagent.md`の中で完結させる。
+軽量な起動条件の委譲先へ届く規範とスキルは`agent-documents-basics.md`「責務と構成」の配送範囲表が示すとおり限られるため、判定基準と手順を`<役割名>.subagent.md`の中で完結させる。
 
 `<役割名>.parent.md`はH1の直後で最初のH2より前へ`text`のコードブロックを1件置く。
 そのブロックの1行目を`起動対象:`とその直後の半角空白で始め、その文書が直接起動する`<役割名>.subagent.md`のファイル名をASCIIカンマで区切って並べる。この行を起動関係の基準となる定義とする。

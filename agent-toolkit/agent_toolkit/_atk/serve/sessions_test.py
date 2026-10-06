@@ -350,6 +350,32 @@ def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
     assert detail["started_at"] == "2026-09-01T00:00:00Z"
 
 
+def test_detail_returns_every_event_of_a_long_record(tmp_path: pathlib.Path) -> None:
+    """5,000件を超えるイベントを持つ記録でも、詳細は全イベントを返し、切り詰めた件数の項目を持たない。
+
+    件数で切り詰めると、右ペインはその後ろのイベントと以後の追記へどの操作でも到達できない。
+    """
+    count = 5001
+    path = _write(
+        tmp_path / "claude" / "projects" / "-home-aki-long" / "long.jsonl",
+        [{"type": "user", "timestamp": "2026-09-01T00:00:00Z", "cwd": "/home/aki/long", "message": {"content": "開始"}}]
+        + [
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-01T00:00:01Z",
+                "message": {"content": [{"type": "text", "text": f"応答{index}"}]},
+            }
+            for index in range(count)
+        ],
+    )
+
+    detail = sessions.read_local_detail(_context(tmp_path), "claude", str(path))
+
+    assert len(detail["events"]) == count + 1
+    assert detail["events"][-1]["text"] == f"応答{count - 1}"
+    assert "truncated_events" not in detail
+
+
 def test_subagent_records_are_reachable_from_the_parent_detail(tmp_path: pathlib.Path) -> None:
     """記録本体があるサブエージェントは絶対パスを返し、その詳細から下位の階層も辿れる。"""
     path = _claude_record(tmp_path)

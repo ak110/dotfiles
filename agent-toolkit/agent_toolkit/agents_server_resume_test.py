@@ -373,7 +373,7 @@ async def test_wait_returns_result_when_child_session_is_missing(
         result = await _wait_with_timeout(manager, 1)
 
         assert result["status"] == "completed"
-        assert result["error"] == {"unobservedSessions": [child_session_id]}
+        assert result["error"] == {"unobservedSessions": [child_session_id], "heldResultFinalized": True}
         assert session.awaiting_auto_resume is False
         assert not session.live_child_session_ids
     finally:
@@ -400,7 +400,7 @@ async def test_wait_returns_result_when_child_session_is_unreadable(
         result = await _wait_with_timeout(manager, 1)
 
         assert result["status"] == "completed"
-        assert result["error"] == {"unobservedSessions": [child_session_id]}
+        assert result["error"] == {"unobservedSessions": [child_session_id], "heldResultFinalized": True}
         assert session.awaiting_auto_resume is False
         assert not session.live_child_session_ids
     finally:
@@ -585,7 +585,7 @@ async def test_unobserved_child_sessions_appear_in_error(
 
         result = await _wait_with_timeout(manager, 1)
 
-        assert result["error"] == {"unobservedSessions": [child_session_id]}
+        assert result["error"] == {"unobservedSessions": [child_session_id], "heldResultFinalized": True}
     finally:
         await backend.close()
 
@@ -611,6 +611,7 @@ async def test_unobserved_child_sessions_merge_into_existing_error(
         assert result["error"] == {
             "message": "既存エラー",
             "unobservedSessions": [child_session_id],
+            "heldResultFinalized": True,
         }
     finally:
         await backend.close()
@@ -762,7 +763,7 @@ async def test_codex_kill_during_hold_returns_pending_result_with_unobserved_chi
         assert session.result_available is True
         assert session.awaiting_auto_resume is False
         assert session.agent_message == f"待機中: {child_session_id}"
-        assert session.error == {"unobservedSessions": [child_session_id]}
+        assert session.error == {"unobservedSessions": [child_session_id], "heldResultFinalized": True}
     finally:
         await manager.close()
 
@@ -802,7 +803,7 @@ async def test_codex_auto_resume_deadline_publishes_pending_result_with_unobserv
     try:
         result = await _wait_with_timeout(manager, 5)
         assert result["status"] == "completed"
-        assert result["error"] == {"unobservedSessions": [child_session_id]}
+        assert result["error"] == {"unobservedSessions": [child_session_id], "heldResultFinalized": True}
         send_message.assert_not_awaited()
     finally:
         await manager.close()
@@ -932,13 +933,47 @@ async def test_result_without_background_task_is_immediately_available(
 
 
 @pytest.mark.asyncio
+async def test_pending_result_waits_for_background_task_up_to_bash_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """保留の期限は背景実行のBashの上限より後に置き、その前に届いた完了通知の再開turnの結果を返す。
+
+    期限が上限より短いと、規範どおり上限内に収まるバックグラウンドタスクを待つ保留が打ち切られ、待機表明が返る。
+    """
+    client = ControlledClaudeClient("claude-bash-limit")
+    manager, backend = _manager(client, monkeypatch)
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        client.emit(TaskStartedMessage("long-ci-wait"))
+        client.emit(ResultMessage("待機中: long-ci-wait"))
+        await _await_state(lambda: session.awaiting_auto_resume)
+        deadline = session.auto_resume_deadline
+        assert deadline is not None
+        assert deadline - asyncio.get_running_loop().time() >= state.CLAUDE_BACKGROUND_BASH_MAX_SECONDS
+
+        client.emit(TaskNotificationMessage("long-ci-wait", "completed"))
+        client.emit(ResultMessage("CIの結果を確認した", origin={"kind": "task-notification"}))
+        result = await wait_task
+
+        assert result["agent_message"] == "CIの結果を確認した"
+        assert "error" not in result
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("completion", ["deadline", "stream_end"])
 async def test_pending_result_is_finalized_without_auto_resume(
     completion: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """自動再開が届かない場合は期限またはストリーム終端で初回結果を確定する。"""
+    """自動再開が届かない場合は期限またはストリーム終端で初回結果を確定し、残ったバックグラウンドタスクを`error`に示す。
+
+    確定した結果は待機表明であり、印が無いと委譲元は再開したturnの結果と取り違えて作業を進める。
+    """
     monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.03)
     client = ControlledClaudeClient(f"claude-{completion}")
@@ -954,6 +989,7 @@ async def test_pending_result_is_finalized_without_auto_resume(
         result = await _wait_with_timeout(manager, 1)
 
         assert result["agent_message"] == "保留結果"
+        assert result["error"] == {"unfinishedBackgroundTasks": ["task-1"], "heldResultFinalized": True}
         assert session.awaiting_auto_resume is False
         assert session.pending_result is None
         await _await_state(lambda: session.session_id not in manager.sessions)
@@ -983,6 +1019,7 @@ async def test_kill_interrupts_while_initial_result_is_pending(
 
         assert result["status"] == "completed"
         assert result["agent_message"] == "初回結果"
+        assert result["error"] == {"unfinishedBackgroundTasks": ["task-1"], "heldResultFinalized": True}
         assert result["kill_requested"] is True
         assert client.interrupts == 1
         assert session.auto_resume_consumed is True
@@ -1049,6 +1086,7 @@ async def test_send_message_finalizes_pending_result_before_starting_reply(
 
         assert response["delivery"] == "reply_started"
         assert response["previous_result"]["agent_message"] == "初回結果"
+        assert response["previous_result"]["error"] == {"unfinishedBackgroundTasks": ["task-1"], "heldResultFinalized": True}
         assert session.status == "running"
         assert session.auto_resume_consumed is False
         assert set(session.live_tasks) == {"task-1"}
@@ -1058,6 +1096,7 @@ async def test_send_message_finalizes_pending_result_before_starting_reply(
         client.emit(ResultMessage("reply結果"))
         result = await _wait_with_timeout(manager, 1)
         assert result["agent_message"] == "reply結果"
+        assert "error" not in result
     finally:
         await backend.close()
 

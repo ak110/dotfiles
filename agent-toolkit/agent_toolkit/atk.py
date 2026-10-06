@@ -4,7 +4,8 @@
 サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents <sub>`・
 `atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
-`atk review-audit <sub>`・`atk run-script <script> -- <引数>`・`atk run-command -- <argv>`形式とする。
+`atk review-audit <sub>`・`atk run-script <script> -- <引数>`・`atk run-command -- <argv>`・
+`atk run-skill <スキル名>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示。
@@ -17,8 +18,8 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq process-loop: `orchestrate_model`設定に従いClaude CodeまたはCodexの新規セッションへ
   `/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
-  待機中は無効化しない限りCI失敗を自動検出してAWI投入し、未判定のDependabotアラートがあれば
-  process-wiを1回実行させて監査させる（`--no-alerts`で無効化）
+  待機中と各セッションの開始前は無効化しない限りCI失敗（定期実行の失敗を含む）を自動検出してAWI投入し、
+  待機中に未判定のDependabotアラートがあればprocess-wiを1回実行させて監査させる（`--no-alerts`で無効化）
 - mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: process-loopへの中断要求と追加指示を操作する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - plans commit/list: 現行計画またはCI対応レビュー指摘管理表の保存と作業中計画の一覧
@@ -28,6 +29,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - agents wait/notify/list/show: 委譲sessionの待機・通知・一覧・詳細表示
 - run-script: plugin内部スクリプトを安定した公開名で実行する
 - run-command: 有限終了する外部コマンドの両ストリームと終了状態を保持する
+- run-skill: 定期実行から任意のスキルを自律モードで1回実行する
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
 `_atk_wi_process_loop`・`_atk_wi_uwi`の各補助モジュールに分割し、
@@ -62,6 +64,7 @@ from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
 from agent_toolkit._atk import review_table as _review_table  # noqa: E402
 from agent_toolkit._atk import run_command as _run_command  # noqa: E402
 from agent_toolkit._atk import run_script as _run_script  # noqa: E402
+from agent_toolkit._atk import run_skill as _run_skill  # noqa: E402
 from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
 from agent_toolkit._atk import watch as _watch  # noqa: E402
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
@@ -69,6 +72,7 @@ from agent_toolkit._atk.environment import is_agent_environment  # noqa: E402
 from agent_toolkit._atk.wi import add as _add  # noqa: E402
 from agent_toolkit._atk.wi import batch as _batch  # noqa: E402
 from agent_toolkit._atk.wi import common as _common  # noqa: E402
+from agent_toolkit._atk.wi import constants as _constants  # noqa: E402
 from agent_toolkit._atk.wi import grep as _grep  # noqa: E402
 from agent_toolkit._atk.wi import listing as _list  # noqa: E402
 from agent_toolkit._atk.wi import mutations as _mutations  # noqa: E402
@@ -397,9 +401,13 @@ def _add_wi_add_parser(sub: Any) -> None:
     )
     add.add_argument(
         "--question-type",
-        choices=("free-form", "yes-no", "choice"),
+        metavar="{" + ",".join(_constants.NEW_QUESTION_TYPES) + "}",
         default=None,
-        help="UWIの回答形式。省略時はfree-formで回答を求める。`--type=uwi`でのみ指定できる。",
+        help=(
+            "UWIの回答形式。`--type=uwi`では必須とし、`--type=uwi`でのみ指定できる。"
+            "選択肢から選ぶ問いは`choice`（`--choices`も指定する）、2択の可否を問う問いは`yes-no`とする。"
+            "選択肢に無い回答は回答欄で受ける。"
+        ),
     )
     add.add_argument(
         "--choices",
@@ -934,7 +942,10 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     loop.add_argument(
         "--no-alerts",
         action="store_true",
-        help="待機中のCI失敗の検出と、未判定のDependabotアラートによるprocess-wiの実行を無効化する（指定しない場合は有効）。",
+        help=(
+            "待機中と各セッションの開始前のCI失敗の検出と、待機中の未判定のDependabotアラートによる"
+            "process-wiの実行を無効化する（指定しない場合は有効）。"
+        ),
     )
     loop.add_argument(
         "--alert-interval",
@@ -1034,6 +1045,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _run_script.build_parser(run_script)
     run_command = _atk_help.add_command(top, "run-command", **_atk_help.HELP["atk run-command"])
     _run_command.build_parser(run_command)
+    run_skill = _atk_help.add_command(top, "run-skill", **_atk_help.HELP["atk run-skill"])
+    _run_skill.build_parser(run_skill)
     plans = _atk_help.add_command(top, "plans", **_atk_help.HELP["atk plans"])
     _plans.build_parser(plans)
     serve = _atk_help.add_command(top, "serve", **_atk_help.HELP["atk serve"])
@@ -1449,13 +1462,26 @@ def main(
         ]
         if uwi_only:
             args.subparser.error(f"{'・'.join(uwi_only)}は--type=uwiでのみ指定できます。")
-    if args.command == "wi" and args.wi_subcommand == "add" and args.type == _common.WI_TYPE_UWI and args.question_type is None:
-        args.question_type = "free-form"
     if (
         args.command == "wi"
         and args.wi_subcommand == "add"
         and args.type == _common.WI_TYPE_UWI
-        and args.question_type == "choice"
+        and args.question_type not in _constants.NEW_QUESTION_TYPES
+    ):
+        # 選択肢の検証をargparseへ任せると、不正値の案内に問いの分け方と投入の形が現れない。
+        _outcome.report_failure(
+            f"--type=uwiの--question-typeが不正か未指定のため保存しなかった（指定値: {args.question_type}）",
+            next_action=(
+                "問いごとに個別のUWIとし、選択肢から選ぶ問いは`--question-type=choice --choices A,B,C`、"
+                "2択の可否を問う問いは`--question-type=yes-no`で投入する。選択肢に無い回答は回答欄で受け取る"
+            ),
+        )
+        sys.exit(2)
+    if (
+        args.command == "wi"
+        and args.wi_subcommand == "add"
+        and args.type == _common.WI_TYPE_UWI
+        and args.question_type == _constants.QUESTION_TYPE_CHOICE
         and not args.choices
     ):
         args.subparser.error("--question-type=choice のときは --choices を指定してください。")
@@ -1474,6 +1500,8 @@ def main(
             sys.exit(1)
     if args.command == "run-command":
         sys.exit(_run_command.run(args))
+    if args.command == "run-skill":
+        sys.exit(_run_skill.run(args))
     if home is None:
         home = pathlib.Path.home()
     if args.command == "serve":

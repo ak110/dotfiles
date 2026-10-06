@@ -39,7 +39,6 @@ def _isolated_state(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> 
     monkeypatch.setenv("TEMP", str(tmp_path))
     monkeypatch.setenv("TMP", str(tmp_path))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.setattr(_stop_gate, "_wait_for_end_turn", lambda _path: None)
     _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
 
 

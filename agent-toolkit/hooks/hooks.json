@@ -33,7 +33,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Agent|Task|mcp__plugin_agent-toolkit_agents_server__start|mcp__plugin_agent-toolkit_agents_server__send_message|mcp__plugin_agent-toolkit_agents_server__kill|mcp__plugin_agent-toolkit_agents_server__stop|mcp__plugin_agent-toolkit_agents_server__list|mcp__plugin_agent-toolkit_agents_server__show",
+        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Agent|Task|AskUserQuestion|mcp__plugin_agent-toolkit_agents_server__start|mcp__plugin_agent-toolkit_agents_server__send_message|mcp__plugin_agent-toolkit_agents_server__kill|mcp__plugin_agent-toolkit_agents_server__stop|mcp__plugin_agent-toolkit_agents_server__list|mcp__plugin_agent-toolkit_agents_server__show",
         "hooks": [
           {
             "type": "command",

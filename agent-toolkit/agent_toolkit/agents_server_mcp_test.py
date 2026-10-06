@@ -466,7 +466,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_agents_server/codex.py",
         "_agents_server/claude.py",
         "_agents_server/antigravity.py",
-        "_agents_server/process_tree.py",
+        "_common/process_tree.py",
         "_agents_server/state.py",
         "_agents_server/status_file.py",
         "_agents_server/session_registry.py",
@@ -1144,12 +1144,11 @@ def test_observed_session_identity_uses_last_identity_from_unique_physical_recor
 ) -> None:
     """終端応答の観測identityは一意な物理記録の最後の観測値を使う。"""
     record = tmp_path / "session.jsonl"
+    # Codex 0.160.1の記録の`turn_context`行の形（最上位の`type`、`payload`の`model`と`effort`）を写した。
     entries = [
-        {"type": "event_msg", "payload": {"type": "turn_context", "model": "gpt-6-sol", "effort": "high"}},
-        {
-            "type": "event_msg",
-            "payload": {"type": "turn_context", "model": "gpt-6.1-sol", "effort": "medium"},
-        },
+        {"type": "turn_context", "payload": {"cwd": "/work", "model": "gpt-6-sol", "effort": "high"}},
+        {"type": "event_msg", "payload": {"type": "token_count"}},
+        {"type": "turn_context", "payload": {"cwd": "/work", "model": "gpt-6.1-sol", "effort": "medium"}},
     ]
     record.write_text("".join(f"{json.dumps(entry)}\n" for entry in entries), encoding="utf-8")
     monkeypatch.setattr(

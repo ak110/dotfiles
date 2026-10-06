@@ -1288,7 +1288,7 @@ function resetCreateForm() {
   byId('create-content').value = '';
   byId('create-target').value = '';
   byId('create-scope').value = '';
-  byId('create-question-type').value = 'free-form';
+  byId('create-question-type').value = 'yes-no';
   byId('create-choices').value = '';
   setFieldError(byId('create-content'), byId('create-content-error'), '');
   setFieldError(byId('create-target'), byId('create-target-error'), '');

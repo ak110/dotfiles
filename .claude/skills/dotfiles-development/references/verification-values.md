@@ -9,6 +9,12 @@
   - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
   - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。`agents_server`のMCPツールと`atk agents wait`が公開する応答の変更も対象に含める。
     共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。公開する応答の変更は、応答の項目の内容・書式・条件・有無の変更を指す。同じ応答の項目をMCP層、CLIの待機および自動再開後の応答のテストが別々のファイルで確かめるためである。いずれも内部のコメント・空白だけの変更は含めない
+  - 配布物の版指定をエンドユーザーの環境の解決方法で確かめるテスト: `install_sh_test.py`。隔離したHOMEへ配布設定を展開し、実際のuvと配布する公開待機設定でpost-applyの`uv tool install`とpyfltr MCPのウォームアップを実行する。次のいずれかを変えた場合は、変更範囲の検証へ`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。
+    - `agent-toolkit/.mcp.json`の版指定（生成物の`agent-toolkit/mcp.json`と`agent-toolkit/.mcp.codex.json`を含む）
+    - リポジトリ直下と`agent-toolkit/`の`pyproject.toml`の`dependencies`
+    - `.chezmoi-source/`の導入・更新処理がパッケージマネージャーへ渡す版指定
+
+    `pytools/_internal/warm_pyfltr_mcp_test.py`は`uvx`を代替実行ファイルへ置き換えるため、版指定を解決できるかを確かめない
   - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`
   - 名前の削除・改名の全体静的確認: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
   - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う

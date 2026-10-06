@@ -1,6 +1,6 @@
 """機械が生成してユーザー入力欄へ入る本文を囲む`atk-auto`要素。
 
-`atk wi process-loop`が子セッションの最初の入力として渡す本文は、ホストからはユーザーの発話と同じ
+`atk wi process-loop`と`atk run-skill`が子セッションの最初の入力として渡す本文は、ホストからはユーザーの発話と同じ
 入力欄へ届く。受領したエージェントがユーザー自身の発話と区別できるよう、生成側が本要素で囲み、
 消費側は同じ要素の有無だけで判定する。生成側と消費側が別の判定を持つと、両者の集合がずれる。
 
@@ -11,6 +11,7 @@ from agent_toolkit._common import message_format
 
 ELEMENT = message_format.AUTO_INSERTED_ELEMENT
 SOURCE_PROCESS_LOOP = "process-loop"
+SOURCE_RUN_SKILL = "run-skill"
 KIND_GOAL = "goal"
 KIND_AVAILABILITY_PROBE = "availability-probe"
 

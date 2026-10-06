@@ -32,6 +32,7 @@ description: >
 | 人間が読む文章（Markdown・README・技術文書・API文書、業務・仕様文書、体験を述べる文章、コメント、AWI・UWIの本文）を書く時 | `references/writing.md` |
 | コード・テストコードを書く時 | 「コードの編集時に読む資料」の各行 |
 | エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`）を書く時 | 「エージェント向け文書の編集時に読む資料」の各行 |
+| 配布物がエンドユーザーの環境でパッケージマネージャーへ渡す版指定（プラグインのMCP定義にある`uvx --from`の引数、導入・更新処理の`uv tool install`が解決する`pyproject.toml`の`dependencies`、`uv run --with`の引数、PEP 723の`dependencies`など）を変える作業の起草、計画、実装およびレビューの時 | `references/dependency-management.md` |
 
 ## 文章の作成時に読む資料
 

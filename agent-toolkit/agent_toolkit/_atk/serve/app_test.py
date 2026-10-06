@@ -1087,7 +1087,7 @@ async def test_entries_api_returns_identical_pages_while_reusing_unchanged_files
         ("/api/entries", {"type": "awi", "messages": ["awi"]}),
         (
             "/api/entries",
-            {"type": "uwi", "messages": ["UWIですか？"], "scope": "test", "question_type": "free-form"},
+            {"type": "uwi", "messages": ["UWIですか？"], "scope": "test", "question_type": "yes-no"},
         ),
     ],
 )
@@ -1105,6 +1105,33 @@ async def test_web_add_mutations_require_target_repo(
     response = await app.test_client().post(path, json=payload)
     assert response.status_code == 400
     assert "target_repo" in (await response.get_json())["error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("question_type", [None, "free-form"])
+async def test_create_uwi_rejects_missing_or_free_form_question_type(
+    tmp_path: pathlib.Path,
+    question_type: str | None,
+) -> None:
+    """新規追加APIは回答形式の省略とfree-formを入力エラーとし、UWIを保存しない。"""
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    payload: dict[str, object] = {
+        "type": "uwi",
+        "messages": ["どちらの案を採用しますか？"],
+        "target_repo": "github.com/example/repo",
+    }
+    if question_type is not None:
+        payload["question_type"] = question_type
+
+    response = await app.test_client().post("/api/entries", json=payload)
+
+    assert response.status_code == 400
+    assert "choice" in (await response.get_json())["error"]
+    assert not list(tmp_path.glob("*/*.md"))
 
 
 @pytest.mark.asyncio
@@ -1126,7 +1153,7 @@ async def test_web_add_mutations_require_target_repo(
                 "type": "uwi",
                 "messages": ["---\nsource: add-awi\n---\n\nUWIですか？"],
                 "scope": "test",
-                "question_type": "free-form",
+                "question_type": "yes-no",
                 "target_repo": "https://github.com/Example/Specified.git",
             },
             "github.com/example/specified",
@@ -1592,7 +1619,7 @@ async def test_single_entry_api_switches_show_format_to_batch_import(
     batch_response = await _serve_app(batch_root).test_client().post("/api/entries/batch", json={"text": text})
     payload: dict[str, object] = {"type": entry_type, "messages": [text.strip()], "raw_text": text}
     if entry_type == "uwi":
-        payload["question_type"] = "free-form"
+        payload["question_type"] = "yes-no"
 
     response = await _serve_app(single_root).test_client().post("/api/entries", json=payload)
 

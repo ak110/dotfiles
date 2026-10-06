@@ -30,8 +30,8 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
   - `~/dotfiles`はdev依存へ固定した`uv run --frozen pyfltr fast`を、`~/pyfltr`は自身を`uv run`で呼び出す。
     その他のプロジェクトは`uvx --exclude-newer-package pyfltr=false pyfltr fast`を呼び出す。
     公開直後のpyfltrを公開待機の対象から外して使うための作者個人の対処であり、pyfltrの推奨ガイドが示す呼び出し形はそのまま保つ。
-    例外の指定先はコマンドラインに限り、グローバルのuv設定（`~/.config/uv/uv.toml`）は対象外とする。ユーザー設定の例外は各プロジェクトの`uv.lock`（`[options.exclude-newer-package]`）へ入り、
-    追跡ロックの再現性を損なうためである。コマンドラインで指定した例外は`uvx`の一時環境だけに適用され、プロジェクトの`uv.lock`は元のまま残る
+    例外はコマンドラインで指定する。置き場所の判断と、グローバルのuv設定（`~/.config/uv/uv.toml`）へ置かない理由は、
+    `agent-toolkit:writing-standards`の`references/dependency-management.md`のパッケージ単位の除外の項に従う
 - 文書lint（textlint、markdownlint、prettier）はpyfltr経由（miseタスク、prekのhook、CI）で行い、`AGENTS.md`を含む文書をpyfltrの対象集合でチェックする
   - `package.json`の`scripts`へ、pyfltrと別に文書lintを動かすスクリプト（`lint`、`lint:fix`など）を置かない。
     起動するコマンドごとに対象集合が分かれ、一方の結果だけでは他方の対象にある警告が漏れるためである

@@ -86,7 +86,7 @@
 | 返却値 | 委譲先が`<役割名>.subagent.md`の`## 出力`に従って返す値 | `agent-toolkit/skills/delegation/references/base-contract.md` |
 | エージェント向け文書 | コーディングエージェントが直接読み込む文書 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
 | 読込表 | スキル本体と`<役割名>.parent.md`・`<役割名>.subagent.md`の冒頭に置き、時点または条件と、その時点で全文読む参照資料を対応付ける表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
-| 配送範囲表 | 常時規範と配送文がどの主体へ届くかを示す表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
+| 配送範囲表 | 常時規範、配送文、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどの主体へ届くかを示す表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | 常時規範 | agent-toolkitが読み手へ常に配送する規範（`rules/`配下と`share/rules-main*.md`・`rules-subagent*.md`） | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | プロジェクト規範 | 対象リポジトリが規範として定める指示 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | プロジェクト方針 | プロジェクト規範に加え、規範化されていない記述に書かれた方針 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |

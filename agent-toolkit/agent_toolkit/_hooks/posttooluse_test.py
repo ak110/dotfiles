@@ -633,6 +633,115 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
+_FREE_TEXT = "process-loopが動いてるからそっちでマージされるはず"
+_QUESTION = "Issue対応の回までマージを待ちますか？"
+_MULTI_QUESTION = "どの対応を進めますか？"
+_LABELS = ("待つ (Recommended)", "今すぐマージする")
+
+
+def _ask_user_question_payload(session_id: str, tool_response: dict) -> dict:
+    """`AskUserQuestion`のPostToolUse payloadを組み立てる。
+
+    `tool_response`の形はClaude Code 2.1.285と2.1.283の`~/.claude/projects`配下の記録にある
+    `toolUseResult`（`questions`・`answers`・`annotations`、注記だけの回答の`(notes only)`、
+    複数選択の`, `区切り）から写した。`response`と`afkTimeoutMs`はClaude Code 2.1.291本体の
+    `AskUserQuestion`の`call`が返す`data`の項目である。
+    """
+    response = {
+        "questions": [
+            {"question": _QUESTION, "multiSelect": False, "options": [{"label": label} for label in _LABELS]},
+            {"question": _MULTI_QUESTION, "multiSelect": True, "options": [{"label": label} for label in _LABELS]},
+        ],
+        "answers": {_QUESTION: _LABELS[0], _MULTI_QUESTION: ", ".join(_LABELS)},
+        "annotations": {},
+        "response": None,
+        "afkTimeoutMs": None,
+    }
+    response.update(tool_response)
+    return {"session_id": session_id, "tool_name": "AskUserQuestion", "tool_input": {}, "tool_response": response}
+
+
+def _single_notice_body(result: subprocess.CompletedProcess[str], source: str) -> str:
+    """hookの出力から指定した生成元の`notice`の本文を1件取り出す。"""
+    assert result.returncode == 0, result.stderr
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    opening = f'<atk-auto source="{source}" kind="notice">\n'
+    assert context.startswith(opening) and context.endswith("\n</atk-auto>")
+    return context[len(opening) : -len("\n</atk-auto>")]
+
+
+@pytest.mark.parametrize(
+    "tool_response",
+    [
+        pytest.param({"answers": {_QUESTION: _FREE_TEXT, _MULTI_QUESTION: _LABELS[0]}}, id="answer-not-a-label"),
+        pytest.param({"answers": {_QUESTION: _LABELS[0], _MULTI_QUESTION: f"{_LABELS[1]}, {_FREE_TEXT}"}}, id="multi-select"),
+        pytest.param({"response": _FREE_TEXT, "answers": {}}, id="response"),
+        pytest.param(
+            {
+                "answers": {_QUESTION: "(notes only)", _MULTI_QUESTION: _LABELS[0]},
+                "annotations": {_QUESTION: {"notes": _FREE_TEXT}},
+            },
+            id="notes",
+        ),
+        pytest.param(
+            {"questions": [{"question": _QUESTION, "multiSelect": False}], "answers": {_QUESTION: _FREE_TEXT}},
+            id="no-options",
+        ),
+    ],
+)
+def test_free_text_answer_receives_the_same_notice_as_user_prompt(tmp_path: pathlib.Path, tool_response: dict) -> None:
+    """ユーザーが書いた文は、通常発話と`AskUserQuestion`のどの形で届いても同じ現物確認の注記を受ける。
+
+    PostToolUseが注記を返さないと、回答が否定した前提を確かめないまま応答が同じ前提を繰り返す。
+    片方のhookだけ本文を改訂すると、同じ文にhookごとに異なる手順が届く。
+    """
+    session_id = "ask-user-question-free-text"
+    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    state_path.write_text(json.dumps({"last_user_prompt_at": 0.0}), encoding="utf-8")
+    env = os.environ.copy()
+    env.update({"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)})
+    user_prompt = _fork_runner.run_script(
+        _SCRIPT,
+        argv=("user_prompt_submit",),
+        input=json.dumps({"session_id": session_id, "prompt": _FREE_TEXT}, ensure_ascii=False),
+        env=env,
+    )
+    prompt_body = _single_notice_body(user_prompt, "user_prompt_submit")
+
+    answer_body = _single_notice_body(
+        _run(_ask_user_question_payload(session_id, tool_response), state_dir=tmp_path), "posttooluse"
+    )
+
+    # 前提を否定する回答への手順の文意は定義の読解で確かめ、ここでは共通の本文に続く手順があることだけを確かめる。
+    assert answer_body.startswith(prompt_body)
+    assert answer_body[len(prompt_body) :].strip()
+
+
+@pytest.mark.parametrize(
+    "tool_response",
+    [
+        pytest.param({}, id="labels-only"),
+        pytest.param({"answers": {_QUESTION: _FREE_TEXT}, "afkTimeoutMs": 60000}, id="afk-timeout"),
+        pytest.param(
+            {"answers": {_QUESTION: "(notes only)"}, "annotations": {_QUESTION: {"preview": "案"}}}, id="preview-only"
+        ),
+    ],
+)
+def test_answer_without_user_text_receives_no_notice(tmp_path: pathlib.Path, tool_response: dict) -> None:
+    """提示した`label`だけの回答と、ユーザーが応答せずに閉じた回答には注記を返さない。"""
+    result = _run(_ask_user_question_payload("ask-user-question-labels", tool_response), state_dir=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
+def test_hooks_json_routes_ask_user_question_to_posttooluse() -> None:
+    """PostToolUseの登録がAskUserQuestionを被覆しないと、前2件の処理へ入力が届かない。"""
+    hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
+    matchers = [entry["matcher"].split("|") for entry in hooks]
+    assert any("AskUserQuestion" in names for names in matchers)
+
+
 def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.Path) -> None:
     """成功したTaskStopの対象記録だけを消費する。"""
     session_id = "task-stop-consume"

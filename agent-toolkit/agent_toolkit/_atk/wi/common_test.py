@@ -114,12 +114,14 @@ def _write_uwi(
     target_repo: str = "github.com/example/repo",
     question: str = "確認事項",
     answer: str = "",
+    source: str | None = None,
 ) -> None:
     """テスト用UWIをinboxへ書き込む。"""
     inbox = private_notes / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
+    source_line = f"source: {source}\n" if source is not None else ""
     (inbox / filename).write_text(
-        f"---\ntarget_repo: {target_repo}\ntype: uwi\n---\n\n## 質問\n\n{question}\n\n## 回答\n\n{answer}",
+        f"---\ntarget_repo: {target_repo}\ntype: uwi\n{source_line}---\n\n## 質問\n\n{question}\n\n## 回答\n\n{answer}",
         encoding="utf-8",
     )
 
@@ -413,6 +415,27 @@ class TestReadiness:
 
         assert result.blocked == ("answer.md", "awi.md")
         assert result.actionable_count == 0
+
+    def test_run_skill_answered_uwi_is_not_ready(self, tmp_path: pathlib.Path) -> None:
+        """`atk run-skill`のUWIは次回の同じスキルの実行が扱うため、process-loopの起動件数へ数えない。
+
+        数えると、process-wiの選定が除くUWIのためにprocess-loopが子セッションの起動を繰り返す。
+        `source`を持たないUWIとprocess-wiのUWIは従来どおり回答済みでready件数へ数える。
+        """
+        _write_uwi(tmp_path, "run-skill.md", answer="回答済み", source="run-skill")
+
+        only_run_skill = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert not only_run_skill.ready
+        assert _common._count_pending_entries(tmp_path, target_repo="github.com/example/repo") == 0  # pylint: disable=protected-access  # noqa: SLF001
+
+        _write_uwi(tmp_path, "no-source.md", answer="回答済み")
+        _write_uwi(tmp_path, "process-wi.md", answer="回答済み", source="process-wi")
+
+        mixed = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert mixed.ready == ("no-source.md", "process-wi.md")
+        assert _common._count_pending_entries(tmp_path, target_repo="github.com/example/repo") == 2  # pylint: disable=protected-access  # noqa: SLF001
 
     def test_answered_uwi_does_not_satisfy_explicit_dependency_while_active(self, tmp_path: pathlib.Path) -> None:
         _write_uwi(tmp_path, "answer.md", answer="回答済み")

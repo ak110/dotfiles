@@ -24,7 +24,6 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     compaction_metrics,  # pylint: disable=wrong-import-position
-    process_tree,  # pylint: disable=wrong-import-position
     status_file,  # pylint: disable=wrong-import-position
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
@@ -48,7 +47,10 @@ from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import
 )
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp  # pylint: disable=wrong-import-position
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import (
+    codex_models,
+    process_tree,  # pylint: disable=wrong-import-position
+)
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -871,10 +873,7 @@ class AppServerManager:
         結果を保留している間はモデルのturnが終わっているため、中断要求を送らずに保留した結果を確定する。
         """
         if session.awaiting_auto_resume and session.pending_result is not None:
-            unobserved = set(session.live_child_session_ids)
             shared_state.finalize_pending_result(session)
-            if unobserved:
-                shared_state.record_unobserved_sessions(session, unobserved)
             await self._notify_waiters()
             return
         if session.terminal:

@@ -74,7 +74,7 @@ def _cmd_add_args(
         depends_on=depends_on or [],
         source=source,
         scope=None,
-        question_type="free-form" if entry_type == WI_TYPE_UWI else None,
+        question_type="yes-no" if entry_type == WI_TYPE_UWI else None,
         choices=None,
         dry_run=dry_run,
         subparser=None,
@@ -1360,6 +1360,7 @@ def test_add_rejects_dependencies_for_uwi(tmp_path: pathlib.Path, capsys: pytest
                 "--target-repo",
                 "github.com/example/repo",
                 "--type=uwi",
+                "--question-type=yes-no",
                 "--depends-on",
                 "awi.md",
                 "--body-file",
@@ -1371,6 +1372,64 @@ def test_add_rejects_dependencies_for_uwi(tmp_path: pathlib.Path, capsys: pytest
 
     assert exc_info.value.code == 1
     assert "--type=awiでのみ" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("dry_run", [[], ["--dry-run"]])
+@pytest.mark.parametrize("question_type", [[], ["--question-type=free-form"]])
+def test_uwi_requires_question_type_and_rejects_free_form(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], question_type: list[str], dry_run: list[str]
+) -> None:
+    """UWIの新規作成は回答形式の省略とfree-formを保存前に拒否し、選択肢形式で投入する操作を示す。
+
+    回答形式の省略を受理すると、選択肢を1組しか持てない形式を避けて複数の問いを1件へ束ねる投入が通る。
+    """
+    notes = _setup_notes(tmp_path)
+    body_path = tmp_path / "body.md"
+    body_path.write_text("どちらの案を採用しますか？", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "wi",
+                "add",
+                "--target-repo",
+                "github.com/example/repo",
+                "--type=uwi",
+                *question_type,
+                *dry_run,
+                "--body-file",
+                str(body_path),
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 2
+    err = capsys.readouterr().err
+    assert err.startswith("失敗: ")
+    assert "--question-type=choice --choices" in err
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_uwi_choice_question_type_is_saved_with_choices(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """選択肢形式のUWIは回答形式と選択肢をfrontmatterへ保存する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["どちらの案を採用しますか？"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        entry_type=WI_TYPE_UWI,
+        question_type="choice",
+        choices="案A,案B",
+    )
+
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    assert "question_type: choice" in content
+    assert "案A" in content
+    assert "案B" in content
 
 
 class TestAddOrderEditorFirst:
@@ -1901,7 +1960,7 @@ def test_add_entries_rejects_answer_marker_in_uwi_body(tmp_path: pathlib.Path, m
             source=None,
             now=_FIXED_DT,
             entry_type=WI_TYPE_UWI,
-            question_type="free-form",
+            question_type="yes-no",
         )
 
 
@@ -1916,7 +1975,7 @@ def test_add_entries_rejects_answer_heading_in_uwi_body(tmp_path: pathlib.Path, 
             source=None,
             now=_FIXED_DT,
             entry_type=WI_TYPE_UWI,
-            question_type="free-form",
+            question_type="yes-no",
         )
 
 
@@ -2172,7 +2231,7 @@ def test_add_entries_accepts_plain_uwi_body(tmp_path: pathlib.Path, monkeypatch:
         source=None,
         now=_FIXED_DT,
         entry_type=WI_TYPE_UWI,
-        question_type="free-form",
+        question_type="yes-no",
     )
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
     assert content.count(uwi_module.ANSWER_MARKER) == 1
@@ -2388,7 +2447,8 @@ def test_validate_rejects_unresolvable_frontmatter_target_repo_in_one_failure(tm
 @pytest.mark.parametrize(
     ("question_type", "choices", "expected"),
     [
-        ("unknown", None, "choice・yes-no・free-form"),
+        ("unknown", None, "`--question-type=choice --choices <A,B,C>`"),
+        ("free-form", None, "`--question-type=choice --choices <A,B,C>`"),
         ("choice", None, "`--choices`"),
     ],
 )

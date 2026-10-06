@@ -36,13 +36,30 @@ _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hook
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
 
 
+def _claude_assistant_line(model: str, effort: str | None = "medium") -> dict[str, object]:
+    """Claude Codeの記録のassistant行を返す。
+
+    形はClaude Code 2.1.291の`~/.claude/projects`配下の記録から写した。モデルは`message.model`、推論量は最上位の
+    `effort`に置かれ、Claude Codeが合成した応答の行は`message.model`が`<synthetic>`で`effort`がnullになる。
+    """
+    return {
+        "type": "assistant",
+        "version": "2.1.291",
+        "effort": effort,
+        "message": {"model": model, "role": "assistant", "content": [{"type": "text", "text": "応答"}]},
+    }
+
+
+def _write_claude_transcript(path: pathlib.Path, models: list[str]) -> pathlib.Path:
+    """モデルを順に記録したClaude Codeの記録を作成する。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(_claude_assistant_line(model)) + "\n" for model in models), encoding="utf-8")
+    return path
+
+
 def _claude_commit_payload(tmp_path: pathlib.Path, project: pathlib.Path) -> dict[str, object]:
     """Claude Codeの観測identityとprojectを持つ通常commit入力を返す。"""
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text(
-        json.dumps({"type": "assistant", "message": {"model": "Claude Opus 4.1", "effort": "HIGH"}}) + "\n",
-        encoding="utf-8",
-    )
+    transcript = _write_claude_transcript(tmp_path / "transcript.jsonl", ["claude-opus-5-5"])
     return {
         "tool_name": "Bash",
         "tool_input": {"command": "git commit -m '変更'"},
@@ -70,12 +87,8 @@ def test_claude_commit_uses_observed_identity_from_transcript(
     tmp_path: pathlib.Path,
 ) -> None:
     """Claude Codeの通常commitはtranscript中の最後の観測identityへ接続する。"""
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text(
-        json.dumps({"type": "assistant", "message": {"model": "Claude Opus 4.1", "effort": "HIGH"}}) + "\n",
-        encoding="utf-8",
-    )
-    trailer = "Co-Authored-By: Claude Opus 4.1 / HIGH <noreply@anthropic.com>"
+    transcript = _write_claude_transcript(tmp_path / "transcript.jsonl", ["claude-opus-5-5"])
+    trailer = "Co-Authored-By: Claude Opus 5.5 / Medium <noreply@anthropic.com>"
     payload = {
         "tool_name": "Bash",
         "tool_input": {"command": f"git commit -m '変更' -m '{trailer}'"},
@@ -85,6 +98,112 @@ def test_claude_commit_uses_observed_identity_from_transcript(
     assert pretooluse.main(json.dumps(payload)) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
+
+
+_LOW_TRAILER = "Co-Authored-By: Claude Opus 5.5 / Low <noreply@anthropic.com>"
+
+
+def _claude_commit_hook_payload(tmp_path: pathlib.Path, command: str, **extra: object) -> dict[str, object]:
+    """推論量をhook入力の`effort.level`に持つClaude CodeのPreToolUse入力を返す。
+
+    hook入力の`effort`はClaude Code 2.1.291本体のhook入力の定義（`{level}`）に従う。記録の推論量（medium）と
+    異なる値にし、turnへ適用した推論量をhook入力から取ることを確かめる。
+    """
+    transcript = _write_claude_transcript(tmp_path / "project-records" / "session-1.jsonl", ["claude-opus-5-5"])
+    return {
+        "session_id": "session-1",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "cwd": str(tmp_path),
+        "transcript_path": str(transcript),
+        "effort": {"level": "low"},
+        **extra,
+    }
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(
+            "git commit -q -F - <<'EOF'\nfix: 変更\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nEOF",
+            id="heredoc-without-effort",
+        ),
+        pytest.param(
+            "git commit -q -F - <<'EOF'\nfix: 変更\n\nCo-Authored-By: Claude Opus 5.5 / 10 <noreply@anthropic.com>\nEOF",
+            id="heredoc-wrong-effort",
+        ),
+        pytest.param(
+            "git commit -m 'fix: 変更' -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'", id="message-option"
+        ),
+    ],
+)
+def test_claude_commit_blocks_trailer_without_turn_identity(
+    capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path, command: str
+) -> None:
+    """推論量を欠くか誤った帰属行は、`-F -`のheredocでも遮断し、必要な帰属行を示す。
+
+    `-F -`を読まないと、エージェントのcommitの大半を確かめないまま通し、誤った帰属行がpushされる。
+    """
+    assert pretooluse.main(json.dumps(_claude_commit_hook_payload(tmp_path, command))) == 2
+    assert _LOW_TRAILER in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(f"git commit -q -F - <<'EOF'\nfix: 変更\n\n本文\n\n{_LOW_TRAILER}\nEOF", id="heredoc"),
+        pytest.param("git commit -F message.txt", id="existing-file"),
+        pytest.param(f"git commit -m 'fix: 変更' -m '{_LOW_TRAILER}'", id="message-option"),
+        pytest.param("git commit --amend --no-edit", id="amend-no-edit"),
+        pytest.param("git commit --fixup HEAD", id="fixup"),
+        pytest.param("git commit -F missing.txt", id="missing-file"),
+    ],
+)
+def test_claude_commit_accepts_matching_or_unjudged_messages(
+    capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path, command: str
+) -> None:
+    """正しい帰属行を持つ`-F -`・`-F <既存ファイル>`・`-m`と、判定しない形は遮断しない。"""
+    (tmp_path / "message.txt").write_text(f"fix: 変更\n\n{_LOW_TRAILER}\n", encoding="utf-8")
+
+    assert pretooluse.main(json.dumps(_claude_commit_hook_payload(tmp_path, command))) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_claude_commit_uses_last_observed_model_after_switching_back(
+    capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    """turnの途中でモデルを切り替えて戻した記録では、最後に観測したモデルで期待値を求める。
+
+    初出順に重複を除いた一覧の末尾を使うと、戻す前のモデルを期待値にして正しい帰属行を遮断する。
+    """
+    command = f"git commit -m 'fix: 変更' -m '{_LOW_TRAILER}'"
+    payload = _claude_commit_hook_payload(tmp_path, command)
+    _write_claude_transcript(
+        pathlib.Path(str(payload["transcript_path"])), ["claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]
+    )
+
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_subagent_commit_uses_the_subagent_record_model(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
+    """`agent_id`を持つ入力はsubagentの記録のモデルで期待値を求め、記録を解決できなければ遮断しない。
+
+    `transcript_path`はsubagentのhookでもメインの記録を指すため、メインのモデルで期待値を求めると誤って遮断する。
+    subagentの記録の配置はClaude Code 2.1.291の`<session_id>/subagents/agent-<agentId>.jsonl`から写した。
+    """
+    command = "git commit -m 'fix: 変更' -m 'Co-Authored-By: Claude Haiku 4.5 / Low <noreply@anthropic.com>'"
+    payload = _claude_commit_hook_payload(tmp_path, command, agent_id="a67c55c5819f1e406")
+    transcript = pathlib.Path(str(payload["transcript_path"]))
+    _write_claude_transcript(
+        transcript.parent / "session-1" / "subagents" / "agent-a67c55c5819f1e406.jsonl", ["claude-haiku-4-5-20251001"]
+    )
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert capsys.readouterr().err == ""
+
+    unresolved = _claude_commit_hook_payload(tmp_path, "git commit -m 'fix: 変更'", agent_id="missing-agent")
+    assert pretooluse.main(json.dumps(unresolved)) == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_commit_without_observed_identity_remains_unblocked(capsys: pytest.CaptureFixture[str]) -> None:
@@ -140,7 +259,7 @@ def test_project_attribution_setting_overrides_user_disable(
     payload = _claude_commit_payload(tmp_path, project)
 
     assert pretooluse.main(json.dumps(payload)) == 2
-    assert "Co-Authored-By: Claude Opus 4.1 / HIGH <noreply@anthropic.com>" in capsys.readouterr().err
+    assert "Co-Authored-By: Claude Opus 5.5 / Medium <noreply@anthropic.com>" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
@@ -972,6 +1091,8 @@ class TestRemovedChecksAreSilent:
         ],
     )
     def test_bash_input_passes_without_output(self, tmp_path: pathlib.Path, command: str) -> None:
+        # 検索コマンドは`agent-toolkit:search`の未起動の警告を返すため、起動済みの文脈で撤去済みの判定だけを確かめる。
+        _write_session_state(tmp_path, "removed-bash", {"operation_skill_ready_agents": {"agent-toolkit:search": ["main"]}})
         result = _run(
             {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "removed-bash", "cwd": str(tmp_path)},
             env_overrides=_plan_file_state_env(tmp_path),

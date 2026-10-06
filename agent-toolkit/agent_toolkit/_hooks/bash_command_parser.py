@@ -471,6 +471,8 @@ def extract_bash_invocations(command: str) -> list[BashInvocation]:
     """引用・置換・出力接続を保持し、判定できるBashの実行位置を返す。
 
     heredoc本文とリテラル引数を実行位置にせず、置換の内側は別の呼び出しとして解析する。
+    区切り語を引用しないheredocの本文にある置換は本関数では解析せず、`heredoc_command_substitutions`が返す。
+    PreToolUseはその置換を含むコマンドを実行前に遮断するため、本文の置換の内側を個別の判定へ渡さない。
     変数や別ファイルに隠れた起動、未対応の複合構文、閉じない構文から実行位置を推定しない。
     """
     try:
@@ -891,9 +893,81 @@ class QuotingScanner:
         self.index += 1
 
 
-def _heredoc_declarations(line: str) -> list[tuple[str, bool]]:
-    """コマンド行にあるheredocの区切り語とtab除去指定を出現順に返す。"""
-    declarations: list[tuple[str, bool]] = []
+@dataclasses.dataclass(frozen=True)
+class HeredocDeclaration:
+    r"""コマンド行にある1つのheredocの宣言。
+
+    `delimiter`はbashと同じく区切り語から引用を除いた語であり、終端行との比較に使う。
+    `expands`は区切り語のどこにも引用（`'`・`"`・`\\`）が無く、bashが本文を展開することを表す。
+    """
+
+    delimiter: str
+    strip_tabs: bool
+    expands: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class HeredocBody:
+    """コマンド文字列上のheredoc本文と終端行の範囲。
+
+    本文は`[start, end)`、終端行の内容（改行を除く）は`[end, terminator_end)`とする。
+    終端行が無いまま末尾へ達した本文では`end`と`terminator_end`が文字列の長さに一致する。
+    """
+
+    start: int
+    end: int
+    terminator_end: int
+    expands: bool
+
+
+_HEREDOC_DELIMITER_END = frozenset(" \t\r\n;|&<>()")
+_DOUBLE_QUOTE_ESCAPABLE = frozenset('$`"\\\n')
+
+
+def _heredoc_delimiter(line: str, start: int) -> tuple[str, bool, int] | None:
+    """区切り語を読み、引用を除いた語、引用の有無および語の直後の位置を返す。
+
+    bashは区切り語へquote removalだけを適用し、語のどこかに引用があれば本文を展開しない。
+    引用が閉じない場合はNoneを返す。
+    """
+    pieces: list[str] = []
+    quoted = False
+    index = start
+    while index < len(line) and line[index] not in _HEREDOC_DELIMITER_END:
+        char = line[index]
+        if char == "\\":
+            if index + 1 >= len(line):
+                return None
+            pieces.append(line[index + 1])
+            quoted = True
+            index += 2
+        elif char == "'":
+            end = line.find("'", index + 1)
+            if end < 0:
+                return None
+            pieces.append(line[index + 1 : end])
+            quoted = True
+            index = end + 1
+        elif char == '"':
+            index += 1
+            while index < len(line) and line[index] != '"':
+                if line[index] == "\\" and index + 1 < len(line) and line[index + 1] in _DOUBLE_QUOTE_ESCAPABLE:
+                    index += 1
+                pieces.append(line[index])
+                index += 1
+            if index >= len(line):
+                return None
+            quoted = True
+            index += 1
+        else:
+            pieces.append(char)
+            index += 1
+    return "".join(pieces), quoted, index
+
+
+def _heredoc_declarations(line: str) -> list[HeredocDeclaration]:
+    """コマンド行にあるheredocの宣言を出現順に返す。"""
+    declarations: list[HeredocDeclaration] = []
     scanner = QuotingScanner(line)
     arithmetic_depth = 0
     word_boundary = True
@@ -939,26 +1013,49 @@ def _heredoc_declarations(line: str) -> list[tuple[str, bool]]:
             cursor += 1
         while cursor < len(line) and line[cursor] in {" ", "\t"}:
             cursor += 1
-        if cursor >= len(line):
+        parsed = _heredoc_delimiter(line, cursor)
+        if parsed is None:
             break
-        if line[cursor] in {"'", '"'}:
-            delimiter_quote = line[cursor]
-            end = line.find(delimiter_quote, cursor + 1)
-            if end < 0:
-                break
-            delimiter = line[cursor + 1 : end]
-            cursor = end + 1
-        else:
-            end = cursor
-            while end < len(line) and line[end] not in " \t\r\n;|&<>()":
-                end += 1
-            delimiter = line[cursor:end]
-            cursor = end
+        delimiter, quoted, cursor = parsed
         if delimiter:
-            declarations.append((delimiter, strip_tabs))
+            declarations.append(HeredocDeclaration(delimiter, strip_tabs, expands=not quoted))
         word_boundary = False
         scanner.index = cursor
     return declarations
+
+
+def heredoc_bodies(command: str) -> list[HeredocBody]:
+    """コマンド文字列にあるheredocの本文と終端行の範囲を出現順に返す。
+
+    本文の範囲と展開の有無は`_heredoc_declarations`の1つの定義から得る。
+    本文のマスクと、展開される本文の置換の判定はいずれも本関数の結果を使う。
+    """
+    bodies: list[HeredocBody] = []
+    line_start = 0
+    while line_start < len(command):
+        line_end = command.find("\n", line_start)
+        if line_end < 0:
+            line_end = len(command)
+        declarations = _heredoc_declarations(command[line_start:line_end])
+        cursor = line_end + (line_end < len(command))
+        for declaration in declarations:
+            body_start = cursor
+            body_end = terminator_end = len(command)
+            while cursor < len(command):
+                body_line_end = command.find("\n", cursor)
+                if body_line_end < 0:
+                    body_line_end = len(command)
+                content_end = body_line_end - (body_line_end > cursor and command[body_line_end - 1] == "\r")
+                content = command[cursor:content_end]
+                candidate = content.lstrip("\t") if declaration.strip_tabs else content
+                line_head = cursor
+                cursor = body_line_end + (body_line_end < len(command))
+                if candidate == declaration.delimiter:
+                    body_end, terminator_end = line_head, body_line_end
+                    break
+            bodies.append(HeredocBody(body_start, body_end, terminator_end, declaration.expands))
+        line_start = cursor
+    return bodies
 
 
 def _blank_line(masked: list[str], start: int, end: int, *, separator: bool = False) -> None:
@@ -971,33 +1068,79 @@ def _blank_line(masked: list[str], start: int, end: int, *, separator: bool = Fa
 
 
 def mask_heredoc_bodies(command: str) -> str:
-    """heredoc本文を同じ長さの空白へ置換し、本文外の位置と改行数を保つ。"""
+    """heredoc本文を同じ長さの空白へ置換し、本文外の位置と改行数を保つ。
+
+    終端行は区切り標識`;`へ置換し、heredoc以降のコマンドを別の区間として残す。
+    """
     masked = list(command)
-    line_start = 0
-    while line_start < len(command):
-        line_end = command.find("\n", line_start)
-        if line_end < 0:
-            line_end = len(command)
-        declarations = _heredoc_declarations(command[line_start:line_end])
-        cursor = line_end + (line_end < len(command))
-        if not declarations:
-            line_start = cursor
-            continue
-        for delimiter, strip_tabs in declarations:
-            while cursor < len(command):
-                body_line_end = command.find("\n", cursor)
-                if body_line_end < 0:
-                    body_line_end = len(command)
-                content_end = body_line_end - (body_line_end > cursor and command[body_line_end - 1] == "\r")
-                content = command[cursor:content_end]
-                candidate = content.lstrip("\t") if strip_tabs else content
-                is_terminator = candidate == delimiter
-                _blank_line(masked, cursor, body_line_end, separator=is_terminator)
-                cursor = body_line_end + (body_line_end < len(command))
-                if is_terminator:
-                    break
-        line_start = cursor
+    for body in heredoc_bodies(command):
+        _blank_line(masked, body.start, body.end)
+        _blank_line(masked, body.end, body.terminator_end, separator=True)
     return "".join(masked)
+
+
+def _active_substitutions(body: str) -> list[str]:
+    r"""展開されるheredoc本文から、エスケープされていないバッククォートと`$(`の置換を返す。
+
+    展開される本文では引用符は特別な意味を持たず、`\\`だけが次の1文字をリテラルにする。
+    `$((`は算術展開として扱い、コマンド置換に数えない。閉じない置換はその行の末尾までを返す。
+    """
+    found: list[str] = []
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "`" or (body.startswith("$(", index) and not body.startswith("$((", index)):
+            try:
+                _, end = _bash_substitution(body, index)
+            except ValueError:
+                line_end = body.find("\n", index)
+                end = len(body) if line_end < 0 else line_end
+            found.append(body[index:end])
+            index = end
+            continue
+        index += 1
+    return found
+
+
+def heredoc_command_substitutions(command: str) -> list[str]:
+    """bashが本文を展開するheredocの本文にある、能動的なコマンド置換を出現順に返す。
+
+    外側のコマンドに加え、`sh -c`・`bash -c`の引数とコマンド置換の本文の中にあるheredocも対象にする。
+    引用付きの区切り語の本文と、`$VAR`・`${VAR}`・`$((...))`・エスケープ済みの表記は対象外とする。
+    """
+    found: list[str] = []
+    for body in heredoc_bodies(command):
+        if body.expands:
+            found.extend(_active_substitutions(command[body.start : body.end]))
+    try:
+        tokens = _bash_tokens(mask_heredoc_bodies(command))
+    except ValueError:
+        tokens = []
+    for nested in _nested_shell_texts(tokens):
+        found.extend(heredoc_command_substitutions(nested))
+    return list(dict.fromkeys(found))
+
+
+def _nested_shell_texts(tokens: Sequence[_BashToken]) -> list[str]:
+    """トークン列から、置換の本文と静的に確定した`sh -c`・`bash -c`の引数を返す。"""
+    texts: list[str] = []
+    words: list[_BashToken] = []
+    for token in [*tokens, _BashToken(";", operator=True)]:
+        if not token.operator:
+            words.append(token)
+            texts.extend(token.nested)
+            continue
+        segment = resolve_execution_segment([word.value for word in words])
+        words = []
+        if not segment.resolved or not segment.tokens:
+            continue
+        shell = _shell_c_argument(segment.tokens)
+        if shell is not None and _UNKNOWN_BASH_WORD not in shell:
+            texts.append(shell)
+    return texts
 
 
 def nested_shell_positions(command: str) -> frozenset[int]:

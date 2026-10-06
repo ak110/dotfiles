@@ -1,5 +1,6 @@
 """エージェント実行identityの由来と表示を共有する。"""
 
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -45,30 +46,41 @@ class RuntimeIdentity:
         }
 
 
+# Claudeの完全モデルID（`claude-opus-5-5`、日付付きの`claude-haiku-4-5-20251001`など）の系列と版。
+_CLAUDE_MODEL_ID = re.compile(r"claude-([a-z]+)-(\d+)-(\d+)(?:-\d{8})?")
+
+
 def _fallback_model_display(model: str) -> str:
-    """完全モデルIDを、カタログ無しでも安定した表示名へ変換する。"""
+    """完全モデルIDを、カタログ無しでも安定した表示名へ変換する。形の合わないIDはそのまま返す。"""
     parts = model.split("-")
     if len(parts) >= 3 and parts[0].lower() == "gpt":
         return f"GPT-{parts[1]} {' '.join(part.capitalize() for part in parts[2:])}"
+    if (matched := _CLAUDE_MODEL_ID.fullmatch(model)) is not None:
+        family, major, minor = matched.groups()
+        return f"Claude {family.capitalize()} {major}.{minor}"
     return model
 
 
 def observed_identity(entry: dict[str, Any], runtime: str) -> RuntimeIdentity | None:
-    """ホスト記録1件にmodelとeffortの両方が明記されている場合だけ返す。"""
-    payload = entry.get("payload")
-    message = entry.get("message")
-    containers = [
-        payload if isinstance(payload, dict) else {},
-        message if isinstance(message, dict) else {},
-        entry,
-    ]
-    if runtime == "codex" and containers[0].get("type") != "turn_context":
+    """ホスト記録1件からモデルと推論量の組を取り出し、両方が明記されている場合だけ返す。
+
+    Claude Codeの記録はassistant行の`message.model`と最上位の`effort`に、Codexの記録は最上位の`type`が
+    `turn_context`の行の`payload.model`と`payload.effort`に組を持つ（Claude Code 2.1.291とCodex 0.160.1の記録で確認）。
+    Claude Codeが合成した応答の行は`effort`がnullのため、組を持たない行として除く。
+    """
+    if runtime == "codex":
+        payload = entry.get("payload")
+        if entry.get("type") != "turn_context" or not isinstance(payload, dict):
+            return None
+        model, effort = payload.get("model"), payload.get("effort")
+    elif runtime == "claude":
+        message = entry.get("message")
+        model = message.get("model") if isinstance(message, dict) else None
+        effort = entry.get("effort")
+    else:
         return None
-    for container in containers:
-        model = container.get("model")
-        effort = container.get("effort") or container.get("reasoning_effort") or container.get("reasoningEffort")
-        if isinstance(model, str) and model and isinstance(effort, str) and effort:
-            return RuntimeIdentity(runtime, model, effort, "observed")
+    if isinstance(model, str) and model and isinstance(effort, str) and effort:
+        return RuntimeIdentity(runtime, model, effort, "observed")
     return None
 
 
@@ -105,9 +117,11 @@ def latest_identity(records: Any, runtime: str, *, before_line: int) -> tuple[in
 
 
 def co_author_trailer(identity: RuntimeIdentity, *, catalog: list[dict[str, Any]] | None = None) -> str:
-    """観測済みidentityからcommit帰属trailerを生成する。"""
+    """観測済みidentityからcommit帰属trailerを生成する。
+
+    表示はユーザーが示した例（`Claude Opus 5.5 / High`、`GPT-6.1 Sol / Medium`）の形へそろえる。
+    """
     if identity.source != "observed":
         raise ValueError("commit帰属にはホストが観測した実行identityが必要です")
     domain = "openai.com" if identity.engine == "codex" else "anthropic.com" if identity.engine == "claude" else identity.engine
-    display = identity.display(catalog=catalog) if identity.engine == "codex" else f"{identity.model} / {identity.effort}"
-    return f"Co-Authored-By: {display} <noreply@{domain}>"
+    return f"Co-Authored-By: {identity.display(catalog=catalog)} <noreply@{domain}>"

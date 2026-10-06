@@ -73,6 +73,7 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     _PROCESS_WI_SKILL_NAMES,
     USER_CONFIRMATION_PENDING_KEY,
     USER_CONFIRMATION_SKILL_NAMES,
+    VERIFICATION_NOTICE_BODY,
     clear_user_confirmation_pending,
 )
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -118,23 +119,6 @@ _USER_PROMPT_SOURCE_USER = "user"
 _VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
 _LAST_USER_PROMPT_AT_KEY = "last_user_prompt_at"
 _VERIFICATION_NOTICE_TAG = "notice"
-_VERIFICATION_NOTICE_BODY = (
-    "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙し、"
-    "それぞれの内容を現物（原文・実装・規範・実行結果・対象の目的を定める仕様・設計記録）と比べて確かめてから応答する。"
-    "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動する。"
-    "不具合の有無・原因・直し方を述べるか確認で提案する場合も、述べる前に起動する。"
-    "対処を委譲先やAWIへ委ねる場合も含む。"
-    "現物と比べて確かめられない場合は同意も変更もしない。"
-    "いずれも含まないと判定した発話では、現物との比較を要さないと判断して次の工程へ進む。"
-    "稼働中の依頼がある場合は、未完了工程が元の依頼の目的に対応するか確かめてから次に実行する工程を確定する。"
-    "同じ論点で修正が続く場合は意図と要件への影響を確かめ、確定できないときだけユーザー確認する。"
-)
-"""発話の内容を現物で確かめる手順を示す注記の本文。
-
-比べて確かめる対象は発話ごとに異なるため、対象の列挙を受領側の手順として本文に持たせる。
-その列挙をフック側の判定で代替しない。本フックの入力は発話本文だけであり、
-規則による分類の誤りは、現物との比較を最も要する発話で注記を無音のまま欠落させるためである。
-"""
 _llm_notice = _notice_formatter("user_prompt_submit")
 _USER_CONFIRMATION_NOTICE_BODY = (
     "この発話は、セッション開始後か会話圧縮後で、`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態で届いた。"
@@ -339,7 +323,7 @@ def main(payload_text: str) -> int:
     if is_normal_prompt and _claim_user_confirmation_notice(session_id, is_codex=is_codex):
         notices.append(_user_confirmation_notice())
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
-        notices.append(_llm_notice(_VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
+        notices.append(_llm_notice(VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
     if is_normal_prompt and "！！" in prompt:
         notices.append(_llm_notice(_REALIGN_NOTICE_BODY, tag="notice"))
     if is_normal_prompt and (example_notice := _example_investigation_notice(prompt)) is not None:

@@ -8,8 +8,8 @@
 
 import json
 import pathlib
-import threading
 import time
+import types
 from typing import Literal
 
 import pytest
@@ -1185,38 +1185,43 @@ class TestIsPendingAsyncWork:
         """transcript が存在しない → False（Stop抑止しない）。"""
         assert is_pending_async_work("/nonexistent/transcript.jsonl", "") is False
 
-    def test_race_with_late_end_turn_flush(self, tmp_path: pathlib.Path):
-        """assistant 最終 (end_turn) エントリが遅延 flush されるケースに対処する。
+    @pytest.mark.usefixtures("real_end_turn_wait")
+    def test_race_with_late_end_turn_flush(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+        """Stop hook起動時点で未到着の最終（end_turn）エントリを、待機が取り込んでから判定する。
 
-        Stop hook 起動時点で transcript に未到着のレースを再現する。
-        最初は tool_use のみが書かれた状態でファイル存在、別スレッドで遅延後に
-        end_turn エントリを追記する。`is_pending_async_work` がポーリングで末尾の到着を待ち、
-        最終的に False を返すこと。
+        遅着前のtranscriptは最後のtool_useが背景Bashで終わり、この状態で判定すると非同期待機中として`True`になる。
+        `_wait_for_end_turn`の最初のポーリング待ちの時点でend_turnエントリを追記し、待機がそれを取り込めば
+        最終ターンはtextだけになって`False`になる。待機が後着を取り込まないと`True`のまま失敗する。
         """
         t = _write_transcript(
             tmp_path,
             [
                 _user_entry("hello"),
                 _assistant_entry(
-                    [{"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "echo done"}}],
+                    [{"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "x", "run_in_background": True}}],
                     msg_id="msg_prev",
                     stop_reason="tool_use",
                 ),
             ],
         )
+        appended = False
 
-        def append_end_turn() -> None:
-            time.sleep(0.1)
-            with t.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(_assistant_entry([{"type": "text", "text": _TEXT}])) + "\n")
+        def append_end_turn_on_first_poll(_seconds: float) -> None:
+            # 待機が最初のポーリング待ちに入った時点を、transcriptへ最終エントリが書き込まれる時点とする。
+            nonlocal appended
+            if not appended:
+                appended = True
+                with t.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(_assistant_entry([{"type": "text", "text": _TEXT}])) + "\n")
 
-        thread = threading.Thread(target=append_end_turn)
-        thread.start()
-        try:
-            # end_turn到着後の最終ターンは text のみ → tool_useなし → 非同期待機なし → False
-            assert is_pending_async_work(str(t), "") is False
-        finally:
-            thread.join()
+        monkeypatch.setattr(
+            _stop_gate,
+            "time",
+            types.SimpleNamespace(monotonic=time.monotonic, sleep=append_end_turn_on_first_poll),
+        )
+
+        assert is_pending_async_work(str(t), "") is False
+        assert appended
 
     def test_sendmessage_bg_resume_detected(self, tmp_path: pathlib.Path):
         """SendMessage呼び出しと対応する背景再開tool_resultが存在する場合に`True`を返す。

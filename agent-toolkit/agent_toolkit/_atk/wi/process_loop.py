@@ -21,8 +21,8 @@ import uuid
 import watchdog.events
 import watchdog.observers
 
-from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import review_audit as _review_audit
 from agent_toolkit._atk.wi import alerts as _alerts
@@ -34,7 +34,6 @@ from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import console_title as _console_title
-from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._git import command as _git_command
@@ -47,13 +46,6 @@ WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
     watchdog.events.FileMovedEvent,
     watchdog.events.FileClosedEvent,
 )
-
-# Claude Codeの`/exit`による終了は0、Function hooksが無い場合のSIGTERMによる終了は残りの値で正常終了とする。
-_CLAUDE_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
-
-# Codexがexit-sessionスキル経由で終了する場合のOS別正常終了集合。
-_CODEX_NORMAL_EXIT_CODES_POSIX: frozenset[int] = frozenset({0, -15})
-_CODEX_NORMAL_EXIT_CODES_WINDOWS: frozenset[int] = frozenset({0})
 
 # 主待機のタイムアウト秒（他端末からのAWI投入を`remote`同期で拾う間隔）。
 _POLL_INTERVAL_SEC = 600.0
@@ -75,17 +67,17 @@ _DEBOUNCE_SEC = 3.0
 # 実体プロセスが自身を`uv`へ置き換えると、置き換え前の`uv`が子の終了を待って残り、
 # 再起動のたびにプロセス階層が1段深くなる。実体は次の起動対象を受け渡しファイルへ出力して終了し、
 # ランチャーが同一プロセスで次の実体を起動することで階層を一定に保つ。
-_RESTART_SPEC_ENV = "AGENT_TOOLKIT_RESTART_SPEC"
+_RESTART_SPEC_ENV = _orchestrator.RESTART_SPEC_ENV
 
 # ランチャーへ再起動を要求する終了コード。
 _RESTART_EXIT_CODE = 75
 
 # process-loopが起動した会話を環境印と会話IDで識別する。
-_PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
-_PROCESS_LOOP_SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
+_PROCESS_LOOP_SESSION_ENV = _orchestrator.PROCESS_LOOP_SESSION_ENV
+_PROCESS_LOOP_SESSION_ID_ENV = _orchestrator.PROCESS_LOOP_SESSION_ID_ENV
 # 次に起動する1セッションだけへ渡すユーザーの追加指示。SessionStart hookが本文を注入する。
 _PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
-_DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
+_DELEGATED_SESSION_ENV = _orchestrator.DELEGATED_SESSION_ENV
 
 # Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数が契約どおりに動作するかを確かめられるよう値を固定する。
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -207,31 +199,10 @@ def _child_env() -> dict[str, str]:
     ランチャーとの再起動要求の受け渡しファイルは自プロセス専用のため、子孫プロセスへは引き継がない。
     引き継ぐと、子孫が同じファイルへ再起動対象を書き込みうる。
     """
-    env = os.environ.copy()
-    _inherited_venv.strip_inherited_venv(env)
-    env.pop(_RESTART_SPEC_ENV, None)
-    return env
+    return _orchestrator.child_env(drop=(_RESTART_SPEC_ENV,))
 
 
-def _session_env(env: dict[str, str], orchestrator: str, *, platform: str = os.name) -> dict[str, str]:
-    """セッション専用の環境を返し、Claudeの監視設定とWindows Codexのbash互換層を加える。"""
-    session_env = env.copy()
-    if orchestrator == "claude":
-        session_env["CLAUDE_CODE_RETRY_WATCHDOG"] = "1"
-    if platform == "nt" and orchestrator == "codex":
-        shim_dir = pathlib.Path(__file__).resolve().parents[2] / "windows-shims"
-        inherited_path = session_env.get("PATH", "")
-        session_env["PATH"] = os.pathsep.join((str(shim_dir), inherited_path))
-    return session_env
-
-
-def _availability_probe_env(env: dict[str, str], orchestrator: str) -> dict[str, str]:
-    """可用性判定をprocess-loop最上位の終了強制から除外した子環境を返す。"""
-    probe_env = _session_env(env, orchestrator)
-    probe_env.pop(_PROCESS_LOOP_SESSION_ENV, None)
-    probe_env.pop(_PROCESS_LOOP_SESSION_ID_ENV, None)
-    probe_env[_DELEGATED_SESSION_ENV] = "1"
-    return probe_env
+_session_env = _orchestrator.session_env
 
 
 def _session_creation_flags(orchestrator: str, *, platform: str = os.name) -> int:
@@ -707,90 +678,12 @@ def _build_process_loop_prompt() -> str:
 
 
 def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
-    """orchestrate_model設定を候補ごとの(orchestrator, model, effort)として返す。
-
-    書式不正（設定ファイルの手編集等）の場合は修正手順を案内してexit 2で終了する。
-    effort未指定は`medium`を補完する。
-    """
-    try:
-        value = _config.resolve_mutable_setting("orchestrate_model")
-    except ValueError as error:
-        default = _config._MUTABLE_KEY_DEFAULTS["orchestrate_model"]  # pylint: disable=protected-access
-        env_name = "AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL"
-        raw_value = os.environ.get(env_name, "") or _config._load_config().get(  # pylint: disable=protected-access
-            "orchestrate_model", default
-        )
-        _next_action.report(
-            f"orchestrate_modelの設定値が不正です（現在の設定値: {raw_value}）。{error}。",
-            next_action=(
-                f"`atk config set orchestrate_model {default}`のように"
-                "`<claude|codex>:<model>[/<effort>]`形式の候補列で修正してください。"
-            ),
-        )
-        sys.exit(2)
-    try:
-        return _config.resolve_model_candidates("orchestrate")
-    except ValueError as error:
-        _next_action.report(
-            f"orchestrate_modelのCodexモデル解決に失敗しました（設定値: {value}）。{error}",
-            next_action=(
-                "`codex`へのログインを確認するか、`atk config set orchestrate_model <候補列>`で候補を変えてから"
-                "process-loopを再起動する"
-            ),
-        )
-        sys.exit(2)
+    """orchestrate_model設定を候補ごとの(orchestrator, model, effort)として返す。"""
+    return _orchestrator.resolve_specs(rerun_action="process-loopを再起動する")
 
 
-def _availability_probe_argv(orchestrator: str, model: str, effort: str) -> list[str]:
-    """候補3値を全て渡す副作用のない可用性判定用argvを返す。
-
-    Claudeは利用上限の種類と解除予定時刻を読み取れるよう、構造化出力（`stream-json`）で起動する。
-    """
-    if orchestrator == "claude":
-        return [
-            "claude",
-            "-p",
-            "--model",
-            model,
-            "--effort",
-            effort,
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            _AVAILABILITY_PROBE_PROMPT,
-        ]
-    return [
-        "codex",
-        "exec",
-        "--model",
-        model,
-        "-c",
-        f"model_reasoning_effort={effort}",
-        _AVAILABILITY_PROBE_PROMPT,
-    ]
-
-
-def _claude_ignored_effort(stderr: str) -> bool:
-    """Claudeが`--effort`値を無視した警告を出力したか判定する。"""
-    folded = stderr.casefold()
-    return "--effort" in folded and any(word in folded for word in ("ignored", "ignoring"))
-
-
-def _probe_usage_limit(
-    orchestrator: str, result: subprocess.CompletedProcess[str]
-) -> _claude_usage_limit.UsageLimitState | None:
-    """失敗した可用性判定がClaudeのWeekly limitか5時間の利用上限による拒否なら、その状態を返す。"""
-    if orchestrator != "claude":
-        return None
-    usage_limit = _claude_usage_limit.from_stream_lines((result.stdout or "").splitlines())
-    return usage_limit if usage_limit is not None and usage_limit.is_wait_target else None
-
-
-def _wait_for_usage_limit(candidate: str, usage_limit: _claude_usage_limit.UsageLimitState) -> None:
-    """利用上限の解除予定時刻まで待つ。待機の内容を端末とprocess-loopのログへ出力する。"""
-    delay = usage_limit.delay_seconds(time.time())
-    print(f"{usage_limit.describe()}。{int(delay)}秒後に同じ候補で可用性を確かめ直します: {candidate}")
-    print("解除後に自動で本作業へ進むため、手動での再送や再起動は不要です。")
+def _record_usage_limit_wait(candidate: str, usage_limit: _claude_usage_limit.UsageLimitState, delay: float) -> None:
+    """利用上限の解除待ちをprocess-loopのログへ記録する。"""
     _process_loop_log.append(
         "usage_limit_wait",
         candidate=candidate,
@@ -798,78 +691,20 @@ def _wait_for_usage_limit(candidate: str, usage_limit: _claude_usage_limit.Usage
         resets_at=usage_limit.resets_at_iso() or "",
         delay_seconds=int(delay),
     )
-    time.sleep(delay)
 
 
 def _select_available_orchestrator(
     candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path
 ) -> tuple[str, str, str]:
-    """候補を先頭から事前に試し、最初に可用な3つ組を返す。
-
-    ClaudeがWeekly limitか5時間の利用上限で拒否した場合は、次の候補へ切り替えず解除まで待って同じ候補を試し直す
-    （ユーザー指示）。待機の回数と総時間に上限を置かない。
-    """
-    last_failure = (candidates[-1][0], 1, "")
-    for orchestrator, model, effort in candidates:
-        candidate = f"{orchestrator}:{model}/{effort}"
-        while True:
-            outcome = _probe_candidate(orchestrator, model, effort, env, cwd, candidate)
-            if outcome is None:
-                return orchestrator, model, effort
-            usage_limit, failure = outcome
-            if usage_limit is None:
-                break
-            _wait_for_usage_limit(candidate, usage_limit)
-        assert failure is not None
-        last_failure = failure
-    _exit_abnormal_session(*last_failure)
-    raise AssertionError("到達不能")
-
-
-def _probe_candidate(
-    orchestrator: str, model: str, effort: str, env: dict[str, str], cwd: pathlib.Path, candidate: str
-) -> tuple[_claude_usage_limit.UsageLimitState | None, tuple[str, int, str] | None] | None:
-    """1候補の可用性を判定する。可用なら`None`、失敗なら解除待ちの対象と失敗の内容の組を返す。
-
-    解除待ちの対象を返す場合、呼び出し元は次の候補へ進まず同じ候補を試し直すため、失敗の案内を出力しない。
-    """
-    try:
-        result = subprocess.run(
-            _availability_probe_argv(orchestrator, model, effort),
-            check=False,
-            env=_availability_probe_env(env, orchestrator),
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-    except OSError as error:
-        _console_title.set_console_title("atk wi process-loop")
-        _next_action.report(
-            f"モデル候補の可用性判定に失敗しました（engineを起動できません: {error}）: {candidate}",
-            next_action=("次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える"),
-        )
-        return None, (orchestrator, 1, f"engineを起動できません: {error}")
-    _console_title.set_console_title("atk wi process-loop")
-    ignored_effort = orchestrator == "claude" and _claude_ignored_effort(result.stderr)
-    if result.returncode == 0 and not ignored_effort:
-        print(f"モデル候補の可用性判定に成功しました: {candidate}")
-        print(f"本作業へ採用するモデル候補: {candidate}")
-        return None
-    if not ignored_effort:
-        usage_limit = _probe_usage_limit(orchestrator, result)
-        if usage_limit is not None:
-            return usage_limit, None
-    failure_code = result.returncode or 1
-    diagnostic = (result.stderr or "").strip()
-    reason = "engineがeffortを無視しました" if ignored_effort else f"exit code {result.returncode}"
-    reason = f"{reason}; engine診断: {diagnostic}" if diagnostic else f"{reason}; engineの診断出力はありません"
-    _next_action.report(
-        f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}",
-        next_action=("次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える"),
+    """候補を先頭から事前に試し、最初に可用な3つ組を返す。全候補が失敗した場合は異常終了する。"""
+    context = _orchestrator.ProbeContext(
+        title="atk wi process-loop", prompt=_AVAILABILITY_PROBE_PROMPT, record_wait=_record_usage_limit_wait
     )
-    return None, (orchestrator, failure_code, reason)
+    try:
+        return _orchestrator.select_available(candidates, env, cwd, context)
+    except _orchestrator.NoAvailableCandidateError as error:
+        _exit_abnormal_session(error.orchestrator, error.returncode, error.detail)
+        raise AssertionError("到達不能") from error
 
 
 def _build_session_argv(
@@ -918,13 +753,7 @@ def _build_session_argv(
     return argv, None
 
 
-def _is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str = os.name) -> bool:
-    """オーケストレーターとOS別の正常終了コードを判定する。"""
-    if orchestrator == "claude":
-        return returncode in _CLAUDE_NORMAL_EXIT_CODES
-    if platform == "nt":
-        return returncode in _CODEX_NORMAL_EXIT_CODES_WINDOWS
-    return returncode in _CODEX_NORMAL_EXIT_CODES_POSIX
+_is_normal_session_exit = _orchestrator.is_normal_session_exit
 
 
 def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "") -> None:
@@ -1389,11 +1218,17 @@ def _check_process_loop_alerts(
     target_repo_id: str,
     local_path: pathlib.Path,
     last_alert_check: float | None,
+    *,
+    count_dependabot: bool,
 ) -> tuple[float | None, int, int]:
     """確認間隔を満たす場合だけアラートを確認し、確認時刻、CI失敗のAWI投入件数、未判定のDependabotアラート件数を返す。
 
+    CI失敗の確認は、キューが空の待機中に加えて各セッションの開始前にも呼ぶ。処理中の期間に起きた失敗も
+    人の操作を介さずにAWIへ入れるためであり、確認時刻を両方の呼び出しで共有して`--alert-interval`より短い間隔で
+    外部APIを呼ばない。
     Dependabotアラートはprocess-wiの実行が行う自動コードレビュー監査が判定するため、AWIを起票せず件数だけを返す。
     呼び出し側は投入が無く件数が1以上のとき、監査を実施させるためにprocess-wiを1回実行させる。
+    セッション開始前の呼び出し（`count_dependabot`が偽）はこれから起動するセッションが監査を行うため件数を数えない。
     """
     if args.no_alerts:
         return last_alert_check, 0, 0
@@ -1414,7 +1249,7 @@ def _check_process_loop_alerts(
             next_action=_alerts.ALERT_FAILURE_NEXT_ACTION,
         )
         submitted = 0
-    dependabot_pending = _count_dependabot_pending(args, target_repo_id)
+    dependabot_pending = _count_dependabot_pending(args, target_repo_id) if count_dependabot else 0
     _process_loop_log.append(
         "alert_check",
         submitted=submitted,
@@ -1474,9 +1309,10 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     要求を解除して正常終了する。反復ループ先頭の判定により、更新検知による再起動と0件待機を
     含む反復の境界でも要求を検出する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
-    件数0の間はアラート自動検出（指定が無ければ有効、`--no-alerts`で無効化）を`--alert-interval`
-    秒間隔で実行する。新規のCI失敗を検知した場合はAWIへ投入して即座に次反復へ進む。
-    未判定のDependabotアラートがある場合はAWIを起票せず、自動コードレビュー監査に判定させるため
+    件数0の間と各セッションの開始前は、アラート自動検出（指定が無ければ有効、`--no-alerts`で無効化）を
+    `--alert-interval`秒間隔で実行する。新規のCI失敗を検知した場合はAWIへ投入し、件数0の間は即座に次反復へ進み、
+    セッションの開始前は件数を数え直してから起動する。
+    件数0の間に未判定のDependabotアラートがある場合はAWIを起票せず、自動コードレビュー監査に判定させるため
     process-wiを1回実行させる。
     `--alert-forge`は検出対象（github/gitlab/auto）を指定する。
     件数0の間はwatchdogによる変更検知と10分間隔のremote同期を含む待機ループへ進み、
@@ -1555,6 +1391,18 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             refresh_before_session = True
                             continue
                         count = _count_pending_entries(private_notes, target_repo=target_repo_id)
+                    if count > 0 or alert_session_pending:
+                        last_alert_check, submitted, _ = _check_process_loop_alerts(
+                            args,
+                            private_notes,
+                            target_repo_id,
+                            local_path,
+                            last_alert_check,
+                            count_dependabot=False,
+                        )
+                        if submitted > 0:
+                            print(f"アラート監視により{submitted}件のAWIを投入しました。")
+                            count = _count_pending_entries(private_notes, target_repo=target_repo_id)
                     _process_loop_log.append("loop_iter_start", count=count)
                     if count > 0 or alert_session_pending:
                         refresh_before_session = False
@@ -1601,6 +1449,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         target_repo_id,
                         local_path,
                         last_alert_check,
+                        count_dependabot=True,
                     )
                     if submitted > 0:
                         print(f"アラート監視により{submitted}件のAWIを投入しました。")

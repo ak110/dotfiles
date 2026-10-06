@@ -86,6 +86,8 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
 
     終端行ごとに`label`、`status`および`agent_message_path`を1行ずつ示し、呼び出し元が保存先を開かずに
     どの依頼が終端したかと結果本文のファイルの所在を得られるようにする。
+    保留した結果を待機対象が残ったまま確定した終端結果は、`unfinished_waits`へ残った待機対象の件数を加える。
+    結果本文はその時点の待機表明であり再開したturnの結果ではないことを、委譲元が終端行だけから判別できるようにする。
     行頭は`保存先:`以外とし、保存先の行を読む既存の処理と競合させない。
     """
     notice_count = 0
@@ -114,6 +116,9 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
                     f"status={result.get('status')}",
                     f"agent_message_path={result.get('agent_message_path') or 'なし'}",
                 ]
+                unfinished_waits = _unfinished_wait_count(result.get("error"))
+                if unfinished_waits:
+                    fields.append(f"unfinished_waits={unfinished_waits}")
                 terminal_lines.append(f"終端行: {' '.join(fields)}")
     if notice_count:
         print(f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）")
@@ -121,6 +126,21 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
         print(f"終端: {terminal_count}件")
         for line in terminal_lines:
             print(line)
+
+
+def _unfinished_wait_count(error: object) -> int:
+    """保留した結果の確定時に残ったバックグラウンドタスクと子sessionの件数を返す。
+
+    `unobservedSessions`は再開したturnの終端など保留と無関係な処理でも記録されるため、
+    保留の確定が付ける`heldResultFinalized`を持つ結果だけを数える。
+    """
+    if not isinstance(error, dict) or error.get(state.HELD_RESULT_FINALIZED_KEY) is not True:
+        return 0
+    return sum(
+        len(identifiers)
+        for key in (state.UNFINISHED_BACKGROUND_TASKS_KEY, state.UNOBSERVED_SESSIONS_KEY)
+        if isinstance(identifiers := error.get(key), list)
+    )
 
 
 def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None = None) -> int:
