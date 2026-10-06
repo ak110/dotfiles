@@ -398,9 +398,12 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     output_format = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     fields = re.findall(r"^  ([^\s:]+):", output_format.split("レーンの所要時間:\n", maxsplit=1)[0], flags=re.MULTILINE)
     assert "書込対象" in fields
+    assert "公開工程の書込対象" in fields
     receipt = _h2_section(parent, "出力の受領")
     generation = _h2_section(picker, "調査とレーン分け")
     assert "`書込対象`" in receipt
+    assert "`公開工程の書込対象`" in receipt
+    assert "全レーン統合後の公開工程だけ" in output and "全レーン統合後の公開工程だけ" in receipt
     assert "`/`" in output and "`/`" in receipt
     assert "パス要素" in generation and "パス要素" in receipt
     assert "狭い方の範囲" in generation and "狭い方の範囲" in receipt

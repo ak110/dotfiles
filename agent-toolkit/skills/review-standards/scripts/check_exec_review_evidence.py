@@ -1187,6 +1187,11 @@ def _input_records(paths: list[pathlib.Path], repository: pathlib.Path, head: st
     return records
 
 
+def _normalized_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
+    """確認に渡す絶対パスを解決し、入力順を保って重複を除く。"""
+    return list(dict.fromkeys(path.resolve() for path in paths))
+
+
 def _referenced_records(row: dict[str, str], records: dict[pathlib.Path, str], repository: pathlib.Path) -> list[str]:
     """sourceとevidenceが実際に指す、今回渡された入力記録だけを返す。"""
     found: list[str] = []
@@ -1453,6 +1458,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.expected_head is None:
         parser.error("証拠の判定には--expected-headが必要です。雛形を書き込む場合は--templateを付ける")
+    plan_paths = _normalized_paths(args.plan)
+    input_record_paths = _normalized_paths(args.input_record)
     unanswered = 0
     if gate_requested:
         assert args.review_table is not None and args.round is not None
@@ -1462,7 +1469,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_head=args.expected_head,
             table_path=args.review_table,
             round_value=args.round,
-            input_paths=[*args.plan, *args.input_record],
+            input_paths=[*plan_paths, *input_record_paths],
         )
     else:
         errors = check_evidence(args.evidence, filenames, expected_head=args.expected_head)
@@ -1482,6 +1489,8 @@ def main(argv: list[str] | None = None) -> int:
         print("状態: completed")
         print(f"レビューしたHEAD: {args.expected_head}")
         print(f"未解決の指摘数: {unanswered}")
+        print(f"計画のパス: {json.dumps([str(path) for path in plan_paths], ensure_ascii=False)}")
+        print(f"入力記録のパス: {json.dumps([str(path) for path in input_record_paths], ensure_ascii=False)}")
         if not no_evidence:
             print(f"完成条件証拠のパス: {args.evidence}")
     else:

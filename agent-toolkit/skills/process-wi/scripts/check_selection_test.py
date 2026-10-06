@@ -151,6 +151,84 @@ def test_accepts_covered_selection_and_skips_out_of_scope_decisions(
     assert capsys.readouterr().err == ""
 
 
+def test_public_write_target_covers_reflection_and_can_be_shared_across_lanes(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開工程所有の同じpathは反映先を覆うが、別レーンの書込競合には加えない。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`と`docs/development/design.md`を変える。")
+    _awi(notes, "b.md", "`README.md`と`src/model.py`を変える。")
+    decisions = [
+        {
+            "WI": "a.md",
+            "レーン": "lane-01",
+            "書込対象": ["docs/development/design.md"],
+            "公開工程の書込対象": ["README.md"],
+        },
+        {
+            "WI": "b.md",
+            "レーン": "lane-02",
+            "書込対象": ["src/model.py"],
+            "公開工程の書込対象": ["README.md"],
+        },
+    ]
+    costs = [
+        {"レーン": lane, "根拠": "対象リポジトリの規範 AGENTS.md の公開工程の節がREADME.mdを割り当てる"}
+        for lane in ("lane-01", "lane-02")
+    ]
+    selection = _write_selection(tmp_path / "selection.yaml", decisions, costs)
+
+    assert check_selection.main(["--work-dir", str(repo), str(selection)]) == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "public_value,expected",
+    [
+        ("README.md", "`公開工程の書込対象`が文字列の列ではない"),
+        (["README.md"], "区分間の重複: README.md"),
+    ],
+)
+def test_rejects_invalid_or_overlapping_public_write_target(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    public_value: object,
+    expected: str,
+) -> None:
+    """公開工程欄の型と3区分が重ならないことを、対象WI・欄・path付きで確かめる。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変える。")
+    decisions = [
+        {
+            "WI": "a.md",
+            "レーン": "lane-01",
+            "書込対象": ["README.md"],
+            "公開工程の書込対象": public_value,
+        }
+    ]
+
+    expected_exit = 2 if not isinstance(public_value, list) else 1
+    assert _run(tmp_path, repo, decisions) == expected_exit
+    stderr = capsys.readouterr().err
+    assert expected in stderr
+    if isinstance(public_value, list):
+        assert "区分間で重複するパスは所有する1区分だけへ残す" in stderr
+
+
+def test_rejects_public_write_target_without_repository_rule_section_rationale(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開工程だけの所有を規範と節から確認できない分類を受理しない。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変える。")
+    decisions = [{"WI": "a.md", "レーン": "lane-01", "書込対象": [], "公開工程の書込対象": ["README.md"]}]
+
+    assert _run(tmp_path, repo, decisions) == 1
+    stderr = capsys.readouterr().err
+    assert "`公開工程の書込対象`の根拠不足: README.md" in stderr
+    assert "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する" in stderr
+
+
 @pytest.mark.parametrize(
     ("first_resume", "second_resume"),
     [

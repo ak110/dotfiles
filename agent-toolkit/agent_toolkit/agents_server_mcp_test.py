@@ -4378,9 +4378,9 @@ async def test_codex_explore_changes_thread_start_only(
     normal_thread = normal_client.requests[0][1]
     explore_thread = explore_client.requests[0][1]
     assert normal_thread["config"] == {"bypass_hook_trust": True}
-    assert normal_thread["developerInstructions"] == f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
+    assert normal_thread["developerInstructions"] == codex_backend._developer_instructions("delegate")  # noqa: SLF001
     assert explore_thread["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
-    assert explore_thread["developerInstructions"] == f"{state.EXPLORE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
+    assert explore_thread["developerInstructions"] == codex_backend._developer_instructions("explore")  # noqa: SLF001
     assert normal_client.requests[1][1] == explore_client.requests[1][1]
 
 
@@ -4401,7 +4401,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
 
     thread_params = client.requests[0][1]
     assert thread_params["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
-    assert thread_params["developerInstructions"] == f"{state.SHELL_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
+    assert thread_params["developerInstructions"] == codex_backend._developer_instructions("shell")  # noqa: SLF001
 
 
 @pytest.mark.asyncio
@@ -4418,11 +4418,11 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
         await manager.resume(session.session_id, state.ResumePrompt("続行"), session.cwd, launch_kind=session.launch_kind)
 
     normal_resume, explore_resume, shell_resume = [params for method, params in client.requests if method == "thread/resume"]
-    assert normal_resume["developerInstructions"] == f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
+    assert normal_resume["developerInstructions"] == codex_backend._developer_instructions("delegate")  # noqa: SLF001
     assert normal_resume["config"] == {"bypass_hook_trust": True}
-    assert explore_resume["developerInstructions"] == f"{state.EXPLORE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
+    assert explore_resume["developerInstructions"] == codex_backend._developer_instructions("explore")  # noqa: SLF001
     assert explore_resume["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
-    assert shell_resume["developerInstructions"] == f"{state.SHELL_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
+    assert shell_resume["developerInstructions"] == codex_backend._developer_instructions("shell")  # noqa: SLF001
     assert shell_resume["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
 
 
@@ -4724,7 +4724,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
             "serviceTier": "default",
             "model": "gpt-test",
             "config": {"bypass_hook_trust": True},
-            "developerInstructions": f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",
+            "developerInstructions": codex_backend._developer_instructions("delegate"),  # noqa: SLF001
         },
     )
     assert client.requests[1][0] == "turn/start"

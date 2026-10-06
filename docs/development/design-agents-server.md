@@ -27,6 +27,12 @@ MCPサーバー自身の作業ディレクトリはホストの起動条件で�
 plugin更新で作業ディレクトリが消えると、子App Serverは生存したまま`thread/start`へ`failed to load configuration: No such file or directory`のJSON-RPC errorを返し続ける。
 子プロセスを再生成する案は、新しい子も同じ親の作業ディレクトリを継承するため採用しない。
 
+Codex backendは、自身を起点に解決したagent-toolkit plugin rootが版数付きcacheにある場合、managed-tempへ1回複製してprocessの生存中に実在するstable rootを得る。同じ絶対パスを内側のagents_server MCP起動設定と、`thread/start`・`thread/resume`の全launch kindの`developerInstructions`へ渡す。委譲先はagent-toolkit skillとplugin内部資源をそのrootから読み、`<役割名>.subagent.md`や別hostのcache版数から別rootを組み立てない。
+直接起動したCodexメインはこの受け渡しの対象外であり、そのplugin root解決は`rules-main.codex.md`「Codexのplugin root解決」が所有する。
+
+知識境界として、`<役割名>.subagent.md`内の`${CLAUDE_PLUGIN_ROOT}`を文書自身のrootへ展開する処理は`agents_server_mcp.py::_task_document_request`が所有する。委譲先が実行時にskillや内部資源を探す起点は、Codex backendのdeveloper instructionが所有する。
+内側MCPだけにstable rootを渡すと、委譲先自身のファイル参照は安定しないため、この案は採用しない。開始時だけにstable rootを渡す案も、保存済みthreadを別processで再開した後の起点を失うため採用しない。
+
 `show`・`send_message`・`kill`および`stop`は受け取った識別子を先に保持中の状態へ解決する。いずれの状態にも解決できなかった値だけを対象に、UUID形式でなければ体系の相違を示すエラーを返す。登録済みの識別子は形式によらず解決するため、backendが発行済みの識別子の解決規則は変わらない。両backendのsession識別子はUUIDであり、他の委譲手段が返す識別子との取り違えを`unknown session`と区別できるようにする。保持しないUUIDへ返す`unknown session`の診断は登録簿の状態で分ける。登録簿が解放済みを示す場合は所有側による解放の理由と時刻を添え、レコードが無い場合はこのホストのどのagents_serverにも記録が無いこと（別のホストで起動したか、7日を超えて記録が回収された）を添える。登録簿のレコードは再起動では削除されないため、不在の原因として再起動を案内しない。2026年9月30日に、所有側が保持期限で解放した孫sessionへの照会が再起動の案内を返し、振り返りが原因を誤推定したことによる。
 
 ローカルbackendのclassはMCP module初期化時に読込み、共有の`SessionState`と状態更新関数は独立した共通moduleが所有する。
@@ -122,6 +128,10 @@ reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_am
 保持期限内に継続させる別の運用を規範へ追加する案も、暗黙再開が同じ結果を与えるため採用しない。
 
 継続要求と中断要求の応答は、対象sessionを所有する実行主体だけが解決する。Claude backendは要求の受理と応答の解決を1つの継続要求チャネルへ集約し、所有主体が保持期限の到達、message streamの例外、明示的な取り消しのいずれで終了する場合も、チャネルの閉鎖で受理済みの要求を所有主体の終了として解決する。閉鎖後の受理は待機させず直ちに拒否する。Codex backendは同じ責務をJSON-RPCの応答待ちへ適用し、接続の終了とstdout readerの失敗で未解決の要求を解決する。この終了処理と呼び出し側のtimeoutを併用し、既知の終了の仕方では配送結果を即座に確定し、未知の停止では有限時間で制御を戻す。却下した代替案は、所有主体終了時の解決を設けず、呼び出し側のtimeoutだけで応答なしを打ち切る案である。要求が配送されたかを呼び出し側が判別できず、再開の可否も決められないため採用しない。
+
+Codex App Serverのstdoutは、正の固定byte長で`read(n)`したchunkをbufferへ蓄積し、改行ごとにJSON-RPC recordへ復元して既存の応答・server request・通知dispatcherへ渡す。`APP_SERVER_STREAM_LIMIT_BYTES`はsubprocess pipeのbufferと1回の読取長を有界にする値であり、protocol recordの最大値ではない。EOF時の残余も1 recordとして処理し、不正UTF-8、不正JSON、取消し、接続終了に対する既存の失敗処理を保つ。
+
+`StreamReader.readline()`のlimitを大きくするだけの案は、その固定値を有効なJSON-RPC recordの上限にしてしまい、planやdiffを含む応答が超えた時点でreaderを停止させるため採用しない。無制限に一度で読む案も、transportのbackpressureとメモリー使用量を有界にできないため採用しない。
 
 backend固有のserver requestは共有公開toolを増やさず、非対話の非対応エラーとして応答する。
 承認、ユーザー入力、認証token更新、attestationおよび未知methodを待機させず、対応turnをfailedへ遷移してwaiterを解放する。

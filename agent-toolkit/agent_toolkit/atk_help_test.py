@@ -153,6 +153,11 @@ def test_every_subcommand_rejects_unsupported_argument_with_accepted_options(
         if command == "atk":
             continue
         arguments, target = _required_arguments(parser)
+        if any(
+            action.nargs == argparse.REMAINDER
+            for action in target._actions  # pylint: disable=protected-access
+        ):
+            continue
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args([*arguments, "--unsupported"])
 
@@ -267,6 +272,27 @@ def test_plan_checkout_and_removed_commands_in_help() -> None:
     assert "atk plans checkout" in commands
     assert "atk plans progress" not in commands
     assert "atk plans migrate" not in commands
+
+
+def test_run_command_help_describes_argv_streams_and_exit_states() -> None:
+    """公開helpだけでrun-commandの入力、出力、終了状態と対象外を判断できる。"""
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    parser = commands["atk run-command"]
+    help_text = parser.format_help()
+
+    for fragment in (
+        "--cwd",
+        "--timeout",
+        "shellで再解釈せずargv",
+        "stdout_path",
+        "stderr_path",
+        "JSON",
+        "signal",
+        "124",
+        "125",
+    ):
+        assert fragment in help_text
+    assert "対話型、常駐、端末制御および追従表示には使わない" in help_text
 
 
 @pytest.mark.parametrize(

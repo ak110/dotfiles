@@ -42,6 +42,11 @@ HELP: dict[str, dict[str, str]] = {
         "description": "目的: agent向け補助スクリプトを現在のagent-toolkit環境で実行する。\n利用場面: skillまたは規範が登録名で補助処理を起動するとき。\n対象と出力: 閉じた登録表のscriptだけを実行し、scriptの終了コードをそのまま返す。エージェント環境では、標準出力と標準エラーのそれぞれが`atk --help`の示す長さを超える場合に全量を保存し、標準出力は`保存先:`・`行数:`、標準エラーは`標準エラー保存先:`・`標準エラー行数:`だけを書く。`session-review-evidence`の`--user-events`は逐語引用の出所ファイルとして渡すため、短い標準出力も保存する。エージェント環境でない場合は両出力をそのまま表示する。\n前提: SCRIPTは公開済みの登録名であること。scriptへ渡す引数は`--`の後へ置く。\n復元・後始末: 対象scriptが定める契約に従う。run-script自身は状態を残さない。",
         "epilog": "実行例:\n\n  atk run-script plan-check -- /absolute/path/to/plan.md",
     },
+    "atk run-command": {
+        "summary": "外部コマンドの全出力と終了状態を保持する",
+        "description": "目的: MCPによる実行手段を持たない有限終了の外部コマンドについて、標準出力と標準エラーの全量および実際の終了状態を保持する。\n利用場面: formatter、linter、testerなどを直接起動し、両ストリームの全量と終了状態を同時に必要とするとき。対話型、常駐、端末制御および追従表示には使わない。\n対象と出力: `--`以後をshellで再解釈せずargvとして起動し、登録済みmanaged-tempの別ファイルへ両ストリームをバイト列のまま保存する。標準出力へargv、cwd、child_exit_code、timed_out、signal、stdout_path、stderr_pathと両ファイルの行数・バイト数を持つJSON objectを1件出力する。自然終了0〜255は同じ終了コード、signalは128+signal番号、timeoutは124、子を開始しないwrapper異常は125を返す。\n前提: `--cwd`は実在する絶対ディレクトリ、`--timeout`は正の秒数とする。pipelineや複数行codeはscriptへ保存し、そのscriptのargvを渡す。\n復元・後始末: 保存先は`atk managed-temp list`と`cleanup`で管理し、未回収でも保持期限後に自動削除される。",
+        "epilog": "実行例:\n\n  atk run-command --cwd /absolute/repository -- pytest -q",
+    },
     "atk wi": {
         "summary": "AWIとUWIのキューを操作する",
         "description": "目的: 対象リポジトリごとのAWIとUWIを、投入、参照、状態遷移、編集、`atk wi process-loop`の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。コーディングエージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのキューのファイルを読み書きする。`atk wi commit`はprivate-notesの作業ツリー全体の未コミット変更を確定する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk wi commit`で確定する。",

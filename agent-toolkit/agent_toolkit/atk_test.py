@@ -9,6 +9,7 @@ UWI共通ヘルパーは本ファイルと分割先テストの双方から使�
 gitリモート応答フェイクは複数テストファイルが共有するため`_atk_git_fake_test_helpers.py`に集約する。
 """
 
+import argparse
 import contextlib
 import datetime
 import json
@@ -26,6 +27,7 @@ import pytest
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import config as _config  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk import run_command as _run_command  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import common as _wi_common  # noqa: E402  # pylint: disable=wrong-import-position
@@ -80,6 +82,23 @@ def test_info_reports_current_execution_context(capsys: pytest.CaptureFixture[st
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
 _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
 _FIXED_ISO = _FIXED_DT.isoformat()
+
+
+def test_run_command_dispatches_remainder_argv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """トップレベルCLIが`--`以後のargvをrun-commandへ渡す。"""
+    received: list[argparse.Namespace] = []
+
+    def fake_run(args: argparse.Namespace) -> int:
+        received.append(args)
+        return 23
+
+    monkeypatch.setattr(_run_command, "run", fake_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["run-command", "--cwd", str(pathlib.Path.cwd()), "--", "tool", "a b", "|", "-x"])
+
+    assert exc_info.value.code == 23
+    assert received[0].command_argv in (["--", "tool", "a b", "|", "-x"], ["tool", "a b", "|", "-x"])
 
 
 def _body_file_args(tmp_path: pathlib.Path, *messages: str) -> list[str]:

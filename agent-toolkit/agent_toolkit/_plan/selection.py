@@ -14,6 +14,7 @@ DECISIONS_KEY = "選定"
 WI_KEY = "WI"
 LANE_KEY = "レーン"
 WRITE_FILES_KEY = "書込対象"
+PUBLIC_WRITE_FILES_KEY = "公開工程の書込対象"
 EXCLUDED_PATHS_KEY = "書き込まない反映先"
 LANE_COSTS_KEY = "レーンの所要時間"
 RATIONALE_KEY = "根拠"
@@ -51,7 +52,11 @@ def decisions(selection: object) -> list[object] | None:
     items = selection.get(DECISIONS_KEY, selection.get(_LEGACY_DECISIONS_KEY))
     if not isinstance(items, list):
         return None
-    return [_normalize(item, _LEGACY_DECISION_KEYS) for item in items]
+    normalized = [_normalize(item, _LEGACY_DECISION_KEYS) for item in items]
+    for item in normalized:
+        if isinstance(item, dict):
+            item.setdefault(PUBLIC_WRITE_FILES_KEY, [])
+    return normalized
 
 
 def lane_costs(selection: object) -> list[object] | None:

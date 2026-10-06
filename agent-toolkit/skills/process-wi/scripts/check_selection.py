@@ -3,7 +3,7 @@
 pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と反映先`、または作業を求める回答済みUWIの
 質問と回答から手で書き写すため、反映先の一部を欠いた値や、個別ファイルの代わりに上位ディレクトリだけを書いた値がレーン分けへ渡り得る。
 本スクリプトは`レーン`が`なし`でない各項目について、反映先パスを文章とインラインコードから抽出し、
-`書込対象`と`書き込まない反映先`の双方に照らして次の4区分の違反を報告する。
+`書込対象`・`公開工程の書込対象`・`書き込まない反映先`の3区分に照らして次の7区分の違反を報告する。
 抽出の対象は、AWIでは`## 反映内容と反映先`、frontmatterの`type`が`uwi`の項目ではfrontmatterを除く本文全体
 （質問、選択肢と帰結、判断材料、回答）とする。UWIは反映先の節を持たず、作業範囲が回答と判断材料に現れるためである。
 旧欄名（`decisions`、`awi`、`lane`、`write_files`、`excluded_paths`）で書かれた選定結果も同じ意味で読む。
@@ -11,11 +11,12 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
 - 未被覆: 反映先パスが`書込対象`の同じパスにも、`書込対象`のディレクトリ範囲の配下にも、`書き込まない反映先`にも無い
 - 広すぎる範囲: `書込対象`のディレクトリ範囲の配下に反映先パスがあるのに、反映先がその範囲自身もそれを含む範囲も挙げていない
 - `書き込まない反映先`の不正: 反映先パスに無いパスを`書き込まない反映先`が含む
-
+- 区分間の重複: 3区分のうち複数が同じパスまたは包含関係にある範囲を持つ
+- `公開工程の書込対象`の根拠不足: 対象リポジトリの規範、節およびpathがレーンの根拠に無い
 - 別レーンの重複根拠不足: 共通ファイルまたは狭い方の範囲が双方のレーンの根拠に無い
 - 同じ再開計画の別レーン割当: pickerが出力した通常中断または観測のみの再開位置が同じ計画を指す項目を別レーンへ置いた
 
-5区分はいずれも、レーン分けと重なりの判定が実際の共有書込対象と異なる結果になるため、違反として終了コード1を返す。
+7区分はいずれも、レーン分けと重なりの判定が実際の共有書込対象と異なる結果になるため、違反として終了コード1を返す。
 分類と定義の独立性の意味判断はpickerとメインの読解へ委ねる。
 
 被覆を比べる前に、選定結果をYAMLとして読み、`pick-wi.subagent.md`「出力」が定める欄名、必須の欄と値の型を確かめる。
@@ -88,6 +89,7 @@ _DECISION_KEYS = frozenset(
         _selection.LANE_KEY,
         _STALENESS_KEY,
         _selection.WRITE_FILES_KEY,
+        _selection.PUBLIC_WRITE_FILES_KEY,
         _selection.MODEL_TYPES_KEY,
         _selection.EXCLUDED_PATHS_KEY,
         _UPSTREAM_TARGETS_KEY,
@@ -234,22 +236,62 @@ def check_decision(
     awi: str,
     reflected: set[str],
     write_files: list[str],
+    public_write_files: list[str],
     excluded_paths: list[str],
 ) -> list[str]:
     """選定結果の1件の項目の違反を、AWIのファイル名・区分・パスを含む行の一覧で返す。"""
     errors: list[str] = []
     for path in sorted(reflected):
-        if path in excluded_paths or any(_covers(entry, path) for entry in write_files):
+        if path in excluded_paths or any(_covers(entry, path) for entry in [*write_files, *public_write_files]):
             continue
         errors.append(f"{awi}: 未被覆: {path}")
     reflected_ranges = [path for path in reflected if _is_range(path)]
-    for entry in write_files:
+    for entry in [*write_files, *public_write_files]:
         if not _is_range(entry):
             continue
         inner = [path for path in reflected if path != entry and path.startswith(entry)]
         if inner and not any(entry.startswith(scope) for scope in reflected_ranges):
             errors.append(f"{awi}: 広すぎる範囲: {entry}")
     errors.extend(f"{awi}: 書き込まない反映先の不正: {path}" for path in excluded_paths if path not in reflected)
+    sections = (
+        (_selection.WRITE_FILES_KEY, write_files),
+        (_selection.PUBLIC_WRITE_FILES_KEY, public_write_files),
+        (_selection.EXCLUDED_PATHS_KEY, excluded_paths),
+    )
+    for (first_name, first_paths), (second_name, second_paths) in itertools.combinations(sections, 2):
+        overlaps = {
+            second if _covers(first, second) else first
+            for first in first_paths
+            for second in second_paths
+            if _covers(first, second) or _covers(second, first)
+        }
+        errors.extend(f"{awi}: 区分間の重複: {path}（`{first_name}`と`{second_name}`）" for path in sorted(overlaps))
+    return errors
+
+
+def _check_public_write_rationales(items: list[dict[str, object]], costs: list[dict[str, object]]) -> list[str]:
+    """公開工程所有の各pathを、対象リポジトリ規範の節へ対応付けた根拠だけに限定する。"""
+    rationales = {
+        row[_selection.LANE_KEY]: row.get(_selection.RATIONALE_KEY, "")
+        for row in costs
+        if isinstance(row, dict) and isinstance(row.get(_selection.LANE_KEY), str)
+    }
+    errors: list[str] = []
+    for item in items:
+        lane = item.get(_selection.LANE_KEY)
+        rationale = rationales.get(lane, "") if isinstance(lane, str) else ""
+        for path in _string_list(item, _selection.PUBLIC_WRITE_FILES_KEY):
+            pattern = re.compile(r"(?<![A-Za-z0-9_./-])" + re.escape(path) + r"(?![A-Za-z0-9_./-])")
+            if (
+                not isinstance(rationale, str)
+                or not pattern.search(rationale)
+                or "規範" not in rationale
+                or "節" not in rationale
+            ):
+                errors.append(
+                    f"{item.get(_selection.WI_KEY, 'WI不明')}: `{_selection.PUBLIC_WRITE_FILES_KEY}`の根拠不足: {path}。"
+                    "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する"
+                )
     return errors
 
 
@@ -266,6 +308,7 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
         if decision[_selection.LANE_KEY] == _LANE_NONE:
             continue
         write_files = _string_list(decision, _selection.WRITE_FILES_KEY)
+        public_write_files = _string_list(decision, _selection.PUBLIC_WRITE_FILES_KEY)
         excluded_paths = _string_list(decision, _selection.EXCLUDED_PATHS_KEY)
         try:
             source = _plan_file.find_wi_source(awi, private_notes)
@@ -280,11 +323,12 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
             body = source.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
-        errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, excluded_paths))
+        errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, public_write_files, excluded_paths))
     errors.extend(_check_lane_models(items))
     errors.extend(_check_resume_plan_lanes(items))
     errors.extend(_check_lane_stages(items, costs))
     errors.extend(_check_lane_overlaps(items, costs))
+    errors.extend(_check_public_write_rationales(items, costs))
     return errors
 
 
@@ -344,7 +388,11 @@ def _structure_errors(selection: object) -> tuple[list[str], list[str]]:
             errors.append(f"{label}: `{_STALENESS_KEY}`が写像ではない: {item[_STALENESS_KEY]!r}")
         errors.extend(
             f"{label}: `{key}`が文字列の列ではない: {item[key]!r}"
-            for key in (_selection.WRITE_FILES_KEY, _selection.EXCLUDED_PATHS_KEY)
+            for key in (
+                _selection.WRITE_FILES_KEY,
+                _selection.PUBLIC_WRITE_FILES_KEY,
+                _selection.EXCLUDED_PATHS_KEY,
+            )
             if key in item and not _is_string_list(item[key])
         )
         upstream_targets = item.get(_UPSTREAM_TARGETS_KEY, _LANE_NONE)
@@ -573,6 +621,8 @@ def main(argv: list[str] | None = None) -> int:
             _next_action.next_action_line(
                 "未被覆のパスは`書込対象`へ加えるか、書き込まない場合は`書き込まない反映先`へ加える。"
                 "広すぎる範囲は反映先が挙げる個別のパスへ置き換える。不正な`書き込まない反映先`は除く。"
+                "区分間で重複するパスは所有する1区分だけへ残す。`公開工程の書込対象`の根拠不足は、"
+                "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する。"
                 "直した後に同じコマンドで確かめる"
             ),
             file=sys.stderr,
