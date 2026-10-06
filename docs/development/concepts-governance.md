@@ -131,6 +131,11 @@
   本方針は旧blocking MCP連携の入力契約に対するものであり、`agents_server`連携へは適用しない。
   現行の扱いは`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`が定める
 - サプライチェーン対策としてmiseの`minimum_release_age`を設定し、依存の即日更新を避ける
+- 自作パッケージをuvの公開待機設定から外す指定は、各プロジェクトの`pyproject.toml`かコマンドライン引数へ置く。
+  グローバルなuv設定（`~/.config/uv/uv.toml`）へは置かない（2026年10月6日、ユーザー回答。グローバル設定の除外は各プロジェクトの`uv.lock`へ入り込むため）。
+  agent-toolkitのMCP定義が起動するpyfltrは、`uvx`の引数`--exclude-newer-package pyfltr=false`で公開待機から外す。
+  MCP定義のpyfltrの下限を公開直後の版へ上げた際、ユーザーは待機の経過を待つ案ではなく、この引数でCIとMCPサーバーの起動を先に回復する案を選んだ（同日のユーザー回答）。
+  現行の規定は`agent-toolkit:writing-standards`の`references/dependency-management.md`「バージョン指定と更新」にある
 - 配布物へ波及しない依存上書きは、エンドユーザー環境の脆弱性を未解消のまま残すため
   採用しない
 - Windows（CP932・PowerShell・パス区切り）での動作を常に考慮し、subprocess境界はUTF-8を明示する
