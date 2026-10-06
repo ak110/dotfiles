@@ -19,7 +19,7 @@ description: >
 ## 統合実行ツール経由の起動
 
 - 対象プロジェクトが統合実行ツール（`pyfltr`など）を採用する場合は、formatter、linter、testerおよびプロジェクト固有のチェックツールを個別に直接起動せず、その統合実行ツールのサブコマンド経由で実行する。設定で無効化したツールも直接起動すれば動作するため、設定による無効化は直接起動への防御にならない。特定のファイルだけを対象にする場合も同じ形でパスを渡す。対象プロジェクトの規範がデバッガー、最小再現、環境ごとの原因の特定などの用途で直接起動を認める場合は、その用途に限り直接起動する
-- 出力の全量を観測するコマンドや、長大な出力が見込まれるコマンドは、`agents_server`の`start`（`mode`は`shell`）へ渡す（努力目標。委譲元のコンテキストを保護する）。委譲元はmanaged-tempの中に保存先を確保し、標準出力と標準エラーの保存先を`summary_policy`へ記す。委譲先が保存したファイルから必要な範囲を読み、終了状態と警告を検収する。出力が短い局所的な実行で統合実行ツールのMCPサーバーを利用できる場合は、そのMCPツールを使う
+- 統合実行ツールがチェック実行用のMCPツールを公開している場合は、そのMCPツールを優先する。pyfltrのチェック実行はMCPの`run`を使う。MCPを利用できず、有限終了する外部チェックの標準出力・標準エラーの全量と終了状態を一体で保持する場合だけ、対象worktreeで`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`を使う。pipelineまたは複数行codeは`agent-toolkit/rules/02-agent-operations.md`に従ってmanaged-temp内のscriptへ保存し、そのscriptをshellで再解釈せずargvとして渡す
 - シェルからCLIを直接実行する場合は、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「背景ジョブの起動形（Claude Code）」が定める長時間コマンドの前景実行に従う
 
 ## pyfltrの起動形
