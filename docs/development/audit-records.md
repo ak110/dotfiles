@@ -403,6 +403,11 @@ Read不足で拒否された場合だけ、その担当がReadで現在の対象
 同日、codex-cli 0.154.0の同じ2169件に対し、`atk wi process-loop`がCodexへ渡す起動プロンプトの完全一致を数えた。一致は0件であった。いずれの記録も最初のuser役レコードの本文は実行環境が挿入する前置きであった。前置きは``# AGENTS.md instructions``または``<recommended_plugins>``で始まる。`agent-toolkit:process-wi`をuser役の本文へ含む記録は304件であった。この304件の`session_meta`を確認すると、`originator`は`agent-toolkit-codex-app-server`が303件、`codex-tui`が1件であった。
 再検証はClaude Codeの記録から`Launching skill:`を含む行を1件取得して`tool_result`の構造を確認し、Codexの記録から同じスキル名を含む行を取得してレコード種別を確認する。あわせてCodexの記録から`atk wi process-loop`が渡す起動プロンプトの完全一致と包含の件数を数える。user役レコードの`text`の先頭が前置きであることも確認する。
 
+## agent-toolkit/skills/writing-standards/references/session-records.md：Claude Codeの記録：2026年10月6日
+
+2026年10月6日にClaude Code 2.1.291の本体（`~/.local/share/claude/versions/2.1.291`）を確かめた。出力の項目`narration_block_indexes`の説明は該当する`thinking`ブロックを「server summaries of the prose between tool calls, not the model's own reasoning」と記す。
+本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して再検証する。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+
 ## agent-toolkit/skills/writing-standards/references/session-records.md：暗号化された値：2026年10月7日
 
 2026年10月7日に公式文書「Thinking」（<https://platform.claude.com/docs/en/build-with-claude/thinking>、同日取得）を確かめた。節「Thinking encryption」は`signature`を「The `signature` field is opaque: don't interpret or parse it.」と定め、`redacted_thinking`の`data`を「opaque and encrypted」と記す。
