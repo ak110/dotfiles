@@ -18,6 +18,7 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import common as _common
 from agent_toolkit._plan import fixture as _plan_fixture
 from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._testing import review_bodies
 
 
 @pytest.fixture(autouse=True)
@@ -254,7 +255,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
         "exec-review",
         "sample.py:1",
         "初回指摘",
-        "修正済み",
+        review_bodies.response_body("修正済み"),
         "",
     )
     _review_table.add(
@@ -271,7 +272,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
         "exec-review",
         "sample.py:2",
         f"再帰失敗の指摘（原因commit: {second_cause_oid}）",
-        "2回目の修正済み",
+        review_bodies.response_body("2回目の修正済み"),
         "",
     )
     assert _review_table.validate(working) == 0

@@ -71,6 +71,11 @@ _SAVED_UNRESOLVED_NEXT_ACTION = (
     "`atk review-table show <PATH>`で保存結果を確認する。解消しない場合はagent-toolkitの不具合としてユーザーへ報告する"
 )
 _ActionableError = _next_action.ActionableError
+# 応答本文の必須ラベル。各ラベルに書く内容は`agent-toolkit:review-standards`の`references/reviewee.md`が定める。
+# 記録時点で同じ規定の検索と不採用の根拠の確認を求めるため、列を増やさず本文の行頭ラベルで表す。
+RESPONSE_LABELS = ("違反を確認した規定:", "同じ規定の検索:", "採用する修正範囲:", "採用しない修正方針:")
+NO_RESPONSE_REASON_LABELS = ("根拠の所在:",)
+_LABEL_DEFINITION = "`agent-toolkit:review-standards`の`references/reviewee.md`「公開可能性の検証」"
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -400,6 +405,10 @@ def respond(
             next_action="--response-fileか--no-response-reason-fileのどちらか一方を指定する",
         )
     needed = "yes" if replacement else "no"
+    if replacement:
+        _require_labels(replacement, RESPONSE_LABELS, "--response-file")
+    else:
+        _require_labels(reason, NO_RESPONSE_REASON_LABELS, "--no-response-reason-file")
     track = _normalize_track(track)
     given = [
         (index, _normalized(value)) for index, value in enumerate((round_value, track, location, issue)) if _normalized(value)
@@ -545,6 +554,20 @@ def _read_cell_file(option: str, raw_path: str) -> str:
             f"{option}をUTF-8として解釈できない: {raw_path}",
             next_action=f"{option}へUTF-8で保存したファイルを指定して再実行する",
         ) from error
+
+
+def _require_labels(body: str, labels: tuple[str, ...], option: str) -> None:
+    """応答本文が各必須ラベルを行頭に持ち、ラベルの後に空でない記述を持つことを確かめる。"""
+    lines = [line.strip() for line in body.splitlines()]
+    missing = [label for label in labels if not any(line.startswith(label) and line[len(label) :].strip() for line in lines)]
+    if missing:
+        raise _ActionableError(
+            f"{option}の本文に必須ラベルが無いか、ラベルの後の記述が空である: {'、'.join(missing)}",
+            next_action=(
+                f"欠けたラベルを行頭に置いて同じ行へ内容を書き、同じコマンドを再実行する。"
+                f"各ラベルに書く内容は{_LABEL_DEFINITION}が定める"
+            ),
+        )
 
 
 def _cell_value(args: argparse.Namespace, dest: str) -> str:
