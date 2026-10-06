@@ -1195,6 +1195,8 @@ def test_codex_question_output_becomes_user_event_at_output_position(tmp_path: p
                 {"answers": ["最初の回答"]},
                 {"answers": ["次の回答1", "次の回答2"]},
             ],
+            # 最初の回答は提示した選択肢のlabelと一致しないため、Claude Codeの回答と同じく介入として残す。
+            "answer_intervention": True,
             "line": 1,
             "timestamp": None,
             "sequence": 2,

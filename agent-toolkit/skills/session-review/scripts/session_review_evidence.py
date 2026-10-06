@@ -374,11 +374,20 @@ class _AnsweredQuestion(NamedTuple):
 
 
 def _question_answers_event(pairs: list[_AnsweredQuestion]) -> dict[str, Any] | None:
-    """質問側の文面とユーザーが入力した値を由来別に分けたuserイベントへ変換する。"""
+    """質問側の文面とユーザーが入力した値を由来別に分けたuserイベントへ変換する。
+
+    選択肢のlabelと一致しない回答と、自由記述を伴う回答は従来の判断を是正した介入であるため、
+    `answer_intervention`を付けて問題候補の母集団へ残す。Claude CodeとCodexの両方の回答がこの関数を通るため、
+    介入の判定をここへ置き、どちらの回答でも是正を含む回答を同じ条件で候補に残す。
+    """
     user_text: list[str] = []
     assistant_context: list[dict[str, Any]] = []
     user_response: list[dict[str, Any]] = []
+    intervention = False
     for pair in pairs:
+        labels = [label for label, _description in pair.options]
+        if pair.notes or not all(_is_offered_answer(answer, labels) for answer in pair.answers):
+            intervention = True
         answers = [_clip(answer) for answer in pair.answers if _clip(answer)]
         notes = _clip(pair.notes) if pair.notes else ""
         user_text.extend(answers)
@@ -398,6 +407,8 @@ def _question_answers_event(pairs: list[_AnsweredQuestion]) -> dict[str, Any] | 
     if event is not None:
         event["assistant_context"] = assistant_context
         event["user_response"] = user_response
+        if intervention:
+            event["answer_intervention"] = True
     return event
 
 
@@ -478,8 +489,7 @@ def _claude_answers_event(
 
     質問と回答は別の行に由来するため、行番号には質問側（先頭行）の値を用いる。
     `annotations`の`notes`はユーザーが選択肢の外へ書いた自由記述であり、`preview`は取り込まない。
-    選択肢のlabelと一致しない回答と、`notes`を持つ回答は従来の判断を是正した介入であるため、
-    `answer_intervention`を付けて問題候補の母集団へ残す。
+    介入の標識は`_question_answers_event`が付ける。
     """
     if not isinstance(content, list):
         return None
@@ -505,20 +515,14 @@ def _claude_answers_event(
         return None
     annotations = result.get("annotations")
     pairs: list[_AnsweredQuestion] = []
-    intervention = False
     for question, answer in answers.items():
         annotation = annotations.get(question) if isinstance(annotations, dict) else None
         raw_notes = annotation.get("notes") if isinstance(annotation, dict) else ""
         notes = raw_notes if isinstance(raw_notes, str) else ""
-        offered = options.get(question, [])
-        if notes or not _is_offered_answer(answer, [label for label, _description in offered]):
-            intervention = True
-        pairs.append(_AnsweredQuestion(question, offered, [answer], notes))
+        pairs.append(_AnsweredQuestion(question, options.get(question, []), [answer], notes))
     event = _question_answers_event(pairs)
     if event is not None:
         event["line"] = question_line
-        if intervention:
-            event["answer_intervention"] = True
     return event
 
 
@@ -3223,7 +3227,7 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
     ツール呼び出しはツール名と代表入力だけを返し、書き込む本文と置換文字列は含めない。
     ツール結果は本スクリプトが`failed-tool`として検出した失敗だけを、診断の1行とともに返す。
     自動挿入本文、実行環境が生成した本文、スキル本文の展開、hookの追加コンテキスト、成功したツール結果の本文は除く。
-    確認への回答（`質問: … 回答: …`）と初期要求はユーザーの入力として残す。
+    確認への回答（本文は回答値と自由記述、質問と選択肢は`assistant_context`）と初期要求はユーザーの入力として残す。
     委譲先の内部は問題候補の側で扱うため、メイン記録だけを対象とする。
     """
     main_record = next((item for item in collected if item.role == "main"), None)
@@ -3900,7 +3904,6 @@ def _candidate_events(
                     event,
                     record,
                     line,
-                    normalized_text,
                     first_main_user,
                     initial_skill_request=initial_skill_request,
                     initial_skill_body=initial_skill_body,
@@ -4254,10 +4257,7 @@ def _initial_request_locator(timeline: list[dict[str, Any]], *, main_record_id: 
             continue
         if _PROCESS_WI_GOAL_BODY in text:
             return (main_record_id, line)
-        if (
-            _user_candidate_exclusion(event, main_record_id, line, " ".join(text.split()), None, main_record_id=main_record_id)
-            is None
-        ):
+        if _user_candidate_exclusion(event, main_record_id, line, None, main_record_id=main_record_id) is None:
             return (main_record_id, line)
     return None
 
@@ -4266,7 +4266,6 @@ def _user_candidate_exclusion(
     event: dict[str, Any],
     record: str,
     line: int,
-    text: str,
     first_main_user: tuple[str, int] | None,
     *,
     initial_skill_request: tuple[str, int] | None = None,
@@ -4280,7 +4279,9 @@ def _user_candidate_exclusion(
     残すとユーザー介入の候補が実際の介入件数を超える。
     接頭辞を持たない実行環境の生成は本文の形からは判別できないため、`_is_runtime_generated`が
     付けた標識で分類する。
-    確認への回答のうち`answer_intervention`を持つものは、選択肢をそのまま選んだ回答ではなく
+    確認への回答は、生成側が付ける`user_response`の構造で判定し、表示用の本文の書式からは推定しない。
+    本文の書式で判定すると、書式の変更で選択肢どおりの回答が候補に残り、同じ書式の通常の発話が回答として除外される。
+    回答のうち`answer_intervention`を持つものは、選択肢をそのまま選んだ回答ではなく
     従来の判断を是正した介入であるため、除外せず候補として残す。
     """
     if record != main_record_id:
@@ -4293,7 +4294,7 @@ def _user_candidate_exclusion(
         return "initial-skill-body"
     if _generated_user_event(event):
         return "runtime-inserted"
-    if text.startswith("質問:") and "回答:" in text:
+    if isinstance(event.get("user_response"), list):
         return None if event.get("answer_intervention") is True else "question-answer"
     if first_main_user == (record, line):
         return "initial-request"
@@ -4319,15 +4320,7 @@ def _initial_skill_input_locators(
         (
             index
             for index, event in enumerate(main_users)
-            if _user_candidate_exclusion(
-                event,
-                main_record_id,
-                int(event["line"]),
-                " ".join(str(event["text"]).split()),
-                None,
-                main_record_id=main_record_id,
-            )
-            is None
+            if _user_candidate_exclusion(event, main_record_id, int(event["line"]), None, main_record_id=main_record_id) is None
         ),
         None,
     )
