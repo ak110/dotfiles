@@ -15,12 +15,19 @@ description: >
 本スキルは本リポジトリの自動チェック、コード整形、依存更新、ホスト本体のバイナリの検索手順および振り返りの参照文書の位置を提供する。
 リリース運用は`dotfiles-release`、配布元と配布先の対応は`dotfiles-repo-layout`が扱う。
 
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `make update`を実行の候補にする前 | 現行`Makefile`の`update` targetと、それが呼び出す子target |
+| コミットメッセージのtypeを判定する時 | [commit-types.md](../../../docs/development/commit-types.md)（判定例） |
+
 ## 開発手順
 
 - 専用worktreeや回収予定の検証用複製を準備する主体は、実行前に本スキルを起動する。後掲のmise trust手順を適用した後、準備する作業ツリーのrootで`env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras`を実行し、その作業ツリーの`.venv`へ依存を同期する。終了コードと全出力を検収し、失敗した環境は準備完了として渡さない。
   - `mise run bootstrap`、`mise bootstrap`、`make setup`は恒久作業ツリーの初期導入に使う。回収予定の作業場所ではローカル依存の同期だけを行い、`uv tool install --editable`、`prek install`、`git config --local commit.template`を準備へ含めない。共有CLIの導入元と共通Git設定が、その作業場所の回収後も存続する必要があるためである。Git hookとtemplateは既存設定を使う。
   - ローカル依存の同期と共有登録の比較の観測・再検証手段は、`docs/development/audit-records.md`「dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日」にある。
-- `make update`: 実行前に現行`Makefile`の`update` targetと呼び出す子targetを読み、変更対象が実処理の更新対象に含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新（リポジトリ直下の`uv.lock`と`agent-toolkit/uv.lock`）、prek autoupdate、mise lock、pinactアクション更新および全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
+- `make update`: 読込表の行が挙げるtargetの実処理の更新対象に変更対象が含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新（リポジトリ直下の`uv.lock`と`agent-toolkit/uv.lock`）、prek autoupdate、mise lock、pinactアクション更新および全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - ローカルで全体検証が必要な場合の実行方法: `make test`
   - 全体検証を始める際は`agent-toolkit:check-execution`を起動し、標準出力と標準エラーを保存して検収できる手段（例: `agents_server`の`start`の`shell`へ`make test`を渡す）で実行する。出力の保存先を確保してから実行し、保存済みの標準出力と標準エラーで検収する
@@ -98,7 +105,6 @@ description: >
   改修版を動かすつもりで複製元の絶対パスが表示された場合は、cwdか起動パスを直して起動し直す
 - 画面の実描画には、ブラウザー操作ツールに加えて、リポジトリ直下の`pyproject.toml`が依存に持つPython版Playwright（`uv run --frozen python`から`playwright`を使うスクリプト）を使える。
   ブラウザー本体は`make setup-browser`が導入し、導入済みの版は`~/.cache/ms-playwright`で確かめる
-- コミットメッセージtypeの判定例: [commit-types.md](../../../docs/development/commit-types.md)
 
 ## ホスト本体のバイナリの検索
 

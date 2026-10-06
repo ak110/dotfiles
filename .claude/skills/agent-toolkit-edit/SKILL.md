@@ -10,7 +10,21 @@ description: >
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex）
 
-WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する場合は、編集前に`agent-toolkit:workflow-overview`を起動する。あわせて`docs/guide/claude-code-guide.md`のうち編集対象と同期する節（少なくとも「推奨ワークフロー」）を読む。
+本スキルは`agent-toolkit/`配下の配布物と`.claude-plugin/marketplace.json`を編集する主体へ、ファイル構成と参照方向、規範を削除・縮小するときの消失確認、版数更新、配布と同期の手順を提供する。
+
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集する主体が自身で全文を読む。要約、見出し一覧、部分読取および別主体の読取結果は全文読了に当たらない |
+| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する前 | `docs/guide/claude-code-guide.md`のうち編集対象と同期する節（少なくとも「推奨ワークフロー」） |
+| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下または`rust/claude-statusline/src/agents_server.rs`の実装を変更または調査する前 | `references/agents-server-shared-state.md` |
+| `agents_server`が起動した委譲先が動かない事象（起動の失敗、初期化の未到達、委譲先の無応答、委譲先が返す結果の欠落）を調査する前 | `references/agents-server-investigation.md` |
+| `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` |
+| `agent-toolkit/`配下を変更対象に含む計画を起草する前 | `references/version-bump.md`の「plan modeでの取り扱い」節 |
+| 全レーン後に版数を更新する時点と、`references/version-bump.md`の手順へ入る前 | `agent-toolkit/skills/process-wi/references/finish-session.md` |
+
+WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する場合は、編集前に`agent-toolkit:workflow-overview`を起動する。
 
 ## ファイル構成と参照方向
 
@@ -74,22 +88,13 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 
 ### agents_serverの共有状態
 
-agents_serverの実装を変更する場合と調査する場合は、着手前に`references/agents-server-shared-state.md`を全文読む。
-対象は`agent-toolkit/agent_toolkit/agents_server_mcp.py`と`agent-toolkit/agent_toolkit/_agents_server/`配下とする。
-`rust/claude-statusline/src/agents_server.rs`も同じ対象とする。
-同書は共有状態ごとに正とする保存先と、読む主体・更新できる主体の対応を保持する。
+読込表の同じ行が挙げる実装の共有状態ごとに正とする保存先と、読む主体・更新できる主体の対応は`references/agents-server-shared-state.md`が保持する。
 状態を正とする保存先、更新できる主体または状態ディレクトリ配下のファイル種別を変える実装では、同書を同じ変更単位で更新する。
 
 ### agents_serverの委譲不具合の調査
 
-`agents_server`が起動した委譲先が動かない事象を調査する場合は、着手前に`references/agents-server-investigation.md`を全文読む。
-対象は起動の失敗、初期化の未到達、委譲先の無応答、および委譲先が返す結果の欠落とする。
-同書は観測できる記録の所在、切り分けの順序、外部プロセスでの再現手順を保持する。
+`references/agents-server-investigation.md`は観測できる記録の所在、切り分けの順序、外部プロセスでの再現手順を保持する。
 記録の所在、`agents_server`の診断項目または委譲先CLIへ与える引数を変える実装では、同書を同じ変更単位で更新する。
-
-### atk serveの静的資産
-
-`agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する場合は、着手前に`references/atk-serve-static.md`を全文読む。
 
 ### MCPサーバー識別子とホスト別ツール名
 
@@ -100,10 +105,17 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 
 `agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`AGENTS.md`、`.claude/skills/`などのエージェント向け文書の記述を削除または縮小する編集では、目的にかかわらずベースcommitとの差分を確認する。削除した価値、適用範囲、条件、例外を特定し、削除の理由をcommit本文へ残す。統合を理由とする場合は、統合先の適用範囲が元の範囲を含むことを確認する。含まない場合は統合先を整えるか、削除を取りやめる。
 
-削除・縮小する行の初出は、文面の微修正をまたいで一致する部分文字列を選び、`git log --follow -S '<本文の部分文字列>' -- <ファイル>`かパスを限定しない`git log -S`で調べる。`git blame`は最後に行へ触れたcommitを示し、パスを限定した`git log -S`は改名前の履歴を含まないため、どちらも単独で初出の判定に使わない。検索結果の最古の導入commitと、その行を復元したcommitのいずれかに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、同じ対象リポジトリの終端済みキュー項目を`atk wi grep --state all`で探す。検索には特徴的な語や反映先パスを使う。候補の`adopt`記録が導入commitのOIDを持つか、そのOIDを進捗ログに持つ計画の`関連WI`が候補を挙げる場合だけ対応を裏付ける。対応する要求単位が`agent-toolkit:wi-standards`「由来と承認」によりエージェント由来と確定したときは、項目名、OID対応および由来の根拠を計画の進捗ログ（計画なしでは引き継ぎ記録、どちらも無い作業ではユーザーへの報告）へ記録して保護の対象から外す。commit本文には前段のとおり削除・縮小の理由を書き、キュー項目のファイル名などの内部識別子は書かない。対応を裏付けられない場合、人間由来を含む場合、または由来を分離できない場合は作者を確定できない規範としてユーザーが書いた規範と同じく保護する。編集前にユーザー確認（事前承認）する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、由来を裏付けられない場合は確認が余分に増えても保護を優先する。
+削除・縮小する行の由来は次の順に調べる。
+
+1. 文面の微修正をまたいで一致する部分文字列を選び、`git log --follow -S '<本文の部分文字列>' -- <ファイル>`かパスを限定しない`git log -S`で初出を調べる。`git blame`は最後に行へ触れたcommitを示し、パスを限定した`git log -S`は改名前の履歴を含まないため、どちらも単独で初出の判定に使わない
+2. 検索結果の最古の導入commitと、その行を復元したcommitのいずれかに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、同じ対象リポジトリの終端済みキュー項目を`atk wi grep --state all`で探す。検索には特徴的な語や反映先パスを使う
+3. 候補の`adopt`記録が導入commitのOIDを持つか、そのOIDを進捗ログに持つ計画の`関連WI`が候補を挙げる場合だけ、候補との対応を裏付ける
+4. 対応する要求単位が`agent-toolkit:wi-standards`「由来と承認」によりエージェント由来と確定したときは、項目名、OID対応および由来の根拠を計画の進捗ログ（計画なしでは引き継ぎ記録、どちらも無い作業ではユーザーへの報告）へ記録して保護の対象から外す。commit本文には第1段落のとおり削除・縮小の理由を書き、キュー項目のファイル名などの内部識別子は書かない
+5. 対応を裏付けられない場合、人間由来を含む場合、または由来を分離できない場合は、作者を確定できない規範としてユーザーが書いた規範と同じく保護し、編集前にユーザー確認（事前承認）する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、由来を裏付けられない場合は確認が余分に増えても保護を優先する
+
 trailerの有無だけでは作者を確定できないため、報告、AWI本文および判断の根拠では、そのcommitをユーザーのcommitと結論づけない。
 
-事前承認で守る対象は、削除・縮小によって行の価値、適用範囲、条件または例外のいずれかが失われる編集である。作者を確定できない行でも、次のいずれかを確かめた削除・縮小は事前承認を求めず、確かめた内容を第1段落の削除の理由と同じcommit本文へ書く。対応するキュー項目が人間由来の要求単位を含むなど人間由来と確定した行と、次のいずれも確かめられない行は、前段のとおり編集前に事前承認する。
+事前承認で守る対象は、削除・縮小によって行の価値、適用範囲、条件または例外のいずれかが失われる編集である。作者を確定できない行でも、次のいずれかを確かめた削除・縮小は事前承認を求めず、確かめた内容を第1段落の削除の理由と同じcommit本文へ書く。対応するキュー項目が人間由来の要求単位を含むなど人間由来と確定した行と、次のいずれも確かめられない行は、前掲の手順5のとおり編集前に事前承認する。
 
 - 移設・統合: 変更後の文書の移設先または統合先の箇所（パスと節）が、削除する行の価値、適用範囲、条件および例外を全て含む。第1段落の統合先の包含の確認でこれを判定し、commit本文へ移設先の箇所と要素ごとの対応を書く
 - 失効: 削除する行が説明または規定する実装、機能、工程またはファイルが現行のリポジトリに無いことを、その識別子の固定文字列検索で確かめた。その対象を撤去したcommitが既にあるか、撤去が処理中の要求の認可の範囲で同じ変更に含まれる。commit本文へ失効した対象、検索の内容と撤去したcommitを書く
@@ -118,7 +130,6 @@ trailerの有無だけでは作者を確定できないため、報告、AWI本�
 - 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述する。
   エンドユーザー環境側の連携設計（個人フックとの優先順序など）は記述の対象から外す
 - 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く（努力目標。素のスキル名は同名スキルの探索を招く）。
-  修飾のない素のスキル名は、同名のスキルを探索する無駄な工程を招く。
   `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
   サブエージェント名は起動指示・地の文とも短縮せず完全名称で書く
 - 配布物内の記述が参照するSSOTは配布物内に配置する。参照先はdotfiles固有ファイルと非配布対象ファイルの外から選ぶ
@@ -159,8 +170,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
-全レーン後に版数を更新する時点と`references/version-bump.md`の手順へ入る前には、`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
-`agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に`references/version-bump.md`の「plan modeでの取り扱い」節を読み、
+`agent-toolkit/`配下を変更対象に含む計画では、読込表の行が挙げる「plan modeでの取り扱い」節に従い、
 `## 要件・外部仕様`へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
 `version`／`description`は以下の箇所で完全に同一文字列に保つ。
@@ -179,10 +189,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 `agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」の一方で、運用形態、WIの登録方法、回答の流れのいずれかを変更した場合は、他方も同じ変更単位でそろえる。
 
-- エージェント向け文書を編集する主体は、編集前に`docs/development/concepts.md`と
-  `docs/development/incidents.md`を自身で全文読み、確定済みの方針・障害対策との整合を確認する。
-  要約、見出し一覧、部分読取および別主体の読取結果は全文読了に当たらない。全文取得の手段は
-  `agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に従う。
+- エージェント向け文書を編集する主体は、読込表の行が挙げる方針と障害対策の記録との整合を、編集前に確認する。
+  全文取得の手段は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に従う。
   編集中に新たな障害または確定した意向が生じた場合は、対応する文書を更新する
 - `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む

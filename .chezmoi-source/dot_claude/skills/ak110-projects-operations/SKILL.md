@@ -11,6 +11,16 @@ description: >
 
 # 作者個人のプロジェクト運用
 
+本スキルは作者個人のプロジェクト群について、ツールチェインとドキュメント構成の同期、追従作業、着手時の依存更新およびリリース運用の手順を提供する。
+
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ドキュメント構成を変更・同期する前 | [references/doc-structure.md](references/doc-structure.md) |
+| 他プロジェクト向けの追従提案を複数リポジトリへ投入する前 | `agent-toolkit:wi-standards`の`references/cross-repository-submission.md` |
+| lint違反への対応か推奨設定の緩和を判断する前 | `agent-toolkit:writing-standards`の`references/implementation-time.md`「lintと機械チェック」 |
+
 ## 前提
 
 姉妹プロジェクト群は、共通化対象のツールチェインを同じコマンド名・設定キーで揃える。
@@ -251,7 +261,6 @@ default branchで実行しているかと未コミット変更の有無を確認
 
 README.md・AGENTS.md・docs/development/development.mdの標準章構成・共通文面・記述基準・バッジ記法は
 [references/doc-structure.md](references/doc-structure.md)が定める。
-ドキュメント構成を変更・同期する場合は同ファイルを読む。
 
 ## 補足事項
 

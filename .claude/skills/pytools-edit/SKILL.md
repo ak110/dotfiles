@@ -11,6 +11,14 @@ description: >
 
 本スキルは本リポジトリのコマンドラインツールと開発スクリプトの配置規約・実装規約を提供する。
 
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `bin/`配下の`*.cmd`を書込ツールで扱う前 | `agent-toolkit:writing-standards`の`references/encoding.md` |
+| `rust/`配下のクレートを編集する前 | `agent-toolkit:writing-standards`の`references/rust.md` |
+| 不変条件のテストの検証対象を探索する時 | `agent-toolkit:check-execution`の`references/verification-scope.md` |
+
 ## 配置規約
 
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュール

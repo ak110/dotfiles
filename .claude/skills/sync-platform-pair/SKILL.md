@@ -8,6 +8,16 @@ description: >
 
 # Linux/Windowsペアファイル編集支援
 
+本スキルはLinux/Windowsのペアファイルを両側そろえて編集する手順を提供する。
+
+## 読込表
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前 | `<plugin root>/skills/writing-standards/references/powershell.md` |
+| Bash（`.sh`・`.sh.tmpl`）側を編集する前 | `<plugin root>/skills/writing-standards/references/bash.md` |
+| Linux側とWindows側で分岐するコードを変更する前 | `<plugin root>/skills/writing-standards/references/testing.md`の「プラットフォーム分岐の検証」 |
+
 ## 適用条件
 
 本リポジトリでLinux/Windowsのペアファイルのいずれかを編集するときに適用する。該当の判定は後掲のファイル名規則で行う。

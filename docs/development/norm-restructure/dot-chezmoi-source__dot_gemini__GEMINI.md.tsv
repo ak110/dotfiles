@@ -1,3 +1,3 @@
 条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
-.chezmoi-source/dot_gemini/GEMINI.md#GEMINI.md > 使用言語#1	ユーザーへの発話、成果物、コメントおよびコミットメッセージは日本語で書く。 指示						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「発話、成果物、コメントおよびコミットメッセージは」）		
-.chezmoi-source/dot_gemini/GEMINI.md#GEMINI.md > 用途#1	この環境のAntigravity CLIは、日本語の技術文書の推敲を担う用途で使						エージェント由来: 導入commit c1795210ba8eにtrailerあり（検索語「i/skills/japanese-tech-w」）		
+.chezmoi-source/dot_gemini/GEMINI.md#GEMINI.md > 使用言語#1	ユーザーへの発話、成果物、コメントおよびコミットメッセージは日本語で書く。 指示	維持	維持（Antigravity CLIの使用言語と用途の定義元）	Q: 悪化（応答言語と推敲規範の所在が届かない）。C: 変化なし。D: 変化なし		なし（障害記録と方針記録に対応する記述を見つけていない）	エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「発話、成果物、コメントおよびコミットメッセージは」）	不要（削除・縮小なし）	
+.chezmoi-source/dot_gemini/GEMINI.md#GEMINI.md > 用途#1	この環境のAntigravity CLIは、日本語の技術文書の推敲を担う用途で使	維持	維持（Antigravity CLIの使用言語と用途の定義元）	Q: 悪化（応答言語と推敲規範の所在が届かない）。C: 変化なし。D: 変化なし		なし（障害記録と方針記録に対応する記述を見つけていない）	エージェント由来: 導入commit c1795210ba8eにtrailerあり（検索語「i/skills/japanese-tech-w」）	不要（削除・縮小なし）	
