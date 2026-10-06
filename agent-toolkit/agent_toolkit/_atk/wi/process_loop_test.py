@@ -3460,6 +3460,88 @@ class TestAlertMonitoring:
             )
         assert calls == ["checked"]
 
+    def test_ci_failure_during_pending_work_is_submitted_before_next_session(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """キューに項目がある間も、セッションの開始前にCI失敗を確認して投入し、数え直した件数で起動する。
+
+        確認が件数0の間だけだと、セッションが続く期間に起きた失敗はキューが空になるまでAWIへ入らない。
+        この確認ではDependabotアラートを数えない（起動するセッションの監査が扱う）。
+        """
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 2))
+        counts = iter([1, 2])
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_k: next(counts))
+        calls: list[str] = []
+
+        def fake_check(*_args: object, **_kwargs: object) -> int:
+            calls.append("checked")
+            return 1
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._alerts,  # pylint: disable=protected-access
+            "check_and_submit_alerts",
+            fake_check,
+        )
+
+        def fail_dependabot(_repository: str) -> dict[str, Any]:
+            raise AssertionError("セッション開始前の確認ではDependabotアラートを数えないはず")
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._review_audit,  # pylint: disable=protected-access
+            "dependabot_pending",
+            fail_dependabot,
+        )
+        with pytest.raises(SystemExit):
+            atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+        assert calls == ["checked"]
+        assert len(claude_calls) == 1
+        log = (tmp_path / "state" / "agent-toolkit" / "process-wi.log").read_text(encoding="utf-8")
+        assert "event=alert_check submitted=1 dependabot_pending=0 session_started=False" in log
+        assert "event=loop_iter_start count=2" in log
+
+    @pytest.mark.parametrize(
+        "extra_argv",
+        [pytest.param(["--no-alerts"], id="no-alerts"), pytest.param(["--alert-interval=3600"], id="within-interval")],
+    )
+    def test_check_before_session_follows_interval_and_no_alerts(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, extra_argv: list[str]
+    ) -> None:
+        """`--no-alerts`では確認せず、直前の確認から`--alert-interval`未満ではセッション開始前も確認しない。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 2))
+        counts = iter([0, 1])
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_k: next(counts))
+        monkeypatch.setattr(time, "monotonic", lambda: 1000.0)
+        calls: list[str] = []
+
+        def fake_check(*_args: object, **_kwargs: object) -> int:
+            calls.append("checked")
+            return 0
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._alerts,  # pylint: disable=protected-access
+            "check_and_submit_alerts",
+            fake_check,
+        )
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._review_audit,  # pylint: disable=protected-access
+            "dependabot_pending",
+            lambda _repository: {"status": "available", "alerts": []},
+        )
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", lambda *_a, **_k: True)
+        with pytest.raises(SystemExit):
+            atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", *extra_argv], home=tmp_path)
+        assert len(claude_calls) == 1
+        assert calls == ([] if "--no-alerts" in extra_argv else ["checked"])
+
     def test_unjudged_dependabot_alerts_start_session_without_submitting_awi(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -1389,11 +1389,17 @@ def _check_process_loop_alerts(
     target_repo_id: str,
     local_path: pathlib.Path,
     last_alert_check: float | None,
+    *,
+    count_dependabot: bool,
 ) -> tuple[float | None, int, int]:
     """確認間隔を満たす場合だけアラートを確認し、確認時刻、CI失敗のAWI投入件数、未判定のDependabotアラート件数を返す。
 
+    CI失敗の確認は、キューが空の待機中に加えて各セッションの開始前にも呼ぶ。処理中の期間に起きた失敗も
+    人の操作を介さずにAWIへ入れるためであり、確認時刻を両方の呼び出しで共有して`--alert-interval`より短い間隔で
+    外部APIを呼ばない。
     Dependabotアラートはprocess-wiの実行が行う自動コードレビュー監査が判定するため、AWIを起票せず件数だけを返す。
     呼び出し側は投入が無く件数が1以上のとき、監査を実施させるためにprocess-wiを1回実行させる。
+    セッション開始前の呼び出し（`count_dependabot`が偽）はこれから起動するセッションが監査を行うため件数を数えない。
     """
     if args.no_alerts:
         return last_alert_check, 0, 0
@@ -1414,7 +1420,7 @@ def _check_process_loop_alerts(
             next_action=_alerts.ALERT_FAILURE_NEXT_ACTION,
         )
         submitted = 0
-    dependabot_pending = _count_dependabot_pending(args, target_repo_id)
+    dependabot_pending = _count_dependabot_pending(args, target_repo_id) if count_dependabot else 0
     _process_loop_log.append(
         "alert_check",
         submitted=submitted,
@@ -1474,9 +1480,10 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     要求を解除して正常終了する。反復ループ先頭の判定により、更新検知による再起動と0件待機を
     含む反復の境界でも要求を検出する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
-    件数0の間はアラート自動検出（指定が無ければ有効、`--no-alerts`で無効化）を`--alert-interval`
-    秒間隔で実行する。新規のCI失敗を検知した場合はAWIへ投入して即座に次反復へ進む。
-    未判定のDependabotアラートがある場合はAWIを起票せず、自動コードレビュー監査に判定させるため
+    件数0の間と各セッションの開始前は、アラート自動検出（指定が無ければ有効、`--no-alerts`で無効化）を
+    `--alert-interval`秒間隔で実行する。新規のCI失敗を検知した場合はAWIへ投入し、件数0の間は即座に次反復へ進み、
+    セッションの開始前は件数を数え直してから起動する。
+    件数0の間に未判定のDependabotアラートがある場合はAWIを起票せず、自動コードレビュー監査に判定させるため
     process-wiを1回実行させる。
     `--alert-forge`は検出対象（github/gitlab/auto）を指定する。
     件数0の間はwatchdogによる変更検知と10分間隔のremote同期を含む待機ループへ進み、
@@ -1555,6 +1562,18 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             refresh_before_session = True
                             continue
                         count = _count_pending_entries(private_notes, target_repo=target_repo_id)
+                    if count > 0 or alert_session_pending:
+                        last_alert_check, submitted, _ = _check_process_loop_alerts(
+                            args,
+                            private_notes,
+                            target_repo_id,
+                            local_path,
+                            last_alert_check,
+                            count_dependabot=False,
+                        )
+                        if submitted > 0:
+                            print(f"アラート監視により{submitted}件のAWIを投入しました。")
+                            count = _count_pending_entries(private_notes, target_repo=target_repo_id)
                     _process_loop_log.append("loop_iter_start", count=count)
                     if count > 0 or alert_session_pending:
                         refresh_before_session = False
@@ -1601,6 +1620,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         target_repo_id,
                         local_path,
                         last_alert_check,
+                        count_dependabot=True,
                     )
                     if submitted > 0:
                         print(f"アラート監視により{submitted}件のAWIを投入しました。")

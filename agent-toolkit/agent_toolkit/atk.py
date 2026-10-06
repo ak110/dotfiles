@@ -17,8 +17,8 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq process-loop: `orchestrate_model`設定に従いClaude CodeまたはCodexの新規セッションへ
   `/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
-  待機中は無効化しない限りCI失敗を自動検出してAWI投入し、未判定のDependabotアラートがあれば
-  process-wiを1回実行させて監査させる（`--no-alerts`で無効化）
+  待機中と各セッションの開始前は無効化しない限りCI失敗（定期実行の失敗を含む）を自動検出してAWI投入し、
+  待機中に未判定のDependabotアラートがあればprocess-wiを1回実行させて監査させる（`--no-alerts`で無効化）
 - mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: process-loopへの中断要求と追加指示を操作する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - plans commit/list: 現行計画またはCI対応レビュー指摘管理表の保存と作業中計画の一覧
@@ -934,7 +934,10 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     loop.add_argument(
         "--no-alerts",
         action="store_true",
-        help="待機中のCI失敗の検出と、未判定のDependabotアラートによるprocess-wiの実行を無効化する（指定しない場合は有効）。",
+        help=(
+            "待機中と各セッションの開始前のCI失敗の検出と、待機中の未判定のDependabotアラートによる"
+            "process-wiの実行を無効化する（指定しない場合は有効）。"
+        ),
     )
     loop.add_argument(
         "--alert-interval",

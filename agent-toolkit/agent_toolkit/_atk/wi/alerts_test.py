@@ -33,6 +33,93 @@ def test_collect_github_ci_failures_skips_in_progress_latest() -> None:
     assert [alert.keys for alert in result] == [("github-run:2",)]
 
 
+def test_collect_github_ci_failures_keeps_schedule_failure_after_push_success() -> None:
+    """同じワークフローの`push`の成功が後にあっても、`schedule`の直近完了runの失敗をアラート化する。
+
+    `event`は`alerts._run_gh_run_list`が`gh run list --json`で取得する公開フィールドである。
+    """
+    runs = [
+        {"workflowName": "Audit", "event": "push", "status": "completed", "conclusion": "success", "databaseId": 5},
+        {"workflowName": "Audit", "event": "schedule", "status": "completed", "conclusion": "failure", "databaseId": 4},
+        {"workflowName": "Audit", "event": "schedule", "status": "completed", "conclusion": "success", "databaseId": 3},
+    ]
+    result = alerts.collect_github_ci_failures("owner/repo", "master", run_list_fn=lambda _r, _b: runs)
+    assert [alert.keys for alert in result] == [("github-run:4",)]
+
+
+def _gitlab_schedule_api(endpoints: list[str]) -> alerts.GlabApiFn:
+    """Pipeline Scheduleの一覧と個別の取得へ応答する`glab api`の代用を返す。
+
+    応答の形は2026年10月6日の`glab api 'projects/:id/pipeline_schedules'`（一覧は`active`・`ref`・`cron`を持ち
+    `last_pipeline`を持たない）と`pipeline_schedules/<ID>`（`last_pipeline`の`id`・`status`・`web_url`）の観測から写した。
+    """
+    project = "projects/group%2Fsub%2Frepo/pipeline_schedules"
+    responses: dict[str, object] = {
+        f"{project}?per_page=100": [
+            {
+                "id": 494,
+                "description": "model deprecation weekday check",
+                "ref": "develop",
+                "cron": "30 8 * * 1-5",
+                "active": True,
+            },
+            {"id": 523, "description": "daily log monitor", "ref": "develop", "cron": "0 12 * * *", "active": True},
+            {"id": 9, "description": "retired", "ref": "develop", "cron": "0 0 * * *", "active": False},
+        ],
+        f"{project}/494": {"id": 494, "last_pipeline": {"id": 437746, "status": "success", "ref": "develop", "web_url": "u1"}},
+        f"{project}/523": {"id": 523, "last_pipeline": {"id": 437813, "status": "failed", "ref": "develop", "web_url": "u2"}},
+    }
+
+    def api(host: str, endpoint: str) -> object:
+        assert host == "gitlab.example.com"
+        endpoints.append(endpoint)
+        return responses[endpoint]
+
+    return api
+
+
+def test_collect_new_alerts_reports_schedule_failure_hidden_by_later_pipeline(tmp_path: pathlib.Path) -> None:
+    """後に起動したpushのパイプラインが実行中でも、有効なスケジュールの失敗したパイプラインを1件アラート化する。
+
+    無効なスケジュールは照会しない。ブランチの直近1件だけを確かめると、失敗が後の実行に隠れてAWIへ入らない。
+    """
+    endpoints: list[str] = []
+    branch_pipelines = [{"id": 437860, "status": "running"}, {"id": 437813, "status": "failed"}]
+    result = alerts.collect_new_alerts(
+        "gitlab.example.com/group/sub/repo",
+        "develop",
+        tmp_path,
+        forge="gitlab",
+        ci_list_fn=lambda _r, _b: branch_pipelines,
+        glab_api_fn=_gitlab_schedule_api(endpoints),
+    )
+    assert [alert.keys for alert in result] == [("gitlab-pipeline:437813",)]
+    assert "daily log monitor" in result[0].body
+    assert not any(endpoint.endswith("/9") for endpoint in endpoints)
+
+
+def test_check_and_submit_alerts_submits_one_awi_per_pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """ブランチの確認と定期実行の確認が同じパイプラインを返しても1件だけ投入し、次の確認では投入しない。"""
+    notes = tmp_path / "private-notes"
+    _prepare_alert_submission(monkeypatch, notes)
+
+    def submit() -> int:
+        return alerts.check_and_submit_alerts(
+            notes,
+            "gitlab.example.com/group/sub/repo",
+            tmp_path / "repo",
+            forge="gitlab",
+            now=datetime.datetime(2026, 1, 1),
+            git_fn=lambda _p, args: "refs/remotes/origin/develop" if args[0] == "symbolic-ref" else None,
+            ci_list_fn=lambda _r, _b: [{"id": 437813, "status": "failed"}],
+            glab_api_fn=_gitlab_schedule_api([]),
+        )
+
+    assert submit() == 1
+    assert submit() == 0
+    assert list(_saved_awis_by_heading(notes)) == ["# パイプライン437813失敗"]
+
+
 def test_collect_gitlab_ci_failures_only_when_latest_failed() -> None:
     """最新パイプラインが失敗した場合のみアラート化する。"""
     success = [{"id": 1, "status": "success"}]
@@ -211,6 +298,7 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
         now=datetime.datetime(2026, 1, 1),
         git_fn=git_fn,
         ci_list_fn=lambda _repo, _branch: [{"status": "failed", "id": 200}],
+        glab_api_fn=lambda _host, _endpoint: [],
     )
 
     assert github_count == 1
