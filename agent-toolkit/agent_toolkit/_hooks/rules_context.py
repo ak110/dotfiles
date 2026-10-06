@@ -37,9 +37,7 @@ RESPONSE_LANGUAGE_REINJECTION_NOTICE = "ユーザーへ向けた地の文は、�
 # PreToolUseが間隔に達した呼び出しで`RESPONSE_LANGUAGE_REINJECTION_NOTICE`を注入し、
 # SessionStartが`RESPONSE_LANGUAGE_NOTICE`を注入した時点で0へ戻す。
 LANGUAGE_REINJECTION_COUNT_KEY = "language_reinjection_count"
-QUALITY_CHECKPOINT_NOTICE = (
-    "会話圧縮後の目的と承認状態の復元は`01-agent.md`「行動と手順の目的」に従う。会話限定の指示を成果物へ混入させない。"
-)
+QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従う。会話限定の指示を成果物へ混入させない。"
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
