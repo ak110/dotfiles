@@ -2631,6 +2631,98 @@ def test_long_injection_is_classified_before_display_shortening(
     assert [event["text"] for event in conversation if event.get("role") == "user"] == texts[1:]
 
 
+def _claude_user_record(content: object, timestamp: str, **fields: object) -> dict:
+    """Claude Codeのユーザーロールの記録を返す。"""
+    return {"type": "user", "message": {"role": "user", "content": content}, "timestamp": timestamp, **fields}
+
+
+def _codex_user_record(text: str, timestamp: str) -> dict:
+    """Codexのユーザーロールのmessage記録を返す。"""
+    return {
+        "timestamp": timestamp,
+        "type": "response_item",
+        "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+    }
+
+
+# 中断の標識、`<bash-stdout>`、`<command-message>`、`<bash-input>`、`<pasted_content`の各記録は
+# Claude Code 2.1.281〜2.1.291の実記録（`~/.claude/projects`配下）から、本文の格納先（文字列かtext要素の配列か）と
+# 中断の標識に付く`interruptedMessageId`、人間の入力に付く`origin`の形を写した。本文は短縮した。
+_CLAUDE_INTERRUPT = "[Request interrupted by user]"
+_CLAUDE_TOOL_INTERRUPT = "[Request interrupted by user for tool use]"
+_CLAUDE_COMMAND_WITHOUT_ARGS = (
+    "<command-message>agent-toolkit:add-awi-by-user</command-message>\n"
+    "<command-name>/agent-toolkit:add-awi-by-user</command-name>"
+)
+_CLAUDE_COMMAND_WITH_ARGS = (
+    "<command-message>agent-toolkit:add-awi-by-user</command-message>\n"
+    "<command-name>/agent-toolkit:add-awi-by-user</command-name>\n<command-args>atk serve</command-args>"
+)
+_CLAUDE_BASH_INPUT = "<bash-input>! sudo bash fix-boot.sh</bash-input>"
+_CLAUDE_BASH_STDOUT = "<bash-stdout>+ FS_UUID=24d572ab\n+ MD_SECTORS=620976256</bash-stdout><bash-stderr></bash-stderr>"
+_CLAUDE_PASTED = '\n\n<pasted_content id="261b">\n言ってること逆では…？\n</pasted_content id="261b">\n'
+
+# Codexの各記録は2026年8月〜10月のrollout（`~/.codex/sessions`配下）の`response_item`の`message`から形を写した。
+_CODEX_INTERNAL_CONTEXT = (
+    '<codex_internal_context source="goal">\nContinue working toward the active thread goal.\n</codex_internal_context>'
+)
+_CODEX_HOOK_PROMPT = '<hook_prompt hook_run_id="stop:8:hooks.codex.json">&lt;atk-auto kind="block"&gt;通知</hook_prompt>'
+_CODEX_SUBAGENT_NOTIFICATION = '<subagent_notification>\n{"agent_path":"01a0280f","status":{"completed":"status: completed"}}'
+_CODEX_QUESTION_REPLY = (
+    '<send_user_message_question_reply>\n[{"answer":"選択後の1回だけ有効（推奨）","question":"どの状態ですか"}]'
+)
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_user_events_excludes_runtime_markers_and_keeps_human_forms(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str
+) -> None:
+    """実行環境の出力と中断の標識を発話から除き、人間が入力した形式は本文を変えずに返す。
+
+    除き損なうと、WI投入担当が実行環境の出力や中断の定型文を人間の発話として逐語引用する。
+    人間の形式を除くと、手動のスキル起動や貼り付けた本文が出所から失われる。
+    `--since`を省略した照会で、記録の最初の発話から返ることも確かめる。
+    """
+    if host == "claude":
+        entries = [
+            _claude_user_record("最初の依頼", "2026-09-01T00:00:01Z", origin={"kind": "human"}),
+            _claude_user_record(
+                [{"type": "text", "text": _CLAUDE_INTERRUPT}], "2026-09-01T00:00:02Z", interruptedMessageId="msg_1"
+            ),
+            _claude_user_record(
+                [{"type": "text", "text": _CLAUDE_TOOL_INTERRUPT}], "2026-09-01T00:00:03Z", interruptedMessageId="msg_2"
+            ),
+            _claude_user_record(_CLAUDE_COMMAND_WITHOUT_ARGS, "2026-09-01T00:00:04Z", origin={"kind": "human"}),
+            _claude_user_record(_CLAUDE_COMMAND_WITH_ARGS, "2026-09-01T00:00:05Z", origin={"kind": "human"}),
+            _claude_user_record(_CLAUDE_BASH_INPUT, "2026-09-01T00:00:06Z"),
+            _claude_user_record(_CLAUDE_BASH_STDOUT, "2026-09-01T00:00:07Z", turnOrigin="human"),
+            _claude_user_record(_CLAUDE_PASTED, "2026-09-01T00:00:08Z", origin={"kind": "human"}),
+        ]
+        expected = [
+            (1, "最初の依頼"),
+            (4, _CLAUDE_COMMAND_WITHOUT_ARGS),
+            (5, _CLAUDE_COMMAND_WITH_ARGS),
+            (6, _CLAUDE_BASH_INPUT),
+            (8, _CLAUDE_PASTED.strip()),
+        ]
+    else:
+        entries = [
+            _codex_user_record("最初の依頼", "2026-09-01T00:00:01Z"),
+            _codex_user_record(_CODEX_INTERNAL_CONTEXT, "2026-09-01T00:00:02Z"),
+            _codex_user_record(_CODEX_HOOK_PROMPT, "2026-09-01T00:00:03Z"),
+            _codex_user_record(_CODEX_SUBAGENT_NOTIFICATION, "2026-09-01T00:00:04Z"),
+            _codex_user_record(_CODEX_QUESTION_REPLY, "2026-09-01T00:00:05Z"),
+        ]
+        expected = [(1, "最初の依頼"), (5, _CODEX_QUESTION_REPLY)]
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--user-events"]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    assert [(event["line"], event["text"]) for event in events if event["kind"] == "user"] == expected
+    assert events[-1] == {"kind": "summary", "count": len(expected)}
+
+
 def test_user_events_without_since_starts_at_first_record(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

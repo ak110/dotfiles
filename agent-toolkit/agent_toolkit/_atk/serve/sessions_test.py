@@ -487,6 +487,44 @@ def test_runtime_inserted_events(tmp_path: pathlib.Path) -> None:
     assert claude_events[1]["text"] == "  Base directory for this skill: /p"
 
 
+def test_runtime_outputs_and_codex_notifications_are_injected(tmp_path: pathlib.Path) -> None:
+    """bashモードの出力とCodexの内部指示・hook出力・委譲先通知を挿入本文として折りたたみ、人間の入力は残す。
+
+    各記録はClaude Code 2.1.282の実記録とCodexの2026年8月〜10月のrolloutから、本文の格納先の形を写した。
+    """
+    claude = _write(
+        tmp_path / "claude" / "projects" / "p" / "claude.jsonl",
+        [
+            {"type": "user", "message": {"role": "user", "content": "<bash-input>! ls</bash-input>"}},
+            {
+                "type": "user",
+                "message": {"role": "user", "content": "<bash-stdout>file</bash-stdout><bash-stderr></bash-stderr>"},
+            },
+        ],
+    )
+    codex = _write(
+        tmp_path / "codex" / "sessions" / "2026" / "09" / "01" / "rollout-notifications.jsonl",
+        [
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+            }
+            for text in (
+                '<codex_internal_context source="goal">\nContinue working toward the active thread goal.',
+                '<hook_prompt hook_run_id="stop:8:hooks.codex.json">&lt;atk-auto kind="block"&gt;',
+                '<subagent_notification>\n{"agent_path":"01a0280f"}',
+                '<send_user_message_question_reply>\n[{"answer":"推奨"}]',
+            )
+        ],
+    )
+
+    claude_events = sessions.read_local_detail(_context(tmp_path), "claude", str(claude))["events"]
+    codex_events = sessions.read_local_detail(_context(tmp_path), "codex", str(codex))["events"]
+
+    assert [event["kind"] for event in claude_events] == ["user", "injected"]
+    assert [event["kind"] for event in codex_events] == ["injected", "injected", "injected", "user"]
+
+
 def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> None:
     """記録が持たない情報は0や空文字列で補わず、取得不能として返す。"""
     path = _write(

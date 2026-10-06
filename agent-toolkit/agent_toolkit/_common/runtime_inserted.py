@@ -16,6 +16,7 @@ _RUNTIME_INSERTED_PREFIXES = (
     "<command-name>",
     "<local-command-caveat>",
     "<local-command-stdout>",
+    "<bash-stdout>",
     "A session-scoped Stop hook is now active",
     "Goal check-in:",
     "Stop hook feedback:",
@@ -34,6 +35,9 @@ _RUNTIME_INSERTED_PREFIXES = (
     "<cross-session-message",
     "<model_switch>",
     "<turn_aborted>",
+    "<codex_internal_context",
+    "<hook_prompt",
+    "<subagent_notification>",
     "Another Claude session sent a message:",
 )
 

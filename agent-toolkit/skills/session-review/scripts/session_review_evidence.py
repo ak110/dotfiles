@@ -8,7 +8,7 @@
 対象の記録はtranscriptの絶対パス、Claude Codeのセッション識別子、Codex thread IDおよびカタログ走査のいずれか1つで指定する。
 ユーザーイベントの由来は原文と生成標識から判定し、その結果を保持してから通常表示の本文を短縮する。
 `--user-events`は人間の発話と確認回答だけを逐語引用の原文として返す。
-本文を切り詰めず、確認回答には提示した全選択肢を含め、スキル展開と実行環境の生成本文は除く。
+本文を切り詰めず、確認回答には提示した全選択肢を含め、スキル展開、実行環境の生成本文およびClaude Codeの中断の定型文は除く。
 
 本スクリプトはデータ抽出を目的とし、合否を判定しないため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -3182,6 +3182,14 @@ def _user_events_since(collected: list[_CollectedRecord], since: datetime.dateti
         _TEXT_LIMIT.reset(token)
 
 
+_CLAUDE_INTERRUPT_MARKERS = frozenset({"[Request interrupted by user]", "[Request interrupted by user for tool use]"})
+"""Claude Codeが中断時にユーザーロールへ書く定型文。本文全体がこの定型文の記録だけが該当する。
+
+人間が書いた本文ではないため逐語引用の出所から除く。会話の流れと介入候補では、ツール実行の中断として
+振り返りの判定対象に残すため、共通の生成本文判定には加えず`--user-events`の抽出だけで除く。
+"""
+
+
 def _collect_user_events_since(collected: list[_CollectedRecord], since: datetime.datetime | None) -> list[dict[str, Any]]:
     """`_user_events_since`の抽出本体。"""
     events: list[dict[str, Any]] = []
@@ -3207,7 +3215,11 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
             if since is None or (timestamp is not None and timestamp > since):
                 selected_events.extend(record_events)
         user_events = [
-            event for event in _finalize(selected_events) if event["kind"] == "user" and not _generated_user_event(event)
+            event
+            for event in _finalize(selected_events)
+            if event["kind"] == "user"
+            and not _generated_user_event(event)
+            and not (runtime == "claude" and event["text"] in _CLAUDE_INTERRUPT_MARKERS)
         ]
         events.extend(_events_with_record(user_events, item.record_id))
         break
@@ -5382,7 +5394,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="メイン記録にある人間の発話と確認回答を、観測境界まで全文で照会する。"
         "`--since`を指定した場合はその時刻より後だけを、省略した場合は記録の最初からを対象とする。"
-        "スキル展開と実行環境の生成本文は除く。",
+        "スキル展開、実行環境の生成本文およびClaude Codeの中断の定型文は除く。",
     )
     parser.add_argument(
         "--since",
