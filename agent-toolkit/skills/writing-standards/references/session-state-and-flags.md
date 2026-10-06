@@ -113,7 +113,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が実ユーザー発話の受領時に読み、真なら同スキルの起動を促す注記を返す。機械注入ターンでは読まず、状態も変えない。
   PostToolUse(Skill)が同スキルの起動で偽へ戻し、UserPromptSubmitもユーザーが同スキルをスラッシュコマンドで起動した発話で偽へ戻す。CodexではSkillの起動を観測できないため、UserPromptSubmitが注記を返した時点で偽へ戻す。
   寿命はセッション状態ファイルと同じとする
-- `operation_skill_ready_agents`: 操作を起動の契機とするスキル（現在は`agent-toolkit:search`）の完全名から、そのスキルを起動済みの呼び出し主体の一覧への対応を記録する。
+- `operation_skill_ready_agents`: 操作を起動の契機とするスキル（現在は`agent-toolkit:search`と`agent-toolkit:bugfix`）の完全名から、そのスキルを起動済みの呼び出し主体の一覧への対応を記録する。
   呼び出し主体はhook payloadの`agent_id`とし、持たないメイン会話は`main`とする。
   `agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が未起動のまま操作した呼び出しへ警告を返した時点と、PostToolUse(Skill)が表のスキルの起動を観測した時点で、その主体を加える。
   同モジュールがPreToolUseで読み、記録の無い主体の操作にだけ警告する。CodexではSkillの起動を観測できないため、警告を返した時点の記録だけで再警告を止める。

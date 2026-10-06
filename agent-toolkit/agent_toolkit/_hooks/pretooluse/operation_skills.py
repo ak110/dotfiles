@@ -24,12 +24,14 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+import re
 from collections.abc import Callable, Sequence
 
 from agent_toolkit._hooks import agent_id as _agent_id
 from agent_toolkit._hooks import bash_command_parser as _bash_command_parser
 from agent_toolkit._hooks import plugin_resources as _plugin_resources
 from agent_toolkit._hooks import rules_context as _rules_context
+from agent_toolkit._hooks import tool_input as _tool_input
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
@@ -108,7 +110,27 @@ def _is_search_operation(tool_name: str, tool_input: dict) -> bool:
     return any(_is_search_segment(pipeline[0]) for pipeline in _bash_command_parser.extract_execution_pipelines(command))
 
 
-OPERATION_SKILLS: tuple[OperationSkill, ...] = (OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),)
+_ROOT_CAUSE_HEADING = re.compile(r"^## 原因分析[ \t]*$", re.MULTILINE)
+"""原因分析の見出しだけから成る行。AWIの`## 原因分析`と計画ファイル（バグ）の起草で書く。"""
+
+
+def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
+    """`agent-toolkit:bugfix`の起動の契機とする原因分析の記述かを返す。
+
+    編集ツールは変更後の断片（Claude Codeの`Write`・`Edit`・`MultiEdit`とCodexの`apply_patch`）、
+    Bashはコマンド文字列に、`## 原因分析`だけから成る行がある場合を対象とする。
+    """
+    if tool_name == "Bash":
+        command = tool_input.get("command")
+        return isinstance(command, str) and _ROOT_CAUSE_HEADING.search(command) is not None
+    fields = _tool_input.new_content_fields(tool_name, tool_input)
+    return fields is not None and any(_ROOT_CAUSE_HEADING.search(value) for _, value in fields)
+
+
+OPERATION_SKILLS: tuple[OperationSkill, ...] = (
+    OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),
+    OperationSkill("agent-toolkit:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
+)
 """操作を起動の契機とするスキルの表。"""
 
 

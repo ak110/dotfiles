@@ -36,7 +36,7 @@ Bash:
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - atkの出力のパイプとリダイレクト（常駐と追従の表示を除く）と、`atk agents wait`のシェル背景化の遮断 (block)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
-- 操作を起動の契機とするスキル（`agent-toolkit:search`）が未起動のままの検索の、文脈ごとに1回の警告 (warn)
+- 操作を起動の契機とするスキル（`agent-toolkit:search`・`agent-toolkit:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
 
 Grep / Glob:
 
@@ -57,6 +57,7 @@ Write / Edit / MultiEdit / apply_patch:
 - lockfile / 生成物ディレクトリの直接編集 (warn)
 - Pythonと計画Markdownの末尾へ混入したツール境界タグ (warn)
 - manifestファイルの手編集 (warn)
+- `agent-toolkit:bugfix`が未起動のままの`## 原因分析`の見出し行の記述の、文脈ごとに1回の警告 (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 
@@ -329,6 +330,7 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return exit_with(0)
 
+    pending_notices.extend(operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex))
     return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices))
 
 

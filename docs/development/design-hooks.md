@@ -84,7 +84,7 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `pretooluse/dispatch.py` `_handle_bash_tool` | '未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。'と、'次の操作: 完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。' | O | 維持（データ破損）：未完了のバックグラウンドタスクが書くファイルを読むと途中の内容を結果と誤認する。対象出力とタスク状態を比べる処理を実装で確認 |
 | `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：Codexのシェル出力の上限を超えた取得は本文を欠落させ、欠落した範囲を回復できない。Claude Codeはホストが`PARTIAL view`または退避ファイルを返し残りを続けて取得できるため対象外とする。遮断後に対処する型であり、閾値48KiBは配布設定の出力上限20,000トークンと測定した1トークンあたりバイト数の最小値3.10から導く（測定は`docs/development/audit-records.md`）。通知は閾値以下の連続行範囲を`sed -n`の形で示す。境界と範囲案を実装・テストで確認 |
 | `pretooluse/large_reads.py` `_large_multi_read_notice` | Bashでの複数ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：複数ファイルの合計が上限を超える取得も同じく本文を欠落させる。遮断後に対処する型で、閾値は前行と同じ。合計判定をテストで確認 |
-| `pretooluse/operation_skills.py` `operation_skill_warnings` | `agent-toolkit:search`を起動しないまま検索（`Grep`・`Glob`、パイプラインの先頭区間の`rg`・`git grep`・`find`・再帰の`grep`系）を実行した呼び出しへの、文脈ごとに1回の警告 | O | 新設（明らかな行動誤り・低費用、2026年10月6日）：起動の契機はセッション開始時に配送されていたが、検索の時点に手掛かりが無く、範囲を見込みで狭めた検索から参照元を漏らした。判定はツール名、コマンド文字列およびSkill起動の記録から確定し、発火は呼び出し主体の文脈ごとに1回である。遮断しない理由と代替案は「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」にある。正例・負例、文脈の分離と`SessionStart`のリセットを`operation_skills_test.py`・`rules_context_test.py`で確認 |
+| `pretooluse/operation_skills.py` `operation_skill_warnings` | `agent-toolkit:search`を起動しないまま検索（`Grep`・`Glob`、パイプラインの先頭区間の`rg`・`git grep`・`find`・再帰の`grep`系）を実行した呼び出しへの、文脈ごとに1回の警告 | O | 新設（明らかな行動誤り・低費用、2026年10月6日）：起動の契機はセッション開始時に配送されていたが、検索の時点に手掛かりが無く、範囲を見込みで狭めた検索から参照元を漏らした。判定はツール名、コマンド文字列およびSkill起動の記録から確定し、発火は呼び出し主体の文脈ごとに1回である。遮断しない理由と代替案は「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」にある。正例・負例、文脈の分離と`SessionStart`のリセットを`operation_skills_test.py`・`rules_context_test.py`で確認。2026年10月7日に`agent-toolkit:bugfix`を、`## 原因分析`だけから成る行を書く操作（`Write`・`Edit`・`MultiEdit`・`apply_patch`の変更後の断片とBashのコマンド文字列）で登録し、編集ツールでも判定するようにした |
 | `pretooluse/shell_checks.py` `_check_bash_option_after_terminator` | オプション終端`--`の後ろへ置いた`rg`・`grep`系・`git log`・`git diff`・`git show`・`git grep`自身のオプションの遮断 | O | 新設（明らかな行動誤り・低費用、2026年10月2日再評価）：`--`の後ろのオプションは存在しないパスとして失敗するか、`git`ではエラーを出力せずにパス指定になり誤った結果を返す。2026年9月21日、9月26日、10月2日と条文の改訂後も反復し、旧基準ではhook案を採用せず条文へ切り替えていた。判定はコマンド文字列から確定でき、遮断で失うのはコマンド1回の発行だけである。`-e`・`-f`を`--`より前に置かない`rg`・`grep`系と`git grep`だけ、`--`の直後を検索パターンとして除き、`git grep`ではその後ろに現れるrevision・パスの区切り`--`も除く。`-e`・`-f`を`--`より前に置く場合は`--`の後ろを全てパスとして判定する。置換内の語を外側の引数へ混ぜず、外側の既知の引数だけを判定する。`git grep`の検索パターンと区切りの位置の解析は、プロセス終了の判定（`_git_grep_literal_pattern_indices`）と共通の1関数が担い、git 2.47.3・ripgrep 15.2.0・GNU grepの実行で確かめた受理形式に合わせる。判定と除外を`shell_checks_test.py`で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_atk_output_loss` | atkの出力のパイプとリダイレクト（ファイル、`/dev/null`、別のファイル記述子、未確定のパスを区別しない）と、`atk agents wait`のシェル背景化の遮断 | O | 新設（結果受領の喪失・低費用）：同じ会話でwaitの`&`と標準出力破棄が反復し、別担当のatk出力パイプも観測された。結果・保存先・終了状態を直接受領できない入力を、既存PreToolUseで起動前に止める。判定はatkの実行位置と出力接続へ限定し、ホスト管理の背景実行・対象限定を通す。2026年10月6日、リダイレクト保存と直後の再読（2026年9月29日以降のClaude Codeの記録で620件、うち342件が3回以内に再読）を観測し、atkが長い出力を自ら保存するため全量は保存先から読めることから、出力保存の許容を外して全てのリダイレクトを遮断の原因へ統合した。waitだけに適用していた標準出力の破棄の原因もこの原因へ統合した。`atk serve`、`atk wi process-loop`の常駐、`atk agents logs --follow`は保存の対象外で背景起動に出力のログへの移動を要するため、リダイレクトの原因から除く。常時規範`02-agent-operations.md`のatkの項にも同じ前提と指示を置き、遮断に至る前に正しい呼び出しを選べるようにした。CLI側ではホストの配送パイプと任意の後段を区別できず、文書だけでは反復を止められなかったため、この入力境界で遮断する。一般の検証コマンドの出力切り詰めチェックを復元する案は、正当な操作の誤検出を増やすため採らない。接続と通知、正常な対照をshell_checks_test.py・dispatch_test.pyで確認 |
 | `pretooluse/shell_checks.py` `_check_bash_process_kill_by_pattern` | 'blocked: パターン一致によるプロセス終了（pkill／killall）は、対象プロセスの所有を確認できないため禁止する。' | O | 維持（不可逆）：pkill・killallのパターン一致は所有外プロセスを終了し、終了したプロセスは元へ戻せない。終了対象の指定形を実装で確認 |
@@ -328,7 +328,7 @@ Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`
 
 2026年10月6日のClaude Codeのセッションで、メインが`agent-toolkit:search`を起動しないまま、検索の範囲を`agent-toolkit/`・`docs/`・`.claude/`へ見込みで狭めて参照元を列挙した。その結果、リポジトリ直下の参照元が漏れた（経緯は`incidents-validation.md`「規範の消失・陳腐化」）。
 同スキルの起動の契機（descriptionと常時規範の参照文）は文脈に配送されていたが、検索する時点に未起動を示す手掛かりが無かった。2026年9月27日以降の記録では、検索を含む512セッションのうち同スキルを検索前に起動したのは1セッションだった。
-そこで`pretooluse/operation_skills.py`が、操作を起動の契機とするスキルと操作の判定関数の組の表を持ち、表のスキルが未起動のまま操作した呼び出しへ警告する。登録は`agent-toolkit:search`の1件とする。
+そこで`pretooluse/operation_skills.py`が、操作を起動の契機とするスキルと操作の判定関数の組の表を持ち、表のスキルが未起動のまま操作した呼び出しへ警告する。登録の一覧は同ファイルの`OPERATION_SKILLS`が持つ。
 
 判定の入力はツール名、コマンド文字列およびSkill起動の記録だけとする。`agent-toolkit:search`が対象とする操作は、Claude Codeの`Grep`・`Glob`と、Bashの呼び出しである。Bashはパイプラインの先頭区間（`extract_execution_pipelines`）が`rg`・`git grep`・`find`か、再帰オプション付きの`grep`・`egrep`・`fgrep`である場合とする。パイプラインの2番目以降の区間は標準入力を検索するため除く。
 `agent_id`で呼び出し主体を区別し、メイン会話と`Agent`ツールのサブエージェントを別の文脈とする。`agents_server`の委譲先は別のセッションとして自身の状態ファイルで判定する。
@@ -359,6 +359,11 @@ Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`
 表へスキルを加える場合は、操作の判定関数とその正例・負例のテストを同じ変更単位で加え、費用の比較を別に行う。
 同じ構造を持つスキルには`agent-toolkit:check-execution`、`agent-toolkit:commit`、`agent-toolkit:writing-standards`がある。
 `agent-toolkit:delegation`と`agent-toolkit:external-write-review`も同じ構造を持つ。いずれも観測事象への寄与と費用を確かめていないため登録していない。
+
+2026年10月7日に`agent-toolkit:bugfix`を登録した。WI投入担当が観測した欠陥を起点とする要求の原因分析を同スキルを起動せずに起草した記録が、原因分析を書いた45件中12件あった（`incidents-validation.md`「誤判定・検証不足」）。
+判定は`## 原因分析`だけから成る行を書く操作であり、ツール入力だけで確定する。過検出は同じ見出しを持つテンプレートなどを編集する場合の1回の警告に留まる。
+遮断しない理由は`agent-toolkit:search`と同じく、スキルの起動が努力目標であり、原稿の書込を遮断すると書いた内容を失うためである。編集ツールを判定するため、`dispatch.py`は編集ツールの処理でも`operation_skill_warnings`を呼ぶ。
+`agent-toolkit:writing-standards`の`references/investigation.md`などの読込は、外部の挙動を書くかが本文の意味に依存し機械的に判定できないため登録しない。
 
 ### 退避したシェル出力の抜粋の置き換え（2026年10月6日）
 
