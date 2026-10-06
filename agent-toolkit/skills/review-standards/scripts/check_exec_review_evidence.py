@@ -24,7 +24,7 @@ import tempfile
 import typing
 
 from agent_toolkit._atk import review_table
-from agent_toolkit._common import markdown_headings
+from agent_toolkit._common import markdown_headings, requirement_units
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan.structure.markdown import extract_tables, markdown_body_text
 
@@ -55,17 +55,7 @@ REVIEW_TABLE_SUFFIX = ".exec-review.tsv"
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
 WHITESPACE = re.compile(r"\s+")
-LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 WI_HEADER = re.compile(r"^### (\d{8}-\d{6}-\d{3}\.md) \[[^]]+\]$")
-# 全角の終止記号は位置によらず文末とする。ASCIIの終止記号は直後が空白か段落末の場合だけ文末とし、
-# ドメイン名・ファイル名・版番号など語の内部のピリオドで文を分けない。
-FULLWIDTH_TERMINATORS = "。．！？"
-ASCII_TERMINATORS = ".!?"
-# 文末記号の直後に続く閉じ括弧類は同じ文へ含め、閉じ括弧だけの単位が残る分割を避ける。
-CLOSING_BRACKETS = ")）」』]】"
-INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)+?\1")
-HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
-FENCE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|(?P<plain>[^\s`\[\]（）「」、。]+)")
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
 # 地の文の1語から切り出す参照。パスは最後の拡張子までとし、拡張子の直後がASCIIのパス文字でない位置で終える。
@@ -176,115 +166,18 @@ def _section(body: list[str], heading: str) -> list[str] | None:
 
 def _normalize_condition(text: str) -> str:
     """完成条件の行頭記号と前後の空白を除く。"""
-    return LIST_ITEM.sub("", text.strip()).strip()
+    return requirement_units.LIST_ITEM.sub("", text.strip()).strip()
 
 
 def _condition_units(content: list[str], filename: str) -> list[str]:
-    lines = HTML_COMMENT.sub("", "\n".join(content)).splitlines()
-    items = [_normalize_condition(line) for line in lines if LIST_ITEM.match(line.strip())]
+    lines = requirement_units.HTML_COMMENT.sub("", "\n".join(content)).splitlines()
+    items = [_normalize_condition(line) for line in lines if requirement_units.LIST_ITEM.match(line.strip())]
     if items:
         return items
     paragraph = " ".join(line.strip() for line in lines if line.strip())
     if paragraph:
         return [paragraph]
     raise ValueError(f"{filename}: 『完成条件』節が空です")
-
-
-def _fenced_blocks(lines: list[str]) -> list[tuple[int, int, str]]:
-    """閉じたフェンス付きコードブロックの開始行・終了行の位置と情報文字列を出現順に返す。
-
-    閉じるフェンスは開始と同じ文字で同じ長さ以上とし、長いフェンスの内側にある短いフェンスは内容として扱う。
-    閉じていないフェンスはブロックとして扱わない。後続の要求を補足資料として失わないためである。
-    """
-    blocks: list[tuple[int, int, str]] = []
-    index = 0
-    while index < len(lines):
-        opening = FENCE.match(lines[index])
-        if opening is None or (opening["fence"][0] == "`" and "`" in opening["info"]):
-            index += 1
-            continue
-        fence = opening["fence"]
-        end = next(
-            (
-                position
-                for position in range(index + 1, len(lines))
-                if (closing := FENCE.match(lines[position])) is not None
-                and closing["fence"][0] == fence[0]
-                and len(closing["fence"]) >= len(fence)
-                and not closing["info"].strip()
-            ),
-            None,
-        )
-        if end is None:
-            index += 1
-            continue
-        blocks.append((index, end, opening["info"].strip()))
-        index = end + 1
-    return blocks
-
-
-def _without_fenced_blocks(lines: list[str]) -> list[str]:
-    """補足資料のフェンス付きコードブロックを空行へ置き換え、前後の地の文を別の段落に保つ。"""
-    remaining = list(lines)
-    for start, end, _info in _fenced_blocks(lines):
-        remaining[start : end + 1] = [""] * (end + 1 - start)
-    return remaining
-
-
-def _sentences(text: str) -> list[str]:
-    """段落の文字列を文へ分ける。インラインコードの内側では分割しない。"""
-    protected = [False] * len(text)
-    for match in INLINE_CODE.finditer(text):
-        protected[match.start() : match.end()] = [True] * (match.end() - match.start())
-    terminators = FULLWIDTH_TERMINATORS + ASCII_TERMINATORS
-    sentences: list[str] = []
-    start = index = 0
-    while index < len(text):
-        if protected[index] or text[index] not in terminators:
-            index += 1
-            continue
-        end = index
-        while end < len(text) and text[end] in terminators and not protected[end]:
-            end += 1
-        fullwidth = any(char in FULLWIDTH_TERMINATORS for char in text[index:end])
-        while end < len(text) and text[end] in CLOSING_BRACKETS and not protected[end]:
-            end += 1
-        if fullwidth or end == len(text) or text[end].isspace():
-            sentences.append(text[start:end])
-            start = end
-        index = end
-    sentences.append(text[start:])
-    return [sentence.strip() for sentence in sentences if sentence.strip()]
-
-
-def _requirement_units(content: list[str]) -> list[str]:
-    """要求原文を、箇条書きの項目と文の単位へ分ける。
-
-    補足のフェンス付きコードブロック（ログ、設定断片、コマンド出力など）は分割の前に除く。
-    句点やピリオドを含むログの断片を要求として数えないためである。資料として読む責務はレビュー担当に残る。
-    """
-    units: list[str] = []
-    paragraph: list[str] = []
-
-    def flush() -> None:
-        if paragraph:
-            units.extend(_sentences(" ".join(paragraph)))
-            paragraph.clear()
-
-    cleaned = _without_fenced_blocks(HTML_COMMENT.sub("", "\n".join(content)).splitlines())
-    for line in cleaned:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            flush()
-            continue
-        item = LIST_ITEM.match(stripped)
-        if item:
-            flush()
-            units.extend(_sentences(stripped[item.end() :]))
-            continue
-        paragraph.append(stripped)
-    flush()
-    return units
 
 
 def _expected_rows(output: str, filename: str) -> tuple[list[str], list[tuple[str, str]]]:
@@ -301,20 +194,20 @@ def _expected_rows(output: str, filename: str) -> tuple[list[str], list[tuple[st
         # `## ユーザー指摘の逐語引用`は投入元のセッションへの発話であり、そのセッションで解決済みとして扱う。
         # 達成を確かめるのは処理側へ宛てた`## ユーザーコメント`だけとし、逐語引用は完成条件を解釈する根拠に留める。
         comment = _section(body, "## ユーザーコメント")
-        requirements = [(unit, f"{filename}#ユーザーコメント") for unit in _requirement_units(comment or [])]
+        requirements = [(unit, f"{filename}#ユーザーコメント") for unit in requirement_units.requirement_units(comment or [])]
         return _condition_units(conditions, filename), requirements
     if kind == "awi" and "source" in frontmatter:
         raise ValueError(f"{filename}: 『完成条件』節がありません")
     if kind == "uwi":
         answer = _section(body, "## 回答")
-        requirements = [(unit, f"{filename}#回答") for unit in _requirement_units(answer or [])]
+        requirements = [(unit, f"{filename}#回答") for unit in requirement_units.requirement_units(answer or [])]
         if not requirements:
             raise ValueError(f"{filename}: 『回答』節が空です")
         return [], requirements
     result = _section(body, "## 処理結果")
     if result is not None:
         body = body[: body.index("## 処理結果")]
-    requirements = [(unit, f"{filename}#本文") for unit in _requirement_units(body)]
+    requirements = [(unit, f"{filename}#本文") for unit in requirement_units.requirement_units(body)]
     if not requirements:
         raise ValueError(f"{filename}: 原文本文が空です")
     return [], requirements
@@ -837,11 +730,11 @@ def _expired_source_error(
             reasons.append(str(exc))
             continue
         if own_comment and frontmatter.get("type") == "awi":
-            if _requirement_units(_section(body, "## ユーザーコメント") or []):
+            if requirement_units.requirement_units(_section(body, "## ユーザーコメント") or []):
                 return None
             reasons.append(f"{reference}: ユーザーコメントが空です")
         elif frontmatter.get("type") == "uwi" and "回答" in source:
-            if _requirement_units(_section(body, "## 回答") or []):
+            if requirement_units.requirement_units(_section(body, "## 回答") or []):
                 return None
             reasons.append(f"{reference}: UWIの回答が空です")
         else:
