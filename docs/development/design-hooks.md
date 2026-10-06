@@ -1,6 +1,6 @@
 # フックの責務・通知・セッション状態の設計記録
 
-通常の`git commit`では、実行位置、最終メッセージ、実行turnの観測identityを確定できる場合だけ帰属trailerを確認する。Claude Codeではフックから観測できるuser・project・local設定を優先順位どおり解決する。最上位の`attribution.commit`が空文字なら、明示的な帰属無効化として確認しない。`--amend --no-edit`、fixup、検索・引用中の文字列、人間がagent session外で実行するcommit、入力を確定できない呼び出しも対象外とする。
+通常の`git commit`では、実行位置、最終メッセージ、実行turnの観測identityを確定できる場合だけ帰属trailerを確認する。Claude Codeは`attribution.commit`の`{model}`と`{effort}`を置き換えないため、確認しないと誤った帰属行がpushまで残る（2026年10月6日に4件のcommitで推論量の欠落と誤りを観測した）。Claude Codeの期待値は、推論量をhook入力の`effort.level`、モデルを記録の`message.model`の最後の観測値から求める。hook入力が`agent_id`を持つ場合はsubagentの記録（`<session_id>/subagents/agent-<agent_id>.jsonl`）のモデルを使い、一意に解決できなければ確認しない。最終メッセージは`-m`に加え、`-F -`・`--file=-`へ同じコマンドのheredocで渡した本文と、`-F <path>`で指定した存在するファイルから読む。エージェントのcommitの多くは`-F -`のheredocで作成されるためである。Claude Codeではフックから観測できるuser・project・local設定を優先順位どおり解決する。最上位の`attribution.commit`が空文字なら、明示的な帰属無効化として確認しない。`--amend --no-edit`、fixup、検索・引用中の文字列、人間がagent session外で実行するcommit、入力を確定できない呼び出しも対象外とする。
 
 本書は[設計記録の索引](design.md)から主題別に分割した記録であり、機構の目的、構造の理由、知識境界と却下した代替案を保持する。
 実行時に適用する規範は、各節が参照する現行のルールファイルとスキルが定める。

@@ -1,6 +1,6 @@
 # agent-toolkit導入ガイド（Agent Plugins・Claude Code・Codex）
 
-managed settingsの`attribution.commit`はホストが展開するmodel・effort入りの`Co-Authored-By:`を生成する。`attribution.sessionUrl`と`attribution.pr`は設定せず既定動作を変えない。agents_serverは起動候補と終端時の観測identityを分ける。
+managed settingsの`attribution.commit`は`Co-Authored-By: {model} / {effort} <noreply@anthropic.com>`の書式をエージェントへの指示として渡す。Claude Codeはこの書式の`{model}`と`{effort}`を置き換えないため、値はエージェントが書き、PreToolUseが実行中のモデルと推論量と一致するかを確かめる。`attribution.sessionUrl`と`attribution.pr`は設定せず既定動作を変えない。agents_serverは起動候補と終端時の観測identityを分ける。
 
 agent-toolkitはAgent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
 Claude Codeは対話、フック、ルールの読み込み、作業全体の統括を担う。Codex CLIは`agents_server` MCP経由の

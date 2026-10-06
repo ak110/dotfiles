@@ -99,7 +99,7 @@ from agent_toolkit._hooks import (
 from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id  # noqa: E402
 
 from agent_toolkit._hooks.session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._common.runtime_identity import RuntimeIdentity, distinct_identities  # noqa: E402
+from agent_toolkit._common.runtime_identity import RuntimeIdentity, identity_observations  # noqa: E402
 from agent_toolkit._hooks.pretooluse.warning_context import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     format_warning_context,
 )
@@ -403,6 +403,7 @@ def _handle_bash_tool(
             command,
             identity,
             attribution_disabled=attribution_disabled,
+            cwd=cwd,
         )
     ) is not None:
         print(attribution_error, file=sys.stderr)
@@ -448,18 +449,27 @@ def _handle_bash_tool(
 
 
 def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity | None:
-    """Hook payloadまたは一意なtranscriptから、このturnの観測identityを返す。"""
+    """Hook payloadとそのturnの実行主体の記録から、このturnの観測identityを返す。
+
+    Claude Codeの推論量はhook入力の`effort.level`（ホストがturnへ適用した値）、モデルは記録の最後の観測値から取る。
+    初出順に重複を除いた一覧の末尾は、turnの途中でモデルを切り替えて戻した記録で古い値を選ぶため使わない。
+    hook入力が`agent_id`を持つ場合は、`transcript_path`がメインの記録を指すため、そのsubagentの記録
+    （`<transcript_pathのディレクトリ>/<session_id>/subagents/agent-<agent_id>.jsonl`）を読む。
+    記録を一意に解決できない場合は判定しない。Codexはhook入力の`model`と`reasoning_effort`を優先し、
+    両方が無い場合は記録の`turn_context`の最後の観測値を使う。
+    """
     runtime = "codex" if is_codex else "claude"
     model = payload.get("model")
-    effort = payload.get("effort") or payload.get("reasoning_effort")
+    effort_input = payload.get("effort")
+    effort = effort_input.get("level") if isinstance(effort_input, dict) else effort_input or payload.get("reasoning_effort")
     if isinstance(model, str) and model and isinstance(effort, str) and effort:
         return RuntimeIdentity(runtime, model, effort, "observed")
-    transcript_path = payload.get("transcript_path")
-    if not isinstance(transcript_path, str) or not transcript_path:
+    record_path = _hook_record_path(payload)
+    if record_path is None:
         return None
     entries: list[dict] = []
     try:
-        with open(transcript_path, encoding="utf-8") as stream:
+        with open(record_path, encoding="utf-8") as stream:
             for raw in stream:
                 if not raw.strip():
                     continue
@@ -471,8 +481,28 @@ def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity
                     entries.append(entry)
     except (OSError, UnicodeError):
         return None
-    identities = distinct_identities(entries, runtime)
-    return identities[-1] if identities else None
+    observations = identity_observations(entries, runtime)
+    if not observations:
+        return None
+    latest = observations[-1][1]
+    if not is_codex and isinstance(effort, str) and effort:
+        return RuntimeIdentity(runtime, latest.model, effort, "observed")
+    return latest
+
+
+def _hook_record_path(payload: dict) -> str | None:
+    """hook入力を発した実行主体の記録のパスを返す。subagentの記録を一意に解決できない場合は`None`を返す。"""
+    transcript_path = payload.get("transcript_path")
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    agent_id = payload.get("agent_id")
+    if agent_id is None:
+        return transcript_path
+    session_id = payload.get("session_id")
+    if not isinstance(agent_id, str) or not agent_id or not isinstance(session_id, str) or not session_id:
+        return None
+    subagent_path = pathlib.Path(transcript_path).parent / session_id / "subagents" / f"agent-{agent_id}.jsonl"
+    return str(subagent_path) if subagent_path.is_file() else None
 
 
 def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:

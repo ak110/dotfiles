@@ -4294,6 +4294,55 @@ def _events_by_kind(events: list[dict], kind: str) -> list[dict]:
     return [event for event in events if event.get("kind") == kind]
 
 
+@pytest.mark.parametrize(
+    ("entries", "expected"),
+    [
+        pytest.param(
+            # Claude Code 2.1.291の記録の形。モデルは`message.model`、推論量は最上位の`effort`に置かれる。
+            [
+                {"type": "user", "timestamp": "2026-10-06T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+                {
+                    "type": "assistant",
+                    "timestamp": "2026-10-06T00:00:01Z",
+                    "effort": "medium",
+                    "message": {"role": "assistant", "model": "claude-opus-5-5", "content": [{"type": "text", "text": "結果"}]},
+                },
+            ],
+            [{"engine": "claude", "model": "claude-opus-5-5", "effort": "medium", "source": "observed"}],
+            id="claude",
+        ),
+        pytest.param(
+            # Codex 0.160.1の記録の形。最上位の`type`が`turn_context`の行の`payload`に`model`と`effort`を持つ。
+            [
+                {
+                    "type": "turn_context",
+                    "timestamp": "2026-10-06T00:00:00Z",
+                    "payload": {"model": "gpt-6-luna", "effort": "medium"},
+                },
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-10-06T00:00:01Z",
+                    "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
+                },
+            ],
+            [{"engine": "codex", "model": "gpt-6-luna", "effort": "medium", "source": "observed"}],
+            id="codex",
+        ),
+    ],
+)
+def test_stats_reports_observed_identity_from_host_records(
+    tmp_path: pathlib.Path, capsys, entries: list[dict], expected: list[dict]
+) -> None:
+    """実記録の形のClaude CodeとCodexの記録から、`--stats`が観測したモデルと推論量を表示する。
+
+    記録の形と異なる場所から読むと、振り返りの統計が実行したモデルと推論量を欠く。
+    """
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    assert _events_by_kind(_read_jsonl(capsys), "stats-summary")[0]["observed_identities"] == expected
+
+
 def test_stats_deduplicates_claude_usage_and_reports_tool_breakdown(tmp_path: pathlib.Path, capsys) -> None:
     """Claudeの重複messageとツール所要時間を集計し、呼び出し行を保持する。"""
     transcript = _write_transcript(

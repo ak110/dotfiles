@@ -113,6 +113,12 @@ def _prompt(
         [
             "",
             "commitを実行するturnでホストが観測したmodelとeffortから帰属trailerを1回だけ生成してください。起動候補、alias、設定値または自己申告を観測値として使わないでください。",
+            "Claude Codeでは、effortをBashで`printenv CLAUDE_EFFORT`を実行して得て、先頭を大文字にします。"
+            "modelはホストが通知するモデルIDから末尾の角括弧の印（1Mコンテキストの`[1m]`など）を除き、"
+            "その値（`claude-opus-5-5`など）を`Claude Opus 5.5`の形の表示名にします"
+            "（`claude-<系列>-<主版>-<副版>`の形を`Claude <系列の先頭大文字> <主版>.<副版>`へ変換し、"
+            "末尾の8桁の日付は除きます）。"
+            "期待値と異なる帰属trailerはPreToolUseが遮断して必要なtrailerを示すため、そのtrailerで実行し直してください。",
             f"# フォーマット\n{format_instructions}",
         ]
     )
