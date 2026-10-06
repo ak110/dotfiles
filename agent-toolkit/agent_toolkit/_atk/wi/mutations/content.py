@@ -28,6 +28,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import bulk as _bulk
+from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -321,15 +322,21 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     if not normalized_message_body.strip():
         raise WebInputError("UWIの質問本文は空にできません", next_action="質問本文を記入して再実行する")
     question_type = updated_data.get("question_type")
-    if question_type not in {"choice", "yes-no", "free-form"}:
+    # 保存済みのfree-formは読取互換として本文編集を受理し、他の形式からfree-formへ変える編集だけを拒否する。
+    accepted_question_types = (
+        _constants.STORED_QUESTION_TYPES
+        if stored_data.get("question_type") == _constants.QUESTION_TYPE_FREE_FORM
+        else _constants.NEW_QUESTION_TYPES
+    )
+    if question_type not in accepted_question_types:
         raise WebInputError(
-            "question_typeが不正です",
-            next_action="frontmatterのquestion_typeへchoice・yes-no・free-formのいずれかを指定する",
+            f"question_typeが不正です: {question_type}",
+            next_action="frontmatterのquestion_typeへchoiceかyes-noを指定する（free-formは新しく指定できない）",
         )
-    if question_type == "choice" and not updated_data.get("choices"):
+    if question_type == _constants.QUESTION_TYPE_CHOICE and not updated_data.get("choices"):
         raise WebInputError(
             "choice形式にはchoicesが必要です",
-            next_action="frontmatterのchoicesへ選択肢を指定するか、question_typeをyes-noかfree-formへ変える",
+            next_action="frontmatterのchoicesへ選択肢を指定するか、question_typeをyes-noへ変える",
         )
 
     marker_index = stored_body.rfind(_uwi.ANSWER_MARKER)

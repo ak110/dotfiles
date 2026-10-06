@@ -69,6 +69,7 @@ from agent_toolkit._atk.environment import is_agent_environment  # noqa: E402
 from agent_toolkit._atk.wi import add as _add  # noqa: E402
 from agent_toolkit._atk.wi import batch as _batch  # noqa: E402
 from agent_toolkit._atk.wi import common as _common  # noqa: E402
+from agent_toolkit._atk.wi import constants as _constants  # noqa: E402
 from agent_toolkit._atk.wi import grep as _grep  # noqa: E402
 from agent_toolkit._atk.wi import listing as _list  # noqa: E402
 from agent_toolkit._atk.wi import mutations as _mutations  # noqa: E402
@@ -397,9 +398,13 @@ def _add_wi_add_parser(sub: Any) -> None:
     )
     add.add_argument(
         "--question-type",
-        choices=("free-form", "yes-no", "choice"),
+        metavar="{" + ",".join(_constants.NEW_QUESTION_TYPES) + "}",
         default=None,
-        help="UWIの回答形式。省略時はfree-formで回答を求める。`--type=uwi`でのみ指定できる。",
+        help=(
+            "UWIの回答形式。`--type=uwi`では必須とし、`--type=uwi`でのみ指定できる。"
+            "選択肢から選ぶ問いは`choice`（`--choices`も指定する）、2択の可否を問う問いは`yes-no`とする。"
+            "選択肢に無い回答は回答欄で受ける。"
+        ),
     )
     add.add_argument(
         "--choices",
@@ -1452,13 +1457,23 @@ def main(
         ]
         if uwi_only:
             args.subparser.error(f"{'・'.join(uwi_only)}は--type=uwiでのみ指定できます。")
-    if args.command == "wi" and args.wi_subcommand == "add" and args.type == _common.WI_TYPE_UWI and args.question_type is None:
-        args.question_type = "free-form"
     if (
         args.command == "wi"
         and args.wi_subcommand == "add"
         and args.type == _common.WI_TYPE_UWI
-        and args.question_type == "choice"
+        and args.question_type not in _constants.NEW_QUESTION_TYPES
+    ):
+        # 選択肢の検証をargparseへ任せると、不正値の案内に問いの分け方と投入の形が現れない。
+        args.subparser.error(
+            f"--type=uwi の --question-type が不正か未指定です（指定値: {args.question_type}）。"
+            "問いごとに個別のUWIとし、選択肢から選ぶ問いは --question-type=choice --choices A,B,C、"
+            "2択の可否は --question-type=yes-no で投入してください。選択肢に無い回答は回答欄で受け取ります。"
+        )
+    if (
+        args.command == "wi"
+        and args.wi_subcommand == "add"
+        and args.type == _common.WI_TYPE_UWI
+        and args.question_type == _constants.QUESTION_TYPE_CHOICE
         and not args.choices
     ):
         args.subparser.error("--question-type=choice のときは --choices を指定してください。")

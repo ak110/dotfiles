@@ -32,6 +32,7 @@ from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.wi import add as awi_add
 from agent_toolkit._atk.wi import batch as awi_batch
 from agent_toolkit._atk.wi import common, frontmatter
+from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._atk.wi import mutations as awi_mutations
 from agent_toolkit._atk.wi import repo as awi_repo
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
@@ -220,7 +221,9 @@ def _ignored_single_fields(data: dict[str, typing.Any]) -> list[str]:
     """一括取り込みへ切り替えた登録で、使わなかった単件用の入力項目名を返す。"""
     ignored = [name for name in ("target_repo", "scope") if data.get(name)]
     question_type = data.get("question_type")
-    if question_type is not None and question_type != "free-form":
+    # 新規追加ダイアログが初期値として送る回答形式は、ユーザーが入力した値として扱わない。
+    # 初期値を選択肢の入力が要らない形式にし、種別を選び違えたshow形式の本文も一括登録へ切り替えられるようにする。
+    if question_type is not None and question_type != wi_constants.QUESTION_TYPE_YES_NO:
         ignored.append("question_type")
     if data.get("choices"):
         ignored.append("choices")
@@ -425,10 +428,14 @@ def _render_body(text: str) -> str:
 def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str, list[str]]:
     """UWIの回答形式と選択肢をWeb UI用の安定した形へ正規化する。"""
     if kind != common.WI_TYPE_UWI:
-        return "free-form", []
+        return wi_constants.QUESTION_TYPE_FREE_FORM, []
     raw_type = metadata.get("question_type")
-    question_type = raw_type if isinstance(raw_type, str) and raw_type in {"choice", "yes-no", "free-form"} else "free-form"
-    if question_type != "choice":
+    question_type = (
+        raw_type
+        if isinstance(raw_type, str) and raw_type in wi_constants.STORED_QUESTION_TYPES
+        else wi_constants.QUESTION_TYPE_FREE_FORM
+    )
+    if question_type != wi_constants.QUESTION_TYPE_CHOICE:
         return question_type, []
     raw_choices = metadata.get("choices")
     if isinstance(raw_choices, str):
@@ -797,8 +804,11 @@ class Operations:
         if entry_type == common.WI_TYPE_AWI and (scope or question_type or choices):
             raise WebApiInputError(f"scope・question_type・choicesはtype={common.WI_TYPE_UWI}でのみ指定できます")
         if entry_type == common.WI_TYPE_UWI:
-            if question_type not in {"choice", "yes-no", "free-form"}:
-                raise WebApiInputError("question_typeが不正です")
+            if question_type not in wi_constants.NEW_QUESTION_TYPES:
+                raise WebApiInputError(
+                    f"UWIの回答形式が不正か未指定です: {question_type}。"
+                    "選択肢形式（choice）か、はい／いいえ（yes-no）を指定してください"
+                )
             if question_type == "choice" and (choices is None or len(choices) < 2):
                 raise WebApiInputError("choice形式には2件以上のchoicesが必要です")
             if question_type != "choice" and choices is not None:
@@ -1573,8 +1583,6 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             if key in data and (not isinstance(data[key], str) or not data[key]):
                 raise WebApiInputError(f"{key}は空でない文字列で指定してください")
         question_type = data.get("question_type")
-        if data["type"] == common.WI_TYPE_UWI and question_type is None:
-            question_type = "free-form"
         filenames = await workers.run(
             ops.add,
             messages,

@@ -159,3 +159,24 @@ def unrepairable_entry_next_action(name: str) -> str:
         f"`atk wi show {name}`で保存内容を確かめ、ユーザーへ報告する"
         "（この状態の項目は`atk wi edit`の`--body-file`で本文を渡しても同じ理由で拒否される）"
     )
+
+
+QUESTION_TYPE_CHOICE = "choice"
+"""UWIの回答形式のうち、`choices`の選択肢から選ぶ形式。"""
+
+QUESTION_TYPE_YES_NO = "yes-no"
+"""UWIの回答形式のうち、はい・いいえの2択の形式。"""
+
+QUESTION_TYPE_FREE_FORM = "free-form"
+"""保存済みのUWIだけが持つ自由記述の回答形式。
+
+AskUserQuestionが選択肢を必須とし自由記述を「Other」で受ける形にそろえ、新規作成では受理しない。
+選択肢に無い回答は、選択肢形式のUWIの回答欄へ書き足して受ける。
+保存済みの項目の表示、回答と本文編集のためだけに読む。
+"""
+
+NEW_QUESTION_TYPES = (QUESTION_TYPE_CHOICE, QUESTION_TYPE_YES_NO)
+"""UWIを新規作成するときと、回答形式を変える本文編集で受理する回答形式。"""
+
+STORED_QUESTION_TYPES = (*NEW_QUESTION_TYPES, QUESTION_TYPE_FREE_FORM)
+"""保存済みのUWIが持ち得る回答形式の全体。"""

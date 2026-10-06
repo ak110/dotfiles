@@ -1828,6 +1828,16 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
     create_dialog = page.get_by_role("dialog", name="新規追加")
     await create_dialog.wait_for(state="visible")
     await create_dialog.locator("#create-kind").select_option("uwi")
+    # UWIの回答形式ははい／いいえと選択肢形式だけを選べる。初期値は選択肢の入力が要らないはい／いいえとする。
+    question_type = create_dialog.locator("#create-question-type")
+    await playwright.async_api.expect(question_type).to_have_value("yes-no")
+    assert await question_type.locator("option").evaluate_all("options => options.map(option => option.value)") == [
+        "yes-no",
+        "choice",
+    ]
+    await question_type.select_option("choice")
+    await playwright.async_api.expect(create_dialog.locator("#choice-fields")).to_be_visible()
+    await question_type.select_option("yes-no")
     await create_dialog.locator("#create-target").fill("ignored/repo")
     show_text = (
         "## target_repo: batch/repo\n"

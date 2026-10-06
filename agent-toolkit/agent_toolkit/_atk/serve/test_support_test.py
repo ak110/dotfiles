@@ -154,7 +154,7 @@ elements['state-filter'].value = 'active';
 elements['period-filter'].value = '2w';
 elements['answer-filter'].value = 'all';
 elements['create-kind'].value = 'awi';
-elements['create-question-type'].value = 'free-form';
+elements['create-question-type'].value = 'yes-no';
 globalThis.controlGroups = {{
   'detail-shell': [
     elements['detail-close-button'], elements['edit-button'], elements['answer-button'],
