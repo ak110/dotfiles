@@ -1,0 +1,24 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/bugfix/SKILL.md##1	--- name: bugfix user-invocable: false d						エージェント由来: 導入commit 58b36e2e7caaにtrailerあり（検索語「題、未対応、デグレード、バグ、CI失敗の診断・修」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応#1	本スキルはバグ対応時の考え方・対応手順を提供する。						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「本スキルはバグ対応時の考え方・対応手順を提供する」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応#2	観測した不具合を再現し、期待する契約、実際の結果、発生条件、直接的原因を確定して						エージェント由来: 導入commit 56be80a9ff55にtrailerあり（検索語「`、`agent-toolkit:plan-mo」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 適用手順#1	問題を発見した時点で、対処に着手する前に`references/response						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「対策を選ぶ前に`agent-toolkit:wo」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 適用手順#2	1. 後述の「初動と拡張原因分析の判定」を読む						未確定: 導入commit a03b094a4a07にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「後述の「初動と拡張原因分析の判定」を読む」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 適用手順#3	2. 拡張原因分析の条件に該当する場合だけ、`references/root-c						エージェント由来: 導入commit acc86153e6faにtrailerあり（検索語「位規範から導かれるかを確かめる判断と、条文の追加」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 適用手順#4	3. CI失敗を扱う時は`agent-toolkit/skills/bugfix						未確定: 導入commit 603c151c3e4aにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ills/bugfix/references/c」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 適用手順#5	4. 計画、実装、レビューのいずれでも同じ判定と原因分析の段階を用いる						未確定: 導入commit 61f499472f9aにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「装、レビューのいずれでも同じ判定と原因分析の段階」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 適用手順#6	CI通過へ入る前は`agent-toolkit:commit`の`commit/						エージェント由来: 導入commit d5eabdb84b4fにtrailerあり（検索語「agent-toolkit:writing-st」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#1	- 処置案を検討する前に、事象、実際の結果および発生条件を再現・ログ・実装から確						エージェント由来: 導入commit ebf43eec8db5にtrailerあり（検索語「設定、依存版、外部状態、規範・スキル・手順の条文」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#2	- 対策を確定する前に、その対策が変える値や動作の影響範囲を実装からたどる。参照						エージェント由来: 導入commit 8eb7f42c254dにtrailerあり（検索語「件・外部仕様」）を対象とし、追随が必要な箇所を対」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#3	- ユーザーが失敗例その他の観測事象の実物を提示した場合は、対象の母集団を発話の						未確定: 導入commit a16b7c43ed0eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「扱う。範囲語と例示が併存する場合の優先順位は`a」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#4	- エンドユーザーが観測した症状の件数や該当対象を数えるときは、エンドユーザーが						エージェント由来: 導入commit 262f40183f9aにtrailerあり（検索語「どる。変換が該当の判定を変えないことと、数えなか」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#5	- 外部から受け取った不具合報告が、別の環境、別の版、過去の時点のいずれかでは事						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「判定は報告が挙げる環境または版が配備する成果物の」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#6	- 事象への対処をAWIの投入で終える場合も、本節の初動と原因分析を投入の前に完						未確定: 導入commit c9b57d5717d6にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「遂する。投入の前に確定する事項は`agent-t」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#7	- 作業途中で発見した事象は、着手前に記録した状態と現在の差分を先に突合し、進行						未確定: 導入commit ea26b57dbc27にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「と現在の差分を先に突合し、進行中の未コミット変更」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#8	- 直接的原因までの確定直後に、拡張原因分析の条件に用いる判定材料を確認する。 						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「た計画・設計文書と当時の指示・契約、およびその判」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#9	- 判定材料の確認後に、次の拡張原因分析の条件を評価する - 拡張原因分析の条件						未確定: 導入commit 2f5d76fbbdd5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「oot-cause-analysis.md`「再」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#10	- 同じ原因が別の箇所ですでに成立するか、同じ判断・工程が反復される箇所を挙げる						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「が反復される箇所を挙げる例は、実在する別の該当箇」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#11	- 拡張原因分析の条件に該当する場合は、「拡張原因分析の資料と因果の確定」以降の						未確定: 導入commit a03b094a4a07にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「に該当する場合は、「拡張原因分析の資料と因果の確」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#12	- 拡張原因分析の条件に該当しない局所不良は、対策と変更範囲の検証に限定する -						未確定: 導入commit 61f499472f9aにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ログの探索、2系統4段階の原因分析、汎用的な恒久」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定#13	- 同種の問題が反復する場合は、`agent-toolkit:review-st						未確定: 導入commit 326b39b27936にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「standards/references/jud」）		
+agent-toolkit/skills/bugfix/SKILL.md#バグ対応 > 初動と拡張原因分析の判定 > 同一症状の修正反復#1	同じ期待契約、症状、検証条件で1回目と2回目の修正後も症状が残り、3回目の修正が						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「す。別症状、別契約、条件不一致、未適用の修正、外」）		

@@ -1,0 +1,15 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領#1	```text 起動対象: reader-fit-review.subagent						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「 reader-fit-review.subag」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領#2	文章成果物を含むレビューで、レビュー担当が本書に従って読者別探索担当を起動し、結						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「UGIN_ROOT}/share/reader-」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#1	実行レビュー担当が対象WIの`担当モデル.実行レビュー担当`を受領した場合、読者						エージェント由来: 導入commit 385f12f95fdcにtrailerあり（検索語「当の起動にも同じ`model_type`を指定す」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#2	読者ごとに`reader-fit-review.subagent.md`を指定す						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「tract.md`「`<役割名>.subagen」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#3	- `成果物`: 成果物の絶対パスと行数。private-notesにあるWIで						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「スと行数。private-notesにあるWIで」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#4	- `種別`: 成果物の種別						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「`種別`: 成果物の種別」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#5	- `読者像`: その成果物を読む主体と、その主体が既に知っている事柄						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「`: その成果物を読む主体と、その主体が既に知っ」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#6	初回はこの3入力から成果物全体を点検する。 再レビューでは、起動前に読者ごとの再						エージェント由来: 導入commit 68a42930ff03にtrailerあり（検索語「では、起動前に読者ごとの再点検対象を確定し、次の」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#7	- `レビュー種別`: `再レビュー`						エージェント由来: 導入commit 68a42930ff03にtrailerあり（検索語「`レビュー種別`: `再レビュー`」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#8	- `修正範囲`: 前回確認版と現行版の取得先および差分、変更した識別子・契約か						エージェント由来: 導入commit 68a42930ff03にtrailerあり（検索語「よび差分、変更した識別子・契約から導く直接影響範」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#9	- `未解決事項`: 対象の読者に関係する前回指摘の箇所、違反した規定、発生条件						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「反した規定、発生条件、根本原因、要求した検収手段」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#10	Gitの前回確認版は前回レビューしたcommitから取得し、Git管理外の文書や						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「し、Git管理外の文書や質問への回答を記録したU」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 起動#11	観点、判定基準、返却形式と規範ファイルは`reader-fit-review.s						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「ため、委譲プロンプトで再掲しない。コードコメント」）		
+agent-toolkit/share/reader-fit-review.parent.md#読者別探索担当の起動と受領 > 受領#1	結果は引数なしの`atk agents wait`で受け取る。 各指摘の裏付けを						エージェント由来: 導入commit 68a42930ff03にtrailerあり（検索語「る契約で確かめ、採否と根拠、採用分の記録先または」）		

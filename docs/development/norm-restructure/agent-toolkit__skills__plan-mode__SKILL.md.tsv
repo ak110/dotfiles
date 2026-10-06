@@ -1,0 +1,22 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/plan-mode/SKILL.md##1	--- name: plan-mode user-invocable: fals						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「象リポジトリを変更する作業で計画ファイルを作成し」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード#1	Codexで実行する場合は、計画工程へ着手する前に`references/cod						未確定: 導入commit 5a1841743b6fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「へ着手する前に`references/codex」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード#2	本スキルは調査から計画ファイルの作成、実装および`起動経路`の値ごとの終端までの						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「lkit:wi-standards`が定める。実」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード#3	確認要否、質問手順とUWIへの退避は`agent-toolkit:user-co						エージェント由来: 導入commit c8fec450f347にtrailerあり（検索語「モードでメインが本スキルを起動した場合は、同スキ」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 計画ファイルの作成要否#1	対象リポジトリを変更する作業では、原則として計画ファイルを作成する。計画は人間の						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「討および中断後の再開をエージェントへ渡す内部資料」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 計画ファイルの作成要否#2	作成を省くのは、既存の値や文字列の差し替えだけで完結し、恒久化・リファクタリング						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「誤字・表記の修正、版数・依存版数・設定値の差し替」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 進め方#1	1. 適用規範、変更対象、定義・参照・呼び出し元、既存テスト、生成・配布の仕組み						エージェント由来: 導入commit 111839d978c4にtrailerあり（検索語「証）を確定するために必要な範囲を調査する。入力の」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 進め方#2	2. 計画の変更対象または採用方針を左右する未確定判断を、判断同士の依存関係とと						エージェント由来: 導入commit 4bef4c247f67にtrailerあり（検索語「、`agent-toolkit:user-con」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 進め方#3	3. `references/plan-file-standards.md`を全						エージェント由来: 導入commit a434c6cda5b1にtrailerあり（検索語「る計画では、計画担当が手順1で起動した`agen」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 進め方#4	4. メインによる起動では`atk run-script plan-check 						未確定: 導入commit 2631a147bd1dにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「olkit:process-wi`のレーン担当は」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 進め方#5	5. `起動経路`の値に対応する次の1行だけを実施する						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「`起動経路`の値に対応する次の1行だけを実施する」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 進め方#6	| `agent-toolkit:plan-mode`のメインによる起動 | 「						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「an-mode`のメインによる起動 | 「メイン」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 進め方#7	| `agent-toolkit:process-wi`のレーン担当としての起動						未確定: 導入commit 3e2200b3ac28にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「PLUGIN_ROOT}/share/exec.」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > 進め方#8	実行工程の計画ファイルの扱いと、実装中に生じた要件・外部仕様の判断の記録は、`r						エージェント由来: 導入commit 8eb7f42c254dにtrailerあり（検索語「様の判断の記録は、`references/pla」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > メインによる起動の実装と終端#1	実行レビューの起動では、実装担当が作成した要求単位ごとのJSONの絶対パスを名前						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「ごとのJSONの絶対パスを名前付き入力`未判定検」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > メインによる起動の実装と終端#2	メインによる起動では、要求を受け取ったメインが計画の起草、実装、実行レビューの反						未確定: 導入commit a16b7c43ed0eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「要求を受け取った時点の作業ディレクトリが属する作」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > メインによる起動の実装と終端#3	1. `agent-toolkit:writing-standards`の該当資						エージェント由来: 導入commit 5b1d63087363にtrailerあり（検索語「トを実装単位へ含めて変更範囲の検証で実行し、シナ」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > メインによる起動の実装と終端#4	2. `${CLAUDE_PLUGIN_ROOT}/share/exec-rev						エージェント由来: 導入commit e90fd7a14012にtrailerあり（検索語「い。画面差分があれば同じ対象HEADのユーザビリ」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > メインによる起動の実装と終端#5	3. 終端前に、同じ共通parentの整合確認で生成された実行レビュー未解決0件						エージェント由来: 導入commit 87b80abd3231にtrailerあり（検索語「して処置へ渡す。画面差分では同じ対象HEADのユ」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > メインによる起動の実装と終端#6	4. `atk run-script plan-progress --`で`##						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「tk plans commit <計画ファイル名」）		
+agent-toolkit/skills/plan-mode/SKILL.md#計画モード > メインによる起動の実装と終端#7	本スキルの起動後に対象規範配下（`agent-toolkit/`等のエージェント						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「け文書）を編集するのは、計画ファイルを作成した後」）		

@@ -1,0 +1,10 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/rules-subagent.md#rules-subagent.md: サブエージェントと委譲先だけに適用する規範#1	本書はサブエージェントと委譲先に適用する。共通の判断と実行上の規律は`01-ag						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「と実行上の規律は`01-agent.md`、`0」）		
+agent-toolkit/share/rules-subagent.md#rules-subagent.md: サブエージェントと委譲先だけに適用する規範 > 確認事項の即時通知#1	ユーザーの確認または事後承認を要する判断は委譲元へ渡す。必要な調査が終わった時点						エージェント由来: 導入commit 385f12f95fdcにtrailerあり（検索語「否された操作と対象を委譲元へ速やかに渡す。別の手」）		
+agent-toolkit/share/rules-subagent.md#rules-subagent.md: サブエージェントと委譲先だけに適用する規範 > 大量出力コマンドの分離実行#1	大量出力の分離、検索、引用、パス、CLI形式と終了状態は`02-agent-op						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「operations.md`が定める。利用できる」）		
+agent-toolkit/share/rules-subagent.md#rules-subagent.md: サブエージェントと委譲先だけに適用する規範 > 委譲時の厳守事項#1	委譲手段と終端の観測手段を起動前に組にする。等しい機能と権限があれば`agent						エージェント由来: 導入commit 82c25d454538にtrailerあり（検索語「gation`の`references/rout」）		
+agent-toolkit/share/rules-subagent.md#rules-subagent.md: サブエージェントと委譲先だけに適用する規範 > 委譲時の厳守事項#2	`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「。新規作成先と移動先も名指しの対象に含める。委譲」）		
+agent-toolkit/share/rules-subagent.md#rules-subagent.md: サブエージェントと委譲先だけに適用する規範 > 委譲時の厳守事項#3	入力が欠けたときは、基準となる定義から観測して一意に得られる値を補って記録する。						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「続ける。委譲元の判断が必要な事象は直ちに通知し、」）		
+agent-toolkit/share/rules-subagent.md#rules-subagent.md: サブエージェントと委譲先だけに適用する規範 > 委譲時の厳守事項 > 手順どおりに進められない場合の返却#1	規範や手順の衝突は、事象と登録に必要な情報を委譲元へ返す。登録先の判断は委譲元が						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「、事象と登録に必要な情報を委譲元へ返す。登録先の」）		
+agent-toolkit/share/rules-subagent.md#rules-subagent.md: サブエージェントと委譲先だけに適用する規範 > 委譲時の厳守事項 > 多段工程の引き継ぎ記録#1	`引き継ぎ記録先`を受け取った多段工程は`agent-toolkit:deleg						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「record.md`を使う。キュー操作の反映抑止」）		
+agent-toolkit/share/rules-subagent.md#rules-subagent.md: サブエージェントと委譲先だけに適用する規範 > 返却と終端#1	作業の結果は、都合の悪い結果も含めて委譲元へ正直に報告する。工程境界と完了では、						エージェント由来: 導入commit b8501c5e02e5にtrailerあり（検索語「象:`の行と同じく返却形式の末尾へ`気付いた改善」）		

@@ -1,0 +1,14 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/search/SKILL.md##1	--- name: search user-invocable: false d						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「たはディレクトリのファイル属性と内容を検索する直」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#1	本スキルはファイル属性と内容の検索手段の選定および検索の出力量の制御を提供する。						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「ル属性と内容の検索手段の選定および検索の出力量の」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#2	検索手段は対象の性質から次の順で決める。						未確定: 導入commit 5a1841743b6fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「検索手段は対象の性質から次の順で決める。」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#3	1. ファイル名、種類、更新時刻およびディレクトリ構造などの属性探索は、対象を限						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「刻およびディレクトリ構造などの属性探索は、対象を」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#4	2. 現在のGit作業ツリー内の管理対象に限定した内容検索と追跡ファイル全体の残						未確定: 導入commit 5a1841743b6fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「対象に限定した内容検索と追跡ファイル全体の残存確」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#5	3. 現在のGit作業ツリー外の明示パス、Git管理外の対象、正規表現を使う内容						未確定: 導入commit 43a1d24caf64にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「索には`rg`を使う。作業ツリー外の明示パスが別」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#6	4. 除外設定を反映したファイル一覧は`rg --files`、構造化した集計と						未確定: 導入commit 5a1841743b6fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「`、構造化した集計と全体件数の上限を要する検索は」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#7	利用中のホストで手段を利用できない場合も同じ対象性質から代替を選ぶ。 `rg`と						未確定: 導入commit 27cfd08d7d32にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「`--include`・`--exclude`・」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#8	`git grep`では、固定文字列の`-F`、拡張正規表現の`-E`またはPe						未確定: 導入commit 16e8e188fe7aにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「/development/audit-recor」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#9	出力をパイプで後段へ渡す場合は、`pipefail`その他の実行シェルが公式に提						エージェント由来: 導入commit e3cd6bf86137にtrailerあり（検索語「られる。`git grep`は一致しないpath」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#10	コーディングエージェントがリポジトリまたはディレクトリ全体を対象として内容検索す						未確定: 導入commit 963dc6863476にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「象の1実体と1一致行が対応することを構造から確認」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#11	コードベースの通常の検索はリポジトリrootから実行し、`.gitignore`						エージェント由来: 導入commit d3d8bb2871cdにtrailerあり（検索語「ール固有の除外が母集団から外すため、root全体」）		
+agent-toolkit/skills/search/SKILL.md#検索手段の選定と出力量の制御#12	網羅性を要する検索では出力量の制御で本文を省かず、分離したコンテキストで実行して						未確定: 導入commit 009ec67240bcにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「olkit/rules/02-agent-ope」）		

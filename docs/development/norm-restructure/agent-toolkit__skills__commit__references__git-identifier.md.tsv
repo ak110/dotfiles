@@ -1,0 +1,7 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/commit/references/git-identifier.md#Git識別子の扱い#1	本書は`agent-toolkit/rules/02-agent-operati						未確定: 導入commit 009ec67240bcにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「les/02-agent-operations.」）		
+agent-toolkit/skills/commit/references/git-identifier.md#Git識別子の扱い#2	Git操作、内部比較、報告、記録または成果物で用いる識別子は、branch名、t						未確定: 導入commit 16e8e188fe7aにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「cs/development/audit-rec」）		
+agent-toolkit/skills/commit/references/git-identifier.md#Git識別子の扱い#3	revisionへpeel式を付ける場合は、その式全体を実行shellで単一引数						未確定: 導入commit daa11d7fde9eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「erify 'HEAD^{commit}'`のよ」）		
+agent-toolkit/skills/commit/references/git-identifier.md#Git識別子の扱い#4	外部コマンドやAPIがGit objectを40桁か64桁のOIDで要求する場合						未確定: 導入commit a16b7c43ed0eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「得に失敗した置換が空文字列へ展開したことを検出で」）		
+agent-toolkit/skills/commit/references/git-identifier.md#Git識別子の扱い#5	完全OIDを工程間へ伝播させると、人間が対象を判別しにくい値が記録とコンテキスト						未確定: 導入commit 67ab60e52d7bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「を判別しにくい値が記録とコンテキストを占有し、r」）		
+agent-toolkit/skills/commit/references/git-identifier.md#Git識別子の扱い#6	現在の作業ディレクトリとは別のリポジトリを操作するGitコマンドは、`git -						未確定: 導入commit 6c7b93e64324にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「リを操作するGitコマンドは、`git -C <」）		

@@ -1,0 +1,29 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/single-lane-process/SKILL.md##1	--- name: single-lane-process descriptio						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「レーンへ分けずメインが主作業ツリーでまとめて実装」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理#1	メインがAWIを取得し、計画、実装、実行レビュー、終端を同じ実行の中で行う。選定						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「./process-wi/SKILL.md`を使」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > agent-toolkit:process-wiの規定の読み替え#1	`agent-toolkit:process-wi`を名指しする条文は、pick						未確定: 導入commit 0cb102c3c664にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「rktreeに依存する場合を除き、本スキルの実行」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > agent-toolkit:process-wiの規定の読み替え#2	直接適用しないスキル側の文書は`agent-toolkit/skills/pro						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「n.parent.md`および`${CLAUDE」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > agent-toolkit:process-wiの規定の読み替え#3	本スキルから`agent-toolkit:plan-mode`を起動する場合は、						未確定: 導入commit 0cb102c3c664にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「で実装する。計画stemは`dd-HHmm_si」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > agent-toolkit:process-wiの規定の読み替え#4	本スキルでは、レーン担当と終端担当を使わないメインが、対象リポジトリの版数規範の						エージェント由来: 導入commit 1a87a7423455にtrailerあり（検索語「ンが、対象リポジトリの版数規範の単一worktr」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 処理の振り分け#1	処理対象の計画ファイル作成要否は`agent-toolkit:plan-mode						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「plan-mode`「計画ファイルの作成要否」で」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 処理の振り分け#2	計画を要する項目は、対象worktreeごとの部分集合に分け、同じ対象workt						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「it:plan-mode`の計画起草手順に従って」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 不変条件#1	- 作業ツリーへ書き込む主体はメインだけとする						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「作業ツリーへ書き込む主体はメインだけとする」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 不変条件#2	- 実行レビューは、実装を担当しない独立した担当が行う						未確定: 導入commit a16b7c43ed0eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「実行レビューは、実装を担当しない独立した担当が行」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 不変条件#3	- 人間由来の不採用範囲は、ユーザーの確認を得てから終端する						未確定: 導入commit a16b7c43ed0eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「由来の不採用範囲は、ユーザーの確認を得てから終端」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 不変条件#4	- 手順で固定した処理対象WIは、実行の終わりまでそのまま使う。`## 見つけた						エージェント由来: 導入commit 744fe2f58aabにtrailerあり（検索語「りまでそのまま使う。`## 見つけた既存不良の扱」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 不変条件#5	- 同じ対象worktreeの計画対象と直接実装対象は1件の実行レビューへまとめ						未確定: 導入commit ef08622188e6にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「件の実行レビューへまとめ、異なる対象worktr」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 見つけた既存不良の扱い#1	`agent-toolkit:process-wi`の`## 即時対応`はレーン						エージェント由来: 導入commit 744fe2f58aabにtrailerあり（検索語「レーンを前提とするため直接適用せず、本節の手順を」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 見つけた既存不良の扱い#2	- 公開（実行順8）の開始前に見つけた既存不良は、`agent-toolkit:						エージェント由来: 導入commit 744fe2f58aabにtrailerあり（検索語「実行順1と同じく`atk wi start-pr」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 見つけた既存不良の扱い#3	- 拡張原因分析を要さず1箇所で是正が完結する軽微な不良は、`agent-too						未確定: 導入commit 2f5d76fbbdd5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「nt-toolkit:bugfix`の`refe」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 見つけた既存不良の扱い#4	- 公開の開始後に見つけた不良のうち、公開を妨げるもの（CI失敗など）は公開の手						エージェント由来: 導入commit 744fe2f58aabにtrailerあり（検索語「の中で直す。公開を妨げないものは、同じ委譲で不良」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 見つけた既存不良の扱い#5	WI実装commitの完了ごとに、`agent-toolkit:commit`の						エージェント由来: 導入commit b1f0711c30faにtrailerあり（検索語「進捗ログへ残す。直接実装では引き継ぎ記録を用意し」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#1	実行レビューの起動では、証拠要求ありなら対応する実装担当の未判定検証記録JSON						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「未判定検証記録JSONの絶対パスを名前付き入力`」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#2	1. processable一覧と各WI本文を取得する。同じ時点で`atk wi						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「o`なら、依存元を同じ実行の処理対象WIへ加えて」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#3	2. `atk wi`操作のうち`adopt`または`reject`へ`--co						エージェント由来: 導入commit 0fc746477a8fにtrailerあり（検索語「rget_repo`を使う。共通前提は`agen」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#4	3. 計画対象がある場合は`agent-toolkit:plan-mode`のS						未確定: 導入commit ef08622188e6にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「treeごとの部分集合を各1つの計画ファイルへ起」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#5	4. 対応表が示すworktreeで、計画対象は`## 要件・外部仕様`、直接実						エージェント由来: 導入commit 623c5f602b37にtrailerあり（検索語「証し、シナリオ別のテスト名と合否を記録する。直接」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#6	5. 対象worktreeごとに1件の実行レビューを`${CLAUDE_PLUG						未確定: 導入commit ef08622188e6にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「、直接実装対象がある場合は対応するWIの記録を渡」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#7	6. 対象worktreeごとに`${CLAUDE_PLUGIN_ROOT}/s						未確定: 導入commit a6884bf814eaにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「-loop-coordination.md`に従」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#8	7. 各計画について`atk run-script plan-progress 						未確定: 導入commit aee25c96b052にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ss --`で完了判定を`## 進捗ログ`へ記録」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#9	8. 各WIを採否に応じて`adopt`または`reject`し、対象workt						エージェント由来: 導入commit 0fc746477a8fにtrailerあり（検索語「には実行順1の対応表の対象worktreeの絶対」）		
+agent-toolkit/skills/single-lane-process/SKILL.md#AWIの単一レーン処理 > 実行順#10	9. 一時的なレビュー指摘管理表を正式な保存または回収契約に従って処理し、`ag						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「契約に従って処理し、`agent-toolkit」）		

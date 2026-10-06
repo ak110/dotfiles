@@ -1,0 +1,5 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/wi-standards/references/managed-temp-bulk-show.md#複数件の`atk wi show`の取得#1	同一の対象リポジトリの複数のキュー項目を同一工程で取得する場合は、実行ツールの戻						エージェント由来: 導入commit d0b924e5fb46にtrailerあり（検索語「ow`は量によらず全量を新規managed-te」）		
+agent-toolkit/skills/wi-standards/references/managed-temp-bulk-show.md#複数件の`atk wi show`の取得#2	本文として採用するのは、終了コード0で、保存ファイルに要求した全ファイル名の`#						エージェント由来: 導入commit d0b924e5fb46にtrailerあり（検索語「イルに要求した全ファイル名の`### <ファイル」）		
+agent-toolkit/skills/wi-standards/references/managed-temp-bulk-show.md#複数件の`atk wi show`の取得#3	エージェント環境でない場合など`保存先:`の行が無く本文が直接表示された場合は、						エージェント由来: 導入commit d0b924e5fb46にtrailerあり（検索語「保存先:`の行が無く本文が直接表示された場合は、」）		
+agent-toolkit/skills/wi-standards/references/managed-temp-bulk-show.md#複数件の`atk wi show`の取得#4	対象リポジトリまたは取得条件が異なる場合は集合を分ける。 単一項目の取得、警告・						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「のその項目だけの再取得、およびUWIの回答確認で」）		

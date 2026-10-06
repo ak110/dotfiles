@@ -1,0 +1,3 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/user-confirmation-and-report/references/conflict-resolution.md#規範どうしが矛盾する場合の由来確定#1	本書は`agent-toolkit/rules/01-agent.md`「方針が						エージェント由来: 導入commit de5599b5d306にtrailerあり（検索語「1-agent.md`「方針が衝突する場合の優先」）		
+agent-toolkit/skills/user-confirmation-and-report/references/conflict-resolution.md#規範どうしが矛盾する場合の由来確定#2	規範どうしが矛盾する場合は、優先順位を適用する前に各条文の由来を確定する。 確定						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「る仕組みがある場合、その項目の`source`と」）		

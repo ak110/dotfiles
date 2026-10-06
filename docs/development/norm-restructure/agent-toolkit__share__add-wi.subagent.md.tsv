@@ -1,0 +1,32 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク#1	受領した要求ごとに、投入前に確定すべき事項を調査し、AWIまたはUWIの原稿と成						エージェント由来: 導入commit 251c7090b8d7にtrailerあり（検索語「Iの原稿と成立性の証拠を終端返却する。委譲元が検」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク#2	本タスクの完了報告と、本タスクで作成する成果物はすべて日本語で書く。本書が書式を						未確定: 導入commit b54b12423482にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「はすべて日本語で書く。本書が書式を固定する機械可」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 入力#1	```text 必須入力名: 投入する要求,引き継ぎ記録先 ```						エージェント由来: 導入commit 8a9a35bb8adcにtrailerあり（検索語「必須入力名: 投入する要求,引き継ぎ記録先」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 入力#2	- `投入する要求`: 要求ごとの、委譲元が付けた要求の識別子、`質問への回答の						未確定: 導入commit 2cd44eacc064にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「lkit:wi-standards`「投入と取得」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 入力#3	- 上流投入では、要求ごとに`元項目`（元項目のAWIファイル名）と`投入条件`						エージェント由来: 導入commit 4ea0200a65d0にtrailerあり（検索語「名）と`投入条件`も受領する。いずれも省略時の値」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 入力#4	- 投入済みAWIの更新と失敗後の再開では、要求ごとに更新または修復する項目の`						エージェント由来: 導入commit bd52ed61cbbaにtrailerあり（検索語「と失敗後の再開では、要求ごとに更新または修復する」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 入力#5	- `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと新規・継続の別。記						未確定: 導入commit 129804c91e98にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「容は`${CLAUDE_PLUGIN_ROOT}」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 入力#6	委譲プロンプトが要求する必須入力の完備は委譲元が起動前に確認するため、着手前の完						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「委譲元の確認と重複する）。入力の欠落を観測した場」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#1	構造化確認の証拠では、`text`と`user_response`の回答・自由記						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「由記述だけをユーザー逐語本文として扱う。`ass」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#2	通常AWIの本文には、原要求または要求固有の採否、実装、完成判定に必要な記述だけ						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「の採否、実装、完成判定に必要な記述だけを置く。一」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#3	`元項目`を受領した要求では、最初に`atk wi show <元項目> --t						エージェント由来: 導入commit 5aea41ae7fc4にtrailerあり（検索語「repo=<起動時のcwdが属するGit wor」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#4	`投入条件`が`無条件`でない要求では、その条件を観測可能な判定へ具体化し、投入						未確定: 導入commit 29e2ebd3a499にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「条件を観測可能な判定へ具体化し、投入先の実装、文」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#5	条件が成立した要求と`無条件`の要求では`投入前に確定すべき事項`と、`agen						未確定: 導入commit 2f5d76fbbdd5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「standards`の`references/d」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#6	依存を受領した要求では、`agent-toolkit:wi-standards`						エージェント由来: 導入commit ed747f95e601にtrailerあり（検索語「d-dependencies.md`の基準を対象」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#7	`確定済みの観測`を受領した要求では、記録位置で実行したコマンドと出力を読み、値						エージェント由来: 導入commit 5c819a918c23にtrailerあり（検索語「standards`「投入と取得」手順1の実行結」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#8	`確定した要件`は起草者が変えない。守れないと分かった要求は原稿を作成せず`ne						エージェント由来: 導入commit acc86153e6faにtrailerあり（検索語「-completion.md`が求める`agen」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#9	- 覆す案が`確定した要件`の対象、範囲および外部可視の結果の内側で成立し技術的						エージェント由来: 導入commit bdc28e9b38d3にtrailerあり（検索語「側で成立し技術的に優れる場合は、その案で原稿を起」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#10	- 覆す案が対象、範囲または外部可視の結果を`確定した要件`の外へ広げるか変える						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「の対象とし、`続行できない理由`へ前提を守る案と」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#11	確定した内容を根拠として、AWIは`agent-toolkit:wi-stand						エージェント由来: 導入commit 71bbcb627aaaにtrailerあり（検索語「比較し、消費側の結果と、その機構を省く既存操作の」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 調査と本文の起草#12	原文と現物の調査、優先順位の適用を経ても要求の採否または実現方式について認識の違						エージェント由来: 導入commit bdc28e9b38d3にtrailerあり（検索語「合は、その要求の原稿を作成せず`needs_es」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 原稿と証拠の返却#1	各要求の本文を他の要求から独立して`agent-toolkit:wi-stand						エージェント由来: 導入commit b57a1c015a75にtrailerあり（検索語「ンスへ適用する。この読み直しでは、完成条件が必須」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 原稿と証拠の返却#2	新規・既存更新、AWI・UWIのいずれも保存前にこの結果を返却する。修正は返され						エージェント由来: 導入commit 251c7090b8d7にtrailerあり（検索語「された不一致だけを同じ原稿へ反映し、原稿と証拠を」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 投入#1	同じthreadで`保存開始`と検収済みの要求識別子を受領した場合だけ、その集合						エージェント由来: 導入commit 251c7090b8d7にtrailerあり（検索語「致があれば保存せず同じ原稿の修正へ戻す。先行項目」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 投入#2	エージェントが新しい通常AWIを生成する場合の重複判定も同スキルに従う。 要求ご						エージェント由来: 導入commit bd52ed61cbbaにtrailerあり（検索語「i show`で取得した現行本文を基に書き直し、」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 出力 > 起草の返却#1	調査と起草の出口で、次の形式だけを返して終端する。原稿と証拠の絶対パスは実在する						エージェント由来: 導入commit 9d9d25255c92にtrailerあり（検索語「形式だけを返して終端する。原稿と証拠の絶対パスは」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 出力 > 起草の返却#2	```text 状態: drafted | needs_escalation 起						未確定: 導入commit 29e2ebd3a499にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「 condition_not_met | nee」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 出力 > 起草の返却#3	入力の要求集合を重複なく返す。全要求が`drafted`か`condition_						エージェント由来: 導入commit 251c7090b8d7にtrailerあり（検索語「`needs_escalation`とする。`d」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 出力 > 保存の返却#1	検収後に指示された要求の保存を終えてから、次の形式だけを返す。`ファイル名`には						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「。`ファイル名`には投入結果として得た文字列をそ」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 出力 > 保存の返却#2	```text 状態: completed | needs_escalation						エージェント由来: 導入commit 4ea0200a65d0にtrailerあり（検索語「から得た根拠、不成立の条件と現物や実行結果から得」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 出力 > 保存の返却#3	入力の各要求を`投入結果`へ重複なく1回ずつ記録する。投入に成功した要求は`結果						エージェント由来: 導入commit 5aea41ae7fc4にtrailerあり（検索語「とし、条件が成立しない要求は`condition」）		
+agent-toolkit/share/add-wi.subagent.md#WI投入担当タスク > 出力 > 保存の返却#4	想定外事象の追加行は`agent-toolkit/share/rules-sub						未確定: 導入commit 164ba7dfde3fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「nt-toolkit/share/rules-s」）		

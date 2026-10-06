@@ -1,0 +1,30 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク#1	実装済み差分を要件・外部仕様の水準で1段階レビューする。最初に`agent-to						エージェント由来: 導入commit 9107e2a8ceddにtrailerあり（検索語「`を起動し、変更ファイルの成果物種別ごとに同スキ」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 入力#1	```text 必須入力名: レビュー基準,引き継ぎ記録先,未判定検証記録,完成						エージェント由来: 導入commit 9b6348ab58b7にtrailerあり（検索語「D,原因commitOID,開始時のHEAD,レ」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 入力#2	`レビュー基準`は`計画`、`CI記録`、`WI`のうち1つ以上を半角読点区切り						未確定: 導入commit 79856a739dc9にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「きの独立した条項として生成する。変更成果物に適用」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 操作区分#1	実行レビュー担当が実行できる操作は、ファイルの読取と検索、Git状態の取得、レビ						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「dence`、`reviewed_head`を更」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 操作区分#2	対象worktree、その開発環境、コンテナー、Git管理外のデータおよび実行ホ						未確定: 導入commit 4c9e3ef08e4dにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ocker compose`、ファイルの削除と移」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 操作区分#3	対象リポジトリのコードを検証するコマンドは、そのリポジトリの`AGENTS.md						未確定: 導入commit 63c9ff044984にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「リポジトリの`AGENTS.md`、`Makef」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 差分とWIの取得#1	変更前の公開契約と比べる開始時点は、`開始時のHEAD`を受領した場合はその値と						未確定: 導入commit 79856a739dc9にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「した条項、受領した`review_contrac」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 差分とWIの取得#2	- `計画`: `## 概要`、`## 実施内容`、`## 要件・外部仕様`、`						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「容`、`## 要件・外部仕様`、`## 恒久化・」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 差分とWIの取得#3	- `CI記録`: 委譲プロンプトで受領したCI記録の各項目						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「I記録`: 委譲プロンプトで受領したCI記録の各」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 差分とWIの取得#4	- `WI`: 要求、完成条件、由来および採否						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「`WI`: 要求、完成条件、由来および採否」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 差分とWIの取得#5	対象WI集合は、委譲プロンプトで受領したWI記録と、`計画`を併せて受領した場合						エージェント由来: 導入commit 992bc2a75c8eにtrailerあり（検索語「る（努力目標。重複取得を避ける）。対象WIと一致」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 差分とWIの取得#6	計画の条項を根拠に修正指摘を登録する前に、その条項と対象WIの明示条件が両立する						エージェント由来: 導入commit 3dfaef8dbc50にtrailerあり（検索語「の行がその否定を根拠に該当提案を`不採用`とした」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 差分とWIの取得#7	レビュー観点は`agent-toolkit:review-standards`の						エージェント由来: 導入commit 1db70dbe4e0cにtrailerあり（検索語「質問は`source`の値を問わず回答対象から外」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 指摘の記録#1	指摘を登録するか完成条件証拠へ記入する直前に、`agent-toolkit:re						エージェント由来: 導入commit a2f7f518818cにtrailerあり（検索語「g.md](../skills/review-s」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 再レビュー#1	修正後の再レビューでは同じsessionに保持したレビュー指摘管理表、開始時点の						エージェント由来: 導入commit 06bd6236adabにtrailerあり（検索語「`round`と任意の`review_contr」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 再レビュー#2	各既存指摘について、現在の成果物とレビュー指摘管理表へ記録された応答・検証証拠を						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「。修正が新しい違反を生じさせた場合は新しい指摘と」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 再レビュー#3	同じthreadの再レビューと引き継ぎ再レビューのいずれでも、`完成条件証拠`の						エージェント由来: 導入commit 2cdca006c0abにtrailerあり（検索語「判定の代わりにはならない。そのラウンドで解消済み」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#1	返却前に探索結果の全指摘を走査結果と比較し、レビュー指摘管理表の対応行または根拠						エージェント由来: 導入commit 68a42930ff03にtrailerあり（検索語「物ごとの識別子・そのラウンドで読んだ本文の複製パ」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#2	返却前の工程は次の順序で完了する。						エージェント由来: 導入commit 085a2061a21cにtrailerあり（検索語「返却前の工程は次の順序で完了する。」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#3	1. `完成条件証拠`の未記入行を本担当が原文と検証資料から判定し、`outco						エージェント由来: 導入commit 7a3845be1280にtrailerあり（検索語「idence`・`reviewed_head`を」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#4	2. 実装差分について裏付けた指摘だけをレビュー指摘管理表へ登録し、表の構造を確						エージェント由来: 導入commit e90fd7a14012にtrailerあり（検索語「ューイーが記入する応答を待つために工程を止めず、」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#5	3. 次のコマンドで証拠を確かめて返却本文を生成し、標準出力、標準エラーと終了状						エージェント由来: 導入commit 085a2061a21cにtrailerあり（検索語「継続セッションを返した場合は終端まで観測し、終了」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#6	```bash atk run-script exec-review-evide						エージェント由来: 導入commit 2cdca006c0abにtrailerあり（検索語「ァイル名...> --expected-head」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#7	計画を受領した場合は全計画を`--plan <絶対パス>`で反復指定する。WI・						エージェント由来: 導入commit e90fd7a14012にtrailerあり（検索語「対パスで受領した引き継ぎ記録を使う場合はそのパス」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#8	同じコマンドは、両配列の全達成行（指定WI集合外の行と計画由来の行を含む）につい						エージェント由来: 導入commit f357d9909c43にtrailerあり（検索語「commit、リポジトリ外の絶対パスは現在の実フ」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#9	現在roundに未応答が1件以上ある場合は、証拠の形式・原文・HEADを確認した						エージェント由来: 導入commit e90fd7a14012にtrailerあり（検索語「置き、延期adoptでは`終端区分: 延期ado」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#10	生成する返却は次の5行とし、証拠要求ありでは6行目へ`完成条件証拠のパス: <完						エージェント由来: 導入commit df3b2ce67d5dにtrailerあり（検索語「パスのJSON配列であり、0件では`[]`とする」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#11	```text 状態: completed | needs_escalation						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「AD: <レビューした対象HEADの7文字以上の」）		
+agent-toolkit/share/exec-review.subagent.md#実行レビュータスク > 出力#12	複数のレビュー基準を受領した場合の`未解決の指摘数`は全ての基準について登録した						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「す。委譲元への`SendMessage`での送信」）		

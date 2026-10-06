@@ -1,0 +1,20 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細#1	日本語環境（Windows／Linux混在）で開発する際の陥穽と対処。						エージェント由来: 導入commit bc3411bbf030にtrailerあり（検索語「（Windows／Linux混在）で開発する際の」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 基本原則#1	- 入出力境界でエンコーディングを明示する。内部処理ではUTF-8を基本とする						エージェント由来: 導入commit 0e3b9a11a31aにtrailerあり（検索語「エンコーディングを明示する。内部処理ではUTF-」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 基本原則#2	- ランタイムが自動で選ぶ文字コードに依存しない: 日本語WindowsのACP						エージェント由来: 導入commit 4ea0200a65d0にtrailerあり（検索語「字コードに依存しない: 日本語WindowsのA」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 基本原則#3	- ライブラリ提供フィールドの暗黙加工: stdlib・サードパーティライブラリ						未確定: 導入commit 3a702a979461にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ドの暗黙加工: stdlib・サードパーティライ」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > BOMの扱い#1	- 読み込み時はBOM有無を両方許容する						未確定: 導入commit ef9b3d83397fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「読み込み時はBOM有無を両方許容する」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > BOMの扱い#2	- 出力時はBOMを付けない（Excelに渡すCSV等、対象側が要求する場合のみ						エージェント由来: 導入commit c9340cd5028fにtrailerあり（検索語「けない（Excelに渡すCSV等、対象側が要求す」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 日本語テキストの自動判定順序#1	BOM検出→ISO-2022-JP特有エスケープシーケンスの整合性検証→UTF-						未確定: 導入commit b57b4909b219にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ーケンスの整合性検証→UTF-8での厳格なデコー」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > ZIPファイル名の扱い#1	General Purpose Bit FlagのBit 11がセットされている						未確定: 導入commit ef9b3d83397fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「作成元が日本語Windows等である根拠がある場」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > ZIPファイル名の扱い#2	Pythonの`zipfile.ZipInfo`を扱う場合、`filename`						未確定: 導入commit 3a702a979461にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「fo`を扱う場合、`filename`は`_sa」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > Unicode正規化#1	比較・検索・一意性判定に使うキーはドメイン要件に応じてNFC等の正規化形式を用い						未確定: 導入commit ef9b3d83397fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「種のNFD相当でファイル名を保存し、APFSは正」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 書込ツールの改行・BOM保全#1	ホストの書込ツールごとの改行・BOM・文字コードの扱いと、CRLF・BOM・非U						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「CRLF・BOM・非UTF-8のファイルを作成・」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 書込ツールの改行・BOM保全#2	- Claude CodeのRead・Edit・WriteはUTF-8を前提とし						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「・WriteはUTF-8を前提とし、非UTF-8」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 書込ツールの改行・BOM保全#3	- EditはCRLF改行とUTF-8 BOMを透過的に維持するため、既存ファイ						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「TF-8 BOMを透過的に維持するため、既存ファ」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 書込ツールの改行・BOM保全#4	- Writeは常にLF改行・BOMなしで書くため、CRLFとBOMが消失する。						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「とBOMが消失する。CRLFやBOMを要するファ」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 書込ツールの改行・BOM保全#5	- CRLF・BOM付きの新規ファイルはBashで書く（例: `printf '						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「'\xEF\xBB\xBF' > file &&」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 書込ツールの改行・BOM保全#6	- 非UTF-8のファイルは`iconv`でUTF-8へ変換して編集し、元の文字						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「でUTF-8へ変換して編集し、元の文字コードへ戻」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > 書込ツールの改行・BOM保全#7	- `.gitattributes`の`eol=crlf`は改行だけを管理し、B						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「utes`の`eol=crlf`は改行だけを管理」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > その他#1	- バイト長と文字長の混同防止: バイト長と文字数（コードポイント数・書記素クラ						未確定: 導入commit ef9b3d83397fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「: バイト長と文字数（コードポイント数・書記素ク」）		
+agent-toolkit/skills/writing-standards/references/encoding.md#文字エンコーディングの詳細 > その他#2	- Unicode特殊文字のセキュリティ: Bidi制御文字（Trojan So						エージェント由来: 導入commit faabb34ca97aにtrailerあり（検索語「ティ: Bidi制御文字（Trojan Sour」）		

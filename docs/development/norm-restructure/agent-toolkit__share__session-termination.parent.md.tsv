@@ -1,0 +1,22 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領#1	```text 起動対象: session-termination.subage						未確定: 導入commit b6ae20128106にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「session-termination.suba」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領#2	`agent-toolkit:process-wi`の公開工程で、メインが本書を						未確定: 導入commit b6ae20128106にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「/share/session-terminati」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 起動方法#1	`agents_server`の`start`で終端担当を1件起動する。 `su						未確定: 導入commit b6ae20128106にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「N_ROOT}/share/session-te」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 起動前の前提#1	全レーンの終端を確認し、対象リポジトリの主作業ツリーへ書き込む主体が自身だけであ						未確定: 導入commit cdb161c2100bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「作業ツリーであり、現在branchが公開対象のベ」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 渡す入力#1	- `bump種別`: レーン数にかかわらず、今回の未公開差分に対して確定した最						エージェント由来: 導入commit 1a87a7423455にtrailerあり（検索語「根拠の要約。AWI起草時の単独区分より上位の変更」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 渡す入力#2	- `プロジェクト固有の公開後の操作`: プロジェクト固有の公開後の操作がある場						エージェント由来: 導入commit b2e98a687d6aにtrailerあり（検索語「象と依存順。長時間工程の待機対象と、親が別の実行」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 渡す入力#3	- `延期adopt`: 延期adoptがある場合だけ、対象AWIファイル名、先						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「とcommit`で検収した実装commitのOI」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 渡す入力#4	- `公開対象のadopt済みAWI`: この公開に含むcommitが終端したA						エージェント由来: 導入commit 82c25d454538にtrailerあり（検索語「commitが終端したAWIファイル名の集合。該」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 渡す入力#5	- `引き継ぎ記録先`: 渡さない。サーバーが`（新規）`の記録先を用意し、その						エージェント由来: 導入commit 5e49e03855bfにtrailerあり（検索語「の担当へ引き継ぐ場合の書式は`agent-too」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 渡す入力#6	対象リポジトリ、ベースbranch名、プロジェクト規範は委譲先が`cwd`とGi						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「ジェクト固有の公開後の操作、延期adopt、公開」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#1	`終端完了`に続く8行を受領し、次のとおり確認する。確認の入力は受領した8行と現						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「判定できる）。`延期後にadoptしたAWI`の」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#2	- `git -C <対象リポジトリの絶対パス> rev-parse --sho						エージェント由来: 導入commit cf2e90cf0c57にtrailerあり（検索語「 <対象リポジトリの絶対パス> rev-pars」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#3	- 全体検証を確認する。`全体検証`は`CI判定`または`ローカル成功`のいずれ						未確定: 導入commit b6ae20128106にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「on-termination.subagent.」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#4	- `CIの結果`が`成功`であり、対象リポジトリのCI照会手段が`CIで検証し						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「対象リポジトリのCI照会手段が`CIで検証したc」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#5	- `CIで検証したcommit`と`ベースbranchのHEAD`が異なり、`						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「chのHEAD`自体のCI成功を前項で検収してい」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#6	- `ベースbranchの状態`が`公開済み`である - `agent-tool						エージェント由来: 導入commit 246fc0f10806にtrailerあり（検索語「i.md`「公開状態の4項目」を現在のGit状態」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#7	- `版数`が`bump不要`でない場合は、対象リポジトリの版数規範が定める定義						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「い場合は、対象リポジトリの版数規範が定める定義フ」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#8	- `実行した終端工程`が、委譲プロンプトで終端担当の実行対象としたプロジェクト						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「たプロジェクト固有の公開後の操作を過不足なく挙げ」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#9	- `延期後にadoptしたAWI`のファイル名集合が、起動時にOIDまたは空文						エージェント由来: 導入commit 4b9d42599021にtrailerあり（検索語「の部分集合であることを確認する。差集合は反映後の」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#10	- 延期`adopt`対象がある場合だけ、全対象のファイル名を渡して`atk w						未確定: 導入commit 6034c3c6c6d5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「る。終了コード0と、出力の`### <ファイル名」）		
+agent-toolkit/share/session-termination.parent.md#終端担当の起動と受領 > 受領と検収#11	各回の返却をその時点のベースbranch、追跡refおよびCI結果と比べる。全て						エージェント由来: 導入commit 7676652a29fbにtrailerあり（検索語「agent-toolkit/skills/pro」）		

@@ -1,0 +1,3 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/user-confirmation-and-report/references/codex-format.md#Codexでの質問表示#1	ユーザー確認の方法は`agent-toolkit/share/rules-mai						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「x.md`が定める。同書の条件に合う構造化質問が」）		
+agent-toolkit/skills/user-confirmation-and-report/references/codex-format.md#Codexでの質問表示#2	```text **Q1** - **<質問タイトル>**: <質問本文。複数段						エージェント由来: 導入commit ee2058da56e5にtrailerあり（検索語「選択肢の評価が依存する技術的事実（作成する主体、」）		

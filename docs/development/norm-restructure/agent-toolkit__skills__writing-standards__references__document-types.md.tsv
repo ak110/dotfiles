@@ -1,0 +1,20 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#1	文書が後続の読者へ何を伝えるかを決め、参照用、作業用、経緯記録の用途を選ぶ。ファ						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「様や使い方を残し、作業中の進捗は作業用文書で扱う」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#2	次の表は読者と役割を選ぶための案内であり、見出しのテンプレートではない。各種類の						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「あり、見出しのテンプレートではない。各種類の形式」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#3	| README | エンドユーザーと開発者が使い始める参照用 | 対象、できる						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「照用 | 対象、できること、導入の前提、主要な操」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#4	| 利用ガイド・運用手順 | エンドユーザーと開発者が操作を確かめる参照用 | 						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「開発者が操作を確かめる参照用 | 操作の前提、手」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#5	| 構成の説明 | 開発者と保守担当が全体構成を把握する参照用 | 配置、責務と						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「全体構成を把握する参照用 | 配置、責務と境界、」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#6	| 設計の記録 | 開発者と保守担当が理由を引く参照用 | 制約、構造、選択理由						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「を引く参照用 | 制約、構造、選択理由、退けた案」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#7	| 技術文書（技術記事・設計書・技術解説） | 技術の使い方や仕組みを知りたい読						エージェント由来: 導入commit 5e0a9ec3e363にtrailerあり（検索語「い読者が再現する参照用 | 入力、コマンド、設定」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#8	| エージェント向け文書 | コーディングエージェントが判断に使う参照用 | 読						エージェント由来: 導入commit 89a36c643cd7にtrailerあり（検索語「gent-documents-basics.md」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#9	| 方針の由来の記録 | 後続の開発者とエージェントが過去の判断を調べる記録 |						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「ェントが過去の判断を調べる記録 | 決めた内容と」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#10	| 障害の記録 | 後続の開発者とエージェントが再発防止に使う記録 | 観測事象						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「とエージェントが再発防止に使う記録 | 観測事象」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#11	| 検証記録 | 後続の開発者とエージェントが技術判断を再検証する記録 | 観測						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「ントが技術判断を再検証する記録 | 観測条件、結」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#12	| 計画ファイル | 実行担当が変更を進める作業用 | 要件、変更、検証、終端と						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「 要件、変更、検証、終端と進捗の対応。形式は`a」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#13	| AWI・UWI | ユーザーと実行担当が要求と確認を共有する作業用 | AW						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「| AWIの対象と完成条件、UWIの問いと判断材」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#14	| 実行レビュー指摘管理表 | 実装担当とレビュー担当が是正を追跡する作業用 |						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「作業用 | 指摘、根拠、採否と対応結果。形式は`」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#15	| コミットメッセージ | 開発者が変更目的を履歴からたどる記録 | 何をなぜ変						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「録 | 何をなぜ変更したかを件名と必要な本文で示」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#16	| 業務・仕様文書（仕様書・業務報告・提案書） | 読者が判断や行動に移るための						エージェント由来: 導入commit 5e0a9ec3e363にtrailerあり（検索語「連絡と参照用 | 決める主体、条件と結果、採否の」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#17	| PR・MRの説明 | レビュアーと関係者へ審査を依頼する連絡 | 変更の目的						エージェント由来: 導入commit 5e0a9ec3e363にtrailerあり（検索語「writing.md`「文書種別ごとの注意点」の」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#18	| Release本文 | エンドユーザーと開発者へ配布済みの変更を伝える記録 						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「ドユーザーへ届く変更、必要な操作と注意点。投稿前」）		
+agent-toolkit/skills/writing-standards/references/document-types.md#文書の役割と種類#19	| 体験を述べる文章（エッセイ・体験記・個人ブログ） | 本人の経験と感想を読者						エージェント由来: 導入commit 5e0a9ec3e363にtrailerあり（検索語「伝える文章 | 本人が述べた状況、感覚、感想と経」）		

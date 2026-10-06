@@ -1,0 +1,29 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え#1	通常commitの検証、stage、messageは親スキルに従う。 本ファイル						未確定: 導入commit e346aed552caにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「Codeのシステムプロンプト「常に新規コミットを」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 履歴確認の起動形#1	本書が履歴の確認として求める`git log`は次の範囲限定の起動形で実行する。						未確定: 導入commit 6ac8ccebe95eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「消した後の継続の直前では、その基準を`## fi」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 修正方法の選択#1	autosquashの単位は、レビュー結果を一意に示す識別子（レビュー指摘管理表						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「up!`、`squash!`または`amend!」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 修正方法の選択#2	レビュー修正は、履歴統合が明確に成立する場合だけamendまたはfixupを選び						エージェント由来: 導入commit 385f12f95fdcにtrailerあり（検索語「めず、変更順と箇所から中間commitの公開契約」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 修正方法の選択#3	通常実装モードのレビュー修正担当がレビュー指摘管理表と現行履歴を確認し、採用指摘						未確定: 導入commit 6c7b93e64324にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「Dと実装単位commitの7文字以上の一意な短縮」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 修正方法の選択#4	過去単位が複数ある場合は、履歴順に1単位ずつ、その単位へ帰属する修正差分だけを適						エージェント由来: 導入commit 385f12f95fdcにtrailerあり（検索語「commitの差分とメッセージを一対一で比較する」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 修正方法の選択#5	同じ実装単位で変更目的が同じ修正は、同じ件名のcommitを範囲内へ増やさず、次						エージェント由来: 導入commit 9784ec13ba84にtrailerあり（検索語「end、それより前のcommitで件名が範囲内で」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 修正方法の選択#6	- 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`						未確定: 導入commit 6034c3c6c6d5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「動形の`git log`を単独のBash呼び出し」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 修正方法の選択#7	- それより前の未プッシュコミットを完成させる修正は、統合後のメッセージ変更要否						エージェント由来: 導入commit 88b04ae02bc0にtrailerあり（検索語「どを追加または更新する場合は`git commi」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 修正方法の選択#8	- 上記の例外に該当しない独立した変更目的を持つ修正、または統合先に適する未プッ						エージェント由来: 導入commit e3c704e675fbにtrailerあり（検索語「作成する。`agent-toolkit/rule」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > WI実装commitの対応の継承#1	WI実装commitの履歴を変更した担当は、`## 操作前後の確認`の検収を終え						エージェント由来: 導入commit b1f0711c30faにtrailerあり（検索語「mitのAWI集合を継承するため、元commit」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > WI実装commitの対応の継承#2	```text atk run-script plan-progress -- 						エージェント由来: 導入commit b1f0711c30faにtrailerあり（検索語「ted-step <工程> --result <」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > WI実装commitの対応の継承#3	計画なしでは`--handoff`と対象集合全件の`--allowed-awi`						エージェント由来: 導入commit 45d53b61c178にtrailerあり（検索語「新OIDの不在は生成側で補う。現在の対応の取得は」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > fixupの実行上の制約#1	- `amend:`・`reword:`のいずれも件名が`amend! <統合先						エージェント由来: 導入commit 0d2b35b1822dにtrailerあり（検索語「d:`のいずれも件名が`amend! <統合先の」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > fixupの実行上の制約#2	- エディターへ渡されるバッファは1行目が`amend! <統合先の件名>`、 						エージェント由来: 導入commit 88b04ae02bc0にtrailerあり（検索語「先の全メッセージが続く構造であり、差し替えてよい」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > fixupの実行上の制約#3	- `--fixup`は`-m`・`-F`と併用できない （`fatal: op						エージェント由来: 導入commit 0d2b35b1822dにtrailerあり（検索語「 '--fixup:reword' cannot」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > fixupの実行上の制約#4	- autosquashを実行する場合は、fixup作成前に最古fixup対象と						エージェント由来: 導入commit 9784ec13ba84にtrailerあり（検索語「に定まる。`amend:`・`reword:`の」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > fixupの実行上の制約#5	- fixup作成直後は、対象OIDから得た統合先件名と生成commitの制御件						未確定: 導入commit 89d13b0bca46にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「件名と生成commitの制御件名を`git lo」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > fixupの実行上の制約#6	- 統合は`GIT_SEQUENCE_EDITOR=: git rebase -						エージェント由来: 導入commit c861c997c050にtrailerあり（検索語「t rebase -i --autosquash」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > fixupの実行上の制約#7	- `amend:`または`reword:`では統合先の既存メッセージと異なるt						未確定: 導入commit 4cef410f8cf0にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「reword:`では統合先の既存メッセージと異な」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 失敗時の扱い#1	本節の`pre_fixup`・`fixup`・`autosquash`・`ame						未確定: 導入commit 3e2200b3ac28にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「_PLUGIN_ROOT}/share/exec」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 失敗時の扱い#2	`pre_fixup`・`fixup`・`autosquash`・`amend`						未確定: 導入commit e963e00c1048にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「を維持できることを条件とする。解消したパスだけを」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > merge進行中の退避#1	`git merge`進行中の退避は、別パスへの`cp`または別ブランチ退避で行						未確定: 導入commit 6ac8ccebe95eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ランチ退避で行う。merge進行中の`git s」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > プッシュ済み判定#1	`git fetch --all --prune`後に`git for-each						エージェント由来: 導入commit dc2e50a89a95にtrailerあり（検索語「されていない未統合のfeature branch」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 操作前後の確認#1	- fixupとamendは、次の5つを1つの工程として順に完了してからcomm						未確定: 導入commit 30f411aa102fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「t status --short`で未stage」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 操作前後の確認#2	- 操作直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独						未確定: 導入commit 6034c3c6c6d5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「リ相対パス>`または`git log -p -n」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 操作前後の確認#3	- autosquash後は、件名の形式によらず次の4点を確認する。比較の基準は						エージェント由来: 導入commit 4588e4b0b041にtrailerあり（検索語「mmitが0件である。基準の範囲から件名が制御語」）		
+agent-toolkit/skills/commit/references/history-rewrite.md#履歴書換え > 操作前後の確認#4	- 書き換え後は各中間`HEAD`へ変更範囲の検証を再実行し、`git log 						エージェント由来: 導入commit 88b04ae02bc0にtrailerあり（検索語「認し、stage状態と`git show HEA」）		

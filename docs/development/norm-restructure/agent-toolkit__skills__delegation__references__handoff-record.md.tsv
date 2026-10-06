@@ -1,0 +1,8 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/delegation/references/handoff-record.md#多段工程の引き継ぎ記録#1	本書は`agent-toolkit/share/rules-subagent.m						未確定: 導入commit 6aad9fbe4c87にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「nces/base-contract.md`から」）		
+agent-toolkit/skills/delegation/references/handoff-record.md#多段工程の引き継ぎ記録#2	委譲プロンプトが`引き継ぎ記録先`として絶対パスと新規・継続の別を示した委譲先は						未確定: 導入commit ccb18982e071にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「た後に起動する担当が、そのファイルの1回の読み取」）		
+agent-toolkit/skills/delegation/references/handoff-record.md#多段工程の引き継ぎ記録#3	- 確認済みの作業ツリーの絶対パスと、残る工程が使用する成果物の用途、絶対パスお						エージェント由来: 導入commit c02c25009040にtrailerあり（検索語「絶対パスと、残る工程が使用する成果物の用途、絶対」）		
+agent-toolkit/skills/delegation/references/handoff-record.md#多段工程の引き継ぎ記録#4	- 計画なしでWI実装commitを作成した場合は、`agent-toolkit						エージェント由来: 導入commit 45d53b61c178にtrailerあり（検索語「`SKILL.md`「WI実装commitの対応」）		
+agent-toolkit/skills/delegation/references/handoff-record.md#多段工程の引き継ぎ記録#5	- 存続中の外部プロセスおよびバックグラウンドタスクの種別、安定した実行識別子な						エージェント由来: 導入commit 0f87a2a59f38にtrailerあり（検索語「よびバックグラウンドタスクの種別、安定した実行識」）		
+agent-toolkit/skills/delegation/references/handoff-record.md#多段工程の引き継ぎ記録#6	- 委譲先が`agents_server`で起動した`session_id`と、						エージェント由来: 導入commit 89e46e3af590にtrailerあり（検索語「起動した`session_id`と、各`sess」）		
+agent-toolkit/skills/delegation/references/handoff-record.md#多段工程の引き継ぎ記録#7	初回の記録では、委譲先自身がそのファイルを作成するため、現行内容を取得せずに書き						未確定: 導入commit ccb18982e071にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「に残ると、後続の担当が成果物とGit状態の再走査」）		

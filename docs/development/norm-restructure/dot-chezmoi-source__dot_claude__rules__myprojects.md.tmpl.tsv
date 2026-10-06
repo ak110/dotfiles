@@ -1,0 +1,18 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl##1	<atk-auto source="dotfiles" kind="rules"						未確定: 導入commit 123bb2b88106にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「s" path=".chezmoi-source」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md#1	{{- $hostname := lower .chezmoi.hostname						未確定: 導入commit 8dad6a503fdaにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ryale-container: 全プロジェクト」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md#2	以下の2プロジェクトは同一作者によるWindowsアプリである。						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「プロジェクトは同一作者によるWindowsアプリ」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md#3	- `D:\VC\_Develop\gv`						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「`D:\VC\_Develop\gv`」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md#4	- `D:\VC\_Develop\lc`						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「`D:\VC\_Develop\lc`」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md#5	開発言語は異なるが、ツールチェインやドキュメント構成は揃える方針とする。 片方を						エージェント由来: 導入commit bc3411bbf030にtrailerあり（検索語「場合、もう片方への変更要否を確認し、必要ならユー」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md#6	{{- else if has $hostname (list "euryale						未確定: 導入commit 8dad6a503fdaにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「tname (list "euryale" "e」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期#1	以下のディレクトリは全て同一作者によるプロジェクト。 ツールチェインやドキュメン						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「下のディレクトリは全て同一作者によるプロジェクト」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期#2	全プロジェクトに反映する可能性のある変更時と、姉妹プロジェクト（gv・lc含む）						エージェント由来: 導入commit 4d199b4e9b50にtrailerあり（検索語「ting-standards`の`referen」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期 > プロジェクト一覧#1	| `~/dotfiles` | dotfiles・ルール原本管理 | Pyth						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「原本管理 | Python + Shell + 」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期 > プロジェクト一覧#2	| `~/pyfltr` | Python CLIツール | Python | 						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「n CLIツール | Python | Linu」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期 > プロジェクト一覧#3	| `~/pytilpack` | Pythonライブラリ | Python |						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「honライブラリ | Python | Linu」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期 > プロジェクト一覧#4	| `~/smpr` | Python CLIツール（非公開・個人用） | Py						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ール（非公開・個人用） | Python | L」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期 > プロジェクト一覧#5	| `~/glatasks` | TypeScript Webシステム | Ty						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「 Webシステム | TypeScript + 」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期 > プロジェクト一覧#6	| `~/gv` | Windows用画像ビューアー | Rust | Wind						エージェント由来: 導入commit bc3411bbf030にtrailerあり（検索語「 Windows | このPCでは開発できない（」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期 > プロジェクト一覧#7	| `~/lc` | Windows用コマンドラインランチャー | C# (.N						未確定: 導入commit 09e25d56a27fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ET) | Windows | このPCでは開発」）		
+.chezmoi-source/dot_claude/rules/myprojects.md.tmpl#myprojects.md > プロジェクト間の同期 > プロジェクト一覧#8	{{- end }} </atk-auto>						エージェント由来: 導入commit 740b5fa622aeにtrailerあり（検索語「</atk-auto>」）		

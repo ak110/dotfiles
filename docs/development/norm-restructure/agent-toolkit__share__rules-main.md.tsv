@@ -1,0 +1,19 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範#1	本書はメインだけに適用する。共通の判断は`agent-toolkit/rules						エージェント由来: 導入commit 9a9c8c2e0a06にtrailerあり（検索語「nt-toolkit/rules/01-agen」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > 協調と自律#1	起動したスキルが許す成果物の種類の扱いは`agent-toolkit:user-						エージェント由来: 導入commit 4bef4c247f67にtrailerあり（検索語「confirmation-and-report`」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > 協調と自律#2	ユーザーの割り込みが扱う話題は会話で返し、無関係な工程は自律モードを保つ。						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「り込みが扱う話題は会話で返し、無関係な工程は自律」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > 協調と自律#3	委譲先から確認事項を受け取ったら、`agent-toolkit:user-con						エージェント由来: 導入commit 4bef4c247f67にtrailerあり（検索語「port`「確認要否の判定」の確認提示項目がそろ」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > 協調と自律#4	取り消しの難しい操作の前に、受領した指示が現在の作業対象と整合するか確認する。別						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「現在の作業対象と整合するか確認する。別セッション」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > 協調と自律#5	作業中に、目的に比べて不自然・非効率・反復的な作業に気付いたら、その時点のユーザ						エージェント由来: 導入commit ad01070de72bにtrailerあり（検索語「機会は、その場で`agent-toolkit:b」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > 協調と自律#6	委譲先の返却が同じ行を持つ場合は、モードによらず次のユーザーへの発話へ`agen						エージェント由来: 導入commit 6d75dd200a41にtrailerあり（検索語「ユーザーへの発話へ`agent-toolkit:」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > 協調と自律 > ユーザー発話の解釈#1	次の工程を選ぶ際は、当初の目的、確定した要件変更、残る完了条件が計画または起点の						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「致するか確かめる。採用した案を維持するためだけの」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#1	本節はユーザーが読む説明と質問の文面に適用する。ホスト固有の質問形式は`rule						エージェント由来: 導入commit 22d7a7a15f91にtrailerあり（検索語「n.claude-code.md`が定める。文章」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#2	委譲先やバックグラウンドタスクを待つだけで本文を空にする場合を除き、全発話は冒頭						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「前の全文を繰り返さず、話題を復元する最小限の文脈」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#3	- 日本語の自然な書き言葉で、結論と重要事項を先に述べる。既知の前提、重複した説						エージェント由来: 導入commit dbc885547d98にtrailerあり（検索語「直前の問い・話題・抽象度）が求めていない否定・除」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#4	- 内部だけの略称は初出で説明する。ユーザーへ示す対象は、規範か対象の成果物に実						エージェント由来: 導入commit 66d61d5474f4にtrailerあり（検索語「面名、表示文言、コマンド名など）を使う。実在する」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#5	- 件数や割合は単位と母集団を示し、比較する値は同じ範囲で数える。出所が異なる値						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「を示し、比較する値は同じ範囲で数える。出所が異な」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#6	- まだ決めていない複数の案をユーザーへ示す発話では、確認を発行しない場合も推奨						エージェント由来: 導入commit 0d003c66ac78にtrailerあり（検索語「できない場合は、推奨を確定するために行う調査と、」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#7	- 指摘、割り込み、是正要求への応答では、確認した原文と実装またはコマンドの結果						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「では、確認した原文と実装またはコマンドの結果を伝」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#8	- 稼働状況への回答は、稼働中と完了済みの主体を先に区別し、判断に必要な観測値を						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「、稼働中と完了済みの主体を先に区別し、判断に必要」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#9	- 委譲先やバックグラウンドタスクを待つだけでターンを終えるときは、ホストが許す						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「ターンを終えるときは、ホストが許す範囲で本文を空」）		
+agent-toolkit/share/rules-main.md#rules-main.md: メインエージェントだけに適用する規範 > ユーザー向け発話ルール#10	- Markdownの本文は地の文で示す。逐語引用、コード、コマンドや設定の断片						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「文で示す。逐語引用、コード、コマンドや設定の断片」）		

@@ -1,0 +1,52 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+.claude/skills/merge-pr/SKILL.md##1	--- name: merge-pr user-invocable: false						未確定: 導入commit f55b30b6a9b1にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「頼を受領したとき、対象PRを検査し、マージ後のb」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂#1	このスキルは、明示的なPRマージ依頼を受領した場合と、`agent-toolki						未確定: 導入commit cefd1aedf1a5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「agent-toolkit:process-wi」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 失敗時の共通規定#1	CIとRelease以外の工程が失敗した場合は、成立済みの外部状態を保持し、失敗						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「態、run URLおよび再開点を報告して停止する」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 失敗時の共通規定#2	CIとReleaseのrunが失敗した場合は、run全体の終端と失敗ログを確認し						エージェント由来: 導入commit 9f9f7cd03d9bにtrailerあり（検索語「ling.md`「再現性」に従って原因を分類する」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 失敗時の共通規定#3	runの失敗ログ取得、失敗jobの再実行、run全体の終端観測には`gh`を使い						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「、run全体の終端観測には`gh`を使い、各操作」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 失敗時の共通規定#4	再実行後のログと結果で検収を続ける。再失敗、または初回ログで外部一時要因を疑えな						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「成立済みの外部状態、失敗工程、run URLおよ」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 対象の選択#1	PR番号またはPR URLが指定された場合は、その対象を読み取る。 引数がない場						未確定: 導入commit f55b30b6a9b1にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「op`から`master`へのopen PRを一」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 対象の選択#2	対象の確認には`gh`でPRの番号、URL、状態、draft、merge可否、h						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「eadとbaseのbranch・OID、merg」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 対象の選択#3	GitHubの設定でhead branchを`develop`だけに制限する操作						未確定: 導入commit f55b30b6a9b1にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「anchを`develop`だけに制限する操作は」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > ローカルdevelop同期条件#1	ユーザーの未コミット変更とローカルbranchを壊さない場合だけ、ローカル`de						エージェント由来: 導入commit 4af4dd8bf23dにtrailerあり（検索語「ーカルbranchを壊さない場合だけ、ローカル`」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > ローカルdevelop同期条件#2	- `git worktree list --porcelain`の出力で`br						エージェント由来: 導入commit 4af4dd8bf23dにtrailerあり（検索語「/heads/develop`を持つblockが」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > ローカルdevelop同期条件#3	- `develop` worktreeの`git status --porce						エージェント由来: 導入commit 4af4dd8bf23dにtrailerあり（検索語「ktreeの`git status --porc」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > ローカルdevelop同期条件#4	- 現在branchが`develop`である						未確定: 導入commit 8ab9a066f0a9にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「現在branchが`develop`である」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > ローカルdevelop同期条件#5	- rebase・merge・cherry-pickの中断状態が無い。中断状態は						エージェント由来: 導入commit 3ead793dcebfにtrailerあり（検索語「トリ（`--git-dir`）の`rebase-」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > ローカルdevelop同期条件#6	- `git merge-base --is-ancestor HEAD <基準						エージェント由来: 導入commit 4af4dd8bf23dにtrailerあり（検索語「estor HEAD <基準ref>`が終了コー」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > ローカルdevelop同期条件#7	観測には次の読み取りコマンドを使う。						エージェント由来: 導入commit 4af4dd8bf23dにtrailerあり（検索語「観測には次の読み取りコマンドを使う。」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > ローカルdevelop同期条件#8	```sh git worktree list --porcelain git 						未確定: 導入commit d1e53741e2a9にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「eeの絶対パス> merge-base --is」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ前の確認#1	`git fetch origin develop master`でremote						未確定: 導入commit 6c7b93e64324にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「gin/develop`とPR番号から操作直前に」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ前の確認#2	ローカル`develop`を同期するかどうかは、マージの前提とは分けて、基準re						エージェント由来: 導入commit 4af4dd8bf23dにtrailerあり（検索語「とは分けて、基準refを`origin/deve」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ前の確認#3	最初に`gh pr checks`のJSON出力を上限付きで反復取得し、同じPR						エージェント由来: 導入commit 89e968ee0964にtrailerあり（検索語「SON項目は`event`、`workflow`」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ前の確認#4	PR起点checkの登録後だけ、`gh pr checks --required						エージェント由来: 導入commit 89e968ee0964にtrailerあり（検索語「uired --watch`で必須checkの終」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ前の確認#5	必須check成功後はPRの`headRefOid`と`mergeStateSt						エージェント由来: 導入commit 89e968ee0964にtrailerあり（検索語「headと一致したまま`mergeStateSt」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ前の確認#6	登録待機または`CLEAN`待機の上限到達、照会失敗、対象の曖昧さ、check失						エージェント由来: 導入commit 89e968ee0964にtrailerあり（検索語「外の状態ではマージしない。必須checkの失敗は」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ前の確認#7	PR #138では、同じheadの`push`起点check成功後に`pull_						エージェント由来: 導入commit 89e968ee0964にtrailerあり（検索語「。観測版と再検証手順は`docs/develop」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > レビューコメントの確認#1	必須checkの待機と並行して、対象PRのレビューコメントを取得する。						未確定: 導入commit 850b5b986d13にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ckの待機と並行して、対象PRのレビューコメント」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > レビューコメントの確認#2	レビューと行コメントを、対象PR番号へ対応付けてGitHubから取得する。`gh						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「応付けてGitHubから取得する。`gh`のAP」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > レビューコメントの確認#3	各指摘は対象の実装と規範を読んで妥当性を判定する。 成立する指摘は`agent-						未確定: 導入commit 810428a2998bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「heck成功とhead OIDの一致で行い、修正」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > PRのマージ#1	レビューコメントの確認と必須checkが完了した後にPR番号から`headRef						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「る。自動マージとbranch削除は指定しない。`」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > PRのマージ#2	マージコマンドは1回だけ実行する。失敗した場合は再試行せず、出力された失敗理由と						エージェント由来: 導入commit 89e968ee0964にtrailerあり（検索語「実行する。失敗した場合は再試行せず、出力された失」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後のbranch同期とCI#1	マージ後に`origin/master`をfetchし、PR番号から操作直前に取						未確定: 導入commit 67ab60e52d7bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「PR番号から操作直前に取得した`mergeCom」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後のbranch同期とCI#2	```sh git fetch origin master git rev-pa						未確定: 導入commit 67ab60e52d7bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「v-parse --short=7 origin」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後のbranch同期とCI#3	`origin/develop`の更新はローカルbranchを操作元にせず、`o						未確定: 導入commit 67ab60e52d7bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「nchを操作元にせず、`origin/maste」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後のbranch同期とCI#4	```sh git push origin origin/master:refs						未確定: 導入commit 67ab60e52d7bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「gin origin/master:refs/h」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後のbranch同期とCI#5	`origin/develop`と`origin/master`の7文字以上の一						エージェント由来: 導入commit 4af4dd8bf23dにtrailerあり（検索語「を実行する直前に、基準refを`origin/m」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後のbranch同期とCI#6	```sh git -C <develop worktreeの絶対パス> mer						未確定: 導入commit 889bf5dd90a4にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「rktreeの絶対パス> merge --ff-」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後のbranch同期とCI#7	実行後に対象worktreeで取得した`develop`が`origin/mas						未確定: 導入commit 889bf5dd90a4にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「nchも変更せずリモートの完遂を維持する。完了報」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後のbranch同期とCI#8	マージ後のmaster pushと同期後のdevelop pushに対するCIは						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「るため、マージコミットのツリーはマージ前の確認で」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 条件付きRelease検収#1	マージコミットの第一親との差分を読み取り、`rust/claude-status						未確定: 導入commit f55b30b6a9b1にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「読み取り、`rust/claude-status」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 条件付きRelease検収#2	変更がある場合は、`origin/master`の完全OIDに対応する`Rele						エージェント由来: 導入commit c33059115919にtrailerあり（検索語「べる。`prepare`が省略されずに実行された」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 条件付きRelease検収#3	- `claude-statusline-x86_64-unknown-linu						エージェント由来: 導入commit 14d38481e106にtrailerあり（検索語「atusline-x86_64-unknown-」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 条件付きRelease検収#4	- `claude-statusline-x86_64-pc-windows-m						エージェント由来: 導入commit 14d38481e106にtrailerあり（検索語「tusline-x86_64-pc-window」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 条件付きRelease検収#5	runの特定と終端観測、Releaseのasset確認、tagの参照先確認には`						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「itの公開情報を使う。取得形式は各操作の直前にヘ」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 条件付きRelease検収#6	Release runの失敗は「失敗時の共通規定」を適用する。tag、Relea						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「g、Releaseまたはassetの検収に失敗し」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後に到着したレビューの確認#1	GitHub Copilotのレビューは、対象PRのマージ後、CIの完了を待つ区						エージェント由来: 導入commit 4b1fd6e3ead4にtrailerあり（検索語「ない場合は、そのPRの取得と判定を省く。含まれる」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後に到着したレビューの確認#2	取得、判定、GitHubへの記録および判定済みの記録は `agent-toolk						エージェント由来: 導入commit 78b16e7cf8c6にtrailerあり（検索語「ll Requestを対象に実行する監査が次回以」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後に到着したレビューの確認#3	要修正と分類した指摘は「レビューコメントの確認」の振り分けに従う。 同一セッショ						エージェント由来: 導入commit 78b16e7cf8c6にtrailerあり（検索語「lop`への通常の変更として扱い、本スキルのマー」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後に`develop`へ加えた変更のCI確認#1	`agent-toolkit:process-wi`の終端から本スキルを実行した						エージェント由来: 導入commit 2741c6b6c9d2にtrailerあり（検索語「終端から本スキルを実行した場合に限り、マージの完」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > マージ後に`develop`へ加えた変更のCI確認#2	本節の適用範囲はマージの完遂後に`develop`へ加えた変更とし、本スキルのマ						未確定: 導入commit 810428a2998bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「branch同期とCI」が定めるCIの検収は、そ」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 完了条件と失敗時の扱い#1	成功時に次を取得する。						未確定: 導入commit 8ab9a066f0a9にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「成功時に次を取得する。」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 完了条件と失敗時の扱い#2	```sh git rev-parse --short=7 origin/dev						未確定: 導入commit 67ab60e52d7bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「-parse --short=7 origin/」）		
+.claude/skills/merge-pr/SKILL.md#PRマージ完遂 > 完了条件と失敗時の扱い#3	`origin/develop`と`origin/master`の短縮OIDが一						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「実施した場合はローカル`develop`の参照を」）		

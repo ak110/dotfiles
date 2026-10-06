@@ -1,0 +1,11 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/managed-temp/SKILL.md##1	--- name: managed-temp user-invocable: f						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「外用途でmanaged-tempの中へ個別のディ」）		
+agent-toolkit/skills/managed-temp/SKILL.md#managed-temp#1	本スキルは一時ファイルの置き場所と、managed-tempの中へ個別のディレク						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「naged-tempの中へ個別のディレクトリを作」）		
+agent-toolkit/skills/managed-temp/SKILL.md#managed-temp > セッションのmanaged-temp#1	SessionStartはセッションごとにmanaged-tempの中へセッショ						エージェント由来: 導入commit c46740b46cb4にtrailerあり（検索語「リポジトリの作業ツリーの外へ置く。作業ツリー内へ」）		
+agent-toolkit/skills/managed-temp/SKILL.md#managed-temp > セッションのmanaged-temp#2	セッションのmanaged-tempはセッションの終了では削除されず、最終更新か						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「れた専用領域へ置き、親のセッションのmanage」）		
+agent-toolkit/skills/managed-temp/SKILL.md#managed-temp > 個別に作成する例外用途#1	`atk managed-temp create --prefix <用途>`で						エージェント由来: 導入commit 1994007969ccにtrailerあり（検索語「ix <用途>`で個別の領域を作成するのは、セッ」）		
+agent-toolkit/skills/managed-temp/SKILL.md#managed-temp > 個別に作成する例外用途#2	<例> セッションのmanaged-tempの通知を受け取っていない場合: 個別						エージェント由来: 導入commit 1994007969ccにtrailerあり（検索語「など）から同じパスへ到達させる場合: `--ro」）		
+agent-toolkit/skills/managed-temp/SKILL.md#managed-temp > 個別に作成する例外用途#3	7日の自動削除は`.git`を含む領域を削除しないため、`.git`を含む個別の						エージェント由来: 導入commit 1994007969ccにtrailerあり（検索語「域は、作成した工程が不要になった時点で`atk 」）		
+agent-toolkit/skills/managed-temp/SKILL.md#managed-temp > 個別に作成する例外用途#4	個別に作成する領域には、対応するAWIを`--awi <ファイル名>`で複数記録						未確定: 導入commit 4576d3d78e70にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「は、対応するAWIを`--awi <ファイル名>」）		
+agent-toolkit/skills/managed-temp/SKILL.md#managed-temp > 設定領域を変更する前の一時バックアップ#1	版管理または自動同期が有効な設定領域（etckeeperが管理する`/etc`な						エージェント由来: 導入commit 0793190743eeにtrailerあり（検索語「`など）を変更する前に一時バックアップが必要にな」）		
+agent-toolkit/skills/managed-temp/SKILL.md#managed-temp > 設定領域を変更する前の一時バックアップ#2	ローカルの自動commitと、外部remoteへのpushまたは同期は別々に確認						エージェント由来: 導入commit 0793190743eeにtrailerあり（検索語「いる場合は、領域内へ置いたファイルが外部の履歴へ」）		

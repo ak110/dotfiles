@@ -1,0 +1,10 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/gitlab-ci-usage/references/self-hosted-tls.md#私設ホスト（自己署名のTLS証明書）でのCI通過確認#1	自己署名のTLS証明書のGitLab私設ホストでも、証明書検証を維持したまま`g						未確定: 導入commit 2cd44eacc064にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「す手順を使い、forgeへ`gitlab`を指定」）		
+agent-toolkit/skills/gitlab-ci-usage/references/self-hosted-tls.md#私設ホスト（自己署名のTLS証明書）でのCI通過確認#2	`glab`でTLS証明書検証エラー（`tls: failed to verif						エージェント由来: 導入commit efd3be85dce8にtrailerあり（検索語「: failed to verify certi」）		
+agent-toolkit/skills/gitlab-ci-usage/references/self-hosted-tls.md#私設ホスト（自己署名のTLS証明書）でのCI通過確認#3	- `glab config set skip_tls_verify true 						エージェント由来: 導入commit efd3be85dce8にtrailerあり（検索語「ls_verify true --host <h」）		
+agent-toolkit/skills/gitlab-ci-usage/references/self-hosted-tls.md#私設ホスト（自己署名のTLS証明書）でのCI通過確認#4	- 環境変数`GITLAB_HOST=<host>`と`GITLAB_TOKEN						エージェント由来: 導入commit efd3be85dce8にtrailerあり（検索語「T=<host>`と`GITLAB_TOKEN=」）		
+agent-toolkit/skills/gitlab-ci-usage/references/self-hosted-tls.md#私設ホスト（自己署名のTLS証明書）でのCI通過確認#5	この設定はTLS検証をスキップするためMITM耐性を下げる。						未確定: 導入commit 2cd44eacc064にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「定はTLS検証をスキップするためMITM耐性を下」）		
+agent-toolkit/skills/gitlab-ci-usage/references/self-hosted-tls.md#私設ホスト（自己署名のTLS証明書）でのCI通過確認#6	CI待機（`wait_ci.py`）がCLIの失敗を示す終了コード3を返した後に						エージェント由来: 導入commit 5632c1a2a25eにtrailerあり（検索語「す終了コード3を返した後に限り、状態の照会と証拠」）		
+agent-toolkit/skills/gitlab-ci-usage/references/self-hosted-tls.md#私設ホスト（自己署名のTLS証明書）でのCI通過確認#7	```text curl -k -H "PRIVATE-TOKEN: ${GIT						未確定: 導入commit dac1065716e5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「/pipelines/<pipeline-id>」）		
+agent-toolkit/skills/gitlab-ci-usage/references/self-hosted-tls.md#私設ホスト（自己署名のTLS証明書）でのCI通過確認#8	pipeline一覧と対象pipelineごとのjob一覧は、応答が100件未満						未確定: 導入commit 2f5d76fbbdd5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「mmit`の`references/push-a」）		
+agent-toolkit/skills/gitlab-ci-usage/references/self-hosted-tls.md#私設ホスト（自己署名のTLS証明書）でのCI通過確認#9	`curl -k`も同じくTLS検証をスキップする。認証トークン漏洩防止のため、						未確定: 導入commit 2cd44eacc064にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「`も同じくTLS検証をスキップする。認証トークン」）		

@@ -1,0 +1,19 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了#1	公開工程は選定工程で固定した集合の全レーンが完了し、選定工程で自動コードレビュー						エージェント由来: 導入commit b68a0d631fc9にtrailerあり（検索語「るのは選定時に固定した項目と、ユーザーの明示指示」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > 公開対象が無い場合の短絡#1	公開工程の開始時に、公開対象と外部操作が1つも無いことを確認する。pickerの						エージェント由来: 導入commit 4ea0200a65d0にtrailerあり（検索語「された行はpickerが定める省略時の値で解釈す」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > 公開対象が無い場合の短絡#2	いずれもが無い場合は、メインが`agent-toolkit:commit`の`r						エージェント由来: 導入commit 623c5f602b37にtrailerあり（検索語「.md`「公開状態の4項目」を対象リポジトリの主」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > 公開対象が無い場合の短絡#3	いずれかがある場合と、4つの観測項目に成立しないものがある場合は、終端担当への委						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「状態の4項目は、後段の「セッション終了」節へ検収」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#1	対象リポジトリの規範が、対応する管理先への計上または終端と同じ工程で固有の追跡先						未確定: 導入commit 6ac8ccebe95eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「有の追跡先への記載を求める場合は、その規範が定め」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#2	終端担当の入力がそろい、対象リポジトリの主作業ツリーへ書き込む主体が解放された時						エージェント由来: 導入commit a9905689c214にtrailerあり（検索語「査対象、既存の証拠、反映先候補を独立した担当へ渡」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#3	終端担当の起動前に、長時間の公開・デプロイ・CI待機と追加の公開工程について、各						エージェント由来: 導入commit b2e98a687d6aにtrailerあり（検索語「の実行対象から外す。これらが独立する追加工程は別」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#4	専用worktreeとレーン専用branchの回収は前項の対象から外し、終端担当						エージェント由来: 導入commit 0f87a2a59f38にtrailerあり（検索語「共通ディレクトリ（`--git-common-d」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#5	全レーンの統合と専用資源の回収が終わったら、開発マシン上の常時稼働サーバーへの反						エージェント由来: 導入commit 21a63f4cdce1にtrailerあり（検索語「トリへ書き込まず、終端担当の入力を生成せず、読み」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#6	メインはレーン数を問わず、各レーンの記録を対象リポジトリの版数規範の判定基準で比						未確定: 導入commit c10a8a3a9fe4にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「UGIN_ROOT}/share/session」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#7	終端担当の返却後、`${CLAUDE_PLUGIN_ROOT}/share/se						エージェント由来: 導入commit 4b9d42599021にtrailerあり（検索語「は、検収済みの実装commitを対応付けた`at」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#8	続けて、終端担当の起動を省いた実行も含め、処理対象WI（ユーザーの明示指示で追加						エージェント由来: 導入commit 926a37df7d8cにtrailerあり（検索語「が`終端しない`とした項目は、どちらもこの対象に」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#9	反映後の観測だけが残る未終端の項目（延期`adopt`の未終端集合と、観測のみの						エージェント由来: 導入commit 560a04520036にtrailerあり（検索語「end --body-file <その絶対パス>」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#10	```markdown ## 反映後の観測の再開記録 - 再開区分: 反映後の観						エージェント由来: 導入commit 560a04520036にtrailerあり（検索語「みの実装commitの完全OID。実装差分の無い」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#11	観測できる最も早い時刻が分かり、現在がその時刻より前の項目は、待機せずに次の手順						エージェント由来: 導入commit 560a04520036にtrailerあり（検索語「wn-until <その時刻> --target」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#12	completion-reportが報告する前に、メインは公開状態の4項目（`a						エージェント由来: 導入commit a9905689c214にtrailerあり（検索語「adopt`だけを入力にして同じ終端手順を再実行」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#13	公開工程の後にactive一覧へ現れた追加分は、次回セッションで扱う。						未確定: 導入commit 6ac8ccebe95eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「後にactive一覧へ現れた追加分は、次回セッシ」）		
+agent-toolkit/skills/process-wi/references/finish-session.md#push、CIおよび終了 > セッション終了#14	未終端の計画の復元は本節のメインによる保存後checkoutへ集約し、統合入力は						エージェント由来: 導入commit 903b24a7fb20にtrailerあり（検索語「インによる保存後checkoutへ集約し、統合入」）		

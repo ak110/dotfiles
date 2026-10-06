@@ -1,0 +1,13 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#1	未判定検証記録は実装担当またはメインが作成する入力、完成条件証拠は実行レビュー担						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「vidence`および`reviewed_hea」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#2	指摘はレビュー指摘管理表へ1件ずつ登録し、対象箇所、違反した契約、観測事象、必要						未確定: 導入commit f93cf022abe6にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「初期化せず`needs_escalation`で」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#3	指摘が無い場合は架空の行を追加せず、表をその時点の内容のまま残す。現在round						未確定: 導入commit fc56f1f7cd53にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「w-table show <表の絶対パス> --」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#4	観点ごとの走査結果は、受領したmanaged-tempの中のファイルへ走査の完了						エージェント由来: 導入commit 2513b10afcfeにtrailerあり（検索語「位置（`逐語引用 text[N] 文字A-B`。」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#5	- 対象AWIのファイル名と`## ユーザーコメント`の所在						エージェント由来: 導入commit 17ed42879665にtrailerあり（検索語「AWIのファイル名と`## ユーザーコメント`の」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#6	- 関連UWIのファイル名と`## 回答`の所在						エージェント由来: 導入commit 17ed42879665にtrailerあり（検索語「関連UWIのファイル名と`## 回答`の所在」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#7	- 会話中のユーザー発話の所在: `atk run-script session						エージェント由来: 導入commit b6a0384d8449にtrailerあり（検索語「`の出力ファイルの絶対パスと、その直後の`<re」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#8	3種はいずれも`agent-toolkit:wi-standards`「由来と承						エージェント由来: 導入commit b6a0384d8449にtrailerあり（検索語「ユーザー自身の記入か記録位置付きの逐語発話に当た」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#9	計画かレビュー指摘管理表の不採用行は`evidence`へ記録し、ユーザー判断の						エージェント由来: 導入commit 3b9886796ba5にtrailerあり（検索語「は、根拠をその手段の観測結果に限る。実装がその観」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#10	各ラウンドで`evidence`へ記入する前に、根拠に使う現物の該当箇所を読む。						エージェント由来: 導入commit f357d9909c43にtrailerあり（検索語「ー対象commitの本文を使い、参照名と見出し・」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#11	ファイルで達成根拠を示す場合は、絶対パスか対象worktreeからの相対パスを記						エージェント由来: 導入commit 554fe2229541にtrailerあり（検索語「異なるWIの行へ識別情報だけを変えた同じ根拠を写」）		
+agent-toolkit/skills/review-standards/references/exec-review-recording.md#実行レビューの指摘と完成条件証拠の記録#12	<例> `/absolute/path/checks.md#設定保存 で保存後の						エージェント由来: 導入commit 68a42930ff03にtrailerあり（検索語「st_save_and_reload PASSE」）		

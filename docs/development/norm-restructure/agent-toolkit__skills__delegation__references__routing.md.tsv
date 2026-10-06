@@ -1,0 +1,14 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定#1	本書は`agent-toolkit/rules/01-agent.md`が定める						エージェント由来: 導入commit 89e46e3af590にtrailerあり（検索語「agent.md`が定める委譲の要否判定と委譲単」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 要否判定#1	委譲先を指定する手順が無い場面でも、独立コンテキストによる先入観のない評価、モデ						未確定: 導入commit 1cc223841103にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「けを問う。終端済みの担当も継続可能性で判定し、保」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 委譲単位の確定#1	委譲対象と判定した作業が複数ある場合は、起動前に同じ委譲先へまとめられるかを判定						エージェント由来: 導入commit 7afc5c61e9c2にtrailerあり（検索語「らに並列に分業する案も比べる。規範や背景の読み込」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 委譲単位の確定#2	確定した委譲単位の構成（件数、各単位の担当範囲、起動順）は、依存関係または書込所						エージェント由来: 導入commit ea76c5c9d711にtrailerあり（検索語「込所有権の変化により構成が成立しなくなった場合に」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 委譲単位の確定#3	実装を委譲する際の書込主体とworktreeの対応は`references/ma						エージェント由来: 導入commit a9905689c214にtrailerあり（検索語「済みで、群どうしに未解決の先行成果依存が無い範囲」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 会話を引き継ぐ委譲#1	親が保持する文脈を委譲先も使う場合は、次の条件をすべて満たすときにホスト標準のf						エージェント由来: 導入commit 333edba98a10にtrailerあり（検索語「先も使う場合は、次の条件をすべて満たすときにホス」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 会話を引き継ぐ委譲#2	- 委譲先が親のユーザー指示、読んだ資料および調査結果の大半を必要とし、新規起動						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「資料および調査結果の大半を必要とし、新規起動では」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 会話を引き継ぐ委譲#3	- 親と同じモデルおよびreasoning effortで作業が成立する						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「デルおよびreasoning effortで作業」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 会話を引き継ぐ委譲#4	- 工程別モデル設定のキーを持つ工程と、`share/`配下の専用の`<役割名>						エージェント由来: 導入commit 0f87a2a59f38にtrailerあり（検索語「share/`配下の専用の`<役割名>.suba」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 会話を引き継ぐ委譲#5	- 独立文脈レビュー（成果物の作成者と文脈を共有しない委譲先が先入観なく行うレビ						エージェント由来: 導入commit 0cb98c433e86にtrailerあり（検索語「先入観なく行うレビュー。実行レビューなど）のよう」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > 会話を引き継ぐ委譲#6	広範囲な調査指示を同じ背景から分業するときや、同じ出発点から複数案を並行して試す						エージェント由来: 導入commit 333edba98a10にtrailerあり（検索語「rk先は親の規範と起動時点までの会話履歴を受け取」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > コンテキスト消費が大きい調査の切り出し#1	同じ担当が多数の独立した比較確認を受領した場合は、対象を依存関係と読者・契約の単						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「重複のない対象集合、判定する契約および返す観測値」）		
+agent-toolkit/skills/delegation/references/routing.md#委譲の要否判定と委譲単位の確定 > コンテキスト消費が大きい調査の切り出し#2	結論だけで後続の判断が成立し、コンテキスト消費が大きい調査は、読み取り専用の探索						エージェント由来: 導入commit 4ea0200a65d0にtrailerあり（検索語「で指定がない場合の扱いは`references/」）		

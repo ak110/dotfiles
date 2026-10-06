@@ -1,0 +1,7 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/bulk-replace-review.parent.md#一括置換後レビュー担当の起動と受領#1	```text 起動対象: bulk-replace-review.subage						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「bulk-replace-review.suba」）		
+agent-toolkit/share/bulk-replace-review.parent.md#一括置換後レビュー担当の起動と受領#2	`agent-toolkit:writing-standards`の`refer						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「notation-rules.md`「表記の一括」）		
+agent-toolkit/share/bulk-replace-review.parent.md#一括置換後レビュー担当の起動と受領 > 起動#1	置換した範囲の`git diff --word-diff=plain --wor						未確定: 導入commit 5d6b3cd3a3afにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「elegation`の`references/b」）		
+agent-toolkit/share/bulk-replace-review.parent.md#一括置換後レビュー担当の起動と受領 > 起動#2	- `差分ファイル`: 保存した差分ファイルの絶対パスと行数						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「分ファイル`: 保存した差分ファイルの絶対パスと」）		
+agent-toolkit/share/bulk-replace-review.parent.md#一括置換後レビュー担当の起動と受領 > 起動#3	観点と返却形式は`bulk-replace-review.subagent.md						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「ce-review.subagent.md`が定」）		
+agent-toolkit/share/bulk-replace-review.parent.md#一括置換後レビュー担当の起動と受領 > 受領#1	結果は引数なしの`atk agents wait`で受け取る。問題が報告された文						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「 wait`で受け取る。問題が報告された文と候補」）		

@@ -1,0 +1,14 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理#1	サプライチェーン攻撃対策とセキュリティ維持の観点から運用する。 依存の追加・更新						未確定: 導入commit d364017bbc8dにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「pnpm`・`mise`等）で行う原則は`imp」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > バージョン指定と更新#1	- バージョン固定は管理コスト増大のため原則採用せず、公開直後の新バージョンを一						エージェント由来: 導入commit 1bcf4854a369にtrailerあり（検索語「lls/writing-standards/re」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > バージョン指定と更新#2	- 公開直後の版を一定期間解決対象から外すパッケージマネージャーの設定（uvの`						エージェント由来: 導入commit 59f79aaf7c49にtrailerあり（検索語「er`、pnpmの`minimum-releas」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > バージョン指定と更新#3	- 依存追加時はメンテナンス状況・代替の有無を確認する。使われていない依存は削除						エージェント由来: 導入commit 59f79aaf7c49にtrailerあり（検索語「テナンス状況・代替の有無を確認する。使われていな」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > バージョン指定と更新#4	- 依存更新コマンドが対象パッケージを更新せずエラーも返さない場合、目的のバージ						エージェント由来: 導入commit 5331bb7adc84にtrailerあり（検索語「パッケージを更新せずエラーも返さない場合、目的の」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > バージョン指定と更新#5	- 上書き設定（`[tool.uv] override-dependencies						未確定: 導入commit 0c14bc15c7e9にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「erride-dependencies`など）は」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > バージョン指定と更新#6	- 依存追加・更新コマンドの出力警告を見逃さない。 パッケージマネージャーの仕様						未確定: 導入commit cb1cf019051bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「様変更・非推奨化が警告で告知されることがあり、放」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > 脆弱性の確認#1	- SCAツールで定期的に脆弱性を確認する（`pip-audit`/`pnpm 						エージェント由来: 導入commit 59f79aaf7c49にtrailerあり（検索語「る（`pip-audit`/`pnpm audi」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > ロックファイルの運用#1	- ロックファイルを尊重する: CI/Makefileでは依存解決を再実行せずロ						エージェント由来: 導入commit 59f79aaf7c49にtrailerあり（検索語「UV_FROZEN=1`、pnpmの`--fro」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > ロックファイルの運用#2	- 依存ロックファイルは自動生成ファイルとして扱い直接編集しない（詳細は`imp						未確定: 導入commit 2cd44eacc064にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ルとして扱い直接編集しない（詳細は`implem」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > pnpm#1	- `packageManager`フィールドはSHAハッシュ付きで保持する -						未確定: 導入commit 15ca58bd0105にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「use pnpm@<version>`でSHAハ」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > pnpm#2	- pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（						エージェント由来: 導入commit 1bcf4854a369にtrailerあり（検索語「skills/writing-standards」）		
+agent-toolkit/skills/writing-standards/references/dependency-management.md#依存管理 > pnpm#3	- `pnpm-workspace.yaml`の設定は`NPM_CONFIG_*						未確定: 導入commit 15ca58bd0105にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ce.yaml`の設定は`NPM_CONFIG_」）		

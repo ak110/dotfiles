@@ -1,0 +1,12 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/workflow-overview/SKILL.md##1	--- name: workflow-overview description:						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「ocess-loop`、process-wiの1」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要#1	本スキルは複数のセッションとユーザーの操作にまたがるWI処理の全体像を提供する知						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「ルには`agent-toolkit:plan-m」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要 > 利用形態と起動主体#1	- 対話型: ユーザーがエージェントへ直接依頼する。メインは`agent-too						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「-mode`「計画ファイルの作成要否」で作成を判」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要 > 利用形態と起動主体#2	- 自律型: ユーザーが`atk wi process-loop`を起動する。p						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「kit:process-wi`を起動する。子セッ」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要 > 利用形態と起動主体#3	- まとめ処理型: ユーザーが`agent-toolkit:single-lan						未確定: 導入commit 0cb102c3c664にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「kit:single-lane-process`」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要 > 利用形態と起動主体#4	ユーザーは`atk wi process-loop abort`で停止を、`at						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「けへ渡す指示を、`atk wi process-」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要 > 登録、回答、振り返り#1	ユーザーは`atk wi add`、`agent-toolkit:add-awi						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「on-review`もWIを投入する。本文、由来」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要 > 登録、回答、振り返り#2	自律モードの確認手段と、回答を得られない場合のUWIへの切替は`agent-to						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「erve`で回答し、process-wiの次の実」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要 > 登録、回答、振り返り#3	作業完了後は`agent-toolkit:completion-report`か						エージェント由来: 導入commit 4f13ffbd3e3cにtrailerあり（検索語「t-toolkit:session-review」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要 > 運用変更を検討する観点#1	process-loopが起動したセッション以外では、別セッションのproces						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「検討するときは、process-loop、子セッ」）		
+agent-toolkit/skills/workflow-overview/SKILL.md#WI処理の運用概要 > 運用変更を検討する観点#2	WI作成、計画、実行、実行レビューの責務と出口は`${CLAUDE_PLUGIN						未確定: 導入commit 171e4d9a581cにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「{CLAUDE_PLUGIN_ROOT}/sha」）		

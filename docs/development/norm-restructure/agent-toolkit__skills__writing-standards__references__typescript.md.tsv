@@ -1,0 +1,8 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/writing-standards/references/typescript.md#TypeScript記述スタイル#1	本書はTypeScriptのコードとテストコードについて、一般的な作法から導けな						エージェント由来: 導入commit 7ad9fbe9a804にtrailerあり（検索語「-time.md`が、セキュリティの一般作法は同」）		
+agent-toolkit/skills/writing-standards/references/typescript.md#TypeScript記述スタイル > 言語スタイル#1	- 内部で扱う「値がない」は`undefined`へそろえ、APIから返された`						エージェント由来: 導入commit 5b18b4fb7214にtrailerあり（検索語「、APIから返された`null`は内部の値へ取り」）		
+agent-toolkit/skills/writing-standards/references/typescript.md#TypeScript記述スタイル > 非同期処理#1	- 戻り値の`Promise`を意図的に無視する（fire-and-forget						エージェント由来: 導入commit 7ad9fbe9a804にtrailerあり（検索語「loating-promises`ルールを有効化」）		
+agent-toolkit/skills/writing-standards/references/typescript.md#TypeScript記述スタイル > 非同期処理#2	- `void`で無視する非同期処理でも、例外が伝播しない設計の場合は明示的に`						エージェント由来: 導入commit 7ad9fbe9a804にtrailerあり（検索語「理でも、例外が伝播しない設計の場合は明示的に`.」）		
+agent-toolkit/skills/writing-standards/references/typescript.md#TypeScript記述スタイル > テストコード（vitest）#1	- テストフレームワークは対象プロジェクトの採用へそろえ、新規に選ぶ場合は`vi						エージェント由来: 導入commit 5b18b4fb7214にtrailerあり（検索語「対象プロジェクトの採用へそろえ、新規に選ぶ場合は」）		
+agent-toolkit/skills/writing-standards/references/typescript.md#TypeScript記述スタイル > テストコード（vitest）#2	- `vi.mock()`はファイル先頭へホイスティングされるため、動的な値を参						エージェント由来: 導入commit 7ad9fbe9a804にtrailerあり（検索語「)`はファイル先頭へホイスティングされるため、動」）		
+agent-toolkit/skills/writing-standards/references/typescript.md#TypeScript記述スタイル > テストコード（vitest）#3	- 時間依存のテストは`vi.useFakeTimers()`で制御し、`aft						エージェント由来: 導入commit bc3411bbf030にtrailerあり（検索語「`afterEach`で`vi.restoreA」）		

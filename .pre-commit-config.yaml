@@ -14,7 +14,8 @@ repos:
     hooks:
       # テキストフォーマット。
       - id: trailing-whitespace
-        exclude: '\.cmd$'
+        # 判定台帳のTSVは末尾の空のセルをタブで区切るため、行末のタブを保つ。
+        exclude: '\.cmd$|^docs/development/norm-restructure/.*\.tsv$'
       # Windowsで通常ファイル化するGit symlinkのリンク先へ末尾改行を追加しない。
       - id: end-of-file-fixer
         exclude: '\.cmd$|(^|/)\.agents/skills$'

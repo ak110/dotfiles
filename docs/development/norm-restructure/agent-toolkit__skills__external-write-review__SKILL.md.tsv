@@ -1,0 +1,6 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/external-write-review/SKILL.md##1	--- name: external-write-review user-inv						エージェント由来: 導入commit 22432f8ac5aaにtrailerあり（検索語「ャットやメールへのMCP経由の送信など、第三者が」）		
+agent-toolkit/skills/external-write-review/SKILL.md#外部サービスへの投稿前レビュー#1	本スキルは投稿後に第三者へ届く文面を、起草者と独立した読み取り専用の担当が投稿前						エージェント由来: 導入commit 4bef4c247f67にtrailerあり（検索語「lkit:user-confirmation-a」）		
+agent-toolkit/skills/external-write-review/SKILL.md#外部サービスへの投稿前レビュー > 対象と入力#1	第三者が読む外部サービスへエージェントが起草または加筆した人間向け文面を対象とす						エージェント由来: 導入commit bd52ed61cbbaにtrailerあり（検索語「olkit:wi-standards`とWI投入」）		
+agent-toolkit/skills/external-write-review/SKILL.md#外部サービスへの投稿前レビュー > 対象と入力#2	投稿する主体は確定した文面をUTF-8のファイルへ保存し、投稿先と投稿の目的、文						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「ルへ保存し、投稿先と投稿の目的、文面が根拠とする」）		
+agent-toolkit/skills/external-write-review/SKILL.md#外部サービスへの投稿前レビュー > 起動と受領#1	投稿する主体は`${CLAUDE_PLUGIN_ROOT}/share/exte						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「xternal-write-review.par」）		

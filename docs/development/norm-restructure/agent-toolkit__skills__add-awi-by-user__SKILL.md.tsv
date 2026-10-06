@@ -1,0 +1,14 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/add-awi-by-user/SKILL.md##1	--- name: add-awi-by-user description: >						未確定: 導入commit 1c7150b1617bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「キルを明示的に手動起動し、AWI（エージェントワ」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入#1	本スキルはユーザーが手動起動したAWI登録の対話機能である。このセッションで編集						未確定: 導入commit 5a1841743b6fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「更新に限る。対象リポジトリの実装、実装用work」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 手順#1	追加要求を既存か起草中のAWIへ合流する前に、名指された対象、外部から確認できる						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「部だけの名指しで縮小意図が確定しなければ全範囲を」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 手順#2	1. `agent-toolkit:wi-standards`を起動する。AWI						未確定: 導入commit 171e4d9a581cにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「CLAUDE_PLUGIN_ROOT}/shar」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 手順#3	2. `agent-toolkit:user-confirmation-and-						エージェント由来: 導入commit 5817c928fdd7にtrailerあり（検索語「要件を確定する。既に明示された要件と合意済みの要」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 手順#4	3. 手順2で確定した要求を`${CLAUDE_PLUGIN_ROOT}/sha						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「が定める`atk run-script sess」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 手順#5	4. 返却された`ファイル名`を含む投入結果を`agent-toolkit:co						未確定: 導入commit aa8130ab1021にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「agent-toolkit:completion」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 手順#6	本スキルは協調モードで動作する。投入する項目の`source`は`add-awi						未確定: 導入commit 5a1841743b6fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「-by-user`とする。ユーザー要求の逐語転記」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > セッション境界#1	成果物をWIの登録と更新へ限定する契約には、`agent-toolkit:use						エージェント由来: 導入commit 54f31863383fにtrailerあり（検索語「イルの変更が必要な場合は測定前の`git sta」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 完成条件#1	- 認識の違いで要件または結果が変わる事項の回答を投入前に得ている						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「違いで要件または結果が変わる事項の回答を投入前に」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 完成条件#2	- 必要な認識合わせを終え、起動時の登録依頼に基づく要求をWI投入担当が登録して						エージェント由来: 導入commit bd52ed61cbbaにtrailerあり（検索語「を終え、起動時の登録依頼に基づく要求をWI投入担」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 完成条件#3	- WI投入担当の返却を`add-wi.parent.md`「受領と検収」に従っ						エージェント由来: 導入commit 68d098a0f53bにtrailerあり（検索語「`add-wi.parent.md`「受領と検収」）		
+agent-toolkit/skills/add-awi-by-user/SKILL.md#AWI投入 > 完成条件#4	- 対象リポジトリの実装と`processing`項目を起動時のまま保っている						未確定: 導入commit a16b7c43ed0eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「リの実装と`processing`項目を起動時の」）		

@@ -1,0 +1,11 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/realign-with-user/SKILL.md##1	--- name: realign-with-user description:						エージェント由来: 導入commit 4ea0200a65d0にtrailerあり（検索語「が一致していない可能性があるとき、行動を繰り返し」）		
+agent-toolkit/skills/realign-with-user/SKILL.md#ユーザーとの認識合わせ#1	本スキルはメインエージェントがユーザーの目標と問題の理解を言葉にして確かめる手順						エージェント由来: 導入commit bdc28e9b38d3にtrailerあり（検索語「ee.md`「ユーザー指摘の受領」に、回答後の処」）		
+agent-toolkit/skills/realign-with-user/SKILL.md#ユーザーとの認識合わせ#2	1. ユーザーが達成したい目標と、解決しようとしている問題を、それぞれ自分の言葉						エージェント由来: 導入commit 4b838401bf77にtrailerあり（検索語「い目標と、解決しようとしている問題を、それぞれ自」）		
+agent-toolkit/skills/realign-with-user/SKILL.md#ユーザーとの認識合わせ#3	2. その理解が合っているか、その場で実行環境の構造化質問を使ってユーザーへ確認						エージェント由来: 導入commit 4bef4c247f67にtrailerあり（検索語「er-confirmation-and-repo」）		
+agent-toolkit/skills/realign-with-user/SKILL.md#ユーザーとの認識合わせ#4	3. 回答が元の依頼の目的・要件と自分の理解に一致するか確かめる。 `agent						未確定: 導入commit 1f85f1d42523にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「andards`の`references/rev」）		
+agent-toolkit/skills/realign-with-user/SKILL.md#ユーザーとの認識合わせ#5	協調モードと自律モードの双方で、理解を提示してその場で確認する。 ユーザー割り込						エージェント由来: 導入commit 4bef4c247f67にtrailerあり（検索語「:user-confirmation-and-r」）		
+agent-toolkit/skills/realign-with-user/SKILL.md#ユーザーとの認識合わせ#6	- `atk wi process-loop`から起動したセッションのように、実						エージェント由来: 導入commit 19eecedb689fにtrailerあり（検索語「を超えて回答が無ければ、同スキルの`refere」）		
+agent-toolkit/skills/realign-with-user/SKILL.md#ユーザーとの認識合わせ#7	- 手動で起動したClaude Codeのように回答期限が無い場合も、その場で質						エージェント由来: 導入commit 19eecedb689fにtrailerあり（検索語「して回答を待つ。認識合わせはユーザーの割り込みや」）		
+agent-toolkit/skills/realign-with-user/SKILL.md#ユーザーとの認識合わせ#8	- 構造化質問を発行できないCodex Default modeでは、`agen						未確定: 導入commit 47b3603e1998にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「re/rules-main.codex.md`の」）		
+agent-toolkit/skills/realign-with-user/SKILL.md#ユーザーとの認識合わせ#9	質問の発行成功や初期選択を回答として扱わず、回答に依存する処置は実回答まで確定し						エージェント由来: 導入commit 4b838401bf77にtrailerあり（検索語「期選択を回答として扱わず、回答に依存する処置は実」）		

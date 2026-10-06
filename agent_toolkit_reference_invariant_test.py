@@ -32,6 +32,8 @@ _INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-workflows.md")
 _AUDIT_RECORDS = pathlib.Path("docs/development/audit-records.md")
 _CONCEPTS_GOVERNANCE = pathlib.Path("docs/development/concepts-governance.md")
 _DESIGN_HOSTS = pathlib.Path("docs/development/design-hosts.md")
+_NORM_RESTRUCTURE_README = pathlib.Path("docs/development/norm-restructure/README.md")
+_NORM_RESTRUCTURE_CLAUSES_TEST = pathlib.Path("scripts/norm_restructure_clauses_test.py")
 _SESSION_RECORDS = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records.py")
 _SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records_test.py")
 _PROCESS_LOOP_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py")
@@ -52,6 +54,10 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     # 廃止したスキルの経緯を記す方針・設計の記録
     (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_GOVERNANCE): 2,
     (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS): 2,
+    # 判定台帳の説明が、基準commitの後に撤去したファイルを例として挙げる
+    (f"{_PLUGIN_PREFIX}/skills/realign-with-user/SKILL.md", _NORM_RESTRUCTURE_README): 1,
+    # 切り出しスクリプトのテストが一時リポジトリへ作るスキルのパス
+    (f"{_PLUGIN_PREFIX}/skills/demo/SKILL.md", _NORM_RESTRUCTURE_CLAUSES_TEST): 1,
 }
 
 

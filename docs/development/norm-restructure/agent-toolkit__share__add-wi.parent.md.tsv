@@ -1,0 +1,33 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領#1	```text 起動対象: add-wi.subagent.md ```						エージェント由来: 導入commit 8a9a35bb8adcにtrailerあり（検索語「起動対象: add-wi.subagent.md」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領#2	エージェントが成立性調査と起草を委ねるAWI・UWIの作成・更新で、本書を全文読						エージェント由来: 導入commit 8a9a35bb8adcにtrailerあり（検索語「GIN_ROOT}/share/add-wi.s」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 起動方法#1	WI投入担当は`add-wi.subagent.md`を指定して起動し（`age						未確定: 導入commit 5d6b3cd3a3afにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「legation`の`references/ba」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 起動方法#2	- 反映先と完成条件が他の要求と重ならず、単独で採否と実装を判断できる要求は、要						エージェント由来: 導入commit 1296b9db5d86にtrailerあり（検索語「と実装を判断できる要求は、要求ごとに別の担当を起」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 起動方法#3	- 次の要求の組は同じ担当へ渡す。1つの要求を投入先の組へ展開した全ての組（上流						未確定: 導入commit d3390fba7957にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「tandards`の`references/cr」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 起動方法#4	- 起動後に独立した要求が生じた場合は、新しい担当を起動する。稼働中の担当と終端						エージェント由来: 導入commit 1296b9db5d86にtrailerあり（検索語「当を起動する。稼働中の担当と終端済みの担当のどち」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 起動方法#5	- 同じ担当へ追送するのは、その担当へ渡した要求の要件更新と、「受領と検収」が定						エージェント由来: 導入commit 1296b9db5d86にtrailerあり（検索語「その担当へ渡した要求の要件更新と、「受領と検収」」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 起動方法#6	`cwd`は委譲元の作業ディレクトリの絶対パスとし、上流投入では元項目を保持する						エージェント由来: 導入commit 8ce64c4ca7fbにtrailerあり（検索語「トリの絶対パスとし、上流投入では元項目を保持する」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 起動前の前提#1	未終端の既存WIを更新・修復する必要が分かった時点と、既存WIについて対象と根拠						未確定: 導入commit fe802fcc2725にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「i-standards`の`references」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 起動前の前提#2	要求ごとに、投入先の対象リポジトリと種別を確定していることを確認する。1つの要求						エージェント由来: 導入commit 20abcdc0d112にtrailerあり（検索語「件」の該当箇所を読む。各対象の判定と根拠は投入前」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 渡す入力#1	`session-review-evidence --user-events`の						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「response`の回答・自由記述だけに限定する」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 渡す入力#2	- `投入する要求`: 要求ごとの識別子、`質問への回答の扱い`、投入先の対象リ						エージェント由来: 導入commit db48b13d9d3dにtrailerあり（検索語「果を書き、異なる場合はその根拠も書く。原文より狭」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 渡す入力#3	- 上流投入の要求では、`元項目`（元項目のAWIファイル名）と`投入条件`も渡						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「イル名）と`投入条件`も渡す。`上流投入先`が複」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 渡す入力#4	- `引き継ぎ記録先`: 値は`agent-toolkit:delegation						未確定: 導入commit 5d6b3cd3a3afにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「rences/base-contract.md`」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#1	保存前に、原稿の全節を通常AWI本文の要求固有性の基準で検収する。一度だけ現れる						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「基準で検収する。一度だけ現れる一般的な手順文も対」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#2	返却の形式、省略時の値および省略規則は`${CLAUDE_PLUGIN_ROOT						エージェント由来: 導入commit 251c7090b8d7にtrailerあり（検索語「の`## 出力`が定める。原稿の終端返却を受領し」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#3	- `起草結果`が挙げる要求の識別子が重複せず、その集合が委譲プロンプトへ渡した						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「別子が重複せず、その集合が委譲プロンプトへ渡した」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#4	- 全体の`状態`が、要求ごとの`結果`から同書の規則どおり導かれている						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「態`が、要求ごとの`結果`から同書の規則どおり導」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#5	- `結果`が`drafted`の要求は原稿と成立性の証拠の絶対パスが実在し、原						未確定: 導入commit f1fd8b9ba59aにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「t:wi-standards`「通常AWIの本文」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#6	- AWIの反映内容・完成条件、UWIの問い・判断材料・回答による結果が、渡した						エージェント由来: 導入commit bd52ed61cbbaにtrailerあり（検索語「確定した要件と逐語本文）と一致する。案を確定した」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#7	- 観測した欠陥を起点とするAWIの原因分析と再発防止策は、`agent-too						エージェント由来: 導入commit a2f7f518818cにtrailerあり（検索語「.md`「再発防止策の必須性」と「再発防止として」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#8	- 原稿が必須とする手段と条件が、種類ごとに次の根拠へ対応する。委譲元が選んだ手						エージェント由来: 導入commit 97a5fa788b61にtrailerあり（検索語「ごとの`## 実現性`の対応先で、確定した要件、」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#9	- 原稿の依存が`agent-toolkit:wi-standards`の`re						エージェント由来: 導入commit 364ce557ecc6にtrailerあり（検索語「eferences/states-and-dep」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#10	- 渡した要求の逐語本文が範囲語か開放列挙で示す集合について、返却か原稿が走査し						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「が走査できない場合は、委譲元が同じ工程で走査する」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#11	- 原稿、成立性の証拠または返却（`想定外事象:`の行を含む）が確かめていない範						エージェント由来: 導入commit 423fd8db9b8fにtrailerあり（検索語「て原稿へ反映するよう修正を指示するか、委譲元が確」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#12	- `判断の変更`を返した要求では、覆された委譲元の判断と理由を読み、採った案が						エージェント由来: 導入commit dc2209e2f7afにtrailerあり（検索語「び外部可視の結果と両立することを確かめる。`判断」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#13	- 返却より前にユーザーへ伝えた回答や説明のうち、担当の調査対象（原因、対象範囲						エージェント由来: 導入commit 3d4aeece8182にtrailerあり（検索語「で確定した内容と比べる。異なる記述があれば、次の」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#14	- `結果`が`condition_not_met`の要求は`条件判定`が不成立						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「判定`が不成立の条件、調査対象および実際の確認結」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#15	- `結果`が`needs_escalation`の要求は`続行できない理由`が						エージェント由来: 導入commit 20abcdc0d112にtrailerあり（検索語「てから、その結果を同じ担当へ渡して再開する。規範」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#16	保存の返却では、指示した集合との一致、`completed`の実際のファイル名と						エージェント由来: 導入commit 251c7090b8d7にtrailerあり（検索語「、原稿を検収済みで終了0なら意味の検収は原稿の受」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#17	- 「起動前の前提」で保留した既存AWIは、保存本文の検収が成立してから`atk						エージェント由来: 導入commit 606450dfaa4fにtrailerあり（検索語「立してから`atk wi unhold`で戻す。」）		
+agent-toolkit/share/add-wi.parent.md#WI投入担当の起動と受領 > 受領と検収#18	いずれかの検収に失敗した場合は、同じWI投入担当へ不一致の修正を指示する。 続行						未確定: 導入commit 29e2ebd3a499にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「する。先に`completed`か`condit」）		

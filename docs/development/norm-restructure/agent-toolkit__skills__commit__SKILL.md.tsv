@@ -1,0 +1,46 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/commit/SKILL.md##1	--- name: commit user-invocable: false d						未確定: 導入commit e346aed552caにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「t作業（通常commit・amend・fixup」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ#1	本スキルはgit commitの操作手順とコミットメッセージの記述規約を提供する						エージェント由来: 導入commit 88b04ae02bc0にtrailerあり（検索語「 commitの操作手順とコミットメッセージの記」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 検証#1	全コミットの完了後に計画全体を対象に変更範囲を検証し、レビューへ進む。						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「の完了後に計画全体を対象に変更範囲を検証し、レビ」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#1	モデル設定、aliasおよび起動候補は起動用の値として扱う。commit担当はc						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「観測したmodelとeffortを使い、最終メッ」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#2	コミット数はセッションや計画ごとに固定せず、変更目的、依存関係、レビュー、rev						エージェント由来: 導入commit cb7a3d546efbにtrailerあり（検索語「開契約とテストを満たす状態にする（努力目標。bi」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#3	コミットはメインが所有する。サブエージェントは明示的に許可された場合、または`e						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「ントは明示的に許可された場合、または`exec.」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#4	別セッションが同一リポジトリへコミットしうる前提で作業する。 コミットの前にベー						未確定: 導入commit 009ec67240bcにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「oolkit/rules/02-agent-op」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#5	commit直前に次を実施する。						未確定: 導入commit 2f5d76fbbdd5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「commit直前に次を実施する。」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#6	1. `git status --short`、`git diff --cach						未確定: 導入commit 2f5d76fbbdd5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「diff --cached`、`git diff」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#7	2. 計画記載の目的およびファイル群別の変更説明と、実装中に目的への帰属と必要性						未確定: 導入commit 07c184d5fc5cにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「説明と、実装中に目的への帰属と必要性を確認した追」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#8	3. format、lint、testの結果と警告ゼロを確認する。対象プロジェク						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「、ローカル検証の完了を後続工程の条件から外すと宣」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#9	4. 競合解決後は`git grep -nE '^(<{7}|={7}|>{7}						未確定: 導入commit 2cc61dca7424にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「^(<{7}|={7}|>{7})( |$)' 」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#10	5. 本文またはtrailerを持つコミットメッセージでは、第2行が空行であるこ						未確定: 導入commit 6063a4738474にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ッセージでは、第2行が空行であることを確認する。」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 通常commit#11	commit時に本来実行されるGit hookまたはhook管理ツール内の対象チ						エージェント由来: 導入commit bc3fc849719aにtrailerあり（検索語「hook名>`などの環境変数による対象チェックの」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > WI実装commitの対応#1	WIを入力に持つ実装commitとAWIの対応は、計画の進捗ログ（計画なしでは引						エージェント由来: 導入commit 45d53b61c178にtrailerあり（検索語「し、記録・取得・履歴変更の各操作を本節の手段で行」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > WI実装commitの対応#2	記録: 実装commitの作成前に対応AWI集合と現在のHEADの完全OIDを取						エージェント由来: 導入commit 385f12f95fdcにtrailerあり（検索語「`--commit`へ渡して記録する。通常実装・」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > WI実装commitの対応#3	```text atk run-script plan-progress -- 						エージェント由来: 導入commit b1f0711c30faにtrailerあり（検索語「<結果> --worktree <worktre」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > WI実装commitの対応#4	計画なしでは引き継ぎ記録を対象にし、`--handoff`と対象集合全件の`--						エージェント由来: 導入commit b1f0711c30faにtrailerあり（検索語「し、`--handoff`と対象集合全件の`--」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > WI実装commitの対応#5	取得: 終端担当などAWIを終端する主体は、`atk run-script pl						エージェント由来: 導入commit f3867cb1b4eaにtrailerあり（検索語「済み計画が一意なら読取りに使える。候補が複数ある」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > WI実装commitの対応#6	履歴変更: rebase・autosquash・amendでWI実装commit						エージェント由来: 導入commit 45d53b61c178にtrailerあり（検索語「write-map`で同じ記録へ追記する。対応表」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > WI実装commitの対応#7	対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIは						エージェント由来: 導入commit 398a70a67dbcにtrailerあり（検索語「残した根拠を使い、commitの指定を省く。公開」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 条件付き手順#1	- 本スキルの起動時に`agent-toolkit/skills/commit/						未確定: 導入commit 833929159c8eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「skills/commit/references」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 条件付き手順#2	- 公開工程に着手する時点で`references/publish.md`を全文						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「る時点で`references/publish.」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 条件付き手順#3	- amend、fixup、autosquash、rebaseまたはpush済み						未確定: 導入commit e346aed552caにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「前に`agent-toolkit/skills/」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 条件付き手順#4	- 実際にpushする直前またはリリース操作に着手する時点で`agent-too						未確定: 導入commit 833929159c8eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「nt-toolkit/skills/commit」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 条件付き手順#5	- 実行工程（`exec.subagent.md`の手順）のcommit履歴を扱						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「履歴を扱う時は`${CLAUDE_PLUGIN_」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 条件付き手順#6	- push後のCI失敗は`agent-toolkit:bugfix`を起動し、						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「x`を起動し、同スキルの`references/」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 作業用ブランチと退避物の削除#1	退避・バックアップ・実験などのために作成した一時ブランチ、`git stash`						エージェント由来: 導入commit b49a94b97444にtrailerあり（検索語「ために作成した一時ブランチ、`git stash」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 作業用ブランチと退避物の削除#2	削除前の確認は退避手段別に行う。						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「削除前の確認は退避手段別に行う。」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 作業用ブランチと退避物の削除#3	- 一時ブランチ: `git cherry -v <統合先> <対象ブランチ>`						未確定: 導入commit 786e940b5bcbにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「filter=A --name-only <統合」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 作業用ブランチと退避物の削除#4	- `git stash`: `git stash list`で対象を特定し、`						エージェント由来: 導入commit b49a94b97444にtrailerあり（検索語「 show --include-untracke」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 作業用ブランチと退避物の削除#5	- 別パスへの複製: `diff`で複製元と複製先の内容を比べる						エージェント由来: 導入commit b49a94b97444にtrailerあり（検索語「への複製: `diff`で複製元と複製先の内容を」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > 作業用ブランチと退避物の削除#6	削除するのは、帰属と反映状況の両方を確定した後とする。 保持する場合は保持理由と						未確定: 導入commit 6ac8ccebe95eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「除するのは、帰属と反映状況の両方を確定した後とす」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#1	コミットメッセージ第1行は「件名」と呼び、コミット文脈の記述で本表記に統一する。						エージェント由来: 導入commit cd33c2bb7085にtrailerあり（検索語「ジ第1行は「件名」と呼び、コミット文脈の記述で本」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#2	コミットメッセージはConventional Commits形式で書く（プロジェ						未確定: 導入commit 61f499472f9aにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ds`の`review-standards/re」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#3	- 形式: `<type>[(<scope>)]: <description>`						エージェント由来: 導入commit 59f79aaf7c49にtrailerあり（検索語「scope>)]: <description>`」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#4	- 本文またはtrailerを持つ場合は、件名と後続行の間に空行を1行置く。件名						未確定: 導入commit 6063a4738474にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「持つ場合は、件名と後続行の間に空行を1行置く。件」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#5	- typeは対象リポジトリの成果物を使う消費主体の振る舞いへの影響を基準に選ぶ						エージェント由来: 導入commit b68a0d631fc9にtrailerあり（検索語「/`docs`/`test`: 消費主体の振る舞」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#6	- scopeは変更範囲が一意に伝わる短い名詞（モジュール名・ディレクトリ名・機						エージェント由来: 導入commit cb7a3d546efbにtrailerあり（検索語「ュールに跨る変更や範囲が曖昧な変更では省略する（」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#7	- `!`も消費主体の振る舞いへの影響を基準に判断する lint/format設						未確定: 導入commit f5508cbbcee2にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ークフロー手順・依存グループ入れ替えなど開発者向」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#8	- エージェント向け文書は配布先でエンドユーザーまたはエージェントの振る舞いを構						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「、規範削除および機能的な規範変更は`chore`」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#9	- descriptionはリリースノートを読むエンドユーザーと後続開発者へ目的						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「に伝える。なぜ必要か、何を可能にするかまたは何を」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#10	- 計画ファイルにコミットメッセージ案を書く時点でも上記基準でセルフチェックする						未確定: 導入commit beaff819e874にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「コミットメッセージ案を書く時点でも上記基準でセル」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#11	- 本文（body）は任意。記載する場合の読み手、粒度、分量および構造は`age						エージェント由来: 導入commit d5eabdb84b4fにtrailerあり（検索語「toolkit:writing-standard」）		
+agent-toolkit/skills/commit/SKILL.md#コミット運用とコミットメッセージ > コミットメッセージとリリース#12	- `Co-Authored-By:`の値はユーザーの明示指示、明文化されたプロ						エージェント由来: 導入commit 4e6ee13b5f8cにtrailerあり（検索語「eply@<モデル提供元のドメイン>>`を付ける」）		

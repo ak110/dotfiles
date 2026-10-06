@@ -1,0 +1,32 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正#1	```text 起動対象: exec-review.subagent.md ``						未確定: 導入commit 129804c91e98にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「対象: exec-review.subagent」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正#2	メインが実装後のHEADを実行レビュー担当へレビューさせ、指摘への修正と履歴統合						未確定: 導入commit 3e2200b3ac28にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「PLUGIN_ROOT}/share/exec-」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正#3	全起動で名前付き入力`未判定検証記録`を渡す。証拠要求ありでは実装担当またはメイ						エージェント由来: 導入commit b53061869f51にtrailerあり（検索語「取可能な絶対パス、証拠要求なしでは`なし`とする」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正#4	画面を変更した差分では、並列画面レビュー（同じplugin rootの`shar						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「ugin rootの`share/usabili」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > 起動方法別のレビュー基準#1	明示したレビュー担当モデルを使う起動では、同じ値を委譲入力`担当モデル`にも渡し						エージェント由来: 導入commit 385f12f95fdcにtrailerあり（検索語「起動では、同じ値を委譲入力`担当モデル`にも渡し」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > 起動方法別のレビュー基準#2	レビュー対象のWIが`担当モデル.実行レビュー担当`を指定した場合、その値を実行						エージェント由来: 導入commit 385f12f95fdcにtrailerあり（検索語「レビューの起動を止め、レビュー単位を分ける。指定」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > 起動方法別のレビュー基準#3	レビュー基準は`計画`、`CI記録`、`WI`のうち1つ以上を同時に渡す集合値と						エージェント由来: 導入commit a9905689c214にtrailerあり（検索語「ーへその計画が持つAWI集合だけを対応付ける。レ」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > 起動方法別のレビュー基準#4	`計画`の基準では項目名`計画`で計画ファイルの絶対パスを渡し、`計画ファイル`						エージェント由来: 導入commit e90fd7a14012にtrailerあり（検索語「d> --return-result`を使う。期」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > 返却に含まれる既存不良の受領#1	実行レビューの返却に差分外の既存不良を示す`想定外事象:`行がある場合は、その行						エージェント由来: 導入commit 9a9c8c2e0a06にtrailerあり（検索語「-toolkit/rules/01-agent.」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > レビュー指摘管理表の準備#1	初回の実行レビュー担当を起動する直前に、本書がレビュー基準に対応するレビュー指摘						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「準に対応するレビュー指摘管理表を準備する。1件の」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > レビュー指摘管理表の準備#2	- `計画`を含む場合: 計画ファイルと同じディレクトリの`<計画stem>.e						未確定: 導入commit b4987cd08e98にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ァイルと同じディレクトリの`<計画stem>.e」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > レビュー指摘管理表の準備#3	- `WI`だけの場合: `~/.claude/plans/wi-<開始時のHE						エージェント由来: 導入commit 9b6348ab58b7にtrailerあり（検索語「ec-review.tsv`。`開始時のHEAD」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > レビュー指摘管理表の準備#4	- `CI記録`だけの場合: `~/.claude/plans/ci-<修正系列						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「.tsv`。`修正系列の開始時のHEAD`は委譲」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > レビュー指摘管理表の準備#5	対応する表が存在しない場合は`atk review-table init <レビ						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「`を単独実行し、成功の報告と警告の不在を確認する」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#1	メインは実装完了と検証結果を受領した後、初回の実行レビュー担当を起動する直前と、						エージェント由来: 導入commit 5e49e03855bfにtrailerあり（検索語「意させ、引き継ぎ再レビューでは応答の`hando」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#2	- 基準`計画`の出典: 計画へ記載されていない、別のレビュー基準で認可されたc						エージェント由来: 導入commit 4af4dd8bf23dにtrailerあり（検索語「ent-toolkit:process-wi`「」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#3	- 基準`CI記録`の出典: 委譲プロンプトへ直接記載するCI記録と、委譲プロン						未確定: 導入commit 2f5d76fbbdd5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「は`agent-toolkit:bugfix`の」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#4	- 基準`WI`の出典: 計画へ現れない対象WIの要求、完成条件、要求単位の由来						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「来および確定した採否。`計画`を併せて渡さない場」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#5	`CI記録`を渡す場合は、`agent-toolkit:bugfix`の`ref						エージェント由来: 導入commit 5222f4c6e206にtrailerあり（検索語「EAD`は同じ修正系列で継続する。レーンの作業を」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#6	初回の実行レビュー担当を起動する委譲プロンプトでは、省略時の値の`レビュー種別:						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「トには、`round: <ラウンド番号>`の行を」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#7	`review_contract`は計画外のユーザー目的、現行の公開契約、ユーザ						未確定: 導入commit 1a3a8fe43279にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「める。現在の基準による重複した認可判定の対象外と」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#8	```text version: 1 clauses: - clause: "<						未確定: 導入commit 79856a739dc9にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ontent: "参照: <絶対パス>#<見出し」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#9	参照先だけで条項の内容が一意に定まる場合は、`content`を例のように引用し						エージェント由来: 導入commit e4b9bd5e4509にtrailerあり（検索語「script review-contract -」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#10	- `前回確認版`: 旧担当の引き継ぎ記録にある記録の絶対パス。前回レビューした						エージェント由来: 導入commit 68a42930ff03にtrailerあり（検索語「絶対パス。前回レビューしたHEADと、Git管理」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#11	記録と比較元の実在を確認してから起動する。 比較元を取得できない場合は、欠けたH						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「ビュー指摘管理表から直接影響範囲を生成するため、」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#12	- `計画`では計画ファイルの絶対パス。`CI記録`では委譲プロンプトへ直接記載						未確定: 導入commit 32a0cd3002b4にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「原因commitOID`を今回の原因commit」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#13	任意入力の`対象ファイル限定`を用いる場合は、その対象も渡す。 対象リポジトリ、						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「結果およびレビュー指摘管理表は実行レビュー担当が」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > `review_contract`の生成#14	実行レビュー担当を起動する前に、必須入力の`レビュー基準`、`完成条件証拠`と、						エージェント由来: 導入commit 8ce64c4ca7fbにtrailerあり（検索語「クトリが実在することを確認し、それ以外では値`な」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > レビュー修正#1	指摘への修正は、そのworktreeを所有する主体が実施する。起動方法ごとの主体						エージェント由来: 導入commit 06bd6236adabにtrailerあり（検索語「iew-contract`の起動で検証してから、」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > レビュー修正#2	再判定が不要な場合は実行レビューを省略するが、`画面差分: あり`で新しい画面資						未確定: 導入commit 3e2200b3ac28にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「UGIN_ROOT}/share/exec.pa」）		
+agent-toolkit/share/exec-review.parent.md#実行レビュー担当の起動とレビュー修正 > レビュー指摘管理表の保存#1	`WI`だけのレビュー基準では、収束後にレビュー指摘管理表を削除し、保存先はpr						エージェント由来: 導入commit 5222f4c6e206にtrailerあり（検索語「のHEAD>.exec-review.tsv`で」）		

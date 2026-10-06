@@ -1,0 +1,25 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/refine-prompt/SKILL.md##1	--- name: refine-prompt description: > a						未確定: 導入commit b8f53c338c5fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「.dev/mizchi/articles/emp」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 使用条件#1	frontmatterの発火条件に加えて、頻繁に使うskillや自動化の中核プロ						エージェント由来: 導入commit 9a9c8c2e0a06にtrailerあり（検索語「t-toolkit/rules/01-agent」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 使用しない条件#1	- 単発利用のプロンプト（サブエージェント起動コストに見合わない）						エージェント由来: 導入commit 17b172fe7d8cにtrailerあり（検索語「用のプロンプト（サブエージェント起動コストに見合」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 使用しない条件#2	- 再現可能な品質改善ではなく、書き手の主観的選好を反映したい場合						未確定: 導入commit 3172dfbac32cにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「能な品質改善ではなく、書き手の主観的選好を反映し」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 使用しない条件#3	新規サブエージェントを起動できない環境での扱いは「環境制約」節に従う。						エージェント由来: 導入commit a0958c824899にtrailerあり（検索語「ージェントを起動できない環境での扱いは「環境制約」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > ワークフロー#1	本スキルはPlan modeの外で実行する。実行環境がPlan modeを提供す						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「eを提供する場合はPlan modeを抜けてから」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > ワークフロー#2	1. メインは`agent-toolkit:writing-standards`						エージェント由来: 導入commit d5eabdb84b4fにtrailerあり（検索語「toolkit:writing-standard」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > ワークフロー#3	2. 対象プロンプトを確定し、シナリオを与えるかを決める。 シナリオを与える場合						エージェント由来: 導入commit a797d7e28499にtrailerあり（検索語「読では`agent-toolkit:writin」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > ワークフロー#4	3. メインは対象の分量と論点数に応じて、サブエージェントの起動数を1体以上とし						未確定: 導入commit 0125cead7a46にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「と論点数に応じて、サブエージェントの起動数を1体」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > ワークフロー#5	4. 各サブエージェントから戻った指摘を集約する。 改善案を作成してユーザーへ提						未確定: 導入commit 0125cead7a46にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「各サブエージェントから戻った指摘を集約する。」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > ワークフロー#6	5. 全処理が完了したら、続行か終了かをユーザーに確認する。 - 続行する場合は						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「g-standards`など）、`agent-t」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > サブエージェントへの指示#1	サブエージェントに渡すプロンプトは次の構造を取る。 サブエージェントは指摘の列挙						未確定: 導入commit fd4e2ddd4058にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「指摘をすべて重要度付きで重要度の高い順に返すよう」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > サブエージェントへの指示#2	````text あなたは <対象プロンプト名> を前提知識を持たずに読む実行者						エージェント由来: 導入commit 34c886b4d8f1にtrailerあり（検索語「t:writing-standards`の「エー」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 指摘の集約と改善案作成#1	メインはサブエージェントから戻った指摘を集約・統廃合し、各指摘に対応する改善案を						エージェント由来: 導入commit 17b172fe7d8cにtrailerあり（検索語「った指摘を集約・統廃合し、各指摘に対応する改善案」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 指摘の集約と改善案作成#2	- 統廃合: サブエージェント間で重複する指摘は1件にまとめ、近接する指摘も意図						未確定: 導入commit 549c6d1d782eにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「で重複する指摘は1件にまとめ、近接する指摘も意図」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 指摘の集約と改善案作成#3	- 取捨選択: 些末な指摘や的外れな指摘がサブエージェントから返ってきた場合は、						エージェント由来: 導入commit a797d7e28499にtrailerあり（検索語「。定義元の内容の転記を求める指摘は、`agent」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 指摘の集約と改善案作成#4	- 改善案の作成: 統廃合・取捨選択後の各指摘について、メインが対応する改善案（						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「rds`の基準に従う。エージェント向け文書では同」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 指摘の集約と改善案作成#5	- ユーザーへの提示: 各指摘と改善案を後述フォーマットで本文へ転記する - サ						エージェント由来: 導入commit 17b172fe7d8cにtrailerあり（検索語「出力はユーザーに直接表示されないため、指摘部分は」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 指摘の集約と改善案作成#6	- 採否確認: ユーザー確認し、提案を回答可能な件数ずつまとめる。Claude 						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「scription`へ変更前後の要点を書く。各オ」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 指摘の集約と改善案作成#7	- 反映: 採用が確定した改善案を対象プロンプトに反映する - 「Other」欄						未確定: 導入commit 3172dfbac32cにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「her」欄に修正指示があれば、その内容に沿って反」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 指摘の集約と改善案作成 > ユーザー提示フォーマット（1件ごとに繰り返す）#1	````text ### 提案 N: <変更対象を1行で> - 指摘元: <サブ						未確定: 導入commit 3172dfbac32cにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「diff形式で示す。新規追加なら`+`のみ、削除」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 環境制約#1	`agent-toolkit:delegation`が定める委譲手段を利用できな						エージェント由来: 導入commit cd33c2bb7085にtrailerあり（検索語「価を実施し、結果提示時に「サブエージェント不可の」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 運用上の遵守事項#1	- サブエージェントは継続時も毎回新規に起動する。同一サブエージェントの再利用は						エージェント由来: 導入commit 41d00cd13799にtrailerあり（検索語「に起動する。同一サブエージェントの再利用は前回の」）		
+agent-toolkit/skills/refine-prompt/SKILL.md#プロンプトの改善案の検討 > 運用上の遵守事項#2	- シナリオは初回設定のまま用い、修正に合わせて容易化しない。不明瞭点が解消した						エージェント由来: 導入commit 41d00cd13799にtrailerあり（検索語「修正に合わせて容易化しない。不明瞭点が解消したよ」）		

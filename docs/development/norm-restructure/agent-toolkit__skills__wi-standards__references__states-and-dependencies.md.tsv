@@ -1,0 +1,40 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#1	本書は`agent-toolkit:wi-standards`の「状態と依存」節						エージェント由来: 導入commit 364ce557ecc6にtrailerあり（検索語「rds`の「状態と依存」節の本文であり、WIの状」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#2	型、保存状態、導出判定および一覧集合を区別する。						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「型、保存状態、導出判定および一覧集合を区別する。」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#3	| 保存状態 | `inbox` | 次の処理主体による取得待ち。依存未解決なら						未確定: 導入commit 26757d430c9bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「x` | 次の処理主体による取得待ち。依存未解決」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#4	| 保存状態 | `processing` | `agent-toolkit:p						未確定: 導入commit 89b1f128f10bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「g` | `agent-toolkit:proc」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#5	| 保存状態 | `hold` | ユーザーまたはエージェントが編集中であり、自						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「d` | ユーザーまたはエージェントが編集中であ」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#6	| 保存状態 | `adopted` | 採用内容が完了した終端 |						未確定: 導入commit 26757d430c9bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「 | `adopted` | 採用内容が完了した」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#7	| 保存状態 | `rejected` | 全要求の不採用を確定した終端 |						未確定: 導入commit 6049eddde0faにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「 `rejected` | 全要求の不採用を確定」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#8	| 導出判定 | `ready` | 全依存が終端し、UWI回答、metadat						エージェント由来: 導入commit 8afa88b75ed9にtrailerあり（検索語「y` | 全依存が終端し、UWI回答、metad」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#9	| 導出判定 | `blocked` | 依存、cooldownまたはmetad						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「nまたはmetadata不備により着手不能。回答」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#10	| 一覧集合 | `active` | `inbox`、`processing`						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「ox`、`processing`および`hold」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#11	| 一覧集合 | `processable` | `inbox`および`proc						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「` | `inbox`および`processin」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#12	現在処理すべき項目の重複は`active`を検索して本文を比較する。過去に同じ要						未確定: 導入commit 377234e4070fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「べる場合は`--state=all`で終端項目も」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#13	エージェントが実行できる状態遷移を次に示す。ユーザーはブラウザーUIから任意の状						未確定: 導入commit 89b1f128f10bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「態遷移を次に示す。ユーザーはブラウザーUIから任」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#14	| `inbox`→`hold` | `atk wi hold` | 項目を修正						未確定: 導入commit 246697120eb4にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「項目の修正が必要と判断した時点で自動処理から除外」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#15	| `processing`→`hold` | `atk wi hold --s						エージェント由来: 導入commit f6a4ee1ed29fにtrailerあり（検索語「られず元項目を進められないと判定した時点で元項目」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#16	| `hold`→`inbox` | `atk wi unhold` | 修正し						エージェント由来: 導入commit 378f926e89a9にtrailerあり（検索語「時点で自動処理へ戻す。`agent-toolki」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#17	| `inbox`→`processing` | `atk wi start-p						エージェント由来: 導入commit 9eaa29a1491cにtrailerあり（検索語「kerが、処理対象を確定した直後に遷移させる。是」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#18	| `inbox`→`adopted` | `atk wi adopt` | `						未確定: 導入commit bd389abe6770にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ss-wi`のpickerが、回答を保存済みで未」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#19	| `processing`→`adopted` | `atk wi adopt						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「端する。AWIの`adopt`では要求を反映した」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#20	| `processing`→`rejected` | `atk wi reje						未確定: 導入commit cefd1aedf1a5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「agent-toolkit:process-wi」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#21	| `hold`→`adopted`または`rejected` | `atk w						エージェント由来: 導入commit 339894d761aeにtrailerあり（検索語「た主体が`unhold`を経ずに終端する。`un」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#22	| `processing`→`inbox` | `atk wi return-						エージェント由来: 導入commit 364ce557ecc6にtrailerあり（検索語「端を待つ項目を`inbox`へ戻す。手順は[cr」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#23	| `adopted`または`rejected`→`inbox` | `atk 						エージェント由来: 導入commit 008ff99278f4にtrailerあり（検索語「turn-to-inbox --state=<終」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#24	| `adopted`または`rejected`→`hold` | `atk w						エージェント由来: 導入commit 008ff99278f4にtrailerあり（検索語「d --state=<終端状態>` | 誤って終」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#25	adoptの実装commit対応は、実装担当が計画の進捗ログまたは引き継ぎ記録へ						エージェント由来: 導入commit 45d53b61c178にtrailerあり（検索語「adoptへ渡す。記録、取得、複数commitの」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#26	回答済みUWIが指す元項目が既に`inbox`で`ready=true`なら、p						エージェント由来: 導入commit 8e18ebbaab50にtrailerあり（検索語「hold`せず開始時の候補を使う。`hold`の」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#27	エージェントは`inbox`と`hold`の項目を`atk wi rm`で削除で						エージェント由来: 導入commit f6a4ee1ed29fにtrailerあり（検索語「で項目が`inbox`へ戻るためである。調査・ユ」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#28	`adopt`または`reject`で項目を終端する主体は、コマンドの実行直前に						未確定: 導入commit caefec2a7dadにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「主体で完了を観測し、後続の主体が解決できる識別子」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#29	`agent-toolkit:process-wi`は`processable`						未確定: 導入commit a1b1c074ed7aにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ble`の項目だけを処理の対象とし、候補、優先度」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#30	`depends_on`はその項目より先に終端すべきキュー項目のファイル名を保持						エージェント由来: 導入commit 070183e53e9fにtrailerあり（検索語「断して判定する。同じファイル名のキュー項目が複数」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#31	`depends_on`は先行成果が無いと、後続WIの安全な実施または完成判定が						エージェント由来: 導入commit ed747f95e601にtrailerあり（検索語「替できない理由を後続本文へ対応付ける。独立に実施」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#32	`depends_on`は`atk wi set-dependencies <f						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「ing`および`hold`の項目の依存を更新する」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#33	`cooldown_until`は`atk wi edit <filename>						未確定: 導入commit 377234e4070fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ld`の項目へ設定する。空文字列の指定で解除する」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#34	着手不能の要因は、解除される契機で分類する。時間経過だけで解除される要因は`co						エージェント由来: 導入commit f6a4ee1ed29fにtrailerあり（検索語「state=processing <元項目のファ」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#35	事後承認型UWIは元の作業を待たせないため、`depends_on`へ加えず、元						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「求の手順を適用し、そのUWI自体を作業要求として」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#36	事前承認型UWIは元項目の`depends_on`へ加えず、元項目を`hold`						エージェント由来: 導入commit 378f926e89a9にtrailerあり（検索語「 wi start-processing`でUW」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#37	`rejected`はエージェント由来だけの全要求を技術的根拠で不採用と判断した						エージェント由来: 導入commit 378f926e89a9にtrailerあり（検索語「ま保持する。未回答の不採用確認では元項目を`ho」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#38	対象リポジトリの成果物を変更しても満たせず、上流リポジトリの改訂を要する要求の投						エージェント由来: 導入commit 364ce557ecc6にtrailerあり（検索語「扱いは[cross-repository-sub」）		
+agent-toolkit/skills/wi-standards/references/states-and-dependencies.md#状態と依存#39	エージェントが自身の誤りで投入した項目は、`atk wi rm`で削除するか`a						エージェント由来: 導入commit 8afa88b75ed9にtrailerあり（検索語「tk wi edit`で本文を正しい要求へ書き直」）		

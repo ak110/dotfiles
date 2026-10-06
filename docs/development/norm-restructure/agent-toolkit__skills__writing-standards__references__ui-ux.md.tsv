@@ -1,0 +1,29 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収#1	本書はエンドユーザーが操作する画面を計画、作成、変更またはレビューする主体が使う						エージェント由来: 導入commit b68a0d631fc9にtrailerあり（検索語「使う共通基準を定める。最初にエンドユーザーの目的」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収#2	画面の判断は本書（共通）と`ui-ux-patterns.md`（主題別）が持ち						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「rules.md`はHTML・CSS・JavaS」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収#3	参考資料: [frontend-ui-ux-skill](https://git						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「lu/ux-designer-skill)、[W」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 判断の順序#1	依頼者の明示指示、対象プロジェクトのデザインシステムと一貫した慣例、本書が定める						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「、トークン、スタイル規約を調べ、同じ役割のコンポ」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 操作と情報#1	- 画面の主目的と主要操作を明確にし、関係の薄い操作は次の段階で示す。選択肢が増						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「増えるほど判断が遅れるため、関連項目をまとまりで」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 操作と情報#2	- 操作の結果、現在の状態、取り消し方、エラーからの復旧をエンドユーザーが分かる						エージェント由来: 導入commit b68a0d631fc9にtrailerあり（検索語「ザーが分かる位置へ示す。画面の言葉と配置は、その」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 操作と情報#3	- 頻用する主要操作は見つけやすく押しやすい領域へ置く。破壊的操作は頻用操作から						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「域へ置く。破壊的操作は頻用操作から離し、誤操作の」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 操作と情報#4	- 表示する情報と操作は、エンドユーザーがその場で判断する順に並べる。取り消せる						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「で判断する順に並べる。取り消せる操作は元に戻す手」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 状態と内容#1	- 初期表示、読み込み中、空、結果あり、入力エラー、通信エラー、保存中、保存後を						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「設計する。読み込み中は最終配置に近い領域を予約し」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 状態と内容#2	- 短い値、通常の値、表示幅を超える長い値で、情報と操作の全体へ到達できることを						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「操作の全体へ到達できることを確かめる。文字の折り」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 状態と内容#3	- モーダルや割り込みは、現在の作業を止める必要がある場合に使う。情報通知は文脈						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「がある場合に使う。情報通知は文脈と緊急度に合う位」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 視覚と構造#1	- 文字サイズは少数の一貫した比率、余白は4pxまたは8pxを基準にしたトークン						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「基準にしたトークンで構成する。ブランド色と成功・」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 視覚と構造#2	- ライトとダークの両テーマを提供する画面では、それぞれの文字、境界、背景、フォ						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「れの文字、境界、背景、フォーカスを確認する。ダー」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 視覚と構造#3	- 動きには150〜300msを目安とし、位置や透明度の変化へ用途を限定する。O						エージェント由来: 導入commit 615ce1d32880にtrailerあり（検索語「や透明度の変化へ用途を限定する。OSやブラウザー」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 視覚と構造#4	- ネイティブの操作要素と意味のある見出し構造を優先する。モバイルの幅から配置を						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「み、横幅が増えたときに情報密度を調整する。左右方」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 視覚と構造#5	- 一律の角丸と影、根拠のないグラデーション、どの製品にも当てはまる定型文言を使						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「の製品にも当てはまる定型文言を使う場合は、製品の」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > アクセシビリティと性能#1	WCAG 2.2 AAを下限として、キーボードだけで全操作を終え、フォーカス位置						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「常文字のコントラストは4.5:1以上、大きな文字」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > アクセシビリティと性能#2	実際の利用環境でCore Web Vitalsを測定できる場合は、LCP 2.5						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「以下を良好域の目標にする。画像と埋め込みの領域を」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 完了前の実描画確認#1	受入シナリオの期待結果との一致、データの反映、操作の成否といった機能の正しさは、						エージェント由来: 導入commit b3de323dc103にtrailerあり（検索語「判定する内容は`agent-toolkit:re」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 完了前の実描画確認#2	ブラウザーを利用できる環境では、変更した画面を実際に描画し、次を観測してから完了						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「し、次を観測してから完了とする。実装者の自己点検」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 完了前の実描画確認#3	1. エンドユーザーと同じクリック、入力、キーボード操作で、主要な利用シナリオを						エージェント由来: 導入commit b3de323dc103にtrailerあり（検索語「操作で、主要な利用シナリオを結果まで終え、迷わず」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 完了前の実描画確認#4	2. ドロップダウン、ダイアログ、読み込み中、入力エラー、空の一覧、通知など、操						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「態へ実際に到達する。それぞれの画面キャプチャーで」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 完了前の実描画確認#5	3. 320px幅と400%拡大、キーボードのみの操作、利用するテーマ、`pre						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「efers-reduced-motion`、短い」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 完了前の実描画確認#6	4. 観測した問題を修正し、同じシナリオと状態を再確認する。問題が解消したことを						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「ナリオと状態を再確認する。問題が解消したことを確」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 完了前の実描画確認#7	描画手段には対象プロジェクトのE2E環境、Playwrightまたはブラウザー操						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「ールを使う。ブラウザーを利用できない環境では、確」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 数値の一次資料#1	- [W3C WCAG 2.2](https://www.w3.org/TR/W						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「22/): 通常文字4.5:1、大きな文字と情報」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 数値の一次資料#2	- [web.dev Core Web Vitals](https://web.						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「/web.dev/articles/vitals」）		
+agent-toolkit/skills/writing-standards/references/ui-ux.md#画面の設計とユーザビリティの検収 > 数値の一次資料#3	- [Apple Human Interface Guidelines: But						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「esign/human-interface-gu」）		

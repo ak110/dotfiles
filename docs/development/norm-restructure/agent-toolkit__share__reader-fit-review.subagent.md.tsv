@@ -1,0 +1,27 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク#1	1件の文章成果物を1人の読者像の立場で読み、読者への適合と、委譲元・委譲先の役割						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「で読み、読者への適合と、委譲元・委譲先の役割への」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 入力#1	```text 必須入力名: 成果物,種別,読者像 任意入力名: レビュー種別,						エージェント由来: 導入commit 68a42930ff03にtrailerあり（検索語「任意入力名: レビュー種別,修正範囲,未解決事項」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 入力#2	- `成果物`: 読む文章成果物の絶対パスと行数。private-notesにあ						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「otesにあるWIでは、ファイル名と取得に使う`」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 入力#3	- `種別`: 成果物の種別（エンドユーザー向け文書、エージェント向け文書、委譲						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「`<役割名>.parent.md`、`<役割名>」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 入力#4	- `読者像`: その成果物を読む主体と、その主体が既に知っている事柄						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「`: その成果物を読む主体と、その主体が既に知っ」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 入力#5	`レビュー種別`は省略時に`初回レビュー`とし、成果物全体を点検する。 `再レビ						エージェント由来: 導入commit 68a42930ff03にtrailerあり（検索語「種別`は省略時に`初回レビュー`とし、成果物全体」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 入力#6	- `修正範囲`: 前回確認版と現行版の取得先および差分、変更した契約の直接影響						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「得先および差分、変更した契約の直接影響範囲、その」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 入力#7	- `未解決事項`: 指定した読者に関係する前回指摘の箇所、違反した規定、発生条						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「所、違反した規定、発生条件、根本原因、検収手段、」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 入力#8	再レビューの2入力の欠落・空欄、比較元の参照不能では、欠けた情報を出力して止める						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「への回答を記録したUWIも、渡された前回本文の複」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 入力#9	成果物の全文は文脈として読み、再レビューの指摘候補は修正箇所と変更した契約から導						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「前回未走査の直接影響範囲の欠陥、同じ違反した規定」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#1	読者への適合として、次を判定する。						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「読者への適合として、次を判定する。」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#2	- 読者像が既に知っている情報の繰り返しを省き、知らない語、内部の呼び名、手元だ						エージェント由来: 導入commit 66d61d5474f4にtrailerあり（検索語「ていない。既存の対象を指す名詞句は、定義元を固定」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#3	- 読者が判断、操作または検証に使う情報（目的、対象、条件、手順の続き、参照先）						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「は検証に使う情報（目的、対象、条件、手順の続き、」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#4	- 読者が到達できない参照（個人メモ、作業中の計画ファイル、会話の経緯など）を出						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「個人メモ、作業中の計画ファイル、会話の経緯など）」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#5	- 行為者と対象を一意に識別できる語で書かれ、指示語と相対語（こちら、先ほどの方						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「で書かれ、指示語と相対語（こちら、先ほどの方針な」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#6	委譲元・委譲先の役割への適合として、種別がエージェント向け文書または委譲の文書で						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「として、種別がエージェント向け文書または委譲の文」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#7	- 委譲元の手順と委譲先の手順が同じ文書に混在せず、読み手が相手側の制約を自分へ						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「先の手順が同じ文書に混在せず、読み手が相手側の制」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#8	- 委譲先が観測できない条件（委譲元の名称、委譲元の文脈など）で委譲先の手順を分						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「条件（委譲元の名称、委譲元の文脈など）で委譲先の」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#9	- 文書内に登場する役割の記述を、読み手が自身の役割として取り込む書き方になって						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「役割の記述を、読み手が自身の役割として取り込む書」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#10	種別が質問への回答である場合は、加えて次の3点を判定する。欠ける場合は読者への適						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「場合は、加えて次の3点を判定する。欠ける場合は読」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#11	- 質問の一つひとつへ直接答えている						エージェント由来: 導入commit 5c1d9d1f5cfcにtrailerあり（検索語「質問の一つひとつへ直接答えている」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#12	- 冒頭の問いが名指しする説明が本文に実在する						エージェント由来: 導入commit 5c1d9d1f5cfcにtrailerあり（検索語「冒頭の問いが名指しする説明が本文に実在する」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 観点#13	- 回答者が知らない内部の呼び名を説明なしで使っていない						エージェント由来: 導入commit 5c1d9d1f5cfcにtrailerあり（検索語「答者が知らない内部の呼び名を説明なしで使っていな」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 出力#1	次の固定形式だけを返す。`未解決の指摘数`は返す指摘の件数であり、再レビューの分						エージェント由来: 導入commit 085a2061a21cにtrailerあり（検索語「摘数`は返す指摘の件数であり、再レビューの分類付」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 出力#2	```text 状態: completed | needs_escalation						エージェント由来: 導入commit 085a2061a21cにtrailerあり（検索語「ーでは各指摘の分類と、初回レビューの不足を別項目」）		
+agent-toolkit/share/reader-fit-review.subagent.md#読者別探索担当タスク > 出力#3	正常時の`状態`は`completed`とし、入力不足では`needs_esca						エージェント由来: 導入commit 085a2061a21cにtrailerあり（検索語「では`needs_escalation`と`続行」）		

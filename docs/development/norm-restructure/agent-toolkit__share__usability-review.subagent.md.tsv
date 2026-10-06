@@ -1,0 +1,18 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク#1	変更された画面を独立した担当として描画・操作し、エンドユーザーが画面の意味を理解						エージェント由来: 導入commit b3de323dc103にtrailerあり（検索語「言、フォーカス、操作の分かりやすさ、狭幅・拡大・」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 入力#1	```text 必須入力名: 対象worktree,変更画面,主要シナリオ,検証						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「ktree,変更画面,主要シナリオ,検証環境,引」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 入力#2	- 対象worktree: レビューする作業ツリーの絶対パス。起動時の`cwd`						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「ューする作業ツリーの絶対パス。起動時の`cwd`」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 入力#3	- 変更画面: 変更した画面のパスまたはURLと、状態を発生させる操作。						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「 変更した画面のパスまたはURLと、状態を発生さ」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 入力#4	- 主要シナリオ: エンドユーザーが画面で終える作業（操作の流れ）。期待結果と比						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「作業（操作の流れ）。期待結果と比べる対象ではなく」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 入力#5	- 検証環境: プロジェクトが定めるローカル環境の起動手順または稼働中のloop						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「トが定めるローカル環境の起動手順または稼働中のl」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 入力#6	- 引き継ぎ記録先: managed-tempの中に作成する記録の絶対パス。						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「先: managed-tempの中に作成する記録」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 入力#7	- round: 初回を1とし、修正後に同じ担当へ再判定を求めるたびに増やす番号						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「初回を1とし、修正後に同じ担当へ再判定を求めるた」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 操作#1	対象worktreeを読んで検索し、プロジェクトの手順が定める開発または検証環境						エージェント由来: 導入commit 17174fd4dee8にtrailerあり（検索語「複製元など別の作業ツリーのコードを配信した画面は」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 操作#2	自ら起動したコマンドとプロセス（検証環境、ブラウザー、描画スクリプトなど）は時間						エージェント由来: 導入commit 24ab948f843aにtrailerあり（検索語「クリプトは、例外で止まった場合もブラウザーを閉じ」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 判定と記録#1	`agent-toolkit:writing-standards`の`refer						エージェント由来: 導入commit 50a115f696b8にtrailerあり（検索語「当する主題がある場合は`references/u」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 判定と記録#2	対象HEADの7文字以上の一意な短縮OID、`round`、完遂を試みたシナリオ						エージェント由来: 導入commit 17174fd4dee8にtrailerあり（検索語「、判定を`未確定`とする。ブラウザー操作ツールが」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 出力#1	次の形式だけを返す。						エージェント由来: 導入commit 5c6e77a694cbにtrailerあり（検索語「次の形式だけを返す。」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 出力#2	```text 判定: 合格 | 不合格 | 未確定 判定の回数: <番号> レ						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「ューしたHEAD: <7文字以上の一意な短縮OI」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 出力#3	`未確定`では、4行の後に描画手段ごとの次の行を3行加える。`<手段>`は`E2						エージェント由来: 導入commit 24ab948f843aにtrailerあり（検索語「ghtのライブラリ`、`ブラウザー操作ツール`の」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 出力#4	```text 試行: <手段> | <実行したコマンド> | <終了コードまた						エージェント由来: 導入commit 24ab948f843aにtrailerあり（検索語「> | <実行したコマンド> | <終了コードま」）		
+agent-toolkit/share/usability-review.subagent.md#ユーザビリティレビュータスク > 出力#5	続行不能時は`判定: needs_escalation`とし、末尾に`続行できな						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「calation`とし、末尾に`続行できない理由」）		

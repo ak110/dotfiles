@@ -1,0 +1,15 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#1	単発の委譲では、起動前に対象、読取・書込権限および完了条件を確定する。 委譲プロ						エージェント由来: 導入commit b1a512946261にtrailerあり（検索語「や履歴の先頭確認は妨げない。既存ファイルの上書き」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#2	委譲元の文書が、委譲プロンプトの必須入力または値の確定規則を別の文書へ委ねる場合						未確定: 導入commit ccb18982e071にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「。担当種別、`model_type`その他の必須」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#3	起動前に委譲先へ渡す方針が確定していることを判定する。判定は委譲が確定する成果物						未確定: 導入commit ccb18982e071にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ついて確認へ送るべき未回答の事項が解消しているこ」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#4	委譲元は目的、要件、制約、確認済みの観測事実および完了条件を委譲プロンプトへ渡す						エージェント由来: 導入commit 55721194b3c3にtrailerあり（検索語「へ渡す場合は、採用した要求の原文と出所を`for」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#5	文書、コメントまたはWI本文の起草を委ねる委譲元は、現行plugin rootを						未確定: 導入commit 5251a1783881にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「 pyfltr.colloquial <起草ファ」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#6	稼働中の委譲先へ指示を追送する場合は、追送する要件が確定しているかを判定する。確						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「たは判断基準を覆す場合も、先行応答を待たずに追送」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#7	稼働中の委譲先の停止は最終手段とする。停止の前に、その委譲先による作業ツリーへの						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「の書込み、未着の報告およびその委譲先が持つ文脈の」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#8	`agents_server`経由の起動では、`mode`ごとの`share/a						未確定: 導入commit e19215a5ea0fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「it/rules/01-agent.md`「使用」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#9	委譲先の`<役割名>.subagent.md`が2つ以上の工程を順に実行すると定						エージェント由来: 導入commit 0f87a2a59f38にtrailerあり（検索語「tempの直下に新しい記録先を用意して委譲プロン」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#10	委譲先の操作を制限する場合は、制限を目的、対象資源および状態遷移で示す。委譲プロ						未確定: 導入commit ccb18982e071にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「必須と定める状態遷移と重ならない範囲に限る。コマ」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約#11	委譲先が待機を表明して終了した場合の判別の根拠と、委譲元が再開を指示するかどうか						未確定: 導入commit 6aad9fbe4c87にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「するかどうかは`references/waiti」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約 > `<役割名>.subagent.md`を指定する起動#1	`agents_server`の`start`へ`subagent_md_pat						エージェント由来: 導入commit 6939d43ae90bにtrailerあり（検索語「nt_md_path`は同じplugin roo」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約 > 分離実行の受領物#1	分離実行で受け取る内容は、観測値の伝達と、観測値に基づく判別に分ける。 委譲元の						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「して決める。コマンド実行では要約方針を、読み取り」）		
+agent-toolkit/skills/delegation/references/base-contract.md#基本委譲契約 > 分離実行の受領物#2	分離先がコマンドを実行するツールの実行上限を超える見込みのコマンドは、コマンドご						未確定: 導入commit ccb18982e071にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「の連結に限り、複数の対象を受理する同一コマンドの」）		

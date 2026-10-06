@@ -1,0 +1,12 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#1	WI作成から実行レビューまでの成果をつなぎ、要求が消費主体の使う公開インターフェ						エージェント由来: 導入commit 82c25d454538にtrailerあり（検索語「満たされるようにする。後工程は前工程の出口を入力」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#2	| WI作成（調査・起草） | 要件定義・基本設計 | ユーザーの要求、観測事実						エージェント由来: 導入commit b68a0d631fc9にtrailerあり（検索語「 | 目的、消費主体、外部可視の完成条件、実現方」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#3	| WI作成（検収・保存） | 要件定義・基本設計の検収 | 返却された原稿と証						エージェント由来: 導入commit 251c7090b8d7にtrailerあり（検索語「拠 | 親が要件・引用・対象集合を検収し、同じ担」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#4	| 計画 | 基本設計・詳細設計 | WIと対象の現行契約 | 外部仕様、変更対						エージェント由来: 導入commit e7588209d24fにtrailerあり（検索語「様、変更対象、受入シナリオ、テスト、検証コマンド」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#5	| 実行 | 実装・単体テスト・結合テスト | 確定した計画と受入シナリオ | 						エージェント由来: 導入commit b68a0d631fc9にtrailerあり（検索語「費主体が使う公開インターフェースから検証する結合」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#6	| 実行レビュー | 総合テスト・受入テスト | 実装差分、受入シナリオ、テスト						エージェント由来: 導入commit 5b1d63087363にtrailerあり（検索語「結果 | 実装後に要件・外部仕様の水準でテストの」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#7	工程表の各行は「<工程名>工程」（計画工程、実行工程など）とも呼ぶ。計画担当は計						エージェント由来: 導入commit 0cb98c433e86にtrailerあり（検索語「i`ではレーン担当、レビュー修正担当、CI修正担」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#8	実行レビューは提出されたテストと結果を確認する。対象を動かして再検証する責務は実						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「たテストと結果を確認する。対象を動かして再検証す」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#9	実行工程の「受入シナリオ検証」は、計画の`### 受入シナリオ`の各行に対応し、						エージェント由来: 導入commit ebb4d09b3925にtrailerあり（検索語「た呼び出し手段（コマンド・画面・API・hook」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#10	エージェント向け文書の改訂を固定入力へ適用する試行では、実装担当が読み取り専用の						エージェント由来: 導入commit bdc28e9b38d3にtrailerあり（検索語「体の制限（`agent-toolkit:sess」）		
+agent-toolkit/share/workflow-phases.md#WIから受入までの工程#11	常駐するサービスなど本番の起動単位（systemd unit、コンテナー定義、タ						エージェント由来: 導入commit 06bd6236adabにtrailerあり（検索語「送範囲、停止のタイムアウト、環境変数、作業ディレ」）		

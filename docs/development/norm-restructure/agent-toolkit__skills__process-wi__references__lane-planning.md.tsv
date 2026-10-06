@@ -1,0 +1,18 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#1	初回選定を受領した`レーン担当`は最初に、選定結果の各項目から再開位置を読み、`						エージェント由来: 導入commit 9bb31475250eにtrailerあり（検索語「成要否」を適用する。1件でも作成条件に当たれば、」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#2	対象リポジトリの版数規範が更新を求める場合、レーン数を問わず、その判定基準からb						エージェント由来: 導入commit 1a87a7423455にtrailerあり（検索語「I本文の区分は要求単独の起草時点の判定として扱い」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#3	全AWIが作成を省く条件に当たる場合は、`atk wi show`で要求と完成条						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「先へ書く。`統合区分`は採用する要求を実装する場」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#4	```text 計画なし準備完了 AWI: <AWIファイル名のASCIIカンマ						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「書: <編集するリポジトリ相対パスのASCIIカ」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#5	エージェント向け文書の編集を含まない場合は、同じAWI集合と統合区分を`計画検査						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「ず`## 実装`へ進む。`マージなし`では実装せ」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#6	1. `agent-toolkit:plan-mode`を起動し、同スキルの`r						エージェント由来: 導入commit 8102b2450a27にtrailerあり（検索語「実行結果の検証」が定める展開前の準備確認を終えた」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#7	2. 人間由来の要求を不採用または部分採用にする判断も`agent-toolki						未確定: 導入commit 164ba7dfde3fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「t/share/rules-subagent.m」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#8	3. 手順4以降へ進む条件は、計画中に通知した確認事項への回答を全て受領し、計画						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「採否へ反映済みであることとする。未受領または未反」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#9	4. `references/plan-file-standards.md`に従						未確定: 導入commit 67ab60e52d7bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「n-source <計画本文の絶対パス> --l」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#10	5. 計画全体から編集・新設・移動するエージェント向け文書の集合を確定する。全パ						エージェント由来: 導入commit 851431064236にtrailerあり（検索語「画ファイルの絶対パス>`を用いる。集合の全パスを」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#11	6. `## 実施内容`の人間由来の行が`部分採用`または`不採用`である場合、						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「が明示した禁止条件が`## 実施内容`にある場合」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#12	```text 計画作成完了 計画ファイル: <絶対パス> エージェント向け文書						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「書: <編集するリポジトリ相対パスのASCIIカ」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#13	レーン担当は手順5で確認した集合をそのまま`エージェント向け文書:`行へ書く。集						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「ジェント向け文書の範囲は`計画なし準備完了`の`」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#14	再開位置が計画ファイルの絶対パスである場合は、`## 概要`、`## 変更履歴`						エージェント由来: 導入commit 560a04520036にtrailerあり（検索語「記す。`計画`の値が`計画なし`の項目では同じ観」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#15	再開位置が`なし`で、いずれの待機条件にも当たらない場合は、計画ファイルの絶対パ						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「送り、応答を待たず実装へ進む。統合区分は`## 」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#16	```text 計画検査完了 計画ファイル: <絶対パス|なし> 統合区分: <						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「WI: <AWIファイル名のASCIIカンマ区切」）		
+agent-toolkit/skills/process-wi/references/lane-planning.md#レーン計画の起草と再開#17	計画なしの調査で設計判断、バグ対応または人間由来の要求の縮小が必要と分かった場合						エージェント由来: 導入commit ff918f492fd4にtrailerあり（検索語「の縮小が必要と分かった場合は、差し替えだけで完結」）		

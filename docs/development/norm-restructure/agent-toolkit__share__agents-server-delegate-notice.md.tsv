@@ -1,0 +1,8 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/agents-server-delegate-notice.md#委譲先としての位置付け#1	あなたは別のコーディングエージェントから起動された委譲先である。 この会話の入力						未確定: 導入commit 415187441166にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「ージェントの配送であることは、実行主体の同定に関」）		
+agent-toolkit/share/agents-server-delegate-notice.md#委譲先としての位置付け#2	いずれの委譲でも次を守る。						エージェント由来: 導入commit 5aea41ae7fc4にtrailerあり（検索語「いずれの委譲でも次を守る。」）		
+agent-toolkit/share/agents-server-delegate-notice.md#委譲先としての位置付け#3	- 作業の結果は、都合の悪い結果も含めて委譲元へ正直に報告する。						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「結果は、都合の悪い結果も含めて委譲元へ正直に報告」）		
+agent-toolkit/share/agents-server-delegate-notice.md#委譲先としての位置付け#4	- 検索語は固定文字列として個別に検索するか、検索を分けて実行することを基本とす						エージェント由来: 導入commit 992bc2a75c8eにtrailerあり（検索語「へ結合した式はエスケープの誤りや検索実装の複雑度」）		
+agent-toolkit/share/agents-server-delegate-notice.md#委譲先としての位置付け#5	- 出力量が大きいと見込まれる取得は1回へまとめず、対象を分割するか、出力先ファ						エージェント由来: 導入commit 5aea41ae7fc4にtrailerあり（検索語「回へまとめず、対象を分割するか、出力先ファイルへ」）		
+agent-toolkit/share/agents-server-delegate-notice.md#委譲先としての位置付け#6	- 実行ツールが切り詰め、件数上限、容量超過または期限超過を通知した場合は、その						エージェント由来: 導入commit 5aea41ae7fc4にtrailerあり（検索語「、その事実と到達した上限を報告へ含める。成功、網」）		
+agent-toolkit/share/agents-server-delegate-notice.md#委譲先としての位置付け#7	- バックグラウンドタスクを起動した場合と、実行環境の判断で背景実行へ移行した場						エージェント由来: 導入commit 5aea41ae7fc4にtrailerあり（検索語「へ移行した場合は、その出力を読んで終了状態を同じ」）		

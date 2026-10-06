@@ -1,0 +1,15 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表#1	`writing.md`の「構成・構造」が参照する詳細規定。 語を先に決める場合						未確定: 導入commit 1f65029aa184にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「同種の対象を複数の主体間で記述する場面では、語よ」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 適用場面#1	本書は用語対応表を作成する場面の手順と書式を定める。 「候補語の確定」を適用する						未確定: 導入commit abebfd03e579にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「、ユーザーへの発話は`agent-toolkit」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 適用場面#2	- 計画ファイルの起草のうち、新しい概念名・節名・識別子を導入する場合（設計・調						エージェント由来: 導入commit f22f67a13a36にtrailerあり（検索語「い概念名・節名・識別子を導入する場合（設計・調査」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 適用場面#3	- 命名（公開仕様・状態名・条件名・事象名・値や記録の型名・メソッド名・真偽値名						エージェント由来: 導入commit f22f67a13a36にtrailerあり（検索語「・条件名・事象名・値や記録の型名・メソッド名・真」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 適用場面#4	- 工程・レビュー・検証・判定・担当へ名前を付ける記述、または既存の工程などを名						エージェント由来: 導入commit 0cb98c433e86にtrailerあり（検索語「子がある対象は識別子で書き、それ以外は`defi」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 適用場面#5	- 同名または同種の対象が複数の主体（自プロジェクトと参照元プロジェクト、変更前						未確定: 導入commit 5406dd02e1b2にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「数の主体（自プロジェクトと参照元プロジェクト、変」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 適用場面#6	ユーザー原文の引用、単純な機械編集および定型出力には適用しない。						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「原文の引用、単純な機械編集および定型出力には適用」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 表の書式#1	語より先に指示対象と役割を確定する。候補語は最後に決める列へ置き、具体対象と役割						エージェント由来: 導入commit 48a03e8bd1b0にtrailerあり（検索語「る。候補語は最後に決める列へ置き、具体対象と役割」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 表の書式#2	- 役割には開始条件、状態、事象、値、記録、目的、手段などのうち対象に合うものを						エージェント由来: 導入commit 48a03e8bd1b0にtrailerあり（検索語「録、目的、手段などのうち対象に合うものを書く。同」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 表の書式#3	- 1つの表には1つの意味境界に属する具体対象を収め、意味境界が変わる対象は別の						エージェント由来: 導入commit 57c6e21deeb2にtrailerあり（検索語「が変わる対象は別の表へ分ける（努力目標。意味境界」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 候補語の確定#1	表の具体対象と役割を一意に指す語から候補語を選び、同じ文書の既存表記とそろえる。						エージェント由来: 導入commit 48a03e8bd1b0にtrailerあり（検索語「、新しく導入する用語の定義を表の直後へ「Xとは〜」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 本文への反映#1	- 表の語を本文の中心語彙に用いる（努力目標。語のずれが指示対象の誤読を招くため						エージェント由来: 導入commit 57c6e21deeb2にtrailerあり（検索語「中心語彙に用いる（努力目標。語のずれが指示対象の」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 本文への反映#2	- 日本語文・設計要素・コード識別子の三層で同一対応を保つ （例: 開始条件は条						エージェント由来: 導入commit f22f67a13a36にtrailerあり（検索語「、事象は事象名・メソッド名、状態は状態名とし、別」）		
+agent-toolkit/skills/writing-standards/references/referent-table.md#用語対応表 > 本文への反映#3	- 骨組み・見出しでは作業ラベル（目的・対象・判断を省いた抽象名詞句）を避け、指						エージェント由来: 導入commit 57c6e21deeb2にtrailerあり（検索語「抽象名詞句）を避け、指示対象の分かる語を使う（努」）		

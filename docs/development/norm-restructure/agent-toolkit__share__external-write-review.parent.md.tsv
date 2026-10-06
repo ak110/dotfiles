@@ -1,0 +1,10 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/external-write-review.parent.md#投稿前レビュー担当の起動と受領#1	```text 起動対象: external-write-review.suba						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「xternal-write-review.sub」）		
+agent-toolkit/share/external-write-review.parent.md#投稿前レビュー担当の起動と受領#2	`agent-toolkit:external-write-review`の対象						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「IN_ROOT}/share/external-」）		
+agent-toolkit/share/external-write-review.parent.md#投稿前レビュー担当の起動と受領 > 起動#1	確定した文面をUTF-8のファイルへ保存してから、`external-write						未確定: 導入commit 5d6b3cd3a3afにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「gation`の`references/base」）		
+agent-toolkit/share/external-write-review.parent.md#投稿前レビュー担当の起動と受領 > 起動#2	- `文面ファイル`: 文面ファイルの絶対パスと行数						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「`文面ファイル`: 文面ファイルの絶対パスと行数」）		
+agent-toolkit/share/external-write-review.parent.md#投稿前レビュー担当の起動と受領 > 起動#3	- `投稿先と目的`: 投稿先と投稿の目的						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「`投稿先と目的`: 投稿先と投稿の目的」）		
+agent-toolkit/share/external-write-review.parent.md#投稿前レビュー担当の起動と受領 > 起動#4	- `根拠の所在`: 文面が根拠とする差分・観測結果・関連ファイルの所在						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「在`: 文面が根拠とする差分・観測結果・関連ファ」）		
+agent-toolkit/share/external-write-review.parent.md#投稿前レビュー担当の起動と受領 > 起動#5	観点、読者像、返却形式と規範ファイルは`external-write-revie						エージェント由来: 導入commit 544e68c25bafにtrailerあり（検索語「agent.md`が定めるため、委譲プロンプトで」）		
+agent-toolkit/share/external-write-review.parent.md#投稿前レビュー担当の起動と受領 > 受領#1	結果は引数なしの`atk agents wait`で受け取り、起動したsessi						エージェント由来: 導入commit 992bc2a75c8eにtrailerあり（検索語「め自動では繰り返さず、反映によって事実主張や対象」）		
+agent-toolkit/share/external-write-review.parent.md#投稿前レビュー担当の起動と受領 > 受領#2	起動したsessionが結果を返さずに終端した場合は、同じ入力で1回だけ起動し直						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「art`を起動できず同等の読み取り専用の委譲手段」）		

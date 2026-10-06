@@ -1,0 +1,18 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程#1	本書は作業の起動形態によらず、commitから公開後の確認までを扱う。実行主体は						エージェント由来: 導入commit e0587cf11209にtrailerあり（検索語「ードのスキルの契約から公開範囲を確定してから適用」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 公開範囲#1	協調モードの選択肢は`agent-toolkit:user-confirmati						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「t.md`「公開範囲の確認」が定める。各範囲で実」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 公開範囲#2	| commitしない | 実装、変更範囲の検証および必要な生成同期を終え、co						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「装、変更範囲の検証および必要な生成同期を終え、c」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 公開範囲#3	| commitまで | 必要な版数更新と生成同期、検証、commitまで行う 						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「で | 必要な版数更新と生成同期、検証、comm」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 公開範囲#4	| push・CIまで | commitまでの工程に続けてpush、CI確認およ						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「mmitまでの工程に続けてpush、CI確認およ」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 公開範囲#5	| 既存の判断基準どおり | push・CIまでの工程に続けて、プロジェクト規範						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「工程に続けて、プロジェクト規範のリリース判定と認」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 公開範囲#6	`agent-toolkit:process-wi`と`agent-toolki						未確定: 導入commit 0cb102c3c664にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「nt-toolkit:single-lane-p」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 版数と生成物#1	配布物の版数更新を要する変更では、版数規範と未push差分を比べ、必要な種別のう						エージェント由来: 導入commit a9905689c214にtrailerあり（検索語「う。公開済みの成果を追加差分へ再び含めず、差分が」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 検証とCI#1	対象リポジトリの全体検証は、push後のCIの結論で判定する。push前には、タ						エージェント由来: 導入commit 49fb0caf299bにtrailerあり（検索語「の書込主体の成果を統合した後にだけ結果が確定する」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 検証とCI#2	CIが実行しないチェックの集合は、プロジェクト規範がその集合か実行コマンドを定め						エージェント由来: 導入commit 49fb0caf299bにtrailerあり（検索語「定および実行環境の4つを比べて求める。集合を確定」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 検証とCI#3	統合差分が依存のロックファイルを変えた場合は、push前に実行するチェックの前に						エージェント由来: 導入commit 49fb0caf299bにtrailerあり（検索語「は、push前に実行するチェックの前に、対象リポ」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 検証とCI#4	push前に実行するチェックとローカルの全体検証は出力が大きく、公開を担う主体が						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「cy`へ渡し、委譲先には双方の全量、終了コード、」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > 検証とCI#5	失敗した場合は公開を担う主体が`agent-toolkit:bugfix`を起動						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「rocess-wi`の終端担当によるCI修正と返」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > pushと公開状態#1	ベースbranchへpushする差分がある場合だけ、`references/pu						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「}`を単独実行する。終了コード0、空でない1行の」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > pushと公開状態#2	pushとCI確認の後、同書「公開状態の4項目」を現在のGit状態から観測する。						エージェント由来: 導入commit b723e0f38698にtrailerあり（検索語「できない場合はその項目名を報告する。プロジェクト」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > プロジェクト固有の公開後の操作とリリース#1	認可済みのPRかMR、release、tag、配布等は依存順に実施する。CI成功						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「施する。CI成功を入力とする操作は対象commi」）		
+agent-toolkit/skills/commit/references/publish.md#リポジトリ変更の公開工程 > プロジェクト固有の公開後の操作とリリース#2	公開範囲が「既存の判断基準どおり」の協調モードと、公開まで進む自律モードでは、p						エージェント由来: 導入commit 0c02031edbfdにtrailerあり（検索語「リースの認可と版数種別はプロジェクト規範と`re」）		

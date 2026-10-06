@@ -487,6 +487,11 @@ _RETIRED_TERMS = (
 )
 
 
+# 規範の再構築の判定台帳は、基準commitの条文の先頭を逐語で抜粋した記録であり、撤去前の名称を含む。
+# 撤去語ごとの許容箇所ではなく、全ての撤去語に共通する許容箇所として扱う。
+_VERBATIM_RECORD_LOCATIONS = (_AllowedLocation("docs/development/norm-restructure/*.tsv"),)
+
+
 def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = _RETIRED_TERMS) -> list[str]:
     """許容箇所の外に現れた撤去語を`<パス>:<行番号>`付きのメッセージで返す。"""
     violations: list[str] = []
@@ -504,7 +509,7 @@ def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = 
         assert proc.returncode == 0, proc.stderr
         for record in proc.stdout.splitlines():
             path, line_number, line = record.split("\0", 2)
-            if any(location.allows(path, line) for location in retired.allowed):
+            if any(location.allows(path, line) for location in (*retired.allowed, *_VERBATIM_RECORD_LOCATIONS)):
                 continue
             violations.append(
                 f"{path}:{line_number}: 撤去した名称「{retired.term}」が残っている。正式名「{retired.replacement}」へ置き換える"

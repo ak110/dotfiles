@@ -1,0 +1,8 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/writing-standards/references/powershell.md#PowerShell記述スタイル#1	本書はPowerShellスクリプトの記述スタイル基準と、Windows Pow						未確定: 導入commit b9d17aa1a4c5にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「スタイル基準と、Windows PowerShe」）		
+agent-toolkit/skills/writing-standards/references/powershell.md#PowerShell記述スタイル#2	- Claude Codeツールの挙動と注意点 - 書込ツールごとの改行・BOM						エージェント由来: 導入commit 615ce1d32880にtrailerあり（検索語「改行・BOM保全」に従う。PS1ファイルはCRL」）		
+agent-toolkit/skills/writing-standards/references/powershell.md#PowerShell記述スタイル#3	- Windows PowerShell 5.1互換性 - `.gitattri						未確定: 導入commit 06bdf40ad4e0にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「.1はBOMを持たないファイルをANSIコードペ」）		
+agent-toolkit/skills/writing-standards/references/powershell.md#PowerShell記述スタイル#4	- 基本スタイル - 冒頭に`Set-StrictMode -Version L						エージェント由来: 導入commit c45b55b1b06eにtrailerあり（検索語「on Latest`と`$ErrorAction」）		
+agent-toolkit/skills/writing-standards/references/powershell.md#PowerShell記述スタイル#5	- エラーハンドリング - `try`／`catch`／`finally`を使う						未確定: 導入commit 83675fda841bにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「`reg`・`git`・`winget`・`ch」）		
+agent-toolkit/skills/writing-standards/references/powershell.md#PowerShell記述スタイル#6	- パス操作 - `Join-Path`でパスを組み立てる（努力目標。文字列結合						エージェント由来: 導入commit 5b18b4fb7214にtrailerあり（検索語「を組み立てる（努力目標。文字列結合では区切り文字」）		
+agent-toolkit/skills/writing-standards/references/powershell.md#PowerShell記述スタイル#7	- COM操作 - PowerShell 5.1のCOM遅延バインディングでは型						未確定: 導入commit 9fa80a98a99fにtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「変換エラーやDISP_E_TYPEMISMATC」）		

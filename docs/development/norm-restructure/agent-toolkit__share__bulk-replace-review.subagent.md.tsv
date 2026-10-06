@@ -1,0 +1,17 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク#1	多数の箇所で語を置き換えた文字単位差分を全件読み、置換によって元の意味や対応関係						エージェント由来: 導入commit 4ea0200a65d0にtrailerあり（検索語「文字単位差分を全件読み、置換によって元の意味や対」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 入力#1	```text 必須入力名: 差分ファイル mode: explore ```						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「必須入力名: 差分ファイル」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 入力#2	- `差分ファイル`: `git diff --word-diff=plain 						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「-word-diff-regex=.`の出力を保」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#1	変更箇所ごとに、置換後の文を前後の文脈とともに読み、次を判定する。差分の文字列だ						エージェント由来: 導入commit 4e6ee13b5f8cにtrailerあり（検索語「る。差分の文字列だけで判定できない観点は、対象の」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#2	- 主体と指示対象: 置換後の文の主体と語が、置換前と同じ主体と対象を指す						エージェント由来: 導入commit 4e6ee13b5f8cにtrailerあり（検索語「対象: 置換後の文の主体と語が、置換前と同じ主体」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#3	- 条件と例外: 否定、条件、例外の範囲が置換前と同じである						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「と例外: 否定、条件、例外の範囲が置換前と同じで」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#4	- 値の取得元: 値や設定を説明する文で、値の取得元（引数、設定、APIの応答、						エージェント由来: 導入commit 4e6ee13b5f8cにtrailerあり（検索語「る文で、値の取得元（引数、設定、APIの応答、環」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#5	- 実装との一致: CLIのヘルプ、docstring、テストの説明、エラー文な						エージェント由来: 導入commit 4e6ee13b5f8cにtrailerあり（検索語「力条件を説明する文では、置換後の文が実装の引数、」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#6	- 同一概念の呼称と選択条件: 同じ値、方針または概念を指す他の出現箇所（隣接す						エージェント由来: 導入commit 4e6ee13b5f8cにtrailerあり（検索語「書）と、呼称と選択条件が一致する。条件による選択」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#7	- 削除した呼称の参照元: 定義元から呼称を削除または変更した場合、その呼称を参						エージェント由来: 導入commit 4e6ee13b5f8cにtrailerあり（検索語「変更した場合、その呼称を参照する規範、コードと設」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#8	- 適用範囲: 規定や説明が及ぶ範囲が広がったり狭まったりしていない						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「: 規定や説明が及ぶ範囲が広がったり狭まったりし」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#9	- 出力元と完全一致期待値の対応: プログラムが出力する文言を置き換えた場合、そ						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「き換えた場合、その文言を期待値として持つテストや」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 観点#10	- 自然な文: 置換後の文が日本語として自然に読め、語の重複や助詞の不整合が無い						エージェント由来: 導入commit 73660fe34167にtrailerあり（検索語「換後の文が日本語として自然に読め、語の重複や助詞」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 出力#1	次の固定形式だけを返す。`未解決の指摘数`は問題のある箇所の件数とする。						エージェント由来: 導入commit 9d9d25255c92にtrailerあり（検索語「だけを返す。`未解決の指摘数`は問題のある箇所の」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 出力#2	```text 状態: completed | needs_escalation						エージェント由来: 導入commit 085a2061a21cにtrailerあり（検索語「のファイルと行、観点、問題点、修正案。0件なら全」）		
+agent-toolkit/share/bulk-replace-review.subagent.md#一括置換後レビュー担当タスク > 出力#3	正常時の`状態`は`completed`とし、続行不能では`needs_esca						エージェント由来: 導入commit 085a2061a21cにtrailerあり（検索語「では`needs_escalation`と`続行」）		

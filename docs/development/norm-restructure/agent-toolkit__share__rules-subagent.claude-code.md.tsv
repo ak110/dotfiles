@@ -1,0 +1,3 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/share/rules-subagent.claude-code.md#rules-subagent.claude-code.md: Claude Codeのサブエージェントおよび委譲先だけに適用する規範#1	本文書はClaude Codeのサブエージェントおよび委譲先だけに適用し、`01						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「けに適用し、`01-agent.md`および`0」）		
+agent-toolkit/share/rules-subagent.claude-code.md#rules-subagent.claude-code.md: Claude Codeのサブエージェントおよび委譲先だけに適用する規範 > 即時通知の宛先#1	- Claude Codeの`Agent`ツールで起動した委譲先が`rules-						エージェント由来: 導入commit 5632c1a2a25eにtrailerあり（検索語「動した委譲先が`rules-subagent.m」）		

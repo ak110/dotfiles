@@ -1,0 +1,12 @@
+条文キー	先頭抜粋	判定	根拠	削除した場合のQCD	移設先・統合先	保護の根拠	由来	事前承認	連動対象
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範#1	単体成果物としてのHTMLは、ブラウザで開くだけで表示完結する用途を想定するため						エージェント由来: 導入commit 19eba10e2b5dにtrailerあり（検索語「Lとは異なるスタイル規範を要する。本書はこの用途」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 適用範囲#1	対象はユーザーへ単体成果物として提示するHTML（レポート・ダッシュボード・可視						エージェント由来: 導入commit 5a5ad336e12aにtrailerあり（検索語「示するHTML（レポート・ダッシュボード・可視化」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 実装指針#1	- 成果物は単一のHTMLファイルへまとめ、外部ファイルへ分割しない						未確定: 導入commit 170a05208314にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「単一のHTMLファイルへまとめ、外部ファイルへ分」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 実装指針#2	- スタイルはCDN経由のCSSフレームワーク（`daisyUI`等）で統一し、						エージェント由来: 導入commit 5a5ad336e12aにtrailerあり（検索語「レームワーク（`daisyUI`等）で統一し、イ」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 実装指針#3	- ネットワークへ接続しない環境での表示が要件の場合だけ、CDN読み込みに代えて						未確定: 導入commit 170a05208314にtrailerなし。キュー項目の照合は削除・縮小の行で行う（検索語「要件の場合だけ、CDN読み込みに代えてCSSとJ」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 実装指針#4	- テーマは`data-theme`属性等のフレームワーク機能で切り替え可能にす						エージェント由来: 導入commit 5a5ad336e12aにtrailerあり（検索語「ta-theme`属性等のフレームワーク機能で切」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 実装指針#5	- 情報密度を高めるため、表・SVG図表・スクリプトを1画面へ統合する						エージェント由来: 導入commit 5a5ad336e12aにtrailerあり（検索語「を高めるため、表・SVG図表・スクリプトを1画面」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 実装指針#6	- 大量情報を扱う場合は、ナビゲーション構造（アンカーリンク・目次）で可読性を確						エージェント由来: 導入commit 5a5ad336e12aにtrailerあり（検索語「合は、ナビゲーション構造（アンカーリンク・目次）」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 実装指針#7	- エクスポート機能（JSON・Markdown等でコピー可能なボタン）を検討す						エージェント由来: 導入commit 5a5ad336e12aにtrailerあり（検索語「能（JSON・Markdown等でコピー可能なボ」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 実装指針#8	- リアルタイム更新が有効な用途では、左側にテンプレート編集・右側にプレビューの						エージェント由来: 導入commit 5a5ad336e12aにtrailerあり（検索語「な用途では、左側にテンプレート編集・右側にプレビ」）		
+agent-toolkit/skills/writing-standards/references/independent-html.md#単体HTML成果物のスタイル規範 > 技術選択の指針#1	標準のHTML/CSS/JavaScriptで成立する範囲は独自実装せず、フレー						エージェント由来: 導入commit 5a5ad336e12aにtrailerあり（検索語「Scriptで成立する範囲は独自実装せず、フレー」）		
