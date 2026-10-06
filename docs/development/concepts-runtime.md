@@ -150,7 +150,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   `agent-toolkit/skills/delegation/references/runtime-routing.md`が定める。UWIへの回答後も同じpickerまたはレーンを一般継続契約で再開する
 - 通常の実装モードでは、レビュー修正担当がレビュー表の指摘を採否判断し、採用した指摘IDと実装単位commitの7文字以上の一意な短縮OIDを対応付けて未pushの実装履歴へ統合する。
   履歴統合前に指摘の原文、対象への適用条件、実際の値と通常運用の再現手順を確認して採否を確定し、採用済みの指摘だけを修正対象へ含める。不採用、または採否未確定の指摘がある場合は、履歴と作業ツリーを変更せず続行できない理由を返す。
-  対応できない場合や中間契約を維持できない場合は、新規commitへフォールバックせず続行できない理由を返す。レビュー修正専用commitは残さない。
+  対応する実装単位へ統合できない修正は、新規commitへフォールバックせず最も新しい実装commitへ統合し、履歴を書き換えられない場合だけ続行できない理由を返す。レビュー修正専用commitは残さない（2026年10月7日のユーザー指示により、2026年8月30日に専用commitを残さないことを努力目標とした扱いを置き換えた）。統合先と続行できない理由を返す条件の詳細は`agent-toolkit/skills/commit/references/history-rewrite.md`「修正方法の選択」が定める。
   未pushかつ単一の実装担当が所有するworktreeの履歴書換え保護は、`agent-toolkit/skills/commit/references/history-rewrite.md`が定める汎用のプッシュ済み判定へ一本化する。
   remote広告refの直積証跡・replace ref・graft・shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
   `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小し、同じ実装担当が再判定からamendまでを完結する。
