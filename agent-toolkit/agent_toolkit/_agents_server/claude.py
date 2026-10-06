@@ -647,7 +647,7 @@ class ClaudeServerManager:
                 loop = asyncio.get_running_loop()
                 now = loop.time()
                 if session is not None and session.auto_resume_deadline is not None and session.auto_resume_deadline <= now:
-                    self._finalize_pending_result(session, record_unobserved=True)
+                    self._finalize_pending_result(session)
                     iterator = None
                     await self._notify_waiters()
                     continue
@@ -671,7 +671,7 @@ class ClaudeServerManager:
                 done, _ = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
                 if not done:
                     if session is not None and session.auto_resume_deadline is not None:
-                        self._finalize_pending_result(session, record_unobserved=True)
+                        self._finalize_pending_result(session)
                         iterator = None
                         await self._notify_waiters()
                         continue
@@ -919,7 +919,7 @@ class ClaudeServerManager:
                 if session.awaiting_auto_resume:
                     # モデルのturnは終わっており、Claude Code CLIはturnの外で受けた中断要求へ`ResultMessage`を返さない。
                     # 保留した結果をそのまま確定し、以後の再開turnは読まない（保留中に`prompt`を受けた場合と同じ扱い）。
-                    self._finalize_pending_result(session, record_unobserved=True)
+                    self._finalize_pending_result(session)
                     iterator = None
                 if not future.done():
                     future.set_result(("interrupt_accepted", None))
@@ -1013,22 +1013,15 @@ class ClaudeServerManager:
         )
 
     @classmethod
-    def _finalize_pending_result(
-        cls,
-        session: SessionState,
-        *,
-        record_unobserved: bool = False,
-    ) -> None:
+    def _finalize_pending_result(cls, session: SessionState) -> None:
         """保留した終端結果を確定する。
 
         Claude backendはタスク完了通知と孫sessionの終端によって同一sessionを再開できるため終端結果を保留する。
         Codex backendは孫sessionの終端による再開だけを持ち、同じ保留をMCP層の監視が確定する。
+        確定の時点で残るバックグラウンドタスクと孫sessionの`error`への記録は、確定の契機によらず共通処理が行う。
         """
         shared_state.consume_agents_wait_background_outputs(session)
-        unobserved = set(session.live_child_session_ids)
         shared_state.finalize_pending_result(session)
-        if record_unobserved and unobserved:
-            shared_state.record_unobserved_sessions(session, unobserved)
 
     @classmethod
     def _record_failure(

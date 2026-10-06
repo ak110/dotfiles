@@ -871,10 +871,7 @@ class AppServerManager:
         結果を保留している間はモデルのturnが終わっているため、中断要求を送らずに保留した結果を確定する。
         """
         if session.awaiting_auto_resume and session.pending_result is not None:
-            unobserved = set(session.live_child_session_ids)
             shared_state.finalize_pending_result(session)
-            if unobserved:
-                shared_state.record_unobserved_sessions(session, unobserved)
             await self._notify_waiters()
             return
         if session.terminal:

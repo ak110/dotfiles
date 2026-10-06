@@ -2005,16 +2005,12 @@ class AgentsServerManager:
         # 保留中の結果を差し替えるため、ここで確定すると再開turnの結果より先に待機表明の結果を公開してしまう。
         # この場合の確定は再開turnの結果か保留期限の経過に委ねる。
         if not has_pending_auto_resume_targets(session) and unobserved:
-            finalize_pending_result(session)
-            record_unobserved_sessions(session, unobserved)
+            finalize_pending_result(session, unobserved_sessions=unobserved)
             return
 
         deadline = session.auto_resume_deadline
         if deadline is not None and asyncio.get_running_loop().time() >= deadline:
-            unobserved = set(session.live_child_session_ids)
-            finalize_pending_result(session)
-            if unobserved:
-                record_unobserved_sessions(session, unobserved)
+            finalize_pending_result(session, unobserved_sessions=unobserved)
 
     async def _resume_after_overload(self, session: SessionState) -> None:
         """過負荷の待機を終えたsessionへ、同じ作業を続ける指示を新しいturnとして送る。"""
@@ -3098,6 +3094,10 @@ async def show_session(
     活動が止まるため`seconds_since_activity`が増えても停滞を意味しない。追跡中のバックグラウンドタスクは`live_background_tasks`
     （`task_id`・`task_type`・`description`・`seconds_since_start`）で返す。
     バックグラウンドタスクの後の結果が不要なら`kill`で保留中の結果を受け取れる。
+    完了通知が届かない保留は、背景実行のBashの上限（Claude Codeで環境変数を設定しない場合は2時間）に余裕を加えた期限で打ち切る。
+    打ち切り、`kill`または追送で確定した時点で待機対象が残った結果は`error`の`heldResultFinalized`が真で、
+    再開したturnの結果ではない。残ったバックグラウンドタスクは`unfinishedBackgroundTasks`、子sessionは
+    `unobservedSessions`に識別子を持つ。`unobservedSessions`だけでは保留の確定と区別できない。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """

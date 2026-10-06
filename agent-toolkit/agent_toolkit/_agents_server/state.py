@@ -11,7 +11,7 @@ import logging
 import pathlib
 import time
 import typing
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import session_registry, task_documents, tool_names
@@ -21,9 +21,28 @@ from agent_toolkit._common.next_action import ActionableError
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
 RESULT_RETENTION_SECONDS = 1800.0
-# 自動再開の待機上限は終端結果の保持期限とは目的が異なる。本計画の起草時点では
-# 値を変える根拠となる観測結果が無いため、現行の結果保持期限と同じ値を選ぶ。
-AUTO_RESUME_DEADLINE_SECONDS = 1800.0
+# Claude CodeのBashツールが背景実行へ許す実行時間の上限（ミリ秒を秒へ換算）。Claude Code 2.1.291の
+# Bashツールの入力スキーマは背景実行の`timeout`を「default 1800000, max 7200000」と説明し、上限に達した
+# バックグラウンドタスクを止めて完了通知を送る。本体の実装は環境変数による上限の引き上げも受け付けるため、
+# この値は環境変数を設定しない場合の上限である。
+CLAUDE_BACKGROUND_BASH_MAX_SECONDS = 7200.0
+# 待機表明の保留を、完了通知が届かない場合に打ち切る期限。保留が待つバックグラウンドタスクの完了通知は背景実行の上限以内に
+# 届くため、上限より短い期限は稼働中のバックグラウンドタスクを待つ保留を打ち切ってしまう。完了通知の配送と再開turnの開始に
+# 要する時間の余裕を上限へ加える。結果保持期限とは目的が異なり、値も共有しない。
+AUTO_RESUME_DEADLINE_SECONDS = CLAUDE_BACKGROUND_BASH_MAX_SECONDS + 600.0
+UNFINISHED_BACKGROUND_TASKS_KEY = "unfinishedBackgroundTasks"
+"""保留した結果を確定した時点で稼働中だったバックグラウンドタスクの識別子を`error`へ記録する項目名。"""
+UNOBSERVED_SESSIONS_KEY = "unobservedSessions"
+"""終端を観測していなかった孫sessionの識別子を`error`へ記録する項目名。
+
+保留の確定に加え、自動再開を消費した後のturnの終端など保留と無関係な処理でも記録する。
+"""
+HELD_RESULT_FINALIZED_KEY = "heldResultFinalized"
+"""待機表明の保留を、待機対象が残ったまま確定したことを`error`へ示す項目名。
+
+`unobservedSessions`は保留と無関係な処理でも記録されるため、確定した結果が再開したturnの結果ではないことは
+この項目だけで判別する。
+"""
 # 起動の可用性確認を過ぎた後にCodexのturnがモデルの過負荷で終端した場合に、同じsessionへ継続を送るまでの待機秒数。
 # 要素数が1回の失敗の連鎖で行う自動継続の上限回数となる。値はユーザー指示（15秒・30秒・60秒）による。
 # 直後の再送では過負荷が解けなかった観測があるため待機を置き、間隔を広げる。上限に達しても解けない場合は
@@ -1064,15 +1083,27 @@ def _discard_collected(session: SessionState, collected: set[str]) -> None:
     session.terminal_child_session_ids.difference_update(collected)
 
 
-def finalize_pending_result(session: SessionState, *, touch: bool = True, keep_resume_chain: bool = False) -> None:
+def finalize_pending_result(
+    session: SessionState,
+    *,
+    touch: bool = True,
+    keep_resume_chain: bool = False,
+    unobserved_sessions: Iterable[str] = (),
+) -> None:
     """保留したturn結果を公開可能な終端状態へ移す。
 
     過負荷の自動継続と利用上限の解除待ちの継続を送る処理だけが`keep_resume_chain`を真にし、連鎖の回数と開始時刻を引き継ぐ。
-    それ以外（`kill`、委譲元の`send_message`、期限到来）は連鎖を終える。
+    それ以外（`kill`、委譲元の`send_message`、期限到来、ストリーム終端）は連鎖を終える。
+    連鎖を終える確定では、確定の時点で稼働中のバックグラウンドタスクと終端を観測していない孫sessionを`error`へ記録し、
+    待機対象が残ったまま確定したことを`heldResultFinalized`で示す。
+    保留した結果は待機表明であり、待機対象が残るまま公開する結果は再開turnの結果ではないことを委譲元へ示すためである。
+    追跡集合から既に外した未観測の孫sessionは`unobserved_sessions`で渡す。既存の`error`の内容は保つ。
     """
     result = session.pending_result
     if result is None:
         raise RuntimeError("auto-resume wait has no pending result")
+    unfinished_tasks = set(session.live_tasks)
+    unobserved = set(session.live_child_session_ids) | set(unobserved_sessions)
     session.overload_resume_at = None
     session.usage_limit_resume_at = None
     if not keep_resume_chain:
@@ -1087,6 +1118,11 @@ def finalize_pending_result(session: SessionState, *, touch: bool = True, keep_r
     session.error = result["error"]
     session.turn_completed = True
     session.turn_start_ambiguous = False
+    if not keep_resume_chain and (unfinished_tasks or unobserved):
+        _merge_error_identifiers(session, UNFINISHED_BACKGROUND_TASKS_KEY, unfinished_tasks)
+        _merge_error_identifiers(session, UNOBSERVED_SESSIONS_KEY, unobserved)
+        assert isinstance(session.error, dict)
+        session.error[HELD_RESULT_FINALIZED_KEY] = True
     if touch:
         session.touch()
 
@@ -1194,7 +1230,15 @@ def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> flo
 
 def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> None:
     """未観測の孫session識別子を既存のerror項目へ併合する。"""
-    identifiers = set(session_ids)
+    _merge_error_identifiers(session, UNOBSERVED_SESSIONS_KEY, session_ids)
+    session.touch()
+
+
+def _merge_error_identifiers(session: SessionState, key: str, identifiers: set[str]) -> None:
+    """識別子の集合を既存のerrorの`key`項目へ併合する。集合が空ならerrorを変えない。"""
+    if not identifiers:
+        return
+    merged = set(identifiers)
     current = session.error
     error: dict[str, Any]
     if isinstance(current, dict):
@@ -1203,12 +1247,11 @@ def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> 
         error = {"message": str(current)}
     else:
         error = {}
-    existing_identifiers = error.get("unobservedSessions")
+    existing_identifiers = error.get(key)
     if isinstance(existing_identifiers, list):
-        identifiers.update(item for item in existing_identifiers if isinstance(item, str))
-    error["unobservedSessions"] = sorted(identifiers)
+        merged.update(item for item in existing_identifiers if isinstance(item, str))
+    error[key] = sorted(merged)
     session.error = error
-    session.touch()
 
 
 def _agents_server_tool_name(tool_name: str) -> str | None:

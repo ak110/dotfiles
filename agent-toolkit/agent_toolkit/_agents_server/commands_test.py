@@ -311,6 +311,52 @@ def test_agents_wait_saves_notice_and_terminal_summary(
     assert len(saved["notices"]) == 2
 
 
+@pytest.mark.parametrize(
+    ("error", "suffix"),
+    [
+        pytest.param(None, "", id="no-record"),
+        pytest.param({"message": "失敗"}, "", id="other-error"),
+        # 自動再開を消費した後のturnの終端が残った子sessionを記録した結果（`codex.py`の`turn/completed`）。
+        # 再開したturnの最終の結果であり、待機表明と取り違えさせない。
+        pytest.param({"unobservedSessions": ["child-1"]}, "", id="resumed-turn-with-unobserved-child"),
+        pytest.param(
+            {"unfinishedBackgroundTasks": ["buaqxv1xf"], "unobservedSessions": ["child-1"], "heldResultFinalized": True},
+            " unfinished_waits=2",
+            id="remaining-targets",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("session_environment")
+def test_agents_wait_terminal_line_marks_result_finalized_with_remaining_waits(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    error: dict[str, Any] | None,
+    suffix: str,
+) -> None:
+    """待機対象が残ったまま確定した結果は、終端行だけから再開したturnの結果でないと分かる。
+
+    委譲元は結果本文のファイルと終端行だけを読んで次の操作を選ぶため、保存先のJSON Linesにだけ記録しても判別に使われない。
+    """
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(parents=True)
+    payload: dict[str, Any] = {"status": "completed", "owner_status_file": "root.json", "agent_message": "待機中: buaqxv1xf"}
+    if error is not None:
+        payload["error"] = error
+    (results / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    output_lines = capsys.readouterr().out.splitlines()
+    saved = json.loads(pathlib.Path(output_lines[0].removeprefix("保存先: ")).read_text(encoding="utf-8"))
+    assert output_lines[-1] == (
+        f"終端行: session_id=session-1 label=なし status=completed agent_message_path={saved['agent_message_path']}{suffix}"
+    )
+
+
 @pytest.mark.usefixtures("session_environment")
 def test_agents_show_selects_one_session(capsys: pytest.CaptureFixture[str]) -> None:
     """showは完全識別子で指定した1件だけを返す。"""
