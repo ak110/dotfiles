@@ -156,7 +156,9 @@ def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_af
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table)) == 0
     assert capsys.readouterr().out == (
-        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n完成条件証拠のパス: {path}\n"
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+        "計画のパス: []\n入力記録のパス: []\n"
+        f"完成条件証拠のパス: {path}\n"
     )
 
 
@@ -221,7 +223,7 @@ def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
     assert not result.out and "--input-record" in result.err
 
 
-def test_return_result_without_evidence_generates_three_lines_from_current_round(
+def test_return_result_without_evidence_generates_result_and_empty_input_arrays(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _mock_wi(monkeypatch, tmp_path, {})
@@ -230,7 +232,9 @@ def test_return_result_without_evidence_generates_three_lines_from_current_round
     review_table.add(table, "1", "exec-review", "旧指摘", "前回の指摘", "詳細")
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table)) == 0
-    assert capsys.readouterr().out == f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n"
+    assert capsys.readouterr().out == (
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n計画のパス: []\n入力記録のパス: []\n"
+    )
 
 
 @pytest.mark.parametrize("source_suffix", ["#存在しない節", "#別の節", ":99-100"])
@@ -1966,7 +1970,45 @@ def test_input_record_saved_outside_repository_is_resolved_by_template_and_retur
     review_table.add(table, "2", "exec-review", "lint", "設定の誤りを直す", "実装")
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table, "--input-record", str(record))) == 0
-    assert capsys.readouterr().out == f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+    assert capsys.readouterr().out == (
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+        f"計画のパス: []\n入力記録のパス: {json.dumps([str(record)])}\n"
+    )
+
+
+def test_returned_input_arrays_reproduce_the_same_gate_with_multiple_and_empty_sets(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """固定返却のJSON配列だけで空集合と複数pathを区別し、同じ受領条件を再確認できる。"""
+    _mock_wi(monkeypatch, tmp_path, {})
+    table = tmp_path / "plan.exec-review.tsv"
+    review_table.init(table)
+    review_table.add(table, "2", "exec-review", "入力", "検査入力を保持する", "仕様")
+    plans = [tmp_path / "plan one.md", tmp_path / "plan two.md"]
+    records = [tmp_path / "record one.md", tmp_path / "record two.md"]
+    for path in plans:
+        path.write_text("# 計画\n", encoding="utf-8")
+    for path in records:
+        path.write_text("# 入力記録\n", encoding="utf-8")
+    extra = [item for path in plans for item in ("--plan", str(path))]
+    extra.extend(item for path in records for item in ("--input-record", str(path)))
+    extra.extend(("--plan", str(plans[0]), "--input-record", str(records[0])))
+    capsys.readouterr()
+
+    assert run_script.dispatch(_no_evidence_return_args(table, *extra)) == 0
+    returned = capsys.readouterr().out
+    lines = dict(line.split(": ", maxsplit=1) for line in returned.splitlines() if ": " in line)
+    returned_plans = json.loads(lines["計画のパス"])
+    returned_records = json.loads(lines["入力記録のパス"])
+    assert returned_plans == [str(path.resolve()) for path in plans]
+    assert returned_records == [str(path.resolve()) for path in records]
+
+    reproduced = [item for path in returned_plans for item in ("--plan", path)]
+    reproduced.extend(item for path in returned_records for item in ("--input-record", path))
+    assert run_script.dispatch(_no_evidence_return_args(table, *reproduced)) == 0
+    reproduced_lines = capsys.readouterr().out
+    assert f"計画のパス: {json.dumps(returned_plans)}" in reproduced_lines
+    assert f"入力記録のパス: {json.dumps(returned_records)}" in reproduced_lines
 
 
 _OBSERVATION = "リリース直後はAPIエラー？"
