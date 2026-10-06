@@ -112,6 +112,7 @@ def run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[object
         (["--detail", "1"], False),
         (["--grep", "検索語"], False),
         (["--user-events", "--since", "2026-09-01T00:00:00Z"], True),
+        (["--user-events"], True),
     ],
 )
 def test_evidence_saves_only_output_passed_as_file(
