@@ -56,7 +56,7 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS): 2,
     # 判定台帳の説明が、基準commitの後に撤去したファイルを例として挙げる
     (f"{_PLUGIN_PREFIX}/skills/realign-with-user/SKILL.md", _NORM_RESTRUCTURE_README): 1,
-    # 切り出しスクリプトのテストが一時リポジトリへ作るスキルのパス
+    # 切り出しスクリプトのテストが一時リポジトリへ作成するスキルのパス
     (f"{_PLUGIN_PREFIX}/skills/demo/SKILL.md", _NORM_RESTRUCTURE_CLAUSES_TEST): 1,
 }
 

@@ -32,7 +32,7 @@
 
 ## 検証またはCIの失敗
 
-この節から実行レビューを起動する場合の名前付き入力`未判定検証記録`は、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の証拠要求の有無による値（証拠要求ありでは未判定検証記録の絶対パス、証拠要求なしでは`なし`）を渡す。
+この節から実行レビューを起動する場合の名前付き入力`未判定検証記録`には`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の証拠要求の有無による値（証拠要求ありでは未判定検証記録の絶対パス、証拠要求なしでは`なし`）を渡す。
 
 最初の失敗からCI成功または本タスクの終端までを1つの修正系列（`agent-toolkit:bugfix`の`references/ci-failure-handling.md`）として扱う。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装および期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
 

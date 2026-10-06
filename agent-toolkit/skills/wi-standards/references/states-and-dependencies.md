@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | `inbox`→`hold` | `atk wi hold` | 項目を修正する主体が、その項目の修正が必要と判断した時点で自動処理から除外する。確認の回答を得られず元項目を進められないと判定した主体が、その時点で元項目を保留する |
 | `processing`→`hold` | `atk wi hold --state=processing <ファイル名>` | 項目を処理中のセッションが、確認の回答を得られず元項目を進められないと判定した時点で元項目を保留する。`--state=processing`を付けずにエージェント環境から実行した`atk wi hold`は`processing`の項目を保留せずに失敗する |
-| `hold`→`inbox` | `atk wi unhold` | 修正した主体が、保存本文の一致確認を終えた時点で自動処理へ戻す。`agent-toolkit:process-wi`のpickerが、回答を保存済みのUWIの本文が指す保留中の元項目を処理対象へ戻す。`agent-toolkit:process-wi`の外では、そのUWIを投入したセッションが回答を元の作業へ反映した後に戻す（手順は`agent-toolkit:user-confirmation-and-report`「回答後の状態遷移」） |
+| `hold`→`inbox` | `atk wi unhold` | 修正した主体が、保存本文の一致確認を終えた時点で自動処理へ戻す。`agent-toolkit:process-wi`のpickerが、回答を保存済みのUWIの本文が指す保留中の元項目を処理対象へ戻す。`agent-toolkit:process-wi`の外ではそのUWIを投入したセッションが回答を元の作業へ反映した後に戻す（手順は`agent-toolkit:user-confirmation-and-report`「回答後の状態遷移」） |
 | `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のpickerが、処理対象を確定した直後に遷移させる。是正を求める回答が保存された事後承認型UWIと、回答が保留中の元項目での作業を求める事前承認型UWIも、その作業を実施するレーンの対象として同じ契機で遷移させる |
 | `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが、回答を保存済みで未終端のUWIをAWIの処理開始前に終端する。事後承認型UWIのうち回答が是正を求めないものも同じ契機で終端する |
 | `processing`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが回答済みUWIをAWIの処理開始前に終端するか、レーンがベースブランチへのマージ完了時または実装変更を伴わない充足の確定後にAWIを終端する。AWIの`adopt`では要求を反映した実装commitの完全OIDを`--commit`へ渡し、複数commitでは全OIDと要求単位を`--note`または`--note-file`へ渡す処理結果に残し、実装差分のない充足済みでは`--commit`を省いて根拠を同じ処理結果に残す（adoptのcommit対応付け） |

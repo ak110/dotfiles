@@ -76,7 +76,7 @@ class Clause:
 
     @property
     def key(self) -> str:
-        """`<リポジトリ相対パス>#<見出しの経路>#<節内の連番>`の条文キー。"""
+        """`<リポジトリ相対パス>#<見出しの階層>#<節内の連番>`の条文キー。"""
         return f"{self.path}#{' > '.join(self.headings)}#{self.index}"
 
     @property
