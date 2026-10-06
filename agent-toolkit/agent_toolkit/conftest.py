@@ -11,8 +11,9 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit._common import codex_models
-from agent_toolkit._hooks import notice
+from agent_toolkit._hooks import notice, stop_gate
 
+_ORIGINAL_WAIT_FOR_END_TURN = stop_gate._wait_for_end_turn  # pylint: disable=protected-access
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
 _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
     "FORCE_PROMPT_CACHING_5M",
@@ -68,6 +69,24 @@ def _fixed_codex_model_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
         for family in sorted(codex_models.FAMILIES)
     ]
     monkeypatch.setattr(codex_models, "list_models", lambda: catalog)
+
+
+@pytest.fixture(autouse=True)
+def _skip_end_turn_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stop判定が通る`stop_gate._wait_for_end_turn`を、待たずに戻る関数へ差し替える。
+
+    本番の待機はtranscriptの最新のassistantエントリが`stop_reason`の`end_turn`になるまで最大0.3秒ポーリングする。
+    テストが組み立てるtranscriptの多くは末尾を`end_turn`で終えないため、待機を検証しないテストでも上限まで待つ。
+    待機そのものを検証するテストは`real_end_turn_wait`を要求して実物へ戻す。
+    子プロセスで起動するStopフックへは本差し替えが及ばないため、そのテストでは末尾を`end_turn`で終えるtranscriptを渡す。
+    """
+    monkeypatch.setattr(stop_gate, "_wait_for_end_turn", lambda *_args, **_kwargs: None)
+
+
+@pytest.fixture(name="real_end_turn_wait")
+def _real_end_turn_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_skip_end_turn_wait`の差し替えを外し、実物の`_wait_for_end_turn`を使わせる。"""
+    monkeypatch.setattr(stop_gate, "_wait_for_end_turn", _ORIGINAL_WAIT_FOR_END_TURN)
 
 
 @pytest.fixture(autouse=True)

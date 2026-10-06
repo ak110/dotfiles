@@ -18,6 +18,11 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _wri
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _HOOK_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _HOOKS_PATH = _PLUGIN_ROOT / "hooks" / "hooks.json"
+# 子プロセスで起動するStopフックへはconftestの待機の差し替えが及ばないため、末尾を`end_turn`で終えるtranscriptを渡し、
+# `stop_gate._wait_for_end_turn`が上限まで待たずに判定へ進むようにする。
+_FINISHED_TURN_ENTRIES = [
+    {"type": "assistant", "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "完了しました。"}]}}
+]
 
 _FIXTURES: dict[tuple[str, str], tuple[str, bool]] = {
     ("SessionStart", "rules_context"): ("rules_context_session_start", True),
@@ -85,7 +90,7 @@ def _build_fixture(
         )
     elif fixture_name == "stop":
         payload["background_tasks"] = []
-        payload["transcript_path"] = str(_write_transcript(tmp_path, []))
+        payload["transcript_path"] = str(_write_transcript(tmp_path, _FINISHED_TURN_ENTRIES))
         for name in (
             "AGENT_TOOLKIT_DELEGATED_SESSION",
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
