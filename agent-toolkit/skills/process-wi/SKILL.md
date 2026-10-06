@@ -90,7 +90,7 @@ pickerと並行して、対象がGitHub上にある場合は対象リポジト�
 
 `atk wi process-loop`はキューが空の待機中に未判定のDependabotアラートを見つけると、AWIを起票せずにprocess-wiを起動する。このときpickerは選定候補が0件の選定結果を返す。メインはその結果を正常な選定結果として受け取り、レーンを起動せずに監査の処置を確定し、`references/finish-session.md`「公開対象が無い場合の短絡」を経て終端する。監査が返した要修正を同じセッションで直す場合は「即時対応」に従う。
 
-監査担当を起動した場合は`references/github-copilot-review-audit.md`に従って自動コードレビューを1回取得し、その返却と処置確定を公開工程の開始条件とする。新しいレビューの到着はprocess-wiの次の実行の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
+監査担当を起動した場合は`references/github-copilot-review-audit.md`に従って自動コードレビューを1回取得する。その処置と公開工程の開始の関係は`references/finish-session.md`冒頭が定める。新しいレビューの到着はprocess-wiの次の実行の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
 
 監査担当は`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.parent.md`に従って起動し、結果を受領する。`atk review-audit pending`に成功した場合は、標準出力のJSONをセッションのmanaged-tempへ保存して渡す。
 

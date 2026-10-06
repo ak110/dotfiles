@@ -47,8 +47,7 @@ agent定義の`tools`は許可の上限を示す。`ListAgents`の許可と実�
 
 ## 委譲プロンプトへ含める前提
 
-- 専用の`<役割名>.subagent.md`とagent定義のいずれかがある起動では、共通の送信契約に従って定義ファイルの絶対パス、対象ID、
-  定義ファイルに未記録の差分だけを渡し、専用の報告様式と前提は定義ファイルをそのまま参照する。
+- 専用の`<役割名>.subagent.md`とagent定義のいずれかがある起動の委譲プロンプトは`agent-toolkit:delegation`「送信」に従う。
   その`<役割名>.subagent.md`またはagent定義の側に、完了報告をツール戻り値で1回返し`SendMessage`で送信しない契約を含める。
   即時通知の手段と判定順序は`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」、Claude Code固有の宛先は`agent-toolkit/share/rules-subagent.claude-code.md`「即時通知の宛先」が定める。受け取る側は`### 完了通知と中継の実行順`に従って扱う
 - 委譲先がさらに読み取り専用の調査・レビューを委譲する場合、起動主体は起動前にmanaged-temp内の成果ファイル絶対パスを確定し、定義ファイルに未記録の動的な差分として委譲プロンプトへ含める。
@@ -67,8 +66,7 @@ agent定義の`tools`は許可の上限を示す。`ListAgents`の許可と実�
   完了報告を日本語で書く指示を含む
 - forkの委譲プロンプトにも同じ完了報告の指示を含める。親が保持する背景は再掲せず、`SubagentStart`フックが追加する`rules-subagent.md`と`rules-subagent.claude-code.md`の読込も指示しない
 - 非forkサブエージェントは親セッションが読み込んだCLAUDE.mdとメモリー階層（プロジェクトルールを含む）を初期コンテキストに受け取るが、組み込み`Explore`・`Plan`はこの階層と親セッション開始時のgitステータスを受け取らない。同名のユーザー定義かプロジェクト定義が組み込み定義を上書きした場合は受け取る。この省略は組み込み定義の固定の挙動であり、frontmatterフィールドとエージェント単位設定の対象外である。このため組み込み`Explore`・`Plan`の委譲プロンプトへは委譲元が読み込んでいる`01-agent.md`の絶対パスを渡し、着手前に全文読むよう指示する。
-  サブエージェント向け条文は、`SubagentStart`フックが`agent-toolkit/share/rules-subagent.md`と`agent-toolkit/share/rules-subagent.claude-code.md`を文脈へ追加する。このため委譲プロンプトでは読込を指示せず、フックへ委ねる。
-  即時通知の適用条件、判定順序、手段および宛先は同規範を定義元とし、委譲プロンプトからは参照だけを行う
+  サブエージェント向け条文は、`SubagentStart`フックが`agent-toolkit/share/rules-subagent.md`と`agent-toolkit/share/rules-subagent.claude-code.md`を文脈へ追加する。このため委譲プロンプトでは読込を指示せず、フックへ委ねる
 - 組み込み`Explore`・`Plan`へ委譲する場合は、報告の正否を左右する前提を委譲プロンプトへ明記する。
   対象は判定に用いる実行系の起動コマンド、検証に用いるコマンド、調査対象から除外する範囲、報告様式とする。
   前提を欠いた委譲は環境が指定なしで選ぶ処理系による構文判定など委譲元の意図と異なる根拠の報告を生み、再検証と棄却に往復を要する

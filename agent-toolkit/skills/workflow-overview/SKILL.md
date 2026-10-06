@@ -21,7 +21,7 @@ user-invocable: false
 
 ## 登録、回答、振り返り
 
-ユーザーは`atk wi add`、`agent-toolkit:add-awi-by-user`または`atk serve`のWI画面から要求を登録する。処理中のエージェントと`agent-toolkit:session-review`もWIを投入する。本文、由来、状態と依存は`agent-toolkit:wi-standards`が定める。登録済みの未終端WIを更新・修復するか採否を見直す場合は、調査や認識合わせより先にその項目を`hold`で自動処理から外し、検収後に戻す。
+ユーザーは`atk wi add`、`agent-toolkit:add-awi-by-user`または`atk serve`のWI画面から要求を登録する。処理中のエージェントと`agent-toolkit:session-review`もWIを投入する。本文、由来、状態と依存は`agent-toolkit:wi-standards`が定める。登録済みの未終端WIを更新・修復するか採否を見直す場合の保留は`agent-toolkit:wi-standards`「状態と依存」に従う。
 
 自律モードの確認手段と、回答を得られない場合のUWIへの切替は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。UWIへ退避した確認には、ユーザーが`atk wi answer`または`atk serve`で回答し、process-wiの次の実行のpickerが回答済みUWIと保留中の元項目を取り込む。取り込みと終端は`agent-toolkit:wi-standards`「状態と依存」と`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める。
 

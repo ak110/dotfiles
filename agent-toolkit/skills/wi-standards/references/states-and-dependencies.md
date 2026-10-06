@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | `inbox`→`hold` | `atk wi hold` | 項目を修正する主体が、その項目の修正が必要と判断した時点で自動処理から除外する。確認の回答を得られず元項目を進められないと判定した主体が、その時点で元項目を保留する |
 | `processing`→`hold` | `atk wi hold --state=processing <ファイル名>` | 項目を処理中のセッションが、確認の回答を得られず元項目を進められないと判定した時点で元項目を保留する。`--state=processing`を付けずにエージェント環境から実行した`atk wi hold`は`processing`の項目を保留せずに失敗する |
-| `hold`→`inbox` | `atk wi unhold` | 修正した主体が、保存本文の一致確認を終えた時点で自動処理へ戻す。`agent-toolkit:process-wi`のpickerが、回答を保存済みのUWIの本文が指す保留中の元項目を処理対象へ戻す |
+| `hold`→`inbox` | `atk wi unhold` | 修正した主体が、保存本文の一致確認を終えた時点で自動処理へ戻す。`agent-toolkit:process-wi`のpickerが、回答を保存済みのUWIの本文が指す保留中の元項目を処理対象へ戻す。`agent-toolkit:process-wi`の外では、そのUWIを投入したセッションが回答を元の作業へ反映した後に戻す（手順は`agent-toolkit:user-confirmation-and-report`「回答後の状態遷移」） |
 | `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のpickerが、処理対象を確定した直後に遷移させる。是正を求める回答が保存された事後承認型UWIと、回答が保留中の元項目での作業を求める事前承認型UWIも、その作業を実施するレーンの対象として同じ契機で遷移させる |
 | `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが、回答を保存済みで未終端のUWIをAWIの処理開始前に終端する。事後承認型UWIのうち回答が是正を求めないものも同じ契機で終端する |
 | `processing`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが回答済みUWIをAWIの処理開始前に終端するか、レーンがベースブランチへのマージ完了時または実装変更を伴わない充足の確定後にAWIを終端する。AWIの`adopt`では要求を反映した実装commitの完全OIDを`--commit`へ渡し、複数commitでは全OIDと要求単位を`--note`または`--note-file`へ渡す処理結果に残し、実装差分のない充足済みでは`--commit`を省いて根拠を同じ処理結果に残す（adoptのcommit対応付け） |
@@ -68,7 +68,7 @@ worktreeの絶対パスを`--target-repo`へ渡す。リポジトリの識別だ
 標準の2択を持つ事後承認型UWIへ`その対応で問題無い`と回答した場合、`atk wi answer`は回答の保存と`adopted`への遷移を同じ操作で完了する。
 回答が是正を求めた場合は、`## 由来と承認`が定めるユーザーの是正要求の手順を適用し、そのUWI自体を作業要求として処理する。処理の着手対象はUWIとし、新しいAWIの起票は不要である。
 
-事前承認型UWIは元項目の`depends_on`へ加えず、元項目を`hold`へ移して自動処理から外す。元項目が`inbox`にあれば`atk wi hold <元項目のファイル名>`、`processing`にあれば`atk wi hold --state=processing <元項目のファイル名>`を使う。`hold`は`processable`に含まれないため、`ready`と`blocked`の導出を経由せずに選定の候補から外れる。回答を保存したUWIは、次にそのキューを処理する`agent-toolkit:process-wi`のpickerが処理対象へ加える。pickerはそのUWIの本文が指す保留中の元項目を`atk wi unhold`で`inbox`へ戻し、続けて`atk wi start-processing`でUWIと元項目を同じ処理対象WIへ加え、同じレーンへ割り当てる。そのレーンが回答を反映して元項目の採否を確定し、UWIと元項目の双方を終端する。回答が元項目での作業を要さない場合は、pickerがそのUWIを`atk wi adopt`で終端し、保留中の元項目を同じ工程で`unhold`して処理対象WIへ加える。UWIは元項目のファイル名と回答に要る情報を保持し、再開工程はレーンが元項目の計画の進捗ログか引き継ぎ記録から読む。本段と、回答済みUWIが指す元項目を同じレーンへ一度ずつ割り当てる前掲の段の扱いを「回答済みUWIの取り込み」と呼ぶ。メインは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`の「出力の受領」に従って検収し、「選定工程の完了」へ進む。
+事前承認型UWIは元項目の`depends_on`へ加えず、元項目を`hold`へ移して自動処理から外す。元項目が`inbox`にあれば`atk wi hold <元項目のファイル名>`、`processing`にあれば`atk wi hold --state=processing <元項目のファイル名>`を使う。`hold`は`processable`に含まれないため、`ready`と`blocked`の導出を経由せずに選定の候補から外れる。回答を保存したUWIは、次にそのキューを処理する`agent-toolkit:process-wi`のpickerが処理対象へ加える。pickerはそのUWIと本文が指す保留中の元項目を同じ処理対象WIへ加えて同じレーンへ割り当て、操作の順序は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`に従う。そのレーンが回答を反映して元項目の採否を確定し、UWIと元項目の双方を終端する。回答が元項目での作業を要さない場合は、pickerがそのUWIを終端し、元項目だけを処理対象WIへ加える。UWIは元項目のファイル名と回答に要る情報を保持し、再開工程はレーンが元項目の計画の進捗ログか引き継ぎ記録から読む。本段と、回答済みUWIが指す元項目を同じレーンへ一度ずつ割り当てる前掲の段の扱いを「回答済みUWIの取り込み」と呼ぶ。メインは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`の「出力の受領」に従って検収し、「選定工程の完了」へ進む。
 
 `rejected`はエージェント由来だけの全要求を技術的根拠で不採用と判断した時点、または人間由来要求の全てについてユーザーが不採用を明示承認した時点で使用できる終端とする。技術的失敗、入力不足、外部条件待ち、計画不備および未回答の不採用確認は、activeのまま保持する。未回答の不採用確認では元項目を`hold`で保持し、採用済み範囲がある複合項目も分割せず、確認を得られない不採用範囲を含む項目全体を`hold`で保持する。他の要因では前段の着手不能要因の分類に従う。`hold`は`active`一覧に含まれるため、ユーザーが未終端の項目を確認できる範囲は変わらない。
 技術的に解消できない具体的な箇所と続行できない理由が残る要求単位は未達終端として記録し、その判定は続行できない理由の実在から行う。

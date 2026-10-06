@@ -38,7 +38,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 
 ### 付帯作業の扱い
 
-`agent-toolkit/rules/01-agent.md`が定める付帯作業のうち、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`配下のエージェント向け文書の改訂は主作業とする。これらの文書はルール、`SKILL.md`、`references/`、`<役割名>.parent.md`と`<役割名>.subagent.md`であり、エンドユーザーへ配布する成果物そのものである。変更目的ごとにcommitとWIを扱い、変更が必要にした整理、テスト、CI、コメント整備も同じ計画、WIおよびcommitで完了する。開発完了後の振り返りが独立に発見した作業だけは別の作業として扱う。
+`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`配下のエージェント向け文書は、エンドユーザーへ配布する成果物そのものである。対象はルール、`SKILL.md`、`references/`、`<役割名>.parent.md`と`<役割名>.subagent.md`である。これらの改訂そのものを目的とする作業は主作業として扱い、変更目的ごとにcommitとWIを分ける。他の開発が必要にしたこれらの文書の改訂と整理は`agent-toolkit/rules/01-agent.md`の付帯作業に当たり、関連する開発と同じ計画、WIおよびcommitで完了する。開発完了後の振り返りが独立に発見した作業だけは別の作業として扱う。
 
 ### scripts配下の配置
 

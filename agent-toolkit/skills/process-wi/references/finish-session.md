@@ -48,7 +48,7 @@ commitを記録する採否操作は`agent-toolkit:wi-standards`「状態と依�
 - 計画: <`private-notes/plans/`からの相対パス|計画なし>
 ```
 
-観測できる最も早い時刻が分かり、現在がその時刻より前の項目は、待機せずに次の手順でprocess-wiの次の実行へ渡す。再開記録の追記の成功を確かめてから`atk wi return-to-inbox <ファイル名> --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。続けて`atk wi edit <ファイル名> --cooldown-until <その時刻> --target-repo=<対象リポジトリの絶対パス>`で再処理抑制期限を付け、セッションの終了工程へ進む。期限前の項目はpickerの候補にならず、期限後に通常の`inbox`の項目として選定される。時刻が不明な項目と、時刻を過ぎても新しいプロセスを起動できない項目は`processing`を維持する。前段落でUWIを保存して`hold`へ移した項目は`hold`のまま残す。
+観測できる最も早い時刻が分かり、現在がその時刻より前の項目は、待機せずに次の手順でprocess-wiの次の実行へ渡す。再開記録の追記の成功を確かめてから`atk wi return-to-inbox <ファイル名> --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。続けて`atk wi edit <ファイル名> --cooldown-until <その時刻> --target-repo=<対象リポジトリの絶対パス>`で再処理抑制期限を付け、セッションの終了工程へ進む。期限前の項目はpickerの候補にならず、期限後に通常の`inbox`の項目として選定される。その他の項目の状態は`references/run-lanes.md`「採否の確定と終端区分」の判定に従う。
 
 completion-reportが報告する前に、メインは公開状態の4項目（`agent-toolkit:commit`の`references/push-and-ci.md`）が検収済みかを確認する。
 短絡時の検収か`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`「受領と検収」のいずれかで得た公開状態の4項目は、主作業ツリーや対象refを変える操作、外部更新が間に観測されなければ、そのまま用いる。
