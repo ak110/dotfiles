@@ -96,6 +96,10 @@
 
 ## 誤判定・検証不足
 
+- 2026年10月6日: Claude Codeのメインが、観測の範囲外について不在を結論づけた事例が2件あった。1件目では`atk run-script session-review-evidence -- --fixed-string UserPromptSubmit`の一致がターン冒頭の発話の記録だけだった。作業中の割り込み発話の位置には記録が無く、メインは割り込み発話ではUserPromptSubmitが発火しないとユーザーへ伝えた。実際には発火していた。2件目では`rg … | cut -c1-300 | head -5`の出力から`awi-body.md`は要求単位の文字位置を求めていないと判断し、委譲入力の`確定済みの観測`へ書いた。同書は該当行の342バイト目以降でその書式を定めていた。
+  直接原因: Claude Code 2.1.291は、`content`・標準出力・標準エラーのいずれも空の`hook_success`をtranscriptへ書かない。agent-toolkitのUserPromptSubmitは注記を返さない発話で何も出力しないため、割り込み発話での実行は記録に残らなかった。2件目は`cut -c1-300`が書式の位置より前で行の表示を止め、一致した行は`head`が表示する10行に入らなかった。照会のヘルプは記録が残る条件を示さず、不在の結論に観測の範囲を確かめさせる`investigation.md`の項は成果物へ書く主張に限って読まれ、選択肢と手段の不在に寄っていた。さらに、切り詰めた結果を不在・件数・網羅性・終端の根拠から外す常時規範の文は`22d7a7a15`が`02-agent-operations.md`から削除しており、`agent-toolkit:search`の該当文はその規定を参照するだけで、参照先から扱いの定めが消えていた。
+  対策: `session_review_evidence.py`の`--hook-notices`・`--grep`・`--fixed-string`のヘルプへ記録の条件を加えた。`agent-toolkit:search`の参照の文を、出力量の制御とパイプの後段の切り詰めで省略された結果を不在・件数・網羅性・終端の根拠にせず、省略の無い形で取り直す扱いを直接述べる文へ書き換えた。`investigation.md`の不在の項を、事象の未発生と記載の不在を含む不在の主張へ広げ、観測が対象を捉える範囲を確かめて範囲外を未観測とする形へ書き換え、範囲限定の文を統合した。同書と`agent-toolkit:writing-standards`の読込表の条件は、成果物に加えてユーザーへの報告と回答、委譲プロンプトへ書く事実主張の調査へ広げた
+
 - 2026年10月6日: pyfltr 3.21.0が公開待機で解決できずCIが失敗した件の対処を問うUWIで、WI投入担当が「dotfilesが配布するuv設定（`~/.config/uv/uv.toml`）でpyfltrの公開待機を外す」選択肢を載せ、委譲元のメインも検収で合格とした。ユーザーは回答欄で、除外は各プロジェクトの`pyproject.toml`へ置き、グローバルに設定すると各プロジェクトの`uv.lock`へ入るため禁止であると以前に伝えたと是正した。この判断は`ak110-projects-operations`スキルの`references/ci-and-tooling.md`に記録済みだった。
   直接原因: WI投入担当は設定値を参照する箇所を隠しディレクトリを走査しない`rg`で探したため、`.chezmoi-source/`配下の`ci-and-tooling.md`が結果に現れなかった。全文を読んだ`dependency-management.md`は除外を対処に挙げながら置き場所の制約を持たず、選択肢を組む`choice-construction.md`は既存の値を変える案を記録と規範に照らすことを求めていなかった。検収の`add-wi.parent.md`も比較の結果を確かめる項目を持たなかった。
   対策: `dependency-management.md`のパッケージ単位の除外の項へ置き場所（プロジェクトは`pyproject.toml`の`[tool.uv]`、`uvx`はコマンドライン、ユーザー設定へは置かない）と理由を集約し、`ci-and-tooling.md`はその項を参照する。`drafting-completion.md`「方針と判断の記録との比較」を確認とUWIの選択肢へ適用し、変更対象の値・設定キー・パスを名指しする規範を隠しディレクトリ配下を含む追跡ファイル全体から探し、比較の結果を成立性の証拠へ書く。`choice-construction.md`「根拠の確定」から同節へ接続し、`add-wi.parent.md`「受領と検収」で比較の結果の有無を確かめる

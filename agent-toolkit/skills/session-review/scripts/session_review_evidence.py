@@ -136,6 +136,11 @@ _FALLBACK_TEXT = (
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
 )
 _CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
+_HOOK_RECORD_NOTE = (
+    "Claude Codeの記録は、出力（標準出力、標準エラー、追加コンテキスト）を返さなかったhookの実行を残さない。"
+    "このためhookの記録が無いことや一致0件は、そのhookが発火しなかったことを示さない。"
+)
+"""hookの記録の有無を照会する引数の説明へ加える、記録が残る条件。"""
 _METADATA_KEYS = frozenset(
     {
         # 識別子・署名
@@ -5386,7 +5391,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="REGEX",
         help="エントリ内の全本文（hook通知を含む。管理用フィールドと"
         "本スクリプト自身の実行記録は除く）を正規表現で検索し、"
-        "一致行と一致エントリ数を照会する。各一致行は元記録行の時刻`timestamp`（無ければnull）を持つ。",
+        "一致行と一致エントリ数を照会する。各一致行は元記録行の時刻`timestamp`（無ければnull）を持つ。" + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
         "--detail",
@@ -5405,7 +5410,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="TEXT",
         help="大小文字を区別する固定文字列ごとに、既存`--grep`と同じ論理entryの一致件数と全locatorだけを返す。"
-        "本文は返さず、0件も文字列ごとに明示する。複数指定ではオプションを繰り返す。",
+        "本文は返さず、0件も文字列ごとに明示する。複数指定ではオプションを繰り返す。" + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
         "--record-schema",
@@ -5429,7 +5434,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="hook実行の記録（追加コンテキスト・システムメッセージ・遮断エラー・実行成功）に"
         "格納された通知本文だけを集計し、hook識別子・発動元・タグ・種別ごとの件数と"
-        "重複を除いた通知件数を照会する。" + _CLAUDE_ONLY_NOTE,
+        "重複を除いた通知件数を照会する。" + _CLAUDE_ONLY_NOTE + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
         "--context-at",

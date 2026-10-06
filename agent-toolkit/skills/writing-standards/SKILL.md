@@ -28,7 +28,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 成果物へ書く事実主張を調査する時 | `references/investigation.md` |
+| 成果物、ユーザーへの報告と回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` |
 | 人間が読む文章（Markdown・README・技術文書・API文書、業務・仕様文書、体験を述べる文章、コメント、AWI・UWIの本文）を書く時 | `references/writing.md` |
 | コード・テストコードを書く時 | 「コードの編集時に読む資料」の各行 |
 | エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`）を書く時 | 「エージェント向け文書の編集時に読む資料」の各行 |
