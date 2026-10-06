@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
+import re
 import subprocess
 import typing
 
@@ -1697,6 +1699,85 @@ def test_public_command_resolves_evidence_references(
             assert "範囲ごとにパスを再記載" in error
     else:
         assert not error
+
+
+# 地の文の参照の区切り規則から期待値を導く組み合わせ。パスは拡張子で終わり、行位置は`:`に続くASCIIの並びとし、
+# 最初の非ASCII文字か空白で参照を終える。参照の終わりは前置きの有無と語の先頭の実在で変えない。
+_ATTACHED_PATHS = {"docs/record.md": True, "docs/exec.parent.md": True, "docs/missing.md": False, "docs/gone.parent.md": False}
+_ATTACHED_LOCATIONS = {"": True, ":1": True, ":1-2": True, ":99": False, ":1-2,5-7": False, ":1-": False}
+# 後続の語と、その語の中で日本語につないだ別の参照（受理されるべきか）の組。
+_ATTACHED_SUFFIXES = {
+    "": None,
+    " で確認": None,
+    "を読んだ": None,
+    "・docs/record.md:2が定める": ("docs/record.md:2", True),
+    "とdocs/missing.md:2で確認": ("docs/missing.md:2", False),
+}
+
+
+@pytest.mark.parametrize("path", list(_ATTACHED_PATHS))
+@pytest.mark.parametrize("prefix", ["", "原因を"], ids=["no-prefix", "japanese-prefix"])
+def test_plain_reference_ends_by_one_rule_regardless_of_prefix_and_existence(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    prefix: str,
+    path: str,
+) -> None:
+    """地の文の参照の終わりを1つの規則で決め、正しい参照を受理し、不正な所在と不在のファイルを拒否する。
+
+    日本語の地の文では参照の直後へ空白なしに助詞や述語が続く。終わりの決め方が前置きの有無やファイルの実在で
+    変わると、正しい参照が行位置の書式不正として拒否されるか、不正な行位置と不在のファイルが切り詰めで受理される。
+    拒否の診断は切り出した参照だけを示し、担当がどの参照を直すかを判断できるようにする。
+    """
+    repository, _, evidence = reference_repository
+    (repository / "docs/exec.parent.md").write_text("1行目\n2行目\n3行目\n", encoding="utf-8")
+    for command in (
+        ["add", "docs/exec.parent.md"],
+        ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "複数ドットの記録"],
+    ):
+        subprocess.run(["git", "-C", str(repository), *command], capture_output=True, check=True, timeout=30)
+    head = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=30,
+    ).stdout.strip()
+    cases = [(location, suffix) for location in _ATTACHED_LOCATIONS for suffix in _ATTACHED_SUFFIXES]
+    conditions = [f"条件{index}" for index in range(1, len(cases) + 1)]
+    notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
+    (notes / "inbox" / FIRST_WI).write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\n---\n# 題\n## 完成条件\n"
+        + "".join(f"- {condition}\n" for condition in conditions),
+        encoding="utf-8",
+    )
+    rows = [
+        {**_condition(FIRST_WI, condition), "reviewed_head": head, "evidence": f"{prefix}{path}{location}{suffix}"}
+        for condition, (location, suffix) in zip(conditions, cases, strict=True)
+    ]
+    _write_evidence(evidence, rows)
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
+    )
+    expected: dict[int, set[str]] = {}
+    for index, (location, suffix) in enumerate(cases, start=1):
+        rejected = set()
+        if not (_ATTACHED_PATHS[path] and _ATTACHED_LOCATIONS[location]):
+            rejected.add(f"{path}{location}")
+        chained = _ATTACHED_SUFFIXES[suffix]
+        if chained is not None and not chained[1]:
+            rejected.add(chained[0])
+        if rejected:
+            expected[index] = rejected
+
+    assert run_script.dispatch(args) == 1
+    actual: dict[int, set[str]] = {}
+    for line in capsys.readouterr().err.splitlines():
+        found = re.match(r"失敗: \S+: wi_conditions\[(\d+)\]\.evidence: 参照『([^』]*)』", line)
+        if found is not None:
+            actual.setdefault(int(found[1]), set()).add(found[2])
+    assert actual == expected
 
 
 @pytest.mark.parametrize("layout", ["single", "outside-selection", "other-array", "plan"])

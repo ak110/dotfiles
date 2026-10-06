@@ -68,8 +68,13 @@ HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 FENCE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|(?P<plain>[^\s`\[\]（）「」、。]+)")
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
-ATTACHED_ASCII_REFERENCE = re.compile(
-    r"(?P<plain>[/A-Za-z0-9_.-][^\s`\[\]（）「」、。:]*?\.[A-Za-z][A-Za-z0-9_-]*(?::[0-9]+(?:-[0-9]+)?|#[^\s`\[\]（）「」、。]+)?)"
+# 地の文の1語から切り出す参照。パスは最後の拡張子までとし、拡張子の直後がASCIIのパス文字でない位置で終える。
+# 行位置などの所在は`:`に続くASCIIの並びとし、最初の非ASCII文字（日本語の助詞・述語、`・`など）で終える。
+# ASCIIの並びは切り詰めずに行位置の書式の判定へ渡し、`:1-2,5-7`や`:1-`を正しい範囲として受理しない。
+# 見出しは日本語を含むため、文字種で終わりを決められず、従来どおり区切り記号までを見出しとする。
+PLAIN_REFERENCE = re.compile(
+    r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_./\\-])"
+    r"(?::[!-~]+|#[^\s`\[\]（）「」、。]+)?)"
 )
 # ファイル参照を除いた残りがこれらの区切りと接続語だけなら、行ごとの説明を持たない参照だけの根拠とみなす。
 REFERENCE_SEPARATORS = re.compile(r"[\s、。，,.;；:：・()（）「」\[\]<>`]+|および|及び|と|や")
@@ -455,45 +460,78 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
     これらを候補にすると、正当な達成根拠が不在ファイルへの参照として拒否される。
     """
     matches = []
-    for match in EVIDENCE_REFERENCE.finditer(evidence):
-        if match.group("plain") is not None:
-            original, _ = _reference_parts(match)
-            if not _is_file(repository / original):
-                for boundary in JAPANESE_ASCII_PATH_BOUNDARY.finditer(original):
-                    suffix = ATTACHED_ASCII_REFERENCE.match(evidence, match.start("plain") + boundary.start())
-                    if suffix is not None:
-                        match = suffix
-                        break
-        candidate, location = _reference_parts(match)
-        if "://" in candidate or candidate.startswith("~") or candidate == "/" or candidate in NON_FILE_PAIRS:
-            continue
-        reference = pathlib.Path(candidate)
-        # 単位の標識はWIの識別子であり、根拠ファイルへの参照ではない。
-        if WI_FILENAME.fullmatch(candidate) and any(
-            re.search(f"{marker}$", evidence[: match.start()]) for marker in _unit_markers("")
-        ):
-            continue
-        # インラインコードにはコマンドも現れる。パスの前に複数の語が続く値を丸ごとパスにしない。
-        # 絶対パス、リンク先、空白を含むファイル名は保持し、パスより前の引数列とオプションを区別する。
-        if (
-            _reference_group(match, "code") is not None
-            and re.match(r"[^/\\\s]+\s+.*[/\\]|\S+\s+--?(?:\s|[A-Za-z])", candidate)
-            and not re.match(r"[A-Za-z]:[\\/]", candidate)
-        ):
-            continue
-        # 自由文の単語、パスのないテスト名、拡張子のない画面・APIのパス、製品名は候補にしない。
-        # 明示された参照は実在に依存させず、不在なら対象版の確認で拒否する。
-        has_separator = "/" in candidate or "\\" in candidate
-        has_extension = re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
-        explicit = (
-            _reference_group(match, "link") is not None
-            or WI_FILENAME.fullmatch(candidate) is not None
-            or (has_separator and has_extension)
-            or (bool(location) and (has_separator or has_extension))
-        )
-        if candidate and (explicit or _is_file(repository / reference)):
-            matches.append(match)
+    for word in EVIDENCE_REFERENCE.finditer(evidence):
+        for match in _plain_references(evidence, word, repository) if word.group("plain") is not None else [word]:
+            if _is_explicit_reference(match, evidence, repository):
+                matches.append(match)
     return matches
+
+
+def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Path) -> list[re.Match[str]]:
+    """地の文の1語から参照を全て切り出す。
+
+    参照の終わりは`PLAIN_REFERENCE`の1つの規則で決め、前置きの有無と語の先頭の実在で変えない。
+    終わりの規則を前置きの有無や実在ごとに別々に持つと、同じ参照が前置きの有無で受理と拒否に分かれるためである。
+    参照の始まりは語の先頭とし、先頭からのパスが実在せず、その途中に日本語の直後から始まるパスがある場合は
+    その位置とする（`原因をdocs/record.md:1で確認`）。日本語でつないだ2件目以降の参照（`A.md:1・B.md:2が`）も
+    日本語の直後から同じ規則で切り出し、全ての参照の所在を確かめる。
+    拡張子で終わるパスを持たない語は、語全体を候補として返す。
+    """
+    start, end = word.span("plain")
+    first = PLAIN_REFERENCE.match(evidence, start, end)
+    references: list[re.Match[str]] = []
+    position = start
+    if first is not None:
+        path, _ = _reference_parts(first)
+        path_end = start + len(path)
+        if _is_file(repository / path) or JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, start + 1, path_end) is None:
+            references.append(first)
+            position = first.end()
+    while True:
+        reference = next(
+            (
+                found
+                for boundary in JAPANESE_ASCII_PATH_BOUNDARY.finditer(evidence, max(position, start + 1), end)
+                if (found := PLAIN_REFERENCE.match(evidence, boundary.start(), end)) is not None
+            ),
+            None,
+        )
+        if reference is None:
+            break
+        references.append(reference)
+        position = reference.end()
+    return references or [word]
+
+
+def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path) -> bool:
+    """切り出した候補が、所在を確かめるファイル参照として明示されているかを返す。"""
+    candidate, location = _reference_parts(match)
+    if "://" in candidate or candidate.startswith("~") or candidate == "/" or candidate in NON_FILE_PAIRS:
+        return False
+    # 単位の標識はWIの識別子であり、根拠ファイルへの参照ではない。
+    if WI_FILENAME.fullmatch(candidate) and any(
+        re.search(f"{marker}$", evidence[: match.start()]) for marker in _unit_markers("")
+    ):
+        return False
+    # インラインコードにはコマンドも現れる。パスの前に複数の語が続く値を丸ごとパスにしない。
+    # 絶対パス、リンク先、空白を含むファイル名は保持し、パスより前の引数列とオプションを区別する。
+    if (
+        _reference_group(match, "code") is not None
+        and re.match(r"[^/\\\s]+\s+.*[/\\]|\S+\s+--?(?:\s|[A-Za-z])", candidate)
+        and not re.match(r"[A-Za-z]:[\\/]", candidate)
+    ):
+        return False
+    # 自由文の単語、パスのないテスト名、拡張子のない画面・APIのパス、製品名は候補にしない。
+    # 明示された参照は実在に依存させず、不在なら対象版の確認で拒否する。
+    has_separator = "/" in candidate or "\\" in candidate
+    has_extension = re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
+    explicit = (
+        _reference_group(match, "link") is not None
+        or WI_FILENAME.fullmatch(candidate) is not None
+        or (has_separator and has_extension)
+        or (bool(location) and (has_separator or has_extension))
+    )
+    return bool(candidate) and (explicit or _is_file(repository / candidate))
 
 
 def _reference_parts(match: re.Match[str]) -> tuple[str, str]:
