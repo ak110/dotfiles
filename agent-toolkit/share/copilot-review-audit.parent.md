@@ -11,7 +11,7 @@
 
 `copilot-review-audit.subagent.md`を指定する起動（`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」）で1件の監査担当を起動する。`cwd`は対象リポジトリの絶対パスとし、`extra_params`には次の名前付き入力だけを渡す。
 
-- `pending取得結果`: `atk review-audit pending`の標準出力をセッションのmanaged-temp（`agent-toolkit:managed-temp`）へ保存したJSONファイルの絶対パス。JSONはCopilot由来の`reviews`・`threads`とDependabotアラートの`dependabot`を持つ。コマンドが非0で終わった場合と、JSONまたは件数を解釈できない場合は`なし`
+- `pending取得結果`: `atk review-audit pending`の標準出力のJSONを持つファイルの絶対パス。`atk`が長い標準出力を保存して`保存先:`を示した場合はその絶対パスを渡し、直接表示された場合は表示されたJSONをセッションのmanaged-temp（`agent-toolkit:managed-temp`）のファイルへ書いて渡す。`atk`の出力はリダイレクトで保存しない（`agent-toolkit/rules/02-agent-operations.md`の`atk`の項）。JSONはCopilot由来の`reviews`・`threads`とDependabotアラートの`dependabot`を持つ。コマンドが非0で終わった場合と、JSONまたは件数を解釈できない場合は`なし`
 - `引き継ぎ記録先`: 値は`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」が指す`引き継ぎ記録先`の書式に従う
 
 ## 受領
