@@ -1002,43 +1002,52 @@ def test_raw_awi_requires_each_original_sentence_and_comment(
     assert run_script.dispatch(args) == 0
 
 
-def test_conditions_also_require_verbatim_requests_and_user_comment(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+_QUOTE_KINDS = {
+    # 要求を含む文。
+    "request": "設定を移して。旧入口を廃止して。",
+    # 要求を含まない過去の観測の文。
+    "background": "先週は保存後に表示が古いままだった。",
+    # 投入元のセッションのメインへ、その場の作業を求めた文。
+    "in-place": "このセッションでさっきのUWIも片付けて。",
+    # 確認回答の記録。
+    "answer-record": (
+        "質問: 旧入口をどうしますか。\n選択肢: 廃止する: 新入口だけを残します。\n回答: 廃止する\n自由記述: 案内も削除して。"
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", list(_QUOTE_KINDS))
+def test_verbatim_quotes_do_not_create_expected_rows(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
-    evidence = tmp_path / "evidence.json"
-    first = "設定を移して。"
-    second = "旧入口を廃止して。"
+    """逐語引用の内容の種類によらず期待行を生成せず、同じAWIのユーザーコメントだけを原文要求の行にする。
+
+    逐語引用は投入元のセッションへの発話であり、そのセッションで解決済みである。期待行に含めると、投入元で済ませた
+    その場の作業や回答済みの問いまで証拠不足となり、割当外・背景のどちらにも当たらない単位が返却を止める。
+    """
     comment = "エンドユーザー向けの案内も直して。"
-    _mock_wi(
-        monkeypatch,
-        tmp_path,
-        {
-            FIRST_WI: (
-                "type: awi\nsource: agent\n---\n# WI\n"
-                "## 完成条件\n- 新入口で操作できる\n"
-                "## ユーザー指摘の逐語引用\n出所: 会話\n\n"
-                f"```text\n{first}{second}\n```\n"
-                f"## ユーザーコメント\n- {comment}\n"
-            )
-        },
+    body = (
+        "type: awi\nsource: agent\n---\n# WI\n"
+        "## 完成条件\n- 新入口で操作できる\n"
+        f"## ユーザー指摘の逐語引用\n出所: 会話\n\n```text\n{_QUOTE_KINDS[kind]}\n```\n"
+        f"## ユーザーコメント\n- {comment}\n"
     )
-    args = argparse.Namespace(
-        script_name="exec-review-evidence-check", script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI]
-    )
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
+    path = tmp_path / "evidence.json"
+    assert _template(path, FIRST_WI) == 0
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert [(row["requirement"], row["origin"]) for row in data["user_requirements"]] == [
+        (comment, f"{FIRST_WI}#ユーザーコメント")
+    ]
+    capsys.readouterr()
 
-    _write_evidence(
-        evidence, [_condition(FIRST_WI, "新入口で操作できる")], [_requirement(FIRST_WI, "設定と旧入口を変更して。")]
-    )
-    assert run_script.dispatch(args) == 1
-    diagnostic = capsys.readouterr().err
-    assert first in diagnostic and second in diagnostic and comment in diagnostic
+    # 是正前に作成した証拠から逐語引用由来の行を削除した状態も、原文要求の不足として拒否しない。
+    _write_evidence(path, [_condition(FIRST_WI, "新入口で操作できる")], [_requirement(FIRST_WI, comment)])
+    assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
 
-    _write_evidence(
-        evidence,
-        [_condition(FIRST_WI, "新入口で操作できる")],
-        [_requirement(FIRST_WI, first), _requirement(FIRST_WI, second), _requirement(FIRST_WI, comment)],
-    )
-    assert run_script.dispatch(args) == 0
+    _write_evidence(path, [_condition(FIRST_WI, "新入口で操作できる")], [])
+    assert _check(path, FIRST_WI) == 1
+    assert f"不足: 「{comment}」" in capsys.readouterr().err
 
 
 def test_split_awi_accepts_unassigned_requirement_but_not_unassigned_condition(
@@ -1083,13 +1092,12 @@ _OTHER_TITLE = "設定の一括移行"
 
 
 def _split_awi(own: str, other: str, record: str) -> str:
-    """2つの要求を逐語引用に持ち、`## 反映内容と反映先`へ割当の記録を持つ分割起票のAWI本文を返す。"""
+    """2つの要求をユーザーコメントに持ち、`## 反映内容と反映先`へ割当の記録を持つ分割起票のAWI本文を返す。"""
     return (
         "type: awi\nsource: agent\n---\n# WI\n"
         f"## 反映内容と反映先\n\n- 引用の前半は本AWIで扱う\n{record}\n"
         "## 完成条件\n- 設定画面で保存できる\n"
-        "## ユーザー指摘の逐語引用\n出所: 会話\n\n"
-        f"```text\n{own}{other}\n```\n"
+        f"## ユーザーコメント\n\n{own}{other}\n"
     )
 
 
@@ -1114,16 +1122,16 @@ def _split_awi(own: str, other: str, record: str) -> str:
         ),
         # evidenceの割当先が記録の行に無い行。
         (f"- 引用の後半は「{_OTHER_TITLE}」へ割当\n", "{wi} ## 反映内容と反映先", f"{SECOND_WI}", "割当を示す行にありません"),
-        # 割当先のWIファイル名が、割当の語も引用位置も持たない依存の言及にだけ現れる行。
+        # 割当先のWIファイル名が、割当の語を持たない依存の言及にだけ現れる行。
         (
             f"- 設定画面の変更は{SECOND_WI}の担当範囲と重ならない\n",
             "{wi} ## 反映内容と反映先",
             SECOND_WI,
             "割当を示す行にありません",
         ),
-        # 引用位置と「」の抜粋だけを持ち割当の語が無い行。背景の記録は位置の後に原文の抜粋を「」で添える。
+        # 「」の抜粋だけを持ち割当の語が無い行。背景の記録は原文の抜粋を「」で添える。
         (
-            f"- 逐語引用 text[1] 文字10-20（「{_OTHER_TITLE}」）は過去の経緯を示す\n",
+            f"- 「{_OTHER_TITLE}」は過去の経緯を示す\n",
             "{wi} ## 反映内容と反映先",
             f"「{_OTHER_TITLE}」",
             "割当を示す行にありません",
@@ -1163,44 +1171,8 @@ def test_unassigned_requirement_without_matching_record_is_rejected(
     assert line.startswith(f"失敗: {FIRST_WI}: user_requirements[1].") and diagnostic in line
     assert "sourceへ書く" in line or "evidenceへ" in line
     if diagnostic == "割当を示す行にありません":
-        # 拒否された担当が記録をどの形へ直せば受理されるかを判断できるよう、受理される2つの形を示す。
-        assert "割当の語" in line and "引用位置" in line
-
-
-@pytest.mark.parametrize(
-    "record",
-    [
-        f"- 逐語引用text[1]文字10-20の移行は、処理中のAWI `{SECOND_WI}`が担う。\n",
-        f"- 逐語引用 text[1] 文字10-20と文字21-31は{SECOND_WI}で扱う\n",
-        f"- `逐語引用text[1]文字10-20`の移行は{SECOND_WI}へ委ねる\n",
-    ],
-)
-def test_unassigned_record_with_quote_position_and_wi_filename_is_accepted(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    record: str,
-) -> None:
-    """割当の語を持たない記録行も、引用位置と割当先のWIファイル名を同じ行に持てば割当の記録として受理する。
-
-    起草規範は割当の記録へ引用位置と割当先のファイル名を求め、述語や位置表記の空白を定めない。
-    語や空白入りの表記だけを記録と認めると、規範どおりに書いた単位が証拠不足となって統合が止まる。
-    """
-    own = "設定画面を直して。"
-    other = "旧設定も一括で移して。"
-    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _split_awi(own, other, record)})
-    unassigned = {
-        **_requirement(FIRST_WI, other),
-        "outcome": "割当外",
-        "source": f"{FIRST_WI} ## 反映内容と反映先",
-        "evidence": SECOND_WI,
-    }
-    path = tmp_path / "evidence.json"
-    _write_evidence(path, [_condition(FIRST_WI, "設定画面で保存できる")], [_requirement(FIRST_WI, own), unassigned])
-    args = argparse.Namespace(
-        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
-    )
-    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+        # 拒否された担当が記録をどの形へ直せば受理されるかを判断できるよう、受理される形を示す。
+        assert "割当の語" in line
 
 
 def test_unassigned_requirement_matching_record_is_accepted(
@@ -1692,15 +1664,10 @@ def _fenced_body(route: str, supplement: str) -> tuple[str, list[dict[str, str]]
     if route == "uwi-answer":
         return f"type: uwi\n---\n# 確認\n\n## 回答\n\n{content}", []
     conditions = "## 完成条件\n- 保存\n"
-    if route == "user-comment":
-        return f"type: awi\nsource: agent\n---\n{conditions}\n## ユーザーコメント\n\n{content}", [_condition(FIRST_WI, "保存")]
-    # 通常AWIの逐語引用は外側の`text`フェンスを要求原文の容器とし、内側だけを補足として除く。
-    container = "`" * 6
-    quote = f"## ユーザー指摘の逐語引用\n\n{container}text\n{content}{container}\n"
-    return f"type: awi\nsource: agent\n---\n{conditions}\n{quote}", [_condition(FIRST_WI, "保存")]
+    return f"type: awi\nsource: agent\n---\n{conditions}\n## ユーザーコメント\n\n{content}", [_condition(FIRST_WI, "保存")]
 
 
-@pytest.mark.parametrize("route", ["raw-awi", "quoted-awi", "user-comment", "uwi-answer"])
+@pytest.mark.parametrize("route", ["raw-awi", "user-comment", "uwi-answer"])
 @pytest.mark.parametrize("supplement", list(_SUPPLEMENTS))
 def test_fenced_supplements_are_not_requirements(
     tmp_path: pathlib.Path,
@@ -1738,68 +1705,7 @@ def test_unclosed_fence_keeps_following_requirements(tmp_path: pathlib.Path, mon
     assert run_script.dispatch(args) == 1
 
 
-_UTTERANCE = "サイトの掲載を確かめて。止まると困るので一時障害の扱いを決めたい。"
-_ANSWER = "一時障害は警告扱い (Recommended)"
-_ANSWER_RECORD = (
-    "質問: 共通前提: 掲載はdocs.python.orgで確かめます。\n"
-    "TLS障害は9月から続いています。一時障害をどう扱いますか。\n"
-    "選択肢: 一時障害は警告扱い (Recommended): 定期実行を止めずに警告だけを表示します。\n"
-    "選択肢: 失敗扱い: 定期実行を失敗させます。\n"
-    "選択肢: 確認を省く: 掲載を確かめません。\n"
-    f"回答: {_ANSWER}\n"
-)
-
-
-def _answer_record_wi(answer_record: str) -> str:
-    """ユーザーの発話の`text`フェンスと、確認回答の記録の`text`フェンスを逐語引用に持つAWI本文を返す。"""
-    return (
-        "type: awi\nsource: agent\n---\n# WI\n## 完成条件\n- 掲載を確かめる\n"
-        "## ユーザー指摘の逐語引用\n\n"
-        f"```text\n{_UTTERANCE}\n```\n\n```text\n{answer_record}```\n"
-    )
-
-
-def test_answer_record_requires_only_user_utterances_and_answer(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """確認回答の記録の質問・共通前提・選択肢を要求単位に数えず、ユーザーの発話の各文と回答の値だけを求める。
-
-    質問や選択肢を要求に数えると、担当はユーザーが述べていない文へ判定を書くか、記録を入力欠陥として返す。
-    """
-    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _answer_record_wi(_ANSWER_RECORD)})
-    path = tmp_path / "evidence.json"
-    args = argparse.Namespace(
-        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
-    )
-    conditions = [_condition(FIRST_WI, "掲載を確かめる")]
-    utterances = ["サイトの掲載を確かめて。", "止まると困るので一時障害の扱いを決めたい。"]
-    _write_evidence(path, conditions, [_requirement(FIRST_WI, text) for text in [*utterances, _ANSWER]])
-    assert run_script.dispatch(args) == 0, capsys.readouterr().err
-
-    _write_evidence(path, conditions, [_requirement(FIRST_WI, text) for text in utterances])
-    assert run_script.dispatch(args) == 1
-    error = capsys.readouterr().err
-    assert f"不足: 「{_ANSWER}」" in error
-    assert "質問" not in error and "選択肢" not in error and "docs." not in error
-
-
-def test_answer_record_keeps_multiline_answer_and_free_text(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """複数行に続く回答の値と自由記述の値を要求単位に残す。"""
-    record = _ANSWER_RECORD.replace(f"回答: {_ANSWER}\n", "回答: 失敗扱い\n確認を省く\n自由記述: 夜間だけ止めて。\n")
-    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _answer_record_wi(record)})
-    path = tmp_path / "evidence.json"
-    args = argparse.Namespace(
-        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
-    )
-    _write_evidence(path, [_condition(FIRST_WI, "掲載を確かめる")], [])
-    assert run_script.dispatch(args) == 1
-    error = capsys.readouterr().err
-    assert "「失敗扱い 確認を省く」、「夜間だけ止めて。」" in error
-
-
-@pytest.mark.parametrize("route", ["raw-awi", "quoted-awi", "user-comment", "uwi-answer"])
+@pytest.mark.parametrize("route", ["raw-awi", "user-comment", "uwi-answer"])
 def test_periods_inside_words_do_not_split_requirements(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], route: str
 ) -> None:
@@ -1818,12 +1724,7 @@ def test_periods_inside_words_do_not_split_requirements(
         body = f"type: uwi\n---\n# 確認\n\n## 回答\n\n{content}"
     else:
         conditions = [_condition(FIRST_WI, "保存")]
-        section = (
-            f"## ユーザーコメント\n\n{content}"
-            if route == "user-comment"
-            else f"## ユーザー指摘の逐語引用\n\n```text\n{content}```\n"
-        )
-        body = f"type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n\n{section}"
+        body = f"type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n\n## ユーザーコメント\n\n{content}"
     _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
     path = tmp_path / "evidence.json"
     args = argparse.Namespace(
@@ -2291,21 +2192,22 @@ def _judge_all(path: pathlib.Path) -> dict[str, list[dict[str, str]]]:
 def test_template_writes_every_expected_row(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """完成条件、逐語引用、ユーザーコメント、原文AWI、UWI回答の全単位を原文と出所付きで、判定欄を空にして出力する。"""
+    """完成条件、ユーザーコメント、原文AWI、UWI回答の全単位を原文と出所付きで、判定欄を空にして出力する。
+
+    逐語引用は投入元のセッションで解決済みの発話であるため、雛形の行にしない。
+    """
     _mock_wi(monkeypatch, tmp_path, _TEMPLATE_BODIES)
     path = tmp_path / "evidence.json"
     wis = list(_TEMPLATE_BODIES)
     assert _template(path, *wis) == 0
     output = capsys.readouterr().out
-    assert "追加 7 行" in output and "\n次の操作: " in output
+    assert "追加 5 行" in output and "\n次の操作: " in output
     data = json.loads(path.read_text(encoding="utf-8"))
     assert [(row["awi"], row["condition"], row["source"]) for row in data["wi_conditions"]] == [
         (FIRST_WI, "保存できる", f"{FIRST_WI}#完成条件 1"),
         (FIRST_WI, "再読込後も保持する", f"{FIRST_WI}#完成条件 2"),
     ]
     assert [(row["awi"], row["requirement"], row["origin"]) for row in data["user_requirements"]] == [
-        (FIRST_WI, "設定を移して。", f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック1"),
-        (FIRST_WI, "旧入口を廃止して。", f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック1"),
         (FIRST_WI, "案内も直して。", f"{FIRST_WI}#ユーザーコメント"),
         (SECOND_WI, "検索範囲を変更して。", f"{SECOND_WI}#本文"),
         ("20260928-192559-003.md", "mediumのまま雛形で補助", "20260928-192559-003.md#回答"),
@@ -2386,7 +2288,7 @@ def test_unfilled_template_is_rejected_until_each_row_is_judged(
 
     assert _check(path, *wis) == 1
     error = capsys.readouterr().err
-    assert error.count("判定が未記入") == 7 and error.count("根拠が未記入") == 7
+    assert error.count("判定が未記入") == 5 and error.count("根拠が未記入") == 5
 
     data = json.loads(path.read_text(encoding="utf-8"))
     for row in [*data["wi_conditions"], *data["user_requirements"]]:
@@ -2394,7 +2296,7 @@ def test_unfilled_template_is_rejected_until_each_row_is_judged(
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     assert _check(path, *wis) == 1
     error = capsys.readouterr().err
-    assert "判定が未記入" not in error and error.count("根拠が未記入") == 7
+    assert "判定が未記入" not in error and error.count("根拠が未記入") == 5
 
     _judge_all(path)
     assert _check(path, *wis) == 0, capsys.readouterr().err
@@ -2414,7 +2316,7 @@ def test_template_preserves_existing_rows_and_adds_only_missing(
     assert f"--template {path} {FIRST_WI}" in capsys.readouterr().err
 
     assert _template(path, FIRST_WI) == 0
-    assert "追加 4 行、既存 2 行を保持" in capsys.readouterr().out
+    assert "追加 2 行、既存 2 行を保持" in capsys.readouterr().out
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["wi_conditions"][0] == judged and data["user_requirements"][0] == plan_row
     assert [row["condition"] for row in data["wi_conditions"]] == ["- 再読込後も保持する", "保存できる"]
@@ -2571,13 +2473,12 @@ _BACKGROUND_REASON = "過去の観測を伝える文で、要求・制約・選�
 
 
 def _background_awi(record: str) -> str:
-    """過去の観測2文と要求1文を逐語引用し、`## 反映内容と反映先`へ分類の記録を持つAWI本文を返す。"""
+    """過去の観測2文と要求1文をユーザーコメントに持ち、`## 反映内容と反映先`へ分類の記録を持つAWI本文を返す。"""
     return (
         "type: awi\nsource: process-wi\n---\n# WI\n"
         f"## 反映内容と反映先\n\n- 「{_REQUEST}」は本AWIで扱う\n{record}\n"
         "## 完成条件\n- 過負荷の後に同じsessionで続く\n"
-        "## ユーザー指摘の逐語引用\n出所: 会話\n\n"
-        f"```text\n{_OBSERVATION}{_OBSERVATION_TAIL}{_REQUEST}\n```\n"
+        f"## ユーザーコメント\n\n{_OBSERVATION}{_OBSERVATION_TAIL}{_REQUEST}\n"
     )
 
 
@@ -2635,14 +2536,14 @@ def test_background_rows_from_template_are_accepted_while_request_stays_judged(
             f"- 「{_OBSERVATION}」は背景の観測\n",
             "{wi} ## 反映内容と反映先",
             None,
-            "原文の範囲を位置参照または旧引用で示していません",
+            "原文の範囲を「」による引用で示していません",
         ),
         # 記録の行に「背景」が無く、割当などの別の扱いを記録した行。
         (
             f"- 「{_OBSERVATION}」は別AWIへ割当\n",
             "{wi} ## 反映内容と反映先",
             None,
-            "原文の範囲を位置参照または旧引用で示していません",
+            "原文の範囲を「」による引用で示していません",
         ),
         # 記録を指す参照だけで、要求を含まない理由を持たない行。
         (_ELIDED_RECORD, "{wi} ## 反映内容と反映先", "{record_file}", "要求を含まない理由がありません"),
@@ -2690,76 +2591,6 @@ def test_background_condition_is_rejected(
     assert "wi_conditions[0].outcome: 未知の判定です: 背景（受理する値: " in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("separator", [" ", ""], ids=["spaced", "compact"])
-@pytest.mark.parametrize("bad_reference", [None, "block", "range", "zero", "reverse", "overflow", "malformed", "reason"])
-def test_background_quote_position_resolves_original_scope(
-    bad_reference: str | None,
-    separator: str,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """原文を再掲せず公開チェックへ参照を渡し、存在・範囲・理由を検証する。
-
-    位置表記の語の間の空白は起草規範が定めないため、空白を省いた参照も空白入りと同じ範囲解決で判定する。
-    """
-    observed = _OBSERVATION + _OBSERVATION_TAIL
-
-    def position(block: int, span: str) -> str:
-        return f"逐語引用{separator}text[{block}]{separator}文字{span}"
-
-    reference = position(1, f"1-{len(observed)}")
-    if bad_reference == "block":
-        reference = position(3, f"1-{len(observed)}")
-    elif bad_reference == "range":
-        reference = position(1, f"{len(observed) + 1}-{len(observed + _REQUEST)}")
-    elif bad_reference == "zero":
-        reference = position(1, f"0-{len(observed)}")
-    elif bad_reference == "reverse":
-        reference = position(1, "2-1")
-    elif bad_reference == "overflow":
-        reference = position(1, "1-9999")
-    elif bad_reference == "malformed":
-        reference += "と" + position(1, "不明")
-    record = f"- `{reference}`は背景。{_BACKGROUND_REASON}。本AWIの完成条件に含めない\n"
-    other = "昨日のログを取得した。"
-    body = _background_awi(record).replace(f"- 「{_REQUEST}」は本AWIで扱う", "- 継続要求は本AWIで扱う")
-    body += f"\n```text\n{other}\n```\n"
-    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
-    source = f"{FIRST_WI} ## 反映内容と反映先"
-    rows = _background_rows(source)
-    for row in rows:
-        row["origin"] = f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック1"
-    rows.append({**_requirement(FIRST_WI, other), "origin": f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック2"})
-    if bad_reference == "reason":
-        rows[0]["evidence"] = ""
-    path = tmp_path / "evidence.json"
-    _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], rows)
-
-    assert _check(path, FIRST_WI) == (0 if bad_reference is None else 1)
-    diagnostic = capsys.readouterr().err
-    if bad_reference:
-        assert "user_requirements[0]" in diagnostic
-    else:
-        assert not diagnostic
-
-
-def test_quote_position_does_not_cover_identical_text_in_other_block(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """同じ文字列でも異なる発話ブロックへの参照を、その行の背景根拠として受理しない。"""
-    record = f"- `逐語引用 text[2] 文字1-{len(_OBSERVATION)}`は背景。{_BACKGROUND_REASON}\n"
-    body = _background_awi(record) + f"\n```text\n{_OBSERVATION}\n```\n"
-    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
-    rows = _background_rows(f"{FIRST_WI} ## 反映内容と反映先")
-    rows[0]["origin"] = f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック1"
-    rows.append({**_requirement(FIRST_WI, _OBSERVATION), "origin": f"{FIRST_WI}#ユーザー指摘の逐語引用 ブロック2"})
-    path = tmp_path / "evidence.json"
-    _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], rows)
-    assert _check(path, FIRST_WI) == 1
-    assert "user_requirements[0]" in capsys.readouterr().err
-
-
 @pytest.mark.parametrize("route", ["plan", "review-table"])
 def test_background_record_in_plan_or_review_table_is_accepted(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], route: str
@@ -2774,7 +2605,7 @@ def test_background_record_in_plan_or_review_table_is_accepted(
     else:
         table = tmp_path / "plan.exec-review.tsv"
         review_table.init(table)
-        review_table.add(table, "1", "exec-review", "逐語引用ブロック1", record, "詳細")
+        review_table.add(table, "1", "exec-review", "ユーザーコメント", record, "詳細")
         source = f"{table} round 1"
     path = tmp_path / "evidence.json"
     _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], _background_rows(source))

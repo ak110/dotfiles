@@ -51,10 +51,6 @@ FILE_REFERENCE_FORM = (
     "リポジトリの外のファイル（managed-tempの検証記録など）は絶対パスで書く。"
     "ファイル名だけや途中からのパスは、対象commitの追跡ファイルとパス末尾が1件に一致する場合だけ受理される"
 )
-# 引用節内のtextブロック番号と、改行も1文字として数える1始まりの文字範囲。
-# 起草規範は語の間の空白を定めないため、`逐語引用text[1]文字1-83`のように空白を省いた表記も同じ参照として読む。
-QUOTE_POSITION = re.compile(r"逐語引用\s*text\[(\d+)\]\s*文字(\d+)-(\d+)")
-QUOTE_POSITION_PREFIX = re.compile(r"逐語引用\s*text\[")
 REVIEW_TABLE_SUFFIX = ".exec-review.tsv"
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
@@ -68,10 +64,6 @@ ASCII_TERMINATORS = ".!?"
 # 文末記号の直後に続く閉じ括弧類は同じ文へ含め、閉じ括弧だけの単位が残る分割を避ける。
 CLOSING_BRACKETS = ")）」』]】"
 INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)+?\1")
-# 確認回答の記録（`質問: `・`選択肢: `・`回答: `・`自由記述: `の行頭ラベルを持つ書式）の各ラベル。
-# 質問と選択肢はエージェントが書いた文であり、ユーザーの要求は回答と自由記述の値だけである。
-ANSWER_LABELS = ("質問: ", "選択肢: ", "回答: ", "自由記述: ")
-USER_ANSWER_LABELS = ("回答: ", "自由記述: ")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 FENCE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|(?P<plain>[^\s`\[\]（）「」、。]+)")
@@ -295,74 +287,21 @@ def _requirement_units(content: list[str]) -> list[str]:
     return units
 
 
-def _answer_record_units(content: list[str]) -> list[str] | None:
-    """確認回答の記録を含む容器から、記録より前の地の文と、回答・自由記述の値を要求単位として返す。"""
-    parsed = _answer_record_values(content)
-    if parsed is None:
-        return None
-    start, values = parsed
-    units = _requirement_units(content[:start])
-    for value in values:
-        units.extend(_requirement_units(value))
-    return units
-
-
-def _answer_record_values(content: list[str]) -> tuple[int, list[list[str]]] | None:
-    """確認回答の記録の開始行と、ユーザーの回答として扱う回答・自由記述の値を返す。
-
-    行頭`質問: `の行の後に行頭`回答: `の行を持たない容器は確認回答の記録ではないため`None`を返す。
-    ラベルの値は次のラベル行の直前まで複数行に続く（回答は選んだ案を改行で並べる）。
-    """
-    start = next((index for index, line in enumerate(content) if line.startswith("質問: ")), None)
-    if start is None or not any(line.startswith("回答: ") for line in content[start + 1 :]):
-        return None
-    values: list[list[str]] = []
-    label: str | None = None
-    value: list[str] = []
-    for line in content[start:]:
-        current = next((candidate for candidate in ANSWER_LABELS if line.startswith(candidate)), None)
-        if current is None:
-            value.append(line)
-            continue
-        if label in USER_ANSWER_LABELS:
-            values.append(value)
-        label, value = current, [line.removeprefix(current)]
-    if label in USER_ANSWER_LABELS:
-        values.append(value)
-    return start, values
-
-
-def _quoted_requirements(body: list[str], filename: str) -> list[tuple[str, str]]:
-    """逐語引用の節にある外側の`text`フェンスを要求原文の容器として読み、その内容を出所付きの要求単位へ分ける。
-
-    容器の内側にある補足のフェンスは`_requirement_units`が除く。
-    容器が確認回答の記録を含む場合は、質問と選択肢を要求単位から除く（`_answer_record_units`）。
-    """
-    requirements: list[tuple[str, str]] = []
-    for heading in (line for line in body if line.startswith("## ") and "逐語引用" in line):
-        section = _section(body, heading)
-        assert section is not None
-        containers = [(start, end) for start, end, info in _fenced_blocks(section) if info == "text"]
-        for number, (start, end) in enumerate(containers, start=1):
-            origin = f"{filename}#{heading.removeprefix('## ')} ブロック{number}"
-            content = section[start + 1 : end]
-            units = _answer_record_units(content)
-            requirements.extend((unit, origin) for unit in (units if units is not None else _requirement_units(content)))
-    return requirements
-
-
 def _expected_rows(output: str, filename: str) -> tuple[list[str], list[tuple[str, str]]]:
-    """WI本文から、完成条件の原文と、出所付きの原文要求単位を、証拠の判定と雛形が共有する期待行として返す。"""
+    """WI本文から、完成条件の原文と、出所付きの原文要求単位を、証拠の判定と雛形が共有する期待行として返す。
+
+    原文要求単位は、完成条件節を持つAWIでは`## ユーザーコメント`、UWIでは`## 回答`、完成条件節の無いAWIでは本文から取る。
+    """
     frontmatter, body = _wi_body(output, filename)
     kind = frontmatter.get("type")
     if kind not in {"awi", "uwi"}:
         raise ValueError(f"{filename}: WIのtypeが不正です")
     conditions = _section(body, "## 完成条件")
     if kind == "awi" and conditions is not None:
-        requirements = _quoted_requirements(body, filename)
+        # `## ユーザー指摘の逐語引用`は投入元のセッションへの発話であり、そのセッションで解決済みとして扱う。
+        # 達成を確かめるのは処理側へ宛てた`## ユーザーコメント`だけとし、逐語引用は完成条件を解釈する根拠に留める。
         comment = _section(body, "## ユーザーコメント")
-        if comment is not None:
-            requirements.extend((unit, f"{filename}#ユーザーコメント") for unit in _requirement_units(comment))
+        requirements = [(unit, f"{filename}#ユーザーコメント") for unit in _requirement_units(comment or [])]
         return _condition_units(conditions, filename), requirements
     if kind == "awi" and "source" in frontmatter:
         raise ValueError(f"{filename}: 『完成条件』節がありません")
@@ -982,19 +921,15 @@ def _user_events_at(path: pathlib.Path, record: str, line: int) -> list[dict[str
     return events
 
 
-def _user_utterance_text(text: str) -> str:
-    """発話本文のうちユーザーの判断として比べる部分を返す。確認回答の書式では回答と自由記述の値だけとする。"""
-    parsed = _answer_record_values(text.splitlines())
-    if parsed is None:
-        return text
-    return "\n".join("\n".join(value) for value in parsed[1])
-
-
 def _user_event_utterance(event: dict[str, typing.Any], text: str) -> str:
-    """新形式ではユーザー値だけを、旧形式では行頭ラベルからユーザー値だけを返す。"""
+    """確認回答の行（`user_response`を持つ行）では回答と自由記述の値だけを、それ以外の発話では本文を返す。
+
+    確認回答かどうかは生成側が付ける`user_response`の構造で判定し、本文の行頭ラベルでは判定しない。
+    行頭ラベルで判定すると、同じ行頭を持つ通常の発話から一部だけを比べることになるためである。
+    """
     responses = event.get("user_response")
     if not isinstance(responses, list):
-        return _user_utterance_text(text)
+        return text
     values: list[str] = []
     for response in responses:
         if not isinstance(response, dict):
@@ -1105,10 +1040,9 @@ def _unassigned_source_error(
 
     記録は要求単位を言い換えて複数の単位を1行で覆うため、要求単位の原文と記録行の一致は求めず、
     割当先の表記が割当を示す記録行に現れるかを行単位で比べる。意味上の対応はレビューと統合時の読解に残す。
-    割当を示す行は、割当の語を持つ行と、引用位置と割当先のWIファイル名を同じ行に持つ行の2つの形とする。
-    後者は起草規範が割当の記録に求める要素であり、「が担う」「で扱う」のように述語が異なっても割当を示す。
-    「」で囲んだタイトルとWIファイル名だけの行へは広げない。背景の記録は位置の後に原文の抜粋を「」で添え、
-    WIファイル名は依存や担当範囲の言及にも現れるため、語なしで受理すると割当でない行まで根拠になる。
+    割当を示す行は割当の語を持つ行とする。「」で囲んだタイトルとWIファイル名だけの行へは広げない。
+    背景の記録は原文の抜粋を「」で添え、WIファイル名は依存や担当範囲の言及にも現れるため、
+    語なしで受理すると割当でない行まで根拠になる。
     """
     label = _row_label(row, section, index)
     record, reason = _record_section(row["source"], repository, wi_outputs)
@@ -1130,12 +1064,9 @@ def _unassigned_source_error(
     for line in record:
         if any(word in line for word in ASSIGNMENT_WORDS) and any(assignee in line for assignee in assignees):
             return None
-        if QUOTE_POSITION.search(line) and any(WI_FILENAME.fullmatch(assignee) and assignee in line for assignee in assignees):
-            return None
     return (
         f"{label}.evidence: 割当先（{_quoted_units(assignees)}）がsourceの節の割当を示す行にありません。"
-        "割当を示す行は、割当の語（割当・割り当て・分割元の依頼全体）を持つ行か、"
-        "引用位置（逐語引用 text[N] 文字A-B）と割当先のWIファイル名を同じ行に持つ行である。"
+        "割当を示す行は、割当の語（割当・割り当て・分割元の依頼全体）を持つ行である。"
         "記録に書かれたとおりの割当先をevidenceへ写すか、記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
     )
 
@@ -1182,33 +1113,13 @@ def _quote_spans(quote: str, original: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _covered_by_background(requirement: str, record: list[str], original: str, origin: str) -> bool:
-    """「背景」を含む記録行のいずれかの引用が、原文上で要求単位の位置を覆うかを返す。"""
+def _covered_by_background(requirement: str, record: list[str], original: str) -> bool:
+    """「背景」を含む記録行のいずれかの「」による引用が、原文上で要求単位の位置を覆うかを返す。"""
     unit = _compact(requirement)
     compact_original = _compact(original)
     positions = [index for index in range(len(compact_original)) if compact_original.startswith(unit, index)] if unit else []
-    section = _section(original.splitlines(), "## ユーザー指摘の逐語引用") or []
-    blocks = ["\n".join(section[start + 1 : end]) for start, end, info in _fenced_blocks(section) if info == "text"]
-    source_block = re.search(r"#ユーザー指摘の逐語引用 ブロック(\d+)$", origin)
     for line in record:
         if BACKGROUND not in line:
-            continue
-        if QUOTE_POSITION_PREFIX.search(line):
-            references = list(QUOTE_POSITION.finditer(line))
-            if not references or len(references) != len(QUOTE_POSITION_PREFIX.findall(line)) or source_block is None:
-                continue
-            resolved: list[tuple[int, str]] = []
-            for reference in references:
-                number, start, end = map(int, reference.groups())
-                if not 1 <= number <= len(blocks):
-                    break
-                text = blocks[number - 1]
-                if not 1 <= start <= end <= len(text):
-                    break
-                resolved.append((number, _compact(text[start - 1 : end])))
-            else:
-                if unit and any(number == int(source_block[1]) and unit in text for number, text in resolved):
-                    return True
             continue
         for quote in BRACKETED_TITLE.findall(line):
             for start, end in _quote_spans(quote, compact_original):
@@ -1234,12 +1145,10 @@ def _background_source_error(
             "記録が無い単位は記録を補ってから背景とするか、達成・未達・証拠不足のいずれかで判定する"
         )
     original = _original_text(row, repository, wi_outputs)
-    if original is None or not _covered_by_background(row["requirement"], record, original, row["origin"]):
+    if original is None or not _covered_by_background(row["requirement"], record, original):
         return (
-            f"{label}.source: 記録の「背景」を含む行が、この要求単位を覆う原文の範囲を位置参照または旧引用で示していません。"
-            "背景とした原文の範囲を`逐語引用 text[N] 文字A-B`で記録へ参照し、読み手が箇所を特定できる短い抜粋か要約を添える。"
-            "Nは同じWIの引用節のtextブロック番号、A-Bは改行も数える1始まりの文字範囲である。"
-            "保存済みの「」による引用（中略は…）も読める。"
+            f"{label}.source: 記録の「背景」を含む行が、この要求単位を覆う原文の範囲を「」による引用で示していません。"
+            "背景とした原文の範囲を「」で囲んで記録へ引用する（中略は…で示せる）。"
             "要求を含む文は背景にせず、達成・未達・証拠不足のいずれかで判定する"
         )
     evidence = row["evidence"].strip()
