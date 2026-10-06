@@ -463,6 +463,27 @@ _RETIRED_TERMS = (
             ("従来の取得と判定", "説明へ"),
         )
     ),
+    # 委譲先の返却形式の状態値（2026年10月6日に廃止）。続行不能は`続行できない理由:`の行だけで表す。
+    # 定義は`agent-toolkit/skills/delegation/references/mandatory-rules.md`「返却形式の受け渡し」を正とする。
+    _RetiredTerm(
+        term="needs_escalation",
+        replacement="`続行できない理由:`の行（地の文では「続行できない理由を返す」）",
+        allowed=(
+            # 過去のセッション記録に残る旧形式の返却を読む定数と、その読み取り互換を確かめるテスト
+            _AllowedLocation(
+                "agent-toolkit/skills/session-review/scripts/session_review_evidence.py",
+                line_exact='_ESCALATION_RETURN_STATUS = "needs_escalation"',
+            ),
+            _AllowedLocation("agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py", "needs_escalation"),
+            _AllowedLocation(
+                "agent-toolkit/skills/session-review/scripts/session_review_candidates_test.py", "needs_escalation"
+            ),
+            # 日付の付いた過去の障害記録
+            _AllowedLocation("docs/development/incidents*.md"),
+            # 登録した語の不在を確かめる本テスト
+            _AllowedLocation("retired_terms_invariant_test.py"),
+        ),
+    ),
 )
 
 

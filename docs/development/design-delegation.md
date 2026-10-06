@@ -44,7 +44,7 @@ Claude Codeでの計測値は`~/.claude/projects`配下のセッション記録�
 `send_message`のtimeoutは配送の成否が未確定であることだけを示すため、継続不能の根拠にしない。
 timeout後は、送った継続要求の受理結果、またはその要求によって始まった新しいreplyを確認できた場合だけ、同じthreadで待機を継続する。
 `wait`が返す`status=completed`だけを配送済みの根拠にしない。
-送った継続要求に対応する観測を得られない場合は、同じ継続指示を再送せず、継続不能とも確定せず`needs_escalation`で委譲元へ返す。
+送った継続要求に対応する観測を得られない場合は、同じ継続指示を再送せず、継続不能とも確定せず続行できない理由を委譲元へ返す。
 `agents_server`で継続不能と確定するのは`send_message`が`unknown session`を返した場合だけである。
 判断理由は`send_message`が`turn_control_lock`の取得待ちでtimeoutした後に元から実行中だったturnが終了しても
 `wait`は`status=completed`を返すため、元のturnの終端を今回の継続要求の配送へ対応付けられない点にある。

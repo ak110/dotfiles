@@ -143,8 +143,8 @@ class TestCheckText:
                 "adopted: 20260101-aaa.md, 20260101-bbb.md\n"
                 "rejected: なし"
             ),
-            "needs_escalation",
-            "status: needs_escalation",
+            "condition_not_met",
+            "status: completed",
             (
                 "統合完了\n"
                 "統合後のHEAD: 0123456789abcdef0123456789abcdef01234567\n"
@@ -154,7 +154,7 @@ class TestCheckText:
                 '変更したエージェント向け文書: ["agent-toolkit/share/exec.subagent.md"]'
             ),
             "状態: completed\nレビューしたHEAD: abc1234\n未解決の指摘数: 0",
-            "状態: needs_escalation\n続行できない理由: 認可範囲の外にある既存不良が変更範囲の検証を妨げる",
+            "続行できない理由: 認可範囲の外にある既存不良が変更範囲の検証を妨げる",
         ],
     )
     def test_allows_specified_return_formats(self, text: str):

@@ -464,7 +464,7 @@ def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
     """反映後の観測だけが残る項目の再開記録を、送信側と受信側が同じ節名と項目で扱う。
 
     セッション終了でメインがAWI本文へ追記する節を、pickerとメインの受領、レーン担当が同じ節名で読まないと、
-    計画が`~/.claude/plans`に無い項目は再開位置を失い、`needs_escalation`か再実装へ進む。
+    計画が`~/.claude/plans`に無い項目は再開位置を失い、続行できない理由の返却か再実装へ進む。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
     finish = (plugin_root / "skills" / "process-wi" / "references" / "finish-session.md").read_text(encoding="utf-8")

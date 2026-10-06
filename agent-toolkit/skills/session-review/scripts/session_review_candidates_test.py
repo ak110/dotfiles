@@ -352,7 +352,10 @@ def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
 
 
 def test_candidate_events_separates_escalations_from_unsuccessful_delegate_returns() -> None:
-    """上位判断を求める返却だけをエスカレーションとし、通常の不成功返却から分離する。"""
+    """上位判断を求める返却だけをエスカレーションとし、通常の不成功返却から分離する。
+
+    `続行できない理由:`の行を持つ返却に加え、過去の記録に残る旧形式の状態値の返却も読み取り互換としてエスカレーションとする。
+    """
     timeline = [
         {"kind": "final-result", "record": "agent-1", "line": 20, "text": "status: needs_escalation\nreason: 認可の不足"},
         {
@@ -368,16 +371,23 @@ def test_candidate_events_separates_escalations_from_unsuccessful_delegate_retur
             "line": 50,
             "text": "状態: needs_escalation\n続行できない理由: 入力の欠落",
         },
+        {
+            "kind": "final-result",
+            "record": "agent-5",
+            "line": 60,
+            "text": "未解決の指摘数: 0\n続行できない理由: 認可範囲の外にある不良",
+        },
     ]
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert sorted(candidate["candidate_kind"] for candidate in candidates[:-1]) == ["delegate-return"] * 2 + ["escalation"] * 2
+    assert sorted(candidate["candidate_kind"] for candidate in candidates[:-1]) == ["delegate-return"] * 2 + ["escalation"] * 3
     assert candidates[-1]["included_locators"] == [
         {"record": "agent-1", "line": 20},
         {"record": "agent-2", "line": 30},
         {"record": "agent-3", "line": 40},
         {"record": "agent-4", "line": 50},
+        {"record": "agent-5", "line": 60},
     ]
 
 
@@ -516,19 +526,19 @@ def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None
             "kind": "final-result",
             "record": "agent-1",
             "line": 20,
-            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}認可の不足",
+            "text": f"続行できない理由: {shared_prefix}認可の不足",
         },
         {
             "kind": "final-result",
             "record": "agent-2",
             "line": 30,
-            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}認可の不足",
+            "text": f"続行できない理由: {shared_prefix}認可の不足",
         },
         {
             "kind": "final-result",
             "record": "agent-3",
             "line": 40,
-            "text": f"状態: needs_escalation\n続行できない理由: {shared_prefix}入力の欠落",
+            "text": f"続行できない理由: {shared_prefix}入力の欠落",
         },
     ]
 

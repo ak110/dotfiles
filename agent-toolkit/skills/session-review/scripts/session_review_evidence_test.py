@@ -7443,7 +7443,7 @@ def test_bundle_excludes_interim_text_of_running_delegate(
                 "type": "user",
                 "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "ok"}]},
             },
-            _assistant_text("status: needs_escalation\nreason: 途中の見込み"),
+            _assistant_text("続行できない理由: 途中の見込み"),
             _execution_tool_use("call-2"),
         ],
     )
@@ -7479,6 +7479,7 @@ def test_bundle_keeps_final_text_of_finished_delegate(
     ("final_text", "expected"),
     [
         ("status: completed\noutput_file: /tmp/out.md", []),
+        ("状態: completed\n未解決の指摘数: 0\n続行できない理由: なし", []),
         (
             "統合完了\nmerged_head: abc1234\n想定外事象: 統合後の検査が1件失敗した",
             ["統合完了\nmerged_head: abc1234\n想定外事象: 統合後の検査が1件失敗した"],
@@ -7492,6 +7493,7 @@ def test_bundle_keeps_final_text_of_finished_delegate(
             for role in ("読者別探索", "一括置換後レビュー", "投稿前レビュー")
             for text in (
                 f"状態: completed\n未解決の指摘数: 1\n{role}: 指摘あり",
+                f"未解決の指摘数: 0\n続行できない理由: {role}の入力不足",
                 f"状態: needs_escalation\n未解決の指摘数: 0\n続行できない理由: {role}の入力不足",
                 f"状態: completed\n未解決の指摘数: 0\n{role}: 指摘なし\n想定外事象: 検証に失敗",
             )

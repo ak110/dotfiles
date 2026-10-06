@@ -23,13 +23,13 @@
 2. 統合先worktreeの現在branchが統合先branchであり、別の書込主体とGitの中断状態が無いことを確認する。
 3. 統合先branchの現在HEADの7文字以上の一意な短縮OIDと、`git merge-base <専用branch> <統合先branch>`で得たrebase前のベースOIDを取得する。
 4. 専用branchのHEADが統合先branchの現在HEADの子孫である場合（`git merge-base --is-ancestor <統合先branchの現在HEAD> <専用branchのHEAD>`が終了コード0）は、rebaseせず手順10へ進む。
-5. 子孫でない場合は、rebaseの前に、専用branchが統合先branchの現在HEADより先に持つ全commitが未pushであることを`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」の手段で確認する。1件でもpush済みの場合はrebaseせず、そのcommitの短縮OIDを`続行できない理由:`へ書いて`needs_escalation`で返す。
+5. 子孫でない場合は、rebaseの前に、専用branchが統合先branchの現在HEADより先に持つ全commitが未pushであることを`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」の手段で確認する。1件でもpush済みの場合はrebaseせず、そのcommitの短縮OIDを`続行できない理由:`へ書いて返す。
 6. 未pushを確認した場合は、rebase前の専用branchのHEADの7文字以上の一意な短縮OIDを`引き継ぎ記録先`へ記録する。書換えコマンドとは別の呼び出しで、専用worktreeを作業ディレクトリとして`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」の`git log`を実行し、対象commitの状態を確認する。続けて同じworktreeで`git rebase <統合先branchの現在HEAD>`を実行し、専用branchを統合先branchの現在HEADの上へ載せ替える。rebaseの対象は専用worktree内の専用branchに限り、統合先branchと他のレーンの専用branchはそのまま保つ。
-7. rebaseが競合で停止した場合は、`git rebase --abort`と`git rebase --continue`のいずれも自ら実行せず、rebaseを進行中のまま保持して`needs_escalation`で返す。`続行できない理由:`へ、競合したファイルのリポジトリ相対パス、専用worktreeの絶対パス、およびそのworktreeでrebaseが進行中であることを書く。競合の解消と再レビューの指示はメインが所有する。メインから競合の解消指示を受領した場合は、競合を解消して解消したパスだけをstageする。続けて`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」の`git log`を単独で実行し、`git rebase --continue`でrebaseを完了させる。競合箇所、解消方針、変更内容、影響範囲を`atk review-table add`で実行レビューのレビュー指摘管理表へ1行登録し、同じ行へ`atk review-table respond`で解消内容を応答として記録する。その後、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」が定める返却値を返す。統合指示を再び受領した場合は手順1から実施する。
-8. rebaseが成功した場合は、`git range-diff <rebase前のベースOID>..<rebase前の専用branchのHEAD> <統合先branchの現在HEAD>..<rebase後の専用branchのHEAD>`を実行する。全commitが1対1で対応し、かつ内容が変化していないこと（各行の対応記号が`=`であること）を確認する。対応の欠落、追加、または内容の変化を観測した場合は手順9へ進まず、`git range-diff`の該当行を`続行できない理由:`へ書いて`needs_escalation`で返す。
-9. 計画を持つ場合は計画ファイルの`## 検証`の`変更範囲の検証`行、計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを、rebase後の専用branchのHEADで再実行し、終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを確認する。失敗がレビュー済みHEADでは再現せず、統合先との組合せだけで生じた場合は、失敗した検証が確かめる契約の送信側、受信側、実装およびテストを列挙したうえで、専用worktreeへ是正commitを記録する。変更範囲の検証を再実行して成功と阻害に当たる警告が無いことを確認し、commitと検証の証拠（警告の判定の根拠を含む）を`needs_escalation`でメインへ返す。メインの差分確認と再指示後に手順10へ進む。レビュー済みHEADでも再現する失敗または認可範囲外の変更を要する失敗は、コマンド、出力および続行できない事情を`続行できない理由:`へ書いて返す。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の`git range-diff`が担保する。
+7. rebaseが競合で停止した場合は、`git rebase --abort`と`git rebase --continue`のいずれも自ら実行せず、rebaseを進行中のまま保持して続行できない理由を返す。`続行できない理由:`へ、競合したファイルのリポジトリ相対パス、専用worktreeの絶対パス、およびそのworktreeでrebaseが進行中であることを書く。競合の解消と再レビューの指示はメインが所有する。メインから競合の解消指示を受領した場合は、競合を解消して解消したパスだけをstageする。続けて`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」の`git log`を単独で実行し、`git rebase --continue`でrebaseを完了させる。競合箇所、解消方針、変更内容、影響範囲を`atk review-table add`で実行レビューのレビュー指摘管理表へ1行登録し、同じ行へ`atk review-table respond`で解消内容を応答として記録する。その後、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」が定める返却値を返す。統合指示を再び受領した場合は手順1から実施する。
+8. rebaseが成功した場合は、`git range-diff <rebase前のベースOID>..<rebase前の専用branchのHEAD> <統合先branchの現在HEAD>..<rebase後の専用branchのHEAD>`を実行する。全commitが1対1で対応し、かつ内容が変化していないこと（各行の対応記号が`=`であること）を確認する。対応の欠落、追加、または内容の変化を観測した場合は手順9へ進まず、`git range-diff`の該当行を`続行できない理由:`へ書いて返す。
+9. 計画を持つ場合は計画ファイルの`## 検証`の`変更範囲の検証`行、計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを、rebase後の専用branchのHEADで再実行し、終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを確認する。失敗がレビュー済みHEADでは再現せず、統合先との組合せだけで生じた場合は、失敗した検証が確かめる契約の送信側、受信側、実装およびテストを列挙したうえで、専用worktreeへ是正commitを記録する。変更範囲の検証を再実行して成功と阻害に当たる警告が無いことを確認し、commitと検証の証拠（警告の判定の根拠を含む）を続行できない理由としてメインへ返す。メインの差分確認と再指示後に手順10へ進む。レビュー済みHEADでも再現する失敗または認可範囲外の変更を要する失敗は、コマンド、出力および続行できない事情を`続行できない理由:`へ書いて返す。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の`git range-diff`が担保する。
 10. 対象リポジトリのプロジェクト規範に、統合後にだけ成立する検証があるか確認する。なければ手順11へ進む。ある場合はmanaged-tempの中に作業ディレクトリを確保する。標準出力と標準エラーの保存先を、その領域内の絶対パスとして`summary_policy`へ記す。規範が定めるコマンドを、専用worktreeを`cwd`として`agents_server`の`start`（`mode`は`shell`）へ渡して1回実行する。委譲先には両方を保存して必要な範囲を読ませ、終了状態、警告の有無、両保存先と要約を返させる。返却パスが渡した領域内に実在することを確認する。保存済みの全量から、終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを検収する。この検証は他のレーンの成果と合わせた状態でだけ成立するため、rebase前の変更範囲の検証では代替できない。専用branchのHEADは統合先branchの現在HEADの子孫であり、そのtreeはfast-forward後の統合先と同じになるため、fast-forwardの前に専用worktreeで実行する。統合先を変える前に失敗を確定すると、他のレーンが失敗した状態の統合先の上へ載ることを防げる。成立しない場合は統合先branchを変更せず、専用worktreeで是正commitを作成し、変更範囲の検証を再実行してから本手順をやり直す。
-11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず`needs_escalation`で返す。
+11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず続行できない理由を返す。
 12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
 手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で、旧完全OIDから新完全OIDへの対応を各計画または引き継ぎ記録へ追記する。対応表へ入れる旧OIDは、`git range-diff`で検収した全commitのうち、その計画の進捗ログ（計画なしでは引き継ぎ記録）にWI対応を持つものに限り、記録済みの旧OIDは全て含める。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
@@ -41,9 +41,9 @@
 比較のために再実行が必要な場合は、統合先worktreeで該当コマンドだけを読み取り専用で実行し、統合先の追跡ファイルとbranchを保持する。
 判定の手段は警告の意味と由来の確認に限る。統合では警告を抑制せず、手順9・10の検証コマンドの対象範囲を縮めない。抑制や縮小で阻害に当たる出力が検証結果から消えると、他のレーンと合わせた統合先で失敗する変更をそのまま統合する。
 
-- 共通判定で阻害とした出力は手順9・10の失敗と同じく扱い、専用worktreeで是正するか`needs_escalation`で返す
+- 共通判定で阻害とした出力は手順9・10の失敗と同じく扱い、専用worktreeで是正するか続行できない理由を返す
 - 処理が成立する既存警告と確定した場合は、意味、統合前の結果との対応と根拠を引き継ぎ記録へ残し、メインの受理を待たずに続行する。その警告が是正を要する既存不良であれば、統合は止めず、観測した出力、直接的原因、修正の対象と方向を返却の`想定外事象:`行でメインへ渡す。即時対応とするかはメインが`agent-toolkit:process-wi`の`SKILL.md`「即時対応」で判定する
-- 新規の警告や診断は、手順9の是正commitで解消した場合を除き、マージとAWI終端へ進まない。比較不能と意味を確定できない結果でも同じく統合を止める。原因・影響または未確認の理由と不足する条件を`needs_escalation`へ添えて返す
+- 新規の警告や診断は、手順9の是正commitで解消した場合を除き、マージとAWI終端へ進まない。比較不能と意味を確定できない結果でも同じく統合を止める。原因・影響または未確認の理由と不足する条件を続行できない理由として返す
 
 ## マージなしの統合
 
@@ -55,7 +55,7 @@
 
 `計画ファイル名一覧: []`のレーンは計画を対象とする自動チェックと保存を省き、レーン稼働時間、統合結果およびAWI終端前の状態を引き継ぎ記録へ残す。返却する`保存した計画ファイル`は`[]`とする。以下の手順は計画を持つレーンだけへ、配列の順に各要素へ適用する。
 
-引き継ぎ記録で先行する統合時に保存済みと確定し、その後に進捗を追記していない計画は、後段の操作を省き、保存した計画ファイルの返却には含める。それ以外の各計画では、メタ情報が示す対象リポジトリの専用worktreeが実在することを確認する。回収済みの場合は、引き継ぎ記録がその計画について反映後の観測のみの再開と旧専用worktreeの回収を示し、保存時の本文から進捗ログ以外が変わっていないことを確かめる。両条件を満たす計画では現在の専用worktreeを後続の操作場所とする。通常の計画で旧専用worktreeが回収済みの場合、または観測のみの計画で本文の凍結を確認できない場合は、計画メタ情報を書き換えず`needs_escalation`で返す。レーンの統合区分に関わらず同じ条件で判定する。観測のみの再開で`atk plans checkout`から進捗を追記したバンドルは再保存する。未保存の計画で`~/.claude/plans`に対象バンドルが無い場合は、保存状態と所在を調べて引き継ぎ記録へ残し、必要なら`atk plans checkout <private-notes/plans/からの相対パス>`で取得する。対象の操作場所をcwdとして、各計画へ`atk run-script plan-progress --`で`## 進捗ログ`にその計画の統合区分、統合先branch、`統合後のHEAD`、対応する実行レビューの収束およびAWI終端前の状態を追記する。
+引き継ぎ記録で先行する統合時に保存済みと確定し、その後に進捗を追記していない計画は、後段の操作を省き、保存した計画ファイルの返却には含める。それ以外の各計画では、メタ情報が示す対象リポジトリの専用worktreeが実在することを確認する。回収済みの場合は、引き継ぎ記録がその計画について反映後の観測のみの再開と旧専用worktreeの回収を示し、保存時の本文から進捗ログ以外が変わっていないことを確かめる。両条件を満たす計画では現在の専用worktreeを後続の操作場所とする。通常の計画で旧専用worktreeが回収済みの場合、または観測のみの計画で本文の凍結を確認できない場合は、計画メタ情報を書き換えず続行できない理由を返す。レーンの統合区分に関わらず同じ条件で判定する。観測のみの再開で`atk plans checkout`から進捗を追記したバンドルは再保存する。未保存の計画で`~/.claude/plans`に対象バンドルが無い場合は、保存状態と所在を調べて引き継ぎ記録へ残し、必要なら`atk plans checkout <private-notes/plans/からの相対パス>`で取得する。対象の操作場所をcwdとして、各計画へ`atk run-script plan-progress --`で`## 進捗ログ`にその計画の統合区分、統合先branch、`統合後のHEAD`、対応する実行レビューの収束およびAWI終端前の状態を追記する。
 同じ追記へそのレーンの稼働時間も記録する。値はレーン担当のsessionの開始時刻から統合の完了時刻までの経過時間とし、書式は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`が定める。開始時刻は`atk agents list`の出力のうち`label`が`<レーン識別子>-exec`と一致する自sessionの`created_at`から取得する。`started_at`はturnごとに更新されるため起点に用いない。`created_at`を持たない行（旧版のagents_serverが書いた状態）では`started_at`を起点とし、秒数に続けて「（最後のturnの開始からの下限値）」と書く。
 この記録はprocess-wiの次の実行の選定工程がレーン配分の見込みを導く入力になる。記録が無いと、見込みと実績の乖離がそのまま待ち時間として残る。rebaseを実行した場合は、rebase前後の専用branchの7文字以上の一意な短縮OIDの対応も同じ追記へ含める。
 前段で観測のみの再開と本文凍結を確認した、旧専用worktreeが回収済みの計画は、元の保存時にplan-checkを通過しているため再実行を省く。それ以外は専用worktreeをcwdとして各計画へ`atk run-script plan-check -- --reject-migration-warnings --work-dir <計画メタ情報の対象リポジトリ> <計画ファイルの絶対パス>`を単独実行し、終了コード0と警告の不在を確認する。統合先worktreeと専用worktreeが異なる場合も、この2コマンドでは専用worktreeをcwdとして維持する。
@@ -88,4 +88,4 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 変更したエージェント向け文書: <["リポジトリ相対パス"]形式のJSON配列。無い場合は[]>
 ```
 
-続行不能時は`状態: needs_escalation`と`続行できない理由:`の2行だけを返す。自身が起動した外部プロセスの終了を確認してから終端する。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
+続行不能時は`agent-toolkit:delegation`の`references/mandatory-rules.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。自身が起動した外部プロセスの終了を確認してから終端する。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

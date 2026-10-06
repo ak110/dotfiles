@@ -3662,10 +3662,15 @@ _BUNDLE_WARNING_SAMPLE_COUNT = 3
 _HOOK_NOTICE_VARIANT_LIMIT = 5
 # 委譲先の返却形式の欄名。日本語名へ改める前の英字の欄名（後者）で返す版の委譲先も同じ意味で読む。
 _RETURN_STATUS_PREFIXES = ("状態:", "status:")
+# 委譲先は続行できないことを`続行できない理由:`の行で表す。値が空の行（後続行へ列挙する形式の見出し）と、
+# 省略時の値「なし」を書いた旧形式の行は続行不能を示さない。
+_ESCALATION_REASON_PREFIX = "続行できない理由:"
+_NO_ESCALATION_REASONS = frozenset({"", "なし"})
+# 続行不能を状態値で示した旧形式の返却。過去のセッション記録に残るため読み取り互換として判定する。
 _ESCALATION_RETURN_STATUS = "needs_escalation"
 _COMPLETED_RETURN_LINES = frozenset(f"{prefix} completed" for prefix in _RETURN_STATUS_PREFIXES)
 _UNRESOLVED_RETURN_PREFIXES = ("未解決の指摘数:", "unresolved:")
-_ESCALATION_REASON_PREFIXES = ("続行できない理由:", "reason:")
+_ESCALATION_REASON_PREFIXES = (_ESCALATION_REASON_PREFIX, "reason:")
 _CANDIDATE_EVIDENCE_LENGTH = 2000
 UNTRUNCATED_EVIDENCE_KINDS = frozenset(
     {"user-intervention", "command-failure", "tool-failure", "delegate-return", "escalation"}
@@ -4189,17 +4194,27 @@ def _is_delegate_return(event: dict[str, Any], *, main_record_id: str = "main") 
 
 
 def _is_escalation_return(event: dict[str, Any]) -> bool:
-    """上位判断を要求する明示的な最終返却であるかを返す。"""
+    """上位判断を要求する明示的な最終返却であるかを返す。
+
+    値を持つ`続行できない理由:`の行を持つ返却と、旧形式の状態値で続行不能を示した返却を対象とする。
+    """
     if event.get("kind") != "final-result":
         return False
     text = event.get("text")
     if not isinstance(text, str):
         return False
+    lines = [line.strip() for line in text.splitlines()]
+    if any(
+        line.startswith(_ESCALATION_REASON_PREFIX)
+        and line.removeprefix(_ESCALATION_REASON_PREFIX).strip() not in _NO_ESCALATION_REASONS
+        for line in lines
+    ):
+        return True
     return any(
-        line.strip().removeprefix(prefix).strip() == _ESCALATION_RETURN_STATUS
-        for line in text.splitlines()
+        line.removeprefix(prefix).strip() == _ESCALATION_RETURN_STATUS
+        for line in lines
         for prefix in _RETURN_STATUS_PREFIXES
-        if line.strip().startswith(prefix)
+        if line.startswith(prefix)
     )
 
 
