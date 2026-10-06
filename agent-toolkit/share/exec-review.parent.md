@@ -59,7 +59,7 @@ JSONは担当が初回に作成する出力先であり、起動前には親デ�
 
 実行レビューの返却に差分外の既存不良を示す`想定外事象:`行がある場合は、その行が指す走査記録を読み、
 対象、条件、実害、根拠、レビュー指摘へ含めない理由、確定した原因と対策案を取得する。
-`agent-toolkit:bugfix`と`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い、是正またはAWI投入へ進む。`agent-toolkit:process-wi`の処理中は同スキルの「即時対応」、`agent-toolkit:single-lane-process`の処理中は同スキルの「見つけた既存不良の扱い」が是正する範囲を定める。
+`agent-toolkit:bugfix`と`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い、是正またはAWI投入へ進む。WI処理の工程が是正する範囲を定める場合はそれに従い、`agent-toolkit:process-wi`の処理中は同スキルの「即時対応」が定める。
 認可を要する場合は`agent-toolkit:user-confirmation-and-report`に従って確認する。
 処置を決めた記録を同じレビューの引き継ぎ記録へ対応付け、
 再レビューと引き継ぎ再レビューでも報告済みと未処置を判別できるようにする。
