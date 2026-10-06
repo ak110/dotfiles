@@ -1382,6 +1382,66 @@ def test_expired_condition_accepts_located_user_utterance(
         assert diagnostic in error and "`<record>:<line>`" in error
 
 
+def test_expired_condition_accepts_location_copied_from_generated_user_events(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """生成側の`--user-events`の出力から写した`record`と`line`の所在を、`record`の形によらず受理する。
+
+    生成側は`record`へ`claude:<stem>`のようにコロンを含む物理記録の識別子を書く。証拠を判定する側が`record`の文字の種類を
+    独自に限ると、出力どおりに写した所在を別の位置として読み、正しい失効根拠を「記録位置の行が0件」で拒否する。
+    出力ファイルを手で書かず生成側を実行して得るため、生成側が識別子の形を変えたときもこのテストが不一致を検出する。
+    """
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text(
+        json.dumps(
+            {"type": "user", "timestamp": "2026-09-01T00:00:01Z", "message": {"role": "user", "content": "条件6は外して。"}},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    generate = argparse.Namespace(
+        script_name="session-review-evidence",
+        script_args=["--", str(transcript), "--user-events", "--since", "2026-09-01T00:00:00Z"],
+    )
+    assert run_script.dispatch(generate) == 0
+    output = capsys.readouterr().out
+    events = tmp_path / "user-events.txt"
+    events.write_text(output, encoding="utf-8")
+    user = next(event for event in map(json.loads, output.splitlines()) if event.get("kind") == "user")
+    assert ":" in user["record"]
+
+    # Codexの`--codex-thread-id`の出力は`record`へ`codex:<thread ID>`を書く。生成にはCodexの記録の配置を要するため、
+    # 同じ形の行を生成側の出力へ加えて同じ読み方で受理されることを確かめる。
+    codex = {**user, "record": "codex:019a1023-45b5-7d90-80bb-424e1994d677", "line": 5}
+    events.write_text(output + json.dumps(codex, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 取り除く条件\n"})
+    evidence = tmp_path / "evidence.json"
+    sources = {
+        "copied": f"{events} {user['record']}:{user['line']} の発話「条件6は外して」",
+        "codex": f"{events} {codex['record']}:{codex['line']}「条件6は外して」",
+        "quoted": f"`{events}` `{user['record']}:{user['line']}`「条件6は外して」",
+        "absent_line": f"{events} {user['record']}:{user['line'] + 1} の発話「条件6は外して」",
+        "absent_record": f"{events} {user['record']}x:{user['line']} の発話「条件6は外して」",
+    }
+    results: dict[str, tuple[int, str]] = {}
+    for name, source in sources.items():
+        _write_evidence(evidence, [{**_condition(FIRST_WI, "取り除く条件"), "outcome": "失効", "source": source}])
+        args = argparse.Namespace(
+            script_name="exec-review-evidence-check",
+            script_args=["--", "--expected-head", REVIEWED_HEAD, str(evidence), FIRST_WI],
+        )
+        code = run_script.dispatch(args)
+        results[name] = (code, capsys.readouterr().err)
+    assert results["copied"][0] == 0, results["copied"][1]
+    assert results["quoted"][0] == 0, results["quoted"][1]
+    assert results["codex"][0] == 0, results["codex"][1]
+    for name in ("absent_line", "absent_record"):
+        assert results[name][0] == 1
+        assert "記録位置の行が0件です" in results[name][1]
+
+
 def test_expired_condition_rejects_missing_user_event_output(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

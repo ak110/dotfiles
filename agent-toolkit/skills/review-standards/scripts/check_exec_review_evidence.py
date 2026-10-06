@@ -93,10 +93,10 @@ REFERENCE_SEPARATORS = re.compile(r"[\s、。，,.;；:：・()（）「」\[\]<
 REFERENCE_MARK = "\0"
 REFERENCE_LABEL = re.compile(r"[^\s、。，,.;；:：\0]{1,20}[:：]\s*(?=\0)")
 # 失効根拠の会話中の発話: `atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと、
-# その直後の`<record>:<line>`（例: `main:625`）。パスは空白を含まない保存先を想定し、記録位置までを最短で区切る。
-USER_EVENT_SOURCE = re.compile(
-    r"(?P<path>(?:[A-Za-z]:[\\/]|/)[^\s`「」]+?)`?\s*(?P<record>[A-Za-z][\w.-]*):(?P<line>\d+)(?!\d)"
-)
+# 空白かバッククォートの後に続く`<record>:<line>`（例: `claude:<セッションID>:625`）。パスは空白を含まない保存先を想定する。
+# `record`は実行環境と生成側の改訂でコロンやスラッシュを含む形へ変わるため文字の種類を限定せず、
+# 生成側の`_resolve_record_locator`と同じく語の最後の`:<数字列>`で`record`と`line`へ分ける。
+USER_EVENT_SOURCE = re.compile(r"(?P<path>(?:[A-Za-z]:[\\/]|/)[^\s`「」]+)[`\s]+(?P<record>[^\s`「」]+):(?P<line>\d+)(?!\d)")
 TEST_RESULT = re.compile(
     r"(?<!\w)test_[\w]+(?:\[[^\]\n]+\])?(?:`)?\s*(?::|：|=|は|が|\s)\s*(?:成功|合格|PASS(?:ED)?|passed)(?!\w)"
 )
