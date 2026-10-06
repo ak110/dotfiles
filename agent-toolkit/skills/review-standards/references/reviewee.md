@@ -154,8 +154,8 @@
 説明できない場合は修正を確定せず、不足する検証または判断を委譲元へ返す。
 
 レビュー指摘管理表が指定された場合は、渡された修正対象の`track`集合だけを扱う。
-採否判断と更新の対象は、渡された集合に属する`track`の行とする。応答は`atk review-table respond <表の絶対パス> --round <ラウンド番号> --track <区分>`の形式で実行する。対応要では`--response-file <対応内容PATH>`を、対応不要では`--no-response-reason-file <理由PATH>`を添える。この2つのオプションは併用できず、どちらを渡したかが対応要否を決める。同じ`round`と`track`で行を一意に特定できない場合は`--location-file`と`--issue-file`も指定する。
-この2つのオプションへは、デコード後の指摘箇所と指摘内容を書く。表の各セルはJSON文字列として保存されるため、保存済みのraw TSVから読んだ値をそのまま渡すと一致する行が0件になる。渡す値は`atk review-table show <表の絶対パス> --track <レビュー区分> --round <ラウンド番号> --format=jsonl`のデコード済み出力から取得するか、raw TSVの各セルをJSON文字列としてデコードして得る。
+採否判断と更新の対象は、渡された集合に属する`track`の行とする。応答は`atk review-table respond <表の絶対パス> --round <ラウンド番号> --track <区分>`の形式で実行する。対応要では`--response-file <対応内容PATH>`を、対応不要では`--no-response-reason-file <理由PATH>`を添える。`--response-file`と`--no-response-reason-file`は併用できず、どちらを渡したかが対応要否を決める。同じ`round`と`track`で行を一意に特定できない場合は`--location-file`と`--issue-file`も指定する。
+`--location-file`と`--issue-file`に渡すファイルにはデコード後の指摘箇所と指摘内容を書く。表の各セルはJSON文字列として保存されるため、保存済みのraw TSVから読んだ値をそのまま渡すと一致する行が0件になる。渡す値は`atk review-table show <表の絶対パス> --track <レビュー区分> --round <ラウンド番号> --format=jsonl`のデコード済み出力から取得するか、raw TSVの各セルをJSON文字列としてデコードして得る。
 
 応答本文では次のラベルを行頭に置き、同じ行のラベルの後へ内容を書く。`atk review-table respond`はラベルが欠けた本文と内容が空のラベルを持つ本文を記録せずに失敗する。対応要の本文は次の4つのラベルを持つ。
 
