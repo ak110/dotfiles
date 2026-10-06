@@ -587,6 +587,7 @@ class SessionState:
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
     _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
+    _published_registry_launch_info: session_registry.LaunchInfo | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
 
     @property
@@ -696,6 +697,8 @@ class SessionState:
         else:
             self.retention_deadline = None
         registry_terminal = self.result_available
+        # 再開ではbackendが再生成したsessionを公開した後に起動情報を写すため、起動情報の変化でも公開し直す。
+        launch_info = session_registry.LaunchInfo.of(self)
         if (
             self.publish_registry
             and not self.result_delivered
@@ -705,6 +708,7 @@ class SessionState:
                 or self.status != self._published_registry_status
                 or self.launcher_session_id != self._published_registry_launcher
                 or self.fast_mode != self._published_registry_fast_mode
+                or launch_info != self._published_registry_launch_info
             )
         ):
             session_registry.publish(
@@ -718,7 +722,7 @@ class SessionState:
                 model_type=self.model_type,
                 launch_kind=self.launch_kind,
                 turn_seq=self.turn_seq,
-                created_at=self.created_at,
+                launch_info=launch_info,
                 started_at=self.started_at,
                 session_updated_at=self.updated_at,
                 turn_id=self.turn_id or None,
@@ -730,6 +734,7 @@ class SessionState:
             self._published_registry_turn_seq = self.turn_seq
             self._published_registry_status = self.status
             self._published_registry_fast_mode = self.fast_mode
+            self._published_registry_launch_info = launch_info
         if not registry_terminal:
             self._terminal_notified = False
         elif not self._terminal_notified:
@@ -782,6 +787,7 @@ class SessionResumeState:
     fast_mode: bool | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
+    # `label`・`prompt`・`created_at`は`session_registry.LaunchInfo`の項目であり、再開時はその定義から写す。
     label: str = ""
     prompt: str = ""
     # 登録簿から復元した旧形式のsessionでは開始時刻が不明なため`None`とする。
@@ -806,9 +812,7 @@ class SessionResumeState:
             cwd=session.cwd,
             model_type=session.model_type,
             launch_kind=session.launch_kind,
-            label=session.label,
-            prompt=session.prompt,
-            created_at=session.created_at,
+            **session_registry.LaunchInfo.of(session).as_kwargs(),
             started_at=session.started_at,
             updated_at=session.updated_at,
             output_updated_at=session.output_updated_at,

@@ -936,7 +936,7 @@ class AgentsServerManager:
             launch_kind=info.launch_kind,
             turn_seq=info.turn_seq,
             status=status,
-            created_at=info.created_at,
+            launch_info=info.launch_info,
             started_at=info.started_at,
             session_updated_at=info.session_updated_at,
             turn_id=info.turn_id,
@@ -997,7 +997,7 @@ class AgentsServerManager:
             fast_mode=info.fast_mode,
             model_type=info.model_type,
             launch_kind=info.launch_kind,
-            created_at=info.created_at,
+            **info.launch_info.as_kwargs(),
             started_at=info.started_at,
             updated_at=info.session_updated_at,
             turn_seq=persisted_result["turn_seq"] if persisted_result is not None else info.turn_seq,
@@ -2147,8 +2147,7 @@ class AgentsServerManager:
                 turn_seq=resume_state.turn_seq,
                 **resume_options,
             )
-            if resume_state.created_at is not None:
-                session.created_at = resume_state.created_at
+            session_registry.LaunchInfo.of(resume_state).apply_to(session)
             if self._status_writer is not None:
                 self._status_writer.delete_result(session_id, collector="send-message")
             if session.status == "starting":
@@ -2250,8 +2249,7 @@ class AgentsServerManager:
                 announced=True,
                 turn_seq=resume_state.turn_seq + 1,
             )
-            if resume_state.created_at is not None:
-                session.created_at = resume_state.created_at
+            session_registry.LaunchInfo.of(resume_state).apply_to(session)
             self.sessions[session.session_id] = session
         self.expired_sessions.pop(session.session_id, None)
         if self._pending_resumes.get(session.session_id) is pending:

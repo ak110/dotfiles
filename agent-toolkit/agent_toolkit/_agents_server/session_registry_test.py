@@ -33,13 +33,14 @@ def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
     assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.TERMINAL
 
 
-def test_resume_info_carries_activity_times_and_accepts_legacy_record(tmp_path: pathlib.Path) -> None:
-    """登録簿はsessionの活動時刻を別欄で渡し、項目の無い旧形式では不明のまま返す。"""
+def test_resume_info_carries_launch_info_and_activity_times_and_accepts_legacy_record(tmp_path: pathlib.Path) -> None:
+    """登録簿は起動情報と活動時刻を別欄で渡し、項目の無い旧形式では起動情報を空文字列か`None`、活動時刻を不明として返す。"""
+    launch_info = subject.LaunchInfo(label="lane-05-exec", prompt="依頼本文", created_at="2026-09-25T21:58:13+00:00")
     subject.publish(
         "created",
         terminal=True,
         cwd=str(tmp_path),
-        created_at="2026-09-25T21:58:13+00:00",
+        launch_info=launch_info,
         started_at="2026-09-27T14:38:32+00:00",
         session_updated_at="2026-09-27T14:39:16+00:00",
         state_root=tmp_path,
@@ -50,13 +51,14 @@ def test_resume_info_carries_activity_times_and_accepts_legacy_record(tmp_path: 
     legacy = subject.resolve("legacy", state_root=tmp_path).resume_info
 
     assert created is not None
-    assert created.created_at == "2026-09-25T21:58:13+00:00"
+    assert created.launch_info == launch_info
     assert created.started_at == "2026-09-27T14:38:32+00:00"
     assert created.session_updated_at == "2026-09-27T14:39:16+00:00"
     payload = json.loads((subject.registry_directory(tmp_path) / "created.json").read_text(encoding="utf-8"))
+    assert payload["version"] == 2
     assert payload["updated_at"] != created.session_updated_at
     assert legacy is not None
-    assert legacy.created_at is None
+    assert legacy.launch_info == subject.LaunchInfo(label="", prompt="", created_at=None)
     assert legacy.started_at is None
     assert legacy.session_updated_at is None
 

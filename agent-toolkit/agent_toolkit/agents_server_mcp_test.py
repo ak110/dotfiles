@@ -155,6 +155,8 @@ class FakeBackend:
         self.release_calls: list[str] = []
         self.start_calls: list[tuple[str | None, str | None, str]] = []
         self.prompts: list[str] = []
+        # 実backendと同じく、再開で再生成したsessionを登録簿へ公開させる場合に真にする。
+        self.publish_registry = False
 
     async def list_models(self) -> list[dict[str, Any]]:
         """系列の候補を指定しない場合も、起動せずに解決できる一覧を返す。"""
@@ -229,9 +231,13 @@ class FakeBackend:
             excluded_candidates=excluded_candidates,
             turn_seq=turn_seq + 1,
             fast_mode=fast_mode,
+            publish_registry=self.publish_registry,
         )
         self.sessions[session_id] = session
         state._initialize_turn(session)
+        if self.publish_registry:
+            # 実backendは起動情報を写される前に、再生成したsessionの状態を公開する。
+            session.touch()
         await prompt.deliver(accept_prompt)
         return session
 
@@ -2823,6 +2829,115 @@ async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib
     entry = next(item for item in projected if item["session_id"] == "created-session")
     assert entry["created_at"] == "2026-09-25T21:58:13+00:00"
     assert entry["started_at"] != entry["created_at"]
+    await manager.close()
+
+
+_LAUNCH_VALUES: dict[str, Any] = {
+    "label": "lane-05-review",
+    "prompt": "起動時の依頼本文",
+    "created_at": "2026-09-25T21:58:13+00:00",
+}
+"""起動情報の各項目へ設定する、フィールドの初期値と異なる値。labelは`-review`で終わり、完了結果の採否確定の案内も確かめる。"""
+
+
+def _resume_test_manager(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> tuple[subject.AgentsServerManager, status_file.StatusFileWriter]:
+    """状態ファイルと登録簿を`tmp_path`へ置き、再開後の状態を観測できるmanagerを返す。"""
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "claude")
+    backend.publish_registry = True
+    _install_backend(manager, "claude", backend)
+    writer.activate()
+    return manager, writer
+
+
+def _expire_launched_session(manager: subject.AgentsServerManager, session: subject.SessionState) -> None:
+    """保持期限を過ぎた終端sessionとして、同じmanagerの`send_message`で再開させる。"""
+    session.retention_deadline = asyncio.get_running_loop().time() - 1
+    manager.sessions[session.session_id] = session
+
+
+def _restart_with_registry_record(manager: subject.AgentsServerManager, session: subject.SessionState) -> None:
+    """登録簿のレコードだけを残し、再起動したmanagerが登録簿から復元して再開させる。"""
+    del manager, session  # 再起動したmanagerは元のsessionを保持せず、登録簿は終端の公開で書かれている
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "prepare_resume",
+    [
+        pytest.param(_expire_launched_session, id="retention-expired"),
+        pytest.param(_restart_with_registry_record, id="registry-after-restart"),
+    ],
+)
+async def test_resumed_session_keeps_every_launch_info_item(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    prepare_resume: Callable[[subject.AgentsServerManager, subject.SessionState], None],
+) -> None:
+    """再開の処理によらず、起動情報の定義の全項目を`start`時の値のまま保つ。
+
+    再開時に写されなかった項目は、`atk agents list`・`show`の状態と`atk agents wait`の終端行で空になり、
+    labelで自sessionを探す手順と、`-review`の完了結果に付く採否確定の案内が成立しなくなる。
+    再開後の登録簿にも同じ値を書き、もう一度再起動しても保たれることを確かめる。
+    """
+    assert set(_LAUNCH_VALUES) == {field.name for field in dataclasses.fields(session_registry.LaunchInfo)}
+    manager, writer = _resume_test_manager(monkeypatch, tmp_path)
+    session = subject.SessionState(
+        "launched-session", str(tmp_path), engine="claude", turn_seq=2, publish_registry=True, **_LAUNCH_VALUES
+    )
+    _complete(session, message="前のturn")
+    prepare_resume(manager, session)
+
+    assert _without_root(await manager.send_message(session.session_id, "続行")) == {"delivery": "reply_started"}
+    writer.flush()
+
+    resumed = manager.sessions[session.session_id]
+    assert resumed is not session
+    assert {name: getattr(resumed, name) for name in _LAUNCH_VALUES} == _LAUNCH_VALUES
+    projected = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+    entry = next(item for item in projected if item["session_id"] == session.session_id)
+    assert {name: entry[name] for name in _LAUNCH_VALUES} == _LAUNCH_VALUES
+    shown = manager.show_session(session.session_id)
+    assert (shown["label"], shown["prompt"]) == (_LAUNCH_VALUES["label"], _LAUNCH_VALUES["prompt"])
+    resume_info = session_registry.resolve(session.session_id).resume_info
+    assert resume_info is not None
+    assert resume_info.launch_info == session_registry.LaunchInfo(**_LAUNCH_VALUES)
+
+    _complete(resumed, message="再開後のturn")
+    writer.flush()
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert (result["session_id"], result["label"], result["status"]) == (
+        session.session_id,
+        _LAUNCH_VALUES["label"],
+        "completed",
+    )
+    assert state.REVIEW_RESULT_NEXT_ACTION in result["next_action"]
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_resume_from_legacy_registry_record_without_launch_info(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """起動情報の項目を持たない版数2の登録簿レコードからも再開でき、labelとpromptは空文字列になる。"""
+    manager, _ = _resume_test_manager(monkeypatch, tmp_path)
+    session_registry.publish("legacy-session", terminal=True, engine="claude", cwd=str(tmp_path), turn_seq=2)
+
+    assert _without_root(await manager.send_message("legacy-session", "続行")) == {"delivery": "reply_started"}
+
+    resumed = manager.sessions["legacy-session"]
+    assert (resumed.label, resumed.prompt) == ("", "")
     await manager.close()
 
 
