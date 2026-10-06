@@ -1201,6 +1201,33 @@ def test_unassigned_requirement_matching_record_is_accepted(
     assert run_script.dispatch(args) == 0, capsys.readouterr().err
 
 
+def test_unassigned_requirement_with_described_assignee_is_accepted(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """どのWIのH1タイトルとも一致しない説明を「」で囲んだ割当先を、割当の記録の行と`evidence`の双方に持てば受理する。
+
+    分割起票した別のAWIのタイトルやファイル名の確定を待たずに保存した原稿は、割当先を説明で示す。説明を拒否すると、
+    保存を遅らせてタイトルへ差し替えるか、統合時に割当外の単位が証拠不足として残る。
+    """
+    own = "設定画面を直して。"
+    other = "旧設定も一括で移して。"
+    described = "同時に起草中の、旧設定の一括移行を扱うAWI"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _split_awi(own, other, f"- 2文目は「{described}」へ割当\n")})
+    path = tmp_path / "evidence.json"
+    assert _template(path, FIRST_WI) == 0
+    capsys.readouterr()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert [row["requirement"] for row in data["user_requirements"]] == [own, other]
+    unassigned = {
+        **_requirement(FIRST_WI, other),
+        "outcome": "割当外",
+        "source": f"{FIRST_WI} ## 反映内容と反映先",
+        "evidence": f"「{described}」",
+    }
+    _write_evidence(path, [_condition(FIRST_WI, "設定画面で保存できる")], [_requirement(FIRST_WI, own), unassigned])
+    assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
+
+
 def test_expired_requirement_also_checks_user_answer_source(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

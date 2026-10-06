@@ -933,7 +933,8 @@ def _unassigned_source_error(
 
     記録は要求単位を言い換えて複数の単位を1行で覆うため、要求単位の原文と記録行の一致は求めず、
     割当先の表記が割当を示す記録行に現れるかを行単位で比べる。意味上の対応はレビューと統合時の読解に残す。
-    割当を示す行は割当の語を持つ行とする。「」で囲んだタイトルとWIファイル名だけの行へは広げない。
+    割当先は、WIファイル名、「」で囲んだタイトルか説明、または分割元の依頼全体とし、WIのH1タイトルとの一致は確かめない。
+    割当を示す行は割当の語を持つ行とする。「」で囲んだ表記とWIファイル名だけの行へは広げない。
     背景の記録は原文の抜粋を「」で添え、WIファイル名は依存や担当範囲の言及にも現れるため、
     語なしで受理すると割当でない行まで根拠になる。
     """
@@ -952,7 +953,7 @@ def _unassigned_source_error(
     if not assignees:
         return (
             f"{label}.evidence: 割当先の表記がありません。"
-            f"記録に書かれたとおりの割当先（WIファイル名、「」で囲んだタイトル、または{WHOLE_REQUEST}）をevidenceへ書く"
+            f"記録に書かれたとおりの割当先（WIファイル名、「」で囲んだタイトルか説明、または{WHOLE_REQUEST}）をevidenceへ書く"
         )
     for line in record:
         if any(word in line for word in ASSIGNMENT_WORDS) and any(assignee in line for assignee in assignees):
