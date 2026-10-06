@@ -338,6 +338,69 @@ def test_directory_range_matches_by_path_element(
     assert "a.md: 未被覆: src-old/model.py" in capsys.readouterr().err
 
 
+_RANGE_DESCRIPTION_FILES = ("agent-toolkit/share/pick-wi.subagent.md", "agent-toolkit/skills/search/SKILL.md")
+
+
+def test_range_description_needs_no_coverage_but_inner_paths_do(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """配下の個別パスも同じ節に挙げたディレクトリ範囲（範囲説明）は被覆を求めず、個別パスだけに被覆を求める。
+
+    範囲説明へ被覆を求めると、覆える区分が`書込対象`だけになり、pickerが広い範囲を`書込対象`へ入れて
+    全レーンが包含関係になる。最上位（インラインコードと文章中）、入れ子の範囲、UWIの本文の範囲を入力に使う。
+    """
+    repo, notes = env
+    for relative in _RANGE_DESCRIPTION_FILES:
+        (repo / relative).parent.mkdir(parents=True, exist_ok=True)
+        (repo / relative).write_text("x\n", encoding="utf-8")
+    _awi(
+        notes,
+        "range.md",
+        "対象リポジトリは`agent-toolkit/`配下とdocs/配下とする。`agent-toolkit/share/pick-wi.subagent.md`を変える。"
+        "`agent-toolkit/skills/`配下に限り、`agent-toolkit/skills/search/SKILL.md`の節を直す。"
+        "`docs/development/design.md`も変える。",
+    )
+    body = (
+        "---\ntype: uwi\nsource: process-wi\n---\n\n## 質問\n\nこの対応で問題無いか？\n\n"
+        "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n`src/`配下の`src/model.py`も直して。\n"
+    )
+    (notes / "processing" / "u.md").write_text(body, encoding="utf-8")
+    inner = [*_RANGE_DESCRIPTION_FILES, "docs/development/design.md"]
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "range.md", "レーン": "lane-01", "書込対象": list(inner)},
+            {"WI": "u.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+        ],
+    )
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+    _write_selection(
+        selection,
+        [
+            {"WI": "range.md", "レーン": "lane-01", "書込対象": [path for path in inner if "search" not in path]},
+            {"WI": "u.md", "レーン": "lane-01", "書込対象": []},
+        ],
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
+    errors = sorted(line for line in capsys.readouterr().err.splitlines() if ": 未被覆: " in line)
+    assert errors == ["range.md: 未被覆: agent-toolkit/skills/search/SKILL.md", "u.md: 未被覆: src/model.py"]
+
+
+def test_directory_range_without_inner_path_still_needs_coverage(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """配下に抽出結果を持たないディレクトリ範囲は範囲説明に当たらず、従来どおり被覆を求める。"""
+    repo, notes = env
+    _awi(notes, "only-range.md", "`pytools/`配下のテストを変える。")
+    selection = _write_selection(tmp_path / "selection.yaml", [{"WI": "only-range.md", "レーン": "lane-01", "書込対象": []}])
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
+    assert "only-range.md: 未被覆: pytools/" in capsys.readouterr().err
+
+
 def test_detects_observed_selection_defects(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
