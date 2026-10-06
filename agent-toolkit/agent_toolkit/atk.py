@@ -1469,11 +1469,14 @@ def main(
         and args.question_type not in _constants.NEW_QUESTION_TYPES
     ):
         # 選択肢の検証をargparseへ任せると、不正値の案内に問いの分け方と投入の形が現れない。
-        args.subparser.error(
-            f"--type=uwi の --question-type が不正か未指定です（指定値: {args.question_type}）。"
-            "問いごとに個別のUWIとし、選択肢から選ぶ問いは --question-type=choice --choices A,B,C、"
-            "2択の可否は --question-type=yes-no で投入してください。選択肢に無い回答は回答欄で受け取ります。"
+        _outcome.report_failure(
+            f"--type=uwiの--question-typeが不正か未指定のため保存しなかった（指定値: {args.question_type}）",
+            next_action=(
+                "問いごとに個別のUWIとし、選択肢から選ぶ問いは`--question-type=choice --choices A,B,C`、"
+                "2択の可否を問う問いは`--question-type=yes-no`で投入する。選択肢に無い回答は回答欄で受け取る"
+            ),
         )
+        sys.exit(2)
     if (
         args.command == "wi"
         and args.wi_subcommand == "add"

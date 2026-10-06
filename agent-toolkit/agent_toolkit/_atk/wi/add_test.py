@@ -1405,7 +1405,9 @@ def test_uwi_requires_question_type_and_rejects_free_form(
         )
 
     assert exc_info.value.code == 2
-    assert "--question-type=choice" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert err.startswith("失敗: ")
+    assert "--question-type=choice --choices" in err
     assert not list((notes / "inbox").iterdir())
 
 
