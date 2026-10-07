@@ -9463,43 +9463,118 @@ def test_bundle_excludes_atk_no_match_of_claude_bash(tmp_path: pathlib.Path, cap
         "bash -lc 'atk wi grep needle' && false",
         "atk wi grep needle\nfalse",
     ]
-    entries = []
-    for index, command in enumerate(commands):
-        call_id = f"no-match-{index}"
-        entries.extend(
-            [
-                {
-                    "type": "assistant",
-                    "message": {
-                        "role": "assistant",
-                        "content": [{"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}}],
-                    },
-                },
-                {
-                    "type": "user",
-                    "message": {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": call_id,
-                                "is_error": True,
-                                "content": "Exit code 1\n" + no_match + "\n保存先: /file\n行数: 0",
-                            }
-                        ],
-                    },
-                },
-            ]
+    records, lines = _bundle_failed_commands_of_runtime(
+        tmp_path, capsys, "claude", [(command, 1, no_match + "\n保存先: /file\n行数: 0") for command in commands]
+    )
+    candidate_lines = {locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]}
+    assert candidate_lines == set(lines[4:])
+    assert records[-1]["excluded"]["normal-negative-result"] == 4
+
+
+def _bundle_failed_commands_of_runtime(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    runtime: str,
+    cases: list[tuple[str, int, str]],
+) -> tuple[list[dict], list[int]]:
+    """シェルのコマンド文字列の失敗列を、Claude CodeのBashかCodexの`CommandExecution`の記録として公開bundleへ渡す。
+
+    候補レコードと、各ケースの失敗を記録した行番号を返す。
+    """
+    if runtime == "codex":
+        records = _bundle_failed_codex_commands(
+            tmp_path, capsys, [(["bash", "-lc", command], code, output) for command, code, output in cases]
         )
+        return records, list(range(1, len(cases) + 1))
+    entries: list[dict] = []
+    for index, (command, code, output) in enumerate(cases):
+        call_id = f"call-{index}"
+        entries += [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": call_id,
+                            "is_error": True,
+                            "content": f"Exit code {code}" + (f"\n{output}" if output else ""),
+                        }
+                    ],
+                },
+            },
+        ]
     transcript = _write_transcript(tmp_path, entries)
     bundle = tmp_path / "bundle"
     bundle.mkdir()
     assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
     _read_jsonl(capsys)
     records = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
-    lines = {locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]}
-    assert lines == {10, 12, 14, 16}
-    assert records[-1]["excluded"]["normal-negative-result"] == 4
+    return records, [2 * index + 2 for index in range(len(cases))]
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_bundle_excludes_cd_prefixed_commands_like_standalone(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
+) -> None:
+    """先頭の`cd <パス>;`と`cd <パス> &&`を付けた4区分の正常な結果を、前置の無いコマンドと同じ区分へ除外する。"""
+    no_match = outcome.NO_MATCH_PREFIX + "検索は正常に完了した"
+    cases = [
+        (f"{prefix}{command}", code, output)
+        for prefix in ("cd /repo; ", "cd /repo && ")
+        for command, code, output in [
+            ("atk wi grep needle", 1, no_match),
+            ("atk agents wait", 3, '{"status": "running"}'),
+            ("rg missing docs", 1, ""),
+            ("make test", 1, "FAILED test_example.py::test_case"),
+        ]
+    ]
+    records, _lines = _bundle_failed_commands_of_runtime(tmp_path, capsys, runtime, cases)
+
+    assert not [item for item in records if item["kind"] == "candidate"]
+    excluded = records[-1]["excluded"]
+    assert excluded["normal-negative-result"] == 4
+    assert excluded["normal-nonterminal-result"] == 2
+    assert excluded["check-detected"] == 2
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_bundle_keeps_cd_failures_and_unsupported_prefixes(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
+) -> None:
+    """`cd`の失敗を示す結果と、外す対象にしない前置の形は候補に残す。"""
+    no_match = outcome.NO_MATCH_PREFIX + "検索は正常に完了した"
+    cd_failure = "bash: line 1: cd: /missing: No such file or directory"
+    cases = [
+        ("cd /missing; atk wi grep needle", 1, f"{cd_failure}\n{no_match}"),
+        ("cd /missing && make test", 1, cd_failure),
+        ("cd /missing; rg missing docs", 1, cd_failure),
+        ("cd -P /repo && make test", 1, "FAILED test_example.py::test_case"),
+        ("cd; atk wi grep needle", 1, no_match),
+        ("cd /a; cd /b; atk wi grep needle", 1, no_match),
+        ("cd /repo | atk wi grep needle", 1, no_match),
+        ("cd /repo\natk wi grep needle", 1, no_match),
+        ("cd /repo; atk wi grep needle; false", 1, no_match),
+        ("cd /repo && atk agents wait; false", 3, '{"status": "running"}'),
+        # 対照: 同じ記録の中で、外す対象の前置だけを持つ正常な結果は除外される。
+        ("cd /repo; atk wi grep needle", 1, no_match),
+    ]
+    records, lines = _bundle_failed_commands_of_runtime(tmp_path, capsys, runtime, cases)
+
+    candidate_lines = {locator["line"] for item in records if item["kind"] == "candidate" for locator in item["locators"]}
+    assert candidate_lines == set(lines[:-1])
+    excluded = records[-1]["excluded"]
+    assert excluded["normal-negative-result"] == 1
+    assert excluded.get("normal-nonterminal-result", 0) == 0
+    assert excluded.get("check-detected", 0) == 0
 
 
 @pytest.mark.parametrize("runtime", ["claude", "handback", "codex", "agy"])

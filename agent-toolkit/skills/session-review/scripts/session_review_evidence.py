@@ -4100,13 +4100,15 @@ def _candidate_events(
             ):
                 excluded["hook-notice-represented"] += 1
                 continue
-            if candidate_kind == "tool-failure" and _is_normal_negative_tool_failure(event):
+            # 除外の判定は終了コードを帰属させるコマンドで行い、候補の署名と表示は記録どおりのコマンドで行う。
+            attributed = _event_without_cd_prefix(event) if candidate_kind in {"command-failure", "tool-failure"} else event
+            if candidate_kind == "tool-failure" and _is_normal_negative_tool_failure(attributed):
                 excluded["normal-negative-result"] += 1
                 continue
-            if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_atk_no_match(event):
+            if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_atk_no_match(attributed):
                 excluded["normal-negative-result"] += 1
                 continue
-            if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_nonterminal_result(event):
+            if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_nonterminal_result(attributed):
                 excluded["normal-nonterminal-result"] += 1
                 continue
             if candidate_kind == "delegate-return" and _is_normal_delegate_return(
@@ -4139,13 +4141,13 @@ def _candidate_events(
             if candidate_kind == "command-failure" and _is_help_command_failure(event):
                 excluded["command-help"] += 1
                 continue
-            if candidate_kind == "command-failure" and _is_normal_negative_result(event):
+            if candidate_kind == "command-failure" and _is_normal_negative_result(attributed):
                 excluded["normal-negative-result"] += 1
                 continue
             if event_kind == "tool-failure" and _TRANSIENT_CLASSIFIER_ERROR in normalized_text:
                 excluded["runtime-transient"] += 1
                 continue
-            if event_kind in {"command-failure", "tool-failure"} and _is_check_detected(event):
+            if event_kind in {"command-failure", "tool-failure"} and _is_check_detected(attributed):
                 excluded["check-detected"] += 1
                 continue
             if event_kind == "hook-notice":
@@ -4600,8 +4602,74 @@ def _is_help_command_failure(event: dict[str, Any]) -> bool:
     return "usage:" in normalized or "options:" in normalized
 
 
+_CD_PREFIX_SEPARATORS = frozenset({";", "&&"})
+
+
+def _event_without_cd_prefix(event: dict[str, Any]) -> dict[str, Any]:
+    """終了コードを帰属させるコマンドを求めるため、先頭の`cd <パス>;`か`cd <パス> &&`を外したイベントを返す。
+
+    作業ディレクトリを移すだけの前置は、後続の単独のコマンドが返す終了コードと出力を変えない。
+    除外判定（`_is_normal_atk_no_match`・`_is_normal_nonterminal_result`・`_is_normal_negative_result`・
+    `_is_normal_negative_tool_failure`・`_is_check_detected`）は、このイベントを前置の無い単独のコマンドとして判定する。
+    外すのは引数1語の`cd`の前置1つだけとし、オプション付きの`cd`、引数の無い`cd`、`|`や改行による前置、
+    2つ目以降の前置は外さない。出力（Bashは`text`、`CommandExecution`は`diagnostic`）に`cd:`を含む行がある場合は、
+    `cd`が失敗して後続のコマンドが意図した場所で動いていないため、前置を外さず記録どおりのイベントを返す。
+    """
+    output = event.get("diagnostic") if event.get("tool") == "CommandExecution" else event.get("text")
+    if isinstance(output, str) and any("cd:" in line for line in output.splitlines()):
+        return event
+    result = dict(event)
+    operation = _json_object(str(event.get("operation", "")))
+    if operation is not None and isinstance(operation.get("command"), str):
+        stripped = _command_without_cd_prefix(operation["command"])
+        if stripped is not None:
+            result["operation"] = json.dumps({**operation, "command": stripped}, ensure_ascii=False, sort_keys=True)
+    for key in ("command", "command_full"):
+        try:
+            args = json.loads(str(event.get(key, "")))
+        except json.JSONDecodeError:
+            continue
+        if (
+            not isinstance(args, list)
+            or len(args) < 3
+            or not all(isinstance(arg, str) for arg in args)
+            or _basename(args[0]) not in _SHELL_NAMES
+            or args[1] not in {"-c", "-lc"}
+        ):
+            continue
+        stripped = _command_without_cd_prefix(args[2])
+        if stripped is not None:
+            result[key] = json.dumps([*args[:2], stripped, *args[3:]], ensure_ascii=False)
+    return result
+
+
+def _command_without_cd_prefix(command: str) -> str | None:
+    """先頭の`cd <パス>;`か`cd <パス> &&`を外したコマンド文字列を返す。前置が無い場合は`None`を返す。
+
+    残りの語は引用し直し、引用の外の演算子だけを演算子として残すため、連結の判定は元のコマンドと変わらない。
+    """
+    tokens = _shell_command_tokens(command)
+    if tokens is None or len(tokens) < 4:
+        return None
+    first, target, separator, *rest = tokens
+    if (
+        first.operator
+        or first.value != "cd"
+        or target.operator
+        or target.value.startswith("-")
+        or not separator.operator
+        or separator.value not in _CD_PREFIX_SEPARATORS
+        or rest[0].operator
+    ):
+        return None
+    return " ".join(token.value if token.operator else shlex.quote(token.value) for token in rest)
+
+
 def _is_normal_nonterminal_result(event: dict[str, Any]) -> bool:
-    """単独の`atk agents wait`が返す終了3を、正常な待機継続として区分する。"""
+    """単独の`atk agents wait`が返す終了3を、正常な待機継続として区分する。
+
+    先頭の`cd`の前置は、呼び出し側が`_event_without_cd_prefix`で外してから渡す。
+    """
     if _failure_exit_code(event) != 3:
         return False
     executable, subcommand, command, args = _failure_command_parts(event)
@@ -4639,7 +4707,10 @@ def _is_normal_negative_result(event: dict[str, Any]) -> bool:
 
 
 def _is_normal_atk_no_match(event: dict[str, Any]) -> bool:
-    """単独のatkが結果行と終了1で表す該当0件を、生成側の契約から判定する。"""
+    """単独のatkが結果行と終了1で表す該当0件を、生成側の契約から判定する。
+
+    先頭の`cd`の前置は、呼び出し側が`_event_without_cd_prefix`で外してから渡す。
+    """
     if event.get("tool") != "CommandExecution" and event.get("tool_name") != "Bash":
         return False
     if _failure_exit_code(event) != 1:
