@@ -4,7 +4,6 @@ import argparse
 import dataclasses
 import json
 import pathlib
-import subprocess
 
 import get_plan_commits
 import pytest
@@ -12,21 +11,19 @@ import rewrite_plan_commits
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._plan import commit_mapping
+from agent_toolkit._testing import git_repository
 
 WI_A = "20261007-040310-002.md"
 WI_B = "20261007-040310-003.md"
 WI_S = "20261007-040310-004.md"
 
 
-def _git(repo: pathlib.Path, *args: str) -> str:
-    """隔離した一時repoでGitを実行し、標準出力を返す。"""
-    return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True, timeout=30).stdout.strip()
-
-
 def _commit(repo: pathlib.Path, message: str) -> str:
     """空のcommitを作成し、その完全OIDを返す。"""
-    _git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", message)
-    return _git(repo, "rev-parse", "HEAD")
+    git_repository.git_output(
+        repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", message
+    )
+    return git_repository.git_output(repo, "rev-parse", "HEAD")
 
 
 def _plan(path: pathlib.Path, wis: list[str]) -> pathlib.Path:
@@ -99,14 +96,14 @@ def _rebased_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     repo = tmp_path / "repo"
     repo.mkdir()
-    _git(repo, "init", "--initial-branch=main")
+    git_repository.init_repository(repo, initial_branch="main")
     root = _commit(repo, "root")
     unaffected = _handoff(tmp_path / "handoff-stable.md")
     _commit(repo, "stable")
     _record(repo, unaffected, root, [WI_S])
-    stable = _git(repo, "rev-parse", "HEAD")
+    stable = git_repository.git_output(repo, "rev-parse", "HEAD")
     orphan = _commit(repo, "orphan")
-    _git(repo, "reset", "--hard", stable)
+    git_repository.git_output(repo, "reset", "--hard", stable)
     plan = _plan(tmp_path / "plans" / "07-example-1a2b.md", [WI_A])
     handoff = _handoff(tmp_path / "handoff-lane.md")
     old = {"a": _commit(repo, "a")}
@@ -116,7 +113,7 @@ def _rebased_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) ->
     old["b"] = _commit(repo, "b")
     _record(repo, handoff, previous, [WI_B])
     previous_head = old["b"]
-    _git(repo, "reset", "--hard", stable)
+    git_repository.git_output(repo, "reset", "--hard", stable)
     _commit(repo, "upstream")
     new = {name: _commit(repo, message) for name, message in (("a", "a"), ("u", "unrecorded"), ("b", "b"))}
     return _Rebased(repo, plan, handoff, unaffected, previous_head, old, new, orphan)
@@ -147,8 +144,8 @@ def test_range_map_appends_to_all_records(rebased: _Rebased, capsys: pytest.Capt
     assert "範囲全体の対応を追記" in rebased.plan.read_text(encoding="utf-8")
     assert rebased.handoff.read_text(encoding="utf-8").endswith("レーン統合のrebase: 範囲全体の対応を追記\n")
 
-    short_a = _git(rebased.repo, "rev-parse", "--short", rebased.new["a"])
-    short_b = _git(rebased.repo, "rev-parse", "--short", rebased.new["b"])
+    short_a = git_repository.git_output(rebased.repo, "rev-parse", "--short", rebased.new["a"])
+    short_b = git_repository.git_output(rebased.repo, "rev-parse", "--short", rebased.new["b"])
     assert get_plan_commits.main(_commits(rebased, rebased.plan, WI_A, handoff=False)) == 0
     assert _read_commits(capsys) == [short_a]
     assert get_plan_commits.main(_commits(rebased, rebased.handoff, WI_B, handoff=True)) == 0
@@ -170,14 +167,14 @@ def test_fixup_squash_inherits_union(tmp_path: pathlib.Path, monkeypatch: pytest
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     repo = tmp_path / "repo"
     repo.mkdir()
-    _git(repo, "init", "--initial-branch=main")
+    git_repository.init_repository(repo, initial_branch="main")
     base = _commit(repo, "base")
     plan = _plan(tmp_path / "plans" / "07-squash-1a2b.md", [WI_A, WI_B])
     target = _commit(repo, "target")
     _record(repo, plan, base, [WI_A])
     fixup = _commit(repo, "fixup! target")
     _record(repo, plan, target, [WI_B])
-    _git(repo, "reset", "--hard", base)
+    git_repository.git_output(repo, "reset", "--hard", base)
     squashed = _commit(repo, "target")
     rewrite = tmp_path / "rewrite.json"
     rewrite.write_text(json.dumps({target: squashed, fixup: squashed}), encoding="utf-8")
@@ -196,7 +193,7 @@ def test_fixup_squash_inherits_union(tmp_path: pathlib.Path, monkeypatch: pytest
         == 0
     )
     events = commit_mapping.read_events(plan, plan.read_text(encoding="utf-8"))
-    short = _git(repo, "rev-parse", "--short", squashed)
+    short = git_repository.git_output(repo, "rev-parse", "--short", squashed)
     assert commit_mapping.get_commits(repo, events, [WI_A, WI_B], {WI_A, WI_B}) == {WI_A: [short], WI_B: [short]}
 
 
@@ -273,5 +270,5 @@ def test_run_script_entry_rewrites_records(rebased: _Rebased, capsys: pytest.Cap
     assert run_script.dispatch(args) == 0
     capsys.readouterr()
     events = commit_mapping.read_events(rebased.plan, rebased.plan.read_text(encoding="utf-8"))
-    short = _git(rebased.repo, "rev-parse", "--short", rebased.new["a"])
+    short = git_repository.git_output(rebased.repo, "rev-parse", "--short", rebased.new["a"])
     assert commit_mapping.get_commits(rebased.repo, events, [WI_A], {WI_A}) == {WI_A: [short]}

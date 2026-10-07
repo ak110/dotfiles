@@ -5,12 +5,12 @@ import pathlib
 import pytest
 from pyfltr.colloquial import check as _colloquial_check
 
-from agent_toolkit._plan import fixture as _plan_fixture
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._plan.structure import constants as plan_constants
 from agent_toolkit._plan.structure import markdown as plan_markdown
 from agent_toolkit._plan.structure import materials as plan_materials
 from agent_toolkit._plan.structure import sections as plan_sections
+from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_structure_support import (
     _BUG_FILE_CONTENT,
     _BUG_INVESTIGATION_TABLE,

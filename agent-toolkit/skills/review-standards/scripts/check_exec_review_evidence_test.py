@@ -14,6 +14,7 @@ import check_exec_review_evidence  # pylint: disable=import-error
 import pytest
 
 from agent_toolkit._atk import review_table, run_script
+from agent_toolkit._testing import git_repository
 
 FIRST_WI = "20260928-192559-001.md"
 SECOND_WI = "20260928-192559-002.md"
@@ -1899,22 +1900,15 @@ def test_public_command_rejects_partly_updated_review_heads(
 ) -> None:
     """片側配列と計画由来の行が更新されていないことを、実Gitの別commitと比べて検出する。"""
 
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(tmp_path), *args],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=True,
-            timeout=30,
-        ).stdout.strip()
-
-    git("init", "-q")
-    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "旧対象")
-    old = git("rev-parse", "HEAD")
-    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "新対象")
-    current = git("rev-parse", "HEAD")
+    git_repository.init_repository(tmp_path)
+    git_repository.git_output(
+        tmp_path, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "旧対象"
+    )
+    old = git_repository.git_output(tmp_path, "rev-parse", "HEAD")
+    git_repository.git_output(
+        tmp_path, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "新対象"
+    )
+    current = git_repository.git_output(tmp_path, "rev-parse", "HEAD")
     real_run = subprocess.run
 
     def fake_wi(args: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
@@ -1961,7 +1955,7 @@ def test_public_command_rejects_partly_updated_review_heads(
     assert run_script.dispatch(args) == 1
     assert "reviewed_head" in capsys.readouterr().err
 
-    stale["reviewed_head"] = git("rev-parse", "--short=7", current)
+    stale["reviewed_head"] = git_repository.git_output(tmp_path, "rev-parse", "--short=7", current)
     _write_evidence(evidence, conditions, requirements)
     assert run_script.dispatch(args) == 0
     assert not capsys.readouterr().err
@@ -2588,21 +2582,12 @@ def test_public_command_runs_platform_launcher(
     (notes / "inbox").mkdir(parents=True)
     repository.mkdir()
 
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(repository), *args],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=True,
-            timeout=30,
-        ).stdout.strip()
-
-    git("init", "-q")
-    git("remote", "add", "origin", "https://github.com/example/foo.git")
-    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "対象")
-    head = git("rev-parse", "HEAD")
+    git_repository.init_repository(repository)
+    git_repository.git_output(repository, "remote", "add", "origin", "https://github.com/example/foo.git")
+    git_repository.git_output(
+        repository, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "対象"
+    )
+    head = git_repository.git_output(repository, "rev-parse", "HEAD")
     body = f"# 題\n\n{_FENCED_REQUIREMENTS[0]}\n\n{_SUPPLEMENTS['backtick-plain']}\n\n{_FENCED_REQUIREMENTS[1]}\n"
     (notes / "inbox" / FIRST_WI).write_text(
         f"---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n{body}", encoding="utf-8"

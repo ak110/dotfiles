@@ -4,7 +4,6 @@ import argparse
 import json
 import pathlib
 import re
-import subprocess
 import typing
 
 import check_selection
@@ -12,6 +11,7 @@ import pytest
 import yaml
 
 from agent_toolkit._atk import run_script  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._testing import git_repository
 
 _REPO_FILES = (
     "README.md",
@@ -710,8 +710,8 @@ def _track(repo: pathlib.Path, *relatives: str) -> None:
     for relative in relatives:
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
         (repo / relative).write_text("x\n", encoding="utf-8")
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True, timeout=30)
-    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True, timeout=30)
+    git_repository.init_repository(repo)
+    git_repository.run_git(repo, "add", "-A")
 
 
 _PLUGIN_SHARE_FILES = ("agent-toolkit/share/pick-wi.parent.md", "agent-toolkit/share/rules-main.md", "share/README.md")

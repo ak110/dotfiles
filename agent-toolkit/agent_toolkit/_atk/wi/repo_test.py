@@ -1,12 +1,12 @@
 """`_atk/wi/repo.py`の対象リポジトリの解決とtarget_repoの一致判定が失敗した際の出力を検証する。"""
 
 import pathlib
-import subprocess
 
 import pytest
 
 from agent_toolkit._atk.wi import repo as repo_module
 from agent_toolkit._atk.wi.common import WebInputError
+from agent_toolkit._testing import git_repository
 
 
 def _failure_and_next_action(stderr: str) -> tuple[str, str]:
@@ -40,7 +40,7 @@ def test_resolve_head_commit_without_commit_asks_to_check_history(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """コミットが無い作業ツリーでは、コミットの有無を確かめる操作を次の操作として返す。"""
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    git_repository.init_repository(tmp_path)
 
     with pytest.raises(SystemExit) as exc_info:
         repo_module.resolve_head_commit(tmp_path)

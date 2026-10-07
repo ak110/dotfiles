@@ -282,7 +282,7 @@ patch全体を仮想ファイルシステムへ展開する案も、同一patch�
 
 Claude Codeのhookが返すJSONで受理されるフィールドはイベントごとに異なり、契約外のフィールドは実行時に破棄される。
 破棄はhookの終了コードへ現れないため、出力形式の誤りは出力形式を誤ったhookが機能しない事象としてだけ観測される。
-これを実装の時点で検出するため、イベントごとの出力契約を`agent-toolkit/agent_toolkit/_hooks/output_contract.py`へJSON Schemaで定義する。
+これを実装の時点で検出するため、イベントごとの出力契約を`agent-toolkit/agent_toolkit/_testing/hook_output_contract.py`へJSON Schemaで定義する。契約の検証は`jsonschema`（開発用の依存）を使い、テストだけが使うため、本番のパッケージから到達しない`_testing`に置く。
 `agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が`agent-toolkit/hooks/hooks.json`の全登録エントリの出力がJSON Schemaの契約と一致するか確かめる。
 CodexのStopは受理する出力が異なるため、`validate_hook_output`の`host`引数でCodexの契約（空のJSONか`decision`と`reason`だけ）を選ぶ。
 

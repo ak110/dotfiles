@@ -25,9 +25,9 @@ from agent_toolkit._agents_server import agents_wait, shared_layout, shared_root
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import state_paths
-from agent_toolkit._hooks.output_contract import validate_hook_output
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state, auto_message_opening_attributes
+from agent_toolkit._testing.hook_output_contract import validate_hook_output
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"

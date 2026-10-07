@@ -2,10 +2,10 @@
 
 import pathlib
 
-from agent_toolkit._plan import fixture as _plan_fixture
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._plan.structure import constants as plan_constants
 from agent_toolkit._plan.structure import sections as plan_sections
+from agent_toolkit._testing import plan_fixture as _plan_fixture
 
 _BASE = _plan_fixture.BASE_COMMIT
 

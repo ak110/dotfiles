@@ -6,24 +6,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._git import status as _git_status
-
-
-def _init_git_repo(path: pathlib.Path) -> None:
-    """最小git repo初期化。"""
-    subprocess.run(["git", "init", "-q", str(path)], check=True)
-    subprocess.run(["git", "-C", str(path), "config", "user.email", "t@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(path), "config", "user.name", "test"], check=True)
-    subprocess.run(["git", "-C", str(path), "config", "commit.gpgsign", "false"], check=True)
-
-
-def _git_commit_initial(path: pathlib.Path, files: dict[str, str]) -> None:
-    """指定ファイルを追加してinitial commitを作成する。"""
-    for rel, content in files.items():
-        target = path / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-    subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
-    subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
+from agent_toolkit._testing import git_repository
 
 
 class TestRunGitLines:
@@ -31,9 +14,7 @@ class TestRunGitLines:
 
     def test_successful_command_returns_lines(self, tmp_path: pathlib.Path):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        _init_git_repo(repo)
-        _git_commit_initial(repo, {"a.txt": "content"})
+        git_repository.init_repository(repo, files={"a.txt": "content"}, commit_message="init")
         result = _git_status.run_git_lines(["remote"], str(repo))
         assert result == []  # リモート未構成
 

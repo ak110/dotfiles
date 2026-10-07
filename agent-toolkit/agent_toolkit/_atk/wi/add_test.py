@@ -28,6 +28,7 @@ from agent_toolkit._atk.wi import (
 )
 from agent_toolkit._atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi.common import WI_TYPE_UWI, WebInputError  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_HEAD_COMMIT,
 )
@@ -128,17 +129,8 @@ def test_add_dry_run_validates_without_side_effects(
 ) -> None:
     """`--dry-run`は入力を検証し、保存・同期・commitを行わない。"""
     notes = _setup_notes(tmp_path)
-    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(notes), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(notes), "commit", "--allow-empty", "-m", "base"], check=True, capture_output=True)
-    before_head = subprocess.run(
-        ["git", "-C", str(notes), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
+    git_repository.init_repository(notes, initial_branch="main")
+    before_head = git_repository.commit_all(notes, "base")
     before_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
     monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
 
@@ -150,12 +142,7 @@ def test_add_dry_run_validates_without_side_effects(
 
     _run_public_add(_cmd_add_args(tmp_path, "本文", dry_run=True), notes, _FIXED_DT, tmp_path)
 
-    after_head = subprocess.run(
-        ["git", "-C", str(notes), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
+    after_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     after_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
     assert capsys.readouterr().out == "成功: 投入前の検証が成立した（--dry-runのため保存していない）\n"
     assert after_files == before_files
@@ -210,16 +197,9 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
 ) -> None:
     """必須節が無いエージェント由来AWIは検証と実登録が同じ理由で拒否する。"""
     notes = _setup_notes(tmp_path)
-    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(notes), "commit", "--allow-empty", "-m", "base"], check=True, capture_output=True)
-    before_head = subprocess.run(
-        ["git", "-C", str(notes), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
+    git_repository.init_repository(notes, initial_branch="main")
+    git_repository.run_git(notes, "commit", "--allow-empty", "-m", "base")
+    before_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     _patch_cmd_add_operations(monkeypatch)
 
     errors: list[str] = []
@@ -238,12 +218,7 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
     for heading in ("反映内容と反映先", "適用範囲", "実現性", "完成条件"):
         assert heading in errors[0]
     assert not list((notes / "inbox").iterdir())
-    after_head = subprocess.run(
-        ["git", "-C", str(notes), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
+    after_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     assert after_head == before_head
 
 
@@ -1479,23 +1454,10 @@ class TestAddOrderEditorFirst:
     ) -> None:
         """remote同期失敗時、エディターで確定済みの本文がstderrへ再表示されたうえで終了コード1になる。"""
         _setup_notes(tmp_path)
-        monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            if cmd[0] == "fake-editor":
-                pathlib.Path(cmd[1]).write_text("消失させたくない本文", encoding="utf-8")
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-            if cmd[:2] == ["git", "merge"]:
-                raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        _patch_add_git(monkeypatch, myrepo, failing_prefix=["git", "merge"])
+        _patch_add_editor(monkeypatch, "消失させたくない本文")
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add"], home=tmp_path, now=_FIXED_DT)
@@ -1574,18 +1536,20 @@ class TestAddRepoPathOverrideCli:
         assert "target_repo: github.com/example/myrepo" in content
         assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
 
+    @pytest.mark.parametrize("type_args", [[], ["--type=uwi", "--question-type=yes-no"]], ids=["awi", "uwi"])
     def test_message_only_directory_errors(
         self,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        type_args: list[str],
     ) -> None:
-        """本文が続かないディレクトリのみの呼び出しは、usage表示付きの平易なエラーでexit 2になる。"""
+        """本文が続かないディレクトリのみの呼び出しは、AWIとUWIのどちらでもusage表示付きの平易なエラーでexit 2になる。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", *type_args, str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -1914,21 +1878,10 @@ class TestAddEmptyBodyRejection:
     ) -> None:
         """エディター経由で空本文が確定した場合も非ゼロ終了する。"""
         _setup_notes(tmp_path)
-        monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            if cmd[0] == "fake-editor":
-                pathlib.Path(cmd[1]).write_text("-\n", encoding="utf-8")
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        _patch_add_git(monkeypatch, myrepo)
+        _patch_add_editor(monkeypatch, "-\n")
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add"], home=tmp_path, now=_FIXED_DT)
@@ -1979,11 +1932,15 @@ def test_add_entries_rejects_answer_heading_in_uwi_body(tmp_path: pathlib.Path, 
         )
 
 
-def _patch_add_git(monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path) -> None:
+def _patch_add_git(monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path, *, failing_prefix: list[str] | None = None) -> None:
+    """対象リポジトリの解決に応答するGit fakeへ差し替える。`failing_prefix`で始まるコマンドは失敗させる。"""
+
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         resp = _fake_git_worktree_remote_response(cmd, repo, kwargs)
         if resp is not None:
             return resp
+        if failing_prefix is not None and cmd[: len(failing_prefix)] == failing_prefix:
+            raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
         empty: Any = "" if kwargs.get("text") else b""
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 

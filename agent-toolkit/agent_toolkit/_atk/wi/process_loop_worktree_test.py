@@ -13,6 +13,7 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -29,29 +30,24 @@ def _prepare_process_loop_environment(monkeypatch: pytest.MonkeyPatch, tmp_path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
 
-def _run_git(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    """テスト用Gitコマンドを実行する。"""
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
-
-
 def _make_remote_repository(tmp_path: pathlib.Path, name: str) -> pathlib.Path:
     """mainブランチを持つローカルoriginとcloneを生成する。"""
     remote = tmp_path / f"{name}-origin.git"
     seed = tmp_path / f"{name}-seed"
     local = tmp_path / name
-    _run_git(["init", "--bare", "--initial-branch=main", str(remote)], tmp_path)
-    _run_git(["init", "--initial-branch=main", str(seed)], tmp_path)
-    _run_git(["config", "user.name", "test"], seed)
-    _run_git(["config", "user.email", "test@example.invalid"], seed)
+    git_repository.init_bare_repository(remote)
+    git_repository.init_repository(seed, initial_branch="main")
+    git_repository.run_git(seed, "config", "user.name", "test")
+    git_repository.run_git(seed, "config", "user.email", "test@example.invalid")
     (seed / "state.txt").write_text("base\n", encoding="utf-8")
-    _run_git(["add", "state.txt"], seed)
-    _run_git(["commit", "-m", "base"], seed)
-    _run_git(["remote", "add", "origin", str(remote)], seed)
-    _run_git(["push", "-u", "origin", "main"], seed)
-    _run_git(["clone", str(remote), str(local)], tmp_path)
-    _run_git(["config", "user.name", "test"], local)
-    _run_git(["config", "user.email", "test@example.invalid"], local)
-    _run_git(["remote", "set-head", "origin", "-a"], local)
+    git_repository.run_git(seed, "add", "state.txt")
+    git_repository.run_git(seed, "commit", "-m", "base")
+    git_repository.run_git(seed, "remote", "add", "origin", str(remote))
+    git_repository.run_git(seed, "push", "-u", "origin", "main")
+    git_repository.run_git(tmp_path, "clone", str(remote), str(local))
+    git_repository.run_git(local, "config", "user.name", "test")
+    git_repository.run_git(local, "config", "user.email", "test@example.invalid")
+    git_repository.run_git(local, "remote", "set-head", "origin", "-a")
     return local
 
 
@@ -325,11 +321,7 @@ class TestPublicWorktreePreparation:
         assert "現在のHEADを`origin/main`へ反映" not in session_calls[0]["cmd"][-1]
         assert exclude_path.read_text(encoding="utf-8") == "# existing\n/.claude/worktrees/\n"
         assert exclude_path.read_text(encoding="utf-8").splitlines().count("/.claude/worktrees/") == 1
-        check_ignore = subprocess.run(
-            ["git", "check-ignore", "-q", ".claude/worktrees/"],
-            cwd=local_path,
-            check=False,
-        )
+        check_ignore = git_repository.run_git(local_path, "check-ignore", "-q", ".claude/worktrees/", check=False)
         assert check_ignore.returncode == 0
         assert worktree_path.is_dir()
 
@@ -496,8 +488,8 @@ class TestPublicWorktreePreparation:
     ) -> None:
         """配置先不在ブランチの所有権を確認できない場合はOIDを変更せず停止する。"""
         local_path = _make_remote_repository(tmp_path, "target")
-        _run_git(["branch", "worktree-process-loop"], local_path)
-        before = _run_git(["rev-parse", "refs/heads/worktree-process-loop"], local_path).stdout.strip()
+        git_repository.run_git(local_path, "branch", "worktree-process-loop")
+        before = git_repository.run_git(local_path, "rev-parse", "refs/heads/worktree-process-loop").stdout.strip()
 
         session_calls, git_calls = _run_public_process_loop(
             monkeypatch,
@@ -506,7 +498,7 @@ class TestPublicWorktreePreparation:
             ["--worktree"],
         )
 
-        after = _run_git(["rev-parse", "refs/heads/worktree-process-loop"], local_path).stdout.strip()
+        after = git_repository.run_git(local_path, "rev-parse", "refs/heads/worktree-process-loop").stdout.strip()
         assert not session_calls
         assert before == after
         assert not (local_path / ".claude").exists()
@@ -522,8 +514,8 @@ class TestPublicWorktreePreparation:
         """再判定が失敗する同一状態を繰り返してもinfo/excludeを重複追記しない。"""
         local_path = _make_remote_repository(tmp_path, "target")
         (local_path / ".gitignore").write_text("!/.claude/worktrees/\n", encoding="utf-8")
-        _run_git(["add", ".gitignore"], local_path)
-        _run_git(["commit", "-m", "negate worktree ignore"], local_path)
+        git_repository.run_git(local_path, "add", ".gitignore")
+        git_repository.run_git(local_path, "commit", "-m", "negate worktree ignore")
         exclude_path = local_path / ".git" / "info" / "exclude"
         before = exclude_path.read_text(encoding="utf-8")
         _setup_notes(tmp_path)

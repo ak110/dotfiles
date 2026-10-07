@@ -36,7 +36,11 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
   起動スクリプトは全ての層をimportできるが、`_hooks`をimportできるのは`hook.py`だけとし、`_testing`はimportできない。
   hook以外の起動スクリプトが`_hooks`へ依存すると、hookの実装の層にhook以外から使う部品が残るため
   同じ走査で、`_git/`と`_testing/`の外から`subprocess`へ`["git", ...]`を渡して起動する箇所も失敗にする。
-  Gitの起動は`_git/command.py`の共通関数へ集め、時間上限・終了コードの扱い・文字コードの指定を1か所で保つため
+  Gitの起動は`_git/command.py`の共通関数へ集め、時間上限・終了コードの扱い・文字コードの指定を1か所で保つため。
+  さらに同じ走査で、`agent-toolkit/pyproject.toml`の`[project] dependencies`に無く開発用の依存グループにだけある
+  パッケージのimportを失敗にする（`_testing`配下を除く）。開発環境には開発用の依存が導入済みのためテストは成功するが、
+  配布先の環境には無く、そのモジュールを読み込んだ時点で失敗するため。`_testing`配下は本番のコードから
+  importできないことを対象種別3が保証するため、テスト専用の依存を使ってよい
 
 スクリプトをimportまたは実行する方式は採らない。生成処理・ファイル書き込みなどの副作用を
 実行し得るうえ、`--help`への対応も保証されていないため。
@@ -83,6 +87,7 @@ class _ImportReference:
 
     name: str
     fallback: str | None = None
+    lineno: int = 0
 
 
 def _script_directories() -> tuple[pathlib.Path, ...]:
@@ -140,13 +145,13 @@ class _ImportVisitor(ast.NodeVisitor):
         self.references: list[_ImportReference] = []
 
     def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
-        self.references.extend(_ImportReference(alias.name) for alias in node.names)
+        self.references.extend(_ImportReference(alias.name, lineno=node.lineno) for alias in node.names)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
         if not node.level and node.module:
-            self.references.append(_ImportReference(node.module))
+            self.references.append(_ImportReference(node.module, lineno=node.lineno))
             self.references.extend(
-                _ImportReference(f"{node.module}.{alias.name}", fallback=node.module)
+                _ImportReference(f"{node.module}.{alias.name}", fallback=node.module, lineno=node.lineno)
                 for alias in node.names
                 if alias.name != "*"
             )
@@ -584,14 +589,49 @@ def _git_subprocess_problems(source: _AgentToolkitSource) -> list[str]:
     return problems
 
 
+def _agent_toolkit_dev_only_imports() -> frozenset[str]:
+    """`agent-toolkit/pyproject.toml`の開発用の依存グループにだけあるパッケージのimport名を返す。"""
+    pyproject = _REPO_ROOT / "agent-toolkit/pyproject.toml"
+    if not pyproject.is_file():
+        return frozenset()
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    runtime = {_dependency_import_name(dep) for dep in data.get("project", {}).get("dependencies", []) if isinstance(dep, str)}
+    development = {
+        _dependency_import_name(dep)
+        for group in data.get("dependency-groups", {}).values()
+        for dep in group
+        if isinstance(dep, str)
+    }
+    return frozenset(development - runtime)
+
+
+def _dev_dependency_import_problems(source: _AgentToolkitSource, dev_only: frozenset[str]) -> list[str]:
+    """`_testing`配下以外の非テストのPythonが開発用の依存だけにあるパッケージをimportしている箇所を返す。"""
+    if source.path.is_relative_to(_REPO_ROOT / "agent-toolkit/agent_toolkit/_testing"):
+        return []
+    problems: list[str] = []
+    for reference in _extract_imports(source.tree):
+        top_level = reference.name.partition(".")[0]
+        if top_level in dev_only and reference.fallback is None:
+            problems.append(
+                f"{_display_path(source.path)}:{reference.lineno}: "
+                f"開発用の依存グループにだけある`{top_level}`をimportしている（配布先の環境には導入されない）。"
+                "次の操作: テストだけが使うコードなら`agent-toolkit/agent_toolkit/_testing/`へ移す。"
+                "本番のコードが使う場合は`agent-toolkit/pyproject.toml`の`[project] dependencies`へ加える"
+            )
+    return problems
+
+
 def _check_agent_toolkit_sources() -> list[str]:
     """`agent_toolkit/`と`skills/*/scripts/`の非テストのPythonを1回ずつ走査し、書き方の規則に反する箇所を返す。"""
     sources, problems = _agent_toolkit_sources()
+    dev_only = _agent_toolkit_dev_only_imports()
     for source in sources:
         problems.extend(_file_level_f821_noqa_problems(source))
         problems.extend(_namespace_write_problems(source))
         problems.extend(_entry_layer_problems(source))
         problems.extend(_git_subprocess_problems(source))
+        problems.extend(_dev_dependency_import_problems(source, dev_only))
     return problems
 
 

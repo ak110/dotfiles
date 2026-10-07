@@ -14,7 +14,7 @@ from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import busy_loop_guard, stop, stop_gate
-from agent_toolkit._hooks.output_contract import validate_hook_output
+from agent_toolkit._testing.hook_output_contract import validate_hook_output
 
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _ENV_SESSION_ID = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"

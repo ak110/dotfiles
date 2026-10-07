@@ -417,27 +417,6 @@ class TestUwiAddRepoPathOverrideCli:
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/cwdrepo" in content
 
-    def test_message_only_directory_errors(
-        self,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """本文が続かないディレクトリのみの呼び出しは、usage表示付きの平易なエラーでexit 2になる。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=uwi", "--question-type=yes-no", str(myrepo)], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 2
-        captured = capsys.readouterr()
-        assert "使い方: atk wi add" in captured.err
-        error_line = captured.err.rstrip("\n").splitlines()[-1]
-        assert "パスの指定は不要です" in error_line
-        assert "REPO_PATH" not in error_line
-        assert "MESSAGE" not in error_line
-
     def test_directory_followed_by_message_uses_compat_path(
         self,
         monkeypatch: pytest.MonkeyPatch,

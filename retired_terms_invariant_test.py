@@ -141,7 +141,7 @@ _RETIRED_TERMS = (
             _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/constants.py"),
             _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/materials.py", "利用者"),
             # 旧形式の計画を作成する試験入力と、その読み取り互換を確かめるテスト
-            _AllowedLocation("agent-toolkit/agent_toolkit/_plan/fixture.py", "利用者合意"),
+            _AllowedLocation("agent-toolkit/agent_toolkit/_testing/plan_fixture.py", "利用者合意"),
             _AllowedLocation("agent-toolkit/agent_toolkit/_testing/plan_structure_support.py", "利用者合意"),
             _AllowedLocation("*_test.py", "利用者合意"),
             _AllowedLocation("*_test.py", "利用者指示"),

@@ -5,13 +5,13 @@
 
 import os
 import pathlib
-import subprocess
 from collections.abc import Callable
 
 import pytest
 
 from agent_toolkit._common import codex_models
 from agent_toolkit._hooks import notice, stop_gate
+from agent_toolkit._testing import git_repository as _git_repository
 
 _ORIGINAL_WAIT_FOR_END_TURN = stop_gate._wait_for_end_turn  # pylint: disable=protected-access
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
@@ -110,14 +110,7 @@ def _make_dirty_repo() -> Callable[[pathlib.Path], pathlib.Path]:
     """
 
     def _make(tmp_path: pathlib.Path, name: str = "repo") -> pathlib.Path:
-        repo = tmp_path / name
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("initial")
-        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "--message=init"], cwd=str(repo), capture_output=True, check=True)
+        repo = _git_repository.init_repository(tmp_path / name, files={"file.txt": "initial"}, commit_message="init")
         # trackedファイルを変更して未コミット状態にする。
         (repo / "file.txt").write_text("modified")
         return repo
@@ -130,14 +123,6 @@ def _make_clean_repo() -> Callable[[pathlib.Path], pathlib.Path]:
     """変更なしのgitリポジトリを作成するfactory fixture。"""
 
     def _make(tmp_path: pathlib.Path, name: str = "clean") -> pathlib.Path:
-        repo = tmp_path / name
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("clean")
-        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "--message=init"], cwd=str(repo), capture_output=True, check=True)
-        return repo
+        return _git_repository.init_repository(tmp_path / name, files={"file.txt": "clean"}, commit_message="init")
 
     return _make

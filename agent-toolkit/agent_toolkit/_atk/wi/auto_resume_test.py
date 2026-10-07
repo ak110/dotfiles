@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import subprocess
 from collections.abc import Sequence
 
 import pytest
@@ -16,17 +15,11 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import session_records
 from agent_toolkit._atk.wi import auto_resume
+from agent_toolkit._testing import git_repository
 
 
 def _repository(path: pathlib.Path, name: str) -> pathlib.Path:
-    repository = path / name
-    repository.mkdir()
-    subprocess.run(["git", "init", "--quiet", str(repository)], check=True)
-    subprocess.run(
-        ["git", "-C", str(repository), "remote", "add", "origin", f"https://github.com/ak110/{name}.git"],
-        check=True,
-    )
-    return repository
+    return git_repository.init_repository(path / name, origin=f"https://github.com/ak110/{name}.git")
 
 
 def _write_record(path: pathlib.Path, records: Sequence[object], modified_at: int) -> None:

@@ -11,23 +11,19 @@ from agent_toolkit import atk
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk.wi import common as _atk_wi_common
 from agent_toolkit._atk.wi import mutations as _atk_wi_mutations
-
-
-def _git(root: pathlib.Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """テスト用Gitコマンドを実行する。"""
-    return subprocess.run(["git", *args], cwd=root, check=check, capture_output=True, text=True)
+from agent_toolkit._testing import git_repository
 
 
 def _init_repo(root: pathlib.Path) -> None:
     """commit検証用のGit repositoryを初期化する。"""
     root.mkdir()
-    _git(root, "init", "--initial-branch=main")
-    _git(root, "config", "user.name", "sync-test")
-    _git(root, "config", "user.email", "sync-test@example.invalid")
+    git_repository.init_repository(root, initial_branch="main")
+    git_repository.run_git(root, "config", "user.name", "sync-test")
+    git_repository.run_git(root, "config", "user.email", "sync-test@example.invalid")
     (root / "target.txt").write_text("before\n", encoding="utf-8")
     (root / "unrelated.txt").write_text("before\n", encoding="utf-8")
-    _git(root, "add", ".")
-    _git(root, "commit", "-m", "base")
+    git_repository.run_git(root, "add", ".")
+    git_repository.run_git(root, "commit", "-m", "base")
 
 
 def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -46,22 +42,22 @@ def _init_diverged_mq_repos(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathl
     local = tmp_path / "local"
     peer = tmp_path / "peer"
     origin.mkdir()
-    _git(origin, "init", "--bare", "--initial-branch=main")
+    git_repository.init_bare_repository(origin)
     seed.mkdir()
-    _git(seed, "init", "--initial-branch=main")
-    _git(seed, "config", "user.name", "sync-test")
-    _git(seed, "config", "user.email", "sync-test@example.invalid")
+    git_repository.init_repository(seed, initial_branch="main")
+    git_repository.run_git(seed, "config", "user.name", "sync-test")
+    git_repository.run_git(seed, "config", "user.email", "sync-test@example.invalid")
     source = seed / "processing" / "20260831-101752-001.md"
     source.parent.mkdir()
     source.write_text("---\ntype: awi\n---\n\n同じ項目\n", encoding="utf-8")
-    _git(seed, "add", ".")
-    _git(seed, "commit", "-m", "base")
-    _git(seed, "remote", "add", "origin", str(origin))
-    _git(seed, "push", "-u", "origin", "main")
+    git_repository.run_git(seed, "add", ".")
+    git_repository.run_git(seed, "commit", "-m", "base")
+    git_repository.run_git(seed, "remote", "add", "origin", str(origin))
+    git_repository.run_git(seed, "push", "-u", "origin", "main")
     for clone in (local, peer):
-        _git(tmp_path, "clone", "--branch", "main", str(origin), str(clone))
-        _git(clone, "config", "user.name", "sync-test")
-        _git(clone, "config", "user.email", "sync-test@example.invalid")
+        git_repository.run_git(tmp_path, "clone", "--branch", "main", str(origin), str(clone))
+        git_repository.run_git(clone, "config", "user.name", "sync-test")
+        git_repository.run_git(clone, "config", "user.email", "sync-test@example.invalid")
     return local, peer
 
 
@@ -76,18 +72,18 @@ def _finish_entry(repo: pathlib.Path, timestamp: str, *, note: str | None = None
         body += f"- メモ: {note}\n"
     destination.write_text(body, encoding="utf-8")
     source.unlink()
-    _git(repo, "add", "--all")
-    _git(repo, "commit", "-m", "chore: process 1 entry (adopted)")
+    git_repository.run_git(repo, "add", "--all")
+    git_repository.run_git(repo, "commit", "-m", "chore: process 1 entry (adopted)")
 
 
 def _create_matching_tree_divergence(local: pathlib.Path, peer: pathlib.Path) -> str:
     """異なるcommitで同じ木を持つ分岐を作成する。"""
     for repo, message in ((local, "local equivalent"), (peer, "peer equivalent")):
         (repo / "equivalent.txt").write_text("same\n", encoding="utf-8")
-        _git(repo, "add", "equivalent.txt")
-        _git(repo, "commit", "-m", message)
-    _git(peer, "push")
-    return _git(peer, "rev-parse", "HEAD").stdout.strip()
+        git_repository.run_git(repo, "add", "equivalent.txt")
+        git_repository.run_git(repo, "commit", "-m", message)
+    git_repository.run_git(peer, "push")
+    return git_repository.run_git(peer, "rev-parse", "HEAD").stdout.strip()
 
 
 def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
@@ -98,13 +94,13 @@ def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
     _init_repo(repo)
     (repo / "target.txt").write_text("after\n", encoding="utf-8")
     (repo / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
-    _git(repo, "add", "unrelated.txt")
+    git_repository.run_git(repo, "add", "unrelated.txt")
 
     with _atk_git_sync.repo_lock(repo):
         _atk_git_sync.commit_and_push(repo, "target only", ["target.txt"], skip_push=True)
 
-    committed = _git(repo, "show", "--format=", "--name-only", "HEAD").stdout.splitlines()
-    staged = _git(repo, "diff", "--cached", "--name-only").stdout.splitlines()
+    committed = git_repository.run_git(repo, "show", "--format=", "--name-only", "HEAD").stdout.splitlines()
+    staged = git_repository.run_git(repo, "diff", "--cached", "--name-only").stdout.splitlines()
     assert committed == ["target.txt"]
     assert staged == ["unrelated.txt"]
     assert "未pushのcommit" in capsys.readouterr().err
@@ -134,14 +130,14 @@ def test_pending_commit_count_distinguishes_remote_and_upstream_states(tmp_path:
 
     origin = tmp_path / "origin.git"
     origin.mkdir()
-    _git(origin, "init", "--bare", "--initial-branch=main")
+    git_repository.init_bare_repository(origin)
     repo = tmp_path / "repo"
     _init_repo(repo)
-    _git(repo, "remote", "add", "origin", str(origin))
-    _git(repo, "push", "-u", "origin", "main")
+    git_repository.run_git(repo, "remote", "add", "origin", str(origin))
+    git_repository.run_git(repo, "push", "-u", "origin", "main")
     (repo / "target.txt").write_text("after\n", encoding="utf-8")
-    _git(repo, "add", "target.txt")
-    _git(repo, "commit", "-m", "local")
+    git_repository.run_git(repo, "add", "target.txt")
+    git_repository.run_git(repo, "commit", "-m", "local")
 
     assert _atk_git_sync.pending_commit_count(repo) == 1
 
@@ -242,9 +238,9 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
         if args[0] == "commit" and not injected:
             injected = True
             (peer / "peer.txt").write_text("他のcloneの変更\n", encoding="utf-8")
-            _git(peer, "add", "peer.txt")
-            _git(peer, "commit", "-m", "peer update")
-            _git(peer, "push")
+            git_repository.run_git(peer, "add", "peer.txt")
+            git_repository.run_git(peer, "commit", "-m", "peer update")
+            git_repository.run_git(peer, "push")
             dirty.write_text("無関係な未追跡差分\n", encoding="utf-8")
         original_run(args, cwd, forward_error_output=forward_error_output)
 
@@ -272,7 +268,7 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "commit"], home=tmp_path)
     assert "1件のcommitをpushした" in capsys.readouterr().out
-    assert _git(local, "rev-list", "--left-right", "--count", "HEAD...@{u}").stdout.split() == ["0", "0"]
+    assert git_repository.run_git(local, "rev-list", "--left-right", "--count", "HEAD...@{u}").stdout.split() == ["0", "0"]
 
 
 def test_push_suppresses_output_of_recovered_first_push(
@@ -387,9 +383,9 @@ def test_sync_recovers_matching_tree_divergence(
     if dirty:
         source = local / "processing" / "20260831-101752-001.md"
         source.write_text(source.read_text(encoding="utf-8") + "\nstaged\n", encoding="utf-8")
-        _git(local, "add", str(source.relative_to(local)))
+        git_repository.run_git(local, "add", str(source.relative_to(local)))
         (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
-    status_before = _git(local, "status", "--porcelain").stdout
+    status_before = git_repository.run_git(local, "status", "--porcelain").stdout
 
     with _atk_git_sync.repo_lock(local):
         if operation == "pull":
@@ -397,8 +393,8 @@ def test_sync_recovers_matching_tree_divergence(
         else:
             _atk_git_sync.push_pending_commits(local)
 
-    assert _git(local, "rev-parse", "HEAD").stdout.strip() == upstream
-    assert _git(local, "status", "--porcelain").stdout == status_before
+    assert git_repository.run_git(local, "rev-parse", "HEAD").stdout.strip() == upstream
+    assert git_repository.run_git(local, "status", "--porcelain").stdout == status_before
     assert not capsys.readouterr().err
 
 
@@ -417,8 +413,8 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
     local, peer = _init_diverged_mq_repos(tmp_path)
     _finish_entry(local, "2026-08-31T20:42:20+00:00")
     _finish_entry(peer, "2026-08-31T20:48:40+00:00")
-    _git(peer, "push")
-    upstream = _git(peer, "rev-parse", "HEAD").stdout.strip()
+    git_repository.run_git(peer, "push")
+    upstream = git_repository.run_git(peer, "rev-parse", "HEAD").stdout.strip()
 
     if operation == "pull":
         with _atk_git_sync.repo_lock(local):
@@ -426,8 +422,8 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
     else:
         assert _atk_wi_mutations.commit_entries(local).changed is False
 
-    assert _git(local, "rev-parse", "HEAD").stdout.strip() == upstream
-    assert _git(local, "status", "--porcelain").stdout == ""
+    assert git_repository.run_git(local, "rev-parse", "HEAD").stdout.strip() == upstream
+    assert git_repository.run_git(local, "status", "--porcelain").stdout == ""
     assert not capsys.readouterr().err
 
 
@@ -437,20 +433,20 @@ def test_mq_pull_rebases_clean_divergence(
     """cleanな履歴分岐はローカルcommitを保持してupstreamへ載せ替える。"""
     local, peer = _init_diverged_mq_repos(tmp_path)
     (local / "local.txt").write_text("local\n", encoding="utf-8")
-    _git(local, "add", "local.txt")
-    _git(local, "commit", "-m", "local change")
+    git_repository.run_git(local, "add", "local.txt")
+    git_repository.run_git(local, "commit", "-m", "local change")
     (peer / "remote.txt").write_text("remote\n", encoding="utf-8")
-    _git(peer, "add", "remote.txt")
-    _git(peer, "commit", "-m", "remote change")
-    _git(peer, "push")
-    upstream = _git(peer, "rev-parse", "HEAD").stdout.strip()
+    git_repository.run_git(peer, "add", "remote.txt")
+    git_repository.run_git(peer, "commit", "-m", "remote change")
+    git_repository.run_git(peer, "push")
+    upstream = git_repository.run_git(peer, "rev-parse", "HEAD").stdout.strip()
 
     with _atk_git_sync.repo_lock(local):
         _atk_wi_common.pull(local)
 
-    assert _git(local, "merge-base", "--is-ancestor", upstream, "HEAD").returncode == 0
-    assert _git(local, "log", "-1", "--format=%s").stdout.strip() == "local change"
-    assert _git(local, "status", "--porcelain").stdout == ""
+    assert git_repository.run_git(local, "merge-base", "--is-ancestor", upstream, "HEAD").returncode == 0
+    assert git_repository.run_git(local, "log", "-1", "--format=%s").stdout.strip() == "local change"
+    assert git_repository.run_git(local, "status", "--porcelain").stdout == ""
 
 
 def test_mq_pull_reports_dirty_divergence_without_rewriting(
@@ -460,19 +456,19 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
     """dirtyな履歴分岐はrebaseせず、原因と手動回復手順を表示する。"""
     local, peer = _init_diverged_mq_repos(tmp_path)
     (local / "local.txt").write_text("local\n", encoding="utf-8")
-    _git(local, "add", "local.txt")
-    _git(local, "commit", "-m", "local change")
-    local_head = _git(local, "rev-parse", "HEAD").stdout.strip()
+    git_repository.run_git(local, "add", "local.txt")
+    git_repository.run_git(local, "commit", "-m", "local change")
+    local_head = git_repository.run_git(local, "rev-parse", "HEAD").stdout.strip()
     (peer / "remote.txt").write_text("remote\n", encoding="utf-8")
-    _git(peer, "add", "remote.txt")
-    _git(peer, "commit", "-m", "remote change")
-    _git(peer, "push")
+    git_repository.run_git(peer, "add", "remote.txt")
+    git_repository.run_git(peer, "commit", "-m", "remote change")
+    git_repository.run_git(peer, "push")
     (local / "untracked.txt").write_text("dirty\n", encoding="utf-8")
 
     with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError):
         _atk_wi_common.pull(local)
 
-    assert _git(local, "rev-parse", "HEAD").stdout.strip() == local_head
+    assert git_repository.run_git(local, "rev-parse", "HEAD").stdout.strip() == local_head
     assert not _atk_git_sync.is_rebase_in_progress(local)
     stderr = capsys.readouterr().err
     assert "Git履歴が分岐している（ローカルのみ1件、upstreamのみ1件）" in stderr
@@ -496,16 +492,16 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     """rebase競合時は中間状態を保持し、競合解消手順を表示する。"""
     local, peer = _init_diverged_mq_repos(tmp_path)
     _finish_entry(local, "2026-08-31T20:42:20+00:00", note="local")
-    local_head = _git(local, "rev-parse", "HEAD").stdout.strip()
+    local_head = git_repository.run_git(local, "rev-parse", "HEAD").stdout.strip()
     _finish_entry(peer, "2026-08-31T20:48:40+00:00", note="remote")
-    _git(peer, "push")
+    git_repository.run_git(peer, "push")
 
     with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError) as exc_info:
         _atk_wi_common.pull(local)
 
     assert exc_info.value.cmd[-3:] == ["merge", "--ff-only", "@{u}"]
     assert _atk_git_sync.is_rebase_in_progress(local)
-    assert _git(local, "rev-parse", "ORIG_HEAD").stdout.strip() == local_head
+    assert git_repository.run_git(local, "rev-parse", "ORIG_HEAD").stdout.strip() == local_head
     stderr = capsys.readouterr().err
     assert "rebaseに失敗したため、rebase状態を保持した" in stderr
     assert "Git履歴が分岐している" not in stderr
@@ -524,20 +520,20 @@ def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path:
     other = local / "inbox" / "20260831-101800-001.md"
     other.parent.mkdir()
     other.write_text(original, encoding="utf-8")
-    _git(local, "add", "--all")
-    _git(local, "commit", "-m", "add other entry")
-    _git(local, "push")
-    _git(peer, "pull")
+    git_repository.run_git(local, "add", "--all")
+    git_repository.run_git(local, "commit", "-m", "add other entry")
+    git_repository.run_git(local, "push")
+    git_repository.run_git(peer, "pull")
     _finish_entry(local, "2026-08-31T20:42:20+00:00", note="local")
-    local_head = _git(local, "rev-parse", "HEAD").stdout.strip()
+    local_head = git_repository.run_git(local, "rev-parse", "HEAD").stdout.strip()
     _finish_entry(peer, "2026-08-31T20:48:40+00:00", note="remote")
-    _git(peer, "push")
+    git_repository.run_git(peer, "push")
 
     with pytest.raises(subprocess.CalledProcessError):
         _atk_wi_common.synchronize(local, lock_timeout=5)
 
     assert _atk_git_sync.is_rebase_in_progress(local)
-    status = _git(local, "status", "--porcelain=v1").stdout
+    status = git_repository.run_git(local, "status", "--porcelain=v1").stdout
     with pytest.raises(_atk_git_sync.RebaseInProgressError):
         _atk_wi_mutations.edit_entry_content(
             local,
@@ -549,9 +545,9 @@ def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path:
         )
 
     assert other.read_text(encoding="utf-8") == original
-    assert _git(local, "status", "--porcelain=v1").stdout == status
+    assert git_repository.run_git(local, "status", "--porcelain=v1").stdout == status
     assert _atk_git_sync.is_rebase_in_progress(local)
-    assert _git(local, "rev-parse", "ORIG_HEAD").stdout.strip() == local_head
+    assert git_repository.run_git(local, "rev-parse", "ORIG_HEAD").stdout.strip() == local_head
 
 
 @pytest.mark.parametrize(
@@ -607,7 +603,7 @@ def test_rebase_in_progress_error_keeps_reason_and_next_action(tmp_path: pathlib
     """rebase中の拒否は理由だけを`str()`で返し、競合解消の手順を次の操作として持つ。"""
     _init_repo(tmp_path / "repo")
     repo = tmp_path / "repo"
-    rebase_dir = pathlib.Path(_git(repo, "rev-parse", "--git-path", "rebase-merge").stdout.strip())
+    rebase_dir = pathlib.Path(git_repository.run_git(repo, "rev-parse", "--git-path", "rebase-merge").stdout.strip())
     (rebase_dir if rebase_dir.is_absolute() else repo / rebase_dir).mkdir(parents=True)
 
     with pytest.raises(_atk_git_sync.RebaseInProgressError) as exc_info:

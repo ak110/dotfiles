@@ -6,7 +6,7 @@
 
 本節は出力先の選択方針だけを定め、各フィールドのスキーマとイベント別の対応可否は`claude-hooks.md`「hookスクリプトの基本プロトコル」が挙げる公式ドキュメントに従う。
 
-イベントごとの出力契約は`agent-toolkit/agent_toolkit/_hooks/output_contract.py`が定める。
+イベントごとの出力契約は`agent-toolkit/agent_toolkit/_testing/hook_output_contract.py`が定める。
 同ファイルは公式のHooksリファレンスが定める契約をJSON Schemaで保持する。
 `agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が登録済みの全hookの出力がその契約に合致するか確かめる。
 フックを追加または変更する場合は、その契約とテストを同じ変更単位で更新する。

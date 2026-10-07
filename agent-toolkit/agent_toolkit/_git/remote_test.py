@@ -1,12 +1,12 @@
 """`_git_remote`のリモートURLの正規化と取得の動作を確かめる。"""
 
 import pathlib
-import subprocess
 
 import pytest
 
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _git_remote
+from agent_toolkit._testing import git_repository
 
 
 @pytest.mark.parametrize(
@@ -40,11 +40,7 @@ def test_normalize_remote_url_rejects_invalid_value(remote_url: str) -> None:
 
 def test_resolve_repo_identifier_reads_legacy_local_path(tmp_path: pathlib.Path) -> None:
     """旧ローカルパス形はoriginを介して正規なURL形へ解決する。"""
-    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "remote", "add", "origin", "git@github.com:Example/Repo.git"],
-        check=True,
-    )
+    git_repository.init_repository(tmp_path, origin="git@github.com:Example/Repo.git")
 
     assert _git_remote.resolve_repo_identifier(str(tmp_path)) == "github.com/example/repo"
 
@@ -54,7 +50,7 @@ def test_resolve_repo_identifier_returns_none_for_unresolvable_path(tmp_path: pa
     """存在しないパスとorigin未設定リポジトリは解決不能として扱う。"""
     target = tmp_path / kind
     if kind == "no-remote":
-        subprocess.run(["git", "init", str(target)], check=True, capture_output=True)
+        git_repository.init_repository(target)
 
     assert _git_remote.resolve_repo_identifier(str(target)) is None
 
@@ -83,13 +79,8 @@ def test_parse_remote_location_rejects_value_without_project_path(value: str) ->
 
 def test_origin_url_and_remote_urls_read_configured_remotes(tmp_path: pathlib.Path) -> None:
     """`origin`のURLと全リモートのURLを返し、Git管理外では`None`と空のリストを返すこと。"""
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    subprocess.run(["git", "init", "-q", str(repository)], check=True)
-    subprocess.run(
-        ["git", "-C", str(repository), "remote", "add", "origin", "https://github.com/ak110/dotfiles.git"], check=True
-    )
-    subprocess.run(["git", "-C", str(repository), "remote", "add", "fork", "git@github.com:other/dotfiles.git"], check=True)
+    repository = git_repository.init_repository(tmp_path / "repository", origin="https://github.com/ak110/dotfiles.git")
+    git_repository.run_git(repository, "remote", "add", "fork", "git@github.com:other/dotfiles.git")
     outside = tmp_path / "outside"
     outside.mkdir()
 

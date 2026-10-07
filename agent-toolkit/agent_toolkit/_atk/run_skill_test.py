@@ -24,6 +24,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._common import claude_usage_limit
+from agent_toolkit._testing import git_repository
 
 _FAKE_ENGINE = """\
 #!{python}
@@ -104,7 +105,7 @@ def _engine_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env
     state = tmp_path / "state"
     repo = tmp_path / "repo"
     (repo / "sub").mkdir(parents=True)
-    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True, text=True, encoding="utf-8")
+    git_repository.init_repository(repo)
     monkeypatch.setenv("PATH", os.pathsep.join((str(bin_dir), os.environ.get("PATH", ""))))
     monkeypatch.setenv("FAKE_RECORD_DIR", str(records))
     monkeypatch.setenv("XDG_STATE_HOME", str(state))

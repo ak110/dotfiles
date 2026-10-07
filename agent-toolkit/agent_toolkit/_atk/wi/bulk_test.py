@@ -11,6 +11,7 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import bulk as remove_all  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.git_fakes import make_outside_worktree_fake as _make_outside_worktree_fake  # noqa: E402
 from agent_toolkit.atk_test import _setup_notes, _write_awi_file  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -496,11 +497,7 @@ class TestRemoveAllScope:
         """一括削除は旧パス形とURL形のactive項目を同じ対象として削除する。"""
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "myrepo"
-        subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
-        subprocess.run(
-            ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/myrepo.git"],
-            check=True,
-        )
+        git_repository.init_repository(local_repo, origin="git@github.com:example/myrepo.git")
         legacy = _write_entry(notes, "inbox", "legacy.md", target_repo=str(local_repo))
         current = _write_entry(notes, "inbox", "current.md", target_repo="github.com/example/myrepo")
         missing = _write_entry(notes, "inbox", "missing.md", target_repo=str(tmp_path / "missing"))

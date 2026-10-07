@@ -22,6 +22,7 @@ from agent_toolkit._atk.wi import (
 )
 from agent_toolkit._atk.wi.mutations import targets as mutation_targets
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_mutations_support import (
     _disable_convert_git,
     _disable_transition_git,
@@ -313,23 +314,15 @@ class TestSkipPush:
         remote = tmp_path / "origin.git"
         _init_notes_with_origin(notes, remote)
         (notes / "adopted" / "pending.md").write_text("pending\n", encoding="utf-8")
-        subprocess.run(["git", "add", "adopted/pending.md"], cwd=notes, capture_output=True, text=True, check=True)
-        subprocess.run(["git", "commit", "-m", "pending"], cwd=notes, capture_output=True, text=True, check=True)
+        git_repository.run_git(notes, "add", "adopted/pending.md")
+        git_repository.run_git(notes, "commit", "-m", "pending")
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        local_head = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
-        ).stdout.strip()
-        remote_head = subprocess.run(
-            ["git", "--git-dir", str(remote), "rev-parse", "refs/heads/main"],
-            cwd=tmp_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
+        local_head = git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
+        remote_head = git_repository.run_git(tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main").stdout.strip()
         assert local_head == remote_head
         output = capsys.readouterr().out
         assert "外部編集の差分は無い" in output
@@ -358,29 +351,15 @@ class TestSkipPush:
         second_home = tmp_path / "second"
         second_home.mkdir()
         second_notes = second_home / "private-notes"
-        subprocess.run(
-            ["git", "clone", "--branch", "main", str(remote), str(second_notes)],
-            cwd=tmp_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        git_repository.run_git(tmp_path, "clone", "--branch", "main", str(remote), str(second_notes))
         for key, value in (("user.name", "queue-test"), ("user.email", "queue-test@example.invalid")):
-            subprocess.run(["git", "config", key, value], cwd=second_notes, capture_output=True, text=True, check=True)
+            git_repository.run_git(second_notes, "config", key, value)
 
         def local_head() -> str:
-            return subprocess.run(
-                ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
-            ).stdout.strip()
+            return git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
 
         def remote_head() -> str:
-            return subprocess.run(
-                ["git", "--git-dir", str(remote), "rev-parse", "refs/heads/main"],
-                cwd=tmp_path,
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.strip()
+            return git_repository.run_git(tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main").stdout.strip()
 
         with pytest.raises(SystemExit) as adopt_exit:
             atk.main(["wi", "adopt", "default-adopt.md"], home=first_home, now=_FIXED_DT)
@@ -392,10 +371,10 @@ class TestSkipPush:
         assert reject_exit.value.code == 0
         assert local_head() == remote_head()
 
-        subprocess.run(["git", "pull", "--ff-only"], cwd=second_notes, capture_output=True, text=True, check=True)
+        git_repository.run_git(second_notes, "pull", "--ff-only")
         (notes / "adopted" / "pending.md").write_text("pending\n", encoding="utf-8")
-        subprocess.run(["git", "add", "adopted/pending.md"], cwd=notes, capture_output=True, text=True, check=True)
-        subprocess.run(["git", "commit", "-m", "pending"], cwd=notes, capture_output=True, text=True, check=True)
+        git_repository.run_git(notes, "add", "adopted/pending.md")
+        git_repository.run_git(notes, "commit", "-m", "pending")
         pending_head = local_head()
         remote_before_skip = remote_head()
 
@@ -404,30 +383,16 @@ class TestSkipPush:
         assert skip_exit.value.code == 0
         assert remote_head() == remote_before_skip
         assert local_head() != remote_head()
-        assert (
-            subprocess.run(
-                ["git", "merge-base", "--is-ancestor", pending_head, "HEAD"],
-                cwd=notes,
-                capture_output=True,
-                text=True,
-                check=False,
-            ).returncode
-            == 0
-        )
-        assert subprocess.run(
-            ["git", "log", "-2", "--format=%s"], cwd=notes, capture_output=True, text=True, check=True
-        ).stdout.splitlines() == ["chore: process 1 entry (adopted)", "pending"]
+        assert git_repository.run_git(notes, "merge-base", "--is-ancestor", pending_head, "HEAD", check=False).returncode == 0
+        assert git_repository.run_git(notes, "log", "-2", "--format=%s").stdout.splitlines() == [
+            "chore: process 1 entry (adopted)",
+            "pending",
+        ]
 
         (second_notes / "remote-update.txt").write_text("remote update\n", encoding="utf-8")
-        subprocess.run(["git", "add", "remote-update.txt"], cwd=second_notes, capture_output=True, text=True, check=True)
-        subprocess.run(
-            ["git", "commit", "-m", "remote update"],
-            cwd=second_notes,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        subprocess.run(["git", "push"], cwd=second_notes, capture_output=True, text=True, check=True)
+        git_repository.run_git(second_notes, "add", "remote-update.txt")
+        git_repository.run_git(second_notes, "commit", "-m", "remote update")
+        git_repository.run_git(second_notes, "push")
 
         with pytest.raises(SystemExit) as following_exit:
             atk.main(["wi", "reject", "following.md"], home=first_home, now=_FIXED_DT)
@@ -565,29 +530,9 @@ class TestStartProcessingFailureBoundaries:
         _write_awi_file(notes, "fb-002.md")
         for state in ("processing", "adopted", "rejected"):
             (notes / state).mkdir()
-        subprocess.run(["git", "init", "--initial-branch=main"], cwd=notes, capture_output=True, text=True, check=True)
-        subprocess.run(["git", "add", "."], cwd=notes, capture_output=True, text=True, check=True)
-        subprocess.run(["git", "commit", "-m", "base"], cwd=notes, capture_output=True, text=True, check=True)
-        remote = tmp_path / "origin.git"
-        subprocess.run(
-            ["git", "init", "--bare", "--initial-branch=main", str(remote)],
-            cwd=tmp_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=notes, capture_output=True, text=True, check=True)
-        subprocess.run(
-            ["git", "push", "--set-upstream", "origin", "main"],
-            cwd=notes,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        _init_notes_with_origin(notes, tmp_path / "origin.git")
         setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
-        before_head = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
-        ).stdout.strip()
+        before_head = git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
         calls: list[str] = []
 
         def fail_push(_path: pathlib.Path) -> None:
@@ -608,19 +553,11 @@ class TestStartProcessingFailureBoundaries:
         assert calls == ["push"]
         assert sorted(path.name for path in (notes / "processing").iterdir()) == ["fb-001.md", "fb-002.md"]
         assert not list((notes / "inbox").iterdir())
-        after_head = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
-        ).stdout.strip()
+        after_head = git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
         assert after_head != before_head
-        status = subprocess.run(["git", "status", "--porcelain"], cwd=notes, capture_output=True, text=True, check=True)
+        status = git_repository.run_git(notes, "status", "--porcelain")
         assert status.stdout == ""
-        upstream_check = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", after_head, "@{u}"],
-            cwd=notes,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        upstream_check = git_repository.run_git(notes, "merge-base", "--is-ancestor", after_head, "@{u}", check=False)
         assert upstream_check.returncode != 0
 
 

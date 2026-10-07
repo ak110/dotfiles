@@ -14,6 +14,7 @@ import pytest
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
@@ -239,24 +240,12 @@ _VALID_H2_PLAN_CONTENT = (
 )
 
 
-def _init_git_repo(path: pathlib.Path) -> None:
-    """一括ステージ警告テスト用の最小git repo初期化。"""
-    subprocess.run(["git", "init", "-q", str(path)], check=True)
-    subprocess.run(["git", "-C", str(path), "config", "user.email", "t@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(path), "config", "user.name", "test"], check=True)
-    subprocess.run(["git", "-C", str(path), "config", "commit.gpgsign", "false"], check=True)
-
-
 def _make_repo_with_optional_remote(path: pathlib.Path, remote_url: str | None) -> str:
     """判定を省略する条件の確認用に、remote設定の有無を選べるgit repoを作成する。
 
     `remote_url`が`None`の場合は`git remote`が空リストを返すrepoになる。
     """
-    path.mkdir(parents=True, exist_ok=True)
-    _init_git_repo(path)
-    if remote_url is not None:
-        subprocess.run(["git", "-C", str(path), "remote", "add", "origin", remote_url], check=True)
-    return str(path)
+    return str(git_repository.init_repository(path, origin=remote_url))
 
 
 def _make_managed_temp_git_case(
@@ -282,16 +271,6 @@ def _make_managed_temp_git_case(
     if condition == "invalid-marker":
         (managed / ".agent-toolkit-managed-temp.json").write_text("{}\n", encoding="utf-8")
     return result
-
-
-def _git_commit_initial(path: pathlib.Path, files: dict[str, str]) -> None:
-    """指定ファイルを追加してinitial commitを作成する。"""
-    for rel, content in files.items():
-        target = path / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-    subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
-    subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
 
 
 def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:

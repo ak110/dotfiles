@@ -23,6 +23,7 @@ from agent_toolkit._atk.wi.mutations import content as _mutations_content  # noq
 from agent_toolkit._atk.wi.mutations import targets as _mutations_targets  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import file_lock as _file_lock  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import private_notes as _private_notes
+from agent_toolkit._testing import git_repository
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 
@@ -268,11 +269,7 @@ class TestReadiness:
     def test_legacy_local_path_matches_canonical_readiness_target(self, tmp_path: pathlib.Path) -> None:
         """着手可否判定は旧パス形とURL形を同じ対象リポジトリへ分類する。"""
         local_repo = tmp_path / "repo"
-        subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
-        subprocess.run(
-            ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/repo.git"],
-            check=True,
-        )
+        git_repository.init_repository(local_repo, origin="git@github.com:example/repo.git")
         _write_awi(tmp_path, "legacy.md", target_repo=str(local_repo))
         _write_awi(tmp_path, "current.md", target_repo="github.com/example/repo")
         _write_awi(tmp_path, "missing.md", target_repo=str(tmp_path / "missing"))
@@ -488,11 +485,7 @@ class TestReadiness:
     ) -> None:
         """同じ旧パス形の外部依存は着手可否計算全体で1回だけGit解決する。"""
         external_repo = tmp_path / "external-repo"
-        subprocess.run(["git", "init", str(external_repo)], check=True, capture_output=True)
-        subprocess.run(
-            ["git", "-C", str(external_repo), "remote", "add", "origin", "git@github.com:example/external.git"],
-            check=True,
-        )
+        git_repository.init_repository(external_repo, origin="git@github.com:example/external.git")
         legacy_dependency = f"    kind: external-repo-entry\n    filenames:\n      - done.md\n    target_repo: {external_repo}"
         _write_awi(tmp_path, "first.md", legacy_dependency=legacy_dependency)
         _write_awi(tmp_path, "second.md", legacy_dependency=legacy_dependency)
@@ -749,11 +742,7 @@ class TestIterEntriesRepoFilter:
     ) -> None:
         """生のローカルパス指定でも旧パス形とURL形を含み、不在のパスは除く。"""
         local_repo = tmp_path / "repo"
-        subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
-        subprocess.run(
-            ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/repo.git"],
-            check=True,
-        )
+        git_repository.init_repository(local_repo, origin="git@github.com:example/repo.git")
         _write_uwi(tmp_path, "legacy.md", target_repo=str(local_repo), question="旧形式")
         _write_uwi(tmp_path, "current.md", target_repo="github.com/example/repo", question="現行形式")
         _write_uwi(tmp_path, "missing.md", target_repo=str(tmp_path / "missing"), question="対象外")
@@ -1008,17 +997,6 @@ class TestCommitAndPushRetry:
 class TestExplicitUpstreamIntegration:
     """実Gitで共有`FETCH_HEAD`とユーザー設定から独立した同期対象を検証する。"""
 
-    @staticmethod
-    def _git(root: pathlib.Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        """`root`で実Gitを実行し、診断可能な出力を保持して結果を返す。"""
-        return subprocess.run(
-            ["git", *args],
-            cwd=root,
-            check=check,
-            capture_output=True,
-            text=True,
-        )
-
     def _make_remote_and_clones(
         self,
         tmp_path: pathlib.Path,
@@ -1028,27 +1006,25 @@ class TestExplicitUpstreamIntegration:
         seed = tmp_path / "seed"
         old_copy = tmp_path / "old-copy"
         new_copy = tmp_path / "new-copy"
-        self._git(tmp_path, "init", "--bare", "--initial-branch=main", str(remote))
-        self._git(tmp_path, "init", "--initial-branch=main", str(seed))
-        self._git(seed, "config", "user.email", "test@example.com")
-        self._git(seed, "config", "user.name", "test")
+        git_repository.init_bare_repository(remote)
+        git_repository.init_repository(seed, initial_branch="main")
         (seed / "queue.md").write_text("initial\n", encoding="utf-8")
-        self._git(seed, "add", "queue.md")
-        self._git(seed, "commit", "-m", "initial")
-        self._git(seed, "remote", "add", "origin", str(remote))
-        self._git(seed, "push", "-u", "origin", "main")
-        self._git(seed, "switch", "-c", "side")
+        git_repository.run_git(seed, "add", "queue.md")
+        git_repository.run_git(seed, "commit", "-m", "initial")
+        git_repository.run_git(seed, "remote", "add", "origin", str(remote))
+        git_repository.run_git(seed, "push", "-u", "origin", "main")
+        git_repository.run_git(seed, "switch", "-c", "side")
         (seed / "side.md").write_text("side\n", encoding="utf-8")
-        self._git(seed, "add", "side.md")
-        self._git(seed, "commit", "-m", "side")
-        self._git(seed, "push", "-u", "origin", "side")
-        self._git(seed, "switch", "main")
-        self._git(tmp_path, "clone", str(remote), str(old_copy))
-        self._git(tmp_path, "clone", str(remote), str(new_copy))
+        git_repository.run_git(seed, "add", "side.md")
+        git_repository.run_git(seed, "commit", "-m", "side")
+        git_repository.run_git(seed, "push", "-u", "origin", "side")
+        git_repository.run_git(seed, "switch", "main")
+        git_repository.run_git(tmp_path, "clone", str(remote), str(old_copy))
+        git_repository.run_git(tmp_path, "clone", str(remote), str(new_copy))
         (seed / "queue.md").write_text("updated\n", encoding="utf-8")
-        self._git(seed, "add", "queue.md")
-        self._git(seed, "commit", "-m", "update")
-        self._git(seed, "push")
+        git_repository.run_git(seed, "add", "queue.md")
+        git_repository.run_git(seed, "commit", "-m", "update")
+        git_repository.run_git(seed, "push")
         return remote, old_copy, new_copy
 
     def test_explicit_upstream_succeeds_when_fetch_head_has_multiple_candidates(
@@ -1059,7 +1035,7 @@ class TestExplicitUpstreamIntegration:
         """複数fetch候補ではpullによる再現は失敗し、明示upstream同期は成功する。"""
         _remote, old_copy, new_copy = self._make_remote_and_clones(tmp_path)
 
-        old_result = self._git(
+        old_result = git_repository.run_git(
             old_copy,
             "-c",
             "pull.rebase=true",
@@ -1077,18 +1053,21 @@ class TestExplicitUpstreamIntegration:
         def run_with_competing_fetch(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
             original_run_git(args, cwd, forward_error_output=forward_error_output)
             if args == ["fetch"]:
-                self._git(cwd, "fetch", "origin", "main", "side")
+                git_repository.run_git(cwd, "fetch", "origin", "main", "side")
 
         monkeypatch.setattr(_common, "_run_git", run_with_competing_fetch)
         with _common._repo_lock(new_copy):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull(new_copy)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert self._git(new_copy, "rev-parse", "HEAD").stdout == self._git(new_copy, "rev-parse", "@{u}").stdout
+        assert (
+            git_repository.run_git(new_copy, "rev-parse", "HEAD").stdout
+            == git_repository.run_git(new_copy, "rev-parse", "@{u}").stdout
+        )
 
     def test_sync_fails_when_upstream_is_unset(self, tmp_path: pathlib.Path) -> None:
         """upstream未設定では暗黙の別refへ退避せず同期を失敗させる。"""
         _remote, old_copy, _new_copy = self._make_remote_and_clones(tmp_path)
-        self._git(old_copy, "branch", "--unset-upstream")
+        git_repository.run_git(old_copy, "branch", "--unset-upstream")
 
         with pytest.raises(subprocess.CalledProcessError), _common._repo_lock(old_copy):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull(old_copy)  # pylint: disable=protected-access  # noqa: SLF001
@@ -1100,12 +1079,12 @@ class TestExplicitUpstreamIntegration:
     ) -> None:
         """直近のFETCH_HEADだけでは再利用せず、upstreamがHEADの祖先の場合だけ再利用する。"""
         _remote, behind, ahead = self._make_remote_and_clones(tmp_path)
-        self._git(behind, "fetch")
-        self._git(ahead, "config", "user.email", "test@example.com")
-        self._git(ahead, "config", "user.name", "test")
+        git_repository.run_git(behind, "fetch")
+        git_repository.run_git(ahead, "config", "user.email", "test@example.com")
+        git_repository.run_git(ahead, "config", "user.name", "test")
         (ahead / "local.md").write_text("local\n", encoding="utf-8")
-        self._git(ahead, "add", "local.md")
-        self._git(ahead, "commit", "-m", "local")
+        git_repository.run_git(ahead, "add", "local.md")
+        git_repository.run_git(ahead, "commit", "-m", "local")
 
         for repo in (behind, ahead):
             fetch_head = repo / ".git" / "FETCH_HEAD"
@@ -1123,7 +1102,7 @@ class TestExplicitUpstreamIntegration:
     ) -> None:
         """ローカル管理リポジトリはFETCH_HEADが直近でも再利用しない。"""
         local_only = tmp_path / "local-only"
-        self._git(tmp_path, "init", "--initial-branch=main", str(local_only))
+        git_repository.init_repository(local_only, initial_branch="main")
         (local_only / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         fetch_head = local_only / ".git" / "FETCH_HEAD"
         fetch_head.touch()
@@ -1139,12 +1118,7 @@ class TestExplicitUpstreamIntegration:
     ) -> None:
         """upstreamを解決できない場合はFETCH_HEADが直近でも再利用しない。"""
         repo = tmp_path / "untracked"
-        self._git(tmp_path, "init", "--initial-branch=main", str(repo))
-        self._git(repo, "config", "user.email", "test@example.com")
-        self._git(repo, "config", "user.name", "test")
-        (repo / "entry.md").write_text("entry\n", encoding="utf-8")
-        self._git(repo, "add", "entry.md")
-        self._git(repo, "commit", "-m", "initial")
+        git_repository.init_repository(repo, initial_branch="main", files={"entry.md": "entry\n"}, commit_message="initial")
         fetch_head = repo / ".git" / "FETCH_HEAD"
         fetch_head.touch()
         os.utime(fetch_head, (1000.0, 1000.0))
@@ -1217,7 +1191,7 @@ class TestPrivateNotesAutoCreate:
         exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         assert exclude.splitlines().count(_file_lock.PLAN_LOCK_IGNORE_PATTERN) == 1
         assert not (root / ".gitignore").exists()
-        assert not _git_stdout(root, "status", "--porcelain")
+        assert not git_repository.git_output(root, "status", "--porcelain")
 
     def test_wi_list_initializes_local_repo_without_git_output(
         self,
@@ -1251,15 +1225,11 @@ class TestPrivateNotesAutoCreate:
         """計画ロックの除外を版管理の対象外へ記録し、commitも作業ツリーの差分も生じない。"""
         home = tmp_path / "home"
         root = home / "private-notes"
-        root.mkdir(parents=True)
-        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
+        git_repository.init_repository(root)
         (root / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         (root / "README.md").write_text("base\n", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
-        subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
-        original_head = _git_stdout(root, "rev-parse", "HEAD")
+        git_repository.commit_all(root, "base")
+        original_head = git_repository.git_output(root, "rev-parse", "HEAD")
         lock = root / "plans" / ".agent-toolkit-plan-create.lock"
         lock.parent.mkdir(parents=True)
         lock.touch()
@@ -1268,29 +1238,25 @@ class TestPrivateNotesAutoCreate:
         exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         assert exclude.splitlines().count(_file_lock.PLAN_LOCK_IGNORE_PATTERN) == 1
         assert not (root / ".gitignore").exists()
-        assert _git_stdout(root, "rev-parse", "HEAD") == original_head
-        assert not _git_stdout(root, "status", "--porcelain")
+        assert git_repository.git_output(root, "rev-parse", "HEAD") == original_head
+        assert not git_repository.git_output(root, "status", "--porcelain")
 
     def test_ensure_environment_keeps_recorded_gitignore_pattern(self, tmp_path: pathlib.Path) -> None:
         """`.gitignore`へ記録済みの管理パターンとユーザーの変更を、commitも削除もしない。"""
         home = tmp_path / "home"
         root = home / "private-notes"
-        root.mkdir(parents=True)
-        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
+        git_repository.init_repository(root)
         (root / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         (root / ".gitignore").write_text(f"tracked\n{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
-        subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
-        original_head = _git_stdout(root, "rev-parse", "HEAD")
+        git_repository.commit_all(root, "base")
+        original_head = git_repository.git_output(root, "rev-parse", "HEAD")
         (root / ".gitignore").write_text(
             f"tracked\nuser-change\n{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n",
             encoding="utf-8",
         )
 
         assert _common._ensure_environment(home) == root  # pylint: disable=protected-access  # noqa: SLF001
-        assert _git_stdout(root, "rev-parse", "HEAD") == original_head
+        assert git_repository.git_output(root, "rev-parse", "HEAD") == original_head
         assert (root / ".gitignore").read_text(encoding="utf-8") == (
             f"tracked\nuser-change\n{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n"
         )
@@ -1306,25 +1272,9 @@ def _init_legacy_repo(root: pathlib.Path, entries: dict[str, str]) -> None:
     remote未設定を示すマーカーを置き、移行処理のpull・pushをスキップさせる。
     `entries`はrepo root相対パスと本文の対応とする。
     """
-    root.mkdir(parents=True)
-    subprocess.run(["git", "init"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
+    git_repository.init_repository(root, files={".gitignore": f"{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n", **entries})
     (root / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
-    (root / ".gitignore").write_text(f"{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n", encoding="utf-8")
-    for relative, text in entries.items():
-        path = root / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
-    subprocess.run(["git", "commit", "-m", "init"], cwd=root, check=True)
-
-
-def _git_stdout(root: pathlib.Path, *args: str) -> str:
-    """`root`でgitコマンドを実行し標準出力を返す。"""
-    result = subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True)
-    assert isinstance(result.stdout, str)
-    return result.stdout
+    git_repository.commit_all(root, "init")
 
 
 class TestMigrateLegacyLayout:
@@ -1360,31 +1310,31 @@ class TestMigrateLegacyLayout:
             "question_type: free-form",
         ]
         assert "3件を平坦レイアウトへ移行" in capsys.readouterr().err
-        assert not _git_stdout(root, "status", "--porcelain")
+        assert not git_repository.git_output(root, "status", "--porcelain")
 
     def test_is_noop_after_migration(self, tmp_path: pathlib.Path) -> None:
         """移行後の再実行では追加のコミットを生成しない。"""
         root = tmp_path / "private-notes"
         _init_legacy_repo(root, {"feedback/inbox/20260101-000000-001.md": _LEGACY_AWI})
         _common._ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
-        head = _git_stdout(root, "rev-parse", "HEAD")
+        head = git_repository.git_output(root, "rev-parse", "HEAD")
 
         _common._ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert _git_stdout(root, "rev-parse", "HEAD") == head
+        assert git_repository.git_output(root, "rev-parse", "HEAD") == head
 
     def test_removes_empty_legacy_dirs_without_commit(self, tmp_path: pathlib.Path) -> None:
         """エントリを含まない旧ディレクトリだけがある場合は削除のみで完結する。"""
         root = tmp_path / "private-notes"
         _init_legacy_repo(root, {"inbox/20260101-000000-001.md": "---\ntarget_repo: r\ntype: awi\n---\n\n本文\n"})
         (root / "feedback" / "inbox").mkdir(parents=True)
-        head = _git_stdout(root, "rev-parse", "HEAD")
+        head = git_repository.git_output(root, "rev-parse", "HEAD")
 
         _common._ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
         assert not (root / "feedback").exists()
-        assert _git_stdout(root, "rev-parse", "HEAD") == head
-        assert not _git_stdout(root, "status", "--porcelain")
+        assert git_repository.git_output(root, "rev-parse", "HEAD") == head
+        assert not git_repository.git_output(root, "status", "--porcelain")
 
     def test_aborts_without_changes_when_entry_is_broken(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -1665,13 +1615,13 @@ class TestPullWithRecentNotice:
         """fetch後のff-only統合失敗直後は、直近mtimeでも再試行して分岐をrebaseする。"""
         integration = TestExplicitUpstreamIntegration()
         _remote, local, _other = integration._make_remote_and_clones(tmp_path)  # pylint: disable=protected-access
-        integration._git(local, "config", "user.email", "test@example.com")  # pylint: disable=protected-access
-        integration._git(local, "config", "user.name", "test")  # pylint: disable=protected-access
+        git_repository.run_git(local, "config", "user.email", "test@example.com")
+        git_repository.run_git(local, "config", "user.name", "test")
         (local / "local.md").write_text("local\n", encoding="utf-8")
-        integration._git(local, "add", "local.md")  # pylint: disable=protected-access
-        integration._git(local, "commit", "-m", "local")  # pylint: disable=protected-access
-        integration._git(local, "fetch")  # pylint: disable=protected-access
-        merge_result = integration._git(local, "merge", "--ff-only", "@{u}", check=False)  # pylint: disable=protected-access
+        git_repository.run_git(local, "add", "local.md")
+        git_repository.run_git(local, "commit", "-m", "local")
+        git_repository.run_git(local, "fetch")
+        merge_result = git_repository.run_git(local, "merge", "--ff-only", "@{u}", check=False)
         assert merge_result.returncode != 0
         fetch_head = local / ".git" / "FETCH_HEAD"
         fetch_mtime = fetch_head.stat().st_mtime

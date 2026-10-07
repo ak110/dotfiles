@@ -20,6 +20,7 @@ from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-posi
 from agent_toolkit._atk.wi import frontmatter, listing  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import legacy as legacy_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common.next_action import ActionableError  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import git_repository
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._testing.git_fakes import make_current_worktree_fake as _make_current_worktree_fake  # noqa: E402
@@ -1779,15 +1780,9 @@ def _git_repository_with_old_later_commit(root: pathlib.Path) -> str:
     """`origin`を持ち、基準commitより後に12時間以上前のcommitを持つGitリポジトリを作成し、基準commitを返す。"""
     old = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=2)).isoformat()
     env = {**os.environ, "GIT_AUTHOR_DATE": old, "GIT_COMMITTER_DATE": old}
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
-    subprocess.run(["git", "-C", str(root), "config", "user.name", "test"], check=True)
-    subprocess.run(["git", "-C", str(root), "remote", "add", "origin", "https://github.com/example/stale.git"], check=True)
-    subprocess.run(["git", "-C", str(root), "commit", "-q", "--allow-empty", "-m", "base"], check=True, env=env)
-    base = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
-    ).stdout.strip()
-    subprocess.run(["git", "-C", str(root), "commit", "-q", "--allow-empty", "-m", "later"], check=True, env=env)
+    git_repository.init_repository(root, origin="https://github.com/example/stale.git")
+    base = git_repository.commit_all(root, "base", env=env)
+    git_repository.commit_all(root, "later", env=env)
     return base
 
 

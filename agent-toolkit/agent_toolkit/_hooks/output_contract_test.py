@@ -13,8 +13,8 @@ import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
-from agent_toolkit._hooks.output_contract import validate_hook_output
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
+from agent_toolkit._testing.hook_output_contract import validate_hook_output
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _HOOK_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"

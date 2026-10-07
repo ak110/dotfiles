@@ -487,3 +487,47 @@ def test_agent_toolkit_allows_git_subprocess_in_git_layer(_isolate_repo_root: pa
     )
 
     assert check_script_imports.main() == 0
+
+
+def _write_toolkit_pyproject(root: pathlib.Path) -> None:
+    """一時ツリーへ実行時の依存と開発用の依存グループを持つ`agent-toolkit/pyproject.toml`を書く。"""
+    (root / "agent-toolkit/pyproject.toml").write_text(
+        '[project]\ndependencies = ["pyyaml", "pyfltr>=3"]\n\n'
+        '[dependency-groups]\ndev = ["jsonschema>=4", "pyfltr[python]>=3", "hypothesis"]\n',
+        encoding="utf-8",
+    )
+
+
+def test_agent_toolkit_dev_dependency_import_is_reported(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """本番のコードとスキル付属スクリプトが開発用の依存だけにあるパッケージをimportすると、行と次の操作を示して失敗する。"""
+    _write_toolkit_pyproject(_isolate_repo_root)
+    for relative_path, import_line in (
+        ("_common/schema.py", "import jsonschema"),
+        ("_atk/contract.py", "from jsonschema import Draft202012Validator"),
+        ("../skills/example/scripts/tool.py", "import hypothesis.strategies"),
+    ):
+        _write_toolkit_module(_isolate_repo_root, relative_path, f'"""対象。"""\n\n{import_line}\n')
+
+    assert check_script_imports.main() == 1
+    reported = [line for line in capsys.readouterr().err.splitlines() if "開発用の依存グループにだけある" in line]
+    # `from ... import`は同じ行を1件だけ報告する。
+    assert len(reported) == 3
+    for location in (
+        "agent_toolkit/_common/schema.py:3:",
+        "agent_toolkit/_atk/contract.py:3:",
+        "skills/example/scripts/tool.py:3:",
+    ):
+        assert any(f"{_TOOLKIT_PREFIX}/{location}" in line for line in reported), location
+    assert all("次の操作: テストだけが使うコードなら`agent-toolkit/agent_toolkit/_testing/`へ移す" in line for line in reported)
+
+
+def test_agent_toolkit_dev_dependency_import_is_accepted_in_testing_and_tests(_isolate_repo_root: pathlib.Path) -> None:
+    """`_testing`配下・テスト、実行時の依存にもあるパッケージ、配布名とimport名が異なる実行時の依存は失敗にしない。"""
+    _write_toolkit_pyproject(_isolate_repo_root)
+    _write_toolkit_module(_isolate_repo_root, "_testing/contract.py", '"""対象。"""\n\nimport jsonschema\n')
+    _write_toolkit_module(_isolate_repo_root, "_common/schema_test.py", '"""対象。"""\n\nimport hypothesis\n')
+    _write_toolkit_module(_isolate_repo_root, "_common/tools.py", '"""対象。"""\n\nimport pyfltr\nimport yaml\n')
+
+    assert check_script_imports.main() == 0

@@ -8,54 +8,6 @@
   },
   "groups": [
     {
-      "fingerprint": "sha256:0b4e8fd18886e4112d9bfd26bccf920494ccd385eb69bad1cc242694703c3393",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/wi/uwi_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:0be979689c1c309f52661abb53872076158af83efce4c15a6852b0373c76b951",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:0efbc0202831cb354a6ccdd633e561a0d067ce517be974ce512f53e0734fd35b",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/wi/extras_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:162b26abd8da7f75cb3a91d9f3f426c52d794d04e64febbd3a04c519a6c4fc6b",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/extras_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:320b0fe78675cdd6a9a285ad802fecf8f7194bce418ac26ab9dfa9641bfaaaf9",
       "lines": 10,
       "occurrences": [
@@ -95,26 +47,6 @@
       "occurrences": [
         {
           "path": "agent_toolkit/atk_test.py",
-          "count": 3
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:5f433b6cd2173b51772c2de88d91ae96f5e369f24cbc3c352ef094e986f447b7",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 3
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:609c91ba1946cb3dde332f49f81153f75909aa1ce6f1eb72c4512edda8e657aa",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
           "count": 3
         }
       ]
@@ -160,16 +92,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:8a37606c42f327803706d9719d668107a0e807f14f301ae4ffd42e66e5f335fb",
-      "lines": 13,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:8a8bcf4fa2b524160d9e7dbaabe31e3760ab85fd4bbc08b9ed0366d2fac0dd94",
       "lines": 15,
       "occurrences": [
@@ -198,16 +120,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:b45641f93deb5548b6941dc2bc543b7dfca94202468706d3a17b13f1164a2994",
-      "lines": 13,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/extras_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:b6c54a8a28a6e32d3a944cfcecb4db444be30750a2af57fb327e3e2cb2bfde59",
       "lines": 10,
       "occurrences": [
@@ -228,72 +140,12 @@
       ]
     },
     {
-      "fingerprint": "sha256:b89fca085b7d8806ae6339775ee44450962d0853f685c84a1183c3c32051820e",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:b8d4a3f58b49d1713c83299648fcf71d8bf62f6c6cfdd016bae66da05600e102",
-      "lines": 12,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 4
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:ccfef40fca8f33b20443af5aad640ead6853b7e959d27a81af98a97579fe63a3",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 12
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:ddd32210dfdc954618c63c7dffcaaddb5935adf60d66bc2f9c08e89fb978e280",
       "lines": 10,
       "occurrences": [
         {
           "path": "agent_toolkit/_hooks/session_end_cleanup_test.py",
           "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:e40074acec7246e5214cd6fdac70b42383e247bdd384a2cbce436058c8ef1358",
-      "lines": 12,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/wait_ci_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:e6177b8aa7ed11b8bcb9f89db1292674ae66dd31ced4ccabf253b40b646f9909",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 3
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:ed83849fb7e4dad099a5a796124e1cf9d80c7e7f78e63e84cb9cbe1124f35b7f",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 8
         }
       ]
     },
@@ -332,16 +184,6 @@
         {
           "path": "agent_toolkit/_atk/serve/cli_test.py",
           "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:ffa6c86e232ea67992280db477890f26f13b029249d486951d40b1c06988f7f5",
-      "lines": 12,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/add_test.py",
-          "count": 3
         }
       ]
     }

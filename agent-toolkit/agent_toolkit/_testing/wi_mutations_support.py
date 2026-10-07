@@ -2,7 +2,6 @@
 
 import contextlib
 import pathlib
-import subprocess
 
 import pytest
 
@@ -11,6 +10,7 @@ from agent_toolkit._atk.wi.mutations import content as mutation_content
 from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
 from agent_toolkit._atk.wi.mutations import targets as mutation_targets
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
+from agent_toolkit._testing import git_repository
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
@@ -122,61 +122,6 @@ def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _init_notes_with_origin(notes: pathlib.Path, remote: pathlib.Path) -> None:
     """private-notesをGitリポジトリにして全ファイルを基準commitへ記録し、bareの`origin`へpushする。"""
-    subprocess.run(
-        ["git", "init", "--initial-branch=main"],
-        cwd=notes,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
-    )
-    for key, value in (("user.name", "queue-test"), ("user.email", "queue-test@example.invalid")):
-        subprocess.run(
-            ["git", "config", key, value],
-            cwd=notes,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=True,
-        )
-    subprocess.run(
-        ["git", "add", "."], cwd=notes, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "base"],
-        cwd=notes,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
-    )
-    subprocess.run(
-        ["git", "init", "--bare", "--initial-branch=main", str(remote)],
-        cwd=remote.parent,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
-    )
-    subprocess.run(
-        ["git", "remote", "add", "origin", str(remote)],
-        cwd=notes,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
-    )
-    subprocess.run(
-        ["git", "push", "--set-upstream", "origin", "main"],
-        cwd=notes,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
-    )
+    git_repository.init_repository(notes, initial_branch="main", origin=str(remote), commit_message="base")
+    git_repository.init_bare_repository(remote)
+    git_repository.run_git(notes, "push", "--set-upstream", "origin", "main")

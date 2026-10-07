@@ -4,7 +4,6 @@ import argparse
 import datetime
 import os
 import pathlib
-import subprocess
 import types
 import typing
 
@@ -17,10 +16,10 @@ from agent_toolkit._atk import review_table as _review_table
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import common as _common
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
-from agent_toolkit._plan import fixture as _plan_fixture
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import owner_records as _owner_records
-from agent_toolkit._testing import review_bodies
+from agent_toolkit._testing import git_repository, review_bodies
+from agent_toolkit._testing import plan_fixture as _plan_fixture
 
 
 @pytest.fixture(autouse=True)
@@ -39,43 +38,38 @@ _OWNER_SESSION = "plans-test-session"
 """テスト中に計画の所有記録へ書かれるセッション識別子。"""
 
 
-def _git(root: pathlib.Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """テスト用Gitコマンドを実行する。"""
-    return subprocess.run(["git", *args], cwd=root, check=check, capture_output=True, text=True)
-
-
 def _init_local_notes(root: pathlib.Path) -> None:
     """remote不要のlocal-only private-notesを初期化する。"""
     root.mkdir()
-    _git(root, "init", "--initial-branch=main")
-    _git(root, "config", "user.name", "plans-test")
-    _git(root, "config", "user.email", "plans-test@example.invalid")
-    _git(root, "config", "core.quotePath", "false")
+    git_repository.init_repository(root, initial_branch="main")
+    git_repository.run_git(root, "config", "user.name", "plans-test")
+    git_repository.run_git(root, "config", "user.email", "plans-test@example.invalid")
+    git_repository.run_git(root, "config", "core.quotePath", "false")
     (root / ".agent-toolkit-local-only").touch()
     for state in ("inbox", "processing", "hold", "adopted", "rejected"):
         (root / state / ".gitkeep").parent.mkdir(parents=True)
         (root / state / ".gitkeep").touch()
-    _git(root, "add", ".")
-    _git(root, "commit", "-m", "base")
+    git_repository.run_git(root, "add", ".")
+    git_repository.run_git(root, "commit", "-m", "base")
 
 
 def _init_remote_notes(root: pathlib.Path, remote: pathlib.Path) -> None:
     """upstream付きprivate-notesを初期化する。"""
     _init_local_notes(root)
     (root / ".agent-toolkit-local-only").unlink()
-    _git(root, "add", "-u")
-    _git(root, "commit", "-m", "enable remote")
-    _git(remote.parent, "init", "--bare", "--initial-branch=main", str(remote))
-    _git(root, "remote", "add", "origin", str(remote))
-    _git(root, "push", "--set-upstream", "origin", "main")
+    git_repository.run_git(root, "add", "-u")
+    git_repository.run_git(root, "commit", "-m", "enable remote")
+    git_repository.init_bare_repository(remote)
+    git_repository.run_git(root, "remote", "add", "origin", str(remote))
+    git_repository.run_git(root, "push", "--set-upstream", "origin", "main")
 
 
 def _clone_notes(remote: pathlib.Path, clone: pathlib.Path) -> None:
     """並行更新用のprivate-notes cloneを作成する。"""
-    _git(remote.parent, "clone", str(remote), str(clone))
-    _git(clone, "config", "user.name", "plans-test-clone")
-    _git(clone, "config", "user.email", "plans-test-clone@example.invalid")
-    _git(clone, "config", "core.quotePath", "false")
+    git_repository.run_git(remote.parent, "clone", str(remote), str(clone))
+    git_repository.run_git(clone, "config", "user.name", "plans-test-clone")
+    git_repository.run_git(clone, "config", "user.email", "plans-test-clone@example.invalid")
+    git_repository.run_git(clone, "config", "core.quotePath", "false")
 
 
 def _preserved_times(path: pathlib.Path) -> tuple[float | None, int]:
@@ -112,8 +106,8 @@ def _create_saved_plan(notes: pathlib.Path, relative: pathlib.Path) -> tuple[pat
     main.parent.mkdir(parents=True)
     main.write_text("# saved main\n", encoding="utf-8")
     detail.write_text("# saved detail\n", encoding="utf-8")
-    _git(notes, "add", "plans")
-    _git(notes, "commit", "-m", "add saved plan")
+    git_repository.run_git(notes, "add", "plans")
+    git_repository.run_git(notes, "commit", "-m", "add saved plan")
     return main, detail
 
 
@@ -188,13 +182,13 @@ def test_checkout_syncs_remote_before_reading_saved_bundle(tmp_path: pathlib.Pat
     _init_remote_notes(notes, remote)
     relative = pathlib.Path("2026/08/30-remote同期-d4f9.md")
     saved_main, _detail = _create_saved_plan(notes, relative)
-    _git(notes, "push")
+    git_repository.run_git(notes, "push")
     _clone_notes(remote, other)
     other_main = other / "plans" / relative
     other_main.write_text("# remote latest\n", encoding="utf-8")
-    _git(other, "add", "plans")
-    _git(other, "commit", "-m", "update saved plan")
-    _git(other, "push")
+    git_repository.run_git(other, "add", "plans")
+    git_repository.run_git(other, "commit", "-m", "update saved plan")
+    git_repository.run_git(other, "push")
 
     copied = _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
 
@@ -245,7 +239,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     assert first["kind"] == "ci-review"
     assert saved.is_file()
     assert not working.exists()
-    assert _git(notes, "status", "--short").stdout == ""
+    assert git_repository.run_git(notes, "status", "--short").stdout == ""
     _clone_notes(remote, clone)
     assert (clone / "plans" / saved_relative).read_bytes() == saved.read_bytes()
 
@@ -284,8 +278,8 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     assert second["plan_file"] == saved_relative.as_posix()
     assert not working.exists()
     assert _atk_plans._read_checkout_record(pathlib.Path(name)) is None  # pylint: disable=protected-access
-    assert _git(notes, "status", "--short").stdout == ""
-    _git(clone, "pull", "--ff-only")
+    assert git_repository.run_git(notes, "status", "--short").stdout == ""
+    git_repository.run_git(clone, "pull", "--ff-only")
     assert (clone / "plans" / saved_relative).read_bytes() == saved.read_bytes()
     assert saved.read_text().count("exec-review") == 2
     assert saved.name == f"ci-{first_cause_oid}.exec-review.tsv"
@@ -373,8 +367,8 @@ def test_commit_ci_review_rejects_saved_change_after_checkout(tmp_path: pathlib.
     saved = _plan_file.new_plans_root(notes) / saved_relative
     saved.parent.mkdir(parents=True)
     _review_table.init(saved)
-    _git(notes, "add", saved.relative_to(notes).as_posix())
-    _git(notes, "commit", "-m", "add review")
+    git_repository.run_git(notes, "add", saved.relative_to(notes).as_posix())
+    git_repository.run_git(notes, "commit", "-m", "add review")
     (working,) = _atk_plans.checkout_plan(notes, saved_relative.as_posix(), home=home)
     _review_table.add(working, "1", "exec-review", "sample.py:1", "作業側", "詳細")
     _review_table.add(saved, "1", "exec-review", "sample.py:2", "保存側", "詳細")
@@ -397,8 +391,8 @@ def test_commit_ci_review_accepts_checked_out_saved_forty_character_name(tmp_pat
     saved = _plan_file.new_plans_root(notes) / saved_relative
     saved.parent.mkdir(parents=True)
     _review_table.init(saved)
-    _git(notes, "add", saved.relative_to(notes).as_posix())
-    _git(notes, "commit", "-m", "add legacy review")
+    git_repository.run_git(notes, "add", saved.relative_to(notes).as_posix())
+    git_repository.run_git(notes, "commit", "-m", "add legacy review")
     (working,) = _atk_plans.checkout_plan(notes, saved_relative.as_posix(), home=home)
     _review_table.add(working, "1", "exec-review", "sample.py:1", "保存済み表の更新", "詳細")
 
@@ -492,7 +486,7 @@ def test_commit_rejects_remote_saved_bundle_change_after_checkout(
     _init_remote_notes(notes, remote)
     relative = pathlib.Path("2026/08/30-remote並行変更-d4f9.md")
     saved_main, _detail = _create_saved_plan(notes, relative)
-    _git(notes, "push")
+    git_repository.run_git(notes, "push")
     _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
     working_main = _plan_file.working_plans_root(home) / saved_main.name
     working_main.write_text("# working\n", encoding="utf-8")
@@ -505,9 +499,9 @@ def test_commit_rejects_remote_saved_bundle_change_after_checkout(
             "# concurrent\n",
             encoding="utf-8",
         )
-    _git(other, "add", "plans")
-    _git(other, "commit", "-m", "concurrent plan update")
-    _git(other, "push")
+    git_repository.run_git(other, "add", "plans")
+    git_repository.run_git(other, "commit", "-m", "concurrent plan update")
+    git_repository.run_git(other, "push")
     saved_before = _atk_plans._bundle_contents(  # pylint: disable=protected-access
         _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
     )
@@ -521,7 +515,9 @@ def test_commit_rejects_remote_saved_bundle_change_after_checkout(
     assert actual == saved_before
     assert working_main.read_text(encoding="utf-8") == "# working\n"
     assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is not None  # pylint: disable=protected-access
-    assert _git(notes, "rev-parse", "HEAD").stdout != _git(notes, "rev-parse", "@{u}").stdout
+    assert (
+        git_repository.run_git(notes, "rev-parse", "HEAD").stdout != git_repository.run_git(notes, "rev-parse", "@{u}").stdout
+    )
 
 
 def test_commit_updates_checked_out_plan_and_preserves_saved_creation_time(tmp_path: pathlib.Path) -> None:
@@ -586,7 +582,7 @@ def test_commit_resumes_checked_out_plan_after_push_failure(
     _init_remote_notes(notes, remote)
     relative = pathlib.Path("2026/08/30-push再開-d4f9.md")
     saved_main, _detail = _create_saved_plan(notes, relative)
-    _git(notes, "push")
+    git_repository.run_git(notes, "push")
     _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
     working_main = _plan_file.working_plans_root(home) / saved_main.name
     working_main.write_text("# updated\n", encoding="utf-8")
@@ -607,7 +603,9 @@ def test_commit_resumes_checked_out_plan_after_push_failure(
 
     assert not working_main.exists()
     assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is None  # pylint: disable=protected-access
-    assert _git(notes, "rev-parse", "HEAD").stdout == _git(notes, "rev-parse", "@{u}").stdout
+    assert (
+        git_repository.run_git(notes, "rev-parse", "HEAD").stdout == git_repository.run_git(notes, "rev-parse", "@{u}").stdout
+    )
 
 
 def test_commit_keeps_checkout_when_diverged_push_is_deferred(
@@ -622,7 +620,7 @@ def test_commit_keeps_checkout_when_diverged_push_is_deferred(
     _init_remote_notes(notes, remote)
     relative = pathlib.Path("2026/08/30-push保留-d4f9.md")
     saved_main, _detail = _create_saved_plan(notes, relative)
-    _git(notes, "push")
+    git_repository.run_git(notes, "push")
     _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
     working_main = _plan_file.working_plans_root(home) / saved_main.name
     working_main.write_text("# working\n", encoding="utf-8")
@@ -634,9 +632,9 @@ def test_commit_keeps_checkout_when_diverged_push_is_deferred(
 
     def diverge_then_commit(private_notes, message, paths, *, skip_push: bool = False):
         other_main.write_text("# concurrent\n", encoding="utf-8")
-        _git(other, "add", "plans")
-        _git(other, "commit", "-m", "concurrent plan update")
-        _git(other, "push")
+        git_repository.run_git(other, "add", "plans")
+        git_repository.run_git(other, "commit", "-m", "concurrent plan update")
+        git_repository.run_git(other, "push")
         original(private_notes, message, paths, skip_push=skip_push)
 
     monkeypatch.setattr(_atk_git_sync, "commit_and_push", diverge_then_commit)
@@ -651,7 +649,9 @@ def test_commit_keeps_checkout_when_diverged_push_is_deferred(
     assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is not None  # pylint: disable=protected-access
     assert saved_main.read_text(encoding="utf-8") == "# working\n"
     assert unrelated.read_text(encoding="utf-8") == "dirty\n"
-    assert _git(notes, "rev-parse", "HEAD").stdout != _git(notes, "rev-parse", "@{u}").stdout
+    assert (
+        git_repository.run_git(notes, "rev-parse", "HEAD").stdout != git_repository.run_git(notes, "rev-parse", "@{u}").stdout
+    )
 
 
 def test_commit_recovers_checkout_record_without_working_bundle(
@@ -668,14 +668,14 @@ def test_commit_recovers_checkout_record_without_working_bundle(
     for path in copied:
         path.unlink()
     saved_before = {path.name: path.read_bytes() for path in (saved_main, saved_detail)}
-    head_before = _git(notes, "rev-parse", "HEAD").stdout
+    head_before = git_repository.run_git(notes, "rev-parse", "HEAD").stdout
     monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["plans", "commit", saved_main.name], home=home)
 
     assert {path.name: path.read_bytes() for path in (saved_main, saved_detail)} == saved_before
-    assert _git(notes, "rev-parse", "HEAD").stdout == head_before
+    assert git_repository.run_git(notes, "rev-parse", "HEAD").stdout == head_before
     assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is None  # pylint: disable=protected-access
 
 
@@ -697,13 +697,13 @@ def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> Non
     implementation_review.write_text('1\t"implementation-review"\n', encoding="utf-8")
     unrelated.write_text("# unrelated\n", encoding="utf-8")
     excluded.write_text("temporary\n", encoding="utf-8")
-    _git(notes, "add", "plans/2026/08/30-別計画-a1b2.md")
+    git_repository.run_git(notes, "add", "plans/2026/08/30-別計画-a1b2.md")
 
     result = _atk_plans.commit_plan(notes, relative.as_posix())
 
     assert result["plan_file"] == relative.as_posix()
-    committed = _git(notes, "show", "--format=", "--name-only", "HEAD").stdout.splitlines()
-    staged = _git(notes, "diff", "--cached", "--name-only").stdout.splitlines()
+    committed = git_repository.run_git(notes, "show", "--format=", "--name-only", "HEAD").stdout.splitlines()
+    staged = git_repository.run_git(notes, "diff", "--cached", "--name-only").stdout.splitlines()
     assert committed == [
         "plans/2026/08/30-計画保存先移行-d4f9.detail.md",
         "plans/2026/08/30-計画保存先移行-d4f9.exec-review.tsv",
@@ -977,7 +977,7 @@ def test_commit_plan_skip_push_commits_locally_without_changing_remote(tmp_path:
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
     _init_remote_notes(notes, remote)
-    remote_head_before = _git(notes, "rev-parse", "@{u}").stdout.strip()
+    remote_head_before = git_repository.run_git(notes, "rev-parse", "@{u}").stdout.strip()
     relative = pathlib.Path("2026/08/30-ローカル確定-d4f9.md")
     main = _plan_file.working_plans_root(home) / relative
     main.parent.mkdir(parents=True)
@@ -987,8 +987,8 @@ def test_commit_plan_skip_push_commits_locally_without_changing_remote(tmp_path:
 
     assert not main.exists()
     assert (notes / "plans" / relative).read_text(encoding="utf-8") == "# main\n"
-    assert _git(notes, "rev-parse", "HEAD").stdout.strip() != remote_head_before
-    assert _git(notes, "rev-parse", "@{u}").stdout.strip() == remote_head_before
+    assert git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip() != remote_head_before
+    assert git_repository.run_git(notes, "rev-parse", "@{u}").stdout.strip() == remote_head_before
 
 
 def test_commit_plan_retries_identical_destination_after_commit_failure(
@@ -1021,7 +1021,7 @@ def test_commit_plan_retries_identical_destination_after_commit_failure(
     _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
     assert not main.exists()
-    assert not _git(notes, "status", "--porcelain").stdout
+    assert not git_repository.run_git(notes, "status", "--porcelain").stdout
 
 
 def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp_path: pathlib.Path) -> None:
@@ -1075,8 +1075,8 @@ def test_commit_plan_includes_deleted_bundle_when_parent_directory_is_gone(tmp_p
     main.parent.mkdir(parents=True)
     main.write_text("# main\n", encoding="utf-8")
     detail.write_text("# detail\n", encoding="utf-8")
-    _git(notes, "add", "plans")
-    _git(notes, "commit", "-m", "add plan")
+    git_repository.run_git(notes, "add", "plans")
+    git_repository.run_git(notes, "commit", "-m", "add plan")
     main.unlink()
     detail.unlink()
     month = main.parent
@@ -1088,7 +1088,7 @@ def test_commit_plan_includes_deleted_bundle_when_parent_directory_is_gone(tmp_p
 
     _atk_plans.commit_plan(notes, relative.as_posix())
 
-    assert _git(notes, "show", "--format=", "--name-only", "HEAD").stdout.splitlines() == [
+    assert git_repository.run_git(notes, "show", "--format=", "--name-only", "HEAD").stdout.splitlines() == [
         "plans/2026/08/30-削除計画-d4f9.detail.md",
         "plans/2026/08/30-削除計画-d4f9.md",
     ]
@@ -1123,9 +1123,9 @@ def test_rewrite_references_replaces_only_matching_stem(
     _init_remote_notes(notes, remote)
     stem = "01-参照表記-1a2b"
     main, detail = _saved_plan_with_references(notes, stem)
-    _git(notes, "add", "-A")
-    _git(notes, "commit", "-m", "add saved plan")
-    _git(notes, "push")
+    git_repository.run_git(notes, "add", "-A")
+    git_repository.run_git(notes, "commit", "-m", "add saved plan")
+    git_repository.run_git(notes, "push")
 
     monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
     with pytest.raises(SystemExit, match="0"):
@@ -1148,9 +1148,9 @@ def test_rewrite_plan_references_saves_lf(tmp_path: pathlib.Path) -> None:
     stem = "01-改行保存-1a2b"
     main, _detail = _saved_plan_with_references(notes, stem)
     main.write_bytes(main.read_bytes().replace(b"\n", b"\r\n"))
-    _git(notes, "add", "-A")
-    _git(notes, "commit", "-m", "add CRLF plan")
-    _git(notes, "push")
+    git_repository.run_git(notes, "add", "-A")
+    git_repository.run_git(notes, "commit", "-m", "add CRLF plan")
+    git_repository.run_git(notes, "push")
 
     _atk_plans.rewrite_plan_references(notes)
 
@@ -1164,9 +1164,9 @@ def test_rewrite_references_replaces_reference_with_spaces_in_file_name(tmp_path
     _init_remote_notes(notes, remote)
     stem = "01-atk serve の統合-1a2b"
     main, _detail = _saved_plan_with_references(notes, stem)
-    _git(notes, "add", "-A")
-    _git(notes, "commit", "-m", "add saved plan")
-    _git(notes, "push")
+    git_repository.run_git(notes, "add", "-A")
+    git_repository.run_git(notes, "commit", "-m", "add saved plan")
+    git_repository.run_git(notes, "push")
 
     result = _atk_plans.rewrite_plan_references(notes)
 
@@ -1186,9 +1186,9 @@ def test_rewrite_references_keeps_queue_items_unchanged(tmp_path: pathlib.Path) 
     queue_item.parent.mkdir(parents=True, exist_ok=True)
     queue_text = f"---\nstatus: inbox\n---\n\n{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/09/{stem}.md\n"
     queue_item.write_text(queue_text, encoding="utf-8")
-    _git(notes, "add", "-A")
-    _git(notes, "commit", "-m", "add saved plan and queue item")
-    _git(notes, "push")
+    git_repository.run_git(notes, "add", "-A")
+    git_repository.run_git(notes, "commit", "-m", "add saved plan and queue item")
+    git_repository.run_git(notes, "push")
 
     _atk_plans.rewrite_plan_references(notes)
 
@@ -1205,9 +1205,9 @@ def test_rewrite_references_keeps_code_fence_verbatim(tmp_path: pathlib.Path) ->
     quoted = f"{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/09/{stem}.norm-texts.md"
     fence = f"### ユーザー発言1\n\n```text\n{quoted} を参照する\n```\n"
     main.write_text(f"{main.read_text(encoding='utf-8')}\n{fence}", encoding="utf-8")
-    _git(notes, "add", "-A")
-    _git(notes, "commit", "-m", "add saved plan")
-    _git(notes, "push")
+    git_repository.run_git(notes, "add", "-A")
+    git_repository.run_git(notes, "commit", "-m", "add saved plan")
+    git_repository.run_git(notes, "push")
 
     result = _atk_plans.rewrite_plan_references(notes)
 
@@ -1220,12 +1220,12 @@ def test_rewrite_references_reports_zero_without_targets(tmp_path: pathlib.Path)
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
     _init_remote_notes(notes, remote)
-    head = _git(notes, "rev-parse", "HEAD").stdout.strip()
+    head = git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
 
     result = _atk_plans.rewrite_plan_references(notes)
 
     assert result == {"plans": 0, "references": 0, "commit": None}
-    assert _git(notes, "rev-parse", "HEAD").stdout.strip() == head
+    assert git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip() == head
 
 
 def test_rewrite_references_commits_and_pushes(tmp_path: pathlib.Path) -> None:
@@ -1234,16 +1234,19 @@ def test_rewrite_references_commits_and_pushes(tmp_path: pathlib.Path) -> None:
     remote = tmp_path / "origin.git"
     _init_remote_notes(notes, remote)
     _saved_plan_with_references(notes)
-    _git(notes, "add", "-A")
-    _git(notes, "commit", "-m", "add saved plan")
-    _git(notes, "push")
-    head = _git(notes, "rev-parse", "HEAD").stdout.strip()
+    git_repository.run_git(notes, "add", "-A")
+    git_repository.run_git(notes, "commit", "-m", "add saved plan")
+    git_repository.run_git(notes, "push")
+    head = git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
 
     result = _atk_plans.rewrite_plan_references(notes)
 
     assert result["commit"] != head
-    assert _git(notes, "status", "--porcelain").stdout == ""
-    assert _git(notes, "rev-parse", "origin/main").stdout.strip() == _git(notes, "rev-parse", "HEAD").stdout.strip()
+    assert git_repository.run_git(notes, "status", "--porcelain").stdout == ""
+    assert (
+        git_repository.run_git(notes, "rev-parse", "origin/main").stdout.strip()
+        == git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
+    )
 
 
 def test_checkout_records_owning_session_without_saving_it(tmp_path: pathlib.Path) -> None:

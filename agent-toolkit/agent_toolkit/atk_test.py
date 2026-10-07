@@ -36,6 +36,7 @@ from agent_toolkit._atk.wi import common as _wi_common  # noqa: E402  # pylint: 
 from agent_toolkit._common import session_state as _session_state  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._hooks import user_prompt_submit  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import wi_bodies as _wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _FIXED_HEAD_COMMIT,
@@ -138,25 +139,16 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
     seed = tmp_path / "seed"
     notes = tmp_path / "private-notes"
     peer = tmp_path / "peer"
-    subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(origin)], check=True, capture_output=True)
-    seed.mkdir()
-    subprocess.run(["git", "init", "--initial-branch=main"], cwd=seed, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "atk-test"], cwd=seed, check=True)
-    subprocess.run(["git", "config", "user.email", "atk-test@example.invalid"], cwd=seed, check=True)
-    (seed / "inbox").mkdir()
-    (seed / "inbox/.gitkeep").write_text("", encoding="utf-8")
-    subprocess.run(["git", "add", "."], cwd=seed, check=True)
-    subprocess.run(["git", "commit", "-m", "base"], cwd=seed, check=True, capture_output=True)
-    subprocess.run(["git", "remote", "add", "origin", str(origin)], cwd=seed, check=True)
-    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=seed, check=True, capture_output=True)
-    subprocess.run(["git", "clone", str(origin), str(notes)], check=True, capture_output=True)
-    subprocess.run(["git", "clone", str(origin), str(peer)], check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "atk-test"], cwd=peer, check=True)
-    subprocess.run(["git", "config", "user.email", "atk-test@example.invalid"], cwd=peer, check=True)
+    git_repository.init_bare_repository(origin)
+    git_repository.init_repository(
+        seed, initial_branch="main", origin=str(origin), files={"inbox/.gitkeep": ""}, commit_message="base"
+    )
+    git_repository.run_git(seed, "push", "-u", "origin", "main")
+    git_repository.run_git(tmp_path, "clone", str(origin), str(notes))
+    git_repository.run_git(tmp_path, "clone", str(origin), str(peer))
     _write_awi_file(peer, "remote.md")
-    subprocess.run(["git", "add", "inbox/remote.md"], cwd=peer, check=True)
-    subprocess.run(["git", "commit", "-m", "remote entry"], cwd=peer, check=True, capture_output=True)
-    subprocess.run(["git", "push"], cwd=peer, check=True, capture_output=True)
+    git_repository.commit_all(peer, "remote entry")
+    git_repository.run_git(peer, "push")
 
     for _ in range(2):
         with pytest.raises(SystemExit) as exc_info:
@@ -216,11 +208,7 @@ def test_cli_local_path_filter_counts_legacy_and_current_uwis(
     """実CLIはローカルパス指定時に旧パス形とURL形のUWIをともに数える。"""
     notes = _setup_notes(tmp_path)
     local_repo = tmp_path / "repo"
-    subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/repo.git"],
-        check=True,
-    )
+    git_repository.init_repository(local_repo, origin="git@github.com:example/repo.git")
     _write_uwi_file(notes, "legacy.md", target_repo=str(local_repo), question="旧形式")
     _write_uwi_file(notes, "current.md", target_repo="github.com/example/repo", question="現行形式")
     _write_uwi_file(notes, "other.md", target_repo="github.com/example/other", question="対象外")
@@ -942,23 +930,20 @@ def _write_awi_file(
 def _setup_notes_with_pending_commit(tmp_path: pathlib.Path, *, pending: bool = True) -> pathlib.Path:
     """upstreamより1件先行したprivate-notesのテスト用cloneを作成する。`pending=False`ではupstreamと一致させる。"""
     origin = tmp_path / "origin.git"
-    origin.mkdir()
-    subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(origin)], check=True, capture_output=True)
+    git_repository.init_bare_repository(origin)
     notes = _setup_notes(tmp_path)
-    (notes / ".gitignore").write_text("plans/.agent-toolkit-plan-create.lock\n", encoding="utf-8")
-    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(notes), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(notes), "commit", "-m", "base"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(notes), "remote", "add", "origin", str(origin)], check=True)
-    subprocess.run(["git", "-C", str(notes), "push", "-u", "origin", "main"], check=True, capture_output=True)
+    git_repository.init_repository(
+        notes,
+        initial_branch="main",
+        origin=str(origin),
+        files={".gitignore": "plans/.agent-toolkit-plan-create.lock\n"},
+        commit_message="base",
+    )
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
     if not pending:
         return notes
-    marker = notes / "pending.txt"
-    marker.write_text("pending\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True)
-    subprocess.run(["git", "-C", str(notes), "commit", "-m", "pending"], check=True, capture_output=True)
+    (notes / "pending.txt").write_text("pending\n", encoding="utf-8")
+    git_repository.commit_all(notes, "pending")
     return notes
 
 
@@ -2482,11 +2467,9 @@ class TestMainFailureNextAction:
         entry = notes / "inbox" / "entry.md"
         entry.parent.mkdir()
         entry.write_text(original, encoding="utf-8")
-        subprocess.run(["git", "-C", str(notes), "add", "-A"], check=True, capture_output=True)
-        subprocess.run(["git", "-C", str(notes), "commit", "-m", "setup"], check=True, capture_output=True)
-        rebase_dir = subprocess.run(
-            ["git", "-C", str(notes), "rev-parse", "--git-path", "rebase-merge"], check=True, capture_output=True, text=True
-        ).stdout.strip()
+        git_repository.run_git(notes, "add", "-A")
+        git_repository.run_git(notes, "commit", "-m", "setup")
+        rebase_dir = git_repository.run_git(notes, "rev-parse", "--git-path", "rebase-merge").stdout.strip()
         (notes / rebase_dir).mkdir(parents=True)
         atk_members = vars(atk)
         monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: notes)

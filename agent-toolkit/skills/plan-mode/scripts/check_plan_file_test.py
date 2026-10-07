@@ -15,9 +15,12 @@ import yaml
 from agent_toolkit._plan import (
     bundle_kinds as _bundle_kinds,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
-from agent_toolkit._plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import (
+    plan_fixture as _plan_fixture,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
 
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
@@ -28,22 +31,16 @@ _FILENAME_ERROR_MARKER = "`~/.claude/plans`直下の計画ファイル名が保�
 type _MigrationInputFactory = collections.abc.Callable[[pathlib.Path], tuple[str, str]]
 
 
-def _git(repo: pathlib.Path, *args: str) -> str:
-    """テスト用リポジトリでgitを実行して標準出力を返す。"""
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True)
-    return result.stdout.strip()
-
-
 @pytest.fixture(name="repo")
 def fixture_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
     """計画の確認に使うGitリポジトリを作成する。"""
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.email", "test@example.com")
-    _git(tmp_path, "config", "user.name", "Test")
+    git_repository.init_repository(tmp_path)
+    git_repository.git_output(tmp_path, "config", "user.email", "test@example.com")
+    git_repository.git_output(tmp_path, "config", "user.name", "Test")
     (tmp_path / "README.md").write_text("test\n", encoding="utf-8")
-    _git(tmp_path, "add", "README.md")
-    _git(tmp_path, "commit", "-qm", "base")
-    return tmp_path, _git(tmp_path, "rev-parse", "HEAD")
+    git_repository.git_output(tmp_path, "add", "README.md")
+    git_repository.git_output(tmp_path, "commit", "-qm", "base")
+    return tmp_path, git_repository.git_output(tmp_path, "rev-parse", "HEAD")
 
 
 def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool = True) -> str:
@@ -165,7 +162,7 @@ def _migration_legacy_bug_reference_input(repo: pathlib.Path) -> tuple[str, str]
 
 def _migration_legacy_two_file_id_input(repo: pathlib.Path) -> tuple[str, str]:
     """旧ID形式だけを残した二ファイル計画を返す。"""
-    main, detail = _new_format_plan(repo, _git(repo, "rev-parse", "HEAD"))
+    main, detail = _new_format_plan(repo, git_repository.git_output(repo, "rev-parse", "HEAD"))
     start = main.index(f"## {_plan_format.PLAN_H2_MATERIALS}")
     end = main.index(f"## {_plan_format.PLAN_H2_LEGACY_HISTORY}", start)
     main = main[:start] + main[end:]
@@ -176,7 +173,7 @@ def _migration_legacy_two_file_id_input(repo: pathlib.Path) -> tuple[str, str]:
 
 def _migration_legacy_materials_input(repo: pathlib.Path) -> tuple[str, str]:
     """旧形式の提示素材表を持つ二ファイル計画を返す。"""
-    main, detail = _new_format_plan(repo, _git(repo, "rev-parse", "HEAD"))
+    main, detail = _new_format_plan(repo, git_repository.git_output(repo, "rev-parse", "HEAD"))
     main = main.replace(
         _plan_fixture.TWO_FILE_ACTION_TABLE,
         _plan_fixture.human_action_table(wi=False),
@@ -401,7 +398,7 @@ def test_cli_requires_metadata_target_repo_instead_of_linked_worktree(
     """構造を判定するとき、同じGitリポジトリの別作業ツリーを対象リポジトリとして代用しない。"""
     work_dir, _base = repo
     linked_worktree = work_dir.parent / f"{work_dir.name}-linked"
-    _git(work_dir, "worktree", "add", "-q", str(linked_worktree), "HEAD")
+    git_repository.git_output(work_dir, "worktree", "add", "-q", str(linked_worktree), "HEAD")
     main_content, detail_content = human_new_format_plan(work_dir)
     plan_path = work_dir / "target-repo-plan.md"
     plan_path.write_text(main_content, encoding="utf-8")

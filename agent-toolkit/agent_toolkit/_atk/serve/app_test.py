@@ -24,6 +24,7 @@ from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve.plans import remote as serve_plan_remote
 from agent_toolkit._atk.wi import common
 from agent_toolkit._atk.wi import repo as awi_repo
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.serve_support import (
     _BATCH_TEXT,
     _BlockingSync,
@@ -677,24 +678,20 @@ async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Pat
     remote = tmp_path / "remote.git"
     notes = tmp_path / "private-notes"
 
-    def git(*args: str, cwd: pathlib.Path = tmp_path) -> str:
-        result = subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
-        return result.stdout.strip()
-
-    git("init", "--bare", "--initial-branch=main", str(remote))
-    git("clone", str(remote), str(notes))
-    git("config", "user.name", "Test", cwd=notes)
-    git("config", "user.email", "test@example.com", cwd=notes)
+    git_repository.init_bare_repository(remote)
+    git_repository.git_output(tmp_path, "clone", str(remote), str(notes))
+    git_repository.git_output(notes, "config", "user.name", "Test")
+    git_repository.git_output(notes, "config", "user.email", "test@example.com")
     inbox = notes / "inbox"
     inbox.mkdir()
     original = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n元の本文\n"
     first_content = original.replace("元の本文", "最初の編集")
     second_content = original.replace("元の本文", "次の編集")
     (inbox / "entry.md").write_text(original, encoding="utf-8")
-    git("add", ".", cwd=notes)
-    git("commit", "-m", "seed", cwd=notes)
-    git("push", "-u", "origin", "main", cwd=notes)
-    remote_before = git("--git-dir", str(remote), "rev-parse", "refs/heads/main")
+    git_repository.git_output(notes, "add", ".")
+    git_repository.git_output(notes, "commit", "-m", "seed")
+    git_repository.git_output(notes, "push", "-u", "origin", "main")
+    remote_before = git_repository.git_output(tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main")
     app = serve_app.create_app(notes, config.ServeConfig("127.0.0.1", 28766), state.ServeState(notes))
     client = app.test_client()
 
@@ -702,13 +699,15 @@ async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Pat
         response = await client.put("/api/entries/inbox/entry.md", json={"content": updated, "expected_content": previous})
         assert response.status_code == 200
     assert (inbox / "entry.md").read_text(encoding="utf-8") == second_content
-    assert git("--git-dir", str(remote), "rev-parse", "refs/heads/main") == remote_before
-    assert git("rev-parse", "HEAD", cwd=notes) != remote_before
+    assert git_repository.git_output(tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main") == remote_before
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") != remote_before
 
     response = await client.post("/api/sync", json={})
     assert response.status_code == 200
     assert await response.get_json() == {"synced": True}
-    assert git("--git-dir", str(remote), "rev-parse", "refs/heads/main") == git("rev-parse", "HEAD", cwd=notes)
+    assert git_repository.git_output(
+        tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main"
+    ) == git_repository.git_output(notes, "rev-parse", "HEAD")
 
 
 def test_operations_read_legacy_type_values_as_current_kinds(tmp_path: pathlib.Path) -> None:
