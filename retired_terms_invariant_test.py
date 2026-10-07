@@ -114,6 +114,8 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     ),
 }
 
+_REPORT_DIRECTION_TERM = "ユーザー報告"
+
 _RETIRED_TERMS = (
     _RetiredTerm(
         term="近接検証",
@@ -492,6 +494,20 @@ _RETIRED_TERMS = (
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
     ),
+    # 報告の向きを示さない呼称。「ユーザー」と「報告」を直結した語はユーザーへ届ける報告と
+    # ユーザーから寄せられた報告のどちらにも読めるため使わない。
+    # 定義は`agent-toolkit/rules/01-agent.md`「役割分担」を正とし、同文書とその生成物だけが禁止する語そのものを持つ。
+    _RetiredTerm(
+        term=_REPORT_DIRECTION_TERM,
+        replacement="ユーザーへの報告、またはユーザーからの報告",
+        allowed=(
+            # 語の使用停止を定める規定と、それを写した生成物
+            _AllowedLocation("agent-toolkit/rules/01-agent.md"),
+            _AllowedLocation(".chezmoi-source/dot_codex/AGENTS.md"),
+            # 登録した語の不在を確かめる本テスト
+            _AllowedLocation("retired_terms_invariant_test.py"),
+        ),
+    ),
 )
 
 
@@ -565,6 +581,24 @@ def test_retired_term_outside_allowed_location_is_reported(tmp_path: pathlib.Pat
         "agent-toolkit/skills/plan-mode/references/plan-file-standards.md:1: "
         "撤去した名称「近接検証」が残っている。正式名「変更範囲の検証」へ置き換える",
     ]
+
+
+def test_report_direction_term_outside_allowed_paths_is_reported(tmp_path: pathlib.Path) -> None:
+    """報告の向きを示さない語は、定義を持つ規範とその生成物の外で報告し、向きを示す言い方は報告しない。"""
+    _init_repo(
+        tmp_path,
+        {
+            "docs/note.md": f"前置き\n2026年の{_REPORT_DIRECTION_TERM}に由来する\n",
+            "docs/clean.md": "ユーザーへの報告とユーザーからの報告\n",
+            "agent-toolkit/rules/01-agent.md": f"「{_REPORT_DIRECTION_TERM}」の語は使わない\n",
+            ".chezmoi-source/dot_codex/AGENTS.md": f"「{_REPORT_DIRECTION_TERM}」の語は使わない\n",
+        },
+    )
+    terms = tuple(retired for retired in _RETIRED_TERMS if retired.term == _REPORT_DIRECTION_TERM)
+
+    violations = _find_violations(tmp_path, terms)
+
+    assert [violation.split(": ", 1)[0] for violation in violations] == ["docs/note.md:2"]
 
 
 def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -> None:
