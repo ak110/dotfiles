@@ -6,7 +6,7 @@ import typing
 
 import pytest
 
-from install_claude_sh_test import (
+from install_claude_test import (
     REPO_ROOT,
     RULES_SRC,
     _log_lines,

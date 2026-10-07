@@ -1,8 +1,13 @@
 #!/bin/bash
-# install-claude.sh - ~/.claude/rules/agent-toolkit/ に agent-toolkit ルールファイルを配置する。
+# install-claude.sh - dotfiles 全体を導入できない環境へ agent-toolkit を導入・更新する。
 #
-# 会社マシンなど dotfiles 全体を導入できない環境向け。GitHub から最新のルールファイルを
-# 一時ステージングディレクトリへダウンロードし、原子的リネームで配布先を差し替える。
+# 会社マシンなど dotfiles 全体を導入できない環境向け。次を順に行う。
+# - GitHub から最新のルールファイルを一時ステージングディレクトリへダウンロードし、
+#   原子的リネームで ~/.claude/rules/agent-toolkit/ を差し替える
+# - Claude Code と Codex へ agent-toolkit プラグインを導入・更新する
+# - agents_server の依存をウォームアップする
+# - 旧 Codex MCP 定義（User scope）を移行する
+# - ~/.local/bin/atk へラッパーを配置する
 #
 # 使い方: Claude Code、Codex、uv をインストールしたあとで以下を実行する。
 #   curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.sh | bash
@@ -188,6 +193,9 @@ raise SystemExit(1)
 PY
 }
 
+# 期待する版はGitHubのmarketplace（ak110/dotfiles）を登録したCodexが取得したmanifestから読む。
+# dotfilesのpost-applyはローカルの作業ツリーをmarketplaceとして登録し、その版を期待値にする。
+# 単体インストーラーは作業ツリーを前提にできないため、配布元の違いをそのまま残す。
 _install_codex_plugin() {
     local before_state=""
     local before_state_known=0
@@ -359,13 +367,14 @@ if set(value) - {"type", "command", "args", "timeout", "env"}:
     raise SystemExit(3)
 if value.get("type") not in (None, "stdio"):
     raise SystemExit(3)
-# argsは文字列1件の配列、timeoutは数値7200000だけを旧定義とみなす（PowerShell版と同じ契約）。
+# argsは文字列1件の配列、timeoutは数値7200000だけを旧定義とみなす。
+# 判定ケースは`pytools/_internal/legacy_codex_mcp_cases.json`にあり、PowerShell版とpytoolsの実装も同じケースでテストする。
 if value.get("command") != "codex" or value.get("args") != ["mcp-server"]:
     raise SystemExit(3)
 if value.get("timeout") not in (None, 7200000):
     raise SystemExit(3)
 # 旧installerが使う`claude mcp add`は`-e`未指定でもenvを空で書き込む。
-# 値を持つenvはユーザーが加えた設定として保持する（PowerShell版と同じ契約）。
+# 値を持つenvはユーザーが加えた設定として保持する。
 env = value.get("env")
 if env is not None and env != {}:
     raise SystemExit(3)
@@ -373,6 +382,8 @@ raise SystemExit(0)
 PY
 }
 
+# 判定できない設定では変更せずに失敗で終える（fail-closed）。dotfilesのpost-applyは同じ判定で何もせず続行するが、
+# 単体インストーラーは導入手順の全体が1回の実行であり、ユーザーが失敗の内容から設定を直して再実行できるためである。
 _migrate_legacy_codex_mcp() {
     local status
     if _legacy_user_codex_mcp_status; then

@@ -21,6 +21,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent
 RULES_SRC = REPO_ROOT / "agent-toolkit" / "rules"
 INSTALL_SH = REPO_ROOT / "install-claude.sh"
 INSTALL_PS1 = REPO_ROOT / "install-claude.ps1"
+LEGACY_CODEX_MCP_CASES = REPO_ROOT / "pytools" / "_internal" / "legacy_codex_mcp_cases.json"
 
 _COMMAND_STUB = """#!/bin/sh
 command_name=$(basename "$0")
@@ -537,10 +538,6 @@ _REGISTERED_STATES = [
         {"mcpServers": {"codex": {}}, "projects": {"/repo": {"mcpServers": {"codex": {}}}}, "projectMarker": True},
         id="user-local-project",
     ),
-    pytest.param(
-        {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "env": {"X": "1"}}}},
-        id="user-env-value",
-    ),
 ]
 
 
@@ -593,61 +590,24 @@ def test_does_not_register_user_codex_mcp_when_only_non_user_state_exists(
     assert not any("claude mcp remove" in line for line in _log_lines(stub_log))
 
 
-_LEGACY_USER_CODEX_STATES = [
-    pytest.param({"mcpServers": {"codex": {"command": "codex", "args": ["mcp-server"]}}}, id="without-type-timeout"),
-    pytest.param(
-        {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "timeout": 7200000}}},
-        id="with-managed-timeout",
-    ),
-    # 旧installerが使う`claude mcp add`が実際に生成する形。
-    pytest.param(
-        {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "env": {}}}},
-        id="with-empty-env",
-    ),
-]
-
-
-_POWERSHELL_CUSTOM_USER_CODEX_STATES = [
-    pytest.param(
-        {"mcpServers": {"codex": {"command": "codex", "args": "mcp-server"}}},
-        id="scalar-args",
-    ),
-    pytest.param(
-        {"mcpServers": {"codex": {"command": "codex", "args": ["mcp-server"], "timeout": "7200000"}}},
-        id="string-timeout",
-    ),
-]
+def _legacy_codex_mcp_cases() -> list[object]:
+    """3実装が共有する旧Codex MCP定義の判定ケースを、定義を持つ`~/.claude.json`の内容として返す。"""
+    data = json.loads(LEGACY_CODEX_MCP_CASES.read_text(encoding="utf-8"))
+    return [
+        pytest.param({"mcpServers": {"codex": case["definition"]}}, case["legacy"], id=case["name"]) for case in data["cases"]
+    ]
 
 
 @pytest.mark.parametrize("kind", _runners())
-@pytest.mark.parametrize("config", _LEGACY_USER_CODEX_STATES)
-def test_removes_exact_legacy_user_codex_mcp(
+@pytest.mark.parametrize(("config", "legacy"), _legacy_codex_mcp_cases())
+def test_legacy_codex_mcp_cases_match_installers(
     kind: str,
     config: object,
+    legacy: bool,
     tmp_path: pathlib.Path,
     rules_url: str,
 ) -> None:
-    """完全一致する旧User scope定義だけをUser scope限定で削除する。"""
-    home = tmp_path / "home"
-    home.mkdir()
-    _write_claude_config(home, config)
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
-
-    _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
-
-    assert sum("claude mcp remove --scope user codex" in line for line in _log_lines(stub_log)) == 1
-    assert not any("claude mcp add" in line for line in _log_lines(stub_log))
-
-
-@pytest.mark.parametrize("kind", _runners())
-@pytest.mark.parametrize("config", _POWERSHELL_CUSTOM_USER_CODEX_STATES)
-def test_platforms_preserve_scalar_args_and_string_timeout(
-    kind: str,
-    config: object,
-    tmp_path: pathlib.Path,
-    rules_url: str,
-) -> None:
-    """両プラットフォーム版は型に一致しないユーザー定義を旧定義として削除しない。"""
+    """両インストーラーは共有ケース表の旧定義だけをUser scope限定で削除し、それ以外の定義を保持する。"""
     home = tmp_path / "home"
     home.mkdir()
     _write_claude_config(home, config)
@@ -656,8 +616,11 @@ def test_platforms_preserve_scalar_args_and_string_timeout(
 
     _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
+    removals = sum("claude mcp remove --scope user codex" in line for line in _log_lines(stub_log))
+    assert removals == (1 if legacy else 0)
+    assert not any("claude mcp add" in line for line in _log_lines(stub_log))
+    # 削除は`claude mcp remove`へ委ね、インストーラー自身は設定ファイルを書き換えない。
     assert (home / ".claude.json").read_bytes() == before
-    assert not any("claude mcp add" in line or "claude mcp remove" in line for line in _log_lines(stub_log))
 
 
 _INVALID_STATES = [

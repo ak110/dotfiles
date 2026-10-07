@@ -1,10 +1,15 @@
 ﻿Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# install-claude.ps1 - ~/.claude/rules/agent-toolkit/ に agent-toolkit ルールファイルを配置する。
+# install-claude.ps1 - dotfiles 全体を導入できない環境へ agent-toolkit を導入・更新する。
 #
-# 会社マシンなど dotfiles 全体を導入できない環境向け。GitHub から最新のルールファイルを
-# 一時ステージングディレクトリへダウンロードし、原子的リネームで配布先を差し替える。
+# 会社マシンなど dotfiles 全体を導入できない環境向け。次を順に行う。
+# - GitHub から最新のルールファイルを一時ステージングディレクトリへダウンロードし、
+#   原子的リネームで ~/.claude/rules/agent-toolkit/ を差し替える
+# - Claude Code と Codex へ agent-toolkit プラグインを導入・更新する
+# - agents_server の依存をウォームアップする
+# - 旧 Codex MCP 定義（User scope）を移行する
+# - ~/.local/bin/atk.cmd へラッパーを配置する
 #
 # cmd からの使い方 (Claude Code、Codex、uv をインストールしたあとで実行する):
 #   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
@@ -110,6 +115,9 @@ function Get-CodexPluginState {
     }
 }
 
+# 期待する版はGitHubのmarketplace（ak110/dotfiles）を登録したCodexが取得したmanifestから読む。
+# dotfilesのpost-applyはローカルの作業ツリーをmarketplaceとして登録し、その版を期待値にする。
+# 単体インストーラーは作業ツリーを前提にできないため、配布元の違いをそのまま残す。
 function Get-CodexExpectedPluginVersion {
     $jsonLines = & codex plugin marketplace list --json 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'Codexマーケットプレイス一覧を取得できません。' }
@@ -290,7 +298,8 @@ function Get-LegacyUserCodexMcpStatus {
         if (-not ($numericTypes | Where-Object { $_.IsInstanceOfType($timeoutValue) }) -or [decimal]$timeoutValue -ne 7200000) { return 'custom' }
     }
     # 旧installerが使う`claude mcp add`は`-e`未指定でもenvを空で書き込む。
-    # 値を持つenvはユーザーが加えた設定として保持する（bash版と同じ契約）。
+    # 値を持つenvはユーザーが加えた設定として保持する。
+    # 判定ケースは`pytools/_internal/legacy_codex_mcp_cases.json`にあり、bash版とpytoolsの実装も同じケースでテストする。
     $envProperty = $definition.PSObject.Properties['env']
     if ($null -ne $envProperty -and $null -ne $envProperty.Value) {
         $envValue = $envProperty.Value
@@ -300,6 +309,8 @@ function Get-LegacyUserCodexMcpStatus {
     return 'legacy'
 }
 
+# 判定できない設定では変更せずに失敗で終える（fail-closed）。dotfilesのpost-applyは同じ判定で何もせず続行するが、
+# 単体インストーラーは導入手順の全体が1回の実行であり、ユーザーが失敗の内容から設定を直して再実行できるためである。
 function Move-LegacyCodexMcp {
     $status = Get-LegacyUserCodexMcpStatus
     if ($status -eq 'missing') {

@@ -354,7 +354,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "install_claude_sh_test.py",
+          "path": "install_claude_test.py",
           "count": 2
         }
       ]
@@ -464,7 +464,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "install_claude_sh_test.py",
+          "path": "install_claude_test.py",
           "count": 2
         }
       ]
@@ -860,7 +860,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "install_claude_sh_test.py",
+          "path": "install_claude_test.py",
           "count": 2
         }
       ]

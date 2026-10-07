@@ -473,6 +473,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         root = claude_common.find_dotfiles_root()
         if root is None:
             return _outcome(changed, notices)
+        # dotfilesの作業ツリーをmarketplaceとして登録し、その版を期待値にする。単体インストーラー
+        # （`install-claude.sh`・`install-claude.ps1`）は作業ツリーを前提にできないため、GitHubのmarketplaceを使う。
         target = _target(root)
         if target is None:
             logger.warning(log_format.format_status("codex plugins", "Codex plugin manifestが不正なためスキップ"))

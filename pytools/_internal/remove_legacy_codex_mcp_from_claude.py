@@ -40,6 +40,7 @@ def is_legacy_definition(value: object) -> bool:
     受理するフィールドの集合は移行元の実生成物を基準とする。旧installerが使う
     `claude mcp add`は`-e`を指定しない場合も`env`を空dictとして書き込むため、
     値を持たない`env`だけを受理し、値を持つ`env`はユーザーが加えた設定として保持する。
+    判定ケースは`legacy_codex_mcp_cases.json`にあり、単体インストーラー2本の判定も同じケースでテストする。
     """
     if not isinstance(value, dict) or not set(value).issubset(_ALLOWED_FIELDS):
         return False
@@ -55,7 +56,11 @@ def is_legacy_definition(value: object) -> bool:
 
 
 def run() -> bool:
-    """完全一致するUser scope旧定義だけを`claude mcp remove --scope user`で削除する。"""
+    """完全一致するUser scope旧定義だけを`claude mcp remove --scope user`で削除する。
+
+    設定を読めない場合も何もせずに終える。post-applyは他のステップを続ける必要があり、
+    判定できない設定で失敗させる単体インストーラー（fail-closed）とは扱いを分ける。
+    """
     if claude_common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
         logger.info(log_format.format_status("legacy-codex-mcp", "claude CLI 未検出のためスキップ"))
         return False
