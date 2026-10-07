@@ -39,6 +39,10 @@ pickerの保存直後とメインの受領時はどちらも本スクリプト�
 選定結果のファイル、`--work-dir`およびprivate-notesを解決できない失敗は、パスや引数を直すか、その場所を確かめる。
 次の操作は原因が分かる送出側で`InputError`へ渡し、捕捉側では固定の案内を付けない。
 
+違反が無い場合（終了コード0）だけ、標準出力へ選定の要約を書く。要約はWI総数、通常レーン数、レーンごとのWI件数・段階・
+先行レーン・実装秒数・統合秒数・WIファイル名の一覧と、`レーン: なし`の項目の一覧を持つ。受領側がレーン構成を出力ファイルを
+開かずに把握できるようにするためであり、根拠と分類の意味の検収は選定結果の本文の読解で行う。
+
 UWIの本文がリポジトリ相対パスを明示しない場合、比べるパスが無いため違反を報告しない。
 この成功はUWIの書込範囲を検証した結果ではない。パスを明示しない回答の書込範囲は、
 pickerの限定調査とメインの読解による検収が確かめる。
@@ -51,6 +55,7 @@ import collections.abc
 import dataclasses
 import functools
 import itertools
+import json
 import pathlib
 import re
 import subprocess
@@ -865,6 +870,42 @@ def _string_list(decision: dict[str, object], key: str) -> list[str]:
     return typing.cast(list[str], decision.get(key, []))
 
 
+def summary_lines(selection: dict[str, object]) -> list[str]:
+    """確認を通った選定結果から、レーン構成の要約行を返す。
+
+    WIファイル名は入力順に全件を示す。段階と先行レーンの省略は読み取り契約の省略時の値（1と空の列）で示し、
+    秒数は旧欄名（`implementation_seconds`・`integration_seconds`）の値も読む。根拠と書込対象は再掲しない。
+    """
+    items = typing.cast(list[dict[str, object]], _selection.decisions(selection) or [])
+    costs = {
+        row[_selection.LANE_KEY]: row
+        for row in typing.cast(list[dict[str, object]], _selection.lane_costs(selection) or [])
+        if isinstance(row.get(_selection.LANE_KEY), str)
+    }
+    lanes: dict[str, list[str]] = {}
+    unassigned: list[str] = []
+    for item in items:
+        awi, lane = str(item[_selection.WI_KEY]), str(item[_selection.LANE_KEY])
+        if lane == _LANE_NONE:
+            unassigned.append(awi)
+        else:
+            lanes.setdefault(lane, []).append(awi)
+    lines = [f"WI総数: {len(items)}", f"通常レーン数: {len(lanes)}"]
+    for lane, names in lanes.items():
+        row = costs.get(lane, {})
+        seconds = [
+            row.get(key, row.get(next(name for name, current in _LEGACY_SECONDS_KEYS.items() if current == key)))
+            for key in (_IMPLEMENTATION_SECONDS_KEY, _INTEGRATION_SECONDS_KEY)
+        ]
+        prior = json.dumps(row.get(_selection.PRIOR_LANES_KEY, []), ensure_ascii=False)
+        lines.append(
+            f"{lane}: WI {len(names)}件、段階 {row.get(_selection.STAGE_KEY, 1)}、先行レーン {prior}、"
+            f"実装秒数 {seconds[0]}、統合秒数 {seconds[1]}、WI {json.dumps(names, ensure_ascii=False)}"
+        )
+    lines.append(f"レーン: なし: {json.dumps(unassigned, ensure_ascii=False)}")
+    return lines
+
+
 def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
     """`--work-dir`の値か、現在のディレクトリが属するGitルートを返す。"""
     if value is not None:
@@ -907,6 +948,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
+    print("\n".join(summary_lines(load_selection(args.selection_file))))
     return 0
 
 

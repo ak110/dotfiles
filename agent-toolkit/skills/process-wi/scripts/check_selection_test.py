@@ -1,6 +1,7 @@
 """選定結果の`書込対象`がWI本文の反映先パスを覆うかの検証を確かめる。"""
 
 import argparse
+import json
 import pathlib
 import re
 import subprocess
@@ -1180,3 +1181,132 @@ def test_invalid_project_norm_config_is_input_error(
     assert _dispatch("--work-dir", str(repo), str(selection)) == 2
     error = capsys.readouterr().err
     assert str(repo / "pyproject.toml") in error and "次の操作: " in error
+
+
+def _parse_summary(output: str) -> dict[str, object]:
+    """成功時の要約行を、WI総数・通常レーン数・レーンごとの値・`レーン: なし`の一覧へ読み直す。"""
+    parsed: dict[str, object] = {"lanes": {}}
+    lanes = typing.cast(dict[str, dict[str, object]], parsed["lanes"])
+    for line in output.splitlines():
+        if line.startswith("WI総数: "):
+            parsed["total"] = int(line.removeprefix("WI総数: "))
+        elif line.startswith("通常レーン数: "):
+            parsed["lane_count"] = int(line.removeprefix("通常レーン数: "))
+        elif line.startswith("レーン: なし: "):
+            parsed["none"] = json.loads(line.removeprefix("レーン: なし: "))
+        elif found := re.fullmatch(
+            r"(\S+): WI (\d+)件、段階 (\d+)、先行レーン (\[.*?\])、実装秒数 (\S+)、統合秒数 (\S+)、WI (\[.*\])", line
+        ):
+            lanes[found[1]] = {
+                "count": int(found[2]),
+                "stage": int(found[3]),
+                "prior": json.loads(found[4]),
+                "seconds": (float(found[5]), float(found[6])),
+                "wis": json.loads(found[7]),
+            }
+    return parsed
+
+
+def _expected_summary(selection: dict[str, typing.Any]) -> dict[str, object]:
+    """選定結果のYAMLの値から、読み取り契約の省略時の値と旧欄名を適用して要約の期待値を求める。"""
+    items = selection.get("選定", selection.get("decisions", []))
+    costs = selection.get("レーンの所要時間", selection.get("lane_costs", []))
+    lane_of = [(item.get("WI", item.get("awi")), item.get("レーン", item.get("lane"))) for item in items]
+    lanes: dict[str, dict[str, object]] = {}
+    for awi, lane in lane_of:
+        if lane == "なし":
+            continue
+        row = next(row for row in costs if row.get("レーン", row.get("lane")) == lane)
+        entry = lanes.setdefault(
+            lane,
+            {
+                "count": 0,
+                "stage": row.get("段階", row.get("stage", 1)),
+                "prior": row.get("先行レーン", row.get("prior_lanes", [])),
+                "seconds": (
+                    float(row.get("実装秒数", row.get("implementation_seconds"))),
+                    float(row.get("統合秒数", row.get("integration_seconds"))),
+                ),
+                "wis": [],
+            },
+        )
+        entry["count"] = typing.cast(int, entry["count"]) + 1
+        typing.cast(list[str], entry["wis"]).append(awi)
+    return {
+        "lanes": lanes,
+        "total": len(items),
+        "lane_count": len(lanes),
+        "none": [awi for awi, lane in lane_of if lane == "なし"],
+    }
+
+
+@pytest.mark.parametrize("layout", ["staged", "legacy", "empty"])
+def test_public_command_prints_lane_summary_on_success(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], layout: str
+) -> None:
+    """成功時の標準出力だけから、WI総数・通常レーン数・各レーンの件数・全WI名・段階・先行レーン・秒数を読める。
+
+    旧欄名の秒数を読まない、`レーン: なし`の項目が欠ける、WI名を切り詰めるのいずれかがあると、受領側はレーン構成を
+    出力ファイルから読み直す必要が残る。期待値は入力のYAMLから求める。
+    """
+    repo, notes = env
+    for name in ("a.md", "b.md", "c.md"):
+        _awi(notes, name, "`src/model.py`を変える。")
+    _awi(notes, "d.md", "`docs/development/design.md`を変える。")
+    selection: dict[str, typing.Any]
+    if layout == "staged":
+        selection = {
+            "選定": [
+                {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+                {"WI": "b.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+                {"WI": "d.md", "レーン": "lane-02", "書込対象": ["docs/development/design.md"]},
+                {"WI": "c.md", "レーン": "なし", "書込対象": []},
+            ],
+            "レーンの所要時間": [
+                {"レーン": "lane-01", "実装秒数": 900, "統合秒数": 120, "根拠": "先行"},
+                {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"], "実装秒数": 300.5, "統合秒数": 30, "根拠": "後段"},
+            ],
+        }
+    elif layout == "legacy":
+        selection = {
+            "decisions": [
+                {"awi": "a.md", "lane": "lane-01", "write_files": ["src/model.py"]},
+                {"awi": "c.md", "lane": "なし", "write_files": []},
+            ],
+            "lane_costs": [
+                {"lane": "lane-01", "implementation_seconds": 450, "integration_seconds": 45, "rationale": "旧形式"}
+            ],
+        }
+    else:
+        selection = {"選定": [], "レーンの所要時間": []}
+    for item in selection.get("選定", selection.get("decisions", [])):
+        item.setdefault("鮮度" if "WI" in item else "staleness", {"status": "current", "later_commit_count": 0})
+    path = tmp_path / "selection.yaml"
+    path.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
+
+    assert _dispatch("--work-dir", str(repo), str(path)) == 0
+    result = capsys.readouterr()
+    assert result.err == ""
+    assert _parse_summary(result.out) == _expected_summary(selection)
+
+
+@pytest.mark.parametrize("failure", ["content", "input", "norm-spec"])
+def test_public_command_prints_no_summary_on_failure(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """内容違反（規範指定の不足を含む）と入力不備では、終了コード1・2と次の操作を示し、標準出力へ要約を書かない。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`src/model.py`と`AGENTS.md`を変える。")
+    _write_files(repo, "AGENTS.md")
+    decisions: list[dict[str, typing.Any]] = [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py", "AGENTS.md"]}]
+    if failure == "content":
+        decisions[0]["書込対象"] = ["src/model.py"]
+    if failure == "norm-spec":
+        (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
+    path = _write_selection(tmp_path / "selection.yaml", decisions)
+    if failure == "input":
+        path.write_text("選定: [\n", encoding="utf-8")
+    assert _dispatch("--work-dir", str(repo), str(path)) == (2 if failure == "input" else 1)
+    result = capsys.readouterr()
+    assert "次の操作: " in result.err
+    assert "WI総数" not in result.out and "通常レーン数" not in result.out
