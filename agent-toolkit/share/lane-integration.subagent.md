@@ -45,7 +45,7 @@
 11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず続行できない理由を返す。
 12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
-手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で、旧OIDから新OIDへの対応を各計画または引き継ぎ記録と同じstemの対応記録ファイルへ追記する。対応表へ入れる旧OIDは、`git range-diff`で検収した全commitのうち、その対応記録ファイル（読み取り互換として本文に残る旧形式の記録を含む）にWI対応を持つものに限り、記録済みの旧OIDは全て含める。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
+手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で対応を追記する。その手段へは、`git range-diff`で検収した全commitの旧OIDから新OIDへの対応と手順6で引き継ぎ記録先へ記録したrebase前のHEADを、統合する全ての計画または引き継ぎ記録とともに1回で渡す。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
 
 ### 検証結果の警告の判定
 

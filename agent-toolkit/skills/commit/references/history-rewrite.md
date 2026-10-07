@@ -55,13 +55,15 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 
 ## WI実装commitの対応の継承
 
-WI実装commitの履歴を変更した担当は、`## 操作前後の確認`の検収を終えた旧OIDから新OIDへの対応をJSONオブジェクトとしてmanaged-tempへ保存する。旧新OIDは短縮OIDと完全OIDのどちらでもよく、記録は短縮OIDで残る。対応表の旧OIDは、対応記録ファイルにWI対応を持つものに限る。各旧commitのAWI集合を継承するため、元commitとfixupが同じ新commitへ統合される場合も、記録済みの旧OIDは全て含める。WI対応を持たないcommitは、履歴検収で比較した対象であっても対応表へ入れない。次の形で同じ計画または引き継ぎ記録の対応記録ファイルへ追記する。記録・worktreeは絶対パスを渡し、`--rewrite-map`にはJSON文字列ではなく保存したファイルの絶対パスを渡す。
+WI実装commitの履歴を変更した担当は、`## 操作前後の確認`や`git range-diff`で検収した範囲全体の旧OIDから新OIDへの対応を、JSONオブジェクトとしてmanaged-tempの1つのファイルへ保存する。WI対応を持たないcommitも含めてよく、元commitとfixupが同じ新commitへ統合される場合は両方の旧OIDを含める。旧新OIDは短縮OIDと完全OIDのどちらでもよく、記録は短縮OIDで残る。同じ書換えの対応を受け取る他のコマンドにも、この同じファイルを渡す。
+
+書換えの直前のHEADと保存したファイルを、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す。記録・worktree・対応表は絶対パスで渡し、`--rewrite-map`にはJSON文字列ではなくファイルの絶対パスを渡す。同じ修正系列で書換えを繰り返す間は、毎回同じ記録の集合を渡す。
 
 ```text
-atk run-script plan-progress -- <記録> --completed-step <工程> --result <結果> --worktree <worktree> --rewrite-map <対応表のJSONファイルの絶対パス>
+atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え前のHEAD> --rewrite-map <対応表のJSONファイルの絶対パス> --completed-step <工程> --result <結果> --plan <計画>... --handoff <引き継ぎ記録>...
 ```
 
-計画なしでは`--handoff`と対象集合全件の`--allowed-awi`を加える。旧対応の欠落や新OIDの不在は生成側で補う。現在の対応の取得は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。
+同コマンドは全記録を検証してから書き込み、記録済みOIDが対応表に無い記録（今回の対応表の不足と過去の書換えの未追記を区別して示す）や対応表の誤りがあれば、どの記録も変えずに失敗する。`--plan`と`--handoff`は反復指定し、書換え対象を持たない記録は変更しない。旧対応の欠落や新OIDの不在は生成側で補う。現在の対応の取得は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。
 
 ## fixupの実行上の制約
 

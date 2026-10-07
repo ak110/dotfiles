@@ -137,6 +137,20 @@ def append_progress_log(
     writer(path, "".join(lines))
 
 
+def append_handoff_log(
+    handoff: pathlib.Path,
+    completed_step: str,
+    result: str,
+    *,
+    writer: Callable[[pathlib.Path, str], None] = atomic_write,
+) -> None:
+    """計画なしの引き継ぎ記録の末尾へ`<完了した工程>: <結果>`の1行を追記する。"""
+    _plan_locations.reject_saved_plans_root_write(handoff)
+    content = handoff.read_text(encoding="utf-8")
+    separator = "\n" if content.endswith("\n") else "\n\n"
+    writer(handoff, content + separator + completed_step + ": " + result + "\n")
+
+
 def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -> bool:
     """対応の記録・取得を処理し、取得だけで終了する場合は真を返す。"""
     if not (
@@ -195,9 +209,7 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         return False
     # 進捗の行を先に追記し、構造の不正で失敗した場合は対応記録ファイルも変えない。
     if args.handoff:
-        _plan_locations.reject_saved_plans_root_write(args.plan_file)
-        separator = "\n" if content.endswith("\n") else "\n\n"
-        atomic_write(args.plan_file, content + separator + args.completed_step + ": " + args.result + "\n")
+        append_handoff_log(args.plan_file, args.completed_step, args.result)
     else:
         append_progress_log(args.plan_file, args.completed_step, args.result)
     commit_mapping.append_event(args.plan_file, event)
