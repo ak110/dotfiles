@@ -264,7 +264,7 @@ class TestStandardInputAndPayloadDump:
         source_directory = _SCRIPT.parent
         (tmp_path / "_common").mkdir()
         (tmp_path / "_common/__init__.py").write_text("", encoding="utf-8")
-        shutil.copy2(source_directory / "_hooks/session_state.py", tmp_path / "_hooks/session_state.py")
+        shutil.copy2(source_directory / "_common/session_state.py", tmp_path / "_common/session_state.py")
         shutil.copy2(source_directory / "_common/atomic_file.py", tmp_path / "_common/atomic_file.py")
         shutil.copy2(source_directory / "_common/file_lock.py", tmp_path / "_common/file_lock.py")
         temp_directory = tmp_path / "temp"

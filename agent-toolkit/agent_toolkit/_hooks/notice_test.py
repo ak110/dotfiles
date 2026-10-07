@@ -2,6 +2,7 @@
 
 import pytest
 
+from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks.notice import (
     block_formatter,
     consume_warning_blocks,
@@ -9,7 +10,6 @@ from agent_toolkit._hooks.notice import (
     set_warning_session_id,
     warning_formatter,
 )
-from agent_toolkit._hooks.session_state import read_state
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 
 

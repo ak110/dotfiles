@@ -16,7 +16,7 @@ import sys
 import pytest
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-from agent_toolkit._hooks import response_language_check
+from agent_toolkit._common import response_language_check
 from agent_toolkit._testing import delegated_threads
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)

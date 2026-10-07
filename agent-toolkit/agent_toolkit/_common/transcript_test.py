@@ -1,9 +1,9 @@
-"""agent-toolkit/agent_toolkit/_hooks/transcript.py のテスト。"""
+"""agent-toolkit/agent_toolkit/_common/transcript.py のテスト。"""
 
 import json
 import pathlib
 
-from agent_toolkit._hooks.transcript import (
+from agent_toolkit._common.transcript import (
     assistant_text,
     iter_latest_assistant_messages,
     iter_latest_assistant_text_messages,

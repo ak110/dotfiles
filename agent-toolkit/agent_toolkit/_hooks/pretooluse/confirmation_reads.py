@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import json
 
+from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._hooks import agent_id as _agent_id
 from agent_toolkit._hooks import plugin_resources as _plugin_resources
-from agent_toolkit._hooks import transcript as _transcript
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 

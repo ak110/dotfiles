@@ -21,10 +21,10 @@ from typing import Any
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import message_format
 from agent_toolkit._common.delegated_session import is_delegated
+from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 from agent_toolkit._hooks.message_format import xml_message
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.session_state import update_state
 
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)

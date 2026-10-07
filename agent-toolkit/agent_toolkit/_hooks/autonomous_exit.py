@@ -40,9 +40,9 @@ import os
 
 from agent_toolkit._atk.agents_exit_session import function_hook_paths
 from agent_toolkit._common.process_loop_session import is_process_loop_session
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.session_state import read_state, update_state
 from agent_toolkit._hooks.stop_gate import active_non_teammate_tasks, append_stop_log, is_pending_async_work
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
 

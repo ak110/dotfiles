@@ -12,7 +12,7 @@
 import enum
 import re
 
-from agent_toolkit._hooks.transcript import iter_latest_assistant_text_messages, visible_text_blocks
+from agent_toolkit._common.transcript import iter_latest_assistant_text_messages, visible_text_blocks
 
 # プレーンテキストがこの文字数に満たない場合は語数比の判定をスキップする。
 # 「OK」「了解」程度の短文応答で英語化検出を行わないようにするための下限。

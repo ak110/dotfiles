@@ -20,7 +20,8 @@ agent_idと委譲先の環境印でサブエージェントと委譲先を除く
 import json
 import pathlib
 
-from agent_toolkit._hooks import agent_id, notice, stop_gate, transcript
+from agent_toolkit._common import transcript
+from agent_toolkit._hooks import agent_id, notice, stop_gate
 
 _block_notice = notice.block_formatter("user_response_advisor")
 

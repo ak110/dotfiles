@@ -201,29 +201,29 @@ def _serve() -> None:  # pylint: disable=import-outside-toplevel
     from agent_toolkit._common import (
         file_lock as _file_lock,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     )
+    from agent_toolkit._common import (
+        response_language_check as _response_language_check,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
+    )
+    from agent_toolkit._common import (
+        session_state as _session_state,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
+    )
+    from agent_toolkit._common import (
+        shell_segments as _shell_segments,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
+    )
+    from agent_toolkit._common import (
+        transcript as _transcript,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
+    )
     from agent_toolkit._git import (
         status as _git_status,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     )
     from agent_toolkit._hooks import (
-        bash_command_parser as _bash_command_parser,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
-    )
-    from agent_toolkit._hooks import (
         message_format as _message_format,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
-    )
-    from agent_toolkit._hooks import (
-        response_language_check as _response_language_check,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
-    )
-    from agent_toolkit._hooks import (
-        session_state as _session_state,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     )
     from agent_toolkit._hooks import (
         stop_gate as _stop_gate,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     )
     from agent_toolkit._hooks import (
         tracked_model_types as _tracked_model_types,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
-    )
-    from agent_toolkit._hooks import (
-        transcript as _transcript,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     )
     from agent_toolkit._plan import (
         locations as _plan_file,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
@@ -236,7 +236,7 @@ def _serve() -> None:  # pylint: disable=import-outside-toplevel
         pyfltr,
         yaml,
         _agents_server_state,
-        _bash_command_parser,
+        _shell_segments,
         _file_lock,
         _git_status,
         _message_format,

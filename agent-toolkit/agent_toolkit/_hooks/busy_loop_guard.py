@@ -32,8 +32,8 @@ import os
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._common.process_loop_session import is_process_loop_session
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.session_state import read_state, update_state
 from agent_toolkit._hooks.stop_gate import (
     append_stop_log,
     has_tool_use_block,

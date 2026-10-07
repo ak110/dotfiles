@@ -33,10 +33,10 @@ import re
 
 from agent_toolkit._agents_server import status_file
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.session_state import read_state, update_state
 from agent_toolkit._hooks.stop_gate import parse_stop_session
 
 _HOOK_ID = "agents_server_session_advisor"

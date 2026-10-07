@@ -42,14 +42,14 @@ try:
     from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
     from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY as _PROCESS_WI_GOAL_BODY
     from agent_toolkit._atk.wi.frontmatter import parse_frontmatter as _parse_wi_frontmatter
+    from agent_toolkit._common import response_language_check as _response_language_check
+    from agent_toolkit._common import transcript as _transcript
     from agent_toolkit._common.runtime_identity import distinct_identities as _distinct_identities
     from agent_toolkit._common.runtime_identity import latest_identity as _latest_identity
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
-    from agent_toolkit._hooks import response_language_check as _response_language_check
-    from agent_toolkit._hooks import transcript as _transcript
-    from agent_toolkit._hooks.bash_command_parser import QuotingScanner as _QuotingScanner
-    from agent_toolkit._hooks.bash_command_parser import extract_execution_segments as _extract_execution_segments
+    from agent_toolkit._common.shell_quoting import QuotingScanner as _QuotingScanner
+    from agent_toolkit._common.shell_segments import extract_execution_segments as _extract_execution_segments
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
     print(

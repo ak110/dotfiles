@@ -16,7 +16,7 @@ import importlib
 import json
 import sys
 
-from agent_toolkit._hooks.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._hooks.stop_gate import append_stop_log  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._hooks.stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position
     parse_stop_session as _parse_stop_session,

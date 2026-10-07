@@ -11,21 +11,49 @@ from collections.abc import (
     Sequence,
 )
 
+from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations, heredoc_command_substitutions
+from agent_toolkit._common.heredocs import mask_heredoc_bodies
 from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
+from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
 from agent_toolkit._common.shell_tokens import strip_redirections
-from agent_toolkit._hooks.bash_command_parser import (
-    _GLOBAL_OPTIONS_WITH_VALUE,
-    _GLOBAL_OPTIONS_WITHOUT_VALUE,
-    BashInvocation,
-    ExecutionSegment,
-    extract_bash_invocations,
-    extract_execution_segments,
-    heredoc_command_substitutions,
-    mask_heredoc_bodies,
-    split_bash_segments,
-)
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+
+_GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
+    {
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree",
+        "--namespace",
+        "--super-prefix",
+        "--config-env",
+        "--list-cmds",
+    }
+)
+
+
+_GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
+    {
+        "--no-pager",
+        "-p",
+        "--paginate",
+        "--bare",
+        "--no-replace-objects",
+        "--literal-pathspecs",
+        "--glob-pathspecs",
+        "--noglob-pathspecs",
+        "--icase-pathspecs",
+        "--no-optional-locks",
+        "--exec-path",
+        "--html-path",
+        "--man-path",
+        "--info-path",
+        "--help",
+        "--version",
+    }
+)
+
 
 # --- Bash: パターン一致によるプロセス終了の検出 ---
 
@@ -643,7 +671,7 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> bool:
     判定はコマンド文字列だけから確定し、遮断された主体は区切り語の引用、事前の変数代入またはエスケープへ
     書き直して同じターンで再実行できる。遮断とする根拠は`agent-toolkit:writing-standards`の
     `references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
-    本文の範囲と展開の有無は`bash_command_parser.heredoc_bodies`の1つの定義から得る。
+    本文の範囲と展開の有無は`agent_toolkit._common.heredocs.heredoc_bodies`の1つの定義から得る。
     """
     found = heredoc_command_substitutions(command)
     if not found:

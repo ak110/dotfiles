@@ -19,9 +19,9 @@ frontmatterの`submitter_session`がフック入力の`session_id`と一致す�
 import subprocess
 
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
+from agent_toolkit._common.session_state import update_state
 from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
-from agent_toolkit._hooks.session_state import update_state
 
 STATE_KEY_ANSWERED = "uwi_answered_by_repo"
 """エージェント別・対象リポジトリID別の回答済みUWIファイル名を保持する状態キー。

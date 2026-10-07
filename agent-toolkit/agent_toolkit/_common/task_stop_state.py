@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable
 
-from agent_toolkit._hooks.session_state import update_state
+from agent_toolkit._common.session_state import update_state
 
 STATE_KEY = "stall_detection_completed_at_by_task"
 READY_WINDOW_SECONDS = 300

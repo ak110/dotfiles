@@ -21,7 +21,7 @@ import json
 import re
 from collections.abc import Iterator
 
-from agent_toolkit._hooks import transcript as _transcript
+from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 from agent_toolkit._hooks.stop_gate import append_stop_log

@@ -420,3 +420,37 @@ def test_agent_toolkit_allows_line_level_f821_noqa(_isolate_repo_root: pathlib.P
     _write_toolkit_module(_isolate_repo_root, "_atk/feature/view_test.py", "# ruff: noqa: F821\n")
 
     assert check_script_imports.main() == 0
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    ["atk.py", "agents_server_mcp.py", "wait_ci.py", "_managed_temp.py", "../skills/example/scripts/tool.py"],
+)
+def test_agent_toolkit_entry_scripts_cannot_import_hooks(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], relative_path: str
+) -> None:
+    """`hook.py`以外の起動スクリプトとスキル付属スクリプトの`_hooks`のimportを、部品を前の層へ移す次の操作とともに失敗にする。"""
+    _write_toolkit_module(_isolate_repo_root, "_hooks/__init__.py", "")
+    _write_toolkit_module(_isolate_repo_root, "_hooks/stop_gate.py", "")
+    _write_toolkit_module(_isolate_repo_root, relative_path, "from agent_toolkit._hooks import stop_gate\n")
+
+    assert check_script_imports.main() == 1
+    err = capsys.readouterr().err
+    assert "`_hooks`をimportしている（`_hooks`をimportできる起動スクリプトは`hook.py`だけ）" in err
+    assert "次の操作: hook以外からも使う部品を前の層（`_common`など）へ移し、移動先からimportする" in err
+
+
+def test_agent_toolkit_hook_entry_may_import_hooks(_isolate_repo_root: pathlib.Path) -> None:
+    """`hook.py`と起動スクリプトのテストは`_hooks`をimportでき、起動スクリプトは前の層を全てimportできる。"""
+    for package in ("_common", "_hooks"):
+        _write_toolkit_module(_isolate_repo_root, f"{package}/__init__.py", "")
+    _write_toolkit_module(_isolate_repo_root, "_hooks/stop_gate.py", "")
+    _write_toolkit_module(_isolate_repo_root, "_common/shell_tokens.py", "")
+    _write_toolkit_module(_isolate_repo_root, "hook.py", "from agent_toolkit._hooks import stop_gate\n")
+    _write_toolkit_module(_isolate_repo_root, "atk_test.py", "from agent_toolkit._hooks import stop_gate\n")
+    _write_toolkit_module(_isolate_repo_root, "atk.py", "from agent_toolkit._common import shell_tokens\n")
+    _write_toolkit_module(
+        _isolate_repo_root, "../skills/example/scripts/tool_test.py", "from agent_toolkit._hooks import stop_gate\n"
+    )
+
+    assert check_script_imports.main() == 0

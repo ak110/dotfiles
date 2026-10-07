@@ -21,10 +21,10 @@ import os
 import pathlib
 
 from agent_toolkit._common.process_loop_session import is_process_loop_session
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.session_state import read_state, update_state
 from agent_toolkit._hooks.stop_gate import append_stop_log, is_pending_async_work
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
 from agent_toolkit._plan.locations import is_plan_main_file, read_owner_session_id, working_plans_root

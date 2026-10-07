@@ -5,7 +5,8 @@
 本文をPythonへ置くのは、modとモデルが同じ定義へシェルから到達するためである。
 TypeScriptの定数に置くと、モデルはplugin rootを解決してファイルの文字列を組み立てる必要がある。
 
-1行目の標識は`user_prompt_submit.PERIODIC_RECHECK_MARKER`を使い、UserPromptSubmitが発火を機械注入と判定する。
+1行目の標識`PERIODIC_RECHECK_MARKER`も本モジュールが定め、UserPromptSubmitフックはこの標識で発火を機械注入と判定する。
+`atk`とフックの双方が読むため、`_hooks`ではなく`_common`に置く。
 待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程は、工程が進むと事実と一致しなくなるため本文へ含めない。
 セッション固有の経過時間起動の義務は、taskを持つ主体が測定コマンドと判定閾値をこの本文の後へ加えてtaskを作成し直す
 （`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」）。
@@ -13,7 +14,16 @@ TypeScriptの定数に置くと、モデルはplugin rootを解決してファ�
 
 from __future__ import annotations
 
-from agent_toolkit._hooks.user_prompt_submit import PERIODIC_RECHECK_MARKER
+PERIODIC_RECHECK_MARKER = '<atk-auto source="periodic-recheck" kind="periodic-recheck">'
+"""定期再確認のpromptの1行目へ置く役割標識。
+
+`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」が
+同じリテラルを持ち、装着するpromptの1行目をこの標識だけの行と定める。
+"""
+LEGACY_PERIODIC_RECHECK_MARKER = (
+    '<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">'
+)
+"""旧形式の役割標識。過去に装着したtaskの発火を同じく機械注入と判定するために読む。"""
 
 PERIODIC_RECHECK_PROMPT_LINES: tuple[str, ...] = (
     PERIODIC_RECHECK_MARKER,

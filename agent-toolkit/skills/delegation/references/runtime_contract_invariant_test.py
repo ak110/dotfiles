@@ -3,7 +3,8 @@
 import pathlib
 import re
 
-from agent_toolkit._hooks import periodic_recheck, user_prompt_submit
+from agent_toolkit._common import periodic_recheck
+from agent_toolkit._hooks import user_prompt_submit
 
 _MOD_DEFINITION = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "periodic_recheck.ts"
 

@@ -1,4 +1,4 @@
-"""agent-toolkit/agent_toolkit/_hooks/session_state.py のテスト。
+"""agent-toolkit/agent_toolkit/_common/session_state.py のテスト。
 
 並行書き込み時のキー保持・アトミック書き込みの保証・OS別ロックの動作を検証する。
 """
@@ -15,7 +15,7 @@ from typing import Any, cast
 
 import pytest
 
-from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     STALE_STATE_MAX_AGE_SECONDS,
     claim_session_title,
     clear_session_state,
@@ -227,7 +227,7 @@ class TestClaimSessionTitle:
         def _fail_write(_path: pathlib.Path, _content: str) -> None:
             raise PermissionError("simulated failure")
 
-        monkeypatch.setattr("agent_toolkit._hooks.session_state._atomic_write", _fail_write)
+        monkeypatch.setattr("agent_toolkit._common.session_state._atomic_write", _fail_write)
 
         assert claim_session_title("sid", "plan") is False
         assert not title_state_path("sid").exists()
@@ -408,14 +408,14 @@ class TestSweepStaleStates:
         update_started = threading.Event()
         allow_update = threading.Event()
         sweep_waiting_for_lock = threading.Event()
-        original_acquire_lock = vars(sys.modules["agent_toolkit._hooks.session_state"])["_acquire_lock"]
+        original_acquire_lock = vars(sys.modules["agent_toolkit._common.session_state"])["_acquire_lock"]
 
         def _acquire_lock(lock_file: Any) -> None:
             if threading.current_thread().name == "state-sweep":
                 sweep_waiting_for_lock.set()
             original_acquire_lock(lock_file)
 
-        monkeypatch.setattr("agent_toolkit._hooks.session_state._acquire_lock", _acquire_lock)
+        monkeypatch.setattr("agent_toolkit._common.session_state._acquire_lock", _acquire_lock)
 
         def _refresh(current: dict) -> dict:
             update_started.set()

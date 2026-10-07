@@ -131,7 +131,7 @@ def main(argv: list[str]) -> int:
             session_id = payload.get("session_id")
             transcript_path = payload.get("transcript_path")
             if isinstance(session_id, str) and isinstance(transcript_path, str):
-                session_state = importlib.import_module("agent_toolkit._hooks.session_state")
+                session_state = importlib.import_module("agent_toolkit._common.session_state")
                 session_state.inherit_state_from_transcript(session_id, transcript_path)
     try:
         module = importlib.import_module(f"agent_toolkit._hooks.{argv[0]}")

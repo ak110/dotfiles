@@ -17,10 +17,10 @@ from agent_toolkit._agents_server import tool_names
 from agent_toolkit._atk.wi import uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
-from agent_toolkit._common import automated_prompt, next_action, runtime_inserted
-from agent_toolkit._hooks import agent_id, agents_server_session_advisor, report_validation, session_state
-from agent_toolkit._hooks import transcript as _transcript
-from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
+from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state
+from agent_toolkit._common import transcript as _transcript
+from agent_toolkit._common.shell_segments import extract_execution_segments
+from agent_toolkit._hooks import agent_id, agents_server_session_advisor, report_validation
 from agent_toolkit._hooks.stop_gate import append_stop_log
 
 STATE_KEY = "termination_evidence"

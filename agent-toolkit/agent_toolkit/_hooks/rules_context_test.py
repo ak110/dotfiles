@@ -11,7 +11,8 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log
-from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_context_codex, session_state
+from agent_toolkit._common import session_state
+from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_context_codex
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 

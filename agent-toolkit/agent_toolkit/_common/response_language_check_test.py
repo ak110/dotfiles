@@ -1,4 +1,4 @@
-"""agent-toolkit/agent_toolkit/_hooks/response_language_check.py のテスト。"""
+"""agent-toolkit/agent_toolkit/_common/response_language_check.py のテスト。"""
 
 import json
 import pathlib
@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from agent_toolkit._hooks.response_language_check import (
+from agent_toolkit._common.response_language_check import (
     BLOCK_BODY,
     WARNING_BODY,
     WARNING_FIX,

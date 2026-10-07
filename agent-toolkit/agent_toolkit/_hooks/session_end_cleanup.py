@@ -26,7 +26,7 @@ import sys
 
 from agent_toolkit._agents_server import status_file
 from agent_toolkit._atk.agents_exit_session import sweep_function_hook_files
-from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     clear_session_state,
     sweep_stale_states,
 )

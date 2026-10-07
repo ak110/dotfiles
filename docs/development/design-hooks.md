@@ -19,14 +19,14 @@
 
 ### Bashコマンドの解析とheredoc遮断
 
-Bashの引数所属と出力接続は、`bash_command_parser.py`の`extract_bash_invocations`が解析する。
+Bashの引数所属と出力接続は、`_common/bash_invocations.py`の`extract_bash_invocations`が解析する。
 外側の語と能動的な置換内の呼び出しを分け、引用・エスケープ・入れ子と、展開結果が未確定であることを保持する。
 出力接続はパイプ、背景化、リダイレクトを区別し、記述順とグループへの継承から判断する。
 未知の実行位置を推定して遮断する案と、置換を含むコマンドを一律に免除する案は、それぞれ誤拒否と外側の明らかな誤りの見逃しを生むため採らない。
 助言や実行記録が使う`extract_execution_pipelines`の既存契約は、用途が異なるため保持する。
 
 heredocの区切り語は、bashと同じく引用を除いた語で終端行と比べる。区切り語のどこかに引用（`'`・`"`・`\`）があれば本文を展開しない区切り語として扱い、`\EOF`・`E"OF"`も`'EOF'`と同じ終端行`EOF`で閉じる。
-本文の範囲と展開の有無は`bash_command_parser.py`の`heredoc_bodies`が1つの定義から返し、本文のマスクと置換の遮断が同じ結果を使う。
+本文の範囲と展開の有無は`_common/heredocs.py`の`heredoc_bodies`が1つの定義から返し、本文のマスクと置換の遮断が同じ結果を使う。
 本文はいずれも実行位置として扱わずにマスクし、本文に書いた文書の文字列（`pkill`などの禁止語）への誤遮断を防ぐ。
 区切り語を引用しない本文のうち、エスケープされていないバッククォートと`$(`（`$((`の算術展開を除く）だけはbashがコマンドとして実行するため、`shell_checks.py`の`_check_bash_unquoted_heredoc_substitution`が実行前に遮断する。外側のコマンドに加え、`sh -c`・`bash -c`の引数とコマンド置換の本文の中のheredocも対象にする。
 置換の内側を既存の判定へ渡す案は採らない。本文の置換は全て遮断するため内側を個別に判定する必要が無く、事象の`atk wi add`のように既存のどの判定にも当たらない置換も防げないためである。
@@ -86,7 +86,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | `pretooluse/shell_checks.py` `_check_bash_option_after_terminator` | オプション終端`--`の後ろへ置いた`rg`・`grep`系・`git log`・`git diff`・`git show`・`git grep`自身のオプションの遮断 | O | 新設（明らかな行動誤り・低費用、2026年10月2日再評価）：`--`の後ろのオプションは存在しないパスとして失敗するか、`git`ではエラーを出力せずにパス指定になり誤った結果を返す。2026年9月21日、9月26日、10月2日と条文の改訂後も反復し、旧基準ではhook案を採用せず条文へ切り替えていた。判定はコマンド文字列から確定でき、遮断で失うのはコマンド1回の発行だけである。`-e`・`-f`を`--`より前に置かない`rg`・`grep`系と`git grep`だけ、`--`の直後を検索パターンとして除き、`git grep`ではその後ろに現れるrevision・パスの区切り`--`も除く。`-e`・`-f`を`--`より前に置く場合は`--`の後ろを全てパスとして判定する。置換内の語を外側の引数へ混ぜず、外側の既知の引数だけを判定する。`git grep`の検索パターンと区切りの位置の解析は、プロセス終了の判定（`_git_grep_literal_pattern_indices`）と共通の1関数が担い、git 2.47.3・ripgrep 15.2.0・GNU grepの実行で確かめた受理形式に合わせる。判定と除外を`shell_checks_test.py`で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_atk_output_loss` | atkの出力のパイプとリダイレクト（ファイル、`/dev/null`、別のファイル記述子、未確定のパスを区別しない）と、`atk agents wait`のシェル背景化の遮断 | O | 新設（結果受領の喪失・低費用）：同じ会話でwaitの`&`と標準出力破棄が反復し、別担当のatk出力パイプも観測された。結果・保存先・終了状態を直接受領できない入力を、既存PreToolUseで起動前に止める。判定はatkの実行位置と出力接続へ限定し、ホスト管理の背景実行・対象限定を通す。2026年10月6日、リダイレクト保存と直後の再読（2026年9月29日以降のClaude Codeの記録で620件、うち342件が3回以内に再読）を観測し、atkが長い出力を自ら保存するため全量は保存先から読めることから、出力保存の許容を外して全てのリダイレクトを遮断の原因へ統合した。waitだけに適用していた標準出力の破棄の原因もこの原因へ統合した。`atk serve`、`atk wi process-loop`の常駐、`atk agents logs --follow`は保存の対象外で背景起動に出力のログへの移動を要するため、リダイレクトの原因から除く。常時規範`02-agent-operations.md`のatkの項にも同じ前提と指示を置き、遮断に至る前に正しい呼び出しを選べるようにした。CLI側ではホストの配送パイプと任意の後段を区別できず、文書だけでは反復を止められなかったため、この入力境界で遮断する。一般の検証コマンドの出力切り詰めチェックを復元する案は、正当な操作の誤検出を増やすため採らない。接続と通知、正常な対照をshell_checks_test.py・dispatch_test.pyで確認 |
 | `pretooluse/shell_checks.py` `_check_bash_process_kill_by_pattern` | 'blocked: パターン一致によるプロセス終了（pkill／killall）は、対象プロセスの所有を確認できないため禁止する。' | O | 維持（不可逆）：pkill・killallのパターン一致は所有外プロセスを終了し、終了したプロセスは元へ戻せない。終了対象の指定形を実装で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_unquoted_heredoc_substitution` | 区切り語を引用しないheredocの本文にある、エスケープされていないバッククォートと`$(...)`の遮断。通知は検出した置換と、区切り語の引用・事前の変数代入・エスケープによる書き直しを示す | X | 新設（不可逆、2026年10月6日）：通すと置換の中のコマンドが実行され、外部への保存とpush、プロセスの終了、ファイルの上書きなど復元できない結果が残る。2026年10月6日にMarkdownのコード表記として書いた`atk wi add`が実行され、検収前の原稿がAWIとして保存された。判定はコマンド文字列から確定し、遮断で失うのはコマンド1回の発行だけである。`$VAR`・`${VAR}`・`$((...))`、エスケープ済みの表記、引用付きの区切り語の本文、here-stringは対象外とする。区切り語の形と本文の内容の組み合わせ表を`shell_checks_test.py`・`bash_command_parser_test.py`で確認 |
+| `pretooluse/shell_checks.py` `_check_bash_unquoted_heredoc_substitution` | 区切り語を引用しないheredocの本文にある、エスケープされていないバッククォートと`$(...)`の遮断。通知は検出した置換と、区切り語の引用・事前の変数代入・エスケープによる書き直しを示す | X | 新設（不可逆、2026年10月6日）：通すと置換の中のコマンドが実行され、外部への保存とpush、プロセスの終了、ファイルの上書きなど復元できない結果が残る。2026年10月6日にMarkdownのコード表記として書いた`atk wi add`が実行され、検収前の原稿がAWIとして保存された。判定はコマンド文字列から確定し、遮断で失うのはコマンド1回の発行だけである。`$VAR`・`${VAR}`・`$((...))`、エスケープ済みの表記、引用付きの区切り語の本文、here-stringは対象外とする。区切り語の形と本文の内容の組み合わせ表を`shell_checks_test.py`・`_common/shell_segments_test.py`で確認 |
 | `pretooluse/shell_checks.py` `_git_commit_attribution_error` | 通常の`git commit`の帰属trailerが、実行turnで観測したモデルと推論量から求めた期待値と一致しない場合の遮断 | X | 新設（明らかな行動誤り・低費用、2026年10月6日）：誤った帰属行はpushまで残る。期待値の求め方と対象外の条件は「commit帰属trailerの確認」にある。判定と除外を`dispatch_test.py`・`shell_checks_test.py`で確認 |
 | `pretooluse/shell_checks.py` `_warn_git_rev_parse_short_multiple` | `git rev-parse --short`へ複数のrevisionを渡すコマンドへの警告 | O | 維持（明らかな行動誤り・低費用、2026年10月2日再評価）：条文を加えた後も同じ失敗が4回の振り返りで扱われた。外側の確定した複数revisionを警告し、置換内の語数を外側の個数へ含めない。展開後の個数を確定できない場合は警告を見送る。旧基準の下では存廃を確認中として表に行が無かった。判定を`shell_checks_test.py`で確認 |
 | `pretooluse/shell_checks.py` `_warn_windows_drive_letter_path` | Windows上のClaude CodeのBashでPATHへドライブ文字形式の要素を加えるコマンドへの警告 | X | 復元（明らかな行動誤り・低費用、2026年10月2日再評価）：Git BashのPATHはコロン区切りで`C:/x`が2要素に分かれ、コマンドは失敗せず、`command -v`の結果や計測値が誤る。判定はWindows上のClaude CodeのBashに限り、他の環境では発火しない。旧基準により一度撤去した。判定とホスト・OSの除外を`shell_checks_test.py`・`dispatch_test.py`で確認 |
@@ -503,7 +503,7 @@ CodexのPostToolUseは`persistedOutputPath`を持たず（出力は退避では�
 ユーザーが`<役割名>.parent.md`による起動までの手順の多さを指摘し、`start`の後の自動化を求めたためである。
 modはメインが定期再確認のtaskを持たない場合に`atk wait-schedule`と同じcron式で`CronCreate`を作成し、task IDを`start`の結果の後に届ける。装着できない場合は、モデルが規範の手順で装着する案内を届ける。
 装着がモデルの遵守に依存しなくなり、起動前の`atk wait-schedule`、`ToolSearch`と`CronCreate`の呼び出しが不要になる。「委譲手段の選択と待機の装着の手掛かり」が`start`の公開説明に置いた手掛かりは、装着できなかった場合と`Agent`ツールの委譲の手順への案内へ改めた。
-定期promptの共通本文は`agent-toolkit/agent_toolkit/_hooks/periodic_recheck.py`だけが持ち、`atk wait-schedule --format json`がcron式とともに出力する。modとモデルが自ら装着する手順は、どちらもこの出力を使う。
+定期promptの共通本文は`agent-toolkit/agent_toolkit/_common/periodic_recheck.py`だけが持ち、`atk wait-schedule --format json`がcron式とともに出力する。modとモデルが自ら装着する手順は、どちらもこの出力を使う。
 当初は本文をTypeScriptの`periodic_recheck_prompt.ts`に置いたが、modを読み込まない環境でモデルが自ら装着する手順は、plugin rootを解決してTypeScriptの文字列を連結する必要があった。メインのシェルがplugin rootを解決できなかった事象と同じ前提に依存するため、シェルから同じ定義へ到達できるPythonの出力へ移した。定義元を1つに保つ目的は変えていない。
 
 装着はメインに限り、`Agent`ツールのサブエージェント（`agentId`を持つ呼出主体）へは装着も通知もしない。2026年10月7日、`agents_server`で起動したClaude Codeのセッションで次を観測した。`Agent`ツールのサブエージェントが`CronList`を呼ぶと、親が作成したtaskが一覧に現れた。前景のサブエージェントが`CronCreate`で作成した1回限りのtaskは、サブエージェントの終了後の発火時刻に親の会話へpromptとして届いた。背景で起動したサブエージェントには`CronCreate`が公開されなかった。このため、modがサブエージェントのために作成したtaskは、サブエージェントの待機を再確認せずに親の会話へ定期promptを届け、親の保有の判定もそのtaskを自身のものに数え得る。サブエージェントは装着の有無によらず完了通知で待機を解くため、装着をメインに限っても待機が成立しなくなる主体は無い。`agents_server`で起動した委譲先は独立したセッションのメインとして`agentId`を持たず、装着の対象に残る。
@@ -528,7 +528,7 @@ Claude Codeでは、同じ応答でツール呼び出しより前に置いた地
 
 ツールの登録と表示を同じmoduleに置くため、moduleを読み込まないClaude Code（管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が無い環境）とCodexにはツールが現れない。その環境のメインは`rules-main.claude-code.md`「ツールの入出力」に従い、届ける内容をターンを終える応答の本文へ書く。
 Claude Code 2.1.292では、hooks.jsonの`modules`は1件だけを受け付け、同じイベントで条件を持たないhookは1回だけ登録できる。`$`を渡せるのは同じファイルで宣言した関数に限られる。このため`register.ts`が唯一のmoduleとして`session.start`を1つにまとめ、`session_exit.ts`と`send_to_user.tsx`の`register`を呼ぶ。両ファイルが共有する値はツールの定義と`$`を受け取らない関数に限る。
-transcriptからユーザーへ届いた本文を数える処理は4つある。`user_response_advisor.py`、`termination_evidence.py`の`visible_messages`、`response_language_check.py`、`session_review_evidence.py`の`assistant`の出来事である。これらは`transcript.visible_text_blocks`で`send_to_user`の`message`を本文に含める。名前の前置部分はmoduleの登録が決めるため、末尾の`__send_to_user`で判定する。
+transcriptからユーザーへ届いた本文を数える処理は4つある。`user_response_advisor.py`、`termination_evidence.py`の`visible_messages`、`_common/response_language_check.py`、`session_review_evidence.py`の`assistant`の出来事である。これらは`_common/transcript.py`の`visible_text_blocks`で`send_to_user`の`message`を本文に含める。名前の前置部分はmoduleの登録が決めるため、末尾の`__send_to_user`で判定する。
 
 却下した代替案は次のとおりである。
 

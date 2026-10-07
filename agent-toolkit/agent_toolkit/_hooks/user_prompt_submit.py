@@ -57,8 +57,17 @@ from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disa
 from agent_toolkit._common.delegated_session import (
     is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
+from agent_toolkit._common.periodic_recheck import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    LEGACY_PERIODIC_RECHECK_MARKER,
+    PERIODIC_RECHECK_MARKER,
+)
 from agent_toolkit._common.process_loop_session import (
     is_process_loop_session,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    claim_session_title,
+    read_state,
+    update_state,
 )
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -74,11 +83,6 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     USER_CONFIRMATION_SKILL_NAMES,
     VERIFICATION_NOTICE_BODY,
     clear_user_confirmation_pending,
-)
-from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    claim_session_title,
-    read_state,
-    update_state,
 )
 from agent_toolkit._hooks.tool_input import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan.locations import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -104,15 +108,6 @@ _PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
-PERIODIC_RECHECK_MARKER = '<atk-auto source="periodic-recheck" kind="periodic-recheck">'
-_LEGACY_PERIODIC_RECHECK_MARKER = (
-    '<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">'
-)
-"""定期再確認のpromptの1行目へ置く役割標識。
-
-`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」が
-同じリテラルを持ち、装着するpromptの1行目をこの標識だけの行と定める。
-"""
 _USER_PROMPT_SOURCE_KEY = "source"
 _USER_PROMPT_SOURCE_USER = "user"
 _VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
@@ -183,7 +178,7 @@ def _is_machine_injected(payload: dict, prompt: str) -> bool:
     source = payload.get(_USER_PROMPT_SOURCE_KEY)
     if isinstance(source, str) and source and source != _USER_PROMPT_SOURCE_USER:
         return True
-    if prompt.split("\n", 1)[0].strip() in {PERIODIC_RECHECK_MARKER, _LEGACY_PERIODIC_RECHECK_MARKER}:
+    if prompt.split("\n", 1)[0].strip() in {PERIODIC_RECHECK_MARKER, LEGACY_PERIODIC_RECHECK_MARKER}:
         return True
     if is_delegated(os.environ):
         return True

@@ -34,15 +34,15 @@ import pathlib
 import re
 from collections.abc import Callable, Sequence
 
+from agent_toolkit._common import shell_segments as _shell_segments
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import agent_id as _agent_id
-from agent_toolkit._hooks import bash_command_parser as _bash_command_parser
 from agent_toolkit._hooks import plugin_resources as _plugin_resources
 from agent_toolkit._hooks import rules_context as _rules_context
 from agent_toolkit._hooks import tool_input as _tool_input
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
-from agent_toolkit._hooks.session_state import read_state, update_state
 
 _llm_notice = _notice_formatter("pretooluse")
 
@@ -89,7 +89,7 @@ def _grep_is_recursive(arguments: Sequence[str]) -> bool:
     return False
 
 
-def _is_search_segment(segment: _bash_command_parser.ExecutionSegment) -> bool:
+def _is_search_segment(segment: _shell_segments.ExecutionSegment) -> bool:
     """パイプラインの先頭区間が、リポジトリまたはディレクトリを検索するコマンドかを返す。"""
     if not segment.resolved or not segment.tokens:
         return False
@@ -114,7 +114,7 @@ def _is_search_operation(tool_name: str, tool_input: dict) -> bool:
     command = tool_input.get("command")
     if not isinstance(command, str):
         return False
-    return any(_is_search_segment(pipeline[0]) for pipeline in _bash_command_parser.extract_execution_pipelines(command))
+    return any(_is_search_segment(pipeline[0]) for pipeline in _shell_segments.extract_execution_pipelines(command))
 
 
 _ROOT_CAUSE_HEADING = re.compile(r"^## 原因分析[ \t]*$", re.MULTILINE)
@@ -147,7 +147,7 @@ def _is_managed_temp_create(tool_name: str, tool_input: dict) -> bool:
     command = tool_input.get("command")
     if not isinstance(command, str):
         return False
-    for pipeline in _bash_command_parser.extract_execution_pipelines(command):
+    for pipeline in _shell_segments.extract_execution_pipelines(command):
         for segment in pipeline:
             tokens = segment.tokens
             for index in range(len(tokens) - 1):

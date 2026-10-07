@@ -31,7 +31,10 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
   名前空間へ書き込む処理（`vars(...)`・`globals()`への代入・`setdefault`・`update`、
   `sys.modules[...]`の`__class__`の置換）を失敗とする。どちらも使う名前を実行時に別の場所から
   注入する構造を許し、静的解析が名前を解決できなくなるため。行単位の`# noqa: F821`は前方参照など
-  特定の1行だけを抑止し、注入への依存を生まないため対象から外す
+  特定の1行だけを抑止し、注入への依存を生まないため対象から外す。
+  同じ走査で、層の外から起動されるスクリプト（`agent_toolkit/`直下の公開スクリプトと`skills/*/scripts/`配下）のimportも検査する。
+  起動スクリプトは全ての層をimportできるが、`_hooks`をimportできるのは`hook.py`だけとし、`_testing`はimportできない。
+  hook以外の起動スクリプトが`_hooks`へ依存すると、hookの実装の層にhook以外から使う部品が残るため
 
 スクリプトをimportまたは実行する方式は採らない。生成処理・ファイル書き込みなどの副作用を
 実行し得るうえ、`--help`への対応も保証されていないため。
@@ -522,12 +525,40 @@ def _namespace_write_problems(source: _AgentToolkitSource) -> list[str]:
     return problems
 
 
+def _is_entry_source(path: pathlib.Path) -> bool:
+    """層の外から起動され全ての層を使うスクリプト（`agent_toolkit/`直下の公開スクリプトと`skills/*/scripts/`配下）かを返す。"""
+    if path.parent == _REPO_ROOT / "agent-toolkit/agent_toolkit":
+        return path.name in _AGENT_TOOLKIT_ROOT_MODULES
+    return path.is_relative_to(_REPO_ROOT / "agent-toolkit/skills")
+
+
+def _entry_layer_problems(source: _AgentToolkitSource) -> list[str]:
+    """起動スクリプトのimportのうち、`hook.py`以外からの`_hooks`と、`_testing`を参照するものを返す。"""
+    if not _is_entry_source(source.path):
+        return []
+    problems: list[str] = []
+    for reference in _extract_imports(source.tree):
+        components = reference.name.split(".")
+        if components[0] != "agent_toolkit" or len(components) < 2:
+            continue
+        if components[1] == "_hooks" and source.path.name != "hook.py":
+            problems.append(
+                f"{_display_path(source.path)}: "
+                "`_hooks`をimportしている（`_hooks`をimportできる起動スクリプトは`hook.py`だけ）。"
+                "次の操作: hook以外からも使う部品を前の層（`_common`など）へ移し、移動先からimportする"
+            )
+        elif components[1] == "_testing":
+            problems.append(f"{_display_path(source.path)}: 非テストモジュールから`_testing`をimportしている")
+    return sorted(set(problems))
+
+
 def _check_agent_toolkit_sources() -> list[str]:
     """`agent_toolkit/`と`skills/*/scripts/`の非テストのPythonを1回ずつ走査し、書き方の規則に反する箇所を返す。"""
     sources, problems = _agent_toolkit_sources()
     for source in sources:
         problems.extend(_file_level_f821_noqa_problems(source))
         problems.extend(_namespace_write_problems(source))
+        problems.extend(_entry_layer_problems(source))
     return problems
 
 

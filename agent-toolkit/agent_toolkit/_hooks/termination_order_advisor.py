@@ -28,10 +28,10 @@ CodexではClaude Code形式のSkill記録を根拠へ使わない。
 import json
 import pathlib
 
+from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_agents_exit_session_command, is_agents_wait_command
 from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 from agent_toolkit._hooks.stop_gate import (
     _entry_in_scan_scope,  # noqa: E402  # pylint: disable=protected-access

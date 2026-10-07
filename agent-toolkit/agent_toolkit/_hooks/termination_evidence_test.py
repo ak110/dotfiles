@@ -11,12 +11,12 @@ import pytest
 
 from agent_toolkit._agents_server import status_file
 from agent_toolkit._atk import config, run_script
+from agent_toolkit._common import session_state
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import (
     agents_server_session_advisor,
     posttooluse,
     pretooluse,
-    session_state,
     termination_evidence,
     termination_order_advisor,
     user_prompt_submit,

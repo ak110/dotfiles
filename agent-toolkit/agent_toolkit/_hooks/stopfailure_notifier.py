@@ -15,7 +15,7 @@ import tempfile
 from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
 )
-from agent_toolkit._hooks.transcript import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common.transcript import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     assistant_text,
     latest_main_assistant_entry,
 )

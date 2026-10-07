@@ -6,8 +6,8 @@ import pathlib
 import shlex
 
 from agent_toolkit._common import background_output
+from agent_toolkit._common.shell_segments import split_bash_segments
 from agent_toolkit._hooks import stop_gate
-from agent_toolkit._hooks.bash_command_parser import split_bash_segments
 
 _READ_COMMANDS = frozenset({"cat", "head", "less", "more", "sed", "tail", "wc", "grep", "rg"})
 
