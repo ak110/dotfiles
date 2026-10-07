@@ -1842,10 +1842,15 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     (notes / "inbox").mkdir(parents=True)
     (repository / "docs/record.md").write_text(_REFERENCE_MARKDOWN, encoding="utf-8")
     (repository / "docs/日本語名.md").write_text("# 日本語名\n", encoding="utf-8")
+    (repository / "docs/.hidden").mkdir()
+    (repository / "docs/.hidden/note.md").write_text("# 隠し\n", encoding="utf-8")
+    # Git管理外の記録は、managed-tempのように隠しディレクトリを途中に持つ絶対パスへ置く。
+    (tmp_path / ".cache").mkdir()
+    (tmp_path / ".cache/out.txt").write_text("観測\n", encoding="utf-8")
     for command in (
         ["init", "-q"],
         ["remote", "add", "origin", "https://github.com/example/foo.git"],
-        ["add", "docs/record.md", "docs/日本語名.md"],
+        ["add", "docs/record.md", "docs/日本語名.md", "docs/.hidden/note.md"],
         ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "観測記録"],
     ):
         subprocess.run(["git", "-C", str(repository), *command], capture_output=True, check=True, timeout=30)
@@ -1874,6 +1879,13 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
         ("原因をdocs/missing.md:1で確認", 1),
         ("原因をdocs/record.md:15で確認", 1),
         ("通常文のdocs/日本語名.md:1を確認", 0),
+        # 日本語に続くパスの直後へ文末の句点を置いた形は、句点の前のパス全体で所在を確かめる。
+        ("原因をdocs/record.md.", 0),
+        ("原因をdocs/missing.md.", 1),
+        ("原因をdocs/.hidden/note.md:1で確認", 0),
+        ("原因をdocs/.hidden/missing.md:1で確認", 1),
+        ("出力は{outside}/.cache/out.txtに保存した", 0),
+        ("出力は{outside}/.cache/missing.txtに保存した", 1),
         ("docs/日本語名.md:1 を確認", 0),
         ("`docs/record.md#設定  保存`の結果を読んだ", 0),
         ("`docs/record.md#括弧 (完了)`の結果を読んだ", 0),
@@ -1935,7 +1947,7 @@ def test_public_command_resolves_evidence_references(
     row = {
         **_condition(FIRST_WI, "完成"),
         "reviewed_head": head,
-        "evidence": reference.format(repository=repository, source=FIRST_WI),
+        "evidence": reference.format(repository=repository, source=FIRST_WI, outside=repository.parent),
     }
     _write_evidence(evidence, [row])
     args = argparse.Namespace(
@@ -1948,6 +1960,12 @@ def test_public_command_resolves_evidence_references(
         assert "参照『" in error and "証拠不足へ再判定" in error
         if reference.startswith("原因をdocs/"):
             assert "参照『docs/" in error
+        if reference.startswith(("原因をdocs/", "出力は")) and "missing" in reference:
+            # 拒否の診断は、途中のピリオドや文末の句点で切り詰めないパス全体を示す。
+            whole = re.search(r"(?:docs|\{outside\})/[^\sで。に]*missing\.(?:md|txt)", reference)
+            assert whole is not None
+            path = re.escape(whole[0].format(outside=repository.parent))
+            assert re.search(f"参照『{path}(?::1)?』", error), error
         if "202609" in reference:
             assert "WI名または節" in error or "WIの節または行" in error
         if ":1-2,5-7" in reference:
