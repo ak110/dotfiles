@@ -79,7 +79,8 @@ patch構文は`apply_patch`の構文として解釈する。相対パスはpaylo
 patchを解釈できない場合はhook側で操作を遮断せず、妥当性判定を`apply_patch`本体へ委ねる。
 
 ホスト判定はCodexがターン単位hookへ付加する非空文字列の`turn_id`を基準とする。
-ホスト判定に用いる入力はこの`turn_id`に限る。
+UserPromptSubmitではCodexだけが発話（`prompt`）とともにモデル名（`model`）を渡すため、`prompt`と`model`を併せ持つ入力もCodexと判定する。
+ホスト判定に用いる入力はこの2つに限り、ツール名の推測を使わない。
 
 複数ファイル・複数チェックの警告は1つの`hookSpecificOutput.additionalContext`へ結合して返す。
 stdout全体が1つのJSONとして解析されるため、対象ごとに出力すると複数JSONとなり解析に失敗する。
