@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from pytools._internal import claude_common, install_codex_plugins, log_format, post_apply_outcome
+from pytools._internal import claude_common, common, install_codex_plugins, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,11 @@ def enabled_version(installed: list[object], plugin_id: str) -> str | None:
 
 def codex_plugin_script(*, plugin_id: str, plugin_name: str, relative_path: Path, tag: str) -> Path | None:
     """Codexが参照する有効版pluginキャッシュ内の入口を返す。"""
-    codex = claude_common.resolve_executable("codex")
+    codex = common.resolve_executable("codex")
     if codex is None:
         logger.info(log_format.format_status(tag, "codex CLI が見つからないためCodex分を除外"))
         return None
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         [str(codex), "plugin", "list", "--json"],
         timeout=_CODEX_LIST_TIMEOUT,
         tag="codex",
@@ -69,7 +69,7 @@ def run(
     uv環境の構築は導入に当たるため、構築できない場合は警告だけを出力してスキップと数える。
     uvのキャッシュだけへ作用し設定を変えないため、変更なしを返す。
     """
-    uv = claude_common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
+    uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
     if uv is None:
         logger.warning(log_format.format_status(tag, "uv CLI が見つからず環境構築を開始できない"))
         return post_apply_outcome.PostApplyOutcome()
@@ -177,7 +177,7 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:
     失敗は警告として記録し、構築できた場合は真を返す。
     """
     started = time.monotonic()
-    result = claude_common.run_subprocess(list(cmd), timeout=_WARMUP_TIMEOUT, tag=Path(cmd[0]).stem)
+    result = common.run_subprocess(list(cmd), timeout=_WARMUP_TIMEOUT, tag=Path(cmd[0]).stem)
     elapsed = time.monotonic() - started
     if result is not None and result.returncode == 0:
         logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{elapsed:.1f}秒): {target}"))
@@ -189,6 +189,6 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:
         summary = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {target}"
     else:
         summary = f"環境構築が異常終了 (exit {result.returncode}、{elapsed:.1f}秒): {target}"
-    message = f"{summary} / {claude_common.format_cli_error(result)}"
+    message = f"{summary} / {common.format_cli_error(result)}"
     logger.warning(log_format.format_status(tag, message))
     return False

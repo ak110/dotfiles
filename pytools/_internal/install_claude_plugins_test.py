@@ -14,6 +14,7 @@ import pytest
 
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
+from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from ._test_helpers import _FakeResult, command_matches, make_fresh_install_fake
@@ -24,7 +25,7 @@ _REAL_VERIFY_TARGET_PLUGINS = _install_claude_plugins._verify_target_plugins
 @pytest.fixture(name="fake_which_present")
 def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
     """claude と uv の両方が存在する状態に見せかける。"""
-    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+    monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
 
 
 @pytest.fixture(name="fake_target_info")
@@ -77,7 +78,7 @@ def test_installed_plugins_are_read_after_marketplace_is_ensured(
     events: list[str] = []
     monkeypatch.setattr(_install_claude_plugins, "_prerequisites_ok", lambda: True)
     monkeypatch.setattr(_install_claude_plugins, "_install_external_marketplaces", lambda: False)
-    monkeypatch.setattr(_claude_common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(_common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({}, {"legacy"}))
 
     def ensure_marketplace() -> bool:
@@ -128,7 +129,7 @@ class TestExtractPluginVersionMap:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """共通の前提設定: which は通し、ファイル読み取りは無効化し、自動管理は no-op にする。"""
-        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
@@ -160,7 +161,7 @@ class TestExtractPluginVersionMap:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         changed = _install_claude_plugins.run().changed
         # version 一致のため changed は False
@@ -191,7 +192,7 @@ class TestExtractPluginVersionMap:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         changed = _install_claude_plugins.run().changed
         # project scope は user scope 用のインストール判定から外れるため install が発行される
@@ -220,7 +221,7 @@ class TestExtractPluginVersionMap:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         changed = _install_claude_plugins.run().changed
         # version 一致のため install は発行されない
@@ -253,7 +254,7 @@ class TestExtractPluginVersionMap:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is True
@@ -264,7 +265,7 @@ class TestExtractPluginVersionMap:
         calls: list[list[str]] = []
         fake_run = make_fresh_install_fake(calls)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is True
@@ -298,7 +299,7 @@ class TestEnsureMarketplaceCliPath:
                 )
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         assert _claude_marketplace.ensure_marketplace() is True
         assert [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "remove"])] == []
@@ -323,12 +324,12 @@ class TestEnsureMarketplaceCliPath:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         assert _claude_marketplace.ensure_marketplace() is True
         add_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])]
         assert len(add_calls) == 1
-        dotfiles_root = _claude_common.find_dotfiles_root()
+        dotfiles_root = _common.find_dotfiles_root()
         assert dotfiles_root is not None
         assert command_matches(
             add_calls[0],
@@ -386,14 +387,14 @@ class TestLegacyGithubTypeMigration:
 
         # CLI remove+add は settings 側を更新しない再現環境として成功のみ返す
         monkeypatch.setattr(
-            _claude_common.subprocess,
+            _common.subprocess,
             "run",
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
 
         assert _claude_marketplace.ensure_marketplace() is True
 
-        dotfiles_root = _claude_common.find_dotfiles_root()
+        dotfiles_root = _common.find_dotfiles_root()
         assert dotfiles_root is not None
 
         known_data = json.loads(known.read_text(encoding="utf-8"))
@@ -424,11 +425,11 @@ class TestReadTargetInfo:
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
         monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
-        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         calls: list[list[str]] = []
         fake_run = make_fresh_install_fake(calls)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is True
@@ -443,16 +444,16 @@ class TestReadTargetInfo:
     ):
         """marketplace.json がない場合は対象 plugin なしでスキップし、claude CLI を一切呼ばない。"""
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
-        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         # dotfiles_root を marketplace.json が存在しない tmp_path に差し替える
-        monkeypatch.setattr(_claude_common, "find_dotfiles_root", lambda: tmp_path)
+        monkeypatch.setattr(_common, "find_dotfiles_root", lambda: tmp_path)
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is False
@@ -472,7 +473,7 @@ class TestEnsurePluginCacheComplete:
                 {
                     "version": 2,
                     "plugins": {
-                        f"{self._NAME}@{_install_claude_plugins._MARKETPLACE_NAME}": [
+                        f"{self._NAME}@{_claude_common.MARKETPLACE_NAME}": [
                             {"scope": "user", "version": "1.0.0", "installPath": str(install_path)}
                         ]
                     },
@@ -481,7 +482,7 @@ class TestEnsurePluginCacheComplete:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", installed)
+        monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", installed)
 
     def _write_cache(self, cache_dir: pathlib.Path, *, missing: tuple[str, ...] = ()) -> None:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -564,7 +565,7 @@ class TestEnsurePluginCacheComplete:
         installed = tmp_path / "plugins" / "installed_plugins.json"
         installed.parent.mkdir(parents=True, exist_ok=True)
         installed.write_text(json.dumps({"version": 2, "plugins": {}}), encoding="utf-8")
-        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", installed)
+        monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", installed)
         monkeypatch.setattr(
             _install_claude_plugins,
             "_install_plugin",

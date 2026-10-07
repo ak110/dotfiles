@@ -23,7 +23,7 @@ import tomllib
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from pytools._internal import claude_common  # pylint: disable=wrong-import-position  # noqa: E402
+from pytools._internal import common  # pylint: disable=wrong-import-position  # noqa: E402
 
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _PYTOOLS_OUTPUT = _REPO_ROOT / "completions" / "_pytools.bash"
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
 def _write_if_changed(output: pathlib.Path, content: str, count: int) -> None:
     if output.exists() and output.read_text(encoding="utf-8") == content:
         return
-    if not claude_common.atomic_write_text(output, content, tag="bash completions"):
+    if not common.atomic_write_text(output, content, tag="bash completions"):
         raise OSError(f"bash補完ファイルの書き込みに失敗: {output}")
     print(f"生成: {output.relative_to(_REPO_ROOT)} ({count}コマンド)")
 

@@ -1,6 +1,6 @@
 """pytools._internal.warmup_agents_server のテスト。
 
-`resolve_executable`・`claude_common.run_subprocess`・plugin一覧の入力を差し替え、
+`resolve_executable`・`common.run_subprocess`・plugin一覧の入力を差し替え、
 ウォームアップ対象の列挙と、構築の失敗をスキップと数えることを検証する。実際の`uv`は起動しない。
 """
 
@@ -9,7 +9,7 @@ import pathlib
 
 import pytest
 
-from pytools._internal import claude_common as _claude_common
+from pytools._internal import common as _common
 from pytools._internal import post_apply_outcome
 from pytools._internal import warmup_agents_server as _warmup
 
@@ -44,7 +44,7 @@ def _setup(
     `codex_entries`から組み立てた出力を返す。`uv run`の結果は`warmup_returncode`で指定し、
     `None`は実行自体の失敗（タイムアウト等）を表す。
     """
-    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+    monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     plugin_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
@@ -68,7 +68,7 @@ def _setup(
             return None
         return _FakeResult(returncode=warmup_returncode)
 
-    monkeypatch.setattr(_claude_common, "run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(_common, "run_subprocess", fake_run_subprocess)
     return calls
 
 
@@ -98,7 +98,7 @@ class TestPrerequisites:
         """uvが無い環境では外部コマンドを実行しない。"""
         calls = _setup(monkeypatch, tmp_path)
         monkeypatch.setattr(
-            _claude_common,
+            _common,
             "resolve_executable",
             lambda name, **_kwargs: None if name == "uv" else pathlib.Path(name),
         )
@@ -206,7 +206,7 @@ class TestCodexResolution:
         """codex CLI不在ではCodex分だけを除外して継続する。"""
         calls = _setup(monkeypatch, tmp_path)
         monkeypatch.setattr(
-            _claude_common,
+            _common,
             "resolve_executable",
             lambda name, **_kwargs: None if name == "codex" else pathlib.Path(name),
         )
@@ -279,7 +279,7 @@ class TestCoverage:
         calls = _setup(monkeypatch, tmp_path)
         repository = tmp_path / "dotfiles"
         _write_script(repository / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py")
-        monkeypatch.setattr(_warmup.claude_common, "find_dotfiles_root", lambda: repository)
+        monkeypatch.setattr(_common, "find_dotfiles_root", lambda: repository)
 
         _warmup.run()
 

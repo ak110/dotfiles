@@ -9,7 +9,7 @@ import logging
 import re
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format, post_apply_outcome, winutils
+from pytools._internal import common, log_format, post_apply_outcome, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     ファイルを解釈できない場合と書き込みの失敗は失敗と数える。
     """
-    root = claude_common.find_dotfiles_root()
+    root = common.find_dotfiles_root()
     if root is None:
         logger.info(log_format.format_status("user.env", "dotfiles ルートが見つからずスキップ"))
         return post_apply_outcome.PostApplyOutcome()

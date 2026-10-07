@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ def _process_plugin(plugin: _Plugin) -> bool:
 
 def _clone(plugin: _Plugin) -> bool:
     plugin.dest.parent.mkdir(parents=True, exist_ok=True)
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         [
             "git",
             "clone",
@@ -119,7 +119,7 @@ def _clone(plugin: _Plugin) -> bool:
 
 
 def _origin_matches(plugin: _Plugin) -> bool:
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["git", "-C", str(plugin.dest), "remote", "get-url", "origin"],
         tag=_TAG,
     )
@@ -135,33 +135,31 @@ def _update(plugin: _Plugin) -> bool:
 
 
 def _update_to_tag(plugin: _Plugin) -> bool:
-    fetch = claude_common.run_subprocess(
+    fetch = common.run_subprocess(
         ["git", "-C", str(plugin.dest), "fetch", "--depth", "1", "origin", plugin.pin],
         tag=_TAG,
     )
     if fetch is None or fetch.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"fetch失敗: {plugin.dest}: {claude_common.format_cli_error(fetch)}"))
+        logger.warning(log_format.format_status(_TAG, f"fetch失敗: {plugin.dest}: {common.format_cli_error(fetch)}"))
         return False
-    checkout = claude_common.run_subprocess(
+    checkout = common.run_subprocess(
         ["git", "-C", str(plugin.dest), "checkout", "FETCH_HEAD"],
         tag=_TAG,
     )
     if checkout is None or checkout.returncode != 0:
-        logger.warning(
-            log_format.format_status(_TAG, f"checkout失敗: {plugin.dest}: {claude_common.format_cli_error(checkout)}")
-        )
+        logger.warning(log_format.format_status(_TAG, f"checkout失敗: {plugin.dest}: {common.format_cli_error(checkout)}"))
         return False
     logger.info(log_format.format_status(_TAG, f"更新: {plugin.dest} ({plugin.pin})"))
     return True
 
 
 def _update_to_branch(plugin: _Plugin) -> bool:
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["git", "-C", str(plugin.dest), "pull", "--ff-only"],
         tag=_TAG,
     )
     if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"pull失敗: {plugin.dest}: {claude_common.format_cli_error(result)}"))
+        logger.warning(log_format.format_status(_TAG, f"pull失敗: {plugin.dest}: {common.format_cli_error(result)}"))
         return False
     logger.info(log_format.format_status(_TAG, f"更新: {plugin.dest} ({plugin.pin})"))
     return True

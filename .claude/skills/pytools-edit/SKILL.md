@@ -37,10 +37,15 @@ description: >
 
 ## 実装規約
 
-- リポジトリ内リソースを参照するスクリプトは`Path.home()`起点ではなく`Path(__file__)`起点で解決する
-  （CIチェックアウトやエンドユーザー環境で`$HOME`と`~/dotfiles`が一致しない場合にimportに失敗するため）
-- `pytools/_internal/claude_common.py`は共通基盤モジュール（`find_dotfiles_root()`・`run_subprocess()`・
-  `atomic_write_*()`等）を提供する。新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける（努力目標。共通基盤を使うと実装の分岐を防げる）
+- `pytools`とプロジェクト環境で起動するスクリプトは、dotfilesの作業ツリーの位置を`pytools._internal.common.find_dotfiles_root()`で求める。
+  `Path.home()`起点の`~/dotfiles`や`Path(__file__)`からの階層数で求めない。CIチェックアウトやエンドユーザー環境では`$HOME`と`~/dotfiles`が一致せず、
+  階層数による解決は配置を変えるたびに各所の修正を要するためである。`None`が返った場合の扱いは呼び出し元が決める。
+  PEP 723形式の単独実行スクリプトは`pytools`をimportできないため、`Path(__file__)`起点で解決する。
+  chezmoiからの起動の判定を兼ねる環境変数`CHEZMOI_WORKING_TREE`の読み取りはこの規定の対象外とする
+- bash、PowerShell、JSON、chezmoiテンプレートの`~/dotfiles`の固定値（`.chezmoi-source/dot_bashrc`、`share/claude_settings_json_managed.win32.json`、`bin/lab-bg`など）は
+  `install.sh`がclone先を`~/dotfiles`とすることを前提とする。clone先の前提を変える場合はこれらの箇所もそろえる
+- `pytools/_internal/common.py`はClaudeに依存しない共通処理（`find_dotfiles_root()`・`run_subprocess()`・`atomic_write_*()`等）、
+  `pytools/_internal/claude_common.py`はClaude Code固有の定数と`run_claude()`を提供する。新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける（努力目標。共通基盤を使うと実装の分岐を防げる）
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている。書込ツールで扱う手段は`agent-toolkit:writing-standards`の
   `references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCIIのみの修正は`sed -i`で対応する
 - 非ASCIIを標準出力または標準エラーへ書くPython CLIは、開始時に`io.TextIOWrapper`の両ストリームをUTF-8・`errors="replace"`へ再構成する。英語版Windowsなどで、エンコーディングを指定せずにランタイムがロケールから選ぶ値へ依存すると、日本語の最初の出力でCLIが停止するためである

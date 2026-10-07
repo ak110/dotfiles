@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools._internal import claude_common, sync_agent_toolkit_rules
+from pytools._internal import claude_common, common, sync_agent_toolkit_rules
 
 
 @pytest.fixture(name="env")
@@ -13,7 +13,7 @@ def env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, 
     dotfiles_root = tmp_path / "dotfiles"
     claude_home = tmp_path / "home" / ".claude"
     codex_home = tmp_path / "home" / ".codex"
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: dotfiles_root)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: dotfiles_root)
     monkeypatch.setattr(claude_common, "CLAUDE_HOME", claude_home)
     monkeypatch.setattr(sync_agent_toolkit_rules, "CODEX_HOME", codex_home)
     return dotfiles_root, claude_home, codex_home
@@ -127,7 +127,7 @@ class TestRun:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`find_dotfiles_root()`が`None`を返すときは何もせずFalseを返す。"""
-        monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: None)
+        monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
         monkeypatch.setattr(claude_common, "CLAUDE_HOME", tmp_path / "home" / ".claude")
 
         assert sync_agent_toolkit_rules.run().changed is False

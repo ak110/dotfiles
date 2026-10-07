@@ -17,11 +17,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="派生JSONを変更せず整合性だけを検査する")
     args = parser.parse_args(argv)
     if args.check:
-        diagnostics = codex_plugin_manifests.check_diagnostics(codex_plugin_manifests.REPO_ROOT)
+        diagnostics = codex_plugin_manifests.check_diagnostics(codex_plugin_manifests.repo_root())
         for diagnostic in diagnostics:
             print(diagnostic, file=sys.stderr)
         return 1 if diagnostics else 0
-    codex_plugin_manifests.sync(codex_plugin_manifests.REPO_ROOT)
+    codex_plugin_manifests.sync(codex_plugin_manifests.repo_root())
     return 0
 
 

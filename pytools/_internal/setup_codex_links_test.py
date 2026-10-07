@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools._internal import claude_common, setup_codex_links, sync_agent_toolkit_rules
+from pytools._internal import claude_common, common, setup_codex_links, sync_agent_toolkit_rules
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 
@@ -16,7 +16,7 @@ def env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, 
     """`find_dotfiles_root`と`CODEX_HOME`を一時ディレクトリ配下へ振り向ける。"""
     dotfiles_root = tmp_path / "dotfiles"
     codex_home = tmp_path / "home" / ".codex"
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: dotfiles_root)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: dotfiles_root)
     monkeypatch.setattr(setup_codex_links, "CODEX_HOME", codex_home)
     return dotfiles_root, codex_home
 
@@ -215,7 +215,7 @@ def test_returns_false_when_dotfiles_root_unresolved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`find_dotfiles_root()`が`None`を返すなら何もせず`False`返却。"""
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: None)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
     monkeypatch.setattr(setup_codex_links, "CODEX_HOME", tmp_path / ".codex")
 
     assert setup_codex_links.run().changed is False
@@ -234,7 +234,7 @@ def test_run_leaves_the_rules_destination_to_the_rules_sync(
     配布先に対する警告が無いことと、`atk-auto`の境界付きの本文が残ることを確かめる。
     """
     dotfiles_root = tmp_path / "dotfiles"
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: dotfiles_root)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: dotfiles_root)
     monkeypatch.setattr(claude_common, "CLAUDE_HOME", tmp_path / "home" / ".claude")
     codex_home = tmp_path / "home" / ".codex"
     monkeypatch.setattr(sync_agent_toolkit_rules, "CODEX_HOME", codex_home)

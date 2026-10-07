@@ -11,7 +11,7 @@ import json
 import logging
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format, plugin_warmup, post_apply_outcome
+from pytools._internal import claude_common, common, log_format, plugin_warmup, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     ツール環境の構築は導入に当たるため、構築できない場合は警告だけを出力してスキップと数える。
     uvのキャッシュだけへ作用し設定を変えないため、変更なしを返す。
     """
-    uvx = claude_common.resolve_executable("uvx", preferred_directories=(Path.home() / ".local" / "bin",))
+    uvx = common.resolve_executable("uvx", preferred_directories=(Path.home() / ".local" / "bin",))
     if uvx is None:
         logger.warning(log_format.format_status(_TAG, "uvx CLI が見つからず環境構築を開始できない"))
         return post_apply_outcome.PostApplyOutcome()

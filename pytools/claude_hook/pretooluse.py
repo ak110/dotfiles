@@ -33,6 +33,8 @@ from agent_toolkit._hooks.notice import (
 )
 from agent_toolkit._hooks.tool_input import new_content_fields
 
+from pytools._internal import common
+
 # このスクリプトのhook識別子。`atk-auto`要素の`source`属性に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
 
@@ -183,8 +185,8 @@ def _check_dotfiles_specific_names(
     """
     if not file_path:
         return None, None
-    dotfiles_root = pathlib.Path(__file__).resolve().parents[2]
-    if not _is_in_agent_toolkit_distribution(file_path, dotfiles_root):
+    dotfiles_root = common.find_dotfiles_root()
+    if dotfiles_root is None or not _is_in_agent_toolkit_distribution(file_path, dotfiles_root):
         return None, None
     block_names, warn_names = _build_dotfiles_specific_names(dotfiles_root)
     block_hits = _collect_word_hits(tool_name, fields, block_names)

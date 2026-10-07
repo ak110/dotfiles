@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ _LINKS: dict[str, str] = {
 
 def run() -> post_apply_outcome.PostApplyOutcome:
     """`~/.codex/`配下のリンクを冪等に生成する。リンクを作成できない場合は失敗と数える。"""
-    dotfiles_root = claude_common.find_dotfiles_root()
+    dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("codex links", "dotfiles ルートが見つからずスキップ"))
         return post_apply_outcome.PostApplyOutcome()

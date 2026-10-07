@@ -13,6 +13,7 @@ import pytest
 
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
+from pytools._internal import common as _common
 
 from ._test_helpers import _FakeResult, command_matches, write_known_entry, write_settings_entry
 
@@ -20,13 +21,13 @@ from ._test_helpers import _FakeResult, command_matches, write_known_entry, writ
 @pytest.fixture(autouse=True)
 def _resolve_claude(monkeypatch: pytest.MonkeyPatch) -> None:
     """Claude CLIをテスト用のコマンド名へ固定する。"""
-    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+    monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
 
 
 @pytest.fixture(name="dotfiles_root")
 def _dotfiles_root() -> pathlib.Path:
     """本リポジトリの dotfiles ルート (directory 型 path のテスト期待値)。"""
-    root = _claude_common.find_dotfiles_root()
+    root = _common.find_dotfiles_root()
     assert root is not None, "dotfiles ルートが検出できない環境ではテストを実行できない"
     return root
 
@@ -226,12 +227,12 @@ class TestRepairMarketplace:
                 write_settings_entry(settings, healthy_entry)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         def fail_replace(*_args, **_kwargs):
             raise AssertionError("os.replace should not be called when CLI succeeds")
 
-        monkeypatch.setattr(_claude_common.os, "replace", fail_replace)
+        monkeypatch.setattr(_common.os, "replace", fail_replace)
 
         assert _claude_marketplace.repair_marketplace() is True
 
@@ -249,7 +250,7 @@ class TestRepairMarketplace:
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         _claude_marketplace.repair_marketplace()
         add_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])]
@@ -286,7 +287,7 @@ class TestRepairMarketplace:
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         assert _claude_marketplace.repair_marketplace() is True
         # 両ファイルとも directory 型 + dotfiles 絶対パスへ更新されている
@@ -330,7 +331,7 @@ class TestRepairMarketplace:
             encoding="utf-8",
         )
         monkeypatch.setattr(
-            _claude_common.subprocess,
+            _common.subprocess,
             "run",
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
@@ -360,7 +361,7 @@ class TestRepairMarketplace:
         # 旧 GitHub 型エントリで破損した状態
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         monkeypatch.setattr(
-            _claude_common.subprocess,
+            _common.subprocess,
             "run",
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
@@ -368,7 +369,7 @@ class TestRepairMarketplace:
         def fail_replace(*_args, **_kwargs):
             raise OSError("permission denied")
 
-        monkeypatch.setattr(_claude_common.os, "replace", fail_replace)
+        monkeypatch.setattr(_common.os, "replace", fail_replace)
 
         assert _claude_marketplace.repair_marketplace() is False
 
@@ -391,12 +392,12 @@ class TestEnsureMarketplaceHealthy:
         def fail_run(cmd, **_kwargs):  # noqa: ANN001
             raise AssertionError(f"subprocess.run should not be called: {cmd}")
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fail_run)
+        monkeypatch.setattr(_common.subprocess, "run", fail_run)
 
         def fail_replace(*_args, **_kwargs):
             raise AssertionError("os.replace should not be called in healthy state")
 
-        monkeypatch.setattr(_claude_common.os, "replace", fail_replace)
+        monkeypatch.setattr(_common.os, "replace", fail_replace)
 
         assert _claude_marketplace.ensure_marketplace() is True
 

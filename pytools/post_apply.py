@@ -24,10 +24,10 @@ import platformdirs
 
 from pytools import update_ssh_config
 from pytools._internal import (
-    claude_common,
     cleanup_paths,
     cleanup_user_path,
     codex_plugin_manifests,
+    common,
     install_claude_plugins,
     install_codex_plugins,
     install_libarchive,
@@ -408,7 +408,7 @@ def _cleanup_removed_paths() -> post_apply_outcome.PostApplyOutcome:
 
 def _sync_codex_plugin_manifests() -> post_apply_outcome.PostApplyOutcome:
     """Codex plugin向けの派生manifestを同期する。"""
-    return post_apply_outcome.PostApplyOutcome(changed=codex_plugin_manifests.sync())
+    return post_apply_outcome.PostApplyOutcome(changed=codex_plugin_manifests.sync(codex_plugin_manifests.repo_root()))
 
 
 _WINDOWS = ("win32",)
@@ -525,15 +525,13 @@ def main(
     )
     args = parser.parse_args([] if runner is not None and argv is None else argv)
     if runner is None:
-        root = claude_common.find_dotfiles_root()
+        root = common.find_dotfiles_root()
         if root is None:
             print("dotfilesの実行ルートを特定できませんでした。", file=sys.stderr)
             sys.exit(2)
-        git_result = claude_common.run_subprocess(
-            ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"]
-        )
+        git_result = common.run_subprocess(["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"])
         if git_result is None or git_result.returncode != 0:
-            detail = claude_common.format_cli_error(git_result)
+            detail = common.format_cli_error(git_result)
             print(f"正規のdotfilesルートを特定できませんでした: {root}: {detail}", file=sys.stderr)
             sys.exit(2)
         canonical_root = Path(git_result.stdout.strip()).parent

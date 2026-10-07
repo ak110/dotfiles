@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from pytools._internal import claude_common as _claude_common
+from pytools._internal import common as _common
 from pytools._internal import plugin_warmup as _plugin_warmup
 
 from ._test_helpers import _FakeResult
@@ -36,7 +36,7 @@ def test_nonzero_exit_reports_captured_output(
 ) -> None:
     """非0終了では、取り込んだstderrとstdoutを警告へ含めて構築できなかったことを返す。"""
     monkeypatch.setattr(
-        _claude_common,
+        _common,
         "run_subprocess",
         lambda *_args, **_kwargs: _FakeResult(returncode=1, stdout=_STDOUT_BODY, stderr=_STDERR_BODY),
     )
@@ -56,9 +56,9 @@ def test_missing_result_reports_execution_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """結果を得られない場合は、コマンドの実行に失敗したことを警告へ含めて構築できなかったことを返す。"""
-    monkeypatch.setattr(_claude_common, "run_subprocess", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_common, "run_subprocess", lambda *_args, **_kwargs: None)
     path = _target(tmp_path)
-    expected = _claude_common.format_cli_error(None)
+    expected = _common.format_cli_error(None)
 
     with caplog.at_level(logging.WARNING):
         assert _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup") is False
@@ -74,7 +74,7 @@ def test_success_does_not_report_captured_output(
 ) -> None:
     """成功した実行では警告を記録せず、診断本文も追加しない。"""
     monkeypatch.setattr(
-        _claude_common,
+        _common,
         "run_subprocess",
         lambda *_args, **_kwargs: _FakeResult(returncode=0, stdout=_STDOUT_BODY, stderr=_STDERR_BODY),
     )

@@ -9,7 +9,7 @@ import pathlib
 
 import pytest
 
-from pytools._internal import claude_common as _claude_common
+from pytools._internal import common as _common
 from pytools._internal import post_apply_outcome
 from pytools._internal import warmup_pyfltr_mcp as _warmup
 
@@ -58,8 +58,8 @@ class _Env:
         _write(installed, {"plugins": {_PLUGIN_ID: [{"installPath": str(tmp_path / "claude")}]}})
         monkeypatch.setattr(_warmup, "_INSTALLED_PLUGINS_PATH", installed)
         monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
-        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
-        monkeypatch.setattr(_claude_common, "run_subprocess", self._run)
+        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+        monkeypatch.setattr(_common, "run_subprocess", self._run)
 
     def _run(self, cmd: list[str], **_kwargs: object) -> _FakeResult | None:
         self.calls.append(cmd)
@@ -105,7 +105,7 @@ def test_missing_uvx_skips_without_running(
 ) -> None:
     """uvx不在は外部コマンドを実行せず、警告してスキップと数える。"""
     monkeypatch.setattr(
-        _claude_common,
+        _common,
         "resolve_executable",
         lambda name, **_kwargs: None if name == "uvx" else pathlib.Path(name),
     )

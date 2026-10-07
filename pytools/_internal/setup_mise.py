@@ -17,7 +17,7 @@ from pathlib import Path
 import httpx
 import platformdirs
 
-from pytools._internal import claude_common, log_format, post_apply_outcome, setup_cli_common, winutils
+from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
     """
     if _is_windows():
         try:
-            result = claude_common.run_subprocess(
+            result = common.run_subprocess(
                 [
                     "winget",
                     "install",
@@ -132,7 +132,7 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
             logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {error}"))
             return False
         if result is None or result.returncode != 0:
-            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {claude_common.format_cli_error(result)}"))
+            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {common.format_cli_error(result)}"))
             return False
         return True
 
@@ -146,14 +146,14 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".sh", delete=False) as temp:
             temp.write(response.content)
             temp_path = Path(temp.name)
-        result = claude_common.run_subprocess(
+        result = common.run_subprocess(
             ["sh", str(temp_path)],
             timeout=_MISE_INSTALL_TIMEOUT,
             tag="mise",
             env_overrides={"MISE_INSTALL_PATH": str(Path.home() / ".local" / "bin" / "mise")},
         )
         if result is None or result.returncode != 0:
-            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {claude_common.format_cli_error(result)}"))
+            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {common.format_cli_error(result)}"))
             return False
         return True
     except Exception as error:  # noqa: BLE001  # 取得・保存・実行の失敗を1件の警告へ集約する
@@ -213,6 +213,9 @@ def _ensure_mise_up_to_date(mise_bin: Path) -> bool:
 
 def _working_tree_with_config() -> Path | None:
     """`mise.toml` を持つchezmoi working treeを返す。該当しない場合は`None`を返す。"""
+    # `find_dotfiles_root()`を使わず`CHEZMOI_WORKING_TREE`を読む。
+    # 値が作業ツリーの位置に加えて「chezmoiから起動された」ことの判定を兼ね、
+    # `dotfiles-post-apply`の単独実行では作業ツリーの`mise.toml`を実行位置に使わないためである。
     working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
     if not working_tree:
         return None
@@ -229,6 +232,9 @@ def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
     事前チェックは行わず毎回実行する。副作用がないため、成功時はchanged判定も常にTrueを
     返す（サマリで「更新」扱いになるが、ノイズよりも実行事実を確認できる方を優先する）。
     """
+    # `find_dotfiles_root()`を使わず`CHEZMOI_WORKING_TREE`を読む。
+    # 値が作業ツリーの位置に加えて「chezmoiから起動された」ことの判定を兼ね、
+    # `dotfiles-post-apply`の単独実行ではtrustをスキップするためである。
     working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
     if not working_tree:
         logger.info(log_format.format_status("mise", "CHEZMOI_WORKING_TREE 未設定のため trust をスキップ"))
@@ -590,7 +596,7 @@ def _run_mise(
     Windowsではシステム版`dotnet.exe`が先行しても、miseのSDK検証が共有ルートを
     参照するよう子プロセスだけの`PATH`を設定する。
     """
-    return claude_common.run_subprocess(
+    return common.run_subprocess(
         [str(mise_bin), *args],
         timeout=timeout,
         cwd=cwd,

@@ -10,9 +10,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from pytools._internal import claude_common
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from pytools._internal import common
 
 PLUGIN_SOURCE = Path("agent-toolkit/.claude-plugin/plugin.json")
 MARKETPLACE_SOURCE = Path(".claude-plugin/marketplace.json")
@@ -442,7 +440,7 @@ def _sync_codex_root(root: Path, expected: dict[Path, tuple[bytes, int]]) -> boo
         content, mode = expected[relative]
         target = target_root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        if not claude_common.atomic_write_bytes(target, content, mode=mode, tag="Codex plugin root"):
+        if not common.atomic_write_bytes(target, content, mode=mode, tag="Codex plugin root"):
             raise OSError(f"Codex plugin rootの書き込みに失敗: {relative}")
     if target_root.exists():
         directories = sorted(
@@ -456,12 +454,23 @@ def _sync_codex_root(root: Path, expected: dict[Path, tuple[bytes, int]]) -> boo
     return bool(stale)
 
 
-def sync(root: Path = REPO_ROOT) -> bool:
+def repo_root() -> Path:
+    """生成元と生成物を持つdotfilesの作業ツリーを返す。
+
+    作業ツリーを解決できない場合は生成元を読めず生成を続けられないため、`FileNotFoundError`を送出する。
+    """
+    root = common.find_dotfiles_root()
+    if root is None:
+        raise FileNotFoundError("dotfilesの作業ツリーを解決できない")
+    return root
+
+
+def sync(root: Path) -> bool:
     """派生JSONを同期し、差分があった場合は`True`を返す。"""
     expected = _outputs(root)
     stale = _differences(expected, _existing_outputs(root, expected))
     for path, content in expected.items():
-        if path in stale and not claude_common.atomic_write_text(root / path, content, tag="plugin manifests"):
+        if path in stale and not common.atomic_write_text(root / path, content, tag="plugin manifests"):
             raise OSError(f"派生JSONの書き込みに失敗: {path}")
     for path in OPTIONAL_TARGETS - set(expected):
         (root / path).unlink(missing_ok=True)
@@ -469,12 +478,12 @@ def sync(root: Path = REPO_ROOT) -> bool:
     return bool(stale) or codex_changed
 
 
-def check(root: Path = REPO_ROOT) -> bool:
+def check(root: Path) -> bool:
     """派生JSONを変更せず、期待内容と一致する場合は`True`を返す。"""
     return not check_diagnostics(root)
 
 
-def check_diagnostics(root: Path = REPO_ROOT) -> tuple[str, ...]:
+def check_diagnostics(root: Path) -> tuple[str, ...]:
     """検査対象の相対パスと差の種類を、派生物を書き換えずに組み立てる。"""
     expected = _outputs(root)
     normal = _output_difference_details(expected, _existing_outputs(root, expected))

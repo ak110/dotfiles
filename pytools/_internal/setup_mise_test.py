@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from pytools._internal import claude_common, winutils
+from pytools._internal import common, winutils
 from pytools._internal import setup_mise as _setup_mise
 
 # 無人セットアップのために`_run_mise`から注入される環境変数の期待値。
@@ -29,7 +29,7 @@ def _expected_env(record: dict[str, typing.Any]) -> dict[str, str]:
 
 
 class _MiseSubprocessStub:
-    """`claude_common.run_subprocess` を差し替えるスタブ。
+    """`common.run_subprocess` を差し替えるスタブ。
 
     `mise <subcommand>` の呼び出しを `records` に蓄積し、登録された
     `handlers` から前方一致でレスポンスを返す。
@@ -44,7 +44,7 @@ class _MiseSubprocessStub:
         ] = {}
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(claude_common, "run_subprocess", self._fake_run_subprocess)
+        monkeypatch.setattr(common, "run_subprocess", self._fake_run_subprocess)
 
     def _fake_run_subprocess(
         self,

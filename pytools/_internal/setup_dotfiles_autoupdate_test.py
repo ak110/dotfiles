@@ -5,7 +5,7 @@ import typing
 
 import pytest
 
-from pytools._internal import claude_common, setup_dotfiles_autoupdate, systemd_user_unit
+from pytools._internal import claude_common, common, setup_dotfiles_autoupdate, systemd_user_unit
 
 
 @pytest.fixture(name="prepared")
@@ -19,8 +19,8 @@ def _prepared(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> tuple[
     uv.parent.mkdir(parents=True)
     uv.write_text("", encoding="utf-8")
     monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: root)
-    monkeypatch.setattr(claude_common, "resolve_uv_path", lambda: uv)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
+    monkeypatch.setattr(common, "resolve_uv_path", lambda: uv)
     monkeypatch.setattr(setup_dotfiles_autoupdate.pathlib.Path, "home", lambda: tmp_path / "home")
     return root, script, uv
 
@@ -42,11 +42,11 @@ def test_missing_dependency_skips_timer(
     """root、スクリプトまたはuvを解決できなければtimerを配置しない。"""
     _root, script, _uv = prepared
     if missing == "root":
-        monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: None)
+        monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
     elif missing == "script":
         script.unlink()
     else:
-        monkeypatch.setattr(claude_common, "resolve_uv_path", lambda: None)
+        monkeypatch.setattr(common, "resolve_uv_path", lambda: None)
     monkeypatch.setattr(systemd_user_unit, "setup_timer", lambda **kwargs: pytest.fail(str(kwargs)))
 
     assert setup_dotfiles_autoupdate.run().changed is False

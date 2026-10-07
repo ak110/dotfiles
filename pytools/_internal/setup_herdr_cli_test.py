@@ -30,7 +30,7 @@ def test_run_updates_existing_direct_install_and_prepends_path(monkeypatch, tmp_
         commands.append(command)
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", prepended.append)
 
     assert setup_herdr_cli.run().changed is True
@@ -58,7 +58,7 @@ def test_run_installs_posix_direct_install(monkeypatch, tmp_path: Path) -> None:
             launcher.write_text("", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", lambda path: None)
 
     with _fake_client(handler) as client:
@@ -94,7 +94,7 @@ def test_run_defers_update_inside_herdr_when_existing_launcher_is_healthy(
             )
         return subprocess.CompletedProcess(command, 0, "herdr 0.9.1", "")
 
-    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", prepended.append)
 
     result = setup_herdr_cli.run()
@@ -135,7 +135,7 @@ def test_run_skips_deferred_update_when_existing_launcher_is_unhealthy(
             )
         return subprocess.CompletedProcess(command, 1, "", "version failed")
 
-    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
 
     with caplog.at_level("WARNING"):
         assert setup_herdr_cli.run() == post_apply_outcome.PostApplyOutcome()
@@ -179,7 +179,7 @@ def test_run_installs_windows_direct_install(
             launcher.write_text("", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", lambda path: None)
 
     with _fake_client(handler) as client:
@@ -241,7 +241,7 @@ def test_run_passes_same_curl_home_to_all_windows_children(
         del request
         return httpx.Response(200, content=b"Write-Host")
 
-    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
 
     with _fake_client(handler) as client:
         outcome = setup_herdr_cli.run(client)
@@ -284,7 +284,7 @@ def test_run_does_not_pass_curl_home_outside_windows(
         del request
         return httpx.Response(200, content=b"#!/bin/bash\n")
 
-    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
 
     with _fake_client(handler) as client:
         assert setup_herdr_cli.run(client).changed is True
@@ -319,7 +319,7 @@ def test_run_skips_when_installer_fails(monkeypatch, tmp_path: Path, caplog) -> 
         del kwargs
         return subprocess.CompletedProcess(command, 1, "", "installer failed")
 
-    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
 
     with _fake_client(handler) as client, caplog.at_level("WARNING"):
         assert setup_herdr_cli.run(client) == post_apply_outcome.PostApplyOutcome()
@@ -346,7 +346,7 @@ def test_run_skips_on_update_or_verification_failure(
     def fail_prepend(path: Path) -> None:
         raise AssertionError(f"失敗後にPATHへ追加した: {path}")
 
-    monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", fail_prepend)
 
     assert setup_herdr_cli.run() == post_apply_outcome.PostApplyOutcome()

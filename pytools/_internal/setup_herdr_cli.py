@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 
-from pytools._internal import claude_common, log_format, post_apply_outcome, setup_cli_common
+from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
     launcher = _launcher_path()
     update_deferred = False
     if launcher.is_file():
-        result = claude_common.run_subprocess(
+        result = common.run_subprocess(
             [str(launcher), "update"], timeout=_COMMAND_TIMEOUT, tag=_TAG, env_overrides=env_overrides
         )
         update_error = result.stderr if result is not None and isinstance(result.stderr, str) else ""
@@ -84,11 +84,11 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
             logger.warning(log_format.format_status(_TAG, reason))
             return post_apply_outcome.PostApplyOutcome()
     if result is None or (result.returncode != 0 and not update_deferred):
-        logger.warning(log_format.format_status(_TAG, f"導入または更新に失敗: {claude_common.format_cli_error(result)}"))
+        logger.warning(log_format.format_status(_TAG, f"導入または更新に失敗: {common.format_cli_error(result)}"))
         return post_apply_outcome.PostApplyOutcome()
-    verification = claude_common.run_subprocess([str(launcher), "--version"], timeout=30, tag=_TAG, env_overrides=env_overrides)
+    verification = common.run_subprocess([str(launcher), "--version"], timeout=30, tag=_TAG, env_overrides=env_overrides)
     if verification is None or verification.returncode != 0:
-        detail = claude_common.format_cli_error(verification)
+        detail = common.format_cli_error(verification)
         logger.warning(log_format.format_status(_TAG, f"導入または更新後の確認に失敗: {detail}"))
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(launcher.parent)

@@ -13,8 +13,8 @@ import pytest
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._testing import isolation
 
-from pytools._internal import claude_common
 from pytools._internal import codex_plugin_manifests as subject
+from pytools._internal import common
 
 _CODEX_HOME = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
 _CODEX_PLUGIN_VALIDATOR = _CODEX_HOME / "skills/.system/plugin-creator/scripts/validate_plugin.py"
@@ -328,11 +328,11 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
         codex_home = tmp_path / ("trusted" if trust else "default")
         codex_home.mkdir()
         if trust:
-            quoted_root = str(subject.REPO_ROOT).replace("\\", "\\\\").replace('"', '\\"')
+            quoted_root = str(subject.repo_root()).replace("\\", "\\\\").replace('"', '\\"')
             (codex_home / "config.toml").write_text(f'[projects."{quoted_root}"]\ntrust_level = "trusted"\n', encoding="utf-8")
         environment = {**os.environ, "CODEX_HOME": str(codex_home)}
         subprocess.run(  # noqa: S603
-            ["codex", "plugin", "marketplace", "add", str(subject.REPO_ROOT)],
+            ["codex", "plugin", "marketplace", "add", str(subject.repo_root())],
             capture_output=True,
             check=True,
             env=environment,
@@ -345,7 +345,7 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
             env=environment,
             text=True,
         )
-        result = await _codex_hooks(codex_home, subject.REPO_ROOT, monkeypatch)
+        result = await _codex_hooks(codex_home, subject.repo_root(), monkeypatch)
         data = result.get("data")
         assert isinstance(data, list) and len(data) == 1
         hooks = data[0].get("hooks")
@@ -362,7 +362,7 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
             Path(hook_environment["TMPDIR"]).mkdir()
             session_start = next(hook for hook in hooks if hook["eventName"] == "sessionStart")
             start_command = shlex.split(session_start["command"])
-            uv = claude_common.resolve_uv_path()
+            uv = common.resolve_uv_path()
             assert uv is not None
             start_command[0] = str(uv)
             start_result = subprocess.run(  # noqa: S603
@@ -412,7 +412,7 @@ def test_codex_plugin_validator_reports_only_known_schema_deviations() -> None:
     資料上の保証がないまま動作中の構成を変えないため、この前提が変わるまで期待値を空にしない。
     """
     result = subprocess.run(  # noqa: S603
-        [sys.executable, str(_CODEX_PLUGIN_VALIDATOR), str(subject.REPO_ROOT / subject.CODEX_PLUGIN_ROOT_TARGET)],
+        [sys.executable, str(_CODEX_PLUGIN_VALIDATOR), str(subject.repo_root() / subject.CODEX_PLUGIN_ROOT_TARGET)],
         capture_output=True,
         check=False,
         text=True,
@@ -702,6 +702,6 @@ def test_rejects_mismatched_sources(manifest_root: Path) -> None:
 
 def test_atomic_write_failure_is_reported(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """共通atomic writeが失敗した場合は同期成功として扱わない。"""
-    monkeypatch.setattr(claude_common, "atomic_write_text", lambda *args, **kwargs: False)
+    monkeypatch.setattr(common, "atomic_write_text", lambda *args, **kwargs: False)
     with pytest.raises(OSError, match="書き込みに失敗"):
         subject.sync(manifest_root)

@@ -15,7 +15,7 @@ from typing import Any, cast
 import pytest
 
 from pytools import post_apply
-from pytools._internal import claude_common, codex_processes, install_codex_plugins, plugin_warmup, post_apply_outcome
+from pytools._internal import claude_common, codex_processes, common, install_codex_plugins, plugin_warmup, post_apply_outcome
 
 from ._test_helpers import _FakeResult
 
@@ -84,8 +84,8 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     current_hook = tmp_path / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/hook.py"
     current_hook.parent.mkdir(parents=True)
     current_hook.write_text("hook", encoding="utf-8")
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: root)
-    monkeypatch.setattr(install_codex_plugins.claude_common, "resolve_executable", lambda _name: Path("codex"))
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
+    monkeypatch.setattr(install_codex_plugins.common, "resolve_executable", lambda _name: Path("codex"))
     monkeypatch.setattr(install_codex_plugins, "CODEX_HOME", tmp_path / ".codex")
     monkeypatch.setattr(install_codex_plugins, "_hook_bin", lambda: tmp_path / ".local/bin")
     hook_bin = tmp_path / ".local/bin"
@@ -270,7 +270,7 @@ def test_running_codex_preserves_cache_then_updates_after_stop(  # noqa: PLR0913
 
     monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
     monkeypatch.setattr(install_codex_plugins, "_command", command)
-    monkeypatch.setattr(claude_common, "run_subprocess", run_subprocess)
+    monkeypatch.setattr(common, "run_subprocess", run_subprocess)
     caplog.set_level(logging.WARNING, logger=install_codex_plugins.__name__)
 
     outcome = install_codex_plugins.run()
@@ -386,7 +386,7 @@ def test_post_apply_deferral_continues_with_installed_warmup_version(
         lambda args: _local_marketplace(plugin_env) if args[1] == "marketplace" else state,
     )
     monkeypatch.setattr(install_codex_plugins, "_command", lambda _args: pytest.fail("延期中にaddを呼ばない"))
-    monkeypatch.setattr(claude_common, "run_subprocess", lambda *_args, **_kwargs: _FakeResult(stdout=json.dumps(state)))
+    monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: _FakeResult(stdout=json.dumps(state)))
     reached: list[str] = []
     warmup_targets: list[Path | None] = []
 
@@ -536,7 +536,7 @@ def test_plugin_update_auto_restarts_running_daemon(plugin_env: Path, monkeypatc
         restart_calls.append(args)
         return _FakeResult(returncode=0)
 
-    monkeypatch.setattr(install_codex_plugins.claude_common, "run_subprocess", run_subprocess)
+    monkeypatch.setattr(install_codex_plugins.common, "run_subprocess", run_subprocess)
 
     outcome = install_codex_plugins.run()
 
@@ -557,7 +557,7 @@ def test_plugin_update_auto_restart_failure_keeps_notice_and_logs_exit_code(
     monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
     monkeypatch.setattr(
-        install_codex_plugins.claude_common,
+        install_codex_plugins.common,
         "run_subprocess",
         lambda *_args, **_kwargs: _FakeResult(returncode=9),
     )
@@ -579,7 +579,7 @@ def test_plugin_update_does_not_restart_stopped_daemon_when_enabled(
     monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
     monkeypatch.setattr(
-        install_codex_plugins.claude_common,
+        install_codex_plugins.common,
         "run_subprocess",
         lambda *_args, **_kwargs: pytest.fail("停止中daemonを再起動してはいけない"),
     )
@@ -617,7 +617,7 @@ def test_same_version_enabled_is_unchanged(plugin_env: Path, monkeypatch: pytest
     monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
     monkeypatch.setattr(
-        install_codex_plugins.claude_common,
+        install_codex_plugins.common,
         "run_subprocess",
         lambda *_args, **_kwargs: pytest.fail("無変更時にdaemonを再起動してはいけない"),
     )

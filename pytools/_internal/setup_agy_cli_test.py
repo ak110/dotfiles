@@ -25,7 +25,7 @@ def test_run_skips_when_the_launcher_already_exists(monkeypatch, tmp_path: Path)
     def fail(*args: object, **kwargs: object) -> None:
         raise AssertionError("導入済みの環境で外部コマンドを実行した")
 
-    monkeypatch.setattr(setup_agy_cli.claude_common, "run_subprocess", fail)
+    monkeypatch.setattr(setup_agy_cli.common, "run_subprocess", fail)
 
     assert setup_agy_cli.run().changed is False
 
@@ -51,7 +51,7 @@ def test_run_installs_and_prepends_path(monkeypatch, tmp_path: Path) -> None:
             launcher.write_text("", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr(setup_agy_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_agy_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_agy_cli.setup_cli_common, "prepend_path", prepended.append)
 
     assert setup_agy_cli.run(_fake_client(handler)).changed is True
@@ -83,7 +83,7 @@ def test_run_installs_with_powershell_file_on_windows(monkeypatch, tmp_path: Pat
             launcher.write_text("", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr(setup_agy_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_agy_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_agy_cli.setup_cli_common, "prepend_path", lambda path: None)
 
     assert setup_agy_cli.run(_fake_client(handler)).changed is True
@@ -107,7 +107,7 @@ def test_run_warns_instead_of_raising_when_the_installer_is_unreachable(
     def fail(*args: object, **kwargs: object) -> None:
         raise AssertionError("インストーラーの取得に失敗した後で外部コマンドを実行した")
 
-    monkeypatch.setattr(setup_agy_cli.claude_common, "run_subprocess", fail)
+    monkeypatch.setattr(setup_agy_cli.common, "run_subprocess", fail)
 
     with caplog.at_level("WARNING"):
         assert setup_agy_cli.run(_fake_client(handler)).changed is False
@@ -136,7 +136,7 @@ def test_run_warns_when_the_verification_fails(monkeypatch, tmp_path: Path, capl
     def fail_prepend(path: Path) -> None:
         raise AssertionError("確認に失敗した状態でPATHへ追加した")
 
-    monkeypatch.setattr(setup_agy_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_agy_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_agy_cli.setup_cli_common, "prepend_path", fail_prepend)
 
     with caplog.at_level("WARNING"):

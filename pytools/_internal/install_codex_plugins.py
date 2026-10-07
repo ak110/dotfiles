@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pytools._internal import claude_common, codex_processes, log_format, post_apply_outcome, setup_codex_links
+from pytools._internal import claude_common, codex_processes, common, log_format, post_apply_outcome, setup_codex_links
 
 logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
@@ -55,7 +55,7 @@ _EXPECTED_HOOK_EVENTS = {
 
 
 def _codex_json(args: list[str]) -> dict[str, Any] | None:
-    result = claude_common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
+    result = common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
     if result is None or result.returncode != 0:
         return None
     try:
@@ -66,7 +66,7 @@ def _codex_json(args: list[str]) -> dict[str, Any] | None:
 
 
 def _command(args: list[str]) -> bool:
-    result = claude_common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
+    result = common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
     return result is not None and result.returncode == 0
 
 
@@ -272,7 +272,7 @@ def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApp
     if os.environ.get(_AUTO_RESTART_ENV) != "1":
         notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
         return
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         [str(_CODEX_EXECUTABLE.get()), "app-server", "daemon", "restart"],
         timeout=_TIMEOUT,
         tag="codex",
@@ -489,7 +489,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     導入・更新と状態確認の失敗は警告を出力してスキップと数え、配布先ファイルの書き込みの失敗は例外として失敗と数える。
     """
-    codex = claude_common.resolve_executable("codex")
+    codex = common.resolve_executable("codex")
     if codex is None:
         logger.info(log_format.format_status("codex plugins", "codex CLIが見つからずスキップ"))
         return _outcome(False, [])
@@ -500,7 +500,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         unused_outcome = _remove_unused_plugins()
         changed = unused_outcome.changed
         notices.extend(unused_outcome.notices)
-        root = claude_common.find_dotfiles_root()
+        root = common.find_dotfiles_root()
         if root is None:
             return _outcome(changed, notices)
         # dotfilesの作業ツリーをmarketplaceとして登録し、その版を期待値にする。単体インストーラー

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools._internal import removal_registry
+from pytools._internal import common, removal_registry
 from pytools._internal import update_claude_settings as mod
 from pytools._internal._test_helpers import run_update_claude_settings
 from pytools._internal.update_claude_settings import update_claude_settings
@@ -674,16 +674,30 @@ class TestPlatformOverride:
         assert result == {"language": "japanese"}
 
 
+def _use_managed_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, managed_settings_path: Path, managed_config_path: Path
+) -> None:
+    """管理設定2件を一時的な作業ツリーの`share/`へ複製し、`find_dotfiles_root()`をその作業ツリーへ向ける。"""
+    root = tmp_path / "dotfiles-root"
+    for source, relative in (
+        (managed_settings_path, mod._MANAGED_SETTINGS_RELATIVE),  # pylint: disable=protected-access
+        (managed_config_path, mod._MANAGED_CONFIG_RELATIVE),  # pylint: disable=protected-access
+    ):
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
+
+
 def _setup_run_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     managed_settings: dict,
     managed_config: dict | None = None,
 ) -> Path:
-    """`run()` 経由テスト向けに 4 つのモジュール定数パスを差し替える。
+    """`run()` 経由テスト向けに管理設定2件と配置先2件のパスを差し替える。
 
-    `_MANAGED_SETTINGS_PATH` には `managed_settings` を書き込む。
-    `_MANAGED_CONFIG_PATH` には `managed_config` を書き込む。省略時は空 dict とする。
+    管理設定には`managed_settings`、管理configには`managed_config`（省略時は空 dict）を書き込む。
     `_SETTINGS_PATH`・`_CONFIG_PATH` は未作成のまま返す。
     """
     managed_settings_path = tmp_path / "managed_settings.json"
@@ -692,9 +706,8 @@ def _setup_run_paths(
     managed_config_path.write_text(json.dumps(managed_config or {}), encoding="utf-8")
     settings_path = tmp_path / "settings.json"
     config_path = tmp_path / "claude.json"
-    monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
+    _use_managed_files(monkeypatch, tmp_path, managed_settings_path, managed_config_path)
     monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
-    monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
     monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
     return settings_path
 
@@ -848,8 +861,12 @@ class TestPlatformOverrideSelection:
     def test_linux_applies_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Linux (posix) 環境では `managed_settings.posix.json` が適用される。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
-        (tmp_path / "managed_settings.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
-        (tmp_path / "managed_settings.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.posix.json").write_text(
+            json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8"
+        )
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.win32.json").write_text(
+            json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8"
+        )
         monkeypatch.setattr(mod.sys, "platform", "linux")
 
         mod.run()
@@ -861,7 +878,9 @@ class TestPlatformOverrideSelection:
     def test_darwin_applies_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """macOS (darwin) 環境でも `managed_settings.posix.json` が適用される。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
-        (tmp_path / "managed_settings.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.posix.json").write_text(
+            json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8"
+        )
         monkeypatch.setattr(mod.sys, "platform", "darwin")
 
         mod.run()
@@ -872,8 +891,12 @@ class TestPlatformOverrideSelection:
     def test_win32_applies_win32_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Windows (win32) 環境では `managed_settings.win32.json` が適用される。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
-        (tmp_path / "managed_settings.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
-        (tmp_path / "managed_settings.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.posix.json").write_text(
+            json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8"
+        )
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.win32.json").write_text(
+            json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8"
+        )
         monkeypatch.setattr(mod.sys, "platform", "win32")
 
         mod.run()
@@ -1680,9 +1703,8 @@ class TestStripRemovedListItems:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
+        _use_managed_files(monkeypatch, tmp_path, managed_settings_path, managed_config_path)
         monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
-        monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
         monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
 
         mod.run()
@@ -1937,9 +1959,8 @@ class TestStripStaleLabeledListItems:
         config_path = tmp_path / "claude.json"
         config_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
 
-        monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
+        _use_managed_files(monkeypatch, tmp_path, managed_settings_path, managed_config_path)
         monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
-        monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
         monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
 
         mod.run()
@@ -2054,3 +2075,16 @@ class TestRetiredAutoModeAllowLabels:
         assert "ラベルを持たないユーザー独自ルール" in allow
         managed_allow = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))["autoMode"]["allow"]
         assert [item for item in managed_allow if item not in allow] == []
+
+
+def test_run_fails_without_dotfiles_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """作業ツリーを解決できない場合は配置先へ書き込まず、工程を失敗と数える。"""
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
+    monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
+    monkeypatch.setattr(mod, "_CONFIG_PATH", tmp_path / "claude.json")
+
+    outcome = mod.run()
+
+    assert outcome.failure == "dotfilesの作業ツリーを解決できない"
+    assert not settings_path.exists()

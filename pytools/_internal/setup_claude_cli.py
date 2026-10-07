@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 
-from pytools._internal import claude_common, log_format, post_apply_outcome, setup_cli_common
+from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 
 logger = logging.getLogger(__name__)
 
@@ -26,18 +26,16 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
         logger.info(log_format.format_status("claude", "実行中のため導入と移行を次回へ延期"))
         return post_apply_outcome.PostApplyOutcome()
     if launcher.is_file():
-        result = claude_common.run_subprocess([str(launcher), "update"], timeout=_COMMAND_TIMEOUT, tag="claude")
+        result = common.run_subprocess([str(launcher), "update"], timeout=_COMMAND_TIMEOUT, tag="claude")
     else:
         result = _install_native(client)
     if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status("claude", f"導入または更新に失敗: {claude_common.format_cli_error(result)}"))
+        logger.warning(log_format.format_status("claude", f"導入または更新に失敗: {common.format_cli_error(result)}"))
         return post_apply_outcome.PostApplyOutcome()
-    verification = claude_common.run_subprocess([str(launcher), "--version"], timeout=30, tag="claude")
+    verification = common.run_subprocess([str(launcher), "--version"], timeout=30, tag="claude")
     if verification is None or verification.returncode != 0:
         logger.warning(
-            log_format.format_status(
-                "claude", f"正規版を確認できないため旧版を保持: {claude_common.format_cli_error(verification)}"
-            )
+            log_format.format_status("claude", f"正規版を確認できないため旧版を保持: {common.format_cli_error(verification)}")
         )
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(launcher.parent)

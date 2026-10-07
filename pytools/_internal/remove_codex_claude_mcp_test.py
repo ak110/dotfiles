@@ -15,7 +15,7 @@ type Result = subprocess.CompletedProcess[str] | None
 @pytest.fixture(autouse=True)
 def _resolve_codex(monkeypatch: pytest.MonkeyPatch) -> None:
     """Codex CLIをテスト用のコマンド名へ固定する。"""
-    monkeypatch.setattr(remove_codex_claude_mcp.claude_common, "resolve_executable", lambda _name: Path("codex"))
+    monkeypatch.setattr(remove_codex_claude_mcp.common, "resolve_executable", lambda _name: Path("codex"))
 
 
 def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
@@ -60,7 +60,7 @@ def test_run_skips_removal_when_claude_mcp_is_not_registered(monkeypatch: pytest
     calls: list[Call] = []
     results: list[Result] = [_result(1, stderr=stderr)]
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         _fake_runner(results, calls),
     )
@@ -74,7 +74,7 @@ def test_run_removes_registered_claude_mcp(monkeypatch: pytest.MonkeyPatch) -> N
     calls: list[Call] = []
     results: list[Result] = [_result(0, stdout='{"name":"claude"}'), _result(0)]
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         _fake_runner(results, calls),
     )
@@ -88,9 +88,9 @@ def test_run_removes_registered_claude_mcp(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_run_skips_when_codex_is_unresolved(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     """Codex CLIを解決できない場合は手動確認を促して変更なしとする。"""
-    monkeypatch.setattr(remove_codex_claude_mcp.claude_common, "resolve_executable", lambda _name: None)
+    monkeypatch.setattr(remove_codex_claude_mcp.common, "resolve_executable", lambda _name: None)
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         lambda *_args, **_kwargs: pytest.fail("コマンドを起動してはいけない"),
     )
@@ -121,7 +121,7 @@ def test_run_reports_failure_when_get_fails(
     """
     calls: list[Call] = []
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         _fake_runner([result], calls),
     )
@@ -149,7 +149,7 @@ def test_run_reports_failure_when_remove_fails(
     """削除不能と非ゼロ終了を例外として上位へ伝える。"""
     calls: list[Call] = []
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         _fake_runner([_result(0), result], calls),
     )

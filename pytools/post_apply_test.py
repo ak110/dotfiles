@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from pytools import post_apply
-from pytools._internal import post_apply_outcome
+from pytools._internal import claude_common, common, post_apply_outcome
 
 # `post_apply`は削除対象の表をimport時のホームで組み立てる。テストの実行中はホームが一時ディレクトリへ隔離されるため、
 # 表を引く鍵もimport時のホームから組み立てる。
@@ -104,7 +104,7 @@ def test_linked_worktree_is_rejected_before_any_step_or_record(
     """複製作業ツリーで工程を指定せずに実行しても、全段と永続記録へ到達しない。"""
     root = tmp_path / "linked"
     canonical_root = tmp_path / "main"
-    monkeypatch.setattr(post_apply.claude_common, "find_dotfiles_root", lambda: root)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
 
     def fake_git(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert cmd == ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"]
@@ -114,7 +114,7 @@ def test_linked_worktree_is_rejected_before_any_step_or_record(
     def unexpected_run() -> tuple[list[post_apply._StepResult], list[str]]:  # noqa: SLF001
         pytest.fail("linked worktreeで_DEFAULT_STEPSの実行へ到達した")
 
-    monkeypatch.setattr(post_apply.claude_common, "run_subprocess", fake_git)
+    monkeypatch.setattr(common, "run_subprocess", fake_git)
     monkeypatch.setattr(post_apply, "run", unexpected_run)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -138,7 +138,7 @@ def test_canonical_root_or_explicit_override_runs_steps(
     """正規ルートと明示解除では既存の全段実行経路へ進む。"""
     canonical_root = tmp_path / "main"
     root = tmp_path / "linked" if allow_non_canonical else canonical_root
-    monkeypatch.setattr(post_apply.claude_common, "find_dotfiles_root", lambda: root)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
 
     def fake_git(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert cmd == ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"]
@@ -146,7 +146,7 @@ def test_canonical_root_or_explicit_override_runs_steps(
         return subprocess.CompletedProcess(cmd, 0, f"{canonical_root / '.git'}\n", "")
 
     calls: list[str] = []
-    monkeypatch.setattr(post_apply.claude_common, "run_subprocess", fake_git)
+    monkeypatch.setattr(common, "run_subprocess", fake_git)
     monkeypatch.setattr(
         post_apply,
         "_DEFAULT_STEPS",
@@ -854,9 +854,9 @@ class TestRun:
     ) -> None:
         """HTTP Request行、claude CLIの実行記録、対象外OSのステップ、開始行を画面から外し、永続ログへ残す。"""
         monkeypatch.setattr(post_apply.sys, "platform", "linux")
-        monkeypatch.setattr(post_apply.claude_common, "resolve_executable", lambda name, **_kwargs: Path(name))
+        monkeypatch.setattr(common, "resolve_executable", lambda name, **_kwargs: Path(name))
         monkeypatch.setattr(
-            post_apply.claude_common,
+            common,
             "run_subprocess",
             lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 0, "", ""),
         )
@@ -868,7 +868,7 @@ class TestRun:
             return post_apply_outcome.PostApplyOutcome()
 
         def claude_step() -> post_apply_outcome.PostApplyOutcome:
-            post_apply.claude_common.run_claude(["plugin", "list"])
+            claude_common.run_claude(["plugin", "list"])
             return post_apply_outcome.PostApplyOutcome()
 
         steps = [

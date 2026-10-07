@@ -39,7 +39,7 @@ def test_run_updates_existing_native_and_migrates_after_verification(monkeypatch
         calls.append(command)
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr(setup_claude_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
 
     assert setup_claude_cli.run().changed
     assert calls == [[str(launcher), "update"], [str(launcher), "--version"]]
@@ -68,7 +68,7 @@ def test_run_does_not_search_for_claude_outside_path(monkeypatch, tmp_path: Path
         calls.append(command)
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr(setup_claude_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
 
     assert setup_claude_cli.run().changed
     assert legacy.read_text(encoding="utf-8") == "legacy"
@@ -93,7 +93,7 @@ def test_run_installs_with_powershell_file(monkeypatch, tmp_path: Path) -> None:
             launcher.write_text("", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    monkeypatch.setattr(setup_claude_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
     client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"installer")))
     try:
         assert setup_claude_cli.run(client).changed
@@ -121,7 +121,7 @@ def test_windows_install_prepends_canonical_path_before_noncanonical(monkeypatch
             launcher.write_text("", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(setup_claude_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
     client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"installer")))
     try:
         assert setup_claude_cli.run(client).changed
@@ -148,7 +148,7 @@ def test_run_does_not_migrate_when_verification_fails(monkeypatch, tmp_path: Pat
         del kwargs
         return subprocess.CompletedProcess(command, 1 if command[-1] == "--version" else 0, "", "")
 
-    monkeypatch.setattr(setup_claude_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
 
     assert setup_claude_cli.run() == post_apply_outcome.PostApplyOutcome()
 
@@ -157,7 +157,7 @@ def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_pat
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: True)
     monkeypatch.setattr(
-        setup_claude_cli.claude_common,
+        setup_claude_cli.common,
         "run_subprocess",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError((args, kwargs))),
     )
@@ -181,7 +181,7 @@ def test_run_handles_installer_failure(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
     monkeypatch.setattr(
-        setup_claude_cli.claude_common,
+        setup_claude_cli.common,
         "run_subprocess",
         lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", "installer failed"),
     )
@@ -203,7 +203,7 @@ def test_run_handles_native_update_failure_and_keeps_legacy_path(monkeypatch, tm
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
     monkeypatch.setattr(
-        setup_claude_cli.claude_common,
+        setup_claude_cli.common,
         "run_subprocess",
         lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", "update failed"),
     )

@@ -35,7 +35,7 @@ def _install_pnpm(monkeypatch: pytest.MonkeyPatch, calls: list[list[str]], curre
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(update_npmrc.shutil, "which", which)
-    monkeypatch.setattr(update_npmrc.claude_common, "run_subprocess", run_subprocess)
+    monkeypatch.setattr(update_npmrc.common, "run_subprocess", run_subprocess)
 
 
 class TestUpdateNpmrc:

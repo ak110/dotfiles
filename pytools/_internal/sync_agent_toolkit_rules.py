@@ -13,7 +13,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import claude_common, common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ NORMATIVE_KIND = "rules"
 
 def run() -> post_apply_outcome.PostApplyOutcome:
     """`agent-toolkit/rules/`をClaude CodeとCodexの配布先へ同期する。配布先の書き込みの失敗は失敗と数える。"""
-    dotfiles_root = claude_common.find_dotfiles_root()
+    dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("agent-toolkit rules", "dotfiles ルートが見つからずスキップ"))
         return post_apply_outcome.PostApplyOutcome()
@@ -69,7 +69,7 @@ def _sync_destination(src: Path, destination: Path) -> bool:
         content = wrapped_body(rule)
         if target.is_file() and target.read_text(encoding="utf-8") == content:
             continue
-        if not claude_common.atomic_write_text(target, content, tag="agent-toolkit rules"):
+        if not common.atomic_write_text(target, content, tag="agent-toolkit rules"):
             raise OSError(f"{target} の書き込みに失敗")
         changed = True
     for existing in sorted(destination.iterdir()):

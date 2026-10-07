@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import claude_common, common, log_format
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def ensure_marketplace() -> bool:
         if _marketplace_already_registered(data):
             return True
 
-    dotfiles_root = claude_common.find_dotfiles_root()
+    dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("marketplace", "dotfiles ルートが見つからず登録をスキップ"))
         return False
@@ -101,9 +101,9 @@ def repair_marketplace() -> bool:
          更新しない環境が存在する）への回避策であり、内部ファイル形式に依存する。
         CLI側で該当不具合が解消したら、直接書き換え経路とその関連ヘルパー
         (``_rewrite_known_marketplaces_entry`` / ``_rewrite_settings_extra_known_entry``
-         / ``_now_iso_millis`` / ``claude_common.atomic_write_json``) は削除候補となる。
+         / ``_now_iso_millis`` / ``common.atomic_write_json``) は削除候補となる。
     """
-    dotfiles_root = claude_common.find_dotfiles_root()
+    dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("marketplace", "dotfiles ルートが見つからず修復をスキップ"))
         return False
@@ -154,7 +154,7 @@ def refresh_marketplace() -> bool:
         logger.info(
             log_format.format_status(
                 "marketplace",
-                f"{claude_common.MARKETPLACE_NAME} の refresh に失敗 (続行): {claude_common.format_cli_error(result)}",
+                f"{claude_common.MARKETPLACE_NAME} の refresh に失敗 (続行): {common.format_cli_error(result)}",
             )
         )
         return False
@@ -189,7 +189,7 @@ def _check_marketplace_from_file() -> bool | None:
 
 def _load_known_marketplace_entry() -> dict[str, object] | None:
     """known_marketplaces.json から対象 marketplace のエントリを読み込む。"""
-    data = claude_common.load_json_dict(_KNOWN_MARKETPLACES_PATH)
+    data = common.load_json_dict(_KNOWN_MARKETPLACES_PATH)
     if data is None:
         return None
     entry = data.get(claude_common.MARKETPLACE_NAME)
@@ -198,7 +198,7 @@ def _load_known_marketplace_entry() -> dict[str, object] | None:
 
 def _load_extra_known_marketplace_entry() -> dict[str, object] | None:
     """settings.json.extraKnownMarketplaces から対象 marketplace のエントリを読み込む。"""
-    data = claude_common.load_json_dict(_SETTINGS_JSON_PATH)
+    data = common.load_json_dict(_SETTINGS_JSON_PATH)
     if data is None:
         return None
     extra = data.get("extraKnownMarketplaces")
@@ -225,7 +225,7 @@ def _is_entry_healthy(entry: dict[str, object]) -> bool:
     source_dict = cast("dict[str, object]", source)
     if source_dict.get("source") != "directory":
         return False
-    dotfiles_root = claude_common.find_dotfiles_root()
+    dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
         return False
     return source_dict.get("path") == str(dotfiles_root)
@@ -263,7 +263,7 @@ def _rewrite_known_marketplaces_entry(dotfiles_root: Path) -> bool:
     （`claude plugin marketplace add` で登録された正常エントリ形式に合わせる）。
     """
     path = _KNOWN_MARKETPLACES_PATH
-    data = claude_common.load_json_dict(path, tag="marketplace")
+    data = common.load_json_dict(path, tag="marketplace")
     if data is None:
         return False
     data[claude_common.MARKETPLACE_NAME] = {
@@ -271,7 +271,7 @@ def _rewrite_known_marketplaces_entry(dotfiles_root: Path) -> bool:
         "installLocation": str(dotfiles_root),
         "lastUpdated": _now_iso_millis(),
     }
-    return claude_common.atomic_write_json(path, data, tag="marketplace")
+    return common.atomic_write_json(path, data, tag="marketplace")
 
 
 def _rewrite_settings_extra_known_entry(dotfiles_root: Path) -> bool:
@@ -285,7 +285,7 @@ def _rewrite_settings_extra_known_entry(dotfiles_root: Path) -> bool:
     path = _SETTINGS_JSON_PATH
     if not path.exists():
         return True
-    data = claude_common.load_json_dict(path, tag="marketplace")
+    data = common.load_json_dict(path, tag="marketplace")
     if data is None:
         return False
     extra = data.get("extraKnownMarketplaces")
@@ -295,4 +295,4 @@ def _rewrite_settings_extra_known_entry(dotfiles_root: Path) -> bool:
     cast("dict[str, object]", extra)[claude_common.MARKETPLACE_NAME] = {
         "source": {"source": "directory", "path": str(dotfiles_root)},
     }
-    return claude_common.atomic_write_json(path, data, tag="marketplace")
+    return common.atomic_write_json(path, data, tag="marketplace")

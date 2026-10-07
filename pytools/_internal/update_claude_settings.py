@@ -17,7 +17,7 @@ from pathlib import Path
 import pytilpack.jsonc
 
 from pytools._internal import (
-    claude_common,
+    common,
     log_format,
     post_apply_outcome,
     removal_registry,
@@ -27,10 +27,10 @@ from pytools._internal import (
 logger = logging.getLogger(__name__)
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 
-_DOTFILES_DIR = Path(__file__).resolve().parents[2]
-_MANAGED_SETTINGS_PATH = _DOTFILES_DIR / "share" / "claude_settings_json_managed.json"
+# dotfilesの作業ツリーからの相対パス
+_MANAGED_SETTINGS_RELATIVE = Path("share") / "claude_settings_json_managed.json"
 _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-_MANAGED_CONFIG_PATH = _DOTFILES_DIR / "share" / "claude_json_managed.json"
+_MANAGED_CONFIG_RELATIVE = Path("share") / "claude_json_managed.json"
 _CONFIG_PATH = Path.home() / ".claude.json"
 
 _REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND = "uv run --no-project --script ~/dotfiles/scripts/claude_hook.py autonomous_exit"
@@ -273,17 +273,21 @@ _HOME_PLACEHOLDER = "__HOME__"
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """Claude 設定ファイル 2 件をマージ更新する。書き込みの失敗は失敗と数える。"""
-    overrides = _platform_overrides(_MANAGED_SETTINGS_PATH)
+    """Claude 設定ファイル 2 件をマージ更新する。書き込みの失敗と作業ツリーを解決できない場合は失敗と数える。"""
+    dotfiles_root = common.find_dotfiles_root()
+    if dotfiles_root is None:
+        return post_apply_outcome.PostApplyOutcome(changed=False, failure="dotfilesの作業ツリーを解決できない")
+    managed_settings_path = dotfiles_root / _MANAGED_SETTINGS_RELATIVE
+    overrides = _platform_overrides(managed_settings_path)
     changed_settings = update_claude_settings(
-        _MANAGED_SETTINGS_PATH,
+        managed_settings_path,
         _SETTINGS_PATH,
         overrides=overrides,
         removed_list_item_substrings=removal_registry.values(_REMOVED_LIST_ITEM_SUBSTRINGS),
         stale_labeled_list_paths=_STALE_LABELED_LIST_PATHS,
     )
     changed_config = update_claude_settings(
-        _MANAGED_CONFIG_PATH,
+        dotfiles_root / _MANAGED_CONFIG_RELATIVE,
         _CONFIG_PATH,
         removed_keys=removal_registry.values(_REMOVED_CONFIG_KEYS),
         strip_legacy_codex_timeout=True,
@@ -370,7 +374,7 @@ def update_claude_settings(
         logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    if not claude_common.write_settings_hybrid(settings_path, original, data, tag=short):
+    if not common.write_settings_hybrid(settings_path, original, data, tag=short):
         return None
     logger.info(log_format.format_status(short, "更新しました"))
     for line in _diff_lines(original, data):

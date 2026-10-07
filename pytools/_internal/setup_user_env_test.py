@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools._internal import claude_common, setup_user_env
+from pytools._internal import common, setup_user_env
 
 from ._test_helpers import FakeEnvironmentRegistry
 
@@ -12,7 +12,7 @@ from ._test_helpers import FakeEnvironmentRegistry
 @pytest.fixture(name="dotfiles_root")
 def _dotfiles_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     (tmp_path / "share").mkdir()
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
     return tmp_path
 
 

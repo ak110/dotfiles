@@ -6,7 +6,7 @@ import pathlib
 import subprocess
 import time
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import common, log_format
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def _ensure_unit_content(unit_path: pathlib.Path, unit_content: str, log_tag: st
         existing = None
     if existing == unit_content:
         return False
-    if not claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag):
+    if not common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag):
         raise OSError(f"{unit_path} の書き込みに失敗")
     logger.info(log_format.format_status(log_tag, f"ユニット配置: {unit_path}"))
     return True
@@ -70,16 +70,16 @@ def setup(
     changed = _ensure_unit_content(unit_path, unit_content, log_tag)
     commands: list[tuple[list[str], float, str]] = []
     if changed:
-        reload_result = claude_common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=15.0, tag=log_tag)
+        reload_result = common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=15.0, tag=log_tag)
         if reload_result is None or reload_result.returncode != 0:
             return_code = reload_result.returncode if reload_result is not None else "N/A"
             raise SetupError(f"{service_name}のdaemon-reloadに失敗しました (exit {return_code})")
-    enabled = claude_common.run_subprocess(["systemctl", "--user", "is-enabled", service_name], timeout=15.0, tag=log_tag)
+    enabled = common.run_subprocess(["systemctl", "--user", "is-enabled", service_name], timeout=15.0, tag=log_tag)
     if enabled is None:
         raise SetupError(f"{service_name}の有効状態を取得できません")
     if enabled.returncode != 0:
         commands.append((["systemctl", "--user", "enable", service_name], 15.0, "enable"))
-    active = claude_common.run_subprocess(["systemctl", "--user", "is-active", service_name], timeout=15.0, tag=log_tag)
+    active = common.run_subprocess(["systemctl", "--user", "is-active", service_name], timeout=15.0, tag=log_tag)
     if active is None:
         raise SetupError(f"{service_name}の稼働状態を取得できません")
     needs_restart = changed or restart_needed or enabled.returncode != 0 or active.returncode != 0
@@ -113,14 +113,14 @@ def setup(
     # systemctlの失敗は後続の常駐確認を無意味にする（旧プロセスがactiveのまま残ると
     # NRestartsも変化せず成功と誤判定するため）。失敗した時点で例外を送出して打ち切る。
     for command, timeout, label in commands:
-        result = claude_common.run_subprocess(command, timeout=timeout, tag=log_tag)
+        result = common.run_subprocess(command, timeout=timeout, tag=log_tag)
         if result is None or result.returncode != 0:
             return_code = result.returncode if result is not None else "N/A"
             raise SetupError(f"{service_name}の{label}に失敗しました (exit {return_code})")
     if needs_restart:
         _wait_until_running(service_name=service_name, log_tag=log_tag)
     user = getpass.getuser()
-    result = claude_common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
+    result = common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
     if result is None:
         logger.warning(log_format.format_status(log_tag, "loginctlを実行できないためlinger状態を確認できません"))
     elif result.returncode != 0:
@@ -178,12 +178,12 @@ def setup_timer(
         ]
     )
     for command, timeout, label in commands:
-        result = claude_common.run_subprocess(command, timeout=timeout, tag=log_tag)
+        result = common.run_subprocess(command, timeout=timeout, tag=log_tag)
         if result is None or result.returncode != 0:
             return_code = result.returncode if result is not None else "N/A"
             raise SetupError(f"{timer_name}の{label}に失敗しました (exit {return_code})")
 
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["systemctl", "--user", "show", timer_name, "--property=ActiveState"],
         timeout=15.0,
         tag=log_tag,
@@ -201,7 +201,7 @@ def setup_timer(
     logger.info(log_format.format_status(log_tag, f"稼働確認: {timer_name}"))
 
     user = getpass.getuser()
-    result = claude_common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
+    result = common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
     if result is None:
         logger.warning(log_format.format_status(log_tag, "loginctlを実行できないためlinger状態を確認できません"))
     elif result.returncode != 0:
@@ -222,7 +222,7 @@ def _query_service(service_name: str, log_tag: str) -> tuple[str, str]:
     Raises:
         SetupError: systemctlを実行できない場合に送出する。
     """
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["systemctl", "--user", "show", service_name, "--property=ActiveState", "--property=NRestarts"],
         timeout=15.0,
         tag=log_tag,

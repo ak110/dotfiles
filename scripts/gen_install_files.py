@@ -14,7 +14,7 @@ import sys
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT))
 
-from pytools._internal import claude_common  # pylint: disable=wrong-import-position  # noqa: E402
+from pytools._internal import common  # pylint: disable=wrong-import-position  # noqa: E402
 
 _RULES_DIR = _REPO_ROOT / "agent-toolkit" / "rules"
 _INSTALL_SH = _REPO_ROOT / "install-claude.sh"
@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         _build_output(_INSTALL_PS1, _gen_ps1_block(names)),
     )
     for path, data, changed in outputs:
-        if changed and not claude_common.atomic_write_bytes(path, data, tag="install files"):
+        if changed and not common.atomic_write_bytes(path, data, tag="install files"):
             raise OSError(f"install scriptの書き込みに失敗: {path}")
     # 原子的書き込みは一時ファイルを生成して置き換えるため元ファイルの実行権限が失われる。
     # install-claude.shはshebangを持ちエンドユーザーがそのまま実行するファイルであり、

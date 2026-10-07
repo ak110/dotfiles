@@ -89,7 +89,7 @@ class _GitAndMiseStub:
         self.build_calls: list[dict[str, typing.Any]] = []
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(mod.claude_common, "run_subprocess", self.run)
+        monkeypatch.setattr(mod.common, "run_subprocess", self.run)
         monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: Path("/fake/mise"))
 
     def run(self, command: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
@@ -359,7 +359,7 @@ def test_atomic_replace_failure_preserves_existing_binary_and_invalidates_etag(
     def fail_atomic_write(_path: Path, _content: bytes, **_kwargs: typing.Any) -> bool:
         return False
 
-    monkeypatch.setattr(mod.claude_common, "atomic_write_bytes", fail_atomic_write)
+    monkeypatch.setattr(mod.common, "atomic_write_bytes", fail_atomic_write)
 
     with caplog.at_level("WARNING"):
         assert mod.run() == post_apply_outcome.PostApplyOutcome()

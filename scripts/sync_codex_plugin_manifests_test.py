@@ -17,7 +17,7 @@ def test_check_exit_codes_and_reports_differences(
 ) -> None:
     """`--check`は差が無ければ0、差があれば差を標準エラーへ出力して1を返し、同期しない。"""
     diagnostics: tuple[str, ...] = ()
-    monkeypatch.setattr(codex_plugin_manifests, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(codex_plugin_manifests, "repo_root", lambda: tmp_path)
     monkeypatch.setattr(
         codex_plugin_manifests, "check_diagnostics", lambda root: diagnostics if root == tmp_path else ("root",)
     )
@@ -38,7 +38,7 @@ def test_main_without_arguments_synchronizes_outputs(monkeypatch: pytest.MonkeyP
         synced.append(root)
         return True
 
-    monkeypatch.setattr(codex_plugin_manifests, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(codex_plugin_manifests, "repo_root", lambda: tmp_path)
     monkeypatch.setattr(codex_plugin_manifests, "sync", _record_sync)
 
     assert entry.main([]) == 0

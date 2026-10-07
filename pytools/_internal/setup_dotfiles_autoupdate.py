@@ -3,7 +3,7 @@
 import logging
 import pathlib
 
-from pytools._internal import claude_common, log_format, post_apply_outcome, systemd_user_unit
+from pytools._internal import claude_common, common, log_format, post_apply_outcome, systemd_user_unit
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if not claude_common.is_euryale():
         return post_apply_outcome.PostApplyOutcome()
 
-    root = claude_common.find_dotfiles_root()
+    root = common.find_dotfiles_root()
     if root is None:
         logger.info(log_format.format_status("dotfiles-autoupdate", "dotfilesルートを解決できないため設定を見送る"))
         return post_apply_outcome.PostApplyOutcome()
@@ -48,7 +48,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         logger.info(log_format.format_status("dotfiles-autoupdate", f"上流差分確認スクリプトが未配置: {script}"))
         return post_apply_outcome.PostApplyOutcome()
 
-    uv = claude_common.resolve_uv_path()
+    uv = common.resolve_uv_path()
     if uv is None:
         logger.info(log_format.format_status("dotfiles-autoupdate", "uvが見つからないため設定を見送る"))
         return post_apply_outcome.PostApplyOutcome()

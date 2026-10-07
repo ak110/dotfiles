@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable
 from typing import NoReturn
 
-from pytools._internal import claude_common
+from pytools._internal import common
 from pytools._internal.cli import enable_completion
 
 _LONG_OPTION_PATTERN = re.compile(r"(?<!\S)(--[A-Za-z0-9][A-Za-z0-9-]*)")
@@ -50,11 +50,11 @@ def _get_claude_options(claude_bin: str, *, run_help: HelpRunner = _run_help) ->
 
 def _resolve_executable(name: str, preferred_directories: tuple[pathlib.Path, ...]) -> pathlib.Path | None:
     """Mise shimを避け、実行名のシンボリックリンクを保持して探索する。"""
-    shim_directories = claude_common.mise_shim_directories()
+    shim_directories = common.mise_shim_directories()
     path_directories = (pathlib.Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
     seen: set[pathlib.Path] = set()
     for directory in (*preferred_directories, *path_directories):
-        resolved_directory = claude_common.safe_resolve(directory)
+        resolved_directory = common.safe_resolve(directory)
         if resolved_directory in seen or resolved_directory in shim_directories:
             continue
         seen.add(resolved_directory)

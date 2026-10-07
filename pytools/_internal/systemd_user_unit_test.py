@@ -6,7 +6,7 @@ import typing
 
 import pytest
 
-from pytools._internal import claude_common, systemd_user_unit
+from pytools._internal import common, systemd_user_unit
 
 _ACTIVE_SHOW = "ActiveState=active\nNRestarts=0\n"
 
@@ -52,7 +52,7 @@ def test_setup_writes_and_applies_unit(tmp_path: pathlib.Path, monkeypatch: typi
     unit = tmp_path / "tool.service"
     commands: list[list[str]] = []
 
-    monkeypatch.setattr(claude_common, "run_subprocess", _recording(commands))
+    monkeypatch.setattr(common, "run_subprocess", _recording(commands))
     assert systemd_user_unit.setup(
         unit_path=unit,
         executable_path=executable,
@@ -86,7 +86,7 @@ def test_setup_records_known_restart_reasons_before_restart(tmp_path: pathlib.Pa
         events.append(("journal", str(kwargs["input"])))
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", run_command)
+    monkeypatch.setattr(common, "run_subprocess", run_command)
     monkeypatch.setattr(systemd_user_unit.subprocess, "run", run_journal)
     assert systemd_user_unit.setup(
         unit_path=tmp_path / "tool.service",
@@ -128,8 +128,8 @@ def test_setup_does_not_rewrite_matching_unit(tmp_path: pathlib.Path, monkeypatc
         del args, kwargs
         raise AssertionError("一致するunitを書き直した")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", _recording(commands, stable=True))
-    monkeypatch.setattr(claude_common, "atomic_write_text", unexpected_write)
+    monkeypatch.setattr(common, "run_subprocess", _recording(commands, stable=True))
+    monkeypatch.setattr(common, "atomic_write_text", unexpected_write)
     assert systemd_user_unit.setup(
         unit_path=unit,
         executable_path=executable,
@@ -178,7 +178,7 @@ def test_setup_repairs_service_state_or_launcher_change(
             return subprocess.CompletedProcess(command, 0, _ACTIVE_SHOW, "")
         return subprocess.CompletedProcess(command, 0, "Linger=yes", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    monkeypatch.setattr(common, "run_subprocess", run)
     assert systemd_user_unit.setup(
         unit_path=unit,
         executable_path=executable,
@@ -202,8 +202,8 @@ def test_setup_uses_atomic_write(tmp_path: pathlib.Path, monkeypatch: typing.Any
         writes.append((path, content, mode, tag))
         return True
 
-    monkeypatch.setattr(claude_common, "atomic_write_text", write)
-    monkeypatch.setattr(claude_common, "run_subprocess", _show_aware())
+    monkeypatch.setattr(common, "atomic_write_text", write)
+    monkeypatch.setattr(common, "run_subprocess", _show_aware())
     unit = tmp_path / "tool.service"
     assert systemd_user_unit.setup(
         unit_path=unit,
@@ -245,7 +245,7 @@ def test_setup_raises_for_systemctl_failures(
         code = return_value if label == failed_label else 0
         return subprocess.CompletedProcess(command, code, "Linger=yes", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    monkeypatch.setattr(common, "run_subprocess", run)
     with pytest.raises(systemd_user_unit.SetupError, match=f"{failed_label}に失敗"):
         systemd_user_unit.setup(
             unit_path=tmp_path / "tool.service",
@@ -285,7 +285,7 @@ def test_setup_reports_linger_states(
             return subprocess.CompletedProcess(command, 0, _ACTIVE_SHOW, "")
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    monkeypatch.setattr(common, "run_subprocess", run)
     assert systemd_user_unit.setup(
         unit_path=tmp_path / "tool.service",
         executable_path=executable,
@@ -311,7 +311,7 @@ def test_setup_raises_when_service_never_activates(
             return subprocess.CompletedProcess(command, 0, "ActiveState=activating\nNRestarts=3\n", "")
         return subprocess.CompletedProcess(command, 0, "Linger=yes", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    monkeypatch.setattr(common, "run_subprocess", run)
     with pytest.raises(systemd_user_unit.SetupError, match="起動しません"):
         systemd_user_unit.setup(
             unit_path=tmp_path / "tool.service",
@@ -342,7 +342,7 @@ def test_setup_raises_when_service_restarts_repeatedly(
             )
         return subprocess.CompletedProcess(command, 0, "Linger=yes", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    monkeypatch.setattr(common, "run_subprocess", run)
     with pytest.raises(systemd_user_unit.SetupError, match="常駐しません"):
         systemd_user_unit.setup(
             unit_path=tmp_path / "tool.service",
@@ -367,7 +367,7 @@ def test_setup_raises_when_state_query_fails(
             return subprocess.CompletedProcess(command, 1, "", "")
         return subprocess.CompletedProcess(command, 0, "Linger=yes", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    monkeypatch.setattr(common, "run_subprocess", run)
     with pytest.raises(systemd_user_unit.SetupError, match="状態を取得できません"):
         systemd_user_unit.setup(
             unit_path=tmp_path / "tool.service",
@@ -388,7 +388,7 @@ def test_setup_timer_writes_units_and_enables_only_timer(
     service_unit = tmp_path / "tool.service"
     timer_unit = tmp_path / "tool.timer"
     commands: list[list[str]] = []
-    monkeypatch.setattr(claude_common, "run_subprocess", _recording(commands))
+    monkeypatch.setattr(common, "run_subprocess", _recording(commands))
 
     assert systemd_user_unit.setup_timer(
         service_unit_path=service_unit,
@@ -441,8 +441,8 @@ def test_setup_timer_matching_units_skip_daemon_reload(
         del args, kwargs
         raise AssertionError("一致するunitを書き直した")
 
-    monkeypatch.setattr(claude_common, "atomic_write_text", unexpected_write)
-    monkeypatch.setattr(claude_common, "run_subprocess", _recording(commands))
+    monkeypatch.setattr(common, "atomic_write_text", unexpected_write)
+    monkeypatch.setattr(common, "run_subprocess", _recording(commands))
     assert systemd_user_unit.setup_timer(
         service_unit_path=service_unit,
         timer_unit_path=timer_unit,
@@ -479,7 +479,7 @@ def test_setup_timer_raises_for_systemctl_failures(
         code = return_value if label == failed_label else 0
         return subprocess.CompletedProcess(command, code, "", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    monkeypatch.setattr(common, "run_subprocess", run)
     with pytest.raises(systemd_user_unit.SetupError, match=f"{failed_label}に失敗"):
         systemd_user_unit.setup_timer(
             service_unit_path=tmp_path / "tool.service",
@@ -506,7 +506,7 @@ def test_setup_timer_raises_when_timer_is_not_active(
             return subprocess.CompletedProcess(command, 0, "ActiveState=inactive\n", "")
         return subprocess.CompletedProcess(command, 0, "Linger=yes\n", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    monkeypatch.setattr(common, "run_subprocess", run)
     with pytest.raises(systemd_user_unit.SetupError, match="ActiveState=inactive"):
         systemd_user_unit.setup_timer(
             service_unit_path=tmp_path / "tool.service",
@@ -523,8 +523,8 @@ def test_setup_raises_when_unit_write_fails(tmp_path: pathlib.Path, monkeypatch:
     """unitを書き込めない場合は、古いunitのまま再起動へ進まず例外を送出する。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
-    monkeypatch.setattr(claude_common, "atomic_write_text", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(claude_common, "run_subprocess", lambda *_args, **_kwargs: pytest.fail("systemctlを呼ばない"))
+    monkeypatch.setattr(common, "atomic_write_text", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: pytest.fail("systemctlを呼ばない"))
     with pytest.raises(OSError, match="書き込みに失敗"):
         systemd_user_unit.setup(
             unit_path=tmp_path / "tool.service",

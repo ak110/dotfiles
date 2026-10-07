@@ -11,6 +11,7 @@ import pytest
 
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
+from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from ._test_helpers import _FakeResult, assert_scope_user_install_calls, command_matches, make_fresh_install_fake
@@ -19,7 +20,7 @@ from ._test_helpers import _FakeResult, assert_scope_user_install_calls, command
 @pytest.fixture(name="fake_which_present")
 def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
     """claude と uv の両方が存在する状態に見せかける。"""
-    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+    monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
 
 
 @pytest.fixture(name="fake_target_info")
@@ -94,13 +95,13 @@ class TestReadInstalledFromFile:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", path)
+        monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", path)
         monkeypatch.setattr(
             _install_claude_plugins,
             "_read_target_info",
             lambda _root: ({"agent-toolkit": "0.2.0"}, set()),
         )
-        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
@@ -116,7 +117,7 @@ class TestReadInstalledFromFile:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is False
@@ -130,13 +131,13 @@ class TestReadInstalledFromFile:
         path = tmp_path / "installed_plugins.json"
         if content is not None:
             path.write_text(content, encoding="utf-8")
-        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", path)
+        monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", path)
         monkeypatch.setattr(
             _install_claude_plugins,
             "_read_target_info",
             lambda _root: ({"agent-toolkit": "0.2.0"}, set()),
         )
-        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
@@ -144,7 +145,7 @@ class TestReadInstalledFromFile:
         calls: list[list[str]] = []
         fake_run = make_fresh_install_fake(calls, version="0.2.0")
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is True
@@ -173,13 +174,13 @@ class TestReadInstalledFromFile:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", path)
+        monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", path)
         monkeypatch.setattr(
             _install_claude_plugins,
             "_read_target_info",
             lambda _root: ({"agent-toolkit": "0.2.0"}, set()),
         )
-        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
@@ -198,7 +199,7 @@ class TestReadInstalledFromFile:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         _install_claude_plugins.run()
         # user scope で version 一致のため install/update は発行されない
@@ -215,7 +216,7 @@ class TestCheckMarketplaceFromFile:
 
     def test_directory_type_healthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """directory 型 + dotfiles 絶対パスなら is_directory_type_registered が True を返す。"""
-        dotfiles_root = _claude_common.find_dotfiles_root()
+        dotfiles_root = _common.find_dotfiles_root()
         assert dotfiles_root is not None
         path = tmp_path / "known_marketplaces.json"
         path.write_text(
@@ -303,10 +304,10 @@ class TestHappyPathDirectoryType:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", installed_path)
+        monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", installed_path)
 
         # known_marketplaces.json: directory 型 + dotfiles 絶対パスで正常登録済み
-        dotfiles_root = _claude_common.find_dotfiles_root()
+        dotfiles_root = _common.find_dotfiles_root()
         assert dotfiles_root is not None
         marketplace_path = tmp_path / "known_marketplaces.json"
         marketplace_path.write_text(
@@ -336,7 +337,7 @@ class TestHappyPathDirectoryType:
                 return _FakeResult(returncode=0)
             raise AssertionError(f"予期しない subprocess 呼び出し: {cmd}")
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run().changed is True
         # 全プラグインに対して install が --scope=user で再実行される

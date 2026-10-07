@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import claude_common, common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     設定を読めない場合も何もせずに終える。post-applyは他のステップを続ける必要があり、
     判定できない設定で失敗させる単体インストーラー（fail-closed）とは扱いを分ける。
     """
-    if claude_common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
+    if common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
         logger.info(log_format.format_status("legacy-codex-mcp", "claude CLI 未検出のためスキップ"))
         return post_apply_outcome.PostApplyOutcome()
     current = _load_user_codex()
@@ -74,7 +74,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         return post_apply_outcome.PostApplyOutcome()
     result = claude_common.run_claude(["mcp", "remove", "--scope", "user", _CODEX_NAME])
     if result is None or result.returncode != 0:
-        detail = claude_common.format_cli_error(result)
+        detail = common.format_cli_error(result)
         return post_apply_outcome.PostApplyOutcome(failure=f"旧User scope登録の削除に失敗: {detail}")
     logger.info(log_format.format_status("legacy-codex-mcp", "旧User scope登録を削除しました"))
     return post_apply_outcome.PostApplyOutcome(changed=True)

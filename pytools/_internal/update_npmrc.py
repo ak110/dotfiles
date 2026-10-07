@@ -11,7 +11,7 @@ import re
 import shutil
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def _update_pnpm_global() -> bool:
     if pnpm is None:
         logger.info(log_format.format_status("pnpm", "未検出のため公開待機の設定を省略しました"))
         return False
-    current = claude_common.run_subprocess(
+    current = common.run_subprocess(
         [pnpm, "config", "get", "--location", "global", _PNPM_KEY], timeout=_PNPM_TIMEOUT, tag="pnpm"
     )
     if current is None or current.returncode != 0:
@@ -91,7 +91,7 @@ def _update_pnpm_global() -> bool:
     if lines and lines[-1].strip() == _PNPM_VALUE:
         logger.info(log_format.format_status("pnpm", f"{_PNPM_KEY}={_PNPM_VALUE} は既に設定済み"))
         return False
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         [pnpm, "config", "set", "--location", "global", _PNPM_KEY, _PNPM_VALUE], timeout=_PNPM_TIMEOUT, tag="pnpm"
     )
     if result is None or result.returncode != 0:

@@ -19,6 +19,7 @@ from pytools._internal import (
     claude_common,
     cleanup_paths,
     cleanup_user_path,
+    common,
     install_claude_plugins,
     install_codex_plugins,
     install_libarchive,
@@ -106,7 +107,7 @@ def _tmux_clone_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
             ),
         ),
     )
-    monkeypatch.setattr(claude_common, "run_subprocess", lambda *_args, **_kwargs: _completed(128, stderr="unreachable"))
+    monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: _completed(128, stderr="unreachable"))
 
 
 def _claude_plugins_install_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -115,7 +116,7 @@ def _claude_plugins_install_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 
 
 def _codex_plugins_add_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(claude_common, "resolve_executable", lambda _name, **_kwargs: tmp_path / "codex")
+    monkeypatch.setattr(common, "resolve_executable", lambda _name, **_kwargs: tmp_path / "codex")
     monkeypatch.setattr(install_codex_plugins, "_remove_unused_plugins", _raise(RuntimeError("Codex plugin addに失敗")))
 
 
@@ -123,9 +124,9 @@ def _uv_environment_build_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     script = tmp_path / "plugin" / "agent_toolkit" / "agents_server_mcp.py"
     script.parent.mkdir(parents=True)
     script.write_text("", encoding="utf-8")
-    monkeypatch.setattr(claude_common, "resolve_executable", lambda name, **_kwargs: tmp_path / name)
+    monkeypatch.setattr(common, "resolve_executable", lambda name, **_kwargs: tmp_path / name)
     monkeypatch.setattr(warmup_agents_server, "_targets", lambda: [script])
-    monkeypatch.setattr(claude_common, "run_subprocess", lambda *_args, **_kwargs: _completed(1, stderr="resolution failed"))
+    monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: _completed(1, stderr="resolution failed"))
 
 
 def _uvx_environment_build_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -134,9 +135,9 @@ def _uvx_environment_build_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
         json.dumps({"mcpServers": {"pyfltr": {"command": "uvx", "args": ["--from", "pyfltr", "pyfltr", "mcp"]}}}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(claude_common, "resolve_executable", lambda name, **_kwargs: tmp_path / name)
+    monkeypatch.setattr(common, "resolve_executable", lambda name, **_kwargs: tmp_path / name)
     monkeypatch.setattr(warmup_pyfltr_mcp.plugin_warmup, "agent_toolkit_targets", lambda *_args, **_kwargs: [definition])
-    monkeypatch.setattr(claude_common, "run_subprocess", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: None)
 
 
 def _libarchive_download_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -168,7 +169,7 @@ def _msys_env_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
 def _user_env_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     (tmp_path / "share").mkdir()
     (tmp_path / "share" / "user.env").write_text("KEY=1\n", encoding="utf-8")
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(winutils, "read_user_env_var", lambda _name: (None, 1))
     monkeypatch.setattr(winutils, "import_winreg", lambda: type("_Winreg", (), {"REG_SZ": 1}))
     monkeypatch.setattr(winutils, "write_user_env_var", _raise(PermissionError("denied")))
@@ -177,7 +178,7 @@ def _user_env_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
 def _vscode_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     settings = tmp_path / "settings.json"
     monkeypatch.setattr(update_vscode_settings, "_settings_path", lambda **_kwargs: settings)
-    monkeypatch.setattr(claude_common, "write_settings_hybrid", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(common, "write_settings_hybrid", lambda *_args, **_kwargs: False)
 
 
 def _ssh_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -185,7 +186,7 @@ def _ssh_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     conf_d = tmp_path / ".ssh" / "conf.d"
     conf_d.mkdir(parents=True)
     (conf_d / "a.conf").write_text("Host a\n", encoding="utf-8")
-    monkeypatch.setattr(claude_common, "atomic_write_text", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(common, "atomic_write_text", lambda *_args, **_kwargs: False)
 
 
 def _cleanup_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -200,29 +201,29 @@ def _cleanup_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 def _npm_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(update_npmrc.shutil, "which", lambda _name: str(tmp_path / "pnpm"))
-    monkeypatch.setattr(claude_common, "run_subprocess", lambda *_args, **_kwargs: _completed(1, stderr="EACCES"))
+    monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: _completed(1, stderr="EACCES"))
 
 
 def _codex_claude_mcp_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(claude_common, "resolve_executable", lambda _name, **_kwargs: tmp_path / "codex")
+    monkeypatch.setattr(common, "resolve_executable", lambda _name, **_kwargs: tmp_path / "codex")
     results = iter([_completed(0, stdout="{}"), _completed(1, stderr="permission denied")])
-    monkeypatch.setattr(remove_codex_claude_mcp.claude_common, "run_subprocess", lambda *_args, **_kwargs: next(results))
+    monkeypatch.setattr(remove_codex_claude_mcp.common, "run_subprocess", lambda *_args, **_kwargs: next(results))
 
 
 def _rules_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     rules = tmp_path / "dotfiles" / "agent-toolkit" / "rules"
     rules.mkdir(parents=True)
     (rules / "01.md").write_text("rule\n", encoding="utf-8")
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
     monkeypatch.setattr(claude_common, "CLAUDE_HOME", tmp_path / ".claude")
     monkeypatch.setattr(sync_agent_toolkit_rules, "CODEX_HOME", tmp_path / ".codex")
-    monkeypatch.setattr(claude_common, "atomic_write_text", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(common, "atomic_write_text", lambda *_args, **_kwargs: False)
 
 
 def _codex_link_blocked(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     (tmp_path / "dotfiles" / "src").mkdir(parents=True)
     (tmp_path / ".codex" / "skills" / "x").mkdir(parents=True)
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
     monkeypatch.setattr(setup_codex_links, "CODEX_HOME", tmp_path / ".codex")
     monkeypatch.setattr(setup_codex_links, "_LINKS", {Path("skills/x"): Path("src")})
 
@@ -248,7 +249,7 @@ def _codex_snapshot_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 
 
 def _legacy_codex_mcp_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(claude_common, "resolve_executable", lambda _name, **_kwargs: tmp_path / "claude")
+    monkeypatch.setattr(common, "resolve_executable", lambda _name, **_kwargs: tmp_path / "claude")
     monkeypatch.setattr(
         remove_legacy_codex_mcp_from_claude, "_load_user_codex", lambda: {"command": "codex", "args": ["mcp-server"]}
     )
@@ -258,7 +259,7 @@ def _legacy_codex_mcp_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 def _claude_settings_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(update_claude_settings, "_SETTINGS_PATH", tmp_path / "settings.json")
     monkeypatch.setattr(update_claude_settings, "_CONFIG_PATH", tmp_path / ".claude.json")
-    monkeypatch.setattr(claude_common, "write_settings_hybrid", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(common, "write_settings_hybrid", lambda *_args, **_kwargs: False)
 
 
 def _euryale_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -270,9 +271,9 @@ def _euryale_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     uv.write_text("", encoding="utf-8")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
-    monkeypatch.setattr(claude_common, "resolve_uv_path", lambda: uv)
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: root)
-    monkeypatch.setattr(claude_common, "atomic_write_text", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(common, "resolve_uv_path", lambda: uv)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
+    monkeypatch.setattr(common, "atomic_write_text", lambda *_args, **_kwargs: False)
     return root
 
 
@@ -300,7 +301,7 @@ def _sendto_shortcut_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
         target = tmp_path / shortcut.target_relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("", encoding="utf-8")
-    monkeypatch.setattr(claude_common, "run_subprocess", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: None)
 
 
 def _media_remote_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

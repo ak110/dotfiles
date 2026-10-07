@@ -58,7 +58,7 @@ def test_official_installer_uses_platform_trust_and_explicit_ca(
         commands.append(command)
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", run)
     result, reason = setup_cli_common.run_official_installer(
         None,
         posix_url="https://example.test/install.sh",
@@ -100,7 +100,7 @@ def test_official_installer_decodes_windows_powershell_with_local_code_page(
         observed.append(str(kwargs["encoding"]))
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", run)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result, reason = setup_cli_common.run_official_installer(
             client,
@@ -160,7 +160,7 @@ def test_migrate_npm_launchers_removes_only_owned_symlink(monkeypatch, tmp_path:
             return subprocess.CompletedProcess(command, 0, f"{tmp_path / 'old/lib/node_modules'}\n", "")
         return subprocess.CompletedProcess(command, uninstall_returncode, "", "failed")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
     if uninstall_returncode:
         with pytest.raises(RuntimeError):
@@ -198,7 +198,7 @@ def test_migrate_npm_launchers_searches_extra_directories_once(monkeypatch, tmp_
             return subprocess.CompletedProcess(command, 0, f"{package_root}\n", "")
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
     assert setup_cli_common.migrate_npm_launchers(
         "codex",
@@ -231,7 +231,7 @@ def test_migrate_npm_launchers_keeps_unknown_launcher(monkeypatch, tmp_path: Pat
         (root / "@openai" / "codex").mkdir(parents=True, exist_ok=True)
         return subprocess.CompletedProcess(command, 0, f"{root}\n", "")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
     assert not setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, canonical_prefix)
     assert not any("uninstall" in call for call in calls)
@@ -281,7 +281,7 @@ def test_migrate_excludes_canonical_prefix_and_launcher(monkeypatch, tmp_path: P
     (launcher.parent / "alias" / "codex").symlink_to(launcher)
     monkeypatch.setenv("PATH", os.pathsep.join([str(launcher.parent), str(launcher.parent / "alias")]))
     monkeypatch.setattr(
-        setup_cli_common.claude_common,
+        setup_cli_common.common,
         "run_subprocess",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError((args, kwargs))),
     )
@@ -343,7 +343,7 @@ def test_migrate_reports_why_package_ownership_is_unconfirmed(
         output = tmp_path / "prefix" if command[1] == "prefix" else root
         return subprocess.CompletedProcess(command, 0, f"{output}\n", "")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
         assert not setup_cli_common.migrate_npm_launchers(
@@ -407,7 +407,7 @@ def test_migrate_windows_owned_launchers(monkeypatch, tmp_path: Path, launcher_k
             return subprocess.CompletedProcess(command, 0, f"{shim_target}\n", "")
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
     assert setup_cli_common.migrate_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"
@@ -429,7 +429,7 @@ def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_pat
         value = tmp_path / "prefix" if command[1] == "prefix" else root
         return subprocess.CompletedProcess(command, 0, f"{value}\n", "")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
     assert not setup_cli_common.migrate_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"
@@ -477,7 +477,7 @@ def test_migrate_windows_cmd_uses_package_json_bin(
             return subprocess.CompletedProcess(command, 0, "", "")
         return subprocess.CompletedProcess(command, 0, f"{output}\n", "")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
     if expected:
         assert setup_cli_common.migrate_npm_launchers(
@@ -519,7 +519,7 @@ def test_migrate_windows_mise_shim_rejects_wrong_target(monkeypatch, tmp_path: P
             output = target
         return subprocess.CompletedProcess(command, 0, f"{output}\n", "")
 
-    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
     assert not setup_cli_common.migrate_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"

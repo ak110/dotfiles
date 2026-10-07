@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools._internal import claude_common, setup_tmux_plugins
+from pytools._internal import common, setup_tmux_plugins
 
 
 def _make_plugin(plugins_dir: Path, *, pin_is_tag: bool) -> setup_tmux_plugins._Plugin:  # pylint: disable=protected-access
@@ -44,7 +44,7 @@ def _install_env(
             stdout = f"{plugin.origin}\n"
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(common, "run_subprocess", fake_run)
     return calls
 
 
@@ -151,7 +151,7 @@ def test_skips_when_origin_mismatched(
             stderr="",
         )
 
-    monkeypatch.setattr(claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(common, "run_subprocess", fake_run)
     assert setup_tmux_plugins.run().changed is False
     assert calls == [["git", "-C", str(plugins_dir / "tpm"), "remote", "get-url", "origin"]]
 
@@ -174,7 +174,7 @@ def test_returns_false_when_subprocess_fails(
     def fake_run(cmd: list[str], **_kwargs: object) -> None:
         calls.append(cmd)
 
-    monkeypatch.setattr(claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(common, "run_subprocess", fake_run)
     assert setup_tmux_plugins.run().changed is False
 
 
@@ -208,7 +208,7 @@ def test_update_failure_warning_includes_git_error(
             return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr=failure_reason)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(common, "run_subprocess", fake_run)
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_tmux_plugins"):
         assert setup_tmux_plugins.run().changed is False

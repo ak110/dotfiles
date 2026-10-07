@@ -550,7 +550,7 @@ def test_doctor_subcommand_renders_all_sections(
             stdout = ""
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr(_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(_cli, "detect_local_ip", lambda: "192.168.1.10")
 
     exit_code = _cli.main(["doctor", "--token-file", str(token_path), "--port", "29123"])

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from pytools._internal import claude_common, log_format, post_apply_outcome, setup_cli_common
+from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +44,12 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
         timeout=_COMMAND_TIMEOUT,
     )
     if result is None or result.returncode != 0:
-        detail = reason or claude_common.format_cli_error(result)
+        detail = reason or common.format_cli_error(result)
         logger.warning(log_format.format_status(_TAG, f"導入に失敗: {detail}"))
         return post_apply_outcome.PostApplyOutcome()
-    verification = claude_common.run_subprocess([str(launcher), "--version"], timeout=30, tag=_TAG)
+    verification = common.run_subprocess([str(launcher), "--version"], timeout=30, tag=_TAG)
     if verification is None or verification.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"導入後の確認に失敗: {claude_common.format_cli_error(verification)}"))
+        logger.warning(log_format.format_status(_TAG, f"導入後の確認に失敗: {common.format_cli_error(verification)}"))
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(launcher.parent)
     return post_apply_outcome.PostApplyOutcome(changed=True)

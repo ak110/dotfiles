@@ -9,7 +9,7 @@ import logging
 import pathlib
 import stat
 
-from pytools._internal import claude_common, log_format, post_apply_outcome, systemd_user_unit
+from pytools._internal import claude_common, common, log_format, post_apply_outcome, systemd_user_unit
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +66,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if not claude_common.is_euryale():
         return post_apply_outcome.PostApplyOutcome()
 
-    uv = claude_common.resolve_uv_path()
+    uv = common.resolve_uv_path()
     if uv is None:
         logger.info(log_format.format_status("atk-serve", "uvが見つからないため設定を見送る"))
         return post_apply_outcome.PostApplyOutcome()
-    dotfiles = claude_common.find_dotfiles_root()
+    dotfiles = common.find_dotfiles_root()
     if dotfiles is None:
         logger.info(log_format.format_status("atk-serve", "dotfilesルートが見つからないため設定を見送る"))
         return post_apply_outcome.PostApplyOutcome()
@@ -80,7 +80,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     launcher = _launcher_path()
     content = _LAUNCHER_TEMPLATE.format(uv=uv, dotfiles=dotfiles)
     launcher_changed = _read_text(launcher) != content
-    if launcher_changed and not claude_common.atomic_write_text(launcher, content, mode=0o755, tag="atk-serve"):
+    if launcher_changed and not common.atomic_write_text(launcher, content, mode=0o755, tag="atk-serve"):
         raise OSError(f"{launcher} の書き込みに失敗")
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
@@ -111,18 +111,18 @@ def _remove_legacy_unit() -> str | None:
     unit_path = _legacy_unit_path()
     if not unit_path.exists():
         return None
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["systemctl", "--user", "disable", "--now", _LEGACY_SERVICE_UNIT],
         timeout=30.0,
         tag="atk-serve",
     )
     if result is None or result.returncode != 0:
-        return f"{_LEGACY_SERVICE_UNIT}を停止できないためunitを残した: {claude_common.format_cli_error(result)}"
+        return f"{_LEGACY_SERVICE_UNIT}を停止できないためunitを残した: {common.format_cli_error(result)}"
     try:
         unit_path.unlink(missing_ok=True)
     except OSError as error:
         return f"{_LEGACY_SERVICE_UNIT}のunitファイルを削除できないため残した: {error}"
-    claude_common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=30.0, tag="atk-serve")
+    common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=30.0, tag="atk-serve")
     logger.info(log_format.format_status("atk-serve", f"{_LEGACY_SERVICE_UNIT}を停止して削除した"))
     return None
 

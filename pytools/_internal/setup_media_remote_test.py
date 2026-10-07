@@ -53,7 +53,7 @@ def _exe_path(windows_stheno: pathlib.Path) -> pathlib.Path:
 def test_startup_dir_missing_returns_false(monkeypatch: pytest.MonkeyPatch):
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        setup_media_remote.claude_common,
+        setup_media_remote.common,
         "run_subprocess",
         _make_static_fake(calls),
     )
@@ -67,7 +67,7 @@ def test_exe_missing_skips(exe_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
     exe_path.unlink()
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        setup_media_remote.claude_common,
+        setup_media_remote.common,
         "run_subprocess",
         _make_static_fake(calls),
     )
@@ -83,7 +83,7 @@ def test_creates_shortcut_and_vbs_when_missing(
 ):
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        setup_media_remote.claude_common,
+        setup_media_remote.common,
         "run_subprocess",
         _make_static_fake(calls, _ok()),
     )
@@ -114,7 +114,7 @@ def test_create_shortcut_failure_returns_false(
     vbs_path.write_text(_expected_vbs(exe_path), encoding="utf-8")
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        setup_media_remote.claude_common,
+        setup_media_remote.common,
         "run_subprocess",
         _make_static_fake(calls, _ok(returncode=1)),
     )
@@ -136,7 +136,7 @@ def test_idempotent_when_vbs_and_lnk_match(
     expected_args = f'"{vbs_path}"'
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        setup_media_remote.claude_common,
+        setup_media_remote.common,
         "run_subprocess",
         _make_branching_fake(
             calls,
@@ -162,7 +162,7 @@ def test_existing_pythonw_lnk_is_overwritten(
     calls: list[list[str]] = []
     old_target = str(pathlib.Path.home() / ".local" / "share" / "uv" / "tools" / "pytools" / "Scripts" / "pythonw.exe")
     monkeypatch.setattr(
-        setup_media_remote.claude_common,
+        setup_media_remote.common,
         "run_subprocess",
         _make_branching_fake(
             calls,
@@ -190,7 +190,7 @@ def test_non_stheno_removes_existing_lnk_and_vbs(
     vbs_path.write_text("dummy", encoding="utf-8")
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        setup_media_remote.claude_common,
+        setup_media_remote.common,
         "run_subprocess",
         _make_static_fake(calls),
     )
@@ -205,7 +205,7 @@ def test_non_stheno_without_existing_assets_is_noop(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(setup_media_remote.socket, "gethostname", lambda: "other-host")
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        setup_media_remote.claude_common,
+        setup_media_remote.common,
         "run_subprocess",
         _make_static_fake(calls),
     )
@@ -249,7 +249,7 @@ def test_restart_after_reinstall_and_symptomatic_restart(
     monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
     monkeypatch.setenv(setup_media_remote.STOPPED_ENV, stopped)
     monkeypatch.setenv(setup_media_remote.REINSTALL_ENV, reinstall)
-    monkeypatch.setattr(setup_media_remote.claude_common, "run_subprocess", _make_static_fake([]))
+    monkeypatch.setattr(setup_media_remote.common, "run_subprocess", _make_static_fake([]))
     monkeypatch.setattr(setup_media_remote, "_is_up_to_date", lambda _lnk, _vbs: True)
     monkeypatch.setattr(setup_media_remote, "_ensure_vbs", lambda _vbs, _exe: False)
     if has_vbs:

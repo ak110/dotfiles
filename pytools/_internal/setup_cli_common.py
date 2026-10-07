@@ -18,7 +18,7 @@ from pathlib import Path
 import httpx
 import psutil
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import common, log_format
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def run_official_installer(
         else:
             command = ["bash", str(temp_path)]
             output_encoding = "utf-8"
-        return claude_common.run_subprocess(
+        return common.run_subprocess(
             command, timeout=timeout, tag=tag, env_overrides=env_overrides, encoding=output_encoding
         ), ""
     except (httpx.HTTPError, OSError) as error:
@@ -139,15 +139,15 @@ def migrate_npm_launchers(
             _warn_unconfirmed_launcher(cli_name, launcher, f"{package_dir}配下の実体ではない: {_launcher_kind(launcher)}")
             continue
         with _NPM_GLOBAL_LOCK:
-            result = claude_common.run_subprocess(
+            result = common.run_subprocess(
                 [str(npm), "uninstall", "--global", package_name],
-                timeout=claude_common.CLAUDE_TIMEOUT,
+                timeout=common.COMMAND_TIMEOUT,
                 tag=cli_name,
             )
         if result is not None and result.returncode == 0:
             changed = True
         else:
-            message = f"旧npm版の削除に失敗: {claude_common.format_cli_error(result)}"
+            message = f"旧npm版の削除に失敗: {common.format_cli_error(result)}"
             logger.warning(log_format.format_status(cli_name, message))
             raise RuntimeError(message)
     return changed
@@ -195,7 +195,7 @@ def _warn_unconfirmed_launcher(cli_name: str, launcher: Path, reason: str) -> No
 def _launcher_kind(launcher: Path) -> str:
     """帰属判定に用いたランチャーの実体の種別を返す。"""
     if launcher.is_symlink():
-        return f"symlink（参照先: {claude_common.safe_resolve(launcher)}）"
+        return f"symlink（参照先: {common.safe_resolve(launcher)}）"
     if launcher.is_dir():
         return "ディレクトリ"
     if launcher.is_file():
@@ -218,13 +218,13 @@ def _iter_noncanonical_launchers(
     """
     seen: set[str] = set()
     names = (cli_name, f"{cli_name}.cmd", f"{cli_name}.exe") if sys.platform == "win32" else (cli_name,)
-    canonical_real = claude_common.safe_resolve(canonical_launcher)
-    prefix_real = claude_common.safe_resolve(canonical_prefix)
-    shim_directories = claude_common.mise_shim_directories()
+    canonical_real = common.safe_resolve(canonical_launcher)
+    prefix_real = common.safe_resolve(canonical_prefix)
+    shim_directories = common.mise_shim_directories()
     path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
     seen_directories: set[str] = set()
     for directory in (*path_directories, *extra_search_directories):
-        directory_real = claude_common.safe_resolve(directory)
+        directory_real = common.safe_resolve(directory)
         directory_key = os.path.normcase(str(directory_real))
         if directory_key in seen_directories:
             continue
@@ -235,11 +235,11 @@ def _iter_noncanonical_launchers(
             launcher = directory / name
             if not launcher.exists():
                 continue
-            key = os.path.normcase(str(claude_common.safe_resolve(launcher)))
+            key = os.path.normcase(str(common.safe_resolve(launcher)))
             if key in seen:
                 continue
             seen.add(key)
-            resolved = claude_common.safe_resolve(launcher)
+            resolved = common.safe_resolve(launcher)
             if resolved == canonical_real or _is_relative_to(resolved, prefix_real):
                 continue
             yield launcher
@@ -256,12 +256,8 @@ def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None 
     解決できない場合は`None`を返す。`unresolved`を渡した場合は、解決できなかった情報を
     そのリストへ1件追加する（呼び出し元がユーザーへ保持の理由を示すために使う）。
     """
-    prefix_result = claude_common.run_subprocess(
-        [str(npm), "prefix", "--global"], timeout=claude_common.CLAUDE_TIMEOUT, tag=npm.name
-    )
-    root_result = claude_common.run_subprocess(
-        [str(npm), "root", "--global"], timeout=claude_common.CLAUDE_TIMEOUT, tag=npm.name
-    )
+    prefix_result = common.run_subprocess([str(npm), "prefix", "--global"], timeout=common.COMMAND_TIMEOUT, tag=npm.name)
+    root_result = common.run_subprocess([str(npm), "root", "--global"], timeout=common.COMMAND_TIMEOUT, tag=npm.name)
     if (
         prefix_result is None
         or prefix_result.returncode != 0
@@ -275,8 +271,8 @@ def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None 
             f"npmの導入先を取得できない: prefix={_command_output(prefix_result)} root={_command_output(root_result)}",
         )
         return None
-    prefix = claude_common.safe_resolve(Path(prefix_result.stdout.strip()))
-    root = claude_common.safe_resolve(Path(root_result.stdout.strip()))
+    prefix = common.safe_resolve(Path(prefix_result.stdout.strip()))
+    root = common.safe_resolve(Path(root_result.stdout.strip()))
     if not _is_relative_to(root, prefix):
         _record_unresolved(unresolved, f"npmのroot（{root}）がprefix（{prefix}）の配下ではない")
         return None
@@ -303,8 +299,8 @@ def _command_output(result: subprocess.CompletedProcess[str] | None) -> str:
 
 
 def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name: str) -> bool:
-    resolved = claude_common.safe_resolve(launcher)
-    package_real = claude_common.safe_resolve(package_dir)
+    resolved = common.safe_resolve(launcher)
+    package_real = common.safe_resolve(package_dir)
     if resolved != launcher.absolute() and _is_relative_to(resolved, package_real):
         return True
     if launcher.suffix.lower() == ".cmd":
@@ -315,10 +311,9 @@ def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name
         entrypoint = _package_bin_entrypoint(package_dir, launcher.stem)
         if entrypoint is None:
             return False
-        entrypoint_real = claude_common.safe_resolve(entrypoint)
+        entrypoint_real = common.safe_resolve(entrypoint)
         return any(
-            claude_common.safe_resolve(candidate) == entrypoint_real
-            for candidate in _cmd_referenced_paths(content, launcher.parent)
+            common.safe_resolve(candidate) == entrypoint_real for candidate in _cmd_referenced_paths(content, launcher.parent)
         )
     if launcher.suffix.lower() == ".exe":
         # mise shimはmiseの解決情報が対象packageを指す場合だけ対象とする。
@@ -326,9 +321,7 @@ def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name
         if mise_name is None:
             return False
         mise = Path(mise_name).absolute()
-        result = claude_common.run_subprocess(
-            [str(mise), "which", launcher.stem], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise"
-        )
+        result = common.run_subprocess([str(mise), "which", launcher.stem], timeout=common.COMMAND_TIMEOUT, tag="mise")
         output = (result.stdout or "").strip() if result is not None else ""
         normalized_output = output.lower().replace("\\", "/")
         package_slug = package_name.lower().removeprefix("@").replace("/", "-")
@@ -336,7 +329,7 @@ def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name
             result is not None
             and result.returncode == 0
             and (package_name.lower() in normalized_output or package_slug in normalized_output)
-            and _is_relative_to(claude_common.safe_resolve(Path(output)), package_real)
+            and _is_relative_to(common.safe_resolve(Path(output)), package_real)
         )
     return False
 
@@ -380,8 +373,8 @@ def _package_bin_entrypoint(package_dir: Path, cli_name: str) -> Path | None:
         return None
     if not isinstance(relative, str) or not relative:
         return None
-    entrypoint = claude_common.safe_resolve(package_dir / relative)
-    package_real = claude_common.safe_resolve(package_dir)
+    entrypoint = common.safe_resolve(package_dir / relative)
+    package_real = common.safe_resolve(package_dir)
     return entrypoint if entrypoint.is_file() and _is_relative_to(entrypoint, package_real) else None
 
 

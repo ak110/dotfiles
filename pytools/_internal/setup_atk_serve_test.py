@@ -12,12 +12,12 @@ import typing
 
 import pytest
 
-from pytools._internal import claude_common, setup_atk_serve, systemd_user_unit
+from pytools._internal import claude_common, common, setup_atk_serve, systemd_user_unit
 
 
 def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """テスト共通の Linux + euryale + uv 配置済み環境をセットアップする。"""
-    monkeypatch.setattr(claude_common.sys, "platform", "linux")
+    monkeypatch.setattr(common.sys, "platform", "linux")
     monkeypatch.setattr(claude_common.socket, "gethostname", lambda: "euryale")
     monkeypatch.setattr(setup_atk_serve.pathlib.Path, "home", lambda: tmp_path)
     uv = tmp_path / ".local" / "bin" / "uv"
@@ -26,8 +26,8 @@ def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) 
     plugin_manifest = tmp_path / "agent-toolkit" / ".claude-plugin" / "plugin.json"
     plugin_manifest.parent.mkdir(parents=True)
     plugin_manifest.write_text('{"version": "2.1.0"}', encoding="utf-8")
-    monkeypatch.setattr(claude_common, "resolve_executable", lambda _name, **_kwargs: uv)
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(common, "resolve_executable", lambda _name, **_kwargs: uv)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
 
 
 class TestRunPlatformGuard:
@@ -44,7 +44,7 @@ class TestRunPlatformGuard:
         hostname: str,
     ) -> None:
         """Linux かつ euryale 以外では False を返し設定処理を開始しない。"""
-        monkeypatch.setattr(claude_common.sys, "platform", platform)
+        monkeypatch.setattr(common.sys, "platform", platform)
         monkeypatch.setattr(claude_common.socket, "gethostname", lambda: hostname)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
         assert not setup_atk_serve.run().changed
@@ -78,7 +78,7 @@ class TestRunUvResolution:
         _run_linux_euryale(monkeypatch, tmp_path)
         (tmp_path / ".local" / "bin" / "uv").unlink()
         monkeypatch.setattr(
-            claude_common,
+            common,
             "resolve_executable",
             lambda _name, **_kwargs: pathlib.Path("/opt/uv/bin/uv"),
         )
@@ -98,7 +98,7 @@ class TestRunUvResolution:
         """uv を解決できない場合は False を返しランチャーも unit も書き込まない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         (tmp_path / ".local" / "bin" / "uv").unlink()
-        monkeypatch.setattr(claude_common, "resolve_executable", lambda _name, **_kwargs: None)
+        monkeypatch.setattr(common, "resolve_executable", lambda _name, **_kwargs: None)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
 
         with caplog.at_level("INFO", logger=setup_atk_serve.logger.name):
@@ -116,7 +116,7 @@ class TestRunUvResolution:
     ) -> None:
         """dotfilesルートを解決できない場合はランチャーとunitを書き込まない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
-        monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: None)
+        monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
 
         with caplog.at_level("INFO", logger=setup_atk_serve.logger.name):
@@ -173,7 +173,7 @@ class TestRunLauncherDeployment:
             assert kwargs["journal_identifier"] == "atk-serve-setup"
             return True
 
-        monkeypatch.setattr(claude_common, "atomic_write_text", write)
+        monkeypatch.setattr(common, "atomic_write_text", write)
         monkeypatch.setattr(systemd_user_unit, "setup", setup)
 
         assert setup_atk_serve.run().changed
@@ -200,7 +200,7 @@ class TestRunLauncherDeployment:
             del args, kwargs
             raise AssertionError("一致するランチャーを書き直した")
 
-        monkeypatch.setattr(claude_common, "atomic_write_text", unexpected_write)
+        monkeypatch.setattr(common, "atomic_write_text", unexpected_write)
 
         def setup(**kwargs: typing.Any) -> bool:
             assert kwargs["restart_needed"] is False
@@ -290,7 +290,7 @@ class TestLegacyPlansViewerUnit:
                 return subprocess.CompletedProcess(cmd, 0, "", "")
             return subprocess.CompletedProcess(cmd, returncode, "", "")
 
-        monkeypatch.setattr(claude_common, "run_subprocess", run_subprocess)
+        monkeypatch.setattr(common, "run_subprocess", run_subprocess)
         return calls
 
     def test_disables_legacy_unit_before_removing_it(

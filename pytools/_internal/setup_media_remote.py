@@ -25,7 +25,7 @@ import subprocess
 
 import psutil
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +242,7 @@ def _read_shortcut(lnk: pathlib.Path) -> tuple[str, str] | None:
         "[Console]::Out.Write([char]9); "
         "[Console]::Out.Write($s.Arguments)"
     )
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         timeout=30.0,
         tag="media-remote",
@@ -268,7 +268,7 @@ def _create_shortcut(lnk: pathlib.Path, vbs: pathlib.Path) -> bool:
         "$s.WindowStyle = 7; "
         "$s.Save()"
     )
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         timeout=30.0,
         tag="media-remote",

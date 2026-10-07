@@ -29,7 +29,7 @@ class TestRunSendToMissing:
         del windows_home
         calls: list[list[str]] = []
         monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
+            setup_sendto_shortcuts.common,
             "run_subprocess",
             _make_static_fake(calls),
         )
@@ -47,7 +47,7 @@ class TestRunTargetMissing:
 
         calls: list[list[str]] = []
         monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
+            setup_sendto_shortcuts.common,
             "run_subprocess",
             _make_static_fake(calls),
         )
@@ -76,7 +76,7 @@ class TestRunShortcutCreation:
         _, target, lnk = prepared
         calls: list[list[str]] = []
         monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
+            setup_sendto_shortcuts.common,
             "run_subprocess",
             _make_static_fake(calls, _ok()),
         )
@@ -97,7 +97,7 @@ class TestRunShortcutCreation:
         lnk.touch()  # 既存ファイル扱いにする
         calls: list[list[str]] = []
         monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
+            setup_sendto_shortcuts.common,
             "run_subprocess",
             _make_branching_fake(calls, _ok(), _ok(stdout=str(target))),
         )
@@ -116,7 +116,7 @@ class TestRunShortcutCreation:
         # Windows のファイルシステムは case-insensitive。
         # 大文字小文字が異なるだけのターゲットは一致とみなす。
         monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
+            setup_sendto_shortcuts.common,
             "run_subprocess",
             _make_branching_fake(calls, _ok(), _ok(stdout=str(target).upper())),
         )
@@ -132,7 +132,7 @@ class TestRunShortcutCreation:
         lnk.touch()
         calls: list[list[str]] = []
         monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
+            setup_sendto_shortcuts.common,
             "run_subprocess",
             _make_branching_fake(calls, _ok(), _ok(stdout=r"C:\old\touch-file.exe")),
         )
@@ -148,7 +148,7 @@ class TestRunShortcutCreation:
         # 生成側が exit 1 で失敗 → run() は False を返し、他の副作用は残さない
         calls: list[list[str]] = []
         monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
+            setup_sendto_shortcuts.common,
             "run_subprocess",
             _make_static_fake(calls, _ok(returncode=1)),
         )
@@ -179,7 +179,7 @@ class TestRunShortcutCreation:
 
         calls: list[list[str]] = []
         monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
+            setup_sendto_shortcuts.common,
             "run_subprocess",
             _make_static_fake(calls, _ok()),
         )
@@ -217,7 +217,7 @@ class TestRunShortcutCreation:
 
         calls: list[list[str]] = []
         monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
+            setup_sendto_shortcuts.common,
             "run_subprocess",
             _make_static_fake(calls, _ok()),
         )

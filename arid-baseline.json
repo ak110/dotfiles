@@ -8,16 +8,6 @@
   },
   "groups": [
     {
-      "fingerprint": "sha256:04b67d6654468bf14bf7aa7f477e0a78c2511330fe17f46c61243bbe81bbbdd3",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/install_claude_plugins_settings_test.py",
-          "count": 3
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:08784506e27994e420c4d8be514652f18d170be2bac80ed0fb569dd73c43d96c",
       "lines": 16,
       "occurrences": [
@@ -110,11 +100,11 @@
       ]
     },
     {
-      "fingerprint": "sha256:150bdf0e58e8d7edd30c9409f0e795d9d13def1378827ff5de4be90436faa36b",
-      "lines": 18,
+      "fingerprint": "sha256:159731d69e13ac14badd1fff54bae65f513013ea9984788630718f5717df8de8",
+      "lines": 10,
       "occurrences": [
         {
-          "path": "pytools/_internal/install_claude_plugins_settings_test.py",
+          "path": "pytools/_internal/setup_codex_cli_test.py",
           "count": 2
         }
       ]
@@ -146,6 +136,16 @@
         {
           "path": "agent-toolkit/agent_toolkit/_atk/managed_temp/inventory_test.py",
           "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:1a4fb16491607728761f30ce16393ccc95d57484a13c44a792a0d8d81410ef61",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_settings_test.py",
+          "count": 3
         }
       ]
     },
@@ -252,12 +252,16 @@
       ]
     },
     {
-      "fingerprint": "sha256:3d4f635a6099b8c6d9ab1dd2e816f2899b7fa0bea956c228d943b086bbeeb264",
-      "lines": 10,
+      "fingerprint": "sha256:3ee76775b8f905ffae2c8a60a0e2ad21f76443e04fe4ef7c7c963ee402362d43",
+      "lines": 12,
       "occurrences": [
         {
-          "path": "pytools/_internal/setup_codex_cli_test.py",
-          "count": 2
+          "path": "pytools/_internal/claude_marketplace_test.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/install_claude_plugins_repair_test.py",
+          "count": 1
         }
       ]
     },
@@ -267,16 +271,6 @@
       "occurrences": [
         {
           "path": "agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:4f712718b93b90ca018505ee67b61d953f0159d492fd4dc8aa06884838ba1c89",
-      "lines": 12,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/systemd_user_unit.py",
           "count": 2
         }
       ]
@@ -372,6 +366,20 @@
       ]
     },
     {
+      "fingerprint": "sha256:6f5011ac7c5c33e155f8036cad3cc2497830228f2307dc3109cf39a3749ac2c7",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_main_test.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/install_claude_plugins_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
       "fingerprint": "sha256:7233fc269c991d04e3b051234711b43b83a180a6ec2140cd7f364ab340b4ed55",
       "lines": 19,
       "occurrences": [
@@ -437,6 +445,16 @@
       "occurrences": [
         {
           "path": "agent-toolkit/agent_toolkit/_agents_server/status_file_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:81c5474cd684c89d4f6bdfd2e40f833481edadb84ef5c8c3ee3d7ecfa35444a7",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/setup_codex_cli_test.py",
           "count": 2
         }
       ]
@@ -566,20 +584,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:9ae57a81177738fe896f7c8d237e28963fa5cd23ed45d882b2a56e18299feb7e",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/install_claude_plugins_main_test.py",
-          "count": 1
-        },
-        {
-          "path": "pytools/_internal/install_claude_plugins_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:9b45843a75d44bc16c7e26c3c22d2db8ded56905a34a02a8f69ecb17441e2958",
       "lines": 13,
       "occurrences": [
@@ -653,6 +657,20 @@
         },
         {
           "path": "agent-toolkit/agent_toolkit/_atk/serve/sessions.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:aa83e5ed909083c8a6544bdabfd667f0b1ba96e0fcc387d7773c7f91b8565892",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_main_test.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/install_claude_plugins_test.py",
           "count": 1
         }
       ]
@@ -800,16 +818,12 @@
       ]
     },
     {
-      "fingerprint": "sha256:c06634dc960c0ec9bc79d638525918be8716d0113037b82869a706ab1c6b4ed4",
-      "lines": 12,
+      "fingerprint": "sha256:c27cc1e3e627ec3e89734924a5ce8783384249af50bafc93197f5db5c1b379f3",
+      "lines": 18,
       "occurrences": [
         {
-          "path": "pytools/_internal/claude_marketplace_test.py",
-          "count": 1
-        },
-        {
-          "path": "pytools/_internal/install_claude_plugins_repair_test.py",
-          "count": 1
+          "path": "pytools/_internal/install_claude_plugins_settings_test.py",
+          "count": 2
         }
       ]
     },
@@ -857,16 +871,6 @@
       "occurrences": [
         {
           "path": "agent-toolkit/skills/plan-mode/scripts/create_plan_files_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:d6446097f83855cb29ed1b050b3226e717db8dce34108fca74784084d71bb48e",
-      "lines": 12,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/systemd_user_unit.py",
           "count": 2
         }
       ]
@@ -946,16 +950,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:e82f8f60fc359f0b491bea7012ee8c6d66f23a9382d3dad761fb970283cf68ff",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/setup_codex_cli_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:eabf1ee5822aef15e70666a158909075299130d02e8118b4f3e79d8260c97b91",
       "lines": 10,
       "occurrences": [
@@ -982,20 +976,6 @@
         {
           "path": "agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks_test.py",
           "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:ebacf0178440401f4fe88481886dc8a7cf8a38929c87f1fb227076b9ad727340",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/install_claude_plugins_main_test.py",
-          "count": 1
-        },
-        {
-          "path": "pytools/_internal/install_claude_plugins_test.py",
-          "count": 1
         }
       ]
     },
@@ -1067,6 +1047,16 @@
       "occurrences": [
         {
           "path": "agent-toolkit/agent_toolkit/_hooks/stop_gate_task_id_fallback_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:f8757617908852d60b0631f86a9cbbeccc152d693015853fb7b2dc284a570045",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/systemd_user_unit.py",
           "count": 2
         }
       ]

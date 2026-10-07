@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytilpack.jsonc
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def run(
         return post_apply_outcome.PostApplyOutcome()
     # Windows は User scope、Linux は Machine scope という使い分けを前提に、
     # scope ごとに managed の内容と削除対象のレガシーキーを切り替える。
-    managed = _build_managed_settings(hostname=hostname, is_user_scope=win, home=home)
+    managed = _build_managed_settings(hostname=hostname, is_user_scope=win)
     legacy_keys: tuple[str, ...] = () if win else _LEGACY_KEYS_FOR_MACHINE_SCOPE
     changed = _apply(managed, settings_path, legacy_keys=legacy_keys)
     if changed is None:
@@ -134,7 +134,7 @@ def _hostname_color(*, hostname: str | None = None) -> str:
     return _HOST_COLORS[index]
 
 
-def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool, home: Path | None = None) -> dict:
+def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool) -> dict:
     """dotfilesが管理する設定項目のdictを構築する。
 
     Args:
@@ -142,20 +142,22 @@ def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool,
         is_user_scope: TrueならUser scope（全マシン共通）、
             FalseならMachine scope（マシン固有）。`markdown.styles` は
             User scopeでのみ管理する。
-        home: ホームディレクトリのオーバーライド (テスト用)。
+
+    dotfilesの作業ツリーを解決できない場合は、作業ツリー内のCSSを指す`markdown-pdf.styles`を管理対象から外す。
     """
-    dotfiles_dir = (home or Path.home()) / "dotfiles"
-    share_vscode = dotfiles_dir / "share" / "vscode"
     settings: dict = {
         "workbench.colorCustomizations": {
             "activityBar.background": _hostname_color(hostname=hostname),
         },
+    }
+    dotfiles_root = common.find_dotfiles_root()
+    if dotfiles_root is not None:
         # yzane/vscode-markdown-pdf は絶対パスを正式サポートしているため絶対パスで渡す。
         # HTTPS URL 指定は PDF 出力で CSS が適用されない可能性が公式 README に示唆されており、
         # markdown.styles 側と揃えて URL 化してはならない（揃えたくなる誘惑への注意）。
         # マシン依存のパスなので両 scope で書き込む必要がある。
-        "markdown-pdf.styles": [share_vscode.joinpath("markdown-pdf.css").as_posix()],
-    }
+        share_vscode = dotfiles_root / "share" / "vscode"
+        settings["markdown-pdf.styles"] = [share_vscode.joinpath("markdown-pdf.css").as_posix()]
     if is_user_scope:
         # markdown.styles は jsDelivr URL で全マシン共通。User scope 側に一度
         # 書けば Settings Sync や Machine scope への波及でカバーされる。
@@ -169,7 +171,7 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
 
     dict値は浅いマージ（既存キーを保持）、それ以外は上書き。
     VSCodeの`settings.json`はJSONC形式のため`pytilpack.jsonc.loads`でパースする。
-    書き込みは`claude_common.write_settings_hybrid`へ委譲する。既存パスの値置換のみ
+    書き込みは`common.write_settings_hybrid`へ委譲する。既存パスの値置換のみ
     で済む場合はJSONCコメント・空行・インデントを維持したまま更新し、構造変化
     （キー追加・list変更）を含む場合は全書き換えするためコメントは保持しない。
 
@@ -197,7 +199,7 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
         logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    if not claude_common.write_settings_hybrid(settings_path, original, data, tag=short):
+    if not common.write_settings_hybrid(settings_path, original, data, tag=short):
         return None
     logger.info(log_format.format_status(short, "更新しました"))
     return True

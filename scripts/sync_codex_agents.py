@@ -19,7 +19,7 @@ __all__ = ["CODEX_EXCLUDED_RULE_NAMES", "is_codex_shared_rule"]
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from pytools._internal import claude_common  # pylint: disable=wrong-import-position  # noqa: E402
+from pytools._internal import common  # pylint: disable=wrong-import-position  # noqa: E402
 
 BASE_SOURCE = Path("agent-toolkit/share/rules-main.codex.md")
 PERSONAL_SOURCE = Path(".chezmoi-source/dot_claude/rules/myprojects-common.md")
@@ -109,7 +109,7 @@ def sync(root: Path = REPO_ROOT) -> bool:
     target = root / TARGET
     if target.exists() and target.read_text(encoding="utf-8") == content:
         return False
-    if not claude_common.atomic_write_text(target, content, tag="codex agents"):
+    if not common.atomic_write_text(target, content, tag="codex agents"):
         raise OSError(f"Codex AGENTS.mdの書き込みに失敗: {TARGET}")
     return True
 

@@ -13,7 +13,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import common, log_format, post_apply_outcome
 from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ def _generate_ssh_config(ssh_dir: Path) -> bool:
     if config_path.exists() and not backup_path.exists():
         shutil.copy2(config_path, backup_path)
         logger.info(log_format.format_status(short, f"バックアップを作成: {log_format.home_short(backup_path)}"))
-    if not claude_common.atomic_write_text(config_path, new_content, mode=0o600):
+    if not common.atomic_write_text(config_path, new_content, mode=0o600):
         raise OSError(f"{short} の書き込みに失敗")
     logger.info(log_format.format_status(short, "更新しました"))
     return True
@@ -110,7 +110,7 @@ def _generate_authorized_keys(ssh_dir: Path) -> bool:
         logger.info(log_format.format_status(short, "変更なし (追加鍵 0 件)"))
         return False
     content = "\n".join(existing_lines) + "\n" if existing_lines else ""
-    if not claude_common.atomic_write_text(ak_path, content, mode=0o600):
+    if not common.atomic_write_text(ak_path, content, mode=0o600):
         raise OSError(f"{short} の書き込みに失敗")
     logger.info(log_format.format_status(short, f"{added} 件の鍵を追加しました"))
     return True

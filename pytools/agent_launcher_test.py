@@ -8,7 +8,7 @@ from typing import NoReturn
 
 import pytest
 
-from pytools import claude_launcher
+from pytools import agent_launcher
 
 # 計画で指定された分岐条件を、外部プロセスに依存せず直接検証する。
 # pylint: disable=protected-access
@@ -20,15 +20,15 @@ type Entrypoint = Callable[..., NoReturn]
     ("entrypoint", "model_args"),
     [
         (
-            claude_launcher.main_sonnet,
+            agent_launcher.main_sonnet,
             ["--permission-mode=auto", "--model=sonnet[1m]"],
         ),
         (
-            claude_launcher.main_opus,
+            agent_launcher.main_opus,
             ["--permission-mode=auto", "--model=opus[1m]"],
         ),
         (
-            claude_launcher.main_fable,
+            agent_launcher.main_fable,
             [
                 "--permission-mode=auto",
                 "--model=fable",
@@ -94,7 +94,7 @@ def test_launch_does_not_clear_terminal(
     def isatty(fd: int) -> bool:
         return stdout_tty if fd == 1 else stderr_tty
 
-    result = claude_launcher._run_claude(
+    result = agent_launcher._run_claude(
         ("--model=test",),
         argv,
         os_name="nt",
@@ -119,13 +119,13 @@ def test_resolve_claude_bin_prefers_user_install_on_all_platforms(
         calls.append((name, directories))
         return preferred
 
-    assert claude_launcher._resolve_claude_bin("posix", tmp_path, resolve) == str(preferred)
-    assert claude_launcher._resolve_claude_bin("nt", tmp_path, resolve) == str(preferred)
+    assert agent_launcher._resolve_claude_bin("posix", tmp_path, resolve) == str(preferred)
+    assert agent_launcher._resolve_claude_bin("nt", tmp_path, resolve) == str(preferred)
     assert calls == [("claude", (preferred.parent,)), ("claude", (preferred.parent,))]
 
 
 def test_missing_claude_returns_127(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
-    result = claude_launcher._run_claude(
+    result = agent_launcher._run_claude(
         ("--model=test",),
         [],
         os_name="nt",
@@ -143,16 +143,16 @@ def test_missing_claude_returns_127(capsys: pytest.CaptureFixture[str], tmp_path
 @pytest.mark.parametrize(
     ("entrypoint", "model_args", "command_name"),
     [
-        (claude_launcher.main_sonnet, ["--permission-mode=auto", "--model=sonnet[1m]"], "claude"),
-        (claude_launcher.main_opus, ["--permission-mode=auto", "--model=opus[1m]"], "claude"),
+        (agent_launcher.main_sonnet, ["--permission-mode=auto", "--model=sonnet[1m]"], "claude"),
+        (agent_launcher.main_opus, ["--permission-mode=auto", "--model=opus[1m]"], "claude"),
         (
-            claude_launcher.main_fable,
+            agent_launcher.main_fable,
             ["--permission-mode=auto", "--model=fable", "--fallback-model=opus[1m]"],
             "claude",
         ),
-        (claude_launcher.main_astra, ["-m", "gpt-6-astra"], "codex"),
-        (claude_launcher.main_sol, ["-m", "gpt-5.6-sol"], "codex"),
-        (claude_launcher.main_terra, ["-m", "gpt-5.6-terra"], "codex"),
+        (agent_launcher.main_astra, ["-m", "gpt-6-astra"], "codex"),
+        (agent_launcher.main_sol, ["-m", "gpt-5.6-sol"], "codex"),
+        (agent_launcher.main_terra, ["-m", "gpt-5.6-terra"], "codex"),
     ],
 )
 def test_posix_launch_replaces_process_with_command_name(
@@ -169,7 +169,7 @@ def test_posix_launch_replaces_process_with_command_name(
         calls.append((path, arguments))
         raise SystemExit(0)
 
-    monkeypatch.setattr(claude_launcher.os, "execv", execv)
+    monkeypatch.setattr(agent_launcher.os, "execv", execv)
     with pytest.raises(SystemExit, match="0"):
         entrypoint(
             ["--version", "追加引数"],
@@ -185,9 +185,9 @@ def test_posix_launch_replaces_process_with_command_name(
 @pytest.mark.parametrize(
     ("entrypoint", "model"),
     [
-        (claude_launcher.main_astra, "gpt-6-astra"),
-        (claude_launcher.main_sol, "gpt-5.6-sol"),
-        (claude_launcher.main_terra, "gpt-5.6-terra"),
+        (agent_launcher.main_astra, "gpt-6-astra"),
+        (agent_launcher.main_sol, "gpt-5.6-sol"),
+        (agent_launcher.main_terra, "gpt-5.6-terra"),
     ],
 )
 def test_codex_entrypoint_windows_forwards_arguments_and_exit_code(
@@ -215,7 +215,7 @@ def test_codex_entrypoint_windows_forwards_arguments_and_exit_code(
 
 def test_codex_missing_returns_127(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
     with pytest.raises(SystemExit, match="127"):
-        claude_launcher.main_astra(
+        agent_launcher.main_astra(
             [],
             os_name="nt",
             home=tmp_path,
@@ -235,10 +235,10 @@ def test_executable_search_keeps_symlink_path(
     binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
     link = tmp_path / "claude"
     link.symlink_to(binary)
-    monkeypatch.setattr(claude_launcher.claude_common, "mise_shim_directories", set)
+    monkeypatch.setattr(agent_launcher.common, "mise_shim_directories", set)
     monkeypatch.setenv("PATH", str(tmp_path))
 
-    assert claude_launcher._resolve_executable("claude", ()) == link
+    assert agent_launcher._resolve_executable("claude", ()) == link
 
 
 def test_get_claude_options_extracts_long_options() -> None:
@@ -249,7 +249,7 @@ def test_get_claude_options_extracts_long_options() -> None:
         stderr="",
     )
 
-    assert claude_launcher._get_claude_options("claude", run_help=lambda _: result) == ["--model", "--print"]
+    assert agent_launcher._get_claude_options("claude", run_help=lambda _: result) == ["--model", "--print"]
 
 
 @pytest.mark.parametrize(
@@ -259,7 +259,7 @@ def test_get_claude_options_extracts_long_options() -> None:
 def test_get_claude_options_returns_empty_on_help_failure(
     result: subprocess.CompletedProcess[str] | None,
 ) -> None:
-    assert claude_launcher._get_claude_options("claude", run_help=lambda _: result) == []
+    assert agent_launcher._get_claude_options("claude", run_help=lambda _: result) == []
 
 
 @pytest.mark.skipif(os.name == "nt", reason="bash補完の疎通確認はPOSIX専用")
@@ -274,7 +274,7 @@ def test_argcomplete_writes_claude_options_to_fd8(tmp_path: pathlib.Path) -> Non
 
     launcher = tmp_path / "sonnet"
     launcher.write_text(
-        f"#!{sys.executable}\nfrom pytools.claude_launcher import main_sonnet\nmain_sonnet()\n",
+        f"#!{sys.executable}\nfrom pytools.agent_launcher import main_sonnet\nmain_sonnet()\n",
         encoding="utf-8",
     )
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)

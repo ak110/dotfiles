@@ -10,7 +10,7 @@ import logging
 import os
 import pathlib
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def _read_shortcut_target(lnk: pathlib.Path) -> str | None:
         f"$s = $ws.CreateShortcut('{_ps_escape(str(lnk))}'); "
         "[Console]::Out.Write($s.TargetPath)"
     )
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         timeout=30.0,
         tag="SendTo",
@@ -101,7 +101,7 @@ def _create_shortcut(lnk: pathlib.Path, target: pathlib.Path) -> bool:
         f"$s.TargetPath = '{_ps_escape(str(target))}'; "
         "$s.Save()"
     )
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         timeout=30.0,
         tag="SendTo",
