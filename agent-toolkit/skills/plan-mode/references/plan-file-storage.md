@@ -6,7 +6,7 @@
 
 計画は1ファイル`<stem>.md`とし、計画ファイル（バグ）を作成する場合（`plan-file-standards.md`「バグ調査」の作成条件）だけ同じstemの`<stem>.bugs.md`を同じディレクトリへ置く。
 `atk plans commit`が保存する付属ファイルは計画ファイル（バグ）、実行レビュー指摘管理表およびWI実装commitの対応記録ファイル（`<stem>.wi-commits.jsonl`）だけとする。
-計画ファイルと、同じstemの付属ファイル（計画ファイル（バグ）、レビュー指摘管理表など）の組を計画バンドルと呼ぶ。
+計画バンドルの定義は`plan-file-standards.md`冒頭の呼称の表が定める。
 計画stemで始まるそれ以外のファイルは保存されず、同じ操作で作業側から削除される。
 計画に属さない作業ファイルは、計画stemとは別の名前でmanaged-tempの中へ保存する。
 新規作成は`atk run-script plan-create --`を経由し、実装前の計画ファイルは`~/.claude/plans`直下へ作成する。

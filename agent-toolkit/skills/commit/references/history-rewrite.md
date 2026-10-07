@@ -3,14 +3,13 @@
 通常commitの検証、stage、messageは親スキルに従う。
 本ファイルはClaude Codeのシステムプロンプト「常に新規コミットを作成する」指示を上書きする。
 
-## 履歴確認の起動形
+## プッシュ済み判定
 
-本書が履歴の確認として求める`git log`は次の範囲限定の起動形で実行する。
-範囲の基準となるOIDを保持している工程では`git log --oneline --decorate <保持している基準OID>^..HEAD`とする。
-autosquashの直前と、autosquashの競合を解消した後の継続の直前では、その基準を`## fixupの実行上の制約`が保持を求める最古fixup対象とする。
-基準となるOIDを保持していない工程では`git log --oneline --decorate -n 20`とする。
-起動形は範囲と件数のいずれかを必ず限定する。
-3,000commitを超えるリポジトリでは、限定しない起動形の出力が実行環境の上限に達し、履歴と対象commitを観測できなくなる。
+`git fetch --all --prune`後に`git for-each-ref --contains=<対象sha> refs/remotes/`を実行する。
+出力が1件以上あれば、対象コミットはいずれかのremote-tracking ref（`origin/`に限らず、追跡remote名は任意）から到達可能でありプッシュ済みである。
+出力が空ならプッシュ未了である。
+判定には`git for-each-ref`の出力を使う。`git log --decorate`はref先端にしか装飾を付けず、対象コミットが先端より前の祖先である場合を検出できない。
+amendとfixupの対象は、プッシュ未了のコミットに限る。公開済みの履歴を書き換えると、そのコミットを取得済みの他の作業ツリーとCIの参照が解決できなくなる。CI失敗の修正を保護されていない未統合のfeature branchの原因commitへ取り込む区分（`references/push-and-ci.md`「pushと監視」手順5）は例外とする。同区分の3条件を操作の直前に確かめた場合だけ適用する。
 
 ## 修正方法の選択
 
@@ -53,17 +52,15 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
   - コード差分を含めずメッセージだけを変更する場合は`git commit --fixup=reword:<sha>`を使う
 - 上記の例外に該当しない独立した変更目的を持つ修正、または統合先に適する未プッシュコミットがない修正は新規コミットを作成する。通常の実装モードのレビュー修正は本項を適用せず、本節前段の統合先へ統合する。`agent-toolkit/rules/01-agent.md`が定める付帯作業は、関連する開発のcommitへ含めても独立した変更目的として数えない
 
-## WI実装commitの対応の継承
+## 操作前後の確認
 
-WI実装commitの履歴を変更した担当は、`## 操作前後の確認`や`git range-diff`で検収した範囲全体の旧OIDから新OIDへの対応を、JSONオブジェクトとしてmanaged-tempの1つのファイルへ保存する。WI対応を持たないcommitも含めてよく、元commitとfixupが同じ新commitへ統合される場合は両方の旧OIDを含める。旧新OIDは短縮OIDと完全OIDのどちらでもよく、記録は短縮OIDで残る。同じ書換えの対応を受け取る他のコマンドにも、この同じファイルを渡す。
-
-書換えの直前のHEADと保存したファイルを、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す。記録・worktree・対応表は絶対パスで渡し、`--rewrite-map`にはJSON文字列ではなくファイルの絶対パスを渡す。同じ修正系列で書換えを繰り返す間は、毎回同じ記録の集合を渡す。
-
-```text
-atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え前のHEAD> --rewrite-map <対応表のJSONファイルの絶対パス> --completed-step <工程> --result <結果> --plan <計画>... --handoff <引き継ぎ記録>...
-```
-
-同コマンドは全記録を検証してから書き込み、記録済みOIDが対応表に無い記録（今回の対応表の不足と過去の書換えの未追記を区別して示す）や対応表の誤りがあれば、どの記録も変えずに失敗する。`--plan`と`--handoff`は反復指定し、書換え対象を持たない記録は変更しない。旧対応の欠落や新OIDの不在は生成側で補う。現在の対応の取得は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。
+- fixupとamendは、次の5つを1つの工程として順に完了してからcommitを実行する。第1に、変更したファイルを対象とする正式formatterを実行する。第2に、formatterが変更した差分を`git diff`で検収する。第3に、そのcommitへ帰属する差分だけをstageする。第4に、`git status --short`で未stageの差分が残らないことを確認する。第5に、fixupまたはamendのcommitを実行する。pre-commitがcommitの実行時に初めて差分を変更すると、stage済みの差分と未stageの差分が併存し、そのcommitが成立しない。pre-commitが差分を変更した場合は`## 失敗時の扱い`に従う
+- 操作直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して対象commitの件名と差分を再特定し、
+  `git blame -- <修正したファイルのリポジトリ相対パス>`または`git log -p -n 20 -- <修正したファイルのリポジトリ相対パス>`と
+  `git show --stat <sha>`で統合先を確定する
+- autosquash後は、件名の形式によらず次の4点を確認する。比較の基準はfixupを全て作成した後のautosquash直前のHEADとする。基準と書換え後HEADの`git rev-parse <OID>^{tree}`が一致する。`<最古fixup対象>^`から数えたfirst-parentのcommit件数が、基準の件数からfixupの件数を引いた値である。範囲内に件名先頭が`fixup!`・`squash!`・`amend!`のcommitが0件である。基準の範囲から件名が制御語で始まるcommitを除いた列と書換え後の範囲の列を先頭から順に対応付け、`git show <OID> | git patch-id --stable`の値を比べると、fixupを帰属させたcommitだけが異なり、それ以外が一致する。差分を変えない`reword:`の統合先はこの比較から外す。最後の確認は、件名で統合先を決めたfixupが別の同名commitへ統合された誤りを検出する。いずれかが満たされない場合は`## 失敗時の扱い`に従う
+- 書き換え後は各中間`HEAD`へ変更範囲の検証を再実行し、`git log -1 --format=%B <統合後sha>`で
+  最終メッセージと`Co-Authored-By:`を確認し、stage状態と`git show HEAD:<path>`で未反映差分が残らないことを確認する
 
 ## fixupの実行上の制約
 
@@ -108,25 +105,23 @@ atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え�
 競合箇所へ担当外の変更が含まれる場合、修正の帰属を確定できない場合または中間commitの公開契約を維持できない場合は、競合をそのまま残して委譲元へ返す。
 失敗した操作、終了コード、標準エラー出力、失敗時点の`git status --short`および`git log --oneline -5`の観測結果を添えて続行できない理由を返す。
 
-## merge進行中の退避
+## WI実装commitの対応の継承
 
-`git merge`進行中の退避は、別パスへの`cp`または別ブランチ退避で行う。merge進行中の`git stash`は競合解決中の内容をpop時に復元せず、解決結果を失う。
-別パスへの複製も、`agent-toolkit:commit`の`SKILL.md`「作業用ブランチと退避物の削除」節が定める回収規定の対象とする。
+WI実装commitの履歴を変更した担当は、`## 操作前後の確認`や`git range-diff`で検収した範囲全体の旧OIDから新OIDへの対応を、JSONオブジェクトとしてmanaged-tempの1つのファイルへ保存する。WI対応を持たないcommitも含めてよく、元commitとfixupが同じ新commitへ統合される場合は両方の旧OIDを含める。旧新OIDは短縮OIDと完全OIDのどちらでもよく、記録は短縮OIDで残る。同じ書換えの対応を受け取る他のコマンドにも、この同じファイルを渡す。
 
-## プッシュ済み判定
+書換えの直前のHEADと保存したファイルを、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す。記録・worktree・対応表は絶対パスで渡し、`--rewrite-map`にはJSON文字列ではなくファイルの絶対パスを渡す。同じ修正系列で書換えを繰り返す間は、毎回同じ記録の集合を渡す。
 
-`git fetch --all --prune`後に`git for-each-ref --contains=<対象sha> refs/remotes/`を実行する。
-出力が1件以上あれば、対象コミットはいずれかのremote-tracking ref（`origin/`に限らず、追跡remote名は任意）から到達可能でありプッシュ済みである。
-出力が空ならプッシュ未了である。
-判定には`git for-each-ref`の出力を使う。`git log --decorate`はref先端にしか装飾を付けず、対象コミットが先端より前の祖先である場合を検出できない。
-amendとfixupの対象は、プッシュ未了のコミットに限る。公開済みの履歴を書き換えると、そのコミットを取得済みの他の作業ツリーとCIの参照が解決できなくなる。CI失敗の修正を保護されていない未統合のfeature branchの原因commitへ取り込む区分（`references/push-and-ci.md`「pushと監視」手順5）は例外とする。同区分の3条件を操作の直前に確かめた場合だけ適用する。
+```text
+atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え前のHEAD> --rewrite-map <対応表のJSONファイルの絶対パス> --completed-step <工程> --result <結果> --plan <計画>... --handoff <引き継ぎ記録>...
+```
 
-## 操作前後の確認
+同コマンドは全記録を検証してから書き込み、記録済みOIDが対応表に無い記録（今回の対応表の不足と過去の書換えの未追記を区別して示す）や対応表の誤りがあれば、どの記録も変えずに失敗する。`--plan`と`--handoff`は反復指定し、書換え対象を持たない記録は変更しない。旧対応の欠落や新OIDの不在は生成側で補う。現在の対応の取得は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。
 
-- fixupとamendは、次の5つを1つの工程として順に完了してからcommitを実行する。第1に、変更したファイルを対象とする正式formatterを実行する。第2に、formatterが変更した差分を`git diff`で検収する。第3に、そのcommitへ帰属する差分だけをstageする。第4に、`git status --short`で未stageの差分が残らないことを確認する。第5に、fixupまたはamendのcommitを実行する。pre-commitがcommitの実行時に初めて差分を変更すると、stage済みの差分と未stageの差分が併存し、そのcommitが成立しない。pre-commitが差分を変更した場合は`## 失敗時の扱い`に従う
-- 操作直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して対象commitの件名と差分を再特定し、
-  `git blame -- <修正したファイルのリポジトリ相対パス>`または`git log -p -n 20 -- <修正したファイルのリポジトリ相対パス>`と
-  `git show --stat <sha>`で統合先を確定する
-- autosquash後は、件名の形式によらず次の4点を確認する。比較の基準はfixupを全て作成した後のautosquash直前のHEADとする。基準と書換え後HEADの`git rev-parse <OID>^{tree}`が一致する。`<最古fixup対象>^`から数えたfirst-parentのcommit件数が、基準の件数からfixupの件数を引いた値である。範囲内に件名先頭が`fixup!`・`squash!`・`amend!`のcommitが0件である。基準の範囲から件名が制御語で始まるcommitを除いた列と書換え後の範囲の列を先頭から順に対応付け、`git show <OID> | git patch-id --stable`の値を比べると、fixupを帰属させたcommitだけが異なり、それ以外が一致する。差分を変えない`reword:`の統合先はこの比較から外す。最後の確認は、件名で統合先を決めたfixupが別の同名commitへ統合された誤りを検出する。いずれかが満たされない場合は`## 失敗時の扱い`に従う
-- 書き換え後は各中間`HEAD`へ変更範囲の検証を再実行し、`git log -1 --format=%B <統合後sha>`で
-  最終メッセージと`Co-Authored-By:`を確認し、stage状態と`git show HEAD:<path>`で未反映差分が残らないことを確認する
+## 履歴確認の起動形
+
+本書が履歴の確認として求める`git log`は次の範囲限定の起動形で実行する。
+範囲の基準となるOIDを保持している工程では`git log --oneline --decorate <保持している基準OID>^..HEAD`とする。
+autosquashの直前と、autosquashの競合を解消した後の継続の直前では、その基準を`## fixupの実行上の制約`が保持を求める最古fixup対象とする。
+基準となるOIDを保持していない工程では`git log --oneline --decorate -n 20`とする。
+起動形は範囲と件数のいずれかを必ず限定する。
+3,000commitを超えるリポジトリでは、限定しない起動形の出力が実行環境の上限に達し、履歴と対象commitを観測できなくなる。

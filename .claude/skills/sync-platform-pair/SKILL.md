@@ -62,6 +62,7 @@ description: >
 
 ## ローカルで実行するlintとCIジョブの対応
 
+CIが実行しないチェックを確定する一般の手順は`agent-toolkit:commit`の`references/publish.md`「検証とCI」が定める。
 ローカルの`make test`で実行されないCIジョブは`dotfiles-development`の`references/verification-values.md`「push前のチェックとCIだけが実行するチェック」が挙げる。
 
 Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されず、CIの`test-windows`ジョブが検証する。

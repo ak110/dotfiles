@@ -13,7 +13,7 @@
   既存の見出し配下への規範文追記・条件補強・例示追加など）
 - MINOR（`+0.1.0`）: 機能追加・検出範囲の大幅拡大・description変更・節新設など、規模の大きい変更
 - MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がある場合だけ実行する
-  （規定は`agent-toolkit:commit`の`references/push-and-ci.md`「リリースバージョン指定」が定める）
+  （規定は`agent-toolkit:commit`の`references/publish.md`「版数と生成物」が定める）
 - 現行版が`major.minor.patch`の数値3要素で表せない非SemVerの場合は、文字列の辞書順・
   桁数・接尾辞からPATCH/MINOR/MAJORを推測せず、プロジェクト固有の対応表またはユーザーの
   明示指定がある場合だけその区分を適用する。

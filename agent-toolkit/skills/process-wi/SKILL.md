@@ -28,7 +28,7 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手
 WI作成、計画、実行および実行レビューの責務と受渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
 - **メイン**: `agent-toolkit/rules/01-agent.md`が定めるメインエージェントの短縮呼称
-- **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める
+- **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める。公開工程の定義は`agent-toolkit:commit`の`references/publish.md`冒頭にあり、本スキルではその工程を終端担当が担う
 - **picker**: 選定工程で処理対象のAWIを固定する担当
 - **処理対象WI**: pickerが選定時に固定した、`agent-toolkit:process-wi`の1回の実行で処理するAWI。処理中にユーザーが追加を明示したAWIを含む
 - **レーン**: pickerが固定した処理対象を割り当てる仮想的な処理単位。各レーンは専用branchと専用worktreeを1つ持つ（`references/run-lanes.md`「レーンと資源」が規定）

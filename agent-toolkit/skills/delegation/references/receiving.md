@@ -82,7 +82,7 @@
   稼働終了は実行状態の観測で確定する。
   編集の競合を検知した場合は採用する版を確定してから統合し、破棄した内容を委譲先へ通知する
 - 完了報告が退避識別子または複製パスを開示した場合は、その退避物も確認対象へ加えて内容を確認し、
-  `agent-toolkit:commit`の「作業用ブランチと退避物の削除」節に従って処置する
+  `agent-toolkit:commit`の`references/stash-cleanup.md`に従って処置する
 - 指摘の採否と修正は、`../SKILL.md`の読込表の行に従って`agent-toolkit:review-standards`の`references/reviewee.md`を読んで確定する
 - 返却（`Agent`ツールの戻り値を含む）や`agents_server`の結果に`気付いた改善点:`で始まる行があれば、全ての該当行を受け取った主体の役割に応じて上流へ渡す。
   全件の事前調査を渡す前提に加えず、作業を続け、原因分析は`agent-toolkit:session-review`へ集める

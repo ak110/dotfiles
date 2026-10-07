@@ -40,7 +40,7 @@
 | エンドユーザー | ソフトウェア・設定・文書などの成果物を使う人の総称。ユーザーを含む | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | 選定工程 | `agent-toolkit:process-wi`の3つの主要工程のうち、処理対象のAWIを固定する工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | レーン工程 | `agent-toolkit:process-wi`の3つの主要工程のうち、レーンごとに計画、実装、レビューおよび統合を行う工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
-| 公開工程 | `agent-toolkit:process-wi`の3つの主要工程のうち、版数更新、push、CI確認と公開後の操作を行う工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
+| 公開工程 | commitの後に版数更新、push、CI確認、公開状態の確認およびプロジェクト固有の公開後の操作までを行う工程。`agent-toolkit:process-wi`では3つの主要工程の1つ | `agent-toolkit/skills/commit/references/publish.md`冒頭 |
 | picker | 選定工程で処理対象のAWIを固定する担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | 処理対象WI | pickerが選定時に固定した、`agent-toolkit:process-wi`の1回の実行で処理するAWI | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | レーン担当 | 各レーンの計画、実装、レビュー修正、履歴統合および主作業ツリーへの統合を同じthreadで担う担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
@@ -100,7 +100,7 @@
 | セッション記録 | Claude CodeとCodexが保存する会話の記録（transcript） | `agent-toolkit/skills/writing-standards/references/session-records.md`冒頭 |
 | メイン記録 | Claude Codeのセッション本体の記録（深さ2） | `agent-toolkit/skills/writing-standards/references/session-records.md`「Claude Codeの記録」 |
 | サブエージェント記録 | Claude Codeのサブエージェントの記録（`subagents/agent-<agentId>.jsonl`、深さ4） | `agent-toolkit/skills/writing-standards/references/session-records.md`「Claude Codeの記録」 |
-| 計画バンドル | 計画ファイルと、同じstemの付属ファイル（計画ファイル（バグ）、レビュー指摘管理表など）の組 | `agent-toolkit/skills/plan-mode/references/plan-file-storage.md`「計画ファイルの保存と参照」 |
+| 計画バンドル | 計画ファイルと、同じstemの付属ファイル（計画ファイル（バグ）、レビュー指摘管理表など）の組 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`冒頭の呼称の表 |
 | 計画の所有記録 | 計画バンドルを所有するセッションを示す`~/.claude/plans`の局所状態 | `agent-toolkit/skills/plan-mode/references/plan-file-storage.md`「計画ファイルの保存と参照」 |
 | バックグラウンドタスク | BashやAgentを背景で動かした非同期の処理 | `agent-toolkit/skills/writing-standards/references/session-state-and-flags.md` |
 | バックグラウンドタスクの所有記録 | 自セッションが起動したバックグラウンドタスクとAgent・Taskの識別子を、PostToolUseが保存した記録 | `agent-toolkit/skills/writing-standards/references/session-state-and-flags.md` |

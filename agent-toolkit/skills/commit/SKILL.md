@@ -3,6 +3,7 @@ name: commit
 user-invocable: false
 description: >
   git commit作業（通常commit・amend・fixup）に着手する直前、
+  push、CI確認、公開工程、リリースに着手する前、
   またはコミットメッセージ案（計画ファイル・PR説明など）を書く時点で起動する。
 # 編集時の注意点:
 # コミット境界判断のSSOTは本ファイル「通常commit」節。
@@ -20,10 +21,9 @@ description: >
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 本スキルを起動した時点 | `references/git-identifier.md` |
-| 公開工程に着手する前 | `references/publish.md` |
+| 公開工程またはリリース操作に着手する前 | `references/publish.md` |
 | amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `references/history-rewrite.md` |
-| 実際にpushする前、またはリリース操作に着手する前 | `references/push-and-ci.md` |
-| 実行工程（`exec.subagent.md`の手順）のcommit履歴を扱う前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md` |
+| 実際にpushする前 | `references/push-and-ci.md` |
 | コミットメッセージを書く前（計画ファイルやPR説明へコミットメッセージ案を書く前を含む） | `references/message.md` |
 | 一時ブランチ、`git stash`の退避または別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `references/stash-cleanup.md` |
 
@@ -71,10 +71,6 @@ WIを入力に持つ実装commitとAWIの対応は、計画（計画なしでは
 
 対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、計画の進捗ログまたは引き継ぎ記録に残した根拠を使い、commitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は対応記録ファイルと共に`atk plans commit`で保存する。
 
-## 作業用ブランチと退避物の削除
-
-退避・バックアップ・実験などのために作成した一時ブランチ、`git stash`による退避、別パスへの複製は、その目的を達した時点で削除する（努力目標。退避物の蓄積で後続の判別を妨げないため）。削除前の帰属と反映の確認、委譲先が開示した退避物の処置および保持する場合の記録は、読込表の`references/stash-cleanup.md`が定める。
-
-## コミットメッセージとリリース
+## コミットメッセージ
 
 コミットメッセージは、件名の形式、type、description、本文と`Co-Authored-By:`を読込表の`references/message.md`に従って書く。計画ファイルやPR説明へコミットメッセージ案を書く場合も同じ基準を適用する。
