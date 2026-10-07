@@ -30,6 +30,7 @@ description: >
 | --- | --- |
 | 成果物、ユーザーへの報告と回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` |
 | セッション記録の集計・分析 | `references/session-records.md` |
+| 計画の起草、WIの実現方式の確定、実装の完了前および実行レビューで、変更後の成果物群の設計品質を評価する時（エージェント向け文書だけを変える場合を含む） | `references/design-heuristics.md` |
 | 人間が読む文章（Markdown・README・技術文書・API文書、業務・仕様文書、体験を述べる文章、コメント、AWI・UWIの本文）を書く時 | `references/writing.md` |
 | コード・テストコードを書く時 | 「コードの編集時に読む資料」の各行 |
 | エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`）を書く時 | 「エージェント向け文書の編集時に読む資料」の各行 |
