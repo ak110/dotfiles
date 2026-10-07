@@ -294,6 +294,73 @@ def test_prepare_requires_following_result(tmp_path: pathlib.Path) -> None:
     assert decision == "block" and "review-result" in reason
 
 
+_MANDATORY_REPORTS = {
+    "id-missing": (
+        "### 対策を見送った問題\n\n- 判定済み: 技術判断の確認; 根拠: 原因分析の結果、既存の規範の当てはめ誤りと判断した\n",
+        "block",
+    ),
+    "id-only": (
+        "### 対策を見送った問題\n\n- 判定済み: 技術判断の確認; 根拠: 既存の規範の当てはめ誤りと判断した（c0006）\n",
+        "block",
+    ),
+    "repeat-without-record": (
+        "### 対策を見送った問題\n\n"
+        "- 再発防止策なし: 技術判断の確認; 評価した案: 条文の追記; 採らない理由: 恒常コスト; 反復: 一致なし（c0006）\n",
+        "block",
+    ),
+    "measure": ("### 確定した問題と対策\n\n- AWI登録予定: 確認要否の判定へ目的との比較を置く（c0006）\n", "approve"),
+    "exclusion": (
+        "### 対策を見送った問題\n\n- 判定済み: 技術判断の確認; 根拠: non-changing-request: 要求を変えない回答だった（c0006）\n",
+        "approve",
+    ),
+    "repeat-with-record": (
+        "### 対策を見送った問題\n\n- 再発防止策なし: 技術判断の確認; 評価した案: 条文の追記; 採らない理由: 恒常コスト; "
+        "反復: 20261001-163353-001.mdの対策は場面ごとの例外で、新しい場面で働かなかった（c0006）\n",
+        "approve",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(_MANDATORY_REPORTS))
+def test_mandatory_candidate_requires_id_or_allowed_skip(tmp_path: pathlib.Path, case: str) -> None:
+    """必須の候補を持つ準備結果では、候補IDの無い報告と許されない見送りを遮断し、確定した対策と許される見送りを通す。
+
+    CodexのStopも同じ`termination_order_advisor`を実行するため、ホストごとの差はこの判定に無い。
+    """
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    outputs = {}
+    for key in ("conversation_path", "candidates_path", "stats_path"):
+        outputs[key] = str(tmp_path / f"{key}.md")
+        pathlib.Path(outputs[key]).write_text("記録", encoding="utf-8")
+    prepared = {
+        **outputs,
+        "prepared_at": "2026-10-07T00:44:00Z",
+        "mandatory_candidates": ["c0006"],
+        "similar_records": {"c0006": ["20261001-163353-001.md", "20261005-103502-001.md"]},
+    }
+    payload = {
+        "session_id": "evidence-test",
+        "tool_name": "Bash",
+        "tool_use_id": "prepare",
+        "transcript_path": str(tmp_path / "transcript.jsonl"),
+        "tool_input": {"command": "atk run-script session-review-prepare -- --session current"},
+    }
+    with contextlib.redirect_stdout(io.StringIO()):
+        pretooluse.main(json.dumps(payload))
+    payload["tool_response"] = {"stdout": json.dumps(prepared), "stderr": ""}
+    with contextlib.redirect_stdout(io.StringIO()):
+        posttooluse.main(json.dumps(payload))
+    body, expected = _MANDATORY_REPORTS[case]
+    report = "## 振り返り結果報告\n\n" + body
+    if "AWI登録予定" in body:
+        report += "\n## AWI投入結果報告\n\n確定した対策を投入した。\n\n### 投入したAWI\n\n- 20261007-102936-001.md: 対策\n"
+    supply_report(tmp_path, report, "review-result", "review")
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, report))
+    assert decision == expected, reason
+    if expected == "block":
+        assert "c0006" in reason
+
+
 def test_finished_work_is_not_reused_after_new_input(tmp_path: pathlib.Path) -> None:
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
     supply_report(tmp_path, REVIEW_RESULT, "review-result", "call-2")
@@ -317,7 +384,7 @@ def test_finished_work_is_not_reused_after_new_input(tmp_path: pathlib.Path) -> 
     ("section", "invalid_item", "corrected_item"),
     [
         ("対策を見送った問題", "- 判定済み: 問題", "- 判定済み: 問題; 根拠: 既存操作で解決できる"),
-        ("確定した問題と対策", "- 問題: 対策", "- 問題: 対策（同一セッションで実装済み: 変更commit）"),
+        ("確定した問題と対策", "- 問題: 対策", "- 実装済み: 対策; 根拠: 変更commit"),
     ],
 )
 def test_invalid_report_can_be_corrected_after_new_input(

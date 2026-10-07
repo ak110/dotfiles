@@ -25,7 +25,7 @@ def _answer_event(line: int, answers: list[str], *, intervention: bool = False) 
 
 
 def test_candidate_events_excludes_non_interventions_and_reports_counts() -> None:
-    """委譲入力、環境挿入、回答および初期要求を決定的に除外する。"""
+    """委譲入力、環境挿入および初期要求を決定的に除外し、選択肢どおりの回答は確認の候補にする。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "agent-1", "line": 1, "text": "委譲入力"},
@@ -36,28 +36,16 @@ def test_candidate_events_excludes_non_interventions_and_reports_counts() -> Non
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert candidates[:-1] == [
-        {
-            "kind": "candidate",
-            "candidate_id": "c0001",
-            "candidate_kind": "user-intervention",
-            "analysis_group_hint": ["実際の是正要求"],
-            "event_key": ["実際の是正要求"],
-            "count": 1,
-            "locators": [{"record": "main", "line": 4}],
-            "text": "実際の是正要求",
-        }
+    assert [(candidate["candidate_kind"], candidate["locators"]) for candidate in candidates[:-1]] == [
+        ("confirmation-request", [{"record": "main", "line": 3}]),
+        ("user-intervention", [{"record": "main", "line": 4}]),
     ]
-    assert candidates[-1]["excluded"] == {
-        "delegated-record": 1,
-        "initial-request": 1,
-        "question-answer": 1,
-        "runtime-inserted": 1,
-    }
+    assert candidates[1]["text"] == "実際の是正要求"
+    assert candidates[-1]["excluded"] == {"delegated-record": 1, "initial-request": 1, "runtime-inserted": 1}
 
 
 def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
-    """選択肢の外の回答と自由記述を伴う回答を問題候補として残し、選択肢どおりの回答だけを除く。"""
+    """選択肢の外の回答はユーザー介入、選択肢どおりの回答は確認の候補とし、どちらも除外しない。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         _answer_event(2, ["推奨"]),
@@ -66,8 +54,11 @@ def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
 
     candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
-    assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
-    assert candidates[-1]["excluded"] == {"initial-request": 1, "question-answer": 1}
+    assert [(candidate["candidate_kind"], candidate["locators"]) for candidate in candidates[:-1]] == [
+        ("confirmation-request", [{"record": "main", "line": 2}]),
+        ("user-intervention", [{"record": "main", "line": 3}]),
+    ]
+    assert candidates[-1]["excluded"] == {"initial-request": 1}
 
 
 _OFFERED = [{"label": "既存機構へ統合"}, {"label": "新機構を追加"}]
@@ -124,16 +115,19 @@ def _codex_question(call_id: str, answer: str) -> list[dict[str, object]]:
     ]
 
 
-def _extracted_candidates(transcript: pathlib.Path) -> tuple[list[str], dict[str, int]]:
-    """生成側の抽出結果を候補抽出へ通し、ユーザー介入候補の本文と除外件数を返す。"""
+def _extracted_candidates(transcript: pathlib.Path) -> tuple[list[str], list[str], dict[str, int]]:
+    """生成側の抽出結果を候補抽出へ通し、ユーザー介入候補と確認候補の本文、除外件数を返す。"""
     events = [{**event, "record": "main"} for event in evidence.load_and_extract(str(transcript))]
     candidates = evidence._candidate_events(events, [], [])  # pylint: disable=protected-access
     texts = [candidate["text"] for candidate in candidates[:-1] if candidate["candidate_kind"] == "user-intervention"]
-    return texts, candidates[-1]["excluded"]
+    confirmations = [
+        candidate["text"] for candidate in candidates[:-1] if candidate["candidate_kind"] == "confirmation-request"
+    ]
+    return texts, confirmations, candidates[-1]["excluded"]
 
 
 def test_claude_answers_from_transcript_are_classified_by_offered_choices(tmp_path: pathlib.Path) -> None:
-    """生成側が出力した回答イベントを、選択肢どおりなら除外し、是正を含めばユーザー介入候補に残す。
+    """生成側が出力した回答イベントを、選択肢どおりなら確認の候補、是正を含めばユーザー介入候補にする。
 
     回答イベントの本文は表示用の回答値であり、候補抽出が本文の書式で回答を推定すると、
     書式の変更で選択肢どおりの回答が候補に残るか、同じ書式の通常の発話が回答として除外される。
@@ -147,14 +141,15 @@ def test_claude_answers_from_transcript_are_classified_by_offered_choices(tmp_pa
         {"type": "user", "message": {"role": "user", "content": _ORDINARY_UTTERANCE}},
     ]
 
-    texts, excluded = _extracted_candidates(_write_transcript(tmp_path, entries))
+    texts, confirmations, excluded = _extracted_candidates(_write_transcript(tmp_path, entries))
 
     assert texts == ["対象範囲を全件へ広げる", "既存機構へ統合\nただし対象は全件とする", _ORDINARY_UTTERANCE]
-    assert excluded == {"initial-request": 1, "question-answer": 2}
+    assert confirmations == ["既存機構へ統合", "既存機構へ統合, 新機構を追加"]
+    assert excluded == {"initial-request": 1}
 
 
 def test_codex_answers_from_transcript_are_classified_by_offered_choices(tmp_path: pathlib.Path) -> None:
-    """Codexの回答も、選択肢どおりなら除外し、選択肢と一致しなければユーザー介入候補に残す。"""
+    """Codexの回答も、選択肢どおりなら確認の候補、選択肢と一致しなければユーザー介入候補にする。"""
     entries: list[dict[str, object]] = [
         {
             "type": "response_item",
@@ -164,10 +159,11 @@ def test_codex_answers_from_transcript_are_classified_by_offered_choices(tmp_pat
         *_codex_question("call-2", "対象範囲を全件へ広げる"),
     ]
 
-    texts, excluded = _extracted_candidates(_write_transcript(tmp_path, entries))
+    texts, confirmations, excluded = _extracted_candidates(_write_transcript(tmp_path, entries))
 
     assert texts == ["対象範囲を全件へ広げる"]
-    assert excluded == {"initial-request": 1, "question-answer": 1}
+    assert confirmations == ["既存機構へ統合"]
+    assert excluded == {"initial-request": 1}
 
 
 def test_candidate_events_excludes_runtime_generated_user_messages() -> None:

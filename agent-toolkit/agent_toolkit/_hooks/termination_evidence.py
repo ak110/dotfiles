@@ -381,10 +381,12 @@ def observe_reports(payload: dict[str, Any]) -> bool:
 
 def report_violations(work: dict[str, Any]) -> list[str]:
     """同じ作業の発話本文へ、completion-reportが定める報告本文の判定だけを適用する。"""
+    prepare = work.get("prepare", [])
+    result = prepare[-1].get("result") if prepare and isinstance(prepare[-1], dict) else None
     return [
         error
         for stage, report in work.get("reports", {}).items()
-        for error in report_validation.validate_report(report["text"], stage)
+        for error in report_validation.validate_report(report["text"], stage, result if isinstance(result, dict) else None)
     ]
 
 
@@ -567,8 +569,8 @@ def missing_stages(work: dict[str, Any]) -> list[str]:
     result = reports.get("review-result")
     if not isinstance(result, dict):
         return ["review-result"]
-    marker = report_validation.SCHEDULED_MARKER
-    return ["review-submission"] if marker in result["text"] and "review-submission" not in reports else []
+    scheduled = report_validation.has_scheduled(result["text"])
+    return ["review-submission"] if scheduled and "review-submission" not in reports else []
 
 
 def visible_messages(payload: dict[str, Any], offset: int) -> list[str] | None:

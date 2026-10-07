@@ -36,8 +36,12 @@ try:
     from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
     from agent_toolkit._atk import config as _atk_config
     from agent_toolkit._atk import outcome as _outcome
+    from agent_toolkit._atk.wi import constants as _wi_constants
+    from agent_toolkit._atk.wi import sections as _wi_sections
     from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
+    from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
     from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY as _PROCESS_WI_GOAL_BODY
+    from agent_toolkit._atk.wi.frontmatter import parse_frontmatter as _parse_wi_frontmatter
     from agent_toolkit._common.runtime_identity import distinct_identities as _distinct_identities
     from agent_toolkit._common.runtime_identity import latest_identity as _latest_identity
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
@@ -45,6 +49,7 @@ try:
     from agent_toolkit._hooks import response_language_check as _response_language_check
     from agent_toolkit._hooks import transcript as _transcript
     from agent_toolkit._hooks.bash_command_parser import QuotingScanner as _QuotingScanner
+    from agent_toolkit._hooks.bash_command_parser import extract_execution_segments as _extract_execution_segments
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
     print(
@@ -3824,7 +3829,15 @@ _UNRESOLVED_RETURN_PREFIXES = ("未解決の指摘数:", "unresolved:")
 _ESCALATION_REASON_PREFIXES = (_ESCALATION_REASON_PREFIX, "reason:")
 _CANDIDATE_EVIDENCE_LENGTH = 2000
 UNTRUNCATED_EVIDENCE_KINDS = frozenset(
-    {"user-intervention", "command-failure", "tool-failure", "delegate-return", "escalation"}
+    {
+        "user-intervention",
+        "confirmation-request",
+        "wi-user-response",
+        "command-failure",
+        "tool-failure",
+        "delegate-return",
+        "escalation",
+    }
 )
 """個別証拠の本文を切り詰めない候補種別。
 
@@ -3925,12 +3938,14 @@ def _bundle_events(
     warnings = _warning_collection_events(collected, [])
     stats = _stats_events(collected, compaction_record_dir)
     hook_notices = _hook_notice_events([record for item in collected for record in item.records])
+    main_record = next(item for item in collected if item.role == "main")
     candidates = _candidate_events(
         timeline,
         warnings,
         _hook_notice_candidate_events(collected),
-        main_record_id=next(item.record_id for item in collected if item.role == "main"),
+        main_record_id=main_record.record_id,
         adhoc_processing=_adhoc_processing_events(collected),
+        wi_events=_wi_candidate_events(collected, main_record.path.stem),
     )
 
     candidate_evidence = _write_candidate_evidence_files(
@@ -3965,6 +3980,106 @@ def _bundle_events(
     events.extend(_bundle_warning_events(warnings))
     events.extend(_unresolved_events(unresolved))
     return events, 0
+
+
+_CANDIDATE_CONTEXT_FIELDS = ("assistant_context", "user_response", "wi_file", "wi_state", "wi_section")
+"""候補へ写す判断材料の項目。確認の質問・選択肢・回答と、記入元のWIの所在を候補一覧へ載せるために使う。"""
+_REPORT_UWI_QUESTION = re.compile(r"の作業結果と振り返りについて、この対応で問題ありませんか？$")
+"""`agent-toolkit:completion-report`が投入する報告用UWIの冒頭の問い。報告用UWIは確認ではないため候補から除く。"""
+_WI_PROCESSING_OPERATIONS = frozenset({"start-processing", "adopt", "reject", "unhold"})
+"""対象セッションが処理したWIとみなす`atk wi`のサブコマンド。`show`などで読んだだけのWIは含めない。"""
+_WI_FILENAME = re.compile(r"\d{8}-\d{6}-\d{3}\.md")
+_YES_NO_CHOICES = ("はい", "いいえ")
+"""`question_type: yes-no`のUWIで回答画面が示す選択肢。"""
+
+
+def _processed_wi_filenames(collected: list[_CollectedRecord]) -> set[str]:
+    """メインと全ての委譲先が実行したシェルコマンドから、処理したWIのファイル名を返す。
+
+    コマンドの実行位置にある`atk wi <サブコマンド>`だけを対象とし、引用や説明文の中の文字列は対象から外す。
+    """
+    names: set[str] = set()
+    for item in collected:
+        for call in _record_tool_calls(item.records):
+            if call.tool.casefold().rsplit("__", maxsplit=1)[-1].rsplit(".", maxsplit=1)[-1] not in _ADHOC_SHELL_TOOLS:
+                continue
+            for segment in _extract_execution_segments(call.text):
+                tokens = list(segment.tokens)
+                if not segment.resolved or len(tokens) < 3:
+                    continue
+                if Path(tokens[0].replace("\\", "/")).name not in {"atk", "atk.cmd", "atk.py"} or tokens[1] != "wi":
+                    continue
+                if tokens[2] in _WI_PROCESSING_OPERATIONS:
+                    names.update(Path(token).name for token in tokens[3:] if _WI_FILENAME.fullmatch(Path(token).name))
+    return names
+
+
+def _wi_entry(text: str, section: str) -> str:
+    """WIの指定した節から、回答欄の注記行（HTMLコメントだけの行）を除いた記入を返す。
+
+    `## ユーザーコメント`は処理結果の節が後ろに続く終端済みの項目もあるため、節の位置を問わずに読む。
+    """
+    lines = [
+        line
+        for line in _wi_sections.h2_sections(text).get(section, "").splitlines()
+        if not (line.strip().startswith("<!--") and line.strip().endswith("-->"))
+    ]
+    return "\n".join(lines).strip()
+
+
+def _wi_choices(metadata: dict[str, Any]) -> tuple[str, ...]:
+    """UWIの回答画面が示す選択肢を返す。"""
+    if metadata.get("question_type") == _wi_constants.QUESTION_TYPE_YES_NO:
+        return _YES_NO_CHOICES
+    choices = metadata.get("choices")
+    if isinstance(choices, str):
+        return tuple(choice.strip() for choice in choices.split(",") if choice.strip())
+    if isinstance(choices, list):
+        return tuple(str(choice).strip() for choice in choices)
+    return ()
+
+
+def _wi_candidate_events(collected: list[_CollectedRecord], session_id: str) -> list[dict[str, Any]]:
+    """private-notesのWIから、対象セッションが投入したUWIと、WIの記入欄で行われた是正を返す。
+
+    `submitted-uwi`は`submitter_session`が対象セッションと一致するUWIで、報告用UWIを除く。
+    確認をUWIへ送った判断の要否を振り返るため、回答の有無によらず載せる。
+    `wi-user-response`は、対象セッションが投入したUWIと`_processed_wi_filenames`が返すWIのうち、
+    準備の時点で記入を持つものとする。UWIの`## 回答`は選択肢のいずれかと完全に一致する記入を除き、
+    AWIの`## ユーザーコメント`は空でなければ載せる。記録位置を持たないため、`record`へWIのファイル名を示す値を置く。
+    private-notesを解決できない環境では空を返す。
+    """
+    root = _uwi_scan.private_notes_root()
+    if root is None:
+        return []
+    processed = _processed_wi_filenames(collected)
+    events: list[dict[str, Any]] = []
+    for state in _wi_constants.WI_STATES:
+        directory = root / state
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.md")):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                continue
+            parsed = _parse_wi_frontmatter(text)
+            metadata = parsed[0] if parsed is not None else {}
+            is_uwi = _wi_constants.normalized_wi_type(metadata.get("type")) == _wi_constants.WI_TYPE_UWI
+            submitted = is_uwi and metadata.get("submitter_session") == session_id
+            question = _wi_sections.title(text) if is_uwi else ""
+            if submitted and _REPORT_UWI_QUESTION.search(question):
+                continue
+            location = {"record": f"wi:{path.name}", "line": 0, "wi_file": path.name, "wi_state": state}
+            if submitted:
+                events.append({"kind": "submitted-uwi", **location, "tag": "submitted-uwi", "text": question})
+            if not submitted and path.name not in processed:
+                continue
+            section = "回答" if is_uwi else "ユーザーコメント"
+            entry = _wi_entry(text, section)
+            if entry and not (is_uwi and entry in _wi_choices(metadata)):
+                events.append({"kind": "wi-user-response", **location, "tag": section, "wi_section": section, "text": entry})
+    return events
 
 
 def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
@@ -4021,10 +4136,15 @@ def _candidate_events(
     *,
     main_record_id: str = "main",
     adhoc_processing: list[dict[str, Any]] | None = None,
+    wi_events: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
-    母集団はhook通知、ユーザー介入、失敗したツール実行、警告、工程の返却値およびその場のコードによる加工とする。
+    母集団はhook通知、ユーザー介入、ユーザー確認、WIの記入欄の是正、失敗したツール実行、警告、工程の返却値
+    およびその場のコードによる加工とする。
+    ユーザー確認（`confirmation-request`）は、提示した選択肢をそのまま選んだ確認への回答と、
+    対象セッションが投入したUWI（`wi_events`のうち`submitted-uwi`）とする。確認が必要だったかは振り返りが判定するため、
+    回答の形からは除外しない。WIの記入欄の是正（`wi-user-response`）は`_wi_candidate_events`が定める。
     返却値を含めるのは、本文に誤りがある委譲結果が他の事象には現れず、本文の判定前に候補集合に含まれなくなるためである。
     正常な完了だけを示し、想定外事象を持たない返却は、判定すべき本文を持たないため除外する。
     その場のコードによる加工（`adhoc-processing`）は成功した呼び出しも含み、記録ごとに1件の候補へまとめ、
@@ -4080,6 +4200,8 @@ def _candidate_events(
             (event for event in timeline if _is_delegate_return(event, main_record_id=main_record_id)),
         ),
         ("adhoc-processing", iter(adhoc_processing or ())),
+        ("confirmation-request", (event for event in wi_events or () if event.get("kind") == "submitted-uwi")),
+        ("wi-user-response", (event for event in wi_events or () if event.get("kind") == "wi-user-response")),
     )
     for candidate_kind, events in sources:
         for event in events:
@@ -4135,7 +4257,9 @@ def _candidate_events(
                     initial_skill_body=initial_skill_body,
                     main_record_id=main_record_id,
                 )
-                if exclusion is not None:
+                if exclusion == "question-answer":
+                    event_kind = "confirmation-request"
+                elif exclusion is not None:
                     excluded[exclusion] += 1
                     continue
             if candidate_kind == "command-failure" and _is_help_command_failure(event):
@@ -4212,6 +4336,9 @@ def _candidate_events(
         text = events[0].get("text")
         if isinstance(text, str):
             candidate["text"] = text
+        for field in _CANDIDATE_CONTEXT_FIELDS:
+            if field in events[0]:
+                candidate[field] = events[0][field]
         if key and key[0] in {"command-failure", "tool-failure"}:
             candidate["failure_signature"] = events[0]["failure_signature"]
             candidate["failure_summary"] = events[0]["failure_summary"]
@@ -4525,6 +4652,8 @@ def _user_candidate_exclusion(
     本文の書式で判定すると、書式の変更で選択肢どおりの回答が候補に残り、同じ書式の通常の発話が回答として除外される。
     回答のうち`answer_intervention`を持つものは、選択肢をそのまま選んだ回答ではなく
     従来の判断を是正した介入であるため、除外せず候補として残す。
+    選択肢をそのまま選んだ回答へ返す`question-answer`はユーザー介入ではない区分であり、
+    呼び出し元はその回答を除外せず、確認の要否を振り返る`confirmation-request`の候補とする。
     """
     if record != main_record_id:
         return "delegated-record"
@@ -5207,6 +5336,9 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
     if candidate_kind == "adhoc-processing":
         # 記録（thread）ごとに1件へまとめ、委譲先が多い実行でも候補の件数が呼び出しの件数に比例しないようにする。
         return candidate_kind, str(event["record"])
+    if candidate_kind in {"confirmation-request", "wi-user-response"}:
+        # 確認ごとに要否を判定するため、同じ回答の文字列（選択肢のlabelなど）でも別の確認をまとめない。
+        return candidate_kind, str(event["record"]), f"{int(event['line']):010d}", str(event.get("tag", ""))
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
 
 
