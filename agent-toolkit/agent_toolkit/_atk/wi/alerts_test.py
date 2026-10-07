@@ -1,4 +1,4 @@
-"""`_atk_wi_alerts`モジュールのテスト。公開API経由でDI（依存性注入）駆動する。"""
+"""`alerts`モジュールのテスト。公開API経由でDI（依存性注入）駆動する。"""
 
 import contextlib
 import datetime

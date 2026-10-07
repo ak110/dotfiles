@@ -24,7 +24,7 @@ def is_existing_dir(path: pathlib.Path) -> bool:
 def copy_to_tempfile(content: bytes) -> pathlib.Path:
     """バイト列を`.md`拡張子の一時ファイルへ書き込み、そのパスを返す。
 
-    エディターをロック外で起動する処理（`_cmd_edit`等）が、ロック保持下で取得した
+    エディターをロック外で起動する処理（`cmd_edit`等）が、ロック保持下で取得した
     対象ファイルのスナップショットを一時ファイルへ複製する用途に用いる。
     """
     with tempfile.NamedTemporaryFile(mode="wb", suffix=".md", delete=False) as f:

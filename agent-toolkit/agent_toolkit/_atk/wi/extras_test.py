@@ -618,8 +618,8 @@ class TestAddViaEditor:
     """addサブコマンド: messages省略時に$EDITOR経由で本文を収集する。
 
     `_editor_fake_run`でエディター呼び出しを差し替え、subprocess.run全呼び出しを
-    捕捉する。エラー時の動作を確かめるテストでは`_pull`等のgit呼び出しもfake_runへ吸収されるが、
-    検証焦点は`_collect_message_via_editor`の早期None返却にあり、gitが呼び出されたかどうかは
+    捕捉する。エラー時の動作を確かめるテストでは`pull`等のgit呼び出しもfake_runへ吸収されるが、
+    検証焦点は`collect_message_via_editor`の早期None返却にあり、gitが呼び出されたかどうかは
     AWIディレクトリへのファイル生成有無によって間接的に確認する。
     """
 

@@ -138,7 +138,7 @@ def test_filename_completion_includes_hold_entries(
 
 
 class TestValidateFilename:
-    """`_validate_filename`の拡張子`.md`省略入力の正規化を検証する（fb 20260721-164301-001反映）。"""
+    """`validate_filename`の拡張子`.md`省略入力の正規化を検証する（fb 20260721-164301-001反映）。"""
 
     def test_appends_md_extension_when_missing(self, tmp_path: pathlib.Path) -> None:
         """拡張子.md省略入力は正規形へ補完される。"""

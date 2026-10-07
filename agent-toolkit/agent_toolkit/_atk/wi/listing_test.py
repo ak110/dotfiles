@@ -1809,7 +1809,7 @@ def test_list_with_staleness_judges_history_in_local_worktree(
 
     frontmatterの`target_repo`（正規化リモートURL）を`git -C`へ渡す取り違えでは、
     作業ツリーの履歴に`target_commit`があっても全項目が`history-unavailable`になる。
-    `subprocess.run`を差し替えず、`_cmd_list`の呼び出しから`git -C`へ渡す引数までを実際のGitで実行する。
+    `subprocess.run`を差し替えず、`cmd_list`の呼び出しから`git -C`へ渡す引数までを実際のGitで実行する。
     """
     notes = _setup_notes(tmp_path)
     repository = tmp_path / "repository"

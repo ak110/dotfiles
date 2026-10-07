@@ -16,7 +16,7 @@ from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._git import remote as _git_remote
 
 _ANSWER_HEADING = "\n## 回答\n"
-"""UWI本文の回答節を示す見出し。`_atk_wi_add`が投入時に付与する。"""
+"""UWI本文の回答節を示す見出し。`add`が投入時に付与する。"""
 
 
 class ActiveUwi(typing.NamedTuple):

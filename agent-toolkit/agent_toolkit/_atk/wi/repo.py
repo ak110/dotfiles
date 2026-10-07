@@ -206,7 +206,7 @@ def edit_entry(
 ) -> bool:
     """AWI・UWI共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
 
-    `_atk_wi_mutations.edit_entry_content`が呼び出す。
+    `mutations.edit_entry_content`が呼び出す。
     編集後の本文frontmatterの`type`が編集前から変更・欠落していないかも検証する
     （`verify_target_repo_content`と同じくexit 2で拒否する。種別は平坦化後の唯一の
     分類情報であり、編集で書き換わると一覧・集計から静かに脱落するため）。

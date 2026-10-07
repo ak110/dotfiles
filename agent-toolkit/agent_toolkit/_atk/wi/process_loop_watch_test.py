@@ -134,7 +134,7 @@ class TestWaitForChanges:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """変更検知イベント無しでタイムアウトに達した場合、`_pull`が呼ばれること。"""
+        """変更検知イベント無しでタイムアウトに達した場合、`pull`が呼ばれること。"""
         private_notes = self._make_private_notes(tmp_path)
         monkeypatch.setattr(_pl_watch, "_POLL_INTERVAL_SEC", 0.1)
         monkeypatch.setattr(_pl_watch, "_DEBOUNCE_SEC", 0.1)
@@ -184,7 +184,7 @@ class TestWaitForChanges:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """タイムアウト前に`.md`ファイル変更を検知した場合、`_pull`が呼ばれないこと。"""
+        """タイムアウト前に`.md`ファイル変更を検知した場合、`pull`が呼ばれないこと。"""
         private_notes = self._make_private_notes(tmp_path)
         inbox = private_notes / "inbox"
         entry = inbox / "entry.md"

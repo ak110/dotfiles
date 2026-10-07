@@ -645,7 +645,7 @@ class Operations:
     def add_batch(self, text: str) -> dict[str, object]:
         """`atk wi show --all`の出力形式のテキストからエントリを一括で取り込む。
 
-        原文保持の契約はCLIと共通の`_atk_wi_batch.add_batch_entries`が担う。
+        原文保持の契約はCLIと共通の`batch.add_batch_entries`が担う。
         ファイル名と本文がともに既存項目と一致して取り込みを省いたエントリは`skipped`で返す。
         """
         mapping, skipped, warnings = awi_batch.add_batch_entries(

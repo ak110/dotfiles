@@ -64,7 +64,7 @@ def _cmd_add_args(
     dry_run: bool = False,
     depends_on: list[str] | None = None,
 ) -> argparse.Namespace:
-    """`_cmd_add`の単体テストへ必要な引数を返す。"""
+    """`cmd_add`の単体テストへ必要な引数を返す。"""
     body_path = tmp_path / "body.md"
     body_path.write_text(message, encoding="utf-8")
     return argparse.Namespace(
@@ -111,7 +111,7 @@ def _run_public_add(
 
 
 def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`_cmd_add`の対象解決・remote同期・commitを差し替える。"""
+    """`cmd_add`の対象解決・remote同期・commitを差し替える。"""
     monkeypatch.setattr(
         add_module,
         "resolve_add_target",
@@ -638,7 +638,7 @@ def test_cmd_add_omits_origin_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`_cmd_add`は由来メタデータを新規作成しない。"""
+    """`cmd_add`は由来メタデータを新規作成しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     _run_public_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
@@ -1408,14 +1408,14 @@ def test_uwi_choice_question_type_is_saved_with_choices(tmp_path: pathlib.Path, 
 
 
 class TestAddOrderEditorFirst:
-    """addサブコマンド: エディター起動を`_pull`より前に呼ぶ順序保証。"""
+    """addサブコマンド: エディター起動を`pull`より前に呼ぶ順序保証。"""
 
     def test_editor_invoked_before_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """messages省略時、エディターは`_pull`より前に起動される（対象リポジトリはcwdから解決）。"""
+        """messages省略時、エディターは`pull`より前に起動される（対象リポジトリはcwdから解決）。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"

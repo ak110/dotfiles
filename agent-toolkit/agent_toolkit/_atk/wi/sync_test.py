@@ -28,7 +28,7 @@ def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytes
 
 
 class TestRepoLock:
-    """`_repo_lock`のプロセス間排他動作を検証する。"""
+    """`repo_lock`のプロセス間排他動作を検証する。"""
 
     @pytest.fixture(autouse=True)
     def _isolate_lock_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,7 +78,7 @@ class TestRepoLock:
             assert lock2.is_locked
 
     def test_concurrent_transactions_are_serialized(self, tmp_path: pathlib.Path) -> None:
-        """2スレッドが同時に`_repo_lock`を取得しても、臨界区間が直列化されること。"""
+        """2スレッドが同時に`repo_lock`を取得しても、臨界区間が直列化されること。"""
         target = tmp_path / "private-notes"
         target.mkdir()
         order: list[str] = []
@@ -104,21 +104,21 @@ class TestRepoLock:
 
 
 class TestAssertRepoLockHeld:
-    """`_assert_repo_lock_held`の不変条件表明を検証する。"""
+    """`assert_repo_lock_held`の不変条件表明を検証する。"""
 
     def test_pull_raises_runtime_error_when_lock_not_held(self, tmp_path: pathlib.Path) -> None:
-        """`_repo_lock`未保持で`_pull`を呼ぶと`RuntimeError`を送出する。"""
+        """`repo_lock`未保持で`pull`を呼ぶと`RuntimeError`を送出する。"""
         with pytest.raises(RuntimeError, match="不変条件違反"):
             _wi_sync.pull(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
     def test_commit_and_push_raises_runtime_error_when_lock_not_held(self, tmp_path: pathlib.Path) -> None:
-        """`_repo_lock`未保持で`_commit_and_push`を呼ぶと`RuntimeError`を送出する。"""
+        """`repo_lock`未保持で`commit_and_push`を呼ぶと`RuntimeError`を送出する。"""
         with pytest.raises(RuntimeError, match="不変条件違反"):
             _wi_sync.commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
 
 
 class TestCommitAndPushRetry:
-    """`_commit_and_push`のpush失敗時再試行動作を検証する。"""
+    """`commit_and_push`のpush失敗時再試行動作を検証する。"""
 
     @pytest.fixture(autouse=True)
     def _isolate_lock_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -397,7 +397,7 @@ class TestPrivateNotesAutoCreate:
         assert resolved == home / "private-notes"
 
     def test_ensure_environment_initializes_local_repo(self, tmp_path: pathlib.Path) -> None:
-        """省略時に使うパスが不在の場合、`_ensure_environment`はローカルgitリポジトリを自動生成して返す。"""
+        """省略時に使うパスが不在の場合、`ensure_environment`はローカルgitリポジトリを自動生成して返す。"""
         home = tmp_path / "home"
         home.mkdir()
         root = _wi_sync.ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
@@ -509,7 +509,7 @@ class TestMigrateLegacyLayout:
     """旧2階層レイアウトから平坦レイアウトへの自動移行を検証する。
 
     管理repoのパスはconftestが適用する隔離（`agent_toolkit._testing.isolation`）が`tmp_path/private-notes`へ差し替えるため、
-    `_ensure_environment`へ渡すhomeは解決結果に影響しない。
+    `ensure_environment`へ渡すhomeは解決結果に影響しない。
     """
 
     def test_migrates_entries_and_removes_legacy_dirs(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -604,7 +604,7 @@ class TestMigrateLegacyLayout:
 
 
 class TestHasRemote:
-    """`_has_remote`のローカル限定マーカー判定を検証する。"""
+    """`has_remote`のローカル限定マーカー判定を検証する。"""
 
     def test_true_when_marker_absent(self, tmp_path: pathlib.Path) -> None:
         """マーカーファイルが無い場合はTrue（通常のremote設定済みリポジトリ扱い）。"""
@@ -620,7 +620,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
     """remote未設定のローカル限定リポジトリではpull・pushをスキップすることを検証する。"""
 
     def test_pull_is_noop_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """マーカー付きディレクトリでは`_pull`がremote同期を実行しない。"""
+        """マーカー付きディレクトリでは`pull`がremote同期を実行しない。"""
         (tmp_path / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         calls: list[list[str]] = []
         monkeypatch.setattr(_wi_sync, "run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
@@ -629,7 +629,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
         assert not any(call[0] in ("fetch", "merge") for call in calls)
 
     def test_commit_and_push_skips_push_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """マーカー付きディレクトリでは`_commit_and_push`がadd・commitのみ実行しpushしない。"""
+        """マーカー付きディレクトリでは`commit_and_push`がadd・commitのみ実行しpushしない。"""
         (tmp_path / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         calls: list[list[str]] = []
         monkeypatch.setattr(_wi_sync, "run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005

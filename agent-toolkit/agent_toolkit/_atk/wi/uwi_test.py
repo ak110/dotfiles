@@ -296,10 +296,10 @@ class TestUwiAdd:
 
 
 class TestUwiAddEditorBeforePull:
-    """UWI投入: `_collect_message_via_editor`を`_pull`より前に呼ぶ順序保証。
+    """UWI投入: `collect_message_via_editor`を`pull`より前に呼ぶ順序保証。
 
-    エディター起動はロック外・ロック取得前に行う設計であり、`_pull`失敗はエディターで
-    確定済みの本文取得後（`_repo_lock`保持下）に発生する。
+    エディター起動はロック外・ロック取得前に行う設計であり、`pull`失敗はエディターで
+    確定済みの本文取得後（`repo_lock`保持下）に発生する。
     `question_type == "choice" and not args.choices`のバリデーションは
     エディター起動より前に維持する。
     """

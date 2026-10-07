@@ -48,7 +48,7 @@ def _write_entry(
 
 
 class _PullTracker:
-    """`_pull`の呼び出し回数を数え、指定回目の呼び出しで並行変更を起こす。"""
+    """`pull`の呼び出し回数を数え、指定回目の呼び出しで並行変更を起こす。"""
 
     def __init__(self, action: Callable[[], None] | None = None, *, at_call: int = 1) -> None:
         self.count = 0
@@ -699,7 +699,7 @@ class TestRemoveAllSkipPull:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """対話フローで`_pull`が削除フェーズの1回だけになる。"""
+        """対話フローで`pull`が削除フェーズの1回だけになる。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []

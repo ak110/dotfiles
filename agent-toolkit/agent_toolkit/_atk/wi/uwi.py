@@ -32,15 +32,15 @@ from agent_toolkit._atk.wi.web_input import WebInputError
 ANSWER_MARKER = "<!-- ユーザーはこの行以降に回答を追記する -->"
 """UWIエントリの回答欄開始位置を示すHTMLコメント。
 
-`_atk_wi_add.add_entries`が投入時に付与し、`answer_uwi`・`cmd_answer`が回答本文の切り出しに使う。
+`add.add_entries`が投入時に付与し、`answer_uwi`・`cmd_answer`が回答本文の切り出しに使う。
 本文字列を直接記述せず、常に本定数を参照する。
 """
 
 QUESTION_HEADING = "## 質問"
-"""UWIエントリの質問見出し。`_atk_wi_add.add_entries`が投入時に付与する。"""
+"""UWIエントリの質問見出し。`add.add_entries`が投入時に付与する。"""
 
 ANSWER_HEADING = "## 回答"
-"""UWIエントリの回答見出し。`_atk_wi_add.add_entries`が投入時に付与する。"""
+"""UWIエントリの回答見出し。`add.add_entries`が投入時に付与する。"""
 
 _RESERVED_MARKUP_HEADINGS = (QUESTION_HEADING, ANSWER_HEADING)
 _POST_APPROVAL_CHOICES = ("その対応で問題無い", "問題がある")
