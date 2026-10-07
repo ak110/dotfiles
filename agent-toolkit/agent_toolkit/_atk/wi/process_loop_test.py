@@ -728,19 +728,27 @@ class TestProcessLoopPromptAndEnv:
         assert len(session_calls) == 1
         assert capsys.readouterr().err == ""
 
+    @pytest.mark.parametrize("configured", [None, "", "relative-config"], ids=["unset", "empty", "relative"])
     def test_hook_debug_log_uses_home_when_config_dir_is_unset(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        configured: str | None,
     ) -> None:
-        """`CLAUDE_CONFIG_DIR`未設定時はユーザーホーム配下`.claude/debug/`へ保存する。"""
+        """`CLAUDE_CONFIG_DIR`が未設定・空・相対パスの場合はユーザーホーム配下`.claude/debug/`へ保存する。
+
+        Claude Codeの設定ディレクトリを解決する他の処理と同じく、空でない絶対パスだけを採用する。
+        """
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.delenv(_PROCESS_LOOP_SESSION_ENV, raising=False)
         monkeypatch.delenv(_PROCESS_LOOP_SESSION_ID_ENV, raising=False)
-        monkeypatch.delenv("CLAUDE_CONFIG_DIR")
+        if configured is None:
+            monkeypatch.delenv("CLAUDE_CONFIG_DIR")
+        else:
+            monkeypatch.setenv("CLAUDE_CONFIG_DIR", configured)
         monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: tmp_path))
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
         counts = iter((1, 0))

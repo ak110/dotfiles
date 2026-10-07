@@ -5,6 +5,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._common import state_paths
 from agent_toolkit._hooks import permissionrequest as hook
 from agent_toolkit._testing import fork_runner as _fork_runner
 
@@ -29,7 +30,7 @@ def _isolate_owner_session_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 def _state_dir(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """記録先の状態ディレクトリをテスト用一時ディレクトリへ差し替える。"""
     state_dir = tmp_path / "state"
-    monkeypatch.setattr(hook._atk_config, "state_dir", lambda: state_dir)  # noqa: SLF001  # pylint: disable=protected-access
+    monkeypatch.setattr(state_paths, "state_dir", lambda: state_dir)  # noqa: SLF001  # pylint: disable=protected-access
     return state_dir
 
 
@@ -185,7 +186,7 @@ class TestRecord:
         """記録先を作成できない場合も許可の応答を返す。"""
         blocked = tmp_path / "blocked"
         blocked.write_text("状態ディレクトリの位置にある通常ファイル", encoding="utf-8")
-        monkeypatch.setattr(hook._atk_config, "state_dir", lambda: blocked)  # noqa: SLF001  # pylint: disable=protected-access
+        monkeypatch.setattr(state_paths, "state_dir", lambda: blocked)  # noqa: SLF001  # pylint: disable=protected-access
 
         assert hook.main(json.dumps({"tool_name": "Bash"})) == 0
         assert json.loads(capsys.readouterr().out) == _ALLOW_RESPONSE

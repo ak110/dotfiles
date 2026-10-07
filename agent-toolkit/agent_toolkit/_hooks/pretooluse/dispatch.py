@@ -77,6 +77,7 @@ import pathlib
 import sys
 from collections.abc import Callable
 
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import response_language_check as _response_language_check
 from agent_toolkit._common.runtime_identity import RuntimeIdentity, identity_observations
 from agent_toolkit._common.session_state import read_state
@@ -139,7 +140,7 @@ def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
 
 def _claude_commit_attribution_disabled(cwd: str) -> bool:
     """フックから観測できる設定範囲で、最上位の明示的な空文字設定を判定する。"""
-    config_dir = pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR", pathlib.Path.home() / ".claude"))
+    config_dir = _host_homes.claude_config_dir()
     project_raw = os.environ.get("CLAUDE_PROJECT_DIR") or cwd
     paths = [config_dir / "settings.json"]
     if project_raw:

@@ -504,6 +504,31 @@ class TestWaitScheduleParser:
         assert captured.out == "fixed-subcommand-output\n"
         assert ("登録を持たない管理対象が1件ある" in captured.err) is expects_warning
 
+    def test_sweep_notice_suppressed_for_codex_delegated_session(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """委譲元の識別子だけを持つCodexの委譲先でも、未登録領域の警告を出力しない。
+
+        Codexの委譲先は`AGENT_TOOLKIT_DELEGATED_SESSION`を持たず、`AGENT_TOOLKIT_OWNER_SESSION`だけを持つ。
+        """
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        )
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner-session")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "fixed-subcommand-output\n"
+        assert "登録を持たない管理対象" not in captured.err
+
     def test_unregistered_managed_temp_count_failure_does_not_change_subcommand_result(
         self,
         monkeypatch: pytest.MonkeyPatch,

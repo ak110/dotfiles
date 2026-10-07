@@ -340,16 +340,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:a8ef309a79d370a25add0ee0977b6a17469d6c92f5fc640945c85802236f6ab0",
-      "lines": 12,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_common/file_lock_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:aa5c3c83065dfa2c5651731a0e042e8e26f749b74e48602a15d4c1e09c70e86a",
       "lines": 25,
       "occurrences": [
@@ -547,20 +537,6 @@
         },
         {
           "path": "agent_toolkit/_atk/serve/assets_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:f1715e181f32fe21b56eae2986a5949c74ae3cb59578f653fdb2792953e14d8a",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/config.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/config_test.py",
           "count": 1
         }
       ]

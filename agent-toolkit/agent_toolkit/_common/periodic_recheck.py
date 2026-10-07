@@ -14,14 +14,18 @@ TypeScriptの定数に置くと、モデルはplugin rootを解決してファ�
 
 from __future__ import annotations
 
-PERIODIC_RECHECK_MARKER = '<atk-auto source="periodic-recheck" kind="periodic-recheck">'
+from agent_toolkit._common import message_format as _message_format
+
+PERIODIC_RECHECK_MARKER = _message_format.opening_tag(
+    _message_format.AUTO_INSERTED_ELEMENT, {"source": "periodic-recheck", "kind": "periodic-recheck"}
+)
 """定期再確認のpromptの1行目へ置く役割標識。
 
 `agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」が
 同じリテラルを持ち、装着するpromptの1行目をこの標識だけの行と定める。
 """
-LEGACY_PERIODIC_RECHECK_MARKER = (
-    '<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">'
+LEGACY_PERIODIC_RECHECK_MARKER = _message_format.opening_tag(
+    _message_format.LEGACY_AUTO_INSERTED_ELEMENT, {"source": "agent-toolkit/periodic-recheck", "kind": "periodic-recheck"}
 )
 """旧形式の役割標識。過去に装着したtaskの発火を同じく機械注入と判定するために読む。"""
 

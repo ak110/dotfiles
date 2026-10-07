@@ -1619,3 +1619,23 @@ def test_respond_records_body_with_required_labels(
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
     assert row[column] == body
     assert row[11 - column] == ""
+
+
+@pytest.mark.skipif(os.name == "nt", reason="XDG_STATE_HOMEで状態ディレクトリを移す規則はWindows以外で働く")
+def test_cli_lock_is_created_under_state_lock_dir(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`atk review-table`のロックは状態ディレクトリ配下の`locks/`に作成され、`~/.claude`配下には作成されない。"""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    path = tmp_path / "review.tsv"
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "init", str(path)], home=home)
+    capsys.readouterr()
+
+    assert exc_info.value.code == 0
+    lock_dir = tmp_path / "state" / "agent-toolkit" / "locks" / "review-table"
+    assert [lock.parent for lock in lock_dir.glob("*.lock")] == [lock_dir]
+    assert not (home / ".claude" / ".atk-locks").exists()

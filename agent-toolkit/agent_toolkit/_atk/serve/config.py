@@ -41,7 +41,7 @@ class PlansConfig:
 class SessionsConfig:
     """セッション画面の参照元。"""
 
-    # 未指定時はそれぞれ`~/.claude`と、空でない`CODEX_HOME`または`~/.codex`を用いる。
+    # 未指定時はそれぞれClaude Codeの設定ディレクトリとCodexのホーム（`agent_toolkit._common.host_homes`）を用いる。
     claude_home: str | None = None
     codex_home: str | None = None
     remote_hosts: tuple[str, ...] = ()

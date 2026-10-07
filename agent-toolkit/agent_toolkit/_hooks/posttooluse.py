@@ -57,6 +57,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
+from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
     update_state,
@@ -365,7 +366,7 @@ def _record_child_session_cwds(session_id: str, structured: dict) -> None:
 
 def _record_agents_server_root_alias(session_id: str, structured: dict) -> None:
     """MCP応答が明示した所有rootを現行会話の別名索引へ記録する。"""
-    if os.environ.get("AGENT_TOOLKIT_OWNER_SESSION"):
+    if _delegated_session.owner_session_id(os.environ) is not None:
         return
     root_session_id = structured.get("root_session_id")
     if not _agents_server_status_file.valid_session_id(session_id):
@@ -455,7 +456,7 @@ def _record_agents_server_session_state(
             identity = _agents_server_status_file.resolve_wait_identity(os.environ, None)
             if (
                 identity is None
-                and os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")
+                and _delegated_session.owner_session_id(os.environ) is not None
                 and fallback_status_host_session is not None
                 and _agents_server_status_file.valid_session_id(fallback_status_host_session)
             ):

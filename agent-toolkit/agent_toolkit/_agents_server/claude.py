@@ -20,7 +20,6 @@ import shutil
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
-from agent_toolkit._agents_server import logging_config
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.state import (
     AUTO_RESUME_NOTICE,
@@ -37,12 +36,12 @@ from agent_toolkit._agents_server.state import (
     _begin_reply,
 )
 from agent_toolkit._common import claude_usage_limit, process_tree
+from agent_toolkit._common import delegated_session as _delegated_session
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _ENV_EMIT_SESSION_STATE_EVENTS = "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"
-_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
-_ENV_OWNER_SESSION = "AGENT_TOOLKIT_OWNER_SESSION"
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 # 軽量な起動条件で許可するツール。探索は読み取り操作、シェル実行はコマンド実行と結果の確認へ限る。
 _LAUNCH_ALLOWED_TOOLS: dict[str, list[str]] = {
@@ -148,7 +147,7 @@ def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
     session識別子は初期化の完了まで確定しないため、開始時点では時刻を名前に使う。
     確定後の改名は`rename_debug_file_for_session`が行う。
     """
-    directory = logging_config.state_dir() / _DEBUG_LOG_DIR_NAME
+    directory = _state_paths.state_dir() / _DEBUG_LOG_DIR_NAME
     directory.mkdir(parents=True, exist_ok=True)
     existing = sorted(directory.glob("*.log"), key=lambda path: path.stat().st_mtime)
     for stale in existing[: max(0, len(existing) - _DEBUG_LOG_RETENTION + 1)]:
@@ -256,13 +255,13 @@ def _build_options(
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
-    env = {_ENV_DELEGATED_SESSION: "1"}
+    env = {_delegated_session.DELEGATED_SESSION_ENV: "1"}
     # CLIのturn状態の報告（`SystemMessage`のsubtype `session_state_changed`）を受け取る。
     # Claude Agent SDKはこの変数が無い場合だけ報告を自身の判定用に要求し、呼び出し側のストリームから除く。
     # 結果の公開の判定に`idle`を使うため、全起動区分で有効にする（`_run`の`ResultMessage`の分岐を参照）。
     env[_ENV_EMIT_SESSION_STATE_EVENTS] = "1"
     if root_session_id is not None:
-        env[_ENV_OWNER_SESSION] = root_session_id
+        env[_delegated_session.OWNER_SESSION_ENV] = root_session_id
     # 委譲先のプロンプトキャッシュ保持期間を`mode`ごとに固定する。評価順序は`_wait_schedule.py`のdocstringが定める。
     # 軽量起動（探索委譲とシェル実行委譲）は連続する要求の間隔が短く、5分でも失効しないため、書き込み単価の低い側を選ぶ。
     # 通常起動は配下のサブエージェントへユーザー設定ファイルの指定が届かないため、1時間を明示する。

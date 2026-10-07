@@ -1,6 +1,6 @@
 """レビュー指摘管理表の7列TSVを排他更新する補助CLI。
 
-排他ロックは表と同じディレクトリではなくホーム配下の専用ディレクトリへ置く。
+排他ロックは表と同じディレクトリではなく、ロックファイルのディレクトリ（`agent_toolkit._common.state_paths.lock_dir`）へ置く。
 表の配置先には`~/.claude/plans`が含まれる。兄弟のロックファイルを生成すると、計画バンドルの回収後も
 ロックだけが`~/.claude/plans`へ残存し、計画の一覧と親ディレクトリの回収を妨げる。
 表の本体ファイル自身へのロックには移行できない。更新は一時ファイルの原子的置換で行い、
@@ -23,6 +23,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._plan import locations as _plan_locations
 
@@ -270,7 +271,7 @@ def lock_path(path: str | Path) -> Path:
     """
     target = Path(path).expanduser().resolve(strict=False)
     digest = hashlib.sha256(target.as_posix().encode("utf-8")).hexdigest()[:32]
-    return Path.home() / ".claude" / ".atk-locks" / "review-table" / f"{digest}.lock"
+    return _state_paths.lock_dir() / "review-table" / f"{digest}.lock"
 
 
 @contextlib.contextmanager

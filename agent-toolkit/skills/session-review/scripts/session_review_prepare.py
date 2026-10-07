@@ -27,13 +27,14 @@ from typing import Any
 
 import session_review_evidence  # pylint: disable=import-error
 
-from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
 from agent_toolkit._common import atomic_file, file_lock
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 
 CONVERSATION_FILENAME = "conversation.md"
@@ -148,7 +149,8 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
     if not common_dir.is_absolute():
         common_dir = target_repo / common_dir
     repository_name = common_dir.resolve().parent.name
-    path = pathlib.Path.home() / (".codex" if codex else ".claude") / "docs" / f"session-review-{repository_name}.md"
+    home = _host_homes.codex_home() if codex else _host_homes.claude_config_dir()
+    path = home / "docs" / f"session-review-{repository_name}.md"
     return path if path.is_file() else None
 
 
@@ -506,7 +508,7 @@ def _candidates_document(
 
 def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: datetime.datetime) -> tuple[dict[str, int], int]:
     """排他下で過去30日の失敗署名を更新し、署名ごとの最上位セッション数を返す。"""
-    path = _atk_config.state_dir() / "session-review" / "failure-signatures.jsonl"
+    path = _state_paths.state_dir() / "session-review" / "failure-signatures.jsonl"
     lock_path = path.with_name(path.name + ".lock")
     cutoff = now.astimezone(datetime.UTC) - datetime.timedelta(days=_FAILURE_LEDGER_DAYS)
     skipped = 0

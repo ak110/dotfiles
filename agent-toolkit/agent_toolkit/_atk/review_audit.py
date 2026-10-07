@@ -16,12 +16,12 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
@@ -61,7 +61,7 @@ def _graphql_error(reason: str) -> _next_action.ActionableError:
 
 def _record_path() -> Path:
     """判定済みreviewの記録ファイルを返す。"""
-    return _config.state_dir() / "review-audit.json"
+    return _state_paths.state_dir() / "review-audit.json"
 
 
 def _validate_repository(repository: str) -> None:
@@ -109,7 +109,7 @@ def _print_identifiers(records: dict[str, str]) -> None:
 @contextlib.contextmanager
 def _record_lock() -> Iterator[None]:
     """記録ファイルの固定ロックを取得し、離脱時に解放する。"""
-    lock_path = Path.home() / ".claude" / ".atk-locks" / "review-audit" / "review-audit.lock"
+    lock_path = _state_paths.lock_dir() / "review-audit" / "review-audit.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
         _file_lock.acquire_lock(lock_file)

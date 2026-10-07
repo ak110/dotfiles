@@ -21,6 +21,7 @@ try:
     from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         file_lock as _file_lock,
     )
+    from agent_toolkit._common import host_homes as _host_homes
     from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         locations as _plan_file,
@@ -105,8 +106,8 @@ def named_plan_name(plan_name: str, *, now: datetime.datetime | None = None) -> 
 
 def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
     """`~/.claude/plans`を解決し、`~/.claude`外へのsymlinkを拒否する。"""
-    home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
-    claude_root = (home_path / ".claude").resolve(strict=False)
+    home_path = pathlib.Path(home).expanduser() if home is not None else None
+    claude_root = _host_homes.claude_config_dir(home=home_path).resolve(strict=False)
     plans_root = _plan_file.working_plans_root(home_path).resolve(strict=False)
     if not plans_root.is_relative_to(claude_root):
         raise PlanCreationError("`~/.claude/plans`が~/.claudeの外を指しています", next_action=_ROOT_NEXT_ACTION)

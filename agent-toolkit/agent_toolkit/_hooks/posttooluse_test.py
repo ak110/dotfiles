@@ -24,6 +24,7 @@ import pytest
 from agent_toolkit import agents_server_mcp
 from agent_toolkit._agents_server import agents_wait
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._common import state_paths
 from agent_toolkit._hooks.output_contract import validate_hook_output
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state, auto_message_opening_attributes
@@ -75,7 +76,7 @@ def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch:
 def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """start応答が明示したルート識別子の索引を書く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
 
     _POSTTOOLUSE_MODULE._record_agents_server_root_alias(
@@ -93,7 +94,7 @@ def test_start_state_record_without_shared_status_does_not_write_alias(
 ) -> None:
     """応答が所有rootを明示しない場合は索引を書かない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     _POSTTOOLUSE_MODULE._record_agents_server_root_alias(
         "current-session",
@@ -109,7 +110,7 @@ def test_root_alias_uses_explicit_response_without_scanning_other_roots(
 ) -> None:
     """同じ子識別子を持つ別rootがあっても応答の所有rootだけへ対応付ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for root_session_id in ("root-a", "root-b"):
         root = _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory(root_session_id, tmp_path)
         root.mkdir(parents=True)
@@ -130,7 +131,7 @@ def test_root_alias_uses_explicit_response_without_scanning_other_roots(
 def test_list_response_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """空のlist応答でも明示された所有rootを現行会話へ対応付ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
     payload = {
         "session_id": "current-session",
@@ -171,7 +172,7 @@ def test_start_and_reply_register_wait_target_for_caller(
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     tool_input: dict[str, object] = {"session_id": "remote-session"}
     if operation in _POSTTOOLUSE_MODULE._AGENTS_SERVER_START_OPERATIONS:
         tool_input = {"prompt": "委譲する", "cwd": str(tmp_path)}
@@ -205,8 +206,7 @@ def _isolate_conversation(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Pat
         monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
-    monkeypatch.setattr(agents_wait.logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path / "logs"))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
 
 def _write_root_status(tmp_path: pathlib.Path, root_session_id: str, sessions: list[dict[str, object]]) -> pathlib.Path:
@@ -310,7 +310,7 @@ def test_steer_does_not_register_wait_target(monkeypatch: pytest.MonkeyPatch, tm
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     exit_code = _POSTTOOLUSE_MODULE.main(
         json.dumps(
@@ -344,7 +344,7 @@ def test_start_registers_wait_target_for_delegated_caller(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "delegate-session")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     exit_code = _POSTTOOLUSE_MODULE.main(
         json.dumps(
@@ -392,7 +392,7 @@ def _run_codex_delegate_hook(
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     tool_input = dict(tool_input)
     if operation == "start":
         tool_input["cwd"] = str(tmp_path)
@@ -485,7 +485,7 @@ def test_codex_delegate_hook_without_host_alias_uses_hook_session(
     for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     exit_code = _POSTTOOLUSE_MODULE.main(
         json.dumps(
@@ -530,7 +530,7 @@ def test_start_without_caller_identity_does_not_register_wait_target(
     if owner_session is not None:
         monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", owner_session)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     exit_code = _POSTTOOLUSE_MODULE.main(
         json.dumps(
@@ -559,7 +559,7 @@ def test_wait_collects_posttooluse_registered_result_and_releases_target(
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     payload = {
         "session_id": "root-session",
         "cwd": str(tmp_path),

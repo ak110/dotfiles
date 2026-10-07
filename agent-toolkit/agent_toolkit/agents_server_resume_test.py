@@ -17,6 +17,7 @@ import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import session_registry, state, status_file
+from agent_toolkit._common import state_paths
 from agent_toolkit._testing.helpers import delivery_payload
 
 _STREAM_END = object()
@@ -226,7 +227,7 @@ async def _await_state(predicate: Any, timeout: float = _STATE_TIMEOUT) -> None:
 @pytest.fixture(autouse=True)
 def _isolate_session_registry(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """各テストのsession登録簿を一時ディレクトリへ隔離する。"""
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
 
 def _emit_child_start(client: ControlledClaudeClient, session_id: str) -> None:

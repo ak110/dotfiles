@@ -86,9 +86,12 @@ from agent_toolkit._atk.wi.mutations import content as _mutation_content  # noqa
 from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies  # noqa: E402
 from agent_toolkit._atk.wi.mutations import targets as _mutation_targets  # noqa: E402
 from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions  # noqa: E402
+from agent_toolkit._common import delegated_session as _delegated_session  # noqa: E402
 from agent_toolkit._common import next_action as _next_action  # noqa: E402
 from agent_toolkit._common import periodic_recheck as _periodic_recheck  # noqa: E402
+from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
 from agent_toolkit._common import session_state as _session_state  # noqa: E402
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
 from agent_toolkit._plan import locations as _plan_file  # noqa: E402
 
@@ -1135,7 +1138,7 @@ def _show_info() -> None:
     print(f"plugin root: {plugin_root}")
     print(f"plugin version (plugin.json): {version}")
     print(f"設定ファイル: {config_file}{'' if config_file.is_file() else '（未作成）'}")
-    print(f"状態ディレクトリ: {_config_cmd.state_dir()}")
+    print(f"状態ディレクトリ: {_state_paths.state_dir()}")
 
 
 def command_option_contract(command_path: tuple[str, ...]) -> tuple[frozenset[str], frozenset[str], tuple[str, ...]] | None:
@@ -1481,7 +1484,7 @@ def main(
             f"managed-tempのディレクトリの自動削除に失敗した: {error}",
             next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
         )
-    is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
+    is_delegated_session = _delegated_session.is_delegated(os.environ)
     if sweep_result is not None and args.command != "managed-temp" and not is_delegated_session:
         # 掃引が同じ起動で探索した結果を使い、未登録候補を再探索しない。
         # 最終更新から7日以内の候補は使用中として自動削除から外れ、対処を要しないため数えない。
@@ -1585,7 +1588,7 @@ def main(
             _worktree_stash.dispatch(
                 args,
                 command_dest="worktree_stash_subcommand",
-                private_notes=_common._private_notes_path(home),
+                private_notes=_private_notes.default_private_notes(home),
             )
         )
     if args.command == "watch":

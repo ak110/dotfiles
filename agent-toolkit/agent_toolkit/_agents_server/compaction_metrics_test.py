@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit._agents_server import codex, state
 from agent_toolkit._agents_server import compaction_metrics as subject
-from agent_toolkit._atk import config as atk_config
+from agent_toolkit._common import state_paths
 
 
 def _record_path(tmp_path: pathlib.Path, thread_id: str) -> pathlib.Path:
@@ -21,7 +21,7 @@ def test_append_records_duration_once_per_item(
     tmp_path: pathlib.Path,
 ) -> None:
     """開始・完了時刻を秒へ換算し、同じitemの再通知は重複記録しない。"""
-    monkeypatch.setattr(atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     subject.append_compaction_record("thread-1", "item-1", 1000, 2234)
     subject.append_compaction_record("thread-1", "item-1", 1000, 9000)
@@ -45,7 +45,7 @@ async def test_notifications_record_only_completed_compaction(
     tmp_path: pathlib.Path,
 ) -> None:
     """開始と完了の両通知が有効な場合だけ記録し、片側だけの保持はturn終端で破棄する。"""
-    monkeypatch.setattr(atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     manager = codex.AppServerManager({session.session_id: session})
 

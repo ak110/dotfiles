@@ -8,7 +8,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import status_file
-from agent_toolkit._atk import config
+from agent_toolkit._common import state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 
 _NOTICE_TAG_PATTERN = re.compile(
@@ -77,7 +77,7 @@ def _notify_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "child-session")
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     return status_file.notices_directory("root-session", tmp_path)
 
 
@@ -148,7 +148,7 @@ def test_agents_notify_rejects_missing_delegated_identity(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     with pytest.raises(SystemExit, match="4"):
         atk.main(["agents", "notify", "--body", "通知"])
@@ -170,7 +170,7 @@ def test_agents_notify_rejects_root_identity(
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     with pytest.raises(SystemExit, match="4"):
         atk.main(["agents", "notify", "--body", "通知"])

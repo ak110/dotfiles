@@ -43,7 +43,8 @@ from agent_toolkit._agents_server.state import (
     terminal_result_payload,
     with_result_next_action,
 )
-from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import delegated_session as _delegated_session
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import ActionableError
@@ -80,7 +81,7 @@ class ConversationRootResolution:
 
 def resolve_root_session_id(environment: Mapping[str, str]) -> str | None:
     """環境変数から読取対象のルートsessionを解決する。"""
-    owner = environment.get("AGENT_TOOLKIT_OWNER_SESSION") or environment.get("CLAUDE_CODE_SESSION_ID")
+    owner = _delegated_session.owner_session_id(environment) or environment.get("CLAUDE_CODE_SESSION_ID")
     return owner if owner is not None and valid_session_id(owner) else None
 
 
@@ -91,7 +92,7 @@ def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileId
         return None
 
     host_session_id: str | None = None
-    if environment.get("AGENT_TOOLKIT_DELEGATED_SESSION"):
+    if environment.get(_delegated_session.DELEGATED_SESSION_ENV):
         host_session_id = environment.get("CLAUDE_CODE_SESSION_ID")
     elif environment.get("CODEX_THREAD_ID"):
         host_session_id = environment.get("CODEX_THREAD_ID")
@@ -99,7 +100,7 @@ def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileId
         host_session_id = environment.get("AGENT_TOOLKIT_STATUS_HOST_SESSION")
     if host_session_id is not None and not valid_session_id(host_session_id):
         return None
-    if host_session_id is None and environment.get("AGENT_TOOLKIT_OWNER_SESSION"):
+    if host_session_id is None and _delegated_session.owner_session_id(environment) is not None:
         return None
 
     file_name = "root.json" if host_session_id is None else f"{host_session_id}.json"
@@ -117,7 +118,7 @@ def create_process_root_identity() -> StatusFileIdentity:
 
 def status_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
     """ルートsessionの状態ファイルディレクトリを返す。"""
-    root = _atk_config.state_dir() if state_root is None else state_root
+    root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / root_session_id
 
 
@@ -145,7 +146,7 @@ def list_status_files(root_session_id: str, state_root: pathlib.Path | None = No
 
 def list_root_session_ids(state_root: pathlib.Path | None = None) -> list[str]:
     """共有状態に存在する有効なルートsession識別子を安定順で返す。"""
-    root = _atk_config.state_dir() if state_root is None else state_root
+    root = _state_paths.state_dir() if state_root is None else state_root
     base = root / "agents-server"
     try:
         identifiers = [
@@ -165,7 +166,7 @@ def sweep_stale_shared_state(
     now: float | None = None,
 ) -> None:
     """7日を超えて更新されていない共有状態を個別失敗で停止せず回収する。"""
-    root = _atk_config.state_dir() if state_root is None else state_root
+    root = _state_paths.state_dir() if state_root is None else state_root
     cutoff = datetime.datetime.now(datetime.UTC).timestamp() if now is None else now
     cutoff -= STALE_SHARED_STATE_SECONDS
     base = root / "agents-server"
@@ -280,7 +281,7 @@ def unavailable_candidates_path(state_root: pathlib.Path | None = None) -> pathl
     `list_root_session_ids`は`agents-server`直下のディレクトリをルートsession識別子として列挙するため、
     この階層へはディレクトリではなく単一のファイルとして置く。
     """
-    root = _atk_config.state_dir() if state_root is None else state_root
+    root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "unavailable-candidates.json"
 
 
@@ -430,7 +431,7 @@ def _matches_candidate(
 
 def aliases_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     """現行session識別子からルートsession識別子を引く索引ディレクトリを返す。"""
-    root = _atk_config.state_dir() if state_root is None else state_root
+    root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "aliases"
 
 

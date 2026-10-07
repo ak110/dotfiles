@@ -24,11 +24,11 @@ Claude Agent SDKで開始したセッションのターンは、main conversatio
 
 import json
 import os
-import pathlib
 import subprocess
 
 import pytilpack.jsonc
 
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common.delegated_session import is_delegated
 
 # キャッシュTTLごとの再確認間隔。TTLが満了する前に必ず再確認するため、間隔はTTLより短く取る。
@@ -73,7 +73,7 @@ def _user_settings_ttl(request_bucket: str) -> str | None:
     ファイルの不在、読み取り失敗、解析失敗および受理しない値では`None`を返し、後続の判定へ委ねる。
     設定ファイルはコメント付きで書かれる場合があるためJSONCとして解析する。
     """
-    path = pathlib.Path.home() / ".claude" / "settings.json"
+    path = _host_homes.claude_config_dir() / "settings.json"
     try:
         settings = pytilpack.jsonc.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError):

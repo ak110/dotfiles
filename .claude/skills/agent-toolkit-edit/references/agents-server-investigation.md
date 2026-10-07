@@ -6,8 +6,9 @@
 
 ## 観測できる記録の所在
 
-診断ログのディレクトリの絶対パスは`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
-同関数は`platformdirs`の`user_state_dir("agent-toolkit", appauthor=False)`が返す値を用いる。
+診断ログのディレクトリの絶対パスは`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir`が解決し、`atk config get state_dir`の出力と同じ値になる。
+同関数はLinuxでは`platformdirs`の`user_state_dir("agent-toolkit", appauthor=False)`を使い、相対の`XDG_STATE_HOME`は`HOME/.local/state`へ退避する。
+Windowsでは`LOCALAPPDATA`配下の`agent-toolkit`を使う。
 Claude Codeの作業ディレクトリのスラッグは、そのディレクトリの絶対パスのうちパス区切りと記号をハイフンへ置換した文字列である。
 
 | 記録 | 所在の組み立て方 | 読み取れる事実 |

@@ -33,7 +33,7 @@ hookスクリプトのウォームアップは更新後の実行を高速化す�
 pyfltr MCPのウォームアップも初回MCP起動の成立条件として扱い、失敗を、ウォームアップを呼び出した更新処理へ伝播する。Claude CodeとCodexは`uvx`でpyfltr MCPを起動し、ツール環境が未構築なら取得と構築の時間がMCPクライアントの起動上限（Codexの`startup_timeout_sec`は未設定時10秒）を超え得るためである。
 起動形は両ホストが実際に読むMCP定義（Claude Codeの`.mcp.json`、Codexの`.mcp.codex.json`）の`pyfltr`の`command`と`args`から導出し、末尾の`mcp`を`--version`へ置き換えて1回起動する。要求指定をウォームアップ側へ書き写すと、配布元の要求指定の更新に追随しない二重管理になるためである。
 
-MCPの処理開始前と`atk agents wait`の待機開始前に、`platformdirs.user_state_dir("agent-toolkit", appauthor=False)`配下の`agents-server.log`を初期化する。
+MCPの処理開始前と`atk agents wait`の待機開始前に、状態ディレクトリ（`agent_toolkit/_common/state_paths.py`の`state_dir`）配下の`agents-server.log`を初期化する。
 MCPの処理と`atk agents wait`は同じlogger階層、UTF-8およびサイズrotationの設定を共有する。
 親MCPの起動モード、正常・異常終了、Codex子App Serverの起動、initialize応答と終了コードを記録する。
 待機対象と由来、ロック競合、復帰理由、sessionの開始・再開・終端、結果ファイルの書込・削除も同じログへINFOで記録する。

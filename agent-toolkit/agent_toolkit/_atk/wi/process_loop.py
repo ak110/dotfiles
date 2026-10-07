@@ -34,6 +34,7 @@ from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import console_title as _console_title
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._git import command as _git_command
@@ -77,7 +78,6 @@ _PROCESS_LOOP_SESSION_ENV = _orchestrator.PROCESS_LOOP_SESSION_ENV
 _PROCESS_LOOP_SESSION_ID_ENV = _orchestrator.PROCESS_LOOP_SESSION_ID_ENV
 # 次に起動する1セッションだけへ渡すユーザーの追加指示。SessionStart hookが本文を注入する。
 _PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
-_DELEGATED_SESSION_ENV = _orchestrator.DELEGATED_SESSION_ENV
 
 # Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数が契約どおりに動作するかを確かめられるよう値を固定する。
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -227,7 +227,7 @@ def _reset_console(*, platform: str = os.name, stream: typing.TextIO | None = No
 
 def _create_hook_debug_log(env: dict[str, str]) -> pathlib.Path:
     """Claude Codeのhook診断ログを所有者限定で事前作成する。"""
-    config_dir = pathlib.Path(env.get("CLAUDE_CONFIG_DIR", pathlib.Path.home() / ".claude"))
+    config_dir = _host_homes.claude_config_dir(env)
     debug_dir = config_dir / "debug"
     debug_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor, name = tempfile.mkstemp(prefix="process-loop-", suffix=".log", dir=debug_dir)

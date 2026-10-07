@@ -13,6 +13,7 @@ import pytest
 
 from agent_toolkit._agents_server import claude
 from agent_toolkit._agents_server import state as shared_state
+from agent_toolkit._common import state_paths
 
 
 def test_debug_file_name_carries_session_id_after_initialization(tmp_path: pathlib.Path) -> None:
@@ -189,7 +190,7 @@ def test_prepare_debug_file_drops_records_beyond_retention(
     tmp_path: pathlib.Path,
 ) -> None:
     """保持世代を超えた古い診断ログを自動的に削除する。"""
-    monkeypatch.setattr(claude.logging_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     directory = tmp_path / claude._DEBUG_LOG_DIR_NAME  # pylint: disable=protected-access
     directory.mkdir(parents=True)
     retention = claude._DEBUG_LOG_RETENTION  # pylint: disable=protected-access
@@ -318,7 +319,7 @@ async def test_start_aborts_when_init_message_never_arrives(
 ) -> None:
     """initへ到達しないsessionを上限で打ち切り、子プロセスを終了させて例外で返す。"""
     monkeypatch.setattr(shared_state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
-    monkeypatch.setattr(claude.logging_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     client = _SilentClient()
     manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
 

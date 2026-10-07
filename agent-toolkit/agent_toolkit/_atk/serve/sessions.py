@@ -16,16 +16,16 @@ import dataclasses
 import datetime
 import json
 import logging
-import os
 import pathlib
 import socket
 import threading
 import typing
 
-from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import session_parents, session_watch
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import session_launchers
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
 logger = logging.getLogger(__name__)
@@ -492,16 +492,13 @@ def _started_at(engine: str, records: list[dict[str, typing.Any]]) -> str | None
 
 
 def default_claude_home() -> pathlib.Path:
-    """Claude Codeの記録の保存先を指定しない場合に使うパスを返す。"""
-    return pathlib.Path.home() / ".claude"
+    """Claude Codeの記録の保存先を指定しない場合に使うパス（Claude Codeの設定ディレクトリ）を返す。"""
+    return _host_homes.claude_config_dir()
 
 
 def default_codex_home() -> pathlib.Path:
-    """Codexの記録の保存先を指定しない場合に使うパスを返す。空でない`CODEX_HOME`を優先する。"""
-    value = os.environ.get("CODEX_HOME")
-    if value:
-        return pathlib.Path(value)
-    return pathlib.Path.home() / ".codex"
+    """Codexの記録の保存先を指定しない場合に使うパス（Codexのホーム）を返す。"""
+    return _host_homes.codex_home()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -563,7 +560,7 @@ def create_context(
         remote_hosts=hosts,
         runner=ssh_runner if ssh_runner is not None else default_ssh_runner,
         state=state,
-        state_dir=state_dir if state_dir is not None else _atk_config.state_dir(),
+        state_dir=state_dir if state_dir is not None else _state_paths.state_dir(),
     )
 
 

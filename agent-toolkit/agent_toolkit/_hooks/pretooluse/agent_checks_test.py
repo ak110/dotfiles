@@ -13,6 +13,7 @@ import pytest
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 from agent_toolkit._testing.pretooluse_support import (
     _EXECUTE_REVIEW_TASK_NAMES,
+    _additional_context,
     _agent_messages,
     _make_plan_file,
     _path_section_build_content,
@@ -679,3 +680,50 @@ class TestWorkflowSkillInvocation:
         assert skill_result.stdout == ""
         assert agent_result.returncode == 0
         assert "agent-toolkit:delegation" not in agent_result.stderr
+
+
+@pytest.mark.parametrize(
+    ("delegation_env", "expects_warning"),
+    [
+        ({}, True),
+        ({"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}, False),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner-session"}, False),
+    ],
+    ids=["main", "claude-delegate", "codex-delegate"],
+)
+def test_owner_session_only_is_treated_as_delegated(
+    tmp_path: pathlib.Path, delegation_env: dict[str, str], expects_warning: bool
+) -> None:
+    """委譲元の識別子だけを持つCodexの委譲先も委譲先として扱い、応答言語の通知を出力しない。
+
+    委譲先の応答はユーザーが直接読まないため、言語の通知は最上位セッションだけへ出力する。
+    Codexの委譲先は`AGENT_TOOLKIT_DELEGATED_SESSION`を持たないため、この印だけで判定すると委譲先の英語の応答で通知と遮断の段階が進む。
+    """
+    entry = {
+        "type": "assistant",
+        "message": {
+            "id": "m1",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "The implementation is still in progress; I'll wait for the completion."}],
+            "stop_reason": "end_turn",
+        },
+    }
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+    env = {
+        **_plan_file_state_env(tmp_path),
+        "AGENT_TOOLKIT_DELEGATED_SESSION": "",
+        "AGENT_TOOLKIT_OWNER_SESSION": "",
+        **delegation_env,
+    }
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": "ls"},
+        "transcript_path": str(transcript),
+        "session_id": "owner-session-only",
+    }
+
+    result = _run(payload, env_overrides=env)
+
+    assert result.returncode == 0, result.stderr
+    assert ("英語主体" in _additional_context(result)) is expects_warning

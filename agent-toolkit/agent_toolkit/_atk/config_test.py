@@ -10,7 +10,7 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import config as config_module  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import codex_models, state_paths
 
 
 @pytest.fixture(autouse=True)
@@ -219,7 +219,7 @@ class TestConfigGet:
             atk.main(["config", "get", "state_dir"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == f"{config_module.state_dir()}\n"
+        assert capsys.readouterr().out == f"{state_paths.state_dir()}\n"
 
     def test_get_state_dir_rejects_relative_xdg_state_home(
         self,

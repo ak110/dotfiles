@@ -8,14 +8,12 @@ YAML表現の違いによってCLIとフックの判定が分岐しないよう�
 """
 
 import hashlib
-import os
 import pathlib
 import typing
 
-import platformdirs
-
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI, normalized_wi_type
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._git import remote as _git_remote
 
 _ANSWER_HEADING = "\n## 回答\n"
@@ -63,16 +61,7 @@ def private_notes_root() -> pathlib.Path | None:
     環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`を優先する。未設定時はCLIと同じ順序で
     `~/private-notes`、platformdirsのユーザーデータディレクトリを参照する。
     """
-    override = os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES")
-    if override:
-        root = pathlib.Path(override).expanduser()
-    else:
-        default = pathlib.Path.home() / "private-notes"
-        root = (
-            default
-            if default.exists()
-            else pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False)) / "private-notes"
-        )
+    root = _private_notes.default_private_notes()
     return root if root.is_dir() else None
 
 

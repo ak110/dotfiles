@@ -17,13 +17,12 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 
-import platformdirs
-
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import common as _common
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import structure as _plan_format
@@ -270,8 +269,7 @@ def _bundle_contents_at_ref(
 
 def _checkout_record_root(relative_main: pathlib.Path) -> pathlib.Path:
     """指定計画stemのcheckout記録ディレクトリを返す。"""
-    state_root = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
-    return state_root / "plan-checkouts" / relative_main.stem
+    return _state_paths.state_dir() / "plan-checkouts" / relative_main.stem
 
 
 def _validate_saved_plan_relative_path(plan_file: str) -> pathlib.Path:

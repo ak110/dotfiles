@@ -12,6 +12,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
@@ -33,10 +34,10 @@ _SECRETS_COPY_GUIDANCE = "Bashの`cp`で原本を複製"
 _EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("exec-review.subagent.md",)
 
 
-_NOTICE_PREFIX = '<atk-auto source="pretooluse" kind="warn">'
+_NOTICE_PREFIX = _message_format.opening_tag(_message_format.AUTO_INSERTED_ELEMENT, {"source": "pretooluse", "kind": "warn"})
 
 
-_NOTICE_SUFFIX = "</atk-auto>"
+_NOTICE_SUFFIX = f"</{_message_format.AUTO_INSERTED_ELEMENT}>"
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:

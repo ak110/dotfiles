@@ -12,10 +12,9 @@ import pytest
 
 import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit import atk
-from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file
-from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._agents_server import agents_wait, session_registry, state, status_file
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import wait_schedule
+from agent_toolkit._common import state_paths, wait_schedule
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -25,7 +24,7 @@ from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_
 def _short_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """結果の無い待機を即時に返して公開引数へ上限を露出させない。"""
     monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0)
-    monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path / "logs"))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
 
 @pytest.fixture(name="wait_environment")
@@ -36,7 +35,7 @@ def _wait_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(_atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     return status_file.results_directory("root-session", tmp_path)
 
 
@@ -1197,7 +1196,7 @@ def test_agents_wait_resolves_changed_conversation_session(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(_atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     results = status_file.results_directory("root-session", tmp_path)
     results.mkdir(parents=True)
     payload = {"session_id": "session-1", "status": "completed"}
@@ -1784,7 +1783,7 @@ def test_agents_wait_logs_targets_and_collection_without_result_body(
     assert _wait_for_session_1_result(wait_environment) == 0
 
     assert json.loads(capsys.readouterr().out)["agent_message"] == "秘密の結果本文"
-    log_text = (wait_environment.parents[2] / "logs" / "agents-server.log").read_text(encoding="utf-8")
+    log_text = (wait_environment.parents[2] / "agents-server.log").read_text(encoding="utf-8")
     assert "wait_start targets=session-1 origins=session-1:result" in log_text
     assert "collector=atk-agents-wait" in log_text
     assert "reason=collected count=1 session_ids=session-1" in log_text
@@ -1811,7 +1810,7 @@ def test_agents_wait_collects_dynamic_target_under_owner_lock(
     assert _wait_for_session_1_result(wait_environment) == 0
 
     assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-2"}
-    log_text = (wait_environment.parents[2] / "logs" / "agents-server.log").read_text(encoding="utf-8")
+    log_text = (wait_environment.parents[2] / "agents-server.log").read_text(encoding="utf-8")
     assert "wait_target_added session_id=session-2" in log_text
 
 

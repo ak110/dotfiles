@@ -23,7 +23,6 @@ import collections
 import contextvars
 import datetime
 import json
-import os
 import re
 import shlex
 import sys
@@ -34,7 +33,6 @@ from typing import Any, Literal, NamedTuple, cast
 try:
     from agent_toolkit._agents_server import record_paths as _record_paths
     from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
-    from agent_toolkit._atk import config as _atk_config
     from agent_toolkit._atk import outcome as _outcome
     from agent_toolkit._atk.wi import constants as _wi_constants
     from agent_toolkit._atk.wi import sections as _wi_sections
@@ -42,7 +40,10 @@ try:
     from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
     from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY as _PROCESS_WI_GOAL_BODY
     from agent_toolkit._atk.wi.frontmatter import parse_frontmatter as _parse_wi_frontmatter
+    from agent_toolkit._common import host_homes as _host_homes
+    from agent_toolkit._common import message_format as _message_format
     from agent_toolkit._common import response_language_check as _response_language_check
+    from agent_toolkit._common import state_paths as _state_paths
     from agent_toolkit._common import transcript as _transcript
     from agent_toolkit._common.runtime_identity import distinct_identities as _distinct_identities
     from agent_toolkit._common.runtime_identity import latest_identity as _latest_identity
@@ -69,7 +70,7 @@ _HANDBACK_TOOL = "SubagentHandback"
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"
     r"\s*(?:\d+\t)?(?:"
-    r"<(?:atk-auto|agent-toolkit-auto-inserted|agent-toolkit-hook-message)"
+    rf"<(?:{_message_format.AUTO_ELEMENT_NAME_PATTERN})"
     r'(?=[^>]*\ssource="[^"]+")(?=[^>]*\skind="(?:warn|warning)")[^>]*>|'
     r"(?:\[auto-generated:[^\]]+\]\s*)?\[(?:warn|warning)\](?:\s|$)|"
     r"⚠(?:\s+|\s*[:：])"
@@ -118,12 +119,12 @@ def _is_hook_record(value: dict[str, Any]) -> bool:
 
 
 _HOOK_NOTICE_MARKER = re.compile(
-    r"(?:<(?:atk-auto|agent-toolkit-auto-inserted|agent-toolkit-hook-message)"
+    rf"(?:<(?:{_message_format.AUTO_ELEMENT_NAME_PATTERN})"
     r'(?=[^>]*\ssource="(?P<hook_xml>[^"]+)")(?=[^>]*\skind="(?P<tag_xml>[^"]+)")[^>]*>|'
     r"\[auto-generated:\s*(?P<hook_legacy>[^\]]*?)\s*\](?:\s*\[(?P<tag_legacy>[^\]]*)\])?)"
 )
-_HOOK_XML_END_TAGS = ("</atk-auto>", "</agent-toolkit-auto-inserted>", "</agent-toolkit-hook-message>")
-_HOOK_XML_END_MARKER = re.compile(r"</(?:atk-auto|agent-toolkit-auto-inserted|agent-toolkit-hook-message)>")
+_HOOK_XML_END_TAGS = tuple(f"</{element}>" for element in _message_format.AUTO_ELEMENTS)
+_HOOK_XML_END_MARKER = re.compile(rf"</(?:{_message_format.AUTO_ELEMENT_NAME_PATTERN})>")
 _CANDIDATE_KIND_LENGTH = 80
 _PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
 """auto mode classifierの拒否本文に現れる定型句。実行環境が返す本文をそのまま用いる。"""
@@ -1554,10 +1555,7 @@ def _codex_home(explicit: str | None = None) -> Path:
     """Codexの記録の保存先を、明示引数、空でない`CODEX_HOME`、`~/.codex`の順に解決する。"""
     if explicit:
         return Path(explicit)
-    env_home = os.environ.get("CODEX_HOME")
-    if env_home:
-        return Path(env_home)
-    return Path.home() / ".codex"
+    return _host_homes.codex_home()
 
 
 def _rollout_candidates(thread_id: str, codex_home: Path) -> list[Path]:
@@ -6168,7 +6166,7 @@ def main(argv: list[str] | None = None) -> int:
     compaction_record_dir = (
         Path(args.compaction_record_dir)
         if args.compaction_record_dir is not None
-        else _atk_config.state_dir() / "agents-server" / "compaction"
+        else _state_paths.state_dir() / "agents-server" / "compaction"
     )
 
     if args.bundle is not None:

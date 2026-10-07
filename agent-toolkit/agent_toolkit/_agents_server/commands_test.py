@@ -11,7 +11,8 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import commands, state
-from agent_toolkit._atk import config, environment, managed_temp, output_file
+from agent_toolkit._atk import environment, managed_temp, output_file
+from agent_toolkit._common import state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
@@ -70,7 +71,7 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     directory = status_file.status_directory("root-session", tmp_path)
     directory.mkdir(parents=True)
     (directory / "root.json").write_text(
@@ -709,7 +710,7 @@ def test_agents_list_without_conversation_root_shows_all_roots(
     """会話識別子のない直接端末では全rootのsessionを表示する。"""
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for root_session_id, remote_session_id in (("root-a", "session-a"), ("root-b", "session-b")):
         directory = status_file.status_directory(root_session_id, tmp_path)
         directory.mkdir(parents=True)
@@ -756,7 +757,7 @@ def test_agents_list_human_tree_omits_roots_without_listed_sessions(
         monkeypatch.delenv(key, raising=False)
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     timestamps = {"started_at": "2026-09-30T00:00:00+00:00", "updated_at": "2026-09-30T00:00:00+00:00"}
     _write_root_sessions(tmp_path, "root-running", [{"session_id": "session-running", "status": "running", **timestamps}])
     _write_root_sessions(tmp_path, "root-empty", [])
@@ -790,7 +791,7 @@ def test_agents_list_human_tree_reports_no_sessions(
         monkeypatch.delenv(key, raising=False)
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     _write_root_sessions(tmp_path, "root-empty", [])
     (tmp_path / "agents-server" / "aliases").mkdir()
 
@@ -810,7 +811,7 @@ def test_agents_list_reports_unconfirmed_conversation_root(
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     with pytest.raises(SystemExit, match="4"):
         atk.main(["agents", "list"])
@@ -832,7 +833,7 @@ def test_agents_list_returns_empty_for_confirmed_root(
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
 
     with pytest.raises(SystemExit, match="0"):
@@ -851,7 +852,7 @@ def test_agents_list_uses_explicit_alias_and_isolates_other_roots(
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for root_session_id, remote_session_id in (("root-a", "session-a"), ("root-b", "session-b")):
         directory = status_file.status_directory(root_session_id, tmp_path)
         directory.mkdir(parents=True)
@@ -1148,7 +1149,7 @@ def test_agents_logs_shows_first_of_ambiguous_codex_records(
         )
     monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
     monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", thread_id])
@@ -1164,7 +1165,7 @@ def test_agents_logs_reads_and_follows_antigravity_events(
     """Antigravityの保存済み出力と、その後に追記された行を順に表示する。"""
     monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
     monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     path = status_file.session_log_path("root-1", "agy-1", tmp_path)
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"event": "init", "conversation_id": "agy-1"}) + "\n", encoding="utf-8")
@@ -1329,7 +1330,7 @@ def test_agents_list_watch_redraws_until_interrupted(
     _human_environment(monkeypatch)
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     timestamps = {"started_at": "2026-09-30T00:00:00+00:00", "updated_at": "2026-09-30T00:00:00+00:00"}
     first = {"session_id": "session-first", "status": "running", **timestamps}
     done = {"session_id": "session-done", "status": "completed", **timestamps}

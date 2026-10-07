@@ -31,12 +31,12 @@ from agent_toolkit._agents_server.state import (
     _initialize_turn,
     _validate_prompt,
 )
+from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import process_tree
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.antigravity")
 _COMMAND = "agy"
-_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 # 非対話実行で上限を指定しない場合は5分で終了するが、委譲先の1turnにはそれより長い時間が必要になる。
 _PRINT_TIMEOUT_SECONDS = 3600
 _STDERR_LIMIT_CHARS = 4000
@@ -78,9 +78,9 @@ def build_command(
 def _child_env(root_session_id: str | None) -> dict[str, str]:
     """委譲先の印とManagerが所有するrootを配送する。"""
     env = dict(os.environ)
-    env[_ENV_DELEGATED_SESSION] = "1"
+    env[_delegated_session.DELEGATED_SESSION_ENV] = "1"
     if root_session_id is not None:
-        env["AGENT_TOOLKIT_OWNER_SESSION"] = root_session_id
+        env[_delegated_session.OWNER_SESSION_ENV] = root_session_id
     return env
 
 

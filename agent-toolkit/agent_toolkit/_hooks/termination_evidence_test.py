@@ -10,8 +10,8 @@ from typing import Any
 import pytest
 
 from agent_toolkit._agents_server import status_file
-from agent_toolkit._atk import config, run_script
-from agent_toolkit._common import session_state
+from agent_toolkit._atk import run_script
+from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import (
     agents_server_session_advisor,
@@ -520,7 +520,7 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     start = {
         "session_id": "evidence-test",
         "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",

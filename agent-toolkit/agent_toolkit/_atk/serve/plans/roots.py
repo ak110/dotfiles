@@ -9,7 +9,6 @@ import asyncio
 import contextlib
 import dataclasses
 import datetime
-import importlib
 import json
 import logging
 import pathlib
@@ -22,6 +21,9 @@ import watchdog.observers.api
 from pygments.formatters.html import HtmlFormatter
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
+from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import private_notes as _private_notes
+from agent_toolkit._plan import locations as _plan_file
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._atk.serve.plans.remote import RemoteWatcher
@@ -34,7 +36,8 @@ NEW_SOURCE_ID = "private-notes-plans"
 LEGACY_SOURCE_ID = "claude-plans"
 NEW_PORTABLE_ROOT = "$(atk config get private_notes)/plans"
 LEGACY_PORTABLE_ROOT = "~/.claude/plans"
-_UNRESOLVED_PRIVATE_NOTES_ROOT = pathlib.Path.home() / ".claude" / ".plans-viewer-private-notes-unresolved"
+_UNRESOLVED_PRIVATE_NOTES_DIRNAME = ".plans-viewer-private-notes-unresolved"
+"""private-notesを解決できない場合に新rootとして示す、Claude Codeの設定ディレクトリ配下の実在しないディレクトリ名。"""
 
 # 付属計画ファイルの接尾辞。計画一覧からは除外されるため、表示応答内のリンクを使って開く。
 _DETAIL_SUFFIX = ".detail.md"
@@ -246,7 +249,7 @@ def _canonical(path: pathlib.Path) -> pathlib.Path:
 def explicit_root_spec(root: str | pathlib.Path) -> RootSpec:
     """設定で明示されたrootを単一root定義へ変換する。"""
     path = _canonical(pathlib.Path(root))
-    legacy = _canonical(pathlib.Path.home() / ".claude" / "plans")
+    legacy = _canonical(_plan_file.working_plans_root())
     portable = LEGACY_PORTABLE_ROOT if path == legacy else str(path).replace("\\", "/")
     return RootSpec(source_id="", path=path, portable_path=portable)
 
@@ -254,12 +257,11 @@ def explicit_root_spec(root: str | pathlib.Path) -> RootSpec:
 def _private_notes_result() -> tuple[pathlib.Path | None, str | None]:
     """private-notesリポジトリのrootと、解決できない場合の警告を返す。
 
-    `atk`の設定解決処理を同一プロセス内で呼ぶ。外部コマンドの起動を経ないため、
+    `atk config get private_notes`と同じ解決を同一プロセス内で呼ぶ。外部コマンドの起動を経ないため、
     常駐サービスのPATHに依存しない。
     """
     try:
-        private_notes_path = vars(importlib.import_module("agent_toolkit._atk.wi.common"))["_private_notes_path"]
-        value = private_notes_path(pathlib.Path.home())
+        value = _private_notes.default_private_notes()
     except Exception as error:  # pylint: disable=broad-exception-caught
         warning = f"private_notesの取得に失敗しました: {error}"
         logger.warning("%s。旧rootを継続します", warning)
@@ -284,7 +286,7 @@ def default_root_specs() -> tuple[RootSpec, ...]:
         specs.append(
             RootSpec(
                 source_id=NEW_SOURCE_ID,
-                path=_UNRESOLVED_PRIVATE_NOTES_ROOT,
+                path=_host_homes.claude_config_dir() / _UNRESOLVED_PRIVATE_NOTES_DIRNAME,
                 portable_path=NEW_PORTABLE_ROOT,
                 warning=warning or "private_notesを解決できません",
                 migrate_legacy_ctime=False,
@@ -293,7 +295,7 @@ def default_root_specs() -> tuple[RootSpec, ...]:
     specs.append(
         RootSpec(
             source_id=LEGACY_SOURCE_ID,
-            path=pathlib.Path.home() / ".claude" / "plans",
+            path=_plan_file.working_plans_root(),
             portable_path=LEGACY_PORTABLE_ROOT,
             migrate_legacy_ctime=True,
         )

@@ -10,16 +10,19 @@ import json
 import pathlib
 import re
 
+from agent_toolkit._common import message_format as _message_format
+
 SESSION_STATE_FILENAME_TEMPLATE = "claude-agent-toolkit-{session_id}.json"
 
+_AUTO = _message_format.AUTO_INSERTED_ELEMENT
 _DELIVERY_TAG_PATTERN = re.compile(
-    r"\A<atk-auto"
+    rf"\A<{_AUTO}"
     r'(?=[^>]*\ssource="agents-server")'
     r'(?=[^>]*\skind="delivery")[^>]*>\n'
-    r"(?P<body>.*)\n</atk-auto>\Z",
+    rf"(?P<body>.*)\n</{_AUTO}>\Z",
     re.DOTALL,
 )
-_AUTO_OPENING_PATTERN = re.compile(r'<atk-auto(?P<attributes>(?:\s+[a-z][a-z-]*="[^"]*")*)>')
+_AUTO_OPENING_PATTERN = re.compile(rf'<{_AUTO}(?P<attributes>(?:\s+[a-z][a-z-]*="[^"]*")*)>')
 _AUTO_ATTRIBUTE_PATTERN = re.compile(r'\s+([a-z][a-z-]*)="([^"]*)"')
 
 

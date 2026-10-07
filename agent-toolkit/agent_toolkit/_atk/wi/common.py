@@ -33,7 +33,6 @@ import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 
 import filelock
-import platformdirs
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
@@ -66,6 +65,7 @@ from agent_toolkit._atk.wi.readiness import QueueEntry, ReadinessResult, _count_
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 
@@ -119,24 +119,6 @@ def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
     path = private_notes / name
     path.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def _private_notes_path(home: pathlib.Path) -> pathlib.Path:
-    """WI保存ディレクトリのroot絶対パスを返す。
-
-    環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`が設定されていればその値を優先する。
-    未設定時は`~/private-notes/`へフォールバックし、そのパスが存在しない場合は
-    `platformdirs.user_data_dir("agent-toolkit")`配下のローカル管理用パスへさらにフォールバックする
-    （`_ensure_environment`がそのフォールバック先へ実体のgitリポジトリを自動生成する）。
-    `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
-    """
-    override = os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES")
-    if override:
-        return pathlib.Path(override).expanduser()
-    default = home / "private-notes"
-    if default.exists():
-        return default
-    return pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False)) / "private-notes"
 
 
 _LOCAL_ONLY_MARKER = _atk_git_sync.LOCAL_ONLY_MARKER
@@ -201,9 +183,9 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
     未指定かつ省略時に使うパスも不在の場合は`_init_local_private_notes_repo`でローカルリポジトリを自動生成する。
     旧2階層レイアウトが残るリポジトリは`_migrate_legacy_layout`が平坦レイアウトへ移行する。
     """
-    root = _private_notes_path(home)
+    root = _private_notes.default_private_notes(home)
     if not root.exists():
-        if os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES"):
+        if _private_notes.private_notes_override() is not None:
             _outcome.report_failure(
                 f"WI保存ディレクトリが見つからない: {root}",
                 next_action="環境変数AGENT_TOOLKIT_PRIVATE_NOTESの値を実在するディレクトリへ直すか、"
@@ -412,12 +394,11 @@ def _assert_repo_lock_held(private_notes: pathlib.Path) -> None:
 def _repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
     """`repo_path`に対応するロックファイルの絶対パスを返す。
 
-    配置先は`platformdirs.user_state_dir("agent-toolkit")`配下`locks/`ディレクトリとし、
+    配置先はロックファイルのディレクトリ（`agent_toolkit._common.state_paths.lock_dir`）とし、
     ファイル名は、同じGitリポジトリに属するworktree間で共有されるGit common directoryの
     SHA-1ハッシュ値とする。対象リポジトリからロックファイル名を導出するため、
     WI保存リポジトリに限らず任意のgit作業コピーへ同一の仕組みを適用できる。
     取得時にロック用ディレクトリを自動作成する。
-    `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     """
     return _atk_git_sync.repo_lock_path(repo_path)
 
@@ -728,7 +709,7 @@ def make_filename_completer(
     """
 
     def complete(prefix: str, **_: object) -> list[str]:
-        private_notes = _private_notes_path(pathlib.Path.home())
+        private_notes = _private_notes.default_private_notes()
         candidates: list[str] = []
         for state in states:
             state_dir = private_notes / state

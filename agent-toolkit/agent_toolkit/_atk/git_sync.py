@@ -26,10 +26,10 @@ from collections.abc import Callable, Iterable
 from typing import Protocol
 
 import filelock
-import platformdirs
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 
 LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
@@ -159,7 +159,7 @@ def repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
     """Git common directoryへ対応するロックファイルの絶対パスを返す。"""
     common = str(_lock_key(repo_path))
     digest = hashlib.sha1(common.encode("utf-8"), usedforsecurity=False).hexdigest()
-    lock_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks"
+    lock_dir = _state_paths.lock_dir()
     lock_dir.mkdir(parents=True, exist_ok=True)
     return lock_dir / f"{digest}.lock"
 

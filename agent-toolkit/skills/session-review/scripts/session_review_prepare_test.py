@@ -16,7 +16,7 @@ import sys
 import pytest
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-from agent_toolkit._common import response_language_check
+from agent_toolkit._common import response_language_check, state_paths
 from agent_toolkit._testing import delegated_threads
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
@@ -30,7 +30,7 @@ _BACKGROUND_OUTPUT_NOTICE = (
 @pytest.fixture(autouse=True)
 def _isolate_failure_ledger(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """失敗署名の発生記録をテストごとの状態ディレクトリへ閉じる。"""
-    monkeypatch.setattr(prepare._atk_config, "state_dir", lambda: tmp_path / "state")  # pylint: disable=protected-access
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")  # pylint: disable=protected-access
 
 
 def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:

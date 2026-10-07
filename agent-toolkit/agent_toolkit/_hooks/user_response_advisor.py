@@ -20,6 +20,7 @@ agent_idと委譲先の環境印でサブエージェントと委譲先を除く
 import json
 import pathlib
 
+from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import transcript
 from agent_toolkit._hooks import agent_id, notice, stop_gate
 
@@ -91,7 +92,7 @@ def _input_text(entry: dict) -> str | None:
 
 def _is_hook_input(prompt: str) -> bool:
     """機械生成の境界を持つ入力を人間の発話から除く。"""
-    return prompt.lstrip().startswith(("<atk-auto", "<agent-toolkit-auto-inserted"))
+    return _message_format.starts_with_auto_element(prompt)
 
 
 def main(payload_text: str) -> int:

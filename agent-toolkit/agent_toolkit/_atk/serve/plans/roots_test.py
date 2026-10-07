@@ -131,3 +131,13 @@ async def test_missing_local_file_is_reported_as_not_found(tmp_path: pathlib.Pat
         await plans.resolve_text(context, "local-host", "", "missing.md")
 
     assert error.value.status == 404
+
+
+def test_default_legacy_root_follows_claude_config_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """設定でrootを明示しない場合の旧rootは、Claude Codeの設定ディレクトリ配下の`plans`を指す。"""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
+
+    specs = plans_roots.default_root_specs()
+
+    legacy = [spec for spec in specs if spec.source_id == plans.LEGACY_SOURCE_ID]
+    assert [spec.path for spec in legacy] == [(tmp_path / "claude-config" / "plans").resolve()]

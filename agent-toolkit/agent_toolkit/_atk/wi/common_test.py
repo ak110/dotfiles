@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 import filelock
+import platformdirs
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
@@ -21,6 +22,7 @@ from agent_toolkit._atk.wi import readiness as _readiness  # noqa: E402  # pylin
 from agent_toolkit._atk.wi.mutations import content as _mutations_content  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi.mutations import targets as _mutations_targets  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import file_lock as _file_lock  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._common import private_notes as _private_notes
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 
@@ -800,7 +802,7 @@ class TestRepoLock:
     @pytest.fixture(autouse=True)
     def _isolate_lock_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """ロックファイル配置先を実環境の`user_state_dir`から隔離する。"""
-        monkeypatch.setattr(_common.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
+        monkeypatch.setattr(platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
 
     def test_second_acquire_times_out_while_held(self, tmp_path: pathlib.Path) -> None:
         """1つ目のロック保持中は、別インスタンスからの2つ目の取得がタイムアウトする。"""
@@ -890,7 +892,7 @@ class TestCommitAndPushRetry:
     @pytest.fixture(autouse=True)
     def _isolate_lock_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """ロックファイル配置先を実環境の`user_state_dir`から隔離する。"""
-        monkeypatch.setattr(_common.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
+        monkeypatch.setattr(platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
 
     def test_retries_once_after_explicit_upstream_rebase_on_push_failure(
         self,
@@ -1178,20 +1180,20 @@ class TestPrivateNotesAutoCreate:
     def _isolate_data_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """自動生成先を実環境の`user_data_dir`から隔離し、テストの準備で設定した環境変数による上書きを解除する。"""
         monkeypatch.delenv("AGENT_TOOLKIT_PRIVATE_NOTES", raising=False)
-        monkeypatch.setattr(_common.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
+        monkeypatch.setattr(platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
 
     def test_private_notes_path_falls_back_to_platformdirs_when_default_missing(self, tmp_path: pathlib.Path) -> None:
         """未指定の場合に使う`home/private-notes`が不在の場合、platformdirs配下へフォールバックする。"""
         home = tmp_path / "home"
         home.mkdir()
-        resolved = _common._private_notes_path(home)  # pylint: disable=protected-access  # noqa: SLF001
+        resolved = _private_notes.default_private_notes(home)
         assert resolved == tmp_path / "data" / "private-notes"
 
     def test_private_notes_path_prefers_existing_default(self, tmp_path: pathlib.Path) -> None:
         """省略時に使うパスが実在する場合はplatformdirsへフォールバックせずそちらを返す。"""
         home = tmp_path / "home"
         (home / "private-notes").mkdir(parents=True)
-        resolved = _common._private_notes_path(home)  # pylint: disable=protected-access  # noqa: SLF001
+        resolved = _private_notes.default_private_notes(home)
         assert resolved == home / "private-notes"
 
     def test_ensure_environment_initializes_local_repo(self, tmp_path: pathlib.Path) -> None:

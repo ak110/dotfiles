@@ -30,7 +30,7 @@ from agent_toolkit._agents_server import agents_wait, logging_config, session_re
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server.notify import send_notification
-from agent_toolkit._common import claude_usage_limit
+from agent_toolkit._common import claude_usage_limit, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -1775,7 +1775,7 @@ async def test_start_records_launcher_in_registry_and_keeps_it(
 
     親のセッション記録に起動結果が残らない委譲先は、登録簿の委譲元が無いと`atk serve`の一覧で親を持たない。
     """
-    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for name in _LAUNCHER_ENVIRONMENT_NAMES:
         monkeypatch.delenv(name, raising=False)
     for name, value in environment.items():
@@ -3028,7 +3028,7 @@ def _resume_test_manager(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> tuple[subject.AgentsServerManager, status_file.StatusFileWriter]:
     """状態ファイルと登録簿を`tmp_path`へ置き、再開後の状態を観測できるmanagerを返す。"""
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("root-session", "root.json", None),
@@ -4224,7 +4224,7 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
     if environment_owner is not None:
         monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", environment_owner)
         monkeypatch.setenv("CODEX_THREAD_ID", "host-thread")
-    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     manager = subject.AgentsServerManager()
     other = subject.AgentsServerManager()
     assert manager._status_writer is not None
@@ -5784,7 +5784,7 @@ def test_dependency_check_cli_propagates_failure(monkeypatch: pytest.MonkeyPatch
 
 def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """依存の確認を含む起動初期の診断を状態ディレクトリへ永続化する。"""
-    monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(claude_backend, "check_dependencies", lambda: None)
 
     assert subject.main(["--check-dependencies"]) == 0
@@ -5802,7 +5802,7 @@ def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPa
 
 def test_main_persists_mcp_initialize_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """stdio起動でinitializeの受信、応答完了および失敗を永続化する。"""
-    monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     def run(**_kwargs: Any) -> None:
         def message(root: SimpleNamespace) -> subject.SessionMessage:
@@ -5831,7 +5831,7 @@ async def test_mcp_lifespan_persists_activate_and_close_milestones(
     tmp_path: pathlib.Path,
 ) -> None:
     """managerのactivate前後とclose前後を永続化する。"""
-    monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     subject._configure_logging()
     monkeypatch.setattr(subject._MANAGER, "activate", lambda: None)
     monkeypatch.setattr(subject._MANAGER, "close", AsyncMock())
@@ -5852,7 +5852,7 @@ async def test_mcp_lifespan_persists_activate_failure(
     tmp_path: pathlib.Path,
 ) -> None:
     """manager activateの開始と失敗を例外診断とともに永続化する。"""
-    monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     subject._configure_logging()
 
     def fail_activate() -> None:
@@ -6358,7 +6358,7 @@ def _publish_recovered_session(
     status: str,
 ) -> None:
     """再起動後の解決に用いるversion 2登録簿を保存する。"""
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         session_id,
         terminal=True,
@@ -6579,7 +6579,7 @@ async def test_wait_delivers_child_session_result_without_kill(
 
     子sessionの登録簿レコードが残らない場合も、共有の終端結果ファイルから終端を判定する。
     """
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(
         subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("claude", "model", "high")]
     )
@@ -6650,7 +6650,7 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
     monkeypatch.setattr(
         subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [(engine, "model", "high")]
     )
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     manager, backend = _manager_with_fake(engine)
     try:
         started = await manager.start("plan", "起動本文", str(tmp_path))
@@ -7186,7 +7186,7 @@ async def test_unrecoverable_registry_record_reports_next_action(
 
     符号だけを返すと、委譲元は別の主体が実行中のsessionを新しいstartでやり直し得る。
     """
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
     session_registry.publish(session_id, terminal=False, engine="codex", cwd=str(tmp_path))
     if registry_content is not None:
@@ -7256,7 +7256,7 @@ async def test_show_reports_another_writer_for_running_registry_record(
     """登録簿が実行中として保持する識別子は、喪失ではなく別主体の実行中として案内する。"""
     manager, _ = _manager_with_fake("codex")
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(session_id, terminal=False, engine="codex", cwd=str(tmp_path))
 
     with pytest.raises(ValueError) as excinfo:
@@ -7277,7 +7277,7 @@ async def test_show_keeps_lost_session_diagnosis_without_registry_record(
     """登録簿にレコードが無い識別子では従来の喪失の案内を返す。"""
     manager, _ = _manager_with_fake("codex")
     session_id = "5c9c2ec4-08f0-4a1e-9a02-9e8f0a4a4f21"
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     with pytest.raises(ValueError, match=f"unknown session: {session_id}"):
         manager.show_session(session_id)
@@ -7308,7 +7308,7 @@ async def test_other_manager_shows_saved_activity_and_lists_unknown_legacy_time(
     tmp_path: pathlib.Path,
 ) -> None:
     """別Managerが復元したsessionの一覧・詳細は保存時刻を使い、旧記録を照会時刻で補わない。"""
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     owner, _ = _manager_with_fake("codex")
     session = subject.SessionState("saved-activity", str(tmp_path), engine="codex", publish_registry=True)
     session.started_at = "2026-09-27T14:38:32+00:00"
@@ -7530,7 +7530,7 @@ async def test_unknown_session_is_distinct_from_expired_session(
 
     登録簿のレコードは再起動では削除されないため、再起動を原因として案内しない。
     """
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     manager, _ = _manager_with_fake("codex")
     session_id = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
     with pytest.raises(ValueError) as exc_info:
@@ -7562,7 +7562,7 @@ async def test_session_released_by_another_server_is_reported_as_released(
     どちらの応答も継続不能の判定に使う`unknown session: <id>`で始め、再起動を案内しない。
     記録が無い識別子とは文面が異なる。
     """
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_id = "7f0c2b8e-5d1a-4e3b-9c6f-2a8d4e1b7c90"
     owner, _ = _manager_with_fake("codex")
     session = subject.SessionState(session_id, str(tmp_path), engine="codex", publish_registry=True)
@@ -8148,7 +8148,7 @@ async def test_child_collected_by_background_agents_wait_is_not_unobserved(
     expected_unobserved: list[str] | None,
 ) -> None:
     """登録簿と終端結果ファイルが消えた後も、背景待機の出力ファイルに終端行がある孫sessionは未観測にしない。"""
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     manager = subject.AgentsServerManager(status_writer=None)
     parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
     parent.live_child_session_ids.add("child-session")
@@ -8196,7 +8196,7 @@ async def test_close_publishes_running_session_as_interrupted_for_restart(
     停止時に公開しないと登録簿が`running`のまま残り、再起動後の`show`・`send_message`が実行中の可能性として拒否し続け、
     委譲元の`atk agents wait`も待機上限での終了を繰り返す。
     """
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter({}, status_file.StatusFileIdentity("root-session", "root.json", None))
     manager = subject.AgentsServerManager(writer)
     _install_backend(manager, engine, FakeBackend(manager.sessions, engine))
@@ -8240,7 +8240,7 @@ def _publish_orphaned_codex(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, session_id: str, turn_id: str | None
 ) -> None:
     """所有者が終端を公開せずに終了したCodexの`running`記録を保存する。"""
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         session_id, terminal=False, engine="codex", cwd=str(tmp_path), turn_seq=3, status="running", turn_id=turn_id
     )

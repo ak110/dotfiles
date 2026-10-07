@@ -52,6 +52,8 @@ from agent_toolkit._common import (
     codex_models,
     process_tree,  # pylint: disable=wrong-import-position
 )
+from agent_toolkit._common import delegated_session as _delegated_session
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 from agent_toolkit._common.next_action import ActionableError
 
@@ -145,8 +147,7 @@ def _embedded_rule_paths() -> set[str]:
     全体指示ファイルは`CODEX_HOME`が設定済みなら`$CODEX_HOME/AGENTS.md`、未設定なら`~/.codex/AGENTS.md`とする。
     ファイルが無いか読めない場合は空集合を返し、`~/.claude/rules/`配下の全ファイルを渡す側へ倒す。
     """
-    codex_home = os.environ.get("CODEX_HOME")
-    agents_md = (Path(codex_home) if codex_home else Path.home() / ".codex") / "AGENTS.md"
+    agents_md = _host_homes.codex_home() / "AGENTS.md"
     try:
         text = agents_md.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
@@ -163,7 +164,7 @@ def _user_rules_instructions() -> str:
     既に届くため除く。ユーザーの編集を次の起動と再開から反映するため、呼び出しのたびに読み直す。
     対象が無い場合は空文字列を返す。
     """
-    rules_dir = Path.home() / ".claude" / "rules"
+    rules_dir = _host_homes.claude_config_dir() / "rules"
     if not rules_dir.is_dir():
         return ""
     embedded = _embedded_rule_paths()
@@ -296,10 +297,10 @@ class JsonRpcProcess:
         self._initialization_stage = "starting_process"
         try:
             environment = os.environ.copy()
-            environment.pop("AGENT_TOOLKIT_DELEGATED_SESSION", None)
+            environment.pop(_delegated_session.DELEGATED_SESSION_ENV, None)
             owner_session_id = self._root_session_id
             if owner_session_id is not None:
-                environment["AGENT_TOOLKIT_OWNER_SESSION"] = owner_session_id
+                environment[_delegated_session.OWNER_SESSION_ENV] = owner_session_id
             self.process = await asyncio.create_subprocess_exec(
                 *APP_SERVER_COMMAND,
                 stdin=asyncio.subprocess.PIPE,
@@ -610,7 +611,7 @@ class AppServerManager:
                         str(plugin_root / "agent_toolkit" / "agents_server_mcp.py"),
                     ],
                     "env": {
-                        "AGENT_TOOLKIT_OWNER_SESSION": owner_session_id,
+                        _delegated_session.OWNER_SESSION_ENV: owner_session_id,
                         "AGENT_TOOLKIT_STATUS_HOST_SESSION": writer_session_id,
                     },
                     "default_tools_approval_mode": "approve",

@@ -8,7 +8,7 @@
 本モジュールのimport自体は環境変数の値に関わらず副作用を持たない
 （判定は`append`呼び出し時に行う）。
 
-ログパスは`platformdirs.user_state_dir("agent-toolkit", appauthor=False)`配下の
+ログパスは状態ディレクトリ（`agent_toolkit._common.state_paths.state_dir`）配下の
 `process-wi.log`とする。排他ロックとサイズローテーションは`_file_lock.py`へ委譲する。
 """
 
@@ -18,8 +18,7 @@ import os
 import time
 from pathlib import Path
 
-import platformdirs
-
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.file_lock import locked_rotate_and_append as _locked_rotate_and_append
 from agent_toolkit._common.process_loop_session import is_process_loop_session
 
@@ -32,10 +31,7 @@ INSTRUCTION_MAX_CHARS = 2000
 
 def log_path() -> Path:
     """ログファイルのパスを返す。"""
-    state_home = os.environ.get("XDG_STATE_HOME")
-    if state_home:
-        return Path(state_home) / "agent-toolkit" / "process-wi.log"
-    return Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "process-wi.log"
+    return _state_paths.state_dir() / "process-wi.log"
 
 
 if __name__ == "__main__":

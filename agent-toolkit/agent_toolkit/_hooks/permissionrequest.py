@@ -19,7 +19,7 @@ import datetime
 import json
 import os
 
-from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._plan import locations as _plan_file
 
 # 記録ファイル名と、退避先の1世代分のファイル名。
@@ -81,7 +81,7 @@ def _append_record(record: dict[str, object]) -> None:
 
     追記前に記録先が上限へ達している場合は、1世代だけの退避先へ移してから新しいファイルへ書く。
     """
-    log_path = _atk_config.state_dir() / _LOG_NAME
+    log_path = _state_paths.state_dir() / _LOG_NAME
     log_path.parent.mkdir(parents=True, exist_ok=True)
     if log_path.exists() and log_path.stat().st_size >= _LOG_SIZE_LIMIT:
         os.replace(log_path, log_path.with_name(_ROTATED_LOG_NAME))

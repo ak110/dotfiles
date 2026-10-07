@@ -1575,3 +1575,14 @@ def test_remote_helper_serve_mode_reuses_unchanged_records(tmp_path: pathlib.Pat
     assert [entry["path"] for entry in responses[1]["entries"]] == [str(record)]
     # 1回目の要求が一覧の値と子セッションIDを1回の走査で求め、2回目の要求は開かない。
     assert opened == [record]
+
+
+def test_default_record_homes_follow_claude_config_dir_and_codex_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """記録の保存先を指定しない場合、`CLAUDE_CONFIG_DIR`と`CODEX_HOME`が示すディレクトリを使う。"""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+
+    assert sessions.default_claude_home() == tmp_path / "claude-config"
+    assert sessions.default_codex_home() == tmp_path / "codex-home"

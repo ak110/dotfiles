@@ -14,8 +14,8 @@ import pathlib
 import re
 from typing import Any, Literal
 
-from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import session_launchers as _session_launchers
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
@@ -107,7 +107,7 @@ class SessionResolution:
 
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     """session登録簿のディレクトリを返す。"""
-    return _session_launchers.registry_directory(_atk_config.state_dir() if state_root is None else state_root)
+    return _session_launchers.registry_directory(_state_paths.state_dir() if state_root is None else state_root)
 
 
 def publish(

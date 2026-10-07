@@ -59,7 +59,7 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
         return None
     if payload.get("agent_id") or payload.get("isSidechain") is True:
         return None
-    if os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1":
+    if is_delegated(os.environ):
         return None
 
     outcome, body, msg_id = _response_language_check.detailed_check(transcript_path)

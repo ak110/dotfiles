@@ -18,7 +18,6 @@
 import base64
 import contextlib
 import json
-import os
 import pathlib
 import socket
 import sys
@@ -31,7 +30,9 @@ from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-im
     session_watch,
 )
 from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position
+    host_homes,
     session_launchers,
+    state_paths,
 )
 
 # 1件の記録から取得する最大バイト数。過大な記録の全文転送により接続が占有される事態を避ける上限とする。
@@ -44,16 +45,13 @@ _CODEX_PREFIX = "rollout-"
 
 
 def _claude_home() -> pathlib.Path:
-    """Claude Codeの記録の保存先を返す。"""
-    return pathlib.Path.home() / ".claude"
+    """Claude Codeの記録の保存先（Claude Codeの設定ディレクトリ）を返す。"""
+    return host_homes.claude_config_dir()
 
 
 def _codex_home() -> pathlib.Path:
-    """Codexの記録の保存先を返す。空でない`CODEX_HOME`を優先する。"""
-    value = os.environ.get("CODEX_HOME")
-    if value:
-        return pathlib.Path(value)
-    return pathlib.Path.home() / ".codex"
+    """Codexの記録の保存先（Codexのホーム）を返す。"""
+    return host_homes.codex_home()
 
 
 def _iter_claude_records() -> typing.Iterator[pathlib.Path]:
@@ -208,7 +206,7 @@ def _state_dir() -> pathlib.Path | None:
     登録簿の委譲元は親子付けの情報源の1つであり、読めない場合も他の情報源で一覧を返す。
     """
     try:
-        return session_launchers.state_dir()
+        return state_paths.state_dir()
     except ImportError:
         return None
 

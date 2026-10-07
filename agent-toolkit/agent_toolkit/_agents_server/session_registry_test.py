@@ -14,6 +14,7 @@ import pytest
 from agent_toolkit import agents_server_mcp
 from agent_toolkit._agents_server import session_registry as subject
 from agent_toolkit._agents_server import state
+from agent_toolkit._common import state_paths
 
 
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
@@ -101,7 +102,7 @@ async def test_session_state_publishes_state_transitions(
     tmp_path: pathlib.Path,
 ) -> None:
     """session状態は進捗更新を重複書込せず、実行中と終端の遷移を公開する。"""
-    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("published-session", str(tmp_path), publish_registry=True)
 
     session.status = "starting"
@@ -131,7 +132,7 @@ async def test_speed_change_is_published_without_status_or_turn_change(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """送信時に変わった速度が登録簿へ届き、再開状態も同じ値を保持する。"""
-    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("speed-session", str(tmp_path), publish_registry=True)
     session.touch()
     initial = subject.resolve(session.session_id).resume_info
@@ -150,7 +151,7 @@ async def test_observing_wait_keeps_record_and_stop_releases_it(
     tmp_path: pathlib.Path,
 ) -> None:
     """終端を観測した待機処理はレコードを残し、所有主体による破棄だけが解放済みへ置き換える。"""
-    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(agents_server_mcp._wait_schedule, "get_wait_timeout", lambda _request_bucket: 0.0)
     subject.publish("child-session", terminal=True, engine="codex", cwd=str(tmp_path))
     manager = agents_server_mcp.AgentsServerManager(status_writer=None)
@@ -179,7 +180,7 @@ async def test_retention_expiry_releases_record(
     tmp_path: pathlib.Path,
 ) -> None:
     """保持期限へ到達したsessionのレコードを所有主体が解放済みへ置き換える。"""
-    monkeypatch.setattr(subject._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     manager = agents_server_mcp.AgentsServerManager(status_writer=None)
     session = state.SessionState("expiring-session", str(tmp_path), engine="codex", publish_registry=True)
     session.status = "completed"

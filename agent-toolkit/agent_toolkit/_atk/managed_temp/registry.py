@@ -26,6 +26,7 @@ from agent_toolkit._atk.managed_temp.windows_security import (
     _windows_security_descriptor,
     _windows_sid_bytes,
 )
+from agent_toolkit._common import state_paths as _state_paths
 
 
 def prefix_violation(prefix: str) -> str | None:
@@ -219,16 +220,8 @@ def _owner_record() -> dict[str, str | int]:
 
 
 def _state_root_path() -> pathlib.Path:
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA")
-        if not base:
-            raise ManagedTempError("LOCALAPPDATAが設定されていない")
-        return pathlib.Path(base) / "agent-toolkit" / "managed-temp"
-    base = os.environ.get("XDG_STATE_HOME")
-    # 相対パスのXDG_STATE_HOMEは作業ディレクトリごとに別の場所を指すため、XDG Base Directory仕様どおり無視する。
-    # `atk config get state_dir`と`agents_server`の状態ディレクトリも同じ扱いにしている。
-    state_home = pathlib.Path(base) if base and pathlib.Path(base).is_absolute() else pathlib.Path.home() / ".local" / "state"
-    return state_home / "agent-toolkit" / "managed-temp"
+    """登録簿を置く、状態ディレクトリ配下の`managed-temp`を返す。"""
+    return _state_paths.state_dir() / "managed-temp"
 
 
 def _state_root() -> pathlib.Path:

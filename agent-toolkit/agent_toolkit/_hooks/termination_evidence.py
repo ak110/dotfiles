@@ -18,6 +18,7 @@ from agent_toolkit._atk.wi import uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state
+from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._hooks import agent_id, agents_server_session_advisor, report_validation
@@ -419,7 +420,7 @@ def record_decision(document: dict[str, Any]) -> str:
         raise ValueError("session_idと受理する判断のactionを指定する")
     if not agent_id.is_main_agent_context({"agent_id": document.get("agent_id", "main")}):
         raise ValueError("終了工程の判断はメインが記録する")
-    owner = os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")
+    owner = _delegated_session.owner_session_id(os.environ)
     if owner and owner != session_id:
         raise ValueError("現在の会話のsession_idを指定する")
     if not isinstance(document.get("reason"), str) or not document["reason"].strip():

@@ -20,8 +20,9 @@ import pathlib
 import re
 import subprocess
 
-import platformdirs
-
+from agent_toolkit._common import delegated_session as _delegated_session
+from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common.next_action import ActionableError
 
 PORTABLE_PLAN_PREFIX = "$(atk config get private_notes)/"
@@ -36,7 +37,7 @@ NEW_PLANS_DIRECTORY = "plans"
 OWNER_RECORD_SUFFIX = ".owner.json"
 """計画バンドルの所有セッションを記録するファイルのサフィックス。"""
 
-_OWNER_SESSION_ENVIRONMENT_KEYS = ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID")
+_OWNER_SESSION_ENVIRONMENT_KEYS = (_delegated_session.OWNER_SESSION_ENV, "CLAUDE_CODE_SESSION_ID")
 
 PROCESS_ROOT_SESSION_PREFIX = "mcp-"
 """`agents_server`が会話の識別子を受け取らずに生成するプロセス専用のrootの接頭辞。
@@ -72,14 +73,7 @@ def private_notes_root(
     """
     if private_notes is not None:
         return pathlib.Path(private_notes).expanduser()
-    override = os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES")
-    if override:
-        return pathlib.Path(override).expanduser()
-    home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
-    default = home_path / "private-notes"
-    if default.exists():
-        return default
-    return pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False)) / "private-notes"
+    return _private_notes.default_private_notes(pathlib.Path(home).expanduser() if home is not None else None)
 
 
 def find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
@@ -101,9 +95,12 @@ def new_plans_root(private_notes: pathlib.Path | str | None = None) -> pathlib.P
 
 
 def working_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
-    """実行レビュー完了まで使う`~/.claude/plans`の絶対パスを返す。"""
-    home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
-    return home_path / ".claude" / "plans"
+    """実行レビュー完了まで使う、Claude Codeの設定ディレクトリ配下の`plans`の絶対パスを返す。
+
+    `CLAUDE_CONFIG_DIR`が未設定なら`~/.claude/plans`となる。
+    """
+    home_path = pathlib.Path(home).expanduser() if home is not None else None
+    return _host_homes.claude_config_dir(home=home_path) / "plans"
 
 
 def legacy_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
