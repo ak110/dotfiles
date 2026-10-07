@@ -2,6 +2,8 @@
 
 通常の`git commit`では、実行位置、最終メッセージ、実行turnの観測identityを確定できる場合だけ帰属trailerを確認する。Claude Codeは`attribution.commit`の`{model}`と`{effort}`を置き換えないため、確認しないと誤った帰属行がpushまで残る（2026年10月6日に4件のcommitで推論量の欠落と誤りを観測した）。Claude Codeの期待値は、推論量をhook入力の`effort.level`、モデルを記録の`message.model`の最後の観測値から求める。hook入力が`agent_id`を持つ場合はsubagentの記録（`<session_id>/subagents/agent-<agent_id>.jsonl`）のモデルを使い、一意に解決できなければ確認しない。PreToolUseの時点ではそのturnの応答がまだ記録に無いため、セッションの最初のツール呼び出しがcommitの場合はモデルを観測できず確認しない。2026年10月6日にClaude Code 2.1.291の`claude -p`で、最初の呼び出しのcommitが通り、別のコマンドの後のcommitが遮断されることを確かめた。hook入力とBashの環境はモデルを持たないため、この区間の期待値を得る手段が無い。最終メッセージは`-m`に加え、`-F -`・`--file=-`へ同じコマンドのheredocで渡した本文と、`-F <path>`で指定した存在するファイルから読む。エージェントのcommitの多くは`-F -`のheredocで作成されるためである。Claude Codeではフックから観測できるuser・project・local設定を優先順位どおり解決する。最上位の`attribution.commit`が空文字なら、明示的な帰属無効化として確認しない。`--amend --no-edit`、fixup、検索・引用中の文字列、人間がagent session外で実行するcommit、入力を確定できない呼び出しも対象外とする。
 
+managed settingsの`attribution.sessionUrl`と`attribution.pr`は設定せず、Claude Codeの既定動作を変えない。
+
 本書は[設計記録の索引](design.md)から主題別に分割した記録であり、機構の目的、構造の理由、知識境界と却下した代替案を保持する。
 実行時に適用する規範は、各節が参照する現行のルールファイルとスキルが定める。
 
@@ -202,6 +204,14 @@ SubagentStopの言語判定はClaude Code専用とし、共有中核へ集約し
 Codexでは`reason`の配送先と再提出の成立を確認できないためである。
 却下した代替案は、PreToolUseのsidechain除外を解除する案である。
 サブエージェントのPreToolUseが受け取る`transcript_path`は親セッションを指すため、完了報告の判定対象を取り違える。
+
+メインエージェント応答の記述言語の警告と、`AskUserQuestion`への縮退誘発フレーズ混入のブロックは
+Claude Codeだけで有効化する。
+記述言語の警告は、応答が日本語文字を含まず英単語を2語以上含む記述であるとき、
+応答の冒頭が英語の談話標識であるとき、日本語文字の比率が閾値未満のときに返す。
+英単語が1語だけの記述は、識別子やコマンド名の単独提示と区別できないため警告しない。
+同一セッションで英語主体の応答を累計2回以上検出すると警告本文が強まるが、ツール呼び出しは続行できる。
+検出の間に日本語の応答があっても累計はリセットされない。
 
 編集入力の共通単位は、入力だけで確定する操作記録と、対象ファイルを読んで得る変更前後像の二層とする。
 適用前のイベントは両方を使い、適用後のイベントは操作記録を基準として変更前後像を再構築しない。
@@ -496,6 +506,32 @@ hookの実装は契約を参照せず、テストだけが両者の一致を確�
 もう1つはフィールドの列挙と条件の羅列で契約を表し、検証器を自作する案である。
 枝ごとの許容フィールドの差を条件の羅列へ展開すると、枝が増えるたびに条件の組み合わせが増え、
 表現の抜けを自ら確認し続ける必要が恒常的に残るため採らない。
+
+## フックごとの処理とCodexの対応範囲
+
+`docs/guide/claude-code-guide.md`「常時有効な仕組み」の一覧がエンドユーザーの観測できる働きを示し、本節は各フックの判定条件とCodexでの対応範囲を保持する。
+
+agent-toolkitは以下のフックを常時有効化する。
+識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
+`個人設定`はdotfilesユーザーの`~/.claude/settings.json`へ配布される分を指す。
+Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の実機検証で確認した範囲を示す。
+
+| フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
+| --- | --- | --- | --- |
+| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作と、入力から機械的に判定できる明らかな誤りを事前に確かめる。編集内容とユーザーが直接読む質問本文・計画本文の文字化け、LF改行のみの`.ps1`書き込み、lockfileの直接編集、自動生成manifestの手編集、ファイル末尾へのツール境界タグの混入を警告する。Bashでは区切り語を引用しないheredocの本文にあるエスケープされていないコマンド置換（バッククォートと`$(...)`）、パターン一致によるプロセス終了と、オプション終端`--`の後ろへ`rg`・`grep`系・`git log`・`git diff`・`git show`・`git grep`自身のオプションを置くコマンドを遮断する。atkの出力のパイプとリダイレクト（ファイルへの保存、`/dev/null`への破棄、`2>&1`を含む。`atk serve`、`atk wi process-loop`の常駐、`atk agents logs --follow`を除く）と、`atk agents wait`のシェルの`&`による背景化も遮断する。未完了のバックグラウンドタスクが書き込む出力ファイルの読取、`git rev-parse --short`へ複数のリビジョンを渡すコマンド、Windows上でPATHへドライブ文字形式（`C:/...`）の要素を加えるコマンドを警告する。`agent-toolkit:search`を起動しないまま検索（`Grep`・`Glob`と、パイプラインの先頭の`rg`・`git grep`・`find`・再帰オプション付きの`grep`系）を実行すると、メイン会話とサブエージェントのそれぞれで1回だけ警告し、`/clear`と会話圧縮の後は再び警告する。警告は`Skill`での起動と、`Skill`を使えない`agents_server`の`explore`・`write`・`shell`の委譲先が同スキルの`SKILL.md`を`Read`で読む操作を併記する。`agents_server`の自由本文の起動に`<役割名>.subagent.md`の実行命令がある場合と、`Agent`・`Task`の実行命令が正式な命令と宣言済み入力以外の行を含む場合に遮断する。実行命令は定型の1行に限らず、文書のパスの直後に実行や作業を求める文として判定し、パスの後の空白、言い回しの違い、同じ行に続く指示を持つ命令も対象とする。文書の読解・引用・比較への参照と、括弧・引用・コードに載せた命令例は通す。直前の応答が英語主体の場合も警告する。メインが`agent-toolkit:user-confirmation-and-report`の確認の前に読む2資料（`references/approval-scope.md`と`references/choice-construction.md`）を最後の会話圧縮より後に読まないまま`AskUserQuestion`を呼んだ場合は、呼び出しを止めずに警告する | 対応 | 部分対応。編集のチェックは文字化け・lockfile・manifest・ツール境界タグに対応する。`.ps1`改行はpatch入力から判定できないため非対応。ユーザーが直接読む本文のチェックと応答言語の警告は、対応する入力を持たないため非対応。確認の前に読む資料の未読の警告は、Codexが`AskUserQuestion`を持たないため非対応。Bashではatkの出力のパイプとリダイレクト・waitのシェル背景化、区切り語を引用しないheredocの本文のコマンド置換、パターン一致によるプロセス終了、オプション終端の後ろのオプションの遮断、`git rev-parse --short`の複数リビジョンの警告に加え、出力の上限を超える通常ファイルの全文取得を遮断する。PATHのドライブ文字形式の警告はPowerShellでシェルを実行するため非対応。スキルの未起動の警告は返さない。Codexは`SKILL.md`の読取でスキルを適用し、hookがその読取を起動として観測できず、未起動を判定できないためである。`agents_server`の自由本文の起動が`<役割名>.subagent.md`の実行命令を持つ場合の遮断に対応する |
+| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。計画ファイル・スキル起動・バックグラウンドタスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、そのセッションが投入したUWIへの回答を通知する。`AskUserQuestion`への回答が選択肢と一致しない自由記述を含む場合は、UserPromptSubmitと同じ、発話の内容を現物で確かめる手順を示す注記を返す。ホストの上限を超えて退避したBashとPowerShellの結果は、抜粋を保存先・元の出力のバイト数・保存先を読む次の操作を示す本文へ置き換える | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録、Bashで実行した振り返りの準備結果の記録に対応する。Codexはシェル出力を退避せず切り詰めて返すため、退避した結果の置き換えは対象外 |
+| plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は`QUALITY_CHECKPOINT_NOTICE`も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
+| plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する。親の一時領域がある場合は、agent_idごとの専用領域を通知する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
+| plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
+| plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
+| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。`send_to_user`ツールで送った本文も本文として数える。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する。報告段階が残る作業は、その作業が起動した委譲先や、背景で実行した待機コマンド（`atk agents wait`・`wait_ci.py`）を待つ間だけ終了を許す。作業を始める前から動いている無関係なバックグラウンドタスクと、作業内で背景起動した開発サーバーなどの常駐コマンドは、報告の不足を免除しない。それ以外は直接発話の報告見出しと準備結果から、足りない報告段階と報告本文の不備（対策行にAWIのファイル名・投入予定・同一セッションの実装根拠が無い、見送りの判定済み行に根拠が無いか根拠が未確定、未確定行に照会・再現・残る理由が欠ける、AWI投入結果報告に投入予定が残る）を示す | 対応 | 対応。`termination_order_advisor`だけを実行し、`decision`と`reason`だけを返す |
+| plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じて発話の内容を現物で確かめる手順を示す注記を返す。実ユーザー発話に全角`！！`がある場合は`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す注記を返し、半角`!!`だけの本文と機械注入は対象から除く。この注記は感情の判定ではなく、認識を確かめるきっかけである。セッションの開始（新規と`/clear`）と会話圧縮の後は、`agent-toolkit:user-confirmation-and-report`が起動されていない間に届いた実ユーザー発話へ同スキルの起動を促す注記を返す。委譲先のセッション、`resume`と`fork`による再開・分岐、機械注入のターンは対象から除く。実ユーザー発話が例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ場合は、範囲語か開放列挙を伴う調査依頼であれば例示を除いた独立した調査を委ねる規範（`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`の該当項と`agent-toolkit:delegation`の`references/routing.md`）の所在を示す注記を返す。コードブロック、インラインコードおよび`>`で始まる引用行の中の語は判定に数えず、機械注入のターンと委譲先のセッションは対象から除く。これらの注記は発話の内容を現物で確かめる手順を示す注記と同じ出力にまとめ、初回や短い間隔の発話でも届く | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、同スキルが起動されるまで発話ごとに返す。例示と調査の語を併せ持つ発話への注記は該当する発話ごとに返す | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、開始・圧縮のたびに最初の実ユーザー発話へ1回だけ返す。例示と調査の語を併せ持つ発話への注記はClaude Codeと同じ条件で発話ごとに返す |
+| plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
+| plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
+| plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した応答にもタスク識別子が含まれる場合は、バックグラウンドタスクの所有記録へ保存する。失敗を成功済み検証として記録しない | 対応 | 非対応。対応するイベントが存在しない |
+| plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
+| plugin `StopFailure/stopfailure_notifier` | APIエラーでのターン終了をベルとデスクトップ通知で知らせ、発生種別をログへ記録する | 対応 | 非対応。対応するイベントが存在しない |
+| 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前のチェック | 対応 | 非対応。dotfiles固有の配布構成に依存するため、プラグインへ移さない |
 
 ## セッション状態の共有
 

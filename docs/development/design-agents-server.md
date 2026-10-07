@@ -2,6 +2,8 @@
 
 起動要求・解決候補と、物理記録から観測した実行identityは別フィールドで返す。開始時の観測値は未確定とし、終端時に観測値を返す。既存の`engine`、`model`、`effort`を互換上の起動値として残す場合も意味を変えない。
 
+Codex backendの観測identityは`turn_context`を観測元とし、表示名はモデルカタログを優先し、無い完全IDだけを決定論的に変換する。取得不能値を推測しない。
+
 本書は[設計記録の索引](design.md)から主題別に分割した記録であり、機構の目的、構造の理由、知識境界と却下した代替案を保持する。
 実行時に適用する規範は、各節が参照する現行のルールファイルとスキルが定める。
 
@@ -105,6 +107,11 @@ Stopフックによる継続の強制は採用しない。バックグラウン�
 この統合により、backendごとに公開toolを増やさず、状態・進捗・結果配送・中断要求の共通契約を維持できる。
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
+
+`delegate`は工程別モデル設定のキー名から`_model`を除いた必須の`model_type`と`prompt`を受け取り、専用の`<役割名>.subagent.md`を用意できない単発の作業に使う。サーバーは`model_type`に対応する`atk config`の候補列からengine、modelおよびeffortを解決し、
+候補を切り替えた場合は採用した値を応答へ含める。可用性に起因する失敗を観測した委譲元は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
+`delegate`以外の`mode`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
+`send_message`は起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、委譲元は検収済み状態を渡して新規起動する。
 
 両backendは委譲先の実行主体へ、自身が委譲先であることを示す指示を起動時に渡す。Codex backendは`thread/start`と`thread/resume`の`developerInstructions`、Claude backendは`ClaudeAgentOptions.system_prompt`のpreset追記へ同じ本文を載せる。目的は規範が実行主体別に定める条文を委譲先が自身へ適用できる状態を起動時に成立させることである。両backendが組み込みで持つ指示はいずれもユーザーと直接対話する主体を前提とし、どの手段で起動されたかを実行主体が観測できないためである。2026-09-02に`model_type=execute_review`で起動したClaude backendの委譲先は、自身をメインエージェントと申告し、応答の返却先を判定できないと回答した。Codexの組み込みの指示はcodex-cli 0.152.1のバイナリで確認した。確認したCodexの組み込みの指示は`You and the user share the same workspace and collaborate to achieve the user's goals.`を含み、同じ前提を持つ。`developerInstructions`は同バイナリのスキーマ記述のとおりdeveloper roleメッセージとして注入され、組み込みの指示を置換しない。スキーマの記述は`Developer instructions that should be injected as a developer role message.`である。再検証は役割を明示しない委譲プロンプトで委譲先を起動し、自身の立場と応答の返却先を申告させて確認する。
 Codex backendは、ユーザーが`~/.claude/rules/`配下（サブディレクトリを含む）に置いた`*.md`の本文も、全launch kindの`developerInstructions`へ連結する。目的はClaude backendの委譲先がSDKの`setting_sources`の`user`で受け取るファイル群と同じ集合をCodexの委譲先へ渡し、engineの選択で委譲先が従う規範が変わらないようにすることである。2026年10月7日に、Codexで起動した終端担当が`~/.claude/rules/`直下のホスト固有の規範を知らずに続行できない理由を返し、委譲元がその節の所在を追送して初めて工程が進んだ。重複を除く規則は、ファイル先頭の`atk-auto`要素の`path`属性と同じ値の`atk-auto`要素をCodexが読む全体指示ファイル（`CODEX_HOME`が設定済みなら`$CODEX_HOME/AGENTS.md`、未設定なら`~/.codex/AGENTS.md`）が持つファイルを除くことである。ファイル名を列挙しないため、ホストごとに置くファイルが増えても追随を要さない。全体指示ファイルが無い環境では除外が0件になる。各ファイルは絶対パスを`path`属性に持つ`atk-auto`要素（`kind`は`user-rules`）で囲み、ユーザーの編集を次の起動と再開から反映するため`thread/start`と`thread/resume`のたびに読み直す。対象が無い場合は従来と同じ本文を返す。Codexのメインとネイティブのサブエージェントへは同じ集合を`~/.codex/AGENTS.md`の読込指示で届け、この連結は`agents_server`の委譲先へ届ける手段として併用する（`design-hosts.md`「Claude CodeとCodexの規範配置」）。却下した代替案は、委譲元が委譲プロンプトで規範の所在を渡す契約と、ファイルのパスだけを列挙して委譲先に読ませる案である。前者は委譲元が依存する規定を事前に列挙できる場合にだけ成立し、観測事象では追送するまで欠落に気付けなかった。後者はCodexのフックが一定の大きさを超えるファイルの全文取得を遮断するため大きな規範ファイルを複数回の範囲取得で読むことになり、委譲先が一部の範囲を読まずに進めても委譲元は検出できない。Antigravityの委譲先は`rules/`配下も受け取らず、読込元（`~/.gemini/GEMINI.md`）へ本規則が当てはまらないため対象外とし、常時規範全体の配送とあわせて設計する。

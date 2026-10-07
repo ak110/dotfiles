@@ -155,8 +155,7 @@ _RETIRED_TERMS = (
             _AllowedLocation(
                 "README.md",
                 line_exact=(
-                    "- [docs/guide/index.md](docs/guide/index.md): "
-                    "利用者向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）"
+                    "- [docs/guide/index.md](docs/guide/index.md): 利用者向け（Claude Code/Codex設定・SSH・セキュリティ）"
                 ),
             ),
             _AllowedLocation("docs/index.md", line_exact="- [docs/guide/index.md](guide/index.md): 利用者向け"),

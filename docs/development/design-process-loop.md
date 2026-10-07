@@ -119,6 +119,16 @@ process-loopは実行中のセッションが終了した直後に要求を確�
 これにより、process-loopと操作コマンドは`XDG_STATE_HOME`を含む同じOSアカウントの状態の解決規則を共有し、対象リポジトリやprivate-notesの初期化に依存しない。
 OSシグナルや稼働中プロセスへの直接通知は、process-loopが動いていない時点で要求を設定できず、解除と状態参照に使う永続状態も提供しないため採用しない。
 
+## Codexのprocess-loopセッションの終了
+
+ready項目がなくなると、`agent-toolkit:completion-report`が選定工程で完了した振り返りの結果を含む完了報告を完了し、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。
+`agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
+probe未実行、読取失敗または値の不一致は停止不能として扱う。
+Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
+終了対象を確認できない環境では対話UIに終了案内を表示し、ユーザーが`/exit`を入力すると親の監視ループへ戻る。
+終了時の`atk agents-exit-session`は起動時の分岐値を再利用せず、停止要求直前に終了対象を新規識別する。
+表示済みPIDの開始時刻と実行ファイルのデバイス・inodeが再確認で一致した場合だけCodexを停止する。
+
 ## process-loopへの1セッション限定の追加指示
 
 `atk wi process-loop instruct <本文>`はprocess-loopが次に起動する1セッションだけへ渡す本文を、
