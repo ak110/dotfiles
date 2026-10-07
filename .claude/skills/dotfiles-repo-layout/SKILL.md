@@ -57,7 +57,8 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 設定・規範・ツールの変更は全環境への配布を前提として反映先を判定し、配布先を直接編集せず配布原本
 （chezmoiソース・`share/`配下の`*_managed*.json`・agent-toolkitプラグイン）を編集する。
 例外はユーザーが単一環境限定と明示した対象と、既存規範が環境限定と定めた成果物
-（`scripts/`配下をLinux前提とする[architecture.md](../../../docs/development/architecture.md)の方針など）とする。
+（開発とCIだけで使う`scripts/`配下をLinux前提とする[architecture.md](../../../docs/development/architecture.md)の方針など）とする。
+エンドユーザー環境で起動される`libexec/`配下はchezmoiで配布せず`~/dotfiles`の作業ツリーから実行するため、LinuxとWindowsの両方で動く書き方とする。
 配布元と配布先の対応は次の列挙に従う。
 
 - `.chezmoi-source/dot_claude/`: 配布元。chezmoiが`~/.claude/`にデプロイする（グローバルユーザー設定の原本）

@@ -1,4 +1,4 @@
-"""`scripts/update_dotfiles.py`のテスト。
+"""`libexec/update_dotfiles.py`のテスト。
 
 通常4段の表示順序・fail-fast・排他ロック・標準ストリーム・Codex管理daemonの一時停止を検証する。
 """
@@ -1405,10 +1405,10 @@ def test_stage_heading_precedes_child_output_when_stdout_is_not_a_terminal() -> 
     自動更新サービスのjournalや保存した出力では標準出力がブロックバッファになり、
     子プロセスが同じ出力先へ直接書くと、見出しが後段の出力の後にまとまって現れる。
     """
-    scripts_dir = pathlib.Path(__file__).resolve().parent
+    libexec_dir = pathlib.Path(__file__).resolve().parent
     code = (
         "import sys\n"
-        f"sys.path.insert(0, {str(scripts_dir)!r})\n"
+        f"sys.path.insert(0, {str(libexec_dir)!r})\n"
         "import update_dotfiles\n"
         "update_dotfiles._run_step(1, 4, 'stage', [sys.executable, '-c', 'print(\"child\", flush=True)'])\n"
         "update_dotfiles._run_step(2, 4, 'next', [sys.executable, '-c', 'print(\"child2\", flush=True)'])\n"

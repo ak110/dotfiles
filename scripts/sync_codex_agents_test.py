@@ -16,7 +16,7 @@ def _root(
     max_bytes: int = 128 * 1024,
     warn_ratio: float = 0.8,
 ) -> Path:
-    (tmp_path / "scripts").mkdir()
+    (tmp_path / "share").mkdir()
     (tmp_path / "agent-toolkit/rules").mkdir(parents=True)
     (tmp_path / "agent-toolkit/share").mkdir(parents=True)
     (tmp_path / ".chezmoi-source/dot_codex").mkdir(parents=True)

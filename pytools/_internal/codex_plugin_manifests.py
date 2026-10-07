@@ -1,0 +1,484 @@
+"""Claude Code向けmanifestからAgent Plugins・Codex向けJSONを生成し、生成物との差を検査する。
+
+生成器の入口`scripts/sync_codex_plugin_manifests.py`と、post-applyの「Codex plugin snapshot の生成」工程が使う。
+"""
+
+import contextlib
+import json
+import stat
+import subprocess
+from pathlib import Path
+from typing import Any, NamedTuple
+
+from pytools._internal import claude_common
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+PLUGIN_SOURCE = Path("agent-toolkit/.claude-plugin/plugin.json")
+MARKETPLACE_SOURCE = Path(".claude-plugin/marketplace.json")
+HOOKS_SOURCE = Path("agent-toolkit/hooks/hooks.json")
+MCP_SOURCE = Path("agent-toolkit/.mcp.json")
+MCP_CODEX_TARGET = Path("agent-toolkit/.mcp.codex.json")
+AGENT_PLUGIN_TARGET = Path("agent-toolkit/plugin.json")
+AGENT_MCP_TARGET = Path("agent-toolkit/mcp.json")
+PLUGIN_TARGET = Path("agent-toolkit/.codex-plugin/plugin.json")
+MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
+HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
+CODEX_PLUGIN_ROOT_TARGET = Path("agent-toolkit-codex")
+OPTIONAL_TARGETS = frozenset((MCP_CODEX_TARGET, AGENT_MCP_TARGET, HOOKS_TARGET))
+CODEX_ROOT_EXCLUDED = frozenset((Path("plugin.json"), Path("mcp.json")))
+CODEX_ROOT_NOTICE = (
+    "# 自動生成ファイル\n\n"
+    "このディレクトリは`scripts/sync_codex_plugin_manifests.py`が`agent-toolkit/`から生成する。"
+    "手動編集しない。\n"
+)
+SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr", "agents_server"})
+
+
+def _hook_command(name: str) -> str:
+    return (
+        'uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
+        f'"${{CLAUDE_PLUGIN_ROOT}}"/agent_toolkit/hook.py {name}'
+    )
+
+
+def _codex_hook_command(name: str) -> str:
+    return f"atk-hook {name}"
+
+
+CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")
+CODEX_USER_PROMPT_SUBMIT_COMMAND = _hook_command("user_prompt_submit")
+CODEX_PRE_TOOL_USE_COMMAND = _hook_command("pretooluse")
+CODEX_POST_TOOL_USE_COMMAND = _hook_command("posttooluse")
+CODEX_STOP_COMMAND = _hook_command("stop")
+CODEX_SUBAGENT_STOP_COMMAND = _hook_command("subagent_stop_advisor")
+CODEX_SESSION_END_COMMAND = _hook_command("session_end_cleanup")
+CODEX_RULES_CONTEXT_COMMAND = _hook_command("rules_context")
+
+# CodexのSessionEndは同期実行のため上限が短い。投影時に明示して超過を避ける。
+CODEX_SESSION_END_TIMEOUT_SECONDS = 3
+
+
+class CodexHookProjection(NamedTuple):
+    """Codexへ射影するhandlerと、ホスト差に合わせた上書き値。
+
+    `matcher`が`None`の場合は`agent-toolkit/hooks/hooks.json`のmatcherをそのまま引き継ぐ。
+    Claude向けの空matcher（全ツール対象）をそのまま配布すると、
+    入力契約を確認していないCodexのツールでもhandlerが起動するため、
+    ツール名を限定する場合は明示する。
+
+    Codexは上限を指定しない場合、およそ2,500トークンを超える`additionalContext`を退避する。
+    条文全文を渡す射影は`additional_context_limit=0`で無効化する。この指定は、
+    handlerの出力量が条文ファイルで固定され、`rules_context_test.py`の上限検査で
+    拘束される場合に限る。
+    """
+
+    commands: tuple[str, ...]
+    matcher: str | None = None
+    timeout: int | None = None
+    output_command: str | None = None
+    additional_context_limit: int | None = None
+
+    def project(self, group: dict[str, Any], handlers: list[dict[str, Any]]) -> dict[str, Any]:
+        """`hooks.json`のmatcher groupへ上書き値を適用した射影結果を返す。"""
+        chosen = []
+        for handler in handlers:
+            projected_handler = dict(handler)
+            projected_handler.pop("async", None)
+            if self.output_command is not None:
+                projected_handler["command"] = self.output_command
+            if self.timeout is not None:
+                projected_handler["timeout"] = self.timeout
+            if self.additional_context_limit is not None:
+                projected_handler["additionalContextLimit"] = self.additional_context_limit
+            chosen.append(projected_handler)
+        projected = {**group, "hooks": chosen}
+        if self.matcher is not None:
+            projected["matcher"] = self.matcher
+        return projected
+
+
+CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
+    "SessionStart": CodexHookProjection(
+        (CODEX_RULES_CONTEXT_COMMAND,),
+        output_command=_codex_hook_command("rules_context_codex"),
+        additional_context_limit=0,
+    ),
+    "SubagentStart": CodexHookProjection(
+        (CODEX_RULES_CONTEXT_COMMAND,),
+        output_command=_codex_hook_command("rules_context_codex"),
+        additional_context_limit=0,
+    ),
+    "PreToolUse": CodexHookProjection(
+        (CODEX_PRE_TOOL_USE_COMMAND,),
+        output_command=_codex_hook_command("pretooluse"),
+        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show",
+    ),
+    "PostToolUse": CodexHookProjection(
+        (CODEX_POST_TOOL_USE_COMMAND,),
+        output_command=_codex_hook_command("posttooluse"),
+        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
+    ),
+    "Stop": CodexHookProjection((CODEX_STOP_COMMAND,), output_command=_codex_hook_command("stop")),
+    "PermissionRequest": CodexHookProjection(
+        (_hook_command("permissionrequest"),),
+        matcher="Bash",
+        output_command=_codex_hook_command("permissionrequest_codex"),
+    ),
+    "UserPromptSubmit": CodexHookProjection(
+        (CODEX_USER_PROMPT_SUBMIT_COMMAND,), output_command=_codex_hook_command("user_prompt_submit")
+    ),
+    "SubagentStop": CodexHookProjection(
+        (CODEX_SUBAGENT_STOP_COMMAND,), output_command=_codex_hook_command("subagent_stop_advisor")
+    ),
+    "SessionEnd": CodexHookProjection(
+        (CODEX_SESSION_END_COMMAND,),
+        timeout=CODEX_SESSION_END_TIMEOUT_SECONDS,
+        output_command=_codex_hook_command("session_end_cleanup"),
+    ),
+}
+# Codex 0.147.0が発火するhookイベント。handlerを持たないイベントは生成しない。
+CODEX_EVENTS = {
+    "PreToolUse",
+    "PostToolUse",
+    "UserPromptSubmit",
+    "Stop",
+    "SubagentStart",
+    "SubagentStop",
+    "SessionStart",
+    "SessionEnd",
+    "PreCompact",
+    "PostCompact",
+    "PermissionRequest",
+}
+AGENT_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+AGENT_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+PLUGIN_METADATA_FIELDS = (
+    "name",
+    "version",
+    "description",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+)
+STDIO_SOURCE_FIELDS = {"command", "args", "env", "cwd"}
+
+
+def _replace_plugin_root(value: str) -> str:
+    return value.replace("${CLAUDE_PLUGIN_ROOT}", "${PLUGIN_ROOT}")
+
+
+def _load(root: Path, relative: Path) -> dict[str, Any]:
+    value = json.loads((root / relative).read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"JSON objectが必要: {relative}")
+    return value
+
+
+def _agent_mcp(source: dict[str, Any]) -> dict[str, Any]:
+    if set(source) != {"mcpServers"} or not isinstance(source["mcpServers"], dict):
+        raise ValueError("agent-toolkit/.mcp.jsonはmcpServersだけを持つJSON objectである必要がある")
+
+    servers: dict[str, dict[str, Any]] = {}
+    for name, value in source["mcpServers"].items():
+        if not isinstance(value, dict):
+            raise ValueError(f"MCP serverはJSON objectである必要がある: {name}")
+        unknown = set(value) - STDIO_SOURCE_FIELDS
+        if unknown:
+            fields = ", ".join(sorted(unknown))
+            raise ValueError(f"stdioへ変換できないMCP field: {name}: {fields}")
+        command = value.get("command")
+        args = value.get("args", [])
+        env = value.get("env")
+        cwd = value.get("cwd")
+        if not isinstance(command, str):
+            raise ValueError(f"MCP commandは文字列である必要がある: {name}")
+        command = _replace_plugin_root(command)
+        if not command:
+            raise ValueError(f"MCP commandは空文字列にできない: {name}")
+        if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+            raise ValueError(f"MCP argsは文字列の配列である必要がある: {name}")
+        args = [_replace_plugin_root(item) for item in args]
+        if env is not None and (
+            not isinstance(env, dict) or not all(isinstance(key, str) and isinstance(item, str) for key, item in env.items())
+        ):
+            raise ValueError(f"MCP envは文字列を値に持つJSON objectである必要がある: {name}")
+        if env is not None:
+            env = {key: _replace_plugin_root(item) for key, item in env.items()}
+        if env is not None and {"PLUGIN_ROOT", "PLUGIN_DATA"} & set(env):
+            raise ValueError(f"MCP envにAgent Pluginsの予約名は指定できない: {name}")
+        if cwd is not None:
+            if not isinstance(cwd, str):
+                raise ValueError(f"MCP cwdは文字列である必要がある: {name}")
+            cwd = _replace_plugin_root(cwd)
+            if not (
+                cwd.startswith("./")
+                or cwd == "${PLUGIN_ROOT}"
+                or cwd.startswith("${PLUGIN_ROOT}/")
+                or cwd == "${PLUGIN_DATA}"
+                or cwd.startswith("${PLUGIN_DATA}/")
+            ):
+                raise ValueError(f"MCP cwdはAgent Plugins schemaのpatternに一致する必要がある: {name}")
+
+        server: dict[str, Any] = {"type": "stdio", "command": command}
+        if "args" in value:
+            server["args"] = args
+        if env is not None:
+            server["env"] = env
+        if cwd is not None:
+            server["cwd"] = cwd
+        servers[name] = server
+    return {"$schema": AGENT_MCP_SCHEMA, "mcpServers": servers}
+
+
+def _codex_mcp(source: dict[str, Any]) -> dict[str, Any]:
+    """Codex plugin rootをcwdとして解決できるMCP設定へ投影する。"""
+    projected = _agent_mcp(source)
+    servers = projected["mcpServers"]
+    agents_server = servers.get("agents_server")
+    if agents_server is not None:
+        agents_server.clear()
+        agents_server.update(
+            {
+                "type": "stdio",
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--project",
+                    ".",
+                    "--locked",
+                    "--no-default-groups",
+                    "agent_toolkit/agents_server_mcp.py",
+                ],
+                "cwd": "./",
+            }
+        )
+    return projected
+
+
+def _outputs(root: Path) -> dict[Path, str]:
+    plugin = _load(root, PLUGIN_SOURCE)
+    marketplace = _load(root, MARKETPLACE_SOURCE)
+    entries = [item for item in marketplace.get("plugins", []) if item.get("name") == plugin.get("name")]
+    if len(entries) != 1:
+        raise ValueError("Claude Codeのmarketplaceのagent-toolkitエントリは1件である必要がある")
+    entry = entries[0]
+    for key in ("version", "description"):
+        if entry.get(key) != plugin.get(key):
+            raise ValueError(f"plugin.jsonとmarketplace.jsonで{key}が一致しない")
+
+    selected: dict[str, list[dict[str, Any]]] = {}
+    if (root / HOOKS_SOURCE).exists():
+        hooks = _load(root, HOOKS_SOURCE)
+        source_hooks = hooks.get("hooks", {})
+        for event, projection in CODEX_HOOK_ALLOWLIST.items():
+            if event not in CODEX_EVENTS or event not in source_hooks:
+                raise ValueError(f"未知のCodex hookイベント: {event}")
+            projected = []
+            for group in source_hooks[event]:
+                handlers = group.get("hooks", [])
+                chosen = [handler for handler in handlers if handler.get("command") in projection.commands]
+                if len(chosen) != len(projection.commands):
+                    continue
+                projected.append(projection.project(group, chosen))
+            if not projected:
+                raise ValueError(f"許可済みハンドラーがhooks.jsonに存在しない: {event}")
+            selected[event] = projected
+
+    metadata = {key: plugin[key] for key in PLUGIN_METADATA_FIELDS}
+    agent_plugin = {"$schema": AGENT_PLUGIN_SCHEMA, **metadata}
+    codex_plugin = dict(metadata)
+    codex_plugin["skills"] = "./skills/"
+    codex_plugin["hooks"] = "./hooks/hooks.codex.json" if selected else {"hooks": {}}
+    if (root / MCP_SOURCE).exists():
+        codex_plugin["mcpServers"] = "./.mcp.codex.json"
+    codex_plugin["interface"] = {
+        "displayName": "agent-toolkit",
+        "shortDescription": "コード、文書、計画、レビューの作業指針",
+        "longDescription": (
+            "コード、文書、計画、レビューの各工程に共通の作業指針を提供する。"
+            "計画の起草から実装、レビュー、AWI処理までを一貫した手順として扱う。"
+        ),
+        "developerName": "aki",
+        "category": "Developer Tools",
+        "capabilities": ["Skills"],
+        "defaultPrompt": [
+            "このリポジトリの変更を計画にまとめて",
+            "直前の変更をレビューして",
+            "溜まっているAWIを処理して",
+        ],
+    }
+    codex_marketplace = {
+        "name": marketplace["name"],
+        "interface": {"displayName": "ak110 dotfiles"},
+        "plugins": [
+            {
+                "name": plugin["name"],
+                "source": {"source": "local", "path": "./agent-toolkit-codex"},
+                "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                "category": "Developer Tools",
+            }
+        ],
+    }
+    result = {
+        AGENT_PLUGIN_TARGET: json.dumps(agent_plugin, ensure_ascii=False, indent=2) + "\n",
+        PLUGIN_TARGET: json.dumps(codex_plugin, ensure_ascii=False, indent=2) + "\n",
+        MARKETPLACE_TARGET: json.dumps(codex_marketplace, ensure_ascii=False, indent=2) + "\n",
+    }
+    if (root / MCP_SOURCE).exists():
+        source = _load(root, MCP_SOURCE)
+        # `.mcp.json`全体のschemaを先に検証する。Codex向けへ射影しないClaude専用serverも
+        # 不正な定義を残したままにしないため、allowlist適用前に検査する。
+        _agent_mcp(source)
+        servers = source.get("mcpServers")
+        if not isinstance(servers, dict):
+            raise ValueError("agent-toolkit/.mcp.jsonはmcpServers objectを持つ必要がある")
+        shared = {name: value for name, value in servers.items() if name in SHARED_MCP_SERVER_NAMES}
+        shared_source = {"mcpServers": shared}
+        result[MCP_CODEX_TARGET] = json.dumps(_codex_mcp(shared_source), ensure_ascii=False, indent=2) + "\n"
+        result[AGENT_MCP_TARGET] = json.dumps(_agent_mcp(shared_source), ensure_ascii=False, indent=2) + "\n"
+    if selected:
+        result[HOOKS_TARGET] = json.dumps({"hooks": selected}, ensure_ascii=False, indent=2) + "\n"
+    return result
+
+
+def _existing_outputs(root: Path, expected: dict[Path, str]) -> dict[Path, str]:
+    """既知の派生JSONのうち、現存する内容を返す。"""
+    paths = set(expected) | OPTIONAL_TARGETS
+    return {path: (root / path).read_text(encoding="utf-8") for path in paths if (root / path).exists()}
+
+
+def _output_difference_details(expected: dict[Path, str], existing: dict[Path, str]) -> tuple[tuple[Path, str], ...]:
+    """通常の派生JSONについて、対象と不一致の種類を返す。"""
+    differences = []
+    for path in sorted(set(expected) | set(existing), key=str):
+        if path not in existing:
+            differences.append((path, "欠落"))
+        elif path not in expected:
+            differences.append((path, "余剰"))
+        elif expected[path] != existing[path]:
+            differences.append((path, "内容差"))
+    return tuple(differences)
+
+
+def _differences(expected: dict[Path, str], existing: dict[Path, str]) -> tuple[Path, ...]:
+    """通常の派生JSONで同期を要するパスを返す。"""
+    return tuple(path for path, _kind in _output_difference_details(expected, existing))
+
+
+def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tuple[bytes, int]]:
+    """`agent-toolkit-codex/`へ通常ファイルとして投影する内容とmodeを返す。"""
+    source_root = root / "agent-toolkit"
+    outputs: dict[Path, tuple[bytes, int]] = {}
+    generated_by_relative = {
+        path.relative_to("agent-toolkit"): content
+        for path, content in generated.items()
+        if path.is_relative_to("agent-toolkit")
+    }
+    result = subprocess.run(  # noqa: S603
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "agent-toolkit"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    source_paths = (Path(item.decode()) for item in result.stdout.split(b"\0") if item)
+    for source_path in source_paths:
+        source = root / source_path
+        if not source.exists():
+            continue
+        if not source.is_file():
+            raise ValueError(f"Codex plugin原本が通常ファイルではない: {source_path}")
+        relative = source.relative_to(source_root)
+        if relative in CODEX_ROOT_EXCLUDED:
+            continue
+        source_relative = Path("agent-toolkit") / relative
+        if source_relative in OPTIONAL_TARGETS and source_relative not in generated:
+            continue
+        generated_content = generated_by_relative.get(relative)
+        content = generated_content.encode() if generated_content is not None else source.read_bytes()
+        outputs[relative] = (content, stat.S_IMODE(source.stat().st_mode))
+    outputs[Path("GENERATED.md")] = (CODEX_ROOT_NOTICE.encode(), 0o644)
+    return outputs
+
+
+def _codex_root_difference_details(root: Path, expected: dict[Path, tuple[bytes, int]]) -> tuple[tuple[Path, str], ...]:
+    """`agent-toolkit-codex/`について、相対パスと不一致の種類を返す。"""
+    target_root = root / CODEX_PLUGIN_ROOT_TARGET
+    existing = {path.relative_to(target_root) for path in target_root.rglob("*") if path.is_file() or path.is_symlink()}
+    differences = []
+    for relative in sorted(existing | set(expected), key=str):
+        if relative not in existing:
+            differences.append((relative, "欠落"))
+            continue
+        if relative not in expected:
+            differences.append((relative, "余剰"))
+            continue
+        path = target_root / relative
+        content, mode = expected[relative]
+        if path.is_symlink():
+            differences.append((relative, "mode差"))
+            continue
+        if path.read_bytes() != content:
+            differences.append((relative, "内容差"))
+        if stat.S_IMODE(path.stat().st_mode) != mode:
+            differences.append((relative, "mode差"))
+    return tuple(differences)
+
+
+def _codex_root_differences(root: Path, expected: dict[Path, tuple[bytes, int]]) -> tuple[Path, ...]:
+    """`agent-toolkit-codex/`で同期を要するパスを返す。"""
+    return tuple(dict.fromkeys(path for path, _kind in _codex_root_difference_details(root, expected)))
+
+
+def _sync_codex_root(root: Path, expected: dict[Path, tuple[bytes, int]]) -> bool:
+    """`agent-toolkit-codex/`を期待集合へ同期する。"""
+    target_root = root / CODEX_PLUGIN_ROOT_TARGET
+    stale = set(_codex_root_differences(root, expected))
+    for relative in sorted(stale - set(expected), key=str, reverse=True):
+        (target_root / relative).unlink()
+    for relative in sorted(stale & set(expected), key=str):
+        content, mode = expected[relative]
+        target = target_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not claude_common.atomic_write_bytes(target, content, mode=mode, tag="Codex plugin root"):
+            raise OSError(f"Codex plugin rootの書き込みに失敗: {relative}")
+    if target_root.exists():
+        directories = sorted(
+            (path for path in target_root.rglob("*") if path.is_dir()),
+            key=lambda path: len(path.parts),
+            reverse=True,
+        )
+        for directory in directories:
+            with contextlib.suppress(OSError):
+                directory.rmdir()
+    return bool(stale)
+
+
+def sync(root: Path = REPO_ROOT) -> bool:
+    """派生JSONを同期し、差分があった場合は`True`を返す。"""
+    expected = _outputs(root)
+    stale = _differences(expected, _existing_outputs(root, expected))
+    for path, content in expected.items():
+        if path in stale and not claude_common.atomic_write_text(root / path, content, tag="plugin manifests"):
+            raise OSError(f"派生JSONの書き込みに失敗: {path}")
+    for path in OPTIONAL_TARGETS - set(expected):
+        (root / path).unlink(missing_ok=True)
+    codex_changed = _sync_codex_root(root, _codex_root_outputs(root, expected))
+    return bool(stale) or codex_changed
+
+
+def check(root: Path = REPO_ROOT) -> bool:
+    """派生JSONを変更せず、期待内容と一致する場合は`True`を返す。"""
+    return not check_diagnostics(root)
+
+
+def check_diagnostics(root: Path = REPO_ROOT) -> tuple[str, ...]:
+    """検査対象の相対パスと差の種類を、派生物を書き換えずに組み立てる。"""
+    expected = _outputs(root)
+    normal = _output_difference_details(expected, _existing_outputs(root, expected))
+    codex = _codex_root_difference_details(root, _codex_root_outputs(root, expected))
+    return tuple(f"{path}: {kind}" for path, kind in normal) + tuple(
+        f"{CODEX_PLUGIN_ROOT_TARGET / path}: {kind}" for path, kind in codex
+    )

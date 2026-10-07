@@ -1,10 +1,10 @@
 {{- /* chezmoi:modify-template */ -}}
-{{- $codexConfig := include (joinPath .chezmoi.workingTree "scripts/codex_config.toml") | fromToml -}}
+{{- $codexConfig := include (joinPath .chezmoi.workingTree "share/codex_config.toml") | fromToml -}}
 {{- $config := dict -}}
 {{- if ne (trim .chezmoi.stdin) "" -}}
 {{-   $config = fromToml .chezmoi.stdin -}}
 {{- end -}}
-{{- /* Codexへ渡すAGENTS.mdの文書量とツール出力の上限は、共有設定`scripts/codex_config.toml`の値で上書きする。 */ -}}
+{{- /* Codexへ渡すAGENTS.mdの文書量とツール出力の上限は、共有設定`share/codex_config.toml`の値で上書きする。 */ -}}
 {{- $config = setValueAtPath "project_doc_max_bytes" $codexConfig.project_doc_max_bytes $config -}}
 {{- $config = setValueAtPath "tool_output_token_limit" $codexConfig.tool_output_token_limit $config -}}
 {{- /* コンテキスト長と自動圧縮の境界はCodexとモデルのデフォルトへ委ねる。 */ -}}

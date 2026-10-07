@@ -172,6 +172,8 @@ class TestAgentToolkitDotfilesNamesCheck:
             "sync-platform-pair",  # dotfiles スキル名 (.claude/skills/)
             "psgrep",  # pytools コマンド名
             "agent_toolkit_bump",  # scripts 名
+            "update_dotfiles",  # libexec 名
+            "update_dotfiles_if_upstream_changed",  # libexec 名
             "glatasks",  # 固定プロジェクト名
             "gv",
             "lc",

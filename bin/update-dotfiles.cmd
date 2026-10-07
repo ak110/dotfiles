@@ -11,7 +11,7 @@ if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" (
     "%UV%" self update
     if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"
 )
-( "%UV%" run --no-project --script "%SCRIPT_DIR%\scripts\update_dotfiles.py" %*
+( "%UV%" run --no-project --script "%SCRIPT_DIR%\libexec\update_dotfiles.py" %*
 rem uv run 更新終了
 call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"
 rem blockは更新後の終了処理を先に解析する。旧版の読取再開位置を前の2行へ保つ。

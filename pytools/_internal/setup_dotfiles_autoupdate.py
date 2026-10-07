@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 _SERVICE_NAME = "dotfiles-autoupdate.service"
 _TIMER_NAME = "dotfiles-autoupdate.timer"
-_SCRIPT_RELATIVE = pathlib.PurePath("scripts") / "update_dotfiles_if_upstream_changed.py"
+_SCRIPT_RELATIVE = pathlib.PurePath("libexec") / "update_dotfiles_if_upstream_changed.py"
 _UNIT_DIR_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user"
 
 _SERVICE_UNIT_TEMPLATE = """[Unit]

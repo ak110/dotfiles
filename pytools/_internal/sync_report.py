@@ -1,15 +1,14 @@
 """`update-dotfiles`の同期結果を構造化したJSONとして記録する。
 
 `update-dotfiles`の失敗内容を、次に起動するコーディングエージェントが読んで
-続行と中断を判定できる形で残す。書き手は`scripts/update_dotfiles.py`と
+続行と中断を判定できる形で残す。書き手は`libexec/update_dotfiles.py`と
 `pytools/post_apply.py`の2つであり、後者は`chezmoi apply`段の内側で動く。
-両者は`scripts/update_dotfiles.py`が取得するプロセス間排他ロックの内側で
+両者は`libexec/update_dotfiles.py`が取得するプロセス間排他ロックの内側で
 直列に動作するため、同時書き込みは起きない。
 
-`scripts/update_dotfiles.py`はPEP 723スクリプトとして`--no-project`で起動され、
-`sys.path[0]`が本ファイルのディレクトリになるため`import sync_report`で解決する。
-`pytools/post_apply.py`はwheelへ同梱される`scripts`パッケージ経由で解決する。
-両経路のいずれからも解決できる位置に置くため、本モジュールの依存は標準ライブラリと`platformdirs`に限る。
+`libexec/update_dotfiles.py`はPEP 723スクリプトとして`--no-project`で起動され、
+リポジトリ直下を`sys.path`へ加えて`pytools._internal`から本モジュールを読み込む。
+そのスクリプトの依存（`filelock`・`platformdirs`・`psutil`）だけで動くよう、本モジュールの依存は標準ライブラリと`platformdirs`に限る。
 """
 
 import contextlib

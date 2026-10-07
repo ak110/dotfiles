@@ -10,7 +10,9 @@
 - `.chezmoi-source/dot_gemini/`: Antigravity CLI用のユーザー設定（`GEMINI.md`と`antigravity-cli/skills/`）。`~/.gemini/`へデプロイする
 - `pytools/`: Pythonコマンドラインツール群（`uv tool install`でインストール）
 - `rust/`: Rust製コマンドラインツール群（CIでビルドしGitHub Releaseへ配布）
-- `scripts/`: リポジトリ内部から呼ばれるスクリプト置き場（prek・Makefile・Claude Codeフック等。配布対象外）
+- `scripts/`: 開発とCIで使うスクリプトの置き場（prek・Makefile・pyfltr・CIから呼ぶ。エンドユーザー環境では実行しない）
+- `libexec/`: エンドユーザー環境（LinuxとWindows）で他のプログラムから起動される実行ファイルの置き場（`bin/`のランチャー、systemd unit、Claude Codeのhook定義などが起動する）
+- `share/`: エンドユーザー環境の処理が読むデータの置き場（Claude Code・Codexの管理対象設定、ユーザー環境変数など）
 - テンプレートからリポジトリルートのファイルを参照する場合は`{{ .chezmoi.workingTree }}`を使用
   - 例: `{{ include (joinPath .chezmoi.workingTree "pyproject.toml") }}`
 
@@ -24,16 +26,21 @@
 
 この区別に基づき、スクリプトの配置先を以下のように分ける。
 
-- `scripts/`: prek・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場
-  - chezmoiで配布しない。Linux前提で書いてよい
+- `scripts/`: prek・Makefile・pyfltr・CIなど開発とCIの工程から呼ばれるスクリプトの置き場
+  - chezmoiで配布せず、エンドユーザー環境では実行しない。Linux前提で書いてよいが、CIのWindows jobで動くもの（`scripts/check_update_dotfiles_upgrade.py`）はWindowsでも動く書き方とする
   - 例: `scripts/check-templates.sh`・`scripts/check-cmd-encoding.sh`・
-    `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`・`pytools/claude_hook/pretooluse.py`
+    `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`
+- `libexec/`: `bin/`のランチャー、chezmoiの後処理、systemd unit、Claude Codeのhook定義など他のプログラムから起動され、
+  `pytools`パッケージの外でエンドユーザー環境（LinuxとWindows）で動く実行ファイルの置き場
+  - chezmoiで配布せず、`~/dotfiles`の作業ツリーから直接実行する。両OSで動く書き方とする
+  - 例: `libexec/update_dotfiles.py`・`libexec/claude-hook-pretooluse.ps1`・`libexec/keep-awake.ps1`
 - `bin/`: ユーザーのPATHに追加して使うコマンド。リポジトリ直下でgit管理し、
   `~/dotfiles/bin`（Linux）/`%USERPROFILE%\dotfiles\bin`（Windows）にPATHを通す
   - 両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する
   - 例: `bin/update-dotfiles`↔`bin/update-dotfiles.cmd`
 
-判断に迷ったら「他者の環境で直接実行されるか」を基準に決める。prek経由でしか動かないなら`scripts/`が適切。
+判断に迷ったら「エンドユーザー環境で実行されるか」を基準に決める。開発とCIの工程からしか動かないなら`scripts/`、
+エンドユーザー環境で他のプログラムから起動されるなら`libexec/`、PATHから直接起動するなら`bin/`が適切。
 
 単純なコマンドラッパーのペアは`scripts/new-bin-cmd.py <name> <command...>`で生成できる。
 `bin/<name>`と`bin/<name>.cmd`を生成する。
@@ -90,7 +97,7 @@ uv run --frozen pyfltr fast                             # 高速ツールと生�
 | `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。大元の設定から許可済みの要素だけを写像する |
 | `rules/`・`agents/`・`hooks/`・`bin/`・`scripts/`・`share/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
 
-`scripts/sync_codex_plugin_manifests.py`がAgent PluginsとCodexの生成物を同期する。
+`pytools/_internal/codex_plugin_manifests.py`がAgent PluginsとCodexの生成物を生成・照合し、生成器の起動スクリプト`scripts/sync_codex_plugin_manifests.py`とpost-applyがこれを使う。
 Codex向け`agents_server`はplugin rootを作業ディレクトリに固定した`uv run --project . --locked --no-default-groups agent_toolkit/agents_server_mcp.py`として生成する。Claude Code向けの`${CLAUDE_PLUGIN_ROOT}`展開はCodexの起動契約へ流用しない。
 `scripts/sync_generated_files.py`は同生成器を統合実行し、生成物を冪等に更新する。
 

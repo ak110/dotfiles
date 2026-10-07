@@ -12,7 +12,7 @@ from pytools._internal import claude_common, setup_dotfiles_autoupdate, systemd_
 def _prepared(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
     """euryale、dotfilesルート、スクリプト、uvを準備する。"""
     root = tmp_path / "dotfiles"
-    script = root / "scripts" / "update_dotfiles_if_upstream_changed.py"
+    script = root / "libexec" / "update_dotfiles_if_upstream_changed.py"
     script.parent.mkdir(parents=True)
     script.write_text("", encoding="utf-8")
     uv = tmp_path / "bin" / "uv"

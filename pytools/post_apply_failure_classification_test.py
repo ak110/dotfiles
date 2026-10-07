@@ -244,7 +244,7 @@ def _plugin_cache_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 
 def _codex_snapshot_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     del tmp_path
-    monkeypatch.setattr(post_apply.sync_codex_plugin_manifests, "sync", _raise(OSError("派生JSONの書き込みに失敗")))
+    monkeypatch.setattr(post_apply.codex_plugin_manifests, "sync", _raise(OSError("派生JSONの書き込みに失敗")))
 
 
 def _legacy_codex_mcp_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

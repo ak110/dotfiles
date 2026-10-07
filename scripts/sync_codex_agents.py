@@ -26,7 +26,7 @@ PERSONAL_SOURCE = Path(".chezmoi-source/dot_claude/rules/myprojects-common.md")
 RULES_SOURCE = Path("agent-toolkit/rules")
 TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
-CODEX_CONFIG = Path("scripts/codex_config.toml")
+CODEX_CONFIG = Path("share/codex_config.toml")
 GENERATED_MARKER = (
     "<!-- dotfilesリポジトリの.chezmoi-source/dot_codex/AGENTS.mdから~/.codex/AGENTS.mdへ配布する自動生成ファイル。"
     "dotfilesリポジトリのscripts/sync_generated_files.pyで再生成し、手動編集しない。"
@@ -103,7 +103,7 @@ def sync(root: Path = REPO_ROOT) -> bool:
     if total >= max_bytes * warn_ratio:
         print(
             f"警告: Codex instruction chainが{total} bytesとなり、上限{max_bytes} bytesの警告比率{warn_ratio:g}へ達した。"
-            "規範の総量を減らすか、scripts/codex_config.tomlのproject_doc_max_bytesを引き上げる。",
+            "規範の総量を減らすか、share/codex_config.tomlのproject_doc_max_bytesを引き上げる。",
             file=sys.stderr,
         )
     target = root / TARGET

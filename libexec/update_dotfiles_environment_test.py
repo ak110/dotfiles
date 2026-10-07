@@ -2,7 +2,7 @@
 
 # pylint: disable=protected-access
 
-from scripts import update_dotfiles
+import update_dotfiles
 
 
 def test_child_env_removes_parent_virtual_environment(monkeypatch) -> None:

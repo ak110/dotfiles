@@ -246,7 +246,7 @@ def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozens
     block |= _list_subdirs(dotfiles_root / ".claude" / "skills")
     block |= _list_pyproject_scripts(dotfiles_root / "pyproject.toml")
     block |= _list_pytools_modules(dotfiles_root / "pytools")
-    block |= _list_scripts_modules(dotfiles_root / "scripts")
+    block |= _list_script_names(dotfiles_root / "scripts", dotfiles_root / "libexec")
     block |= _PERSONAL_PROJECTS_BLOCK
     # warn 対象が誤って block に混入した場合は warn を優先する（保守的措置）。
     block -= _PERSONAL_PROJECTS_WARN
@@ -286,15 +286,19 @@ def _list_pytools_modules(path: pathlib.Path) -> set[str]:
     return {child.stem for child in path.glob("*.py") if child.name != "__init__.py"}
 
 
-def _list_scripts_modules(path: pathlib.Path) -> set[str]:
-    """`scripts/` 直下のスクリプト名（拡張子除去）を返す。`*_test.py` は除外。"""
-    if not path.is_dir():
-        return set()
+def _list_script_names(*directories: pathlib.Path) -> set[str]:
+    """開発用の`scripts/`とエンドユーザー環境で起動する`libexec/`の直下のスクリプト名（拡張子除去）を返す。
+
+    `*_test.py`は除外し、存在しないディレクトリは空集合として扱う。
+    """
     names: set[str] = set()
-    for child in list(path.glob("*.py")) + list(path.glob("*.sh")):
-        if child.suffix == ".py" and child.name.endswith("_test.py"):
+    for path in directories:
+        if not path.is_dir():
             continue
-        names.add(child.stem)
+        for child in list(path.glob("*.py")) + list(path.glob("*.sh")):
+            if child.suffix == ".py" and child.name.endswith("_test.py"):
+                continue
+            names.add(child.stem)
     return names
 
 

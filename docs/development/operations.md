@@ -132,7 +132,7 @@ Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス�
 
 `share/claude_settings_json_managed.json`はClaude Codeの`bashOutputMaxChars`へ62,000を配布する。
 `pytools/_internal/update_claude_settings.py`がこの値を`~/.claude/settings.json`へ反映し、Claude CodeのBashとPowerShellは62,000バイト以下の出力を退避せずに全文で返す。
-値はCodexへ配布する`tool_output_token_limit = 20000`（`scripts/codex_config.toml`）をバイトへ換算したもので、1回のツール出力で受け取る量を両ホストでそろえる。
+値はCodexへ配布する`tool_output_token_limit = 20000`（`share/codex_config.toml`）をバイトへ換算したもので、1回のツール出力で受け取る量を両ホストでそろえる。
 換算には`agent-toolkit/agent_toolkit/_hooks/pretooluse/large_reads.py`が使う1トークンあたり3.10バイトを用いる。
 62,000バイトを超える出力は退避され、agent-toolkitのPostToolUseが抜粋を保存先と次の操作を示す本文へ置き換える。
 置き換えの設計は`design-hooks.md`「退避したシェル出力の抜粋の置き換え（2026年10月6日）」にある。
@@ -313,12 +313,12 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 タイマーが起動するoneshot service`dotfiles-autoupdate.service`を配置して有効化する。
 
 - タイマーはsystemdユーザーマネージャーの起動から1分後に初回確認し、以後はserviceが終了してから10分ごとに再実行する
-- serviceは`scripts/update_dotfiles_if_upstream_changed.py`を実行する。
+- serviceは`libexec/update_dotfiles_if_upstream_changed.py`を実行する。
   このスクリプトは現在branchが`develop`で、upstreamが`origin/develop`であることを検証する。
   そのうえで`git ls-remote`から得た`origin/develop`のcommit IDをローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
   - commit IDが一致し未完了状態も無ければ、`update-dotfiles`を起動せず正常終了する
   - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する
-    - euryaleではユーザーが配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`はランチャーの引数ではなく、内部の`scripts/update_dotfiles.py`が`chezmoi apply`へ渡す
+    - euryaleではユーザーが配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`はランチャーの引数ではなく、内部の`libexec/update_dotfiles.py`が`chezmoi apply`へ渡す
   - 自動更新の判定から未完了状態の解除までを専用ロックで直列化する。作業ツリーのstash、resetおよびcleanは行わない。手動実行との重複は`update-dotfiles`の既存ロックへ委ねる
 - systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
   導入時に解決した`uv`の絶対パスとスクリプトの絶対パスを埋め込む。あわせて`Environment=PATH`を指定する

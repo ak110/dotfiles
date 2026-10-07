@@ -27,6 +27,7 @@ from pytools._internal import (
     claude_common,
     cleanup_paths,
     cleanup_user_path,
+    codex_plugin_manifests,
     install_claude_plugins,
     install_codex_plugins,
     install_libarchive,
@@ -53,13 +54,13 @@ from pytools._internal import (
     setup_tmux_plugins,
     setup_user_env,
     sync_agent_toolkit_rules,
+    sync_report,
     update_claude_settings,
     update_npmrc,
     update_vscode_settings,
     warmup_agents_server,
     warmup_pyfltr_mcp,
 )
-from scripts import sync_codex_plugin_manifests, sync_report
 
 logger = logging.getLogger(__name__)
 
@@ -407,7 +408,7 @@ def _cleanup_removed_paths() -> post_apply_outcome.PostApplyOutcome:
 
 def _sync_codex_plugin_manifests() -> post_apply_outcome.PostApplyOutcome:
     """Codex plugin向けの派生manifestを同期する。"""
-    return post_apply_outcome.PostApplyOutcome(changed=sync_codex_plugin_manifests.sync())
+    return post_apply_outcome.PostApplyOutcome(changed=codex_plugin_manifests.sync())
 
 
 _WINDOWS = ("win32",)

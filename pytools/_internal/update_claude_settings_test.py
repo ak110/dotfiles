@@ -525,7 +525,7 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
             if hook.get("type") == "command"
         ]
         assert len(commands) == 1
-        assert '-File "C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"' in commands[0]
+        assert '-File "C:/Users/Aki User\\dotfiles\\libexec\\claude-hook-pretooluse.ps1"' in commands[0]
 
     def test_posix_personal_hooks_converge_to_single_current_registration(self, tmp_path: Path) -> None:
         """旧形式と現行形式が併存する設定へ適用すると、個人hookは現行形式1件ずつになりPostToolUseは残らない。"""
@@ -1173,26 +1173,32 @@ class TestStripRemovedHooks:
         ]
         assert commands == ["keep-stop-hook"]
 
-    def test_distributed_legacy_windows_pretooluse_is_replaced(
+    @pytest.mark.parametrize(
+        "old_command",
+        [
+            _LEGACY_WINDOWS_PRETOOLUSE_COMMAND.replace("__HOME__", "C:/Users/Aki User"),
+            "powershell -NoProfile -ExecutionPolicy Bypass -File "
+            '"C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"',
+        ],
+        ids=["distributed-legacy", "moved-to-libexec"],
+    )
+    def test_old_windows_pretooluse_converges_to_single_registration(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        old_command: str,
     ) -> None:
-        """配布済みの旧Windows入口を現行の`-File`入口1件へ移行する。"""
+        """配布済みの旧Windows入口とscripts/を指す`-File`入口を、libexec/を指す現行の入口1件へ移行する。"""
         home = Path("C:/Users/Aki User")
         monkeypatch.setattr(sys, "platform", "win32")
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
         target_path = tmp_path / "settings.json"
-        legacy_command = _LEGACY_WINDOWS_PRETOOLUSE_COMMAND.replace("__HOME__", str(home))
         target_path.write_text(
             json.dumps(
                 {
                     "hooks": {
                         "PreToolUse": [
-                            {
-                                "matcher": "Write|Edit|MultiEdit",
-                                "hooks": [{"type": "command", "command": legacy_command}],
-                            }
+                            {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": old_command}]}
                         ]
                     }
                 },
@@ -1216,7 +1222,7 @@ class TestStripRemovedHooks:
         ]
         assert commands == [
             "powershell -NoProfile -ExecutionPolicy Bypass -File "
-            '"C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"'
+            '"C:/Users/Aki User\\dotfiles\\libexec\\claude-hook-pretooluse.ps1"'
         ]
 
     def test_removed_hook_keeps_sibling_in_same_matcher(self, tmp_path: Path):
@@ -1308,9 +1314,15 @@ class TestStripRemovedHooks:
                 'if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"',
                 True,
             ),
+            # 実体をlibexec/へ移す前のscripts/を指す`-File`入口は除去し、現行の入口は保持する
             (
                 "powershell -NoProfile -ExecutionPolicy Bypass -File "
                 '"C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"',
+                True,
+            ),
+            (
+                "powershell -NoProfile -ExecutionPolicy Bypass -File "
+                '"C:/Users/Aki User\\dotfiles\\libexec\\claude-hook-pretooluse.ps1"',
                 False,
             ),
             (

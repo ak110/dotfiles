@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# dotfiles を最新化する。実体は scripts/update_dotfiles.py（PEP 723）。
+# dotfiles を最新化する。実体は libexec/update_dotfiles.py（PEP 723）。
 # NOTE: 対応するWindows版 → bin/update-dotfiles.cmd
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
@@ -16,7 +16,7 @@ fi
 run_exit=0
 # 更新中にランチャーが置換されても、解析済みの終了処理を実行する。
 {
-    "$UV" run --no-project --script "${SCRIPT_DIR}/scripts/update_dotfiles.py" "$@" || run_exit=$?
+    "$UV" run --no-project --script "${SCRIPT_DIR}/libexec/update_dotfiles.py" "$@" || run_exit=$?
     if ((self_update_failed != 0)); then
         echo "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。" >&2
     fi

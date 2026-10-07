@@ -22,7 +22,7 @@ exit code 1で終了し、他プロセスの完了を待って再実行するよ
 
 薄いランチャー`bin/update-dotfiles`・`bin/update-dotfiles.cmd`から
 `uv run --no-project --script`形式で起動される。dotfilesルートは本ファイルの配置
-（`scripts/update_dotfiles.py`）から`Path(__file__)`起点で解決する
+（`libexec/update_dotfiles.py`）から`Path(__file__)`起点で解決する
 （`Path.home()`起点は`$HOME`と実チェックアウト先の不一致を招くため使わない）。
 
 各段の失敗はexit codeをそのまま伝播し以降の段を実行しない。`chezmoi status`段
@@ -37,7 +37,7 @@ Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常�
 git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定時は600秒、
 `0`は上限なしとし、負数または整数でない値は終了コード2で拒否する。
 
-実行の開始時と終了時に、同期結果を`scripts/sync_report.py`が定める構造化ファイルへ記録する。
+実行の開始時と終了時に、同期結果を`pytools/_internal/sync_report.py`が定める構造化ファイルへ記録する。
 次に起動するコーディングエージェントが、失敗した段と標準エラーの末尾からAWIの処理を
 完遂できるかを判定するための記録であり、失敗の内容を人間の目視に頼らず残す。
 `chezmoi init`と`chezmoi apply`の段は、子の標準出力と標準エラーを受け取った順に表示し、その末尾を記録へ残す。
@@ -71,12 +71,11 @@ import time
 import filelock
 import platformdirs
 import psutil
-import sync_report
 
 _SOURCE_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_SOURCE_ROOT))
 
-from pytools._internal import codex_processes  # noqa: E402  # pylint: disable=wrong-import-position
+from pytools._internal import codex_processes, sync_report  # noqa: E402  # pylint: disable=wrong-import-position
 
 _DOTFILES_ROOT = _SOURCE_ROOT
 _LOCK_PATH = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks" / "update-dotfiles.lock"

@@ -111,6 +111,8 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] =
     # 2026-09: 参照文書の読取とスキル起動の記録を読む検査を撤去したため、個人用PostToolUseを除去する
     removal_registry.Registered("dotfiles-claude-hook posttooluse", datetime.date(2026, 9, 26)),
     removal_registry.Registered("claude-hook-posttooluse.ps1", datetime.date(2026, 9, 26)),
+    # 2026-10: Windowsの個人用PreToolUseの実体をlibexec/へ移したため、scripts/を指す旧登録を除去する
+    removal_registry.Registered("\\dotfiles\\scripts\\claude-hook-pretooluse.ps1", datetime.date(2026, 10, 7)),
 )
 
 # settings.json の env 配下から除去するキー。

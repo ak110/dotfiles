@@ -148,5 +148,5 @@ marketplaceの配布方式は次のとおり。
 Codex向け生成物は`agent-toolkit/.codex-plugin/plugin.json`と`.agents/plugins/marketplace.json`とする。
 生成器と生成元の関係は`SKILL.md`「バージョン更新」に従う。
 prek経由のpyfltr（書き込みモード）が`sync-generated-files`でCodex向け生成物を毎回再生成する。
-Codex hookの定義は、`scripts/sync_codex_plugin_manifests.py`がイベント名、matcher、入力契約を確認した許可表の分だけを生成する。
+Codex hookの定義は、`pytools/_internal/codex_plugin_manifests.py`がイベント名、matcher、入力契約を確認した許可表の分だけを生成する（起動スクリプトは`scripts/sync_codex_plugin_manifests.py`）。
 `chezmoi apply`後処理はCodex marketplaceを登録し、agent-toolkit pluginを導入・更新する。

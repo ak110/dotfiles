@@ -2,7 +2,7 @@
 name: pytools-edit
 user-invocable: false
 description: >
-  `pytools/`・`scripts/`・`bin/`・`rust/`配下のコマンドラインツール・スクリプト・hookスクリプトを
+  `pytools/`・`scripts/`・`libexec/`・`bin/`・`rust/`配下のコマンドラインツール・スクリプト・hookスクリプトを
   新規作成・編集するとき、および本リポジトリのテストの配置を決めるとき、テストを新規作成・編集するときに使う。
   配置規約・テスト配置・PEP 723・wheel設定・cmdエンコーディングを扱う。
 ---
@@ -25,8 +25,11 @@ description: >
   （単一ファイル`<name>.py`またはサブパッケージ`<name>/`配下形態）を置き、bash補完（argcomplete）に対応する
   - サブパッケージは`__init__.py`が`_cli.py`の`main`を再エクスポートし、`project.scripts`はパッケージ名の`main`を参照する
 - privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する
-- エージェント・hook・自動化など手で起動しないスクリプトは`scripts/`配下へ置く
-  （`[project.scripts]`登録は行わず、PEP 723形式の単独実行スクリプトとして書く）
+- 開発とCIの工程（prek・Makefile・pyfltr・CI）から起動するスクリプトは`scripts/`配下へ置く。エンドユーザー環境では実行しない
+- `bin/`のランチャー、chezmoiの後処理、systemd unit、Claude Codeのhook定義など他のプログラムから起動され、
+  `pytools`パッケージの外でエンドユーザー環境（LinuxとWindows）で動く実行ファイルは`libexec/`配下へ置き、両OSで動く書き方とする
+- `scripts/`と`libexec/`のPythonは`[project.scripts]`へ登録せず、PEP 723形式の単独実行スクリプトか、プロジェクト環境で起動するスクリプトとして書く。
+  `pytools`から`scripts/`と`libexec/`をimportしない。配布するwheelは`pytools`だけを含み、editable導入以外では解決できないためである
 - 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う
   （リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成する）
 - 高頻度起動するhook・statusLine相当のスクリプトは、Windowsでの`uv run`起動コストを考慮し、

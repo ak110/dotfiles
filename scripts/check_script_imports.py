@@ -8,7 +8,7 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
 スクリプトを実行しない静的解析（`ast.parse`）のみで判定し、副作用を起こさない。
 対象種別ごとに検査方式を分ける。
 
-- 対象種別1: `scripts/`・`agent-toolkit/scripts/`
+- 対象種別1: `scripts/`・`libexec/`・`agent-toolkit/scripts/`
   配下のPEP 723単独実行スクリプト（`*_test.py`を除く）。起点ごとのPEP 723依存と、
   静的に評価できる`sys.path.insert`が示す探索パスを用い、到達する内部モジュールを
   推移走査する。`ImportError`または`ModuleNotFoundError`で保護されたimportは除外する
@@ -75,6 +75,7 @@ class _ImportReference:
 def _script_directories() -> tuple[pathlib.Path, ...]:
     """PEP 723スクリプトの走査対象ディレクトリをパス昇順で返す。"""
     directories = [
+        _REPO_ROOT / "libexec",
         _REPO_ROOT / "scripts",
         _REPO_ROOT / "agent-toolkit/scripts",
     ]
