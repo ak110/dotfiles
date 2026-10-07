@@ -13,13 +13,11 @@ import logging
 import os
 import platform
 import socket
-import sys
 from pathlib import Path
 
 import pytilpack.jsonc
 
-from pytools._internal import claude_common, log_format
-from pytools._internal.cli import setup_logging
+from pytools._internal import claude_common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -39,21 +37,14 @@ _MARKDOWN_STYLE_URL = "https://cdn.jsdelivr.net/gh/ak110/dotfiles@master/share/v
 _LEGACY_KEYS_FOR_MACHINE_SCOPE: tuple[str, ...] = ("markdown.styles",)
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    setup_logging()
-    run()
-    sys.exit(0)
-
-
 def run(
     *,
     hostname: str | None = None,
     is_windows: bool | None = None,
     home: Path | None = None,
     environ: collections.abc.Mapping[str, str] | None = None,
-) -> bool:
-    """VSCode settings.json を更新する。
+) -> post_apply_outcome.PostApplyOutcome:
+    """VSCode settings.json を更新する。書き込みの失敗は失敗と数える。
 
     Args:
         hostname: Activity Bar 色生成に使うホスト名 (テスト用)。
@@ -61,20 +52,20 @@ def run(
             Windows (User scope) なら True、Linux (Machine scope) なら False。
         home: ホームディレクトリのオーバーライド (テスト用)。
         environ: 環境変数マッピングのオーバーライド (テスト用)。
-
-    Returns:
-        実際にファイルを書き換えたかどうか。
     """
     win = _IS_WINDOWS if is_windows is None else is_windows
     settings_path = _settings_path(is_windows=win, home=home, environ=environ)
     if settings_path is None:
         logger.info(log_format.format_status("vscode", "VSCode未検出のためスキップ"))
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     # Windows は User scope、Linux は Machine scope という使い分けを前提に、
     # scope ごとに managed の内容と削除対象のレガシーキーを切り替える。
     managed = _build_managed_settings(hostname=hostname, is_user_scope=win, home=home)
     legacy_keys: tuple[str, ...] = () if win else _LEGACY_KEYS_FOR_MACHINE_SCOPE
-    return _apply(managed, settings_path, legacy_keys=legacy_keys)
+    changed = _apply(managed, settings_path, legacy_keys=legacy_keys)
+    if changed is None:
+        return post_apply_outcome.PostApplyOutcome(failure=f"{log_format.home_short(settings_path)} の書き込みに失敗")
+    return post_apply_outcome.PostApplyOutcome(changed=changed)
 
 
 def _settings_path(
@@ -173,7 +164,7 @@ def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool,
     return settings
 
 
-def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] = ()) -> bool:
+def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] = ()) -> bool | None:
     """dotfilesが管理する設定項目を`settings.json`にマージして書き込む。
 
     dict値は浅いマージ（既存キーを保持）、それ以外は上書き。
@@ -187,7 +178,7 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
     仕組みで、Machine scopeから`markdown.styles`を削除する用途などで使う。
 
     Returns:
-        実際にファイルを書き換えた場合True。
+        実際にファイルを書き換えた場合True、変更が無い場合False、書き込みに失敗した場合None。
     """
     data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
     original = copy.deepcopy(data)
@@ -207,10 +198,6 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     if not claude_common.write_settings_hybrid(settings_path, original, data, tag=short):
-        return False
+        return None
     logger.info(log_format.format_status(short, "更新しました"))
     return True
-
-
-if __name__ == "__main__":
-    main()

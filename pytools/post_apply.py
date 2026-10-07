@@ -29,20 +29,20 @@ from pytools._internal import (
     cleanup_user_path,
     install_claude_plugins,
     install_codex_plugins,
-    install_libarchive_windows,
+    install_libarchive,
     log_format,
     post_apply_outcome,
     prune_claude_plugin_cache,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
-    restore_codex_logs_linux,
+    restore_codex_logs,
     setup_agy_cli,
-    setup_atk_serve_linux,
+    setup_atk_serve,
     setup_bin_path,
     setup_claude_cli,
     setup_codex_cli,
     setup_codex_links,
-    setup_dotfiles_autoupdate_linux,
+    setup_dotfiles_autoupdate,
     setup_herdr_cli,
     setup_media_remote,
     setup_mise,
@@ -55,9 +55,8 @@ from pytools._internal import (
     update_claude_settings,
     update_npmrc,
     update_vscode_settings,
-    warm_agents_server,
-    warm_pyfltr_mcp,
-    warmup_hook_scripts,
+    warmup_agents_server,
+    warmup_pyfltr_mcp,
 )
 from scripts import sync_codex_plugin_manifests, sync_report
 
@@ -370,36 +369,45 @@ class _StepSpec:
     `host_resources`は、HOMEで解決されない実機の共有資源（systemdのユーザーマネージャー、`/dev/shm`など）を
     操作するステップであることを表す。HOMEを差し替えた実行（手動観測やテスト）ではこのステップを実行しない。
     `systemctl --user`はHOMEではなく`XDG_RUNTIME_DIR`とD-Busで接続先を決めるため、HOMEの差し替えでは隔離できない。
+    `run`の戻り値と失敗の分類の基準は`post_apply_outcome.PostApplyOutcome`が定める。
+    対象OSは`platforms`だけで宣言し、`run`の側では対象OSを判定しない。
     """
 
     name: str
-    run: Callable[[], "StepReturn"]
+    run: Callable[[], post_apply_outcome.PostApplyOutcome]
     after: tuple[str, ...] = ()
     after_all_preceding: bool = False
     platforms: tuple[str, ...] = ()
     host_resources: bool = False
 
 
-def _cleanup_removed_paths() -> bool:
-    """`_REMOVED_PATHS` / `_REMOVED_PATHS_IF_CONTENT` に従って旧配布物を削除する。"""
+def _cleanup_removed_paths() -> post_apply_outcome.PostApplyOutcome:
+    """`_REMOVED_PATHS` / `_REMOVED_PATHS_IF_CONTENT` に従って旧配布物を削除する。検査と削除の失敗は失敗と数える。"""
     total_removed = 0
+    failures: list[str] = []
     for base_dir, entries in _REMOVED_PATHS.items():
-        total_removed += cleanup_paths.cleanup_paths(base_dir, [e.path for e in entries if not e.empty_dir_only])
+        total_removed += cleanup_paths.cleanup_paths(
+            base_dir, [e.path for e in entries if not e.empty_dir_only], failures=failures
+        )
         # 空ディレクトリの項目は、同じ基点の他の項目を削除した後に列挙順で判定する。
-        total_removed += cleanup_paths.cleanup_empty_dirs(base_dir, [e.path for e in entries if e.empty_dir_only])
+        total_removed += cleanup_paths.cleanup_empty_dirs(
+            base_dir, [e.path for e in entries if e.empty_dir_only], failures=failures
+        )
     for base_dir, content_entries in _REMOVED_PATHS_IF_CONTENT.items():
         total_removed += cleanup_paths.cleanup_paths_if_content_matches(
-            base_dir, {entry.path: entry.expected for entry in content_entries}
+            base_dir, {entry.path: entry.expected for entry in content_entries}, failures=failures
         )
     if total_removed == 0:
         logger.info(log_format.format_status("cleanup", "削除対象なし"))
     else:
         logger.info(log_format.format_status("cleanup", f"{total_removed} 件を削除した"))
-    return total_removed > 0
+    return post_apply_outcome.PostApplyOutcome(changed=total_removed > 0, failure=" / ".join(failures) or None)
 
 
-# ステップ関数の戻り値型。通常ステップは bool、個別の出力を持つステップは構造化した値を返す。
-StepReturn = bool | tuple[bool, list[str]] | post_apply_outcome.PostApplyOutcome
+def _sync_codex_plugin_manifests() -> post_apply_outcome.PostApplyOutcome:
+    """Codex plugin向けの派生manifestを同期する。"""
+    return post_apply_outcome.PostApplyOutcome(changed=sync_codex_plugin_manifests.sync())
+
 
 _WINDOWS = ("win32",)
 _LINUX = ("linux",)
@@ -410,6 +418,13 @@ _CLAUDE_PLUGIN = "Claude Code plugin のインストール"
 _CODEX_PLUGIN = "Codex plugin のインストール"
 _CODEX_LINKS = "Codex リンクの同期"
 _CLEANUP = "旧配布物の削除"
+_NPM_SUPPLY_CHAIN = "npm/pnpm サプライチェーン対策"
+_BIN_PATH = "bin PATH 登録 (Windows)"
+_CODEX_LOGS = "Codex 診断ログの通常ストレージ復元 (Linux)"
+_CODEX_CLAUDE_MCP = "Codex の Claude MCP 登録削除"
+_CODEX_SNAPSHOT = "Codex plugin snapshot の生成"
+_LEGACY_CODEX_MCP = "旧Codex User scope MCP登録の移行"
+_ATK_SERVE = "atk serve 自動起動セットアップ (Linux)"
 
 # 先行工程は、同じ資源（設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、
 # plugin cache、Claude Code pluginの複製元である`agent-toolkit/`（`.venv`を含む）、systemd、
@@ -417,17 +432,17 @@ _CLEANUP = "旧配布物の削除"
 # 資源は子プロセスやサービスの再起動を経由して間接的に書き換える場合も含める。
 # 宣言の無いステップは他と同時に実行してよい。
 _DEFAULT_STEPS: list[_StepSpec] = [
-    _StepSpec("bin PATH 登録 (Windows)", setup_bin_path.run, platforms=_WINDOWS),
+    _StepSpec(_BIN_PATH, setup_bin_path.run, platforms=_WINDOWS),
     _StepSpec("MSYS 環境変数 (Windows)", setup_msys_env.run, platforms=_WINDOWS),
     _StepSpec("VSCode 設定", update_vscode_settings.run),
     _StepSpec("SSH config", update_ssh_config.run),
     _StepSpec(_CLEANUP, _cleanup_removed_paths),
-    _StepSpec("npm/pnpm サプライチェーン対策", update_npmrc.run),
+    _StepSpec(_NPM_SUPPLY_CHAIN, update_npmrc.run),
     # Windowsでは bin PATH 登録と同じユーザーPATHを読んで書き戻す。
-    _StepSpec(_MISE, setup_mise.run, after=("npm/pnpm サプライチェーン対策", "bin PATH 登録 (Windows)")),
+    _StepSpec(_MISE, setup_mise.run, after=(_NPM_SUPPLY_CHAIN, _BIN_PATH)),
     # miseのinstalls・shimsを操作し、codexを起動するため診断ログの復元後に実行する。
-    _StepSpec(_CODEX_CLI, setup_codex_cli.run, after=(_MISE, "Codex 診断ログの通常ストレージ復元 (Linux)")),
-    _StepSpec("Codex の Claude MCP 登録削除", remove_codex_claude_mcp.run, after=(_CODEX_CLI,)),
+    _StepSpec(_CODEX_CLI, setup_codex_cli.run, after=(_MISE, _CODEX_LOGS)),
+    _StepSpec(_CODEX_CLAUDE_MCP, remove_codex_claude_mcp.run, after=(_CODEX_CLI,)),
     # 旧npm版の除去がmise管理のNode配下のnpmを使う。
     _StepSpec(_CLAUDE_CLI, setup_claude_cli.run, after=(_MISE,)),
     _StepSpec("Antigravity CLI の導入", setup_agy_cli.run),
@@ -436,8 +451,8 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run, after=(_CLEANUP,)),
     _StepSpec(_CODEX_LINKS, setup_codex_links.run),
     _StepSpec(
-        "Codex 診断ログの通常ストレージ復元 (Linux)",
-        restore_codex_logs_linux.run,
+        _CODEX_LOGS,
+        restore_codex_logs.run,
         after=(_CODEX_LINKS,),
         platforms=_LINUX,
         host_resources=True,
@@ -447,38 +462,32 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     # installed_plugins.json が更新後の版を指してから現行版を判定する。
     _StepSpec("Claude Code plugin cache の旧版削除", prune_claude_plugin_cache.run, after=(_CLAUDE_PLUGIN,)),
     # plugin導入が`agent-toolkit/`を複製する間に同じ配下の派生ファイルを書き換えない。
-    _StepSpec("Codex plugin snapshot の生成", sync_codex_plugin_manifests.sync, after=(_CLAUDE_PLUGIN,)),
+    _StepSpec(_CODEX_SNAPSHOT, _sync_codex_plugin_manifests, after=(_CLAUDE_PLUGIN,)),
     # 稼働判定の前にCodex CLI工程とMCP照会を終え、後続のwarmupのCodex照会と重ねない。
     # 診断ログの稼働判定もCodex CLI工程より先に終わるため、この順序を共有する。
     _StepSpec(
         _CODEX_PLUGIN,
         install_codex_plugins.run,
-        after=("Codex の Claude MCP 登録削除", "Codex plugin snapshot の生成", _CODEX_LINKS, _CLEANUP),
+        after=(_CODEX_CLAUDE_MCP, _CODEX_SNAPSHOT, _CODEX_LINKS, _CLEANUP),
     ),
-    _StepSpec("agents_serverのuv環境ウォームアップ", warm_agents_server.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN)),
-    # 両ウォームアップは同じcache版ディレクトリで`uv run --project`を実行するため順に行う。
-    _StepSpec(
-        "hookスクリプトのuv環境ウォームアップ",
-        warmup_hook_scripts.run,
-        after=("agents_serverのuv環境ウォームアップ",),
-    ),
+    _StepSpec("agents_serverのuv環境ウォームアップ", warmup_agents_server.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN)),
     # 両pluginの導入後の参照先にあるMCP定義を読む。uvのキャッシュだけへ作用する。
-    _StepSpec("pyfltr MCPのuv環境ウォームアップ", warm_pyfltr_mcp.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN)),
+    _StepSpec("pyfltr MCPのuv環境ウォームアップ", warmup_pyfltr_mcp.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN)),
     _StepSpec(
-        "旧Codex User scope MCP登録の移行",
+        _LEGACY_CODEX_MCP,
         remove_legacy_codex_mcp_from_claude.run,
         after=(_CLAUDE_CLI, _CODEX_PLUGIN),
     ),
     # settings.json（plugin導入）と~/.claude.json（MCP移行）を読んでマージして書き戻す。
-    _StepSpec("Claude 設定", update_claude_settings.run, after=(_CLAUDE_PLUGIN, "旧Codex User scope MCP登録の移行")),
-    _StepSpec("libarchive (Windows)", install_libarchive_windows.run, after=(_MISE,), platforms=_WINDOWS),
+    _StepSpec("Claude 設定", update_claude_settings.run, after=(_CLAUDE_PLUGIN, _LEGACY_CODEX_MCP)),
+    _StepSpec("libarchive (Windows)", install_libarchive.run, after=(_MISE,), platforms=_WINDOWS),
     # 開発版の取得はmise経由でcargoを使うため、Codex CLI工程のmise操作の後に行う。
     _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run, after=(_CODEX_CLI,)),
     # サービスの再起動で起動する`uv run --project <dotfiles>/agent-toolkit`が`agent-toolkit/.venv`を再同期するため、
     # `claude plugin install`・`update`が同じ`agent-toolkit/`を複製し終えてから実行する。
     _StepSpec(
-        "atk serve 自動起動セットアップ (Linux)",
-        setup_atk_serve_linux.run,
+        _ATK_SERVE,
+        setup_atk_serve.run,
         after=(_CLAUDE_PLUGIN,),
         platforms=_LINUX,
         host_resources=True,
@@ -486,8 +495,8 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     # 両ステップが`systemctl --user daemon-reload`と`restart`を実行する。
     _StepSpec(
         "dotfiles自動更新タイマー セットアップ (Linux)",
-        setup_dotfiles_autoupdate_linux.run,
-        after=("atk serve 自動起動セットアップ (Linux)",),
+        setup_dotfiles_autoupdate.run,
+        after=(_ATK_SERVE,),
         platforms=_LINUX,
         host_resources=True,
     ),
@@ -587,13 +596,13 @@ def _record_sync_report(
 
 
 def _print_plugin_recommendations(recommendations: list[str]) -> None:
-    """``install_claude_plugins.run()`` が算出した推奨コマンドを案内表示する。"""
+    """各ステップが返した推奨コマンドを案内表示する。"""
     # エンドユーザー向け案内のため敬体。
     if not recommendations:
         return
     print(flush=True)
     logger.info("推奨プラグイン設定:")
-    # コマンド行はそのままコピー&ペーストで実行されるため、basicConfig のインデントを避けて
+    # コマンド行はそのままコピー&ペーストで実行されるため、ログのformatterが付けるインデントを避けて
     # stdout に直接出力する。cmd.exe では `^` 継続後に行頭空白が前行へ連結されたまま残り、
     # `&& <空白>...` の空白がコマンド名として解釈されて貼り付けが失敗するため、行頭は無インデントとする。
     if len(recommendations) == 1:
@@ -671,7 +680,10 @@ class _StepOutcome:
 
 
 def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
-    """1ステップを実行し、例外、戻り値、所要時間を共通形式へ変換する。"""
+    """1ステップを実行し、例外、戻り値、所要時間を共通形式へ変換する。
+
+    失敗の数え方は戻り値の`failure`で決め、予期しない例外も失敗と数える。
+    """
     started_at = time.monotonic()
     try:
         ret = step.run()
@@ -685,18 +697,13 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
             detail=sync_report.truncate_tail(traceback.format_exc()),
         )
         return failure, [], time.monotonic() - started_at
-    notices: tuple[post_apply_outcome.PostApplyNotice, ...] = ()
-    recommendations: list[str] = []
-    if isinstance(ret, post_apply_outcome.PostApplyOutcome):
-        changed = ret.changed
-        notices = ret.notices
-    elif isinstance(ret, tuple):
-        changed, recommendations = ret
-    else:
-        changed = ret
+    if ret.failure is not None:
+        logger.error("    %s: 失敗: %s", step.name, ret.failure)
+        failure = _StepResult(name=step.name, ok=False, changed=ret.changed, notices=ret.notices, reason=ret.failure)
+        return failure, list(ret.recommendations), time.monotonic() - started_at
     return (
-        _StepResult(name=step.name, ok=True, changed=changed, notices=notices),
-        recommendations,
+        _StepResult(name=step.name, ok=True, changed=ret.changed, notices=ret.notices),
+        list(ret.recommendations),
         time.monotonic() - started_at,
     )
 
@@ -715,7 +722,7 @@ def _execute_captured_step(label: str, step: _StepSpec) -> _StepOutcome:
         _step_log_state.active = False
 
 
-def _normalize_step(step: _StepSpec | tuple[str, Callable[[], StepReturn]]) -> _StepSpec:
+def _normalize_step(step: _StepSpec | tuple[str, Callable[[], post_apply_outcome.PostApplyOutcome]]) -> _StepSpec:
     if isinstance(step, _StepSpec):
         return step
     name, step_runner = step
@@ -787,15 +794,13 @@ def _emit_outcome(label: str, outcome: _StepOutcome) -> None:
 
 
 def run(
-    steps: Sequence[_StepSpec | tuple[str, Callable[[], StepReturn]]] | None = None,
+    steps: Sequence[_StepSpec | tuple[str, Callable[[], post_apply_outcome.PostApplyOutcome]]] | None = None,
 ) -> tuple[list[_StepResult], list[str]]:
     """各ステップを先行工程の順序を守って並列に実行し、`(results, recommendations)` を返す。
 
     先行工程が失敗しても後続ステップは実行する。出力と`results`は列挙順に並べ、
     各ステップの出力はそのステップと列挙順でそれより前の全ステップが完了した時点で出力する。
-    `recommendations` は ``install_claude_plugins.run()`` が算出した推奨コマンド列。
-    ``install_claude_plugins.run`` は ``tuple[bool, list[str]]`` を返すため、
-    タプルの戻り値を持つステップは推奨コマンドとして収集する。
+    `recommendations` は各ステップが`PostApplyOutcome.recommendations`で返した推奨コマンドを列挙順に並べたもの。
     """
     selected_steps = _DEFAULT_STEPS if steps is None else steps
     effective_steps = [_normalize_step(step) for step in selected_steps]

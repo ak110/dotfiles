@@ -10,13 +10,11 @@ dotfiles apply全体の失敗にはしない。前提を満たしたうえで管
 import json
 import logging
 import shutil
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
-from pytools._internal import claude_common, claude_marketplace, log_format
-from pytools._internal.cli import setup_logging
+from pytools._internal import claude_common, claude_marketplace, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -61,42 +59,45 @@ _EXTERNAL_MARKETPLACES: tuple[tuple[str, str, str], ...] = (
 )
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    setup_logging()
-    run()
-    sys.exit(0)
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """Claude Code pluginをインストール・更新し、ユーザーへ案内する推奨コマンドを結果へ含める。
+
+    管理対象pluginの導入・更新の失敗と、導入後の状態が目標と一致しない場合は、警告を出力してスキップと数える。
+    外部marketplaceのpluginの自動無効化（設定の書き換え）の失敗は失敗と数える。
+    """
+    try:
+        changed, recommendations, disable_failed_count = _install_plugins()
+    except RuntimeError as error:
+        logger.warning(log_format.format_status("plugins", f"導入または更新に失敗: {error}"))
+        return post_apply_outcome.PostApplyOutcome()
+    failure = f"外部plugin {disable_failed_count} 件の自動無効化に失敗" if disable_failed_count else None
+    return post_apply_outcome.PostApplyOutcome(changed=changed, recommendations=tuple(recommendations), failure=failure)
 
 
-def run() -> tuple[bool, list[str]]:
-    """Claude Code pluginをインストール・更新する。
-
-    Returns:
-        (changed, recommendations) のタプル。
-        changedは何らかのpluginを新たにインストールまたは更新した場合にTrue。
-        recommendationsは呼び出し元がユーザーへ案内する推奨コマンド列。
+def _install_plugins() -> tuple[bool, list[str], int]:
+    """導入・更新・自動無効化を行い、`(変更の有無, 推奨コマンド, 自動無効化の失敗件数)`を返す。
 
     Raises:
         RuntimeError: 管理対象pluginの導入・更新に失敗した場合、または導入後の状態が目標と一致しない場合。
     """
     if not _prerequisites_ok():
-        return False, []
+        return False, [], 0
 
     external_changed = _install_external_marketplaces()
 
     dotfiles_root = claude_common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("plugins", "dotfiles ルート (marketplace.json) が見つからずスキップ"))
-        return external_changed, []
+        return external_changed, [], 0
 
     # 対象プラグインは marketplace.json の plugins[] 全件から動的に決める。
     target_versions, deprecated_names = _read_target_info(dotfiles_root)
     if not target_versions and not deprecated_names:
         logger.info(log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
-        return external_changed, []
+        return external_changed, [], 0
 
     if not claude_marketplace.ensure_marketplace():
-        return external_changed, []
+        return external_changed, [], 0
 
     # marketplace の修復は remove/add により導入済み登録を変更し得るため、
     # 修復完了後の実体だけを導入判定へ用いる。
@@ -105,7 +106,7 @@ def run() -> tuple[bool, list[str]]:
         raw_data = _get_installed_plugins_raw()
         if raw_data is None:
             logger.info(log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
-            return external_changed, []
+            return external_changed, [], 0
 
     any_change = False
 
@@ -198,9 +199,8 @@ def run() -> tuple[bool, list[str]]:
         )
     )
     # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
-    # 外部marketplaceの自動無効化の失敗は管理対象の版と動作に影響しないため、件数だけに残す。
     _verify_target_plugins(target_versions, failed_operations)
-    return external_changed or any_change, recommendations
+    return external_changed or any_change, recommendations, disable_failed_count
 
 
 def _install_external_marketplaces() -> bool:
@@ -713,7 +713,6 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
     shutil.rmtree(cache_dir, ignore_errors=True)
     if not _install_plugin(name):
         message = f"plugin cache の修復インストールに失敗しました: {log_format.home_short(cache_dir)}"
-        logger.error(log_format.format_status(name, message))
         raise RuntimeError(f"{name}: {message}")
     repaired_dir = _plugin_cache_directory(name) or cache_dir
     missing = _missing_plugin_cache_files(repaired_dir)
@@ -723,7 +722,6 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
             f"再インストール後も plugin cache に {', '.join(missing)} がありません: "
             f"{log_format.home_short(repaired_dir)} (確認手順: このディレクトリを削除して `{command}` を実行する)"
         )
-        logger.error(log_format.format_status(name, message))
         raise RuntimeError(f"{name}: {message}")
     logger.info(log_format.format_status(name, "plugin cache の欠落を再インストールで解消しました"))
     return True
@@ -764,10 +762,5 @@ def _verify_target_plugins(target_versions: dict[str, str], failed_operations: S
         failures.append(f"未有効化: {', '.join(disabled)}")
     if failures:
         message = " / ".join(failures)
-        logger.error(log_format.format_status("plugins", f"install後の状態検証に失敗: {message}"))
         raise RuntimeError(f"Claude Code pluginのinstall後の状態検証に失敗しました: {message}")
     logger.info(log_format.format_status("plugins", "install後の導入・有効化状態を確認しました"))
-
-
-if __name__ == "__main__":
-    main()

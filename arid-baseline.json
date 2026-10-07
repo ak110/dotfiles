@@ -194,20 +194,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:287bca37f667c6606c9fb24228192e97d3de93fc5397b03efb8196906ad8ccde",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/warm_agents_server.py",
-          "count": 1
-        },
-        {
-          "path": "pytools/_internal/warmup_hook_scripts.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:29181289a096fb03fe8858c07aa2cc3690a5cf49096b526ec02157a8c4889027",
       "lines": 10,
       "occurrences": [
@@ -252,6 +238,16 @@
         {
           "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/transitions_test.py",
           "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:3d4f635a6099b8c6d9ab1dd2e816f2899b7fa0bea956c228d943b086bbeeb264",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/setup_codex_cli_test.py",
+          "count": 2
         }
       ]
     },
@@ -312,20 +308,6 @@
         {
           "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 3
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:64cd25339086c8f7d78a93bb77658e18f3cdaabada8fd1480835e81e6a00de70",
-      "lines": 17,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/warm_agents_server.py",
-          "count": 1
-        },
-        {
-          "path": "pytools/_internal/warmup_hook_scripts.py",
-          "count": 1
         }
       ]
     },
@@ -532,30 +514,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:883abcc79f14ead03a57ac3a19e494ab35c255a2ec09222243c1a255061e0721",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/warm_agents_server.py",
-          "count": 1
-        },
-        {
-          "path": "pytools/_internal/warmup_hook_scripts.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:8a1be8fc5d6e1d833dab3a533b39555d34dbc862333fc9e68263a8c95de9943c",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/setup_codex_cli_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:8a37606c42f327803706d9719d668107a0e807f14f301ae4ffd42e66e5f335fb",
       "lines": 13,
       "occurrences": [
@@ -576,16 +534,6 @@
         {
           "path": "agent-toolkit/agent_toolkit/hook_test.py",
           "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:8ba1fb87a6ca66545d1982f425192567b70643c6f78c572adc2e5ba3fead3080",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/setup_codex_cli_test.py",
-          "count": 2
         }
       ]
     },
@@ -719,20 +667,6 @@
         },
         {
           "path": "pytools/_internal/install_claude_plugins_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:ad7a9f6aaf995fb686ad1f698c644ebf180c6e4d1ab58240c9d4e27af5b3ce79",
-      "lines": 13,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/warm_agents_server.py",
-          "count": 1
-        },
-        {
-          "path": "pytools/_internal/warmup_hook_scripts.py",
           "count": 1
         }
       ]
@@ -904,20 +838,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:c57710115ffc7883a99864fc240fe3e27ebcd297e99eb1aa5357a904ee26f32c",
-      "lines": 21,
-      "occurrences": [
-        {
-          "path": "pytools/_internal/warm_agents_server.py",
-          "count": 1
-        },
-        {
-          "path": "pytools/_internal/warmup_hook_scripts.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:c8ca00f32f4ba67cd98a5765b7254e3009d8ba99e8afb61d431d63c58f5aca8e",
       "lines": 31,
       "occurrences": [
@@ -1032,6 +952,16 @@
         {
           "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 3
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:e82f8f60fc359f0b491bea7012ee8c6d66f23a9382d3dad761fb970283cf68ff",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/setup_codex_cli_test.py",
+          "count": 2
         }
       ]
     },

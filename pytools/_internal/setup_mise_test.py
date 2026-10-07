@@ -143,7 +143,7 @@ class TestRunMiseInstallation:
 
         monkeypatch.setattr(_setup_mise, "_ensure_mise_installed", install)
 
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
         assert installs == [True]
         assert mise_stub.calls_for("install")
 
@@ -159,7 +159,7 @@ class TestRunMiseInstallation:
 
         monkeypatch.setattr(_setup_mise, "_ensure_mise_installed", install)
 
-        assert _setup_mise.run() is False
+        assert _setup_mise.run().changed is False
         assert installs == [True]
         assert not mise_stub.records
 
@@ -171,7 +171,7 @@ class TestRunMiseInstallation:
             "_ensure_mise_installed",
             lambda: pytest.fail("導入済み環境でインストーラーを呼んだ"),
         )
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
         assert mise_stub.calls_for("install")
 
     def test_run_skips_when_installer_download_fails(
@@ -187,7 +187,7 @@ class TestRunMiseInstallation:
                 return None
 
         monkeypatch.setattr(_setup_mise.httpx, "Client", lambda **_kwargs: _FailingClient())
-        assert _setup_mise.run() is False
+        assert _setup_mise.run().changed is False
         assert not mise_stub.records
 
     def test_run_installs_mise_with_winget_on_windows(
@@ -198,7 +198,7 @@ class TestRunMiseInstallation:
         monkeypatch.setattr(_setup_mise, "_is_windows", lambda: True)
         monkeypatch.delenv("LOCALAPPDATA", raising=False)
 
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
         assert [record["cmd"] for record in mise_stub.records].count(
             [
                 "winget",
@@ -218,7 +218,7 @@ class TestEnsureMiseUpToDate:
     def test_self_update_invoked(self, mise_stub: _MiseSubprocessStub):
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{"version": "24"}]})
 
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
 
         self_update_calls = mise_stub.calls_for("self-update")
         assert self_update_calls and self_update_calls[0]["args"] == ["self-update", "-y"]
@@ -259,7 +259,7 @@ class TestRunTrustsWorkingTree:
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{"version": "24"}]})
 
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
 
         trust_calls = mise_stub.calls_for("trust")
         assert trust_calls and trust_calls[0]["args"] == ["trust", str(mise_toml)]
@@ -349,7 +349,7 @@ class TestRunNodeProvisioning:
         mise_stub.handlers[("use", "--global", "node@lts")] = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr="fail"
         )
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
         assert mise_stub.calls_for("install")
 
 
@@ -371,7 +371,7 @@ class TestRunInstallStep:
     ):
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
         mise_stub.handlers[("install",)] = install_response
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
         install_calls = mise_stub.calls_for("install")
         assert len(install_calls) == 1
         assert install_calls[0]["args"] == ["install"]
@@ -395,7 +395,7 @@ class TestRunInstallStep:
         (tmp_path / "mise.toml").write_text("[tools]\n", encoding="utf-8")
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
         install_calls = mise_stub.calls_for("install")
         assert len(install_calls) == 1
         assert install_calls[0]["cwd"] == tmp_path
@@ -415,7 +415,7 @@ class TestRunInstallStep:
             args=[], returncode=1, stdout="", stderr="jq@latest is not in the lockfile"
         )
 
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
 
         install_calls = mise_stub.calls_for("install")
         assert len(install_calls) == 1
@@ -434,7 +434,7 @@ class TestRunInstallStep:
         """working treeに`mise.toml`が無い場合は実行位置を指定しない。"""
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
         assert mise_stub.calls_for("install")[0]["cwd"] is None
 
     def test_run_reshims_after_install(self, mise_stub: _MiseSubprocessStub) -> None:
@@ -536,7 +536,7 @@ class TestRunRepairsMissingBinPaths:
 
         mise_stub.handlers[("install", "--force")] = _force_install
 
-        assert _setup_mise.run() is True
+        assert _setup_mise.run().changed is True
 
         force_calls = mise_stub.calls_for("install", "--force")
         assert [call["args"] for call in force_calls] == [["install", "--force", "actionlint@1.7.12"]]

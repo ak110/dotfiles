@@ -15,7 +15,7 @@ from typing import Any, cast
 import pytest
 
 from pytools import post_apply
-from pytools._internal import claude_common, codex_processes, install_codex_plugins, plugin_warmup
+from pytools._internal import claude_common, codex_processes, install_codex_plugins, plugin_warmup, post_apply_outcome
 
 from ._test_helpers import _FakeResult
 
@@ -390,14 +390,14 @@ def test_post_apply_deferral_continues_with_installed_warmup_version(
     reached: list[str] = []
     warmup_targets: list[Path | None] = []
 
-    def record_step(name: str) -> Callable[[], bool]:
-        def run() -> bool:
+    def record_step(name: str) -> Callable[[], post_apply_outcome.PostApplyOutcome]:
+        def run() -> post_apply_outcome.PostApplyOutcome:
             reached.append(name)
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
         return run
 
-    def warmup() -> bool:
+    def warmup() -> post_apply_outcome.PostApplyOutcome:
         warmup_targets.append(
             plugin_warmup.codex_plugin_script(
                 plugin_id="agent-toolkit@ak110-dotfiles",
@@ -407,9 +407,9 @@ def test_post_apply_deferral_continues_with_installed_warmup_version(
             )
         )
         reached.append("warmup")
-        return False
+        return post_apply_outcome.PostApplyOutcome()
 
-    def install() -> post_apply.StepReturn:
+    def install() -> post_apply_outcome.PostApplyOutcome:
         assert "Codex CLI の導入と更新" in reached
         assert "Codex の Claude MCP 登録削除" in reached
         assert "warmup" not in reached
@@ -657,7 +657,10 @@ def test_invalid_before_state_stops_before_plugin_add(
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
 
 
-def test_plugin_add_failure_keeps_legacy_link(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_plugin_add_failure_keeps_legacy_link(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """plugin addの失敗は導入の失敗としてスキップと数え、legacy linkを除去しない。"""
     destination = _legacy_link(plugin_env)
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), {"installed": []}])
@@ -668,22 +671,30 @@ def test_plugin_add_failure_keeps_legacy_link(plugin_env: Path, monkeypatch: pyt
 
     monkeypatch.setattr(install_codex_plugins, "_command", command)
 
-    with pytest.raises(RuntimeError, match="plugin addに失敗"):
-        install_codex_plugins.run()
+    with caplog.at_level("WARNING"):
+        outcome = install_codex_plugins.run()
+
+    assert outcome.failure is None
+    assert "plugin addに失敗" in caplog.text
 
     assert destination.is_symlink()
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
-def test_post_install_verification_failure_keeps_legacy_link(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """導入後の状態検証に失敗した場合はlegacy linkを除去しない。"""
+def test_post_install_verification_failure_keeps_legacy_link(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """導入後の状態検証に失敗した場合はスキップと数え、legacy linkを除去しない。"""
     destination = _legacy_link(plugin_env)
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), {"installed": []}, None])
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
 
-    with pytest.raises(RuntimeError, match="更新後の状態が期待値と一致しない"):
-        install_codex_plugins.run()
+    with caplog.at_level("WARNING"):
+        outcome = install_codex_plugins.run()
+
+    assert outcome.failure is None
+    assert "更新後の状態が期待値と一致しない" in caplog.text
 
     assert destination.is_symlink()
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls

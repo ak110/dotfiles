@@ -2,6 +2,7 @@
 
 chezmoiは配布元から削除されたファイルをdestination側から自動削除しないため、
 過去に配布して不要になったファイルを追従して削除する仕組みを提供する。
+各関数は`failures`を渡すと、検査と削除の失敗を警告の代わりにそこへ加えて残りの項目を続ける。
 """
 
 import dataclasses
@@ -45,6 +46,14 @@ class RemovedPathIfContent:
     expected: bytes | str
 
 
+def _report_failure(failures: list[str] | None, message: str) -> None:
+    """検査または削除の失敗を`failures`へ加える。`failures`が無い場合は警告として記録して処理を続ける。"""
+    if failures is None:
+        logger.warning("%s（スキップして続行した）", message)
+    else:
+        failures.append(message)
+
+
 def _is_link_like(path: Path) -> bool:
     """シンボリックリンクまたはWindowsのディレクトリジャンクションかを返す。"""
     if path.is_symlink():
@@ -63,7 +72,7 @@ def _remove_link_like(path: Path) -> None:
         path.rmdir()
 
 
-def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
+def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path], *, failures: list[str] | None = None) -> int:
     """`base_dir` 配下から `relative_paths` に列挙されたパスを安全に削除する。
 
     シンボリックリンクを辿って `base_dir` 外を削除しないよう、削除前にresolve後のパスが
@@ -92,7 +101,7 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
             logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
             continue
         except OSError as error:
-            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
+            _report_failure(failures, f"{target} の検査または削除に失敗: {error}")
             continue
         try:
             if is_link_like:
@@ -102,14 +111,14 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
             else:
                 target.unlink()
         except OSError as error:
-            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
+            _report_failure(failures, f"{target} の検査または削除に失敗: {error}")
             continue
         logger.info(log_format.format_status(log_format.home_short(target), "旧配布物を削除"))
         removed += 1
     return removed
 
 
-def cleanup_empty_dirs(base_dir: Path, relative_dirs: Iterable[Path]) -> int:
+def cleanup_empty_dirs(base_dir: Path, relative_dirs: Iterable[Path], *, failures: list[str] | None = None) -> int:
     """`base_dir` 配下の`relative_dirs`を、空のディレクトリである場合だけ列挙順に削除する。
 
     子を先に列挙すると、子の削除で空になった親も同じ呼び出しで削除できる。
@@ -123,7 +132,7 @@ def cleanup_empty_dirs(base_dir: Path, relative_dirs: Iterable[Path]) -> int:
     try:
         base_resolved = base_dir.resolve()
     except OSError as error:
-        logger.warning("%s の検査に失敗したため空ディレクトリの削除をスキップします: %s", base_dir, error)
+        _report_failure(failures, f"{base_dir} の検査に失敗: {error}")
         return 0
     removed = 0
     for rel in relative_dirs:
@@ -136,7 +145,7 @@ def cleanup_empty_dirs(base_dir: Path, relative_dirs: Iterable[Path]) -> int:
             logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
             continue
         except OSError as error:
-            logger.warning("%s の検査に失敗したためスキップします: %s", target, error)
+            _report_failure(failures, f"{target} の検査に失敗: {error}")
             continue
         try:
             target.rmdir()
@@ -155,7 +164,9 @@ def _content_matches(actual: bytes, expected: bytes | str) -> bool:
     return hashlib.sha256(actual).hexdigest() == expected
 
 
-def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes | str]) -> int:
+def cleanup_paths_if_content_matches(
+    base_dir: Path, expected: dict[Path, bytes | str], *, failures: list[str] | None = None
+) -> int:
     """内容が期待値と完全一致する場合に限り、`base_dir` 配下のファイルを削除する。
 
     `cleanup_paths` との違いは「ユーザーが独自に編集済みの可能性があるファイル」を保護するため、
@@ -180,7 +191,7 @@ def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes 
             logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
             continue
         except OSError as error:
-            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
+            _report_failure(failures, f"{target} の検査または削除に失敗: {error}")
             continue
         try:
             if not target.is_file() or target.is_symlink():
@@ -188,7 +199,7 @@ def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes 
                 continue
             actual_bytes = target.read_bytes()
         except OSError as error:
-            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
+            _report_failure(failures, f"{target} の検査または削除に失敗: {error}")
             continue
         if not _content_matches(actual_bytes, expected_content):
             logger.warning(
@@ -199,7 +210,7 @@ def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes 
         try:
             target.unlink()
         except OSError as error:
-            logger.warning("%s の検査または削除に失敗したためスキップします: %s", target, error)
+            _report_failure(failures, f"{target} の検査または削除に失敗: {error}")
             continue
         logger.info(log_format.format_status(log_format.home_short(target), "旧配布物を削除"))
         removed += 1

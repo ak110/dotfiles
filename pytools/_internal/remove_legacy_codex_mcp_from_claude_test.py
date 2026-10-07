@@ -40,7 +40,7 @@ def test_run_removes_only_exact_user_definition(monkeypatch: pytest.MonkeyPatch,
         return _FakeResult(returncode=0)
 
     monkeypatch.setattr(claude_common, "run_claude", run)
-    assert subject.run() is True
+    assert subject.run().changed is True
     assert calls == [["mcp", "remove", "--scope", "user", "codex"]]
 
 
@@ -53,9 +53,9 @@ def test_run_keeps_custom_definition(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     monkeypatch.setattr(subject, "_CLAUDE_CONFIG_PATH", path)
     monkeypatch.setattr(claude_common, "resolve_executable", lambda *_args, **_kwargs: pathlib.Path("claude"))
     monkeypatch.setattr(claude_common, "run_claude", lambda *_args, **_kwargs: pytest.fail("削除してはいけない"))
-    assert subject.run() is False
+    assert subject.run().changed is False
 
 
 def test_run_skips_without_claude(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(claude_common, "resolve_executable", lambda *_args, **_kwargs: None)
-    assert subject.run() is False
+    assert subject.run().changed is False

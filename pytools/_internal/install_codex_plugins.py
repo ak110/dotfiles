@@ -485,7 +485,10 @@ def _append_notices_to_exception(error: Exception, notices: list[post_apply_outc
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """marketplaceを登録してagent-toolkitを導入・更新する。"""
+    """marketplaceを登録してagent-toolkitを導入・更新する。
+
+    導入・更新と状態確認の失敗は警告を出力してスキップと数え、配布先ファイルの書き込みの失敗は例外として失敗と数える。
+    """
     codex = claude_common.resolve_executable("codex")
     if codex is None:
         logger.info(log_format.format_status("codex plugins", "codex CLIが見つからずスキップ"))
@@ -533,6 +536,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             return _outcome(changed, notices)
         local_changed = _sync_local_plugin(root, marketplace_name, plugin_name, version, current, notices)
         return _outcome(changed or local_changed, notices)
+    except RuntimeError as error:
+        # 導入・更新とその後の状態確認の失敗。設定ファイルとランチャーの書き込みの失敗（OSError）は失敗として送出する。
+        logger.warning(log_format.format_status("codex plugins", f"導入または更新に失敗: {error}"))
+        return _outcome(False, notices)
     except Exception as error:
         _append_notices_to_exception(error, notices)
         raise

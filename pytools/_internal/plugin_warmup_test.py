@@ -29,14 +29,12 @@ def _target(tmp_path: pathlib.Path) -> pathlib.Path:
     return entry
 
 
-@pytest.mark.parametrize("fail_on_error", [False, True])
 def test_nonzero_exit_reports_captured_output(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
-    fail_on_error: bool,
 ) -> None:
-    """非0終了の2経路で、取り込んだstderrとstdoutを警告と例外の双方へ含める。"""
+    """非0終了では、取り込んだstderrとstdoutを警告へ含めて構築できなかったことを返す。"""
     monkeypatch.setattr(
         _claude_common,
         "run_subprocess",
@@ -45,38 +43,25 @@ def test_nonzero_exit_reports_captured_output(
     path = _target(tmp_path)
 
     with caplog.at_level(logging.WARNING):
-        if fail_on_error:
-            with pytest.raises(RuntimeError) as excinfo:
-                _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup", fail_on_error=True)
-            assert f"stderr: {_STDERR_BODY}" in str(excinfo.value)
-            assert f"stdout: {_STDOUT_BODY}" in str(excinfo.value)
-        else:
-            _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup")
+        assert _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup") is False
 
     assert f"stderr: {_STDERR_BODY}" in caplog.text
     assert f"stdout: {_STDOUT_BODY}" in caplog.text
     assert "exit 1" in caplog.text
 
 
-@pytest.mark.parametrize("fail_on_error", [False, True])
 def test_missing_result_reports_execution_failure(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
-    fail_on_error: bool,
 ) -> None:
-    """結果を得られない2経路で、コマンドの実行に失敗したことを警告と例外の双方へ含める。"""
+    """結果を得られない場合は、コマンドの実行に失敗したことを警告へ含めて構築できなかったことを返す。"""
     monkeypatch.setattr(_claude_common, "run_subprocess", lambda *_args, **_kwargs: None)
     path = _target(tmp_path)
     expected = _claude_common.format_cli_error(None)
 
     with caplog.at_level(logging.WARNING):
-        if fail_on_error:
-            with pytest.raises(RuntimeError) as excinfo:
-                _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup", fail_on_error=True)
-            assert expected in str(excinfo.value)
-        else:
-            _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup")
+        assert _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup") is False
 
     assert expected in caplog.text
     assert "exit codeなし" in caplog.text
@@ -96,6 +81,6 @@ def test_success_does_not_report_captured_output(
     path = _target(tmp_path)
 
     with caplog.at_level(logging.WARNING):
-        _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup", fail_on_error=True)
+        assert _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup") is True
 
     assert caplog.text == ""

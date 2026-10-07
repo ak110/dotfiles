@@ -35,7 +35,7 @@ def test_creates_symlink_when_missing(
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
     src.mkdir(parents=True)
 
-    assert setup_codex_links.run() is True
+    assert setup_codex_links.run().changed is True
 
     dest = codex_home / "skills" / "foo"
     assert dest.is_symlink()
@@ -55,7 +55,7 @@ def test_no_op_when_link_already_correct(
     dest.parent.mkdir(parents=True)
     dest.symlink_to(src, target_is_directory=True)
 
-    assert setup_codex_links.run() is False
+    assert setup_codex_links.run().changed is False
     assert dest.is_symlink()
 
 
@@ -74,7 +74,7 @@ def test_recreates_link_when_target_mismatched(
     dest.parent.mkdir(parents=True)
     dest.symlink_to(other, target_is_directory=True)
 
-    assert setup_codex_links.run() is True
+    assert setup_codex_links.run().changed is True
 
     assert dest.is_symlink()
     assert dest.resolve() == src.resolve()
@@ -124,28 +124,28 @@ def test_recreates_link_when_dangling(
     assert not dest.exists()
     assert dest.is_symlink()
 
-    assert setup_codex_links.run() is True
+    assert setup_codex_links.run().changed is True
 
     assert dest.is_symlink()
     assert dest.resolve() == src.resolve()
 
 
-def test_skips_when_regular_directory_exists(
+def test_fails_when_regular_directory_exists(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """配布先に通常ディレクトリが存在するなら警告ログ・スキップ・該当件0なら`False`返却。"""
+    """配布先に通常ディレクトリが存在するならリンクを作成せず、失敗と数える。"""
     dotfiles_root, codex_home = env
     _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     (dotfiles_root / "agent-toolkit" / "skills" / "foo").mkdir(parents=True)
     dest = codex_home / "skills" / "foo"
     dest.mkdir(parents=True)
 
-    with caplog.at_level(logging.WARNING):
-        assert setup_codex_links.run() is False
+    outcome = setup_codex_links.run()
 
-    assert any("通常ファイル" in record.message for record in caplog.records)
+    assert outcome.changed is False
+    assert outcome.failure is not None
+    assert "通常ファイル" in outcome.failure
     assert not dest.is_symlink()
 
 
@@ -159,20 +159,19 @@ def test_skips_when_src_missing(
     _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
 
     with caplog.at_level(logging.WARNING):
-        assert setup_codex_links.run() is False
+        assert setup_codex_links.run().changed is False
 
     assert any("配布元が存在しない" in record.message for record in caplog.records)
     assert not (codex_home / "skills" / "foo").exists()
 
 
 @pytest.mark.parametrize("failure_side", ["source", "destination"])
-def test_os_error_skips_only_affected_link(
+def test_os_error_fails_only_affected_link(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
     failure_side: str,
 ) -> None:
-    """配布元または配布先の検査失敗後も、残るリンクを処理する。"""
+    """配布元または配布先の検査失敗を失敗と数え、残るリンクは処理する。"""
     dotfiles_root, codex_home = env
     monkeypatch.setattr(
         setup_codex_links,
@@ -202,11 +201,12 @@ def test_os_error_skips_only_affected_link(
             ),
         )
 
-    with caplog.at_level(logging.WARNING):
-        assert setup_codex_links.run() is True
+    outcome = setup_codex_links.run()
 
-    assert "検査失敗" in caplog.text
-    assert str(failing_dest) in caplog.text
+    assert outcome.changed is True
+    assert outcome.failure is not None
+    assert "検査失敗" in outcome.failure
+    assert str(failing_dest) in outcome.failure
     assert (codex_home / "skills" / "succeeding").is_symlink()
 
 
@@ -218,7 +218,7 @@ def test_returns_false_when_dotfiles_root_unresolved(
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: None)
     monkeypatch.setattr(setup_codex_links, "CODEX_HOME", tmp_path / ".codex")
 
-    assert setup_codex_links.run() is False
+    assert setup_codex_links.run().changed is False
 
 
 def test_run_leaves_the_rules_destination_to_the_rules_sync(
@@ -243,7 +243,7 @@ def test_run_leaves_the_rules_destination_to_the_rules_sync(
     rules_src.mkdir(parents=True)
     (rules_src / "01-agent.md").write_text("条文\n", encoding="utf-8")
 
-    assert sync_agent_toolkit_rules.run() is True
+    assert sync_agent_toolkit_rules.run().changed is True
     rules_dest = codex_home / "agent-toolkit" / "rules"
     with caplog.at_level(logging.WARNING):
         setup_codex_links.run()
@@ -283,7 +283,7 @@ def test_windows_recreates_link_when_junction_like_dangling(
     fake_winapi.CreateJunction = fake_create_junction  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "_winapi", fake_winapi)
 
-    assert setup_codex_links.run() is True
+    assert setup_codex_links.run().changed is True
 
     assert calls == ["remove", "create"]
 
@@ -310,7 +310,7 @@ def test_windows_creates_junction(
     fake_winapi.CreateJunction = fake_create_junction  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "_winapi", fake_winapi)
 
-    assert setup_codex_links.run() is True
+    assert setup_codex_links.run().changed is True
 
     dest = codex_home / "skills" / "foo"
     assert calls == [(str(src), str(dest))]

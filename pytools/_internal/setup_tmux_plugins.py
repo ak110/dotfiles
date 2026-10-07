@@ -8,11 +8,10 @@ Linuxのみ対象とする（Windowsはtmux利用想定外のためスキップ�
 
 import logging
 import os
-import platform
 from dataclasses import dataclass
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import claude_common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -66,16 +65,13 @@ _PLUGINS: tuple[_Plugin, ...] = (
 )
 
 
-def run() -> bool:
-    """tmuxプラグインを冪等に導入・更新する。"""
-    if platform.system() != "Linux":
-        logger.info(log_format.format_status(_TAG, "Linux以外のためスキップ"))
-        return False
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """tmuxプラグインを冪等に導入・更新する。取得の失敗は警告を出力してスキップと数える。"""
     changed = False
     for plugin in _PLUGINS:
         if _process_plugin(plugin):
             changed = True
-    return changed
+    return post_apply_outcome.PostApplyOutcome(changed=changed)
 
 
 def _process_plugin(plugin: _Plugin) -> bool:

@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from pytools._internal import setup_codex_cli
+from pytools._internal import post_apply_outcome, setup_codex_cli
 
 _Call = tuple[list[str], dict[str, object]]
 _INSTALLED_LISTING = '[{"version": "0.1.0", "installed": true, "active": true}]'
@@ -157,7 +157,7 @@ def test_run_installs_verifies_then_migrates_on_posix(monkeypatch, tmp_path: Pat
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -214,7 +214,7 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -263,7 +263,7 @@ def test_run_installs_with_preferred_powershell_on_windows(monkeypatch, tmp_path
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -373,7 +373,7 @@ def test_run_obeys_official_installer_contract(
 
     client = _make_client(requests)
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -399,7 +399,7 @@ def test_run_reruns_installer_when_launcher_already_exists(monkeypatch, tmp_path
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -418,7 +418,7 @@ def test_run_accepts_legacy_launcher_layout(monkeypatch, tmp_path: Path, platfor
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -445,7 +445,7 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -480,7 +480,7 @@ def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_pat
         transport=httpx.MockTransport(lambda request: (_ for _ in ()).throw(AssertionError("取得してはならない")))
     )
     try:
-        assert not setup_codex_cli.run(client)
+        assert not setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -504,7 +504,7 @@ def test_run_retries_transient_http_status(monkeypatch, tmp_path: Path, status_c
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
     client = httpx.Client(transport=httpx.MockTransport(handle_request))
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -531,7 +531,7 @@ def test_run_retries_transient_transport_error(monkeypatch, tmp_path: Path, erro
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
     client = httpx.Client(transport=httpx.MockTransport(handle_request))
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -549,8 +549,7 @@ def test_run_does_not_retry_permanent_http_status(monkeypatch, tmp_path: Path) -
 
     client = httpx.Client(transport=httpx.MockTransport(handle_request))
     try:
-        with pytest.raises(RuntimeError):
-            setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
     finally:
         client.close()
 
@@ -571,8 +570,7 @@ def test_run_stops_retrying_after_finite_attempts(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(setup_codex_cli.random, "uniform", lambda start, end: 0.0)
     client = httpx.Client(transport=httpx.MockTransport(handle_request))
     try:
-        with pytest.raises(RuntimeError):
-            setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
     finally:
         client.close()
 
@@ -598,8 +596,7 @@ def test_run_adds_jitter_to_retry_delays(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(setup_codex_cli.random, "uniform", fixed_jitter)
     client = httpx.Client(transport=httpx.MockTransport(handle_request))
     try:
-        with pytest.raises(RuntimeError):
-            setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
     finally:
         client.close()
 
@@ -629,8 +626,7 @@ def test_run_removes_temporary_file_when_write_fails(monkeypatch, tmp_path: Path
     monkeypatch.setattr(setup_codex_cli.tempfile, "NamedTemporaryFile", lambda **kwargs: FailingTemporaryFile())
     client = _make_client()
     try:
-        with pytest.raises(RuntimeError):
-            setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
     finally:
         client.close()
 
@@ -645,8 +641,7 @@ def test_run_keeps_old_versions_when_installer_fails(monkeypatch, tmp_path: Path
 
     client = _make_client()
     try:
-        with pytest.raises(RuntimeError):
-            setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
     finally:
         client.close()
 
@@ -662,8 +657,7 @@ def test_run_keeps_old_versions_when_launcher_is_missing(monkeypatch, tmp_path: 
 
     client = _make_client()
     try:
-        with pytest.raises(RuntimeError):
-            setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
     finally:
         client.close()
 
@@ -681,8 +675,7 @@ def test_run_keeps_old_versions_when_verification_fails(monkeypatch, tmp_path: P
 
     client = _make_client()
     try:
-        with pytest.raises(RuntimeError):
-            setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
     finally:
         client.close()
 
@@ -699,7 +692,7 @@ def test_run_skips_mise_removal_when_no_version_is_installed(monkeypatch, tmp_pa
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -720,7 +713,7 @@ def test_run_skips_mise_removal_when_listed_version_is_not_installed(monkeypatch
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -750,7 +743,7 @@ def test_run_reshims_orphaned_mise_launcher(monkeypatch, tmp_path: Path) -> None
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -783,7 +776,7 @@ def test_run_warns_without_deleting_orphaned_mise_launcher(
     client = _make_client()
     try:
         with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_codex_cli"):
-            assert setup_codex_cli.run(client)
+            assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -802,7 +795,7 @@ def test_run_reshims_after_npm_migration_without_mise_versions(monkeypatch, tmp_
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 
@@ -825,8 +818,7 @@ def test_run_propagates_mise_failures(monkeypatch, tmp_path: Path, failing: str)
 
     client = _make_client()
     try:
-        with pytest.raises(RuntimeError):
-            setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).failure is not None
     finally:
         client.close()
 
@@ -845,8 +837,7 @@ def test_run_propagates_npm_migration_failure(monkeypatch, tmp_path: Path) -> No
 
     client = _make_client()
     try:
-        with pytest.raises(RuntimeError):
-            setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).failure is not None
     finally:
         client.close()
 
@@ -862,7 +853,7 @@ def test_run_skips_mise_removal_when_mise_is_absent(monkeypatch, tmp_path: Path)
 
     client = _make_client()
     try:
-        assert setup_codex_cli.run(client)
+        assert setup_codex_cli.run(client).changed
     finally:
         client.close()
 

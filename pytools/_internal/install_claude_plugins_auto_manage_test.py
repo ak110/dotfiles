@@ -150,7 +150,7 @@ class TestAutoDisablePlugins:
             installed_ids=[self._DISABLE_TARGET],
             enabled_map={self._DISABLE_TARGET: True},
         )
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is True
         assert ["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope=user"] in calls
 
@@ -162,7 +162,7 @@ class TestAutoDisablePlugins:
             installed_ids=[self._DISABLE_TARGET],
             enabled_map=None,
         )
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is True
         assert ["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope=user"] in calls
 
@@ -174,7 +174,7 @@ class TestAutoDisablePlugins:
             installed_ids=[self._DISABLE_TARGET],
             enabled_map={self._DISABLE_TARGET: False},
         )
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is False
         assert not any(command_matches(c, ["claude", "plugin", "disable"]) for c in calls)
 
@@ -186,7 +186,7 @@ class TestAutoDisablePlugins:
             installed_ids=[],
             enabled_map={},
         )
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is False
         assert not any(command_matches(c, ["claude", "plugin", "disable"]) for c in calls)
 
@@ -221,7 +221,7 @@ class TestAutoDisablePlugins:
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run_with_disable_failure)
 
         # disable 失敗でも例外は出ない (changed は False: 成功件数 0)
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is False
         assert any(command_matches(c, ["claude", "plugin", "disable"]) for c in calls)
 
@@ -274,7 +274,11 @@ class TestRunAutoDisable:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, recommendations = _install_claude_plugins.run()
+        outcome = _install_claude_plugins.run()
+
+        changed = outcome.changed
+
+        recommendations = list(outcome.recommendations)
 
         assert changed is True
         assert not recommendations
@@ -316,7 +320,11 @@ class TestRunNoAutomaticStateChange:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        _changed, recommendations = _install_claude_plugins.run()
+        outcome = _install_claude_plugins.run()
+
+        _changed = outcome.changed
+
+        recommendations = list(outcome.recommendations)
 
         # 自動 enable/disable/install (外部 marketplace 向け) の CLI は発行されない
         install_target_cmd = ["claude", "plugin", "install", target_enable, "--scope=user"]
@@ -375,7 +383,7 @@ class TestExternalMarketplaces:
     def test_registers_and_installs_when_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls = self._setup_run(monkeypatch, registered=False, installed=False)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
 
         assert changed is True
         assert ["claude", "plugin", "marketplace", "add", self._TARGET[1], "--scope=user"] in calls
@@ -385,7 +393,7 @@ class TestExternalMarketplaces:
     def test_skips_when_already_installed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls = self._setup_run(monkeypatch, registered=True, installed=True)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
 
         assert changed is False
         assert not any(command_matches(call, ["claude", "plugin", "marketplace", "add"]) for call in calls)
@@ -401,7 +409,7 @@ class TestExternalMarketplaces:
             registered_source="attacker/compact-plus",
         )
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
 
         assert changed is False
         assert not any(command_matches(call, ["claude", "plugin", "marketplace", "add"]) for call in calls)
@@ -422,7 +430,7 @@ class TestExternalMarketplaces:
             lambda: {"dummy@ak110-dotfiles": True},
         )
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
 
         assert changed is True
         assert ["claude", "plugin", "marketplace", "add", self._TARGET[1], "--scope=user"] in calls

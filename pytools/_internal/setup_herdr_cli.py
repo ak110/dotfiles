@@ -21,15 +21,6 @@ _WINDOWS_INSTALLER_URL = "https://herdr.dev/install.ps1"
 _DETACHED_UPDATE_MARKER = "outside herdr after detaching from the session"
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    from pytools._internal.cli import setup_logging  # pylint: disable=import-outside-toplevel
-
-    setup_logging()
-    run()
-    sys.exit(0)
-
-
 def _launcher_path() -> Path:
     """公式直接インストール版Herdrの安定したランチャー位置を返す。"""
     if sys.platform == "win32":
@@ -39,8 +30,11 @@ def _launcher_path() -> Path:
     return Path.home() / ".local" / "bin" / "herdr"
 
 
-def run(client: httpx.Client | None = None) -> bool | post_apply_outcome.PostApplyOutcome:
-    """公式直接インストール版Herdrを導入または更新し、実行可能な状態を確認する。"""
+def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutcome:
+    """公式直接インストール版Herdrを導入または更新し、実行可能な状態を確認する。
+
+    取得・導入・更新の失敗は警告を出力してスキップと数える。
+    """
     with _curl_env_overrides() as env_overrides:
         return _run(client, env_overrides)
 
@@ -62,7 +56,7 @@ def _curl_env_overrides() -> collections.abc.Iterator[dict[str, str] | None]:
         yield {"CURL_HOME": curl_home}
 
 
-def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> bool | post_apply_outcome.PostApplyOutcome:
+def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> post_apply_outcome.PostApplyOutcome:
     launcher = _launcher_path()
     update_deferred = False
     if launcher.is_file():
@@ -88,16 +82,15 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> b
         )
         if reason:
             logger.warning(log_format.format_status(_TAG, reason))
-            raise RuntimeError("公式インストーラーの取得に失敗")
+            return post_apply_outcome.PostApplyOutcome()
     if result is None or (result.returncode != 0 and not update_deferred):
-        message = f"導入または更新に失敗: {claude_common.format_cli_error(result)}"
-        logger.warning(log_format.format_status(_TAG, message))
-        raise RuntimeError(message)
+        logger.warning(log_format.format_status(_TAG, f"導入または更新に失敗: {claude_common.format_cli_error(result)}"))
+        return post_apply_outcome.PostApplyOutcome()
     verification = claude_common.run_subprocess([str(launcher), "--version"], timeout=30, tag=_TAG, env_overrides=env_overrides)
     if verification is None or verification.returncode != 0:
-        message = f"導入または更新後の確認に失敗: {claude_common.format_cli_error(verification)}"
-        logger.warning(log_format.format_status(_TAG, message))
-        raise RuntimeError(message)
+        detail = claude_common.format_cli_error(verification)
+        logger.warning(log_format.format_status(_TAG, f"導入または更新後の確認に失敗: {detail}"))
+        return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(launcher.parent)
     if update_deferred:
         return post_apply_outcome.PostApplyOutcome(
@@ -109,8 +102,4 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> b
                 ),
             ),
         )
-    return True
-
-
-if __name__ == "__main__":
-    main()
+    return post_apply_outcome.PostApplyOutcome(changed=True)

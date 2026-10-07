@@ -33,7 +33,7 @@ def test_run_updates_existing_direct_install_and_prepends_path(monkeypatch, tmp_
     monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", prepended.append)
 
-    assert setup_herdr_cli.run() is True
+    assert setup_herdr_cli.run().changed is True
     assert commands == [[str(launcher), "update"], [str(launcher), "--version"]]
     assert prepended == [launcher.parent]
 
@@ -62,7 +62,7 @@ def test_run_installs_posix_direct_install(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", lambda path: None)
 
     with _fake_client(handler) as client:
-        assert setup_herdr_cli.run(client) is True
+        assert setup_herdr_cli.run(client).changed is True
 
     assert requested == ["https://herdr.dev/install.sh"]
     assert commands[0][0] == "bash"
@@ -112,11 +112,12 @@ def test_run_defers_update_inside_herdr_when_existing_launcher_is_healthy(
     assert prepended == [launcher.parent]
 
 
-def test_run_keeps_deferred_update_fatal_when_existing_launcher_is_unhealthy(
+def test_run_skips_deferred_update_when_existing_launcher_is_unhealthy(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """既知の更新制約でも既存版を確認できなければ失敗を上位へ伝える。"""
+    """既知の更新制約でも既存版を確認できなければ、導入の失敗として警告しスキップと数える。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_herdr_cli.sys, "platform", "linux")
     launcher = tmp_path / ".local" / "bin" / "herdr"
@@ -136,8 +137,9 @@ def test_run_keeps_deferred_update_fatal_when_existing_launcher_is_unhealthy(
 
     monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
 
-    with pytest.raises(RuntimeError, match="更新後の確認に失敗"):
-        setup_herdr_cli.run()
+    with caplog.at_level("WARNING"):
+        assert setup_herdr_cli.run() == post_apply_outcome.PostApplyOutcome()
+    assert "更新後の確認に失敗" in caplog.text
 
 
 @pytest.mark.parametrize("use_local_app_data", [False, True])
@@ -181,7 +183,7 @@ def test_run_installs_windows_direct_install(
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", lambda path: None)
 
     with _fake_client(handler) as client:
-        assert setup_herdr_cli.run(client) is True
+        assert setup_herdr_cli.run(client).changed is True
 
     assert requested == ["https://herdr.dev/install.ps1"]
     assert commands[0][:2] == ["pwsh", "-NoProfile"]
@@ -208,7 +210,7 @@ def test_run_passes_same_curl_home_to_all_windows_children(
     """Windowsではステップが起動する全子プロセスへ同じ失効確認の設定を渡し、終了後に除去する。
 
     導入済みの`herdr update`もmanifestの取得で`curl`を起動する。設定が導入経路にだけ渡ると、
-    失効確認先へ到達できないネットワークで更新が失敗し、post-apply全体が失敗する。
+    失効確認先へ到達できないネットワークで更新が失敗し、Herdrを更新できない。
     起動を個別に列挙せず記録した全起動を判定し、ステップへ加わる子プロセスの漏れも検出する。
     """
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -242,11 +244,8 @@ def test_run_passes_same_curl_home_to_all_windows_children(
     monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
 
     with _fake_client(handler) as client:
-        if update_returncode:
-            with pytest.raises(RuntimeError, match="導入または更新に失敗"):
-                setup_herdr_cli.run(client)
-        else:
-            assert setup_herdr_cli.run(client) is True
+        outcome = setup_herdr_cli.run(client)
+    assert outcome.changed is not bool(update_returncode)
 
     assert received
     overrides = [env_overrides for _, env_overrides, _ in received]
@@ -288,13 +287,13 @@ def test_run_does_not_pass_curl_home_outside_windows(
     monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
 
     with _fake_client(handler) as client:
-        assert setup_herdr_cli.run(client) is True
+        assert setup_herdr_cli.run(client).changed is True
 
     assert len(overrides) == 2
     assert all(value is None for value in overrides)
 
 
-def test_run_raises_when_installer_is_unreachable(monkeypatch, tmp_path: Path) -> None:
+def test_run_skips_when_installer_is_unreachable(monkeypatch, tmp_path: Path, caplog) -> None:
     """公式インストーラーを取得できない場合は失敗を呼び出し元へ伝える。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_herdr_cli.sys, "platform", "linux")
@@ -302,11 +301,12 @@ def test_run_raises_when_installer_is_unreachable(monkeypatch, tmp_path: Path) -
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, request=request)
 
-    with _fake_client(handler) as client, pytest.raises(RuntimeError, match="取得に失敗"):
-        setup_herdr_cli.run(client)
+    with _fake_client(handler) as client, caplog.at_level("WARNING"):
+        assert setup_herdr_cli.run(client) == post_apply_outcome.PostApplyOutcome()
+    assert "取得に失敗" in caplog.text
 
 
-def test_run_raises_when_installer_fails(monkeypatch, tmp_path: Path) -> None:
+def test_run_skips_when_installer_fails(monkeypatch, tmp_path: Path, caplog) -> None:
     """公式インストーラーの非0終了を成功として扱わない。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_herdr_cli.sys, "platform", "linux")
@@ -321,12 +321,13 @@ def test_run_raises_when_installer_fails(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
 
-    with _fake_client(handler) as client, pytest.raises(RuntimeError, match="導入または更新に失敗"):
-        setup_herdr_cli.run(client)
+    with _fake_client(handler) as client, caplog.at_level("WARNING"):
+        assert setup_herdr_cli.run(client) == post_apply_outcome.PostApplyOutcome()
+    assert "導入または更新に失敗" in caplog.text
 
 
 @pytest.mark.parametrize("failure_command", ["update", "--version"])
-def test_run_raises_on_update_or_verification_failure(
+def test_run_skips_on_update_or_verification_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     failure_command: str,
@@ -348,5 +349,4 @@ def test_run_raises_on_update_or_verification_failure(
     monkeypatch.setattr(setup_herdr_cli.claude_common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", fail_prepend)
 
-    with pytest.raises(RuntimeError):
-        setup_herdr_cli.run()
+    assert setup_herdr_cli.run() == post_apply_outcome.PostApplyOutcome()

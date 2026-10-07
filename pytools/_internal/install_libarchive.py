@@ -10,11 +10,9 @@ import io
 import logging
 import pathlib
 import re
-import sys
 import tarfile
 
-from pytools._internal import log_format, winutils
-from pytools._internal.cli import setup_logging
+from pytools._internal import log_format, post_apply_outcome, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -42,59 +40,60 @@ _INSTALL_DIR = pathlib.Path.home() / ".local" / "lib" / "libarchive"
 _HTTP_TIMEOUT = 60.0
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    setup_logging()
-    run()
-    sys.exit(0)
-
-
-def run() -> bool:
-    """libarchive.dllを配置する（Windowsのみ）。
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """libarchive.dllを配置し、ユーザーPATHと``LIBARCHIVE``環境変数を登録する。
 
     DLLダウンロードはべき等とし、既に配置済みの場合はスキップする。
     ``LIBARCHIVE`` 環境変数の永続化は、DLLの有無にかかわらず毎回実施する。
     libarchive-cはWindowsでDLLを解決する際に ``LIBARCHIVE`` 環境変数を最優先で
     参照するため、DLLだけ配置されて環境変数が未設定の環境でも正しく動作させるためのワークアラウンドである。
-
-    Returns:
-        DLLの新規ダウンロードまたは環境変数の書き換えを1つでも行った場合True。
+    DLLの取得と配置の失敗はスキップ、ユーザーPATHと環境変数の書き込みの失敗は失敗と数える。
     """
-    if sys.platform != "win32":
-        return False
     changed = False
-    try:
-        if _is_already_available():
-            logger.info(log_format.format_status("libarchive", f"既に利用可能 ({_INSTALL_DIR})"))
-        else:
-            # Windows専用処理の関数内ローカル依存のため遅延import。
-            import httpx  # pylint: disable=import-outside-toplevel
-            import zstandard  # pylint: disable=import-outside-toplevel
-
-            _INSTALL_DIR.mkdir(parents=True, exist_ok=True)
-            with httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-                index_html = client.get(_MSYS2_REPO).text
-                for prefix in _REQUIRED_PACKAGES:
-                    filename = _pick_latest(index_html, prefix)
-                    if filename is None:
-                        logger.info(
-                            log_format.format_status(
-                                "libarchive", f"{prefix} の最新版を MSYS2 リポジトリから検出できませんでした"
-                            )
-                        )
-                        return False
-                    logger.info(log_format.format_status("libarchive", f"downloading {filename}"))
-                    data = client.get(f"{_MSYS2_REPO}{filename}").content
-                    _extract_dlls(data, zstandard)
+    if _is_already_available():
+        logger.info(log_format.format_status("libarchive", f"既に利用可能 ({_INSTALL_DIR})"))
+    else:
+        try:
+            installed = _download_dlls()
+        except Exception as e:  # noqa: BLE001 -- 取得と展開のどの段の失敗も導入の失敗として扱う
+            logger.warning(log_format.format_status("libarchive", f"自動インストールに失敗 (手動インストール推奨): {e}"))
+            return post_apply_outcome.PostApplyOutcome()
+        if not installed:
+            return post_apply_outcome.PostApplyOutcome()
+        try:
             winutils.append_user_path(str(_INSTALL_DIR))
-            logger.info(log_format.format_status("libarchive", f"インストール完了: {_INSTALL_DIR}"))
-            changed = True
+        except OSError as e:
+            return post_apply_outcome.PostApplyOutcome(failure=f"ユーザー PATH への登録に失敗: {e}")
+        logger.info(log_format.format_status("libarchive", f"インストール完了: {_INSTALL_DIR}"))
+        changed = True
+    try:
         if _persist_libarchive_env_var():
             changed = True
-        return changed
-    except Exception as e:  # noqa: BLE001
-        logger.info(log_format.format_status("libarchive", f"自動インストールに失敗 (手動インストール推奨): {e}"))
-        return False
+    except OSError as e:
+        return post_apply_outcome.PostApplyOutcome(changed=changed, failure=f"LIBARCHIVE 環境変数の設定に失敗: {e}")
+    return post_apply_outcome.PostApplyOutcome(changed=changed)
+
+
+def _download_dlls() -> bool:
+    """MSYS2リポジトリからDLLを取得して配置する。最新版を検出できないパッケージがあれば偽を返す。"""
+    # Windows専用処理の関数内ローカル依存のため遅延import。
+    import httpx  # pylint: disable=import-outside-toplevel
+    import zstandard  # pylint: disable=import-outside-toplevel
+
+    _INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    with httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
+        index_html = client.get(_MSYS2_REPO).text
+        for prefix in _REQUIRED_PACKAGES:
+            filename = _pick_latest(index_html, prefix)
+            if filename is None:
+                logger.warning(
+                    log_format.format_status("libarchive", f"{prefix} の最新版を MSYS2 リポジトリから検出できませんでした")
+                )
+                return False
+            logger.info(log_format.format_status("libarchive", f"downloading {filename}"))
+            data = client.get(f"{_MSYS2_REPO}{filename}").content
+            _extract_dlls(data, zstandard)
+    return True
 
 
 def _is_already_available() -> bool:
@@ -177,7 +176,3 @@ def _persist_libarchive_env_var() -> bool:
     winutils.write_user_env_var("LIBARCHIVE", target, reg_type)
     logger.info(log_format.format_status("libarchive", f"LIBARCHIVE 環境変数を設定: {target}"))
     return True
-
-
-if __name__ == "__main__":
-    main()

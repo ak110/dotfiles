@@ -46,7 +46,7 @@ class TestFilterUserPath:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Windows\System32",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"D:\mybin", _REG_EXPAND_SZ)]
 
     def test_trailing_separator_is_absorbed(self, monkeypatch: pytest.MonkeyPatch):
@@ -57,7 +57,7 @@ class TestFilterUserPath:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Windows\System32",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"D:\app", _REG_EXPAND_SZ)]
 
     def test_case_difference_is_absorbed(self, monkeypatch: pytest.MonkeyPatch):
@@ -68,7 +68,7 @@ class TestFilterUserPath:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Windows\System32",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"D:\app", _REG_EXPAND_SZ)]
 
     def test_placeholder_matches_expanded_form(self, monkeypatch: pytest.MonkeyPatch):
@@ -79,7 +79,7 @@ class TestFilterUserPath:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Users\test\foo",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"D:\other", _REG_EXPAND_SZ)]
 
     def test_kept_entries_preserve_original_placeholder_string(self, monkeypatch: pytest.MonkeyPatch):
@@ -92,7 +92,7 @@ class TestFilterUserPath:
         )
         # C:\Windows\System32 はシステム側と重複して除外される。
         # %USERPROFILE%\bar は展開されず元の表記のまま残る。
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"%USERPROFILE%\bar", _REG_EXPAND_SZ)]
 
     def test_no_duplicates_means_no_change(self, monkeypatch: pytest.MonkeyPatch):
@@ -103,7 +103,7 @@ class TestFilterUserPath:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Windows\System32",
         )
-        assert cleanup_user_path.run() is False
+        assert cleanup_user_path.run().changed is False
         assert not write_calls
         assert not broadcast_calls
 
@@ -115,7 +115,7 @@ class TestFilterUserPath:
             user_reg_type=_REG_EXPAND_SZ,
             system_value="",
         )
-        assert cleanup_user_path.run() is False
+        assert cleanup_user_path.run().changed is False
         assert not write_calls
         assert not broadcast_calls
 
@@ -127,7 +127,7 @@ class TestFilterUserPath:
             user_reg_type=_REG_EXPAND_SZ,
             system_value="",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"D:\app;D:\tools", _REG_EXPAND_SZ)]
         assert broadcast_calls == [True]
 
@@ -139,7 +139,7 @@ class TestFilterUserPath:
             user_reg_type=_REG_EXPAND_SZ,
             system_value="",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"D:\Apps\bin;D:\other", _REG_EXPAND_SZ)]
         assert broadcast_calls == [True]
 
@@ -151,7 +151,7 @@ class TestFilterUserPath:
             user_reg_type=_REG_EXPAND_SZ,
             system_value="",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"%USERPROFILE%\bin;D:\other", _REG_EXPAND_SZ)]
         assert broadcast_calls == [True]
 
@@ -189,7 +189,7 @@ class TestReplacePlaceholders:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Windows\System32",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls[0][1] == expected
 
     def test_no_match_entry_is_unchanged(self, monkeypatch: pytest.MonkeyPatch):
@@ -201,7 +201,7 @@ class TestReplacePlaceholders:
             system_value=r"C:\Windows\System32",
         )
         # プレースホルダー置換なし・重複除外なし → 書き戻しなし
-        assert cleanup_user_path.run() is False
+        assert cleanup_user_path.run().changed is False
         assert not write_calls
         assert not broadcast_calls
 
@@ -214,7 +214,7 @@ class TestReplacePlaceholders:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Windows\System32",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         # LOCALAPPDATA が欠落しているため USERPROFILE で前方一致
         assert write_calls[0][1] == r"%USERPROFILE%\AppData\Local\foo"
 
@@ -230,7 +230,7 @@ class TestReplacePlaceholders:
             system_value=r"C:\Windows\System32",
         )
         # プレースホルダー置換なし・重複除外なし → 書き戻しなし
-        assert cleanup_user_path.run() is False
+        assert cleanup_user_path.run().changed is False
         assert not write_calls
         assert not broadcast_calls
 
@@ -246,7 +246,7 @@ class TestCollectUserprofileEnv:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Windows\System32",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         # LOCALAPPDATA が USERPROFILE より前に評価されるため、LOCALAPPDATA に置換される
         assert write_calls[0][1] == r"%LOCALAPPDATA%\Programs"
 
@@ -260,7 +260,7 @@ class TestCollectUserprofileEnv:
             user_reg_type=_REG_EXPAND_SZ,
             system_value=r"C:\Windows\System32",
         )
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         # LOCALAPPDATA が欠落しているため USERPROFILE で前方一致
         assert write_calls[0][1] == r"%USERPROFILE%\AppData\Local\foo"
 
@@ -285,7 +285,7 @@ class TestFindMissingPaths:
             stub_find_missing=False,
         )
         # 存在するパスなので書き戻しなし（プレースホルダー化不要・重複なし）
-        assert cleanup_user_path.run() is False
+        assert cleanup_user_path.run().changed is False
 
     def test_missing_entry_emits_warning(self, monkeypatch: pytest.MonkeyPatch, tmp_path, caplog: pytest.LogCaptureFixture):
         """存在しないパスは警告ログを出力し、書き戻しは行わない。"""
@@ -299,7 +299,7 @@ class TestFindMissingPaths:
         )
 
         with caplog.at_level("WARNING", logger=cleanup_user_path.logger.name):
-            assert cleanup_user_path.run() is False
+            assert cleanup_user_path.run().changed is False
         assert any("ユーザー PATH に存在しないエントリーを検出" in record.getMessage() for record in caplog.records)
 
     def test_os_error_is_reported_and_remaining_entry_is_checked(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
@@ -341,13 +341,6 @@ class TestFindMissingPaths:
 class TestRun:
     """`run()` のシナリオテスト。"""
 
-    def test_non_windows_returns_false(self, monkeypatch: pytest.MonkeyPatch):
-        """非 Windows では何もせず False を返す。"""
-        monkeypatch.setattr(cleanup_user_path.sys, "platform", "linux")
-        # winutils の関数が呼ばれないこと（呼ばれれば AttributeError で気づく）を確認するため
-        # 差し替えはせずそのまま実行する。
-        assert cleanup_user_path.run() is False
-
     def test_removes_duplicates_and_broadcasts(self, monkeypatch: pytest.MonkeyPatch):
         """重複ありのケースで書き戻しとブロードキャストを実行する。"""
         write_calls, broadcast_calls = _stub_winutils(
@@ -357,7 +350,7 @@ class TestRun:
             system_value=r"C:\Windows\System32",
         )
 
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         # プレースホルダー入りの元の文字列がそのまま保たれ、値型も維持される。
         assert write_calls == [("Path", r"%USERPROFILE%\bar", _REG_EXPAND_SZ)]
         assert broadcast_calls == [True]
@@ -371,13 +364,12 @@ class TestRun:
             system_value=r"C:\Windows\System32",
         )
 
-        assert cleanup_user_path.run() is False
+        assert cleanup_user_path.run().changed is False
         assert not write_calls
         assert not broadcast_calls
 
     def test_user_path_empty_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         """ユーザー側 PATH 自体が空ならシステム側読み込みすら行わず False を返す。"""
-        monkeypatch.setattr(cleanup_user_path.sys, "platform", "win32")
 
         def _fail(name: str) -> tuple[str | None, int]:
             raise AssertionError("system 側読み込みは呼ばれてはならない")
@@ -388,11 +380,10 @@ class TestRun:
             lambda name: (None, _REG_SZ),
         )
         monkeypatch.setattr(cleanup_user_path.winutils, "read_system_env_var", _fail)
-        assert cleanup_user_path.run() is False
+        assert cleanup_user_path.run().changed is False
 
-    def test_system_read_failure_logs_warning(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
-        """システム側読み込み失敗時は警告ログを表示して False を返し、書き戻しは行わない。"""
-        monkeypatch.setattr(cleanup_user_path.sys, "platform", "win32")
+    def test_system_read_failure_is_reported_as_failure(self, monkeypatch: pytest.MonkeyPatch):
+        """システム側読み込み失敗時は書き戻しを行わず、失敗と数える。"""
         write_calls: list[tuple[str, str, int]] = []
 
         def _raise(name: str) -> tuple[str | None, int]:
@@ -410,10 +401,11 @@ class TestRun:
             lambda name, value, reg_type: write_calls.append((name, value, reg_type)),
         )
 
-        with caplog.at_level("WARNING", logger=cleanup_user_path.logger.name):
-            assert cleanup_user_path.run() is False
+        outcome = cleanup_user_path.run()
+        assert outcome.changed is False
+        assert outcome.failure is not None
+        assert "システム側 PATH の読み込みに失敗" in outcome.failure
         assert not write_calls
-        assert any("システム側 PATH の読み込みに失敗" in record.getMessage() for record in caplog.records)
 
     def test_placeholder_replacement_and_dedup_together(self, monkeypatch: pytest.MonkeyPatch):
         """プレースホルダー化と重複除外が同時に発火するケース。"""
@@ -424,7 +416,7 @@ class TestRun:
             system_value=r"C:\Windows\System32",
         )
 
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"%USERPROFILE%\foo", _REG_EXPAND_SZ)]
         assert broadcast_calls == [True]
 
@@ -437,7 +429,7 @@ class TestRun:
             system_value=r"C:\Windows\System32",
         )
 
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"%USERPROFILE%\foo", _REG_EXPAND_SZ)]
         assert broadcast_calls == [True]
 
@@ -450,7 +442,7 @@ class TestRun:
             system_value=r"C:\Windows\System32",
         )
 
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"%USERPROFILE%\foo", _REG_EXPAND_SZ)]
         assert broadcast_calls == [True]
 
@@ -463,7 +455,7 @@ class TestRun:
             system_value=r"C:\Windows\System32",
         )
 
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         assert write_calls == [("Path", r"C:\app", _REG_SZ)]
         assert broadcast_calls == [True]
 
@@ -476,7 +468,7 @@ class TestRun:
             system_value=r"C:\Windows\System32",
         )
 
-        assert cleanup_user_path.run() is True
+        assert cleanup_user_path.run().changed is True
         # 置換・除外は発生しないが値型昇格のみで書き戻される。
         assert write_calls == [("Path", r"%USERPROFILE%\bin", _REG_EXPAND_SZ)]
         assert broadcast_calls == [True]
@@ -497,7 +489,7 @@ class TestRun:
         )
 
         with caplog.at_level("WARNING", logger=cleanup_user_path.logger.name):
-            assert cleanup_user_path.run() is False
+            assert cleanup_user_path.run().changed is False
         assert not write_calls
         assert not broadcast_calls
         assert any("ユーザー PATH に存在しないエントリーを検出" in record.getMessage() for record in caplog.records)
@@ -527,7 +519,7 @@ class TestRun:
         monkeypatch.setattr(Path, "exists", exists)
 
         with caplog.at_level("WARNING", logger=cleanup_user_path.logger.name):
-            assert cleanup_user_path.run() is True
+            assert cleanup_user_path.run().changed is True
 
         assert write_calls == [("Path", failing, _REG_EXPAND_SZ)]
         assert broadcast_calls == [True]
@@ -552,7 +544,6 @@ def _stub_winutils(
     Returns:
         `(write_calls, broadcast_calls)` の参照。テスト本体で副作用を検証する。
     """
-    monkeypatch.setattr(cleanup_user_path.sys, "platform", "win32")
     write_calls: list[tuple[str, str, int]] = []
     broadcast_calls: list[bool] = []
     monkeypatch.setattr(

@@ -9,11 +9,9 @@ pnpmのキー`minimum-release-age`（分）を`~/.npmrc`へ書くとnpmが未知
 import logging
 import re
 import shutil
-import sys
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format
-from pytools._internal.cli import setup_logging
+from pytools._internal import claude_common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -28,26 +26,25 @@ _LEGACY_NPMRC_PATTERN = re.compile(rf"^{re.escape(_PNPM_KEY)}=.*(?:\n|$)", re.MU
 _PNPM_TIMEOUT = 60.0
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    setup_logging()
-    run()
-    sys.exit(0)
-
-
-def run(npmrc_path: Path | None = None) -> bool:
+def run(npmrc_path: Path | None = None) -> post_apply_outcome.PostApplyOutcome:
     """`~/.npmrc`へnpmの公開待機を設定し、pnpmがあればpnpmのグローバル設定へも設定する。
 
     Args:
         npmrc_path: 対象パス。None の場合は `~/.npmrc` を使用 (テスト時に差し替え可能)。
 
-    Returns:
-        `~/.npmrc`とpnpmのグローバル設定のいずれかを書き換えたかどうか。
+    pnpmの設定の取得と書き換えの失敗は失敗と数える。
     """
     path = npmrc_path if npmrc_path is not None else Path.home() / ".npmrc"
     npmrc_changed = _update_npmrc(path)
-    pnpm_changed = _update_pnpm_global()
-    return npmrc_changed or pnpm_changed
+    try:
+        pnpm_changed = _update_pnpm_global()
+    except _PnpmConfigError as error:
+        return post_apply_outcome.PostApplyOutcome(changed=npmrc_changed, failure=str(error))
+    return post_apply_outcome.PostApplyOutcome(changed=npmrc_changed or pnpm_changed)
+
+
+class _PnpmConfigError(Exception):
+    """pnpmのグローバル設定の取得または書き換えの失敗。"""
 
 
 def _update_npmrc(path: Path) -> bool:
@@ -88,8 +85,7 @@ def _update_pnpm_global() -> bool:
     )
     if current is None or current.returncode != 0:
         detail = "" if current is None else f": {current.stderr.strip()}"
-        logger.warning(log_format.format_status("pnpm", f"{_PNPM_KEY} の取得に失敗しました{detail}"))
-        return False
+        raise _PnpmConfigError(f"pnpmの{_PNPM_KEY} の取得に失敗しました{detail}")
     # 更新通知などが先に出る場合があるため、最後の行を値として読む。
     lines = current.stdout.strip().splitlines()
     if lines and lines[-1].strip() == _PNPM_VALUE:
@@ -100,11 +96,6 @@ def _update_pnpm_global() -> bool:
     )
     if result is None or result.returncode != 0:
         detail = "" if result is None else f": {result.stderr.strip()}"
-        logger.warning(log_format.format_status("pnpm", f"{_PNPM_KEY} の設定に失敗しました{detail}"))
-        return False
+        raise _PnpmConfigError(f"pnpmの{_PNPM_KEY} の設定に失敗しました{detail}")
     logger.info(log_format.format_status("pnpm", f"グローバル設定へ {_PNPM_KEY}={_PNPM_VALUE} を設定しました"))
     return True
-
-
-if __name__ == "__main__":
-    main()

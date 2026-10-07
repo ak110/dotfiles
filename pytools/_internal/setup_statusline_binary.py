@@ -13,7 +13,7 @@ import sys
 
 import httpx
 
-from pytools._internal import claude_common, log_format, setup_mise
+from pytools._internal import claude_common, log_format, post_apply_outcome, setup_mise
 
 logger = logging.getLogger(__name__)
 
@@ -42,28 +42,23 @@ _GIT_TIMEOUT = 30.0
 _BUILD_TIMEOUT = 600.0
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    from pytools._internal.cli import setup_logging  # pylint: disable=import-outside-toplevel
-
-    setup_logging()
-    run()
-    sys.exit(0)
-
-
-def run(client: httpx.Client | None = None) -> bool:
+def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutcome:
     """claude-statuslineバイナリを配置する。
 
     `CHEZMOI_WORKING_TREE`が`develop`のGit作業ツリーを指し、
     `origin/master`との差分がある場合は、解決済みmiseからstatuslineをビルドする。
-    それ以外の場合はGitHub Releaseから取得する。開発版のビルドまたは配置に失敗した場合は
-    例外を送出し、`post_apply`がステップ失敗として記録できるようにする。
+    それ以外の場合はGitHub Releaseから取得する。
+    いずれもバイナリの取得と導入に当たるため、判定・ビルド・取得・配置の失敗は警告を出力してスキップと数える。
     """
-    development_tree = _find_development_tree()
-    if development_tree is not None:
-        working_tree, mise_bin = development_tree
-        return _install_development_binary(working_tree, mise_bin)
-    return _download_release(client)
+    try:
+        development_tree = _find_development_tree()
+        if development_tree is not None:
+            working_tree, mise_bin = development_tree
+            return post_apply_outcome.PostApplyOutcome(changed=_install_development_binary(working_tree, mise_bin))
+    except (RuntimeError, OSError) as error:
+        logger.warning(log_format.format_status("statusline", f"開発版の導入に失敗（既存のバイナリを使う）: {error}"))
+        return post_apply_outcome.PostApplyOutcome()
+    return post_apply_outcome.PostApplyOutcome(changed=_download_release(client))
 
 
 def _find_development_tree() -> tuple[pathlib.Path, pathlib.Path] | None:
@@ -189,12 +184,8 @@ def _download_release(client: httpx.Client | None = None) -> bool:
         logger.info(log_format.format_status("statusline", f"インストール完了: {_INSTALL_PATH}"))
         return True
     except Exception as e:  # noqa: BLE001
-        logger.info(log_format.format_status("statusline", f"バイナリ取得に失敗（statusLineは空表示になる）: {e}"))
+        logger.warning(log_format.format_status("statusline", f"バイナリ取得に失敗（statusLineは空表示になる）: {e}"))
         return False
     finally:
         if owns_client:
             active_client.close()
-
-
-if __name__ == "__main__":
-    main()

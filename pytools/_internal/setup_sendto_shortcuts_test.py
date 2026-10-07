@@ -13,7 +13,6 @@ from pytools._internal._test_helpers import ok_result as _ok
 @pytest.fixture(name="windows_home")
 def _windows_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     """Windows 環境を装い、ホームと APPDATA を tmp_path 配下に振り向ける。"""
-    monkeypatch.setattr(setup_sendto_shortcuts.sys, "platform", "win32")
     monkeypatch.setattr(setup_sendto_shortcuts.pathlib.Path, "home", lambda: tmp_path)
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     return tmp_path
@@ -21,18 +20,6 @@ def _windows_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pa
 
 class TestRunPlatformGuard:
     """非 Windows での no-op 動作。"""
-
-    def test_non_windows_returns_false(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(setup_sendto_shortcuts.sys, "platform", "linux")
-        calls: list[list[str]] = []
-        monkeypatch.setattr(
-            setup_sendto_shortcuts.claude_common,
-            "run_subprocess",
-            _make_static_fake(calls),
-        )
-
-        assert setup_sendto_shortcuts.run() is False
-        assert not calls
 
 
 class TestRunSendToMissing:
@@ -47,7 +34,7 @@ class TestRunSendToMissing:
             _make_static_fake(calls),
         )
 
-        assert setup_sendto_shortcuts.run() is False
+        assert setup_sendto_shortcuts.run().changed is False
         assert not calls
 
 
@@ -65,7 +52,7 @@ class TestRunTargetMissing:
             _make_static_fake(calls),
         )
 
-        assert setup_sendto_shortcuts.run() is False
+        assert setup_sendto_shortcuts.run().changed is False
         assert not calls
         assert not (sendto / "TouchFile.lnk").exists()
 
@@ -94,7 +81,7 @@ class TestRunShortcutCreation:
             _make_static_fake(calls, _ok()),
         )
 
-        assert setup_sendto_shortcuts.run() is True
+        assert setup_sendto_shortcuts.run().changed is True
         cmd_strings = [" ".join(c) for c in calls]
         # .lnk 不在のため読み取りは行われず、Save() を含む生成コマンドのみ呼ばれる。
         # 差し替えていないモジュール定義の `_SHORTCUTS` (TouchFile.lnk) のターゲットと .lnk パスが
@@ -115,7 +102,7 @@ class TestRunShortcutCreation:
             _make_branching_fake(calls, _ok(), _ok(stdout=str(target))),
         )
 
-        assert setup_sendto_shortcuts.run() is False
+        assert setup_sendto_shortcuts.run().changed is False
         cmd_strings = [" ".join(c) for c in calls]
         # 読み取りで一致が確認できるため生成は呼ばれない
         assert not any("Save()" in s for s in cmd_strings)
@@ -134,7 +121,7 @@ class TestRunShortcutCreation:
             _make_branching_fake(calls, _ok(), _ok(stdout=str(target).upper())),
         )
 
-        assert setup_sendto_shortcuts.run() is False
+        assert setup_sendto_shortcuts.run().changed is False
         cmd_strings = [" ".join(c) for c in calls]
         assert not any("Save()" in s for s in cmd_strings)
 
@@ -150,7 +137,7 @@ class TestRunShortcutCreation:
             _make_branching_fake(calls, _ok(), _ok(stdout=r"C:\old\touch-file.exe")),
         )
 
-        assert setup_sendto_shortcuts.run() is True
+        assert setup_sendto_shortcuts.run().changed is True
         cmd_strings = [" ".join(c) for c in calls]
         assert any("Save()" in s for s in cmd_strings)
 
@@ -166,7 +153,7 @@ class TestRunShortcutCreation:
             _make_static_fake(calls, _ok(returncode=1)),
         )
 
-        assert setup_sendto_shortcuts.run() is False
+        assert setup_sendto_shortcuts.run().changed is False
 
     def test_single_quote_in_path_is_escaped_in_powershell_command(
         self, windows_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -197,7 +184,7 @@ class TestRunShortcutCreation:
             _make_static_fake(calls, _ok()),
         )
 
-        assert setup_sendto_shortcuts.run() is True
+        assert setup_sendto_shortcuts.run().changed is True
         cmd_strings = [" ".join(c) for c in calls]
         # シングルクオートが PowerShell の '' (2連) へエスケープされている
         assert any("O''Dir" in s for s in cmd_strings)
@@ -235,7 +222,7 @@ class TestRunShortcutCreation:
             _make_static_fake(calls, _ok()),
         )
 
-        assert setup_sendto_shortcuts.run() is True
+        assert setup_sendto_shortcuts.run().changed is True
         cmd_strings = [" ".join(c) for c in calls]
         # 両エントリの .lnk とターゲットが PowerShell コマンドへ展開される
         assert any("Tool1.lnk" in s and str(target1) in s for s in cmd_strings)

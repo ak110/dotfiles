@@ -11,9 +11,8 @@ chezmoiやGit for Windows等の同梱MSYSランタイムが本変数を読み取
 """
 
 import logging
-import sys
 
-from pytools._internal import log_format, winutils
+from pytools._internal import log_format, post_apply_outcome, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -21,30 +20,21 @@ _MSYS_VAR_NAME = "MSYS"
 _MSYS_VAR_VALUE = "winsymlinks:nativestrict"
 
 
-def run() -> bool:
-    r"""`HKCU\Environment`の`MSYS`を`winsymlinks:nativestrict`に冪等設定する。
-
-    Returns:
-        非Windowsまたは既に同値設定済みの場合は`False`。書き込みを実行した場合は`True`。
-    """
-    if sys.platform != "win32":
-        return False
-
+def run() -> post_apply_outcome.PostApplyOutcome:
+    r"""`HKCU\Environment`の`MSYS`を`winsymlinks:nativestrict`に冪等設定する。"""
     try:
         current, _reg_type = winutils.read_user_env_var(_MSYS_VAR_NAME)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(log_format.format_status("MSYS env", f"読み取りに失敗: {e}"))
-        return False
+    except OSError as e:
+        return post_apply_outcome.PostApplyOutcome(failure=f"{_MSYS_VAR_NAME} の読み取りに失敗: {e}")
 
     if current == _MSYS_VAR_VALUE:
-        return False
+        return post_apply_outcome.PostApplyOutcome()
 
     wr = winutils.import_winreg()
     try:
         winutils.write_user_env_var(_MSYS_VAR_NAME, _MSYS_VAR_VALUE, wr.REG_SZ)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(log_format.format_status("MSYS env", f"書き込みに失敗: {e}"))
-        return False
+    except OSError as e:
+        return post_apply_outcome.PostApplyOutcome(failure=f"{_MSYS_VAR_NAME} の書き込みに失敗: {e}")
     winutils.broadcast_environment_change()
     logger.info(log_format.format_status("MSYS env", f"{_MSYS_VAR_NAME}={_MSYS_VAR_VALUE} を設定"))
-    return True
+    return post_apply_outcome.PostApplyOutcome(changed=True)

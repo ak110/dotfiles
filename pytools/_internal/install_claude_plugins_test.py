@@ -162,7 +162,7 @@ class TestExtractPluginVersionMap:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         # version 一致のため changed は False
         assert changed is False
 
@@ -193,7 +193,7 @@ class TestExtractPluginVersionMap:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         # project scope は user scope 用のインストール判定から外れるため install が発行される
         assert changed is True
         assert any("agent-toolkit@ak110-dotfiles" in c for c in calls if command_matches(c, ["claude", "plugin", "install"]))
@@ -222,7 +222,7 @@ class TestExtractPluginVersionMap:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         # version 一致のため install は発行されない
         assert changed is False
         assert not any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
@@ -255,7 +255,7 @@ class TestExtractPluginVersionMap:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is True
         assert any(command_matches(c, ["claude", "plugin", "update"]) for c in calls)
 
@@ -266,7 +266,7 @@ class TestExtractPluginVersionMap:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is True
         assert any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
 
@@ -430,7 +430,7 @@ class TestReadTargetInfo:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is True
         install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
         # 実際の marketplace.json の agent-toolkit が install 対象として現れる
@@ -454,7 +454,7 @@ class TestReadTargetInfo:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is False
         assert not calls
 

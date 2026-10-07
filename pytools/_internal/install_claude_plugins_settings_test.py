@@ -118,7 +118,7 @@ class TestReadInstalledFromFile:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is False
         assert not any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
 
@@ -146,7 +146,7 @@ class TestReadInstalledFromFile:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        changed, _ = _install_claude_plugins.run()
+        changed = _install_claude_plugins.run().changed
         assert changed is True
         # CLI フォールバックとして plugin list が呼ばれている
         assert any(command_matches(c, ["claude", "plugin", "list"]) for c in calls)
@@ -338,7 +338,7 @@ class TestHappyPathDirectoryType:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run()[0] is True
+        assert _install_claude_plugins.run().changed is True
         # 全プラグインに対して install が --scope=user で再実行される
         assert_scope_user_install_calls(calls)
         # marketplace update / plugin update は呼ばれない

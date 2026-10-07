@@ -42,6 +42,8 @@ description: >
   `references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCIIのみの修正は`sed -i`で対応する
 - 非ASCIIを標準出力または標準エラーへ書くPython CLIは、開始時に`io.TextIOWrapper`の両ストリームをUTF-8・`errors="replace"`へ再構成する。英語版Windowsなどで、エンコーディングを指定せずにランタイムがロケールから選ぶ値へ依存すると、日本語の最初の出力でCLIが停止するためである
 - ストリームの再構成を経由しないログと標準出力のメッセージは、WindowsのCP932で符号化できる範囲に収める。可否は`str.encode("cp932")`の成否で判定する。漢字にもU+20BB7のように符号化できないものがあり、em dash・en dash・`✓`・`•`も符号化できない
+- `pytools/post_apply.py`のステップの`run`は`PostApplyOutcome`だけを返し、失敗をスキップと失敗のどちらに数えるかは`pytools/_internal/post_apply_outcome.py`の`PostApplyOutcome`のdocstringの基準に従う。
+  対象OSは`_StepSpec.platforms`だけで宣言し、ステップのモジュールでは判定しない
 - `pytools/post_apply.py`のステップが外部ツールの不在でそのステップ全体をスキップする場合は、そのツールを同じステップまたは先行するステップが導入するか、`README.md`が復旧手順を持つかのいずれかを満たす。
   dotfilesユーザーが導入先を選ぶアプリケーションは、この対象から外す
 - `pytools/post_apply.py`の工程が配置するファイル（ランチャー、フラグファイル、unitなど）の配置先を改名する場合と工程を廃止する場合は、同じ変更で旧パスを`_REMOVED_PATHS`へ登録する。dotfilesユーザーが編集し得るファイルは`_REMOVED_PATHS_IF_CONTENT`へ登録する。

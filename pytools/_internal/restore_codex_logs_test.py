@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pytools._internal import codex_processes, restore_codex_logs_linux
+from pytools._internal import codex_processes, restore_codex_logs
 
 # 復元処理の安全境界を構成する内部関数と定数を直接検証する。
 # pylint: disable=protected-access
@@ -23,7 +23,6 @@ def _prepare(
 
     `stop_codex`が真なら稼働判定をCodex停止中へ固定し、偽なら判定処理をそのまま実行させる。
     """
-    monkeypatch.setattr(restore_codex_logs_linux.sys, "platform", "linux")
     if stop_codex:
         monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ())
     home = tmp_path / "home"
@@ -31,7 +30,7 @@ def _prepare(
     codex_dir = home / ".codex"
     codex_dir.mkdir(parents=True)
     shm_root.mkdir()
-    return home, shm_root, restore_codex_logs_linux._database_pairs(codex_dir, shm_root)
+    return home, shm_root, restore_codex_logs._database_pairs(codex_dir, shm_root)
 
 
 def _write_targets(
@@ -50,15 +49,6 @@ def _link_all(pairs: tuple[tuple[pathlib.Path, pathlib.Path], ...]) -> None:
         home_path.symlink_to(target_path)
 
 
-def test_non_linux_is_noop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """Linux以外ではホームディレクトリを作成せず何もしない。"""
-    monkeypatch.setattr(restore_codex_logs_linux.sys, "platform", "win32")
-    home = tmp_path / "home"
-
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=tmp_path / "shm") is False
-    assert not home.exists()
-
-
 def test_running_at_start_defers_without_changes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -69,7 +59,7 @@ def test_running_at_start_defers_without_changes(
     _link_all(pairs)
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex mcp-server",))
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
     assert all(home_path.is_symlink() for home_path, _ in pairs)
     assert all(target_path.read_bytes() == contents[target_path] for _, target_path in pairs)
 
@@ -89,7 +79,7 @@ def test_running_after_copy_discards_only_temporary_files(
 
     monkeypatch.setattr(codex_processes, "running_codex_processes", running_codex_processes)
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
     assert all(home_path.is_symlink() for home_path, _ in pairs)
     assert not list((home / ".codex").glob(".*.restore-*"))
     assert all(target_path.exists() for _, target_path in pairs)
@@ -113,10 +103,10 @@ def test_write_after_second_check_is_detected_as_conflict_on_retry(
         return ()
 
     monkeypatch.setattr(codex_processes, "running_codex_processes", check_and_write)
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is True
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is True
     assert pairs[0][0].read_bytes() == original[pairs[0][1]]
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
     assert pairs[0][1].read_bytes() == b"written-after-check"
     assert list((home / ".codex").glob("logs_2-restore-conflict-*"))
 
@@ -132,7 +122,7 @@ def test_unrelated_symlink_defers_entire_set(
     pairs[1][0].unlink()
     pairs[1][0].symlink_to(tmp_path / "unrelated")
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
     assert all(home_path.is_symlink() for home_path, _ in pairs)
     assert all(target_path.exists() for _, target_path in pairs)
 
@@ -150,8 +140,8 @@ def test_unrelated_symlink_warning_includes_link_destinations(
     pairs[1][0].unlink()
     pairs[1][0].symlink_to(other_destination)
 
-    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
-        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    with caplog.at_level("WARNING", logger=restore_codex_logs.logger.name):
+        assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     warning = "\n".join(record.getMessage() for record in caplog.records)
     assert str(pairs[1][0]) in warning
@@ -171,8 +161,8 @@ def test_unrelated_directory_warning_includes_entry_kind(
     pairs[1][0].unlink()
     pairs[1][0].mkdir()
 
-    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
-        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    with caplog.at_level("WARNING", logger=restore_codex_logs.logger.name):
+        assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     warning = "\n".join(record.getMessage() for record in caplog.records)
     assert str(pairs[1][0]) in warning
@@ -187,9 +177,9 @@ def test_insufficient_capacity_preserves_links_and_targets(
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     _link_all(pairs)
-    monkeypatch.setattr(restore_codex_logs_linux.shutil, "disk_usage", lambda _path: SimpleNamespace(free=0))
+    monkeypatch.setattr(restore_codex_logs.shutil, "disk_usage", lambda _path: SimpleNamespace(free=0))
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
     assert all(home_path.is_symlink() for home_path, _ in pairs)
     assert all(target_path.exists() for _, target_path in pairs)
 
@@ -205,14 +195,14 @@ def test_restore_keeps_targets_until_later_matching_run(
     unrelated_target = shm_root / f"codex-{os.getuid()}-other.sqlite"
     unrelated_target.write_bytes(b"unrelated")
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is True
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is True
     for home_path, target_path in pairs:
         assert not home_path.is_symlink()
         assert home_path.read_bytes() == contents[target_path]
         assert stat.S_IMODE(home_path.stat().st_mode) == 0o600
         assert target_path.exists()
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is True
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is True
     assert all(not target_path.exists() for _, target_path in pairs)
     assert unrelated_target.read_bytes() == b"unrelated"
 
@@ -225,7 +215,7 @@ def test_dangling_managed_links_are_removed(
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _link_all(pairs)
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is True
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is True
     assert all(not home_path.is_symlink() and not home_path.exists() for home_path, _ in pairs)
 
 
@@ -239,11 +229,11 @@ def test_partial_restore_is_retryable_and_later_cleans_targets(
     pairs[0][0].write_bytes(contents[pairs[0][1]])
     pairs[2][0].symlink_to(pairs[2][1])
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is True
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is True
     assert all(home_path.read_bytes() == contents[target_path] for home_path, target_path in pairs)
     assert all(target_path.exists() for _, target_path in pairs)
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is True
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is True
     assert all(not target_path.exists() for _, target_path in pairs)
 
 
@@ -259,9 +249,9 @@ def test_copy_failure_removes_temporary_files_only(
     def fail_copy(*_args: object, **_kwargs: object) -> None:
         raise OSError("copy failed")
 
-    monkeypatch.setattr(restore_codex_logs_linux.shutil, "copyfileobj", fail_copy)
+    monkeypatch.setattr(restore_codex_logs.shutil, "copyfileobj", fail_copy)
     with pytest.raises(OSError, match="copy failed"):
-        restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root)
+        restore_codex_logs.run(home_dir=home, shm_root=shm_root)
 
     assert all(home_path.is_symlink() for home_path, _ in pairs)
     assert all(target_path.exists() for _, target_path in pairs)
@@ -286,9 +276,9 @@ def test_replace_failure_preserves_unplaced_links_and_all_targets(
             raise OSError("replace failed")
         real_replace(source, destination)
 
-    monkeypatch.setattr(restore_codex_logs_linux.os, "replace", fail_second_replace)
+    monkeypatch.setattr(restore_codex_logs.os, "replace", fail_second_replace)
     with pytest.raises(OSError, match="replace failed"):
-        restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root)
+        restore_codex_logs.run(home_dir=home, shm_root=shm_root)
 
     assert pairs[0][0].is_file() and not pairs[0][0].is_symlink()
     assert all(home_path.is_symlink() for home_path, _ in pairs[1:])
@@ -308,8 +298,8 @@ def test_mismatch_creates_owner_only_content_addressed_snapshot_and_warning(
         home_path.write_bytes(f"home-{index}".encode())
     home_before = {home_path: home_path.read_bytes() for home_path, _ in pairs}
 
-    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
-        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    with caplog.at_level("WARNING", logger=restore_codex_logs.logger.name):
+        assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     snapshots = list((home / ".codex").glob("logs_2-restore-conflict-*"))
     assert len(snapshots) == 1
@@ -343,8 +333,8 @@ def test_same_conflict_digest_reuses_existing_identical_snapshot(
     for home_path, _ in pairs:
         home_path.write_bytes(b"home")
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     codex_dir = home / ".codex"
     assert len(list(codex_dir.glob("logs_2-restore-conflict-*"))) == 1
@@ -361,17 +351,17 @@ def test_different_conflict_contents_create_distinct_visible_snapshots(
     for home_path, _ in pairs:
         home_path.write_bytes(b"home")
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
     first_snapshots = set((home / ".codex").glob("logs_2-restore-conflict-*"))
     assert len(first_snapshots) == 1
 
     pairs[0][1].write_bytes(b"different-conflict")
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
     second_snapshots = set((home / ".codex").glob("logs_2-restore-conflict-*"))
     assert len(second_snapshots) == 2
     assert first_snapshots < second_snapshots
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
     assert set((home / ".codex").glob("logs_2-restore-conflict-*")) == second_snapshots
     assert not list((home / ".codex").glob(".logs_2-restore-conflict-*"))
 
@@ -389,9 +379,9 @@ def test_existing_different_snapshot_is_not_overwritten(
     destination.mkdir()
     existing_file = destination / pairs[0][1].name
     existing_file.write_bytes(b"existing")
-    monkeypatch.setattr(restore_codex_logs_linux, "_snapshot_digest", lambda _snapshot, _pairs: "fixed")
+    monkeypatch.setattr(restore_codex_logs, "_snapshot_digest", lambda _snapshot, _pairs: "fixed")
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     assert existing_file.read_bytes() == b"existing"
     alternatives = list((home / ".codex").glob(".logs_2-restore-conflict-*"))
@@ -546,7 +536,7 @@ def test_restore_proceeds_unless_own_codex_process_exists(
     _link_all(pairs)
     _patch_process_iter(monkeypatch, processes)
 
-    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is restored
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is restored
     for home_path, target_path in pairs:
         assert home_path.is_symlink() is not restored
         assert target_path.read_bytes() == contents[target_path]
@@ -575,8 +565,8 @@ def test_running_warning_aggregates_labels_without_argument_values(
     ]
     _patch_process_iter(monkeypatch, processes)
 
-    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
-        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    with caplog.at_level("WARNING", logger=restore_codex_logs.logger.name):
+        assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     warning = "\n".join(record.getMessage() for record in caplog.records)
     assert "Codexが稼働中のため通常ストレージへの復元を延期: codex mcp-server (2件)" in warning
@@ -601,8 +591,8 @@ def test_normal_launch_label_excludes_user_prompt(
     )
     _patch_process_iter(monkeypatch, [process])
 
-    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
-        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    with caplog.at_level("WARNING", logger=restore_codex_logs.logger.name):
+        assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     warning = "\n".join(record.getMessage() for record in caplog.records)
     assert "Codexが稼働中のため通常ストレージへの復元を延期: codex (1件)" in warning
@@ -637,8 +627,8 @@ def test_label_uses_executable_name_when_process_name_is_unavailable(
     _link_all(pairs)
     _patch_process_iter(monkeypatch, [_FakeProcess({**info, "uids": _uids(_OWN_UID)}, pid=3000)])
 
-    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
-        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    with caplog.at_level("WARNING", logger=restore_codex_logs.logger.name):
+        assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     warning = "\n".join(record.getMessage() for record in caplog.records)
     assert f"Codexが稼働中のため通常ストレージへの復元を延期: {label} (1件)" in warning

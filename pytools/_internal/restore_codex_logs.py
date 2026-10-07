@@ -9,10 +9,9 @@ import logging
 import os
 import pathlib
 import shutil
-import sys
 import tempfile
 
-from pytools._internal import codex_processes, log_format
+from pytools._internal import codex_processes, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +24,16 @@ def run(
     *,
     home_dir: pathlib.Path | None = None,
     shm_root: pathlib.Path = _SHM_ROOT,
-) -> bool:
-    """管理対象の診断ログを通常ストレージへ復元し、安全な後続実行で旧targetを回収する。"""
-    if sys.platform != "linux":
-        return False
+) -> post_apply_outcome.PostApplyOutcome:
+    """管理対象の診断ログを通常ストレージへ復元し、安全な後続実行で旧targetを回収する。
+
+    稼働中のCodexや競合で復元を延期する場合は警告を出力して変更なしを返し、ファイル操作の失敗は例外として送出する。
+    """
+    return post_apply_outcome.PostApplyOutcome(changed=_restore(home_dir=home_dir, shm_root=shm_root))
+
+
+def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
+    """復元または回収を1段だけ進め、配布先を変更した場合は真を返す。"""
     running = codex_processes.running_codex_processes()
     if running:
         logger.warning(

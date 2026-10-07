@@ -9,10 +9,9 @@ MCP定義の起動形の末尾`mcp`を`--version`へ置き換えて1回起動し
 
 import json
 import logging
-import sys
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format, plugin_warmup
+from pytools._internal import claude_common, log_format, plugin_warmup, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -24,28 +23,16 @@ _CODEX_MCP_RELATIVE = Path(".mcp.codex.json")
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    from pytools._internal.cli import setup_logging  # pylint: disable=import-outside-toplevel
-
-    setup_logging()
-    run()
-    sys.exit(0)
-
-
-def run() -> bool:
+def run() -> post_apply_outcome.PostApplyOutcome:
     """Claude CodeとCodexのMCP定義が指すpyfltrのツール環境を構築する。
 
-    初回MCP起動の成立条件であるため、個別の失敗は後処理全体へ伝播する。
-
-    Returns:
-        常にFalse。uvのキャッシュだけへ作用し、設定を変更しないため。
+    ツール環境の構築は導入に当たるため、構築できない場合は警告だけを出力してスキップと数える。
+    uvのキャッシュだけへ作用し設定を変えないため、変更なしを返す。
     """
     uvx = claude_common.resolve_executable("uvx", preferred_directories=(Path.home() / ".local" / "bin",))
     if uvx is None:
-        message = "uvx CLI が見つからず環境構築を開始できない"
-        logger.warning(log_format.format_status(_TAG, message))
-        raise RuntimeError(message)
+        logger.warning(log_format.format_status(_TAG, "uvx CLI が見つからず環境構築を開始できない"))
+        return post_apply_outcome.PostApplyOutcome()
     definitions = plugin_warmup.agent_toolkit_targets(
         _INSTALLED_PLUGINS_PATH,
         claude_relative=_CLAUDE_MCP_RELATIVE,
@@ -53,17 +40,21 @@ def run() -> bool:
         tag=_TAG,
     )
     if not definitions:
-        message = "MCP定義が見つからず環境構築を開始できない"
-        logger.warning(log_format.format_status(_TAG, message))
-        raise RuntimeError(message)
+        logger.warning(log_format.format_status(_TAG, "MCP定義が見つからず環境構築を開始できない"))
+        return post_apply_outcome.PostApplyOutcome()
     # 同じ起動形は同じツール環境を使うため、定義ファイルをまとめて1回だけ起動する。
     launches: dict[tuple[str, ...], list[Path]] = {}
     for definition in definitions:
-        launches.setdefault(_warmup_arguments(definition), []).append(definition)
+        try:
+            arguments = _warmup_arguments(definition)
+        except ValueError as exc:
+            logger.warning(log_format.format_status(_TAG, f"環境構築を開始できない: {exc}"))
+            continue
+        launches.setdefault(arguments, []).append(definition)
     for arguments, sources in launches.items():
         target = f"uvx {' '.join(arguments)} ({', '.join(log_format.home_short(path) for path in sources)})"
-        plugin_warmup.run_command([str(uvx), *arguments], target=target, tag=_TAG, fail_on_error=True)
-    return False
+        plugin_warmup.run_command([str(uvx), *arguments], target=target, tag=_TAG)
+    return post_apply_outcome.PostApplyOutcome()
 
 
 def _warmup_arguments(definition: Path) -> tuple[str, ...]:
@@ -72,11 +63,11 @@ def _warmup_arguments(definition: Path) -> tuple[str, ...]:
     try:
         data = json.loads(definition.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"MCP定義を読めない: {short}: {exc}") from exc
+        raise ValueError(f"MCP定義を読めない: {short}: {exc}") from exc
     servers = data.get("mcpServers") if isinstance(data, dict) else None
     server = servers.get(_SERVER_NAME) if isinstance(servers, dict) else None
     if not isinstance(server, dict):
-        raise RuntimeError(f"MCP定義に{_SERVER_NAME}が無い: {short}")
+        raise ValueError(f"MCP定義に{_SERVER_NAME}が無い: {short}")
     command = server.get("command")
     args = server.get("args")
     if (
@@ -86,9 +77,5 @@ def _warmup_arguments(definition: Path) -> tuple[str, ...]:
         or not all(isinstance(arg, str) for arg in args)
         or args[-1] != "mcp"
     ):
-        raise RuntimeError(f"{_SERVER_NAME}の起動形が`uvx ... mcp`ではない: {short}: {command} {args}")
+        raise ValueError(f"{_SERVER_NAME}の起動形が`uvx ... mcp`ではない: {short}: {command} {args}")
     return (*args[:-1], "--version")
-
-
-if __name__ == "__main__":
-    main()

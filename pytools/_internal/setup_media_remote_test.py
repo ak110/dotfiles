@@ -17,7 +17,6 @@ def _expected_vbs(exe: pathlib.Path) -> str:
 
 @pytest.fixture(name="windows_stheno")
 def _windows_stheno(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    monkeypatch.setattr(setup_media_remote.sys, "platform", "win32")
     monkeypatch.setattr(setup_media_remote.pathlib.Path, "home", lambda: tmp_path)
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
@@ -45,18 +44,6 @@ def _exe_path(windows_stheno: pathlib.Path) -> pathlib.Path:
     return windows_stheno / ".local" / "bin" / "dotfiles-media-remote.exe"
 
 
-def test_non_windows_returns_false(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(setup_media_remote.sys, "platform", "linux")
-    calls: list[list[str]] = []
-    monkeypatch.setattr(
-        setup_media_remote.claude_common,
-        "run_subprocess",
-        _make_static_fake(calls),
-    )
-    assert setup_media_remote.run() is False
-    assert not calls
-
-
 @pytest.mark.usefixtures("windows_stheno")
 def test_startup_dir_missing_returns_false(monkeypatch: pytest.MonkeyPatch):
     calls: list[list[str]] = []
@@ -65,7 +52,7 @@ def test_startup_dir_missing_returns_false(monkeypatch: pytest.MonkeyPatch):
         "run_subprocess",
         _make_static_fake(calls),
     )
-    assert setup_media_remote.run() is False
+    assert setup_media_remote.run().changed is False
     assert not calls
 
 
@@ -79,7 +66,7 @@ def test_exe_missing_skips(exe_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
         "run_subprocess",
         _make_static_fake(calls),
     )
-    assert setup_media_remote.run() is False
+    assert setup_media_remote.run().changed is False
     assert not calls
 
 
@@ -96,7 +83,7 @@ def test_creates_shortcut_and_vbs_when_missing(
         _make_static_fake(calls, _ok()),
     )
 
-    assert setup_media_remote.run() is True
+    assert setup_media_remote.run().changed is True
 
     # VBSが配置され、内容は期待形式と一致する。
     assert vbs_path.is_file()
@@ -126,7 +113,7 @@ def test_create_shortcut_failure_returns_false(
         "run_subprocess",
         _make_static_fake(calls, _ok(returncode=1)),
     )
-    assert setup_media_remote.run() is False
+    assert setup_media_remote.run().changed is False
     cmd_strings = [" ".join(c) for c in calls]
     assert any("Save()" in s for s in cmd_strings)
 
@@ -152,7 +139,7 @@ def test_idempotent_when_vbs_and_lnk_match(
             _ok(stdout=f"{setup_media_remote.WSCRIPT_PATH}\t{expected_args}"),
         ),
     )
-    assert setup_media_remote.run() is False
+    assert setup_media_remote.run().changed is False
     cmd_strings = [" ".join(c) for c in calls]
     assert not any("Save()" in s for s in cmd_strings)
 
@@ -178,7 +165,7 @@ def test_existing_pythonw_lnk_is_overwritten(
             _ok(stdout=f"{old_target}\t-m pytools.media_remote serve"),
         ),
     )
-    assert setup_media_remote.run() is True
+    assert setup_media_remote.run().changed is True
     assert vbs_path.is_file()
     cmd_strings = [" ".join(c) for c in calls]
     save_scripts = [s for s in cmd_strings if "Save()" in s]
@@ -202,7 +189,7 @@ def test_non_stheno_removes_existing_lnk_and_vbs(
         "run_subprocess",
         _make_static_fake(calls),
     )
-    assert setup_media_remote.run() is True
+    assert setup_media_remote.run().changed is True
     assert not lnk.is_file()
     assert not vbs_path.is_file()
     assert not calls
@@ -217,5 +204,5 @@ def test_non_stheno_without_existing_assets_is_noop(monkeypatch: pytest.MonkeyPa
         "run_subprocess",
         _make_static_fake(calls),
     )
-    assert setup_media_remote.run() is False
+    assert setup_media_remote.run().changed is False
     assert not calls

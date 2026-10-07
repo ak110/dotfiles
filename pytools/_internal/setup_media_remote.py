@@ -16,9 +16,8 @@ import logging
 import os
 import pathlib
 import socket
-import sys
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import claude_common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -28,32 +27,31 @@ LNK_NAME = "dotfiles-media-remote.lnk"
 WSCRIPT_PATH = r"C:\Windows\System32\wscript.exe"
 
 
-def run() -> bool:
+def run() -> post_apply_outcome.PostApplyOutcome:
     """sthenoの場合のみショートカット配置、それ以外では既存ショートカットを削除する。
 
-    Returns:
-        ショートカットやVBSラッパーを新規作成・更新・削除した場合True、それ以外はFalse。
+    ショートカットとVBSラッパーの配置と削除の失敗は失敗と数える。
     """
-    if sys.platform != "win32":
-        return False
-
     startup_dir = _startup_dir()
     if not startup_dir.is_dir():
         logger.info(log_format.format_status("media-remote", f"スタートアップ未存在: {startup_dir}"))
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     lnk = startup_dir / LNK_NAME
     vbs = _vbs_path()
 
-    if socket.gethostname().lower() != TARGET_HOST:
-        return _ensure_absent(lnk, vbs)
+    try:
+        if socket.gethostname().lower() != TARGET_HOST:
+            return post_apply_outcome.PostApplyOutcome(changed=_ensure_absent(lnk, vbs))
 
-    exe = _find_media_remote_exe()
-    if exe is None:
-        logger.info(log_format.format_status("media-remote", "dotfiles-media-remote.exeが見つからないためスキップ"))
-        return False
-    vbs_changed = _ensure_vbs(vbs, exe)
-    lnk_changed = _ensure_shortcut(lnk, vbs)
-    return vbs_changed or lnk_changed
+        exe = _find_media_remote_exe()
+        if exe is None:
+            logger.info(log_format.format_status("media-remote", "dotfiles-media-remote.exeが見つからないためスキップ"))
+            return post_apply_outcome.PostApplyOutcome()
+        vbs_changed = _ensure_vbs(vbs, exe)
+        lnk_changed = _ensure_shortcut(lnk, vbs)
+    except OSError as error:
+        return post_apply_outcome.PostApplyOutcome(failure=str(error))
+    return post_apply_outcome.PostApplyOutcome(changed=vbs_changed or lnk_changed)
 
 
 def _startup_dir() -> pathlib.Path:
@@ -93,7 +91,7 @@ def _ensure_absent(lnk: pathlib.Path, vbs: pathlib.Path) -> bool:
             logger.info(log_format.format_status("media-remote", f"対象外ホストのため削除: {path}"))
             changed = True
         except OSError as e:
-            logger.warning(log_format.format_status("media-remote", f"削除失敗: {e}"))
+            raise OSError(f"{path} の削除に失敗: {e}") from e
     return changed
 
 
@@ -123,10 +121,10 @@ def _ensure_shortcut(lnk: pathlib.Path, vbs: pathlib.Path) -> bool:
     """ショートカットを冪等配置する。"""
     if _is_up_to_date(lnk, vbs):
         return False
-    if _create_shortcut(lnk, vbs):
-        logger.info(log_format.format_status("media-remote", f"ショートカット配置: {lnk}"))
-        return True
-    return False
+    if not _create_shortcut(lnk, vbs):
+        raise OSError(f"ショートカット生成に失敗: {lnk}")
+    logger.info(log_format.format_status("media-remote", f"ショートカット配置: {lnk}"))
+    return True
 
 
 def _shortcut_arguments(vbs: pathlib.Path) -> str:
@@ -192,10 +190,7 @@ def _create_shortcut(lnk: pathlib.Path, vbs: pathlib.Path) -> bool:
         timeout=30.0,
         tag="media-remote",
     )
-    if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status("media-remote", f"ショートカット生成に失敗: {lnk}"))
-        return False
-    return True
+    return result is not None and result.returncode == 0
 
 
 def _ps_escape(value: str) -> str:

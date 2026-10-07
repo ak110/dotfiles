@@ -198,8 +198,9 @@ def test_setup_uses_atomic_write(tmp_path: pathlib.Path, monkeypatch: typing.Any
     executable.write_text("", encoding="utf-8")
     writes: list[tuple[pathlib.Path, str, int, str]] = []
 
-    def write(path: pathlib.Path, content: str, *, mode: int, tag: str) -> None:
+    def write(path: pathlib.Path, content: str, *, mode: int, tag: str) -> bool:
         writes.append((path, content, mode, tag))
+        return True
 
     monkeypatch.setattr(claude_common, "atomic_write_text", write)
     monkeypatch.setattr(claude_common, "run_subprocess", _show_aware())
@@ -515,4 +516,20 @@ def test_setup_timer_raises_when_timer_is_not_active(
             timer_unit_content="timer\n",
             log_tag="test",
             timer_name="tool.timer",
+        )
+
+
+def test_setup_raises_when_unit_write_fails(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:
+    """unitを書き込めない場合は、古いunitのまま再起動へ進まず例外を送出する。"""
+    executable = tmp_path / "tool"
+    executable.write_text("", encoding="utf-8")
+    monkeypatch.setattr(claude_common, "atomic_write_text", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(claude_common, "run_subprocess", lambda *_args, **_kwargs: pytest.fail("systemctlを呼ばない"))
+    with pytest.raises(OSError, match="書き込みに失敗"):
+        systemd_user_unit.setup(
+            unit_path=tmp_path / "tool.service",
+            executable_path=executable,
+            unit_content="unit\n",
+            log_tag="test",
+            service_name="tool.service",
         )

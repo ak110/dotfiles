@@ -1,4 +1,4 @@
-"""pytools._internal.warm_pyfltr_mcp のテスト。
+"""pytools._internal.warmup_pyfltr_mcp のテスト。
 
 実際の`uvx`を起動せず、Claude Code・CodexのMCP定義から導出した起動形と失敗の伝播を検証する。
 """
@@ -10,7 +10,8 @@ import pathlib
 import pytest
 
 from pytools._internal import claude_common as _claude_common
-from pytools._internal import warm_pyfltr_mcp as _warmup
+from pytools._internal import post_apply_outcome
+from pytools._internal import warmup_pyfltr_mcp as _warmup
 
 from ._test_helpers import _FakeResult, command_matches
 
@@ -81,7 +82,7 @@ def test_same_launch_from_both_hosts_runs_once(env: _Env, caplog: pytest.LogCapt
     """配布するClaude Code・Codexの両定義から同じ起動形を導出し、`mcp`を`--version`へ置き換えて1回だけ起動する。"""
     caplog.set_level(logging.INFO)
 
-    assert _warmup.run() is False
+    assert _warmup.run().changed is False
 
     assert [cmd[1:] for cmd in env.uvx_calls()] == [[*_real_pyfltr_arguments()[:-1], "--version"]]
     assert "環境構築を確認 (exit 0、" in caplog.text
@@ -99,26 +100,30 @@ def test_changed_requirement_is_used_for_each_definition(env: _Env) -> None:
     assert all(cmd[-1] == "--version" for cmd in env.uvx_calls())
 
 
-def test_missing_uvx_fails_without_running(env: _Env, monkeypatch: pytest.MonkeyPatch) -> None:
-    """uvx不在は外部コマンドを実行せず工程の失敗とする。"""
+def test_missing_uvx_skips_without_running(
+    env: _Env, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """uvx不在は外部コマンドを実行せず、警告してスキップと数える。"""
     monkeypatch.setattr(
         _claude_common,
         "resolve_executable",
         lambda name, **_kwargs: None if name == "uvx" else pathlib.Path(name),
     )
 
-    with pytest.raises(RuntimeError, match="uvx CLI が見つからず"):
-        _warmup.run()
+    with caplog.at_level("WARNING"):
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+    assert "uvx CLI が見つからず" in caplog.text
     assert not env.calls
 
 
-def test_missing_definitions_fail(env: _Env) -> None:
-    """両ホストのMCP定義が不在なら工程の失敗とする。"""
+def test_missing_definitions_skip(env: _Env, caplog: pytest.LogCaptureFixture) -> None:
+    """両ホストのMCP定義が不在なら、警告してスキップと数える。"""
     env.claude_definition.unlink()
     env.codex_definition.unlink()
 
-    with pytest.raises(RuntimeError, match="MCP定義が見つからず"):
-        _warmup.run()
+    with caplog.at_level("WARNING"):
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+    assert "MCP定義が見つからず" in caplog.text
     assert not env.uvx_calls()
 
 
@@ -130,22 +135,28 @@ def test_missing_definitions_fail(env: _Env) -> None:
         (_definition(["--from", "pyfltr", "pyfltr", "run"]), "起動形が`uvx ... mcp`ではない"),
     ],
 )
-def test_invalid_definition_fails(env: _Env, definition: dict[str, object], message: str) -> None:
-    """pyfltrの欠落と起動形の不一致は起動せずに工程の失敗とする。"""
+def test_invalid_definition_is_skipped(
+    env: _Env, definition: dict[str, object], message: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """pyfltrの欠落と起動形の不一致はその定義を起動せずに警告し、残る定義だけを起動する。"""
     _write(env.claude_definition, definition)
 
-    with pytest.raises(RuntimeError, match=message):
-        _warmup.run()
-    assert not env.uvx_calls()
+    with caplog.at_level("WARNING"):
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+    assert message in caplog.text
+    assert len(env.uvx_calls()) == 1
 
 
 @pytest.mark.parametrize(
     ("result", "message"),
     [(_FakeResult(returncode=2, stderr="resolution failed"), "exit 2"), (None, "exit codeなし")],
 )
-def test_launch_failure_fails(env: _Env, result: _FakeResult | None, message: str) -> None:
-    """非0終了と、上限到達・起動不能で結果が無い場合を工程の失敗とする。"""
+def test_launch_failure_is_skipped(
+    env: _Env, result: _FakeResult | None, message: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """非0終了と、上限到達・起動不能で結果が無い場合は、警告してスキップと数える。"""
     env.uvx_result = result
 
-    with pytest.raises(RuntimeError, match=message):
-        _warmup.run()
+    with caplog.at_level("WARNING"):
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+    assert message in caplog.text

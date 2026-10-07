@@ -1,11 +1,11 @@
-"""pytools._internal.setup_dotfiles_autoupdate_linuxのテスト。"""
+"""pytools._internal.setup_dotfiles_autoupdateのテスト。"""
 
 import pathlib
 import typing
 
 import pytest
 
-from pytools._internal import claude_common, setup_dotfiles_autoupdate_linux, systemd_user_unit
+from pytools._internal import claude_common, setup_dotfiles_autoupdate, systemd_user_unit
 
 
 @pytest.fixture(name="prepared")
@@ -21,7 +21,7 @@ def _prepared(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> tuple[
     monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: root)
     monkeypatch.setattr(claude_common, "resolve_uv_path", lambda: uv)
-    monkeypatch.setattr(setup_dotfiles_autoupdate_linux.pathlib.Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(setup_dotfiles_autoupdate.pathlib.Path, "home", lambda: tmp_path / "home")
     return root, script, uv
 
 
@@ -30,7 +30,7 @@ def test_non_euryale_skips_timer(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(claude_common, "is_euryale", lambda: False)
     monkeypatch.setattr(systemd_user_unit, "setup_timer", lambda **kwargs: pytest.fail(str(kwargs)))
 
-    assert setup_dotfiles_autoupdate_linux.run() is False
+    assert setup_dotfiles_autoupdate.run().changed is False
 
 
 @pytest.mark.parametrize("missing", ["root", "script", "uv"])
@@ -49,7 +49,7 @@ def test_missing_dependency_skips_timer(
         monkeypatch.setattr(claude_common, "resolve_uv_path", lambda: None)
     monkeypatch.setattr(systemd_user_unit, "setup_timer", lambda **kwargs: pytest.fail(str(kwargs)))
 
-    assert setup_dotfiles_autoupdate_linux.run() is False
+    assert setup_dotfiles_autoupdate.run().changed is False
 
 
 def test_run_passes_absolute_paths_and_unit_contents(
@@ -65,7 +65,7 @@ def test_run_passes_absolute_paths_and_unit_contents(
         return True
 
     monkeypatch.setattr(systemd_user_unit, "setup_timer", setup_timer)
-    assert setup_dotfiles_autoupdate_linux.run() is True
+    assert setup_dotfiles_autoupdate.run().changed is True
 
     assert received["executable_path"] == uv
     assert received["timer_name"] == "dotfiles-autoupdate.timer"
@@ -103,4 +103,4 @@ def test_run_propagates_setup_error(
 
     monkeypatch.setattr(systemd_user_unit, "setup_timer", fail)
     with pytest.raises(systemd_user_unit.SetupError, match="inactive"):
-        setup_dotfiles_autoupdate_linux.run()
+        setup_dotfiles_autoupdate.run()

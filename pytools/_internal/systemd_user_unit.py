@@ -39,7 +39,8 @@ def _ensure_unit_content(unit_path: pathlib.Path, unit_content: str, log_tag: st
         existing = None
     if existing == unit_content:
         return False
-    claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag)
+    if not claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag):
+        raise OSError(f"{unit_path} の書き込みに失敗")
     logger.info(log_format.format_status(log_tag, f"ユニット配置: {unit_path}"))
     return True
 

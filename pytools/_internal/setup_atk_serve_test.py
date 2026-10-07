@@ -1,4 +1,4 @@
-"""pytools._internal.setup_atk_serve_linux のテスト。
+"""pytools._internal.setup_atk_serve のテスト。
 
 各分岐 (非 Linux・euryale 以外・uv 不在・dotfilesルート不在・ランチャー配置・共通処理への委譲) を検証する。
 """
@@ -12,14 +12,14 @@ import typing
 
 import pytest
 
-from pytools._internal import claude_common, setup_atk_serve_linux, systemd_user_unit
+from pytools._internal import claude_common, setup_atk_serve, systemd_user_unit
 
 
 def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """テスト共通の Linux + euryale + uv 配置済み環境をセットアップする。"""
     monkeypatch.setattr(claude_common.sys, "platform", "linux")
     monkeypatch.setattr(claude_common.socket, "gethostname", lambda: "euryale")
-    monkeypatch.setattr(setup_atk_serve_linux.pathlib.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(setup_atk_serve.pathlib.Path, "home", lambda: tmp_path)
     uv = tmp_path / ".local" / "bin" / "uv"
     uv.parent.mkdir(parents=True, exist_ok=True)
     uv.touch()
@@ -47,7 +47,7 @@ class TestRunPlatformGuard:
         monkeypatch.setattr(claude_common.sys, "platform", platform)
         monkeypatch.setattr(claude_common.socket, "gethostname", lambda: hostname)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
-        assert not setup_atk_serve_linux.run()
+        assert not setup_atk_serve.run().changed
 
 
 class TestRunUvResolution:
@@ -62,7 +62,7 @@ class TestRunUvResolution:
         _run_linux_euryale(monkeypatch, tmp_path)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
 
-        assert setup_atk_serve_linux.run()
+        assert setup_atk_serve.run().changed
 
         launcher = tmp_path / ".local" / "bin" / "atk-serve"
         content = launcher.read_text(encoding="utf-8")
@@ -84,7 +84,7 @@ class TestRunUvResolution:
         )
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
 
-        assert setup_atk_serve_linux.run()
+        assert setup_atk_serve.run().changed
 
         launcher = tmp_path / ".local" / "bin" / "atk-serve"
         assert "/opt/uv/bin/uv" in launcher.read_text(encoding="utf-8")
@@ -101,10 +101,10 @@ class TestRunUvResolution:
         monkeypatch.setattr(claude_common, "resolve_executable", lambda _name, **_kwargs: None)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
 
-        with caplog.at_level("INFO", logger=setup_atk_serve_linux.logger.name):
-            result = setup_atk_serve_linux.run()
+        with caplog.at_level("INFO", logger=setup_atk_serve.logger.name):
+            result = setup_atk_serve.run()
 
-        assert result is False
+        assert result.changed is False
         assert not (tmp_path / ".local" / "bin" / "atk-serve").exists()
         assert any("uvが見つからない" in record.message for record in caplog.records)
 
@@ -119,10 +119,10 @@ class TestRunUvResolution:
         monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: None)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
 
-        with caplog.at_level("INFO", logger=setup_atk_serve_linux.logger.name):
-            result = setup_atk_serve_linux.run()
+        with caplog.at_level("INFO", logger=setup_atk_serve.logger.name):
+            result = setup_atk_serve.run()
 
-        assert result is False
+        assert result.changed is False
         assert not (tmp_path / ".local" / "bin" / "atk-serve").exists()
         assert any("dotfilesルートが見つからない" in record.message for record in caplog.records)
 
@@ -149,23 +149,24 @@ class TestRunLauncherDeployment:
             launcher.write_text(initial, encoding="utf-8")
             launcher.chmod(0o600)
         events: list[str] = []
-        expected = setup_atk_serve_linux._LAUNCHER_TEMPLATE.format(
+        expected = setup_atk_serve._LAUNCHER_TEMPLATE.format(
             uv=prepared / ".local" / "bin" / "uv",
             dotfiles=prepared,
         )
 
-        def write(path: pathlib.Path, content: str, *, mode: int, tag: str) -> None:
+        def write(path: pathlib.Path, content: str, *, mode: int, tag: str) -> bool:
             del tag
             events.append("write")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             path.chmod(mode)
+            return True
 
         def setup(**kwargs: typing.Any) -> bool:
             events.append("unit")
             assert kwargs["executable_path"] == launcher
             assert launcher.stat().st_mode & stat.S_IXUSR
-            assert kwargs["unit_content"] == setup_atk_serve_linux._UNIT_CONTENT + "# agent-toolkit version: 2.1.0\n"
+            assert kwargs["unit_content"] == setup_atk_serve._UNIT_CONTENT + "# agent-toolkit version: 2.1.0\n"
             assert "KillMode=control-group\n" in kwargs["unit_content"]
             assert kwargs["service_name"] == "atk-serve.service"
             assert kwargs["restart_needed"] is True
@@ -175,7 +176,7 @@ class TestRunLauncherDeployment:
         monkeypatch.setattr(claude_common, "atomic_write_text", write)
         monkeypatch.setattr(systemd_user_unit, "setup", setup)
 
-        assert setup_atk_serve_linux.run()
+        assert setup_atk_serve.run().changed
         assert launcher.read_text(encoding="utf-8") == expected
         assert events == ["write", "unit"]
 
@@ -187,7 +188,7 @@ class TestRunLauncherDeployment:
         """内容が一致するランチャーは書き直さず unit 設定へ進む。"""
         launcher = prepared / ".local" / "bin" / "atk-serve"
         launcher.write_text(
-            setup_atk_serve_linux._LAUNCHER_TEMPLATE.format(
+            setup_atk_serve._LAUNCHER_TEMPLATE.format(
                 uv=prepared / ".local" / "bin" / "uv",
                 dotfiles=prepared,
             ),
@@ -206,7 +207,7 @@ class TestRunLauncherDeployment:
             return True
 
         monkeypatch.setattr(systemd_user_unit, "setup", setup)
-        assert setup_atk_serve_linux.run()
+        assert setup_atk_serve.run().changed
 
     def test_plugin_version_changes_unit_content(
         self,
@@ -221,10 +222,10 @@ class TestRunLauncherDeployment:
             return True
 
         monkeypatch.setattr(systemd_user_unit, "setup", setup)
-        assert setup_atk_serve_linux.run()
+        assert setup_atk_serve.run().changed
         manifest = prepared / "agent-toolkit" / ".claude-plugin" / "plugin.json"
         manifest.write_text('{"version": "2.1.1"}', encoding="utf-8")
-        assert setup_atk_serve_linux.run()
+        assert setup_atk_serve.run().changed
         assert observed[0] != observed[1]
         assert observed[1].endswith("# agent-toolkit version: 2.1.1\n")
 
@@ -235,7 +236,7 @@ class TestRunLauncherDeployment:
     ) -> None:
         """ランチャーがdotfiles作業ツリーをprojectとして直接起動すること。"""
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
-        assert setup_atk_serve_linux.run()
+        assert setup_atk_serve.run().changed
 
         content = (prepared / ".local" / "bin" / "atk-serve").read_text(encoding="utf-8")
         assert f'run --project "{prepared}/agent-toolkit" --locked --no-default-groups' in content
@@ -260,7 +261,7 @@ def test_run_propagates_setup_error(
 
     monkeypatch.setattr(systemd_user_unit, "setup", fail)
     with pytest.raises(systemd_user_unit.SetupError):
-        setup_atk_serve_linux.run()
+        setup_atk_serve.run()
 
 
 class TestLegacyPlansViewerUnit:
@@ -303,7 +304,7 @@ class TestLegacyPlansViewerUnit:
         calls = self._record_subprocess(monkeypatch, returncode=0)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
 
-        assert setup_atk_serve_linux.run() is True
+        assert setup_atk_serve.run().changed is True
 
         assert calls[0] == ["systemctl", "--user", "disable", "--now", "claude-plans-viewer.service"]
         assert ["systemctl", "--user", "daemon-reload"] in calls
@@ -313,28 +314,27 @@ class TestLegacyPlansViewerUnit:
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """停止と無効化に失敗した場合はunitファイルを残し、後続の配置を止めない。"""
+        """停止と無効化に失敗した場合はunitファイルを残して失敗と数え、後続の配置を止めない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         legacy = self._place_legacy_unit(tmp_path)
         calls = self._record_subprocess(monkeypatch, returncode=1)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
 
-        with caplog.at_level("WARNING"):
-            assert setup_atk_serve_linux.run() is True
+        outcome = setup_atk_serve.run()
 
+        assert outcome.changed is True
+        assert outcome.failure is not None
+        assert "claude-plans-viewer.service" in outcome.failure
         assert legacy.exists()
         assert ["systemctl", "--user", "daemon-reload"] not in calls
-        assert "claude-plans-viewer.service" in caplog.text
 
     def test_keeps_legacy_unit_when_removal_raises_os_error(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """削除が入出力エラーで失敗した場合もunitファイルを残し、後続の配置を止めない。"""
+        """削除が入出力エラーで失敗した場合もunitファイルを残して失敗と数え、後続の配置を止めない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         legacy = self._place_legacy_unit(tmp_path)
         calls = self._record_subprocess(monkeypatch, returncode=0)
@@ -346,14 +346,15 @@ class TestLegacyPlansViewerUnit:
                 raise PermissionError("unitファイルを削除する権限がない")
             original_unlink(self, **kwargs)
 
-        monkeypatch.setattr(setup_atk_serve_linux.pathlib.Path, "unlink", unlink)
+        monkeypatch.setattr(setup_atk_serve.pathlib.Path, "unlink", unlink)
 
-        with caplog.at_level("WARNING"):
-            assert setup_atk_serve_linux.run() is True
+        outcome = setup_atk_serve.run()
 
+        assert outcome.changed is True
+        assert outcome.failure is not None
+        assert "削除できないため残した" in outcome.failure
         assert legacy.exists()
         assert ["systemctl", "--user", "daemon-reload"] not in calls
-        assert "削除できないため残す" in caplog.text
 
     def test_absent_legacy_unit_does_not_invoke_systemctl(
         self,
@@ -365,6 +366,6 @@ class TestLegacyPlansViewerUnit:
         calls = self._record_subprocess(monkeypatch, returncode=1)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
 
-        assert setup_atk_serve_linux.run() is True
+        assert setup_atk_serve.run().changed is True
 
         assert not calls

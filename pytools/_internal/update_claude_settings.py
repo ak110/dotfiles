@@ -16,8 +16,13 @@ from pathlib import Path
 
 import pytilpack.jsonc
 
-from pytools._internal import claude_common, log_format, removal_registry, remove_legacy_codex_mcp_from_claude
-from pytools._internal.cli import setup_logging
+from pytools._internal import (
+    claude_common,
+    log_format,
+    post_apply_outcome,
+    removal_registry,
+    remove_legacy_codex_mcp_from_claude,
+)
 
 logger = logging.getLogger(__name__)
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
@@ -265,19 +270,8 @@ _IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
 _HOME_PLACEHOLDER = "__HOME__"
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    setup_logging()
-    run()
-    sys.exit(0)
-
-
-def run() -> bool:
-    """Claude 設定ファイル 2 件をマージ更新する。
-
-    Returns:
-        いずれかのファイルを実際に書き換えたかどうか。呼び出し側がログ集計に使う。
-    """
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """Claude 設定ファイル 2 件をマージ更新する。書き込みの失敗は失敗と数える。"""
     overrides = _platform_overrides(_MANAGED_SETTINGS_PATH)
     changed_settings = update_claude_settings(
         _MANAGED_SETTINGS_PATH,
@@ -292,7 +286,14 @@ def run() -> bool:
         removed_keys=removal_registry.values(_REMOVED_CONFIG_KEYS),
         strip_legacy_codex_timeout=True,
     )
-    return changed_settings or changed_config
+    failures = [
+        f"{log_format.home_short(path)} の書き込みに失敗"
+        for path, changed in ((_SETTINGS_PATH, changed_settings), (_CONFIG_PATH, changed_config))
+        if changed is None
+    ]
+    return post_apply_outcome.PostApplyOutcome(
+        changed=bool(changed_settings) or bool(changed_config), failure=" / ".join(failures) or None
+    )
 
 
 def _platform_overrides(base_path: Path, *, platform: str | None = None) -> list[Path]:
@@ -316,7 +317,7 @@ def update_claude_settings(
     removed_list_item_substrings: tuple[tuple[str, str], ...] = (),
     stale_labeled_list_paths: tuple[str, ...] = (),
     strip_legacy_codex_timeout: bool = False,
-) -> bool:
+) -> bool | None:
     """`managed_path` の設定を `settings_path` にマージして書き込む。
 
     `overrides` が与えられた場合は、`managed_path` の内容に上乗せしてからマージする。
@@ -339,7 +340,7 @@ def update_claude_settings(
     `removed_list_item_substrings`と同じ理由で呼び出し元が明示指定する。
 
     Returns:
-        実際にファイルを書き換えた場合は `True`。
+        実際にファイルを書き換えた場合は `True`、変更が無い場合は `False`、書き込みに失敗した場合は `None`。
     """
     managed = json.loads(managed_path.read_text(encoding="utf-8"))
     for override_path in overrides or []:
@@ -368,7 +369,7 @@ def update_claude_settings(
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     if not claude_common.write_settings_hybrid(settings_path, original, data, tag=short):
-        return False
+        return None
     logger.info(log_format.format_status(short, "更新しました"))
     for line in _diff_lines(original, data):
         logger.info(line)
@@ -796,7 +797,3 @@ def _union_list(existing: list, managed: list) -> list:
         seen.add(key)
         result.append(item)
     return result
-
-
-if __name__ == "__main__":
-    main()

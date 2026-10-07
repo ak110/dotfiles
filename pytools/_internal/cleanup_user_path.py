@@ -12,11 +12,10 @@ WindowsのPATHはシステム（HKLM）側とユーザー（HKCU）側に分か�
 import logging
 import ntpath
 import os
-import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path, PureWindowsPath
 
-from pytools._internal import log_format, winutils
+from pytools._internal import log_format, post_apply_outcome, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -32,26 +31,20 @@ _REG_EXPAND_SZ = 2
 _PLACEHOLDER_VAR_ORDER: tuple[str, ...] = ("LOCALAPPDATA", "APPDATA", "USERPROFILE")
 
 
-def run() -> bool:
-    """ユーザー側 PATH を整理する (Windows のみ)。
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """ユーザー側 PATH を整理する。
 
     プレースホルダー化・システム側およびユーザー側の重複除外・存在チェック警告を実施する。
     存在しないエントリーは警告ログを出力するのみで自動削除はしない。
-
-    Returns:
-        ユーザー側 PATH を実際に書き換えた場合 True。
+    PATH の読み書きの失敗は失敗と数える。
     """
-    if sys.platform != "win32":
-        return False
-
     user_value, reg_type = winutils.read_user_env_var("Path")
     if not user_value:
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     try:
         system_value, _ = winutils.read_system_env_var("Path")
     except OSError as e:
-        logger.warning(log_format.format_status(_LOG_LABEL, f"システム側 PATH の読み込みに失敗: {e}"))
-        return False
+        return post_apply_outcome.PostApplyOutcome(failure=f"システム側 PATH の読み込みに失敗: {e}")
 
     env_map = _collect_userprofile_env(os.environ)
 
@@ -91,18 +84,17 @@ def run() -> bool:
 
     # (5) 書き戻し
     if not (replacements or removed or needs_type_promotion):
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     try:
         winutils.write_user_env_var("Path", new_value, new_reg_type)
     except OSError as e:
-        logger.warning(log_format.format_status(_LOG_LABEL, f"ユーザー PATH の書き込みに失敗: {e}"))
-        return False
+        return post_apply_outcome.PostApplyOutcome(failure=f"ユーザー PATH の書き込みに失敗: {e}")
     for original, new_entry in replacements:
         logger.info(log_format.format_status(_LOG_LABEL, f"ユーザー PATH を整理: {original} → {new_entry}"))
     for entry in removed:
         logger.info(log_format.format_status(_LOG_LABEL, f"ユーザー PATH から除外: {entry}"))
     winutils.broadcast_environment_change()
-    return True
+    return post_apply_outcome.PostApplyOutcome(changed=True)
 
 
 def _collect_userprofile_env(environ: Mapping[str, str]) -> dict[str, str]:

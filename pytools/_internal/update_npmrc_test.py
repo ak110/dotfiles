@@ -44,21 +44,21 @@ class TestUpdateNpmrc:
     def test_new_file_is_created(self, tmp_path: Path):
         """対象ファイルが存在しない場合、新規作成してnpmのキーを書き込む。"""
         path = tmp_path / ".npmrc"
-        assert run(path) is True
+        assert run(path).changed is True
         assert path.read_text(encoding="utf-8") == "min-release-age=1\n"
 
     def test_legacy_pnpm_key_is_replaced_by_npm_key(self, tmp_path: Path):
         """以前書いていたpnpmのキーを除き、npmのキーを追記して他の行は保持する。"""
         path = tmp_path / ".npmrc"
         path.write_text("registry=https://example.com/\nminimum-release-age=1440\n", encoding="utf-8")
-        assert run(path) is True
+        assert run(path).changed is True
         assert path.read_text(encoding="utf-8") == "registry=https://example.com/\nmin-release-age=1\n"
 
     def test_existing_npm_value_is_replaced(self, tmp_path: Path):
         """npmのキーが異なる値を持つ場合は値を置換する。"""
         path = tmp_path / ".npmrc"
         path.write_text("min-release-age=7\nregistry=https://example.com/\n", encoding="utf-8")
-        assert run(path) is True
+        assert run(path).changed is True
         assert path.read_text(encoding="utf-8") == "min-release-age=1\nregistry=https://example.com/\n"
 
     def test_matching_line_is_noop(self, tmp_path: Path):
@@ -66,7 +66,7 @@ class TestUpdateNpmrc:
         path = tmp_path / ".npmrc"
         path.write_text("min-release-age=1\n", encoding="utf-8")
         mtime_before = path.stat().st_mtime_ns
-        assert run(path) is False
+        assert run(path).changed is False
         assert path.stat().st_mtime_ns == mtime_before
 
     def test_create_log_names_file_as_object(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
@@ -89,7 +89,7 @@ class TestUpdateNpmrc:
         """既存ファイルの末尾改行が無くても正しく追記される。"""
         path = tmp_path / ".npmrc"
         path.write_text("registry=https://example.com/", encoding="utf-8")
-        assert run(path) is True
+        assert run(path).changed is True
         assert path.read_text(encoding="utf-8").splitlines() == ["registry=https://example.com/", "min-release-age=1"]
 
 
@@ -101,7 +101,7 @@ class TestUpdatePnpmGlobal:
         path = tmp_path / ".npmrc"
         path.write_text("min-release-age=1\n", encoding="utf-8")
         _install_pnpm(monkeypatch, pnpm_calls, "undefined")
-        assert run(path) is True
+        assert run(path).changed is True
         assert pnpm_calls[-1] == ["/opt/pnpm/bin/pnpm", "config", "set", "--location", "global", "minimum-release-age", "1440"]
 
     def test_pnpm_configured_value_is_noop(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pnpm_calls: list[list[str]]):
@@ -109,5 +109,5 @@ class TestUpdatePnpmGlobal:
         path = tmp_path / ".npmrc"
         path.write_text("min-release-age=1\n", encoding="utf-8")
         _install_pnpm(monkeypatch, pnpm_calls, "1440")
-        assert run(path) is False
+        assert run(path).changed is False
         assert [cmd[1:3] for cmd in pnpm_calls] == [["config", "get"]]

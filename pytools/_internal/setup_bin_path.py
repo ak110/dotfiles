@@ -7,9 +7,8 @@ Windowsには対応する自動投入経路がないため、`chezmoi apply`後�
 """
 
 import logging
-import sys
 
-from pytools._internal import log_format, winutils
+from pytools._internal import log_format, post_apply_outcome, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -22,17 +21,15 @@ _BIN_ENTRIES: tuple[str, ...] = (
 )
 
 
-def run() -> bool:
+def run() -> post_apply_outcome.PostApplyOutcome:
     r"""`HKCU\Environment` の `Path` に dotfiles配下のbinディレクトリを冪等に追記する。"""
-    if sys.platform != "win32":
-        return False
-
     any_appended = False
+    failures: list[str] = []
     for entry in _BIN_ENTRIES:
         try:
             appended = winutils.append_user_path(entry)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(log_format.format_status("bin PATH", f"{entry} の登録に失敗: {e}"))
+        except OSError as e:
+            failures.append(f"{entry} の登録に失敗: {e}")
             continue
         if appended:
             logger.info(log_format.format_status("bin PATH", f"ユーザー PATH に追記: {entry}"))
@@ -40,4 +37,4 @@ def run() -> bool:
     if any_appended:
         # 追記時のみ環境変数変更をブロードキャストし、新規プロセスで即時反映させる。
         winutils.broadcast_environment_change()
-    return any_appended
+    return post_apply_outcome.PostApplyOutcome(changed=any_appended, failure=" / ".join(failures) or None)

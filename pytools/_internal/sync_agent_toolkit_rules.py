@@ -13,7 +13,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import claude_common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +24,16 @@ NORMATIVE_SOURCE = "agent-toolkit"
 NORMATIVE_KIND = "rules"
 
 
-def run() -> bool:
-    """`agent-toolkit/rules/`をClaude CodeとCodexの配布先へ同期する。"""
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """`agent-toolkit/rules/`をClaude CodeとCodexの配布先へ同期する。配布先の書き込みの失敗は失敗と数える。"""
     dotfiles_root = claude_common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("agent-toolkit rules", "dotfiles ルートが見つからずスキップ"))
-        return False
+        return post_apply_outcome.PostApplyOutcome()
 
     src = dotfiles_root / RULES_RELATIVE
     if not src.is_dir():
-        logger.warning(log_format.format_status("agent-toolkit rules", f"コピー元が存在しません: {src}"))
-        return True
+        return post_apply_outcome.PostApplyOutcome(failure=f"コピー元が存在しません: {src}")
 
     destinations = (
         claude_common.CLAUDE_HOME / "rules" / "agent-toolkit",
@@ -44,7 +43,7 @@ def run() -> bool:
     for destination in destinations:
         if _sync_destination(src, destination):
             changed = True
-    return changed
+    return post_apply_outcome.PostApplyOutcome(changed=changed)
 
 
 def wrapped_body(rule: Path) -> str:
@@ -70,8 +69,9 @@ def _sync_destination(src: Path, destination: Path) -> bool:
         content = wrapped_body(rule)
         if target.is_file() and target.read_text(encoding="utf-8") == content:
             continue
-        if claude_common.atomic_write_text(target, content, tag="agent-toolkit rules"):
-            changed = True
+        if not claude_common.atomic_write_text(target, content, tag="agent-toolkit rules"):
+            raise OSError(f"{target} の書き込みに失敗")
+        changed = True
     for existing in sorted(destination.iterdir()):
         if existing.name in expected:
             continue
