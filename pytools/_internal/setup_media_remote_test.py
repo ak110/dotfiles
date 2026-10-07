@@ -15,8 +15,13 @@ def _expected_vbs(exe: pathlib.Path) -> str:
     return f'CreateObject("WScript.Shell").Run """{exe}"" serve", 0, False\n'
 
 
+_REAL_RESTART = setup_media_remote._restart  # pylint: disable=protected-access
+
+
 @pytest.fixture(name="windows_stheno")
 def _windows_stheno(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    # 配置のテストでは実際のプロセスを停止・起動しない。再起動は専用のテストで確かめる。
+    monkeypatch.setattr(setup_media_remote, "_restart", lambda _vbs, _exe: None)
     monkeypatch.setattr(setup_media_remote.pathlib.Path, "home", lambda: tmp_path)
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
@@ -206,3 +211,80 @@ def test_non_stheno_without_existing_assets_is_noop(monkeypatch: pytest.MonkeyPa
     )
     assert setup_media_remote.run().changed is False
     assert not calls
+
+
+class _FakeProcess:
+    """`psutil.Process`の代わり。停止の呼び出しを記録する。"""
+
+    def __init__(self, pid: int, exe: str | None, cmdline: list[str], killed: list[int]) -> None:
+        self.pid = pid
+        self.info = {"pid": pid, "exe": exe, "cmdline": cmdline}
+        self._killed = killed
+
+    def kill(self) -> None:
+        self._killed.append(self.pid)
+
+
+@pytest.mark.parametrize(
+    ("stopped", "reinstall", "expected_kill", "expected_start"),
+    [
+        ("1", "1", False, True),
+        ("", "1", False, False),
+        ("", "", True, True),
+    ],
+)
+@pytest.mark.parametrize("has_vbs", [True, False])
+@pytest.mark.usefixtures("startup_dir")
+def test_restart_after_reinstall_and_symptomatic_restart(
+    monkeypatch: pytest.MonkeyPatch,
+    exe_path: pathlib.Path,
+    vbs_path: pathlib.Path,
+    stopped: str,
+    reinstall: str,
+    expected_kill: bool,
+    expected_start: bool,
+    has_vbs: bool,
+) -> None:
+    """再導入で停止した回は起動だけ、再導入しない回は停止→起動を行い、VBSラッパーが無ければ実行ファイルを直接起動する。"""
+    monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
+    monkeypatch.setenv(setup_media_remote.STOPPED_ENV, stopped)
+    monkeypatch.setenv(setup_media_remote.REINSTALL_ENV, reinstall)
+    monkeypatch.setattr(setup_media_remote.claude_common, "run_subprocess", _make_static_fake([]))
+    monkeypatch.setattr(setup_media_remote, "_is_up_to_date", lambda _lnk, _vbs: True)
+    monkeypatch.setattr(setup_media_remote, "_ensure_vbs", lambda _vbs, _exe: False)
+    if has_vbs:
+        vbs_path.parent.mkdir(parents=True, exist_ok=True)
+        vbs_path.write_text("", encoding="utf-8")
+    killed: list[int] = []
+    processes = [
+        _FakeProcess(1, str(exe_path).upper(), [str(exe_path), "serve"], killed),
+        _FakeProcess(2, r"C:\Python\python.exe", ["python", "-m", "pytools.media_remote", "serve"], killed),
+        _FakeProcess(3, r"C:\other.exe", ["other"], killed),
+    ]
+    monkeypatch.setattr(setup_media_remote.psutil, "process_iter", lambda _attrs: processes)
+    monkeypatch.setattr(setup_media_remote.psutil, "wait_procs", lambda procs, timeout: (procs, []))
+    launched: list[list[str]] = []
+
+    def fake_popen(command: list[str], **_kwargs: object) -> None:
+        launched.append(command)
+
+    monkeypatch.setattr(setup_media_remote.subprocess, "Popen", fake_popen)
+
+    outcome = setup_media_remote.run()
+
+    assert outcome.failure is None
+    assert killed == ([1, 2] if expected_kill else [])
+    expected_command = [setup_media_remote.WSCRIPT_PATH, str(vbs_path)] if has_vbs else [str(exe_path), "serve"]
+    assert launched == ([expected_command] if expected_start else [])
+
+
+@pytest.mark.usefixtures("startup_dir")
+def test_restart_does_nothing_on_other_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """stheno以外では停止も起動もしない。"""
+    monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
+    monkeypatch.setattr(setup_media_remote.socket, "gethostname", lambda: "euryale")
+    monkeypatch.setenv(setup_media_remote.STOPPED_ENV, "1")
+    monkeypatch.setattr(setup_media_remote.psutil, "process_iter", lambda _attrs: pytest.fail("停止しない"))
+    monkeypatch.setattr(setup_media_remote.subprocess, "Popen", lambda *_args, **_kwargs: pytest.fail("起動しない"))
+
+    assert setup_media_remote.run().failure is None

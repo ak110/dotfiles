@@ -51,6 +51,7 @@ from pytools._internal import (
     setup_sendto_shortcuts,
     setup_statusline_binary,
     setup_tmux_plugins,
+    setup_user_env,
     sync_agent_toolkit_rules,
     update_claude_settings,
     update_npmrc,
@@ -434,6 +435,7 @@ _ATK_SERVE = "atk serve 自動起動セットアップ (Linux)"
 _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec(_BIN_PATH, setup_bin_path.run, platforms=_WINDOWS),
     _StepSpec("MSYS 環境変数 (Windows)", setup_msys_env.run, platforms=_WINDOWS),
+    _StepSpec("user.env 環境変数 (Windows)", setup_user_env.run, platforms=_WINDOWS),
     _StepSpec("VSCode 設定", update_vscode_settings.run),
     _StepSpec("SSH config", update_ssh_config.run),
     _StepSpec(_CLEANUP, _cleanup_removed_paths),

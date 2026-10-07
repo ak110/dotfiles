@@ -165,6 +165,15 @@ def _msys_env_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     monkeypatch.setattr(winutils, "write_user_env_var", _raise(PermissionError("denied")))
 
 
+def _user_env_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / "share").mkdir()
+    (tmp_path / "share" / "user.env").write_text("KEY=1\n", encoding="utf-8")
+    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(winutils, "read_user_env_var", lambda _name: (None, 1))
+    monkeypatch.setattr(winutils, "import_winreg", lambda: type("_Winreg", (), {"REG_SZ": 1}))
+    monkeypatch.setattr(winutils, "write_user_env_var", _raise(PermissionError("denied")))
+
+
 def _vscode_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     settings = tmp_path / "settings.json"
     monkeypatch.setattr(update_vscode_settings, "_settings_path", lambda **_kwargs: settings)
@@ -324,6 +333,7 @@ def _user_path_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "bin PATH 登録 (Windows)": [(_bin_path_write_fails, 1)],
     "MSYS 環境変数 (Windows)": [(_msys_env_write_fails, 1)],
+    "user.env 環境変数 (Windows)": [(_user_env_write_fails, 1)],
     "VSCode 設定": [(_vscode_write_fails, 1)],
     "SSH config": [(_ssh_config_write_fails, 1)],
     "旧配布物の削除": [(_cleanup_removal_fails, 1)],

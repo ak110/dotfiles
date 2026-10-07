@@ -10,12 +10,20 @@ VBSラッパーが`dotfiles-media-remote.exe serve`を非表示ウィンドウ�
 これによりコンソール窓・タスクバーアイコンを抑止しつつ、
 uv tool venvの`dotfiles-media-remote.exe`を確実に解決する。
 sthenoホスト以外では既存のショートカットとVBSラッパーを削除する。
+
+sthenoでは配置に続けてmedia-remoteを再起動する。
+post-applyテンプレートがpytoolsの再導入のために停止した場合は起動だけを行い、
+再導入しない回は停止→起動を行う。後者はハングして応答しなくなったmedia-remoteを回復する対症療法であり、
+ハングの原因は未特定である。`launch.vbs`と実行ファイルのパスは本モジュールだけが持つ。
 """
 
 import logging
 import os
 import pathlib
 import socket
+import subprocess
+
+import psutil
 
 from pytools._internal import claude_common, log_format, post_apply_outcome
 
@@ -25,12 +33,18 @@ logger = logging.getLogger(__name__)
 TARGET_HOST = "stheno"
 LNK_NAME = "dotfiles-media-remote.lnk"
 WSCRIPT_PATH = r"C:\Windows\System32\wscript.exe"
+# post-applyテンプレートが渡す、再導入のために停止したか（`1`）と再導入の要否（`1`）。
+STOPPED_ENV = "DOTFILES_MEDIA_REMOTE_STOPPED"
+REINSTALL_ENV = "DOTFILES_PYTOOLS_REINSTALL"
+# 停止からファイルハンドル解放までを待つ上限秒数。
+_STOP_TIMEOUT_SEC = 5.0
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
     """sthenoの場合のみショートカット配置、それ以外では既存ショートカットを削除する。
 
-    ショートカットとVBSラッパーの配置と削除の失敗は失敗と数える。
+    sthenoでは続けてmedia-remoteを再起動する。ショートカットとVBSラッパーの配置と削除、
+    media-remoteの停止と起動の失敗は失敗と数える。
     """
     startup_dir = _startup_dir()
     if not startup_dir.is_dir():
@@ -49,9 +63,78 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             return post_apply_outcome.PostApplyOutcome()
         vbs_changed = _ensure_vbs(vbs, exe)
         lnk_changed = _ensure_shortcut(lnk, vbs)
+        _restart(vbs, exe)
     except OSError as error:
         return post_apply_outcome.PostApplyOutcome(failure=str(error))
     return post_apply_outcome.PostApplyOutcome(changed=vbs_changed or lnk_changed)
+
+
+def _restart(vbs: pathlib.Path, exe: pathlib.Path) -> None:
+    """テンプレートが渡した状態に応じてmedia-remoteを起動する。
+
+    再導入のために停止した場合は起動だけを行い、再導入を試みた回（延期を含む）で停止していない場合は何もしない。
+    再導入しない回は、稼働中のmedia-remoteを停止してから起動する。
+    """
+    if os.environ.get(STOPPED_ENV) == "1":
+        _start(vbs, exe)
+        return
+    if os.environ.get(REINSTALL_ENV) == "1":
+        return
+    _stop_running(exe)
+    _start(vbs, exe)
+
+
+def _stop_running(exe: pathlib.Path) -> None:
+    """実行ファイルのパスかコマンドラインからmedia-remoteと判定したプロセスを停止する。"""
+    targets = [process for process in psutil.process_iter(["pid", "exe", "cmdline"]) if _is_media_remote(process.info, exe)]
+    logger.info(log_format.format_status("media-remote", f"対症療法の停止対象プロセス: {len(targets)}件"))
+    for process in targets:
+        logger.info(log_format.format_status("media-remote", f"PID={process.pid} を停止"))
+        try:
+            process.kill()
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.Error as error:
+            raise OSError(f"media-remote (PID={process.pid}) を停止できない: {error}") from error
+    _gone, alive = psutil.wait_procs(targets, timeout=_STOP_TIMEOUT_SEC)
+    if alive:
+        raise OSError(f"media-remote が停止しない: PID={', '.join(str(process.pid) for process in alive)}")
+
+
+def _is_media_remote(info: dict[str, object], exe: pathlib.Path) -> bool:
+    """プロセス情報がmedia-remoteを指すかを返す。
+
+    配布した実行ファイルの直接起動に加え、uvのランチャーやPythonの経由で起動した場合も含めるため、
+    コマンドラインに実行ファイルのパスかモジュール名`pytools.media_remote`を含むものも対象にする。
+    """
+    exe_text = str(exe).casefold()
+    process_exe = info.get("exe")
+    if isinstance(process_exe, str) and process_exe.casefold() == exe_text:
+        return True
+    cmdline = info.get("cmdline")
+    if not isinstance(cmdline, list):
+        return False
+    joined = " ".join(str(part) for part in cmdline)
+    return exe_text in joined.casefold() or "pytools.media_remote" in joined
+
+
+def _start(vbs: pathlib.Path, exe: pathlib.Path) -> None:
+    """VBSラッパーがあればその経由で、無ければ実行ファイルを直接、非表示で起動する。
+
+    起動したプロセスへ標準入出力を引き継がない。引き継ぐと、post-applyの出力を読む`update-dotfiles`が
+    media-remoteの終了までパイプの終端を待ち続ける。
+    """
+    command = [WSCRIPT_PATH, str(vbs)] if vbs.is_file() else [str(exe), "serve"]
+    logger.info(log_format.format_status("media-remote", "dotfiles-media-remote を再起動"))
+    subprocess.Popen(  # pylint: disable=consider-using-with  # 常駐させるため終了を待たない
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        # コンソールを持たせずに起動する。定数はWindowsにだけあり、他のOSでは0を渡す。
+        creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+    )
 
 
 def _startup_dir() -> pathlib.Path:

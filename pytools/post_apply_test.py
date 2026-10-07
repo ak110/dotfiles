@@ -1212,6 +1212,7 @@ class TestDefaultSteps:
     _WINDOWS_STEPS = {
         "bin PATH 登録 (Windows)",
         "MSYS 環境変数 (Windows)",
+        "user.env 環境変数 (Windows)",
         "libarchive (Windows)",
         "Windowsレジストリ設定",
         "SendTo ショートカット (Windows)",
