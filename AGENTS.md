@@ -9,12 +9,14 @@
 
 次の各文書は経緯、根拠および構造の記録であり、実行時に適用する規範は`agent-toolkit/rules/`配下と各スキルが定める。
 
+- 開発者向け文書の全体の一覧: [docs/development/index.md](docs/development/index.md)
 - リポジトリ全体の構成・配布対象と開発対象の区別・プラットフォーム対応・bash補完運用・
-  PowerShellスクリプト注意事項・ホーム配下編集前の確認手順:
+  PowerShellスクリプト注意事項・agent-toolkitの3形式配布と`agents_server` MCPの配置・ホーム配下編集前の確認手順:
   [docs/development/architecture.md](docs/development/architecture.md)
 - 運用機能の詳細（`sync_generated_files.py`の起動形・tmux自動アタッチ・
   常駐サービス・Windows電源設定・post-applyキャッシュ・chezmoiの命名規則）:
   [docs/development/operations.md](docs/development/operations.md)
+- 機構の目的、構造の理由、知識境界と却下した案を記録する設計記録の索引: [docs/development/design.md](docs/development/design.md)
 - 過去のAWIから確定した方針・意向: [docs/development/concepts.md](docs/development/concepts.md)
 - 再発防止の判断材料となる障害・欠陥: [docs/development/incidents.md](docs/development/incidents.md)
 - 規範の条文が根拠とする検証記録の日付・版数・再検証手段:

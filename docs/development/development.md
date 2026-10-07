@@ -5,11 +5,6 @@
 恒久作業ツリーの初期セットアップでは、mise 2026.8.8以降とuvを導入し、次を実行する。
 uvは公式インストーラーを使用する。
 uvはbootstrap自身の実行基盤であるため、ルートのmise設定では管理しない。
-手動起動した`update-dotfiles`は公式インストーラー版uvの自己更新を起動時に試行する。
-WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換できずに自己更新が失敗することがある。
-この場合も`update-dotfiles`はインストール済みのuvで更新を続行し、処理の最後に失敗と次回の再試行を案内する。
-`atk wi process-loop`からの起動では、常駐中の`uvx`による実行ファイル競合を避けるため自己更新を省略し、
-次回の手動起動まで延期する。補助的なuv自己更新を理由として、dotfiles更新を停止させないためである。
 
 ```bash
 mise bootstrap
@@ -66,8 +61,8 @@ uv sync --reinstall  # .venvを再構築する場合
 
 ロックファイル尊重・公開待機・ピン留め運用・脆弱性検知の4点を貫徹する。
 
-- ロックファイル尊重: Python依存は`uv.lock`を再resolveせず使用する。mise管理ツールはルートと配布用設定に対応する2つの`mise.lock`を優先する
-- 公開待機: Python依存は`exclude-newer`で公開から1日、mise管理ツールは`minimum_release_age`で公開から7日を経たものだけを採用する
+- ロックファイル尊重: Python依存は`Makefile`とCIが常時有効化する`UV_FROZEN=1`により、`uv.lock`を再resolveせず使用する。mise管理ツールはルートと配布用設定に対応する2つの`mise.lock`を優先する
+- 公開待機: Python依存は`pyproject.toml`の`exclude-newer`、mise管理ツールは`mise.toml`の`minimum_release_age`が定める期間を公開から経たものだけを採用する
 - ピン留め運用: GitHub Actionsはコミットハッシュで固定し、pinactで更新を管理する
 - 脆弱性検知: dotfilesは実行可能なコマンドラインツール群を配布するため、依存がエンドユーザーの実行環境へ
   波及する。Dependabot alertsを有効化し、自動修正PRの作成（Dependabot security updates）は
@@ -76,12 +71,13 @@ uv sync --reinstall  # .venvを再構築する場合
   1回の実行ごとに行う自動コードレビュー監査（`atk review-audit pending`）で拾い、削除済みマニフェストに
   紐づく誤検知は却下し、実在する脆弱性は依存更新へ回す。`atk wi process-loop`の待機中確認は、
   未判定のアラートがあればprocess-wiの実行を起動するだけで、AWIを起票しない。Code Scanning由来のアラートは
-  これらの処理の対象に含めない。
-  実際に確認した結果、Dependabot alertsは有効である（`gh api repos/ak110/dotfiles/vulnerability-alerts`が204）。
-  自動修正PRの作成は無効である（`gh api repos/ak110/dotfiles/automated-security-fixes`が
-  `enabled: false`）。いずれも方針どおりの状態にある
+  これらの処理の対象に含めない
 
-## 開発ツールの起動方法
+設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`（prekが読む
+設定ファイルで、ファイル名自体は変更しない）を参照する。
+エンドユーザー向けのグローバル設定一覧は[docs/guide/security.md](../guide/security.md)を参照する。
+
+## MCPサーバーの起動失敗の診断
 
 `agent-toolkit`が配布するMCPサーバー登録は、`uvx`へ版の範囲指定を渡す形を維持する。
 版指定の形式はパッケージインデックスへの問い合わせ有無を変えない。
@@ -99,17 +95,7 @@ MCPクライアントは初期化応答を得られないまま接続断とな�
 インデックスへ到達できない場合は終了コード2となり、再試行回数と接続エラーを出力する。
 この場合は前項のとおり到達性の回復を待つ。
 
-`update-dotfiles`の各工程は`MISE_AUTO_INSTALL=0`を与えたサブプロセスとして実行する。
-実行ファイル名で起動したコマンドがmiseのshimへ解決されると、
-呼び出したコマンドと無関係なツールの自動導入が実行され、その失敗が更新処理全体を止めるためである。
-ツール自体はpost-apply工程で`mise install`を明示的に実行して導入するため、`MISE_AUTO_INSTALL=0`の影響を受けない。
-
-`update-dotfiles`のgit pull工程には待ち時間の上限を設ける。環境変数を設定しない場合は600秒とし、環境変数`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`へ秒数を与えて調整する。`0`を与えると上限を無効化する。
-GitHub向けSSHのupload-pack通信が応答しない環境で、更新処理が無期限に滞留するためである。
-上限を超えた場合は、git pull工程から起動した子孫プロセスを終了させる。
-そのうえで、工程名と処理が未完了であることを標準エラーへ出力し、終了コード1で終わる。
-子孫を終了させるのは、`git`と`ssh`が出力のハンドルを保持したまま停止すると、直接の子を終了させるだけでは待機が終わらないためである。
-`chezmoi apply`工程へは上限を設けない。
+## 依存の版指定を変えるときの検証
 
 `pyproject.toml`の`dependencies`または`override-dependencies`でパッケージの版指定を変更した場合、
 `uv lock`・`uv sync`・`uv run`の成功だけでは配布時の依存解決の成立を確認できない。
@@ -156,6 +142,7 @@ GitHub向けSSHのupload-pack通信が応答しない環境で、更新処理が
 特定パッケージの引き上げは`--upgrade-package <名前>`、全体更新は`--upgrade`を指定する。
 制約を変更したのに版が変わらない場合は、他の依存の制約が原因だと決めつける前に、再解決の範囲を確認する。
 
-設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`（prekが読む
-設定ファイルで、ファイル名自体は変更しない）を参照する。
-エンドユーザー向けのグローバル設定一覧は[docs/guide/security.md](../guide/security.md)を参照する。
+## リリース手順
+
+`develop`から`master`へのリリースPRの作成、マージおよびマージ後の同期と検収は、`dotfiles-release`スキル（`.claude/skills/dotfiles-release/SKILL.md`）が定める。
+リリース運用の方針と経緯は[concepts-workflows.md](concepts-workflows.md)の「developとmasterのリリース運用」にある。

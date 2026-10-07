@@ -16,7 +16,6 @@
 ## developとmasterのリリース運用
 
 現行の規範は`dotfiles-release`スキルと`merge-pr`スキルにある。
-日次リリースの運用機能の詳細は[operations.md](operations.md)の「日次リリースの自動実施」、
 branchとリリースの設計の理由は[design-release.md](design-release.md#developとmasterのbranchリリース設計)の「developとmasterのbranch・リリース設計」が記録する。
 
 通常の開発先は`develop`とし、リリース先およびGitHubのdefault branchは`master`とする。
@@ -44,6 +43,21 @@ statusline（`rust/claude-statusline/`配下）を変更した場合は、レー
 実装済みHEADを`develop`として公開し、`origin/master`が移行前OIDであることを確認する。
 ローカル`master`はローカル`develop`と`origin/develop`のOID一致を確認した後にだけ削除する。
 branchの公開またはCIが失敗した場合は`master`を保持し、同じcommitをrefまたは7文字以上の一意な短縮OIDで再確認してから再開する。
+
+### 日次リリースの判定条件の経緯
+
+判定の入力を`origin/develop`と`origin/master`の短縮OIDの比較だけとし、WIキューの状態を参照しない扱いは、2026年9月16日のユーザー指示による。
+廃止した条件では、WIキュー全体からそのセッションで固定した集合を除き、残った項目がすべて着手できないことを求めていた。
+この条件は「固定したAWIの全件が終端してからリリースする」目的を守るためのものだった。
+`agent-toolkit:process-wi`では公開工程を全レーンの終端後に実施するため、条件を廃止してもこの目的は失われない。
+一方、廃止した条件は共有キューの現在状態を入力としていた。
+この状態はprocess-wiの1回の実行の進行中に`agent-toolkit:session-review`、並行セッションおよびユーザーが投入する項目で増減する。
+増減した項目は、そのセッションの成果と因果を持たない。
+それでも、セッションの成果の完成度とは無関係にリリースが止まった。
+2026年9月16日のprocess-wiの実行では、選定時点のdotfiles宛の`inbox`が4件だったのに対し、レーンの統合が終わる時点では17件になっていた。
+
+2026年9月15日には、同じ原因に対処するため、廃止した条件の評価時点を公開工程から選定工程の完了へ前倒ししていた。
+この是正では入力を取得する時点だけが早まった。入力がセッションの外側から変わる性質は残っていた。
 
 ## WIキューの運用
 

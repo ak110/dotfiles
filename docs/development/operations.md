@@ -1,7 +1,7 @@
 # 運用機能の詳細
 
 本リポジトリが配布・設定する運用機能のホスト固有事項と詳細仕様を扱う。
-編集方針・ディレクトリ構造は`AGENTS.md`、リポジトリ構成は[architecture.md](architecture.md)を参照する。
+リポジトリ構成とディレクトリの役割は[architecture.md](architecture.md)を参照する。
 
 ## 生成物の一括同期（`sync_generated_files.py`）
 
@@ -150,7 +150,29 @@ How many characters of a successful Bash or PowerShell command's output Claude r
 上限値の解釈が変わった疑いがある場合は、本体のバイナリから`bashOutputMaxChars`の説明を確かめる。
 BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
 
-## mise latestの非ログイン再評価
+## `update-dotfiles`のuv自己更新と実行環境
+
+手動起動した`update-dotfiles`は公式インストーラー版uvの自己更新を起動時に試行する。
+WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換できずに自己更新が失敗することがある。
+この場合も`update-dotfiles`はインストール済みのuvで更新を続行し、処理の最後に失敗と次回の再試行を案内する。
+`atk wi process-loop`からの起動では、常駐中の`uvx`による実行ファイル競合を避けるため自己更新を省略し、
+次回の手動起動まで延期する。補助的なuv自己更新を理由として、dotfiles更新を停止させないためである。
+
+`update-dotfiles`の各工程は`MISE_AUTO_INSTALL=0`を与えたサブプロセスとして実行する。
+実行ファイル名で起動したコマンドがmiseのshimへ解決されると、
+呼び出したコマンドと無関係なツールの自動導入が実行され、その失敗が更新処理全体を止めるためである。
+ツール自体はpost-apply工程で`mise install`を明示的に実行して導入するため、`MISE_AUTO_INSTALL=0`の影響を受けない。
+
+`update-dotfiles`のgit pull工程には待ち時間の上限を設ける。環境変数を設定しない場合は600秒とし、環境変数`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`へ秒数を与えて調整する。`0`を与えると上限を無効化する。
+GitHub向けSSHのupload-pack通信が応答しない環境で、更新処理が無期限に滞留するためである。
+上限を超えた場合は、git pull工程から起動した子孫プロセスを終了させる。
+そのうえで、工程名と処理が未完了であることを標準エラーへ出力し、終了コード1で終わる。
+子孫を終了させるのは、`git`と`ssh`が出力のハンドルを保持したまま停止すると、直接の子を終了させるだけでは待機が終わらないためである。
+`chezmoi apply`工程へは上限を設けない。
+
+## miseの導入と再評価
+
+### process-loopの非ログイン再評価
 
 dotfilesリポジトリを対象とする`atk wi process-loop`はmiseの`latest`指定ツールを非ログインシェルから再評価する。
 手動起動時に`mise install --quiet`を一度実行し、その成否後から24時間ごとに待機ループの復帰時に再実行する。
@@ -168,6 +190,8 @@ dotfilesリポジトリを対象とする`atk wi process-loop`はmiseの`latest`
 配布するglobal設定は`gitlab.glab_cli_tokens`を無効にする。
 miseはglab CLIの設定ファイルから取得したトークンを公開APIの呼び出しへ付与するため、期限切れのトークンは401を返す。
 
+### `chezmoi apply`の後処理の`mise install`
+
 `chezmoi apply`の後処理も`mise install`を実行する。
 miseは実行位置から設定ファイルを探索するため、後処理は`CHEZMOI_WORKING_TREE`に`mise.toml`がある場合だけ
 そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
@@ -179,6 +203,8 @@ working treeにだけ定義したツールが更新を繰り返しても未導�
 どの`install_path`の配下にも無い配置先（共有ランタイムへのリンクで導入されるツール）は再導入しない。
 再導入にはlockedモードの環境変数を与えない。mise 2026.9.17では、lockにURLがあってもlockedモードの`mise install --force <ツール>@<版>`は失敗し、版を明示した再導入はlockfileを書き戻さないためである。
 検出と再導入の失敗、および再導入後も残る欠落は警告を出力して後処理を続け、残る欠落の警告には手動の復旧コマンドを含める。
+
+### lockedモードの環境変数
 
 process-loopと後処理の`mise install`へは環境変数`MISE_LOCKED=1`と`MISE_LOCKED_SCOPES=project`を与える。
 これにより、プロジェクトの`mise.lock`に記録済みの解決結果から導入するlockedモードで動かす。
@@ -395,19 +421,4 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 
 dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
 実行時に従う規範は`dotfiles-release`スキルであり、判定条件、評価の時点および実施手順は同スキルが定める。
-本節には日次リリースの自動実施を導入した経緯と根拠を記録する。
-
-判定の入力を`origin/develop`と`origin/master`の短縮OIDの比較だけとし、WIキューの状態を参照しない扱いは、2026年9月16日のユーザー指示による。
-廃止した条件では、WIキュー全体からそのセッションで固定した集合を除き、残った項目がすべて着手できないことを求めていた。
-この条件は「固定したAWIの全件が終端してからリリースする」目的を守るためのものだった。
-`agent-toolkit:process-wi`では公開工程を全レーンの終端後に実施するため、条件を廃止してもこの目的は失われない。
-一方、廃止した条件は共有キューの現在状態を入力としていた。
-この状態はprocess-wiの1回の実行の進行中に`agent-toolkit:session-review`、並行セッションおよびユーザーが投入する項目で増減する。
-増減した項目は、そのセッションの成果と因果を持たない。
-それでも、セッションの成果の完成度とは無関係にリリースが止まった。
-2026年9月16日のprocess-wiの実行では、選定時点のdotfiles宛の`inbox`が4件だったのに対し、レーンの統合が終わる時点では17件になっていた。
-
-2026年9月15日には、同じ原因に対処するため、廃止した条件の評価時点を公開工程から選定工程の完了へ前倒ししていた。
-この是正では入力を取得する時点だけが早まった。入力がセッションの外側から変わる性質は残っていた。
-
-auto-merge、マージ失敗後の自動再試行および自動rollbackを導入しない扱いは、[developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)が記録するユーザー指示による。
+導入の経緯と根拠は[concepts-workflows.md](concepts-workflows.md)の「developとmasterのリリース運用」にある。
