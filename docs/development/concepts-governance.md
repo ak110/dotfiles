@@ -4,7 +4,7 @@
 
 ## 確認・合意の運用
 
-現在はルールファイルの「協調と自律」と、`agent-toolkit/share/rules-main.md`の「協調と自律」「ユーザー発話の解釈」が定める。
+現在はルールファイルの「協調と自律」「指示の解釈と優先順位」と、`agent-toolkit/share/rules-main.md`の「協調と自律」「目的との一致の確認」が定める。
 確認要否の判定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」と`references/judgment.md`が定める。
 
 - 対象、操作または設計の選択は、許容性、必要性、実装品質の順に判定する。エージェントの範囲逸脱には新しい承認制限を加えず、既存の承認判定を技術的な必要性の判定より前へ置いて対処する

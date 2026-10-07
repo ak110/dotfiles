@@ -28,7 +28,7 @@ plugin更新で作業ディレクトリが消えると、子App Serverは生存�
 子プロセスを再生成する案は、新しい子も同じ親の作業ディレクトリを継承するため採用しない。
 
 Codex backendは、自身を起点に解決したagent-toolkit plugin rootが版数付きcacheにある場合、managed-tempへ1回複製してprocessの生存中に実在するstable rootを得る。同じ絶対パスを内側のagents_server MCP起動設定と、`thread/start`・`thread/resume`の全launch kindの`developerInstructions`へ渡す。委譲先はagent-toolkit skillとplugin内部資源をそのrootから読み、`<役割名>.subagent.md`や別hostのcache版数から別rootを組み立てない。
-直接起動したCodexメインはこの受け渡しの対象外であり、そのplugin root解決は`rules-main.codex.md`「Codexのplugin root解決」が所有する。
+直接起動したCodexメインはこの受け渡しの対象外であり、そのplugin root解決は`rules-common.codex.md`「Codexのplugin root解決」が所有する。
 
 知識境界として、`<役割名>.subagent.md`内の`${CLAUDE_PLUGIN_ROOT}`を文書自身のrootへ展開する処理は`agents_server_mcp.py::_task_document_request`が所有する。委譲先が実行時にskillや内部資源を探す起点は、Codex backendのdeveloper instructionが所有する。
 内側MCPだけにstable rootを渡すと、委譲先自身のファイル参照は安定しないため、この案は採用しない。開始時だけにstable rootを渡す案も、保存済みthreadを別processで再開した後の起点を失うため採用しない。

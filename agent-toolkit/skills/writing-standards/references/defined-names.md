@@ -49,15 +49,15 @@
 | 終端担当 | 公開工程のpush、CI、検証失敗時の修正、プロジェクト固有の公開後の操作および延期adoptを担う委譲先 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | 監査担当 | 自動コードレビュー監査で未処置の対象を判定する委譲先 | `agent-toolkit/skills/process-wi/SKILL.md`「自動コードレビュー監査」 |
 | 自動コードレビュー | GitHub Copilotのレビューなど、外部サービスが自動で付けるレビュー | `agent-toolkit/skills/process-wi/SKILL.md`「自動コードレビュー監査」 |
-| WI作成 | 目的、消費主体、完成条件と実現方式を定めたWIを作成する工程 | `agent-toolkit/share/workflow-phases.md`の工程表 |
-| 計画 | WIから外部仕様、変更対象、受入シナリオ、テストと検証コマンドを定める工程 | `agent-toolkit/share/workflow-phases.md`の工程表 |
-| 実行 | 計画どおり実装し、受入シナリオを検証する工程 | `agent-toolkit/share/workflow-phases.md`の工程表 |
-| 実行レビュー | 実装後に要件・外部仕様の水準で実装とテストを確認する工程 | `agent-toolkit/share/workflow-phases.md`の工程表 |
-| 計画担当 | 計画工程を担う主体（`agent-toolkit:process-wi`ではレーン担当、対話型ではメイン） | `agent-toolkit/share/workflow-phases.md`の工程表の直後 |
-| 実装担当 | 実行工程を担う主体（`agent-toolkit:process-wi`ではレーン担当、レビュー修正担当、CI修正担当、対話型ではメイン） | `agent-toolkit/share/workflow-phases.md`の工程表の直後 |
-| 全体検証 | リポジトリ全体を対象にした自動チェックとテストの実行 | `agent-toolkit/share/workflow-phases.md`の工程表の直後 |
-| 受入シナリオ検証 | 計画の受入シナリオを公開された呼び出し手段から検証する結合・E2Eテストを、変更範囲の検証で実行すること | `agent-toolkit/share/workflow-phases.md` |
-| 公開工程判定 | リポジトリ全体の自動チェックとCIの成功を述べる完成条件を、公開工程で判定すること | `agent-toolkit/share/workflow-phases.md` |
+| WI作成 | 目的、消費主体、完成条件と実現方式を定めたWIを作成する工程 | `agent-toolkit/share/workflow-phases.md`「工程表」 |
+| 計画 | WIから外部仕様、変更対象、受入シナリオ、テストと検証コマンドを定める工程 | `agent-toolkit/share/workflow-phases.md`「工程表」 |
+| 実行 | 計画どおり実装し、受入シナリオを検証する工程 | `agent-toolkit/share/workflow-phases.md`「工程表」 |
+| 実行レビュー | 実装後に要件・外部仕様の水準で実装とテストを確認する工程 | `agent-toolkit/share/workflow-phases.md`「工程表」 |
+| 計画担当 | 計画工程を担う主体（`agent-toolkit:process-wi`ではレーン担当、対話型ではメイン） | `agent-toolkit/share/workflow-phases.md`「用語」 |
+| 実装担当 | 実行工程を担う主体（`agent-toolkit:process-wi`ではレーン担当、レビュー修正担当、CI修正担当、対話型ではメイン） | `agent-toolkit/share/workflow-phases.md`「用語」 |
+| 全体検証 | リポジトリ全体を対象にした自動チェックとテストの実行 | `agent-toolkit/share/workflow-phases.md`「用語」 |
+| 受入シナリオ検証 | 計画の受入シナリオを公開された呼び出し手段から検証する結合・E2Eテストを、変更範囲の検証で実行すること | `agent-toolkit/share/workflow-phases.md`「用語」 |
+| 公開工程判定 | リポジトリ全体の自動チェックとCIの成功を述べる完成条件を、公開工程で判定すること | `agent-toolkit/share/workflow-phases.md`「用語」 |
 | 直接影響範囲 | 変更した定義、文言、パスを参照、呼び出し、生成または期待値として持ち、合わせて直す必要がある箇所の全体 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
 | 変更範囲の検証 | 変更するファイルとその直接影響範囲に限った検証 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と終端工程」 |
 | 統合時の完成条件判定 | 統合指示の前に、完成条件証拠の各行がWIの完成条件と原文要求に過不足なく対応するかを確かめる確認 | `agent-toolkit/share/exec.parent.md`「統合時の完成条件判定」 |
@@ -88,7 +88,7 @@
 | エージェント向け文書 | コーディングエージェントが直接読み込む文書 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
 | 読込表 | スキル本体と`<役割名>.parent.md`・`<役割名>.subagent.md`の冒頭に置き、時点または条件と、その時点で全文読む参照資料を対応付ける表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | 配送範囲表 | 常時規範、配送文、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどの主体へ届くかを示す表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
-| 常時規範 | agent-toolkitが読み手へ常に配送する規範（`rules/`配下と`share/rules-main*.md`・`rules-subagent*.md`） | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
+| 常時規範 | agent-toolkitが読み手へ常に配送する規範（`rules/`配下と`share/rules-main*.md`・`rules-common.codex.md`・`rules-subagent*.md`） | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | プロジェクト規範 | 対象リポジトリが規範として定める指示 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | プロジェクト方針 | プロジェクト規範に加え、規範化されていない記述に書かれた方針 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」 |
 | 作成規範 | 対象成果物の種別に適用する作成側の品質基準 | `agent-toolkit/skills/review-standards/SKILL.md`「対象成果物の作成規範」 |

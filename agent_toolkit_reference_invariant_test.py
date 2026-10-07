@@ -526,6 +526,8 @@ def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
 # 監査記録の見出しを、索引元の条文またはコードが同じ文字列で指すことを検査する。
 # 索引元は、テスト（`*_test.py`）と`docs/`配下を除く追跡ファイルと、見出しのファイル部分が指すファイル自身とする。
 # テスト、設計記録と判定台帳は見出しを索引元として持たずに引用するため、そこにだけ現れる見出しは参照元を持たない。
+# 常時規範（`agent-toolkit/rules/`配下と`agent-toolkit/share/rules-*.md`）は全主体が毎回読むため条文へ索引の文を置かず、
+# 見出しそのものを索引とする。ファイル部分が常時規範を指す見出しは、そのファイルに節名と同じ見出しがあることで参照ありとする。
 _AUDIT_HEADING_PATTERN = re.compile(r"^## (?P<heading>.+)$", re.MULTILINE)
 _AUDIT_INDEX_EXCLUDED_PREFIX = "docs/"
 # 監査記録の本文が他の記録を「<対象>：<節>：<年月日>」の見出しで指す参照。
@@ -548,8 +550,33 @@ def _reference_text(root: pathlib.Path, source: pathlib.Path) -> str:
     return f"{content}\n{_comment_joined(content)}"
 
 
+def _is_rule_document(path: pathlib.Path) -> bool:
+    """常時規範（`agent-toolkit/rules/`直下と`agent-toolkit/share/rules-*.md`）のパスかを返す。"""
+    if path.suffix != ".md":
+        return False
+    parent = path.parent.as_posix()
+    return parent == "agent-toolkit/rules" or (parent == "agent-toolkit/share" and path.name.startswith("rules-"))
+
+
+def _rule_section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading: str) -> bool:
+    """常時規範を指す監査見出しについて、ファイルが実在しそのファイルに節名と同じ見出しがあるかを返す。"""
+    parts = heading.split("：")
+    if len(parts) < 3:
+        return False
+    rule_file = pathlib.Path(parts[0])
+    section = "：".join(parts[1:-1])
+    if rule_file not in tracked:
+        return False
+    content = (root / rule_file).read_text(encoding="utf-8")
+    return re.search(rf"^#{{2,6}} {re.escape(section)}$", content, re.MULTILINE) is not None
+
+
 def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]) -> list[str]:
-    """監査記録のH2見出しのうち、索引元の追跡ファイルにも見出しのファイル部分が指すファイル自身にも現れないものを返す。"""
+    """監査記録のH2見出しのうち参照元を持たないものを返す。
+
+    常時規範を指す見出しはファイルと節の実在で判定し、他の見出しは索引元の追跡ファイルか
+    見出しのファイル部分が指すファイル自身に現れるかで判定する。
+    """
     headings = _audit_headings((root / _AUDIT_RECORDS).read_text(encoding="utf-8"))
     corpus = "\n".join(
         _reference_text(root, source)
@@ -559,9 +586,13 @@ def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]
     tracked = set(sources) - {_AUDIT_RECORDS}
     unreferenced: list[str] = []
     for heading in headings:
+        own_file = pathlib.Path(heading.split("：", 1)[0])
+        if _is_rule_document(own_file):
+            if not _rule_section_exists(root, tracked, heading):
+                unreferenced.append(heading)
+            continue
         if heading in corpus:
             continue
-        own_file = pathlib.Path(heading.split("：", 1)[0])
         if own_file in tracked and heading in _reference_text(root, own_file):
             continue
         unreferenced.append(heading)
@@ -584,7 +615,8 @@ def test_audit_record_headings_are_referenced() -> None:
     root = pathlib.Path(__file__).resolve().parent
     unreferenced = _unreferenced_audit_headings(root, _tracked_source_paths(root))
     assert not unreferenced, (
-        "参照元を持たない監査記録の見出し（索引元へ索引の1文を置くか、索引先の無い記録を削除する）:\n" + "\n".join(unreferenced)
+        "参照元を持たない監査記録の見出し（常時規範を指す見出しは条文へ索引の文を置かず、見出しのファイルと節名を条文の現在の所在へ直す。"
+        "それ以外は索引元へ索引の1文を置くか、索引先の無い記録を削除する）:\n" + "\n".join(unreferenced)
     )
 
 
@@ -639,6 +671,31 @@ def test_unreferenced_audit_heading_detector_ignores_tests_and_docs(tmp_path: pa
         (tmp_path / path).write_text(content, encoding="utf-8")
 
     assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, *files]) == [only_tests_and_docs, only_other_doc]
+
+
+def test_rule_audit_heading_requires_existing_section(tmp_path: pathlib.Path) -> None:
+    """常時規範を指す見出しは、索引の文の有無にかかわらず、ファイルに同名の節がある場合だけ参照ありとする。"""
+    existing = "agent-toolkit/rules/01-a.md：節A：2026年1月1日"
+    renamed = "agent-toolkit/rules/01-a.md：消えた節：2026年1月2日"
+    share_existing = "agent-toolkit/share/rules-main.md：節B：2026年1月3日"
+    missing_file = "agent-toolkit/share/rules-gone.md：節C：2026年1月4日"
+    audit = tmp_path / _AUDIT_RECORDS
+    audit.parent.mkdir(parents=True)
+    audit.write_text(
+        "# 監査記録\n\n"
+        + "".join(f"## {heading}\n\n記録。\n\n" for heading in (existing, renamed, share_existing, missing_file)),
+        encoding="utf-8",
+    )
+    files = {
+        pathlib.Path("agent-toolkit/rules/01-a.md"): "# 規範\n\n## 上位\n\n### 節A\n\n本文。\n",
+        pathlib.Path("agent-toolkit/share/rules-main.md"): "# 規範\n\n## 節B\n\n本文。\n",
+        pathlib.Path("tool.py"): f"# 監査記録は「{renamed}」と「{missing_file}」にある。\n",
+    }
+    for path, content in files.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(content, encoding="utf-8")
+
+    assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, *files]) == [renamed, missing_file]
 
 
 def test_audit_body_reference_to_missing_heading_is_reported() -> None:

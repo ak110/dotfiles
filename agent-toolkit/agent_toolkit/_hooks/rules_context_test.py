@@ -116,6 +116,27 @@ def test_session_start_codex_excludes_claude_code_rules(
     assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
 
 
+def test_codex_main_receives_codex_main_rules(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codexのメインだけが`rules-main.codex.md`を`rules-main.md`の後で受け取り、委譲先とClaude Codeは受け取らない。"""
+    main_rules = rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip()
+    codex_main_rules = rules_context.MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip()
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+
+    rules_context_codex.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
+    codex_output = _output(capsys)
+    assert codex_output.index(main_rules) < codex_output.index(codex_main_rules)
+
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
+    assert codex_main_rules not in _output(capsys)
+
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    rules_context_codex.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
+    assert capsys.readouterr().out == ""
+    rules_context_codex.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "explorer"}))
+    assert codex_main_rules not in _output(capsys)
+
+
 @pytest.mark.parametrize("agent_type", ["Explore", "Plan", "general-purpose", "plan-reviewer"])
 @pytest.mark.parametrize("environment", [None, "delegated", "owner"])
 def test_subagent_start_claude_includes_common_and_claude_subagent_rules(

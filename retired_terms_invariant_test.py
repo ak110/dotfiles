@@ -336,7 +336,7 @@ _RETIRED_TERMS = (
             ("延期`adopt`契約", "「lane-integration.subagent.mdの延期adoptの条件」"),
             ("本文契約", "「agent-toolkit:wi-standards「通常AWIの本文」の要件」"),
             ("process-wi契約", "「agent-toolkit:process-wiの規定の読み替え」"),
-            ("分割規範", "「share/rules-main.codex.md「Codex固有の入出力」の分割取得の規定」"),
+            ("分割規範", "「share/rules-common.codex.md「Codex固有の入出力」の分割取得の規定」"),
             ("公開契約基準", "説明へ"),
             ("導入目的の記録", "導入目的の調査記録"),
             # 表・記録・報告の名前

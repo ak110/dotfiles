@@ -27,7 +27,7 @@
 全配布先の規範: 配布物の`rules/`と`skills/`
 </例>
 
-- 実行主体別規範は読み手と読込契機で配置する。全主体共通は`rules/`、メイン限定は`share/rules-main.md`、委譲先限定は`share/rules-subagent.md`、ホスト固有の差分は同じ接頭辞のホスト別ファイルへ置く。Claude CodeとCodexのhook、agents_serverの通常委譲および生成manifestが、その読み手へ同じ規範を配送するため、これらは常時ロードと同じ拘束力を持つ。委譲元と委譲先の双方が守る受け渡し規定は全主体共通として扱う。片側だけに適用する規定を`rules/`へ置くと、適用対象でない主体がその規定を自身へ適用する。軽量委譲へ共通規範を配送しない場合は、軽量委譲の起動契約へ必要な制約を置く。特定作業時だけ必要な内容はスキルか`references/`へ置く。agent-toolkitが読み手へ常に配送する規範（`rules/`配下と、読み手に応じて配送する`share/rules-main*.md`・`rules-subagent*.md`）を常時規範と呼ぶ
+- 実行主体別規範は読み手と読込契機で配置する。全主体共通は`rules/`、メイン限定は`share/rules-main.md`、委譲先限定は`share/rules-subagent.md`、ホスト固有の差分は同じ接頭辞のホスト別ファイルへ置く。Claude CodeとCodexのhook、agents_serverの通常委譲および生成manifestが、その読み手へ同じ規範を配送するため、これらは常時ロードと同じ拘束力を持つ。委譲元と委譲先の双方が守る受け渡し規定は全主体共通として扱う。片側だけに適用する規定を`rules/`へ置くと、適用対象でない主体がその規定を自身へ適用する。軽量委譲へ共通規範を配送しない場合は、軽量委譲の起動契約へ必要な制約を置く。特定作業時だけ必要な内容はスキルか`references/`へ置く。agent-toolkitが読み手へ常に配送する規範（`rules/`配下と、読み手に応じて配送する`share/rules-main*.md`・`rules-common.codex.md`・`rules-subagent*.md`）を常時規範と呼ぶ
 - 配送範囲表とは、常時規範、配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどの主体へ届くかを示す次の表を指す。値は`agent_toolkit/_hooks/rules_context.py`、`agent_toolkit/_agents_server/state.py`、`claude.py`、`codex.py`、`antigravity.py`と`scripts/sync_codex_agents.py`の実装から取る。規定を置く文書を選ぶときと、ある主体へ届く規範を確かめるときにこの表を使う。表の値と実装が一致しない場合は実装を正として表を直す
 
 | 文書 | Claude Codeのメイン | Codexのメイン | `Agent`ツールのサブエージェント | `agents_server`の`task`・`delegate`（Claude） | `agents_server`の`task`・`delegate`（Codex） | `agents_server`の`task`・`delegate`（Antigravity） | `explore`・`write`・`shell`（Claude） | `explore`・`write`・`shell`（Codex） | `explore`・`write`・`shell`（Antigravity） | Codexの組み込み委譲先 |
@@ -36,7 +36,8 @@
 | ユーザーが`~/.claude/rules/`に置いた規範ファイル（`~/.codex/AGENTS.md`が埋め込まないもの） | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`の読込指示） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届かない | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届かない | 届く（`~/.codex/AGENTS.md`の読込指示） |
 | `share/rules-main.md` | 届く（SessionStart） | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/rules-main.claude-code.md` | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
-| `share/rules-main.codex.md` | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
+| `share/rules-main.codex.md` | 届かない | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
+| `share/rules-common.codex.md` | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
 | `share/rules-subagent.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届く（developer指示） | 届く（指示の先頭） | 届かない | 届かない | 届かない | 届く（SubagentStart） |
 | `share/rules-subagent.claude-code.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/agents-server-delegate-notice.md` | 届かない | 届かない | 届かない | 届く | 届く | 届く | 届く | 届く | 届く | 届かない |
@@ -46,7 +47,7 @@
 | 作業ディレクトリのプロジェクト規範（`AGENTS.md`など） | 届く | 届く | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（プロジェクト設定の読込元） | 届く | 届く | 届かない | 届かない（`project_doc_max_bytes=0`） | 届く | 届く |
 | agent-toolkitのスキル | 届く | 届く | 未確認 | 届く | 届く | 届かない | 届かない（`skills=[]`） | 届く | 未確認 | 未確認 |
 
-Codexの列の`rules/`配下と`share/rules-main.codex.md`の値は`~/.codex/AGENTS.md`を配置した環境に限る（Codex単体のインストーラーはこのファイルを配置しない）。
+Codexの列の`rules/`配下と`share/rules-common.codex.md`の値は`~/.codex/AGENTS.md`を配置した環境に限る（Codex単体のインストーラーはこのファイルを配置しない）。
 Antigravityの委譲先は起動区分によらず`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読む。
 ユーザーが`~/.claude/rules/`に置いた規範ファイルの行の読込指示は、Codexのメインと組み込み委譲先へは`~/.claude/rules/`直下の`*.local.md`に限る。`~/.claude/rules/myprojects.md`のようにClaude Code向けに配布するファイルは`agents_server`の委譲先へだけ届く。`~/.claude/CLAUDE.md`はこの行の連結の対象外とし、Claudeの各起動区分へはユーザー設定の読込元から、Codexの主体へは`~/.codex/AGENTS.md`の読込指示で届く。
 Antigravityの列とプロジェクト規範・スキルの行は実機の観測から取った。

@@ -7,7 +7,7 @@ from _scripts_test_helpers import TWO_LAYER_WAIT_HEADING, markdown_section
 
 
 def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
-    source = (subject.REPO_ROOT / "agent-toolkit/share/rules-main.codex.md").read_text(encoding="utf-8")
+    source = (subject.REPO_ROOT / "agent-toolkit/share/rules-common.codex.md").read_text(encoding="utf-8")
     reference = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/codex-runtime.md").read_text(encoding="utf-8")
     generated = (subject.REPO_ROOT / subject.TARGET).read_text(encoding="utf-8")
     assert generated == subject.render()

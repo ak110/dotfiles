@@ -36,6 +36,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
   （`scripts/gen_install_files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範とホスト別規範
+- `agent-toolkit/share/rules-common.codex.md`: Codexの全主体（メイン、サブエージェントおよび委譲先）向けの規範
 - `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範。Codex委譲先の固有差分が必要になった場合は`rules-subagent.codex.md`を追加する
   振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
@@ -149,8 +150,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
 - `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
   計画への記載は`references/version-bump.md`「plan modeでの取り扱い」の派生物の記載規則に従い、生成コマンドは`uv run python scripts/sync_generated_files.py`とする
-- `agent-toolkit/share/rules-main.codex.md`は`scripts/sync_codex_agents.py`の生成元であり、その編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。生成コマンドは`uv run python scripts/sync_generated_files.py`とする
-- `agent-toolkit/share/rules-main.md`と`rules-main.claude-code.md`、`rules-subagent.md`とホスト別の`rules-subagent.*.md`の編集は生成差分もClaude配布一覧の変更も生じさせない。`rules-subagent.md`はClaude CodeとCodexのSubagentStart hookおよびagents_serverの通常委譲へ配る。Claude Code固有規範はClaude Codeだけへ配る。Codex hookの起動コマンドは`scripts/sync_codex_plugin_manifests.py`が生成するmanifestで同期する。軽量なagents_serverでの委譲へ`rules-subagent.md`を配らない境界もテストコードで保持する。各起動区分へ届く規範は`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」の配送範囲表が示す。
+- `agent-toolkit/share/rules-common.codex.md`は`scripts/sync_codex_agents.py`の生成元であり、その編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。生成コマンドは`uv run python scripts/sync_generated_files.py`とする
+- `agent-toolkit/share/rules-main.md`とホスト別の`rules-main.*.md`、`rules-subagent.md`とホスト別の`rules-subagent.*.md`の編集は生成差分もClaude配布一覧の変更も生じさせない。`rules-subagent.md`はClaude CodeとCodexのSubagentStart hookおよびagents_serverの通常委譲へ配る。Claude Code固有規範はClaude Codeだけへ配る。`rules-main.codex.md`はCodexのSessionStart hookでCodexのメインだけへ配る。Codex hookの起動コマンドは`scripts/sync_codex_plugin_manifests.py`が生成するmanifestで同期する。軽量なagents_serverでの委譲へ`rules-subagent.md`を配らない境界もテストコードで保持する。各起動区分へ届く規範は`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」の配送範囲表が示す。
   バージョン更新の規定は適用する
 - 計画ファイルの見出し、固定H3および表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`が定める。
   対象は同ファイルが構造定数として名称を持つものとする。

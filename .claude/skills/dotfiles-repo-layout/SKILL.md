@@ -57,7 +57,7 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 - `.claude/`（本リポジトリルート）: dotfilesリポジトリ自身のClaude Codeプロジェクト設定。配布対象外
   - Codex側でも明示検出させたい場合は`.agents/skills`を`.claude/skills`へのシンボリックリンクにする
 - `.chezmoi-source/dot_codex/`: Codex配布元。`~/.codex/`へデプロイする
-  - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/rules-main.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`および`agent-toolkit/rules/`配下の常時規範から
+  - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/rules-common.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`および`agent-toolkit/rules/`配下の常時規範から
     `scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`が起動する）が生成するため、変更は生成元へ行う（手動編集は生成差分で上書きされて消失する）
   - この生成物はClaude Codeの入れ子指示から`.claude/settings.json`の`claudeMdExcludes`で除外する
   - `setup_codex_links.py`が`~/.codex/`から`.chezmoi-source/dot_claude/`配下の共有スキルと`docs`の原本へリンクを生成する

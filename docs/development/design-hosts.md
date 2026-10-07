@@ -6,7 +6,7 @@
 ## Claude CodeとCodexの規範配置
 
 hook・MCP定義などホスト別に明確に分離された資源を除き、Claude CodeとCodexに共通するルール・スキルは`agent-toolkit/`の共有原本で定義する。
-Codexだけの公開能力との差分は`agent-toolkit/share/rules-main.codex.md`へ上書きとして置き、常時規範へCodex固有の条件を持ち込まない。
+Codexだけの公開能力との差分は上書きとして置き、常時規範へCodex固有の条件を持ち込まない。Codexの全主体へ適用する差分は`agent-toolkit/share/rules-common.codex.md`へ置き、`scripts/sync_codex_agents.py`が`~/.codex/AGENTS.md`へ埋め込む。Codexのメインだけへ適用する差分は`agent-toolkit/share/rules-main.codex.md`へ置き、`SessionStart` hookがCodexのメインへ`rules-main.md`の後に加える。`~/.codex/AGENTS.md`はCodexのサブエージェントと委譲先にも届くため、メイン向けの差分を同じファイルへ置くとメイン専用の条文が全主体へ届く。
 Codex基礎指示の上書きは、確認・待機・並列化・ツール利用前説明のホスト契約をCodex側へ閉じ込め、Claude Codeの共通契約を変更しない。
 Codexの委譲は、`spawn_agent`・`send_message`・`followup_task`・`wait_agent`・`interrupt_agent`を使うネイティブ方式とagents_server方式を分ける。ネイティブ方式では`fork_turns`が選ぶ会話履歴、worktreeの`AGENTS.md`、`SubagentStart` hookが配送する`rules-subagent.md`を独立した入力とする。agents_serverの通常委譲は`_agents_server/state.py`から同じ共通委譲先規範を配送する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」の配送範囲表が示す。Claude Code固有の委譲先規範はCodexへ配送しない。この境界をhookの実起動、agents_serverのprompt構成、Codex manifestの生成テストで確認し、規範本文を方式ごとに複製しない。
 `scripts/sync_codex_agents.py`はCodex基礎指示と共有ルールから生成物を作成し、`scripts/sync_generated_files.py`が正式な一括生成の窓口となる。
@@ -74,7 +74,7 @@ Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案
 
 Claude Codeが自動で読み込む規範は、Codexでは次のいずれかの手段で届けるか、対象外とする理由を記録する。
 Codexへの配送手段を追加・変更する主体は、この対応で届かない規範が無いかを確かめる。
-読込指示は`agent-toolkit/share/rules-main.codex.md`「Claude Code向けに置かれた規範の読込」が定める。
+読込指示は`agent-toolkit/share/rules-common.codex.md`「Claude Code向けに置かれた規範の読込」が定める。
 
 | Claude Codeの自動読込対象 | Codexでの届け方 |
 | --- | --- |

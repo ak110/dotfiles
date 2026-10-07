@@ -137,7 +137,7 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 
 2026年9月20日、`atk agents wait`が`agents_server`の状態投影に対象を持たない状態を終了コード10で報告し、実行ホストの組み込み委譲は同じ状態投影へ登録されないことを確認した。再検証は`agents_server` sessionと組み込み委譲をそれぞれ起動し、`atk agents list`への登録有無、`atk agents wait`の終了コードおよびホストの委譲一覧が返すstatusを比較する。
 
-## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月7日
+## agent-toolkit/share/rules-main.claude-code.md：ターンの終え方：2026年10月7日
 
 2026年10月7日、Claude Codeのセッション記録を`Your previous response had no visible output`の固定文字列で検索した。
 ホストが挿入したこの表示は3件（Claude Code 2.1.281・2.1.282・2.1.283、2026年9月24日から26日）で、いずれも直前のアシスタント応答がthinkingだけを持ち、地の文もツール呼び出しも持たなかった。
@@ -157,27 +157,27 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 
 2026年8月31日から9月2日までの5セッションの観測で、出力トークン量はレーン数へほぼ比例し、レーン数を増やしたセッションで所要時間が短くなる傾向は観測されなかった。
 
-## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年9月2日
+## agent-toolkit/share/rules-main.claude-code.md：ユーザー確認（`AskUserQuestion`）：2026年9月2日
 
 2026年9月2日、Claude Code公式ドキュメント`https://code.claude.com/docs/en/agent-sdk/user-input`の`Question format`節、`Response format`節および`Limitations`節で確認した。再検証は同じ3節を読む。
 
-## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年8月31日
+## agent-toolkit/share/rules-main.claude-code.md：ユーザー確認（`AskUserQuestion`）：2026年8月31日
 
 2026年8月31日、Claude Code v2.1.251・Fable 5で、ツール結果と次のツール呼び出しの間へ置いた地の文が`· summarized`付きの短縮文へ置換されることを確認した。この観測では、ターン冒頭と`AskUserQuestion`直前の地の文は原文どおり表示された。
 
-## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年9月3日
+## agent-toolkit/share/rules-main.claude-code.md：ユーザー確認（`AskUserQuestion`）：2026年9月3日
 
 2026年9月3日、Claude Code v2.1.258・Opus 5では、複数のツール呼び出しの間へ置いた地の文の同じ置換をユーザーが端末表示で確認できなかった。
 
-## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年9月5日
+## agent-toolkit/share/rules-main.claude-code.md：ユーザー確認（`AskUserQuestion`）：2026年9月5日
 
 2026年9月5日、Fable 5.1で`AskUserQuestion`直前の地の文へ選択肢の前提を置いた。ユーザーはその説明を読めず判断できないと回答し、確認の再発行を要した。この観測で使ったClaude Codeの版数は記録していない。再検証はモデルと版ごとに、ターン冒頭、ツール呼び出しの間および`AskUserQuestion`直前の3箇所へ地の文を置き、表示を確認する。
 
-## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年9月28日
+## agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年9月28日
 
 2026年9月28日、Claude Code 2.1.283をtmux内で起動して、複数行の可視本文、Read呼び出し、最後の1行を順に出力するよう指示した。tmux画面とtranscriptの双方へ、4行の本文、ツール呼び出し、最後の本文が同じ順序で現れた。一方、同日の別セッションで実行主体がツール前へ書いたつもりの回答と完了報告は、画面にもtranscriptの`text`にも現れなかった。再検証は新しいClaude Codeセッションへ同じ順序の出力を指示し、画面表示とtranscriptの`text`、`thinking`、`tool_use`を対応付ける。ツール前の複数行本文が可視となることと、拡張思考へ置いた文が可視本文として配送されないことを分けて確認する。
 
-## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年9月4日
+## agent-toolkit/share/rules-main.claude-code.md：ターンの終え方：2026年9月4日
 
 ```text
 2026年9月4日、Claude Code 2.1.260で、Bash背景ジョブの稼働中はデバッグログへ`[goal] evaluation deferred — background work still running`が出て評価が発動せず、背景ジョブを起動しない指示では評価が発動することを実測した。再検証は`claude --debug-file <path> --print --session-id <uuid> --permission-mode auto --allowedTools Bash -- '/goal <条件>。まずBashツールをrun_in_background=trueで使い sleep 60 を実行し、その後は追加作業をせずターンを終えること'`を実行してそのログ行の有無を確認し、背景ジョブを起動しない指示でも同じコマンドを実行し、評価の発動を対にして確認する。
@@ -561,7 +561,7 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 再検証は同じ公開ヘルプを取得し、その回の読み取り可能な作業ツリーと通常ファイルを保持記録から解決して、
 上記の各コマンドへ渡す。cwd、コマンド、標準出力、標準エラーと終了コードを保存し、項目と受理形式を比べる。
 
-## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月3日
+## agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年10月3日
 
 拡張思考の表示に関する変更（`31a598fd5`）の要求を起草した時点の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、
 `showThinkingSummaries=false`だった。transcriptの`thinking`ブロックに保存された文がユーザーの画面へ
@@ -572,7 +572,7 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 再検証ではホスト版、モデルと同設定を保持し、ユーザーの画面表示をtranscriptの同一messageのtext・thinkingへ対応付ける。
 transcriptだけの取得を画面表示の観測として扱わず、画面へ届いた内容とhookが述べる理由を比べる。
 
-## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月6日
+## agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年10月6日
 
 同じ応答でツール呼び出しより前に置いた地の文の一部が、APIの応答の時点で要約へ置き換わる根拠を記す。観測はいずれも`thinking`ブロックの署名を開かずに行った。
 

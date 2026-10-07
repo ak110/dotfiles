@@ -131,7 +131,7 @@ process-loopはセッションを実際に起動する直前に状態ファイ�
 AWIが0件で変更検知を待つ反復は起動へ到達しないため、本文は保持したまま次の起動へ残る。
 `rules_context`のSessionStartは、`AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`に値がある場合に前置きを添えて`additionalContext`へ加え、
 委譲先のセッションへは加えない。この本文がユーザーの入力であり、人間由来の明示的な指示であると前置きに明記する。
-`agent-toolkit/share/rules-main.md`「ユーザー発話の解釈」は、この本文だけをハーネス由来の通知の除外規定の例外とする。
+本文は`forwarded-user-input`要素で囲み、`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」がこの要素の内側だけを機械が生成した本文の中のユーザー発話の証拠として扱う。
 
 本文の上限を2,000文字とするのは、SessionStartの`additionalContext`がClaude Codeで10,000文字に切り詰められ、
 超過すると同じ出力に含まれる規範条文が欠落するためである。

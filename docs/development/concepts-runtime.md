@@ -18,7 +18,7 @@
 
 現行の規定は[design-hosts.md](design-hosts.md#claude-codeとcodexの規範配置)の「Claude CodeとCodexの規範配置」にある。
 
-共通のルール・スキルは`agent-toolkit/`の共有原本へ置き、Codex固有の公開能力との差分は`agent-toolkit/share/rules-main.codex.md`へ集約する。
+共通のルール・スキルは`agent-toolkit/`の共有原本へ置き、Codex固有の公開能力との差分は2つのファイルへ集約する。Codexの全主体へ適用する差分は`agent-toolkit/share/rules-common.codex.md`、Codexのメインだけへ適用する差分は`agent-toolkit/share/rules-main.codex.md`へ置く。
 hook・MCP定義などホスト別に明確に分離された資源は、各ホストの定義へ置く。
 共有原本の`rules/`配下には全ての実行主体へ適用する条文だけを置き、メインエージェントだけに適用する条文とサブエージェント・委譲先だけに適用する条文は`agent-toolkit/share/`配下へ置いて、フックと`agents_server`が起動時に文脈へ追加する（2026年9月、ユーザー指示）。
 共有原本をCodex固有条件で分岐せず、Codex側の基礎指示で上書きして、Claude CodeとCodexの共通契約を維持する。

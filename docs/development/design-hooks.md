@@ -58,7 +58,7 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 - M: `agent-toolkit/skills/plan-mode/SKILL.md`「進め方」
 - W: `agent-toolkit/rules/01-agent.md`「使用言語」
 - G: `agent-toolkit/skills/delegation/SKILL.md`の`<役割名>.subagent.md`を指す起動の規定
-- H: `agent-toolkit/share/rules-main.claude-code.md`「ツールAPIと権限」
+- H: `agent-toolkit/share/rules-main.claude-code.md`「ツールの入出力」「ユーザー確認（`AskUserQuestion`）」
 - X: 該当条文なし
 
 | 条件と通知位置 | 防ぐ契約違反と通知の要旨 | 条文 | 存続区分と実装手段 |
@@ -442,7 +442,7 @@ CodexはAskUserQuestionを持たず、確認を本文の固定形式でも提示
 
 ### send_to_userツール（2026年10月6日）
 
-Claude Codeでは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIがモデルの原文ではなく要約（progress updateの要約）へ置き換えて返す。原文は画面にもtranscriptにも残らず、メインは届いたとみなして作業を続ける。根拠は`audit-records.md`の「agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月6日」、事象は`incidents-validation.md`の2026年10月6日の項にある。
+Claude Codeでは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIがモデルの原文ではなく要約（progress updateの要約）へ置き換えて返す。原文は画面にもtranscriptにも残らず、メインは届いたとみなして作業を続ける。根拠は`audit-records.md`の「agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年10月6日」、事象は`incidents-validation.md`の2026年10月6日の項にある。
 
 ツールの入力は要約されないため、ターンの途中で原文どおり届ける内容をツールの入力で運ぶ。Function hooks module（`agent-toolkit/hooks/send_to_user.tsx`、`register.ts`から登録）は次を行う。
 
@@ -451,7 +451,7 @@ Claude Codeでは、同じ応答でツール呼び出しより前に置いた地
 - `tool.call`で短い確認応答を返す
 - `ui.render`の`ToolUse`でこのツールの行を`message`の`Markdown`要素で描き、他のツールの行は後続へ渡して描き替えない
 
-ツールの登録と表示を同じmoduleに置くため、moduleを読み込まないClaude Code（管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が無い環境）とCodexにはツールが現れない。その環境のメインは`rules-main.claude-code.md`「ツールAPIと権限」に従い、届ける内容をターンを終える応答の本文へ書く。
+ツールの登録と表示を同じmoduleに置くため、moduleを読み込まないClaude Code（管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が無い環境）とCodexにはツールが現れない。その環境のメインは`rules-main.claude-code.md`「ツールの入出力」に従い、届ける内容をターンを終える応答の本文へ書く。
 Claude Code 2.1.292では、hooks.jsonの`modules`は1件だけを受け付け、同じイベントで条件を持たないhookは1回だけ登録できる。`$`を渡せるのは同じファイルで宣言した関数に限られる。このため`register.ts`が唯一のmoduleとして`session.start`を1つにまとめ、`session_exit.ts`と`send_to_user.tsx`の`register`を呼ぶ。両ファイルが共有する値はツールの定義と`$`を受け取らない関数に限る。
 transcriptからユーザーへ届いた本文を数える処理は4つある。`user_response_advisor.py`、`termination_evidence.py`の`visible_messages`、`response_language_check.py`、`session_review_evidence.py`の`assistant`の出来事である。これらは`transcript.visible_text_blocks`で`send_to_user`の`message`を本文に含める。名前の前置部分はmoduleの登録が決めるため、末尾の`__send_to_user`で判定する。
 

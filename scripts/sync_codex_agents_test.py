@@ -17,7 +17,7 @@ def _root(
     (tmp_path / "agent-toolkit/rules").mkdir(parents=True)
     (tmp_path / "agent-toolkit/share").mkdir(parents=True)
     (tmp_path / ".chezmoi-source/dot_codex").mkdir(parents=True)
-    (tmp_path / "agent-toolkit/share/rules-main.codex.md").write_text("base\n", encoding="utf-8")
+    (tmp_path / subject.BASE_SOURCE).write_text("base\n", encoding="utf-8")
     (tmp_path / ".chezmoi-source/dot_claude/rules").mkdir(parents=True)
     (tmp_path / subject.PERSONAL_SOURCE).write_text("personal\n", encoding="utf-8")
     (tmp_path / subject.CODEX_CONFIG).write_text(
@@ -39,6 +39,17 @@ def test_render_preserves_rules_in_sorted_order(tmp_path: Path) -> None:
     assert content.index('path="agent-toolkit/rules/01-a.md"') < content.index('path="agent-toolkit/rules/02-b.md"')
     assert f'path="agent-toolkit/rules/01-a.md">\nfirst\n</{subject.NORMATIVE_ELEMENT}>' in content
     assert content.endswith(f"</{subject.NORMATIVE_ELEMENT}>\n")
+
+
+def test_render_excludes_codex_main_only_rules(tmp_path: Path) -> None:
+    """Codexのメインだけに適用する規範は全主体へ届く生成物へ入らない。"""
+    root = _root(tmp_path)
+    (root / "agent-toolkit/share/rules-main.codex.md").write_text("main-only\n", encoding="utf-8")
+
+    content = subject.render(root)
+
+    assert "base" in content
+    assert "main-only" not in content
 
 
 def test_render_includes_all_common_rules(tmp_path: Path) -> None:
