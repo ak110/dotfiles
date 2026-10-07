@@ -522,4 +522,4 @@ def test_record_lock_is_created_under_state_lock_dir(capsys: pytest.CaptureFixtu
     capsys.readouterr()
 
     assert (tmp_path / "state" / "locks" / "review-audit" / "review-audit.lock").is_file()
-    assert not (tmp_path / "home" / ".claude" / ".atk-locks").exists()
+    assert not list((tmp_path / "home" / ".claude").glob(".atk-*"))

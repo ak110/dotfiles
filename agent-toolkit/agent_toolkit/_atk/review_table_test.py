@@ -1638,4 +1638,4 @@ def test_cli_lock_is_created_under_state_lock_dir(
     assert exc_info.value.code == 0
     lock_dir = tmp_path / "state" / "agent-toolkit" / "locks" / "review-table"
     assert [lock.parent for lock in lock_dir.glob("*.lock")] == [lock_dir]
-    assert not (home / ".claude" / ".atk-locks").exists()
+    assert not list((home / ".claude").glob(".atk-*"))
