@@ -93,7 +93,7 @@ from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
 from agent_toolkit._common import session_state as _session_state  # noqa: E402
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
-from agent_toolkit._plan import locations as _plan_file  # noqa: E402
+from agent_toolkit._plan import owner_records as _owner_records  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
 _active_filename_completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES)
@@ -134,7 +134,7 @@ _MANAGED_TEMP_CHECK_NEXT_ACTION = "本来の操作は継続した。`atk managed
 
 def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bool:
     """候補集合が現行セッションで未報告の場合だけ警告権を取得する。"""
-    session_id = _plan_file.resolve_owner_session_id()
+    session_id = _owner_records.resolve_owner_session_id()
     if session_id is None:
         return bool(candidates)
     source = "\0".join(str(path) for path in candidates)

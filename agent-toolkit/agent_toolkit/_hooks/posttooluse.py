@@ -54,6 +54,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import (
     tool_names as _agents_server_tool_names,
 )  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._atk import run_script as _run_script  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
@@ -89,10 +90,7 @@ from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skill
 
 # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks.tracked_model_types import TRACKED_MODEL_TYPES as _TRACKED_MODEL_TYPES  # noqa: E402
-from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    is_plan_component_file,
-    is_plan_main_file,
-)
+from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: enable=wrong-import-position,import-error
 
@@ -627,7 +625,7 @@ def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment],
     for text in _response_texts(tool_response):
         for line in text.splitlines():
             candidate = line.strip()
-            if candidate and is_plan_component_file(candidate):
+            if candidate and is_plan_main_file(candidate):
                 _record_plan_file(session_id, candidate)
                 return
 
@@ -826,7 +824,7 @@ def _handle_edit_tool(
         display_path = operation.display_path
         if is_plan_main_file(display_path):
             _record_plan_file(session_id, display_path)
-        if plan_mode_invoked and is_plan_component_file(display_path) and operation.is_whole_write:
+        if plan_mode_invoked and is_plan_main_file(display_path) and operation.is_whole_write:
             notices.append(_plan_file_check_notice(_plan_main_path_for(display_path), cwd))
 
 
@@ -837,8 +835,8 @@ def _plan_main_path_for(display_path: str) -> str:
 
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     """計画ファイル全文書き込み後に実行する計画の構造を確かめるコマンドの案内文を返す。"""
-    project_root = pathlib.Path(__file__).resolve().parents[2]
-    check_script = project_root / "skills/plan-mode/scripts/check_plan_file.py"
+    project_root = _run_script.PLUGIN_ROOT
+    check_script = project_root / _run_script.SCRIPT_PATHS["plan-check"]
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
         f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめる:"

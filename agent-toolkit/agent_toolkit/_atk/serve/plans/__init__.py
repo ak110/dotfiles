@@ -1,6 +1,7 @@
 """`atk serve`の計画ファイル画面を責務別のサブモジュールに持つパッケージ。
 
-サブモジュールはrootの解決、Markdownの描画、作成日時インデックス、ローカルとSSH先の走査、HTTPの応答を分担する。
+サブモジュールは設定値と更新通知、Markdownの描画、ローカルとSSH先の走査、HTTPの応答を分担する。
+計画rootの定義と対象判定、作成日時インデックスはSSH先のヘルパーと共有するため`_plan`配下に置く。
 パッケージ外の呼び出し元が使う名前だけを定義元から再exportする。
 """
 
@@ -9,12 +10,7 @@ from agent_toolkit._atk.serve.plans.local_scan import (
     read_pygments_css,
 )
 from agent_toolkit._atk.serve.plans.roots import (
-    LEGACY_PORTABLE_ROOT,
-    LEGACY_SOURCE_ID,
-    NEW_PORTABLE_ROOT,
-    NEW_SOURCE_ID,
     BroadcastState,
-    RootSpec,
     schedule_broadcast,
     subscribe,
     unsubscribe,
@@ -33,6 +29,13 @@ from agent_toolkit._atk.serve.plans.views import (
     start_remote_watchers,
     stop_local_watchers,
     stop_remote_watchers,
+)
+from agent_toolkit._plan.viewer_files import (
+    LEGACY_PORTABLE_ROOT,
+    LEGACY_SOURCE_ID,
+    NEW_PORTABLE_ROOT,
+    NEW_SOURCE_ID,
+    RootSpec,
 )
 
 __all__ = [

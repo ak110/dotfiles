@@ -23,9 +23,11 @@ try:
     )
     from agent_toolkit._common import host_homes as _host_homes
     from agent_toolkit._common import next_action as _next_action
+    from agent_toolkit._plan import bundle_kinds as _bundle_kinds
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         locations as _plan_file,
     )
+    from agent_toolkit._plan import owner_records as _owner_records
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         structure as _plan_format,
     )
@@ -278,10 +280,10 @@ def _finalize_candidate(
     連続する直接編集を判定する処理が読むセッション状態を記録する。
     所有セッションを解決できない環境では記録を書かず、作成そのものは成功として扱う。
     """
-    main_path = directory / f"{stem}.md"
-    targets = [(main_path, main_content, ".md.tmp")]
+    main_path = directory / _bundle_kinds.MAIN.name_for(stem)
+    targets = [(main_path, main_content, f"{_bundle_kinds.MAIN.suffix}.tmp")]
     if bug_content is not None:
-        targets.append((directory / f"{stem}.bugs.md", bug_content, ".bugs.md.tmp"))
+        targets.append((directory / _bundle_kinds.BUGS.name_for(stem), bug_content, f"{_bundle_kinds.BUGS.suffix}.tmp"))
     _require_plans_root_path(directory, plans_root)
     for path, _content, _suffix in targets:
         _require_plans_root_path(path, plans_root)
@@ -304,7 +306,7 @@ def _finalize_candidate(
                 raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}", next_action=_RETRY_NEXT_ACTION)
         _check_plan_references(tuple((path, content) for path, content, _suffix in targets), main_path, private_notes, home)
         _check_structure(main_path, work_dir, private_notes, home)
-        _plan_file.record_plan_owner(main_path)
+        _owner_records.record_plan_owner(main_path)
         return tuple(path for path, _content, _suffix in targets)
     except BaseException:
         for path, identity, content in reversed(owned):

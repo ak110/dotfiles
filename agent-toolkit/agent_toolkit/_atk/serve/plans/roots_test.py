@@ -10,8 +10,8 @@ import pytest
 from agent_toolkit._atk.serve import plans
 from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
 from agent_toolkit._atk.serve.plans import remote as plans_remote
-from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
+from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing.serve_plans_support import (
     _context,
     _FakeWatcher,
@@ -28,7 +28,7 @@ def test_same_root_specified_twice_is_listed_once(tmp_path: pathlib.Path) -> Non
     root = tmp_path / "plans"
     root.mkdir()
 
-    normalized = plans_roots.normalize_root_specs(
+    normalized = plan_viewer_files.normalize_root_specs(
         (
             plans.RootSpec(source_id=plans.NEW_SOURCE_ID, path=root, portable_path="a"),
             plans.RootSpec(source_id=plans.LEGACY_SOURCE_ID, path=tmp_path / "." / "plans", portable_path="b"),
@@ -137,7 +137,7 @@ def test_default_legacy_root_follows_claude_config_dir(monkeypatch: pytest.Monke
     """設定でrootを明示しない場合の旧rootは、Claude Codeの設定ディレクトリ配下の`plans`を指す。"""
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
 
-    specs = plans_roots.default_root_specs()
+    specs = plan_viewer_files.default_root_specs()
 
     legacy = [spec for spec in specs if spec.source_id == plans.LEGACY_SOURCE_ID]
     assert [spec.path for spec in legacy] == [(tmp_path / "claude-config" / "plans").resolve()]

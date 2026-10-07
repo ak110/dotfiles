@@ -15,8 +15,8 @@ import subprocess
 from agent_toolkit._common import next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 
-ATTACHMENT_SUFFIX = ".wi-commits.jsonl"
 PREFIX = "<!-- wi-commits: "
 SUFFIX = " -->"
 _WI = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
@@ -45,7 +45,7 @@ def _range_fail(reason: str, action: str = _RETRY_PREVIOUS_HEAD) -> CommitMappin
 
 def mapping_path(record: pathlib.Path) -> pathlib.Path:
     """計画または引き継ぎ記録と同じディレクトリで同じstemを持つ対応記録ファイルのパスを返す。"""
-    return record.with_name(record.stem + ATTACHMENT_SUFFIX)
+    return record.with_name(_bundle_kinds.WI_COMMITS.name_for(record.stem))
 
 
 def validate_wis(wis: list[str]) -> set[str]:

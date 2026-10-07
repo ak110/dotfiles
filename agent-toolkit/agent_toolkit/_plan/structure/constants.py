@@ -103,9 +103,6 @@ PLAN_LEGACY_MAIN_H2_ORDER: tuple[str, ...] = (
 PLAN_DETAIL_H2_ORDER: tuple[str, ...] = (PLAN_H2_PERMANENCE, PLAN_H2_IMPLEMENTATION, PLAN_H2_COMPLETION)
 """新書式の計画ファイル（詳細）が固定順で持つH2（`バグ調査結果`を除く）。"""
 
-PLAN_DETAIL_SUFFIX: str = ".detail.md"
-"""計画ファイル（詳細）の固定サフィックス。計画ファイル（メイン）と対応する。"""
-
 PLAN_PERMANENCE_H3: tuple[str, ...] = ("恒久化", "リファクタリング")
 """`## 恒久化・リファクタリング内容`直下に固定順で置くH3。"""
 

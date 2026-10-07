@@ -14,6 +14,7 @@ from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
 from agent_toolkit._atk.serve.plans import rendering as plans_rendering
 from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views
+from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload, _runner_returning
 
 
@@ -93,7 +94,7 @@ def test_resolve_under_root_rejects_traversal(tmp_path: pathlib.Path, rel: str) 
     root.mkdir()
     _plan(tmp_path, "outside.md")
 
-    assert plans_local_scan.resolve_under_root(root, rel) is None
+    assert plan_viewer_files.resolve_under_root(root, rel) is None
 
 
 def test_synchronized_root_keeps_only_the_oldest_host(tmp_path: pathlib.Path) -> None:

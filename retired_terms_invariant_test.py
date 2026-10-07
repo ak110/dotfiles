@@ -65,7 +65,7 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
         # 旧形式の計画と計画レビュー表を読む互換の実装とそのテスト
         _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/*.py"),
         _AllowedLocation("agent-toolkit/agent_toolkit/_atk/review_table.py"),
-        _AllowedLocation("agent-toolkit/agent_toolkit/_atk/serve/plans/roots.py"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_plan/bundle_kinds.py"),
         _AllowedLocation("*_test.py"),
     ),
     "統合後検証": (

@@ -6,248 +6,36 @@
 
 操作種別はargvで受け取る（`list`・`read`・`search`・`watch`・`serve`）。
 各サブコマンドの入出力プロトコルは対応する関数のdocstringを参照。
+計画rootの定義、対象判定、走査、検索と作成日時インデックスは、同じcheckoutの`agent_toolkit`のうち
+リモートの実行環境（`platformdirs`と`watchdog`だけを与える）でimportできる`_plan`配下の共有モジュールを読み込む。
+本ファイルは入出力のプロトコルと変更監視だけを持つ。
 """
 
 import base64
-import contextlib
-import hashlib
 import json
-import os
 import pathlib
-import re
-import shutil
 import socket
-import subprocess
 import sys
-import tempfile
 import threading
 import time
 import typing
 
-import platformdirs
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position
+    creation_times,
+    locations,
+    viewer_files,
+)
 
-# リモート側で単独実行するためローカル側の永続キャッシュ実装・ファイルロック実装を共有できない。
-# 作成日時インデックスのキーと値の形式は`_atk/serve/plans/`と一致させる必要がある
-# （同一ホスト上で両者が同じキャッシュディレクトリを共有するため）。
-
-if os.name == "nt":
-    import msvcrt  # type: ignore[import-not-found]  # pylint: disable=import-error
-
-    def _lock_handle(handle: typing.IO[typing.Any]) -> None:
-        """Windows: 先頭1バイトのバイト範囲ロックを取得する（`LK_LOCK`の10秒制限を跨いで再試行する）。"""
-        handle.seek(0)
-        while True:
-            try:
-                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
-                return
-            except OSError:
-                continue
-
-    def _unlock_handle(handle: typing.IO[typing.Any]) -> None:
-        """Windows: バイト範囲ロックを解放する。"""
-        handle.seek(0)
-        with contextlib.suppress(OSError):
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
-
-else:
-    import fcntl
-
-    def _lock_handle(handle: typing.IO[typing.Any]) -> None:
-        """POSIX: ファイル全体への排他ロックを取得する。"""
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-
-    def _unlock_handle(handle: typing.IO[typing.Any]) -> None:
-        """POSIX: ファイル全体への排他ロックを解放する。"""
-        with contextlib.suppress(OSError):
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+# 走査の対象とするroot定義。`main`が起動時に1度だけ解決し、各操作が同じ定義を使う。
+ROOTS: tuple[viewer_files.RootSpec, ...] | None = None
 
 
-NEW_SOURCE_ID = "private-notes-plans"
-LEGACY_SOURCE_ID = "claude-plans"
-NEW_PORTABLE_ROOT = "$(atk config get private_notes)/plans"
-LEGACY_PORTABLE_ROOT = "~/.claude/plans"
-_DEFAULT_ROOT = pathlib.Path.home() / ".claude" / "plans"
-_UNRESOLVED_PRIVATE_NOTES_ROOT = pathlib.Path.home() / ".claude" / ".plans-viewer-private-notes-unresolved"
-# 旧単一rootテスト・呼び出しとの互換用。通常のmain処理ではROOTSを解決済みroot群へ設定する。
-ROOT = _DEFAULT_ROOT
-ROOTS: list["_RootSpec"] | None = None
-
-
-class _RootSpec(typing.NamedTuple):
-    """リモート側で使うroot定義。"""
-
-    source_id: str
-    path: pathlib.Path
-    portable_path: str
-    warning: str | None = None
-    migrate_legacy_ctime: bool | None = None
-
-
-def _canonical(path: pathlib.Path) -> pathlib.Path:
-    """rootの比較・ファイル参照に使う正規化済みパスを返す。"""
-    return path.expanduser().resolve()
-
-
-def _dotfiles_roots() -> tuple[pathlib.Path, ...]:
-    """`atk`を探すdotfilesルートの候補を優先順で返す。"""
-    return (pathlib.Path(__file__).resolve().parent.parent.parent, pathlib.Path.home() / "dotfiles")
-
-
-def _atk_executable() -> str:
-    """対象ホスト上の`atk`の実行ファイルパスを返す。
-
-    本ヘルパーはSSH経由の非対話シェルで起動されるため、対象ホストのPATHにdotfilesの
-    `agent-toolkit/bin`が含まれないことがある。PATHで解決できない場合は、本ファイル位置から
-    取得したdotfilesルート、`~/dotfiles`の順に標準の配置を探す。いずれにも無い場合はPATH解決へ委ね、
-    呼び出し側が失敗として扱う。
-    """
-    found = shutil.which("atk")
-    if found is not None:
-        return found
-    name = "atk.cmd" if os.name == "nt" else "atk"
-    for root in _dotfiles_roots():
-        path = root / "agent-toolkit" / "bin" / name
-        if path.is_file():
-            return str(path)
-    return "atk"
-
-
-def _atk_env() -> dict[str, str]:
-    """`atk`実行用にPATHを補った環境変数を返す。
-
-    `atk`は`uv run`でスクリプトを起動するため、`atk`自体を絶対パスで指定しても
-    PATHに`uv`が無ければ起動に失敗する。dotfilesの標準的な配置である`~/.local/bin`と
-    `agent-toolkit/bin`をPATHの先頭へ加える。
-    """
-    env = dict(os.environ)
-    extra = [str(pathlib.Path.home() / ".local" / "bin")]
-    extra.extend(str(root / "agent-toolkit" / "bin") for root in _dotfiles_roots())
-    current = env.get("PATH")
-    env["PATH"] = os.pathsep.join([*extra, current]) if current else os.pathsep.join(extra)
-    return env
-
-
-# 警告本文へ引き継ぐ標準エラー出力の最大文字数。原因の判別に足りる長さを残しつつ、警告欄を占有させない。
-_STDERR_EXCERPT_MAX_CHARS = 500
-# 依存解決を含む`uv run`経由の初回起動を待てる上限にする。
-_PRIVATE_NOTES_TIMEOUT_SEC = 30
-
-
-def _stderr_excerpt(stderr: str) -> str:
-    """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
-
-    末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
-    """
-    text = " ".join(stderr.split())
-    if not text:
-        return "標準エラー出力はありません"
-    if len(text) > _STDERR_EXCERPT_MAX_CHARS:
-        return f"...{text[-_STDERR_EXCERPT_MAX_CHARS:]}"
-    return text
-
-
-def _resolve_private_notes_result() -> tuple[pathlib.Path | None, str | None]:
-    """対象ホスト上の`atk config get private_notes`を実行し、失敗理由も返す。
-
-    失敗理由はエンドユーザーへ渡る警告本文となるため、失敗元の標準エラー出力を引き継ぐ。
-    """
-    try:
-        completed = subprocess.run(
-            [_atk_executable(), "config", "get", "private_notes"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=_PRIVATE_NOTES_TIMEOUT_SEC,
-            env=_atk_env(),
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        warning = f"private_notesの取得に失敗しました: {error}"
-        sys.stderr.write(f"warn: {warning}\n")
-        return None, warning
-    if completed.returncode != 0:
-        warning = f"private_notesの取得が終了コード{completed.returncode}で失敗しました: {_stderr_excerpt(completed.stderr)}"
-        sys.stderr.write(f"warn: {warning}\n")
-        return None, warning
-    value = completed.stdout.strip()
-    if not value or "\n" in value:
-        warning = "private_notesの取得結果が不正です"
-        sys.stderr.write(f"warn: {warning}\n")
-        return None, warning
-    return _canonical(pathlib.Path(value)), None
-
-
-def _resolve_private_notes_path() -> pathlib.Path | None:
-    """対象ホスト上の`atk config get private_notes`を実行する。"""
-    path, _ = _resolve_private_notes_result()
-    return path
-
-
-def _dedupe_roots(specs: typing.Iterable[_RootSpec]) -> list[_RootSpec]:
-    """同一canonical rootまたは同一実体の重複だけを除く。"""
-    result: list[_RootSpec] = []
-    for spec in specs:
-        migrate_legacy = _migrates_legacy_ctime(spec)
-        candidate = _RootSpec(
-            spec.source_id,
-            _canonical(spec.path),
-            spec.portable_path,
-            spec.warning,
-            migrate_legacy,
-        )
-        duplicate_index: int | None = None
-        for index, existing in enumerate(result):
-            if candidate.path == existing.path:
-                duplicate_index = index
-                break
-            try:
-                if candidate.path.exists() and existing.path.exists() and candidate.path.samefile(existing.path):
-                    duplicate_index = index
-                    break
-            except OSError:
-                continue
-        if duplicate_index is None:
-            result.append(candidate)
-        elif candidate.migrate_legacy_ctime and not result[duplicate_index].migrate_legacy_ctime:
-            result[duplicate_index] = result[duplicate_index]._replace(migrate_legacy_ctime=True)
-    return result
-
-
-def _migrates_legacy_ctime(spec: _RootSpec) -> bool:
-    """旧形式ctime cacheの移行資格を返す。"""
-    if spec.migrate_legacy_ctime is not None:
-        return spec.migrate_legacy_ctime
-    return spec.source_id in ("", LEGACY_SOURCE_ID)
-
-
-def _default_root_specs() -> list[_RootSpec]:
-    """rootを指定しない場合に使う新旧の配置を対象ホスト上で解決する。"""
-    specs: list[_RootSpec] = []
-    private_notes, warning = _resolve_private_notes_result()
-    if private_notes is not None:
-        specs.append(_RootSpec(NEW_SOURCE_ID, private_notes / "plans", NEW_PORTABLE_ROOT, None, False))
-    else:
-        specs.append(
-            _RootSpec(
-                NEW_SOURCE_ID,
-                _UNRESOLVED_PRIVATE_NOTES_ROOT,
-                NEW_PORTABLE_ROOT,
-                warning or "private_notesを解決できません",
-                False,
-            )
-        )
-    specs.append(_RootSpec(LEGACY_SOURCE_ID, _DEFAULT_ROOT, LEGACY_PORTABLE_ROOT, None, True))
-    return _dedupe_roots(specs)
-
-
-def _root_specs() -> list[_RootSpec]:
-    """現在のroot定義を返す。テストでROOTだけ差し替えた場合は旧単一rootへ戻す。"""
-    if ROOT != _DEFAULT_ROOT:
-        return [_RootSpec("", _canonical(ROOT), str(ROOT).replace("\\", "/"))]
+def _root_specs() -> tuple[viewer_files.RootSpec, ...]:
+    """現在のroot定義を返す。"""
     if ROOTS is not None:
-        return list(ROOTS)
-    return _default_root_specs()
+        return ROOTS
+    return viewer_files.default_root_specs()
 
 
 # 生存確認pingの送信間隔（秒）。短すぎるとトラフィックが増え、長すぎると切断検知が遅れる。
@@ -256,345 +44,43 @@ _PING_INTERVAL_SEC = 30.0
 # stdoutへの書き込みは観測スレッドとRPC応答スレッドの双方から発生し得る。
 # print内のwrite/flushが分割されると行JSONが破損するため、emit側で排他する。
 _STDOUT_LOCK = threading.Lock()
-# 作成日時の永続インデックス。`_atk/serve/plans/`の`_CREATION_TIME_INDEX_PATH`と同一のパス・形式とする。
-_CREATION_TIME_INDEX_PATH = (
-    pathlib.Path(platformdirs.user_cache_dir("claude-plans-viewer", appauthor=False)) / "creation-times" / "index.json"
-)
-# 旧形式（1エントリ1ファイル）のキャッシュ名。sha256 hexdigestと`.json`から成る。
-_LEGACY_CACHE_NAME_RE = re.compile(r"^[0-9a-f]{64}\.json$")
-# 旧実装が生成した一時ファイル名。`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`。
-_LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
-_TARGET_TSV_SUFFIXES = (".plan-review.tsv", ".exec-review.tsv")
-_LISTED_EXCLUDED_SUFFIXES = (".detail.md", ".bugs.md", *_TARGET_TSV_SUFFIXES)
-
-
-def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None, source_id: str = "") -> bool:
-    """`path`が指定root配下の対象計画ファイルか判定する。
-
-    `_atk/serve/plans/`の`is_target_path`と同一基準を保つ（両者はSSH越し実行のため実装を共有できない）。
-    `~/.claude/plans`ではメイン`<stem>.md`と付属ファイル`<stem>.bugs.md`・`<stem>.exec-review.tsv`を真とする。
-    `private-notes/plans/`と設定で明示したrootでは旧付属ファイルも読取・検索・監視の対象に含める。
-    付属ファイルは一覧だけから除外し、`_is_listed_path`が一覧専用の判定を持つ。
-    `ROOT`自身がドット配下でも通るよう、判定は`ROOT`からの相対パスに対して行う。
-    シンボリックリンクを解決してから相対化するため、`ROOT`外を指すリンクは対象外となる
-    （`_resolve_target`が単一ファイル取得へ課す範囲と一致させる）。
-    """
-    if path.suffix != ".md" and not path.name.endswith(_TARGET_TSV_SUFFIXES):
-        return False
-    if source_id == LEGACY_SOURCE_ID and path.name.endswith((".detail.md", ".plan-review.tsv")):
-        return False
-    roots = [_canonical(root)] if root is not None else [spec.path for spec in _root_specs()]
-    for candidate in roots:
-        try:
-            rel = path.resolve().relative_to(candidate)
-        except ValueError:
-            continue
-        if not any(p.startswith(".") for p in rel.parts):
-            return True
-    return False
-
-
-def _is_listed_path(path: pathlib.Path, root: pathlib.Path | None = None, source_id: str = "") -> bool:
-    """`path`が計画一覧で独立項目として表示する対象かを判定する。
-
-    メイン計画は常に一覧へ載せ、付属の詳細・計画ファイル（バグ）は除外する。レビュー指摘管理表は対応する
-    メイン計画が存在する場合だけ付属ファイルとして除外し、存在しない場合は自身を一覧へ載せる。
-    """
-    if not _is_target_path(path, root, source_id):
-        return False
-    review_suffix = next((suffix for suffix in _TARGET_TSV_SUFFIXES if path.name.endswith(suffix)), None)
-    if review_suffix is not None:
-        main_path = path.with_name(f"{path.name[: -len(review_suffix)]}.md")
-        return not main_path.is_file()
-    return not path.name.endswith((".detail.md", ".bugs.md"))
-
-
-@contextlib.contextmanager
-def _exclusive_file_lock(path: pathlib.Path) -> typing.Iterator[None]:
-    """`path`をロックファイルとしてプロセス間の排他ロックを保持する。
-
-    `agent-toolkit/agent_toolkit/_common/file_lock.py`の`exclusive_file_lock`と同じ排他範囲を持つ。
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+", encoding="utf-8") as handle:
-        _lock_handle(handle)
-        try:
-            yield
-        finally:
-            _unlock_handle(handle)
-
-
-def _index_lock_path() -> pathlib.Path:
-    """作成日時インデックスの排他ロックファイルのパス。"""
-    return _CREATION_TIME_INDEX_PATH.with_name(_CREATION_TIME_INDEX_PATH.name + ".lock")
-
-
-def _enter_index_lock(stack: contextlib.ExitStack) -> bool:
-    """作成日時インデックスの排他ロックを`stack`へ登録する。取得できない場合は`False`を返す。
-
-    キャッシュディレクトリを作成・書き込みできない環境ではロックファイルを開けず`OSError`となる。
-    作成日時キャッシュの失敗で一覧機能を止めないため、この例外を呼び出し元へ伝播させない。
-    """
-    try:
-        stack.enter_context(_exclusive_file_lock(_index_lock_path()))
-    except OSError:
-        return False
-    return True
-
-
-def _index_key(host: str, root_key: str, rel: str) -> str:
-    r"""インデックスのキー。`(host, root, rel)`を`\0`で連結した文字列のsha256 hexdigest。"""
-    return hashlib.sha256(f"{host}\0{root_key}\0{rel}".encode()).hexdigest()
-
-
-def _root_key(root: pathlib.Path | None = None) -> str:
-    """インデックスのキーと値へ用いる`ROOT`の正規化表記。"""
-    target = root if root is not None else _root_specs()[0].path
-    return str(_canonical(target)).replace("\\", "/")
-
-
-def _entry_ctime(entry: typing.Any) -> float | None:
-    """インデックスまたは旧形式のエントリから作成日時を取り出す。取得できない場合はNone。"""
-    value = entry.get("ctime_epoch")
-    return float(value) if isinstance(value, (int, float)) else None
-
-
-def _load_index() -> dict[str, typing.Any]:
-    """インデックスを読み込む。不在・読み取り失敗・形式不正はいずれも空として扱う。"""
-    try:
-        payload = json.loads(_CREATION_TIME_INDEX_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    if not isinstance(payload, dict):
-        return {}
-    return {key: value for key, value in payload.items() if isinstance(value, dict)}
-
-
-def _load_legacy_entries() -> dict[tuple[str, str], tuple[float, pathlib.Path]]:
-    """旧形式のキャッシュを`(host, 相対パス)`から作成日時と実ファイルへの対応として読み込む。"""
-    entries: dict[tuple[str, str], tuple[float, pathlib.Path]] = {}
-    try:
-        candidates = [path for path in _CREATION_TIME_INDEX_PATH.parent.iterdir() if _LEGACY_CACHE_NAME_RE.match(path.name)]
-    except OSError:
-        return entries
-    for candidate in candidates:
-        try:
-            payload = json.loads(candidate.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not isinstance(payload, dict):
-            continue
-        host = payload.get("host")
-        rel = payload.get("path")
-        ctime = _entry_ctime(payload)
-        if isinstance(host, str) and isinstance(rel, str) and ctime is not None:
-            entries[(host, rel)] = (ctime, candidate)
-    return entries
-
-
-def _atomic_write_index(index: dict[str, typing.Any]) -> bool:
-    """インデックスを同一ディレクトリの一時ファイル経由で原子的に保存する。
-
-    一時ファイル名は`_atk/serve/plans/`が用いる原子的書き込みと同じ
-    `index.json.<ランダム文字列>.tmp`の形とし、除去規則を両実装で一致させる。
-    """
-    content = json.dumps(index, ensure_ascii=False, indent=2) + "\n"
-    temporary: pathlib.Path | None = None
-    try:
-        _CREATION_TIME_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=_CREATION_TIME_INDEX_PATH.parent,
-            delete=False,
-            prefix=f"{_CREATION_TIME_INDEX_PATH.name}.",
-            suffix=".tmp",
-        ) as tmp:
-            tmp.write(content)
-            temporary = pathlib.Path(tmp.name)
-        temporary.replace(_CREATION_TIME_INDEX_PATH)
-    except OSError:
-        if temporary is not None:
-            with contextlib.suppress(OSError):
-                temporary.unlink()
-        return False
-    return True
-
-
-def _update_creation_time_index(
-    host: str,
-    observed: dict[str, float],
-    *,
-    prune: bool,
-    root: pathlib.Path | None = None,
-    migrate_legacy: bool = True,
-) -> dict[str, float]:
-    """走査結果の観測時刻をインデックスへ反映し、確定した作成日時を相対パスごとに返す。
-
-    `prune=True`のとき、同一の`(host, ROOT)`に属し今回の走査に現れなかったキーを回収する。
-    単一ファイルの更新通知は走査結果ではないため`prune=False`で呼ぶ。
-    `migrate_legacy=True`の場合だけ、旧形式から`host`と相対パスが今回の対象と一致するものを取り込み、
-    インデックスの書き込みに成功した場合に限り取り込んだファイルを削除する。
-    ロックを取得できない場合はインデックスの更新を諦め、観測値をそのまま返す。
-    """
-    root_key = _root_key(root)
-    resolved: dict[str, float] = {}
-    with contextlib.ExitStack() as stack:
-        if not _enter_index_lock(stack):
-            return dict(observed)
-        index = _load_index()
-        legacy = _load_legacy_entries() if migrate_legacy else {}
-        migrated: list[pathlib.Path] = []
-        updated: dict[str, typing.Any] = {}
-        for rel, observed_epoch in observed.items():
-            key = _index_key(host, root_key, rel)
-            cached = _entry_ctime(index.get(key, {}))
-            if cached is None:
-                legacy_entry = legacy.get((host, rel))
-                if legacy_entry is not None:
-                    cached, legacy_path = legacy_entry
-                    migrated.append(legacy_path)
-            creation = min(observed_epoch, cached) if cached is not None else observed_epoch
-            resolved[rel] = creation
-            updated[key] = {"host": host, "root": root_key, "path": rel, "ctime_epoch": creation}
-        # インデックスを更新する処理は全て同じロックを保持するため、冒頭で読み込んだ内容へ直接反映する。
-        if prune:
-            for key, entry in list(index.items()):
-                if key not in updated and entry.get("host") == host and entry.get("root") == root_key:
-                    del index[key]
-        index.update(updated)
-        if _atomic_write_index(index):
-            for legacy_path in migrated:
-                with contextlib.suppress(OSError):
-                    legacy_path.unlink()
-    return resolved
-
-
-def _cleanup_creation_time_temporaries() -> None:
-    """作成日時インデックスの残存一時ファイルをロック下で除去する。
-
-    対象は`index.json.<ランダム文字列>.tmp`と、
-    旧実装が生成した`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`の2形式とする。
-    ロックを取得できない場合は何もせずに返る。
-    """
-    directory = _CREATION_TIME_INDEX_PATH.parent
-    if not directory.is_dir():
-        return
-    temporary_pattern = f"{_CREATION_TIME_INDEX_PATH.name}.*.tmp"
-    with contextlib.ExitStack() as stack:
-        if not _enter_index_lock(stack):
-            return
-        try:
-            candidates = list(directory.iterdir())
-        except OSError:
-            return
-        for candidate in candidates:
-            if not candidate.match(temporary_pattern) and not _LEGACY_TEMPORARY_NAME_RE.match(candidate.name):
-                continue
-            with contextlib.suppress(OSError):
-                candidate.unlink()
-
-
-def _ctime_epoch(st: os.stat_result) -> float:
-    """観測時点の作成日時候補をepoch秒で返す。`st_birthtime`（存在時）を優先する。
-
-    詳細は`agent-toolkit/agent_toolkit/_atk/plans.py`の同名関数のdocstringを参照
-    （リモートヘルパーは独立実行スクリプトのためロジックを重複させている）。
-    """
-    birthtime = getattr(st, "st_birthtime", None)
-    return float(birthtime) if birthtime is not None else float(st.st_mtime)
 
 
 def _host_info() -> dict[str, str]:
     """このリモートホストの`host_info`エントリ（`root`・`home`・`os_type`・`os_name`）を組み立てる。
 
-    `root`・`home`は`/`区切りへ正規化する（`_atk/serve/plans/`の`local_host_info`と同一の正規化。
-    クライアント側`copySelectedPath`が`root`・`home`を`/`区切り前提で解析するため）。
+    `root`は作業中の計画root（`~/.claude/plans`）とし、正規化は`viewer_files.host_info`が定める
+    （クライアント側`copySelectedPath`が`root`・`home`を`/`区切り前提で解析するため）。
     """
-    home = str(pathlib.Path.home()).replace("\\", "/")
-    return {
-        "root": str(ROOT.resolve()).replace("\\", "/"),
-        "home": home,
-        "os_type": os.name,
-        "os_name": os.name,
-    }
-
-
-def _root_info(spec: _RootSpec) -> dict[str, typing.Any]:
-    """Source IDごとのroot情報を組み立てる。"""
-    info: dict[str, typing.Any] = {
-        "source_id": spec.source_id,
-        "portable_root": spec.portable_path,
-    }
-    if spec.warning is not None:
-        info["warning"] = spec.warning
-    return info
-
-
-def _root_status(warning: str | None) -> dict[str, str]:
-    """rootの利用状態をsnapshot用辞書へ変換する。"""
-    if warning is None:
-        return {"status": "ok", "message": ""}
-    return {"status": "warning", "message": warning}
+    return viewer_files.host_info(locations.working_plans_root().resolve())
 
 
 def _scan_snapshot() -> tuple[list[dict[str, typing.Any]], dict[str, dict[str, typing.Any]], dict[str, dict[str, str]]]:
     """全rootを独立して走査し、一覧・root情報・root状態を返す。
 
-    rootの不在は計画をまだ保存していない通常の状態として警告せず、走査もしない。
-    不在のrootに対する`rglob`は空を返して成功するため、走査へ進むと空の観測結果で
-    インデックスを更新し、同じ`(host, root)`に記録済みの作成日時を回収してしまう。
+    root単位の警告と不在のrootの扱いは`viewer_files.scan_root`が定める。
     """
     entries: list[dict[str, typing.Any]] = []
     root_info: dict[str, dict[str, typing.Any]] = {}
     root_status: dict[str, dict[str, str]] = {}
     host = socket.gethostname()
     for spec in _root_specs():
-        root_info[spec.source_id] = _root_info(spec)
+        root_info[spec.source_id] = viewer_files.root_info(spec)
         warning: str | None = spec.warning
-        spec_entries: list[dict[str, typing.Any]] = []
-        if warning is None and spec.path.exists() and not spec.path.is_dir():
-            warning = "rootがディレクトリではありません"
-        elif warning is None and spec.path.is_dir():
-            observed: dict[str, float] = {}
-            try:
-                paths = spec.path.rglob("*")
-                for path in paths:
-                    try:
-                        if not path.is_file() or not _is_listed_path(path, spec.path, spec.source_id):
-                            continue
-                        st = path.stat()
-                    except OSError as error:
-                        warning = f"rootの走査に失敗しました: {error}"
-                        continue
-                    rel = path.relative_to(spec.path).as_posix()
-                    observed[rel] = _ctime_epoch(st)
-                    entry: dict[str, typing.Any] = {
-                        "path": rel,
-                        "name": path.name,
-                        "mtime_epoch": st.st_mtime,
-                    }
-                    if spec.source_id:
-                        entry["source_id"] = spec.source_id
-                    spec_entries.append(entry)
-            except OSError as error:
-                warning = f"rootの走査に失敗しました: {error}"
-            resolved = _update_creation_time_index(
-                host,
-                observed,
-                prune=True,
-                root=spec.path,
-                migrate_legacy=_migrates_legacy_ctime(spec),
+        if warning is None:
+            items, warning = viewer_files.scan_root(
+                spec.path, host, spec.source_id, migrate_legacy_ctime=spec.migrate_legacy_ctime
             )
-            for entry in spec_entries:
-                entry["ctime_epoch"] = resolved[entry["path"]]
-            entries.extend(spec_entries)
-        root_status[spec.source_id] = _root_status(warning)
+            for item in items:
+                if spec.source_id:
+                    item["source_id"] = spec.source_id
+                entries.append(item)
+        root_status[spec.source_id] = viewer_files.root_status(warning)
     return entries, root_info, root_status
 
 
 def _scan_entries() -> list[dict[str, typing.Any]]:
-    """一覧用のエントリを走査する。付属ファイルは`_is_listed_path`で除外する。"""
+    """一覧用のエントリを走査する。付属ファイルは`viewer_files.is_listed_path`で除外する。"""
     entries, _, _ = _scan_snapshot()
     return entries
 
@@ -612,15 +98,9 @@ def _resolve_target(source_or_rel_b64: str, rel_b64: str | None = None) -> pathl
         raise ValueError("invalid relative path")
     specs = _root_specs()
     candidates = [spec for spec in specs if spec.source_id == source_id] if source_id else specs
-    matches: list[pathlib.Path] = []
-    for spec in candidates:
-        target = (spec.path / rel).resolve()
-        try:
-            target.relative_to(spec.path.resolve())
-        except ValueError:
-            continue
-        if _is_target_path(target, spec.path, spec.source_id) and target.is_file():
-            matches.append(target)
+    matches = [
+        target for spec in candidates if (target := viewer_files.resolve_under_root(spec.path, rel, spec.source_id)) is not None
+    ]
     if len(matches) != 1:
         if len(matches) > 1:
             raise ValueError("source is required")
@@ -636,28 +116,14 @@ def _read_payload(source_or_rel_b64: str, rel_b64: str | None = None) -> dict[st
 
 def _search_payload(query_b64: str, source_id: str | None = None) -> dict[str, typing.Any]:
     """本文へ検索語が部分一致する計画ファイルの相対パスを返す。"""
-    query = base64.b64decode(query_b64).decode("utf-8").casefold()
+    query = base64.b64decode(query_b64).decode("utf-8")
     matched: list[str] = []
     matches: list[dict[str, str]] = []
     specs = [spec for spec in _root_specs() if source_id in (None, "") or spec.source_id == source_id]
     for spec in specs:
-        if not spec.path.is_dir():
-            continue
-        try:
-            paths = spec.path.rglob("*")
-            for path in paths:
-                if not path.is_file() or not _is_target_path(path, spec.path, spec.source_id):
-                    continue
-                try:
-                    text = path.read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    continue
-                if query in text.casefold():
-                    rel = path.relative_to(spec.path).as_posix()
-                    matched.append(rel)
-                    matches.append({"source_id": spec.source_id, "path": rel})
-        except OSError:
-            continue
+        for rel in viewer_files.search_root(spec.path, query, spec.source_id):
+            matched.append(rel)
+            matches.append({"source_id": spec.source_id, "path": rel})
     payload: dict[str, typing.Any] = {"paths": sorted(matched)}
     if len(specs) > 1 or any(item["source_id"] for item in matches):
         payload["matches"] = sorted(matches, key=lambda item: (item["source_id"], item["path"]))
@@ -713,7 +179,7 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
     class Handler(watchdog.events.FileSystemEventHandler):
         """一つのroot配下の変更を行区切りJSONとして通知するイベントハンドラ。"""
 
-        def __init__(self, spec: _RootSpec) -> None:
+        def __init__(self, spec: viewer_files.RootSpec) -> None:
             super().__init__()
             self.spec = spec
 
@@ -725,8 +191,8 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
             src = pathlib.Path(str(event.src_path))
             if isinstance(event, watchdog.events.FileMovedEvent):
                 dest = pathlib.Path(str(event.dest_path))
-                src_ok = _is_target_path(src, self.spec.path, self.spec.source_id)
-                dest_ok = _is_target_path(dest, self.spec.path, self.spec.source_id)
+                src_ok = viewer_files.is_target_path(src, self.spec.path, self.spec.source_id)
+                dest_ok = viewer_files.is_target_path(dest, self.spec.path, self.spec.source_id)
                 if not (src_ok or dest_ok):
                     return
                 # rename処理でsrcのみ`.md`の場合は元パス側を削除扱い、
@@ -743,7 +209,7 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
                 target = dest if dest_ok else src
                 self._emit_upsert(target)
                 return
-            if not _is_target_path(src, self.spec.path, self.spec.source_id):
+            if not viewer_files.is_target_path(src, self.spec.path, self.spec.source_id):
                 return
             if isinstance(event, watchdog.events.FileDeletedEvent):
                 payload = {"type": "deleted", "path": src.relative_to(self.spec.path).as_posix()}
@@ -761,12 +227,12 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
                 return
             rel = path.relative_to(self.spec.path).as_posix()
             # 単一ファイルの更新通知は走査結果ではないため、不在キーの回収は行わない。
-            resolved = _update_creation_time_index(
+            resolved = creation_times.update_creation_time_index(
                 socket.gethostname(),
-                {rel: _ctime_epoch(st)},
+                self.spec.path,
+                {rel: creation_times.observed_creation_epoch(st)},
                 prune=False,
-                root=self.spec.path,
-                migrate_legacy=_migrates_legacy_ctime(self.spec),
+                migrate_legacy=viewer_files.migrates_legacy_ctime(self.spec.source_id, self.spec.migrate_legacy_ctime),
             )
             payload = {
                 "type": "upsert",
@@ -796,14 +262,14 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
             observer.schedule(Handler(spec), str(spec.path), recursive=True)
             scheduled = True
         except OSError as error:
-            root_status[spec.source_id] = _root_status(f"rootの監視に失敗しました: {error}")
+            root_status[spec.source_id] = viewer_files.root_status(f"rootの監視に失敗しました: {error}")
     if scheduled:
         try:
             observer.start()
         except OSError as error:
             for spec in specs:
                 if spec.path.is_dir():
-                    root_status[spec.source_id] = _root_status(f"rootの監視に失敗しました: {error}")
+                    root_status[spec.source_id] = viewer_files.root_status(f"rootの監視に失敗しました: {error}")
     # observer起動後にsnapshotを発行することで、起動以前の変更取りこぼしを排除する。
     entries, root_info, scanned_status = _scan_snapshot()
     scanned_status.update(root_status)
@@ -822,6 +288,21 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
     return observer
 
 
+def _wait_until_stopped(stop_event: threading.Event, observer: typing.Any) -> int:
+    """停止の要求か割り込みまで待ち、変更監視を止めて終了コードを返す。"""
+    try:
+        while not stop_event.is_set():
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_event.set()
+        if observer.is_alive():
+            observer.stop()
+            observer.join()
+    return 0
+
+
 def _watch_files() -> int:
     """`watch`サブコマンド: `~/.claude/plans`配下をwatchdogで監視し、行区切りJSONをstdoutへ出力する。
 
@@ -835,17 +316,7 @@ def _watch_files() -> int:
     stop_event = threading.Event()
     observer = _start_observer(stop_event)
     # SIGPIPEはping_loopが捕捉してstop_eventを通じて停止処理を実行する。
-    try:
-        while not stop_event.is_set():
-            time.sleep(1.0)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        stop_event.set()
-        if observer.is_alive():
-            observer.stop()
-            observer.join()
-    return 0
+    return _wait_until_stopped(stop_event, observer)
 
 
 def _handle_request(req: dict[str, typing.Any]) -> dict[str, typing.Any]:
@@ -908,18 +379,7 @@ def _serve() -> int:
 
     reader_thread = threading.Thread(target=reader_loop, daemon=True)
     reader_thread.start()
-
-    try:
-        while not stop_event.is_set():
-            time.sleep(1.0)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        stop_event.set()
-        if observer.is_alive():
-            observer.stop()
-            observer.join()
-    return 0
+    return _wait_until_stopped(stop_event, observer)
 
 
 def main() -> int:
@@ -928,7 +388,7 @@ def main() -> int:
         sys.stderr.write("missing operation\n")
         return 2
     # 前回の異常終了で残った作成日時インデックスの一時ファイルを操作分岐の前に除去する。
-    _cleanup_creation_time_temporaries()
+    creation_times.cleanup_creation_time_temporaries()
     globals()["ROOTS"] = _root_specs()
     op = sys.argv[1]
     if op == "list":

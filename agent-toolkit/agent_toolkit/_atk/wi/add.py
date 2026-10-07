@@ -45,7 +45,7 @@ from agent_toolkit._atk.wi.common import (
 from agent_toolkit._atk.wi.formatters import _shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._common import body_match as _body_match
-from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._plan import owner_records as _owner_records
 
 
 def _saved_mismatch_next_action(filename: str) -> str:
@@ -382,7 +382,7 @@ def _resolve_submitter_session() -> str | None:
     解決できない場合と、会話へ対応しないプロセス専用の識別子だった場合は`None`を返す。
     計画の所有会話と同じ判定を使う。
     """
-    return _plan_file.resolve_conversation_session_id()
+    return _owner_records.resolve_conversation_session_id()
 
 
 def _add_entries_locked(

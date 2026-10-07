@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pathlib
 
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import structure as _plan_format
 
 BASE_COMMIT: str = "0123456789012345678901234567890123456789"
@@ -375,7 +376,7 @@ def two_file_main(
     *,
     repo: str | pathlib.Path = REPOSITORY,
     base: str = BASE_COMMIT,
-    detail_name: str = "sample.detail.md",
+    detail_name: str = _bundle_kinds.DETAIL.name_for("sample"),
     work_type: str = "通常変更",
 ) -> str:
     """旧二ファイル形式の計画ファイル（メイン）を返す。読み取り互換のテストに使う。"""

@@ -10,7 +10,6 @@ import contextlib
 import dataclasses
 import hashlib
 import html as html_lib
-import json
 import pathlib
 import socket
 import threading
@@ -24,17 +23,8 @@ import watchdog.events
 import watchdog.observers
 import watchdog.observers.api
 
-from agent_toolkit._atk.serve.plans.ctime_index import cleanup_creation_time_temporaries
-from agent_toolkit._atk.serve.plans.local_scan import (
-    PlansEventHandler,
-    local_host_info,
-    resolve_under_root,
-    root_info,
-    root_status,
-    root_warning,
-    scan_files,
-    search_files,
-)
+from agent_toolkit._atk import review_table as _review_table
+from agent_toolkit._atk.serve.plans.local_scan import PlansEventHandler, scan_files, search_files
 from agent_toolkit._atk.serve.plans.remote import (
     RemoteSearchCoordinator,
     RemoteSearchSuperseded,
@@ -50,24 +40,27 @@ from agent_toolkit._atk.serve.plans.rendering import MarkdownCache, MarkdownCach
 # 画面が消費する処理
 # --------------------------------------------------------------------------------------
 from agent_toolkit._atk.serve.plans.roots import (
-    _CURRENT_PLAN_SUFFIX_LABELS,
-    _LEGACY_RESPONSE_NEEDED_VALUES,
-    _LEGACY_WIDE_REVIEW_TABLE_COLUMN_COUNT,
-    _PLAN_SUFFIX_LABELS,
-    _REVIEW_TABLE_HEADERS,
-    _TARGET_TSV_SUFFIXES,
     DEFAULT_REMOTE_SEARCH_LIMIT,
-    LEGACY_SOURCE_ID,
-    NEW_SOURCE_ID,
     BroadcastState,
     FileEntry,
-    RootSpec,
     SshRunner,
-    default_root_specs,
     deliver_root_status,
-    explicit_root_spec,
     logger,
+)
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
+from agent_toolkit._plan.creation_times import cleanup_creation_time_temporaries
+from agent_toolkit._plan.viewer_files import (
+    LEGACY_SOURCE_ID,
+    NEW_SOURCE_ID,
+    RootSpec,
+    default_root_specs,
+    explicit_root_spec,
+    host_info,
     normalize_root_specs,
+    resolve_under_root,
+    root_info,
+    root_status,
+    root_warning,
 )
 
 
@@ -129,7 +122,7 @@ def create_context(
         state.host_status[host] = "connecting"
     # ローカルホスト分の`host_info`は起動時に即座にセットする。
     # リモート分は接続確立時（初回snapshot受信）に`RemoteWatcher`側で追加する。
-    state.host_info[resolved_hostname] = local_host_info(resolved_root)
+    state.host_info[resolved_hostname] = host_info(resolved_root)
     state.root_info[resolved_hostname] = {spec.source_id: root_info(spec) for spec in root_specs}
     state.root_status[resolved_hostname] = {
         spec.source_id: root_status(spec.warning or root_warning(spec.path)) for spec in root_specs
@@ -205,8 +198,9 @@ async def all_entries(context: PlansContext) -> list[FileEntry]:
 
 def listed_plan_path(rel: str) -> str:
     """付属ファイルの検索一致を一覧で選択できる計画ファイル（メイン）へ接続する。"""
-    suffix = next((suffix for suffix, _ in _PLAN_SUFFIX_LABELS if rel.endswith(suffix)), None)
-    return rel if suffix is None else f"{rel[: -len(suffix)]}.md"
+    path = pathlib.PurePosixPath(rel)
+    main_name = _bundle_kinds.main_name_of(path.name)
+    return rel if main_name is None else str(path.with_name(main_name))
 
 
 async def search_entries(context: PlansContext, query: str) -> list[FileEntry] | None:
@@ -312,47 +306,31 @@ def review_table_html(text: str) -> str:
     旧7列形式は指摘レベルを持たず5列目が対応要否であるため、5列目の値域で現行形式と判別し、
     指摘レベルを空として対応要否の列を除く。
     """
-    rows: list[list[str]] = []
     try:
-        for line in text.splitlines():
-            encoded_cells = line.split("\t")
-            if len(encoded_cells) == _LEGACY_WIDE_REVIEW_TABLE_COLUMN_COUNT:
-                del encoded_cells[5]
-            elif len(encoded_cells) != len(_REVIEW_TABLE_HEADERS):
-                raise ValueError("レビュー指摘管理表の列数が不正です")
-            cells = [json.loads(cell) for cell in encoded_cells]
-            if not all(isinstance(cell, str) for cell in cells):
-                raise ValueError("レビュー指摘管理表のセルがJSON文字列ではありません")
-            if cells[4].strip().casefold() in _LEGACY_RESPONSE_NEEDED_VALUES:
-                cells = [*cells[:4], "", *cells[5:]]
-            rows.append(cells)
-    except (json.JSONDecodeError, ValueError):
+        rows = _review_table.display_rows(text)
+    except ValueError:
         return f"<pre>{html_lib.escape(text)}</pre>\n"
 
-    head = "".join(f"<th>{html_lib.escape(header)}</th>" for header in _REVIEW_TABLE_HEADERS)
+    head = "".join(f"<th>{html_lib.escape(header)}</th>" for header in _review_table.COLUMN_LABELS)
     body = "".join("<tr>" + "".join(f"<td>{html_lib.escape(cell)}</td>" for cell in row) + "</tr>" for row in rows)
     return f'<table class="review-table">\n<thead><tr>{head}</tr></thead>\n<tbody>{body}</tbody>\n</table>\n'
 
 
 def is_review_table_path(rel: str) -> bool:
     """相対パスがレビュー指摘管理表かを判定する。"""
-    return rel.endswith(_TARGET_TSV_SUFFIXES)
+    return _bundle_kinds.is_review_table_name(pathlib.PurePosixPath(rel).name)
 
 
 def _plan_paths(rel: str, source_id: str = "") -> tuple[tuple[str, str], ...]:
     """同じstemに属する計画ファイルの相対パスと表示名を返す。"""
-    suffix_labels = _CURRENT_PLAN_SUFFIX_LABELS if source_id == LEGACY_SOURCE_ID else _PLAN_SUFFIX_LABELS
-    suffix = next((suffix for suffix, _ in suffix_labels if rel.endswith(suffix)), None)
-    if suffix is None:
-        if not rel.endswith(".md"):
+    attachments = tuple(kind for kind in _bundle_kinds.LINKED_ATTACHMENTS if kind.current or source_id != LEGACY_SOURCE_ID)
+    kind = next((kind for kind in attachments if kind.matches(rel)), None)
+    if kind is None:
+        if not _bundle_kinds.MAIN.matches(rel):
             return ()
-        stem = rel[: -len(".md")]
-    else:
-        stem = rel[: -len(suffix)]
-    return (
-        (f"{stem}.md", "メイン"),
-        *((f"{stem}{attached_suffix}", label) for attached_suffix, label in suffix_labels),
-    )
+        kind = _bundle_kinds.MAIN
+    stem = rel.removesuffix(kind.suffix)
+    return tuple((member.name_for(stem), member.display_name) for member in (_bundle_kinds.MAIN, *attachments))
 
 
 async def plan_links_html(context: PlansContext, host: str, source_id: str, rel: str) -> str:

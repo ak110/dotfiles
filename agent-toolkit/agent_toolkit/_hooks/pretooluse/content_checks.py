@@ -10,7 +10,7 @@ from agent_toolkit._hooks import (
 )
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
-from agent_toolkit._plan.locations import is_plan_adjunct_file, is_plan_component_file
+from agent_toolkit._plan.path_kinds import is_plan_adjunct_file, is_plan_main_file
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
@@ -18,7 +18,7 @@ _REPLACEMENT_CHAR = "\ufffd"
 
 def _is_plan_file_or_adjunct(file_path: str) -> bool:
     """計画ファイル（メイン）・計画ファイル（バグ）の場合に真を返す。"""
-    return is_plan_component_file(file_path) or is_plan_adjunct_file(file_path)
+    return is_plan_main_file(file_path) or is_plan_adjunct_file(file_path)
 
 
 def _materialize_cached(

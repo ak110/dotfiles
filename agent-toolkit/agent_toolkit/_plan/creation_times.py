@@ -1,7 +1,8 @@
 """計画ファイルの作成日時インデックス（ホスト・root・相対パスをキーとする単一JSON）の読み書きと排他。
 
-同一ホスト上のリモートヘルパー（`atk_serve_plans_remote_helper.py`）と同じファイルを共有するため、
-キーと値の形式は両実装で一致させる。旧形式（1エントリ1ファイル）のキャッシュの移行と一時ファイルの回収も扱う。
+`atk serve`の計画ファイル画面と、SSH先で動くリモートヘルパー（`atk_serve_plans_remote_helper.py`）が
+本モジュールを共有し、同じホストでは同じインデックスを読み書きする。旧形式（1エントリ1ファイル）のキャッシュの移行と
+一時ファイルの回収も扱う。リモートヘルパーがimportするため、標準ライブラリ、`platformdirs`と`_common`だけに依存する。
 """
 
 from __future__ import annotations
@@ -19,8 +20,6 @@ import platformdirs
 from agent_toolkit._common import file_lock as _file_lock
 
 # 作成日時の永続インデックス。ホスト・root・相対パスの3項をキーとする単一JSONへ集約する。
-# 同一ホスト上でリモートヘルパー（`atk_serve_plans_remote_helper.py`）も同じファイルを共有するため、
-# キーと値の形式を両実装で一致させる。
 # ディレクトリ名は計画ファイル閲覧機能が`atk serve`へ統合される前から蓄積した索引をそのまま使うため維持する。
 # 名前を変えると初回観測時刻が失われ、一覧の並び順が変わる。
 _CREATION_TIME_INDEX_PATH = (
@@ -126,7 +125,7 @@ def _load_legacy_entries() -> dict[tuple[str, str], tuple[float, pathlib.Path]]:
 def _write_index(index: dict[str, typing.Any]) -> bool:
     """インデックスを原子的に保存する。失敗した場合は`False`を返す。
 
-    一時ファイル名はリモートヘルパーの除去規則と一致する`index.json.<ランダム文字列>.tmp`とする。
+    一時ファイル名は`cleanup_creation_time_temporaries`の除去規則と一致する`index.json.<プロセスID>.tmp`とする。
     """
     content = json.dumps(index, ensure_ascii=False, indent=2) + "\n"
     temporary: pathlib.Path | None = None
@@ -143,18 +142,32 @@ def _write_index(index: dict[str, typing.Any]) -> bool:
     return True
 
 
+def observed_creation_epoch(st: os.stat_result) -> float:
+    """観測時点の作成日時候補をepoch秒で返す。
+
+    `st_birthtime`（macOS・Windowsで実在し「作成時刻」を表す）を優先し、
+    存在しないプラットフォームでは更新日時を用いる。
+    初回観測時の値を保持する処理は`update_creation_time_index`が担う。
+    編集で変動する`st_ctime`は用いない。
+    """
+    birthtime = getattr(st, "st_birthtime", None)
+    return float(birthtime) if birthtime is not None else float(st.st_mtime)
+
+
 def update_creation_time_index(
     host: str,
     root: pathlib.Path,
     observed: dict[str, float],
     *,
+    prune: bool = True,
     migrate_legacy: bool = True,
 ) -> dict[str, float]:
-    """走査結果の観測時刻をインデックスへ反映し、確定した作成日時を相対パスごとに返す。
+    """観測時刻をインデックスへ反映し、確定した作成日時を相対パスごとに返す。
 
     初回観測時の値を作成日時として保持することで、編集で変動する値に依らず並び順を維持する。
-    同一の`(host, root)`に属し今回の走査に現れなかったキーは回収し、
+    `prune=True`の場合は、同一の`(host, root)`に属し今回の観測に現れなかったキーを回収し、
     別の`root`に属するキーは維持する（`root`ごとに走査対象が異なるため）。
+    rootの走査結果ではない単一ファイルの更新通知は`prune=False`で反映する。
     `migrate_legacy=True`の場合だけ、旧形式から`host`と相対パスが今回の走査と一致するものを取り込み、
     インデックスの書き込みに成功した場合に限り取り込んだファイルを削除する。
     ロックを取得できない場合はインデックスの更新を諦め、観測値をそのまま返す。
@@ -180,9 +193,10 @@ def update_creation_time_index(
             resolved[rel] = creation
             updated[key] = {"host": host, "root": root_key, "path": rel, "ctime_epoch": creation}
         # インデックスの更新時は必ず同じロックを保持するため、冒頭で読み込んだ内容へ直接反映できる。
-        for key, entry in list(index.items()):
-            if key not in updated and entry.get("host") == host and entry.get("root") == root_key:
-                del index[key]
+        if prune:
+            for key, entry in list(index.items()):
+                if key not in updated and entry.get("host") == host and entry.get("root") == root_key:
+                    del index[key]
         index.update(updated)
         if _write_index(index):
             for legacy_path in migrated:

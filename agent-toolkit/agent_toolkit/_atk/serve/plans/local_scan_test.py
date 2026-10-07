@@ -15,6 +15,7 @@ from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
 from agent_toolkit._atk.serve.plans import remote as plans_remote
 from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
+from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing.serve_plans_support import (
     _context,
     _failed_ssh,
@@ -95,8 +96,8 @@ def test_working_root_excludes_removed_attachments(tmp_path: pathlib.Path, name:
     root.mkdir()
     path = _plan(root, name)
 
-    assert not plans_local_scan.is_target_path(path, root, plans.LEGACY_SOURCE_ID)
-    assert plans_local_scan.is_target_path(path, root, plans.NEW_SOURCE_ID)
+    assert not plan_viewer_files.is_target_path(path, root, plans.LEGACY_SOURCE_ID)
+    assert plan_viewer_files.is_target_path(path, root, plans.NEW_SOURCE_ID)
 
 
 @pytest.mark.asyncio

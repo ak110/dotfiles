@@ -11,8 +11,8 @@ from agent_toolkit._atk.serve import plans
 from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
 from agent_toolkit._atk.serve.plans import remote as plans_remote
 from agent_toolkit._atk.serve.plans import rendering as plans_rendering
-from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
+from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing.serve_plans_support import _context, _FakeWatcher, _plan, _read_payload, _runner_returning
 
 
@@ -23,7 +23,7 @@ def test_distinct_roots_are_kept_separately(tmp_path: pathlib.Path) -> None:
     first.mkdir()
     second.mkdir()
 
-    normalized = plans_roots.normalize_root_specs(
+    normalized = plan_viewer_files.normalize_root_specs(
         (
             plans.RootSpec(source_id=plans.NEW_SOURCE_ID, path=first, portable_path="a"),
             plans.RootSpec(source_id=plans.LEGACY_SOURCE_ID, path=second, portable_path="b"),

@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import asyncio.subprocess as _async_subprocess
 import base64
-import contextlib
 import dataclasses
 import json
 import pathlib
@@ -22,8 +21,6 @@ from agent_toolkit._atk.serve.plans.local_scan import REMOTE_BOOTSTRAP
 # リモートホスト統合
 # --------------------------------------------------------------------------------------
 from agent_toolkit._atk.serve.plans.roots import (
-    _LISTED_EXCLUDED_SUFFIXES,
-    _TARGET_TSV_SUFFIXES,
     DEFAULT_REMOTE_SEARCH_LIMIT,
     REMOTE_BACKOFF_INITIAL_SEC,
     REMOTE_BACKOFF_JITTER_RANGE,
@@ -33,7 +30,6 @@ from agent_toolkit._atk.serve.plans.roots import (
     SSH_BASE_OPTIONS,
     SSH_TIMEOUT_SEC,
     SSH_WATCH_OPTIONS,
-    TERMINATE_GRACE_TIMEOUT_SEC,
     BroadcastState,
     LineSource,
     SshRunner,
@@ -45,12 +41,7 @@ from agent_toolkit._atk.serve.plans.roots import (
     logger,
     make_file_entry,
 )
-
-
-def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
-    """この画面のリモートヘルパーを起動するargv要素列を返す。起動形は`_atk_serve_remote.remote_command_argv`が定める。"""
-    return _atk_serve_remote.remote_command_argv(REMOTE_BOOTSTRAP, op, args)
-
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 
 # 単発SSHの失敗の表現と標準エラー出力の整形はセッション画面と共通の契約とする。
 RemoteHelperError = _atk_serve_remote.RemoteHelperError
@@ -273,7 +264,8 @@ def _decode_root_status(raw: typing.Any) -> dict[str, dict[str, str]]:
 
 def _is_listed_remote_path(path: str) -> bool:
     """リモートwatchイベントのパスが一覧対象かを判定する。"""
-    return not pathlib.PurePosixPath(path).name.endswith(_LISTED_EXCLUDED_SUFFIXES)
+    # 変更通知からは同じstemのメイン計画の有無を観測できないため、レビュー指摘管理表も付属ファイルとして扱う。
+    return _bundle_kinds.is_listed_name(pathlib.PurePosixPath(path).name, main_exists=True)
 
 
 class RemoteWatcher:
@@ -373,9 +365,8 @@ class RemoteWatcher:
                 await self._set_status("disconnected")
             finally:
                 self._fail_pending(ConnectionError(f"watch disconnected: host={self.host}"))
-                await self._cancel_stderr_task()
-                if proc is not None:
-                    await _terminate_process(proc)
+                await _atk_serve_remote.stop_resident_helper(proc, self._stderr_task)
+                self._stderr_task = None
                 self._proc = None
                 self._connected = False
             _atk_serve_remote.raise_if_cancelling()
@@ -385,37 +376,15 @@ class RemoteWatcher:
             self._backoff = min(self._backoff * 2, REMOTE_BACKOFF_MAX_SEC)
 
     async def _connect(self) -> _async_subprocess.Process:
-        cmd = [
-            "ssh",
-            *SSH_BASE_OPTIONS,
-            *SSH_WATCH_OPTIONS,
+        proc, self._stderr_task = await _atk_serve_remote.start_resident_helper(
+            REMOTE_BOOTSTRAP,
             self.host,
-            *_build_remote_command_argv("serve", []),
-        ]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            # ヘルパーは初回snapshotで全エントリーを1行JSONとして出力するため、
-            # asyncioが標準で使う64KiB上限を超えると`readline()`が例外を送出する。
-            limit=REMOTE_STREAM_LIMIT_BYTES,
+            ssh_options=(*SSH_BASE_OPTIONS, *SSH_WATCH_OPTIONS),
+            stream_limit=REMOTE_STREAM_LIMIT_BYTES,
+            logger=logger,
+            label="リモートwatch",
         )
-        # helper起動失敗（依存解決失敗など）はstdoutが空EOFとなり原因ログが残らないため、
-        # stderrを常時読み取ってwarningへ転写する。
-        assert proc.stderr is not None
-        self._stderr_task = asyncio.create_task(_drain_stderr(self.host, proc.stderr))
         return proc
-
-    async def _cancel_stderr_task(self) -> None:
-        """stderr読取タスクを終了させる。切断・キャンセル時にfinallyで呼ぶ。"""
-        task = self._stderr_task
-        if task is None:
-            return
-        self._stderr_task = None
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
 
     async def _process_stream(self, lines: LineSource) -> None:
         """行ストリームを受け取り、type別にハンドラへ振り分ける。"""
@@ -563,64 +532,6 @@ async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterat
         yield chunk.decode("utf-8", errors="replace")
 
 
-async def _drain_stderr(host: str, stream: asyncio.StreamReader) -> None:
-    """stderrを行単位で読み続けてwarningへ転写する（詳細は`_connect`のコメント参照）。"""
-    try:
-        while True:
-            line = await stream.readline()
-            if not line:
-                return
-            text = line.decode("utf-8", errors="replace").rstrip()
-            if text:
-                logger.warning("リモートwatch stderr host=%s: %s", host, text)
-    except Exception as error:  # noqa: BLE001
-        # CancelledErrorはBaseException派生のため`Exception`で拾わず、通常どおり再送出される。
-        logger.warning("リモートwatch stderr読取失敗 host=%s: %s", host, error)
-
-
-async def _terminate_process(
-    proc: _async_subprocess.Process,
-    grace_timeout: float = TERMINATE_GRACE_TIMEOUT_SEC,
-) -> None:
-    """watch用subprocessを段階的に終了させる。
-
-    serveヘルパーは`for raw in sys.stdin:`でEOFを受け取ると停止するため、
-    まずstdinをcloseして穏当な終了を試み、応答がなければ`terminate`、
-    それでも応答がなければ`kill`へ降下する。
-    """
-    if proc.returncode is not None:
-        return
-    # 1) stdinへEOFを送ってhelperのreader_loopをbreakさせる。
-    if proc.stdin is not None and not proc.stdin.is_closing():
-        with contextlib.suppress(BrokenPipeError, ConnectionResetError, OSError):
-            proc.stdin.close()
-    if await _wait_with_timeout(proc, grace_timeout):
-        return
-    # 2) SIGTERM相当でhelperへ停止指示する。
-    with contextlib.suppress(ProcessLookupError):
-        proc.terminate()
-    if await _wait_with_timeout(proc, grace_timeout):
-        return
-    # 3) 最後にSIGKILL相当で強制終了させる。
-    with contextlib.suppress(ProcessLookupError):
-        proc.kill()
-    await _wait_with_timeout(proc, grace_timeout)
-
-
-async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) -> bool:
-    """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。
-
-    `_terminate_process`はキャンセルされた場合も呼ばれるため、
-    `CancelledError`は吸収して段階的処理を継続する。
-    吸収した後に次の反復へ戻る呼び出し側は、`_atk_serve_remote.raise_if_cancelling`でキャンセル要求を確かめる。
-    """
-    if proc.returncode is not None:
-        return True
-    with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
-    return proc.returncode is not None
-
-
 def is_safe_remote_relpath(rel: str) -> bool:
     """SSHヘルパーへ渡す前に相対パスのトラバーサルを検証する。
 
@@ -632,4 +543,4 @@ def is_safe_remote_relpath(rel: str) -> bool:
     parts = pathlib.PurePosixPath(rel).parts
     if any(part in ("", "..") for part in parts):
         return False
-    return rel.endswith(".md") or rel.endswith(_TARGET_TSV_SUFFIXES)
+    return _bundle_kinds.is_viewable_name(parts[-1])

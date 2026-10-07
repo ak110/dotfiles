@@ -64,8 +64,6 @@ REMOTE_STREAM_LIMIT_BYTES = 128 * 1024 * 1024
 # 再接続のバックオフ。
 BACKOFF_INITIAL_SEC = 1.0
 BACKOFF_MAX_SEC = 30.0
-# 停止段階ごとに`proc.wait()`へ与えるタイムアウト秒。
-TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 
 # リモート側で実行する短いPython bootstrap。組み立ての制約は`_atk_serve_remote`が定める。
 REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_sessions_remote_helper.py")
@@ -735,11 +733,6 @@ def _detail_project(engine: str, records: list[dict[str, typing.Any]], path: pat
 # --------------------------------------------------------------------------------------
 
 
-def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
-    """この画面のリモートヘルパーを起動するargv要素列を返す。起動形は`_atk_serve_remote.remote_command_argv`が定める。"""
-    return _atk_serve_remote.remote_command_argv(REMOTE_BOOTSTRAP, op, args)
-
-
 # 単発SSHの失敗の表現と標準エラー出力の整形は計画ファイル画面と共通の契約とする。
 RemoteHelperError = _atk_serve_remote.RemoteHelperError
 _stderr_excerpt = _atk_serve_remote.stderr_excerpt
@@ -825,9 +818,8 @@ class RemoteSessionClient:
                 await self._set_status("disconnected")
             finally:
                 self._fail_pending(ConnectionError(f"session helper disconnected: host={self.host}"))
-                await self._cancel_stderr_task()
-                if proc is not None:
-                    await _terminate_process(proc)
+                await _atk_serve_remote.stop_resident_helper(proc, self._stderr_task)
+                self._stderr_task = None
                 self._proc = None
                 self._connected = False
             _atk_serve_remote.raise_if_cancelling()
@@ -835,26 +827,15 @@ class RemoteSessionClient:
             self._backoff = min(self._backoff * 2, BACKOFF_MAX_SEC)
 
     async def _connect(self) -> _async_subprocess.Process:
-        cmd = ["ssh", *SSH_BASE_OPTIONS, *SSH_WATCH_OPTIONS, self.host, *_build_remote_command_argv("serve", [])]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            limit=REMOTE_STREAM_LIMIT_BYTES,
+        proc, self._stderr_task = await _atk_serve_remote.start_resident_helper(
+            REMOTE_BOOTSTRAP,
+            self.host,
+            ssh_options=(*SSH_BASE_OPTIONS, *SSH_WATCH_OPTIONS),
+            stream_limit=REMOTE_STREAM_LIMIT_BYTES,
+            logger=logger,
+            label="セッション記録の常駐接続",
         )
-        assert proc.stderr is not None
-        self._stderr_task = asyncio.create_task(_drain_stderr(self.host, proc.stderr))
         return proc
-
-    async def _cancel_stderr_task(self) -> None:
-        task = self._stderr_task
-        if task is None:
-            return
-        self._stderr_task = None
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
 
     async def _process_stream(self, stream: asyncio.StreamReader) -> None:
         """行ストリームを読み、`ready`で接続確立、`response`でRPCを解決し、変更通知をSSEへ中継する。"""
@@ -907,51 +888,6 @@ class RemoteSessionClient:
     async def _set_status(self, status: str) -> None:
         async with self.state.lock:
             self.state.host_status[self.host] = status
-
-
-async def _drain_stderr(host: str, stream: asyncio.StreamReader) -> None:
-    """stderrを行単位で読み続けてwarningへ転写する。"""
-    try:
-        while True:
-            line = await stream.readline()
-            if not line:
-                return
-            text = line.decode("utf-8", errors="replace").rstrip()
-            if text:
-                logger.warning("セッション記録の常駐接続 stderr host=%s: %s", host, text)
-    except Exception as error:  # noqa: BLE001
-        logger.warning("セッション記録のstderr読取に失敗 host=%s: %s", host, error)
-
-
-async def _terminate_process(proc: _async_subprocess.Process, grace_timeout: float = TERMINATE_GRACE_TIMEOUT_SEC) -> None:
-    """常駐SSHのsubprocessを段階的に終了させる。"""
-    if proc.returncode is not None:
-        return
-    if proc.stdin is not None and not proc.stdin.is_closing():
-        with contextlib.suppress(BrokenPipeError, ConnectionResetError, OSError):
-            proc.stdin.close()
-    if await _wait_with_timeout(proc, grace_timeout):
-        return
-    with contextlib.suppress(ProcessLookupError):
-        proc.terminate()
-    if await _wait_with_timeout(proc, grace_timeout):
-        return
-    with contextlib.suppress(ProcessLookupError):
-        proc.kill()
-    await _wait_with_timeout(proc, grace_timeout)
-
-
-async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) -> bool:
-    """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。
-
-    キャンセルされた場合も段階的な終了を完了させるため`CancelledError`を吸収する。
-    吸収した後に次の反復へ戻る呼び出し側は、`_atk_serve_remote.raise_if_cancelling`でキャンセル要求を確かめる。
-    """
-    if proc.returncode is not None:
-        return True
-    with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
-    return proc.returncode is not None
 
 
 def is_safe_remote_record_path(raw: str) -> bool:

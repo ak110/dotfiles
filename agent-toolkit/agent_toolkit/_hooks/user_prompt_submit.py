@@ -85,7 +85,7 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     clear_user_confirmation_pending,
 )
 from agent_toolkit._hooks.tool_input import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._plan.locations import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:

@@ -1,6 +1,6 @@
-"""計画ファイル画面の設定値、rootの解決、一覧の項目の型、更新通知の配信。
+"""計画ファイル画面の設定値、一覧の項目の型、更新通知の配信。
 
-記録の保存先とrootの規約は`agent-toolkit/skills/plan-mode`が定める計画ファイルの配置に従う。
+計画rootの定義と解決はSSH先のリモートヘルパーと共有する`_plan.viewer_files`が持つ。
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ import dataclasses
 import datetime
 import json
 import logging
-import pathlib
 import threading
 import typing
 
@@ -21,54 +20,11 @@ import watchdog.observers.api
 from pygments.formatters.html import HtmlFormatter
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import private_notes as _private_notes
-from agent_toolkit._plan import locations as _plan_file
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._atk.serve.plans.remote import RemoteWatcher
 
 logger = logging.getLogger(__name__)
-
-# 配布物独立性を保つため同等機能を独立実装する。
-
-NEW_SOURCE_ID = "private-notes-plans"
-LEGACY_SOURCE_ID = "claude-plans"
-NEW_PORTABLE_ROOT = "$(atk config get private_notes)/plans"
-LEGACY_PORTABLE_ROOT = "~/.claude/plans"
-_UNRESOLVED_PRIVATE_NOTES_DIRNAME = ".plans-viewer-private-notes-unresolved"
-"""private-notesを解決できない場合に新rootとして示す、Claude Codeの設定ディレクトリ配下の実在しないディレクトリ名。"""
-
-# 付属計画ファイルの接尾辞。計画一覧からは除外されるため、表示応答内のリンクを使って開く。
-_DETAIL_SUFFIX = ".detail.md"
-_BUGS_SUFFIX = ".bugs.md"
-_TARGET_TSV_SUFFIXES = (".plan-review.tsv", ".exec-review.tsv")
-_LISTED_EXCLUDED_SUFFIXES = (_DETAIL_SUFFIX, _BUGS_SUFFIX, *_TARGET_TSV_SUFFIXES)
-_PLAN_SUFFIX_LABELS = (
-    (_DETAIL_SUFFIX, "詳細"),
-    (_BUGS_SUFFIX, "バグ"),
-    (_TARGET_TSV_SUFFIXES[0], "計画レビュー指摘管理表"),
-    (_TARGET_TSV_SUFFIXES[1], "実行レビュー指摘管理表"),
-)
-_CURRENT_PLAN_SUFFIX_LABELS = (
-    (_BUGS_SUFFIX, "バグ"),
-    (_TARGET_TSV_SUFFIXES[1], "実行レビュー指摘管理表"),
-)
-_REVIEW_TABLE_HEADERS = (
-    "ラウンド",
-    "系統",
-    "箇所",
-    "指摘内容",
-    "指摘レベル",
-    "対応内容",
-    "対応不要理由",
-)
-# 保存済みの旧形式の列数。8列は指摘レベルと対応要否の双方を、7列は対応要否だけを持つ。
-_LEGACY_WIDE_REVIEW_TABLE_COLUMN_COUNT = 8
-# 旧7列形式の5列目が取る対応要否の値域。現行7列形式の5列目の指摘レベルと区別する。
-_LEGACY_RESPONSE_NEEDED_VALUES = frozenset(
-    {"yes", "true", "1", "required", "対応要", "no", "false", "0", "not-required", "対応不要"}
-)
 
 # debounce窓。watchdogは1回の書き込みで複数イベントを発火するため、時間窓で畳み込む。
 _BROADCAST_DEBOUNCE_SEC = 0.3
@@ -117,8 +73,6 @@ REMOTE_BACKOFF_JITTER_RANGE = (0.8, 1.2)
 # リモートwatch subprocessのstdout用StreamReader上限（バイト）。
 # helperが1行JSONとして全エントリーを出力するsnapshot行は、asyncioが標準で使う64KiBを超えるため、上限を引き上げる。
 REMOTE_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
-# 各停止段階で`proc.wait()`に指定する標準のタイムアウト（秒）。
-TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 
 # SSHランナーの抽象シグネチャ。テストではfake実装を注入し、本番は`default_ssh_runner`を使う。
 SshRunner = typing.Callable[[str, str, list[str]], typing.Awaitable[str]]
@@ -133,19 +87,6 @@ _PYGMENTS_CSS_CLASS = "codehilite"
 # --------------------------------------------------------------------------------------
 # root定義と共有状態
 # --------------------------------------------------------------------------------------
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class RootSpec:
-    """一つの計画rootと、画面へ返す可搬表記をまとめた定義。"""
-
-    source_id: str
-    path: pathlib.Path
-    portable_path: str
-    # root解決前に判明した障害（例: private_notes解決失敗）を保持する。
-    warning: str | None = None
-    # Noneはsource_idによる従来判定を使う。重複排除後は旧rootの資格を論理和で保持する。
-    migrate_legacy_ctime: bool | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -211,96 +152,6 @@ def make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> FileEnt
         ctime_epoch=ctime_epoch,
         source_id=str(item.get("source_id", item.get("source", ""))),
     )
-
-
-def normalize_root_specs(specs: typing.Iterable[RootSpec]) -> tuple[RootSpec, ...]:
-    """rootを正規化し、同一canonical pathまたは同一実体の重複だけを除く。"""
-    normalized: list[RootSpec] = []
-    for spec in specs:
-        path = spec.path.expanduser().resolve()
-        migrate_legacy = (
-            spec.source_id in ("", LEGACY_SOURCE_ID) if spec.migrate_legacy_ctime is None else spec.migrate_legacy_ctime
-        )
-        candidate = dataclasses.replace(spec, path=path, migrate_legacy_ctime=migrate_legacy)
-        duplicate_index: int | None = None
-        for index, existing in enumerate(normalized):
-            if path == existing.path:
-                duplicate_index = index
-                break
-            try:
-                if path.exists() and existing.path.exists() and path.samefile(existing.path):
-                    duplicate_index = index
-                    break
-            except OSError:
-                # 対象が同じ実体かを確認できなくても、そのrootで起きた障害によって他rootの処理を停止しない。
-                continue
-        if duplicate_index is None:
-            normalized.append(candidate)
-        elif candidate.migrate_legacy_ctime and not normalized[duplicate_index].migrate_legacy_ctime:
-            normalized[duplicate_index] = dataclasses.replace(normalized[duplicate_index], migrate_legacy_ctime=True)
-    return tuple(normalized)
-
-
-def _canonical(path: pathlib.Path) -> pathlib.Path:
-    """rootの比較・ファイル参照に使う正規化済みパスを返す。"""
-    return path.expanduser().resolve()
-
-
-def explicit_root_spec(root: str | pathlib.Path) -> RootSpec:
-    """設定で明示されたrootを単一root定義へ変換する。"""
-    path = _canonical(pathlib.Path(root))
-    legacy = _canonical(_plan_file.working_plans_root())
-    portable = LEGACY_PORTABLE_ROOT if path == legacy else str(path).replace("\\", "/")
-    return RootSpec(source_id="", path=path, portable_path=portable)
-
-
-def _private_notes_result() -> tuple[pathlib.Path | None, str | None]:
-    """private-notesリポジトリのrootと、解決できない場合の警告を返す。
-
-    `atk config get private_notes`と同じ解決を同一プロセス内で呼ぶ。外部コマンドの起動を経ないため、
-    常駐サービスのPATHに依存しない。
-    """
-    try:
-        value = _private_notes.default_private_notes()
-    except Exception as error:  # pylint: disable=broad-exception-caught
-        warning = f"private_notesの取得に失敗しました: {error}"
-        logger.warning("%s。旧rootを継続します", warning)
-        return None, warning
-    return _canonical(pathlib.Path(value)), None
-
-
-def default_root_specs() -> tuple[RootSpec, ...]:
-    """設定で明示されない場合に使う新旧rootを解決し、重複rootを除いた定義を返す。"""
-    specs: list[RootSpec] = []
-    private_notes, warning = _private_notes_result()
-    if private_notes is not None:
-        specs.append(
-            RootSpec(
-                source_id=NEW_SOURCE_ID,
-                path=private_notes / "plans",
-                portable_path=NEW_PORTABLE_ROOT,
-                migrate_legacy_ctime=False,
-            )
-        )
-    else:
-        specs.append(
-            RootSpec(
-                source_id=NEW_SOURCE_ID,
-                path=_host_homes.claude_config_dir() / _UNRESOLVED_PRIVATE_NOTES_DIRNAME,
-                portable_path=NEW_PORTABLE_ROOT,
-                warning=warning or "private_notesを解決できません",
-                migrate_legacy_ctime=False,
-            )
-        )
-    specs.append(
-        RootSpec(
-            source_id=LEGACY_SOURCE_ID,
-            path=_plan_file.working_plans_root(),
-            portable_path=LEGACY_PORTABLE_ROOT,
-            migrate_legacy_ctime=True,
-        )
-    )
-    return normalize_root_specs(specs)
 
 
 async def subscribe(state: BroadcastState) -> asyncio.Queue[str]:

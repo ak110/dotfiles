@@ -8,30 +8,6 @@
   },
   "groups": [
     {
-      "fingerprint": "sha256:08784506e27994e420c4d8be514652f18d170be2bac80ed0fb569dd73c43d96c",
-      "lines": 16,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/plans/remote.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/serve/sessions.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:09a57d16156969c4c8373f188caeb870d0eedcc494493bb5d77f4dfd15474abb",
-      "lines": 13,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/plans_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:0b4e8fd18886e4112d9bfd26bccf920494ccd385eb69bad1cc242694703c3393",
       "lines": 10,
       "occurrences": [
@@ -90,30 +66,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:2167a3955998ecbeaaf4e39c2516c24c24d3aee147c9337fcbc22c6dd14838b3",
-      "lines": 20,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/plans/ctime_index.py",
-          "count": 1
-        },
-        {
-          "path": "scripts/atk_serve_plans_remote_helper.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:29181289a096fb03fe8858c07aa2cc3690a5cf49096b526ec02157a8c4889027",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "skills/plan-mode/scripts/check_plan_file_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:320b0fe78675cdd6a9a285ad802fecf8f7194bce418ac26ab9dfa9641bfaaaf9",
       "lines": 10,
       "occurrences": [
@@ -154,16 +106,6 @@
         {
           "path": "agent_toolkit/atk_test.py",
           "count": 3
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:532da1f42610be33e418b7e63c328d54c3237730205ee87cfb0acd8fb6ea4d88",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/plans.py",
-          "count": 2
         }
       ]
     },
@@ -224,20 +166,6 @@
         {
           "path": "skills/session-review/scripts/session_review_evidence_test.py",
           "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:7233fc269c991d04e3b051234711b43b83a180a6ec2140cd7f364ab340b4ed55",
-      "lines": 19,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/plans/remote.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/serve/sessions.py",
-          "count": 1
         }
       ]
     },
@@ -340,20 +268,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:aa5c3c83065dfa2c5651731a0e042e8e26f749b74e48602a15d4c1e09c70e86a",
-      "lines": 25,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/plans/remote.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/serve/sessions.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:b45641f93deb5548b6941dc2bc543b7dfca94202468706d3a17b13f1164a2994",
       "lines": 13,
       "occurrences": [
@@ -379,16 +293,6 @@
       "occurrences": [
         {
           "path": "agent_toolkit/_atk/wi/process_loop_restart_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:b81644998b2c058ecd8922a2d6123d31b8ac5db85b5428fecedfab8d694f10eb",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "scripts/atk_serve_plans_remote_helper.py",
           "count": 2
         }
       ]
@@ -434,36 +338,12 @@
       ]
     },
     {
-      "fingerprint": "sha256:c8ca00f32f4ba67cd98a5765b7254e3009d8ba99e8afb61d431d63c58f5aca8e",
-      "lines": 31,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/plans/ctime_index.py",
-          "count": 1
-        },
-        {
-          "path": "scripts/atk_serve_plans_remote_helper.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:ccfef40fca8f33b20443af5aad640ead6853b7e959d27a81af98a97579fe63a3",
       "lines": 10,
       "occurrences": [
         {
           "path": "agent_toolkit/_atk/wi/add_test.py",
           "count": 12
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:d001114db55d0aabca12ec242ab44ed87c854dd6bd091292237d4f77bdcafeb0",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "skills/plan-mode/scripts/create_plan_files_test.py",
-          "count": 2
         }
       ]
     },
@@ -537,20 +417,6 @@
         },
         {
           "path": "agent_toolkit/_atk/serve/assets_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:f4b1d51f94e60aa23f64af3089759e853aae4f32e870061b8bbf7aa626bff1c4",
-      "lines": 27,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/plans/ctime_index.py",
-          "count": 1
-        },
-        {
-          "path": "scripts/atk_serve_plans_remote_helper.py",
           "count": 1
         }
       ]

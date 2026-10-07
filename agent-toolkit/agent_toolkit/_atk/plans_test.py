@@ -16,8 +16,10 @@ from agent_toolkit._atk import plans as _atk_plans
 from agent_toolkit._atk import review_table as _review_table
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import common as _common
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import fixture as _plan_fixture
 from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._plan import owner_records as _owner_records
 from agent_toolkit._testing import review_bodies
 
 
@@ -1255,8 +1257,8 @@ def test_checkout_records_owning_session_without_saving_it(tmp_path: pathlib.Pat
     _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
 
     working_main = _plan_file.working_plans_root(home) / main.name
-    assert _plan_file.read_owner_session_id(working_main) == _OWNER_SESSION
-    assert not _plan_file.owner_record_path(main).exists()
+    assert _owner_records.read_owner_session_id(working_main) == _OWNER_SESSION
+    assert not _owner_records.owner_record_path(main).exists()
 
 
 def test_commit_excludes_owner_record_and_removes_it_after_collection(tmp_path: pathlib.Path) -> None:
@@ -1272,13 +1274,13 @@ def test_commit_excludes_owner_record_and_removes_it_after_collection(tmp_path: 
 
     result = _atk_plans.commit_plan(notes, main.name, home=home)
 
-    assert not _plan_file.owner_record_path(working_main).exists()
+    assert not _owner_records.owner_record_path(working_main).exists()
     assert not working_main.exists()
     assert [path for path in copied if path != working_main and path.exists()]
     committed_paths = result["paths"]
     assert isinstance(committed_paths, tuple)
-    assert not any(str(path).endswith(_plan_file.OWNER_RECORD_SUFFIX) for path in committed_paths)
-    assert not _plan_file.owner_record_path(notes / "plans" / relative).exists()
+    assert not any(_bundle_kinds.OWNER_RECORD.matches(str(path)) for path in committed_paths)
+    assert not _owner_records.owner_record_path(notes / "plans" / relative).exists()
 
 
 def test_commit_removes_owner_record_of_direct_working_plan(tmp_path: pathlib.Path) -> None:
@@ -1290,11 +1292,11 @@ def test_commit_removes_owner_record_of_direct_working_plan(tmp_path: pathlib.Pa
     main = _plan_file.working_plans_root(home) / relative
     main.parent.mkdir(parents=True)
     main.write_text("# main\n", encoding="utf-8")
-    _plan_file.record_plan_owner(main)
+    _owner_records.record_plan_owner(main)
 
     result = _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
-    assert not _plan_file.owner_record_path(main).exists()
+    assert not _owner_records.owner_record_path(main).exists()
     assert (notes / "plans" / str(result["plan_file"])).read_text(encoding="utf-8") == "# main\n"
 
 
@@ -1379,7 +1381,7 @@ def test_list_reports_every_working_plan_with_owner_and_update_time(tmp_path: pa
     owned.write_text("# owned\n", encoding="utf-8")
     owned_detail = working_root / "30-自分の計画-a1b2.detail.md"
     owned_detail.write_text("# detail\n", encoding="utf-8")
-    _plan_file.record_plan_owner(owned)
+    _owner_records.record_plan_owner(owned)
     unowned = working_root / "30-記録なしの計画-c3d4.md"
     unowned.write_text("# unowned\n", encoding="utf-8")
     os.utime(owned, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
@@ -1485,7 +1487,7 @@ def test_dispatch_list_shows_only_conversation_owner(
     working_root.mkdir(parents=True)
     plan = working_root / "30-所有者表示-a1b2.md"
     plan.write_text("# plan\n", encoding="utf-8")
-    _plan_file.record_plan_owner(plan)
+    _owner_records.record_plan_owner(plan)
 
     assert _atk_plans.dispatch(types.SimpleNamespace(plans_subcommand="list"), notes, home) == 0
 

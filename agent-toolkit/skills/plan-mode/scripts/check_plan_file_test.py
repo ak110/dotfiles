@@ -12,6 +12,9 @@ import check_plan_file
 import pytest
 import yaml
 
+from agent_toolkit._plan import (
+    bundle_kinds as _bundle_kinds,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
 from agent_toolkit._plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -61,7 +64,7 @@ def _new_format_plan(
     )
     bug_section = ""
     if bug:
-        bug_stem = detail_name.removesuffix(_plan_format.PLAN_DETAIL_SUFFIX)
+        bug_stem = detail_name.removesuffix(_bundle_kinds.DETAIL.suffix)
         bug_section = _plan_fixture.bug_reference_section((repo / f"{bug_stem}.bugs.md").resolve())
     return main, _plan_fixture.two_file_detail(bug_section=bug_section)
 
@@ -1537,15 +1540,9 @@ def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
     )
 
 
-def test_cli_rejects_migration_warnings_on_revision(repo: tuple[pathlib.Path, str]) -> None:
-    """改訂用CLI入力では読み取り互換の移行警告をエラーとして返す。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base, detail_name="revision-plan.detail.md")
-    path = work_dir / "revision-plan.md"
-    path.write_text(main_content, encoding="utf-8")
-    (work_dir / "revision-plan.detail.md").write_text(detail_content, encoding="utf-8")
-
-    result = subprocess.run(
+def _run_rejecting_migration_warnings(work_dir: pathlib.Path, path: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    """改訂用の`--reject-migration-warnings`を付けてCLIで計画を確かめる。"""
+    return subprocess.run(
         [
             sys.executable,
             str(pathlib.Path(check_plan_file.__file__)),
@@ -1556,8 +1553,21 @@ def test_cli_rejects_migration_warnings_on_revision(repo: tuple[pathlib.Path, st
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
+
+
+def test_cli_rejects_migration_warnings_on_revision(repo: tuple[pathlib.Path, str]) -> None:
+    """改訂用CLI入力では読み取り互換の移行警告をエラーとして返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, detail_name="revision-plan.detail.md")
+    path = work_dir / "revision-plan.md"
+    path.write_text(main_content, encoding="utf-8")
+    (work_dir / "revision-plan.detail.md").write_text(detail_content, encoding="utf-8")
+
+    result = _run_rejecting_migration_warnings(work_dir, path)
 
     assert result.returncode == 1
     assert "[warn]" not in result.stderr
@@ -1576,19 +1586,7 @@ def test_cli_allows_progress_rows_when_rejecting_migration_warnings(repo: tuple[
     path = work_dir / "progress-revision.md"
     path.write_text(main_content, encoding="utf-8")
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(pathlib.Path(check_plan_file.__file__)),
-            "--reject-migration-warnings",
-            "--work-dir",
-            str(work_dir),
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_rejecting_migration_warnings(work_dir, path)
 
     assert result.returncode == 0, result.stderr
     assert not result.stderr

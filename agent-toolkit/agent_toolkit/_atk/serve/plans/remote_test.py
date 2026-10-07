@@ -18,6 +18,7 @@ from agent_toolkit._atk.serve.plans import remote as plans_remote
 from agent_toolkit._atk.serve.plans import rendering as plans_rendering
 from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
+from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload, _runner_returning
 
 
@@ -74,8 +75,8 @@ def test_attached_files_are_excluded_from_the_listing(tmp_path: pathlib.Path, in
 
     assert [entry.path for entry in plans_local_scan.list_files(root, "local-host")] == ["p.md"]
     assert plans_local_scan.search_files(root, "詳細の本文") == {"p.detail.md"}
-    assert plans_local_scan.resolve_under_root(root, "p.detail.md") is not None
-    assert plans_local_scan.resolve_under_root(root, "note.txt") is None
+    assert plan_viewer_files.resolve_under_root(root, "p.detail.md") is not None
+    assert plan_viewer_files.resolve_under_root(root, "note.txt") is None
 
 
 @pytest.mark.asyncio

@@ -1,12 +1,13 @@
 """`atk serve`がリモートホスト側ヘルパーを起動・停止する処理のうち、両画面に共通する契約を持つ。
 
 計画ファイル画面とセッション画面はそれぞれ別のヘルパーを起動するが、
-リモート側の実行名前空間の構成、単発SSHの起動と停止、常駐接続のタスクと読み取り専用の走査を停止要求で終える条件は
-共通の契約とするため、本モジュールへ集約する。
+リモート側の実行名前空間の構成、単発SSHの起動と停止、常駐接続の子プロセスの起動と段階的な終了、
+常駐接続のタスクと読み取り専用の走査を停止要求で終える条件は共通の契約とするため、本モジュールへ集約する。
 """
 
 import asyncio
 import contextlib
+import logging
 import subprocess
 import threading
 
@@ -16,6 +17,8 @@ STDERR_EXCERPT_MAX_CHARS = 500
 # 単発SSHをキャンセルまたは時間上限で打ち切った後、子プロセスの終了を待つ上限秒数。
 # SIGTERMで終わらない子は上限の後にSIGKILLする。
 _SSH_TERMINATE_TIMEOUT_SEC = 1.0
+# 常駐接続の子プロセスを段階的に終了させるとき、各段階で`proc.wait()`を待つ上限秒数。
+TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 
 
 class RemoteHelperError(Exception):
@@ -193,3 +196,91 @@ def raise_if_cancelling() -> None:
     task = asyncio.current_task()
     if task is not None and task.cancelling():
         raise asyncio.CancelledError
+
+
+async def start_resident_helper(
+    bootstrap: str,
+    host: str,
+    *,
+    ssh_options: tuple[str, ...],
+    stream_limit: int,
+    logger: logging.Logger,
+    label: str,
+) -> tuple[asyncio.subprocess.Process, asyncio.Task[None]]:
+    """リモートヘルパーを常駐モード（`serve`）でSSH越しに起動し、子プロセスと標準エラー出力の転写タスクを返す。
+
+    標準入力でRPC要求を送り、標準出力から行区切りJSONを読むため、3つの標準ストリームをパイプにする。
+    ヘルパーは初回の一覧を1行のJSONで出力し、`asyncio`が標準で使う64KiBの上限を超えると`readline()`が例外を
+    送出するため、行の上限を`stream_limit`で与える。
+    ヘルパーの起動失敗（依存解決の失敗など）は標準出力が空のまま終わり原因が残らないため、
+    標準エラー出力を常時読み取り、`label`を付けて`logger`の警告へ転写する。
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "ssh",
+        *ssh_options,
+        host,
+        *remote_command_argv(bootstrap, "serve", []),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        limit=stream_limit,
+    )
+    assert proc.stderr is not None
+    return proc, asyncio.create_task(_drain_stderr(proc.stderr, logger=logger, label=label, host=host))
+
+
+async def _drain_stderr(stream: asyncio.StreamReader, *, logger: logging.Logger, label: str, host: str) -> None:
+    """標準エラー出力を行単位で読み続けて警告へ転写する。"""
+    try:
+        while True:
+            line = await stream.readline()
+            if not line:
+                return
+            text = line.decode("utf-8", errors="replace").rstrip()
+            if text:
+                logger.warning("%s stderr host=%s: %s", label, host, text)
+    except Exception as error:  # noqa: BLE001
+        # CancelledErrorはBaseException派生のため`Exception`で拾わず、通常どおり再送出される。
+        logger.warning("%sのstderr読取に失敗 host=%s: %s", label, host, error)
+
+
+async def stop_resident_helper(
+    proc: asyncio.subprocess.Process | None,
+    stderr_task: asyncio.Task[None] | None,
+    *,
+    grace_timeout: float = TERMINATE_GRACE_TIMEOUT_SEC,
+) -> None:
+    """常駐接続の標準エラー出力の転写タスクを終え、子プロセスを段階的に終了させる。
+
+    常駐ヘルパーは標準入力のEOFを受け取ると停止するため、まず標準入力を閉じて穏当な終了を試み、
+    応答がなければ`terminate`、それでも応答がなければ`kill`へ降下する。
+    切断とキャンセルの後始末で呼ぶため、待機中のキャンセルは吸収して段階的な終了を完了させる。
+    吸収した後に再接続の反復へ戻る呼び出し側は、`raise_if_cancelling`でキャンセル要求を確かめる。
+    """
+    if stderr_task is not None:
+        stderr_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stderr_task
+    if proc is None or proc.returncode is not None:
+        return
+    if proc.stdin is not None and not proc.stdin.is_closing():
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError, OSError):
+            proc.stdin.close()
+    if await _wait_with_timeout(proc, grace_timeout):
+        return
+    with contextlib.suppress(ProcessLookupError):
+        proc.terminate()
+    if await _wait_with_timeout(proc, grace_timeout):
+        return
+    with contextlib.suppress(ProcessLookupError):
+        proc.kill()
+    await _wait_with_timeout(proc, grace_timeout)
+
+
+async def _wait_with_timeout(proc: asyncio.subprocess.Process, timeout: float) -> bool:
+    """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。キャンセルは吸収する。"""
+    if proc.returncode is not None:
+        return True
+    with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+    return proc.returncode is not None

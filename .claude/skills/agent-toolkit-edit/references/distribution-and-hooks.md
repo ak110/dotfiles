@@ -8,6 +8,8 @@
 対象とする公開スクリプトは`hook.py`・`atk.py`・`agents_server_mcp.py`・`wait_ci.py`・`_managed_temp.py`とする。
 リモートホスト上で読み込んで実行する`atk_serve_plans_remote_helper.py`と`atk_serve_sessions_remote_helper.py`は
 `agent-toolkit/scripts/`直下に置く。これらも公開スクリプトとする。
+両ヘルパーは同じcheckoutの`agent_toolkit`を`sys.path`経由でimportする。
+SSH先の実行環境は標準ライブラリのほかに`platformdirs`と`watchdog`だけを与えるため、ヘルパーがimportする`agent_toolkit`のモジュールはそれらだけに依存させる。
 実装モジュールは責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ置く。
 この6つを依存の層とし、この並び順を層の順序とする。
 後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。

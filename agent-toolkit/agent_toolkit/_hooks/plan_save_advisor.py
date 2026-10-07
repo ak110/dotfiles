@@ -27,7 +27,9 @@ from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.stop_gate import append_stop_log, is_pending_async_work
 from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
-from agent_toolkit._plan.locations import is_plan_main_file, read_owner_session_id, working_plans_root
+from agent_toolkit._plan.locations import working_plans_root
+from agent_toolkit._plan.owner_records import read_owner_session_id
+from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 _HOOK_ID = "plan_save_advisor"
 _NOTIFIED_STATE_KEY = "working_plan_save_notified"

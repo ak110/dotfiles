@@ -10,11 +10,11 @@ import pytest
 
 from agent_toolkit._atk.serve import plans
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._atk.serve.plans import ctime_index as plans_ctime_index
 from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
 from agent_toolkit._atk.serve.plans import remote as plans_remote
-from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
+from agent_toolkit._plan import creation_times as plan_creation_times
+from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing.serve_plans_support import _context, _failed_ssh, _plan
 
 
@@ -25,7 +25,7 @@ def test_symlinked_root_is_deduplicated_by_identity(tmp_path: pathlib.Path) -> N
     link = tmp_path / "link"
     link.symlink_to(root, target_is_directory=True)
 
-    normalized = plans_roots.normalize_root_specs(
+    normalized = plan_viewer_files.normalize_root_specs(
         (
             plans.RootSpec(source_id=plans.NEW_SOURCE_ID, path=root, portable_path="a"),
             plans.RootSpec(source_id="other", path=link, portable_path="b"),
@@ -47,7 +47,7 @@ def test_cleanup_removes_only_temporaries(index_path: pathlib.Path) -> None:
     legacy_temporary = index_path.parent / f".{digest}.json.123.456.tmp"
     legacy_temporary.write_text("{}", encoding="utf-8")
 
-    plans_ctime_index.cleanup_creation_time_temporaries()
+    plan_creation_times.cleanup_creation_time_temporaries()
 
     assert index_path.exists()
     assert keep.exists()

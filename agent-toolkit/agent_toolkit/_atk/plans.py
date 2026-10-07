@@ -24,12 +24,14 @@ from agent_toolkit._atk.wi import common as _common
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._plan import owner_records as _owner_records
+from agent_toolkit._plan import path_kinds as _path_kinds
 from agent_toolkit._plan import structure as _plan_format
 
-_CURRENT_ATTACHMENT_SUFFIXES = (".bugs.md", ".exec-review.tsv", ".wi-commits.jsonl")
 _CI_REVIEW_DIRECTORY = pathlib.Path("ci")
-_CI_REVIEW_NAME_RE = re.compile(r"^ci-[0-9a-f]{7,64}\.exec-review\.tsv$")
+_CI_REVIEW_NAME_RE = re.compile(rf"^ci-[0-9a-f]{{7,64}}{re.escape(_bundle_kinds.EXEC_REVIEW.suffix)}$")
 _SAVED_BUNDLE_CONFLICT_MESSAGE = "保存先に内容の異なる計画ファイルがあります: {destination}"
 _SAVED_BUNDLE_CONFLICT_NEXT_ACTION = (
     "保存済み計画を正とする場合は作業側を退避し、作業側を残す場合は別名の新しい計画として保存してください"
@@ -93,7 +95,7 @@ def _excluded_path(path: pathlib.Path) -> bool:
 
     計画の所有記録は`~/.claude/plans`の局所状態であり、private-notesへ保存しない。
     """
-    return path.name.endswith((*_WORKING_RESIDUE_SUFFIXES, _plan_file.OWNER_RECORD_SUFFIX))
+    return path.name.endswith(_WORKING_RESIDUE_SUFFIXES) or _bundle_kinds.OWNER_RECORD.matches(path.name)
 
 
 def _remove_working_residue(working_main: pathlib.Path) -> None:
@@ -184,7 +186,7 @@ def _working_plan_bundle(home: pathlib.Path | str | None, relative_main: pathlib
         sorted(
             path
             for path in parent.iterdir()
-            if (path == main or path.name in {f"{stem}{suffix}" for suffix in _CURRENT_ATTACHMENT_SUFFIXES})
+            if (path == main or path.name in {kind.name_for(stem) for kind in _bundle_kinds.STORED_ATTACHMENTS})
             and path.is_file()
             and not path.is_symlink()
             and not _excluded_path(path)
@@ -196,7 +198,7 @@ def _working_plan_bundle(home: pathlib.Path | str | None, relative_main: pathlib
 def _current_bundle_contents(contents: dict[str, bytes], main_name: str) -> dict[str, bytes]:
     """保存済みbundleから現行形式の構成要素だけを返す。"""
     stem = pathlib.Path(main_name).stem
-    names = {main_name, *(f"{stem}{suffix}" for suffix in _CURRENT_ATTACHMENT_SUFFIXES)}
+    names = {main_name, *(kind.name_for(stem) for kind in _bundle_kinds.STORED_ATTACHMENTS)}
     return {name: content for name, content in contents.items() if name in names}
 
 
@@ -313,7 +315,7 @@ def _validate_saved_ci_review_relative_path(review_table: str) -> pathlib.Path:
 
 def _validate_saved_checkout_relative_path(path: str) -> pathlib.Path:
     """checkout記録が受理する計画またはCI対応レビュー指摘管理表の相対パスを返す。"""
-    if path.endswith(".exec-review.tsv"):
+    if _bundle_kinds.EXEC_REVIEW.matches(path):
         return _validate_saved_ci_review_relative_path(path)
     return _validate_saved_plan_relative_path(path)
 
@@ -400,7 +402,7 @@ def checkout_plan(
     home: pathlib.Path | str | None = None,
 ) -> tuple[pathlib.Path, ...]:
     """保存済み計画バンドルを`~/.claude/plans`へ取得し、取得時点と所有セッションを記録する。"""
-    if plan_file.endswith(".exec-review.tsv"):
+    if _bundle_kinds.EXEC_REVIEW.matches(plan_file):
         return checkout_ci_review(private_notes, plan_file, home=home)
     relative_main = _validate_saved_plan_relative_path(plan_file)
     working_root = _plan_file.working_plans_root(home)
@@ -446,7 +448,7 @@ def checkout_plan(
             for path in copied:
                 path.unlink(missing_ok=True)
             raise
-        _plan_file.record_plan_owner(working_main)
+        _owner_records.record_plan_owner(working_main)
         return destinations
 
 
@@ -703,7 +705,7 @@ def commit_plan(
 
     作業バンドルを回収する時点でその計画の所有記録も回収し、`~/.claude/plans`へ記録だけが残らないようにする。
     """
-    if plan_file.endswith(".exec-review.tsv"):
+    if _bundle_kinds.EXEC_REVIEW.matches(plan_file):
         return commit_ci_review(
             private_notes,
             plan_file,
@@ -762,7 +764,7 @@ def commit_plan(
     if checkout_record is not None:
         if not working_bundle:
             _remove_checkout_record(requested_relative)
-            _plan_file.remove_owner_record(working_main)
+            _owner_records.remove_owner_record(working_main)
             return {"plan_file": relative_main.as_posix(), "paths": (), "message": ""}
     elif working_relative is not None and not working_bundle:
         raise _common.WebInputError(
@@ -848,10 +850,10 @@ def commit_plan(
         if checkout_record is not None:
             _remove_checked_out_working_bundle(working_bundle, snapshots, requested_relative)
             _remove_checkout_record(requested_relative)
-            _plan_file.remove_owner_record(working_main)
+            _owner_records.remove_owner_record(working_main)
         elif working_bundle:
             _remove_finalized_working_bundle(working_bundle, snapshots, bundle, relative_main, home)
-            _plan_file.remove_owner_record(working_main)
+            _owner_records.remove_owner_record(working_main)
     return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
 
 
@@ -1031,14 +1033,14 @@ def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str
     _remove_legacy_sidecar_locks(root)
     entries: list[dict[str, object]] = []
     for path in sorted(root.rglob("*")):
-        if path.is_symlink() or not path.is_file() or not _plan_file.is_plan_main_file(str(path)):
+        if path.is_symlink() or not path.is_file() or not _path_kinds.is_plan_main_file(str(path)):
             continue
         bundle = _working_plan_bundle(home, path.relative_to(root)) or (path,)
         updated = max(member.stat(follow_symlinks=False).st_mtime for member in bundle)
         entries.append(
             {
                 "path": str(path),
-                "owner_session": _plan_file.read_owner_session_id(path),
+                "owner_session": _owner_records.read_owner_session_id(path),
                 "updated_at": datetime.datetime.fromtimestamp(updated).astimezone().isoformat(),
             }
         )
@@ -1089,8 +1091,8 @@ _PORTABLE_REFERENCE_RE = re.compile(
 )
 
 
-_DETAIL_SUFFIX = ".detail.md"
-_NON_COMPONENT_SUFFIXES = (".bugs.md", ".review.md", "-workaround-check.md")
+# 参照を書き換える対象の種別。本文に計画参照を持つのはメイン計画と旧形式の計画ファイル（詳細）である。
+_REFERENCE_REWRITE_KINDS = (_bundle_kinds.MAIN, _bundle_kinds.DETAIL)
 
 
 def _saved_plan_texts(private_notes: pathlib.Path) -> dict[pathlib.Path, str]:
@@ -1100,7 +1102,7 @@ def _saved_plan_texts(private_notes: pathlib.Path) -> dict[pathlib.Path, str]:
     if not root.is_dir():
         return texts
     for path in sorted(root.rglob("*.md")):
-        if not path.is_file() or path.is_symlink() or path.name.endswith(_NON_COMPONENT_SUFFIXES):
+        if not path.is_file() or path.is_symlink() or _bundle_kinds.kind_of_name(path.name) not in _REFERENCE_REWRITE_KINDS:
             continue
         try:
             texts[path] = path.read_text(encoding="utf-8")
@@ -1112,8 +1114,8 @@ def _saved_plan_texts(private_notes: pathlib.Path) -> dict[pathlib.Path, str]:
 def _plan_stem(path: pathlib.Path) -> str:
     """計画ファイル（メイン）または計画ファイル（詳細）のパスから計画stemを返す。"""
     name = path.name
-    suffix = _DETAIL_SUFFIX if name.endswith(_DETAIL_SUFFIX) else ".md"
-    return name[: -len(suffix)]
+    kind = _bundle_kinds.DETAIL if _bundle_kinds.DETAIL.matches(name) else _bundle_kinds.MAIN
+    return name.removesuffix(kind.suffix)
 
 
 def _rewritten_plan_text(text: str, stem: str) -> tuple[str, int]:

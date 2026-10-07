@@ -20,7 +20,7 @@ import json
 import os
 
 from agent_toolkit._common import state_paths as _state_paths
-from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._plan import owner_records as _owner_records
 
 # 記録ファイル名と、退避先の1世代分のファイル名。
 _LOG_NAME = "permissionrequest.log"
@@ -72,7 +72,7 @@ def _build_record(payload_text: str) -> dict[str, object]:
         payload = {}
     record: dict[str, object] = {"time": datetime.datetime.now(datetime.UTC).isoformat()}
     record.update({key: payload.get(key) for key in _RECORD_KEYS})
-    record["root_session_id"] = _plan_file.resolve_owner_session_id()
+    record["root_session_id"] = _owner_records.resolve_owner_session_id()
     return record
 
 

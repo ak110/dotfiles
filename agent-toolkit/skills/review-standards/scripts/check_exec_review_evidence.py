@@ -30,7 +30,7 @@ from agent_toolkit._atk import review_table
 from agent_toolkit._common import markdown_headings, requirement_units
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
-from agent_toolkit._plan import commit_mapping
+from agent_toolkit._plan import bundle_kinds, commit_mapping
 from agent_toolkit._plan.structure.markdown import extract_tables, markdown_body_text
 
 # 達成・未達・証拠不足は行そのものの判定であり、根拠の記録を別に確かめない。
@@ -74,7 +74,6 @@ FILE_REFERENCE_FORM = (
     "リポジトリの外のファイル（managed-tempの検証記録など）は絶対パスで書く。"
     "ファイル名だけや途中からのパスは、対象commitの追跡ファイルとパス末尾が1件に一致する場合だけ受理される"
 )
-REVIEW_TABLE_SUFFIX = ".exec-review.tsv"
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
 WHITESPACE = re.compile(r"\s+")
@@ -957,7 +956,7 @@ def _review_tables(source: str) -> list[pathlib.Path]:
     """sourceの文字列から、実在するレビュー指摘管理表の絶対パスを出現順に返す。"""
     starts = [match.start() for match in PATH_START.finditer(source)]
     tables: list[pathlib.Path] = []
-    for end in (match.end() for match in re.finditer(re.escape(REVIEW_TABLE_SUFFIX), source)):
+    for end in (match.end() for match in re.finditer(re.escape(bundle_kinds.EXEC_REVIEW.suffix), source)):
         candidate = next(
             (
                 path

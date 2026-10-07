@@ -25,10 +25,10 @@ from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import locations as _plan_locations
 
-# 配布物独立性のため、Web表示側`_atk_serve_plans.py`の`_REVIEW_TABLE_HEADERS`と同じ列順を二重に持つ。
-# 列を増減する場合は双方を同期し、旧形式の読み取り互換も両側で更新する。
+# 列の定義と旧形式の判別は本モジュールだけが持ち、`atk serve`の計画ファイル画面も`display_rows`で同じ解析を使う。
 COLUMNS = (
     "round",
     "track",
@@ -38,6 +38,16 @@ COLUMNS = (
     "response",
     "no-response-reason",
 )
+COLUMN_LABELS = (
+    "ラウンド",
+    "系統",
+    "箇所",
+    "指摘内容",
+    "指摘レベル",
+    "対応内容",
+    "対応不要理由",
+)
+"""`COLUMNS`の各列を画面へ表示する日本語の列名。"""
 _COLUMN_COUNT = len(COLUMNS)
 # 保存済みの旧形式の列数。8列は`level`と`response-needed`の双方を持ち、7列は`response-needed`だけを持つ。
 _LEGACY_WIDE_COLUMN_COUNT = 8
@@ -142,8 +152,11 @@ def _drop_legacy_response_needed(row: list[str]) -> list[str]:
     return row
 
 
-def _parse_text(text: str) -> list[tuple[str, list[str]]]:
-    """Raw TSVを検証し、元の行とtrack正規化済みのデコード済み行を対応づけて返す。"""
+def _decode_text(text: str) -> list[tuple[str, list[str]]]:
+    """Raw TSVを検証し、元の行と、旧形式の列を現行の7列へそろえたデコード済み行を対応づけて返す。
+
+    trackの読み取り互換値は変換しない。
+    """
     rows: list[tuple[str, list[str]]] = []
     for line_number, raw_line in enumerate(text.splitlines(keepends=True), start=1):
         line = raw_line.rstrip("\r\n")
@@ -156,10 +169,25 @@ def _parse_text(text: str) -> list[tuple[str, list[str]]]:
                 next_action=_FIX_FORMAT_NEXT_ACTION,
             )
         row = [_decode_cell(cell, line=line_number, column=index) for index, cell in enumerate(cells, start=1)]
-        row = _drop_legacy_response_needed(row)
-        row[1] = _normalize_track(row[1])
-        rows.append((raw_line, row))
+        rows.append((raw_line, _drop_legacy_response_needed(row)))
     return rows
+
+
+def _parse_text(text: str) -> list[tuple[str, list[str]]]:
+    """Raw TSVを検証し、元の行とtrack正規化済みのデコード済み行を対応づけて返す。"""
+    rows = _decode_text(text)
+    for _raw_line, row in rows:
+        row[1] = _normalize_track(row[1])
+    return rows
+
+
+def display_rows(text: str) -> list[list[str]]:
+    """表示のために、レビュー指摘管理表の本文を`COLUMNS`の順の7列の行へ解析して返す。
+
+    保存済みの旧形式は現行の7列へそろえ、trackは記録された値のまま返す。
+    形式が不正な表は`ValueError`を送出し、表示側が表として描画しない扱いを選ぶ。
+    """
+    return [row for _raw_line, row in _decode_text(text)]
 
 
 def _read_table_text(path: Path) -> str:
@@ -743,7 +771,7 @@ def _require_writable_exec_review(raw_path: str) -> None:
     target = _path(raw_path)
     _plan_locations.reject_saved_plans_root_write(target)
     name = target.name
-    if name.endswith(".plan-review.tsv") or (name.startswith("dlg-") and name.endswith(".exec-review.tsv")):
+    if _bundle_kinds.PLAN_REVIEW.matches(name) or (name.startswith("dlg-") and _bundle_kinds.EXEC_REVIEW.matches(name)):
         raise _ActionableError(
             "保存済みの旧形式のレビュー指摘管理表は読み取り専用です", next_action="更新には.exec-review.tsvを指定する"
         )
