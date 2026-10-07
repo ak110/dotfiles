@@ -524,8 +524,12 @@ def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
 
 
 # 監査記録の見出しを、索引元の条文またはコードが同じ文字列で指すことを検査する。
+# 索引元は、テスト（`*_test.py`）と`docs/`配下を除く追跡ファイルと、見出しのファイル部分が指すファイル自身とする。
+# テスト、設計記録と判定台帳は見出しを索引元として持たずに引用するため、そこにだけ現れる見出しは参照元を持たない。
 _AUDIT_HEADING_PATTERN = re.compile(r"^## (?P<heading>.+)$", re.MULTILINE)
-_AUDIT_REFERENCE_EXCLUDED_PREFIX = "docs/development/norm-restructure/"
+_AUDIT_INDEX_EXCLUDED_PREFIX = "docs/"
+# 監査記録の本文が他の記録を「<対象>：<節>：<年月日>」の見出しで指す参照。
+_AUDIT_BODY_REFERENCE_PATTERN = re.compile(r"「(?P<heading>[^」\n]*：[^」\n]*\d{4}年\d{1,2}月[^」\n]*)」")
 
 
 def _comment_joined(content: str) -> str:
@@ -533,19 +537,46 @@ def _comment_joined(content: str) -> str:
     return "".join(line.strip().lstrip("#").strip() for line in content.splitlines())
 
 
+def _audit_headings(content: str) -> list[str]:
+    """監査記録のH2見出しを出現順に返す。"""
+    return [match.group("heading") for match in _AUDIT_HEADING_PATTERN.finditer(content)]
+
+
+def _reference_text(root: pathlib.Path, source: pathlib.Path) -> str:
+    """見出しの参照を探す本文として、ファイルの本文とコメントの改行を連結した本文を返す。"""
+    content = (root / source).read_text(encoding="utf-8")
+    return f"{content}\n{_comment_joined(content)}"
+
+
 def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]) -> list[str]:
-    """監査記録のH2見出しのうち、監査記録自身と判定台帳を除く追跡ファイルのどこにも現れないものを返す。"""
-    headings = [
-        match.group("heading") for match in _AUDIT_HEADING_PATTERN.finditer((root / _AUDIT_RECORDS).read_text(encoding="utf-8"))
-    ]
-    texts: list[str] = []
-    for source in sources:
-        if source == _AUDIT_RECORDS or source.as_posix().startswith(_AUDIT_REFERENCE_EXCLUDED_PREFIX):
+    """監査記録のH2見出しのうち、索引元の追跡ファイルにも見出しのファイル部分が指すファイル自身にも現れないものを返す。"""
+    headings = _audit_headings((root / _AUDIT_RECORDS).read_text(encoding="utf-8"))
+    corpus = "\n".join(
+        _reference_text(root, source)
+        for source in sources
+        if not source.name.endswith("_test.py") and not source.as_posix().startswith(_AUDIT_INDEX_EXCLUDED_PREFIX)
+    )
+    tracked = set(sources) - {_AUDIT_RECORDS}
+    unreferenced: list[str] = []
+    for heading in headings:
+        if heading in corpus:
             continue
-        content = (root / source).read_text(encoding="utf-8")
-        texts.extend((content, _comment_joined(content)))
-    corpus = "\n".join(texts)
-    return [heading for heading in headings if heading not in corpus]
+        own_file = pathlib.Path(heading.split("：", 1)[0])
+        if own_file in tracked and heading in _reference_text(root, own_file):
+            continue
+        unreferenced.append(heading)
+    return unreferenced
+
+
+def _unresolved_audit_body_references(content: str) -> list[str]:
+    """監査記録の本文で、実在しない見出しを「」で指す参照を出現順に返す。"""
+    headings = set(_audit_headings(content))
+    body = _AUDIT_HEADING_PATTERN.sub("", content)
+    return [
+        match.group("heading")
+        for match in _AUDIT_BODY_REFERENCE_PATTERN.finditer(body)
+        if match.group("heading") not in headings
+    ]
 
 
 def test_audit_record_headings_are_referenced() -> None:
@@ -554,6 +585,16 @@ def test_audit_record_headings_are_referenced() -> None:
     unreferenced = _unreferenced_audit_headings(root, _tracked_source_paths(root))
     assert not unreferenced, (
         "参照元を持たない監査記録の見出し（索引元へ索引の1文を置くか、索引先の無い記録を削除する）:\n" + "\n".join(unreferenced)
+    )
+
+
+def test_audit_record_body_heading_references_resolve() -> None:
+    """監査記録の本文が「」で指す他の記録の見出しが、監査記録に実在する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    unresolved = _unresolved_audit_body_references((root / _AUDIT_RECORDS).read_text(encoding="utf-8"))
+    assert not unresolved, (
+        "実在しない見出しを指す監査記録の本文の参照（参照先の記録の観測と再検証の手順を参照元の本文へ統合するか、見出しを直す）:\n"
+        + "\n".join(unresolved)
     )
 
 
@@ -568,11 +609,49 @@ def test_unreferenced_audit_heading_detector_joins_wrapped_comments(tmp_path: pa
     (tmp_path / source).write_text(
         "# 監査記録は`docs/development/audit-records.md`の\n# 「a.py：節：2026年1月1日」にある。\n", encoding="utf-8"
     )
-    ledger = pathlib.Path(_AUDIT_REFERENCE_EXCLUDED_PREFIX, "ledger.md")
+    ledger = pathlib.Path("docs/development/norm-restructure/ledger.md")
     (tmp_path / ledger).parent.mkdir(parents=True)
     (tmp_path / ledger).write_text("b.md：節：2026年1月2日\n", encoding="utf-8")
 
     assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, source, ledger]) == ["b.md：節：2026年1月2日"]
+
+
+def test_unreferenced_audit_heading_detector_ignores_tests_and_docs(tmp_path: pathlib.Path) -> None:
+    """テストと`docs/`配下の他のファイルだけに現れる見出しを報告し、コードか見出しのファイル自身に現れる見出しを参照ありとする。"""
+    in_code = "tool.py：節：2026年1月1日"
+    in_own_file = "docs/development/design-a.md：節：2026年1月2日"
+    only_tests_and_docs = "c.md：節：2026年1月3日"
+    only_other_doc = "docs/development/design-b.md：節：2026年1月4日"
+    audit = tmp_path / _AUDIT_RECORDS
+    audit.parent.mkdir(parents=True)
+    audit.write_text(
+        "# 監査記録\n\n"
+        + "".join(f"## {heading}\n\n記録。\n\n" for heading in (in_code, in_own_file, only_tests_and_docs, only_other_doc)),
+        encoding="utf-8",
+    )
+    files = {
+        pathlib.Path("tool.py"): f"# 監査記録は「{in_code}」にある。\n",
+        pathlib.Path("sample_test.py"): f"# 「{only_tests_and_docs}」\n",
+        pathlib.Path("docs/development/design-a.md"): f"「{in_own_file}」「{only_tests_and_docs}」「{only_other_doc}」\n",
+        pathlib.Path("docs/development/design-b.md"): "# 設計\n",
+    }
+    for path, content in files.items():
+        (tmp_path / path).write_text(content, encoding="utf-8")
+
+    assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, *files]) == [only_tests_and_docs, only_other_doc]
+
+
+def test_audit_body_reference_to_missing_heading_is_reported() -> None:
+    """監査記録の本文が実在しない見出しを指すと報告し、実在する見出しと見出し以外の「」は報告しない。"""
+    content = (
+        "# 監査記録\n\n"
+        "## a.py：節：2026年1月1日\n\n"
+        "根拠は「b.md：待機区間の構成：2026年9月」にある。\n"
+        "閾値は「a.py：節：2026年1月1日」と「判断指針」を参照する。\n\n"
+        "## b.md：待機区間の構成：2026年9月3日\n\n記録。\n"
+    )
+
+    assert _unresolved_audit_body_references(content) == ["b.md：待機区間の構成：2026年9月"]
 
 
 def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -> None:

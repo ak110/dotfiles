@@ -89,7 +89,9 @@ Because `CLAUDE.local.md` counts, adding one to keep your own uncommitted instru
 ホスト側の上限は、Claude Codeが`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`が未設定の場合に1800秒を課し、
 Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_sec`が未設定の場合に60秒を課す。
 再検証は同じ記録へ同じ集計を適用し、tool_useの時刻と子sessionの記録の先頭エントリの時刻の差の分布と、応答の打ち切りに達した件数を対比する。
-上限値はこの分布に加えて、ホストがMCPツール呼び出しを背景タスクへ移す閾値を制約に持つ。背景移行の閾値を測定した記録は「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月」にある。
+上限値はこの分布に加えて、ホストがMCPツール呼び出しを背景タスクへ移す閾値を制約に持つ。
+2026年9月、Claude Codeで`agents_server`の`wait`が発行から120秒で背景タスクへ移り、完了すると結果本文がそのタスクの通知として届くことを確認した。
+背景移行の閾値の再検証は`wait`を発行し、背景移行の通知を受領した後に完了通知の到達を確認する。
 
 ## agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月5日
 

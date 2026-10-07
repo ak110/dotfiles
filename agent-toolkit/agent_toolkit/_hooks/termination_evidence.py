@@ -163,6 +163,9 @@ def _invocations(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return calls
 
 
+# 両ホストのPostToolUseの`tool_response`の形（CodexのBashでは終了コードを含まない出力文字列）と、
+# Stopの`last_assistant_message`と出力契約を公式Hooks仕様で確かめた監査記録は`docs/development/audit-records.md`の
+# 「agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日」にある。
 def _response_text(response: object) -> str | None:
     if isinstance(response, str):
         try:

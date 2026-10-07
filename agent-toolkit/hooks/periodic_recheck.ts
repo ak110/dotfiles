@@ -5,7 +5,7 @@ import { PERIODIC_RECHECK_MARKER, PERIODIC_RECHECK_PROMPT } from "./periodic_rec
 // `agents_server`の`start`の処理の中で、呼出主体の定期再確認のtaskを`CronCreate`で装着し、結果を呼出主体の会話へ届ける。
 // モデルが起動前に`atk wait-schedule`と`CronCreate`を呼ぶ手順は装着漏れを残し、起動までの呼び出しも増やすため、
 // 装着をモデルの遵守に依存させない。装着できない場合は、モデルが規範の手順で装着するよう案内する。
-// 設計と不採用とした代替は`docs/development/design-hooks.md`「委譲手段の選択と待機の装着の手掛かり（2026年10月1日）」にある。
+// 設計と不採用とした代替は`docs/development/design-hooks.md`「`start`の処理の中での定期再確認の装着（2026年10月7日）」にある。
 
 // Claude Codeがプラグインのstdio MCPサーバーのツールへ付ける名前（`mcp__plugin_<プラグイン名>_<サーバー名>__<ツール名>`）。
 // matcherの無い`tool.call`のhookは`send_to_user.tsx`が登録済みで同じイベントへ2件目を登録できないため、ツール名をmatcherに指定する。
