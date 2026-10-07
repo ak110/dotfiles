@@ -51,7 +51,7 @@ HFS+はApple変種のNFD相当でファイル名を保存し、APFSは正規化�
 - EditはCRLF改行とUTF-8 BOMを透過的に維持するため、既存ファイルの編集にはEditを使う
 - Writeは常にLF改行・BOMなしで書くため、CRLFとBOMが消失する。CRLFやBOMを要するファイルをWriteで書いた場合は、改行とBOMを別途復元する
 - CRLF・BOM付きの新規ファイルはBashで書く（例: `printf '\xEF\xBB\xBF' > file && cat <<'EOF' | sed 's/$/\r/' >> file`）
-- 非UTF-8のファイルは`iconv`でUTF-8へ変換して編集し、元の文字コードへ戻すか、Pythonでバイト列を置換する
+- 非UTF-8のファイルは`iconv`でUTF-8へ変換し、変換後のファイルをReadで読んでからEditで編集して元の文字コードへ戻すか、Pythonでバイト列を置換する
 - `.gitattributes`の`eol=crlf`は改行だけを管理し、BOMを復元しない
 
 ## その他

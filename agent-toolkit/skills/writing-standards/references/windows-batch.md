@@ -10,7 +10,7 @@
     - `git show`もCP932バイト列をそのまま出力するため回避策にならない
     - iconv経由で操作する
       - 読み取り: `iconv -f cp932 -t utf-8 file.cmd`
-      - 編集: UTF-8に変換 → Edit/Writeで編集 → `iconv -f utf-8 -t cp932`でCP932に戻す
+      - 編集: UTF-8に変換 → 変換後のファイルをReadで読む → Edit/Writeで編集 → `iconv -f utf-8 -t cp932`でCP932に戻す
       - 新規作成: UTF-8で記述 → `iconv -f utf-8 -t cp932`で変換
     - Pythonでバイナリ書き換えする選択肢もある（iconv往復より手順が短くCRLFも自然に維持できる）
       - 単純置換・行追加・日本語コメント変更のいずれにも対応できる

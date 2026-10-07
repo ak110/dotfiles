@@ -317,27 +317,34 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 再検証は`uv run --frozen python scripts/check_agent_doc_tone.py --report <対象ファイル>`で現行本文の指標を取得し、上記の値と比べる。
 再検証の契機は、規範文書の一括改訂と、文体の閾値の見直しとする。
 
-## agent-toolkit/skills/writing-standards/references/notation-rules.md：ファイル更新時の編集ツールの前提：2026年9月30日
+## agent-toolkit/skills/writing-standards/references/notation-rules.md：ファイル更新時の編集ツールの前提：2026年10月7日
 
-確認日は2026年9月30日、観測した版はClaude Code 2.1.285である。
-同日の過去のサブエージェント記録には、Bashによる複数ファイルの取得後にEditがRead不足で拒否され、Read後の同一Editが成功した例がある。
-本文をPythonで作成・取得した後のEditと、Write後にBashで変更した対象のEditにもRead不足の失敗が記録されていた。
-ホスト内部で読取状態が失効する条件は、この記録だけからは確定しない。
+確認日は2026年10月7日、観測した版はClaude Code 2.1.292である。
+`agents_server`で起動したClaudeの委譲先（auto mode）で、管理対象一時領域の1行のファイルを使って取得手段ごとにEditとWriteを発行した。
+拒否されたのは次の4条件で、文面はいずれも`File has not been read yet. Read it first before writing to it.`だった。
 
-今回の再検証では、管理対象一時領域で1行のファイルを用い、Readを呼ばずにBashのcat取得からEditへ進めた。
-新しい主セッションでは、単純なcat、forループのcat -n、1201行のファイルを読むforループのいずれでも初回Editが成功した。
-同じ1行の入力はpermission-mode manualでも成功した。
-Agentツールで前景起動した実際のサブエージェントでも、cat取得後の初回Editが成功し、最終本文が置換後の値になった。
-主セッションとサブエージェントは別に観測し、いずれもCLIが終了コード0、標準エラー空で完了した。
-成功した初回Editを、Read不足とRead後の回復の対照としては扱わない。
+- `printf ... >`で作成したファイルへのEdit
+- `cp`で作成した複製へのEdit（複製元はReadで読んだ）
+- `cat "$M/..."; sed -n 1p "$M/..."`の1回の連結で表示した2ファイルへのEdit
+- 未読の既存ファイルへのWrite
 
-管理対象一時領域の通知された絶対パスに内容alphaの1行のファイルを準備して再検証する。
-新しいClaude Code主セッションと、Agentツールで前景起動するサブエージェントで、同じ手順を別のファイルへ実施する。
-Bashで対象をcat取得し、Readをまだ呼ばず、Editでalphaからbetaへの置換を指定する。
-Read不足で拒否された場合だけ、その担当がReadで現在の対象を取得して同じEditを再実行し、最後にBashで結果を読む。
-初回Editが成功した場合は同じEditを繰り返さず、非再現として記録する。
-版数は`claude --version`で取得し、Bash・Edit・Readの入力と結果、主体の種別、CLIの終了コードと標準エラーを保存して比較する。
-過去の拒否と新しい成功を分け、同じ主体・版・操作で得た結果から条文の適用を判断する。
+同じファイルをReadで読んだ後の同じEditは成功した。
+単独の`cat <絶対パス>`で表示したファイルへのEditは成功し、新しい主セッション（`claude -p`、既定の権限モード）でも同じ条件で成功した。
+
+2026年9月30日にClaude Code 2.1.285で行った再検証では、新しい主セッションと`Agent`ツールで前景起動したサブエージェントで、単純な`cat`、forループの`cat -n`、1201行のファイルを読むforループのいずれでも、Readを経ない初回Editが成功した。
+単独の`cat`の成功は2.1.292でも同じであり、拒否はBashでの作成、変数を含むパスや複数コマンドの連結、別パスのReadという取得手段の違いで生じる。
+どのBashの読取をRead状態として扱うかは公開されていないため、条文はBashでの表示を前提として扱わない。
+
+Claude Code本体（`~/.local/share/claude/versions/2.1.292`）を`rg -a`で検索すると、Editの検証は読取状態の記録（`readFileState`）にパスが無い場合に前記の文面を返す。
+Editのツール説明は、編集の前に同じ会話でファイルを読むことを求め、読まずに編集すると失敗すると述べる。
+Writeのツール説明は「Overwriting an existing file you haven't Read will fail.」を含む。
+
+2026年9月7日以降に更新されたClaude Codeのセッション記録1736件（`~/.claude/projects`配下の`*.jsonl`、サブエージェントの記録を含む）では、Read不足で拒否されたツール結果が31件（Edit 26件、Write 5件）あり、17件の記録に分布した。
+数えた層は`is_error`を持つ`tool_result`のうち前記の文面を含み、対応する`tool_use`のIDへ結び付いたものである。同じ期間のEditの呼び出しは1920件、Writeは2464件である。
+
+再検証では管理対象一時領域に1行のファイルを準備し、主セッション、`Agent`ツールのサブエージェントおよび`agents_server`のClaudeの委譲先のそれぞれで発行する。
+Readを経ない取得手段（Bashのリダイレクトでの作成、`cp`での複製、変数を含むパスと複数コマンドの連結での表示、単独の`cat <絶対パス>`での表示、同じ内容の別パスのRead）ごとにEditを発行し、未読の既存ファイルへWriteを発行する。
+条件ごとに拒否の有無と文面、Readで読んだ後の同じ操作の成否を保存して比べる。版数は`claude --version`で取得する。
 
 ## agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 
