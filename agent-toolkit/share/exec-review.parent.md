@@ -169,5 +169,5 @@ clauses:
 ## レビュー指摘管理表の保存
 
 `WI`だけのレビュー基準では、収束後にレビュー指摘管理表を削除し、保存先はprivate-notesの外とする。その表を後から参照する主体が無く、計画バンドルの付属ファイルにも当たらないためである。
-`CI記録`だけのレビュー基準では、同じ修正系列で表と`修正系列の開始時のHEAD`を継続する。収束後に`atk plans commit ci-<修正系列の開始時のHEAD>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。`agent-toolkit:process-wi`の公開工程では、この保存操作を終端担当が実行する。
+`CI記録`だけのレビュー基準では、同じ修正系列で表と`修正系列の開始時のHEAD`を継続する。修正系列の終端で`atk plans commit ci-<修正系列の開始時のHEAD>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。保存の時機は`agent-toolkit:bugfix`の`references/ci-failure-handling.md`の`入力計画`の段落が定める。`agent-toolkit:process-wi`の公開工程では、この保存操作を終端担当が実行する。
 `計画`を含むレビュー基準では、計画を所有する主体が`agent-toolkit:plan-mode`の`references/plan-file-storage.md`「計画ファイルの保存と参照」に従って計画バンドルとともに保存する。

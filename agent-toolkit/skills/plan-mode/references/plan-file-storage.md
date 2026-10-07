@@ -41,4 +41,6 @@ stemは計画メタ情報の`起動経路`ごとに次のとおりとし、`dd`�
 
 実行レビュー指摘管理表は計画ファイルと同じディレクトリへ`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として置く。
 計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。WIだけをレビュー基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`が返した値をそのまま用いる。
-前者は収束後に削除し、後者は`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
+前者は収束後に削除する。
+後者は修正系列の終端で`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
+この保存の時機は`agent-toolkit:bugfix`の`references/ci-failure-handling.md`の`入力計画`の段落が定める。
