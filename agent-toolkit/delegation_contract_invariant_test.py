@@ -461,10 +461,12 @@ def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Pat
 
 
 def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
-    """反映後の観測だけが残る項目の再開記録を、送信側と受信側が同じ節名と項目で扱う。
+    """反映後の観測の再開記録を、送信側と受信側が同じ節名、項目および再開区分の値で扱う。
 
     セッション終了でメインがAWI本文へ追記する節を、pickerとメインの受領、レーン担当が同じ節名で読まないと、
     計画が`~/.claude/plans`に無い項目は再開位置を失い、続行できない理由の返却か再実装へ進む。
+    pickerが再開区分の値で観測のみの再開を判定しないと、再実装へ戻した項目を古い記録から観測だけで再開する。
+    テンプレートへ区分値を加えたときに採否の確定と終端区分がその値の扱いを持たないと、送った記録の扱いが定まらない。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
     finish = (plugin_root / "skills" / "process-wi" / "references" / "finish-session.md").read_text(encoding="utf-8")
@@ -472,12 +474,20 @@ def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
 
-    record = finish.split("```markdown\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
-    heading = record.splitlines()[0]
-    fields = re.findall(r"^- ([^:]+): ", record, flags=re.MULTILINE)
-    prefix = "反映後の観測だけが残る"
+    templates = [block.split("```", maxsplit=1)[0] for block in finish.split("```markdown\n")[1:]]
+    heading = templates[0].splitlines()[0]
     assert heading.startswith("## ")
-    assert f"- 再開区分: {prefix}" in record
+    assert all(template.splitlines()[0] == heading for template in templates)
+    kinds = [re.search(r"^- 再開区分: (.+)$", template, flags=re.MULTILINE) for template in templates]
+    assert all(kinds)
+    kind_values = [kind.group(1) for kind in kinds if kind]
+    assert len(kind_values) >= 2 and len(set(kind_values)) == len(kind_values)
+    prefix = "反映後の観測だけが残る"
+    record = templates[kind_values.index(prefix)]
+    fields = re.findall(r"^- ([^:]+): ", record, flags=re.MULTILINE)
+    assert f"`再開区分`が`{prefix}`の場合だけ" in _h2_section(picker, "処理対象の決定")
+    termination = _h2_section(lanes, "採否の確定と終端区分")
+    assert all(f"`再開区分: {value}`" in termination for value in kind_values if value != prefix)
     assert {"実装commit", "残る完成条件", "観測手段", "観測できる最も早い時刻", "計画"} <= set(fields)
     assert "--append" in finish and "return-to-inbox" in finish and "--cooldown-until" in finish
 

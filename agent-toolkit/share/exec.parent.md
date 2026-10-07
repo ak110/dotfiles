@@ -147,7 +147,7 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス|
 - `統合先worktree`: 主作業ツリーの絶対パス
 - `統合先branch`: ベースbranch名
 - `計画ファイル名一覧`: 引き継ぎ記録に累積した全計画ファイル名の順序付きJSON配列。計画なしのレーンは`[]`
-- `AWI終端区分`: AWIごとの確定済みの採否および終端区分。`completed`の上流要求を持つ`混在`の項目は`終端しない`とし、統合後の扱いは`skills/process-wi/references/run-lanes.md`「上流投入」に従う。観測のみの再開で残る完成条件を観測できなかった項目も`終端しない`とし、統合時の状態を保つ。確認と保留か`processing`での再開かは、メインがレーン担当の観測結果から`skills/process-wi/references/run-lanes.md`「採否の確定と終端区分」で判定する。その結果は`skills/process-wi/references/finish-session.md`「セッション終了」で状態へ反映する
+- `AWI終端区分`: AWIごとの確定済みの採否および終端区分。`completed`の上流要求を持つ`混在`の項目は`終端しない`とし、統合後の扱いは`skills/process-wi/references/run-lanes.md`「上流投入」に従う。観測のみの再開で残る完成条件を観測できなかった項目と、観測が完成条件を満たさなかった項目も`終端しない`とし、統合時の状態を保つ。後者はメインがセッション終了工程で`inbox`へ戻す。確認と保留か`processing`での再開かは、メインがレーン担当の観測結果から`skills/process-wi/references/run-lanes.md`「採否の確定と終端区分」で判定する。その結果は`skills/process-wi/references/finish-session.md`「セッション終了」で状態へ反映する
 - `プロジェクト固有の公開後の操作の順序`: その順序の指定があるAWIごとの対象と時機。無い場合は送らない
 - `完成条件証拠`: `マージあり`の場合に、計画ファイル名（計画なしは`なし`）、対応AWIファイル名の配列、収束した`完成条件証拠のパス`の絶対パスを持つ順序付きJSON配列
 

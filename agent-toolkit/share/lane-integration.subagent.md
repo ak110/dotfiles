@@ -76,7 +76,7 @@
 
 ## AWI行の終端
 
-計画または計画なしの引き継ぎ記録に確定した採否と、受領した終端区分を適用する。採用した項目と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終端する。adoptではAWIごとに実装差分を確かめ、adoptのcommit対応付け（`agent-toolkit:wi-standards`「状態と依存」の遷移表）に従う。複数commitのメモは`--note-file`へ記録する。開始時と統合時のHEADを全項目へ機械的に複製しない。プロジェクト固有の公開後の操作後へadoptを延期する項目は、AWIファイル名と対応する実装commitを対応付けて返し、状態変更は延期先の工程へ委ねる。`終端しない`と受領した項目は状態を変更せず、`adopted`と`rejected`のいずれにも含めない。`混在`の項目はメインが`inbox`へ戻す。観測のみの再開で残った項目は状態を保ち、確認と保留か`processing`での再開かはメインがセッション終了工程で確定する。
+計画または計画なしの引き継ぎ記録に確定した採否と、受領した終端区分を適用する。採用した項目と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終端する。adoptではAWIごとに実装差分を確かめ、adoptのcommit対応付け（`agent-toolkit:wi-standards`「状態と依存」の遷移表）に従う。複数commitのメモは`--note-file`へ記録する。開始時と統合時のHEADを全項目へ機械的に複製しない。プロジェクト固有の公開後の操作後へadoptを延期する項目は、AWIファイル名と対応する実装commitを対応付けて返し、状態変更は延期先の工程へ委ねる。`終端しない`と受領した項目は状態を変更せず、`adopted`と`rejected`のいずれにも含めない。`混在`の項目はメインが`inbox`へ戻す。観測のみの再開で残った項目は状態を保ち、確認と保留か`processing`での再開かはメインがセッション終了工程で確定する。観測が完成条件を満たさなかった項目も状態を保ち、メインがセッション終了工程で`inbox`へ戻す（`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/run-lanes.md`「採否の確定と終端区分」）。
 
 実装差分のあるAWIの対応commitは、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の取得の手段で、計画または引き継ぎ記録と同じstemの対応記録ファイルから短縮OIDで取得し、同節に従って`adopt`へ渡す。`--worktree`へは統合後のworktreeを渡す。延期adoptの返却では、取得した結果から対応するAWIとOIDの組を全件残す。
 
