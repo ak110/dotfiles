@@ -73,7 +73,7 @@
 
 - 対象AWIのファイル名と`## ユーザーコメント`の所在
 - 関連UWIのファイル名と`## 回答`の所在
-- 会話中のユーザー発話の所在: `atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと、その直後の`<record>:<line>`（例: `claude:<セッションID>:625`）。`record`には出力ファイルの`record`の値をコロンも含めてそのまま書く。否定した要求単位は、発話本文（確認回答の書式では回答と自由記述の値）から「」で囲んだ逐語で書く
+- 会話中のユーザー発話の所在: `atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと、その直後の`<record>:<line>`（例: `claude:<セッションID>:625`）。`record`と`line`は出力ファイルのJSONレコードの`record`欄と`line`欄の値であり、`line`は元のセッション記録での行位置を指す。`record`には欄の値をコロンも含めてそのまま書き、発話は両方の欄が一致するレコードから取得する（選び方は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の出所の項）。否定した要求単位は、発話本文（確認回答の書式では回答と自由記述の値）から「」で囲んだ逐語で書く
 - メインの技術判断の記録の所在: その判断を記録したレビュー指摘管理表の絶対パス。表には対象AWIのファイル名と`メインの技術判断`の文字列を含む行がある。この根拠は`source`を持つエージェント由来のAWIの`wi_conditions`の行だけに使い、`user_requirements`の行には使わない
 
 最初の3種はいずれも`agent-toolkit:wi-standards`「由来と承認」の明示由来のうち、ユーザー自身の記入か記録位置付きの逐語発話に当たる。同節の明示由来のうち関連計画の実施内容の由来は、エージェントが書いた記録のため失効の根拠から外す。技術判断の記録は、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の「技術判断で外せる完成条件」に当たる条件だけを外す。

@@ -811,7 +811,8 @@ def _expired_source_error(
     return (
         f"{_row_label(row, section, index)}.source: 失効の根拠となる{judgment}を確認できません{detail}。"
         f"{_source_location(section, '失効')}をsourceへ記録する。"
-        "記録位置は出力ファイルの`record`と`line`で確かめ、逐語は発話本文（確認回答では回答と自由記述の値）から写す。"
+        "記録位置は出力ファイルのJSONレコードの`record`欄と`line`欄の値（`line`は元のセッション記録の行位置で、出力ファイルの物理行番号ではない）で示し、"
+        "両方の欄の値が一致するレコードから発話を取得して、逐語は発話本文（確認回答では回答と自由記述の値）から写す。"
         f"{judgment}がない場合は、委譲元へ失効の判断を求め、記録を得てから同じ証拠をもう一度確かめる"
     )
 
