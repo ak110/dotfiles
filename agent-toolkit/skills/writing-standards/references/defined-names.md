@@ -73,6 +73,7 @@
 | 投稿前レビュー担当 | 外部投稿の委譲先 | `agent-toolkit/share/external-write-review.subagent.md` |
 | 調査担当 | 原因調査の委譲先 | `agent-toolkit/share/defect-investigation.subagent.md` |
 | 読者別探索担当 | 読者適合の委譲先 | `agent-toolkit/share/reader-fit-review.subagent.md` |
+| プロンプト評価担当 | refine-promptの委譲先 | `agent-toolkit/share/refine-prompt.subagent.md`冒頭 |
 | 説明担当 | 選定結果の説明の委譲先 | `agent-toolkit/share/pick-wi-explain.parent.md` |
 | ユーザー確認 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | ユーザーへの報告 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |

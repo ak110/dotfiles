@@ -18,7 +18,7 @@ pytilpackはPythonのユーティリティ集で、各種ライブラリ向け�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 収録モジュール、CLIのサブコマンド、extras要件またはAPIの詳細が必要なとき | 「APIドキュメントの参照方法」のllms.txtと、そこからたどる対象モジュールのページ |
+| 収録モジュール、CLIのサブコマンド、extras要件またはAPIの詳細が必要なとき | <https://ak110.github.io/pytilpack/llms.txt>をWebFetchで取得し、そこからたどる対象モジュールのページ（例: `https://ak110.github.io/pytilpack/api/functools/index.md`）だけを個別に取得する。収録モジュールとCLIのサブコマンドは版により増減するため本ファイルへ列挙しない |
 
 ## 基本的なimport方式
 
@@ -43,16 +43,3 @@ uv add "pytilpack[babel,sqlalchemy]"  # extras指定
 モジュールは、追加依存なしまたは軽量依存で利用できる標準・軽量依存モジュールと、
 対象ライブラリの拡張を提供しextras指定を要するライブラリ用ユーティリティに分かれる。
 extrasが必要なモジュールは`pyproject.toml`の依存指定時にextras名を含めて指定する。
-
-収録モジュールの一覧は後述のllms.txtで確認する（版により増減するため本ファイルへ列挙しない）。
-
-## CLIツール
-
-`pytilpack`コマンドが提供するサブコマンドの一覧と各extras要件は、版により増減するため後述のllms.txtで確認する。
-
-## APIドキュメントの参照方法
-
-pytilpackのAPIの詳細情報が必要な場合は、次のllms.txtをWebFetchで取得する。
-モジュール一覧と各ページのURLを確認し、必要なモジュールのURLだけを個別に取得する（例: `https://ak110.github.io/pytilpack/api/functools/index.md`）。
-
-<https://ak110.github.io/pytilpack/llms.txt>

@@ -105,9 +105,13 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月8日、ripgrep 15.2.0で、隠しディレクトリ配下のファイルに存在する文字列が、`--hidden`の無い実行で一致0件となり、付けた実行で一致することを実際に動かして確かめた。再検証は隠しディレクトリ配下のファイルへ一意な文字列を1件置き、`--hidden`の有無で一致件数を比べる。
 
-## agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月14日
+## agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月14日
 
-2026年9月14日、Git 2.43.0で実際に動かして確かめた。公式`git-rev-parse`文書は`--short=<length>`を、少なくとも指定長を持つ一意な接頭辞と定める。`core.abbrev`を設定していない対象HEADでは`git rev-parse --short HEAD`が9文字、`git rev-parse --short=7 HEAD`が7文字を返した。`grep.lineNumber=true`を指定した`git grep -h -m 1 -F -e <固定文字列> -- AGENTS.md`は`3:<本文>`を返し、同じ検索へ`--no-line-number`を指定すると`<本文>`だけを返した。再検証は`git config --get core.abbrev`の設定有無を記録し、同じHEADに対する`git rev-parse --short HEAD`と`git rev-parse --short=7 HEAD`の文字数を比較し、後者が7文字以上で一意に解決できることを確認する。続けて`git -c grep.lineNumber=true grep -h -m 1 -F -e <固定文字列> -- <追跡ファイル>`と、`-h`を`--no-line-number`へ置き換えた検索の出力を比較する。
+2026年9月14日、Git 2.43.0で実際に動かして確かめた。公式`git-rev-parse`文書は`--short=<length>`を、少なくとも指定長を持つ一意な接頭辞と定める。`core.abbrev`を設定していない対象HEADでは`git rev-parse --short HEAD`が9文字、`git rev-parse --short=7 HEAD`が7文字を返した。再検証は`git config --get core.abbrev`の設定有無を記録し、同じHEADに対する`git rev-parse --short HEAD`と`git rev-parse --short=7 HEAD`の文字数を比較し、後者が7文字以上で一意に解決できることを確認する。
+
+## agent-toolkit/skills/search/SKILL.md：引数とシェルの扱い：2026年9月14日
+
+2026年9月14日、Git 2.43.0で実際に動かして確かめた。`grep.lineNumber=true`を指定した`git grep -h -m 1 -F -e <固定文字列> -- AGENTS.md`は`3:<本文>`を返し、同じ検索へ`--no-line-number`を指定すると`<本文>`だけを返した。再検証は`git -c grep.lineNumber=true grep -h -m 1 -F -e <固定文字列> -- <追跡ファイル>`と、`-h`を`--no-line-number`へ置き換えた検索の出力を比較する。
 
 ## agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月24日
 
@@ -319,7 +323,7 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 再検証は`uv run --frozen python scripts/check_agent_doc_tone.py --report <対象ファイル>`で現行本文の指標を取得し、上記の値と比べる。
 再検証の契機は、規範文書の一括改訂と、文体の閾値の見直しとする。
 
-## agent-toolkit/skills/writing-standards/references/notation-rules.md：ファイル更新時の編集ツールの前提：2026年10月7日
+## agent-toolkit/skills/writing-standards/references/file-editing.md：ファイル更新時の編集ツールの前提：2026年10月7日
 
 確認日は2026年10月7日、観測した版はClaude Code 2.1.292である。
 `agents_server`で起動したClaudeの委譲先（auto mode）で、管理対象一時領域の1行のファイルを使って取得手段ごとにEditとWriteを発行した。

@@ -28,6 +28,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| 既存ファイルをEdit・Writeで編集・上書きする時（コード、文書、エージェント向け文書を問わない） | `references/file-editing.md` |
 | 成果物、ユーザーへの報告と回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` |
 | セッション記録の集計・分析 | `references/session-records.md` |
@@ -44,7 +45,7 @@ description: >
 | 文章を書く時と表記をチェックする時（他の行より先に読む） | `references/notation-rules.md` |
 | 恒久的な成果物の文面案を執筆する前と、textlintの指摘へ対応する時 | `references/textlint-violations.md` |
 | lint設定の緩和・無効化・除外指定を追加する時 | `references/lint-relax-criteria.md` |
-| `notation-rules.md`か`textlint-violations.md`が節名で指す口調例から書き換えの処置を選ぶ時 | `references/tone-examples.md`、`references/tone-examples-llm-tone.md`のうち指された資料 |
+| 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘への対応を含む） | `references/tone-examples.md`、`references/tone-examples-llm-tone.md` |
 | 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` |
 | 新しい概念名または識別子を導入する時 | `references/referent-table.md` |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` |

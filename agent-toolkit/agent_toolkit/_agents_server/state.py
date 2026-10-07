@@ -85,6 +85,7 @@ TASK_MODEL_TYPES = {
     "pick-wi-explain.subagent.md": "low_tier",
     "pick-wi.subagent.md": "medium_tier",
     "reader-fit-review.subagent.md": "low_tier",
+    "refine-prompt.subagent.md": "medium_tier",
     "session-termination.subagent.md": "high_tier",
     "usability-review.subagent.md": "medium_tier",
 }

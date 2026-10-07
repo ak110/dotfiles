@@ -19,15 +19,8 @@ description: >
 | --- | --- |
 | 対象の文面を確定し、レビュー担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/external-write-review.parent.md` |
 
-## 対象と入力
+## 対象
 
 第三者が読む外部サービスへエージェントが起草または加筆した人間向け文面を対象とする。
 ユーザーが逐語で渡した文面、git push、コミットメッセージおよびprivate-notesのWI本文は対象外とする。
 git pushとコミットメッセージは`agent-toolkit:commit`、WI本文は`agent-toolkit:wi-standards`とWI投入担当（`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`）の契約に従う。
-
-投稿する主体は確定した文面をUTF-8のファイルへ保存し、投稿先と投稿の目的、文面が根拠とする差分・観測結果・関連ファイルの所在を対応付ける。
-
-## 起動と受領
-
-投稿する主体は読込表の`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.parent.md`に従ってレビュー担当を起動し、結果を受領する。
-レビュー担当の観点、読者像および返却形式は`external-write-review.subagent.md`が定めるため、委譲プロンプトへ書かない。
