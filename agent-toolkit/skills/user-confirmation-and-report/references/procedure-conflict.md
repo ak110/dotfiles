@@ -20,7 +20,7 @@
 適用時は次の順に判定し、最初に成立した終端を選ぶ。
 
 1. 委譲先が受け取った依頼文と適用中のスキル規則が矛盾する場合、または権限・認証が不足する場合は、
-   `agent-toolkit:delegation`の`references/mandatory-rules.md`に従って委譲元へ差し戻す
+   `agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従って委譲元へ差し戻す
 2. 「確認を要する事項」に該当する場合は、`references/judgment.md`に従ってユーザー確認する
 3. ユーザーの目的・要件と硬い制約を維持したまま次の1工程を実行できる場合は、その工程を実行して継続する。
    手段が複数ある場合は`agent-toolkit/rules/01-agent.md`「判断指針」のQCDで選ぶ。
