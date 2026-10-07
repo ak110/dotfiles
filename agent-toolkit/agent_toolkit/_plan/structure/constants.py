@@ -414,6 +414,15 @@ PLAN_WI_USER_COMMENT_HEADING: str = "ユーザーコメント"
 PLAN_WI_ANSWER_HEADING: str = "回答"
 """UWIファイルでユーザーの回答を記録する見出し。"""
 
+PLAN_WI_MACHINE_DETECTABLE_ORIGIN_HEADINGS: dict[str, bool] = {
+    PLAN_WI_USER_COMMENT_HEADING: True,
+    PLAN_WI_ANSWER_HEADING: False,
+}
+"""計画構造の判定が`source`を持つWIの本文から人間由来を読み取るH2見出しと、本文末尾のH2に限るかの対応。
+
+計画書式の`[対話由来]`注記の条文はこの集合を列挙し、`structure_contract_invariant_test.py`が条文と集合の一致を確かめる。
+"""
+
 PLAN_WI_SCOPE_HEADING: str = "適用範囲"
 """通常AWIファイルで誤りの機構が依存する条件を記録する見出し。"""
 

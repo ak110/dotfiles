@@ -157,6 +157,7 @@ if TYPE_CHECKING:
         PLAN_VERIFICATION_TABLE_HEADER,
         PLAN_VERIFICATION_TABLE_ROWS,
         PLAN_WI_ANSWER_HEADING,
+        PLAN_WI_MACHINE_DETECTABLE_ORIGIN_HEADINGS,
         PLAN_WI_ORIGIN_ALIASES,
         PLAN_WI_ORIGIN_PATTERN,
         PLAN_WI_SCOPE_HEADING,
@@ -1146,12 +1147,14 @@ def _has_frontmatter_source(content: str) -> bool:
 def _has_machine_detectable_human_origin(content: str) -> bool:
     """機械判定できる明示由来を持つかを返す。
 
-    末尾の厳密なH2`## ユーザーコメント`と、UWIの`## 回答`を対象とする。
+    `PLAN_WI_MACHINE_DETECTABLE_ORIGIN_HEADINGS`の各見出しを、末尾のH2に限るものは末尾の厳密なH2として、
+    それ以外は本文のいずれかのH2として探す。
     """
-    h2_headings = [heading for heading in extract_headings(content) if heading.level == 2]
-    if any(heading.text == PLAN_WI_ANSWER_HEADING for heading in h2_headings):
-        return True
-    return bool(h2_headings) and h2_headings[-1].text == PLAN_WI_USER_COMMENT_HEADING
+    h2_texts = [heading.text for heading in extract_headings(content) if heading.level == 2]
+    for text, trailing_only in PLAN_WI_MACHINE_DETECTABLE_ORIGIN_HEADINGS.items():
+        if (h2_texts[-1:] == [text]) if trailing_only else (text in h2_texts):
+            return True
+    return False
 
 
 def _collect_origin_notices(
