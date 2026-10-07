@@ -83,7 +83,12 @@ Codexのセッションまたは`agents_server`の委譲が残る場合と、`DO
 延期中も旧版のスキル・MCP実体と有効状態を保持し、dotfiles本体、snapshot生成、Claude Codeと`atk-serve`の更新は続行する。
 ウォームアップは導入済みの有効版を使い、disabledのまま延期した場合はCodex分を除く。
 
-延期した更新は、Codexのセッションと委譲を終了してから次の`update-dotfiles`を実行すると反映される。
+plugin更新を延期した場合は、延期の案内がpost-applyの完了案内と同期記録に残る。
+同期記録は状態ディレクトリ（`atk config get state_dir`が返すディレクトリ）の`sync-report.json`であり、案内は`post_apply.notices`にある。
+案内は対象plugin、導入版と目標版（再有効化だけを延期した場合は無効から有効への切り替え）、延期の理由になった稼働中のCodexおよび再実行の操作を示す。
+dotfiles全体の同期が成功でも、この案内がある間はCodex pluginの最新版が反映されていない。
+Codexを常に稼働させている間は延期が続き、最新版は適用されない。
+延期した更新は、Codexのセッションと委譲を全て終了してから`update-dotfiles`を再実行すると反映される。
 自動更新タイマーは上流変更が無ければpost-applyを実行しないため、停止後の次の周期に必ず反映されるわけではない。
 
 ### プラグイン更新後のdaemonの再起動
