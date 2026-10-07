@@ -763,6 +763,9 @@ class ClaudeServerManager:
                                     early_cli_turn_state = reported
                             elif reported is not None:
                                 session.cli_turn_state = reported
+                            # 完了通知で次のturnが始まった後は、前のturnの待機期限で古い待機表明を公開させない。
+                            if session is not None and reported == "running" and shared_state.release_auto_resume_hold(session):
+                                await self._notify_waiters()
                             if (
                                 session is not None
                                 and reported == "idle"
@@ -783,6 +786,9 @@ class ClaudeServerManager:
                                 else:
                                     session.usage_limit = usage_limit
                         elif name == "AssistantMessage" and session is not None:
+                            # 保留後のモデル出力は次のturnに属する。Stopの処理中に完了通知が先に届いた場合は、
+                            # 保留の前に`running`が報告済みで、次のturnの開始が出力でしか観測できない。
+                            shared_state.release_auto_resume_hold(session)
                             consume_assistant_message(session, message)
                             await self._notify_waiters()
                         elif name == "StreamEvent" and session is not None:
@@ -790,6 +796,7 @@ class ClaudeServerManager:
                             # それ以外の部分出力は完成したメッセージで反映されるため読み捨てる。
                             event = getattr(message, "event", None)
                             if isinstance(event, dict) and event.get("type") == "message_start":
+                                shared_state.release_auto_resume_hold(session)
                                 session.model_output_observed = True
                                 await self._notify_waiters()
                         elif name == "UserMessage" and session is not None:

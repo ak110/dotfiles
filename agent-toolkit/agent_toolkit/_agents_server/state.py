@@ -1261,6 +1261,23 @@ def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> flo
     return deadline
 
 
+def release_auto_resume_hold(session: SessionState) -> bool:
+    """次のturnの開始を観測した時点で、前のturnの自動再開待ちの保留を解除し、解除したかを返す。
+
+    保留した結果は前のturnの待機表明であり、その待機期限は完了通知を待つ間だけに作用させる。
+    通知で次のturnが始まった後も残すと、backendの待機ループとMCP層の常駐監視が期限の到来で
+    実行中のturnより先に古い待機表明を公開する。次のturnの結果は、そのturnの`ResultMessage`で改めて保留か確定へ進む。
+    バックグラウンドタスクと孫sessionの追跡、自動再開の消費の記録は、それぞれの寿命に従うため変えない。
+    利用上限の解除待ちと過負荷の継続待ちは期限を持たず、MCP層が送る継続の処理で解除するため対象から外す。
+    """
+    if not session.awaiting_auto_resume or session.auto_resume_deadline is None:
+        return False
+    session.pending_result = None
+    session.awaiting_auto_resume = False
+    session.auto_resume_deadline = None
+    return True
+
+
 def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> None:
     """未観測の孫session識別子を既存のerror項目へ併合する。"""
     _merge_error_identifiers(session, UNOBSERVED_SESSIONS_KEY, session_ids)

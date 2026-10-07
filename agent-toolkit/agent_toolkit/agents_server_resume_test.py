@@ -1260,3 +1260,87 @@ async def test_unreported_turn_state_falls_back_with_single_warning(
         assert len(warnings) == 1
     finally:
         await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_resumed_turn_is_not_finalized_by_previous_held_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """完了通知で再開したturnの実行中に前の保留期限が到来しても、古い待機表明を公開せず、再開したturnの結果を返す。
+
+    前のturnの保留を残すと、backendの待機ループとMCP層の常駐監視が期限の到来で待機表明を`completed`として公開し、
+    委譲元は再開したturnの作業が終わる前に結果を受け取る。
+    """
+    monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.1)
+    client = ControlledClaudeClient("claude-stale-deadline", report_state=True)
+    manager, backend = _manager(client, monkeypatch)
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        client.emit(TaskStartedMessage("bg-1"))
+        client.finish_turn(ResultMessage("待機中: bg-1"))
+        await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+
+        client.emit(TaskNotificationMessage("bg-1", "completed"))
+        client.emit(_session_state("running"))
+        client.emit(AssistantMessage([SimpleNamespace(id="impl-tool", name="Bash", input={"command": "make test"})]))
+        await _await_state(lambda: session.cli_turn_state == "running" and session.last_action != "")
+        await asyncio.sleep(0.3)
+        await manager._advance_child_session_wait(session)
+
+        assert wait_task.done() is False
+        assert session.pending_result is None
+        assert manager.show_session(session.session_id)["status"] == "running"
+        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        result = await wait_task
+
+        assert (result["status"], result["agent_message"]) == ("completed", "RESUMED")
+        assert "error" not in result
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_type", ["local_bash", "local_agent"])
+@pytest.mark.parametrize("notification", ["before_result", "after_result"])
+async def test_previous_held_result_is_released_on_resumed_turn_start(
+    notification: str,
+    task_type: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """完了通知が前の結果より先でも後でも、再開したturnの開始で前の保留を解除し、期限の到来で待機表明を公開しない。
+
+    Stopの処理中に完了通知が先に届くと、CLIは`idle`を報告せずに次のturnを始め、`running`は保留の前に報告済みとなる。
+    この順序では次のturnの開始をモデルの出力で観測するため、`running`だけを契機にすると保留が残る。
+    """
+    monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.1)
+    client = ControlledClaudeClient(f"claude-release-{notification}-{task_type}", report_state=True)
+    manager, backend = _manager(client, monkeypatch)
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        client.emit(TaskStartedMessage("bg-1", task_type=task_type))
+        if notification == "before_result":
+            client.emit(TaskNotificationMessage("bg-1", "completed"))
+            client.finish_turn(ResultMessage("待機中: bg-1"), next_turn_queued=True)
+            await _await_state(lambda: session.awaiting_auto_resume)
+        else:
+            client.finish_turn(ResultMessage("待機中: bg-1"))
+            await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+            client.emit(TaskNotificationMessage("bg-1", "completed"))
+            client.emit(_session_state("running"))
+        client.emit(AssistantMessage([SimpleNamespace(type="text", text="再開した作業を続ける")]))
+        await _await_state(lambda: not session.awaiting_auto_resume)
+        await asyncio.sleep(0.3)
+        await manager._advance_child_session_wait(session)
+        assert wait_task.done() is False
+
+        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        result = await wait_task
+
+        assert (result["status"], result["agent_message"]) == ("completed", "RESUMED")
+        assert session.auto_resume_consumed is True
+    finally:
+        await backend.close()
