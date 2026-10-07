@@ -157,13 +157,9 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   ツール種別を問わないバックグラウンドタスクへの移行通知。`Agent`・`Task`の背景起動の応答（`status`が`async_launched`）が返した`agentId`。所有の根拠は自身の呼び出しが識別子を返したことであり、
   その呼び出しの成否に依存しない。
   PreToolUse(TaskStop)が、停止対象が自セッションの起動したバックグラウンドタスクかを判定する入力として読む。
+  PreToolUse(Bash)も、未完了の出力ファイルの読取を警告する判定の前に読み、記録が1件以上ある場合だけtranscriptを読む。
+  出力パスは状態へ記録せず、`stop_gate.py`と同じ起動集合と完了集合から選んだ未完了の背景Bashについて、起動の`tool_result`本文から得る。
   セッション終了まで保持し、リセット処理は設けない
-- `background_task_output_paths`: PostToolUseが背景移行応答から得たタスクIDをキー、絶対出力パスを値として記録する。
-  `run_in_background=true`の応答と、実行時間上限によるホストの背景移行応答を同じ形式で扱う。
-  PreToolUse(Bash)は`stop_gate.py`と同じ起動集合と完了集合を使って未完了のタスクだけを選び、
-  対応する出力パスを読取コマンドのオペランドとして渡した場合に完了通知待ちを案内する。
-  完了通知がUserPromptSubmitへ到達した時点で、同通知のタスクIDに対応する要素を削除する。
-  未完了の対応はセッション終了まで保持する
 - `queued_notification_notified_ids`: Stopの`queued_notification_advisor.py`が、最上位transcriptのキューに残る未配送の完了通知について案内した通知の識別子を重複なく記録する。
   Agent・Taskの起動記録に対応する通知では返却メッセージの利用を、それ以外では出力ファイルの読取を案内する。
   識別子は`<task-id>`、無い場合は`<tool-use-id>`、いずれも無い場合は通知本文とする。

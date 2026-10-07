@@ -62,7 +62,6 @@ from agent_toolkit._common.process_loop_session import (
 )
 
 # pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks import background_task_outputs as _background_task_outputs  # noqa: E402
 from agent_toolkit._hooks import plugin_resources as _plugin_resources
 from agent_toolkit._hooks import termination_evidence
 
@@ -305,7 +304,6 @@ def main(payload_text: str) -> int:
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
-        _background_task_outputs.consume_completed_task_outputs(session_id, prompt)
         return 0
 
     machine_injected = _is_machine_injected(payload, prompt)

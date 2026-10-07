@@ -58,9 +58,6 @@ from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._common.shell_tokens import is_agents_exit_session_command, is_agents_wait_command  # noqa: E402
-from agent_toolkit._hooks import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    background_task_outputs as _background_task_outputs,
-)
 from agent_toolkit._hooks import persisted_output as _persisted_output
 from agent_toolkit._hooks import stop_gate as _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks import termination_evidence
@@ -725,25 +722,6 @@ def _record_background_task_id(session_id: str, task_id: str) -> None:
     update_state(session_id, _append)
 
 
-def _record_background_task_output(session_id: str, response: object) -> None:
-    """バックグラウンドタスクIDとホストが示した出力先を同じsession状態へ記録する。"""
-    pair = _background_task_outputs.task_output_from_response(response)
-    if pair is None:
-        return
-    task_id, output_path = pair
-
-    def _record(state: dict) -> dict | None:
-        recorded = state.get("background_task_output_paths")
-        recorded = dict(recorded) if isinstance(recorded, dict) else {}
-        if recorded.get(task_id) == output_path:
-            return None
-        recorded[task_id] = output_path
-        state["background_task_output_paths"] = recorded
-        return state
-
-    update_state(session_id, _record)
-
-
 def _record_skill_use(session_id: str, skill_name: object) -> None:
     """Skill呼び出しに対応するセッション状態を記録する。"""
     if not isinstance(skill_name, str):
@@ -892,8 +870,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     notice_task_id = _stop_gate.background_task_id_from_notice(payload.get("tool_response"))
     if notice_task_id is not None:
         _record_background_task_id(session_id, notice_task_id)
-    if tool_input.get("run_in_background") or notice_task_id is not None:
-        _record_background_task_output(session_id, payload.get("tool_response"))
 
     if event_name == "PostToolUseFailure":
         if tool_input.get("run_in_background"):

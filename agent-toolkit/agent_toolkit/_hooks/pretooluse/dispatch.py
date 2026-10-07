@@ -421,24 +421,22 @@ def _handle_bash_tool(
     if drive_letter_path_warning is not None:
         warnings.append(drive_letter_path_warning)
     transcript_path = payload.get("transcript_path")
-    if isinstance(transcript_path, str) and transcript_path:
-        state = read_state(session_id)
-        recorded_paths = state.get("background_task_output_paths")
-        if isinstance(recorded_paths, dict):
-            pending_ids = _background_task_outputs.pending_bash_task_ids(transcript_path, session_id)
-            pending_paths = {
-                path for task_id, path in recorded_paths.items() if task_id in pending_ids and isinstance(path, str)
-            }
-            if _background_task_outputs.command_reads_path(command, pending_paths):
-                warnings.append(
-                    _llm_notice(
-                        "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。",
-                        tag=_WARN_TAG,
-                        fix="完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。",
-                        removable_cause=True,
-                        escalate_on_repeat=True,
-                    )
+    # 出力パスはtranscriptの起動記録だけが持つ。所有記録が空のセッションではtranscriptを読まない。
+    if isinstance(transcript_path, str) and transcript_path and read_state(session_id).get("background_task_ids"):
+        pending_paths = _background_task_outputs.pending_task_output_paths(transcript_path, session_id)
+        if _background_task_outputs.command_reads_path(command, pending_paths):
+            warnings.append(
+                _llm_notice(
+                    "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。",
+                    tag=_WARN_TAG,
+                    fix=(
+                        "読み取った内容は途中経過であり、完了通知を受けた後に同じ出力ファイルを読み直してから結果として使う。"
+                        "完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。"
+                    ),
+                    removable_cause=True,
+                    escalate_on_repeat=True,
                 )
+            )
     if warnings:
         emit_json(
             {

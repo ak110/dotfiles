@@ -1,34 +1,15 @@
-"""背景BashのタスクID・出力先・完了状態を対応付ける。"""
+"""未完了の背景Bashが書き込む出力ファイルを、transcriptの起動記録から求める。"""
 
 from __future__ import annotations
 
 import pathlib
-import re
 import shlex
-from collections.abc import Iterator
 
 from agent_toolkit._common import background_output
 from agent_toolkit._hooks import stop_gate
 from agent_toolkit._hooks.bash_command_parser import split_bash_segments
-from agent_toolkit._hooks.session_state import update_state
 
-_TASK_ID_RE = re.compile(r"running in background with ID:\s*([\w-]+)", re.IGNORECASE)
 _READ_COMMANDS = frozenset({"cat", "head", "less", "more", "sed", "tail", "wc", "grep", "rg"})
-
-
-def task_output_from_response(value: object) -> tuple[str, str] | None:
-    """バックグラウンドタスクへの移行を示す応答からタスクIDと絶対出力パスを返す。"""
-    texts = list(_iter_text(value))
-    structured_id = value.get("backgroundTaskId") if isinstance(value, dict) else None
-    task_id = structured_id if isinstance(structured_id, str) and structured_id else None
-    if task_id is None:
-        task_id = stop_gate.background_task_id_from_notice(value)
-    if task_id is None:
-        task_id = next((match.group(1) for text in texts if (match := _TASK_ID_RE.search(text))), None)
-    path = next((path for text in texts for path in background_output.output_paths(text)), None)
-    if task_id is None or path is None:
-        return None
-    return task_id, path
 
 
 def command_reads_path(command: str, paths: set[str]) -> bool:
@@ -61,39 +42,32 @@ def pending_bash_task_ids(transcript_path: str, session_id: str) -> set[str]:
     return {task_id for task_id, tool_use_ids in task_map.items() if tool_use_ids & pending_tool_use_ids}
 
 
-def consume_completed_task_outputs(session_id: str, notice: object) -> bool:
-    """完了通知が示すタスクIDを出力先対応表から除去する。"""
-    completed_ids = {
-        task_id
-        for text in _iter_text(notice)
-        for notification in stop_gate._TASK_NOTIFICATION_RE.findall(text)  # pylint: disable=protected-access
-        for task_id in stop_gate._TASK_ID_RE.findall(notification)  # pylint: disable=protected-access
-    }
-    if not completed_ids:
-        return False
+def pending_task_output_paths(transcript_path: str, session_id: str) -> set[str]:
+    """未完了の背景Bashが書き込む出力ファイルの絶対パスを返す。
 
-    def _consume(state: dict) -> dict | None:
-        raw = state.get("background_task_output_paths")
-        if not isinstance(raw, dict):
-            return None
-        remaining = {task_id: path for task_id, path in raw.items() if task_id not in completed_ids}
-        if remaining == raw:
-            return None
-        if remaining:
-            state["background_task_output_paths"] = remaining
-        else:
-            state.pop("background_task_output_paths", None)
-        return state
-
-    return update_state(session_id, _consume)
-
-
-def _iter_text(value: object) -> Iterator[str]:
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for nested in value.values():
-            yield from _iter_text(nested)
-    elif isinstance(value, list):
-        for nested in value:
-            yield from _iter_text(nested)
+    出力パスは、タスクIDを返した起動の`tool_result`本文（`Output is being written to: <パス>`）から得る。
+    PostToolUseの`tool_response`は構造化した`backgroundTaskId`だけを持ち出力パスを含まないため、入力に使えない。
+    起動の`tool_use_id`に対応する`tool_result`だけを読み、前景Bashや他ツールの結果本文に同じ文言が現れても対象にしない。
+    """
+    pending_ids = pending_bash_task_ids(transcript_path, session_id)
+    if not pending_ids:
+        return set()
+    entries = stop_gate.read_transcript_entries_cached(transcript_path)
+    task_map = stop_gate._collect_background_task_id_tool_use_ids(entries)  # pylint: disable=protected-access
+    launch_tool_use_ids = {tool_use_id for task_id in pending_ids for tool_use_id in task_map.get(task_id, set())}
+    paths: set[str] = set()
+    for entry in entries:
+        message = entry.get("message") if entry.get("type") == "user" else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if (
+                not isinstance(block, dict)
+                or block.get("type") != "tool_result"
+                or block.get("tool_use_id") not in launch_tool_use_ids
+            ):
+                continue
+            for text in stop_gate._tool_result_text_blocks(block.get("content")):  # pylint: disable=protected-access
+                paths.update(background_output.output_paths(text))
+    return paths
