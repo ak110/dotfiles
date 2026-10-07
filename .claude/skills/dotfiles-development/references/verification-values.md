@@ -16,6 +16,9 @@
 
     `pytools/_internal/warm_pyfltr_mcp_test.py`は`uvx`を代替実行ファイルへ置き換えるため、版指定を解決できるかを確かめない
   - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`
+  - Function hooks module: `agent-toolkit/hooks/`の`*.ts`・`*.tsx`（テストの`*.test.ts`・`*.test.tsx`を含む）を変更した場合は、変更範囲の検証へ次の2つを含める。`make test`のpyfltrは`tsc`を有効にしておらず、CIはClaude Codeを導入しないため、どちらもこの2つを実行しない
+    - 型チェック: 現在のClaude Codeの型宣言を使い、`npx --yes -p typescript@5.9.3 tsc --project <設定ファイル> --pretty false`を実行する。型宣言はホスト同梱の`plugin-authoring`スキルを起動したときにClaude Codeがそのスキルの基準ディレクトリへ書く`types/claude-code.d.ts`、またはモジュールを読み込んだプラグインの`.claude-plugin/types/`から得る。設定ファイルはmanaged-tempへ置き、`include`へ型宣言と`agent-toolkit/hooks/`の`*.ts`・`*.tsx`を挙げる。`compilerOptions`は型宣言の冒頭が示す値へ`allowImportingTsExtensions: true`を加えたものとする（モジュール間のimportが拡張子`.ts`を持つため）。設定ファイルと型宣言はリポジトリへ追加しない
+    - モジュールテスト: `claude plugin test <worktree>/agent-toolkit`。プラグインのルートを渡す（`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからず失敗する）
   - 名前の削除・改名の全体静的確認: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
   - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
 
