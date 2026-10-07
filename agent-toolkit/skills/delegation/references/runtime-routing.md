@@ -5,7 +5,7 @@
 
 ## 実行手段
 
-`agents_server`の`start`のうち、`mode`が`delegate`の起動と、`mode:`を宣言しないか`delegate`を宣言した`<役割名>.subagent.md`による`task`の起動を通常起動と呼ぶ。`mode`が`explore`・`shell`・`write`の起動と、`explore`・`shell`・`write`を宣言した`<役割名>.subagent.md`による`task`の起動を軽量起動と呼ぶ。区分は`agent_toolkit/_agents_server/state.py`の`LIGHTWEIGHT_LAUNCH_KINDS`と一致させる。
+`agents_server`の`start`のうち、`mode`が`delegate`の起動と、`mode:`を宣言しないか`delegate`を宣言した`<役割名>.subagent.md`による`task`の起動を通常起動と呼ぶ。`mode`が`explore`・`shell`・`write`の起動と、`explore`・`shell`・`write`を宣言した`<役割名>.subagent.md`による`task`の起動を軽量起動と呼ぶ。区分は`agent_toolkit/_agents_server/launch_prompts.py`の`LIGHTWEIGHT_LAUNCH_KINDS`と一致させる。
 `agents_server`の通常起動と軽量起動では、読み込む設定と利用できるツールが異なる。起動前に公開ツールの説明と実際の起動条件を確認し、委譲先の判断に必要なプロジェクト規範が自動で届かない起動形態では委譲プロンプトへ渡す。
 
 - 専用agent定義がある作業をClaude Codeで実行する場合は、その定義を実装するAgent機能で起動する。`agent-toolkit`は専用agent定義を配布しないため、対象は実行ホスト組込の定義とプロジェクト側の定義に限る
@@ -51,7 +51,7 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 直接渡した場合、サーバーは工程別モデル設定を読まず、渡した候補列をそのまま候補として使う。
 WIが担当とモデル・effortを指定した場合も直接候補列を使う。恒常的な工程別設定の変更は`atk config set`で行う。
 
-1. `agents_server`では`<役割名>.subagent.md`を`start`の`task`へ、自由本文と設定種別または直接候補列を`start`の`delegate`へ渡す。`task`の起動条件は`<役割名>.subagent.md`の`mode:`が、工程別モデル設定は`agent_toolkit/_agents_server/state.py`の`TASK_MODEL_TYPES`が決める。設定の読込、候補の分解および候補の選択はサーバーが行う。
+1. `agents_server`では`<役割名>.subagent.md`を`start`の`task`へ、自由本文と設定種別または直接候補列を`start`の`delegate`へ渡す。`task`の起動条件は`<役割名>.subagent.md`の`mode:`が、工程別モデル設定は`agent_toolkit/_agents_server/launch_prompts.py`の`TASK_MODEL_TYPES`が決める。設定の読込、候補の分解および候補の選択はサーバーが行う。
 2. `Agent`ツールを使う場合は、起動直前に`atk config get <キー>`で設定値を取得し、先頭候補を`engine`、`model`、`effort`へ分解する。effort省略時は`medium`を使う。`engine`部が`claude`でない場合はその工程を未完了として返すか、続行できない理由を返す。分解した値を渡す先は、表の`対応工程`を実行する委譲先の起動に限る。その工程を委譲する調整役は、自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
 3. `agents_server`の通常の起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。起動中の検収には返された`session_id`の`show`を使える。終端時には`wait`の結果から`model_type`、`engine`、`model`および`effort`を確認し、WIの指定値と実際値を計画の進捗または引き継ぎ記録へ残す。保持期限後の`show`を検収の前提にしない。
 4. サーバーが候補列を使い尽くした場合、委譲元は設定外のengineへ自動切替せず、その工程を未完了として返すか、続行できない理由を返す。

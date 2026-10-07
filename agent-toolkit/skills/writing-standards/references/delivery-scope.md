@@ -2,7 +2,7 @@
 
 本書はエージェント向け文書の置き場所を選ぶ主体と、ある主体へ届く規範を確かめる主体へ、規範と資料がどの起動区分の主体へ届くかを示す配送範囲表を提供する。常時規範の定義と置き場所の分類は`agent-documents-basics.md`「置き場所と配送」が定める。
 
-配送範囲表は、常時規範、配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどの主体へ届くかを示す次の表である。値は`agent_toolkit/_hooks/rules_context.py`、`agent_toolkit/_agents_server/state.py`、`claude.py`、`codex.py`、`antigravity.py`と`scripts/sync_codex_agents.py`の実装から取る。規定を置く文書を選ぶときと、ある主体へ届く規範を確かめるときにこの表を使う。表の値と実装が一致しない場合は実装を正として表を直す
+配送範囲表は、常時規範、配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどの主体へ届くかを示す次の表である。値は実装から取る。取得元は`agent_toolkit/`配下の`_hooks/rules_context.py`と`_agents_server/`の`launch_prompts.py`・`claude.py`・`codex.py`・`antigravity.py`と、`scripts/sync_codex_agents.py`である。規定を置く文書を選ぶときと、ある主体へ届く規範を確かめるときにこの表を使う。表の値と実装が一致しない場合は実装を正として表を直す
 
 | 文書 | Claude Codeのメイン | Codexのメイン | `Agent`ツールのサブエージェント | `agents_server`の`task`・`delegate`（Claude） | `agents_server`の`task`・`delegate`（Codex） | `agents_server`の`task`・`delegate`（Antigravity） | `explore`・`write`・`shell`（Claude） | `explore`・`write`・`shell`（Codex） | `explore`・`write`・`shell`（Antigravity） | Codexの組み込み委譲先 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
