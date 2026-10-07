@@ -505,7 +505,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     ),
     _StepSpec("Windowsレジストリ設定", setup_registry.run, platforms=_WINDOWS),
     _StepSpec("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run, platforms=_WINDOWS),
-    _StepSpec("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run, platforms=_WINDOWS),
+    _StepSpec("メディアリモコン自動起動 (Windows/media_remote)", setup_media_remote.run, platforms=_WINDOWS),
     # 他ステップが PATH 追加を行うため、それらの後に整理を実行する。
     _StepSpec("ユーザー PATH 整理 (Windows)", cleanup_user_path.run, after_all_preceding=True, platforms=_WINDOWS),
 ]

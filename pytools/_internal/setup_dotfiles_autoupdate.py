@@ -1,9 +1,9 @@
-"""euryale向けdotfiles自動更新タイマーのセットアップ。"""
+"""役割linux_serverのホスト向けdotfiles自動更新タイマーのセットアップ。"""
 
 import logging
 import pathlib
 
-from pytools._internal import claude_common, common, log_format, post_apply_outcome, systemd_user_unit
+from pytools._internal import common, host_roles, log_format, post_apply_outcome, systemd_user_unit
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,11 @@ WantedBy=timers.target
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """euryaleでdotfiles自動更新用のsystemd user timerを設定する。unitの配置と有効化の失敗は例外として送出する。"""
-    if not claude_common.is_euryale():
+    """役割linux_serverのホストでdotfiles自動更新用のsystemd user timerを設定する。
+
+    unitの配置と有効化の失敗は例外として送出する。
+    """
+    if not host_roles.is_linux_server():
         return post_apply_outcome.PostApplyOutcome()
 
     root = common.find_dotfiles_root()

@@ -1,4 +1,4 @@
-r"""メディアリモコン自動起動セットアップ（Windows / ホスト名sthenoのみ）。
+r"""メディアリモコン自動起動セットアップ（Windows / 役割media_remoteのホストのみ）。
 
 Windowsスタートアップフォルダー
 （`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`）配下に
@@ -9,9 +9,9 @@ Windowsスタートアップフォルダー
 VBSラッパーが`dotfiles-media-remote.exe serve`を非表示ウィンドウで実行する。
 これによりコンソール窓・タスクバーアイコンを抑止しつつ、
 uv tool venvの`dotfiles-media-remote.exe`を確実に解決する。
-sthenoホスト以外では既存のショートカットとVBSラッパーを削除する。
+役割media_remoteを持たないホストでは既存のショートカットとVBSラッパーを削除する。
 
-sthenoでは配置に続けてmedia-remoteを再起動する。
+役割media_remoteのホストでは配置に続けてmedia-remoteを再起動する。
 post-applyテンプレートがpytoolsの再導入のために停止した場合は起動だけを行い、
 再導入しない回は停止→起動を行う。後者はハングして応答しなくなったmedia-remoteを回復する対症療法であり、
 ハングの原因は未特定である。`launch.vbs`と実行ファイルのパスは本モジュールだけが持つ。
@@ -20,17 +20,14 @@ post-applyテンプレートがpytoolsの再導入のために停止した場合
 import logging
 import os
 import pathlib
-import socket
 import subprocess
 
 import psutil
 
-from pytools._internal import common, log_format, post_apply_outcome
+from pytools._internal import common, host_roles, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
-# 自動起動対象ホスト名（大文字小文字無視で比較する）。
-TARGET_HOST = "stheno"
 LNK_NAME = "dotfiles-media-remote.lnk"
 WSCRIPT_PATH = r"C:\Windows\System32\wscript.exe"
 # post-applyテンプレートが渡す、再導入のために停止したか（`1`）と再導入の要否（`1`）。
@@ -41,9 +38,9 @@ _STOP_TIMEOUT_SEC = 5.0
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """sthenoの場合のみショートカット配置、それ以外では既存ショートカットを削除する。
+    """役割media_remoteのホストの場合のみショートカット配置、それ以外では既存ショートカットを削除する。
 
-    sthenoでは続けてmedia-remoteを再起動する。ショートカットとVBSラッパーの配置と削除、
+    役割media_remoteのホストでは続けてmedia-remoteを再起動する。ショートカットとVBSラッパーの配置と削除、
     media-remoteの停止と起動の失敗は失敗と数える。
     """
     startup_dir = _startup_dir()
@@ -54,7 +51,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     vbs = _vbs_path()
 
     try:
-        if socket.gethostname().lower() != TARGET_HOST:
+        if not host_roles.has_role(host_roles.MEDIA_REMOTE):
             return post_apply_outcome.PostApplyOutcome(changed=_ensure_absent(lnk, vbs))
 
         exe = _find_media_remote_exe()

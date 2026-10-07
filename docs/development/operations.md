@@ -264,7 +264,8 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 
 ## 特定ホストでの常駐サービス自動起動
 
-`euryale`でのみ、`chezmoi apply`後処理がsystemd user service`atk-serve.service`を配置して有効化する。
+対象は役割`linux_server`のホストであり、`.chezmoi-source/.chezmoidata.toml`が定める（現在は`euryale`）。
+このホストでのみ、`chezmoi apply`後処理がsystemd user service`atk-serve.service`を配置して有効化する。
 `atk serve`は「AWI」「計画ファイル」「セッション」の3画面を同じナビゲーションから提供する。
 
 - 待受はローカルのみで、ポート28766を使う
@@ -307,7 +308,8 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 
 ## euryaleでの上流更新の自動反映
 
-`euryale`でのみ、`chezmoi apply`後処理がsystemdユーザータイマー`dotfiles-autoupdate.timer`と、
+対象は役割`linux_server`のホストであり、`.chezmoi-source/.chezmoidata.toml`が定める（現在は`euryale`）。
+このホストでのみ、`chezmoi apply`後処理がsystemdユーザータイマー`dotfiles-autoupdate.timer`と、
 タイマーが起動するoneshot service`dotfiles-autoupdate.service`を配置して有効化する。
 
 - タイマーはsystemdユーザーマネージャーの起動から1分後に初回確認し、以後はserviceが終了してから10分ごとに再実行する

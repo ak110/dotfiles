@@ -5,7 +5,7 @@ import typing
 
 import pytest
 
-from pytools._internal import claude_common, common, setup_dotfiles_autoupdate, systemd_user_unit
+from pytools._internal import common, host_roles, setup_dotfiles_autoupdate, systemd_user_unit
 
 
 @pytest.fixture(name="prepared")
@@ -18,7 +18,7 @@ def _prepared(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> tuple[
     uv = tmp_path / "bin" / "uv"
     uv.parent.mkdir(parents=True)
     uv.write_text("", encoding="utf-8")
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
     monkeypatch.setattr(common, "resolve_uv_path", lambda: uv)
     monkeypatch.setattr(setup_dotfiles_autoupdate.pathlib.Path, "home", lambda: tmp_path / "home")
@@ -27,7 +27,7 @@ def _prepared(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> tuple[
 
 def test_non_euryale_skips_timer(monkeypatch: pytest.MonkeyPatch) -> None:
     """対象ホストでなければtimer設定を呼ばない。"""
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: False)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: False)
     monkeypatch.setattr(systemd_user_unit, "setup_timer", lambda **kwargs: pytest.fail(str(kwargs)))
 
     assert setup_dotfiles_autoupdate.run().changed is False

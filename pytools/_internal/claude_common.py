@@ -4,9 +4,7 @@ Claudeに依存しない汎用部品は`pytools._internal.common`が持つ。
 """
 
 import logging
-import socket
 import subprocess
-import sys
 from pathlib import Path
 
 from pytools._internal import common, log_format
@@ -26,13 +24,6 @@ MARKETPLACE_NAME = "ak110-dotfiles"
 
 CLAUDE_TIMEOUT = 30
 PLUGIN_OPERATION_TIMEOUT = 300
-
-_EURYALE_HOSTNAME = "euryale"
-
-
-def is_euryale() -> bool:
-    """Linux上のeuryaleホストである場合だけ真を返す。"""
-    return sys.platform == "linux" and socket.gethostname().lower().split(".")[0] == _EURYALE_HOSTNAME
 
 
 def run_claude(

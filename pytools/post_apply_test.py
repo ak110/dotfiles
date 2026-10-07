@@ -1216,7 +1216,7 @@ class TestDefaultSteps:
         "libarchive (Windows)",
         "Windowsレジストリ設定",
         "SendTo ショートカット (Windows)",
-        "メディアリモコン自動起動 (Windows/stheno)",
+        "メディアリモコン自動起動 (Windows/media_remote)",
         "ユーザー PATH 整理 (Windows)",
     }
     _LINUX_STEPS = {

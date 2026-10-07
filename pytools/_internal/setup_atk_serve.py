@@ -9,7 +9,7 @@ import logging
 import pathlib
 import stat
 
-from pytools._internal import claude_common, common, log_format, post_apply_outcome, systemd_user_unit
+from pytools._internal import common, host_roles, log_format, post_apply_outcome, systemd_user_unit
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ WantedBy=default.target
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """`atk serve`の systemd 自動起動状態を整える (euryale のみ)。
+    """`atk serve`の systemd 自動起動状態を整える (役割linux_serverのホストのみ)。
 
     対象ホストで状態を確認した場合は変更あり、ホスト不一致や uv・dotfiles ルートを解決できず何もしなかった場合は変更なしを返す。
     旧unitの撤去の失敗は失敗と数え、ランチャーとunitの配置は続ける。
@@ -63,7 +63,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         systemd_user_unit.SetupError: restart 後にサービスが常駐状態へ至らない場合に送出する。
         OSError: ランチャーを書き込めない場合に送出する。
     """
-    if not claude_common.is_euryale():
+    if not host_roles.is_linux_server():
         return post_apply_outcome.PostApplyOutcome()
 
     uv = common.resolve_uv_path()

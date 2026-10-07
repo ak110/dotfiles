@@ -25,7 +25,7 @@ def _windows_stheno(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> 
     monkeypatch.setattr(setup_media_remote.pathlib.Path, "home", lambda: tmp_path)
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
-    monkeypatch.setattr(setup_media_remote.socket, "gethostname", lambda: "Stheno")
+    monkeypatch.setattr(setup_media_remote.host_roles.socket, "gethostname", lambda: "Stheno")
     exe = tmp_path / ".local" / "bin" / "dotfiles-media-remote.exe"
     exe.parent.mkdir(parents=True, exist_ok=True)
     exe.touch()
@@ -183,7 +183,7 @@ def test_non_stheno_removes_existing_lnk_and_vbs(
     vbs_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setattr(setup_media_remote.socket, "gethostname", lambda: "other-host")
+    monkeypatch.setattr(setup_media_remote.host_roles.socket, "gethostname", lambda: "other-host")
     lnk = startup_dir / setup_media_remote.LNK_NAME
     lnk.touch()
     vbs_path.parent.mkdir(parents=True, exist_ok=True)
@@ -202,7 +202,7 @@ def test_non_stheno_removes_existing_lnk_and_vbs(
 
 @pytest.mark.usefixtures("startup_dir")
 def test_non_stheno_without_existing_assets_is_noop(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(setup_media_remote.socket, "gethostname", lambda: "other-host")
+    monkeypatch.setattr(setup_media_remote.host_roles.socket, "gethostname", lambda: "other-host")
     calls: list[list[str]] = []
     monkeypatch.setattr(
         setup_media_remote.common,
@@ -282,7 +282,7 @@ def test_restart_after_reinstall_and_symptomatic_restart(
 def test_restart_does_nothing_on_other_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
     """stheno以外では停止も起動もしない。"""
     monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
-    monkeypatch.setattr(setup_media_remote.socket, "gethostname", lambda: "euryale")
+    monkeypatch.setattr(setup_media_remote.host_roles.socket, "gethostname", lambda: "euryale")
     monkeypatch.setenv(setup_media_remote.STOPPED_ENV, "1")
     monkeypatch.setattr(setup_media_remote.psutil, "process_iter", lambda _attrs: pytest.fail("停止しない"))
     monkeypatch.setattr(setup_media_remote.subprocess, "Popen", lambda *_args, **_kwargs: pytest.fail("起動しない"))

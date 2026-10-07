@@ -16,7 +16,7 @@ post-apply.sh
 post-apply-windows.ps1
 {{ end }}
 
-# atk serve の設定ファイル: euryale でのみ配布する
-{{ if ne (lower .chezmoi.hostname) "euryale" }}
+# atk serve の設定ファイル: 役割linux_server（.chezmoidata.toml）のホストでのみ配布する
+{{ if not (has (lower .chezmoi.hostname) .host_roles.linux_server) }}
 .config/agent-toolkit/serve.toml
 {{ end }}

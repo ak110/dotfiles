@@ -12,13 +12,12 @@ import typing
 
 import pytest
 
-from pytools._internal import claude_common, common, setup_atk_serve, systemd_user_unit
+from pytools._internal import common, host_roles, setup_atk_serve, systemd_user_unit
 
 
 def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """テスト共通の Linux + euryale + uv 配置済み環境をセットアップする。"""
-    monkeypatch.setattr(common.sys, "platform", "linux")
-    monkeypatch.setattr(claude_common.socket, "gethostname", lambda: "euryale")
+    """テスト共通の Linux + 役割linux_server + uv 配置済み環境をセットアップする。"""
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
     monkeypatch.setattr(setup_atk_serve.pathlib.Path, "home", lambda: tmp_path)
     uv = tmp_path / ".local" / "bin" / "uv"
     uv.parent.mkdir(parents=True, exist_ok=True)
@@ -31,7 +30,7 @@ def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) 
 
 
 class TestRunPlatformGuard:
-    """非 Linux および euryale 以外のホストでの no-op 動作。"""
+    """非 Linux および役割linux_server以外のホストでの no-op 動作。"""
 
     @pytest.mark.parametrize(
         ("platform", "hostname"),
@@ -43,9 +42,9 @@ class TestRunPlatformGuard:
         platform: str,
         hostname: str,
     ) -> None:
-        """Linux かつ euryale 以外では False を返し設定処理を開始しない。"""
+        """Linux かつ役割linux_serverのホスト以外では False を返し設定処理を開始しない。"""
         monkeypatch.setattr(common.sys, "platform", platform)
-        monkeypatch.setattr(claude_common.socket, "gethostname", lambda: hostname)
+        monkeypatch.setattr(host_roles.socket, "gethostname", lambda: hostname)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
         assert not setup_atk_serve.run().changed
 

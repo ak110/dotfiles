@@ -15,7 +15,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pytools._internal import claude_common, codex_processes, common, log_format, post_apply_outcome, setup_codex_links
+from pytools._internal import (
+    codex_processes,
+    common,
+    host_roles,
+    log_format,
+    post_apply_outcome,
+    setup_codex_links,
+)
 
 logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
@@ -388,7 +395,7 @@ def _sync_local_plugin(
     if (
         needs_plugin_add
         and current is not None
-        and claude_common.is_euryale()
+        and host_roles.is_linux_server()
         and os.environ.get(_AUTO_RESTART_ENV) != "1"
         and (running := codex_processes.running_codex_processes())
     ):

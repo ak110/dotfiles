@@ -20,6 +20,7 @@ from pytools._internal import (
     cleanup_paths,
     cleanup_user_path,
     common,
+    host_roles,
     install_claude_plugins,
     install_codex_plugins,
     install_libarchive,
@@ -270,7 +271,7 @@ def _euryale_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     uv = tmp_path / "uv"
     uv.write_text("", encoding="utf-8")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
     monkeypatch.setattr(common, "resolve_uv_path", lambda: uv)
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
     monkeypatch.setattr(common, "atomic_write_text", lambda *_args, **_kwargs: False)
@@ -310,7 +311,7 @@ def _media_remote_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     startup.mkdir(parents=True)
     lnk = startup / setup_media_remote.LNK_NAME
     lnk.write_text("", encoding="utf-8")
-    monkeypatch.setattr(setup_media_remote.socket, "gethostname", lambda: "other")
+    monkeypatch.setattr(setup_media_remote.host_roles.socket, "gethostname", lambda: "other")
     real_unlink = Path.unlink
 
     def unlink(self: Path, missing_ok: bool = False) -> None:
@@ -363,7 +364,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "dotfiles自動更新タイマー セットアップ (Linux)": [(_autoupdate_unit_write_fails, 1)],
     "Windowsレジストリ設定": [(_registry_write_fails, 1)],
     "SendTo ショートカット (Windows)": [(_sendto_shortcut_fails, 1)],
-    "メディアリモコン自動起動 (Windows/stheno)": [(_media_remote_removal_fails, 1)],
+    "メディアリモコン自動起動 (Windows/media_remote)": [(_media_remote_removal_fails, 1)],
     "ユーザー PATH 整理 (Windows)": [(_user_path_write_fails, 1)],
 }
 

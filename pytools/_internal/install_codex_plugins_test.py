@@ -15,7 +15,14 @@ from typing import Any, cast
 import pytest
 
 from pytools import post_apply
-from pytools._internal import claude_common, codex_processes, common, install_codex_plugins, plugin_warmup, post_apply_outcome
+from pytools._internal import (
+    codex_processes,
+    common,
+    host_roles,
+    install_codex_plugins,
+    plugin_warmup,
+    post_apply_outcome,
+)
 
 from ._test_helpers import _FakeResult
 
@@ -31,7 +38,7 @@ def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     """ローカルpluginのテストでは不要pluginの除去を無効にする。"""
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ())
     monkeypatch.delenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", raising=False)
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: False)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: False)
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ())
     monkeypatch.setattr(
         install_codex_plugins,
@@ -148,7 +155,7 @@ def _set_json_responses(
 
 def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """未導入pluginは公式CLIへ導入を委譲し、legacy linkを除去する。"""
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",))
     destination = _legacy_link(plugin_env)
     cache_entry = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
@@ -241,7 +248,7 @@ def test_running_codex_preserves_cache_then_updates_after_stop(  # noqa: PLR0913
     current: dict[str, Any] = {"version": old_version, "enabled": enabled}
     running = True
     calls: list[list[str]] = []
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",) if running else ())
 
     def codex_json(args: list[str]) -> dict[str, Any]:
@@ -318,7 +325,7 @@ def test_running_codex_updates_outside_default_euryale_policy(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, euryale: bool, auto_restart: bool
 ) -> None:
     """対象外ホストと明示した自動再起動は稼働中でも既存の更新を行う。"""
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: euryale)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: euryale)
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",))
     if auto_restart:
         monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
@@ -349,7 +356,7 @@ def test_euryale_update_is_deferred_only_by_codex_using_plugins(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, cmdlines: list[list[str]], updated: bool
 ) -> None:
     """管理daemonの停止後に残る更新ループだけでは延期せず、管理daemonと委譲用app-serverでは旧版を保つ。"""
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
     monkeypatch.setattr(codex_processes, "running_codex_processes", _REAL_RUNNING_CODEX_PROCESSES)
     uid = 1000
     monkeypatch.setattr(codex_processes.os, "getuid", lambda: uid, raising=False)
@@ -378,7 +385,7 @@ def test_post_apply_deferral_continues_with_installed_warmup_version(
     """工程を指定しない場合に実行する`_DEFAULT_STEPS`の順序で、更新延期後も後続へ進み、snapshotでなく旧有効版をwarmupへ渡す。"""
     monkeypatch.setattr(post_apply.sys, "platform", "linux")
     state = _installed_state(version="1.2.2", enabled=enabled)
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",))
     monkeypatch.setattr(
         install_codex_plugins,
