@@ -96,7 +96,7 @@ agent-toolkit側でprivateなモジュールを移動・改名する変更では
   `agent-toolkit/skills/writing-standards/references/agent-skills.md`を適用する
 - 委譲元の専用の参照文書を起動契約、agent定義を委譲先の恒常手順としてペアで更新する
 - 委譲元のスキルと参照文書からagent定義をReadする手順を除外する
-- 独立に読み込まれる文書間の重複の採否は、`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」の定義の所有者の箇条に従う
+- 独立に読み込まれる文書間の重複の採否は、`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「定義の所有者」の箇条に従う
 - 相互参照が発生する共通観点は横断スキル配下`references/`へ集約してよい
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様」「具体例」は再発リスクと影響度を踏まえて保持判断する
@@ -151,7 +151,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 - `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
   計画への記載は`references/version-bump.md`「plan modeでの取り扱い」の派生物の記載規則に従い、生成コマンドは`uv run python scripts/sync_generated_files.py`とする
 - `agent-toolkit/share/rules-common.codex.md`は`scripts/sync_codex_agents.py`の生成元であり、その編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。生成コマンドは`uv run python scripts/sync_generated_files.py`とする
-- `agent-toolkit/share/rules-main.md`とホスト別の`rules-main.*.md`、`rules-subagent.md`とホスト別の`rules-subagent.*.md`の編集は生成差分もClaude配布一覧の変更も生じさせない。`rules-subagent.md`はClaude CodeとCodexのSubagentStart hookおよびagents_serverの通常委譲へ配る。Claude Code固有規範はClaude Codeだけへ配る。`rules-main.codex.md`はCodexのSessionStart hookでCodexのメインだけへ配る。Codex hookの起動コマンドは`scripts/sync_codex_plugin_manifests.py`が生成するmanifestで同期する。軽量なagents_serverでの委譲へ`rules-subagent.md`を配らない境界もテストコードで保持する。各起動区分へ届く規範は`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」の配送範囲表が示す。
+- `agent-toolkit/share/rules-main.md`とホスト別の`rules-main.*.md`、`rules-subagent.md`とホスト別の`rules-subagent.*.md`の編集は生成差分もClaude配布一覧の変更も生じさせない。`rules-subagent.md`はClaude CodeとCodexのSubagentStart hookおよびagents_serverの通常委譲へ配る。Claude Code固有規範はClaude Codeだけへ配る。`rules-main.codex.md`はCodexのSessionStart hookでCodexのメインだけへ配る。Codex hookの起動コマンドは`scripts/sync_codex_plugin_manifests.py`が生成するmanifestで同期する。軽量なagents_serverでの委譲へ`rules-subagent.md`を配らない境界もテストコードで保持する。各起動区分へ届く規範は`agent-toolkit:writing-standards`の`references/delivery-scope.md`の配送範囲表が示す。
   バージョン更新の規定は適用する
 - 計画ファイルの見出し、固定H3および表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`が定める。
   対象は同ファイルが構造定数として名称を持つものとする。
