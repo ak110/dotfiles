@@ -66,40 +66,8 @@ jobs:
       - name: statusline差分と版数を検査
         id: inspect
         env:
-          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
-        run: |
-          set -euo pipefail
-
-          parent_sha=$(git rev-parse "$HEAD_SHA^1")
-          if git diff --quiet "$parent_sha" "$HEAD_SHA" -- rust/claude-statusline/; then
-            {
-              echo "changed=false"
-              echo "version="
-              echo "tag="
-            } >> "$GITHUB_OUTPUT"
-            echo "statuslineの変更がないため、リリースを省略する。"
-            exit 0
-          fi
-
-          metadata=$(mise exec -- cargo metadata \
-            --locked \
-            --no-deps \
-            --format-version=1 \
-            --manifest-path rust/claude-statusline/Cargo.toml)
-          version=$(jq -er '[.packages[] | select(.name == "claude-statusline") | .version] | if length == 1 then .[0] else error("claude-statuslineのpackage版数を一意に取得できない") end' <<< "$metadata")
-          tag="statusline-v$version"
-
-          tagged_sha=$(git rev-parse --verify --quiet "$tag^{}" || true)
-          if [ -n "$tagged_sha" ] && [ "$tagged_sha" != "$HEAD_SHA" ]; then
-            echo "既存タグが別のcommitを指している: $tag" >&2
-            exit 1
-          fi
-
-          {
-            echo "changed=true"
-            echo "version=$version"
-            echo "tag=$tag"
-          } >> "$GITHUB_OUTPUT"
+          CURRENT_SHA: ${{ needs.gate.outputs.head_sha }}
+        run: python3 scripts/check_statusline_version.py --release-prepare --github-output "$GITHUB_OUTPUT"
 
   build:
     needs: [gate, prepare]
@@ -157,19 +125,19 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+      - name: 既存タグを検査
+        id: tag-state
+        env:
+          CURRENT_SHA: ${{ needs.gate.outputs.head_sha }}
+        run: python3 scripts/check_statusline_version.py --release-tag-state --github-output "$GITHUB_OUTPUT"
       - name: タグとGitHub Releaseを公開
+        env:
+          TAG_EXISTS: ${{ steps.tag-state.outputs.tag_exists }}
         run: |
           set -euo pipefail
 
           tag="$TAG"
-          git fetch --tags origin
-          tagged_sha=$(git rev-parse --verify --quiet "$tag^{}" || true)
-          if [ -n "$tagged_sha" ]; then
-            if [ "$tagged_sha" != "$HEAD_SHA" ]; then
-              echo "既存タグが別のcommitを指している: $tag" >&2
-              exit 1
-            fi
-          else
+          if [ "$TAG_EXISTS" != "true" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git tag "$tag" "$HEAD_SHA"

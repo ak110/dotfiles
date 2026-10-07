@@ -3,12 +3,13 @@
 //! 第1引数でモードを選択する。単一バイナリに3モードを持たせる理由は、GitHub Releaseの
 //! 配布アセットを1個に抑え、post_apply側のダウンロード・配置ロジックを単純化するため。
 //!
-//! - `statusline`: `scripts/claude_status_line.py`の後継
-//! - `subagent-statusline`: `scripts/claude_subagent_status_line.py`の後継
+//! - `statusline`: セッション状況とagents_server sessionを表示する
+//! - `subagent-statusline`: サブエージェントごとの行を表示する
 //! - `agy-statusline`: Antigravity CLIのstatuslineをClaude Codeと同じ体裁で表示する
 
 mod agents_server;
 mod agy;
+mod render;
 mod statusline;
 mod subagent;
 

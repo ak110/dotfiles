@@ -18,9 +18,11 @@ from pytools._internal import claude_common, log_format, setup_mise
 logger = logging.getLogger(__name__)
 
 _REPO = "ak110/dotfiles"
-_ASSET_NAME = (
-    "claude-statusline-x86_64-pc-windows-msvc.exe" if sys.platform == "win32" else "claude-statusline-x86_64-unknown-linux-gnu"
-)
+# 配布物の名前は`.github/workflows/release-statusline.yaml`が公開する名前と一致させる。
+# 一致はリポジトリ直下の`claude_statusline_invariant_test.py`が確かめる。
+ASSET_NAME_POSIX = "claude-statusline-x86_64-unknown-linux-gnu"
+ASSET_NAME_WINDOWS = "claude-statusline-x86_64-pc-windows-msvc.exe"
+_ASSET_NAME = ASSET_NAME_WINDOWS if sys.platform == "win32" else ASSET_NAME_POSIX
 # 簡略化: `releases/latest/download/`はリポジトリ全体で共有される最新リリースを指し、
 # タグプレフィックス（`statusline-v*`）を区別しない。
 # 既知の限界: 将来`ak110/dotfiles`に本ツール以外のRust製ツールが増えGitHub Releaseを
