@@ -18,6 +18,7 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import wait_schedule
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
 @pytest.fixture(autouse=True)
@@ -180,7 +181,7 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     def fail_create(*_args: Any, **_kwargs: Any) -> pathlib.Path:
         raise managed_temp.ManagedTempError("容量不足")
 
-    monkeypatch.setattr(managed_temp, "create_managed_temp", fail_create)
+    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", fail_create)
     with pytest.raises(SystemExit) as failed:
         atk.main(["agents", "wait"])
     first = capsys.readouterr()
@@ -189,7 +190,7 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     assert "結果本文のファイルを書けません" in first.err
     assert NEXT_ACTION_PREFIX in first.err
 
-    monkeypatch.setattr(managed_temp, "create_managed_temp", original_create)
+    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", original_create)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
     delivered = json.loads(capsys.readouterr().out)

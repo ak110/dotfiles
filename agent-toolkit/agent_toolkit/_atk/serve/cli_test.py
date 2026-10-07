@@ -1,6 +1,3 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`のテスト。"""
 
 # pylint: disable=protected-access
@@ -9,30 +6,33 @@ import asyncio
 import binascii
 import contextlib
 import json
-import logging
 import math
 import os
 import pathlib
-import re
 import signal
 import struct
 import subprocess
-import threading
-import types
 import typing
 import zlib
 
-import filelock
 import pytest
 import watchdog.events
 
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import assets, config, state
 from agent_toolkit._atk.serve import cli as serve
-from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
+from agent_toolkit._atk.serve.plans import views as serve_plan_views
 from agent_toolkit._atk.wi import common, user_comment
-from agent_toolkit._atk.wi import repo as awi_repo
+from agent_toolkit._testing.serve_support import (
+    _FakeTimer,
+    _patch_comment_edit_dependencies,
+    _run_node_ui,
+    _session_review_awi,
+    _write_detail_entry,
+    _write_repo_entry,
+)
+from agent_toolkit._testing.wi_mutations_support import MUTATION_MODULES
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -40,9 +40,6 @@ from agent_toolkit._atk.wi import repo as awi_repo
 # 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
 # module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
 _HOST_ENVIRON = dict(os.environ)
-
-
-from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 
 def test_config_precedence_and_platform_ports(tmp_path: pathlib.Path) -> None:
@@ -611,7 +608,7 @@ async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    for module in (common, serve_app.awi_mutations, serve_app.uwi_mutations):
+    for module in (common, *MUTATION_MODULES, serve_app.uwi_mutations):
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
@@ -1248,7 +1245,6 @@ async def test_serve_stops_promptly_while_slow_request_is_in_progress(
     リモート取得が終わるまで`_serve`が戻らない（systemdの停止タイムアウトでSIGKILLされる）。
     打ち切った要求は応答を開始していないため503で完了する。
     """
-    from agent_toolkit._atk.serve.plans import views as serve_plan_views  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     request_started = asyncio.Event()
 

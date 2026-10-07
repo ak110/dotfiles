@@ -1,183 +1,36 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""`atk serve`の計画ファイル画面の処理本体。
+"""ローカルのrootにある計画ファイルの走査、一覧と全文検索の対象判定、変更の監視。
 
-ローカルと設定済みリモートホストの計画ファイルを集約し、全文検索、Markdownと
-レビュー指摘管理表のHTML変換、付属計画間の移動リンク生成、更新通知の配信を担う。
-ルート登録は`_atk_serve_app.py`の`_register_plan_routes`が行い、本モジュールは処理の実装だけを持つ。
-
-記録の保存先とrootの規約は`agent-toolkit/skills/plan-mode`が定める計画ファイルの配置に従う。
-リモートホスト側で実行するヘルパーは`atk_serve_plans_remote_helper.py`とする。
+一覧の各ファイルの作成日時は`ctime_index`のインデックスで初回観測時刻を保つ。
 """
 
 from __future__ import annotations
 
 import asyncio
-import asyncio.subprocess as _async_subprocess
-import base64
-import collections
-import collections.abc
-import contextlib
-import dataclasses
-import datetime
-import hashlib
-import html as html_lib
-import importlib
-import json
-import logging
 import os
 import pathlib
-import random
-import re
-import socket
-import subprocess
 import threading
 import typing
-from typing import TYPE_CHECKING
 
-import markdown_it
-import markdown_it.renderer
-import markdown_it.token
-import markdown_it.utils
-import platformdirs
-import pygments
 import watchdog.events
 import watchdog.observers
 import watchdog.observers.api
-from pygments.formatters.html import HtmlFormatter
-from pygments.lexers import get_lexer_by_name
-from pygments.util import ClassNotFound
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._common import file_lock as _file_lock
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.serve.plans.ctime_index import (
-        _enter_index_lock,
-        _entry_ctime,
-        _exclusive_file_lock,
-        _index_key,
-        _index_lock_path,
-        _load_index,
-        _load_legacy_entries,
-        _root_key,
-        _write_index,
-        cleanup_creation_time_temporaries,
-        update_creation_time_index,
-    )
-    from agent_toolkit._atk.serve.plans.remote import (
-        RemoteHelperError,
-        RemoteSearchCoordinator,
-        RemoteSearchResult,
-        RemoteSearchRunner,
-        RemoteSearchSuperseded,
-        RemoteWatcher,
-        _build_remote_command_argv,
-        _decode_read_payload,
-        _decode_root_info,
-        _decode_root_status,
-        _drain_stderr,
-        _is_listed_remote_path,
-        _iter_stream_lines,
-        _PendingSearch,
-        _stderr_excerpt,
-        _terminate_process,
-        _wait_with_timeout,
-        default_ssh_runner,
-        fetch_remote_file,
-        is_safe_remote_relpath,
-        search_remote_files,
-    )
-    from agent_toolkit._atk.serve.plans.rendering import (
-        MarkdownCache,
-        MarkdownCacheKey,
-        _highlight_code,
-        _render_fence,
-        make_md_renderer,
-        markdown_to_html,
-    )
-    from agent_toolkit._atk.serve.plans.roots import (
-        _BROADCAST_DEBOUNCE_SEC,
-        _BUGS_SUFFIX,
-        _CREATION_TIME_INDEX_PATH,
-        _DETAIL_SUFFIX,
-        _LEGACY_CACHE_NAME_RE,
-        _LEGACY_TEMPORARY_NAME_RE,
-        _LISTED_EXCLUDED_SUFFIXES,
-        _PLAN_SUFFIX_LABELS,
-        _PYGMENTS_CSS_CLASS,
-        _PYGMENTS_FORMATTER,
-        _REVIEW_TABLE_HEADERS,
-        _SSE_REFRESH_PAYLOAD,
-        _TARGET_TSV_SUFFIXES,
-        _UNRESOLVED_PRIVATE_NOTES_ROOT,
-        _WATCHED_EVENT_TYPES,
-        DEFAULT_REMOTE_SEARCH_LIMIT,
-        LEGACY_PORTABLE_ROOT,
-        LEGACY_SOURCE_ID,
-        MARKDOWN_CACHE_MAX_BYTES,
-        MARKDOWN_CACHE_MAX_ENTRIES,
-        NEW_PORTABLE_ROOT,
-        NEW_SOURCE_ID,
-        REMOTE_BACKOFF_INITIAL_SEC,
-        REMOTE_BACKOFF_JITTER_RANGE,
-        REMOTE_BACKOFF_MAX_SEC,
-        REMOTE_STREAM_LIMIT_BYTES,
-        RPC_REQUEST_TIMEOUT_SEC,
-        SSH_BASE_OPTIONS,
-        SSH_TIMEOUT_SEC,
-        SSH_WATCH_OPTIONS,
-        STDERR_EXCERPT_MAX_CHARS,
-        TERMINATE_GRACE_TIMEOUT_SEC,
-        BroadcastState,
-        FileEntry,
-        LineSource,
-        RootSpec,
-        SshRunner,
-        _broadcast,
-        _canonical,
-        _debounced_deliver,
-        _private_notes_result,
-        default_root_specs,
-        deliver_host_info,
-        deliver_host_status,
-        deliver_refresh,
-        deliver_root_info,
-        deliver_root_status,
-        explicit_root_spec,
-        logger,
-        make_file_entry,
-        normalize_root_specs,
-        schedule_broadcast,
-        subscribe,
-        unsubscribe,
-    )
-    from agent_toolkit._atk.serve.plans.views import (
-        PlanFileError,
-        PlansContext,
-        _oldest_host_per_file,
-        _plan_exists,
-        _plan_paths,
-        _read_text,
-        _scan_local_root,
-        _search_remote,
-        all_entries,
-        create_context,
-        is_review_table_path,
-        listed_plan_path,
-        plan_links_html,
-        render_file_html,
-        resolve_source_id,
-        resolve_text,
-        review_table_html,
-        search_entries,
-        start_local_watchers,
-        start_remote_watchers,
-        stop_local_watchers,
-        stop_remote_watchers,
-    )
-
+from agent_toolkit._atk.serve.plans.ctime_index import update_creation_time_index
+from agent_toolkit._atk.serve.plans.roots import (
+    _BUGS_SUFFIX,
+    _DETAIL_SUFFIX,
+    _PYGMENTS_CSS_CLASS,
+    _PYGMENTS_FORMATTER,
+    _TARGET_TSV_SUFFIXES,
+    _WATCHED_EVENT_TYPES,
+    LEGACY_SOURCE_ID,
+    BroadcastState,
+    FileEntry,
+    RootSpec,
+    make_file_entry,
+    schedule_broadcast,
+)
 
 _STATIC_DIR = pathlib.Path(__file__).with_name("static")
 

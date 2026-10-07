@@ -1,42 +1,32 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """計画形式の共通解析を検証する。"""
 
 import pathlib
-import sys
 
 import pytest
-from pyfltr.colloquial import check as _colloquial_check
 
-from agent_toolkit._common import next_action as _next_action  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._plan import fixture as _plan_fixture
+from agent_toolkit._plan import structure as _plan_format
+from agent_toolkit._plan.structure import constants as plan_constants
+from agent_toolkit._plan.structure import materials as plan_materials
+from agent_toolkit._plan.structure import parsing as plan_parsing
+from agent_toolkit._plan.structure import sections as plan_sections
+from agent_toolkit._testing.plan_structure_support import (
+    _BASE,
+    _BUG_CAUSE_TABLE,
+    _BUG_FILE_CONTENT,
+    _HUMAN_DETAIL_CONTENT,
+    _HUMAN_MAIN_CONTENT,
+    _HUMAN_PARTIAL_ROW,
+    _LEGACY_BUG_FILE_CONTENT,
+    _VALID_CONTENT,
+    _VALID_DETAIL_CONTENT,
+    _VALID_MAIN_CONTENT,
+    _canonical_main_content,
+    _origin_check,
+)
 
-_BASE = _plan_fixture.BASE_COMMIT
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
-
-_VALID_CONTENT = _plan_fixture.single_file_plan()
-_BUG_CONTENT = _plan_fixture.single_file_plan(bug=True)
-_LEGACY_CONTENT = _plan_fixture.legacy_materials_single_file_plan()
-
-_BUG_SECTION = _plan_fixture.inline_bug_section()
-_BUG_CAUSE_TABLE = _plan_fixture.bug_cause_table()
-_BUG_INVESTIGATION_TABLE = _plan_fixture.bug_investigation_table()
-_BUG_FILE_CONTENT = _plan_fixture.bug_file()
-_LEGACY_ROWS_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_ROWS)
-_LEGACY_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_STANDALONE)
-
-_HUMAN_MAIN_CONTENT = _plan_fixture.human_main(related_wi=_plan_fixture.WI_FILES)
-_HUMAN_DETAIL_CONTENT = _plan_fixture.human_detail()
-_HUMAN_PARTIAL_ROW = _plan_fixture.WI_ACTION_ROW
-_HUMAN_PARTIAL_REASON = _plan_fixture.WI_ACTION_REASON
-
-_VALID_MAIN_CONTENT = _plan_fixture.two_file_main()
-_VALID_DETAIL_CONTENT = _plan_fixture.two_file_detail()
-
-
-from agent_toolkit._plan.structure.test_support_test import *  # noqa: F403
 
 
 def test_human_readable_wi_and_units_do_not_expose_internal_ids() -> None:
@@ -48,7 +38,7 @@ def test_human_readable_wi_and_units_do_not_expose_internal_ids() -> None:
         "20260817-223603-001.md",
         "20260817-223603-002.md",
     )
-    units, unit_errors = _plan_format.parse_plan_implementation_units(_HUMAN_DETAIL_CONTENT)
+    units, unit_errors = plan_parsing.parse_plan_implementation_units(_HUMAN_DETAIL_CONTENT)
     assert not unit_errors, unit_errors
     assert units is not None
     assert tuple(unit.unit_id for unit in units) == ("契約境界の更新", "回帰検証の追加")
@@ -63,7 +53,7 @@ def test_human_readable_action_accepts_review_origin_with_matching_round(tmp_pat
         f"| 入力の境界を追加確認する | 計画レビュー第2ラウンド | 採用 | {review_path.as_posix()}のround 2 |",
         1,
     )
-    errors = _plan_format.check_plan_main_structure(content)[1]
+    errors = plan_sections.check_plan_main_structure(content)[1]
     assert not errors, errors
 
 
@@ -74,10 +64,10 @@ def test_agent_wi_adopted_action_accepts_rederived_scope() -> None:
         "入力経路全体へ適用する。誤りの機構が由来の種類に依存しないため。 |"
     )
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.WI_ACTION_ROW, row, 1)
-    assert not _plan_format.check_plan_main_structure(content)[1]
+    assert not plan_sections.check_plan_main_structure(content)[1]
 
 
-@pytest.mark.parametrize("decision", _plan_format.PLAN_ACTION_DECISIONS)
+@pytest.mark.parametrize("decision", plan_constants.PLAN_ACTION_DECISIONS)
 def test_user_origin_requires_requirement_decomposition(decision: str) -> None:
     """ユーザー指示由来は採否によらず原文の分解結果を要求する。
 
@@ -91,7 +81,7 @@ def test_user_origin_requires_requirement_decomposition(decision: str) -> None:
         1,
     )
     notices: list[str] = []
-    assert not _plan_format.check_plan_main_structure(accepted, origin_notices=notices)[1]
+    assert not plan_sections.check_plan_main_structure(accepted, origin_notices=notices)[1]
     assert not notices
 
     rejected = _HUMAN_MAIN_CONTENT.replace(
@@ -100,14 +90,14 @@ def test_user_origin_requires_requirement_decomposition(decision: str) -> None:
         1,
     )
     notices = []
-    assert not _plan_format.check_plan_main_structure(rejected, origin_notices=notices)[1]
+    assert not plan_sections.check_plan_main_structure(rejected, origin_notices=notices)[1]
     assert any("分解結果" in notice for notice in notices), notices
 
 
 def test_human_readable_history_rejects_internal_identifier() -> None:
     """人間向け変更履歴は内部管理IDを含めず自然な記録を持つ。"""
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.HISTORY_REVIEW_BODY, "P-001", 1)
-    errors = _plan_format.check_plan_main_structure(content)[1]
+    errors = plan_sections.check_plan_main_structure(content)[1]
     assert any("`## 変更履歴`へ履歴・要求・実装単位の合成ID" in error for error in errors), errors
 
 
@@ -115,32 +105,32 @@ def test_human_readable_history_rejects_internal_identifier() -> None:
 def test_human_readable_main_accepts_ambiguous_external_identifier(external_id: str) -> None:
     """外部仕様名と旧素材IDを区別できない完全トークンは誤拒否しない。"""
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_ACTION_SUBJECT, f"{external_id}を維持する", 1)
-    assert not _plan_format.check_plan_main_structure(content)[1]
+    assert not plan_sections.check_plan_main_structure(content)[1]
 
 
 def test_human_readable_units_reject_ambiguous_exact_id() -> None:
     """構造化された実装単位名では曖昧な完全トークンも旧IDとして拒否する。"""
     content = _HUMAN_DETAIL_CONTENT.replace("| 契約境界の更新 |", "| P-256 |", 1)
-    errors = _plan_format.check_plan_detail_structure(content, "通常変更")
+    errors = plan_sections.check_plan_detail_structure(content, "通常変更")
     assert any("合成IDではない説明的な名前" in error for error in errors), errors
 
 
 def test_bug_file_structure_accepts_canonical_sidecar() -> None:
     """H1直下のバグ単位と原因分析表・固定行の調査表を持つ付属ファイルを受理する。"""
-    assert not _plan_format.check_bug_file_structure(_BUG_FILE_CONTENT)
+    assert not plan_sections.check_bug_file_structure(_BUG_FILE_CONTENT)
 
 
 def test_bug_file_structure_rejects_missing_cause_table() -> None:
     """原因分析表のない新形式のバグ単位を拒否する。"""
     content = _BUG_FILE_CONTENT.replace(f"{_BUG_CAUSE_TABLE}\n\n", "")
-    errors = _plan_format.check_bug_file_structure(content)
+    errors = plan_sections.check_bug_file_structure(content)
     assert any("原因分析表を調査表より前に置く" in error for error in errors), errors
 
 
 def test_bug_file_structure_rejects_mixed_new_and_legacy_tables() -> None:
     """同じバグ単位に新形式と旧14行表が混在した場合を拒否する。"""
     legacy_table = _LEGACY_BUG_FILE_CONTENT.split("\n\n", 2)[2]
-    assert _plan_format.check_bug_file_structure(f"{_BUG_FILE_CONTENT}\n\n{legacy_table}")
+    assert plan_sections.check_bug_file_structure(f"{_BUG_FILE_CONTENT}\n\n{legacy_table}")
 
 
 def test_bug_file_structure_reports_literal_pipe_for_column_mismatch() -> None:
@@ -151,7 +141,7 @@ def test_bug_file_structure_reports_literal_pipe_for_column_mismatch() -> None:
         1,
     )
 
-    errors = _plan_format.check_bug_file_structure(content)
+    errors = plan_sections.check_bug_file_structure(content)
 
     assert any("列数が一致しない" in error and "`\\|`へエスケープ" in error for error in errors), errors
     assert not any("空の`内容`" in error for error in errors), errors
@@ -162,7 +152,7 @@ def test_canonical_fixture_accepts_mixed_agreements_and_numeric_target() -> None
     assert "診断件数を2件から1件へ減らす" in _VALID_CONTENT
     assert "対象外の挙動を変更しない" in _VALID_CONTENT
     assert "基準値は診断2件、目標は1件" in _VALID_CONTENT
-    assert not _plan_format.check_plan_structure(_VALID_CONTENT)
+    assert not plan_sections.check_plan_structure(_VALID_CONTENT)
 
 
 def test_legacy_plan_accepts_legacy_history_review_identifier() -> None:
@@ -172,20 +162,20 @@ def test_legacy_plan_accepts_legacy_history_review_identifier() -> None:
         "| C-002 | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
-    assert not _plan_format.check_plan_structure(content)
+    assert not plan_sections.check_plan_structure(content)
 
 
 def test_permanence_rejects_free_h3() -> None:
     """恒久化領域では固定3見出し以外のH3を拒否する。"""
     content = _VALID_CONTENT.replace("\n## 実装資料", "\n### 任意の補足\n\n補足する。\n\n## 実装資料")
-    assert any("固定見出し以外のH3" in error for error in _plan_format.check_plan_structure(content))
+    assert any("固定見出し以外のH3" in error for error in plan_sections.check_plan_structure(content))
 
 
 def test_progress_table_rejects_empty_cells_when_a_row_exists() -> None:
     """進捗表に内容行がある場合は従来どおり全cellの値を要求する。"""
     marker = "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n"
     content = _VALID_CONTENT.replace(marker, marker + "| 2026-08-09 12:00 | 実装 |  |\n", 1)
-    errors = _plan_format.check_plan_structure(content)
+    errors = plan_sections.check_plan_structure(content)
     assert any("空cell" in error for error in errors), errors
 
 
@@ -193,7 +183,7 @@ def test_permanence_table_accepts_no_candidate_phrase_within_finding() -> None:
     """予約値を含む通常の知見と別の知見を併記した表を受理する。"""
     row = _plan_fixture.PERMANENCE_ROW
     additional = "| 候補なし表記の検査を追加する | P-001 | 対象ファイル | 誤った記載を拒否するため。 |"
-    assert not _plan_format.check_plan_structure(_VALID_CONTENT.replace(row, f"{row}\n{additional}"))
+    assert not plan_sections.check_plan_structure(_VALID_CONTENT.replace(row, f"{row}\n{additional}"))
 
 
 @pytest.mark.parametrize(
@@ -219,7 +209,7 @@ def test_permanence_table_rejects_empty_cells_and_column_mismatch(
     """恒久化表の空セルと列数不一致を拒否する。"""
     original = _plan_fixture.PERMANENCE_ROW
     content = _VALID_CONTENT.replace(original, row)
-    errors = _plan_format.check_plan_structure(content)
+    errors = plan_sections.check_plan_structure(content)
     assert any(expected in error for error in errors), errors
     assert not any(unexpected in error for error in errors), errors
     lineno = content.splitlines().index(row) + 1
@@ -235,7 +225,7 @@ def test_refactoring_table_accepts_one_row_per_target() -> None:
         1,
     )
 
-    assert not _plan_format.check_plan_structure(content)
+    assert not plan_sections.check_plan_structure(content)
 
 
 @pytest.mark.parametrize(
@@ -248,7 +238,7 @@ def test_refactoring_table_accepts_one_row_per_target() -> None:
 def test_refactoring_table_rejects_empty_cells_and_column_mismatch(row: str, expected: str) -> None:
     """現行リファクタリング表の空cellと列数不一致を拒否する。"""
     content = _VALID_CONTENT.replace(_plan_fixture.REFACTORING_ROW, row, 1)
-    errors = _plan_format.check_plan_structure(content)
+    errors = plan_sections.check_plan_structure(content)
 
     assert any(expected in error for error in errors), errors
 
@@ -263,8 +253,8 @@ def test_legacy_refactoring_table_remains_readable() -> None:
 | 本計画に含めるか | 含める |"""
     content = _VALID_CONTENT.replace(_plan_fixture.REFACTORING_TABLE, legacy, 1)
 
-    assert _plan_format.has_legacy_refactoring_table(content)
-    assert not _plan_format.check_plan_structure(content)
+    assert plan_sections.has_legacy_refactoring_table(content)
+    assert not plan_sections.check_plan_structure(content)
 
 
 def test_new_material_tables_take_priority_over_legacy_fence() -> None:
@@ -277,7 +267,7 @@ P-999:
 ```
 """
     content = _VALID_CONTENT.replace("\n## 変更履歴", f"{legacy_tail}\n## 変更履歴", 1)
-    materials, errors = _plan_format.parse_plan_materials(content)
+    materials, errors = plan_materials.parse_plan_materials(content)
     assert not errors
     assert materials is not None
     assert not materials.is_legacy
@@ -291,7 +281,7 @@ def test_action_decision_rejects_unknown_value() -> None:
         "| 診断件数を2件から1件へ減らす | 未定義 | 指示どおり | R-P-001-001 |",
         1,
     )
-    errors = _plan_format.check_plan_structure(content)
+    errors = plan_sections.check_plan_structure(content)
     assert any("採否" in error and "未定義" in error for error in errors), errors
 
 
@@ -307,7 +297,7 @@ def test_non_adopted_action_may_reference_rejected_requirement_in_reason() -> No
         "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001, R-P-001-001 |",
         1,
     )
-    errors = _plan_format.check_plan_structure(content)
+    errors = plan_sections.check_plan_structure(content)
     assert not errors, errors
 
 
@@ -318,7 +308,7 @@ def test_structured_material_contract_rejects_duplicate_feedback_queue_id() -> N
         "| P-002 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |",
         1,
     )
-    _materials, errors = _plan_format.parse_plan_materials(content)
+    _materials, errors = plan_materials.parse_plan_materials(content)
     assert any("フィードバック素材のキューIDが重複している" in error for error in errors), errors
 
 
@@ -341,7 +331,7 @@ def test_structured_material_types_may_be_unreferenced(material_type: str) -> No
         "",
         1,
     )
-    materials, errors = _plan_format.parse_plan_materials(content)
+    materials, errors = plan_materials.parse_plan_materials(content)
     assert not errors
     assert materials is not None
 
@@ -411,7 +401,7 @@ def test_main_structure_requires_none_when_no_agent_proposal_exists() -> None:
     """提案行が無い判断節へ任意の説明文を置かない。"""
     judgment = f"## {_plan_format.PLAN_H2_AGENT_JUDGMENT}"
     content = _canonical_main_content().replace(f"{judgment}\n\nなし", f"{judgment}\n\n調査結果を記載する", 1)
-    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    _work_type, errors = plan_sections.check_plan_main_structure(content)
     assert any("エージェント提案が無い場合は`なし`" in error for error in errors), errors
 
 
@@ -422,10 +412,10 @@ def test_legacy_history_keeps_old_track_compatibility_but_rejects_unknown_track(
         "| R1-conformance | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
-    assert not _plan_format.check_plan_structure(accepted)
+    assert not plan_sections.check_plan_structure(accepted)
 
     rejected = accepted.replace("R1-conformance", "R1-unknown-track", 1)
-    errors = _plan_format.check_plan_structure(rejected)
+    errors = plan_sections.check_plan_structure(rejected)
     assert any("系統名は" in error and "正規値" not in error for error in errors), errors
 
 
@@ -436,7 +426,7 @@ def test_detail_structure_accepts_multiple_units_with_dependency() -> None:
         f"{_plan_fixture.TWO_FILE_UNIT_ROW}\n",
         f"{_plan_fixture.TWO_FILE_UNIT_ROW}\n" + second,
     )
-    assert not _plan_format.check_plan_detail_structure(content, "通常変更")
+    assert not plan_sections.check_plan_detail_structure(content, "通常変更")
 
 
 def test_detail_structure_rejects_dependency_not_preceding_integration_order() -> None:
@@ -447,21 +437,21 @@ def test_detail_structure_rejects_dependency_not_preceding_integration_order() -
         f"{_plan_fixture.TWO_FILE_UNIT_ROW}\n",
         first + second,
     )
-    errors = _plan_format.check_plan_detail_structure(content, "通常変更")
+    errors = plan_sections.check_plan_detail_structure(content, "通常変更")
     assert any("`統合順`より前にない" in error for error in errors), errors
 
 
 def test_main_structure_accepts_termination_placeholder() -> None:
     """`## 終端工程`は終端工程が無い場合`なし`の記載を受理する。"""
     assert "\n## 終端工程\n\nなし\n" in _VALID_MAIN_CONTENT
-    _work_type, errors = _plan_format.check_plan_main_structure(_VALID_MAIN_CONTENT)
+    _work_type, errors = plan_sections.check_plan_main_structure(_VALID_MAIN_CONTENT)
     assert not any(f"`## {_plan_format.PLAN_H2_TERMINATION}`は" in error for error in errors), errors
 
 
 def test_detail_structure_rejects_bug_section_for_normal_work_type() -> None:
     """detail側は作業種別が`通常変更`の場合`## バグ調査結果`を拒否する。"""
     content = "## バグ調査結果\n\n未使用。\n\n" + _VALID_DETAIL_CONTENT
-    errors = _plan_format.check_plan_detail_structure(content, "通常変更")
+    errors = plan_sections.check_plan_detail_structure(content, "通常変更")
     assert any(f"`## {_plan_format.PLAN_H2_BUG}`は置かない" in error for error in errors), errors
 
 

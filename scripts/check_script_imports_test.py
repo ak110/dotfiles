@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pathlib
+import subprocess
+import sys
 
 import check_script_imports
 import pytest
@@ -309,4 +311,112 @@ def test_project_scripts_resolvable_returns_zero(_isolate_repo_root: pathlib.Pat
     (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
     (pkg_dir / "tool.py").write_text("def main() -> None:\n    pass\n", encoding="utf-8")
     (_isolate_repo_root / "pyproject.toml").write_text('[project.scripts]\nfoo-cmd = "pkg.tool:main"\n', encoding="utf-8")
+    assert check_script_imports.main() == 0
+
+
+_SPLIT_PACKAGES = (
+    "_atk/serve/plans",
+    "_atk/managed_temp",
+    "_atk/wi/mutations",
+    "_plan/structure",
+    "_hooks/pretooluse",
+)
+_REAL_TOOLKIT_ROOT = pathlib.Path(check_script_imports.__file__).resolve().parent.parent / _TOOLKIT_PREFIX
+
+
+def _split_package_modules() -> list[str]:
+    """責務別に分けた5パッケージの非テストのサブモジュール名を返す。"""
+    modules: list[str] = []
+    for package in _SPLIT_PACKAGES:
+        package_dir = _REAL_TOOLKIT_ROOT / "agent_toolkit" / package
+        modules.extend(
+            "agent_toolkit." + package.replace("/", ".") + "." + path.stem
+            for path in sorted(package_dir.glob("*.py"))
+            if not path.name.endswith("_test.py") and path.name not in {"__init__.py", "conftest.py"}
+        )
+    return modules
+
+
+@pytest.mark.parametrize("module", _split_package_modules())
+def test_agent_toolkit_split_packages_import_standalone(module: str) -> None:
+    """責務別のサブモジュールは、兄弟モジュールの名前の注入に頼らず新しいプロセスで単独にimportできる。"""
+    completed = subprocess.run(
+        [sys.executable, "-c", f"import importlib; importlib.import_module({module!r})"],
+        cwd=_REAL_TOOLKIT_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def _write_toolkit_module(root: pathlib.Path, relative_path: str, body: str) -> pathlib.Path:
+    """一時ツリーの`agent_toolkit/`配下へモジュールを書く。"""
+    path = root / "agent-toolkit/agent_toolkit" / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "header"),
+    [
+        ("_atk/feature/view.py", "# ruff: noqa: F401,F821,I001\n"),
+        ("_hooks/check.py", "# ruff: noqa\n"),
+        ("../skills/example/scripts/tool.py", "# ruff: noqa: E402, F821\n"),
+    ],
+)
+def test_agent_toolkit_rejects_file_level_f821_noqa(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], relative_path: str, header: str
+) -> None:
+    """ファイル単位の`F821`の抑止（コードを列挙しない抑止を含む）を、明示importへ改める次の操作とともに失敗にする。"""
+    _write_toolkit_module(_isolate_repo_root, relative_path, f'{header}"""対象。"""\n\nVALUE = missing_name\n')
+
+    assert check_script_imports.main() == 1
+    err = capsys.readouterr().err
+    assert "`F821`（未定義名）の検出を抑止している" in err
+    assert "次の操作: 使う名前を定義元から明示的にimportし" in err
+
+
+@pytest.mark.parametrize(
+    ("body", "description"),
+    [
+        (
+            "import sibling\nfor name, value in vars(sibling).items():\n    vars(sibling).setdefault(name, value)\n",
+            "setdefault",
+        ),
+        ("import sibling\nvars(sibling)['name'] = 1\n", "への代入"),
+        ("import sibling\nglobals().update(vars(sibling))\n", "update"),
+        ("import sys\nimport types\nsys.modules[__name__].__class__ = types.ModuleType\n", "__class__"),
+    ],
+)
+def test_agent_toolkit_rejects_namespace_injection(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str, description: str
+) -> None:
+    """モジュールのトップレベルの名前空間への書き込みを、明示importへ改める次の操作とともに失敗にする。"""
+    _write_toolkit_module(_isolate_repo_root, "_atk/feature/__init__.py", body)
+
+    assert check_script_imports.main() == 1
+    err = capsys.readouterr().err
+    assert "モジュールのトップレベルで名前空間へ書き込んでいる" in err
+    assert description in err
+    assert "次の操作: 名前を注入せず、名前を使うモジュールが定義元から明示的にimportする" in err
+
+
+def test_agent_toolkit_allows_line_level_f821_noqa(_isolate_repo_root: pathlib.Path) -> None:
+    """行単位の`# noqa: F821`、名前空間の読み取りと関数内の書き込み、テストファイルは失敗にしない。"""
+    _write_toolkit_module(
+        _isolate_repo_root,
+        "_atk/feature/view.py",
+        '"""対象。"""\n\nimport importlib\n\n'
+        "VALUE: Later = None  # noqa: F821\n"
+        'PRIVATE = vars(importlib.import_module("json"))["dumps"]\n\n\n'
+        "def register(module: object) -> None:\n"
+        '    """関数内の書き込みは読み込み時の注入ではない。"""\n'
+        '    vars(module).setdefault("name", 1)\n',
+    )
+    _write_toolkit_module(_isolate_repo_root, "_atk/feature/view_test.py", "# ruff: noqa: F821\n")
+
     assert check_script_imports.main() == 0

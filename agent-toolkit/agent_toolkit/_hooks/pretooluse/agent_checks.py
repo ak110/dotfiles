@@ -1,5 +1,3 @@
-# ruff: noqa: F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
 r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_serverおよびplan-mode起動の可否を判定する。"""
 
 from __future__ import annotations
@@ -12,42 +10,30 @@ import re
 import sys
 import tempfile
 import time
-from typing import TYPE_CHECKING
-
 
 from agent_toolkit._agents_server import (
-    tool_names as _agents_server_tool_names,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    tool_names as _agents_server_tool_names,
 )
-from agent_toolkit._common.delegated_session import is_delegated  # noqa: E402
-from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common.delegated_session import is_delegated
+from agent_toolkit._common.file_lock import (
     locked_rotate_and_append as _locked_rotate_and_append,
 )
-
-# pylint: disable=wrong-import-position
 from agent_toolkit._hooks import (
-    plugin_resources as _plugin_resources,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    plugin_resources as _plugin_resources,
 )
 from agent_toolkit._hooks import (
-    response_language_check as _response_language_check,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    response_language_check as _response_language_check,
 )
 from agent_toolkit._hooks import (
-    rules_context as _rules_context,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    rules_context as _rules_context,
 )
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.notice import _WARN_TAG  # noqa: E402
-
-from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks.notice import _WARN_TAG
+from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+from agent_toolkit._hooks.session_state import (
     read_state,
     update_state,
 )
-from agent_toolkit._hooks.task_stop_state import has_recent_completion, target_ids  # noqa: E402
-
-if TYPE_CHECKING:
-    from agent_toolkit._hooks.pretooluse.notices import (
-        _block_notice,
-        _llm_notice,
-    )
+from agent_toolkit._hooks.task_stop_state import has_recent_completion, target_ids
 
 
 def _handle_language_check(payload: dict, session_id: str) -> str | None:

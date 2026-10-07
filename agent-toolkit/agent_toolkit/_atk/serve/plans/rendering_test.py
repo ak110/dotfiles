@@ -1,24 +1,21 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`の計画ファイル画面の処理のテスト。"""
 
 # pylint: disable=protected-access
 
 import asyncio
-import base64
-import hashlib
 import json
-import os
 import pathlib
-import subprocess
-import typing
 
 import pytest
 
-from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import plans
-from agent_toolkit._atk.serve.plans.test_support_test import *  # noqa: F403
+from agent_toolkit._atk.serve import remote as _atk_serve_remote
+from agent_toolkit._atk.serve.plans import ctime_index as plans_ctime_index
+from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
+from agent_toolkit._atk.serve.plans import remote as plans_remote
+from agent_toolkit._atk.serve.plans import roots as plans_roots
+from agent_toolkit._atk.serve.plans import views as plans_views
+from agent_toolkit._testing.serve_plans_support import _context, _failed_ssh, _plan
 
 
 def test_symlinked_root_is_deduplicated_by_identity(tmp_path: pathlib.Path) -> None:
@@ -28,7 +25,7 @@ def test_symlinked_root_is_deduplicated_by_identity(tmp_path: pathlib.Path) -> N
     link = tmp_path / "link"
     link.symlink_to(root, target_is_directory=True)
 
-    normalized = plans.normalize_root_specs(
+    normalized = plans_roots.normalize_root_specs(
         (
             plans.RootSpec(source_id=plans.NEW_SOURCE_ID, path=root, portable_path="a"),
             plans.RootSpec(source_id="other", path=link, portable_path="b"),
@@ -50,7 +47,7 @@ def test_cleanup_removes_only_temporaries(index_path: pathlib.Path) -> None:
     legacy_temporary = index_path.parent / f".{digest}.json.123.456.tmp"
     legacy_temporary.write_text("{}", encoding="utf-8")
 
-    plans.cleanup_creation_time_temporaries()
+    plans_ctime_index.cleanup_creation_time_temporaries()
 
     assert index_path.exists()
     assert keep.exists()
@@ -70,7 +67,7 @@ async def test_attached_links_are_omitted_when_other_pages_are_absent(
     _plan(root, "p.md")
     context = _context(root)
 
-    assert await plans.plan_links_html(context, "local-host", "", "p.md") == ""
+    assert await plans_views.plan_links_html(context, "local-host", "", "p.md") == ""
 
 
 def test_non_directory_root_is_reported_as_a_warning(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
@@ -79,7 +76,7 @@ def test_non_directory_root_is_reported_as_a_warning(tmp_path: pathlib.Path, ind
     root = tmp_path / "plans"
     root.write_text("x", encoding="utf-8")
 
-    entries, warning = plans.scan_files(root, "local-host")
+    entries, warning = plans_local_scan.scan_files(root, "local-host")
 
     assert not entries
     assert warning == "rootがディレクトリではありません"
@@ -123,8 +120,8 @@ async def test_remote_read_failure_reports_stderr(monkeypatch: pytest.MonkeyPatc
     """リモート実行が非0で終了した場合、終了コードと失敗元の標準エラー出力を例外本文へ引き継ぐ。"""
     monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(3, stderr))
 
-    with pytest.raises(plans.RemoteHelperError) as error:
-        await plans.fetch_remote_file("remote-host", "p.md", plans.default_ssh_runner, None)
+    with pytest.raises(plans_remote.RemoteHelperError) as error:
+        await plans_remote.fetch_remote_file("remote-host", "p.md", plans_remote.default_ssh_runner, None)
 
     assert "終了コード3" in str(error.value)
     assert expected in str(error.value)

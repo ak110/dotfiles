@@ -17,13 +17,21 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
   束縛）があるかを`ast.parse`で確認する。プロジェクト依存の解決は`--no-project`環境では
   成立しないため対象外とする
 - 対象種別3: `agent-toolkit/agent_toolkit/`配下の責務別サブパッケージを再帰走査し、
-  層の順序に反する絶対importと、非テストモジュールから`_testing`へのimportを検出する
+  層の順序に反する絶対importと、テスト側のモジュール（`*_test.py`・`conftest.py`・`_testing`配下）以外から
+  `_testing`へのimportを検出する
 - 対象種別4: `agent-toolkit/agent_toolkit/`と`agent-toolkit/skills/*/scripts/`を走査し、
   uvプロジェクトへ集約したPythonからPEP 723宣言が除去されていることを検査する
 - 対象種別5: `agent-toolkit/agent_toolkit/`直下の`*.py`（`*_test.py`を除く）が、配布物の外部から
   絶対パスで解決される公開スクリプトと`__init__.py`・`conftest.py`だけであることを検査する。
   対象種別3は責務別サブパッケージだけを走査するため、層に収まらない実装モジュールを直下へ置くと
   層の検査を経ずに配置の規定から外れる
+- 対象種別6: `agent-toolkit/agent_toolkit/`と`agent-toolkit/skills/*/scripts/`の非テストのPython
+  （`*_test.py`と`conftest.py`を除く）を1回ずつ構文解析し、モジュールの書き方の規則を検査する。
+  ファイル単位の`# ruff: noqa`による`F821`（未定義名）の抑止と、モジュールのトップレベルで
+  名前空間へ書き込む処理（`vars(...)`・`globals()`への代入・`setdefault`・`update`、
+  `sys.modules[...]`の`__class__`の置換）を失敗とする。どちらも使う名前を実行時に別の場所から
+  注入する構造を許し、静的解析が名前を解決できなくなるため。行単位の`# noqa: F821`は前方参照など
+  特定の1行だけを抑止し、注入への依存を生まないため対象から外す
 
 スクリプトをimportまたは実行する方式は採らない。生成処理・ファイル書き込みなどの副作用を
 実行し得るうえ、`--help`への対応も保証されていないため。
@@ -380,10 +388,146 @@ def _check_agent_toolkit_layers() -> list[str]:
             for reference in _extract_imports(tree):
                 components = reference.name.split(".")
                 imported_layer = components[1] if components[0] == "agent_toolkit" and len(components) > 1 else components[0]
-                if imported_layer == "_testing" and not source_path.name.endswith("_test.py"):
+                if imported_layer == "_testing" and not _is_test_support_module(source_path, scripts_root):
                     problems.append(f"{_display_path(source_path)}: 非テストモジュールから`_testing`をimportしている")
                 elif imported_layer in order and layer in order and order[imported_layer] > order[layer]:
                     problems.append(f"{_display_path(source_path)}: 層の順序に反して`{imported_layer}`をimportしている")
+    return problems
+
+
+def _is_test_support_module(source_path: pathlib.Path, scripts_root: pathlib.Path) -> bool:
+    """`_testing`をimportできるテスト側のモジュール（`*_test.py`・`conftest.py`・`_testing`配下）かを返す。"""
+    if source_path.name.endswith("_test.py") or source_path.name == "conftest.py":
+        return True
+    return source_path.relative_to(scripts_root).parts[0] == "_testing"
+
+
+_RUFF_FILE_NOQA_RE = re.compile(r"^\s*#\s*ruff\s*:\s*noqa(?:\s*:\s*(?P<codes>[^#]*))?\s*$")
+_NAMESPACE_WRITE_METHODS = frozenset({"setdefault", "update", "__setitem__"})
+
+
+@dataclasses.dataclass(frozen=True)
+class _AgentToolkitSource:
+    """書き方の規則を検査する非テストのPythonファイルと、その構文木。"""
+
+    path: pathlib.Path
+    text: str
+    tree: ast.Module
+
+
+def _agent_toolkit_sources() -> tuple[list[_AgentToolkitSource], list[str]]:
+    """`agent_toolkit/`と`skills/*/scripts/`の非テストのPythonを構文解析し、(対象, 解析の失敗)を返す。"""
+    roots = (
+        _REPO_ROOT / "agent-toolkit/agent_toolkit",
+        *sorted((_REPO_ROOT / "agent-toolkit/skills").glob("*/scripts")),
+    )
+    sources: list[_AgentToolkitSource] = []
+    problems: list[str] = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.py")):
+            if "__pycache__" in path.parts or path.name.endswith("_test.py") or path.name == "conftest.py":
+                continue
+            text = path.read_text(encoding="utf-8")
+            try:
+                tree = ast.parse(text, filename=str(path))
+            except SyntaxError as exc:
+                problems.append(f"{_display_path(path)}: 構文解析に失敗: {exc}")
+                continue
+            sources.append(_AgentToolkitSource(path, text, tree))
+    return sources, problems
+
+
+def _file_level_f821_noqa_problems(source: _AgentToolkitSource) -> list[str]:
+    """ファイル単位の`# ruff: noqa`が`F821`を抑止している行を返す。コードを列挙しない形も全規則の抑止として扱う。"""
+    problems: list[str] = []
+    for lineno, line in enumerate(source.text.splitlines(), start=1):
+        match = _RUFF_FILE_NOQA_RE.match(line)
+        if match is None:
+            continue
+        codes = match.group("codes")
+        if codes is None or "F821" in {code.strip() for code in codes.split(",")}:
+            problems.append(
+                f"{_display_path(source.path)}:{lineno}: ファイル単位の`# ruff: noqa`が`F821`（未定義名）の検出を抑止している。"
+                "次の操作: 使う名前を定義元から明示的にimportし、ファイル単位の抑止から`F821`を除く"
+            )
+    return problems
+
+
+def _is_namespace_call(node: ast.expr) -> bool:
+    """`vars(...)`または`globals()`の呼び出し式かを返す。"""
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"vars", "globals"}
+
+
+def _is_sys_modules_subscript(node: ast.expr) -> bool:
+    """`sys.modules[...]`の添字式かを返す。"""
+    return (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "modules"
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id == "sys"
+    )
+
+
+def _namespace_write_description(node: ast.AST) -> str | None:
+    """1つの文の中で名前空間へ書き込む式を探し、見つかれば書き込みの形を返す。"""
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Assign | ast.AugAssign | ast.AnnAssign):
+            targets = inner.targets if isinstance(inner, ast.Assign) else [inner.target]
+            for target in targets:
+                if isinstance(target, ast.Subscript) and _is_namespace_call(target.value):
+                    return f"`{ast.unparse(target.value)}[...]`への代入"
+                if isinstance(target, ast.Attribute) and target.attr == "__class__" and _is_sys_modules_subscript(target.value):
+                    return "`sys.modules[...].__class__`の置換"
+        if (
+            isinstance(inner, ast.Call)
+            and isinstance(inner.func, ast.Attribute)
+            and inner.func.attr in _NAMESPACE_WRITE_METHODS
+            and _is_namespace_call(inner.func.value)
+        ):
+            return f"`{ast.unparse(inner.func.value)}.{inner.func.attr}(...)`"
+    return None
+
+
+def _top_level_statements(body: list[ast.stmt]) -> list[ast.stmt]:
+    """関数とクラスの本体を除き、モジュールの読み込み時に実行される文を返す。"""
+    statements: list[ast.stmt] = []
+    for node in body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            continue
+        if isinstance(node, ast.If | ast.For | ast.AsyncFor | ast.While | ast.With | ast.AsyncWith):
+            statements.extend(_top_level_statements([*node.body, *getattr(node, "orelse", [])]))
+            continue
+        if isinstance(node, ast.Try):
+            handlers = [statement for handler in node.handlers for statement in handler.body]
+            statements.extend(_top_level_statements([*node.body, *handlers, *node.orelse, *node.finalbody]))
+            continue
+        statements.append(node)
+    return statements
+
+
+def _namespace_write_problems(source: _AgentToolkitSource) -> list[str]:
+    """モジュールのトップレベルで名前空間へ書き込む文を返す。読み取り（`vars(...)[...]`の参照）は対象外とする。"""
+    problems: list[str] = []
+    for statement in _top_level_statements(source.tree.body):
+        description = _namespace_write_description(statement)
+        if description is not None:
+            problems.append(
+                f"{_display_path(source.path)}:{statement.lineno}: "
+                f"モジュールのトップレベルで名前空間へ書き込んでいる（{description}）。"
+                "次の操作: 名前を注入せず、名前を使うモジュールが定義元から明示的にimportする"
+            )
+    return problems
+
+
+def _check_agent_toolkit_sources() -> list[str]:
+    """`agent_toolkit/`と`skills/*/scripts/`の非テストのPythonを1回ずつ走査し、書き方の規則に反する箇所を返す。"""
+    sources, problems = _agent_toolkit_sources()
+    for source in sources:
+        problems.extend(_file_level_f821_noqa_problems(source))
+        problems.extend(_namespace_write_problems(source))
     return problems
 
 
@@ -473,6 +617,7 @@ def main() -> int:
         + _check_project_scripts()
         + _check_agent_toolkit_layers()
         + _check_agent_toolkit_root_modules()
+        + _check_agent_toolkit_sources()
         + _check_project_modules_have_no_pep723()
     )
     for problem in problems:

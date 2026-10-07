@@ -1,106 +1,52 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""agent-toolkitが所有する一時ディレクトリを作成・検証・後始末する。"""
+"""managed-tempのprefixの規則、作成rootと状態rootの解決、マーカーと登録簿の記録の形式と読み書き。"""
 
 from __future__ import annotations
 
-import argparse
-import contextlib
 import datetime
-import enum
 import hashlib
 import json
 import os
 import pathlib
 import re
-import secrets
-import shutil
 import stat
 import sys
-import tempfile
 import typing
 import unicodedata
-from typing import TYPE_CHECKING
 
 import platformdirs
 
-from agent_toolkit._atk import help_text as _atk_help
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._atk.managed_temp.windows_security import (
+    _WINDOWS_REPARSE_POINT,
+    _validate_windows_security,
+    _windows_current_sid,
+    _windows_identity,
+    _windows_managed_root_security_is_valid,
+    _windows_secure_path,
+    _windows_security_descriptor,
+    _windows_sid_bytes,
+)
 
-if TYPE_CHECKING:
-    from agent_toolkit._atk.managed_temp.cli import build_parser, dispatch, main
-    from agent_toolkit._atk.managed_temp.creation import (
-        _invalid_prefix_error,
-        _remove_created_target,
-        _validate_path_shape,
-        _validate_posix,
-        _validate_windows,
-        create_managed_temp,
-        is_valid_prefix,
-        prefix_violation,
-        validate_managed_temp,
-    )
-    from agent_toolkit._atk.managed_temp.inventory import (
-        _classify_quarantine,
-        _cleanup_missing_registered_temp,
-        _cleanup_posix,
-        _cleanup_quarantine,
-        _cleanup_windows,
-        _clear_directory,
-        _consume_registry,
-        _consuming_registry_path,
-        _entity_absence_is_confirmed,
-        _lstat_or_none,
-        _marker_recovery_is_accepted,
-        _QuarantineJudgement,
-        _QuarantineState,
-        _report_unregistered_candidates,
-        _restore_cleanup_marker,
-        _restore_cleanup_state,
-        _restore_interrupted_consume,
-        _restore_posix_quarantine,
-        _restore_registry,
-        _tree_snapshot,
-        _unregistered_candidates,
-        cleanup_managed_temp,
-        count_unregistered_candidates,
-        is_missing_registered_temp,
-        list_managed_temp,
-        sweep_expired_managed_temp,
-    )
-    from agent_toolkit._atk.managed_temp.windows_security import (
-        _AccessAllowedAce,
-        _AceHeader,
-        _Acl,
-        _AclSizeInformation,
-        _ByHandleFileInformation,
-        _FileTime,
-        _validate_windows_managed_root_security,
-        _validate_windows_security,
-        _windows_acl_buffer,
-        _windows_current_sid,
-        _windows_current_user_ace_is_valid,
-        _windows_dll,
-        _windows_equal_sids,
-        _windows_error,
-        _windows_external_writer_ace_is_valid,
-        _windows_handle_open_error,
-        _windows_identity,
-        _windows_information_identity,
-        _windows_managed_root_security_is_valid,
-        _windows_path_handle,
-        _windows_replace_security,
-        _windows_secure_path,
-        _windows_security_base_is_valid,
-        _windows_security_descriptor,
-        _windows_security_from_handle,
-        _windows_security_update_handle,
-        _windows_set_security,
-        _windows_sid_bytes,
-        _WindowsAce,
-        _WindowsSecurity,
-    )
+
+def prefix_violation(prefix: str) -> str | None:
+    """prefixが違反した最初の条件の説明を返す。違反が無ければNoneを返す。"""
+    for description, satisfied in _PREFIX_RULES:
+        if not satisfied(prefix):
+            return description
+    return None
+
+
+def is_valid_prefix(prefix: str) -> bool:
+    """prefixがmanaged-tempのディレクトリの命名規則に一致するか返す。"""
+    return prefix_violation(prefix) is None
+
+
+def _invalid_prefix_error(prefix: str) -> ManagedTempError:
+    """違反した条件と拒否値を示すprefix検証エラーを返す。"""
+    violation = prefix_violation(prefix)
+    assert violation is not None
+    return ManagedTempError(f"prefixが条件を満たしていません（{violation}）: {prefix}")
+
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 _SCHEMA_VERSION = 6
@@ -118,54 +64,6 @@ _PREFIX_RULES = (
 _UTC_ISO8601_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+00:00\Z")
 MAX_AGE_DAYS = 7
 """managed-tempのディレクトリを自動削除するまでの日数。最終更新日時からの経過で判定する。"""
-_WINDOWS_ACCESS_ALLOWED_ACE_TYPE = 0
-_WINDOWS_ACCESS_DENIED_ACE_TYPE = 1
-_WINDOWS_ACL_REVISION = 2
-_WINDOWS_ERROR_ACCESS_DENIED = 5
-_WINDOWS_CONTAINER_INHERIT_ACE = 0x02
-_WINDOWS_DACL_SECURITY_INFORMATION = 0x00000004
-_WINDOWS_EXTERNAL_WRITER_ACCESS = 0x001301BF
-_WINDOWS_FILE_ALL_ACCESS = 0x001F01FF
-_WINDOWS_FILE_ATTRIBUTE_DIRECTORY = 0x10
-_WINDOWS_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
-_WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
-_WINDOWS_FILE_SHARE_ALL = 0x00000001 | 0x00000002 | 0x00000004
-_WINDOWS_OBJECT_INHERIT_ACE = 0x01
-_WINDOWS_OPEN_EXISTING = 3
-_WINDOWS_OWNER_SECURITY_INFORMATION = 0x00000001
-_WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
-_WINDOWS_READ_ATTRIBUTES = 0x0080
-_WINDOWS_READ_CONTROL = 0x00020000
-_WINDOWS_REPARSE_POINT = 0x400
-_WINDOWS_SE_DACL_PROTECTED = 0x1000
-_WINDOWS_SE_FILE_OBJECT = 1
-_WINDOWS_SYNCHRONIZE = 0x00100000
-_WINDOWS_WRITE_DAC = 0x00040000
-_WINDOWS_WRITE_OWNER = 0x00080000
-
-
-class ManagedTempError(Exception):
-    """ユーザーが入力または実行環境を修正できる検証エラー。
-
-    `str()`は理由だけを返し、`next_action`に次の操作を持つ。送出箇所が原因の分類に応じた次の操作を渡し、
-    渡さない送出箇所には状態の確認と報告先を示す次の操作を共通の案内として使う。
-    """
-
-    DEFAULT_NEXT_ACTION = (
-        "`atk managed-temp list`で管理対象の状態を確認し、表示された原因を除去して再実行する。"
-        "解消しない場合はユーザーへ報告する"
-    )
-    PERMISSION_NEXT_ACTION = (
-        "表示されたパスの所有者が実行中のOSアカウントで、権限がディレクトリは0700・ファイルは0600であることを確認する。"
-        "自分で直せない場合はユーザーへ報告する"
-    )
-    REPLACED_NEXT_ACTION = "同じ操作を再実行する。繰り返す場合は別の主体が同じパスを操作していないか確認し、ユーザーへ報告する"
-    RETRYABLE_NEXT_ACTION = "表示された原因を除去した後に、同じ`atk managed-temp cleanup`を再実行する"
-    UNSUPPORTED_NEXT_ACTION = "この実行環境では操作できない。対応するplatformで実行するか、ユーザーへ報告する"
-
-    def __init__(self, message: str, *, next_action: str | None = None) -> None:
-        super().__init__(message)
-        self.next_action = next_action or self.DEFAULT_NEXT_ACTION
 
 
 class _ManagedTempEntry(typing.TypedDict):
@@ -176,19 +74,6 @@ class _ManagedTempEntry(typing.TypedDict):
     created_at: str | None
     awis: list[str]
     session_id: str | None
-
-
-class _WindowsApiError(ManagedTempError):
-    """Windows APIのerror codeを保持する検証エラー。"""
-
-    def __init__(self, action: str, path: pathlib.Path | None, error_code: int) -> None:
-        target = f": {path}" if path is not None else ""
-        super().__init__(f"{action}{target}: {error_code}")
-        self.error_code = error_code
-
-
-class _WindowsHandleOpenError(_WindowsApiError):
-    """Windowsのパスハンドルを開けなかったことを示す。"""
 
 
 class _ValidatedTemp(typing.NamedTuple):

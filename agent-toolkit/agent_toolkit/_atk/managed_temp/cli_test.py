@@ -1,36 +1,30 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """_managed_tempの管理対象一時ディレクトリ境界を検証する。"""
 
 # pylint: disable=protected-access
 
 from __future__ import annotations
 
-import argparse
-import contextlib
-import ctypes
-import datetime
 import json
 import os
 import pathlib
-import stat
 import subprocess
 import sys
-import typing
 
 import pytest
 
 from agent_toolkit._atk import managed_temp as subject
 from agent_toolkit._atk.managed_temp import cli as cli_subject
 from agent_toolkit._atk.managed_temp import inventory as inventory_subject
+from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
+from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
+from agent_toolkit._testing.managed_temp_support import (
+    _install_windows_security_doubles,
+    _isolated_cli_environment,
+    setattr_in_managed_temp_modules,
+)
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-
-
-from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 
 
 @pytest.mark.parametrize(
@@ -48,13 +42,15 @@ from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 def test_cleanup_without_path_reports_managed_targets(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    entries: list[subject._ManagedTempEntry],
+    entries: list[managed_temp_registry._ManagedTempEntry],
     expected_listed: list[str],
     expected_operation: str | None,
 ) -> None:
     """path欠落時は管理対象の件数に応じた再実行情報を次の操作の行で示す。"""
-    monkeypatch.setattr(subject, "list_managed_temp", lambda: entries)
-    monkeypatch.setattr(subject, "cleanup_managed_temp", lambda *_args, **_kwargs: pytest.fail("cleanupを呼んだ"))
+    setattr_in_managed_temp_modules(monkeypatch, "list_managed_temp", lambda: entries)
+    setattr_in_managed_temp_modules(
+        monkeypatch, "cleanup_managed_temp", lambda *_args, **_kwargs: pytest.fail("cleanupを呼んだ")
+    )
 
     assert subject.main(["cleanup"]) == 2
     captured = capsys.readouterr()
@@ -201,8 +197,8 @@ def test_create_with_session_root_rejects_registration_options(conflict: str) ->
     [
         (False, b"current-owner", None, 101, False),
         (True, b"administrator-owner", None, 101, True),
-        (False, b"current-owner", subject._WINDOWS_ERROR_ACCESS_DENIED, 202, False),
-        (True, b"current-owner", subject._WINDOWS_ERROR_ACCESS_DENIED, 202, False),
+        (False, b"current-owner", managed_temp_windows_security._WINDOWS_ERROR_ACCESS_DENIED, 202, False),
+        (True, b"current-owner", managed_temp_windows_security._WINDOWS_ERROR_ACCESS_DENIED, 202, False),
     ],
 )
 def test_secure_path_uses_adopted_handle_for_owner_check_and_update(
@@ -222,15 +218,22 @@ def test_secure_path_uses_adopted_handle_for_owner_check_and_update(
         full_open_error=full_open_error,
     )
 
-    subject._windows_secure_path(tmp_path / "target", directory=directory)
+    managed_temp_windows_security._windows_secure_path(tmp_path / "target", directory=directory)
 
-    full_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC | subject._WINDOWS_WRITE_OWNER
-    minimal_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC
+    full_access = (
+        managed_temp_windows_security._WINDOWS_READ_CONTROL
+        | managed_temp_windows_security._WINDOWS_WRITE_DAC
+        | managed_temp_windows_security._WINDOWS_WRITE_OWNER
+    )
+    minimal_access = managed_temp_windows_security._WINDOWS_READ_CONTROL | managed_temp_windows_security._WINDOWS_WRITE_DAC
     expected_opens = [full_access, minimal_access] if full_open_error is not None else [full_access]
-    expected_information = subject._WINDOWS_DACL_SECURITY_INFORMATION | subject._WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION
+    expected_information = (
+        managed_temp_windows_security._WINDOWS_DACL_SECURITY_INFORMATION
+        | managed_temp_windows_security._WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION
+    )
     expected_owner = None
     if owner_changed:
-        expected_information |= subject._WINDOWS_OWNER_SECURITY_INFORMATION
+        expected_information |= managed_temp_windows_security._WINDOWS_OWNER_SECURITY_INFORMATION
         expected_owner = b"current-owner"
     assert calls.opens == expected_opens
     assert calls.security_reads == [expected_handle]
@@ -250,7 +253,7 @@ def test_cli_resumes_an_interrupted_cleanup(tmp_path: pathlib.Path, quarantine: 
         env=env,
     )
     target = pathlib.Path(created.stdout.strip())
-    registry = state_root / subject._registry_name(target)
+    registry = state_root / managed_temp_registry._registry_name(target)
     record = json.loads(registry.read_text(encoding="utf-8"))
     nonce = record["nonce"]
     consuming = registry.with_name(f"{registry.name}.consuming-{nonce}")

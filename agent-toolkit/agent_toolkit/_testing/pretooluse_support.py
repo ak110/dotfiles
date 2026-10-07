@@ -1,40 +1,30 @@
-# ruff: noqa: F401,I001
-# pylint: disable=unused-import
-"""agent-toolkit/agent_toolkit/_hooks/pretooluse/ のテスト。
+"""`_hooks/pretooluse/`のテストが共有する、PreToolUse hookの起動とpayload・作業場所の組み立て。
 
-subprocessで起動しexit code・stderr・stdoutを検証する。
+hookはsubprocessで起動し、テストはexit code・stderr・stdoutを検証する。
 """
 
 import ast
 import json
 import os
 import pathlib
-import re
-import shlex
 import subprocess
-import tempfile
-import textwrap
-import time
-from collections.abc import Callable
 
 import pytest
-from pyfltr.colloquial import check as _colloquial_check
 
-from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 
 
-_PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[3] / ".claude-plugin" / "plugin.json"
+_PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin" / "plugin.json"
 
 
-_MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[4] / ".claude-plugin" / "marketplace.json"
+_MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[3] / ".claude-plugin" / "marketplace.json"
 
 
-_SHARE_DIR = pathlib.Path(__file__).resolve().parents[3] / "share"
+_SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 
 
 _SECRETS_COPY_GUIDANCE = "Bashの`cp`で原本を複製"
@@ -187,28 +177,6 @@ def _stage_model_env(tmp_path: pathlib.Path, value: str) -> dict[str, str]:
         encoding="utf-8",
     )
     return {"XDG_CONFIG_HOME": str(config_home)}
-
-
-@pytest.fixture(name="deny_substring")
-def _deny_substring_fixture() -> str:
-    """辞書ファイルから口語表現の検出サンプルを生成する。
-
-    テスト本体へ口語表現を直接書かないため、allowlistの最初のオーバーラップサンプルから
-    denylist部分文字列を抽出する。本番ロジック`_colloquial_check.load_patterns`と同じ解釈で
-    タブ区切りの置換候補列を除外する。
-    """
-    deny_patterns = [pattern for pattern, _ in _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)]
-    for raw in _colloquial_check.ALLOW_PATH.read_text(encoding="utf-8").splitlines():
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        sample = re.sub(r"\[([^\]]+)\]", lambda m: m.group(1)[0], stripped)
-        for pattern in deny_patterns:
-            match = pattern.search(sample)
-            if match:
-                return match.group(0)
-    pytest.skip("no overlap between denylist and allowlist; cannot generate test sample")
-    return ""  # unreachable
 
 
 def _user_facing_payload(field: str, value: str) -> dict:
@@ -366,42 +334,3 @@ def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str = "codex-
         "session_id": session_id,
         "turn_id": "turn-1",
     }
-
-
-__all__ = [
-    "_CYRILLIC_SAMPLE",
-    "_EXECUTE_REVIEW_TASK_NAMES",
-    "_HANGUL_SAMPLE",
-    "_MARKETPLACE_MANIFEST",
-    "_NOTICE_PREFIX",
-    "_NOTICE_SUFFIX",
-    "_PLUGIN_MANIFEST",
-    "_SCRIPT",
-    "_SECRETS_COPY_GUIDANCE",
-    "_SHARE_DIR",
-    "_VALID_H2_PLAN_CONTENT",
-    "_additional_context",
-    "_agent_messages",
-    "_codex_payload",
-    "_deny_substring_fixture",
-    "_git_commit_initial",
-    "_home_path",
-    "_init_git_repo",
-    "_make_managed_temp_git_case",
-    "_make_plan_file",
-    "_make_private_notes_plan_file",
-    "_make_repo_with_optional_remote",
-    "_notice_body",
-    "_patch",
-    "_path_section_build_content",
-    "_plan_file_state_env",
-    "_process_loop_log_env",
-    "_read_session_state",
-    "_run",
-    "_run_posttooluse",
-    "_stage_model_env",
-    "_stderr_warn_offenders",
-    "_user_facing_payload",
-    "_write_session_state",
-    "_write_tmp_file",
-]

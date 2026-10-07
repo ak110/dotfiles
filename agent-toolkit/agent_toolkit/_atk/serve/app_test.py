@@ -1,41 +1,43 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`のテスト。"""
 
 # pylint: disable=protected-access
 
 import asyncio
-import binascii
 import contextlib
 import datetime
 import json
-import logging
-import math
 import os
 import pathlib
 import re
-import signal
-import struct
 import subprocess
 import sys
 import threading
-import types
 import typing
-import zlib
 
 import filelock
 import pytest
-import watchdog.events
 
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import assets, config, state
-from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve.plans import remote as serve_plan_remote
-from agent_toolkit._atk.wi import common, user_comment
+from agent_toolkit._atk.wi import common
 from agent_toolkit._atk.wi import repo as awi_repo
+from agent_toolkit._testing.serve_support import (
+    _BATCH_TEXT,
+    _BlockingSync,
+    _disable_wi_git,
+    _patch_batch_repo_operations,
+    _patch_comment_edit_dependencies,
+    _run_node_ui,
+    _session_review_awi,
+    _sync_app,
+    _three_screen_app,
+    _write_detail_entry,
+    _write_repo_entry,
+)
+from agent_toolkit._testing.wi_mutations_support import MUTATION_MODULES
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -43,9 +45,6 @@ from agent_toolkit._atk.wi import repo as awi_repo
 # 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
 # module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
 _HOST_ENVIRON = dict(os.environ)
-
-
-from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 
 def test_unknown_config_key_logs_warning(
@@ -837,18 +836,7 @@ async def test_add_api_rejects_missing_type(tmp_path: pathlib.Path) -> None:
 async def test_uwi_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """UWIエントリも他種別と同様に不採用遷移が成功する。"""
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    monkeypatch.setattr(common, "_repo_lock", lock)
-    monkeypatch.setattr(common, "_pull", lambda _path: None)
-    monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.awi_mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    _disable_wi_git(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(
@@ -984,15 +972,7 @@ async def test_remove_api_uses_user_permissions_for_terminal_state(
 ) -> None:
     """Web APIは実行環境変数にかかわらず人間主体として終端状態を削除する。"""
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    for module in (common, serve_app.awi_mutations):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
+    _disable_wi_git(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
     adopted = tmp_path / "adopted"
     adopted.mkdir()
@@ -1017,15 +997,7 @@ async def test_remove_api_returns_edit_conflict_before_target_repo_validation(
 ) -> None:
     """対象リポジトリの一致を確かめる前に非UTF-8化を削除競合へ正規化する。"""
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    for module in (common, serve_app.awi_mutations):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
+    _disable_wi_git(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     target = inbox / "unreadable.md"
@@ -1072,7 +1044,7 @@ async def test_answer_and_remove_apis_return_edit_conflict_when_concurrent_chang
             remove_inbox.rename(processing / remove_inbox.name)
         yield
 
-    for module in (common, serve_app.awi_mutations, serve_app.uwi_mutations):
+    for module in (common, *MUTATION_MODULES, serve_app.uwi_mutations):
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
         monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)

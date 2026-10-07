@@ -15,6 +15,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._agents_server import codex as subject
 from agent_toolkit._agents_server import state as shared_state
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
 class _ThreadStartClient:
@@ -479,7 +480,7 @@ def _make_plugin_root(base: pathlib.Path, version: str, *, versioned: bool) -> p
 def _isolate_stable_plugin_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """複製先の記録とmanaged-tempの作成先をテストごとに分離する。"""
     monkeypatch.setattr(subject, "_stable_plugin_roots", {})
-    monkeypatch.setattr(subject._managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setenv("TMPDIR", str(tmp_path / "managed-temp"))
     (tmp_path / "managed-temp").mkdir()
 

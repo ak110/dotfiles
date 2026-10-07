@@ -17,6 +17,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import time
 import types
 from collections.abc import Callable
@@ -29,6 +30,7 @@ from agent_toolkit._atk import config as _config  # noqa: E402  # pylint: disabl
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import run_command as _run_command  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import common as _wi_common  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
@@ -41,6 +43,7 @@ from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     make_git_remote_fake as _make_git_remote_fake,
 )
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 _GitCall = dict[str, Any]
 
@@ -424,7 +427,7 @@ class TestWaitScheduleParser:
             calls.append(now)
             return _managed_temp.SweepResult([], (), None)
 
-        monkeypatch.setattr(_managed_temp, "sweep_managed_temp", fake_sweep)
+        setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", fake_sweep)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
@@ -448,8 +451,8 @@ class TestWaitScheduleParser:
             return "fixed-subcommand-output"
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        monkeypatch.setattr(
-            _managed_temp,
+        setattr_in_managed_temp_modules(
+            monkeypatch,
             "sweep_managed_temp",
             lambda *, now: _managed_temp.SweepResult([], tuple(tmp_path / f"orphan-{index}" for index in range(count)), None),
         )
@@ -485,8 +488,8 @@ class TestWaitScheduleParser:
     ) -> None:
         """未登録領域の警告は値が1の委譲先だけで抑止する。"""
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(
-            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
         )
         if delegated_session is None:
             monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -515,8 +518,8 @@ class TestWaitScheduleParser:
             return "fixed-subcommand-output"
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        monkeypatch.setattr(
-            _managed_temp,
+        setattr_in_managed_temp_modules(
+            monkeypatch,
             "sweep_managed_temp",
             lambda *, now: _managed_temp.SweepResult([], (), _managed_temp.ManagedTempError("走査失敗")),
         )
@@ -543,8 +546,8 @@ class TestWaitScheduleParser:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(
-            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
         )
         state: dict = {}
 
@@ -576,8 +579,8 @@ class TestWaitScheduleParser:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(
-            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
         )
 
         def fail_update(_session_id: str, _mutator) -> bool:
@@ -600,9 +603,9 @@ class TestWaitScheduleParser:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """managed-temp listは未登録領域の絶対パスと回収方法を表示する。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = _managed_temp.create_managed_temp("orphan")
-        _managed_temp._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
+        managed_temp_registry._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["managed-temp", "list"], home=tmp_path, now=_FIXED_DT)
@@ -620,7 +623,7 @@ class TestWaitScheduleParser:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """期限超過領域の後始末失敗は警告し、本来のサブコマンドを継続する。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h")
         target = _managed_temp.create_managed_temp("cleanup-failure")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
@@ -637,7 +640,7 @@ class TestWaitScheduleParser:
             del recover_registry, blocking
             raise _managed_temp.ManagedTempError(f"後始末失敗: {path}")
 
-        monkeypatch.setattr(_managed_temp, "_cleanup_managed_temp", fail_cleanup)  # noqa: SLF001
+        setattr_in_managed_temp_modules(monkeypatch, "_cleanup_managed_temp", fail_cleanup)  # noqa: SLF001
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now)
@@ -668,7 +671,7 @@ class TestWaitScheduleParser:
 
         def unregistered(prefix: str, *, expired: bool, gitdir: pathlib.Path | None = None) -> pathlib.Path:
             target = _managed_temp.create_managed_temp(prefix)
-            _managed_temp._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
+            managed_temp_registry._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
             if gitdir is not None:
                 (target / "wt").mkdir()
                 (target / "wt" / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
@@ -720,7 +723,7 @@ class TestWaitScheduleParser:
             validated.append(pathlib.Path(path))
             return original_validate(path)
 
-        monkeypatch.setattr(_managed_temp, "validate_managed_temp", record_validate)
+        setattr_in_managed_temp_modules(monkeypatch, "validate_managed_temp", record_validate)
 
         for moment in (now, now):
             with pytest.raises(SystemExit) as exc_info:
@@ -743,7 +746,7 @@ class TestWaitScheduleParser:
         path_form: str,
     ) -> None:
         """期限超過した明示対象を絶対パス表記にかかわらず重複処理せず、ほかの対象も削除する。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = _managed_temp.create_managed_temp("explicit-cleanup")
         other = _managed_temp.create_managed_temp("other-expired")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
@@ -771,7 +774,7 @@ class TestWaitScheduleParser:
         tmp_path: pathlib.Path,
     ) -> None:
         """自動削除済みの対象でも、明示cleanupの相対パスは受理しない。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = _managed_temp.create_managed_temp("relative-cleanup")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
         old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
@@ -794,7 +797,7 @@ class TestWaitScheduleParser:
         count: int,
     ) -> None:
         """省略時は管理対象の一覧を示して終了コード2を返す。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         targets = [_managed_temp.create_managed_temp(f"cleanup-without-path-{index}") for index in range(count)]
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
 
@@ -944,7 +947,7 @@ def _prepare_sync_mutation(entry: str, tmp_path: pathlib.Path, monkeypatch: pyte
     """同期対象操作のコマンドごとに外部への作用を差し替え、`atk.main`へ渡す引数を返す。"""
     atk_members = vars(atk)
     if entry == "wi start-processing":
-        monkeypatch.setattr(atk_members["_mutations"], "_cmd_start_processing", lambda *_args: None)
+        monkeypatch.setattr(atk_members["_mutation_transitions"], "_cmd_start_processing", lambda *_args: None)
         return ["wi", "start-processing", "awi.md"]
     if entry == "wi add --dry-run":
         monkeypatch.setattr(atk_members["_add"], "resolve_add_target", lambda _value: ("github.com/example/repo", None))
@@ -2401,7 +2404,7 @@ class TestMainFailureNextAction:
         def fail(*_args: object) -> None:
             raise error
 
-        monkeypatch.setattr(atk_members["_mutations"], "_cmd_commit", fail)
+        monkeypatch.setattr(atk_members["_mutation_targets"], "_cmd_commit", fail)
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "commit"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 1

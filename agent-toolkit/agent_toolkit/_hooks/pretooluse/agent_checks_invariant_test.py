@@ -1,6 +1,6 @@
 """起動経路の回帰テストコードと実際の役割文書の対応を検証する。"""
 
-from agent_toolkit._hooks.pretooluse.test_support_test import _EXECUTE_REVIEW_TASK_NAMES, _SHARE_DIR
+from agent_toolkit._testing.pretooluse_support import _EXECUTE_REVIEW_TASK_NAMES, _SHARE_DIR
 
 
 class TestExecuteReviewAlternateRouteAllowed:

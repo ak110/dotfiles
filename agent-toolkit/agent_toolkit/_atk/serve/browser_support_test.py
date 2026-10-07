@@ -20,6 +20,7 @@ from agent_toolkit._atk.serve import config
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
+from agent_toolkit._atk.serve.plans import ctime_index as serve_plans_ctime_index
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
 from agent_toolkit._atk.wi import uwi as uwi_mutations
 
@@ -486,7 +487,7 @@ class _ScreenHarness:
 
 def _isolate_creation_time_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """作成日時インデックスを一時ディレクトリへ隔離し、開発環境の索引を書き換えない。"""
-    monkeypatch.setattr(serve_plans, "_CREATION_TIME_INDEX_PATH", tmp_path / "cache" / "index.json")
+    monkeypatch.setattr(serve_plans_ctime_index, "_CREATION_TIME_INDEX_PATH", tmp_path / "cache" / "index.json")
 
 
 @contextlib.asynccontextmanager

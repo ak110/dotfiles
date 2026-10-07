@@ -1,25 +1,27 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`の計画ファイル画面の処理のテスト。"""
 
 # pylint: disable=protected-access
 
-import asyncio
-import base64
-import hashlib
 import json
 import os
 import pathlib
-import subprocess
 import threading
-import typing
 
 import pytest
 
-from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import plans
-from agent_toolkit._atk.serve.plans.test_support_test import *  # noqa: F403
+from agent_toolkit._atk.serve import remote as _atk_serve_remote
+from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
+from agent_toolkit._atk.serve.plans import remote as plans_remote
+from agent_toolkit._atk.serve.plans import roots as plans_roots
+from agent_toolkit._atk.serve.plans import views as plans_views
+from agent_toolkit._testing.serve_plans_support import (
+    _context,
+    _failed_ssh,
+    _legacy_cache_path,
+    _plan,
+    _write_legacy_cache,
+)
 
 
 def test_first_observed_time_is_kept_across_updates(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
@@ -28,9 +30,9 @@ def test_first_observed_time_is_kept_across_updates(tmp_path: pathlib.Path, inde
     root.mkdir()
     path = _plan(root, "plan.md", mtime=1_000.0)
 
-    first = plans.list_files(root, "local-host")[0]
+    first = plans_local_scan.list_files(root, "local-host")[0]
     os.utime(path, (9_000.0, 9_000.0))
-    second = plans.list_files(root, "local-host")[0]
+    second = plans_local_scan.list_files(root, "local-host")[0]
 
     assert first.ctime_epoch == 1_000.0
     assert second.ctime_epoch == 1_000.0
@@ -46,7 +48,7 @@ def test_migrates_matching_legacy_entry(tmp_path: pathlib.Path, index_path: path
     legacy = _legacy_cache_path(index_path, "local-host", "plan.md")
     _write_legacy_cache(legacy, "local-host", "plan.md", 500.0)
 
-    entry = plans.list_files(root, "local-host")[0]
+    entry = plans_local_scan.list_files(root, "local-host")[0]
 
     assert entry.ctime_epoch == 500.0
     assert not legacy.exists()
@@ -56,7 +58,7 @@ def test_review_table_is_rendered_as_table() -> None:
     """レビュー指摘管理表は7列のHTML表へ変換する。"""
     row = "\t".join(json.dumps(value, ensure_ascii=False) for value in ["1", "実装", "a.py:1", "指摘", "要", "対応", ""])
 
-    html = plans.review_table_html(row + "\n")
+    html = plans_views.review_table_html(row + "\n")
 
     assert "<table" in html
     assert "<th>ラウンド</th>" in html
@@ -73,7 +75,7 @@ async def test_review_table_is_reachable_from_the_main_plan(tmp_path: pathlib.Pa
     _plan(root, "p.exec-review.tsv")
     context = _context(root)
 
-    html = await plans.plan_links_html(context, "local-host", "", "p.md")
+    html = await plans_views.plan_links_html(context, "local-host", "", "p.md")
 
     assert 'data-plan-path="p.exec-review.tsv"' in html
     assert "実行レビュー指摘管理表" in html
@@ -81,9 +83,9 @@ async def test_review_table_is_reachable_from_the_main_plan(tmp_path: pathlib.Pa
 
 def test_review_table_match_is_connected_to_the_main_plan() -> None:
     """付属ファイルの一致は、一覧で選択できるメイン計画へ接続する。"""
-    assert plans.listed_plan_path("p.exec-review.tsv") == "p.md"
-    assert plans.listed_plan_path("p.detail.md") == "p.md"
-    assert plans.listed_plan_path("p.md") == "p.md"
+    assert plans_views.listed_plan_path("p.exec-review.tsv") == "p.md"
+    assert plans_views.listed_plan_path("p.detail.md") == "p.md"
+    assert plans_views.listed_plan_path("p.md") == "p.md"
 
 
 @pytest.mark.parametrize("name", ("p.detail.md", "p.plan-review.tsv"))
@@ -93,8 +95,8 @@ def test_working_root_excludes_removed_attachments(tmp_path: pathlib.Path, name:
     root.mkdir()
     path = _plan(root, name)
 
-    assert not plans.is_target_path(path, root, plans.LEGACY_SOURCE_ID)
-    assert plans.is_target_path(path, root, plans.NEW_SOURCE_ID)
+    assert not plans_local_scan.is_target_path(path, root, plans.LEGACY_SOURCE_ID)
+    assert plans_local_scan.is_target_path(path, root, plans.NEW_SOURCE_ID)
 
 
 @pytest.mark.asyncio
@@ -127,11 +129,11 @@ async def test_start_local_watchers_schedules_existing_roots(
 @pytest.mark.asyncio
 async def test_long_stderr_keeps_the_tail_in_the_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """標準エラー出力が上限を超える場合、失敗の直接原因が現れる末尾側を残して切り詰める。"""
-    head = "先頭の行" * plans.STDERR_EXCERPT_MAX_CHARS
+    head = "先頭の行" * plans_roots.STDERR_EXCERPT_MAX_CHARS
     monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(3, f"{head}\n末尾の理由\n".encode()))
 
-    with pytest.raises(plans.RemoteHelperError) as error:
-        await plans.fetch_remote_file("remote-host", "p.md", plans.default_ssh_runner, None)
+    with pytest.raises(plans_remote.RemoteHelperError) as error:
+        await plans_remote.fetch_remote_file("remote-host", "p.md", plans_remote.default_ssh_runner, None)
 
     message = str(error.value)
     assert "末尾の理由" in message
@@ -145,11 +147,11 @@ def test_local_scans_stop_on_shutdown_request(tmp_path: pathlib.Path) -> None:
     root.mkdir()
     (root / "30-1200_計画.md").write_text("# 計画\n\n検索語\n", encoding="utf-8")
     stop = threading.Event()
-    assert plans.search_files(root, "検索語", stop=stop) == {"30-1200_計画.md"}
+    assert plans_local_scan.search_files(root, "検索語", stop=stop) == {"30-1200_計画.md"}
 
     stop.set()
 
     with pytest.raises(_atk_serve_remote.ServeStopping):
-        plans.search_files(root, "検索語", stop=stop)
+        plans_local_scan.search_files(root, "検索語", stop=stop)
     with pytest.raises(_atk_serve_remote.ServeStopping):
-        plans.scan_files(root, "local-host", stop=stop)
+        plans_local_scan.scan_files(root, "local-host", stop=stop)

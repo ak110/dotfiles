@@ -32,16 +32,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:09aac0c1104d6a2568f735e1699c0af618531a2b85807a88e21a898091662ea9",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_hooks/pretooluse/agent_checks_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:0b4e8fd18886e4112d9bfd26bccf920494ccd385eb69bad1cc242694703c3393",
       "lines": 10,
       "occurrences": [
@@ -100,56 +90,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:1942a7773b01895e2d824cf57fe93e4eebb0283ceddecd45d57bb5275aa137d2",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/managed_temp/inventory_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:20678bd357d049cea719e2813f88a90845943e416aaa37b78aee2f20206a3c6e",
-      "lines": 15,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_plan/structure/constants_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_plan/structure/markdown_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_plan/structure/parsing_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_plan/structure/references_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_plan/structure/sections_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_plan/structure/test_support_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:213796a901b0dfac1b9f278bbc2e880dccd8c22414f5f42b5f90c71a910949f2",
-      "lines": 13,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/mutations/targets_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:2167a3955998ecbeaaf4e39c2516c24c24d3aee147c9337fcbc22c6dd14838b3",
       "lines": 20,
       "occurrences": [
@@ -193,20 +133,6 @@
         },
         {
           "path": "agent_toolkit/_atk/wi/show_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:39ea7bbe753477a3febdb82da73794f17cb6831b346ce584a1b7ac2e9b59b0e7",
-      "lines": 15,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/mutations/content_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/wi/mutations/transitions_test.py",
           "count": 1
         }
       ]
@@ -316,48 +242,12 @@
       ]
     },
     {
-      "fingerprint": "sha256:78adc02d7c6ac82ebd132920113ff4786c39863575a0404cb1daf5b6f1b1d6bf",
-      "lines": 21,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/mutations/targets_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:7c0499e5e1de115187badf1c183742387878e6f140c3e7f9f824c2434065bcaa",
       "lines": 10,
       "occurrences": [
         {
           "path": "agent_toolkit/agents_server_mcp_test.py",
           "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:7eb2a3902f01ebe8e2df42317883d413816211f3f5dbfe5bf27325ebb4bad6cc",
-      "lines": 16,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_plan/structure/constants_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_plan/structure/markdown_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_plan/structure/parsing_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_plan/structure/references_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_plan/structure/test_support_test.py",
-          "count": 1
         }
       ]
     },
@@ -382,48 +272,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:84f2da93ed0abb53a17e0a59b0199ea2283de22dc7e003ff80eca14762ab2dd7",
-      "lines": 15,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/mutations/content_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/wi/mutations/targets_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:8579724d62b1754401a76d8f7c5249db98f410caef9f932b7b2878bb8ac2b09c",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_hooks/pretooluse/shell_checks.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:87bfb23163c437f1bb6cabdf1f5fe5dfbe7c2210594f8f8c71a5d9e56c7ee4ee",
-      "lines": 16,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/managed_temp/__init__.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/serve/plans/__init__.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/wi/mutations/__init__.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:8a37606c42f327803706d9719d668107a0e807f14f301ae4ffd42e66e5f335fb",
       "lines": 13,
       "occurrences": [
@@ -443,20 +291,6 @@
         },
         {
           "path": "agent_toolkit/hook_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:98714e56a0b13ac8b317925f246b19a34f42746492f7dad06597d197cf5c0e29",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/managed_temp/inventory_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/managed_temp/windows_security_test.py",
           "count": 1
         }
       ]
@@ -525,34 +359,6 @@
         },
         {
           "path": "agent_toolkit/_atk/serve/sessions.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:b1db8a7ba37c67e9f4381e809efcfb93be0d47fe4ef767507c5bbe9a769dd5ce",
-      "lines": 14,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/app_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/serve/state_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:b4082a7366817a54b9b5f5693497fa6d717c7fa30d6c9ba47a4af22005fb52b5",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/managed_temp/creation_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/managed_temp/registry_test.py",
           "count": 1
         }
       ]
@@ -638,16 +444,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:bf425ada6b0433720c2b619921dd8131308cd5e29160a482c930aab20024c952",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/wi/mutations/targets.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:c8ca00f32f4ba67cd98a5765b7254e3009d8ba99e8afb61d431d63c58f5aca8e",
       "lines": 31,
       "occurrences": [
@@ -702,20 +498,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:e0e4bc3033525fe577d838d68a2fab7e10ac1fc959998c0548995796ca0ea876",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/app_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/_atk/serve/config_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:e40074acec7246e5214cd6fdac70b42383e247bdd384a2cbce436058c8ef1358",
       "lines": 12,
       "occurrences": [
@@ -741,16 +523,6 @@
       "occurrences": [
         {
           "path": "agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:eb4db593e03b6361204870ef1b50120d85539117aed4b11ca45cdf5fb9a4088d",
-      "lines": 15,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_hooks/pretooluse/shell_checks_test.py",
           "count": 2
         }
       ]

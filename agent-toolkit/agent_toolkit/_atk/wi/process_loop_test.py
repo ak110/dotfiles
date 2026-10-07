@@ -39,6 +39,7 @@ from agent_toolkit._common import (
 from agent_toolkit._common import codex_models
 from agent_toolkit._common import inherited_venv as _inherited_venv  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
@@ -53,7 +54,7 @@ _DOTFILES_REPO_ID = _process_loop._DOTFILES_REPO_ID  # pylint: disable=protected
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部コマンド・Claude設定・初期値のTTLをユーザー環境から分離する。"""
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
-    monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
     monkeypatch.setattr(
@@ -511,7 +512,9 @@ class TestProcessLoopPromptAndEnv:
             real_close(descriptor)
 
         # 共通起動の掃引も`os.fchmod`で期限判定記録を書くため、掃引を外してhook診断ログの記述子だけを数える。
-        monkeypatch.setattr(_managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (), None))
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (), None)
+        )
         monkeypatch.setattr(_process_loop.os, "fchmod", record_fchmod)
         monkeypatch.setattr(_process_loop.os, "close", record_close)
 
@@ -786,7 +789,9 @@ class TestProcessLoopPromptAndEnv:
             real_close(descriptor)
 
         # 共通起動の掃引も`os.fchmod`で期限判定記録を書くため、掃引を外してhook診断ログの記述子だけを数える。
-        monkeypatch.setattr(_managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (), None))
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (), None)
+        )
         monkeypatch.setattr(_process_loop.os, "fchmod", fail_fchmod)
         monkeypatch.setattr(_process_loop.os, "close", record_close)
 

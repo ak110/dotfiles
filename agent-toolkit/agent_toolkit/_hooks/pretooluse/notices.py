@@ -1,5 +1,3 @@
-# ruff: noqa: F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
 r"""PreToolUse統合フックが共有する通知整形関数。"""
 
 from __future__ import annotations

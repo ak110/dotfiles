@@ -1,38 +1,36 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`のテスト。"""
 
 # pylint: disable=protected-access
 
 import asyncio
-import binascii
 import contextlib
 import json
-import logging
-import math
 import os
 import pathlib
-import re
 import signal
-import struct
-import subprocess
-import threading
-import types
 import typing
-import zlib
 
-import filelock
 import pytest
 import watchdog.events
 
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import assets, config, state
 from agent_toolkit._atk.serve import cli as serve
-from agent_toolkit._atk.serve import plans as serve_plans
-from agent_toolkit._atk.serve import sessions as serve_sessions
-from agent_toolkit._atk.wi import common, user_comment
+from agent_toolkit._atk.wi import common
 from agent_toolkit._atk.wi import repo as awi_repo
+from agent_toolkit._testing.serve_support import (
+    _BlockingSync,
+    _disable_wi_git,
+    _FakeTimer,
+    _patch_comment_edit_dependencies,
+    _recorder,
+    _run_node_ui,
+    _session_review_awi,
+    _stub_state,
+    _sync_app,
+    _write_detail_entry,
+)
+from agent_toolkit._testing.wi_mutations_support import MUTATION_MODULES
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -40,9 +38,6 @@ from agent_toolkit._atk.wi import repo as awi_repo
 # 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
 # module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
 _HOST_ENVIRON = dict(os.environ)
-
-
-from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 
 @pytest.mark.parametrize("port", [True, 0, 65536])
@@ -618,7 +613,7 @@ async def test_edit_and_answer_apis_detect_external_changes(
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    for module in (common, awi_repo, serve_app.awi_mutations, serve_app.uwi_mutations):
+    for module in (common, awi_repo, *MUTATION_MODULES, serve_app.uwi_mutations):
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
@@ -785,18 +780,7 @@ async def test_web_transition_mutations_allow_omitted_target_repo(
 ) -> None:
     """状態遷移系APIはfilenameで対象を一意に特定できるためtarget_repo省略を許容する。"""
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    monkeypatch.setattr(common, "_repo_lock", lock)
-    monkeypatch.setattr(common, "_pull", lambda _path: None)
-    monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.awi_mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    _disable_wi_git(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(

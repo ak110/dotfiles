@@ -1,38 +1,23 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
+"""WIエントリの状態遷移と、遷移に伴うメタデータの更新。
 
-旧`pytools/dotfiles_fb/_mutations.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+`atk wi start-processing`・`hold`・`unhold`・`return-to-inbox`・`adopt`・`reject`・`rm`の処理本体を持つ。
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime
-import os
 import pathlib
 import re
 import shutil
-import subprocess
 import sys
-import tempfile
 import typing
-from typing import TYPE_CHECKING
 
-from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi import add as _add
-from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import bulk as _bulk
-from agent_toolkit._atk.wi import user_comment as _user_comment
-from agent_toolkit._atk.wi import uwi as _uwi
+from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi.common import (
     TRANSITION_EXPLICIT_STATES,
-    WI_PROCESSABLE_STATES,
     WI_AGENT_REMOVABLE_STATES,
     WI_STATE_ADOPTED,
     WI_STATE_HOLD,
@@ -41,13 +26,12 @@ from agent_toolkit._atk.wi.common import (
     WI_STATE_REJECTED,
     WI_STATES,
     WI_TYPE_AWI,
-    WI_TYPE_UWI,
     WI_USER_REMOVABLE_STATES,
     WebInputError,
-    _CommitMetadata,
     _commit_and_push,
-    _copy_to_tempfile,
+    _CommitMetadata,
     _dedup_positional_filenames,
+    _ensure_mutation_allowed,
     _pull,
     _push_pending_commits,
     _repo_lock,
@@ -57,55 +41,21 @@ from agent_toolkit._atk.wi.common import (
     _validate_filename,
     _validate_filenames_only,
     is_agent_environment,
-    normalized_wi_type,
-    _ensure_mutation_allowed,
 )
 from agent_toolkit._atk.wi.constants import BULK_SOURCE_STATES
+from agent_toolkit._atk.wi.mutations.targets import (
+    _atomic_write_text,
+    _candidate_local_worktree,
+    _commit_values_by_path,
+    _entry_target_repo,
+    _resolve_active_targets,
+    _resolve_awi_targets,
+    _resolve_processable_targets,
+)
 from agent_toolkit._atk.wi.repo import (
-    _normalize_remote_url,
     _resolve_repo_id,
     _verify_target_repo_content,
 )
-from agent_toolkit._atk.wi.repo import append_entry as _append_entry
-from agent_toolkit._atk.wi.repo import edit_entry as _edit_entry
-from agent_toolkit._plan import locations as _plan_file
-from agent_toolkit._plan import structure as _plan_format
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.wi.mutations.content import (
-        _build_noninteractive_edit_content,
-        _cmd_append,
-        _cmd_edit,
-        _preserve_agent_user_comment,
-        _reject_agent_user_comment_change,
-        _reject_agent_user_comment_message,
-        append_entry_content,
-        edit_entry_content,
-    )
-    from agent_toolkit._atk.wi.mutations.dependencies import (
-        _active_dependency_graph,
-        _cmd_set_dependencies,
-        _dependency_reaches,
-        _entry_dependencies,
-        set_entry_dependencies,
-    )
-    from agent_toolkit._atk.wi.mutations.targets import (
-        _GIT_TIMEOUT_SECONDS,
-        _atomic_write_text,
-        _candidate_local_worktree,
-        _cmd_commit,
-        _commit_values_by_path,
-        _entry_target_repo,
-        _git_head,
-        _invalidate_repo_bound_metadata,
-        _local_worktree_repo_id,
-        _resolve_awi_targets,
-        _resolve_commit,
-        _resolve_processable_targets,
-        _resolve_active_targets,
-        commit_entries,
-    )
-
 
 _AGENT_REMOVE_NEXT_ACTION = "削除はユーザーへ依頼する。不要になった項目なら`atk wi reject`で不採用にする"
 

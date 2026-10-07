@@ -13,13 +13,13 @@ import contextlib
 import pathlib
 import re
 import subprocess
+import tempfile
 from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import common as _common  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import (
@@ -49,7 +49,7 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pyli
 @pytest.fixture(autouse=True)
 def _isolate_managed_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """共通起動のmanaged-tempをテストごとのrootへ隔離する。"""
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 

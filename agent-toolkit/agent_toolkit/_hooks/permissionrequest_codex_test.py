@@ -8,14 +8,19 @@ import json
 import os
 import pathlib
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 import typing
 
 import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
+from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
 from agent_toolkit._hooks import permissionrequest_codex as subject
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 _ENTRYPOINT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _HELPER = pathlib.Path(__file__).resolve().parents[1] / "_managed_temp.py"
@@ -24,7 +29,7 @@ _HELPER = pathlib.Path(__file__).resolve().parents[1] / "_managed_temp.py"
 @pytest.fixture(autouse=True)
 def isolated_state_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部真正性状態を各テストの専用領域へ分離する。"""
-    monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
 
 
 def _payload(command: str, *, tool_name: str = "Bash") -> str:
@@ -65,7 +70,7 @@ def test_allows_only_valid_managed_cleanup(
     temp_root = tmp_path / "temp"
     temp_root.mkdir()
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
     target = _managed_temp.create_managed_temp("hook-test")
 
     assert subject.main(_payload(_command(plugin_root, target))) == 0
@@ -106,7 +111,7 @@ def test_rejects_noncanonical_command(
     temp_root = tmp_path / "temp"
     temp_root.mkdir()
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
     target = _managed_temp.create_managed_temp("hook-test")
     command = typing.cast("typing.Callable[[str], str]", mutate)(_command(plugin_root, target))
 
@@ -123,7 +128,7 @@ def test_rejects_wrong_tool_event_root_and_unmanaged_path(
     plugin_root = pathlib.Path(__file__).resolve().parents[2]
     temp_root = tmp_path / "temp"
     temp_root.mkdir()
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
     target = _managed_temp.create_managed_temp("hook-test")
     command = _command(plugin_root, target)
 
@@ -152,17 +157,17 @@ def test_rejects_handmade_marker_without_external_state(
     target = temp_root / "handmade"
     target.mkdir(mode=0o700)
     if os.name == "nt":
-        _managed_temp._windows_secure_path(target, directory=True)
-    marker = _managed_temp._record(
+        managed_temp_windows_security._windows_secure_path(target, directory=True)
+    marker = managed_temp_registry._record(
         target,
         "0" * 64,
         prefix="handmade",
         created_at="2026-08-30T00:00:00+00:00",
         awis=(),
     )
-    _managed_temp._write_marker(target, marker)
+    managed_temp_registry._write_marker(target, marker)
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
 
     assert subject.main(_payload(_command(plugin_root, target))) == 0
     assert not capsys.readouterr().out
@@ -201,8 +206,8 @@ def test_allows_trusted_atk_launcher_command(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(subject.shutil, "which", lambda name: str(launcher) if name == "atk" else None)
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+    monkeypatch.setattr(shutil, "which", lambda name: str(launcher) if name == "atk" else None)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
     target = _managed_temp.create_managed_temp("hook-test")
 
     assert subject.main(_payload(_atk_command(target))) == 0
@@ -222,9 +227,9 @@ def test_allows_cleanup_from_registered_root_after_temp_root_change(
     shared_root.mkdir()
     current_root.mkdir()
     if os.name == "nt":
-        _managed_temp._windows_secure_path(shared_root, directory=True)
+        managed_temp_windows_security._windows_secure_path(shared_root, directory=True)
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(current_root))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(current_root))
     target = _managed_temp.create_managed_temp("hook-shared-root", root=shared_root)
 
     assert subject.main(_payload(_command(plugin_root, target))) == 0
@@ -244,15 +249,15 @@ def test_rejects_untrusted_or_noncanonical_atk_command(
     other_launcher = tmp_path / ("atk.cmd" if os.name == "nt" else "atk")
     other_launcher.write_text("other\n", encoding="utf-8")
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
     target = _managed_temp.create_managed_temp("hook-test")
     command = _atk_command(target)
 
-    monkeypatch.setattr(subject.shutil, "which", lambda name: str(other_launcher) if name == "atk" else None)
+    monkeypatch.setattr(shutil, "which", lambda name: str(other_launcher) if name == "atk" else None)
     assert subject.main(_payload(command)) == 0
 
     plugin_launcher = plugin_root / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
-    monkeypatch.setattr(subject.shutil, "which", lambda name: str(plugin_launcher) if name == "atk" else None)
+    monkeypatch.setattr(shutil, "which", lambda name: str(plugin_launcher) if name == "atk" else None)
     for rejected in (
         f"{command} extra",
         f"{command} && true",

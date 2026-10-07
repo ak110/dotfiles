@@ -1,8 +1,3 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """atk (agent-toolkit `atk wi`) のadopt/reject/rm/edit・パストラバーサル検証のテスト。
 
 adopt・reject・rm・editサブコマンドと、ファイル名引数の不正値拒否の単体テストを集約する。
@@ -12,41 +7,43 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
-import argparse
 import contextlib
-import datetime
 import pathlib
-import re
 import subprocess
-import sys
 from collections.abc import Callable
 
 import pytest
 
-from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import (  # pylint: disable=wrong-import-position
-    common,  # noqa: E402  # pylint: disable=wrong-import-position
-    mutations,  # noqa: E402  # pylint: disable=wrong-import-position
-    user_comment,  # noqa: E402  # pylint: disable=wrong-import-position
-    uwi,  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit import atk
+from agent_toolkit._atk.wi import add as wi_add
+from agent_toolkit._atk.wi import (
+    common,
+    user_comment,
+    uwi,
 )
-from agent_toolkit._atk.wi import frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
+from agent_toolkit._atk.wi.mutations import content as mutation_content
+from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
+from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
+from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
+from agent_toolkit._testing.wi_mutations_support import (
+    _disable_convert_git,
+    _disable_transition_git,
+    _write_convert_awi,
+    _write_uwi_entry,
+    setattr_in_mutation_modules,
+)
+from agent_toolkit.atk_test import (
     _FIXED_DT,
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
     _setup_notes_with_pending_commit,
     _write_awi_file,
-)  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY  # noqa: E402  # pylint: disable=wrong-import-position
+)
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
-
-
-from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
 
 
 def _edit_body_args(tmp_path: pathlib.Path, filename: str, message: str, *, append: bool = False) -> list[str]:
@@ -110,10 +107,10 @@ def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monke
     _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)
 
-    mutations.transition_entries(notes, action="hold", filenames=["entry.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="hold", filenames=["entry.md"], now=_FIXED_DT)
     assert (notes / "hold/entry.md").is_file()
 
-    mutations.transition_entries(notes, action="unhold", filenames=["entry.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="unhold", filenames=["entry.md"], now=_FIXED_DT)
     assert (notes / "inbox/entry.md").is_file()
 
 
@@ -125,11 +122,11 @@ def test_return_rejected_entry_to_inbox_strips_terminal_result(
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)
-    mutations.transition_entries(notes, action="reject", filenames=["entry.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="reject", filenames=["entry.md"], now=_FIXED_DT)
     rejected = notes / "rejected/entry.md"
     assert "## 処理結果" in rejected.read_text(encoding="utf-8")
 
-    mutations.transition_entries(
+    mutation_transitions.transition_entries(
         notes,
         action="return-to-inbox",
         filenames=["entry.md"],
@@ -148,10 +145,10 @@ def test_remove_targets_explicit_state_and_keeps_legacy_priority(
 ) -> None:
     """状態指定時は指定側を削除し、省略時はprocessing優先を維持する。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
+    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
+    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
     content = "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
     inbox = notes / "inbox/same.md"
     processing = notes / "processing/same.md"
@@ -159,7 +156,7 @@ def test_remove_targets_explicit_state_and_keeps_legacy_priority(
     inbox.write_text(content, encoding="utf-8")
     processing.write_text(content, encoding="utf-8")
 
-    removed = mutations.transition_entries(
+    removed = mutation_transitions.transition_entries(
         notes,
         action="remove",
         filenames=["same.md"],
@@ -172,7 +169,7 @@ def test_remove_targets_explicit_state_and_keeps_legacy_priority(
     assert processing.read_text(encoding="utf-8") == content
 
     inbox.write_text(content, encoding="utf-8")
-    removed = mutations.transition_entries(
+    removed = mutation_transitions.transition_entries(
         notes,
         action="remove",
         filenames=["same.md"],
@@ -192,7 +189,7 @@ def test_set_dependencies_can_clear_dependencies(tmp_path: pathlib.Path, monkeyp
     path.write_text(text, encoding="utf-8")
     _disable_convert_git(monkeypatch)
 
-    mutations.set_entry_dependencies(notes, filename="awi.md", depends_on=())
+    mutation_dependencies.set_entry_dependencies(notes, filename="awi.md", depends_on=())
 
     parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert parsed is not None
@@ -203,12 +200,12 @@ def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monke
     """return-to-inboxがprocessingからinboxへ戻す。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    mutations.transition_entries(notes, action="start-processing", filenames=["entry.md"], now=_FIXED_DT)
-    filenames = mutations.transition_entries(
+    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
+    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
+    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    mutation_transitions.transition_entries(notes, action="start-processing", filenames=["entry.md"], now=_FIXED_DT)
+    filenames = mutation_transitions.transition_entries(
         notes,
         action="return-to-inbox",
         filenames=["entry.md"],
@@ -228,14 +225,14 @@ def test_cooldown_return_rejects_uwi_mixture_without_changes(
     _write_awi_file(notes, "awi.md")
     _write_uwi_entry(notes, "uwi.md")
     _disable_transition_git(monkeypatch)
-    mutations.transition_entries(notes, action="start-processing", filenames=["awi.md", "uwi.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="start-processing", filenames=["awi.md", "uwi.md"], now=_FIXED_DT)
     awi = notes / "processing/awi.md"
     uwi_path = notes / "processing/uwi.md"
     original_awi = awi.read_text(encoding="utf-8")
     original_uwi = uwi_path.read_text(encoding="utf-8")
 
-    with pytest.raises(mutations.WebInputError, match="AWI専用"):
-        mutations.transition_entries(
+    with pytest.raises(common.WebInputError, match="AWI専用"):
+        mutation_transitions.transition_entries(
             notes,
             action="return-to-inbox",
             filenames=["awi.md", "uwi.md"],
@@ -383,7 +380,7 @@ def test_agent_environment_rejects_malformed_user_comment_structure(
     """予約節を一意に抽出できない編集結果も変更として拒否する。"""
     monkeypatch.setenv("AI_AGENT", "1")
 
-    assert mutations._reject_agent_user_comment_change(  # pylint: disable=protected-access
+    assert mutation_content._reject_agent_user_comment_change(  # pylint: disable=protected-access
         "本文\n",
         "本文\n\n## ユーザーコメント\n\n1\n\n## ユーザーコメント\n\n2\n",
     )
@@ -654,7 +651,7 @@ class TestEditBodyFile:
         _disable_transition_git(monkeypatch)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         monkeypatch.setattr(
-            mutations._add,  # pylint: disable=protected-access
+            wi_add,  # pylint: disable=protected-access
             "resolve_add_target",
             lambda _value: ("github.com/example/foo", target_worktree),
         )
@@ -1111,7 +1108,7 @@ class TestEditBodyFile:
         """競合時は上書きせず、FILENAMEと未反映を案内する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md", body="編集前")
-        original_edit = mutations.edit_entry_content
+        original_edit = mutation_content.edit_entry_content
 
         def conflict(
             private_notes: pathlib.Path,
@@ -1136,7 +1133,7 @@ class TestEditBodyFile:
                 finalized_content=finalized_content,
             )
 
-        monkeypatch.setattr(mutations, "edit_entry_content", conflict)
+        monkeypatch.setattr(mutation_content, "edit_entry_content", conflict)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1227,7 +1224,7 @@ class TestEditBodyFile:
         updated = frontmatter_parser.serialize_frontmatter(updated_data, body)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
-        assert mutations.edit_entry_content(
+        assert mutation_content.edit_entry_content(
             notes,
             state="inbox",
             filename="fb-001.md",
@@ -1255,7 +1252,7 @@ class TestEditBodyFile:
         updated = original.replace("target_repo: github.com/example/foo", "target_repo: github.com/example/new")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
-        assert mutations.edit_entry_content(
+        assert mutation_content.edit_entry_content(
             notes,
             state="inbox",
             filename="fb-001.md",
@@ -1543,8 +1540,8 @@ def test_editor_failure_keeps_entry_and_names_retry_command(
 
 def test_terminal_state_edit_rejection_guides_to_accepted_hold_form(tmp_path: pathlib.Path) -> None:
     """終端した項目の編集拒否は、`atk wi hold`が受理する`--state`の値付きの形を案内する。"""
-    with pytest.raises(mutations.WebInputError) as raised:
-        mutations.edit_entry_content(tmp_path, state="adopted", filename="20260930-000000-001.md", content="本文")
+    with pytest.raises(common.WebInputError) as raised:
+        mutation_content.edit_entry_content(tmp_path, state="adopted", filename="20260930-000000-001.md", content="本文")
 
     next_action = raised.value.next_action
     assert "`atk wi hold <ファイル名> --state <adopted|rejected>`" in next_action

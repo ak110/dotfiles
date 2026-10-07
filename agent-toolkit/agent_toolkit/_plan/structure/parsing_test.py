@@ -1,40 +1,27 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """計画形式の共通解析を検証する。"""
 
 import pathlib
-import sys
 
 import pytest
-from pyfltr.colloquial import check as _colloquial_check
 
-from agent_toolkit._plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
-
-_BASE = _plan_fixture.BASE_COMMIT
-
-_VALID_CONTENT = _plan_fixture.single_file_plan()
-_BUG_CONTENT = _plan_fixture.single_file_plan(bug=True)
-_LEGACY_CONTENT = _plan_fixture.legacy_materials_single_file_plan()
-
-_BUG_SECTION = _plan_fixture.inline_bug_section()
-_BUG_CAUSE_TABLE = _plan_fixture.bug_cause_table()
-_BUG_INVESTIGATION_TABLE = _plan_fixture.bug_investigation_table()
-_BUG_FILE_CONTENT = _plan_fixture.bug_file()
-_LEGACY_ROWS_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_ROWS)
-_LEGACY_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_STANDALONE)
-
-_HUMAN_MAIN_CONTENT = _plan_fixture.human_main(related_wi=_plan_fixture.WI_FILES)
-_HUMAN_DETAIL_CONTENT = _plan_fixture.human_detail()
-_HUMAN_PARTIAL_ROW = _plan_fixture.WI_ACTION_ROW
-_HUMAN_PARTIAL_REASON = _plan_fixture.WI_ACTION_REASON
-
-_VALID_MAIN_CONTENT = _plan_fixture.two_file_main()
-_VALID_DETAIL_CONTENT = _plan_fixture.two_file_detail()
-
-
-from agent_toolkit._plan.structure.test_support_test import *  # noqa: F403
+from agent_toolkit._plan import fixture as _plan_fixture
+from agent_toolkit._plan import structure as _plan_format
+from agent_toolkit._plan.structure import markdown as plan_markdown
+from agent_toolkit._plan.structure import materials as plan_materials
+from agent_toolkit._plan.structure import sections as plan_sections
+from agent_toolkit._testing.plan_structure_support import (
+    _BUG_FILE_CONTENT,
+    _HUMAN_DETAIL_CONTENT,
+    _HUMAN_MAIN_CONTENT,
+    _HUMAN_PARTIAL_ROW,
+    _LEGACY_BUG_FILE_CONTENT,
+    _VALID_CONTENT,
+    _VALID_DETAIL_CONTENT,
+    _VALID_MAIN_CONTENT,
+    _origin_check,
+    _wi_source,
+    _write_wi,
+)
 
 
 def test_human_readable_main_accepts_satisfied_action() -> None:
@@ -49,7 +36,7 @@ def test_human_readable_main_accepts_satisfied_action() -> None:
         replacement,
         1,
     )
-    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    _work_type, errors = plan_sections.check_plan_main_structure(content)
     assert not errors, errors
 
 
@@ -73,7 +60,7 @@ def test_human_readable_action_rejects_invalid_review_origin_or_root(
         f"| 入力の境界を追加確認する | {origin} | 採用 | {root.format(path=review_path.as_posix())} |",
         1,
     )
-    errors = _plan_format.check_plan_main_structure(content)[1]
+    errors = plan_sections.check_plan_main_structure(content)[1]
     assert any(expected_error in error for error in errors), errors
 
 
@@ -84,14 +71,14 @@ def test_human_readable_action_rejects_independent_exclusion_table() -> None:
         f"\n### 合意済みの除外・保持\n\n対象外の類似箇所は維持する。\n\n## {_plan_format.PLAN_H2_AGENT_JUDGMENT}\n",
         1,
     )
-    errors = _plan_format.check_plan_main_structure(content)[1]
+    errors = plan_sections.check_plan_main_structure(content)[1]
     assert any("直下にH3を置かない" in error for error in errors), errors
 
 
 def test_legacy_wi_origins_reports_only_legacy_names() -> None:
     """改名前の`由来`欄だけを移行対象として報告する。"""
-    assert not _plan_format.legacy_wi_origins(_HUMAN_MAIN_CONTENT)
-    assert _plan_format.legacy_wi_origins(_plan_fixture.legacy_wi_names(_HUMAN_MAIN_CONTENT)) == (
+    assert not plan_sections.legacy_wi_origins(_HUMAN_MAIN_CONTENT)
+    assert plan_sections.legacy_wi_origins(_plan_fixture.legacy_wi_names(_HUMAN_MAIN_CONTENT)) == (
         _plan_format.PLAN_HUMAN_WI_ORIGIN,
     )
 
@@ -116,7 +103,7 @@ def test_human_readable_main_rejects_internal_identifiers(mutation: str, expecte
             "| P-001 | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |",
             1,
         )
-    errors = _plan_format.check_plan_main_structure(content)[1]
+    errors = plan_sections.check_plan_main_structure(content)[1]
     assert any(expected in error for error in errors), errors
 
 
@@ -126,7 +113,7 @@ def test_bug_file_structure_rejects_empty_content_cell() -> None:
         _plan_fixture.bug_row("直接的原因"),
         "| 直接的原因 |  |",
     )
-    errors = _plan_format.check_bug_file_structure(content)
+    errors = plan_sections.check_bug_file_structure(content)
     matched = [error for error in errors if "空の`内容`" in error]
     assert matched, errors
     assert all("空のセルへ内容を記載し" in error for error in matched)
@@ -134,7 +121,7 @@ def test_bug_file_structure_rejects_empty_content_cell() -> None:
 
 def test_bug_file_structure_accepts_legacy_standalone_table() -> None:
     """原因分析表を持たない旧調査表を読み取り互換で受理する。"""
-    assert not _plan_format.check_bug_file_structure(_LEGACY_BUG_FILE_CONTENT)
+    assert not plan_sections.check_bug_file_structure(_LEGACY_BUG_FILE_CONTENT)
 
 
 def test_optional_exclusion_section_may_be_absent() -> None:
@@ -147,7 +134,7 @@ def test_optional_exclusion_section_may_be_absent() -> None:
         _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001, R-P-002-001 |",
     )
-    assert not _plan_format.check_plan_structure(content)
+    assert not plan_sections.check_plan_structure(content)
 
 
 @pytest.mark.parametrize("empty_column", range(len(_plan_format.PLAN_HISTORY_TABLE_HEADER)))
@@ -161,7 +148,7 @@ def test_history_review_rows_reject_empty_columns(empty_column: int) -> None:
         review_row,
         1,
     )
-    errors = _plan_format.check_plan_structure(content)
+    errors = plan_sections.check_plan_structure(content)
     assert any("表に空cellがある" in error for error in errors), errors
 
 
@@ -177,7 +164,7 @@ def test_permanence_section_accepts_prose_instead_of_table() -> None:
         "変更対象とその参照元を確認し、本計画の変更が是正を必要にする箇所は無かった。",
         1,
     )
-    assert not _plan_format.check_plan_structure(content), _plan_format.check_plan_structure(content)
+    assert not plan_sections.check_plan_structure(content), plan_sections.check_plan_structure(content)
 
 
 @pytest.mark.parametrize(
@@ -192,8 +179,8 @@ def test_permanence_section_accepts_prose_instead_of_table() -> None:
 def test_extract_tables_accepts_gfm_notations(table: str) -> None:
     """区切り行のダッシュ数、整列コロン、行頭パイプ省略の各記法を表として抽出する。"""
     lines: list[tuple[int, str]] = list(enumerate(table.splitlines(), start=1))
-    assert _plan_format.extract_tables(lines) == [
-        _plan_format.MarkdownTable(
+    assert plan_markdown.extract_tables(lines) == [
+        plan_markdown.MarkdownTable(
             1,
             ("項目", "内容"),
             (("母集団", "全体。"),),
@@ -217,7 +204,7 @@ def test_structured_material_ids_preserve_full_namespace() -> None:
     )
     second = "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |"
     content = content.replace(f"{first}\n{rejected}\n{second}", f"{second}\n{first}\n{rejected}", 1)
-    materials, errors = _plan_format.parse_plan_materials(content)
+    materials, errors = plan_materials.parse_plan_materials(content)
     assert not errors
     assert materials is not None
     assert materials.material_ids == frozenset({"P-alpha_1-x", "P-002"})
@@ -227,14 +214,14 @@ def test_structured_material_ids_preserve_full_namespace() -> None:
 
 def test_requirement_coverage_accepts_content_where_every_adopted_requirement_is_referenced() -> None:
     """採用要求が`根拠`または合意表の`素材・要求参照`のいずれかで被覆されていれば検出しない。"""
-    errors = _plan_format.check_plan_structure(_VALID_CONTENT)
+    errors = plan_sections.check_plan_structure(_VALID_CONTENT)
     assert not any("採用要求を被覆しない" in error for error in errors), errors
 
 
 def test_requirement_coverage_rejects_adopted_requirement_referenced_by_neither_action_nor_exclusion() -> None:
     """採用要求が`根拠`にも合意表の`素材・要求参照`にも現れない場合を検出する。"""
     content = _VALID_CONTENT.replace("P-002, R-P-002-001", "P-001, R-P-001-002")
-    errors = _plan_format.check_plan_structure(content)
+    errors = plan_sections.check_plan_structure(content)
     assert any("採用要求を被覆しない: R-P-002-001" in error for error in errors), errors
 
 
@@ -305,7 +292,7 @@ def test_requirement_coverage_rejects_adopted_requirement_referenced_by_neither_
 )
 def test_structured_material_contract_rejects_invalid_combinations(old: str, new: str, message: str) -> None:
     """素材種別、参照、要求IDおよび採否の不整合を拒否する。"""
-    materials, errors = _plan_format.parse_plan_materials(_VALID_CONTENT.replace(old, new, 1))
+    materials, errors = plan_materials.parse_plan_materials(_VALID_CONTENT.replace(old, new, 1))
     assert materials is not None
     assert any(message in error for error in errors), errors
 
@@ -329,7 +316,7 @@ def test_structured_material_contract_rejects_invalid_combinations(old: str, new
 )
 def test_structured_material_errors_state_how_to_fix(old: str, new: str, fix: str) -> None:
     """受理形式を示さなかった違反文は、受理する形式か直し方を同じ行に示す。"""
-    _materials, errors = _plan_format.parse_plan_materials(_VALID_CONTENT.replace(old, new, 1))
+    _materials, errors = plan_materials.parse_plan_materials(_VALID_CONTENT.replace(old, new, 1))
     assert any(fix in error for error in errors), errors
 
 
@@ -338,7 +325,7 @@ def test_main_structure_requires_judgment_for_canonical_headings() -> None:
     content = _VALID_MAIN_CONTENT.replace("## 変更履歴", "## 変更履歴（計画時）", 1).replace(
         "## 進捗ログ", "## 進捗ログ（実行時）", 1
     )
-    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    _work_type, errors = plan_sections.check_plan_main_structure(content)
     assert any(f"`## {_plan_format.PLAN_H2_AGENT_JUDGMENT}`が無い" in error for error in errors), errors
 
 
@@ -350,7 +337,7 @@ def test_legacy_two_file_main_accepts_legacy_review_ids_and_tracks(review_id: st
         f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
-    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    _work_type, errors = plan_sections.check_plan_main_structure(content)
     assert not any("レビュー指摘行の`ID`" in error for error in errors), errors
 
 
@@ -369,7 +356,7 @@ def test_legacy_two_file_main_accepts_legacy_review_ids_and_tracks(review_id: st
 )
 def test_detail_structure_rejects_invalid_implementation_unit_contract(old: str, new: str, message: str) -> None:
     """実装単位ID、依存および統合順の構造違反を拒否する。"""
-    errors = _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT.replace(old, new), "通常変更")
+    errors = plan_sections.check_plan_detail_structure(_VALID_DETAIL_CONTENT.replace(old, new), "通常変更")
     assert any(message in error for error in errors), errors
 
 
@@ -378,7 +365,7 @@ def test_detail_structure_reads_legacy_verification_column(content: str) -> None
     """進行中の二ファイル計画は旧検証列名を読める。"""
     legacy = content.replace("変更範囲の検証", "近接検証", 1)
 
-    errors = _plan_format.check_plan_detail_structure(legacy, "通常変更")
+    errors = plan_sections.check_plan_detail_structure(legacy, "通常変更")
 
     assert not errors, errors
 
@@ -389,13 +376,13 @@ def test_main_structure_rejects_missing_verification_table() -> None:
         _plan_fixture.VERIFICATION_TABLE,
         "",
     )
-    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    _work_type, errors = plan_sections.check_plan_main_structure(content)
     assert any(f"`## {_plan_format.PLAN_H2_VERIFICATION}`は" in error for error in errors), errors
 
 
 def test_detail_structure_requires_bug_section_for_bug_work_type() -> None:
     """detail側は作業種別が`バグ対応`の場合だけ`## バグ調査結果`を先頭へ要求する。"""
-    errors = _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT, "バグ対応")
+    errors = plan_sections.check_plan_detail_structure(_VALID_DETAIL_CONTENT, "バグ対応")
     assert any(f"固定H2`## {_plan_format.PLAN_H2_BUG}`は1件必要" in error for error in errors), errors
 
 

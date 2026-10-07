@@ -1,8 +1,3 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """atk (agent-toolkit `atk wi`) のadopt/reject/rm/edit・パストラバーサル検証のテスト。
 
 adopt・reject・rm・editサブコマンドと、ファイル名引数の不正値拒否の単体テストを集約する。
@@ -12,38 +7,37 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
-import argparse
-import contextlib
-import datetime
 import pathlib
-import re
 import subprocess
-import sys
 
 import pytest
 
-from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import (  # pylint: disable=wrong-import-position
-    common,  # noqa: E402  # pylint: disable=wrong-import-position
-    mutations,  # noqa: E402  # pylint: disable=wrong-import-position
-    user_comment,  # noqa: E402  # pylint: disable=wrong-import-position
-    uwi,  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit import atk
+from agent_toolkit._atk.wi import add as wi_add
+from agent_toolkit._atk.wi import (
+    common,
+    user_comment,
 )
-from agent_toolkit._atk.wi import frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
+from agent_toolkit._atk.wi.mutations import content as mutation_content
+from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
+from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
+from agent_toolkit._testing.wi_mutations_support import (
+    _disable_convert_git,
+    _disable_transition_git,
+    _write_convert_awi,
+    _write_uwi_entry,
+)
+from agent_toolkit.atk_test import (
     _FIXED_DT,
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
     _write_awi_file,
-)  # noqa: E402  # pylint: disable=wrong-import-position
+)
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
-
-
-from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
 
 
 def test_hold_entries_accept_processing_terminal_removal_and_content_operations(
@@ -56,12 +50,14 @@ def test_hold_entries_accept_processing_terminal_removal_and_content_operations(
     for filename in filenames:
         _write_awi_file(notes, filename)
     _disable_transition_git(monkeypatch)
-    mutations.transition_entries(notes, action="hold", filenames=filenames, now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="hold", filenames=filenames, now=_FIXED_DT)
 
-    mutations.transition_entries(notes, action="start-processing", filenames=["process.md"], state="hold", now=_FIXED_DT)
-    mutations.transition_entries(notes, action="adopt", filenames=["adopt.md"], state="hold", now=_FIXED_DT)
-    mutations.transition_entries(notes, action="reject", filenames=["reject.md"], state="hold", now=_FIXED_DT)
-    mutations.transition_entries(notes, action="remove", filenames=["remove.md"], state="hold", now=_FIXED_DT)
+    mutation_transitions.transition_entries(
+        notes, action="start-processing", filenames=["process.md"], state="hold", now=_FIXED_DT
+    )
+    mutation_transitions.transition_entries(notes, action="adopt", filenames=["adopt.md"], state="hold", now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="reject", filenames=["reject.md"], state="hold", now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="remove", filenames=["remove.md"], state="hold", now=_FIXED_DT)
 
     calls: list[tuple[str, pathlib.Path]] = []
 
@@ -73,10 +69,10 @@ def test_hold_entries_accept_processing_terminal_removal_and_content_operations(
         calls.append(("append", directory))
         return True
 
-    monkeypatch.setattr(mutations, "_edit_entry", record_edit)
-    monkeypatch.setattr(mutations, "_append_entry", record_append)
-    assert mutations.edit_entry_content(notes, state="hold", filename="edit.md", content="編集後")
-    assert mutations.append_entry_content(
+    monkeypatch.setattr(mutation_content, "_edit_entry", record_edit)
+    monkeypatch.setattr(mutation_content, "_append_entry", record_append)
+    assert mutation_content.edit_entry_content(notes, state="hold", filename="edit.md", content="編集後")
+    assert mutation_content.append_entry_content(
         notes,
         state="hold",
         filename="append.md",
@@ -120,8 +116,8 @@ def test_set_dependencies_rejects_mutual_and_existing_chain_cycles(
             )
     _disable_convert_git(monkeypatch)
 
-    with pytest.raises(mutations.WebInputError, match="循環"):
-        mutations.set_entry_dependencies(notes, filename=filename, depends_on=dependencies)
+    with pytest.raises(common.WebInputError, match="循環"):
+        mutation_dependencies.set_entry_dependencies(notes, filename=filename, depends_on=dependencies)
 
 
 def test_set_dependencies_updates_held_entry_and_keeps_hold_state(
@@ -134,7 +130,7 @@ def test_set_dependencies_updates_held_entry_and_keeps_hold_state(
     _write_convert_awi(notes, "first.md")
     _disable_convert_git(monkeypatch)
 
-    mutations.set_entry_dependencies(notes, filename="held.md", depends_on=("first.md",))
+    mutation_dependencies.set_entry_dependencies(notes, filename="held.md", depends_on=("first.md",))
 
     assert held.exists()
     assert not (notes / "inbox" / "held.md").exists()
@@ -158,8 +154,8 @@ def test_set_dependencies_detects_cycle_through_held_entry(
     _write_convert_awi(notes, "first.md")
     _disable_convert_git(monkeypatch)
 
-    with pytest.raises(mutations.WebInputError, match="循環"):
-        mutations.set_entry_dependencies(notes, filename="first.md", depends_on=("held.md",))
+    with pytest.raises(common.WebInputError, match="循環"):
+        mutation_dependencies.set_entry_dependencies(notes, filename="first.md", depends_on=("held.md",))
 
 
 def test_cooldown_return_rejects_uwi_without_frontmatter_changes(
@@ -170,12 +166,12 @@ def test_cooldown_return_rejects_uwi_without_frontmatter_changes(
     notes = _setup_notes(tmp_path)
     _write_uwi_entry(notes, "uwi.md")
     _disable_transition_git(monkeypatch)
-    mutations.transition_entries(notes, action="start-processing", filenames=["uwi.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="start-processing", filenames=["uwi.md"], now=_FIXED_DT)
     path = notes / "processing/uwi.md"
     original = path.read_text(encoding="utf-8")
 
-    with pytest.raises(mutations.WebInputError, match="AWI専用"):
-        mutations.transition_entries(
+    with pytest.raises(common.WebInputError, match="AWI専用"):
+        mutation_transitions.transition_entries(
             notes,
             action="return-to-inbox",
             filenames=["uwi.md"],
@@ -398,7 +394,7 @@ def test_set_dependencies_reports_body_mismatch_and_omits_body_on_success(
         "成功: 依存を更新した: success.md",
         "    depends_on: dependency.md",
     ]
-    original_read = mutations._add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    original_read = wi_add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
     captured: dict[str, str] = {}
 
     def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
@@ -407,7 +403,7 @@ def test_set_dependencies_reports_body_mismatch_and_omits_body_on_success(
         return original_read(path, expected_body=expected_body)
 
     monkeypatch.setattr(
-        mutations._add,  # pylint: disable=protected-access
+        wi_add,  # pylint: disable=protected-access
         "_read_saved_entry_details",
         read_after_alteration,
     )

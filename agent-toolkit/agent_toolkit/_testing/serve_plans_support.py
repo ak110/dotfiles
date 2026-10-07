@@ -1,30 +1,16 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-"""`atk serve`の計画ファイル画面の処理のテスト。"""
+"""`_atk/serve/plans/`のテストが共有する、計画ファイル・コンテキスト・SSH応答の擬似の組み立て。"""
 
 # pylint: disable=protected-access
 
-import asyncio
 import base64
 import hashlib
 import json
 import os
 import pathlib
-import subprocess
 import typing
 
-import pytest
-
 from agent_toolkit._atk.serve import plans
-
-
-@pytest.fixture(name="index_path")
-def _index_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """作成日時インデックスを一時ディレクトリへ隔離する。"""
-    path = tmp_path / "cache" / "index.json"
-    monkeypatch.setattr(plans, "_CREATION_TIME_INDEX_PATH", path)
-    monkeypatch.setattr(plans, "_ctime_epoch", lambda st: float(st.st_mtime))
-    return path
+from agent_toolkit._atk.serve.plans import roots as plans_roots
 
 
 def _legacy_cache_path(index_path: pathlib.Path, host: str, rel: str) -> pathlib.Path:
@@ -79,7 +65,7 @@ def _read_payload(text: str) -> dict[str, typing.Any]:
     return {"ok": True, "data": base64.b64encode(text.encode("utf-8")).decode("ascii")}
 
 
-def _runner_returning(payload: dict[str, typing.Any]) -> tuple[plans.SshRunner, list[tuple[str, str, list[str]]]]:
+def _runner_returning(payload: dict[str, typing.Any]) -> tuple[plans_roots.SshRunner, list[tuple[str, str, list[str]]]]:
     """単発SSHの呼び出しを記録するrunnerと、その記録先を返す。"""
     calls: list[tuple[str, str, list[str]]] = []
 
@@ -98,16 +84,3 @@ def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., typing.A
         return returncode, b"", stderr
 
     return run
-
-
-__all__ = [
-    "_FakeWatcher",
-    "_context",
-    "_failed_ssh",
-    "_index_path",
-    "_legacy_cache_path",
-    "_plan",
-    "_read_payload",
-    "_runner_returning",
-    "_write_legacy_cache",
-]

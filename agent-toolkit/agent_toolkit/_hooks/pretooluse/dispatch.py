@@ -1,5 +1,3 @@
-# ruff: noqa: F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
 r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 
 任意ツールの実行前に以下のチェックを順に実行する。
@@ -78,85 +76,53 @@ import os
 import pathlib
 import sys
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 
-
-# pylint: disable=wrong-import-position
+from agent_toolkit._common.runtime_identity import RuntimeIdentity, identity_observations
 from agent_toolkit._hooks import (
-    background_task_outputs as _background_task_outputs,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    background_task_outputs as _background_task_outputs,
 )
 from agent_toolkit._hooks import (
-    bash_command_parser as _bash_command_parser,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    message_format as _message_format,
 )
 from agent_toolkit._hooks import (
-    message_format as _message_format,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    response_language_check as _response_language_check,
 )
+from agent_toolkit._hooks import rules_context as _rules_context
 from agent_toolkit._hooks import (
-    response_language_check as _response_language_check,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    tool_input as _hook_tool_input,
 )
-from agent_toolkit._hooks import (
-    tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id
+from agent_toolkit._hooks.pretooluse.agent_checks import (
+    _AGENTS_SERVER_KILL_TOOLS,
+    _AGENTS_SERVER_SEND_TOOLS,
+    _AGENTS_SERVER_TOOL_NAMES,
+    _PLAN_MODE_SKILL_NAMES,
+    _advance_language_reinjection,
+    _check_agents_server_continuation_input,
+    _check_task_stop,
+    _clear_current_plan_file_path,
+    _handle_language_check,
+    _record_iss_sidechain_probe,
 )
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id  # noqa: E402
-
-from agent_toolkit._hooks.session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._common.runtime_identity import RuntimeIdentity, identity_observations  # noqa: E402
-from agent_toolkit._hooks.pretooluse.warning_context import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks.pretooluse.confirmation_reads import unread_reference_warning
+from agent_toolkit._hooks.pretooluse.content_checks import _collect_edit_operation_warnings, _warn_mojibake
+from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read
+from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _llm_notice
+from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings
+from agent_toolkit._hooks.pretooluse.shell_checks import (
+    _check_bash_atk_output_loss,
+    _check_bash_option_after_terminator,
+    _check_bash_process_kill_by_pattern,
+    _check_bash_unquoted_heredoc_substitution,
+    _git_commit_attribution_error,
+    _warn_git_rev_parse_short_multiple,
+    _warn_windows_drive_letter_path,
+)
+from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES, check_task_document_launch
+from agent_toolkit._hooks.pretooluse.warning_context import (
     format_warning_context,
 )
-from agent_toolkit._hooks.pretooluse.confirmation_reads import unread_reference_warning  # noqa: E402
-from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings  # noqa: E402
-from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    is_plan_adjunct_file,
-    is_plan_component_file,
-)
-
-if TYPE_CHECKING:
-    from agent_toolkit._hooks.pretooluse.agent_checks import (
-        _AGENTS_SERVER_KILL_TOOLS,
-        _AGENTS_SERVER_SEND_TOOLS,
-        _AGENTS_SERVER_TOOL_NAMES,
-        _PLAN_MODE_SKILL_NAMES,
-        _check_agents_server_continuation_input,
-        _check_task_stop,
-        _clear_current_plan_file_path,
-        _advance_language_reinjection,
-        _handle_language_check,
-        _rules_context,
-        _record_iss_sidechain_probe,
-    )
-    from agent_toolkit._hooks.pretooluse.content_checks import (
-        _collect_edit_operation_warnings,
-        _warn_mojibake,
-    )
-    from agent_toolkit._hooks.pretooluse.large_reads import (
-        check_large_bash_read,
-    )
-    from agent_toolkit._hooks.pretooluse.notices import (
-        _HOOK_ID,
-        _llm_notice,
-    )
-    from agent_toolkit._hooks.pretooluse.shell_checks import (
-        _check_bash_process_kill_by_pattern,
-        _check_bash_option_after_terminator,
-        _check_bash_atk_output_loss,
-        _check_bash_unquoted_heredoc_substitution,
-        _git_commit_attribution_error,
-        _warn_git_rev_parse_short_multiple,
-        _warn_windows_drive_letter_path,
-    )
-    from agent_toolkit._hooks.pretooluse.task_document_launch import (
-        AGENT_TOOL_NAMES,
-        check_task_document_launch,
-    )
-
-_ExecutionSegment = _bash_command_parser.ExecutionSegment
-_extract_execution_segments = _bash_command_parser.extract_execution_segments
-
-# U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
-_REPLACEMENT_CHAR = "\ufffd"
+from agent_toolkit._hooks.session_state import read_state
 
 
 def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
@@ -189,11 +155,6 @@ def _claude_commit_attribution_disabled(cwd: str) -> bool:
             defined = True
             effective = current
     return defined and effective == ""
-
-
-def _is_plan_file_or_adjunct(file_path: str) -> bool:
-    """計画ファイル（メイン）・計画ファイル（バグ）の場合に真を返す。"""
-    return is_plan_component_file(file_path) or is_plan_adjunct_file(file_path)
 
 
 _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
@@ -606,14 +567,3 @@ def _handle_edit_tool(
     else:
         flush_warning()
     return 0
-
-
-def _materialize_cached(
-    operation: _hook_tool_input.EditOperation,
-    index: int,
-    images: dict[int, _hook_tool_input.MaterializedEdit | None],
-) -> _hook_tool_input.MaterializedEdit | None:
-    """操作単位の変更前後像を必要になった時点で1回だけ具体化する。"""
-    if index not in images:
-        images[index] = _hook_tool_input.materialize(operation)
-    return images[index]

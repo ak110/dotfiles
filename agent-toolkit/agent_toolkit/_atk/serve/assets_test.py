@@ -1,38 +1,34 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`のテスト。"""
 
 # pylint: disable=protected-access
 
 import asyncio
-import binascii
 import contextlib
-import json
 import logging
-import math
 import os
 import pathlib
-import re
-import signal
-import struct
-import subprocess
 import threading
-import types
 import typing
-import zlib
 
-import filelock
 import pytest
 import watchdog.events
 
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import assets, config, state
 from agent_toolkit._atk.serve import cli as serve
-from agent_toolkit._atk.serve import plans as serve_plans
-from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.wi import common, user_comment
-from agent_toolkit._atk.wi import repo as awi_repo
+from agent_toolkit._testing.serve_support import (
+    _BATCH_TEXT,
+    _FakeTimer,
+    _patch_batch_repo_operations,
+    _patch_comment_edit_dependencies,
+    _run_node_ui,
+    _session_review_awi,
+    _three_screen_app,
+    _write_detail_entry,
+    _write_repo_entry,
+)
+from agent_toolkit._testing.wi_mutations_support import setattr_in_mutation_modules
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -40,9 +36,6 @@ from agent_toolkit._atk.wi import repo as awi_repo
 # 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
 # module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
 _HOST_ENVIRON = dict(os.environ)
-
-
-from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 
 def test_web_transition_rejects_commit_without_resolvable_worktree(
@@ -57,11 +50,10 @@ def test_web_transition_rejects_commit_without_resolvable_worktree(
         "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n",
         encoding="utf-8",
     )
-    mutations = serve_app.awi_mutations
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
+    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
+    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
 
     with pytest.raises(serve_app.WebApiInputError, match="指定したエントリを操作できません"):
         serve_app.Operations(tmp_path).transition("adopt", ["awi.md"], commit="abcdef1")

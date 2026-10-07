@@ -12,6 +12,7 @@ import sys
 import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
 from agent_toolkit._hooks.output_contract import validate_hook_output
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
@@ -103,7 +104,7 @@ def _build_fixture(
         managed_root = tmp_path / "managed temp"
         managed_root.mkdir()
         if os.name == "nt":
-            _managed_temp._windows_secure_path(  # pylint: disable=protected-access
+            managed_temp_windows_security._windows_secure_path(  # pylint: disable=protected-access
                 managed_root,
                 directory=True,
             )

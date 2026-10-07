@@ -1,23 +1,26 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`の計画ファイル画面の処理のテスト。"""
 
 # pylint: disable=protected-access
 
-import asyncio
-import base64
-import hashlib
-import json
-import os
 import pathlib
-import subprocess
 import typing
 
 import pytest
 
 from agent_toolkit._atk.serve import plans
-from agent_toolkit._atk.serve.plans.test_support_test import *  # noqa: F403
+from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
+from agent_toolkit._atk.serve.plans import remote as plans_remote
+from agent_toolkit._atk.serve.plans import roots as plans_roots
+from agent_toolkit._atk.serve.plans import views as plans_views
+from agent_toolkit._testing.serve_plans_support import (
+    _context,
+    _FakeWatcher,
+    _legacy_cache_path,
+    _plan,
+    _read_payload,
+    _runner_returning,
+    _write_legacy_cache,
+)
 
 
 def test_same_root_specified_twice_is_listed_once(tmp_path: pathlib.Path) -> None:
@@ -25,7 +28,7 @@ def test_same_root_specified_twice_is_listed_once(tmp_path: pathlib.Path) -> Non
     root = tmp_path / "plans"
     root.mkdir()
 
-    normalized = plans.normalize_root_specs(
+    normalized = plans_roots.normalize_root_specs(
         (
             plans.RootSpec(source_id=plans.NEW_SOURCE_ID, path=root, portable_path="a"),
             plans.RootSpec(source_id=plans.LEGACY_SOURCE_ID, path=tmp_path / "." / "plans", portable_path="b"),
@@ -48,12 +51,12 @@ def test_only_legacy_root_migrates_matching_legacy_entry(tmp_path: pathlib.Path,
     legacy = _legacy_cache_path(index_path, "local-host", "same.md")
     _write_legacy_cache(legacy, "local-host", "same.md", 500.0)
 
-    new_entry = plans.list_files(new_root, "local-host", plans.NEW_SOURCE_ID)[0]
+    new_entry = plans_local_scan.list_files(new_root, "local-host", plans.NEW_SOURCE_ID)[0]
 
     assert new_entry.ctime_epoch == 2_000.0
     assert legacy.exists()
 
-    legacy_entry = plans.list_files(legacy_root, "local-host", plans.LEGACY_SOURCE_ID)[0]
+    legacy_entry = plans_local_scan.list_files(legacy_root, "local-host", plans.LEGACY_SOURCE_ID)[0]
 
     assert legacy_entry.ctime_epoch == 500.0
     assert not legacy.exists()
@@ -69,7 +72,7 @@ async def test_attached_plan_path_is_escaped(tmp_path: pathlib.Path, index_path:
     _plan(root, 'a"b.detail.md')
     context = _context(root)
 
-    html = await plans.plan_links_html(context, "local-host", "", 'a"b.md')
+    html = await plans_views.plan_links_html(context, "local-host", "", 'a"b.md')
 
     assert 'data-plan-path="a&quot;b.detail.md"' in html
 
@@ -82,8 +85,8 @@ def test_dotdir_entries_are_excluded(tmp_path: pathlib.Path, index_path: pathlib
     _plan(root, "p.md", "本文")
     _plan(root, ".hidden/x.md", "本文")
 
-    assert [entry.path for entry in plans.list_files(root, "local-host")] == ["p.md"]
-    assert plans.search_files(root, "本文") == {"p.md"}
+    assert [entry.path for entry in plans_local_scan.list_files(root, "local-host")] == ["p.md"]
+    assert plans_local_scan.search_files(root, "本文") == {"p.md"}
 
 
 @pytest.mark.asyncio
@@ -109,7 +112,7 @@ async def test_remote_file_is_read_through_rpc_when_connected() -> None:
     runner, calls = _runner_returning(_read_payload("fallback"))
     watcher = _FakeWatcher(connected=True, response=_read_payload("rpc"))
 
-    text = await plans.fetch_remote_file("remote-host", "p.md", runner, typing.cast(typing.Any, watcher))
+    text = await plans_remote.fetch_remote_file("remote-host", "p.md", runner, typing.cast(typing.Any, watcher))
 
     assert text == "rpc"
     assert not calls

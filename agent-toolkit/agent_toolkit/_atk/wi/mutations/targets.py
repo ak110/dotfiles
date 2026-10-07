@@ -1,110 +1,38 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
+"""WIの変更処理が共有する、操作対象のエントリと対象リポジトリの解決、private-notesへのcommit。
 
-旧`pytools/dotfiles_fb/_mutations.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+`atk wi commit`の処理本体と、変更処理が対象のcommitを解決する手順も持つ。
 """
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
-import datetime
-import os
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
-import typing
-from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import bulk as _bulk
-from agent_toolkit._atk.wi import user_comment as _user_comment
-from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
-    TRANSITION_EXPLICIT_STATES,
     WI_EDITABLE_STATES,
-    WI_PROCESSABLE_STATES,
-    WI_STATE_ADOPTED,
     WI_STATE_HOLD,
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
-    WI_STATE_REJECTED,
-    WI_STATES,
-    WI_TYPE_AWI,
-    WI_TYPE_UWI,
     WebInputError,
-    _CommitMetadata,
     _commit_and_push,
-    _copy_to_tempfile,
-    _dedup_positional_filenames,
+    _CommitMetadata,
     _pull,
     _push_pending_commits,
     _repo_lock,
-    _require_type,
-    _stamp_result,
-    _subdir,
     _validate_filename,
-    _validate_filenames_only,
-    is_agent_environment,
-    normalized_wi_type,
 )
 from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action as _unrepairable_entry_next_action
 from agent_toolkit._atk.wi.repo import (
     _normalize_remote_url,
     _resolve_repo_id,
-    _verify_target_repo_content,
 )
-from agent_toolkit._atk.wi.repo import append_entry as _append_entry
-from agent_toolkit._atk.wi.repo import edit_entry as _edit_entry
-from agent_toolkit._plan import locations as _plan_file
-from agent_toolkit._plan import structure as _plan_format
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.wi.mutations.content import (
-        _build_noninteractive_edit_content,
-        _cmd_append,
-        _cmd_edit,
-        _preserve_agent_user_comment,
-        _reject_agent_user_comment_change,
-        _reject_agent_user_comment_message,
-        append_entry_content,
-        edit_entry_content,
-    )
-    from agent_toolkit._atk.wi.mutations.dependencies import (
-        _active_dependency_graph,
-        _cmd_set_dependencies,
-        _dependency_reaches,
-        _entry_dependencies,
-        set_entry_dependencies,
-    )
-    from agent_toolkit._atk.wi.mutations.transitions import (
-        _apply_transition,
-        _cmd_adopt,
-        _cmd_hold,
-        _cmd_reject,
-        _cmd_return_to_inbox,
-        _cmd_rm,
-        _cmd_start_processing,
-        _cmd_unhold,
-        _resolve_transition_paths,
-        _strip_result_section,
-        _transition_commit_message,
-        _update_transition_metadata,
-        _validate_transition_options,
-        _validate_transition_targets,
-        transition_entries,
-    )
 
 _GIT_TIMEOUT_SECONDS = 10.0
 _MISSING_TARGET_NEXT_ACTION = "`atk wi list`で実在するファイル名を確かめて指定し直す"

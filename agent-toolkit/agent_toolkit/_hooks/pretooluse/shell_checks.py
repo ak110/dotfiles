@@ -1,5 +1,3 @@
-# ruff: noqa: F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
 r"""PreToolUse統合フックのうち、Bashコマンドを遮断する条件の判定。"""
 
 from __future__ import annotations
@@ -12,33 +10,22 @@ from collections.abc import (
     Iterable,
     Sequence,
 )
-from typing import TYPE_CHECKING
 
-
-from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    BashInvocation,
+from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
+from agent_toolkit._common.shell_tokens import strip_redirections
+from agent_toolkit._hooks.bash_command_parser import (
     _GLOBAL_OPTIONS_WITH_VALUE,
     _GLOBAL_OPTIONS_WITHOUT_VALUE,
+    BashInvocation,
+    ExecutionSegment,
     extract_bash_invocations,
+    extract_execution_segments,
     heredoc_command_substitutions,
     mask_heredoc_bodies,
     split_bash_segments,
 )
-from agent_toolkit._common.shell_tokens import strip_redirections
-from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
-
-
-if TYPE_CHECKING:
-    from agent_toolkit._hooks.pretooluse.dispatch import (
-        _ExecutionSegment,
-        _extract_execution_segments,
-    )
-    from agent_toolkit._hooks.pretooluse.notices import (
-        _block_notice,
-        _llm_notice,
-    )
-    from agent_toolkit._hooks.notice import _WARN_TAG
-
+from agent_toolkit._hooks.notice import _WARN_TAG
+from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 # --- Bash: パターン一致によるプロセス終了の検出 ---
 
@@ -193,7 +180,7 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
     if _has_active_process_kill_syntax(segment):
         return True
     if command_name == "git":
-        parsed_segments = _extract_execution_segments(segment)
+        parsed_segments = extract_execution_segments(segment)
         if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
             return True
         subcommand = _git_subcommand_tokens(parsed_segments[0])
@@ -246,7 +233,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
     return True
 
 
-def _git_subcommand_tokens(segment: _ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
+def _git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
     """`git`区間のサブコマンド名と、そのサブコマンド以降の引数を返す。"""
     if not segment.resolved or not segment.tokens:
         return None
@@ -751,7 +738,7 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
         return None
     assigned: dict[str, str] = {}
     found: list[str] = []
-    for segment in _extract_execution_segments(command):
+    for segment in extract_execution_segments(command):
         for name, value in _segment_assignments(segment.raw_tokens):
             if name == "PATH":
                 found.extend(_drive_letter_path_elements(value, assigned))

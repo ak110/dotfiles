@@ -1,37 +1,27 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-"""`atk serve`のテスト。"""
+"""`_atk/serve/`のテストが共有する、WI画面のUI実行、3画面のアプリの組み立てと擬似の状態・操作。"""
 
 # pylint: disable=protected-access
 
-import asyncio
-import binascii
 import contextlib
 import json
-import logging
-import math
 import os
 import pathlib
 import re
-import signal
-import struct
 import subprocess
 import threading
 import types
 import typing
-import zlib
 
-import filelock
 import pytest
-import watchdog.events
 
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import assets, config, state
 from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
-from agent_toolkit._atk.wi import common, user_comment
+from agent_toolkit._atk.wi import common
 from agent_toolkit._atk.wi import repo as awi_repo
+from agent_toolkit._testing.wi_mutations_support import MUTATION_MODULES, setattr_in_mutation_modules
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -266,6 +256,8 @@ eval({json.dumps(executable)});
         ["node", "--input-type=commonjs"],
         input=script,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=False,
         env=_HOST_ENVIRON,
@@ -404,26 +396,26 @@ def _patch_comment_edit_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    for module in (common, awi_repo, serve_app.awi_mutations):
+    for module in (common, awi_repo, *MUTATION_MODULES):
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
         monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
 
 
-__all__ = [
-    "_BATCH_TEXT",
-    "_BlockingSync",
-    "_FakeTimer",
-    "_HOST_ENVIRON",
-    "_patch_batch_repo_operations",
-    "_patch_comment_edit_dependencies",
-    "_recorder",
-    "_run_node_ui",
-    "_session_review_awi",
-    "_stub_state",
-    "_sync_app",
-    "_three_screen_app",
-    "_write_detail_entry",
-    "_write_repo_entry",
-]
+def _disable_wi_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WI画面の操作がprivate-notesで行うロック・pull・commit・pushを、何もしない処理へ差し替える。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    replacements: dict[str, object] = {
+        "_repo_lock": lock,
+        "_pull": lambda _path: None,
+        "_commit_and_push": lambda *_args, **_kwargs: None,
+        "_push_pending_commits": lambda _path: None,
+    }
+    for name, value in replacements.items():
+        monkeypatch.setattr(common, name, value)
+        setattr_in_mutation_modules(monkeypatch, name, value)

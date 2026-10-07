@@ -1,182 +1,38 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""agent-toolkitが所有する一時ディレクトリを作成・検証・後始末する。"""
+"""managed-tempのディレクトリの作成（マーカーと登録簿の記録、所有者と権限の設定、失敗時の除去）。"""
 
 from __future__ import annotations
 
-import argparse
 import contextlib
-import ctypes
 import datetime
-import enum
-import hashlib
-import json
 import os
 import pathlib
-import re
 import secrets
-import shutil
 import stat
-import sys
 import tempfile
-import typing
-import unicodedata
-from ctypes import wintypes
-from typing import TYPE_CHECKING
 
-from agent_toolkit._atk import help_text as _atk_help
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.managed_temp.cli import build_parser, dispatch, main
-    from agent_toolkit._atk.managed_temp.inventory import (
-        _classify_quarantine,
-        _cleanup_missing_registered_temp,
-        _cleanup_posix,
-        _cleanup_quarantine,
-        _cleanup_windows,
-        _clear_directory,
-        _consume_registry,
-        _consuming_registry_path,
-        _entity_absence_is_confirmed,
-        _lstat_or_none,
-        _marker_recovery_is_accepted,
-        _QuarantineJudgement,
-        _QuarantineState,
-        _report_unregistered_candidates,
-        _restore_cleanup_marker,
-        _restore_cleanup_state,
-        _restore_interrupted_consume,
-        _restore_posix_quarantine,
-        _restore_registry,
-        _tree_snapshot,
-        _unregistered_candidates,
-        cleanup_managed_temp,
-        count_unregistered_candidates,
-        is_missing_registered_temp,
-        list_managed_temp,
-        sweep_expired_managed_temp,
-    )
-    from agent_toolkit._atk.managed_temp.registry import (
-        _MARKER_NAME,
-        _PREFIX_RE,
-        _PREFIX_RULES,
-        _SCHEMA_VERSION,
-        _UTC_ISO8601_RE,
-        _WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
-        _WINDOWS_ACCESS_DENIED_ACE_TYPE,
-        _WINDOWS_ACL_REVISION,
-        _WINDOWS_CONTAINER_INHERIT_ACE,
-        _WINDOWS_DACL_SECURITY_INFORMATION,
-        _WINDOWS_ERROR_ACCESS_DENIED,
-        _WINDOWS_EXTERNAL_WRITER_ACCESS,
-        _WINDOWS_FILE_ALL_ACCESS,
-        _WINDOWS_FILE_ATTRIBUTE_DIRECTORY,
-        _WINDOWS_FILE_FLAG_BACKUP_SEMANTICS,
-        _WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT,
-        _WINDOWS_FILE_SHARE_ALL,
-        _WINDOWS_OBJECT_INHERIT_ACE,
-        _WINDOWS_OPEN_EXISTING,
-        _WINDOWS_OWNER_SECURITY_INFORMATION,
-        _WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION,
-        _WINDOWS_READ_ATTRIBUTES,
-        _WINDOWS_READ_CONTROL,
-        _WINDOWS_REPARSE_POINT,
-        _WINDOWS_SE_DACL_PROTECTED,
-        _WINDOWS_SE_FILE_OBJECT,
-        _WINDOWS_SYNCHRONIZE,
-        _WINDOWS_WRITE_DAC,
-        _WINDOWS_WRITE_OWNER,
-        MAX_AGE_DAYS,
-        ManagedTempError,
-        _awis_are_valid,
-        _is_utc_iso8601,
-        _load_marker,
-        _load_private_json,
-        _ManagedTempEntry,
-        _owner_record,
-        _path_identity,
-        _record,
-        _record_base,
-        _record_mismatch_error,
-        _records_match,
-        _registry_name,
-        _registry_path,
-        _state_root,
-        _state_root_path,
-        _temp_root,
-        _validate_root,
-        _ValidatedRoot,
-        _ValidatedTemp,
-        _WindowsApiError,
-        _WindowsHandleOpenError,
-        _write_marker,
-        _write_private_json,
-    )
-    from agent_toolkit._atk.managed_temp.windows_security import (
-        _AccessAllowedAce,
-        _AceHeader,
-        _Acl,
-        _AclSizeInformation,
-        _ByHandleFileInformation,
-        _FileTime,
-        _validate_windows_managed_root_security,
-        _validate_windows_security,
-        _windows_acl_buffer,
-        _windows_current_sid,
-        _windows_current_user_ace_is_valid,
-        _windows_dll,
-        _windows_equal_sids,
-        _windows_error,
-        _windows_external_writer_ace_is_valid,
-        _windows_handle_open_error,
-        _windows_identity,
-        _windows_information_identity,
-        _windows_managed_root_security_is_valid,
-        _windows_path_handle,
-        _windows_replace_security,
-        _windows_secure_path,
-        _windows_security_base_is_valid,
-        _windows_security_descriptor,
-        _windows_security_from_handle,
-        _windows_security_update_handle,
-        _windows_set_security,
-        _windows_sid_bytes,
-        _WindowsAce,
-        _WindowsSecurity,
-    )
-
-
-from agent_toolkit._atk.managed_temp.registry import *  # noqa: F403
-from agent_toolkit._atk.managed_temp.windows_security import *  # noqa: F403
-
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._atk.managed_temp.inventory import list_managed_temp
+from agent_toolkit._atk.managed_temp.registry import (
+    _MARKER_NAME,
+    _awis_are_valid,
+    _invalid_prefix_error,
+    _path_identity,
+    _record,
+    _registry_path,
+    _temp_root,
+    _validate_root,
+    _write_marker,
+    _write_private_json,
+    is_valid_prefix,
+)
+from agent_toolkit._atk.managed_temp.validation import _validate_posix, _validate_windows, validate_managed_temp
+from agent_toolkit._atk.managed_temp.windows_security import _windows_identity, _windows_secure_path
 
 SESSION_TEMP_PREFIX = "session"
 """SessionStartが会話ごとに作成するセッションのmanaged-tempの接頭辞。
 
 フックとagents_serverの双方が同じ領域を解決するため、両者より前の層のこのモジュールが持つ。
 """
-
-
-def prefix_violation(prefix: str) -> str | None:
-    """prefixが違反した最初の条件の説明を返す。違反が無ければNoneを返す。"""
-    for description, satisfied in _PREFIX_RULES:
-        if not satisfied(prefix):
-            return description
-    return None
-
-
-def is_valid_prefix(prefix: str) -> bool:
-    """prefixがmanaged-tempのディレクトリの命名規則に一致するか返す。"""
-    return prefix_violation(prefix) is None
-
-
-def _invalid_prefix_error(prefix: str) -> ManagedTempError:
-    """違反した条件と拒否値を示すprefix検証エラーを返す。"""
-    violation = prefix_violation(prefix)
-    assert violation is not None
-    return ManagedTempError(f"prefixが条件を満たしていません（{violation}）: {prefix}")
 
 
 def _remove_created_target(
@@ -407,137 +263,3 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
         if root_descriptor is not None:
             with contextlib.suppress(OSError):
                 os.close(root_descriptor)
-
-
-def _validate_path_shape(path_arg: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    if not path_arg.is_absolute():
-        raise ManagedTempError(f"pathは絶対パスで指定する: {path_arg}")
-    path = pathlib.Path(os.path.abspath(path_arg))
-    root = path.parent
-    return root, path
-
-
-def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = False) -> _ValidatedTemp:
-    if os.name != "posix":
-        raise ManagedTempError(
-            "Windowsの所有者・ACL検証はWindows実機で確定する必要がある", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION
-        )
-    root, path = _validate_path_shape(pathlib.Path(path_arg))
-    root_state = _validate_root(root)
-    root_descriptor: int | None = None
-    target_descriptor: int | None = None
-    try:
-        root_descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        opened_root = os.fstat(root_descriptor)
-        opened_root_state = _ValidatedRoot(
-            opened_root.st_dev,
-            opened_root.st_ino,
-            opened_root.st_uid,
-            stat.S_IMODE(opened_root.st_mode),
-        )
-        if opened_root_state != root_state:
-            raise ManagedTempError(
-                f"管理対象rootが検証中に置換または変更された: {root}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
-            )
-        before = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
-        if not stat.S_ISDIR(before.st_mode):
-            raise ManagedTempError(
-                f"管理対象が通常ディレクトリではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
-            )
-        if before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o700:
-            raise ManagedTempError(
-                f"管理対象の所有者・権限またはroot直下の条件が不正: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
-            )
-        target_descriptor = os.open(
-            path.name,
-            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-            dir_fd=root_descriptor,
-        )
-        opened = os.fstat(target_descriptor)
-        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-            raise ManagedTempError(f"管理対象が検証中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION)
-        marker = _load_marker(target_descriptor, path)
-        after_root = os.fstat(root_descriptor)
-        after_root_state = _ValidatedRoot(
-            after_root.st_dev,
-            after_root.st_ino,
-            after_root.st_uid,
-            stat.S_IMODE(after_root.st_mode),
-        )
-        if after_root_state != root_state:
-            raise ManagedTempError(
-                f"管理対象rootが検証中に置換または変更された: {root}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
-            )
-        if (opened.st_dev, opened.st_ino) != _path_identity(path):
-            raise ManagedTempError(f"管理対象が検証中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION)
-    except OSError as error:
-        raise ManagedTempError(f"管理対象を検証できない: {path}: {error}") from error
-    finally:
-        if target_descriptor is not None:
-            os.close(target_descriptor)
-        if root_descriptor is not None:
-            os.close(root_descriptor)
-    registry_path = _registry_path(path)
-    recovered_from_marker = registry_fallback and not os.path.lexists(registry_path)
-    registry = marker if recovered_from_marker else _load_private_json(registry_path)
-    if not _records_match(path, marker, registry, identity=(opened.st_dev, opened.st_ino)):
-        raise _record_mismatch_error(path / _MARKER_NAME, recovered_from_marker=recovered_from_marker)
-    _validate_root(root, expected=root_state)
-    return _ValidatedTemp(
-        path,
-        opened.st_dev,
-        opened.st_ino,
-        typing.cast(str, registry["nonce"]),
-        registry_path,
-        registry,
-        root_state.device,
-        root_state.inode,
-        root_state.owner,
-        root_state.mode,
-    )
-
-
-def _validate_windows(path_arg: pathlib.Path | str, *, registry_fallback: bool = False) -> _ValidatedTemp:
-    root, path = _validate_path_shape(pathlib.Path(path_arg))
-    root_state = _validate_root(root)
-    try:
-        metadata = path.lstat()
-    except OSError as error:
-        raise ManagedTempError(f"管理対象を検証できない: {path}: {error}") from error
-    if not stat.S_ISDIR(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
-        raise ManagedTempError(
-            f"管理対象が通常ディレクトリではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
-        )
-    _validate_windows_managed_root_security(path)
-    identity = _windows_identity(path)
-    marker = _load_private_json(path / _MARKER_NAME)
-    registry_path = _registry_path(path)
-    recovered_from_marker = registry_fallback and not os.path.lexists(registry_path)
-    registry = marker if recovered_from_marker else _load_private_json(registry_path)
-    if not _records_match(path, marker, registry, identity=identity):
-        raise _record_mismatch_error(path / _MARKER_NAME, recovered_from_marker=recovered_from_marker)
-    _validate_root(root, expected=root_state)
-    if _windows_identity(path) != identity:
-        raise ManagedTempError(f"管理対象が検証中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION)
-    return _ValidatedTemp(
-        path,
-        identity[0],
-        identity[1],
-        typing.cast(str, registry["nonce"]),
-        registry_path,
-        registry,
-        root_state.device,
-        root_state.inode,
-        root_state.owner,
-        root_state.mode,
-        root_state.security,
-    )
-
-
-def validate_managed_temp(path_arg: pathlib.Path | str) -> pathlib.Path:
-    """管理対象一時ディレクトリを削除せずに検証する。"""
-    if os.name == "posix":
-        return _validate_posix(path_arg).path
-    if os.name == "nt":
-        return _validate_windows(path_arg).path
-    raise ManagedTempError(f"未対応platform: {os.name}", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION)

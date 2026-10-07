@@ -1,33 +1,26 @@
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=protected-access,unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
+# pylint: disable=protected-access
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
-import ast
 import json
 import os
 import pathlib
 import re
-import shlex
 import subprocess
 import sys
-import tempfile
-import textwrap
-import time
-from collections.abc import Callable
 
 import pytest
-from pyfltr.colloquial import check as _colloquial_check
 
-from agent_toolkit import hook
-from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse import shell_checks
-from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
-from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, auto_message_opening_attributes
+from agent_toolkit._testing.helpers import auto_message_opening_attributes
+from agent_toolkit._testing.pretooluse_support import (
+    _additional_context,
+    _plan_file_state_env,
+    _run,
+    _write_session_state,
+)
 
 
 class TestAgentsServerInputChecks:

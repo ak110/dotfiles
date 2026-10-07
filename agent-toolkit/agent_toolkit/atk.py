@@ -78,11 +78,14 @@ from agent_toolkit._atk.wi import common as _common  # noqa: E402
 from agent_toolkit._atk.wi import constants as _constants  # noqa: E402
 from agent_toolkit._atk.wi import grep as _grep  # noqa: E402
 from agent_toolkit._atk.wi import listing as _list  # noqa: E402
-from agent_toolkit._atk.wi import mutations as _mutations  # noqa: E402
 from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402
 from agent_toolkit._atk.wi import repo as _wi_repo  # noqa: E402
 from agent_toolkit._atk.wi import show as _show  # noqa: E402
 from agent_toolkit._atk.wi import uwi as _uwi  # noqa: E402
+from agent_toolkit._atk.wi.mutations import content as _mutation_content  # noqa: E402
+from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies  # noqa: E402
+from agent_toolkit._atk.wi.mutations import targets as _mutation_targets  # noqa: E402
+from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions  # noqa: E402
 from agent_toolkit._common import next_action as _next_action  # noqa: E402
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
 from agent_toolkit._hooks import periodic_recheck as _periodic_recheck  # noqa: E402
@@ -1642,18 +1645,18 @@ def main(
         ),
         "list": lambda: _list._cmd_list(args, private_notes),
         "show": lambda: _show._cmd_show(args, private_notes),
-        "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes, now),
-        "hold": lambda: _mutations._cmd_hold(args, private_notes, now),
-        "unhold": lambda: _mutations._cmd_unhold(args, private_notes, now),
-        "return-to-inbox": lambda: _mutations._cmd_return_to_inbox(args, private_notes, now),
-        "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
-        "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
-        "rm": lambda: _mutations._cmd_rm(args, private_notes),
-        "edit": lambda: _mutations._cmd_edit(args, private_notes),
-        "set-dependencies": lambda: _mutations._cmd_set_dependencies(args, private_notes),
+        "start-processing": lambda: _mutation_transitions._cmd_start_processing(args, private_notes, now),
+        "hold": lambda: _mutation_transitions._cmd_hold(args, private_notes, now),
+        "unhold": lambda: _mutation_transitions._cmd_unhold(args, private_notes, now),
+        "return-to-inbox": lambda: _mutation_transitions._cmd_return_to_inbox(args, private_notes, now),
+        "adopt": lambda: _mutation_transitions._cmd_adopt(args, private_notes, now),
+        "reject": lambda: _mutation_transitions._cmd_reject(args, private_notes, now),
+        "rm": lambda: _mutation_transitions._cmd_rm(args, private_notes),
+        "edit": lambda: _mutation_content._cmd_edit(args, private_notes),
+        "set-dependencies": lambda: _mutation_dependencies._cmd_set_dependencies(args, private_notes),
         "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _uwi._cmd_answer(args, private_notes),
-        "commit": lambda: _mutations._cmd_commit(private_notes),
+        "commit": lambda: _mutation_targets._cmd_commit(private_notes),
         "pull": lambda: _cmd_pull(private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
     }

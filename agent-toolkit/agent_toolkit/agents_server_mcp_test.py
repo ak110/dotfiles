@@ -33,6 +33,7 @@ from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._common import claude_usage_limit
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.helpers import delivery_payload
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 _FORBIDDEN_PUBLIC_KEYS = {"turn_id", "result_available"}
 _REAL_PLUGIN_PREFLIGHT = subject._check_plugin_commands_sync
@@ -691,7 +692,7 @@ async def test_public_start_returns_label_of_started_session(
         subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")]
     )
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(subject._managed_temp, "_state_root_path", lambda: tmp_path / "managed-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-state")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     subject._managed_temp.create_managed_temp("session", session_id="caller-session")
@@ -1535,7 +1536,7 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
     応答の値が委譲プロンプトと一致しないと、委譲元は`（継続）`で渡す記録先を誤る。
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(subject._managed_temp, "_state_root_path", lambda: tmp_path / "managed-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-state")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     session_area = subject._managed_temp.create_managed_temp("session", session_id="caller-session")

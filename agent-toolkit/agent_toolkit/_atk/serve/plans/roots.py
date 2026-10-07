@@ -1,143 +1,30 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""`atk serve`の計画ファイル画面の処理本体。
-
-ローカルと設定済みリモートホストの計画ファイルを集約し、全文検索、Markdownと
-レビュー指摘管理表のHTML変換、付属計画間の移動リンク生成、更新通知の配信を担う。
-ルート登録は`_atk_serve_app.py`の`_register_plan_routes`が行い、本モジュールは処理の実装だけを持つ。
+"""計画ファイル画面の設定値、rootの解決、一覧の項目の型、更新通知の配信。
 
 記録の保存先とrootの規約は`agent-toolkit/skills/plan-mode`が定める計画ファイルの配置に従う。
-リモートホスト側で実行するヘルパーは`atk_serve_plans_remote_helper.py`とする。
 """
 
 from __future__ import annotations
 
 import asyncio
-import asyncio.subprocess as _async_subprocess
-import base64
-import collections
-import collections.abc
 import contextlib
 import dataclasses
 import datetime
-import hashlib
-import html as html_lib
 import importlib
 import json
 import logging
-import os
 import pathlib
-import random
-import re
-import socket
-import subprocess
 import threading
 import typing
-from typing import TYPE_CHECKING
 
-import markdown_it
-import markdown_it.renderer
-import markdown_it.token
-import markdown_it.utils
-import platformdirs
-import pygments
 import watchdog.events
 import watchdog.observers
 import watchdog.observers.api
 from pygments.formatters.html import HtmlFormatter
-from pygments.lexers import get_lexer_by_name
-from pygments.util import ClassNotFound
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._common import file_lock as _file_lock
 
-if TYPE_CHECKING:
-    from agent_toolkit._atk.serve.plans.ctime_index import (
-        _enter_index_lock,
-        _entry_ctime,
-        _exclusive_file_lock,
-        _index_key,
-        _index_lock_path,
-        _load_index,
-        _load_legacy_entries,
-        _root_key,
-        _write_index,
-        cleanup_creation_time_temporaries,
-        update_creation_time_index,
-    )
-    from agent_toolkit._atk.serve.plans.local_scan import (
-        _STATIC_DIR,
-        REMOTE_BOOTSTRAP,
-        PlansEventHandler,
-        _ctime_epoch,
-        is_listed_path,
-        is_target_path,
-        list_files,
-        local_host_info,
-        read_pygments_css,
-        resolve_under_root,
-        root_info,
-        root_status,
-        root_warning,
-        scan_files,
-        search_files,
-    )
-    from agent_toolkit._atk.serve.plans.remote import (
-        RemoteHelperError,
-        RemoteSearchCoordinator,
-        RemoteSearchResult,
-        RemoteSearchRunner,
-        RemoteSearchSuperseded,
-        RemoteWatcher,
-        _build_remote_command_argv,
-        _decode_read_payload,
-        _decode_root_info,
-        _decode_root_status,
-        _drain_stderr,
-        _is_listed_remote_path,
-        _iter_stream_lines,
-        _PendingSearch,
-        _stderr_excerpt,
-        _terminate_process,
-        _wait_with_timeout,
-        default_ssh_runner,
-        fetch_remote_file,
-        is_safe_remote_relpath,
-        search_remote_files,
-    )
-    from agent_toolkit._atk.serve.plans.rendering import (
-        MarkdownCache,
-        MarkdownCacheKey,
-        _highlight_code,
-        _render_fence,
-        make_md_renderer,
-        markdown_to_html,
-    )
-    from agent_toolkit._atk.serve.plans.views import (
-        PlanFileError,
-        PlansContext,
-        _oldest_host_per_file,
-        _plan_exists,
-        _plan_paths,
-        _read_text,
-        _scan_local_root,
-        _search_remote,
-        all_entries,
-        create_context,
-        is_review_table_path,
-        listed_plan_path,
-        plan_links_html,
-        render_file_html,
-        resolve_source_id,
-        resolve_text,
-        review_table_html,
-        search_entries,
-        start_local_watchers,
-        start_remote_watchers,
-        stop_local_watchers,
-        stop_remote_watchers,
-    )
+if typing.TYPE_CHECKING:
+    from agent_toolkit._atk.serve.plans.remote import RemoteWatcher
 
 logger = logging.getLogger(__name__)
 
@@ -199,18 +86,6 @@ _WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
 MARKDOWN_CACHE_MAX_ENTRIES = 128
 MARKDOWN_CACHE_MAX_BYTES = 16 * 1024 * 1024
 
-# 作成日時の永続インデックス。ホスト・root・相対パスの3項をキーとする単一JSONへ集約する。
-# 同一ホスト上でリモートヘルパー（`atk_serve_plans_remote_helper.py`）も同じファイルを共有するため、
-# キーと値の形式を両実装で一致させる。
-# ディレクトリ名は計画ファイル閲覧機能が`atk serve`へ統合される前から蓄積した索引をそのまま使うため維持する。
-# 名前を変えると初回観測時刻が失われ、一覧の並び順が変わる。
-_CREATION_TIME_INDEX_PATH = (
-    pathlib.Path(platformdirs.user_cache_dir("claude-plans-viewer", appauthor=False)) / "creation-times" / "index.json"
-)
-# 旧形式（1エントリ1ファイル）のキャッシュ名。sha256 hexdigestと`.json`から成る。
-_LEGACY_CACHE_NAME_RE = re.compile(r"^[0-9a-f]{64}\.json$")
-# 旧実装が生成した一時ファイル名。`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`。
-_LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
 
 # SSH接続時に共通付与するオプション。
 # `BatchMode=yes`で鍵認証失敗時にパスワードプロンプトでハングしないようにする。

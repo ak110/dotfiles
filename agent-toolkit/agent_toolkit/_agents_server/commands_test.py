@@ -13,6 +13,7 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import commands, state
 from agent_toolkit._atk import config, environment, managed_temp, output_file
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 status_file = commands.status_file
 
@@ -56,7 +57,7 @@ def test_public_wait_save_failure_keeps_unreceived_result(
     def fail(_prefix: str) -> pathlib.Path:
         raise OSError("保存準備に失敗")
 
-    monkeypatch.setattr(managed_temp, "create_managed_temp", fail)
+    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", fail)
     with pytest.raises(SystemExit, match="1"):
         atk.main(["agents", "wait"])
     assert result_file.read_text(encoding="utf-8") == original

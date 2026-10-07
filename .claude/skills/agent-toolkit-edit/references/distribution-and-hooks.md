@@ -13,14 +13,14 @@
 後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
 同じ層の中のimportは制限しない。
 テスト専用の共有ヘルパーは`_testing`へ置く。
-`_testing`は層の順序に含めない例外とし、`*_test.py`だけがimportできる。
+`_testing`は層の順序に含めない例外とし、`*_test.py`・`conftest.py`と`_testing`配下のモジュールだけがimportできる。
 新しいモジュールの追加先は、そのモジュールを読み込む主体が属するサブパッケージで判定する。
 直下の公開スクリプトは接頭辞`_`を付けずに命名する。
 `_managed_temp.py`だけは外部の許可判定がそのパスを解決するため名前を維持し、`agent-toolkit/agent_toolkit/script_prefix_invariant_test.py`がこの1件を除外する。
 
 サブパッケージ内のimportには絶対importを使う。
 `scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の自動チェックの被覆が失われるためである。
-同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportを失敗として報告する。
+同スクリプトは層の順序に反するimportと、前段の3種以外のモジュールからの`_testing`のimportを失敗として報告する。
 モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名とは異なる名前を選ぶ。
 テストは`dotfiles-development`「テスト配置」に従い、対象モジュールの動作テストを同居させ、実物の文書や設定を読むテストをその近くへ置く。
 

@@ -14,7 +14,9 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._atk.managed_temp.test_support_test import _interrupt_cleanup, isolated_state_root  # noqa: F401
+from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
+from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
+from agent_toolkit._testing.managed_temp_support import _interrupt_cleanup
 
 _OPERATIONS = ("create", "write", "cleanup", "tamper-marker", "tamper-registry")
 
@@ -22,7 +24,7 @@ _OPERATIONS = ("create", "write", "cleanup", "tamper-marker", "tamper-registry")
 def _prepare_explicit_root(path: pathlib.Path) -> pathlib.Path:
     """明示rootを実行OSの所有者・権限契約へ適合させる。"""
     if os.name == "nt":
-        managed_temp._windows_secure_path(path, directory=True)
+        managed_temp_windows_security._windows_secure_path(path, directory=True)
     else:
         path.chmod(0o700)
     return path
@@ -52,13 +54,13 @@ def test_lifecycle_sequences_match_reference_model(operations: list[str], tmp_pa
             payload += b"x"
             (target / "payload").write_bytes(payload)
         elif operation == "tamper-marker" and target is not None:
-            _replace_nonce(target / managed_temp._MARKER_NAME, "a" * 64)
+            _replace_nonce(target / managed_temp_registry._MARKER_NAME, "a" * 64)
             valid = False
         elif operation == "tamper-registry" and target is not None:
-            _replace_nonce(managed_temp._registry_path(target), "b" * 64)
+            _replace_nonce(managed_temp_registry._registry_path(target), "b" * 64)
             valid = False
         elif operation == "cleanup" and target is not None:
-            registry = managed_temp._registry_path(target)
+            registry = managed_temp_registry._registry_path(target)
             if valid:
                 managed_temp.cleanup_managed_temp(target)
                 assert not target.exists()
@@ -83,7 +85,7 @@ def test_cleanup_in_one_namespace_preserves_other_registration(tmp_path: pathlib
     _prepare_explicit_root(root)
     first = managed_temp.create_managed_temp("first", root=root)
     second = managed_temp.create_managed_temp("second", root=root)
-    second_registry = managed_temp._registry_path(second)
+    second_registry = managed_temp_registry._registry_path(second)
     managed_temp.cleanup_managed_temp(first)
     assert second.is_dir()
     assert second_registry.is_file()
@@ -96,8 +98,8 @@ def test_missing_marker_failure_keeps_target_and_registry_for_retry(tmp_path: pa
     root.mkdir(mode=0o700)
     _prepare_explicit_root(root)
     target = managed_temp.create_managed_temp("missing-marker", root=root)
-    registry = managed_temp._registry_path(target)
-    (target / managed_temp._MARKER_NAME).unlink()
+    registry = managed_temp_registry._registry_path(target)
+    (target / managed_temp_registry._MARKER_NAME).unlink()
     with pytest.raises(managed_temp.ManagedTempError):
         managed_temp.cleanup_managed_temp(target)
     assert target.is_dir()
@@ -116,7 +118,7 @@ def test_interrupted_cleanup_converges_from_consuming_and_quarantine(
         root = _prepare_explicit_root(pathlib.Path(directory))
         target = managed_temp.create_managed_temp("interrupted", root=root)
         (target / "payload").write_bytes(b"x" * payload_size)
-        registry = managed_temp._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         consuming, quarantine_path = _interrupt_cleanup(target, quarantine=quarantine)
 
         managed_temp.cleanup_managed_temp(target)
