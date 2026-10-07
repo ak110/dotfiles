@@ -910,7 +910,7 @@ def test_codex_plugin_deferral_notice_reaches_sync_report_and_summary(  # noqa: 
     monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", report_path)
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
     state = _installed_state(version=version, enabled=enabled)
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",))
     monkeypatch.setattr(
         install_codex_plugins,
@@ -918,7 +918,9 @@ def test_codex_plugin_deferral_notice_reaches_sync_report_and_summary(  # noqa: 
         lambda args: _local_marketplace(plugin_env) if args[1] == "marketplace" else state,
     )
     monkeypatch.setattr(install_codex_plugins, "_command", lambda _args: pytest.fail("延期中にaddを呼ばない"))
-    steps: list[tuple[str, Callable[[], post_apply.StepReturn]]] = [("Codex plugin のインストール", install_codex_plugins.run)]
+    steps: list[tuple[str, Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
+        ("Codex plugin のインストール", install_codex_plugins.run)
+    ]
 
     with pytest.raises(SystemExit) as exc_info:
         post_apply.main(runner=lambda: post_apply.run(steps=steps))
@@ -937,7 +939,7 @@ def test_codex_plugin_deferral_notice_reaches_sync_report_and_summary(  # noqa: 
 
 def test_running_codex_with_current_plugin_reports_no_deferral(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """版が一致して有効な導入は更新すべき差が無く、Codexの稼働中でも延期の案内を返さない。"""
-    monkeypatch.setattr(claude_common, "is_euryale", lambda: True)
+    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex app-server",))
     monkeypatch.setattr(
         install_codex_plugins,
