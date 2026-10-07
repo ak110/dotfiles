@@ -59,6 +59,8 @@ UNASSIGNED_FORMS = (
     "引受の記録の行は`逐語引用 text[N] 文字A-B`か「」の引用でこの単位を指し、割当・割り当て・分割元の依頼全体・背景・"
     "含めない・対象外の語とWIファイル名を含まない。どちらの記録も無い単位は達成・未達・証拠不足のいずれかで判定する"
 )
+# 入力記録の段落で非達成を受理する終端区分。exec.parent.mdの`AWI終端区分`のうち統合時に`adopt`しない値に当たる。
+DEFERRED_TERMINATIONS = frozenset({"延期adopt", "終端しない"})
 # 失効の根拠とするメインの技術判断を、レビュー指摘管理表の行で識別する文字列。
 TECHNICAL_JUDGMENT = "メインの技術判断"
 # `evidence`のファイル参照の受理形式。雛形の次の操作と、参照を解決できない診断の双方がこの説明を示す。
@@ -1397,14 +1399,17 @@ def _normalized_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     return list(dict.fromkeys(path.resolve() for path in paths))
 
 
-def _referenced_records(row: dict[str, str], records: dict[pathlib.Path, str], repository: pathlib.Path) -> list[str]:
-    """sourceとevidenceが実際に指す、今回渡された入力記録だけを返す。"""
-    found: list[str] = []
+def _referenced_records(
+    row: dict[str, str], records: dict[pathlib.Path, str], repository: pathlib.Path
+) -> list[tuple[pathlib.Path, str]]:
+    """sourceとevidenceが実際に指す、今回渡された入力記録の絶対パスと指された範囲の本文を返す。"""
+    found: list[tuple[pathlib.Path, str]] = []
     for match in _file_references(row["source"] + " " + row["evidence"], repository):
         candidate, location = _reference_parts(match)
         if WI_FILENAME.fullmatch(candidate):
             continue
-        text = records.get((repository / candidate).resolve())
+        record_path = (repository / candidate).resolve()
+        text = records.get(record_path)
         if text is not None:
             headings = {title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)}
             if _reference_location_error(text.encode("utf-8"), location, headings) is not None:
@@ -1434,7 +1439,7 @@ def _referenced_records(row: dict[str, str], records: dict[pathlib.Path, str], r
                 if "\n".join(raw_body) not in "\n".join(body):
                     continue
                 body = raw_body
-            found.append("\n".join(body))
+            found.append((record_path, "\n".join(body)))
     return found
 
 
@@ -1455,6 +1460,26 @@ def _reject_record(text: str, filename: str) -> bool:
     return bool(decisions) and all(value == "不採用" and reason.strip() for value, reason in decisions)
 
 
+def _paragraph_values(paragraph: str) -> dict[str, str]:
+    """入力記録の段落の`<項目名>: <値>`の行を項目名と値の組にする。"""
+    return dict(line.strip().removeprefix("- ").split(": ", 1) for line in paragraph.splitlines() if ": " in line)
+
+
+def _deferral_missing(values: dict[str, str]) -> list[str] | None:
+    """段落の区分が受理値なら不足する項目名を返し、受理値の区分を持たない段落は`None`を返す。
+
+    受理する区分は、統合時に`adopt`しないか判定を後の工程へ渡す区分である。終端区分の延期`adopt`と`終端しない`は
+    後続工程と検収時機を伴い、判定工程の公開工程と、並行中のユーザビリティレビューはそれだけで受理する。
+    """
+    if values.get("終端区分") in DEFERRED_TERMINATIONS:
+        return [name for name in ("後続工程", "検収時機") if not values.get(name, "").strip()]
+    if values.get("判定工程") == "公開工程":
+        return []
+    if values.get("判定工程") == "ユーザビリティレビュー":
+        return [] if values.get("進行状態") == "並行中" else ["進行状態（並行中）"]
+    return None
+
+
 def _deferred_record(text: str, row: dict[str, str], field: str) -> bool:
     """対象と後続工程を明示した既存の判断記録へ非達成行を対応付ける。
 
@@ -1462,16 +1487,49 @@ def _deferred_record(text: str, row: dict[str, str], field: str) -> bool:
     自由文の意味は推定せず、延期などの語が他の段落にあるだけでは受理しない。
     """
     for paragraph in text.split("\n\n"):
-        values = dict(line.strip().removeprefix("- ").split(": ", 1) for line in paragraph.splitlines() if ": " in line)
+        values = _paragraph_values(paragraph)
         if values.get("AWI") != (row["awi"] or "計画由来") or values.get("判定対象") != row[field]:
             continue
-        if values.get("終端区分") == "延期adopt" and values.get("後続工程", "").strip() and values.get("検収時機", "").strip():
-            return True
-        if values.get("判定工程") == "公開工程":
-            return True
-        if values.get("判定工程") == "ユーザビリティレビュー" and values.get("進行状態") == "並行中":
+        if _deferral_missing(values) == []:
             return True
     return False
+
+
+def _record_mismatches(path: pathlib.Path, whole: str, text: str, row: dict[str, str], field: str) -> list[str]:
+    """非達成行を受理しなかった入力記録について、近い形の記録の位置と一致しなかった項目を返す。
+
+    同じAWIの段落が受理値の区分を持つのに`判定対象`か必須の項目が一致しない場合と、計画の`## 実施内容`の
+    `採否`と`根拠`を持つ表に対象WIのファイル名を含む行が無い場合を示す。担当が不一致の箇所を探し直さずに
+    記録を直せるよう、記録ファイルと段落・表の行番号を添える。
+    """
+
+    def paragraph_location(fragment: str) -> str:
+        offset = whole.find(fragment)
+        return f"{path}の{whole.count(chr(10), 0, offset) + 1}行目からの段落" if offset >= 0 else f"{path}の段落"
+
+    mismatches: list[str] = []
+    for paragraph in text.split("\n\n"):
+        values = _paragraph_values(paragraph)
+        if values.get("AWI") != (row["awi"] or "計画由来") or (missing := _deferral_missing(values)) is None:
+            continue
+        location = paragraph_location(paragraph.strip())
+        if values.get("判定対象") != row[field]:
+            mismatches.append(
+                f"{location}: 項目`判定対象`が行の`{field}`の原文と一致しません（記録の値: {values.get('判定対象', '')!r}）。"
+                f"条件ごとに段落を分け、`判定対象`へ`{field}`の原文を逐語で置く"
+            )
+        elif missing:
+            mismatches.append(f"{location}: 項目{'・'.join(f'`{name}`' for name in missing)}がありません。同じ段落へ補う")
+    section = _section(whole.splitlines(), "## 実施内容")
+    if section is not None and row["awi"] and "## 実施内容" in text:
+        start = whole.splitlines().index("## 実施内容") + 1
+        for table in extract_tables(list(enumerate(section, start=start + 1))):
+            if "採否" in table.header and "根拠" in table.header and not any(row["awi"] in " ".join(r) for r in table.rows):
+                mismatches.append(
+                    f"{path}の{table.lineno}行目の表（『実施内容』）: 対象WIのファイル名{row['awi']}を含む行がありません。"
+                    "不採用とする行の由来へ対象WIのファイル名を書く"
+                )
+    return mismatches
 
 
 def _names_path(text: str, target: pathlib.Path, repository: pathlib.Path) -> bool:
@@ -1565,13 +1623,19 @@ def check_return_result(
             if section == "wi_conditions" and row["outcome"] == "証拠不足" and row[field].startswith("任意の判断材料"):
                 continue
             referred = _referenced_records(row, records, repository)
-            if any(_reject_record(text, row["awi"]) or _deferred_record(text, row, field) for text in referred):
+            if any(_reject_record(text, row["awi"]) or _deferred_record(text, row, field) for _, text in referred):
                 continue
+            mismatches = [
+                mismatch for path, text in referred for mismatch in _record_mismatches(path, records[path], text, row, field)
+            ]
+            detail = f"（{'。'.join(mismatches)}）" if mismatches else ""
             errors.append(
-                f"{_row_label(row, section, index)}: 未解決の指摘数0件と{row['outcome']}が一致しません。"
-                "必要な証拠を補って再判定するか、実在の指摘を現在roundの表へ登録する。"
-                "許容される非達成なら、採否・後続工程の実在する記録をsourceとevidenceで指し、"
-                "その計画かWI・CI記録を--planまたは--input-recordで渡す"
+                f"{_row_label(row, section, index)}: 未解決の指摘数0件と{row['outcome']}が一致しません{detail}。"
+                "後続工程、本実行で終端しない項目または不採用で許容される非達成なら、入力記録の段落（条件ごとに1段落とし、"
+                "`AWI:`、条件の原文を逐語で置く`判定対象:`、`終端区分:`か`判定工程:`を持つ）か計画の不採用行で表し、"
+                "その記録をsourceとevidenceで指して、計画かWI・CI記録を--planまたは--input-recordで渡す。"
+                "観測が不足する行は証拠を補って再判定する。"
+                "成果物に実装の欠陥がある場合に限り、その欠陥を指摘として現在roundの表へ登録する"
             )
     return errors, unanswered
 

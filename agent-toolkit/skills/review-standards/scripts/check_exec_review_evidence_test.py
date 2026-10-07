@@ -155,6 +155,8 @@ def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_af
     assert run_script.dispatch(_return_args(path, table)) == 1
     result = capsys.readouterr()
     assert not result.out and "wi_conditions[0]" in result.err and "現在round" in result.err
+    # 指摘の登録は、成果物に実装の欠陥がある場合に限る条件付きの操作として示す。
+    assert "実装の欠陥がある場合に限り" in result.err
     review_table.add(table, "2", "exec-review", "保存操作", "保存の証拠を補う", "仕様")
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table)) == 0
@@ -196,7 +198,7 @@ def test_return_result_distinguishes_optional_observation_from_observed_failure(
     assert run_script.dispatch(_return_args(path, table)) == expected
 
 
-@pytest.mark.parametrize("kind", ["reject", "deferred", "publication", "parallel"])
+@pytest.mark.parametrize("kind", ["reject", "deferred", "publication", "parallel", "not-terminating"])
 def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
@@ -210,6 +212,8 @@ def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
         "後続工程: 公開後の再観測\n検収時機: 公開後に保存結果を取得した後\n",
         "publication": f"AWI: {FIRST_WI}\n判定対象: 保存\n判定工程: 公開工程\n",
         "parallel": f"AWI: {FIRST_WI}\n判定対象: 保存\n判定工程: ユーザビリティレビュー\n進行状態: 並行中\n",
+        "not-terminating": f"AWI: {FIRST_WI}\n判定対象: 保存\n終端区分: 終端しない\n"
+        "後続工程: 依存の是正版の公開後に再処理\n検収時機: 次回の処理で依存を更新した後\n",
     }
     record.write_text(bodies[kind], encoding="utf-8")
     review_table.init(table)
@@ -224,6 +228,49 @@ def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
     assert run_script.dispatch(_return_args(path, table)) == 1
     result = capsys.readouterr()
     assert not result.out and "--input-record" in result.err
+
+
+_MISMATCHED_RECORDS = {
+    "deferred-paraphrase": f"# 記録\n\nAWI: {FIRST_WI}\n判定対象: 保存と再読込の各条件\n終端区分: 延期adopt\n"
+    "後続工程: 公開後の再観測\n検収時機: 公開後\n",
+    "deferred-joined": f"# 記録\n\nAWI: {FIRST_WI}\n判定対象: 保存、再読込\n終端区分: 延期adopt\n"
+    "後続工程: 公開後の再観測\n検収時機: 公開後\n",
+    "publication-paraphrase": f"# 記録\n\nAWI: {FIRST_WI}\n判定対象: 保存できること\n判定工程: 公開工程\n",
+    "parallel-paraphrase": f"# 記録\n\nAWI: {FIRST_WI}\n判定対象: 保存の画面\n"
+    "判定工程: ユーザビリティレビュー\n進行状態: 並行中\n",
+    "not-terminating-paraphrase": f"# 記録\n\nAWI: {FIRST_WI}\n判定対象: 保存系の条件\n終端区分: 終端しない\n"
+    "後続工程: 再処理\n検収時機: 次回\n",
+    "reject-without-wi": "# 計画\n\n## 実施内容\n\n| 実施内容 | 採否 | 根拠 |\n| --- | --- | --- |\n"
+    "| 保存の要求 | 不採用 | 前提が成立しない |\n",
+}
+
+
+@pytest.mark.parametrize("kind", list(_MISMATCHED_RECORDS))
+def test_return_result_reports_mismatched_record_location(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    """受理値の区分を持つが行と対応しない記録は、記録の位置と一致しなかった項目を示して拒否する。
+
+    不一致の箇所を示さず指摘の登録を同列に案内すると、担当は記録を直さずに指摘を登録し、
+    同じ論点の指摘が毎ラウンド反復する。指摘の登録は実装の欠陥がある場合の条件付きの操作として示す。
+    """
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    record = tmp_path / "input.md"
+    record.write_text(_MISMATCHED_RECORDS[kind], encoding="utf-8")
+    review_table.init(table)
+    row = _condition(FIRST_WI, "保存")
+    row.update(outcome="証拠不足", source=str(record), evidence=f"{record} の記録に従い後続工程へ対応付けた")
+    _write_evidence(path, [row])
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table, "--input-record", str(record))) == 1
+    error = capsys.readouterr().err
+    line = next(line for line in error.splitlines() if "wi_conditions[0]" in line)
+    if kind == "reject-without-wi":
+        assert f"{record}の5行目の表" in line and f"対象WIのファイル名{FIRST_WI}" in line
+    else:
+        assert f"{record}の3行目からの段落" in line and "項目`判定対象`" in line and "条件ごとに段落を分け" in line
+    assert "実装の欠陥がある場合に限り" in line and "実在の指摘を現在roundの表へ登録する" not in line
 
 
 def test_return_result_without_evidence_generates_result_and_empty_input_arrays(
