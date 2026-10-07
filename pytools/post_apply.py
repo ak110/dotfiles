@@ -141,9 +141,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
     Path.home() / ".claude": [
         # `references/`はスキル配下だけの名前としたため、旧配布先のディレクトリを削除する。
         cleanup_paths.RemovedPath(Path("references"), datetime.date(2026, 9, 18)),
-        # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
-        cleanup_paths.RemovedPath(Path("skills/sync-platform-pair"), datetime.date(2026, 4, 8)),
-        cleanup_paths.RemovedPath(Path("skills/sync-rule-ssot"), datetime.date(2026, 4, 8)),
         # dotfiles ローカルの ak110-projects-operations skill がこの機能を担う (15ca58b)。
         cleanup_paths.RemovedPath(Path("agents/cross-project-sync-checker.md"), datetime.date(2026, 4, 16)),
         # agent-basics → agent-toolkit のディレクトリ名リネームに伴い旧ディレクトリを削除する。
@@ -198,10 +195,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         # agent定義（feedbacks-planner・plan-executor・plan-review-executor）を廃止し、
         # agent-toolkit/agents ディレクトリごと除去したため、旧配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("agent-toolkit/agents"), datetime.date(2026, 9, 3)),
-        # dotfilesリポジトリ専用スキルはプロジェクト直下の .agents/skills に置く。
-        # ~/.codex/skills はグローバルに使うスキルだけを置く。
-        cleanup_paths.RemovedPath(Path("skills/sync-platform-pair"), datetime.date(2026, 4, 8)),
-        cleanup_paths.RemovedPath(Path("skills/sync-rule-ssot"), datetime.date(2026, 4, 8)),
         # 旧名careful-implの後継スキル名はplan-implだったが、
         # plan-implもagentsへ移植し廃止したため配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("skills/careful-impl"), datetime.date(2026, 5, 8)),

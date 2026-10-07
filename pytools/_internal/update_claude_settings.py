@@ -44,10 +44,6 @@ _REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND = (
 # Windows向けPreToolUseは、複合構文を外側のシェルへ渡さず、`-File`でPowerShellスクリプトを起動する。
 # `-Command`の引用符は起動経路によって除去の有無が異なり、argvへ引用符が残る経路では実行されない。
 _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] = (
-    removal_registry.Registered("claude_hook_call_formatter.py", datetime.date(2026, 4, 8)),
-    # 2026-04: 統合フック (claude_hook_pretooluse.py) に統合したため旧エントリを除去
-    removal_registry.Registered("claude_hook_check_mojibake.py", datetime.date(2026, 4, 8)),
-    removal_registry.Registered("claude_hook_check_ps1_eol.py", datetime.date(2026, 4, 8)),
     # 2026-05: `uv run --script` を `uv run --no-project --script` に置き換えたため旧形式エントリを除去
     removal_registry.Registered("uv run --script ~/dotfiles/scripts/claude_hook_pretooluse.py", datetime.date(2026, 5, 18)),
     removal_registry.Registered("uv run --script ~/dotfiles/scripts/claude_hook_stop.py", datetime.date(2026, 5, 18)),
