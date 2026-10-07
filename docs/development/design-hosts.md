@@ -72,6 +72,25 @@ Codexメイン向け条文をAGENTS.mdへ生成器で埋め込む案は、Codex�
 委譲先向け条文もフックだけで届ける案は、Codex backendの委譲先でフックの信頼登録と環境変数の印に依存し、未設定の環境で条文が欠落するため採らない。
 Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案はClaude委譲先の中で起動したCodex委譲先がstatusline表示でClaude委譲先と誤判定されるため採らない。
 
+Claude Codeが自動で読み込む規範は、Codexでは次のいずれかの手段で届けるか、対象外とする理由を記録する。
+Codexへの配送手段を追加・変更する主体は、この対応で届かない規範が無いかを確かめる。
+読込指示は`agent-toolkit/share/rules-main.codex.md`「Claude Code向けに置かれた規範の読込」が定める。
+
+| Claude Codeの自動読込対象 | Codexでの届け方 |
+| --- | --- |
+| `~/.claude/rules/agent-toolkit/`配下（`agent-toolkit/rules/`の共通条文） | `~/.codex/AGENTS.md`への埋め込み（`scripts/sync_codex_agents.py`） |
+| `share/`の主体別条文（`rules-main.md`・`rules-subagent.md`） | `SessionStart`・`SubagentStart` hookと、`agents_server`の委譲先では`developerInstructions` |
+| `~/.claude/rules/myprojects-common.md` | `~/.codex/AGENTS.md`への埋め込み（同スクリプトの`PERSONAL_SOURCE`） |
+| `~/.claude/rules/myprojects.md` | Codexのメインと組み込み委譲先には届けない。ホスト別のプロジェクト一覧と同期方針であり、`myprojects-common.md`冒頭がClaude Codeへの配布と定めるためである |
+| `~/.claude/rules/`直下の`*.local.md`と`~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md`からの読込指示 |
+| プロジェクト直下の`.claude/rules/`、`AGENTS.md`が無い場合の`CLAUDE.md`、`CLAUDE.local.md` | `~/.codex/AGENTS.md`からの読込指示 |
+
+ユーザー単位の`*.local.md`と`~/.claude/CLAUDE.md`の2種類は実行ホストごとにユーザーが置くファイルであり、リポジトリから生成する`~/.codex/AGENTS.md`へ埋め込めない。読込指示は実行時のファイルの有無に依存しないため、プロジェクト直下の`.claude/rules/`と同じ手段を選ぶ。
+2026年10月6日に、`agents_server`で起動したCodexの委譲先が、`~/.claude/rules/`直下の`*.local.md`が使えないと定めたコマンドを実行して失敗した。当時の読込指示はプロジェクト直下の3種だけを挙げ、ユーザー単位の規範を含めていなかった。
+却下した代替案は次の2つである。
+`SessionStart`・`SubagentStart` hookで`*.local.md`の本文を注入する案は、出力量がホストごとに変わり、hookの出力上限を外せるhandlerの条件（出力量が条文ファイルで固定され、上限を確かめるテストで拘束される）を満たさない。作業に該当しないファイルも毎回の起動で文脈へ入り、hookの信頼登録への依存もCodexのメインに残る。
+`agents_server`の`developerInstructions`へ本文を連結する手段だけで届ける案は、Codexのメインとネイティブのサブエージェントに届かず不足する。この連結は`agents_server`の委譲先へ届ける手段として併用する（`design-agents-server.md`「agents_server MCPによる委譲の仕組み」）。起動時の指示に同じファイルの本文が境界付きで含まれる場合は、読込指示の側で読み直さない。
+
 `agents_server`の`start`で起動したClaude backendの委譲先は、`~/.claude/rules/agent-toolkit/`配下の3ファイルの全文をユーザー規範として保持し、起動時のシステム指示と区別する。
 また、`agent-toolkit/share/rules-subagent.md`を起動時のシステム指示として保持する。
 `agent-toolkit/share/rules-main.md`は保持しない。

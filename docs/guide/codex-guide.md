@@ -223,6 +223,7 @@ Linux/macOSではシンボリックリンク、Windowsではディレクトリ�
 Codexでは同じ挙動を前提にできないため、Codex側のプロジェクト専用スキルは`.agents/skills/`へ配置する。
 `.claude/skills/`の原本を再利用する場合も、コピーせず`.agents/skills -> .claude/skills`のシンボリックリンクにする。
 `.claude/rules/`はCodex側に対応する専用ディレクトリへ移さず、`~/.codex/AGENTS.md`から該当ファイルを読むよう指示する。
+ユーザー単位の`~/.claude/CLAUDE.md`と`~/.claude/rules/`直下の`*.local.md`（実行ホストごとに置く規範）も、同じ`~/.codex/AGENTS.md`の読込指示でCodexの主体が作業の開始時に読む。プロジェクト直下の`CLAUDE.local.md`も読込の対象とする。
 
 `~/.codex/rules`はCodexの承認ルール用ディレクトリであり、Claude CodeのMarkdownルールとは互換性がない。
 agent-toolkitのMarkdownルールは`~/.codex/agent-toolkit/rules`に配置する。

@@ -19,7 +19,16 @@ Codex固有の公開能力と常時規範との差分を扱う。「メインエ
 - 組み立てた絶対パス配下の`skills/`を確認し、コマンド失敗、対象要素の欠落またはroot不在では固定パスを推測せず委譲元へ差し戻す
 - 起点のroot確定はホストのplugin導入情報だけから`SKILL.md`読取前に行い、確定した値を以後も使う（努力目標。同じ導入情報から確定し直しても結果は変わらない）。読取済み`SKILL.md`の絶対パスからplugin rootを再解決する処理は、起点の確定の外で用いる
 - 公開サブコマンドがないplugin内部資源は、読取済みのagent-toolkitスキルの絶対パスから現行plugin rootを再解決する
-- プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`および作業に該当する`.claude/rules/`を読む。`~/.codex/agent-toolkit/rules/`は配布元から同期した本文、dotfiles固有スキルはClaude Code側原本へのリンクとして扱う
+
+## Claude Code向けに置かれた規範の読込
+
+Claude Codeが自動で読み込む規範のうち本文書へ埋め込まれていないものは、Codexの主体も読み、各ファイルが定める適用範囲に作業が入る条文に従う。Claude Codeと同じ作業を同じ規範の下で進めるためである。
+
+- プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`、`CLAUDE.local.md`および作業に該当する`.claude/rules/`を読む
+- ユーザー単位の`~/.claude/CLAUDE.md`と、`~/.claude/rules/`直下の`*.local.md`（実行ホストごとにユーザーが置く規範）は、存在する場合に作業の開始時に読む
+- 起動時の指示が同じファイルの本文を`atk-auto`などの境界付きで含む場合は、その本文を読了済みとして扱う
+- `~/.claude/rules/agent-toolkit/`配下と`~/.claude/rules/myprojects-common.md`は本文書へ`atk-auto`要素で埋め込み済みのため、読込の対象から外す。`~/.claude/rules/myprojects.md`はClaude Code向けに配布するホスト別のプロジェクト一覧と同期方針であり、Codexには`myprojects-common.md`が同じ主題の共通部分を届けるため、同じく対象から外す
+- `~/.codex/agent-toolkit/rules/`は配布元から同期した本文、dotfiles固有スキルはClaude Code側原本へのリンクとして扱う
 
 ## Codexホスト契約の適用
 
