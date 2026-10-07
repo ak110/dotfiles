@@ -2,7 +2,7 @@
 name: sync-platform-pair
 user-invocable: false
 description: >
-  Linux/Windowsペアファイル（`.sh`と`.cmd`、`.sh`と`.ps1`、
+  Linux/Windowsペアファイル（`.sh`と`.cmd`、拡張子なしの`bin/<name>`と`bin/<name>.cmd`、`.sh`と`.ps1`、
   `.sh.tmpl`と`-windows.ps1.tmpl`、`*.posix.json`と`*.win32.json`など）を編集するときに使う。
 ---
 
@@ -25,12 +25,21 @@ description: >
 
 ## ペアファイルの判別
 
-ペアファイルはfrontmatterに示すファイル名規則（`.sh`と`.cmd`、`.sh`と`.ps1`、
+ペアファイルはfrontmatterに示すファイル名規則（`.sh`と`.cmd`、拡張子なしの`bin/<name>`と`bin/<name>.cmd`、`.sh`と`.ps1`、
 `.sh.tmpl`と`-windows.ps1.tmpl`、`*.posix.json`と`*.win32.json`）で判別する。
 編集対象がいずれかに該当する場合は、対応するもう一方を作業対象に含める。
 
 作業着手時に両側の対応関係を確認する
 （例: `install.sh`のオプション追加後、`install.ps1`への同一オプション追加が漏れる）。
+
+## 変更フロー
+
+1. 「ペアファイルの判別」に従い、対応するもう一方のパスを特定する
+2. 意味的な変更を両方に適用する
+3. プラットフォーム固有の書き方の違いのみ確認する
+4. 実行できる側を実行して動作確認する（Linuxでのみ実行可能な環境では、Windows側は最低限syntax check）
+5. `dotfiles-development`「開発手順」の特定ファイルに限定する実行形へ、両プラットフォーム側のファイルパスを渡す
+6. コミットメッセージにペアを両方記載する（努力目標。履歴から両側の変更をたどりやすくする）
 
 ## 新規ペアの追加
 
@@ -57,12 +66,3 @@ description: >
 
 Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されず、CIの`test-windows`ジョブが検証する。
 `agent-toolkit:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
-
-## 変更フロー
-
-1. 「ペアファイルの判別」に従い、対応するもう一方のパスを特定する
-2. 意味的な変更を両方に適用する
-3. プラットフォーム固有の書き方の違いのみ確認する
-4. 実行できる側を実行して動作確認する（Linuxでのみ実行可能な環境では、Windows側は最低限syntax check）
-5. `dotfiles-development`「開発手順」の特定ファイルに限定する実行形へ、両プラットフォーム側のファイルパスを渡す
-6. コミットメッセージにペアを両方記載する（努力目標。履歴から両側の変更をたどりやすくする）

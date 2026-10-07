@@ -17,7 +17,7 @@ PRが存在するという観測を起動の契機から外し、前記2つの�
 | CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-toolkit:bugfix`の`references/ci-failure-handling.md` |
 | マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` |
 
-## 失敗時の共通規定
+## 失敗時の扱い
 
 CIとRelease以外の工程が失敗した場合は、成立済みの外部状態を保持し、失敗した工程、外部状態、run URLおよび再開点を報告して停止する。PR作成・マージ操作の再試行とauto-merge、自動修復、自動rollbackは行わない。
 
@@ -76,7 +76,7 @@ PR起点checkの登録後だけ、`gh pr checks --required --watch`で必須chec
 
 必須check成功後はPRの`headRefOid`と`mergeStateStatus`を上限付きで再取得し、保持したheadと一致したまま`mergeStateStatus=CLEAN`になるまで待つ。GitHubのマージ可否評価が`CLEAN`となった場合だけ「PRのマージ」へ進む。
 
-登録待機または`CLEAN`待機の上限到達、照会失敗、対象の曖昧さ、check失敗、head変更および`CLEAN`以外の状態ではマージしない。必須checkの失敗は該当runの終端とログを確認して「失敗時の共通規定」を適用する。その他の停止では、観測した外部状態と再開点を報告する。
+登録待機または`CLEAN`待機の上限到達、照会失敗、対象の曖昧さ、check失敗、head変更および`CLEAN`以外の状態ではマージしない。必須checkの失敗は該当runの終端とログを確認して「失敗時の扱い」を適用する。その他の停止では、観測した外部状態と再開点を報告する。
 
 同じheadの`push`起点checkが成功した後に`pull_request`起点の`statusline-version`が非同期に登録されることがあるため、登録を待ってから必須checkを待つ。観測版と再検証手順は`docs/development/audit-records.md`の「.claude/skills/merge-pr/SKILL.md：マージ前の確認：2026年10月5日」を参照する。
 
@@ -146,13 +146,13 @@ git -C <develop worktreeの絶対パス> rev-parse --short=7 develop
 変更がない場合はRelease検収を省略する。
 
 変更がある場合は、`origin/master`の完全OIDに対応する`Release statusLine` runを候補とし、各候補を完全なdatabase IDで特定してジョブの状態を調べる。`prepare`が省略されずに実行されたrunを検収対象として終端まで待つ。`gate`以外のジョブが全て省略されたrunは対象から外し、次のrunを待つ。候補の`prepare`が未確定の間は、実行または省略が確定するまで観測する。
-masterへのpushのCIを別に待機する工程は加えず、検収対象のRelease runの成否でmaster CIの結論を確かめる。master CIの失敗で対象のrunが作成されない場合は「失敗時の共通規定」に従う。
+masterへのpushのCIを別に待機する工程は加えず、検収対象のRelease runの成否でmaster CIの結論を確かめる。master CIの失敗で対象のrunが作成されない場合は「失敗時の扱い」に従う。
 その後、manifestの版数に対応する`statusline-v<version>` tagが`origin/master`を指すことを確認する。
 GitHub Releaseの存在と、`pytools/_internal/setup_statusline_binary.py`の`ASSET_NAME_POSIX`と`ASSET_NAME_WINDOWS`が定める名前のassetがあることを確認する。
 
 runの特定と終端観測、Releaseのasset確認、tagの参照先確認には`gh`とGitの公開情報を使う。取得形式は各操作の直前にヘルプで確定し、同じ`origin/master`の完全OIDへ対応する結果だけを検収する。
 
-Release runの失敗は「失敗時の共通規定」を適用する。tag、Releaseまたはassetの検収に失敗した場合は、外部状態、失敗工程、run URLおよび再開点を報告する。
+Release runの失敗は「失敗時の扱い」を適用する。tag、Releaseまたはassetの検収に失敗した場合は、外部状態、失敗工程、run URLおよび再開点を報告する。
 
 ## マージ後に到着したレビューの確認
 
@@ -179,7 +179,7 @@ pushが完了してCI runが起動した時点でその変更の公開工程を�
 本節の適用範囲はマージの完遂後に`develop`へ加えた変更とし、本スキルのマージ工程は対象外とする。
 「マージ前の確認」と「マージ後のbranch同期とCI」が定めるCIの検収は、それぞれの節の条件のまま維持する。
 
-## 完了条件と失敗時の扱い
+## 完了条件
 
 成功時に次を取得する。
 

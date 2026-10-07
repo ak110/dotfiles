@@ -105,7 +105,7 @@ dev = [
 
 [tool.agent-toolkit.pick-wi-check]
 # `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。
-# 記載の手順と理由は`.claude/skills/dotfiles-repo-layout/SKILL.md`「変更後の規範の自セッション適用」が定め、
+# 記載の手順と理由は`.claude/skills/dotfiles-norm-edit/SKILL.md`「pickerが書くプロジェクト規範の指定」が定め、
 # 対象範囲の一致は`project_norm_spec_invariant_test.py`が確かめる。
 
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]

@@ -1,4 +1,4 @@
-"""`pyproject.toml`の`プロジェクト規範の指定`の条件が、`dotfiles-repo-layout`の規範と同じ対象範囲を持つことを確かめる。
+"""`pyproject.toml`の`プロジェクト規範の指定`の条件が、`dotfiles-norm-edit`の規範と同じ対象範囲を持つことを確かめる。
 
 `atk run-script pick-wi-check`は設定の条件だけを消費するため、スキルが定める規範の範囲と設定が一致しないと、
 スキルの手順で書くべき指定の欠落を選定時に検出しなくなる。設定の削除、条件の縮小、スキル側の範囲の変更を
@@ -13,7 +13,7 @@ import tomllib
 import typing
 
 _ROOT = pathlib.Path(__file__).resolve().parent
-_SKILL = _ROOT / ".claude" / "skills" / "dotfiles-repo-layout" / "SKILL.md"
+_SKILL = _ROOT / ".claude" / "skills" / "dotfiles-norm-edit" / "SKILL.md"
 # スキルの「変更後の規範の自セッション適用」が規範の範囲を列挙する文。
 _TARGET_SENTENCE = re.compile(r"対象となる規範は、(?P<targets>.+?)である。")
 

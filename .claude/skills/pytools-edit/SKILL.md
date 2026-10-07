@@ -3,8 +3,8 @@ name: pytools-edit
 user-invocable: false
 description: >
   `pytools/`・`scripts/`・`libexec/`・`bin/`・`rust/`配下のコマンドラインツール・スクリプト・hookスクリプトを
-  新規作成・編集するとき、および本リポジトリのテストの配置を決めるとき、テストを新規作成・編集するときに使う。
-  配置規約・テスト配置・PEP 723・wheel設定・cmdエンコーディングを扱う。
+  新規作成・編集するときに使う。
+  配置規約・実装規約・PEP 723・cmdエンコーディングを扱う。テストの配置は`dotfiles-development`が扱う。
 ---
 
 # pytools・scripts・bin の編集
@@ -17,7 +17,6 @@ description: >
 | --- | --- |
 | `bin/`配下の`*.cmd`を書込ツールで扱う前 | `agent-toolkit:writing-standards`の`references/encoding.md` |
 | `rust/`配下のクレートを編集する前 | `agent-toolkit:writing-standards`の`references/rust.md` |
-| 不変条件のテストの検証対象を探索する時 | `agent-toolkit:check-execution`の`references/verification-scope.md` |
 
 ## 配置規約
 
@@ -63,29 +62,3 @@ description: >
   `make test`は`rust/`配下を対象に含まないため、変更したクレートで`cargo fmt --check`、`cargo clippy`および`cargo test`を変更範囲の検証として実行する。
   CIでは`rust-lint` jobが同等の検証を担う。
   配布版数の更新要求は`dotfiles-release`を参照する
-
-## テスト配置
-
-- テストを置く場所は、確かめる対象のできるだけ近くから選ぶ。Pythonモジュールの動作を確かめるテストは、
-  そのモジュールと同じディレクトリの`<name>_test.py`とする。文書・設定・スクリプトの実物を読むテストは、
-  その実物と同じディレクトリか、対象群を包含する最も近いディレクトリへ置く。
-  fixtureで文書などの入力を作成して実装を呼ぶテストは、実装の動作テストとして実装の近くへ残す。
-  収集や配布の制約で近くへ置けない場合は、成立する最も近い場所を選び、その理由を対象テストファイルのモジュールdocstringへ記す
-- 複数領域の既存成果物の不変条件を確かめるPythonテストは、ファイル名を`*_invariant_test.py`として識別する。
-  rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこのファイル名で対象を選び、`pyfltr fast`が実行する。
-  通常の動作テストと混在するときは、不変条件のテストだけを近接する`*_invariant_test.py`へ分離し、通常テストをfastの対象に含めない。
-  検証対象の探索は`agent-toolkit:check-execution`の`references/verification-scope.md`に従い、
-  個々のテストと編集対象の対応表を規範へ増やさない
-- テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`、リポジトリ直下のテストでは直下の`_test_helpers.py`、
-  `scripts/`配下のテストでは`scripts/_scripts_test_helpers.py`へ集約し、テスト間で共有する関数と定数はこれらの補助モジュールからimportする。
-  pytestのprependモードでは直下と`scripts/`がともに`sys.path`へ入り、同名のトップレベルモジュールは先に読み込んだ方だけが残るため、
-  両ディレクトリの補助モジュールには互いに異なる名前を付ける。
-  `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
-  共通化が必要な場合は`agent-toolkit-edit`スキルの`references/distribution-and-hooks.md`「scripts配下の配置」が定めるテスト専用パッケージへ置く
-- テストはリポジトリ直下と`agent-toolkit/`の`conftest.py`が適用する`agent-toolkit/agent_toolkit/_testing/isolation.py`の隔離の下で動き、ホームと設定ディレクトリはテストごとの一時ディレクトリを指す。
-  パッケージを取得して起動する外部ツール（pnpmの`dlx`、corepackなど）を実際に動かすテストは、同モジュールの`share_package_caches`で取得物の保存先だけをホストと共有する。
-  共有しないと、テストのたびに空の保存先へ取得し直して所要が延びる
-- `pytools`パッケージ配布物にテストコードを含めないため、
-  `[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を除外する
-- `scripts/`配下はpytestのprependモードで`sys.path`へ自動追加されるためテストから直接importできる。
-  importしたいスクリプトはアンダースコア区切りで命名し、shebang付きスクリプトは`chmod +x`する

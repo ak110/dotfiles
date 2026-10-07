@@ -4,19 +4,19 @@ user-invocable: false
 description: >
   `agent-toolkit/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
   `agent-toolkit/rules/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
-  `.claude-plugin/marketplace.json`を編集するときに使う。エージェント向け文書の記述を削除または縮小するときにも使う。
+  `.claude-plugin/marketplace.json`を編集するときに使う。
   版数更新・marketplace管理・セッション状態フラグの扱いを含む。
 ---
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex）
 
-本スキルは`agent-toolkit/`配下の配布物と`.claude-plugin/marketplace.json`を編集する主体へ、ファイル構成と参照方向、規範を削除・縮小するときの消失確認、版数更新、配布と同期の手順を提供する。
+本スキルは`agent-toolkit/`配下の配布物と`.claude-plugin/marketplace.json`を編集する主体へ、ファイル構成と参照方向、付帯作業の扱い、版数更新と編集手順、配布と同期の手順を提供する。
+エージェント向け文書の改訂に共通する手順（編集前に読む記録、規範を削除・縮小するときの消失確認など）は`dotfiles-norm-edit`が扱う。
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集する主体が自身で全文を読む。要約、見出し一覧、部分読取および別主体の読取結果は全文読了に当たらない |
 | WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する前 | `docs/guide/claude-code-guide.md`のうち編集対象と同期する節（少なくとも「推奨ワークフロー」） |
 | `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下または`rust/claude-statusline/src/agents_server.rs`の実装を変更または調査する前 | `references/agents-server-shared-state.md` |
 | `agents_server`が起動した委譲先が動かない事象（起動の失敗、初期化の未到達、委譲先の無応答、委譲先が返す結果の欠落）を調査する前 | `references/agents-server-investigation.md` |
@@ -31,7 +31,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 
 - `agent-toolkit/`配下: Agent Plugins・Claude Code・Codexが共有するプラグインルート
 - `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用を担う）
-- `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）。編集は配布元の`agent-toolkit/rules/`へ行う
+- ルールファイルの配布先と同期の仕組みは`dotfiles-repo-layout`「ディレクトリ構造の注意」が扱う。編集は配布元の`agent-toolkit/rules/`へ行う
 - `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保ち、メインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く
   （`scripts/gen_install_files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
@@ -54,38 +54,19 @@ agent-toolkit側でprivateなモジュールを移動・改名する変更では
 - プロジェクト固有のツール、データ、命名、CI、運用手順へ依存する内容はプロジェクト側へ置く
 - 固有要素を同種の任意要素へ置換しても判定基準、工程順序、停止条件が成立する内容だけを配布物候補とする
 
-### 付帯作業の扱い
+## 付帯作業の扱い
 
 `agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`配下のエージェント向け文書は、エンドユーザーへ配布する成果物そのものである。対象はルール、`SKILL.md`、`references/`、`<役割名>.parent.md`と`<役割名>.subagent.md`である。これらの改訂そのものを目的とする作業は主作業として扱い、変更目的ごとにcommitとWIを分ける。他の開発が必要にしたこれらの文書の改訂と整理は`agent-toolkit/rules/01-agent.md`の付帯作業に当たり、関連する開発と同じ計画、WIおよびcommitで完了する。開発完了後の振り返りが独立に発見した作業だけは別の作業として扱う。
 
-### agents_serverの共有状態
+## agents_serverの共有状態
 
 読込表の同じ行が挙げる実装の共有状態ごとに正とする保存先と、読む主体・更新できる主体の対応は`references/agents-server-shared-state.md`が保持する。
 状態を正とする保存先、更新できる主体または状態ディレクトリ配下のファイル種別を変える実装では、同書を同じ変更単位で更新する。
 
-### agents_serverの委譲不具合の調査
+## agents_serverの委譲不具合の調査
 
 `references/agents-server-investigation.md`は観測できる記録の所在、切り分けの順序、外部プロセスでの再現手順を保持する。
 記録の所在、`agents_server`の診断項目または委譲先CLIへ与える引数を変える実装では、同書を同じ変更単位で更新する。
-
-## 規範を削除・縮小するときの消失確認
-
-`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`AGENTS.md`、`.claude/skills/`などのエージェント向け文書の記述を削除または縮小する編集では、目的にかかわらずベースcommitとの差分を確認する。削除した価値、適用範囲、条件、例外を特定し、削除の理由をcommit本文へ残す。統合を理由とする場合は、統合先の適用範囲が元の範囲を含むことを確認する。含まない場合は統合先を整えるか、削除を取りやめる。
-
-削除・縮小する行の由来は次の順に調べる。
-
-1. 文面の微修正をまたいで一致する部分文字列を選び、`git log --follow -S '<本文の部分文字列>' -- <ファイル>`かパスを限定しない`git log -S`で初出を調べる。`git blame`は最後に行へ触れたcommitを示し、パスを限定した`git log -S`は改名前の履歴を含まないため、どちらも単独で初出の判定に使わない
-2. 検索結果の最古の導入commitと、その行を復元したcommitのいずれかに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、同じ対象リポジトリの終端済みキュー項目を`atk wi grep --state all`で探す。検索には特徴的な語や反映先パスを使う
-3. 候補の`adopt`記録の対応commit、または計画の対応記録ファイル（`<計画のstem>.wi-commits.jsonl`。旧形式では進捗ログ）が持つOIDが導入commitの完全OIDの先頭と一致し、後者ではその計画の`関連WI`が候補を挙げる場合だけ、候補との対応を裏付ける。記録は短縮OIDと完全OIDのどちらでもあるため、導入commitの完全OIDの先頭と比べて判定する
-4. 対応する要求単位が`agent-toolkit:wi-standards`「由来と承認」によりエージェント由来と確定したときは、項目名、OID対応および由来の根拠を計画の進捗ログ（計画なしでは引き継ぎ記録、どちらも無い作業ではユーザーへの報告）へ記録して保護の対象から外す。commit本文には第1段落のとおり削除・縮小の理由を書き、キュー項目のファイル名などの内部識別子は書かない
-5. 対応を裏付けられない場合、人間由来を含む場合、または由来を分離できない場合は、作者を確定できない規範としてユーザーが書いた規範と同じく保護し、編集前にユーザー確認（事前承認）する。過去のCodex commitやエージェントの付け忘れにはtrailerの無いものが多いため、由来を裏付けられない場合は確認が余分に増えても保護を優先する
-
-trailerの有無だけでは作者を確定できないため、報告、AWI本文および判断の根拠では、そのcommitをユーザーのcommitと結論づけない。
-
-事前承認で守る対象は、削除・縮小によって行の価値、適用範囲、条件または例外のいずれかが失われる編集である。作者を確定できない行でも、次のいずれかを確かめた削除・縮小は事前承認を求めず、確かめた内容を第1段落の削除の理由と同じcommit本文へ書く。対応するキュー項目が人間由来の要求単位を含むなど人間由来と確定した行と、次のいずれも確かめられない行は、前掲の手順5のとおり編集前に事前承認する。
-
-- 移設・統合: 変更後の文書の移設先または統合先の箇所（パスと節）が、削除する行の価値、適用範囲、条件および例外を全て含む。第1段落の統合先の包含の確認でこれを判定し、commit本文へ移設先の箇所と要素ごとの対応を書く
-- 失効: 削除する行が説明または規定する実装、機能、工程またはファイルが現行のリポジトリに無いことを、その識別子の固定文字列検索で確かめた。その対象を撤去したcommitが既にあるか、撤去が処理中の要求の認可の範囲で同じ変更に含まれる。commit本文へ失効した対象、検索の内容と撤去したcommitを書く
 
 ## 配布物としての記述方針
 
@@ -140,6 +121,17 @@ Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2
 `agent-toolkit/.mcp.json`をもとに`scripts/sync_codex_plugin_manifests.py`が生成する。
 Agent Plugins・Codex向け生成物を手動編集してはならない。変更は生成元の更新と生成器の実行で行う。
 
+`agent-toolkit/`配下を編集する手順は次のとおりとする。push前の版数更新は必須である（同じバージョンでは`claude plugin update`が「最新です」と返しエンドユーザーへ配信されないため）。
+
+1. 本節の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`で版数を更新する。
+   実行する主体と時点は`references/version-bump.md`「plan modeでの取り扱い」に従う。
+   `agent-toolkit:process-wi`のレーンは実行せず版数区分を計画へ記録し、終端担当が全レーンのマージ後に1回実行する
+2. `description`を変更する場合はSSOTの2ファイルを手で同期する
+3. Agent Plugins・Codex向け派生JSONを前掲の生成器で同期する
+4. `docs/guide/claude-code-guide.md`のチェック内容リストは「同期先ドキュメント」節に従って更新する
+5. `dotfiles-development`「開発手順」の特定ファイルに限定する実行形で、SSOTテストを含むテストが成功することを確認する
+6. 変更をコミットする
+
 ## 同期先ドキュメント
 
 複数ファイルへまたがる機構または委譲構造を新設または変更する実装では、`docs/development/design.md`の索引で該当主題の本文と節を選び、目的、構造の理由、知識境界および却下した代替案を追加・更新する（努力目標。構造の理由と却下した案を残すと後の変更で同じ検討を繰り返さずに済む）。
@@ -147,9 +139,6 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 `agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」の一方で、運用形態、WIの登録方法、回答の流れのいずれかを変更した場合は、他方も同じ変更単位でそろえる。
 
-- エージェント向け文書を編集する主体は、読込表の行が挙げる方針と障害対策の記録との整合を、編集前に確認する。
-  全文取得の手段は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に従う。
-  編集中に新たな障害または確定した意向が生じた場合は、対応する文書を更新する
 - `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・
@@ -179,20 +168,3 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 `agent-toolkit:writing-standards`は文章・コードの作成基準を持ち、hook実装の基準もここに含む。エージェントの行動自体の規範は、実行主体別ルールまたは作業別スキルに置く。
 
 hookの実装・編集とセッション状態の設計・変更では`agent-toolkit:writing-standards`を起動する。
-
-## 編集手順
-
-push前にbumpが必須（同じバージョンでは`claude plugin update`が「最新です」と返しエンドユーザーへ配信されないため）。
-
-1. 「バージョン更新」の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`で版数を更新する。
-   実行する主体と時点は`references/version-bump.md`「plan modeでの取り扱い」に従う。
-   `agent-toolkit:process-wi`のレーンは実行せず版数区分を計画へ記録し、終端担当が全レーンのマージ後に1回実行する
-2. `description`を変更する場合はSSOTの2ファイルを手で同期する
-3. Agent Plugins・Codex向け派生JSONを「バージョン更新」節の生成器で同期する
-4. `docs/guide/claude-code-guide.md`のチェック内容リストは「同期先ドキュメント」節に従って更新する
-5. `dotfiles-development`「開発手順」の特定ファイルに限定する実行形で、SSOTテストを含むテストが成功することを確認する
-6. 変更をコミットする
-
-## コミットメッセージ方針と.gitmessage
-
-`<plugin root>/skills/commit/references/message.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化しない。

@@ -27,10 +27,11 @@
 
 | スキル | 扱う範囲 |
 | --- | --- |
-| `dotfiles-development` | テスト、整形、依存更新とホスト本体のバイナリの検索手順、振り返りの参照文書の位置 |
+| `dotfiles-development` | テスト、整形、依存更新の手順、リポジトリ全体のテストの配置、コミットメッセージ方針、ホスト本体のバイナリの検索手順、振り返りの参照文書の位置 |
 | `dotfiles-release` | `develop`と`master`のリリース運用、日次リリースの判定と実施 |
-| `dotfiles-repo-layout` | ロールとファイル群の対応、配布元と配布先の対応、process-wiのpickerが書く`プロジェクト規範の指定`、変更した規範の自セッション適用 |
-| `agent-toolkit-edit` | `agent-toolkit/`配下と`.claude-plugin/marketplace.json`の編集、version bump、権限設定の配置 |
-| `pytools-edit` | `pytools/`・`scripts/`・`bin/`・`rust/`配下の編集、リポジトリ全体のテストの配置とテストの新規作成・編集 |
+| `dotfiles-repo-layout` | ロールとファイル群の対応、配布元と配布先の対応 |
+| `dotfiles-norm-edit` | エージェント向け文書の改訂、変更した規範の自セッション適用、process-wiのpickerが書く`プロジェクト規範の指定`、規範を削除・縮小するときの消失確認 |
+| `agent-toolkit-edit` | `agent-toolkit/`配下と`.claude-plugin/marketplace.json`の編集、version bumpと編集手順、権限設定の配置 |
+| `pytools-edit` | `pytools/`・`scripts/`・`libexec/`・`bin/`・`rust/`配下の配置規約と実装規約 |
 | `sync-platform-pair` | Linux/Windowsペアファイルの同期 |
 | `merge-pr` | PRのマージと、マージ後のbranch同期、CIおよび必要なReleaseの検収 |
