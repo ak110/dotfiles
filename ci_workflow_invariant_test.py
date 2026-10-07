@@ -1,4 +1,4 @@
-"""既存成果物と、生成・登録される契約との整合を検証する。"""
+"""`.github/workflows/`のpytestコマンドが指定する対象の実在と、Windowsのagent-toolkit環境の事前構築が`agent-toolkit/bin/atk.cmd`の起動指定と一致することを検証する。"""
 
 import shlex
 
