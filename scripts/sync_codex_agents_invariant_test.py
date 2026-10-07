@@ -22,7 +22,7 @@ def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
     waiting = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/waiting-and-monitoring.md").read_text(
         encoding="utf-8"
     )
-    response_section = _section(waiting, "## `atk agents wait`の応答の扱い")
+    response_section = markdown_section(waiting, "## `atk agents wait`の応答の扱い")
     assert "前景のCLIが本文を返した後の逐次待機は新しいrunへ進み" in response_section
     assert "先行CLIが稼働中にlock競合した後発待機だけが先行runの本文を1回回収する" in response_section
 
