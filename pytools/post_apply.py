@@ -699,6 +699,9 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
             detail=sync_report.truncate_tail(traceback.format_exc()),
         )
         return failure, [], time.monotonic() - started_at
+    if not isinstance(ret, post_apply_outcome.PostApplyOutcome):
+        # 型注釈は実行時に検査されないため、契約に反する戻り値を工程の失敗として扱い、後続の集計を止めない。
+        ret = post_apply_outcome.PostApplyOutcome(failure=f"戻り値が PostApplyOutcome ではない: {ret!r}")
     if ret.failure is not None:
         logger.error("    %s: 失敗: %s", step.name, ret.failure)
         failure = _StepResult(name=step.name, ok=False, changed=ret.changed, notices=ret.notices, reason=ret.failure)

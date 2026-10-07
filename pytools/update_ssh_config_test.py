@@ -7,6 +7,7 @@ import pytest
 
 from pytools import update_ssh_config
 from pytools._internal import claude_common as _claude_common
+from pytools._internal import post_apply_outcome
 
 
 @pytest.mark.parametrize(("argv", "exit_code"), [(["--help"], 0), (["--unknown"], 2)])
@@ -17,9 +18,9 @@ def test_main_rejects_nondefault_arguments_before_ssh_update(
     config = tmp_path / "config"
     config.write_text("before\n", encoding="utf-8")
 
-    def run() -> bool:
+    def run() -> post_apply_outcome.PostApplyOutcome:
         config.write_text("after\n", encoding="utf-8")
-        return True
+        return post_apply_outcome.PostApplyOutcome(changed=True)
 
     monkeypatch.setattr(update_ssh_config, "run", run)
     with pytest.raises(SystemExit) as exc_info:
@@ -40,10 +41,10 @@ def test_main_without_arguments_updates_ssh_config(monkeypatch: pytest.MonkeyPat
     """引数なしの公開入口は既存の更新処理を実行する。"""
     called = False
 
-    def run() -> bool:
+    def run() -> post_apply_outcome.PostApplyOutcome:
         nonlocal called
         called = True
-        return False
+        return post_apply_outcome.PostApplyOutcome()
 
     monkeypatch.setattr(update_ssh_config, "run", run)
     monkeypatch.setattr(update_ssh_config.sys, "argv", ["update-ssh-config"])

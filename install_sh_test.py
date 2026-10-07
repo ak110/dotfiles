@@ -172,10 +172,11 @@ def _disable_codex_cli_setup(repo: pathlib.Path) -> None:
     """隔離インストールで外部取得を避けるためCodex CLI導入をテスト用実装へ置き換える。"""
     module = repo / "pytools" / "_internal" / "setup_codex_cli.py"
     module.write_text(
-        '"""install.sh統合テスト用のCodex CLI導入スタブ。"""\n\n\n'
-        "def run() -> bool:\n"
+        '"""install.sh統合テスト用のCodex CLI導入スタブ。"""\n\n'
+        "from pytools._internal import post_apply_outcome\n\n\n"
+        "def run() -> post_apply_outcome.PostApplyOutcome:\n"
         '    """外部取得を行わず未変更として返す。"""\n'
-        "    return False\n",
+        "    return post_apply_outcome.PostApplyOutcome()\n",
         encoding="utf-8",
     )
 

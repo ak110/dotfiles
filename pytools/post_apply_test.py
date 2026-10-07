@@ -1392,3 +1392,18 @@ def test_internal_module_names_have_no_legacy_prefix_or_os_suffix() -> None:
     internal = Path(post_apply.__file__).parent / "_internal"
     pattern = re.compile(r"^(warm_.*|.*_(linux|windows)(_test)?)\.py$")
     assert not sorted(path.name for path in internal.glob("*.py") if pattern.match(path.name))
+
+
+def test_step_returning_non_outcome_is_counted_as_failure() -> None:
+    """契約に反する戻り値の工程は失敗と数え、後続の工程と集計を止めない。"""
+
+    def legacy_step() -> bool:
+        return False
+
+    # 型注釈を持たない呼び出し元を模すため、型検査上は契約どおりの工程として渡す。
+    legacy = typing.cast("typing.Callable[[], post_apply_outcome.PostApplyOutcome]", legacy_step)
+    results, _ = post_apply.run([("legacy", legacy), ("next", post_apply_outcome.PostApplyOutcome)])
+
+    assert [(result.name, result.ok) for result in results] == [("legacy", False), ("next", True)]
+    assert results[0].reason is not None
+    assert "PostApplyOutcome" in results[0].reason
