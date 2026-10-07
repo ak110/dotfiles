@@ -56,8 +56,8 @@ _RECOVERY_GUIDANCE = (
     "levelを空としてresponse-neededを読み込みの対象から外す"
 )
 _INPUT_GUIDANCE = (
-    "計画ファイルと同じstemの`.exec-review.tsv`、または原因commitの7文字以上の一意な短縮OID由来の"
-    "`ci-<OID>.exec-review.tsv`を"
+    "計画ファイルと同じstemの`.exec-review.tsv`、またはCI対応レビュー指摘管理表の"
+    f"`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を"
     "通常ファイルの絶対パスで指定する。"
     "標準入力、パイプおよびプロセス置換は受理しない"
 )
@@ -599,7 +599,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
     path_help = (
         "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.exec-review.tsv`、"
-        "または原因commitの7文字以上の一意な短縮OID由来の`ci-<OID>.exec-review.tsv`を指定する。"
+        f"またはCI対応レビュー指摘管理表の`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を指定する。"
     )
     init_parser.add_argument("path", help=path_help)
     add_command_parser = _atk_help.add_command(

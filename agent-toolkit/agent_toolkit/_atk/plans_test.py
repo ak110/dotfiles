@@ -308,6 +308,59 @@ def test_commit_ci_review_rejects_noncanonical_working_name(tmp_path: pathlib.Pa
         _atk_plans.commit_plan(notes, name, home=tmp_path / "home")
 
 
+_SERIES_HEAD = "修正系列の開始時のHEAD"
+"""表の名前の識別子の呼称。
+
+`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`がこの呼称で表を名付け、
+`retired_terms_invariant_test.py`が撤去した旧呼称の置き換え先として記録する。
+"""
+
+
+def _assert_guides_series_head_name(text: str) -> None:
+    """案内文が表の名前を修正系列の開始時のHEADで示し、原因commitで示さないことを確かめる。
+
+    原因commitは再帰的なCI失敗のたびに変わるため、その短縮OIDで名付けると同じ修正系列の表を継続できない。
+    """
+    assert f"ci-<{_SERIES_HEAD}" in text
+    assert "原因commit" not in text
+
+
+def test_plans_commit_help_names_ci_review_table_by_series_head(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`atk plans commit --help`の位置引数の説明が、表を修正系列の開始時のHEAD由来の名前で案内する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["plans", "commit", "--help"], home=tmp_path / "home")
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    _assert_guides_series_head_name(output[output.index("位置引数:") : output.index("オプション:")])
+    _assert_guides_series_head_name(output)
+
+
+def test_ci_review_name_errors_guide_series_head_format(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """書式に合わない名前の表を指定したときの失敗行と次の操作が、修正系列の開始時のHEAD由来の書式を示す。"""
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+
+    for argv, prefix in (
+        (["plans", "commit", "ci-zz.exec-review.tsv", "--skip-push"], "ci-<"),
+        (["plans", "checkout", "ci/ci-zz.exec-review.tsv"], "ci/ci-<"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(argv, home=tmp_path / "home")
+        assert exc_info.value.code != 0
+        error = capsys.readouterr().err
+        failure = next(line for line in error.splitlines() if line.startswith("失敗: "))
+        next_step = next(line for line in error.splitlines() if line.startswith("次の操作: "))
+        for text in (failure, next_step):
+            _assert_guides_series_head_name(text)
+            assert f"{prefix}{_SERIES_HEAD}" in text
+
+
 def test_commit_ci_review_rejects_saved_change_after_checkout(tmp_path: pathlib.Path) -> None:
     """独立表の取得後に保存元が変わった場合は作業側を保持して拒否する。"""
     home = tmp_path / "home"
@@ -324,9 +377,10 @@ def test_commit_ci_review_rejects_saved_change_after_checkout(tmp_path: pathlib.
     _review_table.add(working, "1", "exec-review", "sample.py:1", "作業側", "詳細")
     _review_table.add(saved, "1", "exec-review", "sample.py:2", "保存側", "詳細")
 
-    with pytest.raises(_common.WebInputError, match="取得後に保存元"):
+    with pytest.raises(_common.WebInputError, match="取得後に保存元") as exc_info:
         _atk_plans.commit_plan(notes, name, home=home)
 
+    _assert_guides_series_head_name(exc_info.value.next_action)
     assert working.is_file()
     assert _atk_plans._read_checkout_record(pathlib.Path(name)) is not None  # pylint: disable=protected-access
 

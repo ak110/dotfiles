@@ -71,7 +71,7 @@ def build_parser(parser) -> None:
         help=(
             "`~/.claude/plans`直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、"
             "`private-notes/plans/`相対のyyyy/MM/dd-{名称}-{16進数4桁}.md、または"
-            "ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsv。"
+            f"{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}。"
         ),
     )
     commit_parser.add_argument(
@@ -287,13 +287,13 @@ def _validate_saved_plan_relative_path(plan_file: str) -> pathlib.Path:
 
 def _validate_working_ci_review_relative_path(review_table: str) -> pathlib.Path:
     """`~/.claude/plans`直下のCI対応レビュー指摘管理表名を返す。"""
-    next_action = "ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvの形式で指定し直す"
+    next_action = f"{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}の形式で指定し直す"
     if "\0" in review_table or "\\" in review_table or "$(" in review_table:
         raise _common.WebInputError("CI対応レビュー指摘管理表のパスが不正です", next_action=next_action)
     relative = pathlib.Path(review_table)
     if relative.parent != pathlib.Path() or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
         raise _common.WebInputError(
-            "CI対応レビュー指摘管理表はci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください",
+            f"CI対応レビュー指摘管理表は{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}で指定してください",
             next_action=next_action,
         )
     return relative
@@ -301,13 +301,13 @@ def _validate_working_ci_review_relative_path(review_table: str) -> pathlib.Path
 
 def _validate_saved_ci_review_relative_path(review_table: str) -> pathlib.Path:
     """Plans root相対のCI対応レビュー指摘管理表パスを返す。"""
-    next_action = "ci/ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvの形式で指定し直す"
+    next_action = f"ci/{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}の形式で指定し直す"
     if "\0" in review_table or "\\" in review_table or "$(" in review_table:
         raise _common.WebInputError("CI対応レビュー指摘管理表のパスが不正です", next_action=next_action)
     relative = pathlib.Path(review_table)
     if relative.parent != _CI_REVIEW_DIRECTORY or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
         raise _common.WebInputError(
-            "保存済みのCI対応レビュー指摘管理表はci/ci-{原因commitの7文字以上の一意な短縮OID}.exec-review.tsvで指定してください",
+            f"保存済みのCI対応レビュー指摘管理表はci/{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}で指定してください",
             next_action=next_action,
         )
     return relative
@@ -933,7 +933,8 @@ def commit_ci_review(
                         "次の順に実行してください。"
                         f"`~/.claude/plans`直下の{working.name}を`~/.claude/plans`の外へ退避します。"
                         f"`atk plans commit {working.name}`を実行すると、作業側が不在のため取得記録だけを回収します。"
-                        "保存済みの表を確認し、退避した内容を残す場合は別の原因commitに対応する表として保存します。"
+                        "保存済みの表を確認し、退避した内容を残す場合は、"
+                        f"{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}の書式で別の短縮OIDを名前に持つ表として保存します。"
                     ),
                 )
         elif saved_contents and saved_contents != working_contents:

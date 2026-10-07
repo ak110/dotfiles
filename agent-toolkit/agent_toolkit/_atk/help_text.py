@@ -21,6 +21,12 @@ from agent_toolkit._atk import outcome as _outcome
 ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとコーディングエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（`atk agents wait`、FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`atk agents wait`が通知・終端の内訳と本文を、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断の詳細も`標準エラー保存先:`の保存先へ書く。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 
+CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
+"""CI対応レビュー指摘管理表の名前の書式。保存済みの表は`ci/`を前置する。
+
+ヘルプと、表の名前が書式に合わないときのエラー文と次の操作は、表の名前の書式をこの定義から組み立てて案内する。
+"""
+
 HELP: dict[str, dict[str, str]] = {
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",
@@ -169,7 +175,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans": {
         "summary": "計画ファイルの取得・保存・一覧と参照の書き換え",
-        "description": "目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧と、保存済み計画の参照の書き換えも提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認、保存済み計画の参照を現行の表記へ書き換えるとき。保存の契機は計画を開始した方法ごとに`agent-toolkit:plan-mode`の`plan-file-standards.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: `commit`と`rewrite-references`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "description": "目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧と、保存済み計画の参照の書き換えも提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認、保存済み計画の参照を現行の表記へ書き換えるとき。保存の契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: `commit`と`rewrite-references`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans checkout": {
@@ -179,7 +185,9 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans commit": {
         "summary": "作業中の計画バンドルまたはCI対応レビュー指摘管理表を保存してcommit・pushする",
-        "description": "目的: 指定した計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`からprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたはCI対応レビュー指摘管理表の保存の契機に達したとき。契機は計画を開始した方法ごとに`agent-toolkit:plan-mode`の`plan-file-standards.md`が定める。\n対象と出力: 計画バンドルは年月階層へ、CI対応レビュー指摘管理表は`plans/ci/`へ移し、`--skip-push`を指定しなければpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、`~/.claude/plans`直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは`~/.claude/plans`直下のメイン計画ファイル名、`private-notes/plans/`からの相対のメイン計画パス、または`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commitまたはpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
+        "description": "目的: 指定した計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`からprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたはCI対応レビュー指摘管理表の保存の契機に達したとき。契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: 計画バンドルは年月階層へ、CI対応レビュー指摘管理表は`plans/ci/`へ移し、`--skip-push`を指定しなければpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、`~/.claude/plans`直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは`~/.claude/plans`直下のメイン計画ファイル名、`private-notes/plans/`からの相対のメイン計画パス、または`"
+        + CI_REVIEW_TABLE_NAME_FORMAT
+        + "`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commitまたはpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans list": {
@@ -325,7 +333,9 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table init": {
         "summary": "空のレビュー指摘管理表を作成する",
-        "description": "目的: 行を持たない空の実行レビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: 実行レビューを開始する前に、計画ファイルと同じstemの表、または原因commitに対応する計画がない処理のCI対応レビュー指摘管理表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`、または`~/.claude/plans`直下の`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で指定する。\n復元・後始末: 誤って作成した表は、そのファイルを削除して取り除く。",
+        "description": "目的: 行を持たない空の実行レビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: 実行レビューを開始する前に、計画ファイルと同じstemの表、または原因commitに対応する計画がない処理のCI対応レビュー指摘管理表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`、または`~/.claude/plans`直下の`"
+        + CI_REVIEW_TABLE_NAME_FORMAT
+        + "`で指定する。\n復元・後始末: 誤って作成した表は、そのファイルを削除して取り除く。",
         "epilog": "実行例:\n\n  atk review-table init /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
     },
     "atk review-table add": {

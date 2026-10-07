@@ -394,6 +394,47 @@ def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib
     assert "標準入力" in exc_info.value.next_action
 
 
+_SERIES_HEAD = "修正系列の開始時のHEAD"
+"""表の名前の識別子の呼称。
+
+`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`がこの呼称で表を名付け、
+`retired_terms_invariant_test.py`が撤去した旧呼称の置き換え先として記録する。
+"""
+
+
+def _assert_guides_series_head_name(text: str) -> None:
+    """案内文が表の名前を修正系列の開始時のHEADで示し、原因commitで示さないことを確かめる。"""
+    assert f"ci-<{_SERIES_HEAD}" in text
+    assert "原因commit" not in text
+
+
+def test_review_table_help_names_ci_review_table_by_series_head(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`atk review-table init --help`の位置引数の説明が、表を修正系列の開始時のHEAD由来の名前で案内する。
+
+    説明文の「原因commitに対応する計画がない処理」は表の用途を述べるため、位置引数の節だけを確かめる。
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "init", "--help"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    _assert_guides_series_head_name(output[output.index("位置引数:") : output.index("オプション:")])
+
+
+def test_missing_review_table_guides_series_head_name(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """存在しない表を`atk review-table show`へ渡すと、次の操作が修正系列の開始時のHEAD由来の名前を案内する。"""
+    missing = tmp_path / "missing.exec-review.tsv"
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "show", str(missing)], home=tmp_path)
+
+    assert exc_info.value.code != 0
+    error = capsys.readouterr().err
+    _assert_guides_series_head_name(next(line for line in error.splitlines() if line.startswith("次の操作: ")))
+
+
 def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pathlib.Path) -> None:
     """存在しないパスに対する作成と追記が成功する場合を、読み込みの拒否と区別して維持する。"""
     created = tmp_path / "created.plan-review.tsv"
