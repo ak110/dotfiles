@@ -52,12 +52,11 @@
   この代替確認が示すのは差分commitの集合の一致までとし、`ベースbranchのHEAD`のCI成功の判定は前段の条件で行う
 - `ベースbranchの状態`が`公開済み`である
   - `agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を現在のGit状態から再取得して判定する。終端担当が返した`ベースbranchの状態`は再取得の代わりから外す
-  - 同じ終端担当への差し戻しでも`公開済み`にならない場合は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節が定めるUWIの登録へ送る
+  - 同じ終端担当への差し戻しでも`公開済み`にならない場合は、`agent-toolkit/skills/process-wi/references/finish-session.md`「公開状態の検収と再起動」が定めるUWIの登録へ送る
 - `版数`が`bump不要`でない場合は、対象リポジトリの版数規範が定める定義ファイルの版数がその値と一致する
 - `実行した終端工程`が、委譲プロンプトで終端担当の実行対象としたプロジェクト固有の公開後の操作を過不足なく挙げる。並行開始する工程の完了は、その担当主体の返却から別に検収する
 - `延期後にadoptしたAWI`のファイル名集合が、起動時にOIDまたは空文字列を対応付けた延期`adopt`対象の部分集合であることを確認する。差集合は反映後の新プロセスでしか観測できない完成条件を持つ項目と、観測が完成条件を満たさなかった項目に限る。前者は`実行した終端工程`が残る条件と観測手段を、後者は満たさなかった完成条件と観測の結果を挙げることを確かめる。後者の扱いは`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/run-lanes.md`「採否の確定と終端区分」が定める
 - 延期`adopt`対象がある場合だけ、全対象のファイル名を渡して`atk wi show <ファイル名>... --summary-only --target-repo=<対象リポジトリの絶対パス> --skip-pull`を1回実行する。終了コード0と、出力の`### <ファイル名> [<状態>]`の見出し行が`延期後にadoptしたAWI`では`adopted`、差集合では`processing`であることを確認する。状態フォルダーの全件取得より名指しの取得を選ぶ（努力目標。終端項目が累積し続け、出力量が増える）
 
-各回の返却をその時点のベースbranch、追跡refおよびCI結果と比べる。全ての確認が完了した後は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節へ戻る。
-検収した公開状態の4項目と、延期対象から`延期後にadoptしたAWI`を除いた集合を同節へ渡す。間に主作業ツリーもしくは対象refの変更または外部更新が観測された場合は、同節に従って現在状態を取得し直す。
-同節で未終端集合の観測と再開記録を処置した後、`agent-toolkit:completion-report`による報告および`atk agents-exit-session`の実行を実施する。
+各回の返却をその時点のベースbranch、追跡refおよびCI結果と比べる。全ての確認が完了した後は、延期対象から`延期後にadoptしたAWI`を除いた集合を`agent-toolkit/skills/process-wi/references/finish-session.md`「延期adoptと反映後の観測」へ、検収した公開状態の4項目を同書「公開状態の検収と再起動」へ渡す。間に主作業ツリーもしくは対象refの変更または外部更新が観測された場合は、同節に従って現在状態を取得し直す。
+未終端集合の観測と再開記録を処置した後、同書「完了報告と終了」に従って`agent-toolkit:completion-report`による報告および`atk agents-exit-session`の実行を実施する。
