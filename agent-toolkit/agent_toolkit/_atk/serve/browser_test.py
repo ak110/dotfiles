@@ -1704,6 +1704,54 @@ async def test_detail_mutation_conflict_keeps_input(
 
 
 @pytest.mark.asyncio
+async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarness) -> None:
+    """反映後の観測だけが残るinboxのawiは、一覧・詳細・削除確認でinboxの代わりにneeds-verifyを示す。
+
+    保存状態だけでバッジを決めると、観測待ちの項目が未着手の項目と同じinboxに見え、一覧で見分けられない。
+    色はprocessingと同じにし、状態フィルターと保存先は保存状態のinboxのまま扱う。
+    """
+    harness = browser_harness
+    page = harness.page
+    (harness.root / "inbox" / "verify.md").write_text(
+        "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n観測待ちの本文\n\n"
+        "## 反映後の観測の再開記録\n\n- 再開区分: 反映後の観測だけが残る\n- 計画: 計画なし\n",
+        encoding="utf-8",
+    )
+    (harness.root / "processing").mkdir(exist_ok=True)
+    (harness.root / "processing" / "working.md").write_text(
+        "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n処理中の本文\n", encoding="utf-8"
+    )
+    await page.goto(harness.base_url + "/")
+    # 接続の確立時に一覧を再描画するため、確立を待ってから行の要素を読む。
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    row = page.locator('.entry-select[data-key="inbox/verify.md"]')
+    badge = row.locator(".state-badge")
+    await playwright.async_api.expect(badge).to_have_text("needs-verify")
+    assert "inbox" not in await row.locator(".status-cell").inner_text()
+    label = await row.get_attribute("aria-label")
+    assert label is not None
+    assert "needs-verify" in label.split("、")
+    assert "inbox" not in label.split("、")
+    processing_badge = page.locator('.entry-select[data-key="processing/working.md"] .state-badge')
+    style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
+    assert await badge.evaluate(style) == await processing_badge.evaluate(style)
+
+    await row.click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / needs-verify")
+    await detail.locator("#delete-button").click()
+    delete_dialog = page.get_by_role("dialog", name="削除の確認")
+    await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text("awi / needs-verify")
+    await delete_dialog.locator("#delete-close-button").click()
+    await detail.locator("#detail-close-button").click()
+
+    await _open_filters(page)
+    await page.locator("#state-filter").select_option("inbox")
+    await playwright.async_api.expect(page.locator('.entry-select[data-key="inbox/verify.md"]')).to_be_visible()
+    assert (harness.root / "inbox" / "verify.md").is_file()
+
+
+@pytest.mark.asyncio
 async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
     browser_harness: _BrowserHarness,
 ) -> None:

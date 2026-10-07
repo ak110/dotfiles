@@ -564,7 +564,9 @@ main > .toolbar {
   color: #175cd3;
   background: #eff8ff;
 }
-#screen-wi .state-badge[data-state="processing"] {
+/* 反映後の観測だけが残るinboxの項目は、処理が続いている項目としてprocessingと同じ色で示す。 */
+#screen-wi .state-badge[data-state="processing"],
+#screen-wi .state-badge[data-needs-verify="true"] {
   color: var(--color-warning);
   background: #fffaeb;
 }

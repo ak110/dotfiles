@@ -239,6 +239,14 @@ function formatDateParts(value) {
 
 function kindLabel(kind) { return KIND_LABELS[kind] || '種別不明'; }
 function stateLabel(state) { return STATE_LABELS[state] || state || '不明'; }
+// 反映後の観測だけが残るinboxのawiは、保存状態をinboxのまま、表示だけをneeds-verifyにする。
+// 状態フィルター・件数・操作の可否は保存状態で判定する。
+function displayStateLabel(entry) {
+  return entry.needs_verify === true ? 'needs-verify' : STATE_LABELS[entry.state] || 'unknown';
+}
+function entryStateText(entry) {
+  return `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${displayStateLabel(entry)}`;
+}
 
 function appendCell(row, className) {
   const cell = document.createElement('span');
@@ -304,7 +312,8 @@ function renderEntry(entry) {
   const badge = document.createElement('span');
   badge.className = 'state-badge';
   badge.dataset.state = entry.state;
-  badge.textContent = STATE_LABELS[entry.state] || 'unknown';
+  badge.dataset.needsVerify = String(entry.needs_verify === true);
+  badge.textContent = displayStateLabel(entry);
   status.append(badge);
   if (entry.plan) {
     const plan = document.createElement('span');
@@ -322,7 +331,7 @@ function renderEntry(entry) {
   button.setAttribute(
     'aria-label',
     [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
-      STATE_LABELS[entry.state] || 'unknown',
+      displayStateLabel(entry),
       entry.plan ? 'plan' : '',
       unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
   );
@@ -876,7 +885,7 @@ function displayEntry(entry) {
   setTextMessage('detail-alert', '');
   byId('detail-view').hidden = false;
   byId('detail-filename').textContent = entry.filename;
-  byId('detail-state').textContent = `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${STATE_LABELS[entry.state] || 'unknown'}`;
+  byId('detail-state').textContent = entryStateText(entry);
   byId('detail-state').dataset.state = entry.state;
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
   renderMetadata(entry);
@@ -1420,7 +1429,7 @@ function openDeleteDialog() {
   deleteDialogEntrySnapshot = deleteEntrySnapshot(currentEntry);
   clearDialogMessages('delete');
   byId('delete-target').textContent = currentEntry.filename;
-  byId('delete-state').textContent = `${KIND_LABELS[currentEntry.kind] || KIND_LABELS.unknown} / ${STATE_LABELS[currentEntry.state] || 'unknown'}`;
+  byId('delete-state').textContent = entryStateText(currentEntry);
   byId('delete-state').dataset.state = currentEntry.state;
   byId('delete-target-repo').textContent = currentEntry.target_repo || '—';
   byId('delete-summary').textContent = currentEntry.summary || '—';

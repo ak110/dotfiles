@@ -34,6 +34,7 @@ from agent_toolkit._atk.wi import add as awi_add
 from agent_toolkit._atk.wi import batch as awi_batch
 from agent_toolkit._atk.wi import common, frontmatter
 from agent_toolkit._atk.wi import constants as wi_constants
+from agent_toolkit._atk.wi import headings as wi_headings
 from agent_toolkit._atk.wi import mutations as awi_mutations
 from agent_toolkit._atk.wi import repo as awi_repo
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
@@ -290,6 +291,7 @@ def _entry(
         "state": state,
         "filename": path.name,
         "answered": answered,
+        "needs_verify": _needs_verify(kind, state, text),
         "plan": kind == common.WI_TYPE_AWI and isinstance(metadata.get("plan_file"), str),
         "target_repo": _json_compatible(metadata.get("target_repo")),
         "source": _json_compatible(metadata.get("source")),
@@ -298,6 +300,19 @@ def _entry(
         if updated_at is not None
         else datetime.datetime.fromtimestamp(path.stat().st_mtime, tz=datetime.UTC).isoformat(),
     }
+
+
+def _needs_verify(kind: str, state: str, text: str) -> bool:
+    """反映後の観測だけが残るため`inbox`へ戻されたawiかを返す。
+
+    process-wiは観測できる時刻より前の項目を`inbox`へ戻すため、保存状態だけでは未着手の項目と区別できない。
+    pickerと同じく、フェンス外のトップレベルH2の最後の再開記録の節が観測だけが残る区分を持つかで判定する。
+    `processing`と`hold`は状態バッジが別の意味を示すため対象から外す。
+    """
+    if kind != common.WI_TYPE_AWI or state != common.WI_STATE_INBOX:
+        return False
+    lines = wi_headings.last_h2_section_lines(text, wi_constants.OBSERVATION_RESUME_HEADING)
+    return lines is not None and any(line.strip() == wi_constants.OBSERVATION_ONLY_RESUME_LINE for line in lines)
 
 
 def _json_sort_key(value: typing.Any) -> str:

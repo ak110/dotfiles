@@ -1126,6 +1126,44 @@ async def test_answer_and_remove_apis_return_edit_conflict_when_concurrent_chang
     assert (processing / remove_inbox.name).read_text(encoding="utf-8") == awi_content
 
 
+_OBSERVATION_RECORD = "## 反映後の観測の再開記録\n\n- 再開区分: 反映後の観測だけが残る\n- 計画: 計画なし\n"
+
+
+@pytest.mark.asyncio
+async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> None:
+    """`needs_verify`はpickerと同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
+
+    条件が広いと未着手や処理中の項目まで観測待ちとして示し、狭いと観測待ちの項目が未着手と区別できない。
+    """
+    awi = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n# 件名\n\n本文\n\n"
+    uwi = "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+    other_record = _OBSERVATION_RECORD.replace("反映後の観測だけが残る", "実装から再開する")
+    cases = {
+        ("inbox", "verify.md"): (awi + _OBSERVATION_RECORD, True),
+        ("inbox", "latest-verify.md"): (awi + other_record + "\n" + _OBSERVATION_RECORD, True),
+        ("inbox", "plain.md"): (awi, False),
+        ("processing", "processing.md"): (awi + _OBSERVATION_RECORD, False),
+        ("hold", "hold.md"): (awi + _OBSERVATION_RECORD, False),
+        ("inbox", "other.md"): (awi + _OBSERVATION_RECORD + "\n" + other_record, False),
+        ("inbox", "fenced.md"): (awi + "```markdown\n" + _OBSERVATION_RECORD + "```\n", False),
+        ("inbox", "uwi.md"): (uwi + _OBSERVATION_RECORD, False),
+    }
+    for (state_name, filename), (text, _expected) in cases.items():
+        (tmp_path / state_name).mkdir(exist_ok=True)
+        (tmp_path / state_name / filename).write_text(text, encoding="utf-8")
+    client = _serve_app(tmp_path).test_client()
+
+    listed = await (await client.get("/api/entries?status=all&period=all")).get_json()
+    inbox = await (await client.get("/api/entries?status=inbox&period=all")).get_json()
+    detail = await (await client.get("/api/entries/inbox/verify.md")).get_json()
+
+    flags = {(item["state"], item["filename"]): item["needs_verify"] for item in listed["entries"]}
+    assert flags == {key: expected for key, (_text, expected) in cases.items()}
+    assert ("inbox", "verify.md") in {(item["state"], item["filename"]) for item in inbox["entries"]}
+    assert detail["entry"]["needs_verify"] is True
+    assert detail["entry"]["state"] == "inbox"
+
+
 @pytest.mark.asyncio
 async def test_entries_api_keeps_readable_entries_and_reports_unreadable_files(tmp_path: pathlib.Path) -> None:
     """一覧APIは読取り不能な1ファイルを警告へ分離し、残りの一覧を返す。"""

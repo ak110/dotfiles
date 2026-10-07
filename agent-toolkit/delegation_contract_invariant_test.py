@@ -8,6 +8,7 @@ import pytest
 
 from agent_toolkit._agents_server import task_documents
 from agent_toolkit._atk import run_script
+from agent_toolkit._atk.wi import constants as wi_constants
 
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 _REQUIRED_INPUT_PREFIX = "必須入力名:"
@@ -488,6 +489,9 @@ def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
     assert f"`再開区分`が`{prefix}`の場合だけ" in _h2_section(picker, "処理対象の決定")
     termination = _h2_section(lanes, "採否の確定と終端区分")
     assert all(f"`再開区分: {value}`" in termination for value in kind_values if value != prefix)
+    # `atk serve`の一覧は同じ見出しと区分の行でneeds-verifyを表示する。書式の変更に判定が追随しないと失敗する。
+    assert heading == f"## {wi_constants.OBSERVATION_RESUME_HEADING}"
+    assert wi_constants.OBSERVATION_ONLY_RESUME_LINE in record.splitlines()
     assert {"実装commit", "残る完成条件", "観測手段", "観測できる最も早い時刻", "計画"} <= set(fields)
     assert "--append" in finish and "return-to-inbox" in finish and "--cooldown-until" in finish
 
