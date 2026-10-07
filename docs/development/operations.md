@@ -329,9 +329,9 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 - dotfilesの作業ツリーの未コミット差分は、`update-dotfiles`がpullの前に退避して後に復元する。ルート`mise.lock`の差分は保持せず破棄する。
   pullまたは復元が競合した場合は、元のcommitと未コミット内容を復旧用の参照へ保存して上流へ合わせる
 
-## Windowsの電源設定の最適化（dotfiles-setup）
+## Windowsの電源設定の最適化（optimize-power-settings）
 
-`dotfiles-setup`コマンドはWindows専用で、高速スタートアップとUSB selective suspendをまとめて無効化する。
+`optimize-power-settings`コマンドはWindows専用で、高速スタートアップとUSB selective suspendをまとめて無効化する。
 
 - 高速スタートアップ無効化: `HiberbootEnabled=0`レジストリ書き込みと`powercfg /hibernate off`を実行する
 - USB selective suspend無効化: 電源プラン層のAC・DC両系統と、per-device層（`SelectiveSuspendEnabled`と

@@ -172,7 +172,7 @@ if (-not (Test-IsAdministrator)) {
 }
 
 try {
-    Write-Host "dotfiles-setup: Windows 電源設定を最適化します。"
+    Write-Host "optimize-power-settings: Windows 電源設定を最適化します。"
     Write-Host ""
 
     Disable-FastStartup
@@ -182,7 +182,7 @@ try {
     Show-CurrentState
 
     Write-Host ""
-    Write-Host "dotfiles-setup: 完了しました。"
+    Write-Host "optimize-power-settings: 完了しました。"
 }
 finally {
     if ($AutoElevated) {
