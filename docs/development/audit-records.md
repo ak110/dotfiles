@@ -333,7 +333,7 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日
 
 2026年9月21日、Codex CLI 0.155.1で確認した。`spawn_agent`は`fork_turns`で会話履歴の引継ぎ範囲を選ぶ。起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。`send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終端待機、`interrupt_agent`は中断を担う。agent-toolkitのCodex hookを実起動したテストでは共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
-再検証では`codex --version`で対象版を記録する。`rules_context_codex.main`へ`SubagentStart`を入力するテストと、`_agents_server/state.py`の通常・軽量promptのテストを実行する。生成したCodex hook manifestの`SubagentStart`起動コマンドも実行し、共通規範、ホスト固有規範および軽量委譲の境界を確認する。
+再検証では`codex --version`で対象版を記録する。`rules_context_codex.main`へ`SubagentStart`を入力するテストと、`_agents_server/launch_prompts.py`の通常・軽量promptのテストを実行する。生成したCodex hook manifestの`SubagentStart`起動コマンドも実行し、共通規範、ホスト固有規範および軽量委譲の境界を確認する。
 
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日
 
@@ -518,7 +518,7 @@ Readを経ない取得手段（Bashのリダイレクトでの作成、`cp`で�
 agents_server（`agent-toolkit/agent_toolkit/agents_server_mcp.py`、MCP Python SDK 1.30.0）の公開ツールは`start`、`send_message`、`kill`、`stop`、`list`、`show`の6件である。`FastMCP.list_tools()`の取得結果と、各ツールの直接の応答生成（`_public_start_response`、`AgentsServerManager`の各公開メソッド、`_actionable_tool`）を読んだ。
 
 - 適用済み: 起動操作は`start`の`mode`へ統合し、modeを列挙型でスキーマへ示し、modeごとの必須・禁止の入力を説明と`_validate_start_inputs`の双方に置く。応答は`session_id`と次の操作を返し、`list`は除いた件数を`omitted`へ、`show`は`verbose`で詳細を選ぶ。例外は`_actionable_tool`が`next_action`付きの`ToolError`へ変え、SDKがツール実行エラーとして返す。全ツールが構造化応答を返し、`outputSchema`は任意の項目を許すobjectである。stdio transportのログは標準エラーとファイルへ出力する
-- 是正済み（同書の「単体での利用」とホスト固有の条件による）: 適用前の`start`の説明は2,932文字で、Claude Codeの設定を変えない状態では後半の結果受領・起動前の準備・応答の説明が切り詰められていた。結果受領を先頭へ移し、modeの選び方を`mode`の引数説明へ移して1,962文字とした。`send_message`・`kill`・`stop`・`show`の`session_id`、`send_message`の`prompt`、`list`の`include_terminated`、`show`の`verbose`は引数説明を持たなかったため説明を加えた。`agents_server_mcp_test.py::test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`が説明長と全引数の説明を確かめる。instructionsは690文字である
+- 是正済み（同書の「単体での利用」とホスト固有の条件による）: 適用前の`start`の説明は2,932文字で、Claude Codeの設定を変えない状態では後半の結果受領・起動前の準備・応答の説明が切り詰められていた。結果受領を先頭へ移し、modeの選び方を`mode`の引数説明へ移して1,962文字とした。`send_message`・`kill`・`stop`・`show`の`session_id`、`send_message`の`prompt`、`list`の`include_terminated`、`show`の`verbose`は引数説明を持たなかったため説明を加えた。`_agents_server/tool_descriptions_test.py::test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`が説明長と全引数の説明を確かめる。instructionsは690文字である
 - 任意の改善候補: annotationsは全ツールで未設定である。`show`は保持中の状態を読むだけで`readOnlyHint`を付与できる。`list`は保持期限に達したsessionの本体の解放を内部で進めるため、付与はその扱いを決めてから判断する。`outputSchema`は応答の項目を列挙していない
 - 仕様上の是正: 該当なし
 

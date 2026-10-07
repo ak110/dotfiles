@@ -4,8 +4,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit import agents_server_mcp
-from agent_toolkit._agents_server import record_paths
+from agent_toolkit._agents_server import backends, record_paths
 from agent_toolkit._atk.serve import sessions as session_records
 
 
@@ -15,7 +14,7 @@ def test_record_engines_match_supported_engines() -> None:
     実行系を追加して記録の探索を追随させないと、その実行系の委譲先は`atk agents logs`と
     `atk run-script session-review-evidence`の双方で記録なしとして扱われる。
     """
-    assert record_paths.RECORD_ENGINES == agents_server_mcp.SUPPORTED_ENGINES
+    assert record_paths.RECORD_ENGINES == backends.SUPPORTED_ENGINES
 
 
 def test_claude_subagent_record_is_found_by_its_agent_id(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

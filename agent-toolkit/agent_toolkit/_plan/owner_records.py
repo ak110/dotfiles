@@ -18,7 +18,7 @@ _OWNER_SESSION_ENVIRONMENT_KEYS = (_delegated_session.OWNER_SESSION_ENV, "CLAUDE
 PROCESS_ROOT_SESSION_PREFIX = "mcp-"
 """`agents_server`が会話の識別子を受け取らずに生成するプロセス専用のrootの接頭辞。
 
-`_agents_server.status_file.create_process_root_identity`が生成し、状態ファイルのrootと通知の配送には使うが、
+`_agents_server.shared_roots.create_process_root_identity`が生成し、状態ファイルのrootと通知の配送には使うが、
 会話のセッションを表さない。
 """
 

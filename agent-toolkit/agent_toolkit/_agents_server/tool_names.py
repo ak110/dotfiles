@@ -10,7 +10,7 @@ session-reviewの`atk run-script session-review-evidence`に分かれるため�
 追随しない箇所では実行環境が配送したツール名が未知の名前として扱われ、そうした箇所の判定が
 その呼び出しに対して働かない（孫sessionが追跡対象へ入らない、親sessionが自動再開しない、
 振り返りの証拠抽出が委譲先を収集しないなど）。起動ツールの集合と`agents_server`の登録ツールの一致は
-`agents_server_mcp_test.py`が確かめる。
+`_agents_server/mcp_tools_test.py`が確かめる。
 起動の種類は`start`の`mode`で選ぶため、種類に応じた判定は操作名ではなく`start_mode`の返り値を使う。
 """
 

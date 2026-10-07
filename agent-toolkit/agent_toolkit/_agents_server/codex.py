@@ -18,34 +18,36 @@ import re
 import shlex
 import shutil
 import sys
+import typing
 import uuid
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from pathlib import Path
 from typing import Any
 
 from agent_toolkit._agents_server import (
     compaction_metrics,  # pylint: disable=wrong-import-position
-    status_file,  # pylint: disable=wrong-import-position
+    engine_availability,
+    result_projection,
+    resume_waits,
+    session_errors,
+    shared_roots,  # pylint: disable=wrong-import-position
+    wait_output_tracking,
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
-from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import-position
-    AUTO_RESUME_NOTICE,
-    LAUNCH_SYSTEM_PROMPTS,
-    LIGHTWEIGHT_LAUNCH_KINDS,
+from agent_toolkit._agents_server.input_validation import validate_cwd, validate_model_effort, validate_prompt
+from agent_toolkit._agents_server.launch_prompts import AUTO_RESUME_NOTICE, LAUNCH_SYSTEM_PROMPTS, LIGHTWEIGHT_LAUNCH_KINDS
+from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
+from agent_toolkit._agents_server.state import (
     TERMINAL_STATUSES,
     LaunchKind,
     ModelCandidate,
     ResumePrompt,
-    SessionInitializationTimeoutError,
     SessionState,
-    _append_bounded,
-    _begin_reply,
-    _initialize_turn,
-    _validate_cwd,
-    _validate_model_effort,
-    _validate_prompt,
-    consume_agents_server_tool_result,
+    append_bounded,
+    begin_reply,
+    initialize_turn,
 )
+from agent_toolkit._agents_server.wait_output_tracking import consume_agents_server_tool_result
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp  # pylint: disable=wrong-import-position
 from agent_toolkit._common import (
@@ -203,7 +205,7 @@ def _developer_instructions(launch_kind: LaunchKind) -> str:
     )
 
 
-class AppServerError(shared_state.DelegateBackendError):
+class AppServerError(session_errors.DelegateBackendError):
     """App Serverとの通信または要求検証に失敗した。"""
 
 
@@ -490,7 +492,7 @@ class JsonRpcProcess:
                 if not line:
                     return
                 text = line.decode("utf-8", errors="replace")
-                self._stderr_text = _append_bounded(
+                self._stderr_text = append_bounded(
                     self._stderr_text,
                     text,
                     APP_SERVER_STDERR_LIMIT_CHARS,
@@ -576,6 +578,33 @@ class JsonRpcProcess:
 
 class AppServerManager:
     """Codex App Serverと共有session状態を管理する。"""
+
+    START_FAILURE_EXCLUDES_CANDIDATE: typing.ClassVar[bool] = False
+    """起動の例外は候補を変えても結果が変わらないため、次の候補へ進まずに委譲元へ返す。"""
+    INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool] = True
+    """`turn/interrupt`はturnの識別子を要するため、中断の要求はturnの開始を待ってから送る。"""
+    ORPHAN_TAKEOVER: typing.ClassVar[bool] = True
+    """所有者のいない`running`の登録簿の記録を、`thread/read`の結果から終端として引き継げる。"""
+
+    @staticmethod
+    def unavailable_reason(session: SessionState) -> str | None:
+        """終端したsessionがengineの可用性を理由に失敗した場合、その除外理由を返す。
+
+        接続先がモデルIDを受け付けなかった失敗も、別の候補なら結果が変わるため除外理由にする。
+        """
+
+        def model_rejected(error: Mapping[str, Any]) -> str | None:
+            if engine_availability.rejected_parameter(error) == "model":
+                return engine_availability.ENGINE_MODEL_REJECTED_REASON
+            return None
+
+        return engine_availability.unavailable_reason(session, other_reason=model_rejected)
+
+    @staticmethod
+    def excludes_with_recorded_reason(reason: str) -> bool:
+        """記録済みの除外理由は全て候補を除外する根拠になる。"""
+        del reason
+        return True
 
     def __init__(
         self,
@@ -716,9 +745,9 @@ class AppServerManager:
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
         """新しいthreadとturnを開始し、直ちにsession状態を返す。"""
-        _validate_prompt(prompt)
-        _validate_cwd(cwd)
-        _validate_model_effort(model, effort)
+        validate_prompt(prompt)
+        validate_cwd(cwd)
+        validate_model_effort(model, effort)
         client = await self._ensure_client()
         params: dict[str, Any] = {
             "cwd": cwd,
@@ -751,7 +780,7 @@ class AppServerManager:
             raise AppServerError("thread/start returned no thread.id")
         session_id = thread["id"]
         if owner_session_id is not None and writer_session_id is not None:
-            status_file.write_host_alias(owner_session_id, writer_session_id, session_id)
+            shared_roots.write_host_alias(owner_session_id, writer_session_id, session_id)
             self._writer_session_ids[session_id] = writer_session_id
         session = SessionState(
             session_id=session_id,
@@ -766,7 +795,7 @@ class AppServerManager:
             publish_registry=self._publish_registry,
         )
         self.sessions[session_id] = session
-        _initialize_turn(session)
+        initialize_turn(session)
         session.status = "starting"
         session.touch()
         try:
@@ -794,8 +823,8 @@ class AppServerManager:
         fast_mode: bool | None = None,
     ) -> SessionState:
         """保存済みthreadを再開して新しいturnを開始する。"""
-        _validate_cwd(cwd)
-        _validate_model_effort(model, effort)
+        validate_cwd(cwd)
+        validate_model_effort(model, effort)
         client = await self._ensure_client()
         session = SessionState(
             session_id=session_id,
@@ -811,7 +840,7 @@ class AppServerManager:
             publish_registry=self._publish_registry,
         )
         self.sessions[session_id] = session
-        _initialize_turn(session)
+        initialize_turn(session)
         try:
             writer_session_id = await self._resume_thread(
                 session,
@@ -856,12 +885,12 @@ class AppServerManager:
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         """実行中turnへ追加指示を送り、終端競合時は同じthreadのreplyを開始する。"""
-        _validate_prompt(prompt)
+        validate_prompt(prompt)
         async with session.turn_control_lock:
             if session.awaiting_auto_resume and session.pending_result is not None:
                 # 保留中の追加指示は、保留した結果を確定してから同じsessionのreplyとして配送する。
                 # 確定した結果は`previous_result`で返すため、終端結果ファイルへは公開しない。
-                shared_state.finalize_pending_result(session, touch=False)
+                resume_waits.finalize_pending_result(session, touch=False)
             if session.terminal:
                 previous_result = self._capture_result(session)
                 delivery, status, error = await self._start_reply_locked(session, prompt)
@@ -875,11 +904,11 @@ class AppServerManager:
                 return result
             if session.interrupt_requested:
                 raise ActionableError(
-                    "the active Codex turn is being interrupted", next_action=shared_state.RESEND_AFTER_WAIT_NEXT_ACTION
+                    "the active Codex turn is being interrupted", next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION
                 )
             if not session.turn_id:
                 raise ActionableError(
-                    "the active Codex turn has no turn_id", next_action=shared_state.RESEND_AFTER_WAIT_NEXT_ACTION
+                    "the active Codex turn has no turn_id", next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION
                 )
             client = self.client
             if client is None or getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
@@ -932,7 +961,7 @@ class AppServerManager:
         結果を保留している間はモデルのturnが終わっているため、中断要求を送らずに保留した結果を確定する。
         """
         if session.awaiting_auto_resume and session.pending_result is not None:
-            shared_state.finalize_pending_result(session)
+            resume_waits.finalize_pending_result(session)
             await self._notify_waiters()
             return
         if session.terminal:
@@ -1012,7 +1041,7 @@ class AppServerManager:
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
             raise AppServerError("thread/resume returned an unexpected thread.id")
         if owner_session_id is not None and writer_session_id is not None:
-            status_file.write_host_alias(owner_session_id, writer_session_id, session.session_id)
+            shared_roots.write_host_alias(owner_session_id, writer_session_id, session.session_id)
         return writer_session_id
 
     @staticmethod
@@ -1054,11 +1083,11 @@ class AppServerManager:
 
     @staticmethod
     def _initialize_turn(session: SessionState) -> None:
-        _initialize_turn(session)
+        initialize_turn(session)
 
     @staticmethod
     def _begin_reply(session: SessionState) -> None:
-        _begin_reply(session)
+        begin_reply(session)
 
     async def _mark_failed(
         self,
@@ -1206,24 +1235,24 @@ class AppServerManager:
             if session.status not in TERMINAL_STATUSES:
                 session.status = "failed"
             # 背景実行の`atk agents wait`で回収済みの孫sessionは、保留の判定より前に追跡から外す。
-            shared_state.consume_agents_wait_background_outputs(session)
-            if shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
+            wait_output_tracking.consume_agents_wait_background_outputs(session)
+            if resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                 # 未観測の孫sessionが残るturnは、待機表明を完了報告として公開せずに結果を保留する。
                 # 監査記録は`docs/development/audit-records.md`の
                 # 「agent-toolkit/agent_toolkit/_agents_server/codex.py：孫sessionの待機表明と自動再開：2026年10月1日」にある。
                 # MCP層の常駐監視（`_monitor_auto_resume`）が孫の終端を観測し、同じsessionを一度だけ再開する。
                 # 期限到来・追跡先の喪失・再開失敗の確定と未観測識別子の記録も、同じ監視が既存の診断で行う。
-                shared_state.begin_auto_resume_wait(
+                resume_waits.begin_auto_resume_wait(
                     session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
                 )
                 session.status = "running"
             elif session.live_child_session_ids:
                 unobserved_session_ids = set(session.live_child_session_ids)
                 session.live_child_session_ids.clear()
-                shared_state.record_unobserved_sessions(session, unobserved_session_ids)
-            elif not shared_state.is_overload_failure(session):
-                shared_state.clear_overload_resume(session)
-            elif (session.availability_checked or session.turn_seq > 1) and shared_state.begin_overload_resume_wait(
+                resume_waits.record_unobserved_sessions(session, unobserved_session_ids)
+            elif not resume_waits.is_overload_failure(session):
+                resume_waits.clear_overload_resume(session)
+            elif (session.availability_checked or session.turn_seq > 1) and resume_waits.begin_overload_resume_wait(
                 session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
             ):
                 # 起動の可用性確認を過ぎた後の過負荷は時間の経過で解け得るため、結果を保留して待機後に同じsessionで続ける。
@@ -1285,7 +1314,7 @@ class AppServerManager:
                     current = session.current_item
                     item_id = current.get("id") if isinstance(current, dict) else None
                 item_id = item_id if isinstance(item_id, str) and item_id else "__current__"
-                session.progress_items[item_id] = _append_bounded(session.progress_items.get(item_id, ""), delta)
+                session.progress_items[item_id] = append_bounded(session.progress_items.get(item_id, ""), delta)
                 session.commentary = session.progress_items[item_id]
                 session.set_progress(session.commentary)
         elif method in {"item/fileChange/outputDelta", "item/fileChange/patchUpdated"}:
@@ -1469,7 +1498,7 @@ class AppServerManager:
                     if len(arguments) >= 3 and Path(arguments[0]).name == "timeout":
                         arguments = arguments[2:]
                 if len(arguments) >= 3 and Path(arguments[0]).name == "atk" and arguments[1:3] == ["agents", "wait"]:
-                    shared_state.consume_agents_wait_output(session, output)
+                    wait_output_tracking.consume_agents_wait_output(session, output)
         elif item_type == "mcpToolCall" and item.get("server") == "agents_server":
             arguments = item.get("arguments")
             result = item.get("result")

@@ -40,16 +40,14 @@ import re
 import shlex
 import sys
 
+from agent_toolkit._agents_server import launch_prompts, shared_layout, shared_roots, wait_targets
+
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._agents_server import (
     state as _agents_server_state,
 )  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._agents_server import (
-    status_file as _agents_server_status_file,
-)  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._agents_server import (
     tool_names as _agents_server_tool_names,
@@ -286,9 +284,7 @@ def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
     mode = _agents_server_tool_names.start_mode(operation, tool_input)
     if mode == "task":
         task_path = tool_input.get("subagent_md_path")
-        return (
-            _agents_server_state.TASK_MODEL_TYPES.get(pathlib.PurePath(task_path).name) if isinstance(task_path, str) else None
-        )
+        return launch_prompts.TASK_MODEL_TYPES.get(pathlib.PurePath(task_path).name) if isinstance(task_path, str) else None
     if mode is None:
         return None
     return _agents_server_tool_names.START_MODE_MODEL_TYPES.get(mode)
@@ -318,7 +314,7 @@ def _agents_server_missing_response_fields(session_id: str, payload: dict, struc
         if (
             not isinstance(value, str)
             or not value.strip()
-            or (field == "root_session_id" and not _agents_server_status_file.valid_session_id(value))
+            or (field == "root_session_id" and not shared_layout.valid_session_id(value))
         ):
             missing.append(field)
     if tool_name in _AGENTS_SERVER_START_TOOLS and not _is_nonempty_absolute_cwd(
@@ -367,11 +363,11 @@ def _record_agents_server_root_alias(session_id: str, structured: dict) -> None:
     if _delegated_session.owner_session_id(os.environ) is not None:
         return
     root_session_id = structured.get("root_session_id")
-    if not _agents_server_status_file.valid_session_id(session_id):
+    if not shared_layout.valid_session_id(session_id):
         return
-    if not isinstance(root_session_id, str) or not _agents_server_status_file.valid_session_id(root_session_id):
+    if not isinstance(root_session_id, str) or not shared_layout.valid_session_id(root_session_id):
         return
-    _agents_server_status_file.write_root_alias(session_id, root_session_id)
+    shared_roots.write_root_alias(session_id, root_session_id)
 
 
 def _record_agents_server_session_state(
@@ -451,20 +447,20 @@ def _record_agents_server_session_state(
     if operation in _AGENTS_SERVER_START_OPERATIONS or starts_reply:
         # `atk agents wait`と同じ解決（別名索引を経たルート）で登録し、登録と読み取りの名前空間を一致させる。
         try:
-            identity = _agents_server_status_file.resolve_wait_identity(os.environ, None)
+            identity = shared_roots.resolve_wait_identity(os.environ, None)
             if (
                 identity is None
                 and _delegated_session.owner_session_id(os.environ) is not None
                 and fallback_status_host_session is not None
-                and _agents_server_status_file.valid_session_id(fallback_status_host_session)
+                and shared_layout.valid_session_id(fallback_status_host_session)
             ):
                 environment = dict(os.environ)
                 environment["AGENT_TOOLKIT_STATUS_HOST_SESSION"] = fallback_status_host_session
-                identity = _agents_server_status_file.resolve_wait_identity(environment, None)
+                identity = shared_roots.resolve_wait_identity(environment, None)
         except ValueError as error:
             return f"agents_serverの待機対象を登録できない: {error}"
-        if identity is not None and _agents_server_status_file.valid_session_id(remote_session_id):
-            _agents_server_status_file.retain_wait_targets(
+        if identity is not None and shared_layout.valid_session_id(remote_session_id):
+            wait_targets.retain_wait_targets(
                 identity.root_session_id,
                 identity.file_name,
                 [remote_session_id],

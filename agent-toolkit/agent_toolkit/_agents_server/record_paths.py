@@ -16,7 +16,7 @@ import dataclasses
 import pathlib
 import re
 
-from agent_toolkit._agents_server import status_file
+from agent_toolkit._agents_server import shared_layout
 from agent_toolkit._atk.serve import sessions as session_records
 
 RECORD_ENGINES: frozenset[str] = frozenset({"claude", "codex", "agy"})
@@ -73,8 +73,8 @@ def find_session_record(session_id: str, *, codex_home: pathlib.Path | None = No
             return SessionRecord("codex", codex_paths)
     agy_paths = tuple(
         path
-        for root_session_id in status_file.list_root_session_ids()
-        if (path := status_file.session_log_path(root_session_id, session_id)).is_file()
+        for root_session_id in shared_layout.list_root_session_ids()
+        if (path := shared_layout.session_log_path(root_session_id, session_id)).is_file()
     )
     if agy_paths:
         return SessionRecord("agy", agy_paths)

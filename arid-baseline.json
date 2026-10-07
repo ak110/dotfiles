@@ -86,16 +86,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:189bcc6048f3ec0b472d69216e401ed9c0cf4f6a1f6eec0b42cd969ea40f54ed",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_agents_server/status_file_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:1a4fb16491607728761f30ce16393ccc95d57484a13c44a792a0d8d81410ef61",
       "lines": 11,
       "occurrences": [
@@ -204,16 +194,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:68b9cd78095e6e506ae1a3678c722411a3c0f281b93e3c839b4016fc0dcfad1f",
-      "lines": 13,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:6a950eacb15703d730b7c56ecdb72a63d739ceac1b0d2e62af754af8b514c8d4",
       "lines": 16,
       "occurrences": [
@@ -244,26 +224,6 @@
         {
           "path": "pytools/_internal/install_claude_plugins_test.py",
           "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:7c0499e5e1de115187badf1c183742387878e6f140c3e7f9f824c2434065bcaa",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:800ed9bd4edee943c55306a45b7deb14a4b55b3f597939f7288fa78d3568c4e1",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_agents_server/status_file_test.py",
-          "count": 2
         }
       ]
     },
@@ -356,16 +316,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:9cfa32a3072914de9ea53de1d9bcde63c4947fea46f989cbebf8165decf0d15f",
-      "lines": 20,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:9df472ee678eb08731156a2d3fa10a22875a4b6981a0eeb8fffb9f399996bec7",
       "lines": 53,
       "occurrences": [
@@ -376,26 +326,6 @@
         {
           "path": "agent-toolkit/scripts/atk_serve_sessions_remote_helper.py",
           "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:a21bc6cfaa4742dd70c6130829675b554d7b74aeafe0c1f5e4fa9143d24373b4",
-      "lines": 15,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:a61b43a474b945b7654c3652f24d6028eb81e5a6688c2dab00501f12ebe623a2",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 3
         }
       ]
     },
@@ -488,26 +418,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:bd919ccf9ea5335d8566f4dc2fb59c560c0d480ada6004eea261db201b7e6876",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:be4147bdc33bca31a76174607ccf4feacec7075e94885da5597bb6fbfa2f57b1",
-      "lines": 12,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:c27cc1e3e627ec3e89734924a5ce8783384249af50bafc93197f5db5c1b379f3",
       "lines": 18,
       "occurrences": [
@@ -548,16 +458,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:de8d1c54bcd126514d187a781072540a775fcf1b5f98f27462aa7fe94bbb2825",
-      "lines": 17,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:e40074acec7246e5214cd6fdac70b42383e247bdd384a2cbce436058c8ef1358",
       "lines": 12,
       "occurrences": [
@@ -584,16 +484,6 @@
         {
           "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 3
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:eabf1ee5822aef15e70666a158909075299130d02e8118b4f3e79d8260c97b91",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
         }
       ]
     },

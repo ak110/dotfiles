@@ -6,6 +6,7 @@ import pathlib
 import pytest
 import session_review_evidence as evidence
 
+from agent_toolkit._agents_server import tool_descriptions
 from agent_toolkit._testing.helpers import _write_transcript
 
 
@@ -561,9 +562,8 @@ def test_codex_project_instructions_do_not_change_delegation_kind_or_resume() ->
 
 def test_shell_delegation_marker_matches_agents_server_prompt() -> None:
     """シェル実行の委譲の判定に使う冒頭の文が、agents_serverが委譲先へ渡す指示本文と一致する。"""
-    from agent_toolkit import agents_server_mcp  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
-    prompt = agents_server_mcp._shell_prompt("true", "終了コードを返す")  # pylint: disable=protected-access
+    prompt = tool_descriptions.shell_prompt("true", "終了コードを返す")
     assert prompt.startswith(evidence._SHELL_DELEGATION_MARKER)  # pylint: disable=protected-access
 
 

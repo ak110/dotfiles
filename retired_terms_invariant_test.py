@@ -82,8 +82,8 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     "起動種別": (
         # `mode:`へ改める前の宣言行を読む互換の実装とそのテスト
         _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/task_documents.py", "_LEGACY_LAUNCH_KIND_PREFIX"),
-        _AllowedLocation("agent-toolkit/agent_toolkit/agents_server_mcp_test.py", "起動種別:"),
-        _AllowedLocation("agent-toolkit/agent_toolkit/agents_server_mcp_test.py", "起動種別: explore"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/launch_requests_test.py", "起動種別:"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/launch_requests_test.py", "起動種別: explore"),
     ),
     "背景ジョブ": (
         # 監査記録の見出しと対応させる節の見出しと、その節への参照

@@ -7,7 +7,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._agents_server import status_file
+from agent_toolkit._agents_server import shared_roots, shared_sweep, status_file
 
 
 def _aged_file(path: pathlib.Path, timestamp: float) -> None:
@@ -19,7 +19,7 @@ def _aged_file(path: pathlib.Path, timestamp: float) -> None:
 def test_sweep_stale_shared_state_removes_expired_and_keeps_current(tmp_path: pathlib.Path) -> None:
     """root・登録簿・計測記録を回収し、現行rootと新しい状態を残す。"""
     now = 1_000_000.0
-    old = now - status_file.STALE_SHARED_STATE_SECONDS - 1
+    old = now - shared_sweep.STALE_SHARED_STATE_SECONDS - 1
     current = tmp_path / "agents-server" / "current"
     stale = tmp_path / "agents-server" / "stale"
     fresh = tmp_path / "agents-server" / "fresh"
@@ -34,7 +34,7 @@ def test_sweep_stale_shared_state_removes_expired_and_keeps_current(tmp_path: pa
     orphan_lock = tmp_path / "agents-server" / "compaction" / "orphan.jsonl.lock"
     _aged_file(orphan_lock, old)
 
-    status_file.sweep_stale_shared_state(
+    shared_sweep.sweep_stale_shared_state(
         keep_root_session_id="current",
         state_root=tmp_path,
         now=now,
@@ -56,13 +56,13 @@ def test_sweep_stale_shared_state_continues_after_root_removal_failure(
 ) -> None:
     """root削除の個別失敗が登録簿の掃引を妨げない。"""
     now = 1_000_000.0
-    old = now - status_file.STALE_SHARED_STATE_SECONDS - 1
+    old = now - shared_sweep.STALE_SHARED_STATE_SECONDS - 1
     _aged_file(tmp_path / "agents-server" / "stale" / "root.json", old)
     registry = tmp_path / "agents-server" / "sessions" / "old.json"
     _aged_file(registry, old)
-    monkeypatch.setattr(status_file.shutil, "rmtree", lambda _path: (_ for _ in ()).throw(OSError("busy")))
+    monkeypatch.setattr(shared_sweep.shutil, "rmtree", lambda _path: (_ for _ in ()).throw(OSError("busy")))
 
-    status_file.sweep_stale_shared_state(keep_root_session_id=None, state_root=tmp_path, now=now)
+    shared_sweep.sweep_stale_shared_state(keep_root_session_id=None, state_root=tmp_path, now=now)
 
     assert not registry.exists()
 
@@ -70,10 +70,10 @@ def test_sweep_stale_shared_state_continues_after_root_removal_failure(
 @pytest.mark.asyncio
 async def test_status_writer_activate_continues_when_sweep_fails(tmp_path: pathlib.Path, monkeypatch) -> None:
     """managerの起動処理は掃引APIのOSErrorを記録して書込を開始する。"""
-    monkeypatch.setattr(status_file, "sweep_stale_shared_state", lambda **_kwargs: (_ for _ in ()).throw(OSError("x")))
+    monkeypatch.setattr(shared_sweep, "sweep_stale_shared_state", lambda **_kwargs: (_ for _ in ()).throw(OSError("x")))
     writer = status_file.StatusFileWriter(
         {},
-        status_file.StatusFileIdentity("current", "root.json", None),
+        shared_roots.StatusFileIdentity("current", "root.json", None),
         state_root=tmp_path,
     )
 

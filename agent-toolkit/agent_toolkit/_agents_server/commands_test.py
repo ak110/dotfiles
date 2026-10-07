@@ -10,13 +10,19 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import commands, state
+from agent_toolkit._agents_server import (
+    commands,
+    resume_waits,
+    shared_layout,
+    shared_roots,
+    state,
+    status_file,
+    wait_output_tracking,
+)
 from agent_toolkit._atk import environment, managed_temp, output_file
 from agent_toolkit._common import state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
-
-status_file = commands.status_file
 
 
 def _write_jsonl(path: pathlib.Path, records: list[dict]) -> None:
@@ -49,7 +55,7 @@ def test_public_wait_save_failure_keeps_unreceived_result(
 ) -> None:
     """公開waitの保存先を開けない場合、実際の未回収結果を消費しない。"""
     monkeypatch.setenv("CLAUDECODE", "1")
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
     result_file = results / "session-1.json"
     original = json.dumps({"status": "completed", "owner_status_file": "root.json", "agent_message": "保持する結果"})
@@ -72,7 +78,7 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    directory = status_file.status_directory("root-session", tmp_path)
+    directory = shared_layout.status_directory("root-session", tmp_path)
     directory.mkdir(parents=True)
     (directory / "root.json").write_text(
         json.dumps(
@@ -139,7 +145,7 @@ def test_agents_wait_without_target_returns_no_empty_saved_summary(
     空の要約を返すと、呼び出し元はヘルプが示す対象不在の動作と異なる出力を受け取り、
     読む結果の無いファイルを開いてから委譲元の応答の確認へ進む。
     """
-    root = status_file.status_directory("root-session", tmp_path) / "root.json"
+    root = shared_layout.status_directory("root-session", tmp_path) / "root.json"
     document = json.loads(root.read_text(encoding="utf-8"))
     document["sessions"] = []
     root.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
@@ -164,7 +170,7 @@ def test_agents_wait_saves_small_result_without_output_option(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """短い回収結果も生成側のファイルへ残し、内訳とJSON Linesの内容を一致させる。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
     payload = {
         "status": "completed",
@@ -215,7 +221,7 @@ def test_agents_wait_auto_saves_long_result_for_agent_and_keeps_collection_reada
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
     long_message = "完了報告" * 5000
     (results / "session-1.json").write_text(
@@ -237,17 +243,19 @@ def test_agents_wait_auto_saves_long_result_for_agent_and_keeps_collection_reada
     assert json.loads(saved.read_text(encoding="utf-8"))["agent_message"] == long_message
 
     session = state.SessionState("parent-1", "/tmp")
-    state.consume_claude_agents_server_message(
+    wait_output_tracking.consume_claude_agents_server_message(
         session,
         {"content": [{"id": "toolu_1", "name": "mcp__agents_server__start", "input": {"mode": "explore", "prompt": "調査"}}]},
     )
-    state.consume_claude_agents_server_message(
+    wait_output_tracking.consume_claude_agents_server_message(
         session, {"content": [{"tool_use_id": "toolu_1", "content": {"session_id": "session-1", "status": "running"}}]}
     )
-    state.consume_claude_agents_server_message(
+    wait_output_tracking.consume_claude_agents_server_message(
         session, {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": "atk agents wait"}}]}
     )
-    state.consume_claude_agents_server_message(session, {"content": [{"tool_use_id": "toolu_2", "content": output}]})
+    wait_output_tracking.consume_claude_agents_server_message(
+        session, {"content": [{"tool_use_id": "toolu_2", "content": output}]}
+    )
     assert not session.live_child_session_ids
 
 
@@ -256,7 +264,7 @@ def test_agents_wait_saves_notice_summary(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """通知だけの待機では、送信元と通知件数を保存先を読む前に示す。"""
-    notices = status_file.notices_directory("root-session", tmp_path)
+    notices = shared_layout.notices_directory("root-session", tmp_path)
     notices.mkdir(parents=True)
     (notices / "session-1.1.json").write_text(
         json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-28T00:00:00Z", "body": "警告"}),
@@ -288,13 +296,13 @@ def test_agents_wait_saves_notice_and_terminal_summary(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """通知を伴う終端結果では、通知数と終端数をともに示す。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True)
     (results / "session-1.json").write_text(
         json.dumps({"status": "completed", "owner_status_file": "root.json", "agent_message": "完了"}),
         encoding="utf-8",
     )
-    notices = status_file.notices_directory("root-session", tmp_path)
+    notices = shared_layout.notices_directory("root-session", tmp_path)
     notices.mkdir(parents=True)
     for sequence in (1, 2):
         (notices / f"session-1.{sequence}.json").write_text(
@@ -362,7 +370,7 @@ def test_agents_wait_terminal_line_marks_result_finalized_with_remaining_waits(
 
     委譲元は結果本文のファイルと終端行だけを読んで次の操作を選ぶため、保存先のJSON Linesにだけ記録しても判別に使われない。
     """
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True)
     payload: dict[str, Any] = {"status": "completed", "owner_status_file": "root.json", "agent_message": "待機中: buaqxv1xf"}
     if error is not None:
@@ -552,9 +560,9 @@ def test_agents_show_finds_uncollected_result_after_status_expires(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """期限後に状態一覧から消えたsessionも保存済みの起動情報と結果を返す。"""
-    root = status_file.status_directory("root-session", tmp_path)
+    root = shared_layout.status_directory("root-session", tmp_path)
     (root / "root.json").write_text('{"version": 1, "sessions": []}', encoding="utf-8")
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(exist_ok=True)
     (results / "nested.json").write_text(
         json.dumps(
@@ -620,7 +628,7 @@ async def test_public_show_preserves_latest_speed_in_live_and_retained_results(
     )
     writer = status_file.StatusFileWriter(
         {session.session_id: session},
-        status_file.StatusFileIdentity("root-session", "fast.json", None),
+        shared_roots.StatusFileIdentity("root-session", "fast.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -712,7 +720,7 @@ def test_agents_list_without_conversation_root_shows_all_roots(
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for root_session_id, remote_session_id in (("root-a", "session-a"), ("root-b", "session-b")):
-        directory = status_file.status_directory(root_session_id, tmp_path)
+        directory = shared_layout.status_directory(root_session_id, tmp_path)
         directory.mkdir(parents=True)
         (directory / "root.json").write_text(
             json.dumps(
@@ -742,7 +750,7 @@ def test_agents_list_without_conversation_root_shows_all_roots(
 
 
 def _write_root_sessions(state_root: pathlib.Path, root_session_id: str, sessions: list[dict]) -> None:
-    directory = status_file.status_directory(root_session_id, state_root)
+    directory = shared_layout.status_directory(root_session_id, state_root)
     directory.mkdir(parents=True)
     (directory / "root.json").write_text(json.dumps({"version": 1, "sessions": sessions}), encoding="utf-8")
 
@@ -834,7 +842,7 @@ def test_agents_list_returns_empty_for_confirmed_root(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
+    shared_layout.status_directory("root-session", tmp_path).mkdir(parents=True)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
@@ -854,7 +862,7 @@ def test_agents_list_uses_explicit_alias_and_isolates_other_roots(
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for root_session_id, remote_session_id in (("root-a", "session-a"), ("root-b", "session-b")):
-        directory = status_file.status_directory(root_session_id, tmp_path)
+        directory = shared_layout.status_directory(root_session_id, tmp_path)
         directory.mkdir(parents=True)
         (directory / "root.json").write_text(
             json.dumps(
@@ -865,7 +873,7 @@ def test_agents_list_uses_explicit_alias_and_isolates_other_roots(
             ),
             encoding="utf-8",
         )
-    status_file.write_root_alias("current-session", "root-a", tmp_path)
+    shared_roots.write_root_alias("current-session", "root-a", tmp_path)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
@@ -1166,7 +1174,7 @@ def test_agents_logs_reads_and_follows_antigravity_events(
     monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
     monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    path = status_file.session_log_path("root-1", "agy-1", tmp_path)
+    path = shared_layout.session_log_path("root-1", "agy-1", tmp_path)
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"event": "init", "conversation_id": "agy-1"}) + "\n", encoding="utf-8")
     sleeps = 0
@@ -1284,7 +1292,7 @@ def test_human_tree_prefers_usage_limit_and_api_retry_over_progress() -> None:
             "session_id": "limit",
             "started_at": "2026-09-13T00:00:00+00:00",
             "api_error": {
-                "type": state.USAGE_LIMIT_ERROR_TYPE,
+                "type": resume_waits.USAGE_LIMIT_ERROR_TYPE,
                 "http_status": 429,
                 "first_at": "2026-09-13T00:30:00+00:00",
                 "count": 1,
@@ -1342,7 +1350,7 @@ def test_agents_list_watch_redraws_until_interrupted(
         intervals.append(seconds)
         if len(intervals) == 1:
             added = {"session_id": "session-added", "status": "running", **timestamps}
-            path = status_file.status_directory("root-a", tmp_path) / "root.json"
+            path = shared_layout.status_directory("root-a", tmp_path) / "root.json"
             path.write_text(json.dumps({"version": 1, "sessions": [first, done, added]}), encoding="utf-8")
             return
         raise KeyboardInterrupt

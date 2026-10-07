@@ -7,7 +7,7 @@ import re
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import status_file
+from agent_toolkit._agents_server import shared_layout
 from agent_toolkit._common import state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 
@@ -78,7 +78,7 @@ def _notify_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "child-session")
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    return status_file.notices_directory("root-session", tmp_path)
+    return shared_layout.notices_directory("root-session", tmp_path)
 
 
 def test_agents_notify_preserves_body_exactly(

@@ -10,6 +10,9 @@
 同関数はLinuxでは`platformdirs`の`user_state_dir("agent-toolkit", appauthor=False)`を使い、相対の`XDG_STATE_HOME`は`HOME/.local/state`へ退避する。
 Windowsでは`LOCALAPPDATA`配下の`agent-toolkit`を使う。
 Claude Codeの作業ディレクトリのスラッグは、そのディレクトリの絶対パスのうちパス区切りと記号をハイフンへ置換した文字列である。
+`agents_server`の診断ログのうち、MCPサーバーの起動・終了とinitializeの節目は`_agents_server/mcp_tools.py`と`mcp_transport.py`が書く。
+候補ごとの初期化の開始・完了・再試行と候補の切替は`_agents_server/manager.py`が書く。
+sessionの状態遷移（`session_transition`）は`manager.py`、`manager_registry.py`、`manager_resume.py`と`state.py`が書く。
 
 | 記録 | 所在の組み立て方 | 読み取れる事実 |
 | --- | --- | --- |

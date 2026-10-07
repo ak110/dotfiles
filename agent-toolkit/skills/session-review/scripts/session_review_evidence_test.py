@@ -13,7 +13,7 @@ from typing import Literal
 import pytest
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-from agent_toolkit import agents_server_mcp  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._agents_server import backends
 from agent_toolkit._atk import outcome
 from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -5420,7 +5420,7 @@ def test_extractor_runtimes_match_supported_engines() -> None:
 
     実行系を追加して変換を追随させないと、その実行系の委譲先の記録は候補と集計へ現れない。
     """
-    assert set(evidence.RUNTIME_EXTRACTORS) == agents_server_mcp.SUPPORTED_ENGINES
+    assert set(evidence.RUNTIME_EXTRACTORS) == backends.SUPPORTED_ENGINES
 
 
 def test_collect_resolves_codex_agents_server_delegations(

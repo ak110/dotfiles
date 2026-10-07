@@ -9,7 +9,7 @@ import pathlib
 import uuid
 from collections.abc import Mapping
 
-from agent_toolkit._agents_server import status_file
+from agent_toolkit._agents_server import shared_layout, shared_roots
 from agent_toolkit._atk import outcome
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
@@ -32,7 +32,7 @@ def send_notification(
         )
         return 5
 
-    identity = status_file.resolve_status_file_identity(os.environ if environment is None else environment)
+    identity = shared_roots.resolve_status_file_identity(os.environ if environment is None else environment)
     if identity is None or identity.host_session_id is None:
         report(
             "委譲先のsession識別子またはルートsessionを解決できません",
@@ -43,7 +43,7 @@ def send_notification(
         )
         return 4
 
-    directory = status_file.notices_directory(identity.root_session_id, state_root)
+    directory = shared_layout.notices_directory(identity.root_session_id, state_root)
     directory.mkdir(parents=True, exist_ok=True)
     # 本文は委譲元の会話文脈へ入るため、配送元と作成主体を示す境界で囲む。
     delivery_body = auto_message(

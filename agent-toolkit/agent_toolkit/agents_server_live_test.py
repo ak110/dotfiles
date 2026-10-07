@@ -5,7 +5,8 @@ import pathlib
 
 import pytest
 
-import agent_toolkit.agents_server_mcp as subject
+from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._agents_server import mcp_tools
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._testing import isolation
 
@@ -25,8 +26,8 @@ async def test_live_launch_waits_for_automatic_resume(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """公開する起動ツール`start`の3つのmodeが、再開指示なしでバックグラウンドタスク完了後の結果を返す。"""
-    manager = subject.AgentsServerManager()
-    monkeypatch.setattr(subject, "_MANAGER", manager)
+    manager = server_manager.AgentsServerManager()
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     cwd = str(pathlib.Path(__file__).parents[2])
     # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
     isolation.restore_host_environment(monkeypatch)
@@ -37,11 +38,11 @@ async def test_live_launch_waits_for_automatic_resume(
     )
     try:
         if mode == "delegate":
-            await subject.start(cwd, mode="delegate", prompt=_PROMPT, model_type="low_tier")
+            await mcp_tools.start(cwd, mode="delegate", prompt=_PROMPT, model_type="low_tier")
         elif mode == "explore":
-            await subject.start(cwd, mode="explore", prompt=_PROMPT)
+            await mcp_tools.start(cwd, mode="explore", prompt=_PROMPT)
         else:
-            await subject.start(
+            await mcp_tools.start(
                 cwd,
                 mode="shell",
                 command="sleep 2",
@@ -72,14 +73,14 @@ async def test_live_grandchild_wait_resumes_same_session(
 
     待機表明の行を完了報告として配送せず、再開したturnの結果だけを委譲元へ返すことを確かめる。
     """
-    manager = subject.AgentsServerManager()
-    monkeypatch.setattr(subject, "_MANAGER", manager)
+    manager = server_manager.AgentsServerManager()
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     cwd = str(pathlib.Path(__file__).parents[2])
     # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
     isolation.restore_host_environment(monkeypatch)
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [candidate])
     try:
-        started = await subject.start(cwd, mode="delegate", prompt=_GRANDCHILD_PROMPT, model_type="high_tier")
+        started = await mcp_tools.start(cwd, mode="delegate", prompt=_GRANDCHILD_PROMPT, model_type="high_tier")
         session = manager.sessions[started["session_id"]]
 
         result = await manager.wait()

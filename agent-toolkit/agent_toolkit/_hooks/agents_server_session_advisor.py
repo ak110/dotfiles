@@ -31,7 +31,7 @@ import json
 import os
 import re
 
-from agent_toolkit._agents_server import status_file
+from agent_toolkit._agents_server import shared_layout, shared_roots
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
@@ -87,7 +87,7 @@ def actively_waited_session_ids(session_ids: list[str]) -> set[str]:
     `wait-targets/<待機主体のstatusファイル名>/<対象session識別子>.json`へ対象を登録する。
     判定側も同じ単位で読み、対象session識別子を名前とするロックを探さない。
     """
-    root_session_id = status_file.resolve_conversation_root_session_id(os.environ)
+    root_session_id = shared_roots.resolve_conversation_root_session_id(os.environ)
     if root_session_id is None:
         return set()
     targets = set(session_ids)
@@ -101,7 +101,7 @@ def actively_waited_session_ids(session_ids: list[str]) -> set[str]:
 
 def _held_wait_lock_owners(root_session_id: str) -> list[str]:
     """待機所有権のロックを別プロセスが保持している待機主体を返す。"""
-    lock_directory = status_file.status_directory(root_session_id) / "wait-locks"
+    lock_directory = shared_layout.status_directory(root_session_id) / "wait-locks"
     try:
         lock_paths = sorted(lock_directory.glob("*.lock"))
     except OSError:
@@ -126,7 +126,7 @@ def _registered_wait_targets(root_session_id: str, owner_status_file: str) -> se
 
     この登録簿は`atk agents wait`が所有するため、本フックは読むだけで内容を変更しない。
     """
-    directory = status_file.wait_targets_directory(root_session_id, owner_status_file)
+    directory = shared_layout.wait_targets_directory(root_session_id, owner_status_file)
     try:
         return {path.stem for path in directory.glob("*.json")}
     except OSError:

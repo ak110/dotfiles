@@ -21,8 +21,8 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit import agents_server_mcp
-from agent_toolkit._agents_server import agents_wait
+from agent_toolkit._agents_server import agents_wait, shared_layout, shared_roots, wait_targets
+from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import state_paths
 from agent_toolkit._hooks.output_contract import validate_hook_output
@@ -77,7 +77,7 @@ def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.M
     """start応答が明示したルート識別子の索引を書く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
+    shared_layout.status_directory("root-session", tmp_path).mkdir(parents=True)
 
     _POSTTOOLUSE_MODULE._record_agents_server_root_alias(
         "current-session",
@@ -112,7 +112,7 @@ def test_root_alias_uses_explicit_response_without_scanning_other_roots(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for root_session_id in ("root-a", "root-b"):
-        root = _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory(root_session_id, tmp_path)
+        root = shared_layout.status_directory(root_session_id, tmp_path)
         root.mkdir(parents=True)
         (root / "root.json").write_text(
             json.dumps({"version": 1, "sessions": [{"session_id": "remote-session"}]}),
@@ -132,7 +132,7 @@ def test_list_response_writes_conversation_root_alias(monkeypatch: pytest.Monkey
     """空のlist応答でも明示された所有rootを現行会話へ対応付ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
+    shared_layout.status_directory("root-session", tmp_path).mkdir(parents=True)
     payload = {
         "session_id": "current-session",
         "cwd": str(tmp_path),
@@ -189,7 +189,7 @@ def test_start_and_reply_register_wait_target_for_caller(
         )
     )
 
-    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+    retained, error = wait_targets.read_wait_targets(
         "root-session",
         "root.json",
         tmp_path,
@@ -211,7 +211,7 @@ def _isolate_conversation(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Pat
 
 def _write_root_status(tmp_path: pathlib.Path, root_session_id: str, sessions: list[dict[str, object]]) -> pathlib.Path:
     """指定ルートの書込主体`root.json`を作成し、その状態ディレクトリを返す。"""
-    directory = _POSTTOOLUSE_MODULE._agents_server_status_file.status_directory(root_session_id, tmp_path)
+    directory = shared_layout.status_directory(root_session_id, tmp_path)
     directory.mkdir(parents=True)
     (directory / "root.json").write_text(json.dumps({"version": 1, "sessions": sessions}), encoding="utf-8")
     return directory
@@ -244,9 +244,8 @@ def test_reply_after_resume_registers_under_mcp_root_and_wait_collects_result(
         )
     )
     assert exit_code == 0
-    status_file = _POSTTOOLUSE_MODULE._agents_server_status_file
-    assert status_file.read_wait_targets("mcp-root", "root.json", tmp_path) == ({"remote-session"}, None)
-    assert status_file.read_wait_targets("conversation-session", "root.json", tmp_path) == (set(), None)
+    assert wait_targets.read_wait_targets("mcp-root", "root.json", tmp_path) == ({"remote-session"}, None)
+    assert wait_targets.read_wait_targets("conversation-session", "root.json", tmp_path) == (set(), None)
 
     results = mcp_root / "results"
     results.mkdir()
@@ -324,7 +323,7 @@ def test_steer_does_not_register_wait_target(monkeypatch: pytest.MonkeyPatch, tm
         )
     )
 
-    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+    retained, error = wait_targets.read_wait_targets(
         "root-session",
         "root.json",
         tmp_path,
@@ -358,7 +357,7 @@ def test_start_registers_wait_target_for_delegated_caller(
         )
     )
 
-    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+    retained, error = wait_targets.read_wait_targets(
         "root-session",
         "delegate-session.json",
         tmp_path,
@@ -367,7 +366,7 @@ def test_start_registers_wait_target_for_delegated_caller(
     assert retained == {"remote-session"}
     assert error is None
     assert not (
-        _POSTTOOLUSE_MODULE._agents_server_status_file.wait_targets_directory(
+        shared_layout.wait_targets_directory(
             "root-session",
             "root.json",
             tmp_path,
@@ -424,16 +423,16 @@ def test_codex_delegate_hook_session_registers_wait_target(
     structured: dict[str, object],
 ) -> None:
     """Codex委譲先はhook入力のthreadから内側MCPの書込主体へ待機対象を登録する。"""
-    _POSTTOOLUSE_MODULE._agents_server_status_file.write_host_alias("root-session", "writer-session", "codex-thread", tmp_path)
+    shared_roots.write_host_alias("root-session", "writer-session", "codex-thread", tmp_path)
     exit_code = _run_codex_delegate_hook(monkeypatch, tmp_path, operation, tool_input, structured)
 
-    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+    retained, error = wait_targets.read_wait_targets(
         "root-session",
         "writer-session.json",
         tmp_path,
     )
     assert (exit_code, retained, error) == (0, {"remote-session"}, None)
-    root_targets = _POSTTOOLUSE_MODULE._agents_server_status_file.wait_targets_directory(
+    root_targets = shared_layout.wait_targets_directory(
         "root-session",
         "root.json",
         tmp_path,
@@ -458,7 +457,7 @@ def test_codex_delegate_hook_reports_ambiguous_writer_aliases(
 ) -> None:
     """曖昧な書込主体索引を診断し、誤った待機対象を登録せず正常終了する。"""
     for writer in ("writer-a", "writer-b"):
-        _POSTTOOLUSE_MODULE._agents_server_status_file.write_host_alias("root-session", writer, "codex-thread", tmp_path)
+        shared_roots.write_host_alias("root-session", writer, "codex-thread", tmp_path)
     exit_code = _run_codex_delegate_hook(monkeypatch, tmp_path, operation, tool_input, structured)
 
     output = json.loads(capsys.readouterr().out)
@@ -469,9 +468,7 @@ def test_codex_delegate_hook_reports_ambiguous_writer_aliases(
     assert "\n次の操作: `atk agents wait`はこのセッションを待機対象として扱わないため" in context
     assert "`show`" in context
     for owner_status_file in ("writer-a.json", "writer-b.json", "codex-thread.json"):
-        retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
-            "root-session", owner_status_file, tmp_path
-        )
+        retained, error = wait_targets.read_wait_targets("root-session", owner_status_file, tmp_path)
         assert retained == set()
         assert error is None
 
@@ -499,9 +496,7 @@ def test_codex_delegate_hook_without_host_alias_uses_hook_session(
         )
     )
 
-    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
-        "root-session", "codex-thread.json", tmp_path
-    )
+    retained, error = wait_targets.read_wait_targets("root-session", "codex-thread.json", tmp_path)
     assert (exit_code, retained, error) == (0, {"remote-session"}, None)
 
 
@@ -574,7 +569,7 @@ def test_wait_collects_posttooluse_registered_result_and_releases_target(
         },
     }
     assert _POSTTOOLUSE_MODULE.main(json.dumps(payload)) == 0
-    results = _POSTTOOLUSE_MODULE._agents_server_status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True)
     (results / "remote-session.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
 
@@ -585,7 +580,7 @@ def test_wait_collects_posttooluse_registered_result_and_releases_target(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "remote-session"}
-    retained, error = _POSTTOOLUSE_MODULE._agents_server_status_file.read_wait_targets(
+    retained, error = wait_targets.read_wait_targets(
         "root-session",
         "root.json",
         tmp_path,
@@ -1941,7 +1936,7 @@ class TestAgentsServerSessionState:
         )
         assert started.returncode == 0
 
-        manager = agents_server_mcp.AgentsServerManager()
+        manager = server_manager.AgentsServerManager()
         session = SessionState(remote_session_id, str(tmp_path), engine="codex")
         session.status = "completed"
         session.turn_completed = True

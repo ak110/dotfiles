@@ -10,7 +10,7 @@
 hook・MCP定義などホスト別に明確に分離された資源を除き、Claude CodeとCodexに共通するルール・スキルは`agent-toolkit/`の共有原本で定義する。
 Codexだけの公開能力との差分は上書きとして置き、常時規範へCodex固有の条件を持ち込まない。Codexの全主体へ適用する差分は`agent-toolkit/share/rules-common.codex.md`へ置き、`scripts/sync_codex_agents.py`が`~/.codex/AGENTS.md`へ埋め込む。Codexのメインだけへ適用する差分は`agent-toolkit/share/rules-main.codex.md`へ置き、`SessionStart` hookがCodexのメインへ`rules-main.md`の後に加える。`~/.codex/AGENTS.md`はCodexのサブエージェントと委譲先にも届くため、メイン向けの差分を同じファイルへ置くとメイン専用の条文が全主体へ届く。
 Codex基礎指示の上書きは、確認・待機・並列化・ツール利用前説明のホスト契約をCodex側へ閉じ込め、Claude Codeの共通契約を変更しない。
-Codexの委譲は、`spawn_agent`・`send_message`・`followup_task`・`wait_agent`・`interrupt_agent`を使うネイティブ方式とagents_server方式を分ける。ネイティブ方式では`fork_turns`が選ぶ会話履歴、worktreeの`AGENTS.md`、`SubagentStart` hookが配送する`rules-subagent.md`を独立した入力とする。agents_serverの通常委譲は`_agents_server/state.py`から同じ共通委譲先規範を配送する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。Claude Code固有の委譲先規範はCodexへ配送しない。この境界をhookの実起動、agents_serverのprompt構成、Codex manifestの生成テストで確認し、規範本文を方式ごとに複製しない。
+Codexの委譲は、`spawn_agent`・`send_message`・`followup_task`・`wait_agent`・`interrupt_agent`を使うネイティブ方式とagents_server方式を分ける。ネイティブ方式では`fork_turns`が選ぶ会話履歴、worktreeの`AGENTS.md`、`SubagentStart` hookが配送する`rules-subagent.md`を独立した入力とする。agents_serverの通常委譲は`_agents_server/launch_prompts.py`から同じ共通委譲先規範を配送する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。Claude Code固有の委譲先規範はCodexへ配送しない。この境界をhookの実起動、agents_serverのprompt構成、Codex manifestの生成テストで確認し、規範本文を方式ごとに複製しない。
 `scripts/sync_codex_agents.py`はCodex基礎指示と共有ルールから生成物を作成し、`scripts/sync_generated_files.py`が正式な一括生成の窓口となる。
 `scripts/sync_codex_agents_test.py`は共有原本と生成物の同期、共有契約の保持およびCodex固有上書きの配置を確かめる。
 生成物は手編集せず、原本と正式生成器を更新して同期する。
@@ -72,7 +72,7 @@ Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plug
 メインエージェントだけに適用する条文は`agent-toolkit/share/rules-main.md`へ置き、Claude Code固有分は`agent-toolkit/share/rules-main.claude-code.md`へ置く。
 サブエージェントと委譲先だけに適用する条文は`agent-toolkit/share/rules-subagent.md`へ置く。
 メイン向け条文は`SessionStart`フック（`agent-toolkit/agent_toolkit/_hooks/rules_context.py`）が全ての`source`で文脈へ追加し、会話圧縮の後も再度追加する。
-サブエージェント向け条文は`SubagentStart`フックが全てのagent種別へ追加する。`agents_server`の通常起動の委譲先には、`agent-toolkit/agent_toolkit/_agents_server/state.py`の`DELEGATE_SYSTEM_PROMPT`が同じ条文を連結し、両backendのシステム指示として渡す。
+サブエージェント向け条文は`SubagentStart`フックが全てのagent種別へ追加する。`agents_server`の通常起動の委譲先には、`agent-toolkit/agent_toolkit/_agents_server/launch_prompts.py`の`DELEGATE_SYSTEM_PROMPT`が同じ条文を連結し、両backendのシステム指示として渡す。
 `SessionStart`フックは`AGENT_TOOLKIT_DELEGATED_SESSION`が`1`の場合と`AGENT_TOOLKIT_OWNER_SESSION`が設定されている場合を`agents_server`の子と判定し、メイン向け条文を追加しない。
 後者を併用するのは、Codex backendがstatusline表示の判定のために子のApp Serverから前者を除くためである。
 知識境界として、条文の本文は`share/`配下の各ファイルが持ち、フックと`agents_server`は本文を読んで渡すだけで内容を判定しない。

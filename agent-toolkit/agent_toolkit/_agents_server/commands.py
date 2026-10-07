@@ -14,7 +14,19 @@ import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import agents_wait, logs_export, record_paths, state, status_file
+from agent_toolkit._agents_server import (
+    agents_wait,
+    logs_export,
+    record_paths,
+    result_projection,
+    resume_waits,
+    retained_results,
+    shared_layout,
+    shared_roots,
+    state,
+    status_file,
+    wait_output_tracking,
+)
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import output_file
@@ -198,10 +210,10 @@ def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:
 
 def _print_body_within(session_id: str, body: str, remaining: int) -> int:
     """本文を区切りの行で囲んで表示できる場合だけ表示し、残りのバイト数を返す。"""
-    block = f"{state.WAIT_BODY_START_PREFIX}{session_id}\n{body}"
+    block = f"{wait_output_tracking.WAIT_BODY_START_PREFIX}{session_id}\n{body}"
     if body and not body.endswith("\n"):
         block += "\n"
-    block += f"{state.WAIT_BODY_END_PREFIX}{session_id}\n"
+    block += f"{wait_output_tracking.WAIT_BODY_END_PREFIX}{session_id}\n"
     size = _utf8_size(block)
     if size > remaining:
         return remaining
@@ -219,11 +231,11 @@ def _unfinished_wait_count(error: object) -> int:
     `unobservedSessions`は再開したturnの終端など保留と無関係な処理でも記録されるため、
     保留の確定が付ける`heldResultFinalized`を持つ結果だけを数える。
     """
-    if not isinstance(error, dict) or error.get(state.HELD_RESULT_FINALIZED_KEY) is not True:
+    if not isinstance(error, dict) or error.get(resume_waits.HELD_RESULT_FINALIZED_KEY) is not True:
         return 0
     return sum(
         len(identifiers)
-        for key in (state.UNFINISHED_BACKGROUND_TASKS_KEY, state.UNOBSERVED_SESSIONS_KEY)
+        for key in (resume_waits.UNFINISHED_BACKGROUND_TASKS_KEY, resume_waits.UNOBSERVED_SESSIONS_KEY)
         if isinstance(identifiers := error.get(key), list)
     )
 
@@ -247,7 +259,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
         assert body is not None
         return send_notification(body)
     env = os.environ if environment is None else environment
-    root_resolution = status_file.resolve_conversation_root(env)
+    root_resolution = shared_roots.resolve_conversation_root(env)
     root_session_id = None if root_resolution is None else root_resolution.root_session_id
     if args.agents_subcommand == "list":
         human = not is_agent_environment(env)
@@ -274,7 +286,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             and root_resolution is not None
             and not root_resolution.mapping_confirmed
         ):
-            reason, next_action = status_file.unconfirmed_root_recovery(root_resolution, "atk agents list")
+            reason, next_action = shared_roots.unconfirmed_root_recovery(root_resolution, "atk agents list")
             report(reason, next_action=next_action)
             return 4
         if human:
@@ -318,11 +330,11 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             tool_details=not args.no_tool_details,
         )
     if root_session_id is None:
-        root_session_id = status_file.find_root_session_id_for_session(args.session_id)
+        root_session_id = shared_roots.find_root_session_id_for_session(args.session_id)
     sessions = [] if root_session_id is None else _load_sessions(root_session_id)
     selected = next((session for session in sessions if session.get("session_id") == args.session_id), None)
     if selected is None:
-        resolved = status_file.find_root_session_id_for_session(args.session_id)
+        resolved = shared_roots.find_root_session_id_for_session(args.session_id)
         if resolved is not None and resolved != root_session_id:
             selected = next(
                 (session for session in _load_sessions(resolved) if session.get("session_id") == args.session_id),
@@ -364,7 +376,7 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
         result.update(state.fast_mode_fields(session.get("engine"), session.get("fast_mode")))
     if isinstance(result.get("api_error"), dict):
         result["api_error"] = {
-            key: result["api_error"][key] for key in state.API_ERROR_PUBLIC_KEYS if key in result["api_error"]
+            key: result["api_error"][key] for key in result_projection.API_ERROR_PUBLIC_KEYS if key in result["api_error"]
         }
     if detailed and session.get("error"):
         result["error"] = session["error"]
@@ -375,7 +387,7 @@ def _list_groups(
     *, human: bool, root_session_id: str | None, include_terminated: bool
 ) -> list[tuple[str, list[dict[str, Any]]]]:
     """一覧の対象sessionをrootごとに返す。人の端末では全root、エージェント環境では現在の会話のrootを読む。"""
-    root_ids = status_file.list_root_session_ids() if human else ([root_session_id] if root_session_id else [])
+    root_ids = shared_layout.list_root_session_ids() if human else ([root_session_id] if root_session_id else [])
     groups = [(root_id, _load_sessions(root_id)) for root_id in root_ids]
     if not include_terminated:
         groups = [
@@ -505,7 +517,7 @@ def _status_parts(session: Mapping[str, Any], now: datetime.datetime) -> tuple[s
     raw_error = session.get("api_error") if status == "running" else None
     api_error = raw_error if isinstance(raw_error, dict) and raw_error.get("type") else None
     right: list[str] = []
-    if api_error is not None and api_error.get("type") == state.USAGE_LIMIT_ERROR_TYPE:
+    if api_error is not None and api_error.get("type") == resume_waits.USAGE_LIMIT_ERROR_TYPE:
         description = f"利用上限の解除待ち {api_error.get('limit_type') or '?'}"
         remaining = _elapsed(now, api_error.get("resets_at"))
         right.append(f"解除まで{remaining}" if remaining is not None else "解除時刻確認中")
@@ -629,7 +641,7 @@ def _show_logs(session_id: str, *, follow: bool) -> int:
 
 def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] | None:
     """表示期限を過ぎた未回収結果を同じルートsessionから表示する。"""
-    result = status_file.read_retained_result(root_session_id, session_id)
+    result = retained_results.read_retained_result(root_session_id, session_id)
     if result is None:
         return None
     stored = result.get("session")
@@ -648,9 +660,9 @@ def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] |
 
 def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:
     """ルートsession配下の状態ファイルを統合し、開始順のsession一覧を返す。"""
-    results = status_file.results_directory(root_session_id)
+    results = shared_layout.results_directory(root_session_id)
     by_id: dict[str, dict[str, Any]] = {}
-    for path in status_file.list_status_files(root_session_id):
+    for path in shared_layout.list_status_files(root_session_id):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
@@ -693,7 +705,7 @@ def _add_output_activity(session: dict[str, Any]) -> None:
     updated_at = session.get("updated_at")
     output_updated_at = session.get("output_updated_at")
     started_at = session.get("started_at")
-    activity = state.activity_projection(
+    activity = result_projection.activity_projection(
         updated_at=updated_at if isinstance(updated_at, str) else None,
         output_updated_at=output_updated_at if isinstance(output_updated_at, str) else None,
         started_at=started_at if isinstance(started_at, str) else None,

@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import antigravity
+from agent_toolkit._agents_server import antigravity, launch_prompts, session_errors
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 
@@ -119,7 +119,7 @@ def test_start_wraps_missing_cli_as_backend_error(tmp_path: pathlib.Path, monkey
         finally:
             await manager.close()
 
-    with pytest.raises(shared_state.DelegateBackendError, match="failed to start Antigravity CLI"):
+    with pytest.raises(session_errors.DelegateBackendError, match="failed to start Antigravity CLI"):
         asyncio.run(scenario())
 
 
@@ -326,13 +326,13 @@ def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monk
     assert after_output
 
 
-@pytest.mark.parametrize("launch_kind", shared_state.LAUNCH_SYSTEM_PROMPTS)
+@pytest.mark.parametrize("launch_kind", launch_prompts.LAUNCH_SYSTEM_PROMPTS)
 def test_system_prompt_does_not_promise_auto_resume(launch_kind: shared_state.LaunchKind) -> None:
     """自動再開を確かめていないAntigravity backendは、同じsessionの自動再開と待機表明を委譲先へ約束しない。"""
     prompt = antigravity._system_prompt(launch_kind)  # pylint: disable=protected-access
 
-    assert prompt == shared_state.LAUNCH_SYSTEM_PROMPTS[launch_kind]
-    assert shared_state.AUTO_RESUME_NOTICE not in prompt
+    assert prompt == launch_prompts.LAUNCH_SYSTEM_PROMPTS[launch_kind]
+    assert launch_prompts.AUTO_RESUME_NOTICE not in prompt
 
 
 def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

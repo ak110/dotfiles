@@ -11,10 +11,12 @@ import typing
 
 import pytest
 
-from agent_toolkit import agents_server_mcp
+from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._agents_server import resume_waits, state
 from agent_toolkit._agents_server import session_registry as subject
-from agent_toolkit._agents_server import state
 from agent_toolkit._common import state_paths
+from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._testing.agents_server_support import install_backend
 
 
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
@@ -152,13 +154,13 @@ async def test_observing_wait_keeps_record_and_stop_releases_it(
 ) -> None:
     """終端を観測した待機処理はレコードを残し、所有主体による破棄だけが解放済みへ置き換える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    monkeypatch.setattr(agents_server_mcp._wait_schedule, "get_wait_timeout", lambda _request_bucket: 0.0)
+    monkeypatch.setattr(_wait_schedule, "get_wait_timeout", lambda _request_bucket: 0.0)
     subject.publish("child-session", terminal=True, engine="codex", cwd=str(tmp_path))
-    manager = agents_server_mcp.AgentsServerManager(status_writer=None)
-    manager._codex = _ReleaseOnlyBackend()
+    manager = server_manager.AgentsServerManager(status_writer=None)
+    install_backend(manager, "codex", _ReleaseOnlyBackend())
     parent = state.SessionState("parent-session", str(tmp_path), engine="codex")
     parent.live_child_session_ids.add("child-session")
-    state.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+    resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
     manager.sessions[parent.session_id] = parent
 
     await manager.wait()
@@ -181,7 +183,7 @@ async def test_retention_expiry_releases_record(
 ) -> None:
     """保持期限へ到達したsessionのレコードを所有主体が解放済みへ置き換える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    manager = agents_server_mcp.AgentsServerManager(status_writer=None)
+    manager = server_manager.AgentsServerManager(status_writer=None)
     session = state.SessionState("expiring-session", str(tmp_path), engine="codex", publish_registry=True)
     session.status = "completed"
     session.turn_completed = True

@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import status_file
+from agent_toolkit._agents_server import shared_layout
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
@@ -542,10 +542,10 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
         assert posttooluse.main(json.dumps(wait)) == 0
     child = session_state.read_state("evidence-test")["agents_server_sessions"]["child-test"]
     assert child["pending_observation"] is False
-    root = status_file.status_directory("evidence-test", tmp_path / "state")
+    root = shared_layout.status_directory("evidence-test", tmp_path / "state")
     lock_path = root / "wait-locks" / "root.json.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    targets = status_file.wait_targets_directory("evidence-test", "root.json", tmp_path / "state")
+    targets = shared_layout.wait_targets_directory("evidence-test", "root.json", tmp_path / "state")
     targets.mkdir(parents=True, exist_ok=True)
     (targets / "child-test.json").write_text('{"version":1,"session_id":"child-test"}', encoding="utf-8")
     document = tmp_path / "wait-decision.json"
