@@ -72,7 +72,7 @@ description: >
 | `ps1`・`ps1.tmpl`・`psm1`・`psd1` | `references/powershell.md` |
 | `cmd`・`bat` | `references/windows-batch.md` |
 | `Dockerfile` | `references/dockerfiles.md` |
-| `.github/workflows/*.yaml` | `references/github-actions.md` |
+| `.github/workflows/*.yaml`・`.github/workflows/*.yml` | `references/github-actions.md` |
 | `tailwindcss`（v4系） | `references/tailwindcss.md` |
 | `alpinejs`（v3系。`<script>`読み込みを含む） | `references/alpinejs.md` |
 | `@playwright/test`・`playwright`（Playwright Test v1系とPythonバインディング） | `references/playwright.md` |
@@ -84,8 +84,8 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 計画ファイルを作成する時点 | `references/design-time.md` |
-| コードを編集する時点、設計判断を確定する時、および依存の追加・更新をする時 | `references/implementation-time.md` |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設または変更する時 | `references/design-time.md` |
+| コードを編集する時点と、依存の追加・更新をする時 | `references/implementation-time.md` |
 | 設計判断を確定する時、計画と実装を同じ主体が続けて実施する場合、およびコードレビューを実施する場合 | `references/design-heuristics.md` |
 | 依存の追加・更新をする時 | `references/dependency-management.md` |
 | MCPサーバーのツール、説明、応答を設計、実装、変更またはレビューする時 | `references/mcp-server-design.md` |
@@ -93,8 +93,8 @@ description: >
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等） | `references/encoding.md` |
 | 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時 | `references/independent-html.md` |
 | エンドユーザーが操作する画面（HTML、CSS、画面コンポーネント、単体HTML成果物など）の新設・変更、その計画またはレビューをする時 | `references/ui-ux.md` |
-| 前行の画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` |
-| 前々行の画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` |
+| エンドユーザーが操作する画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` |
+| エンドユーザーが操作する画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` |
 | hookスクリプトと機械チェックスクリプトを書く時 | 「エージェント向け文書の編集時に読む資料」の表のうち、hook、遮断・警告、出力フィールド、`Stop`・`SubagentStop`、通知本文、セッション状態および機械チェックスクリプトの各行で条件が成立する行の資料 |
 
 ## エージェント向け文書の編集時に読む資料
