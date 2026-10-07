@@ -23,14 +23,32 @@ Codexネイティブ委譲は`spawn_agent`で起動し、`send_message`は稼働
 
 `routing.md`「会話を引き継ぐ委譲」がforkを選ぶときは、`spawn_agent`の`fork_turns`を省略するか`"all"`にする。全履歴を渡す起動は親のモデルとreasoning effortを継承し、上書きは受け付けない。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日」にある。
 
+## agents_serverの起動
+
 agents_serverの`start`（全`mode`）はCodexネイティブ委譲とは別の仕組みであり、対応する`model_type`からengine、modelおよびeffortを解決する。通常起動の`start`（`task`の通常起動と`delegate`）は`_agents_server/state.py`が共通の`rules-subagent.md`をsystem promptへ加える。軽量な探索・書込・shell実行へ届く規範は`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」の配送範囲表が示し、そこで届かない制約は委譲プロンプトが持つ。可用性失敗時の候補切替はサーバーへ委ね、委譲元の起動は最初の1回に限る。継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start`の`shell`、読取専用探索は`start`の`explore`を使い、`start`の説明が示す採算の目安に従う。
 
 工程別モデル設定のキーを持つ工程は`runtime-routing.md`でengineを解決する。`engine=claude`をCodexの`spawn_agent`へ置換せず、CodexからClaudeへは対応する`model_type`でagents_serverを使う。指定engineの実行手段がなければ同書の未完了として返すか、続行できない理由を返す。
+
+## 後続操作の共通先行条件
+
+元担当（同じ作業のために既に起動した委譲先）が存在しないCodexの初回起動は、`references/runtime-routing.md`「工程別モデル設定」の起動規定に従い許可する。
+元担当の回復・置換・再起動または代替起動を行う場合は、次の共通条件を満たす場合だけ許可する。
+
+Codexのclient確立中または`thread/start`前に可用性失敗を観測し、利用可能な状態照会でsession未生成かつ元担当不在を実際に確認できる場合を、初回生成前失敗とする。
+初回生成前失敗からの代替起動は、元担当不在の初回起動として`references/runtime-routing.md`「工程別モデル設定」の起動規定に含める。
+sessionか元担当のいずれかが生成された後に可用性失敗から代替起動する場合は、元担当の代替起動として共通条件を満たす場合だけ許可する。
+session未生成かつ元担当不在を実際に確認できない場合は、この例外を適用せず、元担当の代替起動として共通条件を満たす場合だけ許可する。
+
+- Codexの`list_agents`が元担当を`running`として返している間は、そのstatusを受け入れ、回復、置換、再起動、代替起動および`interrupt_agent`による中断を保留する。補助観測と催促と、差分・HEAD・更新時刻・無応答・経過時間からの停滞の推定は、これらを開始する根拠に含めない
+- 元担当の回復・置換・再起動・代替起動と中断を行えるのは、ユーザーの明示要求、終端または失敗への遷移、タスク契約上のキャンセル指定の3根拠（この3つに限る）のいずれかを確認した場合だけである。回復・置換・再起動・代替起動では、元担当の終端と書込所有権の解放も確認する
+
+この共通条件は、元担当が存在するCodexの回復・置換・再起動および代替起動へ適用する。
+元担当を持たないレーン担当、独立したレビューまたはCI修正の起動には、`references/runtime-routing.md`「工程別モデル設定」の起動規定を適用する。
 
 ## agents_serverの二層待機
 
 `functions.exec`の内側でagents_serverを起動し、`PostToolUse`がMCP応答を直接観測できない場合は、起動応答の`root_session_id`を保持し、`atk agents wait --root-session-id <値>`へ渡す。明示入力をランタイム間の識別子の受渡手段とする。CLIは明示した値について、状態ディレクトリの実在と確認済みのルートsessionとの一致を検証する。
 
-`functions.exec`のような遅延実行ツールから`atk agents wait`を起動する場合、内側のCLIと外側の実行セルを別々の待機として扱う。CLIへタスク固有timeoutを渡さず、外側が`cell_id`を返した場合は同じ識別子を`functions.wait`へ渡す。CLI自身が待機上限へ達し対象が未終端なら、その結果を確認してから新しい待機を開始する。前景のCLIが本文を返した後の逐次待機は新しいrunへ進む。先行CLIが稼働中にlock競合した後発待機だけが、先行runの本文を1回回収する。
+`functions.exec`のような遅延実行ツールから`atk agents wait`を起動する場合、内側のCLIと外側の実行セルを別々の待機として扱う。CLIへタスク固有timeoutを渡さず、外側が`cell_id`を返した場合は同じ識別子を`functions.wait`へ渡す。CLI自身が待機上限へ達し対象が未終端なら、その結果を確認してから新しい待機を開始する。逐次待機と、先行CLIが稼働中にlock競合した後発待機の回収は`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
 
 委譲先の成果物側だけを補助観測するときは、`atk watch --worktree [<ラベル>=]<絶対パス> --file [<ラベル>=]<絶対パス>`を単独で使う。session自体の稼働確認には起動手段の状態を用いる。

@@ -161,6 +161,6 @@ autosquashは同`references/history-rewrite.md`「fixupの実行上の制約」�
 
 終端結果では、担当モデル、起動候補および物理記録から観測した`engine`・`model`・`effort`を区別して返す。値が一致しない場合は各値と由来を引き継ぎへ残し、観測不能は未確認として扱う。
 
-工程境界では本書が定める固定形式だけを返す。続行不能時は`agent-toolkit:delegation`の`references/mandatory-rules.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。
+工程境界では本書が定める固定形式だけを返す。続行不能時は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。
 
 自身が起動した外部プロセスの終了を確認してから終端する。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

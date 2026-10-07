@@ -39,6 +39,6 @@ Codexのsystem、developer、userの命令階層は、user側の`AGENTS.md`や�
 
 会話圧縮後は、一時対象、処理対象WI、保留、承認、当初目的、確定済み要件および残る完成条件を、対象リポジトリ、private-notesまたはホストの記録原本から再解決する。出所には記録原本の記述を用い、内部要約の言い換えはその代わりから外す。
 
-Codexの`list_agents`が対象を`running`と返す間の待機と、`interrupt_agent`による中断を許す条件は`agent-toolkit:delegation`の`references/runtime-routing.md`「Codex後続操作の共通先行条件」に従う。
+Codexの`list_agents`が対象を`running`と返す間の待機と、`interrupt_agent`による中断を許す条件は`agent-toolkit:delegation`の`references/codex-runtime.md`「後続操作の共通先行条件」に従う。
 
 Codexの組み込み委譲（`spawn_agent`で起動したthread）の待機はホストの`wait_agent`で終端を観測する。`wait_agent`がある場合は終端を観測してからturnを終え、完了通知だけを提供するホストでは常時規範の再開手順を使う。`agents_server`で起動したsessionの観測は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。

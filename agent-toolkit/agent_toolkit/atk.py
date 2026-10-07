@@ -25,7 +25,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - plans commit/list: 現行計画またはCI対応レビュー指摘管理表の保存と作業中計画の一覧
 - managed-temp create/cleanup: managed-tempのディレクトリの作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
-- wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
+- wait-schedule: request bucketと公開情報から委譲待機用のcron式を出力する（`--format json`では定期再確認のpromptも）
 - agents wait/notify/list/show: 委譲sessionの待機・通知・一覧・詳細表示
 - run-script: plugin内部スクリプトを安定した公開名で実行する
 - run-command: 有限終了する外部コマンドの両ストリームと終了状態を保持する
@@ -85,6 +85,7 @@ from agent_toolkit._atk.wi import show as _show  # noqa: E402
 from agent_toolkit._atk.wi import uwi as _uwi  # noqa: E402
 from agent_toolkit._common import next_action as _next_action  # noqa: E402
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
+from agent_toolkit._hooks import periodic_recheck as _periodic_recheck  # noqa: E402
 from agent_toolkit._hooks import session_state as _session_state  # noqa: E402
 from agent_toolkit._plan import locations as _plan_file  # noqa: E402
 
@@ -1083,6 +1084,12 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="判定対象のrequest bucket（mainまたはsubagent）。",
     )
+    wait_schedule.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="出力形式。textはcron式の1行、jsonは`cron`と定期再確認の`prompt`を持つJSONを出力する（省略時はtext）。",
+    )
     agents = _atk_help.add_command(top, "agents", **_atk_help.HELP["atk agents"])
     _agents.build_parser(agents)
     _atk_help.add_command(top, "agents-exit-session", **_atk_help.HELP["atk agents-exit-session"])
@@ -1527,7 +1534,11 @@ def main(
     ):
         args.subparser.error("--question-type=choice のときは --choices を指定してください。")
     if args.command == "wait-schedule":
-        print(_wait_schedule.get_schedule(args.request_bucket))
+        schedule = _wait_schedule.get_schedule(args.request_bucket)
+        if args.format == "json":
+            print(json.dumps({"cron": schedule, "prompt": _periodic_recheck.PERIODIC_RECHECK_PROMPT}, ensure_ascii=False))
+        else:
+            print(schedule)
         sys.exit(0)
     if args.command == "agents":
         sys.exit(_agents.dispatch(args))

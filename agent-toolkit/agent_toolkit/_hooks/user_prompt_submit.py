@@ -110,7 +110,7 @@ _LEGACY_PERIODIC_RECHECK_MARKER = (
 )
 """定期再確認のpromptの1行目へ置く役割標識。
 
-`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」が
+`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」が
 同じリテラルを持ち、装着するpromptの1行目をこの標識だけの行と定める。
 """
 _USER_PROMPT_SOURCE_KEY = "source"

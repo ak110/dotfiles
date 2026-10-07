@@ -474,7 +474,7 @@ _RETIRED_TERMS = (
         )
     ),
     # 委譲先の返却形式の状態値（2026年10月6日に廃止）。続行不能は`続行できない理由:`の行だけで表す。
-    # 定義は`agent-toolkit/skills/delegation/references/mandatory-rules.md`「返却形式の受け渡し」を正とする。
+    # 定義は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」を正とする。
     _RetiredTerm(
         term="needs_escalation",
         replacement="`続行できない理由:`の行（地の文では「続行できない理由を返す」）",

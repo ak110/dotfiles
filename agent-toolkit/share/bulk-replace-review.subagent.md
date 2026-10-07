@@ -40,4 +40,4 @@ mode: explore
 続行できない理由: <続行不能の理由>
 ```
 
-続行不能時は1行目の`状態`行を置かず、最後の`続行できない理由`行を置く。この形式は`agent-toolkit:delegation`の`references/mandatory-rules.md`「返却形式の受け渡し」の規則に従う。
+続行不能時は1行目の`状態`行を置かず、最後の`続行できない理由`行を置く。この形式は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の規則に従う。

@@ -33,6 +33,7 @@ from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=w
 from agent_toolkit._atk.wi import common as _wi_common  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._hooks import session_state as _session_state  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._hooks import user_prompt_submit  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing import wi_bodies as _wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _FIXED_HEAD_COMMIT,
@@ -366,6 +367,7 @@ class TestWaitScheduleParser:
             ["wait-schedule"],
             ["wait-schedule", "--request-bucket=worker"],
             ["wait-schedule", "--request-bucket=main", "extra"],
+            ["wait-schedule", "--request-bucket=main", "--format=yaml"],
         ],
     )
     def test_rejects_missing_unknown_or_extra_arguments(self, argv: list[str]) -> None:
@@ -392,6 +394,23 @@ class TestWaitScheduleParser:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == "*/30 * * * *\n"
+
+    def test_wait_schedule_json_format(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--format json`はcron式と、1行目がUserPromptSubmitの機械注入の標識であるpromptを1行のJSONで出力する。"""
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "*/3 * * * *")
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main", "--format", "json"], home=tmp_path)
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert out.count("\n") == 1
+        payload = json.loads(out)
+        assert payload["cron"] == "*/3 * * * *"
+        assert payload["prompt"].split("\n", 1)[0] == user_prompt_submit.PERIODIC_RECHECK_MARKER
 
     def test_sweeps_managed_temp_before_dispatch(
         self,

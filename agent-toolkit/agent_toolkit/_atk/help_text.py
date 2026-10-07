@@ -231,9 +231,9 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk config apply-preset show\n  atk config apply-preset codex-balanced",
     },
     "atk wait-schedule": {
-        "summary": "委譲待機に使うcron式を公開情報から判定する",
-        "description": "目的: 指定したrequest bucketのプロンプトキャッシュTTLを公開情報から判定し、対応する壁時計のcron式を1行で出力する。\n利用場面: 委譲先や背景処理の完了を定期的に再確認するタスクを登録するとき。\n対象と出力: `--request-bucket`で指定した呼び出し主体のbucketを待機TTLとcron式の解決へ入力し、環境変数と`claude auth status`の出力を読み取って、標準出力へ`*/3 * * * *`か`*/30 * * * *`を書く。ファイルは変更しない。\n前提: ツール側では呼び出し主体のbucketを自動解決できないため、`--request-bucket`へmainまたはsubagentを明示する。\n復元・後始末: 読み取りだけを行うため不要。出力したcron式は変更せずそのまま登録する。",
-        "epilog": "実行例:\n\n  atk wait-schedule --request-bucket=main",
+        "summary": "委譲待機に使うcron式を公開情報から判定し、定期再確認のpromptとともに出力できる",
+        "description": "目的: 指定したrequest bucketのプロンプトキャッシュTTLを公開情報から判定し、対応する壁時計のcron式を1行で出力する。\n利用場面: 委譲先や背景処理の完了を定期的に再確認するタスクを登録するとき。\n対象と出力: `--request-bucket`で指定した呼び出し主体のbucketを待機TTLとcron式の解決へ入力し、環境変数と`claude auth status`の出力を読み取って、標準出力へ`*/3 * * * *`か`*/30 * * * *`を書く。`--format json`では、同じcron式を`cron`、定期再確認の`CronCreate`へ渡すpromptの共通本文を`prompt`に持つJSONを1行で書く。`prompt`の1行目は定期再確認の標識である。ファイルは変更しない。\n前提: ツール側では呼び出し主体のbucketを自動解決できないため、`--request-bucket`へmainまたはsubagentを明示する。`--format`を省略した場合はtextとして扱う。\n復元・後始末: 読み取りだけを行うため不要。出力したcron式と`prompt`は変更せずそのまま登録する。経過時間起動の義務を加える場合は`prompt`の後へ行を加える。",
+        "epilog": "実行例:\n\n  atk wait-schedule --request-bucket=main\n  atk wait-schedule --request-bucket=main --format json",
     },
     "atk agents": {
         "summary": "委譲sessionの待機・通知・一覧・詳細・記録表示を行う",

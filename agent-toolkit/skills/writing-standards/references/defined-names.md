@@ -79,7 +79,7 @@
 | 報告本文の判定 | Stop hookが作業完了報告・振り返り結果報告・AWI投入結果報告の本文へ適用する、対策の対応・見送りの根拠・未確定の観測・最終報告の確定の判定 | `agent-toolkit/skills/completion-report/SKILL.md`「工程」 |
 | 3段判定 | 新しい対象、操作、設計を許容性、必要性、実装品質の順に判定すること | `agent-toolkit/rules/01-agent.md`「QCDと3段判定」 |
 | 委譲の要否判定 | 委譲するかと委譲の単位を決める判定 | `agent-toolkit/skills/delegation/references/routing.md` |
-| 元担当 | 同じ作業のために既に起動した委譲先 | `agent-toolkit/skills/delegation/references/runtime-routing.md`「Codex後続操作の共通先行条件」 |
+| 元担当 | 同じ作業のために既に起動した委譲先 | `agent-toolkit/skills/delegation/references/codex-runtime.md`「後続操作の共通先行条件」 |
 | 独立文脈レビュー | 成果物の作成者と文脈を共有しない委譲先が先入観なく行うレビュー（実行レビューなど） | `agent-toolkit/skills/delegation/references/routing.md`「会話を引き継ぐ委譲」 |
 | 委譲元 | 委譲先を起動した主体 | `agent-toolkit/skills/delegation/SKILL.md` |
 | 委譲先 | `Agent`ツールで起動する子（サブエージェント）と`agents_server`で起動する子sessionの総称 | `agent-toolkit/skills/delegation/SKILL.md` |

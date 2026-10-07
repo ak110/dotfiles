@@ -1,24 +1,26 @@
 import type { EngineInterface, On } from "claude-code";
 
-import { PERIODIC_RECHECK_MARKER, PERIODIC_RECHECK_PROMPT } from "./periodic_recheck_prompt.ts";
-
-// `agents_server`の`start`の処理の中で、呼出主体の定期再確認のtaskを`CronCreate`で装着し、結果を呼出主体の会話へ届ける。
+// `agents_server`の`start`の処理の中で、メインの定期再確認のtaskを`CronCreate`で装着し、結果をメインの会話へ届ける。
 // モデルが起動前に`atk wait-schedule`と`CronCreate`を呼ぶ手順は装着漏れを残し、起動までの呼び出しも増やすため、
 // 装着をモデルの遵守に依存させない。装着できない場合は、モデルが規範の手順で装着するよう案内する。
+// cron式とpromptの共通本文は`atk wait-schedule --format json`の出力から得る。本文の定義元はPython側の1か所であり、
+// モデルが自ら装着する手順も同じ出力を使う。
+// `Agent`ツールのサブエージェント（`agentId`を持つ呼出主体）へは装着も通知もしない。`CronList`はメインと共有され、
+// サブエージェントが作成したtaskのpromptは親の会話へ届くため、サブエージェントの待機を再確認できない。
+// サブエージェントは完了通知で待機を解く。
 // 設計と不採用とした代替は`docs/development/design-hooks.md`「`start`の処理の中での定期再確認の装着（2026年10月7日）」にある。
 
 // Claude Codeがプラグインのstdio MCPサーバーのツールへ付ける名前（`mcp__plugin_<プラグイン名>_<サーバー名>__<ツール名>`）。
 // matcherの無い`tool.call`のhookは`send_to_user.tsx`が登録済みで同じイベントへ2件目を登録できないため、ツール名をmatcherに指定する。
 // `hooks.json`のPreToolUseの`matcher`も同じ綴りを使う。
 const START_TOOL = "mcp__plugin_agent-toolkit_agents_server__start";
-const RUNTIME_REFERENCE = "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」";
+const RUNTIME_REFERENCE = "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」";
+// 定期再確認のpromptの1行目に置く標識。`agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`の`PERIODIC_RECHECK_MARKER`と
+// 同じリテラルとし、一致は`agent-toolkit/skills/delegation/references/runtime_contract_invariant_test.py`が確かめる。
+export const PERIODIC_RECHECK_MARKER = '<atk-auto source="periodic-recheck" kind="periodic-recheck">';
 const CRON_EXPRESSION = /^\S+( \S+){4}$/;
 // `atk wait-schedule`は`claude auth status`を最大5秒待つ。`uv run`の環境同期を含めても収まる上限を取る。
 const WAIT_SCHEDULE_TIMEOUT_MS = 60_000;
-
-// 呼出主体（メインは`main`、サブエージェントはその`agentId`）ごとに、このmodが作成したtaskのID。
-// モジュールの再読込で失われるため、メインは`CronList`の標識付きtaskからも保有を判定する。
-const createdTasks = new Map<string, string>();
 
 // 装着の結果は保持するtask IDを伝えるだけで対処を要さないため`notice`、
 // 装着できなかった事実はモデルが自ら装着して原因を除けるため`warn`とする。
@@ -38,20 +40,33 @@ function isMarked(prompt: string): boolean {
   return (prompt.split("\n", 1)[0] ?? "").trim() === PERIODIC_RECHECK_MARKER;
 }
 
-// 呼出主体が既に定期再確認のtaskを持つかを判定する。
-// メインは、サブエージェントの分として作成を記録したtask以外の標識付きtaskを自身のものとみなす。
-// モデルが規範の手順で作成したtaskとmodの再読込前に作成したtaskを数え、重複作成を避けるためである。
-function holdsTask(owner: string, markedIds: string[]): boolean {
-  const own = createdTasks.get(owner);
-  if (own !== undefined && markedIds.includes(own)) return true;
-  if (owner !== "main") return false;
-  const subagentTasks = new Set([...createdTasks].filter(([key]) => key !== "main").map(([, id]) => id));
-  return markedIds.some((id) => !subagentTasks.has(id));
+// メインが既に定期再確認のtaskを持つかを判定する。
+// 装着はメインに限るため、標識付きのtaskは全てメインのものとみなす。
+// モデルが規範の手順で作成したtaskとmodの再読込前に作成したtaskも数え、重複作成を避ける。
+function holdsTask(markedIds: string[]): boolean {
+  return markedIds.length > 0;
 }
 
-// 装着の結果を呼出主体へ届ける本文を返す。既にtaskを持つ場合は`undefined`を返し、何も届けない。
+type Schedule = { cron: string; prompt: string };
+
+// `atk wait-schedule --format json`の標準出力から、cron式と標識で始まるpromptを取り出す。形が合わなければ`undefined`を返す。
+function parseSchedule(stdout: string): Schedule | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const { cron, prompt } = parsed as { cron?: unknown; prompt?: unknown };
+  if (typeof cron !== "string" || typeof prompt !== "string") return undefined;
+  if (!CRON_EXPRESSION.test(cron.trim()) || !isMarked(prompt)) return undefined;
+  return { cron: cron.trim(), prompt };
+}
+
+// 装着の結果をメインへ届ける本文を返す。サブエージェントの呼び出しと、既にtaskを持つ場合は`undefined`を返し、何も届けない。
 async function mount($: EngineInterface, agentId: string | undefined): Promise<string | undefined> {
-  const owner = agentId ?? "main";
+  if (agentId !== undefined) return undefined;
   if ((await $.tool.check({ tool: "CronList", input: {} })).decision === "deny") {
     return notMounted("`CronList`の許可の判定が`deny`");
   }
@@ -59,9 +74,8 @@ async function mount($: EngineInterface, agentId: string | undefined): Promise<s
   if (listed.deny !== undefined) return notMounted(`\`CronList\`が拒否された: ${listed.deny}`);
   if (listed.isError === true) return notMounted(`\`CronList\`が失敗した: ${listed.text ?? "本文なし"}`);
   const markedIds = listed.result.jobs.filter((job) => isMarked(job.prompt)).map((job) => job.id);
-  if (holdsTask(owner, markedIds)) return undefined;
+  if (holdsTask(markedIds)) return undefined;
 
-  const bucket = agentId === undefined ? "main" : "subagent";
   const root = $.plugin.root;
   const schedule = await $.process.run(
     [
@@ -74,30 +88,32 @@ async function mount($: EngineInterface, agentId: string | undefined): Promise<s
       `${root}/agent_toolkit/atk.py`,
       "wait-schedule",
       "--request-bucket",
-      bucket,
+      "main",
+      "--format",
+      "json",
     ],
     { timeoutMs: WAIT_SCHEDULE_TIMEOUT_MS },
   );
-  const cron = schedule.stdout.trim();
-  if (schedule.exitCode !== 0 || !CRON_EXPRESSION.test(cron)) {
+  const parsed = schedule.exitCode === 0 ? parseSchedule(schedule.stdout) : undefined;
+  if (parsed === undefined) {
     return notMounted(
-      `\`atk wait-schedule --request-bucket ${bucket}\`がcron式を返さなかった（終了コード${schedule.exitCode}、` +
+      `\`atk wait-schedule --request-bucket main --format json\`がcron式と標識付きのpromptを返さなかった（終了コード${schedule.exitCode}、` +
         `標準エラー: ${schedule.stderr.trim() || "なし"}）`,
     );
   }
+  const { cron } = parsed;
 
-  const input = { cron, prompt: PERIODIC_RECHECK_PROMPT, recurring: true };
+  const input = { cron, prompt: parsed.prompt, recurring: true };
   if ((await $.tool.check({ tool: "CronCreate", input })).decision === "deny") {
     return notMounted("`CronCreate`の許可の判定が`deny`");
   }
   const created = await $.tool.call({ tool: "CronCreate", ...input });
   if (created.deny !== undefined) return notMounted(`\`CronCreate\`が拒否された: ${created.deny}`);
   if (created.isError === true) return notMounted(`\`CronCreate\`が失敗した: ${created.text ?? "本文なし"}`);
-  createdTasks.set(owner, created.result.id);
   return notice(
     "notice",
     `agent-toolkitのmodが定期再確認のtaskを作成した（task ID: ${created.result.id}、cron: ${cron}、` +
-      `request bucket: ${bucket}）。このtask IDを保持し、再利用、resumeとcompaction後の確認、` +
+      `request bucket: main）。このtask IDを保持し、再利用、resumeとcompaction後の確認、` +
       `待機する全対象の終端後の\`CronDelete\`は${RUNTIME_REFERENCE}に従う。`,
   );
 }

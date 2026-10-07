@@ -260,7 +260,7 @@ Claude Codeのメインが調査を`Agent`ツールで委譲し、待機の定�
 `agents_server`のサーバー`instructions`は`Agent`ツールではなく本サーバーを標準とすることを示す。
 `start`の公開説明は、`CronCreate`を使える実行主体が最初の呼び出しの前に定期再確認を装着することを示す。
 Claude Codeはツールを遅延読み込みし、スキーマを取得する最初の呼び出しの直前に`start`の説明を読む。
-`agent-toolkit:delegation`も、Claude Codeで最初の委譲先を起動する前に`references/claude-code-runtime.md`を読む契機を持つ。
+`agent-toolkit:delegation`はClaude Codeで`Agent`ツールの委譲先かバックグラウンドタスクを最初に起動する前と、定期再確認を自ら装着する前に`references/claude-code-runtime.md`を読む契機を持つ。`agents_server`の通常起動と軽量起動の設定読込先の違いは、委譲先とモデルを選ぶ時点に読む`references/runtime-routing.md`「実行手段」が持つ。
 
 却下した代替案は3つある。
 PreToolUseで通知する案は、規範の想起を目的とするチェックをhookに置かない前節の方針に反する。
@@ -273,9 +273,14 @@ PreToolUseで通知する案は、規範の想起を目的とするチェック�
 
 2026年10月7日、`agents_server`の`start`での定期再確認の装着を、モデルが起動前に行う手順からClaude Codeのmod（`agent-toolkit/hooks/periodic_recheck.ts`）が`start`の処理の中で行う方式へ改めた。
 ユーザーが`<役割名>.parent.md`による起動までの手順の多さを指摘し、`start`の後の自動化を求めたためである。
-modは呼出主体が定期再確認のtaskを持たない場合に`atk wait-schedule`と同じcron式で`CronCreate`を作成し、task IDを`start`の結果の後に届ける。装着できない場合は、モデルが規範の手順で装着する案内を届ける。
+modはメインが定期再確認のtaskを持たない場合に`atk wait-schedule`と同じcron式で`CronCreate`を作成し、task IDを`start`の結果の後に届ける。装着できない場合は、モデルが規範の手順で装着する案内を届ける。
 装着がモデルの遵守に依存しなくなり、起動前の`atk wait-schedule`、`ToolSearch`と`CronCreate`の呼び出しが不要になる。前節が`start`の公開説明に置いた手掛かりは、装着できなかった場合と`Agent`ツールの委譲の手順への案内へ改めた。
-定期promptの本文は`agent-toolkit/hooks/periodic_recheck_prompt.ts`だけが持ち、modとモデルが同じ本文を使う。
+定期promptの共通本文は`agent-toolkit/agent_toolkit/_hooks/periodic_recheck.py`だけが持ち、`atk wait-schedule --format json`がcron式とともに出力する。modとモデルが自ら装着する手順は、どちらもこの出力を使う。
+当初は本文をTypeScriptの`periodic_recheck_prompt.ts`に置いたが、modを読み込まない環境でモデルが自ら装着する手順は、plugin rootを解決してTypeScriptの文字列を連結する必要があった。メインのシェルがplugin rootを解決できなかった事象と同じ前提に依存するため、シェルから同じ定義へ到達できるPythonの出力へ移した。定義元を1つに保つ目的は変えていない。
+
+装着はメインに限り、`Agent`ツールのサブエージェント（`agentId`を持つ呼出主体）へは装着も通知もしない。2026年10月7日、`agents_server`で起動したClaude Codeのセッションで次を観測した。`Agent`ツールのサブエージェントが`CronList`を呼ぶと、親が作成したtaskが一覧に現れた。前景のサブエージェントが`CronCreate`で作成した1回限りのtaskは、サブエージェントの終了後の発火時刻に親の会話へpromptとして届いた。背景で起動したサブエージェントには`CronCreate`が公開されなかった。このため、modがサブエージェントのために作成したtaskは、サブエージェントの待機を再確認せずに親の会話へ定期promptを届け、親の保有の判定もそのtaskを自身のものに数え得る。サブエージェントは装着の有無によらず完了通知で待機を解くため、装着をメインに限っても待機が成立しなくなる主体は無い。`agents_server`で起動した委譲先は独立したセッションのメインとして`agentId`を持たず、装着の対象に残る。
+
+共通本文はそのセッションに固有の経過時間起動の義務（定期報告、cooldown解除、期限監視など）を含めない。義務がある場合は、taskを持つメインが義務ごとの測定コマンドと判定閾値を共通本文の後へ加えたpromptで同じtaskを作成し直す（`CronDelete`の後に同じ1行目の標識で`CronCreate`する）。義務とコマンドと閾値を持たない定期promptで定期報告が3時間以上欠落した2026年8月の事象（`incidents-workflows.md`）の対策はコマンドと閾値をpromptへ接続することだった。modによる共通本文の装着とこの対策を両立させるため、共通本文の装着はmodが行い、セッション固有の行の追加はtaskを持つメインが行う。発火の各回にモデルが記録と規範から義務を列挙し直す方式は、事象で失敗した方式と同じであるため採らない。
 `hooks.json`の`modules`は1件だけを受理し、ツール名の条件を持たない同じイベントのhookは1回しか登録できない。このためmodのhookは`agent-toolkit/hooks/register.ts`から登録し、本体を別モジュールに置く。
 却下した代替案は3つある。
 PostToolUseのhookがcron式と`CronCreate`の引数を通知する案は、モデルの`ToolSearch`と`CronCreate`の呼び出しが残り、装着がモデルの遵守に依存する点を除けない。

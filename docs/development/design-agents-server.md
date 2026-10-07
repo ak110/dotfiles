@@ -122,7 +122,7 @@ Codex backendは、ユーザーが`~/.claude/rules/`配下（サブディレク�
 `start`の`shell`は`explore`と同じ軽量起動条件を共有し、システム指示だけをコマンド実行専用の文面へ替える。共有するのは`low_tier_model`の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略である。`explore`は`model_type`を省略すると`low_tier`を使い、軽量側の候補で判断材料が不足する調査だけ`medium_tier`を指定する。
 この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`および`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`および組込tool presetを併用できる。その後、軽量起動の設定読込元は`0d7ffbbe6`（2026-09-23）でユーザー設定（`setting_sources=["user"]`）へ変えたため、この確認の空の設定読込元は現行の起動条件と異なる。この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
 
-継続不能の詳細な判定条件は`runtime-routing.md`「工程別モデル設定」が定める。
+継続不能の詳細な判定条件は`runtime-routing.md`「継続と新規起動」が定める。
 `atk agents wait`は保持期限を過ぎて結果を回収済みのsessionへ`status`が`expired`の応答を返すが、同じsessionの会話再開用の最小状態は保持され、
 `send_message`は保持された会話再開用の最小状態から暗黙再開するため、保持期限の超過だけを継続不能の根拠にしない。
 呼び出し側が`atk agents wait`の`expired`の応答を継続不能と扱う運用は、再開できるthreadを破棄して規範・計画・対象コードの再読込を発生させるため採用しない。

@@ -2893,9 +2893,9 @@ _START_DESCRIPTION = "\n".join(
         '- shell: `{"cwd": "/repo", "mode": "shell", "command": "make test", '
         '"summary_policy": "終了コードと失敗したテスト名"}`',
         "",
-        "Claude Codeでは最初の`start`の処理中にmodが定期再確認を装着し、結果が会話へ届く。"
-        "装着失敗の通知が届いた場合と、通知もtaskも無い実行主体が`CronCreate`を使えて待機でターンを終える場合は、"
-        "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」に従って装着する。",
+        "Claude Codeではメインの最初の`start`の処理中にmodが定期再確認を装着し、結果が会話へ届く。"
+        "装着失敗の通知が届いた場合と、通知もtaskも無いメインが`CronCreate`を使えて待機でターンを終える場合は、"
+        "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」に従って装着する。",
         "",
         "応答は`session_id`、`status`、担当名の`label`を含み、"
         "root sessionの識別子を保持する場合は`root_session_id`も加える。"

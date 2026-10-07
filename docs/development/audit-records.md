@@ -133,7 +133,7 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 
 2026年9月20日、Git 2.43.0で`git rev-parse --short=7 HEAD HEAD~1`が標準エラーへ`fatal: Needed a single revision`を書いて終了コード128となることを確認した。PowerShell 7.6.0では、未引用の`git rev-parse --verify HEAD^{commit}`が同じエラーと終了コード128を返し、単一引用符で囲んだ`git rev-parse --verify 'HEAD^{commit}'`が完全OIDと終了コード0を返した。再検証は同じrepositoryで1件と2件のrevisionを渡した`--short=7`の終了状態を比較し、PowerShellでpeel式の引用有無によるGitの受理結果を比較する。
 
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月20日
+## agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日
 
 2026年9月20日、`atk agents wait`が`agents_server`の状態投影に対象を持たない状態を終了コード10で報告し、実行ホストの組み込み委譲は同じ状態投影へ登録されないことを確認した。再検証は`agents_server` sessionと組み込み委譲をそれぞれ起動し、`atk agents list`への登録有無、`atk agents wait`の終了コードおよびホストの委譲一覧が返すstatusを比較する。
 
@@ -551,7 +551,7 @@ haikuの委譲先に`sleep 2`を背景実行させて直ちにturnを終えさ�
 同じ版の組で上記の環境変数を与えた委譲先へ背景実行の`sleep 2`と即時のturn終了を指示して再検証する。
 Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の全メッセージの種別、`subtype`、`state`、`origin`を到着順に保存して比べる。
 
-## agent-toolkit/skills/delegation/references/claude-code-runtime.md：Cronによる定期再確認：2026年10月4日
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日
 
 HEAD `80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。
 保持記録から解決した値を`atk watch --worktree "$worktree_path"`と

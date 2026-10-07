@@ -18,8 +18,13 @@ def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
     assert {"`functions.exec`", "`atk agents wait`", "`cell_id`", "`functions.wait`"} <= set(re.findall(r"`[^`]+`", section))
     assert "タスク固有timeoutを渡さず" in section
     assert "対象が未終端なら" in section
-    assert "前景のCLIが本文を返した後の逐次待機は新しいrunへ進む" in section
-    assert "先行CLIが稼働中にlock競合した後発待機だけが、先行runの本文を1回回収する" in section
+    assert "`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」" in section
+    waiting = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/waiting-and-monitoring.md").read_text(
+        encoding="utf-8"
+    )
+    response_section = _section(waiting, "## `atk agents wait`の応答の扱い")
+    assert "前景のCLIが本文を返した後の逐次待機は新しいrunへ進み" in response_section
+    assert "先行CLIが稼働中にlock競合した後発待機だけが先行runの本文を1回回収する" in response_section
 
 
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:

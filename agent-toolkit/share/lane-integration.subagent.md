@@ -101,4 +101,4 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 変更したエージェント向け文書: <["リポジトリ相対パス"]形式のJSON配列。無い場合は[]>
 ```
 
-続行不能時は`agent-toolkit:delegation`の`references/mandatory-rules.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。自身が起動した外部プロセスの終了を確認してから終端する。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
+続行不能時は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。自身が起動した外部プロセスの終了を確認してから終端する。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

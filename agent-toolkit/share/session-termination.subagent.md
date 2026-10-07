@@ -55,4 +55,4 @@ CIの結果: <`agent-toolkit:commit`の`references/push-and-ci.md`「後始末�
 延期後にadoptしたAWI: <実際にadoptしたAWIファイル名のJSON文字列配列。反映後の新プロセスでしか観測できない条件が残る項目と、観測が完成条件を満たさなかった項目を含めない。無い場合は[]>
 ```
 
-続行不能時は`agent-toolkit:delegation`の`references/mandatory-rules.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。完了報告はツール戻り値で1回返す。委譲元への`SendMessage`での送信は行わない。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
+続行不能時は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。完了報告はツール戻り値で1回返す。委譲元への`SendMessage`での送信は行わない。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

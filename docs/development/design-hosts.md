@@ -281,7 +281,7 @@ WI処理の運用形態、登録と回答、振り返りからの投入の流れ
 
 委譲の名前付き入力は、`agents_server`の`start`、委譲先での取得結果、`<役割名>.subagent.md`が定める権限と入力および他の受領値から導出できない状態だけを持つ。省略時の値と行が無い場合の解釈は`<役割名>.subagent.md`が定め、`<役割名>.parent.md`はその省略時の値と異なる場合だけ送信する。この分離は値の二重所有を避けるための契約であり、`start`の`cwd`や委譲先がGitから得る値を送信一覧へ再掲しない。
 
-委譲の継続可否条件は`agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」だけで定め、他の文書へ再掲しない。
+委譲の継続可否条件は`agent-toolkit/skills/delegation/references/runtime-routing.md`「継続と新規起動」だけで定め、他の文書へ再掲しない。
 `agent-toolkit/share/exec.parent.md`は工程順と渡す入力だけを定め、判定条件は同節を参照する。
 同じ判定条件を複数の文書へ複製した結果、暫定修正で1文書だけが旧規定のまま残り、実装担当が矛盾を報告する事象が発生したためである。
 

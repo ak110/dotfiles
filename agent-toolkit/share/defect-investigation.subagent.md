@@ -41,5 +41,5 @@
 再発防止策: <同じ原因の再発を防ぐ処置。該当なしの場合はその根拠>
 ```
 
-続行不能時は`agent-toolkit:delegation`の`references/mandatory-rules.md`「返却形式の受け渡し」の形式で返す。
+続行不能時は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の形式で返す。
 想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
