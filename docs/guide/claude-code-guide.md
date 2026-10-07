@@ -174,7 +174,8 @@ Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
 `atk config apply-preset <プリセット名>`は`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`の4キーを1回の実行で一括保存する。`write_model`と`codex_fast_mode`はプリセットの対象外とする。
 受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
-プリセット名を省略した実行と未知の名前を指定した実行は終了コード2で終わり、利用できるプリセット名を表示する。
+`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに4プリセットそれぞれが保存する4キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
+未知の名前を指定した実行は終了コード2で終わり、受理する値を表示する。
 設定を保存していない環境では`codex-balanced`と同じ候補列を使う。
 
 ## Claude Codeの推奨設定

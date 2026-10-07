@@ -53,6 +53,9 @@ _PRESET_ENGINE_ORDERS = {
     "claude-primary": ("claude", frozenset()),
 }
 
+# apply-presetの位置引数でプリセット名の代わりに受理し、全プリセットの値を表示する値。
+_APPLY_PRESET_SHOW = "show"
+
 
 def _preset_settings(preset: str) -> dict[str, str]:
     """プリセットのengine順と用途区分から工程別モデル設定を導出する。"""
@@ -275,7 +278,16 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
 
 def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
-    """apply-presetサブコマンド: 現行の工程別モデル設定を一括保存する。"""
+    """apply-presetサブコマンド: 現行の工程別モデル設定を一括保存する。
+
+    `show`の指定時とプリセット名の省略時は、設定ファイルを読み書きせずに全プリセットの値を表示する。
+    """
+    if args.preset in (None, _APPLY_PRESET_SHOW):
+        for preset in _PRESET_ENGINE_ORDERS:
+            print(f"{preset}:")
+            for key, value in _preset_settings(preset).items():
+                print(f"  {key}: {value}")
+        return
     settings = _preset_settings(args.preset)
     config = _load_config()
     config.update(settings)
@@ -338,7 +350,12 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     set_.add_argument("key", metavar="KEY", help=f"変更可能なキー: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}")
     set_.add_argument("value", metavar="VALUE", help="設定する値。複数候補はASCIIカンマ区切りで指定できる。")
     apply_preset = _atk_help.add_command(sub, "apply-preset", **_atk_help.HELP["atk config apply-preset"])
-    apply_preset.add_argument("preset", choices=tuple(_PRESET_ENGINE_ORDERS), help="適用するプリセット名。")
+    apply_preset.add_argument(
+        "preset",
+        nargs="?",
+        choices=(_APPLY_PRESET_SHOW, *_PRESET_ENGINE_ORDERS),
+        help=f"適用するプリセット名。`{_APPLY_PRESET_SHOW}`または省略で全プリセットの値を保存せずに表示する。",
+    )
 
 
 def dispatch(args: argparse.Namespace, home: pathlib.Path) -> None:

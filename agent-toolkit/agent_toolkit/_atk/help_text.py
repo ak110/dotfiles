@@ -199,7 +199,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config": {
         "summary": "XDG関連パスと工程別モデル設定を確認・変更する",
-        "description": "目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、工程別モデル設定を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
+        "description": "目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、工程別モデル設定を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と、プリセット名を指定した`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
         "epilog": "実行例:\n\n  atk config show\n  atk config get private_notes",
     },
     "atk config show": {
@@ -218,9 +218,9 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk config set high_tier_model codex:sol/medium",
     },
     "atk config apply-preset": {
-        "summary": "工程別モデル設定をプリセットから一括保存する",
-        "description": "目的: 工程別モデル設定の対象キーを1回の実行で一括保存する。\n利用場面: 主に使うengineをcodexまたはclaudeへ切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`へ工程別候補を保存し、保存した各キーと値を標準出力へ表示する。Codex候補は系列名で保存する。\n前提: プリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかを指定する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。",
-        "epilog": "実行例:\n\n  atk config apply-preset codex-balanced",
+        "summary": "工程別モデル設定をプリセットから一括保存する（`show`または省略で全プリセットの値を表示する）",
+        "description": "目的: 工程別モデル設定の対象キーを1回の実行で一括保存する。`show`の指定時と引数の省略時は、保存せずに4プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodexまたはclaudeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ工程別候補を保存し、保存した各キーと値を標準出力へ表示する。Codex候補は系列名で保存する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
+        "epilog": "実行例:\n\n  atk config apply-preset show\n  atk config apply-preset codex-balanced",
     },
     "atk wait-schedule": {
         "summary": "委譲待機に使うcron式を公開情報から判定する",

@@ -533,19 +533,52 @@ class TestConfigApplyPreset:
             assert first.startswith(f"{expected_first}:")
             assert second.startswith(f"{expected_second}:")
 
-    @pytest.mark.parametrize("arguments", [[], ["unknown-preset"]])
-    def test_apply_preset_rejects_omitted_or_unknown_name(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], arguments: list[str]
-    ) -> None:
-        """プリセット名の省略と未知名は候補4件を表示してexit 2とする。"""
+    def test_apply_preset_rejects_unknown_name(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """未知名は`show`と候補4件を表示してexit 2とする。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "apply-preset", *arguments], home=tmp_path)
+            atk.main(["config", "apply-preset", "unknown-preset"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert not captured.out
-        for preset in ("codex-balanced", "codex-primary", "claude-balanced", "claude-primary"):
+        for preset in ("show", "codex-balanced", "codex-primary", "claude-balanced", "claude-primary"):
             assert preset in captured.err
+
+    @pytest.mark.parametrize("existing_config", [False, True])
+    @pytest.mark.parametrize("arguments", [["show"], []])
+    def test_apply_preset_show_and_omitted_print_all_presets_without_saving(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        arguments: list[str],
+        existing_config: bool,
+    ) -> None:
+        """`show`と引数の省略は4プリセットの値を保存せずに表示する。"""
+        config_file = tmp_path / "config" / "config.json"
+        original = json.dumps({"low_tier_model": "claude:sonnet/high"}) + "\n"
+        if existing_config:
+            config_file.parent.mkdir(parents=True)
+            config_file.write_text(original, encoding="utf-8")
+        presets = ("codex-balanced", "codex-primary", "claude-balanced", "claude-primary")
+        keys = ("high_tier_model", "medium_tier_model", "low_tier_model", "orchestrate_model")
+        expected_lines: list[str] = []
+        for preset in presets:
+            settings = config_module._preset_settings(preset)  # pylint: disable=protected-access  # noqa: SLF001
+            assert tuple(settings) == keys
+            expected_lines.append(f"{preset}:")
+            expected_lines.extend(f"  {key}: {settings[key]}" for key in keys)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "apply-preset", *arguments], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert not captured.err
+        assert captured.out.splitlines() == expected_lines
+        if existing_config:
+            assert config_file.read_text(encoding="utf-8") == original
+        else:
+            assert not config_file.exists()
 
 
 class TestConfigSet:
