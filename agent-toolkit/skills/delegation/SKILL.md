@@ -63,7 +63,7 @@ user-invocable: false
 - `subagent_md_path`へ役割名（`share/<役割名>.subagent.md`のファイル名から`.subagent.md`を除いた名前。例: `add-wi`）を渡す。サーバーは役割名を自身のplugin rootの`share/<役割名>.subagent.md`へ解決する
 - `extra_params`へ`<役割名>.parent.md`が列挙する入力名と値を渡す
 - `mode`は指定しない。`model_type`は`<役割名>.parent.md`が値の決め方を定める場合だけ指定し、指定しない場合はサーバーが工程別設定を使う
-- `引き継ぎ記録先`の`（新規）`は省略でき、サーバーが委譲元のセッションのmanaged-tempの直下に記録先を用意して応答の`handoff_record_path`で返す。先行する担当の記録を引き継ぐ担当へは、その絶対パスへ`（継続）`を付けて渡す
+- `引き継ぎ記録先`の`（新規）`の省略と`（継続）`での引き継ぎは`references/base-contract.md`「引き継ぎ記録先」が定める
 - 起動後は応答の`session_id`を`atk agents wait`で観測する。Claude Codeでは最初の`start`の処理の中でagent-toolkitのmodが定期再確認を装着し、装着の結果がその`start`の結果の後に届く
 
 この起動にも、委譲元が委譲プロンプトへ載せる値の義務を適用する。

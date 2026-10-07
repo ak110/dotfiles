@@ -110,3 +110,9 @@ pickerと並行して、対象がGitHub上にある場合は対象リポジト�
 
 選定、レーンまたは公開工程が確認待ちとなる場合は、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:user-confirmation-and-report`の手順でUWIへ退避する。WIの状態は`agent-toolkit:wi-standards`に従い、`processing`にある元項目を`atk wi hold --state=processing <元項目のファイル名>`で保留する。
 通常の完了報告は`agent-toolkit:completion-report`に従う。本スキルの工程で生じたcommitは、公開工程で反映してから完了を報告する。
+
+### 終端工程の承認スコープ
+
+環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`の値が`1`の起動を自動常駐起動、それ以外を手動起動とする。`atk wi process-loop`が子セッションへこの変数を設定するため、この観測で両者を判別できる。判別は選定工程で行い、結果を同じ実行の中で使い回す（努力目標。重複する照会を省く）。
+
+手動起動では、固定したAWIの完成条件に明示されたrelease、tag、push、PRもしくはMRまたは配布を、記載された操作、対象および影響範囲に限って承認スコープとして保持する。自動常駐起動では保持しない。承認済み範囲はそのまま用い、新しく具体化して範囲が変わる部分だけをユーザー確認する。破壊的操作の事前説明は維持する。

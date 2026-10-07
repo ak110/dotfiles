@@ -49,13 +49,13 @@ description: >
    - 人間の依頼かWIが禁止条件を明示する場合は、その条件と採用する手段を`## 実施内容`の同じ概念行へ書く。禁止条件には、実施しない操作、選択肢から外す機構および許容しない副作用を含める。メインが同節だけで両者を並べて確認できる計画を確定する
 2. 計画の変更対象または採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し（入力のWIが確定した事項は列挙の対象から外す）、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。実装中に新たに生じた同種の判断にも本手順を適用する。確認の手段と`起動経路`の値ごとの扱いは本書冒頭の確認の段落に従う
 3. 読込表の`references/plan-file-standards.md`の全項を満たす計画を`atk run-script plan-create --`で作成する。作業種別が`バグ対応`の計画のうち、入力にWIが無い計画とWIの原因分析を訂正または追加する計画では、計画担当が手順1で起動した`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の条件に従って計画ファイル（バグ）を先に埋める。WIの`## 原因分析`をそのまま用いる場合は計画ファイル（バグ）を作成せず、計画はWIファイル名で参照する
-4. メインによる起動では`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行する。`agent-toolkit:process-wi`のレーン担当は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「計画の起草」が定める選定結果とレーン識別子付きの形で単独実行する。いずれも直接返った終了コード0を確認する
+4. メインによる起動では`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行する。`agent-toolkit:process-wi`のレーン担当は`agent-toolkit:process-wi`の`references/lane-planning.md`が定める選定結果とレーン識別子付きの形で単独実行する。いずれも直接返った終了コード0を確認する
 5. `起動経路`の値に対応する次の1行だけを実施する
 
 | `起動経路` | 手順4の後に実施すること |
 | --- | --- |
 | `agent-toolkit:plan-mode`のメインによる起動 | 「メインによる起動の実装と終端」に従う |
-| `agent-toolkit:process-wi`のレーン担当としての起動 | `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「計画の起草」が定める待機条件と、条件に応じた報告・通知・実装の手順に従う |
+| `agent-toolkit:process-wi`のレーン担当としての起動 | `agent-toolkit:process-wi`の`references/lane-planning.md`が定める待機条件と、条件に応じた報告・通知・実装の手順に従う |
 
 実行工程の計画ファイルの扱いと、実装中に生じた要件・外部仕様の判断の記録は、`references/plan-file-standards.md`の計画凍結に従う。
 中断後に再開する主体が読む対象と順序は`references/plan-file-standards.md`「進捗ログ」が定める。

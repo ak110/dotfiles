@@ -60,13 +60,14 @@
 | 公開工程判定 | リポジトリ全体の自動チェックとCIの成功を述べる完成条件を、公開工程で判定すること | `agent-toolkit/share/workflow-phases.md`「用語」 |
 | 直接影響範囲 | 変更した定義、文言、パスを参照、呼び出し、生成または期待値として持ち、合わせて直す必要がある箇所の全体 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
 | 変更範囲の検証 | 変更するファイルとその直接影響範囲に限った検証 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と終端工程」 |
-| 統合時の完成条件判定 | 統合指示の前に、完成条件証拠の各行がWIの完成条件と原文要求に過不足なく対応するかを確かめる確認 | `agent-toolkit/share/exec.parent.md`「統合時の完成条件判定」 |
+| 統合時の完成条件判定 | 統合指示の前に、完成条件証拠の各行がWIの完成条件と原文要求に過不足なく対応するかを確かめる確認 | `agent-toolkit/skills/review-standards/references/exec-review-recording.md`「統合時の完成条件判定」 |
 | 初回レビュー | 実行レビュー担当が最初に行う実行レビュー | `agent-toolkit/share/exec-review.subagent.md` |
 | 再レビュー | 指摘の修正後に同じ実行レビュー担当が行う実行レビュー | `agent-toolkit/share/exec-review.subagent.md` |
 | 引き継ぎ再レビュー | 継続できなくなった実行レビュー担当に代わり、新しい担当が引き継いで行う再レビュー | `agent-toolkit/share/exec-review.subagent.md` |
 | 実行レビュー担当 | 実行レビューを行う委譲先 | `agent-toolkit/share/exec-review.subagent.md` |
 | ユーザビリティレビュー | 画面差分を実際の操作で確かめるレビュー | `agent-toolkit/share/usability-review.parent.md` |
-| 並列画面レビュー | 画面差分のあるレーンで、ユーザビリティレビューと実行レビューを並列に行う運用 | `agent-toolkit/share/usability-review.parent.md` |
+| 画面差分 | エンドユーザーが操作する画面の追加または変更 | `agent-toolkit/share/workflow-phases.md`「用語」 |
+| 並列画面レビュー | 画面差分のあるレーンで、ユーザビリティレビューと実行レビューを並列に行う運用 | `agent-toolkit/share/workflow-phases.md`「用語」 |
 | WI投入担当 | WIの本文を起草して投入する委譲先 | `agent-toolkit/share/add-wi.subagent.md` |
 | 一括置換後レビュー担当 | 一括置換の文字単位差分を全件読み、意味や対応関係が変わった箇所を返す委譲先 | `agent-toolkit/share/bulk-replace-review.subagent.md` |
 | 投稿前レビュー担当 | 外部サービスへ送る文面を送信前にレビューする委譲先 | `agent-toolkit/share/external-write-review.subagent.md` |

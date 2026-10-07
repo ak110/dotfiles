@@ -127,6 +127,36 @@ def _pair_errors(parent: pathlib.Path, recipient: pathlib.Path) -> list[str]:
     return errors
 
 
+_READ_TABLE_SUBAGENT_PATTERN = re.compile(r"share/([A-Za-z0-9_.-]+\.subagent\.md)")
+
+
+def _read_table_subagents(recipient: pathlib.Path, launched: set[str] | None = None) -> list[str]:
+    """`<役割名>.subagent.md`の読込表が読ませる他の`<役割名>.subagent.md`のファイル名を返す。
+
+    起動された委譲先が工程の途中で読む文書（統合の指示で読む`lane-integration.subagent.md`など）は、
+    `start`で起動されないため起動対象に挙げない。その指示を送る委譲元は、起動した委譲先の委譲元である。
+    """
+    content = recipient.read_text(encoding="utf-8")
+    if "\n## 読込表\n" not in content:
+        return []
+    table = content.split("\n## 読込表\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+    launched = launched or set()
+    return [name for name in _READ_TABLE_SUBAGENT_PATTERN.findall(table) if name != recipient.name and name not in launched]
+
+
+def _instructed_errors(parent: pathlib.Path, recipient: pathlib.Path) -> list[str]:
+    """起動した委譲先が読込表で読む文書の必須入力名を、委譲元の本文が指示として持つか確かめる。"""
+    required_names, valid_structure = _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True)
+    if not valid_structure or not required_names:
+        return [f"必須入力名の構造が不正: {recipient.name}"]
+    parent_content = parent.read_text(encoding="utf-8")
+    return [
+        f"必須入力名が欠けている: {parent.name} -> {recipient.name}: {name}"
+        for name in required_names
+        if not _contains_exact_name(parent_content, name)
+    ]
+
+
 def _contract_errors(share: pathlib.Path) -> list[str]:
     """share直下の委譲起動契約に反する箇所を返す。"""
     parents = sorted(share.glob("*.parent.md"))
@@ -147,7 +177,16 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
             if target not in recipients:
                 errors.append(f"委譲先の文書が実在しない: {parent.name} -> {target}")
 
-    assigned = {target for _, target in pairs}
+    # 起動対象に挙がる文書を読込表で読む場合は参照として読むだけであり、指示として届く文書から外す。
+    launched = {target for _, target in pairs}
+    instructed: list[tuple[pathlib.Path, str]] = []
+    for parent, target in pairs:
+        recipient = recipients.get(target)
+        if recipient is None:
+            continue
+        instructed.extend((parent, name) for name in _read_table_subagents(recipient, launched) if name in recipients)
+
+    assigned = {target for _, target in pairs} | {target for _, target in instructed}
     for recipient_name in sorted(recipients.keys() - assigned):
         errors.append(f"委譲先の文書が未割当: {recipient_name}")
 
@@ -161,6 +200,8 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
         if recipient is None:
             continue
         errors.extend(_pair_errors(parent, recipient))
+    for parent, target in sorted(set(instructed), key=lambda pair: (pair[0].name, pair[1])):
+        errors.extend(_instructed_errors(parent, recipients[target]))
 
     parent_populations: dict[pathlib.Path, set[str]] = collections.defaultdict(set)
     accepted_populations: dict[pathlib.Path, set[str]] = collections.defaultdict(set)
@@ -297,7 +338,7 @@ def test_picker_explanation_contract_covers_questions_without_state_changes() ->
     explain = share / "pick-wi-explain.subagent.md"
     declaration = _declaration(explain)
     picker = (share / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    question_route = (share / "pick-wi.parent.md").read_text(encoding="utf-8").split("## 選定理由への質問\n", maxsplit=1)[1]
+    question_route = _h2_section((share / "pick-wi.parent.md").read_text(encoding="utf-8"), "読込表")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
 
     assert declaration.launch_kind == "explore"
@@ -319,18 +360,25 @@ def _declaration(task_document: pathlib.Path) -> task_documents.TaskDocumentDecl
 
 
 def test_parent_input_names_are_declared_by_recipient() -> None:
-    """`<役割名>.parent.md`が`` - `<項目名>`: ``で渡すと定める項目は、起動対象のいずれかが宣言した入力名である。
+    """`<役割名>.parent.md`が`` - `<項目名>`: ``で渡すと定める項目は、起動対象か読込表で読む文書が宣言した入力名である。
 
     宣言外の項目を渡す委譲元の手順は、`agents_server`の`start`が起動を拒否するため成立しない。
     全ての`<役割名>.subagent.md`の宣言が読めること（不正な`mode:`を含まないこと）も同時に確かめる。
     """
     share = pathlib.Path(__file__).resolve().parent / "share"
     errors: list[str] = []
+    launched = {
+        target
+        for parent in share.glob("*.parent.md")
+        for target in _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)[0]
+    }
     for parent in sorted(share.glob("*.parent.md")):
         targets, _ = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
         accepted: set[str] = set()
         for target in targets:
             accepted |= _declaration(share / target).accepted
+            for read_target in _read_table_subagents(share / target, launched):
+                accepted |= _declaration(share / read_target).accepted
         for match in _INPUT_BULLET_PATTERN.finditer(parent.read_text(encoding="utf-8")):
             if match.group("name") not in accepted:
                 errors.append(f"{parent.name}: {match.group('name')}")
@@ -377,9 +425,7 @@ def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
 def test_phase_specific_contract_layout_names_the_task_document() -> None:
     """工程固有の参照へ分ける基準は、配置元の文書種別と実行主体を本文だけで特定できる。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    guideline = (plugin_root / "skills" / "writing-standards" / "references" / "agent-documents-additions.md").read_text(
-        encoding="utf-8"
-    )
+    guideline = (plugin_root / "skills" / "writing-standards" / "references" / "sub-agents.md").read_text(encoding="utf-8")
 
     assert "委譲元が委譲先を動かして結果を利用するまでの工程" in guideline
     assert "入力の組み立て、起動、待機、返却の受領、検収、採否、統合など" in guideline
@@ -404,10 +450,12 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     generation = _h2_section(picker, "調査とレーン分け")
     assert "`書込対象`" in receipt
     assert "`公開工程の書込対象`" in receipt
-    assert "全レーン統合後の公開工程だけ" in output and "全レーン統合後の公開工程だけ" in receipt
-    assert "`/`" in output and "`/`" in receipt
-    assert "パス要素" in generation and "パス要素" in receipt
-    assert "狭い方の範囲" in generation and "狭い方の範囲" in receipt
+    assert "全レーン統合後の公開工程だけ" in output
+    assert "`/`" in output
+    assert "パス要素" in generation
+    assert "狭い方の範囲" in generation
+    # 重なりと公開工程の書込対象の機械的な判定は受領側も同じ`pick-wi-check`へ委ね、意味の独立性だけを本文で読む。
+    assert "`書込対象`の重なり" in receipt and "変更する定義が実際に交わらないか" in receipt
     # 選定時と受領時の双方で、反映先と`書込対象`の対応を同じ公開コマンドで確かめる。
     assert "書き込まない反映先" in fields
     assert "`書き込まない反映先`" in output
@@ -574,7 +622,7 @@ def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
     lane_row = next(line for line in plan_steps.splitlines() if line.startswith("| `agent-toolkit:process-wi`"))
     lane_steps = _lane_planning_contract(plugin_root)
 
-    assert "exec.subagent.md" in lane_row and "待機条件" in lane_row
+    assert "references/lane-planning.md" in lane_row and "待機条件" in lane_row
     assert "計画作成完了" not in lane_row
     assert "委譲元の応答を待って" not in lane_row
     assert "--selection-file" in lane_steps and "--lane" in lane_steps
@@ -589,11 +637,10 @@ def _h2_section(content: str, heading: str) -> str:
 
 
 def _lane_planning_contract(plugin_root: pathlib.Path) -> str:
-    """exec.subagent.mdの「計画の起草」節と工程別の参照文書をひとつの契約として返す。"""
+    """exec.subagent.mdの読込表で計画の起草の時点に読む行と、その参照文書をひとつの契約として返す。"""
     executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
-    entry = _h2_section(executor, "計画の起草")
+    entry = next(line for line in _h2_section(executor, "読込表").splitlines() if "references/lane-planning.md" in line)
     reference = plugin_root / "skills" / "process-wi" / "references" / "lane-planning.md"
-    assert "references/lane-planning.md" in entry
     return entry + "\n" + reference.read_text(encoding="utf-8")
 
 
@@ -712,6 +759,32 @@ def test_nonexistent_recipient_reports_pair(tmp_path: pathlib.Path) -> None:
 
     assert "委譲先の文書が実在しない: task.parent.md -> missing.subagent.md" in errors
     assert "委譲先の文書が未割当: task.subagent.md" in errors
+
+
+def test_recipient_read_by_launched_recipient_is_assigned_and_needs_parent_inputs(tmp_path: pathlib.Path) -> None:
+    """起動した委譲先が読込表で読む文書を割当済みとし、その必須入力名を委譲元の本文に求める。
+
+    起動しない文書を起動対象へ挙げると、委譲元の本文は起動の確認を満たすためだけの文を持つ。
+    読込表の関係を割当に数えないと、その文書は未割当と誤報され、指示の入力名の欠落も検出されない。
+    """
+    _write_pair(tmp_path, parent_body=_parent_body(after_marker="\n| `subagent_md_path` | `task` |\n"))
+    task = tmp_path / "task.subagent.md"
+    task.write_text(
+        task.read_text(encoding="utf-8")
+        + "\n## 読込表\n\n| 時点 | 資料 |\n| --- | --- |\n| 統合の指示 | `${CLAUDE_PLUGIN_ROOT}/share/merge.subagent.md` |\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "merge.subagent.md").write_text(
+        f"# 統合\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} 統合区分\n```\n", encoding="utf-8"
+    )
+
+    errors = _contract_errors(tmp_path)
+    assert "委譲先の文書が未割当: merge.subagent.md" not in errors
+    assert "必須入力名が欠けている: task.parent.md -> merge.subagent.md: 統合区分" in errors
+
+    parent = tmp_path / "task.parent.md"
+    parent.write_text(parent.read_text(encoding="utf-8") + "\n## 統合\n\n- `統合区分`: 値\n", encoding="utf-8")
+    assert not [error for error in _contract_errors(tmp_path) if "merge.subagent.md" in error]
 
 
 def test_unassigned_recipient_is_reported(tmp_path: pathlib.Path) -> None:

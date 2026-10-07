@@ -4,7 +4,7 @@
 是正済みと根拠付き対応不要の分類と根拠をGitHubへ記録し、判定済みのreview本文を記録する。
 あわせて未判定のDependabotアラートを誤検知、是正済み、要修正へ判定し、誤検知を却下して、判定したアラートを記録する。
 対象リポジトリの追跡ファイルと履歴は変更せず、要修正の是正とAWIへの記録は委譲元が担う。
-監査は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`の対象、取得、判定、GitHubへの記録、判定済みの記録およびDependabotアラートの節に従う。
+最初に読込表の着手時の資料を読み、受領した`pending取得結果`のJSONを読む。監査は同書の対象、取得、判定、GitHubへの記録、判定済みの記録およびDependabotアラートの節に従う。
 完了報告と、GitHubへ投稿する文面は日本語で書く。
 
 ## 読込表
@@ -28,17 +28,20 @@
 
 ## 出力
 
-監査を完了と判定できた場合は、次の項目を返す。
+監査を完了と判定できた場合は、次の形式だけを返す。
 
-1. 全Pull RequestのCopilot由来のreview本文と、未解決threadを持つPull RequestのCopilot由来のinline commentごとの所在、分類および処置
-2. 要修正と分類した指摘の所在と対処案
-3. GitHubへの返信、threadの解決およびコメント投稿の結果と、非0で終了した書き込み
-4. `atk review-audit mark`で記録したreview本文のdatabaseId
-5. inline commentの取得対象へ入らなかったPull Request番号
-6. GraphQLで代替取得した場合に、判定済みとして除いたdatabaseIdの一覧と件数
-7. Dependabotアラートごとの番号、判定区分と処置。却下の結果と非0で終了した却下
-8. 要修正と判定したDependabotアラートの番号、マニフェスト、パッケージ、修正版と対処案
-9. `atk review-audit mark`で記録したDependabotアラートの番号
-10. Dependabotアラートを取得できなかった場合（機能無効または権限不足）の状態と理由
+```text
+状態: completed
+指摘の分類: <全Pull RequestのCopilot由来のreview本文と、未解決threadを持つPull RequestのCopilot由来のinline commentごとの所在、分類および処置>
+要修正の指摘: <要修正と分類した指摘の所在と対処案。無い場合は「なし」>
+GitHubへの書き込み: <返信、threadの解決およびコメント投稿の結果と、非0で終了した書き込み。無い場合は「なし」>
+記録したreview本文: <`atk review-audit mark`で記録したreview本文のdatabaseId。無い場合は「なし」>
+取得対象外のPull Request: <inline commentの取得対象へ入らなかったPull Request番号。無い場合は「なし」>
+代替取得で除いた判定済み: <GraphQLで代替取得した場合に、判定済みとして除いたdatabaseIdの一覧と件数。代替取得しなかった場合は「なし」>
+Dependabotアラートの判定: <アラートごとの番号、判定区分と処置。却下の結果と非0で終了した却下を含む。無い場合は「なし」>
+要修正のDependabotアラート: <番号、マニフェスト、パッケージ、修正版と対処案。無い場合は「なし」>
+記録したDependabotアラート: <`atk review-audit mark`で記録した番号。無い場合は「なし」>
+Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
+```
 
-完了と判定できない場合は、失敗したコマンド、終了コード、取得できなかった範囲を返す。
+完了と判定できない場合は1行目の`状態`行を置かず、`続行できない理由: <失敗したコマンド、終了コード、取得できなかった範囲>`の行を末尾へ置く。この形式は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の規則に従う。
