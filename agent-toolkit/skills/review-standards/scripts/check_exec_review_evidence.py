@@ -1640,6 +1640,56 @@ def check_return_result(
     return errors, unanswered
 
 
+def return_lines(
+    head: str,
+    unanswered: int,
+    plan_paths: list[pathlib.Path],
+    input_record_paths: list[pathlib.Path],
+    evidence_path: pathlib.Path | None,
+) -> list[str]:
+    """返却前の確認に成功した`--return-result`の返却行を返す。
+
+    固定行に続けて、両配列の総行数と判定値別の件数、`達成`以外の全行を返す。受領側が非達成行の一覧から
+    該当行へ到達し、許容の根拠を読む判定へ進めるようにするためである。集計は確かめた証拠の全行から求め、
+    指定WI集合外の行と計画由来の行（`awi`が空文字列）も含める。原文は切り詰めずJSONとしてエスケープする。
+    """
+    lines = [
+        "状態: completed",
+        f"レビューしたHEAD: {head}",
+        f"未解決の指摘数: {unanswered}",
+        f"計画のパス: {json.dumps([str(path) for path in plan_paths], ensure_ascii=False)}",
+        f"入力記録のパス: {json.dumps([str(path) for path in input_record_paths], ensure_ascii=False)}",
+    ]
+    payload: dict[str, typing.Any] = {section: [] for section in REQUIRED_FIELDS}
+    if evidence_path is not None:
+        lines.append(f"完成条件証拠のパス: {evidence_path}")
+        payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    outcome_order = [*JUDGMENT_ORDER, *dict.fromkeys(name for checks in EXEMPTIONS.values() for name in checks)]
+    rows: list[str] = []
+    for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
+        counts = collections.Counter(row["outcome"] for row in payload[section])
+        breakdown = {"総数": len(payload[section]), **{name: counts[name] for name in outcome_order if counts[name]}}
+        lines.append(f"{section}の判定内訳: {json.dumps(breakdown, ensure_ascii=False)}")
+        rows.extend(
+            "達成以外の行: "
+            + json.dumps(
+                {
+                    "配列": section,
+                    "添字": index,
+                    "WI": row["awi"],
+                    "判定": row["outcome"],
+                    field: row[field],
+                    "source": row["source"],
+                    "evidence": row["evidence"],
+                },
+                ensure_ascii=False,
+            )
+            for index, row in enumerate(payload[section])
+            if row["outcome"] != "達成"
+        )
+    return [*lines, *rows]
+
+
 def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str], int, int]:
     """不足する期待行を判定欄が空の雛形として`完成条件証拠`へ追記し、診断、追加行数、保持行数を返す。
 
@@ -1820,13 +1870,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     if args.return_result:
-        print("状態: completed")
-        print(f"レビューしたHEAD: {args.expected_head}")
-        print(f"未解決の指摘数: {unanswered}")
-        print(f"計画のパス: {json.dumps([str(path) for path in plan_paths], ensure_ascii=False)}")
-        print(f"入力記録のパス: {json.dumps([str(path) for path in input_record_paths], ensure_ascii=False)}")
-        if not no_evidence:
-            print(f"完成条件証拠のパス: {args.evidence}")
+        print(
+            "\n".join(
+                return_lines(
+                    args.expected_head, unanswered, plan_paths, input_record_paths, None if no_evidence else args.evidence
+                )
+            )
+        )
     else:
         print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(filenames)} 件）")
     return 0

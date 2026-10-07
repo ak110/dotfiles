@@ -164,6 +164,22 @@ def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_af
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
         "計画のパス: []\n入力記録のパス: []\n"
         f"完成条件証拠のパス: {path}\n"
+        'wi_conditionsの判定内訳: {"総数": 1, "証拠不足": 1}\n'
+        'user_requirementsの判定内訳: {"総数": 0}\n'
+        "達成以外の行: "
+        + json.dumps(
+            {
+                "配列": "wi_conditions",
+                "添字": 0,
+                "WI": FIRST_WI,
+                "判定": "証拠不足",
+                "condition": "保存",
+                "source": "WI本文",
+                "evidence": "保存操作の証拠をまだ取得できない",
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
     )
 
 
@@ -284,7 +300,99 @@ def test_return_result_without_evidence_generates_result_and_empty_input_arrays(
     assert run_script.dispatch(_no_evidence_return_args(table)) == 0
     assert capsys.readouterr().out == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n計画のパス: []\n入力記録のパス: []\n"
+        'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
+
+
+def _breakdown_lines(data: dict[str, list[dict[str, str]]]) -> list[str]:
+    """入力の証拠から、判定値ごとの件数と達成以外の行を要求どおりに数えた返却行を組み立てる。"""
+    lines = []
+    for section in ("wi_conditions", "user_requirements"):
+        counts: dict[str, int] = {"総数": len(data[section])}
+        for row in data[section]:
+            counts[row["outcome"]] = counts.get(row["outcome"], 0) + 1
+        lines.append((section, counts))
+    rows = [
+        (section, index, row)
+        for section in ("wi_conditions", "user_requirements")
+        for index, row in enumerate(data[section])
+        if row["outcome"] != "達成"
+    ]
+    return [f"{section}:{sorted(counts.items())}" for section, counts in lines] + [
+        f"{section}[{index}]:{row['awi']}:{row['outcome']}:{row.get('condition', row.get('requirement'))}:"
+        f"{row['source']}:{row['evidence']}"
+        for section, index, row in rows
+    ]
+
+
+def _parsed_breakdown(output: str) -> list[str]:
+    """返却の判定内訳と達成以外の行を、`_breakdown_lines`と同じ形へ読み直す。"""
+    parsed = []
+    for line in output.splitlines():
+        label, _, value = line.partition(": ")
+        if label.endswith("の判定内訳"):
+            parsed.append(f"{label.removesuffix('の判定内訳')}:{sorted(json.loads(value).items())}")
+        elif label == "達成以外の行":
+            row = json.loads(value)
+            text = row.get("condition", row.get("requirement"))
+            parsed.append(f"{row['配列']}[{row['添字']}]:{row['WI']}:{row['判定']}:{text}:{row['source']}:{row['evidence']}")
+    return parsed
+
+
+@pytest.mark.parametrize("layout", ["mixed", "all-achieved", "empty"])
+def test_return_result_reports_outcome_breakdown_and_nonachievement_rows(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], layout: str
+) -> None:
+    """返却が両配列の総数・判定値別件数と達成以外の全行を、指定WI集合外と計画由来の行も含めて切り詰めずに示す。
+
+    受領側は一覧から該当行へ到達して許容の根拠を読む。指定WI集合に限った集計や、計画由来の行の欠落があると、
+    一覧に現れない非達成行の許容を判定しないまま統合へ進む。
+    """
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    review_table.init(table)
+    achieved = {**_condition(FIRST_WI, "保存"), "evidence": "test_save_settings 成功"}
+    conditions = {
+        "mixed": [achieved, {**_condition(SECOND_WI, "別条件"), "outcome": "未達", "evidence": "別WIの観測"}],
+        "all-achieved": [achieved],
+        "empty": [],
+    }[layout]
+    requirements = (
+        [
+            {**_requirement("", "計画の要求\n2行目"), "outcome": "証拠不足", "evidence": "観測が\n2行に渡る"},
+            {**_requirement(FIRST_WI, "保存して"), "outcome": "証拠不足", "evidence": "未観測"},
+        ]
+        if layout == "mixed"
+        else []
+    )
+    _write_evidence(path, conditions, requirements)
+    # 未解決の指摘を1件置き、非達成行の許容判定を経ずに返却の生成まで進める。
+    review_table.add(table, "2", "exec-review", "agent-toolkit/impl.py:3", "保存の観測を補う", "仕様")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    capsys.readouterr()
+    wi = [] if layout == "empty" else [FIRST_WI]
+    record = tmp_path / "input.md"
+    record.write_text("# 記録\n", encoding="utf-8")
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[
+            str(path),
+            *wi,
+            "--input-record",
+            str(record),
+            "--expected-head",
+            REVIEWED_HEAD,
+            "--review-table",
+            str(table),
+            "--round",
+            "2",
+            "--return-result",
+        ],
+    )
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+    output = capsys.readouterr().out
+    assert "未解決の指摘数: 1\n" in output and f"完成条件証拠のパス: {path}\n" in output
+    assert _parsed_breakdown(output) == _breakdown_lines(data)
 
 
 @pytest.mark.parametrize("source_suffix", ["#存在しない節", "#別の節", ":99-100"])
@@ -2684,6 +2792,7 @@ def test_input_record_saved_outside_repository_is_resolved_by_template_and_retur
     assert capsys.readouterr().out == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
         f"計画のパス: []\n入力記録のパス: {json.dumps([str(record)])}\n"
+        'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
 
 
