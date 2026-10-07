@@ -1379,6 +1379,38 @@ def test_listing_reuses_unchanged_records_beyond_two_thousand(tmp_path: pathlib.
     assert str(added) in third
 
 
+def test_initial_list_opens_each_record_once(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """一覧の初回走査は、要約と子セッションIDを同じ走査で求め、各記録を1回だけ開く。
+
+    値ごとに記録を開き直すと、起動直後や単発の`list`の初回走査で全記録の読み込みが値の数だけ増える。
+    """
+    claude = _claude_record(tmp_path)
+    child = _codex_record(tmp_path)
+    parent = _write(
+        tmp_path / "claude" / "projects" / "proj" / "parent.jsonl",
+        [
+            {"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"content": "親"}},
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "tool_use", "id": "start", "name": "mcp__agents_server__start", "input": {}}]},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"session_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "start", "content": "起動"}]},
+            },
+        ],
+    )
+    context = _context(tmp_path)
+    opened = _count_record_opens(monkeypatch)
+
+    entries = {entry.path: entry for entry in sessions.list_local_sessions(context)}
+
+    assert sorted(opened) == sorted([claude, child, parent])
+    assert entries[str(child)].parent_path == str(parent)
+    assert entries[str(claude)].first_user_message == "やあ"
+
+
 @pytest.mark.asyncio
 async def test_concurrent_list_requests_share_one_listing(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """同時に届いた一覧の要求は、進行中の1回の取得（ローカルの走査とリモートの取得）の結果を共有する。
@@ -1452,5 +1484,5 @@ def test_remote_helper_serve_mode_reuses_unchanged_records(tmp_path: pathlib.Pat
     assert [response["id"] for response in responses] == [1, 2]
     assert responses[0]["entries"] == responses[1]["entries"]
     assert [entry["path"] for entry in responses[1]["entries"]] == [str(record)]
-    # 1回目の要求が一覧の値と子セッションIDのために2回開き、2回目の要求は開かない。
-    assert opened == [record, record]
+    # 1回目の要求が一覧の値と子セッションIDを1回の走査で求め、2回目の要求は開かない。
+    assert opened == [record]

@@ -89,6 +89,128 @@ def test_summary_skips_runtime_inserted(tmp_path: pathlib.Path) -> None:
     assert session_watch.has_user_message(only_inserted, "claude") is True
 
 
+def _count_parsed_lines(monkeypatch: typing.Any) -> list[str]:
+    """JSONとして解析した文字列を順に記録する。"""
+    parsed: list[str] = []
+    original = json.loads
+
+    def counting_loads(text: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        parsed.append(text)
+        return original(text, *args, **kwargs)
+
+    monkeypatch.setattr(json, "loads", counting_loads)
+    return parsed
+
+
+_FILLER = {"type": "event_msg", "payload": {"type": "token_count", "info": {"total": 1}}}
+
+
+def test_scan_parses_only_relevant_lines(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:
+    """表示できる発話を持たないCodex記録の走査は、`"user"`も`agents_server`も含まない行を解析しない。
+
+    最初のユーザー発話が挿入本文だけの記録（委譲先の記録）は終端まで読むため、全行を解析すると
+    初回走査の費用の大半を占める。解析を省いても要約と子セッションIDの値は変わらない。
+    """
+    records = [
+        {"type": "session_meta", "payload": {"cwd": "/work", "timestamp": "2026-09-01T00:00:00Z"}},
+        {"type": "response_item", "payload": {"role": "user", "content": [{"text": "<skills_instructions>自動本文"}]}},
+        *([_FILLER] * 5),
+        {"type": "response_item", "payload": {"type": "function_call", "name": "mcp__agents_server__start", "call_id": "c1"}},
+        {
+            "type": "response_item",
+            "payload": {"type": "function_call_output", "call_id": "c1", "output": '{"session_id": "child-1"}'},
+        },
+        *([_FILLER] * 5),
+    ]
+    path = _write(tmp_path / "codex.jsonl", records)
+    filler_line = json.dumps(_FILLER, ensure_ascii=False) + "\n"
+    parsed = _count_parsed_lines(monkeypatch)
+
+    scan = session_watch.scan_record(path, "codex")
+
+    assert scan.fields == ("/work", None, "2026-09-01T00:00:00Z", True, None)
+    assert scan.delegated_ids == frozenset({"child-1"})
+    assert filler_line not in parsed
+    # session_meta・挿入本文の発話・起動の呼び出し・起動結果の4行と、起動結果の文字列だけを解析する。
+    assert len(parsed) == 5
+
+
+def test_scan_record_returns_same_values_as_separate_reads(tmp_path: pathlib.Path) -> None:
+    """1回の走査で求める要約と子セッションIDは、要約だけの走査と起動結果の判定規則の値と一致する。"""
+    claude = _write(
+        tmp_path / "claude.jsonl",
+        [
+            {"type": "user", "cwd": "/w", "timestamp": "2026-09-01", "message": {"content": "親の発話\n続き"}},
+            *([{"type": "assistant", "message": {"content": [{"type": "text", "text": "応答"}]}}] * 3),
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [{"type": "tool_use", "id": "s1", "name": "mcp__plugin_agent-toolkit_agents_server__start"}]
+                },
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"session_id": "child-a"},
+                "mcpMeta": {"structuredContent": {"excluded_candidates": [{"session_id": "child-b"}]}},
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "s1"}]},
+            },
+        ],
+    )
+    codex = _write(
+        tmp_path / "codex.jsonl",
+        [
+            {
+                "type": "session_meta",
+                "payload": {
+                    "cwd": "/c",
+                    "timestamp": "2026-09-02",
+                    "source": {"subagent": {"thread_spawn": {"parent_thread_id": "p"}}},
+                },
+            },
+            {
+                "type": "session_meta",
+                "payload": {"cwd": "/other", "source": {"subagent": {"thread_spawn": {"parent_thread_id": "q"}}}},
+            },
+            {"type": "response_item", "payload": {"role": "user", "content": [{"text": "Codexの発話"}]}},
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "McpToolCall",
+                        "server": "agents_server",
+                        "tool": "start",
+                        "result": {"threadId": "child-c"},
+                    },
+                },
+            },
+        ],
+    )
+
+    claude_scan = session_watch.scan_record(claude, "claude")
+    codex_scan = session_watch.scan_record(codex, "codex")
+
+    assert claude_scan.fields == ("/w", "親の発話", "2026-09-01", True, None)
+    assert claude_scan.fields == session_watch.summary_fields(claude, "claude")
+    assert claude_scan.delegated_ids == frozenset({"child-a", "child-b"})
+    assert codex_scan.fields == ("/c", "Codexの発話", "2026-09-02", True, "p")
+    assert codex_scan.fields == session_watch.summary_fields(codex, "codex")
+    assert codex_scan.delegated_ids == frozenset({"child-c"})
+    missing = session_watch.scan_record(tmp_path / "missing.jsonl", "claude")
+    assert (missing.fields[3], missing.delegated_ids) == (None, frozenset())
+
+
+def test_has_user_message_skips_lines_without_user(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:
+    """`has_user_message`は`"user"`を含まない行を解析せず、判定は変わらない。"""
+    without_user = _write(tmp_path / "a.jsonl", [{"type": "session_meta", "payload": {"cwd": "/w"}}, _FILLER, _FILLER])
+    with_user = _write(tmp_path / "b.jsonl", [_FILLER, {"type": "response_item", "payload": {"role": "user", "content": []}}])
+    parsed = _count_parsed_lines(monkeypatch)
+
+    assert session_watch.has_user_message(without_user, "codex") is False
+    assert session_watch.has_user_message(with_user, "codex") is True
+    assert len(parsed) == 1
+
+
 def test_append_to_listed_record_notifies_only_the_record(tmp_path: pathlib.Path) -> None:
     """一覧に載っている記録への追記は記録1件の更新だけを通知し、一覧の再取得を促さない。"""
     collector = _Collector()

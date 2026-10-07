@@ -63,6 +63,10 @@ def _is_user_record(record: dict[str, typing.Any], engine: str) -> bool:
 SummaryFields = tuple[str | None, str | None, str | None, bool | None, str | None]
 """`summary_fields`が返す作業ディレクトリ、最初の発話、開始日時、発話の有無およびCodexの親threadの識別子。"""
 
+# ユーザー発話の記録行は、Claude Codeでは`"type":"user"`、Codexでは`"role":"user"`を持つ。
+# この文字列を含まない行はユーザー発話になり得ないため、JSONとして解析しない。
+_USER_MARKER = '"user"'
+
 
 def _codex_parent_thread_id(payload: dict[str, typing.Any]) -> str | None:
     """Codexの`session_meta`の`source`から、`spawn_agent`系で起動した親threadの識別子を取り出す。"""
@@ -71,6 +75,132 @@ def _codex_parent_thread_id(payload: dict[str, typing.Any]) -> str | None:
     spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
     parent = spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
     return parent if isinstance(parent, str) and parent else None
+
+
+class _SummaryScan:
+    """記録の行を順に受け取り、`summary_fields`の値を求める。
+
+    作業ディレクトリ・開始日時（Codexでは最初の`session_meta`も）の識別項目が揃うまでは全行を解析し、
+    揃った後は表示できる発話が見つかるまで`"user"`を含む行だけを解析する。
+    """
+
+    def __init__(self, engine: str) -> None:
+        self.engine = engine
+        self.parent_thread_id: str | None = None
+        self.meta_seen = False
+        self.cwd: str | None = None
+        self.first_user_message: str | None = None
+        self.first_user_seen = False
+        self.first_visible_user_seen = False
+        self.started_at: str | None = None
+        self.first_timestamp: str | None = None
+
+    def _identified(self) -> bool:
+        return self.cwd is not None and self.started_at is not None and (self.engine == "claude" or self.meta_seen)
+
+    @property
+    def done(self) -> bool:
+        """以後の行が値を変えないか。"""
+        return self.first_visible_user_seen and self._identified()
+
+    def wants(self, line: str) -> bool:
+        """行をJSONとして解析する必要があるかを返す。"""
+        if self.done:
+            return False
+        return not self._identified() or _USER_MARKER in line
+
+    def feed(self, record: typing.Any) -> None:
+        """`wants`が真を返した行を解析した値を受け取る。"""
+        if not isinstance(record, dict):
+            return
+        if self.first_timestamp is None and isinstance(record.get("timestamp"), str):
+            self.first_timestamp = record["timestamp"]
+        if self.engine == "claude":
+            if self.started_at is None:
+                self.started_at = self.first_timestamp
+            if self.cwd is None and isinstance(record.get("cwd"), str):
+                self.cwd = record["cwd"]
+            if not self.first_visible_user_seen and _is_user_record(record, self.engine):
+                self.first_user_seen = True
+                message = record.get("message")
+                content = message.get("content") if isinstance(message, dict) else None
+                text = _as_text(content)
+                if not is_runtime_generated(record) and not (text and is_runtime_inserted_text(text)):
+                    self.first_visible_user_seen = True
+                    self.first_user_message = _first_line(content)
+            return
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            return
+        is_meta = record.get("type") == "session_meta"
+        if is_meta and not self.meta_seen:
+            self.meta_seen = True
+            self.parent_thread_id = _codex_parent_thread_id(payload)
+        if self.started_at is None and is_meta and isinstance(payload.get("timestamp"), str):
+            self.started_at = payload["timestamp"]
+        if self.cwd is None and is_meta and isinstance(payload.get("cwd"), str):
+            self.cwd = payload["cwd"]
+        if not self.first_visible_user_seen and _is_user_record(record, self.engine):
+            self.first_user_seen = True
+            content = payload.get("content")
+            text = _as_text(content)
+            if not (text and is_runtime_inserted_text(text)):
+                self.first_visible_user_seen = True
+                self.first_user_message = _first_line(content)
+
+    def fields(self, *, readable: bool) -> SummaryFields:
+        """求めた値を返す。記録を読み取れなかった場合は発話の有無を`None`とする。"""
+        has_user = self.first_user_seen if readable else None
+        return self.cwd, self.first_user_message, self.started_at or self.first_timestamp, has_user, self.parent_thread_id
+
+
+@dataclasses.dataclass(frozen=True)
+class RecordScan:
+    """記録1件の1回の走査で求めた、一覧が使う値。"""
+
+    fields: SummaryFields
+    delegated_ids: frozenset[str]
+    """子セッションIDの集合。`scan_record`へ`delegations=False`を渡した場合は求めずに空集合とする。"""
+
+
+def scan_record(path: pathlib.Path, engine: str, *, delegations: bool = True) -> RecordScan:
+    """記録を1回だけ開き、一覧が記録1件ごとに求める値を1つの走査で求める。
+
+    一覧の記録単位の値を加えるときは、記録を別に開く関数を足さずにこの走査へ加える。
+    行は要約と子セッションIDのどちらかが結果を変え得る場合だけJSONとして解析する。
+    文字コードは要約側が不正なバイトを置換して読み、子セッションIDの側はUTF-8として復号できる行だけを使う。
+    記録を読み取れない場合は、要約の発話の有無を`None`、子セッションIDを空集合とする。
+    """
+    summary = _SummaryScan(engine)
+    collector = session_delegations.DelegationCollector(engine) if delegations else None
+    readable = True
+    try:
+        with path.open("rb") as stream:
+            for raw in stream:
+                if collector is None and summary.done:
+                    break
+                try:
+                    line = raw.decode("utf-8")
+                    decodable = True
+                except UnicodeDecodeError:
+                    line = raw.decode("utf-8", errors="replace")
+                    decodable = False
+                summary_wants = summary.wants(line)
+                delegation_wants = collector is not None and decodable and collector.wants(line)
+                if not summary_wants and not delegation_wants:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if summary_wants:
+                    summary.feed(record)
+                if delegation_wants and collector is not None:
+                    collector.feed(record)
+    except OSError:
+        readable = False
+    delegated = collector.children if collector is not None and readable else frozenset()
+    return RecordScan(fields=summary.fields(readable=readable), delegated_ids=delegated)
 
 
 def summary_fields(path: pathlib.Path, engine: str) -> SummaryFields:
@@ -82,72 +212,19 @@ def summary_fields(path: pathlib.Path, engine: str) -> SummaryFields:
     親threadはCodex自身のサブエージェントの記録だけが持ち、最初の`session_meta`行の値を使う。
     2行目以降の`session_meta`行は親thread側のメタデータの写しであり、記録自身を表さないためである。
     """
-    parent_thread_id: str | None = None
-    meta_seen = False
-    cwd: str | None = None
-    first_user_message: str | None = None
-    first_user_seen = False
-    first_visible_user_seen = False
-    started_at: str | None = None
-    first_timestamp: str | None = None
-    try:
-        with path.open(encoding="utf-8", errors="replace") as stream:
-            for line in stream:
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(record, dict):
-                    continue
-                if first_timestamp is None and isinstance(record.get("timestamp"), str):
-                    first_timestamp = record["timestamp"]
-                if engine == "claude":
-                    if started_at is None:
-                        started_at = first_timestamp
-                    if cwd is None and isinstance(record.get("cwd"), str):
-                        cwd = record["cwd"]
-                    if not first_visible_user_seen and _is_user_record(record, engine):
-                        first_user_seen = True
-                        message = record.get("message")
-                        content = message.get("content") if isinstance(message, dict) else None
-                        text = _as_text(content)
-                        if not is_runtime_generated(record) and not (text and is_runtime_inserted_text(text)):
-                            first_visible_user_seen = True
-                            first_user_message = _first_line(content)
-                else:
-                    payload = record.get("payload")
-                    if not isinstance(payload, dict):
-                        continue
-                    if record.get("type") == "session_meta" and not meta_seen:
-                        meta_seen = True
-                        parent_thread_id = _codex_parent_thread_id(payload)
-                    if (
-                        started_at is None
-                        and record.get("type") == "session_meta"
-                        and isinstance(payload.get("timestamp"), str)
-                    ):
-                        started_at = payload["timestamp"]
-                    if cwd is None and record.get("type") == "session_meta" and isinstance(payload.get("cwd"), str):
-                        cwd = payload["cwd"]
-                    if not first_visible_user_seen and _is_user_record(record, engine):
-                        first_user_seen = True
-                        content = payload.get("content")
-                        text = _as_text(content)
-                        if not (text and is_runtime_inserted_text(text)):
-                            first_visible_user_seen = True
-                            first_user_message = _first_line(content)
-                if cwd is not None and first_visible_user_seen and started_at is not None:
-                    break
-    except OSError:
-        return cwd, first_user_message, started_at or first_timestamp, None, parent_thread_id
-    return cwd, first_user_message, started_at or first_timestamp, first_user_seen, parent_thread_id
+    return scan_record(path, engine, delegations=False).fields
 
 
 def has_user_message(path: pathlib.Path, engine: str) -> bool | None:
-    """記録がユーザー発話の記録行を持つかを返す。読み取れない場合は`None`を返す。"""
+    """記録がユーザー発話の記録行を持つかを返す。読み取れない場合は`None`を返す。
+
+    `"user"`を含まない行はユーザー発話になり得ないため、JSONとして解析しない。
+    """
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
             for line in stream:
+                if _USER_MARKER not in line:
+                    continue
                 try:
                     record = json.loads(line)
                 except json.JSONDecodeError:
@@ -172,8 +249,8 @@ class _IndexedRecord:
     trusted: bool
     """更新時刻の精度の範囲外で解析したため、無効化キーの一致だけで再利用できるか。"""
     fields: SummaryFields
-    delegated_ids: frozenset[str] | None = None
-    """子セッションIDの集合。親として扱う記録にだけ求めるため、未計算の間は`None`とする。"""
+    delegated_ids: frozenset[str]
+    """子セッションIDの集合。`fields`と同じ走査で求める。"""
 
 
 class RecordSummaryIndex:
@@ -213,41 +290,36 @@ class RecordSummaryIndex:
         try:
             st = path.stat()
         except OSError as error:
-            return summary_fields(path, engine), error
+            return scan_record(path, engine, delegations=False).fields, error
         key = str(path)
         with self._lock:
             self._seen.add(key)
             cached = self._records.get(key)
         if cached is not None and cached.trusted and (cached.mtime_ns, cached.size) == (st.st_mtime_ns, st.st_size):
             return cached.fields, st
-        fields = summary_fields(path, engine)
+        scan = scan_record(path, engine)
         record = _IndexedRecord(
             mtime_ns=st.st_mtime_ns,
             size=st.st_size,
             trusted=analysis_started_ns - st.st_mtime_ns >= _TRUSTED_AGE_NS,
-            fields=fields,
+            fields=scan.fields,
+            delegated_ids=scan.delegated_ids,
         )
         with self._lock:
             self._records[key] = record
-        return fields, st
+        return scan.fields, st
 
     def delegated_ids(self, path: pathlib.Path, engine: str) -> frozenset[str]:
         """記録が起動した子セッションIDの集合を返す。
 
-        同じ走査で先に`summary`が保持した版の記録に限り、求めた集合を保持して次の走査で再利用する。
-        保持した版が信用できない場合は、`summary`が次の走査で読み直すのに合わせて集合も求め直す。
+        `summary`が要約と同じ走査で求めて保持した集合を、記録を開かずに返す。
+        保持していない記録（`stat`できなかった記録など）だけ記録を読む。
         """
-        key = str(path)
         with self._lock:
-            cached = self._records.get(key)
-        if cached is not None and cached.delegated_ids is not None:
-            return cached.delegated_ids
-        delegated = session_delegations.delegated_session_ids(path, engine)
+            cached = self._records.get(str(path))
         if cached is not None:
-            with self._lock:
-                if self._records.get(key) is cached:
-                    self._records[key] = dataclasses.replace(cached, delegated_ids=delegated)
-        return delegated
+            return cached.delegated_ids
+        return scan_record(path, engine).delegated_ids
 
 
 class RecordChangeTracker:
