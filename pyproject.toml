@@ -105,6 +105,24 @@ dev = [
     "watchdog>=6.0.0",
 ]
 
+[tool.agent-toolkit.pick-wi-check]
+# `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。
+# 記載の手順と理由は`.claude/skills/dotfiles-repo-layout/SKILL.md`「変更後の規範の自セッション適用」が定め、
+# 対象範囲の一致は`project_norm_spec_invariant_test.py`が確かめる。
+
+[[tool.agent-toolkit.pick-wi-check.norm-spec]]
+# 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。
+name = "規範変更の対象ファイル"
+paths = ["AGENTS.md", "agent-toolkit/rules/", "agent-toolkit/skills/", "agent-toolkit/share/", ".claude/skills/"]
+suffixes = [".md"]
+require-paths = true
+
+[[tool.agent-toolkit.pick-wi-check.norm-spec]]
+# 反映先にエージェント向け文書を含む項目には、計画の採否確定前に方針と障害の記録を読む要求を書く。
+name = "方針と障害記録を読む要求"
+agent-doc = true
+require-text = ["docs/development/concepts.md", "docs/development/incidents.md", "分割ファイル"]
+
 [tool.pyfltr]
 preset = "latest"
 python = true

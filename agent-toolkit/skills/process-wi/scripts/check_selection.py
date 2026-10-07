@@ -25,6 +25,12 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
 7区分はいずれも、レーン分けと重なりの判定が実際の共有書込対象と異なる結果になるため、違反として終了コード1を返す。
 分類と定義の独立性の意味判断はpickerとメインの読解へ委ねる。
 
+`--work-dir`の`pyproject.toml`が`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`で`プロジェクト規範の指定`の条件を
+定める場合は、条件に当たる項目の指定の省略・`なし`・空文字列と、必要な対象パスや記載の欠落も違反として終了コード1を返す。
+条件の内容（規範ファイルの範囲、読む要求の文面）は対象リポジトリの設定が持ち、本スクリプトは設定を消費するだけにする。
+共有のスクリプトへプロジェクト固有のパスと文面を書くと、内容の所有者がプロジェクトから共有実装へ移るためである。
+表を持たないリポジトリには条件を課さない。設定の構文と型の誤りはチェックを開始できない入力として終了コード2を返す。
+
 被覆を比べる前に、選定結果をYAMLとして読み、`pick-wi.subagent.md`「出力」が定める欄名、必須の欄と値の型を確かめる。
 pickerの保存直後とメインの受領時はどちらも本スクリプトを実行するため、両者は同じ構造を受理する。
 チェックを開始できない入力には終了コード2を返し、内容の違反と区別する。
@@ -49,6 +55,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tomllib
 import typing
 import unicodedata
 
@@ -61,6 +68,7 @@ try:
     from agent_toolkit._common import next_action as _next_action
     from agent_toolkit._plan import locations as _plan_file
     from agent_toolkit._plan import selection as _selection
+    from agent_toolkit._plan.structure import is_agent_doc_target_file as _is_agent_doc_target_file
 except ImportError as _import_error:
     print(
         f"agent_toolkitパッケージを解決できません: {_import_error}\n"
@@ -142,6 +150,138 @@ _FIX_MODEL = "`担当モデル`は`実装担当`か`実行レビュー担当`の
 
 class InputError(_next_action.ActionableError):
     """チェックを開始できない入力の問題。送出側が原因に合う次の操作を持つ。"""
+
+
+_NORM_SPEC_KEY = "プロジェクト規範の指定"
+_NORM_CONFIG_TABLE = ("tool", "agent-toolkit", "pick-wi-check")
+_NORM_CONDITION_KEYS = frozenset({"name", "paths", "suffixes", "agent-doc", "require-paths", "require-text"})
+
+
+@dataclasses.dataclass(frozen=True)
+class NormCondition:
+    """`プロジェクト規範の指定`に作用する対象リポジトリの条件1件。
+
+    `paths`（リポジトリ相対のファイルか`/`で終わる範囲）と`suffixes`、または`agent-doc`（エージェント向け文書の判定）で
+    項目の書込対象と反映先から当たるパスを選ぶ。当たるパスがある項目には、`require-paths`なら当たった各パスを、
+    `require-text`ならその各文字列を指定へ書くことを求める。
+    """
+
+    name: str
+    paths: tuple[str, ...]
+    suffixes: tuple[str, ...]
+    agent_doc: bool
+    require_paths: bool
+    require_text: tuple[str, ...]
+
+    def matches(self, path: str) -> bool:
+        """パスがこの条件の対象かを返す。"""
+        if self.agent_doc and _is_agent_doc_target_file(path):
+            return True
+        in_scope = any(path == entry or (entry.endswith("/") and path.startswith(entry)) for entry in self.paths)
+        return in_scope and (not self.suffixes or path.endswith(self.suffixes))
+
+
+def load_norm_conditions(work_dir: pathlib.Path) -> list[NormCondition]:
+    """`work_dir`の`pyproject.toml`から`プロジェクト規範の指定`の条件を読む。表が無ければ空の一覧を返す。"""
+    config = work_dir / "pyproject.toml"
+    location = f"{config}の[{'.'.join(_NORM_CONFIG_TABLE)}]"
+    fix = (
+        f"{location}の`norm-spec`を、`name`（文字列）、`paths`・`suffixes`・`require-text`（文字列の配列）、"
+        "`agent-doc`・`require-paths`（真偽値）だけを持つ表の配列へ直してから、同じコマンドを再実行する"
+    )
+    if not config.is_file():
+        return []
+    try:
+        data = tomllib.loads(config.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as error:
+        raise InputError(f"条件の設定を読み込めない: {config}: {error}", next_action=_FIX_PATHS) from error
+    except tomllib.TOMLDecodeError as error:
+        raise InputError(
+            f"条件の設定のTOML構文が不正: {config}: {error}",
+            next_action=f"{config}のTOML構文を直してから、同じコマンドを再実行する",
+        ) from error
+    table: object = data
+    for key in _NORM_CONFIG_TABLE:
+        table = table.get(key) if isinstance(table, dict) else None
+    if table is None:
+        return []
+    entries = table.get("norm-spec") if isinstance(table, dict) else None
+    if not isinstance(table, dict) or not isinstance(entries, list):
+        raise InputError(f"{location}の`norm-spec`が表の配列ではない", next_action=fix)
+    conditions: list[NormCondition] = []
+    for index, entry in enumerate(entries, start=1):
+        problems = _norm_condition_problems(entry)
+        if problems:
+            raise InputError(f"{location}の`norm-spec`の{index}件目が不正: {'、'.join(problems)}", next_action=fix)
+        assert isinstance(entry, dict)
+        conditions.append(
+            NormCondition(
+                name=entry["name"],
+                paths=tuple(entry.get("paths", [])),
+                suffixes=tuple(entry.get("suffixes", [])),
+                agent_doc=entry.get("agent-doc", False),
+                require_paths=entry.get("require-paths", False),
+                require_text=tuple(entry.get("require-text", [])),
+            )
+        )
+    return conditions
+
+
+def _norm_condition_problems(entry: object) -> list[str]:
+    """条件1件の欄名と型の誤りを返す。"""
+    if not isinstance(entry, dict):
+        return ["表ではない"]
+    problems = [f"未知の欄: {key}" for key in entry if key not in _NORM_CONDITION_KEYS]
+    if not isinstance(entry.get("name"), str) or not entry["name"].strip():
+        problems.append("`name`が空でない文字列ではない")
+    problems.extend(
+        f"`{key}`が文字列の配列ではない"
+        for key in ("paths", "suffixes", "require-text")
+        if key in entry and not _is_string_list(entry[key])
+    )
+    problems.extend(
+        f"`{key}`が真偽値ではない"
+        for key in ("agent-doc", "require-paths")
+        if key in entry and not isinstance(entry[key], bool)
+    )
+    if not entry.get("paths") and entry.get("agent-doc") is not True:
+        problems.append("対象を選ぶ`paths`か`agent-doc = true`がない")
+    if entry.get("require-paths") is not True and not entry.get("require-text"):
+        problems.append("求める記載の`require-paths = true`か`require-text`がない")
+    return problems
+
+
+def check_norm_spec(awi: str, decision: dict[str, object], reflected: set[str], conditions: list[NormCondition]) -> list[str]:
+    """条件に当たる項目の`プロジェクト規範の指定`が、条件の求める記載を持つか確かめて違反の行を返す。
+
+    対象のパスは、書込区分のパスと、`書き込まない反映先`に覆われない反映先のパスとする。
+    書き込まない参照先として挙げた規範ファイルにまで指定を求めないためである。
+    """
+    write_paths = [
+        *_string_list(decision, _selection.WRITE_FILES_KEY),
+        *_string_list(decision, _selection.PUBLIC_WRITE_FILES_KEY),
+    ]
+    excluded = _string_list(decision, _selection.EXCLUDED_PATHS_KEY)
+    candidates = sorted({*write_paths, *(path for path in reflected if not any(_covers(entry, path) for entry in excluded))})
+    spec = decision.get(_NORM_SPEC_KEY)
+    filled = isinstance(spec, str) and spec.strip() not in {"", _LANE_NONE}
+    errors: list[str] = []
+    for condition in conditions:
+        matched = [path for path in candidates if condition.matches(path)]
+        if not matched:
+            continue
+        if not filled:
+            errors.append(
+                f"{awi}: プロジェクト規範の指定の不足: {condition.name}（{', '.join(matched)}が当たる）: "
+                f"`{_NORM_SPEC_KEY}`が省略・`なし`・空文字列のいずれか"
+            )
+            continue
+        assert isinstance(spec, str)
+        missing = [*(path for path in matched if condition.require_paths and path not in spec)]
+        missing.extend(text for text in condition.require_text if text not in spec)
+        if missing:
+            errors.append(f"{awi}: プロジェクト規範の指定の不足: {condition.name}: 欠けた記載: {', '.join(missing)}")
+    return errors
 
 
 def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
@@ -436,6 +576,7 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
     costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
     if not private_notes.is_dir():
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
+    conditions = load_norm_conditions(work_dir)
     errors: list[str] = []
     for decision in items:
         awi = typing.cast(str, decision[_selection.WI_KEY])
@@ -457,7 +598,9 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
             body = source.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
-        errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, public_write_files, excluded_paths))
+        reflected = reflected_paths(body, work_dir)
+        errors.extend(check_decision(awi, reflected, write_files, public_write_files, excluded_paths))
+        errors.extend(check_norm_spec(awi, decision, reflected, conditions))
     errors.extend(_check_lane_models(items))
     errors.extend(_check_resume_plan_lanes(items))
     errors.extend(_check_lane_stages(items, costs))
@@ -757,6 +900,8 @@ def main(argv: list[str] | None = None) -> int:
                 "広すぎる範囲は反映先が挙げる個別のパスへ置き換える。不正な`書き込まない反映先`は除く。"
                 "区分間で重複するパスは所有する1区分だけへ残す。`公開工程の書込対象`の根拠不足は、"
                 "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する。"
+                "プロジェクト規範の指定の不足は、`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が"
+                "定める条件に従い、該当項目の`プロジェクト規範の指定`へ欠けた記載を書く。"
                 "直した後に同じコマンドで確かめる"
             ),
             file=sys.stderr,

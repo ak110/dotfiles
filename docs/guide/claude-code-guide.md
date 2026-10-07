@@ -178,6 +178,10 @@ Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`
 未知の名前を指定した実行は終了コード2で終わり、受理する値を表示する。
 設定を保存していない環境では`codex-balanced`と同じ候補列を使う。
 
+対象リポジトリの`pyproject.toml`に`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`を置ける。置いた場合は`agent-toolkit:process-wi`の選定結果を確かめる`atk run-script pick-wi-check`が、条件に当たる項目の`プロジェクト規範の指定`の欠落も報告する。
+各条件は`paths`と`suffixes`か`agent-doc = true`（エージェント向け文書）で対象のパスを選ぶ。`require-paths = true`は当たった対象ファイルのパスを、`require-text`は指定の文字列を、`プロジェクト規範の指定`へ書くことを求める。
+表を置かないリポジトリでは指定を求めない。設定の構文と型の誤りは終了コード2で、設定の場所と直し方を示す。
+
 ## Claude Codeの推奨設定
 
 以下の設定を適用することを推奨する。
