@@ -22,7 +22,8 @@ description: >
 | --- | --- |
 | 問題を発見し、対処に着手する前 | `references/response.md`、`references/initial-analysis.md` |
 | 拡張原因分析の条件に該当し、対策と再発防止策を選ぶ前 | `references/root-cause-analysis.md` |
-| 局所不良でも、AWIの`## 原因分析`を起草する、計画ファイル（バグ）を作成する、または事象単位の調査を委譲する前 | `references/root-cause-analysis.md`のうちその工程を定める節 |
+| AWIの`## 原因分析`を起草する前と、計画ファイル（バグ）を作成する前（局所不良を含む） | `references/analysis-records.md` |
+| 事象単位の調査を委譲する前（局所不良を含む） | `references/investigation-delegation.md` |
 | CI失敗を扱う前 | `references/ci-failure-handling.md` |
 | CI通過の確認へ入る前 | `agent-toolkit:commit`の`references/push-and-ci.md` |
 | 履歴を扱う実装単位へ入る前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md` |
@@ -77,6 +78,6 @@ description: >
   - 実行主体が対策と変更範囲の検証を完遂し、横展開処置と再発防止策を該当なしと判断した根拠を報告する
 - 同種の問題が反復する場合は、`agent-toolkit:review-standards`の`review-standards/references/judgment-details.md`「規範の前提の再検討」を適用し、その事象を統治する規範の条文も分析対象に含める
 
-### 同一症状の修正反復
+## 同一症状の修正反復
 
 同じ期待契約、症状、検証条件で1回目と2回目の修正後も症状が残り、3回目の修正が必要になった時点で追加修正を止める。原因仮説が依存する入力、環境、実装、期待契約、検証手段、統治規範を現物で支持または反証してから修正案を選び直す。別症状、別契約、条件不一致、未適用の修正、外部基盤障害は回数へ含めない。現物で観測できずユーザーだけが持つ値が必要な場合だけ、診断質問を1つに限定する。`references/ci-failure-handling.md`の3回目以降のレビュー契約は置換せず併用する。

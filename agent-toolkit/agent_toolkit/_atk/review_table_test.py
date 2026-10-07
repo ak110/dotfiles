@@ -45,6 +45,10 @@ _RESPOND_NAMESPACE_DEFAULTS = {
 
 _CLI_ACCEPTED_CASES = (
     (
+        ["review-table", "respond", "review.tsv", "--row-id=1", "--response-file=response.txt"],
+        {**_RESPOND_NAMESPACE_DEFAULTS, "row_id": 1, "round": None, "track": None, "response_file": "response.txt"},
+    ),
+    (
         [
             "review-table",
             "add",
@@ -234,6 +238,46 @@ def test_add_rereads_decoded_cells_after_storage_write(
     assert capsys.readouterr().out == ""
 
 
+def test_add_saved_mismatch_guides_row_check_instead_of_respond(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`add`の保存後の不一致は、`respond`では直せないlocation列とissue列で生じるため、表の該当行の確認を案内する。
+
+    `respond`は応答列だけを更新するため、`add`の不一致へ`respond`を案内すると実行できない操作を案内することになる。
+    """
+    path = tmp_path / "review.tsv"
+    location_file = tmp_path / "location.txt"
+    location_file.write_text("module.py:10", encoding="utf-8")
+    issue_file = tmp_path / "issue.md"
+    issue_file.write_text("修正が必要", encoding="utf-8")
+    # 保存行の解決に使う列を変えずに不一致の分岐を通すため、一致判定だけを不一致にする。
+    monkeypatch.setattr(table._body_match, "verdict", lambda _expected, _saved: "不一致")  # pylint: disable=protected-access
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "review-table",
+                "add",
+                str(path),
+                "--round=1",
+                f"--track={_TRACK}",
+                "--level=詳細",
+                f"--location-file={location_file}",
+                f"--issue-file={issue_file}",
+            ],
+            home=tmp_path,
+        )
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "不一致の列: location" in error
+    assert "`atk review-table show <PATH>`" in error
+    assert "location列とissue列" in error
+    assert "respond" not in error
+
+
 def test_respond_reports_decoded_response_and_match(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -291,6 +335,7 @@ def test_respond_reports_body_mismatch_when_saved_response_is_altered(
     assert "最初の差異: 1文字目" in error
     assert f"送信元本文:\n{response}" in error
     assert f"保存本文:\n{altered_response}" in error
+    assert "`atk review-table respond <PATH> --row-id <ROW_ID>`" in error
 
 
 def test_respond_reports_body_mismatch_when_saved_no_response_reason_is_altered(
@@ -1485,10 +1530,10 @@ def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.P
 
 
 @pytest.mark.parametrize("operation", ("add", "respond"))
-def test_saved_body_mismatch_names_show_and_respond(
+def test_saved_body_mismatch_names_show_and_operation_specific_fix(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
-    """保存本文が送信元と一致しない場合は、保存済みであることと確認・修正のコマンドを示す。"""
+    """保存本文が送信元と一致しない場合は、保存済みであることと確認のコマンド、操作ごとに実行できる修正を示す。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     if operation == "respond":
@@ -1503,7 +1548,8 @@ def test_saved_body_mismatch_names_show_and_respond(
 
     assert "保存は済んでいる" in exc_info.value.next_action
     assert "atk review-table show" in exc_info.value.next_action
-    assert "atk review-table respond" in exc_info.value.next_action
+    # `respond`は応答列だけを更新するため、`add`の不一致（location列・issue列）には案内しない。
+    assert ("atk review-table respond" in exc_info.value.next_action) is (operation == "respond")
 
 
 _RESPONSE_WITHOUT_SEARCH = review_bodies.response_body("修正した").replace(

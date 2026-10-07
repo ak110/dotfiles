@@ -63,7 +63,12 @@ _INPUT_GUIDANCE = (
 )
 _FIX_FORMAT_NEXT_ACTION = f"表を次の形式へ直して再実行する。{_RECOVERY_GUIDANCE}"
 _FIX_ROW_NEXT_ACTION = "`atk review-table show <PATH>`で該当行を確認し、表を直して再実行する"
-_SAVED_MISMATCH_NEXT_ACTION = (
+# `add`の不一致はlocation列かissue列で生じ、`respond`は応答列だけを更新するため、案内を操作ごとに分ける。
+_SAVED_ADD_MISMATCH_NEXT_ACTION = (
+    "保存は済んでいる。`atk review-table show <PATH>`で追加した行のlocation列とissue列を確認し、"
+    "送信元本文と異なる場合は表ファイルの該当行を送信元本文へ直す"
+)
+_SAVED_RESPONSE_MISMATCH_NEXT_ACTION = (
     "保存は済んでいる。`atk review-table show <PATH>`で保存結果を確認し、"
     "`atk review-table respond <PATH> --row-id <ROW_ID>`で直す"
 )
@@ -75,7 +80,7 @@ _ActionableError = _next_action.ActionableError
 # 記録時点で同じ規定の検索と不採用の根拠の確認を求めるため、列を増やさず本文の行頭ラベルで表す。
 RESPONSE_LABELS = ("違反を確認した規定:", "同じ規定の検索:", "採用する修正範囲:", "採用しない修正方針:")
 NO_RESPONSE_REASON_LABELS = ("根拠の所在:",)
-_LABEL_DEFINITION = "`agent-toolkit:review-standards`の`references/reviewee.md`「公開可能性の検証」"
+_LABEL_DEFINITION = "`agent-toolkit:review-standards`の`references/reviewee.md`「レビュー指摘管理表への応答」"
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -335,7 +340,7 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
                 f"最初の差異: {position}文字目\n"
                 f"送信元本文:\n{expected}\n"
                 f"保存本文:\n{saved}",
-                next_action=_SAVED_MISMATCH_NEXT_ACTION,
+                next_action=_SAVED_ADD_MISMATCH_NEXT_ACTION,
             )
     _outcome.report_success(f"指摘行を1件追加した: {target}（{len(rows)}件）")
     return 0
@@ -468,7 +473,7 @@ def respond(
             f"最初の差異: {position}文字目\n"
             f"送信元本文:\n{expected_body}\n"
             f"保存本文:\n{saved_body}",
-            next_action=_SAVED_MISMATCH_NEXT_ACTION,
+            next_action=_SAVED_RESPONSE_MISMATCH_NEXT_ACTION,
         )
     _outcome.report_success(f"応答欄を更新した: {target}")
     return 0

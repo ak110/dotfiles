@@ -8,7 +8,7 @@ description: >
 # セッション振り返り
 
 同じユーザー介入、レビュー反復、手戻りまたは無駄が再発しないよう、対象セッションの問題を見つけ、原因と対策を確定した通常AWIを投入する。
-原因と対策の最終判断と統合は、メインが同じセッション内で自身のコンテキストで行う。事実の収集は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「事象単位の並列調査委譲」が定める条件で独立した担当へ委譲する。
+原因と対策の最終判断と統合は、メインが同じセッション内で自身のコンテキストで行う。事実の収集は`agent-toolkit:bugfix`の`references/investigation-delegation.md`「事象単位の並列調査委譲」が定める条件で独立した担当へ委譲する。
 メインが元の記録を持ち、委譲先へ取得できる証拠を渡す。最終判断を別の環境へ移すと、元の記録へ届かず候補の文脈を組み立て直すことになる。
 `atk run-script session-review-prepare`はツール実行結果と自動挿入本文を除いたセッション全体の流れ（会話の流れ）と、雑音になる候補を機械的に除いた問題候補（`candidates.md`）を書く。観点を限定して抽出した候補だけを読むと、どの観点にも当たらない問題が分析の入力に現れない。そこでメインは会話の流れを先に通読して問題を探し、`candidates.md`は通読では得られない事象を補うために使う。
 
@@ -18,14 +18,15 @@ description: >
 | --- | --- |
 | 工程1の`atk run-script session-review-prepare`が0以外で終了したか、標準出力が1行のJSONでない場合 | `references/analysis-failure.md` |
 | 工程2で`atk run-script session-review-prepare`の`reference_document`が値を持つ場合 | `reference_document`が示す対象リポジトリ固有の振り返り参照文書 |
-| 工程3で問題を選別する前 | `references/analysis.md` |
+| 工程2で`conversation.md`を通読する前（工程2の判定と工程3の選別に使う） | `references/analysis.md` |
+| 工程3か工程4で事実の収集を委譲する前 | `agent-toolkit:bugfix`の`references/investigation-delegation.md` |
 | 工程4で問題ごとに`agent-toolkit:bugfix`を起動した時点（`references/analysis.md`「原因と対策」がユーザー介入を拡張原因分析の条件に当たるものとして扱うため） | `agent-toolkit:bugfix`の`references/root-cause-analysis.md` |
 | 工程5で要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` |
 
 ## 実行主体
 
 最上位セッションのメインエージェントが自身のセッションを振り返り対象として本スキルを起動する。別のエージェントからタスクを受け取った実行主体は自身をサブエージェントと判定し、起動判断を委譲元へ返す。1つの実行主体が対象セッションの全ての記録をまとめて抽出するため、個別起動は候補の重複または欠落を生じさせる。
-メインは振り返りの工程と最終判断を担う。工程3と工程4でユーザー介入の候補を扱う場合や、独立した複数の事象を扱う場合は、事実の収集を`agent-toolkit:bugfix`の条件に従って委譲する。対策AWIの本文の起草と投入は、`agent-toolkit:wi-standards`「投入と取得」に従ってWI投入担当へ委譲する。
+メインは振り返りの工程と最終判断を担う。工程3と工程4でユーザー介入の候補を扱う場合や、独立した複数の事象を扱う場合は、事実の収集を`agent-toolkit:bugfix`の`references/investigation-delegation.md`の条件に従って委譲する。対策AWIの本文の起草と投入は、`agent-toolkit:wi-standards`「投入と取得」に従ってWI投入担当へ委譲する。
 
 ## 工程
 

@@ -95,7 +95,7 @@
 | 作成規範 | 対象成果物の種別に適用する作成側の品質基準 | `agent-toolkit/skills/review-standards/SKILL.md`「対象成果物の作成規範」 |
 | 完成条件 | WIの`## 完成条件`が定める、完了を判定する条件 | `agent-toolkit/skills/wi-standards/references/awi-body.md`「通常AWIの本文」 |
 | 完了条件 | 計画の`## 要件・外部仕様`が持つ合否の条件。WIの同種の項目は完成条件と呼ぶ | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
-| レビュー指摘管理表 | `atk review-table`が操作する8列のTSVで、計画ファイルと同じstemの`.exec-review.tsv` | `agent-toolkit/skills/review-standards/SKILL.md`「レビュー指摘管理表の共通操作」 |
+| レビュー指摘管理表 | `atk review-table`が操作する7列のTSVで、計画ファイルと同じstemの`.exec-review.tsv` | `agent-toolkit/skills/review-standards/SKILL.md`「レビュー指摘管理表の共通操作」 |
 | CI対応レビュー指摘管理表 | 対応する計画が無いCI失敗について、CIのエラーへの対応内容をレビューしたときの指摘の管理表（`ci-<OID>.exec-review.tsv`） | `agent-toolkit/skills/review-standards/SKILL.md`「レビュー指摘管理表の共通操作」 |
 | セッション記録 | Claude CodeとCodexが保存する会話の記録（transcript） | `agent-toolkit/skills/writing-standards/references/session-records.md`冒頭 |
 | メイン記録 | Claude Codeのセッション本体の記録（深さ2） | `agent-toolkit/skills/writing-standards/references/session-records.md`「Claude Codeの記録」 |
