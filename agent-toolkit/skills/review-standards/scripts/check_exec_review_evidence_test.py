@@ -1228,6 +1228,91 @@ def test_unassigned_requirement_with_described_assignee_is_accepted(
     assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
 
 
+_OWN = "設定画面を直して。"
+_OTHER = "旧設定も一括で移して。"
+# 割当先の逐語引用の1番目のtextフェンスの本文で、_OTHERが占める1始まりの文字範囲。
+_OTHER_POSITION = f"逐語引用 text[1] 文字{len(_OWN) + 1}-{len(_OWN) + len(_OTHER)}"
+_OWN_POSITION = f"逐語引用 text[1] 文字1-{len(_OWN)}"
+
+
+def _assignee_awi(reflection: str, note: str = "") -> str:
+    """分割元の依頼を逐語で引用し、`## 反映内容と反映先`か引用節の注記へ引受の記録を持つ割当先のAWI本文を返す。"""
+    return (
+        "type: awi\nsource: agent\n---\n# 旧設定の一括移行\n"
+        f"## 反映内容と反映先\n\n{reflection}\n"
+        "## 完成条件\n- 旧設定を移行できる\n\n"
+        f"## ユーザー指摘の逐語引用\n\n{note}```text\n{_OWN}{_OTHER}\n```\n"
+    )
+
+
+def _unassigned_by_assignee(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, assignee_body: str, source: str, evidence: str
+) -> argparse.Namespace:
+    """割当元（FIRST_WI）が割当先を名指しせず、割当先（SECOND_WI）だけが記録を持つ組の証拠と起動引数を用意する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _split_awi(_OWN, _OTHER, ""), SECOND_WI: assignee_body})
+    path = tmp_path / "evidence.json"
+    unassigned = {**_requirement(FIRST_WI, _OTHER), "outcome": "割当外", "source": source, "evidence": evidence}
+    _write_evidence(path, [_condition(FIRST_WI, "設定画面で保存できる")], [_requirement(FIRST_WI, _OWN), unassigned])
+    return argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    )
+
+
+@pytest.mark.parametrize("acceptance", ["position", "quote"])
+def test_unassigned_accepts_assignee_acceptance_record(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], acceptance: str
+) -> None:
+    """割当元が割当先を名指ししなくても、割当先のAWIが同じ単位を引き受けた記録があれば割当外を受理する。
+
+    受理しないと、割当先を名指ししない保存済みのAWIでは本文も凍結済みの計画も直せず、実行レビューの往復が反復する。
+    位置参照は割当先自身の引用節のtextフェンスへ解決し、保存済みの注記は「」の引用で単位を指す。
+    """
+    if acceptance == "position":
+        body = _assignee_awi(f"- {_OTHER_POSITION}: 旧設定の一括移行として本AWIの完成条件で扱う\n")
+        section = "反映内容と反映先"
+    else:
+        body = _assignee_awi("- 旧設定の一括移行を実装する\n", note=f"- 「{_OTHER}」は本AWIで扱う\n\n")
+        section = "ユーザー指摘の逐語引用"
+    args = _unassigned_by_assignee(tmp_path, monkeypatch, body, f"{SECOND_WI} ## {section}", SECOND_WI)
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("reflection", "source_wi", "evidence_wi"),
+    [
+        # 割当先が他へ渡した単位を指す行（除外語を持つ行）は引受ではない。
+        (f"- {_OTHER_POSITION} は本AWIの完成条件に含めない\n", SECOND_WI, SECOND_WI),
+        (f"- {_OTHER_POSITION} は{THIRD_WI}へ割当\n", SECOND_WI, SECOND_WI),
+        (f"- 「{_OTHER}」は{THIRD_WI}で扱う\n", SECOND_WI, SECOND_WI),
+        (f"- {_OTHER_POSITION} は背景として扱う\n", SECOND_WI, SECOND_WI),
+        # 割当先の記録が別の単位だけを指す。
+        (f"- {_OWN_POSITION}: 本AWIで扱う\n", SECOND_WI, SECOND_WI),
+        # evidenceのファイル名が行のawiと同じ（割当元自身の記録を引受として扱わない）。
+        (f"- {_OTHER_POSITION}: 本AWIで扱う\n", FIRST_WI, FIRST_WI),
+    ],
+    ids=["excluded", "assigned-elsewhere", "other-wi", "background", "other-unit", "same-awi"],
+)
+def test_unassigned_rejects_non_acceptance_records(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reflection: str,
+    source_wi: str,
+    evidence_wi: str,
+) -> None:
+    """割当先自身が引き受けない単位の記録と割当元自身の記録を引受として受理せず、2つの受理の形を示して拒否する。
+
+    受理すると、割当先が他へ渡した単位や背景とした単位まで割当外として通り、どのAWIも達成を確かめない単位が残る。
+    """
+    args = _unassigned_by_assignee(
+        tmp_path, monkeypatch, _assignee_awi(reflection), f"{source_wi} ## 反映内容と反映先", evidence_wi
+    )
+    assert run_script.dispatch(args) == 1
+    line = next(line for line in capsys.readouterr().err.splitlines() if "user_requirements[1]" in line)
+    assert line.startswith(f"失敗: {FIRST_WI}: user_requirements[1].")
+    assert "割当元の記録" in line and "割当先の引受の記録" in line and "証拠不足" in line
+
+
 def test_expired_requirement_also_checks_user_answer_source(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

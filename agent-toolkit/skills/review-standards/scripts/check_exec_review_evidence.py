@@ -45,6 +45,20 @@ BRACKETED_TITLE = re.compile(r"「([^」]+)」")
 WHOLE_REQUEST = "分割元の依頼全体"
 ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
 BACKGROUND = "背景"
+# 割当先のAWIが要求単位を引き受けた記録（引受の記録）を読む節と、引用位置の書式。
+ACCEPTANCE_SECTIONS = ("反映内容と反映先", "ユーザー指摘の逐語引用")
+QUOTE_POSITION = re.compile(r"逐語引用\s*text\[(\d+)\]\s*文字(\d+)-(\d+)")
+# 割当先自身が引き受けない単位を指す行の語。awi-body.mdは他のAWIへ割り当てた単位、分割元の依頼全体と背景の単位に、
+# これらの語を同じ記録へ書かせる。`対象外`は保存済みの注記が他のAWIへ渡した単位に使った形である。
+NON_ACCEPTANCE_WORDS = (*ASSIGNMENT_WORDS, BACKGROUND, "含めない", "対象外")
+UNASSIGNED_FORMS = (
+    "受理される記録は2つある。1つは割当元の記録で、sourceへ割当を記録したWIのファイル名と節名『反映内容と反映先』"
+    "（計画では計画ファイルの絶対パスと節名『実施内容』）、evidenceへその節の割当の語（割当・割り当て・分割元の依頼全体）を"
+    "持つ行に書かれたとおりの割当先を書く。もう1つは割当先の引受の記録で、sourceへ割当先のAWIのファイル名と節名"
+    "『反映内容と反映先』（保存済みの形では『ユーザー指摘の逐語引用』のtextフェンス外の注記）、evidenceへ割当先のファイル名を書く。"
+    "引受の記録の行は`逐語引用 text[N] 文字A-B`か「」の引用でこの単位を指し、割当・割り当て・分割元の依頼全体・背景・"
+    "含めない・対象外の語とWIファイル名を含まない。どちらの記録も無い単位は達成・未達・証拠不足のいずれかで判定する"
+)
 # 失効の根拠とするメインの技術判断を、レビュー指摘管理表の行で識別する文字列。
 TECHNICAL_JUDGMENT = "メインの技術判断"
 # `evidence`のファイル参照の受理形式。雛形の次の操作と、参照を解決できない診断の双方がこの説明を示す。
@@ -1023,12 +1037,15 @@ def _unassigned_source_error(
     語なしで受理すると割当でない行まで根拠になる。
     """
     label = _row_label(row, section, index)
+    acceptance = _acceptance_reasons(row, repository, wi_outputs)
+    if acceptance is not None and not acceptance:
+        return None
+    detail = f"（引受の記録として確かめた結果: {'、'.join(acceptance)}）" if acceptance else ""
     record, reason = _record_section(row["source"], repository, wi_outputs)
     if record is None:
         return (
-            f"{label}.source: 割当外の根拠となる割当の記録を特定できません（{reason}）。"
-            f"{_source_location(section, '割当外')}をsourceへ書く。"
-            "割当の記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
+            f"{label}.source: 割当外の根拠となる割当の記録を特定できません（{reason}）{detail}。"
+            f"{_source_location(section, '割当外')}をsourceへ書く。{UNASSIGNED_FORMS}"
         )
     evidence = row["evidence"]
     assignees = [*WI_FILENAME.findall(evidence), *BRACKETED_TITLE.findall(evidence)]
@@ -1036,17 +1053,88 @@ def _unassigned_source_error(
         assignees.append(WHOLE_REQUEST)
     if not assignees:
         return (
-            f"{label}.evidence: 割当先の表記がありません。"
-            f"記録に書かれたとおりの割当先（WIファイル名、「」で囲んだタイトルか説明、または{WHOLE_REQUEST}）をevidenceへ書く"
+            f"{label}.evidence: 割当先の表記がありません{detail}。"
+            f"記録に書かれたとおりの割当先（WIファイル名、「」で囲んだタイトルか説明、または{WHOLE_REQUEST}）をevidenceへ書く。"
+            f"{UNASSIGNED_FORMS}"
         )
     for line in record:
         if any(word in line for word in ASSIGNMENT_WORDS) and any(assignee in line for assignee in assignees):
             return None
     return (
-        f"{label}.evidence: 割当先（{_quoted_units(assignees)}）がsourceの節の割当を示す行にありません。"
+        f"{label}.evidence: 割当先（{_quoted_units(assignees)}）がsourceの節の割当を示す行にありません{detail}。"
         "割当を示す行は、割当の語（割当・割り当て・分割元の依頼全体）を持つ行である。"
-        "記録に書かれたとおりの割当先をevidenceへ写すか、記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
+        f"記録に書かれたとおりの割当先をevidenceへ写す。{UNASSIGNED_FORMS}"
     )
+
+
+def _acceptance_reasons(row: dict[str, str], repository: pathlib.Path, wi_outputs: dict[str, str]) -> list[str] | None:
+    """割当外行が割当先の引受の記録を指す場合に、受理の条件を確かめて満たさなかった条件を返す。
+
+    `evidence`のWIファイル名が`source`にも現れない行は引受の記録を指さないため`None`、条件を満たせば空の一覧を返す。
+    割当は割当元と割当先の2つの本文に現れる事実であり、割当元が割当先を名指ししない保存済みのAWIでも、
+    割当先が同じ単位を自身の反映先へ対応付けた記録から割当を確かめられる。割当先自身が引き受けない単位を指す行
+    （`NON_ACCEPTANCE_WORDS`の語か別のWIファイル名を含む行）は引受に数えない。
+    """
+    source = row["source"]
+    assignees = [name for name in dict.fromkeys(WI_FILENAME.findall(row["evidence"])) if name in source]
+    if not assignees:
+        return None
+    sections = [name for name in ACCEPTANCE_SECTIONS if name in source]
+    reasons: list[str] = []
+    for assignee in assignees:
+        if assignee == row["awi"]:
+            reasons.append(f"evidenceの{assignee}が行のawiと同じです（引受の記録は割当先の別のAWIの本文に限る）")
+            continue
+        if not sections:
+            reasons.append(f"sourceに{assignee}の節名『反映内容と反映先』か『ユーザー指摘の逐語引用』がありません")
+            continue
+        try:
+            _, body = _load_wi(assignee, repository, wi_outputs)
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+            reasons.append(str(exc))
+            continue
+        quote_section = _section(body, f"## {ACCEPTANCE_SECTIONS[1]}") or []
+        fences = [
+            "\n".join(quote_section[start + 1 : end])
+            for start, end, info in requirement_units.fenced_blocks(quote_section)
+            if info == "text"
+        ]
+        for name in sections:
+            lines = _section(body, f"## {name}")
+            if lines is None:
+                reasons.append(f"{assignee}に『{name}』節がありません")
+                continue
+            if name == ACCEPTANCE_SECTIONS[1]:
+                # 引用節の原文はtextフェンスの内側にあり、引受の対応は保存済みの注記としてフェンスの外に書かれる。
+                inside = {
+                    position
+                    for start, end, info in requirement_units.fenced_blocks(lines)
+                    if info == "text"
+                    for position in range(start, end + 1)
+                }
+                lines = [line for position, line in enumerate(lines) if position not in inside]
+            if any(_accepts_unit(line, row["requirement"], fences) for line in lines):
+                return []
+            reasons.append(f"{assignee}の『{name}』節にこの単位を引き受ける行がありません")
+    return reasons
+
+
+def _accepts_unit(line: str, requirement: str, fences: list[str]) -> bool:
+    """記録の1行が、位置参照か「」の引用で要求単位を指し、割当先自身が引き受けない単位の語を含まないかを返す。
+
+    位置参照`逐語引用 text[N] 文字A-B`は割当先自身の引用節のN番目の`text`フェンスの、先頭を1とし改行も1文字として数える
+    文字範囲へ解決する。比較は空白を除いた文字列の包含で行う。
+    """
+    if any(word in line for word in NON_ACCEPTANCE_WORDS) or WI_FILENAME.search(line):
+        return False
+    unit = _compact(requirement)
+    if not unit:
+        return False
+    for match in QUOTE_POSITION.finditer(line):
+        number, start, end = (int(value) for value in match.groups())
+        if 1 <= number <= len(fences) and unit in _compact(fences[number - 1][start - 1 : end]):
+            return True
+    return any(unit in _compact(quote) for quote in BRACKETED_TITLE.findall(line))
 
 
 def _compact(text: str) -> str:
@@ -1179,7 +1267,8 @@ EXEMPTIONS: dict[str, dict[str, Exemption]] = {
         "失効": _EXPIRED_REQUIREMENT,
         "割当外": Exemption(
             _unassigned_source_error,
-            "割当を記録したWIのファイル名と節名『反映内容と反映先』、または計画ファイルの絶対パスと節名『実施内容』",
+            "割当を記録したWIのファイル名と節名『反映内容と反映先』、計画ファイルの絶対パスと節名『実施内容』、"
+            "または引受を記録した割当先のAWIのファイル名と節名『反映内容と反映先』（保存済みの形では『ユーザー指摘の逐語引用』）",
         ),
         BACKGROUND: Exemption(
             _background_source_error,
