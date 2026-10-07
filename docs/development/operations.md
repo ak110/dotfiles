@@ -7,11 +7,9 @@
 
 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する。
 
-- `uv run scripts/sync_generated_files.py`のようにパスを直接渡すと、
-  PEP 723ヘッダーの検出により、スクリプトは依存なしの隔離環境で実行される
 - 同スクリプトは`sys.executable`で生成器を子プロセス起動するため、
-  隔離環境では子が要求するプロジェクト依存（`pytilpack`等）を解決できず全件失敗する
-- `python`を明示するとスクリプトモードにならずプロジェクト環境で実行される
+  子が要求するプロジェクト依存（`pytilpack`等）を持つプロジェクト環境のPythonで起動する。
+  PEP 723ヘッダーを持たないため、パスを直接渡しても依存なしの隔離環境では起動されない
 - 作業ディレクトリを対象の作業用複製（git worktree等）へ変更できない場合は、
   `<複製の絶対パス>/.venv/bin/python <複製の絶対パス>/scripts/sync_generated_files.py`の形で起動する。
   移動コマンドと実行コマンドを同一行に並べる形は、作業ディレクトリの解決が曖昧になるため使わない

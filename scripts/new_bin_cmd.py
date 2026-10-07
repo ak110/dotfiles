@@ -9,7 +9,7 @@
 既存ファイルがあればスキップする。
 
 ハイフン始まりのトークンを含むコマンドを渡す場合は`--`セパレータで位置引数領域を明示する。
-例: `new-bin-cmd.py opus -- claude --model=opus --permission-mode=auto`
+例: `new_bin_cmd.py opus -- claude --model=opus --permission-mode=auto`
 """
 
 import argparse

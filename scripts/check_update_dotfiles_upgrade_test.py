@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import pathlib
 import shutil
@@ -10,22 +9,12 @@ import subprocess
 import sys
 import types
 
+import check_update_dotfiles_upgrade as upgrade
 import pytest
 
 from pytools._internal import setup_codex_cli, setup_herdr_cli
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
-
-
-def _load_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("check_update_dotfiles_upgrade", _SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-upgrade = _load_module()
 
 
 class _FakeRegistry:

@@ -226,6 +226,14 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert result.returncode == 0
         assert "smpr" in _get_additional_context(result)
 
+    def test_non_plan_file_still_uses_distribution_check(self) -> None:
+        """計画ファイル以外の実ファイル編集には固有名の確認を適用する（応答水準は警告）。"""
+        name = "agent" + "_toolkit_bump"
+        target = str(_DOTFILES_ROOT / "agent-toolkit" / "skills" / "example" / "SKILL.md")
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": name}})
+        assert result.returncode == 0
+        assert name in result.stdout
+
     @pytest.mark.parametrize("name", ["pyfltr", "pytilpack"])
     def test_warn_when_target_is_in_agent_toolkit(self, name: str):
         target = str(_AT_DIR / "skills" / "example" / "SKILL.md")

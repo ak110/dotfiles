@@ -33,7 +33,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 - `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用を担う）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）。編集は配布元の`agent-toolkit/rules/`へ行う
 - `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保ち、メインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く
-  （`scripts/gen-install-files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
+  （`scripts/gen_install_files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範とホスト別規範
 - `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範。Codex委譲先の固有差分が必要になった場合は`rules-subagent.codex.md`を追加する
@@ -151,7 +151,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・
   `agent-toolkit/rules/`配下のmdファイル一覧は完全一致を保つ
-  （整合性は`install_script_ssot_invariant_test.py`が検証し、`scripts/gen-install-files.py`を含む`uv run python scripts/sync_generated_files.py`が一覧を自動同期する）
+  （整合性は`install_script_ssot_invariant_test.py`が検証し、`scripts/gen_install_files.py`を含む`uv run python scripts/sync_generated_files.py`が一覧を自動同期する）
 - 配布物スキル本体の外部インターフェース（判定区分・出力フォーマット・後始末コマンド分岐・サマリー表現など）へ
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する

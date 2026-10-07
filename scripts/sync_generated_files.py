@@ -1,16 +1,8 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = []
-# ///
 """リポジトリ内の自動生成ファイルを一括同期する。
 
-起動は`uv run python scripts/sync_generated_files.py`とする。
-パスを直接渡す形（`uv run scripts/sync_generated_files.py`・
-`uv run --no-project --script scripts/sync_generated_files.py`）では
-本ファイルのPEP 723ヘッダーが検出され、依存なしの隔離環境で実行される。
-本スクリプトは`sys.executable`で各生成器を子プロセス起動するため、
-隔離環境では子が要求するプロジェクト依存を解決できず全件失敗する。
+起動は`uv run --frozen python scripts/sync_generated_files.py`とする。
+本スクリプトは`sys.executable`で各生成器を子プロセス起動するため、子が要求するプロジェクト依存を持つ
+プロジェクト環境のPythonで起動する。
 """
 
 from __future__ import annotations
@@ -22,8 +14,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GENERATORS = (
     "scripts/sync_codex_plugin_manifests.py",
-    "scripts/gen-completions.py",
-    "scripts/gen-install-files.py",
+    "scripts/gen_completions.py",
+    "scripts/gen_install_files.py",
     "scripts/sync_codex_agents.py",
 )
 

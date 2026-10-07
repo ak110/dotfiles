@@ -11,7 +11,7 @@
 出力先ファイルは手編集禁止（prekフックで再生成される）。
 
 使い方:
-    scripts/gen-completions.py    # 生成または更新する（既存と同一なら書き換えない）
+    scripts/gen_completions.py    # 生成または更新する（既存と同一なら書き換えない）
 """
 
 import argparse
@@ -34,7 +34,7 @@ _AGENT_TOOLKIT_BIN = _REPO_ROOT / "agent-toolkit" / "bin"
 _MARKER = "# PYTHON_ARGCOMPLETE_OK"
 
 _HEADER_PYTOOLS = """\
-# 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
+# 自動生成ファイル。scripts/gen_completions.py が出力する。手編集禁止。
 # 再生成: `uv run --frozen python scripts/sync_generated_files.py`
 #
 # argcomplete対応の`pytools`系コマンドにbash補完を提供する。
@@ -43,7 +43,7 @@ _HEADER_PYTOOLS = """\
 """
 
 _HEADER_ATK = """\
-# 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
+# 自動生成ファイル。scripts/gen_completions.py が出力する。手編集禁止。
 # 再生成: `uv run --frozen python scripts/sync_generated_files.py`
 #
 # argcomplete対応の`atk`コマンドにbash補完を提供する。

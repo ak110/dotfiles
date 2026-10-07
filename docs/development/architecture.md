@@ -42,7 +42,7 @@
 判断に迷ったら「エンドユーザー環境で実行されるか」を基準に決める。開発とCIの工程からしか動かないなら`scripts/`、
 エンドユーザー環境で他のプログラムから起動されるなら`libexec/`、PATHから直接起動するなら`bin/`が適切。
 
-単純なコマンドラッパーのペアは`scripts/new-bin-cmd.py <name> <command...>`で生成できる。
+単純なコマンドラッパーのペアは`scripts/new_bin_cmd.py <name> <command...>`で生成できる。
 `bin/<name>`と`bin/<name>.cmd`を生成する。
 
 `bin/`直下のスクリプトを追加・移設・削除する際は、以下を同時に見直す。
@@ -59,12 +59,12 @@
 
 補完スクリプトはログイン時の`register-python-argcomplete`実行コストを避けるため事前生成してリポジトリにチェックインする。
 `completions/*.bash`を`.bashrc`がすべて`source`する。コマンド追加時に`.bashrc`を編集する必要はない。
-`scripts/gen-completions.py`は生成先を2箇所へ分岐して書き込む。
+`scripts/gen_completions.py`は生成先を2箇所へ分岐して書き込む。
 通常はpyfltrのcustom formatterから統合生成ランナー経由で実行する。
 `pyproject.toml`の`[project.scripts]`由来のコマンドは`completions/_pytools.bash`へ書き込む。
 `agent-toolkit/scripts/*.py`のうちargcompleteマーカーを持つスクリプトが対象で、
 対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンド（`atk`等）に限る。
-これらの補完は`scripts/gen-completions.py`が`agent-toolkit/completions/atk.bash`へ書き込む。
+これらの補完は`scripts/gen_completions.py`が`agent-toolkit/completions/atk.bash`へ書き込む。
 
 新しいCLIに補完を追加する場合は、CLIモジュールへのマーカー配置と`enable_completion()`呼び出しをコード側コメントに従い追加し、
 補完スクリプトを再生成する。
@@ -76,9 +76,9 @@ uv run --frozen python scripts/sync_generated_files.py  # 全生成物を冪等�
 uv run --frozen pyfltr fast                             # 高速ツールと生成物を同期
 ```
 
-手書き補完が必要な場合（`bin/`配下コマンドのうち`gen-completions.py`の収集対象外のものなど）は
+手書き補完が必要な場合（`bin/`配下コマンドのうち`gen_completions.py`の収集対象外のものなど）は
 `completions/<name>.bash`を新規追加する。`_`プレフィックスのファイルは自動生成物の慣習として予約する。
-`agent-toolkit/completions/atk.bash`は`gen-completions.py`の自動生成対象のため、この手順は当てはまらない。
+`agent-toolkit/completions/atk.bash`は`gen_completions.py`の自動生成対象のため、この手順は当てはまらない。
 
 ## Windows PowerShellスクリプトの注意事項
 
@@ -97,7 +97,7 @@ uv run --frozen pyfltr fast                             # 高速ツールと生�
 | `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。大元の設定から許可済みの要素だけを写像する |
 | `rules/`・`agents/`・`hooks/`・`bin/`・`scripts/`・`share/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
 
-`pytools/_internal/codex_plugin_manifests.py`がAgent PluginsとCodexの生成物を生成・照合し、生成器の起動スクリプト`scripts/sync_codex_plugin_manifests.py`とpost-applyがこれを使う。
+`pytools/_internal/codex_plugin_manifests.py`がAgent PluginsとCodexの生成物の生成と差の確認を担い、生成器の起動スクリプト`scripts/sync_codex_plugin_manifests.py`とpost-applyがこれを使う。
 Codex向け`agents_server`はplugin rootを作業ディレクトリに固定した`uv run --project . --locked --no-default-groups agent_toolkit/agents_server_mcp.py`として生成する。Claude Code向けの`${CLAUDE_PLUGIN_ROOT}`展開はCodexの起動契約へ流用しない。
 `scripts/sync_generated_files.py`は同生成器を統合実行し、生成物を冪等に更新する。
 

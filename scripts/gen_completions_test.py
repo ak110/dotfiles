@@ -1,28 +1,16 @@
-"""scripts/gen-completions.py のテスト。
+"""scripts/gen_completions.py のテスト。
 
-ファイル名にハイフンを含み通常のimport文で読み込めないため、`importlib`経由でロードする。
 公開インターフェース`main()`経由でファイル走査条件・ラッパー実在判定・
 2出力先（`completions/_pytools.bash`・`agent-toolkit/completions/atk.bash`）への
 分岐書き込みを検証する。
 """
 
 import dataclasses
-import importlib.util
 import pathlib
 import types
 
+import gen_completions
 import pytest
-
-_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "gen-completions.py"
-
-
-def _load_module() -> types.ModuleType:
-    """ハイフン付きファイル名のスクリプトを独立モジュールとしてロードする。"""
-    spec = importlib.util.spec_from_file_location("gen_completions", _MODULE_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 @dataclasses.dataclass
@@ -41,7 +29,7 @@ class _Env:
 @pytest.fixture
 def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
     """疑似リポジトリ構造をtmp_path配下に用意し、モジュール定数を差し替えて返す。"""
-    module = _load_module()
+    module = gen_completions
     pyproject = tmp_path / "pyproject.toml"
     pytools_output = tmp_path / "completions" / "_pytools.bash"
     atk_output = tmp_path / "agent-toolkit" / "completions" / "atk.bash"

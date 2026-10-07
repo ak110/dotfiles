@@ -1,12 +1,9 @@
 """sync_codex_agentsのテスト。"""
 
-import re
 from pathlib import Path
 
 import pytest
 import sync_codex_agents as subject
-
-_TWO_LAYER_WAIT_HEADING = "## agents_serverの二層待機"
 
 
 def _root(
@@ -29,12 +26,6 @@ def _root(
     )
     (tmp_path / "AGENTS.md").write_text(project, encoding="utf-8")
     return tmp_path
-
-
-def _section(text: str, heading: str) -> str:
-    match = re.search(rf"^{re.escape(heading)}\n(?P<body>.*?)(?=^#{{1,3}} |\Z)", text, re.MULTILINE | re.DOTALL)
-    assert match is not None
-    return match.group("body")
 
 
 def test_render_preserves_rules_in_sorted_order(tmp_path: Path) -> None:

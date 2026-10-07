@@ -30,7 +30,7 @@ description: >
   `pytools`パッケージの外でエンドユーザー環境（LinuxとWindows）で動く実行ファイルは`libexec/`配下へ置き、両OSで動く書き方とする
 - `scripts/`と`libexec/`のPythonは`[project.scripts]`へ登録せず、PEP 723形式の単独実行スクリプトか、プロジェクト環境で起動するスクリプトとして書く。
   `pytools`から`scripts/`と`libexec/`をimportしない。配布するwheelは`pytools`だけを含み、editable導入以外では解決できないためである
-- 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う
+- 単純なコマンドラッパーの新規追加には`scripts/new_bin_cmd.py <name> <command...>`を使う
   （リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成する）
 - 高頻度起動するhook・statusLine相当のスクリプトは、Windowsでの`uv run`起動コストを考慮し、
   ネイティブバイナリ化を実装方式の第一候補として検討する（先行事例は`rust/claude-statusline/`）
@@ -71,7 +71,10 @@ description: >
   通常の動作テストと混在するときは、不変条件のテストだけを近接する`*_invariant_test.py`へ分離し、通常テストをfastの対象に含めない。
   検証対象の探索は`agent-toolkit:check-execution`の`references/verification-scope.md`に従い、
   個々のテストと編集対象の対応表を規範へ増やさない
-- テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`へ集約する。
+- テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`、リポジトリ直下のテストでは直下の`_test_helpers.py`、
+  `scripts/`配下のテストでは`scripts/_scripts_test_helpers.py`へ集約し、テスト間で共有する関数と定数はこれらの補助モジュールからimportする。
+  pytestのprependモードでは直下と`scripts/`がともに`sys.path`へ入り、同名のトップレベルモジュールは先に読み込んだ方だけが残るため、
+  両ディレクトリの補助モジュールには互いに異なる名前を付ける。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
   共通化が必要な場合は`agent-toolkit-edit`スキルの`references/distribution-and-hooks.md`「scripts配下の配置」が定めるテスト専用パッケージへ置く
 - テストはリポジトリ直下と`agent-toolkit/`の`conftest.py`が適用する`agent-toolkit/agent_toolkit/_testing/isolation.py`の隔離の下で動き、ホームと設定ディレクトリはテストごとの一時ディレクトリを指す。

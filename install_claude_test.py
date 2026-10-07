@@ -1,268 +1,38 @@
 """agent-toolkit統合インストーラーの公開契約を検証する。"""
 
-import functools
-import http.server
 import json
 import os
 import pathlib
 import re
-import shlex
 import shutil
-import socketserver
 import stat
 import subprocess
-import sys
-import threading
 import typing
 
 import pytest
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent
-RULES_SRC = REPO_ROOT / "agent-toolkit" / "rules"
-INSTALL_SH = REPO_ROOT / "install-claude.sh"
-INSTALL_PS1 = REPO_ROOT / "install-claude.ps1"
+from _test_helpers import (
+    INSTALL_PS1,
+    INSTALL_SH,
+    REPO_ROOT,
+    installer_runners,
+    make_command_stubs,
+    read_log_lines,
+    run_installer,
+    serve_rules,
+)
+
 LEGACY_CODEX_MCP_CASES = REPO_ROOT / "pytools" / "_internal" / "legacy_codex_mcp_cases.json"
-
-_COMMAND_STUB = """#!/bin/sh
-command_name=$(basename "$0")
-printf '%s %s\\n' "$command_name" "$*" >> "$CLI_STUB_LOG"
-case "$command_name $*" in
-    *"$STUB_FAIL_PATTERN"*)
-        printf 'stub failure: %s %s\n' "$command_name" "$*" >&2
-        exit 9
-        ;;
-esac
-if [ "$command_name $*" = "codex plugin list --json" ]; then
-    state_index=0
-    if [ -f "$CODEX_PLUGIN_STATE_FILE" ]; then
-        state_index=$(cat "$CODEX_PLUGIN_STATE_FILE")
-    fi
-    if [ "$state_index" -eq 0 ]; then
-        plugin_version="$CODEX_PLUGIN_BEFORE_VERSION"
-        plugin_enabled="$CODEX_PLUGIN_BEFORE_ENABLED"
-    else
-        plugin_version="$CODEX_PLUGIN_AFTER_VERSION"
-        plugin_enabled="$CODEX_PLUGIN_AFTER_ENABLED"
-    fi
-    printf '%s\n' "$((state_index + 1))" > "$CODEX_PLUGIN_STATE_FILE"
-    if [ "$state_index" -eq 0 ] && [ -n "$CODEX_PLUGIN_BEFORE_JSON" ]; then
-        printf '%s\n' "$CODEX_PLUGIN_BEFORE_JSON"
-        exit 0
-    fi
-    if [ "$plugin_version" = "__missing__" ]; then
-        printf '{"installed":[]}\n'
-    else
-        printf '{"installed":[{"pluginId":"agent-toolkit@ak110-dotfiles","version":"%s","enabled":%s}]}\n' \
-            "$plugin_version" "$plugin_enabled"
-    fi
-    exit 0
-fi
-if [ "$command_name $*" = "codex plugin marketplace list --json" ]; then
-    printf '{"marketplaces":[{"name":"ak110-dotfiles","root":"%s"}]}\n' "$STUB_MARKETPLACE_ROOT"
-    exit 0
-fi
-if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json" ]; then
-    rm -rf "$CODEX_PLUGIN_CACHE_ROOT"
-    if [ "$CODEX_STUB_CREATE_CACHE" = "1" ]; then
-        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit"
-        printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit/hook.py"
-        printf 'agents server\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit/agents_server_mcp.py"
-    fi
-    if [ -n "$CODEX_STUB_CONFLICT_VERSION" ]; then
-        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION"
-        printf 'keep\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION/keep"
-    fi
-    exit 0
-fi
-if [ "$command_name $*" = "codex app-server daemon version" ]; then
-    [ "$CODEX_DAEMON_RUNNING" = "1" ]
-    exit $?
-fi
-exit 0
-"""
-
-
-class _QuietHandler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, *args: typing.Any, **kwargs: typing.Any) -> None:
-        del args, kwargs
-
-
-def _serve_rules() -> typing.Iterator[str]:
-    handler = functools.partial(_QuietHandler, directory=str(REPO_ROOT))
-
-    class _Server(socketserver.TCPServer):
-        allow_reuse_address = True
-
-    with _Server(("127.0.0.1", 0), handler) as server:
-        port = typing.cast(tuple[str, int], server.server_address)[1]
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        try:
-            yield f"http://127.0.0.1:{port}/agent-toolkit/rules"
-        finally:
-            server.shutdown()
-            thread.join()
 
 
 @pytest.fixture(name="rules_url", scope="module")
 def rules_url_fixture() -> typing.Iterator[str]:
     """テスト用のルール配布先URLを返す。"""
-    yield from _serve_rules()
-
-
-def _runners() -> list[object]:
-    params: list[object] = [pytest.param("sh", id="sh")]
-    if shutil.which("pwsh"):
-        params.append(pytest.param("ps1", id="ps1"))
-    else:
-        params.append(pytest.param("ps1", id="ps1", marks=pytest.mark.skip(reason="pwsh未インストール")))
-    return params
-
-
-def _make_command_stubs(
-    tmp_path: pathlib.Path,
-    *,
-    omit: str | None = None,
-) -> tuple[pathlib.Path, pathlib.Path]:
-    bin_dir = tmp_path / "stub-bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    log_path = tmp_path / "cli.log"
-    log_path.touch()
-    executable_mode = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
-
-    for command_name in ("claude", "codex"):
-        if command_name == omit:
-            continue
-        stub = bin_dir / command_name
-        stub.write_text(_COMMAND_STUB, encoding="utf-8")
-        stub.chmod(stub.stat().st_mode | executable_mode)
-
-    if omit != "uv":
-        uv_stub = bin_dir / "uv"
-        python_command = shlex.quote(sys.executable)
-        uv_stub.write_text(
-            "#!/bin/sh\n"
-            'printf \'uv %s\\n\' "$*" >> "$CLI_STUB_LOG"\n'
-            'if [ "$#" -lt 8 ] || [ "$1" != run ] || [ "$2" != --no-config ] || '
-            '[ "$3" != --no-project ] || [ "$4" != --python ] || [ "$5" != 3 ] || '
-            '[ "$6" != python ] || [ "$7" != - ]; then\n'
-            "    exit 8\n"
-            "fi\n"
-            "shift 6\n"
-            f'exec {python_command} "$@"\n',
-            encoding="utf-8",
-        )
-        uv_stub.chmod(uv_stub.stat().st_mode | executable_mode)
-
-    return bin_dir, log_path
-
-
-def _run(
-    kind: str,
-    home: pathlib.Path,
-    rules_url: str,
-    *,
-    stub_bin: pathlib.Path | None,
-    stub_log: pathlib.Path,
-    cwd: pathlib.Path | None = None,
-    fail_pattern: str = "__never_match__",
-    codex_plugin_before: tuple[str, bool] | None = None,
-    codex_plugin_before_json: str = "",
-    codex_plugin_after: tuple[str, bool] | None = ("1.2.3", True),
-    codex_daemon_running: bool = True,
-    codex_home: pathlib.Path | None = None,
-    conflict_version: str = "",
-    create_cache: bool = True,
-    check: bool = True,
-) -> subprocess.CompletedProcess[str]:
-    path_parts = [str(stub_bin)] if stub_bin is not None else []
-    path_parts.extend(["/usr/bin", "/bin"])
-    if kind == "ps1" and (pwsh := shutil.which("pwsh")):
-        pwsh_dir = str(pathlib.Path(pwsh).parent)
-        if pwsh_dir not in path_parts:
-            path_parts.insert(1 if stub_bin is not None else 0, pwsh_dir)
-
-    before_version, before_enabled = (
-        ("__missing__", "false")
-        if codex_plugin_before is None
-        else (codex_plugin_before[0], str(codex_plugin_before[1]).lower())
-    )
-    after_version, after_enabled = (
-        ("__missing__", "false") if codex_plugin_after is None else (codex_plugin_after[0], str(codex_plugin_after[1]).lower())
-    )
-    effective_codex_home = codex_home or home / ".codex"
-    marketplace_root = home / "codex-marketplace"
-    marketplace_manifest = marketplace_root / ".agents" / "plugins" / "marketplace.json"
-    marketplace_manifest.parent.mkdir(parents=True, exist_ok=True)
-    marketplace_manifest.write_text(
-        json.dumps(
-            {
-                "plugins": [
-                    {
-                        "name": "agent-toolkit",
-                        "source": {"source": "local", "path": "./agent-toolkit-codex"},
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    manifest = marketplace_root / "agent-toolkit-codex" / ".codex-plugin" / "plugin.json"
-    manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text(json.dumps({"version": after_version}), encoding="utf-8")
-    claude_plugin_root = home / "claude-plugin"
-    claude_plugin_script = claude_plugin_root / "agent_toolkit" / "agents_server_mcp.py"
-    claude_plugin_script.parent.mkdir(parents=True, exist_ok=True)
-    claude_plugin_script.write_text("agents server\n", encoding="utf-8")
-    installed_plugins = home / ".claude" / "plugins" / "installed_plugins.json"
-    installed_plugins.parent.mkdir(parents=True, exist_ok=True)
-    installed_plugins.write_text(
-        json.dumps(
-            {
-                "plugins": {
-                    "agent-toolkit@ak110-dotfiles": [
-                        {"installPath": str(claude_plugin_root)},
-                    ]
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    if before_version != "__missing__":
-        old_cache = effective_codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit" / before_version / "scripts"
-        old_cache.mkdir(parents=True, exist_ok=True)
-        (old_cache / "hook.py").write_text("old hook\n", encoding="utf-8")
-    env = {
-        "HOME": str(home),
-        "PATH": os.pathsep.join(path_parts),
-        "DOTFILES_RULES_URL": rules_url,
-        "CLI_STUB_LOG": str(stub_log),
-        "STUB_FAIL_PATTERN": fail_pattern,
-        "CODEX_PLUGIN_STATE_FILE": str(stub_log.with_suffix(".codex-plugin-state")),
-        "CODEX_PLUGIN_BEFORE_VERSION": before_version,
-        "CODEX_PLUGIN_BEFORE_ENABLED": before_enabled,
-        "CODEX_PLUGIN_BEFORE_JSON": codex_plugin_before_json,
-        "CODEX_PLUGIN_AFTER_VERSION": after_version,
-        "CODEX_PLUGIN_AFTER_ENABLED": after_enabled,
-        "CODEX_DAEMON_RUNNING": "1" if codex_daemon_running else "0",
-        "CODEX_HOME": str(effective_codex_home),
-        "CODEX_PLUGIN_CACHE_ROOT": str(effective_codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"),
-        "CODEX_STUB_CONFLICT_VERSION": conflict_version,
-        "CODEX_STUB_CREATE_CACHE": "1" if create_cache else "0",
-        "STUB_MARKETPLACE_ROOT": str(marketplace_root),
-    }
-    command = (
-        ["bash", str(INSTALL_SH)] if kind == "sh" else ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(INSTALL_PS1)]
-    )
-    return subprocess.run(command, cwd=cwd, env=env, check=check, capture_output=True, text=True)
+    yield from serve_rules()
 
 
 def _write_claude_config(home: pathlib.Path, value: object) -> None:
     (home / ".claude.json").write_text(json.dumps(value), encoding="utf-8")
-
-
-def _log_lines(log_path: pathlib.Path) -> list[str]:
-    return [line for line in log_path.read_text(encoding="utf-8").splitlines() if line]
 
 
 def _run_powershell_function_probe(
@@ -312,16 +82,16 @@ def test_agents_server_warmup_closes_standard_input() -> None:
     )
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     """Claude CodeとCodexが実際に参照する両方のスクリプトを事前取得する。"""
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
-    warmups = [line for line in _log_lines(stub_log) if line.startswith("uv run --project ")]
+    warmups = [line for line in read_log_lines(stub_log) if line.startswith("uv run --project ")]
     assert len(warmups) == 2
     assert any(str(home / "claude-plugin" / "agent_toolkit" / "agents_server_mcp.py") in line for line in warmups)
     assert any(
@@ -330,7 +100,7 @@ def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path
     )
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize(
     ("before_state", "after_state", "daemon_running", "expect_notice"),
     [
@@ -354,9 +124,9 @@ def test_restart_notice_requires_codex_plugin_state_change(
     """導入前後のversionまたはenabledが変化した場合だけ再起動を案内する。"""
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = _run(
+    result = run_installer(
         kind,
         home,
         rules_url,
@@ -367,13 +137,13 @@ def test_restart_notice_requires_codex_plugin_state_change(
         codex_daemon_running=daemon_running,
     )
 
-    lines = _log_lines(stub_log)
+    lines = read_log_lines(stub_log)
     assert sum("codex plugin list --json" in line for line in lines) == 2
     assert ("codex app-server daemon version" in lines) is (before_state != after_state)
     assert ("codex app-server daemon restart" in result.stderr) is expect_notice
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 def test_plugin_update_preserves_previous_cache_for_first_wrapper_transition(
     kind: str, tmp_path: pathlib.Path, rules_url: str
 ) -> None:
@@ -385,9 +155,9 @@ def test_plugin_update_preserves_previous_cache_for_first_wrapper_transition(
     old_compat = cache_root / "1.2.1"
     old_compat.parent.mkdir(parents=True)
     old_compat.symlink_to("1.2.2", target_is_directory=True)
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    _run(
+    run_installer(
         kind,
         home,
         rules_url,
@@ -403,14 +173,14 @@ def test_plugin_update_preserves_previous_cache_for_first_wrapper_transition(
     assert (cache_root / "1.2.2" / "scripts" / "hook.py").read_text(encoding="utf-8") == "old hook\n"
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     """更新前状態を取得できない場合はpluginを変更しない。"""
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = _run(
+    result = run_installer(
         kind,
         home,
         rules_url,
@@ -422,7 +192,7 @@ def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathl
     )
 
     assert result.returncode != 0
-    assert not any("codex plugin add" in line for line in _log_lines(stub_log))
+    assert not any("codex plugin add" in line for line in read_log_lines(stub_log))
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
@@ -435,9 +205,9 @@ def test_powershell_invalid_plugin_state_stops_before_plugin_add(
     """PowerShellではinstalledが配列でない応答を取得失敗として扱う。"""
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = _run(
+    result = run_installer(
         "ps1",
         home,
         rules_url,
@@ -449,10 +219,10 @@ def test_powershell_invalid_plugin_state_stops_before_plugin_add(
     )
 
     assert result.returncode != 0
-    assert not any("codex plugin add" in line for line in _log_lines(stub_log))
+    assert not any("codex plugin add" in line for line in read_log_lines(stub_log))
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize(
     "plugin_state",
     [
@@ -470,9 +240,9 @@ def test_invalid_target_plugin_entry_stops_before_plugin_add(
     """対象plugin要素の必須項目が不正なら更新を中止する。"""
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = _run(
+    result = run_installer(
         kind,
         home,
         rules_url,
@@ -484,18 +254,18 @@ def test_invalid_target_plugin_entry_stops_before_plugin_add(
     )
 
     assert result.returncode != 0
-    assert not any("codex plugin add" in line for line in _log_lines(stub_log))
+    assert not any("codex plugin add" in line for line in read_log_lines(stub_log))
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 def test_other_plugin_details_do_not_block_install(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     """対象外pluginのversionとenabledは対象pluginの状態判定へ影響させない。"""
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
     plugin_state = {"installed": [{"pluginId": "other@marketplace", "version": 1, "enabled": "true"}]}
 
-    _run(
+    run_installer(
         kind,
         home,
         rules_url,
@@ -504,18 +274,18 @@ def test_other_plugin_details_do_not_block_install(kind: str, tmp_path: pathlib.
         codex_plugin_before_json=json.dumps(plugin_state),
     )
 
-    assert any("codex plugin add agent-toolkit@ak110-dotfiles --json" in line for line in _log_lines(stub_log))
+    assert any("codex plugin add agent-toolkit@ak110-dotfiles --json" in line for line in read_log_lines(stub_log))
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 def test_same_version_does_not_create_compat_ledger(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     """同version再実行でも廃止した互換台帳を新設しない。"""
     home = tmp_path / "home"
     home.mkdir()
     codex_home = tmp_path / "custom-codex"
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    _run(
+    run_installer(
         kind,
         home,
         rules_url,
@@ -541,7 +311,7 @@ _REGISTERED_STATES = [
 ]
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize("config", _REGISTERED_STATES)
 def test_preserves_existing_user_codex_mcp(
     kind: str,
@@ -553,12 +323,12 @@ def test_preserves_existing_user_codex_mcp(
     home.mkdir()
     _write_claude_config(home, config)
     before = (home / ".claude.json").read_bytes()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
     assert (home / ".claude.json").read_bytes() == before
-    assert not any("claude mcp add" in line or "claude mcp remove" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp add" in line or "claude mcp remove" in line for line in read_log_lines(stub_log))
 
 
 _UNREGISTERED_STATES = [
@@ -570,7 +340,7 @@ _UNREGISTERED_STATES = [
 ]
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize("config", _UNREGISTERED_STATES)
 def test_does_not_register_user_codex_mcp_when_only_non_user_state_exists(
     kind: str,
@@ -582,12 +352,12 @@ def test_does_not_register_user_codex_mcp_when_only_non_user_state_exists(
     home.mkdir()
     if config is not None:
         _write_claude_config(home, config)
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
-    assert not any("claude mcp add" in line for line in _log_lines(stub_log))
-    assert not any("claude mcp remove" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp add" in line for line in read_log_lines(stub_log))
+    assert not any("claude mcp remove" in line for line in read_log_lines(stub_log))
 
 
 def _legacy_codex_mcp_cases() -> list[object]:
@@ -598,7 +368,7 @@ def _legacy_codex_mcp_cases() -> list[object]:
     ]
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize(("config", "legacy"), _legacy_codex_mcp_cases())
 def test_legacy_codex_mcp_cases_match_installers(
     kind: str,
@@ -612,13 +382,13 @@ def test_legacy_codex_mcp_cases_match_installers(
     home.mkdir()
     _write_claude_config(home, config)
     before = (home / ".claude.json").read_bytes()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
-    removals = sum("claude mcp remove --scope user codex" in line for line in _log_lines(stub_log))
+    removals = sum("claude mcp remove --scope user codex" in line for line in read_log_lines(stub_log))
     assert removals == (1 if legacy else 0)
-    assert not any("claude mcp add" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp add" in line for line in read_log_lines(stub_log))
     # 削除は`claude mcp remove`へ委ね、インストーラー自身は設定ファイルを書き換えない。
     assert (home / ".claude.json").read_bytes() == before
 
@@ -631,7 +401,7 @@ _INVALID_STATES = [
 ]
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize("content", _INVALID_STATES)
 def test_fails_closed_for_invalid_claude_config(
     kind: str,
@@ -642,28 +412,28 @@ def test_fails_closed_for_invalid_claude_config(
     home = tmp_path / "home"
     home.mkdir()
     (home / ".claude.json").write_text(content, encoding="utf-8")
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
+    result = run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
 
     assert result.returncode != 0
-    assert not any("claude mcp add" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp add" in line for line in read_log_lines(stub_log))
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 def test_fails_closed_when_claude_config_is_unreadable(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     home = tmp_path / "home"
     home.mkdir()
     (home / ".claude.json").mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
+    result = run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
 
     assert result.returncode != 0
-    assert not any("claude mcp add" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp add" in line for line in read_log_lines(stub_log))
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize("missing_command", ["claude", "codex", "uv"])
 def test_exits_before_writing_when_required_command_is_missing(
     kind: str,
@@ -673,15 +443,15 @@ def test_exits_before_writing_when_required_command_is_missing(
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path, omit=missing_command)
+    stub_bin, stub_log = make_command_stubs(tmp_path, omit=missing_command)
 
-    result = _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
+    result = run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
 
     assert result.returncode != 0
     assert not (home / ".claude" / "rules" / "agent-toolkit").exists()
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize(
     "fail_pattern",
     [
@@ -699,9 +469,9 @@ def test_propagates_required_setup_failures(
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = _run(
+    result = run_installer(
         kind,
         home,
         rules_url,
@@ -714,7 +484,7 @@ def test_propagates_required_setup_failures(
     assert result.returncode != 0
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize(
     ("fail_pattern", "block_atk_wrapper", "expect_notice"),
     [
@@ -739,9 +509,9 @@ def test_notice_contract_by_failure_stage(
         local_dir = home / ".local"
         local_dir.mkdir()
         (local_dir / "bin").write_text("ディレクトリ作成を阻害する", encoding="utf-8")
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = _run(
+    result = run_installer(
         kind,
         home,
         rules_url,
@@ -759,17 +529,17 @@ def test_notice_contract_by_failure_stage(
         assert result.stderr.index("stub failure:") < result.stderr.index("Codex pluginを更新しました。")
 
 
-@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("kind", installer_runners())
 def test_cleans_stage_directory_on_download_failure(kind: str, tmp_path: pathlib.Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
     rules_dir = home / ".claude" / "rules" / "agent-toolkit"
     rules_dir.mkdir(parents=True)
     sentinel = rules_dir / "01-agent.md"
     sentinel.write_text("# 既存内容\n", encoding="utf-8")
 
-    result = _run(
+    result = run_installer(
         kind,
         home,
         "http://127.0.0.1:1/does-not-exist",
@@ -787,7 +557,7 @@ def test_cleans_stage_directory_on_download_failure(kind: str, tmp_path: pathlib
 def test_bash_json_check_uses_explicit_python_with_real_uv(tmp_path: pathlib.Path, rules_url: str) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    stub_bin, stub_log = _make_command_stubs(tmp_path, omit="uv")
+    stub_bin, stub_log = make_command_stubs(tmp_path, omit="uv")
     uv_executable = os.environ.get("UV") or shutil.which("uv")
     assert uv_executable is not None
     (stub_bin / "uv").symlink_to(uv_executable)
@@ -796,9 +566,9 @@ def test_bash_json_check_uses_explicit_python_with_real_uv(tmp_path: pathlib.Pat
     (working_directory / "pyproject.toml").write_text("invalid", encoding="utf-8")
     (working_directory / ".python-version").write_text("3.99", encoding="utf-8")
 
-    _run("sh", home, rules_url, stub_bin=stub_bin, stub_log=stub_log, cwd=working_directory)
+    run_installer("sh", home, rules_url, stub_bin=stub_bin, stub_log=stub_log, cwd=working_directory)
 
-    assert not any("claude mcp add" in line or "claude mcp remove" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp add" in line or "claude mcp remove" in line for line in read_log_lines(stub_log))
     assert not (working_directory / ".venv").exists()
     assert not (working_directory / "uv.lock").exists()
 

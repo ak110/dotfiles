@@ -100,6 +100,16 @@
       ]
     },
     {
+      "fingerprint": "sha256:14d92dc2f3bb53fdab45d5ec03a5aba3e1447f0dd358c2a35e5662872f3de11a",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "install_claude_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
       "fingerprint": "sha256:150bdf0e58e8d7edd30c9409f0e795d9d13def1378827ff5de4be90436faa36b",
       "lines": 18,
       "occurrences": [
@@ -322,16 +332,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:672428cb2013cb0259fa0d88411b38ea50d6161f9f4aeff51fbbf60497fa30b1",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "install_claude_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:689856046dd24b3b9ed2263e5e43fc1c0483bd7e093e334013df6adc7cccbf2b",
       "lines": 11,
       "occurrences": [
@@ -428,16 +428,6 @@
         {
           "path": "agent-toolkit/agent_toolkit/_plan/structure/test_support_test.py",
           "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:7f3c222fdd1379e406fafdca1223a84a2a14891299cd6a87c872e36a0bd93e27",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "install_claude_test.py",
-          "count": 2
         }
       ]
     },
@@ -562,6 +552,16 @@
         {
           "path": "agent-toolkit/agent_toolkit/_atk/managed_temp/windows_security_test.py",
           "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:99c5ec387108c054168a4721c1a7c113380794981f7331fd47e40e241ebbb65a",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "install_claude_test.py",
+          "count": 2
         }
       ]
     },
@@ -775,16 +775,6 @@
       "occurrences": [
         {
           "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:be2452192e5e415bdbd876c3733c6a7fd8380576a146ca66100c22d098818cbe",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "install_claude_test.py",
           "count": 2
         }
       ]

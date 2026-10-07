@@ -3,8 +3,7 @@
 import re
 
 import sync_codex_agents as subject
-
-from scripts.sync_codex_agents_test import _TWO_LAYER_WAIT_HEADING, _section
+from _scripts_test_helpers import TWO_LAYER_WAIT_HEADING, markdown_section
 
 
 def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
@@ -13,9 +12,9 @@ def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
     generated = (subject.REPO_ROOT / subject.TARGET).read_text(encoding="utf-8")
     assert generated == subject.render()
 
-    assert _TWO_LAYER_WAIT_HEADING not in source
-    assert _TWO_LAYER_WAIT_HEADING not in generated
-    section = _section(reference, _TWO_LAYER_WAIT_HEADING)
+    assert TWO_LAYER_WAIT_HEADING not in source
+    assert TWO_LAYER_WAIT_HEADING not in generated
+    section = markdown_section(reference, TWO_LAYER_WAIT_HEADING)
     assert {"`functions.exec`", "`atk agents wait`", "`cell_id`", "`functions.wait`"} <= set(re.findall(r"`[^`]+`", section))
     assert "タスク固有timeoutを渡さず" in section
     assert "対象が未終端なら" in section
