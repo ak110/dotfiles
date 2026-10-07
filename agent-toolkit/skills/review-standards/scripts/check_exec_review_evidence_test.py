@@ -1847,10 +1847,11 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     # Git管理外の記録は、managed-tempのように隠しディレクトリを途中に持つ絶対パスへ置く。
     (tmp_path / ".cache").mkdir()
     (tmp_path / ".cache/out.txt").write_text("観測\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".env\n.env.local\n", encoding="utf-8")
     for command in (
         ["init", "-q"],
         ["remote", "add", "origin", "https://github.com/example/foo.git"],
-        ["add", "docs/record.md", "docs/日本語名.md", "docs/.hidden/note.md"],
+        ["add", "docs/record.md", "docs/日本語名.md", "docs/.hidden/note.md", ".gitignore"],
         ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "観測記録"],
     ):
         subprocess.run(["git", "-C", str(repository), *command], capture_output=True, check=True, timeout=30)
@@ -1862,6 +1863,9 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
         check=True,
         timeout=30,
     ).stdout.strip()
+    # 作業ツリーにだけある未追跡のファイル。期待HEADに無いため、所在を添えない名前は参照の候補にしない。
+    (repository / ".env").write_text("TOKEN=dummy\n", encoding="utf-8")
+    (repository / ".env.local").write_text("TOKEN=dummy\n", encoding="utf-8")
     (notes / "inbox" / FIRST_WI).write_text(
         "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\n---\n# 題\n## 完成条件\n- 完成\n",
         encoding="utf-8",
@@ -1932,6 +1936,21 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
         ("docs/record.md:1-15 で確認", 1),
         ("docs/record.md:1- で確認", 1),
         ("https://example.test/missing.md で公開結果を確認", 0),
+        # ファイルの所在を示さない語（Issueの参照、先頭がピリオドの名前、未追跡のファイル名）は所在を確かめない。
+        ("pytest-dev/pytest#14635 で報告された", 0),
+        ("`pytest-dev/pytest#14635`で報告された", 0),
+        ("上流のpytest-dev/pytest#14635で報告された", 0),
+        ("group/sub/project#12 で報告された", 0),
+        ("scripts/.env を読む設定で確認", 0),
+        ("docs/.absent は作成しない", 0),
+        (".env を読む設定で確認", 0),
+        (".env.local の値で確認", 0),
+        (".gitignore:1 の除外を確認", 0),
+        # 所在を添えた名前と、区切りと拡張子を持つパスの見出しは従来どおり確かめる。
+        ("scripts/.env:1 で確認", 1),
+        (".env:3 で確認", 1),
+        (".gitignore:9 で確認", 1),
+        ("docs/record.md#不在の節 で確認", 1),
         ("test_save: 成功", 0),
         ("条件に対応する観測の結果", 0),
     ],

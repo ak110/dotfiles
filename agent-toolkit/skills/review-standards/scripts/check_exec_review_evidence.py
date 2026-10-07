@@ -70,6 +70,8 @@ PLAIN_REFERENCE = re.compile(
     r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_/\\-]|\.[A-Za-z0-9_])"
     r"(?::[!-~]+|#[^\s`\[\]（）「」、。]+)?)"
 )
+# 名前の本体（ピリオド以外の文字）を持ち、`.<英字>…`で終わるファイル名。`.env`は本体を持たず、拡張子なしとする。
+NAMED_EXTENSION = re.compile(r"\.*[^.]+.*\.[A-Za-z][A-Za-z0-9_-]*")
 # 共用の比較で除く条件文・要求原文の再掲の境界。区切りは語の境界とし、ファイル名の`.`と`/`は含めない。
 # ラベルはコロンで終わる短い語（`確認対象: `など）とし、パスを飲み込まないよう`/`と区切りを含めない。
 RESTATEMENT_SEPARATORS = r"\s、。，,;；|・"
@@ -388,15 +390,47 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
         return False
     # 自由文の単語、パスのないテスト名、拡張子のない画面・APIのパス、製品名は候補にしない。
     # 明示された参照は実在に依存させず、不在なら対象版の確認で拒否する。
+    # 拡張子は名前の本体を持つファイル名の`.<英字>…`とし、`.env`のように先頭がピリオドで本体の無い名前は拡張子を持たない。
+    # 見出し位置はファイルの節を指すため、拡張子を持つ名前に添えた場合だけ所在とする。
+    # `pytest-dev/pytest#14635`のようなIssueの参照は区切りと`#`を持つが、ファイルを指さない。
+    # 行位置を添えた名前（`.gitignore:9`、`scripts/.env:1`）は、根拠の所在を示すため従来どおり確かめる。
     has_separator = "/" in candidate or "\\" in candidate
-    has_extension = re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
+    has_extension = NAMED_EXTENSION.fullmatch(re.split(r"[/\\]", candidate)[-1]) is not None
+    if location.startswith("#"):
+        located = has_extension
+    else:
+        located = bool(location) and (has_separator or re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None)
     explicit = (
         _reference_group(match, "link") is not None
         or WI_FILENAME.fullmatch(candidate) is not None
         or (has_separator and has_extension)
-        or (bool(location) and (has_separator or has_extension))
+        or located
     )
-    return bool(candidate) and (explicit or _is_file(repository / candidate))
+    if not candidate or (not location and _is_untracked_file(candidate, repository)):
+        return False
+    return explicit or _is_file(repository / candidate)
+
+
+def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
+    """作業ツリーにファイルとして実在するが、Gitで追跡されていないリポジトリ内の候補かを返す。
+
+    所在の内容は期待HEADのGit blobから読むため、作業ツリーにだけある未追跡のファイル（`.env`、`.env.local`など）は
+    候補にすると必ず拒否される。所在を添えない名前は根拠の所在を示していないため、候補から外す。
+    追跡の判定のサブプロセスは、作業ツリーに実在する候補にだけ実行する。
+    """
+    path = pathlib.Path(os.path.abspath(repository / candidate))
+    if not path.is_relative_to(repository) or not _is_file(path):
+        return False
+    result = subprocess.run(
+        ["git", "-C", str(repository), "ls-files", "--error-unmatch", "--", path.relative_to(repository).as_posix()],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=30,
+    )
+    return result.returncode != 0
 
 
 def _reference_parts(match: re.Match[str]) -> tuple[str, str]:
