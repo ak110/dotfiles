@@ -627,10 +627,14 @@ async def test_session_label_prefers_argument_over_generated_value(
         label="作業ツリーの差分",
     )
 
-    assert manager.show_session(named["session_id"])["label"] == "lane-02"
-    assert manager.show_session(unnamed["session_id"])["label"] == "対象の調査"
-    assert manager.show_session(shell_default["session_id"])["label"] == "shell-git"
-    assert manager.show_session(shell_named["session_id"])["label"] == "作業ツリーの差分"
+    for response, expected in (
+        (named, "lane-02"),
+        (unnamed, "対象の調査"),
+        (shell_default, "shell-git"),
+        (shell_named, "作業ツリーの差分"),
+    ):
+        assert response["label"] == expected
+        assert manager.show_session(response["session_id"])["label"] == expected
 
 
 @pytest.mark.asyncio
@@ -669,8 +673,109 @@ async def test_empty_session_label_falls_back_to_the_generated_value(
     started = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label=label)
     shell = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す", label=label)
 
-    assert manager.show_session(started["session_id"])["label"] == "対象の調査"
-    assert manager.show_session(shell["session_id"])["label"] == "shell-git"
+    assert started["label"] == manager.show_session(started["session_id"])["label"] == "対象の調査"
+    assert shell["label"] == manager.show_session(shell["session_id"])["label"] == "shell-git"
+
+
+@pytest.mark.asyncio
+async def test_public_start_returns_label_of_started_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """全modeの公開`start`の応答が、起動したsessionの保持する担当名を`label`で返す。
+
+    応答に担当名が無いか別のsessionの値を返すと、複数の委譲先を起動した委譲元が`session_id`と担当を対応付けられず、
+    追送を別の担当へ送る。明示・省略・空白の指定、taskの引き継ぎ記録付き応答、候補の切替と起動直後の失敗を含める。
+    """
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")]
+    )
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(subject._managed_temp, "_state_root_path", lambda: tmp_path / "managed-state")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    subject._managed_temp.create_managed_temp("session", session_id="caller-session")
+    manager, _ = _manager_with_fake("codex")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    cwd = str(tmp_path)
+    task_params = {
+        **dict(
+            line.split(": ", 1)
+            for line in _observed_input_lines("exec.subagent.md", tmp_path)
+            if not line.startswith("引き継ぎ記録先:")
+        ),
+        "レーン識別子": "lane-07",
+    }
+
+    responses = {
+        "lane-02": await subject.start(
+            cwd, mode="delegate", prompt="対象の調査\n詳細", model_type="high_tier", label="lane-02"
+        ),
+        "別の調査": await subject.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="high_tier"),
+        "空白の調査": await subject.start(cwd, mode="delegate", prompt="空白の調査", model_type="high_tier", label="   "),
+        "explore": await subject.start(cwd, mode="explore", prompt="探索"),
+        "write-awi": await subject.start(cwd, mode="write", prompt="定型変更", label="write-awi"),
+        "shell-git": await subject.start(cwd, mode="shell", command="git status --short", summary_policy="終了コードだけ"),
+        "lane-07-exec": await subject.start(cwd, subagent_md_path="exec", extra_params=task_params),
+    }
+
+    assert "handoff_record_path" in responses["lane-07-exec"]
+    assert len({response["session_id"] for response in responses.values()}) == len(responses)
+    for expected, response in responses.items():
+        assert response["label"] == expected
+        assert manager.show_session(response["session_id"])["label"] == expected
+
+    candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    switching, claude = _manager_with_fake("claude")
+    _install_backend(switching, "codex", UnavailableStartBackend(switching.sessions, "codex"))
+    monkeypatch.setattr(subject, "_MANAGER", switching)
+    switched = await subject.start(cwd, mode="delegate", prompt="切替", model_type="high_tier", label="switched")
+    assert switched["excluded_candidates"]
+    assert switched["label"] == switching.show_session(switched["session_id"])["label"] == "switched"
+
+    _install_backend(switching, "claude", UnavailableStartBackend(switching.sessions, "claude"))
+    del claude
+    failed = await subject.start(cwd, mode="delegate", prompt="失敗", model_type="high_tier", label="all-failed")
+    assert failed["status"] == "failed"
+    assert failed["label"] == switching.show_session(failed["session_id"])["label"] == "all-failed"
+
+
+@pytest.mark.asyncio
+async def test_send_message_returns_label_of_delivered_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """公開`send_message`の応答が、配送した宛先sessionの担当名を`label`で返す。
+
+    実行中turnへのsteer、終端後のreply、保持期限の経過後と破棄後の再開の各配送で、
+    宛先以外のsessionや追送本文から担当名を返すと、委譲元は誤送を応答から検出できない。
+    """
+    monkeypatch.setattr(
+        subject._atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")]
+    )
+    manager, _ = _manager_with_fake("codex")
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    first = await manager.start("high_tier", "i568の投入", str(tmp_path), label="add-wi-568")
+    second = await manager.start("high_tier", "i569の投入", str(tmp_path), label="add-wi-569")
+    first_id, second_id = first["session_id"], second["session_id"]
+
+    steered = await subject.send_message(second_id, "add-wi-568への追加情報")
+    assert (steered["delivery"], steered["label"]) == ("steered", "add-wi-569")
+
+    _complete(manager.sessions[first_id])
+    replied = await subject.send_message(first_id, "add-wi-569への追加情報")
+    assert (replied["delivery"], replied["label"]) == ("reply_started", "add-wi-568")
+
+    _complete(manager.sessions[first_id])
+    manager._expire_session(first_id)
+    resumed_after_expiry = await subject.send_message(first_id, "続行")
+    assert (resumed_after_expiry["delivery"], resumed_after_expiry["label"]) == ("reply_started", "add-wi-568")
+
+    _complete(manager.sessions[second_id])
+    await manager.stop(second_id)
+    resumed_after_stop = await subject.send_message(second_id, "続行")
+    assert (resumed_after_stop["delivery"], resumed_after_stop["label"]) == ("reply_started", "add-wi-569")
 
 
 @pytest.mark.asyncio
@@ -835,7 +940,7 @@ async def test_start_rejects_prompt_missing_required_input(
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         nonlocal called
         called = True
-        return {"session_id": "session", "status": "running"}
+        return {"session_id": "session", "status": "running", "label": "担当"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
@@ -858,14 +963,14 @@ async def test_start_accepts_exec_review_prompt_with_documented_input_names(
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         nonlocal called
         called = True
-        return {"session_id": "session", "status": "running"}
+        return {"session_id": "session", "status": "running", "label": "担当"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
     extra_params = _observed_input_params(task_document.name, tmp_path)
 
     response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
-    assert response == {"session_id": "session", "status": "running"}
+    assert response == {"session_id": "session", "status": "running", "label": "担当"}
     assert called is True
 
 
@@ -888,7 +993,7 @@ async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPat
     受理すると、`<役割名>.subagent.md`が定める手順を委譲元が委譲プロンプトへ書き足して起動できてしまう。
     """
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path) | {"追加指示": "検証はpytestで行う"}
 
@@ -920,7 +1025,7 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
     tmp_path: pathlib.Path,
 ) -> None:
     """`<役割名>.subagent.md`の指定と入力名の誤りは、正しい渡し方か自由本文の`delegate`への切替を次の操作で示す。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     path = str(subject._SHARE_DIRECTORY / document) if document == "exec.subagent.md" else document
 
@@ -942,7 +1047,7 @@ async def test_start_resolves_role_name_to_own_plugin_root(
     委譲プロンプトの1行目の出所が別のrootを指すと、委譲元と委譲先が別の版の文書を使う。
     """
     task_document = (subject._SHARE_DIRECTORY / "add-wi.subagent.md").resolve()
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     subagent_md_path = "add-wi" if form == "role-name" else str(task_document)
 
@@ -950,7 +1055,7 @@ async def test_start_resolves_role_name_to_own_plugin_root(
         str(tmp_path), subagent_md_path=subagent_md_path, extra_params=_observed_input_params(task_document.name, tmp_path)
     )
 
-    assert response == {"session_id": "session", "status": "running"}
+    assert response == {"session_id": "session", "status": "running", "label": "担当"}
     manager.start.assert_awaited_once()
     task_prompt = manager.start.await_args.args[1]
     assert task_prompt.splitlines()[0] == f"次の文書の手順を実行せよ（出所: {task_document}）。"
@@ -979,7 +1084,7 @@ async def test_start_rejects_unresolvable_role_name_with_accepted_roles(
 
     受理すると、`share/`直下の外の文書や作業ディレクトリ相対の文書を委譲先へ渡せてしまう。
     """
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
     with pytest.raises(ValueError) as raised:
@@ -1001,7 +1106,7 @@ async def test_start_reports_missing_model_type_mapping_as_defect(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """工程別設定の対応が無い`<役割名>.subagent.md`は、欠陥の報告と自由本文の`delegate`への切替を次の操作で示す。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.delitem(subject._TASK_MODEL_TYPES, "exec.subagent.md")
 
@@ -1018,7 +1123,7 @@ async def test_start_reports_missing_model_type_mapping_as_defect(
 async def test_start_accepts_declared_optional_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """必須・任意入力名だけの`start`は起動し、委譲プロンプトは`入力:`見出しを持ち`追加指示:`を持たない。"""
     task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path) | {"環境構築": "完了済み"}
 
@@ -1117,7 +1222,7 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
 @pytest.mark.asyncio
 async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`mode:`行の無い`<役割名>.subagent.md`は通常委譲で起動し、不正な値は宣言を読めない扱いで通常委譲とする。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     task_document = _write_declared_task_document(tmp_path, "必須入力名: 対象\n任意入力名: 補足")
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
@@ -1134,7 +1239,7 @@ async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`mode:`へ改める前の`起動種別:`行を持つ旧形式の`<役割名>.subagent.md`も同じ値で読む。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     current = _write_declared_task_document(tmp_path / "current", "必須入力名: 対象\nmode: explore")
     legacy = _write_declared_task_document(tmp_path / "legacy", "必須入力名: 対象\n起動種別: explore")
@@ -1159,13 +1264,16 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "effort": "medium",
         "model_type": "high_tier",
         "root_session_id": "root",
+        "label": "担当",
     }
     manager = SimpleNamespace(
         start=AsyncMock(return_value=response),
         start_explore=AsyncMock(return_value=response),
         start_write=AsyncMock(return_value=response),
         start_shell=AsyncMock(return_value=response),
-        send_message=AsyncMock(return_value={"delivery": "replied", "previous_result": {"status": "completed"}}),
+        send_message=AsyncMock(
+            return_value={"delivery": "replied", "label": "担当", "previous_result": {"status": "completed"}}
+        ),
     )
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
@@ -1182,29 +1290,34 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
     assert await subject.start(str(tmp_path), mode="delegate", prompt="本文", model_type="high_tier") == {
         "session_id": "session",
         "status": "running",
+        "label": "担当",
         "root_session_id": "root",
         **identity_fields,
     }
     assert await subject.start(str(tmp_path), mode="explore", prompt="探索") == {
         "session_id": "session",
         "status": "running",
+        "label": "担当",
         "root_session_id": "root",
         **identity_fields,
     }
     assert await subject.start(str(tmp_path), mode="write", prompt="定型変更") == {
         "session_id": "session",
         "status": "running",
+        "label": "担当",
         "root_session_id": "root",
         **identity_fields,
     }
     assert await subject.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態") == {
         "session_id": "session",
         "status": "running",
+        "label": "担当",
         "root_session_id": "root",
         **identity_fields,
     }
     assert await subject.send_message("session", "続行") == {
         "delivery": "replied",
+        "label": "担当",
         "previous_result": {"status": "completed"},
     }
 
@@ -1347,7 +1460,9 @@ async def test_reader_fit_public_start_accepts_declared_review_inputs(
 ) -> None:
     """親が渡す初回・再レビューの入力をstartで受理し、宣言外入力だけを拒否する。"""
     task = subject._SHARE_DIRECTORY / "reader-fit-review.subagent.md"
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "reader", "status": "running"}))
+    manager = SimpleNamespace(
+        start=AsyncMock(return_value={"session_id": "reader", "status": "running", "label": "reader-fit-review"})
+    )
     monkeypatch.setattr(subject, "_MANAGER", manager)
     params = dict(line.split(": ", 1) for line in _observed_input_lines(task.name, tmp_path, rereview=rereview))
     response = await subject.start(str(tmp_path), subagent_md_path=str(task), extra_params=params)
@@ -1367,7 +1482,9 @@ async def test_exec_review_public_start_accepts_previous_revision(
 ) -> None:
     """引き継ぎ再レビューの比較元を宣言済み入力として委譲プロンプトへ配送する。"""
     task = subject._SHARE_DIRECTORY / "exec-review.subagent.md"
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "review", "status": "running"}))
+    manager = SimpleNamespace(
+        start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "exec-review"})
+    )
     monkeypatch.setattr(subject, "_MANAGER", manager)
     params = {
         **_observed_input_params(task.name, tmp_path),
@@ -1387,13 +1504,13 @@ async def test_defect_investigation_uses_high_tier_model(tmp_path: pathlib.Path,
     工程別モデルの対応が欠けると`start`が起動を拒否し、段位を誤ると調査を上位モデルで行えない。
     """
     task_document = subject._SHARE_DIRECTORY / "defect-investigation.subagent.md"
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path)
 
     response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
-    assert response == {"session_id": "session", "status": "running"}
+    assert response == {"session_id": "session", "status": "running", "label": "担当"}
     manager.start.assert_awaited_once()
     model_type, prompt, cwd = manager.start.await_args.args
     assert model_type == "high_tier"
@@ -1431,7 +1548,7 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
 
     async def fake_start(_model_type: str, prompt: str, *_args: object, **_kwargs: object) -> dict[str, Any]:
         prompts.append(prompt)
-        return {"session_id": "session", "status": "running"}
+        return {"session_id": "session", "status": "running", "label": "担当"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
 
@@ -1455,7 +1572,7 @@ async def test_start_keeps_given_handoff_path_and_rejects_other_missing_inputs(
 
     async def fake_start(_model_type: str, prompt: str, *_args: object, **_kwargs: object) -> dict[str, Any]:
         prompts.append(prompt)
-        return {"session_id": "session", "status": "running"}
+        return {"session_id": "session", "status": "running", "label": "担当"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
 
@@ -1484,7 +1601,7 @@ async def test_start_warns_and_continues_without_required_input_marker(
     task_document.write_text("# タスク\n\n## 入力\n\n- 対象\n", encoding="utf-8")
 
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
-        return {"session_id": "session", "status": "running"}
+        return {"session_id": "session", "status": "running", "label": "担当"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
@@ -1492,7 +1609,7 @@ async def test_start_warns_and_continues_without_required_input_marker(
     with caplog.at_level(logging.WARNING, logger="agent-toolkit.agents-server.mcp"):
         response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={})
 
-    assert response == {"session_id": "session", "status": "running"}
+    assert response == {"session_id": "session", "status": "running", "label": "担当"}
     assert "必須入力を確認できません" in caplog.text
 
 
@@ -1532,6 +1649,7 @@ async def test_start_projects_shared_state_without_internal_fields(
         "model": "model",
         "effort": "high",
         "root_session_id": "root-session",
+        "label": "調査",
     }
     _assert_no_forbidden_keys(response)
     assert f"session_transition event=start session_id={engine}-session writer=mcp-manager status=running" in caplog.text
@@ -1558,7 +1676,7 @@ async def test_success_response_key_sets_for_all_tools(
     explored = await manager.start_explore("探索", str(tmp_path))
     written = await manager.start_write("定型変更", str(tmp_path))
     shelled = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
-    start_keys = {"session_id", "status", "engine", "model", "effort", "model_type", "root_session_id"}
+    start_keys = {"session_id", "status", "label", "engine", "model", "effort", "model_type", "root_session_id"}
     assert started.keys() == start_keys
     assert explored.keys() == start_keys
     assert written.keys() == start_keys
@@ -1573,7 +1691,7 @@ async def test_success_response_key_sets_for_all_tools(
         "progress",
         "elapsed_seconds",
     }
-    assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery", "root_session_id"}
+    assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery", "label", "root_session_id"}
     session.turn_id = "turn-1"
     assert (await manager.kill(session_id, timeout=0)).keys() == {"status", "kill_requested"}
 
@@ -2838,7 +2956,7 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
 
     response = await manager.send_message("saved-session", "続行")
 
-    assert _without_root(response) == {"delivery": "reply_started"}
+    assert _without_root(response) == {"delivery": "reply_started", "label": ""}
     assert "previous_result" not in response
     assert backend.resume_calls == ["saved-session"]
     assert "saved-session" not in manager.expired_sessions
@@ -2885,7 +3003,7 @@ async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
 
-    assert _without_root(await manager.send_message("created-session", "続行")) == {"delivery": "reply_started"}
+    assert _without_root(await manager.send_message("created-session", "続行")) == {"delivery": "reply_started", "label": ""}
     writer.flush()
 
     resumed = manager.sessions["created-session"]
@@ -2963,7 +3081,10 @@ async def test_resumed_session_keeps_every_launch_info_item(
     _complete(session, message="前のturn")
     prepare_resume(manager, session)
 
-    assert _without_root(await manager.send_message(session.session_id, "続行")) == {"delivery": "reply_started"}
+    assert _without_root(await manager.send_message(session.session_id, "続行")) == {
+        "delivery": "reply_started",
+        "label": _LAUNCH_VALUES["label"],
+    }
     writer.flush()
 
     resumed = manager.sessions[session.session_id]
@@ -2999,7 +3120,7 @@ async def test_resume_from_legacy_registry_record_without_launch_info(
     manager, _ = _resume_test_manager(monkeypatch, tmp_path)
     session_registry.publish("legacy-session", terminal=True, engine="claude", cwd=str(tmp_path), turn_seq=2)
 
-    assert _without_root(await manager.send_message("legacy-session", "続行")) == {"delivery": "reply_started"}
+    assert _without_root(await manager.send_message("legacy-session", "続行")) == {"delivery": "reply_started", "label": ""}
 
     resumed = manager.sessions["legacy-session"]
     assert (resumed.label, resumed.prompt) == ("", "")
@@ -4009,7 +4130,7 @@ async def test_send_message_keeps_previous_result_after_reply_failed_response(tm
     )
 
     first = await manager.send_message(session_id, "1回目")
-    assert _without_root(first) == {"delivery": "reply_failed"}
+    assert _without_root(first) == {"delivery": "reply_failed", "label": ""}
 
     second = await manager.send_message(session_id, "2回目")
     assert second["previous_result"]["agent_message"] == "reply失敗結果"
@@ -4048,7 +4169,7 @@ async def test_send_message_steered_response_has_no_previous_result(tmp_path: pa
     session.turn_id = "turn-1"
     manager.sessions[session.session_id] = session
     response = await manager.send_message(session.session_id, "追加指示")
-    assert _without_root(response) == {"delivery": "steered"}
+    assert _without_root(response) == {"delivery": "steered", "label": ""}
 
 
 class FakeCodexClient:
@@ -4751,10 +4872,11 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
         "model": "gpt-test",
         "effort": "high",
         "fast_mode": False,
+        "label": "調査",
     }
     backend.client = cast(Any, client)
     steered = await manager.send_message("thread-codex", "追加指示")
-    assert steered == {"delivery": "steered"}
+    assert steered == {"delivery": "steered", "label": "調査"}
     assert manager.sessions["thread-codex"].turn_seq == 1
     assert client.requests[-1][0] == "turn/steer"
     killed = await manager.kill("thread-codex", timeout=0)
@@ -4790,7 +4912,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
     )
     response = await manager.send_message("thread-saved", "続行")
 
-    assert _without_root(response) == {"delivery": "reply_started"}
+    assert _without_root(response) == {"delivery": "reply_started", "label": ""}
     assert client.requests[0] == (
         "thread/resume",
         {
@@ -6149,7 +6271,7 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
     assert result["error"]["engine"] == "claude"
     response = await manager.send_message(session.session_id, "続行")
 
-    assert _without_root(response) == {"delivery": "reply_started"}
+    assert _without_root(response) == {"delivery": "reply_started", "label": ""}
     assert not manager.expired_sessions
     assert manager.sessions[session.session_id].status == "running"
     await backend.close()
@@ -6187,6 +6309,7 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
     assert previous_error["engine"] == "claude"
     assert _without_root(response) == {
         "delivery": "reply_started",
+        "label": "",
         "previous_result": {
             "status": "failed",
             "agent_message": "",
@@ -6954,7 +7077,7 @@ async def test_start_response_adds_next_action_only_for_failed_start(
     tmp_path: pathlib.Path,
 ) -> None:
     """起動直後に失敗で終端した応答だけが、結果の受領と別候補での再起動を`next_action`で示す。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": status}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": status, "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
     response = await subject.start(str(tmp_path), mode="delegate", prompt="調査", model_type="high_tier")
@@ -6977,7 +7100,7 @@ async def test_send_message_response_adds_next_action_for_unconfirmed_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """新しいturnを開始できなかったか確定できなかった配送は、`atk agents wait`での確認を`next_action`で示す。"""
-    manager = SimpleNamespace(send_message=AsyncMock(return_value={"delivery": delivery}))
+    manager = SimpleNamespace(send_message=AsyncMock(return_value={"delivery": delivery, "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
 
     response = await subject.send_message("3468feae-b2bf-4d67-ac55-3c40207e8b5b", "続行")
@@ -7546,13 +7669,13 @@ async def test_start_accepts_task_document_path_with_spaces(
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document.parent.mkdir()
     task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     response = await subject.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値"})
 
-    assert response == {"session_id": "session", "status": "running"}
+    assert response == {"session_id": "session", "status": "running", "label": "担当"}
     manager.start.assert_awaited_once()
     assert str(task_document) in manager.start.await_args.args[1]
     assert "必須入力名: 対象" in manager.start.await_args.args[1]
@@ -7571,7 +7694,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document.parent.mkdir()
     task_document.write_text("手順: `${CLAUDE_PLUGIN_ROOT}/share/other.parent.md`を読む。\n", encoding="utf-8")
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
@@ -7606,7 +7729,7 @@ async def test_start_rejects_task_document_that_cannot_be_read(
             raise OSError("read failed")
         return original_read_text(path, encoding=encoding, errors=errors)
 
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
     monkeypatch.setattr(subject, "_MANAGER", manager)
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "high_tier")
@@ -8007,6 +8130,7 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
 
     assert _without_root(response) == {
         "delivery": "reply_started",
+        "label": "",
         "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
     }
 

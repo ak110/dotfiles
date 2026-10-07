@@ -274,11 +274,11 @@ def _public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
 
     候補を切り替えて成立した起動だけが、除外した候補と採用した候補を加える。
     除外した候補のうち実際に作成したsessionは、その識別子も保持する。
-    切り替えが起きない起動は`session_id`と`status`を返す。
+    切り替えが起きない起動は`session_id`、`status`および起動したsessionが保持する担当名の`label`を返す。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     起動直後に失敗で終端した応答は、委譲元が状態値だけで次の行動を決められるよう`next_action`を加える。
     """
-    public: dict[str, Any] = {key: response[key] for key in ("session_id", "status")}
+    public: dict[str, Any] = {key: response[key] for key in ("session_id", "status", "label")}
     if all(key in response for key in ("engine", "model", "effort")):
         public["launch_identity"] = {
             "engine": response["engine"],
@@ -462,6 +462,7 @@ _LABEL_DESCRIPTION = _parameter_description(
     "explore・write・shellは同じ種類のsessionを区別できるよう明示する。"
     "省略時はそれぞれ`explore`、`write`、`shell-<コマンドの最初の語のbasename>`を使う。"
     "labelが`-review`で終わるsessionの完了結果には、指摘の採否を確定する手順を示す`next_action`が付く。"
+    "`start`と`send_message`の応答は、そのsessionが保持する担当名（省略時は生成した値）を`label`で返す。"
 )
 _SESSION_ID_DESCRIPTION = _parameter_description(
     "対象sessionの識別子。`start`の応答または`list`が返した`session_id`をそのまま渡す。"
@@ -1613,6 +1614,7 @@ class AgentsServerManager:
                     session.status,
                     session.turn_seq,
                 )
+                response["label"] = session.label
                 return response
             unavailable_response, unavailable_session = response, session
             excluded[candidate] = unavailable_reason
@@ -1634,6 +1636,7 @@ class AgentsServerManager:
                 unavailable_session.status,
                 unavailable_session.turn_seq,
             )
+            unavailable_response["label"] = unavailable_session.label
             return unavailable_response
         raise ActionableRuntimeError(
             "no available model candidates: "
@@ -2236,7 +2239,7 @@ class AgentsServerManager:
             pending.prompt.cancel(ticket)
             raise
         delivery = "reply_failed" if session.result_available else "reply_started"
-        response: dict[str, Any] = {"delivery": delivery}
+        response: dict[str, Any] = {"delivery": delivery, "label": session.label}
         previous_result = pending.take_previous_result()
         if previous_result:
             response["previous_result"] = previous_result
@@ -2398,7 +2401,7 @@ class AgentsServerManager:
                     delivery = result["delivery"]
                     if delivery in {"reply_started", "reply_ambiguous"}:
                         session.reset_progress()
-                    response: dict[str, Any] = {"delivery": delivery}
+                    response: dict[str, Any] = {"delivery": delivery, "label": session.label}
                     if delivery in REPLY_DELIVERIES:
                         previous_result = result["previous_result"]
                         if previous_result:
@@ -2894,8 +2897,9 @@ _START_DESCRIPTION = "\n".join(
         "装着失敗の通知が届いた場合と、通知もtaskも無い実行主体が`CronCreate`を使えて待機でターンを終える場合は、"
         "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」に従って装着する。",
         "",
-        "応答は`session_id`と`status`を含み、サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。"
-        "engineの利用上限などで起動できない候補はサーバーが除外し、残る候補で起動する。"
+        "応答は`session_id`、`status`、担当名の`label`を含み、"
+        "root sessionの識別子を保持する場合は`root_session_id`も加える。"
+        "利用上限などで起動できない候補は除外し、残る候補で起動する。"
         "切り替えた場合だけ、除外した候補と根拠、採用した`engine`・`model`・`effort`を加える。"
         "全候補が可用性またはagyのturn失敗で終端した場合は最後の候補の終端応答を返し、"
         "最後のagy候補のbackend開始例外は除外理由を含む例外で返す。起動条件の詳細は`show`で取得する。",
@@ -2984,7 +2988,10 @@ async def send_message(
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`を含み、サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
+    応答は`delivery`と、指示を配送したsessionが保持する担当名の`label`を含み、
+    サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
+    `label`は起動時に確定した値であり、送信前に意図した担当へ配送したかを確かめる比較に使う。
+    担当名を記録していない旧形式の登録簿から再開した場合は空文字列を返す。
     終端済みsessionの未回収の終端結果を消費して新しいturnを開始した場合は、
     その結果を`previous_result`（`status`・`agent_message`と、ある場合は`error`）で返す。
     消費した結果は`atk agents wait`で受領できないため、委譲元は同じ応答から受け取る。
@@ -3001,7 +3008,7 @@ async def send_message(
     保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
     """
     response = await _MANAGER.send_message(session_id, prompt, timeout)
-    public: dict[str, Any] = {"delivery": response["delivery"]}
+    public: dict[str, Any] = {"delivery": response["delivery"], "label": response["label"]}
     if "root_session_id" in response:
         public["root_session_id"] = response["root_session_id"]
     previous_result = response.get("previous_result")
