@@ -21,6 +21,8 @@ PREFIX = "<!-- wi-commits: "
 SUFFIX = " -->"
 _WI = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+# 対応表の旧新OIDとして受け付ける短縮OIDか完全OIDの形。
+_OID_VALUE = re.compile(r"[0-9a-fA-F]{7,64}")
 _RETRY_PREVIOUS_HEAD = (
     "取り込みやcommit作成の操作の直前に取得したHEADを--previous-headへ渡し、操作後のHEADを--commitへ渡して再実行する"
 )
@@ -231,27 +233,48 @@ def commit_event(
     return {"commits": commits, "awi": sorted(names)}
 
 
-def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[str, set[str]]) -> dict[str, object]:
-    """検収済みの旧OIDから新OIDへのJSON対応を保存したファイルを読み、現在のGit実体へ結び付ける。
+def load_rewrite_map(source: pathlib.Path) -> dict[str, str]:
+    """`--rewrite-map`が受け取る旧OIDから新OIDへの対応表を読み、形式を確かめて返す。
 
-    `source`は`plan-progress`の`--rewrite-map`が受け取るファイルのパスである。読めない場合は、
-    計画ファイルの失敗と区別できるよう、その引数の値を読めなかったことを理由へ書く。
-    旧新OIDは短縮OIDと完全OIDのどちらも受理し、記録は短縮OIDで返す。
+    対応表は旧OIDをキー、新OIDを値とする非空のJSONオブジェクトで、OIDは7文字以上の短縮OIDか完全OIDとする。
+    `plan-progress`の対応記録の更新と`exec-review-evidence-check`の証拠の参照更新が同じ形式を使う。
+    読めない場合は、計画ファイルや証拠の失敗と区別できるよう、その引数の値を読めなかったことを理由へ書く。
     """
+    retry = (
+        "旧OIDから新OIDへのJSONオブジェクトをmanaged-tempのファイルへ保存し、"
+        "その絶対パスを--rewrite-mapへ渡して同じコマンドを再実行する"
+    )
     try:
         replacements = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise CommitMappingError(
-            f"--rewrite-mapの値をJSONファイルとして読めません: {source}: {error}",
-            next_action="旧OIDから新OIDへのJSONオブジェクトをmanaged-tempのファイルへ保存し、"
-            "その絶対パスを--rewrite-mapへ渡して同じコマンドを再実行する",
+            f"--rewrite-mapの値をJSONファイルとして読めません: {source}: {error}", next_action=retry
         ) from error
     if not isinstance(replacements, dict) or not replacements:
-        raise _fail("履歴変更の対応は非空のJSONオブジェクトが必要です")
+        raise CommitMappingError("履歴変更の対応は非空のJSONオブジェクトが必要です", next_action=retry)
+    invalid = [
+        f"{old!r}: {new!r}"
+        for old, new in replacements.items()
+        if not isinstance(new, str) or _OID_VALUE.fullmatch(old) is None or _OID_VALUE.fullmatch(new) is None
+    ]
+    if invalid:
+        raise CommitMappingError(
+            f"履歴変更の対応に7文字以上の短縮OIDか完全OIDでない値があります: {', '.join(invalid)}", next_action=retry
+        )
+    return replacements
+
+
+def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[str, set[str]]) -> dict[str, object]:
+    """検収済みの旧OIDから新OIDへのJSON対応を保存したファイルを読み、現在のGit実体へ結び付ける。
+
+    `source`は`plan-progress`の`--rewrite-map`が受け取るファイルのパスであり、形式は`load_rewrite_map`が確かめる。
+    旧新OIDは短縮OIDと完全OIDのどちらも受理し、記録は短縮OIDで返す。
+    """
+    replacements = load_rewrite_map(source)
     resolved: dict[str, str] = {}
     for old, new in replacements.items():
-        full_old = _full_oid(worktree, old) if isinstance(old, str) and old else ""
-        if full_old not in mapping or not isinstance(new, str):
+        full_old = _full_oid(worktree, old)
+        if full_old not in mapping:
             raise _fail(f"履歴変更前の対応がありません: {old}")
         resolved[short_oid(worktree, full_old)] = short_oid(worktree, resolve_commit(worktree, new))
     return {"rewrite": resolved}

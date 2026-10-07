@@ -3,6 +3,9 @@
 異なる要求へ参照先のない根拠を写すと条件別の検収が成立しないため、errorとして扱う。
 参照内容が実際に各条件を満たすかはレビュー担当が判定する。
 
+`--rewrite-map`は履歴書換え後に、両配列の`evidence`にあるcommit参照だけを旧新OIDの対応表で書き換える。
+判定と`reviewed_head`は変えず、参照を更新した証拠の各行は新しいHEADで再判定する。
+
 `--template`は証拠の判定と同じ規則で期待行を求め、`完成条件証拠`に不足する行を判定欄が空の雛形として追記する。
 担当が原文を書き写す量を減らすためであり、判定・根拠・判定したHEADは担当が各行で記入する。
 雛形が判定欄を埋めないのは、全行へ同じ判定やHEADを機械的に付けると意味の確認を省いた証拠になるためである。
@@ -26,6 +29,7 @@ import typing
 from agent_toolkit._atk import review_table
 from agent_toolkit._common import markdown_headings, requirement_units
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._plan import commit_mapping
 from agent_toolkit._plan.structure.markdown import extract_tables, markdown_body_text
 
 # 達成・未達・証拠不足は行そのものの判定であり、根拠の記録を別に確かめない。
@@ -109,6 +113,8 @@ REFERENCE_LABEL = re.compile(r"[^\s、。，,.;；:：\0]{1,20}[:：]\s*(?=\0)")
 # `record`は実行環境と生成側の改訂でコロンやスラッシュを含む形へ変わるため文字の種類を限定せず、
 # 生成側の`_resolve_record_locator`と同じく語の最後の`:<数字列>`で`record`と`line`へ分ける。
 USER_EVENT_SOURCE = re.compile(r"(?P<path>(?:[A-Za-z]:[\\/]|/)[^\s`「」]+)[`\s]+(?P<record>[^\s`「」]+):(?P<line>\d+)(?!\d)")
+# 根拠の地の文に独立して現れるcommit参照。パスの要素（`docs/abc1234.md`）と長い識別子の一部分は対象にしない。
+COMMIT_REFERENCE = re.compile(r"(?<![\w./\\-])[0-9a-fA-F]{7,64}(?![\w/\\-]|\.\w)")
 TEST_RESULT = re.compile(
     r"(?<!\w)test_[\w]+(?:\[[^\]\n]+\])?(?:`)?\s*(?::|：|=|は|が|\s)\s*(?:成功|合格|PASS(?:ED)?|passed)(?!\w)"
 )
@@ -1748,12 +1754,105 @@ def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str],
     for section, rows in additions.items():
         payload[section].extend(rows)
     added = sum(len(rows) for rows in additions.values())
-    # 書込みの途中で失敗しても既存の証拠を壊さないよう、同じディレクトリの一時ファイルから置き換える。
+    _write_evidence_file(path, payload)
+    return [], added, kept
+
+
+def _write_evidence_file(path: pathlib.Path, payload: dict[str, typing.Any]) -> None:
+    """書込みの途中で失敗しても既存の証拠を壊さないよう、同じディレクトリの一時ファイルから置き換える。"""
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, suffix=".tmp", delete=False) as stream:
         json.dump(payload, stream, ensure_ascii=False, indent=2)
         stream.write("\n")
     pathlib.Path(stream.name).replace(path)
-    return [], added, kept
+
+
+def rewrite_references(path: pathlib.Path, map_path: pathlib.Path) -> tuple[list[str], int, int]:
+    """両配列の`evidence`のcommit参照を旧新OIDの対応表で書き換え、診断、更新した行数、置換件数を返す。
+
+    参照は16進の語として独立したOIDに限り、パスの要素や長い識別子の一部分は置換しない。旧OIDとの一致は
+    前方一致で比べ、旧commitがGitに無くても対応表だけで置換できるようにする。1つの参照が複数の旧OIDに一致する
+    場合は対応を決められないため、証拠を変えずに診断を返す。置換は元の文字列へ1回だけ適用し、置換後の値を
+    再び置換しない。判定と`reviewed_head`は保持し、再判定は実行レビュー担当が新しいHEADで行う。
+    """
+    try:
+        replacements = commit_mapping.load_rewrite_map(map_path)
+    except commit_mapping.CommitMappingError as error:
+        return [f"{error}。{error.next_action}"], 0, 0
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return [f"`完成条件証拠`を読めません: {exc}"], 0, 0
+    payload, errors = _validate_structure(data)
+    if errors:
+        return errors, 0, 0
+    olds = {old.lower(): new for old, new in replacements.items()}
+    updated = count = 0
+    for section in REQUIRED_FIELDS:
+        for index, row in enumerate(payload[section]):
+            found = 0
+
+            def replace(match: re.Match[str], label: str = _row_label(row, section, index)) -> str:
+                nonlocal found
+                token = match.group().lower()
+                # 参照が旧OIDの短縮形か、参照が完全OIDで旧OIDがその短縮形の場合だけ一致とする。
+                hits = {old for old in olds if old.startswith(token) or (len(token) in (40, 64) and token.startswith(old))}
+                if len(hits) > 1:
+                    errors.append(
+                        f"{label}.evidence: 参照{match.group()}が対応表の複数の旧OID（{'、'.join(sorted(hits))}）に一致します"
+                    )
+                    return match.group()
+                if not hits:
+                    return match.group()
+                found += 1
+                return olds[hits.pop()]
+
+            text = COMMIT_REFERENCE.sub(replace, row["evidence"])
+            if found:
+                row["evidence"] = text
+                updated += 1
+                count += found
+    if errors:
+        return errors, 0, 0
+    if count:
+        _write_evidence_file(path, payload)
+    return [], updated, count
+
+
+def _main_rewrite_map(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    """`--rewrite-map`の操作を実行し、結果と次の操作を出力して終了コードを返す。"""
+    exclusive = {
+        "--template": args.template,
+        "--return-result": args.return_result,
+        "--expected-head": args.expected_head is not None,
+        "--review-table": args.review_table is not None,
+        "--round": args.round is not None,
+    }
+    if conflicting := [name for name, given in exclusive.items() if given]:
+        parser.error(
+            f"--rewrite-mapは{'・'.join(conflicting)}と同時に指定できません。参照を更新してから、判定や返却生成を別に実行する"
+        )
+    if not args.evidence.is_absolute() or not args.rewrite_map.is_absolute():
+        parser.error("`完成条件証拠`と--rewrite-mapには絶対パスを指定してください")
+    errors, updated, count = rewrite_references(args.evidence, args.rewrite_map)
+    if errors:
+        for error in errors:
+            print(f"失敗: {error}", file=sys.stderr)
+        print(
+            _next_action.next_action_line(
+                "`完成条件証拠`は変更していない。対応表の旧OIDを完全OIDか一意な長さの短縮OIDへ直し、同じコマンドでもう一度実行する"
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"成功: `完成条件証拠`のcommit参照を対応表で更新しました（更新した行 {updated} 行、置換 {count} 件）: {args.evidence}\n"
+        + _next_action.next_action_line(
+            "判定とreviewed_headは更新していない。各行の要求・判定・根拠を新しいHEADで再判定してreviewed_headを記入し、"
+            f"`atk run-script exec-review-evidence-check -- {args.evidence} <対象WIファイル名...> "
+            "--expected-head <新しいHEAD>`で確かめる"
+        )
+    )
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1798,7 +1897,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="判定せず、`完成条件証拠`に不足する完成条件と原文要求の行を判定欄が空の雛形として追記する",
     )
+    parser.add_argument(
+        "--rewrite-map",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="履歴書換えの旧OIDから新OIDへの対応表（JSONオブジェクト）の絶対パス。判定せず、両配列のevidenceの"
+        "commit参照だけを書き換える。判定とreviewed_headは変えないため、更新後に各行を新しいHEADで再判定する",
+    )
     args = parser.parse_args(argv)
+    if args.rewrite_map is not None:
+        return _main_rewrite_map(parser, args)
     no_evidence = str(args.evidence) == "なし"
     if not args.evidence.is_absolute() and not (no_evidence and args.return_result):
         parser.error("`完成条件証拠`には絶対パスを指定してください")

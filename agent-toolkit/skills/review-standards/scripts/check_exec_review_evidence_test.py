@@ -2235,6 +2235,109 @@ def test_public_command_resolves_evidence_references(
 
 # 地の文の参照の区切り規則から期待値を導く組み合わせ。パスは拡張子で終わり、行位置は`:`に続くASCIIの並びとし、
 # 最初の非ASCII文字か空白で参照を終える。参照の終わりは前置きの有無と語の先頭の実在で変えない。
+_OLD_FULL = "1" * 40
+_NEW_FULL = "2" * 40
+_OLD_SHORT = "abcdef1234567"
+_NEW_SHORT = "fedcba9876543"
+
+
+def _rewrite_args(evidence: pathlib.Path, rewrite_map: pathlib.Path) -> argparse.Namespace:
+    return argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=[str(evidence), "--rewrite-map", str(rewrite_map)]
+    )
+
+
+def test_rewrite_map_updates_commit_references_only(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """両配列のevidenceのうち、旧OIDとその一意な短縮だけを新OIDへ置換し、他の値と判定・reviewed_headを保持する。
+
+    置換結果の再置換、パスや長い識別子の一部分の置換、reviewed_headの書換えがあると、
+    参照更新だけのはずの操作が根拠や判定対象を別の内容へ変える。
+    """
+    evidence, rewrite_map = tmp_path / "evidence.json", tmp_path / "rewrite.json"
+    # 新OIDを旧OIDとしても持つ対応で、置換結果の再置換が起きないことを確かめる。
+    rewrite_map.write_text(json.dumps({_OLD_FULL: _NEW_FULL, _OLD_SHORT: _NEW_SHORT, _NEW_FULL: "3" * 40}), encoding="utf-8")
+    conditions = [
+        {**_condition(FIRST_WI, "保存"), "evidence": f"commit {_OLD_FULL[:7]} で test_save 成功、{_OLD_FULL} を確認"},
+        {
+            **_condition(FIRST_WI, "再読込"),
+            "outcome": "証拠不足",
+            "evidence": f"`{_OLD_SHORT}`の差分、docs/{_OLD_FULL[:7]}.md、{'9' * 40}、x{_OLD_FULL[:7]}y、{_OLD_FULL}0000",
+        },
+    ]
+    requirements = [{**_requirement(FIRST_WI, "保存して"), "reviewed_head": _OLD_FULL, "evidence": "対応表に無い 7777777"}]
+    _write_evidence(evidence, conditions, requirements)
+    assert run_script.dispatch(_rewrite_args(evidence, rewrite_map)) == 0, capsys.readouterr().err
+    assert "更新した行 2 行、置換 3 件" in capsys.readouterr().out
+    data = json.loads(evidence.read_text(encoding="utf-8"))
+    assert data["wi_conditions"][0]["evidence"] == f"commit {_NEW_FULL} で test_save 成功、{_NEW_FULL} を確認"
+    assert data["wi_conditions"][1]["evidence"] == (
+        f"`{_NEW_SHORT}`の差分、docs/{_OLD_FULL[:7]}.md、{'9' * 40}、x{_OLD_FULL[:7]}y、{_OLD_FULL}0000"
+    )
+    assert data["user_requirements"] == requirements
+    assert [row["outcome"] for row in data["wi_conditions"]] == ["達成", "証拠不足"]
+    assert {row["reviewed_head"] for row in data["wi_conditions"]} == {REVIEWED_HEAD}
+
+
+@pytest.mark.parametrize(
+    "rewrite_map",
+    [
+        {"abc1234aaaa": _NEW_FULL, "abc1234bbbb": "3" * 40},
+        {},
+        [],
+        {"not-an-oid": _NEW_FULL},
+        {_OLD_FULL: 5},
+        "{壊れたJSON",
+    ],
+    ids=["ambiguous", "empty", "array", "non-oid-key", "non-string-value", "broken-json"],
+)
+def test_rewrite_map_rejects_ambiguous_or_invalid_map_without_partial_write(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], rewrite_map: object
+) -> None:
+    """曖昧な短縮と不正な対応表では非0で終了し、先に置換できる行があっても証拠を1文字も変えない。"""
+    evidence, map_path = tmp_path / "evidence.json", tmp_path / "rewrite.json"
+    map_path.write_text(rewrite_map if isinstance(rewrite_map, str) else json.dumps(rewrite_map), encoding="utf-8")
+    _write_evidence(
+        evidence,
+        [
+            {**_condition(FIRST_WI, "保存"), "evidence": f"commit {_OLD_FULL} を確認"},
+            {**_condition(FIRST_WI, "再読込"), "evidence": "commit abc1234 を確認"},
+        ],
+    )
+    before = evidence.read_bytes()
+    assert run_script.dispatch(_rewrite_args(evidence, map_path)) == 1
+    result = capsys.readouterr()
+    assert not result.out and "失敗: " in result.err and "変更していない" in result.err
+    assert evidence.read_bytes() == before
+
+
+def test_rewrite_map_does_not_bypass_rejudgment(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """参照を更新しただけの証拠は新しいHEADの判定で拒否され、各行を再判定してreviewed_headを記入すると受理される。"""
+    repository, old_head, evidence = reference_repository
+    new_head = _commit_files(repository, {"docs/added.md": "# 追加\n"})
+    rewrite_map = repository.parent / "rewrite.json"
+    rewrite_map.write_text(json.dumps({old_head[:9]: new_head}), encoding="utf-8")
+    row = {
+        **_condition(FIRST_WI, "完成"),
+        "reviewed_head": old_head,
+        "evidence": f"commit {old_head[:9]} の docs/record.md:1 を確認",
+    }
+    _write_evidence(evidence, [row])
+    assert run_script.dispatch(_rewrite_args(evidence, rewrite_map)) == 0, capsys.readouterr().err
+    capsys.readouterr()
+    check = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", new_head]
+    )
+    assert run_script.dispatch(check) == 1
+    assert "reviewed_head" in capsys.readouterr().err
+    data = json.loads(evidence.read_text(encoding="utf-8"))
+    assert data["wi_conditions"][0]["evidence"] == f"commit {new_head} の docs/record.md:1 を確認"
+    data["wi_conditions"][0]["reviewed_head"] = new_head
+    evidence.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    assert run_script.dispatch(check) == 0, capsys.readouterr().err
+
+
 _ATTACHED_PATHS = {"docs/record.md": True, "docs/exec.parent.md": True, "docs/missing.md": False, "docs/gone.parent.md": False}
 _ATTACHED_LOCATIONS = {"": True, ":1": True, ":1-2": True, ":99": False, ":1-2,5-7": False, ":1-": False}
 # 後続の語と、その語の中で日本語につないだ別の参照（受理されるべきか）の組。
