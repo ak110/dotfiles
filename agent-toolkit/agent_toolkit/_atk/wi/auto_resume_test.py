@@ -49,8 +49,8 @@ def _claude_process_wi_record(cwd: pathlib.Path) -> list[dict[str, object]]:
 def _prepare_homes(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     claude_home = tmp_path / "claude"
     codex_home = tmp_path / "codex"
-    monkeypatch.setattr(session_records, "default_claude_home", lambda: claude_home)
-    monkeypatch.setattr(session_records, "default_codex_home", lambda: codex_home)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
     return claude_home, codex_home
 
 

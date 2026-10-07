@@ -1,4 +1,7 @@
-"""保存済みセッション記録（Claude Code・Codex）の走査・デコード・判定を提供する共通モジュール。"""
+"""保存済みセッション記録（Claude Code・Codex）からprocess-wiの起動と終了工程の到達を判定する。
+
+記録の形式（保存先の規約、行の解析）は`session_record_format`が解釈し、本モジュールはその上の判定を持つ。
+"""
 
 from __future__ import annotations
 
@@ -11,15 +14,10 @@ import shlex
 from collections.abc import Iterator
 from typing import Any
 
-from agent_toolkit._atk.serve.sessions import (
-    CODEX_ROLLOUT_PREFIX,
-    RECORD_SUFFIX,
-    codex_session_id,
-    default_claude_home,
-    default_codex_home,
-)
+from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.repo import resolve_repo_id
+from agent_toolkit._common import host_homes
 from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
 
 # Claude Codeのハーネスが、`Skill`ツールの起動の`tool_result`として記録する起動確認文言。
@@ -43,37 +41,16 @@ _TEXT_EXCERPT_LIMIT = 200
 
 def candidate_paths() -> Iterator[tuple[pathlib.Path, str, str]]:
     """Claude CodeとCodexの本体セッション候補を列挙する。"""
-    projects = default_claude_home() / "projects"
-    if projects.is_dir():
-        for project_dir in projects.iterdir():
-            if project_dir.is_dir():
-                for path in project_dir.glob(f"*{RECORD_SUFFIX}"):
-                    if path.is_file():
-                        yield path, "claude", path.stem
-
-    sessions = default_codex_home() / "sessions"
-    if sessions.is_dir():
-        for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
-            if path.is_file():
-                yield path, "codex", codex_session_id(path)
-
-
-def parsed_records(path: pathlib.Path) -> Iterator[dict[str, Any]]:
-    """JSON Linesから解釈できる辞書レコードだけを返す。"""
-    with path.open(encoding="utf-8") as record_file:
-        for line in record_file:
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(record, dict):
-                yield record
+    for path in session_record_format.claude_session_records(host_homes.claude_config_dir()):
+        yield path, "claude", path.stem
+    for path in session_record_format.codex_session_records(host_homes.codex_home()):
+        yield path, "codex", session_record_format.codex_session_id(path)
 
 
 def session_cwd(path: pathlib.Path, engine: str) -> str | None:
     """本体セッションなら判定に用いるcwdを返す。"""
     try:
-        for record in parsed_records(path):
+        for record in session_record_format.parsed_records(path):
             if engine == "claude" and record.get("type") == "user":
                 cwd = record.get("cwd")
                 return cwd if record.get("entrypoint") == "cli" and isinstance(cwd, str) else None
@@ -136,7 +113,7 @@ def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
 def invoked_process_wi(path: pathlib.Path, engine: str) -> bool:
     """保存済み記録にprocess-wiの起動標識があれば真を返す。"""
     try:
-        return any(_contains_process_wi_marker(record, engine) for record in parsed_records(path))
+        return any(_contains_process_wi_marker(record, engine) for record in session_record_format.parsed_records(path))
     except OSError:
         return False
 
@@ -176,7 +153,7 @@ def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
     try:
         pending: set[str] = set()
         observed_shape = engine == "claude"
-        for record in parsed_records(path):
+        for record in session_record_format.parsed_records(path):
             if engine == "codex":
                 payload = record.get("payload")
                 if not isinstance(payload, dict):
@@ -264,7 +241,7 @@ def _codex_text(record: dict[str, Any], *, role: str, item_type: str) -> str | N
 def first_user_input(path: pathlib.Path, engine: str) -> str:
     """最初のユーザー入力テキストの抜粋を返す。取得できない場合は空文字列。"""
     try:
-        for record in parsed_records(path):
+        for record in session_record_format.parsed_records(path):
             text = (
                 _claude_text(record, role_type="user")
                 if engine == "claude"
@@ -281,7 +258,7 @@ def last_agent_message(path: pathlib.Path, engine: str) -> str:
     """最後のエージェント発言テキストの抜粋を返す。取得できない場合は空文字列。"""
     result = ""
     try:
-        for record in parsed_records(path):
+        for record in session_record_format.parsed_records(path):
             text = (
                 _claude_text(record, role_type="assistant")
                 if engine == "claude"

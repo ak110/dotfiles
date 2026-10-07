@@ -1,12 +1,16 @@
-"""session_review_evidenceの一次選別候補生成を検証する。"""
+"""証拠抽出の問題候補の抽出（`session_evidence_candidates.py`）を検証する。"""
 
 import json
 import pathlib
 
 import pytest
+import session_evidence_candidates as evidence_candidates
+import session_evidence_extract as evidence_extract
+import session_evidence_hook_notices as evidence_hook_notices
 import session_review_evidence as evidence
 
 from agent_toolkit._agents_server import tool_descriptions
+from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._testing.helpers import _write_transcript
 
 
@@ -35,7 +39,7 @@ def test_candidate_events_excludes_non_interventions_and_reports_counts() -> Non
         {"kind": "user", "record": "main", "line": 4, "text": "実際の是正要求"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert [(candidate["candidate_kind"], candidate["locators"]) for candidate in candidates[:-1]] == [
         ("confirmation-request", [{"record": "main", "line": 3}]),
@@ -53,7 +57,7 @@ def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
         _answer_event(3, ["対象範囲を広げる"], intervention=True),
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert [(candidate["candidate_kind"], candidate["locators"]) for candidate in candidates[:-1]] == [
         ("confirmation-request", [{"record": "main", "line": 2}]),
@@ -118,8 +122,8 @@ def _codex_question(call_id: str, answer: str) -> list[dict[str, object]]:
 
 def _extracted_candidates(transcript: pathlib.Path) -> tuple[list[str], list[str], dict[str, int]]:
     """生成側の抽出結果を候補抽出へ通し、ユーザー介入候補と確認候補の本文、除外件数を返す。"""
-    events = [{**event, "record": "main"} for event in evidence.load_and_extract(str(transcript))]
-    candidates = evidence._candidate_events(events, [], [])  # pylint: disable=protected-access
+    events = [{**event, "record": "main"} for event in evidence_extract.load_and_extract(str(transcript))]
+    candidates = evidence_candidates._candidate_events(events, [], [])  # pylint: disable=protected-access
     texts = [candidate["text"] for candidate in candidates[:-1] if candidate["candidate_kind"] == "user-intervention"]
     confirmations = [
         candidate["text"] for candidate in candidates[:-1] if candidate["candidate_kind"] == "confirmation-request"
@@ -202,7 +206,7 @@ def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
         {"kind": "user", "record": "main", "line": 6, "text": "実際の是正要求"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 6}]]
     assert candidates[-1]["excluded"]["runtime-inserted"] == 4
@@ -282,7 +286,7 @@ def test_candidate_events_excludes_runtime_generated_user_records() -> None:
         {"kind": "user", "record": "main", "line": 3, "text": "実際の是正要求"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
     assert candidates[-1]["excluded"]["runtime-meta"] == 1
@@ -311,7 +315,7 @@ def test_candidate_events_excludes_hook_notices_without_tag() -> None:
         },
     ]
 
-    candidates = evidence._candidate_events([], [], hook_notices)  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events([], [], hook_notices)  # pylint: disable=protected-access
 
     assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 2}]]
     assert candidates[-1]["excluded"]["hook-notice-untagged"] == 1
@@ -334,7 +338,7 @@ def test_candidate_events_reports_no_detail_budget_exclusion_without_omitted_not
         }
     ]
 
-    candidates = evidence._candidate_events([], [], hook_notices)  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events([], [], hook_notices)  # pylint: disable=protected-access
 
     assert [candidate["occurrence_count"] for candidate in candidates[:-1]] == [1]
     assert not candidates[-1]["excluded"]
@@ -348,7 +352,7 @@ def test_candidate_events_separates_failures_with_different_exit_codes_and_diagn
         {"kind": "failed-tool", "record": "main", "line": 9, "tool": "toolu_03", "text": "Exit code 3\n詳細3"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert len(candidates[:-1]) == 3
     assert {candidate["candidate_kind"] for candidate in candidates[:-1]} == {"tool-failure"}
@@ -375,7 +379,7 @@ def test_candidate_events_classifies_auto_mode_denial_as_permission_denial() -> 
         {"kind": "failed-tool", "record": "main", "line": 5, "tool": "toolu_02", "text": "Exit code 1\n詳細"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     by_kind: dict[str, list[dict[str, object]]] = {}
     for candidate in candidates[:-1]:
@@ -407,7 +411,7 @@ def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
         },
     ]
 
-    candidates = evidence._candidate_events(timeline, [], hook_notices)  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], hook_notices)  # pylint: disable=protected-access
 
     assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["hook-notice"]
     assert candidates[0]["occurrence_count"] == 1
@@ -442,7 +446,7 @@ def test_candidate_events_separates_escalations_from_unsuccessful_delegate_retur
         },
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert sorted(candidate["candidate_kind"] for candidate in candidates[:-1]) == ["delegate-return"] * 2 + ["escalation"] * 3
     assert candidates[-1]["included_locators"] == [
@@ -497,7 +501,7 @@ def test_candidate_events_excludes_delegate_returns_that_only_report_success() -
         ]
     )
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert sorted(candidate["text"] for candidate in candidates[:-1]) == sorted([*kept_texts, resumed_preface])
     assert candidates[-1]["excluded"] == {"delegated-record": 2, "normal-delegate-return": len(excluded_texts)}
@@ -530,7 +534,7 @@ def test_candidate_events_excludes_successful_shell_delegation_returns() -> None
     timeline.append({"kind": "user", "record": "not-shell", "line": 1, "text": "調査を依頼する"})
     timeline.append({"kind": "final-result", "record": "not-shell", "line": 5, "text": returns["shell-ok-1"]})
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     kept = sorted(locator["record"] for candidate in candidates[:-1] for locator in candidate["locators"])
     assert kept == ["not-shell", "shell-diagnostics", "shell-no-code", "shell-nonzero", "shell-unexpected", "shell-warning"]
@@ -551,8 +555,8 @@ def test_codex_project_instructions_do_not_change_delegation_kind_or_resume() ->
         {"kind": "final-result", "record": record, "line": 3, "text": "- 終了コード: `0`\n- 警告: 0件"},
     ]
 
-    shell_records, resumed_records = evidence._delegation_record_kinds(timeline)  # pylint: disable=protected-access
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    shell_records, resumed_records = evidence_candidates._delegation_record_kinds(timeline)  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert shell_records == {record}
     assert not resumed_records
@@ -564,7 +568,7 @@ def test_shell_delegation_marker_matches_agents_server_prompt() -> None:
     """シェル実行の委譲の判定に使う冒頭の文が、agents_serverが委譲先へ渡す指示本文と一致する。"""
 
     prompt = tool_descriptions.shell_prompt("true", "終了コードを返す")
-    assert prompt.startswith(evidence._SHELL_DELEGATION_MARKER)  # pylint: disable=protected-access
+    assert prompt.startswith(evidence_candidates._SHELL_DELEGATION_MARKER)  # pylint: disable=protected-access
 
 
 def test_candidate_events_includes_delegate_returns_without_status_line() -> None:
@@ -574,7 +578,7 @@ def test_candidate_events_includes_delegate_returns_without_status_line() -> Non
         {"kind": "final-result", "record": "main", "line": 40, "text": "対応を完了した。"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert [candidate["candidate_kind"] for candidate in candidates[:-1]] == ["delegate-return"]
     assert candidates[-1]["included_locators"] == [{"record": "agent-1", "line": 30}]
@@ -604,7 +608,7 @@ def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None
         },
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert sorted(candidate["count"] for candidate in candidates[:-1]) == [1, 2]
     assert candidates[-1]["count"] == 2
@@ -632,7 +636,7 @@ def test_candidate_events_separates_block_reasons_after_shared_long_prefix() -> 
         ]
     ]
 
-    candidates = evidence._candidate_events([], [], notices)  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events([], [], notices)  # pylint: disable=protected-access
 
     assert sorted(candidate["occurrence_count"] for candidate in candidates[:-1]) == [1, 1, 2]
     assert candidates[-1]["count"] == 3
@@ -683,7 +687,7 @@ def test_candidate_events_aggregates_each_kind_and_preserves_all_locators() -> N
         },
     ]
 
-    candidates = evidence._candidate_events(timeline, warnings, hook_notices)  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, warnings, hook_notices)  # pylint: disable=protected-access
 
     by_kind = {candidate["candidate_kind"]: candidate for candidate in candidates[:-1]}
     assert by_kind["tool-failure"]["count"] == 2
@@ -707,7 +711,7 @@ def test_candidate_events_keeps_distinct_kinds_at_the_same_locator() -> None:
     timeline = [{"kind": "failed-tool", "record": "main", "line": 4, "text": "実行失敗"}]
     warnings = [{"kind": "warning", "record": "main", "line": 4, "text": "実行時警告"}]
 
-    candidates = evidence._candidate_events(timeline, warnings, [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, warnings, [])  # pylint: disable=protected-access
 
     assert {candidate["candidate_kind"] for candidate in candidates[:-1]} == {"tool-failure", "warning"}
     assert candidates[-1]["included_locator_count"] == 1
@@ -722,7 +726,7 @@ def test_candidate_events_classifies_hook_failures_from_the_reason_after_the_com
         {"kind": "failed-tool", "record": "main", "line": 3, "text": prefix + "python -cへ複数文を渡している"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     failures = [candidate for candidate in candidates[:-1] if candidate["candidate_kind"] == "tool-failure"]
     assert len(failures) == 2
@@ -736,7 +740,7 @@ def test_candidate_events_keeps_hook_failure_bodies_distinct_after_long_shared_p
         {"kind": "failed-tool", "record": "main", "line": 3, "text": prefix + "。原因B"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert len(candidates[:-1]) == 2
     assert candidates[0]["analysis_group_hint"] != candidates[1]["analysis_group_hint"]
@@ -746,7 +750,7 @@ def test_candidate_events_counts_only_identical_candidate_identity_as_duplicate(
     """位置・種別・タグが同じ重複だけを機械除外件数へ加える。"""
     event = {"kind": "warning", "record": "main", "line": 8, "text": "同じ警告"}
 
-    candidates = evidence._candidate_events([], [event, dict(event)], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events([], [event, dict(event)], [])  # pylint: disable=protected-access
 
     assert len(candidates[:-1]) == 1
     assert candidates[-1]["excluded"] == {"duplicate-candidate": 1}
@@ -766,7 +770,7 @@ def test_first_human_request_after_automated_start_is_initial_request() -> None:
         {"kind": "user", "record": "main", "line": 3, "text": "後続の人間の指摘"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert candidates[0]["locators"] == [{"record": "main", "line": 3}]
     assert candidates[-1]["excluded"] == {"initial-request": 1, "runtime-inserted": 1}
@@ -808,7 +812,7 @@ def test_failed_tools_distinguish_operation_and_full_diagnostic() -> None:
         },
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert sorted(candidate["count"] for candidate in candidates[:-1]) == [1, 1, 2]
     assert candidates[-1]["included_locators"] == [{"record": "main", "line": line} for line in (2, 3, 4, 5)]
@@ -823,7 +827,7 @@ def test_hook_notice_keeps_outer_reasons_and_ignores_nested_delivery_tag() -> No
         '<agent-toolkit-auto-inserted source="hook/c" kind="block">理由C</agent-toolkit-auto-inserted>'
     )
 
-    keys = evidence._hook_notice_keys(body, "PreToolUse:Bash")  # pylint: disable=protected-access
+    keys = evidence_hook_notices._hook_notice_keys(body, "PreToolUse:Bash")  # pylint: disable=protected-access
 
     assert [(key.hook, key.tag) for key in keys] == [("hook/a", "notice"), ("hook/b", "warn"), ("hook/c", "block")]
     assert [key.kind_text for key in keys][0] == "参考"
@@ -856,12 +860,12 @@ def test_candidate_events_bounds_hook_failures_with_hook_notices_and_keeps_rare_
     ]
     timeline.append(_hook_failure(900, "TaskStop", "所有記録の無いタスクの停止"))
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     kinds = {candidate["candidate_kind"] for candidate in candidates[:-1]}
     reasons = [candidate["text"] for candidate in candidates[:-1]]
     assert kinds == {"hook-notice"}
-    assert len(candidates[:-1]) == evidence._HOOK_NOTICE_VARIANT_LIMIT + 1  # pylint: disable=protected-access
+    assert len(candidates[:-1]) == evidence_candidates._HOOK_NOTICE_VARIANT_LIMIT + 1  # pylint: disable=protected-access
     assert any("所有記録の無いタスクの停止" in reason for reason in reasons)
     assert sum(candidate["occurrence_count"] for candidate in candidates[:-1]) + candidates[-1]["excluded"][
         "hook-notice-detail-budget"
@@ -876,7 +880,9 @@ def test_candidate_events_merges_warnings_and_repeats_into_the_originating_hook_
             "kind": "hook-notice",
             "record": "main",
             "line": 10 + index,
-            "text": evidence._normalize_candidate_kind_text(f"`atk agents wait`は位置引数を受理しない。対象: {session_id}"),  # pylint: disable=protected-access
+            "text": evidence_hook_notices._normalize_candidate_kind_text(  # pylint: disable=protected-access
+                f"`atk agents wait`は位置引数を受理しない。対象: {session_id}"
+            ),
             "hook": "agent-toolkit/pretooluse",
             "hook_name": "PreToolUse:Bash",
             "tag": "warn",
@@ -893,7 +899,7 @@ def test_candidate_events_merges_warnings_and_repeats_into_the_originating_hook_
         {"kind": "warning", "record": "main", "line": 21, "text": "無関係な警告の本文である"},
     ]
 
-    candidates = evidence._candidate_events([], warnings, notices)  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events([], warnings, notices)  # pylint: disable=protected-access
 
     by_kind = {candidate["candidate_kind"]: candidate for candidate in candidates[:-1]}
     assert set(by_kind) == {"hook-notice", "warning"}
@@ -911,7 +917,7 @@ def test_hook_repeat_annotation_does_not_split_notice_kinds() -> None:
     )
 
     keys = [
-        evidence._hook_notice_keys(body, "PreToolUse:Bash")[0].kind_text  # pylint: disable=protected-access
+        evidence_hook_notices._hook_notice_keys(body, "PreToolUse:Bash")[0].kind_text  # pylint: disable=protected-access
         for body in (first, repeated)
     ]
 
@@ -933,7 +939,7 @@ def test_candidate_events_counts_a_hook_notice_and_its_warning_line_once(body: s
     通知は切り詰め・可変部の置換・反復注記の除去を経た種類本文だけを保持するため、
     警告本文を同じ正規化で比べないと代表判定が外れ、同じ通知が警告からもう1件数えられる。
     """
-    key = evidence._hook_notice_keys(  # pylint: disable=protected-access
+    key = evidence_hook_notices._hook_notice_keys(  # pylint: disable=protected-access
         f'<atk-auto source="pretooluse" kind="warn">{body}</atk-auto>', "PreToolUse:Bash"
     )[0]
     notice = {
@@ -947,7 +953,7 @@ def test_candidate_events_counts_a_hook_notice_and_its_warning_line_once(body: s
     }
     warning = {"kind": "warning", "record": "main", "line": 3, "text": " ".join(body.split())}
 
-    candidates = evidence._candidate_events([], [warning], [notice])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events([], [warning], [notice])  # pylint: disable=protected-access
 
     assert [(candidate["candidate_kind"], candidate["occurrence_count"]) for candidate in candidates[:-1]] == [
         ("hook-notice", 1)
@@ -989,7 +995,7 @@ def test_candidate_events_excludes_empty_negative_search_results_of_claude_bash(
         _bash_failure(14, "rg -n needle docs || true", "Exit code 123"),
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     kept_lines = sorted(locator["line"] for candidate in candidates[:-1] for locator in candidate["locators"])
     assert kept_lines == [4, 5, 6, 7, 8, 12, 13, 14]
@@ -1011,7 +1017,7 @@ def test_candidate_events_treats_quoted_operator_shaped_search_terms_as_data() -
         _bash_failure(10, "rg -n -F ';' docs", "Exit code 1\nrg: docs: No such file or directory"),
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     kept_lines = sorted(locator["line"] for candidate in candidates[:-1] for locator in candidate["locators"])
     assert kept_lines == [7, 8, 9, 10]
@@ -1093,7 +1099,7 @@ def test_candidate_events_does_not_spend_hook_budget_on_repeat_summaries() -> No
         for repeat in range(count)
     ]
 
-    candidates = evidence._candidate_events([], [], notices)  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events([], [], notices)  # pylint: disable=protected-access
 
     texts = {candidate["text"] for candidate in candidates[:-1]}
     assert "別の検査Dに該当した。" in texts
@@ -1122,7 +1128,7 @@ def test_candidate_events_excludes_wi_body_style_diagnostics() -> None:
         {"kind": "warning", "record": "main", "line": 4, "text": "警告: 設定キー`model`の候補はありません。本文:1:1の口語表現"},
     ]
 
-    candidates = evidence._candidate_events([], warnings, [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events([], warnings, [])  # pylint: disable=protected-access
 
     assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 4}]]
     assert candidates[-1]["excluded"] == {"wi-style-diagnostic": 3}
@@ -1208,7 +1214,7 @@ def test_candidate_keeps_improvement_in_every_normal_return(body: str, shell: bo
                 ),
             },
         )
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
     assert len(candidates[:-1]) == 1
     assert candidates[0]["candidate_kind"] == "delegate-return"
     assert candidates[0]["text"] == text
@@ -1245,7 +1251,7 @@ def test_human_intervention_after_process_loop_start_remains_candidate(
         {"kind": "user", "record": "main", "line": 3, "text": "途中で割り込んだ人間の指摘"},
     ]
 
-    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
     assert candidates[-1]["excluded"] == expected_excluded
@@ -1257,4 +1263,4 @@ def test_process_loop_goal_matches_launch_prompt_body() -> None:
 
     prompt = process_loop._build_process_loop_prompt()  # pylint: disable=protected-access
 
-    assert evidence._PROCESS_WI_GOAL_BODY in prompt  # pylint: disable=protected-access
+    assert PROCESS_WI_GOAL_BODY in prompt

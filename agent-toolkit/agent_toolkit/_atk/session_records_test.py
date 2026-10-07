@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._atk import session_records
+from agent_toolkit._atk import session_record_format, session_records
 from agent_toolkit._atk.wi import process_loop
 
 
@@ -58,8 +58,8 @@ class TestCandidatePaths:
     def test_lists_claude_and_codex_records(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         claude_home = tmp_path / "claude"
         codex_home = tmp_path / "codex"
-        monkeypatch.setattr(session_records, "default_claude_home", lambda: claude_home)
-        monkeypatch.setattr(session_records, "default_codex_home", lambda: codex_home)
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
         claude_path = claude_home / "projects" / "-target" / "main.jsonl"
         codex_path = codex_home / "sessions" / "2026" / "09" / "07" / "rollout-x-00000000-0000-0000-0000-000000000001.jsonl"
         _write_record(claude_path, [_claude_user_text_record("hello")])
@@ -78,7 +78,7 @@ class TestParsedRecords:
         path = tmp_path / "records.jsonl"
         _write_record(path, ["not-json", _claude_user_text_record("hello")])
 
-        assert list(session_records.parsed_records(path)) == [_claude_user_text_record("hello")]
+        assert list(session_record_format.parsed_records(path)) == [_claude_user_text_record("hello")]
 
 
 class TestInvokedProcessWi:

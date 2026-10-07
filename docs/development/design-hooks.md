@@ -550,7 +550,7 @@ Claude Codeでは、同じ応答でツール呼び出しより前に置いた地
 
 ツールの登録と表示を同じmoduleに置くため、moduleを読み込まないClaude Code（管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が無い環境）とCodexにはツールが現れない。その環境のメインは`rules-main.claude-code.md`「ツールの入出力」に従い、届ける内容をターンを終える応答の本文へ書く。
 Claude Code 2.1.292では、hooks.jsonの`modules`は1件だけを受け付け、同じイベントで条件を持たないhookは1回だけ登録できる。`$`を渡せるのは同じファイルで宣言した関数に限られる。このため`register.ts`が唯一のmoduleとして`session.start`を1つにまとめ、`session_exit.ts`と`send_to_user.tsx`の`register`を呼ぶ。両ファイルが共有する値はツールの定義と`$`を受け取らない関数に限る。
-transcriptからユーザーへ届いた本文を数える処理は4つある。`user_response_advisor.py`、`termination_evidence.py`の`visible_messages`、`_common/response_language_check.py`、`session_review_evidence.py`の`assistant`の出来事である。これらは`_common/transcript.py`の`visible_text_blocks`で`send_to_user`の`message`を本文に含める。名前の前置部分はmoduleの登録が決めるため、末尾の`__send_to_user`で判定する。
+transcriptからユーザーへ届いた本文を数える処理は4つある。`user_response_advisor.py`、`termination_evidence.py`の`visible_messages`、`_common/response_language_check.py`と、振り返りの証拠抽出の`assistant`の出来事である。証拠抽出の処理は`session_evidence_extract.py`にある。これらは`_common/transcript.py`の`visible_text_blocks`で`send_to_user`の`message`を本文に含める。名前の前置部分はmoduleの登録が決めるため、末尾の`__send_to_user`で判定する。
 
 却下した代替案は次のとおりである。
 

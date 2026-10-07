@@ -1584,5 +1584,6 @@ def test_default_record_homes_follow_claude_config_dir_and_codex_home(
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
 
-    assert sessions.default_claude_home() == tmp_path / "claude-config"
-    assert sessions.default_codex_home() == tmp_path / "codex-home"
+    context = sessions.create_context(hostname="local", state_dir=tmp_path / "state")
+    assert context.claude_home == tmp_path / "claude-config"
+    assert context.codex_home == tmp_path / "codex-home"

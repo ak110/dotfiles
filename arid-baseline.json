@@ -48,16 +48,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:320b0fe78675cdd6a9a285ad802fecf8f7194bce418ac26ab9dfa9641bfaaaf9",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:320e3f03bf6a08bf4054da3373ee7785ef6a98656c0daf674c6b16df6f7da0be",
       "lines": 10,
       "occurrences": [
@@ -82,16 +72,6 @@
         {
           "path": "pytools/_internal/install_claude_plugins_repair_test.py",
           "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:3f5f3816ce14c0d9bb148dd2a233a35c60090be13404412407e54aeacecfc417",
-      "lines": 16,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py",
-          "count": 2
         }
       ]
     },
@@ -121,16 +101,6 @@
       "occurrences": [
         {
           "path": "agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:6a950eacb15703d730b7c56ecdb72a63d739ceac1b0d2e62af754af8b514c8d4",
-      "lines": 16,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py",
           "count": 2
         }
       ]
@@ -206,20 +176,6 @@
         {
           "path": "pytools/repack_archive_test.py",
           "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:9df472ee678eb08731156a2d3fa10a22875a4b6981a0eeb8fffb9f399996bec7",
-      "lines": 53,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/serve/sessions.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/scripts/atk_serve_sessions_remote_helper.py",
-          "count": 1
         }
       ]
     },

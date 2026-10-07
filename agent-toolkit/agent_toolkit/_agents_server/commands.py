@@ -29,9 +29,8 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
-from agent_toolkit._atk import output_file
+from agent_toolkit._atk import output_file, session_record_format
 from agent_toolkit._atk.environment import is_agent_environment
-from agent_toolkit._atk.serve import sessions as session_records
 from agent_toolkit._common.next_action import report, with_next_action
 
 _WATCH_INTERVAL_SECONDS = 2.0
@@ -620,8 +619,8 @@ def _show_logs(session_id: str, *, follow: bool) -> int:
                     pending += data
                     complete, separator, remainder = pending.rpartition("\n")
                     if separator:
-                        records, broken = session_records.parse_records(complete)
-                        events = session_records.record_events(engine, records)
+                        records, broken = session_record_format.parse_records(complete)
+                        events = session_record_format.record_events(engine, records)
                         for event in events:
                             detail = event.text or event.name or ""
                             print(f"[{event.timestamp or '-'}] {event.kind}: {detail}", flush=True)

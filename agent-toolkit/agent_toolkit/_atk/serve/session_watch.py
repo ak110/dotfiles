@@ -17,10 +17,9 @@ import time
 import typing
 
 from agent_toolkit._atk.serve import session_delegations
+from agent_toolkit._atk.session_record_format import CODEX_ROLLOUT_PREFIX, RECORD_SUFFIX, as_text
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
-RECORD_SUFFIX = ".jsonl"
-CODEX_ROLLOUT_PREFIX = "rollout-"
 # サブエージェントの記録は同じディレクトリの`*.meta.json`で親子関係を確定するため、その作成と削除も一覧を変える。
 _CLAUDE_META_SUFFIX = ".meta.json"
 # 変更をまとめて通知する時間窓（秒）。書き込みのたびに通知すると、進行中のセッションで通知が連続する。
@@ -31,21 +30,9 @@ REFRESH_TYPE = "refresh"
 RECORD_TYPE = "record"
 
 
-def _as_text(value: typing.Any) -> str | None:
-    """記録の本文欄を表示用の文字列へ正規化する。取り出せない場合は`None`を返す。"""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        parts = [
-            block["text"] for block in value if isinstance(block, dict) and isinstance(block.get("text"), str) and block["text"]
-        ]
-        return "\n".join(parts) if parts else None
-    return None
-
-
 def _first_line(value: typing.Any) -> str | None:
     """本文として解釈できる値の先頭1行を返す。"""
-    text = _as_text(value)
+    text = as_text(value)
     if text is None:
         return None
     lines = text.splitlines()
@@ -124,7 +111,7 @@ class _SummaryScan:
                 self.first_user_seen = True
                 message = record.get("message")
                 content = message.get("content") if isinstance(message, dict) else None
-                text = _as_text(content)
+                text = as_text(content)
                 if not is_runtime_generated(record) and not (text and is_runtime_inserted_text(text)):
                     self.first_visible_user_seen = True
                     self.first_user_message = _first_line(content)
@@ -143,7 +130,7 @@ class _SummaryScan:
         if not self.first_visible_user_seen and _is_user_record(record, self.engine):
             self.first_user_seen = True
             content = payload.get("content")
-            text = _as_text(content)
+            text = as_text(content)
             if not (text and is_runtime_inserted_text(text)):
                 self.first_visible_user_seen = True
                 self.first_user_message = _first_line(content)

@@ -100,6 +100,20 @@ Stop hookで準備より後の人間の入力を不足段階として検出す�
 
 確認回答はユーザー値と質問・選択肢へ由来分離する。記録IDは物理記録から決め、役割は別メタデータで扱う。一意な旧IDだけを互換別名として受理し、曖昧な別名は終了コード2で拒否する。統計は全観測model・effort組を保持し、`--context-at`は事象以前の直近identityとlocatorを返す。
 
+### 証拠抽出スクリプトの構成
+
+`atk run-script session-review-evidence`の起動スクリプト`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`はCLIの引数の解釈と照会モードの振り分けだけを持つ。
+記録から時系列イベントへの変換と照会モードが共有する処理は同じディレクトリの`session_evidence_extract.py`、対象記録の解決と付随記録の収集は`session_evidence_records.py`に置く。
+照会モードごとの処理は`session_evidence_<照会モード>.py`（`warn`・`detail`・`stats`・`hook_notices`・`user_events`・`tool_calls`・`context`・`catalog`・`bundle`と、`--bundle`が使う問題候補の`candidates`）に置く。
+テストは各モジュールの隣の`*_test.py`に置き、複数のテストが使う記録の組み立ては`agent-toolkit/agent_toolkit/_testing/session_evidence_support.py`に置く。
+
+分けたモジュールは、同じディレクトリの兄弟モジュールとして`import`で読む。
+`agent-toolkit/agent_toolkit/_atk/run_script.py`はスクリプトを`runpy.run_path`で実行する前にスクリプトのディレクトリを`sys.path`の先頭へ加えるため、起動の形を変えずに読める。
+照会モードを足す場合は、そのモードのモジュールを同じディレクトリへ置き、起動スクリプトの引数と振り分けへ加える。
+記録の保存先の規約と行の解釈は`agent-toolkit/agent_toolkit/_atk/session_record_format.py`が持つ。
+委譲先の記録の探索は`agent-toolkit/agent_toolkit/_agents_server/record_paths.py`が持ち、本スクリプトは独自の探索を持たない。
+照会モードの処理を`agent_toolkit`のパッケージへ置く案は、振り返りのスキルだけが使う処理で配布物の共通層を広げるため採らない。
+
 ## 完了報告と振り返りの関係
 
 `agent-toolkit:session-review`は起動したセッション自身を対象とし、`agent-toolkit:completion-report`が全てのセッションの終了時に起動する。抽出と分析はセッション内で行い、対策の実装だけを通常AWI経由で後続の処理へ渡す。抽出まで次のセッションへ移す形は、対象の探索と、実行系ごとに異なる記録の取得手段を恒常的に抱えるため採用しない。

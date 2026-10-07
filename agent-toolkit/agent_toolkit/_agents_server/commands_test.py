@@ -900,8 +900,8 @@ def test_agents_logs_reads_claude_record(
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", "session-1"])
@@ -944,8 +944,8 @@ def test_agents_logs_markdown_keeps_turns_and_tool_result_together(
             },
         ],
     )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", "session-1", "--format", "markdown"])
@@ -1009,8 +1009,8 @@ def test_agents_logs_markdown_renders_codex_record(
             },
         ],
     )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", thread_id, "--format", "markdown"])
@@ -1035,8 +1035,8 @@ def test_agents_logs_reads_subagent_and_appends_it_to_parent_markdown(
     child.with_name(f"{child_id}.meta.json").write_text(
         json.dumps({"description": "記録調査", "agentType": "Explore"}), encoding="utf-8"
     )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", child_id])
@@ -1093,8 +1093,8 @@ def test_agents_logs_bulk_export_filters_projects_and_preserves_existing_files(
                 {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": cwd}]}},
             ],
         )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path / "codex")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     output_dir = tmp_path / "exports"
 
     with pytest.raises(SystemExit, match="0"):
@@ -1123,8 +1123,8 @@ def test_agents_logs_reports_missing_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """存在しない記録は識別子を添えて報告し、一覧で識別子を確かめる操作を示す。"""
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     for argv in (["missing"], ["missing", "--format", "markdown"]):
         with pytest.raises(SystemExit, match="2"):
@@ -1155,8 +1155,8 @@ def test_agents_logs_shows_first_of_ambiguous_codex_records(
             + "\n",
             encoding="utf-8",
         )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
 
     with pytest.raises(SystemExit, match="0"):
@@ -1171,8 +1171,8 @@ def test_agents_logs_reads_and_follows_antigravity_events(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Antigravityの保存済み出力と、その後に追記された行を順に表示する。"""
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     path = shared_layout.session_log_path("root-1", "agy-1", tmp_path)
     path.parent.mkdir(parents=True)

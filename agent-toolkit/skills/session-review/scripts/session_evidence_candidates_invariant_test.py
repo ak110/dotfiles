@@ -3,6 +3,7 @@
 import pathlib
 import re
 
+import session_evidence_candidates as evidence_candidates
 import session_review_evidence as evidence
 
 
@@ -14,7 +15,7 @@ def test_delegate_completion_values_are_defined_by_task_documents() -> None:
 
     missing = [
         value
-        for value in evidence._DELEGATE_COMPLETION_VALUES  # pylint: disable=protected-access
+        for value in evidence_candidates._DELEGATE_COMPLETION_VALUES  # pylint: disable=protected-access
         if value not in lines and f"`{value}`" not in documents
     ]
 
@@ -43,7 +44,7 @@ def test_subagent_outputs_have_recognized_first_lines() -> None:
         assert match is not None, path
         first = match.group(1)
         assert (
-            first.startswith(evidence._RETURN_STATUS_PREFIXES)  # pylint: disable=protected-access
-            or first in evidence._DELEGATE_COMPLETION_VALUES  # pylint: disable=protected-access
+            first.startswith(evidence_candidates._RETURN_STATUS_PREFIXES)  # pylint: disable=protected-access
+            or first in evidence_candidates._DELEGATE_COMPLETION_VALUES  # pylint: disable=protected-access
             or first.startswith("判定:")
         ), (path, first)
