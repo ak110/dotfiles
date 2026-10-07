@@ -26,6 +26,7 @@ from agent_toolkit._atk.wi.common import (
     WebInputError,
     _commit_and_push,
     _copy_to_tempfile,
+    _ensure_mutation_allowed,
     _is_uwi_answered,
     _iter_entries,
     _pull,
@@ -232,6 +233,7 @@ def answer_uwi(
     if not answer.strip():
         raise WebInputError("回答本文が空です", next_action="回答を記入して再実行する")
     with _repo_lock(private_notes, timeout=lock_timeout):
+        _ensure_mutation_allowed(private_notes)
         if not skip_remote_sync:
             _pull(private_notes)
         try:

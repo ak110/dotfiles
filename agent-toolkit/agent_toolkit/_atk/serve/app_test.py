@@ -485,6 +485,150 @@ async def test_wi_mutation_logs_operation_without_body(
     assert "秘匿本文" not in messages
 
 
+_REBASE_UWI = (
+    "---\ntype: uwi\ntarget_repo: github.com/example/repo\nquestion_type: yes-no\n---\n\n## 質問\n\n進めてよいか？\n\n"
+    "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n"
+)
+_REBASE_AWI = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
+_REBASE_AGENT_AWI = "---\ntype: awi\ntarget_repo: github.com/example/repo\nsource: session-review\n---\n\n本文\n"
+
+
+def _rebasing_notes(tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]) -> pathlib.Path:
+    """各状態の項目をcommitし、rebaseの中間状態が残るWI保存リポジトリを作成する。"""
+    notes = make_clean_repo(tmp_path, "notes")
+    (notes / ".agent-toolkit-local-only").touch()
+    for state_name, filename, text in (
+        ("inbox", "entry.md", _REBASE_AWI),
+        ("inbox", "question.md", _REBASE_UWI),
+        ("inbox", "agent.md", _REBASE_AGENT_AWI),
+        ("processing", "working.md", _REBASE_AWI),
+        ("hold", "held.md", _REBASE_AWI),
+    ):
+        (notes / state_name).mkdir(exist_ok=True)
+        (notes / state_name / filename).write_text(text, encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-m", "setup"], check=True, capture_output=True)
+    rebase_dir = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "--git-path", "rebase-merge"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (notes / rebase_dir).mkdir(parents=True)
+    return notes
+
+
+def _notes_snapshot(notes: pathlib.Path) -> tuple[dict[str, bytes], str, str]:
+    """作業ツリーのファイル、HEADおよび作業ツリーの状態を返す。"""
+    files = {
+        str(path.relative_to(notes)): path.read_bytes()
+        for path in notes.rglob("*")
+        if path.is_file() and ".git" not in path.parts
+    }
+    head = subprocess.run(["git", "-C", str(notes), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout
+    status = subprocess.run(
+        ["git", "-C", str(notes), "status", "--porcelain=v1", "--untracked-files=all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return files, head, status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("put", "/api/entries/inbox/entry.md", {"content": "変更後の本文\n", "expected_content": _REBASE_AWI}),
+        (
+            "post",
+            "/api/entries/user-comment",
+            {"state": "inbox", "filename": "agent.md", "comment": "コメント", "expected_content": _REBASE_AGENT_AWI},
+        ),
+        ("post", "/api/entries", {"type": "awi", "messages": ["新しい本文"], "target_repo": "github.com/example/repo"}),
+        ("post", "/api/entries/batch", {"text": _BATCH_TEXT}),
+        (
+            "post",
+            "/api/entries/answer",
+            {"filename": "question.md", "state": "inbox", "answer": "その対応で問題無い", "expected_content": _REBASE_UWI},
+        ),
+        ("post", "/api/entries/commit", {}),
+        ("post", "/api/sync", None),
+        ("post", "/api/entries/start-processing", {"filenames": ["entry.md"]}),
+        ("post", "/api/entries/return-to-inbox", {"filenames": ["working.md"]}),
+        ("post", "/api/entries/hold", {"filenames": ["entry.md"]}),
+        ("post", "/api/entries/unhold", {"filenames": ["held.md"]}),
+        ("post", "/api/entries/adopt", {"filenames": ["working.md"], "note": "対応済み"}),
+        ("post", "/api/entries/reject", {"filenames": ["entry.md"], "note": "不要"}),
+        ("post", "/api/entries/remove", {"filenames": ["entry.md"], "expected_content": _REBASE_AWI, "force": False}),
+    ],
+)
+async def test_mutations_reject_rebase_in_progress_with_409(
+    tmp_path: pathlib.Path,
+    make_clean_repo: typing.Callable[..., pathlib.Path],
+    method: str,
+    path: str,
+    payload: dict[str, object] | None,
+) -> None:
+    """rebaseの中間状態が残る間、Webの全更新操作は変更前に拒否し、理由と解消操作を409で返す。
+
+    確認がcommit時だけだと、WIを書き換えた後に拒否して作業ツリーへ変更が残り、未処理の例外が500になる。
+    `edit_conflict`と同じcodeにすると、画面が詳細の開き直しを促す誤った回復文を付ける。
+    """
+    notes = _rebasing_notes(tmp_path, make_clean_repo)
+    before = _notes_snapshot(notes)
+    client = _serve_app(notes).test_client()
+
+    response = await getattr(client, method)(path, json=payload)
+
+    assert response.status_code == 409
+    body = await response.get_json()
+    assert body["code"] == "rebase_in_progress"
+    assert "rebase中" in body["error"]
+    assert "git rebase --continue" in body["error"]
+    assert "git rebase --abort" in body["error"]
+    assert _notes_snapshot(notes) == before
+
+
+@pytest.mark.asyncio
+async def test_mutation_waits_for_sync_lock(
+    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]
+) -> None:
+    """共通ロックを保持する同期の間に届いた更新は、同期の終了を待ってから保存する。
+
+    待たずに書き込むと、同期が作業ツリーを書き換えている途中の状態へ変更を書き込む。
+    """
+    notes = _rebasing_notes(tmp_path, make_clean_repo)
+    rebase_dir = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "--git-path", "rebase-merge"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (notes / rebase_dir).rmdir()
+    client = _serve_app(notes).test_client()
+    locked = threading.Event()
+    release = threading.Event()
+
+    def hold_lock() -> None:
+        with common.repo_lock(notes):
+            locked.set()
+            release.wait(timeout=10)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    assert await asyncio.to_thread(locked.wait, 10)
+    request = asyncio.ensure_future(
+        client.put(
+            "/api/entries/inbox/entry.md",
+            json={"content": _REBASE_AWI.replace("本文", "変更後の本文"), "expected_content": _REBASE_AWI},
+        )
+    )
+    await asyncio.sleep(0.3)
+    assert not request.done()
+    assert (notes / "inbox" / "entry.md").read_text(encoding="utf-8") == _REBASE_AWI
+    release.set()
+    response = await request
+    await asyncio.to_thread(holder.join, 10)
+
+    assert response.status_code == 200
+    assert "変更後の本文" in (notes / "inbox" / "entry.md").read_text(encoding="utf-8")
+
+
 @pytest.mark.asyncio
 async def test_commit_api_keeps_changed_boolean(
     tmp_path: pathlib.Path,

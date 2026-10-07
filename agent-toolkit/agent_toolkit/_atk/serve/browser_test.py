@@ -21,6 +21,7 @@ import playwright.async_api
 import pytest
 import pytest_asyncio
 
+from agent_toolkit._atk import git_sync
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import config
 from agent_toolkit._atk.serve import plans as serve_plans
@@ -1715,6 +1716,50 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         "## 質問\n\n回答中の外部更新ですか？\n\n## 回答\n\n"
         "<!-- ユーザーはこの行以降に回答を追記する -->\n",
     )
+
+
+@pytest.mark.asyncio
+async def test_answer_rebase_in_progress_shows_recovery(
+    browser_harness: _BrowserHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """rebaseの中間状態が残る間の回答は理由と解消操作を示して入力を残し、解消後の再実行で保存できる。
+
+    拒否を`edit_conflict`と同じ応答にすると、画面が詳細の開き直しを促し、解消操作へたどり着けない。
+    """
+    harness = browser_harness
+    page = harness.page
+    harness.operations.enable_file_mutations()
+    rebasing = [True]
+    answer_uwi = harness.operations.answer_uwi
+
+    def answer_unless_rebasing(*args: Any, **kwargs: Any) -> bool:
+        if rebasing[0]:
+            raise git_sync.RebaseInProgressError("rebase中のため新しい更新を開始できない")
+        return answer_uwi(*args, **kwargs)
+
+    monkeypatch.setattr(harness.operations, "answer_uwi", answer_unless_rebasing)
+    await page.goto(harness.base_url + "/")
+    detail = page.get_by_role("dialog", name="詳細")
+    await page.locator('.entry-select[data-key="inbox/question.md"]').click()
+    await detail.get_by_role("button", name="回答", exact=True).click()
+    field = detail.locator("#answer-input")
+    await field.fill("解消後に保存する回答")
+
+    await detail.get_by_role("button", name="回答を保存", exact=True).click()
+
+    alert = detail.get_by_role("alert").filter(has_text="rebase中")
+    await alert.wait_for(state="visible")
+    alert_text = await alert.inner_text()
+    assert "git rebase --continue" in alert_text
+    assert "git rebase --abort" in alert_text
+    assert "開き直して" not in alert_text
+    assert await field.input_value() == "解消後に保存する回答"
+
+    rebasing[0] = False
+    await detail.get_by_role("button", name="回答を保存", exact=True).click()
+    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    assert "解消後に保存する回答" in (harness.root / "inbox" / "question.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio

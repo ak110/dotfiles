@@ -15,6 +15,7 @@ from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi.common import (
     WebInputError,
     _commit_and_push,
+    _ensure_mutation_allowed,
     _parse_type,
     _pull,
     _push_pending_commits,
@@ -277,6 +278,7 @@ def edit_entry(
     呼び出し元が保存本文との一致判定へ用いる。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
+        _ensure_mutation_allowed(private_notes)
         if not skip_remote_sync:
             _push_pending_commits(private_notes)
             _pull(private_notes)

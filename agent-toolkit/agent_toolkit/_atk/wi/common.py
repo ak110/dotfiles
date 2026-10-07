@@ -394,6 +394,16 @@ def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = F
     _migrate_legacy_reservations(private_notes)
 
 
+def _ensure_mutation_allowed(private_notes: pathlib.Path) -> None:
+    """共通ロックの取得後、WIの内容・配置を変更する前に、変更を開始できる状態かを確かめる。
+
+    rebase中の作業コピーでは`RebaseInProgressError`を送出する。remote同期を省略する場合（Webの保存）も
+    変更前に確かめる。commit時の確認だけに頼ると、WIを書き換えた後に拒否して作業ツリーへ変更が残る。
+    `_repo_lock`の取得後に呼ぶ。ロックの外で確かめると、確かめた後に同期がrebaseを始め得る。
+    """
+    _atk_git_sync.ensure_not_rebasing(private_notes)
+
+
 def _assert_repo_lock_held(private_notes: pathlib.Path) -> None:
     """`private_notes`が現在の実行スレッドで`_repo_lock`保持中でなければ`RuntimeError`を送出する（不変条件表明）。"""
     _atk_git_sync.assert_repo_lock_held(private_notes)

@@ -40,6 +40,7 @@ from agent_toolkit._atk.wi.common import (
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
+    _ensure_mutation_allowed,
     _max_existing_seq,
     _pull,
     _repo_lock,
@@ -414,6 +415,7 @@ def add_batch_entries(
     for entry in entries:
         validate_filename(entry.original_name, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
+        _ensure_mutation_allowed(private_notes)
         if not skip_remote_sync:
             _pull(private_notes)
         case_sensitive = is_case_sensitive(inbox_dir)

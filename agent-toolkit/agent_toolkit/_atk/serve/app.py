@@ -24,6 +24,7 @@ import pytilpack.sse
 import quart
 import werkzeug.exceptions
 
+from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk.serve import assets, entry_index
 from agent_toolkit._atk.serve import config as serve_config
 from agent_toolkit._atk.serve import plans as serve_plans
@@ -966,6 +967,14 @@ def _register_error_handlers(app: quart.Quart) -> None:
     async def lock_conflict(error: filelock.Timeout) -> tuple[quart.Response, int]:
         del error
         return quart.jsonify(error="別の操作が進行中です", code="lock_conflict"), 409
+
+    @app.errorhandler(_atk_git_sync.RebaseInProgressError)
+    async def rebase_in_progress(error: _atk_git_sync.RebaseInProgressError) -> tuple[quart.Response, int]:
+        # 解消操作を要する状態のため`edit_conflict`と別のcodeで返す。同じcodeにすると画面が
+        # 「外部で更新されました」の回復文を付け、詳細の開き直しを促す誤った案内になる。
+        # `RuntimeError`の派生であり、Quartは例外の型の継承順で最も近いハンドラを選ぶ。
+        message = f"WIの保存リポジトリが{error}。次の操作: {error.next_action}"
+        return quart.jsonify(error=message, code="rebase_in_progress"), 409
 
     @app.errorhandler(RuntimeError)
     async def edit_conflict(error: RuntimeError) -> tuple[quart.Response, int]:

@@ -58,6 +58,7 @@ from agent_toolkit._atk.wi.common import (
     _validate_filenames_only,
     is_agent_environment,
     normalized_wi_type,
+    _ensure_mutation_allowed,
 )
 from agent_toolkit._atk.wi.constants import BULK_SOURCE_STATES
 from agent_toolkit._atk.wi.repo import (
@@ -430,6 +431,7 @@ def transition_entries(
     inbox_dir = private_notes / WI_STATE_INBOX
     _validate_filenames_only(filenames, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
+        _ensure_mutation_allowed(private_notes)
         if not skip_remote_sync:
             if not skip_push:
                 _push_pending_commits(private_notes)

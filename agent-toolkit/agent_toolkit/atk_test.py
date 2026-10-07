@@ -2421,6 +2421,40 @@ class TestMainFailureNextAction:
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
         assert "git rebase --continue" in self._next_action_after_failure(lines)
 
+    def test_wi_edit_rejects_rebase_in_progress_before_change(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        make_clean_repo: Callable[..., pathlib.Path],
+    ) -> None:
+        """rebaseの中間状態が残るWI保存リポジトリでは、`atk wi edit`が本文を変える前に拒否し、解消操作を示す。"""
+        notes = make_clean_repo(tmp_path, "notes")
+        (notes / ".agent-toolkit-local-only").touch()
+        original = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
+        entry = notes / "inbox" / "entry.md"
+        entry.parent.mkdir()
+        entry.write_text(original, encoding="utf-8")
+        subprocess.run(["git", "-C", str(notes), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(notes), "commit", "-m", "setup"], check=True, capture_output=True)
+        rebase_dir = subprocess.run(
+            ["git", "-C", str(notes), "rev-parse", "--git-path", "rebase-merge"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        (notes / rebase_dir).mkdir(parents=True)
+        atk_members = vars(atk)
+        monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: notes)
+        body = tmp_path / "body.md"
+        body.write_text(original.replace("本文", "変更後の本文"), encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "entry.md", "--body-file", str(body)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        lines = capsys.readouterr().err.splitlines()
+        assert "rebase中" in next(line for line in lines if line.startswith("失敗: "))
+        assert "git rebase --continue" in self._next_action_after_failure(lines)
+        assert entry.read_text(encoding="utf-8") == original
+
     def test_unreported_git_failure_names_status_check(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:

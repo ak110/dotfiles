@@ -30,6 +30,7 @@ from agent_toolkit._atk.wi.common import (
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
+    _ensure_mutation_allowed,
     _max_existing_seq,
     _pull,
     _reject_bare_repo_path_override,
@@ -506,6 +507,7 @@ def add_entries(
         source=source,
     )
     with _repo_lock(private_notes, timeout=lock_timeout):
+        _ensure_mutation_allowed(private_notes)
         if not skip_remote_sync:
             _pull(private_notes)
         written = _add_entries_locked(

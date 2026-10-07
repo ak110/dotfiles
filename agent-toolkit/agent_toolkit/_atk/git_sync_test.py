@@ -513,6 +513,47 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     assert "git rebase --continue" in next(line for line in stderr.splitlines() if line.startswith("次の操作: "))
 
 
+def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path: pathlib.Path) -> None:
+    """Webの同期で競合したrebaseは状態と変更を保持し、次のWebの更新を変更前に拒否する。
+
+    Webの保存はremote同期を省略するため、変更前に確かめないと、rebase中の作業ツリーへ書き込んでから
+    commit時に拒否し、競合の解消中の作業ツリーへ無関係な変更を残す。
+    """
+    local, peer = _init_diverged_mq_repos(tmp_path)
+    original = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n別の項目\n"
+    other = local / "inbox" / "20260831-101800-001.md"
+    other.parent.mkdir()
+    other.write_text(original, encoding="utf-8")
+    _git(local, "add", "--all")
+    _git(local, "commit", "-m", "add other entry")
+    _git(local, "push")
+    _git(peer, "pull")
+    _finish_entry(local, "2026-08-31T20:42:20+00:00", note="local")
+    local_head = _git(local, "rev-parse", "HEAD").stdout.strip()
+    _finish_entry(peer, "2026-08-31T20:48:40+00:00", note="remote")
+    _git(peer, "push")
+
+    with pytest.raises(subprocess.CalledProcessError):
+        _atk_wi_common.synchronize(local, lock_timeout=5)
+
+    assert _atk_git_sync.is_rebase_in_progress(local)
+    status = _git(local, "status", "--porcelain=v1").stdout
+    with pytest.raises(_atk_git_sync.RebaseInProgressError):
+        _atk_wi_mutations.edit_entry_content(
+            local,
+            state="inbox",
+            filename=other.name,
+            content="変更後の本文\n",
+            expected_content=original,
+            skip_remote_sync=True,
+        )
+
+    assert other.read_text(encoding="utf-8") == original
+    assert _git(local, "status", "--porcelain=v1").stdout == status
+    assert _atk_git_sync.is_rebase_in_progress(local)
+    assert _git(local, "rev-parse", "ORIG_HEAD").stdout.strip() == local_head
+
+
 @pytest.mark.parametrize(
     ("git_stderr", "expected_cause", "expected_operation"),
     [
