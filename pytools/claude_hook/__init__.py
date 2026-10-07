@@ -6,10 +6,12 @@
 
 集約方針・例外要約1行の書式・モジュール読込失敗を対象外とする理由は
 `agent-toolkit/agent_toolkit/hook.py`と共通のため重複記載しない。
-本ファイルは配布物境界（`agent-toolkit/`配下）を跨がず、dotfiles個人環境側のみで完結する。
+パッケージ内のモジュール（`pretooluse.py`・`stop_bell.py`）は、agent-toolkitをpytoolsの依存パッケージとしてimportし、
+hookの出力の整形と判定の部品を共有する。本ファイルの起動と例外処理だけはagent-toolkitをimportせずに完結させ、
+agent-toolkitを含むモジュールの読み込みに失敗した場合も、ここでtracebackを出力してフックを通過させる。
 """
 
-# 配布物境界を跨がず例外処理を独立実装するため意図的に重複する。
+# 起動と例外処理はagent-toolkitに依存させないため、`agent_toolkit/hook.py`と意図的に重複する。
 
 import importlib
 import io

@@ -7,7 +7,4 @@ if ($null -eq $hook) {
 }
 
 & $hook.Source pretooluse
-if ($LASTEXITCODE -eq 2) {
-    exit 2
-}
 exit 0

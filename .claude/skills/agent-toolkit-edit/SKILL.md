@@ -44,6 +44,9 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
   `<plugin root>/skills/writing-standards/references/claude-hooks.md`が扱う
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
+dotfilesの`pytools/`のコードはagent-toolkitの`_`で始まるprivateなサブパッケージもimportしてよい。
+pytoolsはagent-toolkitを同じリポジトリからpath依存のeditable導入で解決し、両者の版がずれないためである。
+agent-toolkit側でprivateなモジュールを移動・改名する変更では、同じ変更単位で`pytools/`のimportもそろえる。
 配置先は「いつコンテキストへ読み込ませたいか」で判断する。
 
 - 常時ロードする指針と特定タスクでのみ必要な指針の振り分けは`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」に従う

@@ -158,11 +158,10 @@ class TestPs1DirectivesBlock:
 
 
 class TestAgentToolkitDotfilesNamesCheck:
-    """agent-toolkit 配布物への dotfiles 固有名混入検出 (block + warn)。
+    """agent-toolkit 配布物への dotfiles 固有名混入検出（いずれも警告）。
 
-    対象は `agent-toolkit/` 配下。
-    block 対象は配布先のエンドユーザーにとって意味不明な参照となるため exit 2 で停止する。
-    warn 対象 (pyfltr / pytilpack) は OSS として正規参照される場合があるため通知のみ。
+    対象は `agent-toolkit/` 配下。いずれも警告であり、終了コードは0のまま書き込みを止めない。
+    dotfiles 固有名は一般化した表現への置き換えを、OSS 名 (pyfltr / pytilpack) は意図した参照かの確認を求める。
     """
 
     @pytest.mark.parametrize(

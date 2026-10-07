@@ -299,7 +299,7 @@ class TestProductionManagedSettings:
         [
             ("PreToolUse", 0, 0),
             ("PreToolUse", 1, 0),
-            ("PreToolUse", 2, 2),
+            ("PreToolUse", 2, 0),
             ("Stop", 1, 0),
             ("Stop", 2, 0),
         ],
@@ -311,7 +311,7 @@ class TestProductionManagedSettings:
         hook_exit_code: int,
         expected_exit_code: int,
     ) -> None:
-        """POSIX個人hookはPreToolUseの終了コード2だけを呼び出し元へ伝える。"""
+        """POSIX個人hookは警告だけを返すため、どの終了コードも呼び出し元へ伝えず0で終える。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(".posix.json")
         data = json.loads(path.read_text(encoding="utf-8"))
         command = next(
@@ -383,7 +383,7 @@ class TestProductionManagedSettings:
         assert b"\r\n" in raw
         assert b"\n" not in raw.replace(b"\r\n", b"")
 
-    @pytest.mark.parametrize(("hook_exit_code", "expected_exit_code"), [(0, 0), (1, 0), (2, 2)])
+    @pytest.mark.parametrize(("hook_exit_code", "expected_exit_code"), [(0, 0), (1, 0), (2, 0)])
     @pytest.mark.parametrize("invocation", ["direct", "bash"])
     def test_windows_pretooluse_script_runs_via_pwsh(
         self,
@@ -392,7 +392,7 @@ class TestProductionManagedSettings:
         expected_exit_code: int,
         invocation: str,
     ) -> None:
-        """PowerShell実行時も引数境界と終了コード契約を維持する。"""
+        """PowerShell実行時も引数境界を維持し、警告だけを返すhookとしてどの終了コードも0で終える。"""
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")

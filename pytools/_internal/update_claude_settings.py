@@ -113,6 +113,10 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] =
     removal_registry.Registered("claude-hook-posttooluse.ps1", datetime.date(2026, 9, 26)),
     # 2026-10: Windowsの個人用PreToolUseの実体をlibexec/へ移したため、scripts/を指す旧登録を除去する
     removal_registry.Registered("\\dotfiles\\scripts\\claude-hook-pretooluse.ps1", datetime.date(2026, 10, 7)),
+    # 2026-10: 個人用PreToolUseは警告だけを返し終了コード2を返さないため、終了コード2を引き継ぐ旧形式を除去する
+    removal_registry.Registered(
+        "dotfiles-claude-hook pretooluse; code=$?; [ $code -eq 2 ] && exit 2", datetime.date(2026, 10, 7)
+    ),
 )
 
 # settings.json の env 配下から除去するキー。
