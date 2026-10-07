@@ -40,7 +40,7 @@
 
 ## [developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)
 
-## [WIキューの運用](concepts-workflows.md#WIキューの運用)
+## [WIキューの運用](concepts-workflows.md#wiキューの運用)
 
 ## [多数の単純作業の分担](concepts-workflows.md#多数の単純作業の分担)
 
@@ -48,10 +48,10 @@
 
 ## [フックのホスト間共通化](concepts-runtime.md#フックのホスト間共通化)
 
-## [Claude CodeとCodexの規範配置](concepts-runtime.md#Claude CodeとCodexの規範配置)
+## [Claude CodeとCodexの規範配置](concepts-runtime.md#claude-codeとcodexの規範配置)
 
 ## [委譲の運用](concepts-runtime.md#委譲の運用)
 
-## [確認・合意の運用](concepts-governance.md#確認・合意の運用)
+## [確認・合意の運用](concepts-governance.md#確認合意の運用)
 
 ## [セキュリティと環境](concepts-governance.md#セキュリティと環境)

@@ -7,26 +7,26 @@
 後続の改善で対策の内容または反映先が変わった場合は、現行のルール・スキル側を正とする。
 運用方針や意向は[concepts.md](concepts.md)、機構の設計意図は[design.md](design.md)の索引から主題別の本文を参照する。
 
-## [データ破壊・喪失](incidents-data-security.md#データ破壊・喪失)
+## [データ破壊・喪失](incidents-data-security.md#データ破壊喪失)
 
-## [無許可の公開操作・委譲範囲の逸脱](incidents-data-security.md#無許可の公開操作・委譲範囲の逸脱)
+## [無許可の公開操作・委譲範囲の逸脱](incidents-data-security.md#無許可の公開操作委譲範囲の逸脱)
 
 ## [セキュリティ規範の回帰](incidents-data-security.md#セキュリティ規範の回帰)
 
-## [誤った完了報告・虚偽報告](incidents-validation.md#誤った完了報告・虚偽報告)
+## [誤った完了報告・虚偽報告](incidents-validation.md#誤った完了報告虚偽報告)
 
-## [誤判定・検証不足](incidents-validation.md#誤判定・検証不足)
+## [誤判定・検証不足](incidents-validation.md#誤判定検証不足)
 
-## [規範の消失・陳腐化](incidents-validation.md#規範の消失・陳腐化)
+## [規範の消失・陳腐化](incidents-validation.md#規範の消失陳腐化)
 
-## [レビューの発散・目的変質](incidents-workflows.md#レビューの発散・目的変質)
+## [レビューの発散・目的変質](incidents-workflows.md#レビューの発散目的変質)
 
-## [停滞・空転](incidents-workflows.md#停滞・空転)
+## [停滞・空転](incidents-workflows.md#停滞空転)
 
 ## [公開工程の未完了](incidents-workflows.md#公開工程の未完了)
 
 ## [並行実行の競合](incidents-workflows.md#並行実行の競合)
 
-## [フック・セッション状態の不全](incidents-runtime.md#フック・セッション状態の不全)
+## [フック・セッション状態の不全](incidents-runtime.md#フックセッション状態の不全)
 
-## [配布物の改名・廃止に伴う旧生成物の残存](incidents-runtime.md#配布物の改名・廃止に伴う旧生成物の残存)
+## [配布物の改名・廃止に伴う旧生成物の残存](incidents-runtime.md#配布物の改名廃止に伴う旧生成物の残存)
