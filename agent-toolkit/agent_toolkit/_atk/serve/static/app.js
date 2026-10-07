@@ -38,6 +38,9 @@ let userListOperationPending = false;
 let externalListReloadPending = false;
 let pendingListAnnouncement = false;
 let detailRefreshRequired = false;
+// 詳細ダイアログから送信した変更操作の応答を待つ間か、その間に詳細の再読込を保留したか。
+let detailMutationPending = false;
+let detailReloadDeferred = false;
 let deleteDialogEntrySnapshot = '';
 let searchTimer = null;
 let currentPage = 1;
@@ -1013,14 +1016,26 @@ function refreshUserCommentMode(entry, message) {
   input.focus();
 }
 
+// 詳細ダイアログから変更操作を送信している間は、開いている詳細の再読込を保留し、保留したことだけを記録する。
+// その間に届く更新通知には操作自身の書込みが含まれ、外部更新として比べると成功した操作に警告を表示する。
+// 操作によっては項目の状態も変わり、詳細の表示が書き換わる。保留した再読込は失敗時にだけ実行する。
+function deferDetailReloadWhileMutating() {
+  if (!detailMutationPending) return false;
+  detailReloadDeferred = true;
+  return true;
+}
+
 async function reloadOpenDetailFromExternalChange() {
   if (!byId('detail-dialog').open || !currentEntry) return;
   if (detailOriginKey !== entryKey(currentEntry)) return;
+  if (deferDetailReloadWhileMutating()) return;
   const sessionGeneration = detailSessionGeneration;
   const originalState = currentEntry.state;
   const filename = currentEntry.filename;
   const requestGeneration = ++detailRequestGeneration;
-  const requestIsCurrent = () => requestGeneration === detailRequestGeneration &&
+  // 送信の開始前に始まった再読込も、応答を待つ間に結果を反映せず保留へ回す。
+  const requestIsCurrent = () => !deferDetailReloadWhileMutating() &&
+    requestGeneration === detailRequestGeneration &&
     sessionGeneration === detailSessionGeneration && byId('detail-dialog').open &&
     currentEntry?.filename === filename;
   let deleteConfirmationInvalidated = false;
@@ -1157,8 +1172,9 @@ function mutationFailureMessage(key, failure, error) {
   return `${failure} ${recovery}`;
 }
 
-function finishDetailMutation(key, sessionGeneration, message) {
-  const sameDetail = byId('detail-dialog').open && entryKey(currentEntry) === key &&
+// 操作の対象と開いている詳細の同一性は、操作で変わり得る状態を除き、詳細を開いた単位とファイル名で判定する。
+function finishDetailMutation(key, filename, sessionGeneration, message) {
+  const sameDetail = byId('detail-dialog').open && currentEntry?.filename === filename &&
     sessionGeneration === detailSessionGeneration;
   if (sameDetail) closeDetailDialog({force: true});
   void loadEntries({showLoading: false}).then(() => {
@@ -1170,22 +1186,45 @@ function finishDetailMutation(key, sessionGeneration, message) {
   else showToast(message);
 }
 
+// 詳細ダイアログからの全変更操作が通る共通の処理。送信中は詳細の再読込を保留し、成功時は保留を破棄して
+// 詳細を閉じ成功を通知する。失敗時は保留した再読込を実行してから例外を呼び出し元へ返し、
+// 呼び出し元が表示する失敗の文を再読込の警告で上書きしない。
+async function runDetailMutation(pendingKey, pendingOptions, request, successMessage) {
+  if (pendingOperations.has(pendingKey)) return;
+  const key = entryKey(currentEntry);
+  const filename = currentEntry.filename;
+  const sessionGeneration = detailSessionGeneration;
+  detailMutationPending = true;
+  detailReloadDeferred = false;
+  try {
+    await (runPending(pendingKey, pendingOptions, request));
+  } catch (error) {
+    detailMutationPending = false;
+    if (detailReloadDeferred) {
+      detailReloadDeferred = false;
+      await (reloadOpenDetailFromExternalChange());
+    }
+    throw error;
+  } finally {
+    detailMutationPending = false;
+  }
+  detailReloadDeferred = false;
+  finishDetailMutation(key, filename, sessionGeneration, successMessage);
+}
+
 async function saveEntry() {
   if (!currentEntry || detailRefreshRequired) return;
   const content = byId('edit-content').value;
   setFieldError(byId('edit-content'), byId('edit-content-error'), content.trim() ? '' : 'ファイル全体を入力してください。');
   if (firstInvalid([byId('edit-content')])) return;
   const key = entryKey(currentEntry);
-  const sessionGeneration = detailSessionGeneration;
+  const path = `/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`;
   const payload = {content, expected_content: currentEntry.content};
   clearDialogMessages('detail');
   try {
-    await (runPending('save', {
+    await (runDetailMutation('save', {
       container: byId('detail-shell'), button: byId('save-entry-button'), busyLabel: '保存中'
-    }, () => api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`, {
-      method: 'PUT', body: JSON.stringify(payload)
-    })));
-    finishDetailMutation(key, sessionGeneration, `${key}を保存しました。`);
+    }, () => api(path, {method: 'PUT', body: JSON.stringify(payload)}), `${key}を保存しました。`));
   } catch (error) {
     const failure = `${key}を保存できませんでした。 ${error.message}`;
     deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
@@ -1208,10 +1247,9 @@ async function saveAnswer() {
   };
   clearDialogMessages('detail');
   try {
-    await (runPending('answer', {
+    await (runDetailMutation('answer', {
       container: byId('detail-shell'), button: byId('save-answer-button'), busyLabel: '保存中'
-    }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)})));
-    finishDetailMutation(key, sessionGeneration, `${key}へ回答しました。`);
+    }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)}), `${key}へ回答しました。`));
   } catch (error) {
     const failure = `${key}へ回答できませんでした。 ${error.message}`;
     if (sessionGeneration === detailSessionGeneration) {
@@ -1242,10 +1280,9 @@ async function saveUserComment() {
   };
   clearDialogMessages('detail');
   try {
-    await (runPending('user-comment', {
+    await (runDetailMutation('user-comment', {
       container: byId('detail-shell'), button: byId('save-user-comment-button'), busyLabel: '保存中'
-    }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)})));
-    finishDetailMutation(key, sessionGeneration, savedMessage);
+    }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)}), savedMessage));
   } catch (error) {
     if (error.payload?.code === 'edit_conflict' &&
         await (reloadUserCommentAfterConflict(key, sessionGeneration))) return;
@@ -1262,22 +1299,20 @@ async function transitionDetail(action) {
       action === 'hold' ? PROCESSABLE_STATES.has(currentEntry.state) || terminal : MUTABLE_STATES.has(currentEntry.state);
   if (!allowed || (action === 'reject' && currentEntry.kind !== 'awi')) return;
   const key = entryKey(currentEntry);
-  const sessionGeneration = detailSessionGeneration;
   const payload = {filenames: [currentEntry.filename]};
   if (terminal && (action === 'return-to-inbox' || action === 'hold')) payload.state = currentEntry.state;
   if ((action === 'adopt' || action === 'reject') && currentEntry.state === 'hold') payload.state = 'hold';
   const note = byId('decision-note').value.trim();
   if (note && (action === 'adopt' || action === 'reject')) payload.note = note;
+  const label = {
+    adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除', 'return-to-inbox': 'inboxへ戻す'
+  }[action];
   try {
-    await (runPending(`transition-${action}`, {
+    await (runDetailMutation(`transition-${action}`, {
       container: byId('detail-shell'),
       button: byId(action === 'adopt' || action === 'reject' ? `confirm-${action}-button` : `${action}-button`),
       busyLabel: '処理中'
-    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)})));
-    const label = {
-      adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除', 'return-to-inbox': 'inboxへ戻す'
-    }[action];
-    finishDetailMutation(key, sessionGeneration, `${key}を${label}しました。`);
+    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}), `${key}を${label}しました。`));
   } catch (error) {
     deliverOperationMessage(`${key}を処理できませんでした。 ${error.message}`, true);
   }
@@ -1413,20 +1448,9 @@ async function deleteEntry(event) {
   };
   clearDialogMessages('delete');
   try {
-    await (runPending('delete', {
+    await (runDetailMutation('delete', {
       container: byId('delete-form'), button: byId('delete-submit-button'), busyLabel: '削除中'
-    }, () => api('/api/entries/remove', {method: 'POST', body: JSON.stringify(payload)})));
-    if (byId('delete-dialog').open) closeDeleteDialog();
-    await (loadEntries());
-    if (!entries.some(entry => entryKey(entry) === key)) {
-      if (byId('detail-dialog').open || currentEntry) closeDetailDialog({force: true});
-      else detailReturnTarget().focus();
-    } else {
-      byId('edit-button').hidden = true;
-      byId('answer-button').hidden = true;
-      byId('delete-button').hidden = true;
-    }
-    deliverOperationMessage(`${key}を削除しました。`);
+    }, () => api('/api/entries/remove', {method: 'POST', body: JSON.stringify(payload)}), `${key}を削除しました。`));
   } catch (error) {
     const failure = `${key}を削除できませんでした。 ${error.message}`;
     if (error.payload?.code === 'edit_conflict' && byId('detail-dialog').open) {

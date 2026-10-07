@@ -276,7 +276,10 @@ process.stdout.write(JSON.stringify({putUrls, state: savedState, open: elements[
 
 
 def test_assets_clear_self_write_sse_alert_after_save_and_answer_success() -> None:
-    """保存・回答の応答前にSSEが届いても、成功後は詳細を閉じる。"""
+    """保存・回答の応答前にSSEが届いても、送信中は警告せず、成功後は詳細を閉じる。
+
+    送信中の更新通知は操作自身の書込みを含むため、外部更新として警告すると成功した操作を失敗と誤認させる。
+    """
     result = _run_node_ui(
         """
 async function runSave() {
@@ -365,10 +368,9 @@ const answered = await runAnswer();
 process.stdout.write(JSON.stringify({saved, answered}));
 """
     )
-    warning = "外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。"
     assert result == {
         "saved": {
-            "during": warning,
+            "during": "",
             "after": "",
             "status": "",
             "toast": "inbox/entry.mdを保存しました。",
@@ -376,7 +378,7 @@ process.stdout.write(JSON.stringify({saved, answered}));
             "mode": "view",
         },
         "answered": {
-            "during": warning,
+            "during": "",
             "after": "",
             "status": "",
             "toast": "inbox/question.mdへ回答しました。",

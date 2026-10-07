@@ -28,6 +28,7 @@ from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
+from agent_toolkit._atk.wi import uwi as uwi_mutations
 from agent_toolkit._testing import session_tree
 
 _BROWSER_TEST_ENV = "AGENT_TOOLKIT_SERVE_BROWSER_TESTS"
@@ -118,10 +119,12 @@ class _BrowserOperations(serve_app.Operations):
         content: str,
         expected_content: str | None = None,
     ) -> bool:
-        del expected_content
         self.edit_calls += 1
         if self.persist_mutations:
-            (self.private_notes / state / filename).write_text(content, encoding="utf-8")
+            path = self.private_notes / state / filename
+            if expected_content is not None and path.read_text(encoding="utf-8") != expected_content:
+                raise RuntimeError("編集中に他プロセスが対象を変更しました")
+            path.write_text(content, encoding="utf-8")
         if self.delay_edit:
             self.edit_started.set()
             if not self.edit_release.wait(timeout=5):
@@ -144,10 +147,11 @@ class _BrowserOperations(serve_app.Operations):
             (self.private_notes / destination).mkdir(exist_ok=True)
             for filename in filenames:
                 (self.private_notes / source / filename).rename(self.private_notes / destination / filename)
-        if action == "adopt" and self.persist_mutations:
+        if action in {"adopt", "reject"} and self.persist_mutations:
             source = kwargs.get("state") or "inbox"
+            destination = "adopted" if action == "adopt" else "rejected"
             for filename in filenames:
-                (self.private_notes / source / filename).rename(self.private_notes / "adopted" / filename)
+                (self.private_notes / source / filename).rename(self.private_notes / destination / filename)
         if action == "remove":
             self.remove_calls += 1
             if self.persist_mutations:
@@ -241,6 +245,9 @@ class _BrowserOperations(serve_app.Operations):
                     raise RuntimeError("編集中に他プロセスが対象を変更しました")
                 updated = content.rsplit(marker, maxsplit=1)[0] + marker + "\n" + answer.strip() + "\n"
                 path.write_text(updated, encoding="utf-8")
+                # 実装（`uwi.answer_uwi`）と同じ判定で、事後承認型UWIへの肯定回答は項目を`adopted`へ移す。
+                if uwi_mutations._is_affirmative_post_approval(content, answer):  # pylint: disable=protected-access
+                    path.rename(self.private_notes / "adopted" / filename)
                 break
         return True
 
@@ -1427,94 +1434,284 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     await playwright.async_api.expect(page.locator("#entry-list .entry-select").first).to_be_focused()
 
 
+_POST_APPROVAL_UWI = (
+    "---\ntype: uwi\ntarget_repo: example/repo\nquestion_type: choice\nchoices: その対応で問題無い, 問題がある\n---\n\n"
+    "## 質問\n\nこの対応で進めた。問題無いか？\n\n## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n"
+)
+_FREE_FORM_UWI = (
+    "---\ntype: uwi\ntarget_repo: example/repo\nquestion_type: free-form\n---\n\n"
+    "## 質問\n\n方針はどうするか？\n\n## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n"
+)
+_AGENT_AWI = "---\ntype: awi\ntarget_repo: example/repo\nsource: session-review\n---\n\n変更操作の対象\n"
+_SELF_WRITE_WARNINGS = ("外部で項目が更新されました", "削除されたため表示できません")
+
+
+@dataclasses.dataclass(frozen=True)
+class _DetailMutationCase:
+    """詳細ダイアログから送信する変更操作1件の手順と期待結果。"""
+
+    state: str
+    content: str
+    mode_button: str | None
+    field: tuple[str, str] | None
+    submit: str
+    route: str
+    method: str
+    message: str
+    final_state: str | None
+
+
+_DETAIL_MUTATION_CASES = {
+    "answer-auto-adopt": _DetailMutationCase(
+        "inbox",
+        _POST_APPROVAL_UWI,
+        "#answer-button",
+        ("#answer-input", "その対応で問題無い"),
+        "#save-answer-button",
+        "**/api/entries/answer",
+        "POST",
+        "へ回答しました。",
+        "adopted",
+    ),
+    "answer": _DetailMutationCase(
+        "inbox",
+        _FREE_FORM_UWI,
+        "#answer-button",
+        ("#answer-input", "自由記述の回答"),
+        "#save-answer-button",
+        "**/api/entries/answer",
+        "POST",
+        "へ回答しました。",
+        "inbox",
+    ),
+    "save": _DetailMutationCase(
+        "inbox",
+        _AGENT_AWI,
+        "#edit-button",
+        ("#edit-content", _AGENT_AWI + "\n保存追記\n"),
+        "#save-entry-button",
+        "**/api/entries/inbox/target.md",
+        "PUT",
+        "を保存しました。",
+        "inbox",
+    ),
+    "user-comment": _DetailMutationCase(
+        "inbox",
+        _AGENT_AWI,
+        "#user-comment-button",
+        ("#user-comment-input", "ユーザーのコメント"),
+        "#save-user-comment-button",
+        "**/api/entries/user-comment",
+        "POST",
+        "のユーザーコメントを保存しました。",
+        "inbox",
+    ),
+    "adopt": _DetailMutationCase(
+        "inbox",
+        _AGENT_AWI,
+        "#adopt-button",
+        None,
+        "#confirm-adopt-button",
+        "**/api/entries/adopt",
+        "POST",
+        "を採用しました。",
+        "adopted",
+    ),
+    "reject": _DetailMutationCase(
+        "inbox",
+        _AGENT_AWI,
+        "#reject-button",
+        None,
+        "#confirm-reject-button",
+        "**/api/entries/reject",
+        "POST",
+        "を却下しました。",
+        "rejected",
+    ),
+    "hold": _DetailMutationCase(
+        "inbox",
+        _AGENT_AWI,
+        None,
+        None,
+        "#hold-button",
+        "**/api/entries/hold",
+        "POST",
+        "を保留しました。",
+        "hold",
+    ),
+    "unhold": _DetailMutationCase(
+        "hold",
+        _AGENT_AWI,
+        None,
+        None,
+        "#unhold-button",
+        "**/api/entries/unhold",
+        "POST",
+        "を保留解除しました。",
+        "inbox",
+    ),
+    "return-to-inbox": _DetailMutationCase(
+        "adopted",
+        _AGENT_AWI,
+        None,
+        None,
+        "#return-to-inbox-button",
+        "**/api/entries/return-to-inbox",
+        "POST",
+        "をinboxへ戻すしました。",
+        "inbox",
+    ),
+    "delete": _DetailMutationCase(
+        "inbox",
+        _AGENT_AWI,
+        "#delete-button",
+        None,
+        "#delete-submit-button",
+        "**/api/entries/remove",
+        "POST",
+        "を削除しました。",
+        None,
+    ),
+}
+
+
+async def _record_self_write_warnings(page: playwright.async_api.Page) -> None:
+    """詳細と通知の表示へ、自分の書込みを外部更新とみなした表示が一度でも現れたかを記録する。"""
+    await page.evaluate(
+        """warnings => {
+          window.__selfWriteWarnings = [];
+          const check = () => {
+            for (const id of ['detail-alert', 'detail-status', 'operation-notice-message', 'delete-alert']) {
+              const text = document.getElementById(id)?.textContent || '';
+              if (warnings.some(warning => text.includes(warning))) window.__selfWriteWarnings.push(text);
+            }
+          };
+          new MutationObserver(check).observe(document.body, {subtree: true, childList: true, characterData: true});
+        }""",
+        list(_SELF_WRITE_WARNINGS),
+    )
+
+
 @pytest.mark.asyncio
-async def test_self_write_sse_alert_clears_after_save_and_answer_success(
-    browser_harness: _BrowserHarness,
-) -> None:
-    """自書込みSSEが応答より先でも、保存・回答成功後に警告を残さない。"""
+@pytest.mark.parametrize("case_name", list(_DETAIL_MUTATION_CASES))
+async def test_detail_mutation_self_write_does_not_warn(browser_harness: _BrowserHarness, case_name: str) -> None:
+    """変更操作の応答より先に自分の書込みの更新通知が届いても、警告せずに詳細を閉じて成功を通知する。
+
+    送信中の更新通知を外部更新として扱うと、成功した操作に「外部で項目が更新されました」が出る。
+    状態が変わる操作（自動採用される回答、採用、保留、削除など）では詳細の表示も書き換わり、詳細が閉じずに
+    成功の通知が背面へ出るか、自分が削除した項目を削除済みとして通知する。
+    """
+    case = _DETAIL_MUTATION_CASES[case_name]
     harness = browser_harness
     page = harness.page
     harness.operations.enable_file_mutations()
-    await page.goto(harness.base_url + "/")
-    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
-    await playwright.async_api.expect(page.locator("#connection-status")).to_be_hidden()
-
-    awi_row = page.locator('.entry-select[data-key="inbox/awi.md"]')
-    await awi_row.click()
+    for directory in ("hold", "processing"):
+        (harness.root / directory).mkdir(exist_ok=True)
+    (harness.root / case.state / "target.md").write_text(case.content, encoding="utf-8")
+    key = f"{case.state}/target.md"
+    await page.goto(f"{harness.base_url}/?state={case.state}&filename=target.md")
     detail = page.get_by_role("dialog", name="詳細")
-    await detail.get_by_role("button", name="編集", exact=True).click()
-    edit_input = detail.locator("#edit-content")
-    await edit_input.fill((await edit_input.input_value()) + "\n保存追記")
-    edit_finished = asyncio.Event()
-    release_edit_response = asyncio.Event()
+    await detail.wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await _record_self_write_warnings(page)
+    if case.mode_button is not None:
+        await page.locator(case.mode_button).click()
+    if case.field is not None:
+        await page.locator(case.field[0]).fill(case.field[1])
+    fetched = asyncio.Event()
+    release = asyncio.Event()
 
-    async def delay_edit_response(route: playwright.async_api.Route) -> None:
-        if route.request.method != "PUT":
+    async def delay_response(route: playwright.async_api.Route) -> None:
+        if route.request.method != case.method:
             await route.continue_()
             return
         response = await route.fetch()
-        edit_finished.set()
-        await release_edit_response.wait()
+        fetched.set()
+        await release.wait()
         await route.fulfill(response=response)
 
-    await page.route("**/api/entries/inbox/awi.md", delay_edit_response)
-    await detail.get_by_role("button", name="保存", exact=True).click()
-    await asyncio.wait_for(edit_finished.wait(), timeout=5)
-    harness.current_state.publish()
-    try:
-        await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible", timeout=4_000)
-    finally:
-        release_edit_response.set()
-    await page.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
+    await page.route(case.route, delay_response)
+    await page.locator(case.submit).click()
+    await asyncio.wait_for(fetched.wait(), timeout=5)
+    # 更新通知が届き、画面が一覧の再取得を終えて詳細の再読込へ進むまで応答を返さない。
+    async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
+        harness.current_state.publish()
+    await page.wait_for_timeout(300)
+    release.set()
+
     await detail.wait_for(state="hidden")
-    await page.unroute("**/api/entries/inbox/awi.md", delay_edit_response)
-    await awi_row.click()
+    await playwright.async_api.expect(page.locator("#operation-notice-message")).to_have_text(f"{key}{case.message}")
+    assert await page.evaluate("window.__selfWriteWarnings") == []
+    if case.final_state is None:
+        assert not list(harness.root.glob("*/target.md"))
+    else:
+        assert (harness.root / case.final_state / "target.md").is_file()
+    if case_name == "answer-auto-adopt":
+        assert "その対応で問題無い" in (harness.root / "adopted" / "target.md").read_text(encoding="utf-8")
+        await _open_filters(page)
+        await page.locator("#state-filter").select_option("all")
+        await page.locator('.entry-select[data-key="adopted/target.md"]').wait_for(state="visible")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode_button", "field", "submit", "failure"),
+    [
+        ("#answer-button", "#answer-input", "#save-answer-button", "へ回答できませんでした。"),
+        ("#edit-button", "#edit-content", "#save-entry-button", "を保存できませんでした。"),
+    ],
+    ids=["answer", "save"],
+)
+async def test_detail_mutation_conflict_keeps_input(
+    browser_harness: _BrowserHarness, mode_button: str, field: str, submit: str, failure: str
+) -> None:
+    """送信中に他プロセスが本文を変えてサーバーが409を返した場合は、入力を残して失敗と回復の手順を示す。
+
+    保留した詳細の再読込は失敗時に実行するが、その警告で失敗の表示を上書きしない。
+    """
+    harness = browser_harness
+    page = harness.page
+    harness.operations.enable_file_mutations()
+    path = harness.root / "inbox" / "target.md"
+    path.write_text(_FREE_FORM_UWI, encoding="utf-8")
+    await page.goto(f"{harness.base_url}/?state=inbox&filename=target.md")
+    detail = page.get_by_role("dialog", name="詳細")
     await detail.wait_for(state="visible")
-    async with page.expect_response(
-        lambda response: response.request.method == "GET" and response.url.endswith("/api/entries/inbox/awi.md")
-    ):
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await page.locator(mode_button).click()
+    user_input = _FREE_FORM_UWI + "\n入力の追記\n" if field == "#edit-content" else "保持する回答"
+    await page.locator(field).fill(user_input)
+
+    async def change_before_send(route: playwright.async_api.Route) -> None:
+        if route.request.method not in {"POST", "PUT"}:
+            await route.continue_()
+            return
+        path.write_text(_FREE_FORM_UWI.replace("方針はどうするか？", "他プロセスが変えた質問"), encoding="utf-8")
         harness.current_state.publish()
-    await playwright.async_api.expect(detail.locator("#detail-alert")).to_be_hidden()
-    await page.keyboard.press("Escape")
+        await page.wait_for_timeout(300)
+        await route.continue_()
 
-    question_row = page.locator('.entry-select[data-key="inbox/question.md"]')
-    await question_row.click()
-    await detail.get_by_role("button", name="回答", exact=True).click()
-    await detail.locator("#answer-input").fill("競合しない回答")
-    answer_finished = asyncio.Event()
-    release_answer_response = asyncio.Event()
+    await page.route("**/api/entries/answer", change_before_send)
+    await page.route("**/api/entries/inbox/target.md", change_before_send)
+    await page.locator(submit).click()
 
-    async def delay_answer_response(route: playwright.async_api.Route) -> None:
-        response = await route.fetch()
-        answer_finished.set()
-        await release_answer_response.wait()
-        await route.fulfill(response=response)
-
-    await page.route("**/api/entries/answer", delay_answer_response)
-    await detail.get_by_role("button", name="回答を保存").click()
-    await asyncio.wait_for(answer_finished.wait(), timeout=5)
-    harness.current_state.publish()
-    try:
-        await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible", timeout=4_000)
-    finally:
-        release_answer_response.set()
-    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
-    await page.unroute("**/api/entries/answer", delay_answer_response)
-    await page.keyboard.press("Escape")
-    await question_row.click()
-    await detail.wait_for(state="visible")
-    async with page.expect_response(
-        lambda response: response.request.method == "GET" and response.url.endswith("/api/entries/inbox/question.md")
-    ):
-        harness.current_state.publish()
-    await playwright.async_api.expect(detail.locator("#detail-alert")).to_be_hidden()
+    alert = detail.locator("#detail-alert")
+    await playwright.async_api.expect(alert).to_contain_text(f"inbox/target.md{failure}")
+    await playwright.async_api.expect(alert).to_contain_text(
+        "inbox/target.mdは外部で更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。"
+    )
+    assert await page.locator(field).input_value() == user_input
 
 
 @pytest.mark.asyncio
 async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """削除応答とSSEの到着順にかかわらず、親子を閉じて一覧へ戻す。"""
+    """削除応答とSSEの到着順にかかわらず、親子を閉じて一覧へ戻す。
+
+    応答より先に届いた更新通知は自分の削除によるものを含むため、応答まで詳細の再読込を保留し、
+    応答の後に親子を閉じて削除の成功を通知する。
+    """
     harness = browser_harness
     page = harness.page
     for filename in ("sse-first.md", "response-first.md"):
@@ -1533,10 +1730,12 @@ async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
     harness.operations.arm_remove_delay()
     await delete_dialog.get_by_role("button", name="削除する").click()
     assert await asyncio.to_thread(harness.operations.remove_started.wait, 5)
-    harness.current_state.publish()
+    async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
+        harness.current_state.publish()
+    await page.wait_for_timeout(300)
+    harness.operations.remove_release.set()
     await delete_dialog.wait_for(state="hidden")
     await detail.wait_for(state="hidden")
-    harness.operations.remove_release.set()
     await page.get_by_role("status").filter(has_text="削除しました").wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select").first).to_be_focused()
 
@@ -1647,7 +1846,10 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
 async def test_external_update_recovery_survives_save_and_answer_failures(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """自書込み相当のSSE後に更新APIが失敗しても、入力と復旧手順を維持する。"""
+    """送信中に外部更新の通知が届いて更新APIが失敗した場合は、保留した再読込を実行し、入力と復旧手順を維持する。
+
+    送信中は詳細の再読込を保留するため、警告は失敗の応答の後に、失敗の文と復旧手順として表示する。
+    """
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -1686,8 +1888,10 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         await asyncio.wait_for(started.wait(), timeout=5)
         state_name, filename = row_key.split("/", maxsplit=1)
         (harness.root / state_name / filename).write_text(updated_content, encoding="utf-8")
-        harness.current_state.publish()
-        await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible")
+        # 更新通知による一覧の再取得が終わり、詳細の再読込が保留へ回るまで応答を返さない。
+        async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
+            harness.current_state.publish()
+        await page.wait_for_timeout(300)
         release.set()
         await detail.get_by_role("alert").filter(has_text="Git同期に失敗しました").wait_for(state="visible")
         assert "詳細を閉じて開き直してから保存してください" in await detail.locator("#detail-alert").inner_text()
