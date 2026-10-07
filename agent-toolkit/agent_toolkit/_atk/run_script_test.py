@@ -11,6 +11,7 @@ import pytest
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import next_action
+from agent_toolkit._testing import git_repository
 
 
 def test_dispatch_forwards_help_and_exit_code(capsys: pytest.CaptureFixture[str]) -> None:
@@ -182,12 +183,7 @@ def test_dispatch_keeps_worktree_inputs_independent(
 
 
 def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_path: pathlib.Path) -> None:
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    subprocess.run(["git", "init", "--quiet"], cwd=repository, check=True)
-    subprocess.run(["git", "config", "user.name", "test"], cwd=repository, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repository, check=True)
-    subprocess.run(["git", "commit", "--quiet", "--allow-empty", "-m", "base"], cwd=repository, check=True)
+    repository = git_repository.init_repository(tmp_path / "repository", commit_message="base")
     source = tmp_path / "source.md"
     source.write_text(
         f"""# 外部入口検証

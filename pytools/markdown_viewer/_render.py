@@ -5,6 +5,8 @@ import pathlib
 
 import markdown_it
 
+from pytools._internal import common
+
 
 def make_renderer() -> markdown_it.MarkdownIt:
     """Raw HTMLを無効化したGFM相当のMarkdownレンダラを返す。"""
@@ -23,9 +25,12 @@ def resolve_css_path() -> pathlib.Path | None:
     """リポジトリ内の`share/vscode/markdown.css`のパスを返す。見つからなければNone。
 
     `Path.home()`起点だとCI環境や`$HOME`と`~/dotfiles`が一致しない環境で破綻するため、
-    本ファイルの位置を起点に解決する（リポジトリルートは2階層上）。editable installを前提とする。
+    `find_dotfiles_root()`で作業ツリーから解決する。editable installを前提とする。
     """
-    candidate = pathlib.Path(__file__).resolve().parents[2] / "share" / "vscode" / "markdown.css"
+    dotfiles_root = common.find_dotfiles_root()
+    if dotfiles_root is None:
+        return None
+    candidate = dotfiles_root / "share" / "vscode" / "markdown.css"
     if candidate.is_file():
         return candidate
     return None

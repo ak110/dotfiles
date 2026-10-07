@@ -7,13 +7,14 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._plan import owner_records as _owner_records
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
+_SCRIPT = pathlib.Path(_stop_check_runner.__file__)
 # 子プロセスで起動するStopフックへはconftestの待機の差し替えが及ばないため、末尾を`end_turn`で終えるtranscriptを渡し、
-# `stop_gate._wait_for_end_turn`が上限まで待たずに判定へ進むようにする。
+# `transcript_scan.wait_for_end_turn`が上限まで待たずに判定へ進むようにする。
 _FINISHED_TURN_ENTRIES = [
     {"type": "assistant", "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "完了しました。"}]}}
 ]
@@ -75,7 +76,7 @@ def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path)
     transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
     session_id = "block-once"
     for plan in (first, second):
-        _plan_file.write_owner_record(plan, session_id=session_id)
+        _owner_records.write_owner_record(plan, session_id=session_id)
 
     first_result = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
     second_result = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
@@ -96,7 +97,7 @@ def test_nested_working_plans_are_reported(tmp_path: pathlib.Path) -> None:
     nested.mkdir(parents=True)
     plan = nested / "01-nested-a1b2.md"
     plan.write_text("# nested\n", encoding="utf-8")
-    _plan_file.write_owner_record(plan, session_id="nested")
+    _owner_records.write_owner_record(plan, session_id="nested")
     transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
 
     result = _decision(_run(_payload("nested", transcript), state_dir=tmp_path, home=home))
@@ -138,7 +139,7 @@ def test_suppression_conditions_approve(
     plan.write_text("# plan\n", encoding="utf-8")
     transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
     session_id = "suppressed"
-    _plan_file.write_owner_record(plan, session_id=session_id)
+    _owner_records.write_owner_record(plan, session_id=session_id)
     _write_state(tmp_path, session_id, state)
 
     result = _run(
@@ -158,7 +159,7 @@ def test_nested_process_loop_session_is_not_suppressed(tmp_path: pathlib.Path) -
     plans.mkdir(parents=True)
     plan = plans / "plan.md"
     plan.write_text("# plan\n", encoding="utf-8")
-    _plan_file.write_owner_record(plan, session_id="nested")
+    _owner_records.write_owner_record(plan, session_id="nested")
     transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
     result = _decision(
         _run(
@@ -179,7 +180,7 @@ def test_stop_hook_active_still_notifies(tmp_path: pathlib.Path) -> None:
     plan = plans / "plan.md"
     plan.write_text("# plan\n", encoding="utf-8")
     session_id = "stop-hook-active"
-    _plan_file.write_owner_record(plan, session_id=session_id)
+    _owner_records.write_owner_record(plan, session_id=session_id)
     transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
 
     result = _decision(
@@ -202,7 +203,7 @@ def test_paths_outside_the_working_root_approve(tmp_path: pathlib.Path) -> None:
     private_plan = tmp_path / "private-notes" / "plans" / "2026" / "09" / "01-saved-a1b2.md"
     private_plan.parent.mkdir(parents=True)
     private_plan.write_text("# saved\n", encoding="utf-8")
-    _plan_file.write_owner_record(private_plan, session_id="outside-working-root")
+    _owner_records.write_owner_record(private_plan, session_id="outside-working-root")
     transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
 
     result = _run(_payload("outside-working-root", transcript), state_dir=tmp_path, home=home)
@@ -237,7 +238,7 @@ def test_notified_plans_are_limited_to_the_current_session(
     for name in ("own.md", "other.md"):
         (plans / name).write_text(f"# {name}\n", encoding="utf-8")
     for name, session in owner_records.items():
-        _plan_file.write_owner_record(plans / name, session_id=session)
+        _owner_records.write_owner_record(plans / name, session_id=session)
     transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
 
     result = _decision(_run(_payload("current", transcript), state_dir=tmp_path, home=home))
@@ -262,7 +263,7 @@ def test_unreadable_owner_record_approves(tmp_path: pathlib.Path, record: str) -
     plans.mkdir(parents=True)
     plan = plans / "broken.md"
     plan.write_text("# broken\n", encoding="utf-8")
-    _plan_file.owner_record_path(plan).write_text(record, encoding="utf-8")
+    _owner_records.owner_record_path(plan).write_text(record, encoding="utf-8")
     transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
 
     result = _run(_payload("current", transcript), state_dir=tmp_path, home=home)
@@ -282,7 +283,7 @@ def test_process_wi_running_defers_notice_until_flag_is_reset(tmp_path: pathlib.
     plan.write_text("# lane\n", encoding="utf-8")
     transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
     session_id = "process-wi-main"
-    _plan_file.write_owner_record(plan, session_id=session_id)
+    _owner_records.write_owner_record(plan, session_id=session_id)
     _write_state(tmp_path, session_id, {"process_wi_skill_invoked": True})
 
     running = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))

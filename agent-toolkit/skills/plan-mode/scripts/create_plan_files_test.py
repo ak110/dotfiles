@@ -2,19 +2,13 @@
 
 import datetime
 import pathlib
-import subprocess
 import time
 
 import create_plan_files
 import pytest
 
-from agent_toolkit._plan import fixture as _plan_fixture
-
-
-def _git(repo: pathlib.Path, *args: str) -> str:
-    """テスト用Gitリポジトリでコマンドを実行する。"""
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True)
-    return result.stdout.strip()
+from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import plan_fixture as _plan_fixture
 
 
 def _make_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
@@ -22,7 +16,7 @@ def _make_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathl
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     repo = tmp_path / "repo"
     repo.mkdir()
-    _git(repo, "init", "-q")
+    git_repository.init_repository(repo)
     return repo
 
 

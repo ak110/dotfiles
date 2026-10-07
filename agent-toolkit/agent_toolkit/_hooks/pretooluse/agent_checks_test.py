@@ -1,29 +1,30 @@
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
-import ast
 import json
-import os
 import pathlib
 import subprocess
-import tempfile
-import textwrap
 import time
-from collections.abc import Callable
 
 import pytest
-from pyfltr.colloquial import check as _colloquial_check
 
-from agent_toolkit import hook
-from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
-from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
-from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
+from agent_toolkit._testing.pretooluse_support import (
+    _EXECUTE_REVIEW_TASK_NAMES,
+    _additional_context,
+    _agent_messages,
+    _make_plan_file,
+    _path_section_build_content,
+    _plan_file_state_env,
+    _process_loop_log_env,
+    _read_session_state,
+    _run,
+    _run_posttooluse,
+    _stage_model_env,
+    _write_session_state,
+)
 
 
 @pytest.mark.parametrize(
@@ -190,27 +191,89 @@ class TestTaskStopBlock:
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 0
 
-    def test_timeout_notice_allows_only_its_task_stop(
+    @pytest.mark.parametrize(
+        ("label", "phrase"),
+        [
+            ("mcp-notice", "moved to the background as task {task_id} and keeps running"),
+            ("timed-out", "Command timed out and is now running in the background. ID: {task_id}"),
+            (
+                "did-not-complete",
+                "Command did not complete within its 15s timeout and was moved to the background (ID: {task_id}).",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("source", ["bash-stdout", "mcp-grep", "agents-server"])
+    def test_foreground_notice_text_does_not_allow_task_stop(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        source: str,
+        label: str,
+        phrase: str,
+    ) -> None:
+        """前景の出力本文の途中に移行通知の文言を含む応答のIDは所有記録へ追加せず、そのIDへの停止を遮断する。"""
+        session_id = f"task-stop-foreground-{source}-{label}"
+        quoted = f"background_tasks_test.py:1: {phrase.format(task_id='quoted-task-1')}"
+        if source == "bash-stdout":
+            tool_name = "Bash"
+            tool_input: dict = {"command": "rg -n background background_tasks_test.py"}
+            tool_response: object = {
+                "stdout": quoted,
+                "stderr": "",
+                "interrupted": False,
+                "isImage": False,
+                "noOutputExpected": False,
+            }
+        else:
+            tool_name = (
+                "mcp__plugin_agent-toolkit_pyfltr__grep"
+                if source == "mcp-grep"
+                else "mcp__plugin_agent-toolkit_agents_server__show"
+            )
+            tool_input = {"session_id": "remote-1"} if source == "agents-server" else {"pattern": "background"}
+            tool_response = [{"type": "text", "text": quoted}]
+        recorded = _run_posttooluse(
+            {
+                "session_id": session_id,
+                "hook_event_name": "PostToolUse",
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "tool_response": tool_response,
+            },
+            state_dir,
+        )
+
+        assert recorded.returncode == 0
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+        state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+        assert "quoted-task-1" not in (state.get("background_task_ids") or [])
+        assert self._invoke(session_id, state_dir, {"task_id": "quoted-task-1"}).returncode == 2
+
+    def test_host_mcp_notice_allows_only_its_task_stop(
         self,
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """実行上限によるバックグラウンドタスクへの移行通知をバックグラウンドタスクの所有記録から停止許可まで渡す。"""
-        session_id = "task-stop-timeout-notice"
-        notice = "Command did not complete within its 15s timeout and was moved to the background (ID: bgm3jt6xn)."
+        """ホストのMCP移行通知で始まる応答のIDは所有記録へ追加し、そのIDの停止だけを通す。"""
+        session_id = "task-stop-host-mcp-notice"
+        notice = (
+            'MCP tool "mcp__plugin_agent-toolkit_agents_server__wait" is still running after 120s.'
+            " It was moved to the background as task mcp-task-1 and keeps running;"
+        )
         recorded = _run_posttooluse(
             {
                 "session_id": session_id,
-                "tool_name": "Bash",
-                "tool_input": {"command": "sleep 120"},
-                "tool_response": notice,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
+                "tool_input": {},
+                "tool_response": [{"type": "text", "text": notice}],
             },
             state_dir,
         )
         assert recorded.returncode == 0
-        assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["bgm3jt6xn"]
+        assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["mcp-task-1"]
         assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
-        assert self._invoke(session_id, state_dir, {"task_id": "bgm3jt6xn"}).returncode == 0
+        assert self._invoke(session_id, state_dir, {"task_id": "mcp-task-1"}).returncode == 0
 
     def test_structured_timeout_response_allows_only_its_task_stop(
         self,
@@ -617,3 +680,50 @@ class TestWorkflowSkillInvocation:
         assert skill_result.stdout == ""
         assert agent_result.returncode == 0
         assert "agent-toolkit:delegation" not in agent_result.stderr
+
+
+@pytest.mark.parametrize(
+    ("delegation_env", "expects_warning"),
+    [
+        ({}, True),
+        ({"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}, False),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner-session"}, False),
+    ],
+    ids=["main", "claude-delegate", "codex-delegate"],
+)
+def test_owner_session_only_is_treated_as_delegated(
+    tmp_path: pathlib.Path, delegation_env: dict[str, str], expects_warning: bool
+) -> None:
+    """委譲元の識別子だけを持つCodexの委譲先も委譲先として扱い、応答言語の通知を出力しない。
+
+    委譲先の応答はユーザーが直接読まないため、言語の通知は最上位セッションだけへ出力する。
+    Codexの委譲先は`AGENT_TOOLKIT_DELEGATED_SESSION`を持たないため、この印だけで判定すると委譲先の英語の応答で通知と遮断の段階が進む。
+    """
+    entry = {
+        "type": "assistant",
+        "message": {
+            "id": "m1",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "The implementation is still in progress; I'll wait for the completion."}],
+            "stop_reason": "end_turn",
+        },
+    }
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+    env = {
+        **_plan_file_state_env(tmp_path),
+        "AGENT_TOOLKIT_DELEGATED_SESSION": "",
+        "AGENT_TOOLKIT_OWNER_SESSION": "",
+        **delegation_env,
+    }
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": "ls"},
+        "transcript_path": str(transcript),
+        "session_id": "owner-session-only",
+    }
+
+    result = _run(payload, env_overrides=env)
+
+    assert result.returncode == 0, result.stderr
+    assert ("英語主体" in _additional_context(result)) is expects_warning

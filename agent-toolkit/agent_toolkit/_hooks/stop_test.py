@@ -6,8 +6,10 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._common import transcript as _transcript
+from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import stop
-from agent_toolkit._hooks import stop_gate as _stop_gate
+from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 _HOOKS_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
@@ -192,7 +194,7 @@ def test_stop_evaluations_scan_transcript_once(
             "background_tasks": [],
         }
     )
-    original = _stop_gate._read_transcript_entries  # pylint: disable=protected-access
+    original = _transcript.read_transcript_entries  # pylint: disable=protected-access
     calls = 0
     waits = 0
 
@@ -206,10 +208,10 @@ def test_stop_evaluations_scan_transcript_once(
         calls += 1
         return original(path)
 
-    monkeypatch.setattr(_stop_gate, "_wait_for_end_turn", finish_transcript)
-    monkeypatch.setattr(_stop_gate, "_read_transcript_entries", count_reads)
-    _stop_gate._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
-    _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
+    monkeypatch.setattr(_transcript_scan, "wait_for_end_turn", finish_transcript)
+    monkeypatch.setattr(_transcript, "read_transcript_entries", count_reads)
+    _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+    _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
 
     assert stop.evaluate(payload)["decision"] == "block"
     assert waits == 1
@@ -240,8 +242,8 @@ def test_stop_reports_queued_task_notification_output_file(
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     plan_save_advisor = importlib.import_module("agent_toolkit._hooks.plan_save_advisor")
     monkeypatch.setattr(plan_save_advisor, "working_plans_root", lambda: tmp_path / "plans")
-    _stop_gate._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
-    _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
+    _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+    _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
     output_file = str(tmp_path / "tasks" / "b6n4gipz5.output")
     notification = (
         f"<task-notification>\n<task-id>b6n4gipz5</task-id>\n<output-file>{output_file}</output-file>\n"

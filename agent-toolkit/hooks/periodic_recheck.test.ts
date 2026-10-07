@@ -1,20 +1,26 @@
 import type { On } from "claude-code";
 import { expect, test } from "claude-code/testing";
 
-import { PERIODIC_RECHECK_MARKER, PERIODIC_RECHECK_PROMPT } from "./periodic_recheck_prompt.ts";
+import { PERIODIC_RECHECK_MARKER } from "./periodic_recheck.ts";
 
-// `agents_server`の`start`の後に、呼出主体の定期再確認のtaskを1件だけ作成し、結果を会話へ届けることを検証する。
+// `agents_server`の`start`の後に、メインの定期再確認のtaskを1件だけ作成し、結果を会話へ届けることを検証する。
 // 装着しないと、モデルが起動前の手順を省いた場合に停滞と外部ジョブの終了を検出する主体が欠ける。
+// サブエージェントへ装着すると、taskのpromptが親の会話へ届き、サブエージェントの待機を再確認しないtaskが残る。
 
 const START = "mcp__plugin_agent-toolkit_agents_server__start" as const;
 const START_TEXT = '{"session_id": "s1", "status": "running"}';
 
 type Job = { id: string; prompt: string };
 
+// `atk wait-schedule --format json`が返すpromptの代わり。本文の内容はPython側の定義が持ち、modは受け取った本文をそのまま渡す。
+const SCHEDULE_PROMPT = `${PERIODIC_RECHECK_MARKER}\n定期再確認の発火である。`;
+
 type Options = {
   jobs?: Job[];
   decisions?: Record<string, "allow" | "ask" | "deny">;
   cron?: string;
+  prompt?: string;
+  stdout?: string;
   scheduleExitCode?: number;
   createError?: string;
   createdId?: string;
@@ -47,7 +53,9 @@ function engine(on: On, options: Options): Recorded {
     return {
       value: {
         exitCode: options.scheduleExitCode ?? 0,
-        stdout: `${options.cron ?? "*/30 * * * *"}\n`,
+        stdout:
+          options.stdout ??
+          `${JSON.stringify({ cron: options.cron ?? "*/30 * * * *", prompt: options.prompt ?? SCHEDULE_PROMPT })}\n`,
         stderr: options.scheduleExitCode ? "wait-schedule failed" : "",
         isStdoutTruncated: false,
         isStderrTruncated: false,
@@ -59,15 +67,14 @@ function engine(on: On, options: Options): Recorded {
 
 const START_INPUT = { tool: START, cwd: "/repo", mode: "explore", prompt: "質問" } as const;
 
-test("taskを持たないメインのstartは定期再確認のtaskを1件作成し、task IDを文脈へ届ける", async ($, on) => {
+test("main start creates one task from json: taskを持たないメインのstartはJSONのcronとpromptで1件作成し、task IDを文脈へ届ける", async ($, on) => {
   const recorded = engine(on, { createdId: "cron-main" });
   const result = await $.tool.call(START_INPUT);
   expect(result.deny).toBeUndefined();
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
-  expect(recorded.created).toEqual([{ cron: "*/30 * * * *", prompt: PERIODIC_RECHECK_PROMPT, recurring: true }]);
-  expect(recorded.created[0]?.prompt.split("\n")[0]).toBe(PERIODIC_RECHECK_MARKER);
+  expect(recorded.created).toEqual([{ cron: "*/30 * * * *", prompt: SCHEDULE_PROMPT, recurring: true }]);
   const argv = recorded.argv[0] ?? [];
-  expect(argv.slice(-3)).toEqual(["wait-schedule", "--request-bucket", "main"]);
+  expect(argv.slice(-5)).toEqual(["wait-schedule", "--request-bucket", "main", "--format", "json"]);
   expect(result.context?.length).toBe(1);
   expect(result.context?.[0]).toContain("task ID: cron-main");
   expect(result.context?.[0]).toContain('kind="notice"');
@@ -101,7 +108,7 @@ test("CronCreateの許可の判定がdenyなら作成せず、モデルが装着
   expect(recorded.calls).toEqual(["start", "CronList"]);
   expect(result.context?.[0]).toContain('kind="warn"');
   expect(result.context?.[0]).toContain("`CronCreate`の許可の判定が`deny`");
-  expect(result.context?.[0]).toContain("「Cronによる定期再確認」に従って自ら装着する");
+  expect(result.context?.[0]).toContain("「待機中の定期再確認と背景転換」に従って自ら装着する");
 });
 
 test("CronListの許可の判定がdenyなら一覧も作成も呼ばずに案内を届ける", async ($, on) => {
@@ -123,8 +130,22 @@ test("cron式を得られなければCronCreateを呼ばずに案内を届ける
   const recorded = engine(on, { scheduleExitCode: 1, cron: "" });
   const result = await $.tool.call(START_INPUT);
   expect(recorded.calls).toEqual(["start", "CronList"]);
-  expect(result.context?.[0]).toContain("cron式を返さなかった");
+  expect(result.context?.[0]).toContain("cron式と標識付きのpromptを返さなかった");
   expect(result.context?.[0]).toContain("wait-schedule failed");
+});
+
+test("JSONでない出力ではCronCreateを呼ばずに案内を届ける", async ($, on) => {
+  const recorded = engine(on, { stdout: "*/30 * * * *\n" });
+  const result = await $.tool.call(START_INPUT);
+  expect(recorded.calls).toEqual(["start", "CronList"]);
+  expect(result.context?.[0]).toContain('kind="warn"');
+});
+
+test("標識で始まらないpromptではCronCreateを呼ばずに案内を届ける", async ($, on) => {
+  const recorded = engine(on, { prompt: "標識の無い本文" });
+  const result = await $.tool.call(START_INPUT);
+  expect(recorded.calls).toEqual(["start", "CronList"]);
+  expect(result.context?.[0]).toContain('kind="warn"');
 });
 
 test("CronCreateが公開されていなければ案内を届ける", async ($, on) => {
@@ -169,18 +190,11 @@ test("他のツールの呼び出しには関与しない", async ($, on) => {
   expect(result.context ?? []).toEqual([]);
 });
 
-test("サブエージェントのstartはsubagentのbucketで作成する", async ($, on) => {
-  const recorded = engine(on, { createdId: "cron-sub" });
+test("subagent start does not mount: サブエージェントのstartは一覧も作成も通知もしない", async ($, on) => {
+  const recorded = engine(on, {});
   // テストのエンジンは`$.tool.call`の入力の`agentId`をイベントへ渡すため、サブエージェントの呼び出しをこれで再現する。
   const result = await $.tool.call({ ...START_INPUT, agentId: "agent-7" } as typeof START_INPUT);
-  const argv = recorded.argv[0] ?? [];
-  expect(argv.slice(-3)).toEqual(["wait-schedule", "--request-bucket", "subagent"]);
-  expect(result.context?.[0]).toContain("request bucket: subagent");
-});
-
-test("メインの標識付きtaskはサブエージェントの保有に数えない", async ($, on) => {
-  const recorded = engine(on, { jobs: [{ id: "main-task", prompt: `${PERIODIC_RECHECK_MARKER}\n確認する。` }] });
-  const result = await $.tool.call({ ...START_INPUT, agentId: "agent-8" } as typeof START_INPUT);
-  expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
-  expect(result.context?.[0]).toContain("request bucket: subagent");
+  expect(recorded.calls).toEqual(["start"]);
+  expect(recorded.argv).toEqual([]);
+  expect(result.context ?? []).toEqual([]);
 });

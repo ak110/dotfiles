@@ -1,186 +1,67 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""`atk serve`の計画ファイル画面の処理本体。
+"""計画ファイル画面のHTTPの応答を組み立てる処理（一覧、検索、本文とレビュー指摘管理表の描画、付属計画間のリンク、監視の開始と停止）。
 
-ローカルと設定済みリモートホストの計画ファイルを集約し、全文検索、Markdownと
-レビュー指摘管理表のHTML変換、付属計画間の移動リンク生成、更新通知の配信を担う。
-ルート登録は`_atk_serve_app.py`の`_register_plan_routes`が行い、本モジュールは処理の実装だけを持つ。
-
-記録の保存先とrootの規約は`agent-toolkit/skills/plan-mode`が定める計画ファイルの配置に従う。
-リモートホスト側で実行するヘルパーは`atk_serve_plans_remote_helper.py`とする。
+URLと処理の対応付けは`_atk/serve/app.py`が行い、本モジュールは応答の組み立てだけを持つ。
 """
 
 from __future__ import annotations
 
 import asyncio
-import asyncio.subprocess as _async_subprocess
-import base64
-import collections
-import collections.abc
 import contextlib
 import dataclasses
-import datetime
 import hashlib
 import html as html_lib
-import importlib
-import json
-import logging
-import os
 import pathlib
-import random
-import re
 import socket
-import subprocess
 import threading
 import typing
-from typing import TYPE_CHECKING
 
 import markdown_it
 import markdown_it.renderer
 import markdown_it.token
 import markdown_it.utils
-import platformdirs
-import pygments
 import watchdog.events
 import watchdog.observers
 import watchdog.observers.api
-from pygments.formatters.html import HtmlFormatter
-from pygments.lexers import get_lexer_by_name
-from pygments.util import ClassNotFound
 
-from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._common import file_lock as _file_lock
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.serve.plans.ctime_index import (
-        _enter_index_lock,
-        _entry_ctime,
-        _exclusive_file_lock,
-        _index_key,
-        _index_lock_path,
-        _load_index,
-        _load_legacy_entries,
-        _root_key,
-        _write_index,
-        cleanup_creation_time_temporaries,
-        update_creation_time_index,
-    )
-    from agent_toolkit._atk.serve.plans.local_scan import (
-        _STATIC_DIR,
-        REMOTE_BOOTSTRAP,
-        PlansEventHandler,
-        _ctime_epoch,
-        is_listed_path,
-        is_target_path,
-        list_files,
-        local_host_info,
-        read_pygments_css,
-        resolve_under_root,
-        root_info,
-        root_status,
-        root_warning,
-        scan_files,
-        search_files,
-    )
-    from agent_toolkit._atk.serve.plans.remote import (
-        RemoteHelperError,
-        RemoteSearchCoordinator,
-        RemoteSearchResult,
-        RemoteSearchRunner,
-        RemoteSearchSuperseded,
-        RemoteWatcher,
-        _build_remote_command_argv,
-        _decode_read_payload,
-        _decode_root_info,
-        _decode_root_status,
-        _drain_stderr,
-        _is_listed_remote_path,
-        _iter_stream_lines,
-        _PendingSearch,
-        _stderr_excerpt,
-        _terminate_process,
-        _wait_with_timeout,
-        default_ssh_runner,
-        fetch_remote_file,
-        is_safe_remote_relpath,
-        search_remote_files,
-    )
-    from agent_toolkit._atk.serve.plans.rendering import (
-        MarkdownCache,
-        MarkdownCacheKey,
-        _highlight_code,
-        _render_fence,
-        make_md_renderer,
-        markdown_to_html,
-    )
-    from agent_toolkit._atk.serve.plans.roots import (
-        _BROADCAST_DEBOUNCE_SEC,
-        _BUGS_SUFFIX,
-        _CREATION_TIME_INDEX_PATH,
-        _CURRENT_PLAN_SUFFIX_LABELS,
-        _DETAIL_SUFFIX,
-        _LEGACY_CACHE_NAME_RE,
-        _LEGACY_RESPONSE_NEEDED_VALUES,
-        _LEGACY_TEMPORARY_NAME_RE,
-        _LEGACY_WIDE_REVIEW_TABLE_COLUMN_COUNT,
-        _LISTED_EXCLUDED_SUFFIXES,
-        _PLAN_SUFFIX_LABELS,
-        _PYGMENTS_CSS_CLASS,
-        _PYGMENTS_FORMATTER,
-        _REVIEW_TABLE_HEADERS,
-        _SSE_REFRESH_PAYLOAD,
-        _TARGET_TSV_SUFFIXES,
-        _UNRESOLVED_PRIVATE_NOTES_ROOT,
-        _WATCHED_EVENT_TYPES,
-        DEFAULT_REMOTE_SEARCH_LIMIT,
-        LEGACY_PORTABLE_ROOT,
-        LEGACY_SOURCE_ID,
-        MARKDOWN_CACHE_MAX_BYTES,
-        MARKDOWN_CACHE_MAX_ENTRIES,
-        NEW_PORTABLE_ROOT,
-        NEW_SOURCE_ID,
-        REMOTE_BACKOFF_INITIAL_SEC,
-        REMOTE_BACKOFF_JITTER_RANGE,
-        REMOTE_BACKOFF_MAX_SEC,
-        REMOTE_STREAM_LIMIT_BYTES,
-        RPC_REQUEST_TIMEOUT_SEC,
-        SSH_BASE_OPTIONS,
-        SSH_TIMEOUT_SEC,
-        SSH_WATCH_OPTIONS,
-        STDERR_EXCERPT_MAX_CHARS,
-        TERMINATE_GRACE_TIMEOUT_SEC,
-        BroadcastState,
-        FileEntry,
-        LineSource,
-        RootSpec,
-        SshRunner,
-        _broadcast,
-        _canonical,
-        _debounced_deliver,
-        _private_notes_result,
-        default_root_specs,
-        deliver_host_info,
-        deliver_host_status,
-        deliver_refresh,
-        deliver_root_info,
-        deliver_root_status,
-        explicit_root_spec,
-        logger,
-        make_file_entry,
-        normalize_root_specs,
-        schedule_broadcast,
-        subscribe,
-        unsubscribe,
-    )
-
+from agent_toolkit._atk import review_table as _review_table
+from agent_toolkit._atk.serve.plans.local_scan import PlansEventHandler, scan_files, search_files
+from agent_toolkit._atk.serve.plans.remote import (
+    RemoteSearchCoordinator,
+    RemoteSearchSuperseded,
+    RemoteWatcher,
+    default_ssh_runner,
+    fetch_remote_file,
+    is_safe_remote_relpath,
+    search_remote_files,
+)
+from agent_toolkit._atk.serve.plans.rendering import MarkdownCache, MarkdownCacheKey, make_md_renderer, markdown_to_html
 
 # --------------------------------------------------------------------------------------
 # 画面が消費する処理
 # --------------------------------------------------------------------------------------
-
-
-from agent_toolkit._atk.serve.plans.roots import DEFAULT_REMOTE_SEARCH_LIMIT
+from agent_toolkit._atk.serve.plans.roots import (
+    DEFAULT_REMOTE_SEARCH_LIMIT,
+    BroadcastState,
+    FileEntry,
+    SshRunner,
+    deliver_root_status,
+    logger,
+)
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
+from agent_toolkit._plan.creation_times import cleanup_creation_time_temporaries
+from agent_toolkit._plan.viewer_files import (
+    LEGACY_SOURCE_ID,
+    NEW_SOURCE_ID,
+    RootSpec,
+    default_root_specs,
+    explicit_root_spec,
+    host_info,
+    normalize_root_specs,
+    resolve_under_root,
+    root_info,
+    root_status,
+    root_warning,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -241,7 +122,7 @@ def create_context(
         state.host_status[host] = "connecting"
     # ローカルホスト分の`host_info`は起動時に即座にセットする。
     # リモート分は接続確立時（初回snapshot受信）に`RemoteWatcher`側で追加する。
-    state.host_info[resolved_hostname] = local_host_info(resolved_root)
+    state.host_info[resolved_hostname] = host_info(resolved_root)
     state.root_info[resolved_hostname] = {spec.source_id: root_info(spec) for spec in root_specs}
     state.root_status[resolved_hostname] = {
         spec.source_id: root_status(spec.warning or root_warning(spec.path)) for spec in root_specs
@@ -317,8 +198,9 @@ async def all_entries(context: PlansContext) -> list[FileEntry]:
 
 def listed_plan_path(rel: str) -> str:
     """付属ファイルの検索一致を一覧で選択できる計画ファイル（メイン）へ接続する。"""
-    suffix = next((suffix for suffix, _ in _PLAN_SUFFIX_LABELS if rel.endswith(suffix)), None)
-    return rel if suffix is None else f"{rel[: -len(suffix)]}.md"
+    path = pathlib.PurePosixPath(rel)
+    main_name = _bundle_kinds.main_name_of(path.name)
+    return rel if main_name is None else str(path.with_name(main_name))
 
 
 async def search_entries(context: PlansContext, query: str) -> list[FileEntry] | None:
@@ -424,47 +306,31 @@ def review_table_html(text: str) -> str:
     旧7列形式は指摘レベルを持たず5列目が対応要否であるため、5列目の値域で現行形式と判別し、
     指摘レベルを空として対応要否の列を除く。
     """
-    rows: list[list[str]] = []
     try:
-        for line in text.splitlines():
-            encoded_cells = line.split("\t")
-            if len(encoded_cells) == _LEGACY_WIDE_REVIEW_TABLE_COLUMN_COUNT:
-                del encoded_cells[5]
-            elif len(encoded_cells) != len(_REVIEW_TABLE_HEADERS):
-                raise ValueError("レビュー指摘管理表の列数が不正です")
-            cells = [json.loads(cell) for cell in encoded_cells]
-            if not all(isinstance(cell, str) for cell in cells):
-                raise ValueError("レビュー指摘管理表のセルがJSON文字列ではありません")
-            if cells[4].strip().casefold() in _LEGACY_RESPONSE_NEEDED_VALUES:
-                cells = [*cells[:4], "", *cells[5:]]
-            rows.append(cells)
-    except (json.JSONDecodeError, ValueError):
+        rows = _review_table.display_rows(text)
+    except ValueError:
         return f"<pre>{html_lib.escape(text)}</pre>\n"
 
-    head = "".join(f"<th>{html_lib.escape(header)}</th>" for header in _REVIEW_TABLE_HEADERS)
+    head = "".join(f"<th>{html_lib.escape(header)}</th>" for header in _review_table.COLUMN_LABELS)
     body = "".join("<tr>" + "".join(f"<td>{html_lib.escape(cell)}</td>" for cell in row) + "</tr>" for row in rows)
     return f'<table class="review-table">\n<thead><tr>{head}</tr></thead>\n<tbody>{body}</tbody>\n</table>\n'
 
 
 def is_review_table_path(rel: str) -> bool:
     """相対パスがレビュー指摘管理表かを判定する。"""
-    return rel.endswith(_TARGET_TSV_SUFFIXES)
+    return _bundle_kinds.is_review_table_name(pathlib.PurePosixPath(rel).name)
 
 
 def _plan_paths(rel: str, source_id: str = "") -> tuple[tuple[str, str], ...]:
     """同じstemに属する計画ファイルの相対パスと表示名を返す。"""
-    suffix_labels = _CURRENT_PLAN_SUFFIX_LABELS if source_id == LEGACY_SOURCE_ID else _PLAN_SUFFIX_LABELS
-    suffix = next((suffix for suffix, _ in suffix_labels if rel.endswith(suffix)), None)
-    if suffix is None:
-        if not rel.endswith(".md"):
+    attachments = tuple(kind for kind in _bundle_kinds.LINKED_ATTACHMENTS if kind.current or source_id != LEGACY_SOURCE_ID)
+    kind = next((kind for kind in attachments if kind.matches(rel)), None)
+    if kind is None:
+        if not _bundle_kinds.MAIN.matches(rel):
             return ()
-        stem = rel[: -len(".md")]
-    else:
-        stem = rel[: -len(suffix)]
-    return (
-        (f"{stem}.md", "メイン"),
-        *((f"{stem}{attached_suffix}", label) for attached_suffix, label in suffix_labels),
-    )
+        kind = _bundle_kinds.MAIN
+    stem = rel.removesuffix(kind.suffix)
+    return tuple((member.name_for(stem), member.display_name) for member in (_bundle_kinds.MAIN, *attachments))
 
 
 async def plan_links_html(context: PlansContext, host: str, source_id: str, rel: str) -> str:

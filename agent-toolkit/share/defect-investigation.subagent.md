@@ -15,7 +15,7 @@
 - `対象の不良`: 事象、期待する契約、実際の結果、症状を観測した所在を含む発生条件、ログと資料の絶対パス、対象commit、再現手順
 - `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと新規・継続の別。記録する内容は`${CLAUDE_PLUGIN_ROOT}/share/rules-subagent.md`「多段工程の引き継ぎ記録」が定める
 
-委譲プロンプトが要求する必須入力の完備は委譲元が起動前に確認するため、受領した入力のまま着手する。
+必須入力の欠落と宣言外の入力名は`agents_server`の`start`が起動時に確かめるため、受領した入力のまま着手する。
 
 ## 調査
 
@@ -41,5 +41,5 @@
 再発防止策: <同じ原因の再発を防ぐ処置。該当なしの場合はその根拠>
 ```
 
-続行不能時は`agent-toolkit:delegation`の`references/mandatory-rules.md`「返却形式の受け渡し」の形式で返す。
+続行不能時は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の形式で返す。
 想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

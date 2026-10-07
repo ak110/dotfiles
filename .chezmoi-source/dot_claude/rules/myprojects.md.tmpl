@@ -2,10 +2,11 @@
 # myprojects.md
 {{- $hostname := lower .chezmoi.hostname }}
 {{/*
-  stheno: gv, lcの2プロジェクトのみ存在するWindows環境
-  euryale/euryale-container: 全プロジェクト存在するLinux環境
+  役割windows_apps: gv, lcの2プロジェクトのみ存在するWindows環境
+  役割all_projects: 全プロジェクト存在するLinux環境
+  役割とホスト名の対応は.chezmoidata.tomlが定める
 */}}
-{{- if eq $hostname "stheno" }}
+{{- if has $hostname .host_roles.windows_apps }}
 
 以下の2プロジェクトは同一作者によるWindowsアプリである。
 
@@ -15,7 +16,7 @@
 開発言語は異なるが、ツールチェインやドキュメント構成は揃える方針とする。
 片方を変更する場合、もう片方への変更要否を確認し、必要ならユーザーへ提案する。
 
-{{- else if has $hostname (list "euryale" "euryale-container") }}
+{{- else if has $hostname .host_roles.all_projects }}
 
 ## プロジェクト間の同期
 

@@ -59,7 +59,7 @@ def test_removes_only_versions_superseded_more_than_grace_days_ago(plugins_root:
     current = _make_version(plugins_root, "mkt", "tool", "1.3.0", 3)
     _write_installed(plugins_root, {"tool@mkt": [current]})
 
-    assert prune_claude_plugin_cache.run() is True
+    assert prune_claude_plugin_cache.run().changed is True
 
     # 1.0.0と1.1.0は後継の導入（20日前・10日前）から7日を超えたため削除する。
     assert not old.exists()
@@ -74,7 +74,7 @@ def test_keeps_newest_non_current_version_without_successor(plugins_root: Path) 
     newest = _make_version(plugins_root, "mkt", "tool", "2.0.0", 20)
     _write_installed(plugins_root, {"tool@mkt": [current]})
 
-    assert prune_claude_plugin_cache.run() is False
+    assert prune_claude_plugin_cache.run().changed is False
 
     assert current.is_dir()
     assert newest.is_dir()
@@ -86,7 +86,7 @@ def test_ignores_plugins_missing_from_installed_list(plugins_root: Path) -> None
     current = _make_version(plugins_root, "mkt", "tool", "1.0.0", 3)
     _write_installed(plugins_root, {"tool@mkt": [current]})
 
-    assert prune_claude_plugin_cache.run() is False
+    assert prune_claude_plugin_cache.run().changed is False
 
     assert other_old.is_dir()
 
@@ -116,7 +116,7 @@ def test_uses_directory_mtime_when_manifest_is_missing(plugins_root: Path) -> No
     current = _make_version(plugins_root, "mkt", "tool", "1.0.0", 30)
     _write_installed(plugins_root, {"tool@mkt": [current]})
 
-    assert prune_claude_plugin_cache.run() is True
+    assert prune_claude_plugin_cache.run().changed is True
 
     assert not incomplete.exists()
     assert current.is_dir()
@@ -129,7 +129,7 @@ def test_does_nothing_when_installed_list_is_unavailable(plugins_root: Path, con
     if content is not None:
         (plugins_root / "installed_plugins.json").write_text(content, encoding="utf-8")
 
-    assert prune_claude_plugin_cache.run() is False
+    assert prune_claude_plugin_cache.run().changed is False
 
     assert old.is_dir()
 
@@ -151,7 +151,7 @@ def test_orders_versions_by_install_time_not_by_name(plugins_root: Path) -> None
     current = _make_version(plugins_root, "official", "tool", "0000aaa", 20)
     _write_installed(plugins_root, {"tool@official": [current]})
 
-    assert prune_claude_plugin_cache.run() is True
+    assert prune_claude_plugin_cache.run().changed is True
 
     assert not older.exists()
     assert current.is_dir()

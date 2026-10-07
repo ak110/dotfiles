@@ -19,8 +19,8 @@ import datetime
 import json
 import os
 
-from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._plan import owner_records as _owner_records
 
 # 記録ファイル名と、退避先の1世代分のファイル名。
 _LOG_NAME = "permissionrequest.log"
@@ -72,7 +72,7 @@ def _build_record(payload_text: str) -> dict[str, object]:
         payload = {}
     record: dict[str, object] = {"time": datetime.datetime.now(datetime.UTC).isoformat()}
     record.update({key: payload.get(key) for key in _RECORD_KEYS})
-    record["root_session_id"] = _plan_file.resolve_owner_session_id()
+    record["root_session_id"] = _owner_records.resolve_owner_session_id()
     return record
 
 
@@ -81,7 +81,7 @@ def _append_record(record: dict[str, object]) -> None:
 
     追記前に記録先が上限へ達している場合は、1世代だけの退避先へ移してから新しいファイルへ書く。
     """
-    log_path = _atk_config.state_dir() / _LOG_NAME
+    log_path = _state_paths.state_dir() / _LOG_NAME
     log_path.parent.mkdir(parents=True, exist_ok=True)
     if log_path.exists() and log_path.stat().st_size >= _LOG_SIZE_LIMIT:
         os.replace(log_path, log_path.with_name(_ROTATED_LOG_NAME))

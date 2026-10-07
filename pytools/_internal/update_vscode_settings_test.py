@@ -83,22 +83,22 @@ class TestSettingsPath:
     def test_linux_returns_path_when_vscode_server_exists(self, tmp_path: Path) -> None:
         """Linux: .vscode-server が存在すればファイルが作成される。"""
         (tmp_path / ".vscode-server").mkdir()
-        assert mod.run(is_windows=False, home=tmp_path) is True
+        assert mod.run(is_windows=False, home=tmp_path).changed is True
         assert (tmp_path / ".vscode-server" / "data" / "Machine" / "settings.json").exists()
 
     def test_linux_returns_none_when_vscode_server_missing(self, tmp_path: Path) -> None:
         """Linux: .vscode-server が存在しなければ False を返す（ファイル未作成）。"""
-        assert mod.run(is_windows=False, home=tmp_path) is False
+        assert mod.run(is_windows=False, home=tmp_path).changed is False
 
     def test_windows_returns_path_when_code_dir_exists(self, tmp_path: Path) -> None:
         """Windows: %APPDATA%/Code が存在すればファイルが作成される。"""
         (tmp_path / "Code").mkdir()
-        assert mod.run(is_windows=True, environ={"APPDATA": str(tmp_path)}) is True
+        assert mod.run(is_windows=True, environ={"APPDATA": str(tmp_path)}).changed is True
         assert (tmp_path / "Code" / "User" / "settings.json").exists()
 
     def test_windows_returns_none_when_appdata_missing(self) -> None:
         """Windows: APPDATA 未設定なら False を返す。"""
-        assert mod.run(is_windows=True, environ={}) is False
+        assert mod.run(is_windows=True, environ={}).changed is False
 
 
 class TestApply:
@@ -107,7 +107,7 @@ class TestApply:
     def test_creates_new_file(self, tmp_path: Path) -> None:
         """settings.json が存在しない場合、managed がそのまま出力される。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
-        assert mod.run(hostname="test", is_windows=False, home=tmp_path) is True
+        assert mod.run(hostname="test", is_windows=False, home=tmp_path).changed is True
         result = json.loads(target.read_text(encoding="utf-8"))
         assert "workbench.colorCustomizations" in result
         assert "activityBar.background" in result["workbench.colorCustomizations"]
@@ -172,7 +172,7 @@ class TestApply:
         # 先に run() して現在の managed 設定を書き込む
         mod.run(hostname="test", is_windows=False, home=tmp_path)
         # 同じ設定で再度 run() すれば変更なし
-        assert mod.run(hostname="test", is_windows=False, home=tmp_path) is False
+        assert mod.run(hostname="test", is_windows=False, home=tmp_path).changed is False
 
     def test_reads_jsonc_with_comments(self, tmp_path: Path) -> None:
         """JSONC (コメント付き) ファイルをパースしてマージできる。"""
@@ -361,13 +361,13 @@ class TestRun:
     def test_skips_when_settings_path_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """`_settings_path` が None を返す場合スキップする。"""
         monkeypatch.setattr(mod, "_settings_path", lambda **_kwargs: None)
-        assert mod.run() is False
+        assert mod.run().changed is False
 
     def test_user_scope_writes_markdown_styles(self, tmp_path: Path) -> None:
         """Windows (User scope) では markdown.styles が書き込まれる。"""
         target = _make_settings_dir(tmp_path, is_windows=True)
         (tmp_path / "Code").mkdir(exist_ok=True)
-        assert mod.run(hostname="test", is_windows=True, environ={"APPDATA": str(tmp_path)}) is True
+        assert mod.run(hostname="test", is_windows=True, environ={"APPDATA": str(tmp_path)}).changed is True
         result = json.loads(target.read_text(encoding="utf-8"))
         assert "workbench.colorCustomizations" in result
         assert result["markdown.styles"] == [_MARKDOWN_STYLE_URL]
@@ -376,7 +376,7 @@ class TestRun:
     def test_machine_scope_skips_markdown_styles(self, tmp_path: Path) -> None:
         """Linux (Machine scope) では markdown.styles を書き込まない。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
-        assert mod.run(hostname="test", is_windows=False, home=tmp_path) is True
+        assert mod.run(hostname="test", is_windows=False, home=tmp_path).changed is True
         result = json.loads(target.read_text(encoding="utf-8"))
         assert "markdown.styles" not in result
         assert "workbench.colorCustomizations" in result

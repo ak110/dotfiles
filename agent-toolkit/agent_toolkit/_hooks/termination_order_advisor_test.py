@@ -11,8 +11,9 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._hooks import stop_gate as _stop_gate
+from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import termination_evidence, termination_order_advisor, user_prompt_submit
+from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._testing.helpers import _write_transcript
 
 
@@ -100,8 +101,8 @@ def _payload(session_id: str, transcript_path: str, *, stop_hook_active: bool = 
 
 
 def _clear_caches() -> None:
-    _stop_gate._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
-    _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
+    _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+    _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
 
 
 def test_approves_when_not_reentrant(

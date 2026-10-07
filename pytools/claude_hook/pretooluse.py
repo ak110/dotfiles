@@ -10,7 +10,7 @@
 2. agent-toolkit配布物へのdotfiles固有名混入検出（warn）
 
 本フックが扱う検査は、いずれも書き込んだファイルの再編集で結果を復元できるため遮断を用いない。
-判定基準は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」が定める。
+判定基準は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」が定める。
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
@@ -32,6 +32,8 @@ from agent_toolkit._hooks.notice import (
     formatter as _notice_formatter,
 )
 from agent_toolkit._hooks.tool_input import new_content_fields
+
+from pytools._internal import common
 
 # このスクリプトのhook識別子。`atk-auto`要素の`source`属性に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
@@ -63,7 +65,7 @@ def main(payload_text: str) -> int:
     # --- warn 系 check ---
     # 本フックが扱う検査は、いずれも書き込んだファイルの再編集で結果を復元できる。
     # `agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
-    # 「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、遮断を用いない。
+    # 「遮断と警告の選択」が復元できる結果へ警告を求めるため、遮断を用いない。
     # 本文と解消手段（warn通知の`fix`）の組を集める。
     warnings: list[tuple[str, str]] = []
     ps1_directives_warning = _check_ps1_directives(tool_name, fields, file_path)
@@ -149,19 +151,19 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
     return None
 
 
-# --- agent-toolkit 配布物への dotfiles 固有名混入 check (block + warn) ---
+# --- agent-toolkit 配布物への dotfiles 固有名混入 check（いずれも警告） ---
 
 # 個人プロジェクト名の固定リスト。
 # ファイルシステムから機械的に取得できないため明示的に持つ。
-# OSS として紹介する想定がある pyfltr / pytilpack は warn にとどめ、
-# それ以外（個人非公開・特定プラットフォーム専用）は block する。
-_PERSONAL_PROJECTS_BLOCK: frozenset[str] = frozenset({"glatasks", "gv", "lc", "smpr"})
-_PERSONAL_PROJECTS_WARN: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
+# 個人非公開・特定プラットフォーム専用のものは一般化した表現への置き換えを求め、
+# OSS として紹介する想定がある pyfltr / pytilpack は意図した参照かの確認を求める。
+_PERSONAL_PROJECTS_PRIVATE: frozenset[str] = frozenset({"glatasks", "gv", "lc", "smpr"})
+_PERSONAL_PROJECTS_OSS: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
 # 配布物文面で参照する外部 CLI 名の許容リスト。
 # 配布物側が `command -v` 等で存在検査を行い、CLI 不在時に安全にフォールバックする
-# 分岐構造を取る場合に限り登録する。block / warn のいずれからも除外され、
+# 分岐構造を取る場合に限り登録する。固有名と OSS 名のいずれからも除外され、
 # 配布物文面 (`agent-toolkit/` 配下) への記述が許可される。
-# 追加時は本ファイルのテスト群 (`_PERSONAL_PROJECTS_BLOCK` との非衝突など) を確認する。
+# 追加時は本ファイルのテスト群 (`_PERSONAL_PROJECTS_PRIVATE` との非衝突など) を確認する。
 _EXTERNAL_CLI_ALLOWED: frozenset[str] = frozenset({"atk"})
 
 _DOTFILES_SPECIFIC_NAMES_FIX = "Replace the identifiers with generalized wording, then edit the distribution file again."
@@ -175,38 +177,38 @@ def _check_dotfiles_specific_names(
 ) -> tuple[str | None, str | None]:
     """agent-toolkit 配布物への dotfiles 固有名混入を検出する。
 
-    対象範囲は `agent-toolkit/` 配下。
-    block 対象は配布先のエンドユーザーにとって意味不明な参照となるため exit 2 で停止する。
-    warn 対象 (`pyfltr` / `pytilpack`) は OSS として正規参照される場合があるため通知のみ。
+    対象範囲は `agent-toolkit/` 配下。いずれも警告であり、書き込みは止めない。
+    dotfiles 固有名は配布先のエンドユーザーにとって意味不明な参照となるため、一般化した表現への置き換えを求める。
+    OSS 名 (`pyfltr` / `pytilpack`) は OSS として正規参照される場合があるため、意図した参照かの確認を求める。
 
-    `(block_message, warn_message)` を返す。該当なしの側は None。
+    `(specific_message, oss_message)` を返す。該当なしの側は None。
     """
     if not file_path:
         return None, None
-    dotfiles_root = pathlib.Path(__file__).resolve().parents[2]
-    if not _is_in_agent_toolkit_distribution(file_path, dotfiles_root):
+    dotfiles_root = common.find_dotfiles_root()
+    if dotfiles_root is None or not _is_in_agent_toolkit_distribution(file_path, dotfiles_root):
         return None, None
-    block_names, warn_names = _build_dotfiles_specific_names(dotfiles_root)
-    block_hits = _collect_word_hits(tool_name, fields, block_names)
-    warn_hits = _collect_word_hits(tool_name, fields, warn_names)
-    block_msg: str | None = None
-    if block_hits:
-        block_msg = (
+    specific_names, oss_names = _build_dotfiles_specific_names(dotfiles_root)
+    specific_hits = _collect_word_hits(tool_name, fields, specific_names)
+    oss_hits = _collect_word_hits(tool_name, fields, oss_names)
+    specific_msg: str | None = None
+    if specific_hits:
+        specific_msg = (
             "agent-toolkit distribution must not contain dotfiles-specific identifiers."
-            f" Hits: {'; '.join(block_hits)}."
+            f" Hits: {'; '.join(specific_hits)}."
             " Personal skill names, pytools commands, scripts, and personal project names"
             " like glatasks/gv/lc/smpr leak repository internals."
             f" Target: {file_path}"
         )
-    warn_msg: str | None = None
-    if warn_hits:
-        warn_msg = (
+    oss_msg: str | None = None
+    if oss_hits:
+        oss_msg = (
             "agent-toolkit distribution references possibly dotfiles-related projects: "
-            + "; ".join(warn_hits)
+            + "; ".join(oss_hits)
             + ". These names are personal projects but commonly referenced as OSS."
             f" Target: {file_path}"
         )
-    return block_msg, warn_msg
+    return specific_msg, oss_msg
 
 
 def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Path) -> bool:
@@ -236,23 +238,26 @@ def _agent_toolkit_distribution_roots(dotfiles_root: pathlib.Path) -> tuple[path
 
 
 def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozenset[str], frozenset[str]]:
-    """Dotfiles 固有名 (block 対象 / warn 対象) を返す。
+    """Dotfiles 固有名と OSS 名を `(固有名, OSS 名)` の組で返す。
 
-    block 対象は次の 5 カテゴリの動的取得結果と固定の個人プロジェクト名の和集合。
+    固有名は次の 6 カテゴリの動的取得結果と固定の個人プロジェクト名の和集合。
     各カテゴリは対象ディレクトリ未存在時に空集合を返す。
     """
-    block: set[str] = set()
-    block |= _list_subdirs(dotfiles_root / ".chezmoi-source" / "dot_claude" / "skills")
-    block |= _list_subdirs(dotfiles_root / ".claude" / "skills")
-    block |= _list_pyproject_scripts(dotfiles_root / "pyproject.toml")
-    block |= _list_pytools_modules(dotfiles_root / "pytools")
-    block |= _list_scripts_modules(dotfiles_root / "scripts")
-    block |= _PERSONAL_PROJECTS_BLOCK
-    # warn 対象が誤って block に混入した場合は warn を優先する（保守的措置）。
-    block -= _PERSONAL_PROJECTS_WARN
-    # 存在検査付きで参照することを許容する外部 CLI 名は block・warn のいずれからも除外する。
-    block -= _EXTERNAL_CLI_ALLOWED
-    return frozenset(block), _PERSONAL_PROJECTS_WARN - _EXTERNAL_CLI_ALLOWED
+    specific: set[str] = set()
+    specific |= _list_subdirs(dotfiles_root / ".chezmoi-source" / "dot_claude" / "skills")
+    specific |= _list_subdirs(dotfiles_root / ".claude" / "skills")
+    specific |= _list_pyproject_scripts(dotfiles_root / "pyproject.toml")
+    specific |= _list_pytools_modules(dotfiles_root / "pytools")
+    specific |= _list_internal_modules(
+        dotfiles_root / "pytools" / "_internal", dotfiles_root / "agent-toolkit" / "agent_toolkit"
+    )
+    specific |= _list_script_names(dotfiles_root / "scripts", dotfiles_root / "libexec")
+    specific |= _PERSONAL_PROJECTS_PRIVATE
+    # OSS 名が誤って固有名に混入した場合は OSS 名として扱う（確認だけを求める保守的措置）。
+    specific -= _PERSONAL_PROJECTS_OSS
+    # 存在検査付きで参照することを許容する外部 CLI 名は固有名・OSS 名のいずれからも除外する。
+    specific -= _EXTERNAL_CLI_ALLOWED
+    return frozenset(specific), _PERSONAL_PROJECTS_OSS - _EXTERNAL_CLI_ALLOWED
 
 
 def _list_subdirs(path: pathlib.Path) -> set[str]:
@@ -286,15 +291,37 @@ def _list_pytools_modules(path: pathlib.Path) -> set[str]:
     return {child.stem for child in path.glob("*.py") if child.name != "__init__.py"}
 
 
-def _list_scripts_modules(path: pathlib.Path) -> set[str]:
-    """`scripts/` 直下のスクリプト名（拡張子除去）を返す。`*_test.py` は除外。"""
+def _list_internal_modules(path: pathlib.Path, agent_toolkit_package: pathlib.Path) -> set[str]:
+    """`pytools/_internal/` 直下のモジュール名のうち、dotfiles 固有と判定できるものを返す。
+
+    `scripts/` から移した処理（`sync_report` など）を移動前と同じく固有名として扱うため、
+    `_` を含む複合名だけを対象にし、`common` のような一般語の単語名は除く。
+    agent-toolkit のパッケージにも同名のモジュールがある名前は配布物の正規の参照になり得るため除く。
+    """
     if not path.is_dir():
         return set()
+    names = {
+        child.stem
+        for child in path.glob("*.py")
+        if "_" in child.stem and not child.stem.startswith("_") and not child.stem.endswith("_test")
+    }
+    distributed = {child.stem for child in agent_toolkit_package.rglob("*.py")} if agent_toolkit_package.is_dir() else set()
+    return names - distributed
+
+
+def _list_script_names(*directories: pathlib.Path) -> set[str]:
+    """開発用の`scripts/`とエンドユーザー環境で起動する`libexec/`の直下のスクリプト名（拡張子除去）を返す。
+
+    `*_test.py`は除外し、存在しないディレクトリは空集合として扱う。
+    """
     names: set[str] = set()
-    for child in list(path.glob("*.py")) + list(path.glob("*.sh")):
-        if child.suffix == ".py" and child.name.endswith("_test.py"):
+    for path in directories:
+        if not path.is_dir():
             continue
-        names.add(child.stem)
+        for child in list(path.glob("*.py")) + list(path.glob("*.sh")):
+            if child.suffix == ".py" and child.name.endswith("_test.py"):
+                continue
+            names.add(child.stem)
     return names
 
 

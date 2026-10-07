@@ -15,6 +15,7 @@ dependencies = [
     "psutil>=6",
     "pydantic>=2",
     "pyfltr>=3.17.7",
+    "pygments",
     "pytilpack[quart]>=1.47.0",
     "pyyaml",
     "watchdog>=6.0.0",

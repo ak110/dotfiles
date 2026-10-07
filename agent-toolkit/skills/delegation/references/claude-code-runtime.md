@@ -25,7 +25,7 @@ Agent機能を使う条件は`agent-toolkit:delegation`の`references/runtime-ro
 
 agent定義の`tools`は許可の上限を示す。`ListAgents`の許可と実行時提供は別々に判定する。
 
-`agents_server`の通常起動と軽量起動では、読み込む設定と利用できるツールが異なる。起動前に公開ツールの説明と実際の起動条件を確認し、委譲先の判断に必要なプロジェクト規範が自動で届かない起動形態では委譲プロンプトへ渡す。
+`agents_server`の通常起動と軽量起動の設定読込先の違いは`references/runtime-routing.md`「実行手段」が定める。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：実行時能力と通信scope：2026年9月4日」にある。
 通常起動のClaude委譲先には、`agents_server`が`agent-toolkit/share/rules-subagent.md`と`agent-toolkit/share/rules-subagent.claude-code.md`をシステム指示へ連結する。
 `Agent`ツールのサブエージェントには、`SubagentStart`フックが同じ2ファイルを文脈へ追加する。
@@ -93,7 +93,7 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
 
 - 通常のツール配送方式は戻り値と完了通知（task-notification）の2種である。
   サブエージェント起動は常に背景実行として扱われるため、直接の子からの受領は完了通知を基本とし、検収の成否は受領した本文で判定する。
-  ただし、「委譲プロンプトへ含める前提」に従って成果ファイルを指定した孫調査・レビューでは、指定ファイルを成果本文の受領手段とする。成果本文の受領条件は指定ファイルの内容の検収だけとし、完了通知の到着と祖先からの中継はそれぞれ通知と中継の証拠として扱う。
+  ただし、「委譲プロンプトへ含める前提」に従って成果ファイルを指定した孫調査・レビューの受領手段は、`references/receiving.md`「受領手段と報告様式の選択」の成果ファイルの例外に従う。完了通知の到着と祖先からの中継は、それぞれ通知と中継の証拠として扱う。
   稼働中に観測したファイルの存在、必須項目・全文は途中内容として扱う。起動主体は本書および`waiting-and-monitoring.md`の実行状態契約で、完了通知、`ListAgents`または起動結果が返した識別子に対応する状態など、実行時に利用できる手段から委譲先の終端を観測した後、同じ絶対パスから成果ファイルを再読する。委譲先の定義が定める必須項目を全て含む最終完了報告であることを検収して初めて成果本文を受理する。所有プロセスの識別子・終了証拠を求めるのは実装担当の場合に限る。
   委譲先の終端を観測できない場合は委譲成果を完了扱いしない。終端後の再読でファイルが未作成、読取不能、部分書込みまたは必須項目欠落の場合も同様に扱い、絶対パス、取得できた終端観測および異常を続行できない理由として委譲元へ返す。委譲先の終端は、成果ファイルの読取に加えて前記の終端観測で判定する。成果ファイルは個別に回収せず、`references/receiving.md`「委譲元への返却」が定めるセッションのmanaged-tempの自動削除へ委ねる
 - `idle_notification(available)`は待機可能な状態を示す値として扱い、完了報告の判定は戻り値と完了通知で行う
@@ -114,9 +114,8 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
 
 ### 背景ジョブ完了通知と実プロセスの終了順
 
-バックグラウンドタスクの完了通知が届いた後も、同じ`atk agents wait`の実プロセスが残ることがある。後続の待機は先行するrun識別子を固定し、lock解放後に先行待機が保存した本文と終了コードを回収する。run記録を伴わないlockだけを観測した場合に限り、終了コード8で診断する。
+バックグラウンドタスクの完了通知が届いた後も、同じ`atk agents wait`の実プロセスが残ることがある。後続の待機の扱いは`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」が定める。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日」にある。
-待機所有権の衝突後の工程は`waiting-and-monitoring.md`「待機区間の構成」に従う。
 
 ### 完了通知と中継の実行順
 
@@ -155,45 +154,27 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
   稼働状態の判定には、末尾標識の不在、列挙不能および成果物の更新に加えて、これらの観測の組合せを用いる。
   更新が続く間は完了と決めつけず催促にとどめ、上限到達後は取得できた観測結果だけを添えて継続または停止を判断する
 - 待機を解除するために通常使う手段と、MCPツール呼び出しがバックグラウンドタスクへ移った場合の扱いは`references/waiting-and-monitoring.md`「待機区間の構成」に従う
-- Agentツールで起動した担当の継続条件を次に定める（`agents_server`で起動した担当は`references/runtime-routing.md`「工程別モデル設定」手順6）。
-  完了報告を受け取って停止済みの識別子でも、同じ担当へ同じタスクの未完了作業、指摘への対応または再レビューを返す場合は、
-  継続直前に再取得した実効`engine`・`model`・`effort`が現在の担当の起動時と一致するときに限り`SendMessage`で再開してよい。
-  同一セッション内の委譲元が保持した機械可読識別子で再開した場合、再開後の完了報告を委譲元が受け取れる。
-  継続の配送本文には、継続前に作成したファイルと読んだファイルも書込直前に現行本文を取得する条件を含める。継続を受けた委譲先は継続前に保持した本文を編集入力にせず、対象の現行本文を取得してから編集する。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月」にある。
-  完了通知の受領主体はproviderと構成へ依存するため、最上位と直接の親のいずれも標準配送先として固定しない
-  同一セッション内の起動結果IDへの`SendMessage`成功と、送信後に対応する完了通知を受け取れた場合だけ、その継続の成立を判定する。
-  3階層以上の多段委譲で再開後の完了報告がどこへ配送されるかは未検証である。
-  未検証の配送先を推測せず、実行時の完了通知と保持した直接の子IDを`### 完了通知と中継の実行順`へ対応付ける。
-  継続可否は、この対応付けの成否で判定する。
-  次のいずれかに該当する場合は、停止済みの識別子を再利用せず、検収済み状態を渡して新規起動する。
-  担当とタスクの組が異なる場合、実効3値が一致しない場合、完了報告を配送できない場合が該当する。
-  前提が無効化されている場合、中断済みの場合も該当する。
-  新規起動に必要な前提は、過去の会話履歴・ツール呼び出しと結果・推論から明示的に再構成して渡す。
-  必要な前提と完了済み工程に参照可能な記録（計画・進捗ログ等）がある場合は、絶対パス、対象ID、未記録の差分だけを渡す。
-  参照可能な記録がない場合は委譲プロンプト内で完結させる
-- `SendMessage`が`No transcript found for agent ID: <識別子>`で失敗した場合は配送不能と判定し、同じ識別子への再開を控える。
-  `../SKILL.md`「継続と新規起動」に従い、検収済み状態を渡して新規起動する。
-  セッション識別子が変わった場合はタスク出力先ディレクトリの識別子を`ls`で比較し、旧識別子配下の委譲先へ送った`SendMessage`の失敗文面と比べる
+- `Agent`ツールで起動した担当の継続条件と、`SendMessage`の配送不能の判定は`references/runtime-routing.md`「継続と新規起動」が定める
 
-### Cronによる定期再確認
+## 待機中の定期再確認と背景転換
 
-Claude Codeで未完了の委譲または背景処理を待つ実行主体は、機械的な完了通知を待機を解除するために通常使う手段としたまま、`CronCreate`、`CronList`および`CronDelete`が現在の実行主体へ公開される場合だけ定期再確認を併用する。一般の委譲待機では`/loop`専用の`ScheduleWakeup`を使用しない。
+Claude Codeで未完了の委譲または背景処理を待つメインは、機械的な完了通知を待機を解除するために通常使う手段としたまま、`CronCreate`、`CronList`および`CronDelete`が公開される場合だけ定期再確認を併用する。一般の委譲待機では`/loop`専用の`ScheduleWakeup`を使用しない。
+`Agent`ツールのサブエージェントは定期再確認を装着せず、完了通知で待機を解く（`references/waiting-and-monitoring.md`「完了通知を待ってターンを終える場合」の表の`Agent`ツールのサブエージェントの行）。`CronList`はメインとサブエージェントで共有され、サブエージェントのために作成したtaskのpromptは親の会話へ届くため、そのtaskは親へ定期promptを届けるだけになる。`agents_server`で起動した委譲先は独立したセッションのメインとして扱う。
 
-`agents_server`の`start`では、agent-toolkitのmodが実行主体ごとに最初の`start`の処理の中でtaskを作成する。作成したtask IDか装着できなかった事実と理由は、その`start`の結果の後に会話へ届く。既に定期再確認のtaskを持つ実行主体の`start`では作成も通知もしない。実行主体が自ら装着するのは次の場合である。
+`agents_server`の`start`では、agent-toolkitのmodがメインの最初の`start`の処理の中でtaskを作成する。作成したtask IDか装着できなかった事実と理由は、その`start`の結果の後に会話へ届く。既に定期再確認のtaskを持つメインの`start`と、サブエージェントの`start`では作成も通知もしない。メインが自ら装着するのは次の場合である。
 
 - 装着できなかった通知を受けた場合
 - `start`の結果の後に装着の通知が無く、`CronList`に後述の標識を1行目に持つtaskも無い場合（modが読み込まれない環境など）
 - `Agent`ツールの委譲先かバックグラウンドタスクを、そのセッションで最初に起動する直前
 
-自ら装着する場合、メインは`atk wait-schedule --request-bucket main`、サブエージェントは`atk wait-schedule --request-bucket subagent`を1回実行し、標準出力のcron式を変更せず`CronCreate`へ渡す。promptは`${CLAUDE_PLUGIN_ROOT}/hooks/periodic_recheck_prompt.ts`の`PERIODIC_RECHECK_PROMPT_LINES`の各要素を改行で連結した本文とし、modと同じ本文を使う。`recurring: true`で1件だけ作成する。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行である。この行はUserPromptSubmitフックが機械注入ターンを判定する入力であり、resume後の所有taskの確認もこの標識の完全一致を判定手段とする。定期promptは待機対象を記録側（保持元）から列挙する手段、対象ごとの成果物を決める方法および動的に解決したパスを渡す`atk watch`のコマンド形を持ち、待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程を持たない。
+自ら装着する場合は`atk wait-schedule --request-bucket main --format json`を1回実行し、出力のJSONの`cron`と`prompt`を変更せず`CronCreate`へ渡して、`recurring: true`で1件だけ作成する。`prompt`はmodが使う共通本文と同じである。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行である。この行はUserPromptSubmitフックが機械注入ターンを判定する入力であり、resume後の所有taskの確認もこの標識の完全一致を判定手段とする。定期promptは待機対象を記録側（保持元）から列挙する手段、対象ごとの成果物を決める方法および動的に解決したパスを渡す`atk watch`のコマンド形を持ち、待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程を持たない。
 
-作成結果のtask IDはprompt外で保持し、同じ実行主体に未完了対象が1件以上ある間は同じtaskを再利用する。新しい待機対象が加わった場合も同じtaskを再利用する。modの通知で受け取ったtask IDにも、保持、再利用、resumeとcompaction後の確認および全対象の終端後の`CronDelete`を同じく適用する。
+作成結果のtask IDはprompt外で保持し、未完了対象が1件以上ある間は同じtaskを再利用する。新しい待機対象が加わった場合も同じtaskを再利用する。modの通知で受け取ったtask IDにも、保持、再利用、resumeとcompaction後の確認および全対象の終端後の`CronDelete`を同じく適用する。
 
 その回の保持記録からGit作業ツリーの絶対パスを`worktree_path`へ解決した場合は
 `atk watch --worktree "$worktree_path"`を使う。通常の成果物ファイルを`artifact_path`へ解決した場合は
 `atk watch --file "$artifact_path"`を使う。対象の種類ごとの受理形式は`atk watch --help`で確認する。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：Cronによる定期再確認：2026年10月4日」にある。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日」にある。
 変数の値は実行する回の保持記録から取得し、例を定期promptへ使う際も実在の固定パスや待機対象IDを埋め込まない。
 この観測は成果物の状況を補い、委譲sessionの終端は待機対象ごとの終了状態（`atk agents wait`の結果やバックグラウンドタスクの終了状態）と完了通知から判定する。
 
@@ -201,13 +182,13 @@ Claude Codeで未完了の委譲または背景処理を待つ実行主体は、
 
 定期promptは、保持した待機対象のうちblocking waitとそのバックグラウンドタスクのいずれにも所有されていない対象について、記録側の状態と完了通知を再確認し、完了対象があれば既存の受領手順へ進むよう命令する。所有されている対象へは状態照会を発行せず、そのblocking waitの終端応答と完了通知のいずれかで受け取るよう命令する。所有の判定と例外は`references/waiting-and-monitoring.md`「完了通知を待ってターンを終える場合」に従う。全対象が未完了なら、経過の測定値が判定閾値へ到達した経過時間起動の義務を実行し、到達した義務が無ければユーザー向け報告を出力せず待機を継続する。完了と停滞の判定は記録側の状態と完了通知で行い、定期起動の発火はその判定の入力に含めない。
 
-定期promptは全ての実行主体に共通の本文であり、そのセッションに適用される定期報告、cooldown解除、期限監視などの経過時間起動の義務を含めない。発火の各回でそのセッションの記録と規範から義務を列挙し、各義務の経過を実際に測定するコマンドと判定閾値で判定する。
+`atk wait-schedule`が出力する共通本文は全てのメインに共通であり、そのセッションに固有の経過時間起動の義務（定期報告、cooldown解除、期限監視など）を含めない。義務がある場合は、taskを持つメインが義務ごとに経過を実際に測定するコマンドと判定閾値を1行ずつ共通本文の後へ加えたpromptを用意し、保持したtask IDを`CronDelete`へ渡してから、同じ1行目の標識を持つそのpromptで`CronCreate`し直す。義務が委譲先の起動より後に確定した場合は、確定した時点でtaskを作成し直す。作成し直したtaskのIDを、以後の保持、再利用と削除の対象にする。コマンドと閾値がpromptに無いと、発火した回に義務の経過を測る手段が文脈に無く、定期報告が欠落する。
 
 会話のresumeまたはcompaction後は、保持したtask IDを`CronList`の実在taskと比べる。IDを保持していない場合は、promptに含めた固定の役割標識の完全一致から所有taskを一意に確認できる場合だけ再利用か削除へ進む。一意に確認できないtaskを推測して操作せず、新しいtaskも重複作成しない。
 
 待機する全対象の終端を確認した時点で、保持したtask IDを`CronDelete`へ渡して削除を確認する。`CronCreate`、`CronList`もしくは`CronDelete`が未公開・拒否・無効、または`atk wait-schedule`が失敗した場合は、シェルの`sleep`や背景タイマーへ切り替えず、機械的な完了通知を待つ既存手段を維持したまま待機表明でターンを終える。`sleep`等で外部事象の到達だけを待つと、その事象が到達しない障害時に打ち切る契機を失う。
 
-- `run_in_background`を指定しないBashコマンドが実行環境の判断で背景実行へ転換された場合も前項の対象とする。
+- `run_in_background`を指定しないBashコマンドが実行環境の判断で背景実行へ転換された場合も、本節の定期再確認の対象とする。
   転換時は起動結果が出力ファイルの絶対パスを返し、完了時に同じパスを含む完了通知が届く。
   コマンド起動の結果はその出力ファイルを`Read`で読む。サブエージェントの結果は、起動時に選んだ起動形態の終端応答から取得する。
   サブエージェントの出力ファイルはセッション記録の全文であり、読み込むとコンテキストを圧迫する。

@@ -9,9 +9,8 @@ import dataclasses
 import logging
 import os
 import pathlib
-import sys
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -33,22 +32,15 @@ _SHORTCUTS: list[_Shortcut] = [
 ]
 
 
-def run() -> bool:
-    """SendTo に対象ショートカットを冪等配置する。
-
-    Returns:
-        ショートカットを 1 件でも新規作成または更新した場合 True、
-        非 Windows・SendTo 未存在・全件 no-op の場合 False。
-    """
-    if sys.platform != "win32":
-        return False
-
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """SendTo に対象ショートカットを冪等配置する。ショートカットを生成できない場合は失敗と数える。"""
     sendto_dir = _sendto_dir()
     if not sendto_dir.is_dir():
         logger.info(log_format.format_status("SendTo", f"配置先が存在しません: {sendto_dir}"))
-        return False
+        return post_apply_outcome.PostApplyOutcome()
 
     changed = False
+    failures: list[str] = []
     home = pathlib.Path.home()
     for shortcut in _SHORTCUTS:
         target = home / shortcut.target_relative
@@ -61,7 +53,9 @@ def run() -> bool:
         if _create_shortcut(lnk, target):
             logger.info(log_format.format_status("SendTo", f"ショートカット配置: {lnk}"))
             changed = True
-    return changed
+        else:
+            failures.append(f"ショートカット生成に失敗: {lnk}")
+    return post_apply_outcome.PostApplyOutcome(changed=changed, failure=" / ".join(failures) or None)
 
 
 def _sendto_dir() -> pathlib.Path:
@@ -89,7 +83,7 @@ def _read_shortcut_target(lnk: pathlib.Path) -> str | None:
         f"$s = $ws.CreateShortcut('{_ps_escape(str(lnk))}'); "
         "[Console]::Out.Write($s.TargetPath)"
     )
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         timeout=30.0,
         tag="SendTo",
@@ -107,15 +101,12 @@ def _create_shortcut(lnk: pathlib.Path, target: pathlib.Path) -> bool:
         f"$s.TargetPath = '{_ps_escape(str(target))}'; "
         "$s.Save()"
     )
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         timeout=30.0,
         tag="SendTo",
     )
-    if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status("SendTo", f"ショートカット生成に失敗: {lnk}"))
-        return False
-    return True
+    return result is not None and result.returncode == 0
 
 
 def _ps_escape(value: str) -> str:

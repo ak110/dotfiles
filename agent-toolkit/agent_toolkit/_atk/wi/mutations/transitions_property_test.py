@@ -11,7 +11,10 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from agent_toolkit._atk.wi import mutations, readiness
+from agent_toolkit._atk.wi import readiness
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import web_input as _wi_web_input
+from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
 from agent_toolkit.atk_test import _setup_notes, _write_awi_file
 
 _NOW = datetime.datetime(2026, 10, 5, tzinfo=datetime.UTC)
@@ -37,8 +40,8 @@ _SOURCES = {
 
 
 def _disable_git(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
 
 def _state(notes: pathlib.Path) -> str | None:
@@ -69,7 +72,7 @@ def test_transition_sequences_match_reference_model(actions: list[str], monkeypa
             )
             force = action == "remove" and expected == "processing"
             if accepted:
-                mutations.transition_entries(
+                mutation_transitions.transition_entries(
                     notes,
                     action=action,
                     filenames=["entry.md"],
@@ -80,8 +83,8 @@ def test_transition_sequences_match_reference_model(actions: list[str], monkeypa
                 )
                 expected = _DESTINATION[action]
             else:
-                with pytest.raises((SystemExit, mutations.WebInputError)):
-                    mutations.transition_entries(
+                with pytest.raises((SystemExit, _wi_web_input.WebInputError)):
+                    mutation_transitions.transition_entries(
                         notes,
                         action=action,
                         filenames=["entry.md"],
@@ -104,7 +107,7 @@ def test_reopening_terminal_entry_strips_previous_result(monkeypatch: pytest.Mon
     terminal.parent.mkdir(exist_ok=True)
     source.replace(terminal)
     terminal.write_text(terminal.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 旧結果\n", encoding="utf-8")
-    mutations.transition_entries(
+    mutation_transitions.transition_entries(
         notes,
         action="hold",
         filenames=[source.name],
@@ -123,7 +126,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
     second = _write_awi_file(notes, "second.md")
     first_body = first.read_text(encoding="utf-8")
     second_body = second.read_text(encoding="utf-8")
-    assert mutations.transition_entries(
+    assert mutation_transitions.transition_entries(
         notes,
         action="start-processing",
         filenames=[first.name, second.name],
@@ -132,8 +135,8 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
     ) == [first.name, second.name]
 
     processing = notes / "processing" / first.name
-    with pytest.raises(mutations.WebInputError):
-        mutations.transition_entries(
+    with pytest.raises(_wi_web_input.WebInputError):
+        mutation_transitions.transition_entries(
             notes,
             action="hold",
             filenames=[first.name],
@@ -143,7 +146,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
         )
     assert processing.read_text(encoding="utf-8") == first_body
 
-    mutations.transition_entries(
+    mutation_transitions.transition_entries(
         notes,
         action="return-to-inbox",
         filenames=[first.name],
@@ -157,7 +160,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
 
     snapshot = returned.read_bytes()
     with pytest.raises(SystemExit):
-        mutations.transition_entries(
+        mutation_transitions.transition_entries(
             notes,
             action="return-to-inbox",
             filenames=[first.name],

@@ -65,7 +65,7 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
         # 旧形式の計画と計画レビュー表を読む互換の実装とそのテスト
         _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/*.py"),
         _AllowedLocation("agent-toolkit/agent_toolkit/_atk/review_table.py"),
-        _AllowedLocation("agent-toolkit/agent_toolkit/_atk/serve/plans/roots.py"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_plan/bundle_kinds.py"),
         _AllowedLocation("*_test.py"),
     ),
     "統合後検証": (
@@ -82,8 +82,8 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     "起動種別": (
         # `mode:`へ改める前の宣言行を読む互換の実装とそのテスト
         _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/task_documents.py", "_LEGACY_LAUNCH_KIND_PREFIX"),
-        _AllowedLocation("agent-toolkit/agent_toolkit/agents_server_mcp_test.py", "起動種別:"),
-        _AllowedLocation("agent-toolkit/agent_toolkit/agents_server_mcp_test.py", "起動種別: explore"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/launch_requests_test.py", "起動種別:"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/launch_requests_test.py", "起動種別: explore"),
     ),
     "背景ジョブ": (
         # 監査記録の見出しと対応させる節の見出しと、その節への参照
@@ -102,7 +102,7 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     ),
     "鮮度情報": (
         # `atk wi list --with-staleness`のオプション説明（ヘルプの説明として維持する）
-        _AllowedLocation("agent-toolkit/agent_toolkit/atk.py"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_atk/wi/cli.py"),
     ),
     "自律実行": (
         # ユーザーの設定から取り除く旧版の文面と一致させる文字列
@@ -113,6 +113,8 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
         _AllowedLocation("docs/development/design-session-review.md", "振り返り担当"),
     ),
 }
+
+_REPORT_DIRECTION_TERM = "ユーザー報告"
 
 _RETIRED_TERMS = (
     _RetiredTerm(
@@ -137,9 +139,10 @@ _RETIRED_TERMS = (
         allowed=(
             # 改称前の計画の列名と素材種別を読む構造定数と読取処理
             _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/constants.py"),
-            _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/sections.py", "利用者"),
+            _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/materials.py", "利用者"),
             # 旧形式の計画を作成する試験入力と、その読み取り互換を確かめるテスト
-            _AllowedLocation("agent-toolkit/agent_toolkit/_plan/fixture.py", "利用者合意"),
+            _AllowedLocation("agent-toolkit/agent_toolkit/_testing/plan_fixture.py", "利用者合意"),
+            _AllowedLocation("agent-toolkit/agent_toolkit/_testing/plan_structure_support.py", "利用者合意"),
             _AllowedLocation("*_test.py", "利用者合意"),
             _AllowedLocation("*_test.py", "利用者指示"),
             _AllowedLocation("*_test.py", "利用者と入口"),
@@ -153,8 +156,7 @@ _RETIRED_TERMS = (
             _AllowedLocation(
                 "README.md",
                 line_exact=(
-                    "- [docs/guide/index.md](docs/guide/index.md): "
-                    "利用者向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）"
+                    "- [docs/guide/index.md](docs/guide/index.md): 利用者向け（Claude Code/Codex設定・SSH・セキュリティ）"
                 ),
             ),
             _AllowedLocation("docs/index.md", line_exact="- [docs/guide/index.md](guide/index.md): 利用者向け"),
@@ -281,8 +283,8 @@ _RETIRED_TERMS = (
             ("汎用判定", "「プッシュ済み判定」"),
             ("準備工程", "「計画作成の手順1」または「`実装開始`の受領後」"),
             ("更新段階", "「ウォームアップを呼び出した更新処理」"),
-            ("共有判定器", "`stop_gate.py`の`is_pending_async_work`"),
-            ("共有判定", "`stop_gate.py`の`is_pending_async_work`"),
+            ("共有判定器", "`background_tasks.py`の`is_pending_async_work`"),
+            ("共有判定", "`background_tasks.py`の`is_pending_async_work`"),
             ("委譲主体", "委譲元"),
             ("最上位主体", "「最上位セッションのメイン」"),
             ("自律実行主体", "「自律モードで動く主体」"),
@@ -294,7 +296,7 @@ _RETIRED_TERMS = (
             ("独立レビュー", "独立文脈レビュー"),
             ("通常完了の返却形式", "入力名`通常完了の報告様式`"),
             ("英語検知通知", "「`response_language_check`の通知」"),
-            ("投入前チェック", "「`agent-toolkit:wi-standards`「投入と取得」手順1の読み直し」"),
+            ("投入前チェック", "「`agent-toolkit:wi-standards`の`references/drafting-completion.md`「投入前の読み直し」」"),
             ("レビュー調整", "「`share/review-loop-coordination.md`の手順」"),
             ("調整手順", "「`share/review-loop-coordination.md`の手順」"),
             ("読者ごとの探索担当", "読者別探索担当"),
@@ -334,7 +336,7 @@ _RETIRED_TERMS = (
             ("延期`adopt`契約", "「lane-integration.subagent.mdの延期adoptの条件」"),
             ("本文契約", "「agent-toolkit:wi-standards「通常AWIの本文」の要件」"),
             ("process-wi契約", "「agent-toolkit:process-wiの規定の読み替え」"),
-            ("分割規範", "「share/rules-main.codex.md「Codex固有の入出力」の分割取得の規定」"),
+            ("分割規範", "「share/rules-common.codex.md「Codex固有の入出力」の分割取得の規定」"),
             ("公開契約基準", "説明へ"),
             ("導入目的の記録", "導入目的の調査記録"),
             # 表・記録・報告の名前
@@ -472,22 +474,36 @@ _RETIRED_TERMS = (
         )
     ),
     # 委譲先の返却形式の状態値（2026年10月6日に廃止）。続行不能は`続行できない理由:`の行だけで表す。
-    # 定義は`agent-toolkit/skills/delegation/references/mandatory-rules.md`「返却形式の受け渡し」を正とする。
+    # 定義は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」を正とする。
     _RetiredTerm(
         term="needs_escalation",
         replacement="`続行できない理由:`の行（地の文では「続行できない理由を返す」）",
         allowed=(
             # 過去のセッション記録に残る旧形式の返却を読む定数と、その読み取り互換を確かめるテスト
             _AllowedLocation(
-                "agent-toolkit/skills/session-review/scripts/session_review_evidence.py",
+                "agent-toolkit/skills/session-review/scripts/session_evidence_candidates.py",
                 line_exact='_ESCALATION_RETURN_STATUS = "needs_escalation"',
             ),
-            _AllowedLocation("agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py", "needs_escalation"),
+            _AllowedLocation("agent-toolkit/skills/session-review/scripts/session_evidence_bundle_test.py", "needs_escalation"),
             _AllowedLocation(
-                "agent-toolkit/skills/session-review/scripts/session_review_candidates_test.py", "needs_escalation"
+                "agent-toolkit/skills/session-review/scripts/session_evidence_candidates_test.py", "needs_escalation"
             ),
             # 日付の付いた過去の障害記録
             _AllowedLocation("docs/development/incidents*.md"),
+            # 登録した語の不在を確かめる本テスト
+            _AllowedLocation("retired_terms_invariant_test.py"),
+        ),
+    ),
+    # 報告の向きを示さない呼称。「ユーザー」と「報告」を直結した語はユーザーへ届ける報告と
+    # ユーザーから寄せられた報告のどちらにも読めるため使わない。
+    # 定義は`agent-toolkit/rules/01-agent.md`「役割分担」を正とし、同文書とその生成物だけが禁止する語そのものを持つ。
+    _RetiredTerm(
+        term=_REPORT_DIRECTION_TERM,
+        replacement="ユーザーへの報告、またはユーザーからの報告",
+        allowed=(
+            # 語の使用停止を定める規定と、それを写した生成物
+            _AllowedLocation("agent-toolkit/rules/01-agent.md"),
+            _AllowedLocation(".chezmoi-source/dot_codex/AGENTS.md"),
             # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
@@ -565,6 +581,24 @@ def test_retired_term_outside_allowed_location_is_reported(tmp_path: pathlib.Pat
         "agent-toolkit/skills/plan-mode/references/plan-file-standards.md:1: "
         "撤去した名称「近接検証」が残っている。正式名「変更範囲の検証」へ置き換える",
     ]
+
+
+def test_report_direction_term_outside_allowed_paths_is_reported(tmp_path: pathlib.Path) -> None:
+    """報告の向きを示さない語は、定義を持つ規範とその生成物の外で報告し、向きを示す言い方は報告しない。"""
+    _init_repo(
+        tmp_path,
+        {
+            "docs/note.md": f"前置き\n2026年の{_REPORT_DIRECTION_TERM}に由来する\n",
+            "docs/clean.md": "ユーザーへの報告とユーザーからの報告\n",
+            "agent-toolkit/rules/01-agent.md": f"「{_REPORT_DIRECTION_TERM}」の語は使わない\n",
+            ".chezmoi-source/dot_codex/AGENTS.md": f"「{_REPORT_DIRECTION_TERM}」の語は使わない\n",
+        },
+    )
+    terms = tuple(retired for retired in _RETIRED_TERMS if retired.term == _REPORT_DIRECTION_TERM)
+
+    violations = _find_violations(tmp_path, terms)
+
+    assert [violation.split(": ", 1)[0] for violation in violations] == ["docs/note.md:2"]
 
 
 def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -> None:

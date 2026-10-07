@@ -1,38 +1,28 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
+"""WIエントリの状態遷移と、遷移に伴うメタデータの更新。
 
-旧`pytools/dotfiles_fb/_mutations.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+`atk wi start-processing`・`hold`・`unhold`・`return-to-inbox`・`adopt`・`reject`・`rm`の処理本体を持つ。
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime
-import os
 import pathlib
 import re
 import shutil
-import subprocess
 import sys
-import tempfile
 import typing
-from typing import TYPE_CHECKING
 
-from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi import add as _add
-from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import bulk as _bulk
-from agent_toolkit._atk.wi import user_comment as _user_comment
-from agent_toolkit._atk.wi import uwi as _uwi
-from agent_toolkit._atk.wi.common import (
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import filenames as _wi_filenames
+from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.constants import (
+    BULK_SOURCE_STATES,
     TRANSITION_EXPLICIT_STATES,
-    WI_PROCESSABLE_STATES,
     WI_AGENT_REMOVABLE_STATES,
     WI_STATE_ADOPTED,
     WI_STATE_HOLD,
@@ -41,75 +31,28 @@ from agent_toolkit._atk.wi.common import (
     WI_STATE_REJECTED,
     WI_STATES,
     WI_TYPE_AWI,
-    WI_TYPE_UWI,
     WI_USER_REMOVABLE_STATES,
-    WebInputError,
-    _CommitMetadata,
-    _commit_and_push,
-    _copy_to_tempfile,
-    _dedup_positional_filenames,
-    _pull,
-    _push_pending_commits,
-    _repo_lock,
-    _require_type,
-    _stamp_result,
-    _subdir,
-    _validate_filename,
-    _validate_filenames_only,
-    is_agent_environment,
-    normalized_wi_type,
 )
-from agent_toolkit._atk.wi.constants import BULK_SOURCE_STATES
+from agent_toolkit._atk.wi.entries import CommitMetadata
+from agent_toolkit._atk.wi.mutations.targets import (
+    atomic_write_text,
+    candidate_local_worktree,
+    commit_values_by_path,
+    entry_target_repo,
+    resolve_active_targets,
+    resolve_awi_targets,
+    resolve_processable_targets,
+)
 from agent_toolkit._atk.wi.repo import (
-    _normalize_remote_url,
-    _resolve_repo_id,
-    _verify_target_repo_content,
+    resolve_repo_id,
+    verify_target_repo_content,
 )
-from agent_toolkit._atk.wi.repo import append_entry as _append_entry
-from agent_toolkit._atk.wi.repo import edit_entry as _edit_entry
-from agent_toolkit._plan import locations as _plan_file
-from agent_toolkit._plan import structure as _plan_format
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.wi.mutations.content import (
-        _build_noninteractive_edit_content,
-        _cmd_append,
-        _cmd_edit,
-        _preserve_agent_user_comment,
-        _reject_agent_user_comment_change,
-        _reject_agent_user_comment_message,
-        append_entry_content,
-        edit_entry_content,
-    )
-    from agent_toolkit._atk.wi.mutations.dependencies import (
-        _active_dependency_graph,
-        _cmd_set_dependencies,
-        _dependency_reaches,
-        _entry_dependencies,
-        set_entry_dependencies,
-    )
-    from agent_toolkit._atk.wi.mutations.targets import (
-        _GIT_TIMEOUT_SECONDS,
-        _atomic_write_text,
-        _candidate_local_worktree,
-        _cmd_commit,
-        _commit_values_by_path,
-        _entry_target_repo,
-        _git_head,
-        _invalidate_repo_bound_metadata,
-        _local_worktree_repo_id,
-        _resolve_awi_targets,
-        _resolve_commit,
-        _resolve_processable_targets,
-        _resolve_active_targets,
-        commit_entries,
-    )
-
+from agent_toolkit._atk.wi.web_input import WebInputError
 
 _AGENT_REMOVE_NEXT_ACTION = "削除はユーザーへ依頼する。不要になった項目なら`atk wi reject`で不採用にする"
 
 _AGENT_PROCESSING_HOLD_NEXT_ACTION = (
-    "別セッションが処理中の要求を改訂する場合は保留せず、`agent-toolkit:wi-standards`「由来と承認」の処理中の項目の扱いに従い、"
+    "別セッションが処理中の要求を改訂する場合は保留せず、`agent-toolkit:wi-standards`「状態と依存」の処理中の項目の扱いに従い、"
     "書き換えたい内容を新しい項目として投入するか`atk wi edit --append`で追記する。"
     "自セッションの`agent-toolkit:process-wi`が処理中の項目を回答待ちなどで保留する場合は`--state=processing`を付けて再実行する"
 )
@@ -188,44 +131,46 @@ def _resolve_transition_paths(
 ) -> list[pathlib.Path]:
     """操作種別と明示状態から対象エントリを解決する。"""
     inbox_dir = private_notes / WI_STATE_INBOX
-    processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
+    processing_dir = _wi_entries.subdir(private_notes, WI_STATE_PROCESSING)
     removable_states = WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
     if action == "remove" and state is not None and state not in removable_states:
         raise WebInputError(f"エージェント環境ではstate={state}の項目を削除できません", next_action=_AGENT_REMOVE_NEXT_ACTION)
     if action == "remove" and state is None and actor_is_agent:
         forbidden_states = tuple(candidate for candidate in WI_USER_REMOVABLE_STATES if candidate not in removable_states)
         for filename in filenames:
-            if any(_validate_filename(filename, private_notes / candidate).is_file() for candidate in removable_states):
+            if any(
+                _wi_filenames.validate_filename(filename, private_notes / candidate).is_file() for candidate in removable_states
+            ):
                 continue
             for candidate in forbidden_states:
-                if _validate_filename(filename, private_notes / candidate).is_file():
+                if _wi_filenames.validate_filename(filename, private_notes / candidate).is_file():
                     raise WebInputError(
                         f"エージェント環境ではstate={candidate}の項目を削除できません",
                         next_action=_AGENT_REMOVE_NEXT_ACTION,
                     )
     if action == "hold" and state is None and actor_is_agent:
         for filename in filenames:
-            if _validate_filename(filename, inbox_dir).is_file():
+            if _wi_filenames.validate_filename(filename, inbox_dir).is_file():
                 continue
-            if _validate_filename(filename, processing_dir).is_file():
+            if _wi_filenames.validate_filename(filename, processing_dir).is_file():
                 raise WebInputError(
                     f"エージェント環境では処理中（processing）の項目を--state=processingの指定なしに保留できません: {filename}",
                     next_action=_AGENT_PROCESSING_HOLD_NEXT_ACTION,
                 )
     if state is not None:
-        return _resolve_awi_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
+        return resolve_awi_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
     if action == "start-processing":
-        return _resolve_awi_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
+        return resolve_awi_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
     if action == "return-to-inbox":
-        return _resolve_awi_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
+        return resolve_awi_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
     if action == "unhold":
-        return _resolve_awi_targets(
+        return resolve_awi_targets(
             filenames,
-            _subdir(private_notes, WI_STATE_HOLD),
+            _wi_entries.subdir(private_notes, WI_STATE_HOLD),
             missing_is_conflict=missing_is_conflict,
         )
     if action == "remove":
-        return _resolve_active_targets(
+        return resolve_active_targets(
             filenames,
             inbox_dir,
             processing_dir,
@@ -233,14 +178,14 @@ def _resolve_transition_paths(
             states=removable_states,
         )
     if action in {"adopt", "reject"}:
-        return _resolve_active_targets(
+        return resolve_active_targets(
             filenames,
             inbox_dir,
             processing_dir,
             missing_is_conflict=missing_is_conflict,
             states=_implicit_terminal_source_states(action),
         )
-    return _resolve_processable_targets(filenames, inbox_dir, processing_dir, missing_is_conflict=missing_is_conflict)
+    return resolve_processable_targets(filenames, inbox_dir, processing_dir, missing_is_conflict=missing_is_conflict)
 
 
 def _validate_transition_targets(
@@ -262,19 +207,19 @@ def _validate_transition_targets(
         if current_content != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
     raw_target_repos = (target_repo,) if isinstance(target_repo, str) else tuple(target_repo or ())
-    normalized_target_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in raw_target_repos))
+    normalized_target_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in raw_target_repos))
     for path in paths:
         content = current_content if current_content is not None else path.read_text(encoding="utf-8")
         if action == "start-processing":
             # 移動前にtype欠落・不正を拒否する。
-            _require_type(path, content)
+            _wi_entries.entry_type_of(path, content)
             # `--target-repo`未指定でもtarget_repo欠落とfrontmatter解析不能を拒否するため、
-            # 不一致判定を`_verify_target_repo_content`へ委ねる一方でこの必須条件の確認は残す。
-            _entry_target_repo(path, content)
+            # 不一致判定を`verify_target_repo_content`へ委ねる一方でこの必須条件の確認は残す。
+            entry_target_repo(path, content)
         if len(normalized_target_repos) <= 1:
-            _verify_target_repo_content(path, content, normalized_target_repos[0] if normalized_target_repos else None)
+            verify_target_repo_content(path, content, normalized_target_repos[0] if normalized_target_repos else None)
         else:
-            actual_target_repo = _entry_target_repo(path, content)
+            actual_target_repo = entry_target_repo(path, content)
             if actual_target_repo not in normalized_target_repos:
                 _outcome.report_failure(
                     f"target_repoが一致しない: 期待={', '.join(normalized_target_repos)} 実際={actual_target_repo} "
@@ -285,7 +230,9 @@ def _validate_transition_targets(
                 )
                 sys.exit(2)
     if cooldown_days is not None:
-        non_awi = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != WI_TYPE_AWI]
+        non_awi = [
+            path.name for path in paths if _wi_entries.entry_type_of(path, path.read_text(encoding="utf-8")) != WI_TYPE_AWI
+        ]
         if non_awi:
             raise WebInputError(
                 f"--`cooldown-days`はAWI専用です: {', '.join(non_awi)}",
@@ -325,7 +272,7 @@ def _update_transition_metadata(
             data.pop("cooldown_until", None)
         updated = _frontmatter.serialize_frontmatter(data, body)
         if updated != text:
-            _atomic_write_text(path, updated)
+            atomic_write_text(path, updated)
 
 
 def _strip_result_section(path: pathlib.Path) -> None:
@@ -335,7 +282,7 @@ def _strip_result_section(path: pathlib.Path) -> None:
     if not matches:
         return
     updated = text[: matches[-1].start()].rstrip() + "\n"
-    _atomic_write_text(path, updated)
+    atomic_write_text(path, updated)
 
 
 def _apply_transition(
@@ -345,7 +292,7 @@ def _apply_transition(
     action: str,
     now: datetime.datetime,
     note: str | None,
-    commit_values: dict[pathlib.Path, _CommitMetadata | None],
+    commit_values: dict[pathlib.Path, CommitMetadata | None],
     cooldown_days: int | None,
 ) -> None:
     """検証済みエントリを削除または目的状態へ移動する。"""
@@ -361,7 +308,7 @@ def _apply_transition(
         for path in paths:
             path.unlink()
         return
-    destination = _subdir(private_notes, destination_name)
+    destination = _wi_entries.subdir(private_notes, destination_name)
     conflicts = [path.name for path in paths if (destination / path.name).exists()]
     if conflicts:
         _outcome.report_failure(
@@ -374,7 +321,7 @@ def _apply_transition(
         if action == "return-to-inbox" or (action == "hold" and path.parent.name in {WI_STATE_ADOPTED, WI_STATE_REJECTED}):
             _strip_result_section(path)
         if action in {"adopt", "reject"}:
-            _stamp_result(path, outcome=destination_name, now=now, commit=commit_values[path], note=note)
+            _wi_entries.stamp_result(path, outcome=destination_name, now=now, commit=commit_values[path], note=note)
         shutil.move(path, destination / path.name)
 
 
@@ -428,12 +375,13 @@ def transition_entries(
         cooldown_days=cooldown_days,
     )
     inbox_dir = private_notes / WI_STATE_INBOX
-    _validate_filenames_only(filenames, inbox_dir)
-    with _repo_lock(private_notes, timeout=lock_timeout):
+    _wi_filenames.validate_filenames_only(filenames, inbox_dir)
+    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
+        _wi_sync.ensure_mutation_allowed(private_notes)
         if not skip_remote_sync:
             if not skip_push:
-                _push_pending_commits(private_notes)
-            _pull(private_notes)
+                _wi_sync.push_pending_commits(private_notes)
+            _wi_sync.pull(private_notes)
         missing_is_conflict = action == "remove" and expected_content is not None
         paths = _resolve_transition_paths(
             private_notes,
@@ -451,8 +399,8 @@ def transition_entries(
             cooldown_days=cooldown_days,
             force=force,
         )
-        commit_values: dict[pathlib.Path, _CommitMetadata | None] = (
-            _commit_values_by_path(paths, commit, local_worktree)
+        commit_values: dict[pathlib.Path, CommitMetadata | None] = (
+            commit_values_by_path(paths, commit, local_worktree)
             if action in {"adopt", "reject"}
             else {path: None for path in paths}
         )
@@ -466,8 +414,8 @@ def transition_entries(
             cooldown_days=cooldown_days,
         )
         for state_name in WI_STATES:
-            _subdir(private_notes, state_name)
-        _commit_and_push(
+            _wi_entries.subdir(private_notes, state_name)
+        _wi_sync.commit_and_push(
             private_notes,
             _transition_commit_message(action, len(paths), note),
             list(WI_STATES),
@@ -500,9 +448,9 @@ def _bulk_transition(
     commit = getattr(args, "commit", None)
     skip_push = getattr(args, "skip_push", False)
     cooldown_days = getattr(args, "cooldown_days", None)
-    local_worktree = _candidate_local_worktree(_single_target_repo(args.target_repo)) if commit is not None else None
+    local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if commit is not None else None
 
-    def apply_fn(notes: pathlib.Path, candidates: list[_bulk.QueueEntryDisplay]) -> list[str]:
+    def apply_fn(notes: pathlib.Path, candidates: list[_wi_entries.EntryRecord]) -> list[str]:
         paths = [entry[0] for entry in candidates]
         # 個別指定と同じ内容検証を適用の直前へ置く。`--cooldown-days`の対象種別の制約もここが判定する。
         # processing状態の保護は候補の確認時に`bulk`が判定済みのため、ここでは再判定しない。
@@ -514,7 +462,7 @@ def _bulk_transition(
             cooldown_days=cooldown_days,
             force=True,
         )
-        commit_values = _commit_values_by_path(paths, commit, local_worktree)
+        commit_values = commit_values_by_path(paths, commit, local_worktree)
         _apply_transition(
             notes,
             paths,
@@ -524,7 +472,7 @@ def _bulk_transition(
             commit_values=commit_values,
             cooldown_days=cooldown_days,
         )
-        _commit_and_push(
+        _wi_sync.commit_and_push(
             notes,
             _transition_commit_message(action, len(paths), note),
             list(WI_STATES),
@@ -548,13 +496,13 @@ def _bulk_transition(
     )
 
 
-def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """adoptサブコマンド: 採用としてinbox・processing・holdのいずれかからadopted/へ移動しcommit・push。
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
     `--note`指定時はメモ、`--commit`指定時は対応commitの短縮OIDと件名を含む。
     inbox・processing・holdのいずれの起点も許容し、同名ファイルが複数の状態にある場合はprocessing、inbox、holdの順に優先する。
-    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
+    位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="adopt")
@@ -563,8 +511,8 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
             for filename in filenames:
                 print(private_notes / WI_STATE_ADOPTED / filename)
         return
-    args.filenames = _dedup_positional_filenames(args.filenames, "adopt")
-    local_worktree = _candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
+    args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "adopt")
+    local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
     filenames = transition_entries(
         private_notes,
         action="adopt",
@@ -581,13 +529,13 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
         print(private_notes / WI_STATE_ADOPTED / filename)
 
 
-def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """rejectサブコマンド: 不採用としてinbox・processing・holdのいずれかからrejected/へ移動しcommit・push。
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
     `--note`指定時はメモ、`--commit`指定時は対応commitの短縮OIDと件名を含む。
     inbox・processing・holdのいずれの起点も許容し、同名ファイルが複数の状態にある場合はprocessing、inbox、holdの順に優先する。
-    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
+    位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="reject")
@@ -596,8 +544,8 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
             for filename in filenames:
                 print(private_notes / WI_STATE_REJECTED / filename)
         return
-    args.filenames = _dedup_positional_filenames(args.filenames, "reject")
-    local_worktree = _candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
+    args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "reject")
+    local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
     filenames = transition_entries(
         private_notes,
         action="reject",
@@ -615,21 +563,21 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
         print(private_notes / WI_STATE_REJECTED / filename)
 
 
-def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """start-processingサブコマンド: inboxのAWIまたはUWIをprocessing/へ移動しcommit・push。
 
     ファイル名指定の対象はinboxとし、`--all`ではholdの項目も候補にする。
 
     後続の`adopt`・`reject`が処理を継続することを前提とし、`## 処理結果`節の追記はしない
     （最終処理結果の記録は`adopt`・`reject`側で行う）。
-    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
+    位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="start-processing")
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をprocessingへ移した: {', '.join(filenames)}")
         return
-    args.filenames = _dedup_positional_filenames(args.filenames, "start-processing")
+    args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "start-processing")
     filenames = transition_entries(
         private_notes,
         action="start-processing",
@@ -640,14 +588,14 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path,
     _outcome.report_success(f"{len(filenames)}件をprocessingへ移した: {', '.join(filenames)}")
 
 
-def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+def cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """holdサブコマンド: 処理可能または終端した項目をholdへ移動する。"""
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="hold")
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をholdへ移した: {', '.join(filenames)}")
         return
-    args.filenames = _dedup_positional_filenames(args.filenames, "hold")
+    args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "hold")
     filenames = transition_entries(
         private_notes,
         action="hold",
@@ -660,14 +608,14 @@ def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
     _outcome.report_success(f"{len(filenames)}件をholdへ移した: {', '.join(filenames)}")
 
 
-def _cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+def cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """unholdサブコマンド: hold項目をinboxへ戻す。"""
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="unhold")
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をholdからinboxへ戻した: {', '.join(filenames)}")
         return
-    args.filenames = _dedup_positional_filenames(args.filenames, "unhold")
+    args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "unhold")
     filenames = transition_entries(
         private_notes,
         action="unhold",
@@ -678,19 +626,19 @@ def _cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: date
     _outcome.report_success(f"{len(filenames)}件をholdからinboxへ戻した: {', '.join(filenames)}")
 
 
-def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+def cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
 
     保留判定でprocessing化済みの対象を未処理状態へ戻す用途で使う
     （`agent-toolkit:process-wi`のpicker起動契約「同一セッション中にUWIの回答を受領した場合」参照）。
-    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
+    位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="return-to-inbox")
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をinboxへ差し戻した: {', '.join(filenames)}")
         return
-    args.filenames = _dedup_positional_filenames(args.filenames, "return-to-inbox")
+    args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "return-to-inbox")
     filenames = transition_entries(
         private_notes,
         action="return-to-inbox",
@@ -703,7 +651,7 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, 
     _outcome.report_success(f"{len(filenames)}件をinboxへ差し戻した: {', '.join(filenames)}")
 
 
-def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """rmサブコマンド: 個別指定または対象リポジトリ単位でactive項目を削除する。"""
     if args.all:
         filenames = _bulk.remove_all_entries(
@@ -723,7 +671,7 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _outcome.report_success(f"{len(filenames)}件を削除した: {', '.join(filenames)}")
         return
 
-    args.filenames = _dedup_positional_filenames(args.filenames, "rm")
+    args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "rm")
     filenames = transition_entries(
         private_notes,
         action="remove",

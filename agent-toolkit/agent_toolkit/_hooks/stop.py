@@ -16,12 +16,10 @@ import importlib
 import json
 import sys
 
-from agent_toolkit._hooks.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._hooks.stop_gate import append_stop_log  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._hooks.stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position
-    parse_stop_session as _parse_stop_session,
-)
-from agent_toolkit._hooks.tool_input import is_codex_payload
+from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._hooks.host import is_codex_payload
+from agent_toolkit._hooks.stop_session import append_stop_log
+from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 CHECK_MODULE_NAMES = (
     "busy_loop_guard",

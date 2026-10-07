@@ -6,8 +6,8 @@ from __future__ import annotations
 import argparse
 
 from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._hooks.session_state import state_path
-from agent_toolkit._hooks.task_stop_state import record_completion
+from agent_toolkit._common.session_state import state_path
+from agent_toolkit._common.task_stop_state import record_completion
 
 
 def _identifier(value: str) -> str:

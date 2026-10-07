@@ -1,0 +1,14 @@
+# ホストの役割と、その役割を持つホスト名の対応。
+# chezmoiはテンプレートデータとして読み（`.host_roles.<役割>`）、配布先へは置かない。
+# pytoolsは`pytools/_internal/host_roles.py`が同じファイルを読む。
+# ホスト名は小文字の短縮名（最初の`.`より前）で書く。
+
+[host_roles]
+# dotfilesの自動更新とatk serveの常駐を担うLinuxホスト
+linux_server = ["euryale"]
+# 全プロジェクトの作業ツリーを持つ開発環境
+all_projects = ["euryale", "euryale-container"]
+# gvとlcだけを持つWindowsアプリの開発環境
+windows_apps = ["stheno"]
+# media-remoteを自動起動するWindowsホスト
+media_remote = ["stheno"]

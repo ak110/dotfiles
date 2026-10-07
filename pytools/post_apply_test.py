@@ -2,9 +2,12 @@
 
 各ステップが呼ばれること、先行工程の順序と並列実行、途中ステップが例外を送出しても他が継続すること、
 画面と永続ログへの出力の振り分け、失敗時の exit code を検証する。
+撤去前の配布内容はwheelへ含めないため、リポジトリ直下のtestdata/post_applyへ保持する。
 """
 
+import ast
 import dataclasses
+import inspect
 import io
 import json
 import logging
@@ -14,12 +17,13 @@ import re
 import subprocess
 import threading
 import time
+import typing
 from pathlib import Path
 
 import pytest
 
 from pytools import post_apply
-from pytools._internal import post_apply_outcome
+from pytools._internal import claude_common, common, post_apply_outcome
 
 # `post_apply`は削除対象の表をimport時のホームで組み立てる。テストの実行中はホームが一時ディレクトリへ隔離されるため、
 # 表を引く鍵もimport時のホームから組み立てる。
@@ -101,7 +105,7 @@ def test_linked_worktree_is_rejected_before_any_step_or_record(
     """複製作業ツリーで工程を指定せずに実行しても、全段と永続記録へ到達しない。"""
     root = tmp_path / "linked"
     canonical_root = tmp_path / "main"
-    monkeypatch.setattr(post_apply.claude_common, "find_dotfiles_root", lambda: root)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
 
     def fake_git(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert cmd == ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"]
@@ -111,7 +115,7 @@ def test_linked_worktree_is_rejected_before_any_step_or_record(
     def unexpected_run() -> tuple[list[post_apply._StepResult], list[str]]:  # noqa: SLF001
         pytest.fail("linked worktreeで_DEFAULT_STEPSの実行へ到達した")
 
-    monkeypatch.setattr(post_apply.claude_common, "run_subprocess", fake_git)
+    monkeypatch.setattr(common, "run_subprocess", fake_git)
     monkeypatch.setattr(post_apply, "run", unexpected_run)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -135,7 +139,7 @@ def test_canonical_root_or_explicit_override_runs_steps(
     """正規ルートと明示解除では既存の全段実行経路へ進む。"""
     canonical_root = tmp_path / "main"
     root = tmp_path / "linked" if allow_non_canonical else canonical_root
-    monkeypatch.setattr(post_apply.claude_common, "find_dotfiles_root", lambda: root)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
 
     def fake_git(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert cmd == ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"]
@@ -143,7 +147,7 @@ def test_canonical_root_or_explicit_override_runs_steps(
         return subprocess.CompletedProcess(cmd, 0, f"{canonical_root / '.git'}\n", "")
 
     calls: list[str] = []
-    monkeypatch.setattr(post_apply.claude_common, "run_subprocess", fake_git)
+    monkeypatch.setattr(common, "run_subprocess", fake_git)
     monkeypatch.setattr(
         post_apply,
         "_DEFAULT_STEPS",
@@ -160,7 +164,10 @@ def test_canonical_root_or_explicit_override_runs_steps(
 
 def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Path) -> None:
     """失敗したステップの名前、例外の内容、tracebackの末尾を同期結果の記録へ残す。"""
-    steps = [("success", lambda: True), ("failure", lambda: (_ for _ in ()).throw(RuntimeError("boom")))]
+    steps = [
+        ("success", lambda: post_apply_outcome.PostApplyOutcome(changed=True)),
+        ("failure", lambda: (_ for _ in ()).throw(RuntimeError("boom"))),
+    ]
 
     with pytest.raises(SystemExit):
         post_apply.main(runner=lambda: post_apply.run(steps=steps))
@@ -181,7 +188,9 @@ def test_sync_report_preserves_report_of_the_same_run(monkeypatch: pytest.Monkey
     post_apply.sync_report.write_start("run-1", "2026-09-22T00:00:00+00:00")
 
     with pytest.raises(SystemExit):
-        post_apply.main(runner=lambda: post_apply.run(steps=[("success", lambda: True)]))
+        post_apply.main(
+            runner=lambda: post_apply.run(steps=[("success", lambda: post_apply_outcome.PostApplyOutcome(changed=True))])
+        )
 
     report = json.loads(sync_report_path.read_text(encoding="utf-8"))
     assert report["run_id"] == "run-1"
@@ -222,7 +231,10 @@ def test_configure_logging_preserves_cp932_record_with_unencodable_character(
 
 def test_main_records_steps_and_failure_in_persistent_log() -> None:
     """post-applyの各ステップと最終失敗を同じ永続ログへ記録する。"""
-    steps = [("success", lambda: False), ("failure", lambda: (_ for _ in ()).throw(RuntimeError("boom")))]
+    steps = [
+        ("success", post_apply_outcome.PostApplyOutcome),
+        ("failure", lambda: (_ for _ in ()).throw(RuntimeError("boom"))),
+    ]
 
     with pytest.raises(SystemExit) as exc_info:
         post_apply.main(runner=lambda: post_apply.run(steps=steps))
@@ -253,41 +265,68 @@ def test_persistent_log_uses_size_limited_rotation() -> None:
             handler.close()
 
 
+def _registered_paths(base: Path) -> list[Path]:
+    """撤去表の基点`~/<base>`へ登録された相対パスを返す。"""
+    return [entry.path for entry in post_apply._REMOVED_PATHS[_IMPORT_HOME / base]]  # noqa: SLF001
+
+
+def test_removed_paths_bases_are_distribution_targets() -> None:
+    """撤去表の基点は配布先だけで、作業ツリー（`~/dotfiles`）を指さない。"""
+    startup = Path("AppData") / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    allowed = {
+        _IMPORT_HOME / base
+        for base in (
+            Path(".claude"),
+            Path(".codex"),
+            Path(".config"),
+            Path(".ipython"),
+            Path("bin"),
+            Path(".local") / "bin",
+            startup,
+        )
+    }
+    # ホーム直下へ配布した設定（`~/.screenrc`など）は内容一致の表だけがホームを基点にする。
+    assert set(post_apply._REMOVED_PATHS) <= allowed  # noqa: SLF001
+    assert set(post_apply._REMOVED_PATHS_IF_CONTENT) <= allowed | {_IMPORT_HOME}  # noqa: SLF001
+    bases = set(post_apply._REMOVED_PATHS) | set(post_apply._REMOVED_PATHS_IF_CONTENT)  # noqa: SLF001
+    assert _IMPORT_HOME / "dotfiles" not in bases
+
+
 def test_removed_session_review_skill_paths_cover_claude_and_codex() -> None:
     """旧個人スキルをClaude CodeとCodexの両配布先からcleanupする。"""
     relative = Path("skills/session-review-dotfiles")
-    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".claude"]  # noqa: SLF001
-    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".codex"]  # noqa: SLF001
+    assert relative in _registered_paths(Path(".claude"))
+    assert relative in _registered_paths(Path(".codex"))
 
 
 def test_removed_sync_cross_project_paths_cover_claude_and_codex() -> None:
     """改名前の個人プロジェクト運用スキルを両配布先からcleanupする。"""
     relative = Path("skills/sync-cross-project")
-    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".claude"]  # noqa: SLF001
-    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".codex"]  # noqa: SLF001
+    assert relative in _registered_paths(Path(".claude"))
+    assert relative in _registered_paths(Path(".codex"))
 
 
 def test_legacy_reference_directory_is_cleanup_target() -> None:
     """スキル配下以外の旧`references/`を配布先から削除する。"""
-    assert Path("references") in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".claude"]  # noqa: SLF001
+    assert Path("references") in _registered_paths(Path(".claude"))
 
 
 def test_removes_legacy_plans_viewer_config_and_shim() -> None:
     """旧計画ビューアーの設定・CLI・Windowsスタートアップ用shimを配布先から除去する。"""
-    assert Path("pytools/claude-plans-viewer.toml") in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".config"]  # noqa: SLF001
-    local_bin = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".local" / "bin"]  # noqa: SLF001
+    assert Path("pytools/claude-plans-viewer.toml") in _registered_paths(Path(".config"))
+    local_bin = _registered_paths(Path(".local") / "bin")
     assert Path("claude-plans-viewer") in local_bin
     assert Path("claude-plans-viewer.exe") in local_bin
     startup = _IMPORT_HOME / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-    assert Path("claude-plans-viewer.cmd") in post_apply._REMOVED_PATHS_IF_CONTENT[startup]  # noqa: SLF001
+    assert Path("claude-plans-viewer.cmd") in [entry.path for entry in post_apply._REMOVED_PATHS_IF_CONTENT[startup]]  # noqa: SLF001
     # 旧systemd unitは停止と無効化を経てから削除するため、この一括削除の対象へ含めない。
-    for paths in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
-        assert not [path for path in paths if "claude-plans-viewer.service" in path.name]
+    for entries in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
+        assert not [entry for entry in entries if "claude-plans-viewer.service" in entry.path.name]
 
 
 def test_removes_legacy_atk_launcher_but_keeps_current_wrappers() -> None:
     """作業ツリー版を覆い隠す旧atkランチャーを登録し、現行のサービス用・hook用ラッパーは登録しない。"""
-    local_bin = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".local" / "bin"]  # noqa: SLF001
+    local_bin = _registered_paths(Path(".local") / "bin")
     assert Path("atk") in local_bin
     assert Path("atk.cmd") in local_bin
     for kept in ("atk-serve", "atk-hook", "atk-hook.cmd"):
@@ -296,7 +335,7 @@ def test_removes_legacy_atk_launcher_but_keeps_current_wrappers() -> None:
 
 def test_removes_flag_files_of_retired_steps_but_keeps_current_config() -> None:
     """廃止した工程のフラグファイルを登録し、現行のagent-toolkit設定は登録しない。"""
-    config = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".config"]  # noqa: SLF001
+    config = _registered_paths(Path(".config"))
     assert Path("agent-toolkit/feedback-inbox.enabled") in config
     assert Path("agent-toolkit/review-balance-mode.claude-heavy") in config
     for kept in ("agent-toolkit/config.json", "agent-toolkit/serve.toml"):
@@ -337,7 +376,7 @@ def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
         (target_dir / name).parent.mkdir(parents=True, exist_ok=True)
         (target_dir / name).write_text("x\n", encoding="utf-8")
 
-    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
 
     assert changed is True
     for name in removed:
@@ -348,7 +387,7 @@ def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
 
 def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
     """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
-    paths = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".ipython"]  # noqa: SLF001
+    paths = _registered_paths(Path(".ipython"))
     assert Path("profile_default/startup/README") in paths
     assert not any(path.is_relative_to("profile_ipy") for path in paths)
 
@@ -357,7 +396,7 @@ def _redirect_removed_paths_to(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> Path:
-    """旧配布物削除先を一時ホームへ限定し、IPython配布ファイルだけを登録する。"""
+    """旧配布物削除先を一時ホームへ限定し、撤去表のIPythonの項目だけを登録する。"""
     home_dir = tmp_path / "home"
     ipython_dir = home_dir / ".ipython"
     monkeypatch.setenv("HOME", str(home_dir))
@@ -365,23 +404,23 @@ def _redirect_removed_paths_to(
     monkeypatch.setattr(
         post_apply,
         "_REMOVED_PATHS",
-        {ipython_dir: [Path("profile_default/startup/README")]},
+        {ipython_dir: post_apply._REMOVED_PATHS[_IMPORT_HOME / ".ipython"]},  # noqa: SLF001
     )
     monkeypatch.setattr(post_apply, "_REMOVED_PATHS_IF_CONTENT", {})
     return ipython_dir
 
 
-def test_removed_ipython_profile_cleanup_removes_empty_parents(
+def test_cleanup_removes_empty_ipython_dirs_from_table(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """配布済みREADMEの削除後、空になった親ディレクトリだけを深い順で除去する。"""
+    """配布済みREADMEの削除後、撤去表の空ディレクトリの項目で空の親を深い順で除去する。"""
     ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
     default_readme = ipython_dir / "profile_default/startup/README"
     default_readme.parent.mkdir(parents=True)
     default_readme.write_text("old\n", encoding="utf-8")
 
-    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
 
     assert changed is True
     assert not (ipython_dir / "profile_default").exists()
@@ -399,7 +438,7 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_startup(
     user_script = default_readme.parent / "00-user.py"
     user_script.write_text("print('user')\n", encoding="utf-8")
 
-    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
 
     assert changed is True
     assert not default_readme.exists()
@@ -423,7 +462,7 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_profile_root(
     active_config.parent.mkdir(parents=True)
     active_config.write_text("active\n", encoding="utf-8")
 
-    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
 
     assert changed is True
     assert not default_readme.exists()
@@ -440,7 +479,7 @@ def test_removed_ipython_profile_cleanup_skips_missing_profile(
     """配布済みファイルも親ディレクトリも存在しない場合は変更なしとする。"""
     _redirect_removed_paths_to(monkeypatch, tmp_path)
 
-    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
 
     assert changed is False
 
@@ -458,19 +497,85 @@ def test_removed_ipython_profile_cleanup_preserves_symlink_target(
     profile_link = ipython_dir / "profile_default"
     profile_link.symlink_to(outside_profile, target_is_directory=True)
 
-    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
 
     assert changed is False
     assert profile_link.is_symlink()
     assert outside_startup.is_dir()
 
 
+def test_cleanup_removes_unedited_ipython_kernel_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pytestconfig: pytest.Config,
+) -> None:
+    """撤去前の配布物と同じ`ipython_kernel_config.py`は削除し、編集されたものは残す。"""
+    distributed = (pytestconfig.rootpath / "testdata/post_apply/ipython_kernel_config.py.txt").read_bytes()
+    home_dir = tmp_path / "home"
+    ipython_dir = home_dir / ".ipython"
+    monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {})
+    monkeypatch.setattr(
+        post_apply,
+        "_REMOVED_PATHS_IF_CONTENT",
+        {ipython_dir: post_apply._REMOVED_PATHS_IF_CONTENT[_IMPORT_HOME / ".ipython"]},  # noqa: SLF001
+    )
+    target = ipython_dir / "profile_ipy" / "ipython_kernel_config.py"
+    target.parent.mkdir(parents=True)
+
+    target.write_bytes(distributed + b"c.IPKernelApp.matplotlib = 'inline'\n")
+    assert post_apply._cleanup_removed_paths().changed is False  # noqa: SLF001
+    assert target.exists()
+
+    target.write_bytes(distributed)
+    assert post_apply._cleanup_removed_paths().changed is True  # noqa: SLF001
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    ("base", "relative", "fixture_name"),
+    [
+        (Path(), ".screenrc", "screenrc.txt"),
+        (Path(".config"), "xonsh/rc.xsh", "xonsh_rc.xsh.txt"),
+        (Path(".config"), "yapf/style", "yapf_style.txt"),
+        (Path(".config"), "pypoetry/config.toml", "pypoetry_config.toml.txt"),
+        (Path(".config"), "rest-client/environment.json", "rest_client_environment.json.txt"),
+    ],
+)
+def test_cleanup_removes_unedited_retired_configs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pytestconfig: pytest.Config,
+    base: Path,
+    relative: str,
+    fixture_name: str,
+) -> None:
+    """撤去した配布設定は撤去前の配布物と同じ内容なら削除し、1バイトでも違えば残す。"""
+    distributed = (pytestconfig.rootpath / "testdata/post_apply" / fixture_name).read_bytes()
+    target_dir = tmp_path / "home" / base
+    monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {})
+    monkeypatch.setattr(
+        post_apply,
+        "_REMOVED_PATHS_IF_CONTENT",
+        {target_dir: post_apply._REMOVED_PATHS_IF_CONTENT[_IMPORT_HOME / base]},  # noqa: SLF001
+    )
+    target = target_dir / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    target.write_bytes(distributed + b"#")
+    assert post_apply._cleanup_removed_paths().changed is False  # noqa: SLF001
+    assert target.exists()
+
+    target.write_bytes(distributed)
+    assert post_apply._cleanup_removed_paths().changed is True  # noqa: SLF001
+    assert not target.exists()
+
+
 def _make_step(name: str, calls: list[str], changed: bool = False):
     """呼び出し記録を残すステップ関数を返すヘルパー。"""
 
-    def fn() -> bool:
+    def fn() -> post_apply_outcome.PostApplyOutcome:
         calls.append(name)
-        return changed
+        return post_apply_outcome.PostApplyOutcome(changed=changed)
 
     return fn
 
@@ -478,7 +583,7 @@ def _make_step(name: str, calls: list[str], changed: bool = False):
 def _make_broken_step(name: str, calls: list[str], message: str = "boom"):
     """例外を送出するステップ関数を返すヘルパー。"""
 
-    def fn() -> bool:
+    def fn() -> post_apply_outcome.PostApplyOutcome:
         calls.append(name)
         raise RuntimeError(message)
 
@@ -488,8 +593,8 @@ def _make_broken_step(name: str, calls: list[str], message: str = "boom"):
 def _make_plugin_step(recommendations: list[str]):
     """推奨コマンドリストを返すステップ関数を返すヘルパー。"""
 
-    def fn() -> tuple[bool, list[str]]:
-        return True, recommendations
+    def fn() -> post_apply_outcome.PostApplyOutcome:
+        return post_apply_outcome.PostApplyOutcome(changed=True, recommendations=tuple(recommendations))
 
     return fn
 
@@ -509,7 +614,7 @@ class TestRun:
     def test_all_steps_succeed(self):
         """全ステップ成功時、ok=True のリストが返る。"""
         calls: list[str] = []
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("Claude 設定", _make_step("claude", calls, changed=True)),
             ("VSCode 設定", _make_step("vscode", calls)),
             ("SSH config", _make_step("ssh", calls)),
@@ -556,7 +661,7 @@ class TestRun:
     def test_failing_step_does_not_stop_others(self):
         """途中ステップが例外を送出しても後続は実行される。"""
         calls: list[str] = []
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("Claude 設定", _make_step("claude", calls)),
             ("VSCode 設定", _make_step("vscode", calls)),
             ("SSH config", _make_broken_step("broken", calls)),
@@ -591,9 +696,9 @@ class TestRun:
     def test_foreground_completion_reports_step_duration(self, caplog: pytest.LogCaptureFixture) -> None:
         """前景ステップの完了行へステップ本体の所要時間を表示する。"""
 
-        def foreground() -> bool:
+        def foreground() -> post_apply_outcome.PostApplyOutcome:
             time.sleep(0.3)
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
         caplog.set_level(logging.INFO)
         post_apply.run([post_apply._StepSpec("前景", foreground)])  # noqa: SLF001
@@ -614,23 +719,23 @@ class TestRun:
             with lock:
                 events.append(event)
 
-        def first() -> bool:
+        def first() -> post_apply_outcome.PostApplyOutcome:
             record("first-start")
             first_started.set()
             # 2番目のステップが同時に動いていなければ、待機が上限に達して失敗する。
             assert second_started.wait(timeout=5)
             time.sleep(0.1)
             record("first-end")
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
-        def second() -> bool:
+        def second() -> post_apply_outcome.PostApplyOutcome:
             second_started.set()
             assert first_started.wait(timeout=5)
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
-        def successor() -> bool:
+        def successor() -> post_apply_outcome.PostApplyOutcome:
             record("successor-start")
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
         results, _ = post_apply.run(
             [
@@ -664,14 +769,14 @@ class TestRun:
         finished: list[str] = []
         observed: list[list[str]] = []
 
-        def slow() -> bool:
+        def slow() -> post_apply_outcome.PostApplyOutcome:
             time.sleep(0.2)
             finished.append("slow")
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
-        def last() -> bool:
+        def last() -> post_apply_outcome.PostApplyOutcome:
             observed.append(list(finished))
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
         post_apply.run(
             [
@@ -687,15 +792,15 @@ class TestRun:
         """後に完了した先頭ステップの出力を、先に完了した後続ステップより前へまとめて出力する。"""
         second_done = threading.Event()
 
-        def first() -> bool:
+        def first() -> post_apply_outcome.PostApplyOutcome:
             assert second_done.wait(timeout=5)
             logging.getLogger("order-test").info("一のログ")
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
-        def second() -> tuple[bool, list[str]]:
+        def second() -> post_apply_outcome.PostApplyOutcome:
             logging.getLogger("order-test").info("二のログ")
             second_done.set()
-            return True, ["cmd-2"]
+            return post_apply_outcome.PostApplyOutcome(changed=True, recommendations=tuple(["cmd-2"]))
 
         caplog.set_level(logging.INFO)
         results, recommendations = post_apply.run(
@@ -716,11 +821,14 @@ class TestRun:
     @pytest.mark.parametrize(
         ("steps", "message"),
         [
-            ([post_apply._StepSpec("a", lambda: False, after=("missing",))], "先行工程が見つかりません"),  # noqa: SLF001
+            (
+                [post_apply._StepSpec("a", post_apply_outcome.PostApplyOutcome, after=("missing",))],
+                "先行工程が見つかりません",
+            ),  # noqa: SLF001
             (
                 [
-                    post_apply._StepSpec("a", lambda: False, after=("b",)),  # noqa: SLF001
-                    post_apply._StepSpec("b", lambda: False, after=("a",)),  # noqa: SLF001
+                    post_apply._StepSpec("a", post_apply_outcome.PostApplyOutcome, after=("b",)),  # noqa: SLF001
+                    post_apply._StepSpec("b", post_apply_outcome.PostApplyOutcome, after=("a",)),  # noqa: SLF001
                 ],
                 "先行工程が循環しています",
             ),
@@ -738,22 +846,22 @@ class TestRun:
     ) -> None:
         """HTTP Request行、claude CLIの実行記録、対象外OSのステップ、開始行を画面から外し、永続ログへ残す。"""
         monkeypatch.setattr(post_apply.sys, "platform", "linux")
-        monkeypatch.setattr(post_apply.claude_common, "resolve_executable", lambda name, **_kwargs: Path(name))
+        monkeypatch.setattr(common, "resolve_executable", lambda name, **_kwargs: Path(name))
         monkeypatch.setattr(
-            post_apply.claude_common,
+            common,
             "run_subprocess",
             lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 0, "", ""),
         )
         windows_calls: list[str] = []
 
-        def http_step() -> bool:
+        def http_step() -> post_apply_outcome.PostApplyOutcome:
             logging.getLogger("httpx").info('HTTP Request: GET https://example.invalid "HTTP/1.1 200 OK"')
             logging.getLogger("result-test").info("    http: 変更なし")
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
-        def claude_step() -> bool:
-            post_apply.claude_common.run_claude(["plugin", "list"])
-            return False
+        def claude_step() -> post_apply_outcome.PostApplyOutcome:
+            claude_common.run_claude(["plugin", "list"])
+            return post_apply_outcome.PostApplyOutcome()
 
         steps = [
             post_apply._StepSpec("HTTPを使う工程", http_step),  # noqa: SLF001
@@ -790,7 +898,7 @@ class TestRun:
     def test_main_exits_1_on_failure(self):
         """失敗があれば main() は SystemExit(1) で終了する。"""
         calls: list[str] = []
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("ok", _make_step("ok", calls)),
             ("broken", _make_broken_step("broken", calls)),
         ]
@@ -801,7 +909,7 @@ class TestRun:
     def test_cli_install_failure_marks_step_failed_continues_and_exits_1(self):
         """CLI導入失敗を失敗結果へ変換し、後続実行後に終了コード1とする。"""
         calls: list[str] = []
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("Codex CLI の導入と更新", _make_broken_step("codex", calls)),
             ("後続ステップ", _make_step("later", calls)),
         ]
@@ -817,7 +925,7 @@ class TestRun:
     def test_statusline_development_failure_marks_step_failed_continues_and_exits_1(self):
         """statusline開発版の導入失敗を失敗結果へ変換し、後続実行後に終了コード1とする。"""
         calls: list[str] = []
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("claude-statusline バイナリの取得", _make_broken_step("statusline", calls)),
             ("後続ステップ", _make_step("later", calls)),
         ]
@@ -833,7 +941,7 @@ class TestRun:
     def test_main_exits_0_on_success(self):
         """全て成功なら main() は SystemExit(0) で正常終了する。"""
         calls: list[str] = []
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("ok", _make_step("ok", calls)),
         ]
         with pytest.raises(SystemExit) as exc_info:
@@ -846,7 +954,7 @@ class TestRun:
     ) -> None:
         """正常な状態表示はstdout、失敗一覧はstderrへ出力する。"""
         calls: list[str] = []
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("ok", _make_step("ok", calls)),
             ("broken", _make_broken_step("broken", calls)),
         ]
@@ -865,7 +973,7 @@ class TestRun:
     def test_structured_outcome_preserves_changed_and_notices(self) -> None:
         """構造化結果の変更有無と案内をステップ結果へ保持する。"""
         notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。")
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("Codex plugin", _make_outcome_step(changed=True, notices=(notice,))),
         ]
 
@@ -878,7 +986,7 @@ class TestRun:
     def test_main_prints_deduplicated_notice_without_command(self, capsys: pytest.CaptureFixture[str]) -> None:
         """commandを持たない重複案内をstderrへ1回表示する。"""
         notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。")
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("first", _make_outcome_step(changed=True, notices=(notice,))),
             ("second", _make_outcome_step(changed=True, notices=(notice,))),
         ]
@@ -896,7 +1004,7 @@ class TestRun:
         """案内の発生後に後続が失敗しても非0終了と案内を両立する。"""
         calls: list[str] = []
         notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。")
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("Codex plugin", _make_outcome_step(changed=True, notices=(notice,))),
             ("broken", _make_broken_step("broken", calls)),
         ]
@@ -918,7 +1026,7 @@ class TestRun:
         )
         assert notice.command is not None
         failure = f"local pluginの確定に失敗\n{notice.message}\n{notice.command}"
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("Codex plugin", _make_broken_step("codex", calls, failure)),
             ("later", _make_step("later", calls)),
         ]
@@ -1085,7 +1193,6 @@ class TestDefaultSteps:
         "Claude Code plugin のインストール": {"Claude Code CLI の導入と更新"},
         "Claude Code plugin cache の旧版削除": {"Claude Code plugin のインストール"},
         "agents_serverのuv環境ウォームアップ": {"Claude Code plugin のインストール", "Codex plugin のインストール"},
-        "hookスクリプトのuv環境ウォームアップ": {"agents_serverのuv環境ウォームアップ"},
         "pyfltr MCPのuv環境ウォームアップ": {"Claude Code plugin のインストール", "Codex plugin のインストール"},
         "旧Codex User scope MCP登録の移行": {"Claude Code CLI の導入と更新", "Codex plugin のインストール"},
         "Claude 設定": {"Claude Code plugin のインストール", "旧Codex User scope MCP登録の移行"},
@@ -1097,10 +1204,11 @@ class TestDefaultSteps:
     _WINDOWS_STEPS = {
         "bin PATH 登録 (Windows)",
         "MSYS 環境変数 (Windows)",
+        "user.env 環境変数 (Windows)",
         "libarchive (Windows)",
         "Windowsレジストリ設定",
         "SendTo ショートカット (Windows)",
-        "メディアリモコン自動起動 (Windows/stheno)",
+        "メディアリモコン自動起動 (Windows/media_remote)",
         "ユーザー PATH 整理 (Windows)",
     }
     _LINUX_STEPS = {
@@ -1160,7 +1268,7 @@ class TestPluginRecommendations:
     ):
         """推奨コマンドが 1 件のみなら && も継続記号も付けず単一行で出力する。"""
         fake_recommendations = ["claude plugin install a --scope=user"]
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("plugins", _make_plugin_step(fake_recommendations)),
         ]
         with pytest.raises(SystemExit):
@@ -1184,7 +1292,7 @@ class TestPluginRecommendations:
             "claude plugin install b --scope=user",
             "claude plugin disable c --scope=user",
         ]
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("plugins", _make_plugin_step(fake_recommendations)),
         ]
         with pytest.raises(SystemExit):
@@ -1209,7 +1317,7 @@ class TestPluginRecommendations:
             "claude plugin install a --scope=user",
             "claude plugin disable b --scope=user",
         ]
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("plugins", _make_plugin_step(fake_recommendations)),
         ]
         with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
@@ -1226,7 +1334,7 @@ class TestPluginRecommendations:
         capsys: pytest.CaptureFixture[str],
     ):
         """推奨コマンドが空なら案内を出力しない。"""
-        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+        steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("ok", _make_step("ok", [], changed=False)),
         ]
         with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
@@ -1235,3 +1343,59 @@ class TestPluginRecommendations:
         assert not any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()
         assert not any("claude plugin" in line for line in stdout_lines)
+
+
+def test_all_steps_return_post_apply_outcome() -> None:
+    """全工程の`run`の戻り値の型が`PostApplyOutcome`だけである。"""
+    returns = {step.name: typing.get_type_hints(step.run).get("return") for step in post_apply._DEFAULT_STEPS}
+    assert {name: hint for name, hint in returns.items() if hint is not post_apply_outcome.PostApplyOutcome} == {}
+
+
+def test_predecessor_names_are_not_duplicated_literals() -> None:
+    """工程名の文字列リテラルは`post_apply.py`に1回だけ書き、先行工程の指定は定数で参照する。"""
+    source = Path(post_apply.__file__).read_text(encoding="utf-8")
+    literals = [
+        node.value for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    names = {step.name for step in post_apply._DEFAULT_STEPS}
+    duplicated = sorted(name for name in names if literals.count(name) > 1)
+    assert not duplicated
+
+
+def test_platform_steps_have_no_module_os_guard() -> None:
+    """`platforms`を宣言した工程のモジュールは、対象OSを自ら判定しない。"""
+    guards = re.compile(r"\bsys\.platform\b|\bos\.name\b|\bplatform\.system\(")
+    offenders = []
+    for step in post_apply._DEFAULT_STEPS:
+        if not step.platforms:
+            continue
+        module = inspect.getmodule(step.run)
+        assert module is not None
+        if module is post_apply:
+            continue
+        source = Path(inspect.getfile(module)).read_text(encoding="utf-8")
+        if guards.search(source):
+            offenders.append(module.__name__)
+    assert not offenders
+
+
+def test_internal_module_names_have_no_legacy_prefix_or_os_suffix() -> None:
+    """`pytools/_internal/`のモジュール名に`warm_`と対象OSの接尾辞が無い。"""
+    internal = Path(post_apply.__file__).parent / "_internal"
+    pattern = re.compile(r"^(warm_.*|.*_(linux|windows)(_test)?)\.py$")
+    assert not sorted(path.name for path in internal.glob("*.py") if pattern.match(path.name))
+
+
+def test_step_returning_non_outcome_is_counted_as_failure() -> None:
+    """契約に反する戻り値の工程は失敗と数え、後続の工程と集計を止めない。"""
+
+    def legacy_step() -> bool:
+        return False
+
+    # 型注釈を持たない呼び出し元を模すため、型検査上は契約どおりの工程として渡す。
+    legacy = typing.cast("typing.Callable[[], post_apply_outcome.PostApplyOutcome]", legacy_step)
+    results, _ = post_apply.run([("legacy", legacy), ("next", post_apply_outcome.PostApplyOutcome)])
+
+    assert [(result.name, result.ok) for result in results] == [("legacy", False), ("next", True)]
+    assert results[0].reason is not None
+    assert "PostApplyOutcome" in results[0].reason

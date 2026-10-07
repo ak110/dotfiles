@@ -13,6 +13,8 @@ import subprocess
 import pytest
 from agent_toolkit._testing import fork_runner as _fork_runner
 
+from pytools.claude_hook import pretooluse
+
 _HOME = pathlib.Path.home()
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
@@ -158,11 +160,10 @@ class TestPs1DirectivesBlock:
 
 
 class TestAgentToolkitDotfilesNamesCheck:
-    """agent-toolkit 配布物への dotfiles 固有名混入検出 (block + warn)。
+    """agent-toolkit 配布物への dotfiles 固有名混入検出（いずれも警告）。
 
-    対象は `agent-toolkit/` 配下。
-    block 対象は配布先のエンドユーザーにとって意味不明な参照となるため exit 2 で停止する。
-    warn 対象 (pyfltr / pytilpack) は OSS として正規参照される場合があるため通知のみ。
+    対象は `agent-toolkit/` 配下。いずれも警告であり、終了コードは0のまま書き込みを止めない。
+    dotfiles 固有名は一般化した表現への置き換えを、OSS 名 (pyfltr / pytilpack) は意図した参照かの確認を求める。
     """
 
     @pytest.mark.parametrize(
@@ -172,6 +173,9 @@ class TestAgentToolkitDotfilesNamesCheck:
             "sync-platform-pair",  # dotfiles スキル名 (.claude/skills/)
             "psgrep",  # pytools コマンド名
             "agent_toolkit_bump",  # scripts 名
+            "update_dotfiles",  # libexec 名
+            "update_dotfiles_if_upstream_changed",  # libexec 名
+            "sync_report",  # scripts/ から pytools/_internal/ へ移したモジュール名
             "glatasks",  # 固定プロジェクト名
             "gv",
             "lc",
@@ -223,6 +227,14 @@ class TestAgentToolkitDotfilesNamesCheck:
         )
         assert result.returncode == 0
         assert "smpr" in _get_additional_context(result)
+
+    def test_non_plan_file_still_uses_distribution_check(self) -> None:
+        """計画ファイル以外の実ファイル編集には固有名の確認を適用する（応答水準は警告）。"""
+        name = "agent" + "_toolkit_bump"
+        target = str(_DOTFILES_ROOT / "agent-toolkit" / "skills" / "example" / "SKILL.md")
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": name}})
+        assert result.returncode == 0
+        assert name in result.stdout
 
     @pytest.mark.parametrize("name", ["pyfltr", "pytilpack"])
     def test_warn_when_target_is_in_agent_toolkit(self, name: str):
@@ -363,3 +375,16 @@ class TestGeneralBehavior:
         content = "Set-StrictMode -Version Latest\n$ErrorActionPreference = 'Stop'\nWrite-Host 'x'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
         assert result.returncode == 0
+
+
+def test_internal_module_names_exclude_single_words_and_distributed_modules(tmp_path: pathlib.Path) -> None:
+    """`pytools/_internal/`の複合名だけを固有名とし、単語名とagent-toolkitに同名がある名前は除く。"""
+    internal = tmp_path / "pytools" / "_internal"
+    internal.mkdir(parents=True)
+    for name in ("sync_report.py", "common.py", "file_lock.py", "_test_helpers.py", "sync_report_test.py"):
+        (internal / name).write_text("", encoding="utf-8")
+    package = tmp_path / "agent-toolkit" / "agent_toolkit" / "_common"
+    package.mkdir(parents=True)
+    (package / "file_lock.py").write_text("", encoding="utf-8")
+
+    assert pretooluse._list_internal_modules(internal, package.parent) == {"sync_report"}  # pylint: disable=protected-access

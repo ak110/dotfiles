@@ -9,16 +9,14 @@
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
 `serve`は記録のrootの変更も監視し、一覧の再取得と記録1件の更新の通知を同じstdoutへ行で書く。
 
-保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`に従い、
-サーバー側`_atk/serve/sessions.py`と同じ規約で解決する。
-子セッションの解析と、一覧の判定・変更監視は、同じリポジトリの共通モジュールを読み込む。
+保存先の規約と記録の形式は、サーバー側と同じ`agent_toolkit._atk.session_record_format`で解釈する。
+子セッションの解析と、一覧の判定・変更監視も、同じリポジトリの共通モジュールを読み込む。
 ユーザー発話の記録行を持たない記録は一覧から除外する。
 """
 
 import base64
 import contextlib
 import json
-import os
 import pathlib
 import socket
 import sys
@@ -26,72 +24,21 @@ import threading
 import typing
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from agent_toolkit._atk import session_record_format  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-import-position
     session_parents,
     session_watch,
 )
 from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position
+    host_homes,
     session_launchers,
+    state_paths,
 )
 
 # 1件の記録から取得する最大バイト数。過大な記録の全文転送により接続が占有される事態を避ける上限とする。
 MAX_RECORD_BYTES = 64 * 1024 * 1024
 # 一覧が返す最大件数。古い記録は調査対象になりにくいため、開始日時の新しい順で打ち切る。
 MAX_LIST_ENTRIES = 2000
-
-_CLAUDE_SUFFIX = ".jsonl"
-_CODEX_PREFIX = "rollout-"
-
-
-def _claude_home() -> pathlib.Path:
-    """Claude Codeの記録の保存先を返す。"""
-    return pathlib.Path.home() / ".claude"
-
-
-def _codex_home() -> pathlib.Path:
-    """Codexの記録の保存先を返す。空でない`CODEX_HOME`を優先する。"""
-    value = os.environ.get("CODEX_HOME")
-    if value:
-        return pathlib.Path(value)
-    return pathlib.Path.home() / ".codex"
-
-
-def _iter_claude_records() -> typing.Iterator[pathlib.Path]:
-    """Claude Codeのセッション本体の記録を返す。
-
-    記録階層は深さ2（`<project>/<session-uuid>.jsonl`）をセッション本体とする。
-    サブエージェント記録は深さ4に置かれ、一覧では本体へまとめるため列挙しない。
-    """
-    projects = _claude_home() / "projects"
-    if not projects.is_dir():
-        return
-    for project_dir in projects.iterdir():
-        if not project_dir.is_dir():
-            continue
-        for path in project_dir.glob(f"*{_CLAUDE_SUFFIX}"):
-            if path.is_file():
-                yield path
-
-
-def _iter_codex_records() -> typing.Iterator[pathlib.Path]:
-    """Codexのロールアウト記録を返す。
-
-    保存先は`<CODEX_HOME>/sessions/<年>/<月>/<日>/rollout-*<thread-id>.jsonl`とする。
-    """
-    sessions = _codex_home() / "sessions"
-    if not sessions.is_dir():
-        return
-    for path in sessions.glob(f"*/*/*/{_CODEX_PREFIX}*{_CLAUDE_SUFFIX}"):
-        if path.is_file():
-            yield path
-
-
-def _codex_session_id(path: pathlib.Path) -> str:
-    """ロールアウトのファイル名からthread IDを取り出す。"""
-    stem = path.name[len(_CODEX_PREFIX) : -len(_CLAUDE_SUFFIX)]
-    # ファイル名は`rollout-<日時>-<thread-id>`の形であり、thread IDはUUIDの5区画で末尾に置かれる。
-    parts = stem.split("-")
-    return "-".join(parts[-5:]) if len(parts) >= 5 else stem
 
 
 def _entry(index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing.Any]:
@@ -144,27 +91,14 @@ def _list_payload(
         index = session_watch.RecordSummaryIndex()
     index.begin_scan()
     entries: list[dict[str, typing.Any]] = []
-    for path in _iter_claude_records():
+    for path in session_record_format.claude_session_records(host_homes.claude_config_dir()):
         entries.append(_entry(index, path, "claude", path.stem))
-        subagents = _subagents(path)
-        agent_paths = {item["agent_id"]: item["path"] for item in subagents if item["path"]}
-        for item in subagents:
-            child_path = item["path"]
-            if not child_path:
-                continue
-            parent_id = item.get("parent_agent_id")
-            parent_path = (
-                agent_paths.get(parent_id) or agent_paths.get(f"agent-{parent_id}") if isinstance(parent_id, str) else None
-            )
-            if parent_path is None and item.get("spawn_depth") == 1:
-                parent_path = str(path)
-            if parent_path is None:
-                continue
-            child = _entry(index, pathlib.Path(child_path), "claude", item["agent_id"])
+        for agent_id, child_path, parent_path in session_record_format.claude_subagent_records(path):
+            child = _entry(index, child_path, "claude", agent_id)
             child["parent_path"] = parent_path
             entries.append(child)
-    for path in _iter_codex_records():
-        entries.append(_entry(index, path, "codex", _codex_session_id(path)))
+    for path in session_record_format.codex_session_records(host_homes.codex_home()):
+        entries.append(_entry(index, path, "codex", session_record_format.codex_session_id(path)))
     kept: list[dict[str, typing.Any]] = []
     for entry in entries:
         has_user = entry.pop("has_user_message")
@@ -208,7 +142,7 @@ def _state_dir() -> pathlib.Path | None:
     登録簿の委譲元は親子付けの情報源の1つであり、読めない場合も他の情報源で一覧を返す。
     """
     try:
-        return session_launchers.state_dir()
+        return state_paths.state_dir()
     except ImportError:
         return None
 
@@ -223,54 +157,19 @@ def _is_safe_record_path(raw: str) -> bool:
     pure_path = pathlib.PureWindowsPath(raw) if "\\" in raw else pathlib.PurePosixPath(raw)
     if not pure_path.is_absolute() or ".." in pure_path.parts:
         return False
-    if not raw.endswith(_CLAUDE_SUFFIX):
+    if not raw.endswith(session_record_format.RECORD_SUFFIX):
         return False
     try:
         target = pathlib.Path(raw).resolve()
     except OSError:
         return False
-    for root in (_claude_home() / "projects", _codex_home() / "sessions"):
+    for root in (host_homes.claude_config_dir() / "projects", host_homes.codex_home() / "sessions"):
         try:
             target.relative_to(root.resolve())
         except (ValueError, OSError):
             continue
         return True
     return False
-
-
-def _subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]]:
-    """記録本体に属するサブエージェント記録の親子関係を返す。
-
-    サーバー側`_atk/serve/sessions.py`の`_claude_subagents`と同じ規約で解決する。
-    サブエージェント記録が無い場合は空のリストを返す。応答が本欄を持つこと自体を、
-    本欄を返さない旧版のヘルパーとサーバー側が区別する根拠とするためである。
-    """
-    directory = record_path.with_suffix("") / "subagents"
-    if not directory.is_dir():
-        return []
-    found: list[dict[str, typing.Any]] = []
-    for meta_path in sorted(directory.glob("*.meta.json")):
-        try:
-            metadata = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not isinstance(metadata, dict):
-            continue
-        # `agent_id`は`agent-<16進数>`の形であり接頭辞を含むため、記録本体の名前へ重ねて付けない。
-        agent_id = meta_path.name.removesuffix(".meta.json")
-        agent_record = meta_path.with_name(f"{agent_id}{_CLAUDE_SUFFIX}")
-        found.append(
-            {
-                "agent_id": agent_id,
-                "agent_type": metadata.get("agentType"),
-                "description": metadata.get("description"),
-                "spawn_depth": metadata.get("spawnDepth"),
-                "parent_agent_id": metadata.get("parentAgentId"),
-                "model": metadata.get("model"),
-                "path": str(agent_record) if agent_record.is_file() else None,
-            }
-        )
-    return found
 
 
 def _read_payload(path_b64: str) -> dict[str, typing.Any]:
@@ -285,7 +184,9 @@ def _read_payload(path_b64: str) -> dict[str, typing.Any]:
     return {
         "data": base64.b64encode(data).decode("ascii"),
         "mtime_epoch": path.stat().st_mtime,
-        "subagents": _subagents(path),
+        # サブエージェント記録が無い場合も空のリストを返す。応答が本欄を持つこと自体を、
+        # 本欄を返さない旧版のヘルパーとサーバー側が区別する根拠とするためである。
+        "subagents": session_record_format.claude_subagents(path) or [],
     }
 
 
@@ -332,7 +233,7 @@ def _start_watch() -> tuple[session_watch.RecordWatch | None, session_watch.Reco
                 _emit({"type": session_watch.RECORD_TYPE, "engine": engine, "path": path})
 
     tracker = session_watch.RecordChangeTracker(
-        [(_claude_home() / "projects", "claude"), (_codex_home() / "sessions", "codex")],
+        [(host_homes.claude_config_dir() / "projects", "claude"), (host_homes.codex_home() / "sessions", "codex")],
         on_flush,
     )
     watch = session_watch.RecordWatch(tracker)

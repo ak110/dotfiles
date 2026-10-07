@@ -16,27 +16,21 @@ import json
 import logging
 import os
 import pathlib
+import typing
 from typing import Any
 
+from agent_toolkit._agents_server import engine_availability, result_projection, session_errors, shared_layout
 from agent_toolkit._agents_server import state as shared_state
-from agent_toolkit._agents_server import status_file
-from agent_toolkit._agents_server.state import (
-    LAUNCH_SYSTEM_PROMPTS,
-    LaunchKind,
-    ModelCandidate,
-    ResumePrompt,
-    SessionInitializationTimeoutError,
-    SessionOwnerGoneError,
-    SessionState,
-    _initialize_turn,
-    _validate_prompt,
-)
+from agent_toolkit._agents_server.input_validation import validate_prompt
+from agent_toolkit._agents_server.launch_prompts import LAUNCH_SYSTEM_PROMPTS
+from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError, SessionOwnerGoneError
+from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState, initialize_turn
+from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import process_tree
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.antigravity")
 _COMMAND = "agy"
-_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 # 非対話実行で上限を指定しない場合は5分で終了するが、委譲先の1turnにはそれより長い時間が必要になる。
 _PRINT_TIMEOUT_SECONDS = 3600
 _STDERR_LIMIT_CHARS = 4000
@@ -50,7 +44,7 @@ def _system_prompt(launch_kind: LaunchKind) -> str:
 
     Antigravity CLIの非対話モードはシステム指示の専用オプションを持たないため、
     システム指示は本文の先頭へ置いて渡す。1つのメッセージへ配送本文と同居するため、
-    委譲先が両者を区別できるよう、システム指示側は`state.py`が付ける境界を保ったまま渡す。
+    委譲先が両者を区別できるよう、システム指示側は`launch_prompts.py`が付ける境界を保ったまま渡す。
     同じsessionの自動再開はこのbackendで確かめていないため、自動再開の通知（`AUTO_RESUME_NOTICE`）は加えない。
     """
     return LAUNCH_SYSTEM_PROMPTS[launch_kind]
@@ -78,9 +72,9 @@ def build_command(
 def _child_env(root_session_id: str | None) -> dict[str, str]:
     """委譲先の印とManagerが所有するrootを配送する。"""
     env = dict(os.environ)
-    env[_ENV_DELEGATED_SESSION] = "1"
+    env[_delegated_session.DELEGATED_SESSION_ENV] = "1"
     if root_session_id is not None:
-        env["AGENT_TOOLKIT_OWNER_SESSION"] = root_session_id
+        env[_delegated_session.OWNER_SESSION_ENV] = root_session_id
     return env
 
 
@@ -95,6 +89,27 @@ def _event_text(payload: dict[str, Any]) -> str:
 
 class AntigravityManager:
     """Antigravity CLIのturnを所有するタスクと結果メタデータを管理する。"""
+
+    START_FAILURE_EXCLUDES_CANDIDATE: typing.ClassVar[bool] = True
+    """CLIの起動の例外をその候補の可用性の失敗として扱い、次の候補へ進む。"""
+    INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool] = False
+    """中断の要求にturnの識別子を使わない。"""
+    ORPHAN_TAKEOVER: typing.ClassVar[bool] = False
+    """所有者のいない登録簿の記録を、委譲先CLIの記録から終端として引き継がない。"""
+
+    @staticmethod
+    def unavailable_reason(session: SessionState) -> str | None:
+        """失敗で終端したsessionの除外理由として、CLIの標準エラー出力か失敗の本文を返す。"""
+        error = engine_availability.failure_error(session)
+        if error is None:
+            return None
+        return str(error.get("stderr") or error.get("message") or "Antigravity CLI failed")
+
+    @staticmethod
+    def excludes_with_recorded_reason(reason: str) -> bool:
+        """記録済みの除外理由は全て候補を除外する根拠になる。"""
+        del reason
+        return True
 
     def __init__(
         self,
@@ -151,8 +166,13 @@ class AntigravityManager:
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
         turn_seq: int = 0,
+        fast_mode: bool | None = None,
     ) -> SessionState:
-        """保存済みの会話識別子へ新しいturnを開始する。"""
+        """保存済みの会話識別子へ新しいturnを開始する。
+
+        `fast_mode`はCodexの速度の指定であり、本backendは受け取って使わない。
+        """
+        del fast_mode
         await self._stop_owned_task(session_id)
         resume_text = await _resume_text(prompt)
         return await self._start_turn(
@@ -170,13 +190,13 @@ class AntigravityManager:
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         """終端済みturnの後続として、同じ会話識別子で新しいturnを開始する。"""
-        _validate_prompt(prompt)
+        validate_prompt(prompt)
         async with session.turn_control_lock:
             if not session.terminal:
                 raise ActionableError(
-                    "the active Antigravity turn has not finished", next_action=shared_state.RESEND_AFTER_WAIT_NEXT_ACTION
+                    "the active Antigravity turn has not finished", next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION
                 )
-            previous_result = shared_state.with_result_next_action(
+            previous_result = result_projection.with_result_next_action(
                 {"status": session.status, "agent_message": session.agent_message, "error": session.error}, session.label
             )
             await self._stop_owned_task(session.session_id)
@@ -316,7 +336,7 @@ class AntigravityManager:
                 )
             except OSError as exc:
                 # CLIの未導入などの起動失敗を委譲先CLIの失敗として分類し、導入と認証の確認を次の操作として返す。
-                raise shared_state.DelegateBackendError(f"failed to start Antigravity CLI ({command[0]}): {exc}") from exc
+                raise session_errors.DelegateBackendError(f"failed to start Antigravity CLI ({command[0]}): {exc}") from exc
             assert process.stdout is not None
             if session is not None:
                 self._attach_session(session, process, turn_seq)
@@ -366,9 +386,11 @@ class AntigravityManager:
             stderr_text = await _read_stderr(process)
             await process.wait()
             if session is None:
-                raise shared_state.DelegateBackendError(f"Antigravity CLI ended before the init event: stderr={stderr_text}")
+                raise session_errors.DelegateBackendError(f"Antigravity CLI ended before the init event: stderr={stderr_text}")
             if not finalized:
-                raise shared_state.DelegateBackendError(f"Antigravity CLI ended before the result event: stderr={stderr_text}")
+                raise session_errors.DelegateBackendError(
+                    f"Antigravity CLI ended before the result event: stderr={stderr_text}"
+                )
         except asyncio.CancelledError:
             raise
         except BaseException as exc:  # pylint: disable=broad-exception-caught
@@ -388,7 +410,7 @@ class AntigravityManager:
         """公開stream-jsonのイベントを、状態ファイルと同じ領域へ追記する。"""
         if self._log_directory is None:
             return
-        if not status_file.valid_session_id(session_id):
+        if not shared_layout.valid_session_id(session_id):
             raise ValueError(f"invalid Antigravity session_id: {session_id}")
         try:
             self._log_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -406,7 +428,7 @@ class AntigravityManager:
         if current_task is not None:
             self._task_sessions[current_task] = session.session_id
         session.turn_seq = turn_seq
-        _initialize_turn(session)
+        initialize_turn(session)
 
     def _create_session(
         self,
@@ -423,9 +445,9 @@ class AntigravityManager:
     ) -> SessionState:
         session_id = payload.get("conversation_id") or payload.get("conversationId")
         if not isinstance(session_id, str) or not session_id:
-            raise shared_state.DelegateBackendError("Antigravity init event did not contain conversation_id")
+            raise session_errors.DelegateBackendError("Antigravity init event did not contain conversation_id")
         if conversation_id is not None and session_id != conversation_id:
-            raise shared_state.DelegateBackendError("Antigravity resume returned an unexpected conversation_id")
+            raise session_errors.DelegateBackendError("Antigravity resume returned an unexpected conversation_id")
         return SessionState(
             session_id=session_id,
             cwd=cwd,

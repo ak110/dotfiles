@@ -28,8 +28,11 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| 既存ファイルをEdit・Writeで編集・上書きする時（コード、文書、エージェント向け文書を問わない） | `references/file-editing.md` |
 | 成果物、ユーザーへの報告と回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` |
+| ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` |
 | セッション記録の集計・分析 | `references/session-records.md` |
+| 計画の起草、WIの実現方式の確定、実装の完了前および実行レビューで、変更後の成果物群の設計品質を評価する時（エージェント向け文書だけを変える場合を含む） | `references/design-heuristics.md` |
 | 人間が読む文章（Markdown・README・技術文書・API文書、業務・仕様文書、体験を述べる文章、コメント、AWI・UWIの本文）を書く時 | `references/writing.md` |
 | コード・テストコードを書く時 | 「コードの編集時に読む資料」の各行 |
 | エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`）を書く時 | 「エージェント向け文書の編集時に読む資料」の各行 |
@@ -42,7 +45,7 @@ description: >
 | 文章を書く時と表記をチェックする時（他の行より先に読む） | `references/notation-rules.md` |
 | 恒久的な成果物の文面案を執筆する前と、textlintの指摘へ対応する時 | `references/textlint-violations.md` |
 | lint設定の緩和・無効化・除外指定を追加する時 | `references/lint-relax-criteria.md` |
-| `notation-rules.md`か`textlint-violations.md`が節名で指す口調例から書き換えの処置を選ぶ時 | `references/tone-examples.md`、`references/tone-examples-llm-tone.md`のうち指された資料 |
+| 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘への対応を含む） | `references/tone-examples.md`、`references/tone-examples-llm-tone.md` |
 | 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` |
 | 新しい概念名または識別子を導入する時 | `references/referent-table.md` |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` |
@@ -69,7 +72,7 @@ description: >
 | `ps1`・`ps1.tmpl`・`psm1`・`psd1` | `references/powershell.md` |
 | `cmd`・`bat` | `references/windows-batch.md` |
 | `Dockerfile` | `references/dockerfiles.md` |
-| `.github/workflows/*.yaml` | `references/github-actions.md` |
+| `.github/workflows/*.yaml`・`.github/workflows/*.yml` | `references/github-actions.md` |
 | `tailwindcss`（v4系） | `references/tailwindcss.md` |
 | `alpinejs`（v3系。`<script>`読み込みを含む） | `references/alpinejs.md` |
 | `@playwright/test`・`playwright`（Playwright Test v1系とPythonバインディング） | `references/playwright.md` |
@@ -81,8 +84,8 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 計画ファイルを作成する時点 | `references/design-time.md` |
-| コードを編集する時点、設計判断を確定する時、および依存の追加・更新をする時 | `references/implementation-time.md` |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設または変更する時 | `references/design-time.md` |
+| コードを編集する時点と、依存の追加・更新をする時 | `references/implementation-time.md` |
 | 設計判断を確定する時、計画と実装を同じ主体が続けて実施する場合、およびコードレビューを実施する場合 | `references/design-heuristics.md` |
 | 依存の追加・更新をする時 | `references/dependency-management.md` |
 | MCPサーバーのツール、説明、応答を設計、実装、変更またはレビューする時 | `references/mcp-server-design.md` |
@@ -90,8 +93,9 @@ description: >
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等） | `references/encoding.md` |
 | 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時 | `references/independent-html.md` |
 | エンドユーザーが操作する画面（HTML、CSS、画面コンポーネント、単体HTML成果物など）の新設・変更、その計画またはレビューをする時 | `references/ui-ux.md` |
-| 前行の画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` |
-| 前々行の画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` |
+| エンドユーザーが操作する画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` |
+| エンドユーザーが操作する画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` |
+| hookスクリプトと機械チェックスクリプトを書く時 | 「エージェント向け文書の編集時に読む資料」の表のうち、hook、遮断・警告、出力フィールド、`Stop`・`SubagentStop`、通知本文、セッション状態および機械チェックスクリプトの各行で条件が成立する行の資料 |
 
 ## エージェント向け文書の編集時に読む資料
 
@@ -102,14 +106,15 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| スキル編集（公式リファレンスの参照先を含む） | `references/agent-skills.md` |
+| スキル編集 | `references/agent-skills.md`、`references/host-official-references.md` |
+| エージェント向け文書の置き場所を選ぶ時 | `references/delivery-scope.md` |
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md` |
-| hook編集（auto modeのカスタムルール編集やセッション状態の編集に伴うものを含む）、およびhookのエンドユーザー向けメッセージの新設・改訂 | `references/agent-skills.md`、`references/claude-hooks.md` |
+| hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/claude-hooks.md`、`references/host-official-references.md` |
 | 遮断または警告を返すhookの判定を新設・変更する時と、hookを置くか、遮断と警告のどちらにするかを判定する時 | `references/claude-hooks-block-warn.md` |
 | hookの出力フィールドを選ぶ時と、`PermissionRequest`または`UserPromptSubmit`のhookを新設・変更する時 | `references/claude-hooks-output.md` |
 | `Stop`または`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md` |
-| hookとhook以外の生成元がコーディングエージェントへ直接渡す本文（記述言語と`atk-auto`の標識）を新設・改訂する時 | `references/claude-hooks-messages.md` |
-| auto modeのカスタムルール編集 | `references/auto-mode.md`、`references/agent-skills.md`。権限拒否に遭遇した場面の手順は`agent-toolkit:user-confirmation-and-report`が扱う |
+| 遮断・警告・定型の通知を出力するhookを新設・変更する時と、hookとhook以外の生成元がコーディングエージェントへ直接渡す本文（記述言語と`atk-auto`の標識）を新設・改訂する時 | `references/claude-hooks-messages.md` |
+| auto modeのカスタムルール編集 | `references/auto-mode.md`、`references/host-official-references.md`。権限拒否に遭遇した場面の手順は`agent-toolkit:user-confirmation-and-report`が扱う |
 | セッション状態ファイルまたはフラグを扱う編集（hook編集とauto modeのカスタムルール編集で扱う場合を含む） | `references/session-state-and-flags.md` |
 | 機械チェックスクリプトの新設・改修 | `references/check-script-design.md` |
 | エージェント向け文書へ新しい規定を追記する場面、および文書の記述量を管理する場面 | `references/agent-documents-additions.md` |

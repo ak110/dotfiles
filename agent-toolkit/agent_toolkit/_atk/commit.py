@@ -15,6 +15,7 @@ from pathlib import Path
 from agent_toolkit._atk import config, outcome
 from agent_toolkit._common import automated_prompt, claude_usage_limit, message_format
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
 
 _PROMPT_SOURCE = "atk-commit"
 _PROMPT_KIND = "commit-request"
@@ -27,25 +28,11 @@ descriptionは日本語で書く。
 
 
 def _git(root: Path, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-C", str(root), *arguments],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=check,
-    )
+    return _git_command.run(["-C", str(root), *arguments], capture_output=True, text=True, check=check)
 
 
 def _git_root() -> Path:
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
-    )
+    result = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True)
     return Path(result.stdout.strip())
 
 
@@ -260,7 +247,20 @@ def _agent_output(engine: str, stdout: str | None) -> str:
     return text if isinstance(text, str) else stdout
 
 
-def run(args: argparse.Namespace) -> int:
+def build_parser(parser: argparse.ArgumentParser) -> None:
+    """`atk commit`の引数を登録する。"""
+    parser.add_argument("--amend", action="store_true", help="HEADのコミットを改訂する。")
+    parser.add_argument("--dry-run", action="store_true", help="コミットせず候補メッセージを表示する。")
+    parser.add_argument(
+        "--model-type",
+        default="medium_tier",
+        metavar="TYPE",
+        help="モデル段位名またはengine:model[/effort]のカンマ区切り候補列。省略時はmedium_tierを使う。",
+    )
+    parser.add_argument("additional_prompt", nargs="?", help="フォーマットや差分の追加指示。")
+
+
+def dispatch(args: argparse.Namespace) -> int:
     """候補を順に起動し、リポジトリの状態を変えた失敗では再試行しない。"""
     try:
         root = _git_root()

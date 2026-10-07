@@ -1,6 +1,6 @@
 """レビュー指摘管理表の7列TSVを排他更新する補助CLI。
 
-排他ロックは表と同じディレクトリではなくホーム配下の専用ディレクトリへ置く。
+排他ロックは表と同じディレクトリではなく、ロックファイルのディレクトリ（`agent_toolkit._common.state_paths.lock_dir`）へ置く。
 表の配置先には`~/.claude/plans`が含まれる。兄弟のロックファイルを生成すると、計画バンドルの回収後も
 ロックだけが`~/.claude/plans`へ残存し、計画の一覧と親ディレクトリの回収を妨げる。
 表の本体ファイル自身へのロックには移行できない。更新は一時ファイルの原子的置換で行い、
@@ -23,11 +23,12 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import locations as _plan_locations
 
-# 配布物独立性のため、Web表示側`_atk_serve_plans.py`の`_REVIEW_TABLE_HEADERS`と同じ列順を二重に持つ。
-# 列を増減する場合は双方を同期し、旧形式の読み取り互換も両側で更新する。
+# 列の定義と旧形式の判別は本モジュールだけが持ち、`atk serve`の計画ファイル画面も`display_rows`で同じ解析を使う。
 COLUMNS = (
     "round",
     "track",
@@ -37,6 +38,16 @@ COLUMNS = (
     "response",
     "no-response-reason",
 )
+COLUMN_LABELS = (
+    "ラウンド",
+    "系統",
+    "箇所",
+    "指摘内容",
+    "指摘レベル",
+    "対応内容",
+    "対応不要理由",
+)
+"""`COLUMNS`の各列を画面へ表示する日本語の列名。"""
 _COLUMN_COUNT = len(COLUMNS)
 # 保存済みの旧形式の列数。8列は`level`と`response-needed`の双方を持ち、7列は`response-needed`だけを持つ。
 _LEGACY_WIDE_COLUMN_COUNT = 8
@@ -56,14 +67,19 @@ _RECOVERY_GUIDANCE = (
     "levelを空としてresponse-neededを読み込みの対象から外す"
 )
 _INPUT_GUIDANCE = (
-    "計画ファイルと同じstemの`.exec-review.tsv`、または原因commitの7文字以上の一意な短縮OID由来の"
-    "`ci-<OID>.exec-review.tsv`を"
+    "計画ファイルと同じstemの`.exec-review.tsv`、またはCI対応レビュー指摘管理表の"
+    f"`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を"
     "通常ファイルの絶対パスで指定する。"
     "標準入力、パイプおよびプロセス置換は受理しない"
 )
 _FIX_FORMAT_NEXT_ACTION = f"表を次の形式へ直して再実行する。{_RECOVERY_GUIDANCE}"
 _FIX_ROW_NEXT_ACTION = "`atk review-table show <PATH>`で該当行を確認し、表を直して再実行する"
-_SAVED_MISMATCH_NEXT_ACTION = (
+# `add`の不一致はlocation列かissue列で生じ、`respond`は応答列だけを更新するため、案内を操作ごとに分ける。
+_SAVED_ADD_MISMATCH_NEXT_ACTION = (
+    "保存は済んでいる。`atk review-table show <PATH>`で追加した行のlocation列とissue列を確認し、"
+    "送信元本文と異なる場合は表ファイルの該当行を送信元本文へ直す"
+)
+_SAVED_RESPONSE_MISMATCH_NEXT_ACTION = (
     "保存は済んでいる。`atk review-table show <PATH>`で保存結果を確認し、"
     "`atk review-table respond <PATH> --row-id <ROW_ID>`で直す"
 )
@@ -75,7 +91,7 @@ _ActionableError = _next_action.ActionableError
 # 記録時点で同じ規定の検索と不採用の根拠の確認を求めるため、列を増やさず本文の行頭ラベルで表す。
 RESPONSE_LABELS = ("違反を確認した規定:", "同じ規定の検索:", "採用する修正範囲:", "採用しない修正方針:")
 NO_RESPONSE_REASON_LABELS = ("根拠の所在:",)
-_LABEL_DEFINITION = "`agent-toolkit:review-standards`の`references/reviewee.md`「公開可能性の検証」"
+_LABEL_DEFINITION = "`agent-toolkit:review-standards`の`references/reviewee.md`「レビュー指摘管理表への応答」"
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -136,8 +152,11 @@ def _drop_legacy_response_needed(row: list[str]) -> list[str]:
     return row
 
 
-def _parse_text(text: str) -> list[tuple[str, list[str]]]:
-    """Raw TSVを検証し、元の行とtrack正規化済みのデコード済み行を対応づけて返す。"""
+def _decode_text(text: str) -> list[tuple[str, list[str]]]:
+    """Raw TSVを検証し、元の行と、旧形式の列を現行の7列へそろえたデコード済み行を対応づけて返す。
+
+    trackの読み取り互換値は変換しない。
+    """
     rows: list[tuple[str, list[str]]] = []
     for line_number, raw_line in enumerate(text.splitlines(keepends=True), start=1):
         line = raw_line.rstrip("\r\n")
@@ -150,10 +169,25 @@ def _parse_text(text: str) -> list[tuple[str, list[str]]]:
                 next_action=_FIX_FORMAT_NEXT_ACTION,
             )
         row = [_decode_cell(cell, line=line_number, column=index) for index, cell in enumerate(cells, start=1)]
-        row = _drop_legacy_response_needed(row)
-        row[1] = _normalize_track(row[1])
-        rows.append((raw_line, row))
+        rows.append((raw_line, _drop_legacy_response_needed(row)))
     return rows
+
+
+def _parse_text(text: str) -> list[tuple[str, list[str]]]:
+    """Raw TSVを検証し、元の行とtrack正規化済みのデコード済み行を対応づけて返す。"""
+    rows = _decode_text(text)
+    for _raw_line, row in rows:
+        row[1] = _normalize_track(row[1])
+    return rows
+
+
+def display_rows(text: str) -> list[list[str]]:
+    """表示のために、レビュー指摘管理表の本文を`COLUMNS`の順の7列の行へ解析して返す。
+
+    保存済みの旧形式は現行の7列へそろえ、trackは記録された値のまま返す。
+    形式が不正な表は`ValueError`を送出し、表示側が表として描画しない扱いを選ぶ。
+    """
+    return [row for _raw_line, row in _decode_text(text)]
 
 
 def _read_table_text(path: Path) -> str:
@@ -265,7 +299,7 @@ def lock_path(path: str | Path) -> Path:
     """
     target = Path(path).expanduser().resolve(strict=False)
     digest = hashlib.sha256(target.as_posix().encode("utf-8")).hexdigest()[:32]
-    return Path.home() / ".claude" / ".atk-locks" / "review-table" / f"{digest}.lock"
+    return _state_paths.lock_dir() / "review-table" / f"{digest}.lock"
 
 
 @contextlib.contextmanager
@@ -335,7 +369,7 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
                 f"最初の差異: {position}文字目\n"
                 f"送信元本文:\n{expected}\n"
                 f"保存本文:\n{saved}",
-                next_action=_SAVED_MISMATCH_NEXT_ACTION,
+                next_action=_SAVED_ADD_MISMATCH_NEXT_ACTION,
             )
     _outcome.report_success(f"指摘行を1件追加した: {target}（{len(rows)}件）")
     return 0
@@ -468,7 +502,7 @@ def respond(
             f"最初の差異: {position}文字目\n"
             f"送信元本文:\n{expected_body}\n"
             f"保存本文:\n{saved_body}",
-            next_action=_SAVED_MISMATCH_NEXT_ACTION,
+            next_action=_SAVED_RESPONSE_MISMATCH_NEXT_ACTION,
         )
     _outcome.report_success(f"応答欄を更新した: {target}")
     return 0
@@ -599,7 +633,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
     path_help = (
         "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.exec-review.tsv`、"
-        "または原因commitの7文字以上の一意な短縮OID由来の`ci-<OID>.exec-review.tsv`を指定する。"
+        f"またはCI対応レビュー指摘管理表の`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を指定する。"
     )
     init_parser.add_argument("path", help=path_help)
     add_command_parser = _atk_help.add_command(
@@ -737,7 +771,7 @@ def _require_writable_exec_review(raw_path: str) -> None:
     target = _path(raw_path)
     _plan_locations.reject_saved_plans_root_write(target)
     name = target.name
-    if name.endswith(".plan-review.tsv") or (name.startswith("dlg-") and name.endswith(".exec-review.tsv")):
+    if _bundle_kinds.PLAN_REVIEW.matches(name) or (name.startswith("dlg-") and _bundle_kinds.EXEC_REVIEW.matches(name)):
         raise _ActionableError(
             "保存済みの旧形式のレビュー指摘管理表は読み取り専用です", next_action="更新には.exec-review.tsvを指定する"
         )

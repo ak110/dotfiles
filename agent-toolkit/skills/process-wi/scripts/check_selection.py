@@ -14,13 +14,22 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
   レーン間の重なりの判定が働かなくなるためである。範囲説明の配下の個別パスは従来どおり被覆を求める
 - 広すぎる範囲: `書込対象`のディレクトリ範囲の配下に反映先パスがあるのに、反映先がその範囲自身もそれを含む範囲も挙げていない
 - `書き込まない反映先`の不正: 反映先パスに無いパスを`書き込まない反映先`が含む
-- 区分間の重複: 3区分のうち複数が同じパスまたは包含関係にある範囲を持つ
+- 区分間の重複: 3区分のうち複数が同じパスまたは包含関係にある範囲を持つ。
+  ただし`書き込まない反映先`の範囲が書込区分（`書込対象`・`公開工程の書込対象`）のパスを真に含む組は除く。
+  AWI本文が変更しない範囲として挙げる上位ディレクトリの配下で個別のファイルを書く選定を表すためであり、
+  そのパスは書込区分の指定を優先し、範囲の残りを書き込まない扱いとする
 - `公開工程の書込対象`の根拠不足: 対象リポジトリの規範、節およびpathがレーンの根拠に無い
 - 別レーンの重複根拠不足: 共通ファイルまたは狭い方の範囲が双方のレーンの根拠に無い
 - 同じ再開計画の別レーン割当: pickerが出力した通常中断または観測のみの再開位置が同じ計画を指す項目を別レーンへ置いた
 
 7区分はいずれも、レーン分けと重なりの判定が実際の共有書込対象と異なる結果になるため、違反として終了コード1を返す。
 分類と定義の独立性の意味判断はpickerとメインの読解へ委ねる。
+
+`--work-dir`の`pyproject.toml`が`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`で`プロジェクト規範の指定`の条件を
+定める場合は、条件に当たる項目の指定の省略・`なし`・空文字列と、必要な対象パスや記載の欠落も違反として終了コード1を返す。
+条件の内容（規範ファイルの範囲、読む要求の文面）は対象リポジトリの設定が持ち、本スクリプトは設定を消費するだけにする。
+共有のスクリプトへプロジェクト固有のパスと文面を書くと、内容の所有者がプロジェクトから共有実装へ移るためである。
+表を持たないリポジトリには条件を課さない。設定の構文と型の誤りはチェックを開始できない入力として終了コード2を返す。
 
 被覆を比べる前に、選定結果をYAMLとして読み、`pick-wi.subagent.md`「出力」が定める欄名、必須の欄と値の型を確かめる。
 pickerの保存直後とメインの受領時はどちらも本スクリプトを実行するため、両者は同じ構造を受理する。
@@ -29,6 +38,10 @@ pickerの保存直後とメインの受領時はどちらも本スクリプト�
 選定結果のYAML構文、欄名、必須の欄および値の型の誤りは、選定結果を直して同じコマンドを再実行する。
 選定結果のファイル、`--work-dir`およびprivate-notesを解決できない失敗は、パスや引数を直すか、その場所を確かめる。
 次の操作は原因が分かる送出側で`InputError`へ渡し、捕捉側では固定の案内を付けない。
+
+違反が無い場合（終了コード0）だけ、標準出力へ選定の要約を書く。要約はWI総数、通常レーン数、レーンごとのWI件数・段階・
+先行レーン・実装秒数・統合秒数・WIファイル名の一覧と、`レーン: なし`の項目の一覧を持つ。受領側がレーン構成を出力ファイルを
+開かずに把握できるようにするためであり、根拠と分類の意味の検収は選定結果の本文の読解で行う。
 
 UWIの本文がリポジトリ相対パスを明示しない場合、比べるパスが無いため違反を報告しない。
 この成功はUWIの書込範囲を検証した結果ではない。パスを明示しない回答の書込範囲は、
@@ -39,31 +52,27 @@ from __future__ import annotations
 
 import argparse
 import collections.abc
+import dataclasses
 import functools
 import itertools
+import json
 import pathlib
 import re
-import subprocess
 import sys
+import tomllib
 import typing
+import unicodedata
 
 import markdown_it
 import yaml
 
-try:
-    from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
-    from agent_toolkit._common import markdown_headings as _markdown_headings
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._plan import locations as _plan_file
-    from agent_toolkit._plan import selection as _selection
-except ImportError as _import_error:
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script pick-wi-check -- <選定結果の出力先ファイルの絶対パス>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
+from agent_toolkit._common import markdown_headings as _markdown_headings
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._plan import selection as _selection
+from agent_toolkit._plan.structure import is_agent_doc_target_file as _is_agent_doc_target_file
 
 _TARGET_SECTION = "反映内容と反映先"
 _LANE_NONE = "なし"
@@ -139,6 +148,138 @@ class InputError(_next_action.ActionableError):
     """チェックを開始できない入力の問題。送出側が原因に合う次の操作を持つ。"""
 
 
+_NORM_SPEC_KEY = "プロジェクト規範の指定"
+_NORM_CONFIG_TABLE = ("tool", "agent-toolkit", "pick-wi-check")
+_NORM_CONDITION_KEYS = frozenset({"name", "paths", "suffixes", "agent-doc", "require-paths", "require-text"})
+
+
+@dataclasses.dataclass(frozen=True)
+class NormCondition:
+    """`プロジェクト規範の指定`に作用する対象リポジトリの条件1件。
+
+    `paths`（リポジトリ相対のファイルか`/`で終わる範囲）と`suffixes`、または`agent-doc`（エージェント向け文書の判定）で
+    項目の書込対象と反映先から当たるパスを選ぶ。当たるパスがある項目には、`require-paths`なら当たった各パスを、
+    `require-text`ならその各文字列を指定へ書くことを求める。
+    """
+
+    name: str
+    paths: tuple[str, ...]
+    suffixes: tuple[str, ...]
+    agent_doc: bool
+    require_paths: bool
+    require_text: tuple[str, ...]
+
+    def matches(self, path: str) -> bool:
+        """パスがこの条件の対象かを返す。"""
+        if self.agent_doc and _is_agent_doc_target_file(path):
+            return True
+        in_scope = any(path == entry or (entry.endswith("/") and path.startswith(entry)) for entry in self.paths)
+        return in_scope and (not self.suffixes or path.endswith(self.suffixes))
+
+
+def load_norm_conditions(work_dir: pathlib.Path) -> list[NormCondition]:
+    """`work_dir`の`pyproject.toml`から`プロジェクト規範の指定`の条件を読む。表が無ければ空の一覧を返す。"""
+    config = work_dir / "pyproject.toml"
+    location = f"{config}の[{'.'.join(_NORM_CONFIG_TABLE)}]"
+    fix = (
+        f"{location}の`norm-spec`を、`name`（文字列）、`paths`・`suffixes`・`require-text`（文字列の配列）、"
+        "`agent-doc`・`require-paths`（真偽値）だけを持つ表の配列へ直してから、同じコマンドを再実行する"
+    )
+    if not config.is_file():
+        return []
+    try:
+        data = tomllib.loads(config.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as error:
+        raise InputError(f"条件の設定を読み込めない: {config}: {error}", next_action=_FIX_PATHS) from error
+    except tomllib.TOMLDecodeError as error:
+        raise InputError(
+            f"条件の設定のTOML構文が不正: {config}: {error}",
+            next_action=f"{config}のTOML構文を直してから、同じコマンドを再実行する",
+        ) from error
+    table: object = data
+    for key in _NORM_CONFIG_TABLE:
+        table = table.get(key) if isinstance(table, dict) else None
+    if table is None:
+        return []
+    entries = table.get("norm-spec") if isinstance(table, dict) else None
+    if not isinstance(table, dict) or not isinstance(entries, list):
+        raise InputError(f"{location}の`norm-spec`が表の配列ではない", next_action=fix)
+    conditions: list[NormCondition] = []
+    for index, entry in enumerate(entries, start=1):
+        problems = _norm_condition_problems(entry)
+        if problems:
+            raise InputError(f"{location}の`norm-spec`の{index}件目が不正: {'、'.join(problems)}", next_action=fix)
+        assert isinstance(entry, dict)
+        conditions.append(
+            NormCondition(
+                name=entry["name"],
+                paths=tuple(entry.get("paths", [])),
+                suffixes=tuple(entry.get("suffixes", [])),
+                agent_doc=entry.get("agent-doc", False),
+                require_paths=entry.get("require-paths", False),
+                require_text=tuple(entry.get("require-text", [])),
+            )
+        )
+    return conditions
+
+
+def _norm_condition_problems(entry: object) -> list[str]:
+    """条件1件の欄名と型の誤りを返す。"""
+    if not isinstance(entry, dict):
+        return ["表ではない"]
+    problems = [f"未知の欄: {key}" for key in entry if key not in _NORM_CONDITION_KEYS]
+    if not isinstance(entry.get("name"), str) or not entry["name"].strip():
+        problems.append("`name`が空でない文字列ではない")
+    problems.extend(
+        f"`{key}`が文字列の配列ではない"
+        for key in ("paths", "suffixes", "require-text")
+        if key in entry and not _is_string_list(entry[key])
+    )
+    problems.extend(
+        f"`{key}`が真偽値ではない"
+        for key in ("agent-doc", "require-paths")
+        if key in entry and not isinstance(entry[key], bool)
+    )
+    if not entry.get("paths") and entry.get("agent-doc") is not True:
+        problems.append("対象を選ぶ`paths`か`agent-doc = true`がない")
+    if entry.get("require-paths") is not True and not entry.get("require-text"):
+        problems.append("求める記載の`require-paths = true`か`require-text`がない")
+    return problems
+
+
+def check_norm_spec(awi: str, decision: dict[str, object], reflected: set[str], conditions: list[NormCondition]) -> list[str]:
+    """条件に当たる項目の`プロジェクト規範の指定`が、条件の求める記載を持つか確かめて違反の行を返す。
+
+    対象のパスは、書込区分のパスと、`書き込まない反映先`に覆われない反映先のパスとする。
+    書き込まない参照先として挙げた規範ファイルにまで指定を求めないためである。
+    """
+    write_paths = [
+        *_string_list(decision, _selection.WRITE_FILES_KEY),
+        *_string_list(decision, _selection.PUBLIC_WRITE_FILES_KEY),
+    ]
+    excluded = _string_list(decision, _selection.EXCLUDED_PATHS_KEY)
+    candidates = sorted({*write_paths, *(path for path in reflected if not any(_covers(entry, path) for entry in excluded))})
+    spec = decision.get(_NORM_SPEC_KEY)
+    filled = isinstance(spec, str) and spec.strip() not in {"", _LANE_NONE}
+    errors: list[str] = []
+    for condition in conditions:
+        matched = [path for path in candidates if condition.matches(path)]
+        if not matched:
+            continue
+        if not filled:
+            errors.append(
+                f"{awi}: プロジェクト規範の指定の不足: {condition.name}（{', '.join(matched)}が当たる）: "
+                f"`{_NORM_SPEC_KEY}`が省略・`なし`・空文字列のいずれか"
+            )
+            continue
+        assert isinstance(spec, str)
+        missing = [*(path for path in matched if condition.require_paths and path not in spec)]
+        missing.extend(text for text in condition.require_text if text not in spec)
+        if missing:
+            errors.append(f"{awi}: プロジェクト規範の指定の不足: {condition.name}: 欠けた記載: {', '.join(missing)}")
+    return errors
+
+
 def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     """WIファイルの全文から反映先パスの集合を返す。
 
@@ -153,9 +294,22 @@ def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     return _explicit_paths(section, work_dir)
 
 
+@dataclasses.dataclass(frozen=True)
+class _Segment:
+    """段落の文章かインラインコードの1区間。`code`は内容全体を1つのパス候補とするインラインコードかを表す。"""
+
+    text: str
+    code: bool
+
+
 def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
 
+    インラインコードは、内容が空白を含まず`/`か`.`を含む場合に内容全体を1つの候補とし、非ASCIIの文字を含む
+    パス（`docs/dev/ログ監視.md`、`ログ/a.md`）も末尾まで読む。文章の中のパスはASCIIの文字で区切って探し、
+    直後に文字か数字の非ASCII文字が続く場合は、その位置から伸ばした文字列のうち作業ツリーに実在する最長のパスを候補とする。
+    実在するパスが無く、ASCIIの部分が`/`で終わらず最後の要素に`.`も持たない場合（`docs/design/LLM`）は、
+    パスの途中で終わった部分として採らない。
     抽出結果は、作業ツリーに実在するパスか、親ディレクトリが実在する完全なファイル名の新設先に限る。
     `/`を含む候補のうち、末尾が`/`のディレクトリ範囲は実在するディレクトリだけを採用する。
     実在しないファイルの候補は、追跡ファイルのパス末尾と1件だけ一致すればその追跡ファイルへ読み替え、
@@ -166,16 +320,17 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     直後にグロブ記号が続く語は、グロブや波括弧展開の途中で途切れた断片であり個別のパスを指さないため採らない。
     """
     paths: set[str] = set()
-    for run in _inline_runs(text):
+    for segments in _inline_runs(text):
+        run = "".join(segment.text for segment in segments)
         directory: str | None = None
         last_end = 0
-        for match in _PATH_TOKEN_RE.finditer(run):
-            candidate = _normalize_candidate(match.group())
-            gap = run[last_end : match.start()]
+        for start, end in _path_tokens(segments, work_dir):
+            candidate = _normalize_candidate(run[start:end])
+            gap = run[last_end:start]
             if directory is not None and not _LIST_GAP_RE.fullmatch(gap):
                 directory = None
-            last_end = match.end()
-            if candidate is None or run[match.end() : match.end() + 1] in _GLOB_CHARS:
+            last_end = end
+            if candidate is None or run[end : end + 1] in _GLOB_CHARS:
                 directory = None
                 continue
             if "/" in candidate:
@@ -191,6 +346,60 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
             elif directory is not None and (resolved := _repository_path(directory + candidate, work_dir)) is not None:
                 paths.add(resolved)
     return paths
+
+
+def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple[int, int]]:
+    """段落を連結した文字列の中で、パス候補の開始と終了の位置を出現順に返す。"""
+    tokens: list[tuple[int, int]] = []
+    offset = 0
+    for segment in segments:
+        content = segment.text
+        # グロブや波括弧展開を含むインラインコードは個別のパスを指さないため、文章と同じ規則で断片を除く。
+        if (
+            segment.code
+            and content.strip()
+            and not any(char.isspace() or char in _GLOB_CHARS for char in content)
+            and ("/" in content or "." in content)
+        ):
+            tokens.append((offset, offset + len(content)))
+            offset += len(content)
+            continue
+        for match in _PATH_TOKEN_RE.finditer(content):
+            end = match.end()
+            if end < len(content) and _is_non_ascii_word_char(content[end]):
+                extended = _existing_extension(content, match.start(), end, work_dir)
+                if extended is None and not _is_complete_ascii_part(match.group()):
+                    continue
+                end = extended or end
+            tokens.append((offset + match.start(), offset + end))
+        offset += len(content)
+    return tokens
+
+
+def _is_non_ascii_word_char(char: str) -> bool:
+    """非ASCIIの文字か数字（かな、漢字、アクセント付きのラテン文字など）かを返す。句読点、括弧、`・`は含まない。"""
+    return ord(char) > 0x7F and unicodedata.category(char)[0] in {"L", "N"}
+
+
+def _existing_extension(content: str, start: int, end: int, work_dir: pathlib.Path) -> int | None:
+    """ASCIIの候補の直後に続く非ASCIIの文字まで伸ばした文字列のうち、作業ツリーに実在する最長のパスの終了位置を返す。"""
+    limit = end
+    while limit < len(content) and (
+        _is_non_ascii_word_char(content[limit])
+        or content[limit] in "/._-"
+        or content[limit].isascii()
+        and content[limit].isalnum()
+    ):
+        limit += 1
+    for stop in range(limit, end, -1):
+        if (work_dir / content[start:stop]).exists():
+            return stop
+    return None
+
+
+def _is_complete_ascii_part(value: str) -> bool:
+    """ASCIIの候補が`/`で終わるか最後の要素に`.`を持つ（パスの途中で終わっていない）かを返す。"""
+    return value.endswith("/") or "." in value.rsplit("/", 1)[-1]
 
 
 def _repository_path(candidate: str, work_dir: pathlib.Path) -> str | None:
@@ -221,15 +430,7 @@ def _new_file_path(candidate: str, work_dir: pathlib.Path) -> str | None:
 @functools.cache
 def _tracked_files(work_dir: pathlib.Path) -> tuple[str, ...]:
     """`work_dir`の追跡ファイルのリポジトリ相対パスを返す。Gitで取得できない場合は空にする。"""
-    result = subprocess.run(
-        ["git", "-C", str(work_dir), "ls-files", "-z"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=60,
-    )
+    result = _git_command.run(["-C", str(work_dir), "ls-files", "-z"], capture_output=True, text=True, check=False, timeout=60)
     if result.returncode != 0:
         return ()
     return tuple(path for path in result.stdout.split("\0") if path)
@@ -250,13 +451,19 @@ def _section_text(body: str, heading: str) -> str | None:
     return None
 
 
-def _inline_runs(text: str) -> list[str]:
-    """コードフェンスの外にある文章とインラインコードを段落ごとに連結する。"""
-    runs: list[str] = []
+def _inline_runs(text: str) -> list[list[_Segment]]:
+    """コードフェンスの外にある文章とインラインコードを、段落ごとに出現順の区間の列で返す。"""
+    runs: list[list[_Segment]] = []
     for token in _MARKDOWN.parse(text):
         if token.type != "inline" or not token.children:
             continue
-        runs.append("".join(child.content for child in token.children if child.type in {"text", "code_inline"}))
+        runs.append(
+            [
+                _Segment(child.content, child.type == "code_inline")
+                for child in token.children
+                if child.type in {"text", "code_inline"}
+            ]
+        )
     return runs
 
 
@@ -316,7 +523,9 @@ def check_decision(
             second if _covers(first, second) else first
             for first in first_paths
             for second in second_paths
-            if _covers(first, second) or _covers(second, first)
+            if (_covers(first, second) or _covers(second, first))
+            # 書き込まない範囲が書込区分のパスを真に含む組は、範囲の残りを書き込まない選定として受理する。
+            and not (second_name == _selection.EXCLUDED_PATHS_KEY and first != second and _covers(second, first))
         }
         errors.extend(f"{awi}: 区分間の重複: {path}（`{first_name}`と`{second_name}`）" for path in sorted(overlaps))
     return errors
@@ -355,6 +564,7 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
     costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
     if not private_notes.is_dir():
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
+    conditions = load_norm_conditions(work_dir)
     errors: list[str] = []
     for decision in items:
         awi = typing.cast(str, decision[_selection.WI_KEY])
@@ -376,7 +586,9 @@ def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: p
             body = source.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
-        errors.extend(check_decision(awi, reflected_paths(body, work_dir), write_files, public_write_files, excluded_paths))
+        reflected = reflected_paths(body, work_dir)
+        errors.extend(check_decision(awi, reflected, write_files, public_write_files, excluded_paths))
+        errors.extend(check_norm_spec(awi, decision, reflected, conditions))
     errors.extend(_check_lane_models(items))
     errors.extend(_check_resume_plan_lanes(items))
     errors.extend(_check_lane_stages(items, costs))
@@ -641,15 +853,49 @@ def _string_list(decision: dict[str, object], key: str) -> list[str]:
     return typing.cast(list[str], decision.get(key, []))
 
 
+def summary_lines(selection: dict[str, object]) -> list[str]:
+    """確認を通った選定結果から、レーン構成の要約行を返す。
+
+    WIファイル名は入力順に全件を示す。段階と先行レーンの省略は読み取り契約の省略時の値（1と空の列）で示し、
+    秒数は旧欄名（`implementation_seconds`・`integration_seconds`）の値も読む。根拠と書込対象は再掲しない。
+    """
+    items = typing.cast(list[dict[str, object]], _selection.decisions(selection) or [])
+    costs = {
+        row[_selection.LANE_KEY]: row
+        for row in typing.cast(list[dict[str, object]], _selection.lane_costs(selection) or [])
+        if isinstance(row.get(_selection.LANE_KEY), str)
+    }
+    lanes: dict[str, list[str]] = {}
+    unassigned: list[str] = []
+    for item in items:
+        awi, lane = str(item[_selection.WI_KEY]), str(item[_selection.LANE_KEY])
+        if lane == _LANE_NONE:
+            unassigned.append(awi)
+        else:
+            lanes.setdefault(lane, []).append(awi)
+    lines = [f"WI総数: {len(items)}", f"通常レーン数: {len(lanes)}"]
+    for lane, names in lanes.items():
+        row = costs.get(lane, {})
+        seconds = [
+            row.get(key, row.get(next(name for name, current in _LEGACY_SECONDS_KEYS.items() if current == key)))
+            for key in (_IMPLEMENTATION_SECONDS_KEY, _INTEGRATION_SECONDS_KEY)
+        ]
+        prior = json.dumps(row.get(_selection.PRIOR_LANES_KEY, []), ensure_ascii=False)
+        lines.append(
+            f"{lane}: WI {len(names)}件、段階 {row.get(_selection.STAGE_KEY, 1)}、先行レーン {prior}、"
+            f"実装秒数 {seconds[0]}、統合秒数 {seconds[1]}、WI {json.dumps(names, ensure_ascii=False)}"
+        )
+    lines.append(f"レーン: なし: {json.dumps(unassigned, ensure_ascii=False)}")
+    return lines
+
+
 def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
     """`--work-dir`の値か、現在のディレクトリが属するGitルートを返す。"""
     if value is not None:
         if not value.is_dir():
             raise InputError(f"`--work-dir`がディレクトリではない: {value}", next_action=_FIX_PATHS)
         return value.resolve()
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
-    )
+    result = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     if result.returncode != 0 or not result.stdout.strip():
         raise InputError(f"現在のディレクトリからGitルートを解決できない: {result.stderr.strip()}", next_action=_FIX_PATHS)
     return pathlib.Path(result.stdout.strip())
@@ -676,11 +922,14 @@ def main(argv: list[str] | None = None) -> int:
                 "広すぎる範囲は反映先が挙げる個別のパスへ置き換える。不正な`書き込まない反映先`は除く。"
                 "区分間で重複するパスは所有する1区分だけへ残す。`公開工程の書込対象`の根拠不足は、"
                 "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する。"
+                "プロジェクト規範の指定の不足は、`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が"
+                "定める条件に従い、該当項目の`プロジェクト規範の指定`へ欠けた記載を書く。"
                 "直した後に同じコマンドで確かめる"
             ),
             file=sys.stderr,
         )
         return 1
+    print("\n".join(summary_lines(load_selection(args.selection_file))))
     return 0
 
 

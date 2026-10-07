@@ -9,9 +9,9 @@
 
 | 実行主体 | 実体 | 寿命 |
 | --- | --- | --- |
-| MCPサーバー | `agent-toolkit/agent_toolkit/agents_server_mcp.py` | ホストがMCPサーバーを起動する単位ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける。各プロセスが保持するsessionの集合は独立する |
+| MCPサーバー | 起動スクリプト`agent-toolkit/agent_toolkit/agents_server_mcp.py`。MCPツールは`_agents_server/mcp_tools.py`、sessionの管理は`_agents_server/manager.py`と`manager_*.py`が持つ | ホストがMCPサーバーを起動する単位ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける。各プロセスが保持するsessionの集合は独立する |
 | `atk`のCLI | `atk agents wait`、`atk agents notify`、`atk agents list`、`atk agents show`、`atk agents logs` | 呼び出しごとの短命プロセス。現行のsession識別子を得る |
-| フック | `agent-toolkit/agent_toolkit/_hooks/posttooluse.py` | イベントごとの短命プロセス。入力JSONで現行のsession識別子を得る |
+| フック | `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`。観測の記録の書き込みと読み取りは`_hooks/agents_server_observations.py`が持つ | イベントごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 | statusline | `rust/claude-statusline` | 描画ごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 
 `CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。
@@ -20,10 +20,10 @@ MCPサーバープロセスには`CLAUDE_PID`が渡らないため、Claude Code
 
 Codex CLIが起動するMCPサーバープロセスが受け取る環境変数は、外側の`agents_server`が`thread/start`の`config.mcp_servers.agents_server.env`で明示した値だけである。`codex app-server`自身の環境はこのプロセスへ継承されず、明示した値だけが届く。
 ルートsession識別子と書込主体識別子は、この環境変数を介して配送する。
-配送するルートはManagerが持つ`StatusFileWriter.root_session_id`である。環境にownerが無くManagerが生成したルートも、Codex App Serverの子環境、threadの開始・再開のMCP環境とhost索引、Claude SDKの新規・再開環境、Antigravityの子環境へ同じ入力として渡す。backendはこの入力から通知先の所有者を決める。Antigravityではルート配送だけを保証し、固有の通知元識別子の解決と通知成功は別の課題として扱う。計画の所有記録とUWIの投入元の解決はこの配送と別の契約であり、Managerが生成したプロセス専用のroot（`mcp-`で始まる識別子）は会話を表さないため、所有会話と投入元の記録から除く。判定は`agent-toolkit/agent_toolkit/_plan/locations.py`の`resolve_conversation_session_id`が持つ。
+配送するルートはManagerが持つ`StatusFileWriter.root_session_id`である。環境にownerが無くManagerが生成したルートも、Codex App Serverの子環境、threadの開始・再開のMCP環境とhost索引、Claude SDKの新規・再開環境、Antigravityの子環境へ同じ入力として渡す。backendはこの入力から通知先の所有者を決める。Antigravityではルート配送だけを保証し、固有の通知元識別子の解決と通知成功は別の課題として扱う。計画の所有記録とUWIの投入元の解決はこの配送と別の契約であり、Managerが生成したプロセス専用のroot（`mcp-`で始まる識別子）は会話を表さないため、所有会話と投入元の記録から除く。判定は`agent-toolkit/agent_toolkit/_plan/owner_records.py`の`resolve_conversation_session_id`が持つ。
 CodexのPostToolUseフックは、所有session識別子があり環境変数から書込主体を解決できない場合、入力JSONの検証済み現行session識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当として補完する。PostToolUseフックと`atk agents wait`は`hosts`索引が存在する場合は委譲元のthreadから書込主体を逆引きし、状態ファイルと待機対象登録を同じ名前空間で扱う。索引が無い場合は補完した識別子をそのまま書込主体として使う。
 Codex backendは、子sessionを起動した委譲先から`atk agents wait`に成功した`commandExecution`を受け取る。
-人の端末の標準出力、またはエージェント環境で量によらず自動保存した`stdout`の`保存先:`が示す保存結果の終端識別子を、`state.py`の`consume_agents_wait_output`で追跡集合から外す。
+人の端末の標準出力、またはエージェント環境で量によらず自動保存した`stdout`の`保存先:`が示す保存結果の終端識別子を、`_agents_server/wait_output_tracking.py`の`consume_agents_wait_output`で追跡集合から外す。
 標準エラーの保存先は別の標識で返し、待機のJSON Linesとして読まない。保存先は結果回収より先に開き、準備できなければ結果を消費しない。
 待機失敗と読取不能の結果は追跡集合へ残す。
 
@@ -49,7 +49,22 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | Antigravityの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、セッションのイベント経過を調べる主体 | Antigravity backend（公開stream-jsonイベントの追記） |
 | engineの可用性を理由に除外した候補（解除待ちの対象のClaude利用上限は記録せず、旧版の理由`429`のClaude候補は読み込み時に除外の根拠から外す） | `<状態ディレクトリ>/unavailable-candidates.json` | 起動の候補列を解決するMCPサーバー | その状態ディレクトリを共有する各MCPサーバー（ファイルロック下の読み書き） |
 
+状態ディレクトリ配下の読み書きは、`agent-toolkit/agent_toolkit/_agents_server/`配下の次のモジュールが担う。
+
+| 対象 | モジュール |
+| --- | --- |
+| 配置とsession識別子の検証 | `shared_layout.py` |
+| ルートと書込主体の識別、索引（`aliases`・`hosts`） | `shared_roots.py` |
+| statusline・CLI向けの状態ファイルの出力 | `status_file.py` |
+| 終端結果の保持と回収 | `retained_results.py` |
+| CLI待機の対象登録 | `wait_targets.py` |
+| 上り通知の回収 | `notice_inbox.py` |
+| 除外した候補の記録 | `unavailable_candidates.py` |
+| 保持期限を過ぎた状態の掃引 | `shared_sweep.py` |
+| 全sessionの終端登録 | `session_registry.py` |
+
 sessionの`created_at`は最初の開始時刻で、turnごとに更新する`started_at`と別に保持する。`label`と`prompt`も`start`の時点で決まる。これら3項目を再開と再起動をまたいで保持する起動情報とし、項目の集合は`agent-toolkit/agent_toolkit/_agents_server/session_registry.py`の`LaunchInfo`が1か所で定める。MCPサーバーのメモリーを基準とし、状態ファイルとsession登録簿（版数2の任意項目）へ射影する。再開したsessionは登録簿または退避した再開情報の値を`LaunchInfo`の項目ごとに引き継ぐ。項目を持たない旧形式の登録簿から再開した場合、`label`と`prompt`は空文字列とし、`created_at`は再開時刻から数え直す。
+`start`と`send_message`の公開応答へは、開始したsessionと配送先のsessionがメモリーに保持する`label`を返す。委譲元が起動応答と追送応答だけで`session_id`と担当名を対応付け、追送の宛先を確かめられるようにするためである。
 
 ClaudeのAPI失敗が連続する間と、Codexの過負荷（`serverOverloaded`）による自動継続を待つ間の`api_error`は、いずれもMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ射影する。過負荷の待機中の記録は待機を予定したCodex backendの終端処理が作成し、MCPサーバーが継続のturnを送った時点で削除する。待機の予定時刻と連鎖の回数もMCPサーバーのメモリーだけに置き、状態ファイルへは`api_error`の形でだけ射影する。API失敗の合成メッセージは活動時刻を進めず、状態ファイルの更新だけを通知する。`show`・`list`とCLIは共通の活動射影から失敗の経過を算出し、正常なassistantメッセージで記録を削除する。生のエラー本文は共有状態へ保存しない。
 
@@ -71,7 +86,7 @@ MCPサーバーは`start`、`send_message`、`list`の応答へ、自身の状�
 - 対象の状態について、上表の「更新できる主体」が2つ以上あるかを確認する。2つ以上ある場合は、全ての更新主体による処理の流れを読んで網羅を判定する。
 - MCPサーバーのメモリーにだけ存在する状態を更新できるのはMCPサーバーだけであり、プロセス境界の外にある`atk`のCLIとフックは更新する主体から外れる。その状態を判定に用いる処理が、CLI経由の操作でも成立するかを個別に確認する。
 - 新しい状態は1つの表現で保持する形へ設計する。未回収の終端結果は、そのファイルを書いた主体の公開台帳と結果ファイルの在否から`published`、`consumed`、`unpublished`へ区分する。CLIが回収途中の結果はrun別退避物を再開時の基準とし、原本が残る中断点では同じ本文を重ねて配送しない。`SessionState.result_delivered`はファイルを削除する契機を表す内部状態であり、ファイル表現を持たない処理に限り用いる。
-- MCP待機とCLI待機は`status_file.take_result`で所有者の確認、排他取得、本文の読取および削除を1つの区間として実行する。CLI待機は同じ排他区間でrun別退避物を確定してから原本を削除する。MCP待機は退避先を渡さず、従来の回収結果を使う。
+- MCP待機とCLI待機は`_agents_server/retained_results.py`の`take_result`で所有者の確認、排他取得、本文の読取および削除を1つの区間として実行する。CLI待機は同じ排他区間でrun別退避物を確定してから原本を削除する。MCP待機は退避先を渡さず、従来の回収結果を使う。
 - 待機所有権と待機対象の登録は、いずれも書込主体を単位とする名前空間で表す。読む側も同じ単位で読み、探す対象は書込主体を名前とするロックと登録とする。
 - `atk agents wait`の前景実行と背景実行は、書込主体ごとに同時に1つとする。ロック競合を観測した後発は`current.json`が示すrun IDを固定し、同じロックの取得後に固定runの状態を読み直す。`published`か`foreground-delivered`なら保存本文と終了コードを返し、返却後に`consumed`へ遷移させて結果の再演を1回に限る。`running`なら保存対象とrun別退避物の対象を引き継ぎ、lock待ち中の追加対象も含めて同じrunの待機を再開する。競合せずロック取得に成功した後続waitも、現在の対象集合が残存する`running` runと一致すれば退避物を引き継いで待機を再開する。原本の回収後にrun別退避物だけへ残るsessionも対象集合の一致確認へ含める。対象集合が一致し、`continuable`がfalseの`published` runは結果を1回返す。対象集合が変わったrunと継続可能な公開runは新規待機へ進む。`consumed`のrunは再利用せず、新規runを開始する。待機上限への到達または通知だけを返したrunは`continuable`をtrueとし、次の発行は新規runを開始する。run記録がない旧形式のlockだけを観測した場合は、旧形式との競合を示す診断で終了する。ロックの単位は書込主体とし、対象sessionごとのロックは除外する。
 

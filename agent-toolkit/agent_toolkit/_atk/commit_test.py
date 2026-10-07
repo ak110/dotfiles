@@ -173,7 +173,8 @@ def test_candidates_skip_only_before_git_state_changes(
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
-    assert commit.run(atk._build_parser().parse_args(["commit", "--model-type", "medium_tier"])) == (9 if change_state else 0)  # pylint: disable=protected-access
+    args = atk._build_parser().parse_args(["commit", "--model-type", "medium_tier"])  # pylint: disable=protected-access
+    assert commit.dispatch(args) == (9 if change_state else 0)
     assert calls == expected_calls
 
 
@@ -228,7 +229,7 @@ def test_claude_usage_limit_waits_and_resumes_same_conversation(
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
-    assert commit.run(atk._build_parser().parse_args(["commit"])) == 0  # pylint: disable=protected-access
+    assert commit.dispatch(atk._build_parser().parse_args(["commit"])) == 0  # pylint: disable=protected-access
 
     assert [command[0] for command in calls] == ["/fake/claude"] * 3
     session_ids = [argument for argument in calls[0] if argument.startswith("--session-id=")]
@@ -263,7 +264,7 @@ def test_claude_overage_rejection_keeps_existing_candidate_switch(tmp_path: Path
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
-    assert commit.run(atk._build_parser().parse_args(["commit"])) == 0  # pylint: disable=protected-access
+    assert commit.dispatch(atk._build_parser().parse_args(["commit"])) == 0  # pylint: disable=protected-access
     assert calls == ["claude", "codex"]
     assert not sleeps
 
@@ -287,7 +288,7 @@ def test_missing_executable_uses_next_candidate(tmp_path: Path, monkeypatch: pyt
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
-    assert commit.run(atk._build_parser().parse_args(["commit"])) == 0  # pylint: disable=protected-access
+    assert commit.dispatch(atk._build_parser().parse_args(["commit"])) == 0  # pylint: disable=protected-access
     assert calls == ["codex"]
 
 
@@ -307,7 +308,7 @@ def test_no_changes_reports_that_commit_is_unnecessary(
     (repository / "change.txt").unlink()
     monkeypatch.chdir(repository)
 
-    assert commit.run(atk._build_parser().parse_args(["commit"])) == 1  # pylint: disable=protected-access
+    assert commit.dispatch(atk._build_parser().parse_args(["commit"])) == 1  # pylint: disable=protected-access
     assert "commitは不要" in _next_action_line(capsys.readouterr().err)
 
 
@@ -322,7 +323,7 @@ def test_start_failure_names_git_status(
         raise OSError("読み取り失敗")
 
     monkeypatch.setattr(commit.config, "resolve_model_candidates", fail)
-    assert commit.run(atk._build_parser().parse_args(["commit"])) == 2  # pylint: disable=protected-access
+    assert commit.dispatch(atk._build_parser().parse_args(["commit"])) == 2  # pylint: disable=protected-access
     assert "`git status`" in _next_action_line(capsys.readouterr().err)
 
 
@@ -356,7 +357,7 @@ def test_final_failure_names_recovery_operation(
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
-    commit.run(atk._build_parser().parse_args(["commit"]))  # pylint: disable=protected-access
+    commit.dispatch(atk._build_parser().parse_args(["commit"]))  # pylint: disable=protected-access
     captured = capsys.readouterr()
     assert not captured.out
     assert "子の失敗診断" in captured.err

@@ -45,6 +45,10 @@ _RESPOND_NAMESPACE_DEFAULTS = {
 
 _CLI_ACCEPTED_CASES = (
     (
+        ["review-table", "respond", "review.tsv", "--row-id=1", "--response-file=response.txt"],
+        {**_RESPOND_NAMESPACE_DEFAULTS, "row_id": 1, "round": None, "track": None, "response_file": "response.txt"},
+    ),
+    (
         [
             "review-table",
             "add",
@@ -234,6 +238,46 @@ def test_add_rereads_decoded_cells_after_storage_write(
     assert capsys.readouterr().out == ""
 
 
+def test_add_saved_mismatch_guides_row_check_instead_of_respond(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`add`の保存後の不一致は、`respond`では直せないlocation列とissue列で生じるため、表の該当行の確認を案内する。
+
+    `respond`は応答列だけを更新するため、`add`の不一致へ`respond`を案内すると実行できない操作を案内することになる。
+    """
+    path = tmp_path / "review.tsv"
+    location_file = tmp_path / "location.txt"
+    location_file.write_text("module.py:10", encoding="utf-8")
+    issue_file = tmp_path / "issue.md"
+    issue_file.write_text("修正が必要", encoding="utf-8")
+    # 保存行の解決に使う列を変えずに不一致の分岐を通すため、一致判定だけを不一致にする。
+    monkeypatch.setattr(table._body_match, "verdict", lambda _expected, _saved: "不一致")  # pylint: disable=protected-access
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "review-table",
+                "add",
+                str(path),
+                "--round=1",
+                f"--track={_TRACK}",
+                "--level=詳細",
+                f"--location-file={location_file}",
+                f"--issue-file={issue_file}",
+            ],
+            home=tmp_path,
+        )
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "不一致の列: location" in error
+    assert "`atk review-table show <PATH>`" in error
+    assert "location列とissue列" in error
+    assert "respond" not in error
+
+
 def test_respond_reports_decoded_response_and_match(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -291,6 +335,7 @@ def test_respond_reports_body_mismatch_when_saved_response_is_altered(
     assert "最初の差異: 1文字目" in error
     assert f"送信元本文:\n{response}" in error
     assert f"保存本文:\n{altered_response}" in error
+    assert "`atk review-table respond <PATH> --row-id <ROW_ID>`" in error
 
 
 def test_respond_reports_body_mismatch_when_saved_no_response_reason_is_altered(
@@ -392,6 +437,47 @@ def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib
     assert exc_info.value.reason == f"レビュー指摘管理表を読み込めない: {path}: 存在しない"
     assert ".exec-review.tsv" in exc_info.value.next_action
     assert "標準入力" in exc_info.value.next_action
+
+
+_SERIES_HEAD = "修正系列の開始時のHEAD"
+"""表の名前の識別子の呼称。
+
+`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`がこの呼称で表を名付け、
+`retired_terms_invariant_test.py`が撤去した旧呼称の置き換え先として記録する。
+"""
+
+
+def _assert_guides_series_head_name(text: str) -> None:
+    """案内文が表の名前を修正系列の開始時のHEADで示し、原因commitで示さないことを確かめる。"""
+    assert f"ci-<{_SERIES_HEAD}" in text
+    assert "原因commit" not in text
+
+
+def test_review_table_help_names_ci_review_table_by_series_head(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`atk review-table init --help`の位置引数の説明が、表を修正系列の開始時のHEAD由来の名前で案内する。
+
+    説明文の「原因commitに対応する計画がない処理」は表の用途を述べるため、位置引数の節だけを確かめる。
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "init", "--help"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    _assert_guides_series_head_name(output[output.index("位置引数:") : output.index("オプション:")])
+
+
+def test_missing_review_table_guides_series_head_name(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """存在しない表を`atk review-table show`へ渡すと、次の操作が修正系列の開始時のHEAD由来の名前を案内する。"""
+    missing = tmp_path / "missing.exec-review.tsv"
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "show", str(missing)], home=tmp_path)
+
+    assert exc_info.value.code != 0
+    error = capsys.readouterr().err
+    _assert_guides_series_head_name(next(line for line in error.splitlines() if line.startswith("次の操作: ")))
 
 
 def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pathlib.Path) -> None:
@@ -1444,10 +1530,10 @@ def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.P
 
 
 @pytest.mark.parametrize("operation", ("add", "respond"))
-def test_saved_body_mismatch_names_show_and_respond(
+def test_saved_body_mismatch_names_show_and_operation_specific_fix(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
-    """保存本文が送信元と一致しない場合は、保存済みであることと確認・修正のコマンドを示す。"""
+    """保存本文が送信元と一致しない場合は、保存済みであることと確認のコマンド、操作ごとに実行できる修正を示す。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     if operation == "respond":
@@ -1462,7 +1548,8 @@ def test_saved_body_mismatch_names_show_and_respond(
 
     assert "保存は済んでいる" in exc_info.value.next_action
     assert "atk review-table show" in exc_info.value.next_action
-    assert "atk review-table respond" in exc_info.value.next_action
+    # `respond`は応答列だけを更新するため、`add`の不一致（location列・issue列）には案内しない。
+    assert ("atk review-table respond" in exc_info.value.next_action) is (operation == "respond")
 
 
 _RESPONSE_WITHOUT_SEARCH = review_bodies.response_body("修正した").replace(
@@ -1532,3 +1619,23 @@ def test_respond_records_body_with_required_labels(
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
     assert row[column] == body
     assert row[11 - column] == ""
+
+
+@pytest.mark.skipif(os.name == "nt", reason="XDG_STATE_HOMEで状態ディレクトリを移す規則はWindows以外で働く")
+def test_cli_lock_is_created_under_state_lock_dir(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`atk review-table`のロックは状態ディレクトリ配下の`locks/`に作成され、`~/.claude`配下には作成されない。"""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    path = tmp_path / "review.tsv"
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "init", str(path)], home=home)
+    capsys.readouterr()
+
+    assert exc_info.value.code == 0
+    lock_dir = tmp_path / "state" / "agent-toolkit" / "locks" / "review-table"
+    assert [lock.parent for lock in lock_dir.glob("*.lock")] == [lock_dir]
+    assert not list((home / ".claude").glob(".atk-*"))

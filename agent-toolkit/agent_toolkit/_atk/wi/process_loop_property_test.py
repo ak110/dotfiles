@@ -17,10 +17,18 @@ from hypothesis import strategies as st
 
 import agent_toolkit.atk
 from agent_toolkit._atk.wi import process_loop, process_loop_log
+from agent_toolkit._atk.wi import process_loop_alerts as _pl_alerts
+from agent_toolkit._atk.wi import process_loop_control as _pl_control
+from agent_toolkit._atk.wi import process_loop_env as _pl_env
+from agent_toolkit._atk.wi import process_loop_session as _pl_session
+from agent_toolkit._atk.wi import process_loop_update as _pl_update
+from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
+from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
+from agent_toolkit._atk.wi import readiness as _wi_readiness
 
 _CONSUME_INSTRUCTIONS_IMPL = process_loop_log.consume_instructions
-_CMD_PROCESS_LOOP_IMPL = process_loop._cmd_process_loop
-_EXIT_ABNORMAL_SESSION_IMPL = process_loop._exit_abnormal_session
+_CMD_PROCESS_LOOP_IMPL = process_loop.cmd_process_loop
+_EXIT_ABNORMAL_SESSION_IMPL = _pl_session._exit_abnormal_session
 _MODEL_INSTRUCTION_SEPARATOR = "\n---\n"
 _LOOP_EVENTS = (
     "sync_fail",
@@ -180,9 +188,9 @@ def test_session_preparation_matches_reference_model(
         calls.append(name)
         return prepared if preparation_succeeds else None
 
-    monkeypatch.setattr(process_loop, "_sync_worktree_with_upstream", sync)
-    target = process_loop._DOTFILES_REPO_ID if dotfiles_target else "github.com/example/project"
-    result = process_loop._prepare_session_target(
+    monkeypatch.setattr(_pl_worktree, "_sync_worktree_with_upstream", sync)
+    target = _pl_worktree.DOTFILES_REPO_ID if dotfiles_target else "github.com/example/project"
+    result = _pl_worktree.prepare_session_target(
         tmp_path,
         target,
         "original prompt",
@@ -190,11 +198,11 @@ def test_session_preparation_matches_reference_model(
         resume_pending=resume_pending,
     )
     requires_preparation = not resume_pending and (worktree_name is not None or dotfiles_target)
-    assert calls == ([worktree_name or process_loop._DEFAULT_WORKTREE_NAME] if requires_preparation else [])
+    assert calls == ([worktree_name or _pl_worktree._DEFAULT_WORKTREE_NAME] if requires_preparation else [])
     if requires_preparation and not preparation_succeeds:
         assert result is None
     elif requires_preparation:
-        assert result == (prepared, process_loop._build_process_loop_prompt())
+        assert result == (prepared, _pl_session.build_process_loop_prompt())
     else:
         assert result == (tmp_path, "original prompt")
 
@@ -229,20 +237,20 @@ def test_process_loop_event_sequences_match_reference_model(
     repo.mkdir()
     state_root = case_root / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(state_root))
-    monkeypatch.setattr(process_loop, "_resolve_local_worktree", lambda _target: repo)
-    monkeypatch.setattr(process_loop, "_resolve_repo_id", lambda *_args, **_kwargs: "github.com/example/project")
-    monkeypatch.setattr(process_loop, "_resolve_dotfiles_root", lambda: case_root / "dotfiles")
-    monkeypatch.setattr(process_loop, "_code_hash", lambda _path: "startup")
-    monkeypatch.setattr(process_loop, "_resolve_orchestrator_specs", lambda: ["codex:model/medium"])
+    monkeypatch.setattr(process_loop, "resolve_local_worktree", lambda _target: repo)
+    monkeypatch.setattr(process_loop, "resolve_repo_id", lambda *_args, **_kwargs: "github.com/example/project")
+    monkeypatch.setattr(_pl_update, "resolve_dotfiles_root", lambda: case_root / "dotfiles")
+    monkeypatch.setattr(_pl_update, "code_hash", lambda _path: "startup")
+    monkeypatch.setattr(_pl_session, "resolve_orchestrator_specs", lambda: ["codex:model/medium"])
     monkeypatch.setattr(
-        process_loop,
-        "_select_available_orchestrator",
+        _pl_session,
+        "select_available_orchestrator",
         lambda *_args, **_kwargs: ("codex", "model", "medium"),
     )
-    monkeypatch.setattr(process_loop, "_child_env", lambda: {})
-    monkeypatch.setattr(process_loop, "_session_env", lambda env, _orchestrator: dict(env))
-    monkeypatch.setattr(process_loop, "_session_creation_flags", lambda _orchestrator: 0)
-    monkeypatch.setattr(process_loop, "_reset_console", lambda: None)
+    monkeypatch.setattr(_pl_env, "child_env", lambda: {})
+    monkeypatch.setattr(_pl_env, "session_env", lambda env, _orchestrator: dict(env))
+    monkeypatch.setattr(_pl_env, "session_creation_flags", lambda _orchestrator: 0)
+    monkeypatch.setattr(_pl_env, "reset_console", lambda: None)
     monkeypatch.setattr(process_loop._console_title, "set_console_title", lambda _title: None)
     monkeypatch.setattr(
         process_loop._console_title,
@@ -250,7 +258,7 @@ def test_process_loop_event_sequences_match_reference_model(
         lambda _title: contextlib.nullcontext(),
     )
     monkeypatch.setattr(process_loop._process_loop_log, "append", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(process_loop, "_check_process_loop_alerts", lambda *_args, **_kwargs: (None, 0, 0))
+    monkeypatch.setattr(_pl_alerts, "check_process_loop_alerts", lambda *_args, **_kwargs: (None, 0, 0))
 
     launches = 0
     updates = 0
@@ -339,7 +347,7 @@ def test_process_loop_event_sequences_match_reference_model(
             return False, False
         if current_event == "update_restart":
             phase = "update_restart"
-            process_loop._restart_process_loop([], None, mise_refreshed=True, dotfiles_updated=True)
+            _pl_update.restart_process_loop([], None, mise_refreshed=True, dotfiles_updated=True)
         return True, True
 
     def prepare_target(
@@ -373,7 +381,7 @@ def test_process_loop_event_sequences_match_reference_model(
         env = kwargs["env"]
         assert isinstance(env, dict)
         launches += 1
-        delivered_instructions.append(str(env.get(process_loop._PROCESS_LOOP_INSTRUCTION_ENV, "")))
+        delivered_instructions.append(str(env.get(_pl_env.PROCESS_LOOP_INSTRUCTION_ENV, "")))
         phase = "after_child"
         return subprocess.CompletedProcess(["child"], 7 if current_event == "child_abnormal" else 0)
 
@@ -401,18 +409,18 @@ def test_process_loop_event_sequences_match_reference_model(
         marker_consumptions += int(bool(args.internal_dotfiles_updated))
         _CMD_PROCESS_LOOP_IMPL(args, private_notes)
 
-    monkeypatch.setattr(process_loop, "_consume_process_loop_abort", consume_abort)
-    monkeypatch.setattr(process_loop, "_pull_private_notes", pull_notes)
-    monkeypatch.setattr(process_loop, "_count_pending_entries", count_pending)
-    monkeypatch.setattr(process_loop, "_update_before_session", update_before)
-    monkeypatch.setattr(process_loop, "_prepare_session_target", prepare_target)
-    monkeypatch.setattr(process_loop, "_build_session_argv", build_session_argv)
+    monkeypatch.setattr(_pl_control, "consume_process_loop_abort", consume_abort)
+    monkeypatch.setattr(_pl_watch, "pull_private_notes", pull_notes)
+    monkeypatch.setattr(_wi_readiness, "count_pending_entries", count_pending)
+    monkeypatch.setattr(_pl_update, "update_before_session", update_before)
+    monkeypatch.setattr(_pl_worktree, "prepare_session_target", prepare_target)
+    monkeypatch.setattr(_pl_session, "_build_session_argv", build_session_argv)
     monkeypatch.setattr(process_loop._process_loop_log, "consume_instructions", consume_instructions)
-    monkeypatch.setattr(process_loop.subprocess, "run", run_child)
-    monkeypatch.setattr(process_loop, "_restart_process_loop", restart_process_loop)
-    monkeypatch.setattr(process_loop, "_wait_for_changes", wait_for_changes)
-    monkeypatch.setattr(process_loop, "_exit_abnormal_session", exit_abnormal)
-    monkeypatch.setattr(process_loop, "_cmd_process_loop", run_process_loop)
+    monkeypatch.setattr(subprocess, "run", run_child)
+    monkeypatch.setattr(_pl_update, "restart_process_loop", restart_process_loop)
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait_for_changes)
+    monkeypatch.setattr(_pl_session, "_exit_abnormal_session", exit_abnormal)
+    monkeypatch.setattr(process_loop, "cmd_process_loop", run_process_loop)
 
     cli_args = ["wi", "process-loop", f"--target-repo={repo}", "--no-alerts"]
     if resume_requested:
@@ -446,13 +454,13 @@ def test_restart_consumes_resume_and_one_shot_markers_once(tmp_path: pathlib.Pat
     """既知事例: resumeと更新済み印は再起動引数で重複しない。"""
     script = tmp_path / "atk.py"
     script.write_text("", encoding="utf-8")
-    _, args = process_loop._build_restart_target(
+    _, args = _pl_update._build_restart_target(
         [
             str(script),
             "--resume",
             "session",
-            process_loop._INTERNAL_MISE_REFRESHED_ARG,
-            process_loop._INTERNAL_DOTFILES_UPDATED_ARG,
+            _pl_update._INTERNAL_MISE_REFRESHED_ARG,
+            _pl_update._INTERNAL_DOTFILES_UPDATED_ARG,
         ],
         resume_consumed=True,
         mise_refreshed=True,
@@ -460,5 +468,5 @@ def test_restart_consumes_resume_and_one_shot_markers_once(tmp_path: pathlib.Pat
     )
     assert "--resume" not in args
     assert "session" not in args
-    assert args.count(process_loop._INTERNAL_MISE_REFRESHED_ARG) == 1
-    assert args.count(process_loop._INTERNAL_DOTFILES_UPDATED_ARG) == 1
+    assert args.count(_pl_update._INTERNAL_MISE_REFRESHED_ARG) == 1
+    assert args.count(_pl_update._INTERNAL_DOTFILES_UPDATED_ARG) == 1

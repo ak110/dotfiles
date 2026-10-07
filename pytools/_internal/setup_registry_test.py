@@ -5,18 +5,11 @@ import pytest
 from pytools._internal import setup_registry as _setup_registry
 
 
-class TestRun:
-    """``run`` のトップレベルフロー分岐を検証する。"""
-
-    def test_non_windows_skips(self):
-        assert _setup_registry.run(is_windows=False) is False
-
-
 class TestApplyAll:
     """``run`` 経由で winreg 呼び出し列を検証する。"""
 
     def test_calls_create_key_ex_and_set_value_ex(self, monkeypatch: pytest.MonkeyPatch):
-        """run(is_windows=True) が winreg の CreateKeyEx / SetValueEx を期待順で呼ぶ。"""
+        """run() が winreg の CreateKeyEx / SetValueEx を期待順で呼ぶ。"""
         calls: list[tuple] = []
 
         class _FakeKey:
@@ -44,9 +37,9 @@ class TestApplyAll:
 
         monkeypatch.setattr(_setup_registry.winutils, "import_winreg", lambda: _FakeWinreg)
 
-        result = _setup_registry.run(is_windows=True)
+        result = _setup_registry.run()
 
-        assert result is True
+        assert result.changed is True
         # CreateKeyEx と SetValueEx が設定エントリ数と一致して呼ばれる
         create_calls = [c for c in calls if c[0] == "CreateKeyEx"]
         set_calls = [c for c in calls if c[0] == "SetValueEx"]

@@ -57,14 +57,23 @@ from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disa
 from agent_toolkit._common.delegated_session import (
     is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
+from agent_toolkit._common.periodic_recheck import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    LEGACY_PERIODIC_RECHECK_MARKER,
+    PERIODIC_RECHECK_MARKER,
+)
 from agent_toolkit._common.process_loop_session import (
     is_process_loop_session,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
+from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    claim_session_title,
+    read_state,
+    update_state,
+)
 
 # pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks import background_task_outputs as _background_task_outputs  # noqa: E402
 from agent_toolkit._hooks import plugin_resources as _plugin_resources
 from agent_toolkit._hooks import termination_evidence
+from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -76,13 +85,7 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     VERIFICATION_NOTICE_BODY,
     clear_user_confirmation_pending,
 )
-from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    claim_session_title,
-    read_state,
-    update_state,
-)
-from agent_toolkit._hooks.tool_input import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._plan.locations import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
@@ -105,15 +108,6 @@ _PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
-PERIODIC_RECHECK_MARKER = '<atk-auto source="periodic-recheck" kind="periodic-recheck">'
-_LEGACY_PERIODIC_RECHECK_MARKER = (
-    '<agent-toolkit-auto-inserted source="agent-toolkit/periodic-recheck" kind="periodic-recheck">'
-)
-"""定期再確認のpromptの1行目へ置く役割標識。
-
-`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」が
-同じリテラルを持ち、装着するpromptの1行目をこの標識だけの行と定める。
-"""
 _USER_PROMPT_SOURCE_KEY = "source"
 _USER_PROMPT_SOURCE_USER = "user"
 _VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
@@ -184,7 +178,7 @@ def _is_machine_injected(payload: dict, prompt: str) -> bool:
     source = payload.get(_USER_PROMPT_SOURCE_KEY)
     if isinstance(source, str) and source and source != _USER_PROMPT_SOURCE_USER:
         return True
-    if prompt.split("\n", 1)[0].strip() in {PERIODIC_RECHECK_MARKER, _LEGACY_PERIODIC_RECHECK_MARKER}:
+    if prompt.split("\n", 1)[0].strip() in {PERIODIC_RECHECK_MARKER, LEGACY_PERIODIC_RECHECK_MARKER}:
         return True
     if is_delegated(os.environ):
         return True
@@ -305,11 +299,10 @@ def main(payload_text: str) -> int:
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
-        _background_task_outputs.consume_completed_task_outputs(session_id, prompt)
         return 0
 
     machine_injected = _is_machine_injected(payload, prompt)
-    is_codex = "model" in payload or is_codex_payload(payload)
+    is_codex = is_codex_payload(payload)
     first_line = prompt.split("\n", 1)[0].strip()
     command_prefix = "$" if is_codex else "/"
     # スラッシュコマンドで始まる発話もユーザー自身の入力であり、注記の対象に含める。

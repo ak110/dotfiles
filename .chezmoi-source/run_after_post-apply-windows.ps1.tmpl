@@ -11,6 +11,17 @@ $ErrorActionPreference = 'Stop'
 # 2. OS固有の後処理を完了する。
 # 3. dotfiles-post-apply.exe を最終出力主体として実行する。
 
+# update-dotfiles は本スクリプトの出力をパイプで受け取り UTF-8 として読む。
+# 出力先がリダイレクトされている間、Windows PowerShell 5.1 は Write-Host とエラーの出力を
+# コンソールのコードページ（日本語環境では CP932）で書くため、その間だけ UTF-8 へ切り替える。
+# [Console]::OutputEncoding の設定はコンソール全体のコードページを変えるため、終了時に finally で元へ戻す。
+# 本体は字下げせずに try の内側へ置く（テストが本体の区間を行頭の文字列で取り出すため）。
+$originalOutputEncoding = [Console]::OutputEncoding
+if ([Console]::IsOutputRedirected) {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+}
+try {
+
 $cacheDir = Join-Path $env:LOCALAPPDATA 'dotfiles'
 $hashFile = Join-Path $cacheDir 'pytools.hash'
 $currentHash = '{{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}:{{ include (joinPath .chezmoi.workingTree "agent-toolkit/pyproject.toml") | sha256sum }}'
@@ -80,7 +91,8 @@ $uvToolDir = Join-Path $uvToolBaseDir 'pytools'
 
 # 再インストール時にuv tool venv配下のexeが起動中だと、uvはディレクトリ削除に
 # アクセス拒否で失敗する。更新対象を保持するプロセスを停止前に分類し、
-# 再起動できる既知プロセスだけなら停止・再導入・復元する。
+# 再起動できる既知プロセスだけなら停止・再導入する。再起動は post-apply が行う。
+# post-apply は再導入の後に動くため、再導入の前の停止だけは本スクリプトで行う。
 # 再起動できないプロセスが含まれる場合は一切停止せず、既存版とハッシュを温存して次回へ延期する。
 $mediaRemoteWasRunning = $false
 $reinstallDeferred = $false
@@ -126,11 +138,10 @@ if ($needsReinstall -and -not $reinstallDeferred) {
     try {
         # $ErrorActionPreference = 'Stop' はネイティブ exe の非ゼロ終了を例外化しないため、
         # uv コマンド直後で $LASTEXITCODE を明示判定して throw する。
-        # ハッシュ書き込みは uv tool install ・uv tool update-shell ・期待シム実在再確認のすべてが成功した場合のみ実行する。
+        # ハッシュ書き込みは uv tool install と期待シム実在再確認の両方が成功した場合のみ実行する。
+        # ユーザーPATHへの`~\.local\bin`の登録は post-apply の「bin PATH 登録 (Windows)」工程が行う。
         & uv tool install --overrides "{{ joinPath .chezmoi.workingTree "agent-toolkit/uv-overrides.txt" }}" --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}"
         if ($LASTEXITCODE -ne 0) { throw "uv tool install が失敗しました (exit=$LASTEXITCODE)" }
-        & uv tool update-shell
-        if ($LASTEXITCODE -ne 0) { throw "uv tool update-shell が失敗しました (exit=$LASTEXITCODE)" }
         if (-not (Test-ExpectedShims)) {
             throw '期待シムが生成されていません'
         }
@@ -149,65 +160,12 @@ if ($needsReinstall -and -not $reinstallDeferred) {
     Write-Host '  [pytools] 変更なし (ハッシュキャッシュヒット)'
 }
 
-# share/user.env をユーザー環境変数に設定する
-$userEnvFile = Join-Path '{{ .chezmoi.workingTree }}' 'share\user.env'
-if (Test-Path $userEnvFile) {
-    Get-Content $userEnvFile -Encoding UTF8 | ForEach-Object {
-        $line = $_.Trim()
-        if ($line -eq '' -or $line.StartsWith('#')) { return }
-        $idx = $line.IndexOf('=')
-        if ($idx -lt 1) { return }
-        $name = $line.Substring(0, $idx)
-        $value = $line.Substring($idx + 1)
-        # シングルクォートまたは二重クォートで囲まれた値を除去する
-        if (($value.StartsWith("'") -and $value.EndsWith("'")) -or
-            ($value.StartsWith('"') -and $value.EndsWith('"'))) {
-            $value = $value.Substring(1, $value.Length - 2)
-        }
-        [System.Environment]::SetEnvironmentVariable($name, $value, 'User')
-        Write-Host "  [user.env] $name を設定"
-    }
-}
+# 再導入のために media-remote を停止したかと再導入の要否を post-apply へ渡す。
+# 再起動と、再導入しない回の停止→再起動（対症療法）は post-apply の「メディアリモコン自動起動」工程が行う。
+$env:DOTFILES_MEDIA_REMOTE_STOPPED = if ($mediaRemoteWasRunning) { '1' } else { '' }
+$env:DOTFILES_PYTOOLS_REINSTALL = if ($needsReinstall) { '1' } else { '' }
 
-# 再インストール前に停止した media-remote を再起動する（stheno のみ）。
-# 自動起動は post-apply 側のショートカット配置に委ねるが、再インストール中の停止からの
-# 復帰だけは本節で担当する。
-if ($mediaRemoteWasRunning -and $env:COMPUTERNAME -eq 'stheno') {
-    Write-Host '  [pytools] dotfiles-media-remote を再起動'
-    $vbsPath = Join-Path $env:LOCALAPPDATA 'dotfiles\media-remote\launch.vbs'
-    if (Test-Path $vbsPath) {
-        Start-Process -FilePath 'wscript.exe' -ArgumentList @("`"$vbsPath`"") -WindowStyle Hidden
-    } elseif (Test-Path $mediaRemoteBin) {
-        Start-Process -FilePath $mediaRemoteBin -WindowStyle Hidden -ArgumentList @('serve')
-    }
-}
-
-# media-remote 対症療法: stheno ホストでは post-apply 実行ごとに dotfiles-media-remote を停止→再起動する。
-# 再インストール経路は既存節（再インストール時の停止→再起動）が担うため、本節はそれ以外の経路
-# （needsReinstall=$false）を対象として定常運用中のハング応答不能を回復する目的で実施する。
-# dotfiles-media-remote.exe のハング原因は未特定のため対症療法とする。
-if ($env:COMPUTERNAME -eq 'stheno' -and -not $needsReinstall) {
-    $mediaRemoteProcs = @(Get-PytoolsEnvLockingProcess | Where-Object { $_.IsMediaRemote })
-    Write-Host "  [pytools] 対症療法の停止対象プロセス: 停止対象$($mediaRemoteProcs.Count)件"
-    foreach ($p in $mediaRemoteProcs) {
-        Write-Host "  [pytools] dotfiles-media-remote (PID=$($p.ProcessId)) を停止"
-        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
-    }
-    if ($mediaRemoteProcs.Count -gt 0) {
-        Start-Sleep -Milliseconds 500
-    }
-    # VBSラッパー経由の再起動（既存のスタートアップ経路と同じ）。
-    $vbsPath = Join-Path $env:LOCALAPPDATA 'dotfiles\media-remote\launch.vbs'
-    if (Test-Path $vbsPath) {
-        Write-Host '  [pytools] dotfiles-media-remote を再起動（対症療法）'
-        Start-Process -FilePath 'wscript.exe' -ArgumentList @("`"$vbsPath`"") -WindowStyle Hidden
-    } elseif (Test-Path $mediaRemoteBin) {
-        Write-Host '  [pytools] dotfiles-media-remote を再起動（対症療法）'
-        Start-Process -FilePath $mediaRemoteBin -WindowStyle Hidden -ArgumentList @('serve')
-    }
-}
-
-# uv tool update-shell は現プロセスの PATH を更新しないため、フルパスで呼び出す。
+# `~\.local\bin` が現プロセスの PATH に無い場合があるため、フルパスで呼び出す。
 # OS固有処理の後に実行し、post-applyの案内を更新処理全体の最終出力にする。
 $postApplyBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-post-apply.exe'
 if (Test-Path $postApplyBin) {
@@ -217,4 +175,7 @@ if (Test-Path $postApplyBin) {
     exit $LASTEXITCODE
 } else {
     Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ"
+}
+} finally {
+    [Console]::OutputEncoding = $originalOutputEncoding
 }

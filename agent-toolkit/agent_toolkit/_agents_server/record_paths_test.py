@@ -4,9 +4,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit import agents_server_mcp
-from agent_toolkit._agents_server import record_paths
-from agent_toolkit._atk.serve import sessions as session_records
+from agent_toolkit._agents_server import backends, record_paths
 
 
 def test_record_engines_match_supported_engines() -> None:
@@ -15,13 +13,13 @@ def test_record_engines_match_supported_engines() -> None:
     実行系を追加して記録の探索を追随させないと、その実行系の委譲先は`atk agents logs`と
     `atk run-script session-review-evidence`の双方で記録なしとして扱われる。
     """
-    assert record_paths.RECORD_ENGINES == agents_server_mcp.SUPPORTED_ENGINES
+    assert record_paths.RECORD_ENGINES == backends.SUPPORTED_ENGINES
 
 
 def test_claude_subagent_record_is_found_by_its_agent_id(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """公開CLIへ渡すサブエージェント識別子で親の下の記録を解決する。"""
     claude_home = tmp_path / "claude"
-    monkeypatch.setattr(session_records, "default_claude_home", lambda: claude_home)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
     agent_id = "agent-a7157f79d55caab81"
     child = claude_home / "projects" / "project" / "parent" / "subagents" / f"{agent_id}.jsonl"
     child.parent.mkdir(parents=True)
@@ -35,7 +33,7 @@ def test_claude_subagent_record_is_found_by_its_agent_id(tmp_path: pathlib.Path,
 def test_claude_parent_record_precedes_same_named_subagent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """同名記録がある場合は既存の親セッションの探索順を維持する。"""
     claude_home = tmp_path / "claude"
-    monkeypatch.setattr(session_records, "default_claude_home", lambda: claude_home)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
     agent_id = "agent-a7157f79d55caab81"
     project = claude_home / "projects" / "project"
     project.mkdir(parents=True)

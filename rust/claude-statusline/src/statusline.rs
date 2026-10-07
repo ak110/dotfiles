@@ -1,6 +1,6 @@
 //! Claude Code statusLine: セッション状況とagents_server sessionを可視化する。
 //!
-//! `scripts/claude_status_line.py`の後継。stdinから公式statusLine JSON入力を受け取る。
+//! stdinから公式statusLine JSON入力を受け取る。
 //! 1行目はモデル名・effort・cwdを半角スペース区切りで
 //! 結合したのち、コンテキスト・コスト・経過時間・消費量(5h/7d)とパイプ区切りで連結する。
 //! 2行目はセッションID・セッション名を半角スペース区切りで結合したのち、worktree情報（存在時のみ）

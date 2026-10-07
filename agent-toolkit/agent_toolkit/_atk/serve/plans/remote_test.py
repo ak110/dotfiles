@@ -1,24 +1,25 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`の計画ファイル画面の処理のテスト。"""
 
 # pylint: disable=protected-access
 
 import asyncio
-import base64
-import hashlib
 import json
-import os
 import pathlib
-import subprocess
 import sys
+import types
 import typing
 
 import pytest
 
 from agent_toolkit._atk.serve import plans
-from agent_toolkit._atk.serve.plans.test_support_test import *  # noqa: F403
+from agent_toolkit._atk.serve import remote as _atk_serve_remote
+from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
+from agent_toolkit._atk.serve.plans import remote as plans_remote
+from agent_toolkit._atk.serve.plans import rendering as plans_rendering
+from agent_toolkit._atk.serve.plans import roots as plans_roots
+from agent_toolkit._atk.serve.plans import views as plans_views
+from agent_toolkit._plan import viewer_files as plan_viewer_files
+from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload, _runner_returning
 
 
 def test_absent_entries_are_pruned_and_other_roots_are_kept(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
@@ -31,10 +32,10 @@ def test_absent_entries_are_pruned_and_other_roots_are_kept(tmp_path: pathlib.Pa
     _plan(first_root, "gone.md")
     _plan(second_root, "other.md")
 
-    plans.list_files(first_root, "local-host")
-    plans.list_files(second_root, "local-host")
+    plans_local_scan.list_files(first_root, "local-host")
+    plans_local_scan.list_files(second_root, "local-host")
     (first_root / "gone.md").unlink()
-    plans.list_files(first_root, "local-host")
+    plans_local_scan.list_files(first_root, "local-host")
 
     stored = json.loads(index_path.read_text(encoding="utf-8"))
     assert sorted((entry["root"].rsplit("/", 1)[-1], entry["path"]) for entry in stored.values()) == [
@@ -45,7 +46,7 @@ def test_absent_entries_are_pruned_and_other_roots_are_kept(tmp_path: pathlib.Pa
 
 def test_svg_fence_is_rendered_as_source_only_image() -> None:
     """SVGのフェンスは原文を直接埋め込まず、画像要素と原文表示へ変換する。"""
-    html = plans.markdown_to_html('```svg\n<svg onload="alert(1)"></svg>\n```\n')
+    html = plans_rendering.markdown_to_html('```svg\n<svg onload="alert(1)"></svg>\n```\n')
 
     assert 'class="diagram diagram-svg"' in html
     assert 'class="diagram-output svg-output"' in html
@@ -56,7 +57,7 @@ def test_svg_fence_is_rendered_as_source_only_image() -> None:
 
 def test_malformed_review_table_falls_back_to_escaped_source() -> None:
     """列数や形式が合わない表は原文をエスケープして表示する。"""
-    html = plans.review_table_html("<b>1</b>\t2\n")
+    html = plans_views.review_table_html("<b>1</b>\t2\n")
 
     assert "<table" not in html
     assert "&lt;b&gt;1&lt;/b&gt;" in html
@@ -72,10 +73,10 @@ def test_attached_files_are_excluded_from_the_listing(tmp_path: pathlib.Path, in
     _plan(root, "p.exec-review.tsv", "表の本文")
     _plan(root, "note.txt", "対象外")
 
-    assert [entry.path for entry in plans.list_files(root, "local-host")] == ["p.md"]
-    assert plans.search_files(root, "詳細の本文") == {"p.detail.md"}
-    assert plans.resolve_under_root(root, "p.detail.md") is not None
-    assert plans.resolve_under_root(root, "note.txt") is None
+    assert [entry.path for entry in plans_local_scan.list_files(root, "local-host")] == ["p.md"]
+    assert plans_local_scan.search_files(root, "詳細の本文") == {"p.detail.md"}
+    assert plan_viewer_files.resolve_under_root(root, "p.detail.md") is not None
+    assert plan_viewer_files.resolve_under_root(root, "note.txt") is None
 
 
 @pytest.mark.asyncio
@@ -112,7 +113,7 @@ async def test_remote_read_passes_source_id_before_the_path() -> None:
     """複数rootの構成では保存元IDを先頭の引数として渡す。"""
     runner, calls = _runner_returning(_read_payload("body"))
 
-    await plans.fetch_remote_file("remote-host", "p.md", runner, None, source_id=plans.NEW_SOURCE_ID)
+    await plans_remote.fetch_remote_file("remote-host", "p.md", runner, None, source_id=plans.NEW_SOURCE_ID)
 
     assert len(calls[0][2]) == 2
 
@@ -160,6 +161,35 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
 
 
 @pytest.mark.asyncio
+async def test_rpc_timeout_error_names_operation_and_limit(tmp_path: pathlib.Path) -> None:
+    """常駐接続のRPCの上限超過の例外は、操作名と上限秒数を持つ。
+
+    `asyncio.wait_for`の例外は文字列を持たず、本文の読み取りと検索の失敗の警告が理由を欠く。
+    """
+
+    class _Stdin:
+        def write(self, data: bytes) -> None:
+            del data
+
+        async def drain(self) -> None:
+            pass
+
+        def is_closing(self) -> bool:
+            return False
+
+    context = _context(tmp_path, remote_hosts=["remote-host"])
+    watcher = plans_remote.RemoteWatcher("remote-host", context.state)
+    watcher._proc = typing.cast(typing.Any, types.SimpleNamespace(stdin=_Stdin()))
+    watcher._connected = True
+
+    with pytest.raises(TimeoutError) as error:
+        await watcher.request("read", {"path": "a.md"}, timeout=0.05)
+
+    assert "op=read" in str(error.value)
+    assert "上限の0.05秒" in str(error.value)
+
+
+@pytest.mark.asyncio
 async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを従来の起動形で起動し、失敗を標準エラー付きで示す。
 
@@ -172,10 +202,10 @@ async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeyp
         sent.append((cmd, timeout))
         return 3, b"", b"helper not found\n"
 
-    monkeypatch.setattr(plans._atk_serve_remote, "run_ssh", fake_run_ssh)
+    monkeypatch.setattr(_atk_serve_remote, "run_ssh", fake_run_ssh)
 
-    with pytest.raises(plans.RemoteHelperError) as error:
-        await plans.default_ssh_runner("remote-host", "read", ["cGF0aA=="])
+    with pytest.raises(plans_remote.RemoteHelperError) as error:
+        await plans_remote.default_ssh_runner("remote-host", "read", ["cGF0aA=="])
 
     assert "atk_serve_plans_remote_helper.py" in plans.REMOTE_BOOTSTRAP
     assert sent == [
@@ -198,7 +228,7 @@ async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeyp
                 "read",
                 "cGF0aA==",
             ],
-            plans.SSH_TIMEOUT_SEC,
+            plans_roots.SSH_TIMEOUT_SEC,
         )
     ]
     assert "終了コード3" in str(error.value)

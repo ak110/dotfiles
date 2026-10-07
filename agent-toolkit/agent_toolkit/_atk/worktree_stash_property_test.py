@@ -13,30 +13,27 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from agent_toolkit._atk import worktree_stash
+from agent_toolkit._testing import git_repository
 
 _LABELS = ("alpha", "beta", "gamma")
 _ORIGINAL_RUN_GIT = worktree_stash._run_git
 
 
-def _git(repo: pathlib.Path, *args: str) -> str:
-    return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
-
-
 def _repository(parent: pathlib.Path) -> pathlib.Path:
     repo = pathlib.Path(tempfile.mkdtemp(prefix="stash-property-", dir=parent))
-    _git(repo, "init", "--initial-branch=main")
-    _git(repo, "config", "user.email", "property@example.com")
-    _git(repo, "config", "user.name", "Property Test")
+    git_repository.init_repository(repo, initial_branch="main")
+    git_repository.git_output(repo, "config", "user.email", "property@example.com")
+    git_repository.git_output(repo, "config", "user.name", "Property Test")
     (repo / "tracked.txt").write_text("base\n", encoding="utf-8")
-    _git(repo, "add", "tracked.txt")
-    _git(repo, "commit", "-m", "base")
+    git_repository.git_output(repo, "add", "tracked.txt")
+    git_repository.git_output(repo, "commit", "-m", "base")
     (repo / "shared.txt").write_text("existing\n", encoding="utf-8")
-    _git(repo, "stash", "push", "--include-untracked", "-m", "pre-existing")
+    git_repository.git_output(repo, "stash", "push", "--include-untracked", "-m", "pre-existing")
     return repo
 
 
 def _ref_labels(repo: pathlib.Path) -> set[str]:
-    output = _git(repo, "for-each-ref", "--format=%(refname)", "refs/worktree/")
+    output = git_repository.git_output(repo, "for-each-ref", "--format=%(refname)", "refs/worktree/")
     return set(output.splitlines()) if output else set()
 
 
@@ -84,24 +81,24 @@ def test_stash_sequences_match_reference_model(operations: list[tuple[str, str]]
             assert code == (0 if shared_stashes else 2)
             shared_stashes = max(0, shared_stashes - 1)
         assert _ref_labels(repo) == refs
-        stash_lines = _git(repo, "stash", "list").splitlines()
+        stash_lines = git_repository.git_output(repo, "stash", "list").splitlines()
         assert len(stash_lines) == shared_stashes
-        assert bool(_git(repo, "status", "--porcelain")) is dirty
+        assert bool(git_repository.git_output(repo, "status", "--porcelain")) is dirty
 
 
 def test_two_worktrees_keep_distinct_refs_and_existing_stash(tmp_path: pathlib.Path) -> None:
     """既知事例: 複数worktreeの退避は固有refに分かれ、既存の共有stashを保つ。"""
     repo = _repository(tmp_path)
     second = repo.parent / f"{repo.name}-second"
-    _git(repo, "worktree", "add", "-b", "second", str(second), "HEAD")
+    git_repository.git_output(repo, "worktree", "add", "-b", "second", str(second), "HEAD")
     (repo / "tracked.txt").write_text("main\n", encoding="utf-8")
     (second / "tracked.txt").write_text("second\n", encoding="utf-8")
     assert worktree_stash.save("main-worktree", cwd=repo) == 0
     assert worktree_stash.save("second-worktree", cwd=second) == 0
-    main_oid = _git(repo, "rev-parse", "refs/worktree/main-worktree")
-    second_oid = _git(second, "rev-parse", "refs/worktree/second-worktree")
+    main_oid = git_repository.git_output(repo, "rev-parse", "refs/worktree/main-worktree")
+    second_oid = git_repository.git_output(second, "rev-parse", "refs/worktree/second-worktree")
     assert main_oid != second_oid
-    assert len(_git(repo, "stash", "list").splitlines()) == 1
+    assert len(git_repository.git_output(repo, "stash", "list").splitlines()) == 1
 
 
 @settings(max_examples=12, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -132,8 +129,8 @@ def test_save_failure_preserves_recovery_identifier_and_unrelated_stash(
     reported = capsys.readouterr().err
     assert "stash_oid=" in reported
     assert "ref=refs/worktree/failure" in reported
-    stash_lines = _git(repo, "stash", "list").splitlines()
+    stash_lines = git_repository.git_output(repo, "stash", "list").splitlines()
     assert any("pre-existing" in line for line in stash_lines)
-    ref_exists = bool(_git(repo, "for-each-ref", "--format=%(refname)", "refs/worktree/failure"))
+    ref_exists = bool(git_repository.git_output(repo, "for-each-ref", "--format=%(refname)", "refs/worktree/failure"))
     assert ref_exists is (failure_stage == "stash-drop")
     assert len(stash_lines) == (1 if failure_stage == "stash-push" else 2)

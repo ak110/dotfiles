@@ -1,6 +1,6 @@
 """ワークアイテムの保存状態と項目種別の値を定義する共有モジュール。
 
-`_atk_wi_common`と`_uwi_scan`の双方が本モジュールをimportする。
+WIの共通処理のモジュール（`sync.py`・`entries.py`など）と`uwi_scan.py`の双方が本モジュールをimportする。
 両者は依存関係を持つため、状態集合をどちらかへ置くと循環importになる。
 本モジュールは他の配布物モジュールへ依存せず、状態集合の唯一の定義箇所とする。
 """
@@ -11,6 +11,16 @@ PROCESS_WI_GOAL_BODY = "`agent-toolkit:process-wi`を完遂してください。
 最初のプロンプトを組み立てる側と、セッション記録からそのセッションを判別する側が同じ値を使う。
 最初のプロンプトは`atk-auto`要素で囲むため、記録側は本文の包含で判定する。
 """
+
+OBSERVATION_RESUME_HEADING = "反映後の観測の再開記録"
+"""反映後の観測だけが残るAWIへprocess-wiが追記する再開記録のH2見出し名。
+
+書式は`agent-toolkit/skills/process-wi/references/finish-session.md`のテンプレートが定め、
+pickerは最後の同名節を再開記録として読む。`atk serve`の一覧も同じ読み方で表示を決める。
+"""
+
+OBSERVATION_ONLY_RESUME_LINE = "- 再開区分: 反映後の観測だけが残る"
+"""再開記録のうち、反映後の観測だけが残ることを示す行。"""
 
 WI_STATE_INBOX = "inbox"
 """次の処理主体による取得待ち。"""

@@ -1,25 +1,22 @@
 """UWIエントリの回答状態を走査する共有モジュール。
 
-frontmatterはCLIと同じ`_atk_wi_frontmatter.parse_frontmatter`で解析し、
+frontmatterはCLIと同じ`frontmatter.parse_frontmatter`で解析し、
 YAML表現の違いによってCLIとフックの判定が分岐しないようにする。
 
-`is_uwi_answered`はUWI回答判定のSSOTとし、`_atk_wi_common`は本モジュールから
-再エクスポートする。
+`is_uwi_answered`はUWI回答判定のSSOTとし、CLI・Web画面・フックはいずれも本モジュールの判定を使う。
 """
 
 import hashlib
-import os
 import pathlib
 import typing
 
-import platformdirs
-
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI, normalized_wi_type
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._git import remote as _git_remote
 
 _ANSWER_HEADING = "\n## 回答\n"
-"""UWI本文の回答節を示す見出し。`_atk_wi_add`が投入時に付与する。"""
+"""UWI本文の回答節を示す見出し。`add`が投入時に付与する。"""
 
 
 class ActiveUwi(typing.NamedTuple):
@@ -63,16 +60,7 @@ def private_notes_root() -> pathlib.Path | None:
     環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`を優先する。未設定時はCLIと同じ順序で
     `~/private-notes`、platformdirsのユーザーデータディレクトリを参照する。
     """
-    override = os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES")
-    if override:
-        root = pathlib.Path(override).expanduser()
-    else:
-        default = pathlib.Path.home() / "private-notes"
-        root = (
-            default
-            if default.exists()
-            else pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False)) / "private-notes"
-        )
+    root = _private_notes.default_private_notes()
     return root if root.is_dir() else None
 
 

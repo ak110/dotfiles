@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pathlib
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 import psutil
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._common import host_homes as _host_homes
 
 _NO_VALUE = frozenset(
     {
@@ -211,12 +213,8 @@ def _same_process(target: Target) -> bool:
 
 
 def _function_hook_dir() -> pathlib.Path | None:
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
-    root = pathlib.Path(configured) if configured and pathlib.Path(configured).is_absolute() else None
-    if root is None and home:
-        root = pathlib.Path(home) / ".claude"
-    return root / _FUNCTION_HOOK_DIR if root is not None and root.is_absolute() else None
+    root = _host_homes.claude_config_dir()
+    return root / _FUNCTION_HOOK_DIR if root.is_absolute() else None
 
 
 def function_hook_paths(session_id: str) -> tuple[pathlib.Path, pathlib.Path] | None:
@@ -336,3 +334,14 @@ def main() -> int:
         flush=True,
     )
     return 0
+
+
+def build_parser(parser: argparse.ArgumentParser) -> None:
+    """`atk agents-exit-session`は引数を持たない。登録表の形をそろえるために置く。"""
+    del parser
+
+
+def dispatch(args: argparse.Namespace) -> int:
+    """呼び出し元のホストセッションの終了を要求し、終了コードを返す。"""
+    del args
+    return main()

@@ -11,6 +11,7 @@ type Options = {
   jobs?: Job[];
   decisions?: Record<string, "allow" | "ask" | "deny">;
   listThrows?: boolean;
+  listResponse?: "error" | "deny";
 };
 
 const REQUEST_PATH = "/home/tester/.claude/agent-toolkit-function-hooks/request-sess-1.txt";
@@ -34,6 +35,8 @@ function engine(on: On, options: Options): { calls: string[]; writes: Map<string
   on("tool.call", { tool: "CronList" }, () => {
     calls.push("CronList");
     if (options.listThrows) throw new Error("CronList failed");
+    if (options.listResponse === "error") return { isError: true as const, result: "CronList failed", text: "CronList failed" };
+    if (options.listResponse === "deny") return { deny: "CronList denied" };
     return { result: { jobs: (options.jobs ?? []).map((job) => ({ cron: "*/30 * * * *", humanSchedule: "Every 30 minutes", prompt: "p", ...job })) } };
   });
   on("tool.call", { tool: "CronDelete" }, (_$, e) => {
@@ -78,6 +81,18 @@ test("一覧の取得が許可されなければ一覧を呼ばずに/exitを実
 
 test("一覧の取得が例外になっても/exitを実行する", async ($, on) => {
   const { calls } = engine(on, { request: "requested", listThrows: true });
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).toEqual(["CronList", "command:exit"]);
+});
+
+test("一覧がエラー応答なら削除せずに/exitを実行する", async ($, on) => {
+  const { calls } = engine(on, { request: "requested", jobs: [{ id: "a1" }], listResponse: "error" });
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).toEqual(["CronList", "command:exit"]);
+});
+
+test("一覧が拒否応答なら削除せずに/exitを実行する", async ($, on) => {
+  const { calls } = engine(on, { request: "requested", jobs: [{ id: "a1" }], listResponse: "deny" });
   await $.turn.complete(MAIN_TURN);
   expect(calls).toEqual(["CronList", "command:exit"]);
 });

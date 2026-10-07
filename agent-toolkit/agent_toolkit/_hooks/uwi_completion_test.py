@@ -1,4 +1,4 @@
-"""`_uwi_completion.py`のUWI回答ファイル差分通知を検証する。"""
+"""`uwi_completion.py`のUWI回答ファイル差分通知を検証する。"""
 
 import json
 import pathlib

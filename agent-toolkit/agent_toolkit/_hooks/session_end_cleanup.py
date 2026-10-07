@@ -24,9 +24,9 @@ from __future__ import annotations
 import json
 import sys
 
-from agent_toolkit._agents_server import status_file
+from agent_toolkit._agents_server import shared_roots, shared_sweep
 from agent_toolkit._atk.agents_exit_session import sweep_function_hook_files
-from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     clear_session_state,
     sweep_stale_states,
 )
@@ -49,12 +49,12 @@ def main(payload_text: str) -> int:
     if not isinstance(session_id, str) or not session_id:
         session_id = None
     keep_root_session_id = (
-        status_file.resolve_conversation_root_session_id({"CLAUDE_CODE_SESSION_ID": session_id})
+        shared_roots.resolve_conversation_root_session_id({"CLAUDE_CODE_SESSION_ID": session_id})
         if session_id is not None
         else None
     )
     try:
-        status_file.sweep_stale_shared_state(keep_root_session_id=keep_root_session_id)
+        shared_sweep.sweep_stale_shared_state(keep_root_session_id=keep_root_session_id)
     except OSError as error:
         print(f"[session_end_cleanup] agents_server共有状態を期限掃引できませんでした: {error}", file=sys.stderr)
     try:

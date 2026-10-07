@@ -53,20 +53,24 @@ def test_bootstrap_runs_helper_without_file_global(
     json.loads(stdout_buffer.getvalue().decode("utf-8"))
 
 
-def test_helper_resolves_own_root_from_bound_file(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`__file__`を束縛した名前空間では、ヘルパー自身の設置場所と`~/dotfiles`の両rootを返す。"""
+@pytest.mark.parametrize("helper_name", [helper_name for _, helper_name in _HELPERS])
+def test_helper_imports_from_checkout_of_bound_file(
+    helper_name: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`__file__`を束縛した名前空間では、ヘルパー自身の設置場所のcheckoutを`agent_toolkit`の探索先へ加える。"""
     home = tmp_path / "home"
     home.mkdir()
-    installed = tmp_path / "opt" / "dotfiles" / "agent-toolkit" / "scripts" / "atk_serve_plans_remote_helper.py"
+    installed = tmp_path / "opt" / "dotfiles" / "agent-toolkit" / "scripts" / helper_name
     installed.parent.mkdir(parents=True)
-    shutil.copy(_SCRIPTS_DIR / "atk_serve_plans_remote_helper.py", installed)
+    shutil.copy(_SCRIPTS_DIR / helper_name, installed)
     _isolate_environment(home, tmp_path, monkeypatch)
+    monkeypatch.setattr(sys, "path", list(sys.path))
     # `main`を実行させずに関数だけを得るため、`__name__`は`__main__`以外とする。
     namespace: dict[str, typing.Any] = {"__name__": "helper", "__file__": str(installed)}
 
     exec(compile(installed.read_text(encoding="utf-8"), str(installed), "exec"), namespace)  # pylint: disable=exec-used
 
-    assert namespace["_dotfiles_roots"]() == (tmp_path / "opt" / "dotfiles", home / "dotfiles")
+    assert sys.path[0] == str(tmp_path / "opt" / "dotfiles" / "agent-toolkit")
 
 
 @pytest.mark.parametrize("bootstrap", [bootstrap for bootstrap, _ in _HELPERS])

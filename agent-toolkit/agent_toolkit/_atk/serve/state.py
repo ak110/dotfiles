@@ -11,7 +11,7 @@ import typing
 import watchdog.events
 import watchdog.observers
 
-from agent_toolkit._atk.wi import common
+from agent_toolkit._atk.wi import constants as _wi_constants
 
 _TimerFactory = collections.abc.Callable[[float, collections.abc.Callable[..., None], tuple[typing.Any, ...]], threading.Timer]
 
@@ -68,7 +68,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         """監視を開始する。"""
         self._loop = loop
         self._stopped = False
-        for relative in common.WI_STATES:
+        for relative in _wi_constants.WI_STATES:
             path = self.root / relative
             path.mkdir(parents=True, exist_ok=True)
             self.observer.schedule(self, str(path), recursive=False)

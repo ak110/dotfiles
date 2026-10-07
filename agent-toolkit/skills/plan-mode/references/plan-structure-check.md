@@ -31,7 +31,6 @@ atk run-script plan-check -- --reject-migration-warnings /absolute/path/to/plan.
 専用worktreeで作業する場合は、そのworktreeを作業ディレクトリとして検証するか、`--work-dir`へそのworktreeの絶対パスを渡す。
 本スクリプトは`--work-dir`が解決するGitルートが計画メタ情報の`対象リポジトリ`と一致するか確かめるため、複製元の作業ツリーから実行するとその確認が成立せず、計画が拒否される。
 `--reject-migration-warnings`は新規作成・改訂で旧形式からの移行警告をエラーとして扱う。保存済み計画を読み取りだけで検証する場合は同オプションを省略する。
-通常のシェルでは`${CLAUDE_PLUGIN_ROOT}`が展開されないため、読込済みの本書の絶対パスからスキルの絶対ベースディレクトリを確定して指定する。
 旧形式（単一9節、二ファイル）の計画は[legacy-plan-file-standards.md](legacy-plan-file-standards.md)が定める読み取り互換で受理し、構造チェックは新書式への移行を警告する。
 構造定数と値抽出は`agent-toolkit/agent_toolkit/_plan/structure/`に従う。
 素材と要約の意味の一致、根拠の妥当性、検討の実質はレビューで確認する。

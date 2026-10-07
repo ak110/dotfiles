@@ -31,6 +31,11 @@ class TestRemovedHookCommands:
         "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; "
         "code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
     )
+    # 終了コード2を引き継いでいた2026-10-07より前の配布原本のコマンド
+    _EXIT_CODE_PRETOOLUSE_COMMAND = (
+        "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; "
+        "dotfiles-claude-hook pretooluse; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
+    )
 
     @staticmethod
     def _pretooluse_commands(data: dict) -> list[str]:
@@ -38,8 +43,9 @@ class TestRemovedHookCommands:
         entries = data.get("hooks", {}).get("PreToolUse", [])
         return [hook["command"] for entry in entries for hook in entry.get("hooks", [])]
 
-    def test_removes_legacy_pretooluse_command_and_keeps_the_current_one(self, tmp_path: Path) -> None:
-        """スクリプト実在検査を持たない旧コマンドだけを除き、配布原本の現行コマンドは残す。"""
+    @pytest.mark.parametrize("old_command", [_LEGACY_PRETOOLUSE_COMMAND, _EXIT_CODE_PRETOOLUSE_COMMAND])
+    def test_removes_legacy_pretooluse_command_and_keeps_the_current_one(self, tmp_path: Path, old_command: str) -> None:
+        """旧コマンド（実在検査を持たない形式と終了コード2を引き継ぐ形式）だけを除き、配布原本の現行コマンドを1件だけ残す。"""
         override = typing.cast(
             "dict",
             _substitute_home_placeholder(json.loads(self._POSIX_MANAGED_SETTINGS.read_text(encoding="utf-8"))),
@@ -55,8 +61,7 @@ class TestRemovedHookCommands:
                             {
                                 "matcher": "",
                                 "hooks": [
-                                    {"type": "command", "command": command}
-                                    for command in (self._LEGACY_PRETOOLUSE_COMMAND, *current_commands)
+                                    {"type": "command", "command": command} for command in (old_command, *current_commands)
                                 ],
                             }
                         ]
@@ -70,8 +75,8 @@ class TestRemovedHookCommands:
         update_claude_settings(_PROD_MANAGED_SETTINGS, target_path, overrides=[self._POSIX_MANAGED_SETTINGS])
 
         merged = self._pretooluse_commands(json.loads(target_path.read_text(encoding="utf-8")))
-        assert self._LEGACY_PRETOOLUSE_COMMAND not in merged
-        assert all(command in merged for command in current_commands)
+        assert old_command not in merged
+        assert all(merged.count(command) == 1 for command in current_commands)
 
 
 class TestWarnOrphanDotfilesHookCommands:

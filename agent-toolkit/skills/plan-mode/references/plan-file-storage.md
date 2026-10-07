@@ -6,7 +6,7 @@
 
 計画は1ファイル`<stem>.md`とし、計画ファイル（バグ）を作成する場合（`plan-file-standards.md`「バグ調査」の作成条件）だけ同じstemの`<stem>.bugs.md`を同じディレクトリへ置く。
 `atk plans commit`が保存する付属ファイルは計画ファイル（バグ）、実行レビュー指摘管理表およびWI実装commitの対応記録ファイル（`<stem>.wi-commits.jsonl`）だけとする。
-計画ファイルと、同じstemの付属ファイル（計画ファイル（バグ）、レビュー指摘管理表など）の組を計画バンドルと呼ぶ。
+計画バンドルの定義は`plan-file-standards.md`冒頭の呼称の表が定める。
 計画stemで始まるそれ以外のファイルは保存されず、同じ操作で作業側から削除される。
 計画に属さない作業ファイルは、計画stemとは別の名前でmanaged-tempの中へ保存する。
 新規作成は`atk run-script plan-create --`を経由し、実装前の計画ファイルは`~/.claude/plans`直下へ作成する。
@@ -41,4 +41,6 @@ stemは計画メタ情報の`起動経路`ごとに次のとおりとし、`dd`�
 
 実行レビュー指摘管理表は計画ファイルと同じディレクトリへ`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として置く。
 計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。WIだけをレビュー基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`が返した値をそのまま用いる。
-前者は収束後に削除し、後者は`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
+前者は収束後に削除する。
+後者は修正系列の終端で`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
+この保存の時機は`agent-toolkit:bugfix`の`references/ci-failure-handling.md`の`入力計画`の段落が定める。

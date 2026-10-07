@@ -1,116 +1,24 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
-
-旧`pytools/dotfiles_fb/_mutations.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""WIエントリの依存先（`depends_on`）の設定と、依存関係の循環の検出（`atk wi set-dependencies`）。"""
 
 from __future__ import annotations
 
 import argparse
-import datetime
-import os
 import pathlib
-import re
-import shutil
-import subprocess
 import sys
-import tempfile
 import typing
-from typing import TYPE_CHECKING
 
-from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import bulk as _bulk
-from agent_toolkit._atk.wi import user_comment as _user_comment
-from agent_toolkit._atk.wi import uwi as _uwi
-from agent_toolkit._atk.wi.common import (
-    TRANSITION_EXPLICIT_STATES,
-    WI_PROCESSABLE_STATES,
-    WI_STATE_ADOPTED,
-    WI_STATE_HOLD,
-    WI_STATE_INBOX,
-    WI_STATE_PROCESSING,
-    WI_STATE_REJECTED,
-    WI_STATES,
-    WI_TYPE_AWI,
-    WI_TYPE_UWI,
-    WebInputError,
-    _commit_and_push,
-    _copy_to_tempfile,
-    _dedup_positional_filenames,
-    _pull,
-    _push_pending_commits,
-    _repo_lock,
-    _require_type,
-    _stamp_result,
-    _subdir,
-    _validate_filename,
-    _validate_filenames_only,
-    is_agent_environment,
-    normalized_wi_type,
-)
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.constants import WI_STATE_HOLD, WI_STATE_INBOX, WI_STATE_PROCESSING, WI_TYPE_AWI
+from agent_toolkit._atk.wi.mutations.targets import atomic_write_text, resolve_active_targets
 from agent_toolkit._atk.wi.repo import (
-    _normalize_remote_url,
-    _resolve_repo_id,
-    _verify_target_repo_content,
+    resolve_repo_id,
 )
-from agent_toolkit._atk.wi.repo import append_entry as _append_entry
-from agent_toolkit._atk.wi.repo import edit_entry as _edit_entry
-from agent_toolkit._plan import locations as _plan_file
-from agent_toolkit._plan import structure as _plan_format
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.wi.mutations.content import (
-        _build_noninteractive_edit_content,
-        _cmd_append,
-        _cmd_edit,
-        _preserve_agent_user_comment,
-        _reject_agent_user_comment_change,
-        _reject_agent_user_comment_message,
-        append_entry_content,
-        edit_entry_content,
-    )
-    from agent_toolkit._atk.wi.mutations.targets import (
-        _GIT_TIMEOUT_SECONDS,
-        _atomic_write_text,
-        _candidate_local_worktree,
-        _cmd_commit,
-        _commit_values_by_path,
-        _entry_target_repo,
-        _git_head,
-        _invalidate_repo_bound_metadata,
-        _local_worktree_repo_id,
-        _resolve_awi_targets,
-        _resolve_commit,
-        _resolve_processable_targets,
-        _resolve_active_targets,
-        commit_entries,
-    )
-    from agent_toolkit._atk.wi.mutations.transitions import (
-        _apply_transition,
-        _cmd_adopt,
-        _cmd_hold,
-        _cmd_reject,
-        _cmd_return_to_inbox,
-        _cmd_rm,
-        _cmd_start_processing,
-        _cmd_unhold,
-        _resolve_transition_paths,
-        _strip_result_section,
-        _transition_commit_message,
-        _update_transition_metadata,
-        _validate_transition_options,
-        _validate_transition_targets,
-        transition_entries,
-    )
-
+from agent_toolkit._atk.wi.web_input import WebInputError
 
 _BROKEN_ENTRY_NEXT_ACTION = "`atk wi show {name}`で保存内容を確認し、ユーザーへ報告する"
 
@@ -141,15 +49,15 @@ def set_entry_dependencies(
     依存の更新は保存状態を変えないため、`hold`の項目は更新後も`hold`のまま残る。
     """
     inbox_dir = private_notes / WI_STATE_INBOX
-    processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
+    processing_dir = _wi_entries.subdir(private_notes, WI_STATE_PROCESSING)
     hold_dir = private_notes / WI_STATE_HOLD
-    _validate_filenames_only([filename, *depends_on], inbox_dir)
-    normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+    _wi_filenames.validate_filenames_only([filename, *depends_on], inbox_dir)
+    normalized_target_repo = resolve_repo_id(target_repo) if target_repo is not None else None
 
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
-        _pull(private_notes)
-        path = _resolve_active_targets([filename], inbox_dir, processing_dir)[0]
+    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
+        _wi_sync.push_pending_commits(private_notes)
+        _wi_sync.pull(private_notes)
+        path = resolve_active_targets([filename], inbox_dir, processing_dir)[0]
         text = path.read_text(encoding="utf-8")
         parsed = _frontmatter.parse_frontmatter(text)
         if parsed is None:
@@ -158,7 +66,7 @@ def set_entry_dependencies(
                 next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=path.name),
             )
         data, body = parsed
-        if _require_type(path, text) != WI_TYPE_AWI:
+        if _wi_entries.entry_type_of(path, text) != WI_TYPE_AWI:
             raise WebInputError(
                 f"AWIだけ依存を更新できます: {path.name}",
                 next_action="依存を更新するAWIのファイル名を指定し直す",
@@ -169,7 +77,7 @@ def set_entry_dependencies(
                 f"target_repoが不正です: {path.name}",
                 next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=path.name),
             )
-        entry_repo = _resolve_repo_id(raw_entry_repo)
+        entry_repo = resolve_repo_id(raw_entry_repo)
         if normalized_target_repo is not None and entry_repo != normalized_target_repo:
             raise WebInputError(
                 f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}",
@@ -178,7 +86,9 @@ def set_entry_dependencies(
                 ),
             )
 
-        canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
+        canonical_dependencies = tuple(
+            dict.fromkeys(_wi_filenames.validate_filename(value, inbox_dir).name for value in depends_on)
+        )
         if path.name in canonical_dependencies:
             raise WebInputError(
                 f"自分自身を依存先へ指定できません: {path.name}",
@@ -201,10 +111,10 @@ def set_entry_dependencies(
             data.pop("depends_on", None)
         updated_text = _frontmatter.serialize_frontmatter(data, body)
         if updated_text != text:
-            _atomic_write_text(path, updated_text)
+            atomic_write_text(path, updated_text)
             relative_path = str(path.relative_to(private_notes))
-            _commit_and_push(private_notes, "chore: update awi dependencies", [relative_path])
-        return _add._read_saved_entry_details(  # pylint: disable=protected-access
+            _wi_sync.commit_and_push(private_notes, "chore: update awi dependencies", [relative_path])
+        return _add.read_saved_entry_details(
             path,
             expected_body=updated_text,
         )
@@ -231,7 +141,7 @@ def _active_dependency_graph(
                 next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=name),
             )
         data, _body = parsed
-        if _require_type(entry_path, entry_text) != WI_TYPE_AWI:
+        if _wi_entries.entry_type_of(entry_path, entry_text) != WI_TYPE_AWI:
             continue
         raw_dependencies = data.get("depends_on", [])
         if not isinstance(raw_dependencies, list) or not all(isinstance(value, str) for value in raw_dependencies):
@@ -239,7 +149,7 @@ def _active_dependency_graph(
                 f"active項目のdepends_onが不正なため依存を更新できません: {name}",
                 next_action=f"`atk wi set-dependencies {name} --depends-on <依存先>`で依存を指定し直してから再実行する",
             )
-        graph[name] = {_validate_filename(value, inbox_dir).name for value in raw_dependencies}
+        graph[name] = {_wi_filenames.validate_filename(value, inbox_dir).name for value in raw_dependencies}
     return graph
 
 
@@ -280,7 +190,7 @@ def _dependency_cycle(
     return None
 
 
-def _cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """set-dependenciesサブコマンドを実行する。"""
     target_repo = args.target_repo
     if target_repo is None:

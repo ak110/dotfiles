@@ -1,8 +1,6 @@
-"""atk (agent-toolkit `atk wi`) のuwi系サブコマンドのテスト。
+"""`atk wi`のUWIの扱いのテスト。
 
 UWI種別の投入・一覧・編集・回答・採用・削除の単体テストを集約する。
-既存サブコマンドのテストは`atk_test.py`に、拡張サブコマンド・オプションのテストは
-`_atk_wi_extras_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import contextlib
@@ -15,6 +13,7 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi.uwi import (  # noqa: E402  # pylint: disable=wrong-import-position
     _detect_self_containment_deficiency,
@@ -82,9 +81,9 @@ def _make_uwi_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Complet
 def test_flat_uwi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """平引数追加が生成名を返し、回答欄付きUWIを書き込む。"""
     notes = tmp_path / "private-notes"
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     generated = add_module.add_entries(
         notes,
         messages=["この方針を採用しますか？"],
@@ -297,10 +296,10 @@ class TestUwiAdd:
 
 
 class TestUwiAddEditorBeforePull:
-    """UWI投入: `_collect_message_via_editor`を`_pull`より前に呼ぶ順序保証。
+    """UWI投入: `collect_message_via_editor`を`pull`より前に呼ぶ順序保証。
 
-    エディター起動はロック外・ロック取得前に行う設計であり、`_pull`失敗はエディターで
-    確定済みの本文取得後（`_repo_lock`保持下）に発生する。
+    エディター起動はロック外・ロック取得前に行う設計であり、`pull`失敗はエディターで
+    確定済みの本文取得後（`repo_lock`保持下）に発生する。
     `question_type == "choice" and not args.choices`のバリデーションは
     エディター起動より前に維持する。
     """
@@ -416,27 +415,6 @@ class TestUwiAddRepoPathOverrideCli:
         assert _invoke_uwi_add(tmp_path, body="この対応でよいか").code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/cwdrepo" in content
-
-    def test_message_only_directory_errors(
-        self,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """本文が続かないディレクトリのみの呼び出しは、usage表示付きの平易なエラーでexit 2になる。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=uwi", "--question-type=yes-no", str(myrepo)], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 2
-        captured = capsys.readouterr()
-        assert "使い方: atk wi add" in captured.err
-        error_line = captured.err.rstrip("\n").splitlines()[-1]
-        assert "パスの指定は不要です" in error_line
-        assert "REPO_PATH" not in error_line
-        assert "MESSAGE" not in error_line
 
     def test_directory_followed_by_message_uses_compat_path(
         self,
@@ -878,9 +856,9 @@ def test_answer_uwi_common_core_accepts_agent_environment(
     notes = _setup_notes(tmp_path)
     path = _write_uwi_file(notes, "uwi.md", question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
     monkeypatch.setenv("AI_AGENT", "1")
-    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     assert uwi_module.answer_uwi(notes, filename=path.name, answer="採用する")
     assert path.read_text(encoding="utf-8").endswith("採用する\n")
@@ -1275,9 +1253,9 @@ class TestUwiRm:
 def test_answer_uwi_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """回答欄マーカーが重複するエントリでも最後のマーカー基準で分割し、見出しと質問本文を保全する。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     path = notes / "inbox" / "20260101-000000-001.md"
     path.write_text(
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
@@ -1297,9 +1275,9 @@ def test_answer_uwi_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: p
 def test_answer_uwi_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """マーカーが1個の通常データでは従来と同じ結果になる。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     path = notes / "inbox" / "20260101-000000-002.md"
     path.write_text(
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
@@ -1319,12 +1297,12 @@ def test_answer_uwi_auto_adopts_affirmative_post_approval(
 ) -> None:
     """標準の事後承認UWIへ肯定回答した場合は回答保存と採用を同じ操作で完了する。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     commits: list[tuple[str, list[str]]] = []
     monkeypatch.setattr(
-        uwi_module,
-        "_commit_and_push",
+        _wi_sync,
+        "commit_and_push",
         lambda _notes, message, paths, **_kwargs: commits.append((message, list(paths))),
     )
     path = notes / "inbox/post-approval.md"
@@ -1371,8 +1349,8 @@ def test_answer_uwi_auto_adopt_conflict_guides_comparison(
 ) -> None:
     """採用先に同名項目がある場合は何も変えず、比較と不要な側の削除を次の操作として返す。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     path = notes / "inbox/post-approval.md"
     path.write_text(
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
@@ -1401,9 +1379,9 @@ def test_answer_uwi_does_not_auto_adopt_other_answers(
 ) -> None:
     """否定回答と標準外回答は従来どおり回答だけを保存する。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     path = notes / "inbox/post-approval-other.md"
     path.write_text(
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
@@ -1463,9 +1441,9 @@ def test_answer_uwi_targets_explicit_state_and_keeps_legacy_priority(
 ) -> None:
     """状態指定時は指定側へ回答し、省略時はprocessing優先を維持する。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     content = (
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n質問本文。\n\n"
@@ -1492,9 +1470,9 @@ def test_answer_uwi_accepts_explicit_hold_state(tmp_path: pathlib.Path, monkeypa
     held.write_text(held.read_text(encoding="utf-8") + f"{uwi_module.ANSWER_MARKER}\n", encoding="utf-8")
     (notes / "hold").mkdir(exist_ok=True)
     held.rename(notes / "hold/held.md")
-    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     assert uwi_module.answer_uwi(notes, filename="held.md", state="hold", answer="回答") is True
     assert (notes / "hold/held.md").read_text(encoding="utf-8").endswith("回答\n")

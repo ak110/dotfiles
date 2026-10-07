@@ -10,11 +10,19 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import commands, state
-from agent_toolkit._atk import config, environment, managed_temp, output_file
+from agent_toolkit._agents_server import (
+    commands,
+    resume_waits,
+    shared_layout,
+    shared_roots,
+    state,
+    status_file,
+    wait_output_tracking,
+)
+from agent_toolkit._atk import environment, managed_temp, output_file
+from agent_toolkit._common import state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
-
-status_file = commands.status_file
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
 def _write_jsonl(path: pathlib.Path, records: list[dict]) -> None:
@@ -47,7 +55,7 @@ def test_public_wait_save_failure_keeps_unreceived_result(
 ) -> None:
     """公開waitの保存先を開けない場合、実際の未回収結果を消費しない。"""
     monkeypatch.setenv("CLAUDECODE", "1")
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
     result_file = results / "session-1.json"
     original = json.dumps({"status": "completed", "owner_status_file": "root.json", "agent_message": "保持する結果"})
@@ -56,7 +64,7 @@ def test_public_wait_save_failure_keeps_unreceived_result(
     def fail(_prefix: str) -> pathlib.Path:
         raise OSError("保存準備に失敗")
 
-    monkeypatch.setattr(managed_temp, "create_managed_temp", fail)
+    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", fail)
     with pytest.raises(SystemExit, match="1"):
         atk.main(["agents", "wait"])
     assert result_file.read_text(encoding="utf-8") == original
@@ -69,8 +77,8 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
-    directory = status_file.status_directory("root-session", tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    directory = shared_layout.status_directory("root-session", tmp_path)
     directory.mkdir(parents=True)
     (directory / "root.json").write_text(
         json.dumps(
@@ -137,7 +145,7 @@ def test_agents_wait_without_target_returns_no_empty_saved_summary(
     空の要約を返すと、呼び出し元はヘルプが示す対象不在の動作と異なる出力を受け取り、
     読む結果の無いファイルを開いてから委譲元の応答の確認へ進む。
     """
-    root = status_file.status_directory("root-session", tmp_path) / "root.json"
+    root = shared_layout.status_directory("root-session", tmp_path) / "root.json"
     document = json.loads(root.read_text(encoding="utf-8"))
     document["sessions"] = []
     root.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
@@ -162,7 +170,7 @@ def test_agents_wait_saves_small_result_without_output_option(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """短い回収結果も生成側のファイルへ残し、内訳とJSON Linesの内容を一致させる。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
     payload = {
         "status": "completed",
@@ -213,7 +221,7 @@ def test_agents_wait_auto_saves_long_result_for_agent_and_keeps_collection_reada
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
     long_message = "完了報告" * 5000
     (results / "session-1.json").write_text(
@@ -235,17 +243,19 @@ def test_agents_wait_auto_saves_long_result_for_agent_and_keeps_collection_reada
     assert json.loads(saved.read_text(encoding="utf-8"))["agent_message"] == long_message
 
     session = state.SessionState("parent-1", "/tmp")
-    state.consume_claude_agents_server_message(
+    wait_output_tracking.consume_claude_agents_server_message(
         session,
         {"content": [{"id": "toolu_1", "name": "mcp__agents_server__start", "input": {"mode": "explore", "prompt": "調査"}}]},
     )
-    state.consume_claude_agents_server_message(
+    wait_output_tracking.consume_claude_agents_server_message(
         session, {"content": [{"tool_use_id": "toolu_1", "content": {"session_id": "session-1", "status": "running"}}]}
     )
-    state.consume_claude_agents_server_message(
+    wait_output_tracking.consume_claude_agents_server_message(
         session, {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": "atk agents wait"}}]}
     )
-    state.consume_claude_agents_server_message(session, {"content": [{"tool_use_id": "toolu_2", "content": output}]})
+    wait_output_tracking.consume_claude_agents_server_message(
+        session, {"content": [{"tool_use_id": "toolu_2", "content": output}]}
+    )
     assert not session.live_child_session_ids
 
 
@@ -254,7 +264,7 @@ def test_agents_wait_saves_notice_summary(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """通知だけの待機では、送信元と通知件数を保存先を読む前に示す。"""
-    notices = status_file.notices_directory("root-session", tmp_path)
+    notices = shared_layout.notices_directory("root-session", tmp_path)
     notices.mkdir(parents=True)
     (notices / "session-1.1.json").write_text(
         json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-28T00:00:00Z", "body": "警告"}),
@@ -286,13 +296,13 @@ def test_agents_wait_saves_notice_and_terminal_summary(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """通知を伴う終端結果では、通知数と終端数をともに示す。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True)
     (results / "session-1.json").write_text(
         json.dumps({"status": "completed", "owner_status_file": "root.json", "agent_message": "完了"}),
         encoding="utf-8",
     )
-    notices = status_file.notices_directory("root-session", tmp_path)
+    notices = shared_layout.notices_directory("root-session", tmp_path)
     notices.mkdir(parents=True)
     for sequence in (1, 2):
         (notices / f"session-1.{sequence}.json").write_text(
@@ -332,12 +342,17 @@ def test_agents_wait_saves_notice_and_terminal_summary(
     ("error", "suffix"),
     [
         pytest.param(None, "", id="no-record"),
-        pytest.param({"message": "失敗"}, "", id="other-error"),
+        pytest.param({"message": "失敗"}, ' error={"message":"失敗"}', id="other-error"),
         # 自動再開を消費した後のturnの終端が残った子sessionを記録した結果（`codex.py`の`turn/completed`）。
         # 再開したturnの最終の結果であり、待機表明と取り違えさせない。
-        pytest.param({"unobservedSessions": ["child-1"]}, "", id="resumed-turn-with-unobserved-child"),
+        pytest.param(
+            {"unobservedSessions": ["child-1"]},
+            ' error={"unobservedSessions":["child-1"]}',
+            id="resumed-turn-with-unobserved-child",
+        ),
         pytest.param(
             {"unfinishedBackgroundTasks": ["buaqxv1xf"], "unobservedSessions": ["child-1"], "heldResultFinalized": True},
+            ' error={"unfinishedBackgroundTasks":["buaqxv1xf"],"unobservedSessions":["child-1"],"heldResultFinalized":true}'
             " unfinished_waits=2",
             id="remaining-targets",
         ),
@@ -355,7 +370,7 @@ def test_agents_wait_terminal_line_marks_result_finalized_with_remaining_waits(
 
     委譲元は結果本文のファイルと終端行だけを読んで次の操作を選ぶため、保存先のJSON Linesにだけ記録しても判別に使われない。
     """
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True)
     payload: dict[str, Any] = {"status": "completed", "owner_status_file": "root.json", "agent_message": "待機中: buaqxv1xf"}
     if error is not None:
@@ -438,6 +453,89 @@ def test_summarize_saved_wait_keeps_earlier_bodies_and_skips_oversized_or_unread
     ]
 
 
+def test_summarize_saved_wait_shows_error_and_next_action_for_failed_row(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """失敗で終端した行の要約は`error`と`next_action`を示し、委譲元が保存先を開かずに原因と次の操作を読める。
+
+    `error`と`next_action`が要約に無いと、本文が空か作業途中の文である失敗を、委譲元が原因不明として継続を送る。
+    """
+    body_path = tmp_path / "body.md"
+    body_path.write_text("", encoding="utf-8")
+    saved = tmp_path / "output.txt"
+    next_action = "利用上限による失敗なら別のmodel_typeでstartし直す（例: model_type=medium_tier）"
+    _write_jsonl(
+        saved,
+        [
+            {
+                "session_id": "session-1",
+                "label": "WI投入",
+                "status": "failed",
+                "agent_message": "",
+                "engine": "codex",
+                "model": "gpt-5.6-sol",
+                "effort": "medium",
+                "model_type": "high_tier",
+                "error": {
+                    "codexErrorInfo": "usageLimitExceeded",
+                    "message": "Your workspace is out of credits. Add credits to continue.",
+                },
+                "next_action": next_action,
+                "agent_message_path": str(body_path),
+            }
+        ],
+    )
+
+    commands.summarize_saved_wait(saved)
+
+    terminal_line = capsys.readouterr().out.splitlines()[1]
+    assert terminal_line == (
+        f"終端行: session_id=session-1 label=WI投入 status=failed agent_message_path={body_path}"
+        " engine=codex model=gpt-5.6-sol effort=medium model_type=high_tier"
+        ' error={"codexErrorInfo":"usageLimitExceeded","message":"Your workspace is out of credits. Add credits to continue."}'
+        f' next_action="{next_action}"'
+    )
+
+
+def test_summarize_saved_wait_shows_all_fields_except_body_and_notices(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """終端行へ加わった項目は要約へそのまま現れ、本文と通知は要約行へ写さない。
+
+    項目を名前で選ぶ要約では、終端行へ後から加わった項目が委譲元へ届かない。
+    先頭4項目の名前と順序は、要約行を読む委譲元のために保つ。
+    """
+    saved = tmp_path / "output.txt"
+    _write_jsonl(
+        saved,
+        [
+            {
+                "new_field": "追加の値",
+                "agent_message": "本文",
+                "notices": [{"body": "通知本文"}],
+                "status": "completed",
+                "agent_message_path": "/tmp/body.md",
+                "spaced": "a b",
+                "empty": "",
+                "count": 3,
+                "session_id": "session-1",
+                "label": "調査",
+            }
+        ],
+    )
+
+    commands.summarize_saved_wait(saved)
+
+    output_lines = capsys.readouterr().out.splitlines()
+    terminal_line = next(line for line in output_lines if line.startswith("終端行: "))
+    assert terminal_line == (
+        "終端行: session_id=session-1 label=調査 status=completed agent_message_path=/tmp/body.md"
+        ' new_field=追加の値 spaced="a b" empty="" count=3'
+    )
+    assert "本文" not in terminal_line
+    assert "通知本文" not in terminal_line
+
+
 @pytest.mark.usefixtures("session_environment")
 def test_agents_show_selects_one_session(capsys: pytest.CaptureFixture[str]) -> None:
     """showは完全識別子で指定した1件だけを返す。"""
@@ -462,9 +560,9 @@ def test_agents_show_finds_uncollected_result_after_status_expires(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """期限後に状態一覧から消えたsessionも保存済みの起動情報と結果を返す。"""
-    root = status_file.status_directory("root-session", tmp_path)
+    root = shared_layout.status_directory("root-session", tmp_path)
     (root / "root.json").write_text('{"version": 1, "sessions": []}', encoding="utf-8")
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(exist_ok=True)
     (results / "nested.json").write_text(
         json.dumps(
@@ -530,7 +628,7 @@ async def test_public_show_preserves_latest_speed_in_live_and_retained_results(
     )
     writer = status_file.StatusFileWriter(
         {session.session_id: session},
-        status_file.StatusFileIdentity("root-session", "fast.json", None),
+        shared_roots.StatusFileIdentity("root-session", "fast.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -620,9 +718,9 @@ def test_agents_list_without_conversation_root_shows_all_roots(
     """会話識別子のない直接端末では全rootのsessionを表示する。"""
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for root_session_id, remote_session_id in (("root-a", "session-a"), ("root-b", "session-b")):
-        directory = status_file.status_directory(root_session_id, tmp_path)
+        directory = shared_layout.status_directory(root_session_id, tmp_path)
         directory.mkdir(parents=True)
         (directory / "root.json").write_text(
             json.dumps(
@@ -652,7 +750,7 @@ def test_agents_list_without_conversation_root_shows_all_roots(
 
 
 def _write_root_sessions(state_root: pathlib.Path, root_session_id: str, sessions: list[dict]) -> None:
-    directory = status_file.status_directory(root_session_id, state_root)
+    directory = shared_layout.status_directory(root_session_id, state_root)
     directory.mkdir(parents=True)
     (directory / "root.json").write_text(json.dumps({"version": 1, "sessions": sessions}), encoding="utf-8")
 
@@ -667,7 +765,7 @@ def test_agents_list_human_tree_omits_roots_without_listed_sessions(
         monkeypatch.delenv(key, raising=False)
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     timestamps = {"started_at": "2026-09-30T00:00:00+00:00", "updated_at": "2026-09-30T00:00:00+00:00"}
     _write_root_sessions(tmp_path, "root-running", [{"session_id": "session-running", "status": "running", **timestamps}])
     _write_root_sessions(tmp_path, "root-empty", [])
@@ -701,7 +799,7 @@ def test_agents_list_human_tree_reports_no_sessions(
         monkeypatch.delenv(key, raising=False)
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     _write_root_sessions(tmp_path, "root-empty", [])
     (tmp_path / "agents-server" / "aliases").mkdir()
 
@@ -721,7 +819,7 @@ def test_agents_list_reports_unconfirmed_conversation_root(
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     with pytest.raises(SystemExit, match="4"):
         atk.main(["agents", "list"])
@@ -743,8 +841,8 @@ def test_agents_list_returns_empty_for_confirmed_root(
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
-    status_file.status_directory("root-session", tmp_path).mkdir(parents=True)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    shared_layout.status_directory("root-session", tmp_path).mkdir(parents=True)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
@@ -762,9 +860,9 @@ def test_agents_list_uses_explicit_alias_and_isolates_other_roots(
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for root_session_id, remote_session_id in (("root-a", "session-a"), ("root-b", "session-b")):
-        directory = status_file.status_directory(root_session_id, tmp_path)
+        directory = shared_layout.status_directory(root_session_id, tmp_path)
         directory.mkdir(parents=True)
         (directory / "root.json").write_text(
             json.dumps(
@@ -775,7 +873,7 @@ def test_agents_list_uses_explicit_alias_and_isolates_other_roots(
             ),
             encoding="utf-8",
         )
-    status_file.write_root_alias("current-session", "root-a", tmp_path)
+    shared_roots.write_root_alias("current-session", "root-a", tmp_path)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
@@ -802,8 +900,8 @@ def test_agents_logs_reads_claude_record(
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", "session-1"])
@@ -846,8 +944,8 @@ def test_agents_logs_markdown_keeps_turns_and_tool_result_together(
             },
         ],
     )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", "session-1", "--format", "markdown"])
@@ -911,8 +1009,8 @@ def test_agents_logs_markdown_renders_codex_record(
             },
         ],
     )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", thread_id, "--format", "markdown"])
@@ -937,8 +1035,8 @@ def test_agents_logs_reads_subagent_and_appends_it_to_parent_markdown(
     child.with_name(f"{child_id}.meta.json").write_text(
         json.dumps({"description": "記録調査", "agentType": "Explore"}), encoding="utf-8"
     )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", child_id])
@@ -995,8 +1093,8 @@ def test_agents_logs_bulk_export_filters_projects_and_preserves_existing_files(
                 {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": cwd}]}},
             ],
         )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path / "codex")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     output_dir = tmp_path / "exports"
 
     with pytest.raises(SystemExit, match="0"):
@@ -1025,8 +1123,8 @@ def test_agents_logs_reports_missing_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """存在しない記録は識別子を添えて報告し、一覧で識別子を確かめる操作を示す。"""
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
     for argv in (["missing"], ["missing", "--format", "markdown"]):
         with pytest.raises(SystemExit, match="2"):
@@ -1057,9 +1155,9 @@ def test_agents_logs_shows_first_of_ambiguous_codex_records(
             + "\n",
             encoding="utf-8",
         )
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path / "claude")
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path / "state")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", thread_id])
@@ -1073,10 +1171,10 @@ def test_agents_logs_reads_and_follows_antigravity_events(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Antigravityの保存済み出力と、その後に追記された行を順に表示する。"""
-    monkeypatch.setattr(commands.session_records, "default_claude_home", lambda: tmp_path)
-    monkeypatch.setattr(commands.session_records, "default_codex_home", lambda: tmp_path)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
-    path = status_file.session_log_path("root-1", "agy-1", tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    path = shared_layout.session_log_path("root-1", "agy-1", tmp_path)
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"event": "init", "conversation_id": "agy-1"}) + "\n", encoding="utf-8")
     sleeps = 0
@@ -1194,7 +1292,7 @@ def test_human_tree_prefers_usage_limit_and_api_retry_over_progress() -> None:
             "session_id": "limit",
             "started_at": "2026-09-13T00:00:00+00:00",
             "api_error": {
-                "type": state.USAGE_LIMIT_ERROR_TYPE,
+                "type": resume_waits.USAGE_LIMIT_ERROR_TYPE,
                 "http_status": 429,
                 "first_at": "2026-09-13T00:30:00+00:00",
                 "count": 1,
@@ -1240,7 +1338,7 @@ def test_agents_list_watch_redraws_until_interrupted(
     _human_environment(monkeypatch)
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     timestamps = {"started_at": "2026-09-30T00:00:00+00:00", "updated_at": "2026-09-30T00:00:00+00:00"}
     first = {"session_id": "session-first", "status": "running", **timestamps}
     done = {"session_id": "session-done", "status": "completed", **timestamps}
@@ -1252,7 +1350,7 @@ def test_agents_list_watch_redraws_until_interrupted(
         intervals.append(seconds)
         if len(intervals) == 1:
             added = {"session_id": "session-added", "status": "running", **timestamps}
-            path = status_file.status_directory("root-a", tmp_path) / "root.json"
+            path = shared_layout.status_directory("root-a", tmp_path) / "root.json"
             path.write_text(json.dumps({"version": 1, "sessions": [first, done, added]}), encoding="utf-8")
             return
         raise KeyboardInterrupt

@@ -10,6 +10,7 @@ import subprocess
 from agent_toolkit._atk import help_text as _atk_help  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import outcome as _outcome  # pylint: disable=wrong-import-position
 from agent_toolkit._common import file_lock as _file_lock  # pylint: disable=wrong-import-position
+from agent_toolkit._git import command as _git_command
 
 _LOCK_NAME = "agent-toolkit-stash.lock"
 _STASH_IDENTIFIER_PATTERN = re.compile(r"stash@\{[0-9]+\}\Z")
@@ -21,15 +22,7 @@ _QUEUE_REPOSITORY_NEXT_ACTION = (
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
     """指定worktreeでgitを実行する。"""
-    return subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    return _git_command.run([*args], cwd, capture_output=True, text=True, check=False)
 
 
 def _git_output(args: list[str], cwd: pathlib.Path) -> str | None:

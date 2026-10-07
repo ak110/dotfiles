@@ -12,14 +12,15 @@ import sys
 import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._hooks.output_contract import validate_hook_output
+from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
+from agent_toolkit._testing.hook_output_contract import validate_hook_output
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _HOOK_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _HOOKS_PATH = _PLUGIN_ROOT / "hooks" / "hooks.json"
 # 子プロセスで起動するStopフックへはconftestの待機の差し替えが及ばないため、末尾を`end_turn`で終えるtranscriptを渡し、
-# `stop_gate._wait_for_end_turn`が上限まで待たずに判定へ進むようにする。
+# `transcript_scan.wait_for_end_turn`が上限まで待たずに判定へ進むようにする。
 _FINISHED_TURN_ENTRIES = [
     {"type": "assistant", "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "完了しました。"}]}}
 ]
@@ -103,7 +104,7 @@ def _build_fixture(
         managed_root = tmp_path / "managed temp"
         managed_root.mkdir()
         if os.name == "nt":
-            _managed_temp._windows_secure_path(  # pylint: disable=protected-access
+            managed_temp_windows_security._windows_secure_path(  # pylint: disable=protected-access
                 managed_root,
                 directory=True,
             )

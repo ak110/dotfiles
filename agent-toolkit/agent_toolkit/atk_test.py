@@ -1,12 +1,9 @@
-"""atk (agent-toolkit `atk wi`) のテスト。
+"""`atk`のトップレベルCLIと`atk wi`の基本サブコマンドのテスト。
 
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
 add・本文要約切り詰めなど基本サブコマンドの単体テストを集約する。
-list系は`_atk_wi_list_test.py`、show系は`_atk_wi_show_test.py`、mutation系は`_atk_wi_mutations_test.py`、
-process-loop・リポジトリ解決は`_atk_wi_process_loop_test.py`、拡張機能は`_atk_wi_extras_test.py`、
-UWI系は`_atk_wi_uwi_test.py`、本文要約の切り詰め境界ケースは`_atk_wi_formatters_test.py`に分離する。
-UWI共通ヘルパーは本ファイルと分割先テストの双方から使うため本ファイルに残置する。
-gitリモート応答フェイクは複数テストファイルが共有するため`_atk_git_fake_test_helpers.py`に集約する。
+サブコマンドごとのテストは各実装の隣の`*_test.py`に置く。
+UWI共通ヘルパーは本ファイルと他のテストの双方から使うため本ファイルに残置する。
 """
 
 import argparse
@@ -17,6 +14,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import time
 import types
 from collections.abc import Callable
@@ -26,13 +24,22 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import config as _config  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk import git_sync as _git_sync
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk import plans as _plans_module
 from agent_toolkit._atk import run_command as _run_command  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import common as _wi_common  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import listing as _wi_listing
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import web_input as _wi_web_input
+from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
+from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
+from agent_toolkit._common import session_state as _session_state  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._hooks import session_state as _session_state  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._hooks import user_prompt_submit  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import wi_bodies as _wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _FIXED_HEAD_COMMIT,
@@ -40,11 +47,33 @@ from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     make_git_remote_fake as _make_git_remote_fake,
 )
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 _GitCall = dict[str, Any]
 
 _ATK_PATH = pathlib.Path(atk.__file__).resolve()
 _PROJECT_ROOT = _ATK_PATH.parents[1]
+
+
+def _install_myrepo_git_fake(monkeypatch: pytest.MonkeyPatch, myrepo: pathlib.Path) -> list[_GitCall]:
+    """`myrepo`を`github.com/example/myrepo`の作業ツリーとして答えるGitの偽装へ`subprocess.run`を差し替え、記録する呼び出しの列を返す。"""
+    git_calls: list[_GitCall] = []
+
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
+        if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
+        if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+            url = "https://github.com/example/myrepo.git\n"
+            stdout: Any = url if kwargs.get("text") else url.encode()
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+        if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{_FIXED_HEAD_COMMIT}\n", stderr="")
+        empty: Any = "" if kwargs.get("text") else b""
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    return git_calls
 
 
 def _isolated_cli_environ(host_environ: Callable[[], dict[str, str]], tmp_path: pathlib.Path) -> dict[str, str]:
@@ -92,7 +121,7 @@ def test_run_command_dispatches_remainder_argv(monkeypatch: pytest.MonkeyPatch) 
         received.append(args)
         return 23
 
-    monkeypatch.setattr(_run_command, "run", fake_run)
+    monkeypatch.setattr(_run_command, "dispatch", fake_run)
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["run-command", "--cwd", str(pathlib.Path.cwd()), "--", "tool", "a b", "|", "-x"])
@@ -134,25 +163,16 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
     seed = tmp_path / "seed"
     notes = tmp_path / "private-notes"
     peer = tmp_path / "peer"
-    subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(origin)], check=True, capture_output=True)
-    seed.mkdir()
-    subprocess.run(["git", "init", "--initial-branch=main"], cwd=seed, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "atk-test"], cwd=seed, check=True)
-    subprocess.run(["git", "config", "user.email", "atk-test@example.invalid"], cwd=seed, check=True)
-    (seed / "inbox").mkdir()
-    (seed / "inbox/.gitkeep").write_text("", encoding="utf-8")
-    subprocess.run(["git", "add", "."], cwd=seed, check=True)
-    subprocess.run(["git", "commit", "-m", "base"], cwd=seed, check=True, capture_output=True)
-    subprocess.run(["git", "remote", "add", "origin", str(origin)], cwd=seed, check=True)
-    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=seed, check=True, capture_output=True)
-    subprocess.run(["git", "clone", str(origin), str(notes)], check=True, capture_output=True)
-    subprocess.run(["git", "clone", str(origin), str(peer)], check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "atk-test"], cwd=peer, check=True)
-    subprocess.run(["git", "config", "user.email", "atk-test@example.invalid"], cwd=peer, check=True)
+    git_repository.init_bare_repository(origin)
+    git_repository.init_repository(
+        seed, initial_branch="main", origin=str(origin), files={"inbox/.gitkeep": ""}, commit_message="base"
+    )
+    git_repository.run_git(seed, "push", "-u", "origin", "main")
+    git_repository.run_git(tmp_path, "clone", str(origin), str(notes))
+    git_repository.run_git(tmp_path, "clone", str(origin), str(peer))
     _write_awi_file(peer, "remote.md")
-    subprocess.run(["git", "add", "inbox/remote.md"], cwd=peer, check=True)
-    subprocess.run(["git", "commit", "-m", "remote entry"], cwd=peer, check=True, capture_output=True)
-    subprocess.run(["git", "push"], cwd=peer, check=True, capture_output=True)
+    git_repository.commit_all(peer, "remote entry")
+    git_repository.run_git(peer, "push")
 
     for _ in range(2):
         with pytest.raises(SystemExit) as exc_info:
@@ -212,11 +232,7 @@ def test_cli_local_path_filter_counts_legacy_and_current_uwis(
     """実CLIはローカルパス指定時に旧パス形とURL形のUWIをともに数える。"""
     notes = _setup_notes(tmp_path)
     local_repo = tmp_path / "repo"
-    subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/repo.git"],
-        check=True,
-    )
+    git_repository.init_repository(local_repo, origin="git@github.com:example/repo.git")
     _write_uwi_file(notes, "legacy.md", target_repo=str(local_repo), question="旧形式")
     _write_uwi_file(notes, "current.md", target_repo="github.com/example/repo", question="現行形式")
     _write_uwi_file(notes, "other.md", target_repo="github.com/example/other", question="対象外")
@@ -366,6 +382,7 @@ class TestWaitScheduleParser:
             ["wait-schedule"],
             ["wait-schedule", "--request-bucket=worker"],
             ["wait-schedule", "--request-bucket=main", "extra"],
+            ["wait-schedule", "--request-bucket=main", "--format=yaml"],
         ],
     )
     def test_rejects_missing_unknown_or_extra_arguments(self, argv: list[str]) -> None:
@@ -393,6 +410,23 @@ class TestWaitScheduleParser:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == "*/30 * * * *\n"
 
+    def test_wait_schedule_json_format(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--format json`はcron式と、1行目がUserPromptSubmitの機械注入の標識であるpromptを1行のJSONで出力する。"""
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "*/3 * * * *")
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main", "--format", "json"], home=tmp_path)
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert out.count("\n") == 1
+        payload = json.loads(out)
+        assert payload["cron"] == "*/3 * * * *"
+        assert payload["prompt"].split("\n", 1)[0] == user_prompt_submit.PERIODIC_RECHECK_MARKER
+
     def test_sweeps_managed_temp_before_dispatch(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -405,7 +439,7 @@ class TestWaitScheduleParser:
             calls.append(now)
             return _managed_temp.SweepResult([], (), None)
 
-        monkeypatch.setattr(_managed_temp, "sweep_managed_temp", fake_sweep)
+        setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", fake_sweep)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
@@ -429,8 +463,8 @@ class TestWaitScheduleParser:
             return "fixed-subcommand-output"
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        monkeypatch.setattr(
-            _managed_temp,
+        setattr_in_managed_temp_modules(
+            monkeypatch,
             "sweep_managed_temp",
             lambda *, now: _managed_temp.SweepResult([], tuple(tmp_path / f"orphan-{index}" for index in range(count)), None),
         )
@@ -466,8 +500,8 @@ class TestWaitScheduleParser:
     ) -> None:
         """未登録領域の警告は値が1の委譲先だけで抑止する。"""
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(
-            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
         )
         if delegated_session is None:
             monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -481,6 +515,31 @@ class TestWaitScheduleParser:
         captured = capsys.readouterr()
         assert captured.out == "fixed-subcommand-output\n"
         assert ("登録を持たない管理対象が1件ある" in captured.err) is expects_warning
+
+    def test_sweep_notice_suppressed_for_codex_delegated_session(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """委譲元の識別子だけを持つCodexの委譲先でも、未登録領域の警告を出力しない。
+
+        Codexの委譲先は`AGENT_TOOLKIT_DELEGATED_SESSION`を持たず、`AGENT_TOOLKIT_OWNER_SESSION`だけを持つ。
+        """
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        )
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner-session")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "fixed-subcommand-output\n"
+        assert "登録を持たない管理対象" not in captured.err
 
     def test_unregistered_managed_temp_count_failure_does_not_change_subcommand_result(
         self,
@@ -496,8 +555,8 @@ class TestWaitScheduleParser:
             return "fixed-subcommand-output"
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        monkeypatch.setattr(
-            _managed_temp,
+        setattr_in_managed_temp_modules(
+            monkeypatch,
             "sweep_managed_temp",
             lambda *, now: _managed_temp.SweepResult([], (), _managed_temp.ManagedTempError("走査失敗")),
         )
@@ -524,8 +583,8 @@ class TestWaitScheduleParser:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(
-            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
         )
         state: dict = {}
 
@@ -557,8 +616,8 @@ class TestWaitScheduleParser:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        monkeypatch.setattr(
-            _managed_temp, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+        setattr_in_managed_temp_modules(
+            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
         )
 
         def fail_update(_session_id: str, _mutator) -> bool:
@@ -581,9 +640,9 @@ class TestWaitScheduleParser:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """managed-temp listは未登録領域の絶対パスと回収方法を表示する。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = _managed_temp.create_managed_temp("orphan")
-        _managed_temp._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
+        managed_temp_registry._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["managed-temp", "list"], home=tmp_path, now=_FIXED_DT)
@@ -601,7 +660,7 @@ class TestWaitScheduleParser:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """期限超過領域の後始末失敗は警告し、本来のサブコマンドを継続する。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h")
         target = _managed_temp.create_managed_temp("cleanup-failure")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
@@ -618,7 +677,7 @@ class TestWaitScheduleParser:
             del recover_registry, blocking
             raise _managed_temp.ManagedTempError(f"後始末失敗: {path}")
 
-        monkeypatch.setattr(_managed_temp, "_cleanup_managed_temp", fail_cleanup)  # noqa: SLF001
+        setattr_in_managed_temp_modules(monkeypatch, "_cleanup_managed_temp", fail_cleanup)  # noqa: SLF001
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now)
@@ -649,7 +708,7 @@ class TestWaitScheduleParser:
 
         def unregistered(prefix: str, *, expired: bool, gitdir: pathlib.Path | None = None) -> pathlib.Path:
             target = _managed_temp.create_managed_temp(prefix)
-            _managed_temp._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
+            managed_temp_registry._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
             if gitdir is not None:
                 (target / "wt").mkdir()
                 (target / "wt" / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
@@ -701,7 +760,7 @@ class TestWaitScheduleParser:
             validated.append(pathlib.Path(path))
             return original_validate(path)
 
-        monkeypatch.setattr(_managed_temp, "validate_managed_temp", record_validate)
+        setattr_in_managed_temp_modules(monkeypatch, "validate_managed_temp", record_validate)
 
         for moment in (now, now):
             with pytest.raises(SystemExit) as exc_info:
@@ -724,7 +783,7 @@ class TestWaitScheduleParser:
         path_form: str,
     ) -> None:
         """期限超過した明示対象を絶対パス表記にかかわらず重複処理せず、ほかの対象も削除する。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = _managed_temp.create_managed_temp("explicit-cleanup")
         other = _managed_temp.create_managed_temp("other-expired")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
@@ -752,7 +811,7 @@ class TestWaitScheduleParser:
         tmp_path: pathlib.Path,
     ) -> None:
         """自動削除済みの対象でも、明示cleanupの相対パスは受理しない。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = _managed_temp.create_managed_temp("relative-cleanup")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
         old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
@@ -775,7 +834,7 @@ class TestWaitScheduleParser:
         count: int,
     ) -> None:
         """省略時は管理対象の一覧を示して終了コード2を返す。"""
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         targets = [_managed_temp.create_managed_temp(f"cleanup-without-path-{index}") for index in range(count)]
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
 
@@ -895,23 +954,20 @@ def _write_awi_file(
 def _setup_notes_with_pending_commit(tmp_path: pathlib.Path, *, pending: bool = True) -> pathlib.Path:
     """upstreamより1件先行したprivate-notesのテスト用cloneを作成する。`pending=False`ではupstreamと一致させる。"""
     origin = tmp_path / "origin.git"
-    origin.mkdir()
-    subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(origin)], check=True, capture_output=True)
+    git_repository.init_bare_repository(origin)
     notes = _setup_notes(tmp_path)
-    (notes / ".gitignore").write_text("plans/.agent-toolkit-plan-create.lock\n", encoding="utf-8")
-    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(notes), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(notes), "commit", "-m", "base"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(notes), "remote", "add", "origin", str(origin)], check=True)
-    subprocess.run(["git", "-C", str(notes), "push", "-u", "origin", "main"], check=True, capture_output=True)
+    git_repository.init_repository(
+        notes,
+        initial_branch="main",
+        origin=str(origin),
+        files={".gitignore": "plans/.agent-toolkit-plan-create.lock\n"},
+        commit_message="base",
+    )
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
     if not pending:
         return notes
-    marker = notes / "pending.txt"
-    marker.write_text("pending\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True)
-    subprocess.run(["git", "-C", str(notes), "commit", "-m", "pending"], check=True, capture_output=True)
+    (notes / "pending.txt").write_text("pending\n", encoding="utf-8")
+    git_repository.commit_all(notes, "pending")
     return notes
 
 
@@ -923,16 +979,15 @@ _DRY_RUN_SUCCESS = "成功: 投入前の検証が成立した（--dry-runのた�
 
 def _prepare_sync_mutation(entry: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """同期対象操作のコマンドごとに外部への作用を差し替え、`atk.main`へ渡す引数を返す。"""
-    atk_members = vars(atk)
     if entry == "wi start-processing":
-        monkeypatch.setattr(atk_members["_mutations"], "_cmd_start_processing", lambda *_args: None)
+        monkeypatch.setattr(_mutation_transitions, "cmd_start_processing", lambda *_args: None)
         return ["wi", "start-processing", "awi.md"]
     if entry == "wi add --dry-run":
-        monkeypatch.setattr(atk_members["_add"], "resolve_add_target", lambda _value: ("github.com/example/repo", None))
+        monkeypatch.setattr(_add, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
         body = tmp_path / "body.md"
         body.write_text("本文\n", encoding="utf-8")
         return ["wi", "add", "--dry-run", "--target-repo", "github.com/example/repo", "--body-file", str(body)]
-    monkeypatch.setattr(atk_members["_plans"], "dispatch", lambda *_args: 0)
+    monkeypatch.setattr(_plans_module, "dispatch", lambda *_args: 0)
     return ["plans", "rewrite-references"]
 
 
@@ -945,9 +1000,8 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
 ) -> None:
     """同期対象操作だけが、処理の終了後に残る未pushを終了コード3で通知する。"""
     notes = _setup_notes_with_pending_commit(tmp_path)
-    atk_members = vars(atk)
-    monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: notes)
-    monkeypatch.setattr(atk_members["_list"], "_cmd_list", lambda *_args: None)
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_wi_listing, "cmd_list", lambda *_args: None)
     argv = _prepare_sync_mutation(entry, tmp_path, monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -1000,8 +1054,7 @@ def test_main_does_not_report_commit_pushed_by_concurrent_process(
     commit後・push前の一時状態を読むと、同期が完了する途中の状態を同期未達として終了コード3で報告する。
     """
     notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
-    atk_members = vars(atk)
-    monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
     argv = _prepare_sync_mutation(entry, tmp_path, monkeypatch)
     script = tmp_path / "concurrent_push.py"
     script.write_text(_CONCURRENT_PUSH_SCRIPT, encoding="utf-8")
@@ -1215,7 +1268,6 @@ def test_wi_pull_uses_lock_and_suppresses_entry_notification(
     """明示pullは排他区間で毎回同期し、対象パスの1行だけを出力する。"""
     notes = _setup_notes(tmp_path)
     events: list[str] = []
-    common_module = vars(atk)["_common"]
 
     class Lock:
         def __enter__(self) -> None:
@@ -1224,9 +1276,9 @@ def test_wi_pull_uses_lock_and_suppresses_entry_notification(
         def __exit__(self, *_args: object) -> None:
             events.append("lock-exit")
 
-    monkeypatch.setattr(common_module, "_ensure_environment", lambda _home: notes)
-    monkeypatch.setattr(common_module, "_repo_lock", lambda _path: Lock())
-    monkeypatch.setattr(common_module, "pull", lambda _path: events.append("pull"))
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda _path: Lock())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: events.append("pull"))
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", "pull"], home=tmp_path)
@@ -1769,25 +1821,7 @@ class TestAddSingleMessage:
 
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        git_calls: list[_GitCall] = []
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
-            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{_FIXED_HEAD_COMMIT}\n", stderr="")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        git_calls = _install_myrepo_git_fake(monkeypatch, myrepo)
 
         repo_path = str(myrepo)
         message = "テストメッセージ"
@@ -1841,25 +1875,7 @@ class TestMqLifecycleScenario:
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        git_calls: list[_GitCall] = []
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
-            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{_FIXED_HEAD_COMMIT}\n", stderr="")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        git_calls = _install_myrepo_git_fake(monkeypatch, myrepo)
         filename = f"{_FIXED_TIMESTAMP}-001.md"
         message = "ライフサイクル確認"
 
@@ -1948,25 +1964,7 @@ class TestAddMultipleMessages:
 
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        git_calls: list[_GitCall] = []
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
-            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{_FIXED_HEAD_COMMIT}\n", stderr="")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        git_calls = _install_myrepo_git_fake(monkeypatch, myrepo)
 
         repo_path = str(myrepo)
 
@@ -2204,11 +2202,10 @@ class TestAddBatchOption:
     @staticmethod
     def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
         """一括取り込み側のロック・remote同期・commitを無効化する。"""
-        from agent_toolkit._atk.wi import batch as batch_module  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
-        monkeypatch.setattr(batch_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-        monkeypatch.setattr(batch_module, "_pull", lambda _path: None)
-        monkeypatch.setattr(batch_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+        monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+        monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     def test_normal_add_normalizes_omitted_type_to_awi(
         self,
@@ -2376,13 +2373,12 @@ class TestMainFailureNextAction:
         error: BaseException,
     ) -> list[str]:
         """`atk wi commit`の処理が`error`を送出したときの標準エラーの行を返す。"""
-        atk_members = vars(atk)
-        monkeypatch.setattr(atk_members["_common"], "_ensure_environment", lambda _home: tmp_path)
+        monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: tmp_path)
 
         def fail(*_args: object) -> None:
             raise error
 
-        monkeypatch.setattr(atk_members["_mutations"], "_cmd_commit", fail)
+        monkeypatch.setattr(_mutation_targets, "cmd_commit", fail)
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "commit"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 1
@@ -2399,7 +2395,7 @@ class TestMainFailureNextAction:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """`WebInputError`は発生源が渡した次の操作を出力する。"""
-        error = _wi_common.WebInputError("対象が無い", next_action="`atk wi list`で対象を確認する")
+        error = _wi_web_input.WebInputError("対象が無い", next_action="`atk wi list`で対象を確認する")
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
         assert lines[0] == "失敗: 操作を拒否した: 対象が無い"
         assert self._next_action_after_failure(lines) == "次の操作: `atk wi list`で対象を確認する"
@@ -2417,9 +2413,40 @@ class TestMainFailureNextAction:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """wiの処理で発生した`RebaseInProgressError`は失敗行と競合解消の次の操作で出力する。"""
-        error = atk._atk_git_sync.RebaseInProgressError("rebase中")  # pylint: disable=protected-access
+        error = _git_sync.RebaseInProgressError("rebase中")
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
         assert "git rebase --continue" in self._next_action_after_failure(lines)
+
+    def test_wi_edit_rejects_rebase_in_progress_before_change(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        make_clean_repo: Callable[..., pathlib.Path],
+    ) -> None:
+        """rebaseの中間状態が残るWI保存リポジトリでは、`atk wi edit`が本文を変える前に拒否し、解消操作を示す。"""
+        notes = make_clean_repo(tmp_path, "notes")
+        (notes / ".agent-toolkit-local-only").touch()
+        original = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
+        entry = notes / "inbox" / "entry.md"
+        entry.parent.mkdir()
+        entry.write_text(original, encoding="utf-8")
+        git_repository.run_git(notes, "add", "-A")
+        git_repository.run_git(notes, "commit", "-m", "setup")
+        rebase_dir = git_repository.run_git(notes, "rev-parse", "--git-path", "rebase-merge").stdout.strip()
+        (notes / rebase_dir).mkdir(parents=True)
+        monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+        body = tmp_path / "body.md"
+        body.write_text(original.replace("本文", "変更後の本文"), encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "entry.md", "--body-file", str(body)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        lines = capsys.readouterr().err.splitlines()
+        assert "rebase中" in next(line for line in lines if line.startswith("失敗: "))
+        assert "git rebase --continue" in self._next_action_after_failure(lines)
+        assert entry.read_text(encoding="utf-8") == original
 
     def test_unreported_git_failure_names_status_check(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -2434,6 +2461,6 @@ class TestMainFailureNextAction:
     ) -> None:
         """同期基盤が原因と次の操作を出力済みのGit操作の失敗へ、汎用の失敗行を重ねない。"""
         error = subprocess.CalledProcessError(1, ["git", "push"])
-        atk._atk_git_sync.mark_reported(error)  # pylint: disable=protected-access
+        _git_sync.mark_reported(error)
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
         assert not any(line.startswith("失敗: ") for line in lines)

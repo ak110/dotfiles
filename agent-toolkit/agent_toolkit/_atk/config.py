@@ -1,12 +1,10 @@
-"""agent-toolkitプラグイン配下の`atk config`サブコマンド用補助モジュール。
+"""`atk config`サブコマンド。
 
-PEP 723 entrypoint`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
 XDG関連パス（設定・状態・データ各ディレクトリ、private-notesの解決結果）の確認と、
 工程別モデル設定の確認・変更を提供する。
 """
 
 import argparse
-import importlib
 import json
 import os
 import pathlib
@@ -20,7 +18,8 @@ from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import codex_models
 from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common import session_launchers as _session_launchers
+from agent_toolkit._common import private_notes as _private_notes
+from agent_toolkit._common import state_paths as _state_paths
 
 _CONFIG_FILENAME = "config.json"
 
@@ -43,7 +42,7 @@ _CATEGORY_ENGINE_MODELS = {
     },
     "下位": {
         "codex": "codex:luna/medium",
-        "claude": "claude:sonnet[1m]/medium",
+        "claude": "claude:sonnet[1m]/low",
     },
 }
 _PRESET_ENGINE_ORDERS = {
@@ -52,6 +51,9 @@ _PRESET_ENGINE_ORDERS = {
     "claude-balanced": ("claude", frozenset({"medium_tier_model", "low_tier_model"})),
     "claude-primary": ("claude", frozenset()),
 }
+
+# apply-presetの位置引数でプリセット名の代わりに受理し、全プリセットの値を表示する値。
+_APPLY_PRESET_SHOW = "show"
 
 
 def _preset_settings(preset: str) -> dict[str, str]:
@@ -95,16 +97,6 @@ def _config_dir() -> pathlib.Path:
     `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     """
     return pathlib.Path(platformdirs.user_config_dir("agent-toolkit", appauthor=False))
-
-
-def state_dir() -> pathlib.Path:
-    """状態ファイル配置ディレクトリを返す。
-
-    `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
-    `atk config get state_dir`の出力と、フックが状態ファイルを置く位置の双方をここで決める。
-    Linuxでは絶対パスの`XDG_STATE_HOME`だけを受理し、相対値は`HOME/.local/state`へ退避する。
-    """
-    return _session_launchers.state_dir()
 
 
 def _config_file_path() -> pathlib.Path:
@@ -154,13 +146,24 @@ def _validate_mutable_setting(key: str, value: str) -> None:
         _validate_stage_model_candidates(value)
 
 
+def mutable_setting_default(key: str) -> str:
+    """変更可能な設定の初期値を返す。未知のキーは`KeyError`を送出する。"""
+    return _MUTABLE_KEY_DEFAULTS[key]
+
+
+def raw_mutable_setting(key: str) -> str:
+    """変更可能な設定の検証前の値を、環境変数、保存値、初期値の順に解決して返す。未知のキーは`KeyError`を送出する。"""
+    default = mutable_setting_default(key)
+    return os.environ.get(_config_env_name(key), "") or _load_config().get(key, default)
+
+
 def resolve_mutable_setting(key: str) -> str:
     """変更可能な設定は環境変数を優先し、無ければ保存値、どちらも無ければ初期値を使う。"""
     if key not in _MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
     env_name = _config_env_name(key)
     env_value = os.environ.get(env_name, "")
-    value = env_value or _load_config().get(key, _MUTABLE_KEY_DEFAULTS[key])
+    value = raw_mutable_setting(key)
     try:
         _validate_mutable_setting(key, value)
     except ValueError as error:
@@ -178,14 +181,12 @@ def resolve_mutable_setting(key: str) -> str:
 
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
-    private_notes_path = vars(importlib.import_module("agent_toolkit._atk.wi.common"))["_private_notes_path"]
-
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     return {
         "config_dir": str(_config_dir()),
-        "state_dir": str(state_dir()),
+        "state_dir": str(_state_paths.state_dir()),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
-        "private_notes": str(private_notes_path(home)),
+        "private_notes": str(_private_notes.default_private_notes(home)),
         **{key: resolve_mutable_setting(key) for key in _MUTABLE_KEY_DEFAULTS},
     }
 
@@ -275,7 +276,16 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
 
 def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
-    """apply-presetサブコマンド: 現行の工程別モデル設定を一括保存する。"""
+    """apply-presetサブコマンド: 現行の工程別モデル設定を一括保存する。
+
+    `show`の指定時とプリセット名の省略時は、設定ファイルを読み書きせずに全プリセットの値を表示する。
+    """
+    if args.preset in (None, _APPLY_PRESET_SHOW):
+        for preset in _PRESET_ENGINE_ORDERS:
+            print(f"{preset}:")
+            for key, value in _preset_settings(preset).items():
+                print(f"  {key}: {value}")
+        return
     settings = _preset_settings(args.preset)
     config = _load_config()
     config.update(settings)
@@ -338,11 +348,16 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     set_.add_argument("key", metavar="KEY", help=f"変更可能なキー: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}")
     set_.add_argument("value", metavar="VALUE", help="設定する値。複数候補はASCIIカンマ区切りで指定できる。")
     apply_preset = _atk_help.add_command(sub, "apply-preset", **_atk_help.HELP["atk config apply-preset"])
-    apply_preset.add_argument("preset", choices=tuple(_PRESET_ENGINE_ORDERS), help="適用するプリセット名。")
+    apply_preset.add_argument(
+        "preset",
+        nargs="?",
+        choices=(_APPLY_PRESET_SHOW, *_PRESET_ENGINE_ORDERS),
+        help=f"適用するプリセット名。`{_APPLY_PRESET_SHOW}`または省略で全プリセットの値を保存せずに表示する。",
+    )
 
 
-def dispatch(args: argparse.Namespace, home: pathlib.Path) -> None:
-    """`config`サブコマンドを実行しexit 0で終了する（サブコマンド省略時は`show`扱い）。"""
+def dispatch(args: argparse.Namespace, home: pathlib.Path) -> int:
+    """`config`サブコマンドを実行し、終了コードを返す（サブコマンド省略時は`show`扱い）。"""
     sub = getattr(args, "config_subcommand", None) or "show"
     try:
         if sub == "show":
@@ -360,5 +375,5 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path) -> None:
             else "`atk config show`で現在値を確認し、`atk config set <KEY> <VALUE>`で不正な値を直して再実行する"
         )
         _outcome.report_failure(str(error), next_action=next_action)
-        sys.exit(2)
-    sys.exit(0)
+        return 2
+    return 0

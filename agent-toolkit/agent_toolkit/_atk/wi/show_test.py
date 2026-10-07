@@ -1,9 +1,7 @@
-"""atk (agent-toolkit `atk wi`) のshowサブコマンドのテスト。
+"""`atk wi show`のテスト。
 
 FILENAME指定表示（`--status`・`--answered`を迂回した全状態探索を含む）・--all全件表示・
 型フィルター・状態フィルター・--skip-pullの単体テストを集約する。
-既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_wi_list_test.py`・
-`_atk_wi_mutations_test.py`・`_atk_wi_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import pathlib

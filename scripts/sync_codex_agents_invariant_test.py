@@ -1,26 +1,30 @@
-"""既存成果物と、生成・登録される契約との整合を検証する。"""
+"""Codex向けに生成する規範（`sync_codex_agents.py`の出力）が原本と一致し、2層待機の契約を`agent-toolkit:delegation`だけが持ち、共有ルールのスキル参照が両配布経路で解決できることを検証する。"""
 
 import re
 
 import sync_codex_agents as subject
-
-from scripts.sync_codex_agents_test import _TWO_LAYER_WAIT_HEADING, _section
+from _scripts_test_helpers import TWO_LAYER_WAIT_HEADING, markdown_section
 
 
 def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
-    source = (subject.REPO_ROOT / "agent-toolkit/share/rules-main.codex.md").read_text(encoding="utf-8")
+    source = (subject.REPO_ROOT / "agent-toolkit/share/rules-common.codex.md").read_text(encoding="utf-8")
     reference = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/codex-runtime.md").read_text(encoding="utf-8")
     generated = (subject.REPO_ROOT / subject.TARGET).read_text(encoding="utf-8")
     assert generated == subject.render()
 
-    assert _TWO_LAYER_WAIT_HEADING not in source
-    assert _TWO_LAYER_WAIT_HEADING not in generated
-    section = _section(reference, _TWO_LAYER_WAIT_HEADING)
+    assert TWO_LAYER_WAIT_HEADING not in source
+    assert TWO_LAYER_WAIT_HEADING not in generated
+    section = markdown_section(reference, TWO_LAYER_WAIT_HEADING)
     assert {"`functions.exec`", "`atk agents wait`", "`cell_id`", "`functions.wait`"} <= set(re.findall(r"`[^`]+`", section))
     assert "タスク固有timeoutを渡さず" in section
     assert "対象が未終端なら" in section
-    assert "前景のCLIが本文を返した後の逐次待機は新しいrunへ進む" in section
-    assert "先行CLIが稼働中にlock競合した後発待機だけが、先行runの本文を1回回収する" in section
+    assert "`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」" in section
+    waiting = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/waiting-and-monitoring.md").read_text(
+        encoding="utf-8"
+    )
+    response_section = markdown_section(waiting, "## `atk agents wait`の応答の扱い")
+    assert "前景のCLIが本文を返した後の逐次待機は新しいrunへ進み" in response_section
+    assert "先行CLIが稼働中にlock競合した後発待機だけが先行runの本文を1回回収する" in response_section
 
 
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:

@@ -15,7 +15,7 @@ import hypercorn.asyncio
 import hypercorn.config
 import qrcode
 
-from pytools._internal import claude_common
+from pytools._internal import common
 from pytools._internal.cli import enable_completion
 from pytools.media_remote import _app, _token, _window_move
 
@@ -138,7 +138,7 @@ def _write_pid(pid_path: pathlib.Path) -> None:
 
 def _ps(script: str) -> tuple[str, int]:
     """PowerShellを実行して`(stdout, returncode)`を返す。失敗時は`("", -1)`。"""
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         timeout=30.0,
         tag="media-remote-doctor",

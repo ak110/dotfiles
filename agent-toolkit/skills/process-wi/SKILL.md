@@ -15,11 +15,11 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 直前の同期結果（実行順1）の`status`が`failed`か、`post_apply`の`failed_steps`が1件以上ある場合 | `references/sync-failure.md` |
-| pickerによる対象選定を開始する前（実行順3）と、処理対象WIをpickerへ追加する前 | `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md` |
-| 専用worktreeとレーンを作成する前（実行順4） | `references/run-lanes.md` |
+| pickerによる対象選定を開始する前（実行順2）と、処理対象WIをpickerへ追加する前 | `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md` |
+| 専用worktreeとレーンを作成する前（実行順3） | `references/run-lanes.md` |
 | レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
-| 公開工程を開始する前（実行順8） | `references/finish-session.md` |
+| 不良またはユーザーの是正要求を受け取った時 | `references/immediate-fix.md` |
+| 公開工程を開始する前（実行順7） | `references/finish-session.md` |
 | 終端担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` |
 
 ## 用語
@@ -28,7 +28,7 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手
 WI作成、計画、実行および実行レビューの責務と受渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
 - **メイン**: `agent-toolkit/rules/01-agent.md`が定めるメインエージェントの短縮呼称
-- **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める
+- **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める。公開工程の定義は`agent-toolkit:commit`の`references/publish.md`冒頭にあり、本スキルではその工程を終端担当が担う
 - **picker**: 選定工程で処理対象のAWIを固定する担当
 - **処理対象WI**: pickerが選定時に固定した、`agent-toolkit:process-wi`の1回の実行で処理するAWI。処理中にユーザーが追加を明示したAWIを含む
 - **レーン**: pickerが固定した処理対象を割り当てる仮想的な処理単位。各レーンは専用branchと専用worktreeを1つ持つ（`references/run-lanes.md`「レーンと資源」が規定）
@@ -50,41 +50,15 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 - 計画、レビュー指摘管理表およびworktreeは、それを使う全工程の完了後にだけ回収する
 - メインの作業ディレクトリが実行環境の隔離worktree（Claude Codeの`EnterWorktree`など、実行ホストの隔離機能で入ったworktree）の内側にある場合は、隔離を解除してから本スキルの工程へ進む。メインは専用worktreeの作成と回収で対象リポジトリのGit共通ディレクトリ（`--git-common-dir`）を書き換えるため、隔離の外側の作業ディレクトリを要する。`atk wi process-loop`が用意したworktreeは前掲の「主作業ツリー」に当たり、隔離ではないため解除せずにそのまま使う
 
-## 同一主題の追加指示
-
-本スキルの起動中にユーザーが追加した指示は、既存の処理条件と比べて採否を決めた差分だけを同一主題の処理条件へ反映する。比較と採否は`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」に従う。追加指示の範囲と論理関係の解釈は`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`に従う。公開工程の開始前に届いた直接実装を求める表現も、同一主題である間は本スキルの処理を継続する追加条件として扱う。公開工程の開始後に届いた指示は「即時対応」の公開後の扱いに従う。主題の継続と直接実装との境界が不明な場合は、変更の前に確認する。
-追加指示が既存の要件を変える場合、メインは中継前に変更前の要件で作業ツリーの外へ生成済みの成果物を確認し、成果物ごとの終端、改訂または取り消しなどの処置を同じ追送へ含める。キュー項目は`atk wi list`などで確かめる。Issue・MRの本文へ追記済みの項目も成果物に含め、GitLabなら`glab issue view <番号> --output json`の`description`、GitHubなら`gh issue view <番号> --json body`などで本文を取得する。処置が追加指示から一意に定まらない場合はユーザーへ確認する。作業ツリーの差分に依存しない外部成果物の編集は、メインが中継と同じ時点で実施する。作業ツリー内の差分はレーン担当が計画と実装で追随させる。
-中継する追送の各要素には`agent-toolkit:delegation`の`references/base-contract.md`の入力の適格性を適用する。採用した要件差分と外部成果物の処置は渡し、commitの分け方、検証、pushなどレーン担当の規範が決める手段は加えない。
-
-## 即時対応
-
-次のセッションの進行に影響しない不良と是正要求は次回以降へ回し、現在のセッションを終端させる。持ち越すと次のセッションの選定、レーンまたは公開の工程が停止・遮断されるか、その不良を前提に進めた作業がやり直しになる場合は即時対応する。WIのキュー操作や`atk`の失敗、専用worktreeの作成やCIを止める不良、担当が工程を進められなくなる規範・手順の矛盾が該当する。文書の呼称・表記・誤記や、成果物の品質に留まり工程を止めない不良は対象外とする。セッションの経過時間、実装規模、検証の作業量では判定せず、メインがこの基準で確定する。ユーザーが時機を明示した場合はその指示に従う。本セッションの残りの工程を妨げる既存不良と、本セッションの作業で導入した不良は`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い同じセッションで扱う。
-
-公開工程（実行順8）の開始前に、メインが見つけた不良、実行レビュー担当やレーン担当を含む委譲先から`想定外事象:`行で返された不良、および処理中に届いたユーザーの是正要求のうち、前段の基準に該当するものは、同じセッションで不良そのものの修正、類似見直しと再発防止策まで実施する。元の作業と文脈を分けるのは調査だけとし、修正はレーンが行う。この範囲の限定は`agent-toolkit/rules/01-agent.md`「完遂と先送り」の、独立した既存不良を原則その場で是正する一般則に対する本スキル内の例外である。
-
-1. メインは`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従い、不良ごとに調査、AWIの起草および投入を委譲する。`agent-toolkit:session-review`が同じ事象へ投入したAWIがある場合は重ねて投入せず、そのファイル名を使う。
-2. 投入または再利用するAWIのファイル名一覧を、`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`「処理対象WIの追加」のpickerへ渡す。`pick-wi-check`に合格し処理開始済みの追加出力を検収し、`references/run-lanes.md`「処理中に確定した必須是正レーン」の基準で割当を決める。元の選定結果へ反映してからレーンへ渡し、そのセッションで不良を修正させる。追加の是正で見つかった不良も同じ手順で扱い、世代の上限を設けない。以降そのセッションでは修正後の規範に従う。
-3. 委譲先は即時対応を自ら実施せず、問題と修正案をメインへエスカレーションする。
-
-レーン担当が自レーンの変更範囲の検証を妨げる既存不良を報告し、修正の対象（同じ原因による類似箇所を含む）と方向が報告と現物から技術的に定まる場合は、手順1〜2に代えて、その修正を同じレーンの変更範囲へ加える認可を同じレーン担当threadへ追送する。拡張原因分析を要しなければ、この扱いでAWIを投入しない。原因と対象が定まった不良では調査を分ける目的が成立しない。さらにAWIを経ると、投入担当とレーン担当が同じ検証を二重に実行するためである。
-
-- 認可へ含めるのは、修正の対象、方向および認可の出所（レーン担当の報告とメインの判定）とする。エージェント向け文書の編集を含む場合は、編集するリポジトリ相対パスを名指しする。凍結済みの計画は更新しない
-- メインは実行レビュー担当の起動時に、その認可を`review_contract`の条項として渡す（`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「`review_contract`の生成」）
-- 修正の対象か方向が定まらない場合と、修正の方向がユーザーの選好で決まる場合は、手順1〜2に従う
-- 前記の認可でレーン内修正をする事象について、`agent-toolkit:bugfix`の初動判定で拡張原因分析を要すると判定した場合は、原因分析と再発防止策だけを手順1〜2で扱う。レーン内で行った修正はそのAWIの対象から外し、修正のcommitと報告をWI投入担当へ渡す。前記の認可を使わない通常の即時対応では、不良全体を手順1〜2で処理対象へ加える
-
-公開工程の開始前に即時対応の対象外とした不良と是正要求、および公開工程の開始後に見つけた公開を妨げない不良と新しい作業要求はレーンへ割り当てず、`add-wi.parent.md`の委譲でAWIを`source: process-wi`で投入し、次のセッションへ回す。ユーザーの要求は`agent-toolkit:wi-standards`「由来と承認」に従って発話を逐語で転記し、人間由来の要求を残す。公開工程の開始後に見つけた不良のうち、公開を妨げるもの（CI失敗など）は終端担当の手順で直す。公開工程の開始後に届いたユーザーの是正要求と新しい作業要求も、公開を妨げるものとユーザーが同じ実行の中での実施を明示したものは、その実行の中で扱う。それ以外の是正要求は、発話を逐語で転記したAWIへ渡して次回へ回す。本セッションの作業で導入した不良への是正要求は、時機によらず`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い同じセッションで扱う。
-
 ## 実行順
 
 1. 直前の同期結果を読み、このセッションでAWIの処理を完遂できるかを判定する。判定の手順は`## 直前の同期結果の検分`が定める。
-2. 対象リポジトリが個人プロジェクトに該当するかの判定手段は`ak110-projects-operations`が定める。該当する場合は同スキルを起動し、同期と依存更新の要否を確定する。
-3. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`に従い、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って未処置対象を取得し、必要な場合に監査担当を起動する。
-4. `references/run-lanes.md`に従い、選定結果の段階と先行レーンに従って専用worktreeとレーンを作成し、レーン担当を起動する。後段は先行レーンの統合と資源解放を受領してから現行HEADを基点に作成する。
-5. 各レーンの計画または計画なしの準備結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「計画準備の受領」に従って受け取り、判断を要する場合だけ`実装開始`または`実装なし`を返す。
-6. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
-7. ユーザーが明示して追加した処理対象WIは`references/run-lanes.md`に従って割り当て、実装とレビューを収束させる。同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
-8. 全レーンの終端および起動した監査の処置確定後、`references/finish-session.md`に従って公開とセッション終端を完遂する。
+2. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`に従い、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って未処置対象を取得し、必要な場合に監査担当を起動する。
+3. `references/run-lanes.md`に従い、選定結果の段階と先行レーンに従って専用worktreeとレーンを作成し、レーン担当を起動する。後段は先行レーンの統合と資源解放を受領してから現行HEADを基点に作成する。
+4. 各レーンの計画または計画なしの準備結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「計画準備の受領」に従って受け取り、判断を要する場合だけ`実装開始`または`実装なし`を返す。
+5. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
+6. ユーザーが明示して追加した処理対象WIは`references/run-lanes.md`に従って割り当て、実装とレビューを収束させる。同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
+7. 全レーンの終端および起動した監査の処置確定後、`references/finish-session.md`に従って公開とセッション終端を完遂する。
 
 ## 直前の同期結果の検分
 
@@ -92,21 +66,41 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 同期処理は結果を`atk config show`が示す`state_dir`直下の`sync-report.json`へ残すため、選定の前にその記録を読んで続行と中断を判定する。
 
 - ファイルが無い場合と`status`が`succeeded`の場合は判定を記録せず次の工程へ進む
-- `status`が`failed`の場合と、`post_apply`の`failed_steps`が1件以上ある場合は、読込表の行が示す`references/sync-failure.md`に従う
+- `status`が`failed`の場合と、`post_apply`の`failed_steps`が1件以上ある場合は、失敗した段とステップの内容から、このセッションでAWIの処理を完遂できるかを判定する
+  - 完遂できると判定した場合は、判定した内容と根拠を報告してから次の工程へ進む
+  - 完遂できないと判定した場合は、AWIの処理へ着手せず、`atk wi process-loop abort`でprocess-loopへ中断を要求し、失敗した段と判定の根拠を報告してセッションを終える
 
 ## 自動コードレビュー監査
 
 自動コードレビュー監査とは、pickerと並行してGitHub CopilotのレビューとDependabotアラートを取得し、必要な処置を確定する工程を指す。
 
-pickerと並行して、対象がGitHub上にある場合は対象リポジトリに`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。標準出力の`counts.reviews`、`counts.threads`および`counts.dependabot`がいずれも0で終了コード0なら監査担当を起動せず、3件数を監査省略の根拠として完了報告へ渡す。いずれかが1件以上なら標準出力のJSONを監査担当へ渡す。`dependabot.status`が`disabled`か`unauthorized`の場合も、その状態を完了報告へ渡す。コマンドが非0で終わった場合とJSONまたは件数を解釈できない場合は、従来どおり監査担当を起動する。
+pickerと並行して、対象がGitHub上にある場合は対象リポジトリに`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。標準出力の`counts.reviews`、`counts.threads`および`counts.dependabot`がいずれも0で終了コード0なら監査担当を起動せず、3件数を監査省略の根拠として完了報告へ渡す。いずれかが1件以上なら監査担当を起動する。`dependabot.status`が`disabled`か`unauthorized`の場合も、その状態を完了報告へ渡す。コマンドが非0で終わった場合とJSONまたは件数を解釈できない場合も監査担当を起動する。
 
 `atk wi process-loop`はキューが空の待機中に未判定のDependabotアラートを見つけると、AWIを起票せずにprocess-wiを起動する。このときpickerは選定候補が0件の選定結果を返す。メインはその結果を正常な選定結果として受け取り、レーンを起動せずに監査の処置を確定し、`references/finish-session.md`「公開対象が無い場合の短絡」を経て終端する。監査が返した要修正を同じセッションで直す場合は「即時対応」に従う。
 
-監査担当を起動した場合は`references/github-copilot-review-audit.md`に従って自動コードレビューを1回取得する。その処置と公開工程の開始の関係は`references/finish-session.md`冒頭が定める。新しいレビューの到着はprocess-wiの次の実行の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
+監査の処置と公開工程の開始の関係は`references/finish-session.md`冒頭が定める。新しいレビューの到着はprocess-wiの次の実行の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
 
-監査担当は`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.parent.md`に従って起動し、結果を受領する。`atk review-audit pending`に成功した場合は、標準出力のJSONをセッションのmanaged-tempへ保存して渡す。
+監査担当は`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.parent.md`に従って起動し、結果を受領する。
+
+## 同一主題の追加指示
+
+本スキルの起動中にユーザーが追加した指示は、既存の処理条件と比べて採否を決めた差分だけを同一主題の処理条件へ反映する。比較と採否は`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」に従う。追加指示の範囲と論理関係の解釈は`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`に従う。公開工程の開始前に届いた直接実装を求める表現も、同一主題である間は本スキルの処理を継続する追加条件として扱う。公開工程の開始後に届いた指示は`references/immediate-fix.md`「対象外の不良と是正要求」の公開後の扱いに従う。主題の継続と直接実装との境界が不明な場合は、変更の前に確認する。
+追加指示が既存の要件を変える場合、メインは中継前に変更前の要件で作業ツリーの外へ生成済みの成果物を確認し、成果物ごとの終端、改訂または取り消しなどの処置を同じ追送へ含める。キュー項目は`atk wi list`などで確かめる。Issue・MRの本文へ追記済みの項目も成果物に含め、GitLabなら`glab issue view <番号> --output json`の`description`、GitHubなら`gh issue view <番号> --json body`などで本文を取得する。処置が追加指示から一意に定まらない場合はユーザーへ確認する。作業ツリーの差分に依存しない外部成果物の編集は、メインが中継と同じ時点で実施する。作業ツリー内の差分はレーン担当が計画と実装で追随させる。
+中継する追送の各要素には`agent-toolkit:delegation`の`references/base-contract.md`の入力の適格性を適用する。採用した要件差分と外部成果物の処置は渡し、commitの分け方、検証、pushなどレーン担当の規範が決める手段は加えない。
+
+## 即時対応
+
+次のセッションの進行に影響しない不良と是正要求は次回以降へ回し、現在のセッションを終端させる。持ち越すと次のセッションの選定、レーンまたは公開の工程が停止・遮断されるか、その不良を前提に進めた作業がやり直しになる場合は即時対応する。WIのキュー操作や`atk`の失敗、専用worktreeの作成やCIを止める不良、担当が工程を進められなくなる規範・手順の矛盾が該当する。文書の呼称・表記・誤記や、成果物の品質に留まり工程を止めない不良は対象外とする。セッションの経過時間、実装規模、検証の作業量では判定せず、メインがこの基準で確定する。ユーザーが時機を明示した場合はその指示に従う。本セッションの残りの工程を妨げる既存不良と、本セッションの作業で導入した不良は`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い同じセッションで扱う。
+
+即時対応の手順、レーンの変更範囲へ修正を加える認可、および即時対応の対象外とした不良と是正要求の扱いは、読込表の行が挙げる`references/immediate-fix.md`が定める。
 
 ## 終端
 
 選定、レーンまたは公開工程が確認待ちとなる場合は、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:user-confirmation-and-report`の手順でUWIへ退避する。WIの状態は`agent-toolkit:wi-standards`に従い、`processing`にある元項目を`atk wi hold --state=processing <元項目のファイル名>`で保留する。
 通常の完了報告は`agent-toolkit:completion-report`に従う。本スキルの工程で生じたcommitは、公開工程で反映してから完了を報告する。
+
+### 終端工程の承認スコープ
+
+環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`の値が`1`の起動を自動常駐起動、それ以外を手動起動とする。`atk wi process-loop`が子セッションへこの変数を設定するため、この観測で両者を判別できる。判別は選定工程で行い、結果を同じ実行の中で使い回す（努力目標。重複する照会を省く）。
+
+手動起動では、固定したAWIの完成条件に明示されたrelease、tag、push、PRもしくはMRまたは配布を、記載された操作、対象および影響範囲に限って承認スコープとして保持する。自動常駐起動では保持しない。承認済み範囲はそのまま用い、新しく具体化して範囲が変わる部分だけをユーザー確認する。破壊的操作の事前説明は維持する。

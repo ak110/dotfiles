@@ -1,8 +1,8 @@
-"""agents_serverの状態ディレクトリの位置と、session登録簿が持つ委譲元sessionの読み取りを共有する。
+"""agents_serverのsession登録簿の位置と、登録簿が持つ委譲元sessionの読み取りを共有する。
 
 agents_server（登録簿を書く側）と`atk serve`のセッション一覧（ローカルとリモートヘルパー、読む側）が読み込む。
-リモートヘルパーはSSH先で標準ライブラリと`platformdirs`だけを前提に動くため、本モジュールは
-`platformdirs`を状態ディレクトリの解決時に遅延importし、それ以外は標準ライブラリだけを使う。
+リモートヘルパーはSSH先で標準ライブラリと`platformdirs`だけを前提に動くため、本モジュールは標準ライブラリだけを使う。
+状態ディレクトリ自体の解決は`agent_toolkit._common.state_paths`が持つ。
 """
 
 from __future__ import annotations
@@ -17,21 +17,6 @@ LAUNCHER_KEY = "launcher_session_id"
 """sessionを作成した時点の委譲元sessionの識別子を保持する、登録簿のレコードの項目名。"""
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
-
-
-def state_dir() -> pathlib.Path:
-    """agent-toolkitの状態ファイル配置ディレクトリを返す。
-
-    `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
-    Linuxでは絶対パスの`XDG_STATE_HOME`だけを受理し、相対値は`HOME/.local/state`へ退避する。
-    """
-    import platformdirs  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-    resolved = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
-    xdg_state_home = os.environ.get("XDG_STATE_HOME")
-    if os.name != "nt" and xdg_state_home and not pathlib.Path(xdg_state_home).is_absolute():
-        return pathlib.Path.home() / ".local" / "state" / "agent-toolkit"
-    return resolved
 
 
 def registry_directory(state_root: pathlib.Path) -> pathlib.Path:

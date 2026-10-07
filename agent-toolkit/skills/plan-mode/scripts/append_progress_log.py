@@ -12,25 +12,14 @@ import argparse
 import datetime
 import json
 import pathlib
-import sys
 from collections.abc import Callable
 
-try:
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._common.atomic_file import atomic_write
-    from agent_toolkit._common.markdown_headings import top_level_atx_headings
-    from agent_toolkit._plan import commit_mapping
-    from agent_toolkit._plan import locations as _plan_locations
-    from agent_toolkit._plan import structure as _plan_format
-except ImportError as _import_error:
-    _SELF = pathlib.Path(__file__).resolve()
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script plan-progress -- <引数>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.markdown_headings import top_level_atx_headings
+from agent_toolkit._plan import commit_mapping
+from agent_toolkit._plan import locations as _plan_locations
+from agent_toolkit._plan import structure as _plan_format
 
 Clock = Callable[[], datetime.datetime]
 
@@ -137,6 +126,20 @@ def append_progress_log(
     writer(path, "".join(lines))
 
 
+def append_handoff_log(
+    handoff: pathlib.Path,
+    completed_step: str,
+    result: str,
+    *,
+    writer: Callable[[pathlib.Path, str], None] = atomic_write,
+) -> None:
+    """計画なしの引き継ぎ記録の末尾へ`<完了した工程>: <結果>`の1行を追記する。"""
+    _plan_locations.reject_saved_plans_root_write(handoff)
+    content = handoff.read_text(encoding="utf-8")
+    separator = "\n" if content.endswith("\n") else "\n\n"
+    writer(handoff, content + separator + completed_step + ": " + result + "\n")
+
+
 def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -> bool:
     """対応の記録・取得を処理し、取得だけで終了する場合は真を返す。"""
     if not (
@@ -195,9 +198,7 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         return False
     # 進捗の行を先に追記し、構造の不正で失敗した場合は対応記録ファイルも変えない。
     if args.handoff:
-        _plan_locations.reject_saved_plans_root_write(args.plan_file)
-        separator = "\n" if content.endswith("\n") else "\n\n"
-        atomic_write(args.plan_file, content + separator + args.completed_step + ": " + args.result + "\n")
+        append_handoff_log(args.plan_file, args.completed_step, args.result)
     else:
         append_progress_log(args.plan_file, args.completed_step, args.result)
     commit_mapping.append_event(args.plan_file, event)

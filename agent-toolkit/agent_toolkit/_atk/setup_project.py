@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 from agent_toolkit._atk import outcome
+from agent_toolkit._git import command as _git_command
 
 _AGENTS_MD = "AGENTS.md"
 _CLAUDE_MD = "CLAUDE.md"
@@ -38,14 +38,7 @@ def _is_claude_adapter(path: Path) -> bool:
 
 
 def _git_value(target: Path, *arguments: str) -> str | None:
-    result = subprocess.run(
-        ["git", "-C", str(target), *arguments],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    result = _git_command.run(["-C", str(target), *arguments], capture_output=True, text=True, check=False)
     return result.stdout.strip() if result.returncode == 0 else None
 
 
@@ -152,7 +145,14 @@ def _copy_rules(target: Path) -> None:
     shutil.copytree(source, destination)
 
 
-def run(args: argparse.Namespace) -> int:
+def build_parser(parser: argparse.ArgumentParser) -> None:
+    """`atk setup-project`の引数を登録する。"""
+    options = parser.add_mutually_exclusive_group()
+    options.add_argument("--with-rules", action="store_true", help="agent-toolkit/rules/配下の規範をプロジェクトへ複製する。")
+    options.add_argument("--clean", action="store_true", help="配置済みの共有リンクと規範を削除する。")
+
+
+def dispatch(args: argparse.Namespace) -> int:
     """cwdを対象に移行、追加配布または配置済み資源の削除を行う。"""
     target = Path.cwd()
     try:

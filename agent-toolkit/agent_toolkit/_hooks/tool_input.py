@@ -44,18 +44,6 @@ _DELETE_PREFIX = "*** Delete File: "
 _MOVE_PREFIX = "*** Move to: "
 
 
-def is_codex_payload(payload: object) -> bool:
-    """Codexのターン単位hook入力であるかを返す。
-
-    Codexはターン単位のhookへ非空文字列の`turn_id`を付加する。
-    `model`の有無やツール名の推測を別のホスト判定として併設しない。
-    """
-    if not isinstance(payload, dict):
-        return False
-    turn_id = payload.get("turn_id")
-    return isinstance(turn_id, str) and turn_id != ""
-
-
 @dataclasses.dataclass(frozen=True)
 class EditFragment:
     """1つの編集単位に対応する変更前断片と変更後断片。

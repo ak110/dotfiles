@@ -6,15 +6,12 @@
 
 import dataclasses
 import logging
-import os
 import typing
 from collections.abc import Callable, Sequence
 
-from pytools._internal import log_format, winutils
+from pytools._internal import log_format, post_apply_outcome, winutils
 
 logger = logging.getLogger(__name__)
-
-_IS_WINDOWS = os.name == "nt"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -71,19 +68,11 @@ _REGISTRY_SETTINGS: list[_RegistrySpec] = [
 
 def run(
     *,
-    is_windows: bool | None = None,
     apply_fn: Callable[[Sequence[_RegistrySpec]], None] | None = None,
-) -> bool:
-    """Windows でレジストリ設定を書き込む。
-
-    Returns:
-        非 Windows ではスキップして ``False``、書き込みを実行した場合 ``True``。
-    """
-    win = _IS_WINDOWS if is_windows is None else is_windows
-    if not win:
-        return False
+) -> post_apply_outcome.PostApplyOutcome:
+    """レジストリ設定を書き込む。書き込みの失敗は例外として送出する。"""
     (apply_fn or _apply_all)(_REGISTRY_SETTINGS)
-    return True
+    return post_apply_outcome.PostApplyOutcome(changed=True)
 
 
 def _apply_all(specs: Sequence[_RegistrySpec]) -> None:

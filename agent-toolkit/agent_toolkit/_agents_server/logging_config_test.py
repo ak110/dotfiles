@@ -6,6 +6,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._agents_server import logging_config
+from agent_toolkit._common import state_paths
 
 
 def test_configure_logging_reuses_handlers_and_rotation(
@@ -18,7 +19,7 @@ def test_configure_logging_reuses_handlers_and_rotation(
     original_level = logger.level
     original_propagate = logger.propagate
     logger.handlers.clear()
-    monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     try:
         first = logging_config.configure_logging()
         second = logging_config.configure_logging()

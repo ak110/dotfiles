@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pathlib
+import subprocess
+import sys
 
 import check_script_imports
 import pytest
@@ -309,4 +311,223 @@ def test_project_scripts_resolvable_returns_zero(_isolate_repo_root: pathlib.Pat
     (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
     (pkg_dir / "tool.py").write_text("def main() -> None:\n    pass\n", encoding="utf-8")
     (_isolate_repo_root / "pyproject.toml").write_text('[project.scripts]\nfoo-cmd = "pkg.tool:main"\n', encoding="utf-8")
+    assert check_script_imports.main() == 0
+
+
+_SPLIT_PACKAGES = (
+    "_atk/serve/plans",
+    "_atk/managed_temp",
+    "_atk/wi/mutations",
+    "_plan/structure",
+    "_hooks/pretooluse",
+)
+_REAL_TOOLKIT_ROOT = pathlib.Path(check_script_imports.__file__).resolve().parent.parent / _TOOLKIT_PREFIX
+
+
+def _split_package_modules() -> list[str]:
+    """責務別に分けた5パッケージの非テストのサブモジュール名を返す。"""
+    modules: list[str] = []
+    for package in _SPLIT_PACKAGES:
+        package_dir = _REAL_TOOLKIT_ROOT / "agent_toolkit" / package
+        modules.extend(
+            "agent_toolkit." + package.replace("/", ".") + "." + path.stem
+            for path in sorted(package_dir.glob("*.py"))
+            if not path.name.endswith("_test.py") and path.name not in {"__init__.py", "conftest.py"}
+        )
+    return modules
+
+
+@pytest.mark.parametrize("module", _split_package_modules())
+def test_agent_toolkit_split_packages_import_standalone(module: str) -> None:
+    """責務別のサブモジュールは、兄弟モジュールの名前の注入に頼らず新しいプロセスで単独にimportできる。"""
+    completed = subprocess.run(
+        [sys.executable, "-c", f"import importlib; importlib.import_module({module!r})"],
+        cwd=_REAL_TOOLKIT_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def _write_toolkit_module(root: pathlib.Path, relative_path: str, body: str) -> pathlib.Path:
+    """一時ツリーの`agent_toolkit/`配下へモジュールを書く。"""
+    path = root / "agent-toolkit/agent_toolkit" / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "header"),
+    [
+        ("_atk/feature/view.py", "# ruff: noqa: F401,F821,I001\n"),
+        ("_hooks/check.py", "# ruff: noqa\n"),
+        ("../skills/example/scripts/tool.py", "# ruff: noqa: E402, F821\n"),
+    ],
+)
+def test_agent_toolkit_rejects_file_level_f821_noqa(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], relative_path: str, header: str
+) -> None:
+    """ファイル単位の`F821`の抑止（コードを列挙しない抑止を含む）を、明示importへ改める次の操作とともに失敗にする。"""
+    _write_toolkit_module(_isolate_repo_root, relative_path, f'{header}"""対象。"""\n\nVALUE = missing_name\n')
+
+    assert check_script_imports.main() == 1
+    err = capsys.readouterr().err
+    assert "`F821`（未定義名）の検出を抑止している" in err
+    assert "次の操作: 使う名前を定義元から明示的にimportし" in err
+
+
+@pytest.mark.parametrize(
+    ("body", "description"),
+    [
+        (
+            "import sibling\nfor name, value in vars(sibling).items():\n    vars(sibling).setdefault(name, value)\n",
+            "setdefault",
+        ),
+        ("import sibling\nvars(sibling)['name'] = 1\n", "への代入"),
+        ("import sibling\nglobals().update(vars(sibling))\n", "update"),
+        ("import sys\nimport types\nsys.modules[__name__].__class__ = types.ModuleType\n", "__class__"),
+    ],
+)
+def test_agent_toolkit_rejects_namespace_injection(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str, description: str
+) -> None:
+    """モジュールのトップレベルの名前空間への書き込みを、明示importへ改める次の操作とともに失敗にする。"""
+    _write_toolkit_module(_isolate_repo_root, "_atk/feature/__init__.py", body)
+
+    assert check_script_imports.main() == 1
+    err = capsys.readouterr().err
+    assert "モジュールのトップレベルで名前空間へ書き込んでいる" in err
+    assert description in err
+    assert "次の操作: 名前を注入せず、名前を使うモジュールが定義元から明示的にimportする" in err
+
+
+def test_agent_toolkit_allows_line_level_f821_noqa(_isolate_repo_root: pathlib.Path) -> None:
+    """行単位の`# noqa: F821`、名前空間の読み取りと関数内の書き込み、テストファイルは失敗にしない。"""
+    _write_toolkit_module(
+        _isolate_repo_root,
+        "_atk/feature/view.py",
+        '"""対象。"""\n\nimport importlib\n\n'
+        "VALUE: Later = None  # noqa: F821\n"
+        'PRIVATE = vars(importlib.import_module("json"))["dumps"]\n\n\n'
+        "def register(module: object) -> None:\n"
+        '    """関数内の書き込みは読み込み時の注入ではない。"""\n'
+        '    vars(module).setdefault("name", 1)\n',
+    )
+    _write_toolkit_module(_isolate_repo_root, "_atk/feature/view_test.py", "# ruff: noqa: F821\n")
+
+    assert check_script_imports.main() == 0
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    ["atk.py", "agents_server_mcp.py", "wait_ci.py", "_managed_temp.py", "../skills/example/scripts/tool.py"],
+)
+def test_agent_toolkit_entry_scripts_cannot_import_hooks(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], relative_path: str
+) -> None:
+    """`hook.py`以外の起動スクリプトとスキル付属スクリプトの`_hooks`のimportを、部品を前の層へ移す次の操作とともに失敗にする。"""
+    _write_toolkit_module(_isolate_repo_root, "_hooks/__init__.py", "")
+    _write_toolkit_module(_isolate_repo_root, "_hooks/stop_gate.py", "")
+    _write_toolkit_module(_isolate_repo_root, relative_path, "from agent_toolkit._hooks import stop_gate\n")
+
+    assert check_script_imports.main() == 1
+    err = capsys.readouterr().err
+    assert "`_hooks`をimportしている（`_hooks`をimportできる起動スクリプトは`hook.py`だけ）" in err
+    assert "次の操作: hook以外からも使う部品を前の層（`_common`など）へ移し、移動先からimportする" in err
+
+
+def test_agent_toolkit_hook_entry_may_import_hooks(_isolate_repo_root: pathlib.Path) -> None:
+    """`hook.py`と起動スクリプトのテストは`_hooks`をimportでき、起動スクリプトは前の層を全てimportできる。"""
+    for package in ("_common", "_hooks"):
+        _write_toolkit_module(_isolate_repo_root, f"{package}/__init__.py", "")
+    _write_toolkit_module(_isolate_repo_root, "_hooks/stop_gate.py", "")
+    _write_toolkit_module(_isolate_repo_root, "_common/shell_tokens.py", "")
+    _write_toolkit_module(_isolate_repo_root, "hook.py", "from agent_toolkit._hooks import stop_gate\n")
+    _write_toolkit_module(_isolate_repo_root, "atk_test.py", "from agent_toolkit._hooks import stop_gate\n")
+    _write_toolkit_module(_isolate_repo_root, "atk.py", "from agent_toolkit._common import shell_tokens\n")
+    _write_toolkit_module(
+        _isolate_repo_root, "../skills/example/scripts/tool_test.py", "from agent_toolkit._hooks import stop_gate\n"
+    )
+
+    assert check_script_imports.main() == 0
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "call"),
+    [
+        ("_atk/feature.py", 'subprocess.run(["git", "status"])'),
+        ("_hooks/check.py", 'subprocess.check_output(["git", "-C", ".", "rev-parse", "HEAD"])'),
+        ("../skills/example/scripts/tool.py", 'subprocess.Popen(("git", "fetch"))'),
+    ],
+)
+def test_agent_toolkit_rejects_direct_git_subprocess(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], relative_path: str, call: str
+) -> None:
+    """`_git/`の外の`git`の直接起動を、共通関数で起動する次の操作とともに失敗にする。"""
+    _write_toolkit_module(_isolate_repo_root, relative_path, f'"""対象。"""\n\nimport subprocess\n\n{call}\n')
+
+    assert check_script_imports.main() == 1
+    err = capsys.readouterr().err
+    assert "`git`を`subprocess`で直接起動している" in err
+    assert "次の操作: `agent_toolkit._git.command`の共通関数（`run`など）で起動する" in err
+
+
+def test_agent_toolkit_allows_git_subprocess_in_git_layer(_isolate_repo_root: pathlib.Path) -> None:
+    """`_git/`配下、`_testing/`配下とテストの直接起動、および`git`以外の起動は失敗にしない。"""
+    body = '"""対象。"""\n\nimport subprocess\n\nsubprocess.run(["git", "status"])\n'
+    _write_toolkit_module(_isolate_repo_root, "_git/command.py", body)
+    _write_toolkit_module(_isolate_repo_root, "_testing/git_fakes.py", body)
+    _write_toolkit_module(_isolate_repo_root, "_atk/feature_test.py", body)
+    _write_toolkit_module(
+        _isolate_repo_root, "_atk/feature.py", '"""対象。"""\n\nimport subprocess\n\nsubprocess.run(["gh", "run", "list"])\n'
+    )
+
+    assert check_script_imports.main() == 0
+
+
+def _write_toolkit_pyproject(root: pathlib.Path) -> None:
+    """一時ツリーへ実行時の依存と開発用の依存グループを持つ`agent-toolkit/pyproject.toml`を書く。"""
+    (root / "agent-toolkit/pyproject.toml").write_text(
+        '[project]\ndependencies = ["pyyaml", "pyfltr>=3"]\n\n'
+        '[dependency-groups]\ndev = ["jsonschema>=4", "pyfltr[python]>=3", "hypothesis"]\n',
+        encoding="utf-8",
+    )
+
+
+def test_agent_toolkit_dev_dependency_import_is_reported(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """本番のコードとスキル付属スクリプトが開発用の依存だけにあるパッケージをimportすると、行と次の操作を示して失敗する。"""
+    _write_toolkit_pyproject(_isolate_repo_root)
+    for relative_path, import_line in (
+        ("_common/schema.py", "import jsonschema"),
+        ("_atk/contract.py", "from jsonschema import Draft202012Validator"),
+        ("../skills/example/scripts/tool.py", "import hypothesis.strategies"),
+    ):
+        _write_toolkit_module(_isolate_repo_root, relative_path, f'"""対象。"""\n\n{import_line}\n')
+
+    assert check_script_imports.main() == 1
+    reported = [line for line in capsys.readouterr().err.splitlines() if "開発用の依存グループにだけある" in line]
+    # `from ... import`は同じ行を1件だけ報告する。
+    assert len(reported) == 3
+    for location in (
+        "agent_toolkit/_common/schema.py:3:",
+        "agent_toolkit/_atk/contract.py:3:",
+        "skills/example/scripts/tool.py:3:",
+    ):
+        assert any(f"{_TOOLKIT_PREFIX}/{location}" in line for line in reported), location
+    assert all("次の操作: テストだけが使うコードなら`agent-toolkit/agent_toolkit/_testing/`へ移す" in line for line in reported)
+
+
+def test_agent_toolkit_dev_dependency_import_is_accepted_in_testing_and_tests(_isolate_repo_root: pathlib.Path) -> None:
+    """`_testing`配下・テスト、実行時の依存にもあるパッケージ、配布名とimport名が異なる実行時の依存は失敗にしない。"""
+    _write_toolkit_pyproject(_isolate_repo_root)
+    _write_toolkit_module(_isolate_repo_root, "_testing/contract.py", '"""対象。"""\n\nimport jsonschema\n')
+    _write_toolkit_module(_isolate_repo_root, "_common/schema_test.py", '"""対象。"""\n\nimport hypothesis\n')
+    _write_toolkit_module(_isolate_repo_root, "_common/tools.py", '"""対象。"""\n\nimport pyfltr\nimport yaml\n')
+
     assert check_script_imports.main() == 0

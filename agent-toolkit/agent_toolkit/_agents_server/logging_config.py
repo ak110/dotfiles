@@ -7,7 +7,7 @@ import logging.handlers
 import os
 import pathlib
 
-from platformdirs import user_state_dir
+from agent_toolkit._common import state_paths as _state_paths
 
 LOG_MAX_BYTES = 2 * 1024 * 1024
 LOG_BACKUP_COUNT = 3
@@ -27,11 +27,6 @@ class _LogFileHandler(logging.handlers.RotatingFileHandler):
     """
 
 
-def state_dir() -> pathlib.Path:
-    """agents_serverの診断ログを置く状態ディレクトリを返す。"""
-    return pathlib.Path(user_state_dir("agent-toolkit", appauthor=False))
-
-
 def configure_logging() -> pathlib.Path:
     """標準エラーと永続ファイルへagents_serverの診断ログを出力する。"""
     log_level = os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING")
@@ -44,7 +39,7 @@ def configure_logging() -> pathlib.Path:
         stderr_handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
         server_logger.addHandler(stderr_handler)
 
-    log_path = state_dir() / "agents-server.log"
+    log_path = _state_paths.state_dir() / "agents-server.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     for handler in tuple(server_logger.handlers):
         if not isinstance(handler, _LogFileHandler):

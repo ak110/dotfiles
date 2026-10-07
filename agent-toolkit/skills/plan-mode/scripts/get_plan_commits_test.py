@@ -3,32 +3,26 @@
 import argparse
 import json
 import pathlib
-import subprocess
 
 import append_progress_log
 import pytest
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._plan import commit_mapping
+from agent_toolkit._testing import git_repository
 
 
 def _prepare_two_commits(worktree: pathlib.Path) -> str:
     """対応記録の親確認に使う連続した2 commitを作成し、変更前HEADを返す。"""
-    subprocess.run(["git", "init"], cwd=worktree, check=True, capture_output=True, timeout=30)
+    git_repository.init_repository(worktree)
 
     def commit(message: str) -> None:
-        subprocess.run(
-            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", message],
-            cwd=worktree,
-            check=True,
-            capture_output=True,
-            timeout=30,
+        git_repository.run_git(
+            worktree, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", message
         )
 
     commit("base")
-    previous_head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=worktree, check=True, capture_output=True, text=True, timeout=30
-    ).stdout.strip()
+    previous_head = git_repository.run_git(worktree, "rev-parse", "HEAD").stdout.strip()
     commit("change")
     return previous_head
 
@@ -46,9 +40,7 @@ def test_public_plan_commits_reads_existing_handoff(tmp_path: pathlib.Path, caps
         script_args=[str(record), "--worktree", str(tmp_path), "--awi", wi, "--handoff", "--allowed-awi", wi],
     )
     assert run_script.dispatch(args) == 0
-    short = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True, timeout=30
-    ).stdout.strip()
+    short = git_repository.run_git(tmp_path, "rev-parse", "--short", "HEAD").stdout.strip()
     assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [short]}
 
 

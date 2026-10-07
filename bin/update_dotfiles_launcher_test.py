@@ -31,7 +31,7 @@ if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" (
     "%UV%" self update
     if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"
 )
-"%UV%" run --no-project --script "%SCRIPT_DIR%\\scripts\\update_dotfiles.py" %*
+"%UV%" run --no-project --script "%SCRIPT_DIR%\\libexec\\update_dotfiles.py" %*
 """
 
 
@@ -132,7 +132,7 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
             "run",
             "--no-project",
             "--script",
-            str(_ROOT / "scripts" / "update_dotfiles.py"),
+            str(_ROOT / "libexec" / "update_dotfiles.py"),
             *arguments,
         ],
     ]
@@ -158,7 +158,7 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
             "run",
             "--no-project",
             "--script",
-            str(_ROOT / "scripts" / "update_dotfiles.py"),
+            str(_ROOT / "libexec" / "update_dotfiles.py"),
         ],
     ]
     assert result.stderr.splitlines() == ["uv run stderr", _UPDATE_WARNING]
@@ -184,7 +184,7 @@ def test_process_loop_skips_self_update_and_preserves_run_exit(tmp_path: pathlib
             "run",
             "--no-project",
             "--script",
-            str(_ROOT / "scripts" / "update_dotfiles.py"),
+            str(_ROOT / "libexec" / "update_dotfiles.py"),
         ]
     ]
     assert result.stderr == "uv run stderr\n"
@@ -199,7 +199,7 @@ def test_logs_launcher_skips_self_update(tmp_path: pathlib.Path, run_exit: int) 
     )
 
     assert result.returncode == run_exit
-    assert calls == [["native", "run", "--no-project", "--script", str(_ROOT / "scripts" / "update_dotfiles.py"), "logs"]]
+    assert calls == [["native", "run", "--no-project", "--script", str(_ROOT / "libexec" / "update_dotfiles.py"), "logs"]]
     assert result.stderr == "uv run stderr\n"
 
 
@@ -275,9 +275,9 @@ def test_launcher_replacement_preserves_update_exit(tmp_path: pathlib.Path, vers
     launcher.write_bytes({"current": current, "legacy": legacy, "logs": logs}[version])
     launcher.chmod(0o755)
     replacement = current if version != "current" else b"@echo off\r\nexit /b 99\r\n"
-    scripts = tmp_path / "scripts"
-    scripts.mkdir()
-    (scripts / "update_dotfiles.py").write_text(
+    libexec = tmp_path / "libexec"
+    libexec.mkdir()
+    (libexec / "update_dotfiles.py").write_text(
         f"import pathlib\npathlib.Path({str(launcher)!r}).write_bytes({replacement!r})\nraise SystemExit({run_exit})\n",
         encoding="utf-8",
     )
@@ -325,7 +325,7 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     process_loop_guard = 'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" ('
     update = '"%UV%" self update'
     update_failure = 'if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"'
-    run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\scripts\\update_dotfiles.py" %*'
+    run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\libexec\\update_dotfiles.py" %*'
     capture_run_exit = 'call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"'
     warning_state = f'set "UV_SELF_UPDATE_WARNING={_UPDATE_WARNING}"'
     warning = 'if "%UV_SELF_UPDATE_FAILED%"=="1" powershell.exe -NoLogo -NoProfile -Command '

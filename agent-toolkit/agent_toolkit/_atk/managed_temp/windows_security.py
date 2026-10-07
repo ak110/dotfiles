@@ -1,130 +1,98 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""agent-toolkitが所有する一時ディレクトリを作成・検証・後始末する。"""
+"""Windowsのセキュリティ記述子（所有者とDACL）の取得・設定・妥当性の判定と、Windows APIの呼び出しに使う構造体と定数。"""
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import ctypes
-import datetime
-import enum
-import hashlib
-import json
-import os
 import pathlib
-import re
-import secrets
-import shutil
-import stat
-import sys
-import tempfile
 import typing
-import unicodedata
 from ctypes import wintypes
-from typing import TYPE_CHECKING
 
-from agent_toolkit._atk import help_text as _atk_help
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 
-if TYPE_CHECKING:
-    from agent_toolkit._atk.managed_temp.cli import build_parser, dispatch, main
-    from agent_toolkit._atk.managed_temp.creation import (
-        _invalid_prefix_error,
-        _remove_created_target,
-        _validate_path_shape,
-        _validate_posix,
-        _validate_windows,
-        create_managed_temp,
-        is_valid_prefix,
-        prefix_violation,
-        validate_managed_temp,
-    )
-    from agent_toolkit._atk.managed_temp.inventory import (
-        _classify_quarantine,
-        _cleanup_missing_registered_temp,
-        _cleanup_posix,
-        _cleanup_quarantine,
-        _cleanup_windows,
-        _clear_directory,
-        _consume_registry,
-        _consuming_registry_path,
-        _entity_absence_is_confirmed,
-        _lstat_or_none,
-        _marker_recovery_is_accepted,
-        _QuarantineJudgement,
-        _QuarantineState,
-        _report_unregistered_candidates,
-        _restore_cleanup_marker,
-        _restore_cleanup_state,
-        _restore_interrupted_consume,
-        _restore_posix_quarantine,
-        _restore_registry,
-        _tree_snapshot,
-        _unregistered_candidates,
-        cleanup_managed_temp,
-        count_unregistered_candidates,
-        is_missing_registered_temp,
-        list_managed_temp,
-        sweep_expired_managed_temp,
-    )
-    from agent_toolkit._atk.managed_temp.registry import (
-        _MARKER_NAME,
-        _PREFIX_RE,
-        _PREFIX_RULES,
-        _SCHEMA_VERSION,
-        _UTC_ISO8601_RE,
-        _WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
-        _WINDOWS_ACCESS_DENIED_ACE_TYPE,
-        _WINDOWS_ACL_REVISION,
-        _WINDOWS_CONTAINER_INHERIT_ACE,
-        _WINDOWS_DACL_SECURITY_INFORMATION,
-        _WINDOWS_ERROR_ACCESS_DENIED,
-        _WINDOWS_EXTERNAL_WRITER_ACCESS,
-        _WINDOWS_FILE_ALL_ACCESS,
-        _WINDOWS_FILE_ATTRIBUTE_DIRECTORY,
-        _WINDOWS_FILE_FLAG_BACKUP_SEMANTICS,
-        _WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT,
-        _WINDOWS_FILE_SHARE_ALL,
-        _WINDOWS_OBJECT_INHERIT_ACE,
-        _WINDOWS_OPEN_EXISTING,
-        _WINDOWS_OWNER_SECURITY_INFORMATION,
-        _WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION,
-        _WINDOWS_READ_ATTRIBUTES,
-        _WINDOWS_READ_CONTROL,
-        _WINDOWS_REPARSE_POINT,
-        _WINDOWS_SE_DACL_PROTECTED,
-        _WINDOWS_SE_FILE_OBJECT,
-        _WINDOWS_SYNCHRONIZE,
-        _WINDOWS_WRITE_DAC,
-        _WINDOWS_WRITE_OWNER,
-        MAX_AGE_DAYS,
-        ManagedTempError,
-        _awis_are_valid,
-        _is_utc_iso8601,
-        _load_marker,
-        _load_private_json,
-        _ManagedTempEntry,
-        _owner_record,
-        _path_identity,
-        _record,
-        _record_base,
-        _record_mismatch_error,
-        _records_match,
-        _registry_name,
-        _registry_path,
-        _state_root,
-        _state_root_path,
-        _temp_root,
-        _validate_root,
-        _ValidatedRoot,
-        _ValidatedTemp,
-        _WindowsApiError,
-        _WindowsHandleOpenError,
-        _write_marker,
-        _write_private_json,
-    )
+_WINDOWS_ACCESS_ALLOWED_ACE_TYPE = 0
+
+
+_WINDOWS_ACCESS_DENIED_ACE_TYPE = 1
+
+
+_WINDOWS_ACL_REVISION = 2
+
+
+_WINDOWS_ERROR_ACCESS_DENIED = 5
+
+
+_WINDOWS_CONTAINER_INHERIT_ACE = 0x02
+
+
+_WINDOWS_DACL_SECURITY_INFORMATION = 0x00000004
+
+
+_WINDOWS_EXTERNAL_WRITER_ACCESS = 0x001301BF
+
+
+_WINDOWS_FILE_ALL_ACCESS = 0x001F01FF
+
+
+_WINDOWS_FILE_ATTRIBUTE_DIRECTORY = 0x10
+
+
+_WINDOWS_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+
+
+_WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
+
+
+_WINDOWS_FILE_SHARE_ALL = 0x00000001 | 0x00000002 | 0x00000004
+
+
+_WINDOWS_OBJECT_INHERIT_ACE = 0x01
+
+
+_WINDOWS_OPEN_EXISTING = 3
+
+
+_WINDOWS_OWNER_SECURITY_INFORMATION = 0x00000001
+
+
+_WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
+
+
+_WINDOWS_READ_ATTRIBUTES = 0x0080
+
+
+_WINDOWS_READ_CONTROL = 0x00020000
+
+
+_WINDOWS_REPARSE_POINT = 0x400
+
+
+_WINDOWS_SE_DACL_PROTECTED = 0x1000
+
+
+_WINDOWS_SE_FILE_OBJECT = 1
+
+
+_WINDOWS_SYNCHRONIZE = 0x00100000
+
+
+_WINDOWS_WRITE_DAC = 0x00040000
+
+
+_WINDOWS_WRITE_OWNER = 0x00080000
+
+
+class _WindowsApiError(ManagedTempError):
+    """Windows APIのerror codeを保持する検証エラー。"""
+
+    def __init__(self, action: str, path: pathlib.Path | None, error_code: int) -> None:
+        target = f": {path}" if path is not None else ""
+        super().__init__(f"{action}{target}: {error_code}")
+        self.error_code = error_code
+
+
+class _WindowsHandleOpenError(_WindowsApiError):
+    """Windowsのパスハンドルを開けなかったことを示す。"""
 
 
 class _AceHeader(ctypes.Structure):

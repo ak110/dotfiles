@@ -3,8 +3,8 @@ revision = 5
 requires-python = ">=3.13, <4.0"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version == '3.14.*' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version < '3.14' and sys_platform != 'win32'",
@@ -36,6 +36,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pyfltr" },
+    { name = "pygments" },
     { name = "pytilpack", extra = ["quart"] },
     { name = "pyyaml" },
     { name = "watchdog" },
@@ -53,6 +54,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=6" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pyfltr", specifier = ">=3.17.7" },
+    { name = "pygments" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
     { name = "pyyaml" },
     { name = "watchdog", specifier = ">=6.0.0" },
@@ -1883,11 +1885,9 @@ dependencies = [
     { name = "platformdirs" },
     { name = "psutil" },
     { name = "pydantic" },
-    { name = "pygments" },
     { name = "pytilpack", extra = ["quart"] },
     { name = "pyyaml" },
     { name = "qrcode" },
-    { name = "semantic-version" },
     { name = "send2trash" },
     { name = "tqdm" },
     { name = "wand" },
@@ -1929,11 +1929,9 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "psutil" },
     { name = "pydantic", specifier = ">=2" },
-    { name = "pygments" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
     { name = "pyyaml" },
     { name = "qrcode", specifier = ">=8.0" },
-    { name = "semantic-version", specifier = ">=2.10.0" },
     { name = "send2trash" },
     { name = "tqdm" },
     { name = "wand", specifier = ">=0.7.0" },
@@ -2189,15 +2187,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/78/fa/0f9c2020dc316c53d983be011720b8157cc052b97e3f4dfa7db6d0f880a6/ruff-0.16.10-py3-none-win32.whl", hash = "sha256:2a12e01cb9156c10c466f63b46eaae5ecea28dfbd21b5836353ae498e7d1349a", size = 10139176, upload-time = "2026-10-01T18:03:13.267Z" },
     { url = "https://files.pythonhosted.org/packages/99/29/cfb0df9448d4d4ad48c2de029ada9ebd71baa6da983a6c77ee6c6cd0fe82/ruff-0.16.10-py3-none-win_amd64.whl", hash = "sha256:97f2015c92aa97105b0eab19eb5d224884399281cfc5da86a92db4ab5e7fb2ca", size = 10584734, upload-time = "2026-10-01T18:03:16.006Z" },
     { url = "https://files.pythonhosted.org/packages/fc/05/c16957eb287c3fc062e032619a25868d93d408a844b725bcf514f7a378ff/ruff-0.16.10-py3-none-win_arm64.whl", hash = "sha256:25a65fe998c4e6861ec079ada5826a2fc605e6cbccbe9dcd7fac1f54e791621b", size = 10366440, upload-time = "2026-10-01T18:03:19.04Z" },
-]
-
-[[package]]
-name = "semantic-version"
-version = "2.10.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/7d/31/f2289ce78b9b473d582568c234e104d2a342fd658cc288a7553d83bb8595/semantic_version-2.10.0.tar.gz", hash = "sha256:bdabb6d336998cbb378d4b9db3a4b56a1e3235701dc05ea2690d9a997ed5041c", size = 52289, upload-time = "2022-05-26T13:35:23.454Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/23/8146aad7d88f4fcb3a6218f41a60f6c2d4e3a72de72da1825dc7c8f7877c/semantic_version-2.10.0-py2.py3-none-any.whl", hash = "sha256:de78a3b8e0feda74cabc54aab2da702113e33ac9d9eb9d2389bcf1f58b7d9177", size = 15552, upload-time = "2022-05-26T13:35:21.206Z" },
 ]
 
 [[package]]

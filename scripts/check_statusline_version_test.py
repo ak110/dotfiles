@@ -104,3 +104,81 @@ def test_unreachable_origin_is_not_treated_as_success(repo: pathlib.Path) -> Non
 
     with pytest.raises(check_statusline_version.CheckError, match="git fetch"):
         _check(repo)
+
+
+def _commit(repo: pathlib.Path, message: str) -> str:
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", message)
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _push_tag(repo: pathlib.Path, tag: str, revision: str) -> None:
+    _git(repo, "tag", tag, revision)
+    _git(repo, "push", "origin", f"refs/tags/{tag}")
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        pytest.param("README.md", {"changed": "false", "version": "", "tag": ""}, id="without-statusline-change"),
+        pytest.param(
+            "rust/claude-statusline/src/subagent.rs",
+            {"changed": "true", "version": "0.1.0", "tag": "statusline-v0.1.0"},
+            id="with-statusline-change",
+        ),
+    ],
+)
+def test_release_prepare_compares_with_first_parent(repo: pathlib.Path, change: str, expected: dict[str, str]) -> None:
+    """マージ済みcommitを第一親と比べ、版数の据え置きを問わずにリリースの要否と版数を返す。"""
+    _write(repo, change, "changed\n")
+    head = _commit(repo, "change")
+
+    assert check_statusline_version.release_prepare(repo, head, metadata_command=["true"]) == (None, expected)
+
+
+@pytest.mark.parametrize(
+    ("tag_on_head", "expected_failure"),
+    [
+        pytest.param(True, None, id="same-commit"),
+        pytest.param(False, "既存タグが別のcommitを指している: statusline-v0.1.1", id="other-commit"),
+    ],
+)
+def test_release_modes_accept_only_tag_on_current_commit(
+    repo: pathlib.Path, tag_on_head: bool, expected_failure: str | None
+) -> None:
+    """Releaseの再実行で作成済みのタグは受け入れ、別のcommitを指すタグは失敗とする。"""
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    _write(repo, "rust/claude-statusline/Cargo.toml", _MANIFEST_TEMPLATE.format(version="0.1.1"))
+    head = _commit(repo, "bump")
+    _push_tag(repo, "statusline-v0.1.1", head if tag_on_head else base)
+
+    prepare_failure, _ = check_statusline_version.release_prepare(repo, head, metadata_command=["true"])
+    tag_failure, tag_outputs = check_statusline_version.release_tag_state(repo, head)
+
+    assert prepare_failure == expected_failure
+    assert tag_failure == expected_failure
+    assert tag_outputs == {"tag_exists": "true"}
+
+
+def test_release_tag_state_reports_missing_tag(repo: pathlib.Path) -> None:
+    """版数のタグがoriginに無ければ`tag_exists=false`を返す。"""
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+    assert check_statusline_version.release_tag_state(repo, head) == (None, {"tag_exists": "false"})
+
+
+def test_release_main_appends_outputs_and_requires_current_sha(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """release用の指定は結果を`--github-output`へ追記し、`CURRENT_SHA`が無ければ前提の失敗とする。"""
+    monkeypatch.chdir(repo)
+    output = repo.parent / "github-output"
+    output.write_text("existing=1\n", encoding="utf-8")
+
+    assert check_statusline_version.main(["--release-tag-state", "--github-output", str(output)]) == 2
+    assert "CURRENT_SHA" in capsys.readouterr().err
+
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    monkeypatch.setenv("CURRENT_SHA", head)
+    assert check_statusline_version.main(["--release-tag-state", "--github-output", str(output)]) == 0
+    assert output.read_text(encoding="utf-8") == "existing=1\ntag_exists=false\n"

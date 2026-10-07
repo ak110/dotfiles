@@ -26,21 +26,17 @@ Stopの戻り値は`approve`とし、ターンの継続は強制しない。
 委譲先での実行可否: hook入力と委譲先の環境印で判定し、委譲先では何もしない。
 """
 
-import json
 import os
 
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._common.process_loop_session import is_process_loop_session
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.session_state import read_state, update_state
-from agent_toolkit._hooks.stop_gate import (
-    append_stop_log,
-    has_tool_use_block,
-    is_pending_async_work,
-    read_transcript_entries_cached,
-)
-from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
+from agent_toolkit._hooks.background_tasks import is_pending_async_work
+from agent_toolkit._hooks.stop_session import append_stop_log
+from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+from agent_toolkit._hooks.transcript_scan import has_tool_use_block, read_transcript_entries_cached
 
 # 停止工程へ進む連続無進捗ターン数。
 _THRESHOLD = 3
@@ -141,13 +137,3 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     _store(session_id, 0, total)
     return "notify_user", _halt(session_id, count)
-
-
-def main(payload_text: str) -> int:
-    """無進捗の反復を検知してprocess-loopとセッションを停止するエントリポイント。"""
-    decision, body = evaluate(payload_text)
-    if decision == "notify_user":
-        print(json.dumps({"systemMessage": body}, ensure_ascii=False))
-    else:
-        print(json.dumps({}, ensure_ascii=False))
-    return 0

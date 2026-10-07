@@ -1,57 +1,46 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
-"""atk (agent-toolkit `atk wi`) のadopt/reject/rm/edit・パストラバーサル検証のテスト。
+"""`atk wi`の変更系サブコマンド（状態遷移・削除・編集・追記・依存の更新・commit）と、ファイル名引数の検証のテスト。"""
 
-adopt・reject・rm・editサブコマンドと、ファイル名引数の不正値拒否の単体テストを集約する。
-既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_wi_list_test.py`・
-`_atk_wi_show_test.py`・`_atk_wi_process_loop_test.py`に分離する。
-位置引数の重複除去（FB7）テストは`too-many-lines`回避のため`_atk_wi_dedup_test.py`へ分離する。
-共通ヘルパーは`atk_test.py`から再利用する。
-"""
-
-import argparse
 import contextlib
 import datetime
 import io
 import pathlib
-import re
 import subprocess
 import sys
 
 import pytest
 
-from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import (  # pylint: disable=wrong-import-position
-    common,  # noqa: E402  # pylint: disable=wrong-import-position
-    mutations,  # noqa: E402  # pylint: disable=wrong-import-position
-    user_comment,  # noqa: E402  # pylint: disable=wrong-import-position
-    uwi,  # noqa: E402  # pylint: disable=wrong-import-position
-)
-from agent_toolkit._atk.wi import bulk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi.constants import (  # noqa: E402  # pylint: disable=wrong-import-position
-    BULK_ACTION_LABELS,
+from agent_toolkit import atk
+from agent_toolkit._atk.wi import add as wi_add
+from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import user_comment
+from agent_toolkit._atk.wi import web_input as _wi_web_input
+from agent_toolkit._atk.wi.constants import (
     BULK_SOURCE_STATES,
     TRANSITION_EXPLICIT_STATES,
     bulk_source_states,
 )
-from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi.mutations import content as mutation_content
+from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
+from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
+from agent_toolkit._testing.wi_mutations_support import (
+    _disable_convert_git,
+    _disable_transition_git,
+    _edit_plan_args,
+    _write_convert_awi,
+    _write_convert_plan,
+    _write_uwi_entry,
+)
+from agent_toolkit.atk_test import (
     _FIXED_DT,
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
     _write_awi_file,
-)  # noqa: E402  # pylint: disable=wrong-import-position
+)
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
-
-
-from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
 
 
 def _write_body_file(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
@@ -65,11 +54,11 @@ def test_flat_awi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
     """平引数遷移が戻り値とファイル移動を一貫して反映する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    filenames = mutations.transition_entries(
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    filenames = mutation_transitions.transition_entries(
         notes,
         action="start-processing",
         filenames=["entry.md"],
@@ -303,16 +292,16 @@ def test_transition_restores_missing_state_directories_before_commit(
     notes = _setup_notes(tmp_path)
     (notes / "hold").rmdir()
     _write_awi_file(notes, "entry.md")
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
 
     def assert_state_paths_exist(_notes: pathlib.Path, _message: str, paths: list[str], **_kwargs: object) -> None:
         assert all((_notes / path).is_dir() for path in paths)
 
-    monkeypatch.setattr(mutations, "_commit_and_push", assert_state_paths_exist)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", assert_state_paths_exist)
 
-    mutations.transition_entries(
+    mutation_transitions.transition_entries(
         notes,
         action="start-processing",
         filenames=["entry.md"],
@@ -378,9 +367,9 @@ def test_set_dependencies_uses_graph_refreshed_after_pull(
     notes = _setup_notes(tmp_path)
     first = _write_convert_awi(notes, "first.md")
     _write_convert_awi(notes, "second.md")
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     def pull_with_competing_update(_path: pathlib.Path) -> None:
         first.write_text(
@@ -388,10 +377,10 @@ def test_set_dependencies_uses_graph_refreshed_after_pull(
             encoding="utf-8",
         )
 
-    monkeypatch.setattr(mutations, "_pull", pull_with_competing_update)
+    monkeypatch.setattr(_wi_sync, "pull", pull_with_competing_update)
 
-    with pytest.raises(mutations.WebInputError, match="循環"):
-        mutations.set_entry_dependencies(notes, filename="second.md", depends_on=("first.md",))
+    with pytest.raises(_wi_web_input.WebInputError, match="循環"):
+        mutation_dependencies.set_entry_dependencies(notes, filename="second.md", depends_on=("first.md",))
 
 
 def test_cooldown_return_sets_one_utc_deadline_and_start_clears_it(
@@ -404,9 +393,9 @@ def test_cooldown_return_sets_one_utc_deadline_and_start_clears_it(
     second = _write_awi_file(notes, "second.md")
     _disable_transition_git(monkeypatch)
     now = datetime.datetime(2024, 1, 15, 10, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
-    mutations.transition_entries(notes, action="start-processing", filenames=["first.md", "second.md"], now=now)
+    mutation_transitions.transition_entries(notes, action="start-processing", filenames=["first.md", "second.md"], now=now)
 
-    mutations.transition_entries(
+    mutation_transitions.transition_entries(
         notes,
         action="return-to-inbox",
         filenames=["first.md", "second.md"],
@@ -416,7 +405,7 @@ def test_cooldown_return_sets_one_utc_deadline_and_start_clears_it(
 
     for path in (first, second):
         assert "cooldown_until: '2024-01-18T01:30:00+00:00'" in path.read_text(encoding="utf-8")
-    mutations.transition_entries(notes, action="start-processing", filenames=["first.md"], now=now)
+    mutation_transitions.transition_entries(notes, action="start-processing", filenames=["first.md"], now=now)
     assert "cooldown_until" not in (notes / "processing/first.md").read_text(encoding="utf-8")
 
 
@@ -433,8 +422,8 @@ def test_hold_does_not_record_processing_origin(
     _disable_transition_git(monkeypatch)
     original = frontmatter_parser.parse_frontmatter((notes / "inbox/processing.md").read_text(encoding="utf-8"))
 
-    mutations.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
-    mutations.transition_entries(notes, action="hold", filenames=["processing.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="hold", filenames=["processing.md"], now=_FIXED_DT)
 
     held = frontmatter_parser.parse_frontmatter((notes / "hold/processing.md").read_text(encoding="utf-8"))
     assert original is not None and held is not None
@@ -748,7 +737,7 @@ class TestAppendEdit:
         """snapshot後の競合時は追記本文を反映しない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md", body="本文")
-        original_append = mutations.append_entry_content
+        original_append = mutation_content.append_entry_content
 
         def conflict(
             private_notes: pathlib.Path,
@@ -773,7 +762,7 @@ class TestAppendEdit:
                 finalized_content=finalized_content,
             )
 
-        monkeypatch.setattr(mutations, "append_entry_content", conflict)
+        monkeypatch.setattr(mutation_content, "append_entry_content", conflict)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         body_file = _write_body_file(tmp_path, "追記本文")
 
@@ -981,7 +970,7 @@ def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
     filename = "20260827-000000-001.md"
     _write_awi_file(notes, filename, body="編集前")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-    original_read = mutations._add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    original_read = wi_add.read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
     captured: dict[str, str] = {}
 
     def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
@@ -990,8 +979,8 @@ def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
         return original_read(path, expected_body=expected_body)
 
     monkeypatch.setattr(
-        mutations._add,  # pylint: disable=protected-access
-        "_read_saved_entry_details",
+        wi_add,  # pylint: disable=protected-access
+        "read_saved_entry_details",
         read_after_alteration,
     )
     body_file = _write_body_file(tmp_path, "編集後")
@@ -1033,11 +1022,11 @@ def _write_bulk_entry(
 def _patch_bulk_git(monkeypatch: pytest.MonkeyPatch, commit_calls: list[str]) -> None:
     """一括操作が呼び出す2モジュールのgit操作を抑止し、commitメッセージを記録する。"""
     _disable_transition_git(monkeypatch)
-    monkeypatch.setattr(bulk, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(bulk, "_pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(
-        mutations,
-        "_commit_and_push",
+        _wi_sync,
+        "commit_and_push",
         lambda _private_notes, message, _paths, **_kwargs: commit_calls.append(message),
     )
 
@@ -1175,7 +1164,7 @@ def test_bulk_transition_skips_entries_changed_after_confirmation(
     def edit_after_confirmation(_path: pathlib.Path) -> None:
         changed.write_text(changed.read_text(encoding="utf-8") + "\n追記\n", encoding="utf-8")
 
-    monkeypatch.setattr(bulk, "_pull", edit_after_confirmation)
+    monkeypatch.setattr(_wi_sync, "pull", edit_after_confirmation)
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
@@ -1313,7 +1302,7 @@ def test_agent_hold_rejects_processing_entry_without_explicit_state(
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "processing.md")
     _disable_transition_git(monkeypatch)
-    mutations.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
     _set_agent_environment(monkeypatch, agent=True)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -1325,7 +1314,7 @@ def test_agent_hold_rejects_processing_entry_without_explicit_state(
     err = capsys.readouterr().err
     assert "失敗: " in err
     assert "`atk wi edit --append`" in err
-    assert "`agent-toolkit:wi-standards`「由来と承認」" in err
+    assert "`agent-toolkit:wi-standards`「状態と依存」" in err
     assert "`--state=processing`" in err
 
 
@@ -1338,7 +1327,7 @@ def test_agent_hold_moves_processing_entry_with_explicit_state(
     _write_awi_file(notes, "processing.md")
     _write_awi_file(notes, "inbox.md")
     _disable_transition_git(monkeypatch)
-    mutations.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
     _set_agent_environment(monkeypatch, agent=True)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -1360,7 +1349,7 @@ def test_user_hold_keeps_implicit_processing_resolution(
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "processing.md")
     _disable_transition_git(monkeypatch)
-    mutations.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
+    mutation_transitions.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
     _set_agent_environment(monkeypatch, agent=False)
 
     with pytest.raises(SystemExit) as exc_info:

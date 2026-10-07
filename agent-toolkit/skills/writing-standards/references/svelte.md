@@ -1,6 +1,6 @@
 # Svelte／SvelteKit記述スタイル
 
-対象バージョン: Svelte 5系・SvelteKit 2系（参考実利用バージョン: Svelte 5.56・SvelteKit 2.65）。本節は公式ドキュメント（<https://svelte.dev/docs>）のうち、runesモードで判断を誤りやすい箇所を抜粋する。
+対象バージョン: Svelte 5系・SvelteKit 2系（参考実利用バージョン: Svelte 5.56・SvelteKit 2.65）。本書は公式ドキュメント（<https://svelte.dev/docs>）のうち、runesモードで判断を誤りやすい箇所を抜粋する。
 
 ## runesの使い分け
 

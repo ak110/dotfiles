@@ -5,19 +5,19 @@
 import subprocess
 from pathlib import Path
 
-from pytools._internal import claude_common, claude_marketplace, install_claude_plugins
+from pytools._internal import claude_common, claude_marketplace, common, install_claude_plugins
 
 
 def test_run_claude_uses_short_timeout_by_default(monkeypatch) -> None:
     """一般のClaude CLI呼び出しはtimeoutを省略すると30秒を使う。"""
     observed: list[float | None] = []
-    monkeypatch.setattr(claude_common, "resolve_executable", lambda *args, **kwargs: Path("/claude"))
+    monkeypatch.setattr(common, "resolve_executable", lambda *args, **kwargs: Path("/claude"))
 
     def fake_run_subprocess(*args, **kwargs):
         observed.append(kwargs["timeout"])
         return subprocess.CompletedProcess(args[0], 0, "", "")
 
-    monkeypatch.setattr(claude_common, "run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(common, "run_subprocess", fake_run_subprocess)
 
     claude_common.run_claude(["auth", "status"])
     claude_common.run_claude(["plugin", "install", "example"], timeout=300)
@@ -55,7 +55,7 @@ def test_marketplace_write_operations_use_extended_timeout(monkeypatch, tmp_path
 
     checks = iter((None, False, True))
     monkeypatch.setattr(claude_common, "run_claude", fake_run_claude)
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(claude_marketplace, "_KNOWN_MARKETPLACES_PATH", tmp_path / "known_marketplaces.json")
     monkeypatch.setattr(claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
     monkeypatch.setattr(claude_marketplace, "_check_marketplace_from_file", lambda: next(checks))

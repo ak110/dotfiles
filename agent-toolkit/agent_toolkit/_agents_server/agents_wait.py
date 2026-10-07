@@ -14,7 +14,16 @@ import uuid
 from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
+from agent_toolkit._agents_server import (
+    logging_config,
+    notice_inbox,
+    result_projection,
+    retained_results,
+    session_registry,
+    shared_layout,
+    shared_roots,
+    wait_targets,
+)
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
@@ -77,7 +86,7 @@ class _BodyFileWriter:
 
 
 def _wait_run_directory(root_session_id: str, owner: str, state_root: pathlib.Path | None) -> pathlib.Path:
-    return status_file.status_directory(root_session_id, state_root) / "wait-results" / owner
+    return shared_layout.status_directory(root_session_id, state_root) / "wait-results" / owner
 
 
 def _write_json(path: pathlib.Path, value: Mapping[str, Any]) -> None:
@@ -116,7 +125,7 @@ def _stashed_wait_targets(run_path: pathlib.Path) -> set[str]:
     stash = run_path.with_suffix("")
     result_ids = {path.stem for path in (stash / "results").glob("*.json")}
     notice_ids = {path.name.split(".", 1)[0] for path in (stash / "notices").glob("*.json")}
-    return {session_id for session_id in result_ids | notice_ids if status_file.valid_session_id(session_id)}
+    return {session_id for session_id in result_ids | notice_ids if shared_layout.valid_session_id(session_id)}
 
 
 def _publish_wait_result(
@@ -200,9 +209,9 @@ def _with_result_next_action(result: dict[str, Any]) -> dict[str, Any]:
     """委譲先が失敗または中断で終端した結果へ、受領した主体の次の操作を加える。"""
     status = result.get("status")
     if status == "failed":
-        result = state.append_result_next_action(result, _FAILED_RESULT_NEXT_ACTION)
+        result = result_projection.append_result_next_action(result, _FAILED_RESULT_NEXT_ACTION)
     elif status == "interrupted":
-        result = state.append_result_next_action(result, _INTERRUPTED_RESULT_NEXT_ACTION)
+        result = result_projection.append_result_next_action(result, _INTERRUPTED_RESULT_NEXT_ACTION)
     return result
 
 
@@ -215,12 +224,12 @@ def _target_origins(
 ) -> tuple[dict[str, set[str]], tuple[str, int, str] | None]:
     """現行の待機対象と由来を返し、解釈不能な入力は理由・終了コード・次の操作の診断へ変換する。"""
     listed = _read_sessions(own_status_path)
-    invalid = [session["session_id"] for session in listed or () if not status_file.valid_session_id(session["session_id"])]
+    invalid = [session["session_id"] for session in listed or () if not shared_layout.valid_session_id(session["session_id"])]
     if invalid:
         return {}, (f"session_idの形式が不正です: {invalid[0]}", 5, _BROKEN_STATE_NEXT_ACTION)
     listed_ids = {session["session_id"] for session in listed or ()}
     result_ids = _retained_result_session_ids(result_directory, owner_status_file=owner_status_file)
-    registered_ids, registry_error = status_file.read_wait_targets(root_session_id, owner_status_file, state_root)
+    registered_ids, registry_error = wait_targets.read_wait_targets(root_session_id, owner_status_file, state_root)
     if registry_error is not None:
         return {}, (f"待機対象登録簿を読めません: {registry_error}", 9, _BROKEN_STATE_NEXT_ACTION)
     # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終端を示す場合に結果が生じないため解放する。
@@ -232,7 +241,7 @@ def _target_origins(
     }
     for session_id in set(registered_ids) - listed_ids - result_ids:
         if session_registry.resolve(session_id, state_root=state_root).state in releasable:
-            status_file.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
+            wait_targets.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
             registered_ids.remove(session_id)
     origins: dict[str, set[str]] = {}
     for origin, identifiers in (
@@ -271,9 +280,9 @@ def wait_for_result(
     """
     logging_config.configure_logging()
     env = os.environ if environment is None else environment
-    root_resolution = None if root_session_id is not None else status_file.resolve_conversation_root(env, state_root)
+    root_resolution = None if root_session_id is not None else shared_roots.resolve_conversation_root(env, state_root)
     try:
-        identity = status_file.resolve_wait_identity(env, root_session_id, state_root)
+        identity = shared_roots.resolve_wait_identity(env, root_session_id, state_root)
     except ValueError as error:
         return _fail(
             f"agents_serverの待機ルートまたは状態書込主体を解決できません: {error}",
@@ -283,8 +292,8 @@ def wait_for_result(
     if identity is None:
         return _fail("agents_serverの状態ディレクトリを解決できません。", 4, next_action=_IDENTITY_NEXT_ACTION)
     root_session_id = identity.root_session_id
-    own_status_path = status_file.status_directory(root_session_id, state_root) / identity.file_name
-    result_directory = status_file.results_directory(root_session_id, state_root)
+    own_status_path = shared_layout.status_directory(root_session_id, state_root) / identity.file_name
+    result_directory = shared_layout.results_directory(root_session_id, state_root)
     run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
     origins, target_error = _target_origins(
         own_status_path,
@@ -305,7 +314,9 @@ def wait_for_result(
         if (
             isinstance(recorded_targets, list)
             and current_run_path is not None
-            and all(isinstance(session_id, str) and status_file.valid_session_id(session_id) for session_id in recorded_targets)
+            and all(
+                isinstance(session_id, str) and shared_layout.valid_session_id(session_id) for session_id in recorded_targets
+            )
         ):
             stashed = _stashed_wait_targets(current_run_path)
             if set(origins) | stashed == set(recorded_targets):
@@ -315,7 +326,7 @@ def wait_for_result(
     own_sessions = _read_sessions(own_status_path)
     if not ordered_ids and (not own_status_path.exists() or own_sessions is not None):
         if root_resolution is not None and not root_resolution.mapping_confirmed:
-            reason, next_action = status_file.unconfirmed_root_recovery(root_resolution, "atk agents wait")
+            reason, next_action = shared_roots.unconfirmed_root_recovery(root_resolution, "atk agents wait")
             return _fail(reason, 4, next_action=next_action)
         return _fail(_absent_targets_message(identity.file_name), 10, next_action=_ABSENT_TARGETS_NEXT_ACTION)
     _LOG.info(
@@ -323,7 +334,7 @@ def wait_for_result(
         ",".join(ordered_ids) or "none",
         ";".join(f"{session_id}:{','.join(sorted(origins[session_id]))}" for session_id in ordered_ids) or "none",
     )
-    lock_directory = status_file.status_directory(root_session_id, state_root) / "wait-locks"
+    lock_directory = shared_layout.status_directory(root_session_id, state_root) / "wait-locks"
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_path = lock_directory / f"{identity.file_name}.lock"
     lock_file = lock_path.open("a+b")
@@ -355,7 +366,7 @@ def wait_for_result(
                 if run_path is not None:
                     recorded_targets = recorded.get("targets")
                     if not isinstance(recorded_targets, list) or any(
-                        not isinstance(session_id, str) or not status_file.valid_session_id(session_id)
+                        not isinstance(session_id, str) or not shared_layout.valid_session_id(session_id)
                         for session_id in recorded_targets
                     ):
                         return _consume_wait_result(current_run_path)
@@ -376,7 +387,7 @@ def wait_for_result(
                 },
             )
             _write_json(run_directory / "current.json", {"run_id": run_id})
-        status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
+        wait_targets.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
         # 上限はMCPの`wait`と同じくプロンプトキャッシュの保持期間から導出し、CLIとMCPで同じ値を使う。
         # 委譲元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
@@ -416,7 +427,7 @@ def wait_for_result(
             for session_id in sorted(set(current_origins) - set(ordered_ids)):
                 ordered_ids.append(session_id)
                 ordered_ids.sort()
-                status_file.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
+                wait_targets.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
                 recorded = _read_json(run_path) or {}
                 recorded["targets"] = ordered_ids
                 _write_json(run_path, recorded)
@@ -425,12 +436,12 @@ def wait_for_result(
                     session_id,
                     ",".join(sorted(current_origins[session_id])),
                 )
-            status_paths = status_file.list_status_files(root_session_id, state_root)
+            status_paths = shared_layout.list_status_files(root_session_id, state_root)
             collected: list[dict[str, Any]] = []
             read_failure: str | None = None
             for session_id in ordered_ids:
                 result_path = result_directory / f"{session_id}.json"
-                result, read_error = status_file.take_result(
+                result, read_error = retained_results.take_result(
                     root_session_id,
                     session_id,
                     identity.file_name,
@@ -441,7 +452,7 @@ def wait_for_result(
                 if read_error is not None:
                     read_failure = f"終端結果ファイルを読めません: {result_path}: {read_error}"
                     break
-                notices = status_file.take_notices(
+                notices = notice_inbox.take_notices(
                     root_session_id,
                     session_id,
                     state_root,
@@ -463,7 +474,7 @@ def wait_for_result(
                     if notices:
                         result["notices"] = notices
                     collected.append(_with_result_next_action(result))
-                    status_file.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
+                    wait_targets.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
                     continue
                 if notices:
                     response = _running_response(session_id, _session_output_activity(status_paths, session_id))
@@ -518,7 +529,7 @@ def _retained_result_session_ids(result_directory: pathlib.Path, *, owner_status
         return set()
     retained: set[str] = set()
     for path in paths:
-        if path.suffix != ".json" or not path.is_file() or not status_file.valid_session_id(path.stem):
+        if path.suffix != ".json" or not path.is_file() or not shared_layout.valid_session_id(path.stem):
             continue
         result, error = _read_result(path)
         if error is not None:
@@ -571,7 +582,7 @@ def _session_output_activity(paths: list[pathlib.Path], session_id: str) -> dict
             updated_at = session.get("updated_at")
             output_updated_at = session.get("output_updated_at")
             started_at = session.get("started_at")
-            return state.activity_projection(
+            return result_projection.activity_projection(
                 updated_at=updated_at if isinstance(updated_at, str) else None,
                 output_updated_at=output_updated_at if isinstance(output_updated_at, str) else None,
                 started_at=started_at if isinstance(started_at, str) else None,
@@ -617,16 +628,16 @@ def _public_wait_output(output: str, stream: str | None) -> str:
 
 def _public_wait_response(payload: Mapping[str, Any]) -> dict[str, Any]:
     """保存済みの待機行も同じ公開項目へ射影し、古い内部項目を返さない。"""
-    response = state.public_result(payload)
+    response = result_projection.public_result(payload)
     for key in ("seconds_since_activity", "agent_message_path"):
         if key in payload:
             response[key] = payload[key]
     if isinstance(payload.get("api_error"), Mapping):
         response["api_error"] = {
-            key: payload["api_error"][key] for key in state.API_ERROR_PUBLIC_KEYS if key in payload["api_error"]
+            key: payload["api_error"][key] for key in result_projection.API_ERROR_PUBLIC_KEYS if key in payload["api_error"]
         }
     if payload.get("notices"):
-        response["notices"] = [state.public_notice(notice) for notice in payload["notices"]]
+        response["notices"] = [result_projection.public_notice(notice) for notice in payload["notices"]]
     return response
 
 

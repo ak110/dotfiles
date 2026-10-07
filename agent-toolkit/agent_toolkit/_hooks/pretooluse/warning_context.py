@@ -5,8 +5,10 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
+from agent_toolkit._common import message_format as _message_format
+
 _COUNT_HEADER_RE = re.compile(r"\A警告: \d+件\n\n")
-_NOTICE_PREFIX_RE = re.compile(r'(?m)^<(?:atk-auto|agent-toolkit-auto-inserted)\b[^>]*\bkind="warn"[^>]*>')
+_NOTICE_PREFIX_RE = re.compile(rf'(?m)^<(?:{_message_format.AUTO_ELEMENT_NAME_PATTERN})\b[^>]*\bkind="warn"[^>]*>')
 
 
 def format_warning_context(warnings: Sequence[str]) -> str:

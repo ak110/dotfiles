@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -25,40 +25,34 @@ _LINKS: dict[str, str] = {
 # リンクではなく`sync_agent_toolkit_rules`の同期で配る。
 
 
-def run() -> bool:
-    """`~/.codex/`配下のリンクを冪等に生成する。"""
-    dotfiles_root = claude_common.find_dotfiles_root()
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """`~/.codex/`配下のリンクを冪等に生成する。リンクを作成できない場合は失敗と数える。"""
+    dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("codex links", "dotfiles ルートが見つからずスキップ"))
-        return False
+        return post_apply_outcome.PostApplyOutcome()
 
     changed = False
+    failures: list[str] = []
     for dest_rel, src_rel in _LINKS.items():
         dest = CODEX_HOME / dest_rel
         target = dotfiles_root / src_rel
-        if _process_link(dest, target):
-            changed = True
-    return changed
+        try:
+            if _process_link(dest, target):
+                changed = True
+        except FileExistsError:
+            failures.append(f"通常ファイル／通常ディレクトリが存在するためリンクを作成できない: {dest}")
+        except OSError as error:
+            failures.append(f"パスの検査または同期に失敗: {dest}: {error}")
+    return post_apply_outcome.PostApplyOutcome(changed=changed, failure=" / ".join(failures) or None)
 
 
 def _process_link(dest: Path, target: Path) -> bool:
     """単一のリンクを処理し、新規作成または更新したら`True`を返す。"""
-    try:
-        if not target.exists():
-            logger.warning(log_format.format_status("codex links", f"配布元が存在しないためスキップ: {target}"))
-            return False
-        changed = sync_directory_link(dest, target)
-    except FileExistsError:
-        logger.warning(
-            log_format.format_status(
-                "codex links",
-                f"通常ファイル／通常ディレクトリが存在するためスキップ: {dest}",
-            )
-        )
+    if not target.exists():
+        logger.warning(log_format.format_status("codex links", f"配布元が存在しないためスキップ: {target}"))
         return False
-    except OSError as error:
-        logger.warning(log_format.format_status("codex links", f"パスの検査または同期に失敗したためスキップ: {dest}: {error}"))
-        return False
+    changed = sync_directory_link(dest, target)
     if not changed:
         return False
     logger.info(log_format.format_status("codex links", f"作成: {dest} -> {target}"))

@@ -1,13 +1,13 @@
 """対象worktreeの外からcommit付きの採否を行う公開CLIの受入テスト。"""
 
 import pathlib
-import subprocess
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import git_sync
-from agent_toolkit._atk.wi.common import WI_STATES
+from agent_toolkit._atk.wi.constants import WI_STATES
+from agent_toolkit._testing import git_repository
 
 
 @pytest.mark.parametrize("action", ["adopt", "reject"])
@@ -25,20 +25,9 @@ def test_commit_transition_from_outside_worktree(
     outside = tmp_path / "outside"
     outside.mkdir()
 
-    def git(directory: pathlib.Path, *arguments: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(directory), *arguments],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=True,
-            timeout=30,
-        ).stdout.strip()
-
     for directory in (notes, target):
         directory.mkdir()
-        git(directory, "init", "-q", "--initial-branch=main")
+        git_repository.init_repository(directory, initial_branch="main")
     for state in WI_STATES:
         (notes / state).mkdir()
         (notes / state / ".gitkeep").touch()
@@ -46,13 +35,13 @@ def test_commit_transition_from_outside_worktree(
     source = notes / "processing/entry.md"
     original = "---\ntarget_repo: github.com/example/target\ntype: awi\nsource: test\n---\n\n要求\n"
     source.write_text(original, encoding="utf-8")
-    git(notes, "add", ".")
-    git(notes, "commit", "-q", "-m", "base")
+    git_repository.git_output(notes, "add", ".")
+    git_repository.git_output(notes, "commit", "-q", "-m", "base")
     (target / "content.txt").write_text("反映済み\n", encoding="utf-8")
-    git(target, "add", ".")
-    git(target, "commit", "-q", "-m", "要求を反映する")
-    git(target, "remote", "add", "origin", "https://github.com/example/target.git")
-    oid = git(target, "rev-parse", "HEAD")
+    git_repository.git_output(target, "add", ".")
+    git_repository.git_output(target, "commit", "-q", "-m", "要求を反映する")
+    git_repository.git_output(target, "remote", "add", "origin", "https://github.com/example/target.git")
+    oid = git_repository.git_output(target, "rev-parse", "HEAD")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     monkeypatch.chdir(outside)
     target_argument = "github.com/example/target" if case == "missing-worktree" else str(target)
@@ -66,7 +55,7 @@ def test_commit_transition_from_outside_worktree(
         assert captured.value.code == 0, output
         result = notes / ("adopted" if action == "adopt" else "rejected") / source.name
         text = result.read_text(encoding="utf-8")
-        short = git(target, "rev-parse", "--short", oid)
+        short = git_repository.git_output(target, "rev-parse", "--short", oid)
         assert f"- 対応commit: {short}\n" in text
         assert "- 対応commit件名: 要求を反映する" in text
         assert oid not in text

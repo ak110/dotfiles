@@ -28,16 +28,19 @@
   - 信頼できない入力のデシリアライズは`serde` + 明示的な構造体で行う（`serde_json::Value`のまま後段へ渡さない）
   - 乱数はセキュリティ用途なら`rand::rngs::OsRng`、それ以外は`rand::thread_rng`
 - MSRV（最小サポートバージョン）は`Cargo.toml`の`rust-version`に明記する
-- テスト（inline, 最低限）
-  - 単体テストは対象モジュール末尾の`#[cfg(test)] mod tests { ... }`に配置する
-  - 統合テストはクレートルート直下の`tests/`に置く（後述の統合テスト節を参照）
-  - 同期点の待機（`testing.md`「安定性: flakyテスト防止」）には、`thread::sleep`のポーリングではなく`crossbeam-channel::recv_timeout`などの確定待機を使う
-  - `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`（Rust 1.79+）でcompile-timeに行う
-   （努力目標。実行時テストより早いビルド時に検出できるため）
 
-## テストコード（統合テスト）
+## テストコード
 
-クレート直下の`tests/`ディレクトリ配下に置く統合テスト向けの方針。
+### 単体テスト
+
+- 単体テストは対象モジュール末尾の`#[cfg(test)] mod tests { ... }`に配置し、最低限に留める
+- 同期点の待機（`testing.md`「安定性: flakyテスト防止」）には、`thread::sleep`のポーリングではなく`crossbeam-channel::recv_timeout`などの確定待機を使う
+- `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`（Rust 1.79+）でcompile-timeに行う
+  （努力目標。実行時テストより早いビルド時に検出できるため）
+
+### 統合テスト
+
+統合テストはクレートルート直下の`tests/`ディレクトリ配下に置く。
 
 - パラメーター化テストは`rstest`の`#[rstest]` + `#[case]`を使う
 - プロパティベースの網羅検証が有効な場合は`proptest`を検討する

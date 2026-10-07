@@ -22,6 +22,7 @@ from unittest import mock
 import pytest
 
 from agent_toolkit import wait_ci
+from agent_toolkit._testing import git_repository as _git_repository_support
 
 # 直接テスト対象のprivate helperはモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
 # 理由はモジュールdocstringの「例外」記述に従う。
@@ -95,34 +96,16 @@ def _main_args(baseline: pathlib.Path, *, sha: str | None = "abc123", source_ref
     return args
 
 
-def _git(repository: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """テスト用repositoryでgitを実行する。"""
-    return subprocess.run(
-        ["git", *args],
-        cwd=repository,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-
 @pytest.fixture(name="git_repository")
 def _git_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
     """branchと2種類のtagが同じcommitを指すテスト用repositoryを返す。"""
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    _git(repository, "init")
-    _git(repository, "config", "user.name", "Wait CI Test")
-    _git(repository, "config", "user.email", "wait-ci@example.invalid")
-    (repository / "tracked.txt").write_text("first\n", encoding="utf-8")
-    _git(repository, "add", "tracked.txt")
-    _git(repository, "commit", "-m", "first")
-    commit_sha = _git(repository, "rev-parse", "HEAD").stdout.strip()
-    _git(repository, "branch", "source-branch")
-    _git(repository, "tag", "lightweight-tag")
-    _git(repository, "tag", "-a", "annotated-tag", "-m", "annotated")
-    blob_sha = _git(repository, "rev-parse", "HEAD:tracked.txt").stdout.strip()
-    _git(repository, "tag", "-a", "non-commit-tag", blob_sha, "-m", "non-commit")
+    repository = _git_repository_support.init_repository(tmp_path / "repository", files={"tracked.txt": "first\n"})
+    commit_sha = _git_repository_support.commit_all(repository, "first")
+    _git_repository_support.run_git(repository, "branch", "source-branch")
+    _git_repository_support.run_git(repository, "tag", "lightweight-tag")
+    _git_repository_support.run_git(repository, "tag", "-a", "annotated-tag", "-m", "annotated")
+    blob_sha = _git_repository_support.run_git(repository, "rev-parse", "HEAD:tracked.txt").stdout.strip()
+    _git_repository_support.run_git(repository, "tag", "-a", "non-commit-tag", blob_sha, "-m", "non-commit")
     return repository, commit_sha
 
 
@@ -323,6 +306,25 @@ class TestRegistrationGrace:
         )
 
 
+def _wait_for_ci_without_runs(repository: str, *, forge: str = "github") -> int:
+    """runが1件も登録されない状態で、即時に時間切れとなる待機を実行して終了コードを返す。"""
+    return wait_ci.wait_for_ci(
+        "sha1",
+        10.0,
+        1.0,
+        0.0,
+        False,
+        10.0,
+        repository=repository,
+        ref="refs/heads/main",
+        source_ref="HEAD",
+        baseline_ids=frozenset(),
+        forge=forge,
+        now_fn=lambda: 0.0,
+        sleep_fn=lambda _seconds: None,
+    )
+
+
 class TestGithubCiConfiguration:
     """GitHub tree応答によるCI定義不在の即時判定と代替処理。"""
 
@@ -402,23 +404,7 @@ class TestGithubCiConfiguration:
             return subprocess.CompletedProcess(command, 0, b"[]", b"")
 
         monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
-        assert (
-            wait_ci.wait_for_ci(
-                "sha1",
-                10.0,
-                1.0,
-                0.0,
-                False,
-                10.0,
-                repository="owner/repository",
-                ref="refs/heads/main",
-                source_ref="HEAD",
-                baseline_ids=frozenset(),
-                now_fn=lambda: 0.0,
-                sleep_fn=lambda _seconds: None,
-            )
-            == wait_ci.EXIT_NO_RUNS
-        )
+        assert _wait_for_ci_without_runs("owner/repository") == wait_ci.EXIT_NO_RUNS
 
     def test_non_github_forge_skips_tree_query_and_uses_existing_wait(
         self,
@@ -435,43 +421,13 @@ class TestGithubCiConfiguration:
             "run",
             lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, b"[]", b""),
         )
-        assert (
-            wait_ci.wait_for_ci(
-                "sha1",
-                10.0,
-                1.0,
-                0.0,
-                False,
-                10.0,
-                repository="group/repository",
-                ref="refs/heads/main",
-                source_ref="HEAD",
-                baseline_ids=frozenset(),
-                forge="gitlab",
-                now_fn=lambda: 0.0,
-                sleep_fn=lambda _seconds: None,
-            )
-            == wait_ci.EXIT_NO_RUNS
-        )
+        assert _wait_for_ci_without_runs("group/repository", forge="gitlab") == wait_ci.EXIT_NO_RUNS
 
     def test_no_definition_exits_before_run_listing(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         monkeypatch.setattr(wait_ci, "_github_ci_configured", lambda *_args: False)
-        result = wait_ci.wait_for_ci(
-            "sha1",
-            10.0,
-            1.0,
-            0.0,
-            False,
-            10.0,
-            repository="owner/repository",
-            ref="refs/heads/main",
-            source_ref="HEAD",
-            baseline_ids=frozenset(),
-            now_fn=lambda: 0.0,
-            sleep_fn=lambda _seconds: None,
-        )
+        result = _wait_for_ci_without_runs("owner/repository")
         assert result == wait_ci.EXIT_NO_CI_CONFIG
         # CI定義が無い場合は、CI検収を不要として進めてよいことを次の操作で示す。
         assert "次の操作: CI検収は不要として次の工程へ進む" in capsys.readouterr().err
@@ -1600,9 +1556,9 @@ class TestMainEntrypoint:
         ]
         assert wait_ci.main(write_args) == wait_ci.EXIT_SUCCESS
         (repository / "tracked.txt").write_text("second\n", encoding="utf-8")
-        _git(repository, "add", "tracked.txt")
-        _git(repository, "commit", "-m", "second")
-        assert _git(repository, "rev-parse", "HEAD").stdout.strip() != baseline_sha
+        _git_repository_support.run_git(repository, "add", "tracked.txt")
+        _git_repository_support.run_git(repository, "commit", "-m", "second")
+        assert _git_repository_support.run_git(repository, "rev-parse", "HEAD").stdout.strip() != baseline_sha
         captured: dict[str, str] = {}
 
         def fake_wait_for_ci(sha: str, *_args: object, **_kwargs: object) -> int:
@@ -1800,9 +1756,9 @@ class TestResolveForge:
         手順書どおりの`owner/repo`で`--forge`を省くと必ず終了コード3になる不整合を検出する。
         一致するremoteが無い場合と、一致したremoteのforgeが分かれる場合は推測せず判別不能とする。
         """
-        subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True)
+        _git_repository_support.init_repository(tmp_path)
         for name, url in remotes.items():
-            subprocess.run(["git", "-C", str(tmp_path), "remote", "add", name, url], check=True)
+            _git_repository_support.run_git(tmp_path, "remote", "add", name, url)
         assert _resolve_forge("auto", "owner/repo", cwd=tmp_path) == expected
 
 

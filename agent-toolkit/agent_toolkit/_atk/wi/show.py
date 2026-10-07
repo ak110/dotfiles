@@ -1,35 +1,23 @@
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
-
-旧`pytools/dotfiles_fb/_show.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""`atk wi show`による本文の表示。"""
 
 import argparse
 import pathlib
 import sys
 
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi.common import (
-    WI_STATES,
-    WI_TYPE_UWI,
-    WI_TYPES,
-    _canonical_repo,
-    _dedup_positional_filenames,
-    _is_uwi_answered,
-    _pull_with_recent_reuse,
-    _repo_lock,
-    _require_type,
-    _validate_filename,
-)
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import filenames as _wi_filenames
+from agent_toolkit._atk.wi import filters as _wi_filters
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
+from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_UWI, WI_TYPES
 from agent_toolkit._atk.wi.formatters import (
-    _body_summary,
-    _parse_source,
-    _parse_target_repo,
-    _source_matches,
-    _uwi_body_summary,
+    body_summary,
+    parse_source,
+    parse_target_repo,
+    uwi_body_summary,
 )
-from agent_toolkit._atk.wi.listing import _select_entries
-from agent_toolkit._atk.wi.repo import _resolve_repo_id
+from agent_toolkit._atk.wi.repo import resolve_repo_id
 
 
 def _state_prefixed_filename_hint(filename: str) -> str | None:
@@ -58,12 +46,12 @@ def _summary_line(text: str, kind: str | None) -> str:
     状態行の後の行を`#`で始めないため、`--all`の種別見出しと区別できる。
     """
     if kind == WI_TYPE_UWI:
-        return _uwi_body_summary(text, sys.maxsize)
-    summary = _body_summary(text, sys.maxsize)
+        return uwi_body_summary(text, sys.maxsize)
+    summary = body_summary(text, sys.maxsize)
     return summary.removeprefix("# ") if summary.startswith("# ") else summary
 
 
-def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """showサブコマンド: `FILENAME...`指定時は指定された項目群、`--all`指定時は全件の本文を表示する。
 
     `FILENAME`・`--all`のいずれも未指定の場合はエラー終了する（exit 2）。
@@ -93,19 +81,19 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if hint is not None:
             _outcome.report_failure(f"{_STATE_PREFIX_REASON}: {filename}", next_action=hint)
             sys.exit(2)
-    filenames = _dedup_positional_filenames(args.filenames, "show")
+    filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "show")
     validated_filenames = [
-        (filename, _validate_filename(filename, private_notes / WI_STATES[0]).name) for filename in filenames
+        (filename, _wi_filenames.validate_filename(filename, private_notes / WI_STATES[0]).name) for filename in filenames
     ]
     if not args.skip_pull:
-        with _repo_lock(private_notes):
-            _pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
-    resolved_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in (args.target_repo or ())))
+        with _wi_sync.repo_lock(private_notes):
+            _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
+    resolved_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in (args.target_repo or ())))
 
     if validated_filenames:
         # 省略時に使う条件は対象集合を走査する照会のためのものであり、ファイル名で一意に指定した項目へは適用しない。
         explicit_repos = () if getattr(args, "target_repo_defaulted", False) else resolved_repos
-        resolver_cache: dict[str, str | None] = {}
+        repo_matcher = _wi_filters.TargetRepoMatcher(explicit_repos)
         selected_by_name: list[tuple[pathlib.Path, str, str, str, str | None]] = []
         missing: list[str] = []
         for requested_filename, normalized_filename in validated_filenames:
@@ -115,13 +103,13 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 if not path.exists():
                     continue
                 text = path.read_text(encoding="utf-8")
-                kind = _require_type(path, text)
+                kind = _wi_entries.entry_type_of(path, text)
                 if "all" not in args.type and kind not in args.type:
                     continue
-                target_repo = _parse_target_repo(text)
-                if explicit_repos and _canonical_repo(target_repo, resolver_cache) not in explicit_repos:
+                target_repo = parse_target_repo(text)
+                if not repo_matcher.matches(target_repo):
                     continue
-                if args.source is not None and not any(_source_matches(_parse_source(text), source) for source in args.source):
+                if not _wi_filters.source_matches_any(parse_source(text), args.source):
                     continue
                 selected_entry = (path, target_repo, text, state, kind)
                 break
@@ -137,7 +125,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 )
             sys.exit(2)
         for path, target_repo, text, state, kind in selected_by_name:
-            answered = _is_uwi_answered(text)
+            answered = _wi_uwi_scan.is_uwi_answered(text)
             label = f" [{state}]"
             if kind == WI_TYPE_UWI:
                 label = f" [{state}/{'answered' if answered else 'unanswered'}]"
@@ -148,7 +136,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 print()
         return
 
-    selected = _select_entries(
+    selected = _wi_entries.select_entries(
         private_notes,
         status=args.status,
         target_repo=resolved_repos or None,
@@ -161,7 +149,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         for path, target_repo, text, state, entry_type in selected:
             if entry_type != header_type:
                 continue
-            answered = _is_uwi_answered(text)
+            answered = _wi_uwi_scan.is_uwi_answered(text)
             entries.setdefault(target_repo, []).append((path.name, text, state))
         if entries:
             print(f"# {header_type}")
@@ -170,7 +158,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 for name, text, state in items:
                     label = f" [{state}]"
                     if header_type == WI_TYPE_UWI:
-                        label = f" [{state}/{'answered' if _is_uwi_answered(text) else 'unanswered'}]"
+                        label = f" [{state}/{'answered' if _wi_uwi_scan.is_uwi_answered(text) else 'unanswered'}]"
                     print(f"### {name}{label}")
                     print(_summary_line(text, header_type) if summary_only else text)
                     print()

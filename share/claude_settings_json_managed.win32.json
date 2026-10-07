@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"__HOME__\\dotfiles\\scripts\\claude-hook-pretooluse.ps1\""
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"__HOME__\\dotfiles\\libexec\\claude-hook-pretooluse.ps1\""
           }
         ]
       }

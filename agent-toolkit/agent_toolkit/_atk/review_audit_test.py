@@ -9,12 +9,13 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import review_audit
+from agent_toolkit._common import state_paths
 
 
 @pytest.fixture(name="record_path", autouse=True)
 def _record_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     state_dir = tmp_path / "state"
-    monkeypatch.setattr(review_audit._config, "state_dir", lambda: state_dir)  # pylint: disable=protected-access
+    monkeypatch.setattr(state_paths, "state_dir", lambda: state_dir)
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(pathlib.Path, "home", lambda: home)
@@ -513,3 +514,12 @@ def test_pending_failure_names_default_branch_when_repository_lookup_is_rejected
     assert _dispatch("pending", "owner/repo") != 0
 
     assert "GitHub APIの`default_branch`で指定されたbranchの取得が拒否された" in capsys.readouterr().err
+
+
+def test_record_lock_is_created_under_state_lock_dir(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
+    """`atk review-audit`のロックは状態ディレクトリ配下の`locks/`に作成され、`~/.claude`配下には作成されない。"""
+    assert _dispatch("mark", "owner/repo", "9") == 0
+    capsys.readouterr()
+
+    assert (tmp_path / "state" / "locks" / "review-audit" / "review-audit.lock").is_file()
+    assert not list((tmp_path / "home" / ".claude").glob(".atk-*"))

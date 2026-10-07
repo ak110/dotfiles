@@ -1,4 +1,4 @@
-"""近くの実物と共有する契約の整合性を検査する。"""
+"""bootstrapで導入するuvを、リポジトリ直下の`mise.toml`と`mise.lock`の`tools`が管理しないことを検証する。"""
 
 import pathlib
 import tomllib

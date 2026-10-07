@@ -15,7 +15,7 @@ type Result = subprocess.CompletedProcess[str] | None
 @pytest.fixture(autouse=True)
 def _resolve_codex(monkeypatch: pytest.MonkeyPatch) -> None:
     """Codex CLIをテスト用のコマンド名へ固定する。"""
-    monkeypatch.setattr(remove_codex_claude_mcp.claude_common, "resolve_executable", lambda _name: Path("codex"))
+    monkeypatch.setattr(remove_codex_claude_mcp.common, "resolve_executable", lambda _name: Path("codex"))
 
 
 def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
@@ -60,12 +60,12 @@ def test_run_skips_removal_when_claude_mcp_is_not_registered(monkeypatch: pytest
     calls: list[Call] = []
     results: list[Result] = [_result(1, stderr=stderr)]
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         _fake_runner(results, calls),
     )
 
-    assert remove_codex_claude_mcp.run() is False
+    assert remove_codex_claude_mcp.run().changed is False
     assert calls == [(["codex", "mcp", "get", "claude", "--json"], 30, "codex")]
 
 
@@ -74,12 +74,12 @@ def test_run_removes_registered_claude_mcp(monkeypatch: pytest.MonkeyPatch) -> N
     calls: list[Call] = []
     results: list[Result] = [_result(0, stdout='{"name":"claude"}'), _result(0)]
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         _fake_runner(results, calls),
     )
 
-    assert remove_codex_claude_mcp.run() is True
+    assert remove_codex_claude_mcp.run().changed is True
     assert calls == [
         (["codex", "mcp", "get", "claude", "--json"], 30, "codex"),
         (["codex", "mcp", "remove", "claude"], 30, "codex"),
@@ -88,15 +88,15 @@ def test_run_removes_registered_claude_mcp(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_run_skips_when_codex_is_unresolved(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     """Codex CLIを解決できない場合は手動確認を促して変更なしとする。"""
-    monkeypatch.setattr(remove_codex_claude_mcp.claude_common, "resolve_executable", lambda _name: None)
+    monkeypatch.setattr(remove_codex_claude_mcp.common, "resolve_executable", lambda _name: None)
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         lambda *_args, **_kwargs: pytest.fail("コマンドを起動してはいけない"),
     )
 
     with caplog.at_level("WARNING"):
-        assert remove_codex_claude_mcp.run() is False
+        assert remove_codex_claude_mcp.run().changed is False
 
     assert "codex" in caplog.text
     assert "手動" in caplog.text
@@ -110,26 +110,27 @@ def test_run_skips_when_codex_is_unresolved(monkeypatch: pytest.MonkeyPatch, cap
         (_result(1, stderr="Error: config file is invalid"), "stderr: Error: config file is invalid"),
     ],
 )
-def test_run_raises_when_get_fails(
+def test_run_reports_failure_when_get_fails(
     monkeypatch: pytest.MonkeyPatch,
     result: Result,
     error_detail: str,
 ) -> None:
-    """取得不能と想定外の非ゼロ終了を例外として上位へ伝える。
+    """取得不能と想定外の非ゼロ終了を失敗として上位へ伝える。
 
     期待するエラー文言を含まない終了コード1の失敗を未登録と誤判定しない。
     """
     calls: list[Call] = []
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         _fake_runner([result], calls),
     )
 
-    with pytest.raises(RuntimeError, match="Claude MCP登録の取得に失敗") as exc_info:
-        remove_codex_claude_mcp.run()
+    outcome = remove_codex_claude_mcp.run()
 
-    assert error_detail in str(exc_info.value)
+    assert outcome.failure is not None
+    assert "Claude MCP登録の取得に失敗" in outcome.failure
+    assert error_detail in outcome.failure
     assert calls == [(["codex", "mcp", "get", "claude", "--json"], 30, "codex")]
 
 
@@ -140,7 +141,7 @@ def test_run_raises_when_get_fails(
         (_result(2, stdout="remove failed"), "stdout: remove failed"),
     ],
 )
-def test_run_raises_when_remove_fails(
+def test_run_reports_failure_when_remove_fails(
     monkeypatch: pytest.MonkeyPatch,
     result: Result,
     error_detail: str,
@@ -148,15 +149,16 @@ def test_run_raises_when_remove_fails(
     """削除不能と非ゼロ終了を例外として上位へ伝える。"""
     calls: list[Call] = []
     monkeypatch.setattr(
-        remove_codex_claude_mcp.claude_common,
+        remove_codex_claude_mcp.common,
         "run_subprocess",
         _fake_runner([_result(0), result], calls),
     )
 
-    with pytest.raises(RuntimeError, match="Claude MCP登録の削除に失敗") as exc_info:
-        remove_codex_claude_mcp.run()
+    outcome = remove_codex_claude_mcp.run()
 
-    assert error_detail in str(exc_info.value)
+    assert outcome.failure is not None
+    assert "Claude MCP登録の削除に失敗" in outcome.failure
+    assert error_detail in outcome.failure
     assert calls == [
         (["codex", "mcp", "get", "claude", "--json"], 30, "codex"),
         (["codex", "mcp", "remove", "claude"], 30, "codex"),

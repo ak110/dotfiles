@@ -1,41 +1,48 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`のテスト。"""
 
 # pylint: disable=protected-access
 
 import asyncio
-import binascii
 import contextlib
 import datetime
 import json
-import logging
-import math
 import os
 import pathlib
 import re
-import signal
-import struct
 import subprocess
 import sys
 import threading
-import types
 import typing
-import zlib
 
 import filelock
 import pytest
-import watchdog.events
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import assets, config, state
-from agent_toolkit._atk.serve import cli as serve
+from agent_toolkit._atk.serve import assets, config, state, wi_operations, wi_routes
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve.plans import remote as serve_plan_remote
-from agent_toolkit._atk.wi import common, user_comment
+from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import repo as awi_repo
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.serve_support import (
+    _BATCH_TEXT,
+    AWI_TEXT,
+    UNANSWERED_UWI_TEXT,
+    _BlockingSync,
+    _disable_wi_git,
+    _patch_batch_repo_operations,
+    _patch_comment_edit_dependencies,
+    _run_node_ui,
+    _session_review_awi,
+    _sync_app,
+    _three_screen_app,
+    _write_detail_entry,
+    _write_repo_entry,
+    make_inbox_and_processing,
+    stale_fallback_search_script,
+)
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -43,9 +50,6 @@ from agent_toolkit._atk.wi import repo as awi_repo
 # 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
 # module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
 _HOST_ENVIRON = dict(os.environ)
-
-
-from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 
 def test_unknown_config_key_logs_warning(
@@ -205,25 +209,25 @@ const second = {
   summary: '次行', content: '本文', body_html: '<p>本文</p>', frontmatter_entries: []
 };
 entries = [first, second];
-renderList();
+renderEntries();
 const firstButton = elements['entry-list'].children[0].children[0];
 displayEntry(first);
 detailOriginKey = entryKey(first);
 openDialog(elements['detail-dialog'], firstButton, elements['detail-dialog-body']);
 entries = [second];
-renderList();
+renderEntries();
 closeDetailDialog();
 const remainingRow = focused;
 
 entries = [second];
-renderList();
+renderEntries();
 const secondButton = elements['entry-list'].children[0].children[0];
 displayEntry(second);
 detailOriginKey = entryKey(second);
 openDialog(elements['detail-dialog'], secondButton, elements['detail-dialog-body']);
 elements['search-input'].value = '一致しない条件';
 entries = [];
-renderList();
+renderEntries();
 closeDetailDialog();
 process.stdout.write(JSON.stringify({remainingRow, emptyState: focused}));
 """
@@ -276,7 +280,10 @@ process.stdout.write(JSON.stringify({putUrls, state: savedState, open: elements[
 
 
 def test_assets_clear_self_write_sse_alert_after_save_and_answer_success() -> None:
-    """保存・回答の応答前にSSEが届いても、成功後は詳細を閉じる。"""
+    """保存・回答の応答前にSSEが届いても、送信中は警告せず、成功後は詳細を閉じる。
+
+    送信中の更新通知は操作自身の書込みを含むため、外部更新として警告すると成功した操作を失敗と誤認させる。
+    """
     result = _run_node_ui(
         """
 async function runSave() {
@@ -365,10 +372,9 @@ const answered = await runAnswer();
 process.stdout.write(JSON.stringify({saved, answered}));
 """
     )
-    warning = "外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。"
     assert result == {
         "saved": {
-            "during": warning,
+            "during": "",
             "after": "",
             "status": "",
             "toast": "inbox/entry.mdを保存しました。",
@@ -376,7 +382,7 @@ process.stdout.write(JSON.stringify({saved, answered}));
             "mode": "view",
         },
         "answered": {
-            "during": warning,
+            "during": "",
             "after": "",
             "status": "",
             "toast": "inbox/question.mdへ回答しました。",
@@ -462,7 +468,7 @@ async def test_wi_mutation_logs_operation_without_body(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """成功と入力エラーを記録し、編集本文がログに含まれないことを検証する。"""
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
     monkeypatch.setattr(operations, "edit", lambda *_args: True)
     monkeypatch.setattr(operations, "transition", lambda _action, filenames, **_kwargs: filenames)
     app = serve_app.create_app(
@@ -470,19 +476,163 @@ async def test_wi_mutation_logs_operation_without_body(
     )
     client = app.test_client()
 
-    with caplog.at_level("INFO", logger=serve_app.logger.name):
+    with caplog.at_level("INFO", logger=wi_routes.logger.name):
         edit = await client.put("/api/entries/inbox/entry.md", json={"content": "秘匿本文", "expected_content": "旧本文"})
         transition = await client.post("/api/entries/hold", json={"filenames": ["entry.md"]})
         invalid = await client.put("/api/entries/inbox/entry.md", json={"content": ""})
         invalid_transition = await client.post("/api/entries/hold", json={"filenames": ["entry.md"], "bogus": True})
 
     assert [response.status_code for response in (edit, transition, invalid, invalid_transition)] == [200, 200, 400, 400]
-    messages = "\n".join(record.message for record in caplog.records if record.name == serve_app.logger.name)
+    messages = "\n".join(record.message for record in caplog.records if record.name == wi_routes.logger.name)
     assert "WI更新: 操作=edit_entry 対象=entry.md 結果=True" in messages
     assert "WI更新: 操作=hold 対象=entry.md 結果=完了" in messages
     assert "WI更新失敗: 操作=edit_entry 対象=entry.md HTTP=400" in messages
     assert "WI更新失敗: 操作=hold 対象=entry.md HTTP=400" in messages
     assert "秘匿本文" not in messages
+
+
+_REBASE_UWI = (
+    "---\ntype: uwi\ntarget_repo: github.com/example/repo\nquestion_type: yes-no\n---\n\n## 質問\n\n進めてよいか？\n\n"
+    "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n"
+)
+_REBASE_AWI = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
+_REBASE_AGENT_AWI = "---\ntype: awi\ntarget_repo: github.com/example/repo\nsource: session-review\n---\n\n本文\n"
+
+
+def _rebasing_notes(tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]) -> pathlib.Path:
+    """各状態の項目をcommitし、rebaseの中間状態が残るWI保存リポジトリを作成する。"""
+    notes = make_clean_repo(tmp_path, "notes")
+    (notes / ".agent-toolkit-local-only").touch()
+    for state_name, filename, text in (
+        ("inbox", "entry.md", _REBASE_AWI),
+        ("inbox", "question.md", _REBASE_UWI),
+        ("inbox", "agent.md", _REBASE_AGENT_AWI),
+        ("processing", "working.md", _REBASE_AWI),
+        ("hold", "held.md", _REBASE_AWI),
+    ):
+        (notes / state_name).mkdir(exist_ok=True)
+        (notes / state_name / filename).write_text(text, encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-m", "setup"], check=True, capture_output=True)
+    rebase_dir = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "--git-path", "rebase-merge"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (notes / rebase_dir).mkdir(parents=True)
+    return notes
+
+
+def _notes_snapshot(notes: pathlib.Path) -> tuple[dict[str, bytes], str, str]:
+    """作業ツリーのファイル、HEADおよび作業ツリーの状態を返す。"""
+    files = {
+        str(path.relative_to(notes)): path.read_bytes()
+        for path in notes.rglob("*")
+        if path.is_file() and ".git" not in path.parts
+    }
+    head = subprocess.run(["git", "-C", str(notes), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout
+    status = subprocess.run(
+        ["git", "-C", str(notes), "status", "--porcelain=v1", "--untracked-files=all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return files, head, status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("put", "/api/entries/inbox/entry.md", {"content": "変更後の本文\n", "expected_content": _REBASE_AWI}),
+        (
+            "post",
+            "/api/entries/user-comment",
+            {"state": "inbox", "filename": "agent.md", "comment": "コメント", "expected_content": _REBASE_AGENT_AWI},
+        ),
+        ("post", "/api/entries", {"type": "awi", "messages": ["新しい本文"], "target_repo": "github.com/example/repo"}),
+        ("post", "/api/entries/batch", {"text": _BATCH_TEXT}),
+        (
+            "post",
+            "/api/entries/answer",
+            {"filename": "question.md", "state": "inbox", "answer": "その対応で問題無い", "expected_content": _REBASE_UWI},
+        ),
+        ("post", "/api/entries/commit", {}),
+        ("post", "/api/sync", None),
+        ("post", "/api/entries/start-processing", {"filenames": ["entry.md"]}),
+        ("post", "/api/entries/return-to-inbox", {"filenames": ["working.md"]}),
+        ("post", "/api/entries/hold", {"filenames": ["entry.md"]}),
+        ("post", "/api/entries/unhold", {"filenames": ["held.md"]}),
+        ("post", "/api/entries/adopt", {"filenames": ["working.md"], "note": "対応済み"}),
+        ("post", "/api/entries/reject", {"filenames": ["entry.md"], "note": "不要"}),
+        ("post", "/api/entries/remove", {"filenames": ["entry.md"], "expected_content": _REBASE_AWI, "force": False}),
+    ],
+)
+async def test_mutations_reject_rebase_in_progress_with_409(
+    tmp_path: pathlib.Path,
+    make_clean_repo: typing.Callable[..., pathlib.Path],
+    method: str,
+    path: str,
+    payload: dict[str, object] | None,
+) -> None:
+    """rebaseの中間状態が残る間、Webの全更新操作は変更前に拒否し、理由と解消操作を409で返す。
+
+    確認がcommit時だけだと、WIを書き換えた後に拒否して作業ツリーへ変更が残り、未処理の例外が500になる。
+    `edit_conflict`と同じcodeにすると、画面が詳細の開き直しを促す誤った回復文を付ける。
+    """
+    notes = _rebasing_notes(tmp_path, make_clean_repo)
+    before = _notes_snapshot(notes)
+    client = _serve_app(notes).test_client()
+
+    response = await getattr(client, method)(path, json=payload)
+
+    assert response.status_code == 409
+    body = await response.get_json()
+    assert body["code"] == "rebase_in_progress"
+    assert "rebase中" in body["error"]
+    assert "git rebase --continue" in body["error"]
+    assert "git rebase --abort" in body["error"]
+    assert _notes_snapshot(notes) == before
+
+
+@pytest.mark.asyncio
+async def test_mutation_waits_for_sync_lock(
+    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]
+) -> None:
+    """共通ロックを保持する同期の間に届いた更新は、同期の終了を待ってから保存する。
+
+    待たずに書き込むと、同期が作業ツリーを書き換えている途中の状態へ変更を書き込む。
+    """
+    notes = _rebasing_notes(tmp_path, make_clean_repo)
+    rebase_dir = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "--git-path", "rebase-merge"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (notes / rebase_dir).rmdir()
+    client = _serve_app(notes).test_client()
+    locked = threading.Event()
+    release = threading.Event()
+
+    def hold_lock() -> None:
+        with _wi_sync.repo_lock(notes):
+            locked.set()
+            release.wait(timeout=10)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    assert await asyncio.to_thread(locked.wait, 10)
+    request = asyncio.ensure_future(
+        client.put(
+            "/api/entries/inbox/entry.md",
+            json={"content": _REBASE_AWI.replace("本文", "変更後の本文"), "expected_content": _REBASE_AWI},
+        )
+    )
+    await asyncio.sleep(0.3)
+    assert not request.done()
+    assert (notes / "inbox" / "entry.md").read_text(encoding="utf-8") == _REBASE_AWI
+    release.set()
+    response = await request
+    await asyncio.to_thread(holder.join, 10)
+
+    assert response.status_code == 200
+    assert "変更後の本文" in (notes / "inbox" / "entry.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio
@@ -515,8 +665,8 @@ async def test_concurrent_sync_requests_share_one_pull(
 ) -> None:
     """同時同期要求は未送信commitの反映とpullを1回だけ実行する。"""
     synchronize = _BlockingSync()
-    monkeypatch.setattr(common, "synchronize", synchronize)
-    app = _sync_app(tmp_path, serve_app.Operations(tmp_path))
+    monkeypatch.setattr(_wi_sync, "synchronize", synchronize)
+    app = _sync_app(tmp_path, wi_operations.Operations(tmp_path))
     tasks = [asyncio.create_task(app.test_client().post("/api/sync")) for _ in range(4)]
     await asyncio.to_thread(synchronize.started.wait)
     await asyncio.sleep(0)
@@ -532,24 +682,20 @@ async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Pat
     remote = tmp_path / "remote.git"
     notes = tmp_path / "private-notes"
 
-    def git(*args: str, cwd: pathlib.Path = tmp_path) -> str:
-        result = subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
-        return result.stdout.strip()
-
-    git("init", "--bare", "--initial-branch=main", str(remote))
-    git("clone", str(remote), str(notes))
-    git("config", "user.name", "Test", cwd=notes)
-    git("config", "user.email", "test@example.com", cwd=notes)
+    git_repository.init_bare_repository(remote)
+    git_repository.git_output(tmp_path, "clone", str(remote), str(notes))
+    git_repository.git_output(notes, "config", "user.name", "Test")
+    git_repository.git_output(notes, "config", "user.email", "test@example.com")
     inbox = notes / "inbox"
     inbox.mkdir()
     original = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n元の本文\n"
     first_content = original.replace("元の本文", "最初の編集")
     second_content = original.replace("元の本文", "次の編集")
     (inbox / "entry.md").write_text(original, encoding="utf-8")
-    git("add", ".", cwd=notes)
-    git("commit", "-m", "seed", cwd=notes)
-    git("push", "-u", "origin", "main", cwd=notes)
-    remote_before = git("--git-dir", str(remote), "rev-parse", "refs/heads/main")
+    git_repository.git_output(notes, "add", ".")
+    git_repository.git_output(notes, "commit", "-m", "seed")
+    git_repository.git_output(notes, "push", "-u", "origin", "main")
+    remote_before = git_repository.git_output(tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main")
     app = serve_app.create_app(notes, config.ServeConfig("127.0.0.1", 28766), state.ServeState(notes))
     client = app.test_client()
 
@@ -557,13 +703,15 @@ async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Pat
         response = await client.put("/api/entries/inbox/entry.md", json={"content": updated, "expected_content": previous})
         assert response.status_code == 200
     assert (inbox / "entry.md").read_text(encoding="utf-8") == second_content
-    assert git("--git-dir", str(remote), "rev-parse", "refs/heads/main") == remote_before
-    assert git("rev-parse", "HEAD", cwd=notes) != remote_before
+    assert git_repository.git_output(tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main") == remote_before
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") != remote_before
 
     response = await client.post("/api/sync", json={})
     assert response.status_code == 200
     assert await response.get_json() == {"synced": True}
-    assert git("--git-dir", str(remote), "rev-parse", "refs/heads/main") == git("rev-parse", "HEAD", cwd=notes)
+    assert git_repository.git_output(
+        tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main"
+    ) == git_repository.git_output(notes, "rev-parse", "HEAD")
 
 
 def test_operations_read_legacy_type_values_as_current_kinds(tmp_path: pathlib.Path) -> None:
@@ -579,7 +727,7 @@ def test_operations_read_legacy_type_values_as_current_kinds(tmp_path: pathlib.P
         encoding="utf-8",
     )
 
-    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({})
+    result, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({})
 
     assert not warnings
     assert {str(item["filename"]): item["kind"] for item in result} == {"entry.md": "awi", "question.md": "uwi"}
@@ -665,7 +813,7 @@ def test_operations_frontmatter_parser_handles_nested_dependencies_and_broken_ya
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(f"---\n{frontmatter_source}---\n\n要約本文\n", encoding="utf-8")
 
-    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({})
+    result, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({})
     assert not warnings
 
     assert result[0]["target_repo"] == expected_repo
@@ -691,18 +839,7 @@ async def test_add_api_rejects_missing_type(tmp_path: pathlib.Path) -> None:
 async def test_uwi_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """UWIエントリも他種別と同様に不採用遷移が成功する。"""
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    monkeypatch.setattr(common, "_repo_lock", lock)
-    monkeypatch.setattr(common, "_pull", lambda _path: None)
-    monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.awi_mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    _disable_wi_git(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(
@@ -732,10 +869,10 @@ async def test_answer_api_auto_adopts_affirmative_post_approval(
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    monkeypatch.setattr(serve_app.uwi_mutations, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.uwi_mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.uwi_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    for state_name in common.WI_STATES:
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    for state_name in _wi_constants.WI_STATES:
         (tmp_path / state_name).mkdir()
     content = (
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
@@ -788,10 +925,10 @@ async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeou
     def lock(_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
         return filelock.FileLock(str(lock_path), timeout=timeout)
 
-    monkeypatch.setattr(serve_app.uwi_mutations, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.uwi_mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.uwi_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    for state_name in common.WI_STATES:
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    for state_name in _wi_constants.WI_STATES:
         (tmp_path / state_name).mkdir()
     content = (
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\n---\n\n"
@@ -818,7 +955,7 @@ async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeou
     holder.start()
     try:
         assert acquired.wait(timeout=5)
-        threading.Timer(serve_app._BACKGROUND_SYNC_LOCK_TIMEOUT + 0.5, release.set).start()
+        threading.Timer(wi_operations._BACKGROUND_SYNC_LOCK_TIMEOUT + 0.5, release.set).start()
         response = await client.post(
             "/api/entries/answer",
             json={"filename": inbox.name, "state": "inbox", "answer": "はい", "expected_content": content},
@@ -838,15 +975,7 @@ async def test_remove_api_uses_user_permissions_for_terminal_state(
 ) -> None:
     """Web APIは実行環境変数にかかわらず人間主体として終端状態を削除する。"""
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    for module in (common, serve_app.awi_mutations):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
+    _disable_wi_git(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
     adopted = tmp_path / "adopted"
     adopted.mkdir()
@@ -871,15 +1000,7 @@ async def test_remove_api_returns_edit_conflict_before_target_repo_validation(
 ) -> None:
     """対象リポジトリの一致を確かめる前に非UTF-8化を削除競合へ正規化する。"""
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    for module in (common, serve_app.awi_mutations):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
+    _disable_wi_git(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     target = inbox / "unreadable.md"
@@ -926,19 +1047,12 @@ async def test_answer_and_remove_apis_return_edit_conflict_when_concurrent_chang
             remove_inbox.rename(processing / remove_inbox.name)
         yield
 
-    for module in (common, serve_app.awi_mutations, serve_app.uwi_mutations):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
-    inbox = tmp_path / "inbox"
-    processing = tmp_path / "processing"
-    inbox.mkdir()
-    processing.mkdir()
-    uwi_content = (
-        "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
-        "<!-- ユーザーはこの行以降に回答を追記する -->\n"
-    )
-    awi_content = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n"
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    inbox, processing = make_inbox_and_processing(tmp_path)
+    uwi_content = UNANSWERED_UWI_TEXT
+    awi_content = AWI_TEXT
     answer_inbox = inbox / "answer.md"
     remove_inbox = inbox / "remove.md"
     answer_inbox.write_text(uwi_content, encoding="utf-8")
@@ -978,6 +1092,84 @@ async def test_answer_and_remove_apis_return_edit_conflict_when_concurrent_chang
         }
     assert (processing / answer_inbox.name).read_text(encoding="utf-8") == uwi_content
     assert (processing / remove_inbox.name).read_text(encoding="utf-8") == awi_content
+
+
+_OBSERVATION_RECORD = "## 反映後の観測の再開記録\n\n- 再開区分: 反映後の観測だけが残る\n- 計画: 計画なし\n"
+
+
+@pytest.mark.asyncio
+async def test_sessions_detail_html_only_for_assistant(tmp_path: pathlib.Path) -> None:
+    """セッション詳細APIは本文を持つアシスタントの発言だけへ整形したHTMLを加え、`text`を残し、生HTMLを文字にする。
+
+    HTMLが他の種別へ付くと、ツールの入出力や挿入本文の記号が整形で崩れる。生HTMLを通すと記録の本文のスクリプトが画面で動く。
+    """
+    record = tmp_path / "claude" / "projects" / "-home-aki-proj" / "11111111-2222-3333-4444-555555555555.jsonl"
+    record.parent.mkdir(parents=True)
+    markdown = "## 見出し\n\n- 項目\n\n<script>alert(1)</script>\n"
+    lines = [
+        {"type": "user", "timestamp": "2026-09-01T00:00:00Z", "cwd": "/w", "message": {"content": "## 発話"}},
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-01T00:00:01Z",
+            "message": {
+                "content": [
+                    {"type": "thinking", "thinking": "## 思考"},
+                    {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
+                    {"type": "text", "text": markdown},
+                ]
+            },
+        },
+    ]
+    record.write_text("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines), encoding="utf-8")
+    client = _three_screen_app(tmp_path).test_client()
+
+    response = await client.get(f"/api/sessions/detail?engine=claude&path={record}")
+
+    assert response.status_code == 200
+    events = (await response.get_json())["events"]
+    assistant = [event for event in events if event["kind"] == "assistant"]
+    assert [event["text"] for event in assistant] == [markdown]
+    assert "<h2>見出し</h2>" in assistant[0]["html"]
+    assert "<li>項目</li>" in assistant[0]["html"]
+    assert "&lt;script&gt;" in assistant[0]["html"]
+    assert "<script>" not in assistant[0]["html"]
+    assert {event["kind"] for event in events if "html" in event} == {"assistant"}
+    assert {"user", "thinking", "tool_call"} <= {event["kind"] for event in events}
+
+
+@pytest.mark.asyncio
+async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> None:
+    """`needs_verify`はpickerと同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
+
+    条件が広いと未着手や処理中の項目まで観測待ちとして示し、狭いと観測待ちの項目が未着手と区別できない。
+    """
+    awi = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n# 件名\n\n本文\n\n"
+    uwi = "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+    other_record = _OBSERVATION_RECORD.replace("反映後の観測だけが残る", "実装から再開する")
+    cases = {
+        ("inbox", "verify.md"): (awi + _OBSERVATION_RECORD, True),
+        ("inbox", "latest-verify.md"): (awi + other_record + "\n" + _OBSERVATION_RECORD, True),
+        ("inbox", "plain.md"): (awi, False),
+        ("processing", "processing.md"): (awi + _OBSERVATION_RECORD, False),
+        ("hold", "hold.md"): (awi + _OBSERVATION_RECORD, False),
+        ("inbox", "other.md"): (awi + _OBSERVATION_RECORD + "\n" + other_record, False),
+        ("inbox", "fenced.md"): (awi + "```markdown\n" + _OBSERVATION_RECORD + "```\n", False),
+        ("inbox", "uwi.md"): (uwi + _OBSERVATION_RECORD, False),
+    }
+    for (state_name, filename), (text, _expected) in cases.items():
+        (tmp_path / state_name).mkdir(exist_ok=True)
+        (tmp_path / state_name / filename).write_text(text, encoding="utf-8")
+    client = _serve_app(tmp_path).test_client()
+
+    listed = await (await client.get("/api/entries?status=all&period=all")).get_json()
+    inbox = await (await client.get("/api/entries?status=inbox&period=all")).get_json()
+    detail = await (await client.get("/api/entries/inbox/verify.md")).get_json()
+
+    flags = {(item["state"], item["filename"]): item["needs_verify"] for item in listed["entries"]}
+    assert flags == {key: expected for key, (_text, expected) in cases.items()}
+    assert ("inbox", "verify.md") in {(item["state"], item["filename"]) for item in inbox["entries"]}
+    assert detail["entry"]["needs_verify"] is True
+    assert detail["entry"]["state"] == "inbox"
 
 
 @pytest.mark.asyncio
@@ -1050,7 +1242,7 @@ async def test_entries_api_returns_identical_pages_while_reusing_unchanged_files
     first = await (await client.get(query)).get_json()
     built: list[str] = []
     resolved: list[pathlib.Path] = []
-    original_entry = serve_app._entry
+    original_entry = wi_operations._entry
     original_resolve = pathlib.Path.resolve
 
     def counting_entry(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> dict[str, object]:
@@ -1061,7 +1253,7 @@ async def test_entries_api_returns_identical_pages_while_reusing_unchanged_files
         resolved.append(self)
         return original_resolve(self, *args, **kwargs)
 
-    monkeypatch.setattr(serve_app, "_entry", counting_entry)
+    monkeypatch.setattr(wi_operations, "_entry", counting_entry)
     monkeypatch.setattr(pathlib.Path, "resolve", counting_resolve)
 
     second = await (await client.get(query)).get_json()
@@ -1183,16 +1375,16 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
         yield
 
     monkeypatch.setattr(awi_repo, "resolve_repo_id", resolve)
-    monkeypatch.setattr(common, "_repo_lock", lock)
-    monkeypatch.setattr(common, "_pull", lambda _path: None)
-    monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_add, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.awi_add, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_add, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(serve_app.uwi_mutations, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.uwi_mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.uwi_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -1226,7 +1418,7 @@ def test_target_repos_keeps_recent_terminal_values(tmp_path: pathlib.Path) -> No
         old.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 処理日時: 2026-09-06T11:59:59+00:00\n", encoding="utf-8"
     )
     (tmp_path / "inbox" / "broken.md").write_text("frontmatterなし\n", encoding="utf-8")
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
     assert operations.target_repos(now=now) == ["github.com/x/adopted-only", "github.com/x/alpha", "github.com/x/beta"]
     assert operations.target_repos("adopted") == ["github.com/x/adopted-only"]
 
@@ -1242,15 +1434,15 @@ def test_background_sync_uses_stale_sync_and_skips_lock_conflict(
         calls.append("sync")
         return False
 
-    monkeypatch.setattr(common, "synchronize", synchronize)
-    operations = serve_app.Operations(tmp_path)
+    monkeypatch.setattr(_wi_sync, "synchronize", synchronize)
+    operations = wi_operations.Operations(tmp_path)
     assert operations.background_sync() is False
     assert calls == ["sync"]
 
     def conflicting_sync(_path: pathlib.Path, **_kwargs: object) -> bool:
         raise filelock.Timeout("lock")
 
-    monkeypatch.setattr(common, "synchronize", conflicting_sync)
+    monkeypatch.setattr(_wi_sync, "synchronize", conflicting_sync)
     assert operations.background_sync() is False
     assert calls == ["sync"]
 
@@ -1316,32 +1508,11 @@ process.stdout.write(JSON.stringify({
 def test_assets_discard_stale_search_fallback_error_without_overwriting_global_error() -> None:
     """失効した補助検索のエラーが後発要求の操作通知を上書きしない。"""
     result = _run_node_ui(
-        """
-let rejectFallback;
-let fallbackStarted;
-const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
-elements['search-input'].value = 'old';
-fetchHandler = async url => {
-  if (url === '/atk/api/entries?q=old&page=1') {
-    fallbackStarted();
-    return new Promise((_resolve, reject) => { rejectFallback = reject; });
-  }
-  if (url.includes('q=old')) {
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
-  }
-  if (url.includes('q=new')) {
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({
-      entries: [{kind: 'awi', state: 'inbox', filename: 'new.md', summary: 'new'}], warnings: []
-    })};
-  }
-  throw new Error('想定外のURL: ' + url);
-};
-const oldRequest = loadEntries({announce: true});
-await fallbackReady;
-elements['search-input'].value = 'new';
-const newRequest = loadEntries({announce: true});
-await newRequest;
-elements['operation-notice'].textContent = '後発要求のエラー';
+        stale_fallback_search_script(
+            "let rejectFallback;",
+            "new Promise((_resolve, reject) => { rejectFallback = reject; })",
+        )
+        + """elements['operation-notice'].textContent = '後発要求のエラー';
 rejectFallback(new Error('失効した補助検索エラー'));
 await oldRequest;
 process.stdout.write(JSON.stringify({
@@ -1579,11 +1750,10 @@ def _patch_single_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    for module in (common, serve_app.awi_add):
-        monkeypatch.setattr(module, "_repo_lock", lock)
-        monkeypatch.setattr(module, "_pull", lambda _path: None)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
     _patch_batch_repo_operations(monkeypatch)
 
 

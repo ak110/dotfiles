@@ -1,38 +1,42 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`のテスト。"""
 
 # pylint: disable=protected-access
 
 import asyncio
-import binascii
 import contextlib
 import json
-import logging
-import math
 import os
 import pathlib
 import re
 import signal
-import struct
-import subprocess
 import threading
-import types
 import typing
-import zlib
 
 import filelock
 import pytest
 import watchdog.events
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import assets, config, state
+from agent_toolkit._atk.serve import assets, config, state, wi_operations
 from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import plans as serve_plans
-from agent_toolkit._atk.serve import sessions as serve_sessions
-from agent_toolkit._atk.wi import common, user_comment
-from agent_toolkit._atk.wi import repo as awi_repo
+from agent_toolkit._atk.serve import runtime as serve_runtime
+from agent_toolkit._atk.wi import constants as _wi_constants
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import user_comment
+from agent_toolkit._testing.serve_support import (
+    _BATCH_TEXT,
+    _disable_wi_git,
+    _patch_batch_repo_operations,
+    _patch_comment_edit_dependencies,
+    _run_node_ui,
+    _session_review_awi,
+    _stub_state,
+    _three_screen_app,
+    _write_detail_entry,
+)
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -40,9 +44,6 @@ from agent_toolkit._atk.wi import repo as awi_repo
 # 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
 # module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
 _HOST_ENVIRON = dict(os.environ)
-
-
-from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 
 @pytest.mark.parametrize("host", ["", "  ", 1])
@@ -54,7 +55,7 @@ def test_invalid_host(host: object) -> None:
 
 def test_assets_are_self_contained() -> None:
     """UI資産は外部配信元へ依存せず、HTMLとして解釈する本文の代入を1箇所へ限る。"""
-    combined = assets.HTML + assets.CSS + assets.JS
+    combined = assets.HTML + assets.CSS + assets.SCRIPTS["wi.js"]
     assert "https://" not in combined
     assert "http://" not in combined
     assert combined.count("innerHTML") == 1
@@ -524,7 +525,7 @@ async def test_read_routes_remain_available_during_entry_move(
     adopted.mkdir()
     entry = inbox / "entry.md"
     entry.write_text("---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8")
-    original_entry_type_from_metadata = common.entry_type_from_metadata
+    original_entry_type_from_metadata = _wi_entries.entry_type_from_metadata
 
     async def race_request(path: str) -> typing.Any:
         started = threading.Event()
@@ -535,7 +536,7 @@ async def test_read_routes_remain_available_during_entry_move(
             release.wait()
             return original_entry_type_from_metadata(entry_path, metadata)
 
-        monkeypatch.setattr(common, "entry_type_from_metadata", entry_type_from_metadata)
+        monkeypatch.setattr(_wi_entries, "entry_type_from_metadata", entry_type_from_metadata)
         request = asyncio.create_task(app.test_client().get(path))
         await asyncio.to_thread(started.wait)
         entry.rename(adopted / entry.name)
@@ -561,7 +562,7 @@ async def test_read_routes_remain_available_during_entry_move(
 def test_detail_returns_empty_frontmatter_when_unavailable(tmp_path: pathlib.Path) -> None:
     """frontmatterが無い詳細は空の表示用一覧を返す。"""
     _write_detail_entry(tmp_path, "本文のみ\n")
-    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+    detail = wi_operations.Operations(tmp_path).detail("inbox", "entry.md")
     assert not detail["frontmatter_entries"]
 
 
@@ -576,7 +577,7 @@ async def test_detail_api_preserves_top_level_key_types_and_order(
         "---\ntype: awi\nz_key: z\na_key: a\n---\n\n本文\n",
     )
 
-    original_parse = serve_app.frontmatter.parse_frontmatter
+    original_parse = wi_frontmatter.parse_frontmatter
 
     def parse_with_integer_key(text: str) -> tuple[dict[typing.Any, typing.Any], str] | None:
         parsed = original_parse(text)
@@ -591,7 +592,7 @@ async def test_detail_api_preserves_top_level_key_types_and_order(
                 enriched["1"] = "textual"
         return enriched, body
 
-    monkeypatch.setattr(serve_app.frontmatter, "parse_frontmatter", parse_with_integer_key)
+    monkeypatch.setattr(wi_frontmatter, "parse_frontmatter", parse_with_integer_key)
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -613,7 +614,7 @@ async def test_detail_api_preserves_top_level_key_types_and_order(
 
 def test_render_body_renders_footnote_with_document_anchor() -> None:
     """注記記法は本文と同一文書内の参照リンクとして描画する。"""
-    rendered = serve_app._render_body("本文です[^1]。\n\n[^1]: 注記の本文\n")
+    rendered = wi_operations._render_body("本文です[^1]。\n\n[^1]: 注記の本文\n")
 
     assert "注記の本文" in rendered
     assert 'href="#fn1"' in rendered
@@ -625,8 +626,8 @@ def test_operations_answered_filter_returns_only_answered_uwis(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`answered=yes`は回答済みUWIのみを返し、未回答UWI・AWIを除外する。"""
-    monkeypatch.setattr(common, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
-    monkeypatch.setattr(common, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "answered.md").write_text(
@@ -642,7 +643,7 @@ def test_operations_answered_filter_returns_only_answered_uwis(
         "---\ntype: awi\ntarget_repo: example/repo\n---\n\nAWI本文\n",
         encoding="utf-8",
     )
-    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"answered": "yes"})
+    result, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"answered": "yes"})
     assert not warnings
     assert [item["filename"] for item in result] == ["answered.md"]
 
@@ -697,15 +698,7 @@ async def test_remove_api_rejects_changed_and_unreadable_expected_content(
 ) -> None:
     """内容変更と読取り不能を409で保護し、空の確認時本文も受理する。"""
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    for module in (common, serve_app.awi_mutations):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
+    _disable_wi_git(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     original = "---\ntype: awi\n---\n\n確認時本文\n"
@@ -758,7 +751,7 @@ async def test_unrelated_runtime_error_is_not_classified_as_edit_conflict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """競合以外のRuntimeErrorを409へ誤分類しない。"""
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
 
     def fail(
         _state: str,
@@ -841,7 +834,7 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
 
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
 
-    entries, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"status": "inbox"})
+    entries, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"status": "inbox"})
 
     assert [(entry["filename"], entry["kind"]) for entry in entries] == [("unknown.md", "unknown")]
     assert warnings == [{"filename": "os-error.md", "reason": "ファイルを読み取れません"}]
@@ -876,7 +869,7 @@ async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch
     ) -> bool:
         raise filelock.Timeout("locked")
 
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
     monkeypatch.setattr(operations, "edit", edit)
     app = serve_app.create_app(
         tmp_path,
@@ -914,8 +907,9 @@ async def test_safe_base_path_rejects_value_that_proxy_fix_accepts(tmp_path: pat
     assert 'href="/static/app.css"' in index_body
     assert "atk:1" not in index_body
 
-    js_body = await (await client.get("/atk:1/static/app.js", headers=headers)).get_data(as_text=True)
-    assert 'const BASE_PATH="";' in js_body
+    assert '"base_path": ""' in index_body
+    js_response = await client.get("/atk:1/static/wi.js", headers=headers)
+    assert js_response.status_code == 200
 
 
 @pytest.mark.parametrize("received_signal", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP])
@@ -961,12 +955,12 @@ async def test_serve_shuts_down_on_signal_and_stops_state(
 @pytest.mark.asyncio
 async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """定期更新タスクが起動時に開始し終了時に停止する。"""
-    monkeypatch.setattr(serve_app, "_BACKGROUND_SYNC_INTERVAL_SECONDS", 0.001)
+    monkeypatch.setattr(serve_runtime, "_BACKGROUND_SYNC_INTERVAL_SECONDS", 0.001)
     calls: list[str] = []
     called = asyncio.Event()
     loop = asyncio.get_running_loop()
 
-    class _Operations(serve_app.Operations):
+    class _Operations(wi_operations.Operations):
         def background_sync(self) -> bool:
             calls.append("sync")
             loop.call_soon_threadsafe(called.set)
@@ -1152,17 +1146,17 @@ async def test_batch_api_imports_crlf_text(tmp_path: pathlib.Path, monkeypatch: 
 
 def test_assets_state_sets_match_python_states() -> None:
     """フロントエンドが持つ状態集合をPython側の保存状態と一致させる。"""
-    labels = re.search(r"const STATE_LABELS = \{(.*?)\n\};", assets.JS, re.DOTALL)
+    labels = re.search(r"const STATE_LABELS = \{(.*?)\n\};", assets.SCRIPTS["wi.js"], re.DOTALL)
     assert labels is not None
-    assert set(re.findall(r"(\w+):", labels.group(1))) == set(common.WI_STATES)
+    assert set(re.findall(r"(\w+):", labels.group(1))) == set(_wi_constants.WI_STATES)
 
-    deletable = re.search(r"const DELETABLE_STATES = new Set\(\[(.*?)\]\);", assets.JS)
+    deletable = re.search(r"const DELETABLE_STATES = new Set\(\[(.*?)\]\);", assets.SCRIPTS["wi.js"])
     assert deletable is not None
-    assert set(re.findall(r"'(\w+)'", deletable.group(1))) == set(common.WI_STATES)
+    assert set(re.findall(r"'(\w+)'", deletable.group(1))) == set(_wi_constants.WI_STATES)
 
-    processable = re.search(r"const PROCESSABLE_STATES = new Set\(\[(.*?)\]\);", assets.JS)
+    processable = re.search(r"const PROCESSABLE_STATES = new Set\(\[(.*?)\]\);", assets.SCRIPTS["wi.js"])
     assert processable is not None
-    assert set(re.findall(r"'(\w+)'", processable.group(1))) == set(common.WI_PROCESSABLE_STATES)
+    assert set(re.findall(r"'(\w+)'", processable.group(1))) == set(_wi_constants.WI_PROCESSABLE_STATES)
 
 
 @pytest.mark.parametrize(

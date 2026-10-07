@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from pytools._internal import common, removal_registry
 from pytools._internal import update_claude_settings as mod
 from pytools._internal._test_helpers import run_update_claude_settings
 from pytools._internal.update_claude_settings import update_claude_settings
@@ -298,7 +299,7 @@ class TestProductionManagedSettings:
         [
             ("PreToolUse", 0, 0),
             ("PreToolUse", 1, 0),
-            ("PreToolUse", 2, 2),
+            ("PreToolUse", 2, 0),
             ("Stop", 1, 0),
             ("Stop", 2, 0),
         ],
@@ -310,7 +311,7 @@ class TestProductionManagedSettings:
         hook_exit_code: int,
         expected_exit_code: int,
     ) -> None:
-        """POSIX個人hookはPreToolUseの終了コード2だけを呼び出し元へ伝える。"""
+        """POSIX個人hookは警告だけを返すため、どの終了コードも呼び出し元へ伝えず0で終える。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(".posix.json")
         data = json.loads(path.read_text(encoding="utf-8"))
         command = next(
@@ -382,7 +383,7 @@ class TestProductionManagedSettings:
         assert b"\r\n" in raw
         assert b"\n" not in raw.replace(b"\r\n", b"")
 
-    @pytest.mark.parametrize(("hook_exit_code", "expected_exit_code"), [(0, 0), (1, 0), (2, 2)])
+    @pytest.mark.parametrize(("hook_exit_code", "expected_exit_code"), [(0, 0), (1, 0), (2, 0)])
     @pytest.mark.parametrize("invocation", ["direct", "bash"])
     def test_windows_pretooluse_script_runs_via_pwsh(
         self,
@@ -391,7 +392,7 @@ class TestProductionManagedSettings:
         expected_exit_code: int,
         invocation: str,
     ) -> None:
-        """PowerShell実行時も引数境界と終了コード契約を維持する。"""
+        """PowerShell実行時も引数境界を維持し、警告だけを返すhookとしてどの終了コードも0で終える。"""
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
@@ -524,7 +525,7 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
             if hook.get("type") == "command"
         ]
         assert len(commands) == 1
-        assert '-File "C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"' in commands[0]
+        assert '-File "C:/Users/Aki User\\dotfiles\\libexec\\claude-hook-pretooluse.ps1"' in commands[0]
 
     def test_posix_personal_hooks_converge_to_single_current_registration(self, tmp_path: Path) -> None:
         """旧形式と現行形式が併存する設定へ適用すると、個人hookは現行形式1件ずつになりPostToolUseは残らない。"""
@@ -673,16 +674,30 @@ class TestPlatformOverride:
         assert result == {"language": "japanese"}
 
 
+def _use_managed_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, managed_settings_path: Path, managed_config_path: Path
+) -> None:
+    """管理設定2件を一時的な作業ツリーの`share/`へ複製し、`find_dotfiles_root()`をその作業ツリーへ向ける。"""
+    root = tmp_path / "dotfiles-root"
+    for source, relative in (
+        (managed_settings_path, mod._MANAGED_SETTINGS_RELATIVE),  # pylint: disable=protected-access
+        (managed_config_path, mod._MANAGED_CONFIG_RELATIVE),  # pylint: disable=protected-access
+    ):
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
+
+
 def _setup_run_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     managed_settings: dict,
     managed_config: dict | None = None,
 ) -> Path:
-    """`run()` 経由テスト向けに 4 つのモジュール定数パスを差し替える。
+    """`run()` 経由テスト向けに管理設定2件と配置先2件のパスを差し替える。
 
-    `_MANAGED_SETTINGS_PATH` には `managed_settings` を書き込む。
-    `_MANAGED_CONFIG_PATH` には `managed_config` を書き込む。省略時は空 dict とする。
+    管理設定には`managed_settings`、管理configには`managed_config`（省略時は空 dict）を書き込む。
     `_SETTINGS_PATH`・`_CONFIG_PATH` は未作成のまま返す。
     """
     managed_settings_path = tmp_path / "managed_settings.json"
@@ -691,9 +706,8 @@ def _setup_run_paths(
     managed_config_path.write_text(json.dumps(managed_config or {}), encoding="utf-8")
     settings_path = tmp_path / "settings.json"
     config_path = tmp_path / "claude.json"
-    monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
+    _use_managed_files(monkeypatch, tmp_path, managed_settings_path, managed_config_path)
     monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
-    monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
     monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
     return settings_path
 
@@ -847,8 +861,12 @@ class TestPlatformOverrideSelection:
     def test_linux_applies_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Linux (posix) 環境では `managed_settings.posix.json` が適用される。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
-        (tmp_path / "managed_settings.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
-        (tmp_path / "managed_settings.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.posix.json").write_text(
+            json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8"
+        )
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.win32.json").write_text(
+            json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8"
+        )
         monkeypatch.setattr(mod.sys, "platform", "linux")
 
         mod.run()
@@ -860,7 +878,9 @@ class TestPlatformOverrideSelection:
     def test_darwin_applies_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """macOS (darwin) 環境でも `managed_settings.posix.json` が適用される。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
-        (tmp_path / "managed_settings.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.posix.json").write_text(
+            json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8"
+        )
         monkeypatch.setattr(mod.sys, "platform", "darwin")
 
         mod.run()
@@ -871,8 +891,12 @@ class TestPlatformOverrideSelection:
     def test_win32_applies_win32_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Windows (win32) 環境では `managed_settings.win32.json` が適用される。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
-        (tmp_path / "managed_settings.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
-        (tmp_path / "managed_settings.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.posix.json").write_text(
+            json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8"
+        )
+        (tmp_path / "dotfiles-root" / "share" / "claude_settings_json_managed.win32.json").write_text(
+            json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8"
+        )
         monkeypatch.setattr(mod.sys, "platform", "win32")
 
         mod.run()
@@ -1172,26 +1196,32 @@ class TestStripRemovedHooks:
         ]
         assert commands == ["keep-stop-hook"]
 
-    def test_distributed_legacy_windows_pretooluse_is_replaced(
+    @pytest.mark.parametrize(
+        "old_command",
+        [
+            _LEGACY_WINDOWS_PRETOOLUSE_COMMAND.replace("__HOME__", "C:/Users/Aki User"),
+            "powershell -NoProfile -ExecutionPolicy Bypass -File "
+            '"C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"',
+        ],
+        ids=["distributed-legacy", "moved-to-libexec"],
+    )
+    def test_old_windows_pretooluse_converges_to_single_registration(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        old_command: str,
     ) -> None:
-        """配布済みの旧Windows入口を現行の`-File`入口1件へ移行する。"""
+        """配布済みの旧Windows入口とscripts/を指す`-File`入口を、libexec/を指す現行の入口1件へ移行する。"""
         home = Path("C:/Users/Aki User")
         monkeypatch.setattr(sys, "platform", "win32")
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
         target_path = tmp_path / "settings.json"
-        legacy_command = _LEGACY_WINDOWS_PRETOOLUSE_COMMAND.replace("__HOME__", str(home))
         target_path.write_text(
             json.dumps(
                 {
                     "hooks": {
                         "PreToolUse": [
-                            {
-                                "matcher": "Write|Edit|MultiEdit",
-                                "hooks": [{"type": "command", "command": legacy_command}],
-                            }
+                            {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": old_command}]}
                         ]
                     }
                 },
@@ -1215,7 +1245,7 @@ class TestStripRemovedHooks:
         ]
         assert commands == [
             "powershell -NoProfile -ExecutionPolicy Bypass -File "
-            '"C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"'
+            '"C:/Users/Aki User\\dotfiles\\libexec\\claude-hook-pretooluse.ps1"'
         ]
 
     def test_removed_hook_keeps_sibling_in_same_matcher(self, tmp_path: Path):
@@ -1307,9 +1337,15 @@ class TestStripRemovedHooks:
                 'if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"',
                 True,
             ),
+            # 実体をlibexec/へ移す前のscripts/を指す`-File`入口は除去し、現行の入口は保持する
             (
                 "powershell -NoProfile -ExecutionPolicy Bypass -File "
                 '"C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"',
+                True,
+            ),
+            (
+                "powershell -NoProfile -ExecutionPolicy Bypass -File "
+                '"C:/Users/Aki User\\dotfiles\\libexec\\claude-hook-pretooluse.ps1"',
                 False,
             ),
             (
@@ -1648,7 +1684,7 @@ class TestStripRemovedListItems:
         settings_path = tmp_path / "settings.json"
         old_rule_marker = next(
             marker
-            for path, marker in mod._REMOVED_LIST_ITEM_SUBSTRINGS  # pylint: disable=protected-access
+            for path, marker in removal_registry.values(mod._REMOVED_LIST_ITEM_SUBSTRINGS)  # pylint: disable=protected-access
             if path == "autoMode.allow"
         )
         settings_path.write_text(
@@ -1667,9 +1703,8 @@ class TestStripRemovedListItems:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
+        _use_managed_files(monkeypatch, tmp_path, managed_settings_path, managed_config_path)
         monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
-        monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
         monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
 
         mod.run()
@@ -1924,9 +1959,8 @@ class TestStripStaleLabeledListItems:
         config_path = tmp_path / "claude.json"
         config_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
 
-        monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
+        _use_managed_files(monkeypatch, tmp_path, managed_settings_path, managed_config_path)
         monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
-        monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
         monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
 
         mod.run()
@@ -2032,7 +2066,7 @@ class TestRetiredAutoModeAllowLabels:
         update_claude_settings(
             _PROD_MANAGED_SETTINGS,
             target_path,
-            removed_list_item_substrings=mod._REMOVED_LIST_ITEM_SUBSTRINGS,  # pylint: disable=protected-access
+            removed_list_item_substrings=removal_registry.values(mod._REMOVED_LIST_ITEM_SUBSTRINGS),  # pylint: disable=protected-access
             stale_labeled_list_paths=("autoMode.allow",),
         )
 
@@ -2041,3 +2075,16 @@ class TestRetiredAutoModeAllowLabels:
         assert "ラベルを持たないユーザー独自ルール" in allow
         managed_allow = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))["autoMode"]["allow"]
         assert [item for item in managed_allow if item not in allow] == []
+
+
+def test_run_fails_without_dotfiles_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """作業ツリーを解決できない場合は配置先へ書き込まず、工程を失敗と数える。"""
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
+    monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
+    monkeypatch.setattr(mod, "_CONFIG_PATH", tmp_path / "claude.json")
+
+    outcome = mod.run()
+
+    assert outcome.failure == "dotfilesの作業ツリーを解決できない"
+    assert not settings_path.exists()

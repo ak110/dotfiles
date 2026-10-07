@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "heartbeat_expiry_seconds": 120,
+  "state_directory": ["agent-toolkit", "agents-server", "<root_session_id>"],
+  "state_file_keys": ["heartbeat_at", "host_session_id", "sessions", "updated_at", "version"],
+  "session_keys": [
+    "created_at",
+    "cwd",
+    "effort",
+    "engine",
+    "fast_mode",
+    "label",
+    "last_action",
+    "launch_kind",
+    "model",
+    "model_type",
+    "output_updated_at",
+    "progress",
+    "prompt",
+    "session_id",
+    "started_at",
+    "status",
+    "updated_at"
+  ],
+  "example": {
+    "version": 1,
+    "host_session_id": "host-1",
+    "heartbeat_at": "2026-10-07T00:00:00+00:00",
+    "updated_at": "2026-10-07T00:00:00+00:00",
+    "sessions": [
+      {
+        "session_id": "session-1",
+        "cwd": "/work",
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "effort": "medium",
+        "fast_mode": true,
+        "model_type": "delegate",
+        "launch_kind": "delegate",
+        "prompt": "調査する",
+        "status": "running",
+        "label": "調査",
+        "created_at": "2026-10-06T23:59:00+00:00",
+        "started_at": "2026-10-06T23:59:00+00:00",
+        "updated_at": "2026-10-07T00:00:00+00:00",
+        "output_updated_at": null,
+        "progress": "ファイルを読んでいる",
+        "last_action": "Read"
+      }
+    ]
+  }
+}

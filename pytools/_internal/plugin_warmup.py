@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from pytools._internal import claude_common, install_codex_plugins, log_format
+from pytools._internal import claude_common, common, install_codex_plugins, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,11 @@ def enabled_version(installed: list[object], plugin_id: str) -> str | None:
 
 def codex_plugin_script(*, plugin_id: str, plugin_name: str, relative_path: Path, tag: str) -> Path | None:
     """Codexが参照する有効版pluginキャッシュ内の入口を返す。"""
-    codex = claude_common.resolve_executable("codex")
+    codex = common.resolve_executable("codex")
     if codex is None:
         logger.info(log_format.format_status(tag, "codex CLI が見つからないためCodex分を除外"))
         return None
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         [str(codex), "plugin", "list", "--json"],
         timeout=_CODEX_LIST_TIMEOUT,
         tag="codex",
@@ -63,26 +63,23 @@ def run(
     *,
     tag: str,
     arguments: Sequence[str] = (),
-    fail_on_error: bool = False,
-) -> bool:
-    """実在する入口群のuv環境を構築し、設定変更なしを表すFalseを返す。"""
-    uv = claude_common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
+) -> post_apply_outcome.PostApplyOutcome:
+    """実在する入口群のuv環境を構築する。
+
+    uv環境の構築は導入に当たるため、構築できない場合は警告だけを出力してスキップと数える。
+    uvのキャッシュだけへ作用し設定を変えないため、変更なしを返す。
+    """
+    uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
     if uv is None:
-        message = "uv CLI が見つからず環境構築を開始できない"
-        logger.warning(log_format.format_status(tag, message))
-        if fail_on_error:
-            raise RuntimeError(message)
-        return False
+        logger.warning(log_format.format_status(tag, "uv CLI が見つからず環境構築を開始できない"))
+        return post_apply_outcome.PostApplyOutcome()
     resolved = targets()
     if not resolved:
-        message = "対象スクリプトが見つからず環境構築を開始できない"
-        logger.warning(log_format.format_status(tag, message))
-        if fail_on_error:
-            raise RuntimeError(message)
-        return False
+        logger.warning(log_format.format_status(tag, "対象スクリプトが見つからず環境構築を開始できない"))
+        return post_apply_outcome.PostApplyOutcome()
     for target in resolved:
-        warmup(target, uv, tag=tag, arguments=arguments, fail_on_error=fail_on_error)
-    return False
+        warmup(target, uv, tag=tag, arguments=arguments)
+    return post_apply_outcome.PostApplyOutcome()
 
 
 def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Path]:
@@ -156,10 +153,9 @@ def warmup(
     *,
     tag: str,
     arguments: Sequence[str] = (),
-    fail_on_error: bool = False,
-) -> None:
-    """Plugin rootのuvプロジェクトで入口を1回起動し、依存環境を構築する。"""
-    run_command(
+) -> bool:
+    """Plugin rootのuvプロジェクトで入口を1回起動し、依存環境を構築する。構築できた場合は真を返す。"""
+    return run_command(
         [
             str(uv),
             "run",
@@ -172,18 +168,20 @@ def warmup(
         ],
         target=log_format.home_short(path),
         tag=tag,
-        fail_on_error=fail_on_error,
     )
 
 
-def run_command(cmd: Sequence[str], *, target: str, tag: str, fail_on_error: bool) -> None:
-    """環境を構築するコマンドを上限時間付きで1回実行し、対象・終了コード・所要時間を記録する。"""
+def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:
+    """環境を構築するコマンドを上限時間付きで1回実行し、対象・終了コード・所要時間を記録する。
+
+    失敗は警告として記録し、構築できた場合は真を返す。
+    """
     started = time.monotonic()
-    result = claude_common.run_subprocess(list(cmd), timeout=_WARMUP_TIMEOUT, tag=Path(cmd[0]).stem)
+    result = common.run_subprocess(list(cmd), timeout=_WARMUP_TIMEOUT, tag=Path(cmd[0]).stem)
     elapsed = time.monotonic() - started
     if result is not None and result.returncode == 0:
         logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{elapsed:.1f}秒): {target}"))
-        return
+        return True
     # 失敗時は構築コマンドの標準エラーと標準出力を必ず伝播させる。
     # 終了コードと経過時間だけの診断では、依存解決の失敗本文が永続ログにもtracebackにも現れず、
     # ユーザーと後続の調査主体が原因へ到達できない。
@@ -191,7 +189,6 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str, fail_on_error: boo
         summary = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {target}"
     else:
         summary = f"環境構築が異常終了 (exit {result.returncode}、{elapsed:.1f}秒): {target}"
-    message = f"{summary} / {claude_common.format_cli_error(result)}"
+    message = f"{summary} / {common.format_cli_error(result)}"
     logger.warning(log_format.format_status(tag, message))
-    if fail_on_error:
-        raise RuntimeError(message)
+    return False

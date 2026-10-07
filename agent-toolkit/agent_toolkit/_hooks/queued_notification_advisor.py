@@ -9,7 +9,7 @@ Agent・Taskの起動記録に対応する通知には返却メッセージの�
 Bashと種別を判別できない通知には`<task-id>`と`<output-file>`を示し、出力ファイルの読取を促す。
 ファイル読取はツール呼び出しであるため、通知の配送と結果の受領が同じターンで起きる。
 
-キューの解析規則は`stop_gate.queued_task_notification_contents`を`stop_gate.is_pending_async_work`と共有する。
+キューの解析規則は`background_tasks.queued_task_notification_contents`を`background_tasks.is_pending_async_work`と共有する。
 ユーザーが入力欄へ取り戻した入力（`popAll`・`popOne`）は同じ本文の要素1件として除く。
 `dequeue`で取り出された要素は、その後に配送された`user`エントリの本文と比べて決め、
 該当する要素が無い場合だけ先頭とする。ホストは先頭以外の要素を先に取り出すことがあるためである。
@@ -29,11 +29,12 @@ Bashと種別を判別できない通知には`<task-id>`と`<output-file>`を�
 
 import re
 
-from agent_toolkit._hooks import stop_gate
+from agent_toolkit._common.session_state import read_state, update_state
+from agent_toolkit._hooks import background_tasks as _background_tasks
+from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.session_state import read_state, update_state
-from agent_toolkit._hooks.stop_gate import parse_stop_session
+from agent_toolkit._hooks.stop_session import parse_stop_session
 
 _HOOK_ID = "queued_notification_advisor"
 _SESSION_STATE_KEY = "queued_notification_notified_ids"
@@ -126,8 +127,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     notified = _notified_keys(read_state(session_id))
     pending: dict[str, str] = {}
-    entries = stop_gate.read_transcript_entries_cached(transcript_path)
-    for content in stop_gate.queued_task_notification_contents(entries):
+    entries = _transcript_scan.read_transcript_entries_cached(transcript_path)
+    for content in _background_tasks.queued_task_notification_contents(entries):
         for notification in _notification_elements(content):
             key = _notification_key(notification)
             if key not in notified and key not in pending:
@@ -137,7 +138,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     _record_notified(session_id, list(pending))
     agent_notifications = [
-        notification for notification in pending.values() if stop_gate.is_agent_task_notification(notification, entries)
+        notification for notification in pending.values() if _background_tasks.is_agent_task_notification(notification, entries)
     ]
     file_notifications = [notification for notification in pending.values() if notification not in agent_notifications]
     notices: list[str] = []

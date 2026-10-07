@@ -24,10 +24,10 @@
 ## サプライチェーン保護
 
 - `apt-get install`は`--no-install-recommends`を付けて推奨パッケージを除外する
-- パッケージマネージャーの`exclude-newer`系設定で公開直後のバージョン導入を抑止する
-  - uv: `~/.config/uv/uv.toml`に`exclude-newer = "1 day"`
-  - pnpm: `pnpm config set minimum-release-age 1440 --global`（分単位）
-- 自リポジトリのパッケージをイメージビルド内で`uv tool install`等する場合は、`dependency-management.md`「バージョン指定と更新」の公開待機設定の対処に従う
+- `dependency-management.md`「公開待機設定」の規定をイメージ内のパッケージマネージャーでも有効にし、公開直後のバージョン導入を抑止する。待機期間の値は同節に従う
+  - uv: `~/.config/uv/uv.toml`の`exclude-newer`
+  - pnpm: `pnpm config set minimum-release-age <分単位の値> --global`
+- 自リポジトリのパッケージをイメージビルド内で`uv tool install`等する場合は、`dependency-management.md`「公開待機設定」の対処に従う
 
 ## hadolint
 

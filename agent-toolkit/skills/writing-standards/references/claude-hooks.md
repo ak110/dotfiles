@@ -8,7 +8,7 @@ Claude Code固有の上限値や出力契約にはホスト名を付ける。
 
 matcher・出力フィールド・メッセージ標識の記述指示が前提とする最低限の実装規約を示す。
 Claude Codeは公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
-取得方法は`agent-skills.md`の「公式リファレンス（Claude Code）」が定める。
+取得方法は`host-official-references.md`の「公式リファレンス（Claude Code）」が定める。
 Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次資料とする。
 参照対象は入力ペイロード仕様（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`等）と出力形式仕様とする。
 参照したセクション名は計画ファイルの実装者向け領域へ引用する（努力目標。計画を読む実装者とレビュー担当が根拠の節をたどれるようにするため）。
@@ -21,6 +21,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 - Codexの信頼確認: plugin同梱フックも定義の変更後は`/hooks`で内容を確認して信頼する。
   信頼するまではCodexがそのフックをスキップする
 - 呼出主体の判別: サブエージェントの呼び出しとメイン会話を区別する場合は共通入力の`agent_id`を使う。`transcript_path`はサブエージェント内で発火したフックでもメインセッションの記録を指すため判別に利用できない。サブエージェント自身の記録を指すのは`SubagentStop`の`agent_transcript_path`だけである。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日」にある
+  `SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。`agent-toolkit/agent_toolkit/_hooks/rules_context.py`は前者でメイン向け条文を追加するときに委譲先を除く。その判別には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を用い、後者ではサブエージェント向け条文を追加する。`Stop`と`SubagentStop`の判別は`claude-hooks-stop.md`「委譲先での発火」が定める
 - そのターンの地の文の可視性: `PreToolUse`の発火時点では、そのツール呼び出しと同じアシスタントターンのテキストブロックが`transcript_path`のJSONLへ未書き込みである。
   思考ブロックとツール呼び出しだけのターンも記録されるため、直前の1ターンだけを判定対象にすると地の文を取得できない。
   そのターンの地の文を入力とする判定を`PreToolUse`へ置かない。
@@ -35,14 +36,7 @@ payload設計は、上記の一次資料が示す仕様から確定する。
 - CodexのPostToolUseは`tool_response`を任意のJSON値として渡す。シェル実行では終了コードを含まず
   出力文字列だけが届くため、状態記録の条件からコマンドの成否を外す。
   `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる
-- Bashコマンドを対象とするhookの判定は、コマンド文字列全体への部分一致で発火させず、
-  区間分割とトークン化により対象が実行位置にある場合だけ発火させる
-  （検索語・引数として名前が現れるだけの読み取り操作を検出しないため）。
-  実行を遮断するチェックは、コマンド置換・サブシェル・オプション終端まで解決できる解析を用意できる場合に限り
-  同じ判定へ移す。用意できない間は過検出を許容する現行判定を維持し、過検出の費用は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の比較で評価する（解析の不足だけを理由に保護を外さないため）
-- 観測した状態に応じて警告またはblockの出力有無を切り替えるフックを計画に含める場合、
-  別リポジトリ、別worktree、複数主体の同時実行などの条件が誤って成立する入力と誤って成立しない入力を列挙する。
-  各入力の期待動作と検証方法を計画の実装者向け領域へ記載する
+- Bashコマンドを対象とするhookの判定方式と、警告またはblockの出力有無を状態で切り替えるフックの計画への記載は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」が定める
 - hook定義が`command`で参照するスクリプトのパスを改名、移動または削除する場合は、旧パスへ新しいエントリーポイントを呼び出すだけの互換スクリプトを残す。
   hook定義はセッション起動時に読み込まれ、稼働中のセッションは旧パスを参照し続けるため、実体を失うとそのセッションのツール呼び出しがフック実行の失敗で拒否される。
   hook定義が共通エントリーポイントへサブコマンドを渡し、共通エントリーポイントが未知のサブコマンドを終了コード0で通過させる場合は、
@@ -85,7 +79,8 @@ patch構文は`apply_patch`の構文として解釈する。相対パスはpaylo
 patchを解釈できない場合はhook側で操作を遮断せず、妥当性判定を`apply_patch`本体へ委ねる。
 
 ホスト判定はCodexがターン単位hookへ付加する非空文字列の`turn_id`を基準とする。
-ホスト判定に用いる入力はこの`turn_id`に限る。
+UserPromptSubmitではCodexだけが発話（`prompt`）とともにモデル名（`model`）を渡すため、`prompt`と`model`を併せ持つ入力もCodexと判定する。
+ホスト判定に用いる入力はこの2つに限り、ツール名の推測を使わない。
 
 複数ファイル・複数チェックの警告は1つの`hookSpecificOutput.additionalContext`へ結合して返す。
 stdout全体が1つのJSONとして解析されるため、対象ごとに出力すると複数JSONとなり解析に失敗する。
@@ -98,19 +93,21 @@ Codexのシェル実行は、matcher上で`Bash`に一致する。
 ## 環境変数の一覧
 
 配布物完結の環境変数（`AGENT_TOOLKIT_<PURPOSE>`形式）の一覧と用途を示す。
+変数名を読み書きする処理は、private-notesを`agent_toolkit/_common/private_notes.py`、委譲先の印と委譲元の識別子を`agent_toolkit/_common/delegated_session.py`が持ち、他の処理はそれらの定数と関数を使う。
 
 - `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk wi`管理repoのroot（指定がなければ`~/private-notes/`）
 - `AGENT_TOOLKIT_STOP_GATE_DEBUG`: デバッグ出力
 - `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`: 受信payloadのダンプ先
 - `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行で、次に起動するセッションの指定を
   起動側の処理へ渡す一時ファイルのパス
-- `AGENT_TOOLKIT_DELEGATED_SESSION`: 委譲先として起動したセッションであることを示す印。常駐実行の終了保証を最上位セッションへ限定する判定に使う
+- `AGENT_TOOLKIT_DELEGATED_SESSION`: Claude Code（backend）の委譲先として起動したセッションであることを示す印（値`1`）。委譲先かの判定（`is_delegated`）は、この印か次項の識別子のどちらかを持つ場合を委譲先とし、常駐実行の終了保証を最上位セッションへ限定する判定などに使う
 - `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得または作成した計画バンドルの所有として記録する、委譲元セッションの識別子。`agents_server`が起動した子だけが持つため、Codex backendの委譲先を含めてメイン向け規範の追加を省く判定にも使う
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションの印（値`1`）。常駐用hookは次項のIDがある場合、印に加えてhook入力の会話IDとの一致を確認する。IDを指定しない再開では印だけで判定する
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`: process-loopがClaude会話の新規起動またはID指定再開で子へ渡す会話ID。hook入力の`session_id`と比べ、環境印を継承した入れ子の別会話を自律終了、空転ガード、計画保存通知、セッション名および観測ログの対象から外す
 - `AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`: 常駐実行がセッション起動時に渡す追加指示の本文。`rules_context`が委譲先を除くメインのセッション開始時の文脈へ置く
 - `AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBashによる全文取得を分割読取へ誘導する`pretooluse/large_reads`のバイト数の閾値。正の整数だけを採用し、それ以外は省略時の値を使う
 
-## セッション状態ファイル
+ホストが定める次の環境変数は、`agent_toolkit/_common/host_homes.py`の関数だけが読む。
 
-hook間で情報を共有するセッション状態ファイルの設計、寿命、排他制御および個別フラグの記録元と利用先は`session-state-and-flags.md`が定める。
+- `CLAUDE_CONFIG_DIR`: 空でない絶対パスならClaude Codeの設定ディレクトリとして使い、それ以外は`~/.claude`を使う。Function hooks module（`hooks/session_exit.ts`）も同じ規則で解決する
+- `CODEX_HOME`: 空でなければCodexのホームとして使い、空か未設定なら`~/.codex`を使う

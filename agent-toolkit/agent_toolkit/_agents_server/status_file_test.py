@@ -13,94 +13,22 @@ import typing
 
 import pytest
 
-from agent_toolkit import agents_server_mcp
-from agent_toolkit._agents_server import state
+from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._agents_server import (
+    retained_results,
+    shared_layout,
+    shared_roots,
+    state,
+)
 from agent_toolkit._agents_server import status_file as subject
+from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._testing.agents_server_support import install_backend
 
 
-async def _wait_now(manager: agents_server_mcp.AgentsServerManager) -> dict[str, typing.Any]:
+async def _wait_now(manager: server_manager.AgentsServerManager) -> dict[str, typing.Any]:
     """待機せずに現在の終端状態を返すwaitを発行する。"""
     manager._wait_timeouts["main"] = 0.0  # pylint: disable=protected-access
     return await manager.wait()
-
-
-def test_unavailable_candidates_are_kept_until_the_retention_period_elapses(tmp_path: pathlib.Path) -> None:
-    """除外した候補を保持期間内は返し、経過後は返さない。"""
-    recorded_at = datetime.datetime(2026, 9, 16, 0, 0, tzinfo=datetime.UTC)
-    subject.record_unavailable_candidate(
-        "plan",
-        "delegate",
-        ("claude", "opus", "high"),
-        "401",
-        now=recorded_at,
-        state_root=tmp_path,
-    )
-    within = recorded_at + datetime.timedelta(seconds=subject.UNAVAILABLE_CANDIDATES_RETENTION_SECONDS - 1)
-    after = recorded_at + datetime.timedelta(seconds=subject.UNAVAILABLE_CANDIDATES_RETENTION_SECONDS)
-
-    assert subject.load_unavailable_candidates("plan", "delegate", now=within, state_root=tmp_path) == {
-        ("claude", "opus", "high"): "401"
-    }
-    assert not subject.load_unavailable_candidates("plan", "delegate", now=after, state_root=tmp_path)
-    assert not subject.load_unavailable_candidates("plan", "explore", now=within, state_root=tmp_path)
-
-
-def test_unavailable_candidates_hold_two_or_more_engines_and_clear_individually(tmp_path: pathlib.Path) -> None:
-    """同じ起動条件で2件以上の候補を保持し、成立した候補だけを取り除く。"""
-    now = datetime.datetime(2026, 9, 16, 0, 0, tzinfo=datetime.UTC)
-    subject.record_unavailable_candidate("plan", "delegate", ("claude", "opus", "high"), "401", now=now, state_root=tmp_path)
-    subject.record_unavailable_candidate(
-        "plan", "delegate", ("codex", "terra", "medium"), "usageLimitExceeded", now=now, state_root=tmp_path
-    )
-
-    assert subject.load_unavailable_candidates("plan", "delegate", now=now, state_root=tmp_path) == {
-        ("claude", "opus", "high"): "401",
-        ("codex", "terra", "medium"): "usageLimitExceeded",
-    }
-
-    subject.clear_unavailable_candidate("plan", "delegate", ("codex", "terra", "medium"), now=now, state_root=tmp_path)
-
-    assert subject.load_unavailable_candidates("plan", "delegate", now=now, state_root=tmp_path) == {
-        ("claude", "opus", "high"): "401"
-    }
-
-
-def test_clearing_an_unrecorded_candidate_creates_no_file(tmp_path: pathlib.Path) -> None:
-    """記録の無い候補の解除は記録ファイルを作成しない。"""
-    now = datetime.datetime(2026, 9, 16, 0, 0, tzinfo=datetime.UTC)
-
-    subject.clear_unavailable_candidate("plan", "delegate", ("claude", "opus", "high"), now=now, state_root=tmp_path)
-
-    assert not subject.unavailable_candidates_path(tmp_path).exists()
-
-
-def test_unavailable_candidates_record_is_a_file_and_not_a_root_session(tmp_path: pathlib.Path) -> None:
-    """記録はルートsession識別子の列挙へ現れない単一ファイルとする。"""
-    now = datetime.datetime(2026, 9, 16, 0, 0, tzinfo=datetime.UTC)
-    subject.record_unavailable_candidate("plan", "delegate", ("claude", "opus", "high"), "401", now=now, state_root=tmp_path)
-
-    assert subject.unavailable_candidates_path(tmp_path).is_file()
-    assert subject.list_root_session_ids(tmp_path) == []
-
-
-def test_root_session_listing_excludes_management_directories(tmp_path: pathlib.Path) -> None:
-    """状態ディレクトリ直下の管理用ディレクトリはルートsession識別子として列挙しない。"""
-    base = tmp_path / "agents-server"
-    for name in ("aliases", "compaction", "sessions", "root-session"):
-        (base / name).mkdir(parents=True)
-    (base / "aliases" / "current.json").write_text('{"version": 1, "root_session_id": "root-session"}', encoding="utf-8")
-
-    assert subject.list_root_session_ids(tmp_path) == ["root-session"]
-
-
-def test_process_root_identities_are_valid_and_collision_free() -> None:
-    first = subject.create_process_root_identity()
-    second = subject.create_process_root_identity()
-
-    assert first.file_name == "root.json"
-    assert first.host_session_id is None
-    assert subject.valid_session_id(first.root_session_id)
-    assert first.root_session_id != second.root_session_id
 
 
 @pytest.mark.asyncio
@@ -116,7 +44,7 @@ async def test_writer_logs_result_write_and_delete_without_body(
     session.touch()
     writer = subject.StatusFileWriter(
         {session.session_id: session},
-        subject.StatusFileIdentity("root-session", "root.json", None),
+        shared_roots.StatusFileIdentity("root-session", "root.json", None),
         state_root=tmp_path,
     )
 
@@ -136,7 +64,7 @@ async def test_status_file_includes_updated_at(tmp_path: pathlib.Path) -> None:
     session.announced = True
     writer = subject.StatusFileWriter(
         {session.session_id: session},
-        subject.StatusFileIdentity("root-session", "root.json", None),
+        shared_roots.StatusFileIdentity("root-session", "root.json", None),
         state_root=tmp_path,
     )
 
@@ -147,271 +75,10 @@ async def test_status_file_includes_updated_at(tmp_path: pathlib.Path) -> None:
     writer.deactivate()
 
 
-@pytest.mark.parametrize(
-    ("environment", "expected"),
-    [
-        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner"}, "owner"),
-        ({"CLAUDE_CODE_SESSION_ID": "root-session"}, "root-session"),
-        ({}, None),
-        ({"AGENT_TOOLKIT_OWNER_SESSION": "../invalid"}, None),
-    ],
-)
-def test_resolve_root_session_id(environment: dict[str, str], expected: str | None) -> None:
-    """読取対象のルートsessionは書込主体の識別要件から独立して解決する。"""
-    assert subject.resolve_root_session_id(environment) == expected
-
-
-def test_conversation_root_resolution_uses_only_alias_with_existing_target(tmp_path: pathlib.Path) -> None:
-    """索引の有無、妥当性および参照先の実在を別々の解決状態として返す。"""
-    environment = {"CLAUDE_CODE_SESSION_ID": "current-session"}
-    resolution = subject.resolve_conversation_root(environment, tmp_path)
-    assert resolution == subject.ConversationRootResolution(
-        current_session_id="current-session",
-        root_session_id="current-session",
-        alias_present=False,
-        alias_valid=False,
-        mapping_confirmed=False,
-    )
-
-    aliases = subject.aliases_directory(tmp_path)
-    aliases.mkdir(parents=True)
-    alias_path = aliases / "current-session.json"
-    alias_path.write_text(json.dumps({"version": 1, "root_session_id": "root-session"}), encoding="utf-8")
-    resolution = subject.resolve_conversation_root(environment, tmp_path)
-    assert resolution is not None
-    assert resolution.root_session_id == "current-session"
-    assert resolution.alias_present is True
-    assert resolution.alias_valid is True
-    assert resolution.mapping_confirmed is False
-
-    subject.status_directory("root-session", tmp_path).mkdir()
-    resolution = subject.resolve_conversation_root(environment, tmp_path)
-    assert resolution is not None
-    assert resolution.root_session_id == "root-session"
-    assert resolution.mapping_confirmed is True
-
-
-def test_conversation_root_resolution_confirms_direct_root_directory(tmp_path: pathlib.Path) -> None:
-    """索引が無くても現行識別子自身の状態ディレクトリがあれば対応を確認済みとする。"""
-    environment = {"CLAUDE_CODE_SESSION_ID": "root-session"}
-    subject.status_directory("root-session", tmp_path).mkdir(parents=True)
-
-    resolution = subject.resolve_conversation_root(environment, tmp_path)
-
-    assert resolution is not None
-    assert resolution.root_session_id == "root-session"
-    assert resolution.alias_present is False
-    assert resolution.mapping_confirmed is True
-
-
-def test_wait_identity_uses_explicit_existing_root_without_environment(tmp_path: pathlib.Path) -> None:
-    """明示した実在ルートは環境の別名を必要とせずroot書込主体へ解決する。"""
-    subject.status_directory("mcp-root", tmp_path).mkdir(parents=True)
-
-    identity = subject.resolve_wait_identity({}, "mcp-root", tmp_path)
-
-    assert identity == subject.StatusFileIdentity("mcp-root", "root.json", None)
-
-
-@pytest.mark.parametrize("root_session_id", ["../invalid", "missing-root"])
-def test_wait_identity_rejects_invalid_or_missing_explicit_root(
-    tmp_path: pathlib.Path,
-    root_session_id: str,
-) -> None:
-    """不正な形式と実在しない明示ルートを待機対象として受理しない。"""
-    with pytest.raises(ValueError):
-        subject.resolve_wait_identity({}, root_session_id, tmp_path)
-
-
-def test_wait_identity_rejects_explicit_root_different_from_confirmed_conversation(
-    tmp_path: pathlib.Path,
-) -> None:
-    """確認済みルートsessionと異なる明示値から別ルートの結果を回収しない。"""
-    subject.status_directory("conversation-root", tmp_path).mkdir(parents=True)
-    subject.status_directory("other-root", tmp_path).mkdir(parents=True)
-
-    with pytest.raises(ValueError, match="一致しません"):
-        subject.resolve_wait_identity(
-            {"CLAUDE_CODE_SESSION_ID": "conversation-root"},
-            "other-root",
-            tmp_path,
-        )
-
-
-def test_conversation_root_resolution_rejects_invalid_alias(tmp_path: pathlib.Path) -> None:
-    """不正な索引は現行識別子へ戻し、対応未確認として扱う。"""
-    environment = {"CLAUDE_CODE_SESSION_ID": "current-session"}
-    aliases = subject.aliases_directory(tmp_path)
-    aliases.mkdir(parents=True)
-    (aliases / "current-session.json").write_text("{}", encoding="utf-8")
-
-    resolution = subject.resolve_conversation_root(environment, tmp_path)
-
-    assert resolution is not None
-    assert resolution.root_session_id == "current-session"
-    assert resolution.alias_present is True
-    assert resolution.alias_valid is False
-    assert resolution.mapping_confirmed is False
-
-
-@pytest.mark.parametrize(
-    ("alias_text", "alias_valid"),
-    [
-        ("{", False),
-        ("{}", False),
-        (json.dumps({"version": 1, "root_session_id": "missing-root"}), True),
-    ],
-)
-def test_conversation_root_resolution_confirms_direct_root_after_alias_failure(
-    tmp_path: pathlib.Path, alias_text: str, alias_valid: bool
-) -> None:
-    """索引を解釈できない場合も現行sessionの状態ディレクトリで対応を確認する。"""
-    environment = {"CLAUDE_CODE_SESSION_ID": "current-session"}
-    subject.status_directory("current-session", tmp_path).mkdir(parents=True)
-    aliases = subject.aliases_directory(tmp_path)
-    aliases.mkdir(parents=True)
-    (aliases / "current-session.json").write_text(alias_text, encoding="utf-8")
-
-    resolution = subject.resolve_conversation_root(environment, tmp_path)
-
-    assert resolution == subject.ConversationRootResolution(
-        current_session_id="current-session",
-        root_session_id="current-session",
-        alias_present=True,
-        alias_valid=alias_valid,
-        mapping_confirmed=True,
-    )
-
-
-def test_write_root_alias_removes_aliases_with_missing_targets(tmp_path: pathlib.Path) -> None:
-    """索引更新時に参照先ディレクトリを失った既存索引を回収する。"""
-    subject.status_directory("root-session", tmp_path).mkdir(parents=True)
-    aliases = subject.aliases_directory(tmp_path)
-    aliases.mkdir()
-    stale = aliases / "stale-session.json"
-    stale.write_text(json.dumps({"version": 1, "root_session_id": "missing-root"}), encoding="utf-8")
-
-    subject.write_root_alias("current-session", "root-session", tmp_path)
-
-    assert json.loads((aliases / "current-session.json").read_text(encoding="utf-8")) == {
-        "version": 1,
-        "root_session_id": "root-session",
-    }
-    assert not stale.exists()
-
-
-@pytest.mark.parametrize(
-    ("environment", "expected"),
-    [
-        (
-            {"CLAUDE_CODE_SESSION_ID": "root-session"},
-            subject.StatusFileIdentity("root-session", "root.json", None),
-        ),
-        (
-            {
-                "AGENT_TOOLKIT_OWNER_SESSION": "owner",
-                "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
-                "CLAUDE_CODE_SESSION_ID": "claude-child",
-                "CODEX_THREAD_ID": "ignored-codex-child",
-            },
-            subject.StatusFileIdentity("owner", "claude-child.json", "claude-child"),
-        ),
-        (
-            {
-                "AGENT_TOOLKIT_OWNER_SESSION": "owner",
-                "CLAUDE_CODE_SESSION_ID": "root-session",
-                "CODEX_THREAD_ID": "codex-child",
-            },
-            subject.StatusFileIdentity("owner", "codex-child.json", "codex-child"),
-        ),
-        (
-            {
-                "AGENT_TOOLKIT_OWNER_SESSION": "owner",
-                "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer-session",
-            },
-            subject.StatusFileIdentity("owner", "writer-session.json", "writer-session"),
-        ),
-        ({}, None),
-        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner"}, None),
-        ({"CLAUDE_CODE_SESSION_ID": "../invalid"}, None),
-        (
-            {
-                "AGENT_TOOLKIT_OWNER_SESSION": "owner",
-                "CODEX_THREAD_ID": "invalid/child",
-            },
-            None,
-        ),
-    ],
-)
-def test_resolve_status_file_identity(environment: dict[str, str], expected: subject.StatusFileIdentity | None) -> None:
-    """ルート・両backendの委譲先・識別不能な所有session・不正識別子を区別する。"""
-    assert subject.resolve_status_file_identity(environment) == expected
-
-
-def test_status_directory_uses_platform_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """状態ディレクトリをatk configと同じXDG規則から解決する。"""
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    assert subject.status_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root"
-    assert subject.notices_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root" / "notices"
-    assert subject.hosts_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root" / "hosts"
-
-
-def test_write_host_alias_resolves_writer_to_thread_id(tmp_path: pathlib.Path) -> None:
-    """書込主体から委譲元threadへの索引は形式を検証して保存する。"""
-    subject.write_host_alias("root", "writer", "thread", tmp_path)
-
-    assert json.loads((subject.hosts_directory("root", tmp_path) / "writer.json").read_text(encoding="utf-8")) == {
-        "version": 1,
-        "host_session_id": "thread",
-    }
-    with pytest.raises(ValueError, match="invalid session_id"):
-        subject.write_host_alias("root", "bad/writer", "thread", tmp_path)
-
-
-def test_resolve_status_owner_identity_uses_writer_alias(tmp_path: pathlib.Path) -> None:
-    """Codex threadを内側MCPの書込主体へ逆引きする。"""
-    environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}
-    subject.write_host_alias("root", "writer", "thread", tmp_path)
-
-    assert subject.resolve_status_owner_identity(environment, tmp_path) == subject.StatusFileIdentity(
-        "root", "writer.json", "writer"
-    )
-
-
-def test_resolve_status_owner_identity_keeps_unindexed_identity(tmp_path: pathlib.Path) -> None:
-    """索引が無い呼出主体は環境変数から解決した書込主体を維持する。"""
-    environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}
-
-    assert subject.resolve_status_owner_identity(environment, tmp_path) == subject.StatusFileIdentity(
-        "root", "thread.json", "thread"
-    )
-
-
-def test_resolve_status_owner_identity_recovers_from_live_status_file(tmp_path: pathlib.Path) -> None:
-    """索引が失われても、委譲元threadを記録した状態から書込主体を一意に復元する。"""
-    root = subject.status_directory("root", tmp_path)
-    root.mkdir(parents=True)
-    (root / "writer.json").write_text('{"version": 1, "host_session_id": "thread", "sessions": []}', encoding="utf-8")
-
-    assert subject.resolve_status_owner_identity(
-        {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}, tmp_path
-    ) == subject.StatusFileIdentity("root", "writer.json", "writer")
-
-
-def test_resolve_status_owner_identity_rejects_ambiguous_aliases(tmp_path: pathlib.Path) -> None:
-    """同じthreadへ複数の書込主体が対応する索引を推測で選ばない。"""
-    environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}
-    subject.write_host_alias("root", "writer-a", "thread", tmp_path)
-    subject.write_host_alias("root", "writer-b", "thread", tmp_path)
-
-    with pytest.raises(ValueError, match="書込主体を一意に解決できません"):
-        subject.resolve_status_owner_identity(environment, tmp_path)
-
-
 @pytest.mark.asyncio
 async def test_inner_writer_projects_parent_thread_id_into_host_session_id(tmp_path: pathlib.Path) -> None:
     """内側の3つのmode（delegate・explore・shell）のsessionを親thread識別子へ射影して1つの状態ファイルへ集約する。"""
-    identity = subject.resolve_status_file_identity(
+    identity = shared_roots.resolve_status_file_identity(
         {"AGENT_TOOLKIT_OWNER_SESSION": "root", "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer"}
     )
     assert identity is not None
@@ -428,13 +95,13 @@ async def test_inner_writer_projects_parent_thread_id_into_host_session_id(tmp_p
     writer.activate()
     assert json.loads(writer.path.read_text(encoding="utf-8"))["host_session_id"] == "writer"
 
-    subject.write_host_alias("root", "writer", "parent-thread", tmp_path)
+    shared_roots.write_host_alias("root", "writer", "parent-thread", tmp_path)
     writer.flush()
 
     payload = json.loads(writer.path.read_text(encoding="utf-8"))
     assert payload["host_session_id"] == "parent-thread"
     assert len(payload["sessions"]) == 3
-    assert writer.path in subject.list_status_files("root", tmp_path)
+    assert writer.path in shared_layout.list_status_files("root", tmp_path)
     writer.deactivate()
 
 
@@ -445,7 +112,7 @@ async def test_api_error_record_reaches_status_file_without_activity(tmp_path: p
     session.updated_at = "2000-01-01T00:00:00+00:00"
     writer = subject.StatusFileWriter(
         {session.session_id: session},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -466,13 +133,13 @@ async def test_api_error_record_reaches_status_file_without_activity(tmp_path: p
 @pytest.mark.asyncio
 async def test_hosts_entries_are_removed_after_retention(tmp_path: pathlib.Path) -> None:
     """保持期限を過ぎた書込主体索引をactivate時に回収する。"""
-    host_path = subject.hosts_directory("root", tmp_path) / "writer.json"
+    host_path = shared_layout.hosts_directory("root", tmp_path) / "writer.json"
     host_path.parent.mkdir(parents=True)
     host_path.write_text('{"version": 1, "host_session_id": "thread"}', encoding="utf-8")
     stale_at = datetime.datetime.now(datetime.UTC).timestamp() - state.RESULT_RETENTION_SECONDS - 1
     os.utime(host_path, (stale_at, stale_at))
     writer = subject.StatusFileWriter(
-        {}, subject.StatusFileIdentity("root", "root.json", None), state_root=tmp_path, aggregate_seconds=0
+        {}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path, aggregate_seconds=0
     )
 
     writer.activate()
@@ -485,11 +152,11 @@ async def test_hosts_entries_are_removed_after_retention(tmp_path: pathlib.Path)
 @pytest.mark.asyncio
 async def test_host_alias_outlives_uncollected_nested_result(tmp_path: pathlib.Path) -> None:
     """別書込主体の起動が古い索引を回収しても、複数turn後の結果の所有者を失わない。"""
-    subject.write_host_alias("root", "writer", "thread", tmp_path)
-    host_path = subject.hosts_directory("root", tmp_path) / "writer.json"
+    shared_roots.write_host_alias("root", "writer", "thread", tmp_path)
+    host_path = shared_layout.hosts_directory("root", tmp_path) / "writer.json"
     stale_at = datetime.datetime.now(datetime.UTC).timestamp() - state.RESULT_RETENTION_SECONDS - 1
     os.utime(host_path, (stale_at, stale_at))
-    results = subject.results_directory("root", tmp_path)
+    results = shared_layout.results_directory("root", tmp_path)
     results.mkdir(exist_ok=True)
     result_path = results / "nested.json"
     result_path.write_text(
@@ -497,85 +164,21 @@ async def test_host_alias_outlives_uncollected_nested_result(tmp_path: pathlib.P
         encoding="utf-8",
     )
     other = subject.StatusFileWriter(
-        {}, subject.StatusFileIdentity("root", "other.json", "other"), state_root=tmp_path, aggregate_seconds=0
+        {}, shared_roots.StatusFileIdentity("root", "other.json", "other"), state_root=tmp_path, aggregate_seconds=0
     )
 
     other.activate()
 
     assert host_path.exists()
-    assert subject.resolve_wait_identity(
+    assert shared_roots.resolve_wait_identity(
         {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}, None, tmp_path
-    ) == subject.StatusFileIdentity("root", "writer.json", "writer")
-    assert subject.take_result("root", "nested", "writer.json", collector="test", state_root=tmp_path)[0] == {
+    ) == shared_roots.StatusFileIdentity("root", "writer.json", "writer")
+    assert retained_results.take_result("root", "nested", "writer.json", collector="test", state_root=tmp_path)[0] == {
         "status": "completed",
         "agent_message": "完了",
     }
     other.deactivate()
     assert not host_path.exists()
-
-
-def test_status_directory_rejects_relative_xdg_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """相対XDG_STATE_HOMEではatk configと同じHOME配下へ状態を書き込む。"""
-    monkeypatch.setenv("XDG_STATE_HOME", "relative-state")
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    assert subject.status_directory("root") == (
-        tmp_path / "home" / ".local" / "state" / "agent-toolkit" / "agents-server" / "root"
-    )
-
-
-@pytest.mark.parametrize(
-    ("file_names", "expected"),
-    [
-        (["root.json"], ["root.json"]),
-        (["child.json"], ["child.json"]),
-        (["root.json", "child.json"], ["child.json", "root.json"]),
-        (["root.json", "results/result.json"], ["root.json"]),
-    ],
-)
-def test_list_status_files_returns_direct_json_files_in_stable_order(
-    tmp_path: pathlib.Path,
-    file_names: list[str],
-    expected: list[str],
-) -> None:
-    """状態ディレクトリ直下のJSON通常ファイルだけを絶対パスの安定順で返す。"""
-    directory = subject.status_directory("root", tmp_path)
-    for file_name in file_names:
-        path = directory / file_name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("{}", encoding="utf-8")
-
-    assert subject.list_status_files("root", tmp_path) == [directory / file_name for file_name in expected]
-
-
-def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp_path: pathlib.Path) -> None:
-    """不正通知を保持し、正常通知だけを送信時刻とファイル名の順で回収する。"""
-    directory = subject.notices_directory("root", tmp_path)
-    directory.mkdir(parents=True)
-    payloads = {
-        "invalid-version.json": {"version": 2, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "本文"},
-        "invalid-session.json": {"version": 1, "session_id": "other", "sent_at": "2026-09-07T01:00:00Z", "body": "本文"},
-        "invalid-sent-at.json": {"version": 1, "session_id": "target", "sent_at": 1, "body": "本文"},
-        "invalid-body.json": {"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": ["本文"]},
-        "valid-late.json": {"version": 1, "session_id": "target", "sent_at": "2026-09-07T02:00:00Z", "body": "後"},
-        "valid-same-b.json": {"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "同時刻B"},
-        "valid-same-a.json": {"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "同時刻A"},
-    }
-    for name, payload in payloads.items():
-        (directory / name).write_text(json.dumps(payload), encoding="utf-8")
-
-    notices = subject.take_notices("root", "target", tmp_path)
-
-    assert notices == [
-        {"body": "同時刻A"},
-        {"body": "同時刻B"},
-        {"body": "後"},
-    ]
-    assert {path.name for path in directory.iterdir()} == {
-        "invalid-version.json",
-        "invalid-session.json",
-        "invalid-sent-at.json",
-        "invalid-body.json",
-    }
 
 
 @pytest.mark.asyncio
@@ -586,7 +189,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
     sessions: dict[str, state.SessionState] = {}
     writer = subject.StatusFileWriter(
         sessions,
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -620,7 +223,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
     visible.turn_completed = True
     visible.touch()
     writer.flush()
-    result_path = subject.results_directory("root", tmp_path) / "visible.json"
+    result_path = shared_layout.results_directory("root", tmp_path) / "visible.json"
     assert result_path.exists()
     result_path.unlink()
     writer.flush()
@@ -631,25 +234,36 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
     assert not writer.path.parent.exists()
 
 
-@pytest.mark.asyncio
-async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Path) -> None:
-    """期限到達後はsession表示を除き、未回収の結果を保持する。"""
-    session = state.SessionState("retained", str(tmp_path), announced=True, turn_seq=1)
+def _completed_with_retention_deadline(session_id: str, tmp_path: pathlib.Path, *, turn_seq: int = 0) -> state.SessionState:
+    """完了した結果を持ち、0.03秒後に保持期限へ達するsessionを返す。"""
+    session = state.SessionState(session_id, str(tmp_path), announced=True, turn_seq=turn_seq)
     session.status = "completed"
     session.agent_message = "完了"
     session.turn_completed = True
     session.touch()
     session.retention_deadline = asyncio.get_running_loop().time() + 0.03
-    writer = subject.StatusFileWriter(
-        {session.session_id: session},
-        subject.StatusFileIdentity("root", "root.json", None),
+    return session
+
+
+def _root_writer(sessions: dict[str, state.SessionState], tmp_path: pathlib.Path) -> subject.StatusFileWriter:
+    """ルート`root`の状態ファイルを`tmp_path`配下へ即時に書くwriterを返す。"""
+    return subject.StatusFileWriter(
+        sessions,
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
+
+
+@pytest.mark.asyncio
+async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Path) -> None:
+    """期限到達後はsession表示を除き、未回収の結果を保持する。"""
+    session = _completed_with_retention_deadline("retained", tmp_path, turn_seq=1)
+    writer = _root_writer({session.session_id: session}, tmp_path)
     writer.activate()
 
     assert json.loads(writer.path.read_text(encoding="utf-8"))["sessions"][0]["session_id"] == "retained"
-    result_path = subject.results_directory("root", tmp_path) / "retained.json"
+    result_path = shared_layout.results_directory("root", tmp_path) / "retained.json"
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result["agent_message"] == "完了"
     assert result["turn_seq"] == 1
@@ -665,22 +279,12 @@ async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Pa
 @pytest.mark.asyncio
 async def test_writer_retains_result_without_live_session_after_deadline(tmp_path: pathlib.Path) -> None:
     """破棄済みsessionから保持した結果も期限到達後に維持する。"""
-    session = state.SessionState("stopped", str(tmp_path), announced=True)
-    session.status = "completed"
-    session.agent_message = "完了"
-    session.turn_completed = True
-    session.touch()
-    session.retention_deadline = asyncio.get_running_loop().time() + 0.03
-    writer = subject.StatusFileWriter(
-        {},
-        subject.StatusFileIdentity("root", "root.json", None),
-        state_root=tmp_path,
-        aggregate_seconds=0,
-    )
+    session = _completed_with_retention_deadline("stopped", tmp_path)
+    writer = _root_writer({}, tmp_path)
     writer.activate()
     writer.retain_result(session)
     writer.flush()
-    result_path = subject.results_directory("root", tmp_path) / "stopped.json"
+    result_path = shared_layout.results_directory("root", tmp_path) / "stopped.json"
     assert result_path.exists()
     assert writer._retention_handle is None
 
@@ -694,22 +298,12 @@ async def test_writer_retains_result_without_live_session_after_deadline(tmp_pat
 @pytest.mark.asyncio
 async def test_writer_removes_waited_result_at_retention_deadline(tmp_path: pathlib.Path) -> None:
     """waitで回収済みになった結果を次のflushで削除する。"""
-    session = state.SessionState("waited", str(tmp_path), announced=True, turn_seq=1)
-    session.status = "completed"
-    session.agent_message = "完了"
-    session.turn_completed = True
-    session.touch()
-    session.retention_deadline = asyncio.get_running_loop().time() + 0.03
-    writer = subject.StatusFileWriter(
-        {session.session_id: session},
-        subject.StatusFileIdentity("root", "root.json", None),
-        state_root=tmp_path,
-        aggregate_seconds=0,
-    )
-    manager = agents_server_mcp.AgentsServerManager(writer)
+    session = _completed_with_retention_deadline("waited", tmp_path, turn_seq=1)
+    writer = _root_writer({session.session_id: session}, tmp_path)
+    manager = server_manager.AgentsServerManager(writer)
     writer.activate()
 
-    result_path = subject.results_directory("root", tmp_path) / "waited.json"
+    result_path = shared_layout.results_directory("root", tmp_path) / "waited.json"
     assert (await _wait_now(manager))["agent_message"] == "完了"
     writer.flush()
     assert not result_path.exists()
@@ -723,7 +317,7 @@ async def test_writer_excludes_already_expired_session(tmp_path: pathlib.Path) -
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     writer = subject.StatusFileWriter(
         {session.session_id: session},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -741,7 +335,7 @@ def _write_descendant_file(
     heartbeat_age: float = 0,
 ) -> pathlib.Path:
     """別の書込主体が書いた子孫の状態ファイルを置く。"""
-    path = subject.status_directory("root", tmp_path) / file_name
+    path = shared_layout.status_directory("root", tmp_path) / file_name
     path.parent.mkdir(parents=True, exist_ok=True)
     heartbeat = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=heartbeat_age)
     path.write_text(
@@ -782,22 +376,22 @@ async def test_writer_keeps_collected_parent_while_grandchild_runs(tmp_path: pat
     parent = _terminal_parent(tmp_path, status)
     writer = subject.StatusFileWriter(
         {parent.session_id: parent},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
     grandchild = _write_descendant_file(tmp_path, "parent-writer.json", "parent", {"grandchild": "running"})
     writer.activate()
-    result_path = subject.results_directory("root", tmp_path) / "parent.json"
+    result_path = shared_layout.results_directory("root", tmp_path) / "parent.json"
     assert result_path.exists()
 
     # CLIの`atk agents wait`と同じ`take_result`で、書込主体の外から結果を取得する。
-    assert subject.take_result("root", "parent", "root.json", collector="cli", state_root=tmp_path)[0] is not None
+    assert retained_results.take_result("root", "parent", "root.json", collector="cli", state_root=tmp_path)[0] is not None
     writer.flush()
 
     assert _shown_sessions(writer) == {"parent": status}
     assert not result_path.exists()
-    assert subject.take_result("root", "parent", "root.json", collector="cli", state_root=tmp_path) == (None, None)
+    assert retained_results.take_result("root", "parent", "root.json", collector="cli", state_root=tmp_path) == (None, None)
 
     _write_descendant_file(tmp_path, grandchild.name, "parent", {"grandchild": "completed"})
     writer.flush()
@@ -814,7 +408,7 @@ async def test_writer_returns_uncollected_parent_to_normal_rules_after_grandchil
     parent.retention_deadline = asyncio.get_running_loop().time() + 60
     writer = subject.StatusFileWriter(
         {parent.session_id: parent},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -822,7 +416,7 @@ async def test_writer_returns_uncollected_parent_to_normal_rules_after_grandchil
     writer.activate()
 
     assert _shown_sessions(writer) == {"parent": "completed"}
-    assert (subject.results_directory("root", tmp_path) / "parent.json").exists()
+    assert (shared_layout.results_directory("root", tmp_path) / "parent.json").exists()
     writer.deactivate()
 
 
@@ -836,7 +430,7 @@ async def test_writer_keeps_parent_past_retention_deadline_while_descendant_runs
     expired = {"expired-parent": state.SessionResumeState.from_session(expired_parent)}
     writer = subject.StatusFileWriter(
         {parent.session_id: parent},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
         expired_sessions=expired,
@@ -863,7 +457,7 @@ async def test_writer_keeps_parent_for_partial_and_deep_descendants(tmp_path: pa
     parent.result_delivered = True
     writer = subject.StatusFileWriter(
         {parent.session_id: parent},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -891,7 +485,7 @@ async def test_writer_ignores_running_descendant_with_expired_heartbeat(tmp_path
     parent.result_delivered = True
     writer = subject.StatusFileWriter(
         {parent.session_id: parent},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -911,7 +505,7 @@ async def test_writer_ignores_running_descendant_with_expired_heartbeat(tmp_path
 @pytest.mark.asyncio
 async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Path) -> None:
     """ルートwriterは自身と保持期限切れの共有ファイルだけを除く。"""
-    directory = subject.status_directory("root", tmp_path)
+    directory = shared_layout.status_directory("root", tmp_path)
     directory.mkdir(parents=True)
     other_writer = directory / "other.json"
     other_writer.write_text("{}", encoding="utf-8")
@@ -934,7 +528,7 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
         os.utime(path, (stale_at, stale_at))
     writer = subject.StatusFileWriter(
         {},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -957,7 +551,7 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
 @pytest.mark.asyncio
 async def test_writer_removes_state_file_with_expired_heartbeat(tmp_path: pathlib.Path) -> None:
     """生存の印が失効した他の状態ファイルを削除する。"""
-    directory = subject.status_directory("root", tmp_path)
+    directory = shared_layout.status_directory("root", tmp_path)
     directory.mkdir(parents=True)
     stale = directory / "stale.json"
     stale.write_text(
@@ -977,7 +571,7 @@ async def test_writer_removes_state_file_with_expired_heartbeat(tmp_path: pathli
     )
     writer = subject.StatusFileWriter(
         {},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -992,13 +586,13 @@ async def test_writer_removes_state_file_with_expired_heartbeat(tmp_path: pathli
 @pytest.mark.asyncio
 async def test_writer_preserves_state_file_without_heartbeat(tmp_path: pathlib.Path) -> None:
     """旧形式の状態ファイルは他の書込主体が回収しない。"""
-    directory = subject.status_directory("root", tmp_path)
+    directory = shared_layout.status_directory("root", tmp_path)
     directory.mkdir(parents=True)
     legacy = directory / "legacy.json"
     legacy.write_text("{}", encoding="utf-8")
     writer = subject.StatusFileWriter(
         {},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -1016,11 +610,11 @@ async def test_manager_refreshes_heartbeat_until_close(monkeypatch: pytest.Monke
     monkeypatch.setattr(subject, "HEARTBEAT_INTERVAL_SECONDS", 0.01)
     writer = subject.StatusFileWriter(
         {},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = agents_server_mcp.AgentsServerManager(writer)
+    manager = server_manager.AgentsServerManager(writer)
     manager.activate()
     initial = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
 
@@ -1035,7 +629,7 @@ async def test_manager_refreshes_heartbeat_until_close(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_nested_writer_preserves_root_file_on_deactivate(tmp_path: pathlib.Path) -> None:
     """入れ子の書込主体は自身のファイルだけを回収する。"""
-    directory = subject.status_directory("root", tmp_path)
+    directory = shared_layout.status_directory("root", tmp_path)
     directory.mkdir(parents=True)
     root_file = directory / "root.json"
     root_file.write_text("{}", encoding="utf-8")
@@ -1045,7 +639,7 @@ async def test_nested_writer_preserves_root_file_on_deactivate(tmp_path: pathlib
     notice_file.write_text("{}", encoding="utf-8")
     writer = subject.StatusFileWriter(
         {},
-        subject.StatusFileIdentity("root", "child.json", "child"),
+        shared_roots.StatusFileIdentity("root", "child.json", "child"),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -1063,13 +657,13 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     """3つの起動手段と結果回収を状態ファイルへ反映する。"""
     writer = subject.StatusFileWriter(
         {},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = agents_server_mcp.AgentsServerManager(writer)
+    manager = server_manager.AgentsServerManager(writer)
     backend = _FakeStatusBackend(manager.sessions)
-    manager._codex = backend
+    install_backend(manager, "codex", backend)
     _use_candidates(monkeypatch, ("codex", "gpt-5.6-terra", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
@@ -1089,12 +683,12 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     session.touch()
     await _wait_now(manager)
     writer.flush()
-    result_path = subject.results_directory("root", tmp_path) / f"{session.session_id}.json"
+    result_path = shared_layout.results_directory("root", tmp_path) / f"{session.session_id}.json"
     assert not result_path.exists()
     remaining = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     assert session.session_id not in {item["session_id"] for item in remaining}
     await manager.close()
-    assert not subject.status_directory("root", tmp_path).exists()
+    assert not shared_layout.status_directory("root", tmp_path).exists()
 
 
 @pytest.mark.asyncio
@@ -1104,9 +698,9 @@ async def test_manager_removes_previous_result_when_new_turn_starts(
 ) -> None:
     """同じsessionの新しいturnを開始した時点で前の結果を削除する。"""
     writer = _status_writer(tmp_path)
-    manager = agents_server_mcp.AgentsServerManager(writer)
+    manager = server_manager.AgentsServerManager(writer)
     backend = _FakeStatusBackend(manager.sessions)
-    manager._codex = backend
+    install_backend(manager, "codex", backend)
     _use_candidates(monkeypatch, ("codex", "model", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
@@ -1117,7 +711,7 @@ async def test_manager_removes_previous_result_when_new_turn_starts(
     session.turn_completed = True
     session.touch()
     writer.flush()
-    result_path = subject.results_directory("root", tmp_path) / f"{session.session_id}.json"
+    result_path = shared_layout.results_directory("root", tmp_path) / f"{session.session_id}.json"
     assert result_path.exists()
 
     await manager.send_message(session.session_id, "続行")
@@ -1135,7 +729,7 @@ async def test_manager_writes_only_announced_candidate_after_fallback(
 ) -> None:
     """候補切替で除外した試行を隠し、委譲元へ返したsessionだけを書く。"""
     writer = _status_writer(tmp_path)
-    manager = agents_server_mcp.AgentsServerManager(writer)
+    manager = server_manager.AgentsServerManager(writer)
     backend: _FakeStatusBackend = (
         _DelayedUnavailableStatusBackend(
             manager.sessions,
@@ -1145,9 +739,9 @@ async def test_manager_writes_only_announced_candidate_after_fallback(
         if delayed
         else _UnavailableStatusBackend(manager.sessions, unavailable_models={"first"})
     )
-    manager._codex = backend
+    install_backend(manager, "codex", backend)
     _use_candidates(monkeypatch, ("codex", "first", "high"), ("codex", "second", "high"))
-    monkeypatch.setattr(agents_server_mcp, "START_AVAILABILITY_TIMEOUT", 0.01)
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
     writer.activate()
 
     response = await manager.start("high_tier", "実装", str(tmp_path))
@@ -1166,9 +760,9 @@ async def test_manager_writes_only_last_failure_when_all_candidates_are_unavaila
 ) -> None:
     """全候補が利用不能なら、応答へ載せた最後の失敗sessionだけを書く。"""
     writer = _status_writer(tmp_path)
-    manager = agents_server_mcp.AgentsServerManager(writer)
+    manager = server_manager.AgentsServerManager(writer)
     backend = _UnavailableStatusBackend(manager.sessions, unavailable_models={"first", "second"})
-    manager._codex = backend
+    install_backend(manager, "codex", backend)
     _use_candidates(monkeypatch, ("codex", "first", "high"), ("codex", "second", "high"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
@@ -1190,9 +784,9 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
 ) -> None:
     """killで返した結果だけを除き、未回収の終端結果は表示に残す。"""
     writer = _status_writer(tmp_path)
-    manager = agents_server_mcp.AgentsServerManager(writer)
+    manager = server_manager.AgentsServerManager(writer)
     backend = _FakeStatusBackend(manager.sessions)
-    manager._codex = backend
+    install_backend(manager, "codex", backend)
     _use_candidates(monkeypatch, ("codex", "model", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
@@ -1209,7 +803,7 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
     writer.flush()
 
     assert response["agent_message"] == "完了"
-    results = subject.results_directory("root", tmp_path)
+    results = shared_layout.results_directory("root", tmp_path)
     assert not (results / f"{killed['session_id']}.json").exists()
     assert (results / f"{uncollected['session_id']}.json").exists()
     sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
@@ -1222,8 +816,8 @@ async def test_manager_without_writer_does_not_create_status_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """書込主体が無効なmanagerはsession開始後も状態ファイルを作成しない。"""
-    manager = agents_server_mcp.AgentsServerManager(None)
-    manager._codex = _FakeStatusBackend(manager.sessions)
+    manager = server_manager.AgentsServerManager(None)
+    install_backend(manager, "codex", _FakeStatusBackend(manager.sessions))
     _use_candidates(monkeypatch, ("codex", "model", "medium"))
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
 
@@ -1235,16 +829,14 @@ async def test_manager_without_writer_does_not_create_status_files(
 
 def _use_candidates(monkeypatch: pytest.MonkeyPatch, *candidates: tuple[str, str, str]) -> None:
     """session開始時に解決するモデル候補列を固定する。"""
-    monkeypatch.setattr(
-        agents_server_mcp._atk_config, "parse_unresolved_model_candidates", lambda _model_type: list(candidates)
-    )
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: list(candidates))
 
 
 def _status_writer(tmp_path: pathlib.Path) -> subject.StatusFileWriter:
     """公開managerを通した操作に使うルートwriterを返す。"""
     return subject.StatusFileWriter(
         {},
-        subject.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
@@ -1281,7 +873,7 @@ class _FakeStatusBackend:
             turn_seq=1,
         )
         self.sessions[session.session_id] = session
-        state._initialize_turn(session)
+        state.initialize_turn(session)
         return session
 
     async def close(self) -> None:
@@ -1294,7 +886,7 @@ class _FakeStatusBackend:
     async def send_message(self, session: state.SessionState, _prompt: str) -> dict[str, object]:
         """新しいreply turnを開始する。"""
         session.turn_seq += 1
-        state._initialize_turn(session)
+        state.initialize_turn(session)
         return {"delivery": "reply_started", "previous_result": None}
 
 
@@ -1383,69 +975,3 @@ class _DelayedUnavailableStatusBackend(_FakeStatusBackend):
 
     async def close(self) -> None:
         await asyncio.gather(*self._pending)
-
-
-def test_take_result_checks_owner_and_consumes_once(tmp_path: pathlib.Path) -> None:
-    """異なる書込主体は結果を取得できず、正しい主体への配送は1回だけ成立する。"""
-    directory = subject.results_directory("root-session", tmp_path)
-    directory.mkdir(parents=True)
-    result_path = directory / "child-session.json"
-    result_path.write_text(
-        json.dumps(
-            {
-                "status": "completed",
-                "agent_message": "完了",
-                "owner_status_file": "delegate.json",
-                "turn_seq": 7,
-                "finalized_at": "2026-10-03T00:00:00Z",
-                "future_internal": "公開しない",
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    assert subject.take_result(
-        "root-session",
-        "child-session",
-        "root.json",
-        collector="test",
-        state_root=tmp_path,
-    ) == (None, None)
-    assert result_path.exists()
-    assert subject.take_result(
-        "root-session",
-        "child-session",
-        "delegate.json",
-        collector="test",
-        state_root=tmp_path,
-    ) == ({"status": "completed", "agent_message": "完了"}, None)
-    assert subject.take_result(
-        "root-session",
-        "child-session",
-        "delegate.json",
-        collector="test",
-        state_root=tmp_path,
-    ) == (None, None)
-
-
-def test_take_result_keeps_other_owner_result(tmp_path: pathlib.Path) -> None:
-    """CLI用退避先を指定しても別の書込主体の結果は移動しない。"""
-    result_path = subject.results_directory("root-session", tmp_path) / "child-session.json"
-    result_path.parent.mkdir(parents=True)
-    result_path.write_text(json.dumps({"status": "completed", "owner_status_file": "delegate.json"}), encoding="utf-8")
-    stash_path = tmp_path / "wait-run" / "results" / "child-session.json"
-    writer = subject.StatusFileWriter({}, subject.StatusFileIdentity("root-session", "root.json", None), state_root=tmp_path)
-
-    assert subject.take_result(
-        "root-session", "child-session", "root.json", collector="cli", state_root=tmp_path, stash_path=stash_path
-    ) == (None, None)
-    assert not stash_path.exists()
-    assert result_path.exists()
-    assert writer.take_result("child-session", collector="mcp-wait") == (None, None)
-    assert result_path.exists()
-
-    owner = subject.StatusFileWriter(
-        {}, subject.StatusFileIdentity("root-session", "delegate.json", "delegate"), state_root=tmp_path
-    )
-    assert owner.take_result("child-session", collector="mcp-wait") == ({"status": "completed"}, None)
-    assert not result_path.exists()

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import claude_common, common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ def is_legacy_definition(value: object) -> bool:
     受理するフィールドの集合は移行元の実生成物を基準とする。旧installerが使う
     `claude mcp add`は`-e`を指定しない場合も`env`を空dictとして書き込むため、
     値を持たない`env`だけを受理し、値を持つ`env`はユーザーが加えた設定として保持する。
+    判定ケースは`legacy_codex_mcp_cases.json`にあり、単体インストーラー2本の判定も同じケースでテストする。
     """
     if not isinstance(value, dict) or not set(value).issubset(_ALLOWED_FIELDS):
         return False
@@ -54,11 +55,15 @@ def is_legacy_definition(value: object) -> bool:
     return timeout is None or timeout == _LEGACY_TIMEOUT
 
 
-def run() -> bool:
-    """完全一致するUser scope旧定義だけを`claude mcp remove --scope user`で削除する。"""
-    if claude_common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """完全一致するUser scope旧定義だけを`claude mcp remove --scope user`で削除する。
+
+    設定を読めない場合も何もせずに終える。post-applyは他のステップを続ける必要があり、
+    判定できない設定で失敗させる単体インストーラー（fail-closed）とは扱いを分ける。
+    """
+    if common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
         logger.info(log_format.format_status("legacy-codex-mcp", "claude CLI 未検出のためスキップ"))
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     current = _load_user_codex()
     if not is_legacy_definition(current):
         if current is not None:
@@ -66,11 +71,10 @@ def run() -> bool:
                 "User scopeのcodex MCP定義は旧installerの完全一致ではないため保持します。"
                 " 必要なら `claude mcp remove --scope user codex` を手動実行してください。"
             )
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     result = claude_common.run_claude(["mcp", "remove", "--scope", "user", _CODEX_NAME])
     if result is None or result.returncode != 0:
-        detail = claude_common.format_cli_error(result)
-        logger.warning(log_format.format_status("legacy-codex-mcp", f"移行に失敗 (続行): {detail}"))
-        return False
+        detail = common.format_cli_error(result)
+        return post_apply_outcome.PostApplyOutcome(failure=f"旧User scope登録の削除に失敗: {detail}")
     logger.info(log_format.format_status("legacy-codex-mcp", "旧User scope登録を削除しました"))
-    return True
+    return post_apply_outcome.PostApplyOutcome(changed=True)

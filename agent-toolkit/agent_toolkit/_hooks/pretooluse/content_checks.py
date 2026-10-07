@@ -1,32 +1,35 @@
-# ruff: noqa: F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
 r"""PreToolUse統合フックのうち、編集内容とユーザー向け本文について警告するか判定する。"""
 
 from __future__ import annotations
 
 import pathlib
 import re
-from typing import TYPE_CHECKING
 
-
-# pylint: disable=wrong-import-position
 from agent_toolkit._hooks import (
-    tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    tool_input as _hook_tool_input,
 )
+from agent_toolkit._hooks.notice import _WARN_TAG
+from agent_toolkit._hooks.pretooluse.notices import _llm_notice
+from agent_toolkit._plan.path_kinds import is_plan_adjunct_file, is_plan_main_file
 
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.notice import _WARN_TAG  # noqa: E402
+# U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
+_REPLACEMENT_CHAR = "\ufffd"
 
 
-if TYPE_CHECKING:
-    from agent_toolkit._hooks.pretooluse.dispatch import (
-        _REPLACEMENT_CHAR,
-        _is_plan_file_or_adjunct,
-        _materialize_cached,
-    )
-    from agent_toolkit._hooks.pretooluse.notices import (
-        _llm_notice,
-    )
+def _is_plan_file_or_adjunct(file_path: str) -> bool:
+    """計画ファイル（メイン）・計画ファイル（バグ）の場合に真を返す。"""
+    return is_plan_main_file(file_path) or is_plan_adjunct_file(file_path)
+
+
+def _materialize_cached(
+    operation: _hook_tool_input.EditOperation,
+    index: int,
+    images: dict[int, _hook_tool_input.MaterializedEdit | None],
+) -> _hook_tool_input.MaterializedEdit | None:
+    """操作単位の変更前後像を必要になった時点で1回だけ具体化する。"""
+    if index not in images:
+        images[index] = _hook_tool_input.materialize(operation)
+    return images[index]
 
 
 _TRAILING_TOOL_BOUNDARY_RE = re.compile(r"</content>\s*</invoke>\s*\Z")
@@ -47,7 +50,7 @@ def _collect_edit_operation_warnings(
     """1操作分の警告本文を順に集める。
 
     いずれも後続の編集で復元できる結果を対象とするため、`agent-toolkit:writing-standards`の
-    `references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」により警告で返す。
+    `references/claude-hooks-block-warn.md`「遮断と警告の選択」により警告で返す。
     """
     fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
     display_path = operation.display_path

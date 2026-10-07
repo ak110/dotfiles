@@ -8,9 +8,9 @@ import subprocess
 import pytest
 
 from agent_toolkit._hooks.rules_context import QUALITY_CHECKPOINT_NOTICE
-from agent_toolkit._plan import fixture as _plan_fixture
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"

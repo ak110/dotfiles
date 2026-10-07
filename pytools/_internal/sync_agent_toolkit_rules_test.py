@@ -1,11 +1,10 @@
 """pytools._internal.sync_agent_toolkit_rules のテスト。"""
 
-import logging
 from pathlib import Path
 
 import pytest
 
-from pytools._internal import claude_common, sync_agent_toolkit_rules
+from pytools._internal import claude_common, common, sync_agent_toolkit_rules
 
 
 @pytest.fixture(name="env")
@@ -14,7 +13,7 @@ def env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, 
     dotfiles_root = tmp_path / "dotfiles"
     claude_home = tmp_path / "home" / ".claude"
     codex_home = tmp_path / "home" / ".codex"
-    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: dotfiles_root)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: dotfiles_root)
     monkeypatch.setattr(claude_common, "CLAUDE_HOME", claude_home)
     monkeypatch.setattr(sync_agent_toolkit_rules, "CODEX_HOME", codex_home)
     return dotfiles_root, claude_home, codex_home
@@ -58,7 +57,7 @@ class TestRun:
         for name in files:
             (src / name).write_text(f"{name}-body\n", encoding="utf-8")
 
-        assert sync_agent_toolkit_rules.run() is True
+        assert sync_agent_toolkit_rules.run().changed is True
 
         for dst in _dst_dirs(claude_home, codex_home):
             for name in files:
@@ -71,8 +70,8 @@ class TestRun:
         src.mkdir(parents=True)
         (src / "01-agent.md").write_text("body\n", encoding="utf-8")
 
-        assert sync_agent_toolkit_rules.run() is True
-        assert sync_agent_toolkit_rules.run() is False
+        assert sync_agent_toolkit_rules.run().changed is True
+        assert sync_agent_toolkit_rules.run().changed is False
 
         for dst in _dst_dirs(claude_home, codex_home):
             assert (dst / "01-agent.md").read_text(encoding="utf-8") == _expected("01-agent.md", "body")
@@ -87,7 +86,7 @@ class TestRun:
         codex_rules.parent.mkdir(parents=True)
         codex_rules.symlink_to(src, target_is_directory=True)
 
-        assert sync_agent_toolkit_rules.run() is True
+        assert sync_agent_toolkit_rules.run().changed is True
 
         assert not codex_rules.is_symlink()
         assert (codex_rules / "01-agent.md").read_text(encoding="utf-8") == _expected("01-agent.md", "body")
@@ -103,23 +102,22 @@ class TestRun:
             dst.mkdir(parents=True)
             (dst / "stale.md").write_text("x", encoding="utf-8")
 
-        assert sync_agent_toolkit_rules.run() is True
+        assert sync_agent_toolkit_rules.run().changed is True
 
         for dst in _dst_dirs(claude_home, codex_home):
             assert not (dst / "stale.md").exists()
 
-    def test_warns_when_src_missing(
+    def test_fails_when_src_missing(
         self,
         env: tuple[Path, Path, Path],
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """配布元が未存在の場合は警告だけを記録し、配布先を変更しない。"""
+        """配布元が未存在の場合は失敗と数え、配布先を変更しない。"""
         _dotfiles_root, claude_home, codex_home = env
 
-        with caplog.at_level(logging.WARNING):
-            assert sync_agent_toolkit_rules.run() is True
+        outcome = sync_agent_toolkit_rules.run()
 
-        assert any("コピー元が存在しません" in record.message for record in caplog.records)
+        assert outcome.failure is not None
+        assert "コピー元が存在しません" in outcome.failure
         for dst in _dst_dirs(claude_home, codex_home):
             assert not dst.exists()
 
@@ -129,7 +127,7 @@ class TestRun:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`find_dotfiles_root()`が`None`を返すときは何もせずFalseを返す。"""
-        monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: None)
+        monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
         monkeypatch.setattr(claude_common, "CLAUDE_HOME", tmp_path / "home" / ".claude")
 
-        assert sync_agent_toolkit_rules.run() is False
+        assert sync_agent_toolkit_rules.run().changed is False

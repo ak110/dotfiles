@@ -16,7 +16,7 @@ import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from agent_toolkit._hooks import bash_command_parser
+from agent_toolkit._common import shell_cwd, shell_segments
 from agent_toolkit._hooks.notice import block_formatter
 
 # Codexの配布設定の出力上限`tool_output_token_limit = 20000`（トークン）と、
@@ -147,12 +147,12 @@ def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> 
     if not is_codex:
         return None
     byte_threshold = _byte_threshold()
-    current = bash_command_parser.CwdResolution(cwd, bool(cwd))
-    for pipeline in bash_command_parser.extract_execution_pipelines(command):
+    current = shell_cwd.CwdResolution(cwd, bool(cwd))
+    for pipeline in shell_segments.extract_execution_pipelines(command):
         if len(pipeline) != 1 or not pipeline[0].resolved:
             continue
         tokens = pipeline[0].tokens
-        cwd_change = bash_command_parser.resolve_cwd_change(list(tokens), current)
+        cwd_change = shell_cwd.resolve_cwd_change(list(tokens), current)
         if cwd_change is not None:
             current = cwd_change
             continue

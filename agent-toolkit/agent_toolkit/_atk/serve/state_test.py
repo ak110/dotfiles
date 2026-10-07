@@ -1,38 +1,34 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`のテスト。"""
 
 # pylint: disable=protected-access
 
 import asyncio
-import binascii
 import contextlib
 import json
-import logging
-import math
 import os
 import pathlib
-import re
 import signal
-import struct
-import subprocess
-import threading
-import types
 import typing
-import zlib
 
-import filelock
 import pytest
 import watchdog.events
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import assets, config, state
+from agent_toolkit._atk.serve import assets, config, state, wi_operations
 from agent_toolkit._atk.serve import cli as serve
-from agent_toolkit._atk.serve import plans as serve_plans
-from agent_toolkit._atk.serve import sessions as serve_sessions
-from agent_toolkit._atk.wi import common, user_comment
-from agent_toolkit._atk.wi import repo as awi_repo
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._testing.serve_support import (
+    _BlockingSync,
+    _disable_wi_git,
+    _FakeTimer,
+    _patch_comment_edit_dependencies,
+    _recorder,
+    _run_node_ui,
+    _session_review_awi,
+    _stub_state,
+    _sync_app,
+    _write_detail_entry,
+)
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -40,9 +36,6 @@ from agent_toolkit._atk.wi import repo as awi_repo
 # 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
 # module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
 _HOST_ENVIRON = dict(os.environ)
-
-
-from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 
 @pytest.mark.parametrize("port", [True, 0, 65536])
@@ -207,7 +200,7 @@ fetchHandler = async url => {
 };
 const original = {...listed, content: '更新前の本文', body_html: '<p>更新前の本文</p>'};
 entries = [original];
-renderList();
+renderEntries();
 const origin = elements['entry-list'].children[0].children[0];
 displayEntry(original);
 detailOriginKey = entryKey(original);
@@ -452,7 +445,7 @@ async def test_cancelled_sync_request_does_not_cancel_shared_sync(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """開始要求のキャンセル後も共有同期が継続し、別要求へ同じ結果を返す。"""
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
     sync = _BlockingSync()
     monkeypatch.setattr(operations, "sync", sync)
     app = _sync_app(tmp_path, operations)
@@ -477,7 +470,7 @@ def test_detail_returns_existing_uwi_answer(tmp_path: pathlib.Path) -> None:
         "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n既存回答\n2行目\n",
     )
 
-    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+    detail = wi_operations.Operations(tmp_path).detail("inbox", "entry.md")
 
     assert detail["answer"] == "既存回答\n2行目"
 
@@ -515,7 +508,7 @@ async def test_detail_api_round_trips_frontmatter_as_strict_json(tmp_path: pathl
 def test_detail_falls_back_on_broken_frontmatter(tmp_path: pathlib.Path) -> None:
     """frontmatterの解析に失敗した場合は本文全体の整形結果を返す。"""
     _write_detail_entry(tmp_path, "---\nkey: [unclosed\n---\n\n本文\n")
-    rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
+    rendered = typing.cast(str, wi_operations.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert "本文" in rendered
     # 表へ振り分けず本文全体をMarkdownとして整形するため、開始区切りが水平線として残る。
     assert '<table class="frontmatter">' not in rendered
@@ -531,7 +524,7 @@ def test_detail_disables_only_bare_address_links(tmp_path: pathlib.Path) -> None
         "~~取消~~\n\n| 列 |\n| --- |\n| 値 |\n",
     )
 
-    rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
+    rendered = typing.cast(str, wi_operations.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
 
     assert '<a href="https://example.com">' not in rendered
     assert '<a href="http://www.example.com">' not in rendered
@@ -555,7 +548,7 @@ def test_operations_active_includes_hold_entries_of_both_types(tmp_path: pathlib
         encoding="utf-8",
     )
 
-    entries, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"status": "active"})
+    entries, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"status": "active"})
 
     assert not warnings
     assert sorted(str(item["filename"]) for item in entries) == ["held-uwi.md", "held.md"]
@@ -586,7 +579,7 @@ def test_operations_query_searches_full_markdown_and_metadata(tmp_path: pathlib.
         encoding="utf-8",
     )
 
-    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"q": query})
+    result, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"q": query})
     assert not warnings
 
     assert [item["filename"] for item in result] == expected
@@ -618,13 +611,12 @@ async def test_edit_and_answer_apis_detect_external_changes(
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    for module in (common, awi_repo, serve_app.awi_mutations, serve_app.uwi_mutations):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
-    monkeypatch.setattr(common, "repo_lock", lock)
-    monkeypatch.setattr(common, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
 
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
@@ -735,7 +727,7 @@ def test_operations_sort_entries_by_filename_across_kinds(tmp_path: pathlib.Path
         encoding="utf-8",
     )
 
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
     result, warnings = operations.entries_with_warnings({})
     assert not warnings
     filenames = [item["filename"] for item in result]
@@ -785,18 +777,7 @@ async def test_web_transition_mutations_allow_omitted_target_repo(
 ) -> None:
     """状態遷移系APIはfilenameで対象を一意に特定できるためtarget_repo省略を許容する。"""
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    monkeypatch.setattr(common, "_repo_lock", lock)
-    monkeypatch.setattr(common, "_pull", lambda _path: None)
-    monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.awi_mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    _disable_wi_git(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(
@@ -838,15 +819,14 @@ async def test_index_and_js_reflect_forwarded_prefix(tmp_path: pathlib.Path) -> 
     assert index_response.status_code == 200
     index_body = await index_response.get_data(as_text=True)
     assert 'href="/atk/static/app.css"' in index_body
-    assert 'src="/atk/static/app.js"' in index_body
+    assert 'type="module" src="/atk/static/wi.js"' in index_body
+    assert '"base_path": "/atk"' in index_body
     assert 'href="/atk/favicon.svg"' in index_body
     assert 'href="/atk/manifest.webmanifest" crossorigin="use-credentials"' in index_body
     assert "/atk/atk/" not in index_body
 
-    js_response = await client.get("/atk/static/app.js", headers=headers)
+    js_response = await client.get("/atk/static/wi.js", headers=headers)
     assert js_response.status_code == 200
-    js_body = await js_response.get_data(as_text=True)
-    assert 'const BASE_PATH="/atk";' in js_body
 
     manifest_response = await client.get("/atk/manifest.webmanifest", headers=headers)
     manifest = await manifest_response.get_json()
@@ -893,11 +873,11 @@ def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    monkeypatch.setattr(common, "_repo_lock", lock)
-    monkeypatch.setattr(common, "_push_pending_commits", _recorder(calls, "push", result=None))
-    monkeypatch.setattr(common, "_pull", _recorder(calls, "pull", result=None))
-    monkeypatch.setattr(common, "pull_if_stale", _recorder(calls, "pull_if_stale", result=True))
-    operations = serve_app.Operations(tmp_path)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", _recorder(calls, "push", result=None))
+    monkeypatch.setattr(_wi_sync, "pull", _recorder(calls, "pull", result=None))
+    monkeypatch.setattr(_wi_sync, "pull_if_stale", _recorder(calls, "pull_if_stale", result=True))
+    operations = wi_operations.Operations(tmp_path)
     assert operations.sync() is True
     assert operations.sync() is True
     assert calls == ["push", "pull", "push", "pull"]
@@ -1057,13 +1037,13 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    monkeypatch.setattr(common, "_repo_lock", lock)
-    monkeypatch.setattr(common, "_pull", lambda _path: None)
-    monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_add, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.awi_add, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_add, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),

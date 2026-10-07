@@ -79,7 +79,7 @@ def _metadata(
     }
 
 
-def run(args: argparse.Namespace) -> int:
+def dispatch(args: argparse.Namespace) -> int:
     """外部コマンドを実行し、保存結果のJSONと実際の終了状態を返す。"""
     argv = list(args.command_argv)
     if not argv or argv[0] != "--" or len(argv) == 1:

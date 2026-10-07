@@ -13,10 +13,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
-from agent_toolkit._agents_server import session_registry, state, status_file
+from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._agents_server import resume_waits, session_registry, shared_layout, shared_roots, state, status_file
+from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import state_paths
+from agent_toolkit._testing.agents_server_support import install_backend
 from agent_toolkit._testing.helpers import delivery_payload
 
 _STREAM_END = object()
@@ -29,7 +32,7 @@ _STATE_TIMEOUT = 10.0
 _RESUME_WAIT_TIMEOUT = 30.0
 
 
-def _wait_with_timeout(manager: subject.AgentsServerManager, timeout: float) -> Coroutine[Any, Any, dict[str, Any]]:
+def _wait_with_timeout(manager: server_manager.AgentsServerManager, timeout: float) -> Coroutine[Any, Any, dict[str, Any]]:
     """待機上限を確定してから引数なしのwaitを発行する。
 
     `wait`は待機上限を入力として受け取らないため、上限の導出結果だけをテスト用の値へ差し替える。
@@ -185,27 +188,27 @@ class ControlledClaudeClient:
 def _manager(
     client: ControlledClaudeClient,
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[subject.AgentsServerManager, claude_backend.ClaudeServerManager]:
-    manager = subject.AgentsServerManager()
+) -> tuple[server_manager.AgentsServerManager, claude_backend.ClaudeServerManager]:
+    manager = server_manager.AgentsServerManager()
     backend = claude_backend.ClaudeServerManager(
         manager.sessions,
         manager._condition,
         client_factory=lambda _options: client,
         expire_session=manager._expire_session,
     )
-    manager._claude = backend
+    install_backend(manager, "claude", backend)
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     return manager, backend
 
 
 async def _start(
-    manager: subject.AgentsServerManager,
+    manager: server_manager.AgentsServerManager,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> state.SessionState:
-    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.01)
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
     monkeypatch.setattr(
-        subject._atk_config,
+        _atk_config,
         "parse_unresolved_model_candidates",
         lambda _model_type: [("claude", "model", "high")],
     )
@@ -226,7 +229,7 @@ async def _await_state(predicate: Any, timeout: float = _STATE_TIMEOUT) -> None:
 @pytest.fixture(autouse=True)
 def _isolate_session_registry(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """各テストのsession登録簿を一時ディレクトリへ隔離する。"""
-    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
 
 def _emit_child_start(client: ControlledClaudeClient, session_id: str) -> None:
@@ -255,7 +258,7 @@ def _emit_child_start(client: ControlledClaudeClient, session_id: str) -> None:
 
 
 async def _auto_resume_after_child_termination(
-    manager: subject.AgentsServerManager,
+    manager: server_manager.AgentsServerManager,
     client: ControlledClaudeClient,
     session: state.SessionState,
     child_session_id: str,
@@ -275,11 +278,11 @@ async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -
     """状態writerを伴う再開はbackend応答後に前turnの結果を削除する。"""
     writer = status_file.StatusFileWriter(
         {},
-        status_file.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = subject.AgentsServerManager(writer)
+    manager = server_manager.AgentsServerManager(writer)
 
     class ResumeBackend:
         async def resume(
@@ -306,7 +309,7 @@ async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -
         async def close(self) -> None:
             """外部資源を持たないため何もしない。"""
 
-    manager._codex = ResumeBackend()
+    install_backend(manager, "codex", ResumeBackend())
     source = state.SessionState(
         "resume-result",
         str(tmp_path),
@@ -316,7 +319,7 @@ async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -
         model_type="high_tier",
         turn_seq=1,
     )
-    result_path = status_file.results_directory("root", tmp_path) / f"{source.session_id}.json"
+    result_path = shared_layout.results_directory("root", tmp_path) / f"{source.session_id}.json"
     result_path.parent.mkdir(parents=True)
     result_path.write_text("{}\n", encoding="utf-8")
     writer.activate()
@@ -573,7 +576,7 @@ async def test_unobserved_child_sessions_appear_in_error(
     tmp_path: pathlib.Path,
 ) -> None:
     """自動再開の待機期限まで終端しない孫sessionをerrorへ示す。"""
-    monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
+    monkeypatch.setattr(resume_waits, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     client = ControlledClaudeClient("claude-child-deadline")
     manager, backend = _manager(client, monkeypatch)
     child_session_id = "child-deadline"
@@ -596,7 +599,7 @@ async def test_unobserved_child_sessions_merge_into_existing_error(
     tmp_path: pathlib.Path,
 ) -> None:
     """既存の失敗内容を保ったまま未観測sessionをerrorへ併合する。"""
-    monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
+    monkeypatch.setattr(resume_waits, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     client = ControlledClaudeClient("claude-child-error")
     manager, backend = _manager(client, monkeypatch)
     child_session_id = "child-error"
@@ -626,7 +629,7 @@ async def test_unobserved_child_sessions_merge_with_existing_identifiers(tmp_pat
         "unobservedSessions": ["child-existing"],
     }
 
-    state.record_unobserved_sessions(session, {"child-existing", "child-new"})
+    resume_waits.record_unobserved_sessions(session, {"child-existing", "child-new"})
 
     assert session.error == {
         "message": "既存エラー",
@@ -636,16 +639,18 @@ async def test_unobserved_child_sessions_merge_with_existing_identifiers(tmp_pat
 
 def _codex_parent_with_child(
     tmp_path: pathlib.Path,
-) -> tuple[subject.AgentsServerManager, codex_backend.AppServerManager, state.SessionState, status_file.StatusFileWriter]:
+) -> tuple[
+    server_manager.AgentsServerManager, codex_backend.AppServerManager, state.SessionState, status_file.StatusFileWriter
+]:
     writer = status_file.StatusFileWriter(
         {},
-        status_file.StatusFileIdentity("root", "root.json", None),
+        shared_roots.StatusFileIdentity("root", "root.json", None),
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = subject.AgentsServerManager(writer)
+    manager = server_manager.AgentsServerManager(writer)
     backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
-    manager._codex = backend
+    install_backend(manager, "codex", backend)
     session = state.SessionState(
         "codex-parent",
         str(tmp_path),
@@ -730,7 +735,7 @@ async def test_codex_child_session_holds_result_until_single_auto_resume(
 
     async def resume(target: state.SessionState, prompt: str) -> dict[str, Any]:
         prompts.append(prompt)
-        state._begin_reply(target)
+        state.begin_reply(target)
         target.status = "completed"
         target.agent_message = "AUTO_RESUME_COMPLETED"
         target.turn_completed = True
@@ -951,7 +956,7 @@ async def test_pending_result_waits_for_background_task_up_to_bash_limit(
         await _await_state(lambda: session.awaiting_auto_resume)
         deadline = session.auto_resume_deadline
         assert deadline is not None
-        assert deadline - asyncio.get_running_loop().time() >= state.CLAUDE_BACKGROUND_BASH_MAX_SECONDS
+        assert deadline - asyncio.get_running_loop().time() >= resume_waits.CLAUDE_BACKGROUND_BASH_MAX_SECONDS
 
         client.emit(TaskNotificationMessage("long-ci-wait", "completed"))
         client.emit(ResultMessage("CIの結果を確認した", origin={"kind": "task-notification"}))
@@ -974,7 +979,7 @@ async def test_pending_result_is_finalized_without_auto_resume(
 
     確定した結果は待機表明であり、印が無いと委譲元は再開したturnの結果と取り違えて作業を進める。
     """
-    monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
+    monkeypatch.setattr(resume_waits, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.03)
     client = ControlledClaudeClient(f"claude-{completion}")
     manager, backend = _manager(client, monkeypatch)
@@ -1258,5 +1263,89 @@ async def test_unreported_turn_state_falls_back_with_single_warning(
         assert session.cli_turn_state is None
         warnings = [record for record in caplog.records if "claude_turn_state_unreported" in record.getMessage()]
         assert len(warnings) == 1
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_resumed_turn_is_not_finalized_by_previous_held_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """完了通知で再開したturnの実行中に前の保留期限が到来しても、古い待機表明を公開せず、再開したturnの結果を返す。
+
+    前のturnの保留を残すと、backendの待機ループとMCP層の常駐監視が期限の到来で待機表明を`completed`として公開し、
+    委譲元は再開したturnの作業が終わる前に結果を受け取る。
+    """
+    monkeypatch.setattr(resume_waits, "AUTO_RESUME_DEADLINE_SECONDS", 0.1)
+    client = ControlledClaudeClient("claude-stale-deadline", report_state=True)
+    manager, backend = _manager(client, monkeypatch)
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        client.emit(TaskStartedMessage("bg-1"))
+        client.finish_turn(ResultMessage("待機中: bg-1"))
+        await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+
+        client.emit(TaskNotificationMessage("bg-1", "completed"))
+        client.emit(_session_state("running"))
+        client.emit(AssistantMessage([SimpleNamespace(id="impl-tool", name="Bash", input={"command": "make test"})]))
+        await _await_state(lambda: session.cli_turn_state == "running" and session.last_action != "")
+        await asyncio.sleep(0.3)
+        await manager._advance_child_session_wait(session)
+
+        assert wait_task.done() is False
+        assert session.pending_result is None
+        assert manager.show_session(session.session_id)["status"] == "running"
+        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        result = await wait_task
+
+        assert (result["status"], result["agent_message"]) == ("completed", "RESUMED")
+        assert "error" not in result
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_type", ["local_bash", "local_agent"])
+@pytest.mark.parametrize("notification", ["before_result", "after_result"])
+async def test_previous_held_result_is_released_on_resumed_turn_start(
+    notification: str,
+    task_type: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """完了通知が前の結果より先でも後でも、再開したturnの開始で前の保留を解除し、期限の到来で待機表明を公開しない。
+
+    Stopの処理中に完了通知が先に届くと、CLIは`idle`を報告せずに次のturnを始め、`running`は保留の前に報告済みとなる。
+    この順序では次のturnの開始をモデルの出力で観測するため、`running`だけを契機にすると保留が残る。
+    """
+    monkeypatch.setattr(resume_waits, "AUTO_RESUME_DEADLINE_SECONDS", 0.1)
+    client = ControlledClaudeClient(f"claude-release-{notification}-{task_type}", report_state=True)
+    manager, backend = _manager(client, monkeypatch)
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        client.emit(TaskStartedMessage("bg-1", task_type=task_type))
+        if notification == "before_result":
+            client.emit(TaskNotificationMessage("bg-1", "completed"))
+            client.finish_turn(ResultMessage("待機中: bg-1"), next_turn_queued=True)
+            await _await_state(lambda: session.awaiting_auto_resume)
+        else:
+            client.finish_turn(ResultMessage("待機中: bg-1"))
+            await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+            client.emit(TaskNotificationMessage("bg-1", "completed"))
+            client.emit(_session_state("running"))
+        client.emit(AssistantMessage([SimpleNamespace(type="text", text="再開した作業を続ける")]))
+        await _await_state(lambda: not session.awaiting_auto_resume)
+        await asyncio.sleep(0.3)
+        await manager._advance_child_session_wait(session)
+        assert wait_task.done() is False
+
+        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        result = await wait_task
+
+        assert (result["status"], result["agent_message"]) == ("completed", "RESUMED")
+        assert session.auto_resume_consumed is True
     finally:
         await backend.close()

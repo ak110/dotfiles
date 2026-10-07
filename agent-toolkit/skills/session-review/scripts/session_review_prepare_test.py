@@ -16,7 +16,7 @@ import sys
 import pytest
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-from agent_toolkit._hooks import response_language_check
+from agent_toolkit._common import response_language_check, state_paths
 from agent_toolkit._testing import delegated_threads
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
@@ -30,7 +30,7 @@ _BACKGROUND_OUTPUT_NOTICE = (
 @pytest.fixture(autouse=True)
 def _isolate_failure_ledger(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """失敗署名の発生記録をテストごとの状態ディレクトリへ閉じる。"""
-    monkeypatch.setattr(prepare._atk_config, "state_dir", lambda: tmp_path / "state")  # pylint: disable=protected-access
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")  # pylint: disable=protected-access
 
 
 def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -215,12 +215,13 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert not list(work_dir.glob("*material*"))
 
 
-def test_prepare_excludes_answer_that_selects_offered_choice(
+def test_prepare_lists_offered_answer_as_mandatory_confirmation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """選択肢のlabelをそのまま選び自由記述の無い確認回答を、ユーザー介入候補ではなく確認回答として数える。
+    """選択肢のlabelをそのまま選び自由記述の無い確認回答を、ユーザー介入ではなく確認の候補として載せる。
 
-    候補に残すと、振り返りを行う主体が是正を含まない回答まで介入として分析し、実際の介入件数を過大に扱う。
+    介入として数えると是正を含まない回答まで介入として分析する。除外すると不要だった確認が件数だけになり、
+    確認の要否を振り返る入力から消える。確認の候補は再発防止策が必須の候補として1行JSONにも示す。
     """
     monkeypatch.setenv("PATH", str(tmp_path / "no-atk"))
     work_dir = _work_dir(tmp_path)
@@ -262,8 +263,134 @@ def test_prepare_excludes_answer_that_selects_offered_choice(
 
     record = json.loads(capsys.readouterr().out)
     assert "user-intervention" not in record["candidate_counts"]
-    assert record["excluded_counts"]["question-answer"] == 1
-    assert "既存機構へ統合" not in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    assert record["candidate_counts"]["confirmation-request"] == 1
+    assert "question-answer" not in record["excluded_counts"]
+    assert record["mandatory_candidates"] == ["c0001"]
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    assert "- c0001 confirmation-request（発生1件、再発防止策が必須）: 方針" in candidates
+    assert "  - 選択肢: 既存機構へ統合 / 新機構を追加" in candidates
+    assert "  - 回答: 既存機構へ統合" in candidates
+
+
+def _write_wi(root: pathlib.Path, state: str, name: str, frontmatter: dict[str, str], body: str) -> None:
+    """private-notesへWIを1件書く。frontmatterの形は`atk wi add`が保存する形に合わせる。"""
+    directory = root / state
+    directory.mkdir(parents=True, exist_ok=True)
+    head = "".join(f"{key}: {value}\n" for key, value in frontmatter.items())
+    (directory / name).write_text(f"---\n{head}---\n{body}", encoding="utf-8")
+
+
+def _uwi_body(question: str, answer: str) -> str:
+    return (
+        f"\n## 質問\n\n{question}\n\n## 判断材料\n\n- 材料\n\n## 回答\n\n"
+        f"<!-- ユーザーはこの行以降に回答を追記する -->\n{answer}\n"
+    )
+
+
+def _bash_entry(timestamp: str, call_id: str, command: str) -> dict[str, object]:
+    return {
+        "type": "assistant",
+        "timestamp": timestamp,
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}}],
+        },
+    }
+
+
+def test_prepare_marks_wi_candidates_and_similar_past_records(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """投入したUWIを確認の候補、WIの記入欄の是正を是正の候補として載せ、ユーザーの是正へ過去の同種記録を添える。
+
+    報告用UWI、選択肢と一致する回答、読んだだけのWI、引用の中のコマンド名は候補にしない。
+    過去の同種記録はユーザーの発話を保持する節だけと比べ、記入元のWI自身と短い文の一致を含めない。
+    """
+    session_id = "11111111-2222-3333-4444-555555555555"
+    root = tmp_path / "private-notes"
+    correction = "エージェントが判断すべきことをユーザーに委ねないで、判断できないことだけを聞いてほしい"
+    uwi = {"target_repo": "github.com/example/repo", "type": "uwi", "question_type": "choice", "choices": "進める,止める"}
+    _write_wi(
+        root, "adopted", "20261006-100000-001.md", {**uwi, "submitter_session": session_id}, _uwi_body("確認A？", "進める")
+    )
+    _write_wi(
+        root, "adopted", "20261006-100000-002.md", {**uwi, "submitter_session": session_id}, _uwi_body("確認B？", correction)
+    )
+    _write_wi(
+        root,
+        "inbox",
+        "20261006-100000-003.md",
+        {**uwi, "submitter_session": session_id},
+        _uwi_body("2026年10月6日のrepoの作業結果と振り返りについて、この対応で問題ありませんか？", "問題がある"),
+    )
+    _write_wi(root, "adopted", "20261006-100000-004.md", uwi, _uwi_body("他のセッションの確認？", "読んだだけの是正の記入"))
+    _write_wi(root, "processing", "20261006-100000-005.md", uwi, _uwi_body("処理した確認？", "処理した是正の記入"))
+    awi = {"target_repo": "github.com/example/repo", "type": "awi"}
+    _write_wi(
+        root, "processing", "20261006-100000-006.md", awi, "\n# 処理したAWI\n\n本文\n\n## ユーザーコメント\n\nコメントの是正\n"
+    )
+    _write_wi(root, "inbox", "20261006-100000-007.md", awi, "\n# 引用だけのAWI\n\n本文\n\n## ユーザーコメント\n\n引用の是正\n")
+    _write_wi(
+        root,
+        "adopted",
+        "20261001-163353-001.md",
+        awi,
+        f"\n# 過去の同種の是正への対策\n\n## ユーザー指摘の逐語引用\n\n```text\n{correction}。\n```\n",
+    )
+    _write_wi(root, "adopted", "20261001-163353-002.md", awi, f"\n# 本文だけに同じ文を持つ項目\n\n{correction}\n")
+    entries = [
+        {"type": "user", "timestamp": "2026-10-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
+        _bash_entry("2026-10-06T12:00:10Z", "toolu_show", "atk wi show --skip-pull 20261006-100000-004.md"),
+        _bash_entry("2026-10-06T12:00:20Z", "toolu_adopt", "atk wi adopt 20261006-100000-005.md --target-repo=/repo"),
+        _bash_entry("2026-10-06T12:00:30Z", "toolu_start", "atk wi start-processing 20261006-100000-006.md"),
+        _bash_entry("2026-10-06T12:00:40Z", "toolu_echo", "echo 'atk wi adopt 20261006-100000-007.md'"),
+        {"type": "user", "timestamp": "2026-10-06T12:01:00Z", "message": {"role": "user", "content": correction}},
+        {
+            "type": "user",
+            "timestamp": "2026-10-06T12:02:00Z",
+            "message": {"role": "user", "content": "上限をリセットした。続けて"},
+        },
+    ]
+    transcript = tmp_path / f"{session_id}.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
+
+    record = json.loads(capsys.readouterr().out)
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    confirmations = [line for line in candidates.splitlines() if "  - WI: " in line and "`## " not in line]
+    responses = [line for line in candidates.splitlines() if "  - WI: " in line and "`## " in line]
+    assert [line.split("WI: ")[1].split("（")[0] for line in confirmations] == [
+        "20261006-100000-001.md",
+        "20261006-100000-002.md",
+    ]
+    assert [line.split("WI: ")[1].split("（")[0] for line in responses] == [
+        "20261006-100000-002.md",
+        "20261006-100000-005.md",
+        "20261006-100000-006.md",
+    ]
+    assert record["candidate_counts"] == {"confirmation-request": 2, "user-intervention": 2, "wi-user-response": 3}
+    assert sorted(record["mandatory_candidates"]) == sorted(
+        line.split()[1] for line in candidates.splitlines() if "再発防止策が必須）" in line
+    )
+    assert len(record["mandatory_candidates"]) == 7
+    by_text = {
+        line.split()[1]: line for line in candidates.splitlines() if line.startswith("- c") and "再発防止策が必須" in line
+    }
+    intervention_id = next(
+        candidate_id for candidate_id, line in by_text.items() if "user-intervention" in line and "委ねないで" in line
+    )
+    response_id = next(
+        candidate_id for candidate_id, line in by_text.items() if "wi-user-response" in line and "委ねないで" in line
+    )
+    reset_id = next(candidate_id for candidate_id, line in by_text.items() if "上限をリセットした" in line)
+    # ユーザーの発話を保持する節（逐語引用、回答）に同じ文を持つWIだけを添え、本文だけに同じ文を持つ項目は含めない。
+    # 回答欄の是正では、記入元のUWI自身を過去の同種記録から除く。
+    assert record["similar_records"][intervention_id] == ["20261001-163353-001.md", "20261006-100000-002.md"]
+    assert record["similar_records"][response_id] == ["20261001-163353-001.md"]
+    assert record["similar_records"][reset_id] == []
+    assert "  - 過去の同種記録: 一致なし" in candidates
+    assert "    - 20261001-163353-001.md（adopted）: 過去の同種の是正への対策" in candidates
 
 
 @pytest.mark.parametrize(

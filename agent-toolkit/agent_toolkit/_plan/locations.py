@@ -1,4 +1,4 @@
-"""計画ファイルの保存先（`private-notes/plans/`）・参照表記・種別判定を扱う共通モジュール。
+"""計画ファイルの保存先（`~/.claude/plans`と`private-notes/plans/`）の解決、参照表記とパスの検証を扱う共通モジュール。
 
 新規計画は`~/.claude/plans/`直下で作業し、実行レビュー完了後は作成日の年月階層を付けて
 private-notesへ移す。計画本文が同じ計画に属する付属ファイルを参照する場合は、固定接頭辞
@@ -14,15 +14,15 @@ private-notesへ移す。計画本文が同じ計画に属する付属ファイ�
 from __future__ import annotations
 
 import datetime
-import json
 import os
 import pathlib
 import re
 import subprocess
 
-import platformdirs
-
+from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 
 PORTABLE_PLAN_PREFIX = "$(atk config get private_notes)/"
 """キューmetadataの`plan_file`と、計画本文に残る既存参照で受理する固定可搬接頭辞。"""
@@ -33,18 +33,10 @@ PLAN_ADJUNCT_REFERENCE_PREFIX = "~/.claude/plans/"
 NEW_PLANS_DIRECTORY = "plans"
 """private-notes直下の新しい計画root名。"""
 
-OWNER_RECORD_SUFFIX = ".owner.json"
-"""計画バンドルの所有セッションを記録するファイルのサフィックス。"""
+_UNRESOLVED_PRIVATE_NOTES_DIRNAME = ".plans-viewer-private-notes-unresolved"
 
-_OWNER_SESSION_ENVIRONMENT_KEYS = ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID")
-
-PROCESS_ROOT_SESSION_PREFIX = "mcp-"
-"""`agents_server`が会話の識別子を受け取らずに生成するプロセス専用のrootの接頭辞。
-
-`_agents_server.status_file.create_process_root_identity`が生成し、状態ファイルのrootと通知の配送には使うが、
-会話のセッションを表さない。
-"""
-
+# 自身をメイン計画の候補とする種別。移行で生成した旧ファイル名の検証でも、付属ファイルの名前をメイン計画として受理しない。
+_MAIN_CANDIDATE_KINDS = (_bundle_kinds.MAIN, _bundle_kinds.HANDOFF)
 _FORBIDDEN_NAME_CHARACTERS = set('/\\:*?"<>|')
 _CANONICAL_MAIN_RE = re.compile(r"(?P<day>[0-9]{2})-(?P<label>.+)-(?P<token>[0-9a-f]{4})\.md\Z")
 _MIGRATED_MAIN_RE = re.compile(r"(?P<day>[0-9]{2})-(?P<legacy_name>.+\.md)\Z")
@@ -72,14 +64,7 @@ def private_notes_root(
     """
     if private_notes is not None:
         return pathlib.Path(private_notes).expanduser()
-    override = os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES")
-    if override:
-        return pathlib.Path(override).expanduser()
-    home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
-    default = home_path / "private-notes"
-    if default.exists():
-        return default
-    return pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False)) / "private-notes"
+    return _private_notes.default_private_notes(pathlib.Path(home).expanduser() if home is not None else None)
 
 
 def find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
@@ -101,9 +86,12 @@ def new_plans_root(private_notes: pathlib.Path | str | None = None) -> pathlib.P
 
 
 def working_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
-    """実行レビュー完了まで使う`~/.claude/plans`の絶対パスを返す。"""
-    home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
-    return home_path / ".claude" / "plans"
+    """実行レビュー完了まで使う、Claude Codeの設定ディレクトリ配下の`plans`の絶対パスを返す。
+
+    `CLAUDE_CONFIG_DIR`が未設定なら`~/.claude/plans`となる。
+    """
+    home_path = pathlib.Path(home).expanduser() if home is not None else None
+    return _host_homes.claude_config_dir(home=home_path) / "plans"
 
 
 def legacy_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
@@ -111,80 +99,13 @@ def legacy_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
     return working_plans_root(home)
 
 
-def owner_record_path(main_plan_path: pathlib.Path | str) -> pathlib.Path:
-    """計画ファイル（メイン）のパスから所有記録のパスを返す。"""
-    path = pathlib.Path(main_plan_path)
-    return path.with_name(path.stem + OWNER_RECORD_SUFFIX)
+def unresolved_private_notes_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
+    """private-notesを解決できない場合に保存済み計画rootとして示す、実在しないディレクトリの絶対パスを返す。
 
-
-def resolve_owner_session_id() -> str | None:
-    """所有記録へ書くセッション識別子を環境から解決する。
-
-    委譲先には委譲元が`AGENT_TOOLKIT_OWNER_SESSION`で自身の識別子を渡す。
-    この値が無い場合は、実行中のセッション自身を示す`CLAUDE_CODE_SESSION_ID`を用いる。
-    Codex CLIが直接起動するMCPサーバーにはいずれの識別子も渡らないため、
-    そのMCPサーバーが作成した計画バンドルは所有記録を持たない。
-    いずれも非空の値を持たない場合は解決しない。
+    Claude Codeの設定ディレクトリ配下に置き、`atk serve`の計画ファイル画面とSSH先のヘルパーが同じ値を使う。
     """
-    for key in _OWNER_SESSION_ENVIRONMENT_KEYS:
-        value = os.environ.get(key)
-        if value:
-            return value
-    return None
-
-
-def resolve_conversation_session_id() -> str | None:
-    """計画の所有会話とUWIの投入元会話として記録できるセッション識別子を返す。
-
-    `resolve_owner_session_id`の値のうち、プロセス専用のrootは会話へ対応しないため除き、`None`を返す。
-    除いた場合も`CLAUDE_CODE_SESSION_ID`へは戻らない。委譲先自身の識別子は委譲元の会話を表さないためである。
-    """
-    session_id = resolve_owner_session_id()
-    if session_id is None or session_id.startswith(PROCESS_ROOT_SESSION_PREFIX):
-        return None
-    return session_id
-
-
-def write_owner_record(main_plan_path: pathlib.Path | str, *, session_id: str) -> pathlib.Path:
-    """計画バンドルの所有記録を出力し、出力したパスを返す。"""
-    path = owner_record_path(main_plan_path)
-    record = {"session_id": session_id, "recorded_at": datetime.datetime.now().astimezone().isoformat()}
-    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
-    return path
-
-
-def record_plan_owner(main_plan_path: pathlib.Path | str) -> pathlib.Path | None:
-    """所有会話を解決できた場合だけ所有記録を出力し、出力したパスを返す。
-
-    解決できない場合とプロセス専用のrootしか得られない場合は記録を残さず、呼び出し元の取得・作成そのものは成功として扱う。
-    """
-    session_id = resolve_conversation_session_id()
-    if session_id is None:
-        return None
-    return write_owner_record(main_plan_path, session_id=session_id)
-
-
-def read_owner_session_id(main_plan_path: pathlib.Path | str) -> str | None:
-    """所有記録が示すセッション識別子を返す。
-
-    記録が無い場合、JSONオブジェクトとして解釈できない場合、`session_id`が非空の文字列でない場合は
-    いずれも所有を確定できないものとして`None`を返す。
-    """
-    try:
-        record = json.loads(owner_record_path(main_plan_path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    if not isinstance(record, dict):
-        return None
-    session_id = record.get("session_id")
-    if isinstance(session_id, str) and session_id:
-        return session_id
-    return None
-
-
-def remove_owner_record(main_plan_path: pathlib.Path | str) -> None:
-    """計画バンドルの所有記録を回収する。"""
-    owner_record_path(main_plan_path).unlink(missing_ok=True)
+    home_path = pathlib.Path(home).expanduser() if home is not None else None
+    return _host_homes.claude_config_dir(home=home_path) / _UNRESOLVED_PRIVATE_NOTES_DIRNAME
 
 
 def _resolve(path: pathlib.Path) -> pathlib.Path:
@@ -287,7 +208,7 @@ def validate_working_plan_relative_path(relative_path: pathlib.Path | str) -> pa
         day = int(canonical.group("day"))
     elif migrated is not None:
         legacy_name = migrated.group("legacy_name")
-        if legacy_name.endswith((".detail.md", ".bugs.md", ".review.md", "-workaround-check.md")) or any(
+        if _bundle_kinds.kind_of_name(legacy_name) not in _MAIN_CANDIDATE_KINDS or any(
             character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in legacy_name
         ):
             raise ActionableError(
@@ -375,7 +296,7 @@ def validate_migrated_plan_relative_path(relative_path: pathlib.Path | str) -> p
             "移行済み計画ファイルの年月またはファイル名が不正です", next_action=_MIGRATED_PLAN_PATH_NEXT_ACTION
         )
     legacy_name = match.group("legacy_name")
-    if legacy_name.endswith((".detail.md", ".bugs.md", ".review.md", "-workaround-check.md")) or any(
+    if _bundle_kinds.kind_of_name(legacy_name) not in _MAIN_CANDIDATE_KINDS or any(
         character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in legacy_name
     ):
         raise ActionableError(
@@ -388,55 +309,18 @@ def validate_migrated_plan_relative_path(relative_path: pathlib.Path | str) -> p
     return pathlib.Path(*relative.parts)
 
 
-def _main_candidate_for_new_path(path: pathlib.Path) -> pathlib.Path | None:
-    """新root内のdetail/bugsから対応するメイン候補を返す。"""
-    name = path.name
-    if name.endswith((".review.md", "-workaround-check.md")):
-        return None
-    if name.endswith(".detail.md"):
-        return path.with_name(name[: -len(".detail.md")] + ".md")
-    if name.endswith(".bugs.md"):
-        return path.with_name(name[: -len(".bugs.md")] + ".md")
-    if name.endswith(".md"):
+def main_candidate_path(path: pathlib.Path) -> pathlib.Path | None:
+    """計画root内のファイルから、保存形式の名前の検証に使うメイン計画の候補パスを返す。
+
+    詳細と計画ファイル（バグ）は同じstemのメイン計画を、メイン計画と引き継ぎ記録は自身を候補とする。
+    他の種別は計画ファイルとして扱わず`None`を返す。
+    """
+    kind = _bundle_kinds.kind_of_name(path.name)
+    if kind in (_bundle_kinds.DETAIL, _bundle_kinds.BUGS):
+        main_name = _bundle_kinds.main_name_of(path.name)
+        return None if main_name is None else path.with_name(main_name)
+    if kind in _MAIN_CANDIDATE_KINDS:
         return path
-    return None
-
-
-_HANDOFF_SUFFIX = ".handoff.md"
-"""引き継ぎ記録の接尾辞。
-
-計画rootの内側へ置く計画本体以外の成果物であり、計画ファイルとして扱わない。
-"""
-
-
-def _new_plan_kind(file_path: str | os.PathLike[str]) -> str | None:
-    """`~/.claude/plans`または`private-notes/plans/`内の計画ファイルの種別を返す。"""
-    try:
-        path = _resolve(pathlib.Path(file_path))
-        working_root = _resolve(working_plans_root())
-        saved_root = _resolve(new_plans_root())
-        root = next(candidate for candidate in (working_root, saved_root) if path.is_relative_to(candidate))
-        candidate = _main_candidate_for_new_path(path)
-        if candidate is None:
-            return None
-        candidate_rel = candidate.relative_to(root)
-        if root == working_root and len(candidate_rel.parts) == 1:
-            validate_working_plan_relative_path(candidate_rel)
-        else:
-            try:
-                validate_plan_relative_path(candidate_rel)
-            except ValueError:
-                validate_migrated_plan_relative_path(candidate_rel)
-        if path.name.endswith(".bugs.md"):
-            return "adjunct"
-        if path.name.endswith(".detail.md"):
-            return "detail"
-        if path.name.endswith(_HANDOFF_SUFFIX):
-            return "handoff"
-        if path.name.endswith(".md"):
-            return "main"
-    except (OSError, StopIteration, ValueError):
-        return None
     return None
 
 
@@ -471,7 +355,7 @@ def resolve_plan_file(
         if allow_working_fallback and relative.parts and relative.parts[0] == NEW_PLANS_DIRECTORY:
             if len(relative.parts) == 4:
                 direct_candidate = _resolve(working_root / relative.name)
-                direct_main = _main_candidate_for_new_path(direct_candidate)
+                direct_main = main_candidate_path(direct_candidate)
                 try:
                     if direct_main is None:
                         raise ValueError("計画ファイルの種別が不正です")
@@ -533,10 +417,14 @@ def reject_saved_plans_root_write(
     checkout = pathlib.PurePosixPath(*relative.parts)
     # 付属ファイルは計画バンドルの単位で取得するため、同じstemのメイン計画を案内する。
     # CI対応レビュー指摘管理表（`ci-*.exec-review.tsv`）はそれ自体を取得の単位とする。
-    for suffix in (".exec-review.tsv", ".bugs.md"):
-        if checkout.name.endswith(suffix) and not checkout.name.startswith("ci-"):
-            checkout = checkout.with_name(checkout.name.removesuffix(suffix) + ".md")
-            break
+    kind = _bundle_kinds.kind_of_name(checkout.name)
+    main_name = _bundle_kinds.main_name_of(checkout.name)
+    if (
+        kind in (_bundle_kinds.EXEC_REVIEW, _bundle_kinds.BUGS)
+        and main_name is not None
+        and not checkout.name.startswith("ci-")
+    ):
+        checkout = checkout.with_name(main_name)
     raise ActionableError(
         f"保存済み計画の領域（{root}）のファイルは直接更新できない",
         next_action=(
@@ -597,7 +485,7 @@ def to_portable_plan_file(
     working_relative = _relative_to(resolved, working_plans_root(home))
     if working_relative is not None:
         try:
-            main_candidate = _main_candidate_for_new_path(resolved)
+            main_candidate = main_candidate_path(resolved)
             if main_candidate is not None:
                 relative_main = _relative_to(main_candidate, working_plans_root(home))
                 if relative_main is None:
@@ -627,88 +515,6 @@ def stored_plan_file_path(
 ) -> pathlib.Path:
     """保存済みplan_fileを読み取り用実体へ解決する別名。"""
     return resolve_plan_file(value, private_notes=private_notes)
-
-
-def _plan_file_name(file_path: str) -> str | None:
-    """旧`~/.claude/plans/`直下のファイル名を返す。"""
-    if not file_path:
-        return None
-    try:
-        path = _resolve(pathlib.Path(file_path))
-        plans_dir = _resolve(legacy_plans_root())
-        relative = path.relative_to(plans_dir)
-    except (OSError, ValueError):
-        return None
-    if len(relative.parts) != 1:
-        return None
-    return relative.parts[0]
-
-
-def _is_component_name(name: str) -> bool:
-    """`~/.claude/plans`の現行計画ファイル名を判定する。"""
-    if (
-        name.endswith(".detail.md")
-        or name.endswith(".plan-review.tsv")
-        or name.endswith(".review.md")
-        or name.endswith(".codex.log")
-        or name.endswith("-workaround-check.md")
-        or name.endswith(".bugs.md")
-        or name.endswith(_HANDOFF_SUFFIX)
-    ):
-        return False
-    return name.endswith(".md")
-
-
-def is_plan_component_file(file_path: str) -> bool:
-    """現行の計画ファイル（メイン）か判定する。"""
-    name = _plan_file_name(file_path)
-    if name is not None:
-        return _is_component_name(name)
-    try:
-        path = resolve_plan_file(file_path)
-    except (OSError, ValueError):
-        return False
-    return _new_plan_kind(path) == "main"
-
-
-def is_plan_main_file(file_path: str) -> bool:
-    """計画ファイル（メイン）か判定する。"""
-    name = _plan_file_name(file_path)
-    if name is not None:
-        return _is_component_name(name)
-    try:
-        path = resolve_plan_file(file_path)
-    except (OSError, ValueError):
-        return False
-    return _new_plan_kind(path) == "main"
-
-
-def is_plan_adjunct_file(file_path: str) -> bool:
-    """計画付属のbugsファイルか判定する。"""
-    name = _plan_file_name(file_path)
-    if name is not None:
-        return name.endswith(".bugs.md")
-    try:
-        path = resolve_plan_file(file_path)
-    except (OSError, ValueError):
-        return False
-    return _new_plan_kind(path) == "adjunct"
-
-
-def is_plan_handoff_file(file_path: str) -> bool:
-    """計画root配下の引き継ぎ記録か判定する。
-
-    引き継ぎ記録は計画本体ではないため、`agent-toolkit:plan-mode`の未起動を警告する判定の対象から外す。
-    起草中の素材を含むため、口語表現があるか確かめる対象からは外さない。
-    """
-    name = _plan_file_name(file_path)
-    if name is not None:
-        return name.endswith(_HANDOFF_SUFFIX)
-    try:
-        path = resolve_plan_file(file_path)
-    except (OSError, ValueError):
-        return False
-    return _new_plan_kind(path) == "handoff"
 
 
 # 実装側で読みやすい公開別名。既存hookの関数名は維持する。

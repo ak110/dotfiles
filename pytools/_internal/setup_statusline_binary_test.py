@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from pytools._internal import post_apply_outcome
 from pytools._internal import setup_statusline_binary as mod
 
 
@@ -88,7 +89,7 @@ class _GitAndMiseStub:
         self.build_calls: list[dict[str, typing.Any]] = []
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(mod.claude_common, "run_subprocess", self.run)
+        monkeypatch.setattr(mod.common, "run_subprocess", self.run)
         monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: Path("/fake/mise"))
 
     def run(self, command: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
@@ -167,7 +168,7 @@ def test_develop_builds_for_all_tracked_change_states(
     stub = _GitAndMiseStub()
     stub.install(monkeypatch)
 
-    assert mod.run() is True
+    assert mod.run().changed is True
 
     assert install_path.read_bytes() == b"LOCAL"
     _assert_local_build(stub, repo)
@@ -183,7 +184,7 @@ def test_develop_builds_for_nonignored_untracked_file(monkeypatch: pytest.Monkey
     stub.install(monkeypatch)
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
 
-    assert mod.run() is True
+    assert mod.run().changed is True
 
     assert install_path.read_bytes() == b"LOCAL"
     _assert_local_build(stub, repo)
@@ -202,7 +203,7 @@ def test_develop_without_statusline_diff_uses_release_download(monkeypatch: pyte
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: pytest.fail("miseを呼び出している"))
 
-    assert mod.run(client=_client(handler)) is True
+    assert mod.run(client=_client(handler)).changed is True
 
     assert install_path.read_bytes() == b"RELEASE"
     assert requested_urls
@@ -224,7 +225,7 @@ def test_develop_without_mise_uses_release_download(
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: None)
 
-    assert mod.run(client=_client(handler)) is True
+    assert mod.run(client=_client(handler)).changed is True
 
     assert install_path.read_bytes() == b"RELEASE"
     assert "開発版のビルドに必要なmiseが見つからないため、リリース版を取得します" in caplog.text
@@ -246,7 +247,7 @@ def test_ignored_untracked_file_uses_release_download(monkeypatch: pytest.Monkey
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: pytest.fail("miseを呼び出している"))
 
-    assert mod.run(client=_client(handler)) is True
+    assert mod.run(client=_client(handler)).changed is True
     assert install_path.read_bytes() == b"RELEASE"
 
 
@@ -262,7 +263,7 @@ def test_non_develop_branch_uses_release_download(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: pytest.fail("miseを呼び出している"))
 
-    assert mod.run(client=_client(handler)) is True
+    assert mod.run(client=_client(handler)).changed is True
     assert install_path.read_bytes() == b"RELEASE"
 
 
@@ -278,24 +279,29 @@ def test_non_git_working_tree_uses_release_download(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(working_tree))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: pytest.fail("miseを呼び出している"))
 
-    assert mod.run(client=_client(handler)) is True
+    assert mod.run(client=_client(handler)).changed is True
     assert install_path.read_bytes() == b"RELEASE"
 
 
-def test_missing_origin_master_raises_without_release_fallback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_missing_origin_master_skips_without_release_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """developでorigin/masterを解決できない場合はReleaseへ切り替えず失敗する。"""
     repo = _make_git_repo(tmp_path)
     _git(repo, ["update-ref", "-d", "refs/remotes/origin/master"])
     _, install_path, _ = _prepare_install_paths(monkeypatch, tmp_path)
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
 
-    with pytest.raises(RuntimeError, match="origin/master"):
-        mod.run()
+    with caplog.at_level("WARNING"):
+        assert mod.run() == post_apply_outcome.PostApplyOutcome()
+    assert "origin/master" in caplog.text
 
     assert not install_path.exists()
 
 
-def test_build_failure_preserves_existing_binary(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_build_failure_preserves_existing_binary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """ローカルビルド失敗時は既存バイナリを保持する。"""
     repo = _make_git_repo(tmp_path)
     _write_statusline_change(repo)
@@ -307,14 +313,17 @@ def test_build_failure_preserves_existing_binary(monkeypatch: pytest.MonkeyPatch
     stub = _GitAndMiseStub(build_returncode=1)
     stub.install(monkeypatch)
 
-    with pytest.raises(RuntimeError, match="ビルド"):
-        mod.run()
+    with caplog.at_level("WARNING"):
+        assert mod.run() == post_apply_outcome.PostApplyOutcome()
+    assert "ビルド" in caplog.text
 
     assert install_path.read_bytes() == b"OLD"
     assert etag_path.read_text(encoding="utf-8") == '"release"'
 
 
-def test_missing_build_artifact_preserves_existing_binary(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_missing_build_artifact_preserves_existing_binary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """ビルド成果物の読取失敗時は既存バイナリを保持する。"""
     repo = _make_git_repo(tmp_path)
     _write_statusline_change(repo)
@@ -325,8 +334,8 @@ def test_missing_build_artifact_preserves_existing_binary(monkeypatch: pytest.Mo
     stub = _GitAndMiseStub(write_artifact=False)
     stub.install(monkeypatch)
 
-    with pytest.raises(FileNotFoundError):
-        mod.run()
+    with caplog.at_level("WARNING"):
+        assert mod.run() == post_apply_outcome.PostApplyOutcome()
 
     assert install_path.read_bytes() == b"OLD"
 
@@ -334,6 +343,7 @@ def test_missing_build_artifact_preserves_existing_binary(monkeypatch: pytest.Mo
 def test_atomic_replace_failure_preserves_existing_binary_and_invalidates_etag(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """原子的配置が失敗しても既存バイナリを保持し、ETagを無効化する。"""
     repo = _make_git_repo(tmp_path)
@@ -349,10 +359,11 @@ def test_atomic_replace_failure_preserves_existing_binary_and_invalidates_etag(
     def fail_atomic_write(_path: Path, _content: bytes, **_kwargs: typing.Any) -> bool:
         return False
 
-    monkeypatch.setattr(mod.claude_common, "atomic_write_bytes", fail_atomic_write)
+    monkeypatch.setattr(mod.common, "atomic_write_bytes", fail_atomic_write)
 
-    with pytest.raises(RuntimeError, match="配置"):
-        mod.run()
+    with caplog.at_level("WARNING"):
+        assert mod.run() == post_apply_outcome.PostApplyOutcome()
+    assert "配置" in caplog.text
 
     assert install_path.read_bytes() == b"OLD"
     assert not etag_path.exists()
@@ -370,7 +381,7 @@ class TestRun:
         def handler(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, content=b"BINARY", headers={"etag": '"abc123"'})
 
-        assert mod.run(client=_client(handler)) is True
+        assert mod.run(client=_client(handler)).changed is True
         assert (install_dir / "claude-statusline").read_bytes() == b"BINARY"
         assert (install_dir / ".claude-statusline.etag").read_text(encoding="utf-8") == '"abc123"'
 
@@ -389,7 +400,7 @@ class TestRun:
             assert request.headers.get("if-none-match") == '"abc123"'
             return httpx.Response(304)
 
-        assert mod.run(client=_client(handler)) is False
+        assert mod.run(client=_client(handler)).changed is False
         assert binary_path.read_bytes() == b"OLD"
 
     def test_network_failure_returns_false_without_raising(self, tmp_path, monkeypatch: pytest.MonkeyPatch):
@@ -401,7 +412,7 @@ class TestRun:
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("boom", request=request)
 
-        assert mod.run(client=_client(handler)) is False
+        assert mod.run(client=_client(handler)).changed is False
 
 
 class TestDownloadUrlOverride:
@@ -419,5 +430,5 @@ class TestDownloadUrlOverride:
             requested_urls.append(str(request.url))
             return httpx.Response(200, content=b"BINARY")
 
-        assert mod.run(client=_client(handler)) is True
+        assert mod.run(client=_client(handler)).changed is True
         assert requested_urls == ["http://127.0.0.1:9/override"]

@@ -25,39 +25,35 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - plans commit/list: 現行計画またはCI対応レビュー指摘管理表の保存と作業中計画の一覧
 - managed-temp create/cleanup: managed-tempのディレクトリの作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
-- wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
+- wait-schedule: request bucketと公開情報から委譲待機用のcron式を出力する（`--format json`では定期再確認のpromptも）
 - agents wait/notify/list/show: 委譲sessionの待機・通知・一覧・詳細表示
 - run-script: plugin内部スクリプトを安定した公開名で実行する
 - run-command: 有限終了する外部コマンドの両ストリームと終了状態を保持する
 - run-skill: 定期実行から任意のスキルを自律モードで1回実行する
 
-ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
-`_atk_wi_process_loop`・`_atk_wi_uwi`の各補助モジュールに分割し、
-本モジュールはargparse定義・dispatch・エントリポイントを保持する。
+各サブコマンドの引数の登録と実行は、それぞれのモジュールの`build_parser`と`dispatch`が持つ
+（`atk wi`配下は`agent_toolkit._atk.wi.cli`）。本モジュールは共通の前処理（旧形式の引数の解決、出力の保存、
+managed-tempの掃引）と、サブコマンドの登録表・実行の登録表だけを持つ。
 """
 
 import argparse
 import dataclasses
 import datetime
+import functools
 import hashlib
-import importlib
-import json
-import math
 import os
 import pathlib
-import re
-import subprocess
 import sys
 from collections.abc import Callable
-from typing import Any
 
 # pylint: disable=wrong-import-position,protected-access
 from agent_toolkit._agents_server import commands as _agents  # noqa: E402
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
+from agent_toolkit._atk import cli_support as _cli_support
 from agent_toolkit._atk import commit as _commit_cmd  # noqa: E402
 from agent_toolkit._atk import config as _config_cmd  # noqa: E402
-from agent_toolkit._atk import git_sync as _atk_git_sync  # noqa: E402
 from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
+from agent_toolkit._atk import info as _info
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
 from agent_toolkit._atk import outcome as _outcome  # noqa: E402
 from agent_toolkit._atk import output_file as _output_file  # noqa: E402
@@ -69,55 +65,17 @@ from agent_toolkit._atk import run_script as _run_script  # noqa: E402
 from agent_toolkit._atk import run_skill as _run_skill  # noqa: E402
 from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
 from agent_toolkit._atk import user_events_summary as _user_events_summary  # noqa: E402
+from agent_toolkit._atk import wait_schedule as _wait_schedule_cmd
 from agent_toolkit._atk import watch as _watch  # noqa: E402
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
 from agent_toolkit._atk.environment import is_agent_environment  # noqa: E402
-from agent_toolkit._atk.wi import add as _add  # noqa: E402
-from agent_toolkit._atk.wi import batch as _batch  # noqa: E402
-from agent_toolkit._atk.wi import common as _common  # noqa: E402
-from agent_toolkit._atk.wi import constants as _constants  # noqa: E402
-from agent_toolkit._atk.wi import grep as _grep  # noqa: E402
-from agent_toolkit._atk.wi import listing as _list  # noqa: E402
-from agent_toolkit._atk.wi import mutations as _mutations  # noqa: E402
-from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402
-from agent_toolkit._atk.wi import repo as _wi_repo  # noqa: E402
-from agent_toolkit._atk.wi import show as _show  # noqa: E402
-from agent_toolkit._atk.wi import uwi as _uwi  # noqa: E402
-from agent_toolkit._common import next_action as _next_action  # noqa: E402
-from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
-from agent_toolkit._hooks import session_state as _session_state  # noqa: E402
-from agent_toolkit._plan import locations as _plan_file  # noqa: E402
-
-_queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
-_active_filename_completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES)
-_editable_filename_completer = _common.make_filename_completer(_common.WI_EDITABLE_STATES)
-_removable_filename_completer = _common.make_filename_completer(_common.WI_STATES)
-_hold_filename_completer = _common.make_filename_completer((_common.WI_STATE_HOLD,))
-_inbox_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX,))
-_holdable_filename_completer = _common.make_filename_completer(
-    (_common.WI_STATE_INBOX, _common.WI_STATE_PROCESSING, _common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED)
-)
-_returnable_filename_completer = _common.make_filename_completer(
-    (_common.WI_STATE_PROCESSING, _common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED)
-)
-_uwi_filename_completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES, _common.WI_TYPE_UWI)
-
-_WI_SYNC_MUTATIONS = frozenset(
-    (
-        "add",
-        "start-processing",
-        "hold",
-        "unhold",
-        "return-to-inbox",
-        "adopt",
-        "reject",
-        "rm",
-        "edit",
-        "set-dependencies",
-        "answer",
-        "commit",
-    )
-)
+from agent_toolkit._atk.serve import command as _serve_command
+from agent_toolkit._atk.wi import cli as _wi_cli
+from agent_toolkit._atk.wi import cli_input as _wi_cli_input
+from agent_toolkit._common import delegated_session as _delegated_session  # noqa: E402
+from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
+from agent_toolkit._common import session_state as _session_state  # noqa: E402
+from agent_toolkit._plan import owner_records as _owner_records  # noqa: E402
 
 _UNREGISTERED_TEMP_FINGERPRINT_KEY = "unregistered_managed_temp_fingerprint"
 
@@ -127,7 +85,7 @@ _MANAGED_TEMP_CHECK_NEXT_ACTION = "本来の操作は継続した。`atk managed
 
 def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bool:
     """候補集合が現行セッションで未報告の場合だけ警告権を取得する。"""
-    session_id = _plan_file.resolve_owner_session_id()
+    session_id = _owner_records.resolve_owner_session_id()
     if session_id is None:
         return bool(candidates)
     source = "\0".join(str(path) for path in candidates)
@@ -145,22 +103,6 @@ def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bo
 
     _session_state.update_state(session_id, _claim)
     return should_warn
-
-
-def _argument_type_error(reason: str, next_action: str) -> argparse.ArgumentTypeError:
-    """理由と次の操作の行を持つargparse向けの型エラーを返す。"""
-    return argparse.ArgumentTypeError(_next_action.with_next_action(reason, next_action))
-
-
-def _cooldown_days(value: str) -> int:
-    """3以上の再処理抑制日数をargparse向けに検証する。"""
-    try:
-        days = int(value)
-    except ValueError as error:
-        raise _argument_type_error(f"整数ではない: {value}", "3以上の整数を指定する") from error
-    if days < 3:
-        raise _argument_type_error(f"3未満の値: {value}", "3以上の整数を指定する")
-    return days
 
 
 _LEGACY_TOP_LEVEL_COMMANDS = {"mq": "wi"}
@@ -211,813 +153,31 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
         # 本文としての空メッセージ（UWIの空質問等）を誤ってREPO_PATHと誤認するため除外する。
         return argv, None
     candidate_path = pathlib.Path(candidate).expanduser()
-    if not _common.is_existing_dir(candidate_path):
+    if not _wi_cli_input.is_existing_dir(candidate_path):
         return argv, None
     new_argv = argv[:candidate_index] + argv[candidate_index + 1 :]
     return new_argv, str(candidate_path)
 
 
-def _source_filter_type(value: str) -> str:
-    """`--source`の値を検証するargparse `type=`コールバック。
-
-    先頭`!`を除いた残りが空文字列の場合（`--source=`・`--source=!`）は`ArgumentTypeError`を送出する。
-    """
-    remainder = value[1:] if value.startswith("!") else value
-    if not remainder:
-        raise _argument_type_error("空文字列は指定できません", "空でない投入元識別子を指定する（例: --source=session-review）")
-    return value
-
-
-def _port_type(value: str) -> int:
-    """`--port`の値を1から65535までの整数として検証する。"""
-    try:
-        port = int(value)
-    except ValueError as error:
-        raise _argument_type_error(f"portが整数ではない: {value}", "portは1から65535までの整数で指定する") from error
-    if not 1 <= port <= 65535:
-        raise _argument_type_error(f"portが範囲外である: {value}", "portは1から65535までの整数で指定する")
-    return port
-
-
-def _nonnegative_finite_float(value: str) -> float:
-    """0以上の有限な浮動小数点数だけをargparseへ渡す。"""
-    try:
-        parsed = float(value)
-    except ValueError as exc:
-        raise _argument_type_error(f"数値ではない: {value}", "0以上の有限な数値を指定する") from exc
-    if not math.isfinite(parsed) or parsed < 0:
-        raise _argument_type_error(f"0以上の有限な数値ではない: {value}", "0以上の有限な数値を指定する")
-    return parsed
-
-
-def _worktree_name(value: str) -> str:
-    """worktree名としてパス逸脱を起こさない値を検証する。"""
-    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value) is None or ".." in value:
-        raise _argument_type_error(
-            f"worktree名として使えない: {value}",
-            "worktree名は英数字で始め、英数字・`.`・`_`・`-`だけで指定し、`..`を含めない",
-        )
-    return value
-
-
-def _add_source_arg(parser: argparse.ArgumentParser, *, multiple: bool = False) -> None:
-    """`--source`オプションを共通形式で登録する。"""
-    parser.add_argument(
-        "--source",
-        metavar="NAME",
-        type=_source_filter_type,
-        action="append" if multiple else "store",
-        default=None,
-        help=(
-            "投入元識別子（frontmatterのsource）で限定する。完全一致の値、"
-            "または先頭に`!`を付けた否定指定（無指定エントリも対象に含む）を指定する。"
-            "空文字列（`--source=`・`--source=!`）は拒否する。"
-            "例: --source=session-review、--source=!session-review"
-        ),
-    )
-
-
-def _add_target_repo_arg(
-    parser: argparse.ArgumentParser,
-    *,
-    help_extra: str = "",
-    multiple: bool = False,
-    required: bool = False,
-    allow_all: bool = False,
-    resolved_by_consumer: bool = False,
-) -> None:
-    """`--target-repo`オプションを共通形式で登録する。
-
-    受理条件をヘルプ文面と同じ位置で確定する。`allow_all`は対象を限定しない`all`を受理するか、
-    `resolved_by_consumer`はサブコマンド自身が未指定時の解決を行うかを表す。
-    登録した値は`_resolve_wi_target_repo`が読み取る。
-    """
-    default_note = (
-        "" if required else "省略時はカレントディレクトリが属するリポジトリを対象とし、Gitの作業ツリー外では対象を限定しない。"
-    )
-    all_note = f"`{_wi_repo.TARGET_REPO_ALL}`を指定すると対象を限定しない。" if allow_all else ""
-    parser.add_argument(
-        "--target-repo",
-        metavar="REPO",
-        action="append" if multiple else "store",
-        default=None,
-        required=required,
-        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターまたは検証する。" + default_note + all_note + help_extra,
-    )
-    parser.set_defaults(
-        _target_repo_multiple=multiple,
-        _target_repo_allow_all=allow_all,
-        _target_repo_resolved_by_consumer=resolved_by_consumer,
-        target_repo_defaulted=False,
-    )
-
-
-def _absolute_note_path(raw_path: str) -> pathlib.Path:
-    """メモファイルの絶対パスだけを受理する。"""
-    path = pathlib.Path(raw_path)
-    if not path.is_absolute():
-        raise _argument_type_error(f"--note-fileが絶対パスではない: {raw_path}", "--note-fileには絶対パスを指定する")
-    return path
-
-
-def _add_note_args(parser: argparse.ArgumentParser, *, help_text: str) -> None:
-    """文字列またはUTF-8ファイルからメモを受け取る排他引数を登録する。"""
-    note = parser.add_mutually_exclusive_group()
-    note.add_argument("--note", metavar="TEXT", default=None, help=help_text)
-    note.add_argument(
-        "--note-file",
-        metavar="PATH",
-        type=_absolute_note_path,
-        default=None,
-        help=(
-            "メモを記載したUTF-8ファイルの絶対パス。引用符・改行・バッククォートを含む本文を"
-            "シェルのエスケープを介さず渡す場合に使う。--noteとは併用できない。"
-        ),
-    )
-
-
-def _add_mq_read_sync_args(parser: argparse.ArgumentParser) -> None:
-    """読み取り専用`mq`サブコマンドの同期制御オプションを登録する。"""
-    sync = parser.add_mutually_exclusive_group()
-    sync.add_argument(
-        "--skip-pull",
-        action="store_true",
-        help="remote同期全体をスキップする（ログイン時など軽量参照用）。",
-    )
-    sync.add_argument(
-        "--pull",
-        action="store_true",
-        help="直近の同期省略判定を上書きしてremote同期を必ず実行する。",
-    )
-
-
-def _add_wi_add_parser(sub: Any) -> None:
-    """投入サブコマンドを登録する。"""
-    add = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk wi add"])
-    add.add_argument(
-        "--body-file",
-        metavar="PATH",
-        action="append",
-        default=None,
-        help=(
-            "本文を記載したファイルのパス。複数回指定すると複数件を投入する。"
-            "引用符・改行を含む長文をシェルのエスケープを介さずに渡す場合に使う。"
-        ),
-    )
-    add.add_argument(
-        "--batch",
-        action="store_true",
-        help=(
-            "`atk wi show --all`の出力形式で複数エントリを一括登録する。"
-            "移行・復元用途であり、frontmatter・本文を原文保持で取り込み"
-            "（target_commitの再取得・UWI見出しの再生成を行わない）、"
-            "ファイル名は取り込み先と衝突しない限り元名を維持する。"
-            "対象リポジトリは各エントリのfrontmatterのtarget_repoだけを用いる。"
-            "--type・--scope・--question-type・--choices・--depends-on・"
-            "--target-repo・--sourceとは併用できない。"
-            "show形式は可逆な直列化ではないため、本文が完全なshow形式エントリの引用を含む場合に"
-            "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行・"
-            "構造見出し（`# awi`・`# uwi`・`## target_repo: ...`）と同形の末尾行を"
-            "復元できない点は限界として許容する。"
-            "改行はCRLF・単独CRを含む入力もLFへ正規化して保存する。"
-        ),
-    )
-    add.add_argument(
-        "--dry-run",
-        action="store_true",
-        help=(
-            "本文と引数の検証だけを行い、private-notes、remoteおよび対象リポジトリのいずれも変更せずに終了する。"
-            "検証が成立しない場合は終了コード1で終わる。--batchとは併用できない。"
-        ),
-    )
-    add.add_argument(
-        "--type",
-        choices=_common.WI_TYPES,
-        default=None,
-        help="投入する種別。省略時はawiとして投入する。uwiを指定すると確認事項として投入する。",
-    )
-    add.add_argument(
-        "--scope",
-        metavar="NAME",
-        default=None,
-        help="UWIの適用範囲を表す識別子。`--type=uwi`でのみ指定できる。",
-    )
-    add.add_argument(
-        "--question-type",
-        metavar="{" + ",".join(_constants.NEW_QUESTION_TYPES) + "}",
-        default=None,
-        help=(
-            "UWIの回答形式。`--type=uwi`では必須とし、`--type=uwi`でのみ指定できる。"
-            "選択肢から選ぶ問いは`choice`（`--choices`も指定する）、2択の可否を問う問いは`yes-no`とする。"
-            "選択肢に無い回答は回答欄で受ける。"
-        ),
-    )
-    add.add_argument(
-        "--choices",
-        metavar="A,B,C",
-        default=None,
-        help="UWIの選択肢をASCIIカンマ区切りで指定する。`--question-type=choice`で必要となる。",
-    )
-    add.add_argument(
-        "--depends-on",
-        metavar="FILENAME",
-        action="append",
-        default=None,
-        help="AWIが処理完了を待つキュー項目。--type=awiでのみ指定でき、複数回指定できる。",
-    )
-    add.add_argument(
-        "--source",
-        metavar="NAME",
-        default=None,
-        help=(
-            "投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: "
-            "session-review・alert-monitor・agent・human・plan）。"
-            "本文先頭のfrontmatterに source がある場合は本オプションより優先する。"
-        ),
-    )
-    _add_target_repo_arg(
-        add,
-        help_extra=(
-            "ローカルパス指定時は指定worktree、正規化リモートURL指定時は"
-            "ローカルHEADを持たないリポジトリ識別子として解決する。"
-            "frontmatterにtarget_repoが明示されていない場合のfallback値として扱う。"
-        ),
-        resolved_by_consumer=True,
-    )
-    add.set_defaults(subparser=add)
-
-
-def _add_mq_read_parsers(sub: Any) -> None:
-    """一覧・表示サブコマンドを登録する。"""
-    # 旧名`--json`・`--no-json`が改名後の`--jsonl`・`--no-jsonl`の省略形として受理され続けないよう、
-    # 省略したオプション名では一致と判定しない。
-    list_ = _atk_help.add_command(sub, "list", allow_abbrev=False, **_atk_help.HELP["atk wi list"])
-    _add_target_repo_arg(list_, multiple=True, allow_all=True)
-    list_.add_argument(
-        "--type",
-        choices=("all", *_common.WI_TYPES),
-        action="append",
-        default=None,
-        help="出力対象種別。省略時は全種別を表示する。",
-    )
-    list_.add_argument(
-        "--state",
-        "--status",
-        dest="status",
-        choices=("all", "active", "processable", *_common.WI_STATES),
-        action="append",
-        default=None,
-        help=(
-            "状態フォルダで表示範囲を限定する。省略時はactiveを表示する。"
-            "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
-            "回答状況での限定は`--answered`で別途行う。"
-        ),
-    )
-    list_.add_argument(
-        "--answered",
-        choices=("all", "yes", "no"),
-        action="append",
-        default=None,
-        help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
-    )
-    _add_source_arg(list_, multiple=True)
-    output = list_.add_mutually_exclusive_group()
-    output.add_argument(
-        "--count",
-        action="store_true",
-        help="エントリ件数を整数のみで出力する（種別ヘッダを抑制する）。",
-    )
-    output.add_argument(
-        "--summary-only",
-        action="store_true",
-        help="ファイル名と要約だけを持つ1件1行のJSON Lines形式で出力する。",
-    )
-    output.add_argument(
-        "--jsonl",
-        action="store_true",
-        help="端末幅に依存しない1件1行のJSON Lines形式で出力する。",
-    )
-    output.add_argument(
-        "--no-jsonl",
-        action="store_true",
-        help="JSON Linesの代わりに従来のテキスト形式で出力する。",
-    )
-    list_.add_argument(
-        "--with-staleness",
-        action="store_true",
-        help="picker向けにtarget_commit以後の履歴の鮮度情報をJSONへ加える。",
-    )
-    _add_mq_read_sync_args(list_)
-    list_.set_defaults(subparser=list_)
-
-    show = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk wi show"])
-    show.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="*",
-        help="表示するファイル名（複数指定可。省略時は--allの指定が必要）。全状態フォルダを探索する。",
-    ).completer = _queue_filename_completer  # type: ignore[attr-defined]
-    show.add_argument(
-        "--all",
-        action="store_true",
-        help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
-    )
-    _add_target_repo_arg(
-        show,
-        multiple=True,
-        allow_all=True,
-        help_extra="FILENAME指定時は明示的照会として扱い、省略時の限定を適用しない。",
-    )
-    show.add_argument(
-        "--summary-only",
-        action="store_true",
-        help=(
-            "target_repoとファイル名・状態の見出しに続けて、AWIはH1表題、UWIは質問本文の先頭行だけを"
-            "省略せずに1行で表示し、frontmatterと他の本文を省く。"
-        ),
-    )
-    show.add_argument(
-        "--type",
-        choices=("all", *_common.WI_TYPES),
-        action="append",
-        default=None,
-        help="出力対象種別。省略時は全種別を表示する。",
-    )
-    show.add_argument(
-        "--state",
-        "--status",
-        dest="status",
-        choices=("all", "active", "processable", *_common.WI_STATES),
-        action="append",
-        default=None,
-        help=(
-            "状態フォルダで表示範囲を限定する。省略時はactiveを対象とする。--all指定時のみ有効。"
-            "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
-            "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
-        ),
-    )
-    show.add_argument(
-        "--answered",
-        choices=("all", "yes", "no"),
-        action="append",
-        default=None,
-        help="UWIの回答状況で限定する。省略時は全ての回答状況を対象とする。--all指定時のみ有効。`yes`・`no`指定時はAWIを除外する。",
-    )
-    _add_source_arg(show, multiple=True)
-    _add_mq_read_sync_args(show)
-    show.set_defaults(subparser=show)
-
-
-def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
-    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢と省略時の値で追加する。
-
-    一括フィルターの綴りは`--status`だけとする。`rm`と`return-to-inbox`は
-    個別指定の探索先と差し戻し元を`--state`で受け取るため、同じ綴りが2つの概念を指す状態を避ける。
-    フィルター専用の`list`・`show`・`grep`だけが`--state`を正式名として受理する。
-    """
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help=f"--target-repoとフィルターに一致する全項目を{action_label}する。確認時は候補一覧を表示する。",
-    )
-    parser.add_argument(
-        "--type",
-        choices=("all", *_common.WI_TYPES),
-        action="append",
-        default=None,
-        help="--allの対象種別。省略時は全種別を対象とする。",
-    )
-    parser.add_argument(
-        "--status",
-        dest="status",
-        choices=("all", "active", "processable", *_common.WI_STATES),
-        action="append",
-        default=None,
-        help="--allの対象状態。省略時はactiveを対象とする。listと同じ集合名を受理する。",
-    )
-    parser.add_argument(
-        "--answered",
-        choices=("all", "yes", "no"),
-        action="append",
-        default=None,
-        help="--allのUWI回答状況。省略時は全ての回答状況を対象とする。",
-    )
-    _add_source_arg(parser, multiple=True)
-    parser.add_argument(
-        "--yes",
-        action="store_true",
-        help=f"--allによる一括{action_label}の候補一覧と確認入力を省略する。",
-    )
-    parser.add_argument(
-        "--skip-pull",
-        action="store_true",
-        help=(
-            f"{action_label}対象の選定・確認をremote同期せずローカル状態で行う"
-            f"（{action_label}の直前は毎回同期する）。--all指定時のみ有効。"
-        ),
-    )
-
-
-def _add_mq_transition_parsers(sub: Any) -> None:
-    """状態遷移・削除サブコマンドを登録する。"""
-    start_processing = _atk_help.add_command(sub, "start-processing", **_atk_help.HELP["atk wi start-processing"])
-    start_processing.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="*",
-        help="処理開始するAWIまたはUWIのファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
-    _add_bulk_transition_args(start_processing, action_label="処理開始")
-    _add_target_repo_arg(
-        start_processing,
-        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
-        multiple=True,
-    )
-    start_processing.set_defaults(subparser=start_processing)
-
-    hold = _atk_help.add_command(sub, "hold", **_atk_help.HELP["atk wi hold"])
-    hold.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="*",
-        help="保留するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _holdable_filename_completer
-    hold.add_argument(
-        "--state",
-        choices=(_common.WI_STATE_PROCESSING, _common.WI_STATE_ADOPTED, _common.WI_STATE_REJECTED),
-        default=None,
-        help=(
-            "終端した項目、またはエージェント環境で処理中の項目を保留する場合に指定する。"
-            "省略時はinboxまたはprocessingから保留する。ただしエージェント環境ではprocessingの項目を保留せず失敗する。"
-            "--allとは併用できない。"
-        ),
-    )
-    _add_bulk_transition_args(hold, action_label="保留")
-    _add_target_repo_arg(
-        hold,
-        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
-        multiple=True,
-    )
-    hold.set_defaults(subparser=hold)
-
-    unhold = _atk_help.add_command(sub, "unhold", **_atk_help.HELP["atk wi unhold"])
-    unhold.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="*",
-        help="保留を解除するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _hold_filename_completer
-    _add_bulk_transition_args(unhold, action_label="保留解除")
-    _add_target_repo_arg(
-        unhold,
-        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
-        multiple=True,
-    )
-    unhold.set_defaults(subparser=unhold)
-
-    return_to_inbox = _atk_help.add_command(sub, "return-to-inbox", **_atk_help.HELP["atk wi return-to-inbox"])
-    return_to_inbox.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="*",
-        help="差し戻すファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _returnable_filename_completer  # type: ignore[attr-defined]
-    return_to_inbox.add_argument(
-        "--cooldown-days",
-        type=_cooldown_days,
-        default=None,
-        metavar="DAYS",
-        help="時間経過だけで解除される待機のため、指定日数（3以上）だけ再処理対象から除外する。",
-    )
-    return_to_inbox.add_argument(
-        "--state",
-        choices=(_common.WI_STATE_REJECTED, _common.WI_STATE_ADOPTED),
-        default=None,
-        help="adoptedまたはrejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。--allとは併用できない。",
-    )
-    _add_bulk_transition_args(return_to_inbox, action_label="差し戻し")
-    _add_target_repo_arg(
-        return_to_inbox,
-        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
-        multiple=True,
-    )
-    return_to_inbox.set_defaults(subparser=return_to_inbox)
-
-    adopt = _atk_help.add_command(sub, "adopt", **_atk_help.HELP["atk wi adopt"])
-    adopt.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="*",
-        help="採用するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
-    _add_note_args(
-        adopt,
-        help_text="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
-    )
-    adopt.add_argument(
-        "--commit",
-        metavar="SHA",
-        default=None,
-        help=(
-            "ローカルworktreeとrevisionを検証し、一意な長さの短縮OIDと件名を記録する。短縮OIDと完全OIDのどちらも受理する。"
-            "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
-            "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
-            "--commit=VALUE形式で渡すことを推奨。"
-        ),
-    )
-    adopt.add_argument(
-        "--skip-push",
-        action="store_true",
-        help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
-    )
-    _add_bulk_transition_args(adopt, action_label="採用")
-    _add_target_repo_arg(
-        adopt,
-        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
-        multiple=True,
-    )
-    adopt.set_defaults(subparser=adopt)
-
-    reject = _atk_help.add_command(sub, "reject", **_atk_help.HELP["atk wi reject"])
-    reject.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="*",
-        help="不採用とするファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
-    _add_note_args(
-        reject,
-        help_text="不採用理由のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
-    )
-    reject.add_argument(
-        "--commit",
-        metavar="SHA",
-        default=None,
-        help=(
-            "ローカルworktreeとrevisionを検証し、一意な長さの短縮OIDと件名を記録する。短縮OIDと完全OIDのどちらも受理する。"
-            "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
-            "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
-            "--commit=VALUE形式で渡すことを推奨。"
-        ),
-    )
-    reject.add_argument(
-        "--skip-push",
-        action="store_true",
-        help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
-    )
-    reject.add_argument(
-        "--if-inbox",
-        action="store_true",
-        help=(
-            "pull後も全対象がinboxにある場合だけ不採用とし、processingへ移った対象があれば全体を変更しない。"
-            "--allとは併用できない。"
-        ),
-    )
-    _add_bulk_transition_args(reject, action_label="不採用")
-    _add_target_repo_arg(
-        reject,
-        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
-        multiple=True,
-    )
-    reject.set_defaults(subparser=reject)
-
-    rm = _atk_help.add_command(sub, "rm", **_atk_help.HELP["atk wi rm"])
-    rm.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="*",
-        help="削除するファイル名。--allと併用せず、個別削除では1個以上を指定する。",
-    ).completer = _removable_filename_completer  # type: ignore[attr-defined]
-    _add_bulk_transition_args(rm, action_label="削除")
-    rm.add_argument(
-        "--state",
-        choices=_common.WI_STATES,
-        default=None,
-        help="個別削除で探索する状態を明示する。--allとは併用できない。",
-    )
-    rm.add_argument(
-        "--force",
-        action="store_true",
-        help="processing状態のファイルも削除する（指定しない場合は保護して削除を拒否する）。",
-    )
-    _add_note_args(
-        rm,
-        help_text="削除の理由を記録するメモ。`--note=VALUE`の形式で渡すことを推奨する。",
-    )
-    _add_target_repo_arg(
-        rm,
-        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は削除対象を限定する。",
-        multiple=True,
-    )
-    rm.set_defaults(subparser=rm)
-
-
-def _add_mq_edit_parsers(sub: Any) -> None:
-    """本文編集・計画変換・依存更新サブコマンドを登録する。"""
-    edit = _atk_help.add_command(sub, "edit", **_atk_help.HELP["atk wi edit"])
-    edit.add_argument(
-        "filename",
-        metavar="FILENAME",
-        nargs="?",
-        default=None,
-        help=(
-            "編集対象のファイル名（inbox・processing・holdいずれも対象）。"
-            "--body-fileとともに指定すると非対話で編集する。"
-            "省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を$EDITORで編集する。"
-        ),
-    ).completer = _editable_filename_completer  # type: ignore[attr-defined]
-    edit.add_argument(
-        "--body-file",
-        metavar="PATH",
-        default=None,
-        help=(
-            "UTF-8ファイルの内容を本文として読み込む。"
-            "先頭frontmatterで明示したメタデータだけを更新し、未指定メタデータを保持する。"
-        ),
-    )
-    edit.add_argument(
-        "--append",
-        action="store_true",
-        help="FILENAMEの元のraw bytesを保ち、--body-fileの本文をUTF-8で末尾へ追記する。UWIは対象外。",
-    )
-    edit.add_argument(
-        "--cooldown-until",
-        metavar="DATETIME",
-        default=None,
-        help="inbox・holdの再処理抑制期限をタイムゾーン付きISO 8601日時で設定する。空文字列で解除する。",
-    )
-    edit.add_argument(
-        "--dry-run",
-        action="store_true",
-        help=(
-            "FILENAMEと--body-fileによる本文置換を保存と同じ検証にかけ、保存せずに結果を返す。"
-            "private-notesとremoteを変えない。--append・--cooldown-untilとは併用できない。"
-        ),
-    )
-    _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
-    edit.set_defaults(subparser=edit)
-
-    set_dependencies = _atk_help.add_command(sub, "set-dependencies", **_atk_help.HELP["atk wi set-dependencies"])
-    set_dependencies.add_argument(
-        "filename",
-        metavar="FILENAME",
-        help="更新する`inbox`・`processing`・`hold`のいずれかにあるAWIファイル名。",
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
-    set_dependencies.add_argument(
-        "--depends-on",
-        metavar="FILENAME",
-        action="append",
-        default=None,
-        help="処理完了を待つキュー項目。複数回指定でき、省略時は依存を全て解除する。",
-    )
-    _add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
-
-
-def _add_mq_search_and_answer_parsers(sub: Any) -> None:
-    """検索・回答・外部差分コミットサブコマンドを登録する。"""
-    grep = _atk_help.add_command(sub, "grep", **_atk_help.HELP["atk wi grep"])
-    grep.add_argument("pattern", metavar="PATTERN", help="Pythonの正規表現（reモジュール）として解釈する検索パターン。")
-    grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
-    grep.add_argument(
-        "--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別。省略時は全種別を表示する。"
-    )
-    grep.add_argument(
-        "--state",
-        "--status",
-        dest="status",
-        choices=("all", "active", "processable", *_common.WI_STATES),
-        default="active",
-        help="状態フォルダで検索範囲を限定する。省略時はactiveを対象とする。`list`と同じ選択肢と省略時の値を使う。",
-    )
-    grep.add_argument(
-        "--answered",
-        choices=("all", "yes", "no"),
-        default="all",
-        help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
-    )
-    _add_source_arg(grep, multiple=True)
-    _add_target_repo_arg(grep, allow_all=True)
-    _add_mq_read_sync_args(grep)
-    grep.set_defaults(subparser=grep)
-
-    answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk wi answer"])
-    answer.add_argument(
-        "filename", nargs="?", help="回答対象のUWIファイル名（省略時は対話モード）"
-    ).completer = _uwi_filename_completer  # type: ignore[attr-defined]
-    answer.add_argument("answer_body", nargs="?", help="回答本文（省略時は対話モード）")
-    _add_target_repo_arg(answer)
-
-    _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk wi commit"])
-    _atk_help.add_command(sub, "pull", **_atk_help.HELP["atk wi pull"])
-
-
-def _add_mq_process_loop_parser(sub: Any) -> None:
-    """`atk wi process-loop`サブコマンドを登録する。"""
-    loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
-    loop.add_argument(
-        "--target-repo",
-        metavar="REPO",
-        default=None,
-        help="対象リポジトリ（パスまたは正規化リモートURL）。省略時は現在の作業リポジトリを対象とする。",
-    )
-    # process-loopはローカル作業ツリーのパスを必要とするため、未指定時の解決を自身で行う。
-    loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)
-    loop.add_argument(
-        "--worktree",
-        nargs="?",
-        const="process-loop",
-        default=None,
-        type=_worktree_name,
-        metavar="NAME",
-        help=(
-            "対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備してセッションを起動する。"
-            "NAME省略時はprocess-loopを使う。dotfilesリポジトリでは未指定でも自動有効となり、"
-            "指定時はworktree名だけを上書きする。"
-        ),
-    )
-    loop.add_argument(
-        "--no-update",
-        action="store_true",
-        help="セッション完了後と待機中のどちらの場合もupdate-dotfiles実行と自身再起動を抑止する。",
-    )
-    loop.add_argument(
-        "--internal-mise-refreshed",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    loop.add_argument(
-        "--internal-dotfiles-updated",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    loop.add_argument(
-        "--no-alerts",
-        action="store_true",
-        help=(
-            "待機中と各セッションの開始前のCI失敗の検出と、待機中の未判定のDependabotアラートによる"
-            "process-wiの実行を無効化する（指定しない場合は有効）。"
-        ),
-    )
-    loop.add_argument(
-        "--alert-interval",
-        type=float,
-        default=1800.0,
-        metavar="SECONDS",
-        help="アラート確認の最短間隔秒数。省略時は1800秒間隔とする。",
-    )
-    loop.add_argument(
-        "--alert-forge",
-        choices=("auto", "github", "gitlab"),
-        default="auto",
-        help="アラート検出対象のホスティング種別。省略時はautoとしてrepo_idのhostから自動判定する。",
-    )
-    resume_group = loop.add_mutually_exclusive_group()
-    resume_group.add_argument(
-        "--resume",
-        nargs="?",
-        const="",
-        default=None,
-        metavar="SESSION_ID",
-        help=(
-            "初回にorchestrate_model設定で決まったオーケストレーターの過去セッションを再開する。"
-            "SESSION_ID省略時はセッション選択画面を開き、指定時は該当セッションを直接再開する。"
-            "2回目以降は新規セッションとして起動する。"
-        ),
-    )
-    resume_group.add_argument(
-        "--auto-resume",
-        action="store_true",
-        help=(
-            "対象リポジトリでagent-toolkit:process-wiを起動した直近の中断セッションを自動特定し、"
-            "候補情報を表示して確認のうえ再開する。--resumeとは同時指定できない。初回のみ有効。"
-        ),
-    )
-    loop_sub = _atk_help.add_subcommands(loop, dest="process_loop_subcommand", required=False)
-    _atk_help.add_command(loop_sub, "abort", **_atk_help.HELP["atk wi process-loop abort"])
-    _atk_help.add_command(loop_sub, "abort-cancel", **_atk_help.HELP["atk wi process-loop abort-cancel"])
-    _atk_help.add_command(loop_sub, "status", **_atk_help.HELP["atk wi process-loop status"])
-    instruct = _atk_help.add_command(loop_sub, "instruct", **_atk_help.HELP["atk wi process-loop instruct"])
-    instruct.add_argument("body", metavar="BODY", help="次に起動する1セッションへ渡す追加指示の本文。")
-    _atk_help.add_command(loop_sub, "instruct-cancel", **_atk_help.HELP["atk wi process-loop instruct-cancel"])
-
-
-def _build_wi_parser(mq: argparse.ArgumentParser) -> None:
-    """`mq`サブパーサ配下にメッセージキュー操作を登録する。"""
-    sub = _atk_help.add_subcommands(
-        mq,
-        dest="wi_subcommand",
-        required=False,
-        show_help_when_missing=True,
-    )
-    for register in (
-        _add_wi_add_parser,
-        _add_mq_read_parsers,
-        _add_mq_transition_parsers,
-        _add_mq_edit_parsers,
-        _add_mq_search_and_answer_parsers,
-        _add_mq_process_loop_parser,
-    ):
-        register(sub)
+_PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None]], ...] = (
+    ("info", _info.build_parser),
+    ("commit", _commit_cmd.build_parser),
+    ("setup-project", _setup_project.build_parser),
+    ("wi", _wi_cli.build_parser),
+    ("run-script", _run_script.build_parser),
+    ("run-command", _run_command.build_parser),
+    ("run-skill", _run_skill.build_parser),
+    ("plans", _plans.build_parser),
+    ("serve", _serve_command.build_parser),
+    ("config", _config_cmd.build_parser),
+    ("wait-schedule", _wait_schedule_cmd.build_parser),
+    ("agents", _agents.build_parser),
+    ("agents-exit-session", _agents_exit_session.build_parser),
+    ("managed-temp", functools.partial(_managed_temp.build_parser, command_dest="managed_temp_subcommand")),
+    ("worktree-stash", functools.partial(_worktree_stash.build_parser, command_dest="worktree_stash_subcommand")),
+    ("watch", _watch.build_parser),
+)
+"""トップレベルのサブコマンドと引数を登録する関数の対応。`review-table`・`review-audit`は自身でサブコマンドを登録する。"""
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -1033,65 +193,8 @@ def _build_parser() -> argparse.ArgumentParser:
         required=False,
         show_help_when_missing=True,
     )
-    _atk_help.add_command(top, "info", **_atk_help.HELP["atk info"])
-    commit = _atk_help.add_command(top, "commit", **_atk_help.HELP["atk commit"])
-    commit.add_argument("--amend", action="store_true", help="HEADのコミットを改訂する。")
-    commit.add_argument("--dry-run", action="store_true", help="コミットせず候補メッセージを表示する。")
-    commit.add_argument(
-        "--model-type",
-        default="medium_tier",
-        metavar="TYPE",
-        help="モデル段位名またはengine:model[/effort]のカンマ区切り候補列。省略時はmedium_tierを使う。",
-    )
-    commit.add_argument("additional_prompt", nargs="?", help="フォーマットや差分の追加指示。")
-    setup_project = _atk_help.add_command(top, "setup-project", **_atk_help.HELP["atk setup-project"])
-    setup_project_options = setup_project.add_mutually_exclusive_group()
-    setup_project_options.add_argument(
-        "--with-rules", action="store_true", help="agent-toolkit/rules/配下の規範をプロジェクトへ複製する。"
-    )
-    setup_project_options.add_argument("--clean", action="store_true", help="配置済みの共有リンクと規範を削除する。")
-    wi = _atk_help.add_command(top, "wi", **_atk_help.HELP["atk wi"])
-    _build_wi_parser(wi)
-    run_script = _atk_help.add_command(top, "run-script", **_atk_help.HELP["atk run-script"])
-    _run_script.build_parser(run_script)
-    run_command = _atk_help.add_command(top, "run-command", **_atk_help.HELP["atk run-command"])
-    _run_command.build_parser(run_command)
-    run_skill = _atk_help.add_command(top, "run-skill", **_atk_help.HELP["atk run-skill"])
-    _run_skill.build_parser(run_skill)
-    plans = _atk_help.add_command(top, "plans", **_atk_help.HELP["atk plans"])
-    _plans.build_parser(plans)
-    serve = _atk_help.add_command(top, "serve", **_atk_help.HELP["atk serve"])
-    serve.add_argument("serve_action", nargs="?", choices=("logs",), help="user serviceのjournalを表示")
-    serve.add_argument("-f", "--follow", action="store_true", help="直近100行を表示して追従")
-    serve.add_argument(
-        "--host",
-        default=None,
-        help="待受ホスト（環境変数 AGENT_TOOLKIT_SERVE_HOST、設定ファイルからも参照）",
-    )
-    serve.add_argument(
-        "--port",
-        default=None,
-        type=_port_type,
-        help="待受ポート（環境変数 AGENT_TOOLKIT_SERVE_PORT、設定ファイルからも参照）",
-    )
-    config = _atk_help.add_command(top, "config", **_atk_help.HELP["atk config"])
-    _config_cmd.build_parser(config)
-    wait_schedule = _atk_help.add_command(top, "wait-schedule", **_atk_help.HELP["atk wait-schedule"])
-    wait_schedule.add_argument(
-        "--request-bucket",
-        choices=("main", "subagent"),
-        required=True,
-        help="判定対象のrequest bucket（mainまたはsubagent）。",
-    )
-    agents = _atk_help.add_command(top, "agents", **_atk_help.HELP["atk agents"])
-    _agents.build_parser(agents)
-    _atk_help.add_command(top, "agents-exit-session", **_atk_help.HELP["atk agents-exit-session"])
-    managed_temp = _atk_help.add_command(top, "managed-temp", **_atk_help.HELP["atk managed-temp"])
-    _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
-    worktree_stash = _atk_help.add_command(top, "worktree-stash", **_atk_help.HELP["atk worktree-stash"])
-    _worktree_stash.build_parser(worktree_stash, command_dest="worktree_stash_subcommand")
-    watch = _atk_help.add_command(top, "watch", **_atk_help.HELP["atk watch"])
-    _watch.build_parser(watch)
+    for name, register in _PARSER_REGISTRATIONS:
+        register(_atk_help.add_command(top, name, **_atk_help.HELP[f"atk {name}"]))
     _review_table.build_parser(top)
     _review_audit.build_parser(top)
     return parser
@@ -1109,23 +212,6 @@ def format_command_help(command_path: tuple[str, ...]) -> str | None:
             return None
         parser = choices[name]
     return parser.format_help()
-
-
-def _show_info() -> None:
-    """現在の実行文脈とplugin配布元の情報を読み取り専用で表示する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    manifest = plugin_root / "plugin.json"
-    try:
-        version = json.loads(manifest.read_text(encoding="utf-8"))["version"]
-    except (OSError, ValueError, KeyError, TypeError):
-        version = "不明"
-    config_file = _config_cmd._config_file_path()  # pylint: disable=protected-access
-    print(f"作業ディレクトリ: {pathlib.Path.cwd()}")
-    print(f"起動ファイル: {pathlib.Path(sys.argv[0]).resolve()}")
-    print(f"plugin root: {plugin_root}")
-    print(f"plugin version (plugin.json): {version}")
-    print(f"設定ファイル: {config_file}{'' if config_file.is_file() else '（未作成）'}")
-    print(f"状態ディレクトリ: {_config_cmd.state_dir()}")
 
 
 def command_option_contract(command_path: tuple[str, ...]) -> tuple[frozenset[str], frozenset[str], tuple[str, ...]] | None:
@@ -1164,188 +250,6 @@ def format_command_contract(command_path: tuple[str, ...]) -> str | None:
         "位置引数: " + (", ".join(positionals) or "なし"),
     ]
     return " / ".join(fields)
-
-
-_BULK_TRANSITION_SUBCOMMANDS = (
-    "start-processing",
-    "hold",
-    "unhold",
-    "return-to-inbox",
-    "adopt",
-    "reject",
-    "rm",
-)
-"""`--all`とフィルター系引数を受理する状態遷移サブコマンド。"""
-
-
-def _validate_bulk_transition_args(args: argparse.Namespace) -> None:
-    """状態遷移サブコマンドの個別指定と一括指定が排他的であることを検証する。"""
-    if args.command != "wi" or args.wi_subcommand not in _BULK_TRANSITION_SUBCOMMANDS:
-        return
-    if args.all:
-        if args.filenames:
-            args.subparser.error("FILENAMEと--allは同時に指定できません。")
-        if args.target_repo is None:
-            args.subparser.error(
-                "--allの対象リポジトリを確定できません。"
-                "カレントディレクトリを対象リポジトリの作業ツリーへ移すか、--target-repoを指定してください。"
-            )
-        if getattr(args, "state", None) is not None:
-            args.subparser.error("--stateは--allと併用できません。")
-        if getattr(args, "if_inbox", False):
-            args.subparser.error("--if-inboxは--allと併用できません。")
-        return
-    if not args.filenames:
-        args.subparser.error("対象のFILENAME、または--allを指定してください。")
-    if args.yes:
-        args.subparser.error("--yesは--allとともに指定してください。")
-    if args.skip_pull:
-        args.subparser.error("--skip-pullは--allとともに指定してください。")
-    non_all_filters = args.type != ["all"] or args.status != ["active"] or args.answered != ["all"] or args.source is not None
-    if non_all_filters:
-        args.subparser.error("--type・--status・--answered・--sourceは--allとともに指定してください。")
-
-
-def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """`--target-repo`を指定しない場合の対象と`all`の受理可否を確定する。
-
-    確定後の`args.target_repo`は、Noneが対象の非限定を、値が対象リポジトリを表す。
-    未指定のときはカレントディレクトリが属するリポジトリを対象とし、解決できない場合は非限定とする。
-    `all`は非限定の指定として受理し、単一の対象リポジトリを確定するサブコマンドでは拒否する。
-    未指定時の解決を自ら行うサブコマンドへはこの関数で対象を補完せず、`all`の拒否だけを適用する。
-    対象を補完した実行では`args.target_repo_defaulted`を真にする。
-    明示指定と対象の補完を区別できないと、対象を一意に指定した照会まで通常の除外処理が適用される。
-    """
-    if args.command != "wi" or not hasattr(args, "target_repo"):
-        return
-    raw = args.target_repo
-    values = raw if isinstance(raw, list) else ([] if raw is None else [raw])
-    if _wi_repo.TARGET_REPO_ALL in values:
-        if not getattr(args, "_target_repo_allow_all", False):
-            parser.error(
-                f"--target-repo={_wi_repo.TARGET_REPO_ALL}は、単一の対象リポジトリを確定する"
-                f"`atk wi {args.wi_subcommand}`では指定できません。"
-            )
-        args.target_repo = None
-        return
-    if values or getattr(args, "_target_repo_resolved_by_consumer", False):
-        return
-    current = _wi_repo.detect_current_repo_id()
-    if current is None:
-        return
-    args.target_repo = [current] if getattr(args, "_target_repo_multiple", False) else current
-    args.target_repo_defaulted = True
-
-
-def _normalize_repeatable_wi_filters(args: argparse.Namespace) -> None:
-    """一覧・表示・状態遷移の反復可能フィルターへ、指定がない場合に使う従来の値を設定する。"""
-    if args.command != "wi" or args.wi_subcommand not in {"list", "show", *_BULK_TRANSITION_SUBCOMMANDS}:
-        return
-    args.type = args.type or ["all"]
-    args.status = args.status or ["active"]
-    args.answered = args.answered or ["all"]
-
-
-def _resolve_note_file(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """メモファイルを状態変更より前にUTF-8として解決する。"""
-    note_file = getattr(args, "note_file", None)
-    if note_file is None:
-        return
-    try:
-        args.note = note_file.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
-        parser.error(f"--note-fileをUTF-8として読み込めません: {note_file}: {error}")
-
-
-def _validate_add_args(args: argparse.Namespace) -> None:
-    """`atk wi add`の`--batch`併用制約を検証し、種別を指定しない場合の値を確定する。
-
-    `--type`を省略した場合は`None`を設定することで、`--batch`との併用判定で明示指定
-    （`--type=awi`を含む）を区別する。検証後に通常のadd処理が省略時に使う`awi`へ正規化する。
-    """
-    if args.batch and args.dry_run:
-        args.subparser.error("--dry-runは--batchと併用できません。")
-    if args.batch:
-        conflicting = [
-            name
-            for name, value in (
-                ("--type", args.type),
-                ("--scope", args.scope),
-                ("--question-type", args.question_type),
-                ("--choices", args.choices),
-                ("--depends-on", args.depends_on),
-                ("--target-repo", args.target_repo),
-                ("--source", args.source),
-                ("REPO_PATH", args.repo_path_override),
-            )
-            if value is not None
-        ]
-        if conflicting:
-            args.subparser.error(f"{'・'.join(conflicting)}は--batchと併用できません。")
-    if args.type is None:
-        args.type = _common.WI_TYPE_AWI
-
-
-def _sync_exit_code(exit_code: int, private_notes: pathlib.Path, *, should_check: bool) -> int:
-    """成功した同期対象操作に未push通知の終了コードを反映する。"""
-    if exit_code == 0 and should_check and _common._notify_unpushed_commits_if_any(private_notes):
-        return 3
-    return exit_code
-
-
-def _cmd_pull(private_notes: pathlib.Path) -> None:
-    """private-notesを排他ロック内で明示的に同期する。"""
-    with _common._repo_lock(private_notes):
-        _common.pull(private_notes)
-        has_remote = _atk_git_sync.has_remote(private_notes)
-    result = "remoteと同期した" if has_remote else "remoteが無いため同期していない"
-    _outcome.report_success(f"private-notesを{result}: {private_notes.resolve()}")
-
-
-_SUBCOMMAND_DESTS = (
-    "wi_subcommand",
-    "process_loop_subcommand",
-    "plans_subcommand",
-    "review_table_subcommand",
-    "review_audit_subcommand",
-)
-"""リーフサブコマンドの表記を組み立てるときに、トップレベルコマンドへ続けて読むdest名。"""
-
-
-def _command_label(args: argparse.Namespace) -> str:
-    """ヘルプを案内するリーフサブコマンドの表記（例: `atk wi add`）を返す。"""
-    parts = ["atk", args.command]
-    for dest in _SUBCOMMAND_DESTS:
-        value = getattr(args, dest, None)
-        if isinstance(value, str) and value:
-            parts.append(value)
-    return " ".join(parts)
-
-
-def _report_rejected(args: argparse.Namespace, error: ValueError | _atk_git_sync.RebaseInProgressError) -> None:
-    """入力・状態のエラーを失敗行と次の操作の行で出力する。
-
-    共通の例外型と`RebaseInProgressError`は発生源が決めた次の操作を使う。
-    それ以外の`ValueError`は発生源が次の操作を持たないため、受理形式の確認と不具合の報告を案内する。
-    """
-    if isinstance(error, (_next_action.ActionableError, _atk_git_sync.RebaseInProgressError)):
-        next_action = error.next_action
-    else:
-        next_action = (
-            f"`{_command_label(args)} --help`で受理形式を確かめて再実行する。"
-            "解消しない場合はagent-toolkitの不具合としてユーザーへ報告する"
-        )
-    _outcome.report_failure(f"操作を拒否した: {error}", next_action=next_action)
-
-
-def _report_git_failure(error: subprocess.CalledProcessError, private_notes: pathlib.Path) -> None:
-    """Git操作の失敗を出力する。同期基盤が原因と次の操作を出力済みなら重ねない。"""
-    if _atk_git_sync.is_reported(error):
-        return
-    _outcome.report_failure(
-        f"Git操作に失敗した: {error}",
-        next_action=f"`git -C {private_notes.resolve()} status`で確認し、元の操作を再実行する",
-    )
 
 
 def _auto_saves_output(args: argparse.Namespace) -> bool:
@@ -1412,6 +316,61 @@ def _output_as_file_call(args: argparse.Namespace) -> _OutputAsFile | None:
     return next((call for call in _OUTPUT_AS_FILE_CALLS if call.applies(args)), None)
 
 
+@dataclasses.dataclass(frozen=True)
+class _Invocation:
+    """共通の前処理を終えた1回の起動の文脈。"""
+
+    args: argparse.Namespace
+    parser: argparse.ArgumentParser
+    home: pathlib.Path
+    now: datetime.datetime
+    automatically_cleaned: tuple[pathlib.Path, ...]
+
+
+def _dispatch_managed_temp(invocation: _Invocation) -> int:
+    """`atk managed-temp`を実行する。同じ起動の掃引が削除済みの対象の後始末は成功として扱う。"""
+    args = invocation.args
+    if (
+        args.managed_temp_subcommand == "cleanup"
+        and args.path is not None
+        and args.path.is_absolute()
+        and pathlib.Path(os.path.abspath(args.path)) in invocation.automatically_cleaned
+    ):
+        return 0
+    return _managed_temp.dispatch(args, command_dest="managed_temp_subcommand")
+
+
+_EARLY_COMMANDS: dict[str, Callable[[argparse.Namespace], int | None]] = {
+    "info": _info.dispatch,
+    "commit": _commit_cmd.dispatch,
+    "setup-project": _setup_project.dispatch,
+}
+"""managed-tempの掃引と`atk wi`の引数の確定より前に実行するサブコマンド。Noneを返すと終了コードを指定せず戻る。"""
+
+_COMMANDS: dict[str, Callable[[_Invocation], int]] = {
+    "wait-schedule": lambda invocation: _wait_schedule_cmd.dispatch(invocation.args),
+    "agents": lambda invocation: _agents.dispatch(invocation.args),
+    "agents-exit-session": lambda invocation: _agents_exit_session.dispatch(invocation.args),
+    "run-script": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _run_script.dispatch),
+    "run-command": lambda invocation: _run_command.dispatch(invocation.args),
+    "run-skill": lambda invocation: _run_skill.dispatch(invocation.args),
+    "serve": lambda invocation: _serve_command.dispatch(invocation.args, parser=invocation.parser, home=invocation.home),
+    "managed-temp": _dispatch_managed_temp,
+    "worktree-stash": lambda invocation: _worktree_stash.dispatch(
+        invocation.args,
+        command_dest="worktree_stash_subcommand",
+        private_notes=_private_notes.default_private_notes(invocation.home),
+    ),
+    "watch": lambda invocation: _watch.dispatch(invocation.args, now=invocation.now),
+    "config": lambda invocation: _config_cmd.dispatch(invocation.args, invocation.home),
+    "plans": lambda invocation: _plans.dispatch_command(invocation.args, home=invocation.home),
+    "review-table": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_table.dispatch),
+    "review-audit": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_audit.dispatch),
+    "wi": lambda invocation: _wi_cli.dispatch(invocation.args, home=invocation.home, now=invocation.now),
+}
+"""共通の前処理の後に実行するサブコマンドと実行関数の対応。"""
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -1449,16 +408,14 @@ def main(
     if args._help_parser is not None:
         args._help_parser.print_help()
         return
-    if args.command == "info":
-        _show_info()
+    early_command = _EARLY_COMMANDS.get(args.command)
+    if early_command is not None:
+        exit_code = early_command(args)
+        if exit_code is not None:
+            sys.exit(exit_code)
         return
-    if args.command == "commit":
-        sys.exit(_commit_cmd.run(args))
-    if args.command == "setup-project":
-        sys.exit(_setup_project.run(args))
-    _normalize_repeatable_wi_filters(args)
-    _resolve_wi_target_repo(args, parser)
-    _resolve_note_file(args, parser)
+    if args.command == "wi":
+        _wi_cli.prepare_args(args, parser)
     if now is None:
         now = datetime.datetime.now()
     automatically_cleaned: list[pathlib.Path] = []
@@ -1471,7 +428,7 @@ def main(
             f"managed-tempのディレクトリの自動削除に失敗した: {error}",
             next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
         )
-    is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
+    is_delegated_session = _delegated_session.is_delegated(os.environ)
     if sweep_result is not None and args.command != "managed-temp" and not is_delegated_session:
         # 掃引が同じ起動で探索した結果を使い、未登録候補を再探索しない。
         # 最終更新から7日以内の候補は使用中として自動削除から外れ、対処を要しないため数えない。
@@ -1487,179 +444,23 @@ def main(
                     f"自動削除されずに残った、登録を持たない管理対象が{len(unregistered_candidates)}件ある",
                     next_action="`atk managed-temp list`で一覧と回収方法を確認する",
                 )
-    _validate_bulk_transition_args(args)
     args.repo_path_override = repo_path_override
-    if args.command == "wi" and args.wi_subcommand == "add":
-        _validate_add_args(args)
-    if args.command == "wi" and args.wi_subcommand == "add" and args.type != _common.WI_TYPE_UWI:
-        uwi_only = [
-            name
-            for name, value in (
-                ("--scope", args.scope),
-                ("--question-type", args.question_type),
-                ("--choices", args.choices),
-            )
-            if value is not None
-        ]
-        if uwi_only:
-            args.subparser.error(f"{'・'.join(uwi_only)}は--type=uwiでのみ指定できます。")
-    if (
-        args.command == "wi"
-        and args.wi_subcommand == "add"
-        and args.type == _common.WI_TYPE_UWI
-        and args.question_type not in _constants.NEW_QUESTION_TYPES
-    ):
-        # 選択肢の検証をargparseへ任せると、不正値の案内に問いの分け方と投入の形が現れない。
-        _outcome.report_failure(
-            f"--type=uwiの--question-typeが不正か未指定のため保存しなかった（指定値: {args.question_type}）",
-            next_action=(
-                "問いごとに個別のUWIとし、選択肢から選ぶ問いは`--question-type=choice --choices A,B,C`、"
-                "2択の可否を問う問いは`--question-type=yes-no`で投入する。選択肢に無い回答は回答欄で受け取る"
-            ),
-        )
-        sys.exit(2)
-    if (
-        args.command == "wi"
-        and args.wi_subcommand == "add"
-        and args.type == _common.WI_TYPE_UWI
-        and args.question_type == _constants.QUESTION_TYPE_CHOICE
-        and not args.choices
-    ):
-        args.subparser.error("--question-type=choice のときは --choices を指定してください。")
-    if args.command == "wait-schedule":
-        print(_wait_schedule.get_schedule(args.request_bucket))
-        sys.exit(0)
-    if args.command == "agents":
-        sys.exit(_agents.dispatch(args))
-    if args.command == "agents-exit-session":
-        sys.exit(_agents_exit_session.main())
-    if args.command == "run-script":
-        try:
-            sys.exit(_run_script.dispatch(args))
-        except ValueError as error:
-            _report_rejected(args, error)
-            sys.exit(1)
-    if args.command == "run-command":
-        sys.exit(_run_command.run(args))
-    if args.command == "run-skill":
-        sys.exit(_run_skill.run(args))
-    if home is None:
-        home = pathlib.Path.home()
-    if args.command == "serve":
-        _serve = importlib.import_module("agent_toolkit._atk.serve.cli")
-        if args.serve_action == "logs":
-            sys.exit(_serve.show_logs(follow=args.follow))
-        if args.follow:
-            parser.error("--followは`atk serve logs`で指定してください。")
-        try:
-            _serve.run(host=args.host, port=args.port, home=home)
-        except ValueError as error:
-            _report_rejected(args, error)
-            sys.exit(1)
-        sys.exit(0)
-    if args.command == "managed-temp":
-        if (
-            args.managed_temp_subcommand == "cleanup"
-            and args.path is not None
-            and args.path.is_absolute()
-            and pathlib.Path(os.path.abspath(args.path)) in automatically_cleaned
-        ):
-            sys.exit(0)
-        sys.exit(_managed_temp.dispatch(args, command_dest="managed_temp_subcommand"))
-    if args.command == "worktree-stash":
-        sys.exit(
-            _worktree_stash.dispatch(
-                args,
-                command_dest="worktree_stash_subcommand",
-                private_notes=_common._private_notes_path(home),
-            )
-        )
-    if args.command == "watch":
-        sys.exit(_watch.dispatch(args, now=now))
-    if args.command == "config":
-        _config_cmd.dispatch(args, home)
-    if args.command == "plans":
-        private_notes = _common._ensure_environment(home)
-        try:
-            exit_code = _plans.dispatch(args, private_notes, home)
-            sys.exit(
-                _sync_exit_code(
-                    exit_code,
-                    private_notes,
-                    should_check=args.plans_subcommand != "list" and not getattr(args, "skip_push", False),
-                )
-            )
-        except (ValueError, _atk_git_sync.RebaseInProgressError) as error:
-            _report_rejected(args, error)
-            sys.exit(1)
-        except subprocess.CalledProcessError as error:
-            _report_git_failure(error, private_notes)
-            sys.exit(1)
-    if args.command == "review-table":
-        try:
-            sys.exit(_review_table.dispatch(args))
-        except ValueError as error:
-            _report_rejected(args, error)
-            sys.exit(1)
-    if args.command == "review-audit":
-        try:
-            sys.exit(_review_audit.dispatch(args))
-        except ValueError as error:
-            _report_rejected(args, error)
-            sys.exit(1)
-    if args.command != "wi":
+    if args.command == "wi":
+        _wi_cli.validate_args(args)
+    command = _COMMANDS.get(args.command)
+    if command is None:
         parser.error(f"未知のトップレベルコマンド: {args.command}")
-    sub = args.wi_subcommand
-    process_loop_state_dispatch = {
-        "abort": _process_loop._cmd_process_loop_abort,
-        "abort-cancel": _process_loop._cmd_process_loop_abort_cancel,
-        "status": _process_loop._cmd_process_loop_status,
-        "instruct": lambda: _process_loop._cmd_process_loop_instruct(args.body),
-        "instruct-cancel": _process_loop._cmd_process_loop_instruct_cancel,
-    }
-    process_loop_subcommand = getattr(args, "process_loop_subcommand", None)
-    if sub == "process-loop" and process_loop_subcommand is not None:
-        # これらの操作はprivate-notesを必要としないため、環境の用意より前で処理する。
-        process_loop_state_dispatch[process_loop_subcommand]()
-        sys.exit(0)
-    private_notes = _common._ensure_environment(home)
-    dispatch = {
-        "add": lambda: (
-            _batch._cmd_add_batch(args, private_notes, now, home)
-            if args.batch
-            else _add._cmd_add(args, private_notes, now, home)
-        ),
-        "list": lambda: _list._cmd_list(args, private_notes),
-        "show": lambda: _show._cmd_show(args, private_notes),
-        "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes, now),
-        "hold": lambda: _mutations._cmd_hold(args, private_notes, now),
-        "unhold": lambda: _mutations._cmd_unhold(args, private_notes, now),
-        "return-to-inbox": lambda: _mutations._cmd_return_to_inbox(args, private_notes, now),
-        "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
-        "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
-        "rm": lambda: _mutations._cmd_rm(args, private_notes),
-        "edit": lambda: _mutations._cmd_edit(args, private_notes),
-        "set-dependencies": lambda: _mutations._cmd_set_dependencies(args, private_notes),
-        "grep": lambda: _grep._cmd_grep(args, private_notes),
-        "answer": lambda: _uwi._cmd_answer(args, private_notes),
-        "commit": lambda: _mutations._cmd_commit(private_notes),
-        "pull": lambda: _cmd_pull(private_notes),
-        "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
-    }
-    try:
-        exit_code = dispatch[sub]() or 0
-    except (ValueError, _atk_git_sync.RebaseInProgressError) as error:
-        _report_rejected(args, error)
-        sys.exit(1)
-    except subprocess.CalledProcessError as error:
-        _report_git_failure(error, private_notes)
-        sys.exit(1)
-    exit_code = _sync_exit_code(
-        exit_code,
-        private_notes,
-        should_check=sub in _WI_SYNC_MUTATIONS and not getattr(args, "skip_push", False),
+    sys.exit(
+        command(
+            _Invocation(
+                args=args,
+                parser=parser,
+                home=home if home is not None else pathlib.Path.home(),
+                now=now,
+                automatically_cleaned=tuple(automatically_cleaned),
+            )
+        )
     )
-    sys.exit(exit_code)
 
 
 def _run_cli() -> None:

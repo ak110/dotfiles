@@ -15,6 +15,12 @@
 - Agent Plugins、Claude Code、Codexで同じルートを共有するagent-toolkitの配布
 - サプライチェーン攻撃対策設定のグローバル適用（uv/npmの公開待機、`pinact`によるGitHub Actionsのコミットハッシュ固定）
 
+agent-toolkitは、Agent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
+単体導入にはClaude Code CLI、Codex CLI、uvを使用する。
+dotfiles配布では、`chezmoi apply`後の処理がこれらの導入と更新を担う。
+統合導入は[agent-toolkit導入ガイド](docs/guide/claude-code-guide.md)、
+Codex固有の詳細は[Codex利用ガイド](docs/guide/codex-guide.md)を参照する。
+
 ## 前提条件
 
 - [Git](https://git-scm.com/install/)
@@ -38,43 +44,7 @@ winget install --id=Git.Git -e --source=winget
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-agent-toolkitは、Agent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
-単体導入にはClaude Code CLI、Codex CLI、uvを使用する。
-dotfiles配布では、`chezmoi apply`後の処理がこれらの導入と更新を担う。
-統合導入は[agent-toolkit導入ガイド](docs/guide/claude-code-guide.md)、
-Codex固有の詳細は[Codex利用ガイド](docs/guide/codex-guide.md)を参照する。
-
 ## インストール
-
-### GitHubトークンの設定（任意）
-
-mise経由でインストールされる一部ツール（`jq`・`actionlint`・`pinact`など）では
-aquaがGitHub artifact attestations検証のために`api.github.com`へアクセスする。
-未認証では1時間あたり60リクエストのIPベース制限があり、`update-dotfiles`実行時に
-`API rate limit exceeded`で失敗することがあり、OSに依存せず発生し得る。
-
-回避には個人アクセストークンを発行し、ユーザー環境変数`GITHUB_TOKEN`へ設定する。
-
-1. <https://github.com/settings/personal-access-tokens> へアクセスする
-2. `Generate new token`をクリックする
-3. `Repository access`は`Public Repositories (read-only)`を選択する（追加スコープ設定は不要）
-4. `Generate token`をクリックしてトークンを発行する
-5. 表示されたトークンをコピーする
-6. ユーザー環境変数に登録する
-
-   Linuxの場合は`~/.env`に追記する（`~/.bashrc`はchezmoiの管理対象で上書きされるため使わない）。
-
-   ```bash
-   export GITHUB_TOKEN=<コピーしたトークン>
-   ```
-
-   Windows（PowerShell）の場合は以下を実行する。
-
-   ```powershell
-   [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", "<コピーしたトークン>", "User")
-   ```
-
-7. 新しいターミナルを開き直して`update-dotfiles`を再実行する
 
 ### Linux
 
@@ -111,17 +81,37 @@ Windows（PowerShell）の場合は以下を実行する。
 winget install jdx.mise
 ```
 
-## 使い方
+## 設定（任意）
 
-```bash
-update-dotfiles
-```
+### GitHubトークンの設定（任意）
 
-更新が失敗したときや、直近の更新で何が実行されたかを確認したいときは、直近1回の実行の保存ログを表示する。
+mise経由でインストールされる一部ツール（`jq`・`actionlint`・`pinact`など）では
+aquaがGitHub artifact attestations検証のために`api.github.com`へアクセスする。
+未認証では1時間あたり60リクエストのIPベース制限があり、`update-dotfiles`実行時に
+`API rate limit exceeded`で失敗することがあり、OSに依存せず発生し得る。
 
-```bash
-update-dotfiles logs
-```
+回避には個人アクセストークンを発行し、ユーザー環境変数`GITHUB_TOKEN`へ設定する。
+
+1. <https://github.com/settings/personal-access-tokens> へアクセスする
+2. `Generate new token`をクリックする
+3. `Repository access`は`Public Repositories (read-only)`を選択する（追加スコープ設定は不要）
+4. `Generate token`をクリックしてトークンを発行する
+5. 表示されたトークンをコピーする
+6. ユーザー環境変数に登録する
+
+   Linuxの場合は`~/.env`に追記する（`~/.bashrc`はchezmoiの管理対象で上書きされるため使わない）。
+
+   ```bash
+   export GITHUB_TOKEN=<コピーしたトークン>
+   ```
+
+   Windows（PowerShell）の場合は以下を実行する。
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", "<コピーしたトークン>", "User")
+   ```
+
+7. 新しいターミナルを開き直して`update-dotfiles`を再実行する
 
 ### Antigravity CLI
 
@@ -143,8 +133,20 @@ agy models
 statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CLIのstatuslineコマンドへ
 `claude-statusline agy-statusline`を設定する。
 
+## 使い方
+
+```bash
+update-dotfiles
+```
+
+更新が失敗したときや、直近の更新で何が実行されたかを確認したいときは、直近1回の実行の保存ログを表示する。
+
+```bash
+update-dotfiles logs
+```
+
 ## ドキュメント
 
 - [docs/index.md](docs/index.md): ドキュメントの総合案内
-- [docs/guide/index.md](docs/guide/index.md): 利用者向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）
-- [docs/development/development.md](docs/development/development.md): 開発者向け
+- [docs/guide/index.md](docs/guide/index.md): 利用者向け（Claude Code/Codex設定・SSH・セキュリティ）
+- [docs/development/index.md](docs/development/index.md): 開発者向け

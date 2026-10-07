@@ -1,12 +1,9 @@
 """sync_codex_agentsのテスト。"""
 
-import re
 from pathlib import Path
 
 import pytest
 import sync_codex_agents as subject
-
-_TWO_LAYER_WAIT_HEADING = "## agents_serverの二層待機"
 
 
 def _root(
@@ -16,11 +13,11 @@ def _root(
     max_bytes: int = 128 * 1024,
     warn_ratio: float = 0.8,
 ) -> Path:
-    (tmp_path / "scripts").mkdir()
+    (tmp_path / "share").mkdir()
     (tmp_path / "agent-toolkit/rules").mkdir(parents=True)
     (tmp_path / "agent-toolkit/share").mkdir(parents=True)
     (tmp_path / ".chezmoi-source/dot_codex").mkdir(parents=True)
-    (tmp_path / "agent-toolkit/share/rules-main.codex.md").write_text("base\n", encoding="utf-8")
+    (tmp_path / subject.BASE_SOURCE).write_text("base\n", encoding="utf-8")
     (tmp_path / ".chezmoi-source/dot_claude/rules").mkdir(parents=True)
     (tmp_path / subject.PERSONAL_SOURCE).write_text("personal\n", encoding="utf-8")
     (tmp_path / subject.CODEX_CONFIG).write_text(
@@ -29,12 +26,6 @@ def _root(
     )
     (tmp_path / "AGENTS.md").write_text(project, encoding="utf-8")
     return tmp_path
-
-
-def _section(text: str, heading: str) -> str:
-    match = re.search(rf"^{re.escape(heading)}\n(?P<body>.*?)(?=^#{{1,3}} |\Z)", text, re.MULTILINE | re.DOTALL)
-    assert match is not None
-    return match.group("body")
 
 
 def test_render_preserves_rules_in_sorted_order(tmp_path: Path) -> None:
@@ -48,6 +39,17 @@ def test_render_preserves_rules_in_sorted_order(tmp_path: Path) -> None:
     assert content.index('path="agent-toolkit/rules/01-a.md"') < content.index('path="agent-toolkit/rules/02-b.md"')
     assert f'path="agent-toolkit/rules/01-a.md">\nfirst\n</{subject.NORMATIVE_ELEMENT}>' in content
     assert content.endswith(f"</{subject.NORMATIVE_ELEMENT}>\n")
+
+
+def test_render_excludes_codex_main_only_rules(tmp_path: Path) -> None:
+    """Codexのメインだけに適用する規範は全主体へ届く生成物へ入らない。"""
+    root = _root(tmp_path)
+    (root / "agent-toolkit/share/rules-main.codex.md").write_text("main-only\n", encoding="utf-8")
+
+    content = subject.render(root)
+
+    assert "base" in content
+    assert "main-only" not in content
 
 
 def test_render_includes_all_common_rules(tmp_path: Path) -> None:

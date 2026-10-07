@@ -23,11 +23,9 @@ dependencies = [
     "platformdirs>=4.0",
     "psutil",
     "pydantic>=2",
-    "pygments",
     "pytilpack[quart]>=1.47.0",
     "pyyaml",
     "qrcode>=8.0",
-    "semantic-version>=2.10.0",
     "send2trash",
     "tqdm",
     "wand>=0.7.0",
@@ -35,7 +33,7 @@ dependencies = [
 ]
 
 [project.scripts]
-astra = "pytools.claude_launcher:main_astra"
+astra = "pytools.agent_launcher:main_astra"
 check-image-sizes = "pytools.check_image_sizes:main"
 clonedir = "pytools.clonedir:main"
 dateRelocator = "pytools.date_relocator:main"
@@ -45,11 +43,11 @@ dotfiles-media-remote = "pytools.media_remote:main"
 dotfiles-claude-hook = "pytools.claude_hook:main"
 dotfiles-post-apply = "pytools.post_apply:main"
 EcoUtilities = "pytools.ecoutilities:main"
-fable = "pytools.claude_launcher:main_fable"
+fable = "pytools.agent_launcher:main_fable"
 git-justify = "pytools.git_justify:main"
 markdown-viewer = "pytools.markdown_viewer:main"
 mvdir = "pytools.mvdir:main"
-opus = "pytools.claude_launcher:main_opus"
+opus = "pytools.agent_launcher:main_opus"
 psgrep = "pytools.psgrep:main"
 py-imageconverter = "pytools.imageconverter:main"
 py-pdf-to-image = "pytools.pdf_to_image:main"
@@ -61,9 +59,9 @@ releaser = "pytools.releaser:main"
 rename2hash = "pytools.rename2hash:main"
 repack-archive = "pytools.repack_archive:main"
 runAsAdmin = "pytools.run_as_admin:main"
-sonnet = "pytools.claude_launcher:main_sonnet"
-sol = "pytools.claude_launcher:main_sol"
-terra = "pytools.claude_launcher:main_terra"
+sonnet = "pytools.agent_launcher:main_sonnet"
+sol = "pytools.agent_launcher:main_sol"
+terra = "pytools.agent_launcher:main_terra"
 touch-file = "pytools.touch_file:main"
 update-ssh-config = "pytools.update_ssh_config:main"
 
@@ -105,14 +103,32 @@ dev = [
     "watchdog>=6.0.0",
 ]
 
+[tool.agent-toolkit.pick-wi-check]
+# `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。
+# 記載の手順と理由は`.claude/skills/dotfiles-norm-edit/SKILL.md`「pickerが書くプロジェクト規範の指定」が定め、
+# 対象範囲の一致は`project_norm_spec_invariant_test.py`が確かめる。
+
+[[tool.agent-toolkit.pick-wi-check.norm-spec]]
+# 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。
+name = "規範変更の対象ファイル"
+paths = ["AGENTS.md", "agent-toolkit/rules/", "agent-toolkit/skills/", "agent-toolkit/share/", ".claude/skills/"]
+suffixes = [".md"]
+require-paths = true
+
+[[tool.agent-toolkit.pick-wi-check.norm-spec]]
+# 反映先にエージェント向け文書を含む項目には、計画の採否確定前に方針と障害の記録を読む要求を書く。
+name = "方針と障害記録を読む要求"
+agent-doc = true
+require-text = ["docs/development/concepts.md", "docs/development/incidents.md", "分割ファイル"]
+
 [tool.pyfltr]
 preset = "latest"
 python = true
 # Python 3.14はテストsuiteの実行時間が3.12/3.13に比べ25%程度長く、`command-timeout`を指定しない場合の600秒では境界を超えるためCIタイムアウトを延伸する
 command-timeout = 900
 ty = true
-# scripts/とagent-toolkit/skills/plan-mode/scripts/のモジュールを解決するため追加する
-ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
+# scripts/・libexec/とagent-toolkit/skills/plan-mode/scripts/のモジュールを解決するため追加する
+ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "libexec", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
 # pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
 # formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは
 # lintの自動修正を止められない。検査だけを行う`make test`が担当範囲外のファイルを
@@ -244,10 +260,11 @@ targets = [
     "install-claude.sh",
     "install-claude.ps1",
     "pytools/**/*.py",
+    "agent-toolkit/share/rules-common.codex.md",
     "agent-toolkit/share/rules-main.codex.md",
     "scripts/codex_shared_rules.py",
-    "scripts/gen-completions.py",
-    "scripts/gen-install-files.py",
+    "scripts/gen_completions.py",
+    "scripts/gen_install_files.py",
     "scripts/sync_codex_agents.py",
     "scripts/sync_codex_plugin_manifests.py",
     "scripts/sync_generated_files.py",

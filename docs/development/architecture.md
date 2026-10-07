@@ -8,13 +8,23 @@
 - `.chezmoi-source/dot_claude/`: Claude Code用のユーザー設定。`~/.claude/`へデプロイする
 - `.chezmoi-source/dot_codex/`: Codex用のユーザー設定。`~/.codex/`へデプロイする
 - `.chezmoi-source/dot_gemini/`: Antigravity CLI用のユーザー設定（`GEMINI.md`と`antigravity-cli/skills/`）。`~/.gemini/`へデプロイする
+- `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するagent-toolkitのプラグインルート（「agent-toolkitの3形式配布」を参照）
+- `agent-toolkit-codex/`: `agent-toolkit/`から生成するCodex向けプラグインルート。Gitで追跡せず、`update-dotfiles`のpost-applyが生成する
+- `bin/`: ユーザーのPATHへ追加して使うコマンド（「対象環境とスクリプトの配置」を参照）
+- `completions/`: 事前生成したbash補完スクリプト（「bash補完（`completions/`）」を参照）
+- `docs/`: エンドユーザー向けガイド（`docs/guide/`）と開発者向け文書（`docs/development/`）
+- `.claude/`: 本リポジトリの開発で使うClaude Codeのプロジェクト設定とプロジェクトスキル（配布対象外）
+- `.claude-plugin/`: agent-toolkitを配布するマーケットプレイスの定義（`marketplace.json`）
+- `.github/`: GitHub ActionsのワークフローとCIで使う共有アクション
 - `pytools/`: Pythonコマンドラインツール群（`uv tool install`でインストール）
 - `rust/`: Rust製コマンドラインツール群（CIでビルドしGitHub Releaseへ配布）
-- `scripts/`: リポジトリ内部から呼ばれるスクリプト置き場（prek・Makefile・Claude Codeフック等。配布対象外）
+- `scripts/`: 開発とCIで使うスクリプトの置き場（prek・Makefile・pyfltr・CIから呼ぶ。エンドユーザー環境では実行しない）
+- `libexec/`: エンドユーザー環境（LinuxとWindows）で他のプログラムから起動される実行ファイルの置き場（`bin/`のランチャー、systemd unit、Claude Codeのhook定義などが起動する）
+- `share/`: エンドユーザー環境の処理が読むデータの置き場（Claude Code・Codexの管理対象設定、ユーザー環境変数など）
 - テンプレートからリポジトリルートのファイルを参照する場合は`{{ .chezmoi.workingTree }}`を使用
   - 例: `{{ include (joinPath .chezmoi.workingTree "pyproject.toml") }}`
 
-## 開発者とエンドユーザーの対象環境
+## 対象環境とスクリプトの配置
 
 本dotfilesは以下の二者を想定している。配布対象と開発対象でサポート範囲が異なるため、ファイル追加時にどちら用かを確認。
 
@@ -24,18 +34,25 @@
 
 この区別に基づき、スクリプトの配置先を以下のように分ける。
 
-- `scripts/`: prek・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場
-  - chezmoiで配布しない。Linux前提で書いてよい
+- `scripts/`: prek・Makefile・pyfltr・CIなど開発とCIの工程から呼ばれるスクリプトの置き場
+  - chezmoiで配布せず、エンドユーザー環境では実行しない。Linux前提で書いてよいが、CIのWindows jobで動くもの（`scripts/check_update_dotfiles_upgrade.py`）はWindowsでも動く書き方とする
   - 例: `scripts/check-templates.sh`・`scripts/check-cmd-encoding.sh`・
-    `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`・`pytools/claude_hook/pretooluse.py`
+    `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`
+- `libexec/`: `bin/`のランチャー、chezmoiの後処理、systemd unit、Claude Codeのhook定義など他のプログラムから起動され、
+  `pytools`パッケージの外でエンドユーザー環境（LinuxとWindows）で動く実行ファイルの置き場
+  - chezmoiで配布せず、`~/dotfiles`の作業ツリーから直接実行する。両OSで動く書き方とする
+  - 例: `libexec/update_dotfiles.py`・`libexec/claude-hook-pretooluse.ps1`・`libexec/keep-awake.ps1`
 - `bin/`: ユーザーのPATHに追加して使うコマンド。リポジトリ直下でgit管理し、
   `~/dotfiles/bin`（Linux）/`%USERPROFILE%\dotfiles\bin`（Windows）にPATHを通す
   - 両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する
   - 例: `bin/update-dotfiles`↔`bin/update-dotfiles.cmd`
 
-判断に迷ったら「他者の環境で直接実行されるか」を基準に決める。prek経由でしか動かないなら`scripts/`が適切。
+判断に迷ったら「エンドユーザー環境で実行されるか」を基準に決める。開発とCIの工程からしか動かないなら`scripts/`、
+エンドユーザー環境で他のプログラムから起動されるなら`libexec/`、PATHから直接起動するなら`bin/`が適切。
 
-単純なコマンドラッパーのペアは`scripts/new-bin-cmd.py <name> <command...>`で生成できる。
+### `bin/`を変えるときの確認
+
+単純なコマンドラッパーのペアは`scripts/new_bin_cmd.py <name> <command...>`で生成できる。
 `bin/<name>`と`bin/<name>.cmd`を生成する。
 
 `bin/`直下のスクリプトを追加・移設・削除する際は、以下を同時に見直す。
@@ -52,12 +69,12 @@
 
 補完スクリプトはログイン時の`register-python-argcomplete`実行コストを避けるため事前生成してリポジトリにチェックインする。
 `completions/*.bash`を`.bashrc`がすべて`source`する。コマンド追加時に`.bashrc`を編集する必要はない。
-`scripts/gen-completions.py`は生成先を2箇所へ分岐して書き込む。
+`scripts/gen_completions.py`は生成先を2箇所へ分岐して書き込む。
 通常はpyfltrのcustom formatterから統合生成ランナー経由で実行する。
 `pyproject.toml`の`[project.scripts]`由来のコマンドは`completions/_pytools.bash`へ書き込む。
 `agent-toolkit/scripts/*.py`のうちargcompleteマーカーを持つスクリプトが対象で、
 対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンド（`atk`等）に限る。
-これらの補完は`scripts/gen-completions.py`が`agent-toolkit/completions/atk.bash`へ書き込む。
+これらの補完は`scripts/gen_completions.py`が`agent-toolkit/completions/atk.bash`へ書き込む。
 
 新しいCLIに補完を追加する場合は、CLIモジュールへのマーカー配置と`enable_completion()`呼び出しをコード側コメントに従い追加し、
 補完スクリプトを再生成する。
@@ -69,9 +86,9 @@ uv run --frozen python scripts/sync_generated_files.py  # 全生成物を冪等�
 uv run --frozen pyfltr fast                             # 高速ツールと生成物を同期
 ```
 
-手書き補完が必要な場合（`bin/`配下コマンドのうち`gen-completions.py`の収集対象外のものなど）は
+手書き補完が必要な場合（`bin/`配下コマンドのうち`gen_completions.py`の収集対象外のものなど）は
 `completions/<name>.bash`を新規追加する。`_`プレフィックスのファイルは自動生成物の慣習として予約する。
-`agent-toolkit/completions/atk.bash`は`gen-completions.py`の自動生成対象のため、この手順は当てはまらない。
+`agent-toolkit/completions/atk.bash`は`gen_completions.py`の自動生成対象のため、この手順は当てはまらない。
 
 ## Windows PowerShellスクリプトの注意事項
 
@@ -90,9 +107,23 @@ uv run --frozen pyfltr fast                             # 高速ツールと生�
 | `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。大元の設定から許可済みの要素だけを写像する |
 | `rules/`・`agents/`・`hooks/`・`bin/`・`scripts/`・`share/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
 
-`scripts/sync_codex_plugin_manifests.py`がAgent PluginsとCodexの生成物を同期する。
+`pytools/_internal/codex_plugin_manifests.py`がAgent PluginsとCodexの生成物の生成と差の確認を担い、生成器の起動スクリプト`scripts/sync_codex_plugin_manifests.py`とpost-applyがこれを使う。
 Codex向け`agents_server`はplugin rootを作業ディレクトリに固定した`uv run --project . --locked --no-default-groups agent_toolkit/agents_server_mcp.py`として生成する。Claude Code向けの`${CLAUDE_PLUGIN_ROOT}`展開はCodexの起動契約へ流用しない。
 `scripts/sync_generated_files.py`は同生成器を統合実行し、生成物を冪等に更新する。
+
+dotfilesはClaude Code・Agent Plugins向けの`agent-toolkit/`を元にし、Codex向けには`agent-toolkit-codex/`を生成する。
+`agent-toolkit-codex/`はAgent Plugins用の直下`plugin.json`と`mcp.json`を除き、`.codex-plugin/plugin.json`、hook、skill、Python実装、lockfileその他の実行資源を通常ファイルとして含む。
+Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、`agent-toolkit-codex/`は相対シンボリックリンクを含めない。
+`.agents/plugins/marketplace.json`だけが`./agent-toolkit-codex`を参照し、Claude CodeとAgent Pluginsは引き続き`agent-toolkit/`を参照する。
+`agent-toolkit-codex/`はGitで追跡せず、`update-dotfiles`のpost-applyがCodex plugin導入の直前に生成する。
+手動で再生成する場合は`scripts/sync_codex_plugin_manifests.py`を実行し、`--check`で大元の定義との一致を確認する。
+生成に失敗した場合はpost-applyが非0で終了し、失敗したstep名と詳細を更新logへ記録する。
+
+Codex hookはPATH上の`~/.local/bin/atk-hook`（Windowsでは`atk-hook.cmd`）から起動する。
+このコマンドは`codex plugin list --json`に示された有効な現行版を毎回解決し、イベント名、標準入出力および終了状態をhook本体へ渡す。
+インストーラーは`codex plugin add`より先にこのコマンドを配置し、導入後に現行版のhook実体を確認する。
+初回切替時に限り、更新前の版付きhookコマンドを保持したセッションのために旧キャッシュを一時退避し、CLIが削除した場合は復元する。以降の更新に旧版保存台帳は設けない。
+プラグインの通常のversion別cache管理はCodex公式CLIへ委ねる。
 
 agent-toolkitには、公開互換インストーラーである`install-claude.sh`・`install-claude.ps1`を使う単体導入と、
 chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照を維持するため、インストーラーと
@@ -106,6 +137,10 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
   Claude Code向けmanifestを元にして`scripts/sync_generated_files.py`で生成する
 - `setup_codex_links.py`はdotfiles固有スキルと`docs`だけをリンクする。`agent-toolkit/rules/`は`sync_agent_toolkit_rules.py`が配布先へ同期する
+- Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
+
+### `post_apply.py`の工程の依存
+
 - `post_apply.py`は互いに依存しない工程を同時に実行し、工程間の順序を`_StepSpec`の先行工程の宣言で保つ。リンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順序もこの宣言で保つ。先行工程を宣言する対象は、同じ資源を扱う工程の組と、先行工程が導入する実行ファイルを使う工程とする。
   資源は設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、plugin cache、Claude Code pluginの複製元である`agent-toolkit/`（`.venv`を含む）、systemd、codexプロセスの稼働判定を指す。
   子プロセスやサービスの再起動を経由して間接的に書き換える資源も含める。例えば`atk serve`工程が再起動したサービスは`uv run --project <dotfiles>/agent-toolkit`で`.venv`を再同期する。工程を追加する場合も同じ基準で宣言する
@@ -114,20 +149,14 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
   `systemctl --user`はHOMEではなく`XDG_RUNTIME_DIR`とD-Busで実機のユーザーマネージャーへ接続するため、HOMEの差し替えでは隔離できない。
   工程を追加する場合も同じ基準で付ける
 - `post_apply.py`の画面には工程ごとの出力を列挙順にまとめて表示し、開始行、ロガー`httpx`のINFO、`claude` CLIの実行記録、実行中のOSを対象外とする工程の行は永続ログ（`update-dotfiles.log`）にだけ残す
-- Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
 ### agents_server MCPの配置と寿命
 
-共有MCP設定の大元が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/scripts/agents_server_mcp.py`を
+共有MCP設定の大元が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/agent_toolkit/agents_server_mcp.py`を
 plugin rootを`uv run --project`へ指定し、lockfileを固定して起動する。生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、
 Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`が解決した候補のengineに従ってCodex backendまたはClaude backendを選択する。
 
-公開ツールは`start`、`send_message`、`kill`、`list`、`show`、`stop`の6つとし、終端と結果の受領は`atk agents wait`が担う。`start`は`mode`（`task`・`delegate`・`explore`・`write`・`shell`）ごとの入力、絶対`cwd`および任意の`model_type`を受け取り、
-工程別モデル設定の候補列からengine、modelおよびeffortを解決し、完了を待たず`session_id`を返す。`atk agents wait`は引数を受け取らず、登録済みのsessionの終端を待ち、回収できた終端結果を全件返す。待機上限は実行ホストが1回のツール呼び出しへ課す上限を超えない値としてサーバーが確定する。Claude Codeを確認できないホストでは270秒とし、Claude Codeではプロンプトキャッシュの保持期間から導出して`5m`で270秒、`1h`で1740秒とする。委譲先として起動されたセッションでは240秒を上限とする。
-`send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。timeoutは配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。
-`kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
-timeout超過時もsessionとbackend processを強制終了せず、同じsessionへ`wait`または終端後の`send_message`を続けられる。終端結果は30分保持し、期限切れ後は結果本文を破棄して再開用の最小状態だけを残す。保持期限の経過とsessionを所有する実行主体の終了はいずれも暗黙再開の契機とする。再開時には同じ`send_message`がCodexの`thread/resume`かClaude Agent SDKの`resume`を内部で使う。
-`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。`stop(session_id)`は保持中で終端済みのsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。実行中turnを持つsessionは拒否する。`wait`と`kill`は省略時に`false`となる`stop`引数を持ち、`true`では終端結果を返した応答に限って同じsessionを破棄する。破棄したsessionへの`send_message`は保持期限の経過後と同じく保持済みの実効条件から暗黙再開する。
+公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）と`atk agents wait`の入力、応答、待機上限および保持期限の契約は[design-agents-server.md](design-agents-server.md)の「公開ツールの契約」が記録する。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
 MCP moduleの初期化時にCodex backendとClaude backendのローカルmoduleを読み込む。

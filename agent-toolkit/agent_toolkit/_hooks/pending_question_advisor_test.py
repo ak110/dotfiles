@@ -8,9 +8,10 @@ import subprocess
 import pytest
 
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _write_transcript
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
+_SCRIPT = pathlib.Path(_stop_check_runner.__file__)
 
 
 def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -43,7 +44,7 @@ def _transcript_with_response(
 
 def _decision(result: subprocess.CompletedProcess[str]) -> dict:
     assert result.returncode == 0
-    return json.loads(result.stdout)
+    return json.loads(result.stdout) if result.stdout else {}
 
 
 def test_blocks_when_plain_text_asks_user(tmp_path: pathlib.Path) -> None:

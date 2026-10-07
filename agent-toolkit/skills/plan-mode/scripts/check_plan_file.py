@@ -10,34 +10,23 @@ import argparse
 import difflib
 import pathlib
 import re
-import subprocess
 import sys
 import typing
 
 import yaml
 
-try:
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        locations as _plan_file,
-    )
-    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        selection as _selection,
-    )
-    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        structure as _plan_format,
-    )
-except ImportError as _import_error:
-    _SELF = pathlib.Path(__file__).resolve()
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script plan-check -- <計画ファイルの絶対パス>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    bundle_kinds,
+    locations,
+    structure,
+)
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    selection as _selection,
+)
 
-_PLUGIN_DIR = pathlib.Path(_plan_file.__file__).resolve().parents[2]
+_PLUGIN_DIR = pathlib.Path(locations.__file__).resolve().parents[2]
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -100,7 +89,7 @@ def _check_lane_selection(
     if not expected:
         return [f"レーン{lane}の全WIが再開位置を持ち、新しい計画の対象となるWIが無い。再開位置が指す既存計画で続ける"]
 
-    metadata, metadata_errors = _plan_format.parse_plan_metadata(text)
+    metadata, metadata_errors = structure.parse_plan_metadata(text)
     if metadata_errors:
         return metadata_errors
     errors: list[str] = []
@@ -109,7 +98,7 @@ def _check_lane_selection(
         if not prior_plan.is_absolute():
             raise ValueError(f"先行計画は絶対パスで指定する: {prior_plan}")
         prior_text = prior_plan.read_text(encoding="utf-8")
-        prior_metadata, prior_errors = _plan_format.parse_plan_metadata(prior_text)
+        prior_metadata, prior_errors = structure.parse_plan_metadata(prior_text)
         if prior_errors or prior_metadata is None:
             errors.extend(f"先行計画{prior_plan}: {error}" for error in prior_errors or ["計画メタ情報がない"])
             continue
@@ -129,14 +118,14 @@ def _check_lane_selection(
             "計画メタ情報の`関連WI`を、選定結果のうち再開位置を持たないそのレーンのWIへそろえる"
         )
 
-    headings = _plan_format.extract_headings(text)
-    section_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_ACTION)
+    headings = structure.extract_headings(text)
+    section_index = structure.find_heading_index(headings, 2, structure.PLAN_H2_ACTION)
     if section_index is None:
         return errors
-    start, end = _plan_format.heading_subtree_range(headings, section_index)
-    lines = _plan_format.lines_within(list(_plan_format.iter_markdown_body_lines(text)), start, end)
-    for table in _plan_format.extract_tables(lines):
-        if table.header != _plan_format.PLAN_HUMAN_ACTION_TABLE_HEADER:
+    start, end = structure.heading_subtree_range(headings, section_index)
+    lines = structure.lines_within(list(structure.iter_markdown_body_lines(text)), start, end)
+    for table in structure.extract_tables(lines):
+        if table.header != structure.PLAN_HUMAN_ACTION_TABLE_HEADER:
             continue
         for index, row in enumerate(table.rows):
             if len(row) != len(table.header):
@@ -172,13 +161,8 @@ def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
 
 def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
     """作業ディレクトリが属するGitルートの正規化済みパスを返す。"""
-    result = subprocess.run(
-        ["git", "-C", str(work_dir), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
+    result = _git_command.run(
+        ["-C", str(work_dir), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
         return None, result.stderr.strip() or "作業ディレクトリのGitルートを解決できない"
@@ -206,7 +190,7 @@ def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> li
 
 def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
     """コードフェンスを除く本文のスキル・専用agent参照が実在するか確かめる。"""
-    inline_text = _plan_format.markdown_body_text(text)
+    inline_text = structure.markdown_body_text(text)
     errors: list[str] = []
     agent_calls = set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES
     skill_calls = _classify_skill_references(inline_text) - agent_calls
@@ -295,14 +279,13 @@ def _check_plan_size(lines: list[str]) -> list[_ClassifiedWarning]:
 
 def _detail_path_for(plan_path: pathlib.Path) -> pathlib.Path:
     """計画ファイル（メイン）のパスから対応する計画ファイル（詳細）の絶対パスを返す（stem導出）。"""
-    return plan_path.with_name(f"{plan_path.stem}{_plan_format.PLAN_DETAIL_SUFFIX}")
+    return plan_path.with_name(bundle_kinds.DETAIL.name_for(plan_path.stem))
 
 
 def _main_path_for_detail(detail_path: pathlib.Path) -> pathlib.Path:
     """計画ファイル（詳細）のパスからstem対応する計画ファイル（メイン）のパスを返す。"""
-    suffix = _plan_format.PLAN_DETAIL_SUFFIX
-    if detail_path.name.endswith(suffix):
-        return detail_path.with_name(f"{detail_path.name[: -len(suffix)]}.md")
+    if bundle_kinds.DETAIL.matches(detail_path.name):
+        return detail_path.with_name(bundle_kinds.MAIN.name_for(detail_path.name.removesuffix(bundle_kinds.DETAIL.suffix)))
     return detail_path.with_suffix(".md")
 
 
@@ -324,18 +307,18 @@ def _check_bug_file_reference(
     """
     if work_type != "バグ対応":
         return [], []
-    reference = _plan_format.extract_bug_file_reference(text)
+    reference = structure.extract_bug_file_reference(text)
     if reference is None:
         return [], []
 
-    if _plan_file.is_plan_adjunct_reference(reference):
+    if locations.is_plan_adjunct_reference(reference):
         try:
-            reference_path = _plan_file.resolve_plan_adjunct_reference(reference, plan_path=plan_path)
+            reference_path = locations.resolve_plan_adjunct_reference(reference, plan_path=plan_path)
         except (OSError, ValueError) as error:
             return [f"バグ調査ファイルの参照値が不正です: {reference}: {error}"], []
-    elif reference.startswith(_plan_file.PORTABLE_PLAN_PREFIX):
+    elif reference.startswith(locations.PORTABLE_PLAN_PREFIX):
         try:
-            reference_path = _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=home)
+            reference_path = locations.resolve_plan_file(reference, private_notes=private_notes, home=home)
         except (OSError, ValueError) as error:
             return [f"バグ調査ファイルの可搬参照パスが不正です: {reference}: {error}"], []
     else:
@@ -343,14 +326,14 @@ def _check_bug_file_reference(
         if not reference_path.is_absolute():
             return [
                 "バグ調査ファイルの参照は"
-                f"`{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}<ファイル名>`、可搬表記または絶対パスにする: {reference}"
+                f"`{locations.PLAN_ADJUNCT_REFERENCE_PREFIX}<ファイル名>`、可搬表記または絶対パスにする: {reference}"
             ], []
         try:
-            reference_path = _plan_file.resolve_plan_file(reference_path)
+            reference_path = locations.resolve_plan_file(reference_path)
         except (OSError, ValueError) as error:
             return [f"バグ調査ファイルの参照パスが不正です: {reference}: {error}"], []
 
-    expected_path = plan_path.with_name(f"{plan_path.stem}.bugs.md")
+    expected_path = plan_path.with_name(bundle_kinds.BUGS.name_for(plan_path.stem))
     if reference_path.resolve() != expected_path.resolve():
         return [f"バグ調査ファイルの参照パスが計画stemと一致しない: 計画={reference_path}, 期待={expected_path}"], []
     if not reference_path.is_file():
@@ -358,34 +341,34 @@ def _check_bug_file_reference(
 
     bug_text = reference_path.read_text(encoding="utf-8")
     warnings: list[_ClassifiedWarning] = []
-    if _plan_format.has_legacy_bug_investigation_table(bug_text):
+    if structure.has_legacy_bug_investigation_table(bug_text):
         warnings.append(
             (
                 "migration",
                 "バグ調査ファイルの調査表が統廃合前の行構成である。新規作成・改訂では"
-                f"{list(_plan_format.PLAN_BUG_TABLE_ROWS)}の行へ移行する",
+                f"{list(structure.PLAN_BUG_TABLE_ROWS)}の行へ移行する",
             )
         )
-    return _plan_format.check_bug_file_structure(bug_text), warnings
+    return structure.check_bug_file_structure(bug_text), warnings
 
 
 def _legacy_action_warnings(text: str) -> list[_ClassifiedWarning]:
     """旧3列表の実施内容表を新4列表へ移行するwarningを返す。"""
-    if not _plan_format.has_legacy_action_table(text):
+    if not structure.has_legacy_action_table(text):
         return []
     return [("migration", "実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する")]
 
 
 def _legacy_bug_warnings(text: str) -> list[_ClassifiedWarning]:
     """旧形式の本文内バグ調査表を分離先ファイルへ移行するwarningを返す。"""
-    if not _plan_format.has_legacy_bug_table(text):
+    if not structure.has_legacy_bug_table(text):
         return []
     return [("migration", "バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する")]
 
 
 def _legacy_refactoring_warnings(text: str) -> list[_ClassifiedWarning]:
     """旧2列4行のリファクタリング表を現行3列表へ移行するwarningを返す。"""
-    if not _plan_format.has_legacy_refactoring_table(text):
+    if not structure.has_legacy_refactoring_table(text):
         return []
     return [
         (
@@ -397,34 +380,34 @@ def _legacy_refactoring_warnings(text: str) -> list[_ClassifiedWarning]:
 
 def _legacy_acceptance_warnings(text: str) -> list[_ClassifiedWarning]:
     """改名前の列名を持つ受入シナリオ表を現行の列名へ移行するwarningを返す。"""
-    if not _plan_format.has_legacy_acceptance_table(text):
+    if not structure.has_legacy_acceptance_table(text):
         return []
-    header = "`, `".join(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)
+    header = "`, `".join(structure.PLAN_ACCEPTANCE_TABLE_HEADER)
     return [("migration", f"受入シナリオ表の列名が旧形式である。新規作成・改訂では`{header}`の6列表へ移行する")]
 
 
 def _legacy_h2_warnings(text: str) -> list[_ClassifiedWarning]:
     """新書式で旧見出し別名を使っている場合の移行warningを返す。"""
-    if not _plan_format.is_canonical_main_format(text):
+    if not structure.is_canonical_main_format(text):
         return []
-    headings = _plan_format.extract_headings(text)
+    headings = structure.extract_headings(text)
     names = {heading.text for heading in headings if heading.level == 2}
     warnings: list[_ClassifiedWarning] = []
-    if _plan_format.PLAN_H2_LEGACY_AGENT_JUDGMENT in names:
+    if structure.PLAN_H2_LEGACY_AGENT_JUDGMENT in names:
         warnings.append(
             ("migration", "エージェント提案の詳細の見出しが旧形式である。新規作成・改訂では`## エージェント提案詳細`へ移行する")
         )
-    if _plan_format.has_legacy_history_user_event(text):
+    if structure.has_legacy_history_user_event(text):
         warnings.append(
             (
                 "migration",
                 "変更履歴のユーザー発言見出しが旧形式である。新規作成・改訂では"
-                f"`### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}<1から始まる連番>`へ移行する",
+                f"`### {structure.PLAN_HISTORY_USER_EVENT_PREFIX}<1から始まる連番>`へ移行する",
             )
         )
-    if _plan_format.PLAN_H2_LEGACY_HISTORY in names:
+    if structure.PLAN_H2_LEGACY_HISTORY in names:
         warnings.append(("migration", "変更履歴の見出しが旧形式である。新規作成・改訂では`## 変更履歴（計画時）`へ移行する"))
-    if _plan_format.PLAN_H2_LEGACY_PROGRESS in names:
+    if structure.PLAN_H2_LEGACY_PROGRESS in names:
         warnings.append(("migration", "進捗ログの見出しが旧形式である。新規作成・改訂では`## 進捗ログ（実行時）`へ移行する"))
     return warnings
 
@@ -433,48 +416,45 @@ def _legacy_wi_origin_warnings(text: str) -> list[_ClassifiedWarning]:
     """実施内容表の`由来`欄が改名前のWI区分を使っている場合の移行warningを返す。"""
     return [
         ("migration", f"`## 実施内容`の`由来`が旧形式である。新規作成・改訂では`{canonical}`へ移行する")
-        for canonical in _plan_format.legacy_wi_origins(text)
+        for canonical in structure.legacy_wi_origins(text)
     ]
 
 
 def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
     """読み取り互換で受理した旧形式の固定記法に移行警告を返す。"""
     warnings: list[_ClassifiedWarning] = []
-    metadata, _errors = _plan_format.parse_plan_metadata(text)
-    if metadata is not None and any(
-        field == _plan_format.PLAN_METADATA_LEGACY_DETAIL_FIELD for field, _value in metadata.entries
-    ):
+    metadata, _errors = structure.parse_plan_metadata(text)
+    if metadata is not None and any(field == structure.PLAN_METADATA_LEGACY_DETAIL_FIELD for field, _value in metadata.entries):
         warnings.append(("migration", "計画メタ情報の項目名が旧形式である。新規作成・改訂では`計画ファイル（詳細）`へ移行する"))
     if metadata is not None and any(
-        field == _plan_format.PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD for field, _value in metadata.entries
+        field == structure.PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD for field, _value in metadata.entries
     ):
         warnings.append(
             (
                 "migration",
-                "計画メタ情報の項目名が旧形式である。新規作成・改訂では"
-                f"`{_plan_format.PLAN_METADATA_RELATED_WI_FIELD}`へ移行する",
+                f"計画メタ情報の項目名が旧形式である。新規作成・改訂では`{structure.PLAN_METADATA_RELATED_WI_FIELD}`へ移行する",
             )
         )
     warnings.extend(_legacy_wi_origin_warnings(text))
-    if metadata is not None and _plan_format.PLAN_METADATA_DETAIL_FIELD in metadata.values:
+    if metadata is not None and structure.PLAN_METADATA_DETAIL_FIELD in metadata.values:
         warnings.append(
             (
                 "migration",
                 "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
             )
         )
-    headings = _plan_format.extract_headings(text)
-    if _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_MATERIALS) is not None:
+    headings = structure.extract_headings(text)
+    if structure.find_heading_index(headings, 2, structure.PLAN_H2_MATERIALS) is not None:
         warnings.append(
             (
                 "migration",
                 "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の"
-                f"`{_plan_format.PLAN_METADATA_RELATED_WI_FIELD}`へ移行する",
+                f"`{structure.PLAN_METADATA_RELATED_WI_FIELD}`へ移行する",
             )
         )
     if any(
-        line.strip().startswith(_plan_format.PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX)
-        for _lineno, line in _plan_format.iter_markdown_body_lines(text)
+        line.strip().startswith(structure.PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX)
+        for _lineno, line in structure.iter_markdown_body_lines(text)
     ):
         warnings.append(
             (
@@ -482,13 +462,13 @@ def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
                 "バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する",
             )
         )
-    reference = _plan_format.extract_bug_file_reference(text)
-    if reference is not None and not _plan_file.is_plan_adjunct_reference(reference):
+    reference = structure.extract_bug_file_reference(text)
+    if reference is not None and not locations.is_plan_adjunct_reference(reference):
         warnings.append(
             (
                 "migration",
                 "計画本文の付属ファイル参照が旧表記である。新規作成・改訂では"
-                f"`{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}<ファイル名>`へ移行する",
+                f"`{locations.PLAN_ADJUNCT_REFERENCE_PREFIX}<ファイル名>`へ移行する",
             )
         )
     return warnings
@@ -496,16 +476,16 @@ def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
 
 def _legacy_verification_name_warnings(text: str) -> list[_ClassifiedWarning]:
     """旧検証名の表を読取互換で受理し、改訂時だけ移行を求める。"""
-    tables = _plan_format.extract_tables(list(_plan_format.iter_markdown_body_lines(text)))
+    tables = structure.extract_tables(list(structure.iter_markdown_body_lines(text)))
     legacy_headers = (
-        _plan_format.PLAN_LEGACY_CURRENT_IMPLEMENTATION_UNITS_TABLE_HEADER,
-        _plan_format.PLAN_LEGACY_CURRENT_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        structure.PLAN_LEGACY_CURRENT_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        structure.PLAN_LEGACY_CURRENT_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
     )
     if any(
         table.header in legacy_headers
         or (
-            table.header == _plan_format.PLAN_VERIFICATION_TABLE_HEADER
-            and table.row_labels() == _plan_format.PLAN_LEGACY_CURRENT_SINGLE_VERIFICATION_TABLE_ROWS
+            table.header == structure.PLAN_VERIFICATION_TABLE_HEADER
+            and table.row_labels() == structure.PLAN_LEGACY_CURRENT_SINGLE_VERIFICATION_TABLE_ROWS
         )
         for table in tables
     ):
@@ -529,7 +509,7 @@ def _check_new_format(
     warnings: list[_ClassifiedWarning] = []
     origin_notices: list[str] = []
     origin_skips: list[str] = []
-    work_type, main_errors = _plan_format.check_plan_main_structure(
+    work_type, main_errors = structure.check_plan_main_structure(
         text,
         origin_notices=origin_notices,
         origin_skips=origin_skips,
@@ -541,17 +521,17 @@ def _check_new_format(
     warnings.extend(("migration", notice) for notice in origin_notices)
     warnings.extend(("advisory", skip) for skip in origin_skips)
 
-    parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
+    parsed, _ambiguity_errors = structure.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
 
     detail_text = detail_path.read_text(encoding="utf-8")
     warnings.extend(_legacy_verification_name_warnings(detail_text))
     detail_lines = detail_text.splitlines()
-    detail_body_start = _plan_format.markdown_body_start_index(detail_text)
+    detail_body_start = structure.markdown_body_start_index(detail_text)
     detail_structure_lines = ["" if index < detail_body_start else line for index, line in enumerate(detail_lines)]
     _outside_detail, detail_fence_errors = _outside_fences(detail_structure_lines)
     errors.extend(detail_fence_errors)
-    errors.extend(_plan_format.check_plan_detail_structure(detail_text, work_type))
+    errors.extend(structure.check_plan_detail_structure(detail_text, work_type))
     bug_errors, bug_warnings = _check_bug_file_reference(
         _main_path_for_detail(detail_path), detail_text, work_type, private_notes, home
     )
@@ -564,15 +544,15 @@ def _check_new_format(
     warnings.extend(_legacy_fixed_notation_warnings(detail_text))
 
     materials = None
-    if parsed is None or _plan_format.PLAN_METADATA_RELATED_WI_FIELD not in parsed.values:
-        materials, _material_errors = _plan_format.parse_plan_materials(text)
+    if parsed is None or structure.PLAN_METADATA_RELATED_WI_FIELD not in parsed.values:
+        materials, _material_errors = structure.parse_plan_materials(text)
     warnings.extend(_legacy_h2_warnings(text))
     warnings.extend(_legacy_action_warnings(text))
     warnings.extend(_legacy_fixed_notation_warnings(text))
-    is_canonical = _plan_format.is_canonical_main_format(text)
-    if is_canonical and not _plan_format.has_human_action_table(text):
+    is_canonical = structure.is_canonical_main_format(text)
+    if is_canonical and not structure.has_human_action_table(text):
         errors.append("canonical形式の`## 実施内容`には人間向け4列表が必要である")
-    elif not _plan_format.has_human_action_table(text):
+    elif not structure.has_human_action_table(text):
         warnings.append(("migration", "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する"))
     if is_canonical and materials is not None and materials.is_legacy:
         errors.append("canonical形式の`## 提示素材`には素材表と要求表が必要である")
@@ -594,7 +574,7 @@ def _check_single_file_format(
     """現行の1ファイル計画が基準を満たすか判定し、エラーと警告を返す。"""
     origin_notices: list[str] = []
     origin_skips: list[str] = []
-    work_type, errors = _plan_format.check_plan_single_file_structure(
+    work_type, errors = structure.check_plan_single_file_structure(
         text,
         origin_notices=origin_notices,
         origin_skips=origin_skips,
@@ -603,7 +583,7 @@ def _check_single_file_format(
     )
     warnings: list[_ClassifiedWarning] = [("migration", notice) for notice in origin_notices]
     warnings.extend(("advisory", skip) for skip in origin_skips)
-    metadata, _metadata_errors = _plan_format.parse_plan_metadata(text)
+    metadata, _metadata_errors = structure.parse_plan_metadata(text)
     values = metadata.values if metadata is not None else {}
     errors.extend(_check_target_repo(values.get("対象リポジトリ"), work_dir))
     bug_errors, bug_warnings = _check_bug_file_reference(plan_path, text, work_type, private_notes, home)
@@ -626,8 +606,8 @@ def _check_legacy_format(
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
     """旧形式（単一ファイル9節）が基準を満たすか判定し、エラーと警告を返す。読み取り互換であり新規作成では生成しない。"""
     lines = text.splitlines()
-    errors = _plan_format.check_plan_structure(text)
-    materials, _material_errors = _plan_format.parse_plan_materials(text)
+    errors = structure.check_plan_structure(text)
+    materials, _material_errors = structure.parse_plan_materials(text)
     warnings: list[_ClassifiedWarning] = []
     warnings.extend(_legacy_action_warnings(text))
     warnings.extend(_legacy_bug_warnings(text))
@@ -635,7 +615,7 @@ def _check_legacy_format(
     warnings.extend(_legacy_fixed_notation_warnings(text))
     if materials is not None and materials.is_legacy:
         warnings.append(("migration", "提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する"))
-    parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
+    parsed, _ambiguity_errors = structure.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
     bug_errors, bug_warnings = _check_bug_file_reference(plan_path, text, metadata.get("作業種別"), private_notes, home)
@@ -654,11 +634,11 @@ def _check_working_plan_filename(plan_path: pathlib.Path, home: pathlib.Path | s
     計画バンドルの改名と内部参照の修正という手戻りが生じる。判定規則を本スクリプトへ書き写さない。
     `~/.claude/plans`直下に無い対象は`private-notes/plans/`の日付階層などを含むため、ファイル名が形式を満たすかは判定しない。
     """
-    working_root = _plan_file.working_plans_root(home).resolve(strict=False)
+    working_root = locations.working_plans_root(home).resolve(strict=False)
     if plan_path.parent.resolve(strict=False) != working_root:
         return []
     try:
-        _plan_file.validate_working_plan_relative_path(plan_path.name)
+        locations.validate_working_plan_relative_path(plan_path.name)
     except ValueError as error:
         return [f"`~/.claude/plans`直下の計画ファイル名が保存工程の受理条件を満たさない: {plan_path.name}: {error}"]
     return []
@@ -691,25 +671,25 @@ def check(
     """
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
-    body_start = _plan_format.markdown_body_start_index(text)
+    body_start = structure.markdown_body_start_index(text)
     structure_lines = ["" if index < body_start else line for index, line in enumerate(lines)]
     _outside, errors = _outside_fences(structure_lines)
     errors.extend(_check_working_plan_filename(plan_path, home))
 
     detail_path = _detail_path_for(plan_path)
-    progress_heading = _plan_format.PLAN_H2_PROGRESS
+    progress_heading = structure.PLAN_H2_PROGRESS
     if detail_path.is_file():
         format_errors, classified_warnings = _check_new_format(detail_path, text, work_dir, private_notes, home)
         if not any(kind == "migration" for kind, _message in classified_warnings):
             classified_warnings.append(("migration", "旧二ファイル書式である。新規作成・改訂では現行の1ファイル書式へ移行する"))
     else:
-        h2_names = {heading.text for heading in _plan_format.extract_headings(text) if heading.level == 2}
+        h2_names = {heading.text for heading in structure.extract_headings(text) if heading.level == 2}
         current_markers = {
-            _plan_format.PLAN_H2_REQUIREMENTS,
-            _plan_format.PLAN_H2_CURRENT_PERMANENCE,
+            structure.PLAN_H2_REQUIREMENTS,
+            structure.PLAN_H2_CURRENT_PERMANENCE,
         }
         if current_markers <= h2_names:
-            progress_heading = _plan_format.PLAN_H2_CURRENT_PROGRESS
+            progress_heading = structure.PLAN_H2_CURRENT_PROGRESS
             format_errors, classified_warnings = _check_single_file_format(plan_path, text, work_dir, private_notes, home)
         else:
             format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
@@ -730,7 +710,7 @@ def check(
         if plan_path in prior_plans or len(prior_plans) != len(set(prior_plans)):
             raise ValueError("追加計画と先行計画に同じファイルを重複指定できない")
         errors.extend(_check_lane_selection(text, selection_file, lane, prior_plans, work_dir))
-    if reject_progress_log_rows and _plan_format.has_progress_log_rows(text):
+    if reject_progress_log_rows and structure.has_progress_log_rows(text):
         errors.append(f"`## {progress_heading}`は起草時に内容行を置かない")
     warnings: list[str] = []
     for kind, message in classified_warnings:

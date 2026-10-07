@@ -1,7 +1,3 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """_managed_tempの管理対象一時ディレクトリ境界を検証する。"""
 
 # pylint: disable=protected-access
@@ -9,27 +5,33 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
-import ctypes
 import datetime
 import json
 import os
 import pathlib
+import shutil
 import stat
-import subprocess
-import sys
+import tempfile
 import typing
 
 import pytest
 
 from agent_toolkit._atk import managed_temp as subject
 from agent_toolkit._atk.managed_temp import inventory as inventory_subject
+from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
+from agent_toolkit._testing.managed_temp_support import (
+    _assert_child_replacement_preserves_both_versions,
+    _interrupt_cleanup,
+    _managed_state,
+    _registry_recovery_is_accepted,
+    _replace_records,
+    _replace_registry,
+    _set_tree_mtime,
+    setattr_in_managed_temp_modules,
+)
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-
-
-from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 
 
 @pytest.mark.parametrize(
@@ -48,8 +50,8 @@ from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 )
 def test_is_valid_prefix(prefix: str, expected: bool) -> None:
     """createとPermissionRequestが共有するprefix規則を確認する。"""
-    assert subject.is_valid_prefix(prefix) is expected
-    assert (subject._PREFIX_RE.fullmatch(prefix) is not None) is expected
+    assert managed_temp_registry.is_valid_prefix(prefix) is expected
+    assert (managed_temp_registry._PREFIX_RE.fullmatch(prefix) is not None) is expected
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX固有の権限・dirfd検証")
@@ -57,7 +59,7 @@ class TestManagedTempPosix:
     """POSIXの作成・検証・後始末を実ファイルで確認する。"""
 
     def test_create_validate_and_cleanup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
         target = subject.create_managed_temp(
             "plan-review-snapshot",
@@ -96,7 +98,7 @@ class TestManagedTempPosix:
         current_root = tmp_path / "current-root"
         shared_root.mkdir()
         current_root.mkdir()
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(current_root))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(current_root))
 
         target = subject.create_managed_temp("shared-worktree", root=shared_root)
 
@@ -114,7 +116,7 @@ class TestManagedTempPosix:
         root_kind: str,
     ) -> None:
         """明示rootの相対・不在・非ディレクトリ・リンク・権限・所有者不一致を拒否する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "default-root"))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "default-root"))
         (tmp_path / "default-root").mkdir()
         safe = tmp_path / "safe-root"
         safe.mkdir()
@@ -135,7 +137,7 @@ class TestManagedTempPosix:
         else:
             root = safe
             current_euid = os.geteuid()
-            monkeypatch.setattr(subject.os, "geteuid", lambda: current_euid + 1)
+            monkeypatch.setattr(os, "geteuid", lambda: current_euid + 1)
 
         with pytest.raises(subject.ManagedTempError):
             subject.create_managed_temp("invalid-explicit-root", root=root)
@@ -152,7 +154,7 @@ class TestManagedTempPosix:
         root.chmod(0o700)
         displaced = tmp_path / "displaced-root"
         replacement = tmp_path / "replacement-root"
-        original_mkdtemp = subject.tempfile.mkdtemp
+        original_mkdtemp = tempfile.mkdtemp
 
         def replace_root_after_create(*args: typing.Any, **kwargs: typing.Any) -> str:
             created = original_mkdtemp(*args, **kwargs)
@@ -161,7 +163,7 @@ class TestManagedTempPosix:
             (replacement / pathlib.Path(created).name).mkdir()
             return created
 
-        monkeypatch.setattr(subject.tempfile, "mkdtemp", replace_root_after_create)
+        monkeypatch.setattr(tempfile, "mkdtemp", replace_root_after_create)
         with pytest.raises(subject.ManagedTempError, match="root"):
             subject.create_managed_temp("create-root-race", root=root)
         assert not list(displaced.glob("create-root-race-*"))
@@ -178,7 +180,7 @@ class TestManagedTempPosix:
         root.chmod(0o700)
         displaced = tmp_path / "displaced-root"
         replacement = tmp_path / "replacement-root"
-        original_write_marker = subject._write_marker
+        original_write_marker = managed_temp_registry._write_marker
 
         def replace_root_after_marker(
             path: pathlib.Path,
@@ -190,7 +192,7 @@ class TestManagedTempPosix:
             replacement.mkdir()
             (replacement / path.name).mkdir()
 
-        monkeypatch.setattr(subject, "_write_marker", replace_root_after_marker)
+        setattr_in_managed_temp_modules(monkeypatch, "_write_marker", replace_root_after_marker)
         with pytest.raises(subject.ManagedTempError, match="root"):
             subject.create_managed_temp("marker-root-race", root=root)
         assert not list(displaced.glob("marker-root-race-*"))
@@ -202,7 +204,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """旧スキーマのマーカーファイルと登録簿が同じ旧フィールド集合なら互換検証する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("v1-record")
 
         def convert_to_v1(record: dict[str, object]) -> None:
@@ -222,7 +224,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """版数2のフィールド集合が一致する記録を読み取り互換として検証する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("v2-record")
 
         def convert_to_v2(record: dict[str, object]) -> None:
@@ -242,7 +244,7 @@ class TestManagedTempPosix:
         awis: tuple[str, ...],
     ) -> None:
         """対応するAWIのファイル名の空値、パス区切り文字および制御文字を拒否する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
         with pytest.raises(subject.ManagedTempError, match="awi"):
             subject.create_managed_temp("invalid-awi", awis=awis)
@@ -271,7 +273,7 @@ class TestManagedTempPosix:
         value: object,
     ) -> None:
         """v2のprefixとUTC作成時刻は双方で必須かつ型・値を検証する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("invalid-v2")
 
         def set_invalid(record: dict[str, object]) -> None:
@@ -299,7 +301,7 @@ class TestManagedTempPosix:
         awis: object,
     ) -> None:
         """v4のawisは安全な空でないファイル名だけを含むリストに限定する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("invalid-v4")
 
         def set_invalid(record: dict[str, object]) -> None:
@@ -318,10 +320,10 @@ class TestManagedTempPosix:
         marker_only: bool,
     ) -> None:
         """version混在と片側だけのv3更新を真正性エラーとして拒否する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("record-mismatch")
         marker = target / _MARKER_NAME
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         changed = marker if marker_only else registry
         record = json.loads(changed.read_text(encoding="utf-8"))
         if marker_only:
@@ -345,7 +347,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`list`は旧版を含めてJSONL出力し、不正な登録簿を診断して正常項目を継続する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         v1_target = subject.create_managed_temp("legacy")
         v2_target = subject.create_managed_temp("publish-group")
         v3_target = subject.create_managed_temp("implementation", awis=("20260830-061344-001.md",))
@@ -364,7 +366,7 @@ class TestManagedTempPosix:
 
         _replace_records(v1_target, convert_to_v1)
         _replace_records(v2_target, convert_to_v2)
-        invalid_registry = subject._state_root() / "invalid.json"
+        invalid_registry = managed_temp_registry._state_root() / "invalid.json"
         invalid_registry.write_text("{}", encoding="utf-8")
         invalid_registry.chmod(0o600)
 
@@ -381,14 +383,18 @@ class TestManagedTempPosix:
                 "session_id": None,
             },
             {
-                "created_at": subject._load_private_json(subject._registry_path(v2_target))["created_at"],
+                "created_at": managed_temp_registry._load_private_json(managed_temp_registry._registry_path(v2_target))[
+                    "created_at"
+                ],
                 "awis": [],
                 "path": str(v2_target),
                 "prefix": "publish-group",
                 "session_id": None,
             },
             {
-                "created_at": subject._load_private_json(subject._registry_path(v3_target))["created_at"],
+                "created_at": managed_temp_registry._load_private_json(managed_temp_registry._registry_path(v3_target))[
+                    "created_at"
+                ],
                 "awis": ["20260830-061344-001.md"],
                 "path": str(v3_target),
                 "prefix": "implementation",
@@ -403,7 +409,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """同時刻のv2はpath順に並べ、prefix指定ではv1を返さない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         first = subject.create_managed_temp("publish-group")
         second = subject.create_managed_temp("publish-group")
         legacy = subject.create_managed_temp("legacy")
@@ -433,7 +439,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """該当管理領域が無いlistは慣例どおり終了状態1で終える。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         parser = argparse.ArgumentParser()
         subject.build_parser(parser)
 
@@ -449,7 +455,7 @@ class TestManagedTempPosix:
         agent_environment: bool,
     ) -> None:
         """領域内の全更新が期限を超えた真正な領域だけを既存の削除処理で回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         if agent_environment:
             monkeypatch.setenv("AI_AGENT", "1")
         target = subject.create_managed_temp("expired")
@@ -468,7 +474,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """セッションのmanaged-tempは作成直後の掃引では回収しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("session", session_id="session-1")
 
         assert subject.sweep_expired_managed_temp(now=datetime.datetime.now(datetime.UTC)) == []
@@ -482,7 +488,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """複数領域の一部で後始末に失敗しても、残りの期限超過領域を削除する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         failed = subject.create_managed_temp("failed")
         deleted = subject.create_managed_temp("deleted")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
@@ -514,7 +520,7 @@ class TestManagedTempPosix:
         race_point: str,
     ) -> None:
         """一覧取得後に別実行が後始末を完了した競合を削除失敗として警告しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"concurrent-{race_point}")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
         old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
@@ -529,7 +535,7 @@ class TestManagedTempPosix:
             original_cleanup(target)
             raise FileNotFoundError(target)
 
-        monkeypatch.setattr(subject, "list_managed_temp", lambda: entries)
+        setattr_in_managed_temp_modules(monkeypatch, "list_managed_temp", lambda: entries)
         if race_point == "stat":
             original_stat = pathlib.Path.stat
 
@@ -540,14 +546,14 @@ class TestManagedTempPosix:
 
             monkeypatch.setattr(pathlib.Path, "stat", concurrent_stat)
         elif race_point == "scandir":
-            original_scandir = subject.os.scandir
+            original_scandir = os.scandir
 
             def concurrent_scandir(path: pathlib.Path | str) -> typing.Any:
                 if pathlib.Path(path) == target and not triggered:
                     finish_elsewhere()
                 return original_scandir(path)
 
-            monkeypatch.setattr(subject.os, "scandir", concurrent_scandir)
+            monkeypatch.setattr(os, "scandir", concurrent_scandir)
         else:
             monkeypatch.setattr(
                 inventory_subject,
@@ -558,7 +564,7 @@ class TestManagedTempPosix:
         assert subject.sweep_expired_managed_temp(now=now) == []
         assert triggered
         assert not target.exists()
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
         assert capsys.readouterr().err == ""
 
     @pytest.mark.parametrize("interrupted_state", ["consuming", "quarantine"])
@@ -570,10 +576,10 @@ class TestManagedTempPosix:
         interrupted_state: str,
     ) -> None:
         """消費途中または隔離途中の状態が残る対象を別実行の完了として扱わない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"interrupted-{interrupted_state}")
-        registry = subject._registry_path(target)
-        nonce = subject._load_private_json(registry)["nonce"]
+        registry = managed_temp_registry._registry_path(target)
+        nonce = managed_temp_registry._load_private_json(registry)["nonce"]
         assert isinstance(nonce, str)
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
         old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
@@ -587,7 +593,7 @@ class TestManagedTempPosix:
             if path == target and not triggered:
                 triggered = True
                 if interrupted_state == "consuming":
-                    subject.shutil.rmtree(target)
+                    shutil.rmtree(target)
                     os.replace(registry, registry.with_name(f"{registry.name}.consuming-{nonce}"))
                 else:
                     os.replace(target, target.parent / f".agent-toolkit-cleanup-{nonce}")
@@ -595,7 +601,7 @@ class TestManagedTempPosix:
                 raise FileNotFoundError(target)
             return original_stat(path, *args, **kwargs)
 
-        monkeypatch.setattr(subject, "list_managed_temp", lambda: entries)
+        setattr_in_managed_temp_modules(monkeypatch, "list_managed_temp", lambda: entries)
         monkeypatch.setattr(pathlib.Path, "stat", interrupt_cleanup)
 
         assert subject.sweep_expired_managed_temp(now=now) == []
@@ -608,7 +614,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """rootが古くても入れ子に期限内の更新があれば領域を保持する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("nested-recent")
         nested = target / "nested"
         nested.mkdir()
@@ -629,7 +635,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """入れ子に`.git`という名前のエントリーがある領域を自動削除しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("git-worktree")
         (target / "nested" / ".git").mkdir(parents=True)
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
@@ -646,7 +652,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """真正性検証を通らない古いディレクトリは自動削除の候補にしない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("untrusted-expired")
         (target / _MARKER_NAME).write_text("{}", encoding="utf-8")
         (target / _MARKER_NAME).chmod(0o600)
@@ -665,9 +671,9 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`managed-temp list`は検証不能な登録と回収手順を報告する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("unverifiable")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         (target / _MARKER_NAME).write_text("{}", encoding="utf-8")
         (target / _MARKER_NAME).chmod(0o600)
         parser = argparse.ArgumentParser()
@@ -688,19 +694,19 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """root自身が期限境界なら内容を走査せず領域を保持する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("recent")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
         deadline_ns = int((now - datetime.timedelta(days=7)).timestamp() * 1_000_000_000)
         _set_tree_mtime(target, deadline_ns)
-        original_scandir = subject.os.scandir
+        original_scandir = os.scandir
 
         def fail_target_scandir(path: pathlib.Path | str, **kwargs: typing.Any) -> typing.Any:
             if pathlib.Path(path) == target:
                 raise AssertionError(f"期限境界のrootを走査した: {path}")
             return original_scandir(path, **kwargs)
 
-        monkeypatch.setattr(subject.os, "scandir", fail_target_scandir)
+        monkeypatch.setattr(os, "scandir", fail_target_scandir)
 
         assert not subject.sweep_expired_managed_temp(now=now)
         assert target.exists()
@@ -714,11 +720,11 @@ class TestManagedTempPosix:
         tamper: str,
     ) -> None:
         """listは改変・不対応・link・権限不正を出力せず、登録を残して正常項目を継続する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         valid = subject.create_managed_temp("valid")
         invalid = subject.create_managed_temp("invalid")
         marker = invalid / _MARKER_NAME
-        registry = subject._registry_path(invalid)
+        registry = managed_temp_registry._registry_path(invalid)
         if tamper == "marker":
             marker.write_text("{}", encoding="utf-8")
             marker.chmod(0o600)
@@ -738,7 +744,9 @@ class TestManagedTempPosix:
             {
                 "path": str(valid),
                 "prefix": "valid",
-                "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
+                "created_at": managed_temp_registry._load_private_json(managed_temp_registry._registry_path(valid))[
+                    "created_at"
+                ],
                 "awis": [],
                 "session_id": None,
             }
@@ -753,10 +761,10 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """実体の消滅を確定した登録は警告して登録ファイルごと回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         valid = subject.create_managed_temp("valid")
         missing = subject.create_managed_temp("missing")
-        registry = subject._registry_path(missing)
+        registry = managed_temp_registry._registry_path(missing)
         (missing / _MARKER_NAME).unlink()
         missing.rmdir()
 
@@ -764,7 +772,9 @@ class TestManagedTempPosix:
             {
                 "path": str(valid),
                 "prefix": "valid",
-                "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
+                "created_at": managed_temp_registry._load_private_json(managed_temp_registry._registry_path(valid))[
+                    "created_at"
+                ],
                 "awis": [],
                 "session_id": None,
             }
@@ -783,14 +793,14 @@ class TestManagedTempPosix:
         listed_root = tmp_path / "listed"
         recorded_root.mkdir()
         listed_root.mkdir()
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(recorded_root))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(recorded_root))
         missing = subject.create_managed_temp("moved-root")
-        registry = subject._registry_path(missing)
+        registry = managed_temp_registry._registry_path(missing)
         (missing / _MARKER_NAME).unlink()
         missing.rmdir()
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(listed_root))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(listed_root))
 
-        assert subject.is_missing_registered_temp(missing) is True
+        assert inventory_subject.is_missing_registered_temp(missing) is True
         assert subject.list_managed_temp() == []
         assert "実体が失われた管理対象の登録を回収した" in capsys.readouterr().err
         assert not registry.exists()
@@ -802,9 +812,9 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """記録deviceが現在のrootと異なる場合は実体不在を確定せず登録を保持する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("different-device")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
 
         def change_device(record: dict[str, object]) -> None:
             identity = typing.cast(list[int], record["identity"])
@@ -825,10 +835,10 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """報告モードは保持登録と登録欠落領域に別々の再開方法を案内する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         unreachable = subject.create_managed_temp("unreachable")
         orphan = subject.create_managed_temp("orphan")
-        unreachable_registry = subject._registry_path(unreachable)
+        unreachable_registry = managed_temp_registry._registry_path(unreachable)
 
         def change_device(record: dict[str, object]) -> None:
             identity = typing.cast(list[int], record["identity"])
@@ -837,7 +847,7 @@ class TestManagedTempPosix:
         _replace_registry(unreachable, change_device)
         (unreachable / _MARKER_NAME).unlink()
         unreachable.rmdir()
-        subject._registry_path(orphan).unlink()
+        managed_temp_registry._registry_path(orphan).unlink()
 
         assert subject.list_managed_temp(report_recovery_candidates=True) == []
         error = capsys.readouterr().err
@@ -855,12 +865,12 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """登録を失った管理対象が0件、1件、複数件の場合の件数を返す。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         for index in range(count):
             target = subject.create_managed_temp(f"orphan-{index}")
-            subject._registry_path(target).unlink()
+            managed_temp_registry._registry_path(target).unlink()
 
-        assert subject.count_unregistered_candidates() == count
+        assert inventory_subject.count_unregistered_candidates() == count
 
     def test_unregistered_candidate_scan_resolves_state_only_for_marked_entries(
         self,
@@ -869,10 +879,10 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """未登録候補の探索は、マーカーを持つ項目だけへ外部状態の解決を限定する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         orphans = [subject.create_managed_temp(f"orphan-{index}") for index in range(2)]
         for orphan in orphans:
-            subject._registry_path(orphan).unlink()
+            managed_temp_registry._registry_path(orphan).unlink()
         registered = subject.create_managed_temp("registered")
         unmarked = [tmp_path / f"unmarked-{index}" for index in range(20)]
         for directory in unmarked:
@@ -887,16 +897,16 @@ class TestManagedTempPosix:
         assert all(str(directory) not in error for directory in unmarked)
 
         resolutions = 0
-        original_state_root = subject._state_root
+        original_state_root = managed_temp_registry._state_root
 
         def counting_state_root() -> pathlib.Path:
             nonlocal resolutions
             resolutions += 1
             return original_state_root()
 
-        monkeypatch.setattr(subject, "_state_root", counting_state_root)
+        setattr_in_managed_temp_modules(monkeypatch, "_state_root", counting_state_root)
 
-        assert subject.count_unregistered_candidates() == len(orphans)
+        assert inventory_subject.count_unregistered_candidates() == len(orphans)
         assert resolutions <= marked_count
 
     def test_list_with_prefix_ignores_other_prefix_records(
@@ -906,11 +916,11 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """prefix指定時は別prefixの保持登録を報告も回収もしない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         selected = subject.create_managed_temp("selected")
         ignored = subject.create_managed_temp("ignored")
         for target in (selected, ignored):
-            registry = subject._registry_path(target)
+            registry = managed_temp_registry._registry_path(target)
             _replace_registry(
                 target,
                 lambda record: typing.cast(list[int], record["identity"]).__setitem__(0, os.lstat(tmp_path).st_dev + 1),
@@ -923,7 +933,7 @@ class TestManagedTempPosix:
         error = capsys.readouterr().err
         assert str(selected) in error
         assert str(ignored) not in error
-        assert subject._registry_path(ignored).exists()
+        assert managed_temp_registry._registry_path(ignored).exists()
 
     def test_cleanup_consumes_registry_of_a_missing_target(
         self,
@@ -931,13 +941,13 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """実体を失った管理対象のcleanupは、真正性検証を経ず登録の削除だけで完了する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("missing-target")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         (target / _MARKER_NAME).unlink()
         target.rmdir()
 
-        assert subject.is_missing_registered_temp(target) is True
+        assert inventory_subject.is_missing_registered_temp(target) is True
         subject.cleanup_managed_temp(target)
         assert not registry.exists()
 
@@ -947,12 +957,12 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """実体が残り真正性検証に失敗する管理対象は、登録も実体も消費せず失敗する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("untrusted-target")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         (target / _MARKER_NAME).unlink()
 
-        assert subject.is_missing_registered_temp(target) is False
+        assert inventory_subject.is_missing_registered_temp(target) is False
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(target)
         assert target.exists()
@@ -964,10 +974,10 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """登録簿に一致する記録を持たない不在パスは消滅と判定せず失敗する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         unregistered = tmp_path / "unregistered-target"
 
-        assert subject.is_missing_registered_temp(unregistered) is False
+        assert inventory_subject.is_missing_registered_temp(unregistered) is False
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(unregistered)
 
@@ -977,12 +987,12 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """登録欠落領域は明示指定時だけマーカーから登録を復元して後始末する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("registry-recovery")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         registry.unlink()
 
-        assert subject._classify_quarantine(target.parent, target).state is subject._QuarantineState.ABSENT
+        assert inventory_subject._classify_quarantine(target.parent, target).state is inventory_subject._QuarantineState.ABSENT
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(target)
         assert target.exists()
@@ -1001,9 +1011,9 @@ class TestManagedTempPosix:
         marker_state: str,
     ) -> None:
         """`list`が`--recover-registry`を案内する管理対象と、同引数が受理する管理対象を一致させる。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"recovery-{marker_state}")
-        subject._registry_path(target).unlink()
+        managed_temp_registry._registry_path(target).unlink()
         marker = target / _MARKER_NAME
         if marker_state == "unmatched":
             record = json.loads(marker.read_text(encoding="utf-8"))
@@ -1027,9 +1037,9 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """復元できないマーカーには、復元不能の理由と実体の直接削除を案内する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("unmatched-marker")
-        subject._registry_path(target).unlink()
+        managed_temp_registry._registry_path(target).unlink()
         marker = target / _MARKER_NAME
         record = json.loads(marker.read_text(encoding="utf-8"))
         del record["identity"]
@@ -1055,9 +1065,9 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """公開引数の明示指定だけが確認済み登録不在からの復元を有効にする。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("registry-recovery-cli")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         registry.unlink()
         parser = argparse.ArgumentParser()
         subject.build_parser(parser)
@@ -1075,7 +1085,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """`atk managed-temp`が作成していない領域の自己整合マーカーは、ユーザーの指定が無ければ信頼しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = tmp_path / "handmade"
         target.mkdir(mode=0o700)
         metadata = target.stat()
@@ -1083,20 +1093,20 @@ class TestManagedTempPosix:
             "schema_version": 3,
             "path": str(target),
             "platform": os.name,
-            "owner": subject._owner_record(),
+            "owner": managed_temp_registry._owner_record(),
             "identity": [metadata.st_dev, metadata.st_ino],
             "nonce": "0" * 64,
             "prefix": "handmade",
             "created_at": "2026-08-31T00:00:00+00:00",
             "awis": [],
         }
-        subject._write_private_json(target / _MARKER_NAME, marker)
+        managed_temp_registry._write_private_json(target / _MARKER_NAME, marker)
         (target / "keep.txt").write_text("keep", encoding="utf-8")
 
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(target)
         assert (target / "keep.txt").read_text(encoding="utf-8") == "keep"
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
 
     def test_cleanup_rejects_marker_that_does_not_match_the_target(
         self,
@@ -1104,7 +1114,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """別領域から複製したマーカーは登録復元を指定しても受理しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         source = subject.create_managed_temp("marker-source")
         target = tmp_path / "marker-copy"
         target.mkdir(mode=0o700)
@@ -1114,7 +1124,7 @@ class TestManagedTempPosix:
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(target, recover_registry=True)
         assert target.exists()
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
 
     def test_cleanup_resumes_after_an_interrupted_consume(
         self,
@@ -1123,14 +1133,14 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """消費途中状態から登録を取り戻して通常の後始末を再開する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("resume-consume")
         consuming, _ = _interrupt_cleanup(target)
 
         subject.cleanup_managed_temp(target)
         assert "中断した後始末の登録を復元した" in capsys.readouterr().err
         assert not target.exists()
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
         assert not consuming.exists()
 
     def test_cleanup_terminates_when_the_target_is_absent_with_a_consuming_state(
@@ -1139,14 +1149,14 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """実体不在でも消費途中状態を登録へ戻して管理記録を終端する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("resume-missing")
         consuming, _ = _interrupt_cleanup(target)
         (target / _MARKER_NAME).unlink()
         target.rmdir()
 
         subject.cleanup_managed_temp(target)
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
         assert not consuming.exists()
 
     def test_cleanup_resumes_after_an_interrupted_quarantine(
@@ -1156,7 +1166,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """真正な隔離途中状態の内容を削除して登録を終端する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("resume-quarantine")
         (target / "content.txt").write_text("remove", encoding="utf-8")
         consuming, quarantine = _interrupt_cleanup(target, quarantine=True)
@@ -1165,7 +1175,7 @@ class TestManagedTempPosix:
         assert "中断した後始末の隔離先を後始末した" in capsys.readouterr().err
         assert not target.exists()
         assert not quarantine.exists()
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
         assert not consuming.exists()
 
     @pytest.mark.parametrize("mismatch", ["nonce", "identity"])
@@ -1176,7 +1186,7 @@ class TestManagedTempPosix:
         mismatch: str,
     ) -> None:
         """記録から導出できない、またはidentityが異なる隔離先を削除しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"quarantine-{mismatch}")
         (target / "keep.txt").write_text("keep", encoding="utf-8")
         _, quarantine = _interrupt_cleanup(target, quarantine=True)
@@ -1192,15 +1202,15 @@ class TestManagedTempPosix:
 
         subject.cleanup_managed_temp(target)
         assert (preserved / "keep.txt").read_text(encoding="utf-8") == "keep"
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
 
     @pytest.mark.parametrize(
         ("scenario", "expected"),
         [
-            ("target-exists", subject._QuarantineState.ABSENT),
-            ("matched", subject._QuarantineState.MATCHED),
-            ("mismatched", subject._QuarantineState.MISMATCHED),
-            ("unverifiable", subject._QuarantineState.UNVERIFIABLE),
+            ("target-exists", inventory_subject._QuarantineState.ABSENT),
+            ("matched", inventory_subject._QuarantineState.MATCHED),
+            ("mismatched", inventory_subject._QuarantineState.MISMATCHED),
+            ("unverifiable", inventory_subject._QuarantineState.UNVERIFIABLE),
         ],
     )
     def test_classify_quarantine_maps_each_state(
@@ -1208,17 +1218,17 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         scenario: str,
-        expected: subject._QuarantineState,
+        expected: inventory_subject._QuarantineState,
     ) -> None:
         """隔離途中状態の入力を対象不在・一致・不一致・確認不能のいずれかへ分類する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"classify-{scenario}")
         if scenario == "target-exists":
-            judgement = subject._classify_quarantine(target.parent, target)
+            judgement = inventory_subject._classify_quarantine(target.parent, target)
         else:
             _, quarantine = _interrupt_cleanup(target, quarantine=True)
-            registry = subject._registry_path(target)
-            consuming = subject._consuming_registry_path(registry)
+            registry = managed_temp_registry._registry_path(target)
+            consuming = inventory_subject._consuming_registry_path(registry)
             assert consuming is not None
             consuming.replace(registry)
             if scenario == "mismatched":
@@ -1226,16 +1236,16 @@ class TestManagedTempPosix:
                 quarantine.replace(displaced)
                 quarantine.mkdir()
             if scenario == "unverifiable":
-                original_load = subject._load_private_json
+                original_load = managed_temp_registry._load_private_json
                 with monkeypatch.context() as patcher:
-                    patcher.setattr(
-                        subject,
+                    setattr_in_managed_temp_modules(
+                        patcher,
                         "_load_private_json",
                         lambda path: (_ for _ in ()).throw(OSError("failure")) if path == registry else original_load(path),
                     )
-                    judgement = subject._classify_quarantine(target.parent, target)
+                    judgement = inventory_subject._classify_quarantine(target.parent, target)
             else:
-                judgement = subject._classify_quarantine(target.parent, target)
+                judgement = inventory_subject._classify_quarantine(target.parent, target)
         assert judgement.state is expected
 
     @pytest.mark.parametrize("failure_point", ["registry", "target", "identity"])
@@ -1247,21 +1257,21 @@ class TestManagedTempPosix:
         failure_point: str,
     ) -> None:
         """隔離した対象の状態を確認できない場合は管理情報と隔離先を保持して再試行できる。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"unverifiable-{failure_point}")
         (target / "content.txt").write_text("keep", encoding="utf-8")
         _, quarantine = _interrupt_cleanup(target, quarantine=True)
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         parser = argparse.ArgumentParser()
         subject.build_parser(parser)
-        original_load = subject._load_private_json
-        original_lstat = subject.os.lstat
-        original_identity = subject._path_identity
+        original_load = managed_temp_registry._load_private_json
+        original_lstat = os.lstat
+        original_identity = managed_temp_registry._path_identity
 
         with monkeypatch.context() as patcher:
             if failure_point == "registry":
-                patcher.setattr(
-                    subject,
+                setattr_in_managed_temp_modules(
+                    patcher,
                     "_load_private_json",
                     lambda path: (
                         (_ for _ in ()).throw(OSError("registry failure")) if path == registry else original_load(path)
@@ -1269,7 +1279,7 @@ class TestManagedTempPosix:
                 )
             elif failure_point == "target":
                 patcher.setattr(
-                    subject.os,
+                    os,
                     "lstat",
                     lambda path: (
                         (_ for _ in ()).throw(OSError("target failure"))
@@ -1278,8 +1288,8 @@ class TestManagedTempPosix:
                     ),
                 )
             else:
-                patcher.setattr(
-                    subject,
+                setattr_in_managed_temp_modules(
+                    patcher,
                     "_path_identity",
                     lambda path: (
                         (_ for _ in ()).throw(OSError("identity failure")) if path == quarantine else original_identity(path)
@@ -1291,7 +1301,7 @@ class TestManagedTempPosix:
         assert "中断した後始末の状態を判定できない" in error
         assert "再試行できる" in error
         assert registry.exists()
-        assert subject._consuming_registry_path(registry) is None
+        assert inventory_subject._consuming_registry_path(registry) is None
         assert (quarantine / "content.txt").exists()
 
         assert subject.dispatch(parser.parse_args(["cleanup", "--path", str(target)])) == 0
@@ -1305,23 +1315,25 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """隔離先の削除失敗でも管理情報を保持し、同じcleanupを再試行できる。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("failed-resume")
         (target / "content.txt").write_text("keep", encoding="utf-8")
         _, quarantine = _interrupt_cleanup(target, quarantine=True)
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         parser = argparse.ArgumentParser()
         subject.build_parser(parser)
 
         with monkeypatch.context() as patcher:
-            patcher.setattr(subject, "_clear_directory", lambda _descriptor: (_ for _ in ()).throw(OSError("failure")))
+            setattr_in_managed_temp_modules(
+                patcher, "_clear_directory", lambda _descriptor: (_ for _ in ()).throw(OSError("failure"))
+            )
             assert subject.dispatch(parser.parse_args(["cleanup", "--path", str(target)])) == 2
 
         error = capsys.readouterr().err
         assert "中断した後始末の隔離先を後始末できない" in error
         assert "再試行できる" in error
         assert registry.exists()
-        assert subject._consuming_registry_path(registry) is None
+        assert inventory_subject._consuming_registry_path(registry) is None
         assert (quarantine / "content.txt").exists()
 
         assert subject.dispatch(parser.parse_args(["cleanup", "--path", str(target)])) == 0
@@ -1345,7 +1357,7 @@ class TestManagedTempPosix:
         prefix: str,
         violation: str,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         with pytest.raises(subject.ManagedTempError) as captured:
             subject.create_managed_temp(prefix)
         assert str(captured.value) == f"prefixが条件を満たしていません（{violation}）: {prefix}"
@@ -1361,7 +1373,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         with pytest.raises(subject.ManagedTempError, match="絶対パス"):
             subject.validate_managed_temp(pathlib.Path("relative"))
         nested = tmp_path / "parent" / "child"
@@ -1376,12 +1388,12 @@ class TestManagedTempPosix:
     ) -> None:
         root_file = tmp_path / "temp-root-file"
         root_file.write_text("not a directory", encoding="utf-8")
-        monkeypatch.setattr(subject, "_temp_root", lambda: root_file)
+        setattr_in_managed_temp_modules(monkeypatch, "_temp_root", lambda: root_file)
         with pytest.raises(subject.ManagedTempError, match="通常ディレクトリではない"):
             subject.create_managed_temp("invalid-root")
 
     def test_validate_rejects_symlink(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("owned")
         link = tmp_path / "owned-link"
         link.symlink_to(target, target_is_directory=True)
@@ -1394,7 +1406,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("owned")
         target.chmod(0o755)
         with pytest.raises(subject.ManagedTempError, match="権限"):
@@ -1405,7 +1417,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         mode_target = subject.create_managed_temp("mode")
         mode_marker = mode_target / _MARKER_NAME
         mode_marker.chmod(0o644)
@@ -1426,7 +1438,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("marker-link")
         marker = target / _MARKER_NAME
         marker.unlink()
@@ -1439,7 +1451,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("broken-marker")
         marker = target / _MARKER_NAME
         marker.write_text("{", encoding="utf-8")
@@ -1452,7 +1464,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = tmp_path / "handmade"
         target.mkdir(mode=0o700)
         metadata = target.stat()
@@ -1476,7 +1488,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("state-mode")
         registry = next((tmp_path / "external-state").glob("*.json"))
         registry.chmod(0o644)
@@ -1489,7 +1501,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("state-json")
         nested = target / "nested"
         nested.mkdir()
@@ -1507,7 +1519,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("owned")
         (target / _MARKER_NAME).unlink()
         with pytest.raises(subject.ManagedTempError):
@@ -1520,23 +1532,25 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """marker削除後の失敗では二重管理情報を復元し、同じcleanupを再試行できる。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("retry-cleanup")
-        registry = subject._registry_path(target)
-        original_clear_directory = subject._clear_directory
+        registry = managed_temp_registry._registry_path(target)
+        original_clear_directory = inventory_subject._clear_directory
 
         def fail_after_marker_removal(descriptor: int) -> None:
             os.unlink(_MARKER_NAME, dir_fd=descriptor)
             raise PermissionError("injected failure after marker removal")
 
-        monkeypatch.setattr(subject, "_clear_directory", fail_after_marker_removal)
+        setattr_in_managed_temp_modules(monkeypatch, "_clear_directory", fail_after_marker_removal)
         with pytest.raises(subject.ManagedTempError, match="再試行できる"):
             subject.cleanup_managed_temp(target)
 
         assert subject.validate_managed_temp(target) == target
-        assert json.loads((target / _MARKER_NAME).read_text(encoding="utf-8")) == subject._load_private_json(registry)
+        assert json.loads((target / _MARKER_NAME).read_text(encoding="utf-8")) == managed_temp_registry._load_private_json(
+            registry
+        )
 
-        monkeypatch.setattr(subject, "_clear_directory", original_clear_directory)
+        setattr_in_managed_temp_modules(monkeypatch, "_clear_directory", original_clear_directory)
         subject.cleanup_managed_temp(target)
         assert not target.exists()
         assert not registry.exists()
@@ -1547,9 +1561,9 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """markerを復元できない場合は再試行不能を表示し、registry単独回収を許可しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("failed-restore")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
 
         def fail_after_marker_removal(descriptor: int) -> None:
             os.unlink(_MARKER_NAME, dir_fd=descriptor)
@@ -1558,15 +1572,15 @@ class TestManagedTempPosix:
         def fail_marker_restore(*_args: typing.Any, **_kwargs: typing.Any) -> None:
             raise PermissionError("injected marker restore failure")
 
-        monkeypatch.setattr(subject, "_clear_directory", fail_after_marker_removal)
-        monkeypatch.setattr(subject, "_write_marker", fail_marker_restore)
+        setattr_in_managed_temp_modules(monkeypatch, "_clear_directory", fail_after_marker_removal)
+        setattr_in_managed_temp_modules(monkeypatch, "_write_marker", fail_marker_restore)
         with pytest.raises(subject.ManagedTempError, match="再試行できない"):
             subject.cleanup_managed_temp(target)
 
         assert target.exists()
         assert not (target / _MARKER_NAME).exists()
         assert registry.exists()
-        assert subject.is_missing_registered_temp(target) is False
+        assert inventory_subject.is_missing_registered_temp(target) is False
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(target)
 
@@ -1576,9 +1590,9 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
     ) -> None:
         """対象削除後の外部状態削除失敗は、原因除去後の再試行で残存状態ごと回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("consuming-retry")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         original_unlink = pathlib.Path.unlink
 
         def fail_consuming_unlink(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> None:
@@ -1605,10 +1619,10 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("unsafe-platform")
 
-        monkeypatch.setattr(subject.shutil.rmtree, "avoids_symlink_attacks", False)
+        monkeypatch.setattr(shutil.rmtree, "avoids_symlink_attacks", False)
         with pytest.raises(subject.ManagedTempError, match="symlink attack耐性"):
             subject.cleanup_managed_temp(target)
         assert target.exists()
@@ -1618,7 +1632,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         outside = tmp_path / "outside"
         outside.mkdir()
         sentinel = outside / "sentinel.txt"
@@ -1639,13 +1653,13 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("root-race")
         original_sentinel = target / "original.txt"
         original_sentinel.write_text("original", encoding="utf-8")
         displaced = tmp_path / "displaced"
         replacement_sentinel = target / "replacement.txt"
-        original_consume = subject._consume_registry
+        original_consume = inventory_subject._consume_registry
 
         def replace_root(validated: typing.Any) -> pathlib.Path:
             consuming = original_consume(validated)
@@ -1654,7 +1668,7 @@ class TestManagedTempPosix:
             replacement_sentinel.write_text("replacement", encoding="utf-8")
             return consuming
 
-        monkeypatch.setattr(subject, "_consume_registry", replace_root)
+        setattr_in_managed_temp_modules(monkeypatch, "_consume_registry", replace_root)
         with pytest.raises(subject.ManagedTempError, match="置換"):
             subject.cleanup_managed_temp(target)
         assert (displaced / "original.txt").read_text(encoding="utf-8") == "original"
@@ -1670,15 +1684,15 @@ class TestManagedTempPosix:
         root.mkdir()
         root.chmod(0o700)
         target = subject.create_managed_temp("root-mode-race", root=root)
-        registry = subject._registry_path(target)
-        original_consume = subject._consume_registry
+        registry = managed_temp_registry._registry_path(target)
+        original_consume = inventory_subject._consume_registry
 
         def change_root_mode(validated: typing.Any) -> pathlib.Path:
             consuming = original_consume(validated)
             root.chmod(0o755)
             return consuming
 
-        monkeypatch.setattr(subject, "_consume_registry", change_root_mode)
+        setattr_in_managed_temp_modules(monkeypatch, "_consume_registry", change_root_mode)
         with pytest.raises(subject.ManagedTempError, match="root"):
             subject.cleanup_managed_temp(target)
         assert target.exists()
@@ -1693,10 +1707,10 @@ class TestManagedTempPosix:
         root = tmp_path / "shared-root"
         root.mkdir()
         target = subject.create_managed_temp("root-link-race", root=root)
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         displaced = tmp_path / "displaced-root"
         replacement = tmp_path / "replacement-root"
-        original_consume = subject._consume_registry
+        original_consume = inventory_subject._consume_registry
 
         def replace_root(validated: typing.Any) -> pathlib.Path:
             consuming = original_consume(validated)
@@ -1705,7 +1719,7 @@ class TestManagedTempPosix:
             root.symlink_to(replacement, target_is_directory=True)
             return consuming
 
-        monkeypatch.setattr(subject, "_consume_registry", replace_root)
+        setattr_in_managed_temp_modules(monkeypatch, "_consume_registry", replace_root)
         with pytest.raises(subject.ManagedTempError, match="root"):
             subject.cleanup_managed_temp(target)
         assert (displaced / target.name / _MARKER_NAME).is_file()
@@ -1721,13 +1735,13 @@ class TestManagedTempPosix:
         root.mkdir()
         root.chmod(0o700)
         target = subject.create_managed_temp("root-validation-race", root=root)
-        original_load_marker = subject._load_marker
+        original_load_marker = managed_temp_registry._load_marker
 
         def change_root_mode(descriptor: int, path: pathlib.Path) -> dict[str, typing.Any]:
             root.chmod(0o755)
             return original_load_marker(descriptor, path)
 
-        monkeypatch.setattr(subject, "_load_marker", change_root_mode)
+        setattr_in_managed_temp_modules(monkeypatch, "_load_marker", change_root_mode)
         with pytest.raises(subject.ManagedTempError, match="root"):
             subject.validate_managed_temp(target)
         assert target.exists()
@@ -1739,49 +1753,19 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
         kind: str,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
-        target = subject.create_managed_temp("child-race")
-        child = target / "child"
-        displaced = target / "displaced-child"
-        if kind == "directory":
-            child.mkdir()
-            (child / "original.txt").write_text("original", encoding="utf-8")
-        else:
-            child.write_text("original", encoding="utf-8")
-        original_consume = subject._consume_registry
-
-        def replace_child(validated: typing.Any) -> pathlib.Path:
-            consuming = original_consume(validated)
-            if kind == "directory":
-                child.rename(displaced)
-                child.mkdir()
-                (child / "replacement.txt").write_text("replacement", encoding="utf-8")
-            else:
-                child.rename(displaced)
-                child.write_text("replacement", encoding="utf-8")
-            return consuming
-
-        monkeypatch.setattr(subject, "_consume_registry", replace_child)
-        with pytest.raises(subject.ManagedTempError, match="置換"):
-            subject.cleanup_managed_temp(target)
-        if kind == "directory":
-            assert (displaced / "original.txt").read_text(encoding="utf-8") == "original"
-            assert (child / "replacement.txt").read_text(encoding="utf-8") == "replacement"
-        else:
-            assert displaced.read_text(encoding="utf-8") == "original"
-            assert child.read_text(encoding="utf-8") == "replacement"
+        _assert_child_replacement_preserves_both_versions(monkeypatch, tmp_path, kind, "child-race", "displaced-child")
 
     def test_create_failure_removes_only_its_new_empty_target(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
         def reject(_path: pathlib.Path) -> pathlib.Path:
             raise subject.ManagedTempError("validation failed")
 
-        monkeypatch.setattr(subject, "validate_managed_temp", reject)
+        setattr_in_managed_temp_modules(monkeypatch, "validate_managed_temp", reject)
         with pytest.raises(subject.ManagedTempError, match="validation failed"):
             subject.create_managed_temp("create-failure")
         assert not list(tmp_path.glob("create-failure-*"))

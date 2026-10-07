@@ -450,3 +450,15 @@ def test_1h_wait_timeout_below_host_limits() -> None:
     limit = _wait_schedule._WAIT_TIMEOUT_FOR_1H_TTL  # pylint: disable=protected-access
     assert limit < 1800.0
     assert limit < 3600.0
+
+
+def test_user_settings_ttl_reads_claude_config_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`CLAUDE_CONFIG_DIR`が絶対パスなら、その配下の`settings.json`のTTL指定を採用する。"""
+    _write_user_settings(json.dumps({"promptCacheTtl": "5m"}))
+    configured = tmp_path / "configured"
+    configured.mkdir()
+    (configured / "settings.json").write_text(json.dumps({"promptCacheTtl": "1h"}), encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(configured))
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    _assert_ttl_and_schedule("main", "1h", _SCHEDULE_FOR_1H_TTL)

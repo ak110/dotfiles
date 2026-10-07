@@ -4,10 +4,13 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
 import pytest
+
+from pytools._internal import setup_media_remote
 
 REPO_ROOT = Path(__file__).resolve().parent
 LINUX_TEMPLATE = REPO_ROOT / ".chezmoi-source/run_after_post-apply.sh.tmpl"
@@ -39,9 +42,10 @@ def test_windows_post_apply_final_condition_has_branch_local_order() -> None:
     text = _read(WINDOWS_TEMPLATE)
     final_start = text.rindex("$postApplyBin = Join-Path $env:USERPROFILE '.local\\bin\\dotfiles-post-apply.exe'")
     before = text[:final_start]
-    final_block = text[final_start:].strip()
+    # 末尾は出力の文字コードを元へ戻すfinallyであり、最終条件分岐の後に置く。
+    final_block = text[final_start : text.rindex("} finally {")].strip()
 
-    assert "Start-Process" in before
+    assert "Stop-Process" in before
     assert "Start-Process" not in final_block
     assert final_block.splitlines() == [
         "$postApplyBin = Join-Path $env:USERPROFILE '.local\\bin\\dotfiles-post-apply.exe'",
@@ -69,8 +73,10 @@ def test_windows_post_apply_failure_exit_propagates(tmp_path: Path) -> None:
     assignment = final_block.splitlines()[0]
     escaped_path = str(post_apply).replace("'", "''")
     final_block = final_block.replace(assignment, f"$postApplyBin = '{escaped_path}'", 1)
+    # テンプレートは本体をtryの内側へ置き、finallyで出力の文字コードを戻す。
+    # exitがfinallyを経ても終了コードを保つことを確かめる。
     runner = tmp_path / "run-post-apply.ps1"
-    runner.write_text(final_block, encoding="utf-8-sig")
+    runner.write_text("$originalOutputEncoding = [Console]::OutputEncoding\ntry {\n" + final_block, encoding="utf-8-sig")
 
     result = subprocess.run(
         [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(runner)],
@@ -81,17 +87,52 @@ def test_windows_post_apply_failure_exit_propagates(tmp_path: Path) -> None:
     assert result.returncode == 23, result.stderr
 
 
-def test_windows_media_remote_has_pre_post_apply_fallback() -> None:
-    """post-apply前のmedia-remote復帰に配布バイナリの代替経路を持つ。"""
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PowerShell 5.1の出力の文字コードはWindowsでだけ観測できる")
+def test_windows_template_writes_utf8_when_redirected(tmp_path: Path) -> None:
+    """テンプレートが設定する文字コードの下で、リダイレクトしたWrite-Hostの日本語をUTF-8として読める。"""
     text = _read(WINDOWS_TEMPLATE)
-    final_start = text.rindex("$postApplyBin = Join-Path $env:USERPROFILE '.local\\bin\\dotfiles-post-apply.exe'")
-    before = text[:final_start]
+    prologue = text[text.index("$originalOutputEncoding = [Console]::OutputEncoding") : text.index("try {")]
+    message = "[pytools] 日本語の案内"
+    script = tmp_path / "encoding.ps1"
+    script.write_text(
+        prologue + f"try {{\nWrite-Host '{message}'\n}} finally {{\n[Console]::OutputEncoding = $originalOutputEncoding\n}}\n",
+        encoding="utf-8-sig",
+    )
 
-    assert "$mediaRemoteBin = Join-Path $env:USERPROFILE '.local\\bin\\dotfiles-media-remote.exe'" in before
-    assert before.count("elseif (Test-Path $mediaRemoteBin)") == 2
-    assert before.count("Start-Process -FilePath $mediaRemoteBin -WindowStyle Hidden -ArgumentList @('serve')") == 2
-    assert before.count("Start-Process -FilePath 'wscript.exe'") == 2
-    assert before.index("Start-Process -FilePath 'wscript.exe'") < before.index("elseif (Test-Path $mediaRemoteBin)")
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.decode("utf-8").strip() == message
+
+
+def test_windows_template_does_not_run_uv_update_shell() -> None:
+    """ユーザーPATHの登録はpost-applyの工程だけが行い、テンプレートは`uv tool update-shell`を呼ばない。
+
+    `uv tool update-shell`と`cleanup_user_path`の正規化が異なると、再導入のたびにユーザーPATHを書き換え合う。
+    """
+    assert "update-shell" not in _read(WINDOWS_TEMPLATE)
+
+
+def test_windows_template_limits_to_reinstall() -> None:
+    """テンプレートはpytoolsの再導入とその前の停止だけを持ち、user.envの反映とmedia-remoteの起動を持たない。
+
+    再起動の要否はpost-applyの`setup_media_remote`工程が環境変数から読むため、変数名をその定義と比べる。
+    """
+    text = _read(WINDOWS_TEMPLATE)
+
+    assert "user.env" not in text
+    assert "wscript" not in text
+    assert "'serve'" not in text
+    assert "launch.vbs" not in text
+    assert "Stop-Process -Id $p.ProcessId" in text
+    assert f"$env:{setup_media_remote.STOPPED_ENV} = " in text
+    assert f"$env:{setup_media_remote.REINSTALL_ENV} = " in text
+    # 渡した後にpost-applyを起動する。
+    assert text.index(f"$env:{setup_media_remote.STOPPED_ENV} = ") < text.index("& $postApplyBin")
 
 
 def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> None:
@@ -117,7 +158,7 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     assert "再インストールを次回へ延期" in text[guard:stop_loop]
     assert "既存版で後続処理を継続" in text[deferred:]
     assert text.count("Get-CimInstance Win32_Process") == 1
-    assert text.count("Get-PytoolsEnvLockingProcess") == 3
+    assert text.count("Get-PytoolsEnvLockingProcess") == 2
 
 
 def test_windows_install_failure_records_state_and_detail() -> None:
@@ -306,53 +347,6 @@ $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
         "GetCimCalls": 1,
     }
     assert empty_output == ["  [pytools] 更新対象の使用中プロセス: 候補0件 再起動可0件 再起動不可0件"]
-
-    treatment_start = text.index("if ($env:COMPUTERNAME -eq 'stheno' -and -not $needsReinstall) {")
-    treatment_end = text.index("\n\n# uv tool update-shell", treatment_start)
-    treatment = text[treatment_start:treatment_end]
-
-    def run_treatment_scenario(name: str, fixtures: str) -> tuple[dict[str, object], list[str]]:
-        return run_scenario(
-            f"{name}-treatment",
-            fixtures,
-            """$needsReinstall = $false
-$env:COMPUTERNAME = 'stheno'
-$env:LOCALAPPDATA = '/tmp'
-$uvToolDir = 'C:\\tools\\pytools'
-$mediaRemoteBin = 'C:\\Users\\test\\.local\\bin\\dotfiles-media-remote.exe'
-function Test-Path { return $false }
-""",
-            "$allCandidates = @(Get-PytoolsEnvLockingProcess)\n" + treatment,
-            """[pscustomobject]@{
-    Candidates = @($allCandidates | ForEach-Object { $_.ProcessId })
-    MediaRemote = @($mediaRemoteProcs | ForEach-Object { $_.ProcessId })
-    Stopped = @($stopped)
-    GetCimCalls = $getCimCalls
-} | ConvertTo-Json -Compress
-""",
-        )
-
-    distributed_treatment, distributed_treatment_output = run_treatment_scenario(
-        "distributed-media-remote", distributed_fixture
-    )
-    mixed_treatment, mixed_treatment_output = run_treatment_scenario("mixed-locking-processes", mixed_fixture)
-    command_line_treatment, command_line_treatment_output = run_treatment_scenario(
-        "command-line-only-media-remote", command_line_only_fixture
-    )
-    empty_treatment, empty_treatment_output = run_treatment_scenario("no-locking-processes", "")
-
-    assert distributed_treatment["Candidates"] == distributed_exe["Locking"]
-    assert mixed_treatment["Candidates"] == mixed["Locking"]
-    assert command_line_treatment["Candidates"] == command_line_only["Locking"]
-    assert empty_treatment["Candidates"] == empty["Locking"]
-    assert distributed_treatment == {"Candidates": [1], "MediaRemote": [1], "Stopped": [1], "GetCimCalls": 2}
-    assert mixed_treatment == {"Candidates": [2, 3, 4], "MediaRemote": [2, 3], "Stopped": [2, 3], "GetCimCalls": 2}
-    assert command_line_treatment == {"Candidates": [5], "MediaRemote": [5], "Stopped": [5], "GetCimCalls": 2}
-    assert empty_treatment == {"Candidates": [], "MediaRemote": [], "Stopped": [], "GetCimCalls": 2}
-    assert "  [pytools] 対症療法の停止対象プロセス: 停止対象1件" in distributed_treatment_output
-    assert "  [pytools] 対症療法の停止対象プロセス: 停止対象2件" in mixed_treatment_output
-    assert "  [pytools] 対症療法の停止対象プロセス: 停止対象1件" in command_line_treatment_output
-    assert empty_treatment_output == ["  [pytools] 対症療法の停止対象プロセス: 停止対象0件"]
 
 
 @pytest.mark.parametrize(

@@ -21,16 +21,21 @@ import io
 import json
 import pathlib
 import re
-import subprocess
 import sys
+import unicodedata
 from typing import Any
 
 import session_review_evidence  # pylint: disable=import-error
 
-from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import run_script
+from agent_toolkit._atk.wi import constants as _wi_constants
+from agent_toolkit._atk.wi import sections as _wi_sections
+from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
 from agent_toolkit._common import atomic_file, file_lock
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._git import command as _git_command
 
 CONVERSATION_FILENAME = "conversation.md"
 CANDIDATES_FILENAME = "candidates.md"
@@ -55,8 +60,29 @@ _SUMMARY_LENGTH = 200
 ツール呼び出しの行を500字にすると大きい記録で会話の流れが約3割増えた一方、200字でコマンドとファイルパスを識別できた。
 """
 _SLOW_CALL_LIMIT = 10
-_FULL_TEXT_KINDS = frozenset({"user-intervention", "escalation"})
+_FULL_TEXT_KINDS = frozenset({"user-intervention", "wi-user-response", "escalation"})
 """`candidates.md`へ本文の全文を載せる候補種別。ユーザーの是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
+MANDATORY_KINDS = frozenset({"user-intervention", "confirmation-request", "wi-user-response"})
+"""再発防止策を必須とする候補種別。
+
+ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
+`agent-toolkit:session-review`の`references/analysis.md`「ユーザー介入の判定規則」の除外区分に当たる場合を除き、
+前例の有無によらず再発防止策を要する。必須であることを参照資料の読込に依存させないよう候補一覧と1行JSONへ示し、
+Stopの報告本文の判定が候補IDで追跡する。
+"""
+_SIMILAR_RECORD_KINDS = frozenset({"user-intervention", "wi-user-response"})
+"""過去の同種記録を添える候補種別。ユーザーの発話を本文に持つ種別に限る。"""
+_SIMILAR_SECTIONS = ("ユーザー指摘の逐語引用", "回答", "ユーザーコメント")
+"""過去の同種記録を探すWIの節。ユーザーの発話を逐語で保持する節に限り、エージェントが書いた本文との一致を除く。"""
+_SIMILAR_MIN_SENTENCE = 20
+_SIMILAR_NGRAM = 5
+_SIMILAR_RATIO = 0.8
+"""過去の同種記録の一致条件。空白を除きNFKC正規化した20字以上の文の文字5-gramのうち8割以上を節の本文が含む場合に一致とする。
+
+過去の振り返りの`user-intervention`候補207件とprivate-notesの全WIで比べ、12字以上・6割以上の条件では
+スキル展開の定型文などの短い文が多数のWIへ一致した。20字以上・8割以上では、包含率9割5分未満の一致が
+同じ是正の言い換えと同じ環境のログに限られ、無関係な一致は観測されなかった。
+"""
 _FAILURE_KINDS = frozenset({"command-failure", "tool-failure"})
 _FAILURE_LEDGER_DAYS = 30
 
@@ -111,13 +137,8 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
     if target_repo is None:
         return None
     try:
-        result = subprocess.run(
-            ["git", "-C", str(target_repo), "rev-parse", "--git-common-dir"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
+        result = _git_command.run(
+            ["-C", str(target_repo), "rev-parse", "--git-common-dir"], capture_output=True, text=True, check=False
         )
     except OSError:
         return None
@@ -128,7 +149,8 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
     if not common_dir.is_absolute():
         common_dir = target_repo / common_dir
     repository_name = common_dir.resolve().parent.name
-    path = pathlib.Path.home() / (".codex" if codex else ".claude") / "docs" / f"session-review-{repository_name}.md"
+    home = _host_homes.codex_home() if codex else _host_homes.claude_config_dir()
+    path = home / "docs" / f"session-review-{repository_name}.md"
     return path if path.is_file() else None
 
 
@@ -293,7 +315,22 @@ def _preceding_assistant_text(timeline: list[dict[str, Any]], record: str, line:
     return str(max(preceding, key=lambda event: int(event["line"]))["text"]) if preceding else None
 
 
-def _candidate_lines(candidate: dict[str, Any], evidence: dict[str, Any], timeline: list[dict[str, Any]]) -> list[str]:
+def _candidate_bodies(candidate: dict[str, Any], evidence: dict[str, Any]) -> tuple[list[str], str]:
+    """候補の証拠から人が読む本文の一覧と、その先頭（無ければ候補の本文）を返す。"""
+    bodies = [
+        _readable_entry_text(str(event["text"]))
+        for event in evidence.get("events", [])
+        if event.get("kind") == "detail" and isinstance(event.get("text"), str) and event["text"].strip()
+    ]
+    return bodies, bodies[0] if bodies else str(candidate.get("text", ""))
+
+
+def _candidate_lines(
+    candidate: dict[str, Any],
+    evidence: dict[str, Any],
+    timeline: list[dict[str, Any]],
+    similar: list[tuple[str, str, str]] | None = None,
+) -> list[str]:
     """候補1件を、1行の要約、記録位置および判断に要る補足で組み立てる。
 
     hook通知は通知が判定した入力を読まないと是非を判断できないため、直前のアシスタント発話を添える。
@@ -311,28 +348,117 @@ def _candidate_lines(candidate: dict[str, Any], evidence: dict[str, Any], timeli
         )
         return lines
     events = evidence.get("events", [])
-    bodies = [
-        _readable_entry_text(str(event["text"]))
-        for event in events
-        if event.get("kind") == "detail" and isinstance(event.get("text"), str) and event["text"].strip()
-    ]
-    text = bodies[0] if bodies else str(candidate.get("text", ""))
+    bodies, text = _candidate_bodies(candidate, evidence)
     readable = candidate.get("failure_summary") if kind in _FAILURE_KINDS else text
+    contexts = candidate.get("assistant_context")
+    if isinstance(contexts, list) and contexts and isinstance(contexts[0], dict):
+        # 確認への回答は回答の文字列（選択肢のlabelなど）だけでは何を問うたか分からないため、質問を要約に使う。
+        readable = str(contexts[0].get("question", "")) or readable
     sessions = candidate.get("failure_session_count")
     session_count = f"、{sessions}セッション" if isinstance(sessions, int) else ""
-    heading = f"- {candidate['candidate_id']} {kind}（発生{occurrence}件{session_count}）: "
+    mandatory = "、再発防止策が必須" if kind in MANDATORY_KINDS else ""
+    heading = f"- {candidate['candidate_id']} {kind}（発生{occurrence}件{session_count}{mandatory}）: "
     lines = [heading + (_one_line(str(readable)) or "（本文なし）")]
-    locators = ", ".join(f"{locator['record']}:{locator['line']}" for locator in candidate["locators"])
-    omitted = candidate.get("omitted_locator_count", 0)
-    lines.append(f"  - 記録位置: {locators}" + (f"（同じ種類の{omitted}件は省略）" if omitted else ""))
+    if isinstance(candidate.get("wi_file"), str):
+        section = f"の`## {candidate['wi_section']}`" if isinstance(candidate.get("wi_section"), str) else ""
+        lines.append(
+            f"  - WI: {candidate['wi_file']}（{candidate.get('wi_state')}）{section}。"
+            f"全文は`atk wi show --skip-pull {candidate['wi_file']}`で取得する"
+        )
+    else:
+        locators = ", ".join(f"{locator['record']}:{locator['line']}" for locator in candidate["locators"])
+        omitted = candidate.get("omitted_locator_count", 0)
+        lines.append(f"  - 記録位置: {locators}" + (f"（同じ種類の{omitted}件は省略）" if omitted else ""))
+    lines.extend(_question_answer_lines(candidate))
     lines.extend(f"  - 対象: {_tool_use_summary(event)}" for event in events if event.get("kind") == "tool-use")
     if kind == "hook-notice":
         first = candidate["locators"][0]
         preceding = _preceding_assistant_text(timeline, str(first["record"]), int(first["line"]))
         lines.append(f"  - 直前のアシスタント発話: {_one_line(preceding) if preceding else '（なし）'}")
+    if similar is not None:
+        lines.append("  - 過去の同種記録:" + ("" if similar else " 一致なし"))
+        lines.extend(f"    - {filename}（{state}）: {title or '（タイトルなし）'}" for filename, state, title in similar)
     if kind in _FULL_TEXT_KINDS:
         lines.extend(["", *("  " + line if line else "" for line in _fence("\n\n".join(bodies) if bodies else text)), ""])
     return lines
+
+
+def _question_answer_lines(candidate: dict[str, Any]) -> list[str]:
+    """確認への回答の候補へ、質問、提示した選択肢、選んだ回答を添える。"""
+    contexts = candidate.get("assistant_context")
+    responses = candidate.get("user_response")
+    if not isinstance(contexts, list) or not isinstance(responses, list):
+        return []
+    lines: list[str] = []
+    for context, response in zip(contexts, responses, strict=False):
+        if not isinstance(context, dict) or not isinstance(response, dict):
+            continue
+        options = " / ".join(str(option.get("label", "")) for option in context.get("options", []) if isinstance(option, dict))
+        answers = "、".join(str(answer) for answer in response.get("answers", []))
+        lines.extend(
+            [
+                f"  - 質問: {_one_line(str(context.get('question', '')))}",
+                f"  - 選択肢: {options or '（なし）'}",
+                f"  - 回答: {answers or '（なし）'}"
+                + (f"（自由記述: {_one_line(str(response['notes']))}）" if response.get("notes") else ""),
+            ]
+        )
+    return lines
+
+
+def _normalize_for_similarity(text: str) -> str:
+    return "".join(unicodedata.normalize("NFKC", text).split())
+
+
+def _ngrams(text: str) -> set[str]:
+    return {text[index : index + _SIMILAR_NGRAM] for index in range(len(text) - _SIMILAR_NGRAM + 1)}
+
+
+def _sentences(text: str) -> list[set[str]]:
+    """発話を文へ分け、一致の判定に使う長さの文の5-gram集合を返す。"""
+    pieces = re.split(r"[。！？!?\n]", text)
+    return [_ngrams(piece) for piece in map(_normalize_for_similarity, pieces) if len(piece) >= _SIMILAR_MIN_SENTENCE]
+
+
+def _past_wi_sections() -> list[tuple[str, str, str, list[set[str]]]]:
+    """private-notesの全状態のWIから、ファイル名、状態、タイトルと、ユーザーの発話を持つ節ごとの5-gram集合を返す。"""
+    root = _uwi_scan.private_notes_root()
+    if root is None:
+        return []
+    records: list[tuple[str, str, str, list[set[str]]]] = []
+    for state in _wi_constants.WI_STATES:
+        directory = root / state
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.md")):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                continue
+            sections = _wi_sections.h2_sections(text)
+            grams = [_ngrams(_normalize_for_similarity(sections[name])) for name in _SIMILAR_SECTIONS if sections.get(name)]
+            if grams:
+                records.append((path.name, state, _wi_sections.title(text), grams))
+    return records
+
+
+def _similar_records(
+    text: str, past: list[tuple[str, str, str, list[set[str]]]], *, exclude: str | None
+) -> list[tuple[str, str, str]]:
+    """発話のいずれかの文の5-gramの8割以上を1つの節が含むWIを、ファイル名、状態、タイトルで返す。"""
+    sentences = _sentences(text)
+    matched: list[tuple[str, str, str]] = []
+    for filename, state, title, sections in past:
+        if filename == exclude:
+            continue
+        if any(
+            len(sentence & section) >= _SIMILAR_RATIO * len(sentence)
+            for sentence in sentences
+            for section in sections
+            if sentence
+        ):
+            matched.append((filename, state, title))
+    return sorted(matched)
 
 
 def _candidates_document(
@@ -342,9 +468,11 @@ def _candidates_document(
     timeline: list[dict[str, Any]],
     detail_command: str,
     single_failures: list[dict[str, Any]],
+    similar_by_id: dict[str, list[tuple[str, str, str]]] | None = None,
 ) -> str:
     """`candidates.md`の本文を組み立てる。"""
     counts = collections.Counter(str(item["candidate_kind"]) for item in candidates)
+    mandatory = [str(item["candidate_id"]) for item in candidates if item["candidate_kind"] in MANDATORY_KINDS]
     count_text = "、".join(f"{kind} {count}件" for kind, count in sorted(counts.items())) or "なし"
     excluded = summary.get("excluded", {})
     excluded_text = "、".join(f"{name} {count}件" for name, count in sorted(excluded.items())) or "なし"
@@ -354,12 +482,16 @@ def _candidates_document(
         f"- 候補: {len(candidates)}件（{count_text}）",
         f"- 候補から除いた件数: {excluded_text}",
         f"- 記録位置の全文は`{detail_command} --detail <記録位置>`で取得する",
+        f"- 再発防止策が必須の候補: {', '.join(mandatory) or 'なし'}",
         "",
     ]
     if not candidates:
         lines.append("候補として残す問題は無かった。")
     for candidate in candidates:
-        lines.extend(_candidate_lines(candidate, evidence_by_id.get(str(candidate["candidate_id"]), {}), timeline))
+        candidate_id = str(candidate["candidate_id"])
+        lines.extend(
+            _candidate_lines(candidate, evidence_by_id.get(candidate_id, {}), timeline, (similar_by_id or {}).get(candidate_id))
+        )
     if single_failures:
         lines.extend(
             ["", "## 単発の失敗（件数のみ）", "", "| 失敗署名の要約 | 今回の発生件数 | 代表の記録位置 |", "| --- | --- | --- |"]
@@ -376,7 +508,7 @@ def _candidates_document(
 
 def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: datetime.datetime) -> tuple[dict[str, int], int]:
     """排他下で過去30日の失敗署名を更新し、署名ごとの最上位セッション数を返す。"""
-    path = _atk_config.state_dir() / "session-review" / "failure-signatures.jsonl"
+    path = _state_paths.state_dir() / "session-review" / "failure-signatures.jsonl"
     lock_path = path.with_name(path.name + ".lock")
     cutoff = now.astimezone(datetime.UTC) - datetime.timedelta(days=_FAILURE_LEDGER_DAYS)
     skipped = 0
@@ -617,8 +749,20 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)
     candidates, single_failures, summary, ledger_skipped = _select_repeated_failures(candidates, summary, session_id, current)
+    similar_targets = [item for item in candidates if item["candidate_kind"] in _SIMILAR_RECORD_KINDS]
+    past = _past_wi_sections() if similar_targets else []
+    similar_by_id = {
+        str(item["candidate_id"]): _similar_records(
+            "\n".join(_candidate_bodies(item, evidence_by_id.get(str(item["candidate_id"]), {}))[0])
+            or str(item.get("text", "")),
+            past,
+            exclude=item.get("wi_file"),
+        )
+        for item in similar_targets
+    }
     candidates_path.write_text(
-        _candidates_document(candidates, summary, evidence_by_id, timeline, detail_command, single_failures), encoding="utf-8"
+        _candidates_document(candidates, summary, evidence_by_id, timeline, detail_command, single_failures, similar_by_id),
+        encoding="utf-8",
     )
     stats_path.write_text(_stats_document(stats), encoding="utf-8")
 
@@ -639,6 +783,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "candidate_total": len(candidates),
         "candidate_counts": dict(sorted(collections.Counter(str(item["candidate_kind"]) for item in candidates).items())),
         "excluded_counts": dict(sorted(summary.get("excluded", {}).items())),
+        "mandatory_candidates": [str(item["candidate_id"]) for item in candidates if item["candidate_kind"] in MANDATORY_KINDS],
+        "similar_records": {
+            candidate_id: [filename for filename, _state, _title in records] for candidate_id, records in similar_by_id.items()
+        },
         "failure_ledger_skipped": ledger_skipped,
         "elapsed_seconds": total.get("elapsed_seconds"),
         "compaction_count": compaction.get("count", 0),

@@ -16,7 +16,7 @@ import shutil
 import time
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import claude_common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -28,29 +28,32 @@ _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 GRACE_DAYS = 7
 
 
-def run() -> bool:
+def run() -> post_apply_outcome.PostApplyOutcome:
     """現行版以外の版ディレクトリのうち、後継版の導入から猶予期間を過ぎたものを削除する。
 
-    Returns:
-        1件以上削除した場合True。`installed_plugins.json`を解釈できない場合は何もせずFalse。
+    `installed_plugins.json`を解釈できない場合は何もせず変更なしを返し、版ディレクトリの削除の失敗は失敗と数える。
     """
     current_paths = _current_install_paths()
     if current_paths is None:
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     cache_root = _INSTALLED_PLUGINS_PATH.parent / "cache"
     try:
         cache_resolved = cache_root.resolve()
     except OSError as error:
         logger.warning(log_format.format_status(_TAG, f"cacheディレクトリを解決できないためスキップ: {error}"))
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     deadline = time.time() - GRACE_DAYS * 86400
     removed = 0
+    failures: list[str] = []
     for (marketplace, name), installed in sorted(current_paths.items()):
         plugin_dir = cache_root / marketplace / name
         for version_dir in _expired_versions(plugin_dir, installed, deadline):
-            if _remove_version_dir(version_dir, cache_resolved):
-                removed += 1
-    return removed > 0
+            try:
+                if _remove_version_dir(version_dir, cache_resolved):
+                    removed += 1
+            except OSError as error:
+                failures.append(f"{log_format.home_short(version_dir)} の削除に失敗: {error}")
+    return post_apply_outcome.PostApplyOutcome(changed=removed > 0, failure=" / ".join(failures) or None)
 
 
 def _current_install_paths() -> dict[tuple[str, str], set[Path]] | None:
@@ -122,11 +125,7 @@ def _remove_version_dir(version_dir: Path, cache_resolved: Path) -> bool:
     except (OSError, ValueError):
         logger.warning(log_format.format_status(log_format.home_short(version_dir), "cache配下ではないため削除をスキップ"))
         return False
-    try:
-        shutil.rmtree(version_dir)
-    except OSError as error:
-        logger.warning(log_format.format_status(log_format.home_short(version_dir), f"旧版の削除に失敗: {error}"))
-        return False
+    shutil.rmtree(version_dir)
     logger.info(log_format.format_status(log_format.home_short(version_dir), "旧版を削除"))
     return True
 

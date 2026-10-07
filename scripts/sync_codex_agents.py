@@ -19,14 +19,14 @@ __all__ = ["CODEX_EXCLUDED_RULE_NAMES", "is_codex_shared_rule"]
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from pytools._internal import claude_common  # pylint: disable=wrong-import-position  # noqa: E402
+from pytools._internal import common  # pylint: disable=wrong-import-position  # noqa: E402
 
-BASE_SOURCE = Path("agent-toolkit/share/rules-main.codex.md")
+BASE_SOURCE = Path("agent-toolkit/share/rules-common.codex.md")
 PERSONAL_SOURCE = Path(".chezmoi-source/dot_claude/rules/myprojects-common.md")
 RULES_SOURCE = Path("agent-toolkit/rules")
 TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
-CODEX_CONFIG = Path("scripts/codex_config.toml")
+CODEX_CONFIG = Path("share/codex_config.toml")
 GENERATED_MARKER = (
     "<!-- dotfilesリポジトリの.chezmoi-source/dot_codex/AGENTS.mdから~/.codex/AGENTS.mdへ配布する自動生成ファイル。"
     "dotfilesリポジトリのscripts/sync_generated_files.pyで再生成し、手動編集しない。"
@@ -103,13 +103,13 @@ def sync(root: Path = REPO_ROOT) -> bool:
     if total >= max_bytes * warn_ratio:
         print(
             f"警告: Codex instruction chainが{total} bytesとなり、上限{max_bytes} bytesの警告比率{warn_ratio:g}へ達した。"
-            "規範の総量を減らすか、scripts/codex_config.tomlのproject_doc_max_bytesを引き上げる。",
+            "規範の総量を減らすか、share/codex_config.tomlのproject_doc_max_bytesを引き上げる。",
             file=sys.stderr,
         )
     target = root / TARGET
     if target.exists() and target.read_text(encoding="utf-8") == content:
         return False
-    if not claude_common.atomic_write_text(target, content, tag="codex agents"):
+    if not common.atomic_write_text(target, content, tag="codex agents"):
         raise OSError(f"Codex AGENTS.mdの書き込みに失敗: {TARGET}")
     return True
 

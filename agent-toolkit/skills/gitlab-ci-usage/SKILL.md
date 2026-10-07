@@ -84,7 +84,3 @@ job:
 
 GitLab本体のlintは`include`や`workflow`の評価まで実行するため、
 ローカルの構文チェックだけでは検知できない統合レベルの誤りを検出できる。
-
-## 私設ホスト（自己署名のTLS証明書）でのCI通過確認
-
-CI通過確認の手順は`agent-toolkit:commit`の`references/push-and-ci.md`が定め、読込表の行に従って読む。

@@ -8,7 +8,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 「マージありの統合」の手順6のrebaseが競合で停止したときと、手順9の検証が失敗したとき | `agent-toolkit:process-wi`の`references/lane-integration-failure.md` |
+| 「マージありの統合」の手順7（手順6のrebaseが競合で停止した場合）と、手順9の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
+| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」 |
 | 「マージありの統合」の手順9か手順10の検証を実行した後 | `agent-toolkit:check-execution`の`references/diagnostics.md` |
 
 ## 入力
@@ -18,9 +19,9 @@
 任意入力名: 完成条件証拠,プロジェクト固有の公開後の操作の順序
 ```
 
-`実行レビュー済みHEAD`は`統合区分`が`マージあり`の場合は統合入力HEAD（`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」）の7文字以上の一意な短縮OID、`マージなし`の場合は`なし`を受領する。統合入力HEADは、実行レビューが収束したラウンドのレビュー対象HEAD、または収束後に再レビューを省いた修正の後のHEADである。
+`実行レビュー済みHEAD`は`統合区分`が`マージあり`の場合は統合入力HEADの7文字以上の一意な短縮OID、`マージなし`の場合は`なし`を受領する。統合入力HEADは、実行レビューが収束したラウンドのレビュー対象HEAD、または収束後に再レビューを省いた修正の後のHEADである。
 `プロジェクト固有の公開後の操作の順序`は、その順序の指定がある場合だけAWIごとの対象と時機として受領する。`引き継ぎ記録先`はレーン担当の起動時に受領した値を継続し、統合指示からは受領しない。通常の統合書込先は受領した統合先worktreeとする。統合先との組合せだけで生じた変更範囲の検証の失敗は、手順9に従って専用worktreeで是正する。
-`マージあり`では`完成条件証拠`として、計画ファイル名、対応AWI集合と、実行レビューが返した`完成条件証拠のパス`の絶対パスを持つ順序付きJSON配列を受領する。計画なしの要素は計画ファイル名を`なし`とする。統合開始時に全証拠を読み、採用予定AWIの集合が重複も欠落もなく覆われることを確かめ、各AWIへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合時の完成条件判定」を適用する。元のユーザー発言の要求単位はユーザーコメントとUWI回答から取得し、投入元のセッションで解決済みの`## ユーザー指摘の逐語引用`（`agent-toolkit:wi-standards`の`references/origin-and-approval.md`）は取得元に含めない。延期条件と後続工程の対応を確認できない場合はマージを保留する。延期対象は統合時に終端せず、`adoptを延期したAWIとcommit`で終端担当へ渡す。版数更新の完成条件は、全レーン統合後に終端担当が版数、派生manifestおよび公開結果を検収してから`adopt`する。全体検証とCIの成功は公開工程判定（`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`）に従う。許容した延期条件以外に不足、未達または証拠不足があればマージとAWI終端へ進まず、不足したAWIと条件または要求単位を`続行できない理由:`へ書いて返す。
+`マージあり`では`完成条件証拠`として、計画ファイル名、対応AWI集合と、実行レビューが返した`完成条件証拠のパス`の絶対パスを持つ順序付きJSON配列を受領する。計画なしの要素は計画ファイル名を`なし`とする。統合開始時に全証拠を読み、採用予定AWIの集合が重複も欠落もなく覆われることを確かめ、読込表の行が挙げる統合時の完成条件判定を各AWIへ適用する。延期対象は統合時に終端せず、`adoptを延期したAWIとcommit`で終端担当へ渡す。版数更新の完成条件は、全レーン統合後に終端担当が版数、派生manifestおよび公開結果を検収してから`adopt`する。
 
 `計画ファイル名一覧`は重複のないファイル名の順序付きJSON配列とし、計画を作成しなかったレーンでは`[]`を受領する。引き継ぎ記録の計画集合、対応AWIと保存状態に一致するか確認する。
 
@@ -45,18 +46,14 @@
 11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず続行できない理由を返す。
 12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
-手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で、旧OIDから新OIDへの対応を各計画または引き継ぎ記録と同じstemの対応記録ファイルへ追記する。対応表へ入れる旧OIDは、`git range-diff`で検収した全commitのうち、その対応記録ファイル（読み取り互換として本文に残る旧形式の記録を含む）にWI対応を持つものに限り、記録済みの旧OIDは全て含める。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
+手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で対応を追記する。その手段へは、`git range-diff`で検収した全commitの旧OIDから新OIDへの対応と手順6で引き継ぎ記録先へ記録したrebase前のHEADを、統合する全ての計画または引き継ぎ記録とともに1回で渡す。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
 
 ### 検証結果の警告の判定
 
-手順9と10の検証結果は、読込表で読む`agent-toolkit:check-execution`の`references/diagnostics.md`で判定する。
-同節の統合の基準版には、手順3で取得した統合先branchの統合前HEADを使う。
-比較のために再実行が必要な場合は、統合先worktreeで該当コマンドだけを読み取り専用で実行し、統合先の追跡ファイルとbranchを保持する。
-判定の手段は警告の意味と由来の確認に限る。統合では警告を抑制せず、手順9・10の検証コマンドの対象範囲を縮めない。抑制や縮小で阻害に当たる出力が検証結果から消えると、他のレーンと合わせた統合先で失敗する変更をそのまま統合する。
+手順9と10の検証結果は、読込表で読む`agent-toolkit:check-execution`の`references/diagnostics.md`で判定し、同書の統合の基準版には手順3で取得した統合先branchの統合前HEADを使う。統合に固有の扱いは次の2点である。
 
-- 共通判定で阻害とした出力は手順9・10の失敗と同じく扱い、専用worktreeで是正するか続行できない理由を返す
-- 処理が成立する既存警告と確定した場合は、意味、統合前の結果との対応と根拠を引き継ぎ記録へ残し、メインの受理を待たずに続行する。その警告が是正を要する既存不良であれば、統合は止めず、観測した出力、直接的原因、修正の対象と方向を返却の`想定外事象:`行でメインへ渡す。即時対応とするかはメインが`agent-toolkit:process-wi`の`SKILL.md`「即時対応」で判定する
-- 新規の警告や診断は、手順9の是正commitで解消した場合を除き、マージとAWI終端へ進まない。比較不能と意味を確定できない結果でも同じく統合を止める。原因・影響または未確認の理由と不足する条件を続行できない理由として返す
+- 比較のために再実行が必要な場合は、統合先worktreeで該当コマンドだけを読み取り専用で実行し、統合先の追跡ファイルとbranchを保持する
+- 新規の警告や診断は、手順9の是正commitで解消した場合を除き、マージとAWI終端へ進まない。比較不能と意味を確定できない結果でも同じく統合を止め、原因・影響または未確認の理由と不足する条件を続行できない理由として返す。阻害に当たる出力は手順9・10の失敗と同じく扱う
 
 ## マージなしの統合
 
@@ -76,7 +73,7 @@
 
 ## AWI行の終端
 
-計画または計画なしの引き継ぎ記録に確定した採否と、受領した終端区分を適用する。採用した項目と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終端する。adoptではAWIごとに実装差分を確かめ、adoptのcommit対応付け（`agent-toolkit:wi-standards`「状態と依存」の遷移表）に従う。複数commitのメモは`--note-file`へ記録する。開始時と統合時のHEADを全項目へ機械的に複製しない。プロジェクト固有の公開後の操作後へadoptを延期する項目は、AWIファイル名と対応する実装commitを対応付けて返し、状態変更は延期先の工程へ委ねる。`終端しない`と受領した項目は状態を変更せず、`adopted`と`rejected`のいずれにも含めない。`混在`の項目はメインが`inbox`へ戻す。観測のみの再開で残った項目は状態を保ち、確認と保留か`processing`での再開かはメインがセッション終了工程で確定する。
+計画または計画なしの引き継ぎ記録に確定した採否と、受領した終端区分を適用する。採用した項目と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終端する。adoptではAWIごとに実装差分を確かめ、adoptのcommit対応付け（`agent-toolkit:wi-standards`「状態と依存」の遷移表）に従う。複数commitのメモは`--note-file`へ記録する。開始時と統合時のHEADを全項目へ機械的に複製しない。プロジェクト固有の公開後の操作後へadoptを延期する項目は、AWIファイル名と対応する実装commitを対応付けて返し、状態変更は延期先の工程へ委ねる。`終端しない`と受領した項目は状態を変更せず、`adopted`と`rejected`のいずれにも含めない。`混在`の項目はメインが`inbox`へ戻す。観測のみの再開で残った項目は状態を保ち、確認と保留か`processing`での再開かはメインがセッション終了工程で確定する。観測が完成条件を満たさなかった項目も状態を保ち、メインがセッション終了工程で`inbox`へ戻す（`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/run-lanes.md`「採否の確定と終端区分」）。
 
 実装差分のあるAWIの対応commitは、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の取得の手段で、計画または引き継ぎ記録と同じstemの対応記録ファイルから短縮OIDで取得し、同節に従って`adopt`へ渡す。`--worktree`へは統合後のworktreeを渡す。延期adoptの返却では、取得した結果から対応するAWIとOIDの組を全件残す。
 
@@ -86,7 +83,7 @@ commitを記録する採否操作は`agent-toolkit:wi-standards`「状態と依�
 
 ## 出力
 
-統合差分のエージェント向け文書の変更パスは、統合先worktreeで`atk run-script agent-doc-changes -- <手順3で取得した統合先branchの統合前HEAD> <統合後のHEAD>`を単独実行し、終了コード0で得た標準出力のJSON配列をそのまま返す。対象集合は同コマンドの判定に従う。プロジェクト側は`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`、`.claude/skills/`の`SKILL.md`と`references/`、`.claude/agents/`を含む。配布物側は`agent-toolkit/rules/`、`agent-toolkit/skills/`の`SKILL.md`と`references/`、`agent-toolkit/agents/`、`agent-toolkit/share/`を含む。chezmoiの配布元である`.chezmoi-source/dot_claude/rules/`と`.chezmoi-source/dot_claude/skills/`（`.md.tmpl`を含む）も含む。通常コードと経緯記録は対象外とする。`マージなし`の統合では空配列とする。
+統合差分のエージェント向け文書の変更パスは、統合先worktreeで`atk run-script agent-doc-changes -- <手順3で取得した統合先branchの統合前HEAD> <統合後のHEAD>`を単独実行し、終了コード0で得た標準出力のJSON配列をそのまま返す。対象集合は同コマンドの判定に従う。`マージなし`の統合では空配列とする。
 同じレーンの統合を再び行う場合（統合指示の再受領、競合解消後の再統合など）は、前回までに返した`変更したエージェント向け文書`の要素と今回の出力の和集合を、重複を除いて返す。メインはこの値でレーン全体の規範変更を再取得するため、今回の統合前HEADから数えた差分だけを返すと、前回統合したエージェント向け文書が再取得の対象から外れる。そのため、`変更したエージェント向け文書`を返すたびに、その値を引き継ぎ記録先へ記録する。
 
 次の形式だけを返す。
@@ -101,4 +98,4 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 変更したエージェント向け文書: <["リポジトリ相対パス"]形式のJSON配列。無い場合は[]>
 ```
 
-続行不能時は`agent-toolkit:delegation`の`references/mandatory-rules.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。自身が起動した外部プロセスの終了を確認してから終端する。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
+続行不能時は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。自身が起動した外部プロセスの終了を確認してから終端する。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

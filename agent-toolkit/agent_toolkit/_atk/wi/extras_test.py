@@ -1,9 +1,7 @@
-"""atk (agent-toolkit `atk wi`) の拡張サブコマンド・オプションのテスト。
+"""`atk wi`の拡張サブコマンド・オプションのテスト。
 
 `add --source`・`list`/`show`のremote同期・`commit`・`list`の状態に基づく抽出・
-エディター経由の`add`・`mq add`の`--target-repo`の単体テストを集約する。
-既存サブコマンドのテストは`atk_test.py`に分離する。
-共通ヘルパーは`atk_test.py`・`_atk_git_fake_test_helpers.py`から再利用する。
+エディター経由の`add`・`add`の`--target-repo`の単体テストを集約する。
 """
 
 import pathlib
@@ -620,8 +618,8 @@ class TestAddViaEditor:
     """addサブコマンド: messages省略時に$EDITOR経由で本文を収集する。
 
     `_editor_fake_run`でエディター呼び出しを差し替え、subprocess.run全呼び出しを
-    捕捉する。エラー時の動作を確かめるテストでは`_pull`等のgit呼び出しもfake_runへ吸収されるが、
-    検証焦点は`_collect_message_via_editor`の早期None返却にあり、gitが呼び出されたかどうかは
+    捕捉する。エラー時の動作を確かめるテストでは`pull`等のgit呼び出しもfake_runへ吸収されるが、
+    検証焦点は`collect_message_via_editor`の早期None返却にあり、gitが呼び出されたかどうかは
     AWIディレクトリへのファイル生成有無によって間接的に確認する。
     """
 

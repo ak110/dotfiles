@@ -6,6 +6,7 @@ OS別の差分（主にhookコマンドのshell/PowerShellラッパー）は
 """
 
 import copy
+import datetime
 import json
 import logging
 import re
@@ -15,16 +16,21 @@ from pathlib import Path
 
 import pytilpack.jsonc
 
-from pytools._internal import claude_common, log_format, remove_legacy_codex_mcp_from_claude
-from pytools._internal.cli import setup_logging
+from pytools._internal import (
+    common,
+    log_format,
+    post_apply_outcome,
+    removal_registry,
+    remove_legacy_codex_mcp_from_claude,
+)
 
 logger = logging.getLogger(__name__)
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 
-_DOTFILES_DIR = Path(__file__).resolve().parents[2]
-_MANAGED_SETTINGS_PATH = _DOTFILES_DIR / "share" / "claude_settings_json_managed.json"
+# dotfilesの作業ツリーからの相対パス
+_MANAGED_SETTINGS_RELATIVE = Path("share") / "claude_settings_json_managed.json"
 _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-_MANAGED_CONFIG_PATH = _DOTFILES_DIR / "share" / "claude_json_managed.json"
+_MANAGED_CONFIG_RELATIVE = Path("share") / "claude_json_managed.json"
 _CONFIG_PATH = Path.home() / ".claude.json"
 
 _REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND = "uv run --no-project --script ~/dotfiles/scripts/claude_hook.py autonomous_exit"
@@ -37,138 +43,206 @@ _REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND = (
 # union マージは削除を反映しないため、ここで明示的に除去する。
 # Windows向けPreToolUseは、複合構文を外側のシェルへ渡さず、`-File`でPowerShellスクリプトを起動する。
 # `-Command`の引用符は起動経路によって除去の有無が異なり、argvへ引用符が残る経路では実行されない。
-_REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
-    "claude_hook_call_formatter.py",
-    # 2026-04: 統合フック (claude_hook_pretooluse.py) に統合したため旧エントリを除去
-    "claude_hook_check_mojibake.py",
-    "claude_hook_check_ps1_eol.py",
+_REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] = (
     # 2026-05: `uv run --script` を `uv run --no-project --script` に置き換えたため旧形式エントリを除去
-    "uv run --script ~/dotfiles/scripts/claude_hook_pretooluse.py",
-    "uv run --script ~/dotfiles/scripts/claude_hook_stop.py",
-    "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py",
-    "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
+    removal_registry.Registered("uv run --script ~/dotfiles/scripts/claude_hook_pretooluse.py", datetime.date(2026, 5, 18)),
+    removal_registry.Registered("uv run --script ~/dotfiles/scripts/claude_hook_stop.py", datetime.date(2026, 5, 18)),
+    removal_registry.Registered(
+        "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py", datetime.date(2026, 5, 18)
+    ),
+    removal_registry.Registered(
+        "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py", datetime.date(2026, 5, 18)
+    ),
     # 2026-06: agent-toolkitプラグイン側へ移動したため旧エントリを除去
-    "claude_hook_permissionrequest.py",
+    removal_registry.Registered("claude_hook_permissionrequest.py", datetime.date(2026, 6, 2)),
     # 2026-07: 共通エントリポイント (claude_hook.py <subcommand>) へ集約したため旧エントリを除去
-    "uv run --no-project --script ~/dotfiles/scripts/claude_hook_pretooluse.py",
-    "uv run --no-project --script ~/dotfiles/scripts/claude_hook_posttooluse.py",
-    "uv run --no-project --script ~/dotfiles/scripts/claude_hook_stop.py",
-    "uv run --no-project --script ~/dotfiles/scripts/claude_hook_autonomous_exit.py",
-    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py",
-    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_posttooluse.py",
-    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
-    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py",
+    removal_registry.Registered(
+        "uv run --no-project --script ~/dotfiles/scripts/claude_hook_pretooluse.py", datetime.date(2026, 7, 27)
+    ),
+    removal_registry.Registered(
+        "uv run --no-project --script ~/dotfiles/scripts/claude_hook_posttooluse.py", datetime.date(2026, 7, 27)
+    ),
+    removal_registry.Registered(
+        "uv run --no-project --script ~/dotfiles/scripts/claude_hook_stop.py", datetime.date(2026, 7, 27)
+    ),
+    removal_registry.Registered(
+        "uv run --no-project --script ~/dotfiles/scripts/claude_hook_autonomous_exit.py", datetime.date(2026, 7, 27)
+    ),
+    removal_registry.Registered(
+        "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py",
+        datetime.date(2026, 7, 27),
+    ),
+    removal_registry.Registered(
+        "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_posttooluse.py",
+        datetime.date(2026, 7, 27),
+    ),
+    removal_registry.Registered(
+        "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py", datetime.date(2026, 7, 27)
+    ),
+    removal_registry.Registered(
+        "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py",
+        datetime.date(2026, 7, 27),
+    ),
     # 2026-08: 自律終了Stop hookをagent-toolkitプラグイン側へ移動したため個人common入口を除去
-    _REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND,
-    _REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND,
-    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py",
-    'pretooluse; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"',
+    removal_registry.Registered(_REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND, datetime.date(2026, 8, 27)),
+    removal_registry.Registered(_REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND, datetime.date(2026, 8, 27)),
+    removal_registry.Registered(
+        "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py", datetime.date(2026, 8, 23)
+    ),
+    removal_registry.Registered(
+        'pretooluse; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"', datetime.date(2026, 8, 23)
+    ),
     # 2026-08: 振り返り入口をagent-toolkit側へ統合したため個人Stop hookを除去
-    "claude_hook.py stop;",
+    removal_registry.Registered("claude_hook.py stop;", datetime.date(2026, 8, 7)),
     # 2026-09: pretooluseフックへスクリプト実在検査を追加したため、検査を持たない旧形式エントリを除去
-    "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse;",
+    removal_registry.Registered(
+        "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse;", datetime.date(2026, 9, 2)
+    ),
     # 2026-09: dotfiles固有hookをpytoolsのconsole scriptへ移したため旧共通入口を除去
-    "dotfiles/scripts/claude_hook.py",
-    "dotfiles\\scripts\\claude_hook.py",
+    removal_registry.Registered("dotfiles/scripts/claude_hook.py", datetime.date(2026, 8, 27)),
+    removal_registry.Registered("dotfiles\\scripts\\claude_hook.py", datetime.date(2026, 9, 9)),
     # 2026-09: console scriptの不在時に通過させる`command -v`前置を持たない旧形式を除去する。
     # 管理対象の除去は現行コマンド文字列との完全一致で行うため、旧形式が現行形式と並んで二重に実行されていた。
-    "sh -c 'dotfiles-claude-hook ",
+    removal_registry.Registered("sh -c 'dotfiles-claude-hook ", datetime.date(2026, 9, 26)),
     # 2026-09: 参照文書の読取とスキル起動の記録を読む検査を撤去したため、個人用PostToolUseを除去する
-    "dotfiles-claude-hook posttooluse",
-    "claude-hook-posttooluse.ps1",
+    removal_registry.Registered("dotfiles-claude-hook posttooluse", datetime.date(2026, 9, 26)),
+    removal_registry.Registered("claude-hook-posttooluse.ps1", datetime.date(2026, 9, 26)),
+    # 2026-10: Windowsの個人用PreToolUseの実体をlibexec/へ移したため、scripts/を指す旧登録を除去する
+    removal_registry.Registered("\\dotfiles\\scripts\\claude-hook-pretooluse.ps1", datetime.date(2026, 10, 7)),
+    # 2026-10: 個人用PreToolUseは警告だけを返し終了コード2を返さないため、終了コード2を引き継ぐ旧形式を除去する
+    removal_registry.Registered(
+        "dotfiles-claude-hook pretooluse; code=$?; [ $code -eq 2 ] && exit 2", datetime.date(2026, 10, 7)
+    ),
 )
 
 # settings.json の env 配下から除去するキー。
 # share/claude_settings_json_managed.* から廃止した env キーを列挙する。
 # dict は再帰マージのため、配布元から削除してもユーザー設定に残り続ける。ここで明示的に除去する。
-_REMOVED_ENV_KEYS: tuple[str, ...] = (
-    "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+_REMOVED_ENV_KEYS: tuple[removal_registry.Registered[str], ...] = (
+    removal_registry.Registered("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", datetime.date(2026, 8, 7)),
+    removal_registry.Registered("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", datetime.date(2026, 5, 30)),
 )
 
 # 配布元から廃止した設定キーのドット区切りパス。
 # dictは再帰マージのため、配布元から削除してもユーザー設定に残り続ける。ここで明示的に除去する。
-_REMOVED_KEYS: tuple[str, ...] = ("autoMode.allowMode",)
+_REMOVED_KEYS: tuple[removal_registry.Registered[str], ...] = (
+    removal_registry.Registered("autoMode.allowMode", datetime.date(2026, 8, 16)),
+)
 
 # `~/.claude.json`から除去する設定キーのドット区切りパス。
 # `verbose`は`~/.claude/settings.json`が管理するため、`~/.claude.json`側に残ると
 # 両方が同じ表示を指定し、どちらの値が適用されるかをユーザーが判別できない。
-_REMOVED_CONFIG_KEYS: tuple[str, ...] = (*_REMOVED_KEYS, "verbose")
+_REMOVED_CONFIG_KEYS: tuple[removal_registry.Registered[str], ...] = (
+    *_REMOVED_KEYS,
+    removal_registry.Registered("verbose", datetime.date(2026, 9, 17)),
+)
 
 # settings.json 配下のリスト要素から除去する部分文字列のペア。
 # ドット区切りパスで対象配列を指定し、配列要素のうち部分文字列を含むものを除去する。
 # share/claude_settings_json_managed.* から廃止した配列項目を列挙する。
 # union マージは削除を反映しないため、ここで明示的に除去する。
-_REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
+_REMOVED_LIST_ITEM_SUBSTRINGS: tuple[removal_registry.Registered[tuple[str, str]], ...] = (
     # 2026-08: agents_serverへ移行したため旧Codex App Serverの許可項目を除去
-    ("permissions.allow", "mcp__plugin_agent-toolkit_codex_app_server__"),
+    removal_registry.Registered(
+        ("permissions.allow", "mcp__plugin_agent-toolkit_codex_app_server__"), datetime.date(2026, 8, 24)
+    ),
     # 2026-06: Session-Owned Amend ルールに置き換えたため旧文面を除去
-    (
-        "autoMode.allow",
-        f"{_TOOLKIT_PREFIX}:careful-review スキル等でレビュー指摘修正をコミットに反映する際",
+    removal_registry.Registered(
+        (
+            "autoMode.allow",
+            f"{_TOOLKIT_PREFIX}:careful-review スキル等でレビュー指摘修正をコミットに反映する際",
+        ),
+        datetime.date(2026, 6, 21),
     ),
     # 2026-07: Exit-Session Termination の文面を数回改訂した際、union マージで
     # 旧文面が除去されず`~/.claude/settings.json`に重複蓄積していたため除去する
     # （`claude auto-mode critique`実測で4件の重複を検出）
-    (
-        "autoMode.allow",
-        "自律実行系CLIからの間接起動セッションの完遂条件を満たしたときの正当な自律終了操作",
+    removal_registry.Registered(
+        (
+            "autoMode.allow",
+            "自律実行系CLIからの間接起動セッションの完遂条件を満たしたときの正当な自律終了操作",
+        ),
+        datetime.date(2026, 7, 16),
     ),
-    (
-        "autoMode.allow",
-        "呼び出し元スキルから明示的に呼ばれた場合、またはユーザーがSkill名を明示指定した場合の正当な自律終了操作",
+    removal_registry.Registered(
+        (
+            "autoMode.allow",
+            "呼び出し元スキルから明示的に呼ばれた場合、またはユーザーがSkill名を明示指定した場合の正当な自律終了操作",
+        ),
+        datetime.date(2026, 7, 16),
     ),
-    (
-        "autoMode.allow",
-        "自律終了再促フックからの誘導・ユーザーのSkill名明示指定のいずれか",
+    removal_registry.Registered(
+        (
+            "autoMode.allow",
+            "自律終了再促フックからの誘導・ユーザーのSkill名明示指定のいずれか",
+        ),
+        datetime.date(2026, 7, 16),
     ),
     # 2026-08: ラベル付きの Personal Repo Default-Branch Push へ移管したためユーザー記入の旧文面を除去
-    (
-        "autoMode.allow",
-        "ak110の個人リポジトリ（dotfiles, pytilpack",
+    removal_registry.Registered(
+        (
+            "autoMode.allow",
+            "ak110の個人リポジトリ（dotfiles, pytilpack",
+        ),
+        datetime.date(2026, 8, 16),
     ),
     # 2026-08: ユーザースコープの読取禁止を廃止したため旧管理項目を除去
-    (
-        "permissions.deny",
-        "Read(./.env)",
+    removal_registry.Registered(
+        (
+            "permissions.deny",
+            "Read(./.env)",
+        ),
+        datetime.date(2026, 8, 9),
     ),
     # 2026-08: 旧Codex User scope MCPの登録廃止に伴い、そのMCPツールの許可項目を除去
-    (
-        "permissions.allow",
-        "mcp__codex",
+    removal_registry.Registered(
+        (
+            "permissions.allow",
+            "mcp__codex",
+        ),
+        datetime.date(2026, 8, 23),
     ),
     # 2026-09: 秘匿ファイルの読取禁止をプロジェクト側リポジトリ設定へ移したため配布原本の3件を除去
-    (
-        "permissions.deny",
-        "Read(*.key)",
+    removal_registry.Registered(
+        (
+            "permissions.deny",
+            "Read(*.key)",
+        ),
+        datetime.date(2026, 9, 3),
     ),
-    (
-        "permissions.deny",
-        "Read(*.crt)",
+    removal_registry.Registered(
+        (
+            "permissions.deny",
+            "Read(*.crt)",
+        ),
+        datetime.date(2026, 9, 3),
     ),
-    (
-        "permissions.deny",
-        "Read(//**/.credentials.json)",
+    removal_registry.Registered(
+        (
+            "permissions.deny",
+            "Read(//**/.credentials.json)",
+        ),
+        datetime.date(2026, 9, 3),
     ),
     # 2026-09: autoMode.allow を4件の包括ルールへ再編したため、廃止したラベルの旧文面を除去する。
     # `_strip_stale_labeled_list_items`は配布原本に現存するラベルの旧文面だけを除去するため、
     # 配布原本から消えたラベルはここで明示しないとユーザー設定に残り続ける
     # （配布原本14件に対し`~/.claude/settings.json`が16件を保持していた実測による。
     # 残留していたのは下記の`Feedback-`で始まる2件）。
-    ("autoMode.allow", "Session-Owned Amend: "),
-    ("autoMode.allow", "Exit-Session Termination: "),
-    ("autoMode.allow", "AWI-Originated Gate Revision: "),
-    ("autoMode.allow", "Feedback-Originated Gate Revision: "),
-    ("autoMode.allow", "Background Operator Auto-Approval: "),
-    ("autoMode.allow", "External Marketplace Registration: "),
-    ("autoMode.allow", "Agent Config Read: "),
-    ("autoMode.allow", "Delegation Continuation Message: "),
-    ("autoMode.allow", "Release Workflow Dispatch: "),
-    ("autoMode.allow", "Personal Repo Default-Branch Push: "),
-    ("autoMode.allow", "Merge Approval: "),
-    ("autoMode.allow", "Plan File Write: "),
-    ("autoMode.allow", "WI Queue State Transition: "),
-    ("autoMode.allow", "Feedback Queue State Transition: "),
+    removal_registry.Registered(("autoMode.allow", "Session-Owned Amend: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Exit-Session Termination: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "AWI-Originated Gate Revision: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Feedback-Originated Gate Revision: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Background Operator Auto-Approval: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "External Marketplace Registration: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Agent Config Read: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Delegation Continuation Message: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Release Workflow Dispatch: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Personal Repo Default-Branch Push: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Merge Approval: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Plan File Write: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "WI Queue State Transition: "), datetime.date(2026, 9, 17)),
+    removal_registry.Registered(("autoMode.allow", "Feedback Queue State Transition: "), datetime.date(2026, 9, 17)),
 )
 
 # ラベル付き配列要素（`^<ラベル>: `形式の接頭辞を持つ要素）の先頭ラベルを抽出する正規表現。
@@ -198,34 +272,34 @@ _IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
 _HOME_PLACEHOLDER = "__HOME__"
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    setup_logging()
-    run()
-    sys.exit(0)
-
-
-def run() -> bool:
-    """Claude 設定ファイル 2 件をマージ更新する。
-
-    Returns:
-        いずれかのファイルを実際に書き換えたかどうか。呼び出し側がログ集計に使う。
-    """
-    overrides = _platform_overrides(_MANAGED_SETTINGS_PATH)
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """Claude 設定ファイル 2 件をマージ更新する。書き込みの失敗と作業ツリーを解決できない場合は失敗と数える。"""
+    dotfiles_root = common.find_dotfiles_root()
+    if dotfiles_root is None:
+        return post_apply_outcome.PostApplyOutcome(changed=False, failure="dotfilesの作業ツリーを解決できない")
+    managed_settings_path = dotfiles_root / _MANAGED_SETTINGS_RELATIVE
+    overrides = _platform_overrides(managed_settings_path)
     changed_settings = update_claude_settings(
-        _MANAGED_SETTINGS_PATH,
+        managed_settings_path,
         _SETTINGS_PATH,
         overrides=overrides,
-        removed_list_item_substrings=_REMOVED_LIST_ITEM_SUBSTRINGS,
+        removed_list_item_substrings=removal_registry.values(_REMOVED_LIST_ITEM_SUBSTRINGS),
         stale_labeled_list_paths=_STALE_LABELED_LIST_PATHS,
     )
     changed_config = update_claude_settings(
-        _MANAGED_CONFIG_PATH,
+        dotfiles_root / _MANAGED_CONFIG_RELATIVE,
         _CONFIG_PATH,
-        removed_keys=_REMOVED_CONFIG_KEYS,
+        removed_keys=removal_registry.values(_REMOVED_CONFIG_KEYS),
         strip_legacy_codex_timeout=True,
     )
-    return changed_settings or changed_config
+    failures = [
+        f"{log_format.home_short(path)} の書き込みに失敗"
+        for path, changed in ((_SETTINGS_PATH, changed_settings), (_CONFIG_PATH, changed_config))
+        if changed is None
+    ]
+    return post_apply_outcome.PostApplyOutcome(
+        changed=bool(changed_settings) or bool(changed_config), failure=" / ".join(failures) or None
+    )
 
 
 def _platform_overrides(base_path: Path, *, platform: str | None = None) -> list[Path]:
@@ -243,13 +317,13 @@ def update_claude_settings(
     managed_path: Path,
     settings_path: Path,
     overrides: list[Path] | None = None,
-    removed_hook_substrings: tuple[str, ...] = _REMOVED_HOOK_COMMAND_SUBSTRINGS,
-    removed_env_keys: tuple[str, ...] = _REMOVED_ENV_KEYS,
-    removed_keys: tuple[str, ...] = _REMOVED_KEYS,
+    removed_hook_substrings: tuple[str, ...] = removal_registry.values(_REMOVED_HOOK_COMMAND_SUBSTRINGS),
+    removed_env_keys: tuple[str, ...] = removal_registry.values(_REMOVED_ENV_KEYS),
+    removed_keys: tuple[str, ...] = removal_registry.values(_REMOVED_KEYS),
     removed_list_item_substrings: tuple[tuple[str, str], ...] = (),
     stale_labeled_list_paths: tuple[str, ...] = (),
     strip_legacy_codex_timeout: bool = False,
-) -> bool:
+) -> bool | None:
     """`managed_path` の設定を `settings_path` にマージして書き込む。
 
     `overrides` が与えられた場合は、`managed_path` の内容に上乗せしてからマージする。
@@ -272,7 +346,7 @@ def update_claude_settings(
     `removed_list_item_substrings`と同じ理由で呼び出し元が明示指定する。
 
     Returns:
-        実際にファイルを書き換えた場合は `True`。
+        実際にファイルを書き換えた場合は `True`、変更が無い場合は `False`、書き込みに失敗した場合は `None`。
     """
     managed = json.loads(managed_path.read_text(encoding="utf-8"))
     for override_path in overrides or []:
@@ -300,8 +374,8 @@ def update_claude_settings(
         logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    if not claude_common.write_settings_hybrid(settings_path, original, data, tag=short):
-        return False
+    if not common.write_settings_hybrid(settings_path, original, data, tag=short):
+        return None
     logger.info(log_format.format_status(short, "更新しました"))
     for line in _diff_lines(original, data):
         logger.info(line)
@@ -729,7 +803,3 @@ def _union_list(existing: list, managed: list) -> list:
         seen.add(key)
         result.append(item)
     return result
-
-
-if __name__ == "__main__":
-    main()

@@ -59,6 +59,10 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     # 標識の有無で分岐する動作を検証するテストは自身で設定する。
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
+    # Claude Codeの設定ディレクトリとCodexのホームの指定。継承されると、隔離したホーム配下を前提にするテストの
+    # 解決先が実行環境で変わる。指定した場合の解決を検証するテストは自身で設定する。
+    "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
 )
 _GIT_IDENTITY_NAME = "test"
 _GIT_IDENTITY_EMAIL = "test@example.invalid"

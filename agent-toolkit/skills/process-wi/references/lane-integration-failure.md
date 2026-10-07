@@ -1,6 +1,6 @@
 # レーン統合の失敗
 
-本書は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「マージありの統合」で、手順6のrebaseが競合で停止した場合と、手順9の変更範囲の検証が失敗した場合の扱いを定める。手順の番号は同書の番号を指す。
+本書は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「マージありの統合」で、手順7（手順6のrebaseが競合で停止した場合）と、手順9の変更範囲の検証が失敗した場合の扱いを定める。手順の番号は同書の番号を指す。
 
 ## rebaseの競合（手順7）
 

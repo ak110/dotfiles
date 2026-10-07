@@ -1,9 +1,10 @@
-"""`_uwi_scan.py`のUWI走査を検証する。"""
+"""`uwi_scan.py`のUWI走査を検証する。"""
 
 import pathlib
 import subprocess
 from collections.abc import Iterator
 
+import platformdirs
 import pytest
 
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
@@ -183,7 +184,7 @@ class TestPrivateNotesRoot:
     def test_returns_none_when_root_is_missing(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("AGENT_TOOLKIT_PRIVATE_NOTES", raising=False)
         monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
-        monkeypatch.setattr(_uwi_scan.platformdirs, "user_data_dir", lambda *_args, **_kwargs: tmp_path / "data")
+        monkeypatch.setattr(platformdirs, "user_data_dir", lambda *_args, **_kwargs: tmp_path / "data")
         assert _uwi_scan.private_notes_root() is None
 
     def test_uses_platformdirs_fallback(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -191,7 +192,7 @@ class TestPrivateNotesRoot:
         fallback.mkdir(parents=True)
         monkeypatch.delenv("AGENT_TOOLKIT_PRIVATE_NOTES", raising=False)
         monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path / "home")
-        monkeypatch.setattr(_uwi_scan.platformdirs, "user_data_dir", lambda *_args, **_kwargs: tmp_path / "data")
+        monkeypatch.setattr(platformdirs, "user_data_dir", lambda *_args, **_kwargs: tmp_path / "data")
         assert _uwi_scan.private_notes_root() == fallback
 
     def test_handles_nested_mapping_and_folded_values(self, tmp_path: pathlib.Path) -> None:

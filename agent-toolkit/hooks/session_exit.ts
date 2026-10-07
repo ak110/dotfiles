@@ -38,11 +38,12 @@ function isMissing(error: unknown): boolean {
 // `/exit`の直前に削除する。durableなtaskは終了後も残す指定のため削除しない。
 // 許可が`allow`でない環境で`$.tool.call`を呼ぶと権限確認ダイアログで同じく止まるため、先に`$.tool.check`で判定する。
 // 一覧の取得と削除に失敗しても`/exit`は実行する（結果は削除しない場合の確認画面と同じ）。
+// 一覧の拒否（`deny`）とエラー（`isError`）は`result`に一覧を持たないため、成功した一覧だけを走査する。
 async function deleteSessionCrons($: EngineInterface): Promise<void> {
   try {
     if ((await $.tool.check({ tool: "CronList", input: {} })).decision !== "allow") return;
     const listed = await $.tool.call({ tool: "CronList" });
-    if (listed.result === undefined) return;
+    if (listed.deny !== undefined || listed.isError === true) return;
     for (const job of listed.result.jobs) {
       if (job.durable === true) continue;
       if ((await $.tool.check({ tool: "CronDelete", input: { id: job.id } })).decision !== "allow") continue;

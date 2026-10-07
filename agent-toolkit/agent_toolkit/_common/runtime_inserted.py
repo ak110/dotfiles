@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent_toolkit._common import message_format as _message_format
+
 _RUNTIME_INSERTED_PREFIXES = (
     "<system-reminder>",
     "[COMPACTION RECOVERY]",
     "This session is being continued",
     "<normative-context",
-    "<atk-auto",
-    "<agent-toolkit-auto-inserted",
-    "<agent-toolkit-hook-message",
+    *(f"<{element}" for element in _message_format.AUTO_ELEMENTS),
     "<task-notification>",
     "<command-name>",
     "<local-command-caveat>",

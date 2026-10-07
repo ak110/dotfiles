@@ -1,7 +1,7 @@
-"""agent-toolkitプラグイン配下の`atk wi`一括取り込み用補助モジュール。
+"""`atk wi add --batch`による一括取り込み。
 
 `atk wi show --all`の出力形式を入力として、複数エントリをinboxへ原文保持で取り込む。
-別環境からの移行・復元用途であり、通常の投入を担う`_atk_wi_add.add_entries`が行う
+別環境からの移行・復元用途であり、通常の投入を担う`add.add_entries`が行う
 `target_commit`の再取得・UWI見出しと回答欄の再生成・予約frontmatterキーの破棄を適用しない。
 取り込みが保存内容へ加える変更は次の2点だけとする。
 
@@ -12,8 +12,6 @@
 
 - 本文が完全な`show`形式エントリの引用を含む場合、エントリ境界を誤って分割し得る。
 - 元ファイル末尾の改行の有無、末尾の連続空行、および構造見出しと同形の末尾行は復元できない。
-
-PEP 723 entrypoint`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
 """
 
 import argparse
@@ -28,30 +26,19 @@ import sys
 import typing
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.wi import cli_input as _wi_cli_input
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
-from agent_toolkit._atk.wi.add import _body_is_effectively_empty, read_body_files
-from agent_toolkit._atk.wi.common import (
-    MISSING_DEPENDENCY_NEXT_ACTION,
-    WI_STATE_INBOX,
-    WI_STATES,
-    WI_TYPE_AWI,
-    WI_TYPES,
-    WebInputError,
-    _collect_message_via_editor,
-    _commit_and_push,
-    _max_existing_seq,
-    _pull,
-    _repo_lock,
-    _subdir,
-    comparison_key,
-    existing_entry_filenames,
-    is_agent_environment,
-    is_case_sensitive,
-    missing_dependency_warnings,
-    validate_filename,
-)
-from agent_toolkit._atk.wi.formatters import _shorten_home
+from agent_toolkit._atk.wi import web_input as _wi_web_input
+from agent_toolkit._atk.wi.add import body_is_effectively_empty, read_body_files
+from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATES, WI_TYPE_AWI, WI_TYPES
+from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
+from agent_toolkit._atk.wi.formatters import shorten_home
+from agent_toolkit._atk.wi.web_input import WebInputError
 
 _ENTRY_HEADING_RE = re.compile(r"### (?P<name>\S+\.md)(?: \[[^\]]*\])?")
 """エントリ境界となる`show`の見出し行。角括弧内の状態ラベルは無視する。"""
@@ -120,7 +107,7 @@ def _validate_entry(name: str, raw_text: str) -> BatchEntry:
             f"frontmatterのtarget_repoが空または文字列ではない: {name}",
             next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを書いて再投入する",
         )
-    if entry_type == WI_TYPE_AWI and _body_is_effectively_empty(body):
+    if entry_type == WI_TYPE_AWI and body_is_effectively_empty(body):
         raise WebInputError(f"AWI本文が実質空です: {name}", next_action="本文を記入して再投入する")
     return BatchEntry(original_name=name, raw_text=raw_text, frontmatter=frontmatter, body=body)
 
@@ -223,7 +210,7 @@ def _duplicate_original_names(
     保存ファイル名を投入時刻から新規採番し、既存項目とファイル名が一致する入力を生じさせないことによる。
     この採番規則が変わると通常の投入でも同じ重複が生じるため、その時点で本判定の適用範囲を見直す。
     """
-    key = functools.partial(comparison_key, case_sensitive=case_sensitive)
+    key = functools.partial(_wi_filenames.comparison_key, case_sensitive=case_sensitive)
     existing_by_key = {key(name): name for name in existing}
     duplicated: set[str] = set()
     for entry in entries:
@@ -252,15 +239,15 @@ def _assign_filenames(
     元名を維持できるエントリを先に確定し、5状態フォルダの既存名と衝突するエントリだけを
     通常の投入と同じ規則を使って再採番する。再採番候補は既存名・元名を維持するエントリの元名・
     割り当て済みの保存名を予約集合として除外する。
-    既存名との衝突判定と予約集合の判定は`comparison_key`が返す比較キーで行い、
+    既存名との衝突判定と予約集合の判定は`_wi_filenames.comparison_key`が返す比較キーで行い、
     大文字小文字を区別しないファイルシステムでも既存ファイルを上書きしない。
     """
     timestamp = now.strftime("%Y%m%d-%H%M%S")
-    key = functools.partial(comparison_key, case_sensitive=case_sensitive)
+    key = functools.partial(_wi_filenames.comparison_key, case_sensitive=case_sensitive)
     reserved = {key(name) for name in existing}
     assignments = {entry.original_name: entry.original_name for entry in entries if key(entry.original_name) not in reserved}
     reserved |= {key(name) for name in assignments}
-    counter = _max_existing_seq(private_notes, timestamp) + 1
+    counter = _wi_filenames.max_existing_seq(private_notes, timestamp) + 1
     for entry in entries:
         if entry.original_name in assignments:
             continue
@@ -377,10 +364,10 @@ def _dependency_warnings(
     （再採番された元名への参照は`_rewrite_depends_on`が新名へ差し替える）、
     および再採番で確定した保存名の3種とする。
     判定対象の依存先は`_declared_dependencies`が返す列とし、スカラー形式の`depends_on`も含める。
-    実在判定は`comparison_key`が返す比較キーで行い、大文字小文字を区別しないファイルシステムで
+    実在判定は`_wi_filenames.comparison_key`が返す比較キーで行い、大文字小文字を区別しないファイルシステムで
     大小の綴りだけが異なる参照を不在と誤判定しない。警告文には参照の原文を用いる。
     """
-    return missing_dependency_warnings(
+    return _wi_filenames.missing_dependency_warnings(
         [(assignments[entry.original_name], dependency) for entry in entries for dependency in _declared_dependencies(entry)],
         resolvable=set(assignments) | set(assignments.values()) | existing,
         case_sensitive=case_sensitive,
@@ -402,7 +389,7 @@ def add_batch_entries(
     元ファイル名は連結後の全体集合で重複の有無を確認し、重複があれば`depends_on`の読み替え先が
     一意に定まらないため全件拒否する。
     重複と既存名との衝突を確認する判定は、取り込み先ディレクトリの大文字小文字の区別を
-    `is_case_sensitive`で実際に確認した結果に基づく比較キーで行い、大文字小文字を区別しない
+    `_wi_filenames.is_case_sensitive`で実際に確認した結果に基づく比較キーで行い、大文字小文字を区別しない
     ファイルシステムで書き込みが互いを上書きする組も拒否する。
     ファイル名と本文がともに既存項目と一致するエントリは書き込まず、再採番もしない。
     それ以外のファイル名は取り込み先と衝突しない限り元名を維持する。
@@ -410,19 +397,22 @@ def add_batch_entries(
     if not texts:
         raise WebInputError("取り込む本文が無い", next_action="取り込む本文を1件以上指定してください")
     entries = [entry for text in texts for entry in parse_show_batch(text)]
-    inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
+    inbox_dir = _wi_entries.subdir(private_notes, WI_STATE_INBOX)
     for entry in entries:
-        validate_filename(entry.original_name, inbox_dir)
-    with _repo_lock(private_notes, timeout=lock_timeout):
+        _wi_web_input.validate_filename(entry.original_name, inbox_dir)
+    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
+        _wi_sync.ensure_mutation_allowed(private_notes)
         if not skip_remote_sync:
-            _pull(private_notes)
-        case_sensitive = is_case_sensitive(inbox_dir)
-        counts = collections.Counter(comparison_key(entry.original_name, case_sensitive=case_sensitive) for entry in entries)
+            _wi_sync.pull(private_notes)
+        case_sensitive = _wi_filenames.is_case_sensitive(inbox_dir)
+        counts = collections.Counter(
+            _wi_filenames.comparison_key(entry.original_name, case_sensitive=case_sensitive) for entry in entries
+        )
         duplicated = sorted(
             {
                 entry.original_name
                 for entry in entries
-                if counts[comparison_key(entry.original_name, case_sensitive=case_sensitive)] > 1
+                if counts[_wi_filenames.comparison_key(entry.original_name, case_sensitive=case_sensitive)] > 1
             }
         )
         if duplicated:
@@ -430,7 +420,7 @@ def add_batch_entries(
                 f"元ファイル名が重複しています: {'、'.join(duplicated)}",
                 next_action="重複した見出しのファイル名を別名にして再投入する",
             )
-        existing = existing_entry_filenames(private_notes)
+        existing = _wi_filenames.existing_entry_filenames(private_notes)
         skipped = _duplicate_original_names(private_notes, entries, existing=existing, case_sensitive=case_sensitive)
         imported = [entry for entry in entries if entry.original_name not in skipped]
         assignments = _assign_filenames(
@@ -455,7 +445,7 @@ def add_batch_entries(
         )
         count = len(imported)
         if count:
-            _commit_and_push(
+            _wi_sync.commit_and_push(
                 private_notes,
                 f"chore: add {count} imported {'item' if count == 1 else 'items'}",
                 [WI_STATE_INBOX],
@@ -477,13 +467,13 @@ def _collect_batch_texts(args: argparse.Namespace) -> list[str]:
         except WebInputError as error:
             _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
             sys.exit(1)
-    text = _collect_message_via_editor(strip=False)
+    text = _wi_cli_input.collect_message_via_editor(strip=False)
     if text is None:
         sys.exit(1)
     return [text]
 
 
-def _cmd_add_batch(
+def cmd_add_batch(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
     now: datetime.datetime,
@@ -516,11 +506,11 @@ def _cmd_add_batch(
             print("---", file=sys.stderr)
             print(text, file=sys.stderr)
         sys.exit(1)
-    inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
+    inbox_dir = _wi_entries.subdir(private_notes, WI_STATE_INBOX)
     _outcome.report_success(f"{len(mapping)}件をinboxへ取り込んだ")
     for original, saved in mapping:
         renamed = f"（{original} -> {saved}）" if original != saved else ""
-        print(f"  {_shorten_home(inbox_dir / saved, home)}{renamed}")
+        print(f"  {shorten_home(inbox_dir / saved, home)}{renamed}")
     if skipped:
         print(f"{len(skipped)}件スキップ（ファイル名と本文が既存項目と一致）:")
         for original in skipped:

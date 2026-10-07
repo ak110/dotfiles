@@ -11,7 +11,7 @@ import typing
 import pytest
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import config, entry_index
+from agent_toolkit._atk.serve import config, entry_index, wi_operations
 from agent_toolkit._atk.serve import state as serve_state
 
 
@@ -126,7 +126,7 @@ def test_operations_entries_and_target_repos_share_index(
 ) -> None:
     """一覧の直後の候補取得は同じ索引を使い、frontmatterを再解析しない。"""
     _age(_write_entry(tmp_path, "inbox", "entry.md", "本文"))
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
     entries, warnings = operations.entries_with_warnings({"status": "active"})
     assert len(entries) == 1
     assert not warnings
@@ -315,7 +315,7 @@ def test_switching_states_keeps_index_of_unscanned_state(
     """一覧の状態をactiveとadoptedで交互に切り替えても、走査していない状態の索引を保持して再利用する。"""
     _age(_write_entry(tmp_path, "inbox", "active.md", "本文"))
     _age(_write_entry(tmp_path, "adopted", "done.md", "本文"))
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
     operations.entries_with_warnings({"status": "adopted"})
     operations.entries_with_warnings({"status": "active"})
     parse_calls = 0
@@ -357,15 +357,15 @@ def test_target_repos_does_not_reparse_terminal_entries(
     )
     old_ns = time.time_ns() - 30 * 24 * 3600 * 1_000_000_000
     os.utime(old, ns=(old_ns, old_ns))
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
     heading_calls: list[str] = []
-    original_headings = serve_app.top_level_atx_headings
+    original_headings = wi_operations.top_level_atx_headings
 
     def counting_headings(text: str, level: int) -> typing.Any:
         heading_calls.append(text)
         return original_headings(text, level)
 
-    monkeypatch.setattr(serve_app, "top_level_atx_headings", counting_headings)
+    monkeypatch.setattr(wi_operations, "top_level_atx_headings", counting_headings)
 
     assert operations.target_repos("active") == ["example/recent.md"]
     assert operations.target_repos("active") == ["example/recent.md"]

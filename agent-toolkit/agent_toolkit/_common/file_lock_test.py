@@ -1,29 +1,17 @@
-"""_file_lock モジュールの単体テスト。
+"""`file_lock`モジュールの単体テスト。
 
 POSIX/NT両分岐のロック取得・解放、`rotate_if_needed`のローテーション動作を検証する。
-OS別ロック実装は`_session_state_test.py`の先例に倣い、実行環境のOSと一致する側のみ
-`pytest.mark.skipif`で有効化し、実際のロックAPI経由で検証する。
+OS別ロック実装は実行環境のOSと一致する側のみ`pytest.mark.skipif`で有効化し、実際のロックAPI経由で検証する。
 """
 
 import errno
 import multiprocessing
 import pathlib
-import subprocess
 
 import pytest
 
 from agent_toolkit._common import file_lock as _file_lock
-
-
-def _git(repo: pathlib.Path, *args: str) -> str:
-    """テスト用リポジトリでGitを実行し、標準出力を返す。"""
-    result = subprocess.run(
-        ["git", "-C", str(repo), *args],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout
+from agent_toolkit._testing import git_repository
 
 
 def _append_record(path_text: str, record: str, max_bytes: int) -> None:
@@ -63,7 +51,7 @@ class TestEnsurePlanLockIgnored:
 
     def test_preserves_existing_content_and_ignores_all_plan_locks(self, tmp_path: pathlib.Path) -> None:
         """既存内容を保持し、root直下と年月階層のロックを版管理の対象外で除外する。"""
-        _git(tmp_path, "init", "-q")
+        git_repository.init_repository(tmp_path)
         exclude = self._exclude_path(tmp_path)
         exclude.write_bytes(b"existing-pattern")
         root_lock = tmp_path / "plans" / ".agent-toolkit-plan-create.lock"
@@ -78,17 +66,17 @@ class TestEnsurePlanLockIgnored:
         nested_lock.parent.mkdir(parents=True)
         root_lock.touch()
         nested_lock.touch()
-        assert _git(tmp_path, "check-ignore", str(root_lock.relative_to(tmp_path))).strip() == str(
+        assert git_repository.git_output(tmp_path, "check-ignore", str(root_lock.relative_to(tmp_path))).strip() == str(
             root_lock.relative_to(tmp_path)
         )
-        assert _git(tmp_path, "check-ignore", str(nested_lock.relative_to(tmp_path))).strip() == str(
+        assert git_repository.git_output(tmp_path, "check-ignore", str(nested_lock.relative_to(tmp_path))).strip() == str(
             nested_lock.relative_to(tmp_path)
         )
-        assert not _git(tmp_path, "status", "--porcelain")
+        assert not git_repository.git_output(tmp_path, "status", "--porcelain")
 
     def test_keeps_existing_gitignore_untouched(self, tmp_path: pathlib.Path) -> None:
         """管理パターンが`.gitignore`へ残るcloneでも、そのファイルを変更しない。"""
-        _git(tmp_path, "init", "-q")
+        git_repository.init_repository(tmp_path)
         gitignore = tmp_path / ".gitignore"
         recorded = b"existing-pattern\n*.lock\n/plans/**/*.lock\n"
         gitignore.write_bytes(recorded)
@@ -103,14 +91,14 @@ class TestEnsurePlanLockIgnored:
         """worktreeから呼んだ場合は共有側の除外設定へ書き、そのworktreeで除外が成立する。"""
         repository = tmp_path / "repository"
         repository.mkdir()
-        _git(repository, "init", "-q")
-        _git(repository, "config", "user.email", "test@example.com")
-        _git(repository, "config", "user.name", "test")
+        git_repository.init_repository(repository)
+        git_repository.git_output(repository, "config", "user.email", "test@example.com")
+        git_repository.git_output(repository, "config", "user.name", "test")
         (repository / "queue.md").write_text("initial\n", encoding="utf-8")
-        _git(repository, "add", "queue.md")
-        _git(repository, "commit", "-qm", "initial")
+        git_repository.git_output(repository, "add", "queue.md")
+        git_repository.git_output(repository, "commit", "-qm", "initial")
         worktree = tmp_path / "worktree"
-        _git(repository, "worktree", "add", "-q", str(worktree))
+        git_repository.git_output(repository, "worktree", "add", "-q", str(worktree))
         lock = worktree / "plans" / ".agent-toolkit-plan-create.lock"
 
         assert _file_lock.ensure_plan_lock_ignored(lock)
@@ -119,7 +107,7 @@ class TestEnsurePlanLockIgnored:
         assert self._exclude_path(repository).read_bytes().splitlines().count(pattern) == 1
         lock.parent.mkdir(parents=True)
         lock.touch()
-        assert not _git(worktree, "status", "--porcelain")
+        assert not git_repository.git_output(worktree, "status", "--porcelain")
         assert not _file_lock.ensure_plan_lock_ignored(lock)
 
     @pytest.mark.parametrize(
@@ -134,7 +122,7 @@ class TestEnsurePlanLockIgnored:
     )
     def test_exclude_content_is_idempotent(self, tmp_path: pathlib.Path, content: bytes) -> None:
         """初期内容にかかわらず、既存行を保持し再適用で内容が変化しない。"""
-        _git(tmp_path, "init", "-q")
+        git_repository.init_repository(tmp_path)
         exclude = self._exclude_path(tmp_path)
         exclude.write_bytes(content)
         lock = tmp_path / "plans" / ".agent-toolkit-plan-create.lock"
@@ -150,7 +138,7 @@ class TestEnsurePlanLockIgnored:
 
     def test_does_not_modify_repository_for_lock_outside_plans(self, tmp_path: pathlib.Path) -> None:
         """`plans/`外の一般ロックでは除外設定も`.gitignore`も変更しない。"""
-        _git(tmp_path, "init", "-q")
+        git_repository.init_repository(tmp_path)
         exclude = self._exclude_path(tmp_path)
         recorded = exclude.read_bytes()
 

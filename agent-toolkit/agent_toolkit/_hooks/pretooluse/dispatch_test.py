@@ -1,36 +1,33 @@
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/dispatch.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
-import ast
 import json
-import sys
-import os
 import pathlib
-import re
-import shlex
-import subprocess
-import tempfile
+import sys
 import textwrap
-import time
-from collections.abc import Callable
 
 import pytest
-from pyfltr.colloquial import check as _colloquial_check
 
 from agent_toolkit import hook
-from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._atk import help_text as _ATK_HELP_SOURCE
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import agent_checks
-from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
-from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
-from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, auto_message_opening_attributes
+from agent_toolkit._hooks.pretooluse.decision import Decision
+from agent_toolkit._testing.helpers import auto_message_opening_attributes
+from agent_toolkit._testing.pretooluse_support import (
+    _VALID_H2_PLAN_CONTENT,
+    _additional_context,
+    _agent_messages,
+    _make_plan_file,
+    _plan_file_state_env,
+    _read_session_state,
+    _run,
+    _stderr_warn_offenders,
+    _user_facing_payload,
+    _write_session_state,
+)
 
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
@@ -336,23 +333,16 @@ def test_irremovable_warning_does_not_advance_removable_repeat_count(
     """除去不能警告の後も、除去可能警告の2回目だけに反復注記を付ける。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
 
-    def emit_controlled_warning(
-        _tool_name: str,
-        tool_input: dict,
-        _cwd: str,
-        _emit_json: Callable[[dict], None],
-        _flush_warning: Callable[[], None],
-    ) -> int:
+    def emit_controlled_warning(_tool_name: str, tool_input: dict, _cwd: str) -> Decision:
         notice = pretooluse._llm_notice(  # noqa: SLF001  # pylint: disable=protected-access
             "controlled warning",
             tag=pretooluse._WARN_TAG,  # noqa: SLF001  # pylint: disable=protected-access
             fix="retry",
             removable_cause=bool(tool_input["removable"]),
         )
-        _emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": notice}})
-        return 0
+        return Decision(context=notice)
 
-    monkeypatch.setattr(pretooluse, "_handle_edit_tool", emit_controlled_warning)
+    monkeypatch.setattr(pretooluse, "_decide_edit_tool", emit_controlled_warning)
 
     def run(removable: bool) -> int:
         return pretooluse.main(

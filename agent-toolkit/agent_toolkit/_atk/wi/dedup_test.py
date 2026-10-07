@@ -1,9 +1,7 @@
-"""atk (agent-toolkit `atk wi`) の位置引数重複除去（FB7）のテスト。
+"""`atk wi`の位置引数の重複除去のテスト。
 
-`_dedup_positional_filenames`を経由するadopt・reject・rm・start-processingの4サブコマンドで、
-同一ファイル名の重複指定時に警告出力のうえ1回のみ処理されることを検証する。
-`_atk_wi_mutations_test.py`の肥大化（pylint `too-many-lines`）回避のため本ファイルへ分離した。
-共通ヘルパーは`atk_test.py`から再利用する。
+`dedup_positional_filenames`を経由するadopt・reject・rm・start-processingの4サブコマンドで、
+同一ファイル名の重複指定時に警告を出力したうえで1回だけ処理されることを検証する。
 """
 
 import pathlib

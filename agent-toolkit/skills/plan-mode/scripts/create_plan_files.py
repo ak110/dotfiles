@@ -13,30 +13,22 @@ import os
 import pathlib
 import re
 import secrets
-import sys
 import tempfile
 from collections.abc import Iterator
 
-try:
-    from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        file_lock as _file_lock,
-    )
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        locations as _plan_file,
-    )
-    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        structure as _plan_format,
-    )
-except ImportError as _import_error:
-    _SELF = pathlib.Path(__file__).resolve()
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script plan-create -- <引数>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    file_lock as _file_lock,
+)
+from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    locations as _plan_file,
+)
+from agent_toolkit._plan import owner_records as _owner_records
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    structure as _plan_format,
+)
 
 PLAN_STEM_PLACEHOLDER = "__PLAN_STEM__"
 """本文中で最終計画stemが未確定であることを示す固定プレースホルダー。"""
@@ -105,8 +97,8 @@ def named_plan_name(plan_name: str, *, now: datetime.datetime | None = None) -> 
 
 def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
     """`~/.claude/plans`を解決し、`~/.claude`外へのsymlinkを拒否する。"""
-    home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
-    claude_root = (home_path / ".claude").resolve(strict=False)
+    home_path = pathlib.Path(home).expanduser() if home is not None else None
+    claude_root = _host_homes.claude_config_dir(home=home_path).resolve(strict=False)
     plans_root = _plan_file.working_plans_root(home_path).resolve(strict=False)
     if not plans_root.is_relative_to(claude_root):
         raise PlanCreationError("`~/.claude/plans`が~/.claudeの外を指しています", next_action=_ROOT_NEXT_ACTION)
@@ -277,10 +269,10 @@ def _finalize_candidate(
     連続する直接編集を判定する処理が読むセッション状態を記録する。
     所有セッションを解決できない環境では記録を書かず、作成そのものは成功として扱う。
     """
-    main_path = directory / f"{stem}.md"
-    targets = [(main_path, main_content, ".md.tmp")]
+    main_path = directory / _bundle_kinds.MAIN.name_for(stem)
+    targets = [(main_path, main_content, f"{_bundle_kinds.MAIN.suffix}.tmp")]
     if bug_content is not None:
-        targets.append((directory / f"{stem}.bugs.md", bug_content, ".bugs.md.tmp"))
+        targets.append((directory / _bundle_kinds.BUGS.name_for(stem), bug_content, f"{_bundle_kinds.BUGS.suffix}.tmp"))
     _require_plans_root_path(directory, plans_root)
     for path, _content, _suffix in targets:
         _require_plans_root_path(path, plans_root)
@@ -303,7 +295,7 @@ def _finalize_candidate(
                 raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}", next_action=_RETRY_NEXT_ACTION)
         _check_plan_references(tuple((path, content) for path, content, _suffix in targets), main_path, private_notes, home)
         _check_structure(main_path, work_dir, private_notes, home)
-        _plan_file.record_plan_owner(main_path)
+        _owner_records.record_plan_owner(main_path)
         return tuple(path for path, _content, _suffix in targets)
     except BaseException:
         for path, identity, content in reversed(owned):

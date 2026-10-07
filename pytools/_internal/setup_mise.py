@@ -10,7 +10,6 @@ import ntpath
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import typing
 from pathlib import Path
@@ -18,8 +17,7 @@ from pathlib import Path
 import httpx
 import platformdirs
 
-from pytools._internal import claude_common, log_format, setup_cli_common, winutils
-from pytools._internal.cli import setup_logging
+from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -72,18 +70,15 @@ def _mise_env_overrides() -> dict[str, str]:
     return overrides
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    setup_logging()
-    run()
-    sys.exit(0)
+class _SettingError(Exception):
+    """設定の書き換えの失敗。`run`が失敗と数える。"""
 
 
-def run() -> bool:
+def run() -> post_apply_outcome.PostApplyOutcome:
     """Mise セットアップを実行する。
 
-    Returns:
-        何らかの変更を加えたら True。何もしなければ False。
+    mise本体と管理ツールの導入・更新・整理の失敗は警告を出力してスキップと数え、
+    `mise trust`とユーザーPATHの書き換えの失敗は失敗と数える。
     """
     mise_bin = find_mise_binary()
     if mise_bin is None:
@@ -91,18 +86,25 @@ def run() -> bool:
         mise_bin = find_mise_binary()
         if mise_bin is None:
             logger.info(log_format.format_status("mise", "未検出のためスキップ"))
-            return False
+            return post_apply_outcome.PostApplyOutcome()
 
     changed = False
+    failures: list[str] = []
     changed |= _ensure_mise_up_to_date(mise_bin)
-    changed |= _ensure_working_tree_trusted(mise_bin)
+    try:
+        changed |= _ensure_working_tree_trusted(mise_bin)
+    except _SettingError as error:
+        failures.append(str(error))
     changed |= _ensure_global_node(mise_bin)
     changed |= _ensure_tools_installed(mise_bin)
     changed |= _ensure_tool_bin_paths_present(mise_bin)
     changed |= _ensure_orphan_shims_removed(mise_bin)
     if _is_windows():
-        changed |= _ensure_windows_user_path_has_shims()
-    return changed
+        try:
+            changed |= _ensure_windows_user_path_has_shims()
+        except _SettingError as error:
+            failures.append(str(error))
+    return post_apply_outcome.PostApplyOutcome(changed=changed, failure=" / ".join(failures) or None)
 
 
 def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
@@ -114,7 +116,7 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
     """
     if _is_windows():
         try:
-            result = claude_common.run_subprocess(
+            result = common.run_subprocess(
                 [
                     "winget",
                     "install",
@@ -130,7 +132,7 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
             logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {error}"))
             return False
         if result is None or result.returncode != 0:
-            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {claude_common.format_cli_error(result)}"))
+            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {common.format_cli_error(result)}"))
             return False
         return True
 
@@ -144,14 +146,14 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".sh", delete=False) as temp:
             temp.write(response.content)
             temp_path = Path(temp.name)
-        result = claude_common.run_subprocess(
+        result = common.run_subprocess(
             ["sh", str(temp_path)],
             timeout=_MISE_INSTALL_TIMEOUT,
             tag="mise",
             env_overrides={"MISE_INSTALL_PATH": str(Path.home() / ".local" / "bin" / "mise")},
         )
         if result is None or result.returncode != 0:
-            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {claude_common.format_cli_error(result)}"))
+            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {common.format_cli_error(result)}"))
             return False
         return True
     except Exception as error:  # noqa: BLE001  # 取得・保存・実行の失敗を1件の警告へ集約する
@@ -211,6 +213,9 @@ def _ensure_mise_up_to_date(mise_bin: Path) -> bool:
 
 def _working_tree_with_config() -> Path | None:
     """`mise.toml` を持つchezmoi working treeを返す。該当しない場合は`None`を返す。"""
+    # `find_dotfiles_root()`を使わず`CHEZMOI_WORKING_TREE`を読む。
+    # 値が作業ツリーの位置に加えて「chezmoiから起動された」ことの判定を兼ね、
+    # `dotfiles-post-apply`の単独実行では作業ツリーの`mise.toml`を実行位置に使わないためである。
     working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
     if not working_tree:
         return None
@@ -227,6 +232,9 @@ def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
     事前チェックは行わず毎回実行する。副作用がないため、成功時はchanged判定も常にTrueを
     返す（サマリで「更新」扱いになるが、ノイズよりも実行事実を確認できる方を優先する）。
     """
+    # `find_dotfiles_root()`を使わず`CHEZMOI_WORKING_TREE`を読む。
+    # 値が作業ツリーの位置に加えて「chezmoiから起動された」ことの判定を兼ね、
+    # `dotfiles-post-apply`の単独実行ではtrustをスキップするためである。
     working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
     if not working_tree:
         logger.info(log_format.format_status("mise", "CHEZMOI_WORKING_TREE 未設定のため trust をスキップ"))
@@ -240,8 +248,7 @@ def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
     result = _run_mise(mise_bin, ["trust", str(mise_toml)])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
-        logger.info(log_format.format_status("mise", f"`trust` に失敗: {stderr}"))
-        return False
+        raise _SettingError(f"`mise trust` に失敗: {stderr}")
 
     logger.info(log_format.format_status("mise", f"{mise_toml} を trust しました"))
     return True
@@ -548,31 +555,14 @@ def _ensure_windows_user_path_has_shims() -> bool:
         return False
 
     try:
-        current_value, value_type = winutils.read_user_env_var("Path")
+        appended = winutils.append_user_path(_WINDOWS_SHIMS_ENTRY)
     except OSError as e:
-        logger.warning(log_format.format_status("mise", f"ユーザー PATH の読み取りに失敗: {e}"))
-        return False
-    if current_value is None:
-        current_value = ""
-
-    # `%LOCALAPPDATA%` を展開させたいので、元が REG_SZ だった場合も REG_EXPAND_SZ に
-    # 揃えて書き戻す (REG_SZ のままだとリテラルで扱われて shims にアクセスできない)。
-    wr = winutils.import_winreg()
-    if value_type != wr.REG_EXPAND_SZ:
-        value_type = wr.REG_EXPAND_SZ
-
-    already_registered = _path_contains_shims(current_value, shims_dir)
-    if already_registered:
-        logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} は既に登録済み"))
-    else:
-        new_value = _append_entry(current_value, _WINDOWS_SHIMS_ENTRY)
-        try:
-            winutils.write_user_env_var("Path", new_value, value_type)
-        except OSError as e:
-            logger.warning(log_format.format_status("mise", f"ユーザー PATH の書き込みに失敗: {e}"))
-            return False
+        raise _SettingError(f"ユーザー PATH の更新に失敗: {e}") from e
+    if appended:
         logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} を追加しました"))
         winutils.broadcast_environment_change()
+    else:
+        logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} は既に登録済み"))
 
     # 現プロセスの PATH にも反映しておく (post_apply の後続ステップが shims 内の
     # コマンドを参照できるようにするため)。冪等性のため重複追加は避ける。
@@ -583,32 +573,7 @@ def _ensure_windows_user_path_has_shims() -> bool:
             separator = os.pathsep if current_process_path else ""
             os.environ["PATH"] = current_process_path + separator + str(shims_dir)
 
-    return not already_registered
-
-
-def _path_contains_shims(current_value: str, shims_dir: Path) -> bool:
-    r"""PATH文字列にshimsディレクトリが既に含まれているかを判定する。
-
-    レジストリに ``%LOCALAPPDATA%\mise\shims`` のまま格納されているケースと、
-    既に展開済みの絶対パスが格納されているケースの両方を許容する。
-    """
-    entries = [entry for entry in current_value.split(_WINDOWS_PATHSEP) if entry]
-    shims_str = str(shims_dir).lower()
-    for entry in entries:
-        normalized = os.path.expandvars(entry).lower()
-        if normalized == shims_str:
-            return True
-        if entry.lower() == _WINDOWS_SHIMS_ENTRY.lower():
-            return True
-    return False
-
-
-def _append_entry(current_value: str, new_entry: str) -> str:
-    """PATH 末尾に新エントリを追加する。末尾の `;` は重複させない。"""
-    if current_value == "":
-        return new_entry
-    separator = "" if current_value.endswith(_WINDOWS_PATHSEP) else _WINDOWS_PATHSEP
-    return current_value + separator + new_entry
+    return appended
 
 
 def _run_mise(
@@ -631,14 +596,10 @@ def _run_mise(
     Windowsではシステム版`dotnet.exe`が先行しても、miseのSDK検証が共有ルートを
     参照するよう子プロセスだけの`PATH`を設定する。
     """
-    return claude_common.run_subprocess(
+    return common.run_subprocess(
         [str(mise_bin), *args],
         timeout=timeout,
         cwd=cwd,
         tag="mise",
         env_overrides=_mise_env_overrides() | (extra_env or {}),
     )
-
-
-if __name__ == "__main__":
-    main()

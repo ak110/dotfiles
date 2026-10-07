@@ -25,31 +25,31 @@ from agent_toolkit import atk
 from agent_toolkit import hook as _hook
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk import config as _config
-from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._atk.wi import process_loop as _process_loop
+from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
+from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit.atk_test import _setup_notes
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 
-_SUBCOMMANDS = (
-    "pretooluse",
-    "posttooluse",
-    "stop",
-    "autonomous_exit",
-    "plan_save_advisor",
-    "agents_server_session_advisor",
-    "pending_question_advisor",
-    "subagent_stop_advisor",
-    "session_end_cleanup",
-    "stopfailure_notifier",
-    "permissionrequest",
-    "permissionrequest_codex",
-    "rules_context",
-    "rules_context_codex",
-    "user_prompt_submit",
-)
+_HOOK_DEFINITIONS = tuple(_SCRIPT.parents[1] / "hooks" / name for name in ("hooks.json", "hooks.codex.json"))
+
+
+def _registered_subcommands() -> tuple[str, ...]:
+    """Claude Code・Codexのhook定義が`hook.py`（`atk-hook`）へ渡すサブコマンドの和集合を返す。"""
+    names: set[str] = set()
+    for path in _HOOK_DEFINITIONS:
+        definitions = json.loads(path.read_text(encoding="utf-8"))["hooks"]
+        for entries in definitions.values():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    names.add(hook["command"].split()[-1])
+    return tuple(sorted(names))
+
+
+_SUBCOMMANDS = _registered_subcommands()
 
 
 def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -106,13 +106,13 @@ class TestEntrypointExceptionStages:
 
     def test_module_import_error_emits_only_traceback(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / "_hooks" / "autonomous_exit.py").write_text(
+        (tmp_path / "_hooks" / "session_end_cleanup.py").write_text(
             "raise ImportError('module failure')\n",
             encoding="utf-8",
         )
 
         result = subprocess.run(
-            [sys.executable, str(entrypoint), "autonomous_exit"],
+            [sys.executable, str(entrypoint), "session_end_cleanup"],
             input="",
             capture_output=True,
             text=True,
@@ -122,7 +122,7 @@ class TestEntrypointExceptionStages:
         assert result.returncode == 0
         assert not result.stdout
         assert result.stderr.startswith("Traceback (most recent call last):")
-        assert "[autonomous_exit] 想定外エラー" not in result.stderr
+        assert "[session_end_cleanup] 想定外エラー" not in result.stderr
 
     def test_non_approve_fallback_subcommand_exception_returns_0_without_json(
         self,
@@ -241,7 +241,8 @@ class TestStandardInputAndPayloadDump:
         assert auto_message_opening_attributes(stderr) == {"source": "hook", "kind": "warn"}
         assert "\nhook定義と実装が不整合:" in stderr
         assert "stop_advisor" in stderr
-        assert "|".join(sorted(_SUBCOMMANDS)) in stderr
+        # hook.pyが受け付けるサブコマンドは、hook定義（hooks.json・hooks.codex.json）が登録するものと一致する。
+        assert f"現行のサブコマンド: {'|'.join(_SUBCOMMANDS)}。" in stderr
 
     def test_no_subcommand_reports_usage(self) -> None:
         result = subprocess.run(
@@ -264,7 +265,7 @@ class TestStandardInputAndPayloadDump:
         source_directory = _SCRIPT.parent
         (tmp_path / "_common").mkdir()
         (tmp_path / "_common/__init__.py").write_text("", encoding="utf-8")
-        shutil.copy2(source_directory / "_hooks/session_state.py", tmp_path / "_hooks/session_state.py")
+        shutil.copy2(source_directory / "_common/session_state.py", tmp_path / "_common/session_state.py")
         shutil.copy2(source_directory / "_common/atomic_file.py", tmp_path / "_common/atomic_file.py")
         shutil.copy2(source_directory / "_common/file_lock.py", tmp_path / "_common/file_lock.py")
         temp_directory = tmp_path / "temp"
@@ -386,9 +387,9 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     myrepo.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
-    monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
-    monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
-    monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
+    monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
+    monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _path: True)
     monkeypatch.setattr(_wait_schedule, "get_prompt_cache_ttl", lambda _bucket: "1h")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -440,12 +441,12 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1 if len(session_calls) < 2 else 0)
+    monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: 1 if len(session_calls) < 2 else 0)
 
     def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(_process_loop, "_wait_for_changes", stop_wait)
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
 
     with pytest.raises(SystemExit) as loop_exit:
         atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)

@@ -11,7 +11,9 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log
-from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_context_codex, session_state
+from agent_toolkit._common import session_state
+from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_context_codex
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
 def _output(capsys: pytest.CaptureFixture[str]) -> str:
@@ -116,6 +118,27 @@ def test_session_start_codex_excludes_claude_code_rules(
     assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
 
 
+def test_codex_main_receives_codex_main_rules(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codexのメインだけが`rules-main.codex.md`を`rules-main.md`の後で受け取り、委譲先とClaude Codeは受け取らない。"""
+    main_rules = rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip()
+    codex_main_rules = rules_context.MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip()
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+
+    rules_context_codex.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
+    codex_output = _output(capsys)
+    assert codex_output.index(main_rules) < codex_output.index(codex_main_rules)
+
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
+    assert codex_main_rules not in _output(capsys)
+
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    rules_context_codex.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
+    assert capsys.readouterr().out == ""
+    rules_context_codex.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "explorer"}))
+    assert codex_main_rules not in _output(capsys)
+
+
 @pytest.mark.parametrize("agent_type", ["Explore", "Plan", "general-purpose", "plan-reviewer"])
 @pytest.mark.parametrize("environment", [None, "delegated", "owner"])
 def test_subagent_start_claude_includes_common_and_claude_subagent_rules(
@@ -165,7 +188,7 @@ def test_session_start_context_fits_claude_code_cap(
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
     output = _output(capsys)
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT, _session_start_length_report(output)
@@ -210,7 +233,7 @@ def test_session_start_provides_one_session_scoped_managed_temp(
 ) -> None:
     """同じsession_idの全SessionStartで1件の領域と同じ絶対パスを渡す。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     payload = json.dumps({"hook_event_name": "SessionStart", "source": source, "session_id": "session-1"})
 
     rules_context.main(payload)
@@ -246,7 +269,7 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "あ" * process_loop_log.INSTRUCTION_MAX_CHARS)
-    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
 
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
 
@@ -261,7 +284,7 @@ def test_session_start_injects_process_loop_instruction(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "既存のテストコードを先に読む")
-    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
 
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-1"}))
@@ -288,7 +311,7 @@ def test_session_start_temp_notice_names_tmp_and_delegation(
     権限判定に拒否される事象が起きた。
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
 
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-2"}))
     output = _output(capsys)
@@ -309,7 +332,7 @@ def test_subagent_start_notifies_existing_session_temp_without_creating(
     Agentツールのサブエージェントへ所在が届かないと、委譲元が委譲プロンプトへ渡し忘れた場合に`/tmp`が選ばれる。
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-3"}))
     _output(capsys)
     session_root = managed_temp.list_managed_temp(session_id="session-3")[0]["path"]
@@ -334,7 +357,7 @@ def test_subagent_start_without_parent_session_temp_omits_notice(
 ) -> None:
     """親の領域が無い場合は領域の通知を加えない。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
 
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "no-parent-area"}))
 
@@ -346,7 +369,7 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
 ) -> None:
     """異なるAgentが同じ用途名で書いても衝突せず、再開は同じ場所へ届く。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "parent"}))
     _output(capsys)
     parent = pathlib.Path(managed_temp.list_managed_temp(session_id="parent")[0]["path"])

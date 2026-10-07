@@ -1,9 +1,7 @@
-"""atk (agent-toolkit `atk wi`) の`add`サブコマンド順序保証テスト。
+"""`atk wi add`の投入の順序と検証のテスト。
 
-エディター経由の本文確定後に`_pull`を実行しUXブロッキング待ちを最小化する順序
-（エディター起動 → 本文確定 → `_pull` → 書込 → commit&push）が維持されていることを検証する。
-基本動作テストは`atk_test.py`・`_atk_wi_extras_test.py`側に集約する。
-共通ヘルパーは`_atk_git_fake_test_helpers.py`から再利用する。
+エディター経由の本文確定後にremote同期を実行し、待ち時間を最小化する順序
+（エディター起動 → 本文確定 → remote同期 → 書込 → commitとpush）が維持されていることを検証する。
 """
 
 # pylint: disable=protected-access,subprocess-run-check
@@ -13,21 +11,24 @@ import contextlib
 import pathlib
 import re
 import subprocess
+import tempfile
 from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import common as _common  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import (
     frontmatter,  # noqa: E402  # pylint: disable=wrong-import-position
     style_diagnostics,  # noqa: E402  # pylint: disable=wrong-import-position
 )
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi.common import WI_TYPE_UWI, WebInputError  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
+from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_HEAD_COMMIT,
 )
@@ -49,7 +50,7 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pyli
 @pytest.fixture(autouse=True)
 def _isolate_managed_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """共通起動のmanaged-tempをテストごとのrootへ隔離する。"""
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
@@ -63,7 +64,7 @@ def _cmd_add_args(
     dry_run: bool = False,
     depends_on: list[str] | None = None,
 ) -> argparse.Namespace:
-    """`_cmd_add`の単体テストへ必要な引数を返す。"""
+    """`cmd_add`の単体テストへ必要な引数を返す。"""
     body_path = tmp_path / "body.md"
     body_path.write_text(message, encoding="utf-8")
     return argparse.Namespace(
@@ -110,15 +111,15 @@ def _run_public_add(
 
 
 def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`_cmd_add`の対象解決・remote同期・commitを差し替える。"""
+    """`cmd_add`の対象解決・remote同期・commitを差し替える。"""
     monkeypatch.setattr(
         add_module,
         "resolve_add_target",
         lambda _value: ("github.com/example/repo", None),
     )
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
 
 def test_add_dry_run_validates_without_side_effects(
@@ -128,34 +129,20 @@ def test_add_dry_run_validates_without_side_effects(
 ) -> None:
     """`--dry-run`は入力を検証し、保存・同期・commitを行わない。"""
     notes = _setup_notes(tmp_path)
-    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(notes), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(notes), "commit", "--allow-empty", "-m", "base"], check=True, capture_output=True)
-    before_head = subprocess.run(
-        ["git", "-C", str(notes), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
+    git_repository.init_repository(notes, initial_branch="main")
+    before_head = git_repository.commit_all(notes, "base")
     before_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
     monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
 
     def reject_side_effect(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("dry-runでremote同期またはcommitを実行しました")
 
-    monkeypatch.setattr(add_module, "_pull", reject_side_effect)
-    monkeypatch.setattr(add_module, "_commit_and_push", reject_side_effect)
+    monkeypatch.setattr(_wi_sync, "pull", reject_side_effect)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", reject_side_effect)
 
     _run_public_add(_cmd_add_args(tmp_path, "本文", dry_run=True), notes, _FIXED_DT, tmp_path)
 
-    after_head = subprocess.run(
-        ["git", "-C", str(notes), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
+    after_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     after_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
     assert capsys.readouterr().out == "成功: 投入前の検証が成立した（--dry-runのため保存していない）\n"
     assert after_files == before_files
@@ -210,16 +197,9 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
 ) -> None:
     """必須節が無いエージェント由来AWIは検証と実登録が同じ理由で拒否する。"""
     notes = _setup_notes(tmp_path)
-    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
-    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(notes), "commit", "--allow-empty", "-m", "base"], check=True, capture_output=True)
-    before_head = subprocess.run(
-        ["git", "-C", str(notes), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
+    git_repository.init_repository(notes, initial_branch="main")
+    git_repository.run_git(notes, "commit", "--allow-empty", "-m", "base")
+    before_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     _patch_cmd_add_operations(monkeypatch)
 
     errors: list[str] = []
@@ -238,12 +218,7 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
     for heading in ("反映内容と反映先", "適用範囲", "実現性", "完成条件"):
         assert heading in errors[0]
     assert not list((notes / "inbox").iterdir())
-    after_head = subprocess.run(
-        ["git", "-C", str(notes), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
+    after_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     assert after_head == before_head
 
 
@@ -663,7 +638,7 @@ def test_cmd_add_omits_origin_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`_cmd_add`は由来メタデータを新規作成しない。"""
+    """`cmd_add`は由来メタデータを新規作成しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     _run_public_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
@@ -827,7 +802,7 @@ def test_add_rejects_undetermined_direct_cause_in_uwi(
     table = "| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | 調査中 |\n"
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(
+        add_module.cmd_add(
             _cmd_add_args(tmp_path, f"どちらを選ぶか？\n\n## 判断材料\n\n{table}", source="test", entry_type=WI_TYPE_UWI),
             notes,
             _FIXED_DT,
@@ -889,9 +864,9 @@ def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytes
     """平引数操作が生成名を返し、frontmatter付きファイルを書き込む。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     generated = add_module.add_entries(
         notes,
         messages=[_AGENT_AWI_BODY],
@@ -921,16 +896,16 @@ def test_add_reloads_saved_details_while_holding_lock(
         finally:
             lock_state["held"] = False
 
-    original_read = add_module._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    original_read = add_module.read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
 
     def read_while_locked(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
         assert lock_state["held"]
         return original_read(path, expected_body=expected_body)
 
-    monkeypatch.setattr(add_module, "_repo_lock", tracked_lock)
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(add_module, "_read_saved_entry_details", read_while_locked)
+    monkeypatch.setattr(_wi_sync, "repo_lock", tracked_lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(add_module, "read_saved_entry_details", read_while_locked)
     saved_details: dict[str, dict[str, object | None]] = {}
 
     generated = add_module.add_entries(
@@ -989,9 +964,9 @@ def test_flat_add_operation_records_matching_target_commit(
     """fallbackと同じtarget_repoの全メッセージへ投入時の40文字OIDを記録する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     generated = add_module.add_entries(
         notes,
@@ -1014,9 +989,9 @@ def test_flat_add_operation_omits_commit_for_frontmatter_repo_override(
     """frontmatterが別リポジトリを指定したメッセージへfallback側OIDを記録しない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文"
 
     generated = add_module.add_entries(
@@ -1040,9 +1015,9 @@ def test_flat_add_operation_drops_input_target_commit(
     """投入時の入力のtarget_commitを保存せず、システム確定値だけを採用する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     message = f"---\ntarget_commit: {'f' * 40}\n---\n\n本文"
 
     generated = add_module.add_entries(
@@ -1067,7 +1042,7 @@ def test_flat_add_operation_rejects_non_full_oid(
 ) -> None:
     """共有add操作は解決済みの40桁または64桁OID以外を拒否する。"""
     notes = tmp_path / "private-notes"
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
 
     with pytest.raises(WebInputError, match="解決済み"):
         add_module.add_entries(
@@ -1084,9 +1059,9 @@ def test_flat_add_operation_normalizes_frontmatter_target_repo(tmp_path: pathlib
     """frontmatter由来target_repoが正規化されて保存される。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     # frontmatterに大文字小文字混在のURLを指定
     message = f"---\ntarget_repo: GitHub.com/Example/Repo\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
     generated = add_module.add_entries(
@@ -1109,9 +1084,9 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
     """target_repo・source以外のfrontmatterキー（alert_keys等）を入力順で引き継ぐ。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     # 既に正規化済みのURLとサフィックス付きURLの両方をテスト
     message = (
         "---\ntarget_repo: github.com/example/repo.git\nsource: alert-monitor\n"
@@ -1140,9 +1115,9 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
     """移管先へ前処理した本文の非予約frontmatterを保持する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     message = (
         f"---\ntarget_repo: github.com/target/repo\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n{_AGENT_AWI_BODY}"
     )
@@ -1171,9 +1146,9 @@ def test_flat_add_operation_drops_input_queue_schedule(
     """投入時の入力のqueue_scheduleを保存内容へ引き継がない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     message = (
         "---\ntarget_repo: github.com/example/repo\nqueue_schedule:\n  type: normal\nalert_keys: github-run:1\n---\n\n本文\n"
     )
@@ -1216,9 +1191,9 @@ def test_flat_add_operation_drops_input_repair_metadata(
     """投入時の入力の修復UWI予約キーを保存内容へ引き継がない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     message = (
         f"---\ntarget_repo: github.com/example/repo\n{reserved_key}: {reserved_value}\nalert_keys: github-run:1\n---\n\n本文\n"
     )
@@ -1246,9 +1221,9 @@ def test_add_operation_does_not_infer_plan_file_from_body(
     (notes / "inbox").mkdir(parents=True)
     plan = tmp_path / "plan.md"
     plan.write_text("# plan\n", encoding="utf-8")
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     generated = add_module.add_entries(
         notes,
@@ -1272,9 +1247,9 @@ def test_add_operation_records_top_level_dependencies(
     """depends_on指定をトップレベル配列として重複なく記録する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     generated = add_module.add_entries(
         notes,
@@ -1298,9 +1273,9 @@ def test_add_warns_for_missing_dependency_and_keeps_registering(
     """実在しない依存先を指定しても投入を拒否せず、警告を出力したうえで登録を完了する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     _run_public_add(_cmd_add_args(tmp_path, "本文", depends_on=["absent.md"]), notes, _FIXED_DT, tmp_path)
 
@@ -1323,9 +1298,9 @@ def test_add_does_not_warn_for_existing_dependency(
     notes = _setup_notes(tmp_path)
     (notes / "inbox" / "present.md").write_text("---\ntype: awi\n---\n\n本文\n", encoding="utf-8")
     monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     _run_public_add(_cmd_add_args(tmp_path, "本文", depends_on=["present.md"]), notes, _FIXED_DT, tmp_path)
 
@@ -1433,14 +1408,14 @@ def test_uwi_choice_question_type_is_saved_with_choices(tmp_path: pathlib.Path, 
 
 
 class TestAddOrderEditorFirst:
-    """addサブコマンド: エディター起動を`_pull`より前に呼ぶ順序保証。"""
+    """addサブコマンド: エディター起動を`pull`より前に呼ぶ順序保証。"""
 
     def test_editor_invoked_before_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """messages省略時、エディターは`_pull`より前に起動される（対象リポジトリはcwdから解決）。"""
+        """messages省略時、エディターは`pull`より前に起動される（対象リポジトリはcwdから解決）。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -1479,23 +1454,10 @@ class TestAddOrderEditorFirst:
     ) -> None:
         """remote同期失敗時、エディターで確定済みの本文がstderrへ再表示されたうえで終了コード1になる。"""
         _setup_notes(tmp_path)
-        monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            if cmd[0] == "fake-editor":
-                pathlib.Path(cmd[1]).write_text("消失させたくない本文", encoding="utf-8")
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-            if cmd[:2] == ["git", "merge"]:
-                raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        _patch_add_git(monkeypatch, myrepo, failing_prefix=["git", "merge"])
+        _patch_add_editor(monkeypatch, "消失させたくない本文")
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add"], home=tmp_path, now=_FIXED_DT)
@@ -1574,18 +1536,20 @@ class TestAddRepoPathOverrideCli:
         assert "target_repo: github.com/example/myrepo" in content
         assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
 
+    @pytest.mark.parametrize("type_args", [[], ["--type=uwi", "--question-type=yes-no"]], ids=["awi", "uwi"])
     def test_message_only_directory_errors(
         self,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        type_args: list[str],
     ) -> None:
-        """本文が続かないディレクトリのみの呼び出しは、usage表示付きの平易なエラーでexit 2になる。"""
+        """本文が続かないディレクトリのみの呼び出しは、AWIとUWIのどちらでもusage表示付きの平易なエラーでexit 2になる。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", *type_args, str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -1914,21 +1878,10 @@ class TestAddEmptyBodyRejection:
     ) -> None:
         """エディター経由で空本文が確定した場合も非ゼロ終了する。"""
         _setup_notes(tmp_path)
-        monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            if cmd[0] == "fake-editor":
-                pathlib.Path(cmd[1]).write_text("-\n", encoding="utf-8")
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        _patch_add_git(monkeypatch, myrepo)
+        _patch_add_editor(monkeypatch, "-\n")
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add"], home=tmp_path, now=_FIXED_DT)
@@ -1943,9 +1896,9 @@ def _prepare_notes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> p
     """
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     return notes
 
 
@@ -1979,11 +1932,15 @@ def test_add_entries_rejects_answer_heading_in_uwi_body(tmp_path: pathlib.Path, 
         )
 
 
-def _patch_add_git(monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path) -> None:
+def _patch_add_git(monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path, *, failing_prefix: list[str] | None = None) -> None:
+    """対象リポジトリの解決に応答するGit fakeへ差し替える。`failing_prefix`で始まるコマンドは失敗させる。"""
+
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         resp = _fake_git_worktree_remote_response(cmd, repo, kwargs)
         if resp is not None:
             return resp
+        if failing_prefix is not None and cmd[: len(failing_prefix)] == failing_prefix:
+            raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
         empty: Any = "" if kwargs.get("text") else b""
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
@@ -2294,10 +2251,10 @@ def test_add_reports_body_mismatch_when_saved_body_is_altered(
     """保存の処理中に本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-    original_read = add_module._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    original_read = add_module.read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
     captured: dict[str, str] = {}
 
     def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
@@ -2305,7 +2262,7 @@ def test_add_reports_body_mismatch_when_saved_body_is_altered(
         path.write_text(expected_body.replace("本文", "改文", 1), encoding="utf-8")
         return original_read(path, expected_body=expected_body)
 
-    monkeypatch.setattr(add_module, "_read_saved_entry_details", read_after_alteration)
+    monkeypatch.setattr(add_module, "read_saved_entry_details", read_after_alteration)
     saved_details: dict[str, dict[str, object | None]] = {}
 
     with pytest.raises(add_module.WebInputError) as exc_info:
@@ -2332,16 +2289,16 @@ def test_add_reports_body_match_for_trailing_newline_difference_only(
     """末尾改行の有無だけが異なる保存本文は一致と判定する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-    original_read = add_module._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    original_read = add_module.read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
 
     def read_without_trailing_newline(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
         path.write_text(expected_body.removesuffix("\n"), encoding="utf-8")
         return original_read(path, expected_body=expected_body)
 
-    monkeypatch.setattr(add_module, "_read_saved_entry_details", read_without_trailing_newline)
+    monkeypatch.setattr(add_module, "read_saved_entry_details", read_without_trailing_newline)
     saved_details: dict[str, dict[str, object | None]] = {}
 
     generated = add_module.add_entries(
@@ -2477,7 +2434,7 @@ def test_read_saved_entry_details_mismatch_guides_show_and_edit(tmp_path: pathli
     path.write_text("---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n保存本文\n", encoding="utf-8")
 
     with pytest.raises(WebInputError, match="保存本文が送信元本文と一致しない") as error_info:
-        add_module._read_saved_entry_details(  # pylint: disable=protected-access
+        add_module.read_saved_entry_details(  # pylint: disable=protected-access
             path, expected_body="---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n送信本文\n"
         )
 
@@ -2494,7 +2451,7 @@ def test_editor_nonzero_exit_guides_body_file(
     del tmp_path
     monkeypatch.setenv("EDITOR", "false")
 
-    assert _common._collect_message_via_editor() is None  # pylint: disable=protected-access
+    assert _wi_cli_input.collect_message_via_editor() is None  # pylint: disable=protected-access
 
     stderr = capsys.readouterr().err
     assert stderr.startswith("失敗: エディターが終了コード1で終了した\n次の操作: 本文は保存していない。")

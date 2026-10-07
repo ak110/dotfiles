@@ -23,13 +23,13 @@ import subprocess
 import sys
 import threading
 from collections.abc import Callable, Iterable
-from typing import Protocol, cast
+from typing import Protocol
 
 import filelock
-import platformdirs
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 
 LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
@@ -112,8 +112,7 @@ def _forward_error_output(error: subprocess.CalledProcessError) -> None:
 
 def _run_git_result(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
     """Gitコマンドを終了コード付きで実行する。"""
-    result = _git_command.run(args, cwd, check=False, capture_output=True, text=True)
-    return cast(subprocess.CompletedProcess[str], result)
+    return _git_command.run(args, cwd, check=False, capture_output=True, text=True)
 
 
 class _ThreadLocalHeldPaths(threading.local):
@@ -160,7 +159,7 @@ def repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
     """Git common directoryへ対応するロックファイルの絶対パスを返す。"""
     common = str(_lock_key(repo_path))
     digest = hashlib.sha1(common.encode("utf-8"), usedforsecurity=False).hexdigest()
-    lock_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks"
+    lock_dir = _state_paths.lock_dir()
     lock_dir.mkdir(parents=True, exist_ok=True)
     return lock_dir / f"{digest}.lock"
 
@@ -368,7 +367,7 @@ def is_worktree_dirty(
         args.extend(("--", *paths))
     result = result_runner(args, private_notes)
     if result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, ["git", *args], result.stdout, result.stderr)
+        raise subprocess.CalledProcessError(result.returncode, _git_command.command_line(args), result.stdout, result.stderr)
     return bool(result.stdout.strip())
 
 
@@ -683,7 +682,7 @@ def _target_has_staged_changes(
         return None
     raise subprocess.CalledProcessError(
         result.returncode,
-        ["git", "diff", "--cached", "--quiet", "--", *paths],
+        _git_command.command_line(["diff", "--cached", "--quiet", "--", *paths]),
         result.stdout,
         result.stderr,
     )
@@ -714,7 +713,7 @@ def _usable_pathspecs(
         elif result.returncode != 1:
             raise subprocess.CalledProcessError(
                 result.returncode,
-                ["git", "ls-files", "--error-unmatch", "--", relative],
+                _git_command.command_line(["ls-files", "--error-unmatch", "--", relative]),
                 result.stdout,
                 result.stderr,
             )

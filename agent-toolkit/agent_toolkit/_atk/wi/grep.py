@@ -1,21 +1,17 @@
-"""agent-toolkitプラグイン配下の`atk wi grep`コマンド用補助モジュール。
-
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""`atk wi grep`による本文全体の正規表現検索。"""
 
 import argparse
 import pathlib
 import re
 
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi.common import _iter_entries, _pull_with_recent_reuse, _repo_lock
-from agent_toolkit._atk.wi.formatters import _parse_source, _source_matches
-from agent_toolkit._atk.wi.listing import _answered_matches, _resolve_states
-from agent_toolkit._atk.wi.repo import _resolve_repo_id
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._common import next_action as _next_action
 
 
-def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
+def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     """grepサブコマンド: 本文全体（frontmatterを含む）を正規表現で検索し、該当行を列挙する。
 
     該当行は`<ファイル名>:<行番号>:<該当行>`形式（git grep準拠の出力形式）で列挙する。
@@ -30,11 +26,11 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     `show`と同じ引数検証エラー時の扱いであり、こちらは意図的に共通後処理をスキップする）。
     """
     if not args.skip_pull:
-        with _repo_lock(private_notes):
-            _pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
+        with _wi_sync.repo_lock(private_notes):
+            _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
     filter_repo: str | None = None
     if args.target_repo is not None:
-        filter_repo = _resolve_repo_id(args.target_repo)
+        filter_repo = resolve_repo_id(args.target_repo)
     flags = re.IGNORECASE if args.ignore_case else 0
     try:
         compiled = re.compile(args.pattern, flags)
@@ -48,16 +44,14 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         )
         raise AssertionError("unreachable") from error  # pragma: no cover - args.subparser.error()はSystemExitを送出する
     matched = False
-    for path, _, text, _state, entry_type in _iter_entries(
+    for path, _, text, _state, _entry_type in _wi_entries.select_entries(
         private_notes,
-        _resolve_states(args.status),
-        filter_repo,
-        args.type,
+        status=args.status,
+        target_repo=filter_repo,
+        entry_type=args.type,
+        answered=args.answered,
+        source=args.source,
     ):
-        if not _answered_matches(entry_type, text, args.answered):
-            continue
-        if args.source is not None and not any(_source_matches(_parse_source(text), value) for value in args.source):
-            continue
         for line_no, line in enumerate(text.splitlines(), start=1):
             if compiled.search(line):
                 matched = True

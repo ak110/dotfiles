@@ -19,9 +19,9 @@ frontmatterの`submitter_session`がフック入力の`session_id`と一致す�
 import subprocess
 
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
+from agent_toolkit._common.session_state import update_state
 from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
-from agent_toolkit._hooks.session_state import update_state
 
 STATE_KEY_ANSWERED = "uwi_answered_by_repo"
 """エージェント別・対象リポジトリID別の回答済みUWIファイル名を保持する状態キー。
@@ -60,25 +60,17 @@ _GIT_TIMEOUT_SEC = 5.0
 def resolve_target_repo(cwd: str) -> str | None:
     """作業ディレクトリから対象リポジトリIDを解決する。解決できない場合はNoneを返す。
 
-    `_atk_wi_repo._resolve_repo_id`は解決失敗時にプロセスを終了し、
-    `_atk_wi_common`経由で依存パッケージも読み込むため使用しない。
+    `agent_toolkit._atk.wi.repo.resolve_repo_id`は解決失敗時にプロセスを終了し、
+    WIの共通処理を経由して依存パッケージも読み込むため使用しない。
     """
     try:
-        completed = subprocess.run(
-            ["git", "-C", cwd, "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=_GIT_TIMEOUT_SEC,
-        )
+        url = _git_remote.origin_url(cwd, timeout=_GIT_TIMEOUT_SEC)
     except (OSError, subprocess.SubprocessError):
         return None
-    if completed.returncode != 0:
+    if url is None:
         return None
     try:
-        return _git_remote.normalize_remote_url(completed.stdout.strip())
+        return _git_remote.normalize_remote_url(url)
     except ValueError:
         return None
 

@@ -27,14 +27,15 @@ import uuid
 import filelock
 import psutil
 
-from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi.repo import _resolve_local_worktree
+from agent_toolkit._atk.wi.repo import resolve_local_worktree
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import process_tree as _process_tree
+from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._git import command as _git_command
 
 DEFAULT_TIMEOUT_SECONDS = 21600
 """セッションの時間上限の省略時の値（6時間）。数日に1回の定期実行で1回のスキル実行が収まる長さとする。"""
@@ -62,7 +63,6 @@ OUTPUT_DRAIN_SECONDS = 5.0
 
 _TITLE = "atk run-skill"
 _LOG_DIRNAME = "run-skill"
-_LOCK_DIRNAME = "locks"
 _PATH_ACTION = (
     "定期実行の環境変数`PATH`へ`atk`・`claude`・`codex`の実行ファイルの場所を加える（crontabでは`PATH=...`の行を置く）。"
     "PATHに問題が無い場合は`atk config set orchestrate_model <候補列>`で候補を変える"
@@ -95,7 +95,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def run(args: argparse.Namespace) -> int:
+def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
     if args.timeout <= 0:
         _outcome.report_failure(
@@ -104,14 +104,14 @@ def run(args: argparse.Namespace) -> int:
         )
         return 2
     candidates = _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する")
-    repo_root = _resolve_repo_root(_resolve_local_worktree(args.target_repo))
-    log_dir = _config.state_dir() / _LOG_DIRNAME
+    repo_root = _resolve_repo_root(resolve_local_worktree(args.target_repo))
+    log_dir = _state_paths.state_dir() / _LOG_DIRNAME
     log_dir.mkdir(parents=True, exist_ok=True)
     _remove_expired_logs(log_dir, now=time.time())
     log_path = _new_log_path(log_dir, args.skill)
     with log_path.open("w", encoding="utf-8") as log:
         _write_header(log, repo_root=repo_root, args=args)
-        lock = filelock.FileLock(str(_lock_path(log_dir, repo_root, args.skill)))
+        lock = filelock.FileLock(str(_lock_path(repo_root, args.skill)))
         try:
             lock.acquire(timeout=0)
         except filelock.Timeout:
@@ -132,7 +132,8 @@ def build_goal(skill: str, skill_args: str | None) -> str:
     """子セッションへ渡す目的文の本体を返す。"""
     goal = (
         f"スキル`{skill}`を完遂し、`agent-toolkit:completion-report`の報告用UWIを保存してください。"
-        "作業の前に`agent-toolkit:user-confirmation-and-report`「`atk run-skill`の過去の実行のUWI」を適用してください。"
+        "作業の前に`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`"
+        "「`atk run-skill`の過去の実行のUWI」を適用してください。"
     )
     if skill_args is not None:
         goal += f"\nスキルへ渡す引数: {skill_args}"
@@ -308,14 +309,7 @@ def _copy_stream(stream: typing.IO[bytes], label: str, log: typing.TextIO, lock:
 
 def _resolve_repo_root(path: pathlib.Path) -> pathlib.Path:
     """指定パスが属する作業ツリーのrootを返す。Git管理外ならパスをそのまま使う。"""
-    result = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    result = _git_command.run(["-C", str(path), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         _outcome.report_failure(
             f"対象リポジトリの作業ツリーを解決できない: {path}（git: {result.stderr.strip()}）",
@@ -325,10 +319,10 @@ def _resolve_repo_root(path: pathlib.Path) -> pathlib.Path:
     return pathlib.Path(result.stdout.strip()).resolve()
 
 
-def _lock_path(log_dir: pathlib.Path, repo_root: pathlib.Path, skill: str) -> pathlib.Path:
-    """対象リポジトリとスキルの組ごとのロックファイルのパスを返す。"""
+def _lock_path(repo_root: pathlib.Path, skill: str) -> pathlib.Path:
+    """対象リポジトリとスキルの組ごとのロックファイルのパスを、ロックファイルのディレクトリ配下に返す。"""
     digest = hashlib.sha256(f"{repo_root}\0{skill}".encode()).hexdigest()[:16]
-    lock_dir = log_dir / _LOCK_DIRNAME
+    lock_dir = _state_paths.lock_dir() / _LOG_DIRNAME
     lock_dir.mkdir(parents=True, exist_ok=True)
     return lock_dir / f"{digest}.lock"
 

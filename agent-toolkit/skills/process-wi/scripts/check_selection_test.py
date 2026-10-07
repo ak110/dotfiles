@@ -1,9 +1,9 @@
 """選定結果の`書込対象`がWI本文の反映先パスを覆うかの検証を確かめる。"""
 
 import argparse
+import json
 import pathlib
 import re
-import subprocess
 import typing
 
 import check_selection
@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from agent_toolkit._atk import run_script  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._testing import git_repository
 
 _REPO_FILES = (
     "README.md",
@@ -330,7 +331,7 @@ def test_uwi_paths_in_answer_and_materials_require_classification(
 def test_directory_range_matches_by_path_element(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`src/`は`src-old/model.py`を覆わない。"""
+    """ディレクトリの範囲`src/`は、名前の先頭だけが一致する`src-old/`配下のファイルを覆わない。"""
     repo, notes = env
     _awi(notes, "a.md", "`src-old/model.py`を変える。")
 
@@ -709,8 +710,8 @@ def _track(repo: pathlib.Path, *relatives: str) -> None:
     for relative in relatives:
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
         (repo / relative).write_text("x\n", encoding="utf-8")
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True, timeout=30)
-    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True, timeout=30)
+    git_repository.init_repository(repo)
+    git_repository.run_git(repo, "add", "-A")
 
 
 _PLUGIN_SHARE_FILES = ("agent-toolkit/share/pick-wi.parent.md", "agent-toolkit/share/rules-main.md", "share/README.md")
@@ -922,3 +923,390 @@ def test_public_check_model_and_stage_selection_contract(
     code, err = run("lane-01", {"実装担当": "codex:gpt-6-sol/medium"}, ["lane-01"])
     assert code == 1
     assert "lane-01: 実装担当のモデル指定が衝突" in err
+
+
+def _write_files(repo: pathlib.Path, *relatives: str) -> None:
+    """作業ツリーへファイルを作成する。"""
+    for relative in relatives:
+        (repo / relative).parent.mkdir(parents=True, exist_ok=True)
+        (repo / relative).write_text("x\n", encoding="utf-8")
+
+
+_NON_ASCII_FILES = ("docs/dev/ログ監視.md", "docs/design/既存.md", "docs/café.md", "ログ/a.md", "docs/infra/クラウド料金.md")
+
+
+def test_public_command_extracts_non_ascii_paths_whole(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """インラインコードと文章中の非ASCIIを含むパスを末尾まで読み、個別のパスだけの`書込対象`を受理する。
+
+    非ASCIIの手前で抽出が終わると、`docs/dev/`のような範囲や`docs/design/LLM`のような途中の名前が
+    反映先になり、pickerは実際には書かない範囲を`書込対象`へ置いて別レーンと重ねる。
+    """
+    repo, notes = env
+    _write_files(repo, *_NON_ASCII_FILES)
+    _awi(
+        notes,
+        "a.md",
+        "`docs/dev/ログ監視.md`、`docs/design/LLMへのファイル入力.md`、`docs/café.md`、`ログ/a.md`を変える。"
+        "文章中のdocs/infra/クラウド料金.mdを更新する。src/のmodel.py・new_module.pyも変える。",
+    )
+    expected = {
+        "docs/dev/ログ監視.md",
+        "docs/design/LLMへのファイル入力.md",
+        "docs/café.md",
+        "ログ/a.md",
+        "docs/infra/クラウド料金.md",
+        "src/model.py",
+        "src/new_module.py",
+    }
+    # `src/`は配下の列挙を導く範囲説明として抽出され、被覆を求めない。
+    text = (notes / "processing" / "a.md").read_text(encoding="utf-8")
+    assert check_selection.reflected_paths(text, repo) == expected | {"src/"}
+    selection = _write_selection(
+        tmp_path / "selection.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": sorted(expected)}]
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_excluded_range_may_contain_write_paths(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`書き込まない反映先`の範囲が書込区分のパスを含む組を受理し、残る重複と範囲の配下の未分類は報告する。
+
+    受理しないと、AWI本文が変更しないと述べる上位ディレクトリを`書込対象`へ置かせ、別レーンとの重なりを生む。
+    同じパスの2区分と、書込区分の範囲が非書込のパスを含む組まで受理すると、所有の区分が決まらない。
+    """
+    repo, notes = env
+    _write_files(repo, "docs/design/性能.md", "docs/design/別.md", "docs/design/旧.md")
+    excluded_range = "`docs/design/性能.md`を変える。他の`docs/`配下は変更しない。"
+    _awi(notes, "write.md", excluded_range)
+    _awi(notes, "public.md", excluded_range)
+    _awi(notes, "same.md", excluded_range)
+    _awi(notes, "range.md", "`docs/design/`配下の`docs/design/性能.md`を変える。`docs/design/旧.md`は変更しない。")
+    _awi(notes, "inner.md", "`docs/design/性能.md`と`docs/design/別.md`を変える。他の`docs/`配下は変更しない。")
+    decisions: list[dict[str, typing.Any]] = [
+        {"WI": "write.md", "レーン": "lane-01", "書込対象": ["docs/design/性能.md"], "書き込まない反映先": ["docs/"]},
+        {
+            "WI": "public.md",
+            "レーン": "lane-02",
+            "書込対象": [],
+            "公開工程の書込対象": ["docs/design/性能.md"],
+            "書き込まない反映先": ["docs/"],
+        },
+        {
+            "WI": "same.md",
+            "レーン": "lane-03",
+            "書込対象": ["docs/design/性能.md"],
+            "書き込まない反映先": ["docs/", "docs/design/性能.md"],
+        },
+        {"WI": "range.md", "レーン": "lane-04", "書込対象": ["docs/design/"], "書き込まない反映先": ["docs/design/旧.md"]},
+        {"WI": "inner.md", "レーン": "lane-05", "書込対象": ["docs/design/性能.md"], "書き込まない反映先": ["docs/"]},
+    ]
+    costs = [{"レーン": f"lane-0{number}"} for number in range(1, 6)]
+    costs[1]["根拠"] = "対象リポジトリの規範AGENTS.mdの節「公開」がdocs/design/性能.mdを公開工程で書くと定める"
+    selection = _write_selection(tmp_path / "selection.yaml", decisions, costs)
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
+    errors = sorted(line for line in capsys.readouterr().err.splitlines() if re.match(r"\w+\.md: ", line))
+    assert errors == [
+        "inner.md: 未被覆: docs/design/別.md",
+        "range.md: 区分間の重複: docs/design/旧.md（`書込対象`と`書き込まない反映先`）",
+        "same.md: 区分間の重複: docs/design/性能.md（`書込対象`と`書き込まない反映先`）",
+    ]
+
+
+def test_non_ascii_write_paths_do_not_require_lane_overlap_rationale(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """日本語名のファイルを個別に書く別レーンの項目どうしは、重複パスの根拠を求めない。"""
+    repo, notes = env
+    _write_files(repo, "docs/dev/ログ監視.md", "docs/design/性能.md")
+    _awi(notes, "log.md", "`docs/dev/ログ監視.md`を変える。")
+    _awi(notes, "perf.md", "`docs/design/性能.md`を変える。他の`docs/`配下は変更しない。")
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "log.md", "レーン": "lane-01", "書込対象": ["docs/dev/ログ監視.md"]},
+            {"WI": "perf.md", "レーン": "lane-02", "書込対象": ["docs/design/性能.md"], "書き込まない反映先": ["docs/"]},
+        ],
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+
+# 本リポジトリの`pyproject.toml`。設定の削除や条件の縮小で検出が消える退行を、実物の設定で検出する。
+_DOTFILES_PYPROJECT = pathlib.Path(__file__).resolve().parents[4] / "pyproject.toml"
+_READ_REQUEST = (
+    "docs/development/concepts.mdとdocs/development/incidents.mdの全文と、該当する分割ファイルの節を計画の採否確定前に読む"
+)
+
+
+def _norm_spec_selection(
+    tmp_path: pathlib.Path, decisions: list[dict[str, typing.Any]], specs: dict[str, str | None]
+) -> pathlib.Path:
+    """各項目へ`プロジェクト規範の指定`を書き（`None`は省略）、選定結果を保存する。"""
+    for decision in decisions:
+        spec = specs.get(decision["WI"])
+        if spec is not None:
+            decision["プロジェクト規範の指定"] = spec
+    return _write_selection(tmp_path / "selection.yaml", decisions)
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        (None, 1),
+        ("なし", 1),
+        ("", 1),
+        (f"agent-toolkit/share/pick-wi.parent.md。{_READ_REQUEST}", 1),
+        (f"agent-toolkit/share/pick-wi.parent.md、.claude/skills/edit/SKILL.md。{_READ_REQUEST}", 0),
+    ],
+    ids=["omitted", "none", "empty", "partial", "complete"],
+)
+def test_public_command_requires_project_norm_spec(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    spec: str | None,
+    expected: int,
+) -> None:
+    """本リポジトリの設定で、規範ファイルを変える項目の指定の欠落を報告し、補った指定を受理する。
+
+    指定が省略・`なし`・空欄・一部欠落のまま受理されると、レーン担当へ変更後の規範の適用と方針記録の
+    読込の要求が届かない。コードだけを変える項目は省略しても受理する。
+    """
+    repo, notes = env
+    (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
+    _write_files(repo, "agent-toolkit/share/pick-wi.parent.md", ".claude/skills/edit/SKILL.md", "scripts/tool.py")
+    _awi(notes, "norm.md", "`agent-toolkit/share/pick-wi.parent.md`と`.claude/skills/edit/SKILL.md`を変える。")
+    _awi(notes, "code.md", "`scripts/tool.py`を変える。")
+    decisions: list[dict[str, typing.Any]] = [
+        {
+            "WI": "norm.md",
+            "レーン": "lane-01",
+            "書込対象": ["agent-toolkit/share/pick-wi.parent.md", ".claude/skills/edit/SKILL.md"],
+        },
+        {"WI": "code.md", "レーン": "lane-02", "書込対象": ["scripts/tool.py"]},
+    ]
+    selection = _norm_spec_selection(tmp_path, decisions, {"norm.md": spec})
+    # pickerの保存直後とメインの受領時は同じ入力へ同じコマンドを実行し、同じ判定を得る。
+    for _ in range(2):
+        assert _dispatch("--work-dir", str(repo), str(selection)) == expected
+        lines = [
+            line for line in capsys.readouterr().err.splitlines() if re.match(r"\S+\.md: プロジェクト規範の指定の不足", line)
+        ]
+        assert all(line.startswith("norm.md: ") for line in lines)
+        if expected:
+            assert lines
+            if spec and spec != "なし":
+                assert lines == [
+                    "norm.md: プロジェクト規範の指定の不足: 規範変更の対象ファイル: 欠けた記載: .claude/skills/edit/SKILL.md"
+                ]
+        else:
+            assert not lines
+
+
+def test_agent_doc_reflection_requires_read_request(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """配布原本など規範変更の範囲外のエージェント向け文書でも、方針と障害記録を読む要求の欠落を報告する。"""
+    repo, notes = env
+    (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
+    original = ".chezmoi-source/dot_claude/rules/personal.md"
+    _write_files(repo, original)
+    _awi(notes, "rules.md", f"`{original}`を変える。")
+    decisions: list[dict[str, typing.Any]] = [{"WI": "rules.md", "レーン": "lane-01", "書込対象": [original]}]
+    _norm_spec_selection(tmp_path, decisions, {"rules.md": original})
+    assert _dispatch("--work-dir", str(repo), str(tmp_path / "selection.yaml")) == 1
+    error = capsys.readouterr().err
+    assert "rules.md: プロジェクト規範の指定の不足: 方針と障害記録を読む要求: 欠けた記載: " in error
+    decisions = [{"WI": "rules.md", "レーン": "lane-01", "書込対象": [original]}]
+    _norm_spec_selection(tmp_path, decisions, {"rules.md": f"{original}。{_READ_REQUEST}"})
+    assert _dispatch("--work-dir", str(repo), str(tmp_path / "selection.yaml")) == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize("config", ["absent", "custom"])
+def test_project_norm_spec_follows_repository_config(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], config: str
+) -> None:
+    """設定の無いリポジトリでは指定の省略を受理し、独自の条件を設定したリポジトリではその条件で欠落を報告する。"""
+    repo, notes = env
+    if config == "custom":
+        (repo / "pyproject.toml").write_text(
+            '[[tool.agent-toolkit.pick-wi-check.norm-spec]]\nname = "設計記録"\npaths = ["docs/"]\n'
+            'require-text = ["独自の要求"]\n',
+            encoding="utf-8",
+        )
+    _awi(notes, "doc.md", "`docs/development/design.md`と`AGENTS.md`を変える。")
+    _write_files(repo, "AGENTS.md")
+    decisions: list[dict[str, typing.Any]] = [
+        {"WI": "doc.md", "レーン": "lane-01", "書込対象": ["docs/development/design.md", "AGENTS.md"]}
+    ]
+    _norm_spec_selection(tmp_path, decisions, {})
+    expected = 1 if config == "custom" else 0
+    assert _dispatch("--work-dir", str(repo), str(tmp_path / "selection.yaml")) == expected
+    error = capsys.readouterr().err
+    if expected:
+        assert "doc.md: プロジェクト規範の指定の不足: 設計記録（docs/development/design.mdが当たる）" in error
+        decisions = [{"WI": "doc.md", "レーン": "lane-01", "書込対象": ["docs/development/design.md", "AGENTS.md"]}]
+        _norm_spec_selection(tmp_path, decisions, {"doc.md": "独自の要求"})
+        assert _dispatch("--work-dir", str(repo), str(tmp_path / "selection.yaml")) == 0, capsys.readouterr().err
+    else:
+        assert error == ""
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "[tool.agent-toolkit.pick-wi-check\n",
+        '[tool.agent-toolkit.pick-wi-check]\nnorm-spec = "規範"\n',
+        '[[tool.agent-toolkit.pick-wi-check.norm-spec]]\nname = "x"\npaths = "AGENTS.md"\nrequire-paths = true\n',
+        '[[tool.agent-toolkit.pick-wi-check.norm-spec]]\nname = "x"\npaths = ["AGENTS.md"]\n',
+        '[[tool.agent-toolkit.pick-wi-check.norm-spec]]\nname = "x"\nagent-doc = true\nrequire-paths = true\nunknown = 1\n',
+    ],
+    ids=["syntax", "not-array", "paths-type", "no-requirement", "unknown-key"],
+)
+def test_invalid_project_norm_config_is_input_error(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], content: str
+) -> None:
+    """不正な条件の設定は、条件なしとして受理せず、設定の場所と修正の操作を示して終了コード2を返す。"""
+    repo, notes = env
+    (repo / "pyproject.toml").write_text(content, encoding="utf-8")
+    _awi(notes, "a.md", "`src/model.py`を変える。")
+    selection = _write_selection(
+        tmp_path / "selection.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}]
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 2
+    error = capsys.readouterr().err
+    assert str(repo / "pyproject.toml") in error and "次の操作: " in error
+
+
+def _parse_summary(output: str) -> dict[str, object]:
+    """成功時の要約行を、WI総数・通常レーン数・レーンごとの値・`レーン: なし`の一覧へ読み直す。"""
+    parsed: dict[str, object] = {"lanes": {}}
+    lanes = typing.cast(dict[str, dict[str, object]], parsed["lanes"])
+    for line in output.splitlines():
+        if line.startswith("WI総数: "):
+            parsed["total"] = int(line.removeprefix("WI総数: "))
+        elif line.startswith("通常レーン数: "):
+            parsed["lane_count"] = int(line.removeprefix("通常レーン数: "))
+        elif line.startswith("レーン: なし: "):
+            parsed["none"] = json.loads(line.removeprefix("レーン: なし: "))
+        elif found := re.fullmatch(
+            r"(\S+): WI (\d+)件、段階 (\d+)、先行レーン (\[.*?\])、実装秒数 (\S+)、統合秒数 (\S+)、WI (\[.*\])", line
+        ):
+            lanes[found[1]] = {
+                "count": int(found[2]),
+                "stage": int(found[3]),
+                "prior": json.loads(found[4]),
+                "seconds": (float(found[5]), float(found[6])),
+                "wis": json.loads(found[7]),
+            }
+    return parsed
+
+
+def _expected_summary(selection: dict[str, typing.Any]) -> dict[str, object]:
+    """選定結果のYAMLの値から、読み取り契約の省略時の値と旧欄名を適用して要約の期待値を求める。"""
+    items = selection.get("選定", selection.get("decisions", []))
+    costs = selection.get("レーンの所要時間", selection.get("lane_costs", []))
+    lane_of = [(item.get("WI", item.get("awi")), item.get("レーン", item.get("lane"))) for item in items]
+    lanes: dict[str, dict[str, object]] = {}
+    for awi, lane in lane_of:
+        if lane == "なし":
+            continue
+        row = next(row for row in costs if row.get("レーン", row.get("lane")) == lane)
+        entry = lanes.setdefault(
+            lane,
+            {
+                "count": 0,
+                "stage": row.get("段階", row.get("stage", 1)),
+                "prior": row.get("先行レーン", row.get("prior_lanes", [])),
+                "seconds": (
+                    float(row.get("実装秒数", row.get("implementation_seconds"))),
+                    float(row.get("統合秒数", row.get("integration_seconds"))),
+                ),
+                "wis": [],
+            },
+        )
+        entry["count"] = typing.cast(int, entry["count"]) + 1
+        typing.cast(list[str], entry["wis"]).append(awi)
+    return {
+        "lanes": lanes,
+        "total": len(items),
+        "lane_count": len(lanes),
+        "none": [awi for awi, lane in lane_of if lane == "なし"],
+    }
+
+
+@pytest.mark.parametrize("layout", ["staged", "legacy", "empty"])
+def test_public_command_prints_lane_summary_on_success(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], layout: str
+) -> None:
+    """成功時の標準出力だけから、WI総数・通常レーン数・各レーンの件数・全WI名・段階・先行レーン・秒数を読める。
+
+    旧欄名の秒数を読まない、`レーン: なし`の項目が欠ける、WI名を切り詰めるのいずれかがあると、受領側はレーン構成を
+    出力ファイルから読み直す必要が残る。期待値は入力のYAMLから求める。
+    """
+    repo, notes = env
+    for name in ("a.md", "b.md", "c.md"):
+        _awi(notes, name, "`src/model.py`を変える。")
+    _awi(notes, "d.md", "`docs/development/design.md`を変える。")
+    selection: dict[str, typing.Any]
+    if layout == "staged":
+        selection = {
+            "選定": [
+                {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+                {"WI": "b.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+                {"WI": "d.md", "レーン": "lane-02", "書込対象": ["docs/development/design.md"]},
+                {"WI": "c.md", "レーン": "なし", "書込対象": []},
+            ],
+            "レーンの所要時間": [
+                {"レーン": "lane-01", "実装秒数": 900, "統合秒数": 120, "根拠": "先行"},
+                {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"], "実装秒数": 300.5, "統合秒数": 30, "根拠": "後段"},
+            ],
+        }
+    elif layout == "legacy":
+        selection = {
+            "decisions": [
+                {"awi": "a.md", "lane": "lane-01", "write_files": ["src/model.py"]},
+                {"awi": "c.md", "lane": "なし", "write_files": []},
+            ],
+            "lane_costs": [
+                {"lane": "lane-01", "implementation_seconds": 450, "integration_seconds": 45, "rationale": "旧形式"}
+            ],
+        }
+    else:
+        selection = {"選定": [], "レーンの所要時間": []}
+    for item in selection.get("選定", selection.get("decisions", [])):
+        item.setdefault("鮮度" if "WI" in item else "staleness", {"status": "current", "later_commit_count": 0})
+    path = tmp_path / "selection.yaml"
+    path.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
+
+    assert _dispatch("--work-dir", str(repo), str(path)) == 0
+    result = capsys.readouterr()
+    assert result.err == ""
+    assert _parse_summary(result.out) == _expected_summary(selection)
+
+
+@pytest.mark.parametrize("failure", ["content", "input", "norm-spec"])
+def test_public_command_prints_no_summary_on_failure(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """内容違反（規範指定の不足を含む）と入力不備では、終了コード1・2と次の操作を示し、標準出力へ要約を書かない。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`src/model.py`と`AGENTS.md`を変える。")
+    _write_files(repo, "AGENTS.md")
+    decisions: list[dict[str, typing.Any]] = [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py", "AGENTS.md"]}]
+    if failure == "content":
+        decisions[0]["書込対象"] = ["src/model.py"]
+    if failure == "norm-spec":
+        (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
+    path = _write_selection(tmp_path / "selection.yaml", decisions)
+    if failure == "input":
+        path.write_text("選定: [\n", encoding="utf-8")
+    assert _dispatch("--work-dir", str(repo), str(path)) == (2 if failure == "input" else 1)
+    result = capsys.readouterr()
+    assert "次の操作: " in result.err
+    assert "WI総数" not in result.out and "通常レーン数" not in result.out

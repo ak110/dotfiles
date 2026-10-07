@@ -1,8 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
-
-旧`pytools/dotfiles_fb/_add.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""`atk wi add`によるAWI・UWIの投入（本文の検証、対象リポジトリと`target_commit`の解決、保存とcommit）。"""
 
 import argparse
 import datetime
@@ -15,36 +11,24 @@ import sys
 import markdown_it
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import constants as _constants
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
-from agent_toolkit._atk.wi.common import (
-    MISSING_DEPENDENCY_NEXT_ACTION,
-    WI_STATE_INBOX,
-    WI_STATES,
-    WI_TYPE_AWI,
-    WI_TYPE_UWI,
-    WebInputError,
-    _collect_message_via_editor,
-    _commit_and_push,
-    _max_existing_seq,
-    _pull,
-    _reject_bare_repo_path_override,
-    _repo_lock,
-    _subdir,
-    _validate_filename,
-    existing_entry_filenames,
-    is_agent_environment,
-    is_case_sensitive,
-    missing_dependency_warnings,
-)
-from agent_toolkit._atk.wi.formatters import _shorten_home
+from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATES, WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
+from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
+from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
-from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._plan import owner_records as _owner_records
 
 
 def _saved_mismatch_next_action(filename: str) -> str:
@@ -57,7 +41,7 @@ def _target_repo_error(value: object, error: WebInputError) -> WebInputError:
     return WebInputError(f"target_repoを解決できません: {value}（{error.reason}）", next_action=error.next_action)
 
 
-def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
+def read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
     """保存済みエントリを再読込し、本文の一致を検証したうえで一致確認の対象を示すメタデータを返す。
 
     `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存の処理中に本文が欠落または改変されて
@@ -90,7 +74,7 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
     }
 
 
-def _print_entry_details(details: dict[str, object | None]) -> None:
+def print_entry_details(details: dict[str, object | None]) -> None:
     """一致を確認したエントリの項目を決まった順で表示する。"""
     for key in ("target_repo", "target_commit"):
         value = details[key]
@@ -113,7 +97,7 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
 
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
     """CLIの依存ファイル名を検証し、`.md`付きの初出順へ正規化する。"""
-    return tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in (values or ())))
+    return tuple(dict.fromkeys(_wi_filenames.validate_filename(value, inbox_dir).name for value in (values or ())))
 
 
 def _missing_dependency_warnings(
@@ -130,10 +114,10 @@ def _missing_dependency_warnings(
     """
     if not dependencies:
         return []
-    return missing_dependency_warnings(
+    return _wi_filenames.missing_dependency_warnings(
         [(filename, dependency) for filename in generated for dependency in dependencies],
-        resolvable=existing_entry_filenames(private_notes),
-        case_sensitive=is_case_sensitive(inbox_dir),
+        resolvable=_wi_filenames.existing_entry_filenames(private_notes),
+        case_sensitive=_wi_filenames.is_case_sensitive(inbox_dir),
     )
 
 
@@ -145,7 +129,7 @@ def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
     return parsed
 
 
-def _body_is_effectively_empty(body: str) -> bool:
+def body_is_effectively_empty(body: str) -> bool:
     """本文が実質空か判定する。
 
     実質空とは、空文字・空白のみ、または全ての非空行が箇条書きマーカー
@@ -197,14 +181,14 @@ _AWI_HEADING_ORDER: tuple[str, ...] = (
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
     """先頭frontmatterと論理本文を返し、`agent-toolkit:wi-standards`「通常AWIの本文」の要件のうち種別共通のものを検証する。"""
     frontmatter, body = _parse_leading_frontmatter(message)
-    if entry_type == WI_TYPE_AWI and _body_is_effectively_empty(body):
+    if entry_type == WI_TYPE_AWI and body_is_effectively_empty(body):
         raise WebInputError(_EMPTY_AWI_ERROR, next_action=_EMPTY_AWI_NEXT_ACTION)
     if entry_type != WI_TYPE_AWI:
         _uwi.reject_reserved_uwi_markup(body)
     return frontmatter, body
 
 
-def _require_agent_awi_sections(
+def require_agent_awi_sections(
     body: str,
     frontmatter: dict[str, object],
     *,
@@ -313,7 +297,7 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
     """`target_repo`省略時に、全メッセージのfrontmatterが解決可能な対象リポジトリを持つことを検証する。
 
     キー欠落・非文字列値・空文字列・解決不能をいずれも原因別の`WebInputError`で拒否し、
-    `_repo_lock`取得前に全件を確定する。
+    `_wi_sync.repo_lock`取得前に全件を確定する。
     """
     for frontmatter, _body in parsed_messages:
         raw_target_repo = frontmatter.get("target_repo")
@@ -381,7 +365,7 @@ def _resolve_submitter_session() -> str | None:
     解決できない場合と、会話へ対応しないプロセス専用の識別子だった場合は`None`を返す。
     計画の所有会話と同じ判定を使う。
     """
-    return _plan_file.resolve_conversation_session_id()
+    return _owner_records.resolve_conversation_session_id()
 
 
 def _add_entries_locked(
@@ -418,8 +402,8 @@ def _add_entries_locked(
     ):
         raise ValueError("repair_targetとrepair_kindは同時に指定してください")
     timestamp = now.strftime("%Y%m%d-%H%M%S")
-    inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
-    counter = _max_existing_seq(private_notes, timestamp) + 1
+    inbox_dir = _wi_entries.subdir(private_notes, WI_STATE_INBOX)
+    counter = _wi_filenames.max_existing_seq(private_notes, timestamp) + 1
     generated: list[tuple[str, str]] = []
     for (frontmatter, body), repair_target, repair_kind in zip(
         parsed_messages,
@@ -493,7 +477,7 @@ def add_entries(
     UWI種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に
     `_uwi.reject_reserved_uwi_markup`が`WebInputError`を送出する（CLIとWeb UIが共通で呼ぶ処理）。
     `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
-    `_repo_lock`取得前に全件の型・非空・解決可否を検証する。
+    `_wi_sync.repo_lock`取得前に全件の型・非空・解決可否を検証する。
     `submitter_session`はUWI種別のfrontmatterへだけ保存する。
     """
     parsed_messages, normalized_target_repo = _validate_add_entries(
@@ -505,9 +489,10 @@ def add_entries(
         target_commit=target_commit,
         source=source,
     )
-    with _repo_lock(private_notes, timeout=lock_timeout):
+    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
+        _wi_sync.ensure_mutation_allowed(private_notes)
         if not skip_remote_sync:
-            _pull(private_notes)
+            _wi_sync.pull(private_notes)
         written = _add_entries_locked(
             private_notes,
             parsed_messages=parsed_messages,
@@ -524,7 +509,7 @@ def add_entries(
         )
         generated = [filename for filename, _content in written]
         count = len(generated)
-        _commit_and_push(
+        _wi_sync.commit_and_push(
             private_notes,
             f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
             [WI_STATE_INBOX],
@@ -534,7 +519,7 @@ def add_entries(
             saved_details.update(
                 (
                     filename,
-                    _read_saved_entry_details(private_notes / WI_STATE_INBOX / filename, expected_body=content),
+                    read_saved_entry_details(private_notes / WI_STATE_INBOX / filename, expected_body=content),
                 )
                 for filename, content in written
             )
@@ -575,7 +560,7 @@ def _validate_add_entries(
         )
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
     for frontmatter, body in parsed_messages:
-        _require_agent_awi_sections(
+        require_agent_awi_sections(
             body,
             frontmatter,
             entry_type=entry_type,
@@ -614,7 +599,7 @@ def read_body_files(paths: list[str]) -> list[str]:
     return bodies
 
 
-def _cmd_add(
+def cmd_add(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
     now: datetime.datetime,
@@ -628,10 +613,10 @@ def _cmd_add(
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
     `--target-repo`指定時は、レガシーREPO_PATH位置引数が無くfrontmatterにも`target_repo`が
     無い場合のfallback値として使う。
-    エディター経由の本文確定後に対象worktreeのHEADを取得してから`_pull`を実行する順序とし、
+    エディター経由の本文確定後に対象worktreeのHEADを取得してから`_wi_sync.pull`を実行する順序とし、
     エディター起動前のブロッキング待ち（他端末の投入分を反映するremote同期）を無くしてUXを改善する。
     remote同期失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
-    各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
+    各メッセージの本文が実質空（`body_is_effectively_empty`）の場合は`_wi_sync.repo_lock`取得前に拒否する。
     `--body-file`を指定した場合はそのファイルの内容を本文として扱う。
     引用符・改行を含む長文を、シェルの引用規則による解釈を介さずに渡す。複数回指定すれば複数件を投入できる。
     `--depends-on`が指す依存先が取り込み先に実在しない場合は、投入を拒否せず警告をstderrへ出力する。
@@ -647,12 +632,12 @@ def _cmd_add(
     else:
         messages = []
     repo_path_override = args.repo_path_override
-    _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
+    _wi_cli_input.reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
     target_value = repo_path_override if repo_path_override is not None else args.target_repo
     target_repo, local_worktree = resolve_add_target(target_value)
     collected_via_editor = not messages
     if not messages:
-        message = _collect_message_via_editor()
+        message = _wi_cli_input.collect_message_via_editor()
         if message is None:
             sys.exit(1)
         messages = [message]
@@ -669,7 +654,7 @@ def _cmd_add(
             _require_agent_source(frontmatter, args.source)
             style_warnings.extend(_style_diagnostics.warnings_for_body(body))
             try:
-                _require_agent_awi_sections(
+                require_agent_awi_sections(
                     body,
                     frontmatter,
                     entry_type=args.type,
@@ -772,10 +757,10 @@ def _cmd_add(
             print(message, file=sys.stderr)
         sys.exit(1)
     count = len(generated)
-    inbox_dir = _subdir(private_notes, WI_STATE_INBOX)
+    inbox_dir = _wi_entries.subdir(private_notes, WI_STATE_INBOX)
     for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
     _outcome.report_success(f"{count}件をinboxへ投入した")
     for filename in generated:
-        print(f"  {_shorten_home(inbox_dir / filename, home)}")
-        _print_entry_details(saved_details[filename])
+        print(f"  {shorten_home(inbox_dir / filename, home)}")
+        print_entry_details(saved_details[filename])

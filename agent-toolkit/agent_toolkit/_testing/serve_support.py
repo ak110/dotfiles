@@ -1,0 +1,469 @@
+"""`_atk/serve/`のテストが共有する、WI画面のUI実行、3画面のアプリの組み立てと擬似の状態・操作。"""
+
+# pylint: disable=protected-access
+
+import contextlib
+import json
+import os
+import pathlib
+import re
+import subprocess
+import threading
+import types
+import typing
+
+import pytest
+
+from agent_toolkit._atk.serve import app as serve_app
+from agent_toolkit._atk.serve import assets, config, state, wi_operations
+from agent_toolkit._atk.serve import cli as serve
+from agent_toolkit._atk.serve import plans as serve_plans
+from agent_toolkit._atk.serve import sessions as serve_sessions
+from agent_toolkit._atk.wi import sync as _wi_sync
+
+# UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
+# 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
+# そのまま渡すとこの解決が失敗するため、取り込み時点の環境変数を控えてNodeへ渡す。
+# 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
+# module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
+_HOST_ENVIRON = dict(os.environ)
+
+
+_MODULE_IMPORT_RE = re.compile(r"^import\s*\{[^}]*\}\s*from\s*\"[^\"]+\";\n", re.MULTILINE)
+_MODULE_EXPORT_RE = re.compile(r"^export (?=(?:async )?function |const |let |class )", re.MULTILINE)
+
+
+def _module_body(source: str) -> str:
+    """ESモジュールの本文から`import`文と`export`の修飾を除き、同じスコープで評価できる本文にする。"""
+    body = _MODULE_IMPORT_RE.sub("", source)
+    assert not re.search(r"^import ", body, re.MULTILINE), "解釈できないimport文が残っている"
+    return _MODULE_EXPORT_RE.sub("", body)
+
+
+def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
+    """WI画面のUI関数を最小DOM上で実行し、シナリオのJSON結果を返す。
+
+    WI画面はESモジュールであり、モジュールの外から内部の関数と変数を参照できない。
+    共通モジュールとWI画面の本文を`import`と`export`を除いて1つの関数スコープへ並べ、
+    シナリオも同じスコープへ置いて検証対象の関数を直接呼べるようにする。
+    画面の登録先の`shell.js`は文書全体のナビゲーションを扱うため読み込まず、登録関数だけを代替する。
+    """
+    executable = (
+        "(() => {\n"
+        + _module_body(assets.SCRIPTS["common.js"])
+        + "\nfunction registerScreen() {}\n"
+        + _module_body(assets.SCRIPTS["wi.js"])
+        + "\n(async () => {\n"
+        + scenario
+        + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });\n"
+        + "})();\n"
+    )
+    script = f"""
+class Element {{
+  constructor(id = '', tagName = 'DIV') {{
+    this.id = id;
+    this.tagName = tagName;
+    this.children = [];
+    this.dataset = {{}};
+    this.attributes = {{}};
+    this.listeners = {{}};
+    this.parentNode = null;
+    this.ownText = '';
+    this.value = '';
+    this.hidden = false;
+    this.disabled = false;
+    this.checked = false;
+    this.open = false;
+    this.dateTime = '';
+    this.innerHTML = '';
+    this.className = '';
+    this.type = '';
+    this.isConnected = true;
+    this.classList = {{
+      add: (...names) => {{
+        const values = new Set(this.className.split(/\\s+/).filter(Boolean));
+        names.forEach(name => values.add(name));
+        this.className = Array.from(values).join(' ');
+      }},
+      remove: (...names) => {{
+        const values = this.className.split(/\\s+/).filter(name => name && !names.includes(name));
+        this.className = values.join(' ');
+      }},
+      contains: name => this.className.split(/\\s+/).includes(name)
+    }};
+  }}
+  // DOMと同じく、子を持つ要素の`textContent`は子孫の文字列を連結し、代入は子を取り除く。
+  get textContent() {{ return this.ownText + this.children.map(child => child.textContent).join(''); }}
+  set textContent(value) {{
+    this.replaceChildren();
+    this.ownText = String(value);
+  }}
+  get firstChild() {{ return this.children[0] ?? null; }}
+  get nextSibling() {{
+    const siblings = this.parentNode?.children || [];
+    return siblings[siblings.indexOf(this) + 1] ?? null;
+  }}
+  adopt(child) {{
+    if (typeof child.remove === 'function') child.remove();
+    child.parentNode = this;
+    if (typeof child.setConnected === 'function') child.setConnected(this.isConnected);
+  }}
+  insertBefore(child, reference) {{
+    this.adopt(child);
+    const index = reference ? this.children.indexOf(reference) : -1;
+    if (index < 0) this.children.push(child);
+    else this.children.splice(index, 0, child);
+  }}
+  remove() {{
+    if (!this.parentNode) return;
+    this.parentNode.children = this.parentNode.children.filter(child => child !== this);
+    this.parentNode = null;
+    this.setConnected(false);
+  }}
+  setConnected(value) {{
+    this.isConnected = value;
+    this.children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(value); }});
+  }}
+  append(...children) {{
+    children.forEach(child => {{
+      this.adopt(child);
+      this.children.push(child);
+    }});
+  }}
+  replaceChildren(...children) {{
+    this.children.forEach(child => {{
+      child.parentNode = null;
+      if (typeof child.setConnected === 'function') child.setConnected(false);
+    }});
+    this.children = [];
+    this.append(...children);
+  }}
+  contains(node) {{ return this === node || this.children.some(child => child.contains?.(node)); }}
+  closest() {{ return null; }}
+  setAttribute(name, value) {{ this.attributes[name] = String(value); }}
+  getAttribute(name) {{ return this.attributes[name] ?? null; }}
+  removeAttribute(name) {{ delete this.attributes[name]; }}
+  addEventListener(name, handler) {{ this.listeners[name] = handler; }}
+  querySelectorAll() {{ return globalThis.controlGroups[this.id] || []; }}
+  showModal() {{ this.open = true; }}
+  close() {{ this.open = false; }}
+  focus() {{
+    if (this.disabled) return;
+    document.activeElement = this;
+    globalThis.focused = this.dataset.key || this.id;
+    document.listeners.focusin?.({{target: this}});
+  }}
+}}
+const ids = [
+  'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button',
+  'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'period-filter', 'answer-filter',
+  'target-filter', 'source-filter', 'entry-count',
+  'result-status', 'list-warning', 'list-fallback-notice', 'loading-indicator', 'entry-list', 'empty-state',
+  'empty-state-message', 'empty-clear-button', 'empty-all-states-button', 'empty-all-periods-button',
+  'empty-create-button', 'entry-period',
+  'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
+  'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
+  'detail-content', 'readonly-notice', 'edit-button', 'answer-button', 'delete-button',
+  'decision-panel', 'decision-heading', 'decision-note', 'confirm-adopt-button', 'confirm-reject-button',
+  'adopt-button', 'reject-button', 'hold-button', 'unhold-button',
+  'return-to-inbox-button',
+  'edit-panel', 'edit-content', 'edit-content-error', 'save-entry-button', 'answer-panel',
+  'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button', 'user-comment-button',
+  'user-comment-panel', 'user-comment-input', 'user-comment-input-error', 'save-user-comment-button',
+  'create-dialog', 'create-form', 'create-close-button', 'create-alert', 'create-status',
+  'create-kind', 'create-content', 'create-content-label', 'create-content-error',
+  'create-repo-fields', 'create-target',
+  'create-target-error', 'uwi-fields', 'create-scope',
+  'create-question-type', 'choice-fields', 'create-choices', 'create-choices-error',
+  'create-submit-button', 'delete-dialog', 'delete-form', 'delete-close-button',
+  'delete-alert', 'delete-status', 'delete-target', 'delete-state', 'delete-target-repo',
+  'delete-summary', 'force-delete-row', 'force-delete-confirmation', 'delete-error',
+  'delete-submit-button', 'repo-options', 'pagination', 'previous-page-button',
+  'pagination-status', 'next-page-button', 'operation-notice', 'operation-notice-message',
+  'operation-notice-close-button'
+];
+const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
+elements['toast'] = elements['operation-notice-message'];
+elements['operation-notice'].append(elements['operation-notice-message'], elements['operation-notice-close-button']);
+elements['operation-notice-close-button'].setAttribute('aria-label', '操作通知を閉じる');
+elements['kind-filter'].value = 'all';
+elements['state-filter'].value = 'active';
+elements['period-filter'].value = '2w';
+elements['answer-filter'].value = 'all';
+elements['create-kind'].value = 'awi';
+elements['create-question-type'].value = 'yes-no';
+globalThis.controlGroups = {{
+  'detail-shell': [
+    elements['detail-close-button'], elements['edit-button'], elements['answer-button'],
+    elements['user-comment-button'], elements['delete-button'], elements['adopt-button'], elements['reject-button'],
+    elements['hold-button'], elements['unhold-button'], elements['return-to-inbox-button'], elements['decision-note'],
+    elements['edit-content'], elements['save-entry-button'],
+    elements['answer-input'], elements['save-answer-button'], elements['user-comment-input'],
+    elements['save-user-comment-button'], elements['confirm-adopt-button'], elements['confirm-reject-button']
+  ],
+  'create-form': [
+    elements['create-close-button'], elements['create-kind'], elements['create-content'],
+    elements['create-target'], elements['create-scope'],
+    elements['create-question-type'], elements['create-choices'], elements['create-submit-button']
+  ],
+  'delete-form': [
+    elements['delete-close-button'], elements['force-delete-confirmation'], elements['delete-submit-button']
+  ],
+  'app-header': [elements['refresh-button'], elements['create-button']]
+}};
+elements['detail-close-button'].className = 'dialog-close';
+elements['create-close-button'].className = 'dialog-close';
+elements['delete-close-button'].className = 'dialog-close';
+const appHeader = new Element('app-header');
+globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
+globalThis.document = {{
+  activeElement: null,
+  listeners: {{}},
+  getElementById(id) {{ return elements[id] || null; }},
+  addEventListener(name, handler) {{ this.listeners[name] = handler; }},
+  createElement(tagName) {{ return new Element('', tagName.toUpperCase()); }},
+  createTextNode(text) {{ const node = new Element('', '#TEXT'); node.textContent = text; return node; }},
+  querySelector(selector) {{ return selector === '.app-header' ? appHeader : null; }},
+  querySelectorAll(selector) {{
+    if (selector !== '.entry-select') return [];
+    return elements['entry-list'].children.flatMap(item => item.children);
+  }}
+}};
+globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
+elements['serve-bootstrap'] = new Element('serve-bootstrap', 'SCRIPT');
+elements['serve-bootstrap'].textContent = JSON.stringify({{base_path: '/atk', stall_ms: 45000}});
+globalThis.window = globalThis;
+globalThis.confirm = () => true;
+globalThis.setTimeout = () => 1;
+globalThis.clearTimeout = () => undefined;
+globalThis.setInterval = () => 1;
+globalThis.clearInterval = () => undefined;
+globalThis.EventSource = class {{
+  constructor(url) {{ this.url = url; this.listeners = {{}}; }}
+  addEventListener(name, handler) {{ this.listeners[name] = handler; }}
+}};
+const fetchCalls = [];
+let fetchHandler = async () => ({{ok: true, status: 200, statusText: 'OK', json: async () => ({{entries: [], warnings: []}})}});
+globalThis.fetch = async (url, options = {{}}) => {{
+  fetchCalls.push({{url, options}});
+  return fetchHandler(url, options);
+}};
+eval({json.dumps(executable)});
+"""
+    completed = subprocess.run(
+        ["node", "--input-type=commonjs"],
+        input=script,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+        env=_HOST_ENVIRON,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return typing.cast(dict[str, typing.Any], json.loads(completed.stdout))
+
+
+class _FakeTimer(threading.Timer):
+    """`threading.Timer`の代替。実時間で発火せず、テストが明示的に発火させる。"""
+
+    def __init__(self, interval: float, function: typing.Callable[..., None], args: tuple[typing.Any, ...] = ()) -> None:
+        super().__init__(interval, function, args)
+        self.cancelled = False
+
+    def start(self) -> None:
+        """発火予約の代わりに何もしない。"""
+
+    def cancel(self) -> None:
+        """発火予約を取り消したものとして記録する。"""
+        self.cancelled = True
+
+
+_STALE_FALLBACK_SEARCH_SCRIPT = """
+@DECLARATION@
+let fallbackStarted;
+const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
+elements['search-input'].value = 'old';
+fetchHandler = async url => {
+  if (url === '/atk/api/entries?q=old&page=1') {
+    fallbackStarted();
+    return @PENDING@;
+  }
+  if (url.includes('q=old')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+  }
+  if (url.includes('q=new')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({
+      entries: [{kind: 'awi', state: 'inbox', filename: 'new.md', summary: 'new'}], warnings: []
+    })};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+const oldRequest = loadEntries({announce: true});
+await fallbackReady;
+elements['search-input'].value = 'new';
+const newRequest = loadEntries({announce: true});
+await newRequest;
+"""
+
+
+def stale_fallback_search_script(declaration: str, pending_promise: str) -> str:
+    """古い検索語の補助検索を保留させたまま、新しい検索語の一覧要求を完了させるNodeの画面スクリプトを返す。
+
+    `declaration`は保留を解く関数を受ける変数の宣言、`pending_promise`は補助検索が返す保留中のPromiseの式とする。
+    呼び出し側は、返したスクリプトの後ろへ保留の解き方と検証を続ける。
+    """
+    return _STALE_FALLBACK_SEARCH_SCRIPT.replace("@DECLARATION@", declaration).replace("@PENDING@", pending_promise)
+
+
+UNANSWERED_UWI_TEXT = (
+    "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+    "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+)
+"""回答欄が空のUWIの本文。"""
+
+AWI_TEXT = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n"
+"""最小のAWIの本文。"""
+
+
+def make_inbox_and_processing(private_notes: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    """private-notesへinboxとprocessingの状態フォルダを作成し、その順に返す。"""
+    inbox = private_notes / "inbox"
+    processing = private_notes / "processing"
+    inbox.mkdir()
+    processing.mkdir()
+    return inbox, processing
+
+
+def _three_screen_app(tmp_path: pathlib.Path) -> typing.Any:
+    """3画面を登録したアプリを、外部へ接続しない依存で生成する。"""
+    return serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        plans_context=serve_plans.create_context(root=tmp_path / "plans", hostname="local-host"),
+        sessions_context=serve_sessions.create_context(
+            hostname="local-host",
+            claude_home=tmp_path / "claude",
+            codex_home=tmp_path / "codex",
+        ),
+    )
+
+
+class _BlockingSync:
+    """同期処理の代替。呼び出し回数を数え、テストが解放するまで完了しない。"""
+
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.calls = 0
+
+    def __call__(self, *_args: object, **_kwargs: object) -> bool:
+        self.calls += 1
+        self.started.set()
+        self.release.wait()
+        return True
+
+
+def _sync_app(tmp_path: pathlib.Path, operations: wi_operations.Operations) -> typing.Any:
+    """同期APIの検証用に、指定した操作を使うアプリを生成する。"""
+    return serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        operations=operations,
+    )
+
+
+def _write_detail_entry(tmp_path: pathlib.Path, text: str) -> None:
+    """詳細表示テスト用の入力ファイルを作成する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "entry.md").write_text(text, encoding="utf-8")
+
+
+def _stub_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    stopped: list[str],
+) -> None:
+    """監視スレッドを起動しないServeStateへ差し替える。"""
+    current = state.ServeState(tmp_path)
+    monkeypatch.setattr(current, "start", lambda loop: None)
+    monkeypatch.setattr(current, "stop", lambda: stopped.append("stop"))
+    monkeypatch.setattr(serve, "_atk_serve_state", types.SimpleNamespace(ServeState=lambda root: current))
+
+
+def _recorder(calls: list[str], label: str, *, result: object) -> typing.Callable[[pathlib.Path], typing.Any]:
+    """呼び出しを記録して固定値を返す差し替え関数を返す。"""
+
+    def record(_path: pathlib.Path) -> typing.Any:
+        calls.append(label)
+        return result
+
+    return record
+
+
+def _write_repo_entry(root: pathlib.Path, state_name: str, filename: str, target_repo: str) -> None:
+    """対象リポジトリを持つエントリを配置する。"""
+    directory = root / state_name
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / filename).write_text(
+        f"---\ntarget_repo: {target_repo}\ntype: awi\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+
+
+_BATCH_TEXT = (
+    "# awi\n## target_repo: github.com/example/foo\n"
+    "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文\n\n"
+)
+
+
+def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """一括取り込みで使うロック・remote同期・commitを無効化する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+
+
+def _session_review_awi(
+    body: str,
+    *,
+    entry_type: str = "awi",
+    source: str | None = "session-review",
+) -> str:
+    """ユーザーコメント操作テスト用のawi本文を組み立てる。"""
+    source_line = f"source: {source}\n" if source is not None else ""
+    return f"---\ntype: {entry_type}\ntarget_repo: example/repo\n{source_line}---\n\n{body}"
+
+
+def _patch_comment_edit_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ユーザーコメントAPIテストでGit同期だけを無効化する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+
+
+def _disable_wi_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WI画面の操作がprivate-notesで行うロック・pull・commit・pushを、何もしない処理へ差し替える。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)

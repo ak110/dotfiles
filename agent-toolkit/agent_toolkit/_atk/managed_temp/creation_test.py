@@ -1,7 +1,3 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """_managed_tempの管理対象一時ディレクトリ境界を検証する。"""
 
 # pylint: disable=protected-access
@@ -9,26 +5,19 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
-import ctypes
-import datetime
-import json
 import os
 import pathlib
 import stat
 import subprocess
 import sys
-import typing
 
 import pytest
 
 from agent_toolkit._atk import managed_temp as subject
+from agent_toolkit._testing.managed_temp_support import _isolated_cli_environment, setattr_in_managed_temp_modules
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-
-
-from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 
 
 def test_create_parser_passes_repeated_awi_names(
@@ -48,7 +37,7 @@ def test_create_parser_passes_repeated_awi_names(
         calls.append((prefix, root, awis))
         return created
 
-    monkeypatch.setattr(subject, "create_managed_temp", fake_create)
+    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", fake_create)
     parser = argparse.ArgumentParser()
     subject.build_parser(parser)
 

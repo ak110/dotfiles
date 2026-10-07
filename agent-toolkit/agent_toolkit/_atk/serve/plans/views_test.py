@@ -1,24 +1,21 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`の計画ファイル画面の処理のテスト。"""
 
 # pylint: disable=protected-access
 
 import asyncio
-import base64
-import hashlib
 import json
-import os
 import pathlib
-import subprocess
 import typing
 
 import pytest
 
 from agent_toolkit._atk.serve import plans
+from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
+from agent_toolkit._atk.serve.plans import rendering as plans_rendering
+from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views
-from agent_toolkit._atk.serve.plans.test_support_test import *  # noqa: F403
+from agent_toolkit._plan import viewer_files as plan_viewer_files
+from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload, _runner_returning
 
 
 def test_absent_root_keeps_the_recorded_creation_times(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
@@ -26,12 +23,12 @@ def test_absent_root_keeps_the_recorded_creation_times(tmp_path: pathlib.Path, i
     root = tmp_path / "plans"
     root.mkdir()
     _plan(root, "plan.md", mtime=1_000.0)
-    plans.list_files(root, "local-host")
+    plans_local_scan.list_files(root, "local-host")
     stored = json.loads(index_path.read_text(encoding="utf-8"))
     (root / "plan.md").unlink()
     root.rmdir()
 
-    entries, warning = plans.scan_files(root, "local-host")
+    entries, warning = plans_local_scan.scan_files(root, "local-host")
 
     assert not entries
     assert warning is None
@@ -40,7 +37,7 @@ def test_absent_root_keeps_the_recorded_creation_times(tmp_path: pathlib.Path, i
 
 def test_mermaid_fence_is_rendered_as_escaped_diagram() -> None:
     """Mermaidのフェンスは原文をエスケープした描画枠と原文表示へ変換する。"""
-    html = plans.markdown_to_html("```mermaid\ngraph TD;\n  A[<b>x</b>] --> B;\n```\n")
+    html = plans_rendering.markdown_to_html("```mermaid\ngraph TD;\n  A[<b>x</b>] --> B;\n```\n")
 
     assert 'class="diagram diagram-mermaid"' in html
     assert 'class="diagram-output mermaid-output"' in html
@@ -97,15 +94,15 @@ def test_resolve_under_root_rejects_traversal(tmp_path: pathlib.Path, rel: str) 
     root.mkdir()
     _plan(tmp_path, "outside.md")
 
-    assert plans.resolve_under_root(root, rel) is None
+    assert plan_viewer_files.resolve_under_root(root, rel) is None
 
 
 def test_synchronized_root_keeps_only_the_oldest_host(tmp_path: pathlib.Path) -> None:
     """ホスト間で同期されるrootの同名ファイルは、作成日時が最も古いホストの1件へ絞る。"""
     del tmp_path
 
-    def entry(host: str, source_id: str, path: str, ctime: float) -> plans.FileEntry:
-        return plans.FileEntry(
+    def entry(host: str, source_id: str, path: str, ctime: float) -> plans_roots.FileEntry:
+        return plans_roots.FileEntry(
             host=host,
             path=path,
             name=path,
@@ -116,7 +113,7 @@ def test_synchronized_root_keeps_only_the_oldest_host(tmp_path: pathlib.Path) ->
             source_id=source_id,
         )
 
-    merged = plans._oldest_host_per_file(
+    merged = views._oldest_host_per_file(
         [
             entry("a", plans.NEW_SOURCE_ID, "p.md", 200.0),
             entry("b", plans.NEW_SOURCE_ID, "p.md", 100.0),
@@ -163,13 +160,13 @@ async def test_render_file_html_keys_cache_by_text_digest(
     root.mkdir()
     context = _context(root)
     rendered_texts: list[str] = []
-    original = plans.markdown_to_html
+    original = plans_rendering.markdown_to_html
 
     def counting_markdown_to_html(text: str, renderer: typing.Any = None) -> str:
         rendered_texts.append(text)
         return original(text, renderer)
 
-    monkeypatch.setattr(plans, "markdown_to_html", counting_markdown_to_html)
+    monkeypatch.setattr(views, "markdown_to_html", counting_markdown_to_html)
     source_id = context.roots[0].source_id
     _plan(root, "plan.md", "# 変更前\n", mtime=3_000.0)
     before = await plans.render_file_html(context, "local-host", source_id, "plan.md")

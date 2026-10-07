@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from pytools._internal import claude_common, log_format, setup_cli_common
+from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 
 logger = logging.getLogger(__name__)
 
@@ -26,38 +26,29 @@ _HTTP_RETRY_JITTER = 0.25
 _COMMAND_TIMEOUT = 300.0
 
 
-def main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
-    from pytools._internal.cli import setup_logging  # pylint: disable=import-outside-toplevel
+def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutcome:
+    """公式スタンドアローン版を導入または更新し、確認後に旧npm版とmise版を移行する。
 
-    setup_logging()
-    run()
-    sys.exit(0)
-
-
-def run(client: httpx.Client | None = None) -> bool:
-    """公式スタンドアローン版を導入または更新し、確認後に旧npm版とmise版を移行する。"""
+    取得・導入・更新と確認の失敗は警告を出力してスキップと数え、旧版の撤去と中継の再生成の失敗は失敗と数える。
+    """
     if setup_cli_common.is_windows_cli_running("codex", _PACKAGE):
         logger.info(log_format.format_status("codex", "実行中のため導入と移行を次回へ延期"))
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     result = _run_installer(client)
     if result is None or result.returncode != 0:
-        message = f"導入または更新に失敗: {claude_common.format_cli_error(result)}"
-        logger.warning(log_format.format_status("codex", message))
-        raise RuntimeError(message)
+        logger.warning(log_format.format_status("codex", f"導入または更新に失敗: {common.format_cli_error(result)}"))
+        return post_apply_outcome.PostApplyOutcome()
     launcher = _find_standalone_launcher()
     if launcher is None:
         message = f"管理対象のCodexが見つからないため旧版を保持: {_standalone_root() / 'current'}"
         logger.warning(log_format.format_status("codex", message))
-        raise RuntimeError("管理対象Codexの確認に失敗")
-    verification = claude_common.run_subprocess([str(launcher), "--version"], timeout=30, tag="codex")
+        return post_apply_outcome.PostApplyOutcome()
+    verification = common.run_subprocess([str(launcher), "--version"], timeout=30, tag="codex")
     if verification is None or verification.returncode != 0:
         logger.warning(
-            log_format.format_status(
-                "codex", f"正規版を確認できないため旧版を保持: {claude_common.format_cli_error(verification)}"
-            )
+            log_format.format_status("codex", f"正規版を確認できないため旧版を保持: {common.format_cli_error(verification)}")
         )
-        raise RuntimeError("正規Codexの確認に失敗")
+        return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(_visible_bin_dir())
     failures, removed = _remove_mise_versions()
     migrated = False
@@ -84,10 +75,8 @@ def run(client: httpx.Client | None = None) -> bool:
                 if shim.is_file():
                     logger.warning(log_format.format_status("codex", f"mise管理外の中継を保持: {shim}"))
     if failures:
-        message = " / ".join(failures)
-        logger.warning(log_format.format_status("codex", message))
-        raise RuntimeError(message)
-    return True
+        return post_apply_outcome.PostApplyOutcome(changed=True, failure=" / ".join(failures))
+    return post_apply_outcome.PostApplyOutcome(changed=True)
 
 
 def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[str] | None:
@@ -121,7 +110,7 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
         env_overrides = {"CODEX_NON_INTERACTIVE": "1"}
         if sys.platform != "win32":
             env_overrides["PATH"] = _installer_path()
-        return claude_common.run_subprocess(
+        return common.run_subprocess(
             command,
             timeout=_COMMAND_TIMEOUT,
             tag="codex",
@@ -129,7 +118,7 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
         )
     except (httpx.HTTPError, OSError) as error:
         logger.warning(log_format.format_status("codex", f"公式インストーラーの取得に失敗: {error}"))
-        raise RuntimeError("公式インストーラーの取得に失敗") from error
+        return None
     finally:
         if temp_path is not None:
             with contextlib.suppress(OSError):
@@ -223,11 +212,9 @@ def _remove_mise_versions() -> tuple[list[str], bool]:
     if mise is None:
         return [], False
     target = f"npm:{_PACKAGE}"
-    listing = claude_common.run_subprocess(
-        [str(mise), "ls", "--json", target], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise"
-    )
+    listing = common.run_subprocess([str(mise), "ls", "--json", target], timeout=common.COMMAND_TIMEOUT, tag="mise")
     if listing is None or listing.returncode != 0:
-        return [f"mise版の一覧取得に失敗: {claude_common.format_cli_error(listing)}"], False
+        return [f"mise版の一覧取得に失敗: {common.format_cli_error(listing)}"], False
     try:
         listed = json.loads(listing.stdout or "")
     except json.JSONDecodeError as error:
@@ -238,11 +225,9 @@ def _remove_mise_versions() -> tuple[list[str], bool]:
     # 未導入時に`uninstall`を呼ぶと警告が出るため、導入済みの要素だけを数える。
     if not any(isinstance(entry, dict) and entry.get("installed") for entry in listed):
         return [], False
-    removal = claude_common.run_subprocess(
-        [str(mise), "uninstall", "--all", "--yes", target], timeout=_COMMAND_TIMEOUT, tag="mise"
-    )
+    removal = common.run_subprocess([str(mise), "uninstall", "--all", "--yes", target], timeout=_COMMAND_TIMEOUT, tag="mise")
     if removal is None or removal.returncode != 0:
-        return [f"mise版の削除に失敗: {claude_common.format_cli_error(removal)}"], False
+        return [f"mise版の削除に失敗: {common.format_cli_error(removal)}"], False
     return [], True
 
 
@@ -251,9 +236,9 @@ def _find_orphaned_mise_shims() -> tuple[list[str], list[Path]]:
     mise = _find_mise()
     if mise is None:
         return [], []
-    listing = claude_common.run_subprocess([str(mise), "ls", "--json"], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise")
+    listing = common.run_subprocess([str(mise), "ls", "--json"], timeout=common.COMMAND_TIMEOUT, tag="mise")
     if listing is None or listing.returncode != 0:
-        return [f"mise全体の一覧取得に失敗: {claude_common.format_cli_error(listing)}"], []
+        return [f"mise全体の一覧取得に失敗: {common.format_cli_error(listing)}"], []
     try:
         listed = json.loads(listing.stdout or "")
     except json.JSONDecodeError as error:
@@ -263,9 +248,7 @@ def _find_orphaned_mise_shims() -> tuple[list[str], list[Path]]:
     if f"npm:{_PACKAGE}" in listed:
         return [], []
     names = ("codex", "codex.exe") if sys.platform == "win32" else ("codex",)
-    shims = [
-        shim for directory in claude_common.mise_shim_directories() for name in names if (shim := directory / name).is_file()
-    ]
+    shims = [shim for directory in common.mise_shim_directories() for name in names if (shim := directory / name).is_file()]
     return [], shims
 
 
@@ -274,11 +257,7 @@ def _reshim_mise() -> list[str]:
     mise = _find_mise()
     if mise is None:
         return []
-    reshim = claude_common.run_subprocess([str(mise), "reshim", "--force"], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise")
+    reshim = common.run_subprocess([str(mise), "reshim", "--force"], timeout=common.COMMAND_TIMEOUT, tag="mise")
     if reshim is None or reshim.returncode != 0:
-        return [f"mise reshimに失敗: {claude_common.format_cli_error(reshim)}"]
+        return [f"mise reshimに失敗: {common.format_cli_error(reshim)}"]
     return []
-
-
-if __name__ == "__main__":
-    main()

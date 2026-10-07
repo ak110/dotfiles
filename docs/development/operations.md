@@ -1,17 +1,15 @@
 # 運用機能の詳細
 
 本リポジトリが配布・設定する運用機能のホスト固有事項と詳細仕様を扱う。
-編集方針・ディレクトリ構造は`AGENTS.md`、リポジトリ構成は[architecture.md](architecture.md)を参照する。
+リポジトリ構成とディレクトリの役割は[architecture.md](architecture.md)を参照する。
 
 ## 生成物の一括同期（`sync_generated_files.py`）
 
 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する。
 
-- `uv run scripts/sync_generated_files.py`のようにパスを直接渡すと、
-  PEP 723ヘッダーの検出により、スクリプトは依存なしの隔離環境で実行される
 - 同スクリプトは`sys.executable`で生成器を子プロセス起動するため、
-  隔離環境では子が要求するプロジェクト依存（`pytilpack`等）を解決できず全件失敗する
-- `python`を明示するとスクリプトモードにならずプロジェクト環境で実行される
+  子が要求するプロジェクト依存（`pytilpack`等）を持つプロジェクト環境のPythonで起動する。
+  PEP 723ヘッダーを持たないため、パスを直接渡しても依存なしの隔離環境では起動されない
 - 作業ディレクトリを対象の作業用複製（git worktree等）へ変更できない場合は、
   `<複製の絶対パス>/.venv/bin/python <複製の絶対パス>/scripts/sync_generated_files.py`の形で起動する。
   移動コマンドと実行コマンドを同一行に並べる形は、作業ディレクトリの解決が曖昧になるため使わない
@@ -54,7 +52,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   ユーザーの入力を要さない待機でベルが鳴るためである
 - 応答終了そのものは`Stop`のフック（`pytools/claude_hook/stop_bell.py`）で鳴らす。
   常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
-  背景稼働の判定は他のStop系フックと同じ`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の判定を用いる。
+  背景稼働の判定は他のStop系フックと同じ`agent-toolkit/agent_toolkit/_hooks/background_tasks.py`の判定を用いる。
   他のStop系フックがターン継続をblockした場合は、ターンが終了する前にベルが鳴る
 - Windowsはtmux運用外のため、ベルの各設定は`share/claude_settings_json_managed.win32.json`へ追加しない
 - catppuccinが提供する`icon`の書式はcurrent・lastなど全フラグをアイコン化するため、
@@ -132,10 +130,10 @@ Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス�
 
 `share/claude_settings_json_managed.json`はClaude Codeの`bashOutputMaxChars`へ62,000を配布する。
 `pytools/_internal/update_claude_settings.py`がこの値を`~/.claude/settings.json`へ反映し、Claude CodeのBashとPowerShellは62,000バイト以下の出力を退避せずに全文で返す。
-値はCodexへ配布する`tool_output_token_limit = 20000`（`scripts/codex_config.toml`）をバイトへ換算したもので、1回のツール出力で受け取る量を両ホストでそろえる。
+値はCodexへ配布する`tool_output_token_limit = 20000`（`share/codex_config.toml`）をバイトへ換算したもので、1回のツール出力で受け取る量を両ホストでそろえる。
 換算には`agent-toolkit/agent_toolkit/_hooks/pretooluse/large_reads.py`が使う1トークンあたり3.10バイトを用いる。
 62,000バイトを超える出力は退避され、agent-toolkitのPostToolUseが抜粋を保存先と次の操作を示す本文へ置き換える。
-置き換えの設計は`design-hooks.md`「退避したシェル出力の抜粋の置き換え（2026年10月6日）」にある。
+置き換えの設計は`design-hooks.md`「退避したシェル出力の抜粋の置き換え」にある。
 `share/claude_settings_json_managed.json`はコメントを持てないため、値の理由は本節だけが保持する。
 
 本体の設定スキーマにある`bashOutputMaxChars`の説明は次のとおりである。
@@ -152,7 +150,29 @@ How many characters of a successful Bash or PowerShell command's output Claude r
 上限値の解釈が変わった疑いがある場合は、本体のバイナリから`bashOutputMaxChars`の説明を確かめる。
 BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
 
-## mise latestの非ログイン再評価
+## `update-dotfiles`のuv自己更新と実行環境
+
+手動起動した`update-dotfiles`は公式インストーラー版uvの自己更新を起動時に試行する。
+WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換できずに自己更新が失敗することがある。
+この場合も`update-dotfiles`はインストール済みのuvで更新を続行し、処理の最後に失敗と次回の再試行を案内する。
+`atk wi process-loop`からの起動では、常駐中の`uvx`による実行ファイル競合を避けるため自己更新を省略し、
+次回の手動起動まで延期する。補助的なuv自己更新を理由として、dotfiles更新を停止させないためである。
+
+`update-dotfiles`の各工程は`MISE_AUTO_INSTALL=0`を与えたサブプロセスとして実行する。
+実行ファイル名で起動したコマンドがmiseのshimへ解決されると、
+呼び出したコマンドと無関係なツールの自動導入が実行され、その失敗が更新処理全体を止めるためである。
+ツール自体はpost-apply工程で`mise install`を明示的に実行して導入するため、`MISE_AUTO_INSTALL=0`の影響を受けない。
+
+`update-dotfiles`のgit pull工程には待ち時間の上限を設ける。環境変数を設定しない場合は600秒とし、環境変数`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`へ秒数を与えて調整する。`0`を与えると上限を無効化する。
+GitHub向けSSHのupload-pack通信が応答しない環境で、更新処理が無期限に滞留するためである。
+上限を超えた場合は、git pull工程から起動した子孫プロセスを終了させる。
+そのうえで、工程名と処理が未完了であることを標準エラーへ出力し、終了コード1で終わる。
+子孫を終了させるのは、`git`と`ssh`が出力のハンドルを保持したまま停止すると、直接の子を終了させるだけでは待機が終わらないためである。
+`chezmoi apply`工程へは上限を設けない。
+
+## miseの導入と再評価
+
+### process-loopの非ログイン再評価
 
 dotfilesリポジトリを対象とする`atk wi process-loop`はmiseの`latest`指定ツールを非ログインシェルから再評価する。
 手動起動時に`mise install --quiet`を一度実行し、その成否後から24時間ごとに待機ループの復帰時に再実行する。
@@ -170,6 +190,8 @@ dotfilesリポジトリを対象とする`atk wi process-loop`はmiseの`latest`
 配布するglobal設定は`gitlab.glab_cli_tokens`を無効にする。
 miseはglab CLIの設定ファイルから取得したトークンを公開APIの呼び出しへ付与するため、期限切れのトークンは401を返す。
 
+### `chezmoi apply`の後処理の`mise install`
+
 `chezmoi apply`の後処理も`mise install`を実行する。
 miseは実行位置から設定ファイルを探索するため、後処理は`CHEZMOI_WORKING_TREE`に`mise.toml`がある場合だけ
 そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
@@ -181,6 +203,8 @@ working treeにだけ定義したツールが更新を繰り返しても未導�
 どの`install_path`の配下にも無い配置先（共有ランタイムへのリンクで導入されるツール）は再導入しない。
 再導入にはlockedモードの環境変数を与えない。mise 2026.9.17では、lockにURLがあってもlockedモードの`mise install --force <ツール>@<版>`は失敗し、版を明示した再導入はlockfileを書き戻さないためである。
 検出と再導入の失敗、および再導入後も残る欠落は警告を出力して後処理を続け、残る欠落の警告には手動の復旧コマンドを含める。
+
+### lockedモードの環境変数
 
 process-loopと後処理の`mise install`へは環境変数`MISE_LOCKED=1`と`MISE_LOCKED_SCOPES=project`を与える。
 これにより、プロジェクトの`mise.lock`に記録済みの解決結果から導入するlockedモードで動かす。
@@ -217,6 +241,14 @@ Gitの状態だけで開発ツリーと判定すると、ビルド手段を持�
 開発版へ置き換える前に、リリース取得用のETagを無効化する。次回のリリース取得が`304 Not Modified`になっても、開発版を
 リリース版として保持し続けないためである。開発版の導入失敗後も後続の後処理は継続し、最終終了コードは1とする。
 リリース取得のネットワーク失敗は従来どおり非致命として扱う。
+
+## Codex CLI本体の旧版整理
+
+`chezmoi apply`後の処理はCodexの公式インストーラーを非対話で実行した後、mise npmバックエンドとPATHから解決される非正規npm版のCodexを除去する（エンドユーザー向けの説明は`docs/guide/codex-guide.md`「Codex CLI本体」）。
+旧版の整理を`chezmoi apply`後の処理が担うのは、公式インストーラーが非対話実行時に競合するnpm版を残すためである。
+公式インストーラーは競合版を検出したうえで削除の可否を対話で確認し、非対話実行では削除しない側を選ぶ。
+競合版を検出した実行では、シェルの起動ファイルへPATH設定が追記される場合がある。
+起動ファイルはchezmoiの配布対象であるため、追記された内容は次回の`chezmoi apply`で配布内容へ戻る。
 
 ## Codex診断ログの通常ストレージ復元
 
@@ -266,7 +298,8 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 
 ## 特定ホストでの常駐サービス自動起動
 
-`euryale`でのみ、`chezmoi apply`後処理がsystemd user service`atk-serve.service`を配置して有効化する。
+対象は役割`linux_server`のホストであり、`.chezmoi-source/.chezmoidata.toml`が定める（現在は`euryale`）。
+このホストでのみ、`chezmoi apply`後処理がsystemd user service`atk-serve.service`を配置して有効化する。
 `atk serve`は「AWI」「計画ファイル」「セッション」の3画面を同じナビゲーションから提供する。
 
 - 待受はローカルのみで、ポート28766を使う
@@ -309,16 +342,17 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 
 ## euryaleでの上流更新の自動反映
 
-`euryale`でのみ、`chezmoi apply`後処理がsystemdユーザータイマー`dotfiles-autoupdate.timer`と、
+対象は役割`linux_server`のホストであり、`.chezmoi-source/.chezmoidata.toml`が定める（現在は`euryale`）。
+このホストでのみ、`chezmoi apply`後処理がsystemdユーザータイマー`dotfiles-autoupdate.timer`と、
 タイマーが起動するoneshot service`dotfiles-autoupdate.service`を配置して有効化する。
 
 - タイマーはsystemdユーザーマネージャーの起動から1分後に初回確認し、以後はserviceが終了してから10分ごとに再実行する
-- serviceは`scripts/update_dotfiles_if_upstream_changed.py`を実行する。
+- serviceは`libexec/update_dotfiles_if_upstream_changed.py`を実行する。
   このスクリプトは現在branchが`develop`で、upstreamが`origin/develop`であることを検証する。
   そのうえで`git ls-remote`から得た`origin/develop`のcommit IDをローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
   - commit IDが一致し未完了状態も無ければ、`update-dotfiles`を起動せず正常終了する
   - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する
-    - euryaleではユーザーが配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`はランチャーの引数ではなく、内部の`scripts/update_dotfiles.py`が`chezmoi apply`へ渡す
+    - euryaleではユーザーが配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`はランチャーの引数ではなく、内部の`libexec/update_dotfiles.py`が`chezmoi apply`へ渡す
   - 自動更新の判定から未完了状態の解除までを専用ロックで直列化する。作業ツリーのstash、resetおよびcleanは行わない。手動実行との重複は`update-dotfiles`の既存ロックへ委ねる
 - systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
   導入時に解決した`uv`の絶対パスとスクリプトの絶対パスを埋め込む。あわせて`Environment=PATH`を指定する
@@ -329,9 +363,9 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 - dotfilesの作業ツリーの未コミット差分は、`update-dotfiles`がpullの前に退避して後に復元する。ルート`mise.lock`の差分は保持せず破棄する。
   pullまたは復元が競合した場合は、元のcommitと未コミット内容を復旧用の参照へ保存して上流へ合わせる
 
-## Windowsの電源設定の最適化（dotfiles-setup）
+## Windowsの電源設定の最適化（optimize-power-settings）
 
-`dotfiles-setup`コマンドはWindows専用で、高速スタートアップとUSB selective suspendをまとめて無効化する。
+`optimize-power-settings`コマンドはWindows専用で、高速スタートアップとUSB selective suspendをまとめて無効化する。
 
 - 高速スタートアップ無効化: `HiberbootEnabled=0`レジストリ書き込みと`powercfg /hibernate off`を実行する
 - USB selective suspend無効化: 電源プラン層のAC・DC両系統と、per-device層（`SelectiveSuspendEnabled`と
@@ -387,19 +421,4 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 
 dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
 実行時に従う規範は`dotfiles-release`スキルであり、判定条件、評価の時点および実施手順は同スキルが定める。
-本節には日次リリースの自動実施を導入した経緯と根拠を記録する。
-
-判定の入力を`origin/develop`と`origin/master`の短縮OIDの比較だけとし、WIキューの状態を参照しない扱いは、2026年9月16日のユーザー指示による。
-廃止した条件では、WIキュー全体からそのセッションで固定した集合を除き、残った項目がすべて着手できないことを求めていた。
-この条件は「固定したAWIの全件が終端してからリリースする」目的を守るためのものだった。
-`agent-toolkit:process-wi`では公開工程を全レーンの終端後に実施するため、条件を廃止してもこの目的は失われない。
-一方、廃止した条件は共有キューの現在状態を入力としていた。
-この状態はprocess-wiの1回の実行の進行中に`agent-toolkit:session-review`、並行セッションおよびユーザーが投入する項目で増減する。
-増減した項目は、そのセッションの成果と因果を持たない。
-それでも、セッションの成果の完成度とは無関係にリリースが止まった。
-2026年9月16日のprocess-wiの実行では、選定時点のdotfiles宛の`inbox`が4件だったのに対し、レーンの統合が終わる時点では17件になっていた。
-
-2026年9月15日には、同じ原因に対処するため、廃止した条件の評価時点を公開工程から選定工程の完了へ前倒ししていた。
-この是正では入力を取得する時点だけが早まった。入力がセッションの外側から変わる性質は残っていた。
-
-auto-merge、マージ失敗後の自動再試行および自動rollbackを導入しない扱いは、[developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)が記録するユーザー指示による。
+導入の経緯と根拠は[concepts-workflows.md](concepts-workflows.md)の「developとmasterのリリース運用」にある。

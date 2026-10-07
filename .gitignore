@@ -5,6 +5,7 @@
 /.chezmoi-source/.chezmoi*.toml
 !/.chezmoiignore
 !/.chezmoi-source/.chezmoiignore
+!/.chezmoi-source/.chezmoidata.toml
 
 # 編集ターン整形用の Claude Code hook マーカーと、ローカル上書き設定
 /.claude/.format-dirty

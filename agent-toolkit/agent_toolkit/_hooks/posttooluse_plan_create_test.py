@@ -2,8 +2,8 @@
 
 import pathlib
 
+from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._hooks import posttooluse
-from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 
 
 def test_run_script_plan_create_records_current_plan_file_path(

@@ -47,8 +47,10 @@ def main() -> int:
                 f"`codex plugin add {_PLUGIN_ID}`で導入し、Codexの設定でpluginを有効にしてからCodexを再起動する",
             )
         item = matches[0]
+        # plugin環境の外で起動し`agent_toolkit`をimportできないため、`agent_toolkit._common.host_homes.codex_home`と
+        # 同じ規則（空の`CODEX_HOME`は未設定として扱う）を式で保つ。
         plugin_root = (
-            Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+            Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
             / "plugins" / "cache" / item["marketplaceName"] / item["name"] / item["version"]
         )
         hook = plugin_root / "agent_toolkit" / "hook.py"

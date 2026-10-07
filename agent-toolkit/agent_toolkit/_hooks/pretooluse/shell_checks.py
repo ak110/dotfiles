@@ -1,5 +1,3 @@
-# ruff: noqa: F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
 r"""PreToolUse統合フックのうち、Bashコマンドを遮断する条件の判定。"""
 
 from __future__ import annotations
@@ -12,32 +10,49 @@ from collections.abc import (
     Iterable,
     Sequence,
 )
-from typing import TYPE_CHECKING
 
-
-from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    BashInvocation,
-    _GLOBAL_OPTIONS_WITH_VALUE,
-    _GLOBAL_OPTIONS_WITHOUT_VALUE,
-    extract_bash_invocations,
-    heredoc_command_substitutions,
-    mask_heredoc_bodies,
-    split_bash_segments,
-)
-from agent_toolkit._common.shell_tokens import strip_redirections
+from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations, heredoc_command_substitutions
+from agent_toolkit._common.heredocs import mask_heredoc_bodies
 from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
+from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
+from agent_toolkit._common.shell_tokens import strip_redirections
+from agent_toolkit._hooks.notice import _WARN_TAG
+from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+
+_GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
+    {
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree",
+        "--namespace",
+        "--super-prefix",
+        "--config-env",
+        "--list-cmds",
+    }
+)
 
 
-if TYPE_CHECKING:
-    from agent_toolkit._hooks.pretooluse.dispatch import (
-        _ExecutionSegment,
-        _extract_execution_segments,
-    )
-    from agent_toolkit._hooks.pretooluse.notices import (
-        _block_notice,
-        _llm_notice,
-    )
-    from agent_toolkit._hooks.notice import _WARN_TAG
+_GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
+    {
+        "--no-pager",
+        "-p",
+        "--paginate",
+        "--bare",
+        "--no-replace-objects",
+        "--literal-pathspecs",
+        "--glob-pathspecs",
+        "--noglob-pathspecs",
+        "--icase-pathspecs",
+        "--no-optional-locks",
+        "--exec-path",
+        "--html-path",
+        "--man-path",
+        "--info-path",
+        "--help",
+        "--version",
+    }
+)
 
 
 # --- Bash: パターン一致によるプロセス終了の検出 ---
@@ -193,7 +208,7 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
     if _has_active_process_kill_syntax(segment):
         return True
     if command_name == "git":
-        parsed_segments = _extract_execution_segments(segment)
+        parsed_segments = extract_execution_segments(segment)
         if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
             return True
         subcommand = _git_subcommand_tokens(parsed_segments[0])
@@ -221,7 +236,7 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
     return not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens[1:])
 
 
-def _check_bash_process_kill_by_pattern(command: str) -> bool:
+def _check_bash_process_kill_by_pattern(command: str) -> str | None:
     """`pkill`・`killall`等パターン指定によるプロセス終了をブロックする。
 
     対象の所有権を確認できないパターン一致の一括終了は他者のプロセスを停止する危険があるため禁止する。
@@ -231,22 +246,18 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
     """
     matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
     if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):
-        return False
-    print(
-        _block_notice(
-            "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
-            fix=(
-                "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"
-                "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
-                "`p[k]ill`のように文字クラスで書く。"
-            ),
+        return None
+    return _block_notice(
+        "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
+        fix=(
+            "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"
+            "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
+            "`p[k]ill`のように文字クラスで書く。"
         ),
-        file=sys.stderr,
     )
-    return True
 
 
-def _git_subcommand_tokens(segment: _ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
+def _git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
     """`git`区間のサブコマンド名と、そのサブコマンド以降の引数を返す。"""
     if not segment.resolved or not segment.tokens:
         return None
@@ -524,13 +535,13 @@ def _pattern_command_slot(arguments: Sequence[str]) -> set[int]:
     return {terminator + 1}
 
 
-def _check_bash_option_after_terminator(command: str) -> bool:
+def _check_bash_option_after_terminator(command: str) -> str | None:
     """オプション終端`--`の後ろへCLI自身のオプションを置いたコマンドを遮断する。
 
     `--`の後ろは全てデータとして扱われるため、後ろへ置いた`--glob`などは`rg`・`grep`系・`git grep`では
     存在しないパスとして失敗し、`git log`・`git diff`・`git show`ではエラーを出力せずにパス指定として扱われ、誤った結果を返す。
     条文で配置を定めた後も同じ誤りが反復したため、実行の直前に判定する。
-    遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
+    遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
     外側に所属する既知の引数だけを判定し、置換内の語と展開結果が未確定の引数はオプションとして扱わない。
     遮断で失うのはコマンド1回の発行だけである。
     `rg`・`grep`系と`git grep`では、`-e`・`-f`を`--`より前に置かない場合に`--`の直後を検索パターンとみなして除くため、
@@ -559,20 +570,16 @@ def _check_bash_option_after_terminator(command: str) -> bool:
             label = f"git {subcommand[0]}"
         if not found:
             continue
-        print(
-            _block_notice(
-                f"blocked: `{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
-                "`--`の後ろは全てデータとして扱われるため、これらはオプションではなくパスとして解釈され、"
-                "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
-                fix=(
-                    "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"
-                    "`-`で始まるパスを渡す場合は`./`を前置する。"
-                ),
+        return _block_notice(
+            f"blocked: `{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
+            "`--`の後ろは全てデータとして扱われるため、これらはオプションではなくパスとして解釈され、"
+            "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
+            fix=(
+                "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"
+                "`-`で始まるパスを渡す場合は`./`を前置する。"
             ),
-            file=sys.stderr,
         )
-        return True
-    return False
+    return None
 
 
 # --- Bash: atkの結果を受領できない出力接続 ---
@@ -598,7 +605,7 @@ def _is_atk_resident_display(tokens: tuple[str, ...]) -> bool:
     )
 
 
-def _check_bash_atk_output_loss(command: str) -> bool:
+def _check_bash_atk_output_loss(command: str) -> str | None:
     """静的に確定したatkの出力のパイプとリダイレクト、waitの背景化を遮断する。
 
     `atk`はエージェント環境で短い出力を直接表示し、長い出力を自ら保存して保存先を示す。
@@ -624,21 +631,17 @@ def _check_bash_atk_output_loss(command: str) -> bool:
         if not causes:
             continue
         label = "atk agents wait" if is_wait else "atk"
-        print(
-            _block_notice(
-                f"blocked: `{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
-                fix=(
-                    "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
-                    "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読む。"
-                    "`atk agents wait`は`&`も外して単独で発行する。"
-                    "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領する。"
-                    "保存した本文の選別は別の呼び出しで行う。"
-                ),
+        return _block_notice(
+            f"blocked: `{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
+            fix=(
+                "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
+                "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読む。"
+                "`atk agents wait`は`&`も外して単独で発行する。"
+                "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領する。"
+                "保存した本文の選別は別の呼び出しで行う。"
             ),
-            file=sys.stderr,
         )
-        return True
-    return False
+    return None
 
 
 # --- Bash: 区切り語を引用しないheredocの本文にあるコマンド置換 ---
@@ -647,7 +650,7 @@ _HEREDOC_SUBSTITUTION_DISPLAY_LIMIT = 120
 """通知へ載せる置換1件あたりの最大文字数。置換の範囲を特定できる長さに収め、文脈の占有を抑える。"""
 
 
-def _check_bash_unquoted_heredoc_substitution(command: str) -> bool:
+def _check_bash_unquoted_heredoc_substitution(command: str) -> str | None:
     """区切り語を引用しないheredocの本文にある、エスケープされていないコマンド置換を遮断する。
 
     bashは区切り語を引用しないheredoc（`<<EOF`・`<<-EOF`）の本文を展開し、本文のバッククォートと`$(...)`の中の
@@ -655,29 +658,25 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> bool:
     外部への保存、プロセスの終了、ファイルの上書きなど復元できない結果が残るため、実行前に遮断する。
     判定はコマンド文字列だけから確定し、遮断された主体は区切り語の引用、事前の変数代入またはエスケープへ
     書き直して同じターンで再実行できる。遮断とする根拠は`agent-toolkit:writing-standards`の
-    `references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
-    本文の範囲と展開の有無は`bash_command_parser.heredoc_bodies`の1つの定義から得る。
+    `references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
+    本文の範囲と展開の有無は`agent_toolkit._common.heredocs.heredoc_bodies`の1つの定義から得る。
     """
     found = heredoc_command_substitutions(command)
     if not found:
-        return False
+        return None
     shown = "、".join(
         f"「{text if len(text) <= _HEREDOC_SUBSTITUTION_DISPLAY_LIMIT else text[:_HEREDOC_SUBSTITUTION_DISPLAY_LIMIT] + '…'}」"
         for text in found
     )
-    print(
-        _block_notice(
-            f"blocked: 区切り語を引用しないヒアドキュメントの本文にコマンド置換（{shown}）がある。"
-            "`bash`はこの本文を展開し、置換の中のコマンドを実行する。",
-            fix=(
-                "本文をそのまま書く場合は区切り語を引用する（`<<'EOF'`）。"
-                "置換の結果を本文へ入れる場合は、事前に変数へ代入して本文では`$VAR`で参照する。"
-                "リテラルのバッククォートと`$(`は直前に`\\`を置いてエスケープする（「\\`」・「\\$(」）。"
-            ),
+    return _block_notice(
+        f"blocked: 区切り語を引用しないヒアドキュメントの本文にコマンド置換（{shown}）がある。"
+        "`bash`はこの本文を展開し、置換の中のコマンドを実行する。",
+        fix=(
+            "本文をそのまま書く場合は区切り語を引用する（`<<'EOF'`）。"
+            "置換の結果を本文へ入れる場合は、事前に変数へ代入して本文では`$VAR`で参照する。"
+            "リテラルのバッククォートと`$(`は直前に`\\`を置いてエスケープする（「\\`」・「\\$(」）。"
         ),
-        file=sys.stderr,
     )
-    return True
 
 
 # --- Bash: WindowsのGit BashでPATHへ加えるドライブ文字形式の要素の検出 ---
@@ -737,7 +736,7 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
     意図したディレクトリが検索されない。その結果を根拠に結論を下す前に気付けるよう、実行の直前に判定する。
 
     判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
-    「遮断・警告フックの成立条件」にある。誤ったPATHはコマンドを失敗させずに誤った結果を返し、
+    「遮断と警告の選択」にある。誤ったPATHはコマンドを失敗させずに誤った結果を返し、
     その結果が誤った結論の根拠になる。判定はコマンド文字列から機械的に確定でき、実行を止めないため誤検出の費用も小さい。
     影響はそのコマンドのプロセス環境に閉じ、正しい形式で再実行すれば是正できるため遮断はしない。
     反復しても母集団の欠落や工程の停止を招かないため、反復時の昇格もしない。
@@ -751,7 +750,7 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
         return None
     assigned: dict[str, str] = {}
     found: list[str] = []
-    for segment in _extract_execution_segments(command):
+    for segment in extract_execution_segments(command):
         for name, value in _segment_assignments(segment.raw_tokens):
             if name == "PATH":
                 found.extend(_drive_letter_path_elements(value, assigned))

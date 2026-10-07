@@ -1,0 +1,1675 @@
+// ワークアイテム画面。キューの一覧・詳細・登録・編集・状態遷移を扱う。
+import {
+  BASE_PATH, connectEvents, renderList, renderWarnings, resyncWhenVisible
+} from "./common.js";
+import {registerScreen} from "./shell.js";
+
+// エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
+const KIND_LABELS = {awi: 'awi', uwi: 'uwi', unknown: 'unknown'};
+const STATE_LABELS = {
+  inbox: 'inbox', processing: 'processing', hold: 'hold',
+  adopted: 'adopted', rejected: 'rejected'
+};
+const PROCESSABLE_STATES = new Set(['inbox', 'processing']);
+const MUTABLE_STATES = new Set(['inbox', 'processing', 'hold']);
+const TERMINAL_STATES = new Set(['adopted', 'rejected']);
+const DELETABLE_STATES = new Set(['inbox', 'processing', 'hold', 'adopted', 'rejected']);
+const SEARCH_FALLBACK_MAX_RESULTS = 5;
+const SEARCH_FALLBACK_NOTICE =
+  '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
+  'フィルターの選択値は変更していません。';
+const ENTRY_PAGE_SIZE = 100;
+const TARGET_REPO_DISPLAY_LENGTH = 20;
+const FRONTMATTER_EXCLUDED_KEYS = new Set(['type', 'origin_session', 'origin_locator']);
+
+let entries = [];
+let currentEntry = null;
+let detailOrigin = null;
+let detailOriginKey = '';
+let detailRequestGeneration = 0;
+let detailSessionGeneration = 0;
+let listRequestGeneration = 0;
+let targetRepoRequestGeneration = 0;
+let knownUwiRequestGeneration = 0;
+let listLoadingVisible = false;
+let listRequestPending = false;
+let detailRequestPending = false;
+let userListOperationGeneration = 0;
+let userListOperationPending = false;
+let externalListReloadPending = false;
+let pendingListAnnouncement = false;
+let detailRefreshRequired = false;
+// 詳細ダイアログから送信した変更操作の応答を待つ間か、その間に詳細の再読込を保留したか。
+let detailMutationPending = false;
+let detailReloadDeferred = false;
+let deleteDialogEntrySnapshot = '';
+let searchTimer = null;
+let currentPage = 1;
+let pagination = {page: 1, page_size: ENTRY_PAGE_SIZE, page_count: 1, total_count: 0};
+let knownUwiBaselineReady = false;
+const knownUwiFilenames = new Set();
+const pendingOperations = new Set();
+const dialogOrigins = new Map();
+const dialogStack = [];
+let refreshFocusRequested = false;
+let noticeTimer = null;
+let noticeOrigin = null;
+let lastFocusedElement = null;
+
+const byId = id => document.getElementById(id);
+const entryKey = entry => entry ? `${entry.state}/${entry.filename}` : '';
+const isPlainPrimaryClick = event =>
+  event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+const deleteEntrySnapshot = entry => entry ? JSON.stringify([
+  entryKey(entry), entry.content, entry.target_repo || '', entry.summary || ''
+]) : '';
+
+async function api(path, options = {}) {
+  const request = {
+    ...options,
+    headers: {'Content-Type': 'application/json', ...(options.headers || {})}
+  };
+  const response = await fetch(BASE_PATH + path, request);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || response.statusText || '通信に失敗しました。');
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+function setTextMessage(id, message) {
+  const element = byId(id);
+  element.textContent = message;
+  element.hidden = !message;
+}
+
+function setGlobalError(message) {
+  refreshFocusRequested = false;
+  if (message) showToast(message, true);
+  else closeOperationNotice();
+}
+
+function focusRefreshButton() {
+  const refreshButton = byId('refresh-button');
+  if (refreshButton.disabled) {
+    refreshFocusRequested = true;
+    return;
+  }
+  refreshFocusRequested = false;
+  refreshButton.focus();
+}
+
+function restoreRefreshFocus() {
+  if (!refreshFocusRequested) return;
+  const refreshButton = byId('refresh-button');
+  if (refreshButton.disabled) return;
+  refreshFocusRequested = false;
+  refreshButton.focus();
+}
+
+function clearDialogMessages(dialogName) {
+  setTextMessage(`${dialogName}-alert`, '');
+  setTextMessage(`${dialogName}-status`, '');
+}
+
+function showToast(message, isError = false) {
+  const notice = byId('operation-notice');
+  clearTimeout(noticeTimer);
+  noticeOrigin = isError && pendingOperations.has('sync') ? byId('refresh-button') :
+    (document.activeElement === document.body ? lastFocusedElement : document.activeElement);
+  byId('operation-notice-message').textContent = message;
+  notice.dataset.error = String(isError);
+  notice.setAttribute('role', isError ? 'alert' : 'status');
+  notice.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+  notice.hidden = false;
+  if (!isError) noticeTimer = setTimeout(() => { notice.hidden = true; }, 6000);
+}
+
+function closeOperationNotice() {
+  clearTimeout(noticeTimer);
+  byId('operation-notice').hidden = true;
+  const returnTarget = noticeOrigin?.isConnected && !noticeOrigin.disabled ? noticeOrigin : byId('refresh-button');
+  if (returnTarget === byId('refresh-button')) focusRefreshButton();
+  else returnTarget.focus();
+  noticeOrigin = null;
+}
+
+function topmostDialog() {
+  for (let index = dialogStack.length - 1; index >= 0; index -= 1) {
+    const dialog = byId(dialogStack[index]);
+    if (dialog && dialog.open) return dialog;
+  }
+  return null;
+}
+
+function deliverOperationMessage(message, isError = false) {
+  const dialog = topmostDialog();
+  if (!dialog) {
+    showToast(message, isError);
+    return;
+  }
+  // モーダルはtop layerへ描画され、ページ固定の通知は`::backdrop`の下へ入り、暗転して操作も受け付けない。
+  // 開いているダイアログがあるときは、そのダイアログ内の結果表示領域へ配送する。
+  const name = dialog.id.replace(/-dialog$/, '');
+  setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
+  setTextMessage(`${name}-${isError ? 'status' : 'alert'}`, '');
+}
+
+function openDialog(dialog, origin, focusTarget) {
+  dialogOrigins.set(dialog.id, origin || document.activeElement);
+  const previous = dialogStack.indexOf(dialog.id);
+  if (previous >= 0) dialogStack.splice(previous, 1);
+  dialogStack.push(dialog.id);
+  dialog.showModal();
+  if (focusTarget) focusTarget.focus();
+}
+
+function openDetailDialog(origin) {
+  const body = byId('detail-dialog-body');
+  openDialog(byId('detail-dialog'), origin, body);
+  body.scrollTop = 0;
+}
+
+function closeDialog(dialog, {restoreFocus = true} = {}) {
+  const wasOpen = dialog.open;
+  if (wasOpen) dialog.close();
+  const index = dialogStack.lastIndexOf(dialog.id);
+  if (index >= 0) dialogStack.splice(index, 1);
+  const origin = dialogOrigins.get(dialog.id);
+  dialogOrigins.delete(dialog.id);
+  if (wasOpen && restoreFocus && origin && typeof origin.focus === 'function') origin.focus();
+}
+
+function setFieldError(input, errorElement, message) {
+  input.setAttribute('aria-invalid', message ? 'true' : 'false');
+  errorElement.textContent = message;
+  errorElement.hidden = !message;
+}
+
+function firstInvalid(inputs) {
+  const invalid = inputs.find(input => input.getAttribute('aria-invalid') === 'true');
+  if (invalid) invalid.focus();
+  return invalid;
+}
+
+async function runPending(key, {container, button, busyLabel}, operation) {
+  if (pendingOperations.has(key)) return undefined;
+  pendingOperations.add(key);
+  const controls = Array.from(container.querySelectorAll('input, select, textarea, button'))
+    .filter(control => !control.classList.contains('dialog-close'));
+  const previous = controls.map(control => control.disabled);
+  const originalLabel = button.textContent;
+  controls.forEach(control => { control.disabled = true; });
+  button.disabled = true;
+  button.textContent = busyLabel;
+  button.classList.add('is-pending');
+  button.setAttribute('aria-busy', 'true');
+  container.setAttribute('aria-busy', 'true');
+  const restorePendingState = () => {
+    controls.forEach((control, index) => { control.disabled = previous[index]; });
+    button.textContent = originalLabel;
+    button.classList.remove('is-pending');
+    button.setAttribute('aria-busy', 'false');
+    container.setAttribute('aria-busy', 'false');
+    pendingOperations.delete(key);
+  };
+  try {
+    return await Promise.resolve().then(operation);
+  } finally {
+    restorePendingState();
+    syncFilterDependencies();
+    syncDetailMutationAvailability();
+    restoreRefreshFocus();
+  }
+}
+
+function formatDateParts(value) {
+  if (!value) return {date: '—', time: ''};
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return {date: String(value), time: ''};
+  const parts = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(date);
+  const part = type => parts.find(item => item.type === type)?.value || '';
+  return {date: `${part('year')}/${part('month')}/${part('day')}`, time: `${part('hour')}:${part('minute')}`};
+}
+
+function kindLabel(kind) { return KIND_LABELS[kind] || '種別不明'; }
+function stateLabel(state) { return STATE_LABELS[state] || state || '不明'; }
+// 反映後の観測だけが残るinboxのawiは、保存状態をinboxのまま、表示だけをneeds-verifyにする。
+// 状態フィルター・件数・操作の可否は保存状態で判定する。
+function displayStateLabel(entry) {
+  return entry.needs_verify === true ? 'needs-verify' : STATE_LABELS[entry.state] || 'unknown';
+}
+function entryStateText(entry) {
+  return `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${displayStateLabel(entry)}`;
+}
+
+function appendCell(row, className) {
+  const cell = document.createElement('span');
+  cell.className = `entry-cell ${className}`;
+  row.append(cell);
+  return cell;
+}
+
+function appendTextCell(row, className, value) {
+  const cell = appendCell(row, className);
+  cell.textContent = value || '—';
+  return cell;
+}
+
+function targetRepoDisplay(value) {
+  if (!value || value.length <= TARGET_REPO_DISPLAY_LENGTH) return value || '—';
+  const prefixLength = Math.floor((TARGET_REPO_DISPLAY_LENGTH - 1) / 2);
+  const suffixLength = TARGET_REPO_DISPLAY_LENGTH - prefixLength - 1;
+  return `${value.slice(0, prefixLength)}…${value.slice(-suffixLength)}`;
+}
+
+function entryPageUrl(entry) {
+  const query = new URLSearchParams({state: entry.state, filename: entry.filename});
+  return `${BASE_PATH}/?${query.toString()}`;
+}
+
+function entrySelectionFromUrl() {
+  const currentLocation = globalThis.location;
+  if (!currentLocation || currentLocation.pathname !== `${BASE_PATH}/`) return null;
+  const query = new URLSearchParams(currentLocation.search);
+  const state = query.get('state');
+  const filename = query.get('filename');
+  return state && filename ? {state, filename} : null;
+}
+
+// 一覧は再読込のたびに全行を再生成するため、コピー直後の表示は行の要素ではなく項目の識別子に対応付けて保持する。
+const COPIED_LABEL_MS = 2000;
+const copiedLabelDeadlines = new Map();
+
+function renderEntry(entry) {
+  const item = document.createElement('li');
+  item.className = 'entry-row';
+  const button = document.createElement('a');
+  button.href = entryPageUrl(entry);
+  button.className = 'entry-select';
+  button.dataset.key = entryKey(entry);
+  button.dataset.kind = entry.kind || 'unknown';
+  const unanswered = entry.kind === 'uwi' && entry.answered === false;
+  button.dataset.unansweredUwi = String(unanswered);
+  button.setAttribute('aria-current', String(entryKey(currentEntry) === entryKey(entry)));
+
+  appendTextCell(button, 'filename-cell', entry.filename);
+  const targetRepo = appendTextCell(button, 'target-repo-cell', targetRepoDisplay(entry.target_repo));
+  if (entry.target_repo) {
+    targetRepo.title = entry.target_repo;
+    targetRepo.setAttribute('aria-label', `target-repo: ${entry.target_repo}`);
+  }
+  const status = appendCell(button, 'status-cell');
+  const kind = document.createElement('span');
+  kind.className = 'entry-kind';
+  kind.textContent = KIND_LABELS[entry.kind] || KIND_LABELS.unknown;
+  status.append(kind);
+  const badge = document.createElement('span');
+  badge.className = 'state-badge';
+  badge.dataset.state = entry.state;
+  badge.dataset.needsVerify = String(entry.needs_verify === true);
+  badge.textContent = displayStateLabel(entry);
+  status.append(badge);
+  if (entry.plan) {
+    const plan = document.createElement('span');
+    plan.className = 'plan-badge';
+    plan.textContent = 'plan';
+    status.append(plan);
+  }
+  if (unanswered) {
+    const attention = document.createElement('span');
+    attention.className = 'attention-badge';
+    attention.textContent = '未回答';
+    status.append(attention);
+  }
+  appendTextCell(button, 'summary-cell', entry.summary || entry.filename);
+  button.setAttribute(
+    'aria-label',
+    [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
+      displayStateLabel(entry),
+      entry.plan ? 'plan' : '',
+      unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
+  );
+  button.addEventListener('click', event => {
+    if (!isPlainPrimaryClick(event) || button.target) return;
+    event.preventDefault();
+    history.pushState({atkEntry: true}, '', button.href);
+    void selectEntry(entry, button);
+  });
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'entry-copy button-secondary';
+  const key = entryKey(entry);
+  copy.dataset.key = key;
+  copy.textContent = (copiedLabelDeadlines.get(key) ?? 0) > Date.now() ? 'コピーしました' : 'コピー';
+  copy.setAttribute('aria-label', `${entry.filename}の要約をコピー`);
+  copy.addEventListener('click', async () => {
+    try {
+      await (navigator.clipboard.writeText(`${entry.filename} ${entry.summary || ''}`));
+      const deadline = Date.now() + COPIED_LABEL_MS;
+      copiedLabelDeadlines.set(key, deadline);
+      copy.textContent = 'コピーしました';
+      byId('result-status').textContent = `${entry.filename}をコピーしました。`;
+      setTimeout(() => {
+        // 同じ項目を再度コピーした場合は、後のクリックの期限で戻す。
+        if (copiedLabelDeadlines.get(key) !== deadline) return;
+        copiedLabelDeadlines.delete(key);
+        const current = document.querySelector(`#entry-list .entry-copy[data-key="${CSS.escape(key)}"]`);
+        if (current) current.textContent = 'コピー';
+      }, COPIED_LABEL_MS);
+    } catch (error) {
+      setGlobalError(`コピーに失敗しました。 ${error.message}`);
+    }
+  });
+  item.append(button, copy);
+  return item;
+}
+
+// 期間の初期値と「条件をクリア」後の値。古いWIを確認する場面は少ないため直近2週間とする。
+// 期間は状態と同じく常に選ばれている条件であり、空の一覧の文言で範囲を示す。
+const DEFAULT_PERIOD = '2w';
+const PERIOD_LABELS = {'2w': '直近2週間', '4w': '直近4週間', '8w': '直近8週間'};
+
+function hasNonStateFilters() {
+  return byId('search-input').value !== '' ||
+    byId('kind-filter').value !== 'all' ||
+    byId('answer-filter').value !== 'all' ||
+    byId('target-filter').value !== '' ||
+    byId('source-filter').value !== '';
+}
+
+function renderEmptyState() {
+  const empty = byId('empty-state');
+  const message = byId('empty-state-message');
+  const clear = byId('empty-clear-button');
+  const allStates = byId('empty-all-states-button');
+  const allPeriods = byId('empty-all-periods-button');
+  const create = byId('empty-create-button');
+  empty.hidden = entries.length !== 0;
+  clear.hidden = true;
+  allStates.hidden = true;
+  allPeriods.hidden = true;
+  create.hidden = true;
+  if (entries.length) return;
+  const periodLabel = PERIOD_LABELS[byId('period-filter').value];
+  if (hasNonStateFilters() || !['active', 'all'].includes(byId('state-filter').value)) {
+    message.textContent = '条件に一致する項目はありません。';
+    clear.hidden = false;
+  } else if (byId('state-filter').value === 'active') {
+    message.textContent = periodLabel ? `${periodLabel}に作成された対応中の項目はありません。` : '対応中の項目はありません。';
+    allStates.hidden = false;
+    allPeriods.hidden = !periodLabel;
+  } else if (periodLabel) {
+    message.textContent = `${periodLabel}に作成された項目はありません。`;
+    allPeriods.hidden = false;
+  } else {
+    message.textContent = '項目はまだありません。';
+    create.hidden = false;
+  }
+}
+
+// 行は項目のクロージャーを持つため、再利用せずに毎回作り直す。
+function renderEntries(warnings = [], announce = false, searchFallback = false) {
+  const list = byId('entry-list');
+  const focusedKey = document.activeElement?.classList?.contains('entry-select')
+    ? document.activeElement.dataset.key : null;
+  renderList(list, entries, entryKey, entry => renderEntry(entry));
+  if (focusedKey) {
+    (entryButtonForKey(focusedKey) || list.querySelector('.entry-select') || byId('empty-clear-button')).focus();
+  }
+  const unanswered = entries.filter(entry => entry.kind === 'uwi' && entry.answered === false).length;
+  byId('entry-count').textContent = `${entries.length}件（未回答UWI ${unanswered}件）`;
+  // フィルター欄を折りたたむ狭い幅でも、一覧が期間で限られていることを見出しの近くで示す。
+  const periodLabel = PERIOD_LABELS[byId('period-filter').value];
+  byId('entry-period').textContent = periodLabel ? `${periodLabel}に作成` : '';
+  byId('entry-period').hidden = !periodLabel;
+  renderPagination();
+  setTextMessage('list-fallback-notice', searchFallback ? SEARCH_FALLBACK_NOTICE : '');
+  renderWarnings(byId('list-warning'), warnings.length
+    ? [`一覧から除外したファイル: ${warnings.map(item => `${item.filename}（${item.reason}）`).join('、')}`]
+    : []);
+  renderEmptyState();
+  if (announce) {
+    byId('result-status').textContent = entries.length ? `${entries.length}件を表示` : '一致する項目はありません';
+  }
+}
+
+function buildQuery(page = currentPage) {
+  const parameters = new URLSearchParams();
+  parameters.set('type', byId('kind-filter').value);
+  parameters.set('status', byId('state-filter').value);
+  parameters.set('answered', byId('answer-filter').value);
+  parameters.set('period', byId('period-filter').value);
+  const values = {
+    target_repo: byId('target-filter').value,
+    source_kind: byId('source-filter').value,
+    q: byId('search-input').value.trim()
+  };
+  Object.entries(values).forEach(([name, value]) => { if (value) parameters.set(name, value); });
+  parameters.set('page', String(page));
+  return parameters;
+}
+
+function hasSearchFallbackFilters(query) {
+  return query.get('type') !== 'all' || query.get('status') !== 'all' ||
+    query.get('answered') !== 'all' || query.get('period') !== 'all' ||
+    query.has('target_repo') || query.has('source_kind');
+}
+
+function captureListLoadingView() {
+  return {
+    indicator: byId('loading-indicator'),
+    list: byId('entry-list'),
+    previous: byId('previous-page-button'),
+    next: byId('next-page-button'),
+    status: byId('pagination-status')
+  };
+}
+
+function renderListLoading(view = captureListLoadingView()) {
+  view.indicator.hidden = !(listLoadingVisible || userListOperationPending || detailRequestPending);
+  view.list.setAttribute('aria-busy', String(listRequestPending || userListOperationPending));
+  renderPagination(view);
+}
+
+function beginUserListOperation() {
+  userListOperationPending = true;
+  renderListLoading();
+  return ++userListOperationGeneration;
+}
+
+function endUserListOperation(generation) {
+  if (generation !== userListOperationGeneration) return;
+  userListOperationPending = false;
+  renderListLoading();
+  if (externalListReloadPending) {
+    externalListReloadPending = false;
+    void reloadFromExternalChange();
+  }
+}
+
+function isCurrentUserListOperation(generation) {
+  return generation === userListOperationGeneration;
+}
+
+function cancelSearchTimer() {
+  if (searchTimer !== null) clearTimeout(searchTimer);
+  searchTimer = null;
+}
+
+function beginListRequest(view, showLoading = true) {
+  listRequestPending = true;
+  listLoadingVisible = listLoadingVisible || showLoading;
+  renderListLoading(view);
+}
+
+function endListRequest(view, generation) {
+  if (generation !== listRequestGeneration) return;
+  listLoadingVisible = false;
+  listRequestPending = false;
+  renderListLoading(view);
+}
+
+function renderPagination(view = captureListLoadingView()) {
+  const {previous, next, status} = view;
+  if (!previous || !next || !status) return;
+  const page = pagination.page || currentPage;
+  const pageCount = pagination.page_count || 1;
+  status.textContent = `ページ ${page} / ${pageCount}（全${pagination.total_count}件）`;
+  previous.disabled = listRequestPending || userListOperationPending || page <= 1;
+  next.disabled = listRequestPending || userListOperationPending || page >= pageCount;
+  previous.setAttribute('aria-label', `前のページ（現在${page}ページ）`);
+  next.setAttribute('aria-label', `次のページ（現在${page}ページ）`);
+}
+
+async function movePage(offset) {
+  const targetPage = Math.min(
+    Math.max(1, currentPage + offset),
+    pagination.page_count || 1
+  );
+  if (targetPage === currentPage) return;
+  currentPage = targetPage;
+  await (loadEntries({announce: true}));
+}
+
+function applyPagination(payload) {
+  const metadata = payload.pagination;
+  if (metadata && Number.isInteger(metadata.page) && metadata.page > 0 &&
+      Number.isInteger(metadata.page_count) && metadata.page_count > 0 &&
+      Number.isInteger(metadata.total_count) && metadata.total_count >= 0) {
+    pagination = {
+      page: metadata.page,
+      page_size: Number.isInteger(metadata.page_size) && metadata.page_size > 0
+        ? metadata.page_size : ENTRY_PAGE_SIZE,
+      page_count: metadata.page_count,
+      total_count: metadata.total_count
+    };
+    currentPage = metadata.page;
+    return;
+  }
+  const totalCount = Array.isArray(payload.entries) ? payload.entries.length : 0;
+  pagination = {
+    page: currentPage,
+    page_size: ENTRY_PAGE_SIZE,
+    page_count: Math.max(1, Math.ceil(totalCount / ENTRY_PAGE_SIZE)),
+    total_count: totalCount
+  };
+}
+
+async function loadEntries({announce = false, showLoading = true} = {}) {
+  pendingListAnnouncement = pendingListAnnouncement || announce;
+  const query = buildQuery(currentPage);
+  const searchTerm = query.get('q') || '';
+  const canSearchFallback = searchTerm !== '' && hasSearchFallbackFilters(query);
+  const generation = ++listRequestGeneration;
+  const loadingView = captureListLoadingView();
+  beginListRequest(loadingView, showLoading);
+  const pending = (async () => {
+    try {
+      const payload = await api(`/api/entries?${query.toString()}`);
+      if (generation !== listRequestGeneration) return entries;
+      const initialEntries = Array.isArray(payload.entries) ? payload.entries : [];
+      let selectedPayload = payload;
+      let searchFallback = false;
+      let fallbackError = null;
+      if (canSearchFallback && initialEntries.length === 0) {
+        try {
+          const fallbackQuery = new URLSearchParams({q: searchTerm, page: String(currentPage)});
+          const fallbackPayload = await api(`/api/entries?${fallbackQuery.toString()}`);
+          if (generation !== listRequestGeneration) return entries;
+          const fallbackEntries = Array.isArray(fallbackPayload.entries) ? fallbackPayload.entries : [];
+          if (fallbackEntries.length > 0 && fallbackEntries.length <= SEARCH_FALLBACK_MAX_RESULTS) {
+            selectedPayload = fallbackPayload;
+            searchFallback = true;
+          }
+        } catch (error) {
+          fallbackError = error;
+        }
+      }
+      if (generation !== listRequestGeneration) return entries;
+      entries = Array.isArray(selectedPayload.entries) ? selectedPayload.entries : [];
+      applyPagination(selectedPayload);
+      const selected = entries.find(item => entryKey(item) === entryKey(currentEntry));
+      if (selected) currentEntry = {...currentEntry, ...selected};
+      const shouldAnnounce = pendingListAnnouncement;
+      pendingListAnnouncement = false;
+      renderEntries(
+        Array.isArray(selectedPayload.warnings) ? selectedPayload.warnings : [],
+        shouldAnnounce,
+        searchFallback
+      );
+      if (fallbackError) setGlobalError(fallbackError.message);
+      return entries;
+    } catch (error) {
+      if (generation === listRequestGeneration) {
+        pendingListAnnouncement = false;
+        setGlobalError(error.message);
+      }
+      return entries;
+    }
+  })();
+  return pending.finally(() => endListRequest(loadingView, generation));
+}
+
+function syncNotificationButton() {
+  const button = byId('notification-button');
+  button.hidden = typeof Notification === 'undefined' || Notification.permission !== 'default';
+}
+
+async function refreshKnownUwis({notify = false} = {}) {
+  const generation = ++knownUwiRequestGeneration;
+  let payload;
+  try {
+    payload = await (api('/api/entries?type=uwi&status=all&answered=all'));
+  } catch (error) {
+    if (generation !== knownUwiRequestGeneration) return;
+    throw error;
+  }
+  if (generation !== knownUwiRequestGeneration) return;
+  const allUwis = Array.isArray(payload.entries) ? payload.entries : [];
+  const newUnanswered = knownUwiBaselineReady && notify ? allUwis.filter(entry =>
+    !knownUwiFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state) && entry.answered === false
+  ) : [];
+  allUwis.forEach(entry => knownUwiFilenames.add(entry.filename));
+  knownUwiBaselineReady = true;
+  if (newUnanswered.length && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    const filenames = newUnanswered.map(entry => entry.filename);
+    new Notification('新規未回答UWI', {
+      body: filenames.length === 1 ? filenames[0] : `${filenames.length}件: ${filenames.join('、')}`
+    });
+  }
+}
+
+async function enableNotifications() {
+  if (typeof Notification === 'undefined') return;
+  await (Notification.requestPermission());
+  syncNotificationButton();
+}
+
+function replaceOptions(select, values, firstLabel) {
+  const selected = select.value;
+  select.replaceChildren();
+  const first = document.createElement('option');
+  first.value = '';
+  first.textContent = firstLabel;
+  select.append(first);
+  values.forEach(value => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    select.append(option);
+  });
+  select.value = values.includes(selected) ? selected : '';
+}
+
+async function loadTargetRepos() {
+  const generation = ++targetRepoRequestGeneration;
+  const requestedState = byId('state-filter').value;
+  try {
+    const status = encodeURIComponent(requestedState);
+    const payload = await (api(`/api/repos?status=${status}`));
+    if (generation !== targetRepoRequestGeneration ||
+        byId('state-filter').value !== requestedState) return false;
+    const repos = Array.isArray(payload.repos) ? payload.repos : [];
+    replaceOptions(byId('target-filter'), repos, 'all');
+    const datalist = byId('repo-options');
+    datalist.replaceChildren(...repos.map(value => {
+      const option = document.createElement('option');
+      option.value = value;
+      return option;
+    }));
+    return true;
+  } catch (error) {
+    const isCurrent = generation === targetRepoRequestGeneration &&
+      byId('state-filter').value === requestedState;
+    if (isCurrent) setGlobalError(error.message);
+    return isCurrent;
+  }
+}
+
+function syncFilterDependencies() {
+  const awiOnly = byId('kind-filter').value === 'awi';
+  if (awiOnly) byId('answer-filter').value = 'all';
+  byId('answer-filter').disabled = awiOnly;
+}
+
+async function clearFilters() {
+  cancelSearchTimer();
+  const operation = beginUserListOperation();
+  byId('search-input').value = '';
+  byId('kind-filter').value = 'all';
+  byId('state-filter').value = 'active';
+  byId('period-filter').value = DEFAULT_PERIOD;
+  byId('answer-filter').value = 'all';
+  byId('target-filter').value = '';
+  byId('source-filter').value = '';
+  currentPage = 1;
+  pagination.page = 1;
+  syncFilterDependencies();
+  try {
+    await (loadTargetRepos());
+    if (!isCurrentUserListOperation(operation)) return;
+    await (loadEntries({announce: true}));
+  } finally {
+    endUserListOperation(operation);
+  }
+}
+
+function updateCurrentRowSelection() {
+  document.querySelectorAll('.entry-select').forEach(button => {
+    button.setAttribute('aria-current', String(button.dataset.key === entryKey(currentEntry)));
+  });
+}
+
+function entryButtonForKey(key) {
+  return Array.from(document.querySelectorAll('.entry-select')).find(button => button.dataset.key === key) || null;
+}
+
+function detailReturnTarget() {
+  const currentOrigin = entryButtonForKey(detailOriginKey);
+  if (currentOrigin) return currentOrigin;
+  const original = dialogOrigins.get('detail-dialog');
+  if (original?.isConnected) return original;
+  const firstRow = document.querySelectorAll('.entry-select')[0];
+  if (firstRow) return firstRow;
+  const emptyAction = [
+    byId('empty-clear-button'), byId('empty-all-states-button'), byId('empty-all-periods-button'), byId('empty-create-button')
+  ]
+    .find(button => !button.hidden);
+  return emptyAction || byId('search-input');
+}
+
+function formatMetadataValue(value) {
+  if (value !== null && typeof value === 'object') return JSON.stringify(value, null, 2);
+  return value === null ? 'null' : String(value);
+}
+
+function formatMetadataKey(key) {
+  if (key && typeof key === 'object' && !Array.isArray(key) &&
+      typeof key.type === 'string' && Object.prototype.hasOwnProperty.call(key, 'value')) {
+    if (key.type === 'str') return String(key.value);
+    return `${key.type}: ${formatMetadataValue(key.value)}`;
+  }
+  return String(key);
+}
+
+function metadataEntries(entry) {
+  const result = entry.frontmatter_entries.map(item => ({key: item.key, value: item.value}));
+  for (const key of ['target_repo', 'source']) {
+    if (!result.some(item => item.key?.type === 'str' && item.key.value === key) &&
+        entry[key] !== undefined && entry[key] !== null) {
+      result.push({key: {type: 'str', value: key}, value: entry[key]});
+    }
+  }
+  return result;
+}
+
+function appendMetadataItem(metadata, label, value) {
+  if (value === undefined) return;
+  const item = document.createElement('div');
+  item.className = 'metadata-item';
+  const term = document.createElement('dt');
+  term.textContent = label;
+  const definition = document.createElement('dd');
+  definition.textContent = formatMetadataValue(value);
+  item.append(term, definition);
+  metadata.append(item);
+}
+
+function renderMetadata(entry) {
+  const metadata = byId('detail-metadata');
+  metadata.replaceChildren();
+  if (entry.answered === true || entry.answered === false) {
+    appendMetadataItem(metadata, 'answered', entry.answered ? 'yes' : 'no');
+  }
+  for (const item of metadataEntries(entry)) {
+    const key = item.key;
+    if (key?.type === 'str' && FRONTMATTER_EXCLUDED_KEYS.has(key.value)) continue;
+    appendMetadataItem(metadata, formatMetadataKey(key), item.value);
+  }
+  const parts = formatDateParts(entry.updated_at);
+  appendMetadataItem(metadata, 'updated_at', parts.time ? `${parts.date} ${parts.time}` : parts.date);
+}
+
+function setDetailMode(mode) {
+  const editing = mode === 'edit';
+  const answering = mode === 'answer';
+  const commenting = mode === 'user-comment';
+  const decisionAction = mode === 'decide-adopt' ? 'adopt' : mode === 'decide-reject' ? 'reject' : '';
+  const mutating = editing || answering || commenting || decisionAction !== '';
+  const unansweredUwi = currentEntry?.kind === 'uwi' && currentEntry.answered === false;
+  const processable = currentEntry && PROCESSABLE_STATES.has(currentEntry.state);
+  const mutable = currentEntry && MUTABLE_STATES.has(currentEntry.state);
+  const deletable = currentEntry && DELETABLE_STATES.has(currentEntry.state);
+  const held = currentEntry?.state === 'hold';
+  const terminal = currentEntry && TERMINAL_STATES.has(currentEntry.state);
+  byId('edit-panel').hidden = !editing;
+  byId('answer-panel').hidden = !answering;
+  byId('user-comment-panel').hidden = !commenting;
+  // 採否のメモは採用・却下の操作モードでだけ表示し、閲覧中の本文とユーザーコメントの欄から分ける。
+  byId('decision-panel').hidden = decisionAction === '';
+  byId('decision-panel').dataset.action = decisionAction;
+  if (decisionAction) byId('decision-heading').textContent = decisionAction === 'adopt' ? '採用' : '却下';
+  byId('edit-button').hidden = mutating || !mutable;
+  byId('answer-button').hidden = mutating || !currentEntry ||
+    currentEntry.kind !== 'uwi' || !mutable;
+  byId('user-comment-button').hidden = mutating || currentEntry?.user_comment_editable !== true;
+  byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
+  byId('adopt-button').hidden = mutating || !mutable;
+  byId('reject-button').hidden = mutating || !mutable || currentEntry.kind !== 'awi';
+  byId('hold-button').hidden = mutating || !(processable || terminal);
+  byId('unhold-button').hidden = mutating || !held;
+  byId('return-to-inbox-button').hidden = mutating || !terminal;
+  byId('delete-button').hidden = mutating || !deletable;
+  byId('save-entry-button').hidden = !editing;
+  byId('save-answer-button').hidden = !answering;
+  byId('save-user-comment-button').hidden = !commenting;
+  byId('confirm-adopt-button').hidden = decisionAction !== 'adopt';
+  byId('confirm-reject-button').hidden = decisionAction !== 'reject';
+  syncDetailMutationAvailability();
+  byId('edit-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
+  byId('adopt-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
+  if (!editing) setFieldError(byId('edit-content'), byId('edit-content-error'), '');
+  if (!answering) setFieldError(byId('answer-input'), byId('answer-input-error'), '');
+  if (!commenting) setFieldError(byId('user-comment-input'), byId('user-comment-input-error'), '');
+}
+
+function syncDetailMutationAvailability() {
+  for (const id of [
+    'edit-button', 'answer-button', 'user-comment-button', 'delete-button',
+    'save-entry-button', 'save-answer-button', 'save-user-comment-button',
+    'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'return-to-inbox-button',
+    'confirm-adopt-button', 'confirm-reject-button'
+  ]) {
+    const button = byId(id);
+    const userCommentUnavailable = id === 'save-user-comment-button' && currentEntry?.user_comment_editable !== true;
+    button.disabled = !button.hidden && (detailRefreshRequired || userCommentUnavailable);
+  }
+}
+
+function renderAnswerChoices(entry) {
+  const container = byId('answer-choices');
+  const choices = entry.question_type === 'yes-no' ? ['はい', 'いいえ'] :
+    entry.question_type === 'choice' && Array.isArray(entry.choices) ? entry.choices : [];
+  container.replaceChildren(...choices.map(value => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'button-secondary';
+    button.textContent = value;
+    button.addEventListener('click', () => {
+      byId('answer-input').value = value;
+      byId('answer-input').focus();
+    });
+    return button;
+  }));
+  container.hidden = choices.length === 0;
+}
+
+function displayEntry(entry) {
+  currentEntry = entry;
+  detailRefreshRequired = false;
+  byId('decision-note').value = '';
+  setTextMessage('detail-alert', '');
+  byId('detail-view').hidden = false;
+  byId('detail-filename').textContent = entry.filename;
+  byId('detail-state').textContent = entryStateText(entry);
+  byId('detail-state').dataset.state = entry.state;
+  byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
+  renderMetadata(entry);
+  renderAnswerChoices(entry);
+  byId('readonly-notice').hidden = MUTABLE_STATES.has(entry.state) || entry.state === 'rejected';
+  setDetailMode('view');
+  updateCurrentRowSelection();
+  if (entrySelectionFromUrl()) history.replaceState({atkEntry: true}, '', entryPageUrl(entry));
+}
+
+// 一覧の行と開いている詳細の対象は、外部操作で移動・削除され得る。移動はサーバーが全状態から最新の状態を
+// 探して返すため、詳細APIの404は削除済みを意味する。エンドユーザーへ再操作を求めず、削除済みの通知と一覧の更新を行う。
+function reportDeletedEntry(filename, {reloadList = true} = {}) {
+  deliverOperationMessage(`${filename}は削除されたため表示できません。一覧を更新しました。`);
+  if (reloadList) void reloadFromExternalChange();
+}
+
+async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) {
+  const requestGeneration = ++detailRequestGeneration;
+  const sessionGeneration = ++detailSessionGeneration;
+  const requestIsCurrent = () => requestGeneration === detailRequestGeneration &&
+    sessionGeneration === detailSessionGeneration;
+  detailOrigin = origin || document.activeElement;
+  detailOriginKey = entryKey(entry);
+  clearDialogMessages('detail');
+  detailRequestPending = true;
+  renderListLoading();
+  const pendingRow = origin?.closest('.entry-row');
+  if (pendingRow) {
+    pendingRow.setAttribute('aria-busy', 'true');
+  }
+  try {
+    const payload = await api(`/api/entries/${encodeURIComponent(entry.state)}/${encodeURIComponent(entry.filename)}`);
+    if (!requestIsCurrent()) return;
+    displayEntry(payload.entry);
+    openDetailDialog(detailOrigin);
+    if (payload.entry.state !== entry.state) void loadEntries({showLoading: false});
+  } catch (error) {
+    if (!requestIsCurrent()) return;
+    if (error.status === 404) {
+      if (!ignoreNotFound) reportDeletedEntry(entry.filename);
+      return;
+    }
+    setGlobalError(error.message);
+  } finally {
+    if (pendingRow) {
+      pendingRow.removeAttribute('aria-busy');
+    }
+    if (requestIsCurrent()) {
+      detailRequestPending = false;
+      renderListLoading();
+    }
+  }
+}
+
+function closeDeleteDialog({restoreFocus = true} = {}) {
+  closeDialog(byId('delete-dialog'), {restoreFocus});
+  deleteDialogEntrySnapshot = '';
+}
+
+function invalidateDeleteConfirmation() {
+  if (!byId('delete-dialog').open) return false;
+  closeDeleteDialog({restoreFocus: false});
+  byId('detail-dialog-body').focus();
+  return true;
+}
+
+const DELETE_RECONFIRM_MESSAGE =
+  '外部更新により削除確認を閉じました。詳細を確認し、削除操作をやり直してください。';
+const DELETE_CONFLICT_MESSAGE =
+  '外部更新により削除確認を閉じました。詳細を閉じて開き直してから削除してください。';
+
+function reportExternalDetailFailure(error, deleteConfirmationInvalidated) {
+  const invalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
+  const recovery = invalidated ? ` ${DELETE_RECONFIRM_MESSAGE}` : '';
+  setTextMessage('detail-alert', `${error.message}${recovery}`);
+}
+
+function closeDetailDialog({updateUrl = true, force = false} = {}) {
+  const detailDialog = byId('detail-dialog');
+  const deleteDialog = byId('delete-dialog');
+  const hadOpenDialog = detailDialog.open || deleteDialog.open;
+  if (!hadOpenDialog && !currentEntry) return;
+  if (!force) {
+    const mode = currentDetailMode();
+    const changed = mode === 'edit' && byId('edit-content').value !== currentEntry?.content ||
+      mode === 'answer' && byId('answer-input').value !== (currentEntry?.answer || '') ||
+      mode === 'user-comment' && byId('user-comment-input').value !== (currentEntry?.user_comment || '') ||
+      mode.startsWith('decide-') && byId('decision-note').value !== '';
+    if (changed && !window.confirm('変更した入力を破棄しますか？')) return;
+  }
+  const returnTarget = detailReturnTarget();
+  detailRequestGeneration += 1;
+  detailSessionGeneration += 1;
+  detailRequestPending = false;
+  renderListLoading();
+  closeDeleteDialog({restoreFocus: false});
+  closeDialog(detailDialog, {restoreFocus: false});
+  currentEntry = null;
+  detailOriginKey = '';
+  detailRefreshRequired = false;
+  setTextMessage('detail-alert', '');
+  setDetailMode('view');
+  updateCurrentRowSelection();
+  if (updateUrl && globalThis.location?.pathname === `${BASE_PATH}/` && entrySelectionFromUrl()) {
+    history.replaceState({atkEntry: false}, '', `${BASE_PATH}/`);
+  }
+  if (hadOpenDialog && returnTarget && typeof returnTarget.focus === 'function') returnTarget.focus();
+}
+
+async function restoreEntryFromUrl() {
+  const selection = entrySelectionFromUrl();
+  if (!selection) {
+    if (byId('detail-dialog').open || currentEntry) closeDetailDialog({updateUrl: false});
+    return;
+  }
+  const origin = document.querySelector(`.entry-select[data-key="${CSS.escape(entryKey(selection))}"]`);
+  await selectEntry(selection, origin, {ignoreNotFound: true});
+}
+
+function currentDetailMode() {
+  if (!byId('edit-panel').hidden) return 'edit';
+  if (!byId('answer-panel').hidden) return 'answer';
+  if (!byId('user-comment-panel').hidden) return 'user-comment';
+  if (!byId('decision-panel').hidden) return `decide-${byId('decision-panel').dataset.action}`;
+  return 'view';
+}
+
+function refreshUserCommentMode(entry, message) {
+  const input = byId('user-comment-input');
+  const value = input.value;
+  detailOriginKey = entryKey(entry);
+  displayEntry(entry);
+  input.value = value;
+  setDetailMode('user-comment');
+  setTextMessage('detail-alert', message);
+  input.focus();
+}
+
+// 詳細ダイアログから変更操作を送信している間は、開いている詳細の再読込を保留し、保留したことだけを記録する。
+// その間に届く更新通知には操作自身の書込みが含まれ、外部更新として比べると成功した操作に警告を表示する。
+// 操作によっては項目の状態も変わり、詳細の表示が書き換わる。保留した再読込は失敗時にだけ実行する。
+function deferDetailReloadWhileMutating() {
+  if (!detailMutationPending) return false;
+  detailReloadDeferred = true;
+  return true;
+}
+
+async function reloadOpenDetailFromExternalChange() {
+  if (!byId('detail-dialog').open || !currentEntry) return;
+  if (detailOriginKey !== entryKey(currentEntry)) return;
+  if (deferDetailReloadWhileMutating()) return;
+  const sessionGeneration = detailSessionGeneration;
+  const originalState = currentEntry.state;
+  const filename = currentEntry.filename;
+  const requestGeneration = ++detailRequestGeneration;
+  // 送信の開始前に始まった再読込も、応答を待つ間に結果を反映せず保留へ回す。
+  const requestIsCurrent = () => !deferDetailReloadWhileMutating() &&
+    requestGeneration === detailRequestGeneration &&
+    sessionGeneration === detailSessionGeneration && byId('detail-dialog').open &&
+    currentEntry?.filename === filename;
+  let deleteConfirmationInvalidated = false;
+  if (byId('delete-dialog').open && deleteEntrySnapshot(currentEntry) !== deleteDialogEntrySnapshot) {
+    deleteConfirmationInvalidated = invalidateDeleteConfirmation();
+  }
+  let resolvedEntry = null;
+  try {
+    const payload = await api(`/api/entries/${encodeURIComponent(originalState)}/${encodeURIComponent(filename)}`);
+    if (!requestIsCurrent()) return;
+    resolvedEntry = payload.entry;
+  } catch (error) {
+    if (!requestIsCurrent()) return;
+    if (error.status !== 404) {
+      reportExternalDetailFailure(error, deleteConfirmationInvalidated);
+      return;
+    }
+    deleteConfirmationInvalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
+  }
+  if (!resolvedEntry) {
+    const candidates = [];
+    for (const state of Object.keys(STATE_LABELS).filter(state => state !== originalState)) {
+      try {
+        const payload = await api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`);
+        if (!requestIsCurrent()) return;
+        candidates.push(payload.entry);
+      } catch (error) {
+        if (!requestIsCurrent()) return;
+        if (error.status !== 404) {
+          reportExternalDetailFailure(error, deleteConfirmationInvalidated);
+          return;
+        }
+      }
+    }
+    if (candidates.length > 1) {
+      closeDetailDialog();
+      setGlobalError(`${filename}の移動先を一意に特定できません。詳細を開き直してください。`);
+      return;
+    }
+    resolvedEntry = candidates[0] || null;
+  }
+  if (!resolvedEntry) {
+    closeDetailDialog({force: true});
+    reportDeletedEntry(filename, {reloadList: false});
+    return;
+  }
+  const detailChanged = entryKey(resolvedEntry) !== entryKey(currentEntry) ||
+    resolvedEntry.content !== currentEntry.content;
+  if (byId('delete-dialog').open && deleteEntrySnapshot(resolvedEntry) !== deleteDialogEntrySnapshot) {
+    deleteConfirmationInvalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
+  }
+  const mode = currentDetailMode();
+  if (mode === 'user-comment' && detailChanged) {
+    const message = resolvedEntry.user_comment_editable === true
+      ? '外部で項目が更新されました。入力を保持して最新内容を再取得しました。'
+      : `${stateLabel(resolvedEntry.state)}へ移動したためユーザーコメントを保存できません。入力は保持しています。`;
+    refreshUserCommentMode(resolvedEntry, message);
+    updateCurrentRowSelection();
+    return;
+  }
+  if (mode !== 'view') {
+    currentEntry = {...currentEntry, state: resolvedEntry.state};
+    detailOriginKey = entryKey(currentEntry);
+    if (detailChanged) {
+      detailRefreshRequired = true;
+      setTextMessage(
+        'detail-alert',
+        '外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。'
+      );
+      setDetailMode(mode);
+    }
+    updateCurrentRowSelection();
+    return;
+  }
+  detailOriginKey = entryKey(resolvedEntry);
+  displayEntry(resolvedEntry);
+  if (deleteConfirmationInvalidated) setTextMessage('detail-alert', DELETE_RECONFIRM_MESSAGE);
+}
+
+function enterEdit() {
+  if (!currentEntry) return;
+  byId('edit-content').value = currentEntry.content;
+  setDetailMode('edit');
+  byId('edit-content').focus();
+}
+
+function enterAnswer() {
+  if (!currentEntry) return;
+  byId('answer-input').value = currentEntry.answer || '';
+  setDetailMode('answer');
+  byId('answer-input').focus();
+}
+
+function enterUserComment() {
+  if (!currentEntry || currentEntry.user_comment_editable !== true) return;
+  byId('user-comment-input').value = currentEntry.user_comment || '';
+  setDetailMode('user-comment');
+  byId('user-comment-input').focus();
+}
+
+function enterDecision(action) {
+  if (!currentEntry || detailRefreshRequired || !MUTABLE_STATES.has(currentEntry.state)) return;
+  if (action === 'reject' && currentEntry.kind !== 'awi') return;
+  byId('decision-note').value = '';
+  setDetailMode(`decide-${action}`);
+  byId('decision-note').focus();
+}
+
+async function reloadUserCommentAfterConflict(key, sessionGeneration) {
+  const state = currentEntry?.state;
+  const filename = currentEntry?.filename;
+  if (!state || !filename) return false;
+  try {
+    const refreshed = await api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`);
+    if (!byId('detail-dialog').open || entryKey(currentEntry) !== key ||
+        sessionGeneration !== detailSessionGeneration || refreshed.entry.user_comment_editable !== true) return false;
+    refreshUserCommentMode(
+      refreshed.entry,
+      `${key}は外部で更新されました。入力を保持して最新内容を再取得しました。内容を確認して再度保存してください。`
+    );
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function mutationFailureMessage(key, failure, error) {
+  const recoveryRequired = error.payload?.code === 'edit_conflict' || detailRefreshRequired;
+  if (!recoveryRequired) return failure;
+  detailRefreshRequired = true;
+  syncDetailMutationAvailability();
+  const recovery = `${key}は外部で更新されました。入力を保持しています。` +
+    '詳細を閉じて開き直してから保存してください。';
+  return `${failure} ${recovery}`;
+}
+
+// 操作の対象と開いている詳細の同一性は、操作で変わり得る状態を除き、詳細を開いた単位とファイル名で判定する。
+function finishDetailMutation(key, filename, sessionGeneration, message) {
+  const sameDetail = byId('detail-dialog').open && currentEntry?.filename === filename &&
+    sessionGeneration === detailSessionGeneration;
+  if (sameDetail) closeDetailDialog({force: true});
+  void loadEntries({showLoading: false}).then(() => {
+    if (!sameDetail || document.activeElement !== document.body) return;
+    (entryButtonForKey(key) || document.querySelector('.entry-select') ||
+      (!byId('empty-clear-button').hidden && byId('empty-clear-button')) || byId('search-input')).focus();
+  });
+  if (sameDetail) deliverOperationMessage(message);
+  else showToast(message);
+}
+
+// 詳細ダイアログからの全変更操作が通る共通の処理。送信中は詳細の再読込を保留し、成功時は保留を破棄して
+// 詳細を閉じ成功を通知する。失敗時は保留した再読込を実行してから例外を呼び出し元へ返し、
+// 呼び出し元が表示する失敗の文を再読込の警告で上書きしない。
+async function runDetailMutation(pendingKey, pendingOptions, request, successMessage) {
+  if (pendingOperations.has(pendingKey)) return;
+  const key = entryKey(currentEntry);
+  const filename = currentEntry.filename;
+  const sessionGeneration = detailSessionGeneration;
+  detailMutationPending = true;
+  detailReloadDeferred = false;
+  try {
+    await (runPending(pendingKey, pendingOptions, request));
+  } catch (error) {
+    detailMutationPending = false;
+    if (detailReloadDeferred) {
+      detailReloadDeferred = false;
+      await (reloadOpenDetailFromExternalChange());
+    }
+    throw error;
+  } finally {
+    detailMutationPending = false;
+  }
+  detailReloadDeferred = false;
+  finishDetailMutation(key, filename, sessionGeneration, successMessage);
+}
+
+async function saveEntry() {
+  if (!currentEntry || detailRefreshRequired) return;
+  const content = byId('edit-content').value;
+  setFieldError(byId('edit-content'), byId('edit-content-error'), content.trim() ? '' : 'ファイル全体を入力してください。');
+  if (firstInvalid([byId('edit-content')])) return;
+  const key = entryKey(currentEntry);
+  const path = `/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`;
+  const payload = {content, expected_content: currentEntry.content};
+  clearDialogMessages('detail');
+  try {
+    await (runDetailMutation('save', {
+      container: byId('detail-shell'), button: byId('save-entry-button'), busyLabel: '保存中'
+    }, () => api(path, {method: 'PUT', body: JSON.stringify(payload)}), `${key}を保存しました。`));
+  } catch (error) {
+    const failure = `${key}を保存できませんでした。 ${error.message}`;
+    deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key) byId('edit-content').focus();
+  }
+}
+
+async function saveAnswer() {
+  if (!currentEntry || detailRefreshRequired) return;
+  const answer = byId('answer-input').value;
+  setFieldError(byId('answer-input'), byId('answer-input-error'), answer.trim() ? '' : '回答を入力してください。');
+  if (firstInvalid([byId('answer-input')])) return;
+  const key = entryKey(currentEntry);
+  const sessionGeneration = detailSessionGeneration;
+  const payload = {
+    filename: currentEntry.filename,
+    state: currentEntry.state,
+    answer,
+    expected_content: currentEntry.content
+  };
+  clearDialogMessages('detail');
+  try {
+    await (runDetailMutation('answer', {
+      container: byId('detail-shell'), button: byId('save-answer-button'), busyLabel: '保存中'
+    }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)}), `${key}へ回答しました。`));
+  } catch (error) {
+    const failure = `${key}へ回答できませんでした。 ${error.message}`;
+    if (sessionGeneration === detailSessionGeneration) {
+      deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
+    } else {
+      showToast(mutationFailureMessage(key, failure, error), true);
+    }
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key) byId('answer-input').focus();
+  }
+}
+
+async function saveUserComment() {
+  if (!currentEntry || detailRefreshRequired || currentEntry.user_comment_editable !== true) return;
+  const input = byId('user-comment-input');
+  const comment = input.value;
+  setFieldError(input, byId('user-comment-input-error'), '');
+  const key = entryKey(currentEntry);
+  // 空の保存はユーザーコメント節の削除を表す。節が無い項目では本文を変えずに終える。
+  const savedMessage = comment.trim() ? `${key}のユーザーコメントを保存しました。` :
+    currentEntry.user_comment == null ? `${key}にはユーザーコメントが無いため、変更していません。` :
+      `${key}のユーザーコメントを削除しました。`;
+  const sessionGeneration = detailSessionGeneration;
+  const payload = {
+    state: currentEntry.state,
+    filename: currentEntry.filename,
+    comment,
+    expected_content: currentEntry.content
+  };
+  clearDialogMessages('detail');
+  try {
+    await (runDetailMutation('user-comment', {
+      container: byId('detail-shell'), button: byId('save-user-comment-button'), busyLabel: '保存中'
+    }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)}), savedMessage));
+  } catch (error) {
+    if (error.payload?.code === 'edit_conflict' &&
+        await (reloadUserCommentAfterConflict(key, sessionGeneration))) return;
+    deliverOperationMessage(`${key}のユーザーコメントを保存できませんでした。 ${error.message}`, true);
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key) input.focus();
+  }
+}
+
+async function transitionDetail(action) {
+  if (!currentEntry || detailRefreshRequired) return;
+  const terminal = TERMINAL_STATES.has(currentEntry.state);
+  const allowed = action === 'unhold' ? currentEntry.state === 'hold' :
+    action === 'return-to-inbox' ? terminal :
+      action === 'hold' ? PROCESSABLE_STATES.has(currentEntry.state) || terminal : MUTABLE_STATES.has(currentEntry.state);
+  if (!allowed || (action === 'reject' && currentEntry.kind !== 'awi')) return;
+  const key = entryKey(currentEntry);
+  const payload = {filenames: [currentEntry.filename]};
+  if (terminal && (action === 'return-to-inbox' || action === 'hold')) payload.state = currentEntry.state;
+  if ((action === 'adopt' || action === 'reject') && currentEntry.state === 'hold') payload.state = 'hold';
+  const note = byId('decision-note').value.trim();
+  if (note && (action === 'adopt' || action === 'reject')) payload.note = note;
+  const label = {
+    adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除', 'return-to-inbox': 'inboxへ戻す'
+  }[action];
+  try {
+    await (runDetailMutation(`transition-${action}`, {
+      container: byId('detail-shell'),
+      button: byId(action === 'adopt' || action === 'reject' ? `confirm-${action}-button` : `${action}-button`),
+      busyLabel: '処理中'
+    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}), `${key}を${label}しました。`));
+  } catch (error) {
+    deliverOperationMessage(`${key}を処理できませんでした。 ${error.message}`, true);
+  }
+}
+
+function resetCreateForm() {
+  byId('create-kind').value = 'awi';
+  byId('create-content').value = '';
+  byId('create-target').value = '';
+  byId('create-scope').value = '';
+  byId('create-question-type').value = 'yes-no';
+  byId('create-choices').value = '';
+  setFieldError(byId('create-content'), byId('create-content-error'), '');
+  setFieldError(byId('create-target'), byId('create-target-error'), '');
+  setFieldError(byId('create-choices'), byId('create-choices-error'), '');
+  updateCreateFields();
+}
+
+function updateCreateFields() {
+  const kind = byId('create-kind').value;
+  const isBatch = kind === 'batch';
+  const isUwi = kind === 'uwi';
+  const isChoice = isUwi && byId('create-question-type').value === 'choice';
+  byId('uwi-fields').hidden = !isUwi;
+  byId('choice-fields').hidden = !isChoice;
+  // 一括登録は各エントリのfrontmatterの値だけを用いるため、対象リポジトリ欄を隠す。
+  byId('create-repo-fields').hidden = isBatch;
+  byId('create-content-label').textContent = isBatch ? 'show形式テキスト（必須）' : '本文（必須）';
+}
+
+function openCreateDialog(origin = null) {
+  resetCreateForm();
+  clearDialogMessages('create');
+  openDialog(byId('create-dialog'), origin || document.activeElement, byId('create-content'));
+}
+
+const IGNORED_SINGLE_FIELD_LABELS = {
+  target_repo: 'target-repo',
+  scope: '確認範囲',
+  question_type: '回答形式',
+  choices: '選択肢',
+};
+
+function createResultMessage(isBatch, result) {
+  const filenames = Array.isArray(result.filenames) ? result.filenames : [];
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  const renamed = Object.entries(result.mapping || {}).filter(([original, saved]) => original !== saved);
+  // 種別awi・uwiのまま送ったshow形式の本文をサーバーが一括登録として取り込んだ場合、応答の`batch`が真になる。
+  const autoBatch = !isBatch && result.batch === true;
+  const ignored = Array.isArray(result.ignored_fields) ? result.ignored_fields : [];
+  const summary = isBatch || autoBatch
+    ? (autoBatch ? 'show形式の本文のため一括登録として取り込みました。' : '') +
+      `${filenames.length}件を取り込みました。` +
+      (renamed.length ? `改名: ${renamed.map(([original, saved]) => `${original} -> ${saved}`).join('、')}` : '') +
+      (ignored.length
+        ? ` 使わなかった入力欄: ${ignored.map(name => IGNORED_SINGLE_FIELD_LABELS[name] || name).join('、')}`
+        : '')
+    : (filenames[0] ? `${filenames[0]}を追加しました。` : '項目を追加しました。');
+  return warnings.length ? `${summary} 警告: ${warnings.join('、')}` : summary;
+}
+
+async function createEntry(event) {
+  event.preventDefault();
+  const type = byId('create-kind').value;
+  const isBatch = type === 'batch';
+  // 一括登録は原文保持のため、送信値へtrimを適用せず入力の生テキストをそのまま送る。
+  const rawContent = byId('create-content').value;
+  const message = rawContent.trim();
+  const targetRepo = byId('create-target').value.trim();
+  const choiceValues = byId('create-choices').value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+  setFieldError(
+    byId('create-content'), byId('create-content-error'),
+    message ? '' : (isBatch ? 'show形式テキストを入力してください。' : '本文を入力してください。')
+  );
+  const choiceInvalid = type === 'uwi' && byId('create-question-type').value === 'choice' && choiceValues.length < 2;
+  setFieldError(byId('create-choices'), byId('create-choices-error'), choiceInvalid ? '選択肢を2件以上入力してください。' : '');
+  if (firstInvalid([byId('create-content'), byId('create-choices')])) return;
+  // 単件でも未trimの入力を添え、show形式の本文ならサーバーが原文のまま一括登録へ切り替える。
+  const payload = isBatch ? {text: rawContent} : {type, messages: [message], raw_text: rawContent};
+  if (!isBatch) {
+    if (targetRepo) payload.target_repo = targetRepo;
+    if (type === 'uwi') {
+      const scope = byId('create-scope').value.trim();
+      if (scope) payload.scope = scope;
+      payload.question_type = byId('create-question-type').value;
+      if (payload.question_type === 'choice') payload.choices = choiceValues;
+    }
+  }
+  clearDialogMessages('create');
+  try {
+    const result = await (runPending('create', {
+      container: byId('create-form'), button: byId('create-submit-button'), busyLabel: '追加中'
+    }, () => api(isBatch ? '/api/entries/batch' : '/api/entries', {method: 'POST', body: JSON.stringify(payload)})));
+    closeDialog(byId('create-dialog'));
+    await (clearFilters());
+    deliverOperationMessage(createResultMessage(isBatch, result));
+  } catch (error) {
+    deliverOperationMessage(`項目を追加できませんでした。 ${error.message}`, true);
+    if (byId('create-dialog').open) byId('create-content').focus();
+  }
+}
+
+function openDeleteDialog() {
+  if (!currentEntry) return;
+  deleteDialogEntrySnapshot = deleteEntrySnapshot(currentEntry);
+  clearDialogMessages('delete');
+  byId('delete-target').textContent = currentEntry.filename;
+  byId('delete-state').textContent = entryStateText(currentEntry);
+  byId('delete-state').dataset.state = currentEntry.state;
+  byId('delete-target-repo').textContent = currentEntry.target_repo || '—';
+  byId('delete-summary').textContent = currentEntry.summary || '—';
+  byId('force-delete-row').hidden = currentEntry.state !== 'processing';
+  byId('force-delete-confirmation').checked = false;
+  setFieldError(byId('force-delete-confirmation'), byId('delete-error'), '');
+  openDialog(byId('delete-dialog'), byId('delete-button'), byId('delete-close-button'));
+}
+
+async function deleteEntry(event) {
+  event.preventDefault();
+  if (!currentEntry) return;
+  const force = byId('force-delete-confirmation').checked;
+  if (currentEntry.state === 'processing' && !force) {
+    setFieldError(byId('force-delete-confirmation'), byId('delete-error'), '処理中の項目を削除するには確認が必要です。');
+    byId('force-delete-confirmation').focus();
+    return;
+  }
+  const key = entryKey(currentEntry);
+  const payload = {
+    filenames: [currentEntry.filename],
+    state: currentEntry.state,
+    expected_content: currentEntry.content,
+    force
+  };
+  clearDialogMessages('delete');
+  try {
+    await (runDetailMutation('delete', {
+      container: byId('delete-form'), button: byId('delete-submit-button'), busyLabel: '削除中'
+    }, () => api('/api/entries/remove', {method: 'POST', body: JSON.stringify(payload)}), `${key}を削除しました。`));
+  } catch (error) {
+    const failure = `${key}を削除できませんでした。 ${error.message}`;
+    if (error.payload?.code === 'edit_conflict' && byId('detail-dialog').open) {
+      invalidateDeleteConfirmation();
+      detailRefreshRequired = true;
+      syncDetailMutationAvailability();
+      setTextMessage('detail-alert', `${failure} ${DELETE_CONFLICT_MESSAGE}`);
+      byId('detail-dialog-body').focus();
+    } else {
+      deliverOperationMessage(failure, true);
+      if (byId('delete-dialog').open) byId('delete-close-button').focus();
+    }
+  }
+}
+
+async function synchronizeAndLoad() {
+  const payload = {};
+  cancelSearchTimer();
+  const operation = beginUserListOperation();
+  try {
+    await (runPending('sync', {
+      container: document.querySelector('.app-header'), button: byId('refresh-button'), busyLabel: '同期中'
+    }, async () => {
+      let syncFailure = null;
+      try {
+        await api('/api/sync', {method: 'POST', body: JSON.stringify(payload)});
+      } catch (error) {
+        syncFailure = error;
+      }
+      await loadTargetRepos();
+      if (!isCurrentUserListOperation(operation)) return;
+      await loadEntries({announce: true});
+      if (!isCurrentUserListOperation(operation)) return;
+      if (syncFailure) setGlobalError(`Git同期に失敗しました。ローカル内容を表示中です。 ${syncFailure.message}`);
+    }));
+  } finally {
+    endUserListOperation(operation);
+  }
+}
+
+async function handleFilterChange({reloadRepos = false} = {}) {
+  cancelSearchTimer();
+  const operation = beginUserListOperation();
+  currentPage = 1;
+  pagination.page = 1;
+  syncFilterDependencies();
+  const requestedState = byId('state-filter').value;
+  try {
+    if (reloadRepos) {
+      const requestedTarget = byId('target-filter').value;
+      const entriesRequest = loadEntries({announce: true});
+      const loaded = await (loadTargetRepos());
+      await entriesRequest;
+      if (!isCurrentUserListOperation(operation)) return;
+      if ((!loaded && byId('state-filter').value !== requestedState)) return;
+      if (loaded && requestedTarget && byId('target-filter').value !== requestedTarget) {
+        await (loadEntries({announce: true}));
+      }
+      return;
+    }
+    await (loadEntries({announce: true}));
+  } finally {
+    endUserListOperation(operation);
+  }
+}
+
+async function reloadFromExternalChange() {
+  void refreshKnownUwis({notify: true}).catch((error) => {
+    setGlobalError(error.message);
+  });
+  if (userListOperationPending) {
+    externalListReloadPending = true;
+    return;
+  }
+  await (loadTargetRepos());
+  if (userListOperationPending) {
+    externalListReloadPending = true;
+    return;
+  }
+  await (loadEntries({announce: false, showLoading: false}));
+  await (reloadOpenDetailFromExternalChange());
+}
+
+function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null) {
+  const dialog = byId(dialogId);
+  const close = closeHandler || (() => closeDialog(dialog));
+  byId(closeButtonId).addEventListener('click', close);
+  dialog.addEventListener('cancel', event => {
+    event.preventDefault();
+    close();
+  });
+}
+
+function handleFocusIn(event) {
+  if (!byId('operation-notice').contains(event.target)) lastFocusedElement = event.target;
+  refreshFocusRequested = false;
+}
+
+function bindEvents() {
+  document.addEventListener('focusin', handleFocusIn);
+  globalThis.addEventListener?.('popstate', () => { void restoreEntryFromUrl(); });
+  byId('operation-notice-close-button').addEventListener('click', closeOperationNotice);
+  byId('previous-page-button').addEventListener('click', () => { void movePage(-1); });
+  byId('next-page-button').addEventListener('click', () => { void movePage(1); });
+  byId('refresh-button').addEventListener('click', synchronizeAndLoad);
+  byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
+  byId('create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
+  byId('empty-create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
+  byId('clear-filters-button').addEventListener('click', () => clearFilters());
+  byId('empty-clear-button').addEventListener('click', () => clearFilters());
+  byId('empty-all-states-button').addEventListener('click', () => {
+    byId('state-filter').value = 'all';
+    handleFilterChange({reloadRepos: true});
+  });
+  byId('empty-all-periods-button').addEventListener('click', () => {
+    byId('period-filter').value = 'all';
+    handleFilterChange();
+  });
+  byId('kind-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('state-filter').addEventListener('change', () => { void handleFilterChange({reloadRepos: true}); });
+  byId('period-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('answer-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('search-input').addEventListener('input', () => {
+    cancelSearchTimer();
+    const operation = beginUserListOperation();
+    currentPage = 1;
+    pagination.page = 1;
+    searchTimer = setTimeout(() => {
+      searchTimer = null;
+      void loadEntries({announce: true}).finally(() => endUserListOperation(operation));
+    }, 250);
+  });
+  byId('edit-button').addEventListener('click', enterEdit);
+  byId('answer-button').addEventListener('click', enterAnswer);
+  byId('user-comment-button').addEventListener('click', enterUserComment);
+  byId('save-entry-button').addEventListener('click', saveEntry);
+  byId('save-answer-button').addEventListener('click', saveAnswer);
+  byId('save-user-comment-button').addEventListener('click', saveUserComment);
+  byId('adopt-button').addEventListener('click', () => enterDecision('adopt'));
+  byId('reject-button').addEventListener('click', () => enterDecision('reject'));
+  byId('confirm-adopt-button').addEventListener('click', () => { void transitionDetail('adopt'); });
+  byId('confirm-reject-button').addEventListener('click', () => { void transitionDetail('reject'); });
+  byId('hold-button').addEventListener('click', () => { void transitionDetail('hold'); });
+  byId('unhold-button').addEventListener('click', () => { void transitionDetail('unhold'); });
+  byId('return-to-inbox-button').addEventListener('click', () => { void transitionDetail('return-to-inbox'); });
+  byId('delete-button').addEventListener('click', openDeleteDialog);
+  byId('create-kind').addEventListener('change', updateCreateFields);
+  byId('create-question-type').addEventListener('change', updateCreateFields);
+  byId('create-form').addEventListener('submit', createEntry);
+  byId('delete-form').addEventListener('submit', deleteEntry);
+  attachDialogCloseHandlers('detail-dialog', 'detail-close-button', closeDetailDialog);
+  attachDialogCloseHandlers('create-dialog', 'create-close-button', () => closeDialog(byId('create-dialog')));
+  attachDialogCloseHandlers('delete-dialog', 'delete-close-button', closeDeleteDialog);
+}
+
+let initialization = Promise.resolve();
+
+// 無通信の検知、再接続とbfcacheの前後の接続の開閉は共通モジュールが担う。
+function subscribeEvents() {
+  return connectEvents('/api/events', {
+    open: () => {
+      if (byId('connection-status').dataset.syncFailed !== 'true') {
+        byId('connection-status').hidden = true;
+        byId('connection-status').textContent = '';
+      }
+      void initialization.then(async () => {
+        await reloadFromExternalChange();
+        byId('connection-status').dataset.connected = 'true';
+      });
+    },
+    error: () => {
+      byId('connection-status').dataset.connected = 'false';
+      if (byId('connection-status').dataset.syncFailed === 'true') return;
+      byId('connection-status').textContent = '自動更新を再接続中';
+      byId('connection-status').hidden = false;
+    },
+    changed: () => {
+      void initialization.then(() => reloadFromExternalChange());
+    },
+    'sync-error': () => {
+      const status = byId('connection-status');
+      status.dataset.syncFailed = 'true';
+      status.textContent = 'Git同期に失敗しました。今すぐ同期で再試行してください。';
+      status.hidden = false;
+    },
+    'sync-ok': () => {
+      const status = byId('connection-status');
+      status.dataset.syncFailed = 'false';
+      status.textContent = '';
+      status.hidden = true;
+    },
+  });
+}
+
+function initializeApp() {
+  subscribeEvents();
+  syncFilterDependencies();
+  syncNotificationButton();
+  initialization = Promise.all([loadEntries(), loadTargetRepos()])
+    .then(() => refreshKnownUwis({notify: false}))
+    .catch((error) => {
+      setGlobalError(error.message);
+    });
+}
+
+async function init() {
+  bindEvents();
+  resyncWhenVisible(() => initialization.then(() => reloadFromExternalChange()));
+  if (window.matchMedia('(max-width: 700px)').matches) {
+    document.querySelector('#screen-wi .filters details').open = false;
+  }
+  document.addEventListener('focusin', handleFocusIn);
+  initializeApp();
+  await initialization;
+  await restoreEntryFromUrl();
+}
+
+registerScreen('wi', {init});

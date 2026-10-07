@@ -1,37 +1,32 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """_managed_tempの管理対象一時ディレクトリ境界を検証する。"""
 
 # pylint: disable=protected-access
 
 from __future__ import annotations
 
-import argparse
-import contextlib
-import ctypes
-import datetime
 import json
 import os
 import pathlib
-import stat
 import subprocess
 import sys
-import typing
+import tempfile
 
 import pytest
 
 from agent_toolkit._atk import managed_temp as subject
 from agent_toolkit._atk.managed_temp import registry as registry_subject
+from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
+from agent_toolkit._testing.managed_temp_support import (
+    _install_windows_security_doubles,
+    _isolated_cli_environment,
+    _replace_records,
+    setattr_in_managed_temp_modules,
+)
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _ORIGINAL_STATE_ROOT_PATH = registry_subject._state_root_path
 """自動適用fixtureが差し替える前の外部状態ディレクトリの解決関数。"""
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-
-
-from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 
 
 def test_default_root_path_uses_platform_cache_on_posix(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -74,10 +69,10 @@ def test_state_root_path_ignores_relative_xdg_state_home(
 
 def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`list`は登録簿ではなく真正性検証済みの領域だけを返す。"""
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp("publish-group")
 
-    created_at = subject._load_private_json(subject._registry_path(target))["created_at"]
+    created_at = registry_subject._load_private_json(registry_subject._registry_path(target))["created_at"]
     assert subject.list_managed_temp("publish-group") == [
         {
             "path": str(target),
@@ -95,7 +90,7 @@ def test_cli_list_accepts_stale_posix_device(monkeypatch: pytest.MonkeyPatch, tm
     env, state_root = _isolated_cli_environment(tmp_path)
     monkeypatch.setenv("XDG_CACHE_HOME", env["XDG_CACHE_HOME"])
     monkeypatch.setenv("XDG_STATE_HOME", env["XDG_STATE_HOME"])
-    monkeypatch.setattr(subject, "_state_root_path", lambda: state_root)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: state_root)
     created = subprocess.run(
         [sys.executable, str(_SCRIPT), "create", "--prefix", "restart-device"],
         capture_output=True,
@@ -134,7 +129,7 @@ def test_cli_list_rejects_changed_inode(monkeypatch: pytest.MonkeyPatch, tmp_pat
     env, state_root = _isolated_cli_environment(tmp_path)
     monkeypatch.setenv("XDG_CACHE_HOME", env["XDG_CACHE_HOME"])
     monkeypatch.setenv("XDG_STATE_HOME", env["XDG_STATE_HOME"])
-    monkeypatch.setattr(subject, "_state_root_path", lambda: state_root)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: state_root)
     created = subprocess.run(
         [sys.executable, str(_SCRIPT), "create", "--prefix", "changed-inode"],
         capture_output=True,
@@ -169,7 +164,7 @@ def test_cli_list_rejects_changed_inode(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 def test_schema_4_record_remains_valid(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """schema 5の追加後も既存のschema 4レコードを検証できる。"""
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp("schema-four")
 
     def downgrade(record: dict[str, object]) -> None:
@@ -187,7 +182,7 @@ def test_schema_6_record_ignores_legacy_session_owner(
     tmp_path: pathlib.Path,
 ) -> None:
     """旧schema 6のsession_ownerは内容を解釈対象にしない。"""
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp("session", session_id="session-1")
 
     def add_legacy_session_owner(record: dict[str, object]) -> None:
@@ -212,10 +207,14 @@ def test_secure_path_does_not_fallback_for_other_open_error(
         full_open_error=32,
     )
 
-    with pytest.raises(subject._WindowsHandleOpenError) as captured:
-        subject._windows_secure_path(tmp_path / "target", directory=False)
+    with pytest.raises(managed_temp_windows_security._WindowsHandleOpenError) as captured:
+        managed_temp_windows_security._windows_secure_path(tmp_path / "target", directory=False)
 
-    full_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC | subject._WINDOWS_WRITE_OWNER
+    full_access = (
+        managed_temp_windows_security._WINDOWS_READ_CONTROL
+        | managed_temp_windows_security._WINDOWS_WRITE_DAC
+        | managed_temp_windows_security._WINDOWS_WRITE_OWNER
+    )
     assert captured.value.error_code == 32
     assert calls.opens == [full_access]
     assert not calls.security_reads

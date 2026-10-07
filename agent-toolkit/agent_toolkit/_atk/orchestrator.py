@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterable
 from agent_toolkit._atk import config as _config
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import console_title as _console_title
+from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import next_action as _next_action
 
@@ -27,9 +28,6 @@ PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 
 PROCESS_LOOP_SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 """process-loopが起動した会話の会話ID。"""
-
-DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
-"""最上位のセッションではない起動（可用性判定など）を示す環境印。"""
 
 RESTART_SPEC_ENV = "AGENT_TOOLKIT_RESTART_SPEC"
 """process-loopのランチャーが作成する再起動要求の受け渡しファイルのパスを保持する環境変数。
@@ -117,11 +115,8 @@ def resolve_specs(*, rerun_action: str) -> list[tuple[str, str, str]]:
     try:
         value = _config.resolve_mutable_setting("orchestrate_model")
     except ValueError as error:
-        default = _config._MUTABLE_KEY_DEFAULTS["orchestrate_model"]  # pylint: disable=protected-access
-        env_name = "AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL"
-        raw_value = os.environ.get(env_name, "") or _config._load_config().get(  # pylint: disable=protected-access
-            "orchestrate_model", default
-        )
+        default = _config.mutable_setting_default("orchestrate_model")
+        raw_value = _config.raw_mutable_setting("orchestrate_model")
         _next_action.report(
             f"orchestrate_modelの設定値が不正です（現在の設定値: {raw_value}）。{error}。",
             next_action=(
@@ -201,7 +196,7 @@ def _probe_env(env: dict[str, str], orchestrator: str) -> dict[str, str]:
     probe_env = session_env(env, orchestrator)
     probe_env.pop(PROCESS_LOOP_SESSION_ENV, None)
     probe_env.pop(PROCESS_LOOP_SESSION_ID_ENV, None)
-    probe_env[DELEGATED_SESSION_ENV] = "1"
+    probe_env[_delegated_session.DELEGATED_SESSION_ENV] = "1"
     return probe_env
 
 

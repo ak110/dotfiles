@@ -21,10 +21,10 @@ from typing import Any
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import message_format
 from agent_toolkit._common.delegated_session import is_delegated
+from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 from agent_toolkit._hooks.message_format import xml_message
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.session_state import update_state
 
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
@@ -42,6 +42,7 @@ QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動�
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
 MAIN_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-main.claude-code.md"
+MAIN_RULES_CODEX_PATH = SHARE_DIR / "rules-main.codex.md"
 SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
 SUBAGENT_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-subagent.claude-code.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
@@ -65,6 +66,9 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
 
     process-loopが渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
     担うに過ぎず、この指示の宛先ではない。
+
+    ホスト別のメイン向け規範は`rules-main.md`の後へ置く。Codexの全主体へ届く差分は`~/.codex/AGENTS.md`が
+    配送するため、ここではCodexのメインだけに適用する`rules-main.codex.md`を加える。
     """
     parts: list[str] = []
     if not delegated:
@@ -91,6 +95,8 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
         normative_parts.append(MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip("\n"))
         if host == "claude":
             normative_parts.append(MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
+        elif host == "codex":
+            normative_parts.append(MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip("\n"))
     if normative_parts:
         parts.append(_normative_context("\n\n".join(normative_parts), kind=NORMATIVE_KIND_MAIN))
     return "\n\n".join(parts) or None
@@ -103,7 +109,8 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 OPERATION_SKILL_READY_KEY = "operation_skill_ready_agents"
 """操作を起動の契機とするスキルの名前から、起動済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点とPostToolUse(Skill)が記録し、同じ判定が読む。
+Claude Codeでは、PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点とPostToolUse(Skill)が記録し、同じ判定が読む。
+Codexは起動済みを観測できず同モジュールが警告しないため、記録しない。
 """
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
 """メイン会話の起動済みの記録を除くSessionStartの`source`。新しいセッションの`startup`は記録を持たない。"""

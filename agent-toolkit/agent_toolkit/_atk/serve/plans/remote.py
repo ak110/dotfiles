@@ -1,14 +1,6 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""`atk serve`の計画ファイル画面の処理本体。
+"""SSH先の計画ファイルの取得、全文検索、常駐接続による変更通知の受信。
 
-ローカルと設定済みリモートホストの計画ファイルを集約し、全文検索、Markdownと
-レビュー指摘管理表のHTML変換、付属計画間の移動リンク生成、更新通知の配信を担う。
-ルート登録は`_atk_serve_app.py`の`_register_plan_routes`が行い、本モジュールは処理の実装だけを持つ。
-
-記録の保存先とrootの規約は`agent-toolkit/skills/plan-mode`が定める計画ファイルの配置に従う。
-リモートホスト側で実行するヘルパーは`atk_serve_plans_remote_helper.py`とする。
+SSH先ではリモートヘルパー（`atk_serve_plans_remote_helper.py`）を起動し、その入出力のプロトコルで一覧・本文・検索を扱う。
 """
 
 from __future__ import annotations
@@ -16,178 +8,40 @@ from __future__ import annotations
 import asyncio
 import asyncio.subprocess as _async_subprocess
 import base64
-import collections
-import collections.abc
-import contextlib
 import dataclasses
-import datetime
-import hashlib
-import html as html_lib
-import importlib
 import json
-import logging
-import os
 import pathlib
 import random
-import re
-import socket
-import subprocess
 import typing
-from typing import TYPE_CHECKING
-
-import markdown_it
-import markdown_it.renderer
-import markdown_it.token
-import markdown_it.utils
-import platformdirs
-import pygments
-import watchdog.events
-import watchdog.observers
-import watchdog.observers.api
-from pygments.formatters.html import HtmlFormatter
-from pygments.lexers import get_lexer_by_name
-from pygments.util import ClassNotFound
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._common import file_lock as _file_lock
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.serve.plans.ctime_index import (
-        _enter_index_lock,
-        _entry_ctime,
-        _exclusive_file_lock,
-        _index_key,
-        _index_lock_path,
-        _load_index,
-        _load_legacy_entries,
-        _root_key,
-        _write_index,
-        cleanup_creation_time_temporaries,
-        update_creation_time_index,
-    )
-    from agent_toolkit._atk.serve.plans.local_scan import (
-        _STATIC_DIR,
-        REMOTE_BOOTSTRAP,
-        PlansEventHandler,
-        _ctime_epoch,
-        is_listed_path,
-        is_target_path,
-        list_files,
-        local_host_info,
-        read_pygments_css,
-        resolve_under_root,
-        root_info,
-        root_status,
-        root_warning,
-        scan_files,
-        search_files,
-    )
-    from agent_toolkit._atk.serve.plans.rendering import (
-        MarkdownCache,
-        MarkdownCacheKey,
-        _highlight_code,
-        _render_fence,
-        make_md_renderer,
-        markdown_to_html,
-    )
-    from agent_toolkit._atk.serve.plans.roots import (
-        _BROADCAST_DEBOUNCE_SEC,
-        _BUGS_SUFFIX,
-        _CREATION_TIME_INDEX_PATH,
-        _DETAIL_SUFFIX,
-        _LEGACY_CACHE_NAME_RE,
-        _LEGACY_TEMPORARY_NAME_RE,
-        _LISTED_EXCLUDED_SUFFIXES,
-        _PLAN_SUFFIX_LABELS,
-        _PYGMENTS_CSS_CLASS,
-        _PYGMENTS_FORMATTER,
-        _REVIEW_TABLE_HEADERS,
-        _SSE_REFRESH_PAYLOAD,
-        _TARGET_TSV_SUFFIXES,
-        _UNRESOLVED_PRIVATE_NOTES_ROOT,
-        _WATCHED_EVENT_TYPES,
-        DEFAULT_REMOTE_SEARCH_LIMIT,
-        LEGACY_PORTABLE_ROOT,
-        LEGACY_SOURCE_ID,
-        MARKDOWN_CACHE_MAX_BYTES,
-        MARKDOWN_CACHE_MAX_ENTRIES,
-        NEW_PORTABLE_ROOT,
-        NEW_SOURCE_ID,
-        REMOTE_BACKOFF_INITIAL_SEC,
-        REMOTE_BACKOFF_JITTER_RANGE,
-        REMOTE_BACKOFF_MAX_SEC,
-        REMOTE_STREAM_LIMIT_BYTES,
-        RPC_REQUEST_TIMEOUT_SEC,
-        SSH_BASE_OPTIONS,
-        SSH_TIMEOUT_SEC,
-        SSH_WATCH_OPTIONS,
-        STDERR_EXCERPT_MAX_CHARS,
-        TERMINATE_GRACE_TIMEOUT_SEC,
-        BroadcastState,
-        FileEntry,
-        LineSource,
-        RootSpec,
-        SshRunner,
-        _broadcast,
-        _canonical,
-        _debounced_deliver,
-        _private_notes_result,
-        default_root_specs,
-        deliver_host_info,
-        deliver_host_status,
-        deliver_refresh,
-        deliver_root_info,
-        deliver_root_status,
-        explicit_root_spec,
-        logger,
-        make_file_entry,
-        normalize_root_specs,
-        schedule_broadcast,
-        subscribe,
-        unsubscribe,
-    )
-    from agent_toolkit._atk.serve.plans.views import (
-        PlanFileError,
-        PlansContext,
-        _oldest_host_per_file,
-        _plan_exists,
-        _plan_paths,
-        _read_text,
-        _scan_local_root,
-        _search_remote,
-        all_entries,
-        create_context,
-        is_review_table_path,
-        listed_plan_path,
-        plan_links_html,
-        render_file_html,
-        resolve_source_id,
-        resolve_text,
-        review_table_html,
-        search_entries,
-        start_local_watchers,
-        start_remote_watchers,
-        stop_local_watchers,
-        stop_remote_watchers,
-    )
-
+from agent_toolkit._atk.serve.plans.local_scan import REMOTE_BOOTSTRAP
 
 # --------------------------------------------------------------------------------------
 # リモートホスト統合
 # --------------------------------------------------------------------------------------
-
-
 from agent_toolkit._atk.serve.plans.roots import (
     DEFAULT_REMOTE_SEARCH_LIMIT,
+    REMOTE_BACKOFF_INITIAL_SEC,
+    REMOTE_BACKOFF_JITTER_RANGE,
+    REMOTE_BACKOFF_MAX_SEC,
+    REMOTE_STREAM_LIMIT_BYTES,
     RPC_REQUEST_TIMEOUT_SEC,
-    TERMINATE_GRACE_TIMEOUT_SEC,
+    SSH_BASE_OPTIONS,
+    SSH_TIMEOUT_SEC,
+    SSH_WATCH_OPTIONS,
+    BroadcastState,
+    LineSource,
+    SshRunner,
+    deliver_host_info,
+    deliver_host_status,
+    deliver_refresh,
+    deliver_root_info,
+    deliver_root_status,
+    logger,
+    make_file_entry,
 )
-
-
-def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
-    """この画面のリモートヘルパーを起動するargv要素列を返す。起動形は`_atk_serve_remote.remote_command_argv`が定める。"""
-    return _atk_serve_remote.remote_command_argv(REMOTE_BOOTSTRAP, op, args)
-
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 
 # 単発SSHの失敗の表現と標準エラー出力の整形はセッション画面と共通の契約とする。
 RemoteHelperError = _atk_serve_remote.RemoteHelperError
@@ -410,7 +264,8 @@ def _decode_root_status(raw: typing.Any) -> dict[str, dict[str, str]]:
 
 def _is_listed_remote_path(path: str) -> bool:
     """リモートwatchイベントのパスが一覧対象かを判定する。"""
-    return not pathlib.PurePosixPath(path).name.endswith(_LISTED_EXCLUDED_SUFFIXES)
+    # 変更通知からは同じstemのメイン計画の有無を観測できないため、レビュー指摘管理表も付属ファイルとして扱う。
+    return _bundle_kinds.is_listed_name(pathlib.PurePosixPath(path).name, main_exists=True)
 
 
 class RemoteWatcher:
@@ -463,7 +318,7 @@ class RemoteWatcher:
         """常駐SSH接続経由でRPCリクエストを送信し、応答辞書を返す。
 
         接続未確立・切断中では`RuntimeError`を送出する。
-        timeout時は対応するpendingエントリを除去して`TimeoutError`を送出する。
+        timeout時は対応するpendingエントリを除去し、操作名と上限秒数を含む`TimeoutError`を送出する。
         """
         if not self.is_connected():
             raise RuntimeError(f"watch not connected: host={self.host}")
@@ -482,7 +337,7 @@ class RemoteWatcher:
             async with self._send_lock:
                 proc.stdin.write(line.encode("utf-8"))
                 await proc.stdin.drain()
-            return await asyncio.wait_for(fut, timeout=timeout)
+            return await _atk_serve_remote.wait_rpc_response(fut, op=op, timeout=timeout)
         finally:
             self._pending.pop(req_id, None)
 
@@ -510,9 +365,8 @@ class RemoteWatcher:
                 await self._set_status("disconnected")
             finally:
                 self._fail_pending(ConnectionError(f"watch disconnected: host={self.host}"))
-                await self._cancel_stderr_task()
-                if proc is not None:
-                    await _terminate_process(proc)
+                await _atk_serve_remote.stop_resident_helper(proc, self._stderr_task)
+                self._stderr_task = None
                 self._proc = None
                 self._connected = False
             _atk_serve_remote.raise_if_cancelling()
@@ -522,37 +376,15 @@ class RemoteWatcher:
             self._backoff = min(self._backoff * 2, REMOTE_BACKOFF_MAX_SEC)
 
     async def _connect(self) -> _async_subprocess.Process:
-        cmd = [
-            "ssh",
-            *SSH_BASE_OPTIONS,
-            *SSH_WATCH_OPTIONS,
+        proc, self._stderr_task = await _atk_serve_remote.start_resident_helper(
+            REMOTE_BOOTSTRAP,
             self.host,
-            *_build_remote_command_argv("serve", []),
-        ]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            # ヘルパーは初回snapshotで全エントリーを1行JSONとして出力するため、
-            # asyncioが標準で使う64KiB上限を超えると`readline()`が例外を送出する。
-            limit=REMOTE_STREAM_LIMIT_BYTES,
+            ssh_options=(*SSH_BASE_OPTIONS, *SSH_WATCH_OPTIONS),
+            stream_limit=REMOTE_STREAM_LIMIT_BYTES,
+            logger=logger,
+            label="リモートwatch",
         )
-        # helper起動失敗（依存解決失敗など）はstdoutが空EOFとなり原因ログが残らないため、
-        # stderrを常時読み取ってwarningへ転写する。
-        assert proc.stderr is not None
-        self._stderr_task = asyncio.create_task(_drain_stderr(self.host, proc.stderr))
         return proc
-
-    async def _cancel_stderr_task(self) -> None:
-        """stderr読取タスクを終了させる。切断・キャンセル時にfinallyで呼ぶ。"""
-        task = self._stderr_task
-        if task is None:
-            return
-        self._stderr_task = None
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
 
     async def _process_stream(self, lines: LineSource) -> None:
         """行ストリームを受け取り、type別にハンドラへ振り分ける。"""
@@ -700,64 +532,6 @@ async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterat
         yield chunk.decode("utf-8", errors="replace")
 
 
-async def _drain_stderr(host: str, stream: asyncio.StreamReader) -> None:
-    """stderrを行単位で読み続けてwarningへ転写する（詳細は`_connect`のコメント参照）。"""
-    try:
-        while True:
-            line = await stream.readline()
-            if not line:
-                return
-            text = line.decode("utf-8", errors="replace").rstrip()
-            if text:
-                logger.warning("リモートwatch stderr host=%s: %s", host, text)
-    except Exception as error:  # noqa: BLE001
-        # CancelledErrorはBaseException派生のため`Exception`で拾わず、通常どおり再送出される。
-        logger.warning("リモートwatch stderr読取失敗 host=%s: %s", host, error)
-
-
-async def _terminate_process(
-    proc: _async_subprocess.Process,
-    grace_timeout: float = TERMINATE_GRACE_TIMEOUT_SEC,
-) -> None:
-    """watch用subprocessを段階的に終了させる。
-
-    serveヘルパーは`for raw in sys.stdin:`でEOFを受け取ると停止するため、
-    まずstdinをcloseして穏当な終了を試み、応答がなければ`terminate`、
-    それでも応答がなければ`kill`へ降下する。
-    """
-    if proc.returncode is not None:
-        return
-    # 1) stdinへEOFを送ってhelperのreader_loopをbreakさせる。
-    if proc.stdin is not None and not proc.stdin.is_closing():
-        with contextlib.suppress(BrokenPipeError, ConnectionResetError, OSError):
-            proc.stdin.close()
-    if await _wait_with_timeout(proc, grace_timeout):
-        return
-    # 2) SIGTERM相当でhelperへ停止指示する。
-    with contextlib.suppress(ProcessLookupError):
-        proc.terminate()
-    if await _wait_with_timeout(proc, grace_timeout):
-        return
-    # 3) 最後にSIGKILL相当で強制終了させる。
-    with contextlib.suppress(ProcessLookupError):
-        proc.kill()
-    await _wait_with_timeout(proc, grace_timeout)
-
-
-async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) -> bool:
-    """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。
-
-    `_terminate_process`はキャンセルされた場合も呼ばれるため、
-    `CancelledError`は吸収して段階的処理を継続する。
-    吸収した後に次の反復へ戻る呼び出し側は、`_atk_serve_remote.raise_if_cancelling`でキャンセル要求を確かめる。
-    """
-    if proc.returncode is not None:
-        return True
-    with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
-    return proc.returncode is not None
-
-
 def is_safe_remote_relpath(rel: str) -> bool:
     """SSHヘルパーへ渡す前に相対パスのトラバーサルを検証する。
 
@@ -769,4 +543,4 @@ def is_safe_remote_relpath(rel: str) -> bool:
     parts = pathlib.PurePosixPath(rel).parts
     if any(part in ("", "..") for part in parts):
         return False
-    return rel.endswith(".md") or rel.endswith(_TARGET_TSV_SUFFIXES)
+    return _bundle_kinds.is_viewable_name(parts[-1])

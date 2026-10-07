@@ -15,7 +15,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pytools._internal import claude_common, codex_processes, log_format, post_apply_outcome, setup_codex_links
+from pytools._internal import (
+    codex_processes,
+    common,
+    host_roles,
+    log_format,
+    post_apply_outcome,
+    setup_codex_links,
+)
 
 logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
@@ -55,7 +62,7 @@ _EXPECTED_HOOK_EVENTS = {
 
 
 def _codex_json(args: list[str]) -> dict[str, Any] | None:
-    result = claude_common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
+    result = common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
     if result is None or result.returncode != 0:
         return None
     try:
@@ -66,7 +73,7 @@ def _codex_json(args: list[str]) -> dict[str, Any] | None:
 
 
 def _command(args: list[str]) -> bool:
-    result = claude_common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
+    result = common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
     return result is not None and result.returncode == 0
 
 
@@ -272,7 +279,7 @@ def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApp
     if os.environ.get(_AUTO_RESTART_ENV) != "1":
         notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
         return
-    result = claude_common.run_subprocess(
+    result = common.run_subprocess(
         [str(_CODEX_EXECUTABLE.get()), "app-server", "daemon", "restart"],
         timeout=_TIMEOUT,
         tag="codex",
@@ -349,6 +356,31 @@ def _install_hook_wrapper(root: Path) -> bool:
     return changed
 
 
+def _deferred_update_notice(
+    plugin_id: str, current: dict[str, Any], version: str, running_text: str
+) -> post_apply_outcome.PostApplyNotice:
+    """稼働中のCodexを守るために延期した更新の内容と、利用を終えてから再実行する操作を案内する。
+
+    延期した結果は変更なしと同じ成功になるため、案内が無いと同期記録の読み手は最新版を適用済みと扱う。
+    """
+    differences = []
+    current_version = current.get("version")
+    if current_version != version:
+        differences.append(
+            f"導入版{current_version if isinstance(current_version, str) else '不明'}から目標版{version}への更新"
+        )
+    if current.get("enabled") is not True:
+        differences.append("無効から有効への切り替え")
+    return post_apply_outcome.PostApplyNotice(
+        message=(
+            f"Codexが稼働中のため、{plugin_id}の{'と'.join(differences)}を延期しました（稼働中: {running_text}）。"
+            "利用中のセッションを守るため導入済みの版と有効状態を保持しており、最新版の内容はまだ反映されていません。"
+            "Codexのセッションと委譲を全て終了してから、`update-dotfiles`を再実行してください。"
+        ),
+        command="update-dotfiles",
+    )
+
+
 def _sync_local_plugin(
     root: Path,
     marketplace_name: str,
@@ -363,18 +395,20 @@ def _sync_local_plugin(
     if (
         needs_plugin_add
         and current is not None
-        and claude_common.is_euryale()
+        and host_roles.is_linux_server()
         and os.environ.get(_AUTO_RESTART_ENV) != "1"
         and (running := codex_processes.running_codex_processes())
     ):
+        running_text = codex_processes.format_running_processes(running)
         logger.warning(
             log_format.format_status(
                 "codex plugins",
-                "Codexが稼働中のためplugin更新を延期: "
-                f"{codex_processes.format_running_processes(running)}。"
+                f"Codexが稼働中のためplugin更新を延期: {running_text}。"
                 "導入済みの版と有効状態を保持しました。Codex停止後の次のupdate-dotfilesで更新します。",
             )
         )
+        # 同期記録はnoticeの本文だけを保存するため、再実行の操作も本文に含める。
+        notices.append(_deferred_update_notice(plugin_id, current, version, running_text))
         return False
     wrapper = _hook_bin() / ("atk-hook.cmd" if os.name == "nt" else "atk-hook")
     first_transition = not wrapper.exists()
@@ -458,8 +492,11 @@ def _append_notices_to_exception(error: Exception, notices: list[post_apply_outc
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """marketplaceを登録してagent-toolkitを導入・更新する。"""
-    codex = claude_common.resolve_executable("codex")
+    """marketplaceを登録してagent-toolkitを導入・更新する。
+
+    導入・更新と状態確認の失敗は警告を出力してスキップと数え、配布先ファイルの書き込みの失敗は例外として失敗と数える。
+    """
+    codex = common.resolve_executable("codex")
     if codex is None:
         logger.info(log_format.format_status("codex plugins", "codex CLIが見つからずスキップ"))
         return _outcome(False, [])
@@ -470,9 +507,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         unused_outcome = _remove_unused_plugins()
         changed = unused_outcome.changed
         notices.extend(unused_outcome.notices)
-        root = claude_common.find_dotfiles_root()
+        root = common.find_dotfiles_root()
         if root is None:
             return _outcome(changed, notices)
+        # dotfilesの作業ツリーをmarketplaceとして登録し、その版を期待値にする。単体インストーラー
+        # （`install-claude.sh`・`install-claude.ps1`）は作業ツリーを前提にできないため、GitHubのmarketplaceを使う。
         target = _target(root)
         if target is None:
             logger.warning(log_format.format_status("codex plugins", "Codex plugin manifestが不正なためスキップ"))
@@ -504,6 +543,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             return _outcome(changed, notices)
         local_changed = _sync_local_plugin(root, marketplace_name, plugin_name, version, current, notices)
         return _outcome(changed or local_changed, notices)
+    except RuntimeError as error:
+        # 導入・更新とその後の状態確認の失敗。設定ファイルとランチャーの書き込みの失敗（OSError）は失敗として送出する。
+        logger.warning(log_format.format_status("codex plugins", f"導入または更新に失敗: {error}"))
+        return _outcome(False, notices)
     except Exception as error:
         _append_notices_to_exception(error, notices)
         raise

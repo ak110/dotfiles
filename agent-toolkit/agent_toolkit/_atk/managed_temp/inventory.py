@@ -1,19 +1,14 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""agent-toolkitが所有する一時ディレクトリを作成・検証・後始末する。"""
+"""managed-tempのディレクトリの列挙、期限切れの掃引と回収（中断した回収の再開と未登録の候補の報告を含む）。
+
+回収は登録簿を消費してから隔離名へ移し、隔離後の内容を削除する順に進め、中断した時点から再開できる状態を保つ。
+"""
 
 from __future__ import annotations
 
-import argparse
 import contextlib
-import ctypes
 import datetime
 import enum
 import functools
-import hashlib
-import json
 import ntpath
 import os
 import pathlib
@@ -22,123 +17,50 @@ import secrets
 import shutil
 import stat
 import sys
-import tempfile
 import typing
-import unicodedata
-from ctypes import wintypes
-from typing import TYPE_CHECKING
 
-from agent_toolkit._common import file_lock
-from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.managed_temp.cli import build_parser, dispatch, main
-    from agent_toolkit._atk.managed_temp.creation import (
-        _invalid_prefix_error,
-        _remove_created_target,
-        _validate_path_shape,
-        _validate_posix,
-        _validate_windows,
-        create_managed_temp,
-        is_valid_prefix,
-        prefix_violation,
-        validate_managed_temp,
-    )
-    from agent_toolkit._atk.managed_temp.registry import (
-        _MARKER_NAME,
-        _PREFIX_RE,
-        _PREFIX_RULES,
-        _SCHEMA_VERSION,
-        _UTC_ISO8601_RE,
-        _WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
-        _WINDOWS_ACCESS_DENIED_ACE_TYPE,
-        _WINDOWS_ACL_REVISION,
-        _WINDOWS_CONTAINER_INHERIT_ACE,
-        _WINDOWS_DACL_SECURITY_INFORMATION,
-        _WINDOWS_ERROR_ACCESS_DENIED,
-        _WINDOWS_EXTERNAL_WRITER_ACCESS,
-        _WINDOWS_FILE_ALL_ACCESS,
-        _WINDOWS_FILE_ATTRIBUTE_DIRECTORY,
-        _WINDOWS_FILE_FLAG_BACKUP_SEMANTICS,
-        _WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT,
-        _WINDOWS_FILE_SHARE_ALL,
-        _WINDOWS_OBJECT_INHERIT_ACE,
-        _WINDOWS_OPEN_EXISTING,
-        _WINDOWS_OWNER_SECURITY_INFORMATION,
-        _WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION,
-        _WINDOWS_READ_ATTRIBUTES,
-        _WINDOWS_READ_CONTROL,
-        _WINDOWS_REPARSE_POINT,
-        _WINDOWS_SE_DACL_PROTECTED,
-        _WINDOWS_SE_FILE_OBJECT,
-        _WINDOWS_SYNCHRONIZE,
-        _WINDOWS_WRITE_DAC,
-        _WINDOWS_WRITE_OWNER,
-        MAX_AGE_DAYS,
-        ManagedTempError,
-        _awis_are_valid,
-        _is_utc_iso8601,
-        _load_marker,
-        _load_private_json,
-        _ManagedTempEntry,
-        _owner_record,
-        _path_identity,
-        _record,
-        _record_base,
-        _record_mismatch_error,
-        _records_match,
-        _registry_name,
-        _registry_path,
-        _state_root,
-        _state_root_path,
-        _temp_root,
-        _validate_root,
-        _ValidatedRoot,
-        _ValidatedTemp,
-        _WindowsApiError,
-        _WindowsHandleOpenError,
-        _write_marker,
-        _write_private_json,
-    )
-    from agent_toolkit._atk.managed_temp.windows_security import (
-        _AccessAllowedAce,
-        _AceHeader,
-        _Acl,
-        _AclSizeInformation,
-        _ByHandleFileInformation,
-        _FileTime,
-        _validate_windows_managed_root_security,
-        _validate_windows_security,
-        _windows_acl_buffer,
-        _windows_current_sid,
-        _windows_current_user_ace_is_valid,
-        _windows_dll,
-        _windows_equal_sids,
-        _windows_error,
-        _windows_external_writer_ace_is_valid,
-        _windows_handle_open_error,
-        _windows_identity,
-        _windows_information_identity,
-        _windows_managed_root_security_is_valid,
-        _windows_path_handle,
-        _windows_reparse_identity,
-        _windows_replace_security,
-        _windows_secure_path,
-        _windows_security_base_is_valid,
-        _windows_security_descriptor,
-        _windows_security_from_handle,
-        _windows_security_update_handle,
-        _windows_set_security,
-        _windows_sid_bytes,
-        _WindowsAce,
-        _WindowsSecurity,
-    )
-
-
-from agent_toolkit._atk.managed_temp.creation import *  # noqa: F403
-from agent_toolkit._atk.managed_temp.registry import *  # noqa: F403
-from agent_toolkit._atk.managed_temp.windows_security import *  # noqa: F403
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._atk.managed_temp.registry import (
+    _MARKER_NAME,
+    MAX_AGE_DAYS,
+    _awis_are_valid,
+    _invalid_prefix_error,
+    _load_marker,
+    _load_private_json,
+    _ManagedTempEntry,
+    _owner_record,
+    _path_identity,
+    _records_match,
+    _registry_name,
+    _registry_path,
+    _state_root,
+    _temp_root,
+    _validate_root,
+    _ValidatedRoot,
+    _ValidatedTemp,
+    _write_marker,
+    _write_private_json,
+    is_valid_prefix,
+)
+from agent_toolkit._atk.managed_temp.validation import (
+    _validate_path_shape,
+    _validate_posix,
+    _validate_windows,
+    validate_managed_temp,
+)
+from agent_toolkit._atk.managed_temp.windows_security import (
+    _WINDOWS_FILE_ATTRIBUTE_DIRECTORY,
+    _WINDOWS_REPARSE_POINT,
+    _windows_current_sid,
+    _windows_equal_sids,
+    _windows_identity,
+    _windows_reparse_identity,
+    _windows_secure_path,
+    _windows_security_descriptor,
+    _windows_sid_bytes,
+)
+from agent_toolkit._common import file_lock
 
 
 def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:

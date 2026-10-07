@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._hooks.pretooluse.test_support_test import _additional_context, _run
+from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"

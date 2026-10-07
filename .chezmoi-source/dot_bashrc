@@ -483,11 +483,6 @@ if [ -e ~/.localbashrc ]; then
     source ~/.localbashrc
 fi
 
-#xonsh_path=$(which xonsh)
-#if [ -x $xonsh_path ] ; then
-#    exec $xonsh_path
-#fi
-
 # カレントディレクトリが git 作業ツリーなら git status を自動実行する。
 # `.git` はディレクトリだけでなく worktree の場合はファイルになるので `-e` で判定する。
 if [ -e .git ]; then

@@ -3,34 +3,17 @@
 import argparse
 import json
 import pathlib
-import subprocess
 
 import pytest
 
 from agent_toolkit._atk import run_script
-
-
-def _git(repository: pathlib.Path, *args: str) -> str:
-    completed = subprocess.run(
-        ["git", "-C", str(repository), *args],
-        capture_output=True,
-        text=True,
-        check=True,
-        env={
-            "GIT_AUTHOR_NAME": "t",
-            "GIT_AUTHOR_EMAIL": "t@example.com",
-            "GIT_COMMITTER_NAME": "t",
-            "GIT_COMMITTER_EMAIL": "t@example.com",
-            "HOME": str(repository),
-        },
-    )
-    return completed.stdout.strip()
+from agent_toolkit._testing import git_repository
 
 
 def _commit_all(repository: pathlib.Path, message: str) -> str:
-    _git(repository, "add", "-A")
-    _git(repository, "commit", "-q", "-m", message)
-    return _git(repository, "rev-parse", "HEAD")
+    git_repository.git_output(repository, "add", "-A")
+    git_repository.git_output(repository, "commit", "-q", "-m", message)
+    return git_repository.git_output(repository, "rev-parse", "HEAD")
 
 
 def _write(path: pathlib.Path, text: str) -> None:
@@ -48,7 +31,7 @@ def _run(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, str, str]
 def _repository(tmp_path: pathlib.Path) -> pathlib.Path:
     repository = tmp_path / "repo"
     repository.mkdir()
-    _git(repository, "init", "-q")
+    git_repository.init_repository(repository)
     _write(repository / "README.md", "初版\n")
     _write(repository / "agent-toolkit" / "share" / "old.subagent.md", "旧\n")
     return repository

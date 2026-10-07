@@ -31,9 +31,12 @@ def test_required_labels_match_reviewee_definition_and_respond_help(capsys: pyte
     assert "`references/reviewee.md`" in help_text
 
 
-def test_delegation_skill_lists_all_required_labels() -> None:
-    """サブエージェント出力の統合で応答欄を書く主体が読む`delegation`スキルも、`respond`が確かめる全ラベルを挙げる。"""
+def test_delegation_skill_refers_to_reviewee_response_section() -> None:
+    """サブエージェント出力の統合で応答欄を書く主体が読む`delegation`スキルは、ラベルを転記せず定義元の節を参照する。
+
+    ラベルの定義を転記すると定義元の改訂に追随しない複製が残るため、`reviewee.md`の節への参照だけを持たせる。
+    """
     skill = pathlib.Path(__file__).parents[2] / "skills" / "delegation" / "SKILL.md"
-    paragraph = next(line for line in skill.read_text(encoding="utf-8").splitlines() if "応答欄の本文には" in line)
-    assert all(f"`{label}`" in paragraph for label in (*table.RESPONSE_LABELS, *table.NO_RESPONSE_REASON_LABELS))
-    assert "`references/reviewee.md`" in paragraph
+    paragraph = next(line for line in skill.read_text(encoding="utf-8").splitlines() if "応答欄の本文は" in line)
+    assert "`references/reviewee.md`「レビュー指摘管理表への応答」" in paragraph
+    assert not any(f"`{label}`" in paragraph for label in table.RESPONSE_LABELS)

@@ -1,13 +1,4 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F821,I001
-# pylint: disable=unused-import,used-before-assignment,wrong-import-order
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
-
-旧`pytools/dotfiles_fb/_mutations.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""WIエントリの本文の編集と追記（`atk wi edit`・`atk wi append`）と、エージェントによる`## ユーザーコメント`の変更の拒否。"""
 
 from __future__ import annotations
 
@@ -15,105 +6,30 @@ import argparse
 import datetime
 import os
 import pathlib
-import re
-import shutil
 import subprocess
 import sys
-import tempfile
-import typing
-from typing import TYPE_CHECKING
 
-from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import add as _add
-from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import bulk as _bulk
+from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import constants as _constants
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import filenames as _wi_filenames
+from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
-from agent_toolkit._atk.wi.common import (
-    TRANSITION_EXPLICIT_STATES,
-    WI_EDITABLE_STATES,
-    WI_PROCESSABLE_STATES,
-    WI_STATE_ADOPTED,
-    WI_STATE_HOLD,
-    WI_STATE_INBOX,
-    WI_STATE_PROCESSING,
-    WI_STATE_REJECTED,
-    WI_STATES,
-    WI_TYPE_AWI,
-    WI_TYPE_UWI,
-    WebInputError,
-    _commit_and_push,
-    _copy_to_tempfile,
-    _dedup_positional_filenames,
-    _pull,
-    _push_pending_commits,
-    _repo_lock,
-    _require_type,
-    _stamp_result,
-    _subdir,
-    _validate_filename,
-    _validate_filenames_only,
-    is_agent_environment,
-    normalized_wi_type,
-)
-from agent_toolkit._atk.wi.repo import (
-    _normalize_remote_url,
-    _resolve_repo_id,
-    _verify_target_repo_content,
-)
+from agent_toolkit._atk.wi.constants import WI_EDITABLE_STATES, WI_STATE_INBOX, WI_STATE_PROCESSING, WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.mutations.targets import invalidate_repo_bound_metadata, resolve_editable_targets
 from agent_toolkit._atk.wi.repo import append_entry as _append_entry
 from agent_toolkit._atk.wi.repo import edit_entry as _edit_entry
-from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._plan import locations as _plan_file
-from agent_toolkit._plan import structure as _plan_format
-
-if TYPE_CHECKING:
-    from agent_toolkit._atk.wi.mutations.dependencies import (
-        _active_dependency_graph,
-        _cmd_set_dependencies,
-        _dependency_reaches,
-        _entry_dependencies,
-        set_entry_dependencies,
-    )
-    from agent_toolkit._atk.wi.mutations.targets import (
-        _GIT_TIMEOUT_SECONDS,
-        _atomic_write_text,
-        _candidate_local_worktree,
-        _cmd_commit,
-        _commit_values_by_path,
-        _entry_target_repo,
-        _git_head,
-        _invalidate_repo_bound_metadata,
-        _local_worktree_repo_id,
-        _MISSING_TARGET_NEXT_ACTION,
-        _resolve_awi_targets,
-        _resolve_commit,
-        _resolve_editable_targets,
-        _resolve_processable_targets,
-        _resolve_active_targets,
-        commit_entries,
-    )
-    from agent_toolkit._atk.wi.mutations.transitions import (
-        _apply_transition,
-        _cmd_adopt,
-        _cmd_hold,
-        _cmd_reject,
-        _cmd_return_to_inbox,
-        _cmd_rm,
-        _cmd_start_processing,
-        _cmd_unhold,
-        _resolve_transition_paths,
-        _strip_result_section,
-        _transition_commit_message,
-        _update_transition_metadata,
-        _validate_transition_options,
-        _validate_transition_targets,
-        transition_entries,
-    )
-
+from agent_toolkit._atk.wi.repo import (
+    resolve_repo_id,
+    verify_target_repo_content,
+)
+from agent_toolkit._atk.wi.web_input import WebInputError
 
 _USER_COMMENT_EDIT_NEXT_ACTION = (
     "本文からユーザーコメント節（`## ユーザーコメント`見出し以降）を除いて再実行する。"
@@ -221,7 +137,7 @@ def edit_entry_content(
         lock_timeout=lock_timeout,
         expected_content=expected_content,
         commit_message="chore: edit wi item",
-        content_transformer=_invalidate_repo_bound_metadata,
+        content_transformer=invalidate_repo_bound_metadata,
         finalized_content=finalized_content,
         skip_remote_sync=skip_remote_sync,
     )
@@ -250,7 +166,7 @@ def append_entry_content(
 
     def validate(previous: str, updated: str) -> None:
         del updated
-        if _require_type(path, previous) == WI_TYPE_UWI:
+        if _wi_entries.entry_type_of(path, previous) == WI_TYPE_UWI:
             raise WebInputError("UWIには追記できません", next_action="--appendを外して本文全体を置き換える")
 
     return _append_entry(
@@ -276,7 +192,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
             next_action=_BROKEN_STORED_NEXT_ACTION.format(name=path.name),
         )
     stored_data, stored_body = parsed
-    entry_type = _require_type(path, original)
+    entry_type = _wi_entries.entry_type_of(path, original)
     assert entry_type is not None
     message_frontmatter, message_body = _add.parse_entry_message(message, entry_type=entry_type)
     normalized_message_body = message_body.strip("\n")
@@ -304,7 +220,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
                 "target_repoは文字列で指定してください",
                 next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを文字列で指定する",
             )
-        updates["target_repo"] = _resolve_repo_id(raw_target_repo)
+        updates["target_repo"] = resolve_repo_id(raw_target_repo)
     for reserved_key, reserved_next_action in _RESERVED_EDIT_KEY_NEXT_ACTIONS.items():
         if reserved_key in updates:
             raise WebInputError(
@@ -423,7 +339,7 @@ def _print_cooldown_result(content: str) -> None:
     print(f"    cooldown_until: {parsed[0].get('cooldown_until', 'なし')}")
 
 
-def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """editサブコマンド: `--body-file`または$EDITORで対象を編集しcommit・pushする。
 
     無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
@@ -448,7 +364,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         args.subparser.error("--body-fileを指定する場合はFILENAMEも指定してください。")
     if args.append:
         assert message is not None
-        _cmd_append(args, private_notes, message)
+        cmd_append(args, private_notes, message)
         return
     if message is not None and _reject_agent_user_comment_message(message):
         sys.exit(1)
@@ -459,10 +375,10 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _outcome.report_failure("$EDITORが未設定のため編集できない", next_action="$EDITORを設定するか--body-fileを指定する")
             sys.exit(1)
     inbox_dir = private_notes / WI_STATE_INBOX
-    _subdir(private_notes, WI_STATE_PROCESSING)
-    with _repo_lock(private_notes):
+    _wi_entries.subdir(private_notes, WI_STATE_PROCESSING)
+    with _wi_sync.repo_lock(private_notes):
         if args.filename is None:
-            _pull(private_notes)
+            _wi_sync.pull(private_notes)
             candidates = sorted(
                 (p for p in inbox_dir.iterdir() if p.suffix == ".md" and p.is_file()),
                 key=lambda p: p.name,
@@ -472,9 +388,9 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 sys.exit(2)
             path = candidates[-1]
         else:
-            _validate_filenames_only([args.filename], inbox_dir)
-            _pull(private_notes)
-            paths = _resolve_editable_targets([args.filename], private_notes)
+            _wi_filenames.validate_filenames_only([args.filename], inbox_dir)
+            _wi_sync.pull(private_notes)
+            paths = resolve_editable_targets([args.filename], private_notes)
             path = paths[0]
         if args.cooldown_until is not None and path.parent.name == WI_STATE_PROCESSING:
             _outcome.report_failure(
@@ -487,13 +403,13 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         editing_body = message is not None or args.cooldown_until is None
         if editing_body:
             _reject_agent_processing_edit(path)
-        normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
-        _verify_target_repo_content(path, original, normalized_target_repo)
+        normalized_target_repo = resolve_repo_id(args.target_repo) if args.target_repo is not None else None
+        verify_target_repo_content(path, original, normalized_target_repo)
     original = _frontmatter.decode_entry_text(snapshot)
     tmp_path: pathlib.Path | None = None
     if message is None and args.cooldown_until is None:
         assert editor is not None
-        tmp_path = _copy_to_tempfile(snapshot)
+        tmp_path = _wi_cli_input.copy_to_tempfile(snapshot)
         editor_result = subprocess.run([editor, str(tmp_path)], check=False)
         if editor_result.returncode != 0:
             _outcome.report_failure(
@@ -555,7 +471,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             if original_parsed is not None and isinstance(original_parsed[0].get("source"), str):
                 original_frontmatter, original_body = original_parsed
                 try:
-                    _add._require_agent_awi_sections(  # pylint: disable=protected-access
+                    _add.require_agent_awi_sections(
                         original_body,
                         original_frontmatter,
                         entry_type=WI_TYPE_AWI,
@@ -565,7 +481,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     pass  # 既存の旧書式の編集では本文の表記診断だけを行う。
                 else:
                     try:
-                        _add._require_agent_awi_sections(  # pylint: disable=protected-access
+                        _add.require_agent_awi_sections(
                             body,
                             frontmatter,
                             entry_type=WI_TYPE_AWI,
@@ -604,31 +520,31 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if tmp_path is not None:
         tmp_path.unlink(missing_ok=True)
     _outcome.report_success(f"編集を反映した: {path.name}")
-    details = _add._read_saved_entry_details(  # pylint: disable=protected-access
+    details = _add.read_saved_entry_details(
         path,
         expected_body=finalized_content["content"],
     )
     if editing_body:
-        _add._print_entry_details(details)  # pylint: disable=protected-access
+        _add.print_entry_details(details)
     if args.cooldown_until is not None:
         _print_cooldown_result(finalized_content["content"])
 
 
-def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: str) -> None:
+def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: str) -> None:
     """Edit --appendサブコマンド: 既存raw bytesを保って`--body-file`の本文を末尾へ追記する。"""
     assert args.filename is not None
     if _reject_agent_user_comment_message(message):
         sys.exit(1)
 
     inbox_dir = private_notes / WI_STATE_INBOX
-    _subdir(private_notes, WI_STATE_PROCESSING)
-    with _repo_lock(private_notes):
-        _validate_filenames_only([args.filename], inbox_dir)
-        _pull(private_notes)
-        path = _resolve_editable_targets([args.filename], private_notes)[0]
+    _wi_entries.subdir(private_notes, WI_STATE_PROCESSING)
+    with _wi_sync.repo_lock(private_notes):
+        _wi_filenames.validate_filenames_only([args.filename], inbox_dir)
+        _wi_sync.pull(private_notes)
+        path = resolve_editable_targets([args.filename], private_notes)[0]
         snapshot = path.read_bytes()
-        normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
-        _verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)
+        normalized_target_repo = resolve_repo_id(args.target_repo) if args.target_repo is not None else None
+        verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)
 
     original = snapshot.decode("utf-8")
     if is_agent_environment():
@@ -666,7 +582,7 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: 
         )
         sys.exit(1)
     _outcome.report_success(f"追記を反映した: {path.name}")
-    _add._read_saved_entry_details(  # pylint: disable=protected-access
+    _add.read_saved_entry_details(
         path,
         expected_body=finalized_content["content"],
     )

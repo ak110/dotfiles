@@ -26,13 +26,9 @@ import json
 import os
 
 from agent_toolkit._common.process_loop_session import is_process_loop_session
-from agent_toolkit._hooks.stop_gate import (
-    append_stop_log,
-    is_pending_async_work,
-)
-from agent_toolkit._hooks.stop_gate import (
-    parse_stop_session as _parse_stop_session,
-)
+from agent_toolkit._hooks.background_tasks import is_pending_async_work
+from agent_toolkit._hooks.stop_session import append_stop_log
+from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 # 端末ベル（BEL）の制御文字。
 _BELL = "\a"

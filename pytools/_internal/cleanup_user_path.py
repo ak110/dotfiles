@@ -12,11 +12,10 @@ WindowsのPATHはシステム（HKLM）側とユーザー（HKCU）側に分か�
 import logging
 import ntpath
 import os
-import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path, PureWindowsPath
 
-from pytools._internal import log_format, winutils
+from pytools._internal import log_format, post_apply_outcome, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -32,26 +31,20 @@ _REG_EXPAND_SZ = 2
 _PLACEHOLDER_VAR_ORDER: tuple[str, ...] = ("LOCALAPPDATA", "APPDATA", "USERPROFILE")
 
 
-def run() -> bool:
-    """ユーザー側 PATH を整理する (Windows のみ)。
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """ユーザー側 PATH を整理する。
 
     プレースホルダー化・システム側およびユーザー側の重複除外・存在チェック警告を実施する。
     存在しないエントリーは警告ログを出力するのみで自動削除はしない。
-
-    Returns:
-        ユーザー側 PATH を実際に書き換えた場合 True。
+    PATH の読み書きの失敗は失敗と数える。
     """
-    if sys.platform != "win32":
-        return False
-
     user_value, reg_type = winutils.read_user_env_var("Path")
     if not user_value:
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     try:
         system_value, _ = winutils.read_system_env_var("Path")
     except OSError as e:
-        logger.warning(log_format.format_status(_LOG_LABEL, f"システム側 PATH の読み込みに失敗: {e}"))
-        return False
+        return post_apply_outcome.PostApplyOutcome(failure=f"システム側 PATH の読み込みに失敗: {e}")
 
     env_map = _collect_userprofile_env(os.environ)
 
@@ -91,18 +84,17 @@ def run() -> bool:
 
     # (5) 書き戻し
     if not (replacements or removed or needs_type_promotion):
-        return False
+        return post_apply_outcome.PostApplyOutcome()
     try:
         winutils.write_user_env_var("Path", new_value, new_reg_type)
     except OSError as e:
-        logger.warning(log_format.format_status(_LOG_LABEL, f"ユーザー PATH の書き込みに失敗: {e}"))
-        return False
+        return post_apply_outcome.PostApplyOutcome(failure=f"ユーザー PATH の書き込みに失敗: {e}")
     for original, new_entry in replacements:
         logger.info(log_format.format_status(_LOG_LABEL, f"ユーザー PATH を整理: {original} → {new_entry}"))
     for entry in removed:
         logger.info(log_format.format_status(_LOG_LABEL, f"ユーザー PATH から除外: {entry}"))
     winutils.broadcast_environment_change()
-    return True
+    return post_apply_outcome.PostApplyOutcome(changed=True)
 
 
 def _collect_userprofile_env(environ: Mapping[str, str]) -> dict[str, str]:
@@ -161,12 +153,12 @@ def _filter_user_path(user_value: str, system_value: str) -> tuple[str, list[str
     Returns:
         `(整理後のPATH文字列, 削除した元エントリー一覧)` のタプル。
     """
-    system_keys = {key for key in (_normalize_entry(entry) for entry in _split(system_value)) if key}
+    system_keys = {key for key in (winutils.path_key(entry) for entry in _split(system_value)) if key}
     seen_user_keys: set[str] = set()
     kept: list[str] = []
     removed: list[str] = []
     for entry in _split(user_value):
-        key = _normalize_entry(entry)
+        key = winutils.path_key(entry)
         if key and (key in system_keys or key in seen_user_keys):
             removed.append(entry)
             continue
@@ -203,16 +195,3 @@ def _find_missing_paths(
 def _split(path_value: str) -> list[str]:
     """`;` 区切りの PATH 文字列をエントリー配列に分解する。空エントリーは除く。"""
     return [entry for entry in path_value.split(_PATH_SEPARATOR) if entry]
-
-
-def _normalize_entry(entry: str) -> str:
-    """比較用の正規化キーを返す。
-
-    `ntpath.expandvars` で環境変数を展開し `PureWindowsPath` を通したうえで
-    小文字化することで、区切り文字方向・末尾区切り・大文字小文字差を吸収する。
-    展開後が空のエントリーは空文字を返し比較対象から除く。
-    """
-    expanded = ntpath.expandvars(entry)
-    if not expanded:
-        return ""
-    return str(PureWindowsPath(expanded)).lower()

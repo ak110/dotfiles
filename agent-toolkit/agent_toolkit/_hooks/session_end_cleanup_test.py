@@ -192,11 +192,8 @@ def test_orphan_lock_is_never_collected(tmp_path: pathlib.Path) -> None:
     assert abandoned.exists()
 
 
-def test_codex_other_reason_collects_stale_and_keeps_own_state(tmp_path: pathlib.Path) -> None:
-    """Codexの`reason: other`では期限切れ状態だけを回収し、自セッションの状態は残す。"""
-    own = _write_state(tmp_path, "codex-session")
-    stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
-    stale_lock = _write_lock(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
+def _run_codex_session_end_without_output(tmp_path: pathlib.Path) -> None:
+    """Codexの`reason: other`のSessionEndを`codex-session`で実行し、出力なしの正常終了を確かめる。"""
     payload = json.dumps(
         {
             "hook_event_name": "SessionEnd",
@@ -211,6 +208,14 @@ def test_codex_other_reason_collects_stale_and_keeps_own_state(tmp_path: pathlib
     assert result.returncode == 0
     assert not result.stdout
     assert not result.stderr
+
+
+def test_codex_other_reason_collects_stale_and_keeps_own_state(tmp_path: pathlib.Path) -> None:
+    """Codexの`reason: other`では期限切れ状態だけを回収し、自セッションの状態は残す。"""
+    own = _write_state(tmp_path, "codex-session")
+    stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
+    stale_lock = _write_lock(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
+    _run_codex_session_end_without_output(tmp_path)
     assert own.exists()
     assert not stale.exists()
     assert stale_lock.exists()
@@ -221,20 +226,7 @@ def test_codex_other_reason_keeps_own_expired_state(tmp_path: pathlib.Path) -> N
     own = _write_state(tmp_path, "codex-session", age_seconds=_STALE_AGE_SECONDS)
     own_lock = _write_lock(tmp_path, "codex-session", age_seconds=_STALE_AGE_SECONDS)
     stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
-    payload = json.dumps(
-        {
-            "hook_event_name": "SessionEnd",
-            "session_id": "codex-session",
-            "reason": "other",
-            "turn_id": "turn-1",
-        }
-    )
-
-    result = _run(payload, tmp_path)
-
-    assert result.returncode == 0
-    assert not result.stdout
-    assert not result.stderr
+    _run_codex_session_end_without_output(tmp_path)
     assert own.exists()
     assert own_lock.exists()
     assert not stale.exists()

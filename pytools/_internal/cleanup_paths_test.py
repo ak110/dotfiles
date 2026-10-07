@@ -1,11 +1,12 @@
 """pytools._internal.cleanup_paths のテスト。"""
 
+import hashlib
 import logging
 from pathlib import Path
 
 import pytest
 
-from pytools._internal.cleanup_paths import cleanup_paths, cleanup_paths_if_content_matches
+from pytools._internal.cleanup_paths import cleanup_empty_dirs, cleanup_paths, cleanup_paths_if_content_matches
 
 
 class TestCleanupPaths:
@@ -241,3 +242,63 @@ class TestCleanupPathsIfContentMatches:
         assert not real_exists(succeeding)
         assert str(failing) in caplog.text
         assert "検査失敗" in caplog.text
+
+
+def test_cleanup_if_content_matches_accepts_sha256(tmp_path: Path) -> None:
+    """期待値にSHA-256の16進文字列を与えると、一致は削除し不一致は残す。bytes指定の動作は変わらない。"""
+    content = b"# old\n" * 1000
+    digest = hashlib.sha256(content).hexdigest()
+    (tmp_path / "match").write_bytes(content)
+    (tmp_path / "edited").write_bytes(content + b"# user\n")
+    (tmp_path / "bytes").write_bytes(b"old\n")
+
+    removed = cleanup_paths_if_content_matches(
+        tmp_path,
+        {Path("match"): digest, Path("edited"): digest, Path("bytes"): b"old\n"},
+    )
+
+    assert removed == 2
+    assert not (tmp_path / "match").exists()
+    assert (tmp_path / "edited").read_bytes() == content + b"# user\n"
+    assert not (tmp_path / "bytes").exists()
+
+
+class TestCleanupEmptyDirs:
+    """空ディレクトリの項目を削除する関数のテスト。"""
+
+    def test_removes_empty_child_then_parent(self, tmp_path: Path) -> None:
+        """子を先に列挙すると、子の削除で空になった親も削除する。"""
+        (tmp_path / "a" / "b").mkdir(parents=True)
+
+        removed = cleanup_empty_dirs(tmp_path, [Path("a/b"), Path("a")])
+
+        assert removed == 2
+        assert not (tmp_path / "a").exists()
+
+    def test_keeps_non_empty_dir(self, tmp_path: Path) -> None:
+        """中身が残るディレクトリは削除しない。"""
+        (tmp_path / "a" / "b").mkdir(parents=True)
+        (tmp_path / "a" / "keep.txt").write_text("x\n", encoding="utf-8")
+
+        removed = cleanup_empty_dirs(tmp_path, [Path("a/b"), Path("a")])
+
+        assert removed == 1
+        assert (tmp_path / "a" / "keep.txt").is_file()
+
+    def test_skips_link_and_outside(self, tmp_path: Path) -> None:
+        """リンク自体とリンク先の空ディレクトリを削除しない。"""
+        base = tmp_path / "base"
+        outside = tmp_path / "outside" / "empty"
+        outside.mkdir(parents=True)
+        base.mkdir()
+        (base / "link").symlink_to(tmp_path / "outside", target_is_directory=True)
+
+        removed = cleanup_empty_dirs(base, [Path("link/empty"), Path("link")])
+
+        assert removed == 0
+        assert outside.is_dir()
+        assert (base / "link").is_symlink()
+
+    def test_missing_base_dir_is_noop(self, tmp_path: Path) -> None:
+        """基点が無ければ何もしない。"""
+        assert cleanup_empty_dirs(tmp_path / "missing", [Path("a")]) == 0

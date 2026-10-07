@@ -9,14 +9,14 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import status_file
-from agent_toolkit._atk import config, run_script
+from agent_toolkit._agents_server import shared_layout
+from agent_toolkit._atk import run_script
+from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import (
-    agents_server_session_advisor,
+    agents_server_observations,
     posttooluse,
     pretooluse,
-    session_state,
     termination_evidence,
     termination_order_advisor,
     user_prompt_submit,
@@ -294,6 +294,73 @@ def test_prepare_requires_following_result(tmp_path: pathlib.Path) -> None:
     assert decision == "block" and "review-result" in reason
 
 
+_MANDATORY_REPORTS = {
+    "id-missing": (
+        "### 対策を見送った問題\n\n- 判定済み: 技術判断の確認; 根拠: 原因分析の結果、既存の規範の当てはめ誤りと判断した\n",
+        "block",
+    ),
+    "id-only": (
+        "### 対策を見送った問題\n\n- 判定済み: 技術判断の確認; 根拠: 既存の規範の当てはめ誤りと判断した（c0006）\n",
+        "block",
+    ),
+    "repeat-without-record": (
+        "### 対策を見送った問題\n\n"
+        "- 再発防止策なし: 技術判断の確認; 評価した案: 条文の追記; 採らない理由: 恒常コスト; 反復: 一致なし（c0006）\n",
+        "block",
+    ),
+    "measure": ("### 確定した問題と対策\n\n- AWI登録予定: 確認要否の判定へ目的との比較を置く（c0006）\n", "approve"),
+    "exclusion": (
+        "### 対策を見送った問題\n\n- 判定済み: 技術判断の確認; 根拠: non-changing-request: 要求を変えない回答だった（c0006）\n",
+        "approve",
+    ),
+    "repeat-with-record": (
+        "### 対策を見送った問題\n\n- 再発防止策なし: 技術判断の確認; 評価した案: 条文の追記; 採らない理由: 恒常コスト; "
+        "反復: 20261001-163353-001.mdの対策は場面ごとの例外で、新しい場面で働かなかった（c0006）\n",
+        "approve",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(_MANDATORY_REPORTS))
+def test_mandatory_candidate_requires_id_or_allowed_skip(tmp_path: pathlib.Path, case: str) -> None:
+    """必須の候補を持つ準備結果では、候補IDの無い報告と許されない見送りを遮断し、確定した対策と許される見送りを通す。
+
+    CodexのStopも同じ`termination_order_advisor`を実行するため、ホストごとの差はこの判定に無い。
+    """
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    outputs = {}
+    for key in ("conversation_path", "candidates_path", "stats_path"):
+        outputs[key] = str(tmp_path / f"{key}.md")
+        pathlib.Path(outputs[key]).write_text("記録", encoding="utf-8")
+    prepared = {
+        **outputs,
+        "prepared_at": "2026-10-07T00:44:00Z",
+        "mandatory_candidates": ["c0006"],
+        "similar_records": {"c0006": ["20261001-163353-001.md", "20261005-103502-001.md"]},
+    }
+    payload = {
+        "session_id": "evidence-test",
+        "tool_name": "Bash",
+        "tool_use_id": "prepare",
+        "transcript_path": str(tmp_path / "transcript.jsonl"),
+        "tool_input": {"command": "atk run-script session-review-prepare -- --session current"},
+    }
+    with contextlib.redirect_stdout(io.StringIO()):
+        pretooluse.main(json.dumps(payload))
+    payload["tool_response"] = {"stdout": json.dumps(prepared), "stderr": ""}
+    with contextlib.redirect_stdout(io.StringIO()):
+        posttooluse.main(json.dumps(payload))
+    body, expected = _MANDATORY_REPORTS[case]
+    report = "## 振り返り結果報告\n\n" + body
+    if "AWI登録予定" in body:
+        report += "\n## AWI投入結果報告\n\n確定した対策を投入した。\n\n### 投入したAWI\n\n- 20261007-102936-001.md: 対策\n"
+    supply_report(tmp_path, report, "review-result", "review")
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, report))
+    assert decision == expected, reason
+    if expected == "block":
+        assert "c0006" in reason
+
+
 def test_finished_work_is_not_reused_after_new_input(tmp_path: pathlib.Path) -> None:
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
     supply_report(tmp_path, REVIEW_RESULT, "review-result", "call-2")
@@ -317,7 +384,7 @@ def test_finished_work_is_not_reused_after_new_input(tmp_path: pathlib.Path) -> 
     ("section", "invalid_item", "corrected_item"),
     [
         ("対策を見送った問題", "- 判定済み: 問題", "- 判定済み: 問題; 根拠: 既存操作で解決できる"),
-        ("確定した問題と対策", "- 問題: 対策", "- 問題: 対策（同一セッションで実装済み: 変更commit）"),
+        ("確定した問題と対策", "- 問題: 対策", "- 実装済み: 対策; 根拠: 変更commit"),
     ],
 )
 def test_invalid_report_can_be_corrected_after_new_input(
@@ -453,7 +520,7 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(config, "state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     start = {
         "session_id": "evidence-test",
         "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -475,10 +542,10 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
         assert posttooluse.main(json.dumps(wait)) == 0
     child = session_state.read_state("evidence-test")["agents_server_sessions"]["child-test"]
     assert child["pending_observation"] is False
-    root = status_file.status_directory("evidence-test", tmp_path / "state")
+    root = shared_layout.status_directory("evidence-test", tmp_path / "state")
     lock_path = root / "wait-locks" / "root.json.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    targets = status_file.wait_targets_directory("evidence-test", "root.json", tmp_path / "state")
+    targets = shared_layout.wait_targets_directory("evidence-test", "root.json", tmp_path / "state")
     targets.mkdir(parents=True, exist_ok=True)
     (targets / "child-test.json").write_text('{"version":1,"session_id":"child-test"}', encoding="utf-8")
     document = tmp_path / "wait-decision.json"
@@ -497,7 +564,7 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
     with lock_path.open("a+b") as stream:
         acquire_lock(stream, blocking=False)
         try:
-            assert agents_server_session_advisor.actively_waited_session_ids(["child-test"]) == {"child-test"}
+            assert agents_server_observations.actively_waited_session_ids(["child-test"]) == {"child-test"}
             with contextlib.redirect_stdout(io.StringIO()):
                 assert (
                     run_script.dispatch(

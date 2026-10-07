@@ -2,27 +2,31 @@
 
 本書は`.claude/skills/agent-toolkit-edit/SKILL.md`の読込表から読む参照資料であり、`agent-toolkit/`の実装モジュールの配置、`atk`の出力、MCPサーバーとhookの実装と登録、権限設定、配布と反映の手順の規約を持つ。版数更新と同期先の文書は`SKILL.md`が定める。
 
-## scripts配下の配置
+## agent_toolkitパッケージの配置と層
 
 `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置く。
 対象とする公開スクリプトは`hook.py`・`atk.py`・`agents_server_mcp.py`・`wait_ci.py`・`_managed_temp.py`とする。
 リモートホスト上で読み込んで実行する`atk_serve_plans_remote_helper.py`と`atk_serve_sessions_remote_helper.py`は
 `agent-toolkit/scripts/`直下に置く。これらも公開スクリプトとする。
+両ヘルパーは同じcheckoutの`agent_toolkit`を`sys.path`経由でimportする。
+SSH先の実行環境は標準ライブラリのほかに`platformdirs`と`watchdog`だけを与えるため、ヘルパーがimportする`agent_toolkit`のモジュールはそれらだけに依存させる。
 実装モジュールは責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ置く。
 この6つを依存の層とし、この並び順を層の順序とする。
 後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
 同じ層の中のimportは制限しない。
+直下の公開スクリプトと`agent-toolkit/skills/*/scripts/`配下のスクリプトは層の外から起動されるスクリプト（以下、起動スクリプト）として全ての層をimportできるが、`_hooks`をimportできるのは`hook.py`だけとする。
+hook以外からも使うモジュールは`_hooks`へ置かず、`_common`などの前の層へ置く。
 テスト専用の共有ヘルパーは`_testing`へ置く。
-`_testing`は層の順序に含めない例外とし、`*_test.py`だけがimportできる。
+`_testing`は層の順序に含めない例外とし、`*_test.py`・`conftest.py`と`_testing`配下のモジュールだけがimportできる。
 新しいモジュールの追加先は、そのモジュールを読み込む主体が属するサブパッケージで判定する。
 直下の公開スクリプトは接頭辞`_`を付けずに命名する。
 `_managed_temp.py`だけは外部の許可判定がそのパスを解決するため名前を維持し、`agent-toolkit/agent_toolkit/script_prefix_invariant_test.py`がこの1件を除外する。
 
 サブパッケージ内のimportには絶対importを使う。
 `scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の自動チェックの被覆が失われるためである。
-同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportを失敗として報告する。
+同スクリプトはサブパッケージ、直下の公開スクリプトと`skills/*/scripts/`配下を走査し、層の順序に反するimport、`hook.py`以外の起動スクリプトからの`_hooks`のimport、前段の3種以外のモジュールからの`_testing`のimportを失敗として報告する。
 モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名とは異なる名前を選ぶ。
-テストは`pytools-edit`「テスト配置」に従い、対象モジュールの動作テストを同居させ、実物の文書や設定を読むテストをその近くへ置く。
+テストは`dotfiles-development`「テスト配置」に従い、対象モジュールの動作テストを同居させ、実物の文書や設定を読むテストをその近くへ置く。
 
 ## atkの実行結果出力
 
@@ -32,7 +36,7 @@
 出力する行は実行したコマンドの結果と、失敗・警告およびその次の操作に限る。結果と無関係な状況の通知、対処を要しない付随処理の報告、毎回同じ固定の案内、同じ内容の反復は加えず、人向けの補足として環境判定で振り分けない。
 リーフを登録する場合と区分を変える場合は、実行した結果行がその区分の出力先と順序を満たすことをテストで確かめ、子プロセスの標準出力が成功行より前に出る場合も同じ変更単位で検証する。
 区分表と実在するリーフの対応は`agent-toolkit/agent_toolkit/atk_help_test.py`が検証する。
-規約の目的、区分の意味、却下した代替案は`docs/development/design-cli.md`「atkサブコマンドの実行結果出力」が持つ。
+規約の目的、区分の意味、却下した代替案は`docs/development/design-cli.md`「atkの結果行の接頭辞と出力先」が持つ。
 
 ## MCPサーバー識別子とホスト別ツール名
 
@@ -120,16 +124,30 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
   matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。
   イベントごとのエントリーポイントの実装契約は`agent-toolkit:writing-standards`がhook実装の規約として定める
 
-agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_hook/pretooluse.py`の専用チェックがブロックする。
+agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_hook/pretooluse.py`の専用チェックが警告し、一般化した表現への置き換えを求める。
 個人プロジェクト名固定リストはそのスクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
-スキル名・pytoolsコマンド名・scripts名は、`pytools/claude_hook/pretooluse.py`がhook実行時にディレクトリをスキャンして動的に取得する。
+スキル名・pytoolsコマンド名・`pytools/_internal/`の複合名モジュール・`scripts/`と`libexec/`のスクリプト名は、`pytools/claude_hook/pretooluse.py`がhook実行時にディレクトリをスキャンして動的に取得する。
 外部CLI参照は`_EXTERNAL_CLI_ALLOWED`登録識別子に限り`command -v`等による存在確認を経て許容する。
+
+## agents_serverのツール呼び出しを判定するhook
+
+本節はagent-toolkitのPreToolUseとPostToolUseが`agents_server`のツール呼び出しで確かめる内容と記録する状態を定める。
+
+`agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新および一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
+PreToolUseは`send_message`・`kill`の保存済みsessionと、`<役割名>.subagent.md`の実行命令を持つ起動を確認する。
+`start`の`delegate`・`explore`・`write`へ引用の外で`<役割名>.subagent.md`の手順を実行する命令を渡した場合は、タスク起動へ直すよう遮断する。
+`Agent`・`Task`の実行命令では、1行目の正式な命令と宣言済み入力以外の行を遮断する。
+文書の読解・引用・比較の対象への参照と、引用に載せた実行命令の例は通す。
+参照だけから用途を確定できない場合も通し、会話の意味を推定する遮断・警告を加えない。
+`start`の入力妥当性検証（`mode`ごとの欠落と混在を含む）は実行基盤へ委ね、入力の実行権限値はそのまま渡す。
+`wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseのチェック対象へ含めず通過させる。
+PostToolUseは成功した開始ツール`start`（全`mode`。統合前の旧名で記録された開始も含む）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
 
 ## 複数hook共存時の識別子
 
 agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
 自身のhookメッセージを他hookから判別するため、`atk-auto`要素の`source`へagent-toolkitでは接頭辞の無い生成元名を置く。agent-toolkit以外の生成元は`<所有者>/<生成元>`の形で区別する。
-XML境界と属性の規約は`agent-toolkit:writing-standards`がhook実装の規約として定める「コーディングエージェント宛てメッセージの標識」節に従う。
+XML境界と属性の規約は`agent-toolkit:writing-standards`の`references/claude-hooks-messages.md`「コーディングエージェント宛てメッセージの標識」に従う。
 
 ## marketplace管理
 
@@ -148,5 +166,5 @@ marketplaceの配布方式は次のとおり。
 Codex向け生成物は`agent-toolkit/.codex-plugin/plugin.json`と`.agents/plugins/marketplace.json`とする。
 生成器と生成元の関係は`SKILL.md`「バージョン更新」に従う。
 prek経由のpyfltr（書き込みモード）が`sync-generated-files`でCodex向け生成物を毎回再生成する。
-Codex hookの定義は、`scripts/sync_codex_plugin_manifests.py`がイベント名、matcher、入力契約を確認した許可表の分だけを生成する。
+Codex hookの定義は、`pytools/_internal/codex_plugin_manifests.py`がイベント名、matcher、入力契約を確認した許可表の分だけを生成する（起動スクリプトは`scripts/sync_codex_plugin_manifests.py`）。
 `chezmoi apply`後処理はCodex marketplaceを登録し、agent-toolkit pluginを導入・更新する。

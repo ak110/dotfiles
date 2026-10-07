@@ -5,7 +5,7 @@ import pathlib
 import re
 import secrets
 
-from pytools._internal import claude_common
+from pytools._internal import common
 
 # `secrets.token_urlsafe(32)`が返す43文字のURL-safe base64文字列に一致する形式。
 # パディング無しで`A-Za-z0-9-_`の組み合わせとなる。
@@ -35,5 +35,5 @@ def load_or_create_token(path: pathlib.Path) -> str:
     if existing and _TOKEN_PATTERN.fullmatch(existing):
         return existing
     token = secrets.token_urlsafe(32)
-    claude_common.atomic_write_text(path, token + "\n", tag="media-remote")
+    common.atomic_write_text(path, token + "\n", tag="media-remote")
     return token

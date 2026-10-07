@@ -18,7 +18,7 @@ def is_log_only(record: logging.LogRecord) -> bool:
 def format_status(target: str, state: str) -> str:
     """`    <target>: <state>` 形式の詳細行を返す。
 
-    post-applyの`logging.basicConfig`が行頭に "  " を付けるため、
+    post-applyがログのhandlerへ設定するformatterが行頭に "  " を付けるため、
     本関数は追加で4スペースを持たせ、最終的に6スペースインデントの出力になる。
     """
     return f"    {target}: {state}"

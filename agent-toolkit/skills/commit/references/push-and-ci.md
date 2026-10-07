@@ -2,23 +2,7 @@
 
 push主体がpush先、更新ref、基準情報、CI監視、
 証拠用一時領域のライフサイクルを所有する。通常commit、stage、messageは親スキル、
-CI失敗の帰属と原因分析は`../../bugfix/SKILL.md`に従う。
-
-## リリースバージョン指定
-
-プロジェクト方針が無い場合は次の基準を用いる。
-
-- ユーザーが明示したバージョン区分（MAJOR、MINOR、PATCH）を最優先とする
-- MAJORリリースはユーザーの明示指示がある場合に限る。MAJORは互換破壊の外部宣言であり、`agent-toolkit:user-confirmation-and-report`の`references/judgment.md`「認可を要する操作」が定める承認対象に当たる
-- 現行版が数値3要素のSemVerでない場合は、プロジェクトの対応表またはユーザーが明示した区分から区分を決める。いずれも無い場合はバージョンを変更せず、判定不能の根拠を報告する。文字列の辞書順と桁数は区分の判定材料から外れる
-
-## ローカルで実行するlintとCIジョブの対応
-
-push前に対象プロジェクトのCI定義を読み、ローカルで実行した全体検証が対応するジョブと、ローカルでは実行されないジョブを確定する。
-別のOS、別の言語バージョン、実機に依存する資源などが、ローカルでは実行されないジョブが検証する条件に当たる。
-変更対象がこの条件を含む場合は、条件をローカルで検証できる形へ変えてからpushすることを推奨する。
-ローカルで検証できる形は失敗をpush前に見つけられる一方、形を変える費用が便益を上回る場合もある。形を変える費用と、CIの結果を待つ場合の所要時間と手戻りを比べて選ぶ。
-形を変えない場合は、CIの結果を待つ工程を見込む。
+CI失敗の帰属と原因分析は`agent-toolkit:bugfix`に従う。
 
 ## 公開状態の4項目
 
@@ -39,6 +23,8 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 3. `git remote -v`、`git branch --show-current`、追跡branch、有効な`push.default`と明示された承認済みdestinationから、引数なしpushの到達先を先に判定する。`push.default=simple`で現在branch名と追跡branch名が異なる場合や追跡branchが無い場合など、引数なしpushの失敗が確定する構成では、そのdry-runを省く。承認済みの`<remote> <source>:refs/heads/<destination>`を明示した`git push --dry-run --porcelain`を最初に試す。引数なしpushが承認済みdestinationへ到達すると確定する場合は、引数なしdry-runを最初に実行する。設定だけで判定できない場合は、引数なしdry-runを試し、失敗するか意図したrefspecを示さなければ明示dry-runを続ける。
 
    成功したdry-runの全status lineが承認済みremote・destinationへのrefspecを示す場合だけ、その方式を選ぶ。拒否や失敗予定のref、または承認範囲と異なるremote・destinationがあればpushしない。明示指定ではremote、source、完全なdestination refをすべて書き、実際のpushも成功したdry-runと同じ方式を使う
+
+CIを判定する場合は、pushするcommitのtreeでCI定義の有無を`git -C <対象リポジトリの絶対パス> ls-tree -r --name-only <pushするcommit> -- .gitlab-ci.yml .github/workflows`で判定する。forgeによらず同じ判定を使う。終了コード0で出力が0行の場合はCI定義が無いため、次の3工程と「pushと監視」のbaselineによる監視を省き、push結果を判定した後の終端状態を「CI定義なし」とする。終了コードが0以外の場合は原因を確かめてから判定し直す。
 
 委譲元がそのpushのCI通過をこのセッションで判定しないと明示した場合は、次の3工程を省き、「pushと監視」のpush結果判定へ進む。
 CIを判定する場合は、次の3工程で監視用の証拠を作成する。
@@ -92,7 +78,7 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
    登録猶予は、実行が1件も登録されないまま終わる場合を区別するための待機であり、
    判定対象を確定する期限ではない
 4. CI失敗では、最初の失敗jobを検出した時点で`agent-toolkit:bugfix`を起動し、監視は継続する。証拠の取得、帰属、原因および拡張原因分析の要否は同スキルのCI失敗分析契約に従う
-5. CI失敗の修正方法を、push先と修正対象のcommitによって次の2区分から選ぶ。修正後はどちらの区分でも同じbranchへ再pushする。そのpush用の新しいbaselineを作成し、`wait_ci.py --baseline`で再監視する。
+5. CI失敗の修正方法を、push先と修正対象のcommitによって次の2区分から選ぶ。修正後はどちらの区分でも同じbranchへ再pushする。そのpush用の新しいbaselineを作成し、`wait_ci.py --baseline`で再監視する。再監視ではCI失敗を起こしたjobが新しいpushの判定対象に含まれるかを確かめる。含まれない場合の扱いは`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正commitが必要なCI失敗の実施主体」の修正系列の定義に従う。
    - 原因commitへ取り込む区分: 次の全てが成立する場合は、修正を原因のcommitへ取り込む（amendか、fixupとautosquash）。同じbranchは`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように期待値を明示した形で更新する。背景の`git fetch`で追跡refが進むと、期待値を省いた`--force-with-lease`の保護が働かない。取り込みの実行手順は`agent-toolkit:commit`の`references/history-rewrite.md`の「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」に従う
      - push先のbranchが、remoteのHEADが指すbranch（`git ls-remote --symref <remote> HEAD`が示すbranch）と異なる
      - push先のbranchが、対象リポジトリの規範（`AGENTS.md`など）が直接pushまたはforce pushを禁じるbranchに当たらない
@@ -126,4 +112,5 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
 ## 後始末
 
 CI成功、CI定義なし、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
+`agent-toolkit:process-wi`の終端担当は、これらの終端状態の名前を返却の`CIの結果`の値に使う。
 追加pushでは新しいディレクトリとbaselineを作成する。原因commitへ取り込んだ修正のforce pushにも同じく適用する。

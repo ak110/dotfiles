@@ -1,96 +1,31 @@
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
-
-旧`pytools/dotfiles_fb/_list.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""`atk wi list`による一覧の表示（テキスト・JSON Lines・件数・要約）と着手可否の表示。"""
 
 import argparse
 import datetime
 import json
 import pathlib
 import shutil
-import subprocess
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 
-from agent_toolkit._atk.wi.common import (
-    WI_ACTIVE_STATES,
-    WI_PROCESSABLE_STATES,
-    WI_STATES,
-    WI_TYPE_UWI,
-    WI_TYPES,
-    ReadinessResult,
-    _is_uwi_answered,
-    _iter_entries,
-    _pull_with_recent_reuse,
-    _repo_lock,
-    calculate_readiness,
-    is_agent_environment,
-)
+from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import readiness as _wi_readiness
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
+from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI, WI_TYPES
 from agent_toolkit._atk.wi.formatters import (
-    _body_summary,
-    _display_width,
-    _parse_source,
-    _source_matches,
-    _target_repo_budget,
-    _truncate_target_repo,
-    _uwi_body_summary,
+    body_summary,
+    display_width,
+    parse_source,
+    target_repo_budget,
+    truncate_target_repo,
+    uwi_body_summary,
 )
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
-from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
-
-type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
-
-
-def _resolve_states(statuses: str | Iterable[str]) -> tuple[str, ...]:
-    """状態フィルターを走査対象へ変換する。"""
-    if isinstance(statuses, str):
-        statuses = (statuses,)
-    selected: set[str] = set()
-    for status in statuses:
-        if status == "active":
-            selected.update(WI_ACTIVE_STATES)
-        elif status == "processable":
-            selected.update(WI_PROCESSABLE_STATES)
-        elif status == "all":
-            selected.update(WI_STATES)
-        else:
-            selected.add(status)
-    return tuple(state for state in WI_STATES if state in selected)
-
-
-def _answered_matches(entry_type: str | None, text: str, answered_filters: str | Iterable[str]) -> bool:
-    """回答状況フィルターとの一致を返す。"""
-    if isinstance(answered_filters, str):
-        answered_filters = (answered_filters,)
-    filters = set(answered_filters)
-    if "all" in filters:
-        return True
-    if entry_type != WI_TYPE_UWI:
-        return False
-    answered = _is_uwi_answered(text)
-    return (answered and "yes" in filters) or (not answered and "no" in filters)
-
-
-def _select_entries(
-    private_notes: pathlib.Path,
-    *,
-    status: Iterable[str],
-    target_repo: Iterable[str] | None,
-    entry_type: Iterable[str],
-    answered: Iterable[str],
-    source: Iterable[str] | None,
-) -> list[QueueEntryDisplay]:
-    """一覧系コマンドで共有する5条件の積集合を返す。"""
-    selected: list[QueueEntryDisplay] = []
-    for entry in _iter_entries(private_notes, _resolve_states(status), target_repo, entry_type):
-        _, _, text, _, actual_type = entry
-        if not _answered_matches(actual_type, text, answered):
-            continue
-        if source is not None and not any(_source_matches(_parse_source(text), value) for value in source):
-            continue
-        selected.append(entry)
-    return selected
+from agent_toolkit._atk.wi.readiness import ReadinessResult
+from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id
+from agent_toolkit._git import command as _git_command
 
 
 def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> str:
@@ -125,7 +60,7 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
     return "dependency-unmet-internal" if filename in readiness.internal_dependency_waits else "dependency-unmet-external"
 
 
-def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult) -> None:
+def print_entries(selected: list[_wi_entries.EntryRecord], readiness: ReadinessResult) -> None:
     """選択済みエントリを`atk wi list`の1件1行形式で出力する。"""
     for header_type in (*WI_TYPES, None):
         group = [entry for entry in selected if entry[4] == header_type]
@@ -141,7 +76,7 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
             label = f"{state}/{item_kind}/{state_readiness}"
             answered = False
             if entry_type == WI_TYPE_UWI:
-                answered = _is_uwi_answered(text)
+                answered = _wi_uwi_scan.is_uwi_answered(text)
                 label = (
                     f"{state}/answered/blocked"
                     if answered and state_readiness == "blocked"
@@ -151,8 +86,8 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 )
             # パイプ・リダイレクトでは後段が機械的に本文を取得できるよう短縮しない。
             if sys.stdout.isatty():
-                repo_budget = _target_repo_budget(path.name, label)
-                display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
+                repo_budget = target_repo_budget(path.name, label)
+                display_repo = truncate_target_repo(target_repo, max_width=repo_budget)
             else:
                 display_repo = target_repo
             reason = (
@@ -165,11 +100,9 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 cooldown_until = dict(readiness.cooldown_values)[path.name]
                 reason_suffix += f" cooldown_until={cooldown_until}"
             prefix = f"{path.name}: {display_repo} [{label}]{reason_suffix} "
-            available_width = (
-                shutil.get_terminal_size().columns - _display_width(prefix) if sys.stdout.isatty() else sys.maxsize
-            )
+            available_width = shutil.get_terminal_size().columns - display_width(prefix) if sys.stdout.isatty() else sys.maxsize
             summary = (
-                _uwi_body_summary(text, available_width) if entry_type == WI_TYPE_UWI else _body_summary(text, available_width)
+                uwi_body_summary(text, available_width) if entry_type == WI_TYPE_UWI else body_summary(text, available_width)
             )
             print(f"{prefix}{summary}")
 
@@ -188,12 +121,10 @@ def _staleness(text: str, local_worktree: pathlib.Path | None, now: datetime.dat
         return {"status": "indeterminate", "reason": "target-commit-missing"}
     if local_worktree is None:
         return {"status": "indeterminate", "reason": "local-worktree-unavailable"}
-    result = subprocess.run(
-        ["git", "-C", str(local_worktree), "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..HEAD"],
+    result = _git_command.run(
+        ["-C", str(local_worktree), "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..HEAD"],
         capture_output=True,
         text=True,
-        encoding="utf-8",
-        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -207,7 +138,7 @@ def _staleness(text: str, local_worktree: pathlib.Path | None, now: datetime.dat
 
 
 def _print_json_entries(
-    selected: list[QueueEntryDisplay],
+    selected: list[_wi_entries.EntryRecord],
     readiness: ReadinessResult,
     *,
     include_staleness: bool = False,
@@ -221,13 +152,13 @@ def _print_json_entries(
     now = staleness_now or datetime.datetime.now(datetime.UTC)
     for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
         state_readiness = _state_readiness(state, path.name, readiness)
-        answered = entry_type == WI_TYPE_UWI and _is_uwi_answered(text)
+        answered = entry_type == WI_TYPE_UWI and _wi_uwi_scan.is_uwi_answered(text)
         reason = (
             _blocked_reason(readiness, path.name)
             if state_readiness == "blocked" and (entry_type != WI_TYPE_UWI or answered)
             else None
         )
-        summary = _uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
+        summary = uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else body_summary(text, sys.maxsize)
         record: dict[str, object] = {
             "filename": path.name,
             "type": entry_type,
@@ -235,7 +166,7 @@ def _print_json_entries(
             "state": state,
             "ready": state in WI_PROCESSABLE_STATES and path.name in readiness.ready,
             "blocked_reason": reason,
-            "source": _parse_source(text),
+            "source": parse_source(text),
             "summary": summary,
         }
         if include_staleness:
@@ -243,10 +174,10 @@ def _print_json_entries(
         print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
 
 
-def _print_summary_entries(selected: list[QueueEntryDisplay]) -> None:
+def _print_summary_entries(selected: list[_wi_entries.EntryRecord]) -> None:
     """選択済みエントリのファイル名と要約をJSON Linesで出力する。"""
     for path, _, text, _, entry_type in sorted(selected, key=lambda entry: entry[0].name):
-        summary = _uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
+        summary = uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else body_summary(text, sys.maxsize)
         print(json.dumps({"filename": path.name, "summary": summary}, ensure_ascii=False, separators=(",", ":")))
 
 
@@ -259,15 +190,15 @@ def _local_worktrees(args: argparse.Namespace, target_values: list[str]) -> dict
     worktrees: dict[str, pathlib.Path] = {}
     if getattr(args, "target_repo_defaulted", False):
         for value in target_values:
-            worktrees.setdefault(value, _resolve_local_worktree(None))
+            worktrees.setdefault(value, resolve_local_worktree(None))
         return worktrees
     for value in target_values:
         if pathlib.Path(value).expanduser().exists():
-            worktrees.setdefault(_resolve_repo_id(value), _resolve_local_worktree(value))
+            worktrees.setdefault(resolve_repo_id(value), resolve_local_worktree(value))
     return worktrees
 
 
-def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """`list`サブコマンド: AWI/`uwi`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
 
     `--type`指定で出力対象種別（awi・uwi・all）を限定する（省略時はall）。
@@ -285,14 +216,14 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--summary-only`指定時は、ファイル名と要約だけをJSON Linesで出力する。
     """
     if not args.skip_pull:
-        with _repo_lock(private_notes):
-            _pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
+        with _wi_sync.repo_lock(private_notes):
+            _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
     target_values = args.target_repo if isinstance(args.target_repo, list) else [args.target_repo] if args.target_repo else []
-    resolved_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in target_values))
+    resolved_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in target_values))
     readiness_target = resolved_repos[0] if len(resolved_repos) == 1 else None
-    readiness = calculate_readiness(private_notes, readiness_target)
+    readiness = _wi_readiness.calculate_readiness(private_notes, readiness_target)
 
-    selected = _select_entries(
+    selected = _wi_entries.select_entries(
         private_notes,
         status=args.status,
         target_repo=resolved_repos or None,
@@ -319,4 +250,4 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         )
         return
 
-    _print_entries(selected, readiness)
+    print_entries(selected, readiness)

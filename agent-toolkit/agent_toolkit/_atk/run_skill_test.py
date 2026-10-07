@@ -10,6 +10,7 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import stat
 import subprocess
 import sys
@@ -23,6 +24,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._common import claude_usage_limit
+from agent_toolkit._testing import git_repository
 
 _FAKE_ENGINE = """\
 #!{python}
@@ -103,7 +105,7 @@ def _engine_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env
     state = tmp_path / "state"
     repo = tmp_path / "repo"
     (repo / "sub").mkdir(parents=True)
-    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True, text=True, encoding="utf-8")
+    git_repository.init_repository(repo)
     monkeypatch.setenv("PATH", os.pathsep.join((str(bin_dir), os.environ.get("PATH", ""))))
     monkeypatch.setenv("FAKE_RECORD_DIR", str(records))
     monkeypatch.setenv("XDG_STATE_HOME", str(state))
@@ -163,9 +165,15 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
         "example-plugin:check-logs",
         "スキルへ渡す引数: 対象: web",
         "`agent-toolkit:completion-report`の報告用UWI",
-        "「`atk run-skill`の過去の実行のUWI」",
     ):
         assert expected in goal
+    # 目的文が案内する過去の実行のUWIの手順は、`agent-toolkit:user-confirmation-and-report`の
+    # 参照文書の節として実在する必要がある。
+    # 節を移した後に案内だけが旧い所在を指すと、子セッションは手順へ到達できない。
+    reference = re.search(r"`agent-toolkit:user-confirmation-and-report`の`(references/[^`]+)`「([^」]+)」", goal)
+    assert reference is not None and "過去の実行のUWI" in reference[2]
+    skill_dir = pathlib.Path(__file__).resolve().parents[2] / "skills" / "user-confirmation-and-report"
+    assert f"## {reference[2]}" in (skill_dir / reference[1]).read_text(encoding="utf-8").splitlines()
     assert pathlib.Path(sessions[0]["cwd"]).resolve() == engine_env.repo.resolve()
     lines = out.splitlines()
     assert len(lines) == 1

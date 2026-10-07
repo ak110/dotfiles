@@ -1,5 +1,3 @@
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/task_document_launch.py のテスト。
 
 PreToolUseフックをsubprocessで起動し、配布物の`<役割名>.subagent.md`を指す委譲プロンプトの終了コードと通知を検証する。
@@ -10,7 +8,7 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
+from agent_toolkit._testing.pretooluse_support import _SHARE_DIR, _plan_file_state_env, _run
 
 _EXEC_DOCUMENT = _SHARE_DIR / "exec.subagent.md"
 

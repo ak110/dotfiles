@@ -1,14 +1,9 @@
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
-# ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """_managed_tempの管理対象一時ディレクトリ境界を検証する。"""
 
 # pylint: disable=protected-access
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import ctypes
 import datetime
@@ -17,20 +12,30 @@ import os
 import pathlib
 import stat
 import subprocess
-import sys
+import tempfile
 import threading
 import typing
 
 import pytest
 
-from agent_toolkit._common import file_lock
 from agent_toolkit._atk import managed_temp as subject
+from agent_toolkit._atk.managed_temp import inventory as managed_temp_inventory
+from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
+from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
+from agent_toolkit._common import file_lock
+from agent_toolkit._testing.managed_temp_support import (
+    _assert_child_replacement_preserves_both_versions,
+    _install_windows_security_doubles,
+    _interrupt_cleanup,
+    _managed_state,
+    _owner_and_external_writer_aces,
+    _replace_registry,
+    _set_tree_mtime,
+    setattr_in_managed_temp_modules,
+)
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-
-
-from agent_toolkit._atk.managed_temp.test_support_test import *  # noqa: F403
 
 
 def _make_junction(link: pathlib.Path, target: pathlib.Path) -> None:
@@ -64,12 +69,12 @@ def windows_chmod(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatc
 
 def test_windows_ctypes_structures_match_sdk_layout() -> None:
     """Windows APIへ渡す固定幅structureのsizeとSID offsetを確認する。"""
-    assert ctypes.sizeof(subject._AceHeader) == 4
-    assert ctypes.sizeof(subject._AccessAllowedAce) == 12
-    assert subject._AccessAllowedAce.sid_start.offset == 8
-    assert ctypes.sizeof(subject._Acl) == 8
-    assert ctypes.sizeof(subject._AclSizeInformation) == 12
-    assert ctypes.sizeof(subject._ByHandleFileInformation) == 52
+    assert ctypes.sizeof(managed_temp_windows_security._AceHeader) == 4
+    assert ctypes.sizeof(managed_temp_windows_security._AccessAllowedAce) == 12
+    assert managed_temp_windows_security._AccessAllowedAce.sid_start.offset == 8
+    assert ctypes.sizeof(managed_temp_windows_security._Acl) == 8
+    assert ctypes.sizeof(managed_temp_windows_security._AclSizeInformation) == 12
+    assert ctypes.sizeof(managed_temp_windows_security._ByHandleFileInformation) == 52
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX固有の所有者・権限検証")
@@ -79,9 +84,9 @@ def test_force_remove_cleans_target_after_permission_validation_failure(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """通常の権限検証が失敗した所有対象を明示指定で強制回収する。"""
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp("force-remove")
-    registry = subject._registry_path(target)
+    registry = managed_temp_registry._registry_path(target)
     record = json.loads(registry.read_text(encoding="utf-8"))
     consuming = registry.with_name(f"{registry.name}.consuming-{record['nonce']}")
     consuming.write_text(registry.read_text(encoding="utf-8"), encoding="utf-8")
@@ -106,12 +111,12 @@ def test_force_remove_rejects_target_owned_by_another_user(
     tmp_path: pathlib.Path,
 ) -> None:
     """実行中のOSアカウントが所有しない対象は強制回収しない。"""
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp("force-owner")
-    registry = subject._registry_path(target)
-    validated_root = subject._validate_root(target.parent)
-    monkeypatch.setattr(subject, "_validate_root", lambda _root: validated_root)
-    monkeypatch.setattr(subject.os, "geteuid", lambda: target.stat().st_uid + 1)
+    registry = managed_temp_registry._registry_path(target)
+    validated_root = managed_temp_registry._validate_root(target.parent)
+    setattr_in_managed_temp_modules(monkeypatch, "_validate_root", lambda _root: validated_root)
+    monkeypatch.setattr(os, "geteuid", lambda: target.stat().st_uid + 1)
 
     with pytest.raises(subject.ManagedTempError):
         subject.cleanup_managed_temp(target, force_remove=True)
@@ -145,9 +150,9 @@ def test_force_remove_preserves_non_directory_replacement_and_registry(
     replacement: str,
 ) -> None:
     """対象がsymlinkまたは通常ファイルへ置換された場合は実体と登録を保持する。"""
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp(f"force-{replacement}")
-    registry = subject._registry_path(target)
+    registry = managed_temp_registry._registry_path(target)
     registry_body = registry.read_text(encoding="utf-8")
     displaced = target.with_name(f"{target.name}-original")
     target.rename(displaced)
@@ -185,7 +190,7 @@ def test_sweep_skips_a_target_owned_by_explicit_cleanup(
 ) -> None:
     """自動掃引は明示cleanupが所有中の各状態へ介入せず警告しない。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     target = subject.create_managed_temp(f"parallel-{stage}")
     now = datetime.datetime(2026, 10, 6, tzinfo=datetime.UTC)
@@ -197,9 +202,9 @@ def test_sweep_skips_a_target_owned_by_explicit_cleanup(
     results: list[subject.SweepResult] = []
 
     if stage in {"before-consume", "after-consume"}:
-        original_consume = subject._consume_registry
+        original_consume = managed_temp_inventory._consume_registry
 
-        def pause_consume(validated: subject._ValidatedTemp) -> pathlib.Path:
+        def pause_consume(validated: managed_temp_registry._ValidatedTemp) -> pathlib.Path:
             if stage == "before-consume":
                 paused.set()
                 assert resume.wait(timeout=10)
@@ -209,16 +214,16 @@ def test_sweep_skips_a_target_owned_by_explicit_cleanup(
                 assert resume.wait(timeout=10)
             return consuming
 
-        monkeypatch.setattr(subject, "_consume_registry", pause_consume)
+        setattr_in_managed_temp_modules(monkeypatch, "_consume_registry", pause_consume)
     else:
-        original_clear = subject._clear_directory
+        original_clear = managed_temp_inventory._clear_directory
 
         def pause_clear(descriptor: int) -> None:
             paused.set()
             assert resume.wait(timeout=10)
             original_clear(descriptor)
 
-        monkeypatch.setattr(subject, "_clear_directory", pause_clear)
+        setattr_in_managed_temp_modules(monkeypatch, "_clear_directory", pause_clear)
 
     def owner() -> None:
         try:
@@ -251,7 +256,7 @@ def test_sweep_skips_a_target_owned_by_explicit_cleanup(
     assert not failures
     assert results and not results[0].deleted
     assert not target.exists()
-    assert not subject._registry_path(target).exists()
+    assert not managed_temp_registry._registry_path(target).exists()
     assert capsys.readouterr().err == ""
 
 
@@ -262,23 +267,23 @@ def test_explicit_cleanup_waits_for_the_current_owner_and_accepts_its_completion
 ) -> None:
     """同じ対象への明示cleanupは所有者の完了後に状態を読み直して正常終了する。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     target = subject.create_managed_temp("parallel-explicit")
     paused = threading.Event()
     resume = threading.Event()
     second_waiting = threading.Event()
     failures: list[BaseException] = []
-    original_consume = subject._consume_registry
+    original_consume = managed_temp_inventory._consume_registry
     original_acquire = file_lock.acquire_lock
 
-    def pause_after_consume(validated: subject._ValidatedTemp) -> pathlib.Path:
+    def pause_after_consume(validated: managed_temp_registry._ValidatedTemp) -> pathlib.Path:
         consuming = original_consume(validated)
         paused.set()
         assert resume.wait(timeout=10)
         return consuming
 
-    monkeypatch.setattr(subject, "_consume_registry", pause_after_consume)
+    setattr_in_managed_temp_modules(monkeypatch, "_consume_registry", pause_after_consume)
 
     def record_acquire(lock_file: typing.TextIO, *, blocking: bool = True) -> None:
         if threading.current_thread().name == "cleanup-competitor":
@@ -318,7 +323,7 @@ def test_explicit_cleanup_waits_for_sweep_owner_and_accepts_its_completion(
     """明示cleanupは自動掃引の完了後に状態を読み直して正常終了する。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     target = subject.create_managed_temp("parallel-sweep-owner")
     now = datetime.datetime(2026, 10, 6, tzinfo=datetime.UTC)
@@ -328,16 +333,16 @@ def test_explicit_cleanup_waits_for_sweep_owner_and_accepts_its_completion(
     explicit_waiting = threading.Event()
     failures: list[BaseException] = []
     results: list[subject.SweepResult] = []
-    original_consume = subject._consume_registry
+    original_consume = managed_temp_inventory._consume_registry
     original_acquire = file_lock.acquire_lock
 
-    def pause_sweep_after_consume(validated: subject._ValidatedTemp) -> pathlib.Path:
+    def pause_sweep_after_consume(validated: managed_temp_registry._ValidatedTemp) -> pathlib.Path:
         consuming = original_consume(validated)
         paused.set()
         assert resume.wait(timeout=10)
         return consuming
 
-    monkeypatch.setattr(subject, "_consume_registry", pause_sweep_after_consume)
+    setattr_in_managed_temp_modules(monkeypatch, "_consume_registry", pause_sweep_after_consume)
 
     def record_acquire(lock_file: typing.TextIO, *, blocking: bool = True) -> None:
         if threading.current_thread().name == "explicit-cleanup":
@@ -374,7 +379,7 @@ def test_explicit_cleanup_waits_for_sweep_owner_and_accepts_its_completion(
     assert not failures
     assert results and results[0].deleted == [target]
     assert not target.exists()
-    assert not subject._registry_path(target).exists()
+    assert not managed_temp_registry._registry_path(target).exists()
     assert capsys.readouterr().err == ""
 
 
@@ -385,7 +390,7 @@ def test_cleanup_of_another_target_proceeds_while_one_target_is_owned(
 ) -> None:
     """一つの対象が所有中でも別対象のcleanupは待たずに完了する。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     owned = subject.create_managed_temp("parallel-owned")
     independent = subject.create_managed_temp("parallel-independent")
@@ -393,16 +398,16 @@ def test_cleanup_of_another_target_proceeds_while_one_target_is_owned(
     resume = threading.Event()
     independent_finished = threading.Event()
     failures: list[BaseException] = []
-    original_consume = subject._consume_registry
+    original_consume = managed_temp_inventory._consume_registry
 
-    def pause_owned(validated: subject._ValidatedTemp) -> pathlib.Path:
+    def pause_owned(validated: managed_temp_registry._ValidatedTemp) -> pathlib.Path:
         consuming = original_consume(validated)
         if validated.path == owned:
             paused.set()
             assert resume.wait(timeout=10)
         return consuming
 
-    monkeypatch.setattr(subject, "_consume_registry", pause_owned)
+    setattr_in_managed_temp_modules(monkeypatch, "_consume_registry", pause_owned)
 
     def cleanup(path: pathlib.Path, finished: threading.Event | None = None) -> None:
         try:
@@ -428,7 +433,7 @@ def test_cleanup_of_another_target_proceeds_while_one_target_is_owned(
     assert not failures
     for target in (owned, independent):
         assert not target.exists()
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
 
 
 @pytest.mark.parametrize("directory", [False, True])
@@ -442,14 +447,18 @@ def test_secure_path_fails_closed_when_minimal_handle_owner_differs(
         monkeypatch,
         directory=directory,
         existing_owner=b"administrator-owner",
-        full_open_error=subject._WINDOWS_ERROR_ACCESS_DENIED,
+        full_open_error=managed_temp_windows_security._WINDOWS_ERROR_ACCESS_DENIED,
     )
 
     with pytest.raises(subject.ManagedTempError, match="所有者を変更できるハンドル"):
-        subject._windows_secure_path(tmp_path / "target", directory=directory)
+        managed_temp_windows_security._windows_secure_path(tmp_path / "target", directory=directory)
 
-    full_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC | subject._WINDOWS_WRITE_OWNER
-    minimal_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC
+    full_access = (
+        managed_temp_windows_security._WINDOWS_READ_CONTROL
+        | managed_temp_windows_security._WINDOWS_WRITE_DAC
+        | managed_temp_windows_security._WINDOWS_WRITE_OWNER
+    )
+    minimal_access = managed_temp_windows_security._WINDOWS_READ_CONTROL | managed_temp_windows_security._WINDOWS_WRITE_DAC
     assert calls.opens == [full_access, minimal_access]
     assert calls.security_reads == [202]
     assert not calls.updates
@@ -467,7 +476,7 @@ class TestManagedTempWindows:
         _make_junction(junction, destination)
 
         with pytest.raises(subject.ManagedTempError, match="reparse point"):
-            subject._windows_identity(junction)
+            managed_temp_windows_security._windows_identity(junction)
 
     def test_reparse_identity_identifies_the_link_object(self, tmp_path: pathlib.Path) -> None:
         """専用の処理はリンクを辿らず、reparse point自体を識別する。"""
@@ -478,11 +487,11 @@ class TestManagedTempWindows:
         _make_junction(first, destination)
         _make_junction(second, destination)
 
-        first_identity = subject._windows_reparse_identity(first)
+        first_identity = managed_temp_windows_security._windows_reparse_identity(first)
 
-        assert first_identity == subject._windows_reparse_identity(first)
-        assert first_identity != subject._windows_reparse_identity(second)
-        assert first_identity != subject._windows_identity(destination)
+        assert first_identity == managed_temp_windows_security._windows_reparse_identity(first)
+        assert first_identity != managed_temp_windows_security._windows_reparse_identity(second)
+        assert first_identity != managed_temp_windows_security._windows_identity(destination)
 
     @pytest.mark.parametrize("directory", [False, True])
     def test_cleanup_accepts_a_symbolic_link_within_the_managed_root(
@@ -501,13 +510,13 @@ class TestManagedTempWindows:
             destination.write_text("keep", encoding="utf-8")
         link = target / "link"
         link.symlink_to(destination, target_is_directory=directory)
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
 
         with pytest.raises(subject.ManagedTempError, match="reparse point"):
-            subject._windows_identity(link)
-        identity = subject._windows_reparse_identity(link)
-        assert identity == subject._windows_reparse_identity(link)
-        assert identity != subject._windows_identity(destination)
+            managed_temp_windows_security._windows_identity(link)
+        identity = managed_temp_windows_security._windows_reparse_identity(link)
+        assert identity == managed_temp_windows_security._windows_reparse_identity(link)
+        assert identity != managed_temp_windows_security._windows_identity(destination)
 
         subject.cleanup_managed_temp(target)
 
@@ -523,9 +532,9 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """Windowsでも明示指定時だけマーカーから登録を復元する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-registry-recovery")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         registry.unlink()
 
         with pytest.raises(subject.ManagedTempError):
@@ -541,13 +550,13 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """Windowsでも消費途中状態から通常の後始末を再開する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-resume-consume")
         consuming, _ = _interrupt_cleanup(target)
 
         subject.cleanup_managed_temp(target)
         assert not target.exists()
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
         assert not consuming.exists()
 
     @pytest.mark.usefixtures("windows_chmod")
@@ -561,7 +570,7 @@ class TestManagedTempWindows:
         normal.write_text("normal", encoding="utf-8")
         readonly.write_text("readonly", encoding="utf-8")
         readonly.chmod(stat.S_IREAD)
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         changed: list[str] = []
         original_chmod = os.chmod
 
@@ -590,7 +599,7 @@ class TestManagedTempWindows:
 
         assert not target.exists()
         assert not quarantine.exists()
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
         assert not consuming.exists()
 
     @pytest.mark.usefixtures("windows_chmod")
@@ -608,7 +617,7 @@ class TestManagedTempWindows:
         content.write_text("keep", encoding="utf-8")
         content.chmod(mode)
         before_attributes = getattr(content.lstat(), "st_file_attributes", 0)
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         original_unlink = os.unlink
 
         def deny_unlink(path: typing.Any, **kwargs: typing.Any) -> None:
@@ -652,7 +661,7 @@ class TestManagedTempWindows:
         assert content.read_text(encoding="utf-8") == "replacement"
         assert getattr(content.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_READONLY
         assert (target / "original.txt").read_text(encoding="utf-8") == "original"
-        assert subject._registry_path(target).exists()
+        assert managed_temp_registry._registry_path(target).exists()
         assert "置換" in capsys.readouterr().err
 
     def test_cleanup_resumes_after_an_interrupted_quarantine(
@@ -661,7 +670,7 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """Windowsでも真正な隔離途中状態の削除を再開する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-resume-quarantine")
         (target / "content.txt").write_text("remove", encoding="utf-8")
         consuming, quarantine = _interrupt_cleanup(target, quarantine=True)
@@ -669,7 +678,7 @@ class TestManagedTempWindows:
         subject.cleanup_managed_temp(target)
         assert not target.exists()
         assert not quarantine.exists()
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
         assert not consuming.exists()
 
     @pytest.mark.parametrize("mismatch", ["identity", "junction"])
@@ -680,14 +689,14 @@ class TestManagedTempWindows:
         mismatch: str,
     ) -> None:
         """Windowsではidentity不一致とジャンクションの隔離先を削除しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp(f"windows-quarantine-{mismatch}")
         _, quarantine = _interrupt_cleanup(target, quarantine=True)
         displaced = quarantine.with_name(f"{quarantine.name}-original")
         quarantine.replace(displaced)
         if mismatch == "identity":
             quarantine.mkdir()
-            subject._windows_secure_path(quarantine, directory=True)
+            managed_temp_windows_security._windows_secure_path(quarantine, directory=True)
             (quarantine / "keep.txt").write_text("keep", encoding="utf-8")
             preserved = quarantine
         else:
@@ -704,22 +713,22 @@ class TestManagedTempWindows:
 
         subject.cleanup_managed_temp(target)
         assert (preserved / "keep.txt").read_text(encoding="utf-8") == "keep"
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
 
     def test_create_validate_and_cleanup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-roundtrip")
         (target / "nested").mkdir()
         (target / "nested" / "data.txt").write_text("remove", encoding="utf-8")
         assert subject.validate_managed_temp(target) == target
-        security = subject._windows_security_descriptor(target)
-        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
-        assert subject._windows_equal_sids(security.owner, current_sid)
+        security = managed_temp_windows_security._windows_security_descriptor(target)
+        current_sid = managed_temp_windows_security._windows_sid_bytes(managed_temp_windows_security._windows_current_sid())
+        assert managed_temp_windows_security._windows_equal_sids(security.owner, current_sid)
         assert security.dacl_present
         assert security.protected
         assert len(security.aces) == 1
         assert security.aces[0].sid is not None
-        assert subject._windows_equal_sids(security.aces[0].sid, current_sid)
+        assert managed_temp_windows_security._windows_equal_sids(security.aces[0].sid, current_sid)
         subject.cleanup_managed_temp(target)
         assert not target.exists()
 
@@ -733,8 +742,8 @@ class TestManagedTempWindows:
         current_root = tmp_path / "current-root"
         shared_root.mkdir()
         current_root.mkdir()
-        subject._windows_secure_path(shared_root, directory=True)
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(current_root))
+        managed_temp_windows_security._windows_secure_path(shared_root, directory=True)
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(current_root))
 
         target = subject.create_managed_temp("windows-shared-root", root=shared_root)
 
@@ -752,10 +761,10 @@ class TestManagedTempWindows:
         tamper: str,
     ) -> None:
         """Windowsでもlistは不正recordを除外し、登録を残して真正な領域の列挙を継続する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         valid = subject.create_managed_temp("windows-valid")
         invalid = subject.create_managed_temp("windows-invalid")
-        registry = subject._registry_path(invalid)
+        registry = managed_temp_registry._registry_path(invalid)
         if tamper == "marker":
             marker = invalid / _MARKER_NAME
             marker.write_text("{}", encoding="utf-8")
@@ -777,10 +786,10 @@ class TestManagedTempWindows:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Windowsでも実体の消滅を確定した登録は警告して回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         valid = subject.create_managed_temp("windows-valid")
         missing = subject.create_managed_temp("windows-missing")
-        registry = subject._registry_path(missing)
+        registry = managed_temp_registry._registry_path(missing)
         (missing / _MARKER_NAME).unlink()
         missing.rmdir()
 
@@ -794,13 +803,13 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """Windowsでも実体を失った管理対象のcleanupは登録の削除だけで完了する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-missing-target")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         (target / _MARKER_NAME).unlink()
         target.rmdir()
 
-        assert subject.is_missing_registered_temp(target) is True
+        assert managed_temp_inventory.is_missing_registered_temp(target) is True
         subject.cleanup_managed_temp(target)
         assert not registry.exists()
 
@@ -810,12 +819,12 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """Windowsでも実体が残り検証に失敗する管理対象は登録も実体も消費せず失敗する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-untrusted-target")
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
         (target / _MARKER_NAME).unlink()
 
-        assert subject.is_missing_registered_temp(target) is False
+        assert managed_temp_inventory.is_missing_registered_temp(target) is False
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(target)
         assert target.exists()
@@ -827,30 +836,16 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """別実行主体が、実物で確認したものと同じACEを追加した後も公開検証とcleanupが成立する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-external-writer")
-        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
-        external_sid = subject._windows_sid_bytes("S-1-1-0")
-        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE
-        aces = (
-            subject._WindowsAce(
-                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
-                flags,
-                subject._WINDOWS_FILE_ALL_ACCESS,
-                current_sid,
-            ),
-            subject._WindowsAce(
-                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
-                flags,
-                subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
-                external_sid,
-            ),
-        )
-        subject._windows_replace_security(target, current_sid, aces, directory=True)
+        current_sid = managed_temp_windows_security._windows_sid_bytes(managed_temp_windows_security._windows_current_sid())
+        external_sid = managed_temp_windows_security._windows_sid_bytes("S-1-1-0")
+        aces = _owner_and_external_writer_aces(current_sid, external_sid)
+        managed_temp_windows_security._windows_replace_security(target, current_sid, aces, directory=True)
         (target / "external-content.txt").write_text("remove", encoding="utf-8")
 
         with pytest.raises(subject.ManagedTempError):
-            subject._validate_windows_security(target)
+            managed_temp_windows_security._validate_windows_security(target)
         assert subject.validate_managed_temp(target) == target
 
         subject.cleanup_managed_temp(target)
@@ -862,36 +857,22 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """`ACL`再保護用ハンドル取得直前の置換先へセキュリティ更新を適用しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-acl-race")
         displaced = tmp_path / "windows-acl-race-displaced"
         replacement = tmp_path / "windows-acl-race-replacement"
         replacement.mkdir()
-        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
-        external_sid = subject._windows_sid_bytes("S-1-1-0")
-        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE
-        replacement_aces = (
-            subject._WindowsAce(
-                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
-                flags,
-                subject._WINDOWS_FILE_ALL_ACCESS,
-                current_sid,
-            ),
-            subject._WindowsAce(
-                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
-                flags,
-                subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
-                external_sid,
-            ),
-        )
-        subject._windows_replace_security(replacement, current_sid, replacement_aces, directory=True)
-        replacement_security = subject._windows_security_descriptor(replacement)
-        original_update_handle = subject._windows_security_update_handle
+        current_sid = managed_temp_windows_security._windows_sid_bytes(managed_temp_windows_security._windows_current_sid())
+        external_sid = managed_temp_windows_security._windows_sid_bytes("S-1-1-0")
+        replacement_aces = _owner_and_external_writer_aces(current_sid, external_sid)
+        managed_temp_windows_security._windows_replace_security(replacement, current_sid, replacement_aces, directory=True)
+        replacement_security = managed_temp_windows_security._windows_security_descriptor(replacement)
+        original_update_handle = managed_temp_windows_security._windows_security_update_handle
 
         @contextlib.contextmanager
         def replace_before_security_update(
             path: pathlib.Path,
-        ) -> typing.Iterator[tuple[int, subject._ByHandleFileInformation, bool]]:
+        ) -> typing.Iterator[tuple[int, managed_temp_windows_security._ByHandleFileInformation, bool]]:
             if path != target:
                 with original_update_handle(path) as opened:
                     yield opened
@@ -901,12 +882,12 @@ class TestManagedTempWindows:
             with original_update_handle(path) as opened:
                 yield opened
 
-        monkeypatch.setattr(subject, "_windows_security_update_handle", replace_before_security_update)
+        setattr_in_managed_temp_modules(monkeypatch, "_windows_security_update_handle", replace_before_security_update)
 
         with pytest.raises(subject.ManagedTempError, match="ACL再保護時に置換"):
             subject.cleanup_managed_temp(target)
 
-        assert subject._windows_security_descriptor(target) == replacement_security
+        assert managed_temp_windows_security._windows_security_descriptor(target) == replacement_security
         assert (displaced / _MARKER_NAME).is_file()
 
     @pytest.mark.parametrize(("kind", "directory"), [("file", False), ("directory", True)])
@@ -921,45 +902,54 @@ class TestManagedTempWindows:
             target.mkdir()
         else:
             target.write_text("state", encoding="utf-8")
-        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
-        administrators_sid = subject._windows_sid_bytes("S-1-5-32-544")
-        everyone_sid = subject._windows_sid_bytes("S-1-1-0")
-        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE if directory else 0
+        current_sid = managed_temp_windows_security._windows_sid_bytes(managed_temp_windows_security._windows_current_sid())
+        administrators_sid = managed_temp_windows_security._windows_sid_bytes("S-1-5-32-544")
+        everyone_sid = managed_temp_windows_security._windows_sid_bytes("S-1-1-0")
+        flags = (
+            managed_temp_windows_security._WINDOWS_OBJECT_INHERIT_ACE
+            | managed_temp_windows_security._WINDOWS_CONTAINER_INHERIT_ACE
+            if directory
+            else 0
+        )
         initial_aces = (
-            subject._WindowsAce(
-                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+            managed_temp_windows_security._WindowsAce(
+                managed_temp_windows_security._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
                 flags,
-                subject._WINDOWS_FILE_ALL_ACCESS,
+                managed_temp_windows_security._WINDOWS_FILE_ALL_ACCESS,
                 current_sid,
             ),
-            subject._WindowsAce(subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, 0x00120089, everyone_sid),
+            managed_temp_windows_security._WindowsAce(
+                managed_temp_windows_security._WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, 0x00120089, everyone_sid
+            ),
         )
         try:
-            subject._windows_replace_security(target, administrators_sid, initial_aces, directory=directory)
+            managed_temp_windows_security._windows_replace_security(
+                target, administrators_sid, initial_aces, directory=directory
+            )
         except subject.ManagedTempError as error:
-            error_code = error.error_code if isinstance(error, subject._WindowsApiError) else None
+            error_code = error.error_code if isinstance(error, managed_temp_windows_security._WindowsApiError) else None
             cannot_change_owner = "Windowsの所有者を変更できるハンドルを取得できない" in str(error)
             if error_code in (5, 1307, 1314) or cannot_change_owner:
                 pytest.skip(f"別ownerを設定できるWindows tokenではない: {error}")
             raise
 
-        initial = subject._windows_security_descriptor(target)
-        assert subject._windows_equal_sids(initial.owner, administrators_sid)
+        initial = managed_temp_windows_security._windows_security_descriptor(target)
+        assert managed_temp_windows_security._windows_equal_sids(initial.owner, administrators_sid)
         assert len(initial.aces) == 2
 
-        subject._windows_secure_path(target, directory=directory)
+        managed_temp_windows_security._windows_secure_path(target, directory=directory)
 
-        secured = subject._windows_security_descriptor(target)
-        assert subject._windows_equal_sids(secured.owner, current_sid)
+        secured = managed_temp_windows_security._windows_security_descriptor(target)
+        assert managed_temp_windows_security._windows_equal_sids(secured.owner, current_sid)
         assert secured.dacl_present
         assert secured.protected
         assert len(secured.aces) == 1
-        assert secured.aces[0].ace_type == subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE
+        assert secured.aces[0].ace_type == managed_temp_windows_security._WINDOWS_ACCESS_ALLOWED_ACE_TYPE
         assert secured.aces[0].flags == flags
-        assert secured.aces[0].mask == subject._WINDOWS_FILE_ALL_ACCESS
+        assert secured.aces[0].mask == managed_temp_windows_security._WINDOWS_FILE_ALL_ACCESS
         assert secured.aces[0].sid is not None
-        assert subject._windows_equal_sids(secured.aces[0].sid, current_sid)
-        subject._validate_windows_security(target)
+        assert managed_temp_windows_security._windows_equal_sids(secured.aces[0].sid, current_sid)
+        managed_temp_windows_security._validate_windows_security(target)
 
     @pytest.mark.parametrize(("kind", "directory"), [("file", False), ("directory", True)])
     def test_secure_path_preserves_current_owner_without_write_owner(
@@ -973,33 +963,38 @@ class TestManagedTempWindows:
             target.mkdir()
         else:
             target.write_text("state", encoding="utf-8")
-        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
-        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE if directory else 0
+        current_sid = managed_temp_windows_security._windows_sid_bytes(managed_temp_windows_security._windows_current_sid())
+        flags = (
+            managed_temp_windows_security._WINDOWS_OBJECT_INHERIT_ACE
+            | managed_temp_windows_security._WINDOWS_CONTAINER_INHERIT_ACE
+            if directory
+            else 0
+        )
         restricted_aces = (
-            subject._WindowsAce(
-                subject._WINDOWS_ACCESS_DENIED_ACE_TYPE,
+            managed_temp_windows_security._WindowsAce(
+                managed_temp_windows_security._WINDOWS_ACCESS_DENIED_ACE_TYPE,
                 flags,
-                subject._WINDOWS_WRITE_OWNER,
+                managed_temp_windows_security._WINDOWS_WRITE_OWNER,
                 current_sid,
             ),
-            subject._WindowsAce(
-                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+            managed_temp_windows_security._WindowsAce(
+                managed_temp_windows_security._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
                 flags,
-                subject._WINDOWS_READ_CONTROL
-                | subject._WINDOWS_WRITE_DAC
-                | subject._WINDOWS_READ_ATTRIBUTES
-                | subject._WINDOWS_SYNCHRONIZE,
+                managed_temp_windows_security._WINDOWS_READ_CONTROL
+                | managed_temp_windows_security._WINDOWS_WRITE_DAC
+                | managed_temp_windows_security._WINDOWS_READ_ATTRIBUTES
+                | managed_temp_windows_security._WINDOWS_SYNCHRONIZE,
                 current_sid,
             ),
         )
-        subject._windows_replace_security(target, current_sid, restricted_aces, directory=directory)
+        managed_temp_windows_security._windows_replace_security(target, current_sid, restricted_aces, directory=directory)
 
-        restricted = subject._windows_security_descriptor(target)
-        assert subject._windows_equal_sids(restricted.owner, current_sid)
+        restricted = managed_temp_windows_security._windows_security_descriptor(target)
+        assert managed_temp_windows_security._windows_equal_sids(restricted.owner, current_sid)
         assert restricted.aces == restricted_aces
 
-        subject._windows_secure_path(target, directory=directory)
-        subject._validate_windows_security(target)
+        managed_temp_windows_security._windows_secure_path(target, directory=directory)
+        managed_temp_windows_security._validate_windows_security(target)
 
     def test_reparse_child_is_rejected_and_preserved(
         self,
@@ -1008,7 +1003,7 @@ class TestManagedTempWindows:
     ) -> None:
         managed_root = tmp_path / "managed-root"
         managed_root.mkdir()
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(managed_root))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(managed_root))
         target = subject.create_managed_temp("windows-reparse")
         outside = tmp_path / "outside"
         outside.mkdir()
@@ -1034,7 +1029,7 @@ class TestManagedTempWindows:
         sentinel = destination / "keep.txt"
         sentinel.write_text("keep", encoding="utf-8")
         _make_junction(target / "junction", destination)
-        registry = subject._registry_path(target)
+        registry = managed_temp_registry._registry_path(target)
 
         subject.cleanup_managed_temp(target)
 
@@ -1094,7 +1089,7 @@ class TestManagedTempWindows:
         """走査後にmanaged-tempのroot外へ向け直されたJunctionを解除しない。"""
         managed_root = tmp_path / "managed-root"
         managed_root.mkdir()
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(managed_root))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(managed_root))
         target = subject.create_managed_temp("windows-redirected-junction")
         destination = managed_root / "accepted-destination"
         outside = tmp_path / "outside-junction-destination"
@@ -1104,8 +1099,8 @@ class TestManagedTempWindows:
         sentinel.write_text("keep", encoding="utf-8")
         junction = target / "junction"
         _make_junction(junction, destination)
-        registry = subject._registry_path(target)
-        original_snapshot = subject._tree_snapshot
+        registry = managed_temp_registry._registry_path(target)
+        original_snapshot = managed_temp_inventory._tree_snapshot
 
         def snapshot_then_redirect(root: pathlib.Path) -> typing.Any:
             snapshot = original_snapshot(root)
@@ -1115,7 +1110,7 @@ class TestManagedTempWindows:
                 _make_junction(redirected, outside)
             return snapshot
 
-        monkeypatch.setattr(subject, "_tree_snapshot", snapshot_then_redirect)
+        setattr_in_managed_temp_modules(monkeypatch, "_tree_snapshot", snapshot_then_redirect)
 
         with pytest.raises(subject.ManagedTempError, match="reparse point"):
             subject.cleanup_managed_temp(target)
@@ -1141,7 +1136,7 @@ class TestManagedTempWindows:
 
         assert not target.exists()
         assert not quarantine.exists()
-        assert not subject._registry_path(target).exists()
+        assert not managed_temp_registry._registry_path(target).exists()
         assert not consuming.exists()
         assert destination.exists()
 
@@ -1152,33 +1147,38 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
         tamper: str,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-acl")
-        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
-        everyone_sid = subject._windows_sid_bytes("S-1-1-0")
-        authenticated_users_sid = subject._windows_sid_bytes("S-1-5-11")
-        unrelated_sid = subject._windows_sid_bytes("S-1-5-21-1-2-3-1001")
-        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE
-        expected = subject._WindowsAce(
-            subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+        current_sid = managed_temp_windows_security._windows_sid_bytes(managed_temp_windows_security._windows_current_sid())
+        everyone_sid = managed_temp_windows_security._windows_sid_bytes("S-1-1-0")
+        authenticated_users_sid = managed_temp_windows_security._windows_sid_bytes("S-1-5-11")
+        unrelated_sid = managed_temp_windows_security._windows_sid_bytes("S-1-5-21-1-2-3-1001")
+        flags = (
+            managed_temp_windows_security._WINDOWS_OBJECT_INHERIT_ACE
+            | managed_temp_windows_security._WINDOWS_CONTAINER_INHERIT_ACE
+        )
+        expected = managed_temp_windows_security._WindowsAce(
+            managed_temp_windows_security._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
             flags,
-            subject._WINDOWS_FILE_ALL_ACCESS,
+            managed_temp_windows_security._WINDOWS_FILE_ALL_ACCESS,
             current_sid,
         )
-        valid_external = subject._WindowsAce(
-            subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+        valid_external = managed_temp_windows_security._WindowsAce(
+            managed_temp_windows_security._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
             flags,
-            subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
+            managed_temp_windows_security._WINDOWS_EXTERNAL_WRITER_ACCESS,
             everyone_sid,
         )
         altered = {
             "wrong-mask": (
                 expected,
-                subject._WindowsAce(subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, 0x00120089, everyone_sid),
+                managed_temp_windows_security._WindowsAce(
+                    managed_temp_windows_security._WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, 0x00120089, everyone_sid
+                ),
             ),
             "deny": (
-                subject._WindowsAce(
-                    subject._WINDOWS_ACCESS_DENIED_ACE_TYPE,
+                managed_temp_windows_security._WindowsAce(
+                    managed_temp_windows_security._WINDOWS_ACCESS_DENIED_ACE_TYPE,
                     flags,
                     0x00000001,
                     unrelated_sid,
@@ -1188,28 +1188,28 @@ class TestManagedTempWindows:
             "multiple": (
                 expected,
                 valid_external,
-                subject._WindowsAce(
-                    subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                managed_temp_windows_security._WindowsAce(
+                    managed_temp_windows_security._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
                     flags,
-                    subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
+                    managed_temp_windows_security._WINDOWS_EXTERNAL_WRITER_ACCESS,
                     authenticated_users_sid,
                 ),
             ),
             "current-user-extra": (
                 expected,
-                subject._WindowsAce(
-                    subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                managed_temp_windows_security._WindowsAce(
+                    managed_temp_windows_security._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
                     flags,
-                    subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
+                    managed_temp_windows_security._WINDOWS_EXTERNAL_WRITER_ACCESS,
                     current_sid,
                 ),
             ),
         }[tamper]
-        subject._windows_replace_security(target, current_sid, altered, directory=True)
+        managed_temp_windows_security._windows_replace_security(target, current_sid, altered, directory=True)
         with pytest.raises(subject.ManagedTempError):
             subject.validate_managed_temp(target)
         assert target.exists()
-        subject._windows_secure_path(target, directory=True)
+        managed_temp_windows_security._windows_secure_path(target, directory=True)
         subject.cleanup_managed_temp(target)
 
     def test_handmade_marker_without_registry_is_rejected(
@@ -1217,20 +1217,20 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = tmp_path / "handmade-windows"
         target.mkdir()
-        subject._windows_secure_path(target, directory=True)
-        identity = subject._windows_identity(target)
+        managed_temp_windows_security._windows_secure_path(target, directory=True)
+        identity = managed_temp_windows_security._windows_identity(target)
         marker = {
             "schema_version": 1,
             "path": str(target),
             "platform": os.name,
-            "owner": {"kind": "sid", "id": subject._windows_current_sid()},
+            "owner": {"kind": "sid", "id": managed_temp_windows_security._windows_current_sid()},
             "identity": list(identity),
             "nonce": "0" * 64,
         }
-        subject._write_private_json(target / _MARKER_NAME, marker)
+        managed_temp_registry._write_private_json(target / _MARKER_NAME, marker)
         with pytest.raises(subject.ManagedTempError, match="外部状態"):
             subject.validate_managed_temp(target)
         assert target.exists()
@@ -1240,7 +1240,7 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-state-json")
         nested = target / "nested"
         nested.mkdir()
@@ -1257,21 +1257,21 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-race")
         (target / "original.txt").write_text("original", encoding="utf-8")
         displaced = tmp_path / "windows-displaced"
-        original_consume = subject._consume_registry
+        original_consume = managed_temp_inventory._consume_registry
 
         def replace_root(validated: typing.Any) -> pathlib.Path:
             consuming = original_consume(validated)
             target.rename(displaced)
             target.mkdir()
-            subject._windows_secure_path(target, directory=True)
+            managed_temp_windows_security._windows_secure_path(target, directory=True)
             (target / "replacement.txt").write_text("replacement", encoding="utf-8")
             return consuming
 
-        monkeypatch.setattr(subject, "_consume_registry", replace_root)
+        setattr_in_managed_temp_modules(monkeypatch, "_consume_registry", replace_root)
         with pytest.raises(subject.ManagedTempError, match="置換"):
             subject.cleanup_managed_temp(target)
         assert (displaced / "original.txt").read_text(encoding="utf-8") == "original"
@@ -1284,36 +1284,7 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
         kind: str,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
-        target = subject.create_managed_temp("windows-child-race")
-        child = target / "child"
-        displaced = target / "original-child"
-        if kind == "directory":
-            child.mkdir()
-            (child / "original.txt").write_text("original", encoding="utf-8")
-        else:
-            child.write_text("original", encoding="utf-8")
-        original_consume = subject._consume_registry
-
-        def replace_child(validated: typing.Any) -> pathlib.Path:
-            consuming = original_consume(validated)
-            child.rename(displaced)
-            if kind == "directory":
-                child.mkdir()
-                (child / "replacement.txt").write_text("replacement", encoding="utf-8")
-            else:
-                child.write_text("replacement", encoding="utf-8")
-            return consuming
-
-        monkeypatch.setattr(subject, "_consume_registry", replace_child)
-        with pytest.raises(subject.ManagedTempError, match="置換"):
-            subject.cleanup_managed_temp(target)
-        if kind == "directory":
-            assert (displaced / "original.txt").read_text(encoding="utf-8") == "original"
-            assert (child / "replacement.txt").read_text(encoding="utf-8") == "replacement"
-        else:
-            assert displaced.read_text(encoding="utf-8") == "original"
-            assert child.read_text(encoding="utf-8") == "replacement"
+        _assert_child_replacement_preserves_both_versions(monkeypatch, tmp_path, kind, "windows-child-race", "original-child")
 
 
 def _ns(moment: datetime.datetime) -> int:
@@ -1324,7 +1295,7 @@ def _record_validations(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
     """登録済み候補の真正性検証と配下の走査の対象を記録する。"""
     observed: list[pathlib.Path] = []
     original_validate = subject.validate_managed_temp
-    original_walk = subject._latest_update_and_git_paths
+    original_walk = managed_temp_inventory._latest_update_and_git_paths
 
     def record_validate(path: pathlib.Path | str) -> typing.Any:
         observed.append(pathlib.Path(path))
@@ -1334,8 +1305,8 @@ def _record_validations(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
         observed.append(path)
         return original_walk(path)
 
-    monkeypatch.setattr(subject, "validate_managed_temp", record_validate)
-    monkeypatch.setattr(subject, "_latest_update_and_git_paths", record_walk)
+    setattr_in_managed_temp_modules(monkeypatch, "validate_managed_temp", record_validate)
+    setattr_in_managed_temp_modules(monkeypatch, "_latest_update_and_git_paths", record_walk)
     return observed
 
 
@@ -1348,7 +1319,7 @@ class TestSweepSchedule:
         """期限前の登録済み候補と登録を失った候補を、2回目の掃引で検証も走査もしない。"""
         registered = [subject.create_managed_temp(f"pending-{index}") for index in range(5)]
         orphan = subject.create_managed_temp("pending-orphan")
-        subject._registry_path(orphan).unlink()
+        managed_temp_registry._registry_path(orphan).unlink()
         nested = registered[0] / "nested"
         nested.mkdir()
         (nested / "recent.txt").write_text("recent", encoding="utf-8")
@@ -1370,7 +1341,7 @@ class TestSweepSchedule:
         with_git = subject.create_managed_temp("with-git")
         (with_git / "repo" / ".git").mkdir(parents=True)
         orphan = subject.create_managed_temp("expiring-orphan")
-        subject._registry_path(orphan).unlink()
+        managed_temp_registry._registry_path(orphan).unlink()
         for target in (expiring, with_git, orphan):
             _set_tree_mtime(target, _ns(self._NOW - datetime.timedelta(days=6)))
         _set_tree_mtime(recent, _ns(self._NOW))
@@ -1416,7 +1387,7 @@ class TestSweepSchedule:
         expired = subject.create_managed_temp("expired")
         _set_tree_mtime(expired, _ns(self._NOW - datetime.timedelta(days=6)))
         assert subject.sweep_managed_temp(now=self._NOW).deleted == []
-        schedule = subject._state_root() / subject._SWEEP_SCHEDULE_NAME
+        schedule = managed_temp_registry._state_root() / managed_temp_inventory._SWEEP_SCHEDULE_NAME
         assert schedule.exists()
         if damage == "missing":
             schedule.unlink()
@@ -1437,7 +1408,7 @@ class TestSweepSchedule:
         repository_admin = tmp_path / "repository" / ".git" / "worktrees" / "lane"
         repository_admin.mkdir(parents=True)
         live = subject.create_managed_temp("live-worktree")
-        subject._registry_path(live).unlink()
+        managed_temp_registry._registry_path(live).unlink()
         (live / "wt").mkdir()
         (live / "wt" / ".git").write_text(f"gitdir: {repository_admin}\n", encoding="utf-8")
         _set_tree_mtime(live, _ns(self._NOW - datetime.timedelta(days=8)))
@@ -1457,7 +1428,7 @@ class TestSweepSchedule:
         repository_admin = tmp_path / "repository" / ".git" / "worktrees" / "lane"
         repository_admin.mkdir(parents=True)
         live = subject.create_managed_temp("live-worktree")
-        subject._registry_path(live).unlink()
+        managed_temp_registry._registry_path(live).unlink()
         (live / "wt").mkdir()
         (live / "wt" / ".git").write_text(f"gitdir: {repository_admin}\n", encoding="utf-8")
         for target in (with_git, live):
@@ -1486,9 +1457,9 @@ class TestSweepSchedule:
         expired = subject.create_managed_temp("expired")
         _set_tree_mtime(expired, _ns(self._NOW - datetime.timedelta(days=6)))
         assert subject.sweep_managed_temp(now=self._NOW).deleted == []
-        schedule = subject._state_root() / subject._SWEEP_SCHEDULE_NAME
+        schedule = managed_temp_registry._state_root() / managed_temp_inventory._SWEEP_SCHEDULE_NAME
         value = json.loads(schedule.read_text(encoding="utf-8"))
-        value["registered"][subject._registry_path(expired).name][3] = [f"../{holder.name}/.git"]
+        value["registered"][managed_temp_registry._registry_path(expired).name][3] = [f"../{holder.name}/.git"]
         schedule.write_text(json.dumps(value), encoding="utf-8")
         observed = _record_validations(monkeypatch)
 

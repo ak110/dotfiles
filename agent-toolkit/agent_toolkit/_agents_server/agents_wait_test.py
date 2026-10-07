@@ -10,21 +10,31 @@ from typing import Any
 
 import pytest
 
-import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit import atk
-from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file
-from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._agents_server import (
+    agents_wait,
+    notice_inbox,
+    result_projection,
+    retained_results,
+    session_registry,
+    shared_layout,
+    shared_roots,
+    state,
+    wait_targets,
+)
+from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import wait_schedule
+from agent_toolkit._common import state_paths, wait_schedule
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
 @pytest.fixture(autouse=True)
 def _short_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """結果の無い待機を即時に返して公開引数へ上限を露出させない。"""
     monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0)
-    monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path / "logs"))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
 
 @pytest.fixture(name="wait_environment")
@@ -35,8 +45,8 @@ def _wait_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(_atk_config, "state_dir", lambda: tmp_path)
-    return status_file.results_directory("root-session", tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    return shared_layout.results_directory("root-session", tmp_path)
 
 
 def _running_body(response: dict[str, Any]) -> dict[str, Any]:
@@ -180,7 +190,7 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     def fail_create(*_args: Any, **_kwargs: Any) -> pathlib.Path:
         raise managed_temp.ManagedTempError("容量不足")
 
-    monkeypatch.setattr(managed_temp, "create_managed_temp", fail_create)
+    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", fail_create)
     with pytest.raises(SystemExit) as failed:
         atk.main(["agents", "wait"])
     first = capsys.readouterr()
@@ -189,7 +199,7 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     assert "結果本文のファイルを書けません" in first.err
     assert NEXT_ACTION_PREFIX in first.err
 
-    monkeypatch.setattr(managed_temp, "create_managed_temp", original_create)
+    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", original_create)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
     delivered = json.loads(capsys.readouterr().out)
@@ -234,12 +244,12 @@ def test_agents_wait_guides_review_result_before_deciding_findings(
     if expected is None:
         assert next_action is None
     elif expected == "review":
-        assert next_action == state.REVIEW_RESULT_NEXT_ACTION
+        assert next_action == result_projection.REVIEW_RESULT_NEXT_ACTION
         for fragment in ("`agent-toolkit:review-standards`", "`references/reviewee.md`", "合意を示すユーザー発話を特定"):
             assert fragment in next_action
     else:
         assert next_action is not None
-        assert next_action != state.REVIEW_RESULT_NEXT_ACTION
+        assert next_action != result_projection.REVIEW_RESULT_NEXT_ACTION
 
 
 @pytest.mark.parametrize("label", ["add-wi", "lane-01-exec-review"])
@@ -267,9 +277,9 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
     action = result["next_action"]
     assert "既存の案内" in action
     marked = message.startswith("完了\n")
-    assert (state.IMPROVEMENT_RESULT_NEXT_ACTION in action) is marked
+    assert (result_projection.IMPROVEMENT_RESULT_NEXT_ACTION in action) is marked
     if marked:
-        assert action.count(state.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
+        assert action.count(result_projection.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
         for fragment in (
             "メインエージェントは次のユーザーへの発話へ",
             "委譲先は自身の返却の末尾へ",
@@ -280,7 +290,7 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
         ):
             assert fragment in action
     if status == "completed" and label.endswith("-review"):
-        assert state.REVIEW_RESULT_NEXT_ACTION in action
+        assert result_projection.REVIEW_RESULT_NEXT_ACTION in action
     elif status == "failed":
         assert "失敗の種類を確かめる" in action
     elif status == "interrupted":
@@ -295,7 +305,7 @@ def test_agents_wait_uses_explicit_root_without_environment(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """起動応答のルートを明示すれば環境の別名なしで終端結果を回収できる。"""
-    results = status_file.results_directory("mcp-root", tmp_path)
+    results = shared_layout.results_directory("mcp-root", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     results.mkdir(parents=True, exist_ok=True)
     (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
@@ -370,13 +380,13 @@ def test_agents_wait_does_not_consume_another_writer_result(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """同じroot配下でも別の状態書込主体が公開した結果は回収しない。"""
-    root = status_file.status_directory("root-session", tmp_path)
+    root = shared_layout.status_directory("root-session", tmp_path)
     root.mkdir(parents=True)
     (root / "delegate-session.json").write_text(
         json.dumps({"version": 1, "sessions": [{"session_id": "owned-session"}]}),
         encoding="utf-8",
     )
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir()
     foreign_result = results / "foreign-session.json"
     foreign_result.write_text(
@@ -406,10 +416,10 @@ def test_root_wait_does_not_consume_delegate_writer_result(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """ルート待機は所有者を持つ委譲先の結果を旧形式として回収しない。"""
-    root = status_file.status_directory("root-session", tmp_path)
+    root = shared_layout.status_directory("root-session", tmp_path)
     root.mkdir(parents=True)
     (root / "root.json").write_text(json.dumps({"version": 1, "sessions": []}), encoding="utf-8")
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir()
     delegate_result = results / "delegate-result.json"
     delegate_result.write_text(
@@ -438,13 +448,13 @@ def test_delegate_wait_consumes_own_writer_result(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """委譲先待機は結果ファイルの所有者が自身と一致する結果を回収する。"""
-    root = status_file.status_directory("root-session", tmp_path)
+    root = shared_layout.status_directory("root-session", tmp_path)
     root.mkdir(parents=True)
     (root / "delegate-session.json").write_text(
         json.dumps({"version": 1, "sessions": []}),
         encoding="utf-8",
     )
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir()
     own_result = results / "delegate-result.json"
     own_result.write_text(
@@ -484,13 +494,13 @@ def test_codex_delegate_wait_resolves_writer_alias_and_releases_target(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Codex threadと異なる書込主体の稼働状態と終端結果を同じ所有単位で回収する。"""
-    root = status_file.status_directory("root-session", tmp_path)
+    root = shared_layout.status_directory("root-session", tmp_path)
     root.mkdir(parents=True)
     (root / "writer-session.json").write_text(
         json.dumps({"version": 1, "host_session_id": "codex-thread", "sessions": [{"session_id": "remote-session"}]}),
         encoding="utf-8",
     )
-    status_file.write_host_alias("root-session", "writer-session", "codex-thread", tmp_path)
+    shared_roots.write_host_alias("root-session", "writer-session", "codex-thread", tmp_path)
     environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root-session", "CODEX_THREAD_ID": "codex-thread"}
 
     assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 3
@@ -498,19 +508,19 @@ def test_codex_delegate_wait_resolves_writer_alias_and_releases_target(
     timed_out.pop("next_action")
     assert timed_out == {"session_id": "remote-session", "status": "running"}
 
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(exist_ok=True)
     result_path = results / "remote-session.json"
     result_path.write_text(
         json.dumps({"status": "completed", "owner_status_file": "writer-session.json"}),
         encoding="utf-8",
     )
-    (status_file.hosts_directory("root-session", tmp_path) / "writer-session.json").unlink()
+    (shared_layout.hosts_directory("root-session", tmp_path) / "writer-session.json").unlink()
 
     assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 0
     assert json.loads(capsys.readouterr().out) == {"session_id": "remote-session", "status": "completed"}
     assert not result_path.exists()
-    retained, error = status_file.read_wait_targets("root-session", "writer-session.json", tmp_path)
+    retained, error = wait_targets.read_wait_targets("root-session", "writer-session.json", tmp_path)
     assert retained == set()
     assert error is None
 
@@ -534,8 +544,8 @@ def test_codex_delegate_wait_reports_ambiguous_writer_aliases(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """複数の書込主体へ対応するCodex threadは診断を返して待機しない。"""
-    status_file.write_host_alias("root-session", "writer-a", "codex-thread", tmp_path)
-    status_file.write_host_alias("root-session", "writer-b", "codex-thread", tmp_path)
+    shared_roots.write_host_alias("root-session", "writer-a", "codex-thread", tmp_path)
+    shared_roots.write_host_alias("root-session", "writer-b", "codex-thread", tmp_path)
 
     assert (
         agents_wait.wait_for_result(
@@ -553,7 +563,7 @@ def test_codex_delegate_wait_reports_ambiguous_writer_aliases(
 
 def _wait_lock_path(tmp_path: pathlib.Path) -> pathlib.Path:
     """root書込主体の待機所有権を表すロックファイルのパスを返す。"""
-    return status_file.status_directory("root-session", tmp_path) / "wait-locks" / "root.json.lock"
+    return shared_layout.status_directory("root-session", tmp_path) / "wait-locks" / "root.json.lock"
 
 
 def _write_current_wait_run(
@@ -564,7 +574,7 @@ def _write_current_wait_run(
     continuable: bool = False,
 ) -> tuple[pathlib.Path, pathlib.Path]:
     """指定したrunをcurrentとして保存し、runディレクトリと記録ファイルのパスを返す。"""
-    run_directory = status_file.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
+    run_directory = shared_layout.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
     run_path = run_directory / "run-1.json"
     agents_wait._write_json(  # pylint: disable=protected-access
         run_path,
@@ -612,7 +622,7 @@ def _run_contended_wait(
     prepare: Callable[[pathlib.Path, pathlib.Path], None] | None = None,
 ) -> int:
     """後発待機がlockに並んだ後、未公開runを残して所有権を渡す。"""
-    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
     original_acquire, follower_waiting = _observe_waiters(monkeypatch, 1)
     lock_path = _wait_lock_path(tmp_path)
@@ -641,14 +651,14 @@ def _run_contended_wait(
 
 
 def _leave_result_original(tmp_path: pathlib.Path, _run_path: pathlib.Path) -> None:
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True, exist_ok=True)
     (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
 
 
 def _stash_result(tmp_path: pathlib.Path, run_path: pathlib.Path) -> None:
     _leave_result_original(tmp_path, run_path)
-    claimed, error = status_file.take_result(
+    claimed, error = retained_results.take_result(
         "root-session",
         "session-1",
         "root.json",
@@ -661,13 +671,13 @@ def _stash_result(tmp_path: pathlib.Path, run_path: pathlib.Path) -> None:
 
 
 def _stash_notice(tmp_path: pathlib.Path, run_path: pathlib.Path) -> None:
-    notices = status_file.notices_directory("root-session", tmp_path)
+    notices = shared_layout.notices_directory("root-session", tmp_path)
     notices.mkdir()
     (notices / "session-1.1.json").write_text(
         json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}),
         encoding="utf-8",
     )
-    assert status_file.take_notices(
+    assert notice_inbox.take_notices(
         "root-session", "session-1", tmp_path, stash_directory=run_path.with_suffix("") / "notices"
     ) == [{"body": "通知"}]
 
@@ -694,7 +704,7 @@ def _interrupt_after_published(
 
 def _wait_while_owner_is_locked(tmp_path: pathlib.Path, own_session_id: str) -> int:
     """別実行が同じ書込主体の待機所有権を保持する状態で待機を発行する。"""
-    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": own_session_id}])
+    _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": own_session_id}])
     lock_path = _wait_lock_path(tmp_path)
     lock_path.parent.mkdir(parents=True)
     with lock_path.open("a+b") as lock_file:
@@ -726,10 +736,10 @@ def test_followers_join_the_same_wait_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """同時に発行した2件の後発待機は先行runへ固定し、結果を1回だけ再演する。"""
-    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     lock_path = _wait_lock_path(tmp_path)
     lock_path.parent.mkdir(parents=True)
-    run_directory = status_file.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
+    run_directory = shared_layout.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
     run_path = run_directory / "run-1.json"
     agents_wait._write_json(  # pylint: disable=protected-access
         run_path,
@@ -785,7 +795,7 @@ def test_wait_replays_follower_output_after_interrupt(
     stream: str,
 ) -> None:
     """後続waitがflush後に停止しても、lock待ちの別waitが本文を回収する。"""
-    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="foreground-delivered")
     run = json.loads(run_path.read_text(encoding="utf-8"))
     run["stream"] = stream
@@ -876,7 +886,7 @@ def test_wait_continues_after_contended_owner_aborts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """lock取得後も待機を続け、後から届く終端結果を受け取る。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 10.0)
     monkeypatch.setattr(agents_wait.time, "sleep", _publish_result_on_sleep(results))
 
@@ -896,10 +906,10 @@ def test_wait_recovers_target_added_during_lock_contention(
         run = json.loads(run_path.read_text(encoding="utf-8"))
         run["targets"] = ["session-1", "session-2"]
         agents_wait._write_json(run_path, run)  # pylint: disable=protected-access
-        results = status_file.results_directory("root-session", state_root)
+        results = shared_layout.results_directory("root-session", state_root)
         results.mkdir(parents=True, exist_ok=True)
         (results / "session-2.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
-        claimed, error = status_file.take_result(
+        claimed, error = retained_results.take_result(
             "root-session",
             "session-2",
             "root.json",
@@ -930,7 +940,7 @@ def test_later_wait_uses_matching_current_run(
     expected_stream: str,
 ) -> None:
     """公開済みrunは回収し、残存する未公開runは待機を再開する。"""
-    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     run_directory, run_path = _write_current_wait_run(tmp_path, target="session-1", status=status)
 
     assert (
@@ -952,7 +962,7 @@ def test_later_wait_uses_matching_current_run(
 
 def test_wait_recovers_abandoned_run(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """先行プロセスがいない未公開runから終端結果を回収する。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
     results.mkdir(parents=True)
@@ -971,14 +981,14 @@ def test_wait_recovers_claimed_result_once(
     original_exists: bool,
 ) -> None:
     """退避済み結果を原本の有無によらず1回だけ公開する。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     status_path = _write_own_status(results, [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
     results.mkdir(parents=True)
     result_path = results / "session-1.json"
     result_path.write_text(json.dumps({"status": "completed"}), encoding="utf-8")
     stash_path = run_path.with_suffix("") / "results" / "session-1.json"
-    claimed, error = status_file.take_result(
+    claimed, error = retained_results.take_result(
         "root-session", "session-1", "root.json", collector="test", state_root=tmp_path, stash_path=stash_path
     )
     assert claimed == {"status": "completed"}
@@ -1004,16 +1014,16 @@ def test_wait_recovers_claimed_notice_once(
     original_exists: bool,
 ) -> None:
     """退避済み通知を原本の有無によらず1回だけ公開する。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
-    notices = status_file.notices_directory("root-session", tmp_path)
+    notices = shared_layout.notices_directory("root-session", tmp_path)
     notices.mkdir()
     notice_path = notices / "session-1.1.json"
     payload = {"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}
     notice_path.write_text(json.dumps(payload), encoding="utf-8")
     stash_directory = run_path.with_suffix("") / "notices"
-    assert status_file.take_notices("root-session", "session-1", tmp_path, stash_directory=stash_directory) == [
+    assert notice_inbox.take_notices("root-session", "session-1", tmp_path, stash_directory=stash_directory) == [
         {"body": payload["body"]}
     ]
     if original_exists:
@@ -1037,7 +1047,7 @@ def test_wait_replays_published_run_after_publication_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """run記録の確定後、標準出力への配送前に中断しても本文を再取得する。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     results.mkdir(parents=True)
     (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
@@ -1053,9 +1063,9 @@ def test_wait_replays_published_notice_after_publication_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """通知だけを持つ公開済みrunも前景配送前の中断から再演する。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
-    notices = status_file.notices_directory("root-session", tmp_path)
+    notices = shared_layout.notices_directory("root-session", tmp_path)
     notices.mkdir()
     (notices / "session-1.1.json").write_text(
         json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}),
@@ -1077,11 +1087,11 @@ def test_wait_replays_flushed_result_after_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """flush後の中断では結果と通知を次の発行で1回再出力する。"""
-    results = status_file.results_directory("root-session", tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     results.mkdir(parents=True)
     (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
-    notices = status_file.notices_directory("root-session", tmp_path)
+    notices = shared_layout.notices_directory("root-session", tmp_path)
     notices.mkdir()
     (notices / "session-1.1.json").write_text(
         json.dumps({"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}),
@@ -1109,7 +1119,7 @@ def test_wait_replays_flushed_result_after_interrupt(
     monkeypatch.setattr(agents_wait, "_write_json", original_write)
     assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
     assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == first
-    run_directory = status_file.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
+    run_directory = shared_layout.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
     current = json.loads((run_directory / "current.json").read_text(encoding="utf-8"))
     run_path = run_directory / f"{current['run_id']}.json"
     assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "consumed"
@@ -1125,7 +1135,7 @@ def test_later_wait_starts_new_run_for_consumed_current_run(
     continuable: bool,
 ) -> None:
     """回収済みまたは前景配送済みの現行runと対象が一致しても新規runを開始する。"""
-    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     run_directory, _ = _write_current_wait_run(
         tmp_path,
         target="session-1",
@@ -1152,7 +1162,7 @@ def test_later_wait_starts_new_run_for_changed_targets(
     status: str,
 ) -> None:
     """対象が変わった後続waitは先行runではなく新規runを開始する。"""
-    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-2"}])
+    _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-2"}])
     run_directory, _ = _write_current_wait_run(tmp_path, target="session-1", status=status)
 
     assert (
@@ -1172,7 +1182,7 @@ def test_later_wait_starts_new_run_for_continuable_published_run(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """継続可能な公開runの旧出力を再演せず、新しい待機を開始する。"""
-    _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     run_directory, _ = _write_current_wait_run(tmp_path, target="session-1", status="published", continuable=True)
 
     assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 3
@@ -1196,12 +1206,12 @@ def test_agents_wait_resolves_changed_conversation_session(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(_atk_config, "state_dir", lambda: tmp_path)
-    results = status_file.results_directory("root-session", tmp_path)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True)
     payload = {"session_id": "session-1", "status": "completed"}
     (results / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
-    status_file.write_root_alias("current-session", "root-session", tmp_path)
+    shared_roots.write_root_alias("current-session", "root-session", tmp_path)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
@@ -1497,7 +1507,7 @@ def test_agents_wait_releases_registered_session_missing_from_registry(
 
     所有側が解放した解放済みレコードも、レコードの不在と同じく解放の対象とする。
     """
-    status_file.retain_wait_targets("root-session", "root.json", ["session-1"], wait_environment.parents[2])
+    wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], wait_environment.parents[2])
     if released:
         session_registry.release("session-1", reason="retention_expired", state_root=wait_environment.parents[2])
 
@@ -1507,7 +1517,7 @@ def test_agents_wait_releases_registered_session_missing_from_registry(
     captured = capsys.readouterr()
     assert not captured.out
     assert "待機対象の登録が0件" in captured.err
-    retained, error = status_file.read_wait_targets(
+    retained, error = wait_targets.read_wait_targets(
         "root-session",
         "root.json",
         wait_environment.parents[2],
@@ -1522,7 +1532,7 @@ def test_agents_wait_releases_registered_session_terminal_in_registry(
 ) -> None:
     """登録簿が終端を示し、結果も状態ファイルの行も無い待機対象を解放して待たずに終える。"""
     state_root = wait_environment.parents[2]
-    status_file.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
+    wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
     session_registry.publish("session-1", terminal=True, status="interrupted", state_root=state_root)
 
     with pytest.raises(SystemExit, match="10"):
@@ -1531,7 +1541,7 @@ def test_agents_wait_releases_registered_session_terminal_in_registry(
     captured = capsys.readouterr()
     assert not captured.out
     assert "待機対象の登録が0件" in captured.err
-    retained, error = status_file.read_wait_targets("root-session", "root.json", state_root)
+    retained, error = wait_targets.read_wait_targets("root-session", "root.json", state_root)
     assert retained == set()
     assert error is None
 
@@ -1543,7 +1553,7 @@ def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
 ) -> None:
     """待機中に唯一の対象が結果を残さず終端した場合は、待機上限を待たずに対象不在で終える。"""
     state_root = wait_environment.parents[2]
-    status_file.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
+    wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
     session_registry.publish("session-1", terminal=False, state_root=state_root)
     # 上限到達による終了と区別するため、待機上限をテストの実行時間より十分大きくする。
     monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 3600.0)
@@ -1562,7 +1572,7 @@ def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
     assert not captured.out
     assert "待機対象の登録が0件" in captured.err
     assert len(sleeps) == 1
-    retained, error = status_file.read_wait_targets("root-session", "root.json", state_root)
+    retained, error = wait_targets.read_wait_targets("root-session", "root.json", state_root)
     assert retained == set()
     assert error is None
 
@@ -1573,7 +1583,7 @@ def test_agents_wait_collects_registered_terminal_result_and_releases_target(
 ) -> None:
     """PostToolUseが保持した対象の終端結果を回収し、待機対象登録を解除する。"""
     state_root = wait_environment.parents[2]
-    status_file.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
+    wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
     wait_environment.mkdir(parents=True)
     (wait_environment / "session-1.json").write_text(
         json.dumps({"status": "completed"}),
@@ -1584,7 +1594,7 @@ def test_agents_wait_collects_registered_terminal_result_and_releases_target(
         atk.main(["agents", "wait"])
 
     assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-1"}
-    retained, error = status_file.read_wait_targets("root-session", "root.json", state_root)
+    retained, error = wait_targets.read_wait_targets("root-session", "root.json", state_root)
     assert retained == set()
     assert error is None
 
@@ -1594,7 +1604,7 @@ def test_agents_wait_releases_corrupted_wait_target(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """読取不能な待機対象登録を解放し、理由を伴う終了コード9で返す。"""
-    directory = status_file.wait_targets_directory("root-session", "root.json", wait_environment.parents[2])
+    directory = shared_layout.wait_targets_directory("root-session", "root.json", wait_environment.parents[2])
     directory.mkdir(parents=True)
     marker = directory / "session-1.json"
     marker.write_text("{", encoding="utf-8")
@@ -1783,7 +1793,7 @@ def test_agents_wait_logs_targets_and_collection_without_result_body(
     assert _wait_for_session_1_result(wait_environment) == 0
 
     assert json.loads(capsys.readouterr().out)["agent_message"] == "秘密の結果本文"
-    log_text = (wait_environment.parents[2] / "logs" / "agents-server.log").read_text(encoding="utf-8")
+    log_text = (wait_environment.parents[2] / "agents-server.log").read_text(encoding="utf-8")
     assert "wait_start targets=session-1 origins=session-1:result" in log_text
     assert "collector=atk-agents-wait" in log_text
     assert "reason=collected count=1 session_ids=session-1" in log_text
@@ -1810,7 +1820,7 @@ def test_agents_wait_collects_dynamic_target_under_owner_lock(
     assert _wait_for_session_1_result(wait_environment) == 0
 
     assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-2"}
-    log_text = (wait_environment.parents[2] / "logs" / "agents-server.log").read_text(encoding="utf-8")
+    log_text = (wait_environment.parents[2] / "agents-server.log").read_text(encoding="utf-8")
     assert "wait_target_added session_id=session-2" in log_text
 
 
@@ -1846,7 +1856,7 @@ def _observe_cli_wait_limit(
     最初の待機で`probe_limit`の0.5秒前まで時刻を進め、以降は待機した秒数だけ進める。
     実際の上限が`probe_limit`と一致する場合だけ、残り0.5秒の待機を経て同じ時刻に上限へ到達する。
     """
-    identity = status_file.resolve_status_file_identity(dict(os.environ))
+    identity = shared_roots.resolve_status_file_identity(dict(os.environ))
     assert identity is not None
     status_path = results_directory.parent / identity.file_name
     status_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1905,7 +1915,7 @@ def test_cli_and_mcp_wait_limits_match(
     """CLIとMCPの`wait`は同じ条件で同じ上限を使い、CLI専用の上限定数を持たない。"""
     _set_ttl_environment(monkeypatch, environment)
     # 導出値の保持だけを持つ最小のインスタンスで、MCPの`wait`が使う解決処理を呼ぶ。
-    manager = subject.AgentsServerManager.__new__(subject.AgentsServerManager)
+    manager = server_manager.AgentsServerManager.__new__(server_manager.AgentsServerManager)
     manager._wait_timeouts = {}  # pylint: disable=protected-access
     mcp_limit = asyncio.run(manager._resolve_wait_timeout("main"))  # pylint: disable=protected-access
 

@@ -17,7 +17,7 @@ Copilot由来の判定条件は、authorの`__typename`が`Bot`であること�
 
 ## 取得
 
-通常の監査は、委譲元が渡す`atk review-audit pending --repo <OWNER>/<REPO>`のJSONを入力とする。`reviews`には未判定のCopilot由来reviewのPR番号とdatabaseId、`threads`には未解決のCopilot由来threadを持つPR番号が入る。`counts`は両集合の件数を示す。監査担当は`reviews`の各本文を後掲のREST APIで取得し、`threads`の各PRだけinline commentを取得する。判定済みreviewの除外とpagination終端の確認にはコマンドの成功結果を用いる。
+通常の監査の入力は、`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`が定める`pending取得結果`である。`reviews`には未判定のCopilot由来reviewのPR番号とdatabaseId、`threads`には未解決のCopilot由来threadを持つPR番号が入る。監査担当は`reviews`の各本文を後掲のREST APIで取得し、`threads`の各PRだけinline commentを取得する。判定済みreviewの除外とpagination終端の確認にはコマンドの成功結果を用いる。
 
 pendingコマンドが失敗して委譲元からJSONを受け取れない場合は、以下の横断GraphQLクエリーとPR単位のクエリーを使って監査対象を取得する。失敗時も監査対象を直接取得して判定する。
 

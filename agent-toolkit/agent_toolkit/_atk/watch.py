@@ -78,7 +78,7 @@ def _worktree_fields(label: str, path: pathlib.Path) -> list[str]:
     dirty = _ERROR_VALUE if porcelain is None else str(len([line for line in porcelain.splitlines() if line.strip()]))
     # run_git_lines()は第2引数を実行時の作業ディレクトリとして使うため、
     # コマンド側へ`-C`を重ねて指定しない（相対パス指定で二重解決になる）。
-    head_lines = _git_status.run_git_lines(["git", "rev-parse", "--short", "HEAD"], str(path))
+    head_lines = _git_status.run_git_lines(["rev-parse", "--short", "HEAD"], str(path))
     head = head_lines[0] if head_lines else _ERROR_VALUE
     return [f"{label}.dirty={dirty}", f"{label}.head={head}"]
 

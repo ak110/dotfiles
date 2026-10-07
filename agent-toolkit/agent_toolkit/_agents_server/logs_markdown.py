@@ -10,7 +10,7 @@ import pathlib
 import re
 import typing
 
-from agent_toolkit._atk.serve import sessions as session_records
+from agent_toolkit._atk import session_record_format
 
 _TOOL_RESULT_MAX_CHARS = 2000
 
@@ -97,19 +97,19 @@ def render_session(
     lines.append("")
     _render_events(
         lines,
-        session_records.record_events(engine, _display_records(engine, records)),
+        session_record_format.record_events(engine, _display_records(engine, records)),
         heading_level=2,
         include_thinking=include_thinking,
         tool_details=tool_details,
     )
     if include_subagents and engine == "claude":
-        for item in session_records.claude_subagents(record_path) or []:
+        for item in session_record_format.claude_subagents(record_path) or []:
             raw_path = item.get("path")
             if not isinstance(raw_path, str):
                 continue
             child_path = pathlib.Path(raw_path)
             try:
-                child_records, _ = session_records.parse_records(child_path.read_text(encoding="utf-8", errors="replace"))
+                child_records, _ = session_record_format.parse_records(child_path.read_text(encoding="utf-8", errors="replace"))
             except OSError:
                 continue
             description = _optional_text(item.get("description")) or _optional_text(item.get("agent_id")) or "Subagent"
@@ -119,7 +119,7 @@ def render_session(
                 lines.extend([f"Type: {agent_type}", ""])
             _render_events(
                 lines,
-                session_records.record_events("claude", _display_records("claude", child_records, is_subagent=True)),
+                session_record_format.record_events("claude", _display_records("claude", child_records, is_subagent=True)),
                 heading_level=3,
                 include_thinking=include_thinking,
                 tool_details=tool_details,
@@ -155,7 +155,7 @@ def _display_records(
 
 def _render_events(
     lines: list[str],
-    events: list[session_records.SessionEvent],
+    events: list[session_record_format.SessionEvent],
     *,
     heading_level: int,
     include_thinking: bool,
@@ -168,7 +168,7 @@ def _render_events(
             results.setdefault(event.call_id, []).append(event.text)
     role: str | None = None
     message_id: str | None = None
-    turn: list[session_records.SessionEvent] = []
+    turn: list[session_record_format.SessionEvent] = []
     for event in events:
         if event.kind == "user":
             next_role = "Human"
@@ -191,7 +191,7 @@ def _render_events(
 def _render_turn(
     lines: list[str],
     role: str,
-    events: list[session_records.SessionEvent],
+    events: list[session_record_format.SessionEvent],
     results: dict[str, list[str]],
     *,
     heading_level: int,
@@ -210,7 +210,7 @@ def _render_turn(
 
 def _render_tool_call(
     lines: list[str],
-    event: session_records.SessionEvent,
+    event: session_record_format.SessionEvent,
     results: list[str],
     *,
     tool_details: bool,

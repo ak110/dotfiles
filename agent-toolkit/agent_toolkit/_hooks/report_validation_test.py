@@ -15,12 +15,14 @@ from agent_toolkit._hooks.termination_evidence_test import isolated_session  # n
     [
         ("", "", "block"),
         ("## 振り返り結果報告\n\n言い回しは任意。", "", "approve"),
-        ("## 振り返り結果報告\n### 確定した問題と対策\n- 対策（投入予定: 対策のタイトル）", "", "block"),
+        ("## 振り返り結果報告\n### 確定した問題と対策\n- AWI登録予定: 対策のタイトル（c0001）", "", "block"),
         (
-            "## 振り返り結果報告\n### 確定した問題と対策\n- 対策（投入予定: 対策のタイトル）",
+            "## 振り返り結果報告\n### 確定した問題と対策\n- AWI登録予定: 対策のタイトル（c0001）",
             "## AWI投入結果報告\n- 20261004-003316-001.md",
             "approve",
         ),
+        # 区分を先頭に置く書式へ移る前の書式の予告も、最終報告を要求する。
+        ("## 振り返り結果報告\n### 確定した問題と対策\n- 対策（投入予定: 対策のタイトル）", "", "block"),
     ],
 )
 def test_stop_uses_visible_headings_for_each_host(
@@ -64,6 +66,9 @@ def test_stop_uses_visible_headings_for_each_host(
         "### 対策を見送った問題\n- 判定済み: 問題; 根拠: 未照会なので分からない",
         "### 対策を見送った問題\n- 判定済み: 問題",
         "### 対策を見送った問題\n- 未確定: 問題; 照会: 実施; 再現: 実施",
+        "### 確定した問題と対策\n- 実装済み: 対策の要旨だけ",
+        "### 確定した問題と対策\n- AWI登録: 対策のタイトルだけ",
+        "### 対策を見送った問題\n- 再発防止策なし: 問題; 評価した案: 案; 採らない理由: 理由",
     ],
 )
 def test_stop_rejects_required_evidence_violation(host: str, body: str) -> None:
@@ -79,23 +84,37 @@ def test_stop_rejects_required_evidence_violation(host: str, body: str) -> None:
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
-def test_submission_rejects_scheduled_marker(host: str) -> None:
-    text = "## 振り返り結果報告\n結果。\n## AWI投入結果報告\n- （投入予定: 対策）"
+@pytest.mark.parametrize("scheduled", ["- AWI登録予定: 対策", "- （投入予定: 対策）"])
+def test_submission_rejects_scheduled_marker(host: str, scheduled: str) -> None:
+    text = "## 振り返り結果報告\n結果。\n## AWI投入結果報告\n" + scheduled
     payload = {"session_id": "evidence-test", "last_assistant_message": text, "stop_hook_active": False}
     if host == "codex":
         payload["turn_id"] = "codex-turn"
     result = stop.evaluate(json.dumps(payload))
-    assert result["decision"] == "block" and "最終報告の投入予定" in str(result["reason"])
+    assert result["decision"] == "block" and "最終報告のAWI登録予定" in str(result["reason"])
 
 
-@pytest.mark.parametrize("reference", ["20261004-003316-001.md", "（投入予定: 対策）", "（同一セッションで実装済み: abc1234）"])
-def test_accepts_measure_reference_and_tolerates_layout(reference: str) -> None:
+@pytest.mark.parametrize(
+    "measure",
+    [
+        "- AWI登録: 20261004-003316-001.md: 対策のタイトル（c0001, c0002）",
+        "- AWI登録済み: 20261004-003316-001.md: 既存の対策のタイトル",
+        "- AWI登録予定: 対策のタイトル",
+        "- 実装済み: 対策の要旨; 根拠: abc1234（c0003）",
+        # 区分を先頭に置く書式へ移る前の書式は、稼働中のセッションを遮断しないよう受理する。
+        "- 対策 20261004-003316-001.md",
+        "- 対策（投入予定: 対策）",
+        "- 対策（同一セッションで実装済み: abc1234）",
+    ],
+)
+def test_accepts_measure_reference_and_tolerates_layout(measure: str) -> None:
     """H3順序・要約の接頭辞・なし併記・未実施理由と内部パスは追加の判定にしない。"""
     text = (
         "## 振り返り結果報告\n- 別の要約: 任意\n- 成果ファイル: /some/path\n"
         "### 対策を見送った問題\n- なし\n- 判定済み: 問題; 根拠: 同じ条件で確認済み\n"
         "- 未確定: 問題; 照会: 原記録を照会; 再現: 同じ条件を実行; 残る理由: 外部応答の欠落\n"
-        "### 確定した問題と対策\n- 対策 " + reference
+        "- 再発防止策なし: 問題; 評価した案: 手順の追記; 採らない理由: 恒常コストが大きい; 反復: 一致なし\n"
+        "### 確定した問題と対策\n" + measure
     )
     assert not report_validation.validate_report(text, "review-result")
 

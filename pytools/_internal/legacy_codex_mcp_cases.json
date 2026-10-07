@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {"name": "without-type-timeout", "definition": {"command": "codex", "args": ["mcp-server"]}, "legacy": true},
+    {
+      "name": "with-managed-timeout",
+      "definition": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "timeout": 7200000},
+      "legacy": true
+    },
+    {
+      "name": "with-empty-env",
+      "definition": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "env": {}},
+      "legacy": true
+    },
+    {"name": "empty-definition", "definition": {}, "legacy": false},
+    {"name": "other-command", "definition": {"command": "other", "args": ["mcp-server"]}, "legacy": false},
+    {"name": "extra-args", "definition": {"command": "codex", "args": ["mcp-server", "--extra"]}, "legacy": false},
+    {"name": "scalar-args", "definition": {"command": "codex", "args": "mcp-server"}, "legacy": false},
+    {"name": "sse-type", "definition": {"type": "sse", "command": "codex", "args": ["mcp-server"]}, "legacy": false},
+    {"name": "other-timeout", "definition": {"command": "codex", "args": ["mcp-server"], "timeout": 1}, "legacy": false},
+    {"name": "string-timeout", "definition": {"command": "codex", "args": ["mcp-server"], "timeout": "7200000"}, "legacy": false},
+    {
+      "name": "env-value",
+      "definition": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "env": {"X": "1"}},
+      "legacy": false
+    },
+    {"name": "custom-field", "definition": {"command": "codex", "args": ["mcp-server"], "customField": true}, "legacy": false}
+  ]
+}

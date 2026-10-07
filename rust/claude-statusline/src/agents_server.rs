@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 
-use crate::subagent::{
+use crate::render::{
     display_width, format_elapsed, normalize_description, render_line, DEFAULT_COLUMNS,
 };
 
@@ -631,6 +631,75 @@ mod tests {
         assert_eq!(
             state_directory("linux", env(&[("HOME", "/home/test")]), "bad/id"),
             None
+        );
+    }
+
+    /// agent-toolkitの`status_file.py`と共有する状態ファイルの契約。
+    ///
+    /// 同じfixtureをリポジトリ直下の`claude_statusline_invariant_test.py`が書き込み側と比べる。
+    /// 版・期限・キー・状態ディレクトリの構成の一方だけを変えると、どちらかのテストが失敗する。
+    const STATE_CONTRACT: &str = include_str!("../testdata/agents_server_state.json");
+
+    fn sorted_keys(value: &Value) -> Vec<String> {
+        let mut keys = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        keys.sort();
+        keys
+    }
+
+    fn string_list(value: &Value) -> Vec<String> {
+        let mut items = value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        items.sort();
+        items
+    }
+
+    #[test]
+    fn state_contract_fixture_matches_reader() {
+        let contract = serde_json::from_str::<Value>(STATE_CONTRACT).unwrap();
+        assert_eq!(contract["version"].as_u64(), Some(STATE_VERSION));
+        assert_eq!(
+            contract["heartbeat_expiry_seconds"].as_i64(),
+            Some(HEARTBEAT_EXPIRY_SECONDS)
+        );
+
+        let example = &contract["example"];
+        assert_eq!(
+            sorted_keys(example),
+            string_list(&contract["state_file_keys"])
+        );
+        assert_eq!(
+            sorted_keys(&example["sessions"][0]),
+            string_list(&contract["session_keys"])
+        );
+        let heartbeat = DateTime::parse_from_rfc3339(example["heartbeat_at"].as_str().unwrap())
+            .unwrap()
+            .with_timezone(&Utc);
+        let parsed = parse_state_file("root.json".to_string(), example, heartbeat).unwrap();
+        assert_eq!(parsed.sessions.len(), 1);
+        let expired = heartbeat + chrono::Duration::seconds(HEARTBEAT_EXPIRY_SECONDS + 1);
+        assert!(parse_state_file("root.json".to_string(), example, expired).is_none());
+
+        let mut expected = PathBuf::from("/state");
+        for component in contract["state_directory"].as_array().unwrap() {
+            let component = component.as_str().unwrap();
+            expected.push(if component == "<root_session_id>" {
+                "root-1"
+            } else {
+                component
+            });
+        }
+        assert_eq!(
+            state_directory("linux", env(&[("XDG_STATE_HOME", "/state")]), "root-1"),
+            Some(expected)
         );
     }
 

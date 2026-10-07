@@ -4,8 +4,8 @@ import inspect
 from collections.abc import Callable
 
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.session_state import increment_warn_notice_count as _increment_warn_notice_count
 from agent_toolkit._hooks import message_format as _message_format
-from agent_toolkit._hooks.session_state import increment_warn_notice_count as _increment_warn_notice_count
 
 _WARN_REPEAT_THRESHOLD = 2
 _WARN_TAG = "warn"

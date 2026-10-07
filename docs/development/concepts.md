@@ -17,7 +17,11 @@
 
 ## [完遂と縮退の禁止](concepts-principles.md#完遂と縮退の禁止)
 
-## [品質とコスト効率の優先順位](concepts-principles.md#品質とコスト効率の優先順位)
+## [判断の優先順位（QCD）](concepts-principles.md#判断の優先順位qcd)
+
+## [計画と実行の運用](concepts-principles.md#計画と実行の運用)
+
+## [所要時間とコスト](concepts-principles.md#所要時間とコスト)
 
 ## [付帯作業の単位](concepts-principles.md#付帯作業の単位)
 
@@ -31,16 +35,23 @@
 
 ## [規範文書の書き方](concepts-principles.md#規範文書の書き方)
 
-## 場面別手順の配置
-
-実行時に従う規範は`agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」と各スキルに置く。
-エージェントが特定の場面で従う手順は、常時規範の短い箇条と`share/`の長文を組み合わせず、標準のスキルへ置く（2026年9月25日のユーザー指示）。
+## [計画レビュー廃止前の運用（2026年9月13日まで）](concepts-principles.md#計画レビュー廃止前の運用2026年9月13日まで)
 
 ## [複数環境での利用](concepts-workflows.md#複数環境での利用)
 
 ## [developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)
 
-## [WIキューの運用](concepts-workflows.md#WIキューの運用)
+## [WIの状態と遷移](concepts-workflows.md#wiの状態と遷移)
+
+## [`atk`の出力と操作](concepts-workflows.md#atkの出力と操作)
+
+## [AWI・UWIの本文と投入](concepts-workflows.md#awiuwiの本文と投入)
+
+## [確認と承認](concepts-workflows.md#確認と承認)
+
+## [process-wiとレーン](concepts-workflows.md#process-wiとレーン)
+
+## [工程と検証の名前](concepts-workflows.md#工程と検証の名前)
 
 ## [多数の単純作業の分担](concepts-workflows.md#多数の単純作業の分担)
 
@@ -48,10 +59,26 @@
 
 ## [フックのホスト間共通化](concepts-runtime.md#フックのホスト間共通化)
 
-## [Claude CodeとCodexの規範配置](concepts-runtime.md#Claude CodeとCodexの規範配置)
+## [Claude CodeとCodexの規範配置](concepts-runtime.md#claude-codeとcodexの規範配置)
 
-## [委譲の運用](concepts-runtime.md#委譲の運用)
+## [委譲全般と利用上限](concepts-runtime.md#委譲全般と利用上限)
 
-## [確認・合意の運用](concepts-governance.md#確認・合意の運用)
+## [待機と観測](concepts-runtime.md#待機と観測)
 
-## [セキュリティと環境](concepts-governance.md#セキュリティと環境)
+## [レビューの運用](concepts-runtime.md#レビューの運用)
+
+## [`session-review`](concepts-runtime.md#session-review)
+
+## [確認・合意の運用](concepts-governance.md#確認合意の運用)
+
+## [依存とサプライチェーン](concepts-governance.md#依存とサプライチェーン)
+
+## [managed-temp](concepts-governance.md#managed-temp)
+
+## [秘匿値とworktree](concepts-governance.md#秘匿値とworktree)
+
+## [auto modeと許可ルール](concepts-governance.md#auto-modeと許可ルール)
+
+## [実行環境と表示](concepts-governance.md#実行環境と表示)
+
+## [配布するブラウザー資産](concepts-governance.md#配布するブラウザー資産)
