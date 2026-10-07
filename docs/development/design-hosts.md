@@ -119,9 +119,9 @@ sourceによる由来境界の判定とユーザー認可の確認を分け、so
 同じworktreeへ実装担当を引き継ぐ場合に終了確認の成立を検収する。
 通常の実装モードでレビュー修正を委譲する場合は、メインが元の実装入力、レビュー指摘管理表および対象worktreeの絶対パスを修正担当へ渡す。
 修正担当は公開契約と元の要求や確認回答で認可された変更を基準文書から確認し、レビュー指摘管理表の指摘を採否判断して、採用指摘を実装単位commitの7文字以上の一意な短縮OIDへ対応付ける。
-対応付けられない場合、計画が衝突する場合、認可上限を超える場合は、履歴と作業ツリーを変更せず続行できない理由を返す。
+計画が衝突する場合と認可上限を超える場合は、履歴と作業ツリーを変更せず続行できない理由を返す。
 成立する場合は未pushの実装単位履歴へ修正を統合し、詳細をレビュー指摘管理表と成果物へ記録して工程完了だけを返す。
-最終単位だけは修正・変更範囲の検証・stage後に`amend` phaseで再判定し、成功後にamendする。過去単位だけは各fixup作成前とautosquash直前に再判定し、fixupとautosquashを実行する。両方が対象の場合は過去単位だけを先に実装してautosquashし、最終単位を実装・変更範囲の検証・stageした後、amend直前の再判定後にamendする。レビュー修正専用commitを残さないことは努力目標とする。対象OIDの不一致、対象commitのpush済み、複数単位へ不可分にまたがる修正、各中間commitの公開契約を維持できない修正のいずれかでは履歴書換えを開始せず通常commitを選ぶ。履歴書換えを開始した後に失敗した場合は新規commitへ切り替えず、`agent-toolkit/skills/commit/references/history-rewrite.md`の`## 失敗時の扱い`に従う。
+最終単位だけは修正・変更範囲の検証・stage後に`amend` phaseで再判定し、成功後にamendする。過去単位だけは各fixup作成前とautosquash直前に再判定し、fixupとautosquashを実行する。両方が対象の場合は過去単位だけを先に実装してautosquashし、最終単位を実装・変更範囲の検証・stageした後、amend直前の再判定後にamendする。対応付けができない修正などの統合先と、履歴を書き換えられない場合の扱いは`agent-toolkit/skills/commit/references/history-rewrite.md`「修正方法の選択」が定める。履歴書換えを開始した後に失敗した場合は新規commitへ切り替えず、`agent-toolkit/skills/commit/references/history-rewrite.md`の`## 失敗時の扱い`に従う。
 複数の過去単位では、各fixup作成後のclean確認で次の過去単位へ進み、全過去単位のfixup作成後に1回だけautosquashを実行する。
 未pushかつ単一の実装担当が所有するworktreeの履歴書換え保護は、`agent-toolkit/skills/commit/references/history-rewrite.md`が定める汎用のプッシュ済み判定へ一本化する。
 remote広告refの直積証跡・replace ref・graft・shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
@@ -143,7 +143,7 @@ remote広告refの直積証跡・replace ref・graft・shallow複製への追加
 比較不能な総合出力または実在しないauto mode classifierのテストを必須にする案は、変更の成否を識別できないため採用しない。
 
 メインは委譲先専用の`<役割名>.subagent.md`および作成規範を読み込まず、その絶対パスを各担当へ渡す。
-agent-toolkitプラグイン内の`<役割名>.subagent.md`と作成規範の絶対パスは、メインが注入済みの`agent-toolkit:delegation`の所在から現行plugin rootを確定して解決する。
+agent-toolkitプラグイン内の`<役割名>.subagent.md`は、`agents_server`がメインから受け取った役割名を自身のplugin rootの`share/`直下へ解決する。作成規範の絶対パスは、メインが注入済みの`agent-toolkit:delegation`の所在から現行plugin rootを確定して解決する。
 委譲元は新規成果物の絶対パスを起動時に指定するか、委譲先から報告を受領してから観測する。
 AWI計画では、委譲元が既存ファイルと衝突しない保存先の絶対パスを確定する。
 通常型のAWIの下流主体は、担当ファイル名と対象リポジトリを受け取り、キューCLIから保存本文を独立に取得する。
@@ -202,7 +202,7 @@ Claude Platform on AWSで独立セッション間通信が成立しない確認�
 完了通知の受領主体を最上位と直接の親のいずれにも固定せず、直接の委譲元でない主体は現在の実行主体への`SendMessage`公開と保持済みの直接の子IDへの呼び出し成功を確認した場合だけ通知を逐語中継する。
 中継不能時は未反映を推定して再送せず、担当範囲と権限の内側にある未完了工程だけを巻き取り、外側の工程は続行できない理由として委譲元へ返す。
 ホスト別の手段と宛先を常時規範へ書かないのは、未確認の手段を全ホストへ配布する実施契約へ含めないためである。
-Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/share/rules-subagent.md`「Claude Code固有事項」だけが保持し、直接の委譲元への返信、通常完了報告および独立セッション間通信と区別する。
+Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/share/rules-subagent.claude-code.md`「即時通知の宛先」だけが保持し、直接の委譲元への返信、通常完了報告および独立セッション間通信と区別する。
 
 完了報告または`ListAgents`だけから全プロセスの終了を推定する案は、外部プロセスを直接観測できないため採用しない。
 所有主体の終了後に自然終了を待つ案は、終了時機を保証できず実装担当の引継ぎを停止させるため通常手順にしない。

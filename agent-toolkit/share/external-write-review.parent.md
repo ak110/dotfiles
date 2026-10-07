@@ -9,7 +9,17 @@
 
 ## 起動
 
-確定した文面をUTF-8のファイルへ保存してから、`external-write-review.subagent.md`を指定して1件のレビュー担当を起動する。起動の形は`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」に従う。`cwd`は文面が根拠とする対象リポジトリの絶対パスとし、`extra_params`には次の名前付き入力だけを渡す。
+確定した文面をUTF-8のファイルへ保存してから、1件のレビュー担当を起動する。
+
+`agents_server`の`start`を次の引数で呼ぶ。起動の定型と適用する義務は`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」に従う。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 文面が根拠とする対象リポジトリの絶対パス |
+| `subagent_md_path` | `external-write-review` |
+| `extra_params` | 次の名前付き入力だけ |
+| `mode` | 指定しない |
+| `model_type` | 指定しない（サーバーが工程別設定を使う） |
 
 - `文面ファイル`: 文面ファイルの絶対パスと行数
 - `投稿先と目的`: 投稿先と投稿の目的

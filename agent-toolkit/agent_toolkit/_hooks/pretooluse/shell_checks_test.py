@@ -948,6 +948,24 @@ class TestBashAtkOutputLoss:
             "cat <(atk agents wait >/dev/null)",
             "sh -c 'atk agents wait &'; printf done",
             "atk agents wait >/dev/null 2>&1",
+            "atk wi add --dry-run --body-file body.md > dryrun.out 2> dryrun.err",
+            "atk wi show sample.md >> saved.out",
+            "atk wi list 2>/dev/null",
+            "atk run-script completion-report-check -- report.md > out.txt 2>&1",
+            "atk wi list &>saved.out",
+            "atk agents wait 2>/dev/null",
+            "atk agents wait 2>&1",
+            "atk agents wait >saved.stdout 2>saved.stderr",
+            "atk agents wait >/dev/null >saved.stdout",
+            "atk agents wait >/dev/null 1>&2",
+            "(atk agents wait >saved.stdout) >/dev/null",
+            "atk agents list >saved.stdout | head",
+            "atk agents list >saved.stdout |& head",
+            "atk agents list >saved.stdout 2>&1 | head",
+            "atk agents wait >$OUTPUT",
+            "atk wi process-loop status > status.out",
+            "atk wi process-loop --target-repo . instruct --body-file note.md 2>&1",
+            "atk agents logs sample > logs.out",
         ],
     )
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
@@ -957,7 +975,7 @@ class TestBashAtkOutputLoss:
         assert auto_message_opening_attributes(result.stderr)["source"] == "pretooluse"
         assert "結果と終了状態を直接受領できない入力" in result.stderr
         assert "run_in_background" in result.stderr
-        assert "生成側が返す標準出力・標準エラーの保存先" in result.stderr
+        assert "パイプとリダイレクトを外して単独で発行し" in result.stderr
         assert "--output-file" not in result.stderr
         assert "別の呼び出し" in result.stderr
 
@@ -965,12 +983,10 @@ class TestBashAtkOutputLoss:
         "command",
         [
             "atk agents wait",
-            "atk agents wait 2>/dev/null",
-            "atk agents wait 2>&1",
-            "atk agents wait >saved.stdout 2>saved.stderr",
-            "atk agents wait >/dev/null >saved.stdout",
-            "atk agents wait >/dev/null 1>&2",
-            "(atk agents wait >saved.stdout) >/dev/null",
+            "atk serve --host 127.0.0.1 --port 28991 > serve.log 2>&1",
+            "atk wi process-loop > loop.log 2>&1",
+            "atk wi process-loop --no-update &>loop.log",
+            "atk agents logs sample --follow > logs.out 2>&1",
             "printf data | atk wi add --body-file body.md",
             "printf data | atk agents wait",
             "atk agents list --count=1",
@@ -978,9 +994,6 @@ class TestBashAtkOutputLoss:
             "head -c 3000 output.jsonl",
             "atk agents list && printf done",
             "atk agents list || printf failed",
-            "atk agents list >saved.stdout | head",
-            "atk agents list >saved.stdout |& head",
-            "atk agents list >saved.stdout 2>&1 | head",
             "printf '%s' 'atk agents wait >/dev/null &'",
             "rg -F -- 'atk wi list | jq .' records.txt",
             "cat <<'EOF'\natk agents wait >/dev/null &\natk wi list | head\nEOF",
@@ -992,7 +1005,7 @@ class TestBashAtkOutputLoss:
             '"X=1" atk agents wait &',
             'A=1 "B=2" atk agents list | head',
             'printf "%s" "${VALUE:-$(atk wi list | head)}"',
-            "atk agents wait >$OUTPUT",
+            'printf "%s" "$(atk wi list --count)"',
             'bash -c "$COMMAND"',
             "printf data | head; atk agents wait",
             "atk agents wait; printf done &",

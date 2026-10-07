@@ -552,7 +552,7 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
     """adoptサブコマンド: 採用としてinbox・processing・holdのいずれかからadopted/へ移動しcommit・push。
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
-    `--note`指定時はメモ、`--commit`指定時は対応commitの作成者日時と件名を含む。
+    `--note`指定時はメモ、`--commit`指定時は対応commitの短縮OIDと件名を含む。
     inbox・processing・holdのいずれの起点も許容し、同名ファイルが複数の状態にある場合はprocessing、inbox、holdの順に優先する。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
@@ -585,7 +585,7 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
     """rejectサブコマンド: 不採用としてinbox・processing・holdのいずれかからrejected/へ移動しcommit・push。
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
-    `--note`指定時はメモ、`--commit`指定時は対応commitの作成者日時と件名を含む。
+    `--note`指定時はメモ、`--commit`指定時は対応commitの短縮OIDと件名を含む。
     inbox・processing・holdのいずれの起点も許容し、同名ファイルが複数の状態にある場合はprocessing、inbox、holdの順に優先する。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """

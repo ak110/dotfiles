@@ -1,14 +1,14 @@
 """Claude CodeとCodexのtranscript、および委譲先のAntigravityログから振り返り用の時系列証拠を抽出し、照会する。
 
 モードを指定しない場合はセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
-`--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`の照会モードは、抽出結果に無い詳細をtranscriptから
+`--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`・`--tool-calls`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 `--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補および会話の流れの抽出を
 1回の記録読み込みでまとめて行い、走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
 対象の記録はtranscriptの絶対パス、Claude Codeのセッション識別子、Codex thread IDおよびカタログ走査のいずれか1つで指定する。
 ユーザーイベントの由来は原文と生成標識から判定し、その結果を保持してから通常表示の本文を短縮する。
 `--user-events`は人間の発話と確認回答だけを逐語引用の原文として返す。
-本文を切り詰めず、確認回答には提示した全選択肢を含め、スキル展開と実行環境の生成本文は除く。
+本文を切り詰めず、確認回答には提示した全選択肢を含め、スキル展開、実行環境の生成本文およびClaude Codeの中断の定型文は除く。
 
 本スクリプトはデータ抽出を目的とし、合否を判定しないため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -43,6 +43,7 @@ try:
     from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
     from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
     from agent_toolkit._hooks import response_language_check as _response_language_check
+    from agent_toolkit._hooks import transcript as _transcript
     from agent_toolkit._hooks.bash_command_parser import QuotingScanner as _QuotingScanner
 except ImportError as _import_error:
     _SELF = Path(__file__).resolve()
@@ -136,6 +137,13 @@ _FALLBACK_TEXT = (
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
 )
 _CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
+_LOCAL_TIME_NOTE = "タイムゾーン（`Z`や`+09:00`など）を省いた値は実行ホストのローカルタイムゾーンの時刻として扱う。"
+"""時刻を受け取る引数の説明へ加える、タイムゾーンを省いた値の解釈。"""
+_HOOK_RECORD_NOTE = (
+    "Claude Codeの記録は、出力（標準出力、標準エラー、追加コンテキスト）を返さなかったhookの実行を残さない。"
+    "このためhookの記録が無いことや一致0件は、そのhookが発火しなかったことを示さない。"
+)
+"""hookの記録の有無を照会する引数の説明へ加える、記録が残る条件。"""
 _METADATA_KEYS = frozenset(
     {
         # 識別子・署名
@@ -686,7 +694,9 @@ def _claude_entry_events(
                     for call_id, options in _claude_question_options(message.get("content")).items()
                 }
             )
-            for text in _text_blocks(message.get("content")):
+            # ユーザーへ届いた本文として、`text`ブロックに加えて`send_to_user`の呼び出しの`message`も出来事にする。
+            content = message.get("content")
+            for text in [content] if isinstance(content, str) else _transcript.visible_text_blocks(content):
                 event = _event("assistant", text)
                 if event:
                     events.append(event)
@@ -1105,9 +1115,24 @@ _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?
 
 
 def _parse_timestamp(value: str) -> datetime.datetime:
-    """ISO 8601の時刻を解析し、タイムゾーン無しの値をUTCとして返す。"""
+    """記録の`timestamp`などの内部データのISO 8601の時刻を解析し、タイムゾーン無しの値をUTCとして返す。
+
+    ホストは記録の時刻を`Z`付きのUTCで書くため、タイムゾーン無しの値もUTCとみなす。
+    CLI引数で受け取る時刻は`_parse_cli_timestamp`で解析する。
+    """
     parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.UTC)
+
+
+def _parse_cli_timestamp(value: str) -> datetime.datetime:
+    """CLI引数で受け取ったISO 8601の時刻を解析し、タイムゾーン無しの値を実行ホストのローカル時刻として返す。
+
+    人やエージェントが手で書く境界は同じホストの`date`などで得たローカル時刻から書かれるため、
+    記録向けの`_parse_timestamp`と同じくUTCとみなすと、ローカルタイムゾーンとUTCの差だけ境界がずれ、
+    該当0件の結果と区別できない。日付だけの値はその日のローカル時刻0時とする。
+    """
+    parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else parsed.astimezone()
 
 
 def _record_timestamp(record: _Record) -> datetime.datetime | None:
@@ -1135,7 +1160,7 @@ def _started_after_boundary(records: list[_Record], boundary: datetime.datetime)
 def _elapsed_until_event(records: list[_Record], until_text: str) -> dict[str, Any] | str:
     """最初の記録から指定時刻までの経過時間イベントまたはエラー文を返す。"""
     try:
-        until = _parse_timestamp(until_text)
+        until = _parse_cli_timestamp(until_text)
     except ValueError:
         return f"経過時間の終端が不正: {until_text}"
     timestamps = [
@@ -1987,6 +2012,98 @@ def _stats_compaction_events(
     return [*events, total]
 
 
+def _stats_breakdown_events(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
+    """1つの記録の記録間隔、ツール別、反復および遅い呼び出しの集計イベントを返す。
+
+    メイン記録と各agent threadの記録へ同じ集計を適用する。行番号はその記録の行番号である。
+    """
+    events: list[dict[str, Any]] = []
+    timestamped_records = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
+    gaps = sorted(
+        (
+            (after_timestamp - before_timestamp).total_seconds(),
+            before.line,
+            after.line,
+        )
+        for (before, before_timestamp), (after, after_timestamp) in zip(
+            timestamped_records, timestamped_records[1:], strict=False
+        )
+        if (after_timestamp - before_timestamp).total_seconds() >= 60
+    )
+    events.extend(
+        {"kind": "stats-gap", "seconds": round(seconds, 1), "before_line": before, "after_line": after}
+        for seconds, before, after in sorted(gaps, reverse=True)[:10]
+    )
+
+    calls = _stats_call_entries(records, runtime)
+    tool_groups: dict[str, list[dict[str, Any]]] = {}
+    for call in calls:
+        tool_groups.setdefault(call["tool"], []).append(call)
+    events.extend(
+        {
+            "kind": "stats-tool",
+            "tool": tool,
+            "count": len(items),
+            "total_seconds": round(sum(item["seconds"] for item in items), 1),
+        }
+        for tool, items in sorted(tool_groups.items(), key=lambda item: (-sum(call["seconds"] for call in item[1]), item[0]))[
+            :20
+        ]
+    )
+    # 入力ヒントを取れない呼び出しは対象が異なっても同じ組へ集まり、
+    # 反復照会の実態と異なる件数を報告する。集計対象から除く。
+    repeats: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for call in calls:
+        hint_key = call.get("hint_key")
+        if hint_key:
+            repeats.setdefault((call["tool"], hint_key), []).append(call)
+    events.extend(
+        {
+            "kind": "stats-repeat",
+            "tool": tool,
+            "hint": items[0]["hint"],
+            "count": len(items),
+            "lines": [item["line"] for item in items],
+        }
+        for (tool, _), items in sorted(
+            ((key, items) for key, items in repeats.items() if len(items) >= 2),
+            key=lambda item: (-len(item[1]), item[0]),
+        )[:10]
+    )
+    for call in sorted(calls, key=lambda item: (-item["seconds"], item["line"]))[:10]:
+        event = {"kind": "stats-slow-call", "tool": call["tool"], "seconds": round(call["seconds"], 1), "line": call["line"]}
+        if call.get("hint"):
+            event["hint"] = call["hint"]
+        events.append(event)
+    return events
+
+
+def _thread_breakdown_events(thread: _CollectedRecord, runtime: _Runtime) -> list[dict[str, Any]]:
+    """Agent threadの記録へメイン記録と同じ内訳の集計を適用し、threadの識別子と記録位置を付けて返す。
+
+    律速区間となった委譲先の内部の工程を、振り返りが追加の照会なしで読めるようにする。
+    種別はメイン記録の集計と区別するため`stats-thread-`で始め、行番号は`--detail`へそのまま渡せる
+    `<記録ID>:<行番号>`の記録位置へ置き換える。
+    """
+    thread_id = thread.record_id.split(":", 1)[1]
+
+    def locate(line: Any) -> str:
+        return f"{thread.record_id}:{line}"
+
+    events: list[dict[str, Any]] = []
+    for event in _stats_breakdown_events(thread.records, runtime):
+        item = {**event, "kind": "stats-thread-" + event["kind"].removeprefix("stats-"), "thread": thread_id}
+        if "before_line" in item:
+            item["before"] = locate(item.pop("before_line"))
+            item["after"] = locate(item.pop("after_line"))
+        if "line" in item:
+            item["location"] = locate(item.pop("line"))
+        if "lines" in item:
+            item["locations"] = [locate(line) for line in item.pop("lines")]
+        events.append(item)
+    return events
+
+
 def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path) -> list[dict[str, Any]]:
     """セッション全体を対象とした集計イベント列を返す。
 
@@ -2038,65 +2155,7 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
     events = [total_event]
     events.append({"kind": "stats-summary", **summary} if summary else {"kind": "stats-summary", "text": "集計対象なし"})
 
-    timestamped_records = [
-        (record, timestamp) for record in main_records if (timestamp := _record_timestamp(record)) is not None
-    ]
-    gaps = sorted(
-        (
-            (after_timestamp - before_timestamp).total_seconds(),
-            before.line,
-            after.line,
-        )
-        for (before, before_timestamp), (after, after_timestamp) in zip(
-            timestamped_records, timestamped_records[1:], strict=False
-        )
-        if (after_timestamp - before_timestamp).total_seconds() >= 60
-    )
-    events.extend(
-        {"kind": "stats-gap", "seconds": round(seconds, 1), "before_line": before, "after_line": after}
-        for seconds, before, after in sorted(gaps, reverse=True)[:10]
-    )
-
-    calls = _stats_call_entries(main_records, runtime)
-    tool_groups: dict[str, list[dict[str, Any]]] = {}
-    for call in calls:
-        tool_groups.setdefault(call["tool"], []).append(call)
-    events.extend(
-        {
-            "kind": "stats-tool",
-            "tool": tool,
-            "count": len(items),
-            "total_seconds": round(sum(item["seconds"] for item in items), 1),
-        }
-        for tool, items in sorted(tool_groups.items(), key=lambda item: (-sum(call["seconds"] for call in item[1]), item[0]))[
-            :20
-        ]
-    )
-    # 入力ヒントを取れない呼び出しは対象が異なっても同じ組へ集まり、
-    # 反復照会の実態と異なる件数を報告する。集計対象から除く。
-    repeats: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for call in calls:
-        hint_key = call.get("hint_key")
-        if hint_key:
-            repeats.setdefault((call["tool"], hint_key), []).append(call)
-    events.extend(
-        {
-            "kind": "stats-repeat",
-            "tool": tool,
-            "hint": items[0]["hint"],
-            "count": len(items),
-            "lines": [item["line"] for item in items],
-        }
-        for (tool, _), items in sorted(
-            ((key, items) for key, items in repeats.items() if len(items) >= 2),
-            key=lambda item: (-len(item[1]), item[0]),
-        )[:10]
-    )
-    for call in sorted(calls, key=lambda item: (-item["seconds"], item["line"]))[:10]:
-        event = {"kind": "stats-slow-call", "tool": call["tool"], "seconds": round(call["seconds"], 1), "line": call["line"]}
-        if call.get("hint"):
-            event["hint"] = call["hint"]
-        events.append(event)
+    events.extend(_stats_breakdown_events(main_records, runtime))
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
     events.extend(_stats_compaction_events(collected, compaction_record_dir))
 
@@ -2141,6 +2200,7 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
         elif thread.source_line is not None:
             thread_event["line"] = thread.source_line
         events.append(thread_event)
+        events.extend(_thread_breakdown_events(thread, thread_runtime))
     measured_threads = [event for event in events if event.get("kind") == "stats-agent-thread"]
     unmeasured_threads = [event["session_id"] for event in measured_threads if "start" not in event or "end" not in event]
     intervals: list[tuple[datetime.datetime, datetime.datetime, str]] = []
@@ -2310,7 +2370,7 @@ def _warning_tool_names(records: list[_Record]) -> dict[str, str]:
 def _warning_result_values(entry: dict[str, Any], tool_names: dict[str, str]) -> list[tuple[Any, bool, bool]]:
     """警告を抽出できる結果値、hook由来および非構造化本文の走査可否を返す。"""
     values: list[tuple[Any, bool, bool]] = []
-    tool_use_result = entry.get("toolUseResult")
+    tool_use_result = _persisted_result(entry.get("toolUseResult"))
     is_read_result = isinstance(tool_use_result, dict) and "file" in tool_use_result
 
     message = entry.get("message")
@@ -2986,17 +3046,36 @@ def _entry_timestamp(entry: dict[str, Any]) -> str | None:
     return timestamp if isinstance(timestamp, str) else None
 
 
+def _persisted_result(result: Any) -> Any:
+    """退避した実行結果の`stdout`を、保存先のファイルの内容へ置き換えた写しを返す。
+
+    agent-toolkitのPostToolUseは、退避したシェル出力の`stdout`を未読の通知へ置き換え、元の出力は
+    `persistedOutputPath`のファイルだけが持つ。保存先が実在するファイルならその内容を実体とし、
+    無い場合（回収済みなど）は記録の値をそのまま返す。
+    """
+    if not isinstance(result, dict):
+        return result
+    path = result.get("persistedOutputPath")
+    if not isinstance(path, str) or not path.strip():
+        return result
+    try:
+        content = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return result
+    return {**result, "stdout": content}
+
+
 def _tool_result_body(block: dict[str, Any], entry: dict[str, Any]) -> str:
     """tool_resultブロックの実体本文を取得する。
 
     大きなツール出力は退避先ファイルへ移され、message側のcontentには退避通知だけが残る。
     この形態ではmessage側から実際の出力を取得できないため、
-    同エントリのツール実行結果が持つ標準出力・標準エラーを本文とする。
+    同エントリのツール実行結果が持つ標準出力・標準エラー（保存先が実在すればその内容）を本文とする。
     """
     body = "\n".join(_text_blocks(block.get("content")))
     if body.strip() and not body.lstrip().startswith(_PERSISTED_OUTPUT_PREFIX):
         return body
-    result = entry.get("toolUseResult")
+    result = _persisted_result(entry.get("toolUseResult"))
     if isinstance(result, str):
         return result or body
     if not isinstance(result, dict):
@@ -3034,6 +3113,11 @@ def _entry_texts(entry: dict[str, Any]) -> list[str]:
     """
     texts: list[str] = []
     _collect_texts(entry, texts)
+    # 退避した実行結果の実体は保存先のファイルだけが持つため、記録の値に加えてその内容も検索の対象にする。
+    result = entry.get("toolUseResult")
+    persisted = _persisted_result(result)
+    if persisted is not result:
+        _collect_texts(persisted.get("stdout"), texts)
     return texts
 
 
@@ -3127,9 +3211,17 @@ _CATALOG_ROOT_NEXT_ACTION = (
     "Claude Codeは`--catalog-claude-project`へ`~/.claude/projects/<プロジェクト>`の絶対パスを、"
     "Codexは`--catalog-codex-history`へCodexの記録ディレクトリの絶対パスを渡して再実行する"
 )
-_SINCE_NEXT_ACTION = "`--since`へISO 8601形式の時刻（例: `2026-09-30T00:00:00+09:00`）を渡して再実行する"
+_SINCE_NEXT_ACTION = (
+    "`--since`へISO 8601形式の時刻（例: `2026-09-30T00:00:00+09:00`。"
+    "タイムゾーンを省くと実行ホストのローカル時刻として扱う）を渡して再実行する"
+)
 _BOUNDARY_NEXT_ACTION = (
-    "`--observation-boundary`へ`--since`以後のISO 8601形式の時刻（例: `2026-09-30T12:00:00+09:00`）を渡して再実行する"
+    "`--observation-boundary`へ`--since`以後のISO 8601形式の時刻（例: `2026-09-30T12:00:00+09:00`。"
+    "タイムゾーンを省くと実行ホストのローカル時刻として扱う）を渡して再実行する"
+)
+_ELAPSED_UNTIL_NEXT_ACTION = (
+    "`--elapsed-until`へ記録の最初のレコード以後の時刻をISO 8601形式（例: `2026-09-30T12:00:00+09:00`。"
+    "タイムゾーンを省くと実行ホストのローカル時刻として扱う）で渡すか、時刻を持つ記録を対象にして再実行する"
 )
 
 
@@ -3169,9 +3261,10 @@ def _warning_collection_events(collected: list[_CollectedRecord], unresolved: li
     return events
 
 
-def _user_events_since(collected: list[_CollectedRecord], since: datetime.datetime) -> list[dict[str, Any]]:
+def _user_events_since(collected: list[_CollectedRecord], since: datetime.datetime | None) -> list[dict[str, Any]]:
     """メイン記録の状態を保ち、指定時刻より後に成立したユーザーイベントだけを返す。
 
+    `since`が`None`の場合はメイン記録の最初から返す。
     出力は逐語引用と文字列比較する原文として使うため、本文を切り詰めない。
     """
     token = _TEXT_LIMIT.set(None)
@@ -3181,7 +3274,15 @@ def _user_events_since(collected: list[_CollectedRecord], since: datetime.dateti
         _TEXT_LIMIT.reset(token)
 
 
-def _collect_user_events_since(collected: list[_CollectedRecord], since: datetime.datetime) -> list[dict[str, Any]]:
+_CLAUDE_INTERRUPT_MARKERS = frozenset({"[Request interrupted by user]", "[Request interrupted by user for tool use]"})
+"""Claude Codeが中断時にユーザーロールへ書く定型文。本文全体がこの定型文の記録だけが該当する。
+
+人間が書いた本文ではないため逐語引用の出所から除く。会話の流れと介入候補では、ツール実行の中断として
+振り返りの判定対象に残すため、共通の生成本文判定には加えず`--user-events`の抽出だけで除く。
+"""
+
+
+def _collect_user_events_since(collected: list[_CollectedRecord], since: datetime.datetime | None) -> list[dict[str, Any]]:
     """`_user_events_since`の抽出本体。"""
     events: list[dict[str, Any]] = []
     for item in collected:
@@ -3203,10 +3304,14 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
             for event in record_events:
                 event.setdefault("line", record.line)
             timestamp = _record_timestamp(record)
-            if timestamp is not None and timestamp > since:
+            if since is None or (timestamp is not None and timestamp > since):
                 selected_events.extend(record_events)
         user_events = [
-            event for event in _finalize(selected_events) if event["kind"] == "user" and not _generated_user_event(event)
+            event
+            for event in _finalize(selected_events)
+            if event["kind"] == "user"
+            and not _generated_user_event(event)
+            and not (runtime == "claude" and event["text"] in _CLAUDE_INTERRUPT_MARKERS)
         ]
         events.extend(_events_with_record(user_events, item.record_id))
         break
@@ -3295,40 +3400,86 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
 
 def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
     """メイン記録のツール呼び出しを、ツール名、代表入力、呼び出し識別子および記録位置で返す。"""
-    calls: list[dict[str, Any]] = []
+    return [
+        {
+            "kind": "tool-call",
+            "record": "main",
+            "line": call.line,
+            "timestamp": call.timestamp,
+            "tool": call.tool,
+            "call_id": call.call_id,
+            "text": _clip(call.text, _CONVERSATION_INPUT_LIMIT),
+        }
+        for call in _record_tool_calls(records)
+    ]
+
+
+class _ToolCall(NamedTuple):
+    """記録にある1件のツール呼び出し。"""
+
+    line: int
+    timestamp: str | None
+    tool: str
+    call_id: str | None
+    text: str
+    """代表入力。`_claude_call_input`・`_codex_call_input`が返す値を切り詰めずに持つ。"""
+    result_line: int | None
+    """同じ呼び出し識別子を持つ最初の結果の記録行。結果の記録が無い場合は`None`。"""
+
+
+def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
+    """1つの記録のツール呼び出しを、記録位置、時刻、ツール名、呼び出し識別子、代表入力および結果の記録行で返す。
+
+    会話の流れ、`adhoc-processing`候補および`--tool-calls`が共有する抽出であり、
+    Claude Code形式の`tool_use`要素とCodex形式の`function_call`・`custom_tool_call`のpayloadを1件の呼び出しとする。
+    結果はClaude Code形式の`tool_result`の`tool_use_id`と、Codex形式の`function_call_output`・
+    `custom_tool_call_output`の`call_id`で対応付ける。
+    """
+    pending: list[tuple[int, str | None, str, str | None, str]] = []
+    result_lines: dict[str, list[int]] = {}
     for record in records:
-        timestamp = record.entry.get("timestamp")
+        raw_timestamp = record.entry.get("timestamp")
+        timestamp = raw_timestamp if isinstance(raw_timestamp, str) else None
         message = record.entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if isinstance(content, list):
             for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_use":
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use":
                     name = str(block.get("name", ""))
-                    calls.append(
-                        _conversation_call(
-                            record.line, timestamp, name, block.get("id"), _claude_call_input(name, block.get("input"))
+                    call_id = block.get("id")
+                    pending.append(
+                        (
+                            record.line,
+                            timestamp,
+                            name,
+                            call_id if isinstance(call_id, str) else None,
+                            _claude_call_input(name, block.get("input")),
                         )
                     )
+                elif block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
+                    result_lines.setdefault(block["tool_use_id"], []).append(record.line)
             continue
         payload = record.entry.get("payload")
-        if isinstance(payload, dict) and payload.get("type") in {"function_call", "custom_tool_call"}:
+        if not isinstance(payload, dict):
+            continue
+        payload_type = payload.get("type")
+        call_id = payload.get("call_id")
+        if payload_type in {"function_call", "custom_tool_call"}:
             name = str(payload.get("name", ""))
-            calls.append(
-                _conversation_call(record.line, timestamp, name, payload.get("call_id"), _codex_call_input(name, payload))
+            pending.append(
+                (record.line, timestamp, name, call_id if isinstance(call_id, str) else None, _codex_call_input(name, payload))
             )
+        elif payload_type in {"function_call_output", "custom_tool_call_output"} and isinstance(call_id, str):
+            result_lines.setdefault(call_id, []).append(record.line)
+    calls: list[_ToolCall] = []
+    for line, timestamp, name, call_id, text in pending:
+        result_line = (
+            next((value for value in result_lines.get(call_id, ()) if value >= line), None) if call_id is not None else None
+        )
+        calls.append(_ToolCall(line, timestamp, name, call_id, text, result_line))
     return calls
-
-
-def _conversation_call(line: int, timestamp: Any, name: str, call_id: Any, summary: str) -> dict[str, Any]:
-    return {
-        "kind": "tool-call",
-        "record": "main",
-        "line": line,
-        "timestamp": timestamp if isinstance(timestamp, str) else None,
-        "tool": name,
-        "call_id": call_id if isinstance(call_id, str) else None,
-        "text": _clip(summary, _CONVERSATION_INPUT_LIMIT),
-    }
 
 
 def _claude_call_input(name: str, block_input: Any) -> str:
@@ -3728,6 +3879,22 @@ _CHECK_COMMANDS = frozenset(
         ("wait-ci", ""),
     }
 )
+_ADHOC_SHELL_TOOLS = frozenset({"bash", "exec", "exec_command", "shell", "local_shell", "shell_command"})
+"""シェルのコマンドを実行するツール名の末尾部分。Codexの`exec`はJavaScript本文から`exec_command`を呼ぶ形でコマンドを渡す。"""
+_ADHOC_PYTHON = r"(?<![\w.-])python(?:\d+(?:\.\d+)*)?"
+_ADHOC_INLINE_CODE = re.compile(
+    _ADHOC_PYTHON + r"(?:\s+-[A-Za-z]+)*?\s+-c(?![\w-])"
+    r"|" + _ADHOC_PYTHON + r"(?:\s+-[A-Za-z]+)*(?:\s+-)?\s*<<"
+    r"|(?<![\w.-])(?:python(?:\d+(?:\.\d+)*)?|uv\s+run)(?:\s+-\S+)*\s+\S*managed-temp/\S+\.py(?!\w)"
+    r"|(?<![\w.-])node(?:\s+-\S+)*?\s+(?:-e|--eval)(?![\w-])"
+)
+"""インタプリタへその場で書いたコードを渡す実行（`-c`、ヒアドキュメントの標準入力、managed-tempのスクリプト、`node -e`）。"""
+_ADHOC_SAVED_OUTPUT = re.compile(r"atk-output-|agents-wait-|/tool-results/|/tasks/[^\s'\"]*\.output(?!\w)")
+"""`atk`が標準出力の代わりに示す保存先、`atk agents wait`の結果ファイル、
+ホストが退避したツール結果とバックグラウンドタスクの出力。
+"""
+_ADHOC_OUTPUT_PROCESSOR = re.compile(r"(?<![\w.-])(?:jq|awk|gawk|cut|sed|python(?:\d+(?:\.\d+)*)?)(?![\w.-])")
+"""保存された出力の後加工に使うコマンド。読むだけの`cat`・`rg`・`head`は含めない。"""
 
 
 def _bundle_events(
@@ -3763,6 +3930,7 @@ def _bundle_events(
         warnings,
         _hook_notice_candidate_events(collected),
         main_record_id=next(item.record_id for item in collected if item.role == "main"),
+        adhoc_processing=_adhoc_processing_events(collected),
     )
 
     candidate_evidence = _write_candidate_evidence_files(
@@ -3799,18 +3967,68 @@ def _bundle_events(
     return events, 0
 
 
+def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """メイン記録と全ての委譲先の記録から、その場のコードによる加工に当たるシェル呼び出しを返す。
+
+    会話の流れはメイン記録だけを対象とするため、委譲先の成功した呼び出しは候補の側でしか振り返りの入力に届かない。
+    代表入力は会話の流れと同じく空白を詰めた1行を`_BUNDLE_BODY_LENGTH`字までとする。
+    """
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        for call in _record_tool_calls(item.records):
+            if not _is_adhoc_processing(call.tool, call.text):
+                continue
+            events.append(
+                {
+                    "kind": "adhoc-processing",
+                    "record": item.record_id,
+                    "line": call.line,
+                    "timestamp": call.timestamp,
+                    "tool": call.tool,
+                    "text": _clip(" ".join(call.text.split()), _BUNDLE_BODY_LENGTH),
+                }
+            )
+    return events
+
+
+def _is_adhoc_processing(tool: str, command: str) -> bool:
+    """シェル呼び出しが、その場のコードによる加工に当たるかを判定する。
+
+    対象はシェルのコマンドを実行するツール（Claude Codeの`Bash`、Codexのコマンド実行）の呼び出しとし、
+    終了コードによらず成功した呼び出しも含む。次のいずれかに当たるコマンドを加工とする。
+
+    - インタプリタへその場で書いたコードを渡す実行: `python`・`python3`・`uv run … python`への`-c`の引数または
+      ヒアドキュメントの標準入力、managed-tempへ書いたスクリプトファイルの`python`・`uv run`による実行、`node -e`
+    - 保存されたツール出力の後加工: `atk`が標準出力の代わりに示す保存先（`atk-output-`を含むパス）、
+      `atk agents wait`の結果ファイル（`agents-wait-`を含むパス）、ホストが退避したツール結果（`/tool-results/`）と
+      バックグラウンドタスクの出力（`/tasks/`配下の`.output`）を、`jq`・`awk`・`cut`・`sed`・Pythonで加工する呼び出し
+
+    リポジトリのファイルや保存出力を`cat`・`rg`で読むだけの呼び出しと、保存出力を含まないパイプラインの
+    `cut`・`sed`（検索結果の整形など）は含めない。
+    """
+    leaf = tool.casefold().rsplit("__", maxsplit=1)[-1].rsplit(".", maxsplit=1)[-1]
+    if leaf not in _ADHOC_SHELL_TOOLS:
+        return False
+    if _ADHOC_INLINE_CODE.search(command):
+        return True
+    return bool(_ADHOC_SAVED_OUTPUT.search(command) and _ADHOC_OUTPUT_PROCESSOR.search(command))
+
+
 def _candidate_events(
     timeline: list[dict[str, Any]],
     warnings: list[dict[str, Any]],
     hook_notices: list[dict[str, Any]],
     *,
     main_record_id: str = "main",
+    adhoc_processing: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
-    母集団はhook通知、ユーザー介入、失敗したツール実行、警告および工程の返却値とする。
+    母集団はhook通知、ユーザー介入、失敗したツール実行、警告、工程の返却値およびその場のコードによる加工とする。
     返却値を含めるのは、本文に誤りがある委譲結果が他の事象には現れず、本文の判定前に候補集合に含まれなくなるためである。
     正常な完了だけを示し、想定外事象を持たない返却は、判定すべき本文を持たないため除外する。
+    その場のコードによる加工（`adhoc-processing`）は成功した呼び出しも含み、記録ごとに1件の候補へまとめ、
+    呼び出しごとの記録位置と代表入力を`calls`へ保持する。判定条件は`_is_adhoc_processing`が定める。
 
     同じ位置の同一hook発火は構造化されたhook通知を代表とする。それ以外は、同じ位置でも候補種別またはhookタグが異なる事象を別候補として保持する。同じ位置、候補種別およびhookタグの
     組だけを重複として除外する。`permission-denial`は`failed-tool`の一部でもあるため、同じ位置の
@@ -3861,6 +4079,7 @@ def _candidate_events(
             "delegate-return",
             (event for event in timeline if _is_delegate_return(event, main_record_id=main_record_id)),
         ),
+        ("adhoc-processing", iter(adhoc_processing or ())),
     )
     for candidate_kind, events in sources:
         for event in events:
@@ -3997,6 +4216,12 @@ def _candidate_events(
         if _is_bounded_hook_group(key):
             candidate["occurrence_count"] = occurrence_count
             candidate["omitted_locator_count"] = omitted_locator_count
+        if key and key[0] == "adhoc-processing":
+            ordered = sorted(events, key=lambda event: (str(event["record"]), int(event["line"])))
+            candidate["calls"] = [
+                {"record": str(event["record"]), "line": int(event["line"]), "text": str(event.get("text", ""))}
+                for event in ordered
+            ]
         candidates.append(candidate)
     included_locators.sort(key=lambda locator: (locator["record"], locator["line"]))
     return [
@@ -4908,6 +5133,9 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
         return candidate_kind, _failure_signature(candidate_kind, event)[0]
     if candidate_kind == "escalation":
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
+    if candidate_kind == "adhoc-processing":
+        # 記録（thread）ごとに1件へまとめ、委譲先が多い実行でも候補の件数が呼び出しの件数に比例しないようにする。
+        return candidate_kind, str(event["record"])
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
 
 
@@ -5106,23 +5334,40 @@ def _catalog_agy_child(session_id: str) -> _CollectedRecord | None:
     return _CollectedRecord(session_id, found.paths[0], records, "agy", None, None, None, "session")
 
 
-def _catalog_events(
+class _CatalogParent(NamedTuple):
+    """カタログの窓の中の親セッションと、走査rootの中で組み立てた子孫を含む記録群。"""
+
+    item: _CollectedRecord
+    family: list[_CollectedRecord]
+    start_text: str | None
+    end_text: str | None
+
+
+class _CatalogScan(NamedTuple):
+    """カタログ走査の対象範囲と、窓の中の親セッション。"""
+
+    root: Path
+    parents: list[_CatalogParent]
+    unresolved_count: int
+
+
+def _catalog_scan(
     root: Path,
     runtime: _Runtime,
     since: datetime.datetime,
     boundary: datetime.datetime,
-) -> tuple[list[dict[str, Any]], int]:
-    """指定root内だけから比較用の親セッションカタログを生成する。"""
+) -> _CatalogScan | dict[str, Any]:
+    """指定root内だけから窓の中の親セッションを選ぶ。rootから記録を判別できない場合はエラーイベントを返す。"""
     if not root.is_dir():
-        return [_error_event(f"カタログrootが実在するディレクトリでない: {root}", next_action=_CATALOG_ROOT_NEXT_ACTION)], 2
+        return _error_event(f"カタログrootが実在するディレクトリでない: {root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
     resolved_root = root.resolve()
     paths = sorted(resolved_root.glob("**/*.jsonl"))
     if runtime == "codex":
         paths = [path for path in paths if path.name.startswith("rollout-")]
     if not paths:
-        return [
-            _error_event(f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
-        ], 2
+        return _error_event(
+            f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION
+        )
     loaded: dict[str, _CollectedRecord] = {}
     path_items: dict[Path, _CollectedRecord] = {}
     unresolved_loads = 0
@@ -5139,9 +5384,9 @@ def _catalog_events(
         loaded.setdefault(session_id, item)
         path_items[path.resolve()] = item
     if not loaded:
-        return [
-            _error_event(f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
-        ], 2
+        return _error_event(
+            f"カタログrootから{runtime}記録を判別できない: {resolved_root}", next_action=_CATALOG_ROOT_NEXT_ACTION
+        )
 
     children: dict[str, list[str]] = {session_id: [] for session_id in loaded}
     referenced: set[str] = set()
@@ -5176,7 +5421,7 @@ def _catalog_events(
     else:
         parent_ids = [session_id for session_id in loaded if session_id not in referenced]
 
-    events: list[dict[str, Any]] = []
+    parents: list[_CatalogParent] = []
     for parent_id in sorted(set(parent_ids)):
         parent = loaded[parent_id]
         stats = _stats_summary_data(parent.records, runtime)
@@ -5196,22 +5441,44 @@ def _catalog_events(
                 continue
             descendant_ids.append(child_id)
             queue.extend(children.get(child_id, ()))
-        family = [parent, *(loaded[child_id] for child_id in descendant_ids)]
-        workflow, workflow_locator = _workflow_evidence(parent)
-        operations = [operation for item in family for operation in _successful_wi_operations(item)]
+        parents.append(
+            _CatalogParent(
+                parent,
+                [parent, *(loaded[child_id] for child_id in descendant_ids)],
+                start_text if isinstance(start_text, str) else None,
+                end_text if isinstance(end_text, str) else None,
+            )
+        )
+    return _CatalogScan(resolved_root, parents, unresolved_loads + len(unresolved_references))
+
+
+def _catalog_events(
+    root: Path,
+    runtime: _Runtime,
+    since: datetime.datetime,
+    boundary: datetime.datetime,
+) -> tuple[list[dict[str, Any]], int]:
+    """指定root内だけから比較用の親セッションカタログを生成する。"""
+    scan = _catalog_scan(root, runtime, since, boundary)
+    if isinstance(scan, dict):
+        return [scan], 2
+    events: list[dict[str, Any]] = []
+    for parent in scan.parents:
+        workflow, workflow_locator = _workflow_evidence(parent.item)
+        operations = [operation for item in parent.family for operation in _successful_wi_operations(item)]
         events.append(
             {
                 "kind": "catalog-parent",
                 "runtime": runtime,
-                "session_id": parent_id,
-                "started_at": start_text if isinstance(start_text, str) else "unknown",
-                "finished_at": end_text if isinstance(end_text, str) else "unknown",
-                "cwd": _catalog_value(parent.records, "cwd", "originalCwd"),
-                "branch": _catalog_value(parent.records, "gitBranch", "originalBranch", "branch"),
+                "session_id": parent.item.record_id,
+                "started_at": parent.start_text or "unknown",
+                "finished_at": parent.end_text or "unknown",
+                "cwd": _catalog_value(parent.item.records, "cwd", "originalCwd"),
+                "branch": _catalog_value(parent.item.records, "gitBranch", "originalBranch", "branch"),
                 "workflow": workflow,
                 "workflow_locator": workflow_locator,
-                "tokens": _catalog_family_tokens(family),
-                "descendant_count": len(descendant_ids),
+                "tokens": _catalog_family_tokens(parent.family),
+                "descendant_count": len(parent.family) - 1,
                 "successful_wi_operations": operations,
                 "successful_wi_operation_count": len(operations),
             }
@@ -5220,15 +5487,117 @@ def _catalog_events(
     events.append(
         {
             "kind": "catalog-summary",
-            "scan_root": str(resolved_root),
+            "scan_root": str(scan.root),
             "runtime": runtime,
             "since": since.isoformat(),
             "observation_boundary": boundary.isoformat(),
             "parent_record_count": len(events),
-            "unresolved_record_count": unresolved_loads + len(unresolved_references),
+            "unresolved_record_count": scan.unresolved_count,
         }
     )
     return events, 0
+
+
+def _tool_call_events(item: _CollectedRecord, tools: list[str] | None, pattern: re.Pattern[str] | None) -> list[dict[str, Any]]:
+    """1つの記録のツール呼び出しのうち、ツール名と代表入力の条件に一致するものを`tool-call`イベントで返す。
+
+    本スクリプト自身の呼び出しも含める。`--grep`のように自己呼び出しを除くと、本スクリプトの呼び出し回数を数えられない。
+    """
+    return [
+        {
+            "kind": "tool-call",
+            "record": item.record_id,
+            "line": call.line,
+            "timestamp": call.timestamp,
+            "tool": call.tool,
+            "call_id": call.call_id,
+            "text": call.text,
+            "result_line": call.result_line,
+        }
+        for call in _record_tool_calls(item.records)
+        if (tools is None or call.tool in tools) and (pattern is None or pattern.search(call.text))
+    ]
+
+
+def _sorted_tool_call_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`tool-call`イベントを時刻の昇順に並べる。同時刻と時刻を持たないイベントは収集順と行番号の順を保つ。
+
+    時刻を持たないイベントは最後に置く。入力のイベント列は記録の収集順と行番号の順に並んでいる前提とする。
+    """
+    timed: list[tuple[datetime.datetime, int, dict[str, Any]]] = []
+    untimed: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        try:
+            timestamp = _parse_timestamp(event["timestamp"]) if isinstance(event.get("timestamp"), str) else None
+        except ValueError:
+            timestamp = None
+        if timestamp is None:
+            untimed.append(event)
+        else:
+            timed.append((timestamp, index, event))
+    timed.sort(key=lambda item: (item[0], item[1]))
+    return [*(event for _, _, event in timed), *untimed]
+
+
+def _tool_call_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """`tool-call`イベントの件数と、ツール名ごと・記録ごとの件数を返す。"""
+    return {
+        "kind": "tool-call-summary",
+        "count": len(events),
+        "by_tool": dict(sorted(collections.Counter(str(event["tool"]) for event in events).items())),
+        "by_record": dict(sorted(collections.Counter(str(event["record"]) for event in events).items())),
+    }
+
+
+def _tool_call_collection_events(
+    collected: list[_CollectedRecord],
+    unresolved: list[_UnresolvedRecord],
+    tools: list[str] | None,
+    pattern: re.Pattern[str] | None,
+) -> list[dict[str, Any]]:
+    """単一transcriptのメイン記録と全ての委譲先の記録のツール呼び出しを時刻順に返し、末尾へ要約を置く。"""
+    events = _sorted_tool_call_events([event for item in collected for event in _tool_call_events(item, tools, pattern)])
+    return [*events, *_unresolved_events(unresolved), _tool_call_summary(events)]
+
+
+def _catalog_tool_call_events(
+    root: Path,
+    runtime: _Runtime,
+    since: datetime.datetime,
+    boundary: datetime.datetime,
+    tools: list[str] | None,
+    pattern: re.Pattern[str] | None,
+) -> tuple[list[dict[str, Any]], int]:
+    """カタログの窓の中の親セッションごとに、委譲先を含む記録の窓の中のツール呼び出しを返す。
+
+    委譲先は親の記録を起点として`_collect_records`で集める。カタログが走査rootの中だけで組み立てる子孫を使うと、
+    rootの外（別のプロジェクトディレクトリなど）に置かれた委譲先の呼び出しが数えられないためである。
+    窓は`timestamp`が`since`より後で`boundary`以前の呼び出しとし、時刻を持たない呼び出しは含めない。
+    """
+    scan = _catalog_scan(root, runtime, since, boundary)
+    if isinstance(scan, dict):
+        return [scan], 2
+    events: list[dict[str, Any]] = []
+    unresolved: list[_UnresolvedRecord] = []
+    for parent in scan.parents:
+        collected, parent_unresolved = _collect_records(str(parent.item.path), parent.item.records, None, boundary)
+        unresolved.extend(parent_unresolved)
+        for item in collected:
+            for event in _tool_call_events(item, tools, pattern):
+                try:
+                    timestamp = _parse_timestamp(event["timestamp"]) if isinstance(event["timestamp"], str) else None
+                except ValueError:
+                    timestamp = None
+                if timestamp is not None and since < timestamp <= boundary:
+                    events.append({**event, "session_id": parent.item.record_id})
+    events = _sorted_tool_call_events(events)
+    summary = _tool_call_summary(events)
+    summary["by_session"] = dict(sorted(collections.Counter(str(event["session_id"]) for event in events).items()))
+    summary["scan_root"] = str(scan.root)
+    summary["since"] = since.isoformat()
+    summary["observation_boundary"] = boundary.isoformat()
+    summary["parent_record_count"] = len(scan.parents)
+    return [*events, *_unresolved_events(unresolved), summary], 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -5294,14 +5663,14 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="TIMESTAMP",
         help="ISO 8601の時刻を観測境界とし、メイン記録のうちその時刻より後の`timestamp`を持つレコードを"
         "全モードの対象外にする。委譲先の記録へは適用しない。`--detail`の行番号は元ファイルの行番号を維持する。"
-        "解析できない値はエラーイベントを出力して終了コード2を返す。",
+        "解析できない値はエラーイベントを出力して終了コード2を返す。" + _LOCAL_TIME_NOTE,
     )
     parser.add_argument(
         "--elapsed-until",
         metavar="TIMESTAMP",
         help="ISO 8601の時刻を経過時間の終端とし、メイン記録の最初のレコードからその時刻までの経過秒数を返す。"
         "解析できない値、算出できる記録が無い場合およびその時刻が最初のレコードより前の場合は"
-        "エラーイベントを出力して終了コード2を返す。",
+        "エラーイベントを出力して終了コード2を返す。" + _LOCAL_TIME_NOTE,
     )
     parser.add_argument(
         "--warn",
@@ -5314,7 +5683,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="REGEX",
         help="エントリ内の全本文（hook通知を含む。管理用フィールドと"
         "本スクリプト自身の実行記録は除く）を正規表現で検索し、"
-        "一致行と一致エントリ数を照会する。各一致行は元記録行の時刻`timestamp`（無ければnull）を持つ。",
+        "一致行と一致エントリ数を照会する。各一致行は元記録行の時刻`timestamp`（無ければnull）を持つ。" + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
         "--detail",
@@ -5333,7 +5702,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="TEXT",
         help="大小文字を区別する固定文字列ごとに、既存`--grep`と同じ論理entryの一致件数と全locatorだけを返す。"
-        "本文は返さず、0件も文字列ごとに明示する。複数指定ではオプションを繰り返す。",
+        "本文は返さず、0件も文字列ごとに明示する。複数指定ではオプションを繰り返す。" + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
         "--record-schema",
@@ -5357,7 +5726,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="hook実行の記録（追加コンテキスト・システムメッセージ・遮断エラー・実行成功）に"
         "格納された通知本文だけを集計し、hook識別子・発動元・タグ・種別ごとの件数と"
-        "重複を除いた通知件数を照会する。" + _CLAUDE_ONLY_NOTE,
+        "重複を除いた通知件数を照会する。" + _CLAUDE_ONLY_NOTE + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
         "--context-at",
@@ -5379,13 +5748,41 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--user-events",
         action="store_true",
-        help="`--since`より後から観測境界までのメイン記録にある人間の発話と確認回答を全文で照会する。"
-        "スキル展開と実行環境の生成本文は除く。`--since`が必須。",
+        help="メイン記録にある人間の発話と確認回答を、観測境界まで全文で照会する。"
+        "`--since`を指定した場合はその時刻より後だけを、省略した場合は記録の最初からを対象とする。"
+        "スキル展開、実行環境の生成本文およびClaude Codeの中断の定型文は除く。",
     )
     parser.add_argument(
         "--since",
         metavar="TIMESTAMP",
-        help="`--user-events`またはカタログ走査の開始境界をISO 8601の時刻で指定する。",
+        help="`--user-events`またはカタログ走査の開始境界をISO 8601の時刻で指定する。"
+        "カタログ走査では必須、`--user-events`では省略すると記録の最初からを対象とする。" + _LOCAL_TIME_NOTE,
+    )
+    parser.add_argument(
+        "--tool-calls",
+        action="store_true",
+        help="メイン記録と全ての委譲先の記録（Claude Code形式とCodex形式）のツール呼び出しを、1件ずつ`tool-call`イベント"
+        "（`record`・`line`・`timestamp`・`tool`・`call_id`・切り詰めない代表入力`text`・結果の記録行`result_line`）で"
+        "時刻順に返し、末尾の`tool-call-summary`で件数、ツール名ごとと記録ごとの件数を返す。"
+        "`record`と`line`、または`record`と`result_line`を`--detail <記録>:<行番号>`へ渡すと入力と結果の全文を得られる。"
+        "本スクリプト自身の呼び出しも含める。カタログ走査と併用すると、窓の中の親セッションごとに、"
+        "走査rootの外の委譲先を含む記録から`timestamp`が`--since`より後で`--observation-boundary`以前の呼び出しを"
+        "`session_id`付きで返し、要約へ親セッションごとの件数と被覆範囲を加える。",
+    )
+    parser.add_argument(
+        "--tool",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help="`--tool-calls`で返す呼び出しを、記録上のツール名と完全一致するものに限る。"
+        "繰り返し指定するといずれかに一致した呼び出しを返す。",
+    )
+    parser.add_argument(
+        "--input-regex",
+        metavar="REGEX",
+        help="`--tool-calls`で返す呼び出しを、代表入力の文字列全体へ`re.search`で一致するものに限る。"
+        "行ごとには適用しないため、`^`は代表入力の先頭だけに一致し、ヒアドキュメントの本文などコマンドの途中に"
+        "埋め込まれた同じ文字列を除ける。`--tool`と併用すると両方に一致した呼び出しを返す。",
     )
     parser.add_argument(
         "--bundle",
@@ -5415,6 +5812,7 @@ def _single_transcript_query_modes(args: argparse.Namespace) -> tuple[bool, ...]
         args.elapsed_until is not None,
         args.user_events,
         args.context_at is not None,
+        args.tool_calls,
     )
 
 
@@ -5427,18 +5825,33 @@ def main(argv: list[str] | None = None) -> int:
     query_modes = _single_transcript_query_modes(args)
     if sum(query_modes) > 1:
         return _print_error(
-            "--warn・--grep・--detail・--fixed-string・--record-schema・--stats・--hook-notices・--bundle・--elapsed-until・--user-events・--context-atは併用できない",
+            "--warn・--grep・--detail・--fixed-string・--record-schema・--stats・--hook-notices・--bundle・--elapsed-until・"
+            "--user-events・--context-at・--tool-callsは併用できない",
             next_action="`--warn`・`--grep`などの照会の指定を1回に1つだけにして、照会ごとに別々に実行する",
         )
     catalog_root = args.catalog_claude_project or args.catalog_codex_history
     catalog_runtime: _Runtime | None = (
         "claude" if args.catalog_claude_project else "codex" if args.catalog_codex_history else None
     )
-    if catalog_root is not None and any(query_modes):
+    if catalog_root is not None and any(query_modes) and not args.tool_calls:
         return _print_error(
-            "カタログ走査は単一transcriptの照会モードと併用できない",
+            "カタログ走査は`--tool-calls`以外の単一transcriptの照会モードと併用できない",
             next_action="カタログ走査（`--catalog-claude-project`・`--catalog-codex-history`）と単一transcriptの照会を別々に実行する",
         )
+    if (args.tool is not None or args.input_regex is not None) and not args.tool_calls:
+        return _print_error(
+            "--toolと--input-regexは--tool-callsと併用する",
+            next_action="`--tool-calls`を付けるか、`--tool`・`--input-regex`を外して再実行する",
+        )
+    input_pattern = None
+    if args.input_regex is not None:
+        try:
+            input_pattern = re.compile(args.input_regex)
+        except re.error as error:
+            return _print_error(
+                f"正規表現が不正: {error}",
+                next_action="`--input-regex`の正規表現の構文（括弧の対応、エスケープ）を直して再実行する",
+            )
     if args.phrase is not None and args.context_at is None:
         return _print_error(
             "--phraseは--context-atと併用する", next_action="`--context-at <記録ID>:<行番号>`を付けて再実行する"
@@ -5453,8 +5866,6 @@ def main(argv: list[str] | None = None) -> int:
             "--sinceは--user-eventsまたはカタログ走査と併用する",
             next_action="`--user-events`かカタログ走査の引数を付けるか、`--since`を外して再実行する",
         )
-    if args.user_events and args.since is None:
-        return _print_error("--user-eventsには--sinceが必要", next_action=_SINCE_NEXT_ACTION)
     if catalog_root is not None and args.since is None:
         return _print_error("カタログ走査には--sinceが必要", next_action=_SINCE_NEXT_ACTION)
     if catalog_root is not None and args.observation_boundary is None:
@@ -5462,7 +5873,7 @@ def main(argv: list[str] | None = None) -> int:
     since = None
     if args.since is not None:
         try:
-            since = _parse_timestamp(args.since)
+            since = _parse_cli_timestamp(args.since)
         except ValueError:
             return _print_error(f"開始境界が不正: {args.since}", next_action=_SINCE_NEXT_ACTION)
 
@@ -5490,12 +5901,17 @@ def main(argv: list[str] | None = None) -> int:
     if catalog_root is not None:
         assert since is not None and catalog_runtime is not None and args.observation_boundary is not None
         try:
-            catalog_boundary = _parse_timestamp(args.observation_boundary)
+            catalog_boundary = _parse_cli_timestamp(args.observation_boundary)
         except ValueError:
             return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
         if catalog_boundary < since:
             return _print_error("観測境界は開始境界以後を指定する", next_action=_BOUNDARY_NEXT_ACTION)
-        events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary)
+        if args.tool_calls:
+            events, exit_code = _catalog_tool_call_events(
+                Path(catalog_root), catalog_runtime, since, catalog_boundary, args.tool, input_pattern
+            )
+        else:
+            events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary)
         _print_events(events)
         return exit_code
     if args.claude_session_id is not None:
@@ -5532,16 +5948,14 @@ def main(argv: list[str] | None = None) -> int:
     boundary = None
     if args.observation_boundary is not None:
         try:
-            boundary = _parse_timestamp(args.observation_boundary)
+            boundary = _parse_cli_timestamp(args.observation_boundary)
         except ValueError:
             return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
     if args.elapsed_until is not None:
         event = _elapsed_until_event(records, args.elapsed_until)
         if isinstance(event, str):
             message = event or f"経過時間を算出できる記録が無い: {transcript_path}"
-            return _print_error(
-                message, next_action="`--elapsed-until`へ記録に存在する時刻か位置を渡すか、時刻を持つ記録を対象にして再実行する"
-            )
+            return _print_error(message, next_action=_ELAPSED_UNTIL_NEXT_ACTION)
         _print_events([event])
         return 0
     if boundary is not None:
@@ -5594,8 +6008,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.user_events:
-        assert since is not None
         _print_events(_user_events_since(collected, since))
+        return 0
+    if args.tool_calls:
+        _print_events(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern))
         return 0
 
     _print_events(_default_events(collected, unresolved))

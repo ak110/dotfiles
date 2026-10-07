@@ -2,6 +2,10 @@
 # `env --unset=UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
 export UV_FROZEN := 1
 
+# pytestを個別に起動するtargetの共通の起動形。`-v`でテストごとの成否を出力し、保存した出力を
+# 個別テストの合否の根拠に使えるようにする。`-o addopts=''`はpyproject.tomlの並列実行などの設定を外す。
+PYTEST_RUN = uv run pytest -v -o addopts='' -p no:cacheprovider
+
 help:
 	@cat Makefile
 
@@ -81,13 +85,11 @@ test-browser:
 	uv run playwright install chromium
 	uv run --project agent-toolkit playwright install chromium
 	AGENT_TOOLKIT_SERVE_BROWSER_TESTS=1 \
-		uv run pytest agent-toolkit/agent_toolkit/_atk/serve/browser_test.py \
-		-o addopts='' -p no:cacheprovider
+		$(PYTEST_RUN) agent-toolkit/agent_toolkit/_atk/serve/browser_test.py
 
 # agents_serverの実backendを使うライブ一体テスト
 test-agents-live:
 	AGENT_TOOLKIT_LIVE_AGENTS_TEST=1 \
-		uv run pytest agent-toolkit/agent_toolkit/agents_server_live_test.py \
-		-o addopts='' -p no:cacheprovider
+		$(PYTEST_RUN) agent-toolkit/agent_toolkit/agents_server_live_test.py
 
 .PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh format test test-browser test-agents-live

@@ -239,7 +239,7 @@ def test_output_saving_help_matches_cli_condition(argv: list[str], saved: bool) 
     判定が区分と異なると、呼び出し元は短い単発照会でも保存先を探すか、ファイルとして渡す結果を直接表示と誤認する。
     """
     args = atk._build_parser().parse_args(argv)  # pylint: disable=protected-access  # noqa: SLF001
-    assert atk._passes_output_as_file(args) is saved  # pylint: disable=protected-access  # noqa: SLF001
+    assert (atk._output_as_file_call(args) is not None) is saved  # pylint: disable=protected-access  # noqa: SLF001
 
 
 def _leaf_commands() -> set[str]:

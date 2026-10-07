@@ -21,7 +21,7 @@
 必須入力名: pending取得結果,引き継ぎ記録先
 ```
 
-- `pending取得結果`: 委譲元が`atk review-audit pending --repo <OWNER>/<REPO>`の標準出力を保存したJSONファイルの絶対パス。JSONは`reviews`・`threads`とDependabotアラートの`dependabot`、各件数の`counts`を持つ。コマンドが失敗した場合とJSONまたは件数を解釈できない場合は`なし`とし、同書の横断GraphQLクエリーとDependabotアラートの直接取得で監査対象を取得する
+- `pending取得結果`: 委譲元が渡した、`atk review-audit pending --repo <OWNER>/<REPO>`の標準出力のJSONを持つファイルの絶対パス。JSONは`reviews`・`threads`とDependabotアラートの`dependabot`、各件数の`counts`を持つ。コマンドが失敗した場合とJSONまたは件数を解釈できない場合は`なし`とし、同書の横断GraphQLクエリーとDependabotアラートの直接取得で監査対象を取得する
 - `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと新規・継続の別。GitHubへの返信、threadの解決、コメント投稿を済ませた対象と、判定済みとして記録した対象を書き残し、再開時に同じ書き込みを重ねない。記録する内容は`${CLAUDE_PLUGIN_ROOT}/share/rules-subagent.md`「多段工程の引き継ぎ記録」が定める
 
 対象リポジトリは起動時の`cwd`が属するGit worktreeのroot、`<OWNER>/<REPO>`はそのリポジトリのGitHub上の所在とする。

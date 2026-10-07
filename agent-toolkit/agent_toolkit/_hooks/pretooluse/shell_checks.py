@@ -530,7 +530,7 @@ def _check_bash_option_after_terminator(command: str) -> bool:
     `--`の後ろは全てデータとして扱われるため、後ろへ置いた`--glob`などは`rg`・`grep`系・`git grep`では
     存在しないパスとして失敗し、`git log`・`git diff`・`git show`ではエラーを出力せずにパス指定として扱われ、誤った結果を返す。
     条文で配置を定めた後も同じ誤りが反復したため、実行の直前に判定する。
-    遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
+    遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
     外側に所属する既知の引数だけを判定し、置換内の語と展開結果が未確定の引数はオプションとして扱わない。
     遮断で失うのはコマンド1回の発行だけである。
     `rg`・`grep`系と`git grep`では、`-e`・`-f`を`--`より前に置かない場合に`--`の直後を検索パターンとみなして除くため、
@@ -578,10 +578,34 @@ def _check_bash_option_after_terminator(command: str) -> bool:
 # --- Bash: atkの結果を受領できない出力接続 ---
 
 
-def _check_bash_atk_output_loss(command: str) -> bool:
-    """静的に確定したatkの出力パイプとwaitの背景化・標準出力破棄を遮断する。
+_ATK_PROCESS_LOOP_CONTROL_SUBCOMMANDS = frozenset({"abort", "abort-cancel", "status", "instruct", "instruct-cancel"})
+"""`atk wi process-loop`のうち常駐を起動せずに結果を返すサブコマンド。"""
 
-    Bashが返す出力から結果と終了状態を失う反復を、その場で書き直せる入力で止める。
+
+def _is_atk_resident_display(tokens: tuple[str, ...]) -> bool:
+    """常駐と追従の表示（`atk serve`、`atk wi process-loop`の常駐、`atk agents logs --follow`）の起動かを返す。
+
+    これらは`atk`の長い出力の保存の対象外で、背景で起動するときは出力をログへ移す必要があるため、
+    リダイレクトの遮断から除く。
+    """
+    arguments = tokens[1:]
+    if arguments[:1] == ("serve",):
+        return True
+    if arguments[:2] == ("wi", "process-loop"):
+        return not any(token in _ATK_PROCESS_LOOP_CONTROL_SUBCOMMANDS for token in arguments[2:])
+    return arguments[:2] == ("agents", "logs") and any(
+        token == "--follow" or token.startswith("--follow=") for token in arguments[2:]
+    )
+
+
+def _check_bash_atk_output_loss(command: str) -> bool:
+    """静的に確定したatkの出力のパイプとリダイレクト、waitの背景化を遮断する。
+
+    `atk`はエージェント環境で短い出力を直接表示し、長い出力を自ら保存して保存先を示す。
+    パイプかリダイレクトを介すと終了コードと警告を同じ呼び出しで観測できず、保存先の行が後段かファイルへ渡り、
+    結果を得るまでに再読の呼び出しが増える。出力の接続先はファイル（`/dev/null`を含む）、別のファイル記述子、
+    未確定のパスを区別せず、標準出力と標準エラーの最終的な接続先が呼び出し元から引き継いだ1と2から変わったかだけで判定する。
+    常駐と追従の表示は保存の対象外のため、リダイレクトの判定から除く。
     引数のリテラルやheredoc本文、未知の実行位置は判定せず、ホストが管理する背景実行は通す。
     区切り語を引用しないheredocの本文にある置換は、`_check_bash_unquoted_heredoc_substitution`が実行前に遮断する。
     """
@@ -593,10 +617,10 @@ def _check_bash_atk_output_loss(command: str) -> bool:
         causes: list[str] = []
         if is_wait and invocation.background:
             causes.append("シェルの`&`による背景化")
-        if is_wait and invocation.stdout_discarded:
-            causes.append("標準出力の`/dev/null`への破棄")
         if invocation.output_pipe:
             causes.append("atkから後段へ出力を渡すパイプ")
+        elif invocation.output_redirected and not _is_atk_resident_display(tokens):
+            causes.append("出力のリダイレクト")
         if not causes:
             continue
         label = "atk agents wait" if is_wait else "atk"
@@ -604,9 +628,10 @@ def _check_bash_atk_output_loss(command: str) -> bool:
             _block_notice(
                 f"blocked: `{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
                 fix=(
-                    "`atk agents wait`は`&`と標準出力の破棄を外して単独で発行する。"
+                    "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
+                    "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読む。"
+                    "`atk agents wait`は`&`も外して単独で発行する。"
                     "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領する。"
-                    "`atk`はパイプを外して単独で発行し、生成側が返す標準出力・標準エラーの保存先から全量を読む。"
                     "保存した本文の選別は別の呼び出しで行う。"
                 ),
             ),
@@ -630,7 +655,7 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> bool:
     外部への保存、プロセスの終了、ファイルの上書きなど復元できない結果が残るため、実行前に遮断する。
     判定はコマンド文字列だけから確定し、遮断された主体は区切り語の引用、事前の変数代入またはエスケープへ
     書き直して同じターンで再実行できる。遮断とする根拠は`agent-toolkit:writing-standards`の
-    `references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
+    `references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
     本文の範囲と展開の有無は`bash_command_parser.heredoc_bodies`の1つの定義から得る。
     """
     found = heredoc_command_substitutions(command)
@@ -711,7 +736,7 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
     Git Bash（MSYS2）のPATHはコロン区切りでドライブ文字形式を変換しないため、`C:/x`は`C`と`/x`の2要素に分かれ、
     意図したディレクトリが検索されない。その結果を根拠に結論を下す前に気付けるよう、実行の直前に判定する。
 
-    判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
+    判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
     「遮断・警告フックの成立条件」にある。誤ったPATHはコマンドを失敗させずに誤った結果を返し、
     その結果が誤った結論の根拠になる。判定はコマンド文字列から機械的に確定でき、実行を止めないため誤検出の費用も小さい。
     影響はそのコマンドのプロセス環境に閉じ、正しい形式で再実行すれば是正できるため遮断はしない。

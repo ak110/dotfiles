@@ -34,6 +34,9 @@ Codexでは`type`が`compacted`のレコードに、所要時間を除いた情�
   その領域の値が実行したツール自身の出力か、ツールが読み取った外部の内容かを、記録の構造から取得した値で区別する。
   ツールが読み取ったファイルの本文は実行結果と同じ領域に入るため、書式の一致だけで判定すると
   その本文に含まれる例示が実行時の事象として報告される
+- 文面を持つ`thinking`ブロックには、ツール呼び出しの間の地の文をサーバーが要約したもの（ナレーション要約）が含まれ、書き手の原文でも拡張思考の全文でもない。
+  このため`thinking`の文面の形、長さ、語は、原文の性質を数える集計の対象から外す。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：Claude Codeの記録：2026年10月6日」にある
 
 ## スキル起動の判定
 
@@ -92,8 +95,21 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 - 位置が確定している記録の本文を読む: `--detail`
 - 複数の固定文字列を別々に数え、本文を含めず一致entry数と全locatorだけを得る: `--fixed-string`を文字列ごとに反復する。正規表現へ結合しない
 - 位置が確定したレコードの構造だけを調べる: `--record-schema`をlocatorごとに反復する。値が必要なら`--detail`を使う
+- ツール呼び出しを呼び出し単位で列挙し、ツール名と代表入力で選んで数える（複数セッションはカタログ走査と併用する）: `--tool-calls`。発話とツール呼び出しを混ぜた1セッションのメイン記録の時系列は、`--bundle`が書く`conversation.jsonl`で得る
 
-`--grep`、`--detail`、`--fixed-string`、`--record-schema`は照会modeとして互いに排他である。生成側が返す`保存先:`の絶対パスから全量を読み、出所の引き渡しにも同じファイルを使う。
+`--grep`、`--detail`、`--fixed-string`、`--record-schema`、`--tool-calls`は照会modeとして互いに排他である。生成側が返す`保存先:`の絶対パスから全量を読み、出所の引き渡しにも同じファイルを使う。
 本節の手段は`atk run-script session-review-evidence`に限り、検索対象を限定しないJSONLファイル群への汎用CLIによる検索と、セッション記録および`candidates.md`の標準出力への全量表示は対象としない。
 記録は行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を適用するとマッチングの上限に達するためである。
 `atk run-script session-review-evidence`が受理しない調査には、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。
+
+## 暗号化された値
+
+次の値は提供元が暗号化して返す値であり、`investigation.md`が裏付けと判別の手段からデコードと内部構造の解析を外す対象に当たる。
+
+- Claude Codeの記録の`thinking`ブロックの`signature`と`redacted_thinking`ブロックの`data`
+- Codexの記録で`payload.type`が`reasoning`のレコードの`encrypted_content`
+
+ツール呼び出しの間の進捗更新（公式文書の「progress update」。Claude Code本体の内部名は`narration`）を判別する場合は、公式文書「Thinking」の節「Progress updates between tool calls」が定める条件を使う。
+リクエストの`display`が`"updates"`の応答では文面が空でない`thinking`ブロックを進捗更新とする。
+記録はリクエストの`display`の値を持たない。このため値を設定やホストの送信条件から確かめた範囲だけを判別済みとし、残りは判別不能として件数を分ける。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：暗号化された値：2026年10月7日」にある。

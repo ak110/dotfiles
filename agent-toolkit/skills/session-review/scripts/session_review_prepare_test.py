@@ -17,6 +17,7 @@ import pytest
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit._hooks import response_language_check
+from agent_toolkit._testing import delegated_threads
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
 _LONG_INTERVENTION = "そうじゃなくて、対象は全部です。" + "理由の説明。" * 400 + "最後まで読んで。"
@@ -412,6 +413,122 @@ def test_prepare_reads_codex_thread(
     assert "  - 失敗（main:5）: rg: 失敗" in conversation
     assert "成功した出力の本文" not in conversation and "書き込む本文" not in conversation
     assert "候補として残す問題は無かった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+
+
+def test_prepare_lists_adhoc_processing_per_record_without_failure_selection(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """その場のコードによる加工は記録ごとの件数と記録位置・代表入力の一覧で載り、失敗署名の選別を受けない。
+
+    失敗した加工の呼び出しも、単発の失敗として件数表へ送られる失敗の候補とは別に加工の候補へ残る。
+    """
+    saved_output = "/home/u/.cache/agent-toolkit/managed-temp/atk-output-abc/output.txt"
+    entries = [
+        {"type": "user", "timestamp": "2026-09-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-06T12:00:01Z",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "name": "Bash", "id": "toolu_sed", "input": {"command": f"sed -n 2p {saved_output}"}}
+                ],
+            },
+        },
+        {
+            "type": "user",
+            "timestamp": "2026-09-06T12:00:02Z",
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_sed", "content": "2行目"}]},
+        },
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-06T12:00:03Z",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Bash",
+                        "id": "toolu_py",
+                        "input": {"command": "python3 -c 'import sys; sys.exit(3)'"},
+                    }
+                ],
+            },
+        },
+        {
+            "type": "user",
+            "timestamp": "2026-09-06T12:00:04Z",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "toolu_py", "is_error": True, "content": "Exit code 3"}],
+            },
+        },
+    ]
+    transcript = tmp_path / "11111111-2222-3333-4444-555555555555.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+
+    exit_code = prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW)
+
+    assert exit_code == 0, capsys.readouterr().err
+    record = json.loads(capsys.readouterr().out)
+    assert record["candidate_counts"] == {"adhoc-processing": 1}
+    assert record["excluded_counts"]["single-session-failure"] == 1
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    record_id = "claude:11111111-2222-3333-4444-555555555555"
+    assert (
+        f"- c0001 adhoc-processing（発生2件）: 記録{record_id}のその場のコードによる加工\n"
+        f"  - {record_id}:2: sed -n 2p {saved_output}\n"
+        f"  - {record_id}:4: python3 -c 'import sys; sys.exit(3)'\n"
+    ) in candidates
+
+
+def test_prepare_writes_breakdown_of_rate_limiting_threads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """律速区間に排他区間を持つagent threadごとに、内部の工程の内訳の節を排他区間の長い順に`stats.md`へ書く。
+
+    内訳が無いと、振り返りは委譲先の返却本文の説明を内訳の代わりにして律速区間を見送る。
+    節の記録位置は`--detail`へそのまま渡す値であり、委譲先の記録の行を指す必要がある。
+    """
+    threads = delegated_threads.write_delegated_threads(tmp_path)
+    monkeypatch.setenv("HOME", str(threads.home))
+    monkeypatch.setenv("CODEX_HOME", str(threads.codex_home))
+    claude_id = delegated_threads.CLAUDE_THREAD_ID
+    codex_id = delegated_threads.CODEX_THREAD_ID
+
+    exit_code = prepare.main(["--transcript", str(threads.transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW)
+
+    assert exit_code == 0, capsys.readouterr().err
+    stats = pathlib.Path(json.loads(capsys.readouterr().out)["stats_path"]).read_text(encoding="utf-8")
+    claude_section = f"""
+## 律速threadの内訳: {claude_id}
+
+- 排他区間: 175.0秒
+- turnの経過秒: 175秒
+- ツール別: Bash 2件40.0秒、Read 1件1.0秒
+- 60秒以上の間隔:
+  - 80.0秒: claude:{claude_id}:3〜claude:{claude_id}:4
+- 反復:
+  - Bash 2回（claude:{claude_id}:2、claude:{claude_id}:4）: pytest
+- 遅い呼び出しの上位:
+  - Bash 30.0秒 claude:{claude_id}:2: pytest
+  - Bash 10.0秒 claude:{claude_id}:4: pytest
+  - Read 1.0秒 claude:{claude_id}:6: /repo/a.md
+"""
+    codex_section = f"""
+## 律速threadの内訳: {codex_id}
+
+- 排他区間: 59.0秒
+- turnの経過秒: 59秒
+- ツール別: exec_command 1件20.0秒
+- 60秒以上の間隔: なし
+- 反復: なし
+- 遅い呼び出しの上位:
+  - exec_command 20.0秒 codex:{codex_id}:3: make build
+"""
+    assert claude_section in stats
+    assert codex_section in stats
+    assert stats.index(claude_section) < stats.index(codex_section)
 
 
 def _write_failed_codex_transcript(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:

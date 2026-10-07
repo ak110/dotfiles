@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
+import time
+from collections.abc import Iterator
 from typing import Literal
 
 import pytest
@@ -12,6 +15,7 @@ import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wron
 
 from agent_toolkit import agents_server_mcp  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._atk import outcome
+from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -65,6 +69,27 @@ def test_output_file_option_is_removed(capsys: pytest.CaptureFixture[str]) -> No
     with pytest.raises(SystemExit, match="2"):
         evidence.main(["unused.jsonl", "--output-file", "relative.jsonl"])
     assert "--output-file" in capsys.readouterr().err
+
+
+def test_send_to_user_message_is_assistant_event(tmp_path: pathlib.Path) -> None:
+    """send_to_userの`message`はユーザーへ届いた本文として、assistantの出来事にする。"""
+    call = {"type": "tool_use", "id": "toolu_1", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": "途中の報告"}}
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [call]}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "最終結果"}]}},
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [(event["kind"], event["text"]) for event in events] == [
+        ("user", "依頼"),
+        ("assistant", "途中の報告"),
+        ("final-result", "最終結果"),
+    ]
 
 
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:
@@ -976,6 +1001,94 @@ def test_elapsed_until_conflicts_with_other_query_options(
     (event,) = _read_jsonl(capsys)
     assert event["kind"] == "error"
     assert "併用できない" in event["text"]
+
+
+@pytest.fixture(name="local_time_jst")
+def _local_time_jst() -> Iterator[None]:
+    """ローカルタイムゾーンをUTC以外のJST（UTC+9）へ固定し、テスト後に元へ戻す。
+
+    タイムゾーンを省いた時刻の解釈を、テストを実行するホストのタイムゾーン設定に依存させないため。
+    """
+    previous = os.environ.get("TZ")
+    os.environ["TZ"] = "JST-9"
+    time.tzset()
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        time.tzset()
+
+
+def _local_time_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
+    """JSTの10月7日0時をまたぐ発話を持つ記録を書く。"""
+    return _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-10-06T14:59:00Z", "JSTの10月6日23時59分の発話"),
+            _timestamped_entry("2026-10-06T15:01:13Z", "JSTの10月7日0時1分の発話"),
+        ],
+    )
+
+
+@pytest.mark.usefixtures("local_time_jst")
+@pytest.mark.parametrize("since", ["2026-10-07T00:00:00", "2026-10-07"])
+def test_since_without_timezone_is_local_time(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    since: str,
+) -> None:
+    """タイムゾーンを省いた`--since`は、ローカルタイムゾーンのオフセットを付けた値と同じ結果を返す。"""
+    transcript = _local_time_transcript(tmp_path)
+
+    assert evidence.main([str(transcript), "--user-events", "--since", since]) == 0
+    naive = _read_jsonl(capsys)
+    assert evidence.main([str(transcript), "--user-events", "--since", "2026-10-07T00:00:00+09:00"]) == 0
+
+    assert naive == _read_jsonl(capsys)
+    assert [event["text"] for event in naive if event["kind"] == "user"] == ["JSTの10月7日0時1分の発話"]
+
+
+@pytest.mark.usefixtures("local_time_jst")
+def test_observation_boundary_without_timezone_is_local_time(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """タイムゾーンを省いた`--observation-boundary`は、単一transcriptとカタログ走査の双方でローカル時刻として扱う。"""
+    transcript = _local_time_transcript(tmp_path)
+
+    assert evidence.main([str(transcript), "--observation-boundary", "2026-10-07T00:00:00"]) == 0
+    naive = _read_jsonl(capsys)
+    assert evidence.main([str(transcript), "--observation-boundary", "2026-10-07T00:00:00+09:00"]) == 0
+    assert naive == _read_jsonl(capsys)
+    assert [event["text"] for event in naive] == ["JSTの10月6日23時59分の発話"]
+
+    root = tmp_path / "project"
+    _write_jsonl(root / "later-session.jsonl", [_timestamped_entry("2026-10-06T15:01:13Z", "境界後に始まるセッション")])
+    catalog = ["--catalog-claude-project", str(root), "--since", "2026-10-06T00:00:00Z", "--observation-boundary"]
+    assert evidence.main([*catalog, "2026-10-07T00:00:00"]) == 0
+    naive_catalog = _read_jsonl(capsys, raw=True)
+    assert evidence.main([*catalog, "2026-10-07T00:00:00+09:00"]) == 0
+    assert naive_catalog == _read_jsonl(capsys, raw=True)
+    assert [event["kind"] for event in naive_catalog] == ["catalog-summary"]
+
+
+@pytest.mark.usefixtures("local_time_jst")
+def test_elapsed_until_without_timezone_is_local_time(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """タイムゾーンを省いた`--elapsed-until`は、ローカルタイムゾーンのオフセットを付けた値と同じ経過秒数を返す。"""
+    transcript = _local_time_transcript(tmp_path)
+
+    assert evidence.main([str(transcript), "--elapsed-until", "2026-10-07T00:01:00"]) == 0
+    (naive,) = _read_jsonl(capsys)
+    assert evidence.main([str(transcript), "--elapsed-until", "2026-10-07T00:01:00+09:00"]) == 0
+    (offset,) = _read_jsonl(capsys)
+
+    assert naive["elapsed_seconds"] == offset["elapsed_seconds"] == 120
 
 
 def test_default_events_separate_main_user_message_from_subagent_task_prompt(
@@ -2631,6 +2744,129 @@ def test_long_injection_is_classified_before_display_shortening(
     assert [event["text"] for event in conversation if event.get("role") == "user"] == texts[1:]
 
 
+def _claude_user_record(content: object, timestamp: str, **fields: object) -> dict:
+    """Claude Codeのユーザーロールの記録を返す。"""
+    return {"type": "user", "message": {"role": "user", "content": content}, "timestamp": timestamp, **fields}
+
+
+def _codex_user_record(text: str, timestamp: str) -> dict:
+    """Codexのユーザーロールのmessage記録を返す。"""
+    return {
+        "timestamp": timestamp,
+        "type": "response_item",
+        "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+    }
+
+
+# 中断の標識、`<bash-stdout>`、`<command-message>`、`<bash-input>`、`<pasted_content`の各記録は
+# Claude Code 2.1.281〜2.1.291の実記録（`~/.claude/projects`配下）から、本文の格納先（文字列かtext要素の配列か）と
+# 中断の標識に付く`interruptedMessageId`、人間の入力に付く`origin`の形を写した。本文は短縮した。
+_CLAUDE_INTERRUPT = "[Request interrupted by user]"
+_CLAUDE_TOOL_INTERRUPT = "[Request interrupted by user for tool use]"
+_CLAUDE_COMMAND_WITHOUT_ARGS = (
+    "<command-message>agent-toolkit:add-awi-by-user</command-message>\n"
+    "<command-name>/agent-toolkit:add-awi-by-user</command-name>"
+)
+_CLAUDE_COMMAND_WITH_ARGS = (
+    "<command-message>agent-toolkit:add-awi-by-user</command-message>\n"
+    "<command-name>/agent-toolkit:add-awi-by-user</command-name>\n<command-args>atk serve</command-args>"
+)
+_CLAUDE_BASH_INPUT = "<bash-input>! sudo bash fix-boot.sh</bash-input>"
+_CLAUDE_BASH_STDOUT = "<bash-stdout>+ FS_UUID=24d572ab\n+ MD_SECTORS=620976256</bash-stdout><bash-stderr></bash-stderr>"
+_CLAUDE_PASTED = '\n\n<pasted_content id="261b">\n言ってること逆では…？\n</pasted_content id="261b">\n'
+
+# Codexの各記録は2026年8月〜10月のrollout（`~/.codex/sessions`配下）の`response_item`の`message`から形を写した。
+_CODEX_INTERNAL_CONTEXT = (
+    '<codex_internal_context source="goal">\nContinue working toward the active thread goal.\n</codex_internal_context>'
+)
+_CODEX_HOOK_PROMPT = '<hook_prompt hook_run_id="stop:8:hooks.codex.json">&lt;atk-auto kind="block"&gt;通知</hook_prompt>'
+_CODEX_SUBAGENT_NOTIFICATION = '<subagent_notification>\n{"agent_path":"01a0280f","status":{"completed":"status: completed"}}'
+_CODEX_QUESTION_REPLY = (
+    '<send_user_message_question_reply>\n[{"answer":"選択後の1回だけ有効（推奨）","question":"どの状態ですか"}]'
+)
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_user_events_excludes_runtime_markers_and_keeps_human_forms(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str
+) -> None:
+    """実行環境の出力と中断の標識を発話から除き、人間が入力した形式は本文を変えずに返す。
+
+    除き損なうと、WI投入担当が実行環境の出力や中断の定型文を人間の発話として逐語引用する。
+    人間の形式を除くと、手動のスキル起動や貼り付けた本文が出所から失われる。
+    `--since`を省略した照会で、記録の最初の発話から返ることも確かめる。
+    """
+    if host == "claude":
+        entries = [
+            _claude_user_record("最初の依頼", "2026-09-01T00:00:01Z", origin={"kind": "human"}),
+            _claude_user_record(
+                [{"type": "text", "text": _CLAUDE_INTERRUPT}], "2026-09-01T00:00:02Z", interruptedMessageId="msg_1"
+            ),
+            _claude_user_record(
+                [{"type": "text", "text": _CLAUDE_TOOL_INTERRUPT}], "2026-09-01T00:00:03Z", interruptedMessageId="msg_2"
+            ),
+            _claude_user_record(_CLAUDE_COMMAND_WITHOUT_ARGS, "2026-09-01T00:00:04Z", origin={"kind": "human"}),
+            _claude_user_record(_CLAUDE_COMMAND_WITH_ARGS, "2026-09-01T00:00:05Z", origin={"kind": "human"}),
+            _claude_user_record(_CLAUDE_BASH_INPUT, "2026-09-01T00:00:06Z"),
+            _claude_user_record(_CLAUDE_BASH_STDOUT, "2026-09-01T00:00:07Z", turnOrigin="human"),
+            _claude_user_record(_CLAUDE_PASTED, "2026-09-01T00:00:08Z", origin={"kind": "human"}),
+        ]
+        expected = [
+            (1, "最初の依頼"),
+            (4, _CLAUDE_COMMAND_WITHOUT_ARGS),
+            (5, _CLAUDE_COMMAND_WITH_ARGS),
+            (6, _CLAUDE_BASH_INPUT),
+            (8, _CLAUDE_PASTED.strip()),
+        ]
+    else:
+        entries = [
+            _codex_user_record("最初の依頼", "2026-09-01T00:00:01Z"),
+            _codex_user_record(_CODEX_INTERNAL_CONTEXT, "2026-09-01T00:00:02Z"),
+            _codex_user_record(_CODEX_HOOK_PROMPT, "2026-09-01T00:00:03Z"),
+            _codex_user_record(_CODEX_SUBAGENT_NOTIFICATION, "2026-09-01T00:00:04Z"),
+            _codex_user_record(_CODEX_QUESTION_REPLY, "2026-09-01T00:00:05Z"),
+        ]
+        expected = [(1, "最初の依頼"), (5, _CODEX_QUESTION_REPLY)]
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--user-events"]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    assert [(event["line"], event["text"]) for event in events if event["kind"] == "user"] == expected
+    assert events[-1] == {"kind": "summary", "count": len(expected)}
+
+
+def test_user_events_without_since_starts_at_first_record(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--since`を省略すると記録の最初から、指定すると指定時刻より後だけを、同じ形の行で返す。
+
+    省略時に開始境界を推測で補うと最初の発話が欠け、指定時の範囲が変わると既存の呼び出しの出所が変わる。
+    """
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-09-01T00:00:00Z", "最初の発話"),
+            _timestamped_entry(None, "時刻なし"),
+            _timestamped_entry("2026-09-01T00:00:02Z", "後の発話"),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--user-events"]) == 0
+    without_since = _read_jsonl(capsys, raw=True)
+    assert evidence.main([str(transcript), "--user-events", "--since", "2026-09-01T00:00:01Z"]) == 0
+    with_since = _read_jsonl(capsys, raw=True)
+
+    assert [(event["line"], event["text"]) for event in without_since[:-1]] == [
+        (1, "最初の発話"),
+        (2, "時刻なし"),
+        (3, "後の発話"),
+    ]
+    assert [(event["line"], event["text"]) for event in with_since[:-1]] == [(3, "後の発話")]
+    assert with_since[-1] == {"kind": "summary", "count": 1}
+
+
 def test_user_events_includes_offered_options_claude(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """AskUserQuestionの回答イベントは、提示した全選択肢のlabelとdescriptionを質問文の直後に持つ。
 
@@ -2737,18 +2973,17 @@ def test_user_events_includes_offered_options_codex(tmp_path: pathlib.Path, caps
     assert user_event["user_response"] == [{"answers": ["全体"]}]
 
 
-def test_user_events_requires_since(
+def test_user_events_rejects_misused_since(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """照会開始境界の欠落・誤用・不正値と他モード併用を拒否する。"""
+    """照会開始境界の誤用・不正値と他モード併用を拒否する。`--since`の省略は受理する。"""
     transcript = _write_transcript(
         tmp_path,
         [_timestamped_entry("2026-09-01T00:00:01Z", "入力")],
     )
 
     invocations = (
-        [str(transcript), "--user-events"],
         [str(transcript), "--since", "2026-09-01T00:00:00Z"],
         [str(transcript), "--user-events", "--since", "不正な時刻"],
         [str(transcript), "--user-events", "--since", "2026-09-01T00:00:00Z", "--warn"],
@@ -2756,6 +2991,8 @@ def test_user_events_requires_since(
     for arguments in invocations:
         assert evidence.main(arguments) == 2
         assert _read_jsonl(capsys)[0]["kind"] == "error"
+    assert evidence.main([str(transcript), "--user-events"]) == 0
+    assert [event["text"] for event in _read_jsonl(capsys) if event["kind"] == "user"] == ["入力"]
 
 
 def test_warn_mode_reports_matching_entries_with_line_and_tool(
@@ -3913,6 +4150,63 @@ def test_detail_mode_returns_persisted_body_from_tool_use_result(
     assert _read_jsonl(capsys) == [
         {"kind": "detail", "line": 2, "timestamp": None, "tool": "c1", "text": "warning: real output"}
     ]
+
+
+def test_replaced_persisted_output_is_read_from_saved_file(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """PostToolUseが退避した出力の`stdout`を通知へ置き換えた記録でも、保存先の内容を検索・詳細・警告の実体とする。
+
+    置き換え後の記録は元の出力を`persistedOutputPath`のファイルだけに持つ。記録の`stdout`だけを読むと、
+    保存先の末尾にだけある文字列が検索で見つからず、振り返りが出力の不在を誤って結論づける。
+    記録の形は、Claude Code 2.1.291でPostToolUseの`updatedToolOutput`が`stdout`を置き換えたときのtranscriptの
+    `toolUseResult`（置き換えた`stdout`と元の`persistedOutputPath`・`persistedOutputSize`）から写した。
+    """
+    saved = tmp_path / "tool-results" / "b1.txt"
+    saved.parent.mkdir()
+    saved.write_text("先頭の行\n" * 3000 + "warning: tail-only-marker\n", encoding="utf-8")
+    notice = f"このコマンドの出力はホストの上限を超えたため保存先へ退避された。保存先: {saved}"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {"command": "cat large.md"}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "c1",
+                            "content": f"<persisted-output>\nOutput too large (48.8KB). Full output saved to: {saved}\n\n"
+                            f"Preview (first 2KB):\n{notice}\n</persisted-output>",
+                        }
+                    ],
+                },
+                "toolUseResult": {
+                    "stdout": notice,
+                    "stderr": "",
+                    "persistedOutputPath": str(saved),
+                    "persistedOutputSize": saved.stat().st_size,
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--fixed-string", "tail-only-marker"]) == 0
+    assert _read_jsonl(capsys)[0]["count"] == 1
+    assert evidence.main([str(transcript), "--detail", "2"]) == 0
+    # 詳細は出力量の上限で末尾を省くため、通知ではなく保存先の内容を返したことを先頭で確かめる。
+    assert _read_jsonl(capsys)[0]["text"].startswith("先頭の行")
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert "tail-only-marker" in capsys.readouterr().out
 
 
 def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
@@ -5521,6 +5815,77 @@ def test_stats_resolves_runtime_unspecified_thread_once(
     events = _read_jsonl(capsys)
     assert not _events_by_kind(events, "unresolved-record")
     assert [event["session_id"] for event in _events_by_kind(events, "stats-agent-thread")] == [thread_id]
+
+
+def test_stats_reports_breakdown_of_each_agent_thread(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """各agent threadの記録へメイン記録と同じ内訳の集計を適用し、threadの識別子と記録位置を付けて返す。
+
+    内訳が無いと、律速区間となった委譲先の内部の工程を振り返りが追加の照会なしで読めない。
+    委譲先の呼び出しがメイン記録の`stats-tool`の件数へ加わると、メインの工程の所要時間を誤って読む。
+    記録位置は`--detail`へそのまま渡せる`<記録ID>:<行番号>`である必要がある。
+    """
+    threads = delegated_threads.write_delegated_threads(tmp_path)
+    monkeypatch.setenv("HOME", str(threads.home))
+    monkeypatch.setenv("CODEX_HOME", str(threads.codex_home))
+    claude_id = delegated_threads.CLAUDE_THREAD_ID
+    codex_id = delegated_threads.CODEX_THREAD_ID
+
+    assert evidence.main([str(threads.transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys, raw=True)
+
+    assert {event["tool"]: event["count"] for event in _events_by_kind(events, "stats-tool")} == {
+        "Bash": 1,
+        "mcp__agents_server__start": 2,
+    }
+    assert _events_by_kind(events, "stats-critical-path")[0]["segments"] == [
+        {"owner": claude_id, "exclusive_seconds": 175.0},
+        {"owner": codex_id, "exclusive_seconds": 59.0},
+    ]
+    claude_record = f"claude:{claude_id}"
+    codex_record = f"codex:{codex_id}"
+    assert _events_by_kind(events, "stats-thread-tool") == [
+        {"kind": "stats-thread-tool", "tool": "Bash", "count": 2, "total_seconds": 40.0, "thread": claude_id},
+        {"kind": "stats-thread-tool", "tool": "Read", "count": 1, "total_seconds": 1.0, "thread": claude_id},
+        {"kind": "stats-thread-tool", "tool": "exec_command", "count": 1, "total_seconds": 20.0, "thread": codex_id},
+    ]
+    assert _events_by_kind(events, "stats-thread-gap") == [
+        {
+            "kind": "stats-thread-gap",
+            "seconds": 80.0,
+            "thread": claude_id,
+            "before": f"{claude_record}:3",
+            "after": f"{claude_record}:4",
+        }
+    ]
+    assert _events_by_kind(events, "stats-thread-repeat") == [
+        {
+            "kind": "stats-thread-repeat",
+            "tool": "Bash",
+            "hint": "pytest",
+            "count": 2,
+            "thread": claude_id,
+            "locations": [f"{claude_record}:2", f"{claude_record}:4"],
+        }
+    ]
+    assert [
+        (event["thread"], event["tool"], event["seconds"], event["location"], event["hint"])
+        for event in _events_by_kind(events, "stats-thread-slow-call")
+    ] == [
+        (claude_id, "Bash", 30.0, f"{claude_record}:2", "pytest"),
+        (claude_id, "Bash", 10.0, f"{claude_record}:4", "pytest"),
+        (claude_id, "Read", 1.0, f"{claude_record}:6", "/repo/a.md"),
+        (codex_id, "exec_command", 20.0, f"{codex_record}:3", "make build"),
+    ]
+
+    # 記録位置を`--detail`へ渡すと、その呼び出しの記録が返る。
+    assert evidence.main([str(threads.transcript), "--detail", f"{codex_record}:3"]) == 0
+    detail = _read_jsonl(capsys, raw=True)
+    assert [(event["record"], event["line"]) for event in detail] == [(codex_record, 3)]
+    assert "make build" in detail[0]["text"]
 
 
 def test_stats_separates_turn_completion_from_trailing_records(
@@ -8266,6 +8631,373 @@ def test_catalog_rejects_an_unclassifiable_root_and_reversed_period(
 
     assert evidence.main([*base, "--observation-boundary", "2026-09-09T00:00:00Z"]) == 2
     assert _read_jsonl(capsys) == [{"kind": "error", "text": "観測境界は開始境界以後を指定する"}]
+
+
+_TOOL_CALL_THREAD = "66666666-6666-4666-8666-666666666666"
+_SELF_COMMAND = "atk run-script session-review-evidence -- transcript.jsonl --user-events"
+_EMBEDDED_COMMAND = "cat > note.md <<'EOF'\natk run-script session-review-evidence -- transcript.jsonl --user-events\nEOF"
+
+
+def _claude_call(timestamp: str, call_id: str, name: str, tool_input: dict) -> dict:
+    return {
+        "type": "assistant",
+        "timestamp": timestamp,
+        "message": {"role": "assistant", "content": [{"type": "tool_use", "id": call_id, "name": name, "input": tool_input}]},
+    }
+
+
+def _claude_result(timestamp: str, call_id: str, content: str) -> dict:
+    return {
+        "type": "user",
+        "timestamp": timestamp,
+        "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": content}]},
+    }
+
+
+def _codex_item(timestamp: str, payload: dict) -> dict:
+    return {"timestamp": timestamp, "type": "response_item", "payload": payload}
+
+
+def _tool_call_session(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, long_command: str) -> pathlib.Path:
+    """メイン記録、サブエージェント記録、走査rootの外のCodex委譲先記録にツール呼び出しを持つセッションを書く。
+
+    Codex形式の記録は、Codex CLIのrollout（2026年10月4日の記録）の`function_call`・`custom_tool_call`と
+    その出力の形を写した。
+    """
+    root = tmp_path / "project"
+    transcript = root / "parent-session.jsonl"
+    _write_jsonl(
+        transcript,
+        [
+            {"type": "user", "timestamp": "2026-10-06T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _claude_call("2026-10-06T00:00:01Z", "bash-self", "Bash", {"command": _SELF_COMMAND}),
+            _claude_result("2026-10-06T00:00:02Z", "bash-self", "自己呼び出しの結果"),
+            _claude_call("2026-10-06T00:00:03Z", "bash-embed", "Bash", {"command": _EMBEDDED_COMMAND}),
+            _claude_result("2026-10-06T00:00:04Z", "bash-embed", "埋め込みの結果"),
+            _codex_tool_use_entry("2026-10-06T00:00:05Z", "call-codex", _TOOL_CALL_THREAD),
+            _codex_tool_result_entry("2026-10-06T00:00:06Z", "call-codex", _TOOL_CALL_THREAD),
+            _claude_call("2026-10-06T00:00:11Z", "bash-long", "Bash", {"command": long_command}),
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [_claude_call("2026-10-06T00:00:03.500Z", "read-1", "Read", {"file_path": "/repo/a.py"})],
+    )
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    _write_jsonl(
+        codex_home / "sessions" / "2026" / "10" / "06" / f"rollout-2026-10-06T00-00-05-{_TOOL_CALL_THREAD}.jsonl",
+        [
+            {"timestamp": "2026-10-06T00:00:05Z", "type": "session_meta", "payload": {"id": _TOOL_CALL_THREAD}},
+            _codex_item(
+                "2026-10-06T00:00:07Z",
+                {"type": "function_call", "name": "exec_command", "call_id": "c-exec", "arguments": '{"cmd": "rg needle"}'},
+            ),
+            _codex_item("2026-10-06T00:00:08Z", {"type": "function_call_output", "call_id": "c-exec", "output": "一致なし"}),
+            _codex_item(
+                "2026-10-06T00:00:09Z",
+                {
+                    "type": "custom_tool_call",
+                    "name": "apply_patch",
+                    "call_id": "c-patch",
+                    "input": "*** Begin Patch\n*** Update File: b.py\n@@\n-x\n+y\n*** End Patch",
+                },
+            ),
+            _codex_item(
+                "2026-10-06T00:00:10Z", {"type": "custom_tool_call_output", "call_id": "c-patch", "output": "適用した"}
+            ),
+        ],
+    )
+    return transcript
+
+
+def test_tool_calls_lists_main_and_delegate_calls_in_time_order(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """メイン、サブエージェントおよびCodex委譲先の呼び出しを、自己呼び出しを含めて時刻順に切り詰めずに返す。"""
+    long_command = "echo " + "x" * 3000
+    transcript = _tool_call_session(tmp_path, monkeypatch, long_command)
+    codex_record = f"codex:{_TOOL_CALL_THREAD}"
+
+    assert evidence.main([str(transcript), "--tool-calls"]) == 0
+
+    *calls, summary = _read_jsonl(capsys, raw=True)
+    assert [(call["record"], call["line"], call["tool"], call["call_id"], call["result_line"]) for call in calls] == [
+        ("claude:parent-session", 2, "Bash", "bash-self", 3),
+        ("claude:parent-session", 4, "Bash", "bash-embed", 5),
+        ("claude:parent-session/agent-child", 1, "Read", "read-1", None),
+        ("claude:parent-session", 6, "mcp__agents_server__start", "call-codex", 7),
+        (codex_record, 2, "exec_command", "c-exec", 3),
+        (codex_record, 4, "apply_patch", "c-patch", 5),
+        ("claude:parent-session", 8, "Bash", "bash-long", None),
+    ]
+    assert all(call["kind"] == "tool-call" for call in calls)
+    assert [call["text"] for call in calls if call["tool"] in {"Bash", "exec_command", "apply_patch"}] == [
+        _SELF_COMMAND,
+        _EMBEDDED_COMMAND,
+        "rg needle",
+        "b.py",
+        long_command,
+    ]
+    assert summary == {
+        "kind": "tool-call-summary",
+        "count": 7,
+        "by_tool": {"Bash": 3, "Read": 1, "apply_patch": 1, "exec_command": 1, "mcp__agents_server__start": 1},
+        "by_record": {"claude:parent-session": 4, "claude:parent-session/agent-child": 1, codex_record: 2},
+    }
+
+
+def test_tool_calls_select_by_tool_and_whole_input_regex(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--tool`は完全一致のいずれか、`--input-regex`は代表入力全体への検索とし、`^`はヒアドキュメントへ埋め込んだ文字列を除く。"""
+    transcript = _tool_call_session(tmp_path, monkeypatch, "echo done")
+
+    assert (
+        evidence.main(
+            [str(transcript), "--tool-calls", "--tool", "Bash", "--input-regex", "^atk run-script session-review-evidence"]
+        )
+        == 0
+    )
+    *calls, summary = _read_jsonl(capsys, raw=True)
+    assert [call["call_id"] for call in calls] == ["bash-self"]
+    assert summary["count"] == 1
+
+    assert evidence.main([str(transcript), "--tool-calls", "--input-regex", "session-review-evidence"]) == 0
+    *calls, _ = _read_jsonl(capsys, raw=True)
+    assert [call["call_id"] for call in calls] == ["bash-self", "bash-embed"]
+
+    assert evidence.main([str(transcript), "--tool-calls", "--tool", "Read", "--tool", "exec_command", "--tool", "Bas"]) == 0
+    *calls, summary = _read_jsonl(capsys, raw=True)
+    assert [call["call_id"] for call in calls] == ["read-1", "c-exec"]
+    assert summary["by_tool"] == {"Read": 1, "exec_command": 1}
+
+
+def test_tool_call_locators_round_trip_to_detail(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`record`と`line`は呼び出しの入力全体、`record`と`result_line`は結果の本文を`--detail`で返す。"""
+    transcript = _tool_call_session(tmp_path, monkeypatch, "echo done")
+    assert evidence.main([str(transcript), "--tool-calls", "--tool", "Bash", "--tool", "exec_command"]) == 0
+    *calls, _ = _read_jsonl(capsys, raw=True)
+    embed = next(call for call in calls if call["call_id"] == "bash-embed")
+    codex_exec = next(call for call in calls if call["call_id"] == "c-exec")
+
+    for call, expected_input, expected_result in (
+        (embed, "atk run-script session-review-evidence -- transcript.jsonl --user-events", "埋め込みの結果"),
+        (codex_exec, "rg needle", "一致なし"),
+    ):
+        assert evidence.main([str(transcript), "--detail", f"{call['record']}:{call['line']}"]) == 0
+        assert expected_input in json.dumps(_read_jsonl(capsys, raw=True), ensure_ascii=False).replace("\\n", "\n")
+        assert evidence.main([str(transcript), "--detail", f"{call['record']}:{call['result_line']}"]) == 0
+        assert expected_result in json.dumps(_read_jsonl(capsys, raw=True), ensure_ascii=False)
+
+
+def test_tool_calls_with_catalog_include_delegates_outside_root_within_window(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """カタログ併用では窓の中の呼び出しを、走査rootの外の委譲先も含めて親セッションの`session_id`付きで返す。"""
+    transcript = _tool_call_session(tmp_path, monkeypatch, "echo done")
+    root = transcript.parent
+    _write_jsonl(
+        root / "outside-window.jsonl",
+        [_claude_call("2026-10-05T00:00:00Z", "early", "Bash", {"command": "echo early"})],
+    )
+
+    assert (
+        evidence.main(
+            [
+                "--catalog-claude-project",
+                str(root),
+                "--since",
+                "2026-10-06T00:00:02Z",
+                "--observation-boundary",
+                "2026-10-06T00:00:08Z",
+                "--tool-calls",
+            ]
+        )
+        == 0
+    )
+
+    *calls, summary = _read_jsonl(capsys, raw=True)
+    assert [(call["session_id"], call["record"], call["call_id"]) for call in calls] == [
+        ("parent-session", "claude:parent-session", "bash-embed"),
+        ("parent-session", "claude:parent-session/agent-child", "read-1"),
+        ("parent-session", "claude:parent-session", "call-codex"),
+        ("parent-session", f"codex:{_TOOL_CALL_THREAD}", "c-exec"),
+    ]
+    assert summary["count"] == 4
+    assert summary["by_session"] == {"parent-session": 4}
+    assert summary["scan_root"] == str(root.resolve())
+    assert summary["parent_record_count"] == 1
+    assert summary["since"] == "2026-10-06T00:00:02+00:00"
+    assert summary["observation_boundary"] == "2026-10-06T00:00:08+00:00"
+
+    session_id = calls[-1]["session_id"]
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    projects = tmp_path / "home" / ".claude" / "projects"
+    projects.mkdir(parents=True)
+    (projects / "project").symlink_to(root, target_is_directory=True)
+    assert evidence.main(["--claude-session-id", session_id, "--detail", f"{calls[-1]['record']}:{calls[-1]['line']}"]) == 0
+    assert "rg needle" in json.dumps(_read_jsonl(capsys, raw=True), ensure_ascii=False)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        pytest.param(["--tool", "Bash"], id="tool-without-tool-calls"),
+        pytest.param(["--input-regex", "x"], id="input-regex-without-tool-calls"),
+        pytest.param(["--tool-calls", "--input-regex", "("], id="invalid-regex"),
+        pytest.param(["--tool-calls", "--grep", "x"], id="other-query-mode"),
+    ],
+)
+def test_tool_calls_reject_invalid_arguments(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], arguments: list[str]
+) -> None:
+    """`--tool-calls`に関する引数の誤りは次の操作付きのエラーと終了コード2を返す。"""
+    transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-10-06T00:00:00Z", "記録")])
+
+    assert evidence.main([str(transcript), *arguments]) == 2
+
+    (event,) = _read_jsonl(capsys)
+    assert event["kind"] == "error"
+
+
+def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """`--tool-calls`以外の照会modeとカタログ走査の併用は従来どおり拒否する。"""
+    root = tmp_path / "project"
+    _write_jsonl(root / "session.jsonl", [_timestamped_entry("2026-10-06T00:00:00Z", "記録")])
+
+    assert (
+        evidence.main(
+            [
+                "--catalog-claude-project",
+                str(root),
+                "--since",
+                "2026-10-05T00:00:00Z",
+                "--observation-boundary",
+                "2026-10-07T00:00:00Z",
+                "--grep",
+                "記録",
+            ]
+        )
+        == 2
+    )
+    (event,) = _read_jsonl(capsys)
+    assert "併用できない" in event["text"]
+
+
+_ADHOC_THREAD = "77777777-7777-4777-8777-777777777777"
+_CODEX_EXEC_INPUT = (
+    'const r=await tools.exec_command({cmd:"python3 -c \'print(open(\\"draft.md\\").read().count(\\"x\\"))\'"});'
+)
+
+
+def test_bundle_collects_adhoc_processing_per_record_including_delegates(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """委譲先を含む記録ごとに、その場のコードによる加工を1件の候補へまとめ、読むだけの呼び出しを含めない。
+
+    Codex形式の委譲先記録は、Codex CLIのrollout（2026年10月4日の記録）の`exec`ツールがJavaScript本文から
+    `exec_command`を呼ぶ形を写した。
+    """
+    root = tmp_path / "project"
+    transcript = root / "parent-session.jsonl"
+    saved_output = "/home/u/.cache/agent-toolkit/managed-temp/atk-output-abc/output.txt"
+    _write_jsonl(
+        transcript,
+        [
+            {"type": "user", "timestamp": "2026-10-06T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _claude_call("2026-10-06T00:00:01Z", "jq-1", "Bash", {"command": f"jq -r '.line' {saved_output}"}),
+            _claude_result("2026-10-06T00:00:02Z", "jq-1", "12"),
+            _claude_call("2026-10-06T00:00:03Z", "cat-1", "Bash", {"command": "cat agent-toolkit/README.md"}),
+            _claude_result("2026-10-06T00:00:04Z", "cat-1", "本文"),
+            _claude_call("2026-10-06T00:00:05Z", "rg-1", "Bash", {"command": "rg -n needle . | cut -c1-200"}),
+            _claude_result("2026-10-06T00:00:06Z", "rg-1", "a.py:1:needle"),
+            _claude_call("2026-10-06T00:00:07Z", "sed-1", "Bash", {"command": "sed -n 1,20p agent-toolkit/x.py"}),
+            _claude_result("2026-10-06T00:00:08Z", "sed-1", "本文"),
+            _codex_tool_use_entry("2026-10-06T00:00:09Z", "call-codex", _ADHOC_THREAD),
+            _codex_tool_result_entry("2026-10-06T00:00:10Z", "call-codex", _ADHOC_THREAD),
+        ],
+    )
+    heredoc = "python3 - <<'EOF'\nimport json\nprint(json.dumps({'start': 1, 'end': 48}))\nEOF"
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [
+            _claude_call("2026-10-06T00:00:02Z", "heredoc-1", "Bash", {"command": heredoc}),
+            _claude_result("2026-10-06T00:00:03Z", "heredoc-1", '{"start": 1, "end": 48}'),
+            _claude_call("2026-10-06T00:00:04Z", "inline-1", "Bash", {"command": "uv run --frozen python -c 'print(1)'"}),
+        ],
+    )
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    _write_jsonl(
+        codex_home / "sessions" / "2026" / "10" / "06" / f"rollout-2026-10-06T00-00-09-{_ADHOC_THREAD}.jsonl",
+        [
+            {"timestamp": "2026-10-06T00:00:09Z", "type": "session_meta", "payload": {"id": _ADHOC_THREAD}},
+            _codex_item(
+                "2026-10-06T00:00:11Z",
+                {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "c-exec",
+                    "input": _CODEX_EXEC_INPUT,
+                },
+            ),
+            _codex_item("2026-10-06T00:00:12Z", {"type": "custom_tool_call_output", "call_id": "c-exec", "output": "1"}),
+            _codex_item(
+                "2026-10-06T00:00:13Z",
+                {"type": "function_call", "name": "exec_command", "call_id": "c-rg", "arguments": '{"cmd": "rg needle"}'},
+            ),
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    _read_jsonl(capsys, raw=True)
+
+    candidates = [
+        json.loads(line)
+        for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()
+        if json.loads(line).get("candidate_kind") == "adhoc-processing"
+    ]
+    assert [(item["analysis_group_hint"], item["count"], item["calls"]) for item in candidates] == [
+        (
+            ["claude:parent-session"],
+            1,
+            [{"record": "claude:parent-session", "line": 2, "text": f"jq -r '.line' {saved_output}"}],
+        ),
+        (
+            ["claude:parent-session/agent-child"],
+            2,
+            [
+                {
+                    "record": "claude:parent-session/agent-child",
+                    "line": 1,
+                    "text": "python3 - <<'EOF' import json print(json.dumps({'start': 1, 'end': 48})) EOF",
+                },
+                {
+                    "record": "claude:parent-session/agent-child",
+                    "line": 3,
+                    "text": "uv run --frozen python -c 'print(1)'",
+                },
+            ],
+        ),
+        (
+            [f"codex:{_ADHOC_THREAD}"],
+            1,
+            [
+                {
+                    "record": f"codex:{_ADHOC_THREAD}",
+                    "line": 2,
+                    "text": _CODEX_EXEC_INPUT,
+                }
+            ],
+        ),
+    ]
 
 
 def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() -> None:

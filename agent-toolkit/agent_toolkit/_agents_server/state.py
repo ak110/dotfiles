@@ -200,7 +200,9 @@ REVIEW_RESULT_NEXT_ACTION = (
 IMPROVEMENT_RESULT_NEXT_ACTION = (
     "`agent_message`の`気付いた改善点:`で始まる全行を上流へ渡す。"
     "メインエージェントは次のユーザーへの発話へ転記し、委譲先は自身の返却の末尾へ逐語で引き継ぐ。"
-    "報告元と確認した範囲の添え方は`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」に従う"
+    "転記する各行は字下げを除く行頭に`気付いた改善点:`を原文のまま置き、標識の前と、標識とコロンの間へ報告元などの語を入れない。"
+    "報告元と確かめた範囲は標識行の原文の後ろか別の行に添える。"
+    "未確認の主張の扱いなど残りの細則は`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」に従う"
 )
 
 
@@ -585,6 +587,7 @@ class SessionState:
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
     _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
+    _published_registry_launch_info: session_registry.LaunchInfo | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
 
     @property
@@ -694,6 +697,8 @@ class SessionState:
         else:
             self.retention_deadline = None
         registry_terminal = self.result_available
+        # 再開ではbackendが再生成したsessionを公開した後に起動情報を写すため、起動情報の変化でも公開し直す。
+        launch_info = session_registry.LaunchInfo.of(self)
         if (
             self.publish_registry
             and not self.result_delivered
@@ -703,6 +708,7 @@ class SessionState:
                 or self.status != self._published_registry_status
                 or self.launcher_session_id != self._published_registry_launcher
                 or self.fast_mode != self._published_registry_fast_mode
+                or launch_info != self._published_registry_launch_info
             )
         ):
             session_registry.publish(
@@ -716,7 +722,7 @@ class SessionState:
                 model_type=self.model_type,
                 launch_kind=self.launch_kind,
                 turn_seq=self.turn_seq,
-                created_at=self.created_at,
+                launch_info=launch_info,
                 started_at=self.started_at,
                 session_updated_at=self.updated_at,
                 turn_id=self.turn_id or None,
@@ -728,6 +734,7 @@ class SessionState:
             self._published_registry_turn_seq = self.turn_seq
             self._published_registry_status = self.status
             self._published_registry_fast_mode = self.fast_mode
+            self._published_registry_launch_info = launch_info
         if not registry_terminal:
             self._terminal_notified = False
         elif not self._terminal_notified:
@@ -780,6 +787,7 @@ class SessionResumeState:
     fast_mode: bool | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
+    # `label`・`prompt`・`created_at`は`session_registry.LaunchInfo`の項目であり、再開時はその定義から写す。
     label: str = ""
     prompt: str = ""
     # 登録簿から復元した旧形式のsessionでは開始時刻が不明なため`None`とする。
@@ -804,9 +812,7 @@ class SessionResumeState:
             cwd=session.cwd,
             model_type=session.model_type,
             launch_kind=session.launch_kind,
-            label=session.label,
-            prompt=session.prompt,
-            created_at=session.created_at,
+            **session_registry.LaunchInfo.of(session).as_kwargs(),
             started_at=session.started_at,
             updated_at=session.updated_at,
             output_updated_at=session.output_updated_at,
@@ -995,6 +1001,10 @@ def consume_agents_server_tool_result(
 _AGENTS_WAIT_TOOL_USE = "atk agents wait"
 # `atk agents wait`がエージェント環境の自動保存時に標準出力へ書く保存先の行。
 _AGENTS_WAIT_SAVED_PREFIX = "保存先: "
+WAIT_BODY_START_PREFIX = "本文開始: session_id="
+"""`atk agents wait`の要約が結果本文と通知本文の直前に置く行の接頭辞。後ろへsession識別子を続ける。"""
+WAIT_BODY_END_PREFIX = "本文終了: session_id="
+"""`atk agents wait`の要約が結果本文と通知本文の直後に置く行の接頭辞。後ろへsession識別子を続ける。"""
 
 
 def _is_agents_wait_command(tool_input: Any) -> bool:
@@ -1064,11 +1074,14 @@ def consume_agents_wait_background_outputs(session: SessionState) -> None:
 def _collected_from_wait_output(text: str) -> set[str]:
     """`atk agents wait`の標準出力から、終端結果を回収したsession識別子を返す。
 
-    標準出力はJSON Linesか、エージェント環境の自動保存時に保存先の行だけを持つ。
+    標準出力はJSON Linesか、エージェント環境の自動保存時に保存先の行と要約を持つ。
     ツール結果の本文と背景実行の出力ファイルはどちらも標準出力そのものであるため、同じ規則で読む。
+    要約が表示する委譲先の本文は待機の出力を引用して終端行や保存先の行と同じ形の行を含み得るため、
+    本文の範囲の行は回収の根拠から外す。
     """
-    collected = _collected_session_ids(text)
-    for line in text.splitlines():
+    lines = _lines_outside_wait_bodies(text)
+    collected = _collected_session_ids("\n".join(lines))
+    for line in lines:
         if not line.startswith(_AGENTS_WAIT_SAVED_PREFIX):
             continue
         with contextlib.suppress(OSError, UnicodeError):
@@ -1076,6 +1089,25 @@ def _collected_from_wait_output(text: str) -> set[str]:
                 pathlib.Path(line.removeprefix(_AGENTS_WAIT_SAVED_PREFIX).strip()).read_text(encoding="utf-8")
             )
     return collected
+
+
+def _lines_outside_wait_bodies(text: str) -> list[str]:
+    """`本文開始:`の行から同じsession識別子の`本文終了:`の行までを除いた行を返す。
+
+    終了の行が無い範囲は末尾まで本文として扱い、本文の行を回収の根拠へ混ぜない。
+    """
+    lines: list[str] = []
+    end_line: str | None = None
+    for line in text.splitlines():
+        if end_line is not None:
+            if line == end_line:
+                end_line = None
+            continue
+        if line.startswith(WAIT_BODY_START_PREFIX):
+            end_line = WAIT_BODY_END_PREFIX + line.removeprefix(WAIT_BODY_START_PREFIX)
+            continue
+        lines.append(line)
+    return lines
 
 
 def _discard_collected(session: SessionState, collected: set[str]) -> None:

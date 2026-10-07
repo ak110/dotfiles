@@ -17,6 +17,8 @@ warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を
 AskUserQuestion / ExitPlanMode:
 
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
+- 確認の前に読む2資料（`agent-toolkit:user-confirmation-and-report`）を読まないままメインが呼んだ
+  `AskUserQuestion`の警告 (warn、昇格しない)
 
 mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 
@@ -34,9 +36,9 @@ Bash:
 - Codexで48KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)。通知は閾値以下の連続した行範囲を示す
 - 区切り語を引用しないheredocの本文にあるコマンド置換の遮断 (block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
-- atkから後段への出力パイプと、`atk agents wait`のシェル背景化・標準出力破棄の遮断 (block)
+- atkの出力のパイプとリダイレクト（常駐と追従の表示を除く）と、`atk agents wait`のシェル背景化の遮断 (block)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
-- 操作を起動の契機とするスキル（`agent-toolkit:search`）が未起動のままの検索の、文脈ごとに1回の警告 (warn)
+- 操作を起動の契機とするスキル（`agent-toolkit:search`・`agent-toolkit:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
 
 Grep / Glob:
 
@@ -57,6 +59,7 @@ Write / Edit / MultiEdit / apply_patch:
 - lockfile / 生成物ディレクトリの直接編集 (warn)
 - Pythonと計画Markdownの末尾へ混入したツール境界タグ (warn)
 - manifestファイルの手編集 (warn)
+- `agent-toolkit:bugfix`が未起動のままの`## 原因分析`の見出し行の記述の、文脈ごとに1回の警告 (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 
@@ -103,6 +106,7 @@ from agent_toolkit._common.runtime_identity import RuntimeIdentity, identity_obs
 from agent_toolkit._hooks.pretooluse.warning_context import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     format_warning_context,
 )
+from agent_toolkit._hooks.pretooluse.confirmation_reads import unread_reference_warning  # noqa: E402
 from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings  # noqa: E402
 from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
@@ -285,7 +289,7 @@ def main(payload_text: str) -> int:
         return code
 
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
-        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
+        return exit_with(_handle_user_facing_text_tool(payload, tool_name, tool_input, emit_json, flush_pending_notices))
 
     # Skill: plan-mode起動時は前の計画のパスを消去し、UserPromptSubmitが前の計画名を表示し続けないようにする。
     if tool_name == "Skill":
@@ -329,6 +333,7 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return exit_with(0)
 
+    pending_notices.extend(operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex))
     return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices))
 
 
@@ -535,27 +540,35 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
 
 
 def _handle_user_facing_text_tool(
+    payload: dict,
     tool_name: str,
     tool_input: dict,
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
-    """質問・計画本文に文字化けがあるか確かめ、警告として返す。
+    """質問・計画本文の文字化けと、確認の前に読む資料の未読を確かめ、警告として返す。
 
     ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
     遮断するとそのターンの入力と作業を失い、同じ確認を再発行する必要があるため、警告で返す。
-    判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
-    「遮断・警告フックの成立条件」が定める。
+    判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
+    「遮断・警告フックの成立条件」が定める。2つの判定は互いの結果に依存せず、成立した警告を同じ追加コンテキストへ並べる。
     """
-    warning = _warn_mojibake(tool_name, _user_facing_text_fields(tool_name, tool_input))
-    if warning is None:
+    warnings = [
+        warning
+        for warning in (
+            _warn_mojibake(tool_name, _user_facing_text_fields(tool_name, tool_input)),
+            unread_reference_warning(payload, tool_name),
+        )
+        if warning is not None
+    ]
+    if not warnings:
         flush_warning()
     else:
         emit_json(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
-                    "additionalContext": format_warning_context([warning]),
+                    "additionalContext": format_warning_context(warnings),
                 }
             }
         )

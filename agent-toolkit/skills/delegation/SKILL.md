@@ -20,12 +20,13 @@ user-invocable: false
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | Codexで委譲、待機、状態確認または中断へ着手する前 | `references/codex-runtime.md` |
-| 委譲元が委譲を開始する前（全ての委譲） | `references/base-contract.md`、`references/mandatory-rules.md`、`references/sending.md` |
+| 委譲元が、`<役割名>.parent.md`が起動手順を定めない委譲（`start`の`delegate`・`explore`・`write`・`shell`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/base-contract.md`、`references/mandatory-rules.md`、`references/sending.md` |
 | 委譲元が、`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.parent.md`が起動手順と必須入力を逐語で定めていない委譲を開始する前と、確定した委譲単位の構成を変更する前 | `references/routing.md` |
-| 委譲先とモデルを選ぶ時点 | `references/runtime-routing.md` |
-| Claude Codeで最初の委譲先を起動する前と、Claude Code固有の手順を確定する時 | `references/claude-code-runtime.md` |
+| 委譲元が`<役割名>.parent.md`を持つ委譲を起動する前 | 起動する`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`と、同書の読込表が条件付きで挙げる資料 |
+| 委譲先とモデルを選ぶ時点（`<役割名>.parent.md`を持つ起動で`model_type`を指定しない場合を除く） | `references/runtime-routing.md` |
+| Claude Codeで`Agent`ツールの委譲先かバックグラウンドタスクを最初に起動する前、定期再確認を自ら装着する前（装着できなかった通知を受けた場合と、装着の通知も定期再確認のtaskも無い場合）、およびClaude Code固有の手順を確定する時 | `references/claude-code-runtime.md` |
 | 完了通知および待機・停滞を確定する時 | `references/waiting-and-monitoring.md` |
-| 委譲元が委譲先の完了報告を受領して検収する前 | `references/receiving.md` |
+| 委譲元が委譲先の完了報告を受領して検収する前 | `references/receiving.md`、`references/mandatory-rules.md` |
 | 委譲先が、委譲プロンプトで`引き継ぎ記録先`を受け取って最初の記録を書く前 | `references/handoff-record.md` |
 | 実行工程を委譲するときの受領の取り決めを確定する時 | `起動経路`に対応するエージェント向け文書（`agent-toolkit:process-wi`による起動では同スキルの`references/run-lanes.md`、`agent-toolkit:plan-mode`による直接起動では同スキルのSKILL.md） |
 | 指摘の採否と修正を確定する時 | `agent-toolkit:review-standards`を起動し、同スキルの`references/reviewee.md` |
@@ -49,6 +50,31 @@ user-invocable: false
 4. 基準となる記録で内容が一意に定まる入力は、絶対パスと対象IDで参照させる（同節手順4）
 5. 参照できる記録の無い情報は委譲プロンプト内で完結させる（同節手順5）
 6. 起動前の確認（必須入力の完備、絶対パスの実在、記録と実体の一致）は`references/base-contract.md`に従う。`agents_server`の`start`で起動し、返された`session_id`を観測する（`references/sending.md`「委譲プロンプトの構成」の起動と観測の段落）
+
+`<役割名>.parent.md`を持つ委譲は、本節の手順に代えて「`<役割名>.parent.md`を持つ委譲の起動」に従う。
+
+## `<役割名>.parent.md`を持つ委譲の起動
+
+`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.parent.md`が起動を定める委譲は、本節の定型で起動し、本節の義務を適用する。委譲元は起動の前にその`<役割名>.parent.md`を全文読み、同書が定める起動前の前提、入力の値の確定規則および受領と検収に従う。本節は起動の定型と、その起動へ適用する委譲元の義務の唯一の定義元である。`<役割名>.parent.md`は役割ごとに異なる引数の値だけを書く。
+
+起動の定型は次のとおりとする。
+
+- `agents_server`の`start`を呼び、`cwd`へ`<役割名>.parent.md`が定める作業ディレクトリの絶対パスを渡す
+- `subagent_md_path`へ役割名（`share/<役割名>.subagent.md`のファイル名から`.subagent.md`を除いた名前。例: `add-wi`）を渡す。サーバーは役割名を自身のplugin rootの`share/<役割名>.subagent.md`へ解決する
+- `extra_params`へ`<役割名>.parent.md`が列挙する入力名と値を渡す
+- `mode`は指定しない。`model_type`は`<役割名>.parent.md`が値の決め方を定める場合だけ指定し、指定しない場合はサーバーが工程別設定を使う
+- `引き継ぎ記録先`の`（新規）`は省略でき、サーバーが委譲元のセッションのmanaged-tempの直下に記録先を用意して応答の`handoff_record_path`で返す。先行する担当の記録を引き継ぐ担当へは、その絶対パスへ`（継続）`を付けて渡す
+- 起動後は応答の`session_id`を`atk agents wait`で観測する。Claude Codeでは最初の`start`の処理の中でagent-toolkitのmodが定期再確認を装着し、装着の結果がその`start`の結果の後に届く
+
+この起動へ適用する委譲元の義務は次のとおりとする。
+
+- `extra_params`の値はパス、識別子、実行時に確定した事実に限る。手順、経緯、背景、判定に至る過程と委譲元の推測は書かない。`<役割名>.parent.md`が結論の文章を運ぶ欄を定める場合は、その欄の値の種類をその文書が定める
+- 値のうち自ら裏付けを取っていない具体値・挙動・制約には`未検証`を付し、委譲先へ着手前の裏取りを求める。読み取り専用の探索委譲の報告に由来する値と、委譲元が推定した分類、件数、所在および対象の重複の有無も、自ら裏付けを取っていない値に当たる
+- 人間由来の要求を渡す場合は、採用した要求の原文と出所を`forwarded-user-input`標識の内側へ置き、起動前に原文と標識の双方が一致することを確かめる
+- 値がファイルを名指しする場合は、そのファイルを絶対パスで書く
+- 既存の作業ツリーへ書き込む担当を起動する場合は、その作業ツリーの既存の書込担当が終端したことを確かめてから起動し、稼働中であれば実施をその担当へ戻す。1つの作業ツリーへ書き込む主体を同時に1つだけに保つ規定の定義は`references/mandatory-rules.md`「作業ツリーと認証情報の保護」が持つ。並行する書込担当は差分、履歴と成果物を混在させる
+
+サーバーは起動時に必須入力の欠落と宣言外の入力名を拒否し、`引き継ぎ記録先`を用意する。応答言語もサーバーが伝え、`<役割名>.subagent.md`の実在を確かめて`${CLAUDE_PLUGIN_ROOT}`を展開する。これらは委譲元の起動前の確認から外す。拒否された場合は、応答が示す項目名と次の操作に従って起動し直す。
 
 成果物の書込主体、完了報告へ含める証跡、点検・調査の報告項目は`references/sending.md`「権限と成果物の取り決め」、自ら裏付けていない値のラベルは同書「未検証情報の取り扱い」、大きな判断材料の渡し方は同書「判断材料と一時領域」が定める。
 

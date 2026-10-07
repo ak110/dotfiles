@@ -297,9 +297,19 @@ def _candidate_lines(candidate: dict[str, Any], evidence: dict[str, Any], timeli
     """候補1件を、1行の要約、記録位置および判断に要る補足で組み立てる。
 
     hook通知は通知が判定した入力を読まないと是非を判断できないため、直前のアシスタント発話を添える。
+    その場のコードによる加工は、記録ごとの件数と、呼び出しごとの記録位置と代表入力の一覧で示す。
+    加工の目的と反復は呼び出しの列を見比べて判定するため、代表の1件だけでは判断できない。
     """
     kind = str(candidate["candidate_kind"])
     occurrence = candidate.get("occurrence_count", candidate.get("count", 1))
+    if kind == "adhoc-processing":
+        record = candidate["locators"][0]["record"]
+        lines = [f"- {candidate['candidate_id']} {kind}（発生{occurrence}件）: 記録{record}のその場のコードによる加工"]
+        lines.extend(
+            f"  - {call['record']}:{call['line']}: {_one_line(str(call.get('text', ''))) or '（入力なし）'}"
+            for call in candidate.get("calls", [])
+        )
+        return lines
     events = evidence.get("events", [])
     bodies = [
         _readable_entry_text(str(event["text"]))
@@ -504,7 +514,55 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
         for item in slow:
             hint = " ".join(str(item.get("hint", "")).split())
             lines.append(f"- {item.get('tool')} {item.get('seconds')}秒" + (f": {hint}" if hint else ""))
+    if critical is not None:
+        for segment in critical.get("segments", []):
+            lines.extend(_thread_breakdown_lines(segment, threads, by_kind))
     return "\n".join(lines) + "\n"
+
+
+def _thread_breakdown_lines(
+    segment: dict[str, Any], threads: list[dict[str, Any]], by_kind: dict[str, list[dict[str, Any]]]
+) -> list[str]:
+    """律速threadの内部の工程、待機および反復の内訳の節を組み立てる。
+
+    委譲先の返却本文の説明ではなく記録から得た内訳を、振り返りが追加の照会なしで読めるようにする。
+    件数の上限はメイン記録の集計と同じであり、記録位置は`--detail`へそのまま渡せる。
+    """
+    owner = segment.get("owner")
+    thread = next((item for item in threads if item.get("thread") == owner), {})
+
+    def of_thread(kind: str) -> list[dict[str, Any]]:
+        return [item for item in by_kind.get(kind, []) if item.get("thread") == owner]
+
+    def with_hint(text: str, item: dict[str, Any]) -> str:
+        hint = _one_line(str(item.get("hint", "")))
+        return f"{text}: {hint}" if hint else text
+
+    lines = [
+        "",
+        f"## 律速threadの内訳: {owner}",
+        "",
+        f"- 排他区間: {segment.get('exclusive_seconds')}秒",
+        f"- turnの経過秒: {thread.get('turn_elapsed_seconds', 'unknown')}秒",
+    ]
+    tools = of_thread("stats-thread-tool")
+    lines.append(
+        "- ツール別: "
+        + ("、".join(f"{item.get('tool')} {item.get('count')}件{item.get('total_seconds')}秒" for item in tools) or "なし")
+    )
+    gaps = of_thread("stats-thread-gap")
+    lines.append("- 60秒以上の間隔:" + ("" if gaps else " なし"))
+    lines.extend(f"  - {item.get('seconds')}秒: {item.get('before')}〜{item.get('after')}" for item in gaps)
+    repeats = of_thread("stats-thread-repeat")
+    lines.append("- 反復:" + ("" if repeats else " なし"))
+    lines.extend(
+        with_hint(f"  - {item.get('tool')} {item.get('count')}回（{'、'.join(item.get('locations', []))}）", item)
+        for item in repeats
+    )
+    slow = of_thread("stats-thread-slow-call")
+    lines.append("- 遅い呼び出しの上位:" + ("" if slow else " なし"))
+    lines.extend(with_hint(f"  - {item.get('tool')} {item.get('seconds')}秒 {item.get('location')}", item) for item in slow)
+    return lines
 
 
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:

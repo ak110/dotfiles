@@ -15,6 +15,7 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| 直前の同期結果（実行順1）の`status`が`failed`か、`post_apply`の`failed_steps`が1件以上ある場合 | `references/sync-failure.md` |
 | pickerによる対象選定を開始する前（実行順3）と、処理対象WIをpickerへ追加する前 | `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md` |
 | 専用worktreeとレーンを作成する前（実行順4） | `references/run-lanes.md` |
 | レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
@@ -91,9 +92,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 同期処理は結果を`atk config show`が示す`state_dir`直下の`sync-report.json`へ残すため、選定の前にその記録を読んで続行と中断を判定する。
 
 - ファイルが無い場合と`status`が`succeeded`の場合は判定を記録せず次の工程へ進む
-- `status`が`failed`の場合と、`post_apply`の`failed_steps`が1件以上ある場合は、失敗した段とステップの内容から、このセッションでAWIの処理を完遂できるかを判定する
-- 完遂できると判定した場合は、判定した内容と根拠を報告してから次の工程へ進む
-- 完遂できないと判定した場合は、AWIの処理へ着手せず、`atk wi process-loop abort`でprocess-loopへ中断を要求し、失敗した段と判定の根拠を報告してセッションを終える
+- `status`が`failed`の場合と、`post_apply`の`failed_steps`が1件以上ある場合は、読込表の行が示す`references/sync-failure.md`に従う
 
 ## 自動コードレビュー監査
 

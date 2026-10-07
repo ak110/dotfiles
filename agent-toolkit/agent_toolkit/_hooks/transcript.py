@@ -6,6 +6,8 @@ import pathlib
 import typing
 
 _MAX_ENTRIES = 3
+SEND_TO_USER_TOOL_SUFFIX = "__send_to_user"
+"""agent-toolkitのFunction hooks moduleが登録する`send_to_user`ツールの名前の末尾（`mcp__<plugin>__send_to_user`）。"""
 
 
 def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iterator[dict]:
@@ -85,7 +87,7 @@ def iter_latest_assistant_text_messages(transcript_path: str) -> collections.abc
             continue
         msg_id = message.get("id", "")
         if target_msg_id is None:
-            if not assistant_text(message):
+            if not visible_assistant_text(message):
                 continue
             target_msg_id = msg_id if isinstance(msg_id, str) else ""
         elif target_msg_id and msg_id and msg_id != target_msg_id:
@@ -165,6 +167,44 @@ def assistant_text(message: typing.Any) -> str:
     if isinstance(content, list):
         return "".join(block.get("text", "") for block in content if isinstance(block, dict) and block.get("type") == "text")
     return ""
+
+
+def read_transcript_lines(transcript_path: str) -> list[str] | None:
+    """Transcript JSONLを行リストとして読み込み、読み取りに失敗した場合はNoneを返す。"""
+    return _read_transcript_lines(transcript_path)
+
+
+def visible_text_blocks(content: typing.Any) -> list[str]:
+    """Assistant messageの`content`から、ユーザーへ届いた本文を出現順に返す。
+
+    `text`ブロックに加えて、`send_to_user`の呼び出しの`message`を、その呼び出しの位置の本文として扱う。
+    ツール呼び出しより前の地の文はAPIが要約へ置き換えることがあり、原文どおり届ける内容はこのツールの入力で運ぶためである。
+    名前の前置部分はmoduleの登録が決めるため、末尾の一致で判定する。
+    """
+    if not isinstance(content, list):
+        return []
+    texts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "text" and isinstance(block.get("text"), str):
+            texts.append(block["text"])
+        elif block.get("type") == "tool_use" and str(block.get("name", "")).endswith(SEND_TO_USER_TOOL_SUFFIX):
+            tool_input = block.get("input")
+            message = tool_input.get("message") if isinstance(tool_input, dict) else None
+            if isinstance(message, str):
+                texts.append(message)
+    return texts
+
+
+def visible_assistant_text(message: typing.Any) -> str:
+    """Assistant message dictのうちユーザーへ届いた本文（`text`と`send_to_user`の`message`）を連結して返す。"""
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    return "".join(visible_text_blocks(content))
 
 
 def _read_transcript_lines(transcript_path: str) -> list[str] | None:

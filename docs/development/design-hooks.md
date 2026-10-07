@@ -29,7 +29,7 @@ heredoc本文のマスクを除く案も採らない。本文の文字列への�
 hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻りの便益を比べて決める（2026年10月2日、ユーザー指示）。
 誤検出、発火ごとのトークンと実行時間、保守費用が便益に見合わないチェックは置かず、明らかなエージェントの行動誤りを入力から機械的に判定でき費用が小さいチェックは、元へ戻せる誤りを防ぐものでも置く。
 不可逆な操作の防止、データ破損の防止、常駐運用の終端保証は、1回の発火でも結果が残るため置く理由になる。規範の配送と権限の自動許可は比較の対象から外れる。
-現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`「遮断・警告フックの成立条件」にある。
+現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
 
 2026年9月26日の見直しは、当時のユーザー指示による基準「通した場合に元へ戻せない結果を防ぐものだけを残す」で行った。
 規範の想起、CLI形式の事前検出または文体の検出を目的とするチェックは、可逆な失敗を防ぐに留まるとしてhookから外した。
@@ -75,6 +75,7 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないpromptが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないsession_idが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}は、session_idに対応する絶対cwdが保存されていないため続行できない。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
+| `pretooluse/confirmation_reads.py` `unread_reference_warning` | メインが`agent-toolkit:user-confirmation-and-report`の`references/approval-scope.md`か`references/choice-construction.md`を、最後の会話圧縮より後に読まないまま`AskUserQuestion`を呼んだ場合の警告 | H | 新設（明らかな行動誤り・低費用、2026年10月6日）：判定はtranscriptの最後の`compact_boundary`より後に、`Read`の`file_path`か`Bash`のコマンドで2資料を読む操作があるかだけから確定し、読んだ内容の理解は判定しない。警告にとどめ反復しても昇格させないのは、2026年10月6日にユーザーが確認への回答で、`AskUserQuestion`の呼び出しはトークン数が多いことが多く遮断の無駄が大きいとしたためである。主な対策は読込表と常時規範の操作名の書換であり、本判定は補助である。経緯は「AskUserQuestion前に読む資料の未読の警告（2026年10月6日）」にある。未読の組合せ、会話圧縮、非遮断、主体の除外を`confirmation_reads_test.py`で確認 |
 | `pretooluse/content_checks.py` `_collect_edit_operation_warnings` | ファイル末尾のツール境界タグ混入を警告 | X | 維持（データ破損）：編集本文へツール境界タグが混入するとPythonまたは計画本文に制御文字列が残る。編集後の像と対象パスを比べる処理を実装で確認 |
 | `pretooluse/content_checks.py` `_warn_mojibake` | 本文`{body}`と、解消手段`{fix}`を渡した`次の操作:`の行 | X | 維持（データ破損）：編集行の文字化けは元の文字を復元できないままエンドユーザー向け本文へ配布される。文字列検出分岐を実装で確認 |
 | `pretooluse/content_checks.py` `_check_ps1_eol` | f'{tool_name}.{field}にLFだけの内容を検出した。この書き込みではUTF-8 BOMが失われて日本語が文字化けし、.gitattributesの*.p… | X | 維持（データ破損）：PowerShell配布ファイルのBOM・改行喪失で日本語と実行形式が変わる。書込対象と改行の判定を実装で確認 |
@@ -84,9 +85,9 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `pretooluse/dispatch.py` `_handle_bash_tool` | '未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。'と、'次の操作: 完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。' | O | 維持（データ破損）：未完了のバックグラウンドタスクが書くファイルを読むと途中の内容を結果と誤認する。対象出力とタスク状態を比べる処理を実装で確認 |
 | `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：Codexのシェル出力の上限を超えた取得は本文を欠落させ、欠落した範囲を回復できない。Claude Codeはホストが`PARTIAL view`または退避ファイルを返し残りを続けて取得できるため対象外とする。遮断後に対処する型であり、閾値48KiBは配布設定の出力上限20,000トークンと測定した1トークンあたりバイト数の最小値3.10から導く（測定は`docs/development/audit-records.md`）。通知は閾値以下の連続行範囲を`sed -n`の形で示す。境界と範囲案を実装・テストで確認 |
 | `pretooluse/large_reads.py` `_large_multi_read_notice` | Bashでの複数ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：複数ファイルの合計が上限を超える取得も同じく本文を欠落させる。遮断後に対処する型で、閾値は前行と同じ。合計判定をテストで確認 |
-| `pretooluse/operation_skills.py` `operation_skill_warnings` | `agent-toolkit:search`を起動しないまま検索（`Grep`・`Glob`、パイプラインの先頭区間の`rg`・`git grep`・`find`・再帰の`grep`系）を実行した呼び出しへの、文脈ごとに1回の警告 | O | 新設（明らかな行動誤り・低費用、2026年10月6日）：起動の契機はセッション開始時に配送されていたが、検索の時点に手掛かりが無く、範囲を見込みで狭めた検索から参照元を漏らした。判定はツール名、コマンド文字列およびSkill起動の記録から確定し、発火は呼び出し主体の文脈ごとに1回である。遮断しない理由と代替案は「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」にある。正例・負例、文脈の分離と`SessionStart`のリセットを`operation_skills_test.py`・`rules_context_test.py`で確認 |
+| `pretooluse/operation_skills.py` `operation_skill_warnings` | `agent-toolkit:search`を起動しないまま検索（`Grep`・`Glob`、パイプラインの先頭区間の`rg`・`git grep`・`find`・再帰の`grep`系）を実行した呼び出しへの、文脈ごとに1回の警告 | O | 新設（明らかな行動誤り・低費用、2026年10月6日）：起動の契機はセッション開始時に配送されていたが、検索の時点に手掛かりが無く、範囲を見込みで狭めた検索から参照元を漏らした。判定はツール名、コマンド文字列およびSkill起動の記録から確定し、発火は呼び出し主体の文脈ごとに1回である。遮断しない理由と代替案は「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」にある。正例・負例、文脈の分離と`SessionStart`のリセットを`operation_skills_test.py`・`rules_context_test.py`で確認。2026年10月7日に`agent-toolkit:bugfix`を、`## 原因分析`だけから成る行を書く操作（`Write`・`Edit`・`MultiEdit`・`apply_patch`の変更後の断片とBashのコマンド文字列）で登録し、編集ツールでも判定するようにした。同日に`agent-toolkit:managed-temp`を`atk managed-temp create`の実行（区間の`managed-temp`・`create`の連続。直前が`atk`か区間の先頭）で登録した。`cleanup`と`list`は回収と一覧で置き場所を選ばないため除く |
 | `pretooluse/shell_checks.py` `_check_bash_option_after_terminator` | オプション終端`--`の後ろへ置いた`rg`・`grep`系・`git log`・`git diff`・`git show`・`git grep`自身のオプションの遮断 | O | 新設（明らかな行動誤り・低費用、2026年10月2日再評価）：`--`の後ろのオプションは存在しないパスとして失敗するか、`git`ではエラーを出力せずにパス指定になり誤った結果を返す。2026年9月21日、9月26日、10月2日と条文の改訂後も反復し、旧基準ではhook案を採用せず条文へ切り替えていた。判定はコマンド文字列から確定でき、遮断で失うのはコマンド1回の発行だけである。`-e`・`-f`を`--`より前に置かない`rg`・`grep`系と`git grep`だけ、`--`の直後を検索パターンとして除き、`git grep`ではその後ろに現れるrevision・パスの区切り`--`も除く。`-e`・`-f`を`--`より前に置く場合は`--`の後ろを全てパスとして判定する。置換内の語を外側の引数へ混ぜず、外側の既知の引数だけを判定する。`git grep`の検索パターンと区切りの位置の解析は、プロセス終了の判定（`_git_grep_literal_pattern_indices`）と共通の1関数が担い、git 2.47.3・ripgrep 15.2.0・GNU grepの実行で確かめた受理形式に合わせる。判定と除外を`shell_checks_test.py`で確認 |
-| `pretooluse/shell_checks.py` `_check_bash_atk_output_loss` | atkから後段へ出力を渡すパイプと、`atk agents wait`のシェル背景化・標準出力破棄の遮断 | O | 新設（結果受領の喪失・低費用）：同じ会話でwaitの`&`と標準出力破棄が反復し、別担当のatk出力パイプも観測された。結果・保存先・終了状態を直接受領できない入力を、既存PreToolUseで起動前に止める。判定はatkの実行位置と出力接続へ限定し、ホスト管理の背景実行・対象限定・出力保存を通す。CLI側ではホストの配送パイプと任意の後段を区別できず、文書だけでは反復を止められなかったため、この入力境界で遮断する。一般の検証コマンドの出力切り詰めチェックを復元する案は、正当な操作の誤検出を増やすため採らない。接続と通知、正常な対照をshell_checks_test.py・dispatch_test.pyで確認 |
+| `pretooluse/shell_checks.py` `_check_bash_atk_output_loss` | atkの出力のパイプとリダイレクト（ファイル、`/dev/null`、別のファイル記述子、未確定のパスを区別しない）と、`atk agents wait`のシェル背景化の遮断 | O | 新設（結果受領の喪失・低費用）：同じ会話でwaitの`&`と標準出力破棄が反復し、別担当のatk出力パイプも観測された。結果・保存先・終了状態を直接受領できない入力を、既存PreToolUseで起動前に止める。判定はatkの実行位置と出力接続へ限定し、ホスト管理の背景実行・対象限定を通す。2026年10月6日、リダイレクト保存と直後の再読（2026年9月29日以降のClaude Codeの記録で620件、うち342件が3回以内に再読）を観測し、atkが長い出力を自ら保存するため全量は保存先から読めることから、出力保存の許容を外して全てのリダイレクトを遮断の原因へ統合した。waitだけに適用していた標準出力の破棄の原因もこの原因へ統合した。`atk serve`、`atk wi process-loop`の常駐、`atk agents logs --follow`は保存の対象外で背景起動に出力のログへの移動を要するため、リダイレクトの原因から除く。常時規範`02-agent-operations.md`のatkの項にも同じ前提と指示を置き、遮断に至る前に正しい呼び出しを選べるようにした。CLI側ではホストの配送パイプと任意の後段を区別できず、文書だけでは反復を止められなかったため、この入力境界で遮断する。一般の検証コマンドの出力切り詰めチェックを復元する案は、正当な操作の誤検出を増やすため採らない。接続と通知、正常な対照をshell_checks_test.py・dispatch_test.pyで確認 |
 | `pretooluse/shell_checks.py` `_check_bash_process_kill_by_pattern` | 'blocked: パターン一致によるプロセス終了（pkill／killall）は、対象プロセスの所有を確認できないため禁止する。' | O | 維持（不可逆）：pkill・killallのパターン一致は所有外プロセスを終了し、終了したプロセスは元へ戻せない。終了対象の指定形を実装で確認 |
 | `pretooluse/shell_checks.py` `_check_bash_unquoted_heredoc_substitution` | 区切り語を引用しないheredocの本文にある、エスケープされていないバッククォートと`$(...)`の遮断。通知は検出した置換と、区切り語の引用・事前の変数代入・エスケープによる書き直しを示す | X | 新設（不可逆、2026年10月6日）：通すと置換の中のコマンドが実行され、外部への保存とpush、プロセスの終了、ファイルの上書きなど復元できない結果が残る。2026年10月6日にMarkdownのコード表記として書いた`atk wi add`が実行され、検収前の原稿がAWIとして保存された。判定はコマンド文字列から確定し、遮断で失うのはコマンド1回の発行だけである。`$VAR`・`${VAR}`・`$((...))`、エスケープ済みの表記、引用付きの区切り語の本文、here-stringは対象外とする。区切り語の形と本文の内容の組み合わせ表を`shell_checks_test.py`・`bash_command_parser_test.py`で確認 |
 | `pretooluse/shell_checks.py` `_warn_git_rev_parse_short_multiple` | `git rev-parse --short`へ複数のrevisionを渡すコマンドへの警告 | O | 維持（明らかな行動誤り・低費用、2026年10月2日再評価）：条文を加えた後も同じ失敗が4回の振り返りで扱われた。外側の確定した複数revisionを警告し、置換内の語数を外側の個数へ含めない。展開後の個数を確定できない場合は警告を見送る。旧基準の下では存廃を確認中として表に行が無かった。判定を`shell_checks_test.py`で確認 |
@@ -95,7 +96,7 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 | `queued_notification_advisor.py` `evaluate` | 未配送通知の発生元のツールの種別を確かめ、Agent・Taskは返却メッセージの利用を、Bashと不明種別は出力ファイルの読取を案内する | X | 維持（常駐運用の終端保証）：完了通知を待ってツールを呼ばずにターンを終える反復が、目標評価と継続を空転させる。キューの残存と案内済み記録を比べる処理を実装・テストで確認 |
 | `subagent_stop_advisor.py` `main` | '停止する前に、そのターンで返すつもりだった内容を含む完了報告を出力する。委譲元は遮断された報告本文を保持しない。' | D | 維持（常駐運用の終端保証）：空の完了報告で停止すると委譲元に結果が届かない。出力本文の有無を実装で確認 |
 | `termination_order_advisor.py` `evaluate` | '\n\n'.join(missing_bodies) | D | 維持（常駐運用の終端保証）：終端順序の未実行で外部処理と記録が未完となる。順序入力と実行済み記録を比べる処理を実装で確認 |
-| `user_response_advisor.py` `evaluate` | 人間の発話の後に可視の本文が無いメインのStopの遮断 | H | 復元（明らかな行動誤り・低費用、2026年10月2日再評価）：拡張思考へ置いた回答は表示されたかをエージェントが確かめられず、届かない場合にユーザーが問い直す往復が生じる。2026年9月28日に規範を加えた後も9月30日に再発した。判定はtranscriptの要素種別とtextの有無から確定でき、本文の出力だけで解除できる。旧基準と、9月28日にユーザーがStop hookを否定した手段の方針によって一度撤去したが、ユーザーの事後承認を得て復元した。判定と委譲先・サブエージェントの除外を`user_response_advisor_test.py`で確認 |
+| `user_response_advisor.py` `evaluate` | 人間の発話の後に可視の本文が無いメインのStopの遮断 | H | 復元（明らかな行動誤り・低費用、2026年10月2日再評価）：拡張思考へ置いた回答は表示されたかをエージェントが確かめられず、届かない場合にユーザーが問い直す往復が生じる。2026年9月28日に規範を加えた後も9月30日に再発した。判定はtranscriptの要素種別とtextの有無から確定でき、本文の出力だけで解除できる。旧基準と、9月28日にユーザーがStop hookを否定した手段の方針によって一度撤去したが、ユーザーの事後承認を得て復元した。可視の本文には`send_to_user`の`message`を含める（2026年10月6日）。この判定をツール呼び出しより前の地の文が要約へ置き換わる事象の検出へ広げない。発話したつもりで実際には届いていない事象は発話を契機とする判定では捉えられないため、とユーザーが判断した（2026年10月6日）。判定と委譲先・サブエージェントの除外を`user_response_advisor_test.py`で確認 |
 
 Stopの登録は共通ハンドラー1件とする。
 共通ハンドラーから、`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ちを判定する。
@@ -106,7 +107,7 @@ Stopの登録は共通ハンドラー1件とする。
 続いて、`autonomous_exit.py`による常駐ループの`atk agents-exit-session`実行忘れを判定する。同モジュールは入力待ちの判定より先に、終了要求が`requested`でStop入力に有効な非`teammate`のバックグラウンドタスクが残る場合の取り下げを判定する。Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
 続いて、`plan_save_advisor.py`で`~/.claude/plans`に残る計画バンドルの保存を確認し、`agents_server_session_advisor.py`で観測を試みていない作業が残るsessionを警告する。
 続いて、`pending_question_advisor.py`で地の文の問いかけによる終了を遮断し、`termination_order_advisor.py`で終端順序の未実行を判定する。
-両判定の間に、`user_response_advisor.py`が最新の人間の発話の後に可視の本文が無い終了を遮断する。開始時の文字列入力と途中配送のqueued_commandを扱い、thinking・ツール結果・空白・待機記号を本文へ数えない。task-notificationを最新入力とする待機の回と委譲先は除く。回答が質問に答えているかは判断せず、同じターンで本文を出力すれば解除できる。
+両判定の間に、`user_response_advisor.py`が最新の人間の発話の後に可視の本文が無い終了を遮断する。開始時の文字列入力と途中配送のqueued_commandを扱い、thinking・ツール結果・空白・待機記号を本文へ数えない。`send_to_user`の呼び出しの`message`はユーザーの画面へ届く本文として数える。task-notificationを最新入力とする待機の回と委譲先は除く。回答が質問に答えているかは判断せず、同じターンで本文を出力すれば解除できる。
 最後に、`queued_notification_advisor.py`で最上位transcriptのキューに残る未配送の完了通知を案内する。
 共通ハンドラーは判定の順序、例外の隔離、応答の集約および連続blockの上限管理だけを持つ。判定条件と通知本文は各判定モジュールが持つ。
 これら以外を扱わず、ユーザーの意図、作業完了、振り返り要否、Git変更件数、managed-temp回収要否を判定しない。
@@ -239,7 +240,7 @@ Stopの共通ハンドラーは、判定の集約に加えて連続blockの上�
 
 ### 事前に防ぐ型と遮断後に対処する型（2026年9月29日）
 
-blockとwarnは、実行主体が操作の前に条件を満たす事前に防ぐ型と、hookが判定を担い通知が解消手段を示す遮断後に対処する型に分け、費用の小さい型を選ぶ。規定の本文は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`にある。
+blockとwarnは、実行主体が操作の前に条件を満たす事前に防ぐ型と、hookが判定を担い通知が解消手段を示す遮断後に対処する型に分け、費用の小さい型を選ぶ。規定の本文は`agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`にある。
 事前に防ぐ型の費用は、対象の操作のたびに規範が求める事前工程の呼び出しの合計である。遮断後に対処する型の費用は、実際の遮断回数に、遮断された呼び出しと通知に従った取得の分を掛けた量である。
 CodexのBash全文取得は、閾値が出力上限から導かれていなかった間、SKILL.mdなどを読む前に`wc -l`・`wc -c`で行数と容量を測る事前工程を操作のたびに生んでいた。事前計測の呼び出しは失敗しないため振り返りの候補にも現れず、費用が観測されなかった。閾値を出力上限から導いた48KiBへ上げると、agent-toolkitの規範Markdownはすべて閾値以下に収まり、遮断は実際に上限を超え得るファイルだけで発火する。このため同hookを遮断後に対処する型とし、規範から事前計測を撤去した（2026年9月29日、ユーザー指示）。規範Markdownが閾値を超えないことは`agent-toolkit/markdown_size_invariant_test.py`の容量のテストが保つ。
 
@@ -263,8 +264,19 @@ Claude Codeはツールを遅延読み込みし、スキーマを取得する最
 
 却下した代替案は3つある。
 PreToolUseで通知する案は、規範の想起を目的とするチェックをhookに置かない前節の方針に反する。
-この方針は2026年9月26日の旧基準（元へ戻せない結果を防ぐものだけを残す）に由来する。現行の判定は`claude-hooks.md`「遮断・警告フックの成立条件」の費用比較で行い、その比較による採否は「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」が示す。本節の判断そのものは見直していない。
+この方針は2026年9月26日の旧基準（元へ戻せない結果を防ぐものだけを残す）に由来する。現行の判定は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の費用比較で行い、その比較による採否は「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」が示す。本節の判断そのものは見直していない。
 `agent-toolkit:delegation`のdescriptionへ起動の語を加える案は、descriptionを対象作業と発火条件に限る規定に反し、単発の委譲のたびにスキル本体と参照資料を読む費用を生む。
+
+2026年10月7日、`agents_server`の`start`での定期再確認の装着を、モデルが起動前に行う手順からClaude Codeのmod（`agent-toolkit/hooks/periodic_recheck.ts`）が`start`の処理の中で行う方式へ改めた。
+ユーザーが`<役割名>.parent.md`による起動までの手順の多さを指摘し、`start`の後の自動化を求めたためである。
+modは呼出主体が定期再確認のtaskを持たない場合に`atk wait-schedule`と同じcron式で`CronCreate`を作成し、task IDを`start`の結果の後に届ける。装着できない場合は、モデルが規範の手順で装着する案内を届ける。
+装着がモデルの遵守に依存しなくなり、起動前の`atk wait-schedule`、`ToolSearch`と`CronCreate`の呼び出しが不要になる。前段の`start`の公開説明の手掛かりは、装着できなかった場合と`Agent`ツールの委譲の手順への案内へ改めた。
+定期promptの本文は`agent-toolkit/hooks/periodic_recheck_prompt.ts`だけが持ち、modとモデルが同じ本文を使う。
+`hooks.json`の`modules`は1件だけを受理し、ツール名の条件を持たない同じイベントのhookは1回しか登録できない。このためmodのhookは`agent-toolkit/hooks/register.ts`から登録し、本体を別モジュールに置く。
+却下した代替案は3つある。
+PostToolUseのhookがcron式と`CronCreate`の引数を通知する案は、モデルの`ToolSearch`と`CronCreate`の呼び出しが残り、装着がモデルの遵守に依存する点を除けない。
+`start`の応答へcron式を同梱する案は、サーバーが呼出主体のrequest bucketとホストの`CronCreate`の有無を知らず、Codexへも同じ応答が返るため成立しない。
+modが`$.clock.every`と`$.prompt.submit`で定期再確認そのものを行い`CronCreate`を使わない案は採らない。`CronCreate`を前提とする既存の契約（Stopの非同期待機の判定、taskの再利用と削除、`/exit`前の削除）を再設計する必要があり、起動前の手順を減らす要求に対して変更が大きい。
 `agent-toolkit/share/rules-main.claude-code.md`へ追記する案は、常時規範への新しい規定の追記に当たり、メインだけへ配られるため委譲先が委譲する場合を覆わない。
 観測した事象では条文がセッション開始時の文脈にあったため、同じ層へ文を移しても想起の条件は変わらない。
 
@@ -273,7 +285,7 @@ PreToolUseで通知する案は、規範の想起を目的とするチェック�
 2026年10月3日のCodexで、振り返りの準備と通読の後に応答を終え、分析と最終報告の再開にユーザーの指示を要した。同じ日に、構造確認に合格した振り返り結果を最終回答へ載せず、AWI登録の説明だけで終えた事象もあった。どちらも続行と発話の規範は配送されていた。ユーザーは対策を文書の追記だけに頼る再発防止を否定し、Stopフックでの対策を提案した。
 既存の`termination_order_advisor`は起動順だけを再入時に判定して初回Stopを許可し、`user_response_advisor`は可視本文の有無だけを調べるため、どちらの不足も検出できなかった。
 規範の想起を目的とするチェックをhookに置かない前節の方針は維持する。本機構が判定するのは想起ではなく、実際の準備結果と可視発話から機械的に確定する不足である。
-この方針は2026年9月26日の旧基準に由来し、現行の判定は`claude-hooks.md`「遮断・警告フックの成立条件」の費用比較で行う（「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」）。
+この方針は2026年9月26日の旧基準に由来し、現行の判定は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の費用比較で行う（「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」）。
 
 判定と保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`へ集約する。PreToolUse・PostToolUse・UserPromptSubmitは既存のエントリーポイントから準備結果・呼び出しと人間の入力を供給する。Stopの集約は既存の例外隔離と連続block上限を保ち、`termination_order_advisor`が可視発話の報告見出しと、`agent-toolkit:completion-report`が定義する報告本文の判定で不足を示す。起草・確認・再出力は報告ごとに同じ本文の二重出力とツールの往復を必要とするため除去し、直接発話へ移した。言い回しへ判定を広げる案は、許容された不備のたびに報告全体の再発話を必要とするため採らない。
 作業の同一性は報告ファイルのパスではなく、入力、呼び出し、開始と判断記録で区切る。同じパスを使う新しい仕事へ古い中止や充足を流用すると、不足を見逃すためである。
@@ -308,9 +320,9 @@ Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`
 範囲語の有無は条件に含めない。過去の実ユーザー発話の計測では、例示の語と調査を求める語を併せ持つ8件のうち7件が範囲語の候補を含み、候補は「など」「とか」のような一般的な語に頼るため、条件に加えても発火はほとんど減らず判定の意味も持たない。
 注記は同項と`agent-toolkit:delegation`の`references/routing.md`「コンテキスト消費が大きい調査の切り出し」の所在を絶対パスで示し、自ら調査へ着手する前の適用を求める。手順そのものは本文へ再掲しない。経過時間の条件と状態の記録を持たず、該当する発話ごとに返し、成立した他の注記と1つの`additionalContext`へ結合する。
 
-この注記は遮断も警告もせず規範の所在を示す配送であり、`agent-toolkit/skills/writing-standards/references/claude-hooks.md`「遮断・警告フックの成立条件」の費用比較の対象から外れる。同書「UserPromptSubmit」が注入の頻度で分ける2種別（通常発話ごとに毎回返す読込だけの注記と、経過時間が閾値以上の発話へ返す判定手順の注記）のどちらにも当たらない。字面の一致した発話だけへ返す条件付きの注記であり、規範側にこの種別の定めは無い。
+この注記は遮断も警告もせず規範の所在を示す配送であり、`agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の費用比較の対象から外れる。`claude-hooks-output.md`「UserPromptSubmit」が注入の頻度で分ける2種別（通常発話ごとに毎回返す読込だけの注記と、経過時間が閾値以上の発話へ返す判定手順の注記）のどちらにも当たらない。字面の一致した発話だけへ返す条件付きの注記であり、規範側にこの種別の定めは無い。
 「warn・block判定の全件確認（2026年9月26日）」以降の各節が規範の想起を目的とするチェックをhookに置かないとした方針は、操作を判定して警告や遮断を返すチェックを対象とし、本注記とは区別する。
-この方針は2026年9月26日の旧基準に由来し、現行の判定は`claude-hooks.md`「遮断・警告フックの成立条件」の費用比較で行う（「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」）。
+この方針は2026年9月26日の旧基準に由来し、現行の判定は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の費用比較で行う（「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」）。
 本節の前にある応答契約の注入で退けた、発話の内容から是正要求を判別する案とも区別する。退けた案は経過時間が閾値以上の発話へ返す応答契約の注入の条件を発話の内容の判別へ置き換える案であり、判別の誤りが注入の欠落として観測されない。本注記は注記の無い状態へ字面の一致で注記を加えるだけであり、一致しない発話の扱いは変わらない。発話が同項に当たるかは受領したメインが同項を読んで判断し、hookは発話の意味を判断しない。
 字面の一致を契機に規範の所在を示して判断を受領側へ残す形は、全角`！！`から`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す注記（`design-hosts.md`「ユーザーとの認識合わせ」）と同じである。
 
@@ -328,7 +340,7 @@ Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`
 
 2026年10月6日のClaude Codeのセッションで、メインが`agent-toolkit:search`を起動しないまま、検索の範囲を`agent-toolkit/`・`docs/`・`.claude/`へ見込みで狭めて参照元を列挙した。その結果、リポジトリ直下の参照元が漏れた（経緯は`incidents-validation.md`「規範の消失・陳腐化」）。
 同スキルの起動の契機（descriptionと常時規範の参照文）は文脈に配送されていたが、検索する時点に未起動を示す手掛かりが無かった。2026年9月27日以降の記録では、検索を含む512セッションのうち同スキルを検索前に起動したのは1セッションだった。
-そこで`pretooluse/operation_skills.py`が、操作を起動の契機とするスキルと操作の判定関数の組の表を持ち、表のスキルが未起動のまま操作した呼び出しへ警告する。登録は`agent-toolkit:search`の1件とする。
+そこで`pretooluse/operation_skills.py`が、操作を起動の契機とするスキルと操作の判定関数の組の表を持ち、表のスキルが未起動のまま操作した呼び出しへ警告する。登録の一覧は同ファイルの`OPERATION_SKILLS`が持つ。
 
 判定の入力はツール名、コマンド文字列およびSkill起動の記録だけとする。`agent-toolkit:search`が対象とする操作は、Claude Codeの`Grep`・`Glob`と、Bashの呼び出しである。Bashはパイプラインの先頭区間（`extract_execution_pipelines`）が`rg`・`git grep`・`find`か、再帰オプション付きの`grep`・`egrep`・`fgrep`である場合とする。パイプラインの2番目以降の区間は標準入力を検索するため除く。
 `agent_id`で呼び出し主体を区別し、メイン会話と`Agent`ツールのサブエージェントを別の文脈とする。`agents_server`の委譲先は別のセッションとして自身の状態ファイルで判定する。
@@ -339,7 +351,7 @@ Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`
 発火は文脈ごとに1回であり、検索を含むセッションで検索約15件に1件の警告が加わるに留まる。
 
 「委譲手段の選択と待機の装着の手掛かり（2026年10月1日）」「終了工程の証拠と報告の発話の確認（2026年10月3日）」「範囲語と例示を併せた調査依頼の注記（2026年10月5日）」の各節は、規範の想起を目的とするチェックをhookに置かない方針を維持するとした。
-この方針は2026年9月26日の旧基準（元へ戻せない結果を防ぐものだけを残す）から導かれ、旧基準は2026年10月2日のユーザー指示で現行の費用比較へ改められた。本判定は現行の`claude-hooks.md`「遮断・警告フックの成立条件」で判定した。明らかな行動誤りを入力から機械的に判定でき、文脈ごとに1回の警告で費用が小さい。2026年10月1日の委譲手段の選択で退けた判断そのものは見直していない。
+この方針は2026年9月26日の旧基準（元へ戻せない結果を防ぐものだけを残す）から導かれ、旧基準は2026年10月2日のユーザー指示で現行の費用比較へ改められた。本判定は現行の`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」で判定した。明らかな行動誤りを入力から機械的に判定でき、文脈ごとに1回の警告で費用が小さい。2026年10月1日の委譲手段の選択で退けた判断そのものは見直していない。
 
 2026年8月に、`agent-toolkit:delegation`の起動記録が無いことを理由とするPreToolUseの遮断・警告と専用の状態記録を撤去した（`incidents-runtime.md`「フック・セッション状態の不全」）。撤去の理由は、単発の基本委譲と、起動方式の選択・継続・複数主体調整を要する高度な委譲を、同じ必須手順として扱ったことにある。
 本判定はこの前例と次の点で異なる。`agent-toolkit:search`は常時規範（`02-agent-operations.md`「ツール・コマンド運用」）が全ての内容検索の手段の選択へ適用するスキルであり、基本と高度の区別を持たない。本判定は遮断せず、文脈ごとに1回だけ警告する。
@@ -359,6 +371,94 @@ Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`
 表へスキルを加える場合は、操作の判定関数とその正例・負例のテストを同じ変更単位で加え、費用の比較を別に行う。
 同じ構造を持つスキルには`agent-toolkit:check-execution`、`agent-toolkit:commit`、`agent-toolkit:writing-standards`がある。
 `agent-toolkit:delegation`と`agent-toolkit:external-write-review`も同じ構造を持つ。いずれも観測事象への寄与と費用を確かめていないため登録していない。
+
+2026年10月7日に`agent-toolkit:bugfix`を登録した。WI投入担当が観測した欠陥を起点とする要求の原因分析を同スキルを起動せずに起草した記録が、原因分析を書いた45件中12件あった（`incidents-validation.md`「誤判定・検証不足」）。
+判定は`## 原因分析`だけから成る行を書く操作であり、ツール入力だけで確定する。過検出は同じ見出しを持つテンプレートなどを編集する場合の1回の警告に留まる。
+遮断しない理由は`agent-toolkit:search`と同じく、スキルの起動が努力目標であり、原稿の書込を遮断すると書いた内容を失うためである。編集ツールを判定するため、`dispatch.py`は編集ツールの処理でも`operation_skill_warnings`を呼ぶ。
+`agent-toolkit:writing-standards`の`references/investigation.md`などの読込は、外部の挙動を書くかが本文の意味に依存し機械的に判定できないため登録しない。
+
+同日に`agent-toolkit:managed-temp`も登録した。`.git`を含む個別の領域へ参照される保存物を置き、領域の回収で失った事象があり（`incidents-data-security.md`「データ破壊・喪失」）、置き場所の規定は同スキルにある。
+記録のうち`atk managed-temp create`を実行した134セッションで同スキルを起動したのは7セッションだった。判定はBashのコマンド文字列で確定し、`for … ; do atk …`と`d=$(atk …)`の形も検出するため、区間の先頭のトークンではなく`managed-temp`・`create`の連続とその直前で判定する。
+`cleanup`と`list`は置き場所を選ぶ操作でないため除く。回収の時点の警告は削除を止めないため置かない。
+
+### 退避したシェル出力の抜粋の置き換え（2026年10月6日）
+
+Claude CodeのBashとPowerShellは、出力が上限（`bashOutputMaxChars`、指定しない場合30,000。比較はUTF-8のバイト数）を超えると全量を保存先へ書き、モデルへ渡すツール結果を`<persisted-output>`と出力の先頭約2KBの抜粋へ置き換える。
+抜粋は取得結果の全体と同じ位置と形で届くため、2026年10月6日のセッションでは、メインがエージェント向け文書を数件まとめて`cat`した結果の抜粋だけを読み、保存先を読まずに委譲を起動した。
+`02-agent-operations.md`の`Read`の箇条は残りを読むよう定めていたが、条件の主語が`Read`であり、Bashで読んだ結果へ当てはめる想起だけに依存していた。
+
+そこで`posttooluse.py`が、`tool_response`に空でない文字列の`persistedOutputPath`を持つBashとPowerShellの結果へ`hookSpecificOutput.updatedToolOutput`を返す（判定と本文は`persisted_output.py`）。
+返す値は`tool_response`の写しの`stdout`だけを、退避したことと保存先の絶対パス、元の出力のバイト数および保存先を末尾まで読む次の操作を示す本文へ置き換え、`stderr`・`persistedOutputPath`・`persistedOutputSize`などの項目を保つ。
+ホストは置き換えた値を`Preview`として示すため、受け取る本文から元の出力の先頭が消え、抜粋を全体として扱う余地が無くなる。保存先のファイルは元の全量を保持する。
+退避の有無はホストが付ける`persistedOutputPath`で判定し、上限値をhook側で再実装しない。PowerShellもBashと同じ出力スキーマと上限を持つため`hooks.json`の`matcher`へ加えた。
+`updatedToolOutput`を選んだのは、本体の出力スキーマがこの項目を「Replaces the tool output before it is sent to the model」と説明し、`updatedMCPToolOutput`より全ツールへ働く項目として案内しているためである。既存のPostToolUseの起動に相乗りし、新しいイベントの登録、セッション状態および起動を加えない。
+同じ呼び出しで他の分岐が`additionalContext`を返す場合は、1つのJSONへ両方を入れる。transcriptの`toolUseResult.stdout`も置き換えた本文になるため、`session_review_evidence.py`は`persistedOutputPath`が実在するファイルを指せばその内容を検索と警告の抽出の実体とする。
+CodexのPostToolUseは`persistedOutputPath`を持たず（出力は退避ではなく切り詰めで返る）、置き換えは発動しない。
+
+あわせて`share/claude_settings_json_managed.json`へ`bashOutputMaxChars`を配布し、エージェント向け文書の通常の取得が退避されないようにした。値の導出と観測は`operations.md`「Claude CodeのBash出力の上限」にある。
+62,000バイトを超える出力は退避され、この置き換えの対象となる。
+
+却下した代替案は次のとおりである。
+
+| 案 | 採らない理由 |
+| --- | --- |
+| 規範の条文だけを改める | 該当条文が文脈にある状態で、エージェント向け文書をまとめて読んだ取得の未読が8件起きていた。条文の想起だけに依存する構造が残る |
+| PostToolUseでMCPツールの退避も置き換える | MCPツールのPostToolUseの`tool_response`は退避の有無を示す項目を持たない元の出力であり、判定にホストの上限の再実装を要する。MCPの退避は集計期間に1件で、規範の書き直しで覆う |
+| PostToolBatchで`<persisted-output>`を検出して通知する | 全ツールを覆えるが、全ての呼び出しの組ごとにhookの起動（約0.35秒）を加える。MCPの退避は集計期間に1件だった |
+| 次のツール呼び出しで保存先を読んだかを判定して警告・遮断する | 置き換えの後は全体と誤認される抜粋が残らないため防ぐ誤りが無く、件数や対象を限定して取り直す正当な操作を誤検出する |
+| `large_reads.py`の全文取得の判定をClaude Codeへ広げる | 未読8件のうち`cat`へ複数ファイルを渡す単純な形の3件しか静的に判定できない |
+| Bashの退避を失敗として返す | 同じ版の設定スキーマにその設定が無い。置き換えでツール結果そのものが未読を示す形にする |
+| 上限を最大の128,000にする | 1回のツール出力が約41,000トークンとなり、Codexへ配布する上限（20,000トークン）と`Read`の上限（25,000トークン）を超える |
+
+### AskUserQuestion前に読む資料の未読の警告（2026年10月6日）
+
+2026年10月6日のClaude Codeのセッションで、メインは確認の前に全文読む2資料のどちらも読まずに`AskUserQuestion`を2回発行した。2資料は`agent-toolkit:user-confirmation-and-report`の読込表が定める`references/approval-scope.md`と`references/choice-construction.md`である。
+1回目は委譲先の未検証の件数を`共通前提:`行へ書き、ユーザーは回答でその前提を問い返した。
+読込表の2行の条件は工程名（「確認要否の判定」「確認の選択肢を組む手順」）だけで書かれ、同スキルの`description`も`AskUserQuestion`を名指ししていなかった。
+
+主な対策は名指しの書換である。読込表の2行と`description`、Claude Codeの`rules-main.claude-code.md`、Codexの`rules-main.codex.md`の確認の箇条を`AskUserQuestion`とCodexの構造化質問・固定形式の質問という操作の名前で書き、2資料を読む指示を持たせた。
+補助として`pretooluse/confirmation_reads.py`が、メインが最後の会話圧縮より後に2資料のどちらかを読まないまま`AskUserQuestion`を呼んだ場合に警告する。
+警告は読んでいない資料の絶対パスと、回答に依存する操作の前にその資料を読んで発行した質問の前提と選択肢を確かめる次の操作を示す。
+CodexはAskUserQuestionを持たず、確認を本文の固定形式でも提示するため、呼び出しを判定するhookで覆えず書換が対応する。
+
+「委譲手段の選択と待機の装着の手掛かり（2026年10月1日）」などの節は、規範の想起を目的とするチェックをhookに置かない方針を維持するとし、2026年10月5日の節は同方針の対象を「操作を判定して警告や遮断を返すチェック」と記す。本判定はこの文面に当たる。
+ユーザーは確認への回答で、方針から外れることを示されたうえで、警告までとする条件でhookを採用した（2026年10月6日）。判定は読取の操作の有無から機械的に確定し、2026年10月3日の節が置いた、実際の準備結果から確定する不足を判定するhookと同じ型である。
+
+却下した代替案は次のとおりである。
+
+| 案 | 採らない理由 |
+| --- | --- |
+| `AskUserQuestion`の呼び出しを遮断する | 呼び出しの入力はトークン数が多いことが多く、再発行の損失が大きいとユーザーが退けた |
+| 2資料をスキル本体へ戻す | 同スキルはほぼ全てのセッションで起動するため、`AskUserQuestion`を使わないセッションにも約2.3万バイトの読込を課す。ユーザーも選ばなかった |
+| 読込の指示を「確認要否の判定」節などの本文へ戻す | 条件付きの読込指示を読込表へ集め本文へ散在させない規定（`agent-documents-basics.md`「責務と構成」）に反する |
+| UserPromptSubmitで注記する | 確認を組む時点は発話の受領より複数のツール呼び出しだけ後にあり、発行の時点の手掛かりにならない |
+
+### send_to_userツール（2026年10月6日）
+
+Claude Codeでは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIがモデルの原文ではなく要約（progress updateの要約）へ置き換えて返す。原文は画面にもtranscriptにも残らず、メインは届いたとみなして作業を続ける。根拠は`audit-records.md`の「agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月6日」、事象は`incidents-validation.md`の2026年10月6日の項にある。
+
+ツールの入力は要約されないため、ターンの途中で原文どおり届ける内容をツールの入力で運ぶ。Function hooks module（`agent-toolkit/hooks/send_to_user.tsx`、`register.ts`から登録）は次を行う。
+
+- `session.start`で`$.tool.register`により`send_to_user`（入力は必須の文字列`message`だけ）を登録する。モデルは`mcp__agent-toolkit__send_to_user`の名前で呼ぶ
+- `tool.check`でこのツールの呼び出しを許可する。途中の報告のたびに権限確認の画面が出ると作業が止まるためである
+- `tool.call`で短い確認応答を返す
+- `ui.render`の`ToolUse`でこのツールの行を`message`の`Markdown`要素で描き、他のツールの行は後続へ渡して描き替えない
+
+ツールの登録と表示を同じmoduleに置くため、moduleを読み込まないClaude Code（管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が無い環境）とCodexにはツールが現れない。その環境のメインは`rules-main.claude-code.md`「ツールAPIと権限」に従い、届ける内容をターンを終える応答の本文へ書く。
+Claude Code 2.1.292では、hooks.jsonの`modules`は1件だけを受け付け、同じイベントで条件を持たないhookは1回だけ登録できる。`$`を渡せるのは同じファイルで宣言した関数に限られる。このため`register.ts`が唯一のmoduleとして`session.start`を1つにまとめ、`session_exit.ts`と`send_to_user.tsx`の`register`を呼ぶ。両ファイルが共有する値はツールの定義と`$`を受け取らない関数に限る。
+transcriptからユーザーへ届いた本文を数える処理は4つある。`user_response_advisor.py`、`termination_evidence.py`の`visible_messages`、`response_language_check.py`、`session_review_evidence.py`の`assistant`の出来事である。これらは`transcript.visible_text_blocks`で`send_to_user`の`message`を本文に含める。名前の前置部分はmoduleの登録が決めるため、末尾の`__send_to_user`で判定する。
+
+却下した代替案は次のとおりである。
+
+| 案 | 採らない理由 |
+| --- | --- |
+| `agents_server`へツールを置く | MCPサーバーは画面へ描く手段を持たない。moduleを読み込まない環境でも成功を返し、原文を描かないまま届いたことになる。2026年10月6日にユーザーがmoduleへ置く選択肢を選んだ |
+| 本体の組込み`SendUserMessage`を`--brief`か`CLAUDE_CODE_PEWTER_OWL_TOOL`で有効にする | `--brief`は通常の本文を画面から隠し全ての返答をツールへ求める。環境変数は公開された契約ではない |
+| `$.ui.log`で本文を通知として表示する | 試作の画面で改行が崩れた薄い表示になった |
+| `showThinkingSummaries`を`true`にする | ユーザーの設定を変え、表示されるのも原文ではなく要約である |
+| 報告でターンを終え、後続を次の応答で再開する | 2026年10月6日の確認でユーザーが選ばなかった |
+| `CLAUDE_CODE_THINKING_DISPLAY_UPDATES=false`か`CLAUDE_CODE_TURN_UPDATES`を設定する | 公開ドキュメントで記載を確認していない。前者はprogress updateが文面の空のまま返る側になり、後者は最後の本文の要約を促すだけで途中の原文を届けない |
+| 署名を解析して要約を検出するStop hook | 署名を読む手順を使わない方針（2026年10月7日）と、要約への置換をhookで検出しない判断（2026年10月6日、ユーザー）に反する |
 
 ### hook出力契約の自動チェック
 

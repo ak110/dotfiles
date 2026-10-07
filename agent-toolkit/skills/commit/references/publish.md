@@ -30,7 +30,7 @@ CIが実行しないチェックの集合は、プロジェクト規範がその
 
 push前に実行するチェックとローカルの全体検証は出力が大きいため、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の分離した実行（`agents_server`の`start`の`shell`など）で行う。`start`の`shell`へ渡す場合は、対象リポジトリを`cwd`、コマンドを変更せず`command`として渡す。managed-tempの中の標準出力・標準エラー保存先を`summary_policy`へ渡し、委譲先には双方の全量、終了コード、終了シグナル、警告と失敗行、保存先、切り詰めの有無を返させる。どの手段で実行した場合も、公開を担う主体は標準出力と標準エラーの保存先の実在と内容を確かめ、終了コード0を検収する。警告は意味で判定し（`agent-toolkit:bugfix`の`references/response.md`「問題を見つけたときの対処」）、未適用・未完了を示す警告は阻害とする。処理の成立に影響しない警告は根拠を報告へ残す。同じtreeと条件の結果を統合時に判定済みの場合は、その判定と根拠を引き継ぐ。
 
-失敗した場合は公開を担う主体が`agent-toolkit:bugfix`を起動し、直接的原因を確定して認可範囲内で是正する。`agent-toolkit:process-wi`の終端担当によるCI修正と返却は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「検証またはCIの失敗」が定める。
+失敗した場合は公開を担う主体が`agent-toolkit:bugfix`を起動し、直接的原因を確定して認可範囲内で是正する。`agent-toolkit:process-wi`の終端担当によるCI修正と返却は`agent-toolkit:process-wi`の`references/termination-ci-failure.md`「検証またはCIの失敗」が定める。
 
 ## pushと公開状態
 

@@ -161,7 +161,8 @@ _REQUIRED_INPUT_LINE_FORMAT = (
 # 委譲元がツールのエラー本文や状態値だけで次の行動を決められるよう、応答へ載せる次の操作の文面。
 # 同じ状況を複数の処理が返すため、処理ごとに書き分けず1か所へ置く。
 _TASK_DOCUMENT_PATH_NEXT_ACTION = (
-    "`subagent_md_path`へ`<plugin root>/share/*.subagent.md`の絶対パスを渡す。"
+    "`subagent_md_path`へ役割名（`share/<役割名>.subagent.md`の`<役割名>`。例: `add-wi`）か、"
+    "agent-toolkitの`share/*.subagent.md`の絶対パスを渡す。"
     "自由本文で委譲する場合は`mode`へ`delegate`を指定して`prompt`を渡す"
 )
 _TASK_DOCUMENT_DEFECT_NEXT_ACTION = (
@@ -197,6 +198,32 @@ _PLUGIN_ROOT_VARIABLE = "${CLAUDE_PLUGIN_ROOT}"
 def _is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
     """agent-toolkit pluginのshare直下にある`<役割名>.subagent.md`だけを受理する。"""
     return task_documents.is_agent_toolkit_task_document(path)
+
+
+def _accepted_role_names() -> list[str]:
+    """サーバー自身のplugin rootの`share/`直下にある`<役割名>.subagent.md`の役割名を返す。"""
+    return sorted(path.name.removesuffix(_TASK_DOCUMENT_SUFFIX) for path in _SHARE_DIRECTORY.glob(f"*{_TASK_DOCUMENT_SUFFIX}"))
+
+
+def _resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
+    """`subagent_md_path`の絶対パスはそのまま、役割名はサーバー自身のplugin rootの`share/`直下の文書へ解決する。
+
+    委譲元は自身のシェルでplugin rootを解決できないことがあり、サーバーは自身のplugin rootを一意に持つため、
+    役割名を受理して委譲元と同じ版の文書へ解決する。区切り文字か接尾辞を含む相対の値は役割名として扱わずに拒否する。
+    """
+    task_document = pathlib.Path(subagent_md_path)
+    if task_document.is_absolute():
+        return task_document
+    is_role_name = not any(part in subagent_md_path for part in ("/", "\\", _TASK_DOCUMENT_SUFFIX))
+    candidate = _SHARE_DIRECTORY / f"{subagent_md_path}{_TASK_DOCUMENT_SUFFIX}"
+    if is_role_name and subagent_md_path and candidate.is_file():
+        return candidate
+    reason = "役割名に区切り文字か`.subagent.md`を含む" if not is_role_name else "役割名に対応する文書が無い"
+    raise ActionableError(
+        f"subagent_md_path is neither an absolute path nor an accepted role name: {subagent_md_path}（{reason}）; "
+        f"受理する役割名: {', '.join(_accepted_role_names())}。委譲先は起動していない。",
+        next_action=_TASK_DOCUMENT_PATH_NEXT_ACTION,
+    )
 
 
 @dataclasses.dataclass
@@ -398,7 +425,9 @@ _MODE_DESCRIPTION = _parameter_description(
     "読み取り専用の制約は課さないため、対象を変更する自動チェックも渡せる。委譲元の文脈へは終了状態と要約だけが入る。"
 )
 _SUBAGENT_MD_PATH_DESCRIPTION = _parameter_description(
-    "taskで必須、他のmodeでは指定しない。委譲先の手順と返却契約を保持するagent-toolkitの`share/*.subagent.md`の絶対パス。"
+    "taskで必須、他のmodeでは指定しない。委譲先の手順と返却契約を保持する`<役割名>.subagent.md`の役割名（例: `add-wi`）。"
+    "役割名はサーバー自身のplugin rootの`share/<役割名>.subagent.md`へ解決する。"
+    "別のplugin rootの文書を指定する場合はagent-toolkitの`share/*.subagent.md`の絶対パスを渡す。"
 )
 _EXTRA_PARAMS_DESCRIPTION = _parameter_description(
     "taskだけで受理し、他のmodeでは指定しない。省略時は入力なしとして扱う。"
@@ -457,7 +486,7 @@ _START_MODE_INPUTS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     "shell": (("command", "summary_policy"), frozenset({"command", "summary_policy"})),
 }
 _START_MODE_EXAMPLES = {
-    "task": '`{"cwd": "<絶対パス>", "subagent_md_path": "<plugin root>/share/<名前>.subagent.md", "extra_params": {...}}`',
+    "task": '`{"cwd": "<絶対パス>", "subagent_md_path": "<役割名>", "extra_params": {...}}`',
     "delegate": '`{"cwd": "<絶対パス>", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "high_tier"}`',
     "explore": '`{"cwd": "<絶対パス>", "mode": "explore", "prompt": "<質問と調べる範囲>", "label": "explore-<対象>"}`',
     "write": '`{"cwd": "<絶対パス>", "mode": "write", "prompt": "<起草の依頼>", "label": "write-<対象>"}`',
@@ -660,10 +689,7 @@ def _task_document_request(
     拒否せずに`（新規）`の記録先を用意して委譲プロンプトへ加え、その絶対パスを4要素目で返す。
     委譲元が値を渡した場合と、宣言を読めない場合の4要素目は`None`とする。
     """
-    task_document = pathlib.Path(subagent_md_path)
-    if not task_document.is_absolute():
-        raise ActionableError("subagent_md_path must be an absolute path", next_action=_TASK_DOCUMENT_PATH_NEXT_ACTION)
-    task_document = task_document.resolve()
+    task_document = _resolve_task_document_path(subagent_md_path).resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
         raise ActionableError(
             f"subagent_md_path is not an existing .subagent.md file: {task_document}",
@@ -936,7 +962,7 @@ class AgentsServerManager:
             launch_kind=info.launch_kind,
             turn_seq=info.turn_seq,
             status=status,
-            created_at=info.created_at,
+            launch_info=info.launch_info,
             started_at=info.started_at,
             session_updated_at=info.session_updated_at,
             turn_id=info.turn_id,
@@ -997,7 +1023,7 @@ class AgentsServerManager:
             fast_mode=info.fast_mode,
             model_type=info.model_type,
             launch_kind=info.launch_kind,
-            created_at=info.created_at,
+            **info.launch_info.as_kwargs(),
             started_at=info.started_at,
             updated_at=info.session_updated_at,
             turn_seq=persisted_result["turn_seq"] if persisted_result is not None else info.turn_seq,
@@ -2147,8 +2173,7 @@ class AgentsServerManager:
                 turn_seq=resume_state.turn_seq,
                 **resume_options,
             )
-            if resume_state.created_at is not None:
-                session.created_at = resume_state.created_at
+            session_registry.LaunchInfo.of(resume_state).apply_to(session)
             if self._status_writer is not None:
                 self._status_writer.delete_result(session_id, collector="send-message")
             if session.status == "starting":
@@ -2250,8 +2275,7 @@ class AgentsServerManager:
                 announced=True,
                 turn_seq=resume_state.turn_seq + 1,
             )
-            if resume_state.created_at is not None:
-                session.created_at = resume_state.created_at
+            session_registry.LaunchInfo.of(resume_state).apply_to(session)
             self.sessions[session.session_id] = session
         self.expired_sessions.pop(session.session_id, None)
         if self._pending_resumes.get(session.session_id) is pending:
@@ -2855,8 +2879,7 @@ _START_DESCRIPTION = "\n".join(
         "taskでは`<役割名>.subagent.md`の必須入力の欠落と宣言外の入力名も拒否し、該当する項目名と受理する項目名を返す。",
         "",
         "最小の呼び出し例（`cwd`は全modeで必須）:",
-        '- task: `{"cwd": "/repo", "subagent_md_path": "<plugin root>/share/exec-review.subagent.md", '
-        '"extra_params": {"計画": "/abs/plan.md"}}`',
+        '- task: `{"cwd": "/repo", "subagent_md_path": "exec-review", "extra_params": {"計画": "/abs/plan.md"}}`',
         '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "high_tier"}`',
         '- explore: `{"cwd": "/repo", "mode": "explore", "prompt": "<質問と調べる範囲>"}`',
         '- write: `{"cwd": "/repo", "mode": "write", "prompt": "<成果物種別・読者・事実・根拠・反映先・完成形>", '
@@ -2864,9 +2887,9 @@ _START_DESCRIPTION = "\n".join(
         '- shell: `{"cwd": "/repo", "mode": "shell", "command": "make test", '
         '"summary_policy": "終了コードと失敗したテスト名"}`',
         "",
-        "起動前の準備: Claude Codeで`CronCreate`を使える実行主体が待機でターンを終える場合は、"
-        "最初にこのツールを呼ぶ前に定期再確認を装着する"
-        "（`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」）。",
+        "Claude Codeでは最初の`start`の処理中にmodが定期再確認を装着し、結果が会話へ届く。"
+        "装着失敗の通知が届いた場合と、通知もtaskも無い実行主体が`CronCreate`を使えて待機でターンを終える場合は、"
+        "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「Cronによる定期再確認」に従って装着する。",
         "",
         "応答は`session_id`と`status`を含み、サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。"
         "engineの利用上限などで起動できない候補はサーバーが除外し、残る候補で起動する。"

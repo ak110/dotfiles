@@ -206,11 +206,11 @@ def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
 
 
 def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> _CommitMetadata:
-    """作業ツリーでrevisionを解決し、永続記録用のcommit情報を返す。"""
+    """作業ツリーでrevisionを解決し、永続記録用の一意な長さの短縮OIDと件名を返す。"""
     commit = _resolve_commit_oid(local_worktree, revision)
     try:
         result = subprocess.run(
-            ["git", "-C", str(local_worktree), "show", "-s", "--format=%aI%x00%s", commit],
+            ["git", "-C", str(local_worktree), "show", "-s", "--format=%h%x00%s", commit],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -221,18 +221,14 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> _CommitMetad
     except (OSError, subprocess.TimeoutExpired):
         result = None
     output = result.stdout.rstrip("\n") if result is not None and result.returncode == 0 else ""
-    author_date, separator, subject = output.partition("\0")
-    try:
-        datetime.datetime.fromisoformat(author_date)
-    except ValueError:
-        author_date = ""
-    if separator != "\0" or not author_date or not subject or "\n" in subject:
+    short_oid, separator, subject = output.partition("\0")
+    if separator != "\0" or not commit.startswith(short_oid) or not short_oid or not subject or "\n" in subject:
         _outcome.report_failure(
-            f"対応commitの作成者日時と件名を取得できない: {local_worktree} ({revision})",
+            f"対応commitの短縮OIDと件名を取得できない: {local_worktree} ({revision})",
             next_action="--commitへ対象リポジトリで解決できるrevisionを指定し直す",
         )
         sys.exit(2)
-    return _CommitMetadata(oid=commit, author_date=author_date, subject=subject)
+    return _CommitMetadata(short_oid=short_oid, subject=subject)
 
 
 def _commit_values_by_path(

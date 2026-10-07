@@ -39,14 +39,15 @@ def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | Non
     ],
 )
 def test_free_text_start_pointing_task_document_is_blocked(tool_name: str, mode: str, tmp_path: pathlib.Path) -> None:
-    """自由本文のmodeで`<役割名>.subagent.md`を指すと遮断し、taskの`start`と`subagent_md_path`での起動を案内する。
+    """自由本文のmodeで`<役割名>.subagent.md`を指すと遮断し、taskの`start`と役割名の`subagent_md_path`での起動を案内する。
 
     通すと、`<役割名>.subagent.md`の宣言を経ない委譲プロンプトが委譲先のコンテキストへ取り込まれる。
     """
     result = _invoke(tool_name, f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n", tmp_path, mode)
 
     assert result.returncode == 2
-    assert f"subagent_md_path={_EXEC_DOCUMENT}" in result.stderr
+    assert "subagent_md_path=exec`" in result.stderr
+    assert f"`{_EXEC_DOCUMENT}`" in result.stderr
     assert f"`start`の`{mode}`" in result.stderr
 
 

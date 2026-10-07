@@ -9,7 +9,7 @@ Git commitにこうした識別子がない場合は、`git rev-parse --short=7 
 `git rev-parse --short=7`は1回につきrevisionを1件だけ渡す。複数のrevisionを扱う場合はrevisionごとに個別実行し、入力と出力の対応を保持する。複数のrevisionを同じ呼び出しへ渡すと`fatal: Needed a single revision`で失敗する。
 値は実行結果として得たものをそのまま使う。記憶や推測で組み立てた識別子は別対象への操作を招き、受け取った主体が実在しない対象を待つ。
 
-revisionへpeel式を付ける場合は、その式全体を実行shellで単一引数にする。PowerShellでは`git rev-parse --verify 'HEAD^{commit}'`のように単一引用符で囲み、caretと波括弧をPowerShellの解釈から保護する。この引用規則は、前段のrevision件数の制約とは別に適用する。
+revisionへpeel式を付ける場合は、その式全体を実行shellで単一引数にする。PowerShellでは`git rev-parse --verify 'HEAD^{commit}'`のように単一引用符で囲み、caretと波括弧をPowerShellの解釈から保護する。この引用規則は、前段のrevision件数の制約とは別に適用する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月20日」にある。
 
 外部コマンドやAPIがGit objectを40桁か64桁のOIDで要求する場合は、人間可読識別子か7文字以上の一意な短縮OIDを用いる。
 その操作の直前に対象リポジトリで40桁か64桁のOIDへ解決し、その操作だけに用いる。
@@ -17,7 +17,7 @@ revisionへpeel式を付ける場合は、その式全体を実行shellで単一
 値は同じ実行ホストでの解決から得たものだけを使う。会話または過去の出力から書き写した値は、取得に失敗した置換が空文字列へ展開したことを検出できず、`git push origin :<ref>`のような別の意味を持つ引数を成立させる。
 
 完全OIDを工程間へ伝播させると、人間が対象を判別しにくい値が記録とコンテキストを占有し、refの更新後も古い値を操作対象として保持する。
-`atk`の記録コマンドが完全OIDを受け取って機械可読の記録へ保存する工程（`SKILL.md`「WI実装commitの対応」の記録、取得と履歴変更）は、完全OIDを要求する外部コマンドへの受け渡しに当たる。その値も操作の直前に同じ実行ホストで解決して渡し、報告と人間が読む記録には前段の人間可読の識別子を使う。
+`SKILL.md`「WI実装commitの対応」の記録、取得と履歴変更は短縮OIDと完全OIDのどちらも受け取り、`atk`の記録コマンドが対象worktreeで完全OIDへ解決してから記録済みの対応と比べる。記録と取得結果は一意な長さの短縮OIDで残るため、この工程でも工程間には短縮OIDを渡す。
 
 現在の作業ディレクトリとは別のリポジトリを操作するGitコマンドは、`git -C <解決済み絶対パス>`で対象を指定する。
 対象の指定を各コマンドの引数へ明示し、実行場所を`cd`の結果として後続コマンドへ引き継ぐ形は使わない。

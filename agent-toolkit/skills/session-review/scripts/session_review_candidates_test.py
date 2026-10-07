@@ -211,6 +211,72 @@ def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
     assert candidates[-1]["excluded"]["runtime-inserted"] == 4
 
 
+def _claude_user(content: object, **fields: object) -> dict[str, object]:
+    """Claude Codeのユーザーロールの記録を返す。"""
+    return {"type": "user", "message": {"role": "user", "content": content}, **fields}
+
+
+def _codex_user(text: str) -> dict[str, object]:
+    """Codexのユーザーロールのmessage記録を返す。"""
+    return {
+        "type": "response_item",
+        "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+    }
+
+
+# Claude Codeの各記録は2.1.281〜2.1.291の実記録（`~/.claude/projects`配下）、Codexの各記録は2026年8月〜10月の
+# rollout（`~/.codex/sessions`配下）から、本文の格納先と構造の項目の形を写した。本文は短縮した。
+_INTERRUPT = "[Request interrupted by user]"
+_TOOL_INTERRUPT = "[Request interrupted by user for tool use]"
+_BASH_STDOUT = "<bash-stdout>+ FS_UUID=24d572ab</bash-stdout><bash-stderr></bash-stderr>"
+_CODEX_GENERATED = (
+    '<codex_internal_context source="goal">\nContinue working toward the active thread goal.\n</codex_internal_context>',
+    '<hook_prompt hook_run_id="stop:8:hooks.codex.json">&lt;atk-auto kind="block"&gt;通知</hook_prompt>',
+    '<subagent_notification>\n{"agent_path":"01a0280f","status":{"completed":"status: completed"}}',
+)
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_bundle_keeps_interrupt_markers_and_excludes_runtime_outputs(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str
+) -> None:
+    """中断の標識は介入候補と会話の流れに残し、実行環境の出力は除外件数へ数えて会話の流れから除く。
+
+    中断の標識が候補から消えると、振り返りはツール実行の拒否・中断を検討できない。
+    実行環境の出力が候補に残ると、人間の介入として誤って分析される。
+    """
+    if host == "claude":
+        entries = [
+            _claude_user("最初の依頼", origin={"kind": "human"}),
+            _claude_user([{"type": "text", "text": _INTERRUPT}], interruptedMessageId="msg_1"),
+            _claude_user([{"type": "text", "text": _TOOL_INTERRUPT}], interruptedMessageId="msg_2"),
+            _claude_user(_BASH_STDOUT, turnOrigin="human"),
+        ]
+        expected_candidates = [_INTERRUPT, _TOOL_INTERRUPT]
+        expected_utterances = ["最初の依頼", _INTERRUPT, _TOOL_INTERRUPT]
+        expected_runtime_inserted = 1
+    else:
+        entries = [_codex_user("最初の依頼"), *(_codex_user(text) for text in _CODEX_GENERATED), _codex_user("後続の訂正")]
+        expected_candidates = ["後続の訂正"]
+        expected_utterances = ["最初の依頼", "後続の訂正"]
+        expected_runtime_inserted = 3
+    transcript = _write_transcript(tmp_path, entries)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+
+    records = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    # 候補の並びは記録の順序と一致しないため、順序を除いて比べる。
+    assert sorted(item["text"] for item in records[:-1] if item["candidate_kind"] == "user-intervention") == sorted(
+        expected_candidates
+    )
+    assert records[-1]["excluded"]["runtime-inserted"] == expected_runtime_inserted
+    conversation = [json.loads(line) for line in (bundle / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [event["text"] for event in conversation if event.get("role") == "user"] == expected_utterances
+
+
 def test_candidate_events_excludes_runtime_generated_user_records() -> None:
     """実行環境が生成した標識を持つユーザーイベントを候補から除き、除外種類別へ計上する。"""
     timeline = [

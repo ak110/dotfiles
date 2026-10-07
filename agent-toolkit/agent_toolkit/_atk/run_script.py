@@ -25,6 +25,7 @@ SCRIPT_PATHS = {
     "session-review-evidence": pathlib.Path("skills/session-review/scripts/session_review_evidence.py"),
     "session-review-prepare": pathlib.Path("skills/session-review/scripts/session_review_prepare.py"),
     "writing-check-dash": pathlib.Path("skills/writing-standards/scripts/check_dash.py"),
+    "wi-quote-check": pathlib.Path("skills/wi-standards/scripts/wi_quote_check.py"),
 }
 
 

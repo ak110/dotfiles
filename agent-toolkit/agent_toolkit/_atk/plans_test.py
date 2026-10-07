@@ -685,6 +685,36 @@ def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_pa
     assert not review.exists()
 
 
+def test_commit_and_checkout_carry_wi_commit_mapping(tmp_path: pathlib.Path) -> None:
+    """WI実装commitの対応記録ファイルを計画と同じstemの付属ファイルとして保存し、取得で作業側へ戻す。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/10/07-対応記録-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    mapping = main.with_name(main.stem + ".wi-commits.jsonl")
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    mapping.write_text('{"commits":["abc1234"],"awi":["20261007-002735-001.md"]}\n', encoding="utf-8")
+    expected = mapping.read_bytes()
+
+    result = _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert result["paths"] == (
+        "plans/2026/10/07-対応記録-d4f9.md",
+        "plans/2026/10/07-対応記録-d4f9.wi-commits.jsonl",
+    )
+    saved_mapping = notes / "plans" / relative.parent / mapping.name
+    assert saved_mapping.read_bytes() == expected
+    assert not mapping.exists()
+
+    copied = _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+
+    working_mapping = _plan_file.working_plans_root(home) / mapping.name
+    assert working_mapping in copied
+    assert working_mapping.read_bytes() == expected
+
+
 def test_commit_preserves_source_creation_and_modification_time(tmp_path: pathlib.Path) -> None:
     """保存確定は作業側の作成日時と更新日時を移動先へ維持する。"""
     home = tmp_path / "home"

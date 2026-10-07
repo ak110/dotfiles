@@ -448,9 +448,12 @@ class BashInvocation:
         return _BashOutput.PIPE in self.outputs
 
     @property
-    def stdout_discarded(self) -> bool:
-        """標準出力の最終的な接続先が/dev/nullであるかを返す。"""
-        return self.outputs[0] == "/dev/null"
+    def output_redirected(self) -> bool:
+        """標準出力か標準エラーの最終的な接続先が、呼び出し元から引き継いだ1と2からリダイレクトで変わったかを返す。
+
+        接続先がファイル（`/dev/null`を含む）、別のファイル記述子、未確定のパスのいずれでも真とする。
+        """
+        return self.outputs != (1, 2)
 
 
 @dataclasses.dataclass(frozen=True)

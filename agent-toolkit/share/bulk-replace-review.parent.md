@@ -10,8 +10,17 @@
 ## 起動
 
 置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をセッションのmanaged-temp（`agent-toolkit:managed-temp`）のファイルへ保存する。
-その後、`bulk-replace-review.subagent.md`を指定する起動（`agent-toolkit:delegation`の`references/base-contract.md`「`<役割名>.subagent.md`を指定する起動」）で1件のレビュー担当を起動する。
-`cwd`は置換した作業ツリーの絶対パスとし、`extra_params`には次の名前付き入力だけを渡す。
+その後、1件のレビュー担当を起動する。
+
+`agents_server`の`start`を次の引数で呼ぶ。起動の定型と適用する義務は`agent-toolkit:delegation`の「`<役割名>.parent.md`を持つ委譲の起動」に従う。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 置換した作業ツリーの絶対パス |
+| `subagent_md_path` | `bulk-replace-review` |
+| `extra_params` | 次の名前付き入力だけ |
+| `mode` | 指定しない |
+| `model_type` | 指定しない（サーバーが工程別設定を使う） |
 
 - `差分ファイル`: 保存した差分ファイルの絶対パスと行数
 

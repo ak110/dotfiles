@@ -24,6 +24,18 @@ def _plan(heading: str = "進捗ログ", *, newline: str = "\n", final_newline: 
     return content + (newline if final_newline else "")
 
 
+def _git(repo: pathlib.Path, *args: str) -> str:
+    """一時repoでGitを実行して標準出力を返す。"""
+    return subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    ).stdout.strip()
+
+
 @pytest.mark.parametrize("heading", ["進捗ログ", "進捗ログ（実行時）"])
 def test_appends_local_clock_row_for_current_and_legacy_heading(tmp_path: pathlib.Path, heading: str) -> None:
     """現行・旧見出しの固定3列表へ注入時計の1行だけを追加する。"""
@@ -139,10 +151,19 @@ def test_public_cli_records_and_reads_commit_mapping(
         )
         == 0
     )
-    assert path.read_text(encoding="utf-8").startswith(original)
+    body = path.read_text(encoding="utf-8")
+    assert body.startswith(original)
+    assert "実装" in body.removeprefix(original)
+    assert "wi-commits" not in body
+    attachment = tmp_path / "record.wi-commits.jsonl"
+    short = _git(repo, "rev-parse", "--short", oid)
+    assert [json.loads(line) for line in attachment.read_text(encoding="utf-8").splitlines()] == [
+        {"commits": [short], "awi": [wi]}
+    ]
     assert append_progress_log.main([*common, "--get-commits"]) == 0
-    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [oid]}
+    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [short]}
     saved = path.read_bytes()
+    saved_attachment = attachment.read_bytes()
     assert (
         append_progress_log.main(
             [
@@ -160,6 +181,7 @@ def test_public_cli_records_and_reads_commit_mapping(
         == 1
     )
     assert path.read_bytes() == saved
+    assert attachment.read_bytes() == saved_attachment
     assert "次の操作:" in capsys.readouterr().err
     with pytest.raises(SystemExit, match="2"):
         append_progress_log.main([*common, "--commit", oid, "--completed-step", "実装", "--result", "失敗"])
@@ -209,15 +231,18 @@ def test_public_cli_records_and_reads_commit_mapping(
         assert "計画ファイル" not in error
         assert path.read_bytes() == saved
     replacements = tmp_path / "rewrite.json"
-    replacements.write_text(json.dumps({oid: new_oid}), encoding="utf-8")
+    replacements.write_text(json.dumps({short: new_oid}), encoding="utf-8")
     assert (
         append_progress_log.main(
             [*common, "--rewrite-map", str(replacements), "--completed-step", "履歴検収", "--result", "成功"]
         )
         == 0
     )
+    assert "wi-commits" not in path.read_text(encoding="utf-8")
+    new_short = _git(repo, "rev-parse", "--short", new_oid)
+    assert json.loads(attachment.read_text(encoding="utf-8").splitlines()[-1]) == {"rewrite": {short: new_short}}
     assert append_progress_log.main([*common, "--get-commits"]) == 0
-    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [new_oid]}
+    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [new_short]}
 
 
 def test_cli_structure_error_reports_next_action(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -345,6 +370,9 @@ def test_get_commits_reads_unique_saved_plan_from_removed_working_path(
     assert append_progress_log.main([str(working), *record_args]) == 0
     saved.write_bytes(working.read_bytes())
     working.unlink()
+    # `atk plans commit`と同じく対応記録ファイルも保存先へ移し、保存済み計画と同じstemの記録を読む。
+    attachment = working.with_name(working.stem + ".wi-commits.jsonl")
+    attachment.rename(saved.with_name(attachment.name))
     assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 0
     assert json.loads(capsys.readouterr().out)["awi"] == wi
     duplicate = notes / "plans" / "2025" / "10" / working.name
@@ -357,3 +385,140 @@ def test_get_commits_reads_unique_saved_plan_from_removed_working_path(
     duplicate.unlink()
     assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 1
     assert "同名=0件" in capsys.readouterr().err
+
+
+def _related_plan(*wis: str) -> str:
+    """関連WIと進捗ログの固定表を持つ計画本文を返す。"""
+    related = "".join(f"  - {wi}: 対応\n" for wi in wis)
+    return "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n" + related + "\n" + _plan().removeprefix("# 計画\n\n")
+
+
+@pytest.mark.parametrize("handoff", [False, True])
+def test_records_range_from_cherry_pick_and_fast_forward_in_one_call(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
+) -> None:
+    """取り込み前後のHEADで1回記録すると1レコードになり、取り込んだ全commitを短縮OIDで取得する。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "--initial-branch=main")
+    _git(repo, "commit", "--allow-empty", "-m", "base")
+    _git(repo, "switch", "-c", "group")
+    for message in ("group-1", "group-2"):
+        _git(repo, "commit", "--allow-empty", "-m", message)
+    _git(repo, "switch", "main")
+    wi = "20261004-044311-001.md"
+    path = tmp_path / "record.md"
+    path.write_text("# 引継ぎ\n" if handoff else _related_plan(wi), encoding="utf-8")
+    common = [str(path), "--worktree", str(repo), "--awi", wi]
+    if handoff:
+        common += ["--handoff", "--allowed-awi", wi]
+    previous = _git(repo, "rev-parse", "--short", "HEAD")
+    _git(repo, "merge", "--ff-only", "group")
+    assert (
+        append_progress_log.main(
+            [*common, "--commit", "HEAD", "--previous-head", previous, "--completed-step", "統合", "--result", "ff"]
+        )
+        == 0
+    )
+    _git(repo, "commit", "--allow-empty", "-m", "lane")
+    _git(repo, "switch", "-c", "group2")
+    for message in ("group2-1", "group2-2", "group2-3"):
+        _git(repo, "commit", "--allow-empty", "-m", message)
+    _git(repo, "switch", "main")
+    lane = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "cherry-pick", "--allow-empty", "main..group2")
+    assert (
+        append_progress_log.main(
+            [*common, "--commit", "HEAD", "--previous-head", lane, "--completed-step", "統合", "--result", "pick"]
+        )
+        == 0
+    )
+    records = (tmp_path / "record.wi-commits.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(records) == 2
+    assert [len(json.loads(line)["commits"]) for line in records] == [2, 3]
+    assert append_progress_log.main([*common, "--get-commits"]) == 0
+    commits = json.loads(capsys.readouterr().out)["commits"]
+    added = [*_git(repo, "rev-list", f"{previous}..group").splitlines(), *_git(repo, "rev-list", f"{lane}..HEAD").splitlines()]
+    expected = [_git(repo, "rev-parse", "--short", oid) for oid in added]
+    assert sorted(commits) == sorted(expected)
+
+    saved = path.read_bytes()
+    attachment = (tmp_path / "record.wi-commits.jsonl").read_bytes()
+    head = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "switch", "-c", "side", previous)
+    _git(repo, "commit", "--allow-empty", "-m", "side")
+    side = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "switch", "main")
+    for previous_head, message in (
+        (head, "範囲が空"),
+        (side, "first-parentの祖先ではありません"),
+        ("0000000", "前HEADを一意なcommitへ解決できません"),
+    ):
+        assert (
+            append_progress_log.main(
+                [*common, "--commit", "HEAD", "--previous-head", previous_head, "--completed-step", "統合", "--result", "x"]
+            )
+            == 1
+        )
+        error = capsys.readouterr().err
+        assert message in error
+        assert "次の操作: " in error
+        assert path.read_bytes() == saved
+        assert (tmp_path / "record.wi-commits.jsonl").read_bytes() == attachment
+    assert (
+        append_progress_log.main(
+            [*common, "--commit", "HEAD~1", "--previous-head", lane, "--completed-step", "統合", "--result", "x"]
+        )
+        == 1
+    )
+    assert "現在のHEADではありません" in capsys.readouterr().err
+
+
+def test_legacy_body_comment_and_attachment_are_combined(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """本文に旧形式のコメントを持つ計画へ追記すると、本文の記録と付属ファイルの記録を合わせて取得する。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "--initial-branch=main")
+    _git(repo, "commit", "--allow-empty", "-m", "base")
+    _git(repo, "commit", "--allow-empty", "-m", "legacy")
+    legacy = _git(repo, "rev-parse", "HEAD")
+    wi_a, wi_b = "20261004-044311-001.md", "20261004-044247-001.md"
+    path = tmp_path / "plan.md"
+    legacy_row = '| 2026-10-01 10:00 | 実装 | 成功 <!-- wi-commits: {"commit":"' + legacy + '","awi":["' + wi_a + '"]} --> |\n'
+    path.write_text(_related_plan(wi_a, wi_b) + legacy_row, encoding="utf-8")
+    _git(repo, "commit", "--allow-empty", "-m", "current")
+    common = [str(path), "--worktree", str(repo)]
+    assert (
+        append_progress_log.main(
+            [
+                *common,
+                "--awi",
+                wi_b,
+                "--commit",
+                "HEAD",
+                "--previous-head",
+                legacy,
+                "--completed-step",
+                "実装",
+                "--result",
+                "成功",
+            ]
+        )
+        == 0
+    )
+    assert path.read_text(encoding="utf-8").count("wi-commits") == 1
+    assert append_progress_log.main([*common, "--awi", wi_a, "--awi", wi_b, "--get-commits"]) == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert lines == [
+        {"awi": wi_b, "commits": [_git(repo, "rev-parse", "--short", "HEAD")]},
+        {"awi": wi_a, "commits": [_git(repo, "rev-parse", "--short", legacy)]},
+    ]
+
+
+def test_help_describes_range_and_merge_rejection(capsys: pytest.CaptureFixture[str]) -> None:
+    """ヘルプから前HEADから現在のHEADまでの全commitの記録とマージcommitの拒否を読める。"""
+    with pytest.raises(SystemExit, match="0"):
+        append_progress_log.main(["--help"])
+    output = "".join(capsys.readouterr().out.split())
+    assert "--previous-headから現在のHEADまでに加わった全commit" in output
+    assert "マージcommitを含む範囲は受け付けない" in output

@@ -1158,6 +1158,9 @@ def test_keeps_plan_size_advisory_when_rejecting_migration_warnings(repo: tuple[
     assert errors == [_TWO_FILE_MIGRATION]
     assert len(warnings) == 1
     assert warnings[0].startswith("計画の行数が閾値を超えている")
+    # 撤去済みの節と付属素材の規定を案内すると、実行主体が実在しない規定を探す。
+    assert "実装資料と完了条件" not in warnings[0]
+    assert "付属素材" not in warnings[0]
 
 
 def test_rejects_all_migration_warnings_in_legacy_two_file_plan(repo: tuple[pathlib.Path, str]) -> None:

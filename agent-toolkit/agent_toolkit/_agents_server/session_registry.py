@@ -36,6 +36,43 @@ class Resolution(enum.StrEnum):
 
 
 @dataclasses.dataclass(frozen=True)
+class LaunchInfo:
+    """`start`の時点で決まり、同じsessionを継続する間は再開と再起動をまたいでも変えない起動情報。
+
+    再開で`SessionState`を再生成する処理と、session登録簿の書込・復元は、この定義の項目を走査して値を写す。
+    項目を個別に列挙すると、項目を足したときに一部の処理が値を写さなくなり、型やテストでは検出されないためである。
+    項目の値はいずれも文字列か`None`とし、`SessionState`と`SessionResumeState`は同名の属性を持つ。
+    """
+
+    label: str = ""
+    prompt: str = ""
+    # 項目を持たない旧形式の登録簿から復元したsessionでは開始時刻が不明なため`None`とする。
+    created_at: str | None = None
+
+    @classmethod
+    def of(cls, source: object) -> LaunchInfo:
+        """同名の属性を持つsessionの状態から起動情報を取り出す。"""
+        return cls(**{field.name: getattr(source, field.name) for field in dataclasses.fields(cls)})
+
+    @classmethod
+    def from_record(cls, payload: dict[str, Any]) -> LaunchInfo:
+        """登録簿のレコードから読み、文字列でない項目と無い項目はフィールドの初期値（空文字列か`None`）とする。"""
+        return cls(
+            **{field.name: payload[field.name] for field in dataclasses.fields(cls) if isinstance(payload.get(field.name), str)}
+        )
+
+    def as_kwargs(self) -> dict[str, Any]:
+        """同名の引数を持つ生成処理へ渡す項目を返す。"""
+        return {field.name: getattr(self, field.name) for field in dataclasses.fields(self)}
+
+    def apply_to(self, target: object) -> None:
+        """再開で再生成したsessionへ値を写す。`None`の項目は写さず、生成時の値を残す。"""
+        for name, value in self.as_kwargs().items():
+            if value is not None:
+                setattr(target, name, value)
+
+
+@dataclasses.dataclass(frozen=True)
 class ResumeInfo:
     """再起動後のsession再開へ必要な実行条件。"""
 
@@ -47,8 +84,8 @@ class ResumeInfo:
     launch_kind: Literal["delegate", "explore", "shell", "write"]
     turn_seq: int
     status: Literal["starting", "running", "completed", "failed", "interrupted"]
+    launch_info: LaunchInfo = LaunchInfo()
     # 項目を持たない旧形式のレコードでは`None`とする。
-    created_at: str | None = None
     started_at: str | None = None
     session_updated_at: str | None = None
     # 最後に公開した時点のturnを表すengine固有の識別子（Codexのturn id）。
@@ -86,7 +123,7 @@ def publish(
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     turn_seq: int = 0,
     status: Literal["starting", "running", "completed", "failed", "interrupted"] | None = None,
-    created_at: str | None = None,
+    launch_info: LaunchInfo | None = None,
     started_at: str | None = None,
     session_updated_at: str | None = None,
     turn_id: str | None = None,
@@ -119,8 +156,9 @@ def publish(
         "status": status,
         "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
     }
-    if created_at is not None:
-        payload["created_at"] = created_at
+    if launch_info is not None:
+        # 版数2の任意項目として加え、項目を持たない旧形式のレコードは`LaunchInfo.from_record`が空文字列か`None`として読む。
+        payload.update((name, value) for name, value in launch_info.as_kwargs().items() if value is not None)
     if started_at is not None:
         payload["started_at"] = started_at
     if session_updated_at is not None:
@@ -225,7 +263,7 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         launch_kind=launch_kind,
         turn_seq=payload["turn_seq"],
         status=status,
-        created_at=payload.get("created_at") if isinstance(payload.get("created_at"), str) else None,
+        launch_info=LaunchInfo.from_record(payload),
         started_at=payload.get("started_at") if isinstance(payload.get("started_at"), str) else None,
         session_updated_at=payload.get("session_updated_at") if isinstance(payload.get("session_updated_at"), str) else None,
         turn_id=payload.get("turn_id") if isinstance(payload.get("turn_id"), str) and payload.get("turn_id") else None,

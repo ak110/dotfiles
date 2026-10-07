@@ -4,7 +4,7 @@
 その操作を実行する時点には未起動であることを示す手掛かりが無く、起動されないまま本文の規定が適用されない。
 本判定は操作の時点で未起動を示し、スキルを起動して今回の操作を確かめ直させる。
 
-判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks.md`
+判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
 「遮断・警告フックの成立条件」にある。判定の入力はツール名、コマンド文字列およびSkill起動の記録だけで
 機械的に確定し、発火は呼び出し主体の文脈ごとに1回であるため費用が小さい。
 遮断しない理由は、スキルの起動が常時規範で努力目標とされていることと、検索が複合コマンドに含まれると
@@ -24,12 +24,14 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+import re
 from collections.abc import Callable, Sequence
 
 from agent_toolkit._hooks import agent_id as _agent_id
 from agent_toolkit._hooks import bash_command_parser as _bash_command_parser
 from agent_toolkit._hooks import plugin_resources as _plugin_resources
 from agent_toolkit._hooks import rules_context as _rules_context
+from agent_toolkit._hooks import tool_input as _tool_input
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
@@ -108,7 +110,52 @@ def _is_search_operation(tool_name: str, tool_input: dict) -> bool:
     return any(_is_search_segment(pipeline[0]) for pipeline in _bash_command_parser.extract_execution_pipelines(command))
 
 
-OPERATION_SKILLS: tuple[OperationSkill, ...] = (OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),)
+_ROOT_CAUSE_HEADING = re.compile(r"^## 原因分析[ \t]*$", re.MULTILINE)
+"""原因分析の見出しだけから成る行。AWIの`## 原因分析`と計画ファイル（バグ）の起草で書く。"""
+
+
+def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
+    """`agent-toolkit:bugfix`の起動の契機とする原因分析の記述かを返す。
+
+    編集ツールは変更後の断片（Claude Codeの`Write`・`Edit`・`MultiEdit`とCodexの`apply_patch`）、
+    Bashはコマンド文字列に、`## 原因分析`だけから成る行がある場合を対象とする。
+    """
+    if tool_name == "Bash":
+        command = tool_input.get("command")
+        return isinstance(command, str) and _ROOT_CAUSE_HEADING.search(command) is not None
+    fields = _tool_input.new_content_fields(tool_name, tool_input)
+    return fields is not None and any(_ROOT_CAUSE_HEADING.search(value) for _, value in fields)
+
+
+def _is_managed_temp_create(tool_name: str, tool_input: dict) -> bool:
+    """`agent-toolkit:managed-temp`の起動の契機とする`atk managed-temp create`の実行かを返す。
+
+    区間のトークン列にある`managed-temp`・`create`の連続を、直前のトークンが`atk`（パスを伴う形を含む）である場合と、
+    `managed-temp`が区間の先頭である場合に対象とする。`extract_execution_pipelines`は`for … ; do atk …`の`do`を
+    区間の先頭に残し、`d=$(atk …)`では`d=$(atk`を前置語として除くため、先頭のトークンだけでは両方の形を判定できない。
+    検索語として1つの引数に含めた文字列はトークンが分かれないため対象にならない。`cleanup`と`list`は対象外とする。
+    """
+    if tool_name != "Bash":
+        return False
+    command = tool_input.get("command")
+    if not isinstance(command, str):
+        return False
+    for pipeline in _bash_command_parser.extract_execution_pipelines(command):
+        for segment in pipeline:
+            tokens = segment.tokens
+            for index in range(len(tokens) - 1):
+                if tokens[index] != "managed-temp" or tokens[index + 1] != "create":
+                    continue
+                if index == 0 or pathlib.PurePath(tokens[index - 1]).name == "atk":
+                    return True
+    return False
+
+
+OPERATION_SKILLS: tuple[OperationSkill, ...] = (
+    OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),
+    OperationSkill("agent-toolkit:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
+    OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別のmanaged-temp領域の作成", _is_managed_temp_create),
+)
 """操作を起動の契機とするスキルの表。"""
 
 

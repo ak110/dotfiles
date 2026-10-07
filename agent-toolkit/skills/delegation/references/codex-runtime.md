@@ -19,7 +19,7 @@ agent-toolkitの文書に現れるClaude Codeのツール名は、Codexで次の
 | `EnterPlanMode`・`ExitPlanMode` | `agent-toolkit:plan-mode`の`references/codex-runtime.md`に従う |
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 公開能力がなければ、手動運用またはユーザーへの依頼へ切り替える |
 
-Codexネイティブ委譲は`spawn_agent`で起動し、`send_message`は稼働中の入力追加、`followup_task`は待機中または終端後の同一主体の継続、`wait_agent`は終端待機、`interrupt_agent`は起動主体が所有する処理の中断に使う。`fork_turns`で渡す会話履歴と、Codexの`SubagentStart` hookが追加する`rules-subagent.md`は別契約である。会話履歴をforkしない場合も共通委譲先規範はhookから適用され、`AGENTS.md`は対象worktreeの自動読込の仕組みから適用される。Codex固有の委譲先規範が将来必要になった場合は、共通規範と別ファイルに置き、同じhook生成の仕組みでCodexだけへ追加する。
+Codexネイティブ委譲は`spawn_agent`で起動し、`send_message`は稼働中の入力追加、`followup_task`は待機中または終端後の同一主体の継続、`wait_agent`は終端待機、`interrupt_agent`は起動主体が所有する処理の中断に使う。`fork_turns`で渡す会話履歴と、Codexの`SubagentStart` hookが追加する`rules-subagent.md`は別契約である。会話履歴をforkしない場合も共通委譲先規範はhookから適用され、`AGENTS.md`は対象worktreeの自動読込の仕組みから適用される。Codex固有の委譲先規範が将来必要になった場合は、共通規範と別ファイルに置き、同じhook生成の仕組みでCodexだけへ追加する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日」にある。
 
 `routing.md`「会話を引き継ぐ委譲」がforkを選ぶときは、`spawn_agent`の`fork_turns`を省略するか`"all"`にする。全履歴を渡す起動は親のモデルとreasoning effortを継承し、上書きは受け付けない。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日」にある。
 

@@ -155,6 +155,8 @@ class FakeBackend:
         self.release_calls: list[str] = []
         self.start_calls: list[tuple[str | None, str | None, str]] = []
         self.prompts: list[str] = []
+        # 実backendと同じく、再開で再生成したsessionを登録簿へ公開させる場合に真にする。
+        self.publish_registry = False
 
     async def list_models(self) -> list[dict[str, Any]]:
         """系列の候補を指定しない場合も、起動せずに解決できる一覧を返す。"""
@@ -229,9 +231,13 @@ class FakeBackend:
             excluded_candidates=excluded_candidates,
             turn_seq=turn_seq + 1,
             fast_mode=fast_mode,
+            publish_registry=self.publish_registry,
         )
         self.sessions[session_id] = session
         state._initialize_turn(session)
+        if self.publish_registry:
+            # 実backendは起動情報を写される前に、再生成したsessionの状態を公開する。
+            session.touch()
         await prompt.deliver(accept_prompt)
         return session
 
@@ -922,6 +928,71 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
         await subject.start(str(tmp_path), subagent_md_path=path, extra_params=extra_params)
 
     assert operation in _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("form", ["role-name", "absolute-path"])
+async def test_start_resolves_role_name_to_own_plugin_root(
+    form: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """役割名はサーバー自身のplugin rootの`share/<役割名>.subagent.md`へ解決し、絶対パスと同じ起動になる。
+
+    役割名を受理しないと、委譲元はplugin rootを探してから起動する必要がある。
+    委譲プロンプトの1行目の出所が別のrootを指すと、委譲元と委譲先が別の版の文書を使う。
+    """
+    task_document = (subject._SHARE_DIRECTORY / "add-wi.subagent.md").resolve()
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    subagent_md_path = "add-wi" if form == "role-name" else str(task_document)
+
+    response = await subject.start(
+        str(tmp_path), subagent_md_path=subagent_md_path, extra_params=_observed_input_params(task_document.name, tmp_path)
+    )
+
+    assert response == {"session_id": "session", "status": "running"}
+    manager.start.assert_awaited_once()
+    task_prompt = manager.start.await_args.args[1]
+    assert task_prompt.splitlines()[0] == f"次の文書の手順を実行せよ（出所: {task_document}）。"
+    assert manager.start.await_args.kwargs["label"] == "add-wi"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("subagent_md_path", "reason"),
+    [
+        ("missing-role", "対応する文書が無い"),
+        ("share/add-wi", "区切り文字"),
+        ("share\\add-wi", "区切り文字"),
+        ("add-wi.subagent.md", "区切り文字"),
+        ("", "対応する文書が無い"),
+    ],
+    ids=["unknown-role", "slash", "backslash", "suffix", "empty"],
+)
+async def test_start_rejects_unresolvable_role_name_with_accepted_roles(
+    subagent_md_path: str,
+    reason: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """解決先の無い役割名と区切り文字か接尾辞を含む相対の値は起動せず、受理する役割名の一覧と次の操作を返す。
+
+    受理すると、`share/`直下の外の文書や作業ディレクトリ相対の文書を委譲先へ渡せてしまう。
+    """
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    with pytest.raises(ValueError) as raised:
+        await subject.start(str(tmp_path), subagent_md_path=subagent_md_path, extra_params={})
+
+    message = _actionable_message(raised.value)
+    body, next_action = message.split(NEXT_ACTION_PREFIX, 1)
+    assert reason in body
+    accepted = body.split("受理する役割名: ", 1)[1]
+    assert "add-wi" in accepted
+    assert "exec-review" in accepted
+    assert "役割名" in next_action
+    assert "`delegate`" in next_action
     manager.start.assert_not_awaited()
 
 
@@ -2826,6 +2897,115 @@ async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib
     await manager.close()
 
 
+_LAUNCH_VALUES: dict[str, Any] = {
+    "label": "lane-05-review",
+    "prompt": "起動時の依頼本文",
+    "created_at": "2026-09-25T21:58:13+00:00",
+}
+"""起動情報の各項目へ設定する、フィールドの初期値と異なる値。labelは`-review`で終わり、完了結果の採否確定の案内も確かめる。"""
+
+
+def _resume_test_manager(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> tuple[subject.AgentsServerManager, status_file.StatusFileWriter]:
+    """状態ファイルと登録簿を`tmp_path`へ置き、再開後の状態を観測できるmanagerを返す。"""
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "claude")
+    backend.publish_registry = True
+    _install_backend(manager, "claude", backend)
+    writer.activate()
+    return manager, writer
+
+
+def _expire_launched_session(manager: subject.AgentsServerManager, session: subject.SessionState) -> None:
+    """保持期限を過ぎた終端sessionとして、同じmanagerの`send_message`で再開させる。"""
+    session.retention_deadline = asyncio.get_running_loop().time() - 1
+    manager.sessions[session.session_id] = session
+
+
+def _restart_with_registry_record(manager: subject.AgentsServerManager, session: subject.SessionState) -> None:
+    """登録簿のレコードだけを残し、再起動したmanagerが登録簿から復元して再開させる。"""
+    del manager, session  # 再起動したmanagerは元のsessionを保持せず、登録簿は終端の公開で書かれている
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "prepare_resume",
+    [
+        pytest.param(_expire_launched_session, id="retention-expired"),
+        pytest.param(_restart_with_registry_record, id="registry-after-restart"),
+    ],
+)
+async def test_resumed_session_keeps_every_launch_info_item(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    prepare_resume: Callable[[subject.AgentsServerManager, subject.SessionState], None],
+) -> None:
+    """再開の処理によらず、起動情報の定義の全項目を`start`時の値のまま保つ。
+
+    再開時に写されなかった項目は、`atk agents list`・`show`の状態と`atk agents wait`の終端行で空になり、
+    labelで自sessionを探す手順と、`-review`の完了結果に付く採否確定の案内が成立しなくなる。
+    再開後の登録簿にも同じ値を書き、もう一度再起動しても保たれることを確かめる。
+    """
+    assert set(_LAUNCH_VALUES) == {field.name for field in dataclasses.fields(session_registry.LaunchInfo)}
+    manager, writer = _resume_test_manager(monkeypatch, tmp_path)
+    session = subject.SessionState(
+        "launched-session", str(tmp_path), engine="claude", turn_seq=2, publish_registry=True, **_LAUNCH_VALUES
+    )
+    _complete(session, message="前のturn")
+    prepare_resume(manager, session)
+
+    assert _without_root(await manager.send_message(session.session_id, "続行")) == {"delivery": "reply_started"}
+    writer.flush()
+
+    resumed = manager.sessions[session.session_id]
+    assert resumed is not session
+    assert {name: getattr(resumed, name) for name in _LAUNCH_VALUES} == _LAUNCH_VALUES
+    projected = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+    entry = next(item for item in projected if item["session_id"] == session.session_id)
+    assert {name: entry[name] for name in _LAUNCH_VALUES} == _LAUNCH_VALUES
+    shown = manager.show_session(session.session_id)
+    assert (shown["label"], shown["prompt"]) == (_LAUNCH_VALUES["label"], _LAUNCH_VALUES["prompt"])
+    resume_info = session_registry.resolve(session.session_id).resume_info
+    assert resume_info is not None
+    assert resume_info.launch_info == session_registry.LaunchInfo(**_LAUNCH_VALUES)
+
+    _complete(resumed, message="再開後のturn")
+    writer.flush()
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert (result["session_id"], result["label"], result["status"]) == (
+        session.session_id,
+        _LAUNCH_VALUES["label"],
+        "completed",
+    )
+    assert state.REVIEW_RESULT_NEXT_ACTION in result["next_action"]
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_resume_from_legacy_registry_record_without_launch_info(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """起動情報の項目を持たない版数2の登録簿レコードからも再開でき、labelとpromptは空文字列になる。"""
+    manager, _ = _resume_test_manager(monkeypatch, tmp_path)
+    session_registry.publish("legacy-session", terminal=True, engine="claude", cwd=str(tmp_path), turn_seq=2)
+
+    assert _without_root(await manager.send_message("legacy-session", "続行")) == {"delivery": "reply_started"}
+
+    resumed = manager.sessions["legacy-session"]
+    assert (resumed.label, resumed.prompt) == ("", "")
+    await manager.close()
+
+
 @pytest.mark.asyncio
 async def test_owner_gone_resume_removes_previous_result_file(tmp_path: pathlib.Path) -> None:
     """所有主体終了による再開は新しいturnの開始時に旧結果を削除する。"""
@@ -3646,6 +3826,10 @@ async def test_send_message_previous_and_stopped_results_relay_improvements(
     assert action.count(state.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
     assert "メインエージェントは次のユーザーへの発話へ" in action
     assert "委譲先は自身の返却の末尾へ" in action
+    assert "字下げを除く行頭に`気付いた改善点:`を原文のまま置き" in action
+    assert "標識とコロンの間へ報告元などの語を入れない" in action
+    assert "標識行の原文の後ろか別の行に添える" in action
+    assert "`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」" in action
     assert (state.REVIEW_RESULT_NEXT_ACTION in action) is (status == "completed" and label.endswith("-review"))
 
 

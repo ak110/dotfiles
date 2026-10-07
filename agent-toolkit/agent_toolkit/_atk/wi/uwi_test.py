@@ -946,7 +946,7 @@ class TestUwiAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """明示作業ツリーに対応するUWIではcommitの安定識別情報を記録する。"""
+        """明示作業ツリーに対応するUWIではcommitの一意な長さの短縮OIDと件名を記録する。"""
         notes = _setup_notes(tmp_path)
         worktree = tmp_path / "worktree"
         worktree.mkdir()
@@ -954,7 +954,6 @@ class TestUwiAdopt:
         git_calls: list[_GitCall] = []
         base_fake = _make_subprocess_fake(git_calls)
         full_oid = "c" * 40
-        author_date = "2026-09-13T12:34:56+00:00"
         subject = "fix: UWI終端記録を安定化する"
 
         def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -976,10 +975,10 @@ class TestUwiAdopt:
                 str(worktree),
                 "show",
                 "-s",
-                "--format=%aI%x00%s",
+                "--format=%h%x00%s",
                 full_oid,
             ]:
-                return subprocess.CompletedProcess(cmd, 0, f"{author_date}\0{subject}\n", "")
+                return subprocess.CompletedProcess(cmd, 0, f"{full_oid[:9]}\0{subject}\n", "")
             return base_fake(cmd, *args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -997,9 +996,10 @@ class TestUwiAdopt:
             )
         assert exc_info.value.code == 0
         content = (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
-        assert f"- 対応commit作成者日時: {author_date}" in content
+        assert "- 対応commit作成者日時:" not in content
         assert f"- 対応commit件名: {subject}" in content
-        assert f"- 対応commit: {full_oid}" in content
+        assert f"- 対応commit: {full_oid[:9]}\n" in content
+        assert full_oid not in content
 
     def test_multiple_files_adopted_single_commit(
         self,

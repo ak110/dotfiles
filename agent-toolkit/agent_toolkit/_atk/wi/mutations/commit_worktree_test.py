@@ -66,12 +66,25 @@ def test_commit_transition_from_outside_worktree(
         assert captured.value.code == 0, output
         result = notes / ("adopted" if action == "adopt" else "rejected") / source.name
         text = result.read_text(encoding="utf-8")
-        assert f"- 対応commit: {oid}" in text
+        short = git(target, "rev-parse", "--short", oid)
+        assert f"- 対応commit: {short}\n" in text
         assert "- 対応commit件名: 要求を反映する" in text
-        assert "- 対応commit作成者日時:" in text
+        assert oid not in text
+        assert "- 対応commit作成者日時:" not in text
         assert not source.exists()
     else:
         assert captured.value.code == 2, output
         assert source.read_text(encoding="utf-8") == original
         assert not (notes / "adopted/entry.md").exists()
         assert not (notes / "rejected/entry.md").exists()
+
+
+@pytest.mark.parametrize("action", ["adopt", "reject"])
+def test_help_describes_short_oid_and_subject(action: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """adoptとrejectのヘルプが、--commitで短縮OIDと件名を記録すると示す。"""
+    with pytest.raises(SystemExit):
+        atk.main(["wi", action, "--help"])
+    output = "".join(capsys.readouterr().out.split())
+    assert "短縮OIDと件名を記録する" in output
+    if action == "adopt":
+        assert "対応commitの短縮OID・件名を記録する" in output

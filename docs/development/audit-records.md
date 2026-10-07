@@ -91,19 +91,15 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 再検証は同じ記録へ同じ集計を適用し、tool_useの時刻と子sessionの記録の先頭エントリの時刻の差の分布と、応答の打ち切りに達した件数を対比する。
 上限値はこの分布に加えて、ホストがMCPツール呼び出しを背景タスクへ移す閾値を制約に持つ。背景移行の閾値を測定した記録は「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月」にある。
 
-## agent-toolkit/rules/01-agent.md：行動指針：2026年9月8日
-
-2026年9月8日、Codexのrollout記録`01a07e75-0c9a-7263-a52e-0e24c6aacc62`を確かめた。生存14,745秒の間に`custom_tool_call`は445回あり、それぞれの呼び出しから出力までの間隔の中央値は0.1秒であった。`reasoning`と`token_count`を起点とする間隔の合計は約10,186秒であり、ツール呼び出し1サイクルあたり約23秒に当たる。再検証は同じ集計を任意のrollout記録へ適用し、`custom_tool_call`の件数と間隔の合計を対比する。
-
 ## agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月5日
 
 2026年9月5日、GNU bash 5.2.21で、外側のbashの二重引用符へ置いたドル記号付きの変数は外側で展開され、単一引用符で囲んだ値は`sh -c`を2段重ねた実行で引用符を失うことを実際に動かして確かめた。再検証は外側のbashの二重引用符の内側へドル記号と単一引用符を含む文字列を置き、`sh -c`を2段重ねて出力を確認する。
 
-## agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月8日（1）
+## agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（1）
 
 2026年9月8日、ripgrep 15.2.0で実際に動かして確かめた。隠しディレクトリ配下の追跡ファイルだけが含む文字列に対し、リポジトリrootを対象とする`rg -n --fixed-strings`は一致0件を返した。同じ文字列を対象とする`git grep -nF`はその文字列を含む追跡ファイルを返した。再検証は隠しディレクトリ配下の追跡ファイルだけが含む文字列を1件選び、両コマンドの一致件数を比べる。
 
-## agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月8日（2）
+## agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（2）
 
 2026年9月8日、ripgrep 15.2.0で、隠しディレクトリ配下のファイルに存在する文字列が、`--hidden`の無い実行で一致0件となり、付けた実行で一致することを実際に動かして確かめた。再検証は隠しディレクトリ配下のファイルへ一意な文字列を1件置き、`--hidden`の有無で一致件数を比べる。
 
@@ -111,11 +107,11 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月14日、Git 2.43.0で実際に動かして確かめた。公式`git-rev-parse`文書は`--short=<length>`を、少なくとも指定長を持つ一意な接頭辞と定める。`core.abbrev`を設定していない対象HEADでは`git rev-parse --short HEAD`が9文字、`git rev-parse --short=7 HEAD`が7文字を返した。`grep.lineNumber=true`を指定した`git grep -h -m 1 -F -e <固定文字列> -- AGENTS.md`は`3:<本文>`を返し、同じ検索へ`--no-line-number`を指定すると`<本文>`だけを返した。再検証は`git config --get core.abbrev`の設定有無を記録し、同じHEADに対する`git rev-parse --short HEAD`と`git rev-parse --short=7 HEAD`の文字数を比較し、後者が7文字以上で一意に解決できることを確認する。続けて`git -c grep.lineNumber=true grep -h -m 1 -F -e <固定文字列> -- <追跡ファイル>`と、`-h`を`--no-line-number`へ置き換えた検索の出力を比較する。
 
-## agent-toolkit/rules/02-agent-operations.md：testの終了状態の表示：2026年9月24日
+## agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月24日
 
 2026年9月24日、Claude Code 2.1.280のBashツールでは、実在するパスと存在しないパスへの`test -e`がともに`(Bash completed with no output)`を返した。両呼び出しの一次記録はリポジトリ外のセッション記録にあり、本節は観測内容と再検証手段を保持する。bash 5.2.15で`test -e /dev/null; echo "test_e_rc=$?"`は標準出力へ`test_e_rc=0`を返し、存在しない`/dev/__agent_toolkit_audit_absent__`では`test_e_rc=1`を返した。再検証はClaude CodeのBashツールで同じ2種類のパスへ`test -e`と表示付きの起動形をそれぞれ渡し、ツール表示と標準出力の値を対比する。
 
-## agent-toolkit/rules/02-agent-operations.md：規範の全文取得：2026年9月25日
+## agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月25日
 
 2026年9月25日、Claude Code 2.1.282で`agent-toolkit/skills/wi-standards/SKILL.md`の309行・52,347バイトを`Read`の`offset=1, limit=309`で取得すると、末尾まで届いた。同じファイルを`cat <絶対パス> | cat`で取得すると、Bashは表示上限を超えた全量をセッション内のファイルへ保存した。保存物は309行・52,347バイトで原本と一致した。Claude Codeの[tools仕様](https://code.claude.com/docs/en/tools.md)の「Read tool behavior」は、上限超過時に`PARTIAL view`と先頭ページを返し、`offset`と`limit`で続きを取得する方式を説明する。同仕様の「Bash」は、表示上限を超えた結果をセッション内のファイルへ保存してパスを返す。2026年9月21日のCodexでは、複数文書の全文取得を1つの実行セルへ集約した結果、15,105トークンで出力が切り詰められ、個別再取得を要した。この観測時のCodexのホスト版番号は記録されていない。再検証では両ホストへ同一の大容量エージェント向け文書を与えて全文読取とBashの単純全文読取を実行する。hook通知、ホストの部分取得通知、保存物の末尾および容量を比較する。
 
@@ -131,19 +127,23 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 出力の集計は同じ保存ファイルを使い、件数0だけから診断の不在を判断しない。
 導入済みパッケージの同関数も読み、要約が数える値と診断の生成を確かめる。
 
-## agent-toolkit/skills/commit/references/git-identifier.md：revision件数とshell引用：2026年9月20日
+## agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月20日
 
 2026年9月20日、Git 2.43.0で`git rev-parse --short=7 HEAD HEAD~1`が標準エラーへ`fatal: Needed a single revision`を書いて終了コード128となることを確認した。PowerShell 7.6.0では、未引用の`git rev-parse --verify HEAD^{commit}`が同じエラーと終了コード128を返し、単一引用符で囲んだ`git rev-parse --verify 'HEAD^{commit}'`が完全OIDと終了コード0を返した。再検証は同じrepositoryで1件と2件のrevisionを渡した`--short=7`の終了状態を比較し、PowerShellでpeel式の引用有無によるGitの受理結果を比較する。
 
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機対象未登録：2026年9月20日
+## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月20日
 
 2026年9月20日、`atk agents wait`が`agents_server`の状態投影に対象を持たない状態を終了コード10で報告し、実行ホストの組み込み委譲は同じ状態投影へ登録されないことを確認した。再検証は`agents_server` sessionと組み込み委譲をそれぞれ起動し、`atk agents list`への登録有無、`atk agents wait`の終了コードおよびホストの委譲一覧が返すstatusを比較する。
 
-## agent-toolkit/rules/99-claude-code.md：ツールAPIと権限：2026年9月1日
+## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月7日
 
-2026年9月1日、ツール呼び出しだけで地の文を持たない応答に対して`Your previous response had no visible output`が返ることを確認した。再検証では同じ形の応答を1回発行し、この表示が返るか確認する。
+2026年10月7日、Claude Codeのセッション記録を`Your previous response had no visible output`の固定文字列で検索した。
+ホストが挿入したこの表示は3件（Claude Code 2.1.281・2.1.282・2.1.283、2026年9月24日から26日）で、いずれも直前のアシスタント応答がthinkingだけを持ち、地の文もツール呼び出しも持たなかった。
+同じ文字列を含む残りの記録2件は、ツール結果に同じ文字列が含まれただけだった。
+ツール呼び出しだけで地の文を持たない応答は記録に多数あるが、その直後にこの表示は現れなかった。
+再検証では同じ文字列を検索し、表示の直前のアシスタント応答が持つ要素の種類を確かめる。
 
-## agent-toolkit/rules/99-claude-code.md：役割上の区分と実行環境上の区分：2026年9月4日
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：実行時能力と通信scope：2026年9月4日
 
 2026年9月4日、agent-toolkit 2.94.0で通常起動と軽量起動の設定読込先およびStop系フックの動作を検証した。再検証は`agents_server`の通常起動と軽量起動を比較する。
 
@@ -154,14 +154,6 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 ## agent-toolkit/share/pick-wi.subagent.md：調査とレーン分け：2026年8月31日
 
 2026年8月31日から9月2日までの5セッションの観測で、出力トークン量はレーン数へほぼ比例し、レーン数を増やしたセッションで所要時間が短くなる傾向は観測されなかった。
-
-## agent-toolkit/share/pick-wi.subagent.md：調査とレーン分け：2026年9月2日
-
-2026年9月2日のセッションで、担当7件のレーンは同じセッションの担当4件の3レーンを1件あたりのトークン量と所要時間の双方で下回った。再検証は同一条件のレーンを比較する。
-
-## agent-toolkit/share/pick-wi.subagent.md：調査とレーン分け：2026年9月3日
-
-2026年9月3日のセッションでは、担当7件のレーンの実装担当の直列時間が8479秒に達し、セッション全体の所要時間が目標を64.1分超過した。再検証はレーンごとの担当件数と実装担当の直列時間を比較する。
 
 ## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年9月2日
 
@@ -193,27 +185,9 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 
 本項は軽量モデルへreasoning effort `max`を割り当てた大きな作業で自動コンパクションが10回発生し、所要時間が大幅に伸びた観測に基づく（2026年8月、ユーザーからの報告）。再検証は同じ組合せで同規模の作業を1件実行し、自動コンパクションの発生回数を観測することによる。
 
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月
-
-2026年9月、Claude Codeで`agents_server`の`wait`が発行から120秒で背景タスクへ移り、完了すると結果本文がそのタスクの通知として届くことを確認した。再検証は`wait`を発行し、背景移行の通知を受領した後に完了通知の到達を確認する。
-
 ## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月3日
 
 2026年9月3日から9月4日にかけて、`agents_server`の`start`で起動した委譲先が外部コマンドの完了待ちを表明し、`status: completed`で終端した。その後、待機対象のコマンドが終了しても委譲先は再開しなかった。
-
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月4日
-
-2026年9月4日には、同じ方法で起動した委譲先が自ら起動した委譲先の終端を待たずに待機表明で終端し、呼び出し元が保持した`session_id`へ`send_message`を送って再開させた事象を観測した。再検証は`agents_server`で委譲先を起動し、待機表明で終端させたうえで、完了通知の到達を確認する。
-
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月7日
-
-2026年9月7日から9月8日にかけて、Codexで動く主体が発行した`wait`が`timed out awaiting tools/call after 300s`で失敗する事象を確認した。再検証は300秒の上限より長く稼働する委譲先へ`timeout`を省略した`wait`を発行し、同じ失敗が起きるか確認する。
-
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月14日
-
-2026年9月14日、`atk agents wait`が通知だけを返した後に状態投影を削除し、同じコマンドを再発行してから終端結果を公開すると、書込主体別の待機対象登録簿から同じsessionを復元して終端結果を回収することをテストで確認した。結果を保持しない`stop`、session登録簿の`missing`、破損した待機対象登録の各ケースで、回収不能と確定した待機対象を解放することもテストで確認した。
-
-再検証では`agents_wait_test.py`の登録簿のテスト3件と、`agents_server_mcp_test.py`の`test_stop_releases_wait_target_before_waiting_for_new_result`を実行する。通知後の再発行で同じ`session_id`の終端結果が返ることを確認する。明示破棄または喪失確定後は、旧sessionが待機対象に残らないことも確認する。
 
 ## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月4日
 
@@ -223,7 +197,7 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 
 2026年9月2日に別のセッションが起動した背景ジョブの実行識別子を`TaskOutput`へ渡すと、`No task found with ID`で拒否された。一方、そのジョブの出力ファイルには絶対パスで到達でき、全出力と`[exited with code 0]`が残っていた。再検証は同じ形で背景実行し、終了済みセッションが残した出力ファイルを絶対パスで読めることと、同じ実行識別子を`TaskOutput`が解決できないことを対にして確認する。
 
-## agent-toolkit/skills/plan-mode/references/plan-file-standards.md：実装資料と完了条件：2026年9月7日
+## agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月7日
 
 2026年9月7日、git 2.43.0で`assert expanded_common_job_count + len(statusline_jobs) == 7`を検索する`git grep -n`が一致0件を返し、同じ文字列を検索する`git grep -nF`が1件返すことを確認した。再検証は正規表現のメタ文字を含む行を対象リポジトリの追跡ファイルから1件選び、`git grep -n`と`git grep -nF`の一致件数を比べる。
 
@@ -239,15 +213,19 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 
 2026年9月8日、Claude Code 2.1.263で次を確認した。存在しないリポジトリを指す`git -C /tmp log --oneline -1`は終了コード128で終わり、セッションの状態ファイルの`git_log_checked`は未設定のままだった。続けて実在するworktreeを指す同じ形の`git log`を実行すると、そのcwdのキーが真になった。再検証はこの2つのコマンドを単独で順に実行し、`{tempdir}/claude-agent-toolkit-<session_id>.json`の`git_log_checked`を前後で比較する。
 
+## agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年10月7日
+
+2026年10月7日、Claude Code 2.1.292の環境で公式ドキュメント<https://code.claude.com/docs/en/hooks.md>を取得し、`PostToolUseFailure`節と`PermissionDenied`節を確認した。前者は実行を始めたツールの失敗で発火し、`additionalContext`を受理する。未知のツール名、入力検証の失敗と権限拒否では発火しない。後者はauto modeの拒否だけで発火し、手動の拒否、`PreToolUse`の遮断とdeny規則の一致では発火しない。出力は`hookSpecificOutput.retry`だけを受理する。再検証は同ドキュメントの両節を読み、発火条件と受理する出力を確かめる。
+
 ## agent-toolkit/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日
 
 2026年9月4日、Claude Code 2.1.260の実行ファイルへ埋め込まれたパターンマッチ関数を確認した。この関数は値が空文字列と`"*"`のいずれかのときに正規表現へ変換せず一致を返す。同ドキュメントにも同じ3分類が記載されていた。再検証は同ドキュメントの`Matcher patterns`節を取得し、`strings`で抽出した関数が空値と`"*"`を短絡することを確認する。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks.md：出力フィールドの使い分け：2026年9月4日
+## agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日
 
 2026年9月4日、Claude Code 2.1.260の実行ファイルと公式のHooksリファレンスで確認した。再検証ではこの2つの資料を読み、対象の文字列がどちらに由来するか確認する。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks.md：Stop/SubagentStopフックの再帰呼び出し対策：2026年9月4日
+## agent-toolkit/skills/writing-standards/references/claude-hooks-stop.md：Stop/SubagentStopフックの再帰呼び出し対策：2026年9月4日
 
 2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節および`SubagentStop`節で前段の入力仕様を確認した。同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
 
@@ -379,7 +357,7 @@ Read不足で拒否された場合だけ、その担当がReadで現在の対象
 
 本節の記述は2026年9月3日に`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。再検証は同じ2つの関数を読む。
 
-## agent-toolkit/skills/writing-standards/references/sqlalchemy.md：autoflushと問い合わせ順序：2026年9月14日
+## agent-toolkit/skills/writing-standards/references/sqlalchemy.md：問い合わせと属性代入の順序：2026年9月14日
 
 2026年9月14日、SQLAlchemy 2.0.52の公式文書で、`autoflush`を無効にしていない`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。
 2026年9月13日のAWIは、SQLAlchemy 2.0.51を使うアプリケーションで、保留中のUPDATEが一意制約へ違反するケースと、保留中のINSERTが`NOT NULL`制約へ違反するケースを確認した記録を持つ。
@@ -403,6 +381,18 @@ Read不足で拒否された場合だけ、その担当がReadで現在の対象
 同日、codex-cli 0.154.0の同じ2169件に対し、`atk wi process-loop`がCodexへ渡す起動プロンプトの完全一致を数えた。一致は0件であった。いずれの記録も最初のuser役レコードの本文は実行環境が挿入する前置きであった。前置きは``# AGENTS.md instructions``または``<recommended_plugins>``で始まる。`agent-toolkit:process-wi`をuser役の本文へ含む記録は304件であった。この304件の`session_meta`を確認すると、`originator`は`agent-toolkit-codex-app-server`が303件、`codex-tui`が1件であった。
 再検証はClaude Codeの記録から`Launching skill:`を含む行を1件取得して`tool_result`の構造を確認し、Codexの記録から同じスキル名を含む行を取得してレコード種別を確認する。あわせてCodexの記録から`atk wi process-loop`が渡す起動プロンプトの完全一致と包含の件数を数える。user役レコードの`text`の先頭が前置きであることも確認する。
 
+## agent-toolkit/skills/writing-standards/references/session-records.md：Claude Codeの記録：2026年10月6日
+
+2026年10月6日にClaude Code 2.1.291の本体（`~/.local/share/claude/versions/2.1.291`）を確かめた。出力の項目`narration_block_indexes`の説明は該当する`thinking`ブロックを「server summaries of the prose between tool calls, not the model's own reasoning」と記す。
+本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して再検証する。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+
+## agent-toolkit/skills/writing-standards/references/session-records.md：暗号化された値：2026年10月7日
+
+2026年10月7日に公式文書「Thinking」（<https://platform.claude.com/docs/en/build-with-claude/thinking>、同日取得）を確かめた。節「Thinking encryption」は`signature`を「The `signature` field is opaque: don't interpret or parse it.」と定め、`redacted_thinking`の`data`を「opaque and encrypted」と記す。
+同じ文書の節「Progress updates between tool calls」は、`display`が`"updates"`のとき「any `thinking` block with non-empty text is a progress update」と記す。
+同日、codex-cli 0.160.1の記録（`~/.codex/sessions/2026/10/06/rollout-*.jsonl`）で、`encrypted_content`を持つレコードの`type`が`response_item`、`payload.type`が`reasoning`であることを確かめた。観測はいずれも値を開かずに行った。
+公式文書の2つの節を取得して前掲の記述を確かめ、Codexの記録で`encrypted_content`を持つレコードの`payload.type`を数えて再検証する。
+
 ## agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py：UserPromptSubmitの出所欄：2026年9月17日
 
 2026年9月17日に確認した。Claude Code 2.1.274の実行ファイルは、UserPromptSubmitの入力スキーマへ`source`を宣言し、値を`user`、`sdk`、`system`、`loop_wakeup`、`schedule_wakeup`、`poll_event`の6種とする。
@@ -413,10 +403,6 @@ Read不足で拒否された場合だけ、その担当がReadで現在の対象
 確認の範囲は、この3版が出所欄を配送しないこととする。配送を開始する版と時期は確認していない。
 この観測により、出所欄だけを判定入力とする案は現行版で成立しないため、機械注入ターンの判定を4系統で構成した。
 再検証は対象版の実行ファイルから`hook_event_name:"UserPromptSubmit"`の前後の文字列を取得する。`prompt`直後に`source`の代入が現れるか、`hook_event_name:"SessionStart"`の同じ箇所と対にして確認する。
-
-## agent-toolkit/skills/writing-standards/references/claude-hooks.md：Bash失敗の分類：2026年9月14日
-
-2026年9月14日、Claude Code 2.1.270のPostToolUseFailure入力で、失敗ツール名を`tool_name`、中断状態を`is_interrupt`、エラー本文を`error`として取得できることを確認した。Bashの非ゼロ終了では`error`の先頭行が`Exit code N`となる。再検証は同版以降で終了コードを変えたBash失敗と中断を発生させ、PostToolUseFailureへ渡る3項目と先頭行を記録して確認する。
 
 ## agent-toolkit/agent_toolkit/_atk/config.py：Antigravity CLIのモデル指定：2026年9月18日
 
@@ -446,12 +432,12 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 同日、同版へ「検証完了」とだけ答える指示を与えた。`--output-format stream-json --print-timeout 120s --model gemini-3.8-flash --effort low --mode plan --disable-slash-commands`で実行すると、終了コード0で5行のJSONLを返した。イベントは`init`が1行、`step_update`が3行、`result`が1行で、最後の`result.response`は`検証完了`だった。`step_update`の2行には`text_delta`があり、公開ストリームに表示用の本文が含まれることを確認した。標準エラーには、slash command expansionを無効にすると`--mode plan`が適用されないという説明が1行出た。
 再検証は`agy --version`で版数を記録し、同じ指示で`--print-timeout`を`3600`と`3600s`へ変えて終了コード、標準エラーおよびイベント種別を確認する。
 
-## agent-toolkit/skills/delegation/references/codex-runtime.md：Codexネイティブ委譲の入力境界：2026年9月21日
+## agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日
 
 2026年9月21日、Codex CLI 0.155.1で確認した。`spawn_agent`は`fork_turns`で会話履歴の引継ぎ範囲を選ぶ。起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。`send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終端待機、`interrupt_agent`は中断を担う。agent-toolkitのCodex hookを実起動したテストでは共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
 再検証では`codex --version`で対象版を記録する。`rules_context_codex.main`へ`SubagentStart`を入力するテストと、`_agents_server/state.py`の通常・軽量promptのテストを実行する。生成したCodex hook manifestの`SubagentStart`起動コマンドも実行し、共通規範、ホスト固有規範および軽量委譲の境界を確認する。
 
-## agent-toolkit/rules/01-agent.md：自動挿入本文の配送境界：2026年9月25日
+## agent-toolkit/rules/01-agent.md：方針が衝突する場合の優先順位：2026年9月25日
 
 2026年9月25日、Claude Code 2.1.281で新しいセッション`0b228cab-e106-4b5e-805b-f5e88320691c`を起動し、`--include-hook-events --output-format stream-json`でhook応答を保存した。SessionStartの`additionalContext`は`<agent-toolkit-auto-inserted source="agent-toolkit/rules_context" kind="notice">`で始まった。存在しないパスを指定したBash検索に対するPreToolUseの`additionalContext`は`<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">`で始まった。両応答の`exit_code`は0だった。検証用セッションはhook応答を得た後に中断したため、セッション全体の完了結果はこの観測の根拠に含めない。
 再検証するときは、同版以降で`--include-hook-events`を付けて新しいセッションを起動する。SessionStartと、`uv.lock`を`Write`で書き込むPreToolUseの`hook_response.output`を読む（存在しないパスへの警告は2026年9月26日に撤去した）。各応答の外側境界にある`source`と`kind`が上記と一致するか確かめる。
@@ -543,7 +529,7 @@ haikuの委譲先に`sleep 2`を背景実行させて直ちにturnを終えさ�
 同じ版の組で上記の環境変数を与えた委譲先へ背景実行の`sleep 2`と即時のturn終了を指示して再検証する。
 Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の全メッセージの種別、`subtype`、`state`、`origin`を到着順に保存して比べる。
 
-## agent-toolkit/skills/delegation/references/claude-code-runtime.md：動的なwatch対象の指定：2026年10月4日
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：Cronによる定期再確認：2026年10月4日
 
 HEAD `80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。
 保持記録から解決した値を`atk watch --worktree "$worktree_path"`と
@@ -563,6 +549,46 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 表示の有無はエージェントが応答時に確かめられないため、規範と通知は表示されないものとして発話本文へ書くよう求める。
 再検証ではホスト版、モデルと同設定を保持し、ユーザーの画面表示をtranscriptの同一messageのtext・thinkingへ対応付ける。
 transcriptだけの取得を画面表示の観測として扱わず、画面へ届いた内容とhookが述べる理由を比べる。
+
+## agent-toolkit/share/rules-main.claude-code.md：ツールAPIと権限：2026年10月6日
+
+同じ応答でツール呼び出しより前に置いた地の文の一部が、APIの応答の時点で要約へ置き換わる根拠を記す。観測はいずれも`thinking`ブロックの署名を開かずに行った。
+
+公式文書「Thinking」（<https://platform.claude.com/docs/en/build-with-claude/thinking>、2026年10月7日取得）の節「Progress updates between tool calls」を確かめた。
+同節は、Fable 5.1、Mythos 5.1、Opus 5.5、Sonnet 5.5、Fable 5ではモデルがツール呼び出しの間にprogress updateを書き、直後の`tool_use`の前に独立した`thinking`ブロックとして返ると記す。
+返り方は`display`で決まる。`"omitted"`（これらのモデルの既定）では文面が空で、`"updates"`（beta）では要約文になる。`"summarized"`では推論のブロックと区別できない要約になる。
+`"updates"`については「any `thinking` block with non-empty text is a progress update」「The text you receive is a summary of the progress update」と記す。どの`display`でも文面が空で返ることがあるとも記す。
+
+Claude Code 2.1.291の本体では、出力の項目`narration_block_indexes`の説明が該当ブロックを「server summaries of the prose between tool calls, not the model's own reasoning」と記す。
+項目`narration_hint`の説明は、そのブロックの末尾へ`· summarized`を描く規則を端末の表示と同じとする。
+本体が要求へ`display: "updates"`とbeta`thinking-display-updates-2026-08-18`を加える条件は次の3つが揃うときである。環境変数`CLAUDE_CODE_THINKING_DISPLAY_UPDATES`が未設定であること、思考の表示の指定が`omitted`でないこと、設定`showThinkingSummaries`が`true`でないことである。
+観測した環境は`showThinkingSummaries`が`false`で、同環境変数を設定していなかった。
+
+判別では`display: "updates"`を要求している記録で、文面を持つ`thinking`ブロックをprogress updateの要約（ナレーション要約）として数える方法とした。
+`showThinkingSummaries`が`true`の環境と前掲の環境変数で無効にした環境は、この判別の前提を満たさない。
+
+集計の母集団は、2026年9月1日以降に更新されたClaude Codeのメイン記録のうち2026年10月6日19時13分6秒（日本時間）以前に始まった1466件で、同時刻以前の`isSidechain`でない応答のブロック列を数えた。数えた層はAPIの応答を保存したtranscriptであり、画面の表示ではない。
+
+| モデル | 文面を持つ`thinking` | 後続にツール呼び出しがある`text` | 後続にツール呼び出しが無い`text` |
+| --- | --- | --- | --- |
+| Opus 5.5 | 3663件 | 12900件 | 4602件 |
+| Fable 5.1 | 98件 | 131件 | 47件 |
+| Sonnet 5.5 | 12件 | 252件 | 334件 |
+| Opus 5、Sonnet 5、Haiku 4.5 | 0件 | 集計対象外 | 集計対象外 |
+
+ツール呼び出しより前の地の文の多くは`text`のまま届いており、順番は要約への置換の必要条件だが十分条件ではない。
+文面を持つ`thinking`のうち後続にツール呼び出しが無い4件は、いずれも直後にユーザーの中断があった。
+画面の表示は2026年8月31日と2026年10月3日の節が持ち、いずれも原文ではなく要約が表示された点で一致する。
+
+既知の報告としてIssue `anthropics/claude-code#95764`（2026年9月21日作成）が同じ事象を報告し、2026年10月7日時点でOPENで、Anthropicの回答は無かった。
+
+対策の`send_to_user`は、2026年10月6日にClaude Code 2.1.291で試作のFunction hooks moduleを使って確かめた。
+`claude plugin validate`と`claude plugin test`（`ToolUse`の行を端末と`desktop`で描くテスト）が合格した。
+`claude -p --plugin-dir <試作> --model claude-opus-5-5`へ公式ガイドの誘導文を渡し、答えを先に伝えてからファイルを読むよう指示した。モデルはこのツールを呼び、入力は原文のまま記録された。
+tmux内の対話のClaude Code（Opus 5.5）では、ツールで送った見出しと箇条書きが端末の画面へその形で表示された。
+
+再検証は次の2つに限る。1つ目は、本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して`narration_block_indexes`の説明を確かめることである。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+2つ目は、`display: "updates"`を要求する環境の記録で、`thinking`ブロックを文面の有無で数えることである。
 
 ## dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日
 

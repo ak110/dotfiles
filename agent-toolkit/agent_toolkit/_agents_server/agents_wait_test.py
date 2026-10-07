@@ -273,6 +273,9 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
         for fragment in (
             "メインエージェントは次のユーザーへの発話へ",
             "委譲先は自身の返却の末尾へ",
+            "字下げを除く行頭に`気付いた改善点:`を原文のまま置き",
+            "標識とコロンの間へ報告元などの語を入れない",
+            "標識行の原文の後ろか別の行に添える",
             "`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」",
         ):
             assert fragment in action

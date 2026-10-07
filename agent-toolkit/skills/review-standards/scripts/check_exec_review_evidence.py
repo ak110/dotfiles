@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import dataclasses
 import json
 import os
 import pathlib
@@ -23,12 +24,13 @@ import tempfile
 import typing
 
 from agent_toolkit._atk import review_table
-from agent_toolkit._common import markdown_headings
+from agent_toolkit._common import markdown_headings, requirement_units
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan.structure.markdown import extract_tables, markdown_body_text
 
 # 達成・未達・証拠不足は行そのものの判定であり、根拠の記録を別に確かめない。
-JUDGMENT_OUTCOMES = frozenset({"達成", "未達", "証拠不足"})
+JUDGMENT_ORDER = ("達成", "未達", "証拠不足")
+JUDGMENT_OUTCOMES = frozenset(JUDGMENT_ORDER)
 REQUIRED_FIELDS = {
     "wi_conditions": ("awi", "condition", "outcome", "source", "evidence"),
     "user_requirements": ("awi", "requirement", "origin", "outcome", "source", "evidence"),
@@ -43,29 +45,19 @@ BRACKETED_TITLE = re.compile(r"「([^」]+)」")
 WHOLE_REQUEST = "分割元の依頼全体"
 ASSIGNMENT_WORDS = ("割当", "割り当て", WHOLE_REQUEST)
 BACKGROUND = "背景"
-# 引用節内のtextブロック番号と、改行も1文字として数える1始まりの文字範囲。
-# 起草規範は語の間の空白を定めないため、`逐語引用text[1]文字1-83`のように空白を省いた表記も同じ参照として読む。
-QUOTE_POSITION = re.compile(r"逐語引用\s*text\[(\d+)\]\s*文字(\d+)-(\d+)")
-QUOTE_POSITION_PREFIX = re.compile(r"逐語引用\s*text\[")
+# 失効の根拠とするメインの技術判断を、レビュー指摘管理表の行で識別する文字列。
+TECHNICAL_JUDGMENT = "メインの技術判断"
+# `evidence`のファイル参照の受理形式。雛形の次の操作と、参照を解決できない診断の双方がこの説明を示す。
+FILE_REFERENCE_FORM = (
+    "`evidence`のファイル参照は、対象worktreeのルートからの相対パスか絶対パスで書き、"
+    "リポジトリの外のファイル（managed-tempの検証記録など）は絶対パスで書く。"
+    "ファイル名だけや途中からのパスは、対象commitの追跡ファイルとパス末尾が1件に一致する場合だけ受理される"
+)
 REVIEW_TABLE_SUFFIX = ".exec-review.tsv"
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
 WHITESPACE = re.compile(r"\s+")
-LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 WI_HEADER = re.compile(r"^### (\d{8}-\d{6}-\d{3}\.md) \[[^]]+\]$")
-# 全角の終止記号は位置によらず文末とする。ASCIIの終止記号は直後が空白か段落末の場合だけ文末とし、
-# ドメイン名・ファイル名・版番号など語の内部のピリオドで文を分けない。
-FULLWIDTH_TERMINATORS = "。．！？"
-ASCII_TERMINATORS = ".!?"
-# 文末記号の直後に続く閉じ括弧類は同じ文へ含め、閉じ括弧だけの単位が残る分割を避ける。
-CLOSING_BRACKETS = ")）」』]】"
-INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)+?\1")
-# 確認回答の記録（`質問: `・`選択肢: `・`回答: `・`自由記述: `の行頭ラベルを持つ書式）の各ラベル。
-# 質問と選択肢はエージェントが書いた文であり、ユーザーの要求は回答と自由記述の値だけである。
-ANSWER_LABELS = ("質問: ", "選択肢: ", "回答: ", "自由記述: ")
-USER_ANSWER_LABELS = ("回答: ", "自由記述: ")
-HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
-FENCE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|(?P<plain>[^\s`\[\]（）「」、。]+)")
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
 # 地の文の1語から切り出す参照。パスは最後の拡張子までとし、拡張子の直後がASCIIのパス文字でない位置で終える。
@@ -93,10 +85,10 @@ REFERENCE_SEPARATORS = re.compile(r"[\s、。，,.;；:：・()（）「」\[\]<
 REFERENCE_MARK = "\0"
 REFERENCE_LABEL = re.compile(r"[^\s、。，,.;；:：\0]{1,20}[:：]\s*(?=\0)")
 # 失効根拠の会話中の発話: `atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと、
-# その直後の`<record>:<line>`（例: `main:625`）。パスは空白を含まない保存先を想定し、記録位置までを最短で区切る。
-USER_EVENT_SOURCE = re.compile(
-    r"(?P<path>(?:[A-Za-z]:[\\/]|/)[^\s`「」]+?)`?\s*(?P<record>[A-Za-z][\w.-]*):(?P<line>\d+)(?!\d)"
-)
+# 空白かバッククォートの後に続く`<record>:<line>`（例: `claude:<セッションID>:625`）。パスは空白を含まない保存先を想定する。
+# `record`は実行環境と生成側の改訂でコロンやスラッシュを含む形へ変わるため文字の種類を限定せず、
+# 生成側の`_resolve_record_locator`と同じく語の最後の`:<数字列>`で`record`と`line`へ分ける。
+USER_EVENT_SOURCE = re.compile(r"(?P<path>(?:[A-Za-z]:[\\/]|/)[^\s`「」]+)[`\s]+(?P<record>[^\s`「」]+):(?P<line>\d+)(?!\d)")
 TEST_RESULT = re.compile(
     r"(?<!\w)test_[\w]+(?:\[[^\]\n]+\])?(?:`)?\s*(?::|：|=|は|が|\s)\s*(?:成功|合格|PASS(?:ED)?|passed)(?!\w)"
 )
@@ -176,12 +168,12 @@ def _section(body: list[str], heading: str) -> list[str] | None:
 
 def _normalize_condition(text: str) -> str:
     """完成条件の行頭記号と前後の空白を除く。"""
-    return LIST_ITEM.sub("", text.strip()).strip()
+    return requirement_units.LIST_ITEM.sub("", text.strip()).strip()
 
 
 def _condition_units(content: list[str], filename: str) -> list[str]:
-    lines = HTML_COMMENT.sub("", "\n".join(content)).splitlines()
-    items = [_normalize_condition(line) for line in lines if LIST_ITEM.match(line.strip())]
+    lines = requirement_units.HTML_COMMENT.sub("", "\n".join(content)).splitlines()
+    items = [_normalize_condition(line) for line in lines if requirement_units.LIST_ITEM.match(line.strip())]
     if items:
         return items
     paragraph = " ".join(line.strip() for line in lines if line.strip())
@@ -190,184 +182,34 @@ def _condition_units(content: list[str], filename: str) -> list[str]:
     raise ValueError(f"{filename}: 『完成条件』節が空です")
 
 
-def _fenced_blocks(lines: list[str]) -> list[tuple[int, int, str]]:
-    """閉じたフェンス付きコードブロックの開始行・終了行の位置と情報文字列を出現順に返す。
-
-    閉じるフェンスは開始と同じ文字で同じ長さ以上とし、長いフェンスの内側にある短いフェンスは内容として扱う。
-    閉じていないフェンスはブロックとして扱わない。後続の要求を補足資料として失わないためである。
-    """
-    blocks: list[tuple[int, int, str]] = []
-    index = 0
-    while index < len(lines):
-        opening = FENCE.match(lines[index])
-        if opening is None or (opening["fence"][0] == "`" and "`" in opening["info"]):
-            index += 1
-            continue
-        fence = opening["fence"]
-        end = next(
-            (
-                position
-                for position in range(index + 1, len(lines))
-                if (closing := FENCE.match(lines[position])) is not None
-                and closing["fence"][0] == fence[0]
-                and len(closing["fence"]) >= len(fence)
-                and not closing["info"].strip()
-            ),
-            None,
-        )
-        if end is None:
-            index += 1
-            continue
-        blocks.append((index, end, opening["info"].strip()))
-        index = end + 1
-    return blocks
-
-
-def _without_fenced_blocks(lines: list[str]) -> list[str]:
-    """補足資料のフェンス付きコードブロックを空行へ置き換え、前後の地の文を別の段落に保つ。"""
-    remaining = list(lines)
-    for start, end, _info in _fenced_blocks(lines):
-        remaining[start : end + 1] = [""] * (end + 1 - start)
-    return remaining
-
-
-def _sentences(text: str) -> list[str]:
-    """段落の文字列を文へ分ける。インラインコードの内側では分割しない。"""
-    protected = [False] * len(text)
-    for match in INLINE_CODE.finditer(text):
-        protected[match.start() : match.end()] = [True] * (match.end() - match.start())
-    terminators = FULLWIDTH_TERMINATORS + ASCII_TERMINATORS
-    sentences: list[str] = []
-    start = index = 0
-    while index < len(text):
-        if protected[index] or text[index] not in terminators:
-            index += 1
-            continue
-        end = index
-        while end < len(text) and text[end] in terminators and not protected[end]:
-            end += 1
-        fullwidth = any(char in FULLWIDTH_TERMINATORS for char in text[index:end])
-        while end < len(text) and text[end] in CLOSING_BRACKETS and not protected[end]:
-            end += 1
-        if fullwidth or end == len(text) or text[end].isspace():
-            sentences.append(text[start:end])
-            start = end
-        index = end
-    sentences.append(text[start:])
-    return [sentence.strip() for sentence in sentences if sentence.strip()]
-
-
-def _requirement_units(content: list[str]) -> list[str]:
-    """要求原文を、箇条書きの項目と文の単位へ分ける。
-
-    補足のフェンス付きコードブロック（ログ、設定断片、コマンド出力など）は分割の前に除く。
-    句点やピリオドを含むログの断片を要求として数えないためである。資料として読む責務はレビュー担当に残る。
-    """
-    units: list[str] = []
-    paragraph: list[str] = []
-
-    def flush() -> None:
-        if paragraph:
-            units.extend(_sentences(" ".join(paragraph)))
-            paragraph.clear()
-
-    cleaned = _without_fenced_blocks(HTML_COMMENT.sub("", "\n".join(content)).splitlines())
-    for line in cleaned:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            flush()
-            continue
-        item = LIST_ITEM.match(stripped)
-        if item:
-            flush()
-            units.extend(_sentences(stripped[item.end() :]))
-            continue
-        paragraph.append(stripped)
-    flush()
-    return units
-
-
-def _answer_record_units(content: list[str]) -> list[str] | None:
-    """確認回答の記録を含む容器から、記録より前の地の文と、回答・自由記述の値を要求単位として返す。"""
-    parsed = _answer_record_values(content)
-    if parsed is None:
-        return None
-    start, values = parsed
-    units = _requirement_units(content[:start])
-    for value in values:
-        units.extend(_requirement_units(value))
-    return units
-
-
-def _answer_record_values(content: list[str]) -> tuple[int, list[list[str]]] | None:
-    """確認回答の記録の開始行と、ユーザーの回答として扱う回答・自由記述の値を返す。
-
-    行頭`質問: `の行の後に行頭`回答: `の行を持たない容器は確認回答の記録ではないため`None`を返す。
-    ラベルの値は次のラベル行の直前まで複数行に続く（回答は選んだ案を改行で並べる）。
-    """
-    start = next((index for index, line in enumerate(content) if line.startswith("質問: ")), None)
-    if start is None or not any(line.startswith("回答: ") for line in content[start + 1 :]):
-        return None
-    values: list[list[str]] = []
-    label: str | None = None
-    value: list[str] = []
-    for line in content[start:]:
-        current = next((candidate for candidate in ANSWER_LABELS if line.startswith(candidate)), None)
-        if current is None:
-            value.append(line)
-            continue
-        if label in USER_ANSWER_LABELS:
-            values.append(value)
-        label, value = current, [line.removeprefix(current)]
-    if label in USER_ANSWER_LABELS:
-        values.append(value)
-    return start, values
-
-
-def _quoted_requirements(body: list[str], filename: str) -> list[tuple[str, str]]:
-    """逐語引用の節にある外側の`text`フェンスを要求原文の容器として読み、その内容を出所付きの要求単位へ分ける。
-
-    容器の内側にある補足のフェンスは`_requirement_units`が除く。
-    容器が確認回答の記録を含む場合は、質問と選択肢を要求単位から除く（`_answer_record_units`）。
-    """
-    requirements: list[tuple[str, str]] = []
-    for heading in (line for line in body if line.startswith("## ") and "逐語引用" in line):
-        section = _section(body, heading)
-        assert section is not None
-        containers = [(start, end) for start, end, info in _fenced_blocks(section) if info == "text"]
-        for number, (start, end) in enumerate(containers, start=1):
-            origin = f"{filename}#{heading.removeprefix('## ')} ブロック{number}"
-            content = section[start + 1 : end]
-            units = _answer_record_units(content)
-            requirements.extend((unit, origin) for unit in (units if units is not None else _requirement_units(content)))
-    return requirements
-
-
 def _expected_rows(output: str, filename: str) -> tuple[list[str], list[tuple[str, str]]]:
-    """WI本文から、完成条件の原文と、出所付きの原文要求単位を、証拠の判定と雛形が共有する期待行として返す。"""
+    """WI本文から、完成条件の原文と、出所付きの原文要求単位を、証拠の判定と雛形が共有する期待行として返す。
+
+    原文要求単位は、完成条件節を持つAWIでは`## ユーザーコメント`、UWIでは`## 回答`、完成条件節の無いAWIでは本文から取る。
+    """
     frontmatter, body = _wi_body(output, filename)
     kind = frontmatter.get("type")
     if kind not in {"awi", "uwi"}:
         raise ValueError(f"{filename}: WIのtypeが不正です")
     conditions = _section(body, "## 完成条件")
     if kind == "awi" and conditions is not None:
-        requirements = _quoted_requirements(body, filename)
+        # `## ユーザー指摘の逐語引用`は投入元のセッションへの発話であり、そのセッションで解決済みとして扱う。
+        # 達成を確かめるのは処理側へ宛てた`## ユーザーコメント`だけとし、逐語引用は完成条件を解釈する根拠に留める。
         comment = _section(body, "## ユーザーコメント")
-        if comment is not None:
-            requirements.extend((unit, f"{filename}#ユーザーコメント") for unit in _requirement_units(comment))
+        requirements = [(unit, f"{filename}#ユーザーコメント") for unit in requirement_units.requirement_units(comment or [])]
         return _condition_units(conditions, filename), requirements
     if kind == "awi" and "source" in frontmatter:
         raise ValueError(f"{filename}: 『完成条件』節がありません")
     if kind == "uwi":
         answer = _section(body, "## 回答")
-        requirements = [(unit, f"{filename}#回答") for unit in _requirement_units(answer or [])]
+        requirements = [(unit, f"{filename}#回答") for unit in requirement_units.requirement_units(answer or [])]
         if not requirements:
             raise ValueError(f"{filename}: 『回答』節が空です")
         return [], requirements
     result = _section(body, "## 処理結果")
     if result is not None:
         body = body[: body.index("## 処理結果")]
-    requirements = [(unit, f"{filename}#本文") for unit in _requirement_units(body)]
+    requirements = [(unit, f"{filename}#本文") for unit in requirement_units.requirement_units(body)]
     if not requirements:
         raise ValueError(f"{filename}: 原文本文が空です")
     return [], requirements
@@ -643,14 +485,14 @@ def _unresolved_reference(repository: pathlib.Path, head: str, candidates: list[
     if not candidates:
         return (
             f"{basis}。パス末尾が一致する追跡ファイルもなく、略記など別の名前の短縮をファイル参照として書いた可能性があります。"
-            f"実際に読んだファイルの完全なパス（ルートからの相対パスか絶対パス）へ書き換えるか、観測が不足する行を証拠不足へ再判定する。{keep}"
+            f"{FILE_REFERENCE_FORM}。実際に読んだファイルをこの形で書き換えるか、観測が不足する行を証拠不足へ再判定する。{keep}"
         )
     shown = "、".join(candidates[:REFERENCE_CANDIDATE_LIMIT])
     rest = len(candidates) - REFERENCE_CANDIDATE_LIMIT
     more = f"ほか{rest}件" if rest > 0 else ""
     return (
         f"{basis}。パス末尾が一致する追跡ファイルが{len(candidates)}件あり、1件に決まりません（候補: {shown}{more}）。"
-        f"候補のうち実際に読んだファイルをルートからの相対パスか絶対パスで書くか、観測が不足する行を証拠不足へ再判定する。{keep}"
+        f"{FILE_REFERENCE_FORM}。候補のうち実際に読んだファイルをこの形で書くか、観測が不足する行を証拠不足へ再判定する。{keep}"
     )
 
 
@@ -872,10 +714,11 @@ def _load_wi(reference: str, repository: pathlib.Path, wi_outputs: dict[str, str
 def _expired_source_error(
     row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
 ) -> str | None:
-    """失効行のsourceから、ユーザー判断の参照先を確認する。
+    """失効行のsourceから、ユーザー判断かメインの技術判断の記録の参照先を確認する。
 
-    受け付ける参照先は、対象AWIの記入済みユーザーコメント、回答済みUWIの回答、および会話中のユーザー発話
-    （`_user_event_reasons`）である。
+    受け付けるユーザー判断の参照先は、対象AWIの記入済みユーザーコメント、回答済みUWIの回答、および会話中のユーザー発話
+    （`_user_event_reasons`）である。`wi_conditions`の行に限り、メインの技術判断を記録したレビュー指摘管理表の行
+    （`_technical_judgment_reasons`）も受け付ける。技術判断で外せる条件かの意味の判定は、判断したメインと統合時の読解に残す。
     """
     source = row["source"]
     references = dict.fromkeys(WI_FILENAME.findall(source))
@@ -890,11 +733,11 @@ def _expired_source_error(
             reasons.append(str(exc))
             continue
         if own_comment and frontmatter.get("type") == "awi":
-            if _requirement_units(_section(body, "## ユーザーコメント") or []):
+            if requirement_units.requirement_units(_section(body, "## ユーザーコメント") or []):
                 return None
             reasons.append(f"{reference}: ユーザーコメントが空です")
         elif frontmatter.get("type") == "uwi" and "回答" in source:
-            if _requirement_units(_section(body, "## 回答") or []):
+            if requirement_units.requirement_units(_section(body, "## 回答") or []):
                 return None
             reasons.append(f"{reference}: UWIの回答が空です")
         else:
@@ -904,15 +747,58 @@ def _expired_source_error(
         if not event_reasons:
             return None
         reasons.extend(event_reasons)
+    technical_reasons = _technical_judgment_reasons(row, section, repository, wi_outputs)
+    if technical_reasons is not None:
+        if not technical_reasons:
+            return None
+        reasons.extend(technical_reasons)
     detail = f"（{'、'.join(reasons)}）" if reasons else ""
-    return (
-        f"{_row_label(row, section, index)}.source: 失効のユーザー判断を確認できません{detail}。"
-        "対象AWIの記入済みユーザーコメント、関連する回答済みUWIのファイル名と所在、"
-        "または会話中の発話を抽出した`atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと"
-        "`<record>:<line>`に、否定した要求単位の「」による逐語を添えて記録する。"
-        "記録位置は出力ファイルの`record`と`line`で確かめ、逐語は発話本文（確認回答では回答と自由記述の値）から写す。"
-        "ユーザーの判断がない場合は、その判断を得てから同じ証拠をもう一度確かめる"
+    judgment = (
+        "ユーザー判断か、エージェント由来のAWIの完成条件についてのメインの技術判断の記録"
+        if section == "wi_conditions"
+        else "ユーザー判断"
     )
+    return (
+        f"{_row_label(row, section, index)}.source: 失効の根拠となる{judgment}を確認できません{detail}。"
+        f"{_source_location(section, '失効')}をsourceへ記録する。"
+        "記録位置は出力ファイルの`record`と`line`で確かめ、逐語は発話本文（確認回答では回答と自由記述の値）から写す。"
+        f"{judgment}がない場合は、委譲元へ失効の判断を求め、記録を得てから同じ証拠をもう一度確かめる"
+    )
+
+
+def _technical_judgment_reasons(
+    row: dict[str, str], section: str, repository: pathlib.Path, wi_outputs: dict[str, str]
+) -> list[str] | None:
+    """sourceが指すレビュー指摘管理表に、メインの技術判断の記録があるかを確かめ、満たさなかった条件を返す。
+
+    レビュー指摘管理表の絶対パスを持たないsourceは`None`、記録が条件を満たせば空の一覧を返す。
+    技術判断で受理するのは、frontmatterに`source`を持つエージェント由来のAWIの`wi_conditions`の行だけとする。
+    人間由来のWIの条件と原文要求の不採用には、ユーザーの明示承認が要るためである。
+    """
+    tables = _review_tables(row["source"])
+    if not tables:
+        return None
+    if section != "wi_conditions":
+        return ["原文要求の失効はメインの技術判断の記録では受理しません（ユーザー判断が必要です）"]
+    try:
+        frontmatter, _ = _load_wi(row["awi"], repository, wi_outputs)
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        return [str(exc)]
+    if "source" not in frontmatter:
+        return [
+            f"{row['awi']}はfrontmatterに`source`を持たない人間由来のWIのため、技術判断の記録では受理しません（ユーザー判断が必要です）"
+        ]
+    reasons: list[str] = []
+    for table in tables:
+        try:
+            rows = review_table.read_rows(table)
+        except (OSError, UnicodeError, ValueError) as exc:
+            reasons.append(f"レビュー指摘管理表を読めません: {exc}")
+            continue
+        if any(row["awi"] in text and TECHNICAL_JUDGMENT in text for text in (" ".join(cells) for cells in rows)):
+            return []
+        reasons.append(f"{table}に{row['awi']}のファイル名と`{TECHNICAL_JUDGMENT}`の文字列を含む行がありません")
+    return reasons
 
 
 def _user_event_reasons(source: str) -> list[str] | None:
@@ -976,19 +862,15 @@ def _user_events_at(path: pathlib.Path, record: str, line: int) -> list[dict[str
     return events
 
 
-def _user_utterance_text(text: str) -> str:
-    """発話本文のうちユーザーの判断として比べる部分を返す。確認回答の書式では回答と自由記述の値だけとする。"""
-    parsed = _answer_record_values(text.splitlines())
-    if parsed is None:
-        return text
-    return "\n".join("\n".join(value) for value in parsed[1])
-
-
 def _user_event_utterance(event: dict[str, typing.Any], text: str) -> str:
-    """新形式ではユーザー値だけを、旧形式では行頭ラベルからユーザー値だけを返す。"""
+    """確認回答の行（`user_response`を持つ行）では回答と自由記述の値だけを、それ以外の発話では本文を返す。
+
+    確認回答かどうかは生成側が付ける`user_response`の構造で判定し、本文の行頭ラベルでは判定しない。
+    行頭ラベルで判定すると、同じ行頭を持つ通常の発話から一部だけを比べることになるためである。
+    """
     responses = event.get("user_response")
     if not isinstance(responses, list):
-        return _user_utterance_text(text)
+        return text
     values: list[str] = []
     for response in responses:
         if not isinstance(response, dict):
@@ -1099,18 +981,17 @@ def _unassigned_source_error(
 
     記録は要求単位を言い換えて複数の単位を1行で覆うため、要求単位の原文と記録行の一致は求めず、
     割当先の表記が割当を示す記録行に現れるかを行単位で比べる。意味上の対応はレビューと統合時の読解に残す。
-    割当を示す行は、割当の語を持つ行と、引用位置と割当先のWIファイル名を同じ行に持つ行の2つの形とする。
-    後者は起草規範が割当の記録に求める要素であり、「が担う」「で扱う」のように述語が異なっても割当を示す。
-    「」で囲んだタイトルとWIファイル名だけの行へは広げない。背景の記録は位置の後に原文の抜粋を「」で添え、
-    WIファイル名は依存や担当範囲の言及にも現れるため、語なしで受理すると割当でない行まで根拠になる。
+    割当先は、WIファイル名、「」で囲んだタイトルか説明、または分割元の依頼全体とし、WIのH1タイトルとの一致は確かめない。
+    割当を示す行は割当の語を持つ行とする。「」で囲んだ表記とWIファイル名だけの行へは広げない。
+    背景の記録は原文の抜粋を「」で添え、WIファイル名は依存や担当範囲の言及にも現れるため、
+    語なしで受理すると割当でない行まで根拠になる。
     """
     label = _row_label(row, section, index)
     record, reason = _record_section(row["source"], repository, wi_outputs)
     if record is None:
         return (
             f"{label}.source: 割当外の根拠となる割当の記録を特定できません（{reason}）。"
-            "割当を記録したWIのファイル名と節名『反映内容と反映先』、"
-            "または計画ファイルの絶対パスと節名『実施内容』をsourceへ書く。"
+            f"{_source_location(section, '割当外')}をsourceへ書く。"
             "割当の記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
         )
     evidence = row["evidence"]
@@ -1120,17 +1001,14 @@ def _unassigned_source_error(
     if not assignees:
         return (
             f"{label}.evidence: 割当先の表記がありません。"
-            f"記録に書かれたとおりの割当先（WIファイル名、「」で囲んだタイトル、または{WHOLE_REQUEST}）をevidenceへ書く"
+            f"記録に書かれたとおりの割当先（WIファイル名、「」で囲んだタイトルか説明、または{WHOLE_REQUEST}）をevidenceへ書く"
         )
     for line in record:
         if any(word in line for word in ASSIGNMENT_WORDS) and any(assignee in line for assignee in assignees):
             return None
-        if QUOTE_POSITION.search(line) and any(WI_FILENAME.fullmatch(assignee) and assignee in line for assignee in assignees):
-            return None
     return (
         f"{label}.evidence: 割当先（{_quoted_units(assignees)}）がsourceの節の割当を示す行にありません。"
-        "割当を示す行は、割当の語（割当・割り当て・分割元の依頼全体）を持つ行か、"
-        "引用位置（逐語引用 text[N] 文字A-B）と割当先のWIファイル名を同じ行に持つ行である。"
+        "割当を示す行は、割当の語（割当・割り当て・分割元の依頼全体）を持つ行である。"
         "記録に書かれたとおりの割当先をevidenceへ写すか、記録が無い単位は達成・未達・証拠不足のいずれかで判定する"
     )
 
@@ -1177,33 +1055,13 @@ def _quote_spans(quote: str, original: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _covered_by_background(requirement: str, record: list[str], original: str, origin: str) -> bool:
-    """「背景」を含む記録行のいずれかの引用が、原文上で要求単位の位置を覆うかを返す。"""
+def _covered_by_background(requirement: str, record: list[str], original: str) -> bool:
+    """「背景」を含む記録行のいずれかの「」による引用が、原文上で要求単位の位置を覆うかを返す。"""
     unit = _compact(requirement)
     compact_original = _compact(original)
     positions = [index for index in range(len(compact_original)) if compact_original.startswith(unit, index)] if unit else []
-    section = _section(original.splitlines(), "## ユーザー指摘の逐語引用") or []
-    blocks = ["\n".join(section[start + 1 : end]) for start, end, info in _fenced_blocks(section) if info == "text"]
-    source_block = re.search(r"#ユーザー指摘の逐語引用 ブロック(\d+)$", origin)
     for line in record:
         if BACKGROUND not in line:
-            continue
-        if QUOTE_POSITION_PREFIX.search(line):
-            references = list(QUOTE_POSITION.finditer(line))
-            if not references or len(references) != len(QUOTE_POSITION_PREFIX.findall(line)) or source_block is None:
-                continue
-            resolved: list[tuple[int, str]] = []
-            for reference in references:
-                number, start, end = map(int, reference.groups())
-                if not 1 <= number <= len(blocks):
-                    break
-                text = blocks[number - 1]
-                if not 1 <= start <= end <= len(text):
-                    break
-                resolved.append((number, _compact(text[start - 1 : end])))
-            else:
-                if unit and any(number == int(source_block[1]) and unit in text for number, text in resolved):
-                    return True
             continue
         for quote in BRACKETED_TITLE.findall(line):
             for start, end in _quote_spans(quote, compact_original):
@@ -1225,17 +1083,14 @@ def _background_source_error(
     if record is None:
         return (
             f"{label}.source: 背景の根拠となる分類の記録を特定できません（{reason}）。"
-            "背景とした原文の範囲と理由を記録したWIのファイル名と節名『反映内容と反映先』、"
-            "計画ファイルの絶対パスと節名『実施内容』、または実装着手後に記録したレビュー指摘管理表の絶対パスをsourceへ書く。"
+            f"{_source_location(section, BACKGROUND)}をsourceへ書く。"
             "記録が無い単位は記録を補ってから背景とするか、達成・未達・証拠不足のいずれかで判定する"
         )
     original = _original_text(row, repository, wi_outputs)
-    if original is None or not _covered_by_background(row["requirement"], record, original, row["origin"]):
+    if original is None or not _covered_by_background(row["requirement"], record, original):
         return (
-            f"{label}.source: 記録の「背景」を含む行が、この要求単位を覆う原文の範囲を位置参照または旧引用で示していません。"
-            "背景とした原文の範囲を`逐語引用 text[N] 文字A-B`で記録へ参照し、読み手が箇所を特定できる短い抜粋か要約を添える。"
-            "Nは同じWIの引用節のtextブロック番号、A-Bは改行も数える1始まりの文字範囲である。"
-            "保存済みの「」による引用（中略は…）も読める。"
+            f"{label}.source: 記録の「背景」を含む行が、この要求単位を覆う原文の範囲を「」による引用で示していません。"
+            "背景とした原文の範囲を「」で囲んで記録へ引用する（中略は…で示せる）。"
             "要求を含む文は背景にせず、達成・未達・証拠不足のいずれかで判定する"
         )
     evidence = row["evidence"].strip()
@@ -1248,19 +1103,79 @@ def _background_source_error(
 
 
 ExemptionCheck = typing.Callable[[dict[str, str], str, int, pathlib.Path, dict[str, str]], "str | None"]
-# 達成を求めずに行を受理させる判定値は、その根拠の記録を確かめる関数と対にして登録する。
+
+
+@dataclasses.dataclass(frozen=True)
+class Exemption:
+    """達成を求めずに行を受理させる判定値の、根拠の記録を確かめる関数と`source`へ書く所在の説明。
+
+    雛形の次の操作と、根拠を確認できない行の診断は、同じ`source_location`から所在の文面を得る。
+    説明を欠いた判定値を登録できないようにし、受理条件と案内が別々に変わることを防ぐ。
+    """
+
+    check: ExemptionCheck
+    source_location: str
+
+    def __post_init__(self) -> None:
+        """所在の説明を持たない登録を拒否する。"""
+        if not self.source_location.strip():
+            raise ValueError("免除の判定値にはsourceへ書く所在の説明が必要です")
+
+
+_USER_JUDGMENT_LOCATION = (
+    "対象AWIの記入済みユーザーコメント、関連する回答済みUWIのファイル名と所在、"
+    "または会話中の発話を抽出した`atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと"
+    "`<record>:<line>`（例: `claude:<セッションID>:625`）に、否定した要求単位の「」による逐語を添えたもの"
+)
+_EXPIRED_REQUIREMENT = Exemption(_expired_source_error, _USER_JUDGMENT_LOCATION)
+_EXPIRED_CONDITION = Exemption(
+    _expired_source_error,
+    f"{_USER_JUDGMENT_LOCATION}か、frontmatterに`source`を持つAWIの完成条件に限り、"
+    f"対象AWIのファイル名と`{TECHNICAL_JUDGMENT}`の文字列を含む行を持つレビュー指摘管理表の絶対パス",
+)
+# 達成を求めずに行を受理させる判定値は、その根拠の記録を確かめる関数と所在の説明を組にして登録する。
 # 検証関数を持たない免除の判定値を受理値へ加えると、根拠の無い行が確認を通過するためである。
 # 割当外は分割起票で他のWIへ割り当てた原文要求と分割元の依頼全体の単位にだけ使うため、完成条件の行では受理しない。
 # 背景は原文要求のうち要求を含まない過去の観測や経緯の文にだけ使う。完成条件はWI自身の達成対象であるため受理しない。
-EXEMPTIONS: dict[str, dict[str, ExemptionCheck]] = {
-    "wi_conditions": {"失効": _expired_source_error},
+EXEMPTIONS: dict[str, dict[str, Exemption]] = {
+    "wi_conditions": {"失効": _EXPIRED_CONDITION},
     "user_requirements": {
-        "失効": _expired_source_error,
-        "割当外": _unassigned_source_error,
-        BACKGROUND: _background_source_error,
+        "失効": _EXPIRED_REQUIREMENT,
+        "割当外": Exemption(
+            _unassigned_source_error,
+            "割当を記録したWIのファイル名と節名『反映内容と反映先』、または計画ファイルの絶対パスと節名『実施内容』",
+        ),
+        BACKGROUND: Exemption(
+            _background_source_error,
+            "背景とした原文の範囲と理由を記録したWIのファイル名と節名『反映内容と反映先』、"
+            "計画ファイルの絶対パスと節名『実施内容』、または実装着手後に記録したレビュー指摘管理表の絶対パス",
+        ),
     },
 }
 SECTION_OUTCOMES = {section: JUDGMENT_OUTCOMES | set(checks) for section, checks in EXEMPTIONS.items()}
+
+
+def _source_location(section: str, outcome: str) -> str:
+    """登録した免除の判定値の、`source`へ書く所在の説明を返す。"""
+    return EXEMPTIONS[section][outcome].source_location
+
+
+def template_guidance() -> str:
+    """雛形の記入規則を、免除の判定値の登録とファイル参照の受理形式から組み立てて返す。"""
+    # 同じ判定値でも配列ごとに所在が異なる場合があるため、判定値と所在の組ごとに使える配列をまとめる。
+    sections: dict[tuple[str, str], list[str]] = {}
+    for section, exemptions in EXEMPTIONS.items():
+        for outcome, exemption in exemptions.items():
+            sections.setdefault((outcome, exemption.source_location), []).append(section)
+    rules = [
+        f"outcomeを{'・'.join(JUDGMENT_ORDER)}とする行は、雛形のsourceのままでよい",
+        *(
+            f"outcomeを{outcome}とする行（{'と'.join(names)}で使える）は、sourceを{location}へ書き換える"
+            for (outcome, location), names in sections.items()
+        ),
+        FILE_REFERENCE_FORM,
+    ]
+    return "。".join(rules)
 
 
 def _check_exemptions(payload: dict[str, typing.Any], repository: pathlib.Path, wi_outputs: dict[str, str]) -> list[str]:
@@ -1268,8 +1183,8 @@ def _check_exemptions(payload: dict[str, typing.Any], repository: pathlib.Path, 
     errors: list[str] = []
     for section, checks in EXEMPTIONS.items():
         for index, row in enumerate(payload[section]):
-            check = checks.get(row["outcome"])
-            if check is not None and (error := check(row, section, index, repository, wi_outputs)) is not None:
+            exemption = checks.get(row["outcome"])
+            if exemption is not None and (error := exemption.check(row, section, index, repository, wi_outputs)) is not None:
                 errors.append(error)
     return errors
 
@@ -1678,7 +1593,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"成功: `完成条件証拠`へ雛形を書き込みました（追加 {added} 行、既存 {kept} 行を保持）: {args.evidence}\n"
             + _next_action.next_action_line(
-                "空欄のoutcome・evidence・reviewed_headを各行で判定して記入し、"
+                "空欄のoutcome・evidence・reviewed_headを各行で判定して記入する。"
+                f"{template_guidance()}。記入後に"
                 f"`atk run-script exec-review-evidence-check -- {args.evidence} {' '.join(filenames)} "
                 "--expected-head <レビュー対象HEAD>`で証拠を確かめる"
             )

@@ -1855,8 +1855,11 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
     await create_dialog.wait_for(state="hidden")
     notice = page.get_by_role("status").filter(has_text="一括登録として取り込みました")
     await notice.wait_for(state="visible")
-    await playwright.async_api.expect(notice).to_contain_text("1件を取り込みました")
-    await playwright.async_api.expect(notice).to_contain_text("使わなかった入力欄: target-repo")
+    # 使わなかった入力欄はユーザーが入力したtarget-repoだけであり、初期値へ戻した回答形式は数えない。
+    # 列挙の末尾まで一致を求め、回答形式などの余分な入力欄が後ろへ連結された通知を検出する。
+    await playwright.async_api.expect(page.locator("#operation-notice-message")).to_have_text(
+        re.compile(r"1件を取り込みました。.*使わなかった入力欄: target-repo$")
+    )
     await page.locator('.entry-select[data-key="inbox/auto-imported.md"]').wait_for(state="visible")
     assert harness.operations.batch_calls[-1] == show_text
     assert (harness.root / "inbox" / "auto-imported.md").read_text(encoding="utf-8") == (

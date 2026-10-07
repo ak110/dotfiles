@@ -11,7 +11,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from agent_toolkit._atk.wi.common import (
     WI_ACTIVE_STATES,
@@ -37,7 +37,7 @@ from agent_toolkit._atk.wi.formatters import (
     _uwi_body_summary,
 )
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
-from agent_toolkit._atk.wi.repo import _resolve_repo_id
+from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
 
 type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
 
@@ -174,14 +174,22 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
             print(f"{prefix}{summary}")
 
 
-def _staleness(text: str, target_repo: str, now: datetime.datetime) -> dict[str, object]:
-    """target_commit以後に12時間以上経過したcommitがあるかを返す。"""
+def _staleness(text: str, local_worktree: pathlib.Path | None, now: datetime.datetime) -> dict[str, object]:
+    """target_commit以後に12時間以上経過したcommitがあるかを返す。
+
+    履歴は項目の`target_repo`に対応するローカル作業ツリーで調べる。
+    frontmatterの`target_repo`は正規化リモートURLであり`git -C`へ渡せないため、引数を作業ツリーのパスに限る。
+    対応する作業ツリーが無い場合は`git`を起動せず`local-worktree-unavailable`を返し、
+    作業ツリーで`git rev-list`が失敗した場合（`target_commit`が履歴に無い場合など）の`history-unavailable`と区別する。
+    """
     parsed = parse_frontmatter(text)
     target_commit = parsed[0].get("target_commit") if parsed is not None else None
     if not isinstance(target_commit, str) or not target_commit:
         return {"status": "indeterminate", "reason": "target-commit-missing"}
+    if local_worktree is None:
+        return {"status": "indeterminate", "reason": "local-worktree-unavailable"}
     result = subprocess.run(
-        ["git", "-C", target_repo, "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..HEAD"],
+        ["git", "-C", str(local_worktree), "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..HEAD"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -204,8 +212,12 @@ def _print_json_entries(
     *,
     include_staleness: bool = False,
     staleness_now: datetime.datetime | None = None,
+    local_worktrees: Mapping[str, pathlib.Path] | None = None,
 ) -> None:
-    """選択済みエントリを端末幅に依存しないJSON Linesで出力する。"""
+    """選択済みエントリを端末幅に依存しないJSON Linesで出力する。
+
+    `local_worktrees`はリポジトリ識別子からローカル作業ツリーへの対応で、鮮度の判定に使う。
+    """
     now = staleness_now or datetime.datetime.now(datetime.UTC)
     for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
         state_readiness = _state_readiness(state, path.name, readiness)
@@ -227,7 +239,7 @@ def _print_json_entries(
             "summary": summary,
         }
         if include_staleness:
-            record["staleness"] = _staleness(text, target_repo, now)
+            record["staleness"] = _staleness(text, (local_worktrees or {}).get(target_repo), now)
         print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
 
 
@@ -236,6 +248,23 @@ def _print_summary_entries(selected: list[QueueEntryDisplay]) -> None:
     for path, _, text, _, entry_type in sorted(selected, key=lambda entry: entry[0].name):
         summary = _uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
         print(json.dumps({"filename": path.name, "summary": summary}, ensure_ascii=False, separators=(",", ":")))
+
+
+def _local_worktrees(args: argparse.Namespace, target_values: list[str]) -> dict[str, pathlib.Path]:
+    """`--target-repo`の値のうちローカル作業ツリーを指すものを、リポジトリ識別子と対応付けて返す。
+
+    実在するローカルパスの指定はそのパスを、省略時に現在位置から補った識別子は現在位置の作業ツリーを使う。
+    正規化リモートURLでの指定と`all`は作業ツリーを持たないため対応に含めない。
+    """
+    worktrees: dict[str, pathlib.Path] = {}
+    if getattr(args, "target_repo_defaulted", False):
+        for value in target_values:
+            worktrees.setdefault(value, _resolve_local_worktree(None))
+        return worktrees
+    for value in target_values:
+        if pathlib.Path(value).expanduser().exists():
+            worktrees.setdefault(_resolve_repo_id(value), _resolve_local_worktree(value))
+    return worktrees
 
 
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -258,7 +287,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if not args.skip_pull:
         with _repo_lock(private_notes):
             _pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
-    resolved_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in (args.target_repo or ())))
+    target_values = args.target_repo if isinstance(args.target_repo, list) else [args.target_repo] if args.target_repo else []
+    resolved_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in target_values))
     readiness_target = resolved_repos[0] if len(resolved_repos) == 1 else None
     readiness = calculate_readiness(private_notes, readiness_target)
 
@@ -280,7 +310,13 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         return
 
     if getattr(args, "jsonl", False) or (is_agent_environment() and not getattr(args, "no_jsonl", False)):
-        _print_json_entries(selected, readiness, include_staleness=getattr(args, "with_staleness", False))
+        include_staleness = getattr(args, "with_staleness", False)
+        _print_json_entries(
+            selected,
+            readiness,
+            include_staleness=include_staleness,
+            local_worktrees=_local_worktrees(args, target_values) if include_staleness else None,
+        )
         return
 
     _print_entries(selected, readiness)

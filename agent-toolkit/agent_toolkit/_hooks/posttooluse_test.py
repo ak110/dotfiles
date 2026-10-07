@@ -24,6 +24,7 @@ import pytest
 from agent_toolkit import agents_server_mcp
 from agent_toolkit._agents_server import agents_wait
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._hooks.output_contract import validate_hook_output
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state, auto_message_opening_attributes
 
@@ -740,6 +741,76 @@ def test_hooks_json_routes_ask_user_question_to_posttooluse() -> None:
     hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
     matchers = [entry["matcher"].split("|") for entry in hooks]
     assert any("AskUserQuestion" in names for names in matchers)
+
+
+def _shell_payload(tool_name: str, response: dict) -> dict:
+    """シェル系ツールのPostToolUse payloadを組み立てる。
+
+    `tool_response`の項目は、Claude Code 2.1.291で`bashOutputMaxChars`を超える出力を返したBashのPostToolUse入力
+    （`stdout`・`stderr`・`interrupted`・`isImage`・`noOutputExpected`・`persistedOutputPath`・`persistedOutputSize`）から写した。
+    """
+    base = {"stdout": "", "stderr": "", "interrupted": False, "isImage": False, "noOutputExpected": False}
+    base.update(response)
+    return {
+        "session_id": "persisted-output",
+        "hook_event_name": "PostToolUse",
+        "tool_name": tool_name,
+        "tool_input": {"command": "cat docs/large.md"},
+        "tool_response": base,
+    }
+
+
+@pytest.mark.parametrize("tool_name", ["Bash", "PowerShell"])
+def test_persisted_shell_output_excerpt_is_replaced_by_unread_notice(tmp_path: pathlib.Path, tool_name: str) -> None:
+    """退避したシェル出力の抜粋を、保存先・バイト数・次の操作だけを示す本文へ置き換え、他の項目は保つ。
+
+    抜粋が残ると、実行主体は保存先を読まずに先頭約2KBを取得結果の全体として扱える。
+    """
+    excerpt = "元の出力の先頭" * 100
+    saved = str(tmp_path / "tool-results" / "b1.txt")
+    payload = _shell_payload(
+        tool_name, {"stdout": excerpt, "stderr": "警告", "persistedOutputPath": saved, "persistedOutputSize": 50000}
+    )
+
+    result = _run(payload, state_dir=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert validate_hook_output("PostToolUse", json.loads(result.stdout)) == []
+    updated = output["updatedToolOutput"]
+    assert excerpt not in updated["stdout"]
+    assert saved in updated["stdout"] and "50000" in updated["stdout"] and "次の操作:" in updated["stdout"]
+    assert {key: value for key, value in updated.items() if key != "stdout"} == {
+        key: value for key, value in payload["tool_response"].items() if key != "stdout"
+    }
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "response", "event"),
+    [
+        pytest.param("Bash", {"stdout": "短い出力"}, "PostToolUse", id="not-persisted"),
+        pytest.param("Bash", {"stdout": "x", "persistedOutputPath": ""}, "PostToolUse", id="empty-path"),
+        pytest.param("Read", {"stdout": "x", "persistedOutputPath": "/tmp/x.txt"}, "PostToolUse", id="other-tool"),
+        pytest.param("Bash", {"stdout": "x", "persistedOutputPath": "/tmp/x.txt"}, "PostToolUseFailure", id="failure"),
+    ],
+)
+def test_shell_output_without_persisted_path_is_left_unchanged(
+    tmp_path: pathlib.Path, tool_name: str, response: dict, event: str
+) -> None:
+    """退避していない出力、他のツールおよび失敗の結果では、ツール結果を置き換えない。"""
+    payload = {**_shell_payload(tool_name, response), "hook_event_name": event}
+
+    result = _run(payload, state_dir=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "updatedToolOutput" not in result.stdout
+
+
+def test_hooks_json_routes_shell_tools_to_posttooluse() -> None:
+    """PostToolUseの登録がBashとPowerShellを被覆しないと、退避した出力の置き換えへ入力が届かない。"""
+    hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
+    matchers = [entry["matcher"].split("|") for entry in hooks]
+    assert any({"Bash", "PowerShell"} <= set(names) for names in matchers)
 
 
 def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.Path) -> None:

@@ -71,6 +71,28 @@ def test_first_stop_requires_following_visible_result(tmp_path: pathlib.Path) ->
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "終了する。"))[0] == "approve"
 
 
+def test_send_to_user_message_delivers_report(tmp_path: pathlib.Path) -> None:
+    """send_to_userの呼び出しだけの応答も、その`message`を可視本文として報告段階へ数える。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
+    entry = {
+        "type": "assistant",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "mcp__agent-toolkit__send_to_user",
+                    "input": {"message": REVIEW_RESULT},
+                }
+            ]
+        },
+    }
+    with (tmp_path / "transcript.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    assert REVIEW_RESULT in (termination_evidence.visible_messages(json.loads(stop_payload(tmp_path, "")), 0) or [])
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "終了する。"))[0] == "approve"
+
+
 def test_generated_input_cannot_cancel_work(tmp_path: pathlib.Path) -> None:
     supply_report(tmp_path, WORK_COMPLETE, "work-complete", "call-1")
     prompt = '<atk-auto source="stop" kind="continuation">中止する</atk-auto>'

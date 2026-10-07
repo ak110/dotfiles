@@ -128,6 +128,30 @@ Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス�
 `CLAUDE_STREAM_IDLE_TIMEOUT_MS`および`CLAUDE_CODE_MAX_RETRIES`はprocess-loopが子プロセス環境へ常に設定する値に含めない。
 該当する障害を確認した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
 
+## Claude CodeのBash出力の上限
+
+`share/claude_settings_json_managed.json`はClaude Codeの`bashOutputMaxChars`へ62,000を配布する。
+`pytools/_internal/update_claude_settings.py`がこの値を`~/.claude/settings.json`へ反映し、Claude CodeのBashとPowerShellは62,000バイト以下の出力を退避せずに全文で返す。
+値はCodexへ配布する`tool_output_token_limit = 20000`（`scripts/codex_config.toml`）をバイトへ換算したもので、1回のツール出力で受け取る量を両ホストでそろえる。
+換算には`agent-toolkit/agent_toolkit/_hooks/pretooluse/large_reads.py`が使う1トークンあたり3.10バイトを用いる。
+62,000バイトを超える出力は退避され、agent-toolkitのPostToolUseが抜粋を保存先と次の操作を示す本文へ置き換える。
+置き換えの設計は`design-hooks.md`「退避したシェル出力の抜粋の置き換え（2026年10月6日）」にある。
+`share/claude_settings_json_managed.json`はコメントを持てないため、値の理由は本節だけが保持する。
+
+本体の設定スキーマにある`bashOutputMaxChars`の説明は次のとおりである。
+
+```text
+How many characters of a successful Bash or PowerShell command's output Claude receives inline (default 30000; values clamp to 4000-128000)
+```
+
+指定しない場合は50,000バイト（19,774文字）のファイルも退避されるため、比較は文字数ではなくバイト数で行われる。
+観測は2026年10月7日にClaude Code 2.1.291で行った。`claude -p --settings share/claude_settings_json_managed.json --model haiku --output-format stream-json --verbose`へファイルを`cat`させた。
+61,500バイトのファイルは`persistedOutputPath`を持たず全文で返った。63,000バイトのファイルは`<persisted-output>`で返り、`persistedOutputSize`は63000だった。
+
+同じ形で上限の前後の大きさのファイルを`cat`させ、ストリームの`tool_use_result`の`persistedOutputPath`の有無で再検証する。
+上限値の解釈が変わった疑いがある場合は、本体のバイナリから`bashOutputMaxChars`の説明を確かめる。
+BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+
 ## mise latestの非ログイン再評価
 
 dotfilesリポジトリを対象とする`atk wi process-loop`はmiseの`latest`指定ツールを非ログインシェルから再評価する。

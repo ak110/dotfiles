@@ -125,3 +125,121 @@ def test_search_warning_joins_other_warnings(tmp_path: pathlib.Path) -> None:
     assert context.count(_WARN_OPENING) == 2
     assert f"`{_SEARCH_SKILL}`" in context
     assert "`git rev-parse --short`" in context
+
+
+_BUGFIX_SKILL = "agent-toolkit:bugfix"
+_ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n| 要因系統 | L1 現象 |\n"
+
+
+def _bugfix_warnings(context: str) -> int:
+    return context.count(f"`{_BUGFIX_SKILL}`を起動しないまま原因分析の記述を実行した")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"tool_name": "Write", "tool_input": {"file_path": "/tmp/awi.md", "content": _ROOT_CAUSE_BODY}},
+        {"tool_name": "Edit", "tool_input": {"file_path": "/tmp/awi.md", "old_string": "x", "new_string": _ROOT_CAUSE_BODY}},
+        {
+            "tool_name": "MultiEdit",
+            "tool_input": {"file_path": "/tmp/awi.md", "edits": [{"old_string": "x", "new_string": _ROOT_CAUSE_BODY}]},
+        },
+        {
+            "tool_name": "apply_patch",
+            "tool_input": {"command": "*** Begin Patch\n*** Add File: awi.md\n+# 表題\n+## 原因分析\n*** End Patch\n"},
+            "turn_id": "turn-1",
+        },
+        {"tool_name": "Bash", "tool_input": {"command": f"cat > /tmp/awi.md <<'EOF'\n{_ROOT_CAUSE_BODY}EOF"}},
+    ],
+    ids=["write", "edit", "multiedit", "apply_patch", "bash"],
+)
+def test_root_cause_writing_without_bugfix_warns_once_per_context(tmp_path: pathlib.Path, payload: dict) -> None:
+    """`agent-toolkit:bugfix`を起動しないまま`## 原因分析`の見出し行を書くと、文脈ごとに1回だけ警告する。
+
+    起草で原因分析を書く時点に未起動を示す手掛かりが無いと、起動を求める条文が文脈にあっても起動されず、
+    外部の挙動を一次資料で確かめる初動の基準が適用されないまま原因が確定する。
+    """
+    env = _plan_file_state_env(tmp_path)
+    payload = {**payload, "session_id": "root-cause"}
+    first = _run(payload, env)
+    assert first.returncode == 0
+    assert _bugfix_warnings(_additional_context(first)) == 1
+    second = _run(payload, env)
+    assert second.returncode == 0
+    assert _bugfix_warnings(_additional_context(second)) == 0
+
+
+@pytest.mark.parametrize("skill", [_BUGFIX_SKILL, "bugfix"])
+def test_root_cause_writing_after_bugfix_does_not_warn(tmp_path: pathlib.Path, skill: str) -> None:
+    env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "root-cause", skill)
+    payload = {"tool_name": "Write", "tool_input": {"file_path": "/tmp/awi.md", "content": _ROOT_CAUSE_BODY}}
+    result = _run({**payload, "session_id": "root-cause"}, env)
+    assert result.returncode == 0
+    assert _bugfix_warnings(_additional_context(result)) == 0
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["## 原因分析の根拠\n", "### 原因分析\n", "`## 原因分析`を置く\n", "本文だけ\n"],
+)
+def test_writing_without_root_cause_heading_does_not_warn(tmp_path: pathlib.Path, content: str) -> None:
+    payload = {"tool_name": "Write", "tool_input": {"file_path": "/tmp/awi.md", "content": content}, "session_id": "s"}
+    result = _run(payload, _plan_file_state_env(tmp_path))
+    assert result.returncode == 0
+    assert _bugfix_warnings(_additional_context(result)) == 0
+
+
+_MANAGED_TEMP_SKILL = "agent-toolkit:managed-temp"
+
+
+def _managed_temp_warnings(context: str) -> int:
+    return context.count(f"`{_MANAGED_TEMP_SKILL}`を起動しないまま")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "atk managed-temp create --prefix lane-02-grp-a",
+        "/home/u/dotfiles/agent-toolkit/bin/atk managed-temp create --prefix x",
+        "cd /repo && atk managed-temp create --prefix x",
+        "for l in a b; do atk managed-temp create --prefix $l; done",
+        "cd /repo && d=$(atk managed-temp create --prefix y)",
+    ],
+)
+def test_managed_temp_create_without_skill_warns_once_per_context(tmp_path: pathlib.Path, command: str) -> None:
+    """`agent-toolkit:managed-temp`を起動しないまま個別の領域を作成すると、文脈ごとに1回だけ警告する。
+
+    作成の時点に未起動を示す手掛かりが無いと、置き場所の規定を読まずに参照される保存物を個別の領域へ置き、
+    領域の回収で保存物が失われる。
+    """
+    env = _plan_file_state_env(tmp_path)
+    first = _run(_bash(command, "managed-temp"), env)
+    assert first.returncode == 0
+    assert _managed_temp_warnings(_additional_context(first)) == 1
+    second = _run(_bash(command, "managed-temp"), env)
+    assert _managed_temp_warnings(_additional_context(second)) == 0
+
+
+@pytest.mark.parametrize("skill", [_MANAGED_TEMP_SKILL, "managed-temp"])
+def test_managed_temp_create_after_skill_does_not_warn(tmp_path: pathlib.Path, skill: str) -> None:
+    env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "managed-temp", skill)
+    result = _run(_bash("atk managed-temp create --prefix x", "managed-temp"), env)
+    assert _managed_temp_warnings(_additional_context(result)) == 0
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "atk managed-temp cleanup --path /tmp/x",
+        "atk managed-temp list",
+        "git grep -F 'atk managed-temp create'",
+        "printf '%s' 'atk managed-temp create'",
+        "atk wi list",
+    ],
+)
+def test_other_commands_do_not_warn_managed_temp(tmp_path: pathlib.Path, command: str) -> None:
+    result = _run(_bash(command, "s"), _plan_file_state_env(tmp_path))
+    assert result.returncode == 0
+    assert _managed_temp_warnings(_additional_context(result)) == 0
