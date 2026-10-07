@@ -2,6 +2,7 @@
 
 各ステップが呼ばれること、先行工程の順序と並列実行、途中ステップが例外を送出しても他が継続すること、
 画面と永続ログへの出力の振り分け、失敗時の exit code を検証する。
+撤去前の配布内容はwheelへ含めないため、リポジトリ直下のtestdata/post_applyへ保持する。
 """
 
 import ast
@@ -506,15 +507,10 @@ def test_removed_ipython_profile_cleanup_preserves_symlink_target(
 def test_cleanup_removes_unedited_ipython_kernel_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    pytestconfig: pytest.Config,
 ) -> None:
     """撤去前の配布物と同じ`ipython_kernel_config.py`は削除し、編集されたものは残す。"""
-    # 登録値の算出元である撤去前の配布物を履歴から取り出し、登録した期待値と一致することも確かめる。
-    distributed = subprocess.run(
-        ["git", "show", "89ce8990a:.chezmoi-source/dot_ipython/profile_ipy/ipython_kernel_config.py"],
-        cwd=Path(__file__).resolve().parents[1],
-        capture_output=True,
-        check=True,
-    ).stdout
+    distributed = (pytestconfig.rootpath / "testdata/post_apply/ipython_kernel_config.py.txt").read_bytes()
     home_dir = tmp_path / "home"
     ipython_dir = home_dir / ".ipython"
     monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {})
@@ -536,29 +532,25 @@ def test_cleanup_removes_unedited_ipython_kernel_config(
 
 
 @pytest.mark.parametrize(
-    ("base", "relative", "source"),
+    ("base", "relative", "fixture_name"),
     [
-        (Path(), ".screenrc", ".chezmoi-source/dot_screenrc"),
-        (Path(".config"), "xonsh/rc.xsh", ".chezmoi-source/dot_config/xonsh/rc.xsh"),
-        (Path(".config"), "yapf/style", ".chezmoi-source/dot_config/yapf/style"),
-        (Path(".config"), "pypoetry/config.toml", ".chezmoi-source/dot_config/pypoetry/config.toml"),
-        (Path(".config"), "rest-client/environment.json", ".chezmoi-source/dot_config/rest-client/environment.json"),
+        (Path(), ".screenrc", "screenrc.txt"),
+        (Path(".config"), "xonsh/rc.xsh", "xonsh_rc.xsh.txt"),
+        (Path(".config"), "yapf/style", "yapf_style.txt"),
+        (Path(".config"), "pypoetry/config.toml", "pypoetry_config.toml.txt"),
+        (Path(".config"), "rest-client/environment.json", "rest_client_environment.json.txt"),
     ],
 )
 def test_cleanup_removes_unedited_retired_configs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    pytestconfig: pytest.Config,
     base: Path,
     relative: str,
-    source: str,
+    fixture_name: str,
 ) -> None:
     """撤去した配布設定は撤去前の配布物と同じ内容なら削除し、1バイトでも違えば残す。"""
-    distributed = subprocess.run(
-        ["git", "show", f"d074bebbe:{source}"],
-        cwd=Path(__file__).resolve().parents[1],
-        capture_output=True,
-        check=True,
-    ).stdout
+    distributed = (pytestconfig.rootpath / "testdata/post_apply" / fixture_name).read_bytes()
     target_dir = tmp_path / "home" / base
     monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {})
     monkeypatch.setattr(
