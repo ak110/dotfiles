@@ -6,6 +6,7 @@
 """
 
 import argparse
+import datetime
 import io
 import logging
 import logging.handlers
@@ -133,181 +134,186 @@ def _configure_logging() -> tuple[list[logging.Handler], int, bool]:
 
 
 # chezmoi は配布元から削除されたファイルを配布先から自動削除しないため、本テーブルで追跡する。
-_REMOVED_PATHS: dict[Path, list[Path]] = {
-    Path.home() / "dotfiles": [
-        # dotfiles固有hookはpytoolsのconsole scriptへ移設したため、旧入口を除去する。
-        Path("scripts/claude_hook.py"),
-        Path("scripts/claude_hook_pretooluse.py"),
-        Path("scripts/claude_hook_posttooluse.py"),
-        Path("scripts/claude_hook_stop_bell.py"),
-    ],
+# 基点は配布先（`~/.claude`などpost-applyやchezmoiが書き込むディレクトリ）だけとし、作業ツリー内を指定しない。
+# 各項目の登録日と期限の規則は`removal_registry`が定め、期限を過ぎた項目は不変条件のテストが検出する。
+_REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
     Path.home() / ".claude": [
         # `references/`はスキル配下だけの名前としたため、旧配布先のディレクトリを削除する。
-        Path("references"),
+        cleanup_paths.RemovedPath(Path("references"), datetime.date(2026, 9, 18)),
         # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
-        Path("skills/sync-platform-pair"),
-        Path("skills/sync-rule-ssot"),
+        cleanup_paths.RemovedPath(Path("skills/sync-platform-pair"), datetime.date(2026, 4, 8)),
+        cleanup_paths.RemovedPath(Path("skills/sync-rule-ssot"), datetime.date(2026, 4, 8)),
         # dotfiles ローカルの ak110-projects-operations skill がこの機能を担う (15ca58b)。
-        Path("agents/cross-project-sync-checker.md"),
+        cleanup_paths.RemovedPath(Path("agents/cross-project-sync-checker.md"), datetime.date(2026, 4, 16)),
         # agent-basics → agent-toolkit のディレクトリ名リネームに伴い旧ディレクトリを削除する。
         # cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
         # 配下の旧ルールファイル (python.md / claude-rules.md / markdown.md ほか) ごと一括で除去される。
-        Path("rules/agent-basics"),
+        cleanup_paths.RemovedPath(Path("rules/agent-basics"), datetime.date(2026, 4, 17)),
         # 再レビューは careful-spec-reviewer / careful-impl-reviewer の followup モードが担うため、
         # 配布先から旧エージェント定義を削除する。
-        Path("agents/careful-followup-reviewer.md"),
+        cleanup_paths.RemovedPath(Path("agents/careful-followup-reviewer.md"), datetime.date(2026, 4, 30)),
         # 現在のスキル名は refine-prompt。配布先から旧スキルディレクトリを削除する。
-        Path("skills/empirical-prompt-tuning"),
+        cleanup_paths.RemovedPath(Path("skills/empirical-prompt-tuning"), datetime.date(2026, 5, 1)),
         # 2つのスキルはagent-toolkit pluginへ移設したため、dotfiles側の旧配布先を削除する。
-        Path("skills/refine-prompt"),
-        Path("skills/export-session"),
+        cleanup_paths.RemovedPath(Path("skills/refine-prompt"), datetime.date(2026, 9, 29)),
+        cleanup_paths.RemovedPath(Path("skills/export-session"), datetime.date(2026, 9, 29)),
         # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先を削除する。
-        Path("skills/session-review"),
-        Path("skills/session-review-dotfiles"),
+        cleanup_paths.RemovedPath(Path("skills/session-review"), datetime.date(2026, 5, 23)),
+        cleanup_paths.RemovedPath(Path("skills/session-review-dotfiles"), datetime.date(2026, 8, 7)),
         # 現在のスキル名は add-awi。旧名 feedback-add の配布先ディレクトリを削除する。
-        Path("skills/feedback-add"),
+        cleanup_paths.RemovedPath(Path("skills/feedback-add"), datetime.date(2026, 6, 16)),
         # 現在のスキル名は process-wi。旧名 process-feedback の配布先ディレクトリを削除する。
-        Path("skills/process-feedback"),
+        cleanup_paths.RemovedPath(Path("skills/process-feedback"), datetime.date(2026, 6, 16)),
         # 現在は atk wi process-loop CLI が常駐ループを担うため、
         # 旧 process-feedbacks-loop スキルの配布先ディレクトリを削除する。
-        Path("skills/process-feedbacks-loop"),
+        cleanup_paths.RemovedPath(Path("skills/process-feedbacks-loop"), datetime.date(2026, 7, 5)),
         # add-awi・process-wi スキルは agent-toolkit/skills/ 配下へ移設済み。
         # 旧配布先 (dotfiles-fb 系スキル) の配布先ディレクトリを削除する。
-        Path("skills/add-feedback"),
-        Path("skills/process-feedbacks"),
+        cleanup_paths.RemovedPath(Path("skills/add-feedback"), datetime.date(2026, 7, 8)),
+        cleanup_paths.RemovedPath(Path("skills/process-feedbacks"), datetime.date(2026, 7, 8)),
         # 現在のスキル名は ak110-projects-operations。旧名の配布先を削除する。
-        Path("skills/sync-cross-project"),
+        cleanup_paths.RemovedPath(Path("skills/sync-cross-project"), datetime.date(2026, 9, 13)),
         # 02-claude-code.md / 03-styles.md / 04-terminology.md →
         # 03-claude-code.md / 04-styles.md / 05-terminology.md リネームに伴い旧ファイルを削除する。
-        Path("rules/agent-toolkit/02-claude-code.md"),
-        Path("rules/agent-toolkit/03-styles.md"),
-        Path("rules/agent-toolkit/04-terminology.md"),
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit/02-claude-code.md"), datetime.date(2026, 7, 14)),
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit/03-styles.md"), datetime.date(2026, 7, 14)),
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit/04-terminology.md"), datetime.date(2026, 7, 14)),
         # autopilotスキルは協調・自律の規範へ吸収し廃止。配布先から旧スキルディレクトリを削除する。
-        Path("skills/autopilot"),
+        cleanup_paths.RemovedPath(Path("skills/autopilot"), datetime.date(2026, 7, 14)),
         # ルール層を01-agent.md / 02-claude-code.mdの2ファイルへ統合したため、
         # 統合元の旧ファイルを配布先から削除する。
         # chezmoiは配布元の削除を配布先へ伝播しないため、本一覧への登録が必要となる。
-        Path("rules/agent-toolkit/02-collaboration.md"),
-        Path("rules/agent-toolkit/03-claude-code.md"),
-        Path("rules/agent-toolkit/04-styles.md"),
-        Path("rules/agent-toolkit/05-terminology.md"),
-        Path("rules/agent-toolkit/06-monitoring.md"),
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit/02-collaboration.md"), datetime.date(2026, 7, 26)),
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit/03-claude-code.md"), datetime.date(2026, 7, 26)),
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit/04-styles.md"), datetime.date(2026, 7, 26)),
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit/05-terminology.md"), datetime.date(2026, 7, 26)),
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit/06-monitoring.md"), datetime.date(2026, 7, 26)),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、
         # Claude Code向けMarkdownルールとは互換性がない。
         # 共有ルールは .codex/agent-toolkit/rules 配下に置く。
-        Path("rules/agent-toolkit"),
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit"), datetime.date(2026, 5, 6)),
         # agent定義（feedbacks-planner・plan-executor・plan-review-executor）を廃止し、
         # agent-toolkit/agents ディレクトリごと除去したため、旧配布先リンクを除去する。
-        Path("agent-toolkit/agents"),
+        cleanup_paths.RemovedPath(Path("agent-toolkit/agents"), datetime.date(2026, 9, 3)),
         # dotfilesリポジトリ専用スキルはプロジェクト直下の .agents/skills に置く。
         # ~/.codex/skills はグローバルに使うスキルだけを置く。
-        Path("skills/sync-platform-pair"),
-        Path("skills/sync-rule-ssot"),
+        cleanup_paths.RemovedPath(Path("skills/sync-platform-pair"), datetime.date(2026, 4, 8)),
+        cleanup_paths.RemovedPath(Path("skills/sync-rule-ssot"), datetime.date(2026, 4, 8)),
         # 旧名careful-implの後継スキル名はplan-implだったが、
         # plan-implもagentsへ移植し廃止したため配布先リンクを除去する。
-        Path("skills/careful-impl"),
+        cleanup_paths.RemovedPath(Path("skills/careful-impl"), datetime.date(2026, 5, 8)),
         # 現在のスキル名はwriting-standards。旧名claude-code-standardsの配布先リンクを除去する。
-        Path("skills/claude-code-standards"),
+        cleanup_paths.RemovedPath(Path("skills/claude-code-standards"), datetime.date(2026, 5, 17)),
         # plan-impl・plan-codex-reviewはagentsへ移植し、fork型スキルとしては廃止した。
         # 旧配布先リンクを除去する。
-        Path("skills/plan-impl"),
-        Path("skills/plan-codex-review"),
+        cleanup_paths.RemovedPath(Path("skills/plan-impl"), datetime.date(2026, 7, 11)),
+        cleanup_paths.RemovedPath(Path("skills/plan-codex-review"), datetime.date(2026, 7, 11)),
         # 2つのスキルはagent-toolkit pluginへ移設したため、旧リンクを削除する。
-        Path("skills/refine-prompt"),
-        Path("skills/export-session"),
+        cleanup_paths.RemovedPath(Path("skills/refine-prompt"), datetime.date(2026, 9, 29)),
+        cleanup_paths.RemovedPath(Path("skills/export-session"), datetime.date(2026, 9, 29)),
         # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先リンクを除去する。
-        Path("skills/session-review"),
-        Path("skills/session-review-dotfiles"),
+        cleanup_paths.RemovedPath(Path("skills/session-review"), datetime.date(2026, 5, 23)),
+        cleanup_paths.RemovedPath(Path("skills/session-review-dotfiles"), datetime.date(2026, 8, 7)),
         # 現在のスキル名は add-awi。旧名 feedback-add の配布先リンクを除去する。
-        Path("skills/feedback-add"),
+        cleanup_paths.RemovedPath(Path("skills/feedback-add"), datetime.date(2026, 6, 16)),
         # 現在のスキル名は process-wi。旧名 process-feedback の配布先リンクを除去する。
-        Path("skills/process-feedback"),
+        cleanup_paths.RemovedPath(Path("skills/process-feedback"), datetime.date(2026, 6, 16)),
         # 現在のスキル名は ak110-projects-operations。旧名の配布先リンクを削除する。
-        Path("skills/sync-cross-project"),
+        cleanup_paths.RemovedPath(Path("skills/sync-cross-project"), datetime.date(2026, 9, 13)),
     ],
     Path.home() / ".config": [
         # pyfltr v3.14.1で口語表現チェッカーが内蔵化されたため
         # dotfiles配布のカスタムコマンド定義（旧`config.toml`）を配布先から除去する。
-        Path("pyfltr/config.toml"),
+        cleanup_paths.RemovedPath(Path("pyfltr/config.toml"), datetime.date(2026, 7, 1)),
         # 計画ファイル閲覧は atk serve へ統合した。設定は ~/.config/agent-toolkit/serve.toml へ移した。
-        Path("pytools/claude-plans-viewer.toml"),
+        cleanup_paths.RemovedPath(Path("pytools/claude-plans-viewer.toml"), datetime.date(2026, 9, 2)),
         # 廃止した工程が配置したフラグファイル。いずれも廃止時に削除登録がなく残存していた。
         # feedback-inbox.enabled は setup_feedback_inbox（d08f8d5b で廃止）、
         # review-balance-mode.claude-heavy は setup_review_balance_mode（4c53faaa で廃止）が配置した。
-        Path("agent-toolkit/feedback-inbox.enabled"),
-        Path("agent-toolkit/review-balance-mode.claude-heavy"),
+        cleanup_paths.RemovedPath(Path("agent-toolkit/feedback-inbox.enabled"), datetime.date(2026, 9, 26)),
+        cleanup_paths.RemovedPath(Path("agent-toolkit/review-balance-mode.claude-heavy"), datetime.date(2026, 9, 26)),
     ],
     Path.home() / ".ipython": [
-        Path("profile_default/startup/README"),
+        cleanup_paths.RemovedPath(Path("profile_default/startup/README"), datetime.date(2026, 8, 14)),
+        # 配布済みREADMEの親だけを深い順で除去する。dotfilesユーザーのファイルが残るディレクトリは保持する。
+        cleanup_paths.RemovedPath(Path("profile_default/startup"), datetime.date(2026, 8, 14), empty_dir_only=True),
+        cleanup_paths.RemovedPath(Path("profile_default"), datetime.date(2026, 8, 14), empty_dir_only=True),
     ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、
         # .chezmoi-source/bin/ の配布対象外とする。
-        Path("check-cmd-encoding"),
-        Path("check-templates"),
-        Path("run-psscriptanalyzer"),
+        cleanup_paths.RemovedPath(Path("check-cmd-encoding"), datetime.date(2026, 4, 9)),
+        cleanup_paths.RemovedPath(Path("check-templates"), datetime.date(2026, 4, 9)),
+        cleanup_paths.RemovedPath(Path("run-psscriptanalyzer"), datetime.date(2026, 4, 9)),
         # bin/ はリポジトリ直下に置き、~/dotfiles/bin を PATH に通す方式を採用する。
         # 旧配布物 (~/bin/ 配下) を削除する。Linux 用と Windows 用 (.cmd) を共通キーで列挙する。
-        Path("c"),
-        Path("c.cmd"),
-        Path("ccusage"),
-        Path("ccusage.cmd"),
-        Path("check-gh-actions"),
-        Path("claude-code-viewer"),
-        Path("claude-code-viewer.cmd"),
-        Path("countfiles"),
-        Path("git_find_big.sh"),
-        Path("gpuwatch"),
-        Path("ipy"),
-        Path("lab"),
-        Path("lab-bg"),
-        Path("rdp"),
-        Path("remote-plans.cmd"),
-        Path("sonnet"),
-        Path("sonnet.cmd"),
-        Path("sudoll"),
-        Path("update-dotfiles"),
-        Path("update-dotfiles.cmd"),
+        cleanup_paths.RemovedPath(Path("c"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("c.cmd"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("ccusage"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("ccusage.cmd"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("check-gh-actions"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("claude-code-viewer"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("claude-code-viewer.cmd"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("countfiles"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("git_find_big.sh"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("gpuwatch"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("ipy"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("lab"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("lab-bg"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("rdp"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("remote-plans.cmd"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("sonnet"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("sonnet.cmd"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("sudoll"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("update-dotfiles"), datetime.date(2026, 4, 24)),
+        cleanup_paths.RemovedPath(Path("update-dotfiles.cmd"), datetime.date(2026, 4, 24)),
         # pytools/ パッケージ化 (fe09fa3) 以降 .chezmoi-source/bin/ の配布対象外となった旧配布物。
         # 現在は pytools/ の CLI として uv tool install 経由で ~/.local/bin 等に配置される。
-        Path("check-image-sizes.py"),
-        Path("dpkg-licenses"),
-        Path("git-justify.py"),
-        Path("mvdir.py"),
-        Path("update-ssh-config"),
-        Path("update-ssh-config.cmd"),
-        Path("update-ssh-config.py"),
+        cleanup_paths.RemovedPath(Path("check-image-sizes.py"), datetime.date(2026, 4, 27)),
+        cleanup_paths.RemovedPath(Path("dpkg-licenses"), datetime.date(2026, 4, 27)),
+        cleanup_paths.RemovedPath(Path("git-justify.py"), datetime.date(2026, 4, 27)),
+        cleanup_paths.RemovedPath(Path("mvdir.py"), datetime.date(2026, 4, 27)),
+        cleanup_paths.RemovedPath(Path("update-ssh-config"), datetime.date(2026, 4, 27)),
+        cleanup_paths.RemovedPath(Path("update-ssh-config.cmd"), datetime.date(2026, 4, 27)),
+        cleanup_paths.RemovedPath(Path("update-ssh-config.py"), datetime.date(2026, 4, 27)),
     ],
     Path.home() / ".local" / "bin": [
         # 計画ファイル閲覧は atk serve へ統合したため、旧 CLI の配布先を除去する。
-        Path("claude-plans-viewer"),
-        Path("claude-plans-viewer.exe"),
+        cleanup_paths.RemovedPath(Path("claude-plans-viewer"), datetime.date(2026, 9, 2)),
+        cleanup_paths.RemovedPath(Path("claude-plans-viewer.exe"), datetime.date(2026, 9, 2)),
         # 15c2e214 が atk serve 常駐用に生成したランチャー ~/.local/bin/atk は、1116f984 で
         # ~/.local/bin/atk-serve へ改名した際に旧名の削除が漏れて残存していた。
         # dotfiles ホストでは ~/dotfiles/agent-toolkit/bin（Linux は .chezmoi-source/dot_bashrc、
         # Windows は pytools/_internal/setup_bin_path.py）が PATH へ登録されるため、PATH の先頭側にある
         # ~/.local/bin 配下の atk は作業ツリー版を覆い隠す。atk.cmd は install-claude.ps1 が同じ位置へ
         # 生成する Windows 版ラッパーであり、同じ理由で除去する。atk-serve と atk-hook は対象外とする。
-        Path("atk"),
-        Path("atk.cmd"),
+        cleanup_paths.RemovedPath(Path("atk"), datetime.date(2026, 9, 26)),
+        cleanup_paths.RemovedPath(Path("atk.cmd"), datetime.date(2026, 9, 26)),
     ],
 }
 
-# ユーザーの独自編集を保護するため、内容が期待値と bytes 完全一致するときのみ削除する。
-_REMOVED_PATHS_IF_CONTENT: dict[Path, dict[Path, bytes]] = {
-    Path.home() / ".claude": {
+# ユーザーの独自編集を保護するため、内容が期待値と完全一致するときのみ削除する。
+# 期待値は撤去前の内容のbytesか、大きな内容ではそのSHA-256の16進文字列で書く。
+_REMOVED_PATHS_IF_CONTENT: dict[Path, list[cleanup_paths.RemovedPathIfContent]] = {
+    Path.home() / ".claude": [
         # `.chezmoi-source/dot_claude/CLAUDE.md` は配布対象外。未編集の配布先を除去する。
         # 「簡潔に」応答を強制する指示はハルシネーション耐性を下げるため不要 (Giskard Phare)。
-        Path("CLAUDE.md"): ("# カスタム指示\n\n- シンプルに要点のみを述べる\n".encode()),
-    },
+        cleanup_paths.RemovedPathIfContent(
+            Path("CLAUDE.md"), datetime.date(2026, 4, 17), "# カスタム指示\n\n- シンプルに要点のみを述べる\n".encode()
+        ),
+    ],
     # claude-plans-viewer 自動起動セットアップ（旧 setup_plans_viewer_windows）で
     # スタートアップフォルダーへ配置していた .cmd を、未編集なら除去する。
     # 旧モジュールの削除に伴い配布物としての保守元がないため。
-    Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup": {
-        Path("claude-plans-viewer.cmd"): (b'@echo off\r\nstart "" "%USERPROFILE%\\.local\\bin\\claude-plans-viewer.exe"\r\n'),
-    },
+    Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup": [
+        cleanup_paths.RemovedPathIfContent(
+            Path("claude-plans-viewer.cmd"),
+            datetime.date(2026, 5, 4),
+            b'@echo off\r\nstart "" "%USERPROFILE%\\.local\\bin\\claude-plans-viewer.exe"\r\n',
+        ),
+    ],
 }
 
 
@@ -344,33 +350,14 @@ class _StepSpec:
 def _cleanup_removed_paths() -> bool:
     """`_REMOVED_PATHS` / `_REMOVED_PATHS_IF_CONTENT` に従って旧配布物を削除する。"""
     total_removed = 0
-    for base_dir, relative_paths in _REMOVED_PATHS.items():
-        total_removed += cleanup_paths.cleanup_paths(base_dir, relative_paths)
-    for base_dir, expected in _REMOVED_PATHS_IF_CONTENT.items():
-        total_removed += cleanup_paths.cleanup_paths_if_content_matches(base_dir, expected)
-    # 配布済みREADMEの親だけを深い順で除去する。rmdirによりユーザーファイルが残るディレクトリは保持する。
-    ipython_dir = Path.home() / ".ipython"
-    try:
-        ipython_resolved = ipython_dir.resolve()
-    except OSError as error:
-        logger.warning("%s の検査に失敗したため空ディレクトリの削除をスキップします: %s", ipython_dir, error)
-        return total_removed > 0
-    for relative_dir in (Path("profile_default/startup"), Path("profile_default")):
-        target = ipython_dir / relative_dir
-        try:
-            target.resolve().relative_to(ipython_resolved)
-        except ValueError:
-            logger.warning("%s は %s 配下ではないためスキップします", target, ipython_dir)
-            continue
-        except OSError as error:
-            logger.warning("%s の検査に失敗したためスキップします: %s", target, error)
-            continue
-        try:
-            target.rmdir()
-        except OSError:
-            continue
-        logger.info(log_format.format_status(log_format.home_short(target), "空の旧配布先を削除"))
-        total_removed += 1
+    for base_dir, entries in _REMOVED_PATHS.items():
+        total_removed += cleanup_paths.cleanup_paths(base_dir, [e.path for e in entries if not e.empty_dir_only])
+        # 空ディレクトリの項目は、同じ基点の他の項目を削除した後に列挙順で判定する。
+        total_removed += cleanup_paths.cleanup_empty_dirs(base_dir, [e.path for e in entries if e.empty_dir_only])
+    for base_dir, content_entries in _REMOVED_PATHS_IF_CONTENT.items():
+        total_removed += cleanup_paths.cleanup_paths_if_content_matches(
+            base_dir, {entry.path: entry.expected for entry in content_entries}
+        )
     if total_removed == 0:
         logger.info(log_format.format_status("cleanup", "削除対象なし"))
     else:

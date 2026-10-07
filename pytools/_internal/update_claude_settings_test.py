@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from pytools._internal import removal_registry
 from pytools._internal import update_claude_settings as mod
 from pytools._internal._test_helpers import run_update_claude_settings
 from pytools._internal.update_claude_settings import update_claude_settings
@@ -1648,7 +1649,7 @@ class TestStripRemovedListItems:
         settings_path = tmp_path / "settings.json"
         old_rule_marker = next(
             marker
-            for path, marker in mod._REMOVED_LIST_ITEM_SUBSTRINGS  # pylint: disable=protected-access
+            for path, marker in removal_registry.values(mod._REMOVED_LIST_ITEM_SUBSTRINGS)  # pylint: disable=protected-access
             if path == "autoMode.allow"
         )
         settings_path.write_text(
@@ -2032,7 +2033,7 @@ class TestRetiredAutoModeAllowLabels:
         update_claude_settings(
             _PROD_MANAGED_SETTINGS,
             target_path,
-            removed_list_item_substrings=mod._REMOVED_LIST_ITEM_SUBSTRINGS,  # pylint: disable=protected-access
+            removed_list_item_substrings=removal_registry.values(mod._REMOVED_LIST_ITEM_SUBSTRINGS),  # pylint: disable=protected-access
             stale_labeled_list_paths=("autoMode.allow",),
         )
 

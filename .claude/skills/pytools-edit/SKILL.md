@@ -45,7 +45,9 @@ description: >
 - `pytools/post_apply.py`のステップが外部ツールの不在でそのステップ全体をスキップする場合は、そのツールを同じステップまたは先行するステップが導入するか、`README.md`が復旧手順を持つかのいずれかを満たす。
   dotfilesユーザーが導入先を選ぶアプリケーションは、この対象から外す
 - `pytools/post_apply.py`の工程が配置するファイル（ランチャー、フラグファイル、unitなど）の配置先を改名する場合と工程を廃止する場合は、同じ変更で旧パスを`_REMOVED_PATHS`へ登録する。dotfilesユーザーが編集し得るファイルは`_REMOVED_PATHS_IF_CONTENT`へ登録する。
-  工程の生成物はchezmoiの管理外であり、登録しないと旧生成物が配布先に残り続ける
+  工程の生成物はchezmoiの管理外であり、登録しないと旧生成物が配布先に残り続ける。
+  撤去表（`_REMOVED_PATHS`・`_REMOVED_PATHS_IF_CONTENT`と`update_claude_settings.py`の除去表）の各項目には登録日を書き、登録日から6か月を過ぎた項目は表から外す。
+  通常の更新を続ける環境ではその期間内に除去が済むためである。登録日の決め方と期限の数え方は`pytools/_internal/removal_registry.py`が定め、期限切れは`pytools/removed_paths_invariant_test.py`が検出する
 - `rust/`配下の配置の単位は`rust/<クレート名>/`のCargoクレートとする。
   記述作法は`agent-toolkit:writing-standards`の`references/rust.md`が定める。
   `make test`は`rust/`配下を対象に含まないため、変更したクレートで`cargo fmt --check`、`cargo clippy`および`cargo test`を変更範囲の検証として実行する。

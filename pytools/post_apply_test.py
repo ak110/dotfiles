@@ -253,41 +253,66 @@ def test_persistent_log_uses_size_limited_rotation() -> None:
             handler.close()
 
 
+def _registered_paths(base: Path) -> list[Path]:
+    """撤去表の基点`~/<base>`へ登録された相対パスを返す。"""
+    return [entry.path for entry in post_apply._REMOVED_PATHS[_IMPORT_HOME / base]]  # noqa: SLF001
+
+
+def test_removed_paths_bases_are_distribution_targets() -> None:
+    """撤去表の基点は配布先だけで、作業ツリー（`~/dotfiles`）を指さない。"""
+    startup = Path("AppData") / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    allowed = {
+        _IMPORT_HOME / base
+        for base in (
+            Path(".claude"),
+            Path(".codex"),
+            Path(".config"),
+            Path(".ipython"),
+            Path("bin"),
+            Path(".local") / "bin",
+            startup,
+        )
+    }
+    bases = set(post_apply._REMOVED_PATHS) | set(post_apply._REMOVED_PATHS_IF_CONTENT)  # noqa: SLF001
+    assert bases <= allowed
+    assert _IMPORT_HOME / "dotfiles" not in bases
+
+
 def test_removed_session_review_skill_paths_cover_claude_and_codex() -> None:
     """旧個人スキルをClaude CodeとCodexの両配布先からcleanupする。"""
     relative = Path("skills/session-review-dotfiles")
-    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".claude"]  # noqa: SLF001
-    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".codex"]  # noqa: SLF001
+    assert relative in _registered_paths(Path(".claude"))
+    assert relative in _registered_paths(Path(".codex"))
 
 
 def test_removed_sync_cross_project_paths_cover_claude_and_codex() -> None:
     """改名前の個人プロジェクト運用スキルを両配布先からcleanupする。"""
     relative = Path("skills/sync-cross-project")
-    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".claude"]  # noqa: SLF001
-    assert relative in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".codex"]  # noqa: SLF001
+    assert relative in _registered_paths(Path(".claude"))
+    assert relative in _registered_paths(Path(".codex"))
 
 
 def test_legacy_reference_directory_is_cleanup_target() -> None:
     """スキル配下以外の旧`references/`を配布先から削除する。"""
-    assert Path("references") in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".claude"]  # noqa: SLF001
+    assert Path("references") in _registered_paths(Path(".claude"))
 
 
 def test_removes_legacy_plans_viewer_config_and_shim() -> None:
     """旧計画ビューアーの設定・CLI・Windowsスタートアップ用shimを配布先から除去する。"""
-    assert Path("pytools/claude-plans-viewer.toml") in post_apply._REMOVED_PATHS[_IMPORT_HOME / ".config"]  # noqa: SLF001
-    local_bin = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".local" / "bin"]  # noqa: SLF001
+    assert Path("pytools/claude-plans-viewer.toml") in _registered_paths(Path(".config"))
+    local_bin = _registered_paths(Path(".local") / "bin")
     assert Path("claude-plans-viewer") in local_bin
     assert Path("claude-plans-viewer.exe") in local_bin
     startup = _IMPORT_HOME / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-    assert Path("claude-plans-viewer.cmd") in post_apply._REMOVED_PATHS_IF_CONTENT[startup]  # noqa: SLF001
+    assert Path("claude-plans-viewer.cmd") in [entry.path for entry in post_apply._REMOVED_PATHS_IF_CONTENT[startup]]  # noqa: SLF001
     # 旧systemd unitは停止と無効化を経てから削除するため、この一括削除の対象へ含めない。
-    for paths in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
-        assert not [path for path in paths if "claude-plans-viewer.service" in path.name]
+    for entries in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
+        assert not [entry for entry in entries if "claude-plans-viewer.service" in entry.path.name]
 
 
 def test_removes_legacy_atk_launcher_but_keeps_current_wrappers() -> None:
     """作業ツリー版を覆い隠す旧atkランチャーを登録し、現行のサービス用・hook用ラッパーは登録しない。"""
-    local_bin = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".local" / "bin"]  # noqa: SLF001
+    local_bin = _registered_paths(Path(".local") / "bin")
     assert Path("atk") in local_bin
     assert Path("atk.cmd") in local_bin
     for kept in ("atk-serve", "atk-hook", "atk-hook.cmd"):
@@ -296,7 +321,7 @@ def test_removes_legacy_atk_launcher_but_keeps_current_wrappers() -> None:
 
 def test_removes_flag_files_of_retired_steps_but_keeps_current_config() -> None:
     """廃止した工程のフラグファイルを登録し、現行のagent-toolkit設定は登録しない。"""
-    config = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".config"]  # noqa: SLF001
+    config = _registered_paths(Path(".config"))
     assert Path("agent-toolkit/feedback-inbox.enabled") in config
     assert Path("agent-toolkit/review-balance-mode.claude-heavy") in config
     for kept in ("agent-toolkit/config.json", "agent-toolkit/serve.toml"):
@@ -348,7 +373,7 @@ def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
 
 def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
     """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
-    paths = post_apply._REMOVED_PATHS[_IMPORT_HOME / ".ipython"]  # noqa: SLF001
+    paths = _registered_paths(Path(".ipython"))
     assert Path("profile_default/startup/README") in paths
     assert not any(path.is_relative_to("profile_ipy") for path in paths)
 
@@ -357,7 +382,7 @@ def _redirect_removed_paths_to(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> Path:
-    """旧配布物削除先を一時ホームへ限定し、IPython配布ファイルだけを登録する。"""
+    """旧配布物削除先を一時ホームへ限定し、撤去表のIPythonの項目だけを登録する。"""
     home_dir = tmp_path / "home"
     ipython_dir = home_dir / ".ipython"
     monkeypatch.setenv("HOME", str(home_dir))
@@ -365,17 +390,17 @@ def _redirect_removed_paths_to(
     monkeypatch.setattr(
         post_apply,
         "_REMOVED_PATHS",
-        {ipython_dir: [Path("profile_default/startup/README")]},
+        {ipython_dir: post_apply._REMOVED_PATHS[_IMPORT_HOME / ".ipython"]},  # noqa: SLF001
     )
     monkeypatch.setattr(post_apply, "_REMOVED_PATHS_IF_CONTENT", {})
     return ipython_dir
 
 
-def test_removed_ipython_profile_cleanup_removes_empty_parents(
+def test_cleanup_removes_empty_ipython_dirs_from_table(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """配布済みREADMEの削除後、空になった親ディレクトリだけを深い順で除去する。"""
+    """配布済みREADMEの削除後、撤去表の空ディレクトリの項目で空の親を深い順で除去する。"""
     ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
     default_readme = ipython_dir / "profile_default/startup/README"
     default_readme.parent.mkdir(parents=True)

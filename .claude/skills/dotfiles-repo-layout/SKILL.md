@@ -81,7 +81,8 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 - `.chezmoi-source/`配下のファイルを削除・改名した場合、配布先の除去は`pytools/post_apply.py`の`_REMOVED_PATHS`への追記で行う。
   chezmoi自身は配布先を自動削除しないためである。
   改名時は`_REMOVED_PATHS`の`~/.claude`欄（Codex側にもリンクがある対象は`~/.codex`欄も）へ
-  旧パスを追記し、`setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
+  旧パスを追記し、`setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する。
+  追記する項目には登録日を書き、登録日から6か月を過ぎた項目は表から外す（規則は`pytools/_internal/removal_registry.py`）
 - `AGENTS.md`（本リポジトリルート）: dotfiles編集者向けの案内文書。Claude Code／Codex双方がここを読む
   - `CLAUDE.md`は置かず、ホスト共通で`AGENTS.md`に従う。手元に`CLAUDE.local.md`を置く場合は`atk setup-project`が追跡対象外のアダプターを置く
 
