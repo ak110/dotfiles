@@ -5,7 +5,6 @@
 .bash_profile
 .bashrc
 .inputrc
-.screenrc
 .tmux.conf
 {{ end }}
 

@@ -273,8 +273,10 @@ def test_removed_paths_bases_are_distribution_targets() -> None:
             startup,
         )
     }
+    # ホーム直下へ配布した設定（`~/.screenrc`など）は内容一致の表だけがホームを基点にする。
+    assert set(post_apply._REMOVED_PATHS) <= allowed  # noqa: SLF001
+    assert set(post_apply._REMOVED_PATHS_IF_CONTENT) <= allowed | {_IMPORT_HOME}  # noqa: SLF001
     bases = set(post_apply._REMOVED_PATHS) | set(post_apply._REMOVED_PATHS_IF_CONTENT)  # noqa: SLF001
-    assert bases <= allowed
     assert _IMPORT_HOME / "dotfiles" not in bases
 
 
@@ -514,6 +516,49 @@ def test_cleanup_removes_unedited_ipython_kernel_config(
     target.parent.mkdir(parents=True)
 
     target.write_bytes(distributed + b"c.IPKernelApp.matplotlib = 'inline'\n")
+    assert post_apply._cleanup_removed_paths() is False  # noqa: SLF001
+    assert target.exists()
+
+    target.write_bytes(distributed)
+    assert post_apply._cleanup_removed_paths() is True  # noqa: SLF001
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    ("base", "relative", "source"),
+    [
+        (Path(), ".screenrc", ".chezmoi-source/dot_screenrc"),
+        (Path(".config"), "xonsh/rc.xsh", ".chezmoi-source/dot_config/xonsh/rc.xsh"),
+        (Path(".config"), "yapf/style", ".chezmoi-source/dot_config/yapf/style"),
+        (Path(".config"), "pypoetry/config.toml", ".chezmoi-source/dot_config/pypoetry/config.toml"),
+        (Path(".config"), "rest-client/environment.json", ".chezmoi-source/dot_config/rest-client/environment.json"),
+    ],
+)
+def test_cleanup_removes_unedited_retired_configs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    base: Path,
+    relative: str,
+    source: str,
+) -> None:
+    """撤去した配布設定は撤去前の配布物と同じ内容なら削除し、1バイトでも違えば残す。"""
+    distributed = subprocess.run(
+        ["git", "show", f"d074bebbe:{source}"],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        check=True,
+    ).stdout
+    target_dir = tmp_path / "home" / base
+    monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {})
+    monkeypatch.setattr(
+        post_apply,
+        "_REMOVED_PATHS_IF_CONTENT",
+        {target_dir: post_apply._REMOVED_PATHS_IF_CONTENT[_IMPORT_HOME / base]},  # noqa: SLF001
+    )
+    target = target_dir / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    target.write_bytes(distributed + b"#")
     assert post_apply._cleanup_removed_paths() is False  # noqa: SLF001
     assert target.exists()
 

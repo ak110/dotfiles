@@ -297,12 +297,36 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
 # ユーザーの独自編集を保護するため、内容が期待値と完全一致するときのみ削除する。
 # 期待値は撤去前の内容のbytesか、大きな内容ではそのSHA-256の16進文字列で書く。
 _REMOVED_PATHS_IF_CONTENT: dict[Path, list[cleanup_paths.RemovedPathIfContent]] = {
+    Path.home(): [
+        # 使われていないscreenの設定の配布をやめた。
+        cleanup_paths.RemovedPathIfContent(
+            Path(".screenrc"), datetime.date(2026, 10, 7), b"\ndefscrollback 1000000\n\nshell -${SHELL}\n"
+        ),
+    ],
     Path.home() / ".claude": [
         # `.chezmoi-source/dot_claude/CLAUDE.md` は配布対象外。未編集の配布先を除去する。
         # 「簡潔に」応答を強制する指示はハルシネーション耐性を下げるため不要 (Giskard Phare)。
         cleanup_paths.RemovedPathIfContent(
             Path("CLAUDE.md"), datetime.date(2026, 4, 17), "# カスタム指示\n\n- シンプルに要点のみを述べる\n".encode()
         ),
+    ],
+    # 使われていないxonsh・yapf・Poetry・REST Clientの設定の配布をやめた。
+    # rc.xshの値は`git show d074bebbe:.chezmoi-source/dot_config/xonsh/rc.xsh`のSHA-256。
+    Path.home() / ".config": [
+        cleanup_paths.RemovedPathIfContent(
+            Path("xonsh/rc.xsh"),
+            datetime.date(2026, 10, 7),
+            "d60e88ba9557971564d0b58f2f2483b2306182bd21069c377f5d1156b82e9278",
+        ),
+        cleanup_paths.RemovedPathIfContent(
+            Path("yapf/style"), datetime.date(2026, 10, 7), b"[style]\nbased_on_style = google\ncolumn_limit = 256\n"
+        ),
+        cleanup_paths.RemovedPathIfContent(
+            Path("pypoetry/config.toml"),
+            datetime.date(2026, 10, 7),
+            b"[virtualenvs]\nin-project = false\n\n[installer]\n",
+        ),
+        cleanup_paths.RemovedPathIfContent(Path("rest-client/environment.json"), datetime.date(2026, 10, 7), b""),
     ],
     Path.home() / ".ipython": [
         # IPythonが生成した全行コメントの初期設定であり、設定として働かないため配布をやめた。
