@@ -490,6 +490,38 @@ def test_removed_ipython_profile_cleanup_preserves_symlink_target(
     assert outside_startup.is_dir()
 
 
+def test_cleanup_removes_unedited_ipython_kernel_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """撤去前の配布物と同じ`ipython_kernel_config.py`は削除し、編集されたものは残す。"""
+    # 登録値の算出元である撤去前の配布物を履歴から取り出し、登録した期待値と一致することも確かめる。
+    distributed = subprocess.run(
+        ["git", "show", "89ce8990a:.chezmoi-source/dot_ipython/profile_ipy/ipython_kernel_config.py"],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        check=True,
+    ).stdout
+    home_dir = tmp_path / "home"
+    ipython_dir = home_dir / ".ipython"
+    monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {})
+    monkeypatch.setattr(
+        post_apply,
+        "_REMOVED_PATHS_IF_CONTENT",
+        {ipython_dir: post_apply._REMOVED_PATHS_IF_CONTENT[_IMPORT_HOME / ".ipython"]},  # noqa: SLF001
+    )
+    target = ipython_dir / "profile_ipy" / "ipython_kernel_config.py"
+    target.parent.mkdir(parents=True)
+
+    target.write_bytes(distributed + b"c.IPKernelApp.matplotlib = 'inline'\n")
+    assert post_apply._cleanup_removed_paths() is False  # noqa: SLF001
+    assert target.exists()
+
+    target.write_bytes(distributed)
+    assert post_apply._cleanup_removed_paths() is True  # noqa: SLF001
+    assert not target.exists()
+
+
 def _make_step(name: str, calls: list[str], changed: bool = False):
     """呼び出し記録を残すステップ関数を返すヘルパー。"""
 

@@ -304,6 +304,15 @@ _REMOVED_PATHS_IF_CONTENT: dict[Path, list[cleanup_paths.RemovedPathIfContent]] 
             Path("CLAUDE.md"), datetime.date(2026, 4, 17), "# カスタム指示\n\n- シンプルに要点のみを述べる\n".encode()
         ),
     ],
+    Path.home() / ".ipython": [
+        # IPythonが生成した全行コメントの初期設定であり、設定として働かないため配布をやめた。
+        # 値は`git show 89ce8990a:.chezmoi-source/dot_ipython/profile_ipy/ipython_kernel_config.py`のSHA-256。
+        cleanup_paths.RemovedPathIfContent(
+            Path("profile_ipy/ipython_kernel_config.py"),
+            datetime.date(2026, 10, 7),
+            "0b6c81745268a31c9f862651f671f179ae5966d39c12e80b9c1f6034ce783760",
+        ),
+    ],
     # claude-plans-viewer 自動起動セットアップ（旧 setup_plans_viewer_windows）で
     # スタートアップフォルダーへ配置していた .cmd を、未編集なら除去する。
     # 旧モジュールの削除に伴い配布物としての保守元がないため。
