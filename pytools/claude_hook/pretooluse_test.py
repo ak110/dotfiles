@@ -13,6 +13,8 @@ import subprocess
 import pytest
 from agent_toolkit._testing import fork_runner as _fork_runner
 
+from pytools.claude_hook import pretooluse
+
 _HOME = pathlib.Path.home()
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
@@ -173,6 +175,7 @@ class TestAgentToolkitDotfilesNamesCheck:
             "agent_toolkit_bump",  # scripts 名
             "update_dotfiles",  # libexec 名
             "update_dotfiles_if_upstream_changed",  # libexec 名
+            "sync_report",  # scripts/ から pytools/_internal/ へ移したモジュール名
             "glatasks",  # 固定プロジェクト名
             "gv",
             "lc",
@@ -372,3 +375,16 @@ class TestGeneralBehavior:
         content = "Set-StrictMode -Version Latest\n$ErrorActionPreference = 'Stop'\nWrite-Host 'x'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
         assert result.returncode == 0
+
+
+def test_internal_module_names_exclude_single_words_and_distributed_modules(tmp_path: pathlib.Path) -> None:
+    """`pytools/_internal/`の複合名だけを固有名とし、単語名とagent-toolkitに同名がある名前は除く。"""
+    internal = tmp_path / "pytools" / "_internal"
+    internal.mkdir(parents=True)
+    for name in ("sync_report.py", "common.py", "file_lock.py", "_test_helpers.py", "sync_report_test.py"):
+        (internal / name).write_text("", encoding="utf-8")
+    package = tmp_path / "agent-toolkit" / "agent_toolkit" / "_common"
+    package.mkdir(parents=True)
+    (package / "file_lock.py").write_text("", encoding="utf-8")
+
+    assert pretooluse._list_internal_modules(internal, package.parent) == {"sync_report"}  # pylint: disable=protected-access

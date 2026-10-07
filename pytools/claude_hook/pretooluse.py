@@ -240,7 +240,7 @@ def _agent_toolkit_distribution_roots(dotfiles_root: pathlib.Path) -> tuple[path
 def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozenset[str], frozenset[str]]:
     """Dotfiles 固有名と OSS 名を `(固有名, OSS 名)` の組で返す。
 
-    固有名は次の 5 カテゴリの動的取得結果と固定の個人プロジェクト名の和集合。
+    固有名は次の 6 カテゴリの動的取得結果と固定の個人プロジェクト名の和集合。
     各カテゴリは対象ディレクトリ未存在時に空集合を返す。
     """
     specific: set[str] = set()
@@ -248,6 +248,9 @@ def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozens
     specific |= _list_subdirs(dotfiles_root / ".claude" / "skills")
     specific |= _list_pyproject_scripts(dotfiles_root / "pyproject.toml")
     specific |= _list_pytools_modules(dotfiles_root / "pytools")
+    specific |= _list_internal_modules(
+        dotfiles_root / "pytools" / "_internal", dotfiles_root / "agent-toolkit" / "agent_toolkit"
+    )
     specific |= _list_script_names(dotfiles_root / "scripts", dotfiles_root / "libexec")
     specific |= _PERSONAL_PROJECTS_PRIVATE
     # OSS 名が誤って固有名に混入した場合は OSS 名として扱う（確認だけを求める保守的措置）。
@@ -286,6 +289,24 @@ def _list_pytools_modules(path: pathlib.Path) -> set[str]:
     if not path.is_dir():
         return set()
     return {child.stem for child in path.glob("*.py") if child.name != "__init__.py"}
+
+
+def _list_internal_modules(path: pathlib.Path, agent_toolkit_package: pathlib.Path) -> set[str]:
+    """`pytools/_internal/` 直下のモジュール名のうち、dotfiles 固有と判定できるものを返す。
+
+    `scripts/` から移した処理（`sync_report` など）を移動前と同じく固有名として扱うため、
+    `_` を含む複合名だけを対象にし、`common` のような一般語の単語名は除く。
+    agent-toolkit のパッケージにも同名のモジュールがある名前は配布物の正規の参照になり得るため除く。
+    """
+    if not path.is_dir():
+        return set()
+    names = {
+        child.stem
+        for child in path.glob("*.py")
+        if "_" in child.stem and not child.stem.startswith("_") and not child.stem.endswith("_test")
+    }
+    distributed = {child.stem for child in agent_toolkit_package.rglob("*.py")} if agent_toolkit_package.is_dir() else set()
+    return names - distributed
 
 
 def _list_script_names(*directories: pathlib.Path) -> set[str]:
