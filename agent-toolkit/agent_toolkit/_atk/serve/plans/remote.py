@@ -463,7 +463,7 @@ class RemoteWatcher:
         """常駐SSH接続経由でRPCリクエストを送信し、応答辞書を返す。
 
         接続未確立・切断中では`RuntimeError`を送出する。
-        timeout時は対応するpendingエントリを除去して`TimeoutError`を送出する。
+        timeout時は対応するpendingエントリを除去し、操作名と上限秒数を含む`TimeoutError`を送出する。
         """
         if not self.is_connected():
             raise RuntimeError(f"watch not connected: host={self.host}")
@@ -482,7 +482,7 @@ class RemoteWatcher:
             async with self._send_lock:
                 proc.stdin.write(line.encode("utf-8"))
                 await proc.stdin.drain()
-            return await asyncio.wait_for(fut, timeout=timeout)
+            return await _atk_serve_remote.wait_rpc_response(fut, op=op, timeout=timeout)
         finally:
             self._pending.pop(req_id, None)
 

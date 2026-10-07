@@ -49,12 +49,16 @@ SSH_WATCH_OPTIONS = (
     "-o",
     "ServerAliveCountMax=3",
 )
-# 単発SSH呼び出しのタイムアウト秒。
-SSH_TIMEOUT_SEC = 30.0
 # 警告本文へ引き継ぐ標準エラー出力の最大文字数。値と選定理由は計画ファイル画面と共通とする。
 STDERR_EXCERPT_MAX_CHARS = _atk_serve_remote.STDERR_EXCERPT_MAX_CHARS
-# RPCリクエスト1件あたりのタイムアウト秒。超過時は単発SSHへ切り替える。
-RPC_REQUEST_TIMEOUT_SEC = 30.0
+# リモートヘルパーの操作ごとの上限秒。常駐接続のRPCと単発SSHで同じ値を使う。
+# `list`は全記録を走査し、常駐ヘルパーの最初の要求と単発SSHでは所要時間が記録量に比例する。
+# 値の根拠（初回走査の観測値）は`docs/development/design-serve.md`のセッション画面の節に置く。
+# `read`は記録1件の読み取りで、記録量に比例しない。
+OPERATION_TIMEOUT_SEC = {"list": 300.0, "read": 30.0}
+# RPCが上限を超えても単発SSHへ切り替えない操作。単発SSHは同じ走査を索引の無い新しいプロセスで
+# 最初からやり直すため、走査を続けている常駐ヘルパーより先に終わらず、そのCPUを奪い合う。
+_NO_FALLBACK_ON_RPC_TIMEOUT = frozenset({"list"})
 # 常駐SSH接続のstdout用StreamReader上限（バイト）。一覧・本文は1行JSONで届くため大きく取る。
 REMOTE_STREAM_LIMIT_BYTES = 128 * 1024 * 1024
 # 再接続のバックオフ。
@@ -745,9 +749,14 @@ _stderr_excerpt = _atk_serve_remote.stderr_excerpt
 
 
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
-    """SSH経由でこの画面のリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。"""
+    """SSH経由でこの画面のリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
+
+    `list`には常駐接続と同じ接続確立の打ち切りと生存確認を付け、上限が長くても
+    到達できないホストの失敗を接続確立の段階で数秒のうちに返す。
+    """
+    ssh_options = (*SSH_BASE_OPTIONS, *SSH_WATCH_OPTIONS) if op == "list" else SSH_BASE_OPTIONS
     return await _atk_serve_remote.run_remote_helper(
-        REMOTE_BOOTSTRAP, host, op, args, ssh_options=SSH_BASE_OPTIONS, timeout=SSH_TIMEOUT_SEC
+        REMOTE_BOOTSTRAP, host, op, args, ssh_options=ssh_options, timeout=OPERATION_TIMEOUT_SEC[op]
     )
 
 
@@ -778,13 +787,11 @@ class RemoteSessionClient:
             return False
         return not proc.stdin.is_closing()
 
-    async def request(
-        self,
-        op: str,
-        args: dict[str, typing.Any] | None = None,
-        timeout: float = RPC_REQUEST_TIMEOUT_SEC,
-    ) -> dict[str, typing.Any]:
-        """常駐SSH接続経由でRPCリクエストを送信し、応答辞書を返す。"""
+    async def request(self, op: str, args: dict[str, typing.Any] | None = None) -> dict[str, typing.Any]:
+        """常駐SSH接続経由でRPCリクエストを送信し、応答辞書を返す。
+
+        応答が操作ごとの上限（`OPERATION_TIMEOUT_SEC`）までに届かない場合は、操作名と上限秒数を含む`TimeoutError`を送出する。
+        """
         proc = self._proc
         if not self.is_connected() or proc is None or proc.stdin is None or proc.stdin.is_closing():
             raise RuntimeError(f"session helper not connected: host={self.host}")
@@ -798,7 +805,7 @@ class RemoteSessionClient:
             async with self._send_lock:
                 proc.stdin.write(line.encode("utf-8"))
                 await proc.stdin.drain()
-            return await asyncio.wait_for(future, timeout=timeout)
+            return await _atk_serve_remote.wait_rpc_response(future, op=op, timeout=OPERATION_TIMEOUT_SEC[op])
         finally:
             self._pending.pop(req_id, None)
 
@@ -963,12 +970,14 @@ def is_safe_remote_record_path(raw: str) -> bool:
 
 
 async def _remote_call(context: SessionsContext, host: str, op: str, args: dict[str, typing.Any]) -> dict[str, typing.Any]:
-    """常駐RPCを優先し、未接続・期限超過・失敗では単発SSHへ切り替える。"""
+    """常駐RPCを優先し、未接続・失敗と、`_NO_FALLBACK_ON_RPC_TIMEOUT`以外の期限超過では単発SSHへ切り替える。"""
     client = context.state.clients.get(host)
     if client is not None and client.is_connected():
         try:
             response = await client.request(op, args)
         except Exception as error:  # noqa: BLE001
+            if isinstance(error, TimeoutError) and op in _NO_FALLBACK_ON_RPC_TIMEOUT:
+                raise
             logger.warning("セッション記録のRPCに失敗 host=%s op=%s: %s（単発SSHへ）", host, op, error)
         else:
             if response.get("ok"):

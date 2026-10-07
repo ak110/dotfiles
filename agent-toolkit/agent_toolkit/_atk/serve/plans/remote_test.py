@@ -13,6 +13,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import types
 import typing
 
 import pytest
@@ -157,6 +158,35 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     await asyncio.wait_for(plans.stop_remote_watchers(context), timeout=5)
 
     assert len(started) == 1
+
+
+@pytest.mark.asyncio
+async def test_rpc_timeout_error_names_operation_and_limit(tmp_path: pathlib.Path) -> None:
+    """常駐接続のRPCの上限超過の例外は、操作名と上限秒数を持つ。
+
+    `asyncio.wait_for`の例外は文字列を持たず、本文の読み取りと検索の失敗の警告が理由を欠く。
+    """
+
+    class _Stdin:
+        def write(self, data: bytes) -> None:
+            del data
+
+        async def drain(self) -> None:
+            pass
+
+        def is_closing(self) -> bool:
+            return False
+
+    context = _context(tmp_path, remote_hosts=["remote-host"])
+    watcher = plans.RemoteWatcher("remote-host", context.state)
+    watcher._proc = typing.cast(typing.Any, types.SimpleNamespace(stdin=_Stdin()))
+    watcher._connected = True
+
+    with pytest.raises(TimeoutError) as error:
+        await watcher.request("read", {"path": "a.md"}, timeout=0.05)
+
+    assert "op=read" in str(error.value)
+    assert "上限の0.05秒" in str(error.value)
 
 
 @pytest.mark.asyncio

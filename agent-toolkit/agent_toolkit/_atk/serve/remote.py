@@ -171,6 +171,18 @@ async def run_remote_helper(
     return await run_helper(["ssh", *ssh_options, host, *remote_command_argv(bootstrap, op, args)], timeout=timeout)
 
 
+async def wait_rpc_response[T](future: asyncio.Future[T], *, op: str, timeout: float) -> T:
+    """常駐接続へ送ったRPC要求の応答を上限まで待つ。
+
+    上限を超えた場合は、操作名と上限秒数を含む`TimeoutError`を送出する。
+    `asyncio.wait_for`が送出する`TimeoutError`は文字列を持たず、それを書く警告が理由を欠くためである。
+    """
+    try:
+        return await asyncio.wait_for(future, timeout=timeout)
+    except TimeoutError:
+        raise TimeoutError(f"op={op}のRPCの応答が上限の{timeout:g}秒以内に届きませんでした") from None
+
+
 def raise_if_cancelling() -> None:
     """後始末の待機が吸収したキャンセル要求が残っていれば、タスクを終えるため送出する。
 

@@ -12,6 +12,7 @@ import pathlib
 import subprocess
 import sys
 import threading
+import types
 import typing
 
 import pytest
@@ -978,6 +979,94 @@ async def test_remote_call_falls_back_to_single_ssh(tmp_path: pathlib.Path) -> N
 
     assert calls == [("remote-host", "list", []), ("remote-host", "list", []), ("remote-host", "list", [])]
     assert failing.calls == [("list", {})]
+
+
+class _RecordingStdin:
+    """常駐接続の標準入力を差し替え、送られた要求を記録する。"""
+
+    def __init__(self) -> None:
+        self.requests: list[dict[str, typing.Any]] = []
+
+    def write(self, data: bytes) -> None:
+        """要求の行を記録する。"""
+        self.requests.append(json.loads(data))
+
+    async def drain(self) -> None:
+        """書き込みの完了を待つ。記録だけなので待たない。"""
+
+    def is_closing(self) -> bool:
+        """接続中として扱う。"""
+        return False
+
+
+def _connected_client(context: sessions.SessionsContext, host: str) -> tuple[sessions.RemoteSessionClient, _RecordingStdin]:
+    """要求を記録する標準入力を持つ、接続済みの常駐接続を登録する。"""
+    client = sessions.RemoteSessionClient(host, context.state)
+    stdin = _RecordingStdin()
+    client._proc = typing.cast(typing.Any, types.SimpleNamespace(stdin=stdin))
+    client._connected = True
+    context.state.clients[host] = client
+    return client, stdin
+
+
+@pytest.mark.asyncio
+async def test_remote_list_accepts_response_slower_than_read_timeout(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`list`の上限は`read`と別に定め、`read`の上限を超えて遅れる一覧の応答も受け取って単発SSHを起動しない。
+
+    一覧の初回走査は記録量に比例して長くなるため、1件の読み取りと同じ上限で打ち切ると、
+    記録の多いホストの一覧が常に取得できなくなる。
+    """
+    monkeypatch.setitem(sessions.OPERATION_TIMEOUT_SEC, "read", 0.05)
+    monkeypatch.setitem(sessions.OPERATION_TIMEOUT_SEC, "list", 5.0)
+    runner, calls = _runner_returning({"ok": True, "entries": []})
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
+    client, stdin = _connected_client(context, "remote-host")
+
+    async def respond_late() -> None:
+        while not stdin.requests:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.2)
+        stream = asyncio.StreamReader()
+        response = {
+            "type": "response",
+            "id": stdin.requests[0]["id"],
+            "ok": True,
+            "entries": [{"engine": "claude", "path": "/r/a.jsonl"}],
+        }
+        stream.feed_data(json.dumps(response).encode("utf-8") + b"\n")
+        stream.feed_eof()
+        await client._process_stream(stream)
+
+    responder = asyncio.ensure_future(respond_late())
+    entries, warnings = await sessions.list_sessions(context)
+    await responder
+
+    assert [(entry.host, entry.path) for entry in entries] == [("remote-host", "/r/a.jsonl")]
+    assert not warnings
+    assert not calls
+    assert [request["op"] for request in stdin.requests] == ["list"]
+
+
+@pytest.mark.asyncio
+async def test_remote_list_rpc_timeout_does_not_fall_back(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`list`のRPCが上限を超えた場合は単発SSHを起動せず、上限超過と秒数を理由に持つ警告を返す。
+
+    単発SSHは同じ走査を索引の無い新しいプロセスで最初からやり直すため、走査を続ける常駐ヘルパーより先に終わらない。
+    """
+    monkeypatch.setitem(sessions.OPERATION_TIMEOUT_SEC, "list", 0.05)
+    runner, calls = _runner_returning({"ok": True, "entries": []})
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
+    _connected_client(context, "remote-host")
+
+    entries, warnings = await sessions.list_sessions(context)
+
+    assert not [entry for entry in entries if entry.host == "remote-host"]
+    assert not calls
+    assert [warning["host"] for warning in warnings] == ["remote-host"]
+    assert "op=list" in warnings[0]["reason"]
+    assert "上限の0.05秒" in warnings[0]["reason"]
 
 
 @pytest.mark.asyncio
