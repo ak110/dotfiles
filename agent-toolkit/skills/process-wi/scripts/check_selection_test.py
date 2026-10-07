@@ -331,7 +331,7 @@ def test_uwi_paths_in_answer_and_materials_require_classification(
 def test_directory_range_matches_by_path_element(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`src/`は`src-old/model.py`を覆わない。"""
+    """ディレクトリの範囲`src/`は、名前の先頭だけが一致する`src-old/`配下のファイルを覆わない。"""
     repo, notes = env
     _awi(notes, "a.md", "`src-old/model.py`を変える。")
 

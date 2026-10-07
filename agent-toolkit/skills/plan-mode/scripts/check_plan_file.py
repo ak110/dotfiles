@@ -15,26 +15,16 @@ import typing
 
 import yaml
 
-try:
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._git import command as _git_command
-    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        bundle_kinds,
-        locations,
-        structure,
-    )
-    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        selection as _selection,
-    )
-except ImportError as _import_error:
-    _SELF = pathlib.Path(__file__).resolve()
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script plan-check -- <計画ファイルの絶対パス>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    bundle_kinds,
+    locations,
+    structure,
+)
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    selection as _selection,
+)
 
 _PLUGIN_DIR = pathlib.Path(locations.__file__).resolve().parents[2]
 

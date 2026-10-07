@@ -9,7 +9,7 @@
 （判定は`append`呼び出し時に行う）。
 
 ログパスは状態ディレクトリ（`agent_toolkit._common.state_paths.state_dir`）配下の
-`process-wi.log`とする。排他ロックとサイズローテーションは`_file_lock.py`へ委譲する。
+`process-wi.log`とする。排他ロックとサイズローテーションは`_common/file_lock.py`へ委譲する。
 """
 
 from __future__ import annotations

@@ -271,7 +271,7 @@ def _build_options(
     env[_ENV_EMIT_SESSION_STATE_EVENTS] = "1"
     if root_session_id is not None:
         env[_delegated_session.OWNER_SESSION_ENV] = root_session_id
-    # 委譲先のプロンプトキャッシュ保持期間を`mode`ごとに固定する。評価順序は`_wait_schedule.py`のdocstringが定める。
+    # 委譲先のプロンプトキャッシュ保持期間を`mode`ごとに固定する。評価順序は`_common/wait_schedule.py`のdocstringが定める。
     # 軽量起動（探索委譲とシェル実行委譲）は連続する要求の間隔が短く、5分でも失効しないため、書き込み単価の低い側を選ぶ。
     # 通常起動は配下のサブエージェントへユーザー設定ファイルの指定が届かないため、1時間を明示する。
     # 前提が成立しなくなった場合は、軽量起動で連続する要求の間隔が5分を超える事象、または通常起動の配下サブエージェントが

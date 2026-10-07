@@ -1,9 +1,7 @@
-"""atk (agent-toolkit `atk wi`) の拡張サブコマンド・オプションのテスト。
+"""`atk wi`の拡張サブコマンド・オプションのテスト。
 
 `add --source`・`list`/`show`のremote同期・`commit`・`list`の状態に基づく抽出・
-エディター経由の`add`・`mq add`の`--target-repo`の単体テストを集約する。
-既存サブコマンドのテストは`atk_test.py`に分離する。
-共通ヘルパーは`atk_test.py`・`_atk_git_fake_test_helpers.py`から再利用する。
+エディター経由の`add`・`add`の`--target-repo`の単体テストを集約する。
 """
 
 import pathlib

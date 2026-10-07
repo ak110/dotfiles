@@ -1,14 +1,10 @@
-"""`_atk_wi_formatters`モジュール（本文要約の表示幅ベース切り詰め）のテスト。
-
-`atk_test.py`側の肥大化（pylint `too-many-lines`）回避のため、
-`_atk_wi_formatters._body_summary`の切り詰め境界ケースを本ファイルへ分離する。
-"""
+"""`formatters`モジュールの本文要約の表示幅に基づく切り詰め（`body_summary`）の境界ケースのテスト。"""
 
 import pytest
 
 from agent_toolkit._atk.wi import formatters as _formatters  # noqa: E402  # pylint: disable=wrong-import-position
 
-# `_parse_alert_keys`のテストは`_atk_wi_alerts_test.py`側で公開関数`existing_alert_keys`
+# `parse_alert_keys`のテストは`alerts_test.py`側で公開関数`existing_alert_keys`
 # 経由で行う（private関数直接テストを避けるため。`agent-toolkit:writing-standards`の
 # `references/testing.md`「private関数の直接テスト禁止」節参照）。
 

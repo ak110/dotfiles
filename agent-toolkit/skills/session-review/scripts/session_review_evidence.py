@@ -25,69 +25,58 @@ import sys
 from pathlib import Path
 from typing import Any
 
-try:
-    from session_evidence_bundle import (
-        _bundle_events,
-    )
-    from session_evidence_catalog import (
-        _catalog_events,
-        _catalog_tool_call_events,
-    )
-    from session_evidence_context import (
-        _context_at_events,
-        _record_schema_collection_events,
-    )
-    from session_evidence_detail import (
-        _detail_collection_events,
-        _fixed_string_collection_events,
-        _grep_collection_events,
-    )
-    from session_evidence_extract import (
-        _BOUNDARY_NEXT_ACTION,
-        _ELAPSED_UNTIL_NEXT_ACTION,
-        _SINCE_NEXT_ACTION,
-        _default_events,
-        _error_event,
-        _load_records,
-        _Runtime,
-        _unresolved_events,
-    )
-    from session_evidence_hook_notices import (
-        _hook_notice_events,
-    )
-    from session_evidence_records import (
-        _collect_records,
-        _resolve_claude_transcript,
-    )
-    from session_evidence_stats import (
-        _apply_observation_boundary,
-        _elapsed_until_event,
-        _parse_cli_timestamp,
-        _stats_events,
-    )
-    from session_evidence_tool_calls import (
-        _tool_call_collection_events,
-    )
-    from session_evidence_user_events import (
-        _user_events_since,
-    )
-    from session_evidence_warn import (
-        _warning_collection_events,
-    )
+from session_evidence_bundle import (
+    _bundle_events,
+)
+from session_evidence_catalog import (
+    _catalog_events,
+    _catalog_tool_call_events,
+)
+from session_evidence_context import (
+    _context_at_events,
+    _record_schema_collection_events,
+)
+from session_evidence_detail import (
+    _detail_collection_events,
+    _fixed_string_collection_events,
+    _grep_collection_events,
+)
+from session_evidence_extract import (
+    _BOUNDARY_NEXT_ACTION,
+    _ELAPSED_UNTIL_NEXT_ACTION,
+    _SINCE_NEXT_ACTION,
+    _default_events,
+    _error_event,
+    _load_records,
+    _Runtime,
+    _unresolved_events,
+)
+from session_evidence_hook_notices import (
+    _hook_notice_events,
+)
+from session_evidence_records import (
+    _collect_records,
+    _resolve_claude_transcript,
+)
+from session_evidence_stats import (
+    _apply_observation_boundary,
+    _elapsed_until_event,
+    _parse_cli_timestamp,
+    _stats_events,
+)
+from session_evidence_tool_calls import (
+    _tool_call_collection_events,
+)
+from session_evidence_user_events import (
+    _user_events_since,
+)
+from session_evidence_warn import (
+    _warning_collection_events,
+)
 
-    from agent_toolkit._agents_server import record_paths as _record_paths
-    from agent_toolkit._common import host_homes as _host_homes
-    from agent_toolkit._common import state_paths as _state_paths
-except ImportError as _import_error:
-    _SELF = Path(__file__).resolve()
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script session-review-evidence -- <引数>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
-
+from agent_toolkit._agents_server import record_paths as _record_paths
+from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import state_paths as _state_paths
 
 _CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
 

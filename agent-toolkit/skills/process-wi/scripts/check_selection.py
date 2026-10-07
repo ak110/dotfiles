@@ -66,22 +66,13 @@ import unicodedata
 import markdown_it
 import yaml
 
-try:
-    from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
-    from agent_toolkit._common import markdown_headings as _markdown_headings
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._git import command as _git_command
-    from agent_toolkit._plan import locations as _plan_file
-    from agent_toolkit._plan import selection as _selection
-    from agent_toolkit._plan.structure import is_agent_doc_target_file as _is_agent_doc_target_file
-except ImportError as _import_error:
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script pick-wi-check -- <選定結果の出力先ファイルの絶対パス>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
+from agent_toolkit._common import markdown_headings as _markdown_headings
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._plan import selection as _selection
+from agent_toolkit._plan.structure import is_agent_doc_target_file as _is_agent_doc_target_file
 
 _TARGET_SECTION = "反映内容と反映先"
 _LANE_NONE = "なし"

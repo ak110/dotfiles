@@ -1,8 +1,6 @@
-"""atk (agent-toolkit `atk wi`) のuwi系サブコマンドのテスト。
+"""`atk wi`のUWIの扱いのテスト。
 
 UWI種別の投入・一覧・編集・回答・採用・削除の単体テストを集約する。
-既存サブコマンドのテストは`atk_test.py`に、拡張サブコマンド・オプションのテストは
-`_atk_wi_extras_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import contextlib

@@ -152,7 +152,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 
 ### agents_server MCPの配置と寿命
 
-共有MCP設定の大元が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/scripts/agents_server_mcp.py`を
+共有MCP設定の大元が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/agent_toolkit/agents_server_mcp.py`を
 plugin rootを`uv run --project`へ指定し、lockfileを固定して起動する。生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、
 Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`が解決した候補のengineに従ってCodex backendまたはClaude backendを選択する。
 

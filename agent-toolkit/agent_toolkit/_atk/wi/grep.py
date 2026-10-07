@@ -1,7 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk wi grep`コマンド用補助モジュール。
-
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""`atk wi grep`による本文全体の正規表現検索。"""
 
 import argparse
 import pathlib

@@ -261,7 +261,7 @@ session識別子は`--output-format stream-json`が返す`init`イベントの�
 `_atk/config.py`の`_STAGE_MODEL_PATTERN`と`_KNOWN_MODELS`だけを広げ、
 `_MODEL_SETTING_CATEGORIES`・`_CATEGORY_ENGINE_MODELS`・`_PRESET_ENGINE_ORDERS`は変えない。
 Antigravity CLIは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
-候補列のフォールバックの対象にもしないため、`_engine_unavailable_reason`はAntigravity CLIの失敗を分類しない。
+Antigravity CLIは工程別モデル設定の候補列に入らない。委譲先が失敗で終端した場合は、`agent-toolkit/agent_toolkit/_agents_server/antigravity.py`の`unavailable_reason`が標準エラー出力か失敗の本文を除外理由として返し、記録した除外理由は全てそのengineを除外する根拠になる。
 
 委譲先には`--dangerously-skip-permissions`を付ける。
 原稿ファイルの書き換えまでを任せる用途であり、Antigravity CLIの非対話モードは対話確認を持たず、

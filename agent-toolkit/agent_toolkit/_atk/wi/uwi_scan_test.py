@@ -1,4 +1,4 @@
-"""`_uwi_scan.py`のUWI走査を検証する。"""
+"""`uwi_scan.py`のUWI走査を検証する。"""
 
 import pathlib
 import subprocess

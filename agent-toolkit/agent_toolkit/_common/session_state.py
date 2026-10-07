@@ -6,7 +6,7 @@
 `read_state` → 操作 → 直接 `write_state` する従来パターンは廃止する
 （先発プロセスの追加キーが後発プロセスの書き込みで消失する事象を防ぐ）。
 
-ロック取得・解放は`_file_lock.py`（POSIX: `fcntl.flock`、Windows: `msvcrt.locking`）へ委譲する。
+ロック取得・解放は`file_lock.py`（POSIX: `fcntl.flock`、Windows: `msvcrt.locking`）へ委譲する。
 ロックファイルを削除する処理はない。内容を持たない空ファイルであり、
 一時ディレクトリの通常の回収に委ねる（削除する処理がないため、取得開始と削除の
 直列化も不要になる）。書き込みは同一ディレクトリの一時ファイル経由`os.replace`で

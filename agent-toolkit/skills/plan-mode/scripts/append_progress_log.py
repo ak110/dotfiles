@@ -12,25 +12,14 @@ import argparse
 import datetime
 import json
 import pathlib
-import sys
 from collections.abc import Callable
 
-try:
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._common.atomic_file import atomic_write
-    from agent_toolkit._common.markdown_headings import top_level_atx_headings
-    from agent_toolkit._plan import commit_mapping
-    from agent_toolkit._plan import locations as _plan_locations
-    from agent_toolkit._plan import structure as _plan_format
-except ImportError as _import_error:
-    _SELF = pathlib.Path(__file__).resolve()
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script plan-progress -- <引数>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.markdown_headings import top_level_atx_headings
+from agent_toolkit._plan import commit_mapping
+from agent_toolkit._plan import locations as _plan_locations
+from agent_toolkit._plan import structure as _plan_format
 
 Clock = Callable[[], datetime.datetime]
 

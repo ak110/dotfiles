@@ -1,8 +1,7 @@
-"""_file_lock モジュールの単体テスト。
+"""`file_lock`モジュールの単体テスト。
 
 POSIX/NT両分岐のロック取得・解放、`rotate_if_needed`のローテーション動作を検証する。
-OS別ロック実装は`_session_state_test.py`の先例に倣い、実行環境のOSと一致する側のみ
-`pytest.mark.skipif`で有効化し、実際のロックAPI経由で検証する。
+OS別ロック実装は実行環境のOSと一致する側のみ`pytest.mark.skipif`で有効化し、実際のロックAPI経由で検証する。
 """
 
 import errno

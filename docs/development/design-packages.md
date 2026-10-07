@@ -6,7 +6,7 @@
 ## agent-toolkit/agent_toolkit/のパッケージ構成
 
 `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置く。
-該当するファイルはフック共通の`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`、managed-tempの後始末`_managed_temp.py`、およびリモートホスト上で読み込んで実行するヘルパー2件とする。
+該当するファイルはフック共通の`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`、managed-tempの後始末`_managed_temp.py`とする。リモートホスト上で読み込んで実行するヘルパー2件（`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`）は`agent-toolkit/scripts/`に置く。
 それ以外の実装モジュールは、責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ収める。
 この6つを依存の層とし、この並び順を層の順序とする。
 後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
@@ -42,7 +42,7 @@ Gitリポジトリの作成とGitコマンドの実行は`_testing/git_repositor
 層の順序の判定はサブパッケージに加えて、直下の公開スクリプトと`skills/*/scripts/`配下の非テストのスクリプトも走査し、`hook.py`以外の起動スクリプトからの`_hooks`のimportを失敗にする。
 同じ走査で、`_testing`配下を除く非テストのモジュールが`agent-toolkit/pyproject.toml`の開発用の依存グループにだけあるパッケージ（`jsonschema`など）をimportした場合も失敗にする。
 開発環境には開発用の依存が導入済みのためテストは成功するが、配布先の環境には無く、そのモジュールを読み込んだ時点で失敗するためである。
-`_testing`配下を検査から除くのは、テスト専用の依存を使う場所が`_testing`であり、本番のコードから`_testing`へのimportを前述の検査が失敗させるため、開発用の依存が本番のコードへ届かないからである。
+`_testing`配下をこの走査から除くのは、テスト専用の依存を使う場所が`_testing`であり、本番のコードから`_testing`へのimportを前述の走査が失敗にするため、開発用の依存が本番のコードへ届かないからである。
 
 モジュール名からは所属を表す接頭辞を除く。
 ただしPythonの組込み名と標準ライブラリのトップレベル名に一致する名前は使わない。

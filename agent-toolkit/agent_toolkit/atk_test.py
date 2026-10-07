@@ -1,12 +1,9 @@
-"""atk (agent-toolkit `atk wi`) のテスト。
+"""`atk`のトップレベルCLIと`atk wi`の基本サブコマンドのテスト。
 
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
 add・本文要約切り詰めなど基本サブコマンドの単体テストを集約する。
-list系は`_atk_wi_list_test.py`、show系は`_atk_wi_show_test.py`、mutation系は`_atk_wi_mutations_test.py`、
-process-loop・リポジトリ解決は`_atk_wi_process_loop_test.py`、拡張機能は`_atk_wi_extras_test.py`、
-UWI系は`_atk_wi_uwi_test.py`、本文要約の切り詰め境界ケースは`_atk_wi_formatters_test.py`に分離する。
-UWI共通ヘルパーは本ファイルと分割先テストの双方から使うため本ファイルに残置する。
-gitリモート応答フェイクは複数テストファイルが共有するため`_atk_git_fake_test_helpers.py`に集約する。
+サブコマンドごとのテストは各実装の隣の`*_test.py`に置く。
+UWI共通ヘルパーは本ファイルと他のテストの双方から使うため本ファイルに残置する。
 """
 
 import argparse

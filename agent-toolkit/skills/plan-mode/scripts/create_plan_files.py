@@ -13,33 +13,22 @@ import os
 import pathlib
 import re
 import secrets
-import sys
 import tempfile
 from collections.abc import Iterator
 
-try:
-    from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        file_lock as _file_lock,
-    )
-    from agent_toolkit._common import host_homes as _host_homes
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._plan import bundle_kinds as _bundle_kinds
-    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        locations as _plan_file,
-    )
-    from agent_toolkit._plan import owner_records as _owner_records
-    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-        structure as _plan_format,
-    )
-except ImportError as _import_error:
-    _SELF = pathlib.Path(__file__).resolve()
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script plan-create -- <引数>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    file_lock as _file_lock,
+)
+from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    locations as _plan_file,
+)
+from agent_toolkit._plan import owner_records as _owner_records
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    structure as _plan_format,
+)
 
 PLAN_STEM_PLACEHOLDER = "__PLAN_STEM__"
 """本文中で最終計画stemが未確定であることを示す固定プレースホルダー。"""

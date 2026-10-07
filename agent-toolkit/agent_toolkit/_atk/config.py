@@ -1,6 +1,5 @@
-"""agent-toolkitプラグイン配下の`atk config`サブコマンド用補助モジュール。
+"""`atk config`サブコマンド。
 
-PEP 723 entrypoint`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
 XDG関連パス（設定・状態・データ各ディレクトリ、private-notesの解決結果）の確認と、
 工程別モデル設定の確認・変更を提供する。
 """

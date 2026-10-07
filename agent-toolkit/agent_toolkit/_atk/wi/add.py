@@ -1,8 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
-
-旧`pytools/dotfiles_fb/_add.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""`atk wi add`によるAWI・UWIの投入（本文の検証、対象リポジトリと`target_commit`の解決、保存とcommit）。"""
 
 import argparse
 import datetime

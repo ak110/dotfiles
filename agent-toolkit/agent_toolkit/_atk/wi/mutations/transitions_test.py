@@ -1,11 +1,4 @@
-"""atk (agent-toolkit `atk wi`) のadopt/reject/rm/edit・パストラバーサル検証のテスト。
-
-adopt・reject・rm・editサブコマンドと、ファイル名引数の不正値拒否の単体テストを集約する。
-既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_wi_list_test.py`・
-`_atk_wi_show_test.py`・`_atk_wi_process_loop_test.py`に分離する。
-位置引数の重複除去（FB7）テストは`too-many-lines`回避のため`_atk_wi_dedup_test.py`へ分離する。
-共通ヘルパーは`atk_test.py`から再利用する。
-"""
+"""`atk wi`の変更系サブコマンド（状態遷移・削除・編集・追記・依存の更新・commit）と、ファイル名引数の検証のテスト。"""
 
 import contextlib
 import datetime

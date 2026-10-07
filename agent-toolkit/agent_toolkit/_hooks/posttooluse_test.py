@@ -2,7 +2,7 @@
 
 subprocessで起動しexit code・状態ファイルの内容を検証する。
 plan fileの書式と定義元との一致の確認・codex-review.md読み込み追跡は`posttooluse_plan_format_test.py`、
-`session_edited_files`蓄積機構は`posttooluse_session_edited_files_test.py`へ分割している。
+`session_edited_files`の蓄積も本ファイルが検証する。
 """
 
 # pylint: disable=protected-access

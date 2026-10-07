@@ -11,22 +11,12 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import pathlib
-import sys
 
 import append_progress_log
 
-try:
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._plan import commit_mapping
-    from agent_toolkit._plan import structure as _plan_format
-except ImportError as _import_error:
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script plan-rewrite -- <引数>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._plan import commit_mapping
+from agent_toolkit._plan import structure as _plan_format
 
 _CURRENT_OMISSION_ACTION = (
     "対応表に無い旧OIDに対応する新OIDを書換え前後の`git range-diff`で確かめて対応表へ加え、同じ引数で再実行する"

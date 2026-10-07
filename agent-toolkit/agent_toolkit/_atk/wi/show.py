@@ -1,8 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
-
-旧`pytools/dotfiles_fb/_show.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""`atk wi show`による本文の表示。"""
 
 import argparse
 import pathlib

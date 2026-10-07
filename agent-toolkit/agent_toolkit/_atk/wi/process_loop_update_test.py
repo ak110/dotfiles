@@ -1,8 +1,6 @@
-"""atk (agent-toolkit `atk wi`) のprocess-loop待機ループ自動再起動のテスト。
+"""`atk wi process-loop`の自己更新の確認と再起動のテスト。
 
-待機ループがタイムアウト復帰した際の上流差分反映・常駐コードのハッシュ比較・再起動を
-公開CLI経由で検証する。process-loopサブコマンドの他のテストは`_atk_wi_process_loop_test.py`に、
-既存サブコマンドの残テストは`atk_test.py`にある。共通ヘルパーは両ファイルから再利用する。
+待機ループがタイムアウト復帰した際の上流差分の反映・常駐コードのハッシュ比較・再起動を公開CLI経由で検証する。
 """
 
 import collections.abc

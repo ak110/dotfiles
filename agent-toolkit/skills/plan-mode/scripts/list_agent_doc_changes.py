@@ -11,18 +11,9 @@ import json
 import pathlib
 import sys
 
-try:
-    from agent_toolkit._common import next_action as _next_action
-    from agent_toolkit._git import command as _git_command
-    from agent_toolkit._plan.structure import is_agent_doc_target_file
-except ImportError as _import_error:
-    print(
-        f"agent_toolkitパッケージを解決できません: {_import_error}\n"
-        # パッケージを読めない場合に実行されるため共通の出力関数を使えず、同じ標識を直接書く。
-        "次の操作: `atk run-script agent-doc-changes -- <引数>`で起動する",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._plan.structure import is_agent_doc_target_file
 
 
 def changed_agent_doc_paths(repository: pathlib.Path, base: str, target: str) -> list[str]:

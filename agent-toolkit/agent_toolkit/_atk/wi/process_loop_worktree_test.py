@@ -1,8 +1,4 @@
-"""`atk wi process-loop`のworktree追随処理のテスト。
-
-本体テストの`_atk_wi_process_loop_test.py`が行数上限に達したため、
-worktree追随という責務の境界で分割した。
-"""
+"""`atk wi process-loop`のセッションを起動する作業ツリーの準備と上流との同期のテスト。"""
 
 import contextlib
 import os

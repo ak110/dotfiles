@@ -1,9 +1,7 @@
-"""atk (agent-toolkit `atk wi`) の`add`サブコマンド順序保証テスト。
+"""`atk wi add`の投入の順序と検証のテスト。
 
-エディター経由の本文確定後に`_pull`を実行しUXブロッキング待ちを最小化する順序
-（エディター起動 → 本文確定 → `_pull` → 書込 → commit&push）が維持されていることを検証する。
-基本動作テストは`atk_test.py`・`_atk_wi_extras_test.py`側に集約する。
-共通ヘルパーは`_atk_git_fake_test_helpers.py`から再利用する。
+エディター経由の本文確定後にremote同期を実行し、待ち時間を最小化する順序
+（エディター起動 → 本文確定 → remote同期 → 書込 → commitとpush）が維持されていることを検証する。
 """
 
 # pylint: disable=protected-access,subprocess-run-check

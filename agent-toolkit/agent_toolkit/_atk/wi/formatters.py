@@ -1,8 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
-
-旧`pytools/dotfiles_fb/_formatters.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""`atk wi`の一覧と表示が使う、frontmatterの値の抽出と要約・表示幅の整形。"""
 
 import pathlib
 import shutil
