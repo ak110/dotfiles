@@ -464,6 +464,19 @@ run `36791008397`が進行中でjob `110143643856`が`completed/success`のと�
 APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力件数の一致は求めない。
 進行中runが無い場合はその条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
 
+## agent-toolkit/skills/bugfix/references/ci-failure-handling.md：分類判定の補助：2026年10月7日
+
+2026年10月7日、GitLabのリポジトリ（Runnerはgitlab-runner 18.2.1のDocker executor）のAWI処理回で、許容された終了コード4で終わるはずのjobがjobとして終了コード1を報告した事象を再現した。
+手段は次のとおりである。GitLabのjob取得とjob更新の要求に応える最小のHTTPサーバー（偽のjob API）を、コンテナーから到達できるアドレスで起動した。`gitlab/gitlab-runner:v18.2.1`の`run-single --executor docker`（helper `x86_64-v18.2.1`）でjobを1件ずつ実行し、Runnerがjob APIへ送った`exit_code`を報告値として読んだ。
+bashのイメージにはCIのjobと同じdigestのPythonイメージ（bash 5.2.37）、shのイメージには`docker:27-cli`を使った。
+bashのイメージで外部コマンドが4で終わると、`after_script`の有無にかかわらず1を報告した。組み込みの`exit 4`は4を報告した。shのイメージでは外部コマンドの4を4と報告した。
+変数`FF_USE_NEW_BASH_EVAL_STRATEGY=true`を与えると、bashのイメージでも外部コマンドの4と5をそのまま報告した。
+生成形の典拠はgitlab-runner v18.2.1の`shells/bash.go`の`BashWriter.Finish`で、同フラグが偽なら`: | eval <script>`、真なら`: | (eval <script>)`を生成する。
+スクリプトとuvの層だけを含むローカル再現ではこの報告値の差は現れず、Runnerと実行器を含めた再現で初めて直接的原因を対照で確定できた。
+
+再検証では同じ手段で、bashのイメージで`python -c 'import sys; sys.exit(4)'`だけをscriptに持つjobを、同フラグの指定なしと`true`の2条件で実行し、前者が1、後者が4を報告することを確かめる。
+Runnerの版を変えた場合は、その版の`shells/bash.go`で生成形を確かめてから同じ2条件を実行する。
+
 ## dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日
 
 2026年10月1日、uv 0.12.21を使い、専用worktreeのrootで`env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras`を実行した。終了コードは0で、標準エラーには135パッケージの解決と133パッケージの確認が記録された。続く`uv run --frozen python`でpytools、agent_toolkit、pytestのimportが成功した。

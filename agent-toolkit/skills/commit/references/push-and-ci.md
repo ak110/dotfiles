@@ -92,7 +92,7 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
    登録猶予は、実行が1件も登録されないまま終わる場合を区別するための待機であり、
    判定対象を確定する期限ではない
 4. CI失敗では、最初の失敗jobを検出した時点で`agent-toolkit:bugfix`を起動し、監視は継続する。証拠の取得、帰属、原因および拡張原因分析の要否は同スキルのCI失敗分析契約に従う
-5. CI失敗の修正方法を、push先と修正対象のcommitによって次の2区分から選ぶ。修正後はどちらの区分でも同じbranchへ再pushする。そのpush用の新しいbaselineを作成し、`wait_ci.py --baseline`で再監視する。
+5. CI失敗の修正方法を、push先と修正対象のcommitによって次の2区分から選ぶ。修正後はどちらの区分でも同じbranchへ再pushする。そのpush用の新しいbaselineを作成し、`wait_ci.py --baseline`で再監視する。再監視ではCI失敗を起こしたjobが新しいpushの判定対象に含まれるかを確かめる。含まれない場合の扱いは`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正commitが必要なCI失敗の実施主体」の修正系列の定義に従う。
    - 原因commitへ取り込む区分: 次の全てが成立する場合は、修正を原因のcommitへ取り込む（amendか、fixupとautosquash）。同じbranchは`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように期待値を明示した形で更新する。背景の`git fetch`で追跡refが進むと、期待値を省いた`--force-with-lease`の保護が働かない。取り込みの実行手順は`agent-toolkit:commit`の`references/history-rewrite.md`の「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」に従う
      - push先のbranchが、remoteのHEADが指すbranch（`git ls-remote --symref <remote> HEAD`が示すbranch）と異なる
      - push先のbranchが、対象リポジトリの規範（`AGENTS.md`など）が直接pushまたはforce pushを禁じるbranchに当たらない
