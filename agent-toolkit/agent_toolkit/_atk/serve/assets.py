@@ -33,18 +33,16 @@ _STATIC_DIR = pathlib.Path(__file__).with_name("static")
 
 def _read_static_text(filename: str) -> str:
     """pluginへ同梱したフロントエンド資産をUTF-8で読み込む。"""
-    content = (_STATIC_DIR / filename).read_text(encoding="utf-8")
-    # 旧埋め込み定数の末尾改行契約を保つ。HTML/CSSの三重引用符だけが改行を含まなかった。
-    return content if filename == "app.js" else content.removesuffix("\n")
+    return (_STATIC_DIR / filename).read_text(encoding="utf-8")
 
 
-HTML = _read_static_text("index.html")
-CSS = _read_static_text("app.css")
-JS = _read_static_text("app.js")
+# 旧埋め込み定数の末尾改行契約を保つ。HTML/CSSの三重引用符は改行を含まなかった。
+HTML = _read_static_text("index.html").removesuffix("\n")
+CSS = _read_static_text("app.css").removesuffix("\n")
 
-# 3画面が共有するナビゲーション。
-SHELL_JS = _read_static_text("shell.js")
-# 計画ファイル画面。
-PLANS_JS = _read_static_text("plans.js")
-# セッション画面。
-SESSIONS_JS = _read_static_text("sessions.js")
+SCRIPTS = {
+    filename: _read_static_text(filename)
+    # 3画面が共有するナビゲーションと処理、ワークアイテム・計画ファイル・セッションの各画面。
+    for filename in ("shell.js", "common.js", "wi.js", "plans.js", "sessions.js")
+}
+"""`/static/<name>.js`で配信するESモジュール。ファイル名から本文を引く。"""

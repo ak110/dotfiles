@@ -110,16 +110,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:1c7de5345e19ed5ba6aa224e64b1423384463695d7b4882de0ccf38cff584c7c",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/browser_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:20678bd357d049cea719e2813f88a90845943e416aaa37b78aee2f20206a3c6e",
       "lines": 15,
       "occurrences": [
@@ -823,16 +813,6 @@
       "occurrences": [
         {
           "path": "agent_toolkit/_hooks/stop_gate_task_id_fallback_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:f5b3b332bbba95fb2d6522e925a5756e6b4369706bfbbdc76e67883d0b311d53",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_atk/serve/browser_test.py",
           "count": 2
         }
       ]

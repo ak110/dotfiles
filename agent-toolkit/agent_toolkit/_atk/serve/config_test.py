@@ -54,7 +54,7 @@ def test_invalid_host(host: object) -> None:
 
 def test_assets_are_self_contained() -> None:
     """UI資産は外部配信元へ依存せず、HTMLとして解釈する本文の代入を1箇所へ限る。"""
-    combined = assets.HTML + assets.CSS + assets.JS
+    combined = assets.HTML + assets.CSS + assets.SCRIPTS["wi.js"]
     assert "https://" not in combined
     assert "http://" not in combined
     assert combined.count("innerHTML") == 1
@@ -914,8 +914,9 @@ async def test_safe_base_path_rejects_value_that_proxy_fix_accepts(tmp_path: pat
     assert 'href="/static/app.css"' in index_body
     assert "atk:1" not in index_body
 
-    js_body = await (await client.get("/atk:1/static/app.js", headers=headers)).get_data(as_text=True)
-    assert 'const BASE_PATH="";' in js_body
+    assert '"base_path": ""' in index_body
+    js_response = await client.get("/atk:1/static/wi.js", headers=headers)
+    assert js_response.status_code == 200
 
 
 @pytest.mark.parametrize("received_signal", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP])
@@ -1152,15 +1153,15 @@ async def test_batch_api_imports_crlf_text(tmp_path: pathlib.Path, monkeypatch: 
 
 def test_assets_state_sets_match_python_states() -> None:
     """フロントエンドが持つ状態集合をPython側の保存状態と一致させる。"""
-    labels = re.search(r"const STATE_LABELS = \{(.*?)\n\};", assets.JS, re.DOTALL)
+    labels = re.search(r"const STATE_LABELS = \{(.*?)\n\};", assets.SCRIPTS["wi.js"], re.DOTALL)
     assert labels is not None
     assert set(re.findall(r"(\w+):", labels.group(1))) == set(common.WI_STATES)
 
-    deletable = re.search(r"const DELETABLE_STATES = new Set\(\[(.*?)\]\);", assets.JS)
+    deletable = re.search(r"const DELETABLE_STATES = new Set\(\[(.*?)\]\);", assets.SCRIPTS["wi.js"])
     assert deletable is not None
     assert set(re.findall(r"'(\w+)'", deletable.group(1))) == set(common.WI_STATES)
 
-    processable = re.search(r"const PROCESSABLE_STATES = new Set\(\[(.*?)\]\);", assets.JS)
+    processable = re.search(r"const PROCESSABLE_STATES = new Set\(\[(.*?)\]\);", assets.SCRIPTS["wi.js"])
     assert processable is not None
     assert set(re.findall(r"'(\w+)'", processable.group(1))) == set(common.WI_PROCESSABLE_STATES)
 

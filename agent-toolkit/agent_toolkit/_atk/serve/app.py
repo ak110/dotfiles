@@ -1015,8 +1015,10 @@ def _render_index(
         root_dirs: dict[str, typing.Any] = {plans_context.hostname: plans_context.state.host_info[plans_context.hostname]}
     else:
         root_dirs = {plans_context.hostname: local_root_info}
+    # 3画面が共通に使う値（`BASE_PATH`とSSEの無通信判定時間）は`serve-bootstrap`へ、計画ファイル画面だけが
+    # 使う値は`plans-bootstrap`へ置く。資産ファイルは要求ごとに変わらないため、要求ごとに変わる値だけを埋め込む。
+    serve_bootstrap = {"base_path": base_path, "stall_ms": int(SSE_STALL_SEC * 1000)}
     plans_bootstrap = {
-        "base_path": base_path,
         "local_host_name": plans_context.hostname,
         "root_dirs": root_dirs,
     }
@@ -1031,12 +1033,8 @@ def _render_index(
         .replace("__WI_HIDDEN__", hidden["wi"])
         .replace("__PLANS_HIDDEN__", hidden["plans"])
         .replace("__SESSIONS_HIDDEN__", hidden["sessions"])
+        .replace("__SERVE_BOOTSTRAP_JSON__", json.dumps(serve_bootstrap, ensure_ascii=False).replace("</", "<\\/"))
         .replace("__PLANS_BOOTSTRAP_JSON__", json.dumps(plans_bootstrap, ensure_ascii=False).replace("</", "<\\/"))
-        .replace(
-            "__SESSIONS_BOOTSTRAP_JSON__",
-            json.dumps({"base_path": base_path}, ensure_ascii=False).replace("</", "<\\/"),
-        )
-        .replace("__SSE_BOOTSTRAP_JSON__", json.dumps({"stall_ms": int(SSE_STALL_SEC * 1000)}))
     )
 
 
@@ -1054,21 +1052,18 @@ def _register_awi_asset_routes(app: quart.Quart, plans_context: serve_plans.Plan
         body = f"{assets.CSS}\n{serve_plans.read_pygments_css()}"
         return quart.Response(body, content_type="text/css; charset=utf-8")
 
-    @app.get("/static/app.js")
-    async def javascript() -> quart.Response:
-        base_path = _safe_base_path(quart.request.root_path)
-        return quart.Response(
-            assets.JS.replace("__BASE_PATH_JS__", json.dumps(base_path)),
-            content_type="text/javascript; charset=utf-8",
-        )
-
 
 def _register_shell_routes(app: quart.Quart) -> None:
     """3画面が共有するナビゲーション資産とPWAメタデータのルートを登録する。"""
 
-    @app.get("/static/shell.js")
-    async def shell_js() -> quart.Response:
-        return quart.Response(assets.SHELL_JS, content_type="text/javascript; charset=utf-8")
+    @app.get("/static/<name>.js")
+    async def javascript(name: str) -> quart.Response:
+        # 3画面のESモジュールは全て同じ方式で配信する。モジュールは相対パスで互いを読み込み、
+        # 要求ごとに変わる値はHTMLのJSONブロックから読むため、本文を要求ごとに書き換えない。
+        body = assets.SCRIPTS.get(f"{name}.js")
+        if body is None:
+            raise FileNotFoundError(f"{name}.js")
+        return _no_store(body, "text/javascript; charset=utf-8")
 
     @app.get("/manifest.webmanifest")
     async def manifest() -> quart.Response:
@@ -1152,10 +1147,6 @@ def _register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -
         base_path = _safe_base_path(quart.request.root_path)
         body = _render_index(context, base_path, "plans")
         return _no_store(body, "text/html; charset=utf-8")
-
-    @app.get("/static/plans.js")
-    async def plans_js() -> quart.Response:
-        return _no_store(assets.PLANS_JS, "text/javascript; charset=utf-8")
 
     @app.get("/api/plans/host-status")
     async def plans_host_status() -> quart.Response:
@@ -1290,10 +1281,6 @@ def _register_session_routes(
         base_path = _safe_base_path(quart.request.root_path)
         body = _render_index(plans_context, base_path, "sessions")
         return _no_store(body, "text/html; charset=utf-8")
-
-    @app.get("/static/sessions.js")
-    async def sessions_js() -> quart.Response:
-        return _no_store(assets.SESSIONS_JS, "text/javascript; charset=utf-8")
 
     @app.get("/api/sessions/list")
     async def sessions_list() -> quart.Response:

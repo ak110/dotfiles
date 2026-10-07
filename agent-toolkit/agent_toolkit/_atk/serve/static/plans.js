@@ -1,12 +1,11 @@
-// 3画面は同じドキュメントへ順に読み込まれるため、トップレベルの宣言を即時実行関数で囲んで
-// 画面ごとにスコープを閉じる。`window.__atkScreens`への登録だけを外部へ公開する。
-// 内側の字下げは、囲む前後の差分を比較できるよう元のままとする。
-(() => {
-// ページロード時の初期値は単一HTMLのJSONブロックへ埋め込む。
-// 資産ファイルは要求ごとに変わらないため、要求ごとに変わる値だけをHTML側から受け取る。
-// JSONブロックは初回の`init`で読み取る。
-// X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
-let BASE_PATH = "";
+// 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
+import {
+  BASE_PATH, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
+  resyncWhenVisible, setDrawerOpen, updateNavButtons
+} from "./common.js";
+import {registerScreen} from "./shell.js";
+
+// ページロード時の初期値は単一HTMLのJSONブロックへ埋め込み、初回の`init`で読み取る。
 // ホスト名 -> 保存元ID -> {portable_root, home, os_type, os_name}。旧単一root形式の
 // {root, home, os_type, os_name}も受理し、保存元IDは画面へ表示しない。
 let ROOT_DIRS = {};
@@ -115,16 +114,13 @@ function updateCopyPathButton(host, source) {
   document.getElementById("copy-path-btn").disabled = !rootInfo(host, source);
 }
 
-function isSelected(file) {
-  return selectedHost === file.host && selectedSource === fileSource(file) && selectedPath === file.path;
+function isSelectedFile(file) {
+  const selection = selectedHost && selectedPath ? {host: selectedHost, source: selectedSource, path: selectedPath} : null;
+  return isSelected(selection, {host: file.host, source: fileSource(file), path: file.path});
 }
 
 function isMobileViewport() {
   return window.matchMedia("(max-width: 768px)").matches;
-}
-
-function setDrawerOpen(open) {
-  window.__atkDrawer.set("plans", open);
 }
 
 function updateMetaMobile() {
@@ -159,47 +155,19 @@ function updateMetaMobile() {
   block.appendChild(pathSpan);
 }
 
-function updateNavButtons() {
-  const prevBtn = document.getElementById("prev-btn");
-  const nextBtn = document.getElementById("next-btn");
-  if (!prevBtn || !nextBtn) return;
-  if (!selectedHost || !selectedPath || visibleFiles.length === 0) {
-    prevBtn.disabled = true;
-    nextBtn.disabled = true;
-    return;
-  }
-  const idx = visibleFiles.findIndex(f => isSelected(f));
-  // 選択中項目がフィルタ範囲外に出ているときは前後とも非活性にする。
-  if (idx < 0) {
-    prevBtn.disabled = true;
-    nextBtn.disabled = true;
-    return;
-  }
-  prevBtn.disabled = idx <= 0;
-  nextBtn.disabled = idx >= visibleFiles.length - 1;
-}
-
-function navigateRelative(delta) {
-  if (!selectedHost || !selectedPath || visibleFiles.length === 0) return;
-  const idx = visibleFiles.findIndex(f => isSelected(f));
-  if (idx < 0) return;
-  const next = idx + delta;
-  if (next < 0 || next >= visibleFiles.length) return;
-  // 遷移先がDOM未描画領域なら、必要分まで表示上限をステップ単位で拡張してから再描画する。
-  // 段階展開（先頭`VISIBLE_FILES_INITIAL`件のみDOM化）と↑↓ナビゲーションの整合を取るための処理。
-  if (next >= visibleLimit) {
-    const required = next + 1;
-    visibleLimit = Math.ceil(required / VISIBLE_FILES_STEP) * VISIBLE_FILES_STEP;
+// 遷移先がDOM未描画領域なら、必要分まで表示上限をステップ単位で拡張してから再描画する。
+// 段階展開（先頭`VISIBLE_FILES_INITIAL`件のみDOM化）と↑↓ナビゲーションの整合を取るための処理。
+function openRelativeFile(target, position) {
+  if (position >= visibleLimit) {
+    visibleLimit = Math.ceil((position + 1) / VISIBLE_FILES_STEP) * VISIBLE_FILES_STEP;
     renderFiles();
   }
-  const target = visibleFiles[next];
   openFile(target.host, target.path, fileSource(target));
 }
 
 function createFileItem(file) {
   // 1ファイルエントリのDOMノードを生成する。差分更新で項目を追加する際に呼ぶ。
   const item = document.createElement("a");
-  item.dataset.key = fileKey(file);
   const name = document.createElement("div");
   name.className = "name pane-item-title";
   const meta = document.createElement("div");
@@ -224,7 +192,7 @@ function createFileItem(file) {
 function updateFileItem(item, file) {
   // 既存ノードのテキスト・クラス・バッジを最新値で上書きする。
   item.className = "file pane-item";
-  if (isSelected(file)) item.setAttribute("aria-current", "true");
+  if (isSelectedFile(file)) item.setAttribute("aria-current", "true");
   else item.removeAttribute("aria-current");
   item.href = filePageUrl(file.host, file.path, fileSource(file));
   const name = item.querySelector(".name");
@@ -261,40 +229,19 @@ function renderFiles() {
     visibleFiles.push(file);
   }
   const renderCount = Math.min(visibleLimit, visibleFiles.length);
-  // 既存ノードを`data-key`で索引化し、再利用候補とする。最終的に未参照のノードは削除する。
-  const existing = new Map();
-  for (const node of root.children) {
-    const key = node.dataset.key;
-    if (key) existing.set(key, node);
-  }
-  let cursor = root.firstChild;
-  for (let i = 0; i < renderCount; i++) {
-    const file = visibleFiles[i];
-    const key = fileKey(file);
-    let item = existing.get(key);
-    if (item) {
-      existing.delete(key);
-    } else {
-      item = createFileItem(file);
-    }
+  renderList(root, visibleFiles.slice(0, renderCount), fileKey, (file, existing) => {
+    const item = existing || createFileItem(file);
     updateFileItem(item, file);
-    if (cursor === item) {
-      cursor = item.nextSibling;
-    } else {
-      // 期待位置へ並べ替える。`insertBefore`は同一ノードを移動できるため重複処理は不要。
-      root.insertBefore(item, cursor);
-    }
-  }
-  // 残った未使用ノードを削除する。
-  for (const node of existing.values()) {
-    node.remove();
-  }
+    return item;
+  });
   // 番兵は未描画分が残る場合だけ表示する。`hidden`属性を付ければ`display: none`になり、
   // IntersectionObserverの`isIntersecting`通知も止まる。
   if (sentinel) {
     sentinel.hidden = renderCount >= visibleFiles.length;
   }
-  updateNavButtons();
+  updateNavButtons(
+    document.getElementById("prev-btn"), document.getElementById("next-btn"), visibleFiles, isSelectedFile
+  );
   updateMetaMobile();
   renderRootWarnings();
   const empty = document.getElementById("plans-empty");
@@ -306,9 +253,6 @@ function renderFiles() {
 }
 
 function renderRootWarnings() {
-  const block = document.getElementById("root-warnings");
-  if (!block) return;
-  block.innerHTML = "";
   const messages = [];
   for (const host of Object.keys(rootStatus)) {
     for (const source of Object.keys(rootStatus[host] || {})) {
@@ -318,12 +262,7 @@ function renderRootWarnings() {
       }
     }
   }
-  for (const message of messages) {
-    const item = document.createElement("div");
-    item.textContent = message;
-    block.appendChild(item);
-  }
-  block.hidden = messages.length === 0;
+  renderWarnings(document.getElementById("root-warnings"), messages);
 }
 
 function setupSentinelObserver() {
@@ -661,7 +600,7 @@ async function openFile(host, path, source) {
   updateCopyPathButton(host, selectedSource);
   renderFiles();
   // モバイル時のドロワーを自動で閉じる（ファイル選択操作の延長として）。
-  if (isMobileViewport()) setDrawerOpen(false);
+  if (isMobileViewport()) setDrawerOpen("plans", false);
   const main = document.querySelector("#screen-plans main");
   const generation = ++previewGeneration;
   beginPreviewLoading(generation);
@@ -693,7 +632,7 @@ async function resyncFromServer() {
   if (!selectedPath || !selectedHost) return;
   // 更新時刻は同じ時刻刻み内の連続した書き換えで変わらないため、本文の変化の判定には使わない。
   // 本文を毎回取り直し、変化の有無は`updatePreview`が適用済みHTMLとの比較で判定する。
-  if (files.some(f => isSelected(f))) await (updatePreview());
+  if (files.some(isSelectedFile)) await (updatePreview());
 }
 
 async function copySelectedRaw() {
@@ -761,78 +700,38 @@ async function copySelectedPath() {
   }, 2000);
 }
 
-// SSE接続はpagehideで能動的にcloseする。
-// 放置するとページ遷移時にブラウザがchunked転送終端マーカー無しでストリームを切断し、
-// DevToolsコンソールに ERR_INCOMPLETE_CHUNKED_ENCODING が記録されるため。
-// bfcache復帰時はpageshowのevent.persisted=trueで検出して再接続することで、
-// バックフォワード遷移後も自動反映を維持する（beforeunloadはbfcacheを無効化するため避ける）。
-let eventSource = null;
-
-async function handleSseMessage(event) {
-  // 旧形式（dataが"refresh"文字列固定）と新形式（JSON）を両対応する。
-  // JSON解析失敗時もrefresh扱いで再同期する（パース不能なフレームを握り潰さない）。
-  let payload = null;
-  try {
-    payload = JSON.parse(event.data);
-  } catch (_) {
-    payload = null;
+function applyRootInfoUpdate(payload) {
+  hostInfoEventCounter++;
+  if (payload.info === null) {
+    delete ROOT_DIRS[payload.host];
+  } else {
+    ROOT_DIRS[payload.host] = payload.info;
   }
-  if (payload && payload.type === "host-status") {
+  if (selectedHost === payload.host) updateCopyPathButton(selectedHost, selectedSource);
+}
+
+// 名前の無い通知の種類ごとの処理。旧形式（dataが"refresh"文字列固定）と、処理を持たない種類と
+// JSONとして解析できない本文は、取りこぼしを避けるため再同期する。
+const SSE_MESSAGE_HANDLERS = {
+  "host-status": (payload) => {
     hostStatus[payload.host] = payload.status;
     renderFiles();
-    return;
-  }
-  if (payload && payload.type === "host_info_update") {
-    hostInfoEventCounter++;
-    if (payload.info === null) {
-      delete ROOT_DIRS[payload.host];
-    } else {
-      ROOT_DIRS[payload.host] = payload.info;
-    }
-    if (selectedHost === payload.host) {
-      updateCopyPathButton(selectedHost, selectedSource);
-    }
-    return;
-  }
-  if (payload && payload.type === "root_info_update") {
-    hostInfoEventCounter++;
-    if (payload.info === null) {
-      delete ROOT_DIRS[payload.host];
-    } else {
-      ROOT_DIRS[payload.host] = payload.info;
-    }
-    if (selectedHost === payload.host) updateCopyPathButton(selectedHost, selectedSource);
-    return;
-  }
-  if (payload && payload.type === "root-status") {
+  },
+  host_info_update: applyRootInfoUpdate,
+  root_info_update: applyRootInfoUpdate,
+  "root-status": (payload) => {
     rootStatus[payload.host] = payload.status || {};
     renderRootWarnings();
-    return;
-  }
-  await (resyncFromServer());
-}
+  },
+};
 
-function connectEvents() {
+function subscribeEvents() {
   // 接続断後の自動再接続と無通信時の再接続の間に発生したSSEイベントは取り逃される。
   // 初回・自動再接続・無通信後の再接続のいずれでも確立時にホスト状態とファイル一覧を強制再同期する。
-  return window.__atkSse.connect(BASE_PATH + "/api/plans/events", {
-    open: async () => {
-      await (refreshHostStatus());
-      await (refreshHostInfo());
-      await (refreshRootStatus());
-      await (resyncFromServer());
-    },
-    message: (event) => { void handleSseMessage(event); },
+  connectEvents("/api/plans/events", {
+    open: forceResync,
+    message: (event) => { void handleSseMessage(event, SSE_MESSAGE_HANDLERS, resyncFromServer); },
   });
-}
-
-// bfcache復帰後も自動反映を維持するため、`pagehide`で能動的にcloseし`pageshow`で再接続する。
-function handlePageHide() {
-  eventSource?.close();
-}
-
-function handlePageShow(event) {
-  if (event.persisted) eventSource?.reopen();
 }
 
 // 強制再同期の本体。ホスト別接続状態とファイル一覧を順に取り直し、即時に追従させる。
@@ -843,20 +742,6 @@ async function forceResync() {
   await (resyncFromServer());
 }
 
-// バックグラウンドthrottling対策。Chromium系のバックグラウンドタブはタイマー・SSEコールバックを
-// 抑制するため、`EventSource.onmessage`のみに依存するとタブ復帰時に蓄積イベントの処理が体感数秒ずれ込む。
-// `visibilitychange`で`visible`化した瞬間（タブ可視性変化）と`window.focus`時
-// （PWAウィンドウ単独でフォーカスのみ変動するケース）の2系統で`forceResync`を発火する。
-function handleVisibilityChange() {
-  if (document.visibilityState === "visible") {
-    forceResync();
-  }
-}
-
-function handleWindowFocus() {
-  forceResync();
-}
-
 function bindScreenEvents() {
   document.getElementById("plans-filter").addEventListener("input", () => {
     // フィルタ条件が変わったら表示上限を初期値へ戻し、先頭から100件のみ再描画する。
@@ -865,12 +750,16 @@ function bindScreenEvents() {
   });
   document.getElementById("copy-btn").addEventListener("click", copySelectedRaw);
   document.getElementById("copy-path-btn").addEventListener("click", copySelectedPath);
-  document.getElementById("prev-btn").addEventListener("click", () => navigateRelative(-1));
-  document.getElementById("next-btn").addEventListener("click", () => navigateRelative(1));
-  document.getElementById("plans-menu-btn").addEventListener("click", () => {
-    setDrawerOpen(!document.getElementById("screen-plans").classList.contains("drawer-open"));
+  document.getElementById("prev-btn").addEventListener("click", () => {
+    navigateRelative(visibleFiles, isSelectedFile, -1, openRelativeFile);
   });
-  document.getElementById("plans-drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
+  document.getElementById("next-btn").addEventListener("click", () => {
+    navigateRelative(visibleFiles, isSelectedFile, 1, openRelativeFile);
+  });
+  document.getElementById("plans-menu-btn").addEventListener("click", () => {
+    setDrawerOpen("plans", !document.getElementById("screen-plans").classList.contains("drawer-open"));
+  });
+  document.getElementById("plans-drawer-backdrop").addEventListener("click", () => setDrawerOpen("plans", false));
   document.getElementById("plans-clear-filter").addEventListener("click", () => {
     document.getElementById("plans-filter").value = "";
     scheduleFullTextSearch();
@@ -903,21 +792,19 @@ async function restoreFileFromUrl() {
 
 async function init() {
   const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
-  BASE_PATH = bootstrap.base_path;
   ROOT_DIRS = bootstrap.root_dirs;
   bindScreenEvents();
-  window.addEventListener("pagehide", handlePageHide);
-  window.addEventListener("pageshow", handlePageShow);
-  window.addEventListener("focus", handleWindowFocus);
+  // バックグラウンドthrottling対策。Chromium系のバックグラウンドタブはタイマー・SSEコールバックを
+  // 抑制するため、通知のみに依存するとタブ復帰時に蓄積イベントの処理が体感数秒ずれ込む。
+  resyncWhenVisible(forceResync);
   globalThis.addEventListener?.("popstate", () => { void restoreFileFromUrl(); });
-  document.addEventListener("visibilitychange", handleVisibilityChange);
-  setDrawerOpen(false);
+  setDrawerOpen("plans", false);
 
   await (refreshHostStatus());
   await (refreshHostInfo());
   await (refreshRootStatus());
   await (refreshFiles());
-  eventSource = connectEvents();
+  subscribeEvents();
   if (location.pathname === `${BASE_PATH}/plans`) {
     await restoreFileFromUrl();
   } else if (files.length > 0 && !isMobileViewport()) {
@@ -926,6 +813,4 @@ async function init() {
   setupSentinelObserver();
 }
 
-window.__atkScreens = window.__atkScreens || {};
-window.__atkScreens.plans = {init};
-})();
+registerScreen("plans", {init});

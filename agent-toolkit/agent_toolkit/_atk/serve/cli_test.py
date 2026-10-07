@@ -63,18 +63,11 @@ def test_config_precedence_and_platform_ports(tmp_path: pathlib.Path) -> None:
 def test_text_assets_are_bundled_as_plugin_files() -> None:
     """配布対象のscripts配下に実ファイルを同梱し、Python側がその内容を読む。"""
     static_dir = pathlib.Path(assets.__file__).with_name("static")
-    expected = {
-        "index.html": assets.HTML,
-        "app.css": assets.CSS,
-        "app.js": assets.JS,
-        "shell.js": assets.SHELL_JS,
-        "plans.js": assets.PLANS_JS,
-        "sessions.js": assets.SESSIONS_JS,
-    }
+    expected = {"index.html": assets.HTML.removesuffix("\n"), "app.css": assets.CSS.removesuffix("\n"), **assets.SCRIPTS}
     assert {path.name for path in static_dir.iterdir()} == set(expected)
     for filename, content in expected.items():
         bundled = (static_dir / filename).read_text(encoding="utf-8")
-        assert (bundled if filename == "app.js" else bundled.removesuffix("\n")) == content
+        assert (bundled if filename.endswith(".js") else bundled.removesuffix("\n")) == content
 
 
 def test_assets_global_error_focuses_refresh_after_synchronization() -> None:
@@ -228,7 +221,7 @@ const inbox = {
 const processing = {...inbox, state: 'processing', summary: '移動後'};
 const remaining = {...inbox, filename: 'remaining.md', summary: '残存'};
 entries = [inbox, remaining];
-renderList();
+renderEntries();
 const origin = elements['entry-list'].children[0].children[0];
 displayEntry(inbox);
 detailOriginKey = entryKey(inbox);
@@ -257,7 +250,7 @@ const reopened = {
   forceVisible: !elements['force-delete-row'].hidden
 };
 entries = [remaining];
-renderList();
+renderEntries();
 phase = 'missing';
 await reloadOpenDetailFromExternalChange();
 process.stdout.write(JSON.stringify({
@@ -298,7 +291,7 @@ async function exercise(updatedEntries, warnings) {
     frontmatter_entries: []
   };
   entries = [original];
-  renderList();
+  renderEntries();
   displayEntry(original);
   detailOriginKey = entryKey(original);
   openDialog(elements['detail-dialog'], elements['entry-list'].children[0].children[0], elements['detail-dialog-body']);

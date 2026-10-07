@@ -82,7 +82,7 @@ entries = [
    target_repo: 'github.com/example/a-very-long-repository-name',
    updated_at: '2026-08-07T10:11:00+00:00'}
 ];
-renderList([{filename: 'bad.md', reason: 'UTF-8として読み取れません'}], true);
+renderEntries([{filename: 'bad.md', reason: 'UTF-8として読み取れません'}], true);
 const announced = elements['result-status'].textContent;
 const warning = elements['list-warning'].textContent;
   const awiCells = elements['entry-list'].children[2].children[0].children;
@@ -94,7 +94,7 @@ elements['answer-filter'].value = 'no';
 elements['source-filter'].value = 'agent';
 syncFilterDependencies();
 elements['result-status'].textContent = '変更しない';
-renderList([], false);
+renderEntries([], false);
 process.stdout.write(JSON.stringify({
   keys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
   unanswered: elements['entry-list'].children[0].children[0].dataset.unansweredUwi,
@@ -836,10 +836,12 @@ async def test_index_and_js_without_prefix_use_empty_base(tmp_path: pathlib.Path
 
     index_body = await (await client.get("/")).get_data(as_text=True)
     assert 'href="/static/app.css"' in index_body
-    assert 'src="/static/app.js"' in index_body
+    assert 'type="module" src="/static/wi.js"' in index_body
+    assert '"base_path": ""' in index_body
 
-    js_body = await (await client.get("/static/app.js")).get_data(as_text=True)
-    assert 'const BASE_PATH="";' in js_body
+    js_response = await client.get("/static/wi.js")
+    assert js_response.status_code == 200
+    assert (await js_response.get_data(as_text=True)) == assets.SCRIPTS["wi.js"]
 
 
 @pytest.mark.asyncio

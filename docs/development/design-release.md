@@ -55,7 +55,7 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 `master`が`develop`の祖先であり、release merge commitのtreeが`develop` headのtreeと同一になるrelease invariantを、共通CIの実処理を`develop`の`push` runへ帰属させる根拠とする。
 
 実ブラウザーE2Eは、共通`python-lint`から分離した`browser-e2e` jobが所有する。
-同jobはPython 3.14でPlaywright Chromiumを導入し、`agent-toolkit/agent_toolkit/_atk/serve/browser_test.py`だけを実行する。
+同jobはPython 3.14でPlaywright Chromiumを導入し、`agent-toolkit/agent_toolkit/_atk/serve/`配下の`browser`マーカーを持つ実ブラウザーテストだけを実行する。
 分離により、律速となる`python-lint (3.14)`からChromiumの導入とE2Eの実行時間を外したうえで、最新のPythonでのE2E実行を維持する。
 `browser-e2e`は他の共通jobと同じ非所有markerの構成を採用し、required checkへ加えることでE2Eの失敗がマージを遮断する状態を保つ。
 

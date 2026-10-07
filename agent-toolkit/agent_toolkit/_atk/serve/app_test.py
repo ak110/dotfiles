@@ -205,25 +205,25 @@ const second = {
   summary: '次行', content: '本文', body_html: '<p>本文</p>', frontmatter_entries: []
 };
 entries = [first, second];
-renderList();
+renderEntries();
 const firstButton = elements['entry-list'].children[0].children[0];
 displayEntry(first);
 detailOriginKey = entryKey(first);
 openDialog(elements['detail-dialog'], firstButton, elements['detail-dialog-body']);
 entries = [second];
-renderList();
+renderEntries();
 closeDetailDialog();
 const remainingRow = focused;
 
 entries = [second];
-renderList();
+renderEntries();
 const secondButton = elements['entry-list'].children[0].children[0];
 displayEntry(second);
 detailOriginKey = entryKey(second);
 openDialog(elements['detail-dialog'], secondButton, elements['detail-dialog-body']);
 elements['search-input'].value = '一致しない条件';
 entries = [];
-renderList();
+renderEntries();
 closeDetailDialog();
 process.stdout.write(JSON.stringify({remainingRow, emptyState: focused}));
 """

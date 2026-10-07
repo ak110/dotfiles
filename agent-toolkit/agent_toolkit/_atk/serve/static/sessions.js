@@ -1,11 +1,9 @@
-// 3画面は同じドキュメントへ順に読み込まれるため、トップレベルの宣言を即時実行関数で囲んで
-// 画面ごとにスコープを閉じる。`window.__atkScreens`への登録だけを外部へ公開する。
-// 内側の字下げは、囲む前後の差分を比較できるよう元のままとする。
-(() => {
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
-// ページロード時の初期値は単一HTMLのJSONブロックへ埋め込み、初回の`init`で読み取る。
-// X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSourceに前置する。
-let BASE_PATH = "";
+import {
+  BASE_PATH, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
+  resyncWhenVisible, setDrawerOpen, updateNavButtons
+} from "./common.js";
+import {registerScreen} from "./shell.js";
 
 const ENGINE_LABELS = { claude: "Claude Code", codex: "Codex" };
 const KIND_LABELS = {
@@ -29,8 +27,6 @@ const expandedKeys = new Set();
 let visibleSessions = [];
 // サブエージェントの記録は左ペインの一覧に現れないため、委譲元の記録を古い順に保持して戻れるようにする。
 let parentTrail = [];
-// 初期化後は文書とともに維持するSSE購読。
-let eventSource = null;
 // 詳細の取得の世代。選択の切り替えや再取得の後に届いた古い応答を反映しないために使う。
 let detailGeneration = 0;
 // 右ペインへ描画済みのイベント件数。描画済みの末尾まで読み進めると増え、追記の反映後も保つ。
@@ -51,21 +47,12 @@ let detailTitleEl = null;
 let detailUsageEl = null;
 let filterEl = null;
 
-function readBasePath() {
-  const bootstrap = document.getElementById("sessions-bootstrap");
-  if (bootstrap) BASE_PATH = JSON.parse(bootstrap.textContent).base_path;
-}
-
 function formatTime(value) {
   if (!value) return "不明";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   const pad = (n) => String(n).padStart(2, "0");
   return `${parsed.getFullYear()}/${pad(parsed.getMonth() + 1)}/${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
-}
-
-function setDrawerOpen(open) {
-  window.__atkDrawer.set("sessions", open);
 }
 
 function sessionKey(entry) {
@@ -116,19 +103,19 @@ function treeRows() {
   return rows;
 }
 
-function renderList() {
+function isSelectedSession(entry) {
+  return isSelected(selected, entry);
+}
+
+function renderSessions() {
   const rows = treeRows();
   visibleSessions = rows.map(row => row.entry);
-  const existing = new Map([...listEl.children].filter(node => node.dataset.key).map(node => [node.dataset.key, node]));
-  let cursor = listEl.firstChild;
-  for (const {entry, level, childCount} of rows.slice(0, visibleLimit)) {
+  renderList(listEl, rows.slice(0, visibleLimit), ({entry}) => sessionKey(entry), ({entry, level, childCount}, existing) => {
     const key = sessionKey(entry);
-    let row = existing.get(key);
-    if (row) existing.delete(key);
-    else {
+    let row = existing;
+    if (!row) {
       row = document.createElement("div");
       row.className = "session-tree-row";
-      row.dataset.key = key;
     }
     row.setAttribute("role", "treeitem");
     row.setAttribute("aria-level", String(level));
@@ -142,7 +129,7 @@ function renderList() {
     item.dataset.host = entry.host;
     item.dataset.engine = entry.engine;
     item.dataset.path = entry.path;
-    if (selected && sessionKey(selected) === key) item.setAttribute("aria-current", "true");
+    if (isSelectedSession(entry)) item.setAttribute("aria-current", "true");
     else item.removeAttribute("aria-current");
 
     const cwd = document.createElement("div");
@@ -176,7 +163,7 @@ function renderList() {
         toggle.addEventListener("click", () => {
           if (expandedKeys.has(key)) expandedKeys.delete(key);
           else expandedKeys.add(key);
-          renderList();
+          renderSessions();
           listEl.querySelector(`[data-key="${CSS.escape(key)}"] .session-tree-toggle`)?.focus();
         });
         row.insertBefore(toggle, row.firstChild);
@@ -193,10 +180,8 @@ function renderList() {
       row.insertBefore(toggle, row.firstChild);
     }
     if (item.parentNode !== row) row.append(item);
-    if (row === cursor) cursor = row.nextSibling;
-    else listEl.insertBefore(row, cursor);
-  }
-  for (const node of existing.values()) node.remove();
+    return row;
+  });
   document.getElementById("sessions-empty").hidden = rows.length !== 0;
   const empty = document.getElementById("sessions-empty");
   empty.querySelector("p").textContent = sessions.length === 0
@@ -204,39 +189,14 @@ function renderList() {
     : "一致するセッションはありません。";
   empty.querySelector("button").hidden = !queryText;
   document.getElementById("sessions-sentinel").hidden = rows.length <= visibleLimit;
-  updateNavButtons();
+  updateNavButtons(
+    document.getElementById("sessions-prev-btn"), document.getElementById("sessions-next-btn"),
+    visibleSessions, isSelectedSession
+  );
 }
 
-function updateNavButtons() {
-  const visible = visibleSessions;
-  const index = selected
-    ? visible.findIndex((entry) => entry.host === selected.host && entry.engine === selected.engine && entry.path === selected.path)
-    : -1;
-  document.getElementById("sessions-prev-btn").disabled = index <= 0;
-  document.getElementById("sessions-next-btn").disabled = index < 0 || index >= visible.length - 1;
-}
-
-function navigateRelative(delta) {
-  const visible = visibleSessions;
-  const index = selected
-    ? visible.findIndex((entry) => entry.host === selected.host && entry.engine === selected.engine && entry.path === selected.path)
-    : -1;
-  const target = visible[index + delta];
-  if (target) openSession(target.host, target.engine, target.path);
-}
-
-function showWarnings(lines) {
-  warningsEl.hidden = lines.length === 0;
-  warningsEl.replaceChildren();
-  for (const line of lines) {
-    const row = document.createElement("div");
-    row.textContent = line;
-    warningsEl.append(row);
-  }
-}
-
-function renderWarnings(warnings) {
-  showWarnings((warnings || []).map((warning) => `${warning.host}: ${warning.reason}`));
+function openRelativeSession(delta) {
+  navigateRelative(visibleSessions, isSelectedSession, delta, (target) => openSession(target.host, target.engine, target.path));
 }
 
 // 取得中に再び呼ばれた処理は新しい要求を並行して発行せず、進行中の取得の完了後に1回だけ取り直す。
@@ -285,9 +245,9 @@ async function fetchList() {
       if (location.pathname.endsWith("/sessions") && location.search) history.replaceState({atkSession: true}, "", location.pathname);
     }
     sessionRoots = payload.roots || [];
-    renderWarnings(payload.warnings);
+    renderWarnings(warningsEl, (payload.warnings || []).map((warning) => `${warning.host}: ${warning.reason}`));
     document.getElementById("sessions-list-error").hidden = true;
-    renderList();
+    renderSessions();
   } catch (error) {
     const box = document.getElementById("sessions-list-error");
     box.replaceChildren();
@@ -510,10 +470,6 @@ function renderEventsNearEnd() {
   }
 }
 
-function isSelected(host, engine, path) {
-  return Boolean(selected) && selected.host === host && selected.engine === engine && selected.path === path;
-}
-
 function detailScroller() {
   return detailEl.parentElement;
 }
@@ -536,7 +492,7 @@ async function refreshSelectedDetail() {
     const response = await fetch(`${BASE_PATH}/api/sessions/detail?${new URLSearchParams({host, engine, path}).toString()}`);
     if (!response.ok) return;
     const detail = await response.json();
-    if (generation !== detailGeneration || !isSelected(host, engine, path)) return;
+    if (generation !== detailGeneration || !isSelected(selected, {host, engine, path})) return;
     const previousCount = currentDetail ? currentDetail.events.length : detail.events.length;
     const readingTail = isReadingTail();
     renderDetail(detail, {...captureDetailState(), renderedCount: readingTail ? detail.events.length : renderedCount});
@@ -559,7 +515,7 @@ async function openSession(host, engine, path, trail = [], updateUrl = true) {
   }
   parentTrail = trail;
   currentDetail = null;
-  renderList();
+  renderSessions();
   detailEl.replaceChildren();
   detailTitleEl.textContent = "読み込み中...";
   const query = new URLSearchParams({ host, engine, path });
@@ -584,30 +540,24 @@ async function openSession(host, engine, path, trail = [], updateUrl = true) {
     alert.append(retry);
     detailEl.append(alert);
   }
-  setDrawerOpen(false);
+  setDrawerOpen("sessions", false);
 }
 
 // 通知は2種類ある。`refresh`は一覧の再取得を促し、選択中の記録も取り直す。
 // `record`は記録1件の更新を示し、選択中の記録と一致する場合だけ右ペインを取り直す。
-function handleSseMessage(event) {
-  let message = null;
-  try {
-    message = JSON.parse(event.data);
-  } catch (_) {
-    return;
-  }
-  if (message?.type === "refresh") {
-    void resyncFromServer();
-  } else if (message?.type === "record" && isSelected(message.host, message.engine, message.path)) {
-    void refreshSelectedDetail();
-  }
-}
+// JSONとして解析できない本文と他の種類は処理しない。
+const SSE_MESSAGE_HANDLERS = {
+  refresh: () => { void resyncFromServer(); },
+  record: (message) => {
+    if (isSelected(selected, message)) void refreshSelectedDetail();
+  },
+};
 
 // 確立時（初回・自動再接続・無通信後の再接続）は、接続していない間の変更を取り込むため一覧と選択中の記録を取り直す。
 // 初回の確立は`init`の初期取得の直後に起きるため取り直しを省く。
 function subscribeEvents() {
   let firstOpen = true;
-  eventSource = window.__atkSse.connect(BASE_PATH + "/api/sessions/events", {
+  connectEvents("/api/sessions/events", {
     open: () => {
       if (firstOpen) {
         firstOpen = false;
@@ -615,7 +565,7 @@ function subscribeEvents() {
       }
       void resyncFromServer();
     },
-    message: handleSseMessage,
+    message: (event) => handleSseMessage(event, SSE_MESSAGE_HANDLERS),
   });
 }
 
@@ -625,7 +575,6 @@ const resyncFromServer = coalesced(async () => {
 });
 
 async function init() {
-  readBasePath();
   listEl = document.getElementById("sessions");
   warningsEl = document.getElementById("warnings");
   detailEl = document.getElementById("detail");
@@ -637,7 +586,7 @@ async function init() {
     filterTimer = setTimeout(() => {
       queryText = filterEl.value.trim().toLowerCase();
       visibleLimit = 100;
-      renderList();
+      renderSessions();
     }, 300);
   });
   listEl.addEventListener("click", (event) => {
@@ -646,20 +595,20 @@ async function init() {
     openSession(item.dataset.host, item.dataset.engine, item.dataset.path);
   });
   document.getElementById("sessions-menu-btn").addEventListener("click", () => {
-    setDrawerOpen(!document.getElementById("screen-sessions").classList.contains("drawer-open"));
+    setDrawerOpen("sessions", !document.getElementById("screen-sessions").classList.contains("drawer-open"));
   });
-  document.getElementById("sessions-drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
+  document.getElementById("sessions-drawer-backdrop").addEventListener("click", () => setDrawerOpen("sessions", false));
   document.getElementById("sessions-clear-filter").addEventListener("click", () => {
     filterEl.value = "";
     queryText = "";
     visibleLimit = 100;
-    renderList();
+    renderSessions();
     filterEl.focus();
   });
   new IntersectionObserver(entries => {
     if (entries.some(entry => entry.isIntersecting) && visibleLimit < treeRows().length) {
       visibleLimit += 100;
-      renderList();
+      renderSessions();
     }
   }, {root: document.querySelector("#sessions-app > aside"), rootMargin: "400px"})
     .observe(document.getElementById("sessions-sentinel"));
@@ -670,8 +619,8 @@ async function init() {
     if (entry) void openSession(entry.host, entry.engine, entry.path, [], false);
   });
   detailScroller().addEventListener("scroll", renderEventsNearEnd, {passive: true});
-  document.getElementById("sessions-prev-btn").addEventListener("click", () => navigateRelative(-1));
-  document.getElementById("sessions-next-btn").addEventListener("click", () => navigateRelative(1));
+  document.getElementById("sessions-prev-btn").addEventListener("click", () => openRelativeSession(-1));
+  document.getElementById("sessions-next-btn").addEventListener("click", () => openRelativeSession(1));
   await loadList();
   const params = new URLSearchParams(location.search);
   const fromUrl = sessions.find(item => item.host === params.get("host") && item.engine === params.get("engine") && item.path === params.get("path"));
@@ -681,17 +630,9 @@ async function init() {
   } else if (!selected && sessions.length > 0 && !mobile) {
     await openSession(sessions[0].host, sessions[0].engine, sessions[0].path, [], false);
   }
-  setDrawerOpen(false);
+  setDrawerOpen("sessions", false);
   subscribeEvents();
-  // タブが表示された状態へ戻った時点で取り直す。バックグラウンドのタブでは通知の処理が遅れるためである。
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") void resyncFromServer();
-  });
-  // bfcacheへ入る前に接続を閉じ、復帰時に再接続する。再接続した接続の確立時に取り直す。
-  window.addEventListener("pagehide", () => { eventSource?.close(); });
-  window.addEventListener("pageshow", (event) => { if (event.persisted) eventSource?.reopen(); });
+  resyncWhenVisible(resyncFromServer, {focus: false});
 }
 
-window.__atkScreens = window.__atkScreens || {};
-window.__atkScreens.sessions = {init};
-})();
+registerScreen("sessions", {init});

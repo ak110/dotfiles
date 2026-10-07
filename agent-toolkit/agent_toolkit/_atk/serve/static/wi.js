@@ -1,8 +1,9 @@
-// 3画面は同じドキュメントへ順に読み込まれるため、トップレベルの宣言を即時実行関数で囲んで
-// 画面ごとにスコープを閉じる。`window.__atkScreens`への登録だけを外部へ公開する。
-// 内側の字下げは、囲む前後の差分を比較できるよう元のままとする。
-(() => {
-const BASE_PATH=__BASE_PATH_JS__;
+// ワークアイテム画面。キューの一覧・詳細・登録・編集・状態遷移を扱う。
+import {
+  BASE_PATH, connectEvents, renderList, renderWarnings, resyncWhenVisible
+} from "./common.js";
+import {registerScreen} from "./shell.js";
+
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
 const KIND_LABELS = {awi: 'awi', uwi: 'uwi', unknown: 'unknown'};
 const STATE_LABELS = {
@@ -413,22 +414,12 @@ function renderEmptyState() {
   }
 }
 
-function renderWarnings(warnings) {
-  const warning = byId('list-warning');
-  if (!warnings.length) {
-    warning.hidden = true;
-    warning.textContent = '';
-    return;
-  }
-  warning.textContent = `一覧から除外したファイル: ${warnings.map(item => `${item.filename}（${item.reason}）`).join('、')}`;
-  warning.hidden = false;
-}
-
-function renderList(warnings = [], announce = false, searchFallback = false) {
+// 行は項目のクロージャーを持つため、再利用せずに毎回作り直す。
+function renderEntries(warnings = [], announce = false, searchFallback = false) {
   const list = byId('entry-list');
   const focusedKey = document.activeElement?.classList?.contains('entry-select')
     ? document.activeElement.dataset.key : null;
-  list.replaceChildren(...entries.map(renderEntry));
+  renderList(list, entries, entryKey, entry => renderEntry(entry));
   if (focusedKey) {
     (entryButtonForKey(focusedKey) || list.querySelector('.entry-select') || byId('empty-clear-button')).focus();
   }
@@ -440,7 +431,9 @@ function renderList(warnings = [], announce = false, searchFallback = false) {
   byId('entry-period').hidden = !periodLabel;
   renderPagination();
   setTextMessage('list-fallback-notice', searchFallback ? SEARCH_FALLBACK_NOTICE : '');
-  renderWarnings(warnings);
+  renderWarnings(byId('list-warning'), warnings.length
+    ? [`一覧から除外したファイル: ${warnings.map(item => `${item.filename}（${item.reason}）`).join('、')}`]
+    : []);
   renderEmptyState();
   if (announce) {
     byId('result-status').textContent = entries.length ? `${entries.length}件を表示` : '一致する項目はありません';
@@ -606,7 +599,7 @@ async function loadEntries({announce = false, showLoading = true} = {}) {
       if (selected) currentEntry = {...currentEntry, ...selected};
       const shouldAnnounce = pendingListAnnouncement;
       pendingListAnnouncement = false;
-      renderList(
+      renderEntries(
         Array.isArray(selectedPayload.warnings) ? selectedPayload.warnings : [],
         shouldAnnounce,
         searchFallback
@@ -1618,11 +1611,10 @@ function bindEvents() {
 }
 
 let initialization = Promise.resolve();
-// 初期化後は文書とともに維持するSSE購読。無通信の検知と再接続は共通シェルの`__atkSse`が担う。
-let eventSource = null;
 
-function connectEvents() {
-  return window.__atkSse.connect(BASE_PATH + '/api/events', {
+// 無通信の検知、再接続とbfcacheの前後の接続の開閉は共通モジュールが担う。
+function subscribeEvents() {
+  return connectEvents('/api/events', {
     open: () => {
       if (byId('connection-status').dataset.syncFailed !== 'true') {
         byId('connection-status').hidden = true;
@@ -1658,7 +1650,7 @@ function connectEvents() {
 }
 
 function initializeApp() {
-  eventSource = connectEvents();
+  subscribeEvents();
   syncFilterDependencies();
   syncNotificationButton();
   initialization = Promise.all([loadEntries(), loadTargetRepos()])
@@ -1670,14 +1662,7 @@ function initializeApp() {
 
 async function init() {
   bindEvents();
-  window.addEventListener('focus', () => { void initialization.then(() => reloadFromExternalChange()); });
-  // タブが表示された状態へ戻ってもウィンドウのフォーカスが変わらない場合があるため、可視化でも取り直す。
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void initialization.then(() => reloadFromExternalChange());
-  });
-  // bfcacheへ入る前に接続を閉じ、復帰時に再接続する。再接続した接続の確立時に一覧を取り直す。
-  window.addEventListener('pagehide', () => { eventSource?.close(); });
-  window.addEventListener('pageshow', (event) => { if (event.persisted) eventSource?.reopen(); });
+  resyncWhenVisible(() => initialization.then(() => reloadFromExternalChange()));
   if (window.matchMedia('(max-width: 700px)').matches) {
     document.querySelector('#screen-wi .filters details').open = false;
   }
@@ -1687,6 +1672,4 @@ async function init() {
   await restoreEntryFromUrl();
 }
 
-window.__atkScreens = window.__atkScreens || {};
-window.__atkScreens.wi = {init};
-})();
+registerScreen('wi', {init});

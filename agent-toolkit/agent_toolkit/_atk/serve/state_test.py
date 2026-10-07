@@ -207,7 +207,7 @@ fetchHandler = async url => {
 };
 const original = {...listed, content: '更新前の本文', body_html: '<p>更新前の本文</p>'};
 entries = [original];
-renderList();
+renderEntries();
 const origin = elements['entry-list'].children[0].children[0];
 displayEntry(original);
 detailOriginKey = entryKey(original);
@@ -838,15 +838,14 @@ async def test_index_and_js_reflect_forwarded_prefix(tmp_path: pathlib.Path) -> 
     assert index_response.status_code == 200
     index_body = await index_response.get_data(as_text=True)
     assert 'href="/atk/static/app.css"' in index_body
-    assert 'src="/atk/static/app.js"' in index_body
+    assert 'type="module" src="/atk/static/wi.js"' in index_body
+    assert '"base_path": "/atk"' in index_body
     assert 'href="/atk/favicon.svg"' in index_body
     assert 'href="/atk/manifest.webmanifest" crossorigin="use-credentials"' in index_body
     assert "/atk/atk/" not in index_body
 
-    js_response = await client.get("/atk/static/app.js", headers=headers)
+    js_response = await client.get("/atk/static/wi.js", headers=headers)
     assert js_response.status_code == 200
-    js_body = await js_response.get_data(as_text=True)
-    assert 'const BASE_PATH="/atk";' in js_body
 
     manifest_response = await client.get("/atk/manifest.webmanifest", headers=headers)
     manifest = await manifest_response.get_json()

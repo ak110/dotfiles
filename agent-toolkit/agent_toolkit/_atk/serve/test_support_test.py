@@ -41,19 +41,34 @@ from agent_toolkit._atk.wi import repo as awi_repo
 _HOST_ENVIRON = dict(os.environ)
 
 
+_MODULE_IMPORT_RE = re.compile(r"^import\s*\{[^}]*\}\s*from\s*\"[^\"]+\";\n", re.MULTILINE)
+_MODULE_EXPORT_RE = re.compile(r"^export (?=(?:async )?function |const |let |class )", re.MULTILINE)
+
+
+def _module_body(source: str) -> str:
+    """ESモジュールの本文から`import`文と`export`の修飾を除き、同じスコープで評価できる本文にする。"""
+    body = _MODULE_IMPORT_RE.sub("", source)
+    assert not re.search(r"^import ", body, re.MULTILINE), "解釈できないimport文が残っている"
+    return _MODULE_EXPORT_RE.sub("", body)
+
+
 def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
-    """UI関数を最小DOM上で実行し、シナリオのJSON結果を返す。"""
-    source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"')
-    # 画面スクリプトは自身の宣言を即時実行関数で囲むため、シナリオも同じ関数の内側へ置いて
-    # 検証対象の関数を直接呼べるようにする。
-    closing = "})();\n"
-    assert source.endswith(closing)
+    """WI画面のUI関数を最小DOM上で実行し、シナリオのJSON結果を返す。
+
+    WI画面はESモジュールであり、モジュールの外から内部の関数と変数を参照できない。
+    共通モジュールとWI画面の本文を`import`と`export`を除いて1つの関数スコープへ並べ、
+    シナリオも同じスコープへ置いて検証対象の関数を直接呼べるようにする。
+    画面の登録先の`shell.js`は文書全体のナビゲーションを扱うため読み込まず、登録関数だけを代替する。
+    """
     executable = (
-        source[: -len(closing)]
+        "(() => {\n"
+        + _module_body(assets.SCRIPTS["common.js"])
+        + "\nfunction registerScreen() {}\n"
+        + _module_body(assets.SCRIPTS["wi.js"])
         + "\n(async () => {\n"
         + scenario
         + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });\n"
-        + closing
+        + "})();\n"
     )
     script = f"""
 class Element {{
@@ -64,7 +79,8 @@ class Element {{
     this.dataset = {{}};
     this.attributes = {{}};
     this.listeners = {{}};
-    this.textContent = '';
+    this.parentNode = null;
+    this.ownText = '';
     this.value = '';
     this.hidden = false;
     this.disabled = false;
@@ -88,18 +104,51 @@ class Element {{
       contains: name => this.className.split(/\\s+/).includes(name)
     }};
   }}
+  // DOMと同じく、子を持つ要素の`textContent`は子孫の文字列を連結し、代入は子を取り除く。
+  get textContent() {{ return this.ownText + this.children.map(child => child.textContent).join(''); }}
+  set textContent(value) {{
+    this.replaceChildren();
+    this.ownText = String(value);
+  }}
+  get firstChild() {{ return this.children[0] ?? null; }}
+  get nextSibling() {{
+    const siblings = this.parentNode?.children || [];
+    return siblings[siblings.indexOf(this) + 1] ?? null;
+  }}
+  adopt(child) {{
+    if (typeof child.remove === 'function') child.remove();
+    child.parentNode = this;
+    if (typeof child.setConnected === 'function') child.setConnected(this.isConnected);
+  }}
+  insertBefore(child, reference) {{
+    this.adopt(child);
+    const index = reference ? this.children.indexOf(reference) : -1;
+    if (index < 0) this.children.push(child);
+    else this.children.splice(index, 0, child);
+  }}
+  remove() {{
+    if (!this.parentNode) return;
+    this.parentNode.children = this.parentNode.children.filter(child => child !== this);
+    this.parentNode = null;
+    this.setConnected(false);
+  }}
   setConnected(value) {{
     this.isConnected = value;
     this.children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(value); }});
   }}
   append(...children) {{
-    children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(true); }});
-    this.children.push(...children);
+    children.forEach(child => {{
+      this.adopt(child);
+      this.children.push(child);
+    }});
   }}
   replaceChildren(...children) {{
-    this.children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(false); }});
-    children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(true); }});
-    this.children = children;
+    this.children.forEach(child => {{
+      child.parentNode = null;
+      if (typeof child.setConnected === 'function') child.setConnected(false);
+    }});
+    this.children = [];
+    this.append(...children);
   }}
   contains(node) {{ return this === node || this.children.some(child => child.contains?.(node)); }}
   closest() {{ return null; }}
@@ -193,21 +242,17 @@ globalThis.document = {{
   }}
 }};
 globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
+elements['serve-bootstrap'] = new Element('serve-bootstrap', 'SCRIPT');
+elements['serve-bootstrap'].textContent = JSON.stringify({{base_path: '/atk', stall_ms: 45000}});
 globalThis.window = globalThis;
 globalThis.confirm = () => true;
 globalThis.setTimeout = () => 1;
 globalThis.clearTimeout = () => undefined;
+globalThis.setInterval = () => 1;
+globalThis.clearInterval = () => undefined;
 globalThis.EventSource = class {{
   constructor(url) {{ this.url = url; this.listeners = {{}}; }}
   addEventListener(name, handler) {{ this.listeners[name] = handler; }}
-}};
-// 共通シェルのSSE購読の代替。画面が登録するイベントの処理を`EventSource`の代替へそのまま登録する。
-globalThis.__atkSse = {{
-  connect(url, handlers) {{
-    const source = new EventSource(url);
-    for (const [name, handler] of Object.entries(handlers)) source.addEventListener(name, handler);
-    return {{close() {{}}, reopen() {{}}, source}};
-  }}
 }};
 const fetchCalls = [];
 let fetchHandler = async () => ({{ok: true, status: 200, statusText: 'OK', json: async () => ({{entries: [], warnings: []}})}});
