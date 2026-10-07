@@ -103,7 +103,8 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 OPERATION_SKILL_READY_KEY = "operation_skill_ready_agents"
 """操作を起動の契機とするスキルの名前から、起動済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点とPostToolUse(Skill)が記録し、同じ判定が読む。
+Claude Codeでは、PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点とPostToolUse(Skill)が記録し、同じ判定が読む。
+Codexは起動済みを観測できず同モジュールが警告しないため、記録しない。
 """
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
 """メイン会話の起動済みの記録を除くSessionStartの`source`。新しいセッションの`startup`は記録を持たない。"""

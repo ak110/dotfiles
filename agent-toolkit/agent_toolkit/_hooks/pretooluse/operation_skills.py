@@ -13,8 +13,15 @@
 呼び出し主体は`agent_id.resolve_hook_agent_id`で区別し、メイン会話と`Agent`ツールのサブエージェントを
 別の文脈として扱う。`agents_server`の委譲先は別のセッションとして自身の状態ファイルで判定する。
 起動済みの記録はセッション状態キー`rules_context.OPERATION_SKILL_READY_KEY`へ、警告を返した時点と
-PostToolUse(Skill)の起動の観測時点で書く。CodexのPostToolUseはSkillの起動を観測できないため、
-Codexでは警告を返した時点の記録だけで同じ文脈の再警告を止める。
+PostToolUse(Skill)の起動の観測時点で書く。
+
+警告の次の操作は、`Skill`での起動と、`Skill`を使えない主体が`SKILL.md`の絶対パスを`Read`で全文読む操作を併記する。
+`agents_server`の軽量起動（`explore`・`write`・`shell`）のClaudeの委譲先は`Skill`を使えず、スキルの一覧も届かないため、
+警告が基準の本文へ到達する唯一の手掛かりになる。hookの入力は通常の委譲先と軽量起動を区別できないため、
+主体ごとに本文を書き分けず、両方の手段を同じ本文に示す。
+
+Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取で適用し、hookはその読取を起動として観測できないため、
+記録の不在からは未起動と読了済みを区別できず、読了済みの操作にも警告する。Codexにはスキルの一覧と本文が配送される。
 
 表へスキルを加える場合は、操作の判定関数とその正例・負例のテストを同じ変更単位で加える。
 判定関数はツール名とツール入力だけから結果を確定し、作業の意味の解釈を要する条件を含めない。
@@ -200,17 +207,15 @@ def record_skill_ready(session_id: str, skill_name: object, agent: str) -> None:
     update_state(session_id, _mark_ready(canonical, agent))
 
 
-def _warning(entry: OperationSkill, *, is_codex: bool) -> str:
-    short_name = entry.short_name
-    if is_codex:
-        start = f"{_plugin_resources.skill_reference(short_name, 'SKILL.md')}を読み"
-    else:
-        start = f"ツール`Skill`で`{entry.skill_name}`を起動し"
+def _warning(entry: OperationSkill) -> str:
+    skill_md = _plugin_resources.skill_reference(entry.short_name, "SKILL.md")
     return _llm_notice(
         f"`{entry.skill_name}`を起動しないまま{entry.operation}を実行した。",
         tag=_WARN_TAG,
         fix=(
-            f"{start}、同スキルの基準で今回の{entry.operation}の手段と範囲を確かめ直す。"
+            f"ツール`Skill`で`{entry.skill_name}`を起動し、同スキルの基準で今回の{entry.operation}の手段と範囲を確かめ直す。"
+            f"`Skill`を使えない主体（`agents_server`の`explore`・`write`・`shell`の委譲先など）は、"
+            f"{skill_md}を`Read`で全文読んで同じ基準を適用する。"
             f"基準に合わない{entry.operation}の結果は使わず、基準に合う{entry.operation}でやり直す。"
         ),
         removable_cause=False,
@@ -222,8 +227,9 @@ def operation_skill_warnings(payload: dict, tool_name: str, tool_input: dict, se
 
     警告を返した時点でその文脈のそのスキルを起動済みとして記録する。
     `session_id`が無い呼び出しは記録できず文脈ごとの1回を保てないため、判定しない。
+    Codexの呼び出しは起動済みを観測できないため、警告も記録もしない。
     """
-    if not session_id:
+    if not session_id or is_codex:
         return []
     agent = _agent_id.resolve_hook_agent_id(payload)
     warnings: list[str] = []
@@ -232,5 +238,5 @@ def operation_skill_warnings(payload: dict, tool_name: str, tool_input: dict, se
             continue
         # 並行する呼び出しが同時に判定しても、記録を書き込んだ1件だけが警告する。
         if update_state(session_id, _mark_ready(entry.skill_name, agent)):
-            warnings.append(_warning(entry, is_codex=is_codex))
+            warnings.append(_warning(entry))
     return warnings

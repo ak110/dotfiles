@@ -115,8 +115,8 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   寿命はセッション状態ファイルと同じとする
 - `operation_skill_ready_agents`: 操作を起動の契機とするスキルの完全名から、そのスキルを起動済みの呼び出し主体の一覧への対応を記録する。現在の対象は`agent-toolkit:search`、`agent-toolkit:bugfix`、`agent-toolkit:managed-temp`である。
   呼び出し主体はhook payloadの`agent_id`とし、持たないメイン会話は`main`とする。
-  `agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が未起動のまま操作した呼び出しへ警告を返した時点と、PostToolUse(Skill)が表のスキルの起動を観測した時点で、その主体を加える。
-  同モジュールがPreToolUseで読み、記録の無い主体の操作にだけ警告する。CodexではSkillの起動を観測できないため、警告を返した時点の記録だけで再警告を止める。
+  Claude Codeでは、`agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が未起動のまま操作した呼び出しへ警告を返した時点と、PostToolUse(Skill)が表のスキルの起動を観測した時点で、その主体を加える。
+  同モジュールがPreToolUseで読み、記録の無い主体の操作にだけ警告する。CodexではSkillの起動を観測できず未起動を判定できないため、同モジュールの警告と本キーへの記録はClaude Codeに限る。
   `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`clear`・`compact`のときに`main`を除き、委譲先のセッションでも同じく除く。`resume`と`fork`では変えず、サブエージェントの記録も変えない。
   寿命はセッション状態ファイルと同じとする
 

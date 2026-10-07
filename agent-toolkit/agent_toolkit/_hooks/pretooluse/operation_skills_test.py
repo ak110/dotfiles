@@ -10,13 +10,17 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._agents_server import claude as claude_backend
+from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._hooks.pretooluse.test_support_test import (
     _additional_context,
     _plan_file_state_env,
+    _read_session_state,
     _run,
     _run_posttooluse,
 )
+from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _SEARCH_SKILL = operation_skills.OPERATION_SKILLS[0].skill_name
 _SEARCH_SKILL_MD = pathlib.Path(__file__).resolve().parents[3] / "skills" / "search" / "SKILL.md"
@@ -109,13 +113,78 @@ def test_subagent_context_is_separate_from_main(tmp_path: pathlib.Path) -> None:
     assert _search_warning(_bash("rg x", "t"), env).startswith(_WARN_OPENING)
 
 
-def test_codex_search_warning_points_to_skill_md(tmp_path: pathlib.Path) -> None:
+# 軽量起動の各modeで発火し得る検索の入力。許可ツールに含まれるツールだけを使う。
+_LIGHTWEIGHT_SEARCH_PAYLOADS = [
+    ("explore", {"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
+    ("explore", {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}}),
+    ("explore", {"tool_name": "Bash", "tool_input": {"command": "rg -n x ."}}),
+    ("shell", {"tool_name": "Bash", "tool_input": {"command": "git grep -n -F x"}}),
+    ("write", {"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
+    ("write", {"tool_name": "Glob", "tool_input": {"pattern": "*.md"}}),
+]
+
+
+@pytest.mark.parametrize(
+    ("launch_kind", "payload"),
+    _LIGHTWEIGHT_SEARCH_PAYLOADS,
+    ids=[f"{kind}-{payload['tool_name']}" for kind, payload in _LIGHTWEIGHT_SEARCH_PAYLOADS],
+)
+def test_claude_warning_offers_skill_md_read_for_sessions_without_skill(
+    tmp_path: pathlib.Path, launch_kind: str, payload: dict
+) -> None:
+    """Claudeの警告は`Skill`の起動と、`Skill`を使えない主体が実在する`SKILL.md`を`Read`で読む操作を併記する。
+
+    `agents_server`の軽量起動の委譲先は`Skill`を使えずスキルの一覧も届かないため、`Skill`だけを示す警告では
+    起動の失敗を報告するだけで検索の基準へ到達できない。案内する`Read`が各modeの許可ツールにあることも確かめる。
+    """
+    allowed_tools = claude_backend._LAUNCH_ALLOWED_TOOLS[launch_kind]  # pylint: disable=protected-access
+    assert "Read" in allowed_tools
+    assert "Skill" not in allowed_tools
+    assert payload["tool_name"] in allowed_tools
+    env = {**_plan_file_state_env(tmp_path), "AGENT_TOOLKIT_DELEGATED_SESSION": "1"}
+
+    warning = _search_warning({**payload, "session_id": f"light-{launch_kind}"}, env)
+
+    assert warning.startswith(_WARN_OPENING)
+    assert f"ツール`Skill`で`{_SEARCH_SKILL}`を起動し" in warning
+    assert f"`{_SEARCH_SKILL_MD}`）を`Read`で全文読んで" in warning
+    assert _SEARCH_SKILL_MD.is_file()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _bash("rg x", "codex"),
+        _bash("git grep -n -F x", "codex"),
+        _bash("find . -name x", "codex"),
+        _bash("grep -rn x .", "codex"),
+        _bash("cat > /tmp/awi.md <<'EOF'\n# 表題\n\n## 原因分析\nEOF", "codex"),
+        {
+            "tool_name": "apply_patch",
+            "tool_input": {"command": "*** Begin Patch\n*** Add File: awi.md\n+# 表題\n+## 原因分析\n*** End Patch\n"},
+            "session_id": "codex",
+        },
+        _bash("atk managed-temp create --prefix x", "codex"),
+    ],
+    ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "managed-temp"],
+)
+def test_codex_operations_do_not_warn_or_record(tmp_path: pathlib.Path, payload: dict) -> None:
+    """Codexでは表の全操作で未起動の警告も起動済みの記録も生じない。
+
+    Codexは`SKILL.md`の読取でスキルを適用し、hookはその読取を起動として観測できない。
+    警告すると、全文を読んだ後の正当な操作にも再読と結果の見直しを求める。
+    """
     env = _plan_file_state_env(tmp_path)
-    payload = _bash("rg x", "codex-search", turn_id="turn-1")
-    first = _search_warning(payload, env)
-    assert first.startswith(_WARN_OPENING)
-    assert str(_SEARCH_SKILL_MD) in first
-    assert _search_warning(payload, env) == ""
+    codex_payload = {**payload, "turn_id": "turn-1"}
+
+    for _ in range(2):
+        result = _run(codex_payload, env)
+        assert result.returncode == 0
+        assert "を起動しないまま" not in _additional_context(result)
+
+    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=payload["session_id"])
+    state = _read_session_state(tmp_path, payload["session_id"]) if state_file.exists() else {}
+    assert rules_context.OPERATION_SKILL_READY_KEY not in state
 
 
 def test_search_warning_joins_other_warnings(tmp_path: pathlib.Path) -> None:
@@ -144,14 +213,9 @@ def _bugfix_warnings(context: str) -> int:
             "tool_name": "MultiEdit",
             "tool_input": {"file_path": "/tmp/awi.md", "edits": [{"old_string": "x", "new_string": _ROOT_CAUSE_BODY}]},
         },
-        {
-            "tool_name": "apply_patch",
-            "tool_input": {"command": "*** Begin Patch\n*** Add File: awi.md\n+# 表題\n+## 原因分析\n*** End Patch\n"},
-            "turn_id": "turn-1",
-        },
         {"tool_name": "Bash", "tool_input": {"command": f"cat > /tmp/awi.md <<'EOF'\n{_ROOT_CAUSE_BODY}EOF"}},
     ],
-    ids=["write", "edit", "multiedit", "apply_patch", "bash"],
+    ids=["write", "edit", "multiedit", "bash"],
 )
 def test_root_cause_writing_without_bugfix_warns_once_per_context(tmp_path: pathlib.Path, payload: dict) -> None:
     """`agent-toolkit:bugfix`を起動しないまま`## 原因分析`の見出し行を書くと、文脈ごとに1回だけ警告する。
