@@ -38,17 +38,16 @@ deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`は
 Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
 PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。
 
-- block通知は`_hooks.notice`のblock専用整形関数（`block_formatter`）で生成し、解消手段の`fix`を渡す。`warn`通知も同モジュールの整形関数へ解消手段を`fix`として渡す。いずれも`fix`を省くか空文字列または空白文字だけにすると`ValueError`となり、整形関数は本文の後へ`次の操作: <fix>`の行を置く
-- block・warn本文の構成はこれらの整形関数に限る（独自の整形関数では解消手段の欠落を機械的に検出できなくなるため）。解消手段は本文へ混ぜず`fix`へ渡す。文面の基準は`writing.md`「読み手別の追加注意点」のプログラムが出力するメッセージの項目に従う
-- `notice`区分は行動の指示そのものを本文とする定型の配送であり、`fix`を任意とする
+block・warn・noticeの本文の整形（整形関数、`fix`の要否、種別、反復時の縮約と昇格）は`claude-hooks-messages.md`「通知本文の整形」に従う。
 
 警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する。
 決定を省略すると通常の権限フローが適用され、警告表示とは独立に許可プロンプトが出る。
 
-コーディングエージェントの出力を対象とするチェックは、適用境界を書き込み先ではなく読み手で定める。
-ユーザーが直接読む本文を出力する操作は、ファイルへ書き込まない操作であっても、編集入力と同じ本文チェックへ通す。
-Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各欄と`ExitPlanMode`の計画本文が該当する。
-本境界の対象は、ユーザーが直接読む本文に限る。
+### PermissionRequest
+
+確認ダイアログ表示時に発火するイベント。ユーザーに代わって許可 / 拒否を決定するときに使う。
+スキーマがPreToolUseと異なり、`hookSpecificOutput`直下に`decision`オブジェクトを置く。
+`hookEventName`は`"PermissionRequest"`を指定する。
 
 組み込みのdeny / askルールはhookの戻り値に関わらず評価される。
 `.claude/`配下への書き込み確認等の組み込みaskルールはPreToolUseの`allow`では上書きできない。
@@ -56,21 +55,6 @@ Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各�
 
 `updatedInput`による入力書き換えの効果は入力値の変更までとし、確認ダイアログの発生はそのまま残る。
 ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う。
-`agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新および一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
-PreToolUseは`send_message`・`kill`の保存済みsessionと、`<役割名>.subagent.md`の実行命令を持つ起動を確認する。
-`start`の`delegate`・`explore`・`write`へ引用の外で`<役割名>.subagent.md`の手順を実行する命令を渡した場合は、タスク起動へ直すよう遮断する。
-`Agent`・`Task`の実行命令では、1行目の正式な命令と宣言済み入力以外の行を遮断する。
-文書の読解・引用・比較の対象への参照と、引用に載せた実行命令の例は通す。
-参照だけから用途を確定できない場合も通し、会話の意味を推定する遮断・警告を加えない。
-`start`の入力妥当性検証（`mode`ごとの欠落と混在を含む）は実行基盤へ委ね、入力の実行権限値はそのまま渡す。
-`wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseのチェック対象へ含めず通過させる。
-PostToolUseは成功した開始ツール`start`（全`mode`。統合前の旧名で記録された開始も含む）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
-
-### PermissionRequest
-
-確認ダイアログ表示時に発火するイベント。ユーザーに代わって許可 / 拒否を決定するときに使う。
-スキーマがPreToolUseと異なり、`hookSpecificOutput`直下に`decision`オブジェクトを置く。
-`hookEventName`は`"PermissionRequest"`を指定する。
 
 組み込みdenyルールは`allow`でも上書きできないが、確認ダイアログ（ask相当）はスキップできる。
 

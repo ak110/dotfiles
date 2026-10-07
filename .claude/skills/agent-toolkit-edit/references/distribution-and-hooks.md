@@ -125,11 +125,25 @@ agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_h
 スキル名・pytoolsコマンド名・`pytools/_internal/`の複合名モジュール・`scripts/`と`libexec/`のスクリプト名は、`pytools/claude_hook/pretooluse.py`がhook実行時にディレクトリをスキャンして動的に取得する。
 外部CLI参照は`_EXTERNAL_CLI_ALLOWED`登録識別子に限り`command -v`等による存在確認を経て許容する。
 
+## agents_serverのツール呼び出しを判定するhook
+
+本節はagent-toolkitのPreToolUseとPostToolUseが`agents_server`のツール呼び出しで確かめる内容と記録する状態を定める。
+
+`agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新および一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
+PreToolUseは`send_message`・`kill`の保存済みsessionと、`<役割名>.subagent.md`の実行命令を持つ起動を確認する。
+`start`の`delegate`・`explore`・`write`へ引用の外で`<役割名>.subagent.md`の手順を実行する命令を渡した場合は、タスク起動へ直すよう遮断する。
+`Agent`・`Task`の実行命令では、1行目の正式な命令と宣言済み入力以外の行を遮断する。
+文書の読解・引用・比較の対象への参照と、引用に載せた実行命令の例は通す。
+参照だけから用途を確定できない場合も通し、会話の意味を推定する遮断・警告を加えない。
+`start`の入力妥当性検証（`mode`ごとの欠落と混在を含む）は実行基盤へ委ね、入力の実行権限値はそのまま渡す。
+`wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseのチェック対象へ含めず通過させる。
+PostToolUseは成功した開始ツール`start`（全`mode`。統合前の旧名で記録された開始も含む）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
+
 ## 複数hook共存時の識別子
 
 agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
 自身のhookメッセージを他hookから判別するため、`atk-auto`要素の`source`へagent-toolkitでは接頭辞の無い生成元名を置く。agent-toolkit以外の生成元は`<所有者>/<生成元>`の形で区別する。
-XML境界と属性の規約は`agent-toolkit:writing-standards`がhook実装の規約として定める「コーディングエージェント宛てメッセージの標識」節に従う。
+XML境界と属性の規約は`agent-toolkit:writing-standards`の`references/claude-hooks-messages.md`「コーディングエージェント宛てメッセージの標識」に従う。
 
 ## marketplace管理
 

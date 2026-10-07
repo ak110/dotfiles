@@ -1,4 +1,4 @@
-# session-records.md: セッション記録の構造と集計
+# セッション記録の構造と集計
 
 Claude CodeとCodexのセッション記録を集計・分析する場合の構造知識を扱う。セッション記録はClaude CodeとCodexが保存する会話の記録（transcript）を指す。
 
@@ -104,12 +104,16 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 
 ## 暗号化された値
 
-次の値は提供元が暗号化して返す値であり、`investigation.md`が裏付けと判別の手段からデコードと内部構造の解析を外す対象に当たる。
+次の値は提供元が暗号化して返す値である。裏付けと判別には値の有無と所在だけを使い、デコードと内部構造の解析を対象から外す。提供元の公式文書が値を開いて解釈しないよう定めているためである。
 
 - Claude Codeの記録の`thinking`ブロックの`signature`と`redacted_thinking`ブロックの`data`
 - Codexの記録で`payload.type`が`reasoning`のレコードの`encrypted_content`
 
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：暗号化された値：2026年10月7日」にある。
+
+## 進捗更新の判別
+
 ツール呼び出しの間の進捗更新（公式文書の「progress update」。Claude Code本体の内部名は`narration`）を判別する場合は、公式文書「Thinking」の節「Progress updates between tool calls」が定める条件を使う。
 リクエストの`display`が`"updates"`の応答では文面が空でない`thinking`ブロックを進捗更新とする。
 記録はリクエストの`display`の値を持たない。このため値を設定やホストの送信条件から確かめた範囲だけを判別済みとし、残りは判別不能として件数を分ける。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：暗号化された値：2026年10月7日」にある。
+同じ監査記録が節「Progress updates between tool calls」の観測も持つ。

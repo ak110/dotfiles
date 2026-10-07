@@ -4,17 +4,6 @@
 状態ファイルは`{tempdir}/claude-agent-toolkit-{session_id}.json`とする。
 計画名の再出力抑止記録は`{tempdir}/claude-agent-toolkit-session-title/{session_id}.json`へ分離する。
 
-## Function hooksの終了要求
-
-Claude CodeのFunction hooks moduleとPythonのCLI・Stop hookは、同じセッションIDの読込目印と終了要求を共有する。両側は絶対パスの`CLAUDE_CONFIG_DIR`を優先し、無い場合は`HOME`、次に`USERPROFILE`の`.claude`を使う。その下の`agent-toolkit-function-hooks/`へ`marker-{session_id}.txt`と`request-{session_id}.txt`を置く。セッションIDは英数字、アンダースコア、ハイフンだけを受理する。Python側の一時ディレクトリ解決を共有パスの根拠にしない。
-
-`session.start`は読込目印へ`ready`を書き、終了要求を`consumed`へ初期化する。Pythonは目印の内容が`ready`で、更新時刻が現在のClaude Code本体の開始より後の場合だけ、終了要求へ`requested`を書いて`exit_requested`を返す。`turn.complete`はメインのターンだけでその値を読み、`consumed`へ書き換えた後に`/exit`をキューへ入れる。目印が無い場合とCodexでは、対話CLI本体を従来の方法で終了させる。
-
-`/exit`は終了とともに停止するセッション限りの作業が残ると確認画面を表示するため、`turn.complete`は`/exit`の直前に`durable`が真でないcron taskを削除する。一覧の取得と各削除は`$.tool.check`の判定が`allow`の場合だけ行い、失敗しても`/exit`は実行する。
-process-loopが起動した会話の最上位のStopでは、`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がバックグラウンドタスクの残存を確かめる。終了要求が`requested`かつStop入力の`background_tasks`に有効な非`teammate`の作業が残る場合は、同フックが終了要求を`consumed`へ戻してblockする。Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
-
-通常のSessionEndでは現行セッションの2ファイルを保持し、期限を過ぎた他セッションのファイルを回収する。`clear`では現行セッションの2ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルには前掲の固定値だけを保存し、発話やツール結果は保存しない。
-
 ## 状態ファイルの設計
 
 Claude CodeまたはCodexのhook間で情報を共有する場合、セッション単位の状態ファイルを使う。
@@ -36,7 +25,16 @@ hookは1呼び出しごとに独立プロセスとして起動するため、情
 - 状態JSONの削除契機は、期限回収と、終了理由が`clear`のSessionEndに限る。SessionEndは同じセッションへ後から戻る場合にも発火し、`--continue`・`--resume`・`/resume`で戻ると同じ`session_id`で会話が続くため、それ以外の契機で削除すると再開後の記録が失われる。期限回収の対象は更新から一定期間が経過した通常状態と計画名の再出力抑止記録とする。`clear`では会話の破棄が確定するため、排他ロック下でそのセッションの通常状態と再出力抑止記録を削除する。ロックファイルの扱いは「並行書き込みの排他制御」に従う
 - サブエージェント起動の判定は`tool_name in ("Agent", "Task")`をSSOTとする。サブエージェント側で記録される状態は委譲元へ自動伝播しないため、親側で必要な値は完了報告の構造化欄から厳格に解析する
 
-### managed-tempの登録情報
+### 並行書き込みの排他制御
+
+Claude Codeは並列ツール呼び出しでhookを同時発火するため、複数プロセスから同一の状態ファイルへ書き込みが競合する。
+
+- 通常状態の更新は排他ロック付きの`update_state`、計画名の記録は専用の`claim_session_title`を経由し、公開するAPIをこの2つに限る
+- 前身状態の継承は現行セッションの排他ロック下で不在を再確認し、並行するhookが同時に継承しないようにする
+- ロックファイルは常に保持する。内容を持たない空ファイルであり、一時ディレクトリの通常の回収に委ねる
+- 並行書き込みの回帰テストを維持する
+
+## managed-tempの登録情報
 
 managed-tempの管理用マーカーファイル（`.agent-toolkit-managed-temp.json`）とOSアカウント専用の登録簿は、同じ版数付きの登録情報を保持する。
 スキーマ版数3では`prefix`・`created_at`・`awis`を必須とし、全項目の完全一致を検証する。
@@ -44,7 +42,7 @@ managed-tempの管理用マーカーファイル（`.agent-toolkit-managed-temp.
 スキーマ版数1は版数1のフィールド集合どうしだけを完全一致で検証する。
 版数の不一致、片側だけの更新、必須項目の欠落、型不正、余分な項目は拒否する。
 
-### 完了報告からの状態読み取り
+## 完了報告からの状態読み取り
 
 完了報告本文から機械的に状態を読み取る場合、本文中の引用と区別できる位置へ
 記録行を置く。検出対象は完了報告末尾の連続した記録行ブロック、または最終行へ限定する。
@@ -55,14 +53,16 @@ managed-tempの管理用マーカーファイル（`.agent-toolkit-managed-temp.
 英字キー全般に一致する汎用パターンは許可リストに含めない。汎用パターンは、末尾付近に
 他の`キー:`形式の散文が続く場合に引用ごと記録行と誤認する
 
-### 並行書き込みの排他制御
+## Function hooksの終了要求
 
-Claude Codeは並列ツール呼び出しでhookを同時発火するため、複数プロセスから同一の状態ファイルへ書き込みが競合する。
+Claude CodeのFunction hooks moduleとPythonのCLI・Stop hookは、同じセッションIDの読込目印と終了要求を共有する。両側は絶対パスの`CLAUDE_CONFIG_DIR`を優先し、無い場合は`HOME`、次に`USERPROFILE`の`.claude`を使う。その下の`agent-toolkit-function-hooks/`へ`marker-{session_id}.txt`と`request-{session_id}.txt`を置く。セッションIDは英数字、アンダースコア、ハイフンだけを受理する。Python側の一時ディレクトリ解決を共有パスの根拠にしない。
 
-- 通常状態の更新は排他ロック付きの`update_state`、計画名の記録は専用の`claim_session_title`を経由し、公開するAPIをこの2つに限る
-- 前身状態の継承は現行セッションの排他ロック下で不在を再確認し、並行するhookが同時に継承しないようにする
-- ロックファイルは常に保持する。内容を持たない空ファイルであり、一時ディレクトリの通常の回収に委ねる
-- 並行書き込みの回帰テストを維持する
+`session.start`は読込目印へ`ready`を書き、終了要求を`consumed`へ初期化する。Pythonは目印の内容が`ready`で、更新時刻が現在のClaude Code本体の開始より後の場合だけ、終了要求へ`requested`を書いて`exit_requested`を返す。`turn.complete`はメインのターンだけでその値を読み、`consumed`へ書き換えた後に`/exit`をキューへ入れる。目印が無い場合とCodexでは、対話CLI本体を従来の方法で終了させる。
+
+`/exit`は終了とともに停止するセッション限りの作業が残ると確認画面を表示するため、`turn.complete`は`/exit`の直前に`durable`が真でないcron taskを削除する。一覧の取得と各削除は`$.tool.check`の判定が`allow`の場合だけ行い、失敗しても`/exit`は実行する。
+process-loopが起動した会話の最上位のStopでは、`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がバックグラウンドタスクの残存を確かめる。終了要求が`requested`かつStop入力の`background_tasks`に有効な非`teammate`の作業が残る場合は、同フックが終了要求を`consumed`へ戻してblockする。Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
+
+通常のSessionEndでは現行セッションの2ファイルを保持し、期限を過ぎた他セッションのファイルを回収する。`clear`では現行セッションの2ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルには前掲の固定値だけを保存し、発話やツール結果は保存しない。
 
 ## 状態の継承
 
@@ -108,6 +108,9 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   3. 委譲先として起動されている
   4. `prompt`が`<task-notification`か旧形式の`<cross-session-message`で始まる
   5. `prompt`の1行目が新旧の自動挿入要素の開始タグを含む
+
+## 確認・操作スキル系
+
 - `user_confirmation_skill_pending`: `agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態を記録する（真偽値）。
   `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`startup`・`clear`・`compact`で委譲先でない場合に真にし、`resume`と`fork`では変えない。
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が実ユーザー発話の受領時に読み、真なら同スキルの起動を促す注記を返す。機械注入ターンでは読まず、状態も変えない。
@@ -120,12 +123,14 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`clear`・`compact`のときに`main`を除き、委譲先のセッションでも同じく除く。`resume`と`fork`では変えず、サブエージェントの記録も変えない。
   寿命はセッション状態ファイルと同じとする
 
+## 終了工程系
+
 - `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程の証拠を作業単位で保持する。
   中身は作業ごとの可視発話の報告、振り返りの準備結果、呼び出し、判断記録、遅れて返る応答を元の作業へ対応付けるための未完了の呼び出しと、判断の根拠となる人間の入力である。
   PreToolUse・PostToolUse・UserPromptSubmitが呼び出しと人間の入力を更新し、Stopの`termination_order_advisor`が可視発話を取得して報告段階と報告本文の判定の違反を読む。構造確認の受理本文と送達フラグは保持しない。
   解決して参照が不要になった呼び出しと入力は更新のたびに除き、保持量を未完了の作業と現在の本文の大きさに対応させる。版や形式が異なる値は破棄してStop判定ログへ診断を残す。
   寿命と継承はセッション状態ファイルと同じとし、別会話から継承した値は`session_id`の一致を確かめてから使う
-  - 待機の許可: 報告段階が残る作業が待つ非同期対象（作業が起動したagents_serverのsessionと、作業の開始以後に起動したバックグラウンドタスク・未配送の完了通知）が生存する間はStopが待機を許可し、回収後に残工程を再判定する。作業の開始位置はUserPromptSubmitが記録したtranscriptの大きさを使う
+  - 待機の許可: 報告段階が残る作業が待つ非同期対象の生存中にStopが待機を許可する条件は`claude-hooks-stop.md`「終了工程の証拠」が定める。本キーはその判定の記録元として作業の開始位置（UserPromptSubmitが記録したtranscriptの大きさ）を保持し、Stopがその判定の利用先として読む
   - 委譲先へのwait判断: `async_targets`と所有者を確認し、観測義務とは別に有効なCLI待機所有権・対象登録を共通の読取処理で確認する。`pending_observation`が偽でも待機が有効なら保持し、両方が終わると不足判定へ戻る
 
 ## 通知反復系
@@ -133,7 +138,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `unregistered_managed_temp_fingerprint`: `atk`の共通エントリポイントが、登録を持たない管理対象の絶対パス集合を安定順で正規化した指紋を記録する。同じセッションで同じ集合を報告済みの場合は警告を省略し、集合が変化した場合は再度警告する。寿命はセッション状態ファイルと同じとする
 - `warn_notice_counts`: `warn`区分の通知を生成した診断処理の原因識別子ごとの累積件数を記録する。
   キーは`<hook_id>|<原因識別子>`、値はそのセッションでの発生件数とする。
-  通知の整形処理が件数を記録し、3件目以降の通知には同じ原因で繰り返し通知していることと累積件数を載せるために、その件数を読む。
+  通知の整形処理が件数を記録し、2件目以降の通知には同じ原因で繰り返し通知していることと累積件数を載せるために、その件数を読む。
   診断処理が要旨を渡した通知では、同じ件数を用いて2件目以降の本文を要旨と件数だけへ短縮する。
   セッション終了まで保持し、リセットする手段は設けない
 

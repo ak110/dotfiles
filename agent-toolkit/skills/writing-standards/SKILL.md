@@ -29,6 +29,7 @@ description: >
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 成果物、ユーザーへの報告と回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` |
+| ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` |
 | セッション記録の集計・分析 | `references/session-records.md` |
 | 計画の起草、WIの実現方式の確定、実装の完了前および実行レビューで、変更後の成果物群の設計品質を評価する時（エージェント向け文書だけを変える場合を含む） | `references/design-heuristics.md` |
 | 人間が読む文章（Markdown・README・技術文書・API文書、業務・仕様文書、体験を述べる文章、コメント、AWI・UWIの本文）を書く時 | `references/writing.md` |
@@ -93,6 +94,7 @@ description: >
 | エンドユーザーが操作する画面（HTML、CSS、画面コンポーネント、単体HTML成果物など）の新設・変更、その計画またはレビューをする時 | `references/ui-ux.md` |
 | 前行の画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` |
 | 前々行の画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` |
+| hookスクリプトと機械チェックスクリプトを書く時 | 「エージェント向け文書の編集時に読む資料」の表のうち、hook、遮断・警告、出力フィールド、`Stop`・`SubagentStop`、通知本文、セッション状態および機械チェックスクリプトの各行で条件が成立する行の資料 |
 
 ## エージェント向け文書の編集時に読む資料
 
@@ -103,14 +105,15 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| スキル編集（公式リファレンスの参照先を含む） | `references/agent-skills.md` |
+| スキル編集 | `references/agent-skills.md`、`references/host-official-references.md` |
+| エージェント向け文書の置き場所を選ぶ時 | `references/delivery-scope.md` |
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md` |
-| hook編集（auto modeのカスタムルール編集やセッション状態の編集に伴うものを含む）、およびhookのエンドユーザー向けメッセージの新設・改訂 | `references/agent-skills.md`、`references/claude-hooks.md` |
+| hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/claude-hooks.md`、`references/host-official-references.md` |
 | 遮断または警告を返すhookの判定を新設・変更する時と、hookを置くか、遮断と警告のどちらにするかを判定する時 | `references/claude-hooks-block-warn.md` |
 | hookの出力フィールドを選ぶ時と、`PermissionRequest`または`UserPromptSubmit`のhookを新設・変更する時 | `references/claude-hooks-output.md` |
 | `Stop`または`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md` |
-| hookとhook以外の生成元がコーディングエージェントへ直接渡す本文（記述言語と`atk-auto`の標識）を新設・改訂する時 | `references/claude-hooks-messages.md` |
-| auto modeのカスタムルール編集 | `references/auto-mode.md`、`references/agent-skills.md`。権限拒否に遭遇した場面の手順は`agent-toolkit:user-confirmation-and-report`が扱う |
+| 遮断・警告・定型の通知を出力するhookを新設・変更する時と、hookとhook以外の生成元がコーディングエージェントへ直接渡す本文（記述言語と`atk-auto`の標識）を新設・改訂する時 | `references/claude-hooks-messages.md` |
+| auto modeのカスタムルール編集 | `references/auto-mode.md`、`references/host-official-references.md`。権限拒否に遭遇した場面の手順は`agent-toolkit:user-confirmation-and-report`が扱う |
 | セッション状態ファイルまたはフラグを扱う編集（hook編集とauto modeのカスタムルール編集で扱う場合を含む） | `references/session-state-and-flags.md` |
 | 機械チェックスクリプトの新設・改修 | `references/check-script-design.md` |
 | エージェント向け文書へ新しい規定を追記する場面、および文書の記述量を管理する場面 | `references/agent-documents-additions.md` |

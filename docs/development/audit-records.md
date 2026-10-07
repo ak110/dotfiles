@@ -227,7 +227,7 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 
 2026年9月4日、Claude Code 2.1.260の実行ファイルと公式のHooksリファレンスで確認した。再検証ではこの2つの資料を読み、対象の文字列がどちらに由来するか確認する。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks-stop.md：Stop/SubagentStopフックの再帰呼び出し対策：2026年9月4日
+## agent-toolkit/skills/writing-standards/references/claude-hooks-stop.md：入力：2026年9月4日
 
 2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節および`SubagentStop`節で前段の入力仕様を確認した。同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
 

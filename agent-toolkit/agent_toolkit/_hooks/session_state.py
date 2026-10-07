@@ -12,8 +12,8 @@
 直列化も不要になる）。書き込みは同一ディレクトリの一時ファイル経由`os.replace`で
 アトミックに反映する。
 
-パス規則は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
-「セッション状態ファイル」節に記載がある。
+パス規則は`agent-toolkit/skills/writing-standards/references/session-state-and-flags.md`の
+「状態ファイルの設計」節に記載がある。
 """
 
 from __future__ import annotations
