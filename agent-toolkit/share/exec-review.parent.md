@@ -18,7 +18,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 完成条件証拠の検収で、計画や委譲プロンプトから複数のWI名を取得する | `agent-toolkit:wi-standards`の`references/managed-temp-bulk-show.md` |
+| 完成条件証拠の検収で、計画や委譲プロンプトから複数のWI名を取得する | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
 
 ## 起動方法別のレビュー基準
 

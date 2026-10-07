@@ -14,7 +14,7 @@
 | 差分を判定する前 | `agent-toolkit:writing-standards`が変更ファイルの成果物種別ごとに定める資料。テストコードを含む差分では同スキルの`references/testing.md`を含める |
 | `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` |
 | `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:plan-mode`の`references/plan-restoration-contracts.md` |
-| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/managed-temp-bulk-show.md` |
+| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
 | 指摘を登録するか完成条件証拠へ記入する直前 | `agent-toolkit:review-standards`の[references/exec-review-recording.md](../skills/review-standards/references/exec-review-recording.md) |
 
 ## 入力
@@ -70,7 +70,7 @@ plugin rootの配置からPython実行ファイルの絶対パスを組み立て
 対象WI集合は、委譲プロンプトで受領したWI記録と、`計画`を併せて受領した場合に計画の`## 実施内容`でWI由来として挙げる関連WIの和集合とする。WI由来は`人間由来のWI`と`エージェント由来のWI`を指す。
 計画が挙げるWIは、`## 実施内容`の`由来`が`人間由来のWI`または`エージェント由来のWI`である行の全てからWIのファイル名を抽出して特定する。由来と採否も同じ行が持つ値を用いる。
 対象集合にWIがある場合は、計画の有無にかかわらず対象worktreeから`atk wi show`で本文を取得する。
-複数件の取得は読込表の`agent-toolkit:wi-standards`の`references/managed-temp-bulk-show.md`に従う。
+複数件の取得は読込表の`agent-toolkit:wi-standards`の`references/wi-show-bulk.md`に従う。
 取得結果のfrontmatterが`type: awi`と`type: uwi`のいずれかである各項目について、本文に記載された要求と完成条件を基準として差分と比べる。
 ユーザーコメントとUWI回答を持つWIでは、それぞれの発言を要求単位へ分け、元の文面と出所を保持して完成条件と併せて差分と比べる。`## ユーザー指摘の逐語引用`は投入元のセッションで解決済みの発話であり（`agent-toolkit:wi-standards`の`references/origin-and-approval.md`）、要求単位へ分けずに`## 反映内容と反映先`と`## 完成条件`を解釈する根拠として読む。計画の`## 実施内容`に`ユーザー指示`由来の行がある場合も各要求単位へ分け、WI本文に無い追加要求を同じ差分と比べる。
 `計画`を受領した場合は、計画の`## 変更履歴`から各WIの設計時の`staleness`と条件付き履歴確認の判断を取得する。

@@ -296,7 +296,7 @@ _RETIRED_TERMS = (
             ("独立レビュー", "独立文脈レビュー"),
             ("通常完了の返却形式", "入力名`通常完了の報告様式`"),
             ("英語検知通知", "「`response_language_check`の通知」"),
-            ("投入前チェック", "「`agent-toolkit:wi-standards`「投入と取得」手順1の読み直し」"),
+            ("投入前チェック", "「`agent-toolkit:wi-standards`の`references/drafting-completion.md`「投入前の読み直し」」"),
             ("レビュー調整", "「`share/review-loop-coordination.md`の手順」"),
             ("調整手順", "「`share/review-loop-coordination.md`の手順」"),
             ("読者ごとの探索担当", "読者別探索担当"),

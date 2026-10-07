@@ -110,7 +110,7 @@ if TYPE_CHECKING:
 _AGENT_REMOVE_NEXT_ACTION = "削除はユーザーへ依頼する。不要になった項目なら`atk wi reject`で不採用にする"
 
 _AGENT_PROCESSING_HOLD_NEXT_ACTION = (
-    "別セッションが処理中の要求を改訂する場合は保留せず、`agent-toolkit:wi-standards`「由来と承認」の処理中の項目の扱いに従い、"
+    "別セッションが処理中の要求を改訂する場合は保留せず、`agent-toolkit:wi-standards`「状態と依存」の処理中の項目の扱いに従い、"
     "書き換えたい内容を新しい項目として投入するか`atk wi edit --append`で追記する。"
     "自セッションの`agent-toolkit:process-wi`が処理中の項目を回答待ちなどで保留する場合は`--state=processing`を付けて再実行する"
 )

@@ -1325,7 +1325,7 @@ def test_agent_hold_rejects_processing_entry_without_explicit_state(
     err = capsys.readouterr().err
     assert "失敗: " in err
     assert "`atk wi edit --append`" in err
-    assert "`agent-toolkit:wi-standards`「由来と承認」" in err
+    assert "`agent-toolkit:wi-standards`「状態と依存」" in err
     assert "`--state=processing`" in err
 
 
