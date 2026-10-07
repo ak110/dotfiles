@@ -266,6 +266,24 @@ class TestConfigGet:
         candidates = config_module.parse_stage_model_candidates(capsys.readouterr().out.strip())
         assert [engine for engine, _model, _effort in candidates] == ["claude", "codex"]
 
+    def test_saved_low_tier_model_is_kept_after_default_change(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """未保存時の下位はClaude側がlowとなり、保存済みの旧値は移行せずそのまま返す。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "low_tier_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "codex:luna/medium,claude:sonnet[1m]/low\n"
+
+        saved = "codex:luna/medium,claude:sonnet[1m]/medium"
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(json.dumps({"low_tier_model": saved}) + "\n", encoding="utf-8")
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "low_tier_model", "medium_tier_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"{saved}\ncodex:terra/medium,claude:sonnet[1m]/medium\n"
+
     def test_family_setting_tracks_new_model_without_rewriting_saved_value(
         self,
         tmp_path: pathlib.Path,
@@ -755,7 +773,7 @@ class TestConfigSet:
         """model_typeを対応設定の候補へ解決し、未知値は両方の受理形式を示して拒否する。"""
         assert config_module.resolve_model_candidates("low_tier") == [
             ("codex", "gpt-6-luna", "medium"),
-            ("claude", "sonnet[1m]", "medium"),
+            ("claude", "sonnet[1m]", "low"),
         ]
         assert config_module.resolve_model_candidates("write") == [
             ("agy", "gemini-3.8-flash", "medium"),

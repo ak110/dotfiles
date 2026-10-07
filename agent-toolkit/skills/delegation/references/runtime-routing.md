@@ -154,7 +154,7 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 | --- | --- | --- |
 | 上位 | `gpt-6-sol/medium` | `opus/medium` |
 | 中位 | `terra/medium` | 用途に応じて`opus/medium`または`sonnet/medium` |
-| 軽量 | `gpt-6-luna/medium` | `sonnet/medium` |
+| 軽量 | `gpt-6-luna/medium` | `sonnet/low` |
 
 - 同じ行の`codex`と`claude`の組合せを代替候補とみなし、effortは表の値を用いる
 - `terra`は系列名として指定し、その時点で利用可能な同系列の最新版へ解決する。Codexの各行で世代をそろえる前提は置かない。現行の`haiku`は旧世代に属し、新世代の軽量モデルが利用可能になった時点で軽量の行を見直す
