@@ -375,6 +375,15 @@ function renderEvent(event, index) {
   }
   block.append(summary);
 
+  // アシスタントの発言はサーバーが生HTMLを無効にして整形したHTMLを持ち、本文の装飾で表示する。
+  // 他の種別はツールの入出力や挿入本文の記号をそのまま読めるよう、等幅の`<pre>`で表示する。
+  if (typeof event.html === "string") {
+    const formatted = document.createElement("div");
+    formatted.className = "markdown-body event-markdown";
+    formatted.innerHTML = event.html;
+    block.append(formatted);
+    return block;
+  }
   const body = document.createElement("pre");
   if (typeof event.text === "string" && event.text !== "") {
     body.textContent = event.text;

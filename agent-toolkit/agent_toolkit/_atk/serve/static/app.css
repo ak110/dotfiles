@@ -1664,7 +1664,8 @@ main > .toolbar {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#screen-sessions .event pre {
+/* 整形しない本文の`<pre>`に限る。整形したアシスタントの発言の中のコードブロックへ及ぼさない。 */
+#screen-sessions .event > pre {
   margin: 0;
   padding: 10px;
   overflow: auto;
@@ -1672,6 +1673,19 @@ main > .toolbar {
   word-break: break-word;
   background: #fff;
   font-size: var(--font-size-body);
+}
+/* 整形したアシスタントの発言。長いコード行と幅の広い表は本文の中で横スクロールさせ、右ペインの横幅を超えさせない。 */
+.markdown-body.event-markdown {
+  padding: 10px;
+  background: #fff;
+}
+.markdown-body.event-markdown pre {
+  overflow-x: auto;
+  white-space: pre;
+}
+.markdown-body.event-markdown table {
+  display: block;
+  overflow-x: auto;
 }
 #screen-sessions .unavailable {
   color: var(--color-secondary-text);

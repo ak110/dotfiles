@@ -4516,6 +4516,192 @@ async def test_remote_subagents_are_shown_or_reported_as_unavailable(
     assert await harness.page.locator(".subagent-item").count() == 0
 
 
+_SESSION_MARKDOWN = (
+    "## 調査結果\n\n- 1つ目の項目\n- 2つ目の項目\n\n1. 手順\n\n| 列A | 列B |\n| --- | --- |\n| 値1 | 値2 |\n\n"
+    "```python\nprint('コード')\n```\n\n`inline`のコード\n"
+)
+_MARKDOWN_REMOTE_HOST = "markdown-host"
+_MARKDOWN_REMOTE_PATH = "/home/remote/.claude/projects/-home-remote-md/44444444-5555-6666-7777-888888888888.jsonl"
+
+
+def _session_lines(*records: dict[str, Any]) -> str:
+    return "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records)
+
+
+def _assistant_record(text: str) -> dict[str, Any]:
+    return {"type": "assistant", "timestamp": "2026-09-30T00:00:01Z", "message": {"content": [{"type": "text", "text": text}]}}
+
+
+def _write_local_session(tmp_path: Path, name: str, *records: dict[str, Any]) -> str:
+    """ローカルのClaude Codeの記録1件を、開始日時が既存の記録より新しい形で作成する。"""
+    path = tmp_path / "claude" / "projects" / "-home-aki-md" / f"{name}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    first = {"type": "user", "timestamp": "2026-09-30T00:00:00Z", "cwd": "/home/aki/md", "message": {"content": "整形の確認"}}
+    path.write_text(_session_lines(first, *records), encoding="utf-8")
+    return str(path)
+
+
+async def _markdown_remote_runner(host: str, op: str, _args: list[str]) -> str:
+    """整形の対象となるアシスタントの発言を含む記録を返す、リモートヘルパーの偽の応答。"""
+    if op == "list":
+        entry = {
+            "engine": "claude",
+            "cwd": "/home/remote/md",
+            "first_user_message": "リモートの整形",
+            "session_id": "remote-md",
+            "path": _MARKDOWN_REMOTE_PATH,
+            "updated_at": 1_800_000_000,
+            "size": 200,
+        }
+        return json.dumps({"ok": True, "host": host, "entries": [entry]}, ensure_ascii=False)
+    text = _session_lines(
+        {"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": "リモートの整形"}},
+        _assistant_record(_SESSION_MARKDOWN),
+    )
+    return json.dumps({"ok": True, "data": base64.b64encode(text.encode("utf-8")).decode("ascii"), "subagents": []})
+
+
+@contextlib.asynccontextmanager
+async def _markdown_sessions_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
+) -> AsyncGenerator[tuple[playwright.async_api.Page, str]]:
+    """ローカルの記録と、偽の応答を返すリモートホストを登録したセッション画面を開く。"""
+    _isolate_creation_time_index(tmp_path, monkeypatch)
+    _write_entries(tmp_path)
+    plans_root = tmp_path / "plans"
+    plans_root.mkdir()
+    monkeypatch.setattr(serve_sessions, "start_remote_clients", lambda context: None)
+    app = _browser_app(tmp_path, plans_root, remote_hosts=[_MARKDOWN_REMOTE_HOST], ssh_runner=_markdown_remote_runner)
+    async with _serve(app, browser) as (_context, page, port):
+        yield page, f"http://127.0.0.1:{port}"
+
+
+async def _open_session(page: playwright.async_api.Page, base_url: str, host: str, path: str) -> None:
+    await page.goto(base_url + "/sessions")
+    await page.locator(f'#sessions .session-item[data-host="{host}"][data-path="{path}"]').click()
+    await page.locator("#detail .event.kind-assistant").first.wait_for(state="visible")
+
+
+@pytest.mark.asyncio
+async def test_session_assistant_markdown_rendered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
+) -> None:
+    """ローカルとリモートの記録で、アシスタントの発言の見出し・箇条書き・表・コードを要素として表示する。
+
+    `<pre>`のまま表示すると、Markdownの記号が並んだ本文を読み手が頭の中で組み立てる必要がある。
+    リモートの記録はヘルパーが生データだけを返し、整形はサーバー側で行う。
+    """
+    path = _write_local_session(tmp_path, "markdown", _assistant_record(_SESSION_MARKDOWN))
+    async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
+        for host, record_path in (("browser-test", path), (_MARKDOWN_REMOTE_HOST, _MARKDOWN_REMOTE_PATH)):
+            await _open_session(page, base_url, host, record_path)
+            body = page.locator("#detail .event.kind-assistant .event-markdown")
+            await playwright.async_api.expect(body.locator("h2")).to_have_text("調査結果")
+            assert await body.locator("ul > li").count() == 2
+            assert await body.locator("ol > li").count() == 1
+            assert await body.locator("table th").all_inner_texts() == ["列A", "列B"]
+            await playwright.async_api.expect(body.locator("pre code")).to_have_text("print('コード')")
+            await playwright.async_api.expect(body.locator(":not(pre) > code")).to_have_text("inline")
+            text = await body.inner_text()
+            assert "## " not in text
+            assert "| ---" not in text
+            assert await page.locator("#detail .event.kind-assistant > pre").count() == 0
+
+
+@pytest.mark.asyncio
+async def test_session_non_assistant_events_stay_preformatted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
+) -> None:
+    """アシスタント以外の発言・挿入本文・思考・ツール・圧縮のイベントは、記号をそのまま`<pre>`で表示する。"""
+    path = _write_local_session(
+        tmp_path,
+        "preformatted",
+        {"type": "user", "isMeta": True, "timestamp": "2026-09-30T00:00:01Z", "message": {"content": "## 挿入本文"}},
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-30T00:00:02Z",
+            "message": {
+                "content": [
+                    {"type": "thinking", "thinking": "## 思考"},
+                    {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "echo '## ツール'"}},
+                    {"type": "text", "text": "## 発言"},
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "timestamp": "2026-09-30T00:00:03Z",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "## 結果"}]},
+        },
+        {"type": "user", "timestamp": "2026-09-30T00:00:04Z", "message": {"content": "## ユーザー"}},
+        {"type": "system", "subtype": "compact_boundary", "timestamp": "2026-09-30T00:00:05Z", "content": "## 圧縮"},
+    )
+    async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
+        await _open_session(page, base_url, "browser-test", path)
+        for kind in ("user", "injected", "thinking", "tool_call", "tool_result", "compact_boundary"):
+            events = page.locator(f"#detail .event.kind-{kind}")
+            assert await events.count() >= 1, kind
+            assert await events.locator(".event-markdown").count() == 0, kind
+            assert await events.locator(":scope > pre").count() == await events.count(), kind
+        await playwright.async_api.expect(page.locator("#detail .event.kind-user > pre").last).to_have_text("## ユーザー")
+
+
+@pytest.mark.asyncio
+async def test_session_assistant_markdown_escapes_raw_html(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
+) -> None:
+    """アシスタントの発言の生HTMLは文字として表示し、スクリプトを実行せず、`javascript:`をリンクにしない。"""
+    hostile = (
+        '<script>window.__sessionXss = 1</script>\n\n<img src=x onerror="window.__sessionXss = 2">\n\n'
+        "[リンク](javascript:window.__sessionXss=3)\n"
+    )
+    path = _write_local_session(tmp_path, "hostile", _assistant_record(hostile))
+    async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
+        await _open_session(page, base_url, "browser-test", path)
+        body = page.locator("#detail .event.kind-assistant .event-markdown")
+        await playwright.async_api.expect(body).to_contain_text("<script>window.__sessionXss = 1</script>")
+        assert await body.locator("script, img").count() == 0
+        assert await body.locator('a[href^="javascript:"]').count() == 0
+        await page.wait_for_timeout(200)
+        assert await page.evaluate("window.__sessionXss") is None
+
+
+@pytest.mark.asyncio
+async def test_session_assistant_markdown_scrolls_wide_blocks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
+) -> None:
+    """長いコード行と幅の広い表は本文の中で横スクロールし、右ペインの横幅を超えない。"""
+    columns = 24
+    wide = (
+        "```text\n"
+        + "x" * 400
+        + "\n```\n\n"
+        + "| "
+        + " | ".join(f"列{index}見出しの長い名前" for index in range(columns))
+        + " |\n"
+        + "|"
+        + " --- |" * columns
+        + "\n"
+        + "| "
+        + " | ".join(f"値{index}" for index in range(columns))
+        + " |\n"
+    )
+    path = _write_local_session(tmp_path, "wide", _assistant_record(wide))
+    async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
+        await page.set_viewport_size({"width": 1100, "height": 800})
+        await _open_session(page, base_url, "browser-test", path)
+        body = page.locator("#detail .event.kind-assistant .event-markdown")
+        overflow = "element => [element.scrollWidth, element.clientWidth]"
+        for selector in ("pre", "table"):
+            scroll_width, client_width = await body.locator(selector).evaluate(overflow)
+            assert scroll_width > client_width, selector
+        detail_scroll, detail_client = await page.locator("#detail").evaluate(overflow)
+        assert detail_scroll <= detail_client
+        pane = await page.locator("#detail").evaluate("element => element.getBoundingClientRect().right")
+        block = await page.locator("#detail .event.kind-assistant").evaluate("element => element.getBoundingClientRect().right")
+        assert block <= pane
+
+
 @pytest.mark.asyncio
 async def test_multiple_roots_keep_selection_search_update_and_copy_portable_path(
     multi_root_harness: _MultiRootHarness,

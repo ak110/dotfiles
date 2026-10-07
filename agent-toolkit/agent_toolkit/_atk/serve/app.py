@@ -1122,6 +1122,23 @@ def _no_store(body: str, content_type: str, *, status: int = 200) -> quart.Respo
     return quart.Response(body, status=status, content_type=content_type, headers={"Cache-Control": "no-store"})
 
 
+def _with_assistant_html(detail: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """セッションの詳細のうち、本文を持つアシスタントの発言へ整形したHTMLを`html`として加える。
+
+    整形はWI本文と同じ生HTML無効の設定で行い、記録の本文に含まれるタグとスクリプトを実行させない。
+    サーバー側で付与するため、リモートホストの記録も同じ整形になり、リモートのヘルパーを変えずに済む。
+    `sessions.py`の表示モデルは`agents_server`のログ出力も使うため、HTMLはこの応答にだけ加える。
+    対象をアシスタントの発言に限るのは、他の種別がツールの入出力や挿入本文など記号をそのまま読む本文だからである。
+    """
+    events = []
+    for event in detail.get("events", []):
+        text = event.get("text") if isinstance(event, dict) else None
+        if isinstance(event, dict) and event.get("kind") == "assistant" and isinstance(text, str) and text:
+            event = {**event, "html": _MARKDOWN.render(text)}
+        events.append(event)
+    return {**detail, "events": events}
+
+
 def _json_no_store(payload: typing.Any) -> quart.Response:
     """JSON応答を常に再取得させるヘッダーで返す。"""
     return _no_store(json.dumps(payload, ensure_ascii=False), "application/json; charset=utf-8")
@@ -1298,7 +1315,7 @@ def _register_session_routes(
             detail = await serve_sessions.session_detail(context, engine, host, path)
         except serve_sessions.SessionNotFoundError as error:
             raise FileNotFoundError(str(error)) from error
-        return _json_no_store(detail)
+        return _json_no_store(_with_assistant_html(detail))
 
     @app.get("/api/sessions/host-status")
     async def sessions_host_status() -> quart.Response:

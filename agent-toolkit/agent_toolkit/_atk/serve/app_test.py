@@ -1130,6 +1130,46 @@ _OBSERVATION_RECORD = "## 反映後の観測の再開記録\n\n- 再開区分: �
 
 
 @pytest.mark.asyncio
+async def test_sessions_detail_html_only_for_assistant(tmp_path: pathlib.Path) -> None:
+    """セッション詳細APIは本文を持つアシスタントの発言だけへ整形したHTMLを加え、`text`を残し、生HTMLを文字にする。
+
+    HTMLが他の種別へ付くと、ツールの入出力や挿入本文の記号が整形で崩れる。生HTMLを通すと記録の本文のスクリプトが画面で動く。
+    """
+    record = tmp_path / "claude" / "projects" / "-home-aki-proj" / "11111111-2222-3333-4444-555555555555.jsonl"
+    record.parent.mkdir(parents=True)
+    markdown = "## 見出し\n\n- 項目\n\n<script>alert(1)</script>\n"
+    lines = [
+        {"type": "user", "timestamp": "2026-09-01T00:00:00Z", "cwd": "/w", "message": {"content": "## 発話"}},
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-01T00:00:01Z",
+            "message": {
+                "content": [
+                    {"type": "thinking", "thinking": "## 思考"},
+                    {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
+                    {"type": "text", "text": markdown},
+                ]
+            },
+        },
+    ]
+    record.write_text("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines), encoding="utf-8")
+    client = _three_screen_app(tmp_path).test_client()
+
+    response = await client.get(f"/api/sessions/detail?engine=claude&path={record}")
+
+    assert response.status_code == 200
+    events = (await response.get_json())["events"]
+    assistant = [event for event in events if event["kind"] == "assistant"]
+    assert [event["text"] for event in assistant] == [markdown]
+    assert "<h2>見出し</h2>" in assistant[0]["html"]
+    assert "<li>項目</li>" in assistant[0]["html"]
+    assert "&lt;script&gt;" in assistant[0]["html"]
+    assert "<script>" not in assistant[0]["html"]
+    assert {event["kind"] for event in events if "html" in event} == {"assistant"}
+    assert {"user", "thinking", "tool_call"} <= {event["kind"] for event in events}
+
+
+@pytest.mark.asyncio
 async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> None:
     """`needs_verify`はpickerと同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
 
