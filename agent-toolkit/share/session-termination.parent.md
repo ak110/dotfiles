@@ -45,7 +45,9 @@
 
 - `git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse --short=7 <ベースbranchのリモート追跡ref>`の出力が、いずれも`ベースbranchのHEAD`と一致する
 - 全体検証を確認する。`全体検証`は`CI判定`または`ローカル成功`のいずれかだけを受理し、`実行した終端工程`は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「出力」の同項目が定める記載条件を満たす。`CI判定`ではpush前に実行したチェックがそれぞれ終了コード0で警告の扱いが報告され、集合を求めた根拠が挙がっていることを確かめる
-- `CIの結果`が`成功`であり、対象リポジトリのCI照会手段が`CIで検証したcommit`について同じ結論を返す
+- `CIの結果`が次のいずれかの条件を満たす。それ以外の終端状態の名前と値は差し戻す
+  - `CI成功`: 対象リポジトリのCI照会手段が`CIで検証したcommit`について同じ結論を返す
+  - `CI定義なし`: `全体検証`が`ローカル成功`であり、`git -C <対象リポジトリの絶対パス> ls-tree -r --name-only <ベースbranchのHEAD> -- .gitlab-ci.yml .github/workflows`が終了コード0で出力0行を返す。出力が1行以上なら差し戻す
 - `CIで検証したcommit`と`ベースbranchのHEAD`が異なり、`ベースbranchのHEAD`自体のCI成功を前項で検収していない場合は、両方を7文字以上の一意な短縮OIDのまま対象リポジトリのGitコマンドへ渡す。
   `ベースbranchのHEAD`がマージcommitなら、第1親を`<ベースbranchのHEAD>^1`として参照し、
   差分commitを`git -C <対象リポジトリの絶対パス> rev-list <CIで検証したcommit>..<ベースbranchのHEAD> --not <ベースbranchのHEAD>^1`で取得する。

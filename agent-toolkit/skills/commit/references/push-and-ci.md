@@ -40,6 +40,8 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 
    成功したdry-runの全status lineが承認済みremote・destinationへのrefspecを示す場合だけ、その方式を選ぶ。拒否や失敗予定のref、または承認範囲と異なるremote・destinationがあればpushしない。明示指定ではremote、source、完全なdestination refをすべて書き、実際のpushも成功したdry-runと同じ方式を使う
 
+CIを判定する場合は、pushするcommitのtreeでCI定義の有無を`git -C <対象リポジトリの絶対パス> ls-tree -r --name-only <pushするcommit> -- .gitlab-ci.yml .github/workflows`で判定する。forgeによらず同じ判定を使う。終了コード0で出力が0行の場合はCI定義が無いため、次の3工程と「pushと監視」のbaselineによる監視を省き、push結果を判定した後の終端状態を「CI定義なし」とする。終了コードが0以外の場合は原因を確かめてから判定し直す。
+
 委譲元がそのpushのCI通過をこのセッションで判定しないと明示した場合は、次の3工程を省き、「pushと監視」のpush結果判定へ進む。
 CIを判定する場合は、次の3工程で監視用の証拠を作成する。
 
@@ -126,4 +128,5 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
 ## 後始末
 
 CI成功、CI定義なし、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
+`agent-toolkit:process-wi`の終端担当は、これらの終端状態の名前を返却の`CIの結果`の値に使う。
 追加pushでは新しいディレクトリとbaselineを作成する。原因commitへ取り込んだ修正のforce pushにも同じく適用する。
