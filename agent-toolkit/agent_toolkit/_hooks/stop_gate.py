@@ -12,8 +12,8 @@ transcript上のbackground task起動の検出条件は次の4種を統合して
 - `tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ、`toolUseResult.resumedAgentId`が
   文字列で存在するか、text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む
   （SendMessageによるサブエージェント背景再開）
-- 非sidechainのMCP tool_useに対応するtool_result本文に`moved to the background as task`を含む
-  （MCPバックグラウンドタスク）
+- 非sidechainのMCP tool_useに対応するtool_result本文がホストのMCP移行通知の形で始まる
+  （MCPバックグラウンドタスク。形は`_MCP_BACKGROUND_NOTICE_RE`）
 
 SendMessage背景再開は前2者と異なり`toolUseResult`側に起動状態を示すstatusを持たないため、
 SendMessage呼び出し由来のtool_resultへ限定したうえで`resumedAgentId`の有無で識別する。
@@ -70,20 +70,18 @@ _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "CronC
 # `re.DOTALL`で本文中の改行も拾う。
 _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>", re.DOTALL)
 
-_MCP_BACKGROUND_TASK_PATTERNS = (
-    re.compile(r"moved to the background as task\s+(\S+)"),
-    re.compile(r"timed out[^\n]{0,160}?\bID:\s*(\S+)"),
-    re.compile(r"did not complete within its [^\n]{1,40} timeout and was moved to the background\s*\(ID:\s*(\S+)"),
+_MCP_BACKGROUND_NOTICE_RE = re.compile(
+    r'MCP tool "[^"\n]+" is still running after [\d.]+s\. It was moved to the background as task\s+(\S+)'
 )
-"""バックグラウンドタスクへの移行通知が識別子を示す形。
+"""MCP呼び出しが実行時間の上限で背景へ移ったときにホストが返す移行通知の形。
 
-第1はMCP呼び出しの移行通知、第2・第3は実行ホストが実行時間の上限により`Bash`のジョブを
-背景へ移した通知である。いずれも自身の呼び出しが返した識別子であり、
-`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」が停止を許容する所有の根拠に当たる。
+自身の呼び出しが返した識別子であり、`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」が
+停止を許容する所有の根拠に当たる。
 
-第2・第3の判定へ実行上限による移行を示す文面を必須とするのは、`run_in_background`を指定しない前景実行の応答が
-`running in background with ID:`の形で識別子を返す場合と区別するためである。
-前景実行の応答をバックグラウンドタスクの所有記録へ加えると、起動していない対象の停止が通る。
+ホストの通知はテキストの先頭から始まる単独の本文として届く（Claude Codeのtranscriptで観測した形）。
+ツールの出力本文（前景Bashの`stdout`、MCPの検索結果、委譲先の返却など）は同じ文言を任意の位置に含み得るため、
+先頭から一致する場合だけを通知とし、本文の途中の一致は識別子として扱わない。
+Bashの背景移行（実行上限、手動、`run_in_background`）は構造化した`backgroundTaskId`から得るため、文言では判定しない。
 """
 
 # 抽出した値はバックグラウンドタスクの識別子として`<task-id>`との突合と停止対象の所有判定へ渡すため、
@@ -239,7 +237,7 @@ def is_pending_async_work(
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ、
       `toolUseResult.resumedAgentId`が文字列で存在するか、text本文に
       `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
-    - 非sidechainのMCP tool_useに対応するuser tool_result本文に`moved to the background as task`を含む
+    - 非sidechainのMCP tool_useに対応するuser tool_result本文がホストのMCP移行通知の形で始まる
       （MCPバックグラウンドタスク）
 
     完了集合は後続エントリの`<task-notification>`要素、最上位transcriptの
@@ -382,7 +380,7 @@ def async_launch_offsets(transcript_path: str) -> dict[str, int]:
     """非sidechainの記録に現れる非同期対象の識別子ごとに、最初に現れた行の開始バイト位置を返す。
 
     対象はassistantの`tool_use`の`id`、`tool_result`の`tool_use_id`、`toolUseResult`の
-    `backgroundTaskId`・`agentId`・`resumedAgentId`およびバックグラウンドタスクへの移行通知のタスクIDとする。
+    `backgroundTaskId`・`agentId`・`resumedAgentId`およびホストのMCP移行通知のタスクIDとする。
     バイト位置はUserPromptSubmit時点のtranscriptの大きさと比べるために返す。読み取れない場合は空を返す。
     """
     try:
@@ -697,7 +695,7 @@ def _describe_pending_background_entries(
        `toolUseResult.resumedAgentId`が文字列で存在するか、text本文に
        `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
     - 非sidechain assistantの`mcp__` tool_useに対応するuser tool_result本文が
-      `moved to the background as task`を含む（MCPバックグラウンドタスク）
+      ホストのMCP移行通知の形で始まる（MCPバックグラウンドタスク）
 
     完了通知の記録: 次の3形式から`tool_use_id`を抽出する。
     - 旧形式: 非sidechainのメイン側userエントリの`message.content`内テキストブロックの
@@ -1164,19 +1162,19 @@ def async_agent_launch_id(tool_response: object) -> str | None:
 
 
 def background_task_id_from_notice(value: object) -> str | None:
-    """バックグラウンドタスクへの移行通知からタスクIDを返す。
+    """ホストのMCP移行通知からタスクIDを返す。
 
-    対象はMCP呼び出しの移行通知と、実行時間の上限により実行ホストがジョブを背景へ移した通知とする。
+    入れ子を再帰的に走査し、文字列が`_MCP_BACKGROUND_NOTICE_RE`の形で始まる場合だけ識別子を返す。
+    本文の途中に同じ文言がある文字列は通知とみなさない。
     識別子の直後に続く文末の句読点は除く。
     通知本文は文として書かれるため、句読点を含めた値は`<task-id>`要素の値とも
     停止対象の識別子とも一致しない。
     """
     if isinstance(value, str):
-        for pattern in _MCP_BACKGROUND_TASK_PATTERNS:
-            match = pattern.search(value)
-            if match is not None:
-                return match.group(1).rstrip(_TRAILING_PUNCTUATION) or None
-        return None
+        match = _MCP_BACKGROUND_NOTICE_RE.match(value)
+        if match is None:
+            return None
+        return match.group(1).rstrip(_TRAILING_PUNCTUATION) or None
     if isinstance(value, dict):
         nested_values = value.values()
     elif isinstance(value, list):

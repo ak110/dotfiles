@@ -17,6 +17,7 @@ from agent_toolkit._hooks.stop_gate_test import (  # noqa: E402  # pylint: disab
     _assistant_entry,
     _attachment_task_notification_entry,
     _bash_no_bg,
+    _host_mcp_notice,
     _queue_operation_task_notification_entry,
     _user_async_launched_entry,
     _user_task_notification_entry,
@@ -55,7 +56,7 @@ def _mcp_background_timeout_entries(
                     {
                         "type": "tool_result",
                         "tool_use_id": tool_use_id,
-                        "content": [{"type": "text", "text": f"moved to the background as task {task_id}"}],
+                        "content": [{"type": "text", "text": _host_mcp_notice(task_id, tool_name)}],
                     }
                 ],
             },
@@ -195,29 +196,7 @@ class TestMcpBackgroundTaskCompletion:
 
     def test_pending_mcp_task_is_completed_by_task_id_notification(self, tmp_path: pathlib.Path) -> None:
         entries = [
-            _assistant_entry(
-                [
-                    {
-                        "type": "tool_use",
-                        "id": "toolu_mcp",
-                        "name": "mcp__agents_server__start",
-                        "input": {},
-                    }
-                ]
-            ),
-            {
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": "toolu_mcp",
-                            "content": [{"type": "text", "text": "moved to the background as task mcp-task-1"}],
-                        }
-                    ],
-                },
-            },
+            *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp"),
             _user_task_notification_entry(None, task_id="mcp-task-1"),
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
@@ -226,29 +205,7 @@ class TestMcpBackgroundTaskCompletion:
 
     def test_pending_mcp_task_without_completion_remains_pending(self, tmp_path: pathlib.Path) -> None:
         entries = [
-            _assistant_entry(
-                [
-                    {
-                        "type": "tool_use",
-                        "id": "toolu_mcp",
-                        "name": "mcp__agents_server__start",
-                        "input": {},
-                    }
-                ]
-            ),
-            {
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": "toolu_mcp",
-                            "content": [{"type": "text", "text": "moved to the background as task mcp-task-1"}],
-                        }
-                    ],
-                },
-            },
+            *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp"),
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
@@ -344,12 +301,12 @@ class TestMcpBackgroundTaskCompletion:
                         {
                             "type": "tool_result",
                             "tool_use_id": "toolu_mcp_1",
-                            "content": "moved to the background as task mcp-task-1",
+                            "content": _host_mcp_notice("mcp-task-1"),
                         },
                         {
                             "type": "tool_result",
                             "tool_use_id": "toolu_mcp_2",
-                            "content": [{"type": "text", "text": "moved to the background as task mcp-task-2"}],
+                            "content": [{"type": "text", "text": _host_mcp_notice("mcp-task-2")}],
                         },
                     ],
                 },

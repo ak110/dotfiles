@@ -1683,6 +1683,40 @@ class TestAgentsServerSessionState:
         assert state["agents_server_cwd_by_session"] == {"thread-child": str(tmp_path)}
         assert "agents_server_sessions" not in state
 
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "moved to the background as task {task_id} and keeps running",
+            "Command timed out and is now running in the background. ID: {task_id}",
+            "Command did not complete within its 15s timeout and was moved to the background (ID: {task_id}).",
+        ],
+    )
+    def test_agents_server_response_quoting_notice_is_not_backgrounded(self, tmp_path: pathlib.Path, phrase: str) -> None:
+        """委譲先の返却本文が移行通知の文言を引用しても、背景へ移ったとみなさず通常の応答と同じ記録を行う。"""
+        sid = f"show-quoting-notice-{phrase.split()[0].lower()}-{len(phrase)}"
+        quoted = f"委譲先の返却: stop_gate_test.py:1: {phrase.format(task_id='quoted-task-1')}"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__show",
+                "tool_input": {"session_id": "thread-parent"},
+                "tool_response": {
+                    "content": [{"type": "text", "text": quoted}],
+                    "structuredContent": {
+                        "session_id": "thread-parent",
+                        "status": "running",
+                        "last_message": quoted,
+                        "live_child_sessions": [{"session_id": "thread-child", "cwd": str(tmp_path)}],
+                    },
+                },
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert state["agents_server_cwd_by_session"] == {"thread-child": str(tmp_path)}
+        assert "quoted-task-1" not in (state.get("background_task_ids") or [])
+
     @pytest.mark.parametrize("tool_name", ("send_message", "kill", "stop"))
     def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """継続・観測・中断ツールはcwd mapを参照し、session記録へcwdを保存しない。

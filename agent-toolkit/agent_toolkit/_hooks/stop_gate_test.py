@@ -19,11 +19,30 @@ from agent_toolkit._hooks.stop_gate import (
     _describe_pending_background_tasks,
     append_stop_log,
     is_pending_async_work,
+    pending_async_task_ids,
     read_transcript_entries_cached,
 )
 from agent_toolkit._testing.helpers import _write_transcript
 
 _BACKGROUND_TASKS_OMITTED = object()
+
+# 本文の途中に現れても移行通知とみなさない文言（前景の出力が引用する3種）。
+_QUOTED_NOTICE_PHRASES = (
+    "moved to the background as task {task_id} and keeps running",
+    "Command timed out and is now running in the background. ID: {task_id}",
+    "Command did not complete within its 15s timeout and was moved to the background (ID: {task_id}).",
+)
+
+
+def _host_mcp_notice(task_id: str, tool_name: str = "mcp__agents_server__wait") -> str:
+    """MCP呼び出しが背景へ移ったときにホストが返す移行通知の本文を返す。
+
+    Claude Code 2.1.292のtranscriptで観測した形（テキストの先頭から始まる単独の本文）を写す。
+    """
+    return (
+        f'MCP tool "{tool_name}" is still running after 120s. It was moved to the background as task {task_id}'
+        " and keeps running; you will be notified when it completes."
+    )
 
 
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reason: str = "end_turn") -> dict:
@@ -703,7 +722,7 @@ class TestIsPendingAsyncWork:
                             {
                                 "type": "tool_result",
                                 "tool_use_id": "toolu_mcp",
-                                "content": "Tool use moved to the background as task task-1",
+                                "content": _host_mcp_notice("task-1"),
                             }
                         ],
                     },
@@ -713,6 +732,36 @@ class TestIsPendingAsyncWork:
         )
 
         assert is_pending_async_work(str(transcript), "", background_tasks=[]) is True
+
+    @pytest.mark.parametrize("phrase", _QUOTED_NOTICE_PHRASES)
+    def test_mcp_result_quoting_notice_is_not_pending(self, tmp_path: pathlib.Path, phrase: str) -> None:
+        """MCPの`tool_result`本文の途中に移行通知の文言を含むだけでは未完了の非同期作業にしない。"""
+        quoted = f"stop_gate_test.py:1: {phrase.format(task_id='task-1')}"
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _assistant_entry(
+                    [{"type": "tool_use", "id": "toolu_grep", "name": "mcp__plugin_agent-toolkit_pyfltr__grep", "input": {}}]
+                ),
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_grep",
+                                "content": [{"type": "text", "text": quoted}],
+                            }
+                        ],
+                    },
+                },
+                _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+            ],
+        )
+
+        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is False
+        assert "task-1" not in pending_async_task_ids(str(transcript), "", background_tasks=[])
 
     def test_empty_background_tasks_hide_agent_remainder(self, tmp_path: pathlib.Path) -> None:
         """空の`background_tasks`を優先し、記録に残る申告対象の背景Agentは実行中ではないと判定する。"""
@@ -1755,41 +1804,51 @@ class TestReadTranscriptEntriesCached:
 
 
 class TestBackgroundTaskIdFromNotice:
-    """バックグラウンドタスクへの移行通知から抽出する識別子の境界を固定する。"""
+    """ホストのMCP移行通知から抽出する識別子の境界を固定する。"""
+
+    _PREFIX = 'MCP tool "mcp__agents_server__wait" is still running after 120s. It was moved to the background as task '
 
     @pytest.mark.parametrize(
-        ("text", "expected"),
+        ("suffix", "expected"),
         [
-            ("Tool use moved to the background as task task-1", "task-1"),
-            ("moved to the background as task task-1 and keeps running; wait for it", "task-1"),
-            ("moved to the background as task mcp_task_1\n", "mcp_task_1"),
-            ("moved to the background as task  spaced-1 ", "spaced-1"),
+            ("task-1", "task-1"),
+            ("task-1 and keeps running; wait for it", "task-1"),
+            ("mcp_task_1\n", "mcp_task_1"),
+            (" spaced-1 ", "spaced-1"),
+            ("bg-task-notice.", "bg-task-notice"),
+            ("bg-1, and the result is pending.", "bg-1"),
+            ("bg-2; observe it later", "bg-2"),
+            ("bash:12/34", "bash:12/34"),
         ],
-        ids=["end-of-text", "followed-by-word", "trailing-newline", "extra-space"],
+        ids=[
+            "end-of-text",
+            "followed-by-word",
+            "trailing-newline",
+            "extra-space",
+            "period",
+            "comma",
+            "semicolon",
+            "non-word-characters",
+        ],
     )
-    def test_keeps_previously_extracted_identifiers(self, text: str, expected: str) -> None:
-        """従来から正しく抽出できていた形は結果が変わらない。"""
-        assert _stop_gate.background_task_id_from_notice(text) == expected
+    def test_extracts_identifier_from_host_notice(self, suffix: str, expected: str) -> None:
+        """通知の形で始まる本文から、文末の句読点を除いた識別子を途中で打ち切らずに返す。"""
+        assert _stop_gate.background_task_id_from_notice(self._PREFIX + suffix) == expected
+        assert (
+            _stop_gate.background_task_id_from_notice({"content": [{"type": "text", "text": self._PREFIX + suffix}]})
+            == expected
+        )
 
     @pytest.mark.parametrize(
-        ("text", "expected"),
+        "text",
         [
-            ("This tool call was moved to the background as task bg-task-notice.", "bg-task-notice"),
-            ("moved to the background as task bg-1, and the result is pending.", "bg-1"),
-            ("moved to the background as task bg-2; observe it later", "bg-2"),
-            ("(moved to the background as task bg-3)", "bg-3"),
+            *(f"rg output: {phrase.format(task_id='task-1')}" for phrase in _QUOTED_NOTICE_PHRASES),
+            *(phrase.format(task_id="task-1") for phrase in _QUOTED_NOTICE_PHRASES),
+            "log: " + _host_mcp_notice("task-1"),
+            'MCP tool "mcp__agents_server__wait" is still running after 120s. It was moved to the background as task .',
+            "no notice here",
         ],
-        ids=["period", "comma", "semicolon", "closing-paren"],
     )
-    def test_drops_sentence_punctuation_after_the_identifier(self, text: str, expected: str) -> None:
-        """文末の句読点は識別子へ取り込まない。"""
-        assert _stop_gate.background_task_id_from_notice(text) == expected
-
-    def test_keeps_identifiers_containing_non_word_characters(self) -> None:
-        """語構成文字以外を含む識別子も途中で打ち切らない。"""
-        assert _stop_gate.background_task_id_from_notice("moved to the background as task bash:12/34") == "bash:12/34"
-
-    def test_returns_none_without_identifier(self) -> None:
-        """識別子を伴わない本文では`None`を返す。"""
-        assert _stop_gate.background_task_id_from_notice("moved to the background as task .") is None
-        assert _stop_gate.background_task_id_from_notice("no notice here") is None
+    def test_returns_none_for_text_not_starting_with_host_notice(self, text: str) -> None:
+        """通知の形で始まらない本文と識別子を伴わない通知では`None`を返す。"""
+        assert _stop_gate.background_task_id_from_notice(text) is None

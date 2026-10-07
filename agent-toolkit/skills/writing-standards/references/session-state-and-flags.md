@@ -154,7 +154,9 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 - `background_task_ids`: PostToolUseが、自セッションのツール呼び出しの応答から取得したタスクIDを重複なく記録する。この記録をバックグラウンドタスクの所有記録と呼ぶ。バックグラウンドタスクは、BashやAgentを背景で動かした非同期の処理を指す。
   記録の契機は次の4つとする。Bashの`run_in_background`指定が成功した応答と、同じ指定が失敗した応答。
-  ツール種別を問わないバックグラウンドタスクへの移行通知。`Agent`・`Task`の背景起動の応答（`status`が`async_launched`）が返した`agentId`。所有の根拠は自身の呼び出しが識別子を返したことであり、
+  実行上限またはユーザーの操作で背景へ移ったBashの応答が返す構造化`backgroundTaskId`。
+  MCPツールの呼び出しが背景へ移ったときにホストが返す移行通知。記録するのはテキストの先頭から始まる`MCP tool "<ツール名>" is still running after <秒数>s. It was moved to the background as task <ID>`の形だけであり、前景の出力本文の途中に現れる同じ文言は除く。
+  `Agent`・`Task`の背景起動の応答（`status`が`async_launched`）が返した`agentId`。所有の根拠は自身の呼び出しが識別子を返したことであり、
   その呼び出しの成否に依存しない。
   PreToolUse(TaskStop)が、停止対象が自セッションの起動したバックグラウンドタスクかを判定する入力として読む。
   PreToolUse(Bash)も、未完了の出力ファイルの読取を警告する判定の前に読み、記録が1件以上ある場合だけtranscriptを読む。

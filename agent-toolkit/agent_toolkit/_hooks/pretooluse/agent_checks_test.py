@@ -190,27 +190,89 @@ class TestTaskStopBlock:
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 0
 
-    def test_timeout_notice_allows_only_its_task_stop(
+    @pytest.mark.parametrize(
+        ("label", "phrase"),
+        [
+            ("mcp-notice", "moved to the background as task {task_id} and keeps running"),
+            ("timed-out", "Command timed out and is now running in the background. ID: {task_id}"),
+            (
+                "did-not-complete",
+                "Command did not complete within its 15s timeout and was moved to the background (ID: {task_id}).",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("source", ["bash-stdout", "mcp-grep", "agents-server"])
+    def test_foreground_notice_text_does_not_allow_task_stop(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        source: str,
+        label: str,
+        phrase: str,
+    ) -> None:
+        """前景の出力本文の途中に移行通知の文言を含む応答のIDは所有記録へ追加せず、そのIDへの停止を遮断する。"""
+        session_id = f"task-stop-foreground-{source}-{label}"
+        quoted = f"stop_gate_test.py:1: {phrase.format(task_id='quoted-task-1')}"
+        if source == "bash-stdout":
+            tool_name = "Bash"
+            tool_input: dict = {"command": "rg -n background stop_gate_test.py"}
+            tool_response: object = {
+                "stdout": quoted,
+                "stderr": "",
+                "interrupted": False,
+                "isImage": False,
+                "noOutputExpected": False,
+            }
+        else:
+            tool_name = (
+                "mcp__plugin_agent-toolkit_pyfltr__grep"
+                if source == "mcp-grep"
+                else "mcp__plugin_agent-toolkit_agents_server__show"
+            )
+            tool_input = {"session_id": "remote-1"} if source == "agents-server" else {"pattern": "background"}
+            tool_response = [{"type": "text", "text": quoted}]
+        recorded = _run_posttooluse(
+            {
+                "session_id": session_id,
+                "hook_event_name": "PostToolUse",
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "tool_response": tool_response,
+            },
+            state_dir,
+        )
+
+        assert recorded.returncode == 0
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+        state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+        assert "quoted-task-1" not in (state.get("background_task_ids") or [])
+        assert self._invoke(session_id, state_dir, {"task_id": "quoted-task-1"}).returncode == 2
+
+    def test_host_mcp_notice_allows_only_its_task_stop(
         self,
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """実行上限によるバックグラウンドタスクへの移行通知をバックグラウンドタスクの所有記録から停止許可まで渡す。"""
-        session_id = "task-stop-timeout-notice"
-        notice = "Command did not complete within its 15s timeout and was moved to the background (ID: bgm3jt6xn)."
+        """ホストのMCP移行通知で始まる応答のIDは所有記録へ追加し、そのIDの停止だけを通す。"""
+        session_id = "task-stop-host-mcp-notice"
+        notice = (
+            'MCP tool "mcp__plugin_agent-toolkit_agents_server__wait" is still running after 120s.'
+            " It was moved to the background as task mcp-task-1 and keeps running;"
+        )
         recorded = _run_posttooluse(
             {
                 "session_id": session_id,
-                "tool_name": "Bash",
-                "tool_input": {"command": "sleep 120"},
-                "tool_response": notice,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
+                "tool_input": {},
+                "tool_response": [{"type": "text", "text": notice}],
             },
             state_dir,
         )
         assert recorded.returncode == 0
-        assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["bgm3jt6xn"]
+        assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["mcp-task-1"]
         assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
-        assert self._invoke(session_id, state_dir, {"task_id": "bgm3jt6xn"}).returncode == 0
+        assert self._invoke(session_id, state_dir, {"task_id": "mcp-task-1"}).returncode == 0
 
     def test_structured_timeout_response_allows_only_its_task_stop(
         self,

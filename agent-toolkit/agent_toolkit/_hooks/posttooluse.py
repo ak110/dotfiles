@@ -21,8 +21,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
    操作を起動の契機とするスキルの起動による`operation_skill_ready_agents`の記録 (Skill)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの`sessionTitle`出力が計画名の解決に使用）
-7. Bashの背景実行、バックグラウンドタスクへの移行通知およびAgent・Taskの背景起動が返した識別子を、
-   バックグラウンドタスクの所有記録へ記録 (Bash / Agent / Task)
+7. Bashの背景実行、MCP呼び出しの移行通知およびAgent・Taskの背景起動が返した識別子を、
+   バックグラウンドタスクの所有記録へ記録 (Bash / MCP / Agent / Task)
    PostToolUseFailure: Bashのバックグラウンドタスク識別子を同じ所有記録へ保存し、その他は変更せず終了
 8. PermissionDenied: 状態を変更せず終了
 9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
@@ -669,7 +669,8 @@ def _background_task_id_from_response(value: object) -> str | None:
     """Bashの背景実行応答からタスクIDを返す。
 
     応答は文字列と辞書のいずれの形でも届くため、入れ子を再帰的に走査する。
-    実行ホストが背景へ移した通知は`stop_gate.background_task_id_from_notice`が扱う。
+    実行上限や手動の操作で背景へ移ったBashは構造化`backgroundTaskId`で記録し、
+    MCP呼び出しの移行通知は`stop_gate.background_task_id_from_notice`が扱う。
     """
     if isinstance(value, str):
         match = _BACKGROUND_TASK_ID_RE.search(value)
@@ -705,8 +706,8 @@ def _record_background_task_id(session_id: str, task_id: str) -> None:
     """自セッションのツール呼び出しが返したバックグラウンドタスクのIDを記録する。
 
     PreToolUse(TaskStop)が、停止対象が自セッションの起動したバックグラウンドタスクかを判定する入力とする。
-    記録の契機は、Bashの背景実行が成功した応答、同じ指定で失敗した応答、
-    ツール種別を問わないバックグラウンドタスクへの移行通知およびAgent・Taskの背景起動が返した`agentId`の4つとする。
+    記録の契機は、Bashの背景実行が成功した応答と同じ指定で失敗した応答、実行上限または手動の操作で背景へ移ったBashの
+    構造化`backgroundTaskId`、ホストのMCP移行通知およびAgent・Taskの背景起動が返した`agentId`とする。
     所有の根拠は自身の呼び出しが識別子を返したことであり、その呼び出しの成否に依存しない。
     """
 
@@ -866,7 +867,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     set_warning_session_id(session_id)
 
     # 所有の根拠は、自セッションのツール呼び出しの応答がバックグラウンドタスク識別子を返したことである。
-    # 起動の成否は所有の有無を変えないため、バックグラウンドタスクへの移行通知はツール種別と成否によらず記録する。
+    # 起動の成否は所有の有無を変えないため、ホストのMCP移行通知で始まる応答は成否によらず記録する。
+    # 本文の途中に同じ文言を含む前景の出力は、ホストの通知ではないため記録しない。
     notice_task_id = _stop_gate.background_task_id_from_notice(payload.get("tool_response"))
     if notice_task_id is not None:
         _record_background_task_id(session_id, notice_task_id)
