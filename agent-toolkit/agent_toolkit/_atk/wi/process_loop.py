@@ -1,1266 +1,27 @@
-"""agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
-
-旧`pytools/dotfiles_fb/_process_loop.py`からの移設。PEP 723 entrypoint
-`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
-"""
+"""`atk wi process-loop`の常駐ループ。各工程を担うモジュールを順に呼ぶ制御だけを持つ。"""
 
 import argparse
-import datetime
-import hashlib
 import os
 import pathlib
-import shutil
-import subprocess
 import sys
-import tempfile
-import threading
 import time
-import typing
-import uuid
 
-import watchdog.events
-import watchdog.observers
-
-from agent_toolkit._atk import git_sync as _atk_git_sync
-from agent_toolkit._atk import orchestrator as _orchestrator
-from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk import review_audit as _review_audit
-from agent_toolkit._atk.wi import alerts as _alerts
 from agent_toolkit._atk.wi import auto_resume as _auto_resume
+from agent_toolkit._atk.wi import process_loop_alerts as _pl_alerts
+from agent_toolkit._atk.wi import process_loop_control as _pl_control
+from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
-from agent_toolkit._atk.wi.common import _count_pending_entries, _pull, _repo_lock
-from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY, WI_STATE_INBOX, WI_STATE_PROCESSING
-from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
-from agent_toolkit._common import automated_prompt as _automated_prompt
-from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
+from agent_toolkit._atk.wi import process_loop_mise as _pl_mise
+from agent_toolkit._atk.wi import process_loop_session as _pl_session
+from agent_toolkit._atk.wi import process_loop_update as _pl_update
+from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
+from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
+from agent_toolkit._atk.wi import readiness as _wi_readiness
+from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id
 from agent_toolkit._common import console_title as _console_title
-from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common import wait_schedule as _wait_schedule
-from agent_toolkit._git import command as _git_command
 
-# 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`を除外した監視対象イベント型。
-WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
-    watchdog.events.FileCreatedEvent,
-    watchdog.events.FileModifiedEvent,
-    watchdog.events.FileDeletedEvent,
-    watchdog.events.FileMovedEvent,
-    watchdog.events.FileClosedEvent,
-)
 
-# 主待機のタイムアウト秒（他端末からのAWI投入を`remote`同期で拾う間隔）。
-_POLL_INTERVAL_SEC = 600.0
-
-# `latest`指定ツールを外部の登録簿に対して再評価する間隔と、導入処理の実行上限。
-_MISE_REFRESH_INTERVAL_SEC = 24 * 60 * 60
-_MISE_INSTALL_TIMEOUT_SEC = 600
-# dotfilesの作業ツリーの`mise.lock`を書き戻さないよう、プロジェクトのlockfileに対してlockedモードで導入する。
-# global設定はlockにURLを持たないツールを含むため対象外とする。
-_MISE_LOCKED_ENV = {"MISE_LOCKED": "1", "MISE_LOCKED_SCOPES": "project"}
-_INTERNAL_MISE_REFRESHED_ARG = "--internal-mise-refreshed"
-_INTERNAL_DOTFILES_UPDATED_ARG = "--internal-dotfiles-updated"
-
-# 変更検知後、追加イベント発火が無くなるまでの畳み込み待機秒
-# （1回のファイル操作で複数イベントが連続発火するという観測に対応する）。
-_DEBOUNCE_SEC = 3.0
-
-# ランチャーが作成する再起動要求の受け渡しファイルのパスを保持する環境変数。
-# 実体プロセスが自身を`uv`へ置き換えると、置き換え前の`uv`が子の終了を待って残り、
-# 再起動のたびにプロセス階層が1段深くなる。実体は次の起動対象を受け渡しファイルへ出力して終了し、
-# ランチャーが同一プロセスで次の実体を起動することで階層を一定に保つ。
-_RESTART_SPEC_ENV = _orchestrator.RESTART_SPEC_ENV
-
-# ランチャーへ再起動を要求する終了コード。
-_RESTART_EXIT_CODE = 75
-
-# process-loopが起動した会話を環境印と会話IDで識別する。
-_PROCESS_LOOP_SESSION_ENV = _orchestrator.PROCESS_LOOP_SESSION_ENV
-_PROCESS_LOOP_SESSION_ID_ENV = _orchestrator.PROCESS_LOOP_SESSION_ID_ENV
-# 次に起動する1セッションだけへ渡すユーザーの追加指示。SessionStart hookが本文を注入する。
-_PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
-
-# Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数が契約どおりに動作するかを確かめられるよう値を固定する。
-_CREATE_NEW_PROCESS_GROUP = 0x00000200
-
-# モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
-# 受領した委譲先がユーザー自身の発話と区別できるよう、`atk-auto`要素で囲んで渡す。
-_AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
-    "応答できる場合はOKだけを返してください。",
-    source=_automated_prompt.SOURCE_PROCESS_LOOP,
-    kind=_automated_prompt.KIND_AVAILABILITY_PROBE,
-)
-
-# 端末が連続するBELを1回へまとめないよう、鳴動の間に置く待機秒。
-_ABORT_BELL_INTERVAL_SEC = 0.1
-
-
-def _process_loop_abort_path() -> pathlib.Path:
-    """process-loopの中断要求を保持する状態ファイルのパスを返す。
-
-    パスの解決は`process_loop_log.abort_path`が担う。Stop hookも同じ関数を使う。
-    """
-    return _process_loop_log.abort_path()
-
-
-def _cmd_process_loop_abort() -> None:
-    """process-loopへ現在のセッション終了後の中断を要求する。"""
-    _process_loop_log.request_abort()
-    _outcome.report_success("process-loopへ中断を要求した")
-
-
-def _cmd_process_loop_abort_cancel() -> None:
-    """process-loopへの中断要求を解除する。"""
-    path = _process_loop_abort_path()
-    if not path.exists():
-        _outcome.report_success("process-loopへの中断要求は設定されていないため、解除の変更は無い")
-        return
-    path.unlink(missing_ok=True)
-    _outcome.report_success("process-loopへの中断要求を解除した")
-
-
-def _cmd_process_loop_status() -> None:
-    """process-loopへの中断要求と保持中の追加指示を表示する。"""
-    status = "あり" if _process_loop_abort_path().exists() else "なし"
-    print(f"process-loopへの中断要求: {status}")
-    instructions = _process_loop_log.read_instructions()
-    print(f"保持中の追加指示: {len(instructions)}件")
-    for index, body in enumerate(instructions, start=1):
-        print(f"[{index}] {body}")
-
-
-def _cmd_process_loop_instruct(body: str) -> None:
-    """次に起動する1セッションへ渡す追加指示を保持する。"""
-    appended, summary = _process_loop_log.append_instruction(body)
-    if not appended:
-        if summary.startswith("保持中の合計") or summary == "本文が空である":
-            next_action = (
-                "本文を記入して再実行する"
-                if summary == "本文が空である"
-                else "`atk wi process-loop instruct-cancel`で保持中の指示を破棄するか、本文を短くして再実行する"
-            )
-            _outcome.report_failure(f"追加指示を保持しなかった: {summary}", next_action=next_action)
-            raise SystemExit(1)
-        _outcome.report_success(f"追加指示は{summary}ため、変更は無い")
-        return
-    _outcome.report_success(f"次のセッションへ渡す追加指示を保持した。{summary}")
-
-
-def _cmd_process_loop_instruct_cancel() -> None:
-    """保持中の追加指示を全件破棄する。"""
-    count = _process_loop_log.discard_instructions()
-    if count == 0:
-        _outcome.report_success("保持中の追加指示が無いため、変更は無い")
-        return
-    _outcome.report_success(f"保持中の追加指示を{count}件破棄した")
-
-
-def _consume_process_loop_abort() -> bool:
-    """中断要求があればベルを3回鳴らして要求を消費し、process-loopを終了すべきかを返す。
-
-    判定点は反復の境界と、呼び出し元へ戻らない再起動の直前の2箇所へ限定する。
-    `_restart_process_loop`は`os.execv`または`sys.exit`で呼び出し元へ戻らないため、
-    その呼び出しの後段へ置いた判定は`--no-update`を省略して起動した場合には実行されない。
-    同じ理由で`_update_before_session`と`_check_and_restart_on_update`の後段にも判定を置かず、
-    反復ループの先頭でまとめて判定する。
-    `atk wi process-loop abort`の公開契約は、現在のセッションが終わった時点で次の反復へ進まず
-    終了することと、中断で終了した時点で要求も解除されることを定める。
-    """
-    abort_path = _process_loop_abort_path()
-    if not abort_path.exists():
-        return False
-    _process_loop_log.append("abort_consumed", path=str(abort_path))
-    for bell_index in range(3):
-        print("\a", end="", file=sys.stderr, flush=True)
-        if bell_index < 2:
-            time.sleep(_ABORT_BELL_INTERVAL_SEC)
-    abort_path.unlink(missing_ok=True)
-    return True
-
-
-def _dialog_timeout_settings() -> str:
-    """メイン会話の質問タイムアウトとRemote Control無効化の設定を返す。
-
-    Remote Controlのbridgeが接続されると質問の自動送出が無効になるため、
-    process-loopが起動するセッションでは起動時の接続を無効にする。
-    """
-    if _wait_schedule.get_prompt_cache_ttl("main") == "5m":
-        return '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s", "remoteControlAtStartup": false}'
-    return '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}'
-
-
-def _child_env() -> dict[str, str]:
-    """起動元ツールの仮想環境を除いた子プロセス用の環境変数を返す。
-
-    対象は`atk`から起動する外部コマンド（claudeセッション・`update-dotfiles`）とする。
-    `update-dotfiles`は`chezmoi apply`を経て対象リポジトリのuvベースのパッケージ操作へ至るため、
-    claudeセッションと同じく起動元ツールの環境を引き継がせない。
-    自己再起動を行う`_restart_process_loop`は本関数の対象外とする。
-    再起動先は`atk`自身であり、起動元と同じ実行環境で継続する必要があるためである。
-    ランチャーとの再起動要求の受け渡しファイルは自プロセス専用のため、子孫プロセスへは引き継がない。
-    引き継ぐと、子孫が同じファイルへ再起動対象を書き込みうる。
-    """
-    return _orchestrator.child_env(drop=(_RESTART_SPEC_ENV,))
-
-
-_session_env = _orchestrator.session_env
-
-
-def _session_creation_flags(orchestrator: str, *, platform: str = os.name) -> int:
-    """Windows Codexを親process-loopと別のコンソール制御グループで起動する。"""
-    return _CREATE_NEW_PROCESS_GROUP if platform == "nt" and orchestrator == "codex" else 0
-
-
-def _reset_console(*, platform: str = os.name, stream: typing.TextIO | None = None) -> None:
-    """POSIXのターミナルを初期化し、子セッションが残した表示状態を復旧する。"""
-    if platform != "posix":
-        return
-    output = sys.stdout if stream is None else stream
-    try:
-        if not output.isatty():
-            return
-    except (AttributeError, ValueError):
-        return
-    executable = shutil.which("reset")
-    if executable is not None:
-        subprocess.run([executable], check=False)
-
-
-def _create_hook_debug_log(env: dict[str, str]) -> pathlib.Path:
-    """Claude Codeのhook診断ログを所有者限定で事前作成する。"""
-    config_dir = _host_homes.claude_config_dir(env)
-    debug_dir = config_dir / "debug"
-    debug_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    descriptor, name = tempfile.mkstemp(prefix="process-loop-", suffix=".log", dir=debug_dir)
-    try:
-        if os.name != "nt":
-            os.fchmod(descriptor, 0o600)
-    finally:
-        os.close(descriptor)
-    return pathlib.Path(name).resolve()
-
-
-class _ChangeHandler(watchdog.events.FileSystemEventHandler):
-    """inbox配下の`.md`変更検知時に`change_event`をsetするハンドラ。"""
-
-    def __init__(self, change_event: threading.Event) -> None:
-        super().__init__()
-        self._change_event = change_event
-
-    def on_any_event(self, event: watchdog.events.FileSystemEvent) -> None:
-        """監視対象イベント型・非ディレクトリ・`.md`拡張子の全条件を満たす場合にsetする。"""
-        if not isinstance(event, WATCHED_EVENT_TYPES):
-            return
-        if event.is_directory:
-            return
-        if pathlib.Path(str(event.src_path)).suffix != ".md":
-            return
-        self._change_event.set()
-
-
-# `--worktree`指定時またはgithub.com/ak110/dotfiles編集時は、影響範囲の大きい作業ツリー直接編集を避けるため
-# git worktreeを作成してセッションのcwdにする。worktree名は反復ごとに固定値とし、常駐ループの再起動を経ても
-# 同一worktreeを継続利用させる。
-_DOTFILES_REPO_ID = "github.com/ak110/dotfiles"
-_DEFAULT_WORKTREE_NAME = "process-loop"
-# process-loopが作成するworktreeの配置先（対象リポジトリのroot相対）。
-_WORKTREE_PARENT_REL = pathlib.PurePosixPath(".claude/worktrees")
-_WORKTREE_IGNORE_PATTERN = "/.claude/worktrees/"
-
-
-def _resolve_executable(command: str) -> str | None:
-    """実行可能ファイルを環境の探索規則で解決し、利用不能時は警告する。"""
-    executable = shutil.which(command)
-    if executable is None:
-        _next_action.report(
-            f"{command}コマンドを利用できないため処理を継続します。",
-            next_action=f"対応不要（処理は継続した）。{command}を使う場合はPATHへ導入してからprocess-loopを再起動する",
-        )
-    return executable
-
-
-def _mise_output_detail(output: str | bytes | None) -> str:
-    """miseの標準出力または標準エラー出力を警告用の一行へ整形する。"""
-    if isinstance(output, bytes):
-        output = output.decode("utf-8", errors="backslashreplace")
-    return output.strip() if isinstance(output, str) and output.strip() else "出力なし"
-
-
-def _refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
-    """dotfilesのlatest指定ツールをログインシェルを使わずに再評価し、失敗後も呼び出し元を継続させる。"""
-    executable = _resolve_executable("mise")
-    if executable is None:
-        return False
-    try:
-        result = subprocess.run(
-            [executable, "install", "--quiet"],
-            cwd=dotfiles_root,
-            env=_child_env() | _MISE_LOCKED_ENV,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=_MISE_INSTALL_TIMEOUT_SEC,
-        )
-    except subprocess.TimeoutExpired as exc:
-        detail = _mise_output_detail(exc.stderr or exc.stdout)
-        _next_action.report(
-            f"mise install --quietが{_MISE_INSTALL_TIMEOUT_SEC}秒でタイムアウトしました"
-            f"（{detail}）。process-loopを継続します。",
-            next_action=(
-                f"対応不要（process-loopは継続した）。ツールの不足で子セッションが失敗する場合は`mise install`を"
-                f"{dotfiles_root}で手作業で実行して原因を確認する"
-            ),
-        )
-        return False
-    finally:
-        _console_title.set_console_title("atk wi process-loop")
-    if result.returncode != 0:
-        detail = _mise_output_detail(result.stderr or result.stdout)
-        _next_action.report(
-            f"mise install --quietに失敗しました（exit code {result.returncode}: {detail}）。process-loopを継続します。",
-            next_action=(
-                f"対応不要（process-loopは継続した）。ツールの不足で子セッションが失敗する場合は`mise install`を"
-                f"{dotfiles_root}で手作業で実行して原因を確認する"
-            ),
-        )
-        return False
-    return True
-
-
-def _git_output(args: list[str], cwd: pathlib.Path) -> str:
-    """gitコマンドの標準出力を返す。失敗時は空文字を返す。"""
-    try:
-        return _git_command.output(args, cwd)
-    except (OSError, subprocess.CalledProcessError):
-        return ""
-    finally:
-        _console_title.set_console_title("atk wi process-loop")
-
-
-def _worktree_is_clean(worktree_path: pathlib.Path) -> bool:
-    """index・追跡済み差分・未追跡ファイルが全て空か判定する。"""
-    checks = (
-        ["diff", "--quiet"],
-        ["diff", "--cached", "--quiet"],
-    )
-    if any(_git_command.run(command, worktree_path, check=False).returncode != 0 for command in checks):
-        return False
-    untracked = _git_command.run(
-        ["ls-files", "--others", "--exclude-standard"], worktree_path, capture_output=True, text=True, check=False
-    )
-    return untracked.returncode == 0 and not untracked.stdout.strip()
-
-
-def _run_worktree_git(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    """worktree準備用のgitコマンドを実行し、コンソールタイトルを復元する。"""
-    try:
-        result = _git_command.run(args, cwd, capture_output=True, text=True, check=False)
-    except OSError as error:
-        result = subprocess.CompletedProcess(_git_command.command_line(args), returncode=127, stdout="", stderr=str(error))
-    finally:
-        _console_title.set_console_title("atk wi process-loop")
-    return result
-
-
-def _resolve_git_path(output: str, cwd: pathlib.Path) -> pathlib.Path | None:
-    """Gitのパス出力をコマンド実行時のcwd基準で絶対化する。"""
-    if not output:
-        return None
-    path = pathlib.Path(output)
-    if not path.is_absolute():
-        path = cwd / path
-    try:
-        return path.resolve()
-    except (OSError, RuntimeError):
-        return None
-
-
-def _worktree_status_next_action(path: pathlib.Path) -> str:
-    """worktree準備の失敗で、状態の確認から始める次の操作を返す。"""
-    return (
-        f"`git -C {path} status`と`git -C {path} worktree list`で状態を確認して原因を解消する。"
-        "解消後はprocess-loopが次の反復で再試行する"
-    )
-
-
-def _fetch_failure_next_action(path: pathlib.Path, remote: str) -> str:
-    """worktree準備のfetchが失敗したときの次の操作を返す。"""
-    return (
-        f"`git -C {path} fetch {remote}`を手作業で実行して認証とネットワークを確認する。"
-        "解消後はprocess-loopが次の反復で再試行する"
-    )
-
-
-def _worktree_dirty_next_action(path: pathlib.Path) -> str:
-    """worktreeに未コミット変更があるときの次の操作を返す。"""
-    return f"`git -C {path} status`で未コミット変更を確認し、commitするか退避する。解消後はprocess-loopが次の反復で再試行する"
-
-
-def _warn_worktree_preparation_failure(message: str, path: pathlib.Path, *, next_action: str) -> None:
-    """worktree準備を停止する警告を共通形式で出力する。"""
-    _next_action.report(f"{message}ため実装セッションを起動しません: {path}", next_action=next_action)
-
-
-def _ensure_worktree_excluded(local_path: pathlib.Path) -> bool:
-    """worktree配置先の除外を確認し、必要な場合だけ`info/exclude`へ追加する。"""
-    check = _run_worktree_git(["check-ignore", "-q", f"{_WORKTREE_PARENT_REL}/"], local_path)
-    if check.returncode == 0:
-        return True
-    if check.returncode != 1:
-        _warn_worktree_preparation_failure(
-            "worktree配置先の除外判定に失敗した", local_path, next_action=_worktree_status_next_action(local_path)
-        )
-        return False
-
-    exclude_output = _git_output(["rev-parse", "--git-path", "info/exclude"], cwd=local_path)
-    exclude_path = _resolve_git_path(exclude_output, local_path)
-    if exclude_path is None:
-        _warn_worktree_preparation_failure(
-            "Gitの除外設定のパスを解決できなかった", local_path, next_action=_worktree_status_next_action(local_path)
-        )
-        return False
-    try:
-        existing = exclude_path.read_text(encoding="utf-8") if exclude_path.exists() else ""
-        if _WORKTREE_IGNORE_PATTERN not in existing.splitlines():
-            exclude_path.parent.mkdir(parents=True, exist_ok=True)
-            prefix = "" if not existing or existing.endswith(("\n", "\r")) else "\n"
-            with exclude_path.open("a", encoding="utf-8") as exclude_file:
-                exclude_file.write(f"{prefix}{_WORKTREE_IGNORE_PATTERN}\n")
-    except (OSError, UnicodeError):
-        _warn_worktree_preparation_failure(
-            "Gitの除外設定を更新できなかった",
-            exclude_path,
-            next_action=f"{exclude_path}の書き込み権限を確認するか、`{_WORKTREE_IGNORE_PATTERN}`の行を手作業で追記する",
-        )
-        return False
-
-    check = _run_worktree_git(["check-ignore", "-q", f"{_WORKTREE_PARENT_REL}/"], local_path)
-    if check.returncode != 0:
-        _warn_worktree_preparation_failure(
-            "worktree配置先の除外を確認できなかった", local_path, next_action=_worktree_status_next_action(local_path)
-        )
-        return False
-    return True
-
-
-def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib.Path, branch: str) -> bool:
-    """既存worktreeが対象リポジトリの専用worktreeであることを検証する。"""
-    if not worktree_path.is_dir():
-        _warn_worktree_preparation_failure(
-            "worktreeの配置先がディレクトリではない", worktree_path, next_action=_worktree_status_next_action(worktree_path)
-        )
-        return False
-    try:
-        resolved_worktree_path = worktree_path.resolve()
-    except (OSError, RuntimeError):
-        _warn_worktree_preparation_failure(
-            "既存worktreeの実体パスを解決できない", worktree_path, next_action=_worktree_status_next_action(worktree_path)
-        )
-        return False
-
-    worktree_common = _git_output(["rev-parse", "--git-common-dir"], cwd=worktree_path)
-    local_common = _git_output(["rev-parse", "--git-common-dir"], cwd=local_path)
-    worktree_top = _git_output(["rev-parse", "--show-toplevel"], cwd=worktree_path)
-    current_branch = _git_output(["symbolic-ref", "--short", "HEAD"], cwd=worktree_path)
-    if not all((worktree_common, local_common, worktree_top, current_branch)):
-        _warn_worktree_preparation_failure(
-            "既存worktreeのGit照会が失敗した", worktree_path, next_action=_worktree_status_next_action(worktree_path)
-        )
-        return False
-
-    resolved_worktree_common = _resolve_git_path(worktree_common, worktree_path)
-    resolved_local_common = _resolve_git_path(local_common, local_path)
-    resolved_worktree_top = _resolve_git_path(worktree_top, worktree_path)
-    if (
-        resolved_worktree_common is None
-        or resolved_local_common is None
-        or resolved_worktree_top is None
-        or resolved_worktree_common != resolved_local_common
-        or resolved_worktree_top != resolved_worktree_path
-        or current_branch != branch
-    ):
-        _warn_worktree_preparation_failure(
-            "既存worktreeのGit検証条件が成立しなかった", worktree_path, next_action=_worktree_status_next_action(worktree_path)
-        )
-        return False
-    if not _worktree_is_clean(worktree_path):
-        _warn_worktree_preparation_failure(
-            "worktreeに未コミット変更がある", worktree_path, next_action=_worktree_dirty_next_action(worktree_path)
-        )
-        return False
-    return True
-
-
-def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path | None:
-    """worktreeを準備して対象リポジトリの上流最新へ追随させる。
-
-    上流は現在ブランチの追跡先を優先し、利用不能な場合だけ`refs/remotes/origin/HEAD`へ後退する。
-    解決結果はworktreeのfetch・作成・rebaseだけに用い、公開先を最初のプロンプトへ暗黙に設定しない。
-
-    worktree名は反復間で固定のため、前回反復のworktreeがそのまま再利用される。
-    前回反復の成果がpush済みでも、その後に他の作業ツリーが上流へ進めた分は
-    worktreeのブランチへ入らない。追随を経ないまま次の反復が始まると、
-    上流に既にある変更を未実装と誤認して同一内容を二重に実装し、履歴が分岐する。
-
-    worktree未作成の反復では上流最新から新規作成する。
-    追随失敗またはdirty状態では`None`を返し、呼び出し元は実装セッションを起動しない。
-    """
-    branch = f"worktree-{worktree_name}"
-    worktree_path = local_path / _WORKTREE_PARENT_REL / worktree_name
-    ref_check = _run_worktree_git(["check-ref-format", "--branch", branch], local_path)
-    if ref_check.returncode != 0:
-        _warn_worktree_preparation_failure(
-            "worktree名から有効なGitブランチ名を作成できない",
-            worktree_path,
-            next_action="`--worktree`へ英数字とハイフンからなる名前を指定してprocess-loopを再起動する",
-        )
-        return None
-    if not _ensure_worktree_excluded(local_path):
-        return None
-    upstream_branch = _git_output(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=local_path)
-    if not upstream_branch:
-        upstream_branch = _git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path)
-    if not upstream_branch:
-        _next_action.report(
-            f"上流ブランチを解決できないため実装セッションを起動しません: {worktree_path}",
-            next_action=(
-                f"`git -C {local_path} branch -u <remote>/<branch>`で上流を設定するか、"
-                f"`git -C {local_path} remote set-head origin -a`でorigin/HEADを設定する。"
-                "解消後はprocess-loopが次の反復で再試行する"
-            ),
-        )
-        return None
-    remotes = (_git_output(["remote"], cwd=local_path) or "").splitlines()
-    upstream_remote = max(
-        (remote for remote in remotes if upstream_branch.startswith(f"{remote}/")),
-        key=len,
-        default=None,
-    )
-    if upstream_remote is None:
-        _next_action.report(
-            f"上流remoteを解決できないため実装セッションを起動しません: {worktree_path}",
-            next_action=(
-                f"`git -C {local_path} branch -u <remote>/<branch>`で上流を設定するか、"
-                f"`git -C {local_path} remote set-head origin -a`でorigin/HEADを設定する。"
-                "解消後はprocess-loopが次の反復で再試行する"
-            ),
-        )
-        return None
-    created_worktree = False
-    if not worktree_path.exists():
-        branch_exists = (
-            _run_worktree_git(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], local_path).returncode == 0
-        )
-        if branch_exists:
-            registered_worktrees = _run_worktree_git(["worktree", "list", "--porcelain"], local_path)
-            branch_line = f"branch refs/heads/{branch}"
-            if registered_worktrees.returncode != 0 or branch_line not in registered_worktrees.stdout.splitlines():
-                _warn_worktree_preparation_failure(
-                    "既存ブランチのworktree登録を確認できない",
-                    worktree_path,
-                    next_action=_worktree_status_next_action(worktree_path),
-                )
-                return None
-        try:
-            worktree_path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            _warn_worktree_preparation_failure(
-                "worktreeの親ディレクトリを作成できなかった",
-                worktree_path,
-                next_action=_worktree_status_next_action(worktree_path),
-            )
-            return None
-        fetch = _run_worktree_git(["fetch", upstream_remote], local_path)
-        if fetch.returncode != 0:
-            _next_action.report(
-                f"worktree作成前のfetchに失敗しました: {fetch.stderr.strip()}",
-                next_action=_fetch_failure_next_action(local_path, upstream_remote),
-            )
-            return None
-        command = ["worktree", "add", str(worktree_path), branch]
-        if not branch_exists:
-            command = ["worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
-        created = _run_worktree_git(command, local_path)
-        if created.returncode != 0:
-            _next_action.report(
-                f"worktreeの作成に失敗しました: {created.stderr.strip()}",
-                next_action=(
-                    f"`git -C {local_path} worktree list`で登録状況を確認し、実体の無い登録は"
-                    f"`git -C {local_path} worktree prune`で除く。解消後はprocess-loopが次の反復で再試行する"
-                ),
-            )
-            return None
-        created_worktree = True
-    elif not _validate_existing_worktree(local_path, worktree_path, branch):
-        return None
-    if created_worktree:
-        if not worktree_path.is_dir():
-            _warn_worktree_preparation_failure(
-                "worktreeの配置先がディレクトリではない", worktree_path, next_action=_worktree_status_next_action(worktree_path)
-            )
-            return None
-        if not _worktree_is_clean(worktree_path):
-            _warn_worktree_preparation_failure(
-                "worktreeに未コミット変更がある", worktree_path, next_action=_worktree_dirty_next_action(worktree_path)
-            )
-            return None
-    if not created_worktree:
-        fetch = _run_worktree_git(["fetch", upstream_remote], worktree_path)
-        if fetch.returncode != 0:
-            _next_action.report(
-                f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}",
-                next_action=_fetch_failure_next_action(worktree_path, upstream_remote),
-            )
-            return None
-    rebase = _run_worktree_git(["rebase", upstream_branch], worktree_path)
-    if rebase.returncode == 0:
-        print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
-        if _worktree_is_clean(worktree_path):
-            return worktree_path
-        _warn_worktree_preparation_failure(
-            "追随後のworktreeがdirtyになった", worktree_path, next_action=_worktree_dirty_next_action(worktree_path)
-        )
-        return None
-    _run_worktree_git(["rebase", "--abort"], worktree_path)
-    _next_action.report(
-        f"worktreeの{upstream_branch}への追随に失敗したため実装セッションを起動しません（{rebase.stderr.strip()}）。",
-        next_action=(
-            f"rebaseは中止した。`git -C {worktree_path} rebase {upstream_branch}`を手作業で実行して競合を解消する。"
-            "解消後はprocess-loopが次の反復で再試行する"
-        ),
-    )
-    return None
-
-
-def _build_process_loop_prompt() -> str:
-    """AWI処理の完遂を依頼する最小の目的文を構築する。
-
-    目的文はスキルの完遂だけを求める。処理対象、処理範囲、終了手順、実行基盤の障害対応および
-    再開条件は`agent-toolkit:process-wi`とその参照先が定める。目的文へ重ねて書くと、
-    スキル側の規範と目的文の記述が二重管理になり、目的文の記述がユーザー指示として扱われて
-    スキル側の規範より優先される。
-
-    目的文は`/goal`条件としてオーケストレーターへ渡り、ターンを終えるたびにセッション記録の全体を
-    入力とする評価の対象となる。条件が長いほど各評価の入力が増える。この関数へ記述を足す
-    変更は行わない。過去に作業ディレクトリ、対象リポジトリおよび終了手順の指示が順に加わり、
-    そのたびに短縮を求める指摘を受領した経緯がある。
-
-    処理対象は`_run_process_session`が子セッションの作業ディレクトリの引数として渡すことで伝わる。
-    `atk wi`の各サブコマンドは`--target-repo`を省略した場合に作業ディレクトリから対象
-    リポジトリを解決するため、目的文へ処理対象を書く必要はない。
-
-    目的文は`atk-auto`要素で囲み、受領した子セッションがユーザー自身の発話と区別できる形にする。
-    標識は`/goal`の引数の位置へ置く。ホストは1行目の先頭にあるスラッシュコマンドだけを
-    コマンドとして解釈するため、本文全体を囲むとコマンドとして成立しない。
-    """
-    goal = _automated_prompt.wrap(
-        PROCESS_WI_GOAL_BODY,
-        source=_automated_prompt.SOURCE_PROCESS_LOOP,
-        kind=_automated_prompt.KIND_GOAL,
-    )
-    return f"/goal {goal}"
-
-
-def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
-    """orchestrate_model設定を候補ごとの(orchestrator, model, effort)として返す。"""
-    return _orchestrator.resolve_specs(rerun_action="process-loopを再起動する")
-
-
-def _record_usage_limit_wait(candidate: str, usage_limit: _claude_usage_limit.UsageLimitState, delay: float) -> None:
-    """利用上限の解除待ちをprocess-loopのログへ記録する。"""
-    _process_loop_log.append(
-        "usage_limit_wait",
-        candidate=candidate,
-        limit_type=usage_limit.limit_type or "",
-        resets_at=usage_limit.resets_at_iso() or "",
-        delay_seconds=int(delay),
-    )
-
-
-def _select_available_orchestrator(
-    candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path
-) -> tuple[str, str, str]:
-    """候補を先頭から事前に試し、最初に可用な3つ組を返す。全候補が失敗した場合は異常終了する。"""
-    context = _orchestrator.ProbeContext(
-        title="atk wi process-loop", prompt=_AVAILABILITY_PROBE_PROMPT, record_wait=_record_usage_limit_wait
-    )
-    try:
-        return _orchestrator.select_available(candidates, env, cwd, context)
-    except _orchestrator.NoAvailableCandidateError as error:
-        _exit_abnormal_session(error.orchestrator, error.returncode, error.detail)
-        raise AssertionError("到達不能") from error
-
-
-def _build_session_argv(
-    args: argparse.Namespace,
-    prompt: str,
-    env: dict[str, str],
-    *,
-    orchestrator: str,
-    model: str,
-    effort: str,
-    resume_pending: bool,
-) -> tuple[list[str], pathlib.Path | None]:
-    """選択したオーケストレーターの対話セッション用argvを構築する。"""
-    env.pop(_PROCESS_LOOP_SESSION_ID_ENV, None)
-    if orchestrator == "claude":
-        hook_debug_log = _create_hook_debug_log(env)
-        argv = [
-            "claude",
-            "--debug=hooks",
-            "--debug-file",
-            str(hook_debug_log),
-            "--settings",
-            _dialog_timeout_settings(),
-        ]
-        if resume_pending:
-            argv.extend(("--model", model, "--effort", effort))
-            argv.append("--resume" if not args.resume else f"--resume={args.resume}")
-            if args.resume:
-                env[_PROCESS_LOOP_SESSION_ID_ENV] = args.resume
-        else:
-            session_id = str(uuid.uuid4())
-            env[_PROCESS_LOOP_SESSION_ID_ENV] = session_id
-            argv.extend(("--session-id", session_id))
-            argv.extend(("--permission-mode=auto", "--model", model, "--effort", effort, prompt))
-        return argv, hook_debug_log
-
-    argv = ["codex"]
-    if resume_pending:
-        argv.append("resume")
-    argv.extend(("--model", model, "-c", f"model_reasoning_effort={effort}"))
-    if resume_pending:
-        if args.resume:
-            argv.append(args.resume)
-    else:
-        argv.append(prompt)
-    return argv, None
-
-
-_is_normal_session_exit = _orchestrator.is_normal_session_exit
-
-
-def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "") -> None:
-    """既存のセッション異常終了メッセージを出力し、同じ終了コードで終了する。"""
-    suffix = f" 原因: {detail}" if detail else ""
-    _next_action.report(
-        f"{orchestrator}がexit code {returncode}で異常終了しました。{suffix}",
-        next_action=(
-            "オーケストレーターのセッション記録（Claude Codeは`~/.claude/projects`配下、Codexは`~/.codex/sessions`配下）"
-            "で原因を確認し、解消してからprocess-loopを再起動する。モデル候補の問題なら"
-            "`atk config set orchestrate_model <候補列>`で候補を変える"
-        ),
-    )
-    sys.exit(returncode)
-
-
-def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> bool:
-    """watchdogでinbox配下を監視し、変更検知またはタイムアウトまで待機する。
-
-    変更検知時はデバウンス窓（3秒）で追加イベントを畳み込んでから返る
-    （他端末書き込みは10分タイムアウト側のremote同期で拾うため、変更検知時は同期しない）。
-    タイムアウト時は他端末投入を反映するため`_repo_lock`保持下で`_pull`する。
-    他プロセスとの一時的な競合・ネットワーク断等で`_pull`が失敗した場合は例外を捕捉して
-    stderrへ警告出力し、常駐ループの待機動作を続ける。
-    戻り値は`True`=変更検知で復帰、`False`=タイムアウトで復帰を表す。
-    呼び出し元は`False`復帰時のみ常駐コードの更新チェック（`_check_and_restart_on_update`）を行う。
-    """
-    del target_repo_id  # 現状の監視粒度ではrepo単位フィルタは行わない
-    change_event = threading.Event()
-    observer = watchdog.observers.Observer()
-    handler = _ChangeHandler(change_event)
-    _ensure_inbox_dirs(private_notes)
-    observer.schedule(handler, str(private_notes / WI_STATE_PROCESSING), recursive=False)
-    observer.schedule(handler, str(private_notes / WI_STATE_INBOX), recursive=False)
-    observer.start()
-    try:
-        if change_event.wait(timeout=_POLL_INTERVAL_SEC):
-            while True:
-                change_event.clear()
-                if not change_event.wait(timeout=_DEBOUNCE_SEC):
-                    break
-            return True
-        try:
-            with _repo_lock(private_notes):
-                _pull(private_notes)
-        except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
-            _next_action.report(
-                f"remote同期に失敗（待機ループ続行）: {exc}",
-                next_action=f"対応不要（待機は継続した）。繰り返す場合は`git -C {private_notes} status`で同期状態を確認する",
-            )
-        return False
-    finally:
-        observer.stop()
-        observer.join()
-
-
-def _pull_private_notes(private_notes: pathlib.Path) -> bool:
-    """private-notesをlock下で同期し、処理開始に利用できる状態かを返す。"""
-    try:
-        with _repo_lock(private_notes):
-            _pull(private_notes)
-    except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
-        _next_action.report(
-            f"remote同期に失敗（子セッションを起動せず待機します）: {exc}",
-            next_action=(
-                f"`git -C {private_notes} status`で同期状態を確認し、競合やrebase中の状態を解消する。"
-                "解消後はprocess-loopが次の反復で再試行する"
-            ),
-        )
-        return False
-    return True
-
-
-def _ensure_inbox_dirs(private_notes: pathlib.Path) -> None:
-    """watchdog監視対象のinboxディレクトリを事前作成する。"""
-    (private_notes / WI_STATE_PROCESSING).mkdir(parents=True, exist_ok=True)
-    (private_notes / WI_STATE_INBOX).mkdir(parents=True, exist_ok=True)
-
-
-def _without_resume_args(argv: list[str]) -> list[str]:
-    """初回限定のresume指定と任意値をargvから除去する。"""
-    result: list[str] = []
-    index = 0
-    while index < len(argv):
-        arg = argv[index]
-        if arg.startswith("--resume="):
-            index += 1
-            continue
-        if arg == "--resume":
-            index += 1
-            if index < len(argv) and not argv[index].startswith("-"):
-                index += 1
-            continue
-        if arg == "--auto-resume":
-            index += 1
-            continue
-        result.append(arg)
-        index += 1
-    return result
-
-
-def _without_internal_mise_refreshed(argv: list[str]) -> list[str]:
-    """一回限りのmise再評価済み指定を再起動引数から除去する。"""
-    return [arg for arg in argv if arg != _INTERNAL_MISE_REFRESHED_ARG]
-
-
-def _without_internal_dotfiles_updated(argv: list[str]) -> list[str]:
-    """一回限りのdotfiles更新済み指定を再起動引数から除去する。"""
-    return [arg for arg in argv if arg != _INTERNAL_DOTFILES_UPDATED_ARG]
-
-
-def _build_restart_target(
-    argv: list[str],
-    dotfiles_root: pathlib.Path | None = None,
-    *,
-    resume_consumed: bool = False,
-    mise_refreshed: bool = False,
-    dotfiles_updated: bool = False,
-) -> tuple[pathlib.Path, list[str]]:
-    """再起動対象のスクリプトパスと引数列を返す。
-
-    `dotfiles_root`を解決できた場合は再起動先をそのチェックアウト配下の`atk.py`へ切り替える。
-    `atk`がプラグインキャッシュ配下のバージョン別コピーから起動された場合、`argv[0]`は
-    更新前バージョンのディレクトリを指す。更新は新しいバージョンディレクトリへ展開されるため、
-    `argv[0]`のまま再起動すると更新を検知するたびに旧コードを再実行し続ける。
-    """
-    script = pathlib.Path(argv[0]).resolve()
-    if dotfiles_root is not None:
-        canonical = dotfiles_root / "agent-toolkit" / "agent_toolkit" / "atk.py"
-        if canonical.exists():
-            script = canonical
-    rest = _without_internal_dotfiles_updated(_without_internal_mise_refreshed(argv[1:]))
-    if resume_consumed:
-        rest = _without_resume_args(rest)
-    if mise_refreshed:
-        rest.append(_INTERNAL_MISE_REFRESHED_ARG)
-    if dotfiles_updated:
-        rest.append(_INTERNAL_DOTFILES_UPDATED_ARG)
-    return script, rest
-
-
-def _restart_process_loop(
-    argv: list[str],
-    dotfiles_root: pathlib.Path | None = None,
-    *,
-    resume_consumed: bool = False,
-    mise_refreshed: bool = False,
-    dotfiles_updated: bool = False,
-) -> None:
-    """次に起動するスクリプトと引数をランチャーへ渡して再起動を要求する。
-
-    セッション終了後と待機中の双方で呼ぶ共通ヘルパーとする。
-    ランチャー経由で起動された場合は受け渡しファイルへ次の起動対象を書き、
-    専用の終了コードで終了する。ランチャーは同一プロセスで次の実体を`uv run`で起動するため、
-    plugin projectの依存解決が再実行され、かつプロセス階層が増えない。
-    受け渡しファイルの指定が無い直接起動でも、同じprojectを指定して自プロセスを置き換える。
-    """
-    script, rest = _build_restart_target(
-        argv,
-        dotfiles_root,
-        resume_consumed=resume_consumed,
-        mise_refreshed=mise_refreshed,
-        dotfiles_updated=dotfiles_updated,
-    )
-    spec_path = os.environ.get(_RESTART_SPEC_ENV)
-    if spec_path:
-        try:
-            pathlib.Path(spec_path).write_text("\n".join([str(script), *rest]) + "\n", encoding="utf-8")
-        except OSError as error:
-            _process_loop_log.append("restart_spec_write_failed", error=type(error).__name__, detail=str(error))
-            raise
-        _process_loop_log.append("restart_request", method="launcher", code=_RESTART_EXIT_CODE, script=str(script))
-        sys.exit(_RESTART_EXIT_CODE)
-    executable = _resolve_executable("uv")
-    if executable is None:
-        _process_loop_log.append("restart_unavailable", reason="uv_missing")
-        return
-    _process_loop_log.append("restart_request", method="exec", script=str(script))
-    restart_argv = [
-        executable,
-        "run",
-        "--project",
-        str(script.parent.parent),
-        "--locked",
-        "--no-default-groups",
-        str(script),
-        *rest,
-    ]
-    os.execv(executable, restart_argv)
-
-
-def _code_hash(scripts_dir: pathlib.Path) -> str:
-    """`scripts_dir`配下を再帰走査した実装用`*.py`の内容から安定ハッシュを算出する。
-
-    相対パスでソートして順序を固定し、相対パスと内容の各バイト列へ8byte長接頭辞を付けて
-    境界を一意にしたうえでSHA-256を取る。
-    常駐プロセスが起動時に読み込んだPythonコード群と現在のコード群の同一性判定に用いる。
-    テストコードの変更では再起動を要さないため`*_test.py`と`__pycache__`配下は対象から除く。
-    """
-    digest = hashlib.sha256()
-    for path in sorted(
-        p
-        for p in scripts_dir.rglob("*.py")
-        if not p.name.endswith("_test.py") and "__pycache__" not in p.relative_to(scripts_dir).parts
-    ):
-        name_bytes = path.relative_to(scripts_dir).as_posix().encode("utf-8")
-        content = path.read_bytes()
-        for field in (name_bytes, content):
-            digest.update(len(field).to_bytes(8, "big"))
-            digest.update(field)
-    return digest.hexdigest()
-
-
-def _resolve_dotfiles_root() -> pathlib.Path | None:
-    """dotfiles本体チェックアウトの絶対パスを解決する。存在しなければ`None`を返す。
-
-    `atk`コマンドは`~/.claude/plugins/cache/<marketplace>/agent-toolkit/<version>/`配下の
-    バージョン別キャッシュコピーから実行される場合がある
-    （`install-claude.sh`が生成する`~/.local/bin/atk`ラッパーが実行時に解決する参照先）。
-    その場合`pathlib.Path(__file__)`はdotfilesチェックアウトの外側（キャッシュ配下のバージョンディレクトリ）を
-    指すため、自己コード更新検知の基準には使用できない
-    （キャッシュ配下は`agent-toolkit/`のみを含む部分ツリーで、`.git`もdotfiles全体の履歴も持たない）。
-    OSアカウントごとに単一の`~/dotfiles`チェックアウトを持つ運用前提
-    （`.bashrc`が`$HOME/dotfiles/bin`を直接PATHへ追加する既存運用と同じ前提。
-    `atk wi process-loop`の対象リポジトリ（`--target-repo`）とは独立に、常に`~/dotfiles`を指す）に基づき、
-    ホームディレクトリ直下の`dotfiles/`を直接の解決先とする。
-    """
-    candidate = pathlib.Path.home() / "dotfiles"
-    return candidate if (candidate / ".git").exists() else None
-
-
-def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
-    """`dotfiles_root`のgit upstreamとの間に未取込コミットがあるかを判定する。
-
-    同一の作業コピーを対象とする常駐インスタンスが複数並行するため、
-    `git fetch`と`rev-list`を`_repo_lock(dotfiles_root)`保持下で実行する。
-    ロックが無い状態ではgitの内部ロック競合により`fetch`がexit 128で失敗する。
-    `git fetch`失敗・upstream未設定等でコマンドが失敗した場合は差分なし扱いとし、
-    警告をstderrへ出力したうえで待機ループを継続させる（常駐を終了させない）。
-    警告本文にはgitの標準エラー出力を含める。終了コードのみでは原因を特定できないためである。
-    """
-    try:
-        with _repo_lock(dotfiles_root):
-            _git_command.run(["-C", str(dotfiles_root), "fetch", "--quiet"], check=True, capture_output=True, text=True)
-            _console_title.set_console_title("atk wi process-loop")
-            result = _git_command.run(
-                ["-C", str(dotfiles_root), "rev-list", "HEAD..@{upstream}", "--count"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            _console_title.set_console_title("atk wi process-loop")
-        return int(result.stdout.strip()) > 0
-    except (subprocess.CalledProcessError, ValueError) as exc:
-        stderr = getattr(exc, "stderr", None)
-        detail = f": {stderr.strip()}" if isinstance(stderr, str) and stderr.strip() else ""
-        _next_action.report(
-            f"上流差分確認に失敗しました（待機ループを続行します）: {exc}{detail}",
-            next_action=(f"対応不要（待機は継続した）。繰り返す場合は`git -C {dotfiles_root} fetch`で上流への到達を確認する"),
-        )
-        return False
-
-
-def _check_and_restart_on_update(
-    dotfiles_root: pathlib.Path,
-    startup_hash: str,
-    argv: list[str],
-    *,
-    mark_mise_refreshed: bool = False,
-) -> bool:
-    """待機ループのタイムアウト復帰時に上流差分確認・`update-dotfiles`実行・再起動判定を行う。
-
-    上流差分がある場合のみ`update-dotfiles`を実行し（無条件実行による無出力ノイズを避けるため）、
-    その成否に関わらず常駐コードのハッシュを再計算して起動時ハッシュと比較する。
-    ハッシュが変化した場合のみ再起動する（他プロセスが先に`update-dotfiles`を完了させ
-    リポジトリが最新化済みのケース、ローカル手編集のケースの双方を検知できる）。
-    出力は静音を基本とし、上流差分なし・ハッシュ不変の場合は無出力とする。
-    戻り値は、この呼び出しで`update-dotfiles`が成功したかを表す。
-    """
-    update_succeeded = False
-    if _has_upstream_diff(dotfiles_root):
-        executable = _resolve_executable("update-dotfiles")
-        if executable is not None:
-            result = subprocess.run([executable], check=False, env=_child_env())
-            _console_title.set_console_title("atk wi process-loop")
-            update_succeeded = result.returncode == 0
-            if not update_succeeded:
-                _next_action.report(
-                    f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
-                    next_action="対応不要（待機は継続した）。繰り返す場合は`update-dotfiles`を手作業で実行して原因を確認する",
-                )
-    current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
-    if current_hash != startup_hash:
-        print("常駐コードの更新を検知したためprocess-loopを再起動します。")
-        _process_loop_log.append("restart_on_wait_loop_update")
-        _restart_process_loop(
-            argv,
-            dotfiles_root,
-            mise_refreshed=mark_mise_refreshed and update_succeeded,
-            dotfiles_updated=update_succeeded,
-        )
-    return update_succeeded
-
-
-def _update_before_session(
-    private_notes: pathlib.Path,
-    dotfiles_root: pathlib.Path | None,
-    startup_hash: str | None,
-    argv: list[str],
-    env: dict[str, str],
-    *,
-    mark_mise_refreshed: bool = False,
-) -> tuple[bool, bool]:
-    """ready項目の処理前にdotfilesとprivate-notesを同期する。
-
-    戻り値は、子セッションを起動できるかと`update-dotfiles`が成功したかの組とする。
-    更新による再起動先には一回限りの指定を渡し、同じ上流状態への開始前更新を抑止する。
-
-    同期が非0で終了した場合も子セッションを起動する。同期の終了コードは、失敗した段の種類、
-    失敗の回復可能性およびAWIの内容のいずれも表さないため、消化を止める判定の根拠から外す。
-    判定は、同期処理が残す構造化された記録を子セッション側のエージェントが読んで行う。
-    同期処理そのものを起動できない場合だけは、判定材料となる記録も生じないため待機を続ける。
-    """
-    executable = _resolve_executable("update-dotfiles")
-    if executable is None:
-        _next_action.report(
-            "update-dotfilesを利用できないため、子セッションを起動せず待機します。",
-            next_action="`update-dotfiles`をPATHへ導入してからprocess-loopを再起動する",
-        )
-        return False, False
-    result = subprocess.run([executable], check=False, env=env)
-    _console_title.set_console_title("atk wi process-loop")
-    update_succeeded = result.returncode == 0
-    if not update_succeeded:
-        _next_action.report(
-            f"update-dotfilesに失敗しました（exit code {result.returncode}）。",
-            next_action="対応不要（子セッションの起動は続行した）。同期結果の記録は子セッションが判定する",
-        )
-    if dotfiles_root is not None and startup_hash is not None:
-        current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
-        if current_hash != startup_hash:
-            print("処理開始前に常駐コードの更新を検知したためprocess-loopを再起動します。")
-            _process_loop_log.append("restart_before_session_update")
-            _restart_process_loop(
-                argv,
-                dotfiles_root,
-                mise_refreshed=mark_mise_refreshed,
-                dotfiles_updated=update_succeeded,
-            )
-    return _pull_private_notes(private_notes), update_succeeded
-
-
-def _prepare_session_target(
-    local_path: pathlib.Path,
-    target_repo_id: str,
-    prompt: str,
-    *,
-    worktree_name: str | None,
-    resume_pending: bool,
-) -> tuple[pathlib.Path, str] | None:
-    """worktreeを必要とする新規セッションの実行先とpromptを返す。"""
-    if resume_pending:
-        return local_path, prompt
-    if worktree_name is None and target_repo_id != _DOTFILES_REPO_ID:
-        return local_path, prompt
-    # `--worktree`は使わない。CLIのworktree隔離ガードが、gitへの言及を問わず
-    # ANSI-Cクォート・制御構造・コマンド置換など18種のシェル構文を拒否するため。
-    effective_name = worktree_name or _DEFAULT_WORKTREE_NAME
-    prepared = _sync_worktree_with_upstream(local_path, effective_name)
-    if prepared is None:
-        return None
-    return prepared, _build_process_loop_prompt()
-
-
-def _run_process_session(
-    args: argparse.Namespace,
-    session_path: pathlib.Path,
-    session_prompt: str,
-    env: dict[str, str],
-    *,
-    orchestrator: str,
-    model: str,
-    effort: str,
-    resume_pending: bool,
-    dotfiles_root: pathlib.Path | None,
-) -> bool:
-    """子セッションを1回実行し、process-loopを終了すべきかを返す。
-
-    中断要求の判定は`_restart_process_loop`の呼び出しより前に置く。同関数は呼び出し元へ
-    戻らないため、後段へ置いた判定は`--no-update`を省略して起動した場合には実行されない。
-    """
-    session_argv, hook_debug_log = _build_session_argv(
-        args,
-        session_prompt,
-        env,
-        orchestrator=orchestrator,
-        model=model,
-        effort=effort,
-        resume_pending=resume_pending,
-    )
-    if hook_debug_log is not None:
-        print(f"Claude hook診断ログ: {hook_debug_log}")
-    _process_loop_log.append("session_start")
-    session_started_at = time.monotonic()
-    # 追加指示はセッションを実際に起動する反復でだけ消費する。
-    # AWIが0件で変更検知を待つ反復はここへ到達しないため、保持したまま次の起動へ残る。
-    launch_env = _session_env(env, orchestrator)
-    instruction = _process_loop_log.consume_instructions()
-    if instruction:
-        launch_env[_PROCESS_LOOP_INSTRUCTION_ENV] = instruction
-    try:
-        result = subprocess.run(
-            session_argv,
-            check=False,
-            env=launch_env,
-            cwd=session_path,
-            creationflags=_session_creation_flags(orchestrator),
-        )
-    except OSError as error:
-        _process_loop_log.append("session_launch_failed", error=type(error).__name__, detail=str(error))
-        raise
-    _reset_console()
-    _console_title.set_console_title("atk wi process-loop")
-    _process_loop_log.append(
-        "session_end",
-        elapsed_sec=round(time.monotonic() - session_started_at, 3),
-        returncode=result.returncode,
-    )
-    normal_exit = _is_normal_session_exit(orchestrator, result.returncode, platform=os.name)
-    _process_loop_log.append("session_classified", normal=normal_exit, returncode=result.returncode)
-    if not normal_exit:
-        _exit_abnormal_session(orchestrator, result.returncode)
-    if _consume_process_loop_abort():
-        _process_loop_log.append("loop_exit", reason="abort")
-        return True
-    if args.no_update:
-        _process_loop_log.append("loop_continue", reason="no_update")
-        return False
-    print("process-loopを再起動します。")
-    _restart_process_loop(
-        sys.argv,
-        dotfiles_root,
-        resume_consumed=True,
-        mise_refreshed=False,
-        dotfiles_updated=False,
-    )
-    return False
-
-
-def _check_process_loop_alerts(
-    args: argparse.Namespace,
-    private_notes: pathlib.Path,
-    target_repo_id: str,
-    local_path: pathlib.Path,
-    last_alert_check: float | None,
-    *,
-    count_dependabot: bool,
-) -> tuple[float | None, int, int]:
-    """確認間隔を満たす場合だけアラートを確認し、確認時刻、CI失敗のAWI投入件数、未判定のDependabotアラート件数を返す。
-
-    CI失敗の確認は、キューが空の待機中に加えて各セッションの開始前にも呼ぶ。処理中の期間に起きた失敗も
-    人の操作を介さずにAWIへ入れるためであり、確認時刻を両方の呼び出しで共有して`--alert-interval`より短い間隔で
-    外部APIを呼ばない。
-    Dependabotアラートはprocess-wiの実行が行う自動コードレビュー監査が判定するため、AWIを起票せず件数だけを返す。
-    呼び出し側は投入が無く件数が1以上のとき、監査を実施させるためにprocess-wiを1回実行させる。
-    セッション開始前の呼び出し（`count_dependabot`が偽）はこれから起動するセッションが監査を行うため件数を数えない。
-    """
-    if args.no_alerts:
-        return last_alert_check, 0, 0
-    monotonic_now = time.monotonic()
-    if last_alert_check is not None and monotonic_now - last_alert_check < args.alert_interval:
-        return last_alert_check, 0, 0
-    try:
-        submitted = _alerts.check_and_submit_alerts(
-            private_notes,
-            target_repo_id,
-            local_path,
-            forge=args.alert_forge,
-            now=datetime.datetime.now(),
-        )
-    except (_alerts.AlertCollectError, subprocess.CalledProcessError) as exc:
-        _next_action.report(
-            f"警告: アラート確認処理に失敗しました: {exc}",
-            next_action=_alerts.ALERT_FAILURE_NEXT_ACTION,
-        )
-        submitted = 0
-    dependabot_pending = _count_dependabot_pending(args, target_repo_id) if count_dependabot else 0
-    _process_loop_log.append(
-        "alert_check",
-        submitted=submitted,
-        dependabot_pending=dependabot_pending,
-        session_started=submitted == 0 and dependabot_pending > 0,
-    )
-    return monotonic_now, submitted, dependabot_pending
-
-
-def _count_dependabot_pending(args: argparse.Namespace, target_repo_id: str) -> int:
-    """GitHubの対象リポジトリで未判定のDependabotアラート件数を返す。取得できない場合は警告して0とする。"""
-    host, _, repo_path = target_repo_id.partition("/")
-    forge = args.alert_forge if args.alert_forge != "auto" else ("github" if host == "github.com" else "gitlab")
-    if forge != "github" or not repo_path:
-        return 0
-    try:
-        return len(_review_audit.dependabot_pending(repo_path)["alerts"])
-    except _next_action.ActionableError as exc:
-        _next_action.report(
-            f"警告: Dependabotアラートの確認に失敗しました: {exc}",
-            next_action=_alerts.ALERT_FAILURE_NEXT_ACTION,
-        )
-        return 0
-
-
-def _restore_process_loop_env(previous_values: dict[str, str | None]) -> None:
-    """process-loop識別環境変数を呼び出し前の状態へ戻す。"""
-    for key, previous_value in previous_values.items():
-        if previous_value is None:
-            os.environ.pop(key, None)
-        else:
-            os.environ[key] = previous_value
-
-
-def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """process-loopサブコマンド: 選択した対話セッションと待機ループを常駐で繰り返す。
 
     初回と0件待機からの復帰時はprivate-notesを同期し、ready項目があれば`update-dotfiles`と
@@ -1280,7 +41,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     Codexは対話CLIを使い、設定値のmodel・effortを起動引数へ渡す。
     Claude Codeは0・-15・15・143、POSIXのCodexは0・-15、WindowsのCodexは0を正常終了とする。
     正常終了した場合、
-    `--no-update`未指定なら`_restart_process_loop`でランチャーへ再起動を要求する。
+    `--no-update`未指定なら`_pl_update.restart_process_loop`でランチャーへ再起動を要求する。
     中断要求は反復ループの先頭と再起動の直前で判定する。要求がある場合は端末ベルを3回鳴らし、
     要求を解除して正常終了する。反復ループ先頭の判定により、更新検知による再起動と0件待機を
     含む反復の境界でも要求を検出する。
@@ -1295,7 +56,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     待機に入るたびに待機メッセージを1度出力する。
     待機ループがタイムアウト（変更未検知）で復帰した場合、上流差分があれば`update-dotfiles`を実行したうえで、
     `~/dotfiles`チェックアウト内`agent-toolkit/scripts/`配下コードの起動時ハッシュと現在のハッシュを比較し、
-    差異があれば同じく`_restart_process_loop`で再起動する。他プロセスが先に`update-dotfiles`を
+    差異があれば同じく`_pl_update.restart_process_loop`で再起動する。他プロセスが先に`update-dotfiles`を
     完了させていてもローカルコードの変更を独立して検知できる。`--no-update`指定時はこの待機中の
     更新反映・再起動チェックも抑止する。`~/dotfiles`チェックアウトが見つからない環境
     （`atk`がプラグインキャッシュ配下から実行され、かつ`~/dotfiles`が存在しない場合）ではこのチェック自体を行わない。
@@ -1309,19 +70,19 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     成功した`update-dotfiles`直後は再評価時刻を更新し、正常再起動先へ一回限りの内部指定を渡して重複を避ける。
     更新成功による再起動先は、同じ上流状態への開始前更新を一回だけ抑止する。
     """
-    _resolve_orchestrator_specs()
-    local_path = _resolve_local_worktree(args.target_repo)
-    target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
+    _pl_session.resolve_orchestrator_specs()
+    local_path = resolve_local_worktree(args.target_repo)
+    target_repo_id = resolve_repo_id(args.target_repo, cwd=local_path)
     if args.auto_resume and args.resume is None:
         args.resume = _auto_resume.select_session(target_repo_id, local_path)
-    prompt = _build_process_loop_prompt()
-    dotfiles_root = _resolve_dotfiles_root()
-    startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
-    mise_refresh_root = dotfiles_root if target_repo_id == _DOTFILES_REPO_ID and not args.no_update else None
+    prompt = _pl_session.build_process_loop_prompt()
+    dotfiles_root = _pl_update.resolve_dotfiles_root()
+    startup_hash = _pl_update.code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
+    mise_refresh_root = dotfiles_root if target_repo_id == _pl_worktree.DOTFILES_REPO_ID and not args.no_update else None
     mise_refreshed_at: float | None = None
     if mise_refresh_root is not None:
         if not args.internal_mise_refreshed:
-            _refresh_mise_tools(mise_refresh_root)
+            _pl_mise.refresh_mise_tools(mise_refresh_root)
         mise_refreshed_at = time.monotonic()
     print(f"atk wi process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
     last_alert_check: float | None = None
@@ -1330,28 +91,28 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。
     # 関数終了時に元の値へ戻し、in-process呼び出し（テスト等）への環境変数漏洩を避ける。
     previous_env_values = {
-        _PROCESS_LOOP_SESSION_ENV: os.environ.get(_PROCESS_LOOP_SESSION_ENV),
-        _PROCESS_LOOP_SESSION_ID_ENV: os.environ.get(_PROCESS_LOOP_SESSION_ID_ENV),
+        _pl_env.PROCESS_LOOP_SESSION_ENV: os.environ.get(_pl_env.PROCESS_LOOP_SESSION_ENV),
+        _pl_env.PROCESS_LOOP_SESSION_ID_ENV: os.environ.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV),
     }
-    os.environ[_PROCESS_LOOP_SESSION_ENV] = "1"
-    os.environ.pop(_PROCESS_LOOP_SESSION_ID_ENV, None)
-    env = _child_env()
+    os.environ[_pl_env.PROCESS_LOOP_SESSION_ENV] = "1"
+    os.environ.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
+    env = _pl_env.child_env()
     resume_pending = args.resume is not None
     refresh_before_session = not args.internal_dotfiles_updated
     with _console_title.console_title("atk wi process-loop"):
         try:
             try:
                 while True:
-                    if _consume_process_loop_abort():
+                    if _pl_control.consume_process_loop_abort():
                         return
-                    if not _pull_private_notes(private_notes):
+                    if not _pl_watch.pull_private_notes(private_notes):
                         print("同期を再試行するまで変更検知を待機します。")
-                        _wait_for_changes(private_notes, target_repo_id)
+                        _pl_watch.wait_for_changes(private_notes, target_repo_id)
                         refresh_before_session = True
                         continue
-                    count = _count_pending_entries(private_notes, target_repo=target_repo_id)
+                    count = _wi_readiness.count_pending_entries(private_notes, target_repo=target_repo_id)
                     if (count > 0 or alert_session_pending) and refresh_before_session and not args.no_update:
-                        session_ready, update_succeeded = _update_before_session(
+                        session_ready, update_succeeded = _pl_update.update_before_session(
                             private_notes,
                             dotfiles_root,
                             startup_hash,
@@ -1363,12 +124,12 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             mise_refreshed_at = time.monotonic()
                         if not session_ready:
                             print("同期を再試行するまで変更検知を待機します。")
-                            _wait_for_changes(private_notes, target_repo_id)
+                            _pl_watch.wait_for_changes(private_notes, target_repo_id)
                             refresh_before_session = True
                             continue
-                        count = _count_pending_entries(private_notes, target_repo=target_repo_id)
+                        count = _wi_readiness.count_pending_entries(private_notes, target_repo=target_repo_id)
                     if count > 0 or alert_session_pending:
-                        last_alert_check, submitted, _ = _check_process_loop_alerts(
+                        last_alert_check, submitted, _ = _pl_alerts.check_process_loop_alerts(
                             args,
                             private_notes,
                             target_repo_id,
@@ -1378,14 +139,14 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         )
                         if submitted > 0:
                             print(f"アラート監視により{submitted}件のAWIを投入しました。")
-                            count = _count_pending_entries(private_notes, target_repo=target_repo_id)
+                            count = _wi_readiness.count_pending_entries(private_notes, target_repo=target_repo_id)
                     _process_loop_log.append("loop_iter_start", count=count)
                     if count > 0 or alert_session_pending:
                         refresh_before_session = False
                         current_resume_pending = resume_pending
                         if current_resume_pending:
                             resume_pending = False
-                        prepared_target = _prepare_session_target(
+                        prepared_target = _pl_worktree.prepare_session_target(
                             local_path,
                             target_repo_id,
                             prompt,
@@ -1394,19 +155,19 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         )
                         if prepared_target is None:
                             print("worktree準備を再試行するまで変更検知を待機します。")
-                            _wait_for_changes(private_notes, target_repo_id)
+                            _pl_watch.wait_for_changes(private_notes, target_repo_id)
                             refresh_before_session = True
                             continue
                         session_path, session_prompt = prepared_target
-                        orchestrator, model, effort = _select_available_orchestrator(
-                            _resolve_orchestrator_specs(), env, session_path
+                        orchestrator, model, effort = _pl_session.select_available_orchestrator(
+                            _pl_session.resolve_orchestrator_specs(), env, session_path
                         )
                         if count > 0:
                             print(f"{count}件のAWI/回答済みUWIを検知。{orchestrator}へ委譲します。")
                         else:
                             print(f"未判定のDependabotアラートを検知。監査のため{orchestrator}へ委譲します。")
                         alert_session_pending = False
-                        if _run_process_session(
+                        if _pl_session.run_process_session(
                             args,
                             session_path,
                             session_prompt,
@@ -1419,7 +180,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         ):
                             return
                         continue
-                    last_alert_check, submitted, dependabot_pending = _check_process_loop_alerts(
+                    last_alert_check, submitted, dependabot_pending = _pl_alerts.check_process_loop_alerts(
                         args,
                         private_notes,
                         target_repo_id,
@@ -1437,17 +198,17 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         refresh_before_session = True
                         continue
                     print("0件のため変更検知を待機します。")
-                    changed = _wait_for_changes(private_notes, target_repo_id)
+                    changed = _pl_watch.wait_for_changes(private_notes, target_repo_id)
                     refresh_before_session = True
                     if (
                         mise_refresh_root is not None
                         and mise_refreshed_at is not None
-                        and time.monotonic() - mise_refreshed_at >= _MISE_REFRESH_INTERVAL_SEC
+                        and time.monotonic() - mise_refreshed_at >= _pl_mise.MISE_REFRESH_INTERVAL_SEC
                     ):
-                        _refresh_mise_tools(mise_refresh_root)
+                        _pl_mise.refresh_mise_tools(mise_refresh_root)
                         mise_refreshed_at = time.monotonic()
                     if not changed and not args.no_update and dotfiles_root is not None and startup_hash is not None:
-                        update_succeeded = _check_and_restart_on_update(
+                        update_succeeded = _pl_update.check_and_restart_on_update(
                             dotfiles_root,
                             startup_hash,
                             sys.argv,
@@ -1458,4 +219,4 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
             except KeyboardInterrupt:
                 print("Ctrl+Cを検知しました。常駐モードを終了します。")
         finally:
-            _restore_process_loop_env(previous_env_values)
+            _pl_env.restore_process_loop_env(previous_env_values)

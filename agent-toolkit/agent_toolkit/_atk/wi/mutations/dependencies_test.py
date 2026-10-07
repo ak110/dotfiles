@@ -14,11 +14,9 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as wi_add
-from agent_toolkit._atk.wi import (
-    common,
-    user_comment,
-)
 from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
+from agent_toolkit._atk.wi import user_comment
+from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import content as mutation_content
 from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
@@ -116,7 +114,7 @@ def test_set_dependencies_rejects_mutual_and_existing_chain_cycles(
             )
     _disable_convert_git(monkeypatch)
 
-    with pytest.raises(common.WebInputError, match="循環"):
+    with pytest.raises(_wi_web_input.WebInputError, match="循環"):
         mutation_dependencies.set_entry_dependencies(notes, filename=filename, depends_on=dependencies)
 
 
@@ -154,7 +152,7 @@ def test_set_dependencies_detects_cycle_through_held_entry(
     _write_convert_awi(notes, "first.md")
     _disable_convert_git(monkeypatch)
 
-    with pytest.raises(common.WebInputError, match="循環"):
+    with pytest.raises(_wi_web_input.WebInputError, match="循環"):
         mutation_dependencies.set_entry_dependencies(notes, filename="first.md", depends_on=("held.md",))
 
 
@@ -170,7 +168,7 @@ def test_cooldown_return_rejects_uwi_without_frontmatter_changes(
     path = notes / "processing/uwi.md"
     original = path.read_text(encoding="utf-8")
 
-    with pytest.raises(common.WebInputError, match="AWI専用"):
+    with pytest.raises(_wi_web_input.WebInputError, match="AWI専用"):
         mutation_transitions.transition_entries(
             notes,
             action="return-to-inbox",
@@ -394,7 +392,7 @@ def test_set_dependencies_reports_body_mismatch_and_omits_body_on_success(
         "成功: 依存を更新した: success.md",
         "    depends_on: dependency.md",
     ]
-    original_read = wi_add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    original_read = wi_add.read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
     captured: dict[str, str] = {}
 
     def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
@@ -404,7 +402,7 @@ def test_set_dependencies_reports_body_mismatch_and_omits_body_on_success(
 
     monkeypatch.setattr(
         wi_add,  # pylint: disable=protected-access
-        "_read_saved_entry_details",
+        "read_saved_entry_details",
         read_after_alteration,
     )
 

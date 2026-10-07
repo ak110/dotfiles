@@ -19,6 +19,10 @@
 
 3画面のスクリプト（`static/shell.js`・`wi.js`・`plans.js`・`sessions.js`）はESモジュールとして読み込み、3画面が同じ役割で使う処理を共通モジュール`static/common.js`の1つの定義から`import`して使う。対象はSSEの購読と名前の無い通知の振り分け（`connectEvents`・`handleSseMessage`）、一覧の差分描画と選択の判定（`renderList`・`isSelected`）、前後の項目への移動とボタンの状態（`navigateRelative`・`updateNavButtons`）である。警告の表示（`renderWarnings`）、ドロワーの開閉（`setDrawerOpen`）とタブ復帰時の再取得（`resyncWhenVisible`）も同じモジュールに置く。取得するAPI、一覧の項目の描画、画面固有の操作は各画面が引数の関数として渡し、同じ役割の関数を画面側で再定義しない。以前は3画面が別々の実装から統合され、同じ役割の関数を画面ごとに持ち、スクリプトのスコープを即時実行関数で閉じていたため、一方の画面だけを直すと挙動が分かれた。`BASE_PATH`とSSEの無通信判定時間はHTMLへ埋め込んだJSONブロック`serve-bootstrap`から共通モジュールが読み、JavaScriptの資産は要求ごとに書き換えずに`/static/<name>.js`の1つのルートで配信する。WI画面のスクリプトだけをサーバー側の文字列置換で配信する方式は、画面ごとに設定値の受け取り方が分かれるため採らない。ESモジュールは文書の解析後に順に評価されるため、各画面は`DOMContentLoaded`より前に登録を終え、共通シェルが`DOMContentLoaded`で全画面の`init`を実行する。
 
+### サーバー側のモジュール構成
+
+`atk serve`のサーバー側は`agent-toolkit/agent_toolkit/_atk/serve/`配下の責務ごとのモジュールへ分ける。WI画面のドメイン処理（一覧・詳細・変更をprivate-notesの同期ファイル操作として提供する`Operations`）は`wi_operations.py`、WI画面のAPIのルートの登録と要求の検証は`wi_routes.py`が持つ。画面の配信、共通の例外応答、計画ファイル画面とセッション画面のルートの登録は`shell_routes.py`が持つ。同期処理の並列数の制限、停止要求中の応答、定期同期、起動と停止の手続きは`runtime.py`が持つ。`app.py`の`create_app`はこれらを組み立てるだけを持つ。以前は1つのファイルがドメイン処理とルーティングを同居させ、画面の機能を加える計画ごとに同じファイルへ追記していた。ドメイン処理をルートの登録から分けると、`Operations`の振る舞いをHTTPを介さずに確かめられる。
+
 ### リモートヘルパーの起動コード
 
 リモートホスト側ヘルパーの起動コードは`agent-toolkit/agent_toolkit/_atk/serve/remote.py`の`remote_bootstrap`へ集約する。

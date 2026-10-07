@@ -12,7 +12,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import session_record_format, session_records
-from agent_toolkit._atk.wi import process_loop
+from agent_toolkit._atk.wi import process_loop_session as _pl_session
 
 
 def _write_record(path: pathlib.Path, records: list[object], modified_at: int = 10) -> None:
@@ -140,7 +140,7 @@ class TestInvokedProcessWi:
         """
         assert (
             session_records._CODEX_PROCESS_WI_PROMPT  # pylint: disable=protected-access
-            in process_loop._build_process_loop_prompt()  # pylint: disable=protected-access
+            in _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access
         )
 
     def test_missing_marker_returns_false(self, tmp_path: pathlib.Path) -> None:

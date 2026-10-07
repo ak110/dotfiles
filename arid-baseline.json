@@ -48,20 +48,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:320e3f03bf6a08bf4054da3373ee7785ef6a98656c0daf674c6b16df6f7da0be",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/listing_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/show_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:3ee76775b8f905ffae2c8a60a0e2ad21f76443e04fe4ef7c7c963ee402362d43",
       "lines": 12,
       "occurrences": [
@@ -72,36 +58,6 @@
         {
           "path": "pytools/_internal/install_claude_plugins_repair_test.py",
           "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:51c423be85f77fa1393763d8b15d86fd3a3f19540c86d92273000d44a38bd04a",
-      "lines": 18,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/atk_test.py",
-          "count": 3
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:65e95811353be8ac6bc5dc70d19e68d9e56350a774f48424397cb8171743a657",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:689856046dd24b3b9ed2263e5e43fc1c0483bd7e093e334013df6adc7cccbf2b",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py",
-          "count": 2
         }
       ]
     },
@@ -135,16 +91,6 @@
       "occurrences": [
         {
           "path": "pytools/_internal/setup_codex_cli_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:8468768fb2e0644cd87602dcb15b10c2a2cf0acad20ca54af8d0bba12e701092",
-      "lines": 19,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/atk_test.py",
           "count": 2
         }
       ]
@@ -218,26 +164,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:b6c54a8a28a6e32d3a944cfcecb4db444be30750a2af57fb327e3e2cb2bfde59",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:b787355fd9a8fdf1abd762fbfcff77795f5c1a9b8d043c648789d77db45ad49e",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/wi/process_loop_restart_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:c27cc1e3e627ec3e89734924a5ce8783384249af50bafc93197f5db5c1b379f3",
       "lines": 18,
       "occurrences": [
@@ -278,20 +204,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:eedadbd914acd6024bdf43350be330b0e0296ee98a2322017bb955e2ba386855",
-      "lines": 11,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/serve/app_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/serve/assets_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:f525b8a74ec5b77c488e2e57816f6e2195d90315a84c25ded9fa6a494c0286d1",
       "lines": 15,
       "occurrences": [
@@ -308,20 +220,6 @@
         {
           "path": "pytools/_internal/systemd_user_unit.py",
           "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:fc589305a6e8fcaea446980666c085571292c72266bdf07dfd98398ded552577",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/serve/app_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/agent_toolkit/_atk/serve/cli_test.py",
-          "count": 1
         }
       ]
     }

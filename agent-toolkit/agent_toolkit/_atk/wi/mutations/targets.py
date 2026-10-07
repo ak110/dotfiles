@@ -14,24 +14,16 @@ import tempfile
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi.common import (
-    WI_EDITABLE_STATES,
-    WI_STATE_HOLD,
-    WI_STATE_INBOX,
-    WI_STATE_PROCESSING,
-    WebInputError,
-    _commit_and_push,
-    _CommitMetadata,
-    _pull,
-    _push_pending_commits,
-    _repo_lock,
-    _validate_filename,
-)
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.constants import WI_EDITABLE_STATES, WI_STATE_HOLD, WI_STATE_INBOX, WI_STATE_PROCESSING
 from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action as _unrepairable_entry_next_action
+from agent_toolkit._atk.wi.entries import CommitMetadata
 from agent_toolkit._atk.wi.repo import (
-    _resolve_repo_id,
+    resolve_repo_id,
 )
+from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 
@@ -39,7 +31,7 @@ _GIT_TIMEOUT_SECONDS = 10.0
 _MISSING_TARGET_NEXT_ACTION = "`atk wi list`で実在するファイル名を確かめて指定し直す"
 
 
-def _entry_target_repo(path: pathlib.Path, text: str) -> str:
+def entry_target_repo(path: pathlib.Path, text: str) -> str:
     """エントリの`target_repo`を検証し、正規化した識別子を返す。"""
     parsed = _frontmatter.parse_frontmatter(text)
     if parsed is None:
@@ -55,10 +47,10 @@ def _entry_target_repo(path: pathlib.Path, text: str) -> str:
             next_action=_unrepairable_entry_next_action(path.name),
         )
         sys.exit(2)
-    return _resolve_repo_id(raw_target_repo)
+    return resolve_repo_id(raw_target_repo)
 
 
-def _candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
+def candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
     """実在パスの引数を優先し、それ以外は現在位置から対応候補の作業ツリーを返す。"""
     if target_repo is not None:
         path = pathlib.Path(target_repo).expanduser()
@@ -110,7 +102,7 @@ def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
     return commit
 
 
-def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> _CommitMetadata:
+def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> CommitMetadata:
     """作業ツリーでrevisionを解決し、永続記録用の一意な長さの短縮OIDと件名を返す。"""
     commit = _resolve_commit_oid(local_worktree, revision)
     try:
@@ -131,18 +123,18 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> _CommitMetad
             next_action="--commitへ対象リポジトリで解決できるrevisionを指定し直す",
         )
         sys.exit(2)
-    return _CommitMetadata(short_oid=short_oid, subject=subject)
+    return CommitMetadata(short_oid=short_oid, subject=subject)
 
 
-def _commit_values_by_path(
+def commit_values_by_path(
     paths: list[pathlib.Path],
     revision: str | None,
     local_worktree: pathlib.Path | None,
-) -> dict[pathlib.Path, _CommitMetadata | None]:
+) -> dict[pathlib.Path, CommitMetadata | None]:
     """対象ごとに永続記録用のcommit情報を解決する。"""
     if revision is None:
         return {path: None for path in paths}
-    target_repos = {path: _entry_target_repo(path, path.read_text(encoding="utf-8")) for path in paths}
+    target_repos = {path: entry_target_repo(path, path.read_text(encoding="utf-8")) for path in paths}
     candidate_repo = _local_worktree_repo_id(local_worktree) if local_worktree is not None else None
     unmatched = sorted({target_repo for target_repo in target_repos.values() if target_repo != candidate_repo})
     if local_worktree is None or candidate_repo is None or unmatched:
@@ -156,7 +148,7 @@ def _commit_values_by_path(
     return dict.fromkeys(paths, resolved)
 
 
-def _invalidate_repo_bound_metadata(original: str, updated: str) -> str:
+def invalidate_repo_bound_metadata(original: str, updated: str) -> str:
     """target_repo変更時に旧リポジトリへ結び付くメタデータを削除する。"""
     original_parsed = _frontmatter.parse_frontmatter(original)
     updated_parsed = _frontmatter.parse_frontmatter(updated)
@@ -184,22 +176,22 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
 
     差分がない場合も滞留commitをpushし、外部編集とremoteの有無・送信件数を返す。
     """
-    with _repo_lock(private_notes, timeout=lock_timeout):
+    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
         has_remote = _atk_git_sync.has_remote(private_notes)
-        initial_pushed = _push_pending_commits(private_notes)
-        _pull(private_notes)
+        initial_pushed = _wi_sync.push_pending_commits(private_notes)
+        _wi_sync.pull(private_notes)
         status = _git_command.run(["status", "--porcelain"], private_notes, check=True, capture_output=True, text=True)
         changed = bool(status.stdout.strip())
         final_pushed = (
-            _commit_and_push(private_notes, "chore: edit private notes externally", ["."])
+            _wi_sync.commit_and_push(private_notes, "chore: edit private notes externally", ["."])
             if changed
-            else _push_pending_commits(private_notes)
+            else _wi_sync.push_pending_commits(private_notes)
         )
         pushed = None if initial_pushed is None or final_pushed is None else initial_pushed + final_pushed
         return CommitEntriesResult(changed, has_remote, pushed)
 
 
-def _resolve_awi_targets(
+def resolve_awi_targets(
     filenames: list[str],
     awi_dir: pathlib.Path,
     *,
@@ -210,7 +202,7 @@ def _resolve_awi_targets(
     `awi_dir`には`start-processing`はinbox、`return-to-inbox`はprocessingが渡される。
     エラーメッセージは`awi_dir.name`から動的に状態名を組み込み、呼び出し元の状態と一致させる。
     """
-    paths = [_validate_filename(f, awi_dir) for f in filenames]
+    paths = [_wi_filenames.validate_filename(f, awi_dir) for f in filenames]
     missing = [p for p in paths if not p.exists()]
     if missing:
         if missing_is_conflict:
@@ -221,7 +213,7 @@ def _resolve_awi_targets(
     return paths
 
 
-def _resolve_processable_targets(
+def resolve_processable_targets(
     filenames: list[str],
     inbox_dir: pathlib.Path,
     processing_dir: pathlib.Path,
@@ -237,9 +229,9 @@ def _resolve_processable_targets(
     missing: list[str] = []
     for name in filenames:
         # 検証はinbox基準ディレクトリで行うが、実体はいずれか片方の状態フォルダに存在する。
-        # `_validate_filename`側で拡張子`.md`の省略を正規形へ補完する。
-        inbox_path = _validate_filename(name, inbox_dir)
-        processing_path = _validate_filename(inbox_path.name, processing_dir)
+        # `_wi_filenames.validate_filename`側で拡張子`.md`の省略を正規形へ補完する。
+        inbox_path = _wi_filenames.validate_filename(name, inbox_dir)
+        processing_path = _wi_filenames.validate_filename(inbox_path.name, processing_dir)
         if processing_path.exists():
             resolved.append(processing_path)
         elif inbox_path.exists():
@@ -255,7 +247,7 @@ def _resolve_processable_targets(
     return resolved
 
 
-def _resolve_editable_targets(
+def resolve_editable_targets(
     filenames: list[str],
     private_notes: pathlib.Path,
     *,
@@ -265,7 +257,7 @@ def _resolve_editable_targets(
     resolved: list[pathlib.Path] = []
     missing: list[str] = []
     for name in filenames:
-        normalized = _validate_filename(name, private_notes / WI_STATE_INBOX).name
+        normalized = _wi_filenames.validate_filename(name, private_notes / WI_STATE_INBOX).name
         path = next(
             (
                 private_notes / state_name / normalized
@@ -289,7 +281,7 @@ def _resolve_editable_targets(
     return resolved
 
 
-def _resolve_active_targets(
+def resolve_active_targets(
     filenames: list[str],
     inbox_dir: pathlib.Path,
     processing_dir: pathlib.Path,
@@ -306,7 +298,7 @@ def _resolve_active_targets(
     resolved: list[pathlib.Path] = []
     missing: list[str] = []
     for name in filenames:
-        normalized = _validate_filename(name, inbox_dir).name
+        normalized = _wi_filenames.validate_filename(name, inbox_dir).name
         candidates = (
             tuple(inbox_dir.parent / state_name / normalized for state_name in states)
             if states is not None
@@ -332,7 +324,7 @@ def _resolve_active_targets(
     return resolved
 
 
-def _atomic_write_text(path: pathlib.Path, content: str) -> None:
+def atomic_write_text(path: pathlib.Path, content: str) -> None:
     """同一ディレクトリの一時ファイルから置換してUTF-8本文を原子的に保存する。"""
     encoded = _frontmatter.normalize_newlines(content).encode("utf-8")
     temporary_path: pathlib.Path | None = None
@@ -366,7 +358,7 @@ def _git_head(private_notes: pathlib.Path) -> str:
     return commit
 
 
-def _cmd_commit(private_notes: pathlib.Path) -> None:
+def cmd_commit(private_notes: pathlib.Path) -> None:
     """commitサブコマンド: 外部編集後のprivate-notesの未コミット変更をコミット・push。
 
     未コミット変更がない場合も滞留commitをpushする。

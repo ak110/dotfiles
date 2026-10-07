@@ -16,12 +16,15 @@ import pytest
 import pytest_asyncio
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import config
+from agent_toolkit._atk.serve import config, wi_operations
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
+from agent_toolkit._atk.wi import batch as wi_batch
+from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
 from agent_toolkit._atk.wi import uwi as uwi_mutations
+from agent_toolkit._atk.wi import web_input as wi_web_input
 from agent_toolkit._plan import creation_times as plan_creation_times
 
 _BROWSER_TEST_ENV = "AGENT_TOOLKIT_SERVE_BROWSER_TESTS"
@@ -45,7 +48,7 @@ def _browser_tests_enabled() -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
-class _BrowserOperations(serve_app.Operations):
+class _BrowserOperations(wi_operations.Operations):
     """Gitを使わず、更新処理の待機を同期イベントで制御する。"""
 
     def __init__(self, private_notes: Path) -> None:
@@ -147,7 +150,7 @@ class _BrowserOperations(serve_app.Operations):
                         if not path.exists():
                             continue
                         if state_name == "processing" and not force:
-                            raise serve_app.WebApiInputError("指定したエントリを操作できません")
+                            raise wi_operations.WebApiInputError("指定したエントリを操作できません")
                         if expected_content is not None:
                             try:
                                 current_content = path.read_text(encoding="utf-8")
@@ -179,11 +182,11 @@ class _BrowserOperations(serve_app.Operations):
         self.add_calls.append({"messages": messages, "target_repo": target_repo})
         filenames: list[str] = []
         for index, message in enumerate(messages):
-            parsed = serve_app.frontmatter.parse_frontmatter(message)
+            parsed = wi_frontmatter.parse_frontmatter(message)
             metadata, body = parsed if parsed is not None else ({}, message)
             repo = target_repo if target_repo is not None else metadata.get("target_repo")
             if not isinstance(repo, str) or not repo:
-                raise serve_app.common.WebInputError(
+                raise wi_web_input.WebInputError(
                     "target_repoを指定するか各メッセージのfrontmatterへ記載してください",
                     next_action="--target-repoを指定して再実行する",
                 )
@@ -198,7 +201,7 @@ class _BrowserOperations(serve_app.Operations):
     def add_batch(self, text: str) -> dict[str, object]:
         """Gitを使わず、実装と同じ解析結果を一時リポジトリへ原文保持で書き込む。"""
         self.batch_calls.append(text)
-        entries = serve_app.awi_batch.parse_show_batch(text)
+        entries = wi_batch.parse_show_batch(text)
         for entry in entries:
             (self.private_notes / "inbox" / entry.original_name).write_text(entry.raw_text, encoding="utf-8")
         return {
@@ -346,7 +349,7 @@ async def _browser_harness_fixture(
     browser: playwright.async_api.Browser,
 ) -> AsyncGenerator[_BrowserHarness]:
     _write_entries(tmp_path)
-    original_parse = serve_app.frontmatter.parse_frontmatter
+    original_parse = wi_frontmatter.parse_frontmatter
 
     def parse_with_integer_key(text: str) -> tuple[dict[Any, Any], str] | None:
         parsed = original_parse(text)
@@ -361,7 +364,7 @@ async def _browser_harness_fixture(
                 enriched["1"] = "textual"
         return enriched, body
 
-    monkeypatch.setattr(serve_app.frontmatter, "parse_frontmatter", parse_with_integer_key)
+    monkeypatch.setattr(wi_frontmatter, "parse_frontmatter", parse_with_integer_key)
     current_state = serve_state.ServeState(tmp_path)
     operations = _BrowserOperations(tmp_path)
     app = serve_app.create_app(

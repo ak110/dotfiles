@@ -15,13 +15,11 @@ import typing
 import pytest
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import assets, config, state
+from agent_toolkit._atk.serve import assets, config, state, wi_operations
 from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
-from agent_toolkit._atk.wi import common
-from agent_toolkit._atk.wi import repo as awi_repo
-from agent_toolkit._testing.wi_mutations_support import MUTATION_MODULES, setattr_in_mutation_modules
+from agent_toolkit._atk.wi import sync as _wi_sync
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -281,6 +279,62 @@ class _FakeTimer(threading.Timer):
         self.cancelled = True
 
 
+_STALE_FALLBACK_SEARCH_SCRIPT = """
+@DECLARATION@
+let fallbackStarted;
+const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
+elements['search-input'].value = 'old';
+fetchHandler = async url => {
+  if (url === '/atk/api/entries?q=old&page=1') {
+    fallbackStarted();
+    return @PENDING@;
+  }
+  if (url.includes('q=old')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+  }
+  if (url.includes('q=new')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({
+      entries: [{kind: 'awi', state: 'inbox', filename: 'new.md', summary: 'new'}], warnings: []
+    })};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+const oldRequest = loadEntries({announce: true});
+await fallbackReady;
+elements['search-input'].value = 'new';
+const newRequest = loadEntries({announce: true});
+await newRequest;
+"""
+
+
+def stale_fallback_search_script(declaration: str, pending_promise: str) -> str:
+    """古い検索語の補助検索を保留させたまま、新しい検索語の一覧要求を完了させるNodeの画面スクリプトを返す。
+
+    `declaration`は保留を解く関数を受ける変数の宣言、`pending_promise`は補助検索が返す保留中のPromiseの式とする。
+    呼び出し側は、返したスクリプトの後ろへ保留の解き方と検証を続ける。
+    """
+    return _STALE_FALLBACK_SEARCH_SCRIPT.replace("@DECLARATION@", declaration).replace("@PENDING@", pending_promise)
+
+
+UNANSWERED_UWI_TEXT = (
+    "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+    "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+)
+"""回答欄が空のUWIの本文。"""
+
+AWI_TEXT = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n"
+"""最小のAWIの本文。"""
+
+
+def make_inbox_and_processing(private_notes: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    """private-notesへinboxとprocessingの状態フォルダを作成し、その順に返す。"""
+    inbox = private_notes / "inbox"
+    processing = private_notes / "processing"
+    inbox.mkdir()
+    processing.mkdir()
+    return inbox, processing
+
+
 def _three_screen_app(tmp_path: pathlib.Path) -> typing.Any:
     """3画面を登録したアプリを、外部へ接続しない依存で生成する。"""
     return serve_app.create_app(
@@ -311,7 +365,7 @@ class _BlockingSync:
         return True
 
 
-def _sync_app(tmp_path: pathlib.Path, operations: serve_app.Operations) -> typing.Any:
+def _sync_app(tmp_path: pathlib.Path, operations: wi_operations.Operations) -> typing.Any:
     """同期APIの検証用に、指定した操作を使うアプリを生成する。"""
     return serve_app.create_app(
         tmp_path,
@@ -373,9 +427,9 @@ def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    monkeypatch.setattr(serve_app.awi_batch, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.awi_batch, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.awi_batch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
 
 def _session_review_awi(
@@ -396,11 +450,10 @@ def _patch_comment_edit_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    for module in (common, awi_repo, *MUTATION_MODULES):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
 
 
 def _disable_wi_git(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -410,12 +463,7 @@ def _disable_wi_git(monkeypatch: pytest.MonkeyPatch) -> None:
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    replacements: dict[str, object] = {
-        "_repo_lock": lock,
-        "_pull": lambda _path: None,
-        "_commit_and_push": lambda *_args, **_kwargs: None,
-        "_push_pending_commits": lambda _path: None,
-    }
-    for name, value in replacements.items():
-        monkeypatch.setattr(common, name, value)
-        setattr_in_mutation_modules(monkeypatch, name, value)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)

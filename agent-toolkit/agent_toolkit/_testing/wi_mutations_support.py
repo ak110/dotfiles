@@ -6,28 +6,12 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk.wi import repo, user_comment, uwi
-from agent_toolkit._atk.wi.mutations import content as mutation_content
-from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.mutations import targets as mutation_targets
-from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
 from agent_toolkit._testing import git_repository
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
-
-
-MUTATION_MODULES = (mutation_content, mutation_dependencies, mutation_targets, mutation_transitions)
-"""WI変更処理のサブモジュール。テストが差し替える共通の名前を束縛しうる全モジュール。"""
-
-
-def setattr_in_mutation_modules(monkeypatch: pytest.MonkeyPatch, name: str, value: object) -> None:
-    """`agent_toolkit._atk.wi.common`から複数のサブモジュールへimportした名前を、束縛する全サブモジュールで差し替える。
-
-    各サブモジュールは定義元から名前を自らimportして束縛するため、1つのサブモジュールの差し替えは他へ届かない。
-    """
-    for module in MUTATION_MODULES:
-        if name in vars(module):
-            monkeypatch.setattr(module, name, value)
 
 
 def _write_uwi_entry(
@@ -56,10 +40,10 @@ def _disable_transition_git(monkeypatch: pytest.MonkeyPatch) -> None:
     対象リポジトリの一致を明示指定だけで判定する状態へそろえる。
     """
     monkeypatch.setattr(repo, "detect_current_repo_id", lambda: None)
-    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
 
 def _write_convert_plan(directory: pathlib.Path, target_commit: str) -> pathlib.Path:
@@ -113,10 +97,10 @@ def _write_convert_awi(
 
 def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """変換テストでprivate-notesへのgit操作を無効化する。"""
-    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(mutation_targets, "_git_head", lambda _path: "a" * 40)
 
 

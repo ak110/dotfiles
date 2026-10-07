@@ -36,7 +36,7 @@ _NORM_RESTRUCTURE_README = pathlib.Path("docs/development/norm-restructure/READM
 _NORM_RESTRUCTURE_CLAUSES_TEST = pathlib.Path("scripts/norm_restructure_clauses_test.py")
 _SESSION_RECORDS = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records.py")
 _SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records_test.py")
-_PROCESS_LOOP_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py")
+_PROCESS_LOOP_SESSION_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/process_loop_session_test.py")
 _READ_METHODS = {"read_text", "read_bytes"}
 _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS_VALIDATION): 1,
@@ -50,7 +50,7 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:exit-session", _AUDIT_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
-    (f"{_PLUGIN_PREFIX}:exit-session", _PROCESS_LOOP_TEST): 1,
+    (f"{_PLUGIN_PREFIX}:exit-session", _PROCESS_LOOP_SESSION_TEST): 1,
     # 分割前のStop判定モジュールを当時の所在で記す障害事例
     (f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py", _INCIDENTS_WORKFLOWS): 1,
     # 廃止したスキルの経緯を記す方針・設計の記録

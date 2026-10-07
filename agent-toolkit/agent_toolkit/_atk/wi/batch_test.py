@@ -10,7 +10,6 @@ import argparse
 import contextlib
 import datetime
 import pathlib
-import types
 from collections.abc import Iterator
 
 import pytest
@@ -18,8 +17,11 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as add_module
 from agent_toolkit._atk.wi import batch
+from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import show as show_module
-from agent_toolkit._atk.wi.common import WI_STATES, WebInputError
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.constants import WI_STATES
+from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
@@ -34,7 +36,7 @@ def _setup_notes(tmp_path: pathlib.Path, name: str = "private-notes") -> pathlib
     return notes
 
 
-def _patch_repo_operations(monkeypatch: pytest.MonkeyPatch, module: types.ModuleType) -> list[str]:
+def _patch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """ロック・remote同期・commitを差し替え、commitメッセージ列を返す。"""
     messages: list[str] = []
 
@@ -42,9 +44,9 @@ def _patch_repo_operations(monkeypatch: pytest.MonkeyPatch, module: types.Module
     def lock(*_args: object, **_kwargs: object) -> Iterator[None]:
         yield
 
-    monkeypatch.setattr(module, "_repo_lock", lock)
-    monkeypatch.setattr(module, "_pull", lambda _path: None)
-    monkeypatch.setattr(module, "_commit_and_push", lambda _path, message, _rel, **_kwargs: messages.append(message))
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda _path, message, _rel, **_kwargs: messages.append(message))
     return messages
 
 
@@ -52,10 +54,10 @@ def _assume_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
     """取り込み先が大文字小文字を区別しないファイルシステムである状況を再現する。
 
     Linuxの一時ディレクトリでは実際に区別しないファイルシステムを用意できないため、
-    実際の判定結果だけを差し替える。プローブ処理そのものは`common_test`の該当テストと
+    実際の判定結果だけを差し替える。プローブ処理そのものは`filenames_test`の該当テストと
     差し替えを行わない他のテストが実際の呼び出しを通して検証する。
     """
-    monkeypatch.setattr(batch, "is_case_sensitive", lambda _directory: False)
+    monkeypatch.setattr(_wi_filenames, "is_case_sensitive", lambda _directory: False)
 
 
 def _entry_text(name: str, *, target_repo: str = "github.com/example/foo", body: str = "本文") -> str:
@@ -79,7 +81,7 @@ def test_batch_cli_omits_queue_overview_in_both_environments(
 ) -> None:
     """一括投入も両環境で結果を先に示し、無関係なキュー件数を付けない。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     existing = notes / "inbox" / "existing.md"
     existing.write_text("---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n既存\n", encoding="utf-8")
     body = tmp_path / "batch.md"
@@ -104,12 +106,12 @@ def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
 ) -> None:
     """エージェント環境の一括投入は予約見出しを含む全入力を拒否する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
     text = _entry_text("awi.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
 
     with pytest.raises(SystemExit) as exc_info:
-        batch._cmd_add_batch(_batch_args(tmp_path, text), notes, _FIXED_DT, tmp_path)
+        batch.cmd_add_batch(_batch_args(tmp_path, text), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert not list((notes / "inbox").iterdir())
@@ -124,12 +126,12 @@ def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environme
 ) -> None:
     """エージェント環境でなければ一括投入で予約見出しを保持する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
     text = _entry_text("awi.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
 
-    batch._cmd_add_batch(_batch_args(tmp_path, text), notes, _FIXED_DT, tmp_path)
+    batch.cmd_add_batch(_batch_args(tmp_path, text), notes, _FIXED_DT, tmp_path)
 
     assert "## ユーザーコメント" in (notes / "inbox" / "awi.md").read_text(encoding="utf-8")
 
@@ -217,7 +219,7 @@ def test_import_keeps_original_names_and_raw_text(
 ) -> None:
     """衝突しない元名を維持し、frontmatterと本文を字面ごと保存する。"""
     notes = _setup_notes(tmp_path)
-    messages = _patch_repo_operations(monkeypatch, batch)
+    messages = _patch_repo_operations(monkeypatch)
     raw = (
         "---\n"
         'target_repo: "github.com/example/foo"\n'
@@ -246,7 +248,7 @@ def test_batch_restore_keeps_free_form_question_type(
     廃止前に保存したUWIを別環境へ移すと、取り込みで拒否された項目だけが失われる。
     """
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     raw = (
         "---\n"
         "target_repo: github.com/example/foo\n"
@@ -268,7 +270,7 @@ def test_import_renumbers_only_colliding_names(
 ) -> None:
     """4状態フォルダと同名のエントリだけを再採番し、他は元名を維持する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     (notes / "adopted" / "clash.md").write_text("既存\n", encoding="utf-8")
     text = _entry_text("clash.md") + _entry_text("keep.md")
 
@@ -285,7 +287,7 @@ def test_import_avoids_renumbering_onto_kept_original_name(
 ) -> None:
     """再採番候補がバッチ内の維持対象元名と一致する場合は次の連番へ回避する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     kept = f"{_FIXED_TIMESTAMP}-001.md"
     (notes / "inbox" / "clash.md").write_text("既存\n", encoding="utf-8")
     text = _entry_text("clash.md") + _entry_text(kept)
@@ -302,7 +304,7 @@ def test_import_skips_entry_matching_existing_name_and_body(
 ) -> None:
     """ファイル名と本文がともに既存項目と一致するエントリは書き込まず、commitも追加しない。"""
     notes = _setup_notes(tmp_path)
-    commits = _patch_repo_operations(monkeypatch, batch)
+    commits = _patch_repo_operations(monkeypatch)
     text = _entry_text("same.md")
     batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
@@ -321,7 +323,7 @@ def test_import_renumbers_entry_matching_existing_name_with_different_body(
 ) -> None:
     """ファイル名だけが既存項目と一致するエントリは取り込みを省かず再採番する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     batch.add_batch_entries(notes, texts=[_entry_text("same.md")], now=_FIXED_DT)
 
     mapping, skipped, _warnings = batch.add_batch_entries(
@@ -340,7 +342,7 @@ def test_import_keeps_names_differing_only_by_case_on_case_sensitive_filesystem(
 ) -> None:
     """大文字小文字を区別するファイルシステムでは、大小差だけの名前を衝突と判定せず元名を維持する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     (notes / "adopted" / "Clash.md").write_text("既存\n", encoding="utf-8")
 
     mapping, _skipped, _warnings = batch.add_batch_entries(
@@ -359,7 +361,7 @@ def test_import_renumbers_name_colliding_only_by_case(
 ) -> None:
     """大文字小文字だけが異なる既存ファイルとの衝突も再採番し、既存ファイルを上書きしない。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     _assume_case_insensitive(monkeypatch)
     (notes / "adopted" / "Clash.md").write_text("既存\n", encoding="utf-8")
 
@@ -376,7 +378,7 @@ def test_import_rejects_original_names_duplicated_only_by_case(
 ) -> None:
     """大文字小文字だけが異なる元名の組も、書き込みが互いを上書きし得るため全件拒否する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     _assume_case_insensitive(monkeypatch)
 
     with pytest.raises(WebInputError):
@@ -391,7 +393,7 @@ def test_import_rejects_duplicated_original_names_across_texts(
 ) -> None:
     """複数textsの連結後に元名が重複する入力を全件拒否する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
 
     with pytest.raises(WebInputError) as error_info:
         batch.add_batch_entries(notes, texts=[_entry_text("same.md"), _entry_text("same.md")], now=_FIXED_DT)
@@ -407,7 +409,7 @@ def test_import_rejects_invalid_original_name(
 ) -> None:
     """基準ディレクトリ外を指す元ファイル名を拒否する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
 
     with pytest.raises(WebInputError):
         batch.add_batch_entries(notes, texts=[_entry_text("../evil.md")], now=_FIXED_DT)
@@ -419,7 +421,7 @@ def test_import_rewrites_only_renamed_depends_on_element_lines(
 ) -> None:
     """再採番された参照の要素行だけを差し替え、他の行の字面を保持する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
     (notes / "inbox" / "outside.md").write_text("既存\n", encoding="utf-8")
     dependent = (
@@ -453,7 +455,7 @@ def test_import_keeps_trailing_comment_of_rewritten_depends_on_element(
 ) -> None:
     """読み替えた要素行の値だけを差し替え、行末のコメントを字面ごと残す。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
     dependent = (
         "### plan.md [inbox]\n"
@@ -477,7 +479,7 @@ def test_import_rewrites_depends_on_with_commented_heading_line(
 ) -> None:
     """`depends_on:`見出し行に行末コメントがあっても後続のブロック形式を読み替える。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
     dependent = (
         "### plan.md [inbox]\n"
@@ -502,7 +504,7 @@ def test_import_rejects_quoted_depends_on_element_needing_rewrite(
 ) -> None:
     """値とコメントの境界を一意に特定できない引用符付き要素行の読み替えは全件拒否する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
     dependent = (
         '### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on:\n- "dep.md"\n---\n\n本文\n\n'
@@ -520,7 +522,7 @@ def test_import_rejects_non_canonical_depends_on_needing_rewrite(
 ) -> None:
     """flow形式の`depends_on`を読み替える必要がある場合は全件拒否する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
     dependent = (
         "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on: [dep.md]\n---\n\n本文\n\n"
@@ -542,7 +544,7 @@ def test_import_warns_for_missing_external_dependency(
 ) -> None:
     """取り込み先に実在しないバッチ外の依存先を警告する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     dependent = (
         "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on:\n- missing.md\n---\n\n本文\n\n"
     )
@@ -558,7 +560,7 @@ def test_import_warns_for_missing_scalar_dependency(
 ) -> None:
     """スカラー形式の`depends_on`でも取り込み先に実在しない依存先を警告する。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     dependent = (
         "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on: missing.md\n---\n\n本文\n\n"
     )
@@ -574,7 +576,7 @@ def test_import_does_not_warn_for_dependency_differing_only_by_case(
 ) -> None:
     """大文字小文字を区別しないファイルシステムでは、大小差だけの既存参照を不在と誤判定しない。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     _assume_case_insensitive(monkeypatch)
     (notes / "adopted" / "dep.md").write_text("既存\n", encoding="utf-8")
     dependent = (
@@ -593,7 +595,7 @@ def test_import_does_not_warn_for_dependency_on_renumbered_name(
 ) -> None:
     """再採番で確定した保存名を直接参照する依存先を警告しない。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     (notes / "inbox" / "clash.md").write_text("既存\n", encoding="utf-8")
     renumbered = f"{_FIXED_TIMESTAMP}-001.md"
     dependent = (
@@ -619,7 +621,7 @@ def test_import_keeps_unresolvable_legacy_target_repo(
 ) -> None:
     """リポジトリ識別子として解決できない旧ローカルパス形式の保存値も原値で取り込む。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     text = _entry_text("legacy.md", target_repo="/home/other/absent-repo")
 
     batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
@@ -638,7 +640,7 @@ def test_import_keeps_plan_file_verbatim(
 ) -> None:
     """保存済み項目の`plan_file`は、指す計画ファイルの有無によらず原文のまま取り込む。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     text = (
         f"### imported.md [adopted]\n---\ntarget_repo: github.com/example/foo\ntype: awi\nplan_file: {plan_file}\n---\n\n"
         "本文\n\n"
@@ -656,7 +658,7 @@ def test_import_skips_entry_matching_existing_after_plan_file_normalization(
 ) -> None:
     """`plan_file`を持つ項目の同じ出力を再投入しても、取り込みを省く。"""
     notes = _setup_notes(tmp_path)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
     plan = notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
     plan.parent.mkdir(parents=True)
     plan.write_text("# 計画\n", encoding="utf-8")
@@ -684,7 +686,7 @@ def _show_all_output(notes: pathlib.Path, capsys: pytest.CaptureFixture[str]) ->
         subparser=None,
     )
     capsys.readouterr()
-    show_module._cmd_show(args, notes)
+    show_module.cmd_show(args, notes)
     return capsys.readouterr().out
 
 
@@ -696,8 +698,8 @@ def test_show_all_output_round_trips_into_another_repository(
     """`add`→`show --all`→一括取り込みで、保存ファイルが元と全文一致する。"""
     source_notes = _setup_notes(tmp_path, "source-notes")
     target_notes = _setup_notes(tmp_path, "target-notes")
-    _patch_repo_operations(monkeypatch, add_module)
-    _patch_repo_operations(monkeypatch, batch)
+    _patch_repo_operations(monkeypatch)
+    _patch_repo_operations(monkeypatch)
     monkeypatch.setattr(add_module, "resolve_repo_id_or_raise", lambda value, **_kwargs: value)
     generated = add_module.add_entries(
         source_notes,

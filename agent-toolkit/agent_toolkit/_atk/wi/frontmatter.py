@@ -1,8 +1,8 @@
 """frontmatterの読み書きを提供する共有モジュール。PyYAMLを使用して標準的なYAML形式をサポート。
 
-このモジュールは他の`_atk_wi_*`モジュールへ依存せず、依存グラフの最下層に置く。
-`_atk_wi_common.py`・`_atk_wi_formatters.py`・`_atk_wi_add.py`・`_atk_wi_mutations.py`・
-`_atk_wi_common.py`・`_atk_serve_app.py`・`_uwi_scan.py`がこのモジュールから一方向にimportする。
+このモジュールは`agent_toolkit._atk.wi`配下の他のモジュールへ依存せず、依存グラフの最下層に置く。
+`entries.py`・`formatters.py`・`add.py`・`mutations/`配下、`agent_toolkit._atk.serve`の画面と`uwi_scan.py`が
+このモジュールから一方向にimportする。
 """
 
 import pathlib

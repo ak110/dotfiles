@@ -357,8 +357,8 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     )
 
 
-def dispatch(args: argparse.Namespace, home: pathlib.Path) -> None:
-    """`config`サブコマンドを実行しexit 0で終了する（サブコマンド省略時は`show`扱い）。"""
+def dispatch(args: argparse.Namespace, home: pathlib.Path) -> int:
+    """`config`サブコマンドを実行し、終了コードを返す（サブコマンド省略時は`show`扱い）。"""
     sub = getattr(args, "config_subcommand", None) or "show"
     try:
         if sub == "show":
@@ -376,5 +376,5 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path) -> None:
             else "`atk config show`で現在値を確認し、`atk config set <KEY> <VALUE>`で不正な値を直して再実行する"
         )
         _outcome.report_failure(str(error), next_action=next_action)
-        sys.exit(2)
-    sys.exit(0)
+        return 2
+    return 0

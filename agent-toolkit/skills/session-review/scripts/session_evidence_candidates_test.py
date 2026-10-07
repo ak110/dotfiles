@@ -10,6 +10,7 @@ import session_evidence_hook_notices as evidence_hook_notices
 import session_review_evidence as evidence
 
 from agent_toolkit._agents_server import tool_descriptions
+from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._testing.helpers import _write_transcript
 
@@ -1259,8 +1260,7 @@ def test_human_intervention_after_process_loop_start_remains_candidate(
 
 def test_process_loop_goal_matches_launch_prompt_body() -> None:
     """起動の判定に使う目的文が、process-loopが子セッションへ渡す目的文と一致する。"""
-    from agent_toolkit._atk.wi import process_loop  # pylint: disable=import-outside-toplevel
 
-    prompt = process_loop._build_process_loop_prompt()  # pylint: disable=protected-access
+    prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access
 
     assert PROCESS_WI_GOAL_BODY in prompt

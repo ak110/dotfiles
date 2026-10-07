@@ -17,7 +17,7 @@ from agent_toolkit._atk.wi.constants import (
     normalized_wi_type,
     unrepairable_entry_next_action,
 )
-from agent_toolkit._atk.wi.formatters import _parse_target_repo
+from agent_toolkit._atk.wi.formatters import parse_target_repo
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
 from agent_toolkit._common import automated_prompt as _automated_prompt
@@ -109,7 +109,7 @@ def _iter_entries(
             if path.suffix != ".md":
                 continue
             text = path.read_text(encoding="utf-8")
-            entry_repo = _parse_target_repo(text)
+            entry_repo = parse_target_repo(text)
             entry_type = _require_type(path, text)
             if filter_repo is not None and entry_type is not None and entry_repo != filter_repo:
                 continue
@@ -134,7 +134,7 @@ def _normalized_repo_or_none(
     return resolver_cache[value]
 
 
-def _count_pending_entries(
+def count_pending_entries(
     private_notes: pathlib.Path,
     target_repo: str | None = None,
 ) -> int:
@@ -213,7 +213,7 @@ def _load_referenced_terminal_entries(
                 continue
             text = path.read_text(encoding="utf-8")
             entry_type = _require_type(path, text)
-            entries.append(_queue_entry(path, _parse_target_repo(text), text, entry_type, resolver_cache))
+            entries.append(_queue_entry(path, parse_target_repo(text), text, entry_type, resolver_cache))
     return tuple(entries)
 
 

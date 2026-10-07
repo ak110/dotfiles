@@ -14,8 +14,14 @@ import subprocess
 import sys
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.wi import cli_input as _wi_cli_input
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi.common import (
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
+from agent_toolkit._atk.wi.constants import (
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
     WI_STATE_HOLD,
@@ -23,26 +29,14 @@ from agent_toolkit._atk.wi.common import (
     WI_STATE_PROCESSING,
     WI_STATES,
     WI_TYPE_UWI,
-    WebInputError,
-    _commit_and_push,
-    _copy_to_tempfile,
-    _ensure_mutation_allowed,
-    _is_uwi_answered,
-    _iter_entries,
-    _pull,
-    _repo_lock,
-    _require_type,
-    _stamp_result,
-    _subdir,
-    _validate_filename,
-    is_agent_environment,
 )
-from agent_toolkit._atk.wi.repo import _resolve_repo_id
+from agent_toolkit._atk.wi.repo import resolve_repo_id
+from agent_toolkit._atk.wi.web_input import WebInputError
 
 ANSWER_MARKER = "<!-- ユーザーはこの行以降に回答を追記する -->"
 """UWIエントリの回答欄開始位置を示すHTMLコメント。
 
-`_atk_wi_add.add_entries`が投入時に付与し、`answer_uwi`・`_cmd_answer`が回答本文の切り出しに使う。
+`_atk_wi_add.add_entries`が投入時に付与し、`answer_uwi`・`cmd_answer`が回答本文の切り出しに使う。
 本文字列を直接記述せず、常に本定数を参照する。
 """
 
@@ -160,12 +154,12 @@ def _resolve_active_entry(
     if state is not None:
         if state not in (*WI_PROCESSABLE_STATES, WI_STATE_HOLD):
             raise WebInputError(f"stateが不正です: {state}", next_action="stateはinbox、processingまたはholdで指定してください")
-        candidate = _validate_filename(filename, private_notes / state)
+        candidate = _wi_filenames.validate_filename(filename, private_notes / state)
         if candidate.is_file():
             return candidate
         raise FileNotFoundError(filename)
     for candidate_state in _ANSWER_TARGET_STATES:
-        candidate = _validate_filename(filename, private_notes / candidate_state)
+        candidate = _wi_filenames.validate_filename(filename, private_notes / candidate_state)
         if candidate.is_file():
             return candidate
     raise FileNotFoundError(filename)
@@ -177,7 +171,7 @@ def require_uwi_entry(path: pathlib.Path, text: str) -> None:
     CLIとWeb APIの双方が呼び出す共通の検証とする。
     frontmatterの`type`のみを根拠とし、所在ディレクトリーは根拠にしない。
     """
-    entry_type = _require_type(path, text)
+    entry_type = _wi_entries.entry_type_of(path, text)
     if entry_type != WI_TYPE_UWI:
         raise WebInputError(
             f"回答はUWIのエントリにのみ適用できます（type={entry_type}）: {path.name}",
@@ -232,10 +226,10 @@ def answer_uwi(
     """
     if not answer.strip():
         raise WebInputError("回答本文が空です", next_action="回答を記入して再実行する")
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _ensure_mutation_allowed(private_notes)
+    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
+        _wi_sync.ensure_mutation_allowed(private_notes)
         if not skip_remote_sync:
-            _pull(private_notes)
+            _wi_sync.pull(private_notes)
         try:
             path = _resolve_active_entry(private_notes, filename, state)
         except FileNotFoundError as error:
@@ -262,7 +256,7 @@ def answer_uwi(
         auto_adopt = _is_affirmative_post_approval(text, answer)
         if text == content and not auto_adopt:
             return False
-        destination = _subdir(private_notes, WI_STATE_ADOPTED) / path.name if auto_adopt else None
+        destination = _wi_entries.subdir(private_notes, WI_STATE_ADOPTED) / path.name if auto_adopt else None
         if destination is not None and destination.exists():
             raise WebInputError(
                 f"移動先（{WI_STATE_ADOPTED}）に同名エントリが既に存在します: {path.name}",
@@ -271,11 +265,13 @@ def answer_uwi(
         if text != content:
             _frontmatter.write_entry_text(path, content)
         if destination is not None:
-            _stamp_result(path, outcome=WI_STATE_ADOPTED, now=datetime.datetime.now(datetime.UTC))
+            _wi_entries.stamp_result(path, outcome=WI_STATE_ADOPTED, now=datetime.datetime.now(datetime.UTC))
             shutil.move(path, destination)
-            _commit_and_push(private_notes, "chore: answer and adopt uwi item", list(WI_STATES), skip_push=skip_remote_sync)
+            _wi_sync.commit_and_push(
+                private_notes, "chore: answer and adopt uwi item", list(WI_STATES), skip_push=skip_remote_sync
+            )
         else:
-            _commit_and_push(
+            _wi_sync.commit_and_push(
                 private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))], skip_push=skip_remote_sync
             )
     return True
@@ -297,7 +293,7 @@ def _is_affirmative_post_approval(text: str, answer: str) -> bool:
     return metadata.get("question_type") == "choice" and normalized_choices == _POST_APPROVAL_CHOICES
 
 
-def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """answerサブコマンド: UWIへ回答する。
 
     `filename`と`answer_body`の双方を指定した場合は、指定したUWIの回答欄を非対話で更新する。
@@ -331,13 +327,15 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         )
         sys.exit(1)
     targets: list[pathlib.Path] = []
-    with _repo_lock(private_notes):
-        _pull(private_notes)
+    with _wi_sync.repo_lock(private_notes):
+        _wi_sync.pull(private_notes)
         filter_repo: str | None = None
         if args.target_repo is not None:
-            filter_repo = _resolve_repo_id(args.target_repo)
-        for path, _repo, text, _state, _kind in _iter_entries(private_notes, WI_PROCESSABLE_STATES, filter_repo, WI_TYPE_UWI):
-            if _is_uwi_answered(text):
+            filter_repo = resolve_repo_id(args.target_repo)
+        for path, _repo, text, _state, _kind in _wi_entries.iter_entries(
+            private_notes, WI_PROCESSABLE_STATES, filter_repo, WI_TYPE_UWI
+        ):
+            if _wi_uwi_scan.is_uwi_answered(text):
                 continue
             targets.append(path)
     if not targets:
@@ -347,14 +345,14 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     had_conflict = False
     editor_failed = False
     for path in targets:
-        with _repo_lock(private_notes):
-            _pull(private_notes)
+        with _wi_sync.repo_lock(private_notes):
+            _wi_sync.pull(private_notes)
             if not path.exists():
                 continue
             print(f"--- {path.name} ---")
             print(path.read_text(encoding="utf-8"))
             snapshot = path.read_bytes()
-        tmp_path = _copy_to_tempfile(snapshot)
+        tmp_path = _wi_cli_input.copy_to_tempfile(snapshot)
         result = subprocess.run([editor, str(tmp_path)], check=False)
         if result.returncode != 0:
             _outcome.report_failure(

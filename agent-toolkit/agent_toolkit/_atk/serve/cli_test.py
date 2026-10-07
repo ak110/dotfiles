@@ -19,20 +19,23 @@ import pytest
 import watchdog.events
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import assets, config, state
+from agent_toolkit._atk.serve import assets, config, state, wi_operations
 from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve.plans import views as serve_plan_views
-from agent_toolkit._atk.wi import common, user_comment
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import user_comment
 from agent_toolkit._testing.serve_support import (
+    AWI_TEXT,
+    UNANSWERED_UWI_TEXT,
     _FakeTimer,
     _patch_comment_edit_dependencies,
     _run_node_ui,
     _session_review_awi,
     _write_detail_entry,
     _write_repo_entry,
+    make_inbox_and_processing,
 )
-from agent_toolkit._testing.wi_mutations_support import MUTATION_MODULES
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -413,7 +416,7 @@ async def test_state_ignores_pending_timer_cancelled_by_deadline(
 async def test_transition_routes_forward_only_supported_explicit_states(tmp_path: pathlib.Path) -> None:
     """各遷移ルートが共通契約の明示状態だけを処理層へ渡す。"""
 
-    class CaptureOperations(serve_app.Operations):
+    class CaptureOperations(wi_operations.Operations):
         def __init__(self, private_notes: pathlib.Path) -> None:
             super().__init__(private_notes)
             self.calls: list[tuple[str, list[str], dict[str, object]]] = []
@@ -500,7 +503,7 @@ def test_detail_preserves_frontmatter_as_strict_json_values(tmp_path: pathlib.Pa
         "---\n\n本文\n",
     )
 
-    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+    detail = wi_operations.Operations(tmp_path).detail("inbox", "entry.md")
     entries = typing.cast(list[dict[str, typing.Any]], detail["frontmatter_entries"])
     frontmatter = {item["key"]["value"]: item["value"] for item in entries}
 
@@ -522,7 +525,7 @@ def test_detail_with_frontmatter_only_returns_empty_body_html(tmp_path: pathlib.
     """frontmatterだけの詳細は本文用HTMLを空文字列として返す。"""
     _write_detail_entry(tmp_path, "---\ntype: awi\ntarget_repo: example/repo\n---\n")
 
-    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+    detail = wi_operations.Operations(tmp_path).detail("inbox", "entry.md")
 
     assert detail["body_html"] == ""
     assert '<table class="frontmatter">' in typing.cast(str, detail["content_html"])
@@ -551,7 +554,7 @@ def test_detail_returns_body_only_and_normalized_question_metadata(
         f"---\ntype: uwi\ntarget_repo: example/repo\n{question_source}---\n\n## 質問\n\n質問本文\n",
     )
 
-    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+    detail = wi_operations.Operations(tmp_path).detail("inbox", "entry.md")
 
     assert detail["question_type"] == expected_type
     assert detail["choices"] == expected_choices
@@ -566,8 +569,8 @@ def test_operations_source_empty_filter_returns_items_with_missing_or_empty_sour
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`source_empty=true`は空の投入元だけを返し、値あり・非文字列の項目を除外する。"""
-    monkeypatch.setattr(common, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
-    monkeypatch.setattr(common, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "no-source.md").write_text(
@@ -590,7 +593,7 @@ def test_operations_source_empty_filter_returns_items_with_missing_or_empty_sour
         "---\ntype: awi\ntarget_repo: example/repo\nsource: []\n---\n\nリスト形式の投入元\n",
         encoding="utf-8",
     )
-    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"source_empty": "true"})
+    result, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"source_empty": "true"})
     assert not warnings
     filenames = [typing.cast(str, item["filename"]) for item in result]
     filenames.sort()
@@ -608,20 +611,13 @@ async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
         yield
 
-    for module in (common, *MUTATION_MODULES, serve_app.uwi_mutations):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
-    inbox = tmp_path / "inbox"
-    processing = tmp_path / "processing"
-    inbox.mkdir()
-    processing.mkdir()
-    uwi_content = (
-        "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
-        "<!-- ユーザーはこの行以降に回答を追記する -->\n"
-    )
-    awi_content = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n"
+    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    inbox, processing = make_inbox_and_processing(tmp_path)
+    uwi_content = UNANSWERED_UWI_TEXT
+    awi_content = AWI_TEXT
     for filename in ("answer-state.md", "answer-legacy.md"):
         (inbox / filename).write_text(uwi_content, encoding="utf-8")
         (processing / filename).write_text(uwi_content, encoding="utf-8")
@@ -871,7 +867,7 @@ def test_repository_readers_canonicalize_legacy_paths_once_per_operation(
         return subprocess.CompletedProcess(cmd, 0, stdout="https://github.com/example/repo.git\n", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    operations = serve_app.Operations(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
 
     url_entries, warnings = operations.entries_with_warnings({"target_repo": "github.com/example/repo"})
     assert [item["filename"] for item in url_entries] == ["legacy-b.md", "legacy-a.md", "current.md"]

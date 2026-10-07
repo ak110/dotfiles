@@ -9,6 +9,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._atk.wi import alerts  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import json_command as _json_command  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -216,17 +217,9 @@ def _prepare_alert_submission(monkeypatch: pytest.MonkeyPatch, notes: pathlib.Pa
     def no_repository_update(*_args: object, **_kwargs: object) -> None:
         return None
 
-    monkeypatch.setattr(  # pylint: disable=protected-access
-        alerts._add,  # pylint: disable=protected-access
-        "_repo_lock",
-        no_repo_lock,
-    )
-    monkeypatch.setattr(alerts._add, "_pull", no_repository_update)  # pylint: disable=protected-access
-    monkeypatch.setattr(  # pylint: disable=protected-access
-        alerts._add,  # pylint: disable=protected-access
-        "_commit_and_push",
-        no_repository_update,
-    )
+    monkeypatch.setattr(_wi_sync, "repo_lock", no_repo_lock)
+    monkeypatch.setattr(_wi_sync, "pull", no_repository_update)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", no_repository_update)
 
 
 def _saved_awis_by_heading(notes: pathlib.Path) -> dict[str, str]:

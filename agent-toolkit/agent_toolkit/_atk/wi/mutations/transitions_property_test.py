@@ -11,9 +11,10 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from agent_toolkit._atk.wi import common, readiness
+from agent_toolkit._atk.wi import readiness
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
-from agent_toolkit._testing.wi_mutations_support import setattr_in_mutation_modules
 from agent_toolkit.atk_test import _setup_notes, _write_awi_file
 
 _NOW = datetime.datetime(2026, 10, 5, tzinfo=datetime.UTC)
@@ -39,8 +40,8 @@ _SOURCES = {
 
 
 def _disable_git(monkeypatch: pytest.MonkeyPatch) -> None:
-    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
 
 def _state(notes: pathlib.Path) -> str | None:
@@ -82,7 +83,7 @@ def test_transition_sequences_match_reference_model(actions: list[str], monkeypa
                 )
                 expected = _DESTINATION[action]
             else:
-                with pytest.raises((SystemExit, common.WebInputError)):
+                with pytest.raises((SystemExit, _wi_web_input.WebInputError)):
                     mutation_transitions.transition_entries(
                         notes,
                         action=action,
@@ -134,7 +135,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
     ) == [first.name, second.name]
 
     processing = notes / "processing" / first.name
-    with pytest.raises(common.WebInputError):
+    with pytest.raises(_wi_web_input.WebInputError):
         mutation_transitions.transition_entries(
             notes,
             action="hold",

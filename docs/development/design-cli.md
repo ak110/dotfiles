@@ -39,6 +39,13 @@ dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、P
 
 呼び出しごとにredirect先、終了コードの退避、件数取得とJSON化をshellで組み立てる案は、引用と終了コード伝播の判断を反復させるため採用しない。出力をメモリーに集約して終了後に保存する案は、大容量出力と異常終了までの部分出力を失い得るため採用しない。対話型、常駐、端末制御ならびに追従表示は有限終了後に全量を返す契約と合わないため、対象外とする。
 
+## atkのサブコマンドの登録
+
+`atk`の各サブコマンドは、実装のモジュールが引数を登録する`build_parser`と実行する`dispatch`を公開する。`agent-toolkit/agent_toolkit/atk.py`はサブコマンドと`build_parser`の登録表、実行の登録表と、全サブコマンドに共通の前処理（旧形式の引数の解決、出力の保存、managed-tempの掃引）だけを持つ。`atk wi`配下の引数の登録と実行の振り分けは`_atk/wi/cli.py`、`atk serve`は起動処理の依存を遅延して読み込む`_atk/serve/command.py`が持つ。以前は`wi`の全サブコマンドの引数と`commit`・`serve`などの引数を`atk.py`へ直接書き、`main`の分岐が他モジュールの非公開の関数を呼んでいた。登録方式が2通りに分かれ、サブコマンドを加える計画ごとに`atk.py`へ追記する構造だったためである。
+
+`atk wi`の引数の確定は`prepare_args`と`validate_args`の2段とし、前者をmanaged-tempの掃引より前、後者を掃引の後に呼ぶ。分ける前の`main`と同じ順序で、引数の誤りと掃引の警告を出力するためである。`info`・`commit`・`setup-project`は掃引より前に実行する。
+知識境界として、各サブコマンドの引数と実行は実装のモジュールが持ち、`atk.py`は登録の順序と共通の前処理だけを持つ。`--help`の文面と引数は登録の移動前後で変えず、`atk_help_test.py`と既存の動作テストの期待値で確かめる。
+
 ## atkサブコマンドの引数拒否形式
 
 目的は`atk`の利用主体であるコーディングエージェントが、受理しないオプション名を与えた場合に、1回の出力から正しい呼び出し形式へ到達できるようにすることである。
@@ -94,7 +101,7 @@ dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、P
 標識`次の操作:`、空の次の操作の拒否、理由と次の操作を持つ例外型（`ActionableError`）、標準エラーへの出力関数の4つは`agent-toolkit/agent_toolkit/_common/next_action.py`が持つ。
 同モジュールは層の順序で最も前にあり、全ての層、公開スクリプトとスキル付属スクリプトから使える。
 hookは`_hooks/notice.py`の`block_formatter`と`warn`区分の整形関数が解消手段`fix`を必須とし、反復集約の2件目以降と遮断への昇格でも同じ行を残す。
-`atk`は`WebInputError`を`ActionableError`の派生とし、`atk.py:main`が理由と次の操作の2行で出力する。Web APIの応答本文は`str()`が返す理由だけを使い、変えない。
+`atk`は`WebInputError`を`ActionableError`の派生とし、各サブコマンドの実行を振り分ける処理が`_atk/cli_support.py`の`report_rejected`で理由と次の操作の2行を出力する。Web APIの応答本文は`str()`が返す理由だけを使い、変えない。
 agents_serverはツール関数の登録の1箇所で例外を包み、`ActionableError`と想定外の例外を次の操作付きのエラー本文へ変える。状態値だけを返す応答（配送の失敗、期限切れsessionの中断、待機の打ち切りなど）には`next_action`項目を加える。
 `atk agents wait`、`wait_ci.py`、スキル付属スクリプトと計画ファイルの構造チェックも、非0の終了で同じ標識の行を出力する。
 

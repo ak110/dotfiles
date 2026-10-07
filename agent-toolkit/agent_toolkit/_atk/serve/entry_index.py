@@ -25,7 +25,8 @@ import threading
 import time
 import typing
 
-from agent_toolkit._atk.wi import common, frontmatter
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import frontmatter
 
 _TRUSTED_AGE_NS = 2_000_000_000
 """解析結果を信用するために必要な、走査開始時刻と更新時刻の差。秒単位の精度とFATの2秒精度を覆う。"""
@@ -137,7 +138,7 @@ class EntryIndex:
                         continue
                     parsed_frontmatter = frontmatter.parse_frontmatter(text)
                     metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
-                    kind = common.entry_type_from_metadata(path, metadata) if parsed_frontmatter is not None else None
+                    kind = _wi_entries.entry_type_from_metadata(path, metadata) if parsed_frontmatter is not None else None
                     parsed = _ParsedFile(text=text, text_folded=text.casefold(), metadata=metadata, kind=kind)
                     cached = _CacheEntry(
                         mtime_ns=file_stat.st_mtime_ns,

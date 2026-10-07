@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pathlib
@@ -333,3 +334,14 @@ def main() -> int:
         flush=True,
     )
     return 0
+
+
+def build_parser(parser: argparse.ArgumentParser) -> None:
+    """`atk agents-exit-session`は引数を持たない。登録表の形をそろえるために置く。"""
+    del parser
+
+
+def dispatch(args: argparse.Namespace) -> int:
+    """呼び出し元のホストセッションの終了を要求し、終了コードを返す。"""
+    del args
+    return main()

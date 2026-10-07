@@ -12,19 +12,12 @@ import typing
 from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi.common import (
-    WI_STATE_PROCESSING,
-    WI_STATES,
-    WI_TYPES,
-    _commit_and_push,
-    _pull,
-    _repo_lock,
-    _subdir,
-    calculate_readiness,
-)
-from agent_toolkit._atk.wi.constants import BULK_ACTION_LABELS, bulk_source_states
-from agent_toolkit._atk.wi.listing import QueueEntryDisplay, _print_entries, _select_entries
-from agent_toolkit._atk.wi.repo import _resolve_repo_id
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import readiness as _wi_readiness
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.constants import BULK_ACTION_LABELS, WI_STATE_PROCESSING, WI_STATES, WI_TYPES, bulk_source_states
+from agent_toolkit._atk.wi.listing import print_entries
+from agent_toolkit._atk.wi.repo import resolve_repo_id
 
 
 class CandidateKey(typing.NamedTuple):
@@ -38,7 +31,7 @@ class CandidateKey(typing.NamedTuple):
 
 
 type CandidateSnapshot = tuple[CandidateKey, ...]
-type ApplyCandidates = Callable[[pathlib.Path, list[QueueEntryDisplay]], list[str]]
+type ApplyCandidates = Callable[[pathlib.Path, list[_wi_entries.EntryRecord]], list[str]]
 
 
 def _select_candidates(
@@ -50,11 +43,11 @@ def _select_candidates(
     answered: Iterable[str],
     source: Iterable[str] | None,
     source_states: tuple[str, ...],
-) -> list[QueueEntryDisplay]:
+) -> list[_wi_entries.EntryRecord]:
     """一覧条件とその操作の遷移元状態集合がともに一致する項目を選択する。"""
     return [
         entry
-        for entry in _select_entries(
+        for entry in _wi_entries.select_entries(
             private_notes,
             status=status,
             target_repo=target_repo,
@@ -66,20 +59,20 @@ def _select_candidates(
     ]
 
 
-def _candidate_key(entry: QueueEntryDisplay) -> CandidateKey:
+def _candidate_key(entry: _wi_entries.EntryRecord) -> CandidateKey:
     """候補1件を状態・名前・対象リポジトリ・本文・種別の比較可能な組へ変換する。"""
     path, target_repo, text, state, entry_type = entry
     assert entry_type is not None  # `_select_candidates`が有効な種別だけを返す。
     return CandidateKey(state, path.name, target_repo, text, entry_type)
 
 
-def _snapshot(candidates: list[QueueEntryDisplay]) -> CandidateSnapshot:
+def _snapshot(candidates: list[_wi_entries.EntryRecord]) -> CandidateSnapshot:
     """候補一覧を確認時点の記録へ変換する。"""
     return tuple(_candidate_key(entry) for entry in candidates)
 
 
 def _ensure_processing_is_explicit(
-    candidates: list[QueueEntryDisplay],
+    candidates: list[_wi_entries.EntryRecord],
     *,
     force: bool,
 ) -> None:
@@ -106,7 +99,7 @@ def _confirm(count: int, label: str) -> bool:
 
 def _remove_candidates(
     private_notes: pathlib.Path,
-    candidates: list[QueueEntryDisplay],
+    candidates: list[_wi_entries.EntryRecord],
     *,
     note: str | None,
 ) -> list[str]:
@@ -114,11 +107,11 @@ def _remove_candidates(
     for path, _repo, _text, _state, _type in candidates:
         path.unlink()
     for state_name in WI_STATES:
-        _subdir(private_notes, state_name)
+        _wi_entries.subdir(private_notes, state_name)
     count = len(candidates)
     item_word = "entry" if count == 1 else "entries"
     note_suffix = f" (理由: {note})" if note else ""
-    _commit_and_push(
+    _wi_sync.commit_and_push(
         private_notes,
         f"chore: remove {count} {item_word}{note_suffix}",
         list(WI_STATES),
@@ -147,8 +140,8 @@ def _apply_confirmed_candidates(
     label = BULK_ACTION_LABELS[action]
     source_states = bulk_source_states(action, actor_is_agent=actor_is_agent)
     confirmed_keys = set(confirmed)
-    with _repo_lock(private_notes):
-        _pull(private_notes)
+    with _wi_sync.repo_lock(private_notes):
+        _wi_sync.pull(private_notes)
         current = _select_candidates(
             private_notes,
             normalized_repos,
@@ -195,10 +188,10 @@ def bulk_apply_entries(
     """
     label = BULK_ACTION_LABELS[action]
     source_states = bulk_source_states(action, actor_is_agent=actor_is_agent)
-    normalized_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in target_repo))
-    with _repo_lock(private_notes):
+    normalized_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in target_repo))
+    with _wi_sync.repo_lock(private_notes):
         if not skip_pull:
-            _pull(private_notes)
+            _wi_sync.pull(private_notes)
         candidates = _select_candidates(
             private_notes,
             normalized_repos,
@@ -208,11 +201,13 @@ def bulk_apply_entries(
             source=source,
             source_states=source_states,
         )
-        readiness = calculate_readiness(private_notes, normalized_repos[0] if len(normalized_repos) == 1 else None)
+        readiness = _wi_readiness.calculate_readiness(
+            private_notes, normalized_repos[0] if len(normalized_repos) == 1 else None
+        )
         confirmed_snapshot = _snapshot(candidates)
 
     if not assume_yes:
-        _print_entries(candidates, readiness)
+        print_entries(candidates, readiness)
     if not candidates:
         _outcome.report_success(f"対象0件のため{label}しなかった（変更は無い）: {', '.join(normalized_repos)}")
         return []
@@ -251,7 +246,7 @@ def remove_all_entries(
 ) -> list[str]:
     """対象リポジトリの候補を一覧表示し、確認後に一括削除する。"""
 
-    def apply_fn(notes: pathlib.Path, candidates: list[QueueEntryDisplay]) -> list[str]:
+    def apply_fn(notes: pathlib.Path, candidates: list[_wi_entries.EntryRecord]) -> list[str]:
         return _remove_candidates(notes, candidates, note=note)
 
     return bulk_apply_entries(

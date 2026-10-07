@@ -29,7 +29,7 @@ import psutil
 
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi.repo import _resolve_local_worktree
+from agent_toolkit._atk.wi.repo import resolve_local_worktree
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import console_title as _console_title
@@ -95,7 +95,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def run(args: argparse.Namespace) -> int:
+def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
     if args.timeout <= 0:
         _outcome.report_failure(
@@ -104,7 +104,7 @@ def run(args: argparse.Namespace) -> int:
         )
         return 2
     candidates = _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する")
-    repo_root = _resolve_repo_root(_resolve_local_worktree(args.target_repo))
+    repo_root = _resolve_repo_root(resolve_local_worktree(args.target_repo))
     log_dir = _state_paths.state_dir() / _LOG_DIRNAME
     log_dir.mkdir(parents=True, exist_ok=True)
     _remove_expired_logs(log_dir, now=time.time())

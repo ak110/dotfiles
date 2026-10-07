@@ -5,7 +5,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk.wi import repo as repo_module
-from agent_toolkit._atk.wi.common import WebInputError
+from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._testing import git_repository
 
 
@@ -28,7 +28,7 @@ def test_resolve_repo_id_or_raise_guides_target_repo_option() -> None:
 def test_resolve_repo_id_reports_one_failure_line(capsys: pytest.CaptureFixture[str]) -> None:
     """CLIで対象の解決に失敗した場合は失敗行1本と次の操作の行で終了コード2になる。"""
     with pytest.raises(SystemExit) as exc_info:
-        repo_module._resolve_repo_id("not-a-repository")  # pylint: disable=protected-access
+        repo_module.resolve_repo_id("not-a-repository")  # pylint: disable=protected-access
 
     assert exc_info.value.code == 2
     failure, next_action = _failure_and_next_action(capsys.readouterr().err)
@@ -57,7 +57,7 @@ def test_verify_target_repo_content_without_target_repo_guides_edit(
     path = tmp_path / "20260101-000000-001.md"
 
     with pytest.raises(SystemExit) as exc_info:
-        repo_module._verify_target_repo_content(  # pylint: disable=protected-access
+        repo_module.verify_target_repo_content(  # pylint: disable=protected-access
             path, "---\ntype: awi\n---\n\n本文\n", "github.com/example/foo"
         )
 
@@ -73,7 +73,7 @@ def test_verify_target_repo_content_mismatch_guides_actual_value(
     path = tmp_path / "20260101-000000-001.md"
 
     with pytest.raises(SystemExit) as exc_info:
-        repo_module._verify_target_repo_content(  # pylint: disable=protected-access
+        repo_module.verify_target_repo_content(  # pylint: disable=protected-access
             path, "---\ntarget_repo: github.com/example/other\ntype: awi\n---\n\n本文\n", "github.com/example/foo"
         )
 

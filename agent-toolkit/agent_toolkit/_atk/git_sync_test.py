@@ -9,8 +9,8 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import git_sync as _atk_git_sync
-from agent_toolkit._atk.wi import common as _atk_wi_common
 from agent_toolkit._atk.wi import mutations as _atk_wi_mutations
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._testing import git_repository
 
 
@@ -229,7 +229,7 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
     local, peer = _init_diverged_mq_repos(tmp_path)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(local))
     monkeypatch.chdir(tmp_path)
-    original_run = _atk_wi_common._run_git
+    original_run = _wi_sync.run_git
     injected = False
     dirty = local / "unrelated.tmp"
 
@@ -244,7 +244,7 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
             dirty.write_text("無関係な未追跡差分\n", encoding="utf-8")
         original_run(args, cwd, forward_error_output=forward_error_output)
 
-    monkeypatch.setattr(_atk_wi_common, "_run_git", run_git)
+    monkeypatch.setattr(_wi_sync, "run_git", run_git)
     with pytest.raises(SystemExit, match="3"):
         atk.main(["wi", "hold", "20260831-101752-001.md"], home=tmp_path)
     held = capsys.readouterr()
@@ -389,7 +389,7 @@ def test_sync_recovers_matching_tree_divergence(
 
     with _atk_git_sync.repo_lock(local):
         if operation == "pull":
-            _atk_wi_common.pull(local)
+            _wi_sync.pull(local)
         else:
             _atk_git_sync.push_pending_commits(local)
 
@@ -418,7 +418,7 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
 
     if operation == "pull":
         with _atk_git_sync.repo_lock(local):
-            _atk_wi_common.pull(local)
+            _wi_sync.pull(local)
     else:
         assert _atk_wi_mutations.commit_entries(local).changed is False
 
@@ -442,7 +442,7 @@ def test_mq_pull_rebases_clean_divergence(
     upstream = git_repository.run_git(peer, "rev-parse", "HEAD").stdout.strip()
 
     with _atk_git_sync.repo_lock(local):
-        _atk_wi_common.pull(local)
+        _wi_sync.pull(local)
 
     assert git_repository.run_git(local, "merge-base", "--is-ancestor", upstream, "HEAD").returncode == 0
     assert git_repository.run_git(local, "log", "-1", "--format=%s").stdout.strip() == "local change"
@@ -466,7 +466,7 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
     (local / "untracked.txt").write_text("dirty\n", encoding="utf-8")
 
     with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError):
-        _atk_wi_common.pull(local)
+        _wi_sync.pull(local)
 
     assert git_repository.run_git(local, "rev-parse", "HEAD").stdout.strip() == local_head
     assert not _atk_git_sync.is_rebase_in_progress(local)
@@ -497,7 +497,7 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     git_repository.run_git(peer, "push")
 
     with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError) as exc_info:
-        _atk_wi_common.pull(local)
+        _wi_sync.pull(local)
 
     assert exc_info.value.cmd[-3:] == ["merge", "--ff-only", "@{u}"]
     assert _atk_git_sync.is_rebase_in_progress(local)
@@ -530,7 +530,7 @@ def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path:
     git_repository.run_git(peer, "push")
 
     with pytest.raises(subprocess.CalledProcessError):
-        _atk_wi_common.synchronize(local, lock_timeout=5)
+        _wi_sync.synchronize(local, lock_timeout=5)
 
     assert _atk_git_sync.is_rebase_in_progress(local)
     status = git_repository.run_git(local, "status", "--porcelain=v1").stdout

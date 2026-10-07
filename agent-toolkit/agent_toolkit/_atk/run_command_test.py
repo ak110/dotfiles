@@ -28,7 +28,7 @@ def _run(
     directory.mkdir()
     monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: directory)
     args = argparse.Namespace(command_argv=["--", *argv], cwd=tmp_path.resolve(), timeout=timeout)
-    result = run_command.run(args)
+    result = run_command.dispatch(args)
     captured = capsys.readouterr()
     return result, json.loads(captured.out), captured.err
 
@@ -162,7 +162,7 @@ def test_empty_command_is_wrapper_failure(
     monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: tmp_path / "unused")
     args = argparse.Namespace(command_argv=[], cwd=tmp_path.resolve(), timeout=None)
 
-    result = run_command.run(args)
+    result = run_command.dispatch(args)
     captured = capsys.readouterr()
 
     assert result == 125
@@ -177,7 +177,7 @@ def test_command_without_separator_is_wrapper_failure(
     monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: tmp_path / "unused")
     args = argparse.Namespace(command_argv=[sys.executable, "--version"], cwd=tmp_path.resolve(), timeout=None)
 
-    result = run_command.run(args)
+    result = run_command.dispatch(args)
     captured = capsys.readouterr()
 
     assert result == 125

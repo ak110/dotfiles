@@ -1,10 +1,9 @@
 """UWIエントリの回答状態を走査する共有モジュール。
 
-frontmatterはCLIと同じ`_atk_wi_frontmatter.parse_frontmatter`で解析し、
+frontmatterはCLIと同じ`frontmatter.parse_frontmatter`で解析し、
 YAML表現の違いによってCLIとフックの判定が分岐しないようにする。
 
-`is_uwi_answered`はUWI回答判定のSSOTとし、`_atk_wi_common`は本モジュールから
-再エクスポートする。
+`is_uwi_answered`はUWI回答判定のSSOTとし、CLI・Web画面・フックはいずれも本モジュールの判定を使う。
 """
 
 import hashlib

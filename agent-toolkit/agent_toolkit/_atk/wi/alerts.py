@@ -20,8 +20,9 @@ from collections.abc import Callable
 from typing import Any
 
 from agent_toolkit._atk.wi import add as _add
-from agent_toolkit._atk.wi.common import WI_STATES, WI_TYPE_AWI, _iter_entries
-from agent_toolkit._atk.wi.formatters import _parse_alert_keys
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_AWI
+from agent_toolkit._atk.wi.formatters import parse_alert_keys
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
@@ -256,10 +257,10 @@ def collect_gitlab_schedule_failures(host: str, repo: str, *, api_fn: GlabApiFn 
 def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[str]:
     """対象リポジトリに限定したAWI全状態の`alert_keys`を集合として返す。"""
     keys: set[str] = set()
-    for _path, _entry_repo, text, _state, _entry_type in _iter_entries(
+    for _path, _entry_repo, text, _state, _entry_type in _wi_entries.iter_entries(
         private_notes, _ALL_AWI_STATES, target_repo, WI_TYPE_AWI
     ):
-        keys.update(_parse_alert_keys(text))
+        keys.update(parse_alert_keys(text))
     return keys
 
 

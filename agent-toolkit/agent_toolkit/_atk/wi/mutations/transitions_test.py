@@ -18,12 +18,10 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as wi_add
-from agent_toolkit._atk.wi import (
-    bulk,
-    common,
-    user_comment,
-)
 from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import user_comment
+from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.constants import (
     BULK_SOURCE_STATES,
     TRANSITION_EXPLICIT_STATES,
@@ -39,7 +37,6 @@ from agent_toolkit._testing.wi_mutations_support import (
     _write_convert_awi,
     _write_convert_plan,
     _write_uwi_entry,
-    setattr_in_mutation_modules,
 )
 from agent_toolkit.atk_test import (
     _FIXED_DT,
@@ -64,10 +61,10 @@ def test_flat_awi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
     """平引数遷移が戻り値とファイル移動を一貫して反映する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
-    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     filenames = mutation_transitions.transition_entries(
         notes,
         action="start-processing",
@@ -302,14 +299,14 @@ def test_transition_restores_missing_state_directories_before_commit(
     notes = _setup_notes(tmp_path)
     (notes / "hold").rmdir()
     _write_awi_file(notes, "entry.md")
-    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
 
     def assert_state_paths_exist(_notes: pathlib.Path, _message: str, paths: list[str], **_kwargs: object) -> None:
         assert all((_notes / path).is_dir() for path in paths)
 
-    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", assert_state_paths_exist)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", assert_state_paths_exist)
 
     mutation_transitions.transition_entries(
         notes,
@@ -377,9 +374,9 @@ def test_set_dependencies_uses_graph_refreshed_after_pull(
     notes = _setup_notes(tmp_path)
     first = _write_convert_awi(notes, "first.md")
     _write_convert_awi(notes, "second.md")
-    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     def pull_with_competing_update(_path: pathlib.Path) -> None:
         first.write_text(
@@ -387,9 +384,9 @@ def test_set_dependencies_uses_graph_refreshed_after_pull(
             encoding="utf-8",
         )
 
-    setattr_in_mutation_modules(monkeypatch, "_pull", pull_with_competing_update)
+    monkeypatch.setattr(_wi_sync, "pull", pull_with_competing_update)
 
-    with pytest.raises(common.WebInputError, match="循環"):
+    with pytest.raises(_wi_web_input.WebInputError, match="循環"):
         mutation_dependencies.set_entry_dependencies(notes, filename="second.md", depends_on=("first.md",))
 
 
@@ -980,7 +977,7 @@ def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
     filename = "20260827-000000-001.md"
     _write_awi_file(notes, filename, body="編集前")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-    original_read = wi_add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    original_read = wi_add.read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
     captured: dict[str, str] = {}
 
     def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
@@ -990,7 +987,7 @@ def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
 
     monkeypatch.setattr(
         wi_add,  # pylint: disable=protected-access
-        "_read_saved_entry_details",
+        "read_saved_entry_details",
         read_after_alteration,
     )
     body_file = _write_body_file(tmp_path, "編集後")
@@ -1032,11 +1029,11 @@ def _write_bulk_entry(
 def _patch_bulk_git(monkeypatch: pytest.MonkeyPatch, commit_calls: list[str]) -> None:
     """一括操作が呼び出す2モジュールのgit操作を抑止し、commitメッセージを記録する。"""
     _disable_transition_git(monkeypatch)
-    monkeypatch.setattr(bulk, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(bulk, "_pull", lambda _path: None)
-    setattr_in_mutation_modules(
-        monkeypatch,
-        "_commit_and_push",
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(
+        _wi_sync,
+        "commit_and_push",
         lambda _private_notes, message, _paths, **_kwargs: commit_calls.append(message),
     )
 
@@ -1174,7 +1171,7 @@ def test_bulk_transition_skips_entries_changed_after_confirmation(
     def edit_after_confirmation(_path: pathlib.Path) -> None:
         changed.write_text(changed.read_text(encoding="utf-8") + "\n追記\n", encoding="utf-8")
 
-    monkeypatch.setattr(bulk, "_pull", edit_after_confirmation)
+    monkeypatch.setattr(_wi_sync, "pull", edit_after_confirmation)
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(

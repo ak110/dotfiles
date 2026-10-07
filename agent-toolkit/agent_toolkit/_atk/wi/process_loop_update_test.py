@@ -9,6 +9,7 @@ import collections.abc
 import contextlib
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -17,21 +18,28 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import config as _config  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.wi.process_loop_test import (
-    _fake_run_with_remote_url,  # noqa: E402  # pylint: disable=wrong-import-position
-)
+from agent_toolkit._atk.wi import process_loop_env as _pl_env
+from agent_toolkit._atk.wi import process_loop_session as _pl_session
+from agent_toolkit._atk.wi import process_loop_update as _pl_update
+from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
+from agent_toolkit._atk.wi import readiness as _wi_readiness
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
+from agent_toolkit._testing.process_loop_support import (
+    fake_run_with_remote_url,
+    isolate_process_loop_commands,
+    raise_system_exit_0,
+)
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 # 上流差分確認関数は`_run_until_stop`が差し替えるため、公開CLI経由では検証できない。
 # private参照はモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
-_has_upstream_diff = _process_loop._has_upstream_diff  # pylint: disable=protected-access
-_restart_process_loop = _process_loop._restart_process_loop  # pylint: disable=protected-access
-_RESTART_SPEC_ENV = _process_loop._RESTART_SPEC_ENV  # pylint: disable=protected-access
-_RESTART_EXIT_CODE = _process_loop._RESTART_EXIT_CODE  # pylint: disable=protected-access
-_INTERNAL_MISE_REFRESHED_ARG = _process_loop._INTERNAL_MISE_REFRESHED_ARG  # pylint: disable=protected-access
-_INTERNAL_DOTFILES_UPDATED_ARG = _process_loop._INTERNAL_DOTFILES_UPDATED_ARG  # pylint: disable=protected-access
+_has_upstream_diff = _pl_update._has_upstream_diff  # pylint: disable=protected-access
+_restart_process_loop = _pl_update.restart_process_loop  # pylint: disable=protected-access
+_RESTART_SPEC_ENV = _pl_env.RESTART_SPEC_ENV  # pylint: disable=protected-access
+_RESTART_EXIT_CODE = _pl_update._RESTART_EXIT_CODE  # pylint: disable=protected-access
+_INTERNAL_MISE_REFRESHED_ARG = _pl_update._INTERNAL_MISE_REFRESHED_ARG  # pylint: disable=protected-access
+_INTERNAL_DOTFILES_UPDATED_ARG = _pl_update._INTERNAL_DOTFILES_UPDATED_ARG  # pylint: disable=protected-access
 
 
 def _run_posix_launcher(
@@ -160,12 +168,20 @@ def test_posix_launcher_logs_non_restart_exit(
     assert f"event={expected_event}" in log
 
 
+_RESUME_ARGV_CASES = [
+    ["--resume"],
+    ["--resume", "00000000-0000-0000-0000-000000000000"],
+    ["--resume=00000000-0000-0000-0000-000000000000"],
+]
+"""再開指定の書き方（値なし、空白区切りの値、等号区切りの値）。"""
+
+
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部コマンド・Claude設定・managed-tempの登録簿をユーザー環境から分離する。"""
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
-    monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
+    monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.delenv(_RESTART_SPEC_ENV, raising=False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
 
@@ -222,19 +238,19 @@ class TestWaitLoopAutoRestart:
         # `_resolve_dotfiles_root`は`~/dotfiles`を直接参照するため、
         # `atk`実行コード自体の物理配置（`__file__`）とは独立にテスト用ダミーへ差し替える。
         resolved_root = None if dotfiles_root_missing else fake_dotfiles_root
-        monkeypatch.setattr(_process_loop, "_resolve_dotfiles_root", lambda: resolved_root)
+        monkeypatch.setattr(_pl_update, "resolve_dotfiles_root", lambda: resolved_root)
         subprocess_calls: list[list[str]] = []
-        base_fake_run = _fake_run_with_remote_url(myrepo, [], 0)
+        base_fake_run = fake_run_with_remote_url(myrepo, [], 0)
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             subprocess_calls.append(list(cmd))
             return base_fake_run(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: pending_count)
+        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: pending_count)
         monkeypatch.setattr(
-            _process_loop,
-            "_select_available_orchestrator",
+            _pl_session,
+            "select_available_orchestrator",
             lambda candidates, _env, _cwd: candidates[0],
         )
 
@@ -265,8 +281,8 @@ class TestWaitLoopAutoRestart:
                 cache_file.write_text("value = 1\n", encoding="utf-8")
             return wait_return
 
-        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
-        monkeypatch.setattr(_process_loop, "_has_upstream_diff", lambda *_a, **_kw: has_upstream_diff)
+        monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait)
+        monkeypatch.setattr(_pl_update, "_has_upstream_diff", lambda *_a, **_kw: has_upstream_diff)
 
         execv_calls: list[tuple[str, list[str]]] = []
 
@@ -449,14 +465,7 @@ class TestWaitLoopAutoRestart:
         assert not _command_was_called(subprocess_calls, "update-dotfiles")
         assert not execv_calls
 
-    @pytest.mark.parametrize(
-        "resume_argv",
-        [
-            ["--resume"],
-            ["--resume", "00000000-0000-0000-0000-000000000000"],
-            ["--resume=00000000-0000-0000-0000-000000000000"],
-        ],
-    )
+    @pytest.mark.parametrize("resume_argv", _RESUME_ARGV_CASES)
     def test_wait_loop_restart_preserves_resume_option(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -479,14 +488,7 @@ class TestWaitLoopAutoRestart:
             assert arg in restart_argv
         assert "--target-repo" in restart_argv
 
-    @pytest.mark.parametrize(
-        "resume_argv",
-        [
-            ["--resume"],
-            ["--resume", "00000000-0000-0000-0000-000000000000"],
-            ["--resume=00000000-0000-0000-0000-000000000000"],
-        ],
-    )
+    @pytest.mark.parametrize("resume_argv", _RESUME_ARGV_CASES)
     def test_session_restart_drops_resume_option_and_value(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -729,7 +731,7 @@ def test_has_upstream_diff_reports_stderr_on_failure(
     def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         raise subprocess.CalledProcessError(128, cmd, output="", stderr="fatal: Unable to create index.lock: File exists")
 
-    monkeypatch.setattr(_process_loop.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     assert _has_upstream_diff(tmp_path) is False
     captured = capsys.readouterr()
     assert "index.lock" in captured.err
@@ -744,11 +746,242 @@ def test_has_upstream_diff_acquires_repo_lock_for_target(monkeypatch: pytest.Mon
         acquired.append(repo_path)
         yield
 
-    monkeypatch.setattr(_process_loop, "_repo_lock", fake_repo_lock)
+    monkeypatch.setattr(_wi_sync, "repo_lock", fake_repo_lock)
     monkeypatch.setattr(
-        _process_loop.subprocess,
+        subprocess,
         "run",
         lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout="0\n", stderr=""),
     )
     assert _has_upstream_diff(tmp_path) is False
     assert acquired == [tmp_path]
+
+
+@pytest.fixture(name="process_loop_commands_isolated")
+def _process_loop_commands_isolated(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """外部コマンド・Claude設定・初期値のTTLをユーザー環境から分離する。常駐ループ全体を動かすテストが使う。"""
+    isolate_process_loop_commands(monkeypatch, tmp_path)
+
+
+@pytest.mark.usefixtures("process_loop_commands_isolated")
+class TestProcessLoopUpdateAndRestart:
+    """1反復後のupdate-dotfiles実行と自身再起動の挙動を検証する。"""
+
+    def test_update_and_execv_called_by_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--no-update`未指定で開始前更新とclaude後の`os.execv`再起動が行われること。"""
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_notes(tmp_path)
+        subprocess_calls: list[list[str]] = []
+        base_fake_run = fake_run_with_remote_url(myrepo, [], 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            subprocess_calls.append(list(cmd))
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(
+            _wi_readiness,
+            "count_pending_entries",
+            lambda *_a, **_kw: 1,
+        )
+        execv_calls: list[tuple[str, list[str]]] = []
+
+        def fake_execv(path: str, argv: list[str]) -> None:
+            execv_calls.append((path, list(argv)))
+            raise SystemExit(0)
+
+        monkeypatch.setattr(os, "execv", fake_execv)
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["wi", "process-loop", "--target-repo", str(myrepo)],
+                home=tmp_path,
+            )
+        assert execv_calls
+        assert execv_calls[0][0] == "/resolved/uv"
+        assert pathlib.Path(execv_calls[0][1][0]).name == "uv"
+        expected_script = pathlib.Path(sys.argv[0]).resolve()
+        assert execv_calls[0][1][1:7] == [
+            "run",
+            "--project",
+            str(expected_script.parent.parent),
+            "--locked",
+            "--no-default-groups",
+            str(expected_script),
+        ]
+        assert _command_was_called(subprocess_calls, "update-dotfiles")
+        captured = capsys.readouterr()
+        assert "process-loopを再起動します。" in captured.out
+        # テスト実行環境（非TTY）ではコンソールタイトル制御文字を一切出力しないこと。
+        assert "\033]2;" not in captured.out
+        assert "\033]2;" not in captured.err
+
+    def test_update_dotfiles_receives_stripped_env(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """セッション終了後の`update-dotfiles`起動へ、仮想環境を除去した環境を渡すこと。
+
+        `update-dotfiles`は`chezmoi apply`を経て対象リポジトリのuvベースのパッケージ操作へ至るため、
+        起動元ツールのエフェメラル仮想環境を引き継がせない。
+        """
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_notes(tmp_path)
+        venv_root = "/home/user/.cache/uv/environments-v2/atk-0123456789abcdef"
+        monkeypatch.setenv("VIRTUAL_ENV", venv_root)
+        monkeypatch.setenv("PATH", os.pathsep.join((f"{venv_root}/bin", "/usr/bin")))
+        update_envs: list[Any] = []
+        base_fake_run = fake_run_with_remote_url(myrepo, [], 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if pathlib.Path(cmd[0]).stem.lower() == "update-dotfiles":
+                update_envs.append(kwargs.get("env"))
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: 1)
+        monkeypatch.setattr(os, "execv", raise_system_exit_0)
+
+        with pytest.raises(SystemExit):
+            atk.main(["wi", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+
+        assert len(update_envs) == 1
+        for child_env in update_envs:
+            assert child_env is not None
+            assert "VIRTUAL_ENV" not in child_env
+            assert child_env["PATH"] == "/usr/bin"
+
+    def test_wait_loop_update_dotfiles_receives_stripped_env(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """待機ループ復帰時の`update-dotfiles`起動へも、仮想環境を除去した環境を渡すこと。"""
+        venv_root = "/home/user/.cache/uv/environments-v2/atk-0123456789abcdef"
+        monkeypatch.setenv("VIRTUAL_ENV", venv_root)
+        monkeypatch.setenv("PATH", os.pathsep.join((f"{venv_root}/bin", "/usr/bin")))
+        update_envs: list[Any] = []
+
+        def fake_run(cmd: list[str], *_a: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if pathlib.Path(cmd[0]).stem.lower() == "update-dotfiles":
+                update_envs.append(kwargs.get("env"))
+            stdout = "1\n" if "rev-list" in cmd else ""
+            return subprocess.CompletedProcess(cmd, 0, stdout, "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_pl_update, "code_hash", lambda _d: "same-hash")  # 再起動へ進ませない
+        _pl_update.check_and_restart_on_update(tmp_path, "same-hash", ["argv0"])  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert len(update_envs) == 1
+        assert update_envs[0] is not None
+        assert "VIRTUAL_ENV" not in update_envs[0]
+        assert update_envs[0]["PATH"] == "/usr/bin"
+
+    def test_no_update_skips_restart(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`--no-update`指定時にupdate-dotfilesと`os.execv`のいずれも呼ばれないこと。"""
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_notes(tmp_path)
+        counts = iter([1, 1, 0])
+        subprocess_calls: list[list[str]] = []
+        base_fake_run = fake_run_with_remote_url(myrepo, [], 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            subprocess_calls.append(list(cmd))
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(
+            _wi_readiness,
+            "count_pending_entries",
+            lambda *_a, **_kw: next(counts),
+        )
+
+        def fake_wait(*_a: object, **_kw: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait)
+        execv_calls: list[tuple[str, list[str]]] = []
+        monkeypatch.setattr(
+            os,
+            "execv",
+            lambda p, a: execv_calls.append((p, list(a))),
+        )
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["wi", "process-loop", "--target-repo", str(myrepo), "--no-update"],
+                home=tmp_path,
+            )
+        assert not execv_calls
+        assert not _command_was_called(subprocess_calls, "update-dotfiles")
+
+    def test_missing_update_command_reports_error_and_continues_loop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """update-dotfilesを解決できない場合も次反復へ進み、待機を継続すること。"""
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_notes(tmp_path)
+        counts = iter([1, 0])
+        monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, [], 0))
+        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(
+            shutil,
+            "which",
+            lambda command: None if command == "update-dotfiles" else f"/resolved/{command}",
+        )
+
+        def fake_wait(*_a: object, **_kw: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert "update-dotfilesコマンドを利用できない" in capsys.readouterr().err
+
+    def test_missing_uv_command_reports_error_and_continues_loop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """再起動用uvを解決できない場合も次反復へ進み、待機を継続すること。"""
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_notes(tmp_path)
+        counts = iter([1, 1, 0])
+        monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, [], 0))
+        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(
+            shutil,
+            "which",
+            lambda command: None if command == "uv" else f"/resolved/{command}",
+        )
+
+        def fake_wait(*_a: object, **_kw: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait)
+        monkeypatch.setattr(os, "execv", lambda *_a, **_kw: pytest.fail("uv未解決時はexecvを呼ばないこと"))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert "uvコマンドを利用できない" in capsys.readouterr().err

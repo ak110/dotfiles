@@ -63,7 +63,7 @@ pickerが要求した場合だけ、`target_commit`以後の履歴へ12時間以
 
 キューの全状態は`inbox`、`processing`、`hold`、`adopted`、`rejected`である。公開一覧の`active`は`inbox`、`processing`、`hold`を表示し、`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。一覧集合は型によらず同じ定義とする。`hold`は明示操作まで処理ループ、readiness、UWIスキャンおよびalertsの対象にしない。
 
-計画作成中の項目と外部編集中の項目を分けていた`planning`と`editing`は自動処理から除外する点で`hold`と同じ振る舞いであり、状態集合の定義を型と操作ごとに分岐させていたため廃止した。役割は`hold`へ統合し、状態集合の定義を`agent-toolkit/agent_toolkit/_atk/wi/common.py`へ集約する。
+計画作成中の項目と外部編集中の項目を分けていた`planning`と`editing`は自動処理から除外する点で`hold`と同じ振る舞いであり、状態集合の定義を型と操作ごとに分岐させていたため廃止した。役割は`hold`へ統合し、状態集合の定義を`agent-toolkit/agent_toolkit/_atk/wi/constants.py`へ集約する。
 
 `hold`は`inbox`、`processing`、`adopted`、`rejected`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す操作は設けない。終端状態から保留または受信へ戻す際には旧`## 処理結果`を除き、前回の採否を再開後の結果として残さない。`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、UWI回答、ユーザーコメント、採否および削除は`inbox`と同じ条件で許可する。CLIのファイル名指定による`adopt`・`reject`は`processing`、`inbox`、`hold`の順で対象を解決し、探索する状態の集合を`--all`の候補と同じ`BULK_SOURCE_STATES`から導く。両方の処理が状態を別々に列挙すると、状態の追加が片方にだけ反映されるためである。
 削除は終端状態（`adopted`・`rejected`）も明示`state`として受理し、`processing`の削除保護だけを維持する。
@@ -77,6 +77,14 @@ pickerが要求した場合だけ、`target_commit`以後の履歴へ12時間以
 オプション指定が無い場合の出力形式を変えるこの規則は`list`だけに適用し、`show`、状態遷移および編集CLIの既存テキスト出力は変更しない。
 
 テキスト表示の`target_repo`と要約はstdoutがTTYである場合だけ端末幅に応じて短縮する。パイプやリダイレクトなど非TTYのテキスト表示では全文を保持し、機械取得で本文の手掛かりを失わせない。人間がTTYで表示する既存の幅適応は維持する。
+
+### 共通処理の構成と一覧の限定条件
+
+WIの共通処理は`agent-toolkit/agent_toolkit/_atk/wi/`配下の責務ごとのモジュールへ分ける。WI保存リポジトリの準備・remote同期・排他ロック・commitとpushは`sync.py`、エントリの走査・種別の判定・処理結果の追記は`entries.py`、ファイル名の検証・採番・補完候補は`filenames.py`が持つ。CLIの位置引数と本文の入力は`cli_input.py`、CLIとWeb APIが共有する入力エラーは`web_input.py`が持つ。他のモジュールが使う名前は公開名とし、`_`で始まる名前を定義したモジュールの外からimportしない。以前の`common.py`はこれらを1つのファイルに同居させ、`git_sync`へ委譲するだけの非公開の関数の上に公開の関数を重ねていた。他のモジュールは非公開名を直接importし、テストは同じ名前を束縛した複数のモジュールを個別に差し替えていた。二重の名前は1つの公開名へまとめ、呼び出し側は定義元のモジュールの属性として呼ぶ。テストは定義元のモジュール1か所を差し替える。
+
+`ensure_environment`は毎回旧2階層レイアウトの移行を、`pull`は毎回旧予約形式の移行を呼ぶ。分割の前後でこの呼び出しの順序を変えない。
+
+一覧を限定する条件（状態、回答状況、`source`、`target_repo`）の判定は`filters.py`の1つの実装を`atk wi list`・`grep`・`show`・一括遷移とWI画面の一覧が使う。以前はCLIと画面が別々に実装し、`source`の否定指定と、識別子へ正規化できない`target_repo`の扱いが分かれていた。正規化できない`target_repo`の指定値は保存値と原値のまま比べる。WI画面が示す`target_repo`の選択肢には、正規化できない保存値が原値のまま入るためである。CLIは`--target-repo`の値を識別子へ解決してから渡すため、この規則へそろえてもCLIの結果は変わらない。画面だけが持つ条件（検索語、期間、`plan`、種別の由来、`source`の空）は画面側に残す。両者の一致は`_atk/serve/wi_listing_parity_test.py`が同じprivate-notesに対する項目集合の比較で確かめる。CLIの判定を画面へ複製して両方を保つ案は、片方だけを直すと結果が分かれる状態を残すため採らない。
 
 ### ユーザーコメントの由来と編集境界
 

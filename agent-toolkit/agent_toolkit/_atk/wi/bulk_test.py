@@ -11,6 +11,7 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import bulk as remove_all  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.git_fakes import make_outside_worktree_fake as _make_outside_worktree_fake  # noqa: E402
 from agent_toolkit.atk_test import _setup_notes, _write_awi_file  # noqa: E402  # pylint: disable=wrong-import-position
@@ -82,16 +83,16 @@ def _patch_storage(
     on_pull: Callable[[], None] | None = None,
 ) -> None:
     """外部git操作を抑止し、commit要求を記録する。"""
-    monkeypatch.setattr(remove_all, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
 
     def fake_pull(_private_notes: pathlib.Path) -> None:
         if on_pull is not None:
             on_pull()
 
-    monkeypatch.setattr(remove_all, "_pull", fake_pull)
+    monkeypatch.setattr(_wi_sync, "pull", fake_pull)
     monkeypatch.setattr(
-        remove_all,
-        "_commit_and_push",
+        _wi_sync,
+        "commit_and_push",
         lambda _private_notes, message, paths: commit_calls.append((message, list(paths))),
     )
 

@@ -15,11 +15,9 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as wi_add
-from agent_toolkit._atk.wi import (
-    common,
-    repo,
-    user_comment,
-)
+from agent_toolkit._atk.wi import repo, user_comment
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import targets as mutation_targets
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
 from agent_toolkit._testing import git_repository
@@ -29,7 +27,6 @@ from agent_toolkit._testing.wi_mutations_support import (
     _edit_plan_args,
     _init_notes_with_origin,
     _write_convert_awi,
-    setattr_in_mutation_modules,
 )
 from agent_toolkit.atk_test import (
     _FIXED_DT,
@@ -106,10 +103,10 @@ def test_remove_rejects_changed_and_unreadable_expected_content(
 ) -> None:
     """確認後の内容変更とUTF-8読取り不能を競合として削除しない。"""
     notes = _setup_notes(tmp_path)
-    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     original = "---\ntype: awi\n---\n\n確認時本文\n"
 
     changed = notes / "inbox/changed.md"
@@ -131,7 +128,7 @@ def test_remove_rejects_changed_and_unreadable_expected_content(
     def update_during_pull(_path: pathlib.Path) -> None:
         pull_changed.write_text(original.replace("確認時", "pull後"), encoding="utf-8")
 
-    setattr_in_mutation_modules(monkeypatch, "_pull", update_during_pull)
+    monkeypatch.setattr(_wi_sync, "pull", update_during_pull)
     with pytest.raises(RuntimeError, match="編集中に他プロセスが対象を変更しました"):
         mutation_transitions.transition_entries(
             notes,
@@ -145,7 +142,7 @@ def test_remove_rejects_changed_and_unreadable_expected_content(
 
     unreadable = notes / "inbox/unreadable.md"
     unreadable.write_bytes(b"\xff")
-    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     with pytest.raises(RuntimeError, match="編集中に他プロセスが対象を変更しました"):
         mutation_transitions.transition_entries(
             notes,
@@ -410,7 +407,7 @@ class TestSkipPush:
         """remote未設定の管理リポジトリでは--skip-pushの注記を出力しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
-        (notes / common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        (notes / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -477,16 +474,16 @@ class TestStartProcessingFailureBoundaries:
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         _write_awi_file(notes, "fb-002.md")
-        setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-        setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
-        setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
+        monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+        monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+        monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
         transition_calls: list[str] = []
 
         def fail_commit(*_args: object, **_kwargs: object) -> None:
             transition_calls.append("transition")
             raise subprocess.CalledProcessError(1, ["git", "commit"])
 
-        setattr_in_mutation_modules(monkeypatch, "_commit_and_push", fail_commit)
+        monkeypatch.setattr(_wi_sync, "commit_and_push", fail_commit)
         with pytest.raises(subprocess.CalledProcessError):
             mutation_transitions.transition_entries(
                 notes,
@@ -512,8 +509,8 @@ class TestStartProcessingFailureBoundaries:
             recovery_calls.append(args)
 
         monkeypatch.setattr(subprocess, "run", fake_status)
-        setattr_in_mutation_modules(monkeypatch, "_commit_and_push", recover_commit)
-        setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", push_calls.append)
+        monkeypatch.setattr(_wi_sync, "commit_and_push", recover_commit)
+        monkeypatch.setattr(_wi_sync, "push_pending_commits", push_calls.append)
         assert mutation_targets.commit_entries(notes).changed is True
         assert mutation_targets.commit_entries(notes).changed is False
         assert len(recovery_calls) == 1
@@ -531,15 +528,20 @@ class TestStartProcessingFailureBoundaries:
         for state in ("processing", "adopted", "rejected"):
             (notes / state).mkdir()
         _init_notes_with_origin(notes, tmp_path / "origin.git")
-        setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
+        monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
         before_head = git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
         calls: list[str] = []
 
-        def fail_push(_path: pathlib.Path) -> None:
+        real_push = _wi_sync.push_pending_commits
+
+        def fail_push(path: pathlib.Path) -> int | None:
+            # 遷移前の同期のpushは実物のまま通し、遷移commitの後のpushだけを失敗させる。
+            if git_repository.git_output(path, "rev-parse", "HEAD") == before_head:
+                return real_push(path)
             calls.append("push")
             raise subprocess.CalledProcessError(1, ["git", "push"])
 
-        monkeypatch.setattr(common, "_push_pending_commits", fail_push)
+        monkeypatch.setattr(_wi_sync, "push_pending_commits", fail_push)
         with pytest.raises(subprocess.CalledProcessError) as exc_info:
             mutation_transitions.transition_entries(
                 notes,
@@ -572,7 +574,7 @@ def test_git_head_rejects_non_oid_with_status_guidance(
         lambda cmd, *_args, **_kwargs: subprocess.CompletedProcess(cmd, 0, "not-an-oid\n", ""),
     )
 
-    with pytest.raises(common.WebInputError) as exc_info:
+    with pytest.raises(_wi_web_input.WebInputError) as exc_info:
         mutation_targets._git_head(tmp_path)  # pylint: disable=protected-access
 
     assert f"git -C {tmp_path} status" in exc_info.value.next_action
@@ -595,7 +597,7 @@ def test_entry_target_repo_failure_guides_to_show_and_report(
     path = tmp_path / "broken.md"
 
     with pytest.raises(SystemExit) as exc_info:
-        mutation_targets._entry_target_repo(path, text)  # pylint: disable=protected-access
+        mutation_targets.entry_target_repo(path, text)  # pylint: disable=protected-access
 
     assert exc_info.value.code == 2
     failure, next_action = capsys.readouterr().err.splitlines()

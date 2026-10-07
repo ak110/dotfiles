@@ -11,8 +11,8 @@
 値は`agent-toolkit/agent_toolkit/_atk/config.py`の`resolve_mutable_setting`が、環境変数`AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL`、保存値、未設定時の値の順に取得する。
 未設定時の値は同モジュールの`_MUTABLE_KEY_DEFAULTS`が`_preset_settings("codex-balanced")`から導出する`claude:opus[1m]/medium,codex:sol/medium`である。
 
-`agent-toolkit/agent_toolkit/_atk/wi/process_loop.py`の`_cmd_process_loop`は開始時に`_resolve_orchestrator_specs()`で設定値を検証する。
-さらに子セッションを起動する前ごとに同関数で候補列を読み直し、`_select_available_orchestrator`が先頭の候補から可用性を判定して最初に利用できる候補で起動する。
+`agent-toolkit/agent_toolkit/_atk/wi/process_loop.py`の`cmd_process_loop`は開始時に`process_loop_session.py`の`resolve_orchestrator_specs()`で設定値を検証する。
+さらに子セッションを起動する前ごとに同関数で候補列を読み直し、`select_available_orchestrator`が先頭の候補から可用性を判定して最初に利用できる候補で起動する。
 このため常駐中に`atk config set`で保存した変更は、次の子セッションの起動前に反映される。
 空でない環境変数がある間は、保存値を変えても環境変数の値が実効値になる。
 候補列を子セッションの起動前ごとに読み直すため、可用性とCodex系列名の解決は起動時点の利用枠とモデル一覧で判定され、設定の変更も常駐プロセスを再起動せずに次の子セッションへ届く。
@@ -20,9 +20,13 @@
 CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設定との優先関係を複雑化するため
 ユーザー合意で廃止した。
 
-Codexの`astra`・`sol`・`terra`・`luna`は設定へ系列名として保存する。完全IDへの解決は`_resolve_orchestrator_specs()`内の`resolve_model_candidates("orchestrate")`が子セッションの起動前ごとに行い、App Serverの`model/list`を最終ページまで取得して表示対象の同系列の最新版へ解決する。委譲起動は保持中のApp Server接続を使い、設定CLIは短命の接続を所有する。選んだ完全IDが指定effortを受理しない場合は理由を返し、別系列または旧版へ暗黙に置換しない。明示された完全IDは固定し、engine側の可用性判定が返す診断を候補とともに示す。Claude候補の可用性判定は構造化出力（`stream-json`）で起動し、Weekly limitか5時間の利用上限による拒否を出力の利用枠情報から判定する。この拒否では次の候補へ進まず、解除予定時刻（不明なら300秒後）まで待って同じ候補を判定し直し、待機の種類と解除予定時刻を端末とprocess-loopのログ（`usage_limit_wait`）へ出力する（ユーザー指示）。本作業のセッションが利用上限で終わった場合も、次の反復の可用性判定が同じ待機へ入る。モデルを試行起動して系列の最新版を推測する案は、実行費用を生み、利用可能なモデル一覧との対応も保証できないため採用しない。複数の起動処理が同じ判断を持たないよう、一覧取得と系列解決の知識境界を`agent-toolkit/agent_toolkit/_common/codex_models.py`に置く。
+Codexの`astra`・`sol`・`terra`・`luna`は設定へ系列名として保存する。完全IDへの解決は`resolve_orchestrator_specs()`内の`resolve_model_candidates("orchestrate")`が子セッションの起動前ごとに行い、App Serverの`model/list`を最終ページまで取得して表示対象の同系列の最新版へ解決する。委譲起動は保持中のApp Server接続を使い、設定CLIは短命の接続を所有する。選んだ完全IDが指定effortを受理しない場合は理由を返し、別系列または旧版へ暗黙に置換しない。明示された完全IDは固定し、engine側の可用性判定が返す診断を候補とともに示す。Claude候補の可用性判定は構造化出力（`stream-json`）で起動し、Weekly limitか5時間の利用上限による拒否を出力の利用枠情報から判定する。この拒否では次の候補へ進まず、解除予定時刻（不明なら300秒後）まで待って同じ候補を判定し直し、待機の種類と解除予定時刻を端末とprocess-loopのログ（`usage_limit_wait`）へ出力する（ユーザー指示）。本作業のセッションが利用上限で終わった場合も、次の反復の可用性判定が同じ待機へ入る。モデルを試行起動して系列の最新版を推測する案は、実行費用を生み、利用可能なモデル一覧との対応も保証できないため採用しない。複数の起動処理が同じ判断を持たないよう、一覧取得と系列解決の知識境界を`agent-toolkit/agent_toolkit/_common/codex_models.py`に置く。
 
 工程別モデル設定の中位（`medium_tier_model`）で値を保存していない場合に使うCodexの候補と、プリセットの「軽量」「探索上位」は`terra/medium`を選び、「上位」と「探索軽量」は各用途の指定を維持する。`luna/xhigh`を前二者へ残す案は、ユーザーが速度と精度の釣り合いを見直したため採用しない。これらのモデル名は運用中に変わる設定値であり、テストは値の複製ではなく、プリセットの導出、engine順、保存と実行時解決の接続を確認する。
+
+## process-loopのモジュール構成
+
+`atk wi process-loop`の工程は`agent-toolkit/agent_toolkit/_atk/wi/`配下の責務ごとのモジュールが持つ。作業ツリーの準備と上流との同期は`process_loop_worktree.py`、自己更新の確認と再起動は`process_loop_update.py`、miseの更新は`process_loop_mise.py`が持つ。変更の監視とprivate-notesの同期は`process_loop_watch.py`、プロンプトとオーケストレーターの選択とセッションの起動は`process_loop_session.py`、アラートの確認は`process_loop_alerts.py`が持つ。中断要求と追加指示の状態ファイルは`process_loop_control.py`、子プロセスの環境と実行ファイルの解決は`process_loop_env.py`が持つ。`process_loop.py`の`cmd_process_loop`はこれらを順に呼ぶ制御だけを持つ。以前は1つのファイルが全ての責務を持ち、工程を加える計画ごとに同じファイルへ追記していた。モジュール間の呼び出しは定義元のモジュールの属性として行い、テストは定義元を差し替える。テストも同じ単位で`process_loop_<責務>_test.py`へ分ける。
 
 ## process-loopのworktree隔離
 

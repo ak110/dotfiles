@@ -145,7 +145,14 @@ def _copy_rules(target: Path) -> None:
     shutil.copytree(source, destination)
 
 
-def run(args: argparse.Namespace) -> int:
+def build_parser(parser: argparse.ArgumentParser) -> None:
+    """`atk setup-project`の引数を登録する。"""
+    options = parser.add_mutually_exclusive_group()
+    options.add_argument("--with-rules", action="store_true", help="agent-toolkit/rules/配下の規範をプロジェクトへ複製する。")
+    options.add_argument("--clean", action="store_true", help="配置済みの共有リンクと規範を削除する。")
+
+
+def dispatch(args: argparse.Namespace) -> int:
     """cwdを対象に移行、追加配布または配置済み資源の削除を行う。"""
     target = Path.cwd()
     try:

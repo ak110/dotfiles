@@ -25,7 +25,8 @@ from agent_toolkit import atk
 from agent_toolkit import hook as _hook
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk import config as _config
-from agent_toolkit._atk.wi import process_loop as _process_loop
+from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
+from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -387,8 +388,8 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
-    monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
-    monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
+    monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
+    monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _path: True)
     monkeypatch.setattr(_wait_schedule, "get_prompt_cache_ttl", lambda _bucket: "1h")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -440,12 +441,12 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1 if len(session_calls) < 2 else 0)
+    monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: 1 if len(session_calls) < 2 else 0)
 
     def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(_process_loop, "_wait_for_changes", stop_wait)
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
 
     with pytest.raises(SystemExit) as loop_exit:
         atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)

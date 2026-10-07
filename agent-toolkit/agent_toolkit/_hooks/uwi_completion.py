@@ -60,8 +60,8 @@ _GIT_TIMEOUT_SEC = 5.0
 def resolve_target_repo(cwd: str) -> str | None:
     """作業ディレクトリから対象リポジトリIDを解決する。解決できない場合はNoneを返す。
 
-    `_atk_wi_repo._resolve_repo_id`は解決失敗時にプロセスを終了し、
-    `_atk_wi_common`経由で依存パッケージも読み込むため使用しない。
+    `agent_toolkit._atk.wi.repo.resolve_repo_id`は解決失敗時にプロセスを終了し、
+    WIの共通処理を経由して依存パッケージも読み込むため使用しない。
     """
     try:
         url = _git_remote.origin_url(cwd, timeout=_GIT_TIMEOUT_SEC)

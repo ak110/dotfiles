@@ -9,26 +9,16 @@ import typing
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi.common import (
-    WI_STATE_HOLD,
-    WI_STATE_INBOX,
-    WI_STATE_PROCESSING,
-    WI_TYPE_AWI,
-    WebInputError,
-    _commit_and_push,
-    _pull,
-    _push_pending_commits,
-    _repo_lock,
-    _require_type,
-    _subdir,
-    _validate_filename,
-    _validate_filenames_only,
-)
-from agent_toolkit._atk.wi.mutations.targets import _atomic_write_text, _resolve_active_targets
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.constants import WI_STATE_HOLD, WI_STATE_INBOX, WI_STATE_PROCESSING, WI_TYPE_AWI
+from agent_toolkit._atk.wi.mutations.targets import atomic_write_text, resolve_active_targets
 from agent_toolkit._atk.wi.repo import (
-    _resolve_repo_id,
+    resolve_repo_id,
 )
+from agent_toolkit._atk.wi.web_input import WebInputError
 
 _BROKEN_ENTRY_NEXT_ACTION = "`atk wi show {name}`で保存内容を確認し、ユーザーへ報告する"
 
@@ -59,15 +49,15 @@ def set_entry_dependencies(
     依存の更新は保存状態を変えないため、`hold`の項目は更新後も`hold`のまま残る。
     """
     inbox_dir = private_notes / WI_STATE_INBOX
-    processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
+    processing_dir = _wi_entries.subdir(private_notes, WI_STATE_PROCESSING)
     hold_dir = private_notes / WI_STATE_HOLD
-    _validate_filenames_only([filename, *depends_on], inbox_dir)
-    normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+    _wi_filenames.validate_filenames_only([filename, *depends_on], inbox_dir)
+    normalized_target_repo = resolve_repo_id(target_repo) if target_repo is not None else None
 
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
-        _pull(private_notes)
-        path = _resolve_active_targets([filename], inbox_dir, processing_dir)[0]
+    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
+        _wi_sync.push_pending_commits(private_notes)
+        _wi_sync.pull(private_notes)
+        path = resolve_active_targets([filename], inbox_dir, processing_dir)[0]
         text = path.read_text(encoding="utf-8")
         parsed = _frontmatter.parse_frontmatter(text)
         if parsed is None:
@@ -76,7 +66,7 @@ def set_entry_dependencies(
                 next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=path.name),
             )
         data, body = parsed
-        if _require_type(path, text) != WI_TYPE_AWI:
+        if _wi_entries.entry_type_of(path, text) != WI_TYPE_AWI:
             raise WebInputError(
                 f"AWIだけ依存を更新できます: {path.name}",
                 next_action="依存を更新するAWIのファイル名を指定し直す",
@@ -87,7 +77,7 @@ def set_entry_dependencies(
                 f"target_repoが不正です: {path.name}",
                 next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=path.name),
             )
-        entry_repo = _resolve_repo_id(raw_entry_repo)
+        entry_repo = resolve_repo_id(raw_entry_repo)
         if normalized_target_repo is not None and entry_repo != normalized_target_repo:
             raise WebInputError(
                 f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}",
@@ -96,7 +86,9 @@ def set_entry_dependencies(
                 ),
             )
 
-        canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
+        canonical_dependencies = tuple(
+            dict.fromkeys(_wi_filenames.validate_filename(value, inbox_dir).name for value in depends_on)
+        )
         if path.name in canonical_dependencies:
             raise WebInputError(
                 f"自分自身を依存先へ指定できません: {path.name}",
@@ -119,10 +111,10 @@ def set_entry_dependencies(
             data.pop("depends_on", None)
         updated_text = _frontmatter.serialize_frontmatter(data, body)
         if updated_text != text:
-            _atomic_write_text(path, updated_text)
+            atomic_write_text(path, updated_text)
             relative_path = str(path.relative_to(private_notes))
-            _commit_and_push(private_notes, "chore: update awi dependencies", [relative_path])
-        return _add._read_saved_entry_details(  # pylint: disable=protected-access
+            _wi_sync.commit_and_push(private_notes, "chore: update awi dependencies", [relative_path])
+        return _add.read_saved_entry_details(
             path,
             expected_body=updated_text,
         )
@@ -149,7 +141,7 @@ def _active_dependency_graph(
                 next_action=_BROKEN_ENTRY_NEXT_ACTION.format(name=name),
             )
         data, _body = parsed
-        if _require_type(entry_path, entry_text) != WI_TYPE_AWI:
+        if _wi_entries.entry_type_of(entry_path, entry_text) != WI_TYPE_AWI:
             continue
         raw_dependencies = data.get("depends_on", [])
         if not isinstance(raw_dependencies, list) or not all(isinstance(value, str) for value in raw_dependencies):
@@ -157,7 +149,7 @@ def _active_dependency_graph(
                 f"active項目のdepends_onが不正なため依存を更新できません: {name}",
                 next_action=f"`atk wi set-dependencies {name} --depends-on <依存先>`で依存を指定し直してから再実行する",
             )
-        graph[name] = {_validate_filename(value, inbox_dir).name for value in raw_dependencies}
+        graph[name] = {_wi_filenames.validate_filename(value, inbox_dir).name for value in raw_dependencies}
     return graph
 
 
@@ -198,7 +190,7 @@ def _dependency_cycle(
     return None
 
 
-def _cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """set-dependenciesサブコマンドを実行する。"""
     target_repo = args.target_repo
     if target_repo is None:

@@ -6,7 +6,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import git_sync
-from agent_toolkit._atk.wi.common import WI_STATES
+from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._testing import git_repository
 
 

@@ -13,7 +13,7 @@ import hypercorn.config
 from agent_toolkit._atk.serve import app as _atk_serve_app
 from agent_toolkit._atk.serve import config as _atk_serve_config
 from agent_toolkit._atk.serve import state as _atk_serve_state
-from agent_toolkit._atk.wi import common
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
 
@@ -113,7 +113,7 @@ def run(*, host: str | None = None, port: int | None = None, home: pathlib.Path 
     # rootのハンドラーへも伝搬して二重出力になる。hypercorn側の書式を活かすため伝搬を止める。
     logging.getLogger("hypercorn.error").propagate = False
     resolved_home = pathlib.Path.home() if home is None else home
-    private_notes = common.ensure_environment(resolved_home)
+    private_notes = _wi_sync.ensure_environment(resolved_home)
     config = _atk_serve_config.resolve_config(host=host, port=port)
     logger.info("atk serveを http://%s:%s/ で配信します", config.host, config.port)
     with _console_title.console_title(build_console_title()):

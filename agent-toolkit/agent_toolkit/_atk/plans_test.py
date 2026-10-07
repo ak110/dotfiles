@@ -14,7 +14,8 @@ from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import plans as _atk_plans
 from agent_toolkit._atk import review_table as _review_table
 from agent_toolkit._atk import run_script
-from agent_toolkit._atk.wi import common as _common
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import owner_records as _owner_records
@@ -158,7 +159,7 @@ def test_cli_checkout_edit_and_commit_saved_bundle(tmp_path: pathlib.Path, monke
     _init_local_notes(notes)
     relative = pathlib.Path("2026/08/30-再編集-d4f9.md")
     saved_main, _ = _create_saved_plan(notes, relative)
-    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["plans", "checkout", relative.as_posix()], home=home)
@@ -206,7 +207,7 @@ def test_checkout_rejection_reports_recovery_commands(tmp_path: pathlib.Path) ->
     main, _detail = _create_saved_plan(notes, relative)
     _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
 
-    with pytest.raises(_common.WebInputError) as exc_info:
+    with pytest.raises(_wi_web_input.WebInputError) as exc_info:
         _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
 
     # 次の操作は理由と別の行で届くため、2行の本文から回収コマンドを確かめる。
@@ -300,7 +301,7 @@ def test_commit_ci_review_rejects_noncanonical_working_name(tmp_path: pathlib.Pa
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
 
-    with pytest.raises(_common.WebInputError):
+    with pytest.raises(_wi_web_input.WebInputError):
         _atk_plans.commit_plan(notes, name, home=tmp_path / "home")
 
 
@@ -340,7 +341,7 @@ def test_ci_review_name_errors_guide_series_head_format(
     """書式に合わない名前の表を指定したときの失敗行と次の操作が、修正系列の開始時のHEAD由来の書式を示す。"""
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
-    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
 
     for argv, prefix in (
         (["plans", "commit", "ci-zz.exec-review.tsv", "--skip-push"], "ci-<"),
@@ -373,7 +374,7 @@ def test_commit_ci_review_rejects_saved_change_after_checkout(tmp_path: pathlib.
     _review_table.add(working, "1", "exec-review", "sample.py:1", "作業側", "詳細")
     _review_table.add(saved, "1", "exec-review", "sample.py:2", "保存側", "詳細")
 
-    with pytest.raises(_common.WebInputError, match="取得後に保存元") as exc_info:
+    with pytest.raises(_wi_web_input.WebInputError, match="取得後に保存元") as exc_info:
         _atk_plans.commit_plan(notes, name, home=home)
 
     _assert_guides_series_head_name(exc_info.value.next_action)
@@ -426,7 +427,7 @@ def test_checkout_rejects_conflicting_working_file_and_existing_record(
     saved_before = {path.name: path.read_bytes() for path in (main, detail) if path.exists()}
     working_before = {path.name: path.read_bytes() for path in _plan_file.working_plans_root(home).glob("*") if path.is_file()}
 
-    with pytest.raises(_common.WebInputError):
+    with pytest.raises(_wi_web_input.WebInputError):
         _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
 
     assert {path.name: path.read_bytes() for path in (main, detail) if path.exists()} == saved_before
@@ -457,7 +458,7 @@ def test_commit_rejects_checked_out_plan_when_saved_bundle_changed(
         _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
     )
 
-    with pytest.raises(_common.WebInputError, match="取得後に保存元") as exc_info:
+    with pytest.raises(_wi_web_input.WebInputError, match="取得後に保存元") as exc_info:
         _atk_plans.commit_plan(notes, main.name, home=home)
 
     assert "相違した対象" in str(exc_info.value)
@@ -506,7 +507,7 @@ def test_commit_rejects_remote_saved_bundle_change_after_checkout(
         _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
     )
 
-    with pytest.raises(_common.WebInputError, match="取得後に保存元"):
+    with pytest.raises(_wi_web_input.WebInputError, match="取得後に保存元"):
         _atk_plans.commit_plan(notes, saved_main.name, home=home)
 
     actual = _atk_plans._bundle_contents(  # pylint: disable=protected-access
@@ -639,7 +640,7 @@ def test_commit_keeps_checkout_when_diverged_push_is_deferred(
 
     monkeypatch.setattr(_atk_git_sync, "commit_and_push", diverge_then_commit)
 
-    with pytest.raises(_common.WebInputError, match="remote branch") as error_info:
+    with pytest.raises(_wi_web_input.WebInputError, match="remote branch") as error_info:
         _atk_plans.commit_plan(notes, saved_main.name, home=home)
 
     # 到達を確認できない場合は、ローカルに残ったcommitをpushする手段を案内する。
@@ -669,7 +670,7 @@ def test_commit_recovers_checkout_record_without_working_bundle(
         path.unlink()
     saved_before = {path.name: path.read_bytes() for path in (saved_main, saved_detail)}
     head_before = git_repository.run_git(notes, "rev-parse", "HEAD").stdout
-    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["plans", "commit", saved_main.name], home=home)
@@ -1037,7 +1038,7 @@ def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp
     working.write_text("working\n", encoding="utf-8")
     saved.write_text("saved\n", encoding="utf-8")
 
-    with pytest.raises(_common.WebInputError, match="内容の異なる") as error_info:
+    with pytest.raises(_wi_web_input.WebInputError, match="内容の異なる") as error_info:
         _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
     assert "作業側を退避" in error_info.value.next_action
@@ -1057,7 +1058,7 @@ def test_commit_saved_bundle_rejects_working_root_residue(tmp_path: pathlib.Path
     residue.parent.mkdir(parents=True)
     residue.write_text("# unsaved residue\n", encoding="utf-8")
 
-    with pytest.raises(_common.WebInputError, match="同じstemのファイルが残っています") as error_info:
+    with pytest.raises(_wi_web_input.WebInputError, match="同じstemのファイルが残っています") as error_info:
         _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
     assert "別名の新しい計画" in error_info.value.next_action
@@ -1127,7 +1128,7 @@ def test_rewrite_references_replaces_only_matching_stem(
     git_repository.run_git(notes, "commit", "-m", "add saved plan")
     git_repository.run_git(notes, "push")
 
-    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["plans", "rewrite-references"], home=tmp_path / "home")
 
@@ -1530,7 +1531,7 @@ def test_dispatch_rejects_removed_progress_subcommand(
     )
     args = types.SimpleNamespace(plans_subcommand="progress", plan_file=relative.as_posix())
 
-    with pytest.raises(_common.WebInputError, match="未知のplansサブコマンド: progress"):
+    with pytest.raises(_wi_web_input.WebInputError, match="未知のplansサブコマンド: progress"):
         _atk_plans.dispatch(args, notes, home)
     assert capsys.readouterr().out == ""
 
@@ -1547,7 +1548,7 @@ def test_dispatch_rejects_removed_progress_subcommand_for_empty_plan(
     _write_saved_progress_plan(notes, relative, "")
     args = types.SimpleNamespace(plans_subcommand="progress", plan_file=relative.as_posix())
 
-    with pytest.raises(_common.WebInputError, match="未知のplansサブコマンド: progress"):
+    with pytest.raises(_wi_web_input.WebInputError, match="未知のplansサブコマンド: progress"):
         _atk_plans.dispatch(args, notes, home)
     assert capsys.readouterr().out == ""
 
@@ -1581,7 +1582,7 @@ def test_progress_rejects_missing_plan_file(tmp_path: pathlib.Path) -> None:
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
 
-    with pytest.raises(_common.WebInputError, match="指定したメイン計画が見つかりません") as error_info:
+    with pytest.raises(_wi_web_input.WebInputError, match="指定したメイン計画が見つかりません") as error_info:
         _atk_plans.plan_progress(notes, "2026/09/09-不在-a1b5.md", home=home)
 
     assert "atk plans list" in error_info.value.next_action
@@ -1605,7 +1606,7 @@ def test_progress_rejects_broken_progress_structure(tmp_path: pathlib.Path, cont
     main.parent.mkdir(parents=True, exist_ok=True)
     main.write_text(content, encoding="utf-8")
 
-    with pytest.raises(_common.WebInputError, match="進捗ログを読み取れません"):
+    with pytest.raises(_wi_web_input.WebInputError, match="進捗ログを読み取れません"):
         _atk_plans.plan_progress(notes, relative.as_posix(), home=home)
 
 
@@ -1620,7 +1621,7 @@ def test_commit_rejects_broken_checkout_record_with_recovery_steps(tmp_path: pat
     record = _atk_plans._checkout_record_root(pathlib.Path(relative.name))  # pylint: disable=protected-access
     (record / "meta.json").write_text("{", encoding="utf-8")
 
-    with pytest.raises(_common.WebInputError, match="取得記録を読み取れません") as error_info:
+    with pytest.raises(_wi_web_input.WebInputError, match="取得記録を読み取れません") as error_info:
         _atk_plans.commit_plan(notes, relative.name, home=home)
 
     assert str(record) in error_info.value.next_action
@@ -1634,7 +1635,7 @@ def test_rewrite_references_rejects_dirty_notes_with_commit_guidance(tmp_path: p
     _init_remote_notes(notes, remote)
     (notes / "未確定.md").write_text("未確定\n", encoding="utf-8")
 
-    with pytest.raises(_common.WebInputError, match="cleanでないため書き換えを開始できません") as error_info:
+    with pytest.raises(_wi_web_input.WebInputError, match="cleanでないため書き換えを開始できません") as error_info:
         _atk_plans.rewrite_plan_references(notes)
 
     assert f"`git -C {notes} status`" in error_info.value.next_action
@@ -1653,7 +1654,7 @@ def test_finalize_keeps_working_file_when_content_changed_after_check(tmp_path: 
     destination = tmp_path / "saved" / "01-example-1a2b.md"
     destination.parent.mkdir()
 
-    with pytest.raises(_common.WebInputError) as exc_info:
+    with pytest.raises(_wi_web_input.WebInputError) as exc_info:
         _atk_plans._finalize_plan_file(  # pylint: disable=protected-access
             source, destination, "確認時の本文\n".encode()
         )
@@ -1670,7 +1671,7 @@ def test_public_save_all_then_restore_unfinished_plan(
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
-    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
     working = _plan_file.working_plans_root(home)
     working.mkdir(parents=True)
     names = ["04-0100_first-abcd.md", "04-0200_second-bcde.md"]

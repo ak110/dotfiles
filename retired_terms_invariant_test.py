@@ -102,7 +102,7 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     ),
     "鮮度情報": (
         # `atk wi list --with-staleness`のオプション説明（ヘルプの説明として維持する）
-        _AllowedLocation("agent-toolkit/agent_toolkit/atk.py"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_atk/wi/cli.py"),
     ),
     "自律実行": (
         # ユーザーの設定から取り除く旧版の文面と一致させる文字列

@@ -10,7 +10,7 @@ from typing import Any
 import playwright.async_api
 import pytest
 
-from agent_toolkit._atk.serve import app as serve_app
+from agent_toolkit._atk.serve import runtime as serve_runtime
 
 # pytestがテストの引数名で参照するfixtureを、このモジュールへ登録する。
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
@@ -991,8 +991,8 @@ async def test_silent_sse_is_reconnected_and_lists_are_refetched(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """通知もheartbeatも届かない時間が閾値を超えると、3画面とも再接続して一覧を取り直す。"""
-    monkeypatch.setattr(serve_app, "SSE_HEARTBEAT_SEC", 3600.0)
-    monkeypatch.setattr(serve_app, "SSE_STALL_SEC", 1.0)
+    monkeypatch.setattr(serve_runtime, "SSE_HEARTBEAT_SEC", 3600.0)
+    monkeypatch.setattr(serve_runtime, "SSE_STALL_SEC", 1.0)
     await _open_all_screens(screen_harness)
     before = {
         name: (_request_count(screen_harness, stream), _request_count(screen_harness, listing))
@@ -1014,8 +1014,8 @@ async def test_regular_heartbeat_keeps_sse_without_refetching(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """heartbeatが届き続ける間は、閾値を超えて待っても再接続も一覧の再取得も起きない。"""
-    monkeypatch.setattr(serve_app, "SSE_HEARTBEAT_SEC", 0.2)
-    monkeypatch.setattr(serve_app, "SSE_STALL_SEC", 1.0)
+    monkeypatch.setattr(serve_runtime, "SSE_HEARTBEAT_SEC", 0.2)
+    monkeypatch.setattr(serve_runtime, "SSE_STALL_SEC", 1.0)
     await _open_all_screens(screen_harness)
     await asyncio.sleep(0.5)
     before = {path: _request_count(screen_harness, path) for pair in _SCREEN_STREAMS.values() for path in pair}

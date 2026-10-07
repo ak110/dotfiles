@@ -16,12 +16,10 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as wi_add
-from agent_toolkit._atk.wi import (
-    common,
-    user_comment,
-    uwi,
-)
 from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import user_comment, uwi
+from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import content as mutation_content
 from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
@@ -31,7 +29,6 @@ from agent_toolkit._testing.wi_mutations_support import (
     _disable_transition_git,
     _write_convert_awi,
     _write_uwi_entry,
-    setattr_in_mutation_modules,
 )
 from agent_toolkit.atk_test import (
     _FIXED_DT,
@@ -145,10 +142,10 @@ def test_remove_targets_explicit_state_and_keeps_legacy_priority(
 ) -> None:
     """状態指定時は指定側を削除し、省略時はprocessing優先を維持する。"""
     notes = _setup_notes(tmp_path)
-    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     content = "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
     inbox = notes / "inbox/same.md"
     processing = notes / "processing/same.md"
@@ -200,10 +197,10 @@ def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monke
     """return-to-inboxがprocessingからinboxへ戻す。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
-    setattr_in_mutation_modules(monkeypatch, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    setattr_in_mutation_modules(monkeypatch, "_push_pending_commits", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_pull", lambda _path: None)
-    setattr_in_mutation_modules(monkeypatch, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     mutation_transitions.transition_entries(notes, action="start-processing", filenames=["entry.md"], now=_FIXED_DT)
     filenames = mutation_transitions.transition_entries(
         notes,
@@ -231,7 +228,7 @@ def test_cooldown_return_rejects_uwi_mixture_without_changes(
     original_awi = awi.read_text(encoding="utf-8")
     original_uwi = uwi_path.read_text(encoding="utf-8")
 
-    with pytest.raises(common.WebInputError, match="AWI専用"):
+    with pytest.raises(_wi_web_input.WebInputError, match="AWI専用"):
         mutation_transitions.transition_entries(
             notes,
             action="return-to-inbox",
@@ -1540,7 +1537,7 @@ def test_editor_failure_keeps_entry_and_names_retry_command(
 
 def test_terminal_state_edit_rejection_guides_to_accepted_hold_form(tmp_path: pathlib.Path) -> None:
     """終端した項目の編集拒否は、`atk wi hold`が受理する`--state`の値付きの形を案内する。"""
-    with pytest.raises(common.WebInputError) as raised:
+    with pytest.raises(_wi_web_input.WebInputError) as raised:
         mutation_content.edit_entry_content(tmp_path, state="adopted", filename="20260930-000000-001.md", content="本文")
 
     next_action = raised.value.next_action
