@@ -1,5 +1,6 @@
 """Gitコマンド共通ラッパーの出力契約を検証する。"""
 
+import os
 import pathlib
 import subprocess
 
@@ -78,3 +79,34 @@ def test_run_quiet_can_hold_failure_output(
     assert captured.err == ""
     assert exc_info.value.output == ""
     assert exc_info.value.stderr
+
+
+def test_run_passes_input_and_environment(tmp_path: pathlib.Path) -> None:
+    """標準入力と環境変数を`git`へ渡し、テキストの結果を返すこと。"""
+    subject.run_quiet(["init", "--initial-branch=main"], tmp_path)
+    blob = subject.run(["hash-object", "-w", "--stdin"], tmp_path, capture_output=True, text=True, input="本文\n", check=True)
+    shown = subject.run(["cat-file", "-p", blob.stdout.strip()], tmp_path, capture_output=True, check=True)
+    configured = subject.run(
+        ["config", "--get", "user.name"],
+        tmp_path,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "環境の名前"},
+    )
+
+    assert shown.stdout == "本文\n".encode()
+    assert configured.stdout == "環境の名前\n"
+
+
+def test_optional_helpers_return_none_on_failure(tmp_path: pathlib.Path) -> None:
+    """非0終了では`None`を返し、`optional_stdout`は起動の失敗でも`None`を返すこと。"""
+    assert subject.optional_stdout(["rev-parse", "--verify", "missing"], tmp_path, timeout=30) is None
+    assert subject.optional_output(["rev-parse", "--verify", "missing"], tmp_path, timeout=30) is None
+    assert subject.optional_stdout(["status"], tmp_path / "missing-directory", timeout=30) is None
+    with pytest.raises(OSError):
+        subject.optional_output(["status"], tmp_path / "missing-directory", timeout=30)
+
+
+def test_command_line_prefixes_git() -> None:
+    """例外と記録へ載せるコマンドは`git`で始まる引数列であること。"""
+    assert subject.command_line(["status", "--porcelain"]) == ["git", "status", "--porcelain"]

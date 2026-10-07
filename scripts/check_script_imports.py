@@ -35,6 +35,8 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
   同じ走査で、層の外から起動されるスクリプト（`agent_toolkit/`直下の公開スクリプトと`skills/*/scripts/`配下）のimportも検査する。
   起動スクリプトは全ての層をimportできるが、`_hooks`をimportできるのは`hook.py`だけとし、`_testing`はimportできない。
   hook以外の起動スクリプトが`_hooks`へ依存すると、hookの実装の層にhook以外から使う部品が残るため
+  同じ走査で、`_git/`と`_testing/`の外から`subprocess`へ`["git", ...]`を渡して起動する箇所も失敗にする。
+  Gitの起動は`_git/command.py`の共通関数へ集め、時間上限・終了コードの扱い・文字コードの指定を1か所で保つため
 
 スクリプトをimportまたは実行する方式は採らない。生成処理・ファイル書き込みなどの副作用を
 実行し得るうえ、`--help`への対応も保証されていないため。
@@ -552,6 +554,36 @@ def _entry_layer_problems(source: _AgentToolkitSource) -> list[str]:
     return sorted(set(problems))
 
 
+_SUBPROCESS_LAUNCHERS = frozenset({"run", "Popen", "call", "check_call", "check_output"})
+
+
+def _git_subprocess_problems(source: _AgentToolkitSource) -> list[str]:
+    """`_git/`と`_testing/`の外で`subprocess`へ`["git", ...]`を渡して起動している箇所を返す。"""
+    relative = source.path.relative_to(_REPO_ROOT / "agent-toolkit").parts
+    if relative[:2] in {("agent_toolkit", "_git"), ("agent_toolkit", "_testing")}:
+        return []
+    problems: list[str] = []
+    for node in ast.walk(source.tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _SUBPROCESS_LAUNCHERS
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "subprocess"
+            and node.args
+            and isinstance(node.args[0], ast.List | ast.Tuple)
+            and node.args[0].elts
+            and isinstance(node.args[0].elts[0], ast.Constant)
+            and node.args[0].elts[0].value == "git"
+        ):
+            continue
+        problems.append(
+            f"{_display_path(source.path)}:{node.lineno}: `git`を`subprocess`で直接起動している。"
+            "次の操作: `agent_toolkit._git.command`の共通関数（`run`など）で起動する"
+        )
+    return problems
+
+
 def _check_agent_toolkit_sources() -> list[str]:
     """`agent_toolkit/`と`skills/*/scripts/`の非テストのPythonを1回ずつ走査し、書き方の規則に反する箇所を返す。"""
     sources, problems = _agent_toolkit_sources()
@@ -559,6 +591,7 @@ def _check_agent_toolkit_sources() -> list[str]:
         problems.extend(_file_level_f821_noqa_problems(source))
         problems.extend(_namespace_write_problems(source))
         problems.extend(_entry_layer_problems(source))
+        problems.extend(_git_subprocess_problems(source))
     return problems
 
 

@@ -30,9 +30,10 @@ from agent_toolkit._atk.wi.common import (
 )
 from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action as _unrepairable_entry_next_action
 from agent_toolkit._atk.wi.repo import (
-    _normalize_remote_url,
     _resolve_repo_id,
 )
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import remote as _git_remote
 
 _GIT_TIMEOUT_SECONDS = 10.0
 _MISSING_TARGET_NEXT_ACTION = "`atk wi list`で実在するファイル名を確かめて指定し直す"
@@ -64,14 +65,8 @@ def _candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
         if path.exists():
             return path.resolve()
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=_GIT_TIMEOUT_SECONDS,
+        result = _git_command.run(
+            ["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False, timeout=_GIT_TIMEOUT_SECONDS
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -82,21 +77,13 @@ def _candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
 def _local_worktree_repo_id(local_worktree: pathlib.Path) -> str | None:
     """作業ツリーのoriginから対象リポジトリ識別子を返す。"""
     try:
-        result = subprocess.run(
-            ["git", "-C", str(local_worktree), "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=_GIT_TIMEOUT_SECONDS,
-        )
+        url = _git_remote.origin_url(local_worktree, timeout=_GIT_TIMEOUT_SECONDS)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    if result.returncode != 0:
+    if url is None:
         return None
     try:
-        return _normalize_remote_url(result.stdout.strip())
+        return _git_remote.normalize_remote_url(url)
     except ValueError:
         return None
 
@@ -104,20 +91,10 @@ def _local_worktree_repo_id(local_worktree: pathlib.Path) -> str | None:
 def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
     """作業ツリーでrevisionをcommitの40桁または64桁OIDへ解決する。"""
     try:
-        result = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(local_worktree),
-                "rev-parse",
-                "--verify",
-                "--end-of-options",
-                f"{revision}^{{commit}}",
-            ],
+        result = _git_command.run(
+            ["-C", str(local_worktree), "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
             capture_output=True,
             text=True,
-            encoding="utf-8",
-            errors="replace",
             check=False,
             timeout=_GIT_TIMEOUT_SECONDS,
         )
@@ -137,12 +114,10 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> _CommitMetad
     """作業ツリーでrevisionを解決し、永続記録用の一意な長さの短縮OIDと件名を返す。"""
     commit = _resolve_commit_oid(local_worktree, revision)
     try:
-        result = subprocess.run(
-            ["git", "-C", str(local_worktree), "show", "-s", "--format=%h%x00%s", commit],
+        result = _git_command.run(
+            ["-C", str(local_worktree), "show", "-s", "--format=%h%x00%s", commit],
             capture_output=True,
             text=True,
-            encoding="utf-8",
-            errors="replace",
             check=False,
             timeout=_GIT_TIMEOUT_SECONDS,
         )
@@ -213,15 +188,7 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
         has_remote = _atk_git_sync.has_remote(private_notes)
         initial_pushed = _push_pending_commits(private_notes)
         _pull(private_notes)
-        status = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=private_notes,
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        status = _git_command.run(["status", "--porcelain"], private_notes, check=True, capture_output=True, text=True)
         changed = bool(status.stdout.strip())
         final_pushed = (
             _commit_and_push(private_notes, "chore: edit private notes externally", ["."])
@@ -387,14 +354,8 @@ def _atomic_write_text(path: pathlib.Path, content: str) -> None:
 
 def _git_head(private_notes: pathlib.Path) -> str:
     """管理repoのHEADを40桁または64桁OIDで返す。"""
-    result = subprocess.run(
-        ["git", "rev-parse", "--verify", "HEAD^{commit}"],
-        cwd=private_notes,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
+    result = _git_command.run(
+        ["rev-parse", "--verify", "HEAD^{commit}"], private_notes, capture_output=True, text=True, check=True
     )
     commit = result.stdout.strip()
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:

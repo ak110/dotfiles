@@ -1,13 +1,17 @@
-"""GitリモートURLの取得と正規化を提供する。"""
+"""GitリモートURLの取得と解析を提供する。
+
+agent-toolkitがoriginなどのリモートのURLを取得する処理は本モジュールの関数を通す。
+"""
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import re
-import subprocess
 import urllib.parse
 
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._git import command as _git_command
 
 _SCP_LIKE_REMOTE_RE = re.compile(r"^[^@\s]+@(?P<host>[^:\s]+):(?P<path>.+)$")
 _NORMALIZED_REMOTE_RE = re.compile(r"[^/]+(?:/[^/]+){2,}")
@@ -68,18 +72,11 @@ def resolve_repo_identifier(value: str) -> str | None:
             return None
     except OSError:
         return None
-    result = subprocess.run(
-        ["git", "-C", str(local_path), "remote", "get-url", "origin"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    if result.returncode != 0:
+    url = origin_url(local_path)
+    if url is None:
         return None
     try:
-        return normalize_remote_url(result.stdout.strip())
+        return normalize_remote_url(url)
     except ValueError:
         return None
 
@@ -89,3 +86,61 @@ def canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
     if value not in cache:
         cache[value] = resolve_repo_identifier(value)
     return cache[value]
+
+
+def origin_url(worktree: str | pathlib.Path, *, timeout: float | None = None) -> str | None:
+    """作業ツリーの`origin`のURLを返す。Git管理外や`origin`未設定で`git`が非0で終了した場合は`None`を返す。
+
+    `git`を起動できない場合の`OSError`と時間切れの`subprocess.TimeoutExpired`は送出し、扱いは呼び出し側が決める。
+    """
+    result = _git_command.run(
+        ["-C", str(worktree), "remote", "get-url", "origin"], capture_output=True, text=True, check=False, timeout=timeout
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def remote_urls(cwd: str | pathlib.Path | None, *, timeout: float) -> list[str]:
+    """`cwd`のリポジトリに設定された全リモートのURLを返す。取得できない場合は空のリストを返す。"""
+    stdout = _git_command.optional_stdout(["config", "--get-regexp", r"^remote\..*\.url$"], cwd, timeout=timeout)
+    if stdout is None:
+        return []
+    return [line.partition(" ")[2] for line in stdout.splitlines()]
+
+
+@dataclasses.dataclass(frozen=True)
+class RemoteLocation:
+    """リモートのURLから取り出したホスト名とプロジェクトのパス（`owner/repository`など）。"""
+
+    hostname: str | None
+    project_path: str
+
+
+def parse_remote_location(value: str) -> RemoteLocation:
+    """URL・SCP形式・`[host/]owner/repository`からホスト名とプロジェクトのパスを取り出す。
+
+    ホスト名を含まない`owner/repository`形式では`hostname`を`None`とする。
+    プロジェクトのパスが`owner/repository`の形を持たない値は`ValueError`を送出する。
+    """
+    stripped = value.strip()
+    hostname: str | None = None
+    project_path = stripped
+    if "://" in stripped:
+        parsed = urllib.parse.urlparse(stripped)
+        hostname = parsed.hostname
+        project_path = parsed.path
+    elif match := re.match(r"^(?:[^@/]+@)?([^:/]+):(.+)$", stripped):
+        hostname = match.group(1)
+        project_path = match.group(2)
+    else:
+        parts = stripped.strip("/").split("/")
+        if len(parts) >= 3 and "." in parts[0]:
+            hostname = parts[0]
+            project_path = "/".join(parts[1:])
+    project_path = project_path.strip("/")
+    if project_path.endswith(".git"):
+        project_path = project_path[:-4]
+    if not project_path or "/" not in project_path:
+        raise ValueError(f"リモートのプロジェクトのパスを取り出せない: {value!r}")
+    return RemoteLocation(hostname=hostname, project_path=project_path)

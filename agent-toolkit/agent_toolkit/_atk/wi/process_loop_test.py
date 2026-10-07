@@ -1,6 +1,6 @@
 """atk (agent-toolkit `atk wi`) のprocess-loopサブコマンド・リポジトリID解決のテスト。
 
-process-loopサブコマンド（常駐ループ）、リモートURL正規化（`_normalize_remote_url`）、
+process-loopサブコマンド（常駐ループ）、
 リポジトリID解決（`_resolve_repo_id`）の単体テストを集約する。
 既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_wi_show_test.py`・
 `_atk_wi_mutations_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
@@ -3188,36 +3188,6 @@ class TestProcessLoopWaitMessage:
             )
         captured = capsys.readouterr()
         assert "0件のため変更検知を待機します。" in captured.out
-
-
-class TestNormalizeRemoteUrl:
-    """_normalize_remote_url: 各種リモートURL形式を`host/owner/repo`へ正規化する。"""
-
-    @pytest.mark.parametrize(
-        ("url", "expected"),
-        [
-            # HTTPS（.gitサフィックスあり）
-            ("https://github.com/owner/repo.git", "github.com/owner/repo"),
-            # HTTPS（.gitサフィックスなし）
-            ("https://github.com/owner/repo", "github.com/owner/repo"),
-            # HTTPS（大文字ホスト → 小文字正規化）
-            ("https://GitHub.com/Owner/Repo.git", "github.com/owner/repo"),
-            # SSH短縮形
-            ("git@github.com:owner/repo.git", "github.com/owner/repo"),
-            # SSH URI（ssh://スキーム）
-            ("ssh://git@github.com/owner/repo.git", "github.com/owner/repo"),
-            # 既に正規化済み
-            ("github.com/owner/repo", "github.com/owner/repo"),
-        ],
-    )
-    def test_normalize_returns_expected(self, url: str, expected: str) -> None:
-        """各URLフォーマットが期待する`host/owner/repo`形式へ変換されること。"""
-        assert _repo._normalize_remote_url(url) == expected  # pylint: disable=protected-access  # noqa: SLF001
-
-    def test_invalid_url_raises_value_error(self) -> None:
-        """解析不能な文字列はValueErrorを送出すること。"""
-        with pytest.raises(ValueError, match="リモートURLとして解析できません"):
-            _repo._normalize_remote_url("not-a-url")  # pylint: disable=protected-access  # noqa: SLF001
 
 
 class TestResolveRepoId:

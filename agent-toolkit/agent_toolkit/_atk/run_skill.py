@@ -35,6 +35,7 @@ from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import process_tree as _process_tree
+from agent_toolkit._git import command as _git_command
 
 DEFAULT_TIMEOUT_SECONDS = 21600
 """セッションの時間上限の省略時の値（6時間）。数日に1回の定期実行で1回のスキル実行が収まる長さとする。"""
@@ -309,14 +310,7 @@ def _copy_stream(stream: typing.IO[bytes], label: str, log: typing.TextIO, lock:
 
 def _resolve_repo_root(path: pathlib.Path) -> pathlib.Path:
     """指定パスが属する作業ツリーのrootを返す。Git管理外ならパスをそのまま使う。"""
-    result = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    result = _git_command.run(["-C", str(path), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         _outcome.report_failure(
             f"対象リポジトリの作業ツリーを解決できない: {path}（git: {result.stderr.strip()}）",

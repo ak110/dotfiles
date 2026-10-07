@@ -9,11 +9,11 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-import subprocess
 import sys
 
 try:
     from agent_toolkit._common import next_action as _next_action
+    from agent_toolkit._git import command as _git_command
     from agent_toolkit._plan.structure import is_agent_doc_target_file
 except ImportError as _import_error:
     print(
@@ -30,8 +30,8 @@ def changed_agent_doc_paths(repository: pathlib.Path, base: str, target: str) ->
 
     改名は削除と追加に分けて扱い、改名前と改名後の双方を対象へ含める。
     """
-    completed = subprocess.run(
-        ["git", "-C", str(repository), "diff", "--name-only", "--no-renames", "-z", base, target, "--"],
+    completed = _git_command.run(
+        ["-C", str(repository), "diff", "--name-only", "--no-renames", "-z", base, target, "--"],
         capture_output=True,
         check=False,
     )

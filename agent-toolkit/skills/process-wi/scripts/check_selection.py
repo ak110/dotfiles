@@ -58,7 +58,6 @@ import itertools
 import json
 import pathlib
 import re
-import subprocess
 import sys
 import tomllib
 import typing
@@ -71,6 +70,7 @@ try:
     from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
     from agent_toolkit._common import markdown_headings as _markdown_headings
     from agent_toolkit._common import next_action as _next_action
+    from agent_toolkit._git import command as _git_command
     from agent_toolkit._plan import locations as _plan_file
     from agent_toolkit._plan import selection as _selection
     from agent_toolkit._plan.structure import is_agent_doc_target_file as _is_agent_doc_target_file
@@ -439,15 +439,7 @@ def _new_file_path(candidate: str, work_dir: pathlib.Path) -> str | None:
 @functools.cache
 def _tracked_files(work_dir: pathlib.Path) -> tuple[str, ...]:
     """`work_dir`の追跡ファイルのリポジトリ相対パスを返す。Gitで取得できない場合は空にする。"""
-    result = subprocess.run(
-        ["git", "-C", str(work_dir), "ls-files", "-z"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=60,
-    )
+    result = _git_command.run(["-C", str(work_dir), "ls-files", "-z"], capture_output=True, text=True, check=False, timeout=60)
     if result.returncode != 0:
         return ()
     return tuple(path for path in result.stdout.split("\0") if path)
@@ -912,9 +904,7 @@ def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
         if not value.is_dir():
             raise InputError(f"`--work-dir`がディレクトリではない: {value}", next_action=_FIX_PATHS)
         return value.resolve()
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
-    )
+    result = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     if result.returncode != 0 or not result.stdout.strip():
         raise InputError(f"現在のディレクトリからGitルートを解決できない: {result.stderr.strip()}", next_action=_FIX_PATHS)
     return pathlib.Path(result.stdout.strip())

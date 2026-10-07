@@ -64,21 +64,13 @@ def resolve_target_repo(cwd: str) -> str | None:
     `_atk_wi_common`経由で依存パッケージも読み込むため使用しない。
     """
     try:
-        completed = subprocess.run(
-            ["git", "-C", cwd, "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=_GIT_TIMEOUT_SEC,
-        )
+        url = _git_remote.origin_url(cwd, timeout=_GIT_TIMEOUT_SEC)
     except (OSError, subprocess.SubprocessError):
         return None
-    if completed.returncode != 0:
+    if url is None:
         return None
     try:
-        return _git_remote.normalize_remote_url(completed.stdout.strip())
+        return _git_remote.normalize_remote_url(url)
     except ValueError:
         return None
 

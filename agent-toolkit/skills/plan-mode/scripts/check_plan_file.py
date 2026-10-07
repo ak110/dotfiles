@@ -10,7 +10,6 @@ import argparse
 import difflib
 import pathlib
 import re
-import subprocess
 import sys
 import typing
 
@@ -18,6 +17,7 @@ import yaml
 
 try:
     from agent_toolkit._common import next_action as _next_action
+    from agent_toolkit._git import command as _git_command
     from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
         locations as _plan_file,
     )
@@ -172,13 +172,8 @@ def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
 
 def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
     """作業ディレクトリが属するGitルートの正規化済みパスを返す。"""
-    result = subprocess.run(
-        ["git", "-C", str(work_dir), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
+    result = _git_command.run(
+        ["-C", str(work_dir), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
         return None, result.stderr.strip() or "作業ディレクトリのGitルートを解決できない"

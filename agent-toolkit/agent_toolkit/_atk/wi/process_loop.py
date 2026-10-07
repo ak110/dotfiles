@@ -341,38 +341,23 @@ def _git_output(args: list[str], cwd: pathlib.Path) -> str:
 def _worktree_is_clean(worktree_path: pathlib.Path) -> bool:
     """index・追跡済み差分・未追跡ファイルが全て空か判定する。"""
     checks = (
-        ["git", "diff", "--quiet"],
-        ["git", "diff", "--cached", "--quiet"],
+        ["diff", "--quiet"],
+        ["diff", "--cached", "--quiet"],
     )
-    if any(subprocess.run(command, cwd=worktree_path, check=False).returncode != 0 for command in checks):
+    if any(_git_command.run(command, worktree_path, check=False).returncode != 0 for command in checks):
         return False
-    untracked = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard"],
-        cwd=worktree_path,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
+    untracked = _git_command.run(
+        ["ls-files", "--others", "--exclude-standard"], worktree_path, capture_output=True, text=True, check=False
     )
     return untracked.returncode == 0 and not untracked.stdout.strip()
 
 
 def _run_worktree_git(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
     """worktree準備用のgitコマンドを実行し、コンソールタイトルを復元する。"""
-    command = ["git", *args]
     try:
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        result = _git_command.run(args, cwd, capture_output=True, text=True, check=False)
     except OSError as error:
-        result = subprocess.CompletedProcess(command, returncode=127, stdout="", stderr=str(error))
+        result = subprocess.CompletedProcess(_git_command.command_line(args), returncode=127, stdout="", stderr=str(error))
     finally:
         _console_title.set_console_title("atk wi process-loop")
     return result
@@ -593,10 +578,10 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
                 next_action=_fetch_failure_next_action(local_path, upstream_remote),
             )
             return None
-        command = ["git", "worktree", "add", str(worktree_path), branch]
+        command = ["worktree", "add", str(worktree_path), branch]
         if not branch_exists:
-            command = ["git", "worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
-        created = _run_worktree_git(command[1:], local_path)
+            command = ["worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
+        created = _run_worktree_git(command, local_path)
         if created.returncode != 0:
             _next_action.report(
                 f"worktreeの作成に失敗しました: {created.stderr.strip()}",
@@ -997,22 +982,13 @@ def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
     """
     try:
         with _repo_lock(dotfiles_root):
-            subprocess.run(
-                ["git", "-C", str(dotfiles_root), "fetch", "--quiet"],
-                check=True,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
+            _git_command.run(["-C", str(dotfiles_root), "fetch", "--quiet"], check=True, capture_output=True, text=True)
             _console_title.set_console_title("atk wi process-loop")
-            result = subprocess.run(
-                ["git", "-C", str(dotfiles_root), "rev-list", "HEAD..@{upstream}", "--count"],
+            result = _git_command.run(
+                ["-C", str(dotfiles_root), "rev-list", "HEAD..@{upstream}", "--count"],
                 check=True,
                 capture_output=True,
                 text=True,
-                encoding="utf-8",
-                errors="replace",
             )
             _console_title.set_console_title("atk wi process-loop")
         return int(result.stdout.strip()) > 0

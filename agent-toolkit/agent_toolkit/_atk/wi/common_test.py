@@ -503,31 +503,13 @@ class TestReadiness:
         original_run = subprocess.run
         git_resolutions = 0
 
-        def run(
-            args: list[str],
-            *,
-            capture_output: bool,
-            text: bool,
-            encoding: str | None = None,
-            errors: str | None = None,
-            check: bool,
-            timeout: float | None = None,
-        ) -> subprocess.CompletedProcess[Any]:
+        def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
             nonlocal git_resolutions
             if args == ["git", "-C", str(external_repo), "remote", "get-url", "origin"]:
                 git_resolutions += 1
-            return original_run(
-                args,
-                capture_output=capture_output,
-                text=text,
-                encoding=encoding,
-                errors=errors,
-                check=check,
-                timeout=timeout,
-            )
+            return original_run(args, **kwargs)  # pylint: disable=subprocess-run-check
 
-        git_remote = _readiness.__dict__["_git_remote"]
-        monkeypatch.setattr(git_remote.subprocess, "run", run)
+        monkeypatch.setattr(subprocess, "run", run)
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 

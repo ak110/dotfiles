@@ -6,7 +6,6 @@
 
 import pathlib
 import re
-import subprocess
 import sys
 import typing
 
@@ -25,22 +24,13 @@ from agent_toolkit._atk.wi.common import (
     web_input_error_from,
 )
 from agent_toolkit._atk.wi.formatters import _parse_target_repo
+from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 
 TARGET_REPO_ALL = "all"
 """`--target-repo`へ指定すると対象リポジトリを限定しない値。"""
 
 _TARGET_REPO_NEXT_ACTION = "`--target-repo`へローカルworktreeのパスかremote URLを指定して再実行する"
-
-
-def _normalize_remote_url(url: str) -> str:
-    """リモートURLを`host/owner/repo`形式（またはネスト配下`host/group/.../repo`）へ正規化して返す。
-
-    HTTPS形式・SSH短縮形式・SSH URI形式・既に正規化済みの`host/path...`形式（`host`直下に
-    2要素以上の`/`区切りパスを持つ）の4種を受理する。ネスト配下のリポジトリ（GitLabサブグループ等）も
-    含む。受理外はValueErrorを送出する。出力は全体小文字化し`.git`サフィックスを除去する。
-    """
-    return _git_remote.normalize_remote_url(url)
 
 
 def _resolve_local_worktree(value: str | None) -> pathlib.Path:
@@ -59,14 +49,7 @@ def _resolve_local_worktree(value: str | None) -> pathlib.Path:
             sys.exit(2)
         return local_path.resolve()
 
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    result = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         _outcome.report_failure(
             "git rev-parse --show-toplevel が失敗した",
@@ -78,20 +61,13 @@ def _resolve_local_worktree(value: str | None) -> pathlib.Path:
 
 def _origin_url(worktree: pathlib.Path) -> str:
     """作業ツリーのoriginのURLを返す。取得できない場合は設定手順を次の操作とする例外を送出する。"""
-    result = subprocess.run(
-        ["git", "-C", str(worktree), "remote", "get-url", "origin"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    if result.returncode != 0:
+    url = _git_remote.origin_url(worktree)
+    if url is None:
         raise WebInputError(
             f"リモートURLを取得できない（git remote get-url origin）: {worktree}",
             next_action=f"`git -C {worktree} remote add origin <URL>`でoriginを設定するか、{_TARGET_REPO_NEXT_ACTION}",
         )
-    return result.stdout.strip()
+    return url
 
 
 def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = None) -> str:
@@ -109,11 +85,11 @@ def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = No
         if local_path.exists():
             local_path = local_path.resolve()
             try:
-                return _normalize_remote_url(_origin_url(local_path))
+                return _git_remote.normalize_remote_url(_origin_url(local_path))
             except ValueError as exc:
                 raise web_input_error_from(exc, next_action=_TARGET_REPO_NEXT_ACTION) from exc
         try:
-            return _normalize_remote_url(value)
+            return _git_remote.normalize_remote_url(value)
         except ValueError as exc:
             raise WebInputError(
                 f"パスが存在せずリモートURLとしても解析できない: {value}", next_action=_TARGET_REPO_NEXT_ACTION
@@ -123,7 +99,7 @@ def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = No
     if cwd is None:
         cwd = _resolve_local_worktree(None)
     try:
-        return _normalize_remote_url(_origin_url(cwd))
+        return _git_remote.normalize_remote_url(_origin_url(cwd))
     except ValueError as exc:
         raise web_input_error_from(exc, next_action=_TARGET_REPO_NEXT_ACTION) from exc
 
@@ -149,28 +125,14 @@ def detect_current_repo_id() -> str | None:
     リモートURLを正規化できない形式のいずれでもNoneを返す。Noneを受け取った呼び出し元は
     対象を限定せず、全ての対象リポジトリを扱う。
     """
-    toplevel = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    toplevel = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     if toplevel.returncode != 0:
         return None
-    remote = subprocess.run(
-        ["git", "-C", toplevel.stdout.strip(), "remote", "get-url", "origin"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    if remote.returncode != 0:
+    url = _git_remote.origin_url(toplevel.stdout.strip())
+    if url is None:
         return None
     try:
-        return _normalize_remote_url(remote.stdout.strip())
+        return _git_remote.normalize_remote_url(url)
     except ValueError:
         return None
 
@@ -184,13 +146,8 @@ def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
     local_path = pathlib.Path(value).expanduser()
     if local_path.exists():
         local_worktree = local_path.resolve()
-        result = subprocess.run(
-            ["git", "-C", str(local_worktree), "rev-parse", "--is-inside-work-tree"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
+        result = _git_command.run(
+            ["-C", str(local_worktree), "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True, check=False
         )
         if result.returncode != 0 or result.stdout.strip() != "true":
             _outcome.report_failure(
@@ -204,13 +161,8 @@ def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
 
 def resolve_head_commit(local_worktree: pathlib.Path) -> str:
     """ローカルworktreeのHEADを40桁または64桁OIDとして返す。"""
-    result = subprocess.run(
-        ["git", "-C", str(local_worktree), "rev-parse", "--verify", "HEAD^{commit}"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
+    result = _git_command.run(
+        ["-C", str(local_worktree), "rev-parse", "--verify", "HEAD^{commit}"], capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
         detail = result.stderr.strip()

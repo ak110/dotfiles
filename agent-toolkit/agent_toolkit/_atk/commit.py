@@ -15,6 +15,7 @@ from pathlib import Path
 from agent_toolkit._atk import config, outcome
 from agent_toolkit._common import automated_prompt, claude_usage_limit, message_format
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
 
 _PROMPT_SOURCE = "atk-commit"
 _PROMPT_KIND = "commit-request"
@@ -27,25 +28,11 @@ descriptionは日本語で書く。
 
 
 def _git(root: Path, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-C", str(root), *arguments],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=check,
-    )
+    return _git_command.run(["-C", str(root), *arguments], capture_output=True, text=True, check=check)
 
 
 def _git_root() -> Path:
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
-    )
+    result = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True)
     return Path(result.stdout.strip())
 
 

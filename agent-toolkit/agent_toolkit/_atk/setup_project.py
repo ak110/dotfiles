@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 from agent_toolkit._atk import outcome
+from agent_toolkit._git import command as _git_command
 
 _AGENTS_MD = "AGENTS.md"
 _CLAUDE_MD = "CLAUDE.md"
@@ -38,14 +38,7 @@ def _is_claude_adapter(path: Path) -> bool:
 
 
 def _git_value(target: Path, *arguments: str) -> str | None:
-    result = subprocess.run(
-        ["git", "-C", str(target), *arguments],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    result = _git_command.run(["-C", str(target), *arguments], capture_output=True, text=True, check=False)
     return result.stdout.strip() if result.returncode == 0 else None
 
 

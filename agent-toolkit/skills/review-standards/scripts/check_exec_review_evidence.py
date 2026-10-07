@@ -29,6 +29,7 @@ import typing
 from agent_toolkit._atk import review_table
 from agent_toolkit._common import markdown_headings, requirement_units
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import commit_mapping
 from agent_toolkit._plan.structure.markdown import extract_tables, markdown_body_text
 
@@ -121,15 +122,7 @@ TEST_RESULT = re.compile(
 
 
 def _repository_root() -> pathlib.Path:
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=30,
-    )
+    result = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False, timeout=30)
     if result.returncode != 0:
         raise ValueError(f"対象リポジトリを特定できません: {result.stderr.strip()}")
     return pathlib.Path(result.stdout.strip()).resolve()
@@ -297,12 +290,10 @@ def _commit_oid(repository: pathlib.Path, revision: str) -> str:
     # HEADやbranch名は、行を更新せずに参照先が新しい対象へ変わる。
     if re.fullmatch(r"[0-9a-fA-F]{7,64}", revision) is None:
         raise ValueError(f"判定したcommitの7文字以上のOIDを記録してください: {revision}")
-    result = subprocess.run(
-        ["git", "-C", str(repository), "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
+    result = _git_command.run(
+        ["-C", str(repository), "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
         capture_output=True,
         text=True,
-        encoding="utf-8",
-        errors="replace",
         check=False,
         timeout=30,
     )
@@ -443,12 +434,10 @@ def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
     path = pathlib.Path(os.path.abspath(repository / candidate))
     if not path.is_relative_to(repository) or not _is_file(path):
         return False
-    result = subprocess.run(
-        ["git", "-C", str(repository), "ls-files", "--error-unmatch", "--", path.relative_to(repository).as_posix()],
+    result = _git_command.run(
+        ["-C", str(repository), "ls-files", "--error-unmatch", "--", path.relative_to(repository).as_posix()],
         capture_output=True,
         text=True,
-        encoding="utf-8",
-        errors="replace",
         check=False,
         timeout=30,
     )
@@ -480,11 +469,8 @@ def _reference_content(path: pathlib.Path, repository: pathlib.Path, head: str) 
     if not path.is_relative_to(repository):
         return path.read_bytes()
     relative = path.relative_to(repository).as_posix()
-    result = subprocess.run(
-        ["git", "-C", str(repository), "cat-file", "blob", f"{head}:{relative}"],
-        capture_output=True,
-        check=False,
-        timeout=30,
+    result = _git_command.run(
+        ["-C", str(repository), "cat-file", "blob", f"{head}:{relative}"], capture_output=True, check=False, timeout=30
     )
     if result.returncode != 0:
         raise ValueError(f"対象commit {head}のファイルを読めません: {result.stderr.decode('utf-8', errors='replace').strip()}")
@@ -510,12 +496,10 @@ def _reference_location_error(content: bytes, location: str, headings: set[str])
 
 def _tracked_files(repository: pathlib.Path, head: str) -> list[str]:
     """対象commitの追跡ファイルを、worktreeのルートからの相対パスで返す。"""
-    result = subprocess.run(
-        ["git", "-C", str(repository), "ls-tree", "-r", "-z", "--name-only", head],
+    result = _git_command.run(
+        ["-C", str(repository), "ls-tree", "-r", "-z", "--name-only", head],
         capture_output=True,
         text=True,
-        encoding="utf-8",
-        errors="replace",
         check=False,
         timeout=30,
     )

@@ -34,11 +34,11 @@ class TestRunGitLines:
         repo.mkdir()
         _init_git_repo(repo)
         _git_commit_initial(repo, {"a.txt": "content"})
-        result = _git_status.run_git_lines(["git", "remote"], str(repo))
+        result = _git_status.run_git_lines(["remote"], str(repo))
         assert result == []  # リモート未構成
 
     def test_failed_command_returns_none(self, tmp_path: pathlib.Path):
-        result = _git_status.run_git_lines(["git", "config", "nonexistent"], str(tmp_path / "nonexistent"))
+        result = _git_status.run_git_lines(["config", "nonexistent"], str(tmp_path / "nonexistent"))
         assert result is None
 
     def test_timeout_returns_none(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
@@ -46,7 +46,7 @@ class TestRunGitLines:
             raise subprocess.TimeoutExpired(cmd="git", timeout=10)
 
         monkeypatch.setattr(subprocess, "run", _raise_timeout)
-        result = _git_status.run_git_lines(["git", "remote"], str(tmp_path))
+        result = _git_status.run_git_lines(["remote"], str(tmp_path))
         assert result is None
 
     def test_os_error_returns_none(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
@@ -54,7 +54,7 @@ class TestRunGitLines:
             raise OSError("simulated failure")
 
         monkeypatch.setattr(subprocess, "run", _raise_os_error)
-        result = _git_status.run_git_lines(["git", "remote"], str(tmp_path))
+        result = _git_status.run_git_lines(["remote"], str(tmp_path))
         assert result is None
 
     def test_blank_lines_are_filtered(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
@@ -64,5 +64,5 @@ class TestRunGitLines:
             return completed
 
         monkeypatch.setattr(subprocess, "run", _fake_run)
-        result = _git_status.run_git_lines(["git", "remote"], str(tmp_path))
+        result = _git_status.run_git_lines(["remote"], str(tmp_path))
         assert result == ["a", "b"]

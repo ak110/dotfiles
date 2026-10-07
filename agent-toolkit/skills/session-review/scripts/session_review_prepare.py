@@ -21,7 +21,6 @@ import io
 import json
 import pathlib
 import re
-import subprocess
 import sys
 import unicodedata
 from typing import Any
@@ -35,6 +34,7 @@ from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
 from agent_toolkit._common import atomic_file, file_lock
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
 
 CONVERSATION_FILENAME = "conversation.md"
 CANDIDATES_FILENAME = "candidates.md"
@@ -136,13 +136,8 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
     if target_repo is None:
         return None
     try:
-        result = subprocess.run(
-            ["git", "-C", str(target_repo), "rev-parse", "--git-common-dir"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
+        result = _git_command.run(
+            ["-C", str(target_repo), "rev-parse", "--git-common-dir"], capture_output=True, text=True, check=False
         )
     except OSError:
         return None

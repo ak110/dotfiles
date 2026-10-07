@@ -1749,7 +1749,7 @@ def test_staleness_uses_fixed_time_and_commit_age(
     expected: dict[str, object],
 ) -> None:
     monkeypatch.setattr(
-        listing.subprocess,
+        subprocess,
         "run",
         lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=stdout, stderr=""),
     )
@@ -1761,7 +1761,7 @@ def test_staleness_uses_fixed_time_and_commit_age(
 
 def test_staleness_reports_unavailable_history(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        listing.subprocess,
+        subprocess,
         "run",
         lambda *_args, **_kwargs: subprocess.CompletedProcess([], 128, stdout="", stderr="bad revision"),
     )

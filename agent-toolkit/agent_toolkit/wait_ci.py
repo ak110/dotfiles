@@ -24,11 +24,13 @@ import sys
 import time
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import remote as _git_remote
 
 # 以下の終了コードはCLIの公開インターフェース（ユーザーが`echo $?`等で参照する契約）であり、
 # private実装詳細ではないためアンダースコア接頭辞を付けない。
@@ -115,37 +117,16 @@ class CiBaseline:
     run_ids: frozenset[int]
 
 
-@dataclasses.dataclass(frozen=True)
-class RepositoryTarget:
-    """forge CLIに渡すrepositoryのホストとproject path。"""
-
-    hostname: str | None
-    project_path: str
+RepositoryTarget = _git_remote.RemoteLocation
+"""forge CLIに渡すrepositoryのホストとproject path。"""
 
 
 def _parse_repository(repository: str) -> RepositoryTarget:
     """URL・SCP形式・`[host/]owner/repo`をrepository対象へ正規化する。"""
-    value = repository.strip()
-    hostname: str | None = None
-    project_path = value
-    if "://" in value:
-        parsed = urlparse(value)
-        hostname = parsed.hostname
-        project_path = parsed.path
-    elif match := re.match(r"^(?:[^@/]+@)?([^:/]+):(.+)$", value):
-        hostname = match.group(1)
-        project_path = match.group(2)
-    else:
-        parts = value.strip("/").split("/")
-        if len(parts) >= 3 and "." in parts[0]:
-            hostname = parts[0]
-            project_path = "/".join(parts[1:])
-    project_path = project_path.strip("/")
-    if project_path.endswith(".git"):
-        project_path = project_path[:-4]
-    if not project_path or "/" not in project_path:
-        raise RunListError(f"repository指定が不正: {repository!r}")
-    return RepositoryTarget(hostname=hostname, project_path=project_path)
+    try:
+        return _git_remote.parse_remote_location(repository)
+    except ValueError as error:
+        raise RunListError(f"repository指定が不正: {repository!r}") from error
 
 
 def _short_ref(ref: str) -> str:
@@ -523,22 +504,8 @@ def _forge_from_hostname(hostname: str) -> str | None:
 
 def _remote_hostnames(project_path: str, cwd: pathlib.Path | None) -> list[str]:
     """`cwd`のGit remoteのうち、project pathが一致するURLのホスト名を返す。取得できない場合は空とする。"""
-    try:
-        result = subprocess.run(
-            ["git", "config", "--get-regexp", r"^remote\..*\.url$"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return []
     hostnames: list[str] = []
-    for line in result.stdout.splitlines():
-        _, _, url = line.partition(" ")
+    for url in _git_remote.remote_urls(cwd, timeout=30):
         try:
             remote = _parse_repository(url)
         except RunListError:
@@ -1092,12 +1059,10 @@ def _resolve_sha(revision: str, subprocess_timeout: float) -> str | None:
     解決失敗時は`None`を返し、呼び出し元で識別子解決失敗として区別できるようにする。
     """
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
+        result = _git_command.run(
+            ["rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
             capture_output=True,
             text=True,
-            encoding="utf-8",
-            errors="replace",
             check=False,
             timeout=subprocess_timeout,
         )
@@ -1111,12 +1076,10 @@ def _resolve_sha(revision: str, subprocess_timeout: float) -> str | None:
 def _is_ancestor_of_ref(ancestor_sha: str, ref: str, subprocess_timeout: float) -> bool:
     """`git merge-base --is-ancestor <sha> <ref>`で祖先関係を確認する。"""
     try:
-        result = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", ancestor_sha, ref],
+        result = _git_command.run(
+            ["merge-base", "--is-ancestor", ancestor_sha, ref],
             capture_output=True,
             text=True,
-            encoding="utf-8",
-            errors="replace",
             check=False,
             timeout=subprocess_timeout,
         )
@@ -1128,12 +1091,10 @@ def _is_ancestor_of_ref(ancestor_sha: str, ref: str, subprocess_timeout: float) 
 def _follow_shas(base_sha: str, ref: str, subprocess_timeout: float) -> list[str]:
     """`git log <base_sha>..<ref> --format=%H`で後続SHA集合を新しい順で返す。"""
     try:
-        result = subprocess.run(
-            ["git", "log", f"{base_sha}..{ref}", "--format=%H"],
+        result = _git_command.run(
+            ["log", f"{base_sha}..{ref}", "--format=%H"],
             capture_output=True,
             text=True,
-            encoding="utf-8",
-            errors="replace",
             check=False,
             timeout=subprocess_timeout,
         )

@@ -9,7 +9,6 @@ import datetime
 import json
 import pathlib
 import shutil
-import subprocess
 import sys
 from collections.abc import Iterable, Mapping
 
@@ -38,6 +37,7 @@ from agent_toolkit._atk.wi.formatters import (
 )
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._atk.wi.repo import _resolve_local_worktree, _resolve_repo_id
+from agent_toolkit._git import command as _git_command
 
 type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
 
@@ -188,12 +188,10 @@ def _staleness(text: str, local_worktree: pathlib.Path | None, now: datetime.dat
         return {"status": "indeterminate", "reason": "target-commit-missing"}
     if local_worktree is None:
         return {"status": "indeterminate", "reason": "local-worktree-unavailable"}
-    result = subprocess.run(
-        ["git", "-C", str(local_worktree), "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..HEAD"],
+    result = _git_command.run(
+        ["-C", str(local_worktree), "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..HEAD"],
         capture_output=True,
         text=True,
-        encoding="utf-8",
-        errors="replace",
         check=False,
     )
     if result.returncode != 0:

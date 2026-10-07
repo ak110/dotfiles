@@ -454,3 +454,36 @@ def test_agent_toolkit_hook_entry_may_import_hooks(_isolate_repo_root: pathlib.P
     )
 
     assert check_script_imports.main() == 0
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "call"),
+    [
+        ("_atk/feature.py", 'subprocess.run(["git", "status"])'),
+        ("_hooks/check.py", 'subprocess.check_output(["git", "-C", ".", "rev-parse", "HEAD"])'),
+        ("../skills/example/scripts/tool.py", 'subprocess.Popen(("git", "fetch"))'),
+    ],
+)
+def test_agent_toolkit_rejects_direct_git_subprocess(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], relative_path: str, call: str
+) -> None:
+    """`_git/`の外の`git`の直接起動を、共通関数で起動する次の操作とともに失敗にする。"""
+    _write_toolkit_module(_isolate_repo_root, relative_path, f'"""対象。"""\n\nimport subprocess\n\n{call}\n')
+
+    assert check_script_imports.main() == 1
+    err = capsys.readouterr().err
+    assert "`git`を`subprocess`で直接起動している" in err
+    assert "次の操作: `agent_toolkit._git.command`の共通関数（`run`など）で起動する" in err
+
+
+def test_agent_toolkit_allows_git_subprocess_in_git_layer(_isolate_repo_root: pathlib.Path) -> None:
+    """`_git/`配下、`_testing/`配下とテストの直接起動、および`git`以外の起動は失敗にしない。"""
+    body = '"""対象。"""\n\nimport subprocess\n\nsubprocess.run(["git", "status"])\n'
+    _write_toolkit_module(_isolate_repo_root, "_git/command.py", body)
+    _write_toolkit_module(_isolate_repo_root, "_testing/git_fakes.py", body)
+    _write_toolkit_module(_isolate_repo_root, "_atk/feature_test.py", body)
+    _write_toolkit_module(
+        _isolate_repo_root, "_atk/feature.py", '"""対象。"""\n\nimport subprocess\n\nsubprocess.run(["gh", "run", "list"])\n'
+    )
+
+    assert check_script_imports.main() == 0

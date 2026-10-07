@@ -4,7 +4,6 @@
 
 import pathlib
 import shutil
-import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
@@ -14,6 +13,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter, serialize_frontmatter, write_entry_text
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._git import command as _git_command
 
 WI_STATE_INBOX = "inbox"
 WI_STATE_PLANNING = "planning"
@@ -98,15 +98,7 @@ def _tracked_names(private_notes: pathlib.Path, names: Iterable[str]) -> list[st
     削除済みディレクトリをcommit対象へ含める際の限定に用いる。
     """
     name_list = list(names)
-    result = subprocess.run(
-        ["git", "ls-files", "--", *name_list],
-        cwd=private_notes,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
-    )
+    result = _git_command.run(["ls-files", "--", *name_list], private_notes, capture_output=True, text=True, check=True)
     assert isinstance(result.stdout, str)
     tracked = {line.split("/", 1)[0] for line in result.stdout.splitlines()}
     return [name for name in name_list if name in tracked]
