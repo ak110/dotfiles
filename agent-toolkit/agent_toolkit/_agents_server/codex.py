@@ -14,6 +14,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -51,6 +52,7 @@ from agent_toolkit._common import (
     codex_models,
     process_tree,  # pylint: disable=wrong-import-position
 )
+from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -133,14 +135,70 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None) -> Path:
     return destination
 
 
+_BOUNDARY_PATH_PATTERN = re.compile(rf'<{AUTO_INSERTED_ELEMENT}\b[^>]*\spath="([^"]*)"')
+"""`atk-auto`要素の開始タグから`path`属性の値を取り出す。"""
+
+
+def _embedded_rule_paths() -> set[str]:
+    """Codexが読む全体指示ファイルが`atk-auto`要素で埋め込む規範の`path`属性の集合を返す。
+
+    全体指示ファイルは`CODEX_HOME`が設定済みなら`$CODEX_HOME/AGENTS.md`、未設定なら`~/.codex/AGENTS.md`とする。
+    ファイルが無いか読めない場合は空集合を返し、`~/.claude/rules/`配下の全ファイルを渡す側へ倒す。
+    """
+    codex_home = os.environ.get("CODEX_HOME")
+    agents_md = (Path(codex_home) if codex_home else Path.home() / ".codex") / "AGENTS.md"
+    try:
+        text = agents_md.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return set()
+    return set(_BOUNDARY_PATH_PATTERN.findall(text))
+
+
+def _user_rules_instructions() -> str:
+    """`~/.claude/rules/`配下の規範ファイルのうち、全体指示ファイルが埋め込まないものの本文を連結して返す。
+
+    Claude backendの委譲先はユーザー設定の読込元から同じファイル群を受け取る。Codex backendの委譲先へも
+    同じ集合を渡し、engineの選択で委譲先が従う規範が変わらないようにする。
+    ファイル先頭の`atk-auto`要素の`path`属性が全体指示ファイルの埋め込みと一致するファイルは、同じ本文が
+    既に届くため除く。ユーザーの編集を次の起動と再開から反映するため、呼び出しのたびに読み直す。
+    対象が無い場合は空文字列を返す。
+    """
+    rules_dir = Path.home() / ".claude" / "rules"
+    if not rules_dir.is_dir():
+        return ""
+    embedded = _embedded_rule_paths()
+    sections: list[str] = []
+    for path in sorted(rules_dir.rglob("*.md")):
+        if not path.is_file():
+            continue
+        try:
+            body = path.read_text(encoding="utf-8").rstrip("\n")
+        except (OSError, UnicodeError) as exc:
+            _LOG.warning("ユーザー規範を読めないため委譲先へ渡しません: path=%s error=%s", path, exc)
+            continue
+        first_line = body.split("\n", 1)[0]
+        match = _BOUNDARY_PATH_PATTERN.match(first_line)
+        if match is not None and match.group(1) in embedded:
+            continue
+        sections.append(auto_message(body, source="agents-server", kind="user-rules", attributes={"path": str(path)}))
+    if not sections:
+        return ""
+    return (
+        "\n\n委譲元のホストで`~/.claude/rules/`に置かれた規範ファイルを次に示す。"
+        "各ファイルが定める適用範囲に作業が入る条文に従う。各要素の`path`属性のファイルは読了済みとして扱う。\n"
+        + "\n".join(sections)
+    )
+
+
 def _developer_instructions(launch_kind: LaunchKind) -> str:
-    """委譲先の役割と、このprocessで安定化した配布物rootを一体で返す。"""
+    """委譲先の役割、このprocessで安定化した配布物root、ユーザーが置いた規範ファイルの本文を一体で返す。"""
     plugin_root = resolve_stable_plugin_root()
     return (
         f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}\n\n"
         f"agent-toolkit plugin root: {plugin_root}\n"
         "agent-toolkitのskillとplugin内部資源は、この実在する絶対パスを起点に読む。"
         "`<役割名>.subagent.md`や別hostのcache版数から別のplugin rootを組み立てない。"
+        f"{_user_rules_instructions()}"
     )
 
 

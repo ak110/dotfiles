@@ -709,3 +709,58 @@ async def test_send_message_during_overload_wait_delivers_instruction_as_reply(
     assert session.overload_resume_count == 0
     assert session.overload_resume_at is None
     await manager.close()
+
+
+def test_developer_instructions_include_user_rules_except_embedded(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`~/.claude/rules/`配下の規範ファイルを委譲先の指示へ連結し、全体指示ファイルが埋め込むものだけを除く。
+
+    連結しないとCodexの委譲先はClaudeの委譲先が受け取るホスト固有の制約を知らずに操作し、
+    埋め込み済みの本文を重ねると指示が重複する。起動時に読んだ値を使い回すと、ユーザーの編集が再開へ反映されない。
+    """
+    home = tmp_path / "home"
+    codex_home = tmp_path / "codex-home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setattr(subject, "resolve_stable_plugin_root", lambda: tmp_path / "plugin")
+    rules = home / ".claude" / "rules"
+    (rules / "agent-toolkit").mkdir(parents=True)
+    plain = rules / "env.local.md"
+    plain.write_text("# env.local.md\n\nGitHubへ書き込まない。\n", encoding="utf-8")
+    nested = rules / "team" / "review.md"
+    nested.parent.mkdir()
+    nested.write_text("# review.md\n\nレビューは日本語で書く。\n", encoding="utf-8")
+    embedded = rules / "agent-toolkit" / "01-agent.md"
+    embedded.write_text(
+        '<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/01-agent.md">\n'
+        "埋め込み済みの本文\n</atk-auto>\n",
+        encoding="utf-8",
+    )
+    unmatched = rules / "myprojects.md"
+    unmatched.write_text(
+        '<atk-auto source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects.md.tmpl">\n'
+        "Claude Code向けの一覧\n</atk-auto>\n",
+        encoding="utf-8",
+    )
+    codex_home.mkdir()
+    (codex_home / "AGENTS.md").write_text(
+        "# 全体指示\n\n"
+        '<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/01-agent.md">\n本文\n</atk-auto>\n',
+        encoding="utf-8",
+    )
+
+    for launch_kind in ("delegate", "explore", "write", "shell"):
+        instructions = subject._developer_instructions(launch_kind)
+        assert "GitHubへ書き込まない。" in instructions
+        assert "レビューは日本語で書く。" in instructions
+        assert "Claude Code向けの一覧" in instructions
+        assert "埋め込み済みの本文" not in instructions
+        for path in (plain, nested, unmatched):
+            assert f'kind="user-rules" path="{path}"' in instructions
+
+    plain.write_text("# env.local.md\n\n書き換えた制約。\n", encoding="utf-8")
+    rewritten = subject._developer_instructions("delegate")
+    assert "書き換えた制約。" in rewritten
+    assert "GitHubへ書き込まない。" not in rewritten

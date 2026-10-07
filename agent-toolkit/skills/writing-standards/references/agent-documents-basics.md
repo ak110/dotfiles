@@ -33,6 +33,7 @@
 | 文書 | Claude Codeのメイン | Codexのメイン | `Agent`ツールのサブエージェント | `agents_server`の`task`・`delegate`（Claude） | `agents_server`の`task`・`delegate`（Codex） | `agents_server`の`task`・`delegate`（Antigravity） | `explore`・`write`・`shell`（Claude） | `explore`・`write`・`shell`（Codex） | `explore`・`write`・`shell`（Antigravity） | Codexの組み込み委譲先 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `rules/`配下 | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
+| ユーザーが`~/.claude/rules/`に置いた規範ファイル（`~/.codex/AGENTS.md`が埋め込まないもの） | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`の読込指示） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届かない | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届かない | 届く（`~/.codex/AGENTS.md`の読込指示） |
 | `share/rules-main.md` | 届く（SessionStart） | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/rules-main.claude-code.md` | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/rules-main.codex.md` | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
@@ -47,6 +48,7 @@
 
 Codexの列の`rules/`配下と`share/rules-main.codex.md`の値は`~/.codex/AGENTS.md`を配置した環境に限る（Codex単体のインストーラーはこのファイルを配置しない）。
 Antigravityの委譲先は起動区分によらず`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読む。
+ユーザーが`~/.claude/rules/`に置いた規範ファイルの行の読込指示は、Codexのメインと組み込み委譲先へは`~/.claude/rules/`直下の`*.local.md`に限る。`~/.claude/rules/myprojects.md`のようにClaude Code向けに配布するファイルは`agents_server`の委譲先へだけ届く。`~/.claude/CLAUDE.md`はこの行の連結の対象外とし、Claudeの各起動区分へはユーザー設定の読込元から、Codexの主体へは`~/.codex/AGENTS.md`の読込指示で届く。
 Antigravityの列とプロジェクト規範・スキルの行は実機の観測から取った。
 観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日」にある。
 

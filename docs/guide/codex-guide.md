@@ -138,6 +138,8 @@ CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値
 `explore`で`model_type`を省略すると`low_tier`を使う。所在の特定や該当箇所の列挙のように結論だけで後続の判断が成立する調査は`model_type`を省略したまま使い、軽量な探索では判断材料が不足する調査だけ`model_type="medium_tier"`を指定する。
 MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
+`agents_server`がCodexで起動した委譲先は、`~/.claude/rules/`配下に置いた規範ファイル（サブディレクトリを含み、`~/.codex/AGENTS.md`が埋め込むものを除く）の本文を起動時の指示として受け取り、Claudeで起動した委譲先と同じ規範で作業する。Codexのメインとネイティブのサブエージェントはこの指示を受け取らず、`~/.codex/AGENTS.md`の読込指示で`~/.claude/rules/`直下の`*.local.md`と`~/.claude/CLAUDE.md`を読む。Codexのメインにも適用したい規範は`~/.claude/rules/`直下の`*.local.md`へ置く。
+
 公開ツールは`start`、`send_message`、`kill`、`list`、`show`、`stop`の6つであり、終端と結果の受領は`atk agents wait`が担う。`start`の`cwd`は全`mode`で既存ディレクトリの絶対パスとし、
 完了を待たず`session_id`を返す。`atk agents wait`は引数を受け取らず、登録済みのsessionの終端を待ち、回収できた終端結果を全件返す。待機上限は実行ホストの1回のツール呼び出しの上限からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。`wait`を再発行する前に、`list`で待機対象のsessionの`status`を確認する。
 `start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionについては、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。作業の観測を試みずにターンを終えると、その作業を観測する主体が残らない。
