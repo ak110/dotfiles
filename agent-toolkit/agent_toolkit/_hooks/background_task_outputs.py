@@ -7,7 +7,8 @@ import shlex
 
 from agent_toolkit._common import background_output
 from agent_toolkit._common.shell_segments import split_bash_segments
-from agent_toolkit._hooks import stop_gate
+from agent_toolkit._hooks import background_tasks as _background_tasks
+from agent_toolkit._hooks import transcript_scan as _transcript_scan
 
 _READ_COMMANDS = frozenset({"cat", "head", "less", "more", "sed", "tail", "wc", "grep", "rg"})
 
@@ -29,16 +30,16 @@ def command_reads_path(command: str, paths: set[str]) -> bool:
 
 
 def pending_bash_task_ids(transcript_path: str, session_id: str) -> set[str]:
-    """stop_gateと同じ起動・完了解析から未完了の背景BashタスクIDを返す。"""
-    entries = stop_gate.read_transcript_entries_cached(transcript_path)
-    launched, completed, _host_reported = stop_gate._describe_pending_background_entries(  # pylint: disable=protected-access
+    """Stopの継続判定と同じ起動・完了解析（`background_tasks`）から未完了の背景BashタスクIDを返す。"""
+    entries = _transcript_scan.read_transcript_entries_cached(transcript_path)
+    launched, completed, _host_reported = _background_tasks.describe_pending_background_entries(
         entries,
         session_id,
         kinds=("bash",),
         transcript_path=transcript_path,
     )
     pending_tool_use_ids = launched - completed
-    task_map = stop_gate._collect_background_task_id_tool_use_ids(entries)  # pylint: disable=protected-access
+    task_map = _background_tasks.collect_background_task_id_tool_use_ids(entries)  # pylint: disable=protected-access
     return {task_id for task_id, tool_use_ids in task_map.items() if tool_use_ids & pending_tool_use_ids}
 
 
@@ -52,8 +53,8 @@ def pending_task_output_paths(transcript_path: str, session_id: str) -> set[str]
     pending_ids = pending_bash_task_ids(transcript_path, session_id)
     if not pending_ids:
         return set()
-    entries = stop_gate.read_transcript_entries_cached(transcript_path)
-    task_map = stop_gate._collect_background_task_id_tool_use_ids(entries)  # pylint: disable=protected-access
+    entries = _transcript_scan.read_transcript_entries_cached(transcript_path)
+    task_map = _background_tasks.collect_background_task_id_tool_use_ids(entries)  # pylint: disable=protected-access
     launch_tool_use_ids = {tool_use_id for task_id in pending_ids for tool_use_id in task_map.get(task_id, set())}
     paths: set[str] = set()
     for entry in entries:
@@ -68,6 +69,6 @@ def pending_task_output_paths(transcript_path: str, session_id: str) -> set[str]
                 or block.get("tool_use_id") not in launch_tool_use_ids
             ):
                 continue
-            for text in stop_gate._tool_result_text_blocks(block.get("content")):  # pylint: disable=protected-access
+            for text in _transcript_scan.tool_result_text_blocks(block.get("content")):  # pylint: disable=protected-access
                 paths.update(background_output.output_paths(text))
     return paths

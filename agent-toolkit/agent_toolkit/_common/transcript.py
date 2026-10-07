@@ -1,7 +1,12 @@
-"""Claude Code agent-toolkit: transcript JSONLからアシスタント直前ターンを抽出する共通ヘルパー。"""
+"""Claude Code agent-toolkit: 実行中のセッションの記録（transcript JSONL）の読み取りと、アシスタント直前ターンの抽出。
+
+hookの処理が記録のファイルを開くのは`read_transcript_bytes`だけとし、行・エントリ・バイト位置の各形は
+その結果から組み立てる。読み取りの失敗の扱い（`None`か空）をこの1か所で保つためである。
+"""
 
 import collections.abc
 import json
+import os
 import pathlib
 import typing
 
@@ -26,7 +31,7 @@ def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iter
     transcript読み取りに失敗した場合（空文字列パス・存在しないパス・OSエラーを含む）は
     空のイテレーターを返す。
     """
-    lines = _read_transcript_lines(transcript_path)
+    lines = read_transcript_lines(transcript_path)
     if lines is None:
         return
     first_msg_id: str | None = None
@@ -68,7 +73,7 @@ def iter_latest_assistant_text_messages(transcript_path: str) -> collections.abc
     テキストを持たないターンを除いて遡り、最初に見つけたmessage IDと同じエントリを
     最大3件返す。APIエラーは、それ以前の本文を判定対象にしない終端境界とする。
     """
-    lines = _read_transcript_lines(transcript_path)
+    lines = read_transcript_lines(transcript_path)
     if lines is None:
         return
     target_msg_id: str | None = None
@@ -110,7 +115,7 @@ def latest_main_assistant_entry(transcript_path: str) -> dict | None:
 
     見つからない場合・読み取り失敗時（空文字列パス・存在しないパス・OSエラーを含む）はNoneを返す。
     """
-    lines = _read_transcript_lines(transcript_path)
+    lines = read_transcript_lines(transcript_path)
     if lines is None:
         return None
     for line in reversed(lines):
@@ -126,11 +131,7 @@ def latest_main_assistant_entry(transcript_path: str) -> dict | None:
 def iter_assistant_content_blocks(lines: list[str]) -> collections.abc.Iterator[tuple[int, dict]]:
     """非sidechain assistantエントリの`content`配下dict要素を`(行位置, block)`で順に返す。
 
-    `_stop_gate.py`のSendMessage集計系関数と非同期tool_use列挙関数が同一の
-    走査ロジック（JSONL全行を前方から走査し、
-    assistant・非sidechain・`message.content`がリストのエントリからdict要素を取り出す）を
-    必要とするため本モジュールへ集約する。`iter_latest_assistant_messages`と異なり、
-    末尾からの直前ターン限定ではなく全行を前方から走査する。
+    `iter_latest_assistant_messages`と異なり、末尾からの直前ターン限定ではなく全行を前方から走査する。
     """
     for position, line in enumerate(lines):
         try:
@@ -169,9 +170,46 @@ def assistant_text(message: typing.Any) -> str:
     return ""
 
 
+def read_transcript_bytes(transcript_path: str, *, offset: int = 0) -> bytes | None:
+    """記録を`offset`のバイト位置から末尾まで読む。
+
+    読み取りに失敗した場合（空文字列パス・存在しないパス・OSエラーを含む）と、記録が`offset`より短い場合は
+    `None`を返す。後者は記録の置き換えなどで以前に観測した位置が失われたことを示す。
+    """
+    try:
+        with pathlib.Path(transcript_path).open("rb") as stream:
+            if offset:
+                stream.seek(0, os.SEEK_END)
+                if stream.tell() < offset:
+                    return None
+                stream.seek(offset)
+            return stream.read()
+    except OSError:
+        return None
+
+
 def read_transcript_lines(transcript_path: str) -> list[str] | None:
-    """Transcript JSONLを行リストとして読み込み、読み取りに失敗した場合はNoneを返す。"""
-    return _read_transcript_lines(transcript_path)
+    """記録を行リストとして読み込み、読み取りかUTF-8の解釈に失敗した場合はNoneを返す。"""
+    data = read_transcript_bytes(transcript_path)
+    if data is None:
+        return None
+    try:
+        return data.decode("utf-8").splitlines()
+    except UnicodeDecodeError:
+        return None
+
+
+def read_transcript_entries(transcript_path: str) -> list[dict]:
+    """記録を読み込み、JSONオブジェクトの行を時系列で返す。読み取れない場合と解釈できない行は除く。"""
+    entries: list[dict] = []
+    for line in read_transcript_lines(transcript_path) or []:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
 
 
 def visible_text_blocks(content: typing.Any) -> list[str]:
@@ -205,14 +243,3 @@ def visible_assistant_text(message: typing.Any) -> str:
     if isinstance(content, str):
         return content
     return "".join(visible_text_blocks(content))
-
-
-def _read_transcript_lines(transcript_path: str) -> list[str] | None:
-    """Transcript JSONLを行リストとして読み込む。
-
-    読み取りに失敗した場合（空文字列パス・存在しないパス・OSエラーを含む）はNoneを返す。
-    """
-    try:
-        return pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError):
-        return None

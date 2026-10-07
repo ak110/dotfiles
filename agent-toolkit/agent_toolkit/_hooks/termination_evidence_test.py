@@ -14,7 +14,7 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import (
-    agents_server_session_advisor,
+    agents_server_observations,
     posttooluse,
     pretooluse,
     termination_evidence,
@@ -564,7 +564,7 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
     with lock_path.open("a+b") as stream:
         acquire_lock(stream, blocking=False)
         try:
-            assert agents_server_session_advisor.actively_waited_session_ids(["child-test"]) == {"child-test"}
+            assert agents_server_observations.actively_waited_session_ids(["child-test"]) == {"child-test"}
             with contextlib.redirect_stdout(io.StringIO()):
                 assert (
                     run_script.dispatch(

@@ -17,6 +17,28 @@
 広い一致条件だけで操作を拒否する案も、無関係な呼び出しを停止させるため採用しない。
 フックは早期の適用判定を持ち、判断できない場合は成果物の実ファイルを直接確認する。
 
+### エントリーポイントと判定の集約
+
+`agent-toolkit/agent_toolkit/hook.py`が受け付けるサブコマンドは、`agent-toolkit/hooks/hooks.json`と`hooks.codex.json`が登録するものだけとする。
+Stopのエントリーポイントを統合した後も、4つのサブコマンド（`autonomous_exit`・`plan_save_advisor`・`agents_server_session_advisor`・`pending_question_advisor`）を互換のため残していた。
+旧定義を読み込んだセッションが残らないことを確かめて、これらを除いた。
+`hook.py`は未知のサブコマンドを終了コード0で通過させるため、旧定義が届いてもツール呼び出しは拒否されない。
+登録との一致は`agent-toolkit/agent_toolkit/hook_test.py`が両方のhook定義から求めた和集合と比べて確かめる。
+
+各判定は結果を値で返し、標準出力・標準エラーと終了コードへの変換はイベントのエントリーポイントだけが行う。
+Stopの判定は`evaluate`が判定と本文の組を返し、`stop.py`が集約する。
+PreToolUseの判定は`pretooluse/decision.py`の`Decision`（遮断の本文、追加コンテキスト、保留中の通知への追加、許可）を返し、`pretooluse/dispatch.py`の`main`が保留中の通知と結合して書く。
+PostToolUseの記録処理は通知本文の一覧を返し、`posttooluse.py`の`main`が1つの応答へまとめる。
+判定へ出力関数を渡す方式は、保留中の通知の結合と遮断時の出力順を判定ごとに再現させるため採らない。
+
+Stop系の判定とイベントをまたいで使う処理は責務ごとのモジュールに分ける。
+`transcript_scan.py`はtranscriptのエントリの取得（同じhookプロセスでの解析結果の再利用とStop時の書き込み完了の待機）と走査を持つ。
+`background_tasks.py`はバックグラウンドタスクと非同期待機の追跡による継続判定、`stop_session.py`はStop入力の解析と判定根拠の常時ログを持つ。
+`agents_server_observations.py`はagents_serverの観測の記録の書き込みと読み取りを持ち、PostToolUse・Stop・PreToolUseと終了工程の証拠が同じ記録をこのモジュールを通して扱う。
+記録のファイルを開くのは`agent-toolkit/agent_toolkit/_common/transcript.py`の`read_transcript_bytes`だけとし、行・エントリ・バイト位置はその結果から組み立てる。
+ホストの判定は`host.py`の`is_codex_payload`だけが行う。
+これらをStopの名前を持つ1つのモジュールへまとめる構成は、PreToolUseとPostToolUseも使う処理の所在を名前から判断できないため採らない。
+
 ### Bashコマンドの解析とheredoc遮断
 
 Bashの引数所属と出力接続は、`_common/bash_invocations.py`の`extract_bash_invocations`が解析する。
@@ -60,14 +82,14 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 
 | 条件と通知位置 | 防ぐ契約違反と通知の要旨 | 条文 | 存続区分と実装手段 |
 | --- | --- | --- | --- |
+| `agents_server_observations.py` `observe_tool` | f"warn: `list`の応答で{', '.join(missing)}が欠落しているか不正である。"と、`show`での再取得を案内する`次の操作:`の行 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
+| `agents_server_observations.py` `observe_tool` | f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
+| `agents_server_observations.py` `observe_tool` | 起動応答をsession状態へ記録できない警告 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
+| `agents_server_observations.py` `observe_tool` | 継続応答をsession状態へ記録できない警告 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
 | `agents_server_session_advisor.py` `evaluate` | 未観測の子sessionを残した終了への警告 | D | 維持（常駐運用の終端保証）：所有する子sessionがrunningのままStopへ進むと、終了報告が子の結果を含まない。状態記録とStop入力を比べる処理を実装・テストで確認 |
 | `autonomous_exit.py` `evaluate` | 常駐セッションで必須の終了操作を欠く遮断と、バックグラウンドタスクが残る終了要求の取り下げ | P | 維持（常駐運用の終端保証）：常駐ループが終了操作を欠くと実行主体が残り、次の周期へ移れない。バックグラウンドタスクが残ったまま`/exit`を実行すると確認画面で止まる。Stop入力と起動記録、終了要求ファイルを比べる処理を実装で確認 |
 | `pending_question_advisor.py` `evaluate` | 地の文に質問を残した終了の遮断 | C | 維持（常駐運用の終端保証）：ユーザー確認を経ない質問を地の文へ置いたまま終了すると、回答を受け取る手段が残らない。Stop入力の判定を実装で確認 |
 | `plan_save_advisor.py` `evaluate` | f'現在のセッションが所有する計画バンドルが`~/.claude/plans`に残っている: {path_list}\n保存の契機に達したバンドルだけをatk plans commit <計画… | M | 維持（データ破損）：保存契機後も所有する計画バンドルが`~/.claude/plans`に残ると、後続の読込先へ版が反映されない。バンドル実在分岐を実装で確認 |
-| `posttooluse.py` `_dispatch` | f"warn: `list`の応答で{', '.join(missing)}が欠落しているか不正である。"と、`show`での再取得を案内する`次の操作:`の行 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
-| `posttooluse.py` `_dispatch` | f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。" | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
-| `posttooluse.py` `_dispatch` | 起動応答をsession状態へ記録できない警告 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
-| `posttooluse.py` `_dispatch` | 継続応答をsession状態へ記録できない警告 | X | 維持（常駐運用の終端保証）：agents_server応答にsession識別子・状態が欠けると、継続・待機の対象を記録できず、終端前の未観測作業を判定できない。応答の必須fieldと記録分岐を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_task_stop` | f"blocked: TaskStop。現在のセッションには、指定した対象のバックグラウンドタスクの所有記録も停滞検知完了記録も無い。バックグラウンドタスクの停止は、ユーザーの明示的な即時停止要求があるか、… | D | 維持（不可逆）：バックグラウンドタスクの所有記録のないTaskStopは他主体のバックグラウンドタスクを停止し、停止した処理は元へ戻せない。所有状態と対象IDを比べる処理を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないpromptが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
 | `pretooluse/agent_checks.py` `_check_agents_server_continuation_input` | f'blocked: {display_name}には空でないsession_idが必要である。' | D | 維持（常駐運用の終端保証）：prompt・session_id・記録済みcwdの欠落で継続先を特定できない。3入力を判定する分岐を実装で確認 |
@@ -79,7 +101,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | `pretooluse/content_checks.py` `_check_lockfiles` | f'{tool_name}による{label}の直接編集を検出した。対象: {file_path}'と、パッケージ管理ツールを名指す`次の操作:`の行 | X | 維持（データ破損）：生成lockfileの直接編集は解決済み依存の整合を失う。対象パスと生成元ツールの分岐を実装で確認 |
 | `pretooluse/content_checks.py` `_check_manifest` | f'{tool_name}で{label}の依存の節を編集しようとしている。{hint}' | X | 維持（データ破損）：依存manifestの手編集で生成先と配布値がずれる。対象の依存節判定を実装で確認 |
 | `pretooluse/dispatch.py` `main` | language_warning_body | W | 維持（明らかな行動誤り・低費用）：英語応答は以後の発話言語を引きずる明らかな行動誤りで、発話入力から機械的に判定でき、警告のため実行を止めない。ユーザーが残すと確定した警告でもある。発話入力から言語警告を組み立てる分岐を実装で確認 |
-| `pretooluse/dispatch.py` `_handle_bash_tool` | '未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。'と、'次の操作: 読み取った内容は途中経過であり、完了通知を受けた後に同じ出力ファイルを読み直してから結果として使う。完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。' | O | 維持（データ破損）：未完了のバックグラウンドタスクが書くファイルを読むと途中の内容を結果と誤認する。判定の入力はtranscriptであり、未完了の背景Bashの起動`tool_result`本文から出力パスを得る（PostToolUseの応答は出力パスを含まない）。起動の出力パスと完了通知による完了集合を比べる処理を実装とテストで確認 |
+| `pretooluse/dispatch.py` `_decide_bash_tool` | '未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。'と、'次の操作: 読み取った内容は途中経過であり、完了通知を受けた後に同じ出力ファイルを読み直してから結果として使う。完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。' | O | 維持（データ破損）：未完了のバックグラウンドタスクが書くファイルを読むと途中の内容を結果と誤認する。判定の入力はtranscriptであり、未完了の背景Bashの起動`tool_result`本文から出力パスを得る（PostToolUseの応答は出力パスを含まない）。起動の出力パスと完了通知による完了集合を比べる処理を実装とテストで確認 |
 | `pretooluse/large_reads.py` `_large_read_notice` | Bashでの大容量ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：Codexのシェル出力の上限を超えた取得は本文を欠落させ、欠落した範囲を回復できない。Claude Codeはホストが`PARTIAL view`または退避ファイルを返し残りを続けて取得できるため対象外とする。遮断後に対処する型であり、閾値48KiBは配布設定の出力上限20,000トークンと測定した1トークンあたりバイト数の最小値3.10から導く（測定は`docs/development/audit-records.md`）。通知は閾値以下の連続行範囲を`sed -n`の形で示す。境界と範囲案を実装・テストで確認 |
 | `pretooluse/large_reads.py` `_large_multi_read_notice` | Bashでの複数ファイル全文取得を遮断 | O | Codexだけで維持（データ破損）：複数ファイルの合計が上限を超える取得も同じく本文を欠落させる。遮断後に対処する型で、閾値は前行と同じ。合計判定をテストで確認 |
 | `pretooluse/operation_skills.py` `operation_skill_warnings` | `agent-toolkit:search`を起動しないまま検索（`Grep`・`Glob`、パイプラインの先頭区間の`rg`・`git grep`・`find`・再帰の`grep`系）を実行した呼び出しへの、文脈ごとに1回の警告 | O | 新設（明らかな行動誤り・低費用、2026年10月6日）：起動の契機はセッション開始時に配送されていたが、検索の時点に手掛かりが無く、範囲を見込みで狭めた検索から参照元を漏らした。判定はツール名、コマンド文字列およびSkill起動の記録から確定し、発火は呼び出し主体の文脈ごとに1回である。遮断しない理由と代替案は「操作を起動の契機とするスキルの未起動の警告」にある。正例・負例、文脈の分離と`SessionStart`のリセットを`operation_skills_test.py`・`rules_context_test.py`で確認。2026年10月7日に`agent-toolkit:bugfix`を、`## 原因分析`だけから成る行を書く操作（`Write`・`Edit`・`MultiEdit`・`apply_patch`の変更後の断片とBashのコマンド文字列）で登録し、編集ツールでも判定するようにした。同日に`agent-toolkit:managed-temp`を`atk managed-temp create`の実行（区間の`managed-temp`・`create`の連続。直前が`atk`か区間の先頭）で登録した。`cleanup`と`list`は回収と一覧で置き場所を選ばないため除く。同日に、警告の次の操作へ`Skill`を使えない主体が`SKILL.md`を`Read`で読む操作を併記し、Codexでは警告も記録もしないようにした（理由は同節）。正例・負例は`operation_skills_test.py`で確認 |
@@ -131,7 +153,7 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 ### 共通ハンドラーと連続block上限
 
 Stopの登録は共通ハンドラー1件とする。
-共通ハンドラーから、`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ちを判定する。
+共通ハンドラーから、`agent-toolkit/agent_toolkit/_hooks/background_tasks.py`の`is_pending_async_work`による入力待ちを判定する。
 次に、`busy_loop_guard.py`が常駐ループのセッションの無進捗の反復を判定し、閾値へ達した場合はprocess-loopへの中断要求とセッションの終了要求を実行する。
 判定の入力は、前回のStop判定から今回のStop判定までにセッション記録へ加わった自セッションのツール呼び出しの有無とし、経過時間とStopの発火間隔はこの入力から外す。
 実行環境の応答速度と正当な待機の長さが時間の値を変えるため、時間窓での判定は正当な待機を停止し得る。
@@ -166,7 +188,7 @@ Stopの登録は共通ハンドラー1件とする。
 Agent・Taskに対応する通知ではtask-idだけを示し、配送された返却メッセージの利用を案内する。
 返却済みの結果へ内部transcriptの読取を求めると、ホストの読取制約により受領できなくなるためである。
 Bashと種別を判別できない通知では、task-idと出力ファイルの絶対パスを示し、同じターンでの読取を促す。
-通知の発生元のツールの種別の対応は`stop_gate.py`が既存のtool-use-id集合とagentIdへの対応から解決する。
+通知の発生元のツールの種別の対応は`background_tasks.py`が既存のtool-use-id集合とagentIdへの対応から解決する。
 キュー復元では`popAll`と`popOne`も`remove`と同じく対応する本文1件を取り除き、配送済み通知を入力待ちと助言の両方から除く。
 同じ本文の残りと別の本文は保持し、`popAll`を全消去として扱わない。`popAll`の記録はユーザーが送信待ちの入力を入力欄へ取り戻した操作であり、無視すると取り戻した入力がキューに残って後続の`dequeue`の再生がずれる。
 `dequeue`の記録は取り出した要素を持たないため、その後に最初に現れる最上位の`user`エントリのうち`tool_result`を含まないものの本文と比べて取り出した要素を決める。本文と等しい要素、無ければ本文に含まれる要素を1件除き、どちらも無い場合と比べる対象のエントリが無い場合は先頭を除く。
@@ -200,7 +222,7 @@ Bashと種別を判別できない通知では、task-idと出力ファイルの
 両者を対等な根拠として合成する案は、復元側に残る解決できない起動記録が申告を恒久的に上書きし、入力待ち判定に依存する終了保証を働かなくするため採用しない。
 `background_tasks`の権威性を全種別へ適用したまま、`agents_server`側で背景移行を申告させる案も採用しない。ホストの入力形式を変えられないためである。
 
-`stop_gate.py`の`is_pending_async_work`は`CronCreate`を非同期待機系として扱い、`CronCreate`後のStopでも機械的な完了通知を待つ動作を維持する。
+`background_tasks.py`の`is_pending_async_work`は`CronCreate`を非同期待機系として扱い、`CronCreate`後のStopでも機械的な完了通知を待つ動作を維持する。
 `ScheduleWakeup`の判定は`/loop`専用の既存契約として残し、Cronの作成・再利用・確認・削除をフックの永続状態へ移さない。
 最上位Stopはpayloadの`transcript_path`から生JSONLを読み、同じstemの`subagents`配下にある固定名
 `agent-*.jsonl`をmetadataの親子関係で直接の子に限定して読む。直接の子の記録にあるAgent起動を孫起動として起動集合へ加え、
@@ -218,7 +240,7 @@ LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ�
 
 判定と保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`へ集約する。PreToolUse・PostToolUse・UserPromptSubmitは既存のエントリーポイントから準備結果・呼び出しと人間の入力を供給する。Stopの集約は既存の例外隔離と連続block上限を保ち、`termination_order_advisor`が可視発話の報告見出しと、`agent-toolkit:completion-report`が定義する報告本文の判定で不足を示す。起草・確認・再出力は報告ごとに同じ本文の二重出力とツールの往復を必要とするため除去し、直接発話へ移した。言い回しへ判定を広げる案は、許容された不備のたびに報告全体の再発話を必要とするため採らない。
 作業の同一性は報告ファイルのパスではなく、入力、呼び出し、開始と判断記録で区切る。同じパスを使う新しい仕事へ古い中止や充足を流用すると、不足を見逃すためである。
-報告段階が残る作業ごとにその作業が待つ非同期対象を確かめ、対象が生存する間は初回・再入回とも正常な待機のターン終了を許可し、回収後は残る終了工程を再判定する。待機対象とするのは、作業が起動したagents_serverのsessionと、作業の開始以後にtranscriptへ起動が記録された非同期対象とする。非同期対象には背景Agent・MCPのバックグラウンドタスク・未配送の完了通知と、結果を待つ公開の待機コマンド（`atk agents wait`・`wait_ci.py`）を実行する背景Bashを含める。背景Bashは起動したコマンドを`extract_execution_segments`で区間へ分けて待機コマンドかを判定し、待機コマンドでないBashの`tool_use_id`と`backgroundTaskId`は作業へ対応付けない。開発サーバーなどの常駐コマンドは終了せず完了通知による再開も来ないため、作業内で起動しただけで待機対象とすると、セッション全体の継続判定を先に適用した場合と同じく報告が欠けたまま終了する。背景Bashを一律に待機対象から外す案は、`concepts-runtime.md`が正常な終端とするCLI待機を遮断するため採らない。作業の開始位置にはUserPromptSubmitが記録したtranscriptの大きさを使い、起動の位置より前に開始した作業のうち最も新しいものへそのタスクを対応付ける。セッション全体の継続判定（`stop_gate.is_pending_async_work`）を報告不足より先に適用すると、作業の開始前から動く常駐Bashなど無関係なタスクが1件あるだけで全作業の報告不足が消えるため、作業との対応をStop側で判定する。同関数の意味を変える案は、同関数でセッションの継続を判定する他のhook（自律終了、空転ガード、計画保存の通知）の結果を変えるため採らない。待機対象をagents_serverのsessionだけに限る案は、背景CLIで待つ正常なターン終了を再び遮断するため採らない。現在の作業を中止・置換・技術的不成立と記録した場合は報告の取得不能と区別し、他の作業に残る報告段階の判定を続ける。委譲先のwait判断は作業との対応・所有に加え、有効なCLI待機のロックと対象登録を既存の共通処理から読む。観測を試みてpending_observationが偽になっても、待機の生存とは区別する。
+報告段階が残る作業ごとにその作業が待つ非同期対象を確かめ、対象が生存する間は初回・再入回とも正常な待機のターン終了を許可し、回収後は残る終了工程を再判定する。待機対象とするのは、作業が起動したagents_serverのsessionと、作業の開始以後にtranscriptへ起動が記録された非同期対象とする。非同期対象には背景Agent・MCPのバックグラウンドタスク・未配送の完了通知と、結果を待つ公開の待機コマンド（`atk agents wait`・`wait_ci.py`）を実行する背景Bashを含める。背景Bashは起動したコマンドを`extract_execution_segments`で区間へ分けて待機コマンドかを判定し、待機コマンドでないBashの`tool_use_id`と`backgroundTaskId`は作業へ対応付けない。開発サーバーなどの常駐コマンドは終了せず完了通知による再開も来ないため、作業内で起動しただけで待機対象とすると、セッション全体の継続判定を先に適用した場合と同じく報告が欠けたまま終了する。背景Bashを一律に待機対象から外す案は、`concepts-runtime.md`が正常な終端とするCLI待機を遮断するため採らない。作業の開始位置にはUserPromptSubmitが記録したtranscriptの大きさを使い、起動の位置より前に開始した作業のうち最も新しいものへそのタスクを対応付ける。セッション全体の継続判定（`background_tasks.is_pending_async_work`）を報告不足より先に適用すると、作業の開始前から動く常駐Bashなど無関係なタスクが1件あるだけで全作業の報告不足が消えるため、作業との対応をStop側で判定する。同関数の意味を変える案は、同関数でセッションの継続を判定する他のhook（自律終了、空転ガード、計画保存の通知）の結果を変えるため採らない。待機対象をagents_serverのsessionだけに限る案は、背景CLIで待つ正常なターン終了を再び遮断するため採らない。現在の作業を中止・置換・技術的不成立と記録した場合は報告の取得不能と区別し、他の作業に残る報告段階の判定を続ける。委譲先のwait判断は作業との対応・所有に加え、有効なCLI待機のロックと対象登録を既存の共通処理から読む。観測を試みてpending_observationが偽になっても、待機の生存とは区別する。
 中止・置換・待機・技術的不成立の意味はメインが判断し、`atk run-script termination-evidence`の記録処理は原入力の由来と全文の一致、対象の実在、主体だけを確かめる。自然言語の意味を語句一覧で判定すると誤判定が生じ、完了の自己申告を受理すると根拠の無いフラグが判定を代替するためである。
 証拠を読めない場合は判定不能としてログへ残し、遮断しない。状態の欠落を未完了の証拠とする方式は、旧版や期限回収の後に遮断を反復させる。
 
@@ -597,7 +619,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 ## 通知本文の仕様とエージェント向け文書の長さの追随検出
 
 `agent-toolkit`の通知本文と常時読み込むエージェント向け文書を変更した主体が、変更の時点で追随すべき対象を把握できるようにすることを目的とする。変更箇所と直接接続していないテストや上限が全体チェックで失敗する事象を、統合の後ではなく編集の時点へ移す。
-構造の理由は、同じ外部仕様を固定する箇所を1か所へ集約する点にある。ユーザーが直接読む本文へのチェックは`agent-toolkit/agent_toolkit/_hooks/pretooluse/dispatch.py`の`_handle_user_facing_text_tool`へ集約する。適用対象は同ファイルの`_USER_FACING_TEXT_TOOL_NAMES`だけで定める。
+構造の理由は、同じ外部仕様を固定する箇所を1か所へ集約する点にある。ユーザーが直接読む本文へのチェックは`agent-toolkit/agent_toolkit/_hooks/pretooluse/dispatch.py`の`_decide_user_facing_text_tool`へ集約する。適用対象は同ファイルの`_USER_FACING_TEXT_TOOL_NAMES`だけで定める。
 エージェント向け文書の合計長は、上限の超過を検出した時点で文書ごとの長さと超過分を失敗本文へ示す。上限超過時の診断本文は`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`が組み立てる。
 知識境界として、上限値は`rules_context.py`の`CLAUDE_CODE_OUTPUT_LIMIT`が持ち、超過時の診断本文はテスト側が持つ。
 却下した代替案は、相反する期待を持つテストの組をテストの意味から機械的に検出する案と、エージェント向け文書の編集時点で上限までの残量を示す案である。前者はテストの意味解析を要して成立を確認できず、後者はエージェント向け文書の編集を検出する手段の特定を要するため採用しない。

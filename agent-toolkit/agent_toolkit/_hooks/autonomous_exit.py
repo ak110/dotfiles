@@ -29,22 +29,22 @@ Stopは同じターン完了の`turn.complete`より先に発火するため、�
 LLM宛て出力は`_hook_notice`のblock専用整形関数経由で整形し、
 `decision: "block"`＋`reason`フィールドへ載せて返す。
 
-各判定分岐の最終判定ラベルと根拠は`_stop_gate.append_stop_log`で
+各判定分岐の最終判定ラベルと根拠は`stop_session.append_stop_log`で
 常時ログへ記録する。
 
 委譲先での実行可否: 委譲先は最上位セッションの終了工程を実行できないため、hook入力と環境印で除外する。
 """
 
-import json
 import os
 
 from agent_toolkit._atk.agents_exit_session import function_hook_paths
 from agent_toolkit._common.process_loop_session import is_process_loop_session
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks.agent_id import is_main_agent_context
+from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, is_pending_async_work
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.stop_gate import active_non_teammate_tasks, append_stop_log, is_pending_async_work
-from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
+from agent_toolkit._hooks.stop_session import append_stop_log
+from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 # このスクリプトのhook識別子。
 _HOOK_ID = "autonomous_exit"
@@ -67,11 +67,6 @@ _WITHDRAW_BODY = """\
 残っているバックグラウンドタスク:"""
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
-
-
-def _approve() -> None:
-    """空のapprove応答を返す。"""
-    print(json.dumps({}, ensure_ascii=False))
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -143,13 +138,3 @@ def _withdraw_exit_request(session_id: str) -> bool:
         return False
     update_state(session_id, lambda state: {**state, _STATE_KEY: False})
     return True
-
-
-def main(payload_text: str) -> int:
-    """`atk agents-exit-session`が起動されていないことを検知して再促するエントリポイント。"""
-    decision, body = evaluate(payload_text)
-    if decision == "block":
-        print(json.dumps({"decision": "block", "reason": body}, ensure_ascii=False))
-    else:
-        _approve()
-    return 0

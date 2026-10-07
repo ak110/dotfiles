@@ -1,9 +1,8 @@
-"""agent-toolkit/agent_toolkit/_hooks/stop_gate.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/background_tasks.py のテスト。
 
 公開関数`is_pending_async_work`の振る舞いを境界値・同値分割で網羅する。
-常時ログ関数（`append_stop_log`）も対象とする。
 `<task-id>`要素フォールバック解決の網羅テストは責務分離のため
-`_stop_gate_task_id_fallback_test.py`へ分割し、共通ヘルパーは本ファイルから再利用する。
+`background_tasks_task_id_fallback_test.py`へ分割し、共通ヘルパーは本ファイルから再利用する。
 """
 
 import json
@@ -14,17 +13,24 @@ from typing import Literal
 
 import pytest
 
-from agent_toolkit._hooks import stop_gate as _stop_gate
-from agent_toolkit._hooks.stop_gate import (
-    _describe_pending_background_tasks,
-    append_stop_log,
-    is_pending_async_work,
-    pending_async_task_ids,
-    read_transcript_entries_cached,
-)
+from agent_toolkit._common import transcript as _transcript
+from agent_toolkit._hooks import background_tasks as _background_tasks
+from agent_toolkit._hooks import transcript_scan as _transcript_scan
+from agent_toolkit._hooks.background_tasks import is_pending_async_work, pending_async_task_ids
 from agent_toolkit._testing.helpers import _write_transcript
 
 _BACKGROUND_TASKS_OMITTED = object()
+
+
+def _describe_pending_background_tasks(transcript_path: str, session_id: str) -> tuple[set[str], set[str]]:
+    """transcriptを読み込み、非sidechainのバックグラウンドタスク起動集合と完了集合を返す。"""
+    launched, completed, _host_reported = _background_tasks.describe_pending_background_entries(
+        _transcript.read_transcript_entries(transcript_path),
+        session_id,
+        transcript_path=transcript_path,
+    )
+    return launched, completed
+
 
 # 本文の途中に現れても移行通知とみなさない文言（前景の出力が引用する3種）。
 _QUOTED_NOTICE_PHRASES = (
@@ -736,7 +742,7 @@ class TestIsPendingAsyncWork:
     @pytest.mark.parametrize("phrase", _QUOTED_NOTICE_PHRASES)
     def test_mcp_result_quoting_notice_is_not_pending(self, tmp_path: pathlib.Path, phrase: str) -> None:
         """MCPの`tool_result`本文の途中に移行通知の文言を含むだけでは未完了の非同期作業にしない。"""
-        quoted = f"stop_gate_test.py:1: {phrase.format(task_id='task-1')}"
+        quoted = f"background_tasks_test.py:1: {phrase.format(task_id='task-1')}"
         transcript = _write_transcript(
             tmp_path,
             [
@@ -931,7 +937,7 @@ class TestIsPendingAsyncWork:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """別識別子の停止結果では対象の背景Bashを未完了のまま保つ。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             _user_background_bash_entry("toolu_bash1"),
             _user_task_stop_success_entry("bash-task-other"),
@@ -1046,7 +1052,7 @@ class TestIsPendingAsyncWork:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """通知以外の先行項目を配送しても、後ろの完了通知はキューへ残る。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             {"type": "queue-operation", "operation": "enqueue", "content": {"kind": "other"}},
             _queue_operation_task_notification_entry("enqueue", tool_use_id="toolu_done"),
@@ -1101,7 +1107,7 @@ class TestIsPendingAsyncWork:
         entries = [{"type": "queue-operation", "operation": "enqueue", "content": content} for content in contents]
         entries.append({"type": "queue-operation", "operation": "dequeue"})
         entries.extend(delivered)
-        assert _stop_gate.queued_task_notification_contents(entries) == expected
+        assert _background_tasks.queued_task_notification_contents(entries) == expected
 
     def test_missing_child_transcript_preserves_top_level_decision(self, tmp_path: pathlib.Path) -> None:
         """サブエージェント記録ディレクトリが無い場合も、最上位の起動・完了判定を維持する。"""
@@ -1264,7 +1270,7 @@ class TestIsPendingAsyncWork:
                     f.write(json.dumps(_assistant_entry([{"type": "text", "text": _TEXT}])) + "\n")
 
         monkeypatch.setattr(
-            _stop_gate,
+            _transcript_scan,
             "time",
             types.SimpleNamespace(monotonic=time.monotonic, sleep=append_end_turn_on_first_poll),
         )
@@ -1665,7 +1671,7 @@ class TestMonitorTaskNotificationSuppression:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Monitorのtool_useと突合できる通知はtask_notification_unresolvedをログしない。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             *_monitor_launch_entries("toolu_monitor1", "monitor-a"),
             _user_task_notification_entry(None, task_id="monitor-a"),
@@ -1680,7 +1686,7 @@ class TestMonitorTaskNotificationSuppression:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Monitor以外の`taskId`値では未解決通知をログする。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             _user_non_monitor_task_id_entry("toolu_taskupdate1", "1"),
             _user_task_notification_entry(None, task_id="1"),
@@ -1694,7 +1700,7 @@ class TestMonitorTaskNotificationSuppression:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Monitor由来か一意に決まらない`taskId`値では未解決通知をログする。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             *_monitor_launch_entries("toolu_monitor1", "shared-id"),
             _user_non_monitor_task_id_entry("toolu_taskupdate1", "shared-id"),
@@ -1707,100 +1713,12 @@ class TestMonitorTaskNotificationSuppression:
 
     def test_unknown_notification_still_logs_unresolved(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Monitor由来と識別できない未知の通知は引き続きtask_notification_unresolvedをログする。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [_user_task_notification_entry(None, task_id="unknown-task")]
         t = _write_transcript(tmp_path, entries)
         _describe_pending_background_tasks(str(t), "sess-unknown")
         log_path = tmp_path / "claude-agent-toolkit-stop-sess-unknown.log"
         assert "task_notification_unresolved" in log_path.read_text(encoding="utf-8")
-
-
-class TestAppendStopLog:
-    """`append_stop_log`のログ追記挙動を検証する。"""
-
-    def test_appends_one_line_with_decision_and_context(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """1行追記され、decisionとcontextのkey-valueが整形されて含まれる。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
-        append_stop_log("session-x", "approve_pending_async", {"last_tool": "Agent", "pending": 0})
-        path = tmp_path / "claude-agent-toolkit-stop-session-x.log"
-        lines = path.read_text(encoding="utf-8").splitlines()
-        assert len(lines) == 1
-        assert "decision=approve_pending_async" in lines[0]
-        assert "last_tool=Agent" in lines[0]
-        assert "pending=0" in lines[0]
-
-    def test_skips_when_session_id_empty(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """session_idが空の場合はログファイルを作成しない。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
-        append_stop_log("", "approve_pending_async", {})
-        assert not list(tmp_path.iterdir())
-
-    def test_multiple_calls_append(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """複数回の呼び出しが1行ずつ追記される。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
-        append_stop_log("session-y", "approve_no_env", {})
-        append_stop_log("session-y", "block_autonomous_exit", {})
-        path = tmp_path / "claude-agent-toolkit-stop-session-y.log"
-        lines = path.read_text(encoding="utf-8").splitlines()
-        assert len(lines) == 2
-        assert "decision=approve_no_env" in lines[0]
-        assert "decision=block_autonomous_exit" in lines[1]
-
-    def test_rotates_when_max_bytes_exceeded(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`max_bytes`を小さくすると先行ログが`.log.1`へローテートされる。"""
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
-        append_stop_log("session-z", "first", {})
-        # 先行ログが上限を超えた状態で追記するとローテーションが発生する。
-        append_stop_log("session-z", "second", {}, max_bytes=10)
-        path = tmp_path / "claude-agent-toolkit-stop-session-z.log"
-        rotated = tmp_path / "claude-agent-toolkit-stop-session-z.log.1"
-        assert rotated.exists()
-        assert "decision=first" in rotated.read_text(encoding="utf-8")
-        assert "decision=second" in path.read_text(encoding="utf-8")
-
-
-class TestReadTranscriptEntriesCached:
-    """`read_transcript_entries_cached`の待機・解析の重複回避を検証する。"""
-
-    def test_second_call_with_same_path_skips_wait_and_read(self, tmp_path: pathlib.Path) -> None:
-        """同じ`transcript_path`への2回目の呼び出しは待機と解析を再実行しない。"""
-        _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
-        transcript = _write_transcript(tmp_path, [_user_entry("hello")])
-        calls = {"wait": 0, "read": 0}
-        original_read = _stop_gate._read_transcript_entries  # pylint: disable=protected-access
-
-        def counting_wait(_path: str) -> None:
-            calls["wait"] += 1
-
-        def counting_read(path: str) -> list[dict]:
-            calls["read"] += 1
-            return original_read(path)
-
-        with pytest.MonkeyPatch.context() as monkeypatch:
-            monkeypatch.setattr(_stop_gate, "_wait_for_end_turn", counting_wait)
-            monkeypatch.setattr(_stop_gate, "_read_transcript_entries", counting_read)
-
-            first = read_transcript_entries_cached(str(transcript))
-            second = read_transcript_entries_cached(str(transcript))
-
-        assert first == second
-        assert calls["wait"] == 1
-        assert calls["read"] == 1
-
-    def test_different_path_invalidates_cache(self, tmp_path: pathlib.Path) -> None:
-        """異なる`transcript_path`への呼び出しはキャッシュを入れ替えて再解析する。"""
-        _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
-        first_dir, second_dir = tmp_path / "a", tmp_path / "b"
-        first_dir.mkdir()
-        second_dir.mkdir()
-        first_transcript = _write_transcript(first_dir, [_user_entry("first")])
-        second_transcript = _write_transcript(second_dir, [_user_entry("second")])
-
-        first_entries = read_transcript_entries_cached(str(first_transcript))
-        second_entries = read_transcript_entries_cached(str(second_transcript))
-
-        assert first_entries != second_entries
-        assert second_entries == read_transcript_entries_cached(str(second_transcript))
 
 
 class TestBackgroundTaskIdFromNotice:
@@ -1833,9 +1751,9 @@ class TestBackgroundTaskIdFromNotice:
     )
     def test_extracts_identifier_from_host_notice(self, suffix: str, expected: str) -> None:
         """通知の形で始まる本文から、文末の句読点を除いた識別子を途中で打ち切らずに返す。"""
-        assert _stop_gate.background_task_id_from_notice(self._PREFIX + suffix) == expected
+        assert _background_tasks.background_task_id_from_notice(self._PREFIX + suffix) == expected
         assert (
-            _stop_gate.background_task_id_from_notice({"content": [{"type": "text", "text": self._PREFIX + suffix}]})
+            _background_tasks.background_task_id_from_notice({"content": [{"type": "text", "text": self._PREFIX + suffix}]})
             == expected
         )
 
@@ -1851,4 +1769,4 @@ class TestBackgroundTaskIdFromNotice:
     )
     def test_returns_none_for_text_not_starting_with_host_notice(self, text: str) -> None:
         """通知の形で始まらない本文と識別子を伴わない通知では`None`を返す。"""
-        assert _stop_gate.background_task_id_from_notice(text) is None
+        assert _background_tasks.background_task_id_from_notice(text) is None

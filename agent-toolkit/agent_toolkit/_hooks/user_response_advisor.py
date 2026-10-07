@@ -18,18 +18,18 @@ agent_idと委譲先の環境印でサブエージェントと委譲先を除く
 """
 
 import json
-import pathlib
 
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import transcript
-from agent_toolkit._hooks import agent_id, notice, stop_gate
+from agent_toolkit._hooks import agent_id, notice
+from agent_toolkit._hooks import stop_session as _stop_session
 
 _block_notice = notice.block_formatter("user_response_advisor")
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
     """最新の人間の発話に本文が無い場合だけ、本文の出力を求める。"""
-    resolved = stop_gate.parse_stop_session(payload_text, lambda: None)
+    resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
     session_id, payload = resolved
@@ -38,9 +38,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     path = payload.get("transcript_path")
     if not isinstance(path, str) or not path:
         return "approve", ""
-    try:
-        lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError):
+    lines = transcript.read_transcript_lines(path)
+    if lines is None:
         return "approve", ""
 
     needs_response = False
@@ -64,7 +63,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     if not needs_response:
         return "approve", ""
-    stop_gate.append_stop_log(session_id, "block_missing_user_response", {})
+    _stop_session.append_stop_log(session_id, "block_missing_user_response", {})
     return "block", _block_notice(
         "人間の発話の後に、応答本文（`text`）が無い。"
         "拡張思考（その要約を含む）が画面に表示されたかはエージェントから観測できないため、"
@@ -93,10 +92,3 @@ def _input_text(entry: dict) -> str | None:
 def _is_hook_input(prompt: str) -> bool:
     """機械生成の境界を持つ入力を人間の発話から除く。"""
     return _message_format.starts_with_auto_element(prompt)
-
-
-def main(payload_text: str) -> int:
-    """本文欠落のStop判定をhook応答として返す。"""
-    decision, body = evaluate(payload_text)
-    print(json.dumps({"decision": "block", "reason": body} if decision == "block" else {}, ensure_ascii=False))
-    return 0

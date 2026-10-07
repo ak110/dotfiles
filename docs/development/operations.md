@@ -52,7 +52,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   ユーザーの入力を要さない待機でベルが鳴るためである
 - 応答終了そのものは`Stop`のフック（`pytools/claude_hook/stop_bell.py`）で鳴らす。
   常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
-  背景稼働の判定は他のStop系フックと同じ`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の判定を用いる。
+  背景稼働の判定は他のStop系フックと同じ`agent-toolkit/agent_toolkit/_hooks/background_tasks.py`の判定を用いる。
   他のStop系フックがターン継続をblockした場合は、ターンが終了する前にベルが鳴る
 - Windowsはtmux運用外のため、ベルの各設定は`share/claude_settings_json_managed.win32.json`へ追加しない
 - catppuccinが提供する`icon`の書式はcurrent・lastなど全フラグをアイコン化するため、

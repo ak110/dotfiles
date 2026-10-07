@@ -236,7 +236,7 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
     return not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens[1:])
 
 
-def _check_bash_process_kill_by_pattern(command: str) -> bool:
+def _check_bash_process_kill_by_pattern(command: str) -> str | None:
     """`pkill`・`killall`等パターン指定によるプロセス終了をブロックする。
 
     対象の所有権を確認できないパターン一致の一括終了は他者のプロセスを停止する危険があるため禁止する。
@@ -246,19 +246,15 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
     """
     matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
     if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):
-        return False
-    print(
-        _block_notice(
-            "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
-            fix=(
-                "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"
-                "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
-                "`p[k]ill`のように文字クラスで書く。"
-            ),
+        return None
+    return _block_notice(
+        "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
+        fix=(
+            "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"
+            "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
+            "`p[k]ill`のように文字クラスで書く。"
         ),
-        file=sys.stderr,
     )
-    return True
 
 
 def _git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
@@ -539,7 +535,7 @@ def _pattern_command_slot(arguments: Sequence[str]) -> set[int]:
     return {terminator + 1}
 
 
-def _check_bash_option_after_terminator(command: str) -> bool:
+def _check_bash_option_after_terminator(command: str) -> str | None:
     """オプション終端`--`の後ろへCLI自身のオプションを置いたコマンドを遮断する。
 
     `--`の後ろは全てデータとして扱われるため、後ろへ置いた`--glob`などは`rg`・`grep`系・`git grep`では
@@ -574,20 +570,16 @@ def _check_bash_option_after_terminator(command: str) -> bool:
             label = f"git {subcommand[0]}"
         if not found:
             continue
-        print(
-            _block_notice(
-                f"blocked: `{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
-                "`--`の後ろは全てデータとして扱われるため、これらはオプションではなくパスとして解釈され、"
-                "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
-                fix=(
-                    "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"
-                    "`-`で始まるパスを渡す場合は`./`を前置する。"
-                ),
+        return _block_notice(
+            f"blocked: `{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
+            "`--`の後ろは全てデータとして扱われるため、これらはオプションではなくパスとして解釈され、"
+            "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
+            fix=(
+                "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"
+                "`-`で始まるパスを渡す場合は`./`を前置する。"
             ),
-            file=sys.stderr,
         )
-        return True
-    return False
+    return None
 
 
 # --- Bash: atkの結果を受領できない出力接続 ---
@@ -613,7 +605,7 @@ def _is_atk_resident_display(tokens: tuple[str, ...]) -> bool:
     )
 
 
-def _check_bash_atk_output_loss(command: str) -> bool:
+def _check_bash_atk_output_loss(command: str) -> str | None:
     """静的に確定したatkの出力のパイプとリダイレクト、waitの背景化を遮断する。
 
     `atk`はエージェント環境で短い出力を直接表示し、長い出力を自ら保存して保存先を示す。
@@ -639,21 +631,17 @@ def _check_bash_atk_output_loss(command: str) -> bool:
         if not causes:
             continue
         label = "atk agents wait" if is_wait else "atk"
-        print(
-            _block_notice(
-                f"blocked: `{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
-                fix=(
-                    "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
-                    "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読む。"
-                    "`atk agents wait`は`&`も外して単独で発行する。"
-                    "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領する。"
-                    "保存した本文の選別は別の呼び出しで行う。"
-                ),
+        return _block_notice(
+            f"blocked: `{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
+            fix=(
+                "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
+                "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読む。"
+                "`atk agents wait`は`&`も外して単独で発行する。"
+                "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領する。"
+                "保存した本文の選別は別の呼び出しで行う。"
             ),
-            file=sys.stderr,
         )
-        return True
-    return False
+    return None
 
 
 # --- Bash: 区切り語を引用しないheredocの本文にあるコマンド置換 ---
@@ -662,7 +650,7 @@ _HEREDOC_SUBSTITUTION_DISPLAY_LIMIT = 120
 """通知へ載せる置換1件あたりの最大文字数。置換の範囲を特定できる長さに収め、文脈の占有を抑える。"""
 
 
-def _check_bash_unquoted_heredoc_substitution(command: str) -> bool:
+def _check_bash_unquoted_heredoc_substitution(command: str) -> str | None:
     """区切り語を引用しないheredocの本文にある、エスケープされていないコマンド置換を遮断する。
 
     bashは区切り語を引用しないheredoc（`<<EOF`・`<<-EOF`）の本文を展開し、本文のバッククォートと`$(...)`の中の
@@ -675,24 +663,20 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> bool:
     """
     found = heredoc_command_substitutions(command)
     if not found:
-        return False
+        return None
     shown = "、".join(
         f"「{text if len(text) <= _HEREDOC_SUBSTITUTION_DISPLAY_LIMIT else text[:_HEREDOC_SUBSTITUTION_DISPLAY_LIMIT] + '…'}」"
         for text in found
     )
-    print(
-        _block_notice(
-            f"blocked: 区切り語を引用しないヒアドキュメントの本文にコマンド置換（{shown}）がある。"
-            "`bash`はこの本文を展開し、置換の中のコマンドを実行する。",
-            fix=(
-                "本文をそのまま書く場合は区切り語を引用する（`<<'EOF'`）。"
-                "置換の結果を本文へ入れる場合は、事前に変数へ代入して本文では`$VAR`で参照する。"
-                "リテラルのバッククォートと`$(`は直前に`\\`を置いてエスケープする（「\\`」・「\\$(」）。"
-            ),
+    return _block_notice(
+        f"blocked: 区切り語を引用しないヒアドキュメントの本文にコマンド置換（{shown}）がある。"
+        "`bash`はこの本文を展開し、置換の中のコマンドを実行する。",
+        fix=(
+            "本文をそのまま書く場合は区切り語を引用する（`<<'EOF'`）。"
+            "置換の結果を本文へ入れる場合は、事前に変数へ代入して本文では`$VAR`で参照する。"
+            "リテラルのバッククォートと`$(`は直前に`\\`を置いてエスケープする（「\\`」・「\\$(」）。"
         ),
-        file=sys.stderr,
     )
-    return True
 
 
 # --- Bash: WindowsのGit BashでPATHへ加えるドライブ文字形式の要素の検出 ---

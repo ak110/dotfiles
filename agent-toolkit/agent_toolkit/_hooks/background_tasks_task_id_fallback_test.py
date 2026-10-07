@@ -1,18 +1,18 @@
-"""agent-toolkit/agent_toolkit/_hooks/stop_gate.py のテスト（`<task-id>`フォールバック解決）。
+"""agent-toolkit/agent_toolkit/_hooks/background_tasks.py のテスト（`<task-id>`フォールバック解決）。
 
 `<task-notification>`要素に`<tool-use-id>`が含まれない通知形式に対する
 `<task-id>`要素経由のフォールバック解決を、旧形式（userエントリ）・
 新形式（`type=="attachment"`）の双方で検証する。不変条件
 「起動として記録した全バックグラウンドタスクはいずれかの完了通知形式で完了集合へ解決できる」を担保する。
-基幹テストは`_stop_gate_test.py`に、共通ヘルパーは同ファイルから再利用する。
+基幹テストは`background_tasks_test.py`に、共通ヘルパーは同ファイルから再利用する。
 """
 
 import pathlib
 
 import pytest
 
-from agent_toolkit._hooks.stop_gate import is_pending_async_work  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._hooks.stop_gate_test import (  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._hooks.background_tasks import is_pending_async_work
+from agent_toolkit._hooks.background_tasks_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _assistant_agent_entry,
     _assistant_entry,
     _attachment_task_notification_entry,
@@ -157,7 +157,7 @@ class TestAttachmentTaskIdFallbackCompletion:
 
         あわせて`task_notification_unresolved`が常時ログへ記録されることを検証する。
         """
-        monkeypatch.setattr("agent_toolkit._hooks.stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
             _attachment_task_notification_entry(None, task_id=None),

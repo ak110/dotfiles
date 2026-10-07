@@ -112,7 +112,7 @@ class TestCheckText:
         "identifier",
         [
             "/opt/project/agent-toolkit/hooks.py",
-            "agent-toolkit/agent_toolkit/_hooks/stop_gate.py",
+            "agent-toolkit/agent_toolkit/_hooks/stop_session.py",
             "C:\\Users\\aki\\dotfiles\\hook.py",
             "550e8400-e29b-41d4-a716-446655440000",
             "b4acde0123456789abcdef0123456789abcdef01",

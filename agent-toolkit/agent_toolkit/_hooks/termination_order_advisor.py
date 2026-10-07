@@ -25,25 +25,18 @@ CodexではClaude Code形式のSkill記録を根拠へ使わない。
 委譲先での実行可否: 委譲先は最上位セッションが起動する終了手順の起動順を確かめる対象ではないため、hook入力と環境印で除外する。
 """
 
-import json
 import pathlib
 
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_agents_exit_session_command, is_agents_wait_command
 from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._hooks.agent_id import is_main_agent_context
+from agent_toolkit._hooks.background_tasks import async_launch_offsets, is_pending_async_work, pending_async_task_ids
+from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.stop_gate import (
-    _entry_in_scan_scope,  # noqa: E402  # pylint: disable=protected-access
-    _iter_assistant_blocks,  # noqa: E402  # pylint: disable=protected-access
-    append_stop_log,
-    async_launch_offsets,
-    is_pending_async_work,
-    pending_async_task_ids,
-    read_transcript_entries_cached,
-)
-from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
-from agent_toolkit._hooks.tool_input import is_codex_payload
+from agent_toolkit._hooks.stop_session import append_stop_log
+from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+from agent_toolkit._hooks.transcript_scan import entry_in_scan_scope, iter_assistant_blocks, read_transcript_entries_cached
 
 _HOOK_ID = "termination_order_advisor"
 
@@ -73,16 +66,11 @@ _MISSING_STEP_TEMPLATE = "{target}の終了手順が未完了である。次の�
 _block_notice = _block_notice_formatter(_HOOK_ID)
 
 
-def _approve() -> None:
-    """空のapprove応答を返す。"""
-    print(json.dumps({}, ensure_ascii=False))
-
-
 def _successful_tool_use_ids(entries: list[dict]) -> set[str]:
     """非sidechainのuserエントリから成功したツール起動IDを返す。"""
     successful_ids: set[str] = set()
     for entry in entries:
-        if entry.get("type") != "user" or not _entry_in_scan_scope(entry, include_sidechain=False):
+        if entry.get("type") != "user" or not entry_in_scan_scope(entry, include_sidechain=False):
             continue
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
@@ -101,7 +89,7 @@ def _skill_invocations(entries: list[dict]) -> list[str]:
     """成功したSkillとBash終了工程の起動を時系列順で返す。"""
     successful_ids = _successful_tool_use_ids(entries)
     invocations: list[str] = []
-    for block in _iter_assistant_blocks(entries):
+    for block in iter_assistant_blocks(entries):
         if block.get("type") != "tool_use":
             continue
         tool_input = block.get("input")
@@ -183,7 +171,7 @@ def _non_wait_bash_ids(entries: list[dict]) -> set[str]:
     常駐コマンドは終了しないため完了通知による再開が来ず、その生存を作業の待機として扱うと報告不足が残る。
     """
     identifiers: set[str] = set()
-    for block in _iter_assistant_blocks(entries):
+    for block in iter_assistant_blocks(entries):
         if block.get("type") != "tool_use" or block.get("name") != "Bash":
             continue
         tool_input = block.get("input")
@@ -192,7 +180,7 @@ def _non_wait_bash_ids(entries: list[dict]) -> set[str]:
         if isinstance(tool_use_id, str) and not (isinstance(command, str) and _is_wait_command(command)):
             identifiers.add(tool_use_id)
     for entry in entries:
-        if entry.get("type") != "user" or not _entry_in_scan_scope(entry, include_sidechain=False):
+        if entry.get("type") != "user" or not entry_in_scan_scope(entry, include_sidechain=False):
             continue
         tool_use_result = entry.get("toolUseResult")
         task_id = tool_use_result.get("backgroundTaskId") if isinstance(tool_use_result, dict) else None
@@ -329,13 +317,3 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         fix="列挙した終了工程を指定順で実行してから終了する。",
     )
     return "block", reason
-
-
-def main(payload_text: str) -> int:
-    """終了手順順序の不足・順序違反を検知し再促するエントリポイント。"""
-    decision, body = evaluate(payload_text)
-    if decision == "block":
-        print(json.dumps({"decision": "block", "reason": body}, ensure_ascii=False))
-    else:
-        _approve()
-    return 0

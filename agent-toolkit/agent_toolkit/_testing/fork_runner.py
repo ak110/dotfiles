@@ -217,13 +217,19 @@ def _serve() -> None:  # pylint: disable=import-outside-toplevel
         status as _git_status,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     )
     from agent_toolkit._hooks import (
+        background_tasks as _background_tasks,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
+    )
+    from agent_toolkit._hooks import (
         message_format as _message_format,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     )
     from agent_toolkit._hooks import (
-        stop_gate as _stop_gate,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
+        stop_session as _stop_session,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     )
     from agent_toolkit._hooks import (
         tracked_model_types as _tracked_model_types,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
+    )
+    from agent_toolkit._hooks import (
+        transcript_scan as _transcript_scan,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     )
     from agent_toolkit._plan import (
         locations as _plan_file,  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
@@ -245,7 +251,9 @@ def _serve() -> None:  # pylint: disable=import-outside-toplevel
         _process_loop_log,
         _response_language_check,
         _session_state,
-        _stop_gate,
+        _background_tasks,
+        _stop_session,
+        _transcript_scan,
         _tracked_model_types,
         _transcript,
     )

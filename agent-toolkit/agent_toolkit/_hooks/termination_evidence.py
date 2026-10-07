@@ -21,8 +21,8 @@ from agent_toolkit._common import automated_prompt, next_action, runtime_inserte
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.shell_segments import extract_execution_segments
-from agent_toolkit._hooks import agent_id, agents_server_session_advisor, report_validation
-from agent_toolkit._hooks.stop_gate import append_stop_log
+from agent_toolkit._hooks import agent_id, agents_server_observations, report_validation
+from agent_toolkit._hooks.stop_session import append_stop_log
 
 STATE_KEY = "termination_evidence"
 
@@ -433,7 +433,7 @@ def record_decision(document: dict[str, Any]) -> str:
         evidence: dict[str, Any] = {}
         if action == "wait":
             target = document.get("target_session_id")
-            child = state.get("agents_server_sessions", {}).get(target)
+            child = agents_server_observations.session_record(state, target)
             work_for_wait = data["works"].get(document.get("work_id"), {})
             if target is not None:
                 if not isinstance(target, str) or target not in work_for_wait.get("async_targets", {}):
@@ -442,7 +442,7 @@ def record_decision(document: dict[str, Any]) -> str:
                     raise ValueError(
                         f"委譲先待機の対象を所有していません: {target}。この作業が起動した所有済みの対象を指定する"
                     )
-                active = agents_server_session_advisor.actively_waited_session_ids([target])
+                active = agents_server_observations.actively_waited_session_ids([target])
                 if child.get("pending_observation") is not True and target not in active:
                     raise ValueError(
                         f"対象sessionの有効なCLI待機がありません: {target}。実際の待機を開始するか回収後の残工程へ戻る"
@@ -500,7 +500,7 @@ def _session_works(state: dict[str, Any], session_id: str) -> dict[str, Any]:
 
 def _async_target_alive(state: dict[str, Any], work: dict[str, Any], target: object) -> bool:
     """作業が起動して所有する委譲先が、実行中か未回収の結果を持つ場合に真を返す。"""
-    child = state.get("agents_server_sessions", {}).get(target)
+    child = agents_server_observations.session_record(state, target)
     return (
         isinstance(target, str)
         and target in work.get("async_targets", {})
@@ -508,7 +508,7 @@ def _async_target_alive(state: dict[str, Any], work: dict[str, Any], target: obj
         and child.get("owner_agent_id") == "main"
         and (
             child.get("pending_observation") is True
-            or target in agents_server_session_advisor.actively_waited_session_ids([target])
+            or target in agents_server_observations.actively_waited_session_ids([target])
         )
     )
 
@@ -583,44 +583,29 @@ def visible_messages(payload: dict[str, Any], offset: int) -> list[str] | None:
     texts: list[str] = []
     incomplete = False
     if isinstance(path, str):
-        try:
-            with pathlib.Path(path).open("rb") as stream:
-                stream.seek(0, os.SEEK_END)
-                if stream.tell() < offset:
-                    return None
-                stream.seek(offset)
-                for raw in stream:
-                    try:
-                        entry = json.loads(raw)
-                    except (json.JSONDecodeError, UnicodeError):
-                        incomplete = True
-                        continue
-                    if (
-                        not isinstance(entry, dict)
-                        or entry.get("isSidechain") is True
-                        or entry.get("agent_id", "main") != "main"
-                    ):
-                        continue
-                    event = entry.get("payload", {})
-                    if (
-                        entry.get("type") == "response_item"
-                        and event.get("type") == "message"
-                        and event.get("role") == "assistant"
-                    ):
-                        if event.get("channel") not in {None, "final", "commentary"}:
-                            continue
-                        texts.extend(
-                            part["text"]
-                            for part in event.get("content", [])
-                            if isinstance(part, dict)
-                            and part.get("type") == "output_text"
-                            and isinstance(part.get("text"), str)
-                        )
-                    elif entry.get("type") == "assistant":
-                        message = entry.get("message", {})
-                        texts.extend(_transcript.visible_text_blocks(message.get("content")))
-        except OSError:
+        data = _transcript.read_transcript_bytes(path, offset=offset)
+        if data is None:
             return None
+        for raw in data.splitlines(keepends=True):
+            try:
+                entry = json.loads(raw)
+            except (json.JSONDecodeError, UnicodeError):
+                incomplete = True
+                continue
+            if not isinstance(entry, dict) or entry.get("isSidechain") is True or entry.get("agent_id", "main") != "main":
+                continue
+            event = entry.get("payload", {})
+            if entry.get("type") == "response_item" and event.get("type") == "message" and event.get("role") == "assistant":
+                if event.get("channel") not in {None, "final", "commentary"}:
+                    continue
+                texts.extend(
+                    part["text"]
+                    for part in event.get("content", [])
+                    if isinstance(part, dict) and part.get("type") == "output_text" and isinstance(part.get("text"), str)
+                )
+            elif entry.get("type") == "assistant":
+                message = entry.get("message", {})
+                texts.extend(_transcript.visible_text_blocks(message.get("content")))
     last = payload.get("last_assistant_message")
     if isinstance(last, str):
         texts.append(last)

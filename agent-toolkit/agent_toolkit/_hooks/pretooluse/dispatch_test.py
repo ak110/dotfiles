@@ -7,7 +7,6 @@ import json
 import pathlib
 import sys
 import textwrap
-from collections.abc import Callable
 
 import pytest
 
@@ -15,6 +14,7 @@ from agent_toolkit import hook
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
+from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.pretooluse_support import (
     _VALID_H2_PLAN_CONTENT,
@@ -333,23 +333,16 @@ def test_irremovable_warning_does_not_advance_removable_repeat_count(
     """除去不能警告の後も、除去可能警告の2回目だけに反復注記を付ける。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
 
-    def emit_controlled_warning(
-        _tool_name: str,
-        tool_input: dict,
-        _cwd: str,
-        _emit_json: Callable[[dict], None],
-        _flush_warning: Callable[[], None],
-    ) -> int:
+    def emit_controlled_warning(_tool_name: str, tool_input: dict, _cwd: str) -> Decision:
         notice = pretooluse._llm_notice(  # noqa: SLF001  # pylint: disable=protected-access
             "controlled warning",
             tag=pretooluse._WARN_TAG,  # noqa: SLF001  # pylint: disable=protected-access
             fix="retry",
             removable_cause=bool(tool_input["removable"]),
         )
-        _emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": notice}})
-        return 0
+        return Decision(context=notice)
 
-    monkeypatch.setattr(pretooluse, "_handle_edit_tool", emit_controlled_warning)
+    monkeypatch.setattr(pretooluse, "_decide_edit_tool", emit_controlled_warning)
 
     def run(removable: bool) -> int:
         return pretooluse.main(

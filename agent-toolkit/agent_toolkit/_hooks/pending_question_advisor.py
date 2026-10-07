@@ -17,15 +17,14 @@
 委譲先での実行可否: 委譲先は`AskUserQuestion`を実行できないため、hook入力と環境印で除外する。
 """
 
-import json
 import re
 from collections.abc import Iterator
 
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.stop_gate import append_stop_log
-from agent_toolkit._hooks.stop_gate import parse_stop_session as _parse_stop_session
+from agent_toolkit._hooks.stop_session import append_stop_log
+from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 _HOOK_ID = "pending_question_advisor"
 _block_notice = _block_notice_formatter(_HOOK_ID)
@@ -64,11 +63,6 @@ BLOCK_BODY = (
 )
 
 _BLOCK_FIX = "AskUserQuestionで確認するか、その問いかけを本文から除いて応答を書き直す。"
-
-
-def _approve() -> None:
-    """空のapprove応答を返す。"""
-    print(json.dumps({}, ensure_ascii=False))
 
 
 def _plain_text(text: str) -> str:
@@ -156,13 +150,3 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     reason = _block_notice(BLOCK_BODY, fix=_BLOCK_FIX)
     append_stop_log(session_id, "block_pending_question", {})
     return "block", reason
-
-
-def main(payload_text: str) -> int:
-    """地の文の問いかけでターンを終えようとした応答を遮断する。"""
-    decision, body = evaluate(payload_text)
-    if decision == "block":
-        print(json.dumps({"decision": "block", "reason": body}, ensure_ascii=False))
-    else:
-        _approve()
-    return 0

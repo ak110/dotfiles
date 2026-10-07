@@ -13,7 +13,9 @@ import pytest
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._common.session_state import read_state
-from agent_toolkit._hooks import busy_loop_guard, stop, stop_gate
+from agent_toolkit._hooks import background_tasks as _background_tasks
+from agent_toolkit._hooks import busy_loop_guard, stop
+from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
@@ -36,7 +38,7 @@ def _calls(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> dict[str,
     monkeypatch.setenv(_ENV_REQUIRED, "1")
     monkeypatch.delenv(_ENV_SESSION_ID, raising=False)
     monkeypatch.delenv(_ENV_DELEGATED_SESSION, raising=False)
-    monkeypatch.setattr(stop_gate, "is_pending_async_work", lambda *args, **kwargs: False)
+    monkeypatch.setattr(_background_tasks, "is_pending_async_work", lambda *args, **kwargs: False)
     recorded = {"abort": 0, "terminate": 0}
 
     def _abort() -> pathlib.Path:
@@ -56,7 +58,7 @@ def _calls(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> dict[str,
 def _write_transcript(tmp_path: pathlib.Path, name: str, entries: list[dict]) -> str:
     path = tmp_path / name
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n", encoding="utf-8")
-    stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
+    _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
     return str(path)
 
 

@@ -5,8 +5,9 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import queued_notification_advisor as subject
-from agent_toolkit._hooks import stop_gate as _stop_gate
+from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._testing.helpers import _write_transcript
 
 _OUTPUT_FILE = "/tmp/claude-1000/tasks/b6n4gipz5.output"
@@ -39,14 +40,14 @@ def _isolated_state(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> 
     monkeypatch.setenv("TEMP", str(tmp_path))
     monkeypatch.setenv("TMP", str(tmp_path))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
+    _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
 
 
 def _evaluate(
     transcript: pathlib.Path, *, session_id: str = "queued-session", stop_hook_active: bool = False
 ) -> tuple[str, str]:
     """Stop入力を組み立てて判定する。"""
-    _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
+    _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
     payload = {"session_id": session_id, "transcript_path": str(transcript), "stop_hook_active": stop_hook_active}
     return subject.evaluate(json.dumps(payload))
 
@@ -204,13 +205,13 @@ def test_pop_removes_only_matching_content_from_stop_and_advisor(tmp_path: pathl
         _queue(operation, "登録されていない本文"),
         _queue(operation, first),
     ]
-    assert _stop_gate.queued_task_notification_contents(entries) == [second, first]
+    assert _background_tasks.queued_task_notification_contents(entries) == [second, first]
     transcript = _write_transcript(tmp_path, entries)
-    assert _stop_gate.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
+    assert _background_tasks.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
     entries.extend([_queue(operation, first), _queue(operation, second)])
     transcript = _write_transcript(tmp_path, entries)
     assert _evaluate(transcript) == ("approve", "")
-    assert not _stop_gate.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
+    assert not _background_tasks.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
 
 
 @pytest.mark.parametrize("operation", ["popAll", "popOne"])
@@ -241,7 +242,7 @@ def test_notification_delivered_after_reclaimed_input_is_silent(tmp_path: pathli
     transcript = _write_transcript(tmp_path, entries)
 
     assert _evaluate(transcript) == ("approve", "")
-    assert not _stop_gate.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
+    assert not _background_tasks.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
 
 
 def test_notification_stays_when_agent_message_is_dequeued_first(tmp_path: pathlib.Path) -> None:
@@ -253,7 +254,7 @@ def test_notification_stays_when_agent_message_is_dequeued_first(tmp_path: pathl
         _queue("dequeue"),
         _delivered_user(agent_message),
     ]
-    assert _stop_gate.queued_task_notification_contents(entries) == [_notification()]
+    assert _background_tasks.queued_task_notification_contents(entries) == [_notification()]
     transcript = _write_transcript(tmp_path, entries)
 
     decision, body = _evaluate(transcript)

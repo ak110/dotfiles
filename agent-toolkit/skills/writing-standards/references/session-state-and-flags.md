@@ -165,7 +165,7 @@ process-loopが起動した会話の最上位のStopでは、`agent-toolkit/agen
   その呼び出しの成否に依存しない。
   PreToolUse(TaskStop)が、停止対象が自セッションの起動したバックグラウンドタスクかを判定する入力として読む。
   PreToolUse(Bash)も、未完了の出力ファイルの読取を警告する判定の前に読み、記録が1件以上ある場合だけtranscriptを読む。
-  出力パスは状態へ記録せず、`stop_gate.py`と同じ起動集合と完了集合から選んだ未完了の背景Bashについて、起動の`tool_result`本文から得る。
+  出力パスは状態へ記録せず、`background_tasks.py`と同じ起動集合と完了集合から選んだ未完了の背景Bashについて、起動の`tool_result`本文から得る。
   セッション終了まで保持し、リセット処理は設けない
 - `queued_notification_notified_ids`: Stopの`queued_notification_advisor.py`が、最上位transcriptのキューに残る未配送の完了通知について案内した通知の識別子を重複なく記録する。
   Agent・Taskの起動記録に対応する通知では返却メッセージの利用を、それ以外では出力ファイルの読取を案内する。

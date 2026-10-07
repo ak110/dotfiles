@@ -92,20 +92,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:8a8bcf4fa2b524160d9e7dbaabe31e3760ab85fd4bbc08b9ed0366d2fac0dd94",
-      "lines": 15,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/hook.py",
-          "count": 1
-        },
-        {
-          "path": "agent_toolkit/hook_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:9df472ee678eb08731156a2d3fa10a22875a4b6981a0eeb8fffb9f399996bec7",
       "lines": 53,
       "occurrences": [
@@ -140,16 +126,6 @@
       ]
     },
     {
-      "fingerprint": "sha256:ddd32210dfdc954618c63c7dffcaaddb5935adf60d66bc2f9c08e89fb978e280",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_hooks/session_end_cleanup_test.py",
-          "count": 2
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:eedadbd914acd6024bdf43350be330b0e0296ee98a2322017bb955e2ba386855",
       "lines": 11,
       "occurrences": [
@@ -160,16 +136,6 @@
         {
           "path": "agent_toolkit/_atk/serve/assets_test.py",
           "count": 1
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:f56697f12716175c32393bb7b0c298f1f87a415922b071ba14b19f586a60b480",
-      "lines": 13,
-      "occurrences": [
-        {
-          "path": "agent_toolkit/_hooks/stop_gate_task_id_fallback_test.py",
-          "count": 2
         }
       ]
     },

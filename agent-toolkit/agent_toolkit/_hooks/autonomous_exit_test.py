@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py のテスト。
 
-agent-toolkit pluginが提供するStopフックを共通のhook起動スクリプト`hook.py`から起動し、環境変数・再帰呼び出し・
+Stopの判定を`_testing/stop_check_runner.py`で単独の別プロセスとして起動し、環境変数・再帰呼び出し・
 非同期待機・呼び出し済み状態・blockの各契約を検証する。
 """
 
@@ -12,9 +12,10 @@ import subprocess
 import pytest
 
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
+_SCRIPT = pathlib.Path(_stop_check_runner.__file__)
 
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _ENV_SESSION_ID = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
@@ -80,7 +81,7 @@ def _run(
 
 
 def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:
-    return json.loads(result.stdout)
+    return json.loads(result.stdout) if result.stdout else {}
 
 
 class TestApproveConditions:

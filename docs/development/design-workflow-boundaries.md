@@ -327,7 +327,7 @@ Claude Codeの委譲・背景処理の待機は、機械的な完了通知で待
 `agents_server`の`start`ではagent-toolkitのmodが`start`の処理の中で定期再確認を作成し、それ以外の場合と装着できなかった場合は実行主体が作成する。定期再確認は`atk wait-schedule`が出力したcron式を変更せずに1件だけ作成し、保持した待機対象IDとtask IDを作成時に記録した状態と比較しながら再利用し、全対象の終端後に削除する。
 `ScheduleWakeup`は`/loop`専用であり、一般の委譲待機へ広げない。定期起動を完了・停滞の証拠にせず、シェルの`sleep`や背景タイマーを追加しない。
 `claude-code-runtime.md`はClaude Codeの能力とCron所有を、`waiting-and-monitoring.md`は完了通知を優先する再待機を基準として保持する。
-`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`はCron作成後も継続中とするStop判定を基準として保持する。
+`agent-toolkit/agent_toolkit/_hooks/background_tasks.py`はCron作成後も継続中とするStop判定を基準として保持する。
 この分離により即時通知を定期再確認へ置換せず、独自設定resolver・フックの永続状態を追加せずに、同じ待機対象のライフサイクルを各境界で確認できる。
 
 委譲元が`atk agents wait`で委譲先の結果を待つ設計は`design-delegation.md`「委譲先セッションの結果待機」にある。

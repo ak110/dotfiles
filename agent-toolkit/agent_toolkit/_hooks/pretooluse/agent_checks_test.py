@@ -213,10 +213,10 @@ class TestTaskStopBlock:
     ) -> None:
         """前景の出力本文の途中に移行通知の文言を含む応答のIDは所有記録へ追加せず、そのIDへの停止を遮断する。"""
         session_id = f"task-stop-foreground-{source}-{label}"
-        quoted = f"stop_gate_test.py:1: {phrase.format(task_id='quoted-task-1')}"
+        quoted = f"background_tasks_test.py:1: {phrase.format(task_id='quoted-task-1')}"
         if source == "bash-stdout":
             tool_name = "Bash"
-            tool_input: dict = {"command": "rg -n background stop_gate_test.py"}
+            tool_input: dict = {"command": "rg -n background background_tasks_test.py"}
             tool_response: object = {
                 "stdout": quoted,
                 "stderr": "",

@@ -16,15 +16,15 @@ import pathlib
 import shlex
 import subprocess
 import types
-from collections.abc import Callable
-from typing import Any
 
 import pytest
 
 from agent_toolkit._agents_server import agents_wait, shared_layout, shared_roots, wait_targets
 from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import state_paths
+from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state, auto_message_opening_attributes
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
@@ -54,78 +54,12 @@ def _load_posttooluse_module() -> types.ModuleType:
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
-def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    """中断の観測試行は入力のsessionだけを解消する。"""
-    state = {
-        "agents_server_sessions": {
-            "remote-a": {"pending_observation": True, "owner_agent_id": "main"},
-            "remote-b": {"pending_observation": True, "owner_agent_id": "main"},
-        }
-    }
-
-    def apply(_session_id: str, mutator: Callable[[dict[str, Any]], object]) -> None:
-        mutator(state)
-
-    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", apply)
-    _POSTTOOLUSE_MODULE._record_agents_server_observation_attempt("local", {"session_id": "remote-a"}, operation="kill")
-
-    assert state["agents_server_sessions"]["remote-a"]["pending_observation"] is False
-    assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is True
-
-
-def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """start応答が明示したルート識別子の索引を書く。"""
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    shared_layout.status_directory("root-session", tmp_path).mkdir(parents=True)
-
-    _POSTTOOLUSE_MODULE._record_agents_server_root_alias(
-        "current-session",
-        {"root_session_id": "root-session"},
-    )
-
-    alias = tmp_path / "agents-server" / "aliases" / "current-session.json"
-    assert json.loads(alias.read_text(encoding="utf-8")) == {"version": 1, "root_session_id": "root-session"}
-
-
-def test_start_state_record_without_shared_status_does_not_write_alias(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    """応答が所有rootを明示しない場合は索引を書かない。"""
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-
-    _POSTTOOLUSE_MODULE._record_agents_server_root_alias(
-        "current-session",
-        {"session_id": "remote-session"},
-    )
-
-    assert not (tmp_path / "agents-server" / "aliases" / "current-session.json").exists()
-
-
-def test_root_alias_uses_explicit_response_without_scanning_other_roots(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    """同じ子識別子を持つ別rootがあっても応答の所有rootだけへ対応付ける。"""
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    for root_session_id in ("root-a", "root-b"):
-        root = shared_layout.status_directory(root_session_id, tmp_path)
-        root.mkdir(parents=True)
-        (root / "root.json").write_text(
-            json.dumps({"version": 1, "sessions": [{"session_id": "remote-session"}]}),
-            encoding="utf-8",
-        )
-
-    _POSTTOOLUSE_MODULE._record_agents_server_root_alias(
-        "current-session",
-        {"root_session_id": "root-b"},
-    )
-
-    alias = tmp_path / "agents-server" / "aliases" / "current-session.json"
-    assert json.loads(alias.read_text(encoding="utf-8"))["root_session_id"] == "root-b"
+def _observe(payload: dict) -> list[str]:
+    """PostToolUseの入力を解析して記録処理へ渡し、コーディングエージェントへ返す通知を返す。"""
+    parsed = _POSTTOOLUSE_MODULE._parse_hook_payload(json.dumps(payload))  # pylint: disable=protected-access
+    if parsed is None:
+        return []
+    return _POSTTOOLUSE_MODULE._observe_tool(*parsed)  # pylint: disable=protected-access
 
 
 def test_list_response_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -174,7 +108,7 @@ def test_start_and_reply_register_wait_target_for_caller(
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     tool_input: dict[str, object] = {"session_id": "remote-session"}
-    if operation in _POSTTOOLUSE_MODULE._AGENTS_SERVER_START_OPERATIONS:
+    if operation in _agents_server_tool_names.RECORDED_START_OPERATIONS:
         tool_input = {"prompt": "委譲する", "cwd": str(tmp_path)}
 
     exit_code = _POSTTOOLUSE_MODULE.main(
@@ -953,7 +887,6 @@ class TestUwiCompletionNotice:
             "build_notice",
             lambda _session_id, _cwd, _transcript_path: "newly answered: answered.md",
         )
-        notices: list[str] = []
         payload = {
             "session_id": "uwi-answer",
             "hook_event_name": "PostToolUse",
@@ -962,11 +895,8 @@ class TestUwiCompletionNotice:
             "cwd": "/repo",
         }
 
-        result = _POSTTOOLUSE_MODULE._dispatch(  # pylint: disable=protected-access  # noqa: SLF001
-            json.dumps(payload), notices
-        )
+        notices = _observe(payload)
 
-        assert result == 0
         assert len(notices) == 1
         assert "newly answered: answered.md" in notices[0]
 
@@ -982,7 +912,6 @@ class TestUwiCompletionNotice:
             "build_notice",
             lambda *_args: pytest.fail("失敗イベントでUWI通知が呼ばれた"),
         )
-        notices: list[str] = []
         payload = {
             "session_id": "uwi-failure",
             "hook_event_name": hook_event_name,
@@ -991,11 +920,8 @@ class TestUwiCompletionNotice:
             "cwd": "/repo",
         }
 
-        result = _POSTTOOLUSE_MODULE._dispatch(  # pylint: disable=protected-access  # noqa: SLF001
-            json.dumps(payload), notices
-        )
+        notices = _observe(payload)
 
-        assert result == 0
         assert not notices
 
     def test_in_process_subagent_skips_uwi_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1006,7 +932,6 @@ class TestUwiCompletionNotice:
             "build_notice",
             lambda *_args: pytest.fail("サブエージェントでUWI通知が呼ばれた"),
         )
-        notices: list[str] = []
         payload = {
             "session_id": "uwi-subagent",
             "hook_event_name": "PostToolUse",
@@ -1016,11 +941,8 @@ class TestUwiCompletionNotice:
             "agent_id": "agent-1",
         }
 
-        result = _POSTTOOLUSE_MODULE._dispatch(  # pylint: disable=protected-access  # noqa: SLF001
-            json.dumps(payload), notices
-        )
+        notices = _observe(payload)
 
-        assert result == 0
         assert not notices
 
     @pytest.mark.parametrize(
@@ -1041,7 +963,6 @@ class TestUwiCompletionNotice:
             "build_notice",
             lambda *_args: pytest.fail("委譲先セッションでUWI通知が呼ばれた"),
         )
-        notices: list[str] = []
         payload = {
             "session_id": "uwi-delegate",
             "hook_event_name": "PostToolUse",
@@ -1050,11 +971,8 @@ class TestUwiCompletionNotice:
             "cwd": "/repo",
         }
 
-        result = _POSTTOOLUSE_MODULE._dispatch(  # pylint: disable=protected-access  # noqa: SLF001
-            json.dumps(payload), notices
-        )
+        notices = _observe(payload)
 
-        assert result == 0
         assert not notices
 
 
@@ -1515,8 +1433,8 @@ class TestAgentsServerSessionState:
         """8ツールの削減後成功応答を欠落として報告しない。"""
         qualified_name = f"mcp__plugin_agent-toolkit_agents_server__{tool_name}"
         payload = {"tool_input": tool_input}
-        assert (
-            _POSTTOOLUSE_MODULE._agents_server_missing_response_fields("local-session", payload, response, qualified_name) == []
+        assert not _agents_server_observations._agents_server_missing_response_fields(  # pylint: disable=protected-access
+            "local-session", payload, response, qualified_name
         )
 
     @pytest.mark.parametrize(
@@ -1689,7 +1607,7 @@ class TestAgentsServerSessionState:
     def test_agents_server_response_quoting_notice_is_not_backgrounded(self, tmp_path: pathlib.Path, phrase: str) -> None:
         """委譲先の返却本文が移行通知の文言を引用しても、背景へ移ったとみなさず通常の応答と同じ記録を行う。"""
         sid = f"show-quoting-notice-{phrase.split()[0].lower()}-{len(phrase)}"
-        quoted = f"委譲先の返却: stop_gate_test.py:1: {phrase.format(task_id='quoted-task-1')}"
+        quoted = f"委譲先の返却: background_tasks_test.py:1: {phrase.format(task_id='quoted-task-1')}"
         result = _run(
             {
                 "session_id": sid,
@@ -2259,29 +2177,3 @@ class TestRemovedRecordsAreAbsent:
             assert result.stdout == ""
         state = _read_state(tmp_path, sid)
         assert not [key for key in self._REMOVED_KEYS if key in state]
-
-
-@pytest.mark.parametrize(
-    ("operation", "tool_input", "expected"),
-    (
-        ("start", {"mode": "write", "prompt": "起草する", "cwd": "/tmp/x"}, "write"),
-        ("start", {"mode": "shell", "command": "make test", "cwd": "/tmp/x"}, "low_tier"),
-        ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x"}, "low_tier"),
-        ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "medium_tier"}, "medium_tier"),
-        ("start", {"mode": "delegate", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "high_tier"}, "high_tier"),
-        ("start", {"subagent_md_path": "/plugin/share/exec.subagent.md", "cwd": "/tmp/x"}, "high_tier"),
-        ("start", {"model_type": "medium_tier"}, "medium_tier"),
-        ("start", {"mode": "unknown", "prompt": "調べる"}, None),
-        # 統合前の起動ツール名で記録された呼び出しも、対応するmodeの種別を記録する。
-        ("start_write", {"prompt": "起草する", "cwd": "/tmp/x"}, "write"),
-        ("start_shell", {"command": "make test", "cwd": "/tmp/x"}, "low_tier"),
-        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x"}, "low_tier"),
-        ("start_custom", {"prompt": "調べる", "cwd": "/tmp/x"}, None),
-    ),
-)
-def test_agents_server_model_type_matches_server_defaults(operation: str, tool_input: dict, expected: str | None) -> None:
-    """記録する工程種別は、サーバーが各modeの省略時に使う種別と一致する。
-
-    writeで種別を省略すると`write`を使うため、shellと同じ`low_tier`を記録すると工程を別の種別に加算してしまう。
-    """
-    assert _POSTTOOLUSE_MODULE._agents_server_model_type(tool_input, operation) == expected

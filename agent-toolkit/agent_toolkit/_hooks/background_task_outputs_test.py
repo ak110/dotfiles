@@ -13,7 +13,9 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks import background_task_outputs as subject
+from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import posttooluse
+from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.pretooluse import dispatch
 
 _WARNING = "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。"
@@ -221,16 +223,16 @@ def test_command_reads_path_only_for_read_command_operand() -> None:
 
 
 def test_pending_bash_task_ids_excludes_completed(monkeypatch) -> None:
-    """stop_gateの起動集合から完了集合を引いたタスクだけを返す。"""
-    monkeypatch.setattr(subject.stop_gate, "read_transcript_entries_cached", lambda _path: [{"entry": 1}])
+    """Stopの継続判定の起動集合から完了集合を引いたタスクだけを返す。"""
+    monkeypatch.setattr(_transcript_scan, "read_transcript_entries_cached", lambda _path: [{"entry": 1}])
     monkeypatch.setattr(
-        subject.stop_gate,
-        "_describe_pending_background_entries",
+        _background_tasks,
+        "describe_pending_background_entries",
         lambda *_args, **_kwargs: ({"toolu_pending", "toolu_done"}, {"toolu_done"}, set()),
     )
     monkeypatch.setattr(
-        subject.stop_gate,
-        "_collect_background_task_id_tool_use_ids",
+        _background_tasks,
+        "collect_background_task_id_tool_use_ids",
         lambda _entries: {"bg-pending": {"toolu_pending"}, "bg-done": {"toolu_done"}},
     )
 

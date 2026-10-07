@@ -26,6 +26,7 @@ import time
 from collections.abc import Callable, Iterator
 from typing import TextIO
 
+from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.atomic_file import atomic_write as _atomic_write
 from agent_toolkit._common.file_lock import acquire_lock as _acquire_lock
 from agent_toolkit._common.file_lock import release_lock as _release_lock
@@ -180,33 +181,32 @@ def inherit_state_from_transcript(session_id: str, transcript_path: str) -> bool
             if target.exists():
                 return False
             candidates: dict[str, dict] = {}
-            with pathlib.Path(transcript_path).open(encoding="utf-8") as transcript:
-                for line in transcript:
-                    try:
-                        entry = json.loads(line)
-                    except (json.JSONDecodeError, ValueError):
-                        continue
-                    if not isinstance(entry, dict):
-                        continue
-                    predecessor = next(
-                        (
-                            value
-                            for key in _TRANSCRIPT_SESSION_ID_KEYS
-                            if isinstance((value := entry.get(key)), str) and value and value != session_id
-                        ),
-                        None,
-                    )
-                    if predecessor is None or predecessor in candidates:
-                        continue
-                    predecessor_path = state_path(predecessor)
-                    if predecessor_path.parent != pathlib.Path(tempfile.gettempdir()):
-                        continue
-                    try:
-                        inherited = json.loads(predecessor_path.read_text(encoding="utf-8"))
-                    except (OSError, json.JSONDecodeError, ValueError):
-                        continue
-                    if isinstance(inherited, dict):
-                        candidates[predecessor] = inherited
+            for line in _transcript.read_transcript_lines(transcript_path) or []:
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                predecessor = next(
+                    (
+                        value
+                        for key in _TRANSCRIPT_SESSION_ID_KEYS
+                        if isinstance((value := entry.get(key)), str) and value and value != session_id
+                    ),
+                    None,
+                )
+                if predecessor is None or predecessor in candidates:
+                    continue
+                predecessor_path = state_path(predecessor)
+                if predecessor_path.parent != pathlib.Path(tempfile.gettempdir()):
+                    continue
+                try:
+                    inherited = json.loads(predecessor_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError, ValueError):
+                    continue
+                if isinstance(inherited, dict):
+                    candidates[predecessor] = inherited
             if len(candidates) != 1:
                 return False
             predecessor, inherited = next(iter(candidates.items()))

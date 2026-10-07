@@ -51,6 +51,8 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
     (f"{_PLUGIN_PREFIX}:exit-session", _PROCESS_LOOP_TEST): 1,
+    # 分割前のStop判定モジュールを当時の所在で記す障害事例
+    (f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py", _INCIDENTS_WORKFLOWS): 1,
     # 廃止したスキルの経緯を記す方針・設計の記録
     (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_GOVERNANCE): 2,
     (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS): 2,
@@ -331,6 +333,7 @@ def _known_legacy_references() -> dict[pathlib.Path, list[str]]:
             *[f"{_PLUGIN_PREFIX}:process-feedbacks"] * 4,
             f"{_PLUGIN_PREFIX}:reviewee-standards",
             f"{_PLUGIN_PREFIX}:shell-exec",
+            f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py",
         ],
     }
 

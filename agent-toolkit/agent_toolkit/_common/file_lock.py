@@ -1,6 +1,6 @@
 """Claude Code agent-toolkit: ファイルロック・ログローテーションの共通ヘルパー。
 
-`_common/session_state.py`のセッション状態排他ロックと`_hooks/stop_gate.py`の常時ログローテーションが
+`_common/session_state.py`のセッション状態排他ロックと`_hooks/stop_session.py`の常時ログローテーションが
 同一実装を個別に持っていたため、本モジュールへ集約する。
 POSIX/NT両対応のロック取得・解放と、サイズ超過時の1世代ローテーションを提供する。
 """

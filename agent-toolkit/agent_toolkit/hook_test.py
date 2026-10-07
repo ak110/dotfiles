@@ -33,23 +33,22 @@ from agent_toolkit.atk_test import _setup_notes
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 
-_SUBCOMMANDS = (
-    "pretooluse",
-    "posttooluse",
-    "stop",
-    "autonomous_exit",
-    "plan_save_advisor",
-    "agents_server_session_advisor",
-    "pending_question_advisor",
-    "subagent_stop_advisor",
-    "session_end_cleanup",
-    "stopfailure_notifier",
-    "permissionrequest",
-    "permissionrequest_codex",
-    "rules_context",
-    "rules_context_codex",
-    "user_prompt_submit",
-)
+_HOOK_DEFINITIONS = tuple(_SCRIPT.parents[1] / "hooks" / name for name in ("hooks.json", "hooks.codex.json"))
+
+
+def _registered_subcommands() -> tuple[str, ...]:
+    """Claude Code・Codexのhook定義が`hook.py`（`atk-hook`）へ渡すサブコマンドの和集合を返す。"""
+    names: set[str] = set()
+    for path in _HOOK_DEFINITIONS:
+        definitions = json.loads(path.read_text(encoding="utf-8"))["hooks"]
+        for entries in definitions.values():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    names.add(hook["command"].split()[-1])
+    return tuple(sorted(names))
+
+
+_SUBCOMMANDS = _registered_subcommands()
 
 
 def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -106,13 +105,13 @@ class TestEntrypointExceptionStages:
 
     def test_module_import_error_emits_only_traceback(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / "_hooks" / "autonomous_exit.py").write_text(
+        (tmp_path / "_hooks" / "session_end_cleanup.py").write_text(
             "raise ImportError('module failure')\n",
             encoding="utf-8",
         )
 
         result = subprocess.run(
-            [sys.executable, str(entrypoint), "autonomous_exit"],
+            [sys.executable, str(entrypoint), "session_end_cleanup"],
             input="",
             capture_output=True,
             text=True,
@@ -122,7 +121,7 @@ class TestEntrypointExceptionStages:
         assert result.returncode == 0
         assert not result.stdout
         assert result.stderr.startswith("Traceback (most recent call last):")
-        assert "[autonomous_exit] 想定外エラー" not in result.stderr
+        assert "[session_end_cleanup] 想定外エラー" not in result.stderr
 
     def test_non_approve_fallback_subcommand_exception_returns_0_without_json(
         self,
@@ -241,7 +240,8 @@ class TestStandardInputAndPayloadDump:
         assert auto_message_opening_attributes(stderr) == {"source": "hook", "kind": "warn"}
         assert "\nhook定義と実装が不整合:" in stderr
         assert "stop_advisor" in stderr
-        assert "|".join(sorted(_SUBCOMMANDS)) in stderr
+        # hook.pyが受け付けるサブコマンドは、hook定義（hooks.json・hooks.codex.json）が登録するものと一致する。
+        assert f"現行のサブコマンド: {'|'.join(_SUBCOMMANDS)}。" in stderr
 
     def test_no_subcommand_reports_usage(self) -> None:
         result = subprocess.run(

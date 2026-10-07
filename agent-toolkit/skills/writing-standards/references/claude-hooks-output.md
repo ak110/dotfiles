@@ -21,7 +21,7 @@ PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェン�
 stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 `systemMessage`はユーザーの判断・操作に影響する情報通知に限って使う。決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象は通知の対象に含めない。
 Stop/SubagentStopでそのターン継続を強制する用途は、エラーとして遮断する場合（振り返り誘導等）に`decision: "block"`＋`reason`を、フックの想定内の助言に`hookSpecificOutput.additionalContext`を採用する。
-永続ログはstderr出力ではなく`_hooks.stop_gate.append_stop_log`等の専用APIに集約する。
+永続ログはstderr出力ではなく`_hooks.stop_session.append_stop_log`等の専用APIに集約する。
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |

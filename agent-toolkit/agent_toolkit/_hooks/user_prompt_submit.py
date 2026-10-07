@@ -73,6 +73,7 @@ from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disab
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks import plugin_resources as _plugin_resources
 from agent_toolkit._hooks import termination_evidence
+from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -84,7 +85,6 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     VERIFICATION_NOTICE_BODY,
     clear_user_confirmation_pending,
 )
-from agent_toolkit._hooks.tool_input import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -302,7 +302,7 @@ def main(payload_text: str) -> int:
         return 0
 
     machine_injected = _is_machine_injected(payload, prompt)
-    is_codex = "model" in payload or is_codex_payload(payload)
+    is_codex = is_codex_payload(payload)
     first_line = prompt.split("\n", 1)[0].strip()
     command_prefix = "$" if is_codex else "/"
     # スラッシュコマンドで始まる発話もユーザー自身の入力であり、注記の対象に含める。

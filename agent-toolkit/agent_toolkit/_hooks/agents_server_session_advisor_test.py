@@ -7,9 +7,11 @@ import re
 
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _HOOK = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
+_STOP_CHECK_RUNNER = pathlib.Path(_stop_check_runner.__file__)
 # 警告の契約: 未観測の作業が残ることと、実在する観測手段（`atk agents wait`）・破棄手段（`kill`）を次の操作として示すこと。
 _WARNING_BODY = "`agents_server`の`session`に、観測を試みていない作業が残っている。"
 _NEXT_ACTION_PATTERN = re.compile(r"\n次の操作: [^\n]*`atk agents wait`[^\n]*`kill\(session_id\)`")
@@ -76,7 +78,7 @@ def _run_stop(
     environment["CLAUDE_CODE_SESSION_ID"] = local_session_id
     environment["XDG_STATE_HOME"] = str(state_directory)
     result = _fork_runner.run_script(
-        _HOOK,
+        _STOP_CHECK_RUNNER,
         argv=("agents_server_session_advisor",),
         input=json.dumps(payload),
         env=environment,
@@ -199,7 +201,7 @@ def test_subagent_transcript_path_does_not_identify_the_caller(tmp_path: pathlib
         "transcript_path": str(tmp_path / "agent-child-1.jsonl"),
     }
     result = _fork_runner.run_script(
-        _HOOK,
+        _STOP_CHECK_RUNNER,
         argv=("agents_server_session_advisor",),
         input=json.dumps(payload),
         env=_environment(tmp_path),
@@ -464,7 +466,7 @@ def test_stop_hook_active_emits_nothing(tmp_path: pathlib.Path) -> None:
 def test_malformed_payload_allows_stop(tmp_path: pathlib.Path) -> None:
     """payload不正時は何も出力せず終了を許可する。"""
     result = _fork_runner.run_script(
-        _HOOK,
+        _STOP_CHECK_RUNNER,
         argv=("agents_server_session_advisor",),
         input="not-json",
         env=_environment(tmp_path),

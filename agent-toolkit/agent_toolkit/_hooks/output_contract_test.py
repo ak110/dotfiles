@@ -20,7 +20,7 @@ _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _HOOK_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _HOOKS_PATH = _PLUGIN_ROOT / "hooks" / "hooks.json"
 # 子プロセスで起動するStopフックへはconftestの待機の差し替えが及ばないため、末尾を`end_turn`で終えるtranscriptを渡し、
-# `stop_gate._wait_for_end_turn`が上限まで待たずに判定へ進むようにする。
+# `transcript_scan.wait_for_end_turn`が上限まで待たずに判定へ進むようにする。
 _FINISHED_TURN_ENTRIES = [
     {"type": "assistant", "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "完了しました。"}]}}
 ]

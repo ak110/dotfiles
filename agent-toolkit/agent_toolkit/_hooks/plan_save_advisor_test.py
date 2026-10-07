@@ -9,11 +9,12 @@ import pytest
 
 from agent_toolkit._plan import owner_records as _owner_records
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
+_SCRIPT = pathlib.Path(_stop_check_runner.__file__)
 # 子プロセスで起動するStopフックへはconftestの待機の差し替えが及ばないため、末尾を`end_turn`で終えるtranscriptを渡し、
-# `stop_gate._wait_for_end_turn`が上限まで待たずに判定へ進むようにする。
+# `transcript_scan.wait_for_end_turn`が上限まで待たずに判定へ進むようにする。
 _FINISHED_TURN_ENTRIES = [
     {"type": "assistant", "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "完了しました。"}]}}
 ]

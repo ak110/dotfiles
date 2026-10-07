@@ -7,7 +7,6 @@ import json
 import os
 import pathlib
 import re
-import sys
 import tempfile
 import time
 
@@ -24,6 +23,7 @@ from agent_toolkit._common.session_state import (
     update_state,
 )
 from agent_toolkit._common.task_stop_state import has_recent_completion, target_ids
+from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 from agent_toolkit._hooks import (
     plugin_resources as _plugin_resources,
 )
@@ -31,6 +31,7 @@ from agent_toolkit._hooks import (
     rules_context as _rules_context,
 )
 from agent_toolkit._hooks.notice import _WARN_TAG
+from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 
@@ -158,7 +159,6 @@ _AGENTS_SERVER_TOOL_NAMES = (
 # 集合の一致を確かめるテスト（pretooluse/dispatch_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
 AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 
-_AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 # --- 計画単位の状態管理 ---
 
 # `Skill`の`skill`引数として許容するplan-modeスキル名。
@@ -169,7 +169,7 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 # --- TaskStop: 初回遮断と再実行窓 ---
 
 
-def _check_task_stop(session_id: str, tool_input: dict) -> bool:
+def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
     """自セッションのバックグラウンドタスクの所有記録または対象別の停滞検知完了記録がある`TaskStop`だけを許可する。
 
     停止対象が状態キー`background_task_ids`へ記録済みの場合は遮断しない。
@@ -189,33 +189,29 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     recorded_ids = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
     targets = target_ids(tool_input)
     if targets & recorded_ids or has_recent_completion(session_id, targets, now=now):
-        return False
-    print(
-        _block_notice(
-            "blocked: TaskStop。現在のセッションには、指定した対象のバックグラウンドタスクの所有記録も停滞検知完了記録も無い。"
-            "バックグラウンドタスクの停止は、ユーザーの明示的な即時停止要求があるか、"
-            "停滞検知の手順を完了した場合に限る。"
-            "この手順の完了条件は`agent-toolkit:delegation`の"
+        return None
+    return _block_notice(
+        "blocked: TaskStop。現在のセッションには、指定した対象のバックグラウンドタスクの所有記録も停滞検知完了記録も無い。"
+        "バックグラウンドタスクの停止は、ユーザーの明示的な即時停止要求があるか、"
+        "停滞検知の手順を完了した場合に限る。"
+        "この手順の完了条件は`agent-toolkit:delegation`の"
+        f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
+        "「停滞の検知と巻き取り」節が定める。"
+        "進行が遅いことや非効率に確認できることだけでは停止の指示にならない。"
+        "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
+        "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
+        fix=(
+            "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定する。"
+            "その他の対象は"
             f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
-            "「停滞の検知と巻き取り」節が定める。"
-            "進行が遅いことや非効率に確認できることだけでは停止の指示にならない。"
-            "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
-            "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
-            fix=(
-                "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定する。"
-                "その他の対象は"
-                f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
-                "「停滞の検知と巻き取り」節に従い、"
-                "対象別の停滞検知完了記録を作成してからTaskStopを実行する。"
-                '記録は`uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
-                '"${CLAUDE_PLUGIN_ROOT}/skills/delegation/scripts/record_stall_detection.py" '
-                "--session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`で作成し、"
-                "終了コード0を返した対象だけを5分以内に停止する。"
-            ),
+            "「停滞の検知と巻き取り」節に従い、"
+            "対象別の停滞検知完了記録を作成してからTaskStopを実行する。"
+            '記録は`uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
+            '"${CLAUDE_PLUGIN_ROOT}/skills/delegation/scripts/record_stall_detection.py" '
+            "--session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`で作成し、"
+            "終了コード0を返した対象だけを5分以内に停止する。"
         ),
-        file=sys.stderr,
     )
-    return True
 
 
 def _clear_current_plan_file_path(session_id: str) -> None:
@@ -248,7 +244,7 @@ def _record_iss_sidechain_probe(
     暫定機構: fb7 の実サンプル採取が目的。
     十分なサンプルが集まり代替判定機構が実装された時点で本ヘルパーは削除する。
     ログ出力先はtempfile.gettempdir()起点でsession_id単位に分離する
-    （_stop_gate.pyの_stop_log_path先例に揃える）。
+    （`stop_session.py`の`_stop_log_path`先例に揃える）。
     ローテーションと追記は`_file_lock.locked_rotate_and_append`へ委譲する。
     """
     try:
@@ -270,7 +266,7 @@ def _record_iss_sidechain_probe(
         pass
 
 
-def _check_agents_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> bool | str:
+def _check_agents_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> Decision:
     """`send_message`・`kill`の入力と保存済みcwdから操作の可否を判定する。
 
     必須値の欠落はツール自身が拒否する可逆な入力不成立として警告する。
@@ -280,33 +276,35 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
     if tool_name in _AGENTS_SERVER_SEND_TOOLS:
         prompt = tool_input.get("prompt")
         if not isinstance(prompt, str) or not prompt.strip():
-            return _llm_notice(
-                f"warn: {display_name}には空でない`prompt`が必要である。",
-                tag=_WARN_TAG,
-                fix="空でない`prompt`を指定して再実行する。",
-                removable_cause=True,
+            return Decision(
+                context=_llm_notice(
+                    f"warn: {display_name}には空でない`prompt`が必要である。",
+                    tag=_WARN_TAG,
+                    fix="空でない`prompt`を指定して再実行する。",
+                    removable_cause=True,
+                ),
+                allow=True,
             )
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
-        return _llm_notice(
-            f"warn: {display_name}には空でない`session_id`が必要である。",
-            tag=_WARN_TAG,
-            fix=("`start`が返した`session_id`を指定して再実行する。"),
-            removable_cause=True,
+        return Decision(
+            context=_llm_notice(
+                f"warn: {display_name}には空でない`session_id`が必要である。",
+                tag=_WARN_TAG,
+                fix=("`start`が返した`session_id`を指定して再実行する。"),
+                removable_cause=True,
+            ),
+            allow=True,
         )
-    state = read_state(session_id)
-    cwd_map = state.get(_AGENTS_SERVER_SESSION_CWD_KEY)
-    if not isinstance(cwd_map, dict) or not isinstance(cwd_map.get(remote_session_id), str):
-        print(
-            _block_notice(
+    if _agents_server_observations.session_cwd(read_state(session_id), remote_session_id) is None:
+        return Decision(
+            block=_block_notice(
                 f"blocked: {display_name}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。",
                 fix=(
                     "対象が自身の起動した対象でない場合は、その対象を起動した委譲先へ`send_message`で追送し、"
                     "その委譲先に対象を打ち切らせる。"
                     "自身が所有する作業を続ける場合は、絶対`cwd`を指定した`agents_server`の`start`で新しいセッションを開始する。"
                 ),
-            ),
-            file=sys.stderr,
+            )
         )
-        return True
-    return False
+    return Decision(allow=True)
