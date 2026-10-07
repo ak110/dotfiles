@@ -1254,6 +1254,9 @@ class AgentsServerManager:
             api_error=getattr(session, "api_error", None) if status == "running" else None,
         )
         response.update(activity)
+        if status in TERMINAL_STATUSES and state.nonempty_error(session.error):
+            # 失敗で終端したsessionの原因を、結果の回収とは別に照会できるようにする。
+            response["error"] = session.error
         if status == "running" and isinstance(session, SessionState):
             active_tool_uses = session.active_tool_uses()
             if active_tool_uses:
@@ -3121,6 +3124,8 @@ async def show_session(
     打ち切り、`kill`または追送で確定した時点で待機対象が残った結果は`error`の`heldResultFinalized`が真で、
     再開したturnの結果ではない。残ったバックグラウンドタスクは`unfinishedBackgroundTasks`、子sessionは
     `unobservedSessions`に識別子を持つ。`unobservedSessions`だけでは保留の確定と区別できない。
+    終端したsessionが空でない`error`を保持する場合は、`error`を返す。失敗の原因と次の操作の判断に使える。
+    共有の登録簿だけから復元したsessionは`error`を保持しないため返さず、原因は`atk agents wait`の終端行で受け取る。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """

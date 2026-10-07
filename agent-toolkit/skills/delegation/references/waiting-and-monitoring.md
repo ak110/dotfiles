@@ -45,7 +45,7 @@
   「完了通知と中継の実行順」に従う）
 - 生存状態と対象は、起動結果が返した識別子、完了通知、成果物側の状態確認手段のいずれかで判定する。
   照会手段と停止手段が公開されない実行環境でも同様に確認し、成果物の更新時刻、末尾標識、`git log`および`git status`は補助の材料に留める
-- `atk agents wait`の応答の行の形式（JSON Lines、`session_id`と`label`、`agent_message_path`、`終端行:`の要約行）と待機の成立の判定は同CLIの`--help`に従う。依頼の判別には`label`を使う
+- `atk agents wait`の応答の行の形式（JSON Lines、`session_id`と`label`、`agent_message_path`、`終端行:`の要約行）と待機の成立の判定は同CLIの`--help`に従う。依頼の判別には`label`を使う。失敗で終端した行は、要約行の`error`で原因を確かめ、`next_action`に従って次の操作を選ぶ。結果を回収できなかった終端sessionの原因は`show`の`error`で確かめる
 - 同じ書込主体の`atk agents wait`が既に稼働している場合、後発は`current.json`が示すrun識別子を固定し、先行待機のlock解放後にそのrunが保存した本文と終了コードを返す。先行待機と後発待機は同じ結果を各1回受け取る
 - `atk agents wait`が返す終了コード8は、run記録を持たない旧形式の待機との競合、先行run記録の読取不能、未公開または回収済みを示す。待機対象の異常とは別の事象として、診断本文を委譲元へ返す
 - 目標評価の発動条件は`agent-toolkit/share/rules-main.claude-code.md`の`/goal`の条項に従う。

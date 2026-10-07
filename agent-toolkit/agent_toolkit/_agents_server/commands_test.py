@@ -332,12 +332,17 @@ def test_agents_wait_saves_notice_and_terminal_summary(
     ("error", "suffix"),
     [
         pytest.param(None, "", id="no-record"),
-        pytest.param({"message": "失敗"}, "", id="other-error"),
+        pytest.param({"message": "失敗"}, ' error={"message":"失敗"}', id="other-error"),
         # 自動再開を消費した後のturnの終端が残った子sessionを記録した結果（`codex.py`の`turn/completed`）。
         # 再開したturnの最終の結果であり、待機表明と取り違えさせない。
-        pytest.param({"unobservedSessions": ["child-1"]}, "", id="resumed-turn-with-unobserved-child"),
+        pytest.param(
+            {"unobservedSessions": ["child-1"]},
+            ' error={"unobservedSessions":["child-1"]}',
+            id="resumed-turn-with-unobserved-child",
+        ),
         pytest.param(
             {"unfinishedBackgroundTasks": ["buaqxv1xf"], "unobservedSessions": ["child-1"], "heldResultFinalized": True},
+            ' error={"unfinishedBackgroundTasks":["buaqxv1xf"],"unobservedSessions":["child-1"],"heldResultFinalized":true}'
             " unfinished_waits=2",
             id="remaining-targets",
         ),
@@ -436,6 +441,89 @@ def test_summarize_saved_wait_keeps_earlier_bodies_and_skips_oversized_or_unread
         "本文終了: session_id=session-2",
         f"終端行: session_id=session-3 label=なし status=completed agent_message_path={missing_body}",
     ]
+
+
+def test_summarize_saved_wait_shows_error_and_next_action_for_failed_row(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """失敗で終端した行の要約は`error`と`next_action`を示し、委譲元が保存先を開かずに原因と次の操作を読める。
+
+    `error`と`next_action`が要約に無いと、本文が空か作業途中の文である失敗を、委譲元が原因不明として継続を送る。
+    """
+    body_path = tmp_path / "body.md"
+    body_path.write_text("", encoding="utf-8")
+    saved = tmp_path / "output.txt"
+    next_action = "利用上限による失敗なら別のmodel_typeでstartし直す（例: model_type=medium_tier）"
+    _write_jsonl(
+        saved,
+        [
+            {
+                "session_id": "session-1",
+                "label": "WI投入",
+                "status": "failed",
+                "agent_message": "",
+                "engine": "codex",
+                "model": "gpt-5.6-sol",
+                "effort": "medium",
+                "model_type": "high_tier",
+                "error": {
+                    "codexErrorInfo": "usageLimitExceeded",
+                    "message": "Your workspace is out of credits. Add credits to continue.",
+                },
+                "next_action": next_action,
+                "agent_message_path": str(body_path),
+            }
+        ],
+    )
+
+    commands.summarize_saved_wait(saved)
+
+    terminal_line = capsys.readouterr().out.splitlines()[1]
+    assert terminal_line == (
+        f"終端行: session_id=session-1 label=WI投入 status=failed agent_message_path={body_path}"
+        " engine=codex model=gpt-5.6-sol effort=medium model_type=high_tier"
+        ' error={"codexErrorInfo":"usageLimitExceeded","message":"Your workspace is out of credits. Add credits to continue."}'
+        f' next_action="{next_action}"'
+    )
+
+
+def test_summarize_saved_wait_shows_all_fields_except_body_and_notices(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """終端行へ加わった項目は要約へそのまま現れ、本文と通知は要約行へ写さない。
+
+    項目を名前で選ぶ要約では、終端行へ後から加わった項目が委譲元へ届かない。
+    先頭4項目の名前と順序は、要約行を読む委譲元のために保つ。
+    """
+    saved = tmp_path / "output.txt"
+    _write_jsonl(
+        saved,
+        [
+            {
+                "new_field": "追加の値",
+                "agent_message": "本文",
+                "notices": [{"body": "通知本文"}],
+                "status": "completed",
+                "agent_message_path": "/tmp/body.md",
+                "spaced": "a b",
+                "empty": "",
+                "count": 3,
+                "session_id": "session-1",
+                "label": "調査",
+            }
+        ],
+    )
+
+    commands.summarize_saved_wait(saved)
+
+    output_lines = capsys.readouterr().out.splitlines()
+    terminal_line = next(line for line in output_lines if line.startswith("終端行: "))
+    assert terminal_line == (
+        "終端行: session_id=session-1 label=調査 status=completed agent_message_path=/tmp/body.md"
+        ' new_field=追加の値 spaced="a b" empty="" count=3'
+    )
+    assert "本文" not in terminal_line
+    assert "通知本文" not in terminal_line
 
 
 @pytest.mark.usefixtures("session_environment")

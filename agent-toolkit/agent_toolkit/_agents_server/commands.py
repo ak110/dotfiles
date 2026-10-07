@@ -82,11 +82,19 @@ def _dump(payload: Any, environment: Mapping[str, str]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+# 要約行の先頭に固定の順序で置く項目と、要約行から除く項目。
+# `agent_message`は`agent_message_path`の本文として、`notices`は`通知:`の行として別に示す。
+_SUMMARY_LEADING_KEYS = ("session_id", "label", "status", "agent_message_path")
+_SUMMARY_EXCLUDED_KEYS = frozenset({"agent_message", "notices"})
+
+
 def summarize_saved_wait(path: pathlib.Path) -> None:
     """保存した待機結果に含まれる通知と終端の内訳を、直接表示できる量の本文とともに表示する。
 
-    終端行ごとに`label`、`status`および`agent_message_path`を1行ずつ示し、呼び出し元が保存先を開かずに
-    どの依頼が終端したかと結果本文のファイルの所在を得られるようにする。
+    終端行ごとに、本文を運ぶ`agent_message`と件数を別の行で示す`notices`を除く全項目を1行ずつ示す。
+    先頭は`session_id`、`label`、`status`、`agent_message_path`の順とし、`error`と`next_action`を含む残りの項目を続ける。
+    呼び出し元は保存先を開かずに、どの依頼が終端したか、結果本文のファイルの所在、失敗の原因と次の操作を得られる。
+    終端行へ項目が加わった場合も、本関数を変えずに要約へ現れる。
     保留した結果を待機対象が残ったまま確定した終端結果は、`unfinished_waits`へ残った待機対象の件数を加える。
     結果本文はその時点の待機表明であり再開したturnの結果ではないことを、委譲元が終端行だけから判別できるようにする。
     行頭は`保存先:`以外とし、保存先の行を読む既存の処理と競合させない。
@@ -127,6 +135,11 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
                     f"label={result.get('label') or 'なし'}",
                     f"status={result.get('status')}",
                     f"agent_message_path={result.get('agent_message_path') or 'なし'}",
+                    *(
+                        f"{key}={_summary_value(value)}"
+                        for key, value in result.items()
+                        if key not in _SUMMARY_LEADING_KEYS and key not in _SUMMARY_EXCLUDED_KEYS
+                    ),
                 ]
                 unfinished_waits = _unfinished_wait_count(result.get("error"))
                 if unfinished_waits:
@@ -154,6 +167,17 @@ def summarize_saved_wait(path: pathlib.Path) -> None:
             print(line)
             if body_entry is not None:
                 remaining = _print_body_within(*body_entry, remaining)
+
+
+def _summary_value(value: object) -> str:
+    """要約行の項目の値を、空白で区切った他の項目と区別できる1行の表記へ変換する。
+
+    空白を含まない空でない文字列はそのまま示し、それ以外（空白や改行を含む文字列、辞書、数値など）は
+    改行を含まないJSONで示す。
+    """
+    if isinstance(value, str) and value and not value.startswith('"') and not any(char.isspace() for char in value):
+        return value
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:

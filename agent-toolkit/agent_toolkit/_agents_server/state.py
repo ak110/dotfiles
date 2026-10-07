@@ -431,7 +431,8 @@ def activity_projection(
     return projection
 
 
-def _nonempty_error(error: Any) -> bool:
+def nonempty_error(error: Any) -> bool:
+    """`error`が公開応答へ含める内容を持つかを返す（`None`、空文字列、空の辞書は持たない）。"""
     return error is not None and error != "" and error != {}
 
 
@@ -453,7 +454,7 @@ def public_result(payload: Mapping[str, Any]) -> dict[str, Any]:
         )
         if key in payload
     }
-    if _nonempty_error(payload.get("error")):
+    if nonempty_error(payload.get("error")):
         result["error"] = payload["error"]
     return result
 
@@ -758,7 +759,7 @@ class SessionState:
         if include_result and self.result_available:
             result["agent_message"] = self.agent_message
             result.update(engine=self.engine, model=self.model, effort=self.effort, model_type=self.model_type)
-            if _nonempty_error(self.error):
+            if nonempty_error(self.error):
                 result["error"] = self.error
         return result
 
@@ -770,7 +771,7 @@ class SessionState:
             "status": self.status,
             "agent_message": self.agent_message,
         }
-        if _nonempty_error(self.error):
+        if nonempty_error(self.error):
             result["error"] = self.error
         return with_result_next_action(result, self.label)
 
@@ -894,7 +895,7 @@ def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[
         "effort": session.effort,
         "model_type": session.model_type,
     }
-    if _nonempty_error(session.error):
+    if nonempty_error(session.error):
         result["error"] = session.error
     return result
 
@@ -1275,7 +1276,7 @@ def _merge_error_identifiers(session: SessionState, key: str, identifiers: set[s
     error: dict[str, Any]
     if isinstance(current, dict):
         error = dict(current)
-    elif _nonempty_error(current):
+    elif nonempty_error(current):
         error = {"message": str(current)}
     else:
         error = {}

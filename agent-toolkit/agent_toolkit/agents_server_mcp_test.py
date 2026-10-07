@@ -3169,6 +3169,53 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
 
 
 @pytest.mark.asyncio
+async def test_show_returns_error_of_terminal_session(tmp_path: pathlib.Path) -> None:
+    """保持中・期限切れ・破棄後の終端sessionが空でない`error`を持つ場合だけ、`show`が`error`を返す。
+
+    `show`が`error`を返さないと、結果を回収できなかった委譲元は失敗の原因を確かめられず、
+    利用上限で失敗したsessionへ継続を送り直す。
+    """
+    manager, _ = _manager_with_fake("codex")
+    usage_limit = {"codexErrorInfo": "usageLimitExceeded", "message": "Your workspace is out of credits."}
+    failed = subject.SessionState("failed-held", str(tmp_path), engine="codex")
+    _complete(failed, message="", error=usage_limit)
+    manager.sessions[failed.session_id] = failed
+    completed = subject.SessionState("completed-held", str(tmp_path), engine="codex")
+    _complete(completed)
+    manager.sessions[completed.session_id] = completed
+    running = subject.SessionState("running-held", str(tmp_path), engine="codex")
+    running.error = {"message": "前のturnの失敗"}
+    manager.sessions[running.session_id] = running
+    manager.expired_sessions["failed-expired"] = state.SessionResumeState(
+        session_id="failed-expired",
+        cwd=str(tmp_path),
+        model=None,
+        effort=None,
+        engine="claude",
+        status="failed",
+        error="API Error",
+    )
+    manager.stopped_sessions["failed-stopped"] = state.SessionResumeState(
+        session_id="failed-stopped",
+        cwd=str(tmp_path),
+        model=None,
+        effort=None,
+        engine="codex",
+        status="failed",
+        error=usage_limit,
+    )
+    manager.stopped_sessions["completed-stopped"] = state.SessionResumeState(
+        session_id="completed-stopped", cwd=str(tmp_path), model=None, effort=None, engine="codex", status="completed", error={}
+    )
+
+    assert manager.show_session("failed-held")["error"] == usage_limit
+    assert manager.show_session("failed-expired")["error"] == "API Error"
+    assert manager.show_session("failed-stopped", verbose=True)["error"] == usage_limit
+    for session_id in ("completed-held", "running-held", "completed-stopped"):
+        assert "error" not in manager.show_session(session_id)
+
+
+@pytest.mark.asyncio
 async def test_claude_api_error_is_visible_in_show_and_list(tmp_path: pathlib.Path) -> None:
     """ClaudeのAPI失敗を両方の公開手段で示し、再試行と回復を区別できる。"""
     manager, _ = _manager_with_fake("claude")
