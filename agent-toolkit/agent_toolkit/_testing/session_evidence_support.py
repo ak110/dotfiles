@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
+import time
+from collections.abc import Iterator
 
 import pytest
 
@@ -295,3 +298,24 @@ def tool_call_session(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, l
         ],
     )
     return transcript
+
+
+@pytest.fixture(name="local_time_jst")
+def local_time_jst() -> Iterator[None]:
+    """ローカルタイムゾーンをUTC以外のJST（UTC+9）へ固定し、テスト後に元へ戻す。
+
+    タイムゾーンを省いた時刻の解釈を、テストを実行するホストのタイムゾーン設定に依存させないため。
+    `agent-toolkit/conftest.py`が自身の名前空間へ代入して、`skills/`配下のテストへ提供する。
+    スキル付属スクリプトのディレクトリへ`conftest.py`を置くと、mypyが同名の最上位モジュールとして重複を報告するためである。
+    """
+    previous = os.environ.get("TZ")
+    os.environ["TZ"] = "JST-9"
+    time.tzset()
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        time.tzset()
