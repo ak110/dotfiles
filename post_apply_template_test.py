@@ -81,6 +81,14 @@ def test_windows_post_apply_failure_exit_propagates(tmp_path: Path) -> None:
     assert result.returncode == 23, result.stderr
 
 
+def test_windows_template_does_not_run_uv_update_shell() -> None:
+    """ユーザーPATHの登録はpost-applyの工程だけが行い、テンプレートは`uv tool update-shell`を呼ばない。
+
+    `uv tool update-shell`と`cleanup_user_path`の正規化が異なると、再導入のたびにユーザーPATHを書き換え合う。
+    """
+    assert "update-shell" not in _read(WINDOWS_TEMPLATE)
+
+
 def test_windows_media_remote_has_pre_post_apply_fallback() -> None:
     """post-apply前のmedia-remote復帰に配布バイナリの代替経路を持つ。"""
     text = _read(WINDOWS_TEMPLATE)
@@ -308,7 +316,7 @@ $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
     assert empty_output == ["  [pytools] 更新対象の使用中プロセス: 候補0件 再起動可0件 再起動不可0件"]
 
     treatment_start = text.index("if ($env:COMPUTERNAME -eq 'stheno' -and -not $needsReinstall) {")
-    treatment_end = text.index("\n\n# uv tool update-shell", treatment_start)
+    treatment_end = text.index("\n\n# `~\\.local\\bin` が現プロセスの PATH に無い場合がある", treatment_start)
     treatment = text[treatment_start:treatment_end]
 
     def run_treatment_scenario(name: str, fixtures: str) -> tuple[dict[str, object], list[str]]:

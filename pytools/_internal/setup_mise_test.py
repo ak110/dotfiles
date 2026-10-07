@@ -641,6 +641,7 @@ def _windows_env(
 
     state: dict[str, typing.Any] = {
         "existing": ("", _WinregFake.REG_SZ),
+        "system": "",
         "writes": [],
         "broadcasts": 0,
         "shims_dir": shims_dir,
@@ -656,7 +657,12 @@ def _windows_env(
     def fake_broadcast() -> None:
         state["broadcasts"] += 1
 
+    def fake_read_system(name: str) -> tuple[str | None, int]:
+        del name
+        return state["system"], _WinregFake.REG_EXPAND_SZ
+
     monkeypatch.setattr(winutils, "read_user_env_var", fake_read)
+    monkeypatch.setattr(winutils, "read_system_env_var", fake_read_system)
     monkeypatch.setattr(winutils, "write_user_env_var", fake_write)
     monkeypatch.setattr(winutils, "broadcast_environment_change", fake_broadcast)
     monkeypatch.setattr(winutils, "import_winreg", lambda: _WinregFake)
@@ -700,6 +706,13 @@ class TestRunWindowsPathSetup:
         # %LOCALAPPDATA% 展開済みかつ大小不一致のエントリを既登録として認識する
         expanded = str(windows_env["shims_dir"]).upper()
         windows_env["existing"] = (f"C:\\WINDOWS;{expanded}", _WinregFake.REG_EXPAND_SZ)
+        _setup_mise.run()
+        assert not windows_env["writes"]
+
+    def test_already_registered_in_system_path(self, windows_env: dict[str, typing.Any]):
+        """システム側に同じディレクトリがあればユーザー側へ書き込まない。"""
+        windows_env["existing"] = (r"C:\Windows", _WinregFake.REG_EXPAND_SZ)
+        windows_env["system"] = str(windows_env["shims_dir"])
         _setup_mise.run()
         assert not windows_env["writes"]
 

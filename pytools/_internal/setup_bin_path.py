@@ -1,9 +1,11 @@
-r"""ユーザーPATHへの`%USERPROFILE%\dotfiles\bin`および`%USERPROFILE%\dotfiles\agent-toolkit\bin`登録（Windowsのみ）。
+r"""ユーザーPATHへの`bin`ディレクトリ群の登録（Windowsのみ）。
 
-`bin/`はリポジトリ直下にあるchezmoi管理外ディレクトリで、Linuxでは`~/.bashrc`で
-`$HOME/dotfiles/bin`および`$HOME/dotfiles/agent-toolkit/bin`をPATHへ追加する。
+`%USERPROFILE%\dotfiles\bin`・`%USERPROFILE%\dotfiles\agent-toolkit\bin`と、`uv tool install`が実行ファイルを置く
+`%USERPROFILE%\.local\bin`を登録する。
+Linuxでは`~/.bashrc`が同じディレクトリをPATHへ追加する。
 Windowsには対応する自動投入経路がないため、`chezmoi apply`後処理で
 `HKCU\Environment`の`Path`へ冪等に追記する。
+`.local\bin`は`uv tool update-shell`へ任せず本工程で登録し、登録済みの判定を`winutils.append_user_path`の1か所にそろえる。
 """
 
 import logging
@@ -18,6 +20,7 @@ logger = logging.getLogger(__name__)
 _BIN_ENTRIES: tuple[str, ...] = (
     r"%USERPROFILE%\dotfiles\bin",
     r"%USERPROFILE%\dotfiles\agent-toolkit\bin",
+    r"%USERPROFILE%\.local\bin",
 )
 
 

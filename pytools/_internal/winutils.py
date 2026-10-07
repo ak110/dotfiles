@@ -7,7 +7,9 @@ Windows専用標準モジュール（winreg・msvcrt・ctypes.windll等）はLin
 """
 
 import logging
+import ntpath
 import typing
+from pathlib import PureWindowsPath
 
 logger = logging.getLogger(__name__)
 
@@ -93,19 +95,43 @@ def broadcast_environment_change() -> None:
         logger.info("環境変数変更のブロードキャストに失敗: %s", e)
 
 
+def path_key(entry: str) -> str:
+    """PATHのエントリーを、登録済みかどうかの比較に使う正規化キーへ変換する。
+
+    `ntpath.expandvars`で環境変数を展開し`PureWindowsPath`を通したうえで小文字化し、
+    `%USERPROFILE%`表記と展開済みの表記、区切り文字の向き、末尾の区切り、大文字小文字の差を吸収する。
+    展開後が空のエントリーは空文字を返す。
+    """
+    expanded = ntpath.expandvars(entry)
+    if not expanded:
+        return ""
+    return str(PureWindowsPath(expanded)).lower()
+
+
 def append_user_path(entry: str) -> bool:
-    """ユーザースコープのPATH環境変数に `entry` を追記する（重複は追加しない）。
+    """ユーザースコープのPATH環境変数の末尾へ`entry`を追記する。
+
+    ユーザー側またはシステム側に`path_key`が同じエントリーが1件でもあれば登録済みとして書き込まない。
+    PATHへ登録する処理は、独自の比較を持たずに本関数を使う。比較の方法が処理ごとに異なると、
+    登録する処理とユーザーPATHを整理する処理（`cleanup_user_path`）が実行のたびに同じ値を書き換え合う。
+    `%`を含む値を書き込む場合、既存の値型がREG_SZならREG_EXPAND_SZへ改めて展開させる。
 
     Returns:
         実際に追記した場合True、既に含まれていればFalse。
     """
+    wr = import_winreg()
     current, reg_type = read_user_env_var("Path")
     if current is None:
         current = ""
-        reg_type = import_winreg().REG_EXPAND_SZ
+        reg_type = wr.REG_EXPAND_SZ
+    system_value, _ = read_system_env_var("Path")
     entries = [e for e in current.split(";") if e]
-    if entry in entries:
+    registered = {path_key(e) for e in [*entries, *(system_value or "").split(";")] if e}
+    if path_key(entry) in registered:
         return False
     entries.append(entry)
-    write_user_env_var("Path", ";".join(entries), reg_type)
+    new_value = ";".join(entries)
+    if "%" in new_value and reg_type == wr.REG_SZ:
+        reg_type = wr.REG_EXPAND_SZ
+    write_user_env_var("Path", new_value, reg_type)
     return True

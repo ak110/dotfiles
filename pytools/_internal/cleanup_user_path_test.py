@@ -7,11 +7,13 @@
 
 # pylint: disable=protected-access
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from pytools._internal import cleanup_user_path
+from pytools._internal import cleanup_user_path, install_libarchive, setup_bin_path, setup_mise
+
+from ._test_helpers import FakeEnvironmentRegistry
 
 # `winreg.REG_EXPAND_SZ` / `REG_SZ` の値。Linux 上では `winreg` をインポートできないため、
 # Windows 上の定数値を直接埋め込んでテストの再現性を確保する。
@@ -570,3 +572,37 @@ def _stub_winutils(
         # stub_find_missing を省略した場合は存在チェック警告を抑止する (テストごとに必要なら明示的に差し替える)。
         monkeypatch.setattr(cleanup_user_path, "_find_missing_paths", lambda entries: ([], []))
     return write_calls, broadcast_calls
+
+
+def test_registration_then_cleanup_is_fixed_point(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """登録の工程とPATH整理を2巡しても、2巡目は書き込みが無くPATH整理も変更なしを返す。
+
+    ユーザー側に展開済みの表記、システム側に登録対象と同じディレクトリを置き、
+    登録の工程とPATH整理が異なる比較で同じ値を書き換え合わないことを確かめる。
+    """
+    local_app_data = tmp_path / "AppData" / "Local"
+    (local_app_data / "mise" / "shims").mkdir(parents=True)
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+    registry = FakeEnvironmentRegistry(
+        user_path=rf"C:\Windows;{_USERPROFILE}\dotfiles\bin",
+        system_path=rf"C:\Windows\System32;{local_app_data}\mise\shims",
+    )
+    registry.install(monkeypatch)
+    monkeypatch.setattr(install_libarchive, "_INSTALL_DIR", PureWindowsPath(_USERPROFILE) / ".local" / "lib" / "libarchive")
+    monkeypatch.setattr(install_libarchive, "_is_already_available", lambda: False)
+    monkeypatch.setattr(install_libarchive, "_download_dlls", lambda: True)
+    monkeypatch.setattr(install_libarchive, "_persist_libarchive_env_var", lambda: False)
+
+    def register_all() -> None:
+        assert setup_bin_path.run().failure is None
+        assert install_libarchive.run().failure is None
+        # miseの工程全体はmise本体の起動を伴うため、ユーザーPATHへ登録する処理だけを呼ぶ。
+        setup_mise._ensure_windows_user_path_has_shims()  # noqa: SLF001  # pylint: disable=protected-access
+
+    register_all()
+    cleanup_user_path.run()
+    registry.writes.clear()
+
+    register_all()
+    assert cleanup_user_path.run().changed is False
+    assert not registry.writes

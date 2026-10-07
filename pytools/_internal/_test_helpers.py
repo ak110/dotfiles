@@ -202,3 +202,45 @@ def run_update_claude_settings(tmp_path: Path, managed: dict, existing: dict | N
         removed_list_item_substrings=(),
     )
     return json.loads(target_path.read_text(encoding="utf-8"))
+
+
+class FakeEnvironmentRegistry:
+    """`winutils`のレジストリ読み書きを置き換える、ユーザー側とシステム側の環境変数の記憶域。
+
+    `install`で`winutils`の関数を差し替え、`writes`で書き込みの記録を観測する。
+    """
+
+    REG_SZ = 1
+    REG_EXPAND_SZ = 2
+
+    def __init__(self, *, user_path: str = "", system_path: str = "", user_path_type: int = REG_EXPAND_SZ) -> None:
+        self.user: dict[str, tuple[str, int]] = {"Path": (user_path, user_path_type)} if user_path else {}
+        self.system: dict[str, tuple[str, int]] = {"Path": (system_path, self.REG_EXPAND_SZ)}
+        self.writes: list[tuple[str, str, int]] = []
+
+    def install(self, monkeypatch: typing.Any) -> None:
+        """`winutils`のレジストリ関数をこの記憶域へ向ける。"""
+        from pytools._internal import winutils  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        monkeypatch.setattr(winutils, "import_winreg", lambda: self)
+        monkeypatch.setattr(winutils, "read_user_env_var", self.read_user)
+        monkeypatch.setattr(winutils, "read_system_env_var", self.read_system)
+        monkeypatch.setattr(winutils, "write_user_env_var", self.write_user)
+        monkeypatch.setattr(winutils, "broadcast_environment_change", lambda: None)
+
+    def read_user(self, name: str) -> tuple[str | None, int]:
+        """ユーザー側の値と値型を返す。"""
+        return self.user.get(name, (None, self.REG_SZ))
+
+    def read_system(self, name: str) -> tuple[str | None, int]:
+        """システム側の値と値型を返す。"""
+        return self.system.get(name, (None, self.REG_SZ))
+
+    def write_user(self, name: str, value: str, reg_type: int) -> None:
+        """ユーザー側へ書き込み、記録する。"""
+        self.user[name] = (value, reg_type)
+        self.writes.append((name, value, reg_type))
+
+    def user_path(self) -> str:
+        """ユーザー側の`Path`を返す。"""
+        return self.user.get("Path", ("", self.REG_SZ))[0]

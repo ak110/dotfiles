@@ -549,29 +549,14 @@ def _ensure_windows_user_path_has_shims() -> bool:
         return False
 
     try:
-        current_value, value_type = winutils.read_user_env_var("Path")
+        appended = winutils.append_user_path(_WINDOWS_SHIMS_ENTRY)
     except OSError as e:
-        raise _SettingError(f"ユーザー PATH の読み取りに失敗: {e}") from e
-    if current_value is None:
-        current_value = ""
-
-    # `%LOCALAPPDATA%` を展開させたいので、元が REG_SZ だった場合も REG_EXPAND_SZ に
-    # 揃えて書き戻す (REG_SZ のままだとリテラルで扱われて shims にアクセスできない)。
-    wr = winutils.import_winreg()
-    if value_type != wr.REG_EXPAND_SZ:
-        value_type = wr.REG_EXPAND_SZ
-
-    already_registered = _path_contains_shims(current_value, shims_dir)
-    if already_registered:
-        logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} は既に登録済み"))
-    else:
-        new_value = _append_entry(current_value, _WINDOWS_SHIMS_ENTRY)
-        try:
-            winutils.write_user_env_var("Path", new_value, value_type)
-        except OSError as e:
-            raise _SettingError(f"ユーザー PATH の書き込みに失敗: {e}") from e
+        raise _SettingError(f"ユーザー PATH の更新に失敗: {e}") from e
+    if appended:
         logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} を追加しました"))
         winutils.broadcast_environment_change()
+    else:
+        logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} は既に登録済み"))
 
     # 現プロセスの PATH にも反映しておく (post_apply の後続ステップが shims 内の
     # コマンドを参照できるようにするため)。冪等性のため重複追加は避ける。
@@ -582,32 +567,7 @@ def _ensure_windows_user_path_has_shims() -> bool:
             separator = os.pathsep if current_process_path else ""
             os.environ["PATH"] = current_process_path + separator + str(shims_dir)
 
-    return not already_registered
-
-
-def _path_contains_shims(current_value: str, shims_dir: Path) -> bool:
-    r"""PATH文字列にshimsディレクトリが既に含まれているかを判定する。
-
-    レジストリに ``%LOCALAPPDATA%\mise\shims`` のまま格納されているケースと、
-    既に展開済みの絶対パスが格納されているケースの両方を許容する。
-    """
-    entries = [entry for entry in current_value.split(_WINDOWS_PATHSEP) if entry]
-    shims_str = str(shims_dir).lower()
-    for entry in entries:
-        normalized = os.path.expandvars(entry).lower()
-        if normalized == shims_str:
-            return True
-        if entry.lower() == _WINDOWS_SHIMS_ENTRY.lower():
-            return True
-    return False
-
-
-def _append_entry(current_value: str, new_entry: str) -> str:
-    """PATH 末尾に新エントリを追加する。末尾の `;` は重複させない。"""
-    if current_value == "":
-        return new_entry
-    separator = "" if current_value.endswith(_WINDOWS_PATHSEP) else _WINDOWS_PATHSEP
-    return current_value + separator + new_entry
+    return appended
 
 
 def _run_mise(
