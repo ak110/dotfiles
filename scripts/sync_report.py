@@ -34,7 +34,7 @@ def now_text() -> str:
 
 
 def truncate_tail(text: str) -> str | None:
-    """標準エラーの末尾を上限付きで返す。空文字列は`None`として扱う。"""
+    """子の出力（標準エラーを含む）の末尾を上限付きで返す。空文字列は`None`として扱う。"""
     stripped = text.strip()
     if not stripped:
         return None

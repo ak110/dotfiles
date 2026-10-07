@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -39,7 +40,8 @@ def test_windows_post_apply_final_condition_has_branch_local_order() -> None:
     text = _read(WINDOWS_TEMPLATE)
     final_start = text.rindex("$postApplyBin = Join-Path $env:USERPROFILE '.local\\bin\\dotfiles-post-apply.exe'")
     before = text[:final_start]
-    final_block = text[final_start:].strip()
+    # 末尾は出力の文字コードを元へ戻すfinallyであり、最終条件分岐の後に置く。
+    final_block = text[final_start : text.rindex("} finally {")].strip()
 
     assert "Start-Process" in before
     assert "Start-Process" not in final_block
@@ -69,8 +71,10 @@ def test_windows_post_apply_failure_exit_propagates(tmp_path: Path) -> None:
     assignment = final_block.splitlines()[0]
     escaped_path = str(post_apply).replace("'", "''")
     final_block = final_block.replace(assignment, f"$postApplyBin = '{escaped_path}'", 1)
+    # テンプレートは本体をtryの内側へ置き、finallyで出力の文字コードを戻す。
+    # exitがfinallyを経ても終了コードを保つことを確かめる。
     runner = tmp_path / "run-post-apply.ps1"
-    runner.write_text(final_block, encoding="utf-8-sig")
+    runner.write_text("$originalOutputEncoding = [Console]::OutputEncoding\ntry {\n" + final_block, encoding="utf-8-sig")
 
     result = subprocess.run(
         [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(runner)],
@@ -79,6 +83,28 @@ def test_windows_post_apply_failure_exit_propagates(tmp_path: Path) -> None:
         check=False,
     )
     assert result.returncode == 23, result.stderr
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PowerShell 5.1の出力の文字コードはWindowsでだけ観測できる")
+def test_windows_template_writes_utf8_when_redirected(tmp_path: Path) -> None:
+    """テンプレートが設定する文字コードの下で、リダイレクトしたWrite-Hostの日本語をUTF-8として読める。"""
+    text = _read(WINDOWS_TEMPLATE)
+    prologue = text[text.index("$originalOutputEncoding = [Console]::OutputEncoding") : text.index("try {")]
+    message = "[pytools] 日本語の案内"
+    script = tmp_path / "encoding.ps1"
+    script.write_text(
+        prologue + f"try {{\nWrite-Host '{message}'\n}} finally {{\n[Console]::OutputEncoding = $originalOutputEncoding\n}}\n",
+        encoding="utf-8-sig",
+    )
+
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.decode("utf-8").strip() == message
 
 
 def test_windows_template_does_not_run_uv_update_shell() -> None:

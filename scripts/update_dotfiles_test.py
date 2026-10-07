@@ -5,6 +5,7 @@
 
 # pylint: disable=protected-access
 
+import io
 import json
 import os
 import pathlib
@@ -22,7 +23,32 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import update_dotfiles  # noqa: E402  # pylint: disable=wrong-import-position
 
 _REAL_UPDATE_GIT_WITH_RECOVERY = update_dotfiles._update_git_with_recovery  # pylint: disable=protected-access
+_REAL_STREAM_MERGED_OUTPUT = update_dotfiles._stream_merged_output  # pylint: disable=protected-access
 _REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "bin"
+
+
+@pytest.fixture(autouse=True)
+def _merged_output_via_fake_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """段の子の起動を`subprocess.run`経由に置き換え、段の順序のテストが`subprocess.run`の偽装で子を模せるようにする。
+
+    合流と逐次表示そのものは、`_REAL_STREAM_MERGED_OUTPUT`を戻したテストが実際の子プロセスで確かめる。
+    """
+
+    def run_and_merge(argv: list[str]) -> tuple[int, str]:
+        result = subprocess.run(
+            argv,
+            cwd=update_dotfiles._DOTFILES_ROOT,  # pylint: disable=protected-access
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            env=update_dotfiles._child_env(),  # pylint: disable=protected-access
+        )
+        merged = (result.stdout or "") + (result.stderr or "")
+        sys.stdout.write(merged)
+        return result.returncode, merged
+
+    monkeypatch.setattr(update_dotfiles, "_stream_merged_output", run_and_merge)
 
 
 @pytest.fixture(autouse=True)
@@ -425,6 +451,76 @@ def test_run_step_preserves_exit_and_non_utf8_diagnostic(capsys: pytest.CaptureF
     assert output == ""
     assert "diagnostic: �" in capsys.readouterr().err
     assert update_dotfiles._last_stderr_tail == "diagnostic: �"  # pylint: disable=protected-access
+
+
+_INTERLEAVED_CHILD_CODE = """
+import sys
+for index in (1, 2):
+    sys.stdout.write(f"out{index}\\n")
+    sys.stdout.flush()
+    sys.stderr.write(f"err{index}\\n")
+    sys.stderr.flush()
+sys.exit(int(sys.argv[1]))
+"""
+
+
+@pytest.mark.parametrize("exit_code", [0, 4])
+def test_run_step_streams_interleaved_child_output_in_write_order(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str], exit_code: int
+) -> None:
+    """子が標準出力と標準エラーへ交互に書いた出力を、見出しの後へ書き込み順で並べ、失敗時は末尾を記録へ残す。"""
+    monkeypatch.setattr(update_dotfiles, "_stream_merged_output", _REAL_STREAM_MERGED_OUTPUT)
+
+    returncode, output = update_dotfiles._run_step(  # pylint: disable=protected-access
+        3, 5, "chezmoi apply", [sys.executable, "-c", _INTERLEAVED_CHILD_CODE, str(exit_code)]
+    )
+
+    captured = capfd.readouterr()
+    assert returncode == exit_code
+    assert output == ""
+    assert captured.out.splitlines() == ["=== [3/5] chezmoi apply ===", "out1", "err1", "out2", "err2"]
+    assert not captured.err
+    tail = update_dotfiles._last_stderr_tail  # pylint: disable=protected-access
+    assert tail is not None
+    assert "err2" in tail
+
+
+class _SignalingWriter(io.StringIO):
+    """最初の行を受け取った時点で、子の終了を許す合図のファイルを作成する標準出力の代わり。"""
+
+    def __init__(self, signal_path: pathlib.Path) -> None:
+        super().__init__()
+        self._signal_path = signal_path
+
+    def write(self, text: str) -> int:
+        if "first" in text:
+            self._signal_path.write_text("", encoding="utf-8")
+        return super().write(text)
+
+
+def test_run_step_delivers_child_output_before_child_exits(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """子が終了を待つ間に、それまでの出力が標準出力へ届く。届かなければ子は合図を待てず終了コード3で終わる。"""
+    monkeypatch.setattr(update_dotfiles, "_stream_merged_output", _REAL_STREAM_MERGED_OUTPUT)
+    signal_path = tmp_path / "received"
+    writer = _SignalingWriter(signal_path)
+    monkeypatch.setattr(sys, "stdout", writer)
+    code = (
+        "import pathlib, sys, time\n"
+        "sys.stderr.write('first\\n'); sys.stderr.flush()\n"
+        "deadline = time.monotonic() + 10\n"
+        "while not pathlib.Path(sys.argv[1]).exists():\n"
+        "    if time.monotonic() > deadline:\n"
+        "        sys.exit(3)\n"
+        "    time.sleep(0.05)\n"
+        "print('second')\n"
+    )
+
+    returncode, _output = update_dotfiles._run_step(  # pylint: disable=protected-access
+        3, 5, "chezmoi apply", [sys.executable, "-c", code, str(signal_path)], show_heading=False
+    )
+
+    assert returncode == 0
+    assert writer.getvalue().splitlines() == ["first", "second"]
 
 
 def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -40,7 +40,7 @@ git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定
 実行の開始時と終了時に、同期結果を`scripts/sync_report.py`が定める構造化ファイルへ記録する。
 次に起動するコーディングエージェントが、失敗した段と標準エラーの末尾からAWIの処理を
 完遂できるかを判定するための記録であり、失敗の内容を人間の目視に頼らず残す。
-取得した段の標準エラーは、表示のために親の標準エラーへ転送したうえで末尾を記録へ残す。
+`chezmoi init`と`chezmoi apply`の段は、子の標準出力と標準エラーを受け取った順に表示し、その末尾を記録へ残す。
 
 Linuxでは`chezmoi apply`の直前に、Codexの管理daemonだけが稼働し、利用セッションが無い場合に限り、
 公開CLI`codex app-server daemon stop`で管理daemonを一時停止する。
@@ -53,6 +53,8 @@ post-applyのplugin更新と診断ログ復元が、利用セッションの無�
 # pylint: disable=global-statement
 
 import argparse
+import codecs
+import collections
 import contextlib
 import dataclasses
 import io
@@ -88,6 +90,9 @@ _GIT_OUTPUT_RECOVERY_TIMEOUT_SEC = 30
 _PROCESS_TREE_WAIT_TIMEOUT_SEC = 5
 _GIT_TIMEOUT_ENV = "UPDATE_DOTFILES_GIT_TIMEOUT_SEC"
 _LOG_STAGE_TOTAL = 5
+_STREAM_READ_SIZE = 65536
+# 合流した出力のうち段の記録用に保持する末尾の文字数。記録の上限（`sync_report.STDERR_TAIL_MAX_CHARS`）以上を保つ。
+_STREAM_TAIL_MAX_CHARS = 64 * 1024
 _CODEX_AUTO_RESTART_ENV = "DOTFILES_CODEX_DAEMON_AUTO_RESTART"
 # 公式READMEが定める停止猶予`shutdownGraceSeconds`の上限300秒に、強制終了と応答の余裕を加える。
 _CODEX_DAEMON_STOP_TIMEOUT_SEC = 360
@@ -184,32 +189,40 @@ def _run_step(
 ) -> tuple[int, str]:
     """1段を実行し、画面と診断ログへそれぞれの段番号を記録する。
 
-    `capture=False`の段でも標準エラーだけは取得し、段の終了後に親の標準エラーへ転送する。
-    同期結果の記録へ失敗した段の標準エラーを残すためである。進捗を表す標準出力は取得せず、
-    子プロセスの出力先を親から引き継いだまま保つ。
-    `capture=True`時のみ標準出力を文字列で返す。
+    `capture=False`の段は、子の標準出力と標準エラーを1本のパイプへ合流して受け取り、
+    受け取った順に改行を待たず`update-dotfiles`の標準出力へ書く。
+    標準出力と標準エラーを別のパイプで取ると、子が書いた順序を親の側で復元できず、
+    段の途中の出力（後処理の工程ごとの出力と、その工程が呼ぶツールの警告など）が段の終了後にまとめて並ぶためである。
+    受け取った出力の末尾は、失敗した段の記録（`sync-report.json`の`stderr_tail`）へ残す。
+    `capture=True`時は標準出力を文字列で返し、標準エラーは段の終了後に親の標準エラーへ転送する。
     """
     global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
     _current_stage_title = title
     _last_stderr_tail = None
     log_step_no = step_no if log_step_no is None else log_step_no
     if show_heading:
-        # 子プロセスが同じ標準出力へ直接書くため、見出しを子プロセスの起動前に書き込む。
+        # 子の出力より前に並ぶよう、見出しを子プロセスの起動前に書き込む。
         # 端末以外（サービスのjournal、ファイル）への出力はブロックバッファで、flushしないと見出しが後段の出力より後に並ぶ。
         print(f"=== [{step_no}/{total}] {title} ===", flush=True)
     logger.info("stage開始: %d/%d %s", log_step_no, _LOG_STAGE_TOTAL, title)
     started_at = time.monotonic()
     try:
-        result = subprocess.run(
-            argv,
-            cwd=_DOTFILES_ROOT,
-            check=False,
-            stdout=subprocess.PIPE if capture else None,
-            stderr=subprocess.PIPE,
-            encoding="utf-8",
-            errors="replace",
-            env=_child_env(),
-        )
+        if capture:
+            result = subprocess.run(
+                argv,
+                cwd=_DOTFILES_ROOT,
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_child_env(),
+            )
+            returncode, stdout, output_tail = result.returncode, result.stdout, result.stderr
+            if result.stderr:
+                sys.stderr.write(result.stderr)
+        else:
+            returncode, output_tail = _stream_merged_output(argv)
+            stdout = ""
     except OSError as error:
         logger.exception("stage起動失敗: %d/%d %s", log_step_no, _LOG_STAGE_TOTAL, title)
         print(f"{title}を開始できませんでした: {error}", file=sys.stderr)
@@ -220,13 +233,45 @@ def _run_step(
         log_step_no,
         _LOG_STAGE_TOTAL,
         title,
-        result.returncode,
+        returncode,
         time.monotonic() - started_at,
     )
-    if result.stderr:
-        sys.stderr.write(result.stderr)
-        _last_stderr_tail = sync_report.truncate_tail(result.stderr)
-    return result.returncode, (result.stdout if capture else "")
+    if output_tail:
+        _last_stderr_tail = sync_report.truncate_tail(output_tail)
+    return returncode, stdout
+
+
+def _stream_merged_output(argv: list[str]) -> tuple[int, str]:
+    """子の標準出力と標準エラーを合流して受け取り順に標準出力へ書き、終了コードと出力の末尾を返す。"""
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    tail: collections.deque[str] = collections.deque()
+    tail_chars = 0
+    with subprocess.Popen(
+        argv,
+        cwd=_DOTFILES_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=_child_env(),
+    ) as process:
+        assert process.stdout is not None
+        while chunk := os.read(process.stdout.fileno(), _STREAM_READ_SIZE):
+            text = decoder.decode(chunk)
+            if not text:
+                continue
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            tail.append(text)
+            tail_chars += len(text)
+            # 記録へ残すのは末尾だけのため、上限を超えた先頭の断片を捨てて保持量を抑える。
+            while tail_chars - len(tail[0]) >= _STREAM_TAIL_MAX_CHARS:
+                tail_chars -= len(tail.popleft())
+        rest = decoder.decode(b"", final=True)
+        if rest:
+            sys.stdout.write(rest)
+            sys.stdout.flush()
+            tail.append(rest)
+        returncode = process.wait()
+    return returncode, "".join(tail)
 
 
 def _git_timeout() -> int | None:

@@ -11,6 +11,17 @@ $ErrorActionPreference = 'Stop'
 # 2. OS固有の後処理を完了する。
 # 3. dotfiles-post-apply.exe を最終出力主体として実行する。
 
+# update-dotfiles は本スクリプトの出力をパイプで受け取り UTF-8 として読む。
+# 出力先がリダイレクトされている間、Windows PowerShell 5.1 は Write-Host とエラーの出力を
+# コンソールのコードページ（日本語環境では CP932）で書くため、その間だけ UTF-8 へ切り替える。
+# [Console]::OutputEncoding の設定はコンソール全体のコードページを変えるため、終了時に finally で元へ戻す。
+# 本体は字下げせずに try の内側へ置く（テストが本体の区間を行頭の文字列で取り出すため）。
+$originalOutputEncoding = [Console]::OutputEncoding
+if ([Console]::IsOutputRedirected) {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+}
+try {
+
 $cacheDir = Join-Path $env:LOCALAPPDATA 'dotfiles'
 $hashFile = Join-Path $cacheDir 'pytools.hash'
 $currentHash = '{{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}:{{ include (joinPath .chezmoi.workingTree "agent-toolkit/pyproject.toml") | sha256sum }}'
@@ -216,4 +227,7 @@ if (Test-Path $postApplyBin) {
     exit $LASTEXITCODE
 } else {
     Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ"
+}
+} finally {
+    [Console]::OutputEncoding = $originalOutputEncoding
 }
