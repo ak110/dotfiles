@@ -8,7 +8,7 @@ import type { EngineInterface, On } from "claude-code";
 // `Agent`ツールのサブエージェント（`agentId`を持つ呼出主体）へは装着も通知もしない。`CronList`はメインと共有され、
 // サブエージェントが作成したtaskのpromptは親の会話へ届くため、サブエージェントの待機を再確認できない。
 // サブエージェントは完了通知で待機を解く。
-// 設計と不採用とした代替は`docs/development/design-hooks.md`「`start`の処理の中での定期再確認の装着（2026年10月7日）」にある。
+// 設計と不採用とした代替は`docs/development/design-hooks.md`「`start`の処理の中での定期再確認の装着」にある。
 
 // Claude Codeがプラグインのstdio MCPサーバーのツールへ付ける名前（`mcp__plugin_<プラグイン名>_<サーバー名>__<ツール名>`）。
 // matcherの無い`tool.call`のhookは`send_to_user.tsx`が登録済みで同じイベントへ2件目を登録できないため、ツール名をmatcherに指定する。

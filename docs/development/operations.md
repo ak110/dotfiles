@@ -133,7 +133,7 @@ Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス�
 値はCodexへ配布する`tool_output_token_limit = 20000`（`share/codex_config.toml`）をバイトへ換算したもので、1回のツール出力で受け取る量を両ホストでそろえる。
 換算には`agent-toolkit/agent_toolkit/_hooks/pretooluse/large_reads.py`が使う1トークンあたり3.10バイトを用いる。
 62,000バイトを超える出力は退避され、agent-toolkitのPostToolUseが抜粋を保存先と次の操作を示す本文へ置き換える。
-置き換えの設計は`design-hooks.md`「退避したシェル出力の抜粋の置き換え（2026年10月6日）」にある。
+置き換えの設計は`design-hooks.md`「退避したシェル出力の抜粋の置き換え」にある。
 `share/claude_settings_json_managed.json`はコメントを持てないため、値の理由は本節だけが保持する。
 
 本体の設定スキーマにある`bashOutputMaxChars`の説明は次のとおりである。

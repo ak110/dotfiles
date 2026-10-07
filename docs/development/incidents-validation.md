@@ -607,7 +607,7 @@
 
 - 2026年10月3日: レビュー契約へcommitとWIの別参照配列を加え、条項にある同じ参照の同期を送受信の条件にしていた。
   直接原因: 2026年9月21日の`4603ea1e8`が両配列を導入し、条項内の誤参照を空配列で渡す入力を受理して、宣言した参照だけを解決していた。条項だけにある参照を取り込む分岐は無く、別配列が消費側へ寄与するかを確かめないまま、写しの同期と既存機構の保守が残った。9月23日以降に新設案を抑える変更（`5b15e4b06`、`80c85e135`）を加えたが、隣接する参照配列は再評価しなかった。
-  対策: `commit_references`と、同じ原因の`awi_references`を撤去した（`71bbcb627`）。構造は`atk run-script review-contract`が、参照と認可は受信したレビュー担当が評価する。再発防止として、WI起草の完成条件の固定と実行レビューの詳細確認より前に必要性を比べ、直接影響範囲の既存機構にも適用する。必要性の比較の手順は`agent-toolkit/skills/review-standards/references/reviewer.md`「初回レビュー」にある。比較の基準は`agent-toolkit/skills/writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」、方式は[design-planning.md](design-planning.md#計画と実行レビュー)にある
+  対策: `commit_references`と、同じ原因の`awi_references`を撤去した（`71bbcb627`）。構造は`atk run-script review-contract`が、参照と認可は受信したレビュー担当が評価する。再発防止として、WI起草の完成条件の固定と実行レビューの詳細確認より前に必要性を比べ、直接影響範囲の既存機構にも適用する。必要性の比較の手順は`agent-toolkit/skills/review-standards/references/reviewer.md`「初回レビュー」にある。比較の基準は`agent-toolkit/skills/writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」、方式は[design-planning.md](design-planning.md#review_contractとレビュー指摘管理表)にある
 
 - 2026年10月3日: Stop hookへの対処をWI投入担当へ委譲したメインが、機能の目的と比べずに不具合と文面の直し方を述べ、ユーザーに2回是正された。
   直接原因: `agent-toolkit:bugfix`の起動条件が対処への着手に結び付き、委譲中に判断を述べる場面を含まなかった。期待する契約を実装自身の文言から選び、目的を定める設計記録と、文面を受け取る主体が観測できる条件を評価していなかった。
@@ -623,7 +623,7 @@
 
 - 2026年10月5日: Claude Codeのセッションで、メインは何か計上されないものが無いか確認するよう求め、「例えば」に続けて1つの呼び出し元を挙げた依頼を受けた。メインは受領直後に`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`を全文読み、`agent-toolkit:bugfix`を起動したが、例示の呼び出し元を自らのコマンドで直列に調べた。ユーザーが`agents_server`の`start`の`explore`を使うべきではないかと指摘した後、メインは例示を除いた探索を2件委ね、その探索が例示の外にある2つの計上されない利用を見つけた。同じ節の2026年10月2日の事例のうち、`agent-toolkit:add-awi-by-user`のセッションで範囲語と例示を併せ持つ依頼を扱った事例と同じ機構の再発である。
   直接原因: 例示の語と調査を求める語を併せ持つ発話を受けたメインの文脈に、その発話が`user-utterance.md`の範囲語と例示を併せた依頼の項に当たることを示す手掛かりが無かった。同項は受領時に読む参照資料の多数の箇条の1つとしてだけ置かれていた。2026年10月2日の対策は手掛かりを`add-awi-by-user`手順2と`add-wi.parent.md`だけに置いたため、その工程を通らない通常の調査の依頼に届かなかった。
-  対策: 例示の語と調査を求める語を併せ持つ通常発話へ、`UserPromptSubmit/user_prompt_submit`が注記を返す。注記は同項と`agent-toolkit:delegation`の`references/routing.md`「コンテキスト消費が大きい調査の切り出し」の所在を示し、自ら調査へ着手する前の適用を求める。判定は字面の一致だけで行い、該当するかの判断は受領側に残す。設計の判断と退けた代替案は`design-hooks.md`「範囲語と例示を併せた調査依頼の注記（2026年10月5日）」にある
+  対策: 例示の語と調査を求める語を併せ持つ通常発話へ、`UserPromptSubmit/user_prompt_submit`が注記を返す。注記は同項と`agent-toolkit:delegation`の`references/routing.md`「コンテキスト消費が大きい調査の切り出し」の所在を示し、自ら調査へ着手する前の適用を求める。判定は字面の一致だけで行い、該当するかの判断は受領側に残す。設計の判断と退けた代替案は`design-hooks.md`「範囲語と例示を併せた調査依頼の注記」にある
 
 - 2026年10月5日: pickerが選定結果へ`担当モデル: {実装担当: claude:opus[1m]/medium, 実行レビュー担当: claude:opus[1m]/medium}`と書き、`pick-wi-check`が読み込みに失敗して終了コード2で終わった。pickerが値を単一引用符で囲んで書き直し、再実行で合格するまでの往復が生じた。
   直接原因: `pick-wi.subagent.md`「出力」の書式例が文字列の値を引用符の無いプレースホルダーで示しており、書式例どおりに書いた`[1m]`の`[`を`yaml.safe_load`がフロー列の開始として読んだ。パスの`[`や`,`、根拠の`同一レーン案: 3000秒`のようなコロンと空白の並びも同じ機構で読み込みの失敗か別の値になる。

@@ -240,7 +240,7 @@
   秘匿値が現れ得ることを理由に、ツール呼び出しの引数、コマンド文字列その他の入力を表示から除かない
   （2026年9月15日、ユーザー指示）。
   `agents_server`のstatusline表示がツール名だけを載せ、同じツールを繰り返す区間で稼働と停止を区別できなかった観測に由来する。
-  現行の実装契約は[design-agents-runtime.md](design-agents-runtime.md#agents_server-sessionのstatusline表示)の「agents_server sessionのstatusline表示」にある
+  現行の実装契約は[design-agents-runtime.md](design-agents-runtime.md#statuslineの表示)の「statuslineの表示」にある
 - 同一の変更がpushとPR/MRで重複してCIを起動することを避ける1回限りのCIスキップは許可の対象とする。
   リポジトリまたは組織のチェック設定を変える操作（必須チェックの解除、branch protectionの変更、ワークフローの無効化）は、この許可に含めない
   （2026年9月17日、ユーザー指示。一時的にCI無効でpushする手順を持つプロジェクトがあるため）

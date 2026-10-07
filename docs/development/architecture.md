@@ -156,7 +156,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 plugin rootを`uv run --project`へ指定し、lockfileを固定して起動する。生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、
 Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`が解決した候補のengineに従ってCodex backendまたはClaude backendを選択する。
 
-公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）と`atk agents wait`の入力、応答、待機上限および保持期限の契約は[design-agents-server.md](design-agents-server.md)の「agents_server MCPによる委譲の仕組み」が記録する。
+公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）と`atk agents wait`の入力、応答、待機上限および保持期限の契約は[design-agents-server.md](design-agents-server.md)の「公開ツールの契約」が記録する。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
 MCP moduleの初期化時にCodex backendとClaude backendのローカルmoduleを読み込む。

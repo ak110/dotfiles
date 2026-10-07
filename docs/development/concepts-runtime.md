@@ -24,7 +24,7 @@
   規範の配送と権限の自動許可は遮断・警告に当たらない。
   2026年9月26日のユーザー指示は、フックを元へ戻せない結果を防ぐ判定と常駐運用の終端保証だけに置き、範囲の外はユーザーが例外として確定した場合だけ残すとしていた。
   2026年10月2日のユーザー指示（「hookは元へ戻せない結果を防ぐものだけ残すだけだと厳しすぎる」、基準はQCD）で、この範囲限定をQCDの費用比較へ改めた。
-  経緯と全件確認の表は[design-hooks.md](design-hooks.md#warnblock判定の全件確認2026年9月26日)「warn・block判定の全件確認（2026年9月26日）」にある。
+  経緯と全件確認の表は[design-hooks.md](design-hooks.md#全件確認の経緯2026年9月26日)「全件確認の経緯（2026年9月26日）」にある。
   現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`の「遮断・警告フックの成立条件」にある
 - フックのblockは、通した場合の結果を復元できない操作と、遮断で失うターンの入力と作業が小さい明らかな行動誤りに用いる。
   それ以外の再編集または再実行で是正できる操作にはwarnを用いる。
@@ -68,7 +68,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 - Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は、解除まで待って同じClaudeで作業を続け、Codexなど別の候補へ切り替えない
   （2026年10月4日、ユーザー指示。待てば確実に解除されるため、切替で作業の文脈を失う方が損失が大きい）。
   対象は`agents_server`、`atk wi process-loop`の可用性判定と`atk commit`であり、`overage`、他の429、529、認証・権限の失敗は従来の切替のままとする。
-  待機は回数と総時間で打ち切らない。実装契約は[design-agents-runtime.md](design-agents-runtime.md)のAPI失敗の段落にあり、委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`「停滞の検知と巻き取り」が定める
+  待機は回数と総時間で打ち切らない。実装契約は[design-agents-runtime.md](design-agents-runtime.md#api失敗過負荷利用上限の待機)の「API失敗・過負荷・利用上限の待機」にあり、委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`「停滞の検知と巻き取り」が定める
 
 - Codexのサブエージェントのモデルと推論量は指定せず、指定がない場合にCodexが選ぶ値を使う
   （2026年8月、ユーザー指示。上書きするよりCodexの選ぶ値の方が動作が安定するとの実運用判断による）。
@@ -111,7 +111,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   禁止を解いた（2026年8月、実物での確認）
 - 委譲先が待機表明でターンを終える動作は、完了通知だけを提供するホストの再開可能な正常状態として扱う。
   子がターンを終え、孫の終端やバックグラウンドタスクの完了の通知で再開する挙動は変えない（2026年10月4日、ユーザー判断）。委譲先を起こし続ける変更はトークンを浪費するためである。
-  agents_serverが待機表明を終端結果として公開した不具合は、公開の時機の判定で直した。委譲先への指示とStop hookは変えない（`docs/development/design-agents-server.md`「agents_server MCPによる委譲の仕組み」）
+  agents_serverが待機表明を終端結果として公開した不具合は、公開の時機の判定で直した。委譲先への指示とStop hookは変えない（`docs/development/design-agents-server.md`「結果の保留と自動再開」）
   Codexで`wait_agent`が提供される場合は、終了状態を観測するまで`wait_agent`を使う。
   完了通知の受領主体を最上位または直接の親へ固定せず、通知の`status`・`result`と保持した直接の子のagent IDを用いる。
   現在の実行主体へ`SendMessage`が公開され呼び出しが成功する場合だけ同じIDへ逐語中継する。
@@ -215,4 +215,4 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 - `agent-toolkit:session-review`はユーザー介入と同じく、次の4事象を前例の有無によらず再発防止策の必須対象とする。
   不適切なユーザー確認（必要なユーザー確認を除く）、ユーザーの手を煩わせた事象、品質に悪影響があった事象、所要時間目標を超過した事象である。
   2026年10月7日のユーザー指示による。必須のユーザー介入を規範の当てはめ誤りとして見送った振り返りへの是正に続けて、ユーザーが前例の有無によらず対策必須とするよう求めた。
-  現行の規定は`agent-toolkit/skills/session-review/references/analysis.md`「原因と対策」にあり、必須の候補の追跡の構造は`design-session-review.md`「session-reviewと完了報告」にある
+  現行の規定は`agent-toolkit/skills/session-review/references/analysis.md`「原因と対策」にあり、必須の候補の追跡の構造は`design-session-review.md`「session-reviewの構成と候補抽出」にある

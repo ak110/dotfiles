@@ -33,7 +33,7 @@ SessionEndは`--resume`や`agents_server`の`send_message`で同じ会話が続�
 寿命の異なる保存物を同じ領域へ置くと、作業ツリーが不要になった時点の回収で参照先が失われるためである（`incidents-data-security.md`「データ破壊と喪失」の2026年10月6日の項）。
 この配置で、回収する主体は追加の確認を経ずに回収できる。`atk managed-temp cleanup`が作業ツリー以外の内容を持つ領域を拒否する案は、手順を増やし、作業ツリーに伴う正当な内容まで止めるため採用しない。
 cleanupへ警告を返す案は、PreToolUseの警告が削除を止めないため採用しない。手順側へ回収前の確認を加える案も、手順の増加と残存物を避ける方針に反するため採用しない。
-置き場所の規定は`agent-toolkit:managed-temp`の1箇所に置き、`atk managed-temp create`の実行時にPreToolUseが同スキルの未起動を警告する（`design-hooks.md`「操作を起動の契機とするスキルの未起動の警告（2026年10月6日）」）。
+置き場所の規定は`agent-toolkit:managed-temp`の1箇所に置き、`atk managed-temp create`の実行時にPreToolUseが同スキルの未起動を警告する（`design-hooks.md`「操作を起動の契機とするスキルの未起動の警告」）。
 `--session-root`による無登録のmanaged-temp直下の作業ディレクトリの作成は公開オプションとして残すが、規範の手順からは使わない。
 実装worktreeを別namespaceへ渡す呼び出し元は、全消費主体から同一絶対パスへ到達できることを読み取り専用で確認する。
 MQ、CIおよびpublishの補助領域は同一namespaceで`--root`を指定せず、未指定時に使うユーザーキャッシュ配下を使い、暗黙の共有rootへ切り替えない。

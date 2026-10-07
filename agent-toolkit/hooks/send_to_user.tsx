@@ -3,7 +3,7 @@ import type { On } from "claude-code";
 // Claude Codeは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIが返す要約（progress update）へ置き換えて表示する。
 // ツールの入力は要約されないため、ターンの途中でユーザーへ原文どおり届ける内容をこのツールの`message`で運び、
 // 呼び出しの行を`message`の`Markdown`で描く。ツールの登録と表示を同じmoduleに置き、表示できる環境にだけツールが現れるようにする。
-// 設計と不採用とした代替は`docs/development/design-hooks.md`「send_to_userツール（2026年10月6日）」にある。
+// 設計と不採用とした代替は`docs/development/design-hooks.md`「send_to_userツール」にある。
 
 const TOOL_NAME = "send_to_user";
 
