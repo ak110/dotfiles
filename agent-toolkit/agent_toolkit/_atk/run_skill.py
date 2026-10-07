@@ -132,7 +132,8 @@ def build_goal(skill: str, skill_args: str | None) -> str:
     """子セッションへ渡す目的文の本体を返す。"""
     goal = (
         f"スキル`{skill}`を完遂し、`agent-toolkit:completion-report`の報告用UWIを保存してください。"
-        "作業の前に`agent-toolkit:user-confirmation-and-report`「`atk run-skill`の過去の実行のUWI」を適用してください。"
+        "作業の前に`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`"
+        "「`atk run-skill`の過去の実行のUWI」を適用してください。"
     )
     if skill_args is not None:
         goal += f"\nスキルへ渡す引数: {skill_args}"

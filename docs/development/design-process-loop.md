@@ -149,7 +149,7 @@ AWIが0件で変更検知を待つ反復は起動へ到達しないため、本�
 
 報告用UWIは`atk`の後処理ではなく、セッション内の`agent-toolkit:completion-report`が作成する。報告の内容と保存の検収は同スキルが既に定めており、後処理で作成すると同じ報告の定義が2箇所に分かれる。保存に失敗したセッションは目標を満たせず時間上限の終了コード124で終わり、cronが非0の終了を通知する。
 
-過去の実行が投入したUWIは、次回の同じスキルの実行が`source`（`run-skill`）と`scope`（スキル名）で識別して扱う（`agent-toolkit/skills/user-confirmation-and-report/SKILL.md`「`atk run-skill`の過去の実行のUWI」）。process-wiは回答済みUWIの取得へ`--source=!run-skill`を付け、`calculate_readiness`もこれらのUWIをreadyへ含めない。含めると、process-wiの選定が除くUWIのためにprocess-loopが子セッションの起動を繰り返す。識別には既存の`source`と`scope`を使い、新しい状態や保存先は加えない。
+過去の実行が投入したUWIは、次回の同じスキルの実行が`source`（`run-skill`）と`scope`（スキル名）で識別して扱う。手順は`agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」にある。process-wiは回答済みUWIの取得へ`--source=!run-skill`を付け、`calculate_readiness`もこれらのUWIをreadyへ含めない。含めると、process-wiの選定が除くUWIのためにprocess-loopが子セッションの起動を繰り返す。識別には既存の`source`と`scope`を使い、新しい状態や保存先は加えない。
 
 実行ごとのログは状態ディレクトリの`run-skill/`へ置き、各実行の開始時に最終更新から30日を超えたものを削除する。数日に1回の起動で同じ組の直近約10回分を調べられる長さとした。多重起動は同じディレクトリの`locks/`のファイルロックで防ぎ、対象リポジトリかスキルが異なる実行は並行して起動できる。
 
