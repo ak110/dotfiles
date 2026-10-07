@@ -922,3 +922,114 @@ def test_public_check_model_and_stage_selection_contract(
     code, err = run("lane-01", {"実装担当": "codex:gpt-6-sol/medium"}, ["lane-01"])
     assert code == 1
     assert "lane-01: 実装担当のモデル指定が衝突" in err
+
+
+def _write_files(repo: pathlib.Path, *relatives: str) -> None:
+    """作業ツリーへファイルを作成する。"""
+    for relative in relatives:
+        (repo / relative).parent.mkdir(parents=True, exist_ok=True)
+        (repo / relative).write_text("x\n", encoding="utf-8")
+
+
+_NON_ASCII_FILES = ("docs/dev/ログ監視.md", "docs/design/既存.md", "docs/café.md", "ログ/a.md", "docs/infra/クラウド料金.md")
+
+
+def test_public_command_extracts_non_ascii_paths_whole(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """インラインコードと文章中の非ASCIIを含むパスを末尾まで読み、個別のパスだけの`書込対象`を受理する。
+
+    非ASCIIの手前で抽出が終わると、`docs/dev/`のような範囲や`docs/design/LLM`のような途中の名前が
+    反映先になり、pickerは実際には書かない範囲を`書込対象`へ置いて別レーンと重ねる。
+    """
+    repo, notes = env
+    _write_files(repo, *_NON_ASCII_FILES)
+    _awi(
+        notes,
+        "a.md",
+        "`docs/dev/ログ監視.md`、`docs/design/LLMへのファイル入力.md`、`docs/café.md`、`ログ/a.md`を変える。"
+        "文章中のdocs/infra/クラウド料金.mdを更新する。src/のmodel.py・new_module.pyも変える。",
+    )
+    expected = {
+        "docs/dev/ログ監視.md",
+        "docs/design/LLMへのファイル入力.md",
+        "docs/café.md",
+        "ログ/a.md",
+        "docs/infra/クラウド料金.md",
+        "src/model.py",
+        "src/new_module.py",
+    }
+    # `src/`は配下の列挙を導く範囲説明として抽出され、被覆を求めない。
+    text = (notes / "processing" / "a.md").read_text(encoding="utf-8")
+    assert check_selection.reflected_paths(text, repo) == expected | {"src/"}
+    selection = _write_selection(
+        tmp_path / "selection.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": sorted(expected)}]
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_excluded_range_may_contain_write_paths(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`書き込まない反映先`の範囲が書込区分のパスを含む組を受理し、残る重複と範囲の配下の未分類は報告する。
+
+    受理しないと、AWI本文が変更しないと述べる上位ディレクトリを`書込対象`へ置かせ、別レーンとの重なりを生む。
+    同じパスの2区分と、書込区分の範囲が非書込のパスを含む組まで受理すると、所有の区分が決まらない。
+    """
+    repo, notes = env
+    _write_files(repo, "docs/design/性能.md", "docs/design/別.md", "docs/design/旧.md")
+    excluded_range = "`docs/design/性能.md`を変える。他の`docs/`配下は変更しない。"
+    _awi(notes, "write.md", excluded_range)
+    _awi(notes, "public.md", excluded_range)
+    _awi(notes, "same.md", excluded_range)
+    _awi(notes, "range.md", "`docs/design/`配下の`docs/design/性能.md`を変える。`docs/design/旧.md`は変更しない。")
+    _awi(notes, "inner.md", "`docs/design/性能.md`と`docs/design/別.md`を変える。他の`docs/`配下は変更しない。")
+    decisions: list[dict[str, typing.Any]] = [
+        {"WI": "write.md", "レーン": "lane-01", "書込対象": ["docs/design/性能.md"], "書き込まない反映先": ["docs/"]},
+        {
+            "WI": "public.md",
+            "レーン": "lane-02",
+            "書込対象": [],
+            "公開工程の書込対象": ["docs/design/性能.md"],
+            "書き込まない反映先": ["docs/"],
+        },
+        {
+            "WI": "same.md",
+            "レーン": "lane-03",
+            "書込対象": ["docs/design/性能.md"],
+            "書き込まない反映先": ["docs/", "docs/design/性能.md"],
+        },
+        {"WI": "range.md", "レーン": "lane-04", "書込対象": ["docs/design/"], "書き込まない反映先": ["docs/design/旧.md"]},
+        {"WI": "inner.md", "レーン": "lane-05", "書込対象": ["docs/design/性能.md"], "書き込まない反映先": ["docs/"]},
+    ]
+    costs = [{"レーン": f"lane-0{number}"} for number in range(1, 6)]
+    costs[1]["根拠"] = "対象リポジトリの規範AGENTS.mdの節「公開」がdocs/design/性能.mdを公開工程で書くと定める"
+    selection = _write_selection(tmp_path / "selection.yaml", decisions, costs)
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
+    errors = sorted(line for line in capsys.readouterr().err.splitlines() if re.match(r"\w+\.md: ", line))
+    assert errors == [
+        "inner.md: 未被覆: docs/design/別.md",
+        "range.md: 区分間の重複: docs/design/旧.md（`書込対象`と`書き込まない反映先`）",
+        "same.md: 区分間の重複: docs/design/性能.md（`書込対象`と`書き込まない反映先`）",
+    ]
+
+
+def test_non_ascii_write_paths_do_not_require_lane_overlap_rationale(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """日本語名のファイルを個別に書く別レーンの項目どうしは、重複パスの根拠を求めない。"""
+    repo, notes = env
+    _write_files(repo, "docs/dev/ログ監視.md", "docs/design/性能.md")
+    _awi(notes, "log.md", "`docs/dev/ログ監視.md`を変える。")
+    _awi(notes, "perf.md", "`docs/design/性能.md`を変える。他の`docs/`配下は変更しない。")
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "log.md", "レーン": "lane-01", "書込対象": ["docs/dev/ログ監視.md"]},
+            {"WI": "perf.md", "レーン": "lane-02", "書込対象": ["docs/design/性能.md"], "書き込まない反映先": ["docs/"]},
+        ],
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""

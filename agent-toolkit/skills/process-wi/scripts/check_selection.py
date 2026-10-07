@@ -14,7 +14,10 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
   レーン間の重なりの判定が働かなくなるためである。範囲説明の配下の個別パスは従来どおり被覆を求める
 - 広すぎる範囲: `書込対象`のディレクトリ範囲の配下に反映先パスがあるのに、反映先がその範囲自身もそれを含む範囲も挙げていない
 - `書き込まない反映先`の不正: 反映先パスに無いパスを`書き込まない反映先`が含む
-- 区分間の重複: 3区分のうち複数が同じパスまたは包含関係にある範囲を持つ
+- 区分間の重複: 3区分のうち複数が同じパスまたは包含関係にある範囲を持つ。
+  ただし`書き込まない反映先`の範囲が書込区分（`書込対象`・`公開工程の書込対象`）のパスを真に含む組は除く。
+  AWI本文が変更しない範囲として挙げる上位ディレクトリの配下で個別のファイルを書く選定を表すためであり、
+  そのパスは書込区分の指定を優先し、範囲の残りを書き込まない扱いとする
 - `公開工程の書込対象`の根拠不足: 対象リポジトリの規範、節およびpathがレーンの根拠に無い
 - 別レーンの重複根拠不足: 共通ファイルまたは狭い方の範囲が双方のレーンの根拠に無い
 - 同じ再開計画の別レーン割当: pickerが出力した通常中断または観測のみの再開位置が同じ計画を指す項目を別レーンへ置いた
@@ -39,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import collections.abc
+import dataclasses
 import functools
 import itertools
 import pathlib
@@ -46,6 +50,7 @@ import re
 import subprocess
 import sys
 import typing
+import unicodedata
 
 import markdown_it
 import yaml
@@ -153,9 +158,22 @@ def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     return _explicit_paths(section, work_dir)
 
 
+@dataclasses.dataclass(frozen=True)
+class _Segment:
+    """段落の文章かインラインコードの1区間。`code`は内容全体を1つのパス候補とするインラインコードかを表す。"""
+
+    text: str
+    code: bool
+
+
 def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
 
+    インラインコードは、内容が空白を含まず`/`か`.`を含む場合に内容全体を1つの候補とし、非ASCIIの文字を含む
+    パス（`docs/dev/ログ監視.md`、`ログ/a.md`）も末尾まで読む。文章の中のパスはASCIIの文字で区切って探し、
+    直後に文字か数字の非ASCII文字が続く場合は、その位置から伸ばした文字列のうち作業ツリーに実在する最長のパスを候補とする。
+    実在するパスが無く、ASCIIの部分が`/`で終わらず最後の要素に`.`も持たない場合（`docs/design/LLM`）は、
+    パスの途中で終わった部分として採らない。
     抽出結果は、作業ツリーに実在するパスか、親ディレクトリが実在する完全なファイル名の新設先に限る。
     `/`を含む候補のうち、末尾が`/`のディレクトリ範囲は実在するディレクトリだけを採用する。
     実在しないファイルの候補は、追跡ファイルのパス末尾と1件だけ一致すればその追跡ファイルへ読み替え、
@@ -166,16 +184,17 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     直後にグロブ記号が続く語は、グロブや波括弧展開の途中で途切れた断片であり個別のパスを指さないため採らない。
     """
     paths: set[str] = set()
-    for run in _inline_runs(text):
+    for segments in _inline_runs(text):
+        run = "".join(segment.text for segment in segments)
         directory: str | None = None
         last_end = 0
-        for match in _PATH_TOKEN_RE.finditer(run):
-            candidate = _normalize_candidate(match.group())
-            gap = run[last_end : match.start()]
+        for start, end in _path_tokens(segments, work_dir):
+            candidate = _normalize_candidate(run[start:end])
+            gap = run[last_end:start]
             if directory is not None and not _LIST_GAP_RE.fullmatch(gap):
                 directory = None
-            last_end = match.end()
-            if candidate is None or run[match.end() : match.end() + 1] in _GLOB_CHARS:
+            last_end = end
+            if candidate is None or run[end : end + 1] in _GLOB_CHARS:
                 directory = None
                 continue
             if "/" in candidate:
@@ -191,6 +210,60 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
             elif directory is not None and (resolved := _repository_path(directory + candidate, work_dir)) is not None:
                 paths.add(resolved)
     return paths
+
+
+def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple[int, int]]:
+    """段落を連結した文字列の中で、パス候補の開始と終了の位置を出現順に返す。"""
+    tokens: list[tuple[int, int]] = []
+    offset = 0
+    for segment in segments:
+        content = segment.text
+        # グロブや波括弧展開を含むインラインコードは個別のパスを指さないため、文章と同じ規則で断片を除く。
+        if (
+            segment.code
+            and content.strip()
+            and not any(char.isspace() or char in _GLOB_CHARS for char in content)
+            and ("/" in content or "." in content)
+        ):
+            tokens.append((offset, offset + len(content)))
+            offset += len(content)
+            continue
+        for match in _PATH_TOKEN_RE.finditer(content):
+            end = match.end()
+            if end < len(content) and _is_non_ascii_word_char(content[end]):
+                extended = _existing_extension(content, match.start(), end, work_dir)
+                if extended is None and not _is_complete_ascii_part(match.group()):
+                    continue
+                end = extended or end
+            tokens.append((offset + match.start(), offset + end))
+        offset += len(content)
+    return tokens
+
+
+def _is_non_ascii_word_char(char: str) -> bool:
+    """非ASCIIの文字か数字（かな、漢字、アクセント付きのラテン文字など）かを返す。句読点、括弧、`・`は含まない。"""
+    return ord(char) > 0x7F and unicodedata.category(char)[0] in {"L", "N"}
+
+
+def _existing_extension(content: str, start: int, end: int, work_dir: pathlib.Path) -> int | None:
+    """ASCIIの候補の直後に続く非ASCIIの文字まで伸ばした文字列のうち、作業ツリーに実在する最長のパスの終了位置を返す。"""
+    limit = end
+    while limit < len(content) and (
+        _is_non_ascii_word_char(content[limit])
+        or content[limit] in "/._-"
+        or content[limit].isascii()
+        and content[limit].isalnum()
+    ):
+        limit += 1
+    for stop in range(limit, end, -1):
+        if (work_dir / content[start:stop]).exists():
+            return stop
+    return None
+
+
+def _is_complete_ascii_part(value: str) -> bool:
+    """ASCIIの候補が`/`で終わるか最後の要素に`.`を持つ（パスの途中で終わっていない）かを返す。"""
+    return value.endswith("/") or "." in value.rsplit("/", 1)[-1]
 
 
 def _repository_path(candidate: str, work_dir: pathlib.Path) -> str | None:
@@ -250,13 +323,19 @@ def _section_text(body: str, heading: str) -> str | None:
     return None
 
 
-def _inline_runs(text: str) -> list[str]:
-    """コードフェンスの外にある文章とインラインコードを段落ごとに連結する。"""
-    runs: list[str] = []
+def _inline_runs(text: str) -> list[list[_Segment]]:
+    """コードフェンスの外にある文章とインラインコードを、段落ごとに出現順の区間の列で返す。"""
+    runs: list[list[_Segment]] = []
     for token in _MARKDOWN.parse(text):
         if token.type != "inline" or not token.children:
             continue
-        runs.append("".join(child.content for child in token.children if child.type in {"text", "code_inline"}))
+        runs.append(
+            [
+                _Segment(child.content, child.type == "code_inline")
+                for child in token.children
+                if child.type in {"text", "code_inline"}
+            ]
+        )
     return runs
 
 
@@ -316,7 +395,9 @@ def check_decision(
             second if _covers(first, second) else first
             for first in first_paths
             for second in second_paths
-            if _covers(first, second) or _covers(second, first)
+            if (_covers(first, second) or _covers(second, first))
+            # 書き込まない範囲が書込区分のパスを真に含む組は、範囲の残りを書き込まない選定として受理する。
+            and not (second_name == _selection.EXCLUDED_PATHS_KEY and first != second and _covers(second, first))
         }
         errors.extend(f"{awi}: 区分間の重複: {path}（`{first_name}`と`{second_name}`）" for path in sorted(overlaps))
     return errors
