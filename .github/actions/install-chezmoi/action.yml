@@ -1,0 +1,46 @@
+name: install-chezmoi
+description: get.chezmoi.ioのインストーラーを再試行付きで取得してchezmoiを導入し、導入先をPATHへ加える
+inputs:
+  bin-dir:
+    description: chezmoiの導入先ディレクトリ。省略時は$HOME/.local/bin
+    required: false
+    default: ""
+  ssl-revoke-best-effort:
+    description: >-
+      curlへ--ssl-revoke-best-effortを付けるか（"true"か"false"）。
+      Windowsのrunnerでは証明書の失効確認先へ到達できず取得が失敗することがあるため"true"を渡す
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: chezmoi インストール
+      shell: bash
+      env:
+        BIN_DIR: ${{ inputs.bin-dir }}
+        SSL_REVOKE_BEST_EFFORT: ${{ inputs.ssl-revoke-best-effort }}
+      # 再試行の上限と待機はinstall.shのinstall_chezmoiと同じにする（install_chezmoi_retry_test.pyが確かめる）。
+      run: |
+        set -euo pipefail
+        bin_dir="${BIN_DIR:-$HOME/.local/bin}"
+        download_installer() {
+          if [ "$SSL_REVOKE_BEST_EFFORT" = "true" ]; then
+            curl -fsSL --ssl-revoke-best-effort --connect-timeout 10 --max-time 30 get.chezmoi.io
+          else
+            curl -fsSL --connect-timeout 10 --max-time 30 get.chezmoi.io
+          fi
+        }
+        install_chezmoi() {
+          local attempt=1
+          local installer
+          until installer=$(download_installer) &&
+            sh -c "$installer" -- -b "$bin_dir"; do
+            if [ "$attempt" -ge 3 ]; then
+              return 1
+            fi
+            attempt=$((attempt + 1))
+            sleep 2
+          done
+        }
+        install_chezmoi
+        echo "$bin_dir" >> "$GITHUB_PATH"

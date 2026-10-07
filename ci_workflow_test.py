@@ -214,16 +214,62 @@ def test_python_314_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     assert "${{ matrix.check }}" in str(cache_with["key"])
 
 
-@pytest.mark.parametrize("job_name", ["update-dotfiles-upgrade-windows", "python-lint"])
-def test_new_parallel_jobs_keep_release_pr_non_owner_path(workflow_data: dict[str, object], job_name: str) -> None:
-    """新しい実行単位はrelease PRで非所有markerだけを成功させる。"""
-    job = _mapping(_jobs(workflow_data)[job_name])
-    marker = next(step for step in _steps(job) if step.get("name") == "共通CI非所有経路")
-    marker_if = str(marker["if"])
-    assert "github.head_ref == 'develop'" in marker_if
-    assert "github.base_ref == 'master'" in marker_if
-    real_steps = [step for step in _steps(job) if step is not marker]
-    assert all(step.get("if") != marker_if for step in real_steps)
+_RELEASE_PULL_REQUEST_CONDITIONS = (
+    "github.event_name == 'pull_request'",
+    "github.event.pull_request.head.repo.full_name == github.repository",
+    "github.head_ref == 'develop'",
+    "github.base_ref == 'master'",
+)
+_OWNS = "steps.owner.outputs.owns == 'true'"
+
+
+def _common_job_names(workflow: dict[str, object]) -> list[str]:
+    """release pull requestで非所有の表示名を持つ共通jobの名前を返す。"""
+    return [name for name, job in _jobs(workflow).items() if "(non-owner)" in str(_mapping(job)["name"])]
+
+
+def test_common_jobs_compute_release_pull_request_once(workflow_data: dict[str, object]) -> None:
+    """全共通jobが先頭の判定stepで1回だけ判定し、非所有markerと後続stepは判定式を書かずにその出力を参照する。"""
+    common_jobs = _common_job_names(workflow_data)
+    assert common_jobs == [
+        "test-linux",
+        "update-dotfiles-upgrade-windows",
+        "test-windows",
+        "python-lint",
+        "browser-e2e",
+        "rust-lint",
+    ]
+    for job_name in common_jobs:
+        steps = _steps(_mapping(_jobs(workflow_data)[job_name]))
+        judgment, marker, *real_steps = steps
+        assert judgment["id"] == "owner", job_name
+        assert "if" not in judgment, job_name
+        release_expression = str(_mapping(judgment["env"])["RELEASE_PULL_REQUEST"])
+        assert all(condition in release_expression for condition in _RELEASE_PULL_REQUEST_CONDITIONS), job_name
+        assert marker["name"] == "共通CI非所有経路", job_name
+        assert marker["if"] == "steps.owner.outputs.owns == 'false'", job_name
+        for step in [marker, *real_steps]:
+            condition = str(step.get("if", ""))
+            assert not any(term in condition for term in ("github.head_ref", "github.base_ref", "github.event_name")), (
+                job_name,
+                step.get("name"),
+            )
+        assert all(str(step.get("if", "")).startswith(_OWNS) for step in real_steps), job_name
+
+
+def test_chezmoi_is_installed_by_shared_action(workflow_data: dict[str, object]) -> None:
+    """chezmoiを導入するjobは、導入の処理を写さずリポジトリのcomposite actionを使う。"""
+    installers = {
+        job_name: step
+        for job_name, job in _jobs(workflow_data).items()
+        for step in _steps(_mapping(job))
+        if step.get("name") == "chezmoi インストール"
+    }
+    assert sorted(installers) == ["python-lint", "test-linux", "test-windows", "update-dotfiles-upgrade-windows"]
+    for job_name, step in installers.items():
+        assert str(step["uses"]).endswith(".github/actions/install-chezmoi"), job_name
+        assert "run" not in step, job_name
+    assert "install_chezmoi()" not in _WORKFLOW_PATH.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")

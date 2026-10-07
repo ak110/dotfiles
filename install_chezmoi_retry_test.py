@@ -5,49 +5,61 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent
-CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yaml"
+INSTALL_ACTION = REPO_ROOT / ".github" / "actions" / "install-chezmoi" / "action.yml"
 INSTALL_SCRIPT = REPO_ROOT / "install.sh"
 
-DOWNLOAD_COMMAND = "installer=$(curl -fsSL --connect-timeout 10 --max-time 30 get.chezmoi.io)"
-WINDOWS_DOWNLOAD_COMMAND = "installer=$(curl -fsSL --ssl-revoke-best-effort --connect-timeout 10 --max-time 30 get.chezmoi.io)"
+DOWNLOAD_ARGUMENTS = "curl -fsSL --connect-timeout 10 --max-time 30 get.chezmoi.io"
+WINDOWS_DOWNLOAD_ARGUMENTS = "curl -fsSL --ssl-revoke-best-effort --connect-timeout 10 --max-time 30 get.chezmoi.io"
 INSTALL_COMMAND = 'sh -c "$installer"'
 ATTEMPT_LIMIT = 'if [ "$attempt" -ge 3 ]; then'
 RETRY_DELAY = "sleep 2"
 
 
-def test_all_chezmoi_install_paths_share_bounded_retry_contract() -> None:
-    """CIとエンドユーザー向け導入処理で同じ再試行制限を維持する。"""
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    install_script = INSTALL_SCRIPT.read_text(encoding="utf-8")
-    workflow_functions = _extract_install_functions(workflow)
-    install_functions = _extract_install_functions(install_script)
+def _action_script() -> str:
+    """CIが使うcomposite actionの導入スクリプトを返す。"""
+    action = yaml.safe_load(INSTALL_ACTION.read_text(encoding="utf-8"))
+    (step,) = action["runs"]["steps"]
+    return step["run"]
 
-    assert len(workflow_functions) == 4
-    assert len(install_functions) == 1
-    functions = [*workflow_functions, *install_functions]
-    for function in functions:
-        assert function.count(DOWNLOAD_COMMAND) + function.count(WINDOWS_DOWNLOAD_COMMAND) == 1
+
+def test_ci_action_and_install_sh_share_bounded_retry_contract() -> None:
+    """CIのcomposite actionとエンドユーザー向けのinstall.shで同じ取得引数と再試行制限を維持する。"""
+    action_script = _action_script()
+    action_function = _single_install_function(action_script)
+    install_function = _single_install_function(INSTALL_SCRIPT.read_text(encoding="utf-8"))
+
+    for function in (action_function, install_function):
         assert function.count(INSTALL_COMMAND) == 1
         assert function.count(ATTEMPT_LIMIT) == 1
         assert function.count(RETRY_DELAY) == 1
-    assert sum(function.count(WINDOWS_DOWNLOAD_COMMAND) for function in workflow_functions) == 2
-    assert sum(function.count(DOWNLOAD_COMMAND) for function in functions) == 3
+    assert install_function.count(f"installer=$({DOWNLOAD_ARGUMENTS})") == 1
+    assert action_script.count(DOWNLOAD_ARGUMENTS) == 1
+    assert action_script.count(WINDOWS_DOWNLOAD_ARGUMENTS) == 1
 
 
 @pytest.mark.parametrize(("first_script", "first_exit"), [("", 1), ("exit 1", 0)])
-def test_installer_retries_after_failure(tmp_path: Path, first_script: str, first_exit: int) -> None:
-    """本文取得またはインストーラーの失敗後に処理全体を再実行する。"""
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    install_script = INSTALL_SCRIPT.read_text(encoding="utf-8")
-    functions = [*_extract_install_functions(workflow), *_extract_install_functions(install_script)]
+@pytest.mark.parametrize("revoke_best_effort", ["false", "true"])
+def test_ci_action_retries_after_failure(tmp_path: Path, first_script: str, first_exit: int, revoke_best_effort: str) -> None:
+    """composite actionは本文取得またはインストーラーの失敗後に処理全体を再実行し、導入先をPATHへ加える。"""
+    github_path = tmp_path / "github_path"
+    env = {"SSL_REVOKE_BEST_EFFORT": revoke_best_effort, "BIN_DIR": "", "GITHUB_PATH": str(github_path)}
 
-    for index, function in enumerate(functions):
-        _assert_function_retries(tmp_path / str(index), function, first_script, first_exit)
+    _assert_script_retries(tmp_path, _action_script(), first_script, first_exit, env)
+
+    assert github_path.read_text(encoding="utf-8") == f"{tmp_path / '.local' / 'bin'}\n"
 
 
-def _assert_function_retries(root: Path, function: str, first_script: str, first_exit: int) -> None:
+@pytest.mark.parametrize(("first_script", "first_exit"), [("", 1), ("exit 1", 0)])
+def test_install_sh_retries_after_failure(tmp_path: Path, first_script: str, first_exit: int) -> None:
+    """install.shの導入関数は本文取得またはインストーラーの失敗後に処理全体を再実行する。"""
+    function = _single_install_function(INSTALL_SCRIPT.read_text(encoding="utf-8"))
+    _assert_script_retries(tmp_path, f"{function}\ninstall_chezmoi", first_script, first_exit, {})
+
+
+def _assert_script_retries(root: Path, script: str, first_script: str, first_exit: int, extra_env: dict[str, str]) -> None:
     fake_bin = root / "bin"
     fake_bin.mkdir(parents=True)
     counter = root / "attempts"
@@ -75,11 +87,19 @@ fi
         "RETRY_COUNTER": str(counter),
         "FIRST_SCRIPT": first_script,
         "FIRST_EXIT": str(first_exit),
+        **extra_env,
     }
 
-    subprocess.run(["bash", "-c", f"{function}\ninstall_chezmoi"], check=True, env=env)
+    subprocess.run(["bash", "-c", script], check=True, env=env)
 
     assert counter.read_text(encoding="utf-8") == "2"
+
+
+def _single_install_function(content: str) -> str:
+    """導入関数がちょうど1つあることを確かめて返す。"""
+    functions = _extract_install_functions(content)
+    assert len(functions) == 1
+    return functions[0]
 
 
 def _extract_install_functions(content: str) -> list[str]:

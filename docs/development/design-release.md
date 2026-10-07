@@ -44,10 +44,11 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 | `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 8件のrequired check名 |
 | `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 8件のrequired check名 |
 
-同一repositoryのheadが`develop`、baseが`master`のpull requestでは、共通jobの先頭で非所有markerだけを成功させ、checkoutを含む既存実処理を実行しない。
+共通jobの先頭の判定stepが、release pull requestかどうか（同一repositoryのheadが`develop`、baseが`master`のpull request）を1回だけ求めて出力し、非所有markerと後続stepの条件はその出力を参照する。
+release pull requestでは、非所有markerだけを成功させ、checkoutを含む既存実処理を実行しない。
 このrelease pull request以外の同一repository pull requestとfork pull requestでは、非所有markerをskipして既存実処理を実行する。
-非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、`test-windows`は`pwsh`、その他の共通jobは`bash`を明示する。
-`rust-lint`は既存jobの`defaults.run.working-directory`を維持し、非所有markerだけがworkspace rootを明示してその指定を上書きする。
+判定stepと非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、Windowsの共通jobは`pwsh`、その他の共通jobは`bash`を明示する。
+`rust-lint`は既存jobの`defaults.run.working-directory`を維持し、判定stepと非所有markerだけがworkspace rootを明示してその指定を上書きする。
 
 job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の8件の表示名を保証できない。
 共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。
