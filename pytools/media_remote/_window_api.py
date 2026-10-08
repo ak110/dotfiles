@@ -7,7 +7,7 @@ DLLを差し替えれば、Linuxでも登録されたコールバックから検
 import contextlib
 import ctypes
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from typing import Any, cast
 
 from pytools.media_remote import _window_uia
@@ -137,7 +137,7 @@ class WindowsAPI:
         self.kernel32.GetModuleHandleW.restype = pointer
 
     @contextlib.contextmanager
-    def physical_coordinates(self) -> Iterator[None]:
+    def physical_coordinates(self) -> Generator[None]:
         """座標を扱うスレッドだけをPer Monitor V2へ切り替える。"""
         previous = self.user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
         if not previous:

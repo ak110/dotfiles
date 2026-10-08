@@ -7,7 +7,7 @@ import logging
 import os
 import pathlib
 import warnings
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
@@ -53,7 +53,7 @@ _MANAGER = AgentsServerManager()
 
 
 @contextlib.asynccontextmanager
-async def _mcp_lifespan(_server: FastMCP[Any]) -> AsyncIterator[None]:
+async def _mcp_lifespan(_server: FastMCP[Any]) -> AsyncGenerator[None]:
     _LOG.info("manager activateを開始します")
     try:
         _MANAGER.activate()

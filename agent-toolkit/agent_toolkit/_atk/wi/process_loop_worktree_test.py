@@ -6,7 +6,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from typing import Any, NoReturn
 
 import pytest
@@ -616,7 +616,7 @@ class TestProcessLoopSessionPreparation:
         events: list[str] = []
 
         @contextlib.contextmanager
-        def fake_lock(path: pathlib.Path) -> Iterator[None]:
+        def fake_lock(path: pathlib.Path) -> Generator[None]:
             assert path == tmp_path
             events.append("lock-enter")
             yield
@@ -1082,7 +1082,7 @@ class TestWorktreeWriterGate:
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: 1)
 
         @contextlib.contextmanager
-        def fake_console_title(title: str) -> Iterator[None]:
+        def fake_console_title(title: str) -> Generator[None]:
             entered.append(title)
             yield
 

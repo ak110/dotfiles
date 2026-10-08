@@ -269,11 +269,11 @@ class TestConfigGet:
     def test_saved_low_tier_model_is_kept_after_default_change(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """未保存時の下位はClaude側がlowとなり、保存済みの旧値は移行せずそのまま返す。"""
+        """未保存時はHaikuを返し、保存済みの旧値は移行せずそのまま返す。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "low_tier_model"], home=tmp_path)
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "codex:luna/medium,claude:sonnet[1m]/low\n"
+        assert capsys.readouterr().out == "codex:luna/medium,claude:haiku/medium\n"
 
         saved = "codex:luna/medium,claude:sonnet[1m]/medium"
         config_file = tmp_path / "config" / "config.json"
@@ -806,7 +806,7 @@ class TestConfigSet:
         """model_typeを対応設定の候補へ解決し、未知値は両方の受理形式を示して拒否する。"""
         assert config_module.resolve_model_candidates("low_tier") == [
             ("codex", "gpt-6-luna", "medium"),
-            ("claude", "sonnet[1m]", "low"),
+            ("claude", "haiku", "medium"),
         ]
         assert config_module.resolve_model_candidates("write") == [
             ("agy", "gemini-3.8-flash", "medium"),

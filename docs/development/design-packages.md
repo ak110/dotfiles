@@ -89,6 +89,9 @@ lycheeの`.lycheeignore`が届かずCIが外部サイトの応答待ちで失敗
 分割の有無はpyfltrの`resolve_subproject_aware`で直下の設定から求め、pyfltrの判定をテスト側に再実装しない。
 探索パスをcwd基準で書く`ty-args`と`[tool.pyright]`の`extraPaths`、直下の実行だけの事情による`mypy-exclude`、直下基準のパスだけを持つ`extend-exclude`は意図的な差異としてテストに理由付きで列挙する。
 意図的な差異を加える場合は同じ列挙へ理由とともに加える。
+aridの検出条件は両側で共有するが、既存負債の受容データは検査範囲ごとに持つ。
+`arid-baseline.json`は受容中の負債が残る直下だけに置き、負債を解消したagent-toolkit側は基準ファイルも参照も持たない。
+空のファイルを同期する仕組みは追加せず、設定整合テストも検出条件の同値と受容データの有無を区別する。
 `[tool.typos]`はtyposが各ファイルに最も近い設定を自ら読み、語の不足は変更時点のチェックで失敗として現れるため対象から外す。
 
 `subproject-exclude`で分割そのものを外す案は、Python系のチェックがリポジトリ直下の環境で動いてagent-toolkitの依存と設定を使えなくなるため採らない。
@@ -101,6 +104,13 @@ lycheeの`.lycheeignore`が届かずCIが外部サイトの応答待ちで失敗
 リポジトリ直下の`conftest.py`（`pytools/`・`scripts/`）と`agent-toolkit/conftest.py`（`agent_toolkit/`・`skills/`）が同じ定義をautouseで適用する。
 pytestは祖先ディレクトリのconftestだけを読むため、起動範囲ごとにconftestを置くと隔離の集合が範囲ごとに異なり、範囲を横断する定義を持たないまま事象ごとに次元を足す運用になっていた。その結果、開発機で成功しCIだけで失敗する事象が、Git設定、private-notes、PATH上のCLIと次元を変えて繰り返された。
 リポジトリ直下から`agent-toolkit/`配下を指定して起動すると2つのconftestが読まれるが、fixture名が同じため近い側の定義だけが適用され、二重に適用されない。
+
+パッケージ内の自動fixtureは`agent_toolkit._testing.pytest_plugin`が登録し、両`pyproject.toml`のpytest `addopts`から`-p`で読み込む。
+pytest 9.1.1では、パッケージ内・親ディレクトリ・パッケージ内の順にファイルを指定するとcollectorが再生成され、conftestの自動fixtureが後半へ適用されなくなる（[pytest #14997](https://github.com/pytest-dev/pytest/issues/14997)、[修正 #14645](https://github.com/pytest-dev/pytest/pull/14645)）。
+起動時登録はcollectorの同一性から切り離し、fixture本体はテストのファイル位置で従来の適用範囲を守る。
+環境変数・警告状態・Codexモデル一覧・終了待機・端末幅の5件は`agent_toolkit/`配下、外部真正性状態の隔離は`_atk/managed_temp/`配下、編集環境の隔離は`_atk/wi/mutations/`配下に限る。
+自動fixtureを実物へ戻す`real_end_turn_wait`も同じプラグインへ置き、親ファイルの後でも復帰を使えるようにする。他の明示要求型fixtureとテスト内の個別差し替えはそのまま使う。
+修正を含むpytest安定版を採用し、プラグインの回避を外しても同じ収集順と適用範囲・個別差し替えの契約が成立すれば、この登録方式の回避を撤去できる。
 
 PATHの隔離は、エージェントCLIを含むディレクトリを、CLI以外の項目へのシンボリックリンクだけを持つ一時ディレクトリへ置き換える。ディレクトリごと外すと同じ場所の`uv`などテストが使うツールまで失われる。置き換えたPATHはセッションで1回だけ組み立てる。
 実際のCLIやホームを意図して使うテストは、`host_environ`で子プロセスへ渡す環境変数を組み立てるか、`restore_host_environment`で同じプロセスの値を戻す。

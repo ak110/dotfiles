@@ -100,11 +100,9 @@ disable = [
     "too-many-statements",
 ]
 
-# 既存の重複はarid-baseline.jsonで抑制し、新しい重複だけを検出する。
 # 個別の`# arid: disable`と`# arid: enable`による領域抑制は使わない。
 [tool.arid]
 min-lines = 10
-baseline = "arid-baseline.json"
 
 [tool.ruff]
 line-length = 128
@@ -144,6 +142,7 @@ intervall = "intervall"
 addopts = [
     "--showlocals",
     "-p", "no:cacheprovider",
+    "-p", "agent_toolkit._testing.pytest_plugin",
     "--maxfail=5",
     "--durations=30",
     "--durations-min=0.5",

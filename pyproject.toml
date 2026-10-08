@@ -456,6 +456,7 @@ thm = "thm"
 addopts = [
     "--showlocals",
     "-p", "no:cacheprovider",
+    "-p", "agent_toolkit._testing.pytest_plugin",
     "--maxfail=5",
     "--durations=30",
     "--durations-min=0.5",

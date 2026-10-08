@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 from pyfltr.config import config as pyfltr_config
+from pyfltr.config.model import resolve_subproject_aware
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 _SUBPROJECT = pathlib.PurePosixPath("agent-toolkit")
@@ -37,6 +38,7 @@ _SHARED_SECTIONS: tuple[tuple[str, ...], ...] = (
     ("arid",),
 )
 _INTENTIONAL_DIFFERENCES = {
+    ("arid", "baseline"): "受容中の負債は直下だけに残り、agent-toolkit側には保持する負債が無いため",
     ("pyfltr", "ty-args"): "探索パスをそれぞれのcwd基準で書くため",
     ("pyright", "extraPaths"): "探索パスをそれぞれのcwd基準で書くため",
     ("pyfltr", "mypy-exclude"): "直下・agent-toolkit/・agent_toolkit/の3つのconftest.pyが同じ実行に入る直下だけの事情のため",
@@ -64,8 +66,7 @@ def _subproject_awareness(root_dir: pathlib.Path) -> dict[str, bool]:
     # ユーザーのglobal設定が判定へ混ざらないよう、存在しないパスを渡す。
     config = pyfltr_config.load_config(root_dir, global_config_path=root_dir / "pyfltr-global-config-unused.toml")
     return {
-        name: pyfltr_config.resolve_subproject_aware(config.values, name, info.subproject_aware)
-        for name, info in config.commands.items()
+        name: resolve_subproject_aware(config.values, name, info.subproject_aware) for name, info in config.commands.items()
     }
 
 
@@ -84,6 +85,12 @@ def _config_violations(root_dir: pathlib.Path) -> list[str]:
     root_pyfltr = _section(root_tool, ("pyfltr",))
     sub_pyfltr = _section(sub_tool, ("pyfltr",))
     violations: list[str] = []
+    if _section(root_tool, ("arid",)).get("baseline") != "arid-baseline.json":
+        violations.append("pyproject.toml [tool.arid] baseline: 受容中の負債を持つarid-baseline.jsonを指定する")
+    if not (root_dir / "arid-baseline.json").is_file():
+        violations.append("arid-baseline.json: リポジトリ直下の受容中の負債を保持する")
+    if "baseline" in _section(sub_tool, ("arid",)):
+        violations.append("agent-toolkit/pyproject.toml [tool.arid] baseline: 受容対象が無いため基準ファイルを指定しない")
 
     # 条件1: 分割しない検査の値と設定ファイルをsubproject側に置かない。
     for key in sub_pyfltr:
@@ -145,10 +152,11 @@ def _mismatch(path: tuple[str, ...], key: str, root_section: dict[str, Any], sub
 
 
 def _copy_config(destination: pathlib.Path) -> pathlib.Path:
-    """直下と`agent-toolkit/`の`pyproject.toml`を一時ディレクトリへ複写する。"""
+    """両側の設定と直下の受容済み負債を一時ディレクトリへ複写する。"""
     (destination / _SUBPROJECT).mkdir(parents=True)
     shutil.copyfile(_ROOT / "pyproject.toml", destination / "pyproject.toml")
     shutil.copyfile(_ROOT / _SUBPROJECT / "pyproject.toml", destination / _SUBPROJECT / "pyproject.toml")
+    shutil.copyfile(_ROOT / "arid-baseline.json", destination / "arid-baseline.json")
     return destination
 
 
@@ -169,10 +177,30 @@ def _place_subproject_lycheeignore(root_dir: pathlib.Path) -> None:
     (root_dir / _SUBPROJECT / ".lycheeignore").write_text("https://example\\.com/\n", encoding="utf-8")
 
 
+def _add_subproject_baseline(root_dir: pathlib.Path) -> None:
+    pyproject = root_dir / _SUBPROJECT / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+    assert text.count("[tool.arid]\n") == 1
+    pyproject.write_text(text.replace("[tool.arid]\n", '[tool.arid]\nbaseline = "arid-baseline.json"\n'), encoding="utf-8")
+
+
+def _remove_root_baseline_reference(root_dir: pathlib.Path) -> None:
+    pyproject = root_dir / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+    reference = 'baseline = "arid-baseline.json"\n'
+    assert text.count(reference) == 1
+    pyproject.write_text(text.replace(reference, ""), encoding="utf-8")
+
+
+def _remove_root_baseline_file(root_dir: pathlib.Path) -> None:
+    (root_dir / "arid-baseline.json").unlink()
+
+
 def test_repository_config_is_consistent() -> None:
     """リポジトリの検査設定が3条件を満たす。"""
     violations = _config_violations(_ROOT)
     assert not violations, "\n".join(violations)
+    assert not (_ROOT / _SUBPROJECT / "arid-baseline.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -184,9 +212,14 @@ def test_repository_config_is_consistent() -> None:
             "[tool.pyfltr.custom-commands.example-check]: example-check-subproject-aware = falseが無い",
         ),
         (_place_subproject_lycheeignore, "agent-toolkit/.lycheeignore: "),
+        (_add_subproject_baseline, "agent-toolkit/pyproject.toml [tool.arid] baseline: "),
+        (_remove_root_baseline_reference, "pyproject.toml [tool.arid] baseline: "),
+        (_remove_root_baseline_file, "arid-baseline.json: リポジトリ直下"),
     ],
 )
-def test_violations_are_reported(tmp_path: pathlib.Path, mutate: Callable[[pathlib.Path], None], expected: str) -> None:
+def test_violations_are_reported(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mutate: Callable[[pathlib.Path], None], expected: str
+) -> None:
     """片側だけの設定変更を、該当するキーまたはファイルを示す違反として報告する。"""
     root_dir = _copy_config(tmp_path)
     assert not _config_violations(root_dir)
@@ -196,3 +229,7 @@ def test_violations_are_reported(tmp_path: pathlib.Path, mutate: Callable[[pathl
     violations = _config_violations(root_dir)
     assert len(violations) == 1, violations
     assert expected in violations[0]
+    monkeypatch.setattr(f"{__name__}._ROOT", root_dir)
+    with pytest.raises(AssertionError) as error:
+        test_repository_config_is_consistent()
+    assert expected in str(error.value)

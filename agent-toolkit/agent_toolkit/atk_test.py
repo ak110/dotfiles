@@ -902,7 +902,7 @@ class TestWaitScheduleParser:
         assert "auth-error-secret" not in captured.out + captured.err
 
 
-# 端末幅の固定化は`conftest.py`の`_fixed_terminal_size`autouseフィクスチャへ集約する
+# 端末幅の固定化は`_testing.pytest_plugin`の`_fixed_terminal_size`autouseフィクスチャへ集約する
 # （`shutil`モジュール差し替えのため個別テストファイルへの重複定義は不要）。
 
 

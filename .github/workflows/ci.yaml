@@ -210,6 +210,7 @@ jobs:
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
           uv run --python 3.14 pytest -q
+          post_apply_template_test.py
           agent-toolkit/agent_toolkit/_atk/managed_temp
           agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
           agent-toolkit/agent_toolkit/_plan/structure

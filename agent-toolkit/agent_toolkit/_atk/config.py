@@ -42,7 +42,7 @@ _CATEGORY_ENGINE_MODELS = {
     },
     "下位": {
         "codex": "codex:luna/medium",
-        "claude": "claude:sonnet[1m]/low",
+        "claude": "claude:haiku/medium",
     },
 }
 _PRESET_ENGINE_ORDERS = {

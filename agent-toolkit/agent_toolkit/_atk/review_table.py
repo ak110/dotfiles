@@ -15,7 +15,7 @@ import hashlib
 import json
 import re
 import unicodedata
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 from agent_toolkit._atk import help_text as _atk_help
@@ -303,7 +303,7 @@ def lock_path(path: str | Path) -> Path:
 
 
 @contextlib.contextmanager
-def _table_lock(path: Path) -> Iterator[None]:
+def _table_lock(path: Path) -> Generator[None]:
     """レビュー指摘管理表の排他ロックを取得し、離脱時に解放する。"""
     target_lock = lock_path(path)
     target_lock.parent.mkdir(parents=True, exist_ok=True)

@@ -12,7 +12,7 @@ import datetime
 import json
 import re
 import urllib.parse
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -107,7 +107,7 @@ def _print_identifiers(records: dict[str, str]) -> None:
 
 
 @contextlib.contextmanager
-def _record_lock() -> Iterator[None]:
+def _record_lock() -> Generator[None]:
     """記録ファイルの固定ロックを取得し、離脱時に解放する。"""
     lock_path = _state_paths.lock_dir() / "review-audit" / "review-audit.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)

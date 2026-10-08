@@ -80,7 +80,7 @@ def _install_windows_security_doubles(
         path: pathlib.Path,
         access: int,
         **_kwargs: object,
-    ) -> typing.Iterator[tuple[int, managed_temp_windows_security._ByHandleFileInformation]]:
+    ) -> typing.Generator[tuple[int, managed_temp_windows_security._ByHandleFileInformation]]:
         opens.append(access)
         if access == full_access and full_open_error is not None:
             raise managed_temp_windows_security._WindowsHandleOpenError("handle open failed", path, full_open_error)
