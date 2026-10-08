@@ -60,6 +60,55 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["codex", "claude", "agy"])
+async def test_retention_expiry_releases_backend_once_without_tool_call(
+    engine: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """終端の保持期限到達は照会なしで解放を呼び、後からstopしても重ねて解放しない。"""
+    manager, backend = _manager_with_fake(engine)
+    released = asyncio.Event()
+    original_release = backend.release_session
+
+    async def release(session: state.SessionState) -> None:
+        await original_release(session)
+        released.set()
+
+    monkeypatch.setattr(backend, "release_session", release)
+    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.02)
+    try:
+        session = await backend.start("調査", str(tmp_path), None, None)
+        _complete(session)
+        await asyncio.wait_for(released.wait(), 1)
+        assert backend.release_calls == [session.session_id]
+        assert session.session_id not in manager.sessions
+        assert session.session_id in manager.expired_sessions
+        # release本体が送った通知の後に、taskの完了callbackを実行する。
+        await asyncio.sleep(0)
+        assert not manager._resource_release_tasks
+        await manager.stop(session.session_id)
+        assert backend.release_calls == [session.session_id]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_reply_cancels_old_retention_deadline(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """保持期限より前に再開したturnへ、旧turnの解放を遅れて適用しない。"""
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
+    try:
+        session = await backend.start("調査", str(tmp_path), None, None)
+        _complete(session)
+        await manager.send_message(session.session_id, "続行")
+        await asyncio.sleep(0.03)
+        assert not backend.release_calls
+        assert manager.sessions[session.session_id] is session
+        assert session.status == "running"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_start_resolves_codex_family_from_existing_backend_catalog(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -1298,7 +1347,18 @@ async def test_kill_timeout_zero_bounds_turn_control_lock_wait(
     assert backend.interrupt_calls == 0
 
 
+@pytest.fixture(name="kill_deadline_clock")
+def _kill_deadline_clock(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """managerの残量計算だけを固定し、実際のwait_forタイマーは維持する。"""
+    clock = SimpleNamespace(value=0.0)
+    loop = SimpleNamespace(time=lambda: clock.value)
+    proxy = SimpleNamespace(**{**vars(asyncio), "get_running_loop": lambda: loop})
+    monkeypatch.setattr(server_manager, "asyncio", proxy)
+    return clock
+
+
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("kill_deadline_clock")
 async def test_kill_timeout_zero_bounds_interrupt_delivery(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -1312,9 +1372,10 @@ async def test_kill_timeout_zero_bounds_interrupt_delivery(
     manager.sessions[session.session_id] = session
 
     with pytest.raises(TimeoutError, match="interrupt delivery is undetermined"):
-        await asyncio.wait_for(manager.kill(session.session_id, timeout=0), timeout=0.1)
+        await asyncio.wait_for(manager.kill(session.session_id, timeout=0), timeout=1)
 
     assert session.session_id in manager.sessions
+    assert backend.interrupt_started.is_set()
     assert backend.interrupt_calls == 1
     assert session.interrupt_requested is False
 
@@ -1340,7 +1401,10 @@ async def test_send_message_timeout_covers_turn_control_lock(tmp_path: pathlib.P
 
 
 @pytest.mark.asyncio
-async def test_kill_timeout_after_delivery_distinguishes_terminal_wait(tmp_path: pathlib.Path) -> None:
+@pytest.mark.usefixtures("kill_deadline_clock")
+async def test_kill_timeout_after_delivery_distinguishes_terminal_wait(
+    tmp_path: pathlib.Path,
+) -> None:
     """中断要求配送後の終端待ち超過を未配送と区別する。"""
     manager, backend = _manager_with_fake("codex")
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
@@ -1353,6 +1417,36 @@ async def test_kill_timeout_after_delivery_distinguishes_terminal_wait(tmp_path:
         await manager.kill(session.session_id, timeout=0.01)
 
     assert backend.interrupt_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("timeout", [0, 0.01])
+async def test_kill_restores_state_when_delivery_budget_expires_before_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    kill_deadline_clock: SimpleNamespace,
+    timeout: float,
+) -> None:
+    """配送前処理で予算が尽きた入力はbackend未到達と状態復旧を検証する。"""
+    monkeypatch.setattr(server_manager, "DEFAULT_SEND_MESSAGE_TIMEOUT", 0.01)
+    manager, backend = _manager_with_fake("codex")
+    session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+    original_touch = state.SessionState.touch
+
+    def consume_delivery_budget(current: state.SessionState) -> None:
+        if current.interrupt_requested:
+            kill_deadline_clock.value += 1
+        original_touch(current)
+
+    monkeypatch.setattr(state.SessionState, "touch", consume_delivery_budget)
+    with pytest.raises(TimeoutError, match="interrupt delivery is undetermined") as raised:
+        await asyncio.wait_for(manager.kill(session.session_id, timeout=timeout), timeout=1)
+
+    assert backend.interrupt_calls == 0
+    assert session.session_id in manager.sessions
+    assert session.interrupt_requested is False
+    assert "`atk agents wait`" in _actionable_message(raised.value)
 
 
 @pytest.mark.asyncio

@@ -67,6 +67,50 @@ def windows_chmod(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(os, "chmod", chmod_without_follow_symlinks)
 
 
+@pytest.mark.parametrize("reject", [False, True])
+def test_cleanup_closes_scandir_after_snapshot_failure(monkeypatch: pytest.MonkeyPatch, reject: bool) -> None:
+    """走査中の取得失敗でもiteratorを閉じ、拒否時は実体と登録を保持する。"""
+    target = subject.create_managed_temp("snapshot-close")
+    nested = target / "nested"
+    nested.mkdir()
+    content = nested / "keep.txt"
+    content.write_text("keep", encoding="utf-8")
+    registry = managed_temp_registry._registry_path(target)
+    iterators: list[typing.Any] = []
+    original_scandir = os.scandir
+    original_lstat = pathlib.Path.lstat
+
+    def record_scandir(path: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        iterator = original_scandir(path, **kwargs)
+        if path == target:
+            iterators.append(iterator)
+        return iterator
+
+    def reject_metadata(path: pathlib.Path, **kwargs: typing.Any) -> os.stat_result:
+        if reject and iterators and path.parent == target:
+            raise OSError("走査中のmetadata取得拒否")
+        return original_lstat(path, **kwargs)
+
+    monkeypatch.setattr(os, "scandir", record_scandir)
+    monkeypatch.setattr(pathlib.Path, "lstat", reject_metadata)
+    try:
+        if reject:
+            with pytest.raises(OSError, match="metadata取得拒否"):
+                subject.cleanup_managed_temp(target)
+            assert content.read_text(encoding="utf-8") == "keep"
+            assert registry.exists()
+        else:
+            subject.cleanup_managed_temp(target)
+            assert not target.exists()
+            assert not registry.exists()
+        assert iterators
+        for iterator in iterators:
+            assert next(iterator, None) is None
+    finally:
+        for iterator in iterators:
+            iterator.close()
+
+
 def test_windows_ctypes_structures_match_sdk_layout() -> None:
     """Windows APIへ渡す固定幅structureのsizeとSID offsetを確認する。"""
     assert ctypes.sizeof(managed_temp_windows_security._AceHeader) == 4

@@ -408,7 +408,8 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
                 expected_content,
                 state_name,
             )
-        return quart.jsonify(changed=changed)
+        saved = await workers.run(ops.detail, state_name or wi_constants.WI_STATE_INBOX, data["filename"])
+        return quart.jsonify(changed=changed, state=saved["state"])
 
     transition_specs = {
         "start-processing": {"filenames", "target_repo", "state"},

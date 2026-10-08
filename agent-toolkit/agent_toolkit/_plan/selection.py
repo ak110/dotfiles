@@ -21,6 +21,7 @@ RATIONALE_KEY = "根拠"
 MODEL_TYPES_KEY = "担当モデル"
 STAGE_KEY = "段階"
 PRIOR_LANES_KEY = "先行レーン"
+LANE_OVERLAPS_KEY = "レーン間の重なり"
 
 _LEGACY_DECISIONS_KEY = "decisions"
 

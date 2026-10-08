@@ -848,6 +848,46 @@ class TestGitCommitAttribution:
         )
 
 
+class TestGitCommitMessageFormat:
+    """同じ本文取得から、件名と本文の区切りを帰属とは独立に確かめる。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git commit -m '件名\n本文'",
+            "git commit --message='件名\nCo-Authored-By: 著者'",
+            "git commit -F - <<'EOF'\n件名\n本文\nEOF",
+            "git commit --file=message.txt",
+        ],
+    )
+    def test_rejects_missing_blank_line(self, tmp_path: pathlib.Path, command: str) -> None:
+        (tmp_path / "message.txt").write_text("件名\n本文\n", encoding="utf-8")
+        assert shell_checks._git_commit_message_format_error(command, cwd=str(tmp_path)) is not None
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git commit -m 件名",
+            "git commit -m 件名 -m 本文",
+            "git commit -m '件名\n\n本文'",
+            "git commit -F - <<'EOF'\n件名\n\n本文\nEOF",
+            "git commit -F missing.txt",
+            "git commit --amend --no-edit",
+            "git commit --fixup=HEAD -m '件名\n本文'",
+            "git commit --squash HEAD -m '件名\n本文'",
+            "git commit -C HEAD",
+            "git commit -c HEAD",
+            "git commit --reuse-message=HEAD",
+            "git commit --reedit-message HEAD",
+            "echo 'git commit -m message'",
+            "cd elsewhere && git commit -F message.txt",
+        ],
+    )
+    def test_accepts_valid_and_unresolved_messages(self, tmp_path: pathlib.Path, command: str) -> None:
+        (tmp_path / "message.txt").write_text("件名\n本文\n", encoding="utf-8")
+        assert shell_checks._git_commit_message_format_error(command, cwd=str(tmp_path)) is None
+
+
 class TestBashOptionAfterTerminator:
     """オプション終端`--`の後ろへCLI自身のオプションを置いたコマンドの遮断（block）。
 

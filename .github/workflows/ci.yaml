@@ -420,8 +420,6 @@ jobs:
         run: make setup-browser
       - name: ブラウザーE2E
         if: steps.owner.outputs.owns == 'true'
-        env:
-          AGENT_TOOLKIT_SERVE_BROWSER_TESTS: "1"
         run: >-
           uv run pytest
           -m browser agent-toolkit/agent_toolkit/_atk/serve

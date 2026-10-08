@@ -96,9 +96,11 @@ def _hooks_list() -> dict[str, Any] | None:
     messages: queue.Queue[str | None] = queue.Queue()
 
     def read_messages() -> None:
-        for line in process_stdout:
-            messages.put(line)
-        messages.put(None)
+        """stdoutは読み取りを終えた側が閉じ、主スレッドの回収を読み取り待ちで妨げない。"""
+        with process_stdout:
+            for line in process_stdout:
+                messages.put(line)
+            messages.put(None)
 
     reader = threading.Thread(target=read_messages, daemon=True)
     reader.start()

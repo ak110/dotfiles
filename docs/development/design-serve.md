@@ -40,6 +40,8 @@
 メイン計画が存在する場合はレビュー指摘管理表を一覧へ載せず、detail、バグ調査およびその他の付属ファイルも独立表示しない。
 本文検索は一覧上のメイン計画へ対応付けたパスと実際のファイルパスの双方を比べ、孤立したレビュー指摘管理表の一致を失わない。
 
+リモートのread RPCはファイル不在を`error_type: not_found`で障害から区別する。共通取得処理はこの応答をFileNotFoundErrorで呼出側へ伝え、WARNINGや単発SSHへの切り替えを行わない。存在確認は未作成の付属ファイルを正常な不在としてリンクから省き、明示的な本文取得は同じ不在をHTTP 404と取得失敗のWARNINGへ変える。接続断・権限不足・パス不正など他の失敗は従来の警告と代替取得を保つ。用途別にログを抑えるだけでは下位層の警告とSSH反復を止められないため、不在の分類はヘルパーと共通取得処理が所有する。
+
 知識境界として、計画バンドルの種別と接尾辞、種別ごとの一覧の扱いは`agent-toolkit/agent_toolkit/_plan/bundle_kinds.py`が持つ。
 計画rootの定義、表示と一覧の対象判定、走査、全文検索は`_plan/viewer_files.py`が、作成日時インデックスは`_plan/creation_times.py`が持ち、ローカル側（`_atk/serve/plans/`）とSSH先のヘルパーが同じモジュールを通る。
 SSH先のヘルパー（`agent-toolkit/scripts/atk_serve_plans_remote_helper.py`）は同じcheckoutの`agent-toolkit`を`sys.path`へ加え、これらの共有モジュールをimportする。

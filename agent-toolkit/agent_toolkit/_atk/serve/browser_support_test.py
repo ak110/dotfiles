@@ -27,7 +27,6 @@ from agent_toolkit._atk.wi import uwi as uwi_mutations
 from agent_toolkit._atk.wi import web_input as wi_web_input
 from agent_toolkit._plan import creation_times as plan_creation_times
 
-_BROWSER_TEST_ENV = "AGENT_TOOLKIT_SERVE_BROWSER_TESTS"
 _SERVER_START_TIMEOUT_SEC = 10.0
 _LONG_UNKNOWN_FRONTMATTER_KEY = "unknown_" + "x" * (500 - len("unknown_"))
 
@@ -41,11 +40,6 @@ async def _hold_route(
     started.set()
     await release.wait()
     await route.continue_()
-
-
-def _browser_tests_enabled() -> bool:
-    value = os.environ.get(_BROWSER_TEST_ENV, "")
-    return value.lower() in {"1", "true", "yes", "on"}
 
 
 class _BrowserOperations(wi_operations.Operations):
@@ -723,11 +717,9 @@ def _write_session_records(root: Path) -> None:
 
 
 __all__ = [
-    "_BROWSER_TEST_ENV",
     "_SERVER_START_TIMEOUT_SEC",
     "_LONG_UNKNOWN_FRONTMATTER_KEY",
     "_hold_route",
-    "_browser_tests_enabled",
     "_BrowserOperations",
     "_BrowserHarness",
     "_reserve_port",

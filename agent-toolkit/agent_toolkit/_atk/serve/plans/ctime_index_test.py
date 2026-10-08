@@ -108,7 +108,7 @@ def test_remote_relative_path_is_validated_before_ssh(rel: str, expected: bool) 
     [None, RuntimeError("切断"), {"ok": False, "error": "permission denied"}],
     ids=["disconnected", "rpc-raises", "rpc-error"],
 )
-async def test_remote_file_falls_back_to_single_ssh(response: typing.Any) -> None:
+async def test_remote_file_falls_back_to_single_ssh(response: typing.Any, caplog: pytest.LogCaptureFixture) -> None:
     """RPCが未接続・失敗・エラー応答の場合は単発SSHへ切り替える。"""
     runner, calls = _runner_returning(_read_payload("fallback"))
     watcher = None if response is None else _FakeWatcher(connected=True, response=response)
@@ -117,3 +117,4 @@ async def test_remote_file_falls_back_to_single_ssh(response: typing.Any) -> Non
 
     assert text == "fallback"
     assert [call[0:2] for call in calls] == [("remote-host", "read")]
+    assert len([record for record in caplog.records if record.levelname == "WARNING"]) == (0 if response is None else 1)

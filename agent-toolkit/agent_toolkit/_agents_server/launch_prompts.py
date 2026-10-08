@@ -18,7 +18,7 @@ TASK_MODEL_TYPES = {
     "external-write-review.subagent.md": "low_tier",
     "lane-integration.subagent.md": "high_tier",
     "pick-wi-explain.subagent.md": "low_tier",
-    "pick-wi.subagent.md": "medium_tier",
+    "pick-wi.subagent.md": "high_tier",
     "reader-fit-review.subagent.md": "low_tier",
     "refine-prompt.subagent.md": "medium_tier",
     "session-termination.subagent.md": "high_tier",

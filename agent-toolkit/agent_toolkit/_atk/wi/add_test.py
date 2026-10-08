@@ -122,6 +122,21 @@ def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
 
+def test_public_add_post_approval_uses_fixed_choices(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開CLIは専用の事後承認形式を保存し、選択肢の指定を要求しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "実施した対応で問題ありませんか？", source="test", entry_type="uwi")
+    args.question_type = "post-approval"
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    paths = list((notes / "inbox").glob("*.md"))
+    assert len(paths) == 1
+    parsed = frontmatter.parse_frontmatter(paths[0].read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["question_type"] == "post-approval"
+    assert "choices" not in parsed[0]
+
+
 def test_add_dry_run_validates_without_side_effects(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

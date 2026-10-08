@@ -226,9 +226,9 @@ class AntigravityManager:
         session.interrupt_requested = False
         await self._notify_waiters()
 
-    async def release_session(self, session_id: str) -> None:
+    async def release_session(self, session: SessionState) -> None:
         """対象のsessionを所有するタスクとプロセスを終了する。"""
-        await self._stop_owned_task(session_id)
+        await self._stop_owned_task(session.session_id)
 
     async def close(self) -> None:
         """所有中の全turnを終了する。"""

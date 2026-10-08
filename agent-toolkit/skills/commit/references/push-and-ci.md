@@ -59,12 +59,12 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
    - GitHub Actionsでは、対象workflowの直近の成功runから開始時刻と終了時刻を取得する。`gh`の入力と出力形式は実行直前のヘルプで確定する
    - `updatedAt - startedAt`の実績へ登録猶予と変動分の余裕を加えて総待機時間を決める
    - 対象workflowの成功runが取得できない場合と実績を算出できない場合は270秒を使う
-   - baselineごとに確定した総待機時間を指定して1回だけ起動する
+   - baselineごとに確定した総待機時間を指定する。終了コード6（新規失敗・未終端あり）と2（timeout）では同じ引数で呼び直し、それ以外を待機の終端として扱う
    - 背景実行で起動する場合は、ホストのツールがコマンドを時間で停止する上限を総待機時間より長くする。引数を省略した場合の上限と指定できる最大値はホストのツール説明が示す値を使い、省略した場合の上限が総待機時間より長ければその引数を省略し、短ければ総待機時間より長い値を指定する。総待機時間より先にホストが止めると、スクリプトは判定結果の終了コードを返せず、同じbaselineでの待ち直しが要る
    - ホストが実行ハンドルのyield・再開を提供する場合は、60秒未満の観測間隔で同一processへ再接続する
    - 起動した処理は同じprocessのまま維持する。進捗表示のために短い`--timeout`の別processへ分割する形と、実行中のplugin root更新を契機に置換する形は、いずれも判定対象の実行を取りこぼす
    - push前のbaselineが無い場合または別の主体がpushしたcommitを待つ場合は、対象の40桁の完全長commit SHAを
-     `--wait-sha`へ渡す。この起動形は対象SHAの全実行を判定対象とする
+     `--wait-sha`へ渡し、managed-temp内のその待機専用JSONを`--failure-record`へ指定する。この起動形は対象SHAの全実行を判定対象とする
    - baseline方式はpush前に存在した実行IDを除外するため、自身のpushにより新しく登録された実行だけを判定対象とする
    - GitLabでは、親pipelineに加えて同一projectのbridgeが再帰的に指すdownstream pipelineとそのジョブを判定対象とし、入れ子の下流も親の待機結果へ反映する
    - 別projectのdownstream pipelineは対象外とする
@@ -77,8 +77,8 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
    登録猶予の終了後に登録された実行も判定対象に含む。
    登録猶予は、実行が1件も登録されないまま終わる場合を区別するための待機であり、
    判定対象を確定する期限ではない
-4. CI失敗では、最初の失敗jobを検出した時点で`agent-toolkit:bugfix`を起動し、監視は継続する。証拠の取得、帰属、原因および拡張原因分析の要否は同スキルのCI失敗分析契約に従う
-5. CI失敗の修正方法を、push先と修正対象のcommitによって次の2区分から選ぶ。修正後はどちらの区分でも同じbranchへ再pushする。そのpush用の新しいbaselineを作成し、`wait_ci.py --baseline`で再監視する。再監視ではCI失敗を起こしたjobが新しいpushの判定対象に含まれるかを確かめる。含まれない場合の扱いは`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正commitが必要なCI失敗を修正するエージェント」の修正系列の定義に従う。
+4. 終了コード6を受けた時点で`agent-toolkit:bugfix`を起動し、並行して同じbaseline・引数で呼び直す。既報の失敗は再度の早期返却を起こさず、新しい失敗か全体終端まで待つ。終了コード1も同スキルで対処する。証拠の取得、帰属、原因および拡張原因分析の要否は同スキルのCI失敗分析契約に従う
+5. 元のbaselineの待機が終端（6と2以外）を返し、終端の出力が示す失敗集合全体を修正範囲へ含めてから再pushする。監視不能などで失敗集合を取得できなかった場合は、その原因を解消して終端の集合を取得する。CI失敗の修正方法を、push先と修正対象のcommitによって次の2区分から選ぶ。修正後はどちらの区分でも同じbranchへ再pushする。そのpush用の新しいbaselineを作成し、`wait_ci.py --baseline`で再監視する。再監視ではCI失敗を起こしたjobが新しいpushの判定対象に含まれるかを確かめる。含まれない場合の扱いは`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正commitが必要なCI失敗を修正するエージェント」の修正系列の定義に従う。
    - 原因commitへ取り込む区分: 次の全てが成立する場合は、修正を原因のcommitへ取り込む（amendか、fixupとautosquash）。同じbranchは`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように期待値を明示した形で更新する。背景の`git fetch`で追跡refが進むと、期待値を省いた`--force-with-lease`の保護が働かない。取り込みの実行手順は`agent-toolkit:commit`の`references/history-rewrite.md`の「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」に従う
      - push先のbranchが、remoteのHEADが指すbranch（`git ls-remote --symref <remote> HEAD`が示すbranch）と異なる
      - push先のbranchが、対象リポジトリの規範（`AGENTS.md`など）が直接pushまたはforce pushを禁じるbranchに当たらない
@@ -102,11 +102,12 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
 | 終了コード | 意味 |
 | --- | --- |
 | 0 | CI通過 |
-| 1 | CI失敗 |
+| 1 | 全run終端・CI失敗。既報分を含む全失敗集合を出力 |
 | 2 | timeout |
 | 3 | forge CLIまたは対象判別の失敗 |
 | 4 | run未登録 |
 | 5 | CI定義なしのため監視対象なし |
+| 6 | 未報告の失敗を検出し、未終端のrun・jobが残る。同じ引数で待機を再開 |
 | 130 | 中断 |
 
 ## 後始末

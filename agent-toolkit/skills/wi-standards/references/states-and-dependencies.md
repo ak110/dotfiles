@@ -96,7 +96,7 @@ worktreeの絶対パスを`--target-repo`へ渡す。リポジトリの識別だ
 ## 承認型UWIと元項目
 
 事後承認型UWIは元の作業を待たせないため、`depends_on`へ加えず、元項目をそのUWIの回答前に終端する。
-標準の2択を持つ事後承認型UWIへ`その対応で問題無い`と回答した場合、`atk wi answer`は回答の保存と`adopted`への遷移を同じ操作で完了する。
+専用の`question_type: post-approval`を持つ事後承認型UWIへ`その対応で問題無い`だけを回答した場合、`atk wi answer`と`atk serve`の回答操作は、回答の保存と`adopted`への遷移を同じ操作で完了する。保存済みの標準二択`choice`も同じ肯定完全一致を読み取り互換で扱う。一般の`yes-no`、否定回答と追加記述を含む回答は自動採択せず、回答済みとして通常の取り込みへ残す。
 回答が是正を求めた場合は、`origin-and-approval.md`「ユーザー専用の記入欄と是正要求」が定めるユーザーの是正要求の手順を適用し、そのUWI自体を作業要求として処理する。処理の着手対象はUWIとし、新しいAWIの起票は不要である。
 
 事前承認型UWIは元項目の`depends_on`へ加えず、元項目を`hold`へ移して自動処理から外す。元項目が`inbox`にあれば`atk wi hold <元項目のファイル名>`、`processing`にあれば`atk wi hold --state=processing <元項目のファイル名>`を使う。`hold`は`processable`に含まれないため、`ready`と`blocked`の導出を経由せずに選定の候補から外れる。

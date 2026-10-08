@@ -300,6 +300,8 @@ class SessionState:
     _progress_text: str = dataclasses.field(default="", repr=False)
     progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
     compaction_started_at_ms: dict[str, int] = dataclasses.field(default_factory=dict, repr=False)
+    # Codex接続が購読した子孫thread。thread解放だけに使い、状態ファイルや再開記録へ射影しない。
+    codex_subagent_thread_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
     publish_registry: bool = dataclasses.field(default=False, repr=False)
     # sessionを作成した時点の委譲元sessionの識別子。登録簿へ公開し、`atk serve`の一覧が親子付けに使う。
     launcher_session_id: str | None = dataclasses.field(default=None, repr=False)

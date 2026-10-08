@@ -37,6 +37,10 @@ dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、P
 
 同じJSONを両出力と同じ領域の`record.json`へ保存し、`record_path`で絶対パスを返す。短いコマンド結果でも、後続担当は保存JSONだけから実行条件と両出力を取得できる。JSON保存に失敗した場合はwrapper異常125と診断を返し、`record_path`をnullにする。子の終了状態と取得済み出力は残す。stdoutだけへ返す方式では呼出側が記録ファイルを再作成する必要があり、別の記録CLIでは同じ項目の所有が分かれるため、既存のmetadata生成へ保存を加えた。
 
+子の環境は親の環境を複製し、共通の`strip_inherited_venv`で起動元の`VIRTUAL_ENV`と対応するPATHのbin・Scripts要素を取り除く。
+親の環境、無関係の値、PATHの順序と空要素は保持する。別プロジェクトのuvや通常の子コマンドが、atkを起動したpluginの仮想環境へ誘導されることを防ぐためである。
+process-loopと委譲サーバーにも使う共通処理へ接続し、run-command専用の環境除去規則は持たない。
+
 責務境界として、どのチェックを実行するかと結果の診断は呼び出し側が担い、`run-command`はコマンドの意味や出力内容を解釈しない。MCPツールを利用できる統合実行ツールはMCPを優先し、`run-command`はその代替プロトコルにしない。pipelineと複数行codeは呼び出し側が保存済みscriptにし、`run-command`へはそのscriptのargvだけを渡す。
 
 呼び出しごとにredirect先、終了コードの退避、件数取得とJSON化をshellで組み立てる案は、引用と終了コード伝播の判断を反復させるため採用しない。出力をメモリーに集約して終了後に保存する案は、大容量出力と異常終了までの部分出力を失い得るため採用しない。対話型、常駐、端末制御ならびに追従表示は有限終了後に全量を返す契約と合わないため、対象外とする。
@@ -152,5 +156,11 @@ WIの表記診断は詳細の全量を別ファイルへ保存し、件数・`�
 過去の実行が投入したUWIは、次回の同じスキルの実行が`source`（`run-skill`）と`scope`（スキル名）で識別して扱う。手順は`agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」にある。process-wiは回答済みUWIの取得へ`--source=!run-skill`を付け、`calculate_readiness`もこれらのUWIをreadyへ含めない。含めると、process-wiの選定が除くUWIのためにprocess-loopが子セッションの起動を繰り返す。識別には既存の`source`と`scope`を使い、新しい状態や保存先は加えない。
 
 実行ごとのログは状態ディレクトリの`run-skill/`へ置き、各実行の開始時に最終更新から30日を超えたものを削除する。数日に1回の起動で同じ組の直近約10回分を調べられる長さとした。多重起動は同じディレクトリの`locks/`のファイルロックで防ぎ、対象リポジトリかスキルが異なる実行は並行して起動できる。
+
+標準エラーが端末の場合は、ログ作成直後に絶対パス、取得直後に子の識別子、受信ごとにassistantの発言とtool呼出名を標準エラーへ表示する。標準出力だけをリダイレクトした起動でも表示する。Claudeは`--output-format stream-json --verbose`を使い、起動前のUUIDを表示する。Codexは`--json`を使い、`thread.started`の`thread_id`を表示する（[非対話実行の公式仕様](https://learn.chatgpt.com/docs/non-interactive-mode#make-output-machine-readable)）。思考と生JSON全体は表示せず、表示した進捗と両streamの生診断を同じログへ残す。非TTYの子CLIの出力形式、成功時のstdout一行、失敗時のstderrと終了コード、timeoutと出力待機上限は従来どおりである。
+
+進捗の変換と表示は`run_skill_progress.py`が持つ。`atk agents logs`の`logs_export.py`が使う`session_record_format.SessionEvent`とClaudeの変換を再利用し、Codex exec固有のitemイベントだけを同じ型へ変換する。保存済みロールアウトを読むlogsと実行中のstdoutを読むrun-skillは入力形式と所有する資源が異なるため、ログファイルの追跡機構は共通化しない。
+
+2026年10月8日の起草記録では、類似見直し観点を「非対話の子セッションを待つコマンド」へ限定し、比較対象にorchestratorとcommitを挙げていた。既存のログ表示との共通化判断は記録になく、受信処理の修正だけで実現性を確定していた。実装では表示側のSessionEventまで比較し、既存変換を共有する構成にした。終了前のPTY観測を両候補・別スキル・正常と異常の終了で行い、表示対象と生診断の境界を検証する。この説明は起草記録を根拠とし、記録されていない思考の有無を含まない。
 
 却下した案は3つある。cronからAWIを定期投入し`atk wi process-loop`に処理させる案は、ユーザーが単発実行コマンドを選んだため採らない。対話型の`claude`をcronから起動する案は、端末が無いため採らない。Claude Codeのクラウド定期実行は社内のサーバーへ届かない見込みのため採らない（届くかは確かめていない）。

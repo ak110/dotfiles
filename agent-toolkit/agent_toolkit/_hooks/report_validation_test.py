@@ -9,7 +9,7 @@ from agent_toolkit._hooks import report_validation, stop
 from agent_toolkit._hooks.termination_evidence_test import isolated_session  # noqa: F401  # pylint: disable=unused-import
 
 
-@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("host", ["claude", "claude-send", "codex"])
 @pytest.mark.parametrize(
     ("review", "submission", "expected"),
     [
@@ -23,6 +23,8 @@ from agent_toolkit._hooks.termination_evidence_test import isolated_session  # n
         ),
         # 区分を先頭に置く書式へ移る前の書式の予告も、最終報告を要求する。
         ("## 振り返り結果報告\n### 確定した問題と対策\n- 対策（投入予定: 対策のタイトル）", "", "block"),
+        ("## 振り返り結果の予告\n### 確定した問題と対策\n- AWI登録予定: 対策のタイトル", "", "block"),
+        ("## 振り返り結果の予告\n予告。", "## AWI投入結果報告\n投入完了。", "approve"),
     ],
 )
 def test_stop_uses_visible_headings_for_each_host(
@@ -34,6 +36,18 @@ def test_stop_uses_visible_headings_for_each_host(
     entries = []
     for text in texts:
         if not text:
+            continue
+        if host == "claude-send":
+            entries.append(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {"type": "tool_use", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": text}},
+                        ]
+                    },
+                }
+            )
             continue
         entries.append(
             {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
@@ -56,9 +70,13 @@ def test_stop_uses_visible_headings_for_each_host(
     assert result.get("decision", "approve") == expected
     reason = str(result.get("reason", ""))
     assert "completion-report-check" not in reason
+    if expected == "block" and review:
+        assert "review-submission" in reason
+        assert "review-result" not in reason
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("heading", ["振り返り結果報告", "振り返り結果の予告"])
 @pytest.mark.parametrize(
     "body",
     [
@@ -71,16 +89,17 @@ def test_stop_uses_visible_headings_for_each_host(
         "### 対策を見送った問題\n- 再発防止策なし: 問題; 評価した案: 案; 採らない理由: 理由",
     ],
 )
-def test_stop_rejects_required_evidence_violation(host: str, body: str) -> None:
+def test_stop_rejects_required_evidence_violation(host: str, heading: str, body: str) -> None:
     """違反した行と直し方を両ホストのStopへ返す。"""
-    text = "## 作業完了報告\n完了。\n\n## 振り返り結果報告\n" + body
+    text = f"## 作業完了報告\n完了。\n\n## {heading}\n" + body
     payload = {"session_id": "evidence-test", "last_assistant_message": text, "stop_hook_active": False}
     if host == "codex":
         payload["turn_id"] = "codex-turn"
     result = stop.evaluate(json.dumps(payload))
     assert result["decision"] == "block"
     reason = str(result["reason"])
-    assert body.splitlines()[-1] in reason and "直接発話" in reason
+    assert body.splitlines()[-1] in reason
+    assert ("mcp__agent-toolkit__send_to_user" in reason) is (host == "claude")
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

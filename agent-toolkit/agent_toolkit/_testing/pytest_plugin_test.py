@@ -17,10 +17,7 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
         directory = package / suffix
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "__init__.py").touch()
-    # 明示要求型fixtureは実物を使い、自動fixtureの登録だけを試験用パッケージへ向ける。
-    (package / "conftest.py").write_text(
-        (pathlib.Path(__file__).resolve().parents[1] / "conftest.py").read_text(encoding="utf-8"), encoding="utf-8"
-    )
+    # 明示要求型fixtureも起動時プラグインから使い、自動fixtureの適用先だけを試験用パッケージへ向ける。
     (tmp_path / "conftest.py").write_text(
         textwrap.dedent("""\
             import os

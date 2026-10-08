@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import json
@@ -16,6 +18,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import agent_toolkit.agents_server_mcp as entry_script
+from agent_toolkit import _agents_server as server_package
 from agent_toolkit._agents_server import (
     launch_requests,
     mcp_tools,
@@ -23,6 +26,7 @@ from agent_toolkit._agents_server import (
     session_registry,
     tool_descriptions,
 )
+from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import state_paths
@@ -42,6 +46,64 @@ from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.parametrize("placement", ["root-version", "ancestor-version", "checkout"])
+@pytest.mark.parametrize("form", ["role-name", "absolute-path"])
+def test_imported_server_keeps_role_documents_after_distribution_removal(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, placement: str, form: str
+) -> None:
+    """サーバーのモジュール読込時に保持し、元配布物の消失後も役割とplugin変数を同じ版へ解決する。"""
+    roots = {
+        "root-version": tmp_path / "cache" / "agent-toolkit" / "2.125.0",
+        "ancestor-version": tmp_path / "cache" / "2.125.0" / "agent-toolkit",
+        "checkout": tmp_path / "checkout" / "agent-toolkit",
+    }
+    source = roots[placement]
+    manifest = source / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"agent-toolkit","version":"2.125.0"}', encoding="utf-8")
+    task = source / "share" / "declared.subagent.md"
+    task.parent.mkdir()
+    task.write_text(
+        "# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n```\n\n${CLAUDE_PLUGIN_ROOT}/skills/sample/SKILL.md\n",
+        encoding="utf-8",
+    )
+    skill = source / "skills" / "sample" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# この版の手順\n", encoding="utf-8")
+    module_dir = source / "agent_toolkit" / "_agents_server"
+    module_dir.mkdir(parents=True)
+    for module in (plugin_roots, launch_requests):
+        assert module.__file__ is not None
+        shutil.copyfile(module.__file__, module_dir / pathlib.Path(module.__file__).name)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+    def load(name: str) -> Any:
+        spec = importlib.util.spec_from_file_location(f"retained_{name}", module_dir / f"{name}.py")
+        assert spec is not None and spec.loader is not None
+        loaded = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loaded)
+        return loaded
+
+    retained = load("plugin_root")
+    monkeypatch.setattr(server_package, "plugin_root", retained)
+    requests = load("launch_requests")
+    monkeypatch.setitem(requests._TASK_MODEL_TYPES, task.name, "high_tier")
+    stable = retained.SERVER_PLUGIN_ROOT
+    if placement == "checkout":
+        assert stable == source
+    else:
+        assert stable != source
+        shutil.rmtree(source)
+    model_type, prompt, _kind, _handoff = requests.task_document_request(
+        "declared" if form == "role-name" else str(task), {"対象": "値"}
+    )
+    assert model_type == "high_tier"
+    assert str(stable / "share" / task.name) in prompt
+    assert str(stable / "skills" / "sample" / "SKILL.md") in prompt
+    assert (stable / "skills" / "sample" / "SKILL.md").read_text(encoding="utf-8") == "# この版の手順\n"
 
 
 @pytest.mark.asyncio
@@ -406,6 +468,10 @@ async def test_reader_fit_public_start_accepts_declared_review_inputs(
     prompt = manager.start.await_args.args[1]
     assert all(f"{key}: {value}" in prompt for key, value in params.items())
     manager.start.reset_mock()
+    missing_scope = {key: value for key, value in params.items() if key != "修正範囲"}
+    with pytest.raises(ActionableError, match="修正範囲"):
+        await mcp_tools.start(str(tmp_path), subagent_md_path=str(task), extra_params=missing_scope)
+    manager.start.assert_not_awaited()
     with pytest.raises(ActionableError, match="宣言"):
         await mcp_tools.start(str(tmp_path), subagent_md_path=str(task), extra_params={**params, "追加説明": "全体を再走査"})
     manager.start.assert_not_awaited()
@@ -433,12 +499,15 @@ async def test_exec_review_public_start_accepts_previous_revision(
 
 
 @pytest.mark.asyncio
-async def test_defect_investigation_uses_high_tier_model(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存不良の調査担当は`start`から`high_tier`で起動し、委譲プロンプトへ`<役割名>.subagent.md`の出所と対象の不良を載せる。
+@pytest.mark.parametrize("task_name", ["defect-investigation.subagent.md", "pick-wi.subagent.md"])
+async def test_public_start_uses_high_tier_model(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, task_name: str
+) -> None:
+    """調査担当とpickerは段位省略の`start`から`high_tier`で起動し、出所と入力を載せる。
 
     工程別モデルの対応が欠けると`start`が起動を拒否し、段位を誤ると調査を上位モデルで行えない。
     """
-    task_document = launch_requests._SHARE_DIRECTORY / "defect-investigation.subagent.md"
+    task_document = launch_requests._SHARE_DIRECTORY / task_name
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path)
@@ -451,7 +520,28 @@ async def test_defect_investigation_uses_high_tier_model(tmp_path: pathlib.Path,
     assert model_type == "high_tier"
     assert cwd == str(tmp_path)
     assert str(task_document) in prompt
-    assert f"対象の不良: {extra_params['対象の不良']}" in prompt
+    assert all(f"{key}: {value}" in prompt for key, value in extra_params.items())
+
+
+@pytest.mark.asyncio
+async def test_public_picker_resolves_high_tier_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """段位省略のpickerが保存設定の上位候補を解決し、backendへ渡す。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL", "claude:opus/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_MEDIUM_TIER_MODEL", "claude:sonnet/medium")
+    manager, _backend = _manager_with_fake("claude")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    task_document = launch_requests._SHARE_DIRECTORY / "pick-wi.subagent.md"
+    try:
+        response = await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path=str(task_document),
+            extra_params=_observed_input_params(task_document.name, tmp_path),
+        )
+        session = manager.sessions[response["session_id"]]
+        assert (session.engine, session.model, session.effort) == ("claude", "opus", "high")
+        assert session.model_type == "high_tier"
+    finally:
+        await manager.close()
 
 
 def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

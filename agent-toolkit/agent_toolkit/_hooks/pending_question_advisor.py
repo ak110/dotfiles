@@ -1,4 +1,4 @@
-"""地の文の問いかけでターンを終える応答を検出するStopフック。
+"""通常本文と送信本文の問いかけでターンを終える応答を検出するStopフック。
 
 直前のアシスタント応答の地の文へ、ユーザーへ判断を求める文が含まれ、同じ応答が
 `AskUserQuestion`の呼び出しを持たない場合にターンの終了を遮断する。
@@ -25,6 +25,7 @@ from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 from agent_toolkit._hooks.stop_session import append_stop_log
 from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+from agent_toolkit._hooks.transcript_scan import read_transcript_entries_cached
 
 _HOOK_ID = "pending_question_advisor"
 _block_notice = _block_notice_formatter(_HOOK_ID)
@@ -105,23 +106,61 @@ def _is_unconditional_request(sentence: str, expression: str) -> bool:
 
 
 def _latest_response(transcript_path: str) -> tuple[str, bool]:
-    """直前のアシスタント応答の本文と、`AskUserQuestion`の呼び出しの有無を返す。"""
+    """最後の本文を返し、人間の応答・作業ツール・APIエラー以前の問いを除く。
+
+    送信のtool resultを本文の境界から除くため、そのIDだけを透過させる。
+    空の最終応答でも送信済み本文を保持し、本文を持つ別応答へ進めば判定対象を更新する。
+    """
     texts: list[str] = []
     used_ask_user_question = False
-    for message in _transcript.iter_latest_assistant_messages(transcript_path):
-        content = message.get("content")
-        if not isinstance(content, list):
+    message_id = ""
+    send_ids: set[str] = set()
+    for entry in read_transcript_entries_cached(transcript_path):
+        if entry.get("isSidechain"):
             continue
-        for block in content:
-            if not isinstance(block, dict):
+        message = entry.get("message", {})
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        blocks = [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
+        attachment = entry.get("attachment")
+        queued_input = isinstance(attachment, dict) and attachment.get("type") == "queued_command"
+        if entry.get("isApiErrorMessage") or entry.get("type") == "user" or queued_input:
+            if (
+                not entry.get("isApiErrorMessage")
+                and not queued_input
+                and blocks
+                and all(
+                    block.get("type") == "tool_result" and block.get("tool_use_id") in send_ids and not block.get("is_error")
+                    for block in blocks
+                )
+            ):
                 continue
-            block_type = block.get("type")
-            if block_type == "text":
-                text = block.get("text", "")
-                if isinstance(text, str) and text:
-                    texts.append(text)
-            elif block_type == "tool_use" and block.get("name") == _ASK_USER_QUESTION_TOOL:
-                used_ask_user_question = True
+            texts.clear()
+            send_ids.clear()
+            used_ask_user_question = False
+            message_id = ""
+            continue
+        if entry.get("type") != "assistant" or not any(
+            block.get("type") == "tool_use" or _transcript.visible_text_blocks([block]) for block in blocks
+        ):
+            continue
+        current_id = message.get("id", "")
+        if message_id and current_id and message_id != current_id:
+            texts.clear()
+            send_ids.clear()
+            used_ask_user_question = False
+        message_id = current_id
+        for block in blocks:
+            if block.get("type") == "tool_use":
+                name = str(block.get("name", ""))
+                if name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX):
+                    if isinstance(block.get("id"), str):
+                        send_ids.add(block["id"])
+                else:
+                    texts.clear()
+                    used_ask_user_question = name == _ASK_USER_QUESTION_TOOL
+            texts.extend(_transcript.visible_text_blocks([block]))
     return ("\n".join(texts), used_ask_user_question)
 
 

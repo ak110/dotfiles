@@ -221,8 +221,8 @@ class FakeBackend:
         del session
         self.interrupt_calls += 1
 
-    async def release_session(self, session_id: str) -> None:
-        self.release_calls.append(session_id)
+    async def release_session(self, session: state.SessionState) -> None:
+        self.release_calls.append(session.session_id)
 
     async def close(self) -> None:
         """バックエンド終了処理のダミー。"""
@@ -455,6 +455,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
     if task_name == "lane-integration.subagent.md":
         return [
             "統合区分: マージあり",
+            "レーン開始時刻: 2026-10-08T00:38:16Z",
             "実行レビュー済みHEAD: 0123abc",
             f"統合先worktree: {root}",
             "統合先branch: develop",
@@ -481,12 +482,12 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             f"成果物: {root / 'guide.md'}（40行）",
             "種別: エンドユーザー向け文書",
             "読者像: ツールを初めて導入するエンドユーザー。内部の実装は知らない",
+            f"修正範囲: {root / 'before.md'}と成果物の設定保存節の差分、直接影響は再読込節",
         ]
         if rereview:
             lines.extend(
                 [
                     "レビュー種別: 再レビュー",
-                    f"修正範囲: {root / 'before.md'}と成果物の設定保存節の差分、直接影響は再読込節",
                     "未解決事項: なし",
                 ]
             )

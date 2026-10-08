@@ -143,6 +143,7 @@ addopts = [
     "--showlocals",
     "-p", "no:cacheprovider",
     "-p", "agent_toolkit._testing.pytest_plugin",
+    "-m", "not browser and not live_agents",
     "--maxfail=5",
     "--durations=30",
     "--durations-min=0.5",
@@ -154,8 +155,11 @@ addopts = [
     "--dist=worksteal",
 ]
 markers = [
-    "browser: Chromiumを使う実ブラウザー統合テスト",
+    "browser: 通常のpytest実行から除外するChromium統合テスト（make test-browserで実行）",
+    "live_agents: 通常のpytest実行から除外する実backend統合テスト（make test-agents-liveで実行）",
 ]
+# 読取を終えたpipeの未解放を、GC時の警告も含めてテスト失敗として検出する。
+filterwarnings = ["error::ResourceWarning", "error::pytest.PytestUnraisableExceptionWarning"]
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"

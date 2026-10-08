@@ -498,9 +498,9 @@ class ClaudeServerManager:
             task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    async def release_session(self, session_id: str) -> None:
+    async def release_session(self, session: SessionState) -> None:
         """sessionを所有するタスクを終了し、SDKクライアントの接続を閉じる。"""
-        await self._stop_owned_task(session_id)
+        await self._stop_owned_task(session.session_id)
 
     async def _start_owned_task(
         self,

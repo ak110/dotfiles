@@ -247,13 +247,18 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     if question_type not in accepted_question_types:
         raise WebInputError(
             f"question_typeが不正です: {question_type}",
-            next_action="frontmatterのquestion_typeへchoiceかyes-noを指定する（free-formは新しく指定できない）",
+            next_action="frontmatterのquestion_typeへchoice、yes-no、post-approvalを指定する（free-formは新しく指定できない）",
         )
     if question_type == _constants.QUESTION_TYPE_CHOICE and not updated_data.get("choices"):
         raise WebInputError(
             "choice形式にはchoicesが必要です",
             next_action="frontmatterのchoicesへ選択肢を指定するか、question_typeをyes-noへ変える",
         )
+
+    if question_type == _constants.QUESTION_TYPE_POST_APPROVAL:
+        if "choices" in updates:
+            raise WebInputError("post-approval形式の選択肢は固定です", next_action="編集本文のfrontmatterからchoicesを外す")
+        updated_data.pop("choices", None)
 
     marker_index = stored_body.rfind(_uwi.ANSWER_MARKER)
     if marker_index < 0:

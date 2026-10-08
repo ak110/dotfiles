@@ -317,7 +317,8 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
 
     子のセッションとプロセスグループは変更せず、SSH鍵のパスフレーズを制御端末から入力できる状態を保つ。
     `timeout=None`は待機上限を設けない。上限超過時は子を終了する前に子孫を列挙して全て強制終了し、
-    出力回収にも上限を設ける。
+    出力回収にも上限を設ける。POSIXでは回収に失敗しても呼出側が両pipeを閉じる。
+    Windowsではcommunicateのreader threadが閉じるため、読み取りロックを待ち得る主スレッドのcloseは行わない。
     """
     global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
     _current_stage_title = "git pull"
@@ -352,45 +353,53 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
         _last_stderr_tail = sync_report.truncate_tail(str(error))
         return 1
     try:
-        stdout, stderr = process.communicate(timeout=timeout) if timeout is not None else process.communicate()
-    except subprocess.TimeoutExpired:
-        _kill_process_tree(process)
         try:
-            stdout, stderr = process.communicate(timeout=_GIT_OUTPUT_RECOVERY_TIMEOUT_SEC)
+            stdout, stderr = process.communicate(timeout=timeout) if timeout is not None else process.communicate()
         except subprocess.TimeoutExpired:
-            stdout, stderr = "", ""
+            _kill_process_tree(process)
+            try:
+                stdout, stderr = process.communicate(timeout=_GIT_OUTPUT_RECOVERY_TIMEOUT_SEC)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", ""
+            if stdout:
+                sys.stdout.write(stdout)
+            if stderr:
+                sys.stderr.write(stderr)
+            timeout_message = (
+                f"git pullが{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
+                f"未完了です。必要に応じて{_GIT_TIMEOUT_ENV}を調整してください。"
+            )
+            print(timeout_message, file=sys.stderr)
+            _last_stderr_tail = sync_report.truncate_tail(f"{stderr}\n{timeout_message}")
+            logger.error(
+                "stage終了: %d/%d git pull exit=1 timeout=%s duration=%.3f",
+                step_no,
+                _LOG_STAGE_TOTAL,
+                timeout,
+                time.monotonic() - started_at,
+            )
+            return 1
         if stdout:
             sys.stdout.write(stdout)
         if stderr:
-            sys.stderr.write(stderr)
-        timeout_message = (
-            f"git pullが{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
-            f"未完了です。必要に応じて{_GIT_TIMEOUT_ENV}を調整してください。"
-        )
-        print(timeout_message, file=sys.stderr)
-        _last_stderr_tail = sync_report.truncate_tail(f"{stderr}\n{timeout_message}")
-        logger.error(
-            "stage終了: %d/%d git pull exit=1 timeout=%s duration=%.3f",
+            stream = sys.stdout if process.returncode == 0 else sys.stderr
+            stream.write(stderr)
+            _last_stderr_tail = sync_report.truncate_tail(stderr)
+        logger.info(
+            "stage終了: %d/%d git pull exit=%d duration=%.3f",
             step_no,
             _LOG_STAGE_TOTAL,
-            timeout,
+            process.returncode,
             time.monotonic() - started_at,
         )
-        return 1
-    if stdout:
-        sys.stdout.write(stdout)
-    if stderr:
-        stream = sys.stdout if process.returncode == 0 else sys.stderr
-        stream.write(stderr)
-        _last_stderr_tail = sync_report.truncate_tail(stderr)
-    logger.info(
-        "stage終了: %d/%d git pull exit=%d duration=%.3f",
-        step_no,
-        _LOG_STAGE_TOTAL,
-        process.returncode,
-        time.monotonic() - started_at,
-    )
-    return process.returncode
+        return process.returncode
+
+    finally:
+        if os.name != "nt":
+            assert process.stdout is not None
+            assert process.stderr is not None
+            process.stdout.close()
+            process.stderr.close()
 
 
 def _git_capture(*arguments: str) -> subprocess.CompletedProcess[str]:

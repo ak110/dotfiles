@@ -182,3 +182,91 @@ def test_allows_when_transcript_missing(tmp_path: pathlib.Path) -> None:
 
     assert not _decision(result)
     assert not result.stderr
+
+
+@pytest.mark.parametrize("empty_final", [False, True])
+def test_blocks_sent_question_after_delivery_result(tmp_path: pathlib.Path, empty_final: bool) -> None:
+    """送信結果や空の最終応答が続いても、末尾の未確認の問いを検出する。"""
+    entries = [
+        _assistant_entry(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "sent",
+                    "name": "mcp__agent-toolkit__send_to_user",
+                    "input": {"message": "どちらにしますか？"},
+                },
+            ]
+        ),
+        {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "sent", "content": "表示した"}]}},
+    ]
+    if empty_final:
+        entries.append({"type": "assistant", "message": {"id": "msg-2", "content": []}})
+    transcript = _write_transcript(tmp_path, entries)
+    result = _decision(_run({"session_id": "sent", "transcript_path": str(transcript)}, state_dir=tmp_path))
+    assert result["decision"] == "block"
+
+
+@pytest.mark.parametrize("boundary", ["human", "queued-human", "tool", "ask", "api-error", "send-error", "new-response"])
+def test_old_sent_question_does_not_cross_response_boundary(tmp_path: pathlib.Path, boundary: str) -> None:
+    """応答と作業の境界を越えて過去の送信の問いを再遮断しない。"""
+    entries = [
+        _assistant_entry(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "sent",
+                    "name": "mcp__agent-toolkit__send_to_user",
+                    "input": {"message": "どちらにしますか？"},
+                },
+            ]
+        )
+    ]
+    if boundary == "human":
+        entries.append({"type": "user", "message": {"content": "A案にする"}})
+    elif boundary == "queued-human":
+        entries.append({"type": "attachment", "attachment": {"type": "queued_command", "prompt": "A案にする"}})
+    elif boundary in {"tool", "ask"}:
+        entries.append(
+            _assistant_entry([{"type": "tool_use", "name": "Bash" if boundary == "tool" else "AskUserQuestion", "input": {}}])
+        )
+    elif boundary == "api-error":
+        entries.append({"type": "assistant", "isApiErrorMessage": True, "message": {"content": []}})
+    elif boundary == "send-error":
+        entries.append(
+            {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "sent", "is_error": True}]}}
+        )
+    else:
+        entries.append(
+            {
+                "type": "assistant",
+                "message": {"id": "msg-2", "content": [{"type": "text", "text": "判断が不要なことを確認しました。"}]},
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+    assert not _decision(_run({"session_id": boundary, "transcript_path": str(transcript)}, state_dir=tmp_path))
+
+
+def test_old_confirmation_does_not_allow_new_sent_question(tmp_path: pathlib.Path) -> None:
+    entries = [
+        _assistant_entry([{"type": "tool_use", "name": "AskUserQuestion", "input": {}}]),
+        {"type": "user", "message": {"content": "A案"}},
+        {
+            "type": "assistant",
+            "message": {
+                "id": "msg-2",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "mcp__agent-toolkit__send_to_user",
+                        "input": {"message": "次はどうしますか？"},
+                    },
+                ],
+            },
+        },
+    ]
+    transcript = _write_transcript(tmp_path, entries)
+    assert (
+        _decision(_run({"session_id": "new-question", "transcript_path": str(transcript)}, state_dir=tmp_path))["decision"]
+        == "block"
+    )

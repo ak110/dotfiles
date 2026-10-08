@@ -83,7 +83,7 @@ description: >
 
 ## ホスト本体のバイナリの検索
 
-本体の検索は、ホスト機能の公式ドキュメントと提供元の公開Issueトラッカーにある既知の報告の確認を補う手段である。挙動の結論と回避策の採否はそれらの確認と合わせて行い、基準は`agent-toolkit:writing-standards`の`references/investigation.md`と`agent-toolkit:bugfix`の`references/initial-analysis.md`にある。
+本体の検索は、ホスト機能の公式ドキュメントと提供元の公開Issueトラッカーにある既知の報告の確認を補う手段である。挙動の結論と回避策の採否はそれらの確認と合わせて行い、基準は`agent-toolkit:writing-standards`の`references/investigation.md`と`agent-toolkit:bugfix`の`SKILL.md`「直接的原因と事象時点の確定」にある。
 
 Claude Code本体は`B=$(readlink -f "$(command -v claude)")`、Codex本体は
 `C=$(readlink -f "$(command -v codex)")`で実体パスを解決する。

@@ -129,7 +129,16 @@ _LANE_COST_KEYS = frozenset(
         *_LEGACY_SECONDS_KEYS,
     }
 )
-_TOP_LEVEL_KEYS = frozenset({_selection.DECISIONS_KEY, "decisions", _selection.LANE_COSTS_KEY, "lane_costs", _BLOCKERS_KEY})
+_TOP_LEVEL_KEYS = frozenset(
+    {
+        _selection.DECISIONS_KEY,
+        "decisions",
+        _selection.LANE_COSTS_KEY,
+        "lane_costs",
+        _BLOCKERS_KEY,
+        _selection.LANE_OVERLAPS_KEY,
+    }
+)
 _MODEL_ROLES = ("実装担当", "実行レビュー担当")
 _MODEL_TYPE_RE = re.compile(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+")
 _OBSERVATION_PLAN_RE = re.compile(r"計画:\s*([^）]+)")
@@ -413,7 +422,9 @@ def _repository_path(candidate: str, work_dir: pathlib.Path) -> str | None:
     target = work_dir / candidate
     if candidate.endswith("/"):
         return candidate if target.is_dir() else None
-    if target.exists():
+    if target.is_dir():
+        return candidate + "/"
+    if target.is_file():
         return candidate
     suffix = "/" + candidate
     matches = [path for path in _tracked_files(work_dir) if path.endswith(suffix)]
@@ -498,9 +509,30 @@ def check_decision(
     write_files: list[str],
     public_write_files: list[str],
     excluded_paths: list[str],
+    work_dir: pathlib.Path | None = None,
 ) -> list[str]:
     """選定結果の1件の項目の違反を、AWIのファイル名・区分・パスを含む行の一覧で返す。"""
     errors: list[str] = []
+    if work_dir is not None:
+        for name, entries in (
+            (_selection.WRITE_FILES_KEY, write_files),
+            (_selection.PUBLIC_WRITE_FILES_KEY, public_write_files),
+        ):
+            for entry in entries:
+                target = work_dir / entry
+                valid = _normalize_candidate(entry) == entry and (
+                    target.is_dir()
+                    and entry.endswith("/")
+                    or target.is_file()
+                    and not entry.endswith("/")
+                    or not target.exists()
+                    and entry in reflected
+                )
+                if not valid:
+                    errors.append(
+                        f"{awi}: `{name}`のパスの不正: {entry}。"
+                        "実在ファイル、末尾/付き実在ディレクトリ、または反映先に明示された新設先へ直す"
+                    )
     range_descriptions = {
         path for path in reflected if _is_range(path) and any(other != path and other.startswith(path) for other in reflected)
     }
@@ -598,12 +630,16 @@ def check(
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
         reflected = reflected_paths(body, work_dir)
-        errors.extend(check_decision(awi, reflected, write_files, public_write_files, excluded_paths))
+        errors.extend(check_decision(awi, reflected, write_files, public_write_files, excluded_paths, work_dir))
         errors.extend(check_norm_spec(awi, decision, reflected, conditions))
     errors.extend(_check_lane_models(items))
     errors.extend(_check_resume_plan_lanes(items))
     errors.extend(_check_lane_stages(items, costs))
-    errors.extend(_check_lane_overlaps(items, costs))
+    errors.extend(
+        _check_lane_overlaps(
+            items, costs, typing.cast(list[dict[str, object]], selection.get(_selection.LANE_OVERLAPS_KEY, []))
+        )
+    )
     errors.extend(_check_public_write_rationales(items, costs))
     return errors
 
@@ -711,7 +747,31 @@ def _structure_errors(selection: object) -> tuple[list[str], list[str]]:
     blockers = selection.get(_BLOCKERS_KEY, [])
     if not _is_string_list(blockers):
         errors.append(f"`{_BLOCKERS_KEY}`が文字列の列ではない: {blockers!r}")
+    errors.extend(_overlap_structure_errors(selection.get(_selection.LANE_OVERLAPS_KEY, [])))
     return errors, model_errors
+
+
+def _overlap_structure_errors(records: object) -> list[str]:
+    """重なりの各記録が所定の欄と型を持つか確かめる。空列の記録欠落は共有パスの処理で判定する。"""
+    if not isinstance(records, list):
+        return [f"`{_selection.LANE_OVERLAPS_KEY}`が列ではない"]
+    errors: list[str] = []
+    keys = {"レーン1", "レーン2", "共通パス", "レーン1の定義", "レーン2の定義", "判定"}
+    for index, record in enumerate(records, 1):
+        label = f"{_selection.LANE_OVERLAPS_KEY}の{index}件目"
+        if not isinstance(record, dict) or set(record) != keys:
+            errors.append(f"{label}: 欄を{', '.join(sorted(keys))}へそろえる")
+            continue
+        for key in ("レーン1", "レーン2", "共通パス"):
+            if not isinstance(record[key], str) or not record[key].strip():
+                errors.append(f"{label}: {key}が空でない文字列ではない")
+        for key in ("レーン1の定義", "レーン2の定義"):
+            value = record[key]
+            if not _is_string_list(value) or not value or any(not item.strip() for item in value):
+                errors.append(f"{label}: {key}が空でない定義の列ではない")
+        if record["判定"] not in ("交わる", "交わらない"):
+            errors.append(f"{label}: 判定は交わるか交わらないを指定する")
+    return errors
 
 
 def _is_string_list(value: object) -> typing.TypeGuard[list[str]]:
@@ -808,13 +868,10 @@ def _check_lane_stages(items: collections.abc.Sequence[object], costs: collectio
     return errors
 
 
-def _check_lane_overlaps(items: collections.abc.Sequence[object], costs: collections.abc.Sequence[object]) -> list[str]:
-    """別レーンの重複パスが双方の根拠にあるか確かめ、意味の独立性は担当の読解へ残す。"""
-    rationales = {
-        row[_selection.LANE_KEY]: row.get(_selection.RATIONALE_KEY, "")
-        for row in costs
-        if isinstance(row, dict) and isinstance(row.get(_selection.LANE_KEY), str)
-    }
+def _check_lane_overlaps(
+    items: collections.abc.Sequence[object], costs: collections.abc.Sequence[object], records: list[dict[str, object]]
+) -> list[str]:
+    """全共有パスに記録があり、段階・先行関係が交わる定義に従うか確かめる。"""
     stages = {
         row[_selection.LANE_KEY]: (row.get(_selection.STAGE_KEY, 1), row.get(_selection.PRIOR_LANES_KEY, []))
         for row in costs
@@ -828,16 +885,10 @@ def _check_lane_overlaps(items: collections.abc.Sequence[object], costs: collect
         for item in items
         if isinstance(item, dict) and isinstance(item.get(_selection.LANE_KEY), str) and item[_selection.LANE_KEY] != _LANE_NONE
     ]
-    errors: list[str] = []
+    expected: set[tuple[str, str, str]] = set()
     for left, right in itertools.combinations(assigned, 2):
-        lanes = (left[_selection.LANE_KEY], right[_selection.LANE_KEY])
+        lanes = sorted((left[_selection.LANE_KEY], right[_selection.LANE_KEY]))
         if lanes[0] == lanes[1]:
-            continue
-        left_stage, left_prior = stages.get(lanes[0], (1, []))
-        right_stage, right_prior = stages.get(lanes[1], (1, []))
-        if left_stage != right_stage and (
-            (left_stage < right_stage and lanes[0] in right_prior) or (right_stage < left_stage and lanes[1] in left_prior)
-        ):
             continue
         overlaps = {
             second if _covers(first, second) else first
@@ -845,18 +896,60 @@ def _check_lane_overlaps(items: collections.abc.Sequence[object], costs: collect
             for second in _string_list(right, _selection.WRITE_FILES_KEY)
             if _covers(first, second) or _covers(second, first)
         }
-        for path in sorted(overlaps):
-            pattern = re.compile(r"(?<![A-Za-z0-9_./-])" + re.escape(path) + r"(?![A-Za-z0-9_./-])")
-            missing = [
-                lane for lane in lanes if not isinstance(rationales.get(lane), str) or not pattern.search(rationales[lane])
-            ]
-            if missing:
-                errors.append(
-                    f"{left[_selection.WI_KEY]}（{lanes[0]}）と{right[_selection.WI_KEY]}（{lanes[1]}）: "
-                    f"重複パスの根拠不足: {path}（{', '.join(missing)}）。"
-                    "双方のレーンの根拠へ共通パスと交わらない定義を記し、交わる場合は同じレーンへまとめる"
-                )
+        expected.update((lanes[0], lanes[1], path) for path in overlaps)
+    errors: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    dependencies: dict[str, set[str]] = {}
+    for record in records:
+        left, right = sorted((str(record["レーン1"]), str(record["レーン2"])))
+        path = str(record["共通パス"])
+        key = (left, right, path)
+        label = f"{left}と{right}: {path}"
+        if key in seen:
+            errors.append(f"{label}: 重なりの記録が重複。共通パスごとに1件へ直す")
+        seen.add(key)
+        if key not in expected:
+            errors.append(f"{label}: 余剰の重なりの記録。実際の共有パスとレーンの組へ直す")
+            continue
+        if record["判定"] == "交わらない":
+            first = typing.cast(list[str], record["レーン1の定義"])
+            second = typing.cast(list[str], record["レーン2の定義"])
+            if {value.strip() for value in first} & {value.strip() for value in second}:
+                errors.append(f"{label}: 交わらない定義が同一。判定または定義を直す")
+            continue
+        left_stage = stages.get(left, (1, []))[0]
+        right_stage = stages.get(right, (1, []))[0]
+        if left_stage == right_stage:
+            errors.append(f"{label}: 同じ段階で定義が交わる。同じレーンへまとめるか先行関係と段階を直す")
+        else:
+            earlier, later = (left, right) if left_stage < right_stage else (right, left)
+            dependencies.setdefault(later, set()).add(earlier)
+    for left, right, path in sorted(expected - seen):
+        errors.append(f"{left}と{right}: 重複パスの記録不足: {path}。双方の定義と判定をレーン間の重なりへ1件記録する")
+    for lane, (_, prior) in stages.items():
+        for predecessor in prior:
+            if not _reachable(lane, predecessor, dependencies):
+                errors.append(f"{lane}: 根拠の無い直列化: {predecessor}。交わる記録に基づく先行関係へ直す")
+    actual = {lane: set(prior) for lane, (_, prior) in stages.items()}
+    for lane, predecessors in dependencies.items():
+        for predecessor in predecessors:
+            if not _reachable(lane, predecessor, actual):
+                errors.append(f"{lane}: 交わる先行レーン{predecessor}への依存がない。先行レーンへ記録する")
     return errors
+
+
+def _reachable(lane: str, target: str, dependencies: dict[str, set[str]]) -> bool:
+    """先行関係の直接・推移依存を循環しても停止する探索で判定する。"""
+    pending = list(dependencies.get(lane, ()))
+    seen: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current == target:
+            return True
+        if current not in seen:
+            seen.add(current)
+            pending.extend(dependencies.get(current, ()))
+    return False
 
 
 def _string_list(decision: dict[str, object], key: str) -> list[str]:
@@ -941,6 +1034,9 @@ def main(argv: list[str] | None = None) -> int:
                 "該当WIの元本文へ戻り、変更要求と限定調査から書込・参照・除外・公開工程所有の区分を判断し直す。"
                 "抽出パスや存在だけで区分を決めず、未被覆・広すぎる範囲・不正な除外をその判断に従って直す。"
                 "変更領域が変われば、競合とレーン配分も再評価する。"
+                "書込対象の不正な要素は実在ファイル、末尾/付き実在ディレクトリ、または反映先に明示された新設先へ直す。"
+                "重なりの記録は共通パスごとに双方の定義と判定を1件残し、余剰・重複・欠落を直す。"
+                "同段階で交わる定義は統合または段階変更し、根拠の無い直列化は交わる記録に基づく先行関係へ直す。"
                 "区分間で重複するパスは所有する1区分だけへ残す。`公開工程の書込対象`の根拠不足は、"
                 "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する。"
                 "プロジェクト規範の指定の不足は、`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が"

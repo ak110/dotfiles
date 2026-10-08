@@ -21,10 +21,10 @@ Codex固有の公開能力と常時規範との差分を扱う。Codexのメイ�
 
 ## Claude Code向けに置かれた規範の読込
 
-Claude Codeが自動で読み込む規範のうち本文書へ埋め込まれていないものは、Codexのエージェントも読み、各ファイルが定める適用範囲に作業が入る条文に従う。Claude Codeと同じ作業を同じ規範の下で進めるためである。
+Claude Codeが自動で読み込む規範のうち本文書へ埋め込まれていないものは、Codexのエージェントも読み、各ファイルが定める適用範囲に作業が入る条文に従う。Claude Codeと同じ作業を同じ規範の下で進めるためである。以下の読込先は実在するものに限り、存在を確かめてから読むか検索の対象へ渡す。
 
 - プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`、`CLAUDE.local.md`および作業に該当する`.claude/rules/`を読む
-- ユーザー単位の`~/.claude/CLAUDE.md`と、`~/.claude/rules/`直下の`*.local.md`（実行ホストごとにユーザーが置く規範）は、存在する場合に作業の開始時に読む
+- ユーザー単位の`~/.claude/CLAUDE.md`と、`~/.claude/rules/`直下の`*.local.md`（実行ホストごとにユーザーが置く規範）は、作業の開始時に読む
 - 起動時の指示が同じファイルの本文を`atk-auto`などの境界付きで含む場合は、その本文を読了済みとして扱う
 - `~/.claude/rules/agent-toolkit/`配下と`~/.claude/rules/myprojects-common.md`は本文書へ`atk-auto`要素で埋め込み済みのため、読込の対象から外す。`~/.claude/rules/myprojects.md`はClaude Code向けに配布するホスト別のプロジェクト一覧と同期方針であり、Codexには`myprojects-common.md`が同じ主題の共通部分を届けるため、同じく対象から外す
 - `~/.codex/agent-toolkit/rules/`は配布元から同期した本文、dotfiles固有スキルはClaude Code側原本へのリンクとして扱う

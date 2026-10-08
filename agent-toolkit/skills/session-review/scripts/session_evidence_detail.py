@@ -25,6 +25,8 @@ from session_evidence_extract import (
     _UnresolvedRecord,
 )
 
+from agent_toolkit._common import transcript as _transcript
+
 _MAX_DETAIL_LENGTH = 8000
 
 
@@ -69,7 +71,7 @@ def _entry_detail_events(
     空の出力が元から空だったのか省略の結果なのかを判別できない。
     各イベントは元エントリの`timestamp`を持ち、区間境界の時刻を元記録を読み直さずに確定できるようにする。
 
-    `full_message_text`では、ユーザーとアシスタントの発話本文（テキスト要素）を予算の外で切り詰めずに先頭へ返す。
+    `full_message_text`では、ユーザーとアシスタントの発話本文（送信本文を含む）を予算の外で切り詰めずに先頭へ返す。
     会話の流れは長い発話の先頭と末尾だけを載せて記録位置を添えるため、その位置の照会で全文へ到達できる必要がある。
     """
     budget = _DetailBudget(limit)
@@ -87,6 +89,8 @@ def _entry_detail_events(
             if not isinstance(block, dict):
                 continue
             if block.get("type") == "tool_use":
+                if full_message_text and entry.get("type") == "assistant" and _transcript.visible_text_blocks([block]):
+                    continue
                 events.append(
                     {
                         "kind": "detail",
@@ -122,14 +126,20 @@ def _entry_detail_events(
 
 
 def _message_texts(entry: dict[str, Any]) -> list[tuple[str, str]]:
-    """ユーザーまたはアシスタントのメッセージのエントリから、役割とテキスト要素の本文を出現順に返す。"""
+    """役割と可視本文を返す。送信ツールの入力はassistantの本文にだけ含める。"""
     message = entry.get("message")
     if (
         isinstance(message, dict)
         and entry.get("type") in {"user", "assistant"}
         and message.get("role") in {"user", "assistant"}
     ):
-        return [(str(message["role"]), text) for text in _text_blocks(message.get("content")) if text.strip()]
+        content = message.get("content")
+        texts = (
+            _transcript.visible_text_blocks(content)
+            if entry.get("type") == "assistant" and message.get("role") == "assistant" and isinstance(content, list)
+            else _text_blocks(content)
+        )
+        return [(str(message["role"]), text) for text in texts if text.strip()]
     payload = entry.get("payload")
     if (
         entry.get("type") == "response_item"

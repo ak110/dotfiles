@@ -29,13 +29,17 @@ Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import pathlib
 import re
 from collections.abc import Callable, Sequence
 
 from agent_toolkit._common import shell_segments as _shell_segments
+from agent_toolkit._common.bash_invocations import extract_bash_invocations
+from agent_toolkit._common.heredocs import heredoc_bodies
 from agent_toolkit._common.session_state import read_state, update_state
+from agent_toolkit._common.uv_arguments import is_python_token
 from agent_toolkit._hooks import agent_id as _agent_id
 from agent_toolkit._hooks import plugin_resources as _plugin_resources
 from agent_toolkit._hooks import rules_context as _rules_context
@@ -43,6 +47,7 @@ from agent_toolkit._hooks import tool_input as _tool_input
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
+from agent_toolkit._plan.structure import is_agent_doc_target_file
 
 _llm_notice = _notice_formatter("pretooluse")
 
@@ -158,10 +163,169 @@ def _is_managed_temp_create(tool_name: str, tool_input: dict) -> bool:
     return False
 
 
+def _python_write_paths(code: str) -> list[str]:
+    """実行する直列の文から、リテラルと単純代入で確定できるPythonの書込先を返す。"""
+    try:
+        module = ast.parse(code)
+    except SyntaxError:
+        return []
+    values: dict[str, str] = {}
+    path_variables: set[str] = set()
+    paths: list[str] = []
+
+    def is_path(node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in path_variables
+        return isinstance(node, ast.Call) and (
+            isinstance(node.func, ast.Name)
+            and node.func.id == "Path"
+            or isinstance(node.func, ast.Attribute)
+            and node.func.attr == "Path"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "pathlib"
+        )
+
+    def literal(node: ast.AST) -> str | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Name):
+            return values.get(node.id)
+        if (
+            isinstance(node, ast.Call)
+            and node.args
+            and (
+                isinstance(node.func, ast.Name)
+                and node.func.id == "Path"
+                or isinstance(node.func, ast.Attribute)
+                and node.func.attr == "Path"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "pathlib"
+            )
+        ):
+            return literal(node.args[0])
+        return None
+
+    def inspect(node: ast.AST) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            return
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id == "open" and node.args:
+                mode = (
+                    node.args[1]
+                    if len(node.args) > 1
+                    else next((item.value for item in node.keywords if item.arg == "mode"), ast.Constant("r"))
+                )
+                if any(char in (literal(mode) or "") for char in "wax+") and (path := literal(node.args[0])) is not None:
+                    paths.append(path)
+            elif (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in {"write_text", "write_bytes"}
+                and is_path(node.func.value)
+            ):
+                if (path := literal(node.func.value)) is not None:
+                    paths.append(path)
+        for child in ast.iter_child_nodes(node):
+            inspect(child)
+
+    def statements(nodes: list[ast.stmt]) -> None:
+        for node in nodes:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                if node.value is not None:
+                    inspect(node.value)
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                value = literal(node.value) if node.value is not None else None
+                path_value = node.value is not None and is_path(node.value)
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        values.pop(target.id, None)
+                        path_variables.discard(target.id)
+                        if value is not None:
+                            values[target.id] = value
+                            if path_value:
+                                path_variables.add(target.id)
+            elif isinstance(node, ast.Expr):
+                inspect(node.value)
+            elif isinstance(node, ast.With):
+                for item in node.items:
+                    inspect(item.context_expr)
+                statements(node.body)
+            # 分岐・関数定義などは、入力だけで実行を確定できないため走査しない。
+
+    statements(module.body)
+    return paths
+
+
+def _sed_write_paths(arguments: tuple[str, ...]) -> list[str]:
+    """in-place編集のsedから、スクリプトとオプションの値を除いたファイル引数を返す。"""
+    if "--help" in arguments or "--version" in arguments:
+        return []
+    if not any(arg == "--in-place" or arg.startswith(("-i", "--in-place=")) for arg in arguments):
+        return []
+    paths: list[str] = []
+    has_script = False
+    index = 0
+    while index < len(arguments):
+        arg = arguments[index]
+        if arg in {"-e", "--expression", "-f", "--file"}:
+            has_script = True
+            index += 2
+            continue
+        if arg.startswith(("-e", "-f", "--expression=", "--file=")):
+            has_script = True
+        elif arg == "--":
+            paths.extend(arguments[index + 1 :])
+            break
+        elif not arg.startswith("-"):
+            paths.append(arg)
+        index += 1
+    return paths if has_script else paths[1:]
+
+
+def _bash_write_paths(command: str) -> list[str]:
+    """実行位置の書込コマンドと、確定したリダイレクト先を返す。本文を実行して解決しない。"""
+    paths: list[str] = []
+    for invocation in extract_bash_invocations(command):
+        paths.extend(target for target in invocation.outputs if isinstance(target, str))
+        if not invocation.arguments_known:
+            continue
+        tokens = invocation.segment.tokens
+        name = pathlib.PurePath(tokens[0]).name
+        if name == "tee":
+            options = tokens[1 : tokens.index("--")] if "--" in tokens else tokens[1:]
+            if not any(arg in {"--help", "--version"} for arg in options):
+                paths.extend(arg for arg in tokens[1:] if not arg.startswith("-"))
+        elif name == "sed":
+            paths.extend(_sed_write_paths(tokens[1:]))
+        elif is_python_token(name) and len(tokens) > 2 and tokens[1] == "-c":
+            paths.extend(_python_write_paths(tokens[2]))
+    for body in heredoc_bodies(command):
+        header = command[: body.start].rstrip("\r\n").rsplit("\n", 1)[-1]
+        invocations = extract_bash_invocations(header)
+        if len(invocations) == 1:
+            tokens = invocations[0].segment.tokens
+            if is_python_token(pathlib.PurePath(tokens[0]).name) and tokens[1:] in {(), ("-",)}:
+                paths.extend(_python_write_paths(command[body.start : body.end]))
+    return paths
+
+
+def _is_agent_document_writing(tool_name: str, tool_input: dict) -> bool:
+    """編集ツールとBashの書込先がエージェント向け文書なら真を返す。"""
+    if tool_name == "Bash":
+        command = tool_input.get("command")
+        return isinstance(command, str) and any(is_agent_doc_target_file(path) for path in _bash_write_paths(command))
+    operations = _tool_input.parse_operations(tool_name, tool_input, "")
+    return operations is not None and any(
+        is_agent_doc_target_file(path) for operation in operations for path in operation.display_paths
+    )
+
+
 OPERATION_SKILLS: tuple[OperationSkill, ...] = (
     OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),
     OperationSkill("agent-toolkit:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
     OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別のmanaged-temp領域の作成", _is_managed_temp_create),
+    OperationSkill(
+        "agent-toolkit:writing-standards", "writing-standards", "エージェント向け文書の編集", _is_agent_document_writing
+    ),
 )
 """操作を起動の契機とするスキルの表。"""
 

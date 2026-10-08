@@ -23,7 +23,7 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す。
 例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ
 実ユーザー発話では、経過時間と状態によらず、`agent-toolkit:user-confirmation-and-report`の
-`references/user-utterance.md`のうち範囲語か開放列挙と例示を併せた調査依頼の項と、
+`SKILL.md`「原文の保持と取り込み」の範囲語か開放列挙と例示を併せた調査依頼の項と、
 `agent-toolkit:delegation`の`references/routing.md`の所在を示す。判定はコードブロック、インラインコードおよび
 引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（「など」「とか」のような
 一般的な語に頼り、条件に加えても発火がほとんど減らないため）。発話がその項に当たるかの判断は受領側に残し、
@@ -137,12 +137,12 @@ def _example_investigation_notice(prompt: str) -> str | None:
     text = _QUOTED_MATERIAL_RE.sub("", prompt)
     if not any(word in text for word in _EXAMPLE_WORDS) or not any(word in text for word in _INVESTIGATION_WORDS):
         return None
-    utterance = _plugin_resources.skill_reference("user-confirmation-and-report", "references/user-utterance.md")
+    utterance = _plugin_resources.skill_reference("user-confirmation-and-report", "SKILL.md")
     routing = _plugin_resources.skill_reference("delegation", "references/routing.md")
     body = (
         "この発話は例示の語と、調査・確認を求める語を含む。"
         "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に"
-        f"{utterance}の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用する。"
+        f"{utterance}「原文の保持と取り込み」の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用する。"
         f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従う。"
     )
     return _llm_notice(body, tag="notice")

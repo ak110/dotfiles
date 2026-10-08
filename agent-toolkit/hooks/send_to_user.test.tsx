@@ -63,6 +63,21 @@ test("send_to_userの呼び出しは許可され、確認応答を返す", async
   expect(called.result).toBe("ユーザーの画面へ表示した。");
 });
 
+test("send_to_userは文字列のmessageが無ければ表示済みと返さない", async ($) => {
+  for (const input of [{ text: MESSAGE }, {}, { message: null }, { message: 1 }, { message: {} }]) {
+    const called = await $.tool.call({ tool: TOOL, ...input });
+    expect(called.deny).toBeDefined();
+    expect(called.result).toBeUndefined();
+  }
+});
+
+test("send_to_userは空文字のmessageも描画と同じ条件で受け取る", async ($) => {
+  const called = await $.tool.call({ tool: TOOL, message: "" });
+  expect(called.deny).toBeUndefined();
+  expect(called.isError).toBeUndefined();
+  expect(called.result).toBe("ユーザーの画面へ表示した。");
+});
+
 test("send_to_userの成功結果は応答文言によらず空のBoxで描く", async ($) => {
   for (const surface of ["terminal", "desktop"] as const) {
     for (const output of ["ユーザーの画面へ表示した。", "別の成功結果"]) {

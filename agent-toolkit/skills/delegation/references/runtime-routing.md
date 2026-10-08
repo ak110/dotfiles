@@ -29,8 +29,8 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 | キー | 対応工程 | 起動直前に解決するエージェント | `codex`環境 | `claude`環境 |
 | --- | --- | --- | --- | --- |
-| `high_tier_model` | 計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程 | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `medium_tier_model` | WIの選定とレーン分け、実装後の実行レビュー、`model_type="medium_tier"`を指定した`start`の`explore` | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `high_tier_model` | WIの選定とレーン分け、計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程 | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `medium_tier_model` | 実装後の実行レビュー、`model_type="medium_tier"`を指定した`start`の`explore` | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `low_tier_model` | `start`の`explore`で指定がない場合、`start`の`shell`、`TASK_MODEL_TYPES`が`low_tier`へ対応付けた軽量種別の`<役割名>.subagent.md`を指定する起動 | 調査またはshellを委譲するエージェント | `agents_server` MCP | `agents_server` MCP |
 | `write_model` | `start`の`write`による文章起草 | 文章を委譲するエージェント | `agents_server` MCP | `agents_server` MCP |
 | `orchestrate_model` | `atk wi process-loop`の新しいセッション | process-loop | `atk` | `atk` |

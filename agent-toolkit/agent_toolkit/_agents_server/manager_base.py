@@ -78,6 +78,8 @@ class ManagerBase:
         self._pending_unobserved_child_sessions: dict[str, tuple[int, set[str]]] = {}
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._auto_resume_task: asyncio.Task[None] | None = None
+        self._retention_timers: dict[str, asyncio.TimerHandle] = {}
+        self._resource_release_tasks: dict[str, asyncio.Task[None]] = {}
         self._status_writer: status_file.StatusFileWriter | None
         if status_writer is _DEFAULT_STATUS_WRITER:
             identity = shared_roots.resolve_status_file_identity(os.environ)
@@ -91,7 +93,53 @@ class ManagerBase:
             add_touch_listener(self._status_writer.schedule)
         add_terminal_listener(self._carry_over_unavailable_candidate)
         add_terminal_listener(self._record_pending_unobserved_child_sessions)
+        add_terminal_listener(self._schedule_session_expiry)
         add_lifecycle_listener(self._record_resources)
+        add_lifecycle_listener(self._cancel_expiry_on_start)
+
+    def _cancel_retention_timer(self, session_id: str) -> None:
+        """再開・明示解放により不要になった期限通知を取り消す。"""
+        timer = self._retention_timers.pop(session_id, None)
+        if timer is not None:
+            timer.cancel()
+
+    def _cancel_expiry_on_start(self, session: SessionState, event: str) -> None:
+        """同じsessionで次のturnを始めたら、旧turnの保持期限を取り消す。"""
+        if event == "start" and self.sessions.get(session.session_id) is session:
+            self._cancel_retention_timer(session.session_id)
+
+    def _schedule_session_expiry(self, session: SessionState) -> None:
+        """終端の確定時に期限通知を登録し、ツール照会の無いsessionも解放する。"""
+        if self.sessions.get(session.session_id) is not session or session.retention_deadline is None:
+            return
+        self._cancel_retention_timer(session.session_id)
+        self._retention_timers[session.session_id] = asyncio.get_running_loop().call_at(
+            session.retention_deadline, self._expire_retained_session, session
+        )
+
+    def _expire_retained_session(self, session: SessionState) -> None:
+        """期限通知が指す同じ終端状態だけを解放し、再開後のturnを解放しない。"""
+        if self.sessions.get(session.session_id) is not session or session.retention_deadline is None:
+            return
+        if asyncio.get_running_loop().time() < session.retention_deadline:
+            self._schedule_session_expiry(session)
+            return
+        self._expire_session(session.session_id)
+
+    def _finish_resource_release(self, session_id: str, task: asyncio.Task[None]) -> None:
+        """終了した解放taskを保持せず、失敗した場合も診断を失わない。"""
+        if self._resource_release_tasks.get(session_id) is task:
+            del self._resource_release_tasks[session_id]
+        if not task.cancelled() and (error := task.exception()) is not None:
+            _LOG.error("保持期限に到達したsessionの資源解放に失敗しました: %s", error, exc_info=error)
+
+    async def _wait_for_resource_release(self, session_id: str) -> None:
+        """期限解放が進行中なら完了を待ち、再開したthreadを遅れて解放する競合を防ぐ。"""
+        task = self._resource_release_tasks.get(session_id)
+        if task is not None:
+            await asyncio.shield(task)
+            if self._resource_release_tasks.get(session_id) is task:
+                del self._resource_release_tasks[session_id]
 
     def _record_resources(self, session: SessionState, event: str) -> None:
         """自身が所有するsessionの遷移だけを共有状態とホスト資源へ対応付ける。"""
@@ -136,8 +184,12 @@ class ManagerBase:
     def _expire_session(self, session_id: str) -> None:
         """期限に到達したsession本体を解放し、再開状態と未回収結果を保持する。"""
         self._pending_unobserved_child_sessions.pop(session_id, None)
+        self._cancel_retention_timer(session_id)
         session = self.sessions.pop(session_id, None)
         if session is not None:
+            task = asyncio.create_task(self._backend(session.engine).release_session(session))
+            self._resource_release_tasks[session_id] = task
+            task.add_done_callback(lambda completed: self._finish_resource_release(session_id, completed))
             if session.publish_registry:
                 session_registry.release(session_id, reason="retention_expired")
             resume_state = SessionResumeState.from_session(session)

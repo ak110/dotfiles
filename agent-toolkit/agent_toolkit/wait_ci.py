@@ -4,6 +4,8 @@ push前に対象repository・destination ref・source refから解決したcommi
 GitHub ActionsまたはGitLab CIの実行一覧からbaselineに存在しないIDだけを待機する。
 一覧とジョブ取得の両方に明示的なrepositoryを指定し、一覧はdestination refとSHAで限定する。
 境界条件（run未登録・コマンド失敗・登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
+未報告の失敗を検出し未終端が残る場合は6を返す。同じbaselineまたは--failure-recordで再開すると、
+既報の失敗では返らず残りを待つ。全体終端では全失敗を出力し、成功0・失敗1を返す。
 `agent-toolkit:commit`の`references/push-and-ci.md`から参照される。
 """
 
@@ -42,6 +44,7 @@ EXIT_TIMEOUT = 2
 EXIT_GH_ERROR = 3
 EXIT_NO_RUNS = 4
 EXIT_NO_CI_CONFIG = 5
+EXIT_NEW_FAILURE = 6
 EXIT_INTERRUPTED = 130
 
 _STDERR_FD = 2
@@ -115,6 +118,7 @@ class CiBaseline:
     source_ref: str
     sha: str
     run_ids: frozenset[int]
+    reported_failures: frozenset[str] = frozenset()
 
 
 RepositoryTarget = _git_remote.RemoteLocation
@@ -536,6 +540,7 @@ def _write_baseline(path: pathlib.Path, baseline: CiBaseline) -> None:
         "source_ref": baseline.source_ref,
         "sha": baseline.sha,
         "run_ids": sorted(baseline.run_ids),
+        "reported_failures": sorted(baseline.reported_failures),
     }
     path.write_text(f"{json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)}\n", encoding="utf-8")
 
@@ -559,6 +564,11 @@ def _load_baseline(path: pathlib.Path) -> CiBaseline:
         if not isinstance(run_id, int) or isinstance(run_id, bool):
             raise RunListError(f"baselineのrun_idsが不正: {path}")
         validated_run_ids.append(run_id)
+    reported = payload.get("reported_failures", [])
+    if not isinstance(reported, list) or not all(
+        isinstance(item, str) and re.fullmatch(r"(?:run|job):[0-9]+", item) for item in reported
+    ):
+        raise RunListError(f"baselineのreported_failuresが不正: {path}")
     return CiBaseline(
         forge=payload["forge"],
         repository=payload["repository"],
@@ -566,6 +576,7 @@ def _load_baseline(path: pathlib.Path) -> CiBaseline:
         source_ref=payload["source_ref"],
         sha=payload["sha"],
         run_ids=frozenset(validated_run_ids),
+        reported_failures=frozenset(reported),
     )
 
 
@@ -602,29 +613,68 @@ _GITHUB_EARLY_FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out", "action_r
 _GITHUB_EARLY_FAILURE_RUN_CONCLUSIONS = _GITHUB_EARLY_FAILURE_CONCLUSIONS | frozenset({"startup_failure", "stale"})
 
 
-def _find_early_failure(runs: list[RunRecord], jobs: list[JobRecord], forge: str) -> tuple[RunRecord | JobRecord, str] | None:
-    """forgeの確定的な失敗状態を1件返す。最終結論へ委ねる状態は返さない。
-
-    - `gitlab`: statusが`failed`かつ`allowFailure is False`のjobを早期失敗とする
-      （`allow_failure=true`・`manual`・`skipped`・`canceled`・進行中・未知状態は対象外）
-    - それ以外（`github`）: 完了runのconclusionが`_GITHUB_EARLY_FAILURE_RUN_CONCLUSIONS`
-      （`failure`・`timed_out`・`action_required`・`startup_failure`・`stale`）であれば先に返し、
-      無ければ完了jobのconclusionが`_GITHUB_EARLY_FAILURE_CONCLUSIONS`
-      （`failure`・`timed_out`・`action_required`）であるものを返す
-      （`cancelled`・`neutral`・`skipped`・進行中・未知状態は対象外）
-    """
-    if forge == "gitlab":
-        for job in jobs:
-            if job.get("status") == "failed" and job.get("allowFailure") is False:
-                return job, "job"
-        return None
-    for run in runs:
-        if run.get("status") == "completed" and run.get("conclusion") in _GITHUB_EARLY_FAILURE_RUN_CONCLUSIONS:
-            return run, "run"
+def _failures(runs: list[RunRecord], jobs: list[JobRecord], forge: str) -> list[tuple[RunRecord | JobRecord, str]]:
+    """確定したrunとjobの失敗を全件返す。GitLabの許容されたjob失敗は含めない。"""
+    failures = [
+        (run, "run")
+        for run in runs
+        if run.get("status") == "completed" and run.get("conclusion") in _GITHUB_EARLY_FAILURE_RUN_CONCLUSIONS
+    ]
     for job in jobs:
-        if job.get("status") == "completed" and job.get("conclusion") in _GITHUB_EARLY_FAILURE_CONCLUSIONS:
-            return job, "job"
-    return None
+        failed = (
+            job.get("status") == "failed" and job.get("allowFailure") is False
+            if forge == "gitlab"
+            else job.get("status") == "completed" and job.get("conclusion") in _GITHUB_EARLY_FAILURE_CONCLUSIONS
+        )
+        if failed:
+            failures.append((job, "job"))
+    return failures
+
+
+def _snapshot_completed(runs: list[RunRecord], jobs: list[JobRecord]) -> bool:
+    """全runが完了し、取得済みjobにも実行待ち・実行中が残っていないかを返す。"""
+    pending = {"queued", "in_progress", "waiting", "pending", "running", "created", "preparing", "scheduled"}
+    return _all_completed(runs) and not any(job.get("status") in pending for job in jobs)
+
+
+def _report_new_failures(
+    runs: list[RunRecord],
+    jobs: list[JobRecord],
+    forge: str,
+    repository: str,
+    reported: set[str],
+    save: Callable[[set[str]], None] | None,
+) -> int | None:
+    """未終端スナップショットの新規失敗を保存して返す。保存失敗を早期報告成功にしない。"""
+    if _snapshot_completed(runs, jobs):
+        return None
+    new = []
+    for record, kind in _failures(runs, jobs, forge):
+        identifier = record.get("databaseId")
+        if not isinstance(identifier, int) or isinstance(identifier, bool) or identifier < 0:
+            print(f"[wait_ci] 失敗{kind}のdatabaseIdが不正: {identifier!r}", file=sys.stderr)
+            return _finish(EXIT_GH_ERROR, "forgeの失敗一覧の識別子を確認し、同じ引数で再実行する")
+        key = f"{kind}:{identifier}"
+        if key not in reported:
+            new.append((record, kind))
+            reported.add(key)
+    if not new:
+        return None
+    if save is not None:
+        try:
+            save(reported)
+        except OSError as exc:
+            print(f"[wait_ci] 報告済み失敗の保存に失敗: {exc}", file=sys.stderr)
+            return _finish(EXIT_GH_ERROR, "待機記録の保存先が書き込めることを確かめ、同じ引数で再実行する")
+    for failure in new:
+        _emit_failure_summary(*failure)
+    resume = (
+        "同じ引数で呼び直すと残りのjobの終端まで待てる"
+        if save is not None
+        else "`--failure-record <記録ファイル>`を付けて呼び直し、以降は同じ引数で残りのjobの終端まで待つ"
+    )
+    actions = [_failure_next_action(record, kind, repository, forge) for record, kind in new]
+    return _finish(EXIT_NEW_FAILURE, "。".join([*actions, resume]))
 
 
 def _fetch_snapshot(
@@ -759,6 +809,8 @@ def _wait_for_completion(
     now_fn: Callable[[], float],
     consecutive_failures: int,
     follow_mode: bool,
+    reported: set[str],
+    save: Callable[[set[str]], None] | None,
 ) -> tuple[int, list[RunRecord], float]:
     """確定したrun集合と後続SHAのrun集合のどちらにも使う完了待ちループ。
 
@@ -780,7 +832,7 @@ def _wait_for_completion(
             sleep_fn(poll_interval)
             continue
         elapsed = now_fn() - start
-        if not follow_mode and (added := _run_ids(candidates) - expected_ids):
+        if added := _run_ids(candidates) - expected_ids:
             _print(elapsed, f"追加登録されたrunを待機対象へ追加（{len(added)}件）")
             expected_ids |= added
         runs = select_fn(candidates)
@@ -792,11 +844,13 @@ def _wait_for_completion(
                 return _finish(EXIT_TIMEOUT, _NEXT_ACTION_TIMEOUT), runs, elapsed
             sleep_fn(poll_interval)
             continue
-        if failure := _find_early_failure(runs, jobs, forge):
-            _emit_failure_summary(*failure)
-            return _finish(EXIT_CI_FAILED, _failure_next_action(*failure, repository, forge)), runs, elapsed
-        if runs and _all_completed(runs):
+        early = _report_new_failures(runs, jobs, forge, repository, reported, save)
+        if early is not None:
+            return early, runs, elapsed
+        if _snapshot_completed(runs, jobs):
             _emit_summary(runs)
+            for failure in _failures(runs, jobs, forge):
+                _emit_failure_summary(*failure)
             if _all_success(runs):
                 return EXIT_SUCCESS, runs, elapsed
             # 全run cancelledで後続runを追跡する場合は、呼び出し側が追跡の結果に応じた次の操作を書く。
@@ -837,13 +891,15 @@ def wait_for_ci(
     job_list_fn: JobListFn | None = None,
     ancestor_check_fn: AncestorCheckFn | None = None,
     follow_shas_fn: FollowShasFn | None = None,
+    reported_failures: frozenset[str] = frozenset(),
+    save_failures: Callable[[set[str]], None] | None = None,
 ) -> int:
-    """対象shaの明確な失敗run・ジョブ1件検出または期待run集合完了の早い方を待ちexit codeを返す。
+    """未報告失敗と全体終端の早い方を待ち、部分結果6・成功0・失敗1を返す。
 
     - 毎pollでbaseline IDを除いたrun一覧とジョブ一覧を、通常は`_fetch_snapshot`、
       後続SHA追跡時は`_fetch_follow_snapshot`で不可分なスナップショットとして取得し、
-      `_find_early_failure`が確定的な失敗（forgeごとの判定は同関数docstring参照）を1件検出した時点で
-      run/pipeline完了を待たずEXIT_CI_FAILEDを返す
+      `_failures`が未報告の確定失敗を検出した時点で保存し、未終端が残ればEXIT_NEW_FAILUREを返す。
+      再呼出では`reported_failures`を除いて待機し、全体終端では全失敗を出力する
     - 同じworkflow名・同じcommitでより後に登録されたrunに置き換えられて打ち切られたrunは、
       判定対象と期待run集合の双方から除く（`_superseded_cancelled_ids`）
     - 登録猶予期間全体でrun集合を継続収集し、期間末に1件以上あることを確認して完了待ちへ移る
@@ -859,7 +915,7 @@ def wait_for_ci(
     - 対象SHAが明示したsource refの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
     - `forge`が`gitlab`のとき取得関数を指定しない場合の手段を`glab ci list --sha`・`glab api`へ切り替える
       （`run_list_fn`・`job_list_fn`を明示指定した場合、取得関数の選択には`forge`を参照しない）
-    - `forge`は早期失敗の分類（`_find_early_failure`のforgeごとの判定）には
+    - `forge`は早期失敗の分類（`_failures`のforgeごとの判定）には
       `run_list_fn`・`job_list_fn`の明示指定有無によらず常に使う
     """
     use_default_fetchers = run_list_fn is None and job_list_fn is None
@@ -877,6 +933,7 @@ def wait_for_ci(
     runs: list[RunRecord] = []
     consecutive_failures = 0
     expected_ids: set[int] = set()
+    reported = set(reported_failures)
 
     while True:  # 登録猶予フェーズ: 猶予末まで継続収集する
         last_call_failed = False
@@ -885,9 +942,9 @@ def wait_for_ci(
             consecutive_failures = 0
             expected_ids -= superseded_ids
             expected_ids |= _run_ids(runs)
-            if failure := _find_early_failure(runs, jobs, forge):
-                _emit_failure_summary(*failure)
-                return _finish(EXIT_CI_FAILED, _failure_next_action(*failure, repository, forge))
+            early = _report_new_failures(runs, jobs, forge, repository, reported, save_failures)
+            if early is not None:
+                return early
         except RunListError as exc:
             consecutive_failures += 1
             last_call_failed = True
@@ -922,6 +979,8 @@ def wait_for_ci(
         now_fn=now_fn,
         consecutive_failures=consecutive_failures,
         follow_mode=False,
+        reported=reported,
+        save=save_failures,
     )
     if result != EXIT_CI_FAILED or not _all_cancelled(expected_runs):
         return result
@@ -950,6 +1009,8 @@ def wait_for_ci(
         forge=forge,
         repository=repository,
         excluded_ids=baseline_ids,
+        reported=reported,
+        save=save_failures,
     )
 
 
@@ -967,6 +1028,8 @@ def _follow_cancelled(
     forge: str,
     repository: str,
     excluded_ids: frozenset[int],
+    reported: set[str],
+    save: Callable[[set[str]], None] | None,
 ) -> int:
     """全run cancelled時、明示source refの後続SHA集合を判定対象とする。
 
@@ -999,9 +1062,9 @@ def _follow_cancelled(
             consecutive_failures = 0
             expected_ids -= superseded_ids
             expected_ids |= _run_ids(candidates)
-            if failure := _find_early_failure(candidates, jobs, forge):
-                _emit_failure_summary(*failure)
-                return _finish(EXIT_CI_FAILED, _failure_next_action(*failure, repository, forge))
+            early = _report_new_failures(candidates, jobs, forge, repository, reported, save)
+            if early is not None:
+                return early
         except RunListError as exc:
             consecutive_failures += 1
             last_call_failed = True
@@ -1035,8 +1098,7 @@ def _follow_cancelled(
             follow_shas,
             run_list_fn,
             job_list_fn,
-            expected_ids,
-            excluded_ids,
+            excluded_ids=excluded_ids,
         ),
         select_fn=lambda candidates: [
             run for run in candidates if run.get("headSha") in follow_shas and run.get("databaseId") in expected_ids
@@ -1047,6 +1109,8 @@ def _follow_cancelled(
         now_fn=now_fn,
         consecutive_failures=consecutive_failures,
         follow_mode=True,
+        reported=reported,
+        save=save,
     )
     return result
 
@@ -1161,6 +1225,11 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--write-baseline", type=pathlib.Path, help="push前の実行IDを保存するJSONパス")
     mode.add_argument("--baseline", type=pathlib.Path, help="push前に保存したbaseline JSONパス")
     mode.add_argument("--wait-sha", type=_full_sha, help="baselineを使わず全実行を待つ完全長commit SHA")
+    parser.add_argument(
+        "--failure-record",
+        type=pathlib.Path,
+        help="--wait-shaの報告済み失敗を保存するJSON。同じ引数で終了コード6から待機を再開する",
+    )
     parser.add_argument("--repo", required=True, help="対象repository（owner/repoまたはホストを含むURL）")
     parser.add_argument("--ref", required=True, help="対象destination ref（例: refs/heads/main）")
     parser.add_argument("--source-ref", required=True, help="push元のローカルsource ref（例: HEAD）")
@@ -1196,6 +1265,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.wait_sha is not None and args.sha is not None:
         parser.error("--wait-shaと--shaは同時に指定できません")
+    if args.failure_record is not None and args.wait_sha is None:
+        parser.error("--failure-recordは--wait-shaと組み合わせて指定してください")
     forge = _resolve_forge(args.forge, args.repo)
     if forge is None:
         print("[wait_ci] 対象forgeを--repoと作業ディレクトリのGit remoteから判別できない", file=sys.stderr)
@@ -1228,19 +1299,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[wait_ci] baseline保存: {args.write_baseline} ({len(baseline.run_ids)}件)")
         return EXIT_SUCCESS
     if args.wait_sha is not None:
-        return wait_for_ci(
-            args.wait_sha,
-            args.timeout,
-            args.poll_interval,
-            args.registration_grace,
-            args.follow_cancelled,
-            args.subprocess_timeout,
-            repository=args.repo,
-            ref=args.ref,
-            source_ref=args.source_ref,
-            baseline_ids=frozenset(),
-            forge=forge,
-        )
+        record_path = args.failure_record
+        baseline = CiBaseline(forge, args.repo, args.ref, args.source_ref, args.wait_sha, frozenset())
+        try:
+            if record_path is not None:
+                if record_path.exists():
+                    baseline = _load_baseline(record_path)
+                    _validate_baseline_context(baseline, forge, args.repo, args.ref, args.source_ref, args.wait_sha)
+                    if baseline.run_ids:
+                        raise RunListError("--wait-shaの記録にbaselineの除外runが含まれている")
+                else:
+                    _write_baseline(record_path, baseline)
+        except (OSError, RunListError) as exc:
+            print(f"[wait_ci] 待機記録の準備に失敗: {exc}", file=sys.stderr)
+            return _finish(EXIT_GH_ERROR, "対象に一致する書込可能な`--failure-record`を指定して再実行する")
+        return _wait_from_record(args, baseline, record_path)
     try:
         baseline = _load_baseline(args.baseline)
         if args.sha is None:
@@ -1258,8 +1331,18 @@ def main(argv: list[str] | None = None) -> int:
             "push前に同じ`--repo`・`--ref`・`--source-ref`で`--write-baseline`を取り直してから待機するか、"
             "baselineを使わない`--wait-sha`で対象commitの全runを待つ",
         )
+    return _wait_from_record(args, baseline, args.baseline)
+
+
+def _wait_from_record(args: argparse.Namespace, baseline: CiBaseline, path: pathlib.Path | None) -> int:
+    """対象と報告済み集合を待機へ渡し、部分結果の返却前に同じ記録を更新する。"""
+
+    def save(reported: set[str]) -> None:
+        if path is not None:
+            _write_baseline(path, dataclasses.replace(baseline, reported_failures=frozenset(reported)))
+
     return wait_for_ci(
-        sha,
+        baseline.sha,
         args.timeout,
         args.poll_interval,
         args.registration_grace,
@@ -1269,7 +1352,9 @@ def main(argv: list[str] | None = None) -> int:
         ref=args.ref,
         source_ref=args.source_ref,
         baseline_ids=baseline.run_ids,
-        forge=forge,
+        forge=baseline.forge,
+        reported_failures=baseline.reported_failures,
+        save_failures=save if path is not None else None,
     )
 
 

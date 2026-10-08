@@ -192,6 +192,145 @@ class TestSuccessAndFailurePaths:
     def test_all_success_returns_exit_success(self):
         assert _run_wait(lambda _s: [_run()]) == wait_ci.EXIT_SUCCESS
 
+
+@pytest.mark.parametrize("registration_grace", [0.0, 60.0])
+def test_invalid_failed_job_id_returns_monitoring_error(registration_grace, capsys):
+    """登録中と通常待機のどちらでも、不正な失敗IDを監視不能として返す。"""
+    calls = 0
+
+    def jobs(_run_record):
+        nonlocal calls
+        calls += 1
+        return [] if calls == 1 else [_job(conclusion="failure", db_id=-1)]
+
+    result = _run_wait(
+        lambda _sha: [_run(status="in_progress", conclusion=None)],
+        job_list_fn=jobs,
+        registration_grace=registration_grace,
+    )
+    assert result == wait_ci.EXIT_GH_ERROR
+    assert "databaseIdが不正" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("sha", "b" * 40), ("run_ids", [99]), ("reported_failures", ["invalid"]), ("reported_failures", True)],
+)
+def test_wait_sha_rejects_incompatible_failure_record(tmp_path, capsys, field, value):
+    """対象の異なる記録や不正な失敗集合から待機を再開しない。"""
+    record = tmp_path / "failure.json"
+    _write_test_baseline(record)
+    payload = json.loads(record.read_text(encoding="utf-8"))
+    payload[field] = value
+    record.write_text(json.dumps(payload), encoding="utf-8")
+    args = _main_args(record, sha=None)
+    args[:2] = ["--wait-sha", _FULL_SHA, "--failure-record", str(record)]
+    with mock.patch.object(wait_ci, "wait_for_ci") as waiter:
+        assert wait_ci.main(args) == wait_ci.EXIT_GH_ERROR
+    waiter.assert_not_called()
+    assert "待機記録の準備に失敗" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("forge", ["github", "gitlab"])
+@pytest.mark.parametrize("mode", ["baseline", "wait-sha"])
+@pytest.mark.parametrize("follow", [False, True])
+def test_main_resumes_after_reported_failure_and_returns_all_failures(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], forge: str, mode: str, follow: bool
+) -> None:
+    """同じ引数で再開し、既報失敗の再通知を省き新規失敗と全体終端を順に受け取る。"""
+    record = tmp_path / "wait.json"
+    if mode == "baseline":
+        _write_test_baseline(record)
+        payload = json.loads(record.read_text(encoding="utf-8"))
+        payload["forge"] = forge
+        record.write_text(json.dumps(payload), encoding="utf-8")
+        args = _main_args(record, sha=None)
+        args[2] = f"--forge={forge}"
+    else:
+        args = [
+            "--wait-sha",
+            _FULL_SHA,
+            "--failure-record",
+            str(record),
+            f"--forge={forge}",
+            "--repo",
+            "owner/repository",
+            "--ref",
+            "refs/heads/main",
+            "--source-ref",
+            "HEAD",
+        ]
+    args += ["--registration-grace", "0"]
+    if follow:
+        args.append("--follow-cancelled")
+    current = {"stage": 0, "poll": 0}
+
+    def runs(sha):
+        if follow and sha == _FULL_SHA:
+            return [_run(conclusion="cancelled", head_sha=sha)]
+        current["poll"] += 1
+        completed = current["stage"] == 2
+        return [
+            _run(
+                name="CI",
+                db_id=2,
+                head_sha=sha,
+                status="completed" if completed else "in_progress",
+                conclusion="failure" if completed else None,
+            )
+        ]
+
+    def jobs(run):
+        if run["databaseId"] == 1:
+            return []
+
+        def failed(name, identifier):
+            return _job(
+                name=name, db_id=identifier, conclusion="failure", status="failed" if forge == "gitlab" else "completed"
+            )
+
+        result = [failed("failure-A", 10)]
+        if current["stage"] == 2 or (current["stage"] > 0 and current["poll"] > 1):
+            result.append(failed("failure-B", 11))
+        else:
+            result.append(_job(name="B", status="in_progress", conclusion=None, db_id=11))
+        return result
+
+    original_wait = wait_ci.wait_for_ci
+
+    def invoke(*positional, **keywords):
+        clock = iter(range(10000))
+        return original_wait(
+            *positional,
+            **keywords,
+            run_list_fn=runs,
+            job_list_fn=jobs,
+            now_fn=lambda: float(next(clock)),
+            sleep_fn=lambda _: None,
+            ancestor_check_fn=lambda _: True,
+            follow_shas_fn=lambda _: ["b" * 40],
+        )
+
+    with mock.patch.object(wait_ci, "wait_for_ci", side_effect=invoke):
+        assert wait_ci.main(args) == 6
+        first = capsys.readouterr()
+        assert "job failure-A:" in first.out
+        assert "同じ引数" in first.err
+        current.update(stage=1, poll=0)
+        assert wait_ci.main(args) == 6
+        second = capsys.readouterr()
+        assert current["poll"] > 1
+        assert "job failure-B:" in second.out
+        assert "job failure-A:" not in second.out
+        current.update(stage=2, poll=0)
+        assert wait_ci.main(args) == 1
+        final = capsys.readouterr()
+        assert "job failure-A:" in final.out
+        assert "job failure-B:" in final.out
+        assert "run CI:" in final.out
+
+
+class TestFailureClassifications:
     @pytest.mark.parametrize(
         "conclusion", ["failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale", "skipped", None]
     )
@@ -211,7 +350,7 @@ class TestSuccessAndFailurePaths:
                 registration_grace=100.0,
                 job_list_fn=lambda _r: [_job(conclusion=conclusion)],
             )
-            == wait_ci.EXIT_CI_FAILED
+            == wait_ci.EXIT_NEW_FAILURE
         )
 
     @pytest.mark.parametrize(
@@ -225,14 +364,11 @@ class TestSuccessAndFailurePaths:
         ],
     )
     def test_github_non_failure_job_waits_for_run_conclusion(self, status, conclusion):
-        assert (
-            _run_wait(
-                lambda _s: [_run()],
-                registration_grace=0.0,
-                job_list_fn=lambda _r: [_job(status=status, conclusion=conclusion)],
-            )
-            == wait_ci.EXIT_SUCCESS
-        )
+        assert _run_wait(
+            lambda _s: [_run()],
+            registration_grace=0.0,
+            job_list_fn=lambda _r: [_job(status=status, conclusion=conclusion)],
+        ) == (wait_ci.EXIT_TIMEOUT if status == "in_progress" else wait_ci.EXIT_SUCCESS)
 
     @pytest.mark.parametrize("conclusion", ["startup_failure", "stale"])
     def test_github_failed_completed_run_returns_before_other_run(self, conclusion):
@@ -240,7 +376,7 @@ class TestSuccessAndFailurePaths:
             _run(name="failed", conclusion=conclusion, db_id=1),
             _run(name="pending", status="in_progress", conclusion=None, db_id=2),
         ]
-        assert _run_wait(lambda _s: runs, registration_grace=100.0) == wait_ci.EXIT_CI_FAILED
+        assert _run_wait(lambda _s: runs, registration_grace=100.0) == wait_ci.EXIT_NEW_FAILURE
 
     def test_gitlab_non_allowed_failure_returns_early(self):
         run = _run(status="in_progress", conclusion=None)
@@ -252,7 +388,7 @@ class TestSuccessAndFailurePaths:
                 registration_grace=100.0,
                 job_list_fn=lambda _r: [job],
             )
-            == wait_ci.EXIT_CI_FAILED
+            == wait_ci.EXIT_NEW_FAILURE
         )
 
     @pytest.mark.parametrize(
@@ -267,15 +403,12 @@ class TestSuccessAndFailurePaths:
         ],
     )
     def test_gitlab_non_early_failure_waits_for_pipeline_conclusion(self, status, allow_failure):
-        assert (
-            _run_wait(
-                lambda _s: [_run()],
-                forge="gitlab",
-                registration_grace=0.0,
-                job_list_fn=lambda _r: [_job(status=status, conclusion=status, allow_failure=allow_failure)],
-            )
-            == wait_ci.EXIT_SUCCESS
-        )
+        assert _run_wait(
+            lambda _s: [_run()],
+            forge="gitlab",
+            registration_grace=0.0,
+            job_list_fn=lambda _r: [_job(status=status, conclusion=status, allow_failure=allow_failure)],
+        ) == (wait_ci.EXIT_TIMEOUT if status == "running" else wait_ci.EXIT_SUCCESS)
 
 
 class TestRegistrationGrace:
@@ -302,7 +435,7 @@ class TestRegistrationGrace:
                 registration_grace=100.0,
                 job_list_fn=lambda _r: [_job(conclusion="failure")],
             )
-            == wait_ci.EXIT_CI_FAILED
+            == wait_ci.EXIT_NEW_FAILURE
         )
 
 
@@ -531,7 +664,7 @@ class TestPollingCompletion:
                 registration_grace=0.0,
                 job_list_fn=lambda _r: [_job(conclusion="failure")],
             )
-            == wait_ci.EXIT_CI_FAILED
+            == wait_ci.EXIT_NEW_FAILURE
         )
 
     def test_successful_generated_jobs_do_not_finish_in_progress_dag(self):
@@ -563,7 +696,7 @@ class TestPollingCompletion:
                 return [_job(conclusion="failure")]
             return []
 
-        assert _run_wait(run_list_fn, registration_grace=0.0, job_list_fn=job_list_fn) == wait_ci.EXIT_CI_FAILED
+        assert _run_wait(run_list_fn, registration_grace=0.0, job_list_fn=job_list_fn) == wait_ci.EXIT_NEW_FAILURE
         assert 2 in fetched_job_run_ids
 
     def test_run_registered_after_grace_is_waited_until_completion(self):
@@ -683,6 +816,8 @@ class TestUnifiedCompletionLoop:
             now_fn=now_fn,
             consecutive_failures=0,
             follow_mode=follow_mode,
+            reported=set(),
+            save=None,
         )
 
     @pytest.mark.parametrize("follow_mode", [False, True])
@@ -788,7 +923,7 @@ class TestFollowCancelled:
                 follow_shas_fn=lambda _b: ["sha2"],
                 job_list_fn=job_list_fn,
             )
-            == wait_ci.EXIT_CI_FAILED
+            == wait_ci.EXIT_NEW_FAILURE
         )
 
     def test_failed_job_ends_follow_completion_wait(self):
@@ -812,7 +947,7 @@ class TestFollowCancelled:
                 follow_shas_fn=lambda _b: ["sha2"],
                 job_list_fn=job_list_fn,
             )
-            == wait_ci.EXIT_CI_FAILED
+            == wait_ci.EXIT_NEW_FAILURE
         )
 
     def test_follow_job_failures_retry_three_times(self):
@@ -1348,7 +1483,7 @@ class TestNextActionOnNonZeroExit:
                 follow_cancelled=follow,
                 job_list_fn=job_list,
             )
-            == wait_ci.EXIT_CI_FAILED
+            == wait_ci.EXIT_NEW_FAILURE
         )
         action = _next_action(capsys.readouterr().err)
         assert calls == fail_at
@@ -1375,7 +1510,7 @@ class TestNextActionOnNonZeroExit:
                 forge="gitlab",
                 job_list_fn=lambda _run: [_job(db_id=904, status="failed", conclusion="failure")],
             )
-            == wait_ci.EXIT_CI_FAILED
+            == wait_ci.EXIT_NEW_FAILURE
         )
         assert "glab ci trace 904 --repo owner/repository" in _next_action(capsys.readouterr().err)
 
@@ -1479,6 +1614,7 @@ class TestMainEntrypoint:
             "source_ref": "HEAD",
             "sha": _FULL_SHA,
             "run_ids": [11, 12],
+            "reported_failures": [],
         }
 
     @pytest.mark.parametrize("source_ref", ["source-branch", "lightweight-tag", "annotated-tag"])

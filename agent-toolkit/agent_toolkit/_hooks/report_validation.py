@@ -7,7 +7,12 @@ import markdown_it
 
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
 
-_STAGES = {"作業完了報告": "work-complete", "振り返り結果報告": "review-result", "AWI投入結果報告": "review-submission"}
+_STAGES = {
+    "作業完了報告": "work-complete",
+    "振り返り結果の予告": "review-preview",
+    "振り返り結果報告": "review-result",
+    "AWI投入結果報告": "review-submission",
+}
 _WI_FILENAME = re.compile(r"\b\d{8}-\d{6}-\d{3}\.md\b")
 _CATEGORIES = ("AWI登録予定", "AWI登録済み", "AWI登録", "実装済み")
 """`### 確定した問題と対策`の行の先頭に置く区分。前方一致で判定するため、長い区分名を先に並べる。"""
@@ -156,7 +161,7 @@ def validate_report(text: str, stage: str, prepare: dict[str, Any] | None = None
             fields = _NO_PREVENTION.fullmatch(_TRAILING_IDS.sub("", item).rstrip())
             if fields is None or not all(value.strip() for value in fields.groups()):
                 errors.append(f"再発防止策なしの行へ評価した案・採らない理由・反復を書く: {item}")
-    if stage == "review-result" and prepare is not None:
+    if stage in {"review-preview", "review-result"} and prepare is not None:
         errors.extend(_mandatory_errors(measures, skipped, prepare))
     if stage == "review-submission" and has_scheduled(text):
         errors.append("最終報告のAWI登録予定を、投入したAWIのファイル名と実際の結果へ直す")

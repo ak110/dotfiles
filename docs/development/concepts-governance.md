@@ -5,7 +5,7 @@
 ## 確認・合意の運用
 
 現在はルールファイルの「協調と自律」「指示の解釈と優先順位」と、`agent-toolkit/share/rules-main.md`の「協調と自律」「目的との一致の確認」が定める。
-確認要否の判定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」と`references/judgment.md`が定める。
+確認要否の判定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」と`SKILL.md`「判定の細則」が定める。
 
 ### 確認要否の判定
 
@@ -57,7 +57,7 @@
   2026年10月7日、ユーザー発話による。Herdr導入時に限って決めたbest-effortの扱いを同じ目的と同じ失敗を持つ`herdr update`へ当てはめる原稿を、メインが目的側の判断の変更として事前承認の確認へ回し、ユーザーが「エージェントが判断できないことだけユーザーに聞いて」と是正した。
   技術判断を確認へ回す事象への対策は、バグの修正と新しい挙動の追加の区分、規範の不整合、先行成果物の提案集合、回答中に見つけた既存不良と場面ごとの例外として足されてきた。保護の条文には決めかねた場合は確認する扱いが残り、例外の無い新しい場面でその扱いが働いたため、場面ごとの例外の追加では再発が止まらなかった。
   このため決めかねた場合の扱いそのものを除き、目的との比較を確認要否の判定の共通の段へ置いた。
-  現行の規定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」と`references/judgment.md`「認可を要する操作」にある
+  現行の規定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」と`SKILL.md`「認可を要する操作」にある
 
 ### 承認の範囲
 
@@ -85,7 +85,7 @@
   （2026年10月2日、ユーザー回答。確定済みの方針を全てQCDの下に置く案と、全て事前承認のまま保つ案から、手段の方針だけをQCDの下に置く案を選んだ）。
   同日の改訂は「どちらか判別できない場合は目的側として事前承認とする」も加えたが、この扱いはユーザーの回答に含まれず、エージェントが付け加えたものだった。
   2026年10月7日のユーザー発話により、目的側か手段側かを決めかねる場合は判断の目的に照らしてエージェントが確定する扱いへ置き換えた（後掲の同日の項）。
-  現行の規定は`agent-toolkit:user-confirmation-and-report`の`references/judgment.md`「認可を要する操作」と`references/approval-scope.md`にある
+  現行の規定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「認可を要する操作」と`references/approval-scope.md`にある
 - 承認は成立と再利用を分けて扱い、成立した承認は承認源を問わず操作、対象、影響範囲および成立条件が同じ範囲で再確認せず実行する。人間由来のWIから承認が成立する条件は`agent-toolkit:wi-standards`が定める。適用範囲を限定した指示は、限定の前提の解消後と別の対象へ引き継がない
   （2026年9月1日、ユーザー指示。承認済みの`make update`とpushを繰り返し確認し、private-notesの競合時だけの限定指示を別リポジトリの操作へ広げた観測に由来する）
 - `atk wi rm`による削除はprivate-notesリポジトリのGit履歴へ残るため、自動承認しても復旧手段を失わない
@@ -138,7 +138,7 @@
   その事実は、確かめた事実としては報告しない。
   成果物の誤り、認可、安全性、変更対象または回答の正否を左右する前提は確認を続ける。
   2026年10月8日に、断言された事実の裏付け調査の必要性をユーザーが問い直した指示による。過去の実績を説明した発話に対し、古い記録の探索を始めた観測が契機である。
-  現行の規定は`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「割り込み・訂正・中止」にある。
+  現行の規定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「割り込み・訂正・中止」にある。
   通常発話と確認回答へ届ける注記は`agent-toolkit/agent_toolkit/_hooks/posttooluse.py`の`VERIFICATION_NOTICE_BODY`が持つ
 - Markdownとして描画されることを前提に書いた成果物の本文をユーザーへ提示する時は、フェンス付きコードブロックで囲まず地の文へそのまま出力する。原文の改変を許さない逐語引用と、コード、コマンド、設定の断片は囲む（2026年9月8日、ユーザー指示。囲んだ本文が記法のまま表示され、見出しと箇条書きを構造として解釈できないことに由来する）
 

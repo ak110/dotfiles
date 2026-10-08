@@ -141,6 +141,10 @@
 
 ## agents_serverと委譲基盤の不全
 
+- 2026年10月8日: Codex App Serverのreader障害と対象を特定できないserver requestの処理が、同じmanagerのClaude・Antigravity sessionもfailedへ変更する実装になっていた。
+  直接原因: backend間で共有するsession一覧に対し、全件処理とthread・turn検索がengineを限定していなかった。
+  対策: Codex sessionだけを返す共通の検索境界を使い、Backendの契約と共有状態表へ更新主体を明記する。自動再開の保留中Claudeを含む混在一覧で、他engineの状態・エラー・保留・結果公開状態が変わらないことを検証する
+
 - 2026年8月28日: 複数レーンの計画レビュー中に、先に完了した計画担当へ指摘を返す時点で30分の結果保持期限を超え、`send_message`が`session retention expired`を返して同一会話を再開できなかった。
   直接原因: Codexの`thread/resume`とClaude Agent SDKの`resume`は保持中sessionの内部replyだけから利用でき、期限切れ後に呼び出し元の正確な識別子から到達する公開入力がなかった。
   背景原因: 初期移行時に結果本体とClaude接続の有限時間回収だけを検証し、長時間オーケストレーションが保持期限後も同じ担当へ指摘を返す利用シナリオを契約テストへ含めなかった。

@@ -8,7 +8,7 @@
 
 開始条件の記録には`update_plan`で「調査」と「計画ファイル起草」を分けることを推奨する。使う場合は調査を`completed`にするとき、`explanation`へ確認対象・手段・確定事項・未確定事項の有無を記録する。ユーザー依存事項は`agent-toolkit:user-confirmation-and-report`の確認を完了してから起草へ進み、登録済みの起草工程を`in_progress`にする。
 
-変更対象または採用方針を左右する提案的表現の扱いは`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`に従う。自律モードで回答を同期的に得られない実行では、常時規範が定めるUWI記録と暫定判断を完了した事項だけを起草の対象にできる。レーン担当の確認の扱いは`agent-toolkit:plan-mode`のSKILL.mdに従う。
+変更対象または採用方針を左右する提案的表現の扱いは`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「問い・提案・疑問形の扱い」に従う。自律モードで回答を同期的に得られない実行では、常時規範が定めるUWI記録と暫定判断を完了した事項だけを起草の対象にできる。レーン担当の確認の扱いは`agent-toolkit:plan-mode`のSKILL.mdに従う。
 
 起草後に事実不足が判明した場合は、調査工程へ戻ってから再開する。レビュー指摘の反映と進捗ログ追記は初版の開始制御の対象外とする。
 

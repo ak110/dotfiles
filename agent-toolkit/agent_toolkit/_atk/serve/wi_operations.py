@@ -333,6 +333,8 @@ def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str,
         if isinstance(raw_type, str) and raw_type in wi_constants.STORED_QUESTION_TYPES
         else wi_constants.QUESTION_TYPE_FREE_FORM
     )
+    if question_type == wi_constants.QUESTION_TYPE_POST_APPROVAL:
+        return question_type, list(wi_constants.POST_APPROVAL_CHOICES)
     if question_type != wi_constants.QUESTION_TYPE_CHOICE:
         return question_type, []
     raw_choices = metadata.get("choices")
@@ -455,6 +457,11 @@ class Operations:
             kind = wi_entries.entry_type_from_metadata(path, metadata) if parsed is not None else None
             question_type, choices = _question_metadata(metadata, kind or "unknown")
             detail_entry = _entry(path, kind or "unknown", state, text, metadata)
+            display_text = text
+            if kind == wi_constants.WI_TYPE_UWI and uwi_mutations.ANSWER_MARKER in text:
+                # 保存・回答抽出と同じ最後の区切りだけを、表示用本文から除く。
+                before_answer, answer = text.rsplit(uwi_mutations.ANSWER_MARKER, 1)
+                display_text = before_answer + answer
             try:
                 extracted_comment = user_comment_mutations.extract_user_comment(text)
             except user_comment_mutations.UserCommentError:
@@ -469,8 +476,8 @@ class Operations:
             return {
                 **detail_entry,
                 "content": text,
-                "content_html": _render_content(text),
-                "body_html": _render_body(text),
+                "content_html": _render_content(display_text),
+                "body_html": _render_body(display_text),
                 "frontmatter_entries": (
                     _json_compatible_mapping_entries(metadata) if isinstance(metadata, collections.abc.Mapping) else []
                 ),
@@ -616,7 +623,7 @@ class Operations:
             if question_type not in wi_constants.NEW_QUESTION_TYPES:
                 raise WebApiInputError(
                     f"UWIの回答形式が不正か未指定です: {question_type}。"
-                    "選択肢形式（choice）か、はい／いいえ（yes-no）を指定してください"
+                    "選択肢形式（choice）、はい／いいえ（yes-no）、事後承認（post-approval）を指定してください"
                 )
             if question_type == "choice" and (choices is None or len(choices) < 2):
                 raise WebApiInputError("choice形式には2件以上のchoicesが必要です")

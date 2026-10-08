@@ -25,7 +25,11 @@ CODEX_ENGINE = "codex"
 
 
 class Backend(typing.Protocol):
-    """engine別のbackendが満たす操作と性質。"""
+    """engine別のbackendが満たす操作と性質。
+
+    session一覧はmanagerと全backendが共有する。backendが検索・状態遷移の対象にできるのは
+    自身のengineのsessionだけであり、接続全体の障害処理でも他engineの状態を更新しない。
+    """
 
     START_FAILURE_EXCLUDES_CANDIDATE: typing.ClassVar[bool]
     """起動の例外をその候補の可用性の失敗として扱い、次の候補へ進むか。"""
@@ -83,8 +87,12 @@ class Backend(typing.Protocol):
         """実行中のturnへ中断を要求する。"""
         ...
 
-    async def release_session(self, session_id: str) -> None:
-        """sessionが保持する委譲先の資源を解放する。"""
+    async def release_session(self, session: SessionState) -> None:
+        """保持期限到達時とstopでmanagerが呼び、終端後に残るsession単位の全資源を解放する。
+
+        プロセス、接続、ロード済みthreadとその子孫を含む。共有一覧から除去した後も解放できるよう、
+        解放対象のメモリ状態を渡す。保存済み会話の再開性とbackendが共有する接続は保つ。
+        """
         ...
 
     async def close(self) -> None:

@@ -16,7 +16,6 @@ import logging
 import os
 import re
 import shlex
-import shutil
 import sys
 import typing
 import uuid
@@ -32,6 +31,9 @@ from agent_toolkit._agents_server import (
     session_errors,
     shared_roots,  # pylint: disable=wrong-import-position
     wait_output_tracking,
+)
+from agent_toolkit._agents_server import (
+    plugin_root as plugin_roots,
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
 from agent_toolkit._agents_server.input_validation import validate_cwd, validate_model_effort, validate_prompt
@@ -49,7 +51,6 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_server_tool_result
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._atk import managed_temp as _managed_temp  # pylint: disable=wrong-import-position
 from agent_toolkit._common import (
     codex_models,
     process_tree,  # pylint: disable=wrong-import-position
@@ -71,72 +72,15 @@ DEFAULT_WAIT_TIMEOUT = 300.0
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 APP_SERVER_STDERR_LIMIT_CHARS = 4000
 APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT = 1.0
-# 版別ディレクトリ配下の配布物を複製するmanaged-tempの接頭辞。
-STABLE_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
-# 複製へ持ち込まない対象。仮想環境とバイトコードは複製先で再生成され、Git履歴は起動へ要らない。
-STABLE_PLUGIN_ROOT_EXCLUDED = (".venv", "__pycache__", ".git")
 # `item/started`のうちモデル出力に数えないitem種別。
 # `userMessage`はモデル呼び出しより前に届く入力の記録で、利用上限の失敗はその後に起こり得る。
 # codex-cli 0.157.0の通常のturnでは`userMessage`の後に`reasoning`が届いた（2026年9月26日の実行で確認）。
 _NON_MODEL_OUTPUT_ITEM_TYPES = frozenset({"userMessage", "hookPrompt", "contextCompaction"})
 
-_stable_plugin_roots: dict[Path, Path] = {}
-
 
 def _current_service_tier() -> str:
     """turnの開始時の実効設定を読み、Codex側の設定を継承せず速度を明示する。"""
     return "priority" if _atk_config.resolve_mutable_setting("codex_fast_mode") == "true" else "default"
-
-
-def _plugin_root_is_versioned(plugin_root: Path) -> bool:
-    """配布物rootが更新で消える版別ディレクトリ配下にあるかを返す。
-
-    Codexホストの配布物rootは`<cache>/agent-toolkit/<版>/`であり、プラグインの更新で
-    その版のディレクトリが除去される。版数は配布物の内側の`plugin.json`から取得する。
-    """
-    manifest = plugin_root / ".claude-plugin" / "plugin.json"
-    try:
-        version = json.loads(manifest.read_text(encoding="utf-8")).get("version")
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
-        return False
-    if not isinstance(version, str) or not version:
-        return False
-    return any(parent.name == version for parent in plugin_root.parents)
-
-
-def resolve_stable_plugin_root(plugin_root: Path | None = None) -> Path:
-    """委譲先の内側MCPサーバーの起動コマンドへ埋め込む配布物rootを返す。
-
-    起動コマンドは委譲先のturnごとに実行されるため、解決結果は本プロセスの生存期間を通じて
-    ディスク上の実体を必要とする。版別ディレクトリ配下の配布物は更新で除去されるため、
-    managed-tempへ複製した実体を返す。複製元ごとの結果を保持し、同じ複製元に対する
-    複製を本プロセスで1回に限る。
-    複製に失敗した場合は解決したrootをそのまま返し、複製の失敗を委譲の不成立へ変えない。
-    `plugin_root`には解決済みrootを渡し、省略時は自身の位置から解決する。
-    """
-    root = Path(__file__).resolve().parents[2] if plugin_root is None else plugin_root
-    cached = _stable_plugin_roots.get(root)
-    if cached is not None:
-        return cached
-    if not _plugin_root_is_versioned(root):
-        _stable_plugin_roots[root] = root
-        return root
-    try:
-        area = _managed_temp.create_managed_temp(STABLE_PLUGIN_ROOT_PREFIX)
-        destination = Path(area) / root.name
-        shutil.copytree(
-            root,
-            destination,
-            ignore=shutil.ignore_patterns(*STABLE_PLUGIN_ROOT_EXCLUDED),
-            symlinks=True,
-        )
-    except (OSError, _managed_temp.ManagedTempError) as exc:
-        _LOG.warning("配布物rootを複製できないため解決したrootを使います: root=%s error=%s", root, exc)
-        _stable_plugin_roots[root] = root
-        return root
-    _LOG.info("版別ディレクトリの配布物rootを複製しました: source=%s destination=%s", root, destination)
-    _stable_plugin_roots[root] = destination
-    return destination
 
 
 _BOUNDARY_PATH_PATTERN = re.compile(rf'<{AUTO_INSERTED_ELEMENT}\b[^>]*\spath="([^"]*)"')
@@ -195,7 +139,7 @@ def _user_rules_instructions() -> str:
 
 def _developer_instructions(launch_kind: LaunchKind) -> str:
     """委譲先の役割、このprocessで安定化した配布物root、ユーザーが置いた規範ファイルの本文を一体で返す。"""
-    plugin_root = resolve_stable_plugin_root()
+    plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
     return (
         f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}\n\n"
         f"agent-toolkit plugin root: {plugin_root}\n"
@@ -622,11 +566,12 @@ class AppServerManager:
         self._lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._writer_session_ids: dict[str, str] = {}
+        self._resume_close_events: dict[str, asyncio.Event] = {}
 
     @staticmethod
     def _agents_server_config(owner_session_id: str, writer_session_id: str) -> dict[str, Any]:
         """内側のMCPサーバーへ状態ファイルの書込主体を配送する設定を返す。"""
-        plugin_root = resolve_stable_plugin_root()
+        plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
         return {
             "mcp_servers": {
                 "agents_server": {
@@ -948,13 +893,25 @@ class AppServerManager:
                 **session.public_status(),
             }
 
-    async def release_session(self, session_id: str) -> None:
-        """Codex backendにはsession専用の接続が無いため、資源を解放しない。
+    async def release_session(self, session: SessionState) -> None:
+        """親と子孫threadの購読を外し、ロード状態とthreadごとのMCPサーバーを解放する。
 
-        `codex app-server`はbackend単位で共有する。`thread/unsubscribe`後の
-        `thread/resume`による会話復元を実際に動かして確かめていないため、unsubscribeは行わない。
+        backendの共有App Serverは止めない。解放後のsend_messageは既存のthread/resumeで会話を復元する。
+        notLoaded・notSubscribedの応答と接続閉鎖は既に解放済みのため、そのまま成功とする。
         """
-        del session_id
+        client = self.client
+        if client is None or getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
+            session.codex_subagent_thread_ids.clear()
+            return
+        for thread_id in (*sorted(session.codex_subagent_thread_ids), session.session_id):
+            try:
+                await client.request("thread/unsubscribe", {"threadId": thread_id})
+            except AppServerError:
+                if not getattr(client, "closed", False) and getattr(client, "reader_failure", None) is None:
+                    raise
+                session.codex_subagent_thread_ids.clear()
+                return
+            session.codex_subagent_thread_ids.discard(thread_id)
 
     async def interrupt(self, session: SessionState) -> None:
         """公開killから対象turnへ中断要求を送り、受理を待つ。
@@ -1057,13 +1014,41 @@ class AppServerManager:
             config.update(AppServerManager._agents_server_config(owner_session_id, writer_session_id))
         resume_params["config"] = config
         resume_params["developerInstructions"] = _developer_instructions(session.launch_kind)
-        resume_response = await client.request("thread/resume", resume_params)
+        resume_response = await self._request_thread_resume(client, resume_params)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
             raise AppServerError("thread/resume returned an unexpected thread.id")
         if owner_session_id is not None and writer_session_id is not None:
             shared_roots.write_host_alias(owner_session_id, writer_session_id, session.session_id)
         return writer_session_id
+
+    async def _request_thread_resume(self, client: Any, params: dict[str, Any]) -> dict[str, Any]:
+        """unsubscribe後の閉鎖と再開が競合した場合だけ、閉鎖通知を待って再送する。"""
+        thread_id = params["threadId"]
+        closed = asyncio.Event()
+        self._resume_close_events[thread_id] = closed
+        try:
+            async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                try:
+                    return await client.request("thread/resume", params)
+                except JsonRpcResponseError as exc:
+                    if str(exc) != (
+                        f"thread/resume: thread {thread_id} is closing; retry thread/resume after the thread is closed"
+                    ):
+                        raise
+                    async with self._condition:
+                        await self._condition.wait_for(
+                            lambda: (
+                                closed.is_set()
+                                or getattr(client, "closed", False)
+                                or getattr(client, "reader_failure", None) is not None
+                            )
+                        )
+                    if not closed.is_set():
+                        raise
+                return await client.request("thread/resume", params)
+        finally:
+            self._resume_close_events.pop(thread_id, None)
 
     @staticmethod
     def _capture_result(session: SessionState) -> dict[str, Any]:
@@ -1216,8 +1201,28 @@ class AppServerManager:
         params = message.get("params")
         if not isinstance(method, str) or not isinstance(params, dict):
             return
+        if method == "thread/closed":
+            close_event = self._resume_close_events.get(_thread_id_from(params) or "")
+            if close_event is not None:
+                close_event.set()
+                await self._notify_waiters()
+            return
+        if method == "thread/started":
+            thread = params.get("thread")
+            if isinstance(thread, dict):
+                owner = self._find_thread_owner(thread.get("parentThreadId"))
+                if owner is not None and isinstance(thread.get("id"), str):
+                    owner.codex_subagent_thread_ids.add(thread["id"])
         session = self._find_session(params)
         if session is None:
+            # 子孫threadの通知は子孫の追跡だけに使い、親のstatusや進捗へ混ぜない。
+            owner = self._find_thread_owner(_thread_id_from(params))
+            if owner is not None:
+                self._track_subagent_thread(owner, params.get("item"))
+                turn = params.get("turn")
+                if isinstance(turn, dict) and isinstance(turn.get("items"), list):
+                    for item in turn["items"]:
+                        self._track_subagent_thread(owner, item)
             return
         notification_turn_id = self._notification_turn_id(params)
         if notification_turn_id is not None and session.turn_id and notification_turn_id != session.turn_id:
@@ -1290,6 +1295,7 @@ class AppServerManager:
                 session.diff_changed = True
         elif method == "item/started":
             item = params.get("item")
+            self._track_subagent_thread(session, item)
             session.record_current_item_start(item if isinstance(item, dict) else None)
             if isinstance(item, dict):
                 if item.get("type") not in _NON_MODEL_OUTPUT_ITEM_TYPES:
@@ -1389,7 +1395,7 @@ class AppServerManager:
         if session is not None:
             sessions = [session] if not session.terminal else []
         else:
-            sessions = [item for item in self.sessions.values() if not item.terminal]
+            sessions = [item for item in self._codex_sessions() if not item.terminal]
         interrupt_targets: list[tuple[str, str]] = []
         for active in sessions:
             has_active_turn = bool(active.turn_id)
@@ -1423,7 +1429,7 @@ class AppServerManager:
 
     async def _handle_interrupt_response_error(self, session_id: str, turn_id: str, error: JsonRpcResponseError) -> None:
         """turn/interruptのJSON-RPC errorを対象turnだけへ記録する。"""
-        session = self.sessions.get(session_id)
+        session = self._find_session({"threadId": session_id})
         if session is None or session.turn_completed or session.turn_id != turn_id:
             return
         session.error = {"message": str(error) or error.__class__.__name__}
@@ -1435,7 +1441,7 @@ class AppServerManager:
         """reader異常時に全active turnをfailedへ遷移させて待機者を起こす。"""
         detail = str(error) or error.__class__.__name__
         changed = False
-        for session in self.sessions.values():
+        for session in self._codex_sessions():
             if not session.terminal or session.failure_pending_completion:
                 session.status = "failed"
                 if not session.failure_pending_completion:
@@ -1449,13 +1455,41 @@ class AppServerManager:
         if changed:
             await self._notify_waiters()
 
+    def _codex_sessions(self) -> list[SessionState]:
+        """managerと共有する一覧から、このbackendが状態を更新できるsessionだけを返す。"""
+        return [session for session in self.sessions.values() if session.engine == "codex"]
+
+    def _find_thread_owner(self, thread_id: Any) -> SessionState | None:
+        """直接開始したthreadか、その子孫を所有するCodex sessionを返す。"""
+        if not isinstance(thread_id, str):
+            return None
+        return next(
+            (
+                session
+                for session in self._codex_sessions()
+                if thread_id == session.session_id or thread_id in session.codex_subagent_thread_ids
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _track_subagent_thread(session: SessionState, item: Any) -> None:
+        """開始・再操作で購読したsubagentを記録し、親だけのunsubscribeで残る資源を追跡する。"""
+        if isinstance(item, dict) and item.get("type") == "subAgentActivity":
+            thread_id = item.get("agentThreadId")
+            if isinstance(thread_id, str) and thread_id and thread_id != session.session_id:
+                session.codex_subagent_thread_ids.add(thread_id)
+
     def _find_session(self, params: Any) -> SessionState | None:
         thread_id = _thread_id_from(params)
-        if thread_id is not None and thread_id in self.sessions:
-            return self.sessions[thread_id]
+        sessions = self._codex_sessions()
+        if thread_id is not None:
+            session = next((item for item in sessions if item.session_id == thread_id), None)
+            if session is not None:
+                return session
         turn_id = _turn_id_from(params)
         if turn_id is not None:
-            return next((item for item in self.sessions.values() if item.turn_id == turn_id), None)
+            return next((item for item in sessions if item.turn_id == turn_id), None)
         return None
 
     @staticmethod
@@ -1481,6 +1515,7 @@ class AppServerManager:
 
     @staticmethod
     def _consume_item(session: SessionState, item: dict[str, Any]) -> None:
+        AppServerManager._track_subagent_thread(session, item)
         item_type = item.get("type")
         if item_type == "agentMessage":
             text = item.get("text")

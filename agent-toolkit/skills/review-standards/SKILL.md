@@ -42,11 +42,12 @@ description: >
 ## 対象成果物の作成規範
 
 作成規範とは対象成果物の種別に適用する作成側の品質基準（`agent-toolkit:writing-standards`の該当資料とプロジェクト規範）を指す。
-該当する規範は`agent-toolkit:writing-standards`と、対象リポジトリの`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`配下とする。読む時点は読込表の最初の行が定め、いずれの役割でも他の資料より先に読む。
+該当する規範は`agent-toolkit:writing-standards`と、対象リポジトリの`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`配下とする。所在は実在するものに限り、存在を確かめてから読むか検索の対象へ渡す。読む時点は読込表の最初の行が定め、いずれの役割でも他の資料より先に読む。
 
 ## レビュー指摘管理表の共通操作
 
-レビュー指摘管理表は、`atk review-table`が操作する7列のTSVで、計画ファイルと同じstemの`.exec-review.tsv`を指す。CI対応レビュー指摘管理表は、対応する計画が無いCI失敗について、CIのエラーへの対応内容をレビューしたときの指摘を記録するレビュー指摘管理表（`ci-<OID>.exec-review.tsv`）を指す。
+レビュー指摘管理表は、`atk review-table`が操作するヘッダーなしのTSVで、計画ファイルと同じstemの`.exec-review.tsv`を指す。CI対応レビュー指摘管理表は、対応する計画が無いCI失敗について、CIのエラーへの対応内容をレビューしたときの指摘を記録するレビュー指摘管理表（`ci-<OID>.exec-review.tsv`）を指す。
+`atk review-table init`直後の0バイトの表は、指摘0件の初期化済みの表である。通常の表とCI対応レビュー指摘管理表、指摘なしで終端するレビューにも同じ定義を適用し、ヘッダーや仮の指摘行を加えない。列の形式は`atk review-table --help`を参照する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/review-standards/SKILL.md：レビュー指摘管理表の共通操作：2026年10月8日」にある。
 レビュー担当の指摘追加とレビューイーの応答記録は、いずれも`atk review-table`で行う。
 指摘箇所、指摘内容、対応内容および理由はいずれもファイル経由で渡す。受理形式はファイルのパスを渡すオプションだけである。
 役割ごとのサブコマンドと必須オプションは各参照資料が定める。

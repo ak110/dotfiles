@@ -18,7 +18,7 @@ formatter未適用・単純なテスト期待値の未追随など）と確定�
   - GitHubではrunと対象jobの状態から取得手段を選び、各コマンドの受理形式を操作直前のヘルプで確かめる
     - run進行中で対象jobが完了済み: `gh api repos/<OWNER>/<REPO>/actions/jobs/<job ID>/logs --allow-escape-sequences`で全jobログをmanaged-tempの中のファイルへ暫定保存する。端末エスケープを含む応答はこの指定が無いと出力を拒否される。取得に失敗した場合とjobが進行中の場合は、annotationや失敗テスト名などの取得可能な証拠を保存して先行分析する
     - run終端後: `gh run view <run ID> --repo <OWNER>/<REPO> --job <job ID> --log-failed`で対象jobの失敗ステップを取得する。全失敗jobの確認には`--job`を省いたrun単位の取得を使い、暫定証拠が全失敗jobを覆っているか確かめる。job logs APIの全jobログとは出力範囲が異なる
-    - run単位の失敗ログの取得前は`gh run watch <run ID> --repo <OWNER>/<REPO> --exit-status`などで終端を待ち、失敗による非0終了と待機手段の失敗をrun状態で区別する
+    - run単位の失敗ログは、`wait_ci.py`を同じ引数で呼び直して全体終端の返却を受けた後に取得する。終了コード6と2では待機を再開し、1（終端のCI失敗）と3（待機手段の失敗）などを終了コードで区別する
     - 観測結果と再検証手段は`docs/development/audit-records.md`の「agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」にある
   - GitLabでは対象SHAに対応するpipeline IDから失敗jobとそのtraceへ到達する。`gh`と`glab`の受理形式は実行直前のヘルプで確定する
 - artifactが生成されるジョブでは、VRT差分画像やtest-resultsなどのartifactも取得する
@@ -128,8 +128,8 @@ VRTベースライン再生成とマスク追加では、VRT固有差分分類�
 
 1. plan mode開始前に、失敗jobを検出した時点で、「失敗ログとartifactの取得」のrun状態別の取得手順に従ってjob ID、annotation、取得可能なjob単位ログとartifactを所有者限定の一時領域へ暫定保存する（努力目標。待機時間を分析へ充てるため）
    - 同一SHAのローカル再現、帰属判定、原因仮説、対策検討を全対象の終端を待たずに始める
-   - 残りのjob監視を継続する
-   - 全対象の終端後にrun単位の失敗ログを取得し、追加の失敗job、各失敗ログおよびartifactの完全性を再確認して先行分析へ統合する
+   - `wait_ci.py`が6または2を返したら同じ引数で呼び直し、残りのjobを待つ。再開の記録には同じbaseline、SHA待機では同じ`--failure-record`を使う
+   - 全体終端の返却後に、その出力が示す失敗集合全体のrun単位ログとartifactを取得し、先行分析へ統合する
 2. 初回ログと同一SHAのローカル再現結果から再現性を暫定分類する。
    再実行の可否、回数および終端後の資料確認は「再現性」節に従う
 3. 先行した調査を止めず、全失敗集合の確認後に修正範囲を確定してplan modeを開始し、新しい計画ファイル（バグ）の調査工程で
@@ -165,7 +165,7 @@ VRTベースライン再生成とマスク追加では、VRT固有差分分類�
 
 ### 修正系列
 
-最初のCI失敗（公開工程では全体検証の失敗を含む）からCIが成功するかその工程が終端するまでの1つの処理単位を「修正系列」と呼ぶ。修正の回数、CI記録、レビュー指摘管理表、修正系列の開始時のHEADはこの単位で引き継ぎ、原因commitが変わっても修正の回数を継続して計上する。修正の回数は、是正した失敗へ対応付けた修正の数で数え、原因commitへ取り込んだ修正（`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」手順5）も1回として数える。原因commitへ取り込んだ場合、`exec-review`へ渡す`原因commitOID`は書き換え後の現在の履歴で解決できる値とし、レビュー担当が修正の差分を特定できるよう、書き換え前後のOIDの対応と`git range-diff`の結果をCI記録へ残す。`修正系列の開始時のHEAD`はレビュー指摘管理表の名前の識別子として修正系列の間で継続する。
+最初のCI失敗（公開工程では全体検証の失敗を含む）からCIが成功するかその工程が終端するまでの1つの処理単位を「修正系列」と呼ぶ。修正の回数、CI記録、レビュー指摘管理表、修正系列の開始時のHEADはこの単位で引き継ぎ、原因commitが変わっても修正の回数を継続して計上する。修正の回数は、是正した失敗へ対応付けた修正の数で数え、原因commitへ取り込んだ修正（`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の「原因commitへ取り込む区分」）も1回として数える。原因commitへ取り込んだ場合、`exec-review`へ渡す`原因commitOID`は書き換え後の現在の履歴で解決できる値とし、レビュー担当が修正の差分を特定できるよう、書き換え前後のOIDの対応と`git range-diff`の結果をCI記録へ残す。`修正系列の開始時のHEAD`はレビュー指摘管理表の名前の識別子として修正系列の間で継続する。
 修正系列を終えるCIの成功は、失敗したjobを判定対象に含み、そのjobが期待する終了状態（許容された失敗を含む）で終わったpipeline（GitHub Actionsではrun）に限る。push先の実行が失敗したjobを含まない場合（保護branchだけ、schedule、パスの変更条件などのjobの実行条件による）は、その成功を是正の確認に数えない。この場合はjobの実行器を含めたローカル再現（「分類判定の補助」）で確認し、それもできない場合は修正系列をCIの成功で終えず、未確認のjob、試した再現と残る条件差をエスカレーションとして返す。
 `入力計画`には原因commitに対応する計画のパスを渡す。計画が保存済みの場合は、CI修正担当を起動するエージェントが起動前に`atk plans checkout <private-notes/plans/からの相対パス>`で`~/.claude/plans`へ取得し、取得したパスを渡す。同じ修正系列で起動する実行レビュー（`レビュー基準: 計画`）へも同じパスを渡す。CIの成功かその工程の終端で修正系列を終えるときに、起動したエージェントが`atk plans commit <private-notes/plans/からの相対パス>`で再保存し、成功の表示と警告の不在を確かめる。CI記録を基準とするレビュー指摘管理表`ci-<修正系列の開始時のHEAD>.exec-review.tsv`も同じ時機に、起動したエージェントが`atk plans commit ci-<修正系列の開始時のHEAD>.exec-review.tsv`で保存する。実行レビューのラウンドが収束しても修正系列が続く間（再pushしたCIの結果を待つ間を含む）は、表を`~/.claude/plans`に残す。修正系列の終端より前に保存した場合は、`atk plans checkout ci/ci-<修正系列の開始時のHEAD>.exec-review.tsv`で戻してから続ける。計画が`~/.claude/plans`にあり未保存の場合はそのパスをそのまま渡し、原因commitに対応する計画が無い場合は`入力計画`を`なし`とする。保存済み計画のパスを直接渡すと、進捗ログとレビュー指摘管理表への記録が拒否され、private-notesの計画も更新されない。
 同じ修正系列の3回目以降の修正と、回数によらず公開契約または設計へ及ぶ修正では、単一の`exec-review`を収束まで反復する。この起動条件は公開工程の終端担当が扱う修正系列（`agent-toolkit:process-wi`の`references/termination-ci-failure.md`）にも適用する。それ以外の修正では`exec-review`を起動せず、再push、CI確認へ戻る。

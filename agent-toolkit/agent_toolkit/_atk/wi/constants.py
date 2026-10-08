@@ -185,7 +185,13 @@ AskUserQuestionが選択肢を必須とし自由記述を「Other」で受ける
 保存済みの項目の表示、回答と本文編集のためだけに読む。
 """
 
-NEW_QUESTION_TYPES = (QUESTION_TYPE_CHOICE, QUESTION_TYPE_YES_NO)
+QUESTION_TYPE_POST_APPROVAL = "post-approval"
+"""実施済みの対応を固定二択で確認し、肯定回答で自動採択する形式。"""
+
+POST_APPROVAL_CHOICES = ("その対応で問題無い", "問題がある")
+"""事後承認の表示と肯定完全一致の判定が共有する選択肢。"""
+
+NEW_QUESTION_TYPES = (QUESTION_TYPE_CHOICE, QUESTION_TYPE_YES_NO, QUESTION_TYPE_POST_APPROVAL)
 """UWIを新規作成するときと、回答形式を変える本文編集で受理する回答形式。"""
 
 STORED_QUESTION_TYPES = (*NEW_QUESTION_TYPES, QUESTION_TYPE_FREE_FORM)

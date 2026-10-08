@@ -856,7 +856,7 @@ function syncDetailMutationAvailability() {
 function renderAnswerChoices(entry) {
   const container = byId('answer-choices');
   const choices = entry.question_type === 'yes-no' ? ['はい', 'いいえ'] :
-    entry.question_type === 'choice' && Array.isArray(entry.choices) ? entry.choices : [];
+    ['choice', 'post-approval'].includes(entry.question_type) && Array.isArray(entry.choices) ? entry.choices : [];
   container.replaceChildren(...choices.map(value => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1198,8 +1198,9 @@ async function runDetailMutation(pendingKey, pendingOptions, request, successMes
   const sessionGeneration = detailSessionGeneration;
   detailMutationPending = true;
   detailReloadDeferred = false;
+  let result;
   try {
-    await (runPending(pendingKey, pendingOptions, request));
+    result = await (runPending(pendingKey, pendingOptions, request));
   } catch (error) {
     detailMutationPending = false;
     if (detailReloadDeferred) {
@@ -1211,7 +1212,8 @@ async function runDetailMutation(pendingKey, pendingOptions, request, successMes
     detailMutationPending = false;
   }
   detailReloadDeferred = false;
-  finishDetailMutation(key, filename, sessionGeneration, successMessage);
+  const message = typeof successMessage === 'function' ? successMessage(result) : successMessage;
+  finishDetailMutation(key, filename, sessionGeneration, message);
 }
 
 async function saveEntry() {
@@ -1251,7 +1253,8 @@ async function saveAnswer() {
   try {
     await (runDetailMutation('answer', {
       container: byId('detail-shell'), button: byId('save-answer-button'), busyLabel: '保存中'
-    }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)}), `${key}へ回答しました。`));
+    }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)}), result =>
+      result.state === 'adopted' ? `${key}の回答を保存し、採用済み（adopted）へ移しました。` : `${key}へ回答しました。`));
   } catch (error) {
     const failure = `${key}へ回答できませんでした。 ${error.message}`;
     if (sessionGeneration === detailSessionGeneration) {

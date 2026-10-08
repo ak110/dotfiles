@@ -97,7 +97,7 @@
 | 作成規範 | 品質基準 | `agent-toolkit/skills/review-standards/SKILL.md`「対象成果物の作成規範」 |
 | 完成条件 | WIの条件 | `agent-toolkit/skills/wi-standards/references/awi-body.md`「通常AWIの本文」 |
 | 完了条件 | 計画の条件 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
-| レビュー指摘管理表 | atk review-tableが操作する7列のTSV | `agent-toolkit/skills/review-standards/SKILL.md`「レビュー指摘管理表の共通操作」 |
+| レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit/skills/review-standards/SKILL.md`「レビュー指摘管理表の共通操作」 |
 | CI対応レビュー指摘管理表 | 計画の無いCI失敗のレビュー指摘管理表 | `agent-toolkit/skills/review-standards/SKILL.md`「レビュー指摘管理表の共通操作」 |
 | セッション記録 | 会話の記録 | `agent-toolkit/skills/writing-standards/references/session-records.md`冒頭 |
 | メイン記録 | 会話の記録 | `agent-toolkit/skills/writing-standards/references/session-records.md`「Claude Codeの記録」 |

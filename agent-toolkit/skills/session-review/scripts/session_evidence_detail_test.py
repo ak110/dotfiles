@@ -15,6 +15,48 @@ from agent_toolkit._testing.session_evidence_support import (
 )
 
 
+def test_detail_returns_full_sent_body_without_other_tool_content(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """会話の省略対象になった送信本文を詳細照会で全文取得する。"""
+    body = "本文の中間も保存する。\n" * 1200
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "send",
+                            "name": "mcp__agent-toolkit__send_to_user",
+                            "input": {"message": body},
+                        },
+                        {"type": "tool_use", "id": "other", "name": "OtherTool", "input": {"message": "別ツールの入力"}},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "send", "content": "表示した"},
+                    ],
+                },
+            },
+        ],
+    )
+    assert evidence.main([str(transcript), "--detail", "1", "--detail", "2"]) == 0
+    events = read_jsonl(capsys)
+    visible = [event for event in events if event.get("role") in {"assistant", "user"}]
+    assert [event["text"] for event in visible] == [body]
+    assert not visible[0].get("omitted")
+    assert any(event.get("name") == "OtherTool" for event in events)
+
+
 def test_observation_boundary_keeps_original_line_numbers(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

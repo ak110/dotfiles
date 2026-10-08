@@ -336,6 +336,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         再開は結果保持期限の経過と所有主体の終了の双方を契機とする。
         結果本文を保持したまま所有主体だけが終了した場合は、直前結果を応答へ含める。
         """
+        await self._wait_for_resource_release(resume_state.session_id)
         pending, ticket = self._start_resume(
             resume_state,
             prompt,

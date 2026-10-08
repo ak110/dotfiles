@@ -13,6 +13,7 @@ description: >
 # コミット運用とコミットメッセージ
 
 本スキルはgit commitの操作手順とコミットメッセージの記述規約を提供する。
+最初に`references/git-identifier.md`を全文読む。
 
 ## 読込表
 

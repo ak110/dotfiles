@@ -572,6 +572,11 @@ def _validate_add_entries(
         raise WebInputError(
             "choice形式にはchoicesが必要です", next_action="`--choices`で選択肢を指定するか、別のquestion_typeを選ぶ"
         )
+    if entry_type == WI_TYPE_UWI and question_type == _constants.QUESTION_TYPE_POST_APPROVAL and choices is not None:
+        raise WebInputError(
+            "post-approval形式の選択肢は固定です",
+            next_action="--choicesを外して再投入する",
+        )
     return parsed_messages, normalized_target_repo
 
 

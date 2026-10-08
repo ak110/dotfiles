@@ -27,6 +27,7 @@ from pytools._internal import (
 from ._test_helpers import _FakeResult
 
 _REAL_RUNNING_CODEX_PROCESSES = codex_processes.running_codex_processes
+_REAL_HOOKS_LIST = install_codex_plugins._hooks_list  # pylint: disable=protected-access
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 # 生成器の許可表と同じ9イベント。install_codex_pluginsはこの集合が全て登録済みかを判定する。
@@ -151,6 +152,40 @@ def _set_json_responses(
 ) -> None:
     iterator: Iterator[dict[str, Any] | None] = iter(responses)
     monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(iterator))
+
+
+@pytest.mark.parametrize("respond", [True, False])
+def test_hooks_list_closes_real_stdout_after_response_or_eof(monkeypatch: pytest.MonkeyPatch, respond: bool) -> None:
+    """短命app-serverの実pipeから応答またはEOFを読み、stdout・stdinと子を回収する。"""
+    child_code = """
+import json, sys
+for line in sys.stdin:
+    message = json.loads(line)
+    if not int(sys.argv[1]):
+        break
+    if message.get('method') == 'initialize':
+        print(json.dumps({'id': message['id'], 'result': {}}), flush=True)
+    elif message.get('method') == 'hooks/list':
+        print(json.dumps({'id': message['id'], 'result': {'data': []}}), flush=True)
+"""
+    real_popen = subprocess.Popen
+    children: list[subprocess.Popen[str]] = []
+
+    def popen(_argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
+        # 被検証関数がcloseと子の回収を担うことを観測する。
+        process = real_popen(  # pylint: disable=consider-using-with
+            [sys.executable, "-c", child_code, str(int(respond))], **kwargs
+        )
+        children.append(process)
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    assert _REAL_HOOKS_LIST() == ({"data": []} if respond else None)
+    assert len(children) == 1
+    child = children[0]
+    assert child.poll() == 0
+    assert child.stdout is not None and child.stdout.closed
+    assert child.stdin is not None and child.stdin.closed
 
 
 def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:

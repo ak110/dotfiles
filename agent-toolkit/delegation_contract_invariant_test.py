@@ -483,7 +483,10 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     assert "パス要素" in generation
     assert "狭い方の範囲" in generation
     # 重なりと公開工程の書込対象の機械的な判定は受領側も同じ`pick-wi-check`へ委ね、意味の独立性だけを本文で読む。
-    assert "`書込対象`の重なり" in receipt and "変更する定義が実際に交わらないか" in receipt
+    assert "レーン間の重なり:" in output_format
+    overlap_fields = {"共通パス", "レーン1の定義", "レーン2の定義", "判定"}
+    assert overlap_fields <= set(re.findall(r"^  ([^\s:]+):", output_format, flags=re.MULTILINE))
+    assert overlap_fields <= set(re.findall(r"`([^`]+)`", receipt))
     # 選定時と受領時の双方で、反映先と`書込対象`の対応を同じ公開コマンドで確かめる。
     assert "書き込まない反映先" in fields
     assert "`書き込まない反映先`" in output
