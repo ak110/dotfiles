@@ -631,7 +631,10 @@ def _logs_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
         "PROGRAMDATA",
     ):
         monkeypatch.setenv(variable, str(tmp_path / variable))
+    # WindowsのKnownFolder APIも子へ継承する公開overrideで隔離する。
+    monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", os.environ["LOCALAPPDATA"])
     state_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
+    assert state_dir.is_relative_to(tmp_path)
     state_dir.mkdir(parents=True)
     return state_dir / "update-dotfiles.log"
 

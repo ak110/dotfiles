@@ -228,10 +228,13 @@ def test_logs_public_launcher_reads_saved_log_without_writing_state(
         "PROGRAMDATA",
     ):
         monkeypatch.setenv(variable, str(tmp_path / variable))
+    # WindowsのKnownFolder APIも子へ継承する公開overrideで隔離する。
+    monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", os.environ["LOCALAPPDATA"])
     monkeypatch.setenv("UV_CACHE_DIR", cache)
     monkeypatch.setenv("UV_PYTHON", sys.executable)
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
     state_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
+    assert state_dir.is_relative_to(tmp_path)
     state_dir.mkdir(parents=True)
     expected = "2026-10-01 12:00:00,000 run=100-2 INFO 保存済みの更新\n"
     (state_dir / "update-dotfiles.log").write_text(expected, encoding="utf-8")
