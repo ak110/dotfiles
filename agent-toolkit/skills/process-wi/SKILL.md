@@ -84,8 +84,8 @@ pickerと並行して、対象がGitHub上にある場合は対象リポジト�
 
 ## 同一主題の追加指示
 
-本スキルの起動中にユーザーが追加した指示は、既存の処理条件と比べて採否を決めた差分だけを同一主題の処理条件へ反映する。比較と採否は`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」に従う。追加指示の範囲と論理関係の解釈は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」に従う。公開工程の開始前に届いた直接実装を求める表現も、同一主題である間は本スキルの処理を継続する追加条件として扱う。公開工程の開始後に届いた指示は`references/immediate-fix.md`「対象外の不良と是正要求」の公開後の扱いに従う。主題の継続と直接実装との境界が不明な場合は、変更の前に確認する。
-追加指示が既存の要件を変える場合、メインは中継前に変更前の要件で作業ツリーの外へ生成済みの成果物を確認し、成果物ごとの終端、改訂または取り消しなどの処置を同じ追送へ含める。キュー項目は`atk wi list`などで確かめる。Issue・MRの本文へ追記済みの項目も成果物に含め、GitLabなら`glab issue view <番号> --output json`の`description`、GitHubなら`gh issue view <番号> --json body`などで本文を取得する。処置が追加指示から一意に定まらない場合はユーザーへ確認する。作業ツリーの差分に依存しない外部成果物の編集は、メインが中継と同じ時点で実施する。作業ツリー内の差分はレーン担当が計画と実装で追随させる。
+本スキルの起動中にユーザーが追加した指示は、既存の処理条件と比べて採否を決めた差分だけを同一主題の処理条件へ反映する。比較と採否は`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」に従う。追加指示の範囲と論理関係の解釈は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」に従う。公開工程の開始前に届いた直接実装を求める表現も、同一主題である間は本スキルの処理を継続する追加条件として扱う。公開工程の開始後に届いた指示は`references/immediate-fix.md`「対象外の不良と是正要求」の公開後の扱いに従う。主題の継続と直接実装との境界は原要求・現物・既存認可から自ら判定し、共通の確認要否判定でユーザーだけの目的・範囲・認可の未確定値が残る場合だけ変更前に確認する。
+追加指示が既存の要件を変える場合、メインは中継前に変更前の要件で作業ツリーの外へ生成済みの成果物を確認し、成果物ごとの終端、改訂または取り消しなどの処置を同じ追送へ含める。キュー項目は`atk wi list`などで確かめる。Issue・MRの本文へ追記済みの項目も成果物に含め、GitLabなら`glab issue view <番号> --output json`の`description`、GitHubなら`gh issue view <番号> --json body`などで本文を取得する。既存成果物の処置も共通の確認要否判定を適用し、技術と既存認可で決まるものは自ら確定して報告し、目的・結果の変更や不足する認可だけを確認する。作業ツリーの差分に依存しない外部成果物の編集は、メインが中継と同じ時点で実施する。作業ツリー内の差分はレーン担当が計画と実装で追随させる。
 中継する追送の各要素には`agent-toolkit:delegation`の`references/base-contract.md`の入力の適格性を適用する。採用した要件差分と外部成果物の処置は渡し、commitの分け方、検証、pushなどレーン担当の規範が決める手段は加えない。
 
 ## 即時対応
@@ -96,7 +96,7 @@ pickerと並行して、対象がGitHub上にある場合は対象リポジト�
 
 ## 終端
 
-選定、レーンまたは公開工程が確認待ちとなる場合は、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:user-confirmation-and-report`の手順でUWIへ退避する。WIの状態は`agent-toolkit:wi-standards`に従い、`processing`にある元項目を`atk wi hold --state=processing <元項目のファイル名>`で保留する。
+選定、レーンまたは公開の工程境界そのものを確認理由にせず、共通の確認要否判定で必要な判断だけを確認待ちとし、依存しない工程を継続する。回答を得られない確認は`agent-toolkit:user-confirmation-and-report`の手順でUWIへ退避する。WIの状態は`agent-toolkit:wi-standards`に従い、`processing`にある元項目を`atk wi hold --state=processing <元項目のファイル名>`で保留する。
 通常の完了報告は`agent-toolkit:completion-report`に従う。本スキルの工程で生じたcommitは、公開工程で反映してから完了を報告する。
 
 ### 終端工程の承認スコープ

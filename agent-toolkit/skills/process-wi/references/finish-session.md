@@ -84,7 +84,7 @@ completion-reportが報告する前に、メインは公開状態の4項目（`a
 
 - 前回pushのOIDからベースbranchへ新しいcommitが統合された場合: 全レーンの終端と書込主体の解放を確かめ、追加差分のbump種別、プロジェクト固有の公開後の操作および延期`adopt`だけを入力にして同じ終端手順を再実行する。主作業ツリーで直接作成した是正commitも追加差分に含める。再実行の返却を検収し、最新HEADのpushとCI成功を確かめる。CI定義の無い対象リポジトリでは、CI成功の代わりに`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`「受領と検収」の`CI定義なし`の受理条件で確かめる。
 - 新しいcommitが無い場合: 再起動せず、既存のUWIへの報告処理へ進む。
-- 公開状態の不成立が新しいcommit以外に起因する場合: `agent-toolkit:wi-standards`を起動してUWIを登録し、観測結果を報告へ含める。
+- 公開状態の不成立が新しいcommit以外に起因する場合: 原因と回復手段を調べ、既存認可内の技術回復を実施する。`agent-toolkit:user-confirmation-and-report`「確認要否の判定」でユーザーだけの値が残る部分だけをUWIで確認し、観測結果と未完了は報告へ含める。不成立の分類だけで承認要求を発行しない。
 
 ## 完了報告と終了
 

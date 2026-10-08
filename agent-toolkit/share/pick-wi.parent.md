@@ -73,7 +73,7 @@ AWIも`atk wi show`で元本文を取得し、変更要求から既存・新設�
 `agent-toolkit:process-wi`の`references/finish-session.md`「延期adoptと反映後の観測」はAWI本文へ再開記録（最後の`## 反映後の観測の再開記録`の節）を追記する。pickerは最後の同名節の`再開区分`が`反映後の観測だけが残る`の項目だけ、その記録から`反映後の観測だけが残る`で始まる観測のみの再開位置を返す。この値では前文の計画ファイルの確認に代えて、AWI本文の最後の同名節が持つ`計画`の値と再開位置の`計画:`の値が一致することを確かめる。値が`private-notes/plans/`からの相対パスの場合は、`atk config get private_notes`が返す場所の`plans/`配下にその計画が実在し、計画の`関連WI`が対象AWIを含むことも確かめる。値が`計画なし`の場合は計画の確認を省く。
 再開位置が無い項目は新しい計画を起草する対象とする。省略時の値との一致により省略された行は、pickerの出力契約が定める省略時の値として解釈する。
 
-欠落、重複、形式外の値または不一致を検出した場合だけ、観測値を添えて同じpicker threadへ再取得を指示する。`続行できない理由`の行を持つ返却では結果をそのまま保持し、確認事項をユーザー確認する。回答を得られない場合はUWIを登録し、その回答を得るまで進められない項目を`atk wi hold`で保留する。選定後に`processing`へ移した項目は`atk wi hold --state=processing <ファイル名>`で保留する。
+欠落、重複、形式外の値または不一致を検出した場合だけ、観測値を添えて同じpicker threadへ再取得を指示する。`続行できない理由`の返却も根拠を検収し、内側で補える入力・技術的不足は同じpickerへ結果か続行指示を返す。`agent-toolkit:user-confirmation-and-report`「確認要否の判定」でユーザーだけの値が残る事項だけを確認する。必要な回答を得られない場合はUWIを登録し、回答依存の項目を`atk wi hold`で保留する。`processing`の項目は`atk wi hold --state=processing <ファイル名>`で保留する。
 
 メインはpickerの出力へ不採用と既存実装による充足の確定が含まれないことを検収する。選定工程ではメインがAWIを直接`reject`または`adopt`せず、採否と通常の終端はレーン担当が行う。反映後の観測だけが残る延期`adopt`は`agent-toolkit:process-wi`の`references/finish-session.md`「延期adoptと反映後の観測」に従う。採否の確定はレーン担当の職務であり、その職務境界は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める。
 

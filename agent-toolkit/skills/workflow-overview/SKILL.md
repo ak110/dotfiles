@@ -21,7 +21,7 @@ user-invocable: false
 
 ## 利用形態と起動主体
 
-- 対話型: ユーザーがエージェントへ直接依頼する。メインは`agent-toolkit:plan-mode`「計画ファイルの作成要否」で作成を判定し、作成する場合だけ同スキルを起動する。作成を省く変更も協調モードで要件と公開範囲を確認する。
+- 対話型: ユーザーがエージェントへ直接依頼する。メインは`agent-toolkit:plan-mode`「計画ファイルの作成要否」で作成を判定し、作成する場合だけ同スキルを起動する。計画の有無によらず要件と公開範囲へ既存認可を適用し、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で不足するユーザー判断だけ確認する。
 - 自律型: ユーザーが`atk wi process-loop`を起動する。process-loopが反復ごとに開始前更新と専用worktreeを準備し、子セッションで`agent-toolkit:process-wi`を起動する。子セッションへ渡すプロンプトはユーザーの発話ではない。子セッションは`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`でprocess-loopから起動されたことを判別する。
 - まとめ処理型: ユーザーが`agent-toolkit:single-lane-process`を手動起動し、たまったWIを1回の実行の中で扱う。
 - 定期実行型: ユーザーがcronなどの定期実行へ`atk run-skill`を登録し、WIキューを経由せずにスキル1件を自律モードで1回ずつ実行する。各回の結果は報告用UWIで、判断が要る対応は事前承認型UWIで届く。これらのUWIは`source`が`run-skill`、`scope`がスキル名であり、process-wiの選定とprocess-loopの起動件数からは除く。
@@ -33,6 +33,8 @@ user-invocable: false
 ユーザーは`atk wi add`、`agent-toolkit:add-awi-by-user`または`atk serve`のWI画面から要求を登録する。処理中のエージェントと`agent-toolkit:session-review`もWIを投入する。本文、由来、状態と依存は`agent-toolkit:wi-standards`が定める。登録済みの未終端WIを更新・修復するか採否を見直す場合の保留は`agent-toolkit:wi-standards`「状態と依存」に従う。
 
 自律モードの確認手段と、回答を得られない場合のUWIへの切替は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。UWIへ退避した確認には、ユーザーが`atk wi answer`または`atk serve`で回答する。回答済みUWIのうち、`source`が`run-skill`のものは同じ対象リポジトリと同じスキルの次回の`atk run-skill`の実行が取り込み、それ以外はprocess-wiの次の実行のpickerが保留中の元項目とともに取り込む。ユーザーが処理中のprocess-wiのセッションへ回答を告げた場合は、同じ実行の処理対象へ加える（`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`「処理対象WIの追加」）。取り込みと終端は`agent-toolkit:wi-standards`「状態と依存」と`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める。
+
+自律モードでも同スキル「確認要否の判定」を先に適用し、技術と既存認可で確定する事項は自ら実施して報告する。必要な確認では回答に依存する部分だけを保留し、他の作業を続ける。
 
 作業完了後は`agent-toolkit:completion-report`から`agent-toolkit:session-review`が起動する。振り返りが投入したAWIは次のprocess-loopセッションで処理される。
 
