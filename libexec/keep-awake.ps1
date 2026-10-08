@@ -1,6 +1,16 @@
 ﻿Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if ($args.Count -eq 1 -and $args[0] -eq '--help') {
+    Write-Output 'keep-awake: スリープ抑制を開始します。引数なしで実行し、Ctrl+Cで終了します。'
+    Write-Output '--help: この説明を表示して終了します。'
+    exit 0
+}
+if ($args.Count -gt 0) {
+    [Console]::Error.WriteLine('受理できない引数: ' + ($args -join ' '))
+    exit 2
+}
+
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;

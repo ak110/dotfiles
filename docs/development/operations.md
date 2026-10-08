@@ -7,6 +7,11 @@
 
 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する。
 
+引数なしで既存の4生成器を順に実行し、失敗を集約する。
+`--help`は使用方法を表示して終了コード0で終わる。
+`--check`、未知のオプションと位置引数は標準エラーへ入力の診断を出力し、非0で終わる。
+ヘルプと不正入力では生成器を起動しない。検査だけを行うモードは持たない。
+
 - 同スクリプトは`sys.executable`で生成器を子プロセス起動するため、
   子が要求するプロジェクト依存（`pytilpack`等）を持つプロジェクト環境のPythonで起動する。
   PEP 723ヘッダーを持たないため、パスを直接渡しても依存なしの隔離環境では起動されない
@@ -366,6 +371,12 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 ## Windowsの電源設定の最適化（optimize-power-settings）
 
 `optimize-power-settings`コマンドはWindows専用で、高速スタートアップとUSB selective suspendをまとめて無効化する。
+
+引数なしで設定処理を開始する。自昇格した子は`-AutoElevated`を受け取る。
+`--help`は使用方法を表示して終了コード0で終わり、未知引数は標準エラーへ診断を出力して非0で終わる。
+どちらも管理者確認、自昇格、レジストリ・電源設定の操作へ進まない。
+Windowsのスリープ抑制用`keep-awake`も、引数なしで本体を開始し、
+`--help`と未知引数では同じ終了契約でAdd-Typeとスリープ抑制へ進まない。
 
 - 高速スタートアップ無効化: `HiberbootEnabled=0`レジストリ書き込みと`powercfg /hibernate off`を実行する
 - USB selective suspend無効化: 電源プラン層のAC・DC両系統と、per-device層（`SelectiveSuspendEnabled`と
