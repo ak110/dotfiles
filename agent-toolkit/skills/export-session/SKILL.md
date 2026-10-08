@@ -17,26 +17,12 @@ description: >
 
 ### 実行例
 
-現在のClaude Codeセッションを標準出力へ変換する:
+現在のセッションはClaude Codeでは`CLAUDE_CODE_SESSION_ID`、Codexでは`CODEX_THREAD_ID`を識別子に使う。
+例えば、Claude Codeの現在の記録を標準出力へ変換するには次を実行する。
 
 ```bash
 atk agents logs "$CLAUDE_CODE_SESSION_ID" --format markdown
 ```
 
-Codexでは`CODEX_THREAD_ID`を使う:
-
-```bash
-atk agents logs "$CODEX_THREAD_ID" --format markdown
-```
-
-プロジェクトの直近3件をディレクトリへ保存する:
-
-```bash
-atk agents logs --project-dir /path/to/project --latest 3 --format markdown --output-dir /path/to/exports
-```
-
-thinkingとサブエージェントを含めて全件を変換する:
-
-```bash
-atk agents logs --all --format markdown --include-thinking --include-subagents --output-dir /path/to/exports
-```
+プロジェクト単位なら`--project-dir`と`--latest 3`などで範囲を指定し、全件なら`--all`を使う。
+保存先は`--output-dir`、thinkingと委譲先の記録は`--include-thinking`と`--include-subagents`で指定する。

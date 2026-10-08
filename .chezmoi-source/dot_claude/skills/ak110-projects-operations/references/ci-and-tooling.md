@@ -45,8 +45,8 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
 以下4点はworkflow編集時の確認観点であり、実値は各リポジトリの`.github/workflows/**`に従う。
 
 - container化ジョブではuv / pnpm / Node.js / miseのセットアップステップを省く。
-  GitHub Actionsのピン留め確認には独立したstepを置かず、pyfltrの組み込みlinter`pinact`へ任せる。
-  `pinact`は`pyproject.toml`の`[tool.pyfltr]`が持つ`preset = "latest"`で有効になり、CIの`ci.yaml`が実行する`pyfltr ci`と、push前に実行する`pyfltr run`・`pyfltr fast`（prekのpre-commitを含む）のいずれにも含まれるため、独立したstepは同じ確認の重複になる。
+  Actionsのピン留めのチェックは`pyproject.toml`の`[tool.pyfltr]`の`preset = "latest"`で有効な`pinact`へ集約する。
+  対象は`ci.yaml`の`pyfltr ci`と、push前の`pyfltr run`・`pyfltr fast`（prekのpre-commitを含む）とし、独立したstepは対象外とする。
   Pythonバージョンマトリクスは
   `env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
   `defaults.run.shell: bash`の指定が必須（GitHub Actionsは`container:`のジョブで`shell`の指定が無い`run`を`sh`で実行するため）

@@ -9,8 +9,7 @@
 エンドユーザーに届く振る舞いが変わるものは必ずbumpし、判断に迷う場合はbumpする。
 コメント・docstringのみ、`*_test.py`のみ、入出力が不変なリファクタリング、誤字・スタイル調整はbumpせず版数を据え置く。
 
-- PATCH（`+0.0.1`）: 軽微な修正（フック・検出パターン・メッセージの変更、バグ修正、
-  既存の見出し配下への規範文追記・条件補強・例示追加など）
+- PATCH（`+0.0.1`）: 軽微な修正（不具合・フック・検出・文言、既存見出し内の規範の補強など）
 - MINOR（`+0.1.0`）: 機能追加・検出範囲の大幅拡大・description変更・節新設など、規模の大きい変更
 - MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がある場合だけ実行する
   （規定は`agent-toolkit:commit`の`references/publish.md`「版数と生成物」が定める）
@@ -26,8 +25,7 @@ rebase・merge時に`version`が競合した場合は、`(major, minor, patch)`�
 反映後に`scripts/sync_codex_plugin_manifests.py`でAgent Plugins・Codex向け派生manifestを同期し、
 `scripts/sync_codex_plugin_manifests.py --check`で派生物を変更せず整合性を確かめる。
 終了コードは最新なら0、不整合なら1、引数誤用なら2とする。
-同スクリプトが定義元ファイル間の`version`と`description`の一致と派生manifestの内容一致をまとめて判定するため、
-確認は同スクリプトの実行で終える（努力目標。派生先のパスを列挙して`jq`などの別コマンドで各ファイルの値を個別に比較すると、同じ判定の重複になる）。
+定義元の`version`・`description`と派生manifestの一致は同スクリプトの判定を使い、個別比較を重ねない（努力目標。同じ値の確認の重複を避ける）。
 
 rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの統合先と現在の定義元ファイルの`version`値を比較する。
 自分の未公開コミットにエンドユーザーの振る舞いを変えるplugin変更が残り、両者の値が同じ場合は、
@@ -55,11 +53,8 @@ plugin cache directory配下の新versionのrootを解決し直す。
 本節の前段が定める一般則は、単一のworktreeで実装する計画へ適用する。
 `agent-toolkit:process-wi`が起動したレーンでは、レーン数によらず本節末尾の特則が前段に優先する。
 
-計画フェーズではbump要否や既存bumpとの差分の調査を省き（努力目標。既存bumpとの統合はツールが吸収する）、種別（PATCH／MINOR／MAJOR）と
-「判定基準」節に基づく種別選定根拠を`## 要件・外部仕様`へ記述する。
-具体的なversion数値は書かず`scripts/agent_toolkit_bump.py`の実行結果に従う。
-実装フェーズでは検証より前に`scripts/agent_toolkit_bump.py {種別}`を実行する
-（既存bumpとの統合はツール側が吸収する）。bump不要の場合は`## 要件・外部仕様`へ`bump不要`と根拠を記載する。
+計画では`## 要件・外部仕様`へ種別（PATCH／MINOR／MAJORまたは`bump不要`）と「判定基準」に基づく根拠を記す。
+具体的な版数と既存bumpとの統合は`scripts/agent_toolkit_bump.py`へ委ね、要否や既存bumpとの差分の調査は省く（努力目標。ツールと重複する調査を避ける）。bumpする実装では検証前に`scripts/agent_toolkit_bump.py {種別}`を実行する。
 version bumpを伴う計画では、Claude Code向けの定義元2ファイルを`## 要件・外部仕様`の変更説明へ含める。
 正式な生成コマンドと生成器出力との一致確認は`## 検証`へ記載する。
 生成コマンドが扱う派生物（派生manifest、`agent-toolkit/rules/`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など生成器の出力全般）は、変更説明へ重複して含めない（努力目標。派生物は生成器が保証するため列挙は重複になる）。

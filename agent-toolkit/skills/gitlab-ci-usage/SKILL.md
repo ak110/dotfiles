@@ -21,37 +21,21 @@ description: >
 
 ## 基本方針
 
-`.gitlab-ci.yml`のキーワード仕様は改訂頻度が高く、訓練データ由来の記憶で書くと、既に非推奨となったサブキーをそのまま採用する。公式ドキュメントの取得は非推奨のサブキーの採用を防ぐが、基礎的なキーワードで毎回取得すると費用が便益を上回る場合もある。新規に使うキーワード、改訂の多いキーワードおよび記憶が確かでない構文では、公式ドキュメントを直接WebFetchし、該当キーワードのページを取得してから構文を決める。
-代表的な導線と典型パターンのみを以下に示す。網羅的な仕様は公式ドキュメントを参照する。
+新規に使うキーワード、改訂の多いキーワード、不確かな構文は、対象バージョンの公式ドキュメントをWebFetchで取得してから採用する。
+既知の基礎構文は取得費用と確認の必要性を比べ、非推奨の仕様を記憶だけで採用することを避ける。
 
 ## テーマ別参照URL
 
-テーマ別の代表ページを以下に示す。
-
-- [キーワード全リファレンス](https://docs.gitlab.com/ci/yaml/): 未知のキーワード、サブキーの網羅確認
-- [`rules` / `only` / `except`](https://docs.gitlab.com/ci/yaml/#rules):
-  ジョブ起動条件、`rules:if` / `rules:changes` / `rules:exists`
-- [`workflow:rules`](https://docs.gitlab.com/ci/yaml/workflow/):
-  パイプライン自体の起動制御、`workflow:auto_cancel`
-- [`include`](https://docs.gitlab.com/ci/yaml/includes/):
-  `include:local` / `include:project` / `include:template` / `include:component`
-- [`artifacts:reports`](https://docs.gitlab.com/ci/yaml/artifacts_reports/):
-  `junit` / `coverage_report` / `dotenv` / `sast`などレポート種別
-- [事前定義変数](https://docs.gitlab.com/ci/variables/predefined_variables/): `CI_*`変数の正確な名称と値のタイミング
-- [CI Lint API](https://docs.gitlab.com/api/lint/): 外部からのlint呼び出し仕様
-- [CI/CD components](https://docs.gitlab.com/ci/components/): コンポーネント定義・入力パラメーター
+[キーワード全リファレンス](https://docs.gitlab.com/ci/yaml/)を起点に、`rules`、`workflow`、`include`、`artifacts:reports`、componentsなど対象の仕様へ進む。
+変数の名称と評価時点は[事前定義変数](https://docs.gitlab.com/ci/variables/predefined_variables/)、外部からの検証は[CI Lint API](https://docs.gitlab.com/api/lint/)で確認する。
 
 ## 誤りやすい点と推奨
 
-基礎構文（`rules:if`・`needs`・`extends`・`parallel:matrix`等）は公式ドキュメントを参照する。
-以下は誤りやすい点だけを示す。
-
-- `rules`の暗黙のフォールスルー挙動に依存する箇所は、意図と異なる起動をしやすいため末尾の`when: never`で明示する。全ての起動条件を`rules`へ列挙し、いずれにも一致しない場合に起動しないことが意図と一致する箇所は対象外とする
-- `include`の`ref`はタグまたはコミットSHA固定を推奨する。ブランチ名参照は意図せず挙動が変わるため避ける
-- 機能を採用する前に、その機能のページ冒頭にある`Tier`と`Offering`の表記を確認し、対象インスタンスで利用できる範囲だけを設計へ含める
-- CI設定ファイルからは設定できずAPIでのみ変更できる属性があるため、YAMLキーワードとして受理されるかを同じページで確認する
-- 対象インスタンスのeditionは、同じ読込文脈から対象ホストを特定できる場合に`glab api version`の`enterprise`で判定する（`false`はCommunity Edition）。
-  ホストを特定できない場合は、tierに依存する機能の採否を対象ホストの確定後に判定する
+起動条件を省略した場合の動作、参照先の版、対象インスタンスでの利用可否を確認し、意図したジョブだけが再現可能な設定で動くようにする。
+`rules`のフォールスルーや`include`の`ref`など、暗黙値と変動する参照を点検する。
+機能ページの`Tier`・`Offering`と、YAMLで設定できる属性かAPI専用かを区別する。
+editionは対象ホストを同じ読込文脈から特定できる場合に`glab api version`の`enterprise`で判定する（`false`はCommunity Edition）。
+ホストが未確定なら、tierに依存する機能の採否は確定後に判断する。
 
 ### `rules:changes`とスケジュール実行
 
@@ -71,16 +55,7 @@ job:
 
 ## lint / 検証
 
-`.gitlab-ci.yml`の妥当性検証には以下の手段がある。
-ローカルで完結できる場合（`include`解決・変数評価へ依存しない検証だけで完結する場合）はまずローカルで確認し、
-最終確認でGitLab本体のlintを使う。
-
-- [`gitlab-ci-local`](https://github.com/firecow/gitlab-ci-local):
-  ローカルでジョブをシミュレート実行できるNode製CLI。構文チェックに加え、rulesの評価結果まで確認したい場合に使用
-- `/api/v4/ci/lint`: GitLab本体のCI Lint API（`content`フィールドにyaml全文を渡す）。CI内やスクリプトからの自動検証
-- プロジェクトの`/-/ci/lint`ページ: Web UIでの手動検証
-  - `include`解決や変数込みの検証が可能
-  - `include`先を含めた統合的な妥当性確認、最終確認に使用
-
-GitLab本体のlintは`include`や`workflow`の評価まで実行するため、
-ローカルの構文チェックだけでは検知できない統合レベルの誤りを検出できる。
+ローカルで完結する検証は[`gitlab-ci-local`](https://github.com/firecow/gitlab-ci-local)などで先に確認する。
+最終確認は`include`・`workflow`・変数を統合評価するGitLab本体のlintを使う。
+自動検証は`/api/v4/ci/lint`の`content`へYAML全文を渡し、手動検証はプロジェクトの`/-/ci/lint`ページを使う。
+私設ホストのCI通過確認とTLSエラーの扱いは読込表に従う。

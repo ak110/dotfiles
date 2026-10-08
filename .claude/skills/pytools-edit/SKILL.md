@@ -23,12 +23,12 @@ description: >
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュール
   （単一ファイル`<name>.py`またはサブパッケージ`<name>/`配下形態）を置き、bash補完（argcomplete）に対応する
   - サブパッケージは`__init__.py`が`_cli.py`の`main`を再エクスポートし、`project.scripts`はパッケージ名の`main`を参照する
-- privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する
+- privateなヘルパーは`pytools/_internal/`へ集約する
 - 開発とCIの工程（prek・Makefile・pyfltr・CI）から起動するスクリプトは`scripts/`配下へ置く。エンドユーザー環境では実行しない
 - `bin/`のランチャー、chezmoiの後処理、systemd unit、Claude Codeのhook定義など他のプログラムから起動され、
   `pytools`パッケージの外でエンドユーザー環境（LinuxとWindows）で動く実行ファイルは`libexec/`配下へ置き、両OSで動く書き方とする
 - `scripts/`と`libexec/`のPythonは`[project.scripts]`へ登録せず、PEP 723形式の単独実行スクリプトか、プロジェクト環境で起動するスクリプトとして書く。
-  `pytools`から`scripts/`と`libexec/`をimportしない。配布するwheelは`pytools`だけを含み、editable導入以外では解決できないためである
+  wheelは`pytools`だけを含むため、`pytools`から`scripts/`・`libexec/`をimportしない
 - 単純なコマンドラッパーの新規追加には`scripts/new_bin_cmd.py <name> <command...>`を使う
   （リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成する）
 - 高頻度起動するhook・statusLine相当のスクリプトは、Windowsでの`uv run`起動コストを考慮し、
@@ -44,7 +44,7 @@ description: >
 - bash、PowerShell、JSON、chezmoiテンプレートの`~/dotfiles`の固定値（`.chezmoi-source/dot_bashrc`、`share/claude_settings_json_managed.win32.json`、`bin/lab-bg`など）は
   `install.sh`がclone先を`~/dotfiles`とすることを前提とする。clone先の前提を変える場合はこれらの箇所もそろえる
 - `pytools/_internal/common.py`はClaudeに依存しない共通処理（`find_dotfiles_root()`・`run_subprocess()`・`atomic_write_*()`等）、
-  `pytools/_internal/claude_common.py`はClaude Code固有の定数と`run_claude()`を提供する。新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける（努力目標。共通基盤を使うと実装の分岐を防げる）
+  `pytools/_internal/claude_common.py`はClaude Code固有の定数と`run_claude()`を提供する。新設前に公開APIを確認して共通処理を再利用する（努力目標。重複と実装の分岐を防ぐ）
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている。書込ツールで扱う手段は`agent-toolkit:writing-standards`の
   `references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCIIのみの修正は`sed -i`で対応する
 - 非ASCIIを標準出力または標準エラーへ書くPython CLIは、開始時に`io.TextIOWrapper`の両ストリームをUTF-8・`errors="replace"`へ再構成する。英語版Windowsなどで、エンコーディングを指定せずにランタイムがロケールから選ぶ値へ依存すると、日本語の最初の出力でCLIが停止するためである
