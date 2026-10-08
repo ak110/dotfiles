@@ -696,7 +696,12 @@ def _load_wi(reference: str, _repository: pathlib.Path, wi_outputs: dict[str, st
 
 
 def _expired_source_error(
-    row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
+    row: dict[str, str],
+    section: str,
+    index: int,
+    repository: pathlib.Path,
+    wi_outputs: dict[str, str],
+    plans: list[pathlib.Path] | None = None,
 ) -> str | None:
     """失効行のsourceから、ユーザー判断かメインの技術判断の記録の参照先を確認する。
 
@@ -731,7 +736,7 @@ def _expired_source_error(
         if not event_reasons:
             return None
         reasons.extend(event_reasons)
-    technical_reasons = _technical_judgment_reasons(row, section, repository, wi_outputs)
+    technical_reasons = _technical_judgment_reasons(row, section, repository, wi_outputs, plans=plans)
     if technical_reasons is not None:
         if not technical_reasons:
             return None
@@ -752,16 +757,22 @@ def _expired_source_error(
 
 
 def _technical_judgment_reasons(
-    row: dict[str, str], section: str, repository: pathlib.Path, wi_outputs: dict[str, str]
+    row: dict[str, str],
+    section: str,
+    repository: pathlib.Path,
+    wi_outputs: dict[str, str],
+    *,
+    plans: list[pathlib.Path] | None = None,
 ) -> list[str] | None:
-    """sourceが指すレビュー指摘管理表に、メインの技術判断の記録があるかを確かめ、満たさなかった条件を返す。
+    """sourceが指す入力計画かレビュー指摘管理表の技術判断を確かめ、満たさなかった条件を返す。
 
-    レビュー指摘管理表の絶対パスを持たないsourceは`None`、記録が条件を満たせば空の一覧を返す。
+    どちらの記録の絶対パスも持たないsourceは`None`、記録が条件を満たせば空の一覧を返す。
     技術判断で受理するのは、frontmatterに`source`を持つエージェント由来のAWIの`wi_conditions`の行だけとする。
     人間由来のWIの条件と原文要求の不採用には、ユーザーの明示承認が要るためである。
     """
     tables = _review_tables(row["source"])
-    if not tables:
+    plan_files = _plan_files(row["source"]) if "実施内容" in row["source"] else []
+    if not tables and not plan_files:
         return None
     if section != "wi_conditions":
         return ["原文要求の失効はメインの技術判断の記録では受理しません（ユーザー判断が必要です）"]
@@ -774,6 +785,31 @@ def _technical_judgment_reasons(
             f"{row['awi']}はfrontmatterに`source`を持たない人間由来のWIのため、技術判断の記録では受理しません（ユーザー判断が必要です）"
         ]
     reasons: list[str] = []
+    for plan in plan_files:
+        if plan.resolve() not in {path.resolve() for path in plans or []}:
+            reasons.append(f"{plan}は今回の--plan入力ではありません")
+            continue
+        try:
+            section_lines = _section(plan.read_text(encoding="utf-8").splitlines(), "## 実施内容") or []
+        except (OSError, UnicodeError) as exc:
+            reasons.append(f"計画を読めません: {exc}")
+            continue
+        for table in extract_tables(list(enumerate(section_lines, start=1))):
+            if not {"由来", "根拠"}.issubset(table.header):
+                continue
+            for cells in table.rows:
+                if len(cells) != len(table.header):
+                    continue
+                origin = cells[table.header.index("由来")]
+                reason = cells[table.header.index("根拠")]
+                if row["awi"] not in origin:
+                    continue
+                if "エージェント由来のWI" not in origin or "人間由来" in origin:
+                    reasons.append(f"{plan}の{row['awi']}はエージェント由来の採否行ではありません")
+                    continue
+                if row["awi"] in reason and TECHNICAL_JUDGMENT in reason and _compact(row["condition"]) in _compact(reason):
+                    return []
+        reasons.append(f"{plan}の実施内容の根拠に対象AWI・対象条件・{TECHNICAL_JUDGMENT}・外す根拠の記録がありません")
     for table in tables:
         try:
             rows = review_table.read_rows(table)
@@ -960,7 +996,12 @@ def _record_section(
 
 
 def _unassigned_source_error(
-    row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
+    row: dict[str, str],
+    section: str,
+    index: int,
+    repository: pathlib.Path,
+    wi_outputs: dict[str, str],
+    _plans: list[pathlib.Path] | None = None,
 ) -> str | None:
     """割当外行について、割当の記録の所在、割当先の表記、記録との一致を確かめる。
 
@@ -1130,7 +1171,12 @@ def _covered_by_background(requirement: str, record: list[str], original: str) -
 
 
 def _background_source_error(
-    row: dict[str, str], section: str, index: int, repository: pathlib.Path, wi_outputs: dict[str, str]
+    row: dict[str, str],
+    section: str,
+    index: int,
+    repository: pathlib.Path,
+    wi_outputs: dict[str, str],
+    _plans: list[pathlib.Path] | None = None,
 ) -> str | None:
     """背景行について、分類の記録の所在、原文の範囲との対応、要求を含まない理由の記述を確かめる。
 
@@ -1161,7 +1207,9 @@ def _background_source_error(
     return None
 
 
-ExemptionCheck = typing.Callable[[dict[str, str], str, int, pathlib.Path, dict[str, str]], "str | None"]
+ExemptionCheck = typing.Callable[
+    [dict[str, str], str, int, pathlib.Path, dict[str, str], list[pathlib.Path] | None], "str | None"
+]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1190,7 +1238,8 @@ _EXPIRED_REQUIREMENT = Exemption(_expired_source_error, _USER_JUDGMENT_LOCATION)
 _EXPIRED_CONDITION = Exemption(
     _expired_source_error,
     f"{_USER_JUDGMENT_LOCATION}か、frontmatterに`source`を持つAWIの完成条件に限り、"
-    f"対象AWIのファイル名と`{TECHNICAL_JUDGMENT}`の文字列を含む行を持つレビュー指摘管理表の絶対パス",
+    f"対象AWIのファイル名と`{TECHNICAL_JUDGMENT}`の文字列を含む行を持つレビュー指摘管理表の絶対パス、"
+    "または今回--planで渡した計画の絶対パスと『実施内容』（エージェント由来のWIの行の根拠に対象AWI・対象条件・判断主体・外す根拠を記録）",
 )
 # 達成を求めずに行を受理させる判定値は、その根拠の記録を確かめる関数と所在の説明を組にして登録する。
 # 検証関数を持たない免除の判定値を受理値へ加えると、根拠の無い行が確認を通過するためである。
@@ -1238,13 +1287,21 @@ def template_guidance() -> str:
     return "。".join(rules)
 
 
-def _check_exemptions(payload: dict[str, typing.Any], repository: pathlib.Path, wi_outputs: dict[str, str]) -> list[str]:
+def _check_exemptions(
+    payload: dict[str, typing.Any],
+    repository: pathlib.Path,
+    wi_outputs: dict[str, str],
+    plans: list[pathlib.Path] | None = None,
+) -> list[str]:
     """両配列の全行のうち免除の判定値を持つ行について、登録した検証関数で根拠の記録を確かめる。"""
     errors: list[str] = []
     for section, checks in EXEMPTIONS.items():
         for index, row in enumerate(payload[section]):
             exemption = checks.get(row["outcome"])
-            if exemption is not None and (error := exemption.check(row, section, index, repository, wi_outputs)) is not None:
+            if exemption is None:
+                continue
+            error = exemption.check(row, section, index, repository, wi_outputs, plans)
+            if error is not None:
                 errors.append(error)
     return errors
 
@@ -1276,7 +1333,7 @@ def check_evidence(
     condition_rows = payload["wi_conditions"]
     requirement_rows = payload["user_requirements"]
     assert isinstance(condition_rows, list) and isinstance(requirement_rows, list)
-    errors.extend(_check_exemptions(payload, repository, wi_outputs))
+    errors.extend(_check_exemptions(payload, repository, wi_outputs, plans))
     for filename in filenames:
         try:
             expected, requirements = _expected_rows(wi_outputs[filename], filename)
@@ -1555,17 +1612,32 @@ def check_return_result(
             return ["対象WIがあるレビューには完成条件証拠を作成する。--templateで生成して各行を記入する"], unanswered
         return [], unanswered
     errors = [*check_evidence(evidence_path, filenames, expected_head=head, plans=plans), *circular]
-    if errors or unanswered:
+    if errors:
         return errors, unanswered
     payload = json.loads(evidence_path.read_text(encoding="utf-8"))
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         for index, row in enumerate(payload[section]):
-            if row["outcome"] == "達成" or row["outcome"] in EXEMPTIONS[section]:
+            referred = _referenced_records(row, records, repository)
+            rejects = [(path, text) for path, text in records.items() if _reject_record(text, row["awi"])]
+            if rejects:
+                terminal_text = row["evidence"]
+                for reference in reversed(_file_references(terminal_text, repository)):
+                    terminal_text = terminal_text[: reference.start()] + " " + terminal_text[reference.end() :]
+                if row["outcome"] != "未達" or not (
+                    re.search(r"(?<![A-Za-z0-9_])reject(?![A-Za-z0-9_])", terminal_text)
+                    and "実施内容" in row["evidence"]
+                    and any(_names_path(row["evidence"], path, repository) for path, _ in rejects)
+                ):
+                    errors.append(
+                        f"{_row_label(row, section, index)}: 全体不採用は初回から未達とし、"
+                        "evidenceへreject終端と計画の実施内容の不採用根拠の所在を記録する"
+                    )
+                continue
+            if unanswered or row["outcome"] == "達成" or row["outcome"] in EXEMPTIONS[section]:
                 continue
             if section == "wi_conditions" and row["outcome"] == "証拠不足" and row[field].startswith("任意の判断材料"):
                 continue
-            referred = _referenced_records(row, records, repository)
-            if any(_reject_record(text, row["awi"]) or _deferred_record(text, row, field) for _, text in referred):
+            if any(_deferred_record(text, row, field) for _, text in referred):
                 continue
             mismatches = [
                 mismatch for path, text in referred for mismatch in _record_mismatches(path, records[path], text, row, field)

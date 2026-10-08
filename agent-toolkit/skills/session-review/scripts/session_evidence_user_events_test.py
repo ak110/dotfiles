@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 import pytest
@@ -265,3 +266,105 @@ def test_user_events_rejects_misused_since(
         assert read_jsonl(capsys)[0]["kind"] == "error"
     assert evidence.main([str(transcript), "--user-events"]) == 0
     assert [event["text"] for event in read_jsonl(capsys) if event["kind"] == "user"] == ["入力"]
+
+
+def test_saved_user_events_preserves_original_positions_and_all_fields(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """保存済み出力の物理行ではなく元の組を選び、重複と確認回答を入力順・全情報で返す。"""
+    # 保存形式は同モジュールの--user-events出力。質問と選択肢の欄も照会では再解釈しない。
+    first = {"kind": "user", "record": "codex:parent:child", "line": 91, "text": "長い原文\n" * 2000}
+    answer = {
+        "kind": "user",
+        "record": "codex:parent:child",
+        "line": 91,
+        "text": "確認回答",
+        "assistant_context": [{"question": "どれを選びますか", "options": ["A", "B", "C"]}],
+        "user_response": [{"answers": ["B"], "notes": "自由記述\nの全文"}],
+        "extra": {"retained": True},
+    }
+    path = tmp_path / "events.jsonl"
+    entries = [{**first, "record": "claude:other"}, first, {**first, "line": 2}, answer]
+    path.write_text("\n".join(json.dumps(event, ensure_ascii=False) for event in entries), encoding="utf-8")
+
+    assert evidence.main(["--user-events-file", str(path), "--user-event-at", "codex:parent:child:91"]) == 0
+    assert read_jsonl(capsys, raw=True) == [first, answer]
+
+
+@pytest.mark.parametrize(
+    "position",
+    [
+        "missing:91",
+        "codex:parent:child:0",
+        "codex:parent:child:-1",
+        "codex:parent:child:x",
+        "91",
+        "codex:parent:child:１",
+        ":91",
+    ],
+)
+def test_saved_user_events_rejects_unknown_or_invalid_position(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], position: str
+) -> None:
+    """不在と不正位置は成功や部分出力にせず、次の操作を持つerrorだけを返す。"""
+    path = tmp_path / "events.jsonl"
+    path.write_text(json.dumps({"kind": "user", "record": "codex:parent:child", "line": 91, "text": "本文"}), encoding="utf-8")
+    assert evidence.main(["--user-events-file", str(path), "--user-event-at", position]) == 2
+    events = read_jsonl(capsys, raw=True)
+    assert len(events) == 1 and events[0]["kind"] == "error"
+    assert events[0]["next_action"]
+
+
+@pytest.mark.parametrize("invalid", [None, b"\xff", b'{"record":"main","line":1}\n{broken', b"[]"])
+def test_saved_user_events_rejects_unreadable_or_invalid_jsonl(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], invalid: bytes | None
+) -> None:
+    """一致行の後ろも含めて保存ファイルを読み、壊れた入力を成功にしない。"""
+    path = tmp_path / "events.jsonl"
+    if invalid is not None:
+        path.write_bytes(invalid)
+    assert evidence.main(["--user-events-file", str(path), "--user-event-at", "main:1"]) == 2
+    events = read_jsonl(capsys, raw=True)
+    assert len(events) == 1 and events[0]["kind"] == "error"
+    assert events[0]["next_action"]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--transcript", "missing"],
+        ["--warn"],
+        ["--grep", ""],
+        ["--user-events"],
+        ["--since", "2026-10-08"],
+        ["--detail", "1"],
+        ["--bundle", "missing"],
+        ["--codex-thread-id", "missing"],
+    ],
+)
+def test_saved_user_events_rejects_original_record_modes(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], extra: list[str]
+) -> None:
+    """元記録の照会と保存済み照会を混ぜず、空の文字列の引数も指定として拒否する。"""
+    path = tmp_path / "events.jsonl"
+    path.write_text('{"record":"main","line":1,"text":"本文"}', encoding="utf-8")
+    assert evidence.main(["--user-events-file", str(path), "--user-event-at", "main:1", *extra]) == 2
+    events = read_jsonl(capsys, raw=True)
+    assert len(events) == 1 and events[0]["kind"] == "error" and events[0]["next_action"]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--user-events-file", "/missing.jsonl"],
+        ["--user-event-at", "main:1"],
+        ["--user-events-file", "relative.jsonl", "--user-event-at", "main:1"],
+    ],
+)
+def test_saved_user_events_requires_paired_arguments_and_absolute_path(
+    capsys: pytest.CaptureFixture[str], arguments: list[str]
+) -> None:
+    """入力の組と絶対パスを呼出境界で検査する。"""
+    assert evidence.main(arguments) == 2
+    events = read_jsonl(capsys, raw=True)
+    assert len(events) == 1 and events[0]["kind"] == "error" and events[0]["next_action"]

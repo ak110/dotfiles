@@ -249,6 +249,8 @@ def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
     row.update(
         outcome="証拠不足", source=str(record), evidence=f"{record} の判断に従いこの条件を後続工程または不採用へ対応付けた"
     )
+    if kind == "reject":
+        row.update(outcome="未達", evidence=f"reject終端。{record} の実施内容の不採用根拠に従う")
     _write_evidence(path, [row])
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table, "--input-record", str(record))) == 0
@@ -1681,6 +1683,90 @@ def test_expired_row_accepts_main_technical_judgment_only_for_agent_awi_conditio
     if diagnostic is not None:
         line = next(line for line in error.splitlines() if f"{section}[0].source" in line)
         assert diagnostic in line and "委譲元へ失効の判断を求め" in line
+
+
+@pytest.mark.parametrize("missing", [None, "reject", "location", "outcome", "unreferenced"])
+@pytest.mark.parametrize("unanswered", [False, True])
+def test_return_result_requires_reject_and_reason_location_from_first_review(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    missing: str | None,
+    unanswered: bool,
+) -> None:
+    """全体不採用の証拠漏れは指摘件数で隠れず、初回から担当自身の補完へ戻る。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path, table, plan = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv", tmp_path / "reject-plan.md"
+    plan.write_text(
+        "# 計画\n\n## 実施内容\n\n| 実施内容 | 由来 | 採否 | 根拠 |\n| --- | --- | --- | --- |\n"
+        f"| 保存 | エージェント由来のWI ({FIRST_WI}) | 不採用 | 前提が成立しない |\n",
+        encoding="utf-8",
+    )
+    review_table.init(table)
+    if unanswered:
+        review_table.add(table, "2", "exec-review", "別の成果物", "別の欠陥", "仕様")
+    row = {
+        **_condition(FIRST_WI, "保存"),
+        "outcome": "未達",
+        "source": f"{plan} の実施内容",
+        "evidence": f"reject終端。{plan} の実施内容の不採用根拠に従う",
+    }
+    if missing == "reject":
+        row["evidence"] = f"{plan} の実施内容の不採用根拠に従う"
+    elif missing == "location":
+        row["evidence"] = "reject終端として扱う"
+    elif missing == "outcome":
+        row["outcome"] = "証拠不足"
+    elif missing == "unreferenced":
+        row["source"] = _condition(FIRST_WI, "保存")["source"]
+        row["evidence"] = "reject終端として扱う"
+    _write_evidence(path, [row])
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table, "--plan", str(plan))) == (0 if missing is None else 1)
+    result = capsys.readouterr()
+    if missing is not None:
+        assert not result.out and "wi_conditions[0]" in result.err and "reject" in result.err
+
+
+@pytest.mark.parametrize(
+    "case", ["valid", "human-wi", "human-plan", "requirement", "no-subject", "no-condition", "no-reason", "not-input"]
+)
+def test_expired_condition_accepts_preimplementation_plan_judgment_without_table_transfer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """計画の同じ根拠を初回レビューへ渡し、人間由来・原文要求・記録の不足を拒否する。"""
+    frontmatter = "type: awi" + ("" if case == "human-wi" else "\nsource: agent")
+    body = f"{frontmatter}\n---\n## 完成条件\n- 旧形式の回答も除外する\n"
+    if case == "requirement":
+        body += "## ユーザーコメント\n旧形式を直して。\n"
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: body})
+    plan, path = tmp_path / "plan.md", tmp_path / "evidence.json"
+    reason = f"メインの技術判断。{FIRST_WI}の条件「旧形式の回答も除外する」を外す。現行にその生成元が存在しない"
+    if case == "no-subject":
+        reason = reason.replace("メインの技術判断", "担当の提案")
+    elif case == "no-condition":
+        reason = reason.replace("旧形式の回答も除外する", "別条件")
+    elif case == "no-reason":
+        reason = "-"
+    origin = "人間由来のWI" if case == "human-plan" else "エージェント由来のWI"
+    plan.write_text(
+        "# 計画\n\n## 実施内容\n\n| 実施内容 | 由来 | 採否 | 根拠 |\n| --- | --- | --- | --- |\n"
+        f"| 旧形式を外す | {origin} ({FIRST_WI}) | 部分採用 | {reason} |\n",
+        encoding="utf-8",
+    )
+    condition = _condition(FIRST_WI, "旧形式の回答も除外する")
+    requirement = _requirement(FIRST_WI, "旧形式を直して。")
+    (requirement if case == "requirement" else condition).update(outcome="失効", source=f"{plan} の実施内容")
+    _write_evidence(path, [condition], [requirement] if case == "requirement" else [])
+    arguments = [str(path), FIRST_WI, "--expected-head", REVIEWED_HEAD]
+    if case != "not-input":
+        arguments.extend(["--plan", str(plan)])
+    assert run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=arguments)) == (
+        0 if case == "valid" else 1
+    )
+    result = capsys.readouterr()
+    if case != "valid":
+        assert ".source" in result.err
 
 
 def _user_events(tmp_path: pathlib.Path) -> pathlib.Path:

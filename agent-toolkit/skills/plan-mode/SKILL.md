@@ -24,7 +24,7 @@ description: >
 | 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-structure-check.md`、`references/plan-file-storage.md` |
 | 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` |
 | 保持、不変性、完全復元のいずれかを計画の契約か確認の選択肢へ書く前と、過去の契約へ戻す変更か過去の契約を撤去する変更を計画する前 | `references/plan-restoration-contracts.md` |
-| `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前 | `references/main-launch.md` |
+| `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前（メインが自ら実装に着手する直前） | `references/main-launch.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`未判定検証記録`の段落と「起動」の`Git管理外の変更`の段落 |
 | 計画構造を検証する前 | `references/plan-structure-check.md` |
 | 旧単一ファイル形式または旧二ファイル形式の計画を読む前と、計画書式の読み取り互換の実装・自動チェックを変更する前 | `references/legacy-plan-file-standards.md` |
 

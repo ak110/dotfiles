@@ -9,6 +9,8 @@
 ユーザーイベントの由来は原文と生成標識から判定し、その結果を保持してから通常表示の本文を短縮する。
 `--user-events`は人間の発話と確認回答だけを逐語引用の原文として返す。
 本文を切り詰めず、確認回答には提示した全選択肢を含め、スキル展開、実行環境の生成本文およびClaude Codeの中断の定型文は除く。
+`--user-events-file`と`--user-event-at`は、その保存済みJSONLから元記録のrecordとlineに一致する全イベントを返す。
+元記録の読み込みと由来の再判定をせず、全欄と値を保持する。
 
 本スクリプトはデータ抽出を目的とし、合否を判定しないため、
 `agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -68,6 +70,7 @@ from session_evidence_tool_calls import (
     _tool_call_collection_events,
 )
 from session_evidence_user_events import (
+    _saved_user_events_at,
     _user_events_since,
 )
 from session_evidence_warn import (
@@ -270,6 +273,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "スキル展開、実行環境の生成本文およびClaude Codeの中断の定型文は除く。",
     )
     parser.add_argument(
+        "--user-events-file",
+        metavar="PATH",
+        help="保存済みの--user-events出力の絶対パス。--user-event-atと組で使い、元記録の指定・照会モードとは併用しない。",
+    )
+    parser.add_argument(
+        "--user-event-at",
+        metavar="RECORD:LINE",
+        help="保存済み出力のrecord欄とline欄の値の組。末尾のコロンで区切り、record内のコロンは保持する。"
+        "一致する全イベントを入力順・全文で返す。lineは元記録の正の整数位置で、出力の物理行番号ではない。",
+    )
+    parser.add_argument(
         "--since",
         metavar="TIMESTAMP",
         help="`--user-events`またはカタログ走査の開始境界をISO 8601の時刻で指定する。"
@@ -339,6 +353,25 @@ def main(argv: list[str] | None = None) -> int:
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
+    if args.user_events_file is not None or args.user_event_at is not None:
+        next_action = (
+            "`--user-events-file <保存済み出力の絶対パス> --user-event-at <record>:<line>`だけで再実行する。"
+            "出所ファイルの存在とUTF-8 JSONL、record欄とline欄の値を確認する"
+        )
+        if args.user_events_file is None or args.user_event_at is None:
+            return _print_error("--user-events-fileと--user-event-atは組で指定する", next_action=next_action)
+        if any(
+            value is not None and value is not False
+            for name, value in vars(args).items()
+            if name not in {"user_events_file", "user_event_at"}
+        ):
+            return _print_error("保存済み発話の照会は元記録の指定・照会モードと併用できない", next_action=next_action)
+        try:
+            events = _saved_user_events_at(Path(args.user_events_file), args.user_event_at)
+        except (OSError, UnicodeError, ValueError) as error:
+            return _print_error(str(error), next_action=next_action)
+        _print_events(events)
+        return 0
     query_modes = _single_transcript_query_modes(args)
     if sum(query_modes) > 1:
         return _print_error(

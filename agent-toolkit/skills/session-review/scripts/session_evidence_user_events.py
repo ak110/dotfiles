@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime
+import json
+from pathlib import Path
 from typing import Any
 
 from session_evidence_extract import (
@@ -23,6 +25,32 @@ from session_evidence_extract import (
 from session_evidence_tool_calls import (
     _conversation_tool_calls,
 )
+
+
+def _saved_user_events_at(path: Path, position: str) -> list[dict[str, Any]]:
+    """保存済みイベントを元記録の欄の組で選ぶ。一意性と由来の判断は消費側に残す。"""
+    record, separator, raw_line = position.rpartition(":")
+    if not separator or not record or not raw_line.isascii() or not raw_line.isdecimal() or int(raw_line) < 1:
+        raise ValueError(f"記録位置が不正: {position}（record全体と正の整数lineをコロンで区切る）")
+    if not path.is_absolute():
+        raise ValueError(f"保存済み出力には絶対パスを指定する: {path}")
+    line = int(raw_line)
+    events: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as stream:
+        for physical_line, text in enumerate(stream, start=1):
+            if not text.strip():
+                continue
+            try:
+                event = json.loads(text)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"JSONLが不正: {path}の物理行{physical_line}: {error.msg}") from error
+            if not isinstance(event, dict):
+                raise ValueError(f"JSONLのイベントがオブジェクトでない: {path}の物理行{physical_line}")
+            if event.get("record") == record and event.get("line") == line:
+                events.append(event)
+    if not events:
+        raise ValueError(f"保存済み出力に一致する記録位置がない: {path}の{position}")
+    return events
 
 
 def _user_events_since(collected: list[_CollectedRecord], since: datetime.datetime | None) -> list[dict[str, Any]]:
