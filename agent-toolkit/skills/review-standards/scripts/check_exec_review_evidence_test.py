@@ -2276,6 +2276,35 @@ def test_rewrite_map_updates_commit_references_only(tmp_path: pathlib.Path, caps
     assert {row["reviewed_head"] for row in data["wi_conditions"]} == {REVIEWED_HEAD}
 
 
+def test_rewrite_map_keeps_acquired_version_held_by_observation_file(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """取得版を観測ファイルの参照で書いた行は、参照の更新後も取得版を元の値のまま読める。
+
+    取得版を`evidence`へOIDで書くと、対応表の旧OIDとして新しい版へ置き換わり、旧版で実行した観測が
+    新しい版で実行した記録として読める。観測ファイルの参照で示せば、置換は現行の成果物を指すOIDにだけ及ぶ。
+    """
+    evidence, rewrite_map = tmp_path / "evidence.json", tmp_path / "rewrite.json"
+    record = tmp_path / "atk-command-x" / "record.json"
+    record.parent.mkdir()
+    record_text = json.dumps({"git_head": _OLD_FULL, "git_status": [], "child_exit_code": 0})
+    record.write_text(record_text, encoding="utf-8")
+    rewrite_map.write_text(json.dumps({_OLD_FULL: _NEW_FULL}), encoding="utf-8")
+    conditions = [
+        {
+            **_condition(FIRST_WI, "保存"),
+            "evidence": f"取得版は{record}のgit_head。test_save 成功。対象のcommit {_OLD_FULL} から変化なし",
+        }
+    ]
+    _write_evidence(evidence, conditions, [])
+    assert run_script.dispatch(_rewrite_args(evidence, rewrite_map)) == 0, capsys.readouterr().err
+    data = json.loads(evidence.read_text(encoding="utf-8"))
+    assert data["wi_conditions"][0]["evidence"] == (
+        f"取得版は{record}のgit_head。test_save 成功。対象のcommit {_NEW_FULL} から変化なし"
+    )
+    assert record.read_text(encoding="utf-8") == record_text
+
+
 @pytest.mark.parametrize(
     "rewrite_map",
     [
