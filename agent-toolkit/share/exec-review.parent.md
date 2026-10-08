@@ -8,7 +8,7 @@
 実行レビュー担当自身の手順は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`が定める。
 本書が定める範囲は起動、入力生成、レビュー修正およびレビュー指摘管理表の保存とする。レビュー分類と判定手順を再定義しない。
 
-全起動で名前付き入力`未判定検証記録`を渡す。証拠要求ありでは実装担当またはメインが作成したJSONの実在し読取可能な絶対パス、証拠要求なしでは`なし`とする。起動前に値を確定し、進捗ログや引き継ぎからレビュー担当に探索させない。引き継ぎ再レビューでも初回値を保持する。JSONの作成手順は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の、`atk run-script exec-review-evidence-check -- --template`で雛形を生成する段落が定める。メインが自ら実装した場合は、メインが同じ手順で実装の完了前に作成する。
+全起動で名前付き入力`未判定検証記録`を渡す。証拠要求ありでは実装担当またはメインが作成したJSONの実在し読取可能な絶対パス、証拠要求なしでは`なし`とする。起動前に値を確定し、進捗ログや引き継ぎからレビュー担当に探索させない。引き継ぎ再レビューでも初回値を保持する。JSONの作成手順は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の、`atk run-script exec-review-evidence-check -- --template`で雛形を生成する段落が定める。メインが自ら実装した場合は、メインが同じ手順で実装の完了前に作成する。根拠にするテスト出力と手動観測は、同書「操作の直前に判定する前提」の保存手順で実行した版（HEADと未commit・未追跡の状態）とともに保存する。
 
 画面差分では並列画面レビュー（`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`「用語」）とし、ユーザビリティレビュー担当の起動と検収は`${CLAUDE_PLUGIN_ROOT}/share/usability-review.parent.md`に従う。
 
@@ -159,7 +159,7 @@ Git管理外の変更元と変更前複製の対がある場合は、任意入�
 
 指摘への修正は、そのworktreeを所有する主体が実施する。起動方法ごとの主体と反復の調整は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`が定める。同じthreadを継続する場合は`レビュー指摘の対応をせよ`、`round: <ラウンド番号>`、`レビュー指摘管理表: <絶対パス>`を送り、新しい修正担当を起動しない。
 同じthreadを継続できない場合は`agent-toolkit:delegation`のSKILL.mdの`## 継続と新規起動`に従い、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の`## 入力`と同じ形式で新しいレーン担当を起動する。このとき`担当種別`を`レビュー修正担当`とし、`再開位置`へ`~/.claude/plans`の計画ファイルの絶対パス、`レビュー指摘管理表`へレビュー指摘管理表の絶対パスを渡す。
-修正する主体はレビュー指摘管理表とworktreeの実体から指摘の採否、対象の実装commitおよび修正方針を確定する。採否の基準は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」に従う。履歴統合、履歴書換え証拠の保存と回復は同書「レビュー修正の履歴統合」に、履歴書換えの遮断は`agent-toolkit:commit`の`references/history-rewrite.md`に従う。
+修正する主体はレビュー指摘管理表とworktreeの実体から指摘の採否、対象の実装commitおよび修正方針を確定する。採否の基準は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」に従う。履歴統合、履歴書換え証拠の保存と回復は同書「レビュー修正の履歴統合」に、履歴書換えの遮断は`agent-toolkit:commit`の`references/history-rewrite.md`に従う。書換えで取得版が変わった検証記録を根拠に使えるかは、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」が定める。旧OIDから新OIDへの対応表で更新するのは現行の成果物への参照だけとし、観測ファイルが保持する取得版は元のまま保つ。
 メインがレビュー指摘管理表を読むラウンドは`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の「応答済みの判定」が定める範囲に限る。指摘の採否と実装commitへの対応付けに加えて、成果物、Git状態、検証結果の検収も修正する主体が担う
 （努力目標。メインが同じ検収を重ねると、修正1件ごとにメインのコンテキストへ成果物の全体が載る）。
 修正する主体が`対応完了`と`対応完了（再レビュー不要）`のいずれかを返した場合は、`検証結果`と`画面差分`の行を確認し、欠けていれば同じthreadへ返却を求める。`対応完了`では、同書「応答済みの判定」に従ってレビュー指摘管理表の未応答件数を取得し、0件である場合だけ同じレビューthreadへ`再レビューせよ`と`round: <ラウンド番号>`の2行を送る。

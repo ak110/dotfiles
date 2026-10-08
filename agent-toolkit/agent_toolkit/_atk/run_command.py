@@ -10,9 +10,12 @@ import subprocess
 from typing import Any
 
 from agent_toolkit._atk import managed_temp, outcome
+from agent_toolkit._git import command as _git_command
 
 _EXIT_TIMEOUT = 124
 _EXIT_WRAPPER_FAILURE = 125
+# 子プロセスの起動前に作業ツリーの状態を取る`git`の時間上限。観測の前処理で実行を止めないよう短く保つ。
+_GIT_STATE_TIMEOUT_SECONDS = 30.0
 
 
 def _positive_seconds(value: str) -> float:
@@ -51,10 +54,56 @@ def _file_metrics(path: pathlib.Path) -> tuple[int, int]:
     return lines, path.stat().st_size
 
 
+def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
+    """起動直前の作業ツリーのHEADと、未commit・未追跡の状態を返す。
+
+    実行結果を後から別の版へ適用できるかを判定するには、実行した対象の版が要る。
+    HEADだけでは未commitの差分や未追跡の入力を実行した結果を区別できないため、`git status`の行も残す。
+    Git作業ツリーの外では両方を`None`とする。取得に失敗した場合も子プロセスの実行は続け、警告を標準エラーへ書く。
+    """
+    try:
+        inside = _git_command.run(
+            ["rev-parse", "--is-inside-work-tree"],
+            cwd,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_STATE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        outcome.report_warning(
+            f"作業ツリーの状態を取得できない: {error}",
+            next_action="対応不要（コマンドは実行し、`git_head`と`git_status`を`null`で保存した）",
+        )
+        return None, None
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return None, None
+    head = _git_command.optional_output(["rev-parse", "--verify", "HEAD^{commit}"], cwd, timeout=_GIT_STATE_TIMEOUT_SECONDS)
+    try:
+        status = _git_command.run(
+            ["status", "--porcelain=v1", "--untracked-files=all"],
+            cwd,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_STATE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        status = None
+    status_lines = status.stdout.splitlines() if status is not None and status.returncode == 0 else None
+    if head is None or status_lines is None:
+        outcome.report_warning(
+            "作業ツリーのHEADまたは`git status`を取得できない",
+            next_action="対応不要（コマンドは実行し、取得できなかった項目を`null`で保存した）。"
+            "観測の版を根拠に使う場合は、同じcwdで`git rev-parse HEAD`と`git status`を確かめて記録する",
+        )
+    return head, status_lines
+
+
 def _metadata(
     *,
     argv: list[str],
     cwd: pathlib.Path,
+    git_head: str | None,
+    git_status: list[str] | None,
     child_exit_code: int | None,
     timed_out: bool,
     signal_number: int | None,
@@ -67,6 +116,8 @@ def _metadata(
     return {
         "argv": argv,
         "cwd": str(cwd),
+        "git_head": git_head,
+        "git_status": git_status,
         "child_exit_code": child_exit_code,
         "timed_out": timed_out,
         "signal": signal_number,
@@ -90,6 +141,7 @@ def dispatch(args: argparse.Namespace) -> int:
     argv.pop(0)
 
     cwd = args.cwd if args.cwd is not None else pathlib.Path.cwd().resolve()
+    git_head, git_status = _git_state(cwd)
     stdout_path: pathlib.Path | None = None
     stderr_path: pathlib.Path | None = None
     child_exit_code: int | None = None
@@ -130,6 +182,8 @@ def dispatch(args: argparse.Namespace) -> int:
     metadata = _metadata(
         argv=argv,
         cwd=cwd,
+        git_head=git_head,
+        git_status=git_status,
         child_exit_code=child_exit_code,
         timed_out=timed_out,
         signal_number=signal_number,

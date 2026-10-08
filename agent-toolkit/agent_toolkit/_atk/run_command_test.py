@@ -14,6 +14,7 @@ import time
 import pytest
 
 from agent_toolkit._atk import run_command
+from agent_toolkit._testing import git_repository
 
 
 def _run(
@@ -23,11 +24,14 @@ def _run(
     argv: list[str],
     *,
     timeout: float | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> tuple[int, dict[str, object], str]:
     directory = tmp_path / "managed"
-    directory.mkdir()
+    directory.mkdir(exist_ok=True)
+    for previous in directory.iterdir():
+        previous.unlink()
     monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: directory)
-    args = argparse.Namespace(command_argv=["--", *argv], cwd=tmp_path.resolve(), timeout=timeout)
+    args = argparse.Namespace(command_argv=["--", *argv], cwd=(cwd or tmp_path).resolve(), timeout=timeout)
     result = run_command.dispatch(args)
     captured = capsys.readouterr()
     metadata = json.loads(captured.out)
@@ -48,6 +52,8 @@ def test_success_preserves_streams_and_metadata(
     assert result == 0
     assert metadata["argv"] == command
     assert metadata["cwd"] == str(tmp_path.resolve())
+    assert metadata["git_head"] is None
+    assert metadata["git_status"] is None
     assert metadata["child_exit_code"] == 0
     assert metadata["timed_out"] is False
     assert metadata["signal"] is None
@@ -228,3 +234,36 @@ def test_command_without_separator_is_wrapper_failure(
     assert result == 125
     assert captured.out == ""
     assert "`--`以後" in captured.err
+
+
+def test_records_worktree_head_and_uncommitted_state_before_running(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Git作業ツリーで実行すると、起動直前のHEADと未commit・未追跡の状態を保存JSONへ残す。
+
+    観測を後から別の版へ適用できるかは、実行した版と未commitの入力で決まる。HEADだけを残すと、
+    未commitの変更を実行した記録を、HEADの内容を実行した結果と取り違える。
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.init_repository(repo)
+    git_repository.git_output(repo, "config", "user.email", "test@example.com")
+    git_repository.git_output(repo, "config", "user.name", "Test")
+    (repo / "tracked.txt").write_text("base\n", encoding="utf-8")
+    git_repository.git_output(repo, "add", "tracked.txt")
+    git_repository.git_output(repo, "commit", "-qm", "base")
+    head = git_repository.git_output(repo, "rev-parse", "HEAD")
+    command = [sys.executable, "-c", "print('ok')"]
+
+    result, metadata, stderr = _run(monkeypatch, tmp_path, capsys, command, cwd=repo)
+    assert result == 0
+    assert metadata["git_head"] == head
+    assert metadata["git_status"] == []
+    assert stderr == "成功: 外部コマンドが終了した\n"
+
+    (repo / "tracked.txt").write_text("changed\n", encoding="utf-8")
+    (repo / "untracked.txt").write_text("input\n", encoding="utf-8")
+    result, metadata, _stderr = _run(monkeypatch, tmp_path, capsys, command, cwd=repo)
+    assert result == 0
+    assert metadata["git_head"] == head
+    assert metadata["git_status"] == [" M tracked.txt", "?? untracked.txt"]
