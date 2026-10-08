@@ -74,6 +74,16 @@ _STRUCTURED_WARNING_STREAM_KEYS = ("stdout", "stderr")
 _HOOK_XML_END_TAGS = tuple(f"</{element}>" for element in _message_format.AUTO_ELEMENTS)
 
 
+def _is_schema_definition(value: dict[str, Any]) -> bool:
+    """構造定義そのものを実行値と区別する。"""
+    return isinstance(value.get("properties"), dict) and value.get("type") == "object"
+
+
+def _runtime_children(value: dict[str, Any]) -> list[Any]:
+    """定義の境界を除いた兄弟値を返す。実行時の警告キーは保持する。"""
+    return [item for key, item in value.items() if key not in {"inputSchema", "outputSchema", "$schema"}]
+
+
 def _structured_warning_fields(value: dict[str, Any]) -> tuple[list[Any], bool]:
     """辞書から警告キーの値と直接警告を表す標識を取り出す。"""
     warning_values: list[Any] = []
@@ -119,6 +129,8 @@ def _structured_warning_value_texts(value: Any) -> list[str]:
         return [text for item in value for text in _structured_warning_value_texts(item)]
     if not isinstance(value, dict):
         return []
+    if _is_schema_definition(value):
+        return []
 
     warning_values, _ = _structured_warning_fields(value)
     if warning_values:
@@ -130,7 +142,12 @@ def _structured_warning_value_texts(value: Any) -> list[str]:
     stream_values = [normalized[key] for key in _STRUCTURED_WARNING_STREAM_KEYS if key in normalized]
     if stream_values:
         return [text for item in stream_values for text in _structured_warning_value_texts(item)]
-    return [text for item in value.values() if isinstance(item, (dict, list)) for text in _structured_warning_value_texts(item)]
+    return [
+        text
+        for item in _runtime_children(value)
+        if isinstance(item, (dict, list))
+        for text in _structured_warning_value_texts(item)
+    ]
 
 
 def _warning_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
@@ -253,16 +270,20 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
 
     def collect_markers(value: Any, from_hook_record: bool) -> None:
         if isinstance(value, str):
-            bodies.append((value, True, from_hook_record))
             try:
                 parsed = json.loads(value)
             except (json.JSONDecodeError, TypeError, ValueError):
+                bodies.append((value, True, from_hook_record))
                 return
             if isinstance(parsed, (dict, list)):
                 collect_markers(parsed, from_hook_record)
+            else:
+                bodies.append((value, True, from_hook_record))
             return
         if isinstance(value, dict):
-            for item in value.values():
+            if _is_schema_definition(value):
+                return
+            for item in _runtime_children(value):
                 collect_markers(item, from_hook_record)
         elif isinstance(value, list):
             for item in value:
@@ -278,6 +299,8 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
                 collect_structured(parsed, from_hook_record)
             return
         if isinstance(value, dict):
+            if _is_schema_definition(value):
+                return
             warning_values, direct_warning = _structured_warning_fields(value)
             for warning_value in warning_values:
                 for text in _structured_warning_value_texts(warning_value):
@@ -285,7 +308,7 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
             if direct_warning and not warning_values and _has_structured_warning_body(value):
                 for text in _structured_warning_value_texts(value):
                     bodies.append((text, False, from_hook_record))
-            for item in value.values():
+            for item in _runtime_children(value):
                 collect_structured(item, from_hook_record)
         elif isinstance(value, list):
             for item in value:
