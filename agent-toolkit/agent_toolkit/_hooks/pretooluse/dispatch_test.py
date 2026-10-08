@@ -385,7 +385,7 @@ class TestMojibakeCheck:
         assert result.returncode == 0
         context = _additional_context(result)
         assert "U+FFFD" in context
-        # コーディングエージェント宛てメッセージ規約: XMLの開始境界と終了境界が付与されていること。
+        # エージェント宛てメッセージの規約: XMLの開始境界と終了境界が付与されていること。
         assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
         assert "\n次の操作: U+FFFDを意図した文字へ置き換えて再実行する" in context
         assert context.endswith("</atk-auto>")

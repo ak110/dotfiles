@@ -84,8 +84,8 @@
 | 委譲の要否判定 | 委譲の判定 | `agent-toolkit/skills/delegation/references/routing.md` |
 | 元担当 | 既存の委譲先 | `agent-toolkit/skills/delegation/references/codex-runtime.md`「後続操作の共通先行条件」 |
 | 独立文脈レビュー | レビューの形態 | `agent-toolkit/skills/delegation/references/routing.md`「会話を引き継ぐ委譲」 |
-| 委譲元 | 委譲の主体 | `agent-toolkit/skills/delegation/SKILL.md` |
-| 委譲先 | 委譲の主体 | `agent-toolkit/skills/delegation/SKILL.md` |
+| 委譲元 | 委譲先を起動したエージェント | `agent-toolkit/skills/delegation/SKILL.md` |
+| 委譲先 | 委譲元が起動したエージェント | `agent-toolkit/skills/delegation/SKILL.md` |
 | 委譲プロンプト | 委譲の指示 | `agent-toolkit/skills/delegation/references/base-contract.md` |
 | 返却値 | 委譲先の出力 | `agent-toolkit/skills/delegation/references/base-contract.md` |
 | エージェント向け文書 | エージェントが直接読み込む文書の種別 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
