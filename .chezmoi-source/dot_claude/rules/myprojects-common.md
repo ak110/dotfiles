@@ -1,7 +1,7 @@
 <atk-auto source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">
 # myprojects-common.md: ホスト共通の個人プロジェクト規範
 
-実行ホストとコーディングエージェントの種別によらず、同一作者の個人プロジェクト全体へ適用する規範を置く。
+実行ホストとエージェントの種別によらず、同一作者の個人プロジェクト全体へ適用する規範を置く。
 ホストごとに異なるプロジェクト一覧と同期方針は、Claude Codeへ配布する`myprojects.md`が扱う。
 
 ## AWI処理の開始時の横断同期
