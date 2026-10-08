@@ -18,6 +18,8 @@ from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
 from agent_toolkit._atk.wi.constants import (
+    POST_APPROVAL_CHOICES,
+    QUESTION_TYPE_POST_APPROVAL,
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
     WI_STATE_HOLD,
@@ -43,7 +45,6 @@ ANSWER_HEADING = "## 回答"
 """UWIエントリの回答見出し。`add.add_entries`が投入時に付与する。"""
 
 _RESERVED_MARKUP_HEADINGS = (QUESTION_HEADING, ANSWER_HEADING)
-_POST_APPROVAL_CHOICES = ("その対応で問題無い", "問題がある")
 
 
 def _looks_like_question(message: str) -> bool:
@@ -276,9 +277,11 @@ def answer_uwi(
 def _is_affirmative_post_approval(text: str, answer: str) -> bool:
     """標準の事後承認UWIに対する肯定回答であるかを返す。"""
     parsed = _frontmatter.parse_frontmatter(text)
-    if parsed is None or answer.strip() != _POST_APPROVAL_CHOICES[0]:
+    if parsed is None or answer.strip() != POST_APPROVAL_CHOICES[0]:
         return False
     metadata, _body = parsed
+    if metadata.get("question_type") == QUESTION_TYPE_POST_APPROVAL:
+        return True
     choices = metadata.get("choices")
     if isinstance(choices, str):
         normalized_choices = tuple(choice.strip() for choice in choices.split(","))
@@ -286,7 +289,7 @@ def _is_affirmative_post_approval(text: str, answer: str) -> bool:
         normalized_choices = tuple(choice.strip() for choice in choices)
     else:
         return False
-    return metadata.get("question_type") == "choice" and normalized_choices == _POST_APPROVAL_CHOICES
+    return metadata.get("question_type") == "choice" and normalized_choices == POST_APPROVAL_CHOICES
 
 
 def cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:

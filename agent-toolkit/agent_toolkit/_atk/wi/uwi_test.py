@@ -1291,9 +1291,13 @@ def test_answer_uwi_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, mon
     assert content.rstrip().endswith("不採用とする")
 
 
+@pytest.mark.parametrize(
+    "question_metadata", ["question_type: post-approval", "question_type: choice\nchoices: [その対応で問題無い, 問題がある]"]
+)
 def test_answer_uwi_auto_adopts_affirmative_post_approval(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    question_metadata: str,
 ) -> None:
     """標準の事後承認UWIへ肯定回答した場合は回答保存と採用を同じ操作で完了する。"""
     notes = _setup_notes(tmp_path)
@@ -1307,8 +1311,7 @@ def test_answer_uwi_auto_adopts_affirmative_post_approval(
     )
     path = notes / "inbox/post-approval.md"
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
-        "choices: [その対応で問題無い, 問題がある]\n---\n\n"
+        f"---\ntarget_repo: github.com/example/foo\ntype: uwi\n{question_metadata}\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n実施済みの対応を承認しますか。\n\n"
         f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
         encoding="utf-8",
@@ -1371,9 +1374,11 @@ def test_answer_uwi_auto_adopt_conflict_guides_comparison(
     assert "atk wi rm" in error_info.value.next_action
 
 
-@pytest.mark.parametrize("answer", ["問題がある", "別の回答"])
+@pytest.mark.parametrize("answer", ["問題がある", "別の回答", "その対応で問題無い\nただし追加対応を求める"])
+@pytest.mark.parametrize("question_type", ["post-approval", "choice", "yes-no"])
 def test_answer_uwi_does_not_auto_adopt_other_answers(
     answer: str,
+    question_type: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1384,7 +1389,7 @@ def test_answer_uwi_does_not_auto_adopt_other_answers(
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     path = notes / "inbox/post-approval-other.md"
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
+        f"---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: {question_type}\n"
         "choices: その対応で問題無い,問題がある\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n実施済みの対応を承認しますか。\n\n"
         f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",

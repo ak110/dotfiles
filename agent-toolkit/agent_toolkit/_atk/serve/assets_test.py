@@ -4,6 +4,7 @@
 
 import asyncio
 import contextlib
+import html
 import logging
 import os
 import pathlib
@@ -22,6 +23,7 @@ from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment
+from agent_toolkit._atk.wi import uwi as wi_uwi
 from agent_toolkit._testing.serve_support import (
     _BATCH_TEXT,
     _FakeTimer,
@@ -530,6 +532,47 @@ def test_detail_escapes_frontmatter_values(tmp_path: pathlib.Path) -> None:
     rendered = typing.cast(str, wi_operations.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert "<script>" not in rendered
     assert "&lt;script&gt;" in rendered
+
+
+@pytest.mark.parametrize("question_type", ["post-approval", "free-form", "choice"])
+@pytest.mark.parametrize("answer", ["", "問題がある\n是正内容を確認してください。"])
+def test_uwi_preview_hides_answer_separator_and_preserves_raw_content(
+    tmp_path: pathlib.Path, question_type: str, answer: str
+) -> None:
+    """各質問形式の両プレビューは区切りだけを除き、回答と安全な本文表示・原文を保つ。"""
+    content = (
+        f"---\ntype: uwi\nquestion_type: {question_type}\nchoices: [選択肢]\n---\n\n"
+        "## 質問\n\n質問本文\n\n<!-- 一般のコメント -->\n\n<script>alert(1)</script>\n\n"
+        f"## 回答\n\n{wi_uwi.ANSWER_MARKER}\n{answer}\n"
+    )
+    _write_detail_entry(tmp_path, content)
+    detail = wi_operations.Operations(tmp_path).detail("inbox", "entry.md")
+    assert detail["content"] == content
+    assert detail["answer"] == (answer or None)
+    for key in ("content_html", "body_html"):
+        rendered = typing.cast(str, detail[key])
+        assert "ユーザーはこの行以降に回答を追記する" not in rendered
+        assert "質問本文" in rendered
+        assert html.escape("<!-- 一般のコメント -->") in rendered
+        assert "<script>" not in rendered
+        assert "&lt;script&gt;" in rendered
+        if answer:
+            assert answer in rendered
+
+
+@pytest.mark.parametrize("kind", ["uwi", "awi"])
+def test_preview_preserves_marker_examples_before_answer_separator(tmp_path: pathlib.Path, kind: str) -> None:
+    """UWIの最後の保存区切り以外の記法例と、AWIの本文は表示から失わない。"""
+    marker = wi_uwi.ANSWER_MARKER
+    content = f"---\ntype: {kind}\n---\n\n`{marker}`\n\n```markdown\n{marker}\n```\n\n## 回答\n\n{marker}\n"
+    _write_detail_entry(tmp_path, content)
+    detail = wi_operations.Operations(tmp_path).detail("inbox", "entry.md")
+    assert detail["content"] == content
+    for key in ("content_html", "body_html"):
+        rendered = typing.cast(str, detail[key])
+        assert rendered.count(html.escape(marker)) == (2 if kind == "uwi" else 3)
+        assert "<code>" in rendered
+        assert '<code class="language-markdown">' in rendered
 
 
 def test_detail_with_empty_frontmatter_renders_body_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

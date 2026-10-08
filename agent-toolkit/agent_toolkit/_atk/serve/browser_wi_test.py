@@ -16,11 +16,9 @@ from agent_toolkit._atk import git_sync
 
 # pytestがテストの引数名で参照するfixtureを、このモジュールへ登録する。
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
-    _BROWSER_TEST_ENV,
     _LONG_UNKNOWN_FRONTMATTER_KEY,
     _browser_fixture,
     _browser_harness_fixture,
-    _browser_tests_enabled,
     _BrowserHarness,
     _hold_route,
     _open_filters,
@@ -32,10 +30,6 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
 
 pytestmark = [
     pytest.mark.browser,
-    pytest.mark.skipif(
-        not _browser_tests_enabled(),
-        reason=f"{_BROWSER_TEST_ENV}=1の場合のみ実行する",
-    ),
 ]
 _SAVE_RELEASE_DELAY_SEC = 1.0
 
@@ -91,7 +85,7 @@ _DETAIL_MUTATION_CASES = {
         "#save-answer-button",
         "**/api/entries/answer",
         "POST",
-        "へ回答しました。",
+        "の回答を保存し、採用済み（adopted）へ移しました。",
         "adopted",
     ),
     "answer": _DetailMutationCase(
@@ -619,6 +613,60 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#entry-list .entry-select").filter(has_text="sse.md").wait_for(state="visible")
     await playwright.async_api.expect(page.locator('#target-filter option[value="sse/repo"]')).to_have_count(1)
     await playwright.async_api.expect(page.locator("#result-status")).to_have_text("1件を表示")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("choice", "addition", "saved_state"),
+    [
+        ("その対応で問題無い", "", "adopted"),
+        ("問題がある", "\n是正してください。", "inbox"),
+        ("その対応で問題無い", "\n追加の確認があります。", "inbox"),
+    ],
+)
+async def test_post_approval_fixed_choices_show_saved_state(
+    browser_harness: _BrowserHarness, choice: str, addition: str, saved_state: str
+) -> None:
+    """専用二択の保存通知は実際の採用済み遷移を伝え、是正・追記は回答済みで残る。"""
+    harness = browser_harness
+    filename = "post-approval.md"
+    (harness.root / "inbox" / filename).write_text(
+        "---\ntype: uwi\ntarget_repo: example/repo\nquestion_type: post-approval\n---\n\n"
+        "## 質問\n\n実施した対応で問題ありませんか？\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n",
+        encoding="utf-8",
+    )
+    harness.operations.enable_file_mutations()
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator(f'.entry-select[data-key="inbox/{filename}"]').click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await playwright.async_api.expect(detail.locator("#detail-content")).not_to_contain_text(
+        "ユーザーはこの行以降に回答を追記する"
+    )
+    await detail.get_by_role("button", name="回答", exact=True).click()
+    await playwright.async_api.expect(detail.get_by_role("button", name="問題がある", exact=True)).to_be_visible()
+    await detail.get_by_role("button", name=choice, exact=True).click()
+    await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value(choice)
+    if addition:
+        await detail.locator("#answer-input").fill(choice + addition)
+    await detail.get_by_role("button", name="回答を保存").click()
+    await playwright.async_api.expect(detail).to_be_hidden()
+    message = "採用済み（adopted）へ移しました。" if saved_state == "adopted" else "へ回答しました。"
+    await playwright.async_api.expect(page.get_by_role("status").filter(has_text=message)).to_be_visible()
+    assert (harness.root / saved_state / filename).exists()
+    saved = (harness.root / saved_state / filename).read_text(encoding="utf-8")
+    assert "<!-- ユーザーはこの行以降に回答を追記する -->" in saved
+    assert choice + addition in saved
+    assert (harness.root / "inbox" / filename).exists() == (saved_state == "inbox")
+    if saved_state == "inbox":
+        await page.locator(f'.entry-select[data-key="inbox/{filename}"]').click()
+        await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("answered")
+        await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("yes")
+        await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text(choice + addition)
+        await playwright.async_api.expect(detail.locator("#detail-content")).not_to_contain_text(
+            "ユーザーはこの行以降に回答を追記する"
+        )
 
 
 @pytest.mark.asyncio
@@ -1746,15 +1794,18 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
     create_dialog = page.get_by_role("dialog", name="新規追加")
     await create_dialog.wait_for(state="visible")
     await create_dialog.locator("#create-kind").select_option("uwi")
-    # UWIの回答形式ははい／いいえと選択肢形式だけを選べる。初期値は選択肢の入力が要らないはい／いいえとする。
+    # 初期値は選択肢の入力が要らないはい／いいえとする。
     question_type = create_dialog.locator("#create-question-type")
     await playwright.async_api.expect(question_type).to_have_value("yes-no")
     assert await question_type.locator("option").evaluate_all("options => options.map(option => option.value)") == [
         "yes-no",
+        "post-approval",
         "choice",
     ]
     await question_type.select_option("choice")
     await playwright.async_api.expect(create_dialog.locator("#choice-fields")).to_be_visible()
+    await question_type.select_option("post-approval")
+    await playwright.async_api.expect(create_dialog.locator("#choice-fields")).to_be_hidden()
     await question_type.select_option("yes-no")
     await create_dialog.locator("#create-target").fill("ignored/repo")
     show_text = (

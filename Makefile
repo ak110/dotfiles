@@ -84,12 +84,10 @@ test:
 test-browser:
 	uv run playwright install chromium
 	uv run --project agent-toolkit playwright install chromium
-	AGENT_TOOLKIT_SERVE_BROWSER_TESTS=1 \
-		$(PYTEST_RUN) -m browser agent-toolkit/agent_toolkit/_atk/serve
+	$(PYTEST_RUN) -m browser agent-toolkit/agent_toolkit/_atk/serve
 
 # agents_serverの実backendを使うライブ一体テスト
 test-agents-live:
-	AGENT_TOOLKIT_LIVE_AGENTS_TEST=1 \
-		$(PYTEST_RUN) agent-toolkit/agent_toolkit/agents_server_live_test.py
+	$(PYTEST_RUN) -m live_agents agent-toolkit/agent_toolkit/agents_server_live_test.py
 
 .PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh format test test-browser test-agents-live

@@ -283,6 +283,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         help=(
             "UWIの回答形式。`--type=uwi`では必須とし、`--type=uwi`でのみ指定できる。"
             "選択肢から選ぶ問いは`choice`（`--choices`も指定する）、2択の可否を問う問いは`yes-no`とする。"
+            "実施済みの対応への事後承認は`post-approval`とし、固定二択を使う。"
             "選択肢に無い回答は回答欄で受ける。"
         ),
     )

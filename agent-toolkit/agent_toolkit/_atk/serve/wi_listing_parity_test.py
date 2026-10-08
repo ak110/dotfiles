@@ -24,7 +24,7 @@ def _write(
     if source is not None:
         lines.append(f"source: {source}")
     if kind == "uwi":
-        lines.append("question_type: yes-no")
+        lines.append("question_type: post-approval" if state == "hold" else "question_type: yes-no")
     lines.extend(["---", ""])
     if kind == "uwi":
         answer = "はい\n" if answered else ""

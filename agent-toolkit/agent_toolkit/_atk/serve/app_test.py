@@ -859,11 +859,25 @@ async def test_uwi_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_answer_api_auto_adopts_affirmative_post_approval(
+@pytest.mark.parametrize(
+    "question_metadata", ["question_type: post-approval", "question_type: choice\nchoices: [その対応で問題無い, 問題がある]"]
+)
+@pytest.mark.parametrize(
+    ("answer", "saved_state"),
+    [
+        (" その対応で問題無い\n", "adopted"),
+        ("問題がある\n是正してください。", "inbox"),
+        ("その対応で問題無い\n追加の確認があります。", "inbox"),
+    ],
+)
+async def test_answer_api_returns_saved_post_approval_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    question_metadata: str,
+    answer: str,
+    saved_state: str,
 ) -> None:
-    """回答APIは標準の事後承認UWIへの肯定回答を採択まで完了する。"""
+    """回答APIは肯定だけを採用し、是正・追記を残した実際の保存先を返す。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
@@ -875,8 +889,7 @@ async def test_answer_api_auto_adopts_affirmative_post_approval(
     for state_name in _wi_constants.WI_STATES:
         (tmp_path / state_name).mkdir()
     content = (
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
-        "choices: [その対応で問題無い, 問題がある]\n---\n\n"
+        f"---\ntarget_repo: github.com/example/foo\ntype: uwi\n{question_metadata}\n---\n\n"
         "## 質問\n\n実施済みの対応を承認しますか。\n\n## 回答\n\n"
         "<!-- ユーザーはこの行以降に回答を追記する -->\n"
     )
@@ -894,21 +907,20 @@ async def test_answer_api_auto_adopts_affirmative_post_approval(
         json={
             "filename": inbox.name,
             "state": "inbox",
-            "answer": " その対応で問題無い\n",
+            "answer": answer,
             "expected_content": content,
         },
     )
     active_response = await client.get("/api/entries?status=active")
 
     assert response.status_code == 200
-    assert await response.get_json() == {"changed": True}
+    assert await response.get_json() == {"changed": True, "state": saved_state}
     assert active_response.status_code == 200
-    assert not (await active_response.get_json())["entries"]
-    assert not inbox.exists()
-    adopted = tmp_path / "adopted" / inbox.name
-    saved = adopted.read_text(encoding="utf-8")
-    assert "その対応で問題無い" in saved
-    assert "- 採否: adopted" in saved
+    assert len((await active_response.get_json())["entries"]) == (0 if saved_state == "adopted" else 1)
+    saved = (tmp_path / saved_state / inbox.name).read_text(encoding="utf-8")
+    assert answer.strip() in saved
+    assert ("- 採否: adopted" in saved) == (saved_state == "adopted")
+    assert inbox.exists() == (saved_state == "inbox")
 
 
 @pytest.mark.asyncio

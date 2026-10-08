@@ -975,10 +975,12 @@ class TestEditBodyFile:
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8").endswith("追記前\n\n\n追記後")
 
+    @pytest.mark.parametrize("question_type", ["choice", "post-approval"])
     def test_uwi_question_and_scope_update_preserves_answer(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        question_type: str,
     ) -> None:
         """UWIの質問とscopeだけを更新し、回答領域を保持する。"""
         notes = _setup_notes(tmp_path)
@@ -989,7 +991,7 @@ class TestEditBodyFile:
         )
         original_answer = path.read_text(encoding="utf-8").split(uwi.ANSWER_HEADING, maxsplit=1)[1]
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        message = "---\nscope: new\n---\n\n変更後の質問"
+        message = f"---\nscope: new\nquestion_type: {question_type}\n---\n\n変更後の質問"
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(_edit_body_args(tmp_path, "uwi-001.md", message), home=tmp_path)
@@ -997,6 +999,9 @@ class TestEditBodyFile:
         assert exc_info.value.code == 0
         content = path.read_text(encoding="utf-8")
         assert "scope: new" in content
+        assert f"question_type: {question_type}" in content
+        if question_type == "post-approval":
+            assert "choices:" not in content
         assert "変更後の質問" in content
         assert content.split(uwi.ANSWER_HEADING, maxsplit=1)[1] == original_answer
 

@@ -51,7 +51,7 @@ Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の
 2026年10月1日、codex-cli 0.159.3とClaude Code 2.1.286を同じホストで使い、変更後の作業ツリーで`agents_server_live_test.py::test_live_grandchild_wait_resumes_same_session`を実行した。委譲先は`agents_server`の起動ツールで`sleep 5`を実行する孫sessionを起動し、回収前に`待機中: <孫のsession_id>`を出力してターンを終える指示を受けた。
 Codexの委譲先（`codex:sol/medium`）とClaudeの委譲先（`claude:sonnet[1m]/medium`）のいずれも、待機表明の結果は呼び出し元へ配送されず、孫の終端後に同じsessionが手動の指示なしに再開した。再開したターンは`atk agents wait`で孫の結果を回収し、呼び出し元は`AUTO_RESUME_COMPLETED`と`turn_seq`2の完了結果を受け取った。2件とも成功し、所要時間は141秒だった。
 変更前のCodex backendは、同じ待機表明を`completed`の結果として公開し、孫の識別子を`error.unobservedSessions`へ記録していた（同日の対照観測）。
-再検証は`AGENT_TOOLKIT_LIVE_AGENTS_TEST=1`を設定し、呼び出し元の会話と状態ディレクトリを分けるため別の`CLAUDE_CODE_SESSION_ID`を与えて同じテストを実行する。
+再検証は`make test-agents-live`と同じpytest引数（`-m live_agents`）を指定し、呼び出し元の会話と状態ディレクトリを分けるため別の`CLAUDE_CODE_SESSION_ID`を与えて同じテストを実行する。
 
 ## agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日
 

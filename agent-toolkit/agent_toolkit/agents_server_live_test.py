@@ -1,6 +1,5 @@
 """agents_serverの実backendによるバックグラウンドタスク完了後の自動再開を検証する。"""
 
-import os
 import pathlib
 
 import pytest
@@ -10,10 +9,8 @@ from agent_toolkit._agents_server import mcp_tools
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._testing import isolation
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("AGENT_TOOLKIT_LIVE_AGENTS_TEST") != "1",
-    reason="実際のagents_serverを起動するテストは明示指定時だけ実行する",
-)
+pytestmark = pytest.mark.live_agents
+
 
 _PROMPT = """Bashツールで`sleep 2`を背景実行し、待たずにturnを終えよ。
 バックグラウンドタスクの完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。"""
