@@ -24,10 +24,11 @@
 
 ## push前のチェックとCIだけが実行するチェック
 
-- 公開前の全体検証は`agent-toolkit:commit`が公開工程の着手時に読ませる資料の「検証とCI」に従う。本リポジトリでpush前に実行するCI非実行のチェックと全体走査のチェックは次の3件である
+- 公開前の全体検証は`agent-toolkit:commit`が公開工程の着手時に読ませる資料の「検証とCI」に従う。push前にはCIが実行しないチェックを選ぶ。変更ファイルだけでは検出できない、複数ファイル間の関係に起因する問題も全体を対象に確かめる。本リポジトリでは次を実行する
   - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version --enable=statusline-version`
-  - レーンをまたぐ重複実装の検出: `uv run --frozen pyfltr run --commands=arid`
-  - 変更ファイルの外に残ったPythonの静的参照の検出: `uv run --frozen pyfltr run --commands=ty`
+  - レーンをまたぐ重複実装は片側の変更ファイルだけでは比較できないため、全体を検出: `uv run --frozen pyfltr run --commands=arid`
+  - Pythonの型と静的参照の整合を変更ファイルの外も含めて確かめる: `uv run --frozen pyfltr run --commands=ty`
+  - 複数ファイルにまたがるimport循環は一部ファイルだけでは検出できない。次のコマンドで全体の循環importを検出する。 `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`
 - `make test`が実行するツール集合とCIの`python-lint (3.14)`ジョブの差は、同ジョブが`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version`で無効化するチェックである。Python 3.14のpytestは`pytest (3.14)`ジョブが所有する。
   次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
   - `test-windows`ジョブ: Windows実機でのchezmoi適用、Windows固有のテストと公開ランチャー確認
