@@ -301,7 +301,10 @@ def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[st
     return {"rewrite": resolved}
 
 
-_FIX_RANGE_MAP = "対応表の該当項目を書換え前後の`git range-diff`の結果と比べて直し、同じ引数で再実行する"
+_FIX_RANGE_MAP = (
+    "rebase/autosquashの対応表は`atk run-script history-compare`で範囲を検収して再生成する。"
+    "amendはcommitのhistory-rewrite.mdに従って1対1の対応を検収・保存し、同じ引数で再実行する"
+)
 
 
 def _is_ancestor(worktree: pathlib.Path, oid: str, head: str) -> bool:

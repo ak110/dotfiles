@@ -105,6 +105,9 @@ WI実装commitの対応は、実装・レビュー修正・CI修正の各commit�
 
 ### 完成条件証拠の検証記録
 
+構造化結果を使う場合は、試験の取得時に`atk run-command -- ... pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス> <対象...>`でXML・実行記録・両出力を保存する。XMLは試験実行時に取得する。診断はpyfltrの`show-run --commands <対象> --output-format=jsonl`またはMCPの構造化結果を保存し、取得版・対象範囲・オプション・依存版・並列度・実行環境と必要な保存時本文を対応付ける。
+結果指定と更新配列のJSON形式は`atk run-script verification-record -- --help`で取得する。原文の雛形を生成して`--list`で出所と1始まりの行番号を確認した後、同操作の`--output <記録の絶対パス> --results-file <結果指定JSONの絶対パス> --list-results`で完全テスト名、状態、版、所在と基準版との差を読む。診断の比較不能は不足として補い、一致と区別する。担当が各要求を直接満たすテストと診断の識別子を選び、`section`・`row`・完全一致の`source`・`tests`・`diagnostics`・`mode`を持つ更新配列を保存し、`--list-results`の代わりに`--updates-file <更新配列JSONの絶対パス>`を渡す。同じ結果を複数の要求行へ関連付ける場合もこの配列で指定する。不正な行が1件でもある場合は全更新が拒否される。手動観測と後続工程の説明は任意の`evidence_file`か後段の単一行操作で補う。結果の解析と記録の編集はこの公開操作へ集約し、`outcome`と`reviewed_head`は空欄を保つ。
+
 実行レビューが完成条件証拠を作成する対象では、実装完了前にmanaged-tempへ要求単位ごとの検証記録JSONを作成する。レビューの出力先とは別のファイルへ、`atk run-script verification-record -- --output <検証記録JSONの絶対パス> --plan <計画の絶対パス>`で原文と出所の雛形を生成する。WI直渡しでは`--plan`の代わりに`--wi <WIファイル名>`を反復する。計画だけのユーザー指示も変更履歴の逐語発言から生成される。`--output <同じパス> --list`で配列・1始まりの行番号・出所を確認する。`--output <同じパス> --section <配列> --row <行番号> --source <出所の完全一致文字列> --evidence-file <根拠のUTF-8ファイルの絶対パス> --mode append`で根拠を追記する。置換には`--mode replace`を使う。各`evidence`にテスト完全名・成功結果の所在、または保存済み観測の入力・操作・期待結果・観測結果の箇所を記す。pytestのテスト完全名を挙げるときは、同じ検証対象版の保存済み出力にその名前と結果の行があることを比較して確認する。直接実行するpytestは対象を変えずに`-v`を付け、標準出力・標準エラー・終了コードと、実行した版（HEADと未commit・未追跡の状態）を保存し、`evidence`から該当行を指す。`atk run-command`で実行すると保存JSONがこれらを持つ。点表示と総数だけを個別テストの合否の根拠にしない。後続工程の条件と不採用・割当の単位の行には、検証済みの範囲と、採否・後続工程を記録した箇所（計画の`## 実施内容`、計画なしでは引き継ぎ記録）を記す。`outcome`と`reviewed_head`は空欄を保ち、レビューの合格判定に用いる資料と区別する。
 不足する根拠は担当種別に与えられた操作の範囲で検証を補い、入力・権限・外部状態を要する不足は本書「出力」の続行不能時の形式で委譲元へ返す。レビュー修正後も同じ生成操作で既存根拠を保持して不足行を加え、一覧から行を選んで同じ更新操作で修正後の根拠へ置換する。記録の絶対パスを実装完了・対応完了の`検証結果`、計画の進捗ログか計画なしの引き継ぎ記録へ残す。CI記録だけのレビューで完成条件証拠が`なし`の場合はこの配列を追加しない。
 
@@ -132,7 +135,7 @@ autosquashは同`references/history-rewrite.md`「fixupの実行上の制約」�
 
 ラウンドごとのautosquashにより、次のラウンドを開始する時点のrebase範囲には、件名の先頭が`fixup!`・`squash!`・`amend!`のcommitが残らない。同`references/history-rewrite.md`「fixupの実行上の制約」はその件名のcommitが範囲内にある場合にfixupの作成を遮断するため、2ラウンド目以降の修正も本節の手順のままfixupとして作成できる。
 
-履歴書換えの前後ではrewrite対象を操作直前に解決したOID、tree、親OIDおよび件名を比較用に保持し、`rewrite_guard`の要求に合致するか確かめる。レビュー指摘管理表へ、指摘、採否、修正commit、検証結果、書換え前後の7文字以上の一意な短縮OIDの対応、一致確認結果を証拠として保存する。検収済みの完全OID対応は、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で同じ進捗記録へ追記し、AWI集合を現在の実装commitへ継承する。履歴統合後の変更範囲の検証結果を`atk run-script plan-progress --`で`## 進捗ログ`へ追記する。
+履歴書換えの前後ではrewrite対象を操作直前に解決したOID、tree、親OIDおよび件名を比較用に保持し、`rewrite_guard`の要求に合致するか確かめる。autosquash後は`agent-toolkit:commit`の`references/history-rewrite.md`「操作前後の確認」を参照する。そこに示す`atk run-script history-compare -- --operation autosquash`を実行し、終了コード0と検収済み対応表の保存を確認する。非0では同書の失敗時の扱いに従う。比較はこの公開操作が所有する。レビュー指摘管理表へ、指摘、採否、修正commit、検証結果、書換え前後の7文字以上の一意な短縮OIDの対応、一致確認結果と保存した対応表の絶対パスを証拠として残す。この完全OID対応表をそのまま`plan-rewrite`と完成条件証拠の`--rewrite-map`へ渡す。同じ進捗記録へ追記し、AWI集合を現在の実装commitへ継承する。amendの検収は同書に従う。履歴統合後の変更範囲の検証結果を`atk run-script plan-progress --`で`## 進捗ログ`へ追記する。
 
 `agent-toolkit:commit`の`references/history-rewrite.md`が用いる各phaseの対象は次のとおりとする。
 

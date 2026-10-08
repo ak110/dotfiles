@@ -31,11 +31,12 @@ Agent / Task:
 
 Bash:
 
-- Codexで48KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)。通知は閾値以下の連続した行範囲を示す
+- Codexで48KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)。通知は`atk read-file`による終端までの読取を示す
 - 区切り語を引用しないheredocの本文にあるコマンド置換の遮断 (block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - atkの出力のパイプとリダイレクト（常駐と追従の表示を除く）と、`atk agents wait`のシェル背景化の遮断 (block)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
+- Codexでcommitのmessage.mdを読むとき、観測したモデルと推論量の帰属行を先行配送 (warn)
 - 操作を起動の契機とするスキル（`agent-toolkit:search`・`agent-toolkit:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
 
 Grep / Glob:
@@ -80,7 +81,7 @@ import sys
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import response_language_check as _response_language_check
 from agent_toolkit._common import transcript as _transcript
-from agent_toolkit._common.runtime_identity import RuntimeIdentity, identity_observations
+from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
@@ -109,7 +110,7 @@ from agent_toolkit._hooks.pretooluse.agent_checks import (
 from agent_toolkit._hooks.pretooluse.confirmation_reads import unread_reference_warning
 from agent_toolkit._hooks.pretooluse.content_checks import _collect_edit_operation_warnings, _warn_mojibake
 from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read
+from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read
 from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _llm_notice
 from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings
 from agent_toolkit._hooks.pretooluse.shell_checks import (
@@ -346,7 +347,27 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                     escalate_on_repeat=True,
                 )
             )
+    if is_codex and _reads_commit_message_rules(command, cwd):
+        identity = _hook_observed_identity(payload, is_codex=True)
+        if identity is not None and identity.source == "observed":
+            warnings.append(
+                _message_format.llm_notice(
+                    "読取時点に観測したモデルと推論量の帰属行: "
+                    + co_author_trailer(identity)
+                    + "。明示指定と無効化の方針を先に確認する。通常commit直前にも現在の観測を確認する。",
+                    _HOOK_ID,
+                )
+            )
     return Decision(context=format_warning_context(warnings) if warnings else None)
+
+
+def _reads_commit_message_rules(command: str, cwd: str) -> bool:
+    """静的に解決できる読取のファイル引数だけで帰属資料を識別する。"""
+    for paths in bash_read_paths(command, cwd, include_partial=True):
+        for path in paths:
+            if path.as_posix().endswith("/skills/commit/references/message.md") and path.is_file():
+                return True
+    return False
 
 
 def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity | None:

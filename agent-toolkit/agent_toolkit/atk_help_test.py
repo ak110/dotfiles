@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import pathlib
 from collections.abc import Iterator
 
@@ -12,6 +13,28 @@ from agent_toolkit import atk
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import wait_schedule
+
+
+def test_agents_help_matches_mcp_and_cli_operations(capsys: pytest.CaptureFixture[str]) -> None:
+    """実際のMCP登録とCLI登録を公開ヘルプから見つけられる。"""
+    source = pathlib.Path(__file__).parent / "_agents_server" / "mcp_tools.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    registered = {
+        keyword.value.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "tool"
+        for keyword in node.keywords
+        if keyword.arg == "name" and isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str)
+    }
+    cli = {name.removeprefix("atk agents ") for name, _, _ in _walk_commands() if name.startswith("atk agents ")}
+    assert {"start", "send_message", "kill", "stop"} <= registered - cli
+    assert cli == {"wait", "notify", "list", "show", "logs"}
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "--help"])
+    output = capsys.readouterr()
+    assert not output.err
+    assert "agents_server" in output.out
+    assert all(name in output.out for name in registered - cli | cli)
 
 
 def test_info_reports_current_environment_without_creating_config(

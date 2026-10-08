@@ -79,6 +79,80 @@ def test_codex_commit_uses_observed_identity_from_hook_payload(capsys: pytest.Ca
     assert "Co-Authored-By: GPT-6.1 Sol / Medium <noreply@openai.com>" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("reader", ["cat --", "sed -n '1,200p'", "awk '{print}'", "atk read-file --"])
+def test_commit_rules_read_delivers_observed_trailer_and_allows_same_turn_commit(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    reader: str,
+) -> None:
+    """実ファイルの読取で得た帰属行は同turnの通常commitへ使え、turn変化では現在値と比べる。"""
+    rules = tmp_path / "different root" / "skills/commit/references/message.md"
+    rules.parent.mkdir(parents=True)
+    rules.write_text("帰属規範\n", encoding="utf-8")
+    payload = {
+        "tool_name": "Bash",
+        "turn_id": "codex-turn",
+        "model": "gpt-6.1-sol",
+        "reasoning_effort": "medium",
+        "cwd": str(tmp_path),
+        "tool_input": {"command": f"{reader} '{rules}'"},
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr()
+    notice = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+    trailer = "Co-Authored-By: GPT-6.1 Sol / Medium <noreply@openai.com>"
+    assert trailer in notice and "読取時点" in notice
+    assert not captured.err
+    payload["tool_input"] = {"command": f"git commit -m 'fix: 変更' -m '{trailer}'"}
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert not capsys.readouterr().err
+    payload["reasoning_effort"] = "high"
+    assert pretooluse.main(json.dumps(payload)) == 2
+    assert "GPT-6.1 Sol / High" in capsys.readouterr().err
+    for value in ("誤った行", f"{trailer}\n{trailer}"):
+        payload["tool_input"] = {"command": f"git commit -m 'fix: 変更' -m '{value}'"}
+        assert pretooluse.main(json.dumps(payload)) == 2
+        assert "GPT-6.1 Sol / High" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("case", ["literal", "search", "other", "missing", "unknown", "claude", "read-tool"])
+def test_commit_rules_read_notice_is_limited_to_observed_codex_reads(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    """引用・検索・別資料・未観測・別ホストを帰属配送の読取にしない。"""
+    rules = tmp_path / "skills/commit/references/message.md"
+    rules.parent.mkdir(parents=True)
+    rules.write_text("帰属規範\n", encoding="utf-8")
+    other = rules.with_name("other.md")
+    other.write_text("別資料\n", encoding="utf-8")
+    commands = {
+        "literal": f"printf '%s' '{rules}'",
+        "search": f"rg -F -- '帰属' '{rules}'",
+        "other": f"cat '{other}'",
+        "missing": f"cat '{tmp_path}/missing/skills/commit/references/message.md'",
+    }
+    payload = {
+        "tool_name": "Bash",
+        "turn_id": "codex-turn",
+        "model": "gpt-6.1-sol",
+        "reasoning_effort": "medium",
+        "cwd": str(tmp_path),
+        "tool_input": {"command": commands.get(case, f"cat '{rules}'")},
+    }
+    if case == "unknown":
+        payload.pop("model")
+        payload.pop("reasoning_effort")
+    if case == "claude":
+        payload.pop("turn_id")
+    if case == "read-tool":
+        payload["tool_name"] = "Read"
+        payload["tool_input"] = {"file_path": str(rules)}
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert "読取時点" not in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("host", ["claude-unknown", "claude-disabled", "codex-unknown", "codex-observed"])
 @pytest.mark.parametrize("source", ["message", "heredoc", "file"])
 def test_commit_format_blocks_independently_of_attribution(

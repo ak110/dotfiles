@@ -3339,3 +3339,68 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
     assert [result["exit_code"] for result in results] == [1, 0]
     assert results[0]["diagnostics"]
     assert all(path.read_bytes() == before for path, before in evidence_before.items())
+
+
+def test_public_update_requires_explicit_outcomes_and_preserves_unselected_rows(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """未判定根拠を分離し、同じ完成条件証拠を更新しても未選択行を保持する。"""
+    repository = git_repository.init_repository(tmp_path / "repo", files={"value.txt": "保存値\n"}, commit_message="基準")
+    head = git_repository.git_output(repository, "rev-parse", "HEAD")
+    monkeypatch.chdir(repository)
+    explanation = tmp_path / "observation.txt"
+    explanation.write_text("保存値と再読込値が一致した。\n", encoding="utf-8")
+    first = {**_condition("", "保存する。"), "source": "原文1", "outcome": "", "reviewed_head": "", "evidence": ""}
+    untouched = {
+        **_condition("", "再読込する。"),
+        "source": "原文2",
+        "reviewed_head": head,
+        "evidence": f"再読込値を観測した: {explanation}:1",
+    }
+    template, pending, output = (tmp_path / name for name in ("template.json", "pending.json", "review.json"))
+    _write_evidence(template, [first, untouched])
+    observed = {**first, "evidence": f"保存操作で値を観測した: {explanation}:1"}
+    _write_evidence(pending, [observed])
+    updates_path = tmp_path / "updates.json"
+    update = {"section": "wi_conditions", "row": 1, "source": "原文1", "verification_source": "原文1", "mode": "replace"}
+    updates_path.write_text(json.dumps([update]), encoding="utf-8")
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[
+            str(template),
+            "--verification-record",
+            str(pending),
+            "--updates-file",
+            str(updates_path),
+            "--output",
+            str(output),
+        ],
+    )
+    before = template.read_bytes(), pending.read_bytes()
+    assert run_script.dispatch(args) == 1
+    assert not output.exists()
+    assert "outcome" in capsys.readouterr().err
+    update.update(outcome="達成", reviewed_head=head)
+    updates_path.write_text(json.dumps([update]), encoding="utf-8")
+    assert run_script.dispatch(args) == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["wi_conditions"][0]["outcome"] == "達成"
+    assert payload["wi_conditions"][0]["evidence"] == observed["evidence"]
+    assert payload["wi_conditions"][1] == untouched
+    assert (template.read_bytes(), pending.read_bytes()) == before
+    args.script_args[args.script_args.index("--output") + 1] = str(template)
+    assert run_script.dispatch(args) == 0
+    assert json.loads(template.read_text(encoding="utf-8")) == payload
+    assert pending.read_bytes() == before[1]
+    args.script_args[args.script_args.index("--output") + 1] = str(pending)
+    assert run_script.dispatch(args) == 1
+    assert pending.read_bytes() == before[1]
+    record = tmp_path / "input.md"
+    record.write_text("# 採用済みの入力\n", encoding="utf-8")
+    checked = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[str(output), "--input-record", str(record), "--expected-head", head],
+    )
+    assert run_script.dispatch(checked) == 0, capsys.readouterr().err

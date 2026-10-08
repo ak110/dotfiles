@@ -82,6 +82,7 @@ VALUE_OUTPUT_COMMANDS = frozenset(
 READ_ONLY_COMMANDS = frozenset(
     {
         "atk info",
+        "atk read-file",
         "atk wi list",
         "atk wi show",
         "atk wi grep",

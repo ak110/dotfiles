@@ -12,6 +12,7 @@ from agent_toolkit._common import next_action as _next_action
 
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT_PATHS = {
+    "history-compare": pathlib.Path("skills/commit/scripts/compare_history.py"),
     "agent-doc-changes": pathlib.Path("skills/plan-mode/scripts/list_agent_doc_changes.py"),
     "plan-create": pathlib.Path("skills/plan-mode/scripts/create_plan_files.py"),
     "plan-check": pathlib.Path("skills/plan-mode/scripts/check_plan_file.py"),

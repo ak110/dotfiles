@@ -37,7 +37,12 @@
 5. 子孫でない場合は、rebaseの前に、専用branchが統合先branchの現在HEADより先に持つ全commitが未pushであることを`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」の手段で確認する。1件でもpush済みの場合はrebaseせず、そのcommitの短縮OIDを`続行できない理由:`へ書いて返す。
 6. 未pushを確認した場合は、rebase前の専用branchのHEADの7文字以上の一意な短縮OIDを`引き継ぎ記録先`へ記録する。書換えコマンドとは別の呼び出しで、専用worktreeを作業ディレクトリとして`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」の`git log`を実行し、対象commitの状態を確認する。続けて同じworktreeで`git rebase <統合先branchの現在HEAD>`を実行し、専用branchを統合先branchの現在HEADの上へ載せ替える。rebaseの対象は専用worktree内の専用branchに限り、統合先branchと他のレーンの専用branchはそのまま保つ。
 7. rebaseが競合で停止した場合は、読込表の行が示す`agent-toolkit:process-wi`の`references/lane-integration-failure.md`「rebaseの競合」に従う。競合の解消と再レビューの指示はメインが所有する。
-8. rebaseが成功した場合は、`git range-diff <rebase前のベースOID>..<rebase前の専用branchのHEAD> <統合先branchの現在HEAD>..<rebase後の専用branchのHEAD>`を実行する。全commitが1対1で対応し、かつ内容が変化していないこと（各行の対応記号が`=`であること）を確認する。対応の欠落、追加、または内容の変化を観測した場合は手順9へ進まず、`git range-diff`の該当行を`続行できない理由:`へ書いて返す。
+8. rebaseが成功した場合は、次のコマンドを実行する。全commitの1対1対応と`range-diff`の全対応記号が`=`であることを同コマンドが検収し、完全OIDの旧新対応を保存する。非0の場合は手順9へ進まず、対象と診断を`続行できない理由:`へ書いて返す。比較と対応表の生成はこの公開操作へ集約する。
+
+   ```text
+   atk run-script history-compare -- --operation rebase --work-dir <専用worktreeの絶対パス> --old-base <rebase前のベースOID> --old-head <rebase前の専用branchのHEAD> --new-base <統合先branchの現在HEAD> --new-head <rebase後の専用branchのHEAD> --output <managed-temp内の対応表JSONの絶対パス>
+   ```
+
 9. 計画を持つ場合は計画ファイルの`## 検証`の`変更範囲の検証`行、計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを、rebase後の専用branchのHEADで再実行し、終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを確認する。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の`git range-diff`が担保する。失敗した場合は、読込表の行が示す同資料「統合後の変更範囲の検証の失敗」に従う。
 10. 対象リポジトリのプロジェクト規範に、統合後にだけ成立する検証があるか確認する。なければ手順11へ進む。ある場合は次の順で実行する。この検証は他のレーンの成果と合わせた状態でだけ成立するため、rebase前の変更範囲の検証では代替できない。専用branchのHEADは統合先branchの現在HEADの子孫であり、そのtreeはfast-forward後の統合先と同じになるため、fast-forwardの前に専用worktreeで実行する。統合先を変える前に失敗を確定すると、他のレーンが失敗した状態の統合先の上へ載ることを防げる。
     1. managed-tempの中に作業ディレクトリを確保し、標準出力と標準エラーの保存先を、その領域内の絶対パスとして`summary_policy`へ記す。
@@ -47,7 +52,7 @@
 11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず続行できない理由を返す。
 12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
-手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で対応を追記する。その手段へは、`git range-diff`で検収した全commitの旧OIDから新OIDへの対応と手順6で引き継ぎ記録先へ記録したrebase前のHEADを、統合する全ての計画または引き継ぎ記録とともに1回で渡す。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
+手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で対応を追記する。その手段へは、`history-compare`が保存した対応表をそのまま`--rewrite-map`へ渡し、手順6で引き継ぎ記録先へ記録したrebase前のHEADと、統合する全ての計画または引き継ぎ記録も1回で渡す。完成条件証拠のOID参照更新にも同じ対応表を使う。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
 
 ### 検証結果の警告の判定
 

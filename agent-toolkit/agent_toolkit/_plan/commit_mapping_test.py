@@ -215,7 +215,7 @@ def test_rejects_range_with_merge_or_non_ancestor(repo: pathlib.Path) -> None:
 def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:
     """WI対応のないcommitを含むrebaseでは、記録済み旧OIDだけの対応表で継承し、記録外OIDと記録済みOIDの欠落を失敗にする。
 
-    統合手順は`git range-diff`で全commitを検収するが、`--rewrite-map`へ渡すのは対応記録を持つ旧OIDに限る。
+    この旧形式の内部操作は、公開history-compareが返す範囲全体のうち対応記録を持つ旧OIDだけを受け取る。
     記録外OIDを含めると対応を確定できず失敗し、記録済み旧OIDが対応表に無いと終端前の取得が失敗する。
     """
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
@@ -256,3 +256,15 @@ def test_reads_legacy_body_comments_before_attachment(tmp_path: pathlib.Path, re
         WI_A: [_short(repo, legacy)],
         WI_B: [_short(repo, current)],
     }
+
+
+@pytest.mark.parametrize("mapping", [{}, {"missing": "missing"}])
+def test_range_mapping_failure_points_to_public_comparison(repo: pathlib.Path, mapping: dict[str, str]) -> None:
+    """不正な対応表の復旧を担当の手作業へ戻さず、公開比較とamendの区別を案内する。"""
+    source = repo / "invalid.json"
+    source.write_text(json.dumps(mapping), encoding="utf-8")
+    with pytest.raises(commit_mapping.CommitMappingError) as raised:
+        commit_mapping.load_range_rewrite(repo, source, "HEAD")
+    assert "atk run-script history-compare" in raised.value.next_action
+    assert "amend" in raised.value.next_action
+    assert "git range-diff" not in raised.value.next_action
