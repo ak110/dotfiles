@@ -8,7 +8,7 @@ description: >
 
 # formatter・linter・testerの実行
 
-本スキルはformatter、linter、testerおよびプロジェクト固有のチェックツールを起動する主体へ、起動手段の選び方を提供する。
+本スキルはformatter、linter、testerおよびプロジェクト固有のチェックツールを起動するエージェントへ、起動手段の選び方を提供する。
 各ツールの受理形式、出力形式、個別の対処は、そのツールのヘルプ、MCPツールのスキーマ、公式ドキュメントに従う。
 検証後は読込表の`references/diagnostics.md`の行に従い、診断本文と担当差分を使って結果を判定する。
 

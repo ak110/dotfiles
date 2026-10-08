@@ -1,6 +1,6 @@
 # Playwrightテスト記述スタイル
 
-本書はPlaywright Testでブラウザーテストを書く主体とレビューする主体へ、ロケーター、アサーション、テストの分離、flaky対策、Page Object Modelの採否と並列実行の設定で判断を誤りやすい箇所の基準を示す。
+本書はPlaywright Testでブラウザーテストを書くエージェントとレビューするエージェントへ、ロケーター、アサーション、テストの分離、flaky対策、Page Object Modelの採否と並列実行の設定で判断を誤りやすい箇所の基準を示す。
 対象バージョン: Playwright Test v1系（参考実利用バージョン: 1.60）。公式のベストプラクティスは<https://playwright.dev/docs/best-practices>を参照する。
 本書はPythonバインディング（`playwright.async_api`・`playwright.sync_api`）を用いるテストへも適用し、綴りが異なるAPIは同じ機能のPython側の名前へ読み替える。
 

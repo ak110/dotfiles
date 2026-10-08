@@ -2,8 +2,8 @@
 
 `agents_server`の状態はMCPサーバーのメモリー、状態ディレクトリのファイル、フックが記録するセッション状態およびstatuslineが読む射影の4つの表現に分かれる。
 実行主体ごとに更新できる範囲が異なるため、挙動を確定する際は関係する全ての処理の流れを読む。単一の処理だけを読むと、別の処理が同じ状態を更新しない事実を見逃す。
-`agent-toolkit/agent_toolkit/agents_server_mcp.py`と`agent-toolkit/agent_toolkit/_agents_server/`配下を変更または調査する主体は、着手前に本書を読む。
-`rust/claude-statusline/src/agents_server.rs`を扱う主体も同じとする。
+`agent-toolkit/agent_toolkit/agents_server_mcp.py`と`agent-toolkit/agent_toolkit/_agents_server/`配下を変更または調査するエージェントは、着手前に本書を読む。
+`rust/claude-statusline/src/agents_server.rs`を扱うエージェントも同じとする。
 
 ## 実行主体
 

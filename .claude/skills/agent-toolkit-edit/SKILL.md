@@ -10,7 +10,7 @@ description: >
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex）
 
-本スキルは`agent-toolkit/`配下の配布物と`.claude-plugin/marketplace.json`を編集する主体へ、ファイル構成と参照方向、付帯作業の扱い、版数更新と編集手順、配布と同期の手順を提供する。
+本スキルは`agent-toolkit/`配下の配布物と`.claude-plugin/marketplace.json`を編集するエージェントへ、ファイル構成と参照方向、付帯作業の扱い、版数更新と編集手順、配布と同期の手順を提供する。
 エージェント向け文書の改訂に共通する手順（編集前に読む記録、規範を削除・縮小するときの消失確認など）は`dotfiles-norm-edit`が扱う。
 
 ## 読込表
@@ -35,7 +35,7 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 - `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保ち、メインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く
   （`scripts/gen_install_files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範とホスト別規範
-- `agent-toolkit/share/rules-common.codex.md`: Codexの全主体（メイン、サブエージェントおよび委譲先）向けの規範
+- `agent-toolkit/share/rules-common.codex.md`: Codexの全てのエージェント（メイン、サブエージェントおよび委譲先）向けの規範
 - `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範。Codex委譲先の固有差分が必要になった場合は`rules-subagent.codex.md`を追加する
   振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
@@ -116,7 +116,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 `agent-toolkit/`配下を編集する手順は次のとおりとする。push前の版数更新は必須である（同じバージョンでは`claude plugin update`が「最新です」と返しエンドユーザーへ配信されないため）。
 
 1. 本節の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`で版数を更新する。
-   実行する主体と時点は`references/version-bump.md`「plan modeでの取り扱い」に従う。
+   実行するエージェントと時点は`references/version-bump.md`「plan modeでの取り扱い」に従う。
    `agent-toolkit:process-wi`のレーンは実行せず版数区分を計画へ記録し、終端担当が全レーンのマージ後に1回実行する
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
 3. Agent Plugins・Codex向け派生JSONを前掲の生成器で同期する
@@ -157,6 +157,6 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 `agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:writing-standards`の
 `references/session-state-and-flags.md`に置く。フラグを追加・変更する際は同ファイルを更新する。
-`agent-toolkit:writing-standards`は文章・コードの作成基準を持ち、hook実装の基準もここに含む。エージェントの行動自体の規範は、実行主体別ルールまたは作業別スキルに置く。
+`agent-toolkit:writing-standards`は文章・コードの作成基準を持ち、hook実装の基準もここに含む。エージェントの行動自体の規範は、役割別ルールまたは作業別スキルに置く。
 
 hookの実装・編集とセッション状態の設計・変更では`agent-toolkit:writing-standards`を起動する。

@@ -16,7 +16,7 @@ description: >
 
 # 成果物の品質基準
 
-本スキルはドキュメント、コードおよびエージェント向け文書を書く主体へ品質基準を提供する。hookの実装とセッション状態ファイルの設計も、コードを書くときの基準として扱う。エージェントが作業中に取る行動の規範は、実行主体別のルールと各作業のスキルが定める。
+本スキルはドキュメント、コードおよびエージェント向け文書を書くエージェントへ品質基準を提供する。hookの実装とセッション状態ファイルの設計も、コードを書くときの基準として扱う。エージェントが作業中に取る行動の規範は、役割別のルールと各作業のスキルが定める。
 レビュー担当とレビューイーの判断基準は`agent-toolkit:review-standards`が定める。
 計画ファイルの成果物契約は`agent-toolkit:plan-mode`が定め、本スキルの対象外とする。
 
@@ -86,7 +86,7 @@ description: >
 | --- | --- |
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設または変更する時 | `references/design-time.md` |
 | コードを編集する時点と、依存の追加・更新をする時 | `references/implementation-time.md` |
-| 設計判断を確定する時、計画と実装を同じ主体が続けて実施する場合、およびコードレビューを実施する場合 | `references/design-heuristics.md` |
+| 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する場合、およびコードレビューを実施する場合 | `references/design-heuristics.md` |
 | 依存の追加・更新をする時 | `references/dependency-management.md` |
 | MCPサーバーのツール、説明、応答を設計、実装、変更またはレビューする時 | `references/mcp-server-design.md` |
 | テストコードを書く時とレビューする時、および条件分岐と判定条件を新設または変更する時 | `references/testing.md` |
@@ -113,7 +113,7 @@ description: >
 | 遮断または警告を返すhookの判定を新設・変更する時と、hookを置くか、遮断と警告のどちらにするかを判定する時 | `references/claude-hooks-block-warn.md` |
 | hookの出力フィールドを選ぶ時と、`PermissionRequest`または`UserPromptSubmit`のhookを新設・変更する時 | `references/claude-hooks-output.md` |
 | `Stop`または`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md` |
-| 遮断・警告・定型の通知を出力するhookを新設・変更する時と、hookとhook以外の生成元がコーディングエージェントへ直接渡す本文（記述言語と`atk-auto`の標識）を新設・改訂する時 | `references/claude-hooks-messages.md` |
+| 遮断・警告・定型の通知を出力するhookを新設・変更する時と、hookとhook以外の生成元がエージェントへ直接渡す本文（記述言語と`atk-auto`の標識）を新設・改訂する時 | `references/claude-hooks-messages.md` |
 | auto modeのカスタムルール編集 | `references/auto-mode.md`、`references/host-official-references.md`。権限拒否に遭遇した場面の手順は`agent-toolkit:user-confirmation-and-report`が扱う |
 | セッション状態ファイルまたはフラグを扱う編集（hook編集とauto modeのカスタムルール編集で扱う場合を含む） | `references/session-state-and-flags.md` |
 | 機械チェックスクリプトの新設・改修 | `references/check-script-design.md` |

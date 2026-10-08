@@ -142,7 +142,7 @@ PostToolUseは成功した開始ツール`start`（全`mode`。統合前の旧�
 ## 複数hook共存時の識別子
 
 同一イベントで共存するhookを識別するため、`atk-auto`の`source`はagent-toolkitなら接頭辞の無い生成元名、他の生成元なら`<所有者>/<生成元>`とする。
-XML境界と属性の規約は`agent-toolkit:writing-standards`の`references/claude-hooks-messages.md`「コーディングエージェント宛てメッセージの標識」に従う。
+XML境界と属性の規約は`agent-toolkit:writing-standards`の`references/claude-hooks-messages.md`「エージェント宛てメッセージの標識」に従う。
 
 ## marketplace管理
 

@@ -4,7 +4,7 @@
 起動対象: external-write-review.subagent.md
 ```
 
-`agent-toolkit:external-write-review`の対象となる文面を投稿する主体が、本書に従って投稿前レビュー担当を起動し、結果を受領する。
+`agent-toolkit:external-write-review`の対象となる文面を投稿するエージェントが、本書に従って投稿前レビュー担当を起動し、結果を受領する。
 レビュー担当の観点と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.subagent.md`が定める。
 
 ## 起動
@@ -23,7 +23,7 @@
 - `投稿先と目的`: 投稿先と投稿の目的
 - `根拠の所在`: 文面が根拠とする差分・観測結果・関連ファイルの所在
 
-委譲先として投稿する主体も、同じ担当内の独立した確認として本書に従って起動する。
+委譲先として投稿するエージェントも、同じ担当内の独立した確認として本書に従って起動する。
 
 ## 受領
 
