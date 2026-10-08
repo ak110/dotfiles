@@ -254,6 +254,15 @@ atk wi process-loop
 dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk wi process-loop --worktree[=NAME]`を指定する。
 `NAME`を省略すると`process-loop`を使い、dotfilesリポジトリではオプションを指定しなくても自動的にworktreeを使う。
 
+CI失敗だけを1回確認してAWIへ投入する場合は、エージェントが次のコマンドを呼べる。対象を省略すると現在の作業ツリーを使う。
+
+```bash
+atk wi check-alerts --target-repo /home/user/repo
+```
+
+常駐監視と同じCI収集・重複除外・保存を使い、実行後に終了する。投入0件も成功なら終了コード0、全体または一部の取得失敗は投入件数と取得不能の理由を分けて示し、終了コード1となる。
+process-loop、process-wiとDependabot監査は起動しない。呼び出す時機は各環境が選び、process-wiの1回の実行への定期組込みはこのコマンドが行わない。
+
 ### まとめ処理型
 
 AWIが常時発生しないリポジトリでは、常駐実行を起動せず、数件のAWIがたまった時点で

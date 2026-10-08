@@ -1,4 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk wi process-loop`アラート自動検出補助モジュール。
+"""単発コマンドと`atk wi process-loop`が共有するCI失敗監視。
 
 対象リポジトリのCI失敗（GitHub Actions run失敗・GitLabパイプライン失敗）を収集し、
 AWIへの重複投入を防いだうえで`add_entries`へ引き渡す本文を組み立てる。
@@ -11,6 +11,7 @@ GitLab Ultimateプラン限定機能のため対象外とする。
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import datetime
 import json
@@ -19,12 +20,13 @@ import urllib.parse
 from collections.abc import Callable
 from typing import Any
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
 from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import repo as _wi_repo
 from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_AWI
 from agent_toolkit._atk.wi.formatters import parse_alert_keys
 from agent_toolkit._common import json_command as _json_command
-from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
 
 _GH_SUBPROCESS_TIMEOUT = 30.0
@@ -63,6 +65,14 @@ class Alert:
     title: str
     body: str
     completion: str
+
+
+@dataclasses.dataclass(frozen=True)
+class AlertCheckResult:
+    """保存できたAWI件数と、収集できなかった種別の理由を分けて返す。"""
+
+    submitted: int
+    failures: tuple[str, ...]
 
 
 def _now_iso() -> str:
@@ -288,6 +298,8 @@ def collect_new_alerts(
     run_list_fn: GhRunListFn = _run_gh_run_list,
     ci_list_fn: GlabCiListFn = _run_glab_ci_list,
     glab_api_fn: GlabApiFn = _run_glab_api,
+    failures: list[str] | None = None,
+    next_action: str = ALERT_FAILURE_NEXT_ACTION,
 ) -> list[Alert]:
     """収集に失敗した種別を警告し、未投入の新規アラート一覧を返す。
 
@@ -297,24 +309,30 @@ def collect_new_alerts(
     resolved_forge = forge if forge != "auto" else ("github" if host == "github.com" else "gitlab")
     repo_path = repo_id.split("/", 1)[1] if "/" in repo_id else repo_id
     candidates: list[Alert] = []
+
+    def report_failure(message: str) -> None:
+        if failures is not None:
+            failures.append(message)
+        _outcome.report_warning(message, next_action=next_action)
+
+    if branch is None:
+        report_failure("CI監視対象ブランチを解決できません（追跡先とorigin/HEADが無い）")
     if resolved_forge == "github":
         if branch is not None:
             try:
                 candidates.extend(collect_github_ci_failures(repo_path, branch, run_list_fn=run_list_fn))
             except AlertCollectError as exc:
-                _next_action.report(f"警告: GitHub CI状態の取得に失敗しました: {exc}", next_action=ALERT_FAILURE_NEXT_ACTION)
+                report_failure(f"GitHub CI状態の取得に失敗しました: {exc}")
     else:
         if branch is not None:
             try:
                 candidates.extend(collect_gitlab_ci_failures(repo_path, branch, ci_list_fn=ci_list_fn))
             except AlertCollectError as exc:
-                _next_action.report(f"警告: GitLab CI状態の取得に失敗しました: {exc}", next_action=ALERT_FAILURE_NEXT_ACTION)
+                report_failure(f"GitLab CI状態の取得に失敗しました: {exc}")
         try:
             candidates.extend(collect_gitlab_schedule_failures(host, repo_path, api_fn=glab_api_fn))
         except AlertCollectError as exc:
-            _next_action.report(
-                f"警告: GitLabのPipeline Scheduleの状態の取得に失敗しました: {exc}", next_action=ALERT_FAILURE_NEXT_ACTION
-            )
+            report_failure(f"GitLabのPipeline Scheduleの状態の取得に失敗しました: {exc}")
     existing = existing_alert_keys(private_notes, repo_id)
     alerts: list[Alert] = []
     for alert in candidates:
@@ -336,8 +354,10 @@ def check_and_submit_alerts(
     run_list_fn: GhRunListFn = _run_gh_run_list,
     ci_list_fn: GlabCiListFn = _run_glab_ci_list,
     glab_api_fn: GlabApiFn = _run_glab_api,
-) -> int:
-    """アラートを収集・重複除外し、新規分をAWIへ投入した件数を返す。"""
+    next_action: str = ALERT_FAILURE_NEXT_ACTION,
+) -> AlertCheckResult:
+    """共有の収集・重複除外・AWI保存を実行し、保存件数と取得失敗を返す。"""
+    failures: list[str] = []
     alerts = collect_new_alerts(
         repo_id,
         resolve_target_branch(local_path, git_fn=git_fn),
@@ -346,9 +366,11 @@ def check_and_submit_alerts(
         run_list_fn=run_list_fn,
         ci_list_fn=ci_list_fn,
         glab_api_fn=glab_api_fn,
+        failures=failures,
+        next_action=next_action,
     )
     if not alerts:
-        return 0
+        return AlertCheckResult(0, tuple(failures))
     generated = _add.add_entries(
         private_notes,
         messages=[_build_alert_message(repo_id, alert) for alert in alerts],
@@ -356,4 +378,21 @@ def check_and_submit_alerts(
         source="alert-monitor",
         now=now,
     )
-    return len(generated)
+    return AlertCheckResult(len(generated), tuple(failures))
+
+
+def cmd_check_alerts(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> int:
+    """ローカル対象のCI監視を1回実行して終了する。"""
+    local_path = _wi_repo.resolve_local_worktree(args.target_repo)
+    repo_id = _wi_repo.resolve_repo_id(None, cwd=local_path)
+    next_action = (
+        "診断に示した対象・ブランチ設定と`gh auth status`（GitLabは`glab auth status`）を確認し、"
+        "`atk wi check-alerts`を再実行する"
+    )
+    result = check_and_submit_alerts(private_notes, repo_id, local_path, forge=args.forge, now=now, next_action=next_action)
+    message = f"CI失敗監視: 対象={repo_id} AWI投入={result.submitted}件"
+    if result.failures:
+        _outcome.report_failure(f"{message} 取得不能={len(result.failures)}種別", next_action=next_action)
+        return 1
+    _outcome.report_success(message)
+    return 0

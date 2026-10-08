@@ -143,6 +143,11 @@ HELP: dict[str, dict[str, str]] = {
         "description": "目的: private-notesをupstreamと明示的に同期する。\n利用場面: キュー本文を表示せず、後続操作の前に最新状態だけを取得するとき。\n対象と出力: private-notesへfast-forward同期と既存のlegacy予約移行を適用し、成功時は同期対象の絶対パスを1行だけ表示する。キュー項目の本文は表示しない。\n前提: private-notesが有効なGitリポジトリで、upstreamとfast-forward同期できること。\n復元・後始末: fast-forwardで取得した履歴は通常のGit履歴として残る。失敗時は既存のGit回復手順に従う。",
         "epilog": "実行例:\n\n  atk wi pull",
     },
+    "atk wi check-alerts": {
+        "summary": "CI失敗を1回確認して新規AWIを投入する",
+        "description": "目的: 常駐監視と共有するCI収集・重複除外・本文生成・保存を1回実行する。\n利用場面: エージェントがprocess-wiの実行途中などにCI失敗を確認するとき。\n対象と出力: --target-repoのローカル作業ツリー、未指定時は現在の作業ツリーを対象とする。GitHubのワークフローとイベント別の直近完了run、GitLabの最新pipelineと有効なPipeline Scheduleを確認し、未投入の失敗をsource=alert-monitor・alert_keys付きのAWIへ保存する。成功行へ投入件数を書き、0件を含め終了コード0で終わる。全体・一部の取得失敗は理由と投入件数を分けて示し、終了コード1で終わる。対象・引数の不正は終了コード2、保存失敗は非0で終わる。\n前提: private-notes、対象のorigin、追跡先またはorigin/HEADとforgeの認証が有効であること。\n復元・後始末: 実行後に終了する。保存したAWIは通常のキュー操作で扱う。process-loop・process-wi・Dependabot監査は起動せず、呼び出す時機は各環境が選ぶ。",
+        "epilog": "実行例:\n\n  atk wi check-alerts\n  atk wi check-alerts --target-repo /home/user/repo --forge github",
+    },
     "atk wi process-loop": {
         "summary": "AWIを消化し続けるprocess-loopを開始する",
         "description": "目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行するprocess-loopを開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_model設定で決まるオーケストレーターを起動する。待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せずprocess-wiを1回実行させ、その実行の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、初回のセッション起動をその再開へ差し替える。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。`--auto-resume`と`--resume`は同時指定できない。\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",

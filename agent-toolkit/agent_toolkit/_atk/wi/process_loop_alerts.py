@@ -42,7 +42,7 @@ def check_process_loop_alerts(
             local_path,
             forge=args.alert_forge,
             now=datetime.datetime.now(),
-        )
+        ).submitted
     except (_alerts.AlertCollectError, subprocess.CalledProcessError) as exc:
         _next_action.report(
             f"警告: アラート確認処理に失敗しました: {exc}",
