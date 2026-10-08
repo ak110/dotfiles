@@ -34,9 +34,9 @@ class TestAlertMonitoring:
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_k: 0)
         calls: list[str] = []
 
-        def fake_check(*_args: object, **_kwargs: object) -> int:
+        def fake_check(*_args: object, **_kwargs: object) -> _wi_alerts.AlertCheckResult:
             calls.append("checked")
-            return 0
+            return _wi_alerts.AlertCheckResult(0, ())
 
         monkeypatch.setattr(  # pylint: disable=protected-access
             _wi_alerts,  # pylint: disable=protected-access
@@ -93,7 +93,7 @@ class TestAlertMonitoring:
         monkeypatch.setattr(  # pylint: disable=protected-access
             _wi_alerts,  # pylint: disable=protected-access
             "check_and_submit_alerts",
-            lambda *_a, **_k: 1,
+            lambda *_a, **_k: _wi_alerts.AlertCheckResult(1, ()),
         )
 
         def fail_wait(*_args: object, **_kwargs: object) -> None:
@@ -115,9 +115,9 @@ class TestAlertMonitoring:
         monkeypatch.setattr(time, "monotonic", lambda: next(times))
         calls: list[str] = []
 
-        def fake_check(*_args: object, **_kwargs: object) -> int:
+        def fake_check(*_args: object, **_kwargs: object) -> _wi_alerts.AlertCheckResult:
             calls.append("checked")
-            return 0
+            return _wi_alerts.AlertCheckResult(0, ())
 
         monkeypatch.setattr(  # pylint: disable=protected-access
             _wi_alerts,  # pylint: disable=protected-access
@@ -163,9 +163,9 @@ class TestAlertMonitoring:
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_k: next(counts))
         calls: list[str] = []
 
-        def fake_check(*_args: object, **_kwargs: object) -> int:
+        def fake_check(*_args: object, **_kwargs: object) -> _wi_alerts.AlertCheckResult:
             calls.append("checked")
-            return 1
+            return _wi_alerts.AlertCheckResult(1, ())
 
         monkeypatch.setattr(  # pylint: disable=protected-access
             _wi_alerts,  # pylint: disable=protected-access
@@ -207,9 +207,9 @@ class TestAlertMonitoring:
         monkeypatch.setattr(time, "monotonic", lambda: 1000.0)
         calls: list[str] = []
 
-        def fake_check(*_args: object, **_kwargs: object) -> int:
+        def fake_check(*_args: object, **_kwargs: object) -> _wi_alerts.AlertCheckResult:
             calls.append("checked")
-            return 0
+            return _wi_alerts.AlertCheckResult(0, ())
 
         monkeypatch.setattr(  # pylint: disable=protected-access
             _wi_alerts,  # pylint: disable=protected-access
@@ -275,7 +275,7 @@ class TestAlertMonitoring:
         monkeypatch.setattr(  # pylint: disable=protected-access
             _wi_alerts,  # pylint: disable=protected-access
             "check_and_submit_alerts",
-            lambda *_a, **_k: 0,
+            lambda *_a, **_k: _wi_alerts.AlertCheckResult(0, ()),
         )
         monkeypatch.setattr(  # pylint: disable=protected-access
             _review_audit_module,  # pylint: disable=protected-access

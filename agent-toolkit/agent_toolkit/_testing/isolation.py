@@ -14,7 +14,7 @@
 - 開発セッションの環境変数（エージェント環境の判定、委譲先とprocess-loopの標識）
 - PATH上の開発機専用のエージェントCLI（`codex`・`claude`・`agy`）
 
-パッケージを取得して起動するツール（pnpmの`dlx`、corepackなど）を実際に動かすテストは、
+パッケージを取得して起動するツール（uv、pnpmの`dlx`、corepackなど）を実際に動かすテストは、
 `share_package_caches`で取得物の保存先だけをホストと共有する。ホームと設定ディレクトリを隔離したままだと、
 テストのたびに空の保存先へ取得し直し、1件あたり数秒から十数秒かかる。
 
@@ -22,6 +22,7 @@
 fixtureの名前が同じであるため、テストに近い側の定義だけが適用される。
 """
 
+import functools
 import ntpath
 import os
 import pathlib
@@ -91,11 +92,11 @@ _HOST_RESTORED_ENVIRONMENT_NAMES = (*HOME_ENVIRONMENT_NAMES, *CONFIG_DIRECTORY_E
 _HOST_ENVIRON = {
     name: host_value for name in _HOST_RESTORED_ENVIRONMENT_NAMES if (host_value := os.environ.get(name)) is not None
 }
-# pnpmのキャッシュ・ストアとcorepackの保存先を指定する環境変数。`share_package_caches`がホストの位置へ向ける。
+# 取得物の保存先を指定する環境変数。`share_package_caches`がホストの位置へ向ける。
 PACKAGE_CACHE_ENVIRONMENT_NAMES = ("npm_config_cache_dir", "npm_config_store_dir", "COREPACK_HOME")
 _HOST_PACKAGE_CACHE_ENVIRON = {
     name: host_value
-    for name in (*PACKAGE_CACHE_ENVIRONMENT_NAMES, "PNPM_HOME")
+    for name in (*PACKAGE_CACHE_ENVIRONMENT_NAMES, "PNPM_HOME", "UV_CACHE_DIR")
     if (host_value := os.environ.get(name)) is not None
 }
 
@@ -233,14 +234,32 @@ def package_cache_environ(environ: Mapping[str, str], platform: str) -> dict[str
     return {name: environ.get(name) or derived[name] for name in PACKAGE_CACHE_ENVIRONMENT_NAMES}
 
 
+@functools.cache
+def host_package_cache_environ() -> dict[str, str]:
+    """隔離前に解決した取得物の保存先を、明示利用する試験だけへ渡す。
+
+    uvのOS別の規則はuv自身へ委ねる。解決は利用時にプロセスで1回だけ行い、
+    キャッシュを使わない試験の収集へ外部コマンドの費用を加えない。
+    """
+    environ = dict(os.environ)
+    for name in (*_HOST_RESTORED_ENVIRONMENT_NAMES, "UV_CACHE_DIR"):
+        environ.pop(name, None)
+    environ.update(_HOST_ENVIRON)
+    environ.update(_HOST_PACKAGE_CACHE_ENVIRON)
+    uv_cache = subprocess.run(
+        ["uv", "cache", "dir"], capture_output=True, text=True, encoding="utf-8", errors="replace", env=environ, check=True
+    ).stdout.strip()
+    return {**package_cache_environ(environ, sys.platform), "UV_CACHE_DIR": uv_cache}
+
+
 @pytest.fixture(name="share_package_caches")
 def share_package_caches(monkeypatch: pytest.MonkeyPatch) -> None:
-    """pnpmとcorepackの取得物の保存先だけを、隔離前のホストの位置へ向ける。
+    """uv、pnpm、corepackの取得物の保存先だけを、隔離前のホストの位置へ向ける。
 
     ホーム、設定ディレクトリ、`XDG_CACHE_HOME`は隔離したまま保ち、pyfltrの実行記録などはテストの一時ディレクトリへ残る。
     設定した環境変数はテストが起動する子プロセスへも継承される。
     """
-    for name, value in package_cache_environ({**_HOST_ENVIRON, **_HOST_PACKAGE_CACHE_ENVIRON}, sys.platform).items():
+    for name, value in host_package_cache_environ().items():
         monkeypatch.setenv(name, value)
 
 

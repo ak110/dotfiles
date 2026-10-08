@@ -17,6 +17,7 @@ from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
+from agent_toolkit._atk.wi import alerts as _alerts
 from agent_toolkit._atk.wi import batch as _batch
 from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import filenames as _wi_filenames
@@ -72,6 +73,7 @@ _uwi_filename_completer = _wi_filenames.make_filename_completer(_wi_constants.WI
 _WI_SYNC_MUTATIONS = frozenset(
     (
         "add",
+        "check-alerts",
         "start-processing",
         "hold",
         "unhold",
@@ -788,6 +790,20 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
     """`atk wi process-loop`サブコマンドを登録する。"""
+    check_alerts = _atk_help.add_command(sub, "check-alerts", **_atk_help.HELP["atk wi check-alerts"])
+    check_alerts.add_argument(
+        "--target-repo",
+        metavar="LOCAL_WORKTREE",
+        default=None,
+        help="CI監視対象のローカルGit作業ツリー。省略時は現在の作業ツリーを使う。",
+    )
+    check_alerts.set_defaults(_target_repo_resolved_by_consumer=True)
+    check_alerts.add_argument(
+        "--forge",
+        choices=("auto", "github", "gitlab"),
+        default="auto",
+        help="CI取得先。autoはgithub.comならGitHub、それ以外はGitLabを使う。",
+    )
     loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
     loop.add_argument(
         "--target-repo",
@@ -1107,6 +1123,7 @@ def dispatch(args: argparse.Namespace, *, home: pathlib.Path, now: datetime.date
         "commit": lambda: _mutation_targets.cmd_commit(private_notes),
         "pull": lambda: _pull_command(private_notes),
         "process-loop": lambda: _process_loop.cmd_process_loop(args, private_notes),
+        "check-alerts": lambda: _alerts.cmd_check_alerts(args, private_notes, now),
     }
     try:
         exit_code = commands[sub]() or 0

@@ -300,26 +300,30 @@ def test_session_start_injects_process_loop_instruction(
     assert "既存のテストコードを先に読む" not in delegated_output
 
 
-def test_session_start_temp_notice_names_tmp_and_delegation(
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("delegated", [False, True])
+def test_session_start_temp_notice_points_to_registered_directory(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    host: str,
+    delegated: bool,
 ) -> None:
-    """SessionStartの領域通知は、`/tmp`を使わずこの領域へ置く行動と、委譲先へ所在を渡す行動を示す。
-
-    所在だけの通知では一時ファイルの置き場所を選ぶ時点で想起されず、`/tmp`へ置いた一時ファイルの削除が
-    権限判定に拒否される事象が起きた。
-    """
+    """両ホストのメイン・委譲先へ、実際に登録したセッションの領域を通知する。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
 
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-2"}))
+    rules_context.main(
+        json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-2"}), host=host
+    )
     output = _output(capsys)
     entries = managed_temp.list_managed_temp(session_id="session-2")
 
-    assert f"このセッションのmanaged-temp: {entries[0]['path']}" in output
-    assert "一時ファイルは`/tmp`ではなくこの領域の直下へ置く" in output
-    assert "サブエージェントへ委ねる場合は、この絶対パスを委譲プロンプトへ渡す" in output
+    assert len(entries) == 1
+    assert str(entries[0]["path"]) in output
+    assert pathlib.Path(entries[0]["path"]).is_dir()
 
 
 def test_subagent_start_notifies_existing_session_temp_without_creating(
@@ -346,7 +350,6 @@ def test_subagent_start_notifies_existing_session_temp_without_creating(
     output = _output(capsys)
 
     assert f"このセッションのmanaged-temp: {session_root}" in output
-    assert "一時ファイルは`/tmp`ではなくこの領域の直下へ置く" in output
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
 
 
@@ -380,7 +383,6 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
         path = parent / f"agent-{agent}"
         assert str(path) in output
         assert str(parent) in output
-        assert "委譲元が渡したファイルの読み書き" in output
         assert path.is_dir()
         paths.append(path)
     assert paths[0] == paths[2]

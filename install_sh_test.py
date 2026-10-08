@@ -35,6 +35,7 @@ INSTALL_SH = REPO_ROOT / "install.sh"
 
 @pytest.mark.skipif(shutil.which("chezmoi") is None, reason="chezmoi未インストール")
 @pytest.mark.timeout(300)
+@pytest.mark.usefixtures("share_package_caches")
 def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     """install.sh が chezmoi でルールを ~/.claude/rules/ に配置する。"""
     fake_home = tmp_path / "home"
@@ -55,7 +56,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     local_bin.mkdir(parents=True)
     isolated_path = f"{local_bin}:/usr/bin:/bin:/usr/local/bin"
     uv_bin = _usable_uv_binary(fake_home, isolated_path)
-    uv_cache_dir = subprocess.run([str(uv_bin), "cache", "dir"], check=True, capture_output=True, text=True).stdout.strip()
+    uv_cache_dir = os.environ["UV_CACHE_DIR"]
     assert pathlib.Path(uv_cache_dir).is_absolute()
     shutil.copy2(chezmoi_bin, local_bin / "chezmoi")
     shutil.copy2(uv_bin, local_bin / "uv")

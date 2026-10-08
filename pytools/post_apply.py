@@ -236,11 +236,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("profile_default"), datetime.date(2026, 8, 14), empty_dir_only=True),
     ],
     Path.home() / "bin": [
-        # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、
-        # .chezmoi-source/bin/ の配布対象外とする。
-        cleanup_paths.RemovedPath(Path("check-cmd-encoding"), datetime.date(2026, 4, 9)),
-        cleanup_paths.RemovedPath(Path("check-templates"), datetime.date(2026, 4, 9)),
-        cleanup_paths.RemovedPath(Path("run-psscriptanalyzer"), datetime.date(2026, 4, 9)),
         # bin/ はリポジトリ直下に置き、~/dotfiles/bin を PATH に通す方式を採用する。
         # 旧配布物 (~/bin/ 配下) を削除する。Linux 用と Windows 用 (.cmd) を共通キーで列挙する。
         cleanup_paths.RemovedPath(Path("c"), datetime.date(2026, 4, 24)),

@@ -257,10 +257,11 @@ class TestConfigGet:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == f"{configured}\n"
 
-    def test_get_orchestrate_model_default(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """未設定のオーケストレーター設定はcodex-balancedの反転候補列を返す。"""
+    @pytest.mark.parametrize("key", ["orchestrate_model", "medium_tier_model"])
+    def test_get_reversed_model_default(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str) -> None:
+        """未設定のorchestrateとmediumはcodex-balancedのclaude優先候補列を返す。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "get", "orchestrate_model"], home=tmp_path)
+            atk.main(["config", "get", key], home=tmp_path)
 
         assert exc_info.value.code == 0
         candidates = config_module.parse_stage_model_candidates(capsys.readouterr().out.strip())
@@ -282,7 +283,7 @@ class TestConfigGet:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "low_tier_model", "medium_tier_model"], home=tmp_path)
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == f"{saved}\ncodex:terra/medium,claude:sonnet[1m]/medium\n"
+        assert capsys.readouterr().out == f"{saved}\nclaude:sonnet[1m]/medium,codex:terra/medium\n"
 
     def test_family_setting_tracks_new_model_without_rewriting_saved_value(
         self,
@@ -486,7 +487,7 @@ class TestConfigApplyPreset:
     @pytest.mark.parametrize(
         ("preset", "primary_engine", "reversed_keys"),
         [
-            ("codex-balanced", "codex", {"orchestrate_model"}),
+            ("codex-balanced", "codex", {"orchestrate_model", "medium_tier_model"}),
             ("codex-primary", "codex", set()),
             ("claude-balanced", "claude", {"medium_tier_model", "low_tier_model"}),
             ("claude-primary", "claude", set()),

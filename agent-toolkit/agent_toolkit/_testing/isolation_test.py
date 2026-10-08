@@ -172,3 +172,44 @@ def test_commit_hook_context_does_not_escape_nested_test_repository(tmp_path: pa
 def test_package_cache_environ_follows_tool_rules(platform: str, environ: dict[str, str], expected: dict[str, str]) -> None:
     """pnpmの公式資料とcorepackの実装が定める保存先の規則どおりに、ホストの位置を求める。"""
     assert isolation.package_cache_environ(environ, platform) == expected
+
+
+@pytest.mark.parametrize("explicit", [False, True], ids=["uv-default", "uv-explicit"])
+def test_uv_cache_is_resolved_before_state_isolation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, host_environ, explicit: bool
+) -> None:
+    """uv自身の解決結果を使い、隔離したXDGキャッシュ先へ取得物を向けない。"""
+    captured = {name: value for name, value in host_environ().items() if name in isolation.PACKAGE_CACHE_ENVIRONMENT_NAMES}
+    captured.pop("UV_CACHE_DIR", None)
+    if explicit:
+        captured["UV_CACHE_DIR"] = str(tmp_path / "download-cache")
+    monkeypatch.setattr(isolation, "_HOST_PACKAGE_CACHE_ENVIRON", captured)
+    environ = host_environ()
+    environ.pop("UV_CACHE_DIR", None)
+    environ.update(captured)
+    expected = subprocess.run(["uv", "cache", "dir"], env=environ, capture_output=True, text=True, check=True).stdout.strip()
+    isolation.host_package_cache_environ.cache_clear()
+    try:
+        assert isolation.host_package_cache_environ()["UV_CACHE_DIR"] == expected
+        assert expected != str(pathlib.Path(os.environ["XDG_CACHE_HOME"]) / "uv")
+        isolation.assert_development_state_isolated(tmp_path)
+    finally:
+        isolation.host_package_cache_environ.cache_clear()
+
+
+@pytest.mark.usefixtures("share_package_caches")
+def test_shared_cache_child_keeps_development_state_isolated(tmp_path: pathlib.Path) -> None:
+    """実子プロセスへ取得物だけが渡り、設定・private-notes・出力状態は隔離される。"""
+    result = subprocess.run(
+        [sys.executable, "-c", "import json, os; print(json.dumps(dict(os.environ)))"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    observed = json.loads(result.stdout)
+    assert observed["UV_CACHE_DIR"] == isolation.host_package_cache_environ()["UV_CACHE_DIR"]
+    assert pathlib.Path(observed["HOME"]).is_relative_to(tmp_path)
+    assert pathlib.Path(observed["XDG_CONFIG_HOME"]).is_relative_to(tmp_path)
+    assert pathlib.Path(observed["XDG_CACHE_HOME"]).is_relative_to(tmp_path)
+    assert pathlib.Path(observed["AGENT_TOOLKIT_PRIVATE_NOTES"]).is_relative_to(tmp_path)
+    isolation.assert_development_state_isolated(tmp_path)

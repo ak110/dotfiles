@@ -1,15 +1,23 @@
 """`alerts`モジュールのテスト。公開API経由でDI（依存性注入）駆動する。"""
 
+import argparse
 import contextlib
 import datetime
 import json
 import pathlib
 import subprocess
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
-from agent_toolkit._atk.wi import alerts  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit import atk
+from agent_toolkit._atk.wi import (
+    alerts,  # noqa: E402  # pylint: disable=wrong-import-position
+    process_loop_alerts,
+)
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import json_command as _json_command  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -104,7 +112,7 @@ def test_check_and_submit_alerts_submits_one_awi_per_pipeline(monkeypatch: pytes
     notes = tmp_path / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
 
-    def submit() -> int:
+    def submit() -> alerts.AlertCheckResult:
         return alerts.check_and_submit_alerts(
             notes,
             "gitlab.example.com/group/sub/repo",
@@ -116,8 +124,8 @@ def test_check_and_submit_alerts_submits_one_awi_per_pipeline(monkeypatch: pytes
             glab_api_fn=_gitlab_schedule_api([]),
         )
 
-    assert submit() == 1
-    assert submit() == 0
+    assert submit().submitted == 1
+    assert submit().submitted == 0
     assert list(_saved_awis_by_heading(notes)) == ["# パイプライン437813失敗"]
 
 
@@ -247,7 +255,7 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
         git_fn=lambda _p, args: "refs/remotes/origin/main" if args == ["symbolic-ref", "refs/remotes/origin/HEAD"] else None,
         run_list_fn=lambda _r, _b: runs,
     )
-    assert count == 1
+    assert count.submitted == 1
     content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
     assert "alert_keys: github-run:21" in content
     assert "source: alert-monitor" in content
@@ -294,8 +302,8 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
         glab_api_fn=lambda _host, _endpoint: [],
     )
 
-    assert github_count == 1
-    assert gitlab_count == 1
+    assert github_count.submitted == 1
+    assert gitlab_count.submitted == 1
     awis = _saved_awis_by_heading(notes)
     workflow_completion = (
         "## 完成条件\n\n対象ワークフロー`CI`の失敗が解消し、ブランチ`main`でそのワークフローが成功する。"
@@ -329,7 +337,7 @@ def test_check_and_submit_alerts_returns_zero_when_empty(monkeypatch: pytest.Mon
         now=datetime.datetime(2026, 1, 1),
         git_fn=lambda _p, _a: None,
     )
-    assert count == 0
+    assert count.submitted == 0
     assert not calls
 
 
@@ -397,3 +405,211 @@ def test_collect_new_alerts_keeps_non_utf8_stderr_as_bytes_notation(
 
     assert not alerts.collect_new_alerts("github.com/owner/repo", "main", tmp_path, forge="github")
     assert "\\x81" in capsys.readouterr().err
+
+
+def _prepare_alert_cli(
+    monkeypatch: pytest.MonkeyPatch, root: pathlib.Path, *, forge: str = "github", branch: bool = True
+) -> tuple[pathlib.Path, pathlib.Path]:
+    """実Git対象と保存領域を作成し、private-notesの外部同期だけを隔離する。"""
+    repo = root / "repo"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+    host = "github.com" if forge == "github" else "gitlab.example.com"
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", f"https://{host}/owner/repo.git"], check=True)
+    if branch:
+        subprocess.run(
+            ["git", "-C", str(repo), "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], check=True
+        )
+    notes = root / "private-notes"
+    _prepare_alert_submission(monkeypatch, notes)
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(alerts, "_now_iso", lambda: "2026-01-01T00:00:00+00:00")
+    return repo, notes
+
+
+def _forge_responses(monkeypatch: pytest.MonkeyPatch, response: Callable[[list[str]], object], calls: list[list[str]]) -> None:
+    """forgeの公開コマンドだけを差し替え、対象解決のGit操作は実行する。"""
+    real_run = subprocess.run
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+        if command[0] not in {"gh", "glab"}:
+            return real_run(command, check=kwargs.pop("check", False), **kwargs)
+        calls.append(command)
+        payload = response(command)
+        if isinstance(payload, Exception):
+            raise payload
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload).encode(), stderr=b"")
+
+    monkeypatch.setattr(_json_command.subprocess, "run", run)
+
+
+def _invoke_alert_cli(repo: pathlib.Path | None = None, *, forge: str = "auto") -> int:
+    """公開CLIを呼び、プロセスの終了値を検収する。"""
+    argv = ["wi", "check-alerts", "--forge", forge]
+    if repo is not None:
+        argv.extend(("--target-repo", str(repo)))
+    with pytest.raises(SystemExit) as result:
+        atk.main(argv, now=datetime.datetime(2026, 1, 1))
+    assert isinstance(result.value.code, int)
+    return result.value.code
+
+
+def _invoke_loop_alerts(repo: pathlib.Path, notes: pathlib.Path, forge: str) -> int:
+    """常駐側の公開監視処理を呼び、process-wiの1回の実行とDependabot監査を起動しない。"""
+    args = argparse.Namespace(no_alerts=False, alert_interval=0, alert_forge=forge)
+    host = "github.com" if forge == "github" else "gitlab.example.com"
+    return process_loop_alerts.check_process_loop_alerts(args, notes, f"{host}/owner/repo", repo, None, count_dependabot=False)[
+        1
+    ]
+
+
+@pytest.mark.parametrize("explicit_target", [False, True], ids=["cwd", "target-worktree"])
+def test_check_alerts_cli_submits_and_exits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], explicit_target: bool
+) -> None:
+    """単発CLIは対象を解決し、CI失敗を保存して終了する。"""
+    repo, notes = _prepare_alert_cli(monkeypatch, tmp_path)
+    monkeypatch.chdir(repo if not explicit_target else tmp_path)
+    calls: list[list[str]] = []
+    _forge_responses(
+        monkeypatch,
+        lambda _command: [
+            {"workflowName": "CI", "event": "push", "status": "completed", "conclusion": "failure", "databaseId": 21}
+        ],
+        calls,
+    )
+    assert _invoke_alert_cli(repo if explicit_target else None) == 0
+    output = capsys.readouterr()
+    assert "成功: CI失敗監視: 対象=github.com/owner/repo AWI投入=1件" in output.out
+    assert output.err == ""
+    assert len(calls) == 1 and calls[0][:3] == ["gh", "run", "list"]
+    content = next(iter(_saved_awis_by_heading(notes).values()))
+    assert "source: alert-monitor" in content and "alert_keys: github-run:21" in content
+
+
+def test_check_alerts_cli_and_loop_deduplicate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """全保存状態を除外し、別対象のキーを残して、単発と常駐の反復で二重保存しない。"""
+    repo, notes = _prepare_alert_cli(monkeypatch, tmp_path)
+    runs = []
+    for number, state in enumerate(WI_STATES, start=1):
+        directory = notes / state
+        directory.mkdir(exist_ok=True)
+        (directory / f"saved-{number}.md").write_text(
+            f"---\ntarget_repo: github.com/owner/repo\ntype: awi\nalert_keys: github-run:{number}\n---\n\n# 保存済み\n",
+            encoding="utf-8",
+        )
+        runs.append({"workflowName": f"CI-{number}", "status": "completed", "conclusion": "failure", "databaseId": number})
+    (notes / "adopted" / "other.md").write_text(
+        "---\ntarget_repo: github.com/other/repo\ntype: awi\nalert_keys: github-run:99\n---\n\n# 別対象\n", encoding="utf-8"
+    )
+    runs.append({"workflowName": "新規CI", "status": "completed", "conclusion": "failure", "databaseId": 99})
+    _forge_responses(monkeypatch, lambda _command: runs, [])
+    assert _invoke_alert_cli(repo) == 0
+    assert "AWI投入=1件" in capsys.readouterr().out
+    assert _invoke_alert_cli(repo) == 0
+    assert "AWI投入=0件" in capsys.readouterr().out
+    assert _invoke_loop_alerts(repo, notes, "github") == 0
+    assert alerts.existing_alert_keys(notes, "github.com/owner/repo") == {
+        *(f"github-run:{number}" for number in range(1, len(WI_STATES) + 1)),
+        "github-run:99",
+    }
+
+
+@pytest.mark.parametrize("case", ["github-push", "github-schedule", "gitlab-normal", "gitlab-schedule", "gitlab-disabled"])
+def test_check_alerts_cli_matches_loop_by_forge(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, case: str) -> None:
+    """各収集種別で、単発と常駐が同じ本文・出所・キーを保存する。"""
+    forge = "github" if case.startswith("github") else "gitlab"
+
+    def response(command: list[str]) -> object:
+        if forge == "github":
+            return [
+                {
+                    "workflowName": "CI",
+                    "event": case.split("-")[1],
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "databaseId": 21,
+                }
+            ]
+        if command[1:3] == ["ci", "list"]:
+            return [{"id": 22, "status": "failed"}] if case == "gitlab-normal" else []
+        if command[-1].endswith("?per_page=100"):
+            return [{"id": 1, "ref": "main", "active": case == "gitlab-schedule"}]
+        return {"last_pipeline": {"id": 23, "status": "failed", "ref": "main"}}
+
+    repo, notes = _prepare_alert_cli(monkeypatch, tmp_path / "single", forge=forge)
+    _forge_responses(monkeypatch, response, [])
+    assert _invoke_alert_cli(repo) == 0
+    single = _saved_awis_by_heading(notes)
+    # 同じ入力を別保存領域へ渡し、重複除外で本文比較が省かれないようにする。
+    repo, notes = _prepare_alert_cli(monkeypatch, tmp_path / "loop", forge=forge)
+    assert _invoke_loop_alerts(repo, notes, forge) == (0 if case == "gitlab-disabled" else 1)
+    loop = _saved_awis_by_heading(notes)
+
+    # 保存日時は呼び出しごとに異なるが、要求本文・source・keysは同じ生成主体が持つ。
+    def normalize(text):
+        return "\n".join(line for line in text.splitlines() if not line.startswith("created_at:"))
+
+    assert {heading: normalize(text) for heading, text in single.items()} == {
+        heading: normalize(text) for heading, text in loop.items()
+    }
+    assert len(single) == (0 if case == "gitlab-disabled" else 1)
+
+
+@pytest.mark.parametrize("case", ["empty", "github-unavailable", "gitlab-partial", "branch-unresolved", "save-failure"])
+def test_check_alerts_cli_reports_collection_failures(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """正常0件と取得不能を区別し、部分成功の実件数と保存失敗を報告する。"""
+    forge = "gitlab" if case == "gitlab-partial" else "github"
+    repo, notes = _prepare_alert_cli(monkeypatch, tmp_path, forge=forge, branch=case != "branch-unresolved")
+
+    def response(command: list[str]) -> object:
+        if case == "github-unavailable" or (case == "gitlab-partial" and command[1:3] == ["ci", "list"]):
+            return FileNotFoundError(command[0])
+        if case == "save-failure":
+            return [{"workflowName": "CI", "status": "completed", "conclusion": "failure", "databaseId": 21}]
+        if case == "gitlab-partial":
+            if command[-1].endswith("?per_page=100"):
+                return [{"id": 1, "active": True, "ref": "main"}]
+            return {"last_pipeline": {"id": 23, "status": "failed", "ref": "main"}}
+        return []
+
+    _forge_responses(monkeypatch, response, [])
+    if case == "save-failure":
+
+        def failed_pull(*_args: object, **_kwargs: object) -> None:
+            raise subprocess.CalledProcessError(1, ["git", "pull"], stderr="保存先同期失敗")
+
+        monkeypatch.setattr(_wi_sync, "pull", failed_pull)
+    assert _invoke_alert_cli(repo, forge=forge) == (0 if case == "empty" else 1)
+    output = capsys.readouterr()
+    if case == "empty":
+        assert "成功: CI失敗監視:" in output.out and "AWI投入=0件" in output.out
+        assert output.err == ""
+    else:
+        assert "成功: CI失敗監視:" not in output.out
+        if case == "save-failure":
+            assert "Git操作に失敗した" in output.err
+            assert "git" in output.err and "pull" in output.err
+        else:
+            assert f"AWI投入={1 if case == 'gitlab-partial' else 0}件" in output.err
+            assert "次の操作:" in output.err
+            assert ("ブランチを解決できません" if case == "branch-unresolved" else "取得に失敗しました") in output.err
+    assert len(_saved_awis_by_heading(notes)) == (1 if case == "gitlab-partial" else 0)
+
+
+@pytest.mark.parametrize("target", ["https://github.com/owner/repo", "missing", "not-a-repo"])
+def test_check_alerts_cli_rejects_invalid_target(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], target: str
+) -> None:
+    """ローカル対象の不正は収集せず終了コード2となる。"""
+    _repo, notes = _prepare_alert_cli(monkeypatch, tmp_path)
+    if target == "not-a-repo":
+        (tmp_path / target).mkdir()
+    monkeypatch.chdir(tmp_path)
+    assert _invoke_alert_cli(pathlib.Path(target)) == 2
+    assert "失敗:" in capsys.readouterr().err
+    assert not _saved_awis_by_heading(notes)

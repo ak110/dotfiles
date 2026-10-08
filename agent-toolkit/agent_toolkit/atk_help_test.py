@@ -309,3 +309,23 @@ def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
             for option in action.option_strings
         }
         assert expected <= option_strings, command
+
+
+def test_check_alerts_help_exposes_finite_operation_without_saving(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開ヘルプから単発形式へ到達でき、対象解決や保存は発生しない。"""
+    monkeypatch.chdir(tmp_path)
+    before = set(tmp_path.rglob("*"))
+    with pytest.raises(SystemExit) as parent_exit:
+        atk.main(["wi", "--help"])
+    assert parent_exit.value.code == 0
+    assert "check-alerts" in capsys.readouterr().out
+    with pytest.raises(SystemExit) as command_exit:
+        atk.main(["wi", "check-alerts", "--help"])
+    assert command_exit.value.code == 0
+    output = capsys.readouterr()
+    assert "--target-repo LOCAL_WORKTREE" in output.out
+    assert "--forge {auto,github,gitlab}" in output.out
+    assert output.err == ""
+    assert set(tmp_path.rglob("*")) == before
