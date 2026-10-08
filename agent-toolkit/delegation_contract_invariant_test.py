@@ -444,7 +444,8 @@ def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
     assert "後段の分割不能条件と同じ規則で`再開位置`の計画識別を比較" in picker
     assert "同じ計画を持つ既存レーンの識別子と計画識別" in picker
     assert "その既存レーンへの割当を費用比較より先に確定" in addition
-    assert "追記後の全体YAMLへ`atk run-script pick-wi-check --" in addition
+    assert "受領時と同じ統合操作" in addition
+    assert "--output <元の選定結果の出力先ファイル>" in addition
     assert "--body-wi <追加WI名>" in addition
     assert "そのレーンへの割当を分割不能条件として費用比較より先に確定" in lanes
     assert "その計画を別レーンへ割り当てず" in lanes
@@ -475,6 +476,7 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     assert "書込対象" in fields
     assert "公開工程の書込対象" in fields
     receipt = _h2_section(parent, "出力の受領")
+    receipt = re.sub(r"```.*?```", "", receipt, flags=re.DOTALL)
     generation = _h2_section(picker, "調査とレーン分け")
     assert "`書込対象`" in receipt
     assert "`公開工程の書込対象`" in receipt
