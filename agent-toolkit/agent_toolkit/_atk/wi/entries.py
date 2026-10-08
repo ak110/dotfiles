@@ -90,14 +90,6 @@ def iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None) 
         yield path, entry_repo, text
 
 
-def parse_type(text: str) -> str | None:
-    """本文先頭のfrontmatterから`type`を抽出する。"""
-    parsed = parse_frontmatter(text)
-    if parsed is None:
-        return None
-    return normalized_wi_type(parsed[0].get("type"))
-
-
 def entry_type_of(path: pathlib.Path, text: str) -> str | None:
     """エントリの種別を検証して返す。"""
     parsed = parse_frontmatter(text)

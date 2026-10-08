@@ -4,6 +4,7 @@ import pathlib
 import shutil
 import unicodedata
 
+from agent_toolkit._atk.wi.constants import normalized_wi_type
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 
 _SUMMARY_MAX_LEN = 40
@@ -89,6 +90,14 @@ def parse_target_repo(text: str) -> str:
         return "(unknown)"
     value = parsed[0].get("target_repo")
     return value if isinstance(value, str) and value else "(unknown)"
+
+
+def parse_type(text: str) -> str | None:
+    """本文先頭のfrontmatterから`type`を抽出する。"""
+    parsed = parse_frontmatter(text)
+    if parsed is None:
+        return None
+    return normalized_wi_type(parsed[0].get("type"))
 
 
 def parse_source(text: str) -> str | None:
