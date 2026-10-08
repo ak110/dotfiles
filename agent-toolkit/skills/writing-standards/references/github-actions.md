@@ -4,8 +4,7 @@
 
 ## 基本
 
-- ワークフローファイルは`.github/workflows/*.yaml`（または`.yml`）に配置する
-- `actionlint`でlintする。`yamllint`も併用してフォーマット系の指摘を捕捉する
+- workflowは標準の配置に置き、actionlintとyamllintで検証する
 - 外部actionは`uses: owner/repo@<commit-sha> # vX.Y.Z`形式でcommit SHA pinする
  （tagはmutableなため改ざんリスクがある）。Renovate/pinact等で自動更新する
 
@@ -34,13 +33,11 @@
 
 ## トリガーと最適化
 
-- `on:`では必要なイベントだけを指定する。`paths`／`paths-ignore`で対象を限定し、
-  無関係な変更でCIを起動させない
-- `actions/cache`等でビルド成果物を再利用する。キーは依存ファイルのhashを含める
-- jobの並列度を意識する。独立な処理は別jobに分けて並列化する
+- トリガーは検証が必要なイベントと変更範囲へ対応させる
+- キャッシュは依存関係の変化を識別して再利用する
+- jobは依存関係を明確にし、独立した処理を並列化する
 
 ## 出力とstep間連携
 
-- step間の値受け渡しは`$GITHUB_OUTPUT`を使う（`echo "key=value" >> "$GITHUB_OUTPUT"`）
-  旧来の`set-output`はGitHub Actions側で受け付けない
-- `run:`ブロックの先頭に`set -euo pipefail`を置き、未定義変数や途中失敗を確実に止める
+- step間はGITHUB_OUTPUTの公開契約で値を渡す。廃止されたset-outputは使わない
+- runは未定義変数と途中失敗を検出し、pipefailを有効にする

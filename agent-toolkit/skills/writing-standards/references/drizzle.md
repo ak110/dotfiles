@@ -6,10 +6,8 @@
 
 ## スキーマ定義
 
-- スキーマは`sqliteTable`/`pgTable`等のテーブル定義関数で宣言し、型はコードから推論させる（手書きの型定義との二重管理による乖離を防ぐため）
-- 行の型は`typeof table.$inferSelect`・`typeof table.$inferInsert`で取得する（別途importが不要なため）
-- テーブル数が増える場合はスキーマを複数ファイルに分割し、`drizzle.config.ts`の`schema`にディレクトリを指定する（Drizzle Kitがディレクトリを再帰走査するため、機能単位で分けてもmigration生成は正常に動作する）
-- リレーションは`relations()`ヘルパーで明示的に宣言する（Relational Query APIがリレーション定義を前提とするため）
+- スキーマを型の基準にし、推論で二重管理を避ける。機能境界で分けても設定から全体へ到達できるようにする
+- Relational Query APIが使うリレーションは明示的に定義する
 
 ## マイグレーション運用
 
@@ -19,15 +17,14 @@
 
 ## クエリの書き方
 
-- 単純なCRUD・複雑な集計・動的な条件組み立てはクエリビルダー（`db.select()`/`db.insert()`等）を使う
-- 関連テーブルを含むネスト取得（`with`句）はRelational Query API（`db.query.*`）を使う（ネストしたJOINを1回のSQL文にまとめて発行し、アプリ側でのN+1クエリを回避できるため）
-- 動的な`limit`/`offset`/`where`を伴う頻出クエリは`.prepare()`と`sql.placeholder()`でプリペアドステートメント化する（クエリプランの再利用によりレイテンシを削減できるため）
+- 条件の構成や集計はquery builder、関連を含む取得はRelational Query APIを選び、N+1を避ける
+- 頻出クエリはprepared statementによる実行計画の再利用を検討する
 
 ## トランザクション・接続管理
 
 - 複数テーブルにまたがる更新は`db.transaction(async (tx) => { ... })`でまとめ、`tx`経由で全クエリを実行する（`db`を直接使うと個別コミットになり原子性が保証されないため）
 - 行ロックが必要な更新は、対応する方言（PostgreSQL・MySQL等）では`.for('update')`・`.skipLocked()`等をトランザクション内で使う。SQLite等の行ロック構文を持たない方言では適用外とする
-- コネクションプールはドライバー側（`pg`の`Pool`等）で管理し、Drizzleインスタンスはアプリ起動時に1回だけ生成する（リクエストごとの再接続はレイテンシとコネクション枯渇の原因になるため）
+- 接続プールはドライバーで管理し、Drizzleインスタンスの寿命をアプリケーションへそろえる
 
 ## SQLインジェクション対策
 
@@ -36,5 +33,5 @@
 
 ## drizzle.config.tsの推奨設定
 
-- `schema`・`out`・`dialect`・`dbCredentials`を明示指定する（省略時のデフォルト解決に依存すると環境差異でマイグレーション生成先がずれるため）
+- schema・out・dialect・dbCredentialsを明示し、環境と生成先を確定する
 - `dbCredentials.url`は環境変数経由で注入し、設定ファイルへ直書きしない

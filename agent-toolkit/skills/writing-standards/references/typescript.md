@@ -20,4 +20,4 @@
 
 - テストフレームワークは対象プロジェクトの採用へそろえ、新規に選ぶ場合は`vitest`を使う
 - `vi.mock()`はファイル先頭へホイスティングされるため、動的な値を参照できない
-- 時間依存のテストは`vi.useFakeTimers()`で制御し、`afterEach`で`vi.restoreAllMocks()`と`vi.useRealTimers()`を呼ぶ
+- 時間依存はfake timersなどで決定論的に制御し、タイマーとモックを後始末してテスト間の影響を除く

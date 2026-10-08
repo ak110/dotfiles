@@ -4,40 +4,29 @@
 
 ## 基本
 
-- 冒頭に`# syntax=docker/dockerfile:1`を記述することを基本とする
-  BuildKitの最新安定フロントエンドが使われ、`heredoc`・`--mount`等の機能が確実に有効になる。
-  省くとビルド環境に同梱された版のフロントエンドが使われ、その版が対応しない機能はビルド時の失敗として現れる
+- syntaxでBuildKitの安定フロントエンドを明示し、必要な機能と再現性を保つ
 - ベースイメージは`image:tag@sha256:...`形式でdigest pinする
   RenovateやDependabotで自動更新できるよう`tag`も併記する
-- マルチステージビルドで「変更頻度の低い基盤」と「変更頻度の高い成果物導入」を分離し、
-  キャッシュの再利用効率を上げる
+- マルチステージで基盤と成果物の責務・変更頻度を分ける
 - 非rootユーザーで実行する。`useradd`でユーザー作成後に`USER`命令で切り替える
 
 ## レイヤー設計とキャッシュ
 
-- 関連する処理は1 RUNにまとめてレイヤー数を抑える。ただし変更頻度が異なる処理は分割する
-- BuildKitのキャッシュマウントを活用する
-  - APT: `--mount=type=cache,target=/var/cache/apt,sharing=locked`
-   （Debian系では`/etc/apt/apt.conf.d/docker-clean`の自動削除設定を事前に除去する）
-  - npm/pnpm/uv等のパッケージキャッシュも同様にマウントする
+- レイヤーは変更頻度と処理の関連で分け、BuildKitのキャッシュマウントを再利用する
+- APTキャッシュでは排他共有を使い、Debian系の`/etc/apt/apt.conf.d/docker-clean`による自動削除設定を事前に除去する
 
 ## サプライチェーン保護
 
 - `apt-get install`は`--no-install-recommends`を付けて推奨パッケージを除外する
 - `dependency-management.md`「公開待機設定」の規定をイメージ内のパッケージマネージャーでも有効にし、公開直後のバージョン導入を抑止する。待機期間の値は同節に従う
-  - uv: `~/.config/uv/uv.toml`の`exclude-newer`
-  - pnpm: `pnpm config set minimum-release-age <分単位の値> --global`
 - 自リポジトリのパッケージをイメージビルド内で`uv tool install`等する場合は、`dependency-management.md`「公開待機設定」の対処に従う
 
 ## hadolint
 
-- `hadolint`でlintする。プロジェクト全体で抑止したいルールはDockerfile冒頭に
-  `# hadolint global ignore=DL3007`のように記述する
-- 個別行の抑止は直前行に`# hadolint ignore=DL3008`を置く
+- hadolintで静的解析し、抑制は必要な範囲に限定する
 
 ## 実行時設定
 
 - `ENTRYPOINT`は配列形式（exec form）で書く。文字列形式（shell form）はシグナル伝達などで問題になる
 - `HEALTHCHECK`はサーバー用途で設定する。CLIツール用途のイメージでは設定しない
-- 環境変数でユーザーが上書き可能にする項目（キャッシュディレクトリ、各種閾値等）は
-  Dockerfile冒頭の`ENV`で指定なしの場合に使う値を明示する
+- ユーザーが設定できる項目はENVで初期値を明示する
