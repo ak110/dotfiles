@@ -5,7 +5,7 @@ import { expect, test } from "claude-code/testing";
 
 const PLUGIN = "agent-toolkit";
 const TOOL = `mcp__${PLUGIN}__send_to_user`;
-const MESSAGE = "## 作業完了報告\n\n- 変更: `a.py`\n- 検証: 成功\n\n次の工程へ進む。";
+const MESSAGE = "## 作業完了報告\n\n- 変更: `a.py`\n- 検証: 成功\n\n次の工程へ進む。\n\n".repeat(30);
 
 function row(tool: string, input: unknown) {
   return {
@@ -60,4 +60,43 @@ test("send_to_userの呼び出しは許可され、確認応答を返す", async
   const called = await $.tool.call({ tool: TOOL, message: MESSAGE });
   expect(called.deny).toBeUndefined();
   expect(called.isError).toBeUndefined();
+  expect(called.result).toBe("ユーザーの画面へ表示した。");
+});
+
+test("send_to_userの成功結果は応答文言によらず空のBoxで描く", async ($) => {
+  for (const surface of ["terminal", "desktop"] as const) {
+    for (const output of ["ユーザーの画面へ表示した。", "別の成功結果"]) {
+      const ui = await $.ui.mount({
+        plugin: PLUGIN,
+        surface,
+        component: "ToolResult",
+        requestId: "toolu_1",
+        props: { ...row(TOOL, { message: MESSAGE }), output },
+      });
+      expect(await ui.find({ type: "Box" })).toBeDefined();
+      expect(await ui.find({ type: "Text" })).toBeUndefined();
+      expect(await ui.find({ type: "Markdown" })).toBeUndefined();
+      await ui.unmount();
+    }
+  }
+});
+
+test("他ツールとsend_to_userのエラー結果は後続の描画へ渡す", async ($, on) => {
+  on("ui.render", { component: "ToolResult" }, ($, e) => {
+    const { Text } = $.ui.resolve(e);
+    return <Text>engine result</Text>;
+  });
+  for (const surface of ["terminal", "desktop"] as const) {
+    for (const [tool, isErrored] of [["Bash", false], [TOOL, true]] as const) {
+      const ui = await $.ui.mount({
+        plugin: PLUGIN,
+        surface,
+        component: "ToolResult",
+        requestId: "toolu_1",
+        props: { ...row(tool, {}), isErrored },
+      });
+      expect((await ui.find({ type: "Text", text: /engine result/ }))?.text).toBe("engine result");
+      await ui.unmount();
+    }
+  }
 });
