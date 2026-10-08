@@ -11,6 +11,29 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 
 
+@pytest.mark.parametrize("invalid", ["columns", "initial-progress"])
+def test_document_template_rejects_invalid_initial_structure(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    invalid: str,
+) -> None:
+    """雛形から記入しても、列数が違う表と起草時の進捗内容行は作成しない。"""
+    source, _ = _source(repo, tmp_path)
+    content = source.read_text(encoding="utf-8")
+    if invalid == "columns":
+        content = content.replace("| 実施内容 | 由来 | 採否 | 根拠 |", "| 実施内容 | 由来 | 採否 |")
+    else:
+        content += "| 2026-10-09 00:00 | 実装 | 成功 |\n"
+    source.write_text(content, encoding="utf-8")
+    assert (
+        create_plan_files.main(
+            ["--main-source", str(source), "--name", "invalid", "--work-dir", str(repo), "--home", str(tmp_path / "home")]
+        )
+        != 0
+    )
+    assert not list((tmp_path / "home" / ".claude" / "plans").glob("*.md"))
+
+
 def _make_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """構造の判定に使うGitリポジトリを準備する。"""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))

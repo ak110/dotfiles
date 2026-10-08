@@ -181,6 +181,8 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         if metadata is None or errors:
             raise ProgressLogError("計画の関連WIを確定できません", next_action=_CHECK_STRUCTURE)
         allowed = {wi for wi, _summary in metadata.related_wi}
+    if args.get_commits or args.commit:
+        commit_mapping.validate_targets(args.awi or [], allowed)
     events = commit_mapping.read_events(read_path, content)
     if args.get_commits:
         result = commit_mapping.get_commits(args.worktree, events, args.awi or [], allowed)
@@ -235,6 +237,7 @@ def main(argv: list[str] | None = None, *, description: str | None = None) -> in
     parser.add_argument("--handoff", action="store_true", help="計画なしの引き継ぎ記録について同じ対応を記録・取得する")
     parser.add_argument("--allowed-awi", action="append", help="引き継ぎ記録の対象AWI全件。--handoffでは反復指定が必須")
     args = parser.parse_args(argv)
+    failure_title = "commit対応を取得できません" if args.get_commits else "進捗ログを更新できません"
     if not args.get_commits and (args.completed_step is None or args.result is None):
         parser.error("記録には--completed-stepと--resultが必要です")
     try:
@@ -243,12 +246,14 @@ def main(argv: list[str] | None = None, *, description: str | None = None) -> in
         append_progress_log(args.plan_file, args.completed_step, args.result)
     except _next_action.ActionableError as error:
         # 保存済み計画の直接更新（`_plan.locations`）もこの型で次の操作を持って届く。
-        _next_action.report(f"進捗ログを更新できません: {error.reason}", next_action=error.next_action)
+        _next_action.report(f"{failure_title}: {error.reason}", next_action=error.next_action)
         return 1
     except (OSError, ValueError) as error:
         _next_action.report(
-            f"進捗ログを更新できません: {error}",
-            next_action="計画ファイルのパスと読み書きの権限を確かめ、同じ引数で再実行する",
+            f"{failure_title}: {error}",
+            next_action="計画または引き継ぎ記録のパスと読取権限を確かめ、同じ引数で再実行する"
+            if args.get_commits
+            else "計画または引き継ぎ記録のパスと読み書きの権限を確かめ、同じ引数で再実行する",
         )
         return 1
     return 0

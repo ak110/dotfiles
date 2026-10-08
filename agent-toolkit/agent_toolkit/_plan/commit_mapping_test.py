@@ -86,7 +86,11 @@ def test_rejects_incomplete_records(repo: pathlib.Path, failure: str) -> None:
     with pytest.raises(commit_mapping.CommitMappingError) as raised:
         commit_mapping.get_commits(repo, commit_mapping.body_events(content), [WI_A], {WI_A})
     assert raised.value.reason
-    assert "実装担当" in raised.value.next_action
+    if failure == "oid":
+        assert "Gitで確認" in raised.value.next_action
+        assert "再記録" not in raised.value.next_action
+    else:
+        assert "実装担当" in raised.value.next_action
 
 
 def test_rejects_unresolvable_or_ambiguous_short_oid(repo: pathlib.Path) -> None:

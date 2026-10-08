@@ -51,7 +51,7 @@ description: >
    - 是正前の状態と期待値が同じ条件、対象分岐が無効な条件および成功時に抑制される生出力の不在は識別条件にせず、公開状態または直接の契約テストを使う
    - 依頼・WIの明示的な禁止条件（操作・機構・副作用）と採用手段は`## 実施内容`の同じ概念行へ書き、両者を比べられるようにする
 2. 計画の変更対象または採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し（入力のWIが確定した事項は列挙の対象から外す）、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。実装中に新たに生じた同種の判断にも本手順を適用する。確認の手段と`起動経路`の値ごとの扱いは「確認と起動経路」に従う
-3. 読込表の`references/plan-file-standards.md`の全項を満たす計画を`atk run-script plan-create --`で作成する。作業種別が`バグ対応`の計画のうち、入力にWIが無い計画とWIの原因分析を訂正または追加する計画では、計画担当が手順1で起動した`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の条件に従って計画ファイル（バグ）を先に埋める。WIの`## 原因分析`をそのまま用いる場合は計画ファイル（バグ）を作成せず、計画はWIファイル名で参照する
+3. 読込表の`references/plan-file-standards.md`「初回起草の雛形」をコピーして案件の値を記入し、全項を満たす原稿を`atk run-script plan-create --`で作成する。作業種別が`バグ対応`の計画のうち、入力にWIが無い計画とWIの原因分析を訂正または追加する計画では、計画担当が手順1で起動した`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の条件に従って計画ファイル（バグ）を先に埋める。WIの`## 原因分析`をそのまま用いる場合は計画ファイル（バグ）を作成せず、計画はWIファイル名で参照する
 4. メインによる起動では`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行する。`agent-toolkit:process-wi`のレーン担当は`agent-toolkit:process-wi`の`references/lane-planning.md`が定める選定結果とレーン識別子付きの形で単独実行する。いずれも直接返った終了コード0を確認する
 5. `起動経路`の値に対応する次の1行だけを実施する
 

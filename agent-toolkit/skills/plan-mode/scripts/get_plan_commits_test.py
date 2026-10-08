@@ -27,6 +27,59 @@ def _prepare_two_commits(worktree: pathlib.Path) -> str:
     return previous_head
 
 
+@pytest.mark.parametrize("handoff", [False, True])
+@pytest.mark.parametrize(
+    "case", ["missing-input", "invalid-input", "outside-input", "missing-record", "broken-record", "record-wi", "missing-git"]
+)
+def test_public_commit_diagnostics_distinguish_input_record_and_git(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    handoff: bool,
+    case: str,
+) -> None:
+    """原因別の案内を確認し、入力または保存記録を補った同じ入口で回復する。"""
+    previous_head = _prepare_two_commits(tmp_path)
+    wi = "20261004-044311-001.md"
+    record = tmp_path / "record.md"
+    record.write_text(
+        "# 引き継ぎ\n" if handoff else "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n  - " + wi + ": 対応\n",
+        encoding="utf-8",
+    )
+    event = commit_mapping.commit_event(tmp_path, "HEAD", previous_head, [wi], {wi})
+    attachment = commit_mapping.mapping_path(record)
+    if case != "missing-record":
+        commit_mapping.append_event(record, event)
+    if case == "broken-record":
+        attachment.write_text("{\n", encoding="utf-8")
+    elif case == "record-wi":
+        attachment.write_text(json.dumps({"commits": ["HEAD"], "awi": []}), encoding="utf-8")
+    elif case == "missing-git":
+        attachment.write_text(json.dumps({"commits": ["deadbee"], "awi": [wi]}), encoding="utf-8")
+    base = [str(record), "--worktree", str(tmp_path)]
+    if handoff:
+        base += ["--handoff", "--allowed-awi", wi]
+    request = (
+        []
+        if case == "missing-input"
+        else ["--awi", "invalid" if case == "invalid-input" else "20261004-044311-002.md" if case == "outside-input" else wi]
+    )
+    args = argparse.Namespace(script_name="plan-commits", script_args=[*base, *request])
+    assert run_script.dispatch(args) == 1
+    diagnostic = capsys.readouterr().err
+    assert "commit対応を取得できません" in diagnostic
+    action = diagnostic.split("次の操作:", 1)[1]
+    if case.endswith("input"):
+        assert "--awi" in action and "再記録" not in action
+    elif case == "missing-git":
+        assert "Git" in action and "--worktree" in action and "再記録" not in action
+    else:
+        assert "対応記録" in action and "再記録" in action
+    attachment.write_text(json.dumps(event) + "\n", encoding="utf-8")
+    args.script_args = [*base, "--awi", wi]
+    assert run_script.dispatch(args) == 0
+    assert json.loads(capsys.readouterr().out)["awi"] == wi
+
+
 def test_public_plan_commits_reads_existing_handoff(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """引き継ぎ記録と同じstemの対応記録ファイルを公開登録から取得し、取得時点で一意な長さの短縮OIDを返す。"""
     previous_head = _prepare_two_commits(tmp_path)
