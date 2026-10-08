@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import pathlib
 import subprocess
 from typing import Any
 
 from agent_toolkit._atk import managed_temp, outcome
+from agent_toolkit._common.inherited_venv import strip_inherited_venv
 from agent_toolkit._git import command as _git_command
 
 _EXIT_TIMEOUT = 124
@@ -141,6 +143,8 @@ def dispatch(args: argparse.Namespace) -> int:
     argv.pop(0)
 
     cwd = args.cwd if args.cwd is not None else pathlib.Path.cwd().resolve()
+    child_env = dict(os.environ)
+    strip_inherited_venv(child_env)
     git_head, git_status = _git_state(cwd)
     stdout_path: pathlib.Path | None = None
     stderr_path: pathlib.Path | None = None
@@ -157,7 +161,7 @@ def dispatch(args: argparse.Namespace) -> int:
         with stdout_path.open("xb") as stdout_stream, stderr_path.open("xb") as stderr_stream:
             try:
                 with subprocess.Popen(  # noqa: S603
-                    argv, cwd=cwd, stdout=stdout_stream, stderr=stderr_stream
+                    argv, cwd=cwd, env=child_env, stdout=stdout_stream, stderr=stderr_stream
                 ) as process:
                     try:
                         process.wait(timeout=args.timeout)

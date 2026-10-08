@@ -6,15 +6,115 @@ import argparse
 import json
 import os
 import pathlib
+import shutil
 import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 
 import pytest
 
 from agent_toolkit._atk import run_command
 from agent_toolkit._testing import git_repository
+
+
+def _public_command(argv: list[str], cwd: pathlib.Path, env: dict[str, str]) -> tuple[subprocess.CompletedProcess[str], dict]:
+    """実CLIから子を起動し、保存された結果を読む。"""
+    env = {**env, "PYTHONPATH": str(pathlib.Path(run_command.__file__).resolve().parents[2])}
+    result = subprocess.run(
+        [sys.executable, "-m", "agent_toolkit.atk", "run-command", "--cwd", str(cwd), *argv],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    metadata = json.loads(result.stdout)
+    assert json.loads(pathlib.Path(metadata["record_path"]).read_text(encoding="utf-8")) == metadata
+    return result, metadata
+
+
+def test_public_command_strips_inherited_venv(tmp_path: pathlib.Path) -> None:
+    """実子へ渡る環境から仮想環境だけを除き、無関係の値とPATHの順序を保つ。"""
+    venv = tmp_path / "inherited"
+    path = os.pathsep.join([str(tmp_path / "before"), str(venv / "bin"), "", str(venv / "Scripts"), os.defpath])
+    env = {**os.environ, "VIRTUAL_ENV": str(venv), "PATH": path, "PRESERVE_VALUE": "保持する"}
+    result, metadata = _public_command(
+        ["--", sys.executable, "-c", "import json, os; print(json.dumps(dict(os.environ)))"],
+        tmp_path,
+        env,
+    )
+    assert result.returncode == 0, result.stderr
+    child = json.loads(pathlib.Path(metadata["stdout_path"]).read_text(encoding="utf-8"))
+    assert "VIRTUAL_ENV" not in child
+    assert child["PATH"] == os.pathsep.join([str(tmp_path / "before"), "", os.defpath])
+    assert child["PRESERVE_VALUE"] == "保持する"
+    assert env["VIRTUAL_ENV"] == str(venv)
+
+
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_public_command_records_exit_modes(tmp_path: pathlib.Path, exit_code: int) -> None:
+    """公開コマンドでも終了値と両streamを保存する。"""
+    argv = [sys.executable, "-c", f"import sys; print('out'); print('err', file=sys.stderr); sys.exit({exit_code})"]
+    result, metadata = _public_command(["--", *argv], tmp_path, dict(os.environ))
+    assert result.returncode == exit_code
+    assert metadata["argv"] == argv
+    assert metadata["cwd"] == str(tmp_path)
+    assert metadata["child_exit_code"] == exit_code
+    assert pathlib.Path(metadata["stdout_path"]).read_text(encoding="utf-8") == "out\n"
+    assert pathlib.Path(metadata["stderr_path"]).read_text(encoding="utf-8") == "err\n"
+
+
+def test_public_command_runs_another_uv_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    """実uvの環境で起動したatkから別プロジェクトのPythonへ到達する。"""
+    env = host_environ()
+    uv = shutil.which("uv", path=env["PATH"])
+    assert uv is not None
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text('[project]\nname="child"\nversion="0.0.0"\n', encoding="utf-8")
+    subprocess.run(
+        [uv, "venv", "--offline", "--python", sys.executable, str(project / ".venv")],
+        env=env,
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
+    plugin = pathlib.Path(run_command.__file__).resolve().parents[2]
+    result = subprocess.run(
+        [
+            uv,
+            "run",
+            "--project",
+            str(plugin),
+            "--no-sync",
+            "python",
+            "-m",
+            "agent_toolkit.atk",
+            "run-command",
+            "--cwd",
+            str(project),
+            "--",
+            uv,
+            "run",
+            "--project",
+            str(project),
+            "--no-sync",
+            "python",
+            "-c",
+            "import sys; print(sys.prefix)",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    metadata = json.loads(result.stdout)
+    assert pathlib.Path(pathlib.Path(metadata["stdout_path"]).read_text(encoding="utf-8").strip()) == project / ".venv"
+    assert "VIRTUAL_ENV" not in pathlib.Path(metadata["stderr_path"]).read_text(encoding="utf-8")
 
 
 def _run(

@@ -6,8 +6,8 @@ plugin rootを`uv run --project`へ指定して起動したツールは、plugin
 `python`・`pip`・コンソールスクリプトの解決が起動元ツールの環境を対象にする。
 
 `VIRTUAL_ENV`だけを取り除くと`PATH`側が残り、解決先は起動元ツールの環境のままになる。
-本モジュールは両方を同じ契約で取り除く処理を、`atk`のprocess-loopと委譲サーバーの
-双方へ提供する。
+本モジュールは両方を同じ契約で取り除く処理を、`atk`のprocess-loop、run-commandと
+委譲サーバーへ提供する。
 """
 
 from __future__ import annotations
