@@ -196,6 +196,22 @@ def _remove_root_baseline_file(root_dir: pathlib.Path) -> None:
     (root_dir / "arid-baseline.json").unlink()
 
 
+def _remove_subproject_always_targets(root_dir: pathlib.Path) -> None:
+    pyproject = root_dir / _SUBPROJECT / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+    setting = 'pytest-always-targets = ["*_invariant_test.py"]\n'
+    assert text.count(setting) == 1
+    pyproject.write_text(text.replace(setting, ""), encoding="utf-8")
+
+
+def _change_subproject_always_targets(root_dir: pathlib.Path) -> None:
+    pyproject = root_dir / _SUBPROJECT / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+    setting = 'pytest-always-targets = ["*_invariant_test.py"]'
+    assert text.count(setting) == 1
+    pyproject.write_text(text.replace(setting, 'pytest-always-targets = ["other_test.py"]'), encoding="utf-8")
+
+
 def test_repository_config_is_consistent() -> None:
     """リポジトリの検査設定が3条件を満たす。"""
     violations = _config_violations(_ROOT)
@@ -215,6 +231,8 @@ def test_repository_config_is_consistent() -> None:
         (_add_subproject_baseline, "agent-toolkit/pyproject.toml [tool.arid] baseline: "),
         (_remove_root_baseline_reference, "pyproject.toml [tool.arid] baseline: "),
         (_remove_root_baseline_file, "arid-baseline.json: リポジトリ直下"),
+        (_remove_subproject_always_targets, "[tool.pyfltr] pytest-always-targets: "),
+        (_change_subproject_always_targets, "[tool.pyfltr] pytest-always-targets: "),
     ],
 )
 def test_violations_are_reported(
