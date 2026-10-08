@@ -46,7 +46,7 @@ _CATEGORY_ENGINE_MODELS = {
     },
 }
 _PRESET_ENGINE_ORDERS = {
-    "codex-balanced": ("codex", frozenset({"orchestrate_model"})),
+    "codex-balanced": ("codex", frozenset({"orchestrate_model", "medium_tier_model"})),
     "codex-primary": ("codex", frozenset()),
     "claude-balanced": ("claude", frozenset({"medium_tier_model", "low_tier_model"})),
     "claude-primary": ("claude", frozenset()),
