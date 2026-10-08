@@ -47,6 +47,7 @@ from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     make_git_remote_fake as _make_git_remote_fake,
 )
+from agent_toolkit._testing.isolation import host_package_cache_environ
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 _GitCall = dict[str, Any]
@@ -84,14 +85,11 @@ def _isolated_cli_environ(host_environ: Callable[[], dict[str, str]], tmp_path: 
     標準エラーへ書き、実環境の領域を自動回収する。uvのキャッシュは実環境の位置を保ち、依存の再取得を避ける。
     """
     environ = host_environ()
-    uv_cache = subprocess.run(
-        ["uv", "cache", "dir"], capture_output=True, text=True, encoding="utf-8", errors="replace", env=environ, check=True
-    ).stdout.strip()
+    environ.update(host_package_cache_environ())
     home = pathlib.Path(environ.get("HOME", str(pathlib.Path.home())))
     # miseはshimの信頼設定とキャッシュを同じXDG変数から解決するため、実環境の位置を明示して保つ。
     environ.setdefault("MISE_STATE_DIR", str(pathlib.Path(environ.get("XDG_STATE_HOME", home / ".local" / "state")) / "mise"))
     environ.setdefault("MISE_CACHE_DIR", str(pathlib.Path(environ.get("XDG_CACHE_HOME", home / ".cache")) / "mise"))
-    environ["UV_CACHE_DIR"] = uv_cache
     environ["XDG_CACHE_HOME"] = str(tmp_path / "cli-cache")
     environ["XDG_STATE_HOME"] = str(tmp_path / "cli-state")
     return environ

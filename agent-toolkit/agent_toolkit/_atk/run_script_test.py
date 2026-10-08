@@ -182,6 +182,7 @@ def test_dispatch_keeps_worktree_inputs_independent(
     ]
 
 
+@pytest.mark.usefixtures("share_package_caches")
 def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_path: pathlib.Path) -> None:
     repository = git_repository.init_repository(tmp_path / "repository", commit_message="base")
     source = tmp_path / "source.md"
@@ -291,6 +292,7 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
     assert output.is_file()
 
 
+@pytest.mark.usefixtures("share_package_caches")
 def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib.Path) -> None:
     """公開された`atk run-script plan-progress`へ撤去した`--start-head`を渡すと引数エラーで終わる。
 

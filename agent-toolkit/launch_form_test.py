@@ -4,9 +4,12 @@ import json
 import pathlib
 import subprocess
 
+import pytest
+
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
 
 
+@pytest.mark.usefixtures("share_package_caches")
 def test_project_launch_preserves_cwd_and_uses_plugin_environment(tmp_path: pathlib.Path) -> None:
     """`--project`は呼出元のcwdを変えず、plugin rootの仮想環境を選ぶ。"""
     result = subprocess.run(
