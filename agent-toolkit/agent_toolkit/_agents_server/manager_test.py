@@ -60,6 +60,55 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["codex", "claude", "agy"])
+async def test_retention_expiry_releases_backend_once_without_tool_call(
+    engine: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """終端の保持期限到達は照会なしで解放を呼び、後からstopしても重ねて解放しない。"""
+    manager, backend = _manager_with_fake(engine)
+    released = asyncio.Event()
+    original_release = backend.release_session
+
+    async def release(session: state.SessionState) -> None:
+        await original_release(session)
+        released.set()
+
+    monkeypatch.setattr(backend, "release_session", release)
+    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.02)
+    try:
+        session = await backend.start("調査", str(tmp_path), None, None)
+        _complete(session)
+        await asyncio.wait_for(released.wait(), 1)
+        assert backend.release_calls == [session.session_id]
+        assert session.session_id not in manager.sessions
+        assert session.session_id in manager.expired_sessions
+        # release本体が送った通知の後に、taskの完了callbackを実行する。
+        await asyncio.sleep(0)
+        assert not manager._resource_release_tasks
+        await manager.stop(session.session_id)
+        assert backend.release_calls == [session.session_id]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_reply_cancels_old_retention_deadline(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """保持期限より前に再開したturnへ、旧turnの解放を遅れて適用しない。"""
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
+    try:
+        session = await backend.start("調査", str(tmp_path), None, None)
+        _complete(session)
+        await manager.send_message(session.session_id, "続行")
+        await asyncio.sleep(0.03)
+        assert not backend.release_calls
+        assert manager.sessions[session.session_id] is session
+        assert session.status == "running"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_start_resolves_codex_family_from_existing_backend_catalog(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:

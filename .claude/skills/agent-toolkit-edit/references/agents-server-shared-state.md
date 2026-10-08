@@ -31,7 +31,7 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
-| session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | MCPサーバーだけ |
+| session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | managerと、当該sessionのengineを所有するbackend。各backendは共有一覧から自身のengineだけを検索・状態遷移の対象とし、接続障害時も他engineを変更しない |
 | statusline・CLI向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show`、同じルートに属する他のMCPサーバー（稼働中の子孫を持つ終端sessionの表示判定）、全ルートを読む資源記録 | そのルートに属する各MCPサーバー。各MCPサーバーは自身のファイルだけを書く |
 | 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイルの`host_session_id`を委譲元のsession識別子へ解決する主体、PostToolUseフック、`atk agents wait` | そのsessionを起動したMCPサーバー |
 | 状態ファイルの生存の印`heartbeat_at` | 状態ファイルを書き込むMCPサーバー | statusline、同じルートに属する他のMCPサーバー | その状態ファイルを書き込むMCPサーバー |

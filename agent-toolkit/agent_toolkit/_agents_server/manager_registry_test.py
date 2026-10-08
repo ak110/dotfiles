@@ -899,7 +899,8 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
     listed = manager.list_sessions()
     assert listed["sessions"] == []
     assert "omitted" not in listed
-    assert backend.release_calls == [session.session_id]
+    # expiredへ移した時点で資源は解放済みなので、stopは再開状態の移動だけを行う。
+    assert not backend.release_calls
 
 
 @pytest.mark.asyncio

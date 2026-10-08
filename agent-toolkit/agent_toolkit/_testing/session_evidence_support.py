@@ -305,8 +305,7 @@ def local_time_jst() -> Iterator[None]:
     """ローカルタイムゾーンをUTC以外のJST（UTC+9）へ固定し、テスト後に元へ戻す。
 
     タイムゾーンを省いた時刻の解釈を、テストを実行するホストのタイムゾーン設定に依存させないため。
-    `agent-toolkit/conftest.py`が自身の名前空間へ代入して、`skills/`配下のテストへ提供する。
-    スキル付属スクリプトのディレクトリへ`conftest.py`を置くと、mypyが同名の最上位モジュールとして重複を報告するためである。
+    `agent_toolkit._testing.pytest_plugin`が登録し、収集順によらず`skills/`配下のテストへ提供する。
     """
     previous = os.environ.get("TZ")
     os.environ["TZ"] = "JST-9"

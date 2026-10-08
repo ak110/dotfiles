@@ -879,9 +879,9 @@ class _FakeStatusBackend:
     async def close(self) -> None:
         """外部資源を持たないため何もしない。"""
 
-    async def release_session(self, session_id: str) -> None:
+    async def release_session(self, session: state.SessionState) -> None:
         """解放対象を検証用に記録する。"""
-        self.release_calls.append(session_id)
+        self.release_calls.append(session.session_id)
 
     async def send_message(self, session: state.SessionState, _prompt: str) -> dict[str, object]:
         """新しいreply turnを開始する。"""

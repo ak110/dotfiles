@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import json
@@ -16,6 +18,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import agent_toolkit.agents_server_mcp as entry_script
+from agent_toolkit import _agents_server as server_package
 from agent_toolkit._agents_server import (
     launch_requests,
     mcp_tools,
@@ -23,6 +26,7 @@ from agent_toolkit._agents_server import (
     session_registry,
     tool_descriptions,
 )
+from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import state_paths
@@ -42,6 +46,64 @@ from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.parametrize("placement", ["root-version", "ancestor-version", "checkout"])
+@pytest.mark.parametrize("form", ["role-name", "absolute-path"])
+def test_imported_server_keeps_role_documents_after_distribution_removal(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, placement: str, form: str
+) -> None:
+    """サーバーのモジュール読込時に保持し、元配布物の消失後も役割とplugin変数を同じ版へ解決する。"""
+    roots = {
+        "root-version": tmp_path / "cache" / "agent-toolkit" / "2.125.0",
+        "ancestor-version": tmp_path / "cache" / "2.125.0" / "agent-toolkit",
+        "checkout": tmp_path / "checkout" / "agent-toolkit",
+    }
+    source = roots[placement]
+    manifest = source / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"agent-toolkit","version":"2.125.0"}', encoding="utf-8")
+    task = source / "share" / "declared.subagent.md"
+    task.parent.mkdir()
+    task.write_text(
+        "# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n```\n\n${CLAUDE_PLUGIN_ROOT}/skills/sample/SKILL.md\n",
+        encoding="utf-8",
+    )
+    skill = source / "skills" / "sample" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# この版の手順\n", encoding="utf-8")
+    module_dir = source / "agent_toolkit" / "_agents_server"
+    module_dir.mkdir(parents=True)
+    for module in (plugin_roots, launch_requests):
+        assert module.__file__ is not None
+        shutil.copyfile(module.__file__, module_dir / pathlib.Path(module.__file__).name)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+    def load(name: str) -> Any:
+        spec = importlib.util.spec_from_file_location(f"retained_{name}", module_dir / f"{name}.py")
+        assert spec is not None and spec.loader is not None
+        loaded = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loaded)
+        return loaded
+
+    retained = load("plugin_root")
+    monkeypatch.setattr(server_package, "plugin_root", retained)
+    requests = load("launch_requests")
+    monkeypatch.setitem(requests._TASK_MODEL_TYPES, task.name, "high_tier")
+    stable = retained.SERVER_PLUGIN_ROOT
+    if placement == "checkout":
+        assert stable == source
+    else:
+        assert stable != source
+        shutil.rmtree(source)
+    model_type, prompt, _kind, _handoff = requests.task_document_request(
+        "declared" if form == "role-name" else str(task), {"対象": "値"}
+    )
+    assert model_type == "high_tier"
+    assert str(stable / "share" / task.name) in prompt
+    assert str(stable / "skills" / "sample" / "SKILL.md") in prompt
+    assert (stable / "skills" / "sample" / "SKILL.md").read_text(encoding="utf-8") == "# この版の手順\n"
 
 
 @pytest.mark.asyncio

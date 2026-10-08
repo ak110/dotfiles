@@ -492,7 +492,10 @@ class ManagerRegistry(responses.ManagerResponses):
         if session is not None:
             session.result_delivered = not keep_result
         if not already_stopped:
-            await self._backend(resume_state.engine).release_session(session_id)
+            await self._wait_for_resource_release(session_id)
+            if session is not None:
+                await self._backend(resume_state.engine).release_session(session)
+        self._cancel_retention_timer(session_id)
         self._pending_unobserved_child_sessions.pop(session_id, None)
         self.sessions.pop(session_id, None)
         self.expired_sessions.pop(session_id, None)

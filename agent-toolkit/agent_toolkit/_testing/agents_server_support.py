@@ -221,8 +221,8 @@ class FakeBackend:
         del session
         self.interrupt_calls += 1
 
-    async def release_session(self, session_id: str) -> None:
-        self.release_calls.append(session_id)
+    async def release_session(self, session: state.SessionState) -> None:
+        self.release_calls.append(session.session_id)
 
     async def close(self) -> None:
         """バックエンド終了処理のダミー。"""

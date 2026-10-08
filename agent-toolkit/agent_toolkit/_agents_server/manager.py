@@ -342,7 +342,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
 
     async def _abandon_unavailable_session(self, session: SessionState) -> None:
         """次候補へ進む前に可用性失敗sessionの全資源を解放する。"""
-        await self._backend(session.engine).release_session(session.session_id)
+        await self._backend(session.engine).release_session(session)
+        self._cancel_retention_timer(session.session_id)
         self.sessions.pop(session.session_id, None)
         if self._status_writer is not None:
             self._status_writer.delete_result(session.session_id, collector="start-unavailable")
@@ -668,6 +669,14 @@ class AgentsServerManager(manager_wait.ManagerWait):
 
     async def close(self) -> None:
         """初期化済みバックエンドを停止する。"""
+        remove_terminal_listener(self._schedule_session_expiry)
+        remove_lifecycle_listener(self._cancel_expiry_on_start)
+        for timer in self._retention_timers.values():
+            timer.cancel()
+        self._retention_timers.clear()
+        if self._resource_release_tasks:
+            await asyncio.gather(*self._resource_release_tasks.values(), return_exceptions=True)
+            self._resource_release_tasks.clear()
         if self._auto_resume_task is not None:
             self._auto_resume_task.cancel()
             await asyncio.gather(self._auto_resume_task, return_exceptions=True)

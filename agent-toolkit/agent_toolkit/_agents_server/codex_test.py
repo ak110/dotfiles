@@ -26,6 +26,9 @@ from agent_toolkit._agents_server import (
     shared_roots,
     state,
 )
+from agent_toolkit._agents_server import (
+    plugin_root as plugin_roots,
+)
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import state_paths
@@ -495,9 +498,11 @@ async def test_start_aborts_when_thread_start_never_returns(monkeypatch: pytest.
     await manager.close()
 
 
-def _make_plugin_root(base: pathlib.Path, version: str, *, versioned: bool) -> pathlib.Path:
+def _make_plugin_root(base: pathlib.Path, version: str, *, versioned: bool, root_is_version: bool = False) -> pathlib.Path:
     """`plugin.json`を持つ配布物rootを、版別ディレクトリの有無を変えて作成する。"""
     root = base / version / "agent-toolkit" if versioned else base / "checkout" / "agent-toolkit"
+    if root_is_version:
+        root = base / version
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin" / "plugin.json").write_text(f'{{"version": "{version}"}}\n', encoding="utf-8")
     (root / "agent_toolkit").mkdir()
@@ -510,17 +515,18 @@ def _make_plugin_root(base: pathlib.Path, version: str, *, versioned: bool) -> p
 @pytest.fixture(autouse=True)
 def _isolate_stable_plugin_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """複製先の記録とmanaged-tempの作成先をテストごとに分離する。"""
-    monkeypatch.setattr(subject, "_stable_plugin_roots", {})
+    monkeypatch.setattr(plugin_roots, "_stable_plugin_roots", {})
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setenv("TMPDIR", str(tmp_path / "managed-temp"))
     (tmp_path / "managed-temp").mkdir()
 
 
-def test_versioned_plugin_root_is_copied_to_a_stable_location(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("root_is_version", [True, False])
+def test_versioned_plugin_root_is_copied_to_a_stable_location(tmp_path: pathlib.Path, root_is_version: bool) -> None:
     """版別ディレクトリ配下の配布物rootは、複製元を失っても解決できる実体へ写す。"""
-    source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True)
+    source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True, root_is_version=root_is_version)
 
-    resolved = subject.resolve_stable_plugin_root(source)
+    resolved = plugin_roots.resolve_stable_plugin_root(source)
 
     assert resolved != source
     shutil.rmtree(source)
@@ -532,8 +538,8 @@ def test_versioned_plugin_root_is_copied_once_per_source(tmp_path: pathlib.Path)
     """同じ複製元への解決を繰り返しても複製先は変わらない。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True)
 
-    first = subject.resolve_stable_plugin_root(source)
-    second = subject.resolve_stable_plugin_root(source)
+    first = plugin_roots.resolve_stable_plugin_root(source)
+    second = plugin_roots.resolve_stable_plugin_root(source)
 
     assert first == second
     assert first != source
@@ -544,7 +550,7 @@ def test_plain_plugin_root_is_used_as_is(tmp_path: pathlib.Path) -> None:
     """版別ディレクトリに当たらない配布物rootは複製せずそのまま使う。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=False)
 
-    assert subject.resolve_stable_plugin_root(source) == source
+    assert plugin_roots.resolve_stable_plugin_root(source) == source
 
 
 def test_copy_failure_falls_back_to_the_resolved_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -552,11 +558,11 @@ def test_copy_failure_falls_back_to_the_resolved_root(monkeypatch: pytest.Monkey
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True)
 
     def _fail(*_args: Any, **_kwargs: Any) -> pathlib.Path:
-        raise subject._managed_temp.ManagedTempError("一時領域を作成できない")
+        raise plugin_roots._managed_temp.ManagedTempError("一時領域を作成できない")
 
-    monkeypatch.setattr(subject._managed_temp, "create_managed_temp", _fail)
+    monkeypatch.setattr(plugin_roots._managed_temp, "create_managed_temp", _fail)
 
-    assert subject.resolve_stable_plugin_root(source) == source
+    assert plugin_roots.resolve_stable_plugin_root(source) == source
 
 
 def test_agents_server_config_uses_the_stable_plugin_root() -> None:
@@ -564,7 +570,7 @@ def test_agents_server_config_uses_the_stable_plugin_root() -> None:
     config = subject.AppServerManager._agents_server_config("owner", "writer")
 
     args = config["mcp_servers"]["agents_server"]["args"]
-    expected_root = subject.resolve_stable_plugin_root()
+    expected_root = plugin_roots.resolve_stable_plugin_root()
     assert args[1] == "--project"
     assert args[2] == str(expected_root)
     assert args[-1] == str(expected_root / "agent_toolkit" / "agents_server_mcp.py")
@@ -577,11 +583,14 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     launch_kind: state.LaunchKind, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """開始と再開の全役割へ、同じ実在plugin rootと再解決を禁じる契約を渡す。"""
-    plugin_root = tmp_path / "stable-plugin-root"
-    plugin_root.mkdir()
-    monkeypatch.setattr(subject, "resolve_stable_plugin_root", lambda: plugin_root)
+    source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True, root_is_version=True)
+    (source / "skills" / "sample").mkdir(parents=True)
+    (source / "skills" / "sample" / "SKILL.md").write_text("# 手順\n", encoding="utf-8")
+    plugin_root = plugin_roots.resolve_stable_plugin_root(source)
+    shutil.rmtree(source)
+    monkeypatch.setattr(plugin_roots, "SERVER_PLUGIN_ROOT", plugin_root)
     client = _TierClient()
-    manager = subject.AppServerManager()
+    manager = subject.AppServerManager(root_session_id="owner")
     monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
 
     await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
@@ -593,6 +602,10 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     for params in (start_params, resume_params):
         instructions = params["developerInstructions"]
         assert str(plugin_root) in instructions
+        args = params["config"]["mcp_servers"]["agents_server"]["args"]
+        assert pathlib.Path(args[-1]).is_file()
+        assert pathlib.Path(args[2]) == plugin_root
+        assert (plugin_root / "skills" / "sample" / "SKILL.md").is_file()
         assert "別hostのcache版数から別のplugin rootを組み立てない" in instructions
     assert start_params["developerInstructions"] == resume_params["developerInstructions"]
 
@@ -756,7 +769,7 @@ def test_developer_instructions_include_user_rules_except_embedded(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setattr(subject, "resolve_stable_plugin_root", lambda: tmp_path / "plugin")
+    monkeypatch.setattr(plugin_roots, "SERVER_PLUGIN_ROOT", tmp_path / "plugin")
     rules = home / ".claude" / "rules"
     (rules / "agent-toolkit").mkdir(parents=True)
     plain = rules / "env.local.md"
@@ -1076,6 +1089,194 @@ async def test_codex_reader_failure_marks_all_active_sessions_failed(tmp_path: p
     assert {session.status for session in manager.sessions.values()} == {"failed"}
     assert all(session.result_available for session in manager.sessions.values())
     assert all(session.retention_deadline is not None for session in manager.sessions.values())
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["reader", "unknown-request"])
+async def test_codex_connection_failure_preserves_other_engines(tmp_path: pathlib.Path, failure: str) -> None:
+    """共有一覧に他engineと保留中Claudeがあっても、Codex接続の失敗はCodexだけを変更する。"""
+    manager = subject.AppServerManager()
+    active = state.SessionState("codex-active", str(tmp_path), engine="codex")
+    completed = state.SessionState("codex-done", str(tmp_path), engine="codex", status="completed", turn_completed=True)
+    others = [
+        state.SessionState("claude-active", str(tmp_path), engine="claude", turn_id="claude-turn"),
+        state.SessionState(
+            "claude-held",
+            str(tmp_path),
+            engine="claude",
+            awaiting_auto_resume=True,
+            pending_result={"status": "completed", "agent_message": "待機中"},
+        ),
+        state.SessionState("agy-active", str(tmp_path), engine="agy", turn_id="agy-turn"),
+    ]
+    for session in (active, completed, *others):
+        manager.sessions[session.session_id] = session
+    before = [
+        (item.status, item.error, item.awaiting_auto_resume, item.result_available, item.pending_result, item.updated_at)
+        for item in others
+    ]
+    if failure == "reader":
+        await manager._handle_client_failure(RuntimeError("invalid JSON line"))
+    else:
+        await manager._fail_for_request({}, "item/tool/requestUserInput")
+    assert active.status == "failed" and active.result_available
+    assert completed.status == "completed"
+    assert [
+        (item.status, item.error, item.awaiting_auto_resume, item.result_available, item.pending_result, item.updated_at)
+        for item in others
+    ] == before
+    for item in others:
+        assert manager._find_session({"threadId": item.session_id}) is None
+        if item.turn_id:
+            assert manager._find_session({"turnId": item.turn_id}) is None
+    assert manager._find_session({"threadId": active.session_id}) is active
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("release_result", ["unsubscribed", "notLoaded", "notSubscribed", "closed", "closes-during-request"])
+async def test_stop_releases_codex_descendants_and_preserves_resume(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, release_result: str
+) -> None:
+    """stopは親・子・孫の購読を解放し、既解放と接続閉鎖を許容し、同じ会話の再開を保つ。"""
+    manager = server_manager.AgentsServerManager(None)
+    backend = subject.AppServerManager(manager.sessions, manager._condition)
+    install_backend(manager, "codex", backend)
+    client = FakeCodexClient()
+    backend.client = cast(Any, client)
+    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+    original_request = client.request
+
+    async def request(method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
+        response = await original_request(method, params, **kwargs)
+        if method == "thread/unsubscribe":
+            if release_result == "closes-during-request":
+                client.closed = True
+                raise subject.AppServerError("connection closed")
+            return {"status": release_result}
+        return response
+
+    monkeypatch.setattr(client, "request", request)
+    try:
+        session = await backend.start("開始", str(tmp_path))
+        await backend._handle_notification(
+            {
+                "method": "turn/started",
+                "params": {"threadId": session.session_id, "turn": {"id": session.turn_id}},
+            }
+        )
+        for owner, child, kind in ((session.session_id, "child", "started"), ("child", "grandchild", "interacted")):
+            await backend._handle_notification(
+                {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": owner,
+                        "item": {
+                            "id": f"spawn-{child}",
+                            "type": "subAgentActivity",
+                            "kind": kind,
+                            "agentThreadId": child,
+                        },
+                    },
+                }
+            )
+        await backend._handle_notification(
+            {
+                "method": "thread/started",
+                "params": {
+                    "thread": {
+                        "id": "great-grandchild",
+                        "parentThreadId": "grandchild",
+                    }
+                },
+            }
+        )
+        assert session.codex_subagent_thread_ids == {"child", "grandchild", "great-grandchild"}
+        assert session.status == "running"
+        _complete(session)
+        client.requests.clear()
+        if release_result == "closed":
+            client.closed = True
+        stopped = await manager.stop(session.session_id)
+        assert stopped == {}
+        unsubscribed = [params["threadId"] for method, params in client.requests if method == "thread/unsubscribe"]
+        if release_result == "closed":
+            assert not unsubscribed
+        elif release_result == "closes-during-request":
+            assert len(unsubscribed) == 1
+        else:
+            assert set(unsubscribed) == {session.session_id, "child", "grandchild", "great-grandchild"}
+            assert client.closed is False
+        assert not session.codex_subagent_thread_ids
+        client.closed = False
+        client.requests.clear()
+        response = await manager.send_message(session.session_id, "前の会話を続ける")
+        assert response["delivery"] == "reply_started"
+        assert [method for method, _params in client.requests] == ["thread/resume", "turn/start"]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("notification_first", [False, True])
+async def test_resume_waits_for_thread_close_after_unsubscribe(
+    monkeypatch: pytest.MonkeyPatch, notification_first: bool
+) -> None:
+    """閉鎖中の再開拒否は対象threadの閉鎖通知で解消し、通知先着でも取りこぼさない。"""
+    backend = subject.AppServerManager()
+    client = FakeCodexClient()
+    closed_notice = {"method": "thread/closed", "params": {"threadId": "thread-1"}}
+    rejected = asyncio.Event()
+    attempts = 0
+
+    async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        nonlocal attempts
+        assert method == "thread/resume" and params == {"threadId": "thread-1"}
+        attempts += 1
+        if attempts == 1:
+            if notification_first:
+                await backend._handle_notification(closed_notice)
+            rejected.set()
+            raise subject.JsonRpcResponseError(
+                method, -32600, "thread thread-1 is closing; retry thread/resume after the thread is closed"
+            )
+        return {"thread": {"id": "thread-1"}}
+
+    monkeypatch.setattr(client, "request", request)
+    task = asyncio.create_task(backend._request_thread_resume(client, {"threadId": "thread-1"}))
+    try:
+        await asyncio.wait_for(rejected.wait(), timeout=1)
+        if not notification_first:
+            await backend._handle_notification({"method": "thread/closed", "params": {"threadId": "other"}})
+            assert not task.done() and attempts == 1
+            await backend._handle_notification(closed_notice)
+        assert await asyncio.wait_for(task, timeout=1) == {"thread": {"id": "thread-1"}}
+        assert attempts == 2
+        assert not backend._resume_close_events
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_resume_close_wait_preserves_initialization_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """閉鎖通知が届かなければ初期化上限で終了し、再送と待機登録を残さない。"""
+    backend = subject.AppServerManager()
+    client = FakeCodexClient()
+    request = AsyncMock(
+        side_effect=subject.JsonRpcResponseError(
+            "thread/resume", -32600, "thread thread-1 is closing; retry thread/resume after the thread is closed"
+        )
+    )
+    monkeypatch.setattr(client, "request", request)
+    monkeypatch.setattr(subject.shared_state, "SESSION_INITIALIZATION_TIMEOUT", 0.01)
+    with pytest.raises(TimeoutError):
+        await backend._request_thread_resume(client, {"threadId": "thread-1"})
+    assert request.await_count == 1
+    assert not backend._resume_close_events
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

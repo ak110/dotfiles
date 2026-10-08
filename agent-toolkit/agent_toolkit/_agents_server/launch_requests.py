@@ -13,6 +13,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     launch_prompts,
+    plugin_root,
     shared_roots,
     task_documents,
 )
@@ -30,7 +31,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 _REQUIRED_INPUT_NAME_PATTERN = task_documents.INPUT_NAME_PATTERN
 
 
-_SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parents[2] / "share"
+_SHARE_DIRECTORY = plugin_root.SERVER_PLUGIN_ROOT / "share"
 
 
 _TASK_MODEL_TYPES = launch_prompts.TASK_MODEL_TYPES
@@ -100,7 +101,8 @@ def _resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
     """
     task_document = pathlib.Path(subagent_md_path)
     if task_document.is_absolute():
-        return task_document
+        root = plugin_root.resolve_stable_plugin_root(task_document.parent.parent)
+        return root / task_document.parent.name / task_document.name
     is_role_name = not any(part in subagent_md_path for part in ("/", "\\", _TASK_DOCUMENT_SUFFIX))
     candidate = _SHARE_DIRECTORY / f"{subagent_md_path}{_TASK_DOCUMENT_SUFFIX}"
     if is_role_name and subagent_md_path and candidate.is_file():

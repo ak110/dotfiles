@@ -105,12 +105,13 @@ aridの検出条件は両側で共有するが、既存負債の受容データ�
 pytestは祖先ディレクトリのconftestだけを読むため、起動範囲ごとにconftestを置くと隔離の集合が範囲ごとに異なり、範囲を横断する定義を持たないまま事象ごとに次元を足す運用になっていた。その結果、開発機で成功しCIだけで失敗する事象が、Git設定、private-notes、PATH上のCLIと次元を変えて繰り返された。
 リポジトリ直下から`agent-toolkit/`配下を指定して起動すると2つのconftestが読まれるが、fixture名が同じため近い側の定義だけが適用され、二重に適用されない。
 
-パッケージ内の自動fixtureは`agent_toolkit._testing.pytest_plugin`が登録し、両`pyproject.toml`のpytest `addopts`から`-p`で読み込む。
-pytest 9.1.1では、パッケージ内・親ディレクトリ・パッケージ内の順にファイルを指定するとcollectorが再生成され、conftestの自動fixtureが後半へ適用されなくなる（[pytest #14997](https://github.com/pytest-dev/pytest/issues/14997)、[修正 #14645](https://github.com/pytest-dev/pytest/pull/14645)）。
-起動時登録はcollectorの同一性から切り離し、fixture本体はテストのファイル位置で従来の適用範囲を守る。
+パッケージ内の共通fixtureは自動・明示要求型とも`agent_toolkit._testing.pytest_plugin`が登録し、両`pyproject.toml`のpytest `addopts`から`-p`で読み込む。
+pytest 9.1.1では、パッケージ内・親ディレクトリ・パッケージ内の順にファイルを指定するとcollectorが再生成され、conftestに結び付いたfixtureが後半で失われる（[pytest #14997](https://github.com/pytest-dev/pytest/issues/14997)、[修正 #14645](https://github.com/pytest-dev/pytest/pull/14645)）。fixtureの種別によらず配置に依存するため、明示要求型も起動時に登録する。
+起動時登録はcollectorの同一性から切り離し、自動fixture本体はテストのファイル位置で従来の適用範囲を守る。
 環境変数・警告状態・Codexモデル一覧・終了待機・端末幅の5件は`agent_toolkit/`配下、外部真正性状態の隔離は`_atk/managed_temp/`配下、編集環境の隔離は`_atk/wi/mutations/`配下に限る。
-自動fixtureを実物へ戻す`real_end_turn_wait`も同じプラグインへ置き、親ファイルの後でも復帰を使えるようにする。他の明示要求型fixtureとテスト内の個別差し替えはそのまま使う。
-修正を含むpytest安定版を採用し、プラグインの回避を外しても同じ収集順と適用範囲・個別差し替えの契約が成立すれば、この登録方式の回避を撤去できる。
+自動fixtureを実物へ戻す`real_end_turn_wait`、agents_serverの隔離、計画インデックス、口語検出の入力、Gitリポジトリのfactory、JST固定も同じプラグインへ置く。テスト内の個別差し替えはそのまま使う。
+conftest.pyを置けるのはリポジトリ直下と`agent-toolkit/`直下だけとし、後者の登録名は前者にもそろえる。`pytest_fixture_registration_invariant_test.py`が配置と登録の不変条件を確かめる。
+修正を含むpytest安定版を採用し、自動・明示要求型ともプラグインの回避を外して同じ収集順と適用範囲・個別差し替えの契約が成立すれば、この登録方式と配置制約の回避を撤去できる。
 
 PATHの隔離は、エージェントCLIを含むディレクトリを、CLI以外の項目へのシンボリックリンクだけを持つ一時ディレクトリへ置き換える。ディレクトリごと外すと同じ場所の`uv`などテストが使うツールまで失われる。置き換えたPATHはセッションで1回だけ組み立てる。
 実際のCLIやホームを意図して使うテストは、`host_environ`で子プロセスへ渡す環境変数を組み立てるか、`restore_host_environment`で同じプロセスの値を戻す。
