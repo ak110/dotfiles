@@ -1343,3 +1343,58 @@ def test_query_modes_are_mutually_exclusive(
     events = read_jsonl(capsys)
     assert [event["kind"] for event in events] == ["error"]
     assert "併用できない" in events[0]["text"]
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("field", ["warnings", "warning_message"])
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("runtime", [False, True])
+def test_schema_definitions_are_not_runtime_warnings(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    host: str,
+    field: str,
+    wrapped: bool,
+    runtime: bool,
+) -> None:
+    """実記録形式で、定義と兄弟の実警告を公開照会・候補化で区別する。"""
+    value: dict[str, object] = {
+        "outputSchema": {"type": "object", "properties": {field: {"type": "string", "description": "定義の説明文"}}}
+    }
+    if runtime:
+        value[field] = "実際の警告"
+    output = json.dumps([{"nested": value}], ensure_ascii=False) if wrapped else value
+    if host == "codex":
+        entry = {
+            "type": "response_item",
+            "payload": {"type": "custom_tool_call_output", "call_id": "schema-control", "output": output},
+        }
+    else:
+        entry = {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "schema-control",
+                        "content": json.dumps(output, ensure_ascii=False) if isinstance(output, dict) else output,
+                    }
+                ],
+            },
+        }
+    transcript = _write_transcript(tmp_path, [entry])
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    events = read_jsonl(capsys)
+    assert [event["text"] for event in events] == (["実際の警告"] if runtime else ["一致なし"])
+    if runtime:
+        assert events[0]["line"] == 1
+    assert evidence.main([str(transcript), "--grep", "定義の説明文"]) == 0
+    assert read_jsonl(capsys)[-1]["count"] == 1
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    read_jsonl(capsys)
+    candidates = (bundle / "candidates.jsonl").read_text(encoding="utf-8")
+    assert "定義の説明文" not in candidates
+    assert ("実際の警告" in candidates) is runtime

@@ -25,6 +25,29 @@ from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
+@pytest.mark.parametrize("operation", ["start", "send_message", "kill", "stop"])
+def test_mcp_only_operations_are_actionable_errors(operation: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """MCP専用操作を実行せず、対応する公開ツールの説明へ案内する。"""
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["agents", operation])
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "MCP専用操作" in captured.err
+    assert f"agents_serverの{operation}" in captured.err
+    assert "公開説明で引数を確認" in captured.err
+
+
+@pytest.mark.parametrize("operation", ["wait", "notify", "list", "show", "logs"])
+def test_existing_agents_operations_keep_help(operation: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """既存CLIのヘルプは実行せず正常終了し、一般の誤入力は拒否する。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", operation, "--help"])
+    assert "使い方:" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["agents", "unknown-operation"])
+    assert "MCP専用操作" not in capsys.readouterr().err
+
+
 def _write_jsonl(path: pathlib.Path, records: list[dict]) -> None:
     """公開CLI用の保存済み記録を作成する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -192,6 +215,7 @@ def test_agents_wait_saves_small_result_without_output_option(
     assert output_lines == [
         f"保存先: {destination}",
         "行数: 1",
+        f"読取: atk read-file -- {destination}",
         "終端: 1件",
         f"終端行: session_id=session-1 label=調査レーンA status=completed agent_message_path={body_path}",
         "本文開始: session_id=session-1",
@@ -235,9 +259,10 @@ def test_agents_wait_auto_saves_long_result_for_agent_and_keeps_collection_reada
         atk.main(["agents", "wait"])
 
     output = capsys.readouterr().out
-    saved_line, count_line, terminal_line, terminal_row = output.splitlines()
+    saved_line, count_line, read_line, terminal_line, terminal_row = output.splitlines()
     saved = pathlib.Path(saved_line.removeprefix("保存先: "))
     assert saved_line.startswith("保存先: ")
+    assert read_line == f"読取: atk read-file -- {saved}"
     assert (count_line, terminal_line) == ("行数: 1", "終端: 1件")
     assert terminal_row.startswith("終端行: session_id=session-1 label=なし status=completed agent_message_path=")
     assert json.loads(saved.read_text(encoding="utf-8"))["agent_message"] == long_message
@@ -281,6 +306,7 @@ def test_agents_wait_saves_notice_summary(
     assert output_lines == [
         f"保存先: {destination}",
         "行数: 1",
+        f"読取: atk read-file -- {destination}",
         "通知: 1件（session_id: session-1）",
         "本文開始: session_id=session-1",
         "警告",
@@ -321,6 +347,7 @@ def test_agents_wait_saves_notice_and_terminal_summary(
     assert output_lines == [
         f"保存先: {destination}",
         "行数: 1",
+        f"読取: atk read-file -- {destination}",
         "通知: 2件（session_id: session-1）",
         "本文開始: session_id=session-1",
         "通知1",
@@ -384,13 +411,13 @@ def test_agents_wait_terminal_line_marks_result_finalized_with_remaining_waits(
 
     output_lines = capsys.readouterr().out.splitlines()
     saved = json.loads(pathlib.Path(output_lines[0].removeprefix("保存先: ")).read_text(encoding="utf-8"))
-    assert output_lines[3] == (
+    assert output_lines[4] == (
         f"終端行: session_id=session-1 label=なし status=completed agent_message_path={saved['agent_message_path']}{suffix}"
     )
 
 
 @pytest.mark.parametrize(("excess", "shown"), [pytest.param(0, True, id="at-limit"), pytest.param(1, False, id="over-limit")])
-def test_summarize_saved_wait_shows_body_only_within_direct_output_limit(
+def test_saved_wait_budget_includes_read_command(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], excess: int, shown: bool
 ) -> None:
     """本文を加えた標準出力全体が直接表示の上限に収まる場合だけ本文を続け、超える場合は終端行だけを示す。
@@ -402,7 +429,7 @@ def test_summarize_saved_wait_shows_body_only_within_direct_output_limit(
     saved = tmp_path / "output.txt"
     _write_jsonl(saved, [{"session_id": "session-1", "status": "completed", "agent_message_path": str(body_path)}])
     terminal_line = f"終端行: session_id=session-1 label=なし status=completed agent_message_path={body_path}"
-    header = f"保存先: {saved}\n行数: 1\n"
+    header = f"保存先: {saved}\n行数: 1\n読取: atk read-file -- {saved}\n"
     # 本文以外の出力。本文の末尾に改行が無いため、表示時に補う改行も含める。
     fixed = f"{header}終端: 1件\n{terminal_line}\n本文開始: session_id=session-1\n\n本文終了: session_id=session-1\n"
     body = "x" * (output_file.AUTO_SAVE_THRESHOLD_BYTES - len(fixed.encode("utf-8")) + excess)

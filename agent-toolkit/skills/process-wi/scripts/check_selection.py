@@ -65,10 +65,12 @@ import unicodedata
 
 import markdown_it
 import yaml
+from selection_merge import merge_selection
 
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
 from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import selection as _selection
@@ -593,10 +595,16 @@ def _check_public_write_rationales(items: list[dict[str, object]], costs: list[d
 
 
 def check(
-    selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: pathlib.Path, body_wis: set[str] | None = None
+    selection_file: pathlib.Path,
+    work_dir: pathlib.Path,
+    private_notes: pathlib.Path,
+    body_wis: set[str] | None = None,
+    *,
+    selection: dict[str, object] | None = None,
 ) -> list[str]:
     """指定した集合の本文と選定全体の関係を確かめ、違反の行を返す。省略時は全本文を検査する。"""
-    selection = load_selection(selection_file)
+    if selection is None:
+        selection = load_selection(selection_file)
     items = typing.cast(list[dict[str, object]], _selection.decisions(selection))
     costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
     unknown = (body_wis or set()) - {str(item[_selection.WI_KEY]) for item in items}
@@ -1018,11 +1026,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("selection_file", type=pathlib.Path, metavar="PATH", help="pickerが保存した選定結果の絶対パス")
     parser.add_argument("--work-dir", type=pathlib.Path, metavar="DIR", default=None, help="対象リポジトリの絶対パス")
     parser.add_argument("--body-wi", action="append", metavar="WI", help="本文検査するWIファイル名。反復指定可、省略時は全件")
+    parser.add_argument("--merge", type=pathlib.Path, metavar="PATH", help="追加選定YAMLの絶対パス")
+    parser.add_argument("--lane-map", type=pathlib.Path, metavar="PATH", help="追加レーンから最終レーンへの対応JSON")
+    parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した統合結果の保存先")
     args = parser.parse_args(argv)
+    if any(value is not None for value in (args.merge, args.lane_map, args.output)) and not all(
+        value is not None for value in (args.merge, args.lane_map, args.output)
+    ):
+        parser.error("--merge・--lane-map・--outputは組で指定する")
     body_wis = set(args.body_wi) if args.body_wi is not None else None
     try:
         work_dir = _resolve_work_dir(args.work_dir)
-        errors = check(args.selection_file, work_dir, _plan_file.private_notes_root(), body_wis)
+        selection = load_selection(args.selection_file)
+        if args.merge is not None:
+            try:
+                mapping = json.loads(args.lane_map.read_text(encoding="utf-8"))
+                selection = merge_selection(selection, load_selection(args.merge), mapping)
+            except (OSError, ValueError) as error:
+                raise InputError(
+                    str(error), next_action="追加入力とレーン対応JSONを確認して同じ統合操作を再実行する"
+                ) from error
+            structural, models = _structure_errors(selection)
+            if structural or models:
+                raise InputError("\n".join([*models, *structural]), next_action=_FIX_CONTENT)
+        errors = check(args.selection_file, work_dir, _plan_file.private_notes_root(), body_wis, selection=selection)
     except InputError as error:
         _next_action.report(error.reason, next_action=error.next_action)
         return 2
@@ -1046,7 +1073,16 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    print("\n".join(summary_lines(load_selection(args.selection_file), body_wis)))
+    if args.output is not None and args.merge is not None:
+        try:
+            if args.output.resolve() == args.merge.resolve():
+                raise OSError("追加YAMLを保存先に指定できない")
+            atomic_write(args.output, yaml.safe_dump(selection, allow_unicode=True, sort_keys=False))
+        except OSError as error:
+            _next_action.report(str(error), next_action="保存先を確認して同じ統合操作を再実行する")
+            return 2
+        print(f"統合結果: {args.output.resolve()}")
+    print("\n".join(summary_lines(selection, body_wis)))
     return 0
 
 

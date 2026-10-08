@@ -9,7 +9,7 @@ import sys
 from collections.abc import Callable, Generator
 from typing import TextIO
 
-from agent_toolkit._atk import outcome
+from agent_toolkit._atk import outcome, read_file
 
 AUTO_SAVE_THRESHOLD_BYTES = 16 * 1024
 """通常出力を自動保存するUTF-8バイト数の境界。短い出力は直接表示する。"""
@@ -24,13 +24,16 @@ def save_text(text: str, create_directory: Callable[[], pathlib.Path], *, filena
 
 
 def saved_report_text(path: pathlib.Path, *, stderr: bool = False) -> str:
-    """保存先・行数の2行を返す。標準出力と標準エラーは別の標識で示す。
+    """保存先・行数と最初の読取コマンドを返す。両ストリームは別の標識で示す。
 
-    保存後の表示が直接表示の上限の内訳へこの2行を含めるため、表示と同じ文字列をここだけで組み立てる。
+    保存後の表示が直接表示の上限の内訳へ案内を含めるため、表示と同じ文字列をここだけで組み立てる。
     """
     with path.open(encoding="utf-8", newline="") as stream:
         lines = sum(1 for _line in stream)
-    return f"{'標準エラー保存先' if stderr else '保存先'}: {path}\n{'標準エラー行数' if stderr else '行数'}: {lines}\n"
+    return (
+        f"{'標準エラー保存先' if stderr else '保存先'}: {path}\n{'標準エラー行数' if stderr else '行数'}: {lines}\n"
+        f"{'標準エラー読取' if stderr else '読取'}: {read_file.first_read_command(path)}\n"
+    )
 
 
 def _report_saved(path: pathlib.Path, *, stderr: bool = False) -> None:

@@ -5,6 +5,16 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if ($args.Count -eq 1 -and $args[0] -eq '--help') {
+    Write-Output 'optimize-power-settings: Windows電源設定を最適化します。引数なし、または自昇格用の-AutoElevatedを受理します。'
+    Write-Output '--help: この説明を表示して終了します。'
+    exit 0
+}
+if ($args.Count -gt 0) {
+    [Console]::Error.WriteLine('受理できない引数: ' + ($args -join ' '))
+    exit 2
+}
+
 function Invoke-Native {
     param(
         [Parameter(Mandatory = $true)] [string]$Description,

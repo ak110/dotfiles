@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -25,8 +26,9 @@ def run_generator(path: str) -> int:
     return subprocess.run([sys.executable, path], cwd=REPO_ROOT, check=False).returncode
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """全生成器を固定順で実行し、失敗を集約する。"""
+    argparse.ArgumentParser(description=__doc__).parse_args(argv)
     failures: list[str] = []
     for generator in GENERATORS:
         if run_generator(generator) != 0:

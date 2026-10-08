@@ -4,12 +4,37 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shlex
 import sys
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import output_file
+
+
+def test_saved_streams_lead_to_read_file(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """両ストリームの案内を起点に、保存した全文へ公開操作だけで到達する。"""
+    bodies = ("標準出力\r\n" * 3000, "標準エラー\n" * 3000)
+    with output_file.auto_save(lambda: tmp_path):
+        sys.stdout.write(bodies[0])
+        sys.stderr.write(bodies[1])
+    captured = capsys.readouterr()
+    for output, expected, prefix in zip((captured.out, captured.err), bodies, ("", "標準エラー"), strict=True):
+        lines = output.splitlines()
+        assert lines[0].startswith(f"{prefix}保存先: ")
+        assert lines[1] == f"{prefix}行数: 3000"
+        argv = shlex.split(lines[2].removeprefix(f"{prefix}読取: "))
+        parts: list[str] = []
+        while True:
+            code, body, error = run_atk(argv[1:], capsys)
+            assert code == 0 and not error
+            response = json.loads(body)
+            parts.append(response["text"])
+            if response["eof"]:
+                break
+            argv = ["atk", "read-file", "--start", str(response["next"]), "--", argv[-1]]
+        assert "".join(parts) == expected
 
 
 @pytest.mark.parametrize("stderr", [False, True])
@@ -145,7 +170,7 @@ def test_evidence_saves_only_output_passed_as_file(
         output = path.read_text(encoding="utf-8")
         # 保存後の表示は保存ファイルの発話行と同じ順・同じ記録位置を示し、呼び出し元は保存先を開かずに出所を選べる。
         users = [event for event in map(json.loads, output.splitlines()) if event["kind"] == "user"]
-        assert summary[2:] == [f"発話: record={event['record']} line={event['line']} {event['text']}" for event in users]
+        assert summary[3:] == [f"発話: record={event['record']} line={event['line']} {event['text']}" for event in users]
     assert "検索語" in output
 
 

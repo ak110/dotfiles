@@ -1,4 +1,4 @@
-"""選定結果の`書込対象`がWI本文の反映先パスを覆うかの検証を確かめる。"""
+"""選定結果の被覆・構造と、チェック専用操作の互換性を確かめる。"""
 
 import argparse
 import json
@@ -83,6 +83,14 @@ def _run(tmp_path: pathlib.Path, repo: pathlib.Path, decisions: list[dict[str, t
 def _dispatch(*args: str) -> int:
     """`atk run-script pick-wi-check`の公開名から検証を実行し、終了コードを返す。"""
     return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
+
+
+@pytest.mark.parametrize("option", ["--merge", "--lane-map", "--output"])
+def test_merge_options_must_be_provided_together(tmp_path: pathlib.Path, option: str) -> None:
+    """統合モードの不完全な呼出は、ファイルを読む前に入力誤りとして拒否する。"""
+    with pytest.raises(SystemExit) as error:
+        check_selection.main([str(tmp_path / "selection.yaml"), option, str(tmp_path / "other")])
+    assert error.value.code == 2
 
 
 def _overlap_record(path: str, judgment: str = "交わらない") -> dict[str, typing.Any]:

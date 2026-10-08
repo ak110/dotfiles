@@ -6,15 +6,24 @@
 import json
 import pathlib
 import re
-import subprocess
+import shlex
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._hooks import pretooluse
-from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read
+from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read
 
 _THRESHOLD = 48 * 1024
-_RANGE_RE = re.compile(r"`sed -n '(\d+),(\d+)p' ([^`\s]+)`")
+
+
+@pytest.mark.parametrize("command", ["cat -- large.txt", "sed -n '2,3p' large.txt", "atk read-file -- large.txt"])
+def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.Path, command: str) -> None:
+    """配送の追加読取形は同じパスを得るが、既存の大量読取遮断を増やさない。"""
+    target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
+    command = f"cd {target.parent} && {command}"
+    assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
+    assert check_large_bash_read(command, str(tmp_path), is_codex=True) is None
 
 
 def _sized_file(tmp_path: pathlib.Path, size: int, name: str = "large.txt", line_bytes: int = 100) -> pathlib.Path:
@@ -31,10 +40,6 @@ def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
     return check_large_bash_read(command, str(cwd), is_codex=True)
 
 
-def _ranges(notice: str) -> list[tuple[int, int, str]]:
-    return [(int(first), int(last), path) for first, last, path in _RANGE_RE.findall(notice)]
-
-
 def test_codex_byte_threshold_boundary(tmp_path: pathlib.Path) -> None:
     """48KiB以下の全文取得は通し、1バイトでも超えると遮断する。"""
     within = _sized_file(tmp_path, _THRESHOLD, "within.md")
@@ -44,51 +49,29 @@ def test_codex_byte_threshold_boundary(tmp_path: pathlib.Path) -> None:
     assert _codex_read(f"cat {over}", tmp_path) is not None
 
 
-def test_codex_notice_ranges_cover_all_lines_within_threshold(tmp_path: pathlib.Path) -> None:
-    """通知の範囲案は`sed -n`の形で全行を重複も欠落もなく覆い、各範囲が閾値以下になる。
-
-    範囲案どおりの取得が再び遮断されると、通知が正しい操作のたびに反復する。
-    """
-    path = _sized_file(tmp_path, _THRESHOLD * 2 + 5000, "agent-toolkit/rules/01-agent.md")
-    lines = path.read_bytes().splitlines(keepends=True)
-
-    notice = _codex_read(f"cat {path}", tmp_path)
-
+@pytest.mark.parametrize("single_line", [False, True])
+def test_block_notice_leads_to_read_file(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], single_line: bool) -> None:
+    """通知から示した公開コマンドだけで、長い単一行を含む全文を復元する。"""
+    path = _sized_file(tmp_path / "with space", _THRESHOLD + 300, line_bytes=100000 if single_line else 100)
+    notice = _codex_read(f"cat {shlex.quote(str(path))}", tmp_path)
     assert notice is not None
-    ranges = _ranges(notice)
-    assert len(ranges) >= 3
-    expected_first = 1
-    for first, last, quoted in ranges:
-        assert first == expected_first
-        assert quoted == str(path)
-        assert sum(len(line) for line in lines[first - 1 : last]) <= _THRESHOLD
-        assert _codex_read(f"sed -n '{first},{last}p' {path}", tmp_path) is None
-        expected_first = last + 1
-    assert expected_first == len(lines) + 1
-
-
-def test_codex_notice_range_command_reproduces_file(tmp_path: pathlib.Path) -> None:
-    """範囲案のコマンドを順に実行した出力の連結が元のファイルと一致する。"""
-    path = _sized_file(tmp_path / "with space", _THRESHOLD + 300, "large.md")
-
-    notice = _codex_read(f"cat '{path}'", tmp_path)
-
-    assert notice is not None
-    commands = re.findall(r"`(sed -n '\d+,\d+p' [^`]+)`", notice)
-    assert commands
-    output = b"".join(subprocess.run(["bash", "-c", command], capture_output=True, check=True).stdout for command in commands)
-    assert output == path.read_bytes()
-
-
-def test_codex_notice_reports_oversized_single_line(tmp_path: pathlib.Path) -> None:
-    path = tmp_path / "minified.js"
-    path.write_bytes(b"x" * (_THRESHOLD + 10) + b"\nshort\n")
-
-    notice = _codex_read(f"cat {path}", tmp_path)
-
-    assert notice is not None
-    assert f"1行目（{_THRESHOLD + 11}バイト）" in notice
-    assert _ranges(notice) == [(2, 2, str(path))]
+    command = re.search(r"`(atk read-file -- [^`]+)`", notice)
+    assert command is not None
+    argv = shlex.split(command.group(1))
+    parts: list[str] = []
+    while True:
+        assert _codex_read(shlex.join(argv), tmp_path) is None
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(argv[1:])
+        captured = capsys.readouterr()
+        assert not captured.err
+        assert len(captured.out.encode("utf-8")) <= 4096
+        result = json.loads(captured.out)
+        parts.append(result["text"])
+        if result["eof"]:
+            break
+        argv = ["atk", "read-file", "--start", str(result["next"]), "--", str(path)]
+    assert "".join(parts).encode("utf-8") == path.read_bytes()
 
 
 @pytest.mark.parametrize("change", ["cd", "pushd"])
@@ -188,4 +171,4 @@ def test_dispatch_codex_blocks_bash_full_read(tmp_path: pathlib.Path, capsys) ->
     assert pretooluse.main(json.dumps(payload)) == 2
     err = capsys.readouterr().err
     assert str(target) in err
-    assert "sed -n '1," in err
+    assert "atk read-file -- " in err

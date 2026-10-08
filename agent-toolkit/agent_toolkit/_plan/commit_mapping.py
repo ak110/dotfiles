@@ -35,7 +35,22 @@ class CommitMappingError(next_action.ActionableError):
 def _fail(reason: str) -> CommitMappingError:
     return CommitMappingError(
         reason,
-        next_action="対象AWIと実装commit・履歴変更の対応を実装担当が補い、`atk run-script plan-progress`で再記録する",
+        next_action="対象の計画または引き継ぎ記録と同じstemの対応記録を確認し、実装担当が不足・不正な対応を補って"
+        "`atk run-script plan-progress`で再記録する",
+    )
+
+
+def _input_fail(reason: str) -> CommitMappingError:
+    return CommitMappingError(
+        reason,
+        next_action="計画の関連WI（引き継ぎ記録では対象AWI）を確認し、正しいAWIファイル名を--awiへ渡して再実行する",
+    )
+
+
+def _git_fail(reason: str) -> CommitMappingError:
+    return CommitMappingError(
+        reason,
+        next_action="--worktreeが対象作業ツリーを指すか、commitが実在し現在のHEADに含まれるかをGitで確認して再実行する",
     )
 
 
@@ -48,11 +63,19 @@ def mapping_path(record: pathlib.Path) -> pathlib.Path:
     return record.with_name(_bundle_kinds.WI_COMMITS.name_for(record.stem))
 
 
-def validate_wis(wis: list[str]) -> set[str]:
-    """外部入力のAWI集合を検証する。"""
+def validate_wis(wis: list[str], *, recorded: bool = False) -> set[str]:
+    """AWI集合を検証し、外部入力と保存済み記録の修復先を区別する。"""
     if not wis or any(_WI.fullmatch(wi) is None for wi in wis):
-        raise _fail(f"AWI集合が不正です: {wis}")
+        raise (_fail if recorded else _input_fail)(f"AWI集合が不正です: {wis}")
     return set(wis)
+
+
+def validate_targets(wis: list[str], allowed_wis: set[str]) -> set[str]:
+    """対応記録を読む前に呼出側の対象指定を検証する。"""
+    names = validate_wis(wis)
+    if outside := names - allowed_wis:
+        raise _input_fail(f"指定した対象外AWI: {sorted(outside)}")
+    return names
 
 
 def _full_oid(worktree: pathlib.Path, value: str) -> str:
@@ -71,11 +94,11 @@ def _full_oid(worktree: pathlib.Path, value: str) -> str:
             text=True,
         )
     except (OSError, subprocess.SubprocessError) as error:
-        raise _fail(f"commitを解決できません: {value}: {error}") from error
+        raise _git_fail(f"commitを解決できません: {value}: {error}") from error
     assert isinstance(result.stdout, str)
     oid = result.stdout.strip()
     if result.returncode != 0 or _OID.fullmatch(oid) is None:
-        raise _fail(f"commitを一意に解決できません（存在しないか、短縮OIDが複数のcommitに一致します）: {value}")
+        raise _git_fail(f"commitを一意に解決できません（存在しないか、短縮OIDが複数のcommitに一致します）: {value}")
     return oid
 
 
@@ -84,7 +107,7 @@ def short_oid(worktree: pathlib.Path, oid: str) -> str:
     try:
         result = command.run(["rev-parse", "--short", "--verify", "--quiet", oid], worktree, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError) as error:
-        raise _fail(f"短縮OIDを取得できません: {oid}: {error}") from error
+        raise _git_fail(f"短縮OIDを取得できません: {oid}: {error}") from error
     assert isinstance(result.stdout, str)
     short = result.stdout.strip()
     return short if result.returncode == 0 and short and oid.startswith(short) else oid
@@ -97,9 +120,9 @@ def resolve_commit(worktree: pathlib.Path, revision: str) -> str:
         verified = command.output(["rev-parse", "--verify", "--end-of-options", f"{oid}^{{commit}}"], worktree)
         present = command.run(["merge-base", "--is-ancestor", verified, "HEAD"], worktree, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError) as error:
-        raise _fail(f"実装commitを解決できません: {revision}: {error}") from error
+        raise _git_fail(f"実装commitを解決できません: {revision}: {error}") from error
     if _OID.fullmatch(verified) is None or present.returncode != 0:
-        raise _fail(f"現在のHEADに実装commitがありません: {revision}")
+        raise _git_fail(f"現在のHEADに実装commitがありません: {revision}")
     return verified
 
 
@@ -161,7 +184,7 @@ def read_mapping(worktree: pathlib.Path, events: list[dict[str, object]], allowe
                 raise _fail(f"commit対応にcommitがありません: {oids}")
             if not isinstance(wis, list) or any(not isinstance(wi, str) for wi in wis):
                 raise _fail(f"commit対応のAWI集合が不正です: {wis}")
-            names = validate_wis(wis)
+            names = validate_wis(wis, recorded=True)
             if outside := names - allowed_wis:
                 raise _fail(f"記録に対象外AWIがあります: {sorted(outside)}")
             for oid in oids:
@@ -198,9 +221,7 @@ def commit_event(
     `revision`は現在のHEADを指し、前HEADから現在のHEADまでのfirst-parentの履歴がマージcommitを含まない
     1件以上のcommitの直列である場合だけ記録する。
     """
-    names = validate_wis(wis)
-    if outside := names - allowed_wis:
-        raise _fail(f"commitの対象外AWI: {sorted(outside)}")
+    names = validate_targets(wis, allowed_wis)
     try:
         previous = _full_oid(worktree, previous_head)
     except CommitMappingError as error:
@@ -210,7 +231,7 @@ def commit_event(
         head = command.output(["rev-parse", "--verify", "HEAD"], worktree)
         ancestor = command.run(["merge-base", "--is-ancestor", previous, head], worktree, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError) as error:
-        raise _fail(f"現在のHEADを確認できません: {error}") from error
+        raise _git_fail(f"現在のHEADを確認できません: {error}") from error
     if oid != head:
         raise _range_fail(f"指定commitが現在のHEADではありません: {revision}")
     if previous == head:
@@ -220,7 +241,7 @@ def commit_event(
     try:
         lines = command.output(["rev-list", "--first-parent", "--parents", f"{previous}..{head}"], worktree).splitlines()
     except (OSError, subprocess.SubprocessError) as error:
-        raise _fail(f"前HEADから現在のHEADまでのcommitを列挙できません: {error}") from error
+        raise _git_fail(f"前HEADから現在のHEADまでのcommitを列挙できません: {error}") from error
     chain = [line.split() for line in lines]
     if len(chain[-1]) < 2 or chain[-1][1] != previous:
         raise _range_fail(f"前HEADが現在のHEADのfirst-parentの祖先ではありません: {previous_head}")
@@ -280,7 +301,10 @@ def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[st
     return {"rewrite": resolved}
 
 
-_FIX_RANGE_MAP = "対応表の該当項目を書換え前後の`git range-diff`の結果と比べて直し、同じ引数で再実行する"
+_FIX_RANGE_MAP = (
+    "rebase/autosquashの対応表は`atk run-script history-compare`で範囲を検収して再生成する。"
+    "amendはcommitのhistory-rewrite.mdに従って1対1の対応を検収・保存し、同じ引数で再実行する"
+)
 
 
 def _is_ancestor(worktree: pathlib.Path, oid: str, head: str) -> bool:
@@ -288,7 +312,7 @@ def _is_ancestor(worktree: pathlib.Path, oid: str, head: str) -> bool:
     try:
         result = command.run(["merge-base", "--is-ancestor", oid, head], worktree, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError) as error:
-        raise _fail(f"commitの到達を確認できません: {oid}: {error}") from error
+        raise _git_fail(f"commitの到達を確認できません: {oid}: {error}") from error
     return result.returncode == 0
 
 
@@ -362,9 +386,7 @@ def get_commits(
     worktree: pathlib.Path, events: list[dict[str, object]], wis: list[str], allowed_wis: set[str]
 ) -> dict[str, list[str]]:
     """対象AWIの現在の実装commit集合を取得時点で一意な長さの短縮OIDで返し、不足があれば推測せず失敗する。"""
-    targets = validate_wis(wis)
-    if outside := targets - allowed_wis:
-        raise _fail(f"取得対象に対象外AWIがあります: {sorted(outside)}")
+    targets = validate_targets(wis, allowed_wis)
     mapping = read_mapping(worktree, events, allowed_wis)
     result: dict[str, list[str]] = {wi: [] for wi in sorted(targets)}
     for oid, names in mapping.items():

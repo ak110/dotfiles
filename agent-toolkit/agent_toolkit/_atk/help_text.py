@@ -20,6 +20,7 @@ from agent_toolkit._atk import outcome as _outcome
 
 ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（`atk agents wait`、FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`atk agents wait`が通知・終端の内訳と本文を、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断の詳細も`標準エラー保存先:`の保存先へ書く。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
+ROOT_EPILOG += "\n\n保存結果は両ストリームの最初のatk read-fileコマンドを示す。返却JSONのtextを連結し、nextを--startへ渡してeof: trueまで読む。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
 """CI対応レビュー指摘管理表の名前の書式。保存済みの表は`ci/`を前置する。
@@ -28,6 +29,22 @@ CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以�
 """
 
 HELP: dict[str, dict[str, str]] = {
+    "atk read-file": {
+        "summary": "UTF-8本文を上限内で連続取得する",
+        "description": (
+            "目的: 長い本文を文字と改行を保って取得する。\n"
+            "利用場面: 全文取得が出力上限で失敗した後、またはatkが返した保存先の本文を読むとき。\n"
+            "対象と出力: UTF-8ファイルの絶対パスを指定する。text、start、end、next、eofを持つJSONを返す。"
+            "末尾の改行とJSONのエスケープを含む返却全体は4096 UTF-8バイト以内。"
+            "位置はデコード後の文字数で、endは取得末尾を含まない。"
+            "textを連結し、nextを--startへ渡してeofがtrueになるまで取得する。終端のnextはnull。"
+            "空ファイルと末尾位置も空のtextで終端を示す。\n"
+            "前提: 通常のファイルは事前に容量を測らず全文取得から始める。"
+            "負の位置、末尾を超える位置、相対パス、不在と非UTF-8は非0で拒否する。\n"
+            "復元・後始末: 読取だけを行い、取得状態を保存しないため不要。"
+        ),
+        "epilog": "実行例:\n\n  atk read-file -- /absolute/path/to/file.txt\n  atk read-file --start 1000 -- /absolute/path/to/file.txt",
+    },
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",
         "description": "目的: atkが参照する実行環境を診断する。\n利用場面: 起動したディレクトリ、pluginの版または設定の所在を確かめるとき。\n対象と出力: 現在ディレクトリ、実行ファイル、plugin rootと版、設定ファイルと状態ディレクトリの所在を標準出力へ書く。\n前提: なし。\n復元・後始末: 読み取りだけを行うため不要。",
@@ -395,6 +412,19 @@ HELP: dict[str, dict[str, str]] = {
     },
 }
 
+HELP["atk agents"]["description"] += (
+    "\n操作の分担: 開始はMCPサーバーagents_serverのstart、追送はsend_message、実行中turnの中断はkill、"
+    "終端済みsessionの破棄はstopを呼び出す。引数は各MCPツールの公開説明で確認する。"
+    "これらはCLIから実行できない。CLIはwaitで待機・回収、notifyで委譲元への通知、"
+    "listで一覧、showで詳細、logsで記録の表示を行う。"
+)
+HELP["atk run-script"]["description"] += (
+    "\n履歴の検収はhistory-compareでrebaseとautosquashを分け、検収済み完全OID対応表をplan-rewriteと証拠の--rewrite-mapへ渡す。"
+    "verification-recordとexec-review-evidence-checkは--results-fileでJUnit・実行記録・構造化診断を読み、"
+    "--list-resultsで選択して--updates-fileで複数の要求行へ根拠を保存する。各scriptの--helpが入力JSONの形式を示す。"
+    "未判定記録の判定欄は空に保ち、レビューでは行ごとの判定とHEADを明示して別ファイルへ保存する。"
+)
+
 _STATE_CHANGE_RESULT_LINE = "状態変更が成立した実行は標準出力の1行目へ`成功: `で始まる行を書く。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
 _VALUE_OUTPUT_RESULT_LINE = (
     "状態変更が成立した実行は標準エラーの1行目へ`成功: `で始まる行を書き、標準出力は値と構造化データだけを保つ。"
@@ -469,6 +499,15 @@ class JapaneseHelpFormatter(argparse.HelpFormatter):
 
 class GuidedSubcommandParser(argparse.ArgumentParser):
     """解釈できない引数を、サブコマンドの受理形式とともに拒否する。"""
+
+    @typing.override
+    def _check_value(self, action: argparse.Action, value: Any) -> None:
+        if action.dest == "agents_subcommand" and value in ("start", "send_message", "kill", "stop"):
+            raise argparse.ArgumentError(
+                action,
+                f"{value}はMCP専用操作です。次の操作: MCPサーバーagents_serverの{value}の公開説明で引数を確認し、そのツールを呼び出す",
+            )
+        super()._check_value(action, value)
 
     @typing.override
     def parse_known_args(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # ty: ignore[invalid-method-override]

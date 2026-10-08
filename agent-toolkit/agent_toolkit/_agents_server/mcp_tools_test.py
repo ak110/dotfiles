@@ -16,7 +16,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 
 import agent_toolkit.agents_server_mcp as entry_script
 from agent_toolkit._agents_server import claude as claude_backend

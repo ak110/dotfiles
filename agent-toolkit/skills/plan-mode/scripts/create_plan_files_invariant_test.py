@@ -1,5 +1,7 @@
 """計画作成処理とエージェント向け文書の横断契約を検証する。"""
 
+import argparse
+import json
 import pathlib
 import re
 
@@ -10,7 +12,10 @@ from create_plan_files_test import (  # pylint: disable=import-error,unused-impo
     _source,
 )
 
-_DOCUMENTED_BUG_REFERENCE_PATTERN = re.compile(r"^- 計画ファイル（バグ）: `([^`]+)`$", re.MULTILINE)
+from agent_toolkit._atk import run_script
+from agent_toolkit._testing import git_repository
+
+_DOCUMENTED_BUG_REFERENCE_PATTERN = re.compile(r"計画ファイル（バグ）: `([^`]+)`")
 
 
 @pytest.fixture(name="repo")
@@ -81,3 +86,78 @@ def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
     created = [pathlib.Path(line) for line in captured.out.splitlines() if line]
     assert len(created) == (2 if bug else 1)
     assert all(path.exists() for path in created)
+
+
+@pytest.mark.parametrize("refactoring", [True, False])
+def test_document_template_supports_create_progress_and_commit_lookup(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    refactoring: bool,
+) -> None:
+    """実在文書の雛形を記入し、公開操作だけで作成、進捗と対応の保存、取得まで進む。"""
+    document = pathlib.Path(__file__).resolve().parents[1] / "references" / "plan-file-standards.md"
+    template = (
+        document.read_text(encoding="utf-8").split("## 初回起草の雛形\n", 1)[1].split("```md\n", 1)[1].split("\n```", 1)[0]
+    )
+    content = re.sub(r"<[^>]+>", "案件の記入内容", template).replace("/absolute/repository/path", str(repo))
+    if not refactoring:
+        start = content.index("| 対象 | 現状の問題 | 対応 |")
+        end = content.index("## 変更履歴", start)
+        content = content[:start] + "\n" + content[end:]
+    notes = tmp_path / "private-notes"
+    (notes / "processing").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    wi = "20260831-000000-001.md"
+    (notes / "processing" / wi).write_text(
+        "---\nsource: test\n---\n# 変更\n\n## 適用範囲\n\n対象の公開契約。\n", encoding="utf-8"
+    )
+    source = tmp_path / "template.md"
+    source.write_text(content + "\n", encoding="utf-8")
+    args = argparse.Namespace(
+        script_name="plan-create",
+        script_args=[
+            "--main-source",
+            str(source),
+            "--name",
+            "template",
+            "--work-dir",
+            str(repo),
+            "--home",
+            str(tmp_path / "home"),
+        ],
+    )
+    assert run_script.dispatch(args) == 0
+    capsys.readouterr()
+    (plan,) = (tmp_path / "home" / ".claude" / "plans").glob("*.md")
+    git_repository.run_git(
+        repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "base"
+    )
+    previous = git_repository.run_git(repo, "rev-parse", "HEAD").stdout.strip()
+    git_repository.run_git(
+        repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "change"
+    )
+    args.script_name = "plan-progress"
+    args.script_args = [
+        str(plan),
+        "--completed-step",
+        "実装",
+        "--result",
+        "成功",
+        "--commit",
+        "HEAD",
+        "--previous-head",
+        previous,
+        "--worktree",
+        str(repo),
+        "--awi",
+        wi,
+    ]
+    assert run_script.dispatch(args) == 0
+    assert "実装 | 成功" in plan.read_text(encoding="utf-8")
+    capsys.readouterr()
+    args.script_name = "plan-commits"
+    args.script_args = [str(plan), "--worktree", str(repo), "--awi", wi]
+    assert run_script.dispatch(args) == 0
+    assert json.loads(capsys.readouterr().out)["awi"] == wi

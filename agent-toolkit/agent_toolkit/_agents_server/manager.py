@@ -115,6 +115,16 @@ class AgentsServerManager(manager_wait.ManagerWait):
             raise ActionableError(
                 f"no model candidates remain for model_type: {model_type}", next_action=MODEL_TYPE_NEXT_ACTION
             )
+        unsupported = {
+            candidate: "Antigravityは読み取り専用のexploreに対応していません"
+            for candidate in candidates
+            if launch_kind == "explore" and candidate[0] == "agy"
+        }
+        candidates = [candidate for candidate in candidates if candidate not in unsupported]
+        if not candidates:
+            raise ActionableError(
+                "no model candidates remain: " + "; ".join(unsupported.values()), next_action=MODEL_TYPE_NEXT_ACTION
+            )
         recorded = unavailable_candidates.load_unavailable_candidates(
             model_type,
             launch_kind,
@@ -127,8 +137,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
         }
         remaining = [item for item in candidates if item not in excluded]
         if not remaining:
-            return candidates, {}
-        return remaining, excluded
+            return candidates, unsupported
+        return remaining, excluded | unsupported
 
     async def start(
         self,

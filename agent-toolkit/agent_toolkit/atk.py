@@ -58,6 +58,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # py
 from agent_toolkit._atk import outcome as _outcome  # noqa: E402
 from agent_toolkit._atk import output_file as _output_file  # noqa: E402
 from agent_toolkit._atk import plans as _plans  # noqa: E402
+from agent_toolkit._atk import read_file as _read_file
 from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
 from agent_toolkit._atk import review_table as _review_table  # noqa: E402
 from agent_toolkit._atk import run_command as _run_command  # noqa: E402
@@ -166,6 +167,7 @@ _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None
     ("wi", _wi_cli.build_parser),
     ("run-script", _run_script.build_parser),
     ("run-command", _run_command.build_parser),
+    ("read-file", _read_file.build_parser),
     ("run-skill", _run_skill.build_parser),
     ("plans", _plans.build_parser),
     ("serve", _serve_command.build_parser),
@@ -353,6 +355,7 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     "agents-exit-session": lambda invocation: _agents_exit_session.dispatch(invocation.args),
     "run-script": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _run_script.dispatch),
     "run-command": lambda invocation: _run_command.dispatch(invocation.args),
+    "read-file": lambda invocation: _read_file.dispatch(invocation.args),
     "run-skill": lambda invocation: _run_skill.dispatch(invocation.args),
     "serve": lambda invocation: _serve_command.dispatch(invocation.args, parser=invocation.parser, home=invocation.home),
     "managed-temp": _dispatch_managed_temp,

@@ -28,6 +28,8 @@ import sys
 import tempfile
 import typing
 
+import verification_results
+
 from agent_toolkit._atk import review_table
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import repo as _wi_repo
@@ -1959,7 +1961,49 @@ def main(argv: list[str] | None = None) -> int:
         help="履歴書換えの旧OIDから新OIDへの対応表（JSONオブジェクト）の絶対パス。判定せず、両配列のevidenceの"
         "commit参照だけを書き換える。判定とreviewed_headは変えないため、更新後に各行を新しいHEADで再判定する",
     )
+    verification_results.add_arguments(parser, reviewing=True)
     args = parser.parse_args(argv)
+    if args.results_file or args.list_results or args.updates_file or args.verification_record or args.output:
+        if (
+            args.batch
+            or args.template
+            or args.rewrite_map
+            or args.return_result
+            or args.review_table
+            or args.round
+            or args.expected_head
+        ):
+            parser.error("結果の取込みは雛形生成・参照更新・判定の確認・返却生成とは別に実行する")
+        try:
+            results = verification_results.load_results(args.results_file)
+            if args.list_results:
+                if args.results_file is None or args.updates_file or args.output:
+                    raise ValueError("結果一覧には--results-fileだけを指定し、更新とは別に実行する")
+                verification_results.list_results(results)
+                return 0
+            if args.evidence is None or args.updates_file is None or args.output is None:
+                raise ValueError("レビュー更新は入力証拠・--updates-file・--outputを指定する")
+            if args.verification_record and args.output.resolve() == args.verification_record.resolve():
+                raise ValueError("レビュー出力は未判定記録と別ファイルへ保存する")
+            payload, errors = validate_structure(verification_results.load_json(args.evidence))
+            pending = None
+            if args.verification_record:
+                pending, pending_errors = validate_structure(verification_results.load_json(args.verification_record))
+                errors.extend(pending_errors)
+            if errors:
+                raise ValueError("。".join(errors))
+            payload = verification_results.updated_payload(
+                payload, args.updates_file, results, reviewing=True, pending=pending, outcomes=SECTION_OUTCOMES
+            )
+            verification_results.save(args.output, payload)
+        except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:
+            _next_action.report(
+                str(error),
+                next_action="ヘルプの入力契約と--list-resultsの識別子を確認し、同じ操作を再実行する。記録は変更していない",
+            )
+            return 1
+        print(f"成功: 明示した要求行の判定と根拠を保存しました: {args.output}")
+        return 0
     if args.batch is not None:
         if any(
             (

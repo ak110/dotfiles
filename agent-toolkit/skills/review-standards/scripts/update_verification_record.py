@@ -13,6 +13,7 @@ import pathlib
 import subprocess
 
 import check_exec_review_evidence as review
+import verification_results
 
 from agent_toolkit._common import next_action, requirement_units
 from agent_toolkit._common.atomic_file import atomic_write
@@ -31,6 +32,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--source", help="一覧で確認したsourceの完全一致文字列")
     parser.add_argument("--evidence-file", type=pathlib.Path, metavar="PATH", help="根拠を持つUTF-8ファイルの絶対パス")
     parser.add_argument("--mode", choices=("append", "replace"), help="根拠の追記か置換")
+    verification_results.add_arguments(parser)
     return parser
 
 
@@ -53,11 +55,25 @@ def run(args: argparse.Namespace) -> None:
     paths = [args.output, *args.plan, *([args.evidence_file] if args.evidence_file else [])]
     if any(not path.is_absolute() for path in paths):
         raise ValueError("ファイルは絶対パスで指定する")
+    results = verification_results.load_results(args.results_file)
+    if args.list_results:
+        if (
+            args.results_file is None
+            or args.updates_file
+            or args.list
+            or any(value is not None for value in (args.section, args.row, args.source, args.evidence_file, args.mode))
+        ):
+            raise ValueError("--list-resultsは--results-fileと指定し、更新・原文一覧とは別に実行する")
+        verification_results.list_results(results)
+        return
     updating = any(value is not None for value in (args.section, args.row, args.source, args.evidence_file, args.mode))
     if updating and any(value is None for value in (args.section, args.row, args.source, args.evidence_file, args.mode)):
         raise ValueError("更新には--section・--row・--source・--evidence-file・--modeを全て指定する")
     if args.list and updating:
         raise ValueError("一覧と更新は別々に実行する")
+    if args.updates_file and (args.list or updating):
+        raise ValueError("一括更新と単一行更新・一覧は別々に実行する")
+    updating = updating or args.updates_file is not None
     if (args.list or updating) and not args.output.is_file():
         raise ValueError("一覧・更新の前に未判定検証記録を生成する")
     if not args.wi and not args.plan and not args.list and not updating:
@@ -71,7 +87,9 @@ def run(args: argparse.Namespace) -> None:
             [(str(plan), plan.read_text(encoding="utf-8")) for plan in dict.fromkeys(args.plan)],
         )
         requirement_units.append_missing_rows(payload, expected)
-    if updating:
+    if args.updates_file:
+        payload = verification_results.updated_payload(payload, args.updates_file, results)
+    elif updating:
         rows = payload[args.section]
         if not 1 <= args.row <= len(rows):
             raise ValueError("--rowが対象配列に存在しません。--listで行番号と出所を確認する")

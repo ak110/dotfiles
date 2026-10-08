@@ -5,6 +5,13 @@
 
 ## backend構成と起動
 
+MCP Python SDK 2系の`MCPServer`が6ツールの登録、入力スキーマと構造化応答を所有する。
+stdioの送受信は公開lowlevel `Server`と`stdio_server`へ接続し、登録側の`list_tools`・`call_tool`を使う。
+通常の`MCPServer.run`では既存のstream監視を挿入できないため、この接続でinitializeの受信、応答送信の成功・失敗と未完了終了を診断する。
+Managerのactivate・closeも同じlowlevelサーバーのlifespanへ接続する。
+SDKのprivateサーバー属性へ依存する案と、ツール定義やスキーマ生成を二重に持つ案は採らない。
+ツール処理の`ToolError`は理由と次の操作を持つエラー応答へ変換し、SDKが返す構造化成功応答と区別する。
+
 `agents_server`はClaude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
 `start`の`model_type`に対応する工程別モデル設定でCodex backendまたはClaude backendを選択し、各backendの実行主体を
 共有のsession状態機械、待機通知および結果配送境界へ接続する。Codex backendは公式stdio App Serverを
@@ -166,9 +173,9 @@ timeout後は、送った継続要求の受理結果、またはその要求に�
 
 ### `explore`と`shell`
 
-`start`の`explore`は調査委譲の初期コンテキストと起動費用を減らすため、backend別の軽量起動条件で開始する。Codex backendは`thread/start`へ`project_doc_max_bytes=0`と探索用指示を渡す。Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省いて組込tool presetと探索用toolを維持する。Antigravity backendは軽量起動を区別せず、全modeで`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読む。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。探索委譲を選ぶ条件は`agent-toolkit/rules/01-agent.md`、起動手段は`runtime-routing.md`を知識境界とする。読取専用sandboxで書込を機械的に禁じる案は、`agent-toolkit:delegation`が読取専用の担保にsandbox値を用いない既存規定と衝突するため採用しない。
+`start`の`explore`は調査委譲の初期コンテキストと起動費用を減らし、実行側で書込を制限する。Codex backendは開始・再開へ`project_doc_max_bytes=0`と探索用指示、読み取り専用sandboxを渡し、後続turnでも読み取り専用と承認不要の拒否を保つ。MCPの実効設定を取得して全serverを無効にし、Apps・プラグイン・下位委譲も無効にする。実効設定を取得できない場合は起動を中止する。Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省く。提供する組込toolはRead・Glob・Grepに限定し、`--strict-mcp-config`で継承MCPを除き、承認を要する操作は待機せず拒否する。任意Bashや編集toolの事前承認を制限の代わりにしない。Antigravityは読み取り専用のexploreに対応しないため候補から除外する。探索結果は返却本文へ保持し、server自身のセッション記録保存とは区別する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。探索委譲を選ぶ条件は`agent-toolkit/rules/01-agent.md`、起動手段は`runtime-routing.md`を知識境界とする。
 
-`start`の`shell`は`explore`と同じ軽量起動条件を共有し、システム指示だけをコマンド実行専用の文面へ替える。共有するのは`low_tier_model`の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略である。`explore`は`model_type`を省略すると`low_tier`を使い、軽量側の候補で判断材料が不足する調査だけ`medium_tier`を指定する。
+`start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。共有するのは`low_tier_model`の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。`explore`は`model_type`を省略すると`low_tier`を使い、軽量側の候補で判断材料が不足する調査だけ`medium_tier`を指定する。
 この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`および`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`および組込tool presetを併用できる。その後、軽量起動の設定読込元は`0d7ffbbe6`（2026-09-23）でユーザー設定（`setting_sources=["user"]`）へ変えたため、この確認の空の設定読込元は現行の起動条件と異なる。この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
 
 ### 継続不能
@@ -218,6 +225,8 @@ Stopフックによる継続の強制は採用しない。バックグラウン�
 ## 委譲先への指示と起動時の規範
 
 動的に生成する通知・委譲本文と静的な配布文書は、最初のXML開始タグと最後の同名終了タグで配送境界を確定する。出所と用途は開始タグの属性で示す。常時読む説明には、その判断時に必要な契約だけを置き、計測値と変更経緯は監査記録へ置く。
+
+プロジェクト文書を省くCodex・Claudeの軽量起動（explore・shell・write）は、開始と再開の指示へ標準ライブラリの短い照会用のPython情報を添える。`launch_prompts.py`がserver自身の`sys.executable`から実在する絶対パスとホストのシェルに合わせた起動部分を生成する。固定の`python`やLinuxの名前を前提にせず、プロジェクト依存を使う処理と固有の実行指定はプロジェクト規範・依頼を優先する。情報は実行権限を追加しない。文書全文を戻す案は軽量化の目的を失い、alias・パッケージ・wrapperの新設はホストの永続状態や管理対象を増やすため採らない。Antigravityはプロジェクト規範を読むため配送対象外とする。
 
 新しい配送境界は`atk-auto`とし、agent-toolkit自身の`source`から重複する所有者接頭辞を除く。委譲先への配送から`from`と`composed-by`を除き、送信元の識別が必要な上り通知だけ`from`を残す。委譲先がユーザー入力と生成本文を分ける根拠は内側の`forwarded-user-input`であるため、配送の作成主体を示す属性を重ねる必要がない。旧形式のセッション記録と登録済みの定期起動は残るので、読取側は旧境界を受け付け続ける。
 
@@ -279,6 +288,8 @@ session識別子は`--output-format stream-json`が返す`init`イベントの�
 `_MODEL_SETTING_CATEGORIES`・`_CATEGORY_ENGINE_MODELS`・`_PRESET_ENGINE_ORDERS`は変えない。
 Antigravity CLIは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
 Antigravity CLIは工程別モデル設定の候補列に入らない。委譲先が失敗で終端した場合は、`agent-toolkit/agent_toolkit/_agents_server/antigravity.py`の`unavailable_reason`が標準エラー出力か失敗の本文を除外理由として返し、記録した除外理由は全てそのengineを除外する根拠になる。
+
+候補列でAntigravityを直接指定した場合も、exploreでは読み取り専用の実行に対応しない理由を返して候補から除外し、利用できるClaude・Codex候補へ進む。候補が尽きた場合はその理由を返して終了し、可用性記録を無視する再試行でも非対応候補を復活させない。backendの直接開始・再開でもexploreを拒否する。原稿書換え用途の権限は保持し、探索用の専用プロフィールや配布機構は設けない。
 
 委譲先には`--dangerously-skip-permissions`を付ける。
 原稿ファイルの書き換えまでを任せる用途であり、Antigravity CLIの非対話モードは対話確認を持たず、

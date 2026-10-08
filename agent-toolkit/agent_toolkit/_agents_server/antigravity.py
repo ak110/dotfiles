@@ -269,6 +269,10 @@ class AntigravityManager:
         excluded_candidates: frozenset[ModelCandidate],
         turn_seq: int,
     ) -> SessionState:
+        if launch_kind == "explore":
+            raise ActionableError(
+                "Antigravityは読み取り専用のexploreに対応していません", next_action="ClaudeまたはCodexを指定する"
+            )
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
         task: asyncio.Task[Any] = asyncio.create_task(

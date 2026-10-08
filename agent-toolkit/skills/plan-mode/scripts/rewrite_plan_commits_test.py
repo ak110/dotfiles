@@ -207,7 +207,7 @@ def test_missing_recorded_oid_fails_without_writes(rebased: _Rebased, capsys: py
     error = capsys.readouterr().err
     assert f"{rebased.plan}: 対応表の不足" in error and rebased.old["a"] in error
     assert "過去の書換えの未追記" not in error
-    assert "次の操作: " in error and "git range-diff" in error
+    assert "次の操作: " in error and "atk run-script history-compare" in error and "amend" in error
     assert _snapshot(records) == before
 
 

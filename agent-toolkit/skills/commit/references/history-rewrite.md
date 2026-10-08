@@ -58,7 +58,12 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 - 操作直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して対象commitの件名と差分を再特定し、
   `git blame -- <修正したファイルのリポジトリ相対パス>`または`git log -p -n 20 -- <修正したファイルのリポジトリ相対パス>`と
   `git show --stat <sha>`で統合先を確定する
-- autosquash後は、件名の形式によらず次の4点を確認する。比較の基準はfixupを全て作成した後のautosquash直前のHEADとする。基準と書換え後HEADの`git rev-parse <OID>^{tree}`が一致する。`<最古fixup対象>^`から数えたfirst-parentのcommit件数が、基準の件数からfixupの件数を引いた値である。範囲内に件名先頭が`fixup!`・`squash!`・`amend!`のcommitが0件である。基準の範囲から件名が制御語で始まるcommitを除いた列と書換え後の範囲の列を先頭から順に対応付け、`git show <OID> | git patch-id --stable`の値を比べると、fixupを帰属させたcommitだけが異なり、それ以外が一致する。差分を変えない`reword:`の統合先はこの比較から外す。最後の確認は、件名で統合先を決めたfixupが別の同名commitへ統合された誤りを検出する。いずれかが満たされない場合は`## 失敗時の扱い`に従う
+- autosquash後は、fixupを全て作成した直後のHEADと`<最古fixup対象>^`を保持し、次の公開操作を実行する。同操作は最終tree一致、旧件数からfixup件数を引いた新件数、制御件名の残存0、fixup対象以外のpatch-id不変を検収する。元commitとfixupは同じ新commitへ対応付け、一意な件名か完全OIDで対象を解決できない場合は拒否する。差分を変えない`reword:`の対象もfixup対象として扱う。非0の場合は`## 失敗時の扱い`に従う。比較と対応表の生成はこの操作へ集約する
+
+  ```text
+  atk run-script history-compare -- --operation autosquash --work-dir <絶対worktree> --old-base <保持した親OID> --old-head <autosquash直前HEAD> --new-base <保持した親OID> --new-head <書換え後HEAD> --output <managed-temp内の対応表JSONの絶対パス>
+  ```
+
 - 書き換え後は各中間`HEAD`へ変更範囲の検証を再実行し、`git log -1 --format=%B <統合後sha>`で
   最終メッセージと`Co-Authored-By:`を確認し、stage状態と`git show HEAD:<path>`で未反映差分が残らないことを確認する
 
@@ -109,7 +114,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 
 ## WI実装commitの対応の継承
 
-WI実装commitの履歴を変更した担当は、`## 操作前後の確認`や`git range-diff`で検収した範囲全体の旧OIDから新OIDへの対応を、JSONオブジェクトとしてmanaged-tempの1つのファイルへ保存する。WI対応を持たないcommitも含めてよく、元commitとfixupが同じ新commitへ統合される場合は両方の旧OIDを含める。旧新OIDは短縮OIDと完全OIDのどちらでもよく、記録は短縮OIDで残る。同じ書換えの対応を受け取る他のコマンドにも、この同じファイルを渡す。
+WI実装commitの履歴を変更した担当は、`atk run-script history-compare`の検収成功時に保存された完全OIDの旧新対応表を使う。rebaseは`--operation rebase`、autosquashは`--operation autosquash`で、両系列のbaseを除くheadまでを指定する。WI対応を持たないcommitも含まれ、元commitとfixupが同じ新commitへ統合される場合は両方の旧OIDを含む。amendでは修正差分と変更範囲の検証で検収した旧新HEADの1対1対応を保存する。記録は短縮OIDで残り、同じ書換えの対応を受け取る他のコマンドにも同じファイルを渡す。
 
 書換えの直前のHEADと保存したファイルを、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す。記録・worktree・対応表は絶対パスで渡し、`--rewrite-map`にはJSON文字列ではなくファイルの絶対パスを渡す。同じ修正系列で書換えを繰り返す間は、毎回同じ記録の集合を渡す。
 

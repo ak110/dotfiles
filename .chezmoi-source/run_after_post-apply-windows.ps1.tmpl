@@ -140,7 +140,7 @@ if ($needsReinstall -and -not $reinstallDeferred) {
         # uv コマンド直後で $LASTEXITCODE を明示判定して throw する。
         # ハッシュ書き込みは uv tool install と期待シム実在再確認の両方が成功した場合のみ実行する。
         # ユーザーPATHへの`~\.local\bin`の登録は post-apply の「bin PATH 登録 (Windows)」工程が行う。
-        & uv tool install --overrides "{{ joinPath .chezmoi.workingTree "agent-toolkit/uv-overrides.txt" }}" --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}"
+        & uv tool install --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}"
         if ($LASTEXITCODE -ne 0) { throw "uv tool install が失敗しました (exit=$LASTEXITCODE)" }
         if (-not (Test-ExpectedShims)) {
             throw '期待シムが生成されていません'

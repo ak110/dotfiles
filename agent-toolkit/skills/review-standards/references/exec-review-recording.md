@@ -38,6 +38,13 @@
 
 ## JSONの形式と返却前の確認
 
+構造化試験と診断の取込みは、実装担当の`verification-record`と同じ結果指定JSONを使う。`atk run-script exec-review-evidence-check -- --help`の形式で、`--results-file <絶対JSON> --list-results`からテスト完全名・状態・版・所在と診断の比較を読み、取得版と条件が要求を直接満たすかを本担当が判定する。成功件数や比較の一致だけから達成を生成しない。
+雛形生成後、次の操作で指定行だけを更新する。更新配列は実装側と同じ`section`・1始まりの`row`・完全一致の`source`・選択する`tests`と`diagnostics`・`mode`を持ち、本担当が各行の`outcome`と`reviewed_head`の完全OIDを明示する。未判定根拠を選ぶ行は`verification_source`へその原文出所を指定する。同じ原文とWIの根拠だけを使い、`evidence_file`で行を満たす説明や手動観測を補える。不要な結果指定と未判定記録は省略できる。保存先は未判定記録と別ファイルにし、受領した完成条件証拠の同じパスへ原子的に更新できる。別の保存先も指定できる。不正な選択は全更新が拒否される。原文・出所・未選択行と未判定記録は元の内容を保持する。根拠は既存の参照書式でテスト名と結果、保存出力の箇所と実行記録を指し、取得版は実行記録に保持する。根拠の取込み後も次節以降の原文・内容・HEAD・共用の確認と返却前確認を実施する。
+
+```text
+atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --results-file <結果指定JSONの絶対パス> --verification-record <未判定記録の絶対パス> --updates-file <更新配列JSONの絶対パス> --output <同じ完成条件証拠の絶対パス>
+```
+
 JSONの最上位は`{"wi_conditions": [...], "user_requirements": [...]}`とする。`wi_conditions`の各要素は`awi`、`condition`、`outcome`、`source`、`evidence`、`reviewed_head`を持つ。`condition`には`## 完成条件`の各項目の原文を逐語で置き、`evidence`にはその行を直接満たす根拠（ファイルと行、テスト名と結果、観測記録の所在など）だけを置く。WI単位の根拠を全行へ写す書き方は採らない。条件が観測手段（特定のコマンドの出力、画面、hookの通知など）を名指しする行の判定は`reviewer.md`「実行レビューの判定」の観測手段の段落に従い、`evidence`へはその手段の観測結果を書く。`user_requirements`の各要素は`awi`、`requirement`、`origin`、`outcome`、`source`、`evidence`、`reviewed_head`を持ち、`origin`で発言の所在を示す。WI本文からの行は`awi`へそのファイル名を置き、計画だけからの行は`awi`を空文字列とし、`origin`へ計画内の所在を置く。
 `完成条件証拠`を返す前に、対象WIの完成条件の各要求単位と`wi_conditions`の行を原文で比べる。完成条件節のない正規WIの原文と回答、ユーザーコメント、計画の`ユーザー指示`行から得た各要求単位も`user_requirements`の行と比べる。各単位に対応する行を1件以上置き、行の判定と証拠参照を確認してから返す。原文の一文に含まれる複数の意味上の要求と例示・要件の区別は機械的な最低行数に委ねず、自身で比べる。WIにも計画にも元のユーザー発言が無い場合は`user_requirements`の行を要求しない。計画に含むWIと計画外のWIの双方に適用する。
 

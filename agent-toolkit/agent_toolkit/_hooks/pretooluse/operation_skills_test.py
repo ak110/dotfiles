@@ -117,7 +117,6 @@ def test_subagent_context_is_separate_from_main(tmp_path: pathlib.Path) -> None:
 _LIGHTWEIGHT_SEARCH_PAYLOADS = [
     ("explore", {"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
     ("explore", {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}}),
-    ("explore", {"tool_name": "Bash", "tool_input": {"command": "rg -n x ."}}),
     ("shell", {"tool_name": "Bash", "tool_input": {"command": "git grep -n -F x"}}),
     ("write", {"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
     ("write", {"tool_name": "Glob", "tool_input": {"pattern": "*.md"}}),
