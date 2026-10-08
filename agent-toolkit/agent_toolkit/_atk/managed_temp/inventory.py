@@ -912,18 +912,19 @@ def _tree_snapshot(root: pathlib.Path) -> dict[str, _TreeEntry]:
     pending = [root]
     while pending:
         parent = pending.pop()
-        for entry in os.scandir(parent):
-            path = pathlib.Path(entry.path)
-            metadata = path.lstat()
-            if os.name == "nt" and getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
-                snapshot[str(path.relative_to(root))] = _windows_reparse_entry(path, metadata, root.parent)
-                continue
-            kind = "dir" if stat.S_ISDIR(metadata.st_mode) else "leaf"
-            device, inode = _path_identity(path)
-            relative = str(path.relative_to(root))
-            snapshot[relative] = (kind, device, inode)
-            if kind == "dir":
-                pending.append(path)
+        with os.scandir(parent) as entries:
+            for entry in entries:
+                path = pathlib.Path(entry.path)
+                metadata = path.lstat()
+                if os.name == "nt" and getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
+                    snapshot[str(path.relative_to(root))] = _windows_reparse_entry(path, metadata, root.parent)
+                    continue
+                kind = "dir" if stat.S_ISDIR(metadata.st_mode) else "leaf"
+                device, inode = _path_identity(path)
+                relative = str(path.relative_to(root))
+                snapshot[relative] = (kind, device, inode)
+                if kind == "dir":
+                    pending.append(path)
     return snapshot
 
 
