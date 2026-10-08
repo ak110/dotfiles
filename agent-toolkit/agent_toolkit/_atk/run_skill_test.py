@@ -1,6 +1,6 @@
 """`atk run-skill`の公開契約を、偽の`claude`・`codex`実行ファイルをPATHへ置いた起動で検証する。
 
-偽の実行ファイルは可用性判定（Claudeは`--output-format`付き、Codexは`availability-probe`の入力）と本作業の
+偽の実行ファイルは可用性判定（`availability-probe`の入力）と本作業の
 セッションを引数で見分け、起動ごとに引数、作業ディレクトリと環境印の有無を記録ディレクトリへ書く。
 """
 
@@ -11,6 +11,7 @@ import json
 import os
 import pathlib
 import re
+import select
 import stat
 import subprocess
 import sys
@@ -32,7 +33,7 @@ import json, os, pathlib, subprocess, sys, time, uuid
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
 record_dir = pathlib.Path(os.environ["FAKE_RECORD_DIR"])
-probe = "--output-format" in args if name == "claude" else "availability-probe" in args[-1]
+probe = "availability-probe" in args[-1]
 kind = "probe" if probe else "session"
 record = {{
     "name": name,
@@ -67,6 +68,13 @@ if probe:
 print("session stdout line")
 print("session stderr line", file=sys.stderr)
 sys.stdout.flush()
+if os.environ.get("FAKE_PROGRESS_DIR"):
+    progress_dir = pathlib.Path(os.environ["FAKE_PROGRESS_DIR"])
+    events = json.loads((progress_dir / "events.json").read_text())
+    for index, event in enumerate(events):
+        while not (progress_dir / str(index)).exists():
+            time.sleep(0.01)
+        print(json.dumps(event), flush=True)
 if os.environ.get("FAKE_SESSION_STARTED_FILE"):
     pathlib.Path(os.environ["FAKE_SESSION_STARTED_FILE"]).write_text("started")
 if os.environ.get("FAKE_SESSION_SPAWN_PID_FILE"):
@@ -134,6 +142,167 @@ def _records(env: _Env, kind: str) -> list[dict[str, typing.Any]]:
 
 def _log_files(env: _Env) -> list[pathlib.Path]:
     return sorted((env.state / "agent-toolkit" / "run-skill").glob("*.log"))
+
+
+def _read_terminal_until(fd: int, expected: str, received: bytes = b"") -> bytes:
+    """PTYのstderrから指定の進捗が届くまで、期限を付けて読む。"""
+    deadline = time.monotonic() + 20
+    while expected.encode() not in received:
+        remaining = deadline - time.monotonic()
+        assert remaining > 0, received.decode(errors="replace")
+        ready, _, _ = select.select([fd], [], [], remaining)
+        assert ready, received.decode(errors="replace")
+        received += os.read(fd, 65536)
+    return received
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのPTYでstderrだけを端末にする結合テスト")
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize(
+    ("skill", "mode"), [("example:check", "normal"), ("other-skill", "failed"), ("timed-skill", "timeout")]
+)
+def test_tty_progress_arrives_before_child_exits(
+    engine_env: _Env, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, skill: str, mode: str
+) -> None:
+    """公開CLIはstdoutをリダイレクトしても、終了前の開始情報・発言・toolだけをstderrへ到着順に出力する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", f"{engine}:test-model/low")
+    progress_dir = tmp_path / "progress"
+    progress_dir.mkdir()
+    if engine == "claude":
+        events = [
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "途中の発言"}]}},
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "thinking", "thinking": "表示しない思考"},
+                        {"type": "tool_use", "id": "tool-1", "name": "Read", "input": {"path": "file"}},
+                    ]
+                },
+            },
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "次の発言"}]}},
+        ]
+        tool_text = "tool: Read"
+    else:
+        events = [
+            {"type": "thread.started", "thread_id": "test-thread"},
+            {"type": "item.completed", "item": {"type": "agent_message", "text": "途中の発言"}},
+            {"type": "item.completed", "item": {"type": "reasoning", "text": "表示しない思考"}},
+            {"type": "item.started", "item": {"id": "tool-1", "type": "command_execution", "command": "pwd"}},
+            {"type": "item.completed", "item": {"id": "tool-1", "type": "command_execution", "command": "pwd"}},
+            {"type": "item.completed", "item": {"type": "agent_message", "text": "次の発言"}},
+        ]
+        tool_text = "tool: command_execution"
+    (progress_dir / "events.json").write_text(json.dumps(events), encoding="utf-8")
+    release = tmp_path / "release"
+    env = {**os.environ, "FAKE_PROGRESS_DIR": str(progress_dir), "FAKE_SESSION_HOLD_FILE": str(release)}
+    env["FAKE_SESSION_EXIT"] = "7" if mode == "failed" else "0"
+    env["PYTHONPATH"] = os.pathsep.join((str(pathlib.Path(run_skill.__file__).resolve().parents[2]), env.get("PYTHONPATH", "")))
+    master, slave = os.openpty()
+    try:
+        with subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import sys; from agent_toolkit import atk; atk.main(sys.argv[1:])",
+                "run-skill",
+                "--target-repo",
+                str(engine_env.repo),
+                "--timeout",
+                "10",
+                skill,
+            ],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=slave,
+        ) as process:
+            try:
+                received = _read_terminal_until(master, "ログ: ")
+                log_path = _log_files(engine_env)[0]
+                received = _read_terminal_until(master, str(log_path.resolve()), received)
+                assert log_path.is_file() and process.poll() is None
+                if engine == "claude":
+                    received = _read_terminal_until(master, "Claudeのセッション識別子:", received)
+                else:
+                    (progress_dir / "0").touch()
+                    received = _read_terminal_until(master, "Codexのthread識別子: test-thread", received)
+                assert process.poll() is None
+                first_message = 0 if engine == "claude" else 1
+                (progress_dir / str(first_message)).touch()
+                received = _read_terminal_until(master, "assistant: 途中の発言", received)
+                assert process.poll() is None
+                for index in range(first_message + 1, len(events)):
+                    (progress_dir / str(index)).touch()
+                received = _read_terminal_until(master, "assistant: 次の発言", received)
+                terminal = received.decode()
+                assert (
+                    terminal.index("assistant: 途中の発言") < terminal.index(tool_text) < terminal.index("assistant: 次の発言")
+                )
+                assert terminal.count(tool_text) == 1
+                assert "表示しない思考" not in terminal and '"type"' not in terminal
+                assert "session stdout line" not in terminal and "session stderr line" not in terminal
+                assert process.poll() is None
+                if mode != "timeout":
+                    release.touch()
+                out, _ = process.communicate(timeout=20)
+                assert process.returncode == {"normal": 0, "failed": 7, "timeout": 124}[mode]
+                assert (out.decode().startswith("成功: ") and len(out.splitlines()) == 1) if mode == "normal" else not out
+                if mode != "normal":
+                    received = _read_terminal_until(master, "次の操作:", received)
+                    assert "失敗:" in received.decode()
+            finally:
+                release.touch()
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate(timeout=20)
+        log = log_path.read_text(encoding="utf-8")
+        for text in ("assistant: 途中の発言", tool_text, "assistant: 次の発言", "[stderr] session stderr line"):
+            assert text in log
+        for event in events:
+            assert f"[stdout] {json.dumps(event)}" in log
+        argv = _records(engine_env, "session")[0]["argv"]
+        assert "stream-json" in argv if engine == "claude" else "--json" in argv
+    finally:
+        os.close(slave)
+        os.close(master)
+
+
+@pytest.mark.parametrize(("mode", "expected"), [("normal", 0), ("failed", 7), ("timeout", 124)])
+def test_session_readers_close_both_pipes(
+    engine_env: _Env,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+    expected: int,
+) -> None:
+    """公開CLIの正常・非0・timeoutのいずれも、読み終えた実pipeを閉じて結果とログを返す。"""
+    real_popen = subprocess.Popen
+    sessions: list[subprocess.Popen[typing.Any]] = []
+
+    def popen(argv: list[str], **kwargs: typing.Any) -> typing.Any:
+        # 被検証関数へ所有権を渡し、reader自身によるcloseを観測する。
+        process = real_popen(argv, **kwargs)  # pylint: disable=consider-using-with
+        if "--session-id" in argv:
+            sessions.append(process)
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    arguments = ["--target-repo", str(engine_env.repo), "pipe-skill"]
+    if mode == "failed":
+        monkeypatch.setenv("FAKE_SESSION_EXIT", "7")
+    elif mode == "timeout":
+        monkeypatch.setenv("FAKE_SESSION_HOLD_FILE", str(tmp_path / "never-release"))
+        arguments[0:0] = ["--timeout", "3"]
+    code, _out, _err = _run(arguments, capsys)
+    assert code == expected
+    assert len(sessions) == 1
+    session = sessions[0]
+    assert session.stdout is not None and session.stdout.closed
+    assert session.stderr is not None and session.stderr.closed
+    log = _log_files(engine_env)[0].read_text(encoding="utf-8")
+    assert "session stdout line" in log
+    assert "session stderr line" in log
 
 
 def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, capsys: pytest.CaptureFixture[str]) -> None:
@@ -313,7 +482,17 @@ def test_same_skill_is_not_started_twice_but_other_skill_runs(
         assert len(_records(engine_env, "session")) == 2
     finally:
         release.write_text("release")
-        first.communicate(timeout=60)
+        try:
+            first.communicate(timeout=60)
+        except subprocess.TimeoutExpired:
+            first.kill()
+            first.wait(timeout=60)
+            if os.name != "nt":
+                assert first.stdout is not None
+                assert first.stderr is not None
+                first.stdout.close()
+                first.stderr.close()
+            raise
     assert first.returncode == 0
 
 

@@ -29,6 +29,7 @@ import psutil
 
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.run_skill_progress import Progress
 from agent_toolkit._atk.wi.repo import resolve_local_worktree
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
@@ -110,6 +111,8 @@ def dispatch(args: argparse.Namespace) -> int:
     _remove_expired_logs(log_dir, now=time.time())
     log_path = _new_log_path(log_dir, args.skill)
     with log_path.open("w", encoding="utf-8") as log:
+        progress = Progress(log, sys.stderr)
+        progress.message(f"ログ: {log_path.resolve()}")
         _write_header(log, repo_root=repo_root, args=args)
         lock = filelock.FileLock(str(_lock_path(repo_root, args.skill)))
         try:
@@ -123,7 +126,9 @@ def dispatch(args: argparse.Namespace) -> int:
             return CONCURRENT_EXIT_CODE
         try:
             with _console_title.console_title(_TITLE):
-                return _run_locked(args, repo_root=repo_root, candidates=candidates, log=log, log_path=log_path)
+                return _run_locked(
+                    args, repo_root=repo_root, candidates=candidates, log=log, log_path=log_path, progress=progress
+                )
         finally:
             lock.release()
 
@@ -147,6 +152,7 @@ def _run_locked(
     candidates: list[tuple[str, str, str]],
     log: typing.TextIO,
     log_path: pathlib.Path,
+    progress: Progress,
 ) -> int:
     """ロックを取得した状態で候補を選び、子セッションを実行する。"""
     env = _orchestrator.child_env(
@@ -190,7 +196,7 @@ def _run_locked(
     )
     if orchestrator == "claude":
         session_id = str(uuid.uuid4())
-        _log_line(log, f"Claudeのセッション識別子: {session_id}")
+        progress.message(f"Claudeのセッション識別子: {session_id}")
         argv = [
             "claude",
             "-p",
@@ -206,9 +212,13 @@ def _run_locked(
             effort,
             f"/goal {goal}",
         ]
+        if progress.enabled:
+            argv[1:1] = ["--output-format", "stream-json", "--verbose"]
     else:
         # Codexの非対話起動は`/goal`を目標として扱わず通常の入力として残すため、目的文だけを渡す。
         argv = ["codex", "exec", "--model", model, "-c", f"model_reasoning_effort={effort}", goal]
+        if progress.enabled:
+            argv.insert(2, "--json")
     log.flush()
     try:
         process = subprocess.Popen(  # pylint: disable=consider-using-with
@@ -223,7 +233,9 @@ def _run_locked(
         _log_line(log, f"終了状態: {orchestrator}を起動できなかった（{error}）")
         _outcome.report_failure(f"{orchestrator}を起動できなかった: {error}（ログ: {log_path}）", next_action=_PATH_ACTION)
         return 1
-    return _wait_session(process, orchestrator=orchestrator, timeout=args.timeout, log=log, log_path=log_path)
+    return _wait_session(
+        process, orchestrator=orchestrator, timeout=args.timeout, log=log, log_path=log_path, progress=progress
+    )
 
 
 def _wait_session(
@@ -233,12 +245,13 @@ def _wait_session(
     timeout: int,
     log: typing.TextIO,
     log_path: pathlib.Path,
+    progress: Progress,
 ) -> int:
     """子セッションの終了か時間上限を待ち、結果行を出力して終了コードを返す。"""
     lock = threading.Lock()
     assert process.stdout is not None and process.stderr is not None
     readers = [
-        threading.Thread(target=_copy_stream, args=(process.stdout, "stdout", log, lock), daemon=True),
+        threading.Thread(target=_copy_stream, args=(process.stdout, "stdout", log, lock, progress, orchestrator), daemon=True),
         threading.Thread(target=_copy_stream, args=(process.stderr, "stderr", log, lock), daemon=True),
     ]
     for reader in readers:
@@ -295,16 +308,29 @@ def _drain_output(readers: list[threading.Thread], log: typing.TextIO, lock: thr
             )
 
 
-def _copy_stream(stream: typing.IO[bytes], label: str, log: typing.TextIO, lock: threading.Lock) -> None:
-    """子セッションの出力を行ごとにログへ写す。標準出力と標準エラーを行頭の名前で区別する。"""
-    for raw in iter(stream.readline, b""):
-        line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-        with lock:
-            if log.closed:
-                # 読み取りを打ち切った後に届いた出力は、閉じたログへ書けないため捨てる。
-                return
-            log.write(f"[{label}] {line}\n")
-            log.flush()
+def _copy_stream(
+    stream: typing.IO[bytes],
+    label: str,
+    log: typing.TextIO,
+    lock: threading.Lock,
+    progress: Progress | None = None,
+    orchestrator: str = "",
+) -> None:
+    """子の出力を行ごとにログへ写し、読み取りを終えた側がstreamを閉じる。
+
+    主スレッドからcloseすると読み取り中のロックを待ち、出力待機の上限を超えるため行わない。
+    """
+    with stream:
+        for raw in iter(stream.readline, b""):
+            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+            with lock:
+                if log.closed:
+                    # 読み取りを打ち切った後に届いた出力は、閉じたログへ書けないため捨てる。
+                    return
+                log.write(f"[{label}] {line}\n")
+                log.flush()
+                if progress is not None:
+                    progress.receive(orchestrator, line)
 
 
 def _resolve_repo_root(path: pathlib.Path) -> pathlib.Path:

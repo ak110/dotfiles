@@ -157,4 +157,10 @@ WIの表記診断は詳細の全量を別ファイルへ保存し、件数・`�
 
 実行ごとのログは状態ディレクトリの`run-skill/`へ置き、各実行の開始時に最終更新から30日を超えたものを削除する。数日に1回の起動で同じ組の直近約10回分を調べられる長さとした。多重起動は同じディレクトリの`locks/`のファイルロックで防ぎ、対象リポジトリかスキルが異なる実行は並行して起動できる。
 
+標準エラーが端末の場合は、ログ作成直後に絶対パス、取得直後に子の識別子、受信ごとにassistantの発言とtool呼出名を標準エラーへ表示する。標準出力だけをリダイレクトした起動でも表示する。Claudeは`--output-format stream-json --verbose`を使い、起動前のUUIDを表示する。Codexは`--json`を使い、`thread.started`の`thread_id`を表示する（[非対話実行の公式仕様](https://learn.chatgpt.com/docs/non-interactive-mode#make-output-machine-readable)）。思考と生JSON全体は表示せず、表示した進捗と両streamの生診断を同じログへ残す。非TTYの子CLIの出力形式、成功時のstdout一行、失敗時のstderrと終了コード、timeoutと出力待機上限は従来どおりである。
+
+進捗の変換と表示は`run_skill_progress.py`が持つ。`atk agents logs`の`logs_export.py`が使う`session_record_format.SessionEvent`とClaudeの変換を再利用し、Codex exec固有のitemイベントだけを同じ型へ変換する。保存済みロールアウトを読むlogsと実行中のstdoutを読むrun-skillは入力形式と所有する資源が異なるため、ログファイルの追跡機構は共通化しない。
+
+2026年10月8日の起草記録では、類似見直し観点を「非対話の子セッションを待つコマンド」へ限定し、比較対象にorchestratorとcommitを挙げていた。既存のログ表示との共通化判断は記録になく、受信処理の修正だけで実現性を確定していた。実装では表示側のSessionEventまで比較し、既存変換を共有する構成にした。終了前のPTY観測を両候補・別スキル・正常と異常の終了で行い、表示対象と生診断の境界を検証する。この説明は起草記録を根拠とし、記録されていない思考の有無を含まない。
+
 却下した案は3つある。cronからAWIを定期投入し`atk wi process-loop`に処理させる案は、ユーザーが単発実行コマンドを選んだため採らない。対話型の`claude`をcronから起動する案は、端末が無いため採らない。Claude Codeのクラウド定期実行は社内のサーバーへ届かない見込みのため採らない（届くかは確かめていない）。

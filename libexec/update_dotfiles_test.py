@@ -5,6 +5,7 @@
 
 # pylint: disable=protected-access
 
+import ctypes
 import io
 import json
 import os
@@ -138,6 +139,8 @@ class _FakePopen:
         self.returncode = returncode
         self._stdout = output_text
         self._stderr = error_text
+        self.stdout = io.StringIO(output_text)
+        self.stderr = io.StringIO(error_text)
         self._communicate_timeouts = communicate_timeouts
         self.kill_calls = 0
         calls.append(list(argv))
@@ -373,10 +376,12 @@ def test_git_timeout_kills_descendants_and_limits_output_recovery(
     assert "子孫プロセスを終了" in captured.err
 
 
+@pytest.mark.parametrize("platform_name", ["posix", "nt"])
 def test_git_timeout_does_not_wait_again_when_output_recovery_times_out(
     monkeypatch: pytest.MonkeyPatch,
+    platform_name: str,
 ) -> None:
-    """終了後の出力回収も超過した場合は空出力として復帰する。"""
+    """二重timeout後は復帰し、POSIXだけが呼出側でpipeを閉じる。"""
     calls: list[list[str]] = []
     communicate_timeouts: list[int | None] = []
     process = _TimeoutPopen(
@@ -387,9 +392,63 @@ def test_git_timeout_does_not_wait_again_when_output_recovery_times_out(
     )
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
     monkeypatch.setattr(update_dotfiles, "_kill_process_tree", lambda _process: None)
+    # os.name全体を変えるとpathlibの実装選択へ波及するため、対象モジュールだけを差し替える。
+    monkeypatch.setattr(update_dotfiles, "os", type("Platform", (), {"name": platform_name}))
+    monkeypatch.setattr(update_dotfiles, "_child_env", lambda: {})
 
     assert update_dotfiles._run_git_pull(1, 4, timeout=3) == 1  # pylint: disable=protected-access
     assert communicate_timeouts == [3, 30]
+    assert process.stdout.closed is (platform_name == "posix")
+    assert process.stderr.closed is (platform_name == "posix")
+    process.stdout.close()
+    process.stderr.close()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linuxのsubreaperで列挙外の孫もテスト自身が回収する")
+def test_git_pull_closes_real_pipes_after_detached_descendant_timeout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """直接子が終了し別sessionの孫だけがpipeを保持しても、二重timeout後に両pipeを閉じる。"""
+    # Linux prctlの公開定数。孤児の孫を本テストがwaitpidし、PID 1へ残さない。
+    libc = ctypes.CDLL(None, use_errno=True)
+    previous = ctypes.c_int(0)
+    assert libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0  # PR_GET_CHILD_SUBREAPER
+    assert libc.prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
+    pid_path = tmp_path / "holder.pid"
+    child_code = (
+        "import pathlib, subprocess, sys; "
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True); "
+        "pathlib.Path(sys.argv[1]).write_text(str(child.pid))"
+    )
+    process = subprocess.Popen(  # pylint: disable=consider-using-with
+        [sys.executable, "-c", child_code, str(pid_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        encoding="utf-8",
+    )
+    holder_pid: int | None = None
+    try:
+        process.wait(timeout=10)
+        holder_pid = int(pid_path.read_text(encoding="utf-8"))
+        monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
+        monkeypatch.setattr(update_dotfiles, "_GIT_OUTPUT_RECOVERY_TIMEOUT_SEC", 0.05)
+        assert update_dotfiles._run_git_pull(1, 4, timeout=1) == 1
+        assert process.stdout is not None and process.stdout.closed
+        assert process.stderr is not None and process.stderr.closed
+    finally:
+        if holder_pid is None and pid_path.exists():
+            holder_pid = int(pid_path.read_text(encoding="utf-8"))
+        if holder_pid is not None:
+            os.kill(holder_pid, 9)
+            os.waitpid(holder_pid, 0)
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=10)
+        assert process.stdout is not None and process.stderr is not None
+        process.stdout.close()
+        process.stderr.close()
+        assert libc.prctl(36, previous.value, 0, 0, 0) == 0
+    assert holder_pid is not None and not psutil.pid_exists(holder_pid)
 
 
 def test_run_step_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch) -> None:

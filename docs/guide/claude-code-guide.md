@@ -286,6 +286,9 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 未回答の間は、同じ対応のUWIを重ねて投入せず、報告用UWIの要対応の欄へ既存のUWIを示す。
 これらのUWIは`atk wi process-loop`と`/agent-toolkit:single-lane-process`の処理対象にならない。
 実行ごとのログは`atk config get state_dir`が示すディレクトリの`run-skill/`に保存され、30日を過ぎたログは次の実行で削除される。
+手動起動で標準エラーが端末につながる場合は、開始時にログの絶対パスと子の識別子、実行中に発言とtool呼出の要約が標準エラーへ表示される。
+標準出力だけをファイルへ向けた場合も表示する。cronなど端末の無い起動では追加表示しない。
+ログには端末に表示した進捗と、子の標準出力・標準エラーの生診断を残す。思考内容や生JSON全体は端末に表示しない。
 オプションと終了コードは`atk run-skill --help`で確認する。
 
 ### 登録方法
