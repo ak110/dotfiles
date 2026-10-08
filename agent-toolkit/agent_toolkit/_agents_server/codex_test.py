@@ -76,11 +76,13 @@ class _TierClient:
         self.requests: list[tuple[str, dict[str, Any]]] = []
 
     async def request(self, method: str, params: dict[str, Any], *, on_sent: Any = None) -> dict[str, Any]:
+        if method == "config/read":
+            return {"config": {"mcp_servers": {"agents_server": {}, "external": {"enabled": True}}}}
         self.requests.append((method, dict(params)))
         if on_sent is not None:
             on_sent()
         if method in {"thread/start", "thread/resume"}:
-            return {"thread": {"id": "tier-thread"}}
+            return {"thread": {"id": params.get("threadId", "tier-thread")}}
         assert method == "turn/start"
         return {"turn": {"id": f"turn-{len(self.requests)}"}}
 
@@ -602,9 +604,13 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     for params in (start_params, resume_params):
         instructions = params["developerInstructions"]
         assert str(plugin_root) in instructions
-        args = params["config"]["mcp_servers"]["agents_server"]["args"]
-        assert pathlib.Path(args[-1]).is_file()
-        assert pathlib.Path(args[2]) == plugin_root
+        assert (subject.python_runtime_instructions() in instructions) is (launch_kind != "delegate")
+        if launch_kind == "explore":
+            assert params["config"]["mcp_servers"]["agents_server"] == {"enabled": False}
+        else:
+            args = params["config"]["mcp_servers"]["agents_server"]["args"]
+            assert pathlib.Path(args[-1]).is_file()
+            assert pathlib.Path(args[2]) == plugin_root
         assert (plugin_root / "skills" / "sample" / "SKILL.md").is_file()
         assert "別hostのcache版数から別のplugin rootを組み立てない" in instructions
     assert start_params["developerInstructions"] == resume_params["developerInstructions"]
@@ -918,11 +924,11 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-async def test_codex_explore_changes_thread_start_only(
+async def test_codex_explore_limits_start_resume_and_followup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Codex探索起動はthreadの指示源だけを軽量化し、turn入力を変えない。"""
+    """探索の開始・再開・追送は読取専用と外部tool無効を保ち、通常起動と分ける。"""
     normal_manager = subject.AppServerManager()
     normal_client = FakeCodexClient()
 
@@ -933,21 +939,35 @@ async def test_codex_explore_changes_thread_start_only(
     await normal_manager.start("調査", str(tmp_path), "model", "high")
 
     explore_manager = subject.AppServerManager()
-    explore_client = FakeCodexClient()
+    explore_client = _TierClient()
 
-    async def ensure_explore_client() -> FakeCodexClient:
+    async def ensure_explore_client() -> _TierClient:
         return explore_client
 
     monkeypatch.setattr(explore_manager, "_ensure_client", ensure_explore_client)
-    await explore_manager.start("調査", str(tmp_path), "model", "high", launch_kind="explore")
+    session = await explore_manager.start("調査", str(tmp_path), "model", "high", launch_kind="explore")
+    await explore_manager._start_turn(session, "追送", cast(subject.JsonRpcProcess, explore_client))
+    await explore_manager._resume_thread(session, explore_client)
 
     normal_thread = normal_client.requests[0][1]
     explore_thread = explore_client.requests[0][1]
     assert normal_thread["config"] == {"bypass_hook_trust": True}
     assert normal_thread["developerInstructions"] == subject._developer_instructions("delegate")  # noqa: SLF001
-    assert explore_thread["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
+    assert explore_thread["config"] == {
+        "bypass_hook_trust": True,
+        "project_doc_max_bytes": 0,
+        "mcp_servers": {"agents_server": {"enabled": False}, "external": {"enabled": False}},
+        "features": {"apps": False, "plugins": False, "multi_agent": False},
+    }
     assert explore_thread["developerInstructions"] == subject._developer_instructions("explore")  # noqa: SLF001
-    assert normal_client.requests[1][1] == explore_client.requests[1][1]
+    for method, params in explore_client.requests:
+        assert params["approvalPolicy"] == "never"
+        if method in {"thread/start", "thread/resume"}:
+            assert params["sandbox"] == "read-only"
+            assert params["config"] == explore_thread["config"]
+        else:
+            assert params["sandboxPolicy"] == {"type": "readOnly"}
+    assert normal_client.requests[1][1]["sandboxPolicy"] == {"type": "dangerFullAccess"}
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -975,7 +995,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
 @pytest.mark.asyncio
 async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """Codexの再開は`mode`に応じた委譲先宣言をthread/resumeへ渡す。"""
-    client = FakeCodexClient()
+    client = _TierClient()
     manager = subject.AppServerManager()
     monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
     normal_session = state.SessionState("thread-normal", str(tmp_path), engine="codex")
@@ -989,7 +1009,8 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
     assert normal_resume["developerInstructions"] == subject._developer_instructions("delegate")  # noqa: SLF001
     assert normal_resume["config"] == {"bypass_hook_trust": True}
     assert explore_resume["developerInstructions"] == subject._developer_instructions("explore")  # noqa: SLF001
-    assert explore_resume["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
+    assert explore_resume["config"]["project_doc_max_bytes"] == 0
+    assert explore_resume["config"]["features"] == {"apps": False, "plugins": False, "multi_agent": False}
     assert shell_resume["developerInstructions"] == subject._developer_instructions("shell")  # noqa: SLF001
     assert shell_resume["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
 

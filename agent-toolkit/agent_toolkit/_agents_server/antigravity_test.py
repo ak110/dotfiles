@@ -62,6 +62,18 @@ def test_build_command_omits_absent_options() -> None:
     assert "--conversation" not in command
 
 
+@pytest.mark.asyncio
+async def test_explore_is_rejected_before_start_and_resume(tmp_path: pathlib.Path) -> None:
+    """直接backendを使う開始と再開でもexploreはCLIを起動しない。"""
+    backend = antigravity.AntigravityManager()
+    with pytest.raises(ActionableError, match="読み取り専用のexploreに対応していません"):
+        await backend.start("探索", str(tmp_path), launch_kind="explore")
+    with pytest.raises(ActionableError, match="読み取り専用のexploreに対応していません"):
+        await backend.resume("conversation", "探索", str(tmp_path), launch_kind="explore")
+    assert not backend.sessions
+    await backend.close()
+
+
 @pytest.mark.parametrize(
     ("payload", "expected_status"),
     [

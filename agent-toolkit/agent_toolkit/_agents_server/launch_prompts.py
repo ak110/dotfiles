@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
+import shlex
+import sys
 
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._common import message_format
@@ -104,6 +107,22 @@ AUTO_RESUME_NOTICE = _normative(_read_prompt("agents-server-auto-resume.md"), ki
 
 # プロジェクト規範と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
+
+
+def python_runtime_instructions() -> str:
+    """serverが使うPythonの実在パスと用途を軽量委譲へ渡す。"""
+    executable = str(pathlib.Path(sys.executable).absolute())
+    if not pathlib.Path(executable).is_file():
+        raise RuntimeError(f"Pythonの実行ファイルが存在しません: {executable}")
+    command = "& '" + executable.replace("'", "''") + "'" if os.name == "nt" else shlex.quote(executable)
+    shell = "PowerShell" if os.name == "nt" else "POSIX shell"
+    return _normative(
+        f"標準ライブラリだけを使う短い照会用のPython 3は {executable} に実在する。\n"
+        f"{shell}での起動部分: {command}\n"
+        "専用コマンドを先に選ぶ。Pythonを使う場合はこの起動部分に引数を続け、コードもシェルに合わせて引用する。\n"
+        "この情報は実行権限を追加しない。プロジェクト依存を使う処理や固有の実行指定は、プロジェクト規範・依頼に従う。",
+        kind="python-runtime",
+    )
 
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")

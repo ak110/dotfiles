@@ -1092,6 +1092,30 @@ async def test_start_explore_selects_default_low_tier_route(
 
 
 @pytest.mark.asyncio
+async def test_explore_excludes_agy_and_returns_later_candidate(tmp_path: pathlib.Path) -> None:
+    """探索で非対応のagyを起動せず、除外理由と後続候補の結果を返す。"""
+    manager, claude = _manager_with_fake("claude")
+    agy = FakeBackend(manager.sessions, "agy")
+    _install_backend(manager, "agy", agy)
+    result = await manager.start(
+        "agy:gemini-3.8-flash/medium,claude:opus[1m]/medium", "探索", str(tmp_path), launch_kind="explore"
+    )
+    assert not agy.start_calls
+    assert claude.start_calls == [("opus[1m]", "medium", "explore")]
+    assert result["excluded_candidates"][0]["engine"] == "agy"
+    assert "読み取り専用のexploreに対応していません" in result["excluded_candidates"][0]["reason"]
+
+
+@pytest.mark.asyncio
+async def test_explore_only_agy_returns_unsupported_reason(tmp_path: pathlib.Path) -> None:
+    """候補が尽きても非対応のagyへ戻さず理由付きで終了する。"""
+    manager, agy = _manager_with_fake("agy")
+    with pytest.raises(ValueError, match="読み取り専用のexploreに対応していません"):
+        await manager.start("agy:gemini-3.8-flash/medium", "探索", str(tmp_path), launch_kind="explore")
+    assert not agy.start_calls
+
+
+@pytest.mark.asyncio
 async def test_start_shell_runs_command_on_the_low_tier_route(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

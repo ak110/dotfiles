@@ -34,6 +34,7 @@ from agent_toolkit._agents_server.launch_prompts import (
     CLAUDE_DELEGATE_SYSTEM_PROMPT,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
+    python_runtime_instructions,
 )
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError, SessionOwnerGoneError
 from agent_toolkit._agents_server.state import (
@@ -54,7 +55,7 @@ _ENV_EMIT_SESSION_STATE_EVENTS = "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 # 軽量な起動条件で許可するツール。探索は読み取り操作、シェル実行はコマンド実行と結果の確認へ限る。
 _LAUNCH_ALLOWED_TOOLS: dict[str, list[str]] = {
-    "explore": ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+    "explore": ["Read", "Glob", "Grep"],
     "shell": ["Bash", "Read"],
     "write": ["Read", "Write", "Edit", "Glob", "Grep"],
 }
@@ -293,7 +294,7 @@ def _build_options(
         "env": env,
         "setting_sources": ["user"] if lightweight else ["user", "project"],
         "system_prompt": (
-            f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
+            f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}\n{python_runtime_instructions()}"
             if lightweight
             else {
                 "type": "preset",
@@ -316,6 +317,10 @@ def _build_options(
             tools={"type": "preset", "preset": "claude_code"},
             allowed_tools=_LAUNCH_ALLOWED_TOOLS[launch_kind],
         )
+    if launch_kind == "explore":
+        options["tools"] = _LAUNCH_ALLOWED_TOOLS[launch_kind]
+        options["mcp_servers"] = {}
+        options.setdefault("extra_args", {}).update({"strict-mcp-config": None, "permission-prompts": "none"})
     return ClaudeAgentOptions(**options)
 
 

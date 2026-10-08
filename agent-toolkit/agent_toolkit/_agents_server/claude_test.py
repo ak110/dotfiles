@@ -508,6 +508,20 @@ def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
     assert options.resume == "claude-saved"
 
 
+@pytest.mark.parametrize("session_id", [None, "saved-session"])
+@pytest.mark.usefixtures("agents_server_isolation")
+def test_explore_options_keep_read_tools_and_no_inherited_mcp_on_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
+    """再接続しても組込道具とMCPを制限し、診断ログの指定を保つ。"""
+    options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore", debug_file=tmp_path / "debug.log")
+    assert options.tools == ["Read", "Glob", "Grep"]
+    assert options.extra_args == {
+        "debug-file": str(tmp_path / "debug.log"),
+        "strict-mcp-config": None,
+        "permission-prompts": "none",
+    }
+    assert launch_prompts.python_runtime_instructions() in options.system_prompt
+
+
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.usefixtures("_owner_session_environment")
 def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_path: pathlib.Path) -> None:
@@ -524,9 +538,14 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_pa
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     }
-    assert options.system_prompt == f"{launch_prompts.EXPLORE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}"
-    assert options.tools == {"type": "preset", "preset": "claude_code"}
-    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"}
+    assert options.system_prompt == (
+        f"{launch_prompts.EXPLORE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.python_runtime_instructions()}"
+    )
+    assert options.tools == ["Read", "Glob", "Grep"]
+    assert set(options.allowed_tools) == {"Read", "Glob", "Grep"}
+    assert not options.mcp_servers
+    assert options.extra_args == {"strict-mcp-config": None, "permission-prompts": "none"}
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -536,7 +555,10 @@ def test_claude_write_options_limit_lightweight_session_to_file_edits(tmp_path: 
     options = claude._build_options(str(tmp_path), "model", "high", launch_kind="write")
     assert options.setting_sources == ["user"]
     assert options.skills == []
-    assert options.system_prompt == f"{launch_prompts.WRITE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}"
+    assert options.system_prompt == (
+        f"{launch_prompts.WRITE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.python_runtime_instructions()}"
+    )
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Write", "Edit"}
 
 
@@ -553,7 +575,10 @@ def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_pa
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     }
-    assert options.system_prompt == f"{launch_prompts.SHELL_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}"
+    assert options.system_prompt == (
+        f"{launch_prompts.SHELL_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.python_runtime_instructions()}"
+    )
     assert set(options.allowed_tools) == {"Bash", "Read"}
 
 

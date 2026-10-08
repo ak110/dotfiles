@@ -37,7 +37,12 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
 from agent_toolkit._agents_server.input_validation import validate_cwd, validate_model_effort, validate_prompt
-from agent_toolkit._agents_server.launch_prompts import AUTO_RESUME_NOTICE, LAUNCH_SYSTEM_PROMPTS, LIGHTWEIGHT_LAUNCH_KINDS
+from agent_toolkit._agents_server.launch_prompts import (
+    AUTO_RESUME_NOTICE,
+    LAUNCH_SYSTEM_PROMPTS,
+    LIGHTWEIGHT_LAUNCH_KINDS,
+    python_runtime_instructions,
+)
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import (
     TERMINAL_STATUSES,
@@ -140,8 +145,9 @@ def _user_rules_instructions() -> str:
 def _developer_instructions(launch_kind: LaunchKind) -> str:
     """委譲先の役割、このprocessで安定化した配布物root、ユーザーが置いた規範ファイルの本文を一体で返す。"""
     plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
+    runtime = f"\n{python_runtime_instructions()}" if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else ""
     return (
-        f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}\n\n"
+        f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}{runtime}\n\n"
         f"agent-toolkit plugin root: {plugin_root}\n"
         "agent-toolkitのskillとplugin内部資源は、この実在する絶対パスを起点に読む。"
         "`<役割名>.subagent.md`や別hostのcache版数から別のplugin rootを組み立てない。"
@@ -631,6 +637,19 @@ class AppServerManager:
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
+    @staticmethod
+    async def _restrict_explore_config(client: Any, config: dict[str, Any], cwd: str) -> None:
+        """sandbox外で動く外部toolを実効設定から除く。取得不能時は起動しない。"""
+        response = await client.request("config/read", {"cwd": cwd, "includeLayers": False})
+        effective = response.get("config")
+        if not isinstance(effective, dict):
+            raise AppServerError("exploreの外部tool制限に必要な実効設定を取得できません")
+        servers = effective.get("mcp_servers", {})
+        if not isinstance(servers, dict):
+            raise AppServerError("exploreの実効mcp_serversが不正です")
+        config["mcp_servers"] = {name: {"enabled": False} for name in servers}
+        config["features"] = {"apps": False, "plugins": False, "multi_agent": False}
+
     async def _ensure_client(self) -> JsonRpcProcess:
         async with self._lock:
             if self.client is not None and not self.client.closed and self.client.reader_failure is None:
@@ -697,12 +716,15 @@ class AppServerManager:
         params: dict[str, Any] = {
             "cwd": cwd,
             "approvalPolicy": "never",
-            "sandbox": "danger-full-access",
+            "sandbox": "read-only" if launch_kind == "explore" else "danger-full-access",
             "serviceTier": _current_service_tier(),
         }
         if model is not None:
             params["model"] = model
         config, owner_session_id, writer_session_id = self._thread_config(lightweight=launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
+        if launch_kind == "explore":
+            await self._restrict_explore_config(client, config, cwd)
+            owner_session_id = writer_session_id = None
         params["config"] = config
         params["developerInstructions"] = _developer_instructions(launch_kind)
         try:
@@ -1002,7 +1024,7 @@ class AppServerManager:
             "threadId": session.session_id,
             "cwd": session.cwd,
             "approvalPolicy": "never",
-            "sandbox": "danger-full-access",
+            "sandbox": "read-only" if session.launch_kind == "explore" else "danger-full-access",
             "serviceTier": _current_service_tier(),
         }
         if session.model is not None:
@@ -1012,6 +1034,9 @@ class AppServerManager:
         if owner_session_id is not None:
             writer_session_id = writer_session_id or uuid.uuid4().hex
             config.update(AppServerManager._agents_server_config(owner_session_id, writer_session_id))
+        if session.launch_kind == "explore":
+            await self._restrict_explore_config(client, config, session.cwd)
+            owner_session_id = writer_session_id = None
         resume_params["config"] = config
         resume_params["developerInstructions"] = _developer_instructions(session.launch_kind)
         resume_response = await self._request_thread_resume(client, resume_params)
@@ -1156,7 +1181,7 @@ class AppServerManager:
             "input": [{"type": "text", "text": prompt}],
             "cwd": session.cwd,
             "approvalPolicy": "never",
-            "sandboxPolicy": {"type": "dangerFullAccess"},
+            "sandboxPolicy": {"type": "readOnly"} if session.launch_kind == "explore" else {"type": "dangerFullAccess"},
             "serviceTier": _current_service_tier(),
         }
         if session.model is not None:
