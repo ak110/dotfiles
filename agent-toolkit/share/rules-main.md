@@ -4,7 +4,7 @@
 
 ## 協調と自律
 
-起動したスキルが許す成果物の種類の扱いは`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`の成果物制限に従う。
+起動したスキルが許す成果物の種類の扱いは`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「成果物の制限」に従う。
 
 ユーザーの割り込みが扱う話題は会話で返し、無関係な工程は自律モードを保つ。
 

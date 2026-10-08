@@ -7,9 +7,9 @@ from agent_toolkit._hooks import plugin_resources
 
 def test_skill_reference_includes_an_existing_absolute_path() -> None:
     """実在する資料では、スキル名に加えて実在する絶対パスを併記する。"""
-    reference = plugin_resources.skill_reference("user-confirmation-and-report", "references/user-utterance.md")
+    reference = plugin_resources.skill_reference("user-confirmation-and-report", "SKILL.md")
 
-    assert "`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`" in reference
+    assert "`agent-toolkit:user-confirmation-and-report`の`SKILL.md`" in reference
     quoted = reference.split("（`", 1)[1].removesuffix("`）")
     assert pathlib.Path(quoted).is_absolute()
     assert pathlib.Path(quoted).is_file()

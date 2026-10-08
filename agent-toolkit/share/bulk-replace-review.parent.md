@@ -24,4 +24,4 @@
 
 ## 受領
 
-結果は引数なしの`atk agents wait`で受け取る。問題が報告された文と候補外の文は、`agent-toolkit:writing-standards`の`references/notation-rules.md`「表記の一括置換」の手順4に従って書き直す。
+結果は引数なしの`atk agents wait`で受け取る。問題が報告された文と候補外の文は、`agent-toolkit:writing-standards`の`references/notation-rules.md`「表記の一括置換」の、問題が報告された文と候補外の文を書き直す段落に従って書き直す。

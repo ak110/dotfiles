@@ -60,7 +60,7 @@ user-invocable: false
 - 起動後は応答の`session_id`を`atk agents wait`で観測する。Claude Codeでは最初の`start`の処理の中でagent-toolkitのmodが定期再確認を装着し、装着の結果がその`start`の結果の後に届く
 
 この起動にも、委譲元が委譲プロンプトへ載せる値の義務を適用する。
-`extra_params`の値の種類は`references/sending.md`「委譲プロンプトの構成」手順3の「値へ書かない内容」、自ら裏付けを取っていない値の`未検証`は同手順の「未検証の値」が定める。
+`extra_params`の値の種類は`references/sending.md`「委譲プロンプトの構成」の「値へ書かない内容」、自ら裏付けを取っていない値の`未検証`は同節の「未検証の値」が定める。
 人間由来の要求を渡す場合の`forwarded-user-input`標識は`references/base-contract.md`「入力の適格性と追送」、ファイルを名指しする値の絶対パスは同書「起動前の確認」が定める。
 既存の作業ツリーへ書き込む担当を起動する前の確認は、読込表の行が挙げる`references/mandatory-rules.md`が定める。
 

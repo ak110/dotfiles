@@ -552,7 +552,7 @@ class TestExampleInvestigationNotice:
         "例えばアプリ呼び出しの分がチャット画面の消費CRのバッジに表示されないとか？\n"
         "（報告者の勘違いの可能性もあるのでそれも含めて調査して。）"
     )
-    _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "user-confirmation-and-report" / "references" / "user-utterance.md"
+    _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "user-confirmation-and-report" / "SKILL.md"
     _ROUTING_PATH = _SCRIPTS_DIR.parent / "skills" / "delegation" / "references" / "routing.md"
 
     @classmethod
@@ -570,6 +570,7 @@ class TestExampleInvestigationNotice:
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
         assert str(self._ROUTING_PATH) in bodies[0]
+        assert "「原文の保持と取り込み」" in bodies[0]
         assert "「コンテキスト消費が大きい調査の切り出し」" in bodies[0]
         assert "自ら調査へ着手する前に" in bodies[0]
 
