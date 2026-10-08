@@ -123,7 +123,21 @@ def test_working_root_excludes_removed_attachments(monkeypatch: pytest.MonkeyPat
     )
 
     assert response["ok"] is False
+    assert response["error_type"] == "not_found"
     assert response["error"].startswith("FileNotFoundError")
+
+
+@pytest.mark.parametrize("name", ("p.md", "p.bugs.md", "p.exec-review.tsv", "q.detail.md"))
+def test_read_rpc_classifies_missing_files(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, name: str) -> None:
+    """不在分類はファイル種別によらず共通し、存在する本文の取得は成功する。"""
+    root, _ = _isolate(monkeypatch, tmp_path)
+    request = {"id": 1, "op": "read", "source_id": viewer_files.NEW_SOURCE_ID, "path": _b64(name)}
+    missing = helper._handle_request(request)  # pylint: disable=protected-access
+    assert missing["ok"] is False and missing["error_type"] == "not_found"
+    (root / name).write_text("本文", encoding="utf-8")
+    found = helper._handle_request(request)  # pylint: disable=protected-access
+    assert found["ok"] is True
+    assert base64.b64decode(found["data"]).decode("utf-8") == "本文"
 
 
 def test_helper_imports_only_remote_runtime_dependencies(tmp_path: pathlib.Path) -> None:

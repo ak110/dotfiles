@@ -3,19 +3,72 @@
 # pylint: disable=protected-access
 
 import asyncio
+import base64
 import json
 import pathlib
+import types
 import typing
 
 import pytest
+import quart
 
-from agent_toolkit._atk.serve import plans
+from agent_toolkit._atk.serve import plans, shell_routes
 from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
 from agent_toolkit._atk.serve.plans import rendering as plans_rendering
 from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views
+from agent_toolkit._atk.serve.plans.remote import RemoteWatcher
 from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload, _runner_returning
+
+
+@pytest.mark.asyncio
+async def test_remote_missing_attachments_do_not_warn_or_fallback_but_explicit_read_does(
+    tmp_path: pathlib.Path, index_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """HTTP表示の関連リンク探索は正常な不在を無警告で省き、同じ不在の明示取得だけ404と警告にする。"""
+    del index_path
+    runner, calls = _runner_returning(_read_payload("代替取得"))
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
+    existing = {"p.md": "# 本文", "p.bugs.md": "# バグ"}
+
+    async def request(_op: str, args: dict[str, typing.Any]) -> dict[str, typing.Any]:
+        path = base64.b64decode(args["path"]).decode("utf-8")
+        if path in existing:
+            return {"ok": True, **_read_payload(existing[path])}
+        return {"ok": False, "error_type": "not_found", "error": f"FileNotFoundError: {path}"}
+
+    context.state.remote_watchers["remote-host"] = typing.cast(
+        RemoteWatcher, types.SimpleNamespace(is_connected=lambda: True, request=request)
+    )
+    app = quart.Quart(__name__)
+    shell_routes.register_plan_routes(app, context)
+    client = app.test_client()
+    caplog.set_level("WARNING")
+    for _ in range(2):
+        response = await client.get("/api/plans/file", query_string={"host": "remote-host", "path": "p.md"})
+        assert response.status_code == 200
+        html = await response.get_data(as_text=True)
+        assert 'data-plan-path="p.bugs.md"' in html
+        assert html.count("data-plan-path") == 1
+        assert "本文" in html
+    assert not caplog.records
+    assert not calls
+
+    response = await client.get("/api/plans/raw", query_string={"host": "remote-host", "path": "p.exec-review.tsv"})
+    assert response.status_code == 404
+    assert len(caplog.records) == 1
+    assert "リモートファイル取得失敗" in caplog.records[0].message
+    assert not calls
+
+    # 付属側から消えたメインを探す場合も同じ分類を使う。
+    existing.pop("p.md")
+    caplog.clear()
+    response = await client.get("/api/plans/file", query_string={"host": "remote-host", "path": "p.bugs.md"})
+    assert response.status_code == 200
+    assert "data-plan-path" not in await response.get_data(as_text=True)
+    assert not caplog.records
+    assert not calls
 
 
 def test_absent_root_keeps_the_recorded_creation_times(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:

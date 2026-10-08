@@ -73,6 +73,7 @@ async def fetch_remote_file(
 
     `watcher`が渡され、対応する常駐SSH接続が`connected`状態にあればRPC経由で読み取る。
     未接続・タイムアウト・例外などRPC不可状態では`ssh_runner`経由のfallbackへ切り替える。
+    RPCが確定した不在はFileNotFoundErrorで伝え、存在確認での警告や追加SSHを生まない。
     """
     rel_b64 = base64.b64encode(rel.encode("utf-8")).decode("ascii")
     request_args: dict[str, str] = {"path": rel_b64}
@@ -87,6 +88,8 @@ async def fetch_remote_file(
         else:
             if response.get("ok"):
                 return _decode_read_payload(response)
+            if response.get("error_type") == "not_found":
+                raise FileNotFoundError(rel)
             error_msg = response.get("error", "(no error message)")
             # `ok=False`は権限不足・パス不正など恒久的な失敗を含むため、fallbackで救済する。
             logger.warning("リモートRPCエラー host=%s path=%s: %s（fallbackへ）", host, rel, error_msg)

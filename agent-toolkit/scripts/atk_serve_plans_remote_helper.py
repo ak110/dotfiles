@@ -340,6 +340,14 @@ def _handle_request(req: dict[str, typing.Any]) -> dict[str, typing.Any]:
             payload = _search_payload(str(req.get("query", "")), source_id)
             return {"type": "response", "id": req_id, "ok": True, **payload}
         return {"type": "response", "id": req_id, "ok": False, "error": f"unknown op: {op}"}
+    except FileNotFoundError as error:
+        return {
+            "type": "response",
+            "id": req_id,
+            "ok": False,
+            "error_type": "not_found",
+            "error": f"FileNotFoundError: {error}",
+        }
     except Exception as e:  # noqa: BLE001  pylint: disable=broad-exception-caught
         return {"type": "response", "id": req_id, "ok": False, "error": f"{type(e).__name__}: {e}"}
 
@@ -354,6 +362,7 @@ def _serve() -> int:
         応答（stdout）:
             成功: {"type":"response", "id":<int>, "ok":true, "data":"<base64本文>"}
             失敗: {"type":"response", "id":<int>, "ok":false, "error":"<msg>"}
+            不在: 失敗応答に"error_type":"not_found"を持つ。通信障害と区別する。
     """
     stop_event = threading.Event()
     observer = _start_observer(stop_event)
