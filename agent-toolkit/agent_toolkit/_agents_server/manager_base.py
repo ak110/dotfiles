@@ -11,6 +11,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     backends,
+    resource_snapshot,
     session_registry,
     shared_layout,
     shared_roots,
@@ -22,6 +23,7 @@ from agent_toolkit._agents_server.state import (
     ResumePrompt,
     SessionResumeState,
     SessionState,
+    add_lifecycle_listener,
     add_terminal_listener,
     add_touch_listener,
     selected_candidate,
@@ -89,6 +91,19 @@ class ManagerBase:
             add_touch_listener(self._status_writer.schedule)
         add_terminal_listener(self._carry_over_unavailable_candidate)
         add_terminal_listener(self._record_pending_unobserved_child_sessions)
+        add_lifecycle_listener(self._record_resources)
+
+    def _record_resources(self, session: SessionState, event: str) -> None:
+        """自身が所有するsessionの遷移だけを共有状態とホスト資源へ対応付ける。"""
+        if self._status_writer is None or self.sessions.get(session.session_id) is not session:
+            return
+        resource_snapshot.record(
+            event,
+            session,
+            root_session_id=self._status_writer.root_session_id,
+            sessions=self.sessions,
+            state_root=self._status_writer.state_root,
+        )
 
     async def _refresh_heartbeat(self) -> None:
         """MCPサーバーの生存中に状態ファイルの生存の印を更新する。"""

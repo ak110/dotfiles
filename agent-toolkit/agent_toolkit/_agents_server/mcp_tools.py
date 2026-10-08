@@ -179,6 +179,7 @@ async def send_message(
     待つのは継続要求の配送結果が確定するまでであり、委譲先の応答生成の完了ではない。
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
+    子session・背景taskの完了待ちの保留中には待機対象を引き継いで新しいturnを開始し、古い待機表明を結果として返さない。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
     応答は`delivery`と、指示を配送したsessionが保持する担当名の`label`を含み、
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
@@ -192,7 +193,7 @@ async def send_message(
     `steered`は実行中turnの配送キューへ指示を投入したことだけを示し、委譲先が読んだことは示さない。
     委譲先が単一の長時間コマンドを実行している間はturnの区切りに達しないため、指示はキューに残る。
     到達は、`show`が返す`seconds_since_activity`と`active_tool_uses`の変化で判定する。
-    `reply_started`は終端済みsessionで新しいturnを開始したことを示す。
+    `reply_started`は終端済みまたは完了待ちで保留中のsessionで新しいturnを開始したことを示す。
     `reply_failed`は新しいturnを開始できなかったこと、`reply_ambiguous`は開始の成否を確定できなかったことを示し、
     いずれも`atk agents wait`で状態を確認してから次の操作を選ぶ。
     sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
@@ -320,8 +321,9 @@ async def show_session(
     （`task_id`・`task_type`・`description`・`seconds_since_start`）で返す。
     バックグラウンドタスクの後の結果が不要なら`kill`で保留中の結果を受け取れる。
     完了通知が届かない保留は、背景実行のBashの上限（Claude Codeで環境変数を設定しない場合は2時間）に余裕を加えた期限で打ち切る。
-    打ち切り、`kill`または追送で確定した時点で待機対象が残った結果は`error`の`heldResultFinalized`が真で、
-    再開したturnの結果ではない。残ったバックグラウンドタスクは`unfinishedBackgroundTasks`、子sessionは
+    子session・バックグラウンドタスクの完了待ちの保留は追送では確定しない。
+    打ち切り、`kill`、または期限を持たない利用上限の解除待ち・過負荷の継続待ちの保留への追送で確定した時点で
+    待機対象が残った結果は`error`の`heldResultFinalized`が真で、再開したturnの結果ではない。残ったバックグラウンドタスクは`unfinishedBackgroundTasks`、子sessionは
     `unobservedSessions`に識別子を持つ。`unobservedSessions`だけでは保留の確定と区別できない。
     終端したsessionが空でない`error`を保持する場合は、`error`を返す。失敗の原因と次の操作の判断に使える。
     共有の登録簿だけから復元したsessionは`error`を保持しないため返さず、原因は`atk agents wait`の終端行で受け取る。

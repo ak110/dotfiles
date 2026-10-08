@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 from collections.abc import Iterable
@@ -59,6 +60,42 @@ OVERLOAD_ERROR_INFO = "serverOverloaded"
 USAGE_LIMIT_ERROR_TYPE = "usage_limit"
 
 
+@dataclasses.dataclass(frozen=True)
+class HeldTurn:
+    """追送が拒否された場合に戻す保留結果。待機対象は現物を維持して完了観測を巻き戻さない。"""
+
+    result: dict[str, Any]
+    deadline: float | None
+    turn_seq: int
+    turn_id: str
+    started_at: str
+
+    @classmethod
+    def capture(cls, session: SessionState) -> HeldTurn | None:
+        """保留中だけ復元に必要なturn情報を退避する。"""
+        if not session.awaiting_auto_resume or session.pending_result is None or session.auto_resume_deadline is None:
+            return None
+        return cls(session.pending_result, session.auto_resume_deadline, session.turn_seq, session.turn_id, session.started_at)
+
+    def restore(self, session: SessionState) -> None:
+        """未受理の追送を取り消し、同じ待機対象の観測を継続できる保留へ戻す。"""
+        session.pending_result = self.result
+        session.auto_resume_deadline = self.deadline
+        session.awaiting_auto_resume = True
+        session.turn_seq = self.turn_seq
+        session.turn_id = self.turn_id
+        session.started_at = self.started_at
+        session.status = "running"
+        session.turn_completed = True
+        session.turn_start_ambiguous = False
+        session.turn_start_sent = False
+        session.reply_turn_started = False
+        session.reply_retryable = True
+        session.agent_message = self.result["agent_message"]
+        session.error = self.result["error"]
+        session.touch()
+
+
 def cli_turn_may_continue(session: SessionState) -> bool:
     """Claude Code CLIが次のturnを開始し得る状態と報告しているかを返す。
 
@@ -95,7 +132,8 @@ def finalize_pending_result(
     """保留したturn結果を公開可能な終端状態へ移す。
 
     過負荷の自動継続と利用上限の解除待ちの継続を送る処理だけが`keep_resume_chain`を真にし、連鎖の回数と開始時刻を引き継ぐ。
-    それ以外（`kill`、委譲元の`send_message`、期限到来、ストリーム終端）は連鎖を終える。
+    それ以外（`kill`、期限を持たない利用上限・過負荷の保留への委譲元の`send_message`、期限到来、ストリーム終端）は連鎖を終える。
+    子session・バックグラウンドタスクの完了待ちの保留への`send_message`は本関数で確定せず、待機対象を引き継いで新しいturnを開始する。
     連鎖を終える確定では、確定の時点で稼働中のバックグラウンドタスクと終端を観測していない孫sessionを`error`へ記録し、
     待機対象が残ったまま確定したことを`heldResultFinalized`で示す。
     保留した結果は待機表明であり、待機対象が残るまま公開する結果は再開turnの結果ではないことを委譲元へ示すためである。

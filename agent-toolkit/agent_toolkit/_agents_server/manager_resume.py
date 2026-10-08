@@ -86,7 +86,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.terminal_child_session_ids.add(session_id)
         session.live_child_session_ids.difference_update(unobserved)
 
-        if not has_pending_auto_resume_targets(session) and session.terminal_child_session_ids:
+        if (
+            not has_pending_auto_resume_targets(session)
+            and session.terminal_child_session_ids
+            and not session.auto_resume_consumed
+        ):
             identifiers = sorted(session.terminal_child_session_ids)
             prompt = wrap_delivery_body(
                 "あなたが`agents_server`で起動した次のsessionは終端した。\n"
@@ -96,13 +100,13 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.auto_resume_consumed = True
             pending_result = session.pending_result
             assert pending_result is not None
-            session.status = pending_result["status"]
-            session.agent_message = pending_result["agent_message"]
-            session.error = pending_result["error"]
             if unobserved:
                 self._pending_unobserved_child_sessions[session.session_id] = (session.turn_seq + 1, unobserved)
             try:
-                await self._backend(session.engine).send_message(session, prompt)
+                delivery = await self._backend(session.engine).send_message(session, prompt)
+                if delivery.get("delivery") == "reply_failed":
+                    session.auto_resume_consumed = False
+                    return
             except Exception as exc:
                 self._pending_unobserved_child_sessions.pop(session.session_id, None)
                 session.awaiting_auto_resume = False
@@ -119,8 +123,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.turn_start_ambiguous = False
                 session.touch()
                 return
-            if session.pending_result is not None:
-                finalize_pending_result(session, touch=False)
+            session.terminal_child_session_ids.difference_update(identifiers)
             if self._status_writer is not None:
                 self._status_writer.delete_result(session.session_id, collector="auto-resume")
             return

@@ -28,7 +28,9 @@ def session_log_path(root_session_id: str, session_id: str, state_root: pathlib.
     return status_directory(root_session_id, state_root) / "logs" / f"{session_id}.jsonl"
 
 
-def list_status_files(root_session_id: str, state_root: pathlib.Path | None = None) -> list[pathlib.Path]:
+def list_status_files(
+    root_session_id: str, state_root: pathlib.Path | None = None, *, strict: bool = False
+) -> list[pathlib.Path]:
     """書込主体ごとの状態ファイルを絶対パスの安定順で返す。
 
     書込主体ごとに`root.json`と`<host_session_id>.json`へ分かれるため、
@@ -38,12 +40,16 @@ def list_status_files(root_session_id: str, state_root: pathlib.Path | None = No
     directory = status_directory(root_session_id, state_root)
     try:
         paths = [path.absolute() for path in directory.iterdir() if path.suffix == ".json" and path.is_file()]
+    except FileNotFoundError:
+        return []
     except OSError:
+        if strict:
+            raise
         return []
     return sorted(paths)
 
 
-def list_root_session_ids(state_root: pathlib.Path | None = None) -> list[str]:
+def list_root_session_ids(state_root: pathlib.Path | None = None, *, strict: bool = False) -> list[str]:
     """共有状態に存在する有効なルートsession識別子を安定順で返す。"""
     root = _state_paths.state_dir() if state_root is None else state_root
     base = root / "agents-server"
@@ -53,7 +59,11 @@ def list_root_session_ids(state_root: pathlib.Path | None = None) -> list[str]:
             for path in base.iterdir()
             if path.is_dir() and path.name not in RESERVED_DIRECTORY_NAMES and valid_session_id(path.name)
         ]
+    except FileNotFoundError:
+        return []
     except OSError:
+        if strict:
+            raise
         return []
     return sorted(identifiers)
 

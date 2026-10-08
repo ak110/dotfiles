@@ -61,6 +61,9 @@ def consume_agents_server_tool_result(
     if normalized in tool_names.RECORDED_START_OPERATIONS:
         session_id = result.get("session_id")
         if isinstance(session_id, str) and session_id:
+            if session_id not in session.live_child_session_ids and session_id not in session.terminal_child_session_ids:
+                # 新しい委譲は前の完了通知と別の待機単位であり、その終端でも一度だけ再開できる。
+                session.auto_resume_consumed = False
             session.live_child_session_ids.add(session_id)
         return
     if normalized != "kill":
