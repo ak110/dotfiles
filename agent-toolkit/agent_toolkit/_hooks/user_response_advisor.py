@@ -23,6 +23,7 @@ from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import transcript
 from agent_toolkit._hooks import agent_id, notice
 from agent_toolkit._hooks import stop_session as _stop_session
+from agent_toolkit._hooks.host import is_codex_payload
 
 _block_notice = notice.block_formatter("user_response_advisor")
 
@@ -64,14 +65,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if not needs_response:
         return "approve", ""
     _stop_session.append_stop_log(session_id, "block_missing_user_response", {})
+    delivery = "応答本文" if is_codex_payload(payload) else "mcp__agent-toolkit__send_to_user（無い環境では応答本文）"
     return "block", _block_notice(
-        "人間の発話の後に、応答本文（`text`）が無い。"
-        "拡張思考（その要約を含む）が画面に表示されたかはエージェントから観測できないため、"
-        "表示されないものとして扱い、応答を発話本文へ書く。",
-        fix=(
-            "そのターンでユーザーへ伝えるつもりだった判断の報告・確認結果・回答などを、発話本文として出力し直す。"
-            "拡張思考やツール呼び出しの前に書いたつもりの内容も含め、受領や状況の説明だけで済ませない。"
-        ),
+        "人間の発話の後に、ユーザーへ届いた応答本文が無い。",
+        fix=f"伝える予定だった回答・判断・確認結果を{delivery}で届ける。",
     )
 
 

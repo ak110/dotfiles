@@ -18,7 +18,7 @@ formatter未適用・単純なテスト期待値の未追随など）と確定�
   - GitHubではrunと対象jobの状態から取得手段を選び、各コマンドの受理形式を操作直前のヘルプで確かめる
     - run進行中で対象jobが完了済み: `gh api repos/<OWNER>/<REPO>/actions/jobs/<job ID>/logs --allow-escape-sequences`で全jobログをmanaged-tempの中のファイルへ暫定保存する。端末エスケープを含む応答はこの指定が無いと出力を拒否される。取得に失敗した場合とjobが進行中の場合は、annotationや失敗テスト名などの取得可能な証拠を保存して先行分析する
     - run終端後: `gh run view <run ID> --repo <OWNER>/<REPO> --job <job ID> --log-failed`で対象jobの失敗ステップを取得する。全失敗jobの確認には`--job`を省いたrun単位の取得を使い、暫定証拠が全失敗jobを覆っているか確かめる。job logs APIの全jobログとは出力範囲が異なる
-    - run単位の失敗ログの取得前は`gh run watch <run ID> --repo <OWNER>/<REPO> --exit-status`などで終端を待ち、失敗による非0終了と待機手段の失敗をrun状態で区別する
+    - run単位の失敗ログは、`wait_ci.py`を同じ引数で呼び直して全体終端の返却を受けた後に取得する。終了コード6と2では待機を再開し、1（終端のCI失敗）と3（待機手段の失敗）などを終了コードで区別する
     - 観測結果と再検証手段は`docs/development/audit-records.md`の「agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」にある
   - GitLabでは対象SHAに対応するpipeline IDから失敗jobとそのtraceへ到達する。`gh`と`glab`の受理形式は実行直前のヘルプで確定する
 - artifactが生成されるジョブでは、VRT差分画像やtest-resultsなどのartifactも取得する
@@ -128,8 +128,8 @@ VRTベースライン再生成とマスク追加では、VRT固有差分分類�
 
 1. plan mode開始前に、失敗jobを検出した時点で、「失敗ログとartifactの取得」のrun状態別の取得手順に従ってjob ID、annotation、取得可能なjob単位ログとartifactを所有者限定の一時領域へ暫定保存する（努力目標。待機時間を分析へ充てるため）
    - 同一SHAのローカル再現、帰属判定、原因仮説、対策検討を全対象の終端を待たずに始める
-   - 残りのjob監視を継続する
-   - 全対象の終端後にrun単位の失敗ログを取得し、追加の失敗job、各失敗ログおよびartifactの完全性を再確認して先行分析へ統合する
+   - `wait_ci.py`が6または2を返したら同じ引数で呼び直し、残りのjobを待つ。再開の記録には同じbaseline、SHA待機では同じ`--failure-record`を使う
+   - 全体終端の返却後に、その出力が示す失敗集合全体のrun単位ログとartifactを取得し、先行分析へ統合する
 2. 初回ログと同一SHAのローカル再現結果から再現性を暫定分類する。
    再実行の可否、回数および終端後の資料確認は「再現性」節に従う
 3. 先行した調査を止めず、全失敗集合の確認後に修正範囲を確定してplan modeを開始し、新しい計画ファイル（バグ）の調査工程で

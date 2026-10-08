@@ -42,7 +42,7 @@ description: >
 ## 対象成果物の作成規範
 
 作成規範とは対象成果物の種別に適用する作成側の品質基準（`agent-toolkit:writing-standards`の該当資料とプロジェクト規範）を指す。
-該当する規範は`agent-toolkit:writing-standards`と、対象リポジトリの`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`配下とする。読む時点は読込表の最初の行が定め、いずれの役割でも他の資料より先に読む。
+該当する規範は`agent-toolkit:writing-standards`と、対象リポジトリの`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`配下とする。所在は実在するものに限り、存在を確かめてから読むか検索の対象へ渡す。読む時点は読込表の最初の行が定め、いずれの役割でも他の資料より先に読む。
 
 ## レビュー指摘管理表の共通操作
 

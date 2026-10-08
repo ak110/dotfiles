@@ -116,7 +116,7 @@ process-loopが起動した会話の最上位のStopでは、`agent-toolkit/agen
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が実ユーザー発話の受領時に読み、真なら同スキルの起動を促す注記を返す。機械注入ターンでは読まず、状態も変えない。
   PostToolUse(Skill)が同スキルの起動で偽へ戻し、UserPromptSubmitもユーザーが同スキルをスラッシュコマンドで起動した発話で偽へ戻す。CodexではSkillの起動を観測できないため、UserPromptSubmitが注記を返した時点で偽へ戻す。
   寿命はセッション状態ファイルと同じとする
-- `operation_skill_ready_agents`: 操作を起動の契機とするスキルの完全名から、そのスキルを起動済みの呼び出し主体の一覧への対応を記録する。現在の対象は`agent-toolkit:search`、`agent-toolkit:bugfix`、`agent-toolkit:managed-temp`である。
+- `operation_skill_ready_agents`: 操作を起動の契機とするスキルの完全名から、そのスキルを起動済みの呼び出し主体の一覧への対応を記録する。現在の対象は`agent-toolkit:search`、`agent-toolkit:bugfix`、`agent-toolkit:managed-temp`、`agent-toolkit:writing-standards`である。writing-standardsはエージェント向け文書への編集と、書込先を確定できるBash操作を契機とする。
   呼び出し主体はhook payloadの`agent_id`とし、持たないメイン会話は`main`とする。
   Claude Codeでは、`agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が未起動のまま操作した呼び出しへ警告を返した時点と、PostToolUse(Skill)が表のスキルの起動を観測した時点で、その主体を加える。
   同モジュールがPreToolUseで読み、記録の無い主体の操作にだけ警告する。CodexではSkillの起動を観測できず未起動を判定できないため、同モジュールの警告と本キーへの記録はClaude Codeに限る。

@@ -118,6 +118,7 @@ from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_process_kill_by_pattern,
     _check_bash_unquoted_heredoc_substitution,
     _git_commit_attribution_error,
+    _git_commit_message_format_error,
     _warn_git_rev_parse_short_multiple,
     _warn_windows_drive_letter_path,
 )
@@ -310,6 +311,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         lambda: _check_bash_process_kill_by_pattern(command),
         lambda: _check_bash_option_after_terminator(command),
         lambda: _check_bash_atk_output_loss(command),
+        lambda: _git_commit_message_format_error(command, cwd=cwd),
         lambda: _git_commit_attribution_error(
             command,
             _hook_observed_identity(payload, is_codex=is_codex),

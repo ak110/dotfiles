@@ -322,7 +322,8 @@ _MANDATORY_REPORTS = {
 
 
 @pytest.mark.parametrize("case", list(_MANDATORY_REPORTS))
-def test_mandatory_candidate_requires_id_or_allowed_skip(tmp_path: pathlib.Path, case: str) -> None:
+@pytest.mark.parametrize("heading", ["振り返り結果報告", "振り返り結果の予告"])
+def test_mandatory_candidate_requires_id_or_allowed_skip(tmp_path: pathlib.Path, case: str, heading: str) -> None:
     """必須の候補を持つ準備結果では、候補IDの無い報告と許されない見送りを遮断し、確定した対策と許される見送りを通す。
 
     CodexのStopも同じ`termination_order_advisor`を実行するため、ホストごとの差はこの判定に無い。
@@ -351,8 +352,8 @@ def test_mandatory_candidate_requires_id_or_allowed_skip(tmp_path: pathlib.Path,
     with contextlib.redirect_stdout(io.StringIO()):
         posttooluse.main(json.dumps(payload))
     body, expected = _MANDATORY_REPORTS[case]
-    report = "## 振り返り結果報告\n\n" + body
-    if "AWI登録予定" in body:
+    report = f"## {heading}\n\n" + body
+    if "AWI登録予定" in body or heading == "振り返り結果の予告":
         report += "\n## AWI投入結果報告\n\n確定した対策を投入した。\n\n### 投入したAWI\n\n- 20261007-102936-001.md: 対策\n"
     supply_report(tmp_path, report, "review-result", "review")
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, report))

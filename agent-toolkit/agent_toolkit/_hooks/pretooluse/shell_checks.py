@@ -279,25 +279,16 @@ def _git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, .
     return None
 
 
-def _git_commit_attribution_error(
-    command: str,
-    identity: RuntimeIdentity | None,
-    *,
-    attribution_disabled: bool = False,
-    cwd: str = "",
-) -> str | None:
-    """確定済みの通常commitメッセージが観測identityのtrailerをちょうど1件持つか確認する。
+def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
+    """指定内容を確定できる通常commitのメッセージを返す。
 
     メッセージは`-m`・`--message`に加え、`-F -`・`--file=-`へ同じコマンドのheredocで渡した本文と、
     `-F <path>`・`--file=<path>`で指定したhookの時点で存在する通常ファイルからも読む。
     エージェントのcommitの多くは`-F -`のheredocで作成されるため、この形を読めないと帰属行を確かめないまま通す。
     相対パスは`git -C`とpayloadの`cwd`で解決し、同じコマンドの`cd`で基準が変わる場合は判定しない。
     heredocを一意に対応付けられない場合、存在しないファイル、`-C`・`-c`・`--reuse-message`・`--reedit-message`、
-    `--amend --no-edit`、fixup、squashおよび帰属の設定が空文字の場合は判定しない。
+    `--amend --no-edit`、fixup、squashの場合は判定しない。
     """
-    if attribution_disabled or identity is None or identity.source != "observed":
-        return None
-    expected = co_author_trailer(identity)
     invocations = extract_bash_invocations(command)
     for position, invocation in enumerate(invocations):
         if not invocation.arguments_known:
@@ -359,7 +350,31 @@ def _git_commit_attribution_error(
             messages.append(body)
         if unknown or not messages:
             continue
-        trailers = [line for line in "\n\n".join(messages).splitlines() if line.startswith("Co-Authored-By:")]
+        yield "\n\n".join(messages)
+
+
+def _git_commit_message_format_error(command: str, *, cwd: str = "") -> str | None:
+    """件名の次に内容が続く通常commitで、2行目の空行欠落を返す。"""
+    for message in _git_commit_messages(command, cwd=cwd):
+        lines = message.splitlines()
+        if len(lines) > 1 and lines[1].strip():
+            return "commitの件名と本文の間に空行がありません。件名の次に空行を1行入れて再実行する。"
+    return None
+
+
+def _git_commit_attribution_error(
+    command: str,
+    identity: RuntimeIdentity | None,
+    *,
+    attribution_disabled: bool = False,
+    cwd: str = "",
+) -> str | None:
+    """通常commitが観測identityのtrailerをちょうど1件持つか確認する。"""
+    if attribution_disabled or identity is None or identity.source != "observed":
+        return None
+    expected = co_author_trailer(identity)
+    for message in _git_commit_messages(command, cwd=cwd):
+        trailers = [line for line in message.splitlines() if line.startswith("Co-Authored-By:")]
         if trailers != [expected]:
             return f"通常commitの帰属trailerが実行turnの観測identityと一致しません。必要なtrailer: {expected}"
     return None

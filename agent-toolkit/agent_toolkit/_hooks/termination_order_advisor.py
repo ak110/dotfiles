@@ -256,10 +256,11 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     violations = [
         f"作業 {work_id}: {error}" for work_id, work in pending for error in termination_evidence.report_violations(work)
     ]
+    delivery = "可視の発話本文" if is_codex_payload(payload) else "mcp__agent-toolkit__send_to_user（無い環境では発話本文）"
     if violations:
         return "block", _block_notice(
             "報告本文の要求を満たしていない。\n" + "\n".join(violations),
-            fix="列挙した行の根拠・対策の対応・実際の投入結果を直し、報告を直接発話する。",
+            fix=f"列挙した行の根拠・対策の対応・実際の投入結果を直し、報告を{delivery}で届ける。",
         )
     missing_evidence = [
         f"作業 {work_id}: {', '.join(termination_evidence.missing_stages(work))}"
@@ -274,7 +275,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             + "\n"
             + termination_evidence.decision_hint(payload),
             fix=(
-                "不足する段階の報告を可視の発話本文へ直接書く。"
+                f"不足する段階の報告を{delivery}で届ける。"
                 "中止・置換・待機・技術的不成立は原証拠と対象の`work_id`を"
                 "`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ渡す。"
             ),

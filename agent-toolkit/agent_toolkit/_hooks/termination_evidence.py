@@ -567,6 +567,8 @@ def missing_stages(work: dict[str, Any]) -> list[str]:
     reports = work.get("reports", {})
     if not data_calls and not reports:
         return []
+    if isinstance(reports.get("review-preview"), dict):
+        return [] if "review-submission" in reports else ["review-submission"]
     result = reports.get("review-result")
     if not isinstance(result, dict):
         return ["review-result"]

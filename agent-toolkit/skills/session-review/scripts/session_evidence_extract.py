@@ -541,20 +541,21 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
     pending_claude_questions: dict[str, _PendingQuestion] = {}
     tool_uses: dict[str, tuple[str, str]] = {}
     subagent_record = _is_subagent_record(entries)
-    last_tool_use_line: int | None = None
+    last_work_position: tuple[int, int] | None = None
     for line, entry in zip(lines, entries, strict=True):
         message = entry.get("message")
         if isinstance(message, dict) and entry.get("type") == "assistant":
             content = message.get("content")
             if isinstance(content, list):
-                for block in content:
+                for block_index, block in enumerate(content):
                     if isinstance(block, dict) and block.get("type") == "tool_use" and isinstance(block.get("id"), str):
                         tool_uses[block["id"]] = (
                             str(block.get("name", "")),
                             json.dumps(block.get("input"), ensure_ascii=False, sort_keys=True),
                         )
-                        if block.get("name") != _HANDBACK_TOOL:
-                            last_tool_use_line = line
+                        name = str(block.get("name", ""))
+                        if name != _HANDBACK_TOOL and not name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX):
+                            last_work_position = (line, block_index)
         for event in _claude_entry_events(entry, line, pending_claude_questions, subagent_record):
             if event.get("kind") == "failed-tool":
                 tool_name, operation = tool_uses.get(str(event.get("tool", "")), ("", ""))
@@ -564,12 +565,16 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
             _set_entry_timestamp(event, entry)
             events.append(event)
     # Claude Code形式の本文は途中発話と最終応答を区別する標識を持たない。
-    # 同じエントリまたは後続のエントリにツール呼び出しがある本文は途中発話であり、最後の行動がツール呼び出しである記録
-    # （抽出時点で稼働中の委譲先など）の本文を最終結果として扱わないよう、Codex形式と同じ`commentary`を付ける。
-    if last_tool_use_line is not None:
-        for event in events:
-            if event.get("kind") == "assistant" and not event.get("handback") and event["line"] <= last_tool_use_line:
-                event["phase"] = "commentary"
+    # 送信は報告そのものとして扱う。後続に作業ツールがある本文だけを、同一エントリ内の順序も含めて途中発話にする。
+    for event in events:
+        position = (event["line"], event.pop("_content_index", -1))
+        if (
+            last_work_position is not None
+            and event.get("kind") == "assistant"
+            and not event.get("handback")
+            and position <= last_work_position
+        ):
+            event["phase"] = "commentary"
     return events
 
 
@@ -656,10 +661,13 @@ def _claude_entry_events(
             )
             # ユーザーへ届いた本文として、`text`ブロックに加えて`send_to_user`の呼び出しの`message`も出来事にする。
             content = message.get("content")
-            for text in [content] if isinstance(content, str) else _transcript.visible_text_blocks(content):
-                event = _event("assistant", text)
-                if event:
-                    events.append(event)
+            blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
+            for block_index, block in enumerate(blocks if isinstance(blocks, list) else []):
+                for text in _transcript.visible_text_blocks([block]):
+                    event = _event("assistant", text)
+                    if event:
+                        event["_content_index"] = block_index
+                        events.append(event)
             for text in _handback_messages(message.get("content")):
                 event = _event("assistant", text)
                 if event:

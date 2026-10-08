@@ -392,8 +392,8 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 
 | フック識別子 | 観測できる働き | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
-| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作と、入力から機械的に判定できる明らかな誤り（編集内容の文字化け、lockfileの直接編集、atkの出力のパイプとリダイレクトなど）を実行前に警告または遮断する。commitの帰属行（`Co-Authored-By`）はエージェントが書き、このフックが実行中のモデルと推論量に一致するかを確かめる | 対応 | 部分対応 |
-| plugin `PostToolUse/posttooluse` | 成功したツール実行の結果を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内する。そのセッションが投入したUWIへの回答を通知し、上限を超えて退避されたシェル出力を保存先と次の操作を示す本文へ置き換える | 対応 | 部分対応 |
+| plugin `PreToolUse/pretooluse` | 元へ戻せない結果を生む操作と、入力から機械的に判定できる明らかな誤り（編集内容の文字化け、lockfileの直接編集、atkの出力のパイプとリダイレクトなど）を実行前に警告または遮断する。commit本文を確定でき、2行目が空行でない場合は遮断し、件名の直後へ空行を加える操作を案内する。commitの帰属行（`Co-Authored-By`）はエージェントが書き、このフックが実行中のモデルと推論量に一致するかを確かめる | 対応 | 部分対応 |
+| plugin `PostToolUse/posttooluse` | 成功したツール実行の結果を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内する。メインの成功した前景Bashのcommit・push後にはcompletion-reportの起動条件を通知する。そのセッションが投入したUWIへの回答を通知し、上限を超えて退避されたシェル出力を保存先と次の操作を示す本文へ置き換える | 対応 | 部分対応 |
 | plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および会話圧縮の後に、メインエージェントだけに適用する条文を文脈へ追加する | 対応 | 対応 |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文を文脈へ追加する | 対応 | 対応 |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応 |
@@ -408,6 +408,9 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づき、編集前にチェックする | 対応 | 非対応 |
 
 各フックの判定条件と、Codexでの対応範囲の詳細は[design-hooks.md](../development/design-hooks.md)「フックごとの処理とCodexの対応範囲」を参照。
+
+Claude CodeのPreToolUseは、エージェント向け文書の編集と、書込先を確定できるBash操作の前に、未起動のwriting-standardsを文脈ごとに1回案内する。親子の起動済み記録は分け、Codexはこの警告と記録の対象から外す。
+commit・push後のPostToolUseの案内は、成果報告へ進むメインへcompletion-reportの適用条件を示す。Claude CodeではSkillの起動、Codexでは通知されたSKILL.mdの読取へ進む。失敗・背景・dry-run・help・委譲先は対象外で、後続の該当操作にも案内する。
 
 plugin `PreToolUse/pretooluse`がatkの呼び出しを遮断するのは、静的に分かるatkの実行位置と出力の接続先に限る。
 検索語やheredoc本文に現れたatkと、ホストが管理する背景実行は遮断しない。ただし区切り語を引用しないheredocの本文にあるコマンド置換は、`bash`が実行するため置換の中身によらず遮断する。
@@ -483,8 +486,8 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `atk agents-exit-session`: ユーザー指示時または自律モードのスキル完遂時に、現在のClaude CodeまたはCodexの対話セッションへ終了を要求するCLI。管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeでは、ターンの完了後に`/exit`を実行してセッション記録の末尾まで残す。moduleが読み込まれていないClaude CodeとCodexでは従来のプロセス停止方式を使う。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
-- `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。ターンの途中でユーザーへ原文どおり届ける内容（質問への回答、確認結果、作業完了報告など）を運び、画面へMarkdownとして表示する。ツール呼び出しより前に書いた地の文は要約へ置き換わって届かないことがあるため、メインはこのツールで送る。moduleを読み込まないClaude CodeとCodexにはツールが現れず、メインはターンを終える本文へ書く
-- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。振り返りが対策のAWIを投入する場合は、投入の前に振り返り結果を予告し、投入の完了後に完了の旨と投入したAWIのファイル名を報告する。途中の回答や割り込みへの返答の後に残りの報告段階へ進まない停止と、報告本文に不備がある停止はStopフックが遮断して戻す。報告本文の不備は、対策行に根拠（AWIのファイル名・投入予定・同一セッションの実装）が無いこと、見送りの判定済み行の根拠の欠落か未確定、未確定行の照会・再現・残る理由の欠落、AWI投入結果報告に残った投入予定の4つである。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
+- `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。途中の回答や割り込みへの返答の後に残りの報告段階へ進まない停止と、報告本文に不備がある停止はStopフックが遮断して戻す。報告本文の不備は、対策行に根拠（AWIのファイル名・投入予定・同一セッションの実装）が無いこと、見送りの判定済み行の根拠の欠落か未確定、未確定行の照会・再現・残る理由の欠落、AWI投入結果報告に残った投入予定の4つである。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う
 - `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 

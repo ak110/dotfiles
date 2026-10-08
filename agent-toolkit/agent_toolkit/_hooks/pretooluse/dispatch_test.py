@@ -79,6 +79,35 @@ def test_codex_commit_uses_observed_identity_from_hook_payload(capsys: pytest.Ca
     assert "Co-Authored-By: GPT-6.1 Sol / Medium <noreply@openai.com>" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("host", ["claude-unknown", "claude-disabled", "codex-unknown", "codex-observed"])
+@pytest.mark.parametrize("source", ["message", "heredoc", "file"])
+def test_commit_format_blocks_independently_of_attribution(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str, source: str
+) -> None:
+    (tmp_path / "message.txt").write_text("件名\n本文\n", encoding="utf-8")
+    commands = {
+        "message": "git commit -m '件名\n本文'",
+        "heredoc": "git commit -F - <<'EOF'\n件名\n本文\nEOF",
+        "file": "git commit -F message.txt",
+    }
+    payload = {
+        "session_id": "format-case",
+        "cwd": str(tmp_path),
+        "tool_name": "Bash",
+        "tool_input": {"command": commands[source]},
+    }
+    if host.startswith("codex"):
+        payload["turn_id"] = "codex-turn"
+    if host == "codex-observed":
+        payload.update(model="gpt-6.1-sol", reasoning_effort="medium")
+    if host == "claude-disabled":
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude/settings.json").write_text('{"attribution":{"commit":""}}', encoding="utf-8")
+    assert pretooluse.main(json.dumps(payload)) == 2
+    error = capsys.readouterr().err
+    assert "空行" in error and "再実行" in error
+
+
 def test_claude_commit_uses_observed_identity_from_transcript(
     capsys: pytest.CaptureFixture[str],
     tmp_path: pathlib.Path,

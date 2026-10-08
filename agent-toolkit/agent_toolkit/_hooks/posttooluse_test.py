@@ -551,6 +551,94 @@ def _run(
     return _fork_runner.run_script(_SCRIPT, argv=("posttooluse",), input=text, env=env)
 
 
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git commit -m message",
+        "git commit --amend --no-edit",
+        "git -C /repo push",
+        "git commit -m message && git push",
+        "git commit -n -m message",
+        "git commit -m --help",
+    ],
+)
+def test_git_completion_operation_notifies_each_successful_call(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, command: str, codex: bool
+) -> None:
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    payload = {
+        "session_id": "completion-notice",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "tool_response": {"exit_code": 0},
+    }
+    if codex:
+        payload["turn_id"] = "codex-turn"
+    for _ in range(2):
+        result = _run(payload, state_dir=tmp_path)
+        assert result.returncode == 0
+        body = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert body.count("報告を書く前に") == 1
+        assert "completion-report" in body
+        assert ("SKILL.md" in body) is codex
+    assert not any("completion" in key for key in _read_state(tmp_path, "completion-notice"))
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "failure",
+        "nonzero",
+        "background",
+        "moved-background",
+        "shell-background",
+        "agent",
+        "delegate",
+        "dry-run",
+        "help",
+        "global-help",
+        "text",
+    ],
+)
+def test_git_completion_notice_excludes_non_completion_operations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    commands = {
+        "shell-background": "git push &",
+        "dry-run": "git push --dry-run",
+        "help": "git commit --help",
+        "global-help": "git --help push",
+        "text": "echo 'git push'",
+    }
+    payload: dict = {
+        "session_id": "excluded-notice",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": commands.get(case, "git push")},
+        "tool_response": {"exit_code": 0},
+    }
+    if case == "failure":
+        payload["hook_event_name"] = "PostToolUseFailure"
+    elif case == "nonzero":
+        payload["tool_response"] = {"exit_code": 1}
+    elif case == "background":
+        payload["tool_input"] = {"command": "git push", "run_in_background": True}
+    elif case == "moved-background":
+        payload["tool_response"] = {"backgroundTaskId": "task-1"}
+    elif case == "agent":
+        payload["agent_id"] = "child-1"
+    elif case == "delegate":
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    result = _run(payload, state_dir=tmp_path)
+    assert result.returncode == 0
+    assert "completion-report" not in result.stdout
+
+
 def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
     """同じ一時状態ディレクトリでPreToolUse hookを実行する。"""
     env = os.environ.copy()
@@ -2154,7 +2242,7 @@ class TestRemovedRecordsAreAbsent:
     def test_bash_and_edit_do_not_record_removed_state(self, tmp_path: pathlib.Path) -> None:
         sid = "removed-records"
         rule = pathlib.Path(__file__).resolve().parents[2] / "rules" / "01-agent.md"
-        payloads = [
+        payloads: list[dict] = [
             {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "uv run pytest"}, "tool_response": {}},
             {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log -3"}, "tool_response": {}},
             {
@@ -2174,6 +2262,9 @@ class TestRemovedRecordsAreAbsent:
             result = _run(payload, state_dir=tmp_path)
 
             assert result.returncode == 0
-            assert result.stdout == ""
+            if payload.get("tool_input", {}).get("command") == "git commit --amend --no-edit":
+                assert "agent-toolkit:completion-report" in result.stdout
+            else:
+                assert result.stdout == ""
         state = _read_state(tmp_path, sid)
         assert not [key for key in self._REMOVED_KEYS if key in state]

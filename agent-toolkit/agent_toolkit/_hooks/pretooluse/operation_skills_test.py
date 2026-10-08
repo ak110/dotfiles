@@ -165,8 +165,9 @@ def test_claude_warning_offers_skill_md_read_for_sessions_without_skill(
             "session_id": "codex",
         },
         _bash("atk managed-temp create --prefix x", "codex"),
+        _bash("echo rule > AGENTS.md", "codex"),
     ],
-    ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "managed-temp"],
+    ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "managed-temp", "agent-doc"],
 )
 def test_codex_operations_do_not_warn_or_record(tmp_path: pathlib.Path, payload: dict) -> None:
     """Codexでは表の全操作で未起動の警告も起動済みの記録も生じない。
@@ -185,6 +186,76 @@ def test_codex_operations_do_not_warn_or_record(tmp_path: pathlib.Path, payload:
     state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=payload["session_id"])
     state = _read_session_state(tmp_path, payload["session_id"]) if state_file.exists() else {}
     assert rules_context.OPERATION_SKILL_READY_KEY not in state
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo rule > AGENTS.md",
+        "printf rule 2>>.claude/rules/local.md",
+        "printf rule | tee .claude/skills/x/SKILL.md",
+        "sed -i 's/old/new/' agent-toolkit/rules/01-agent.md",
+        "sed --in-place -e 's/old/new/' CLAUDE.md",
+        "python3 -c \"p='AGENTS.md'; open(p,'w').write('rule')\"",
+        "uv run --frozen python -c \"from pathlib import Path; Path('.claude/rules/x.md').write_text('rule')\"",
+        "python3 - <<'PY'\np='.claude/skills/server-log-review/SKILL.md'\nopen(p,'w').write('rule')\nPY",
+        "python3 -c \"from pathlib import Path; p=Path('AGENTS.md'); p.write_bytes(b'rule')\"",
+    ],
+)
+def test_agent_document_bash_writing_warns_once(tmp_path: pathlib.Path, command: str) -> None:
+    env = _plan_file_state_env(tmp_path)
+    payload = _bash(command, "writing")
+    assert "agent-toolkit:writing-standards" in _search_warning(payload, env)
+    assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat AGENTS.md",
+        "echo 'open(AGENTS.md, w)'",
+        "printf rule > README.md",
+        "tee script.py",
+        "tee --help AGENTS.md",
+        "sed --help -i 's/a/b/' AGENTS.md",
+        "sed 's/old/new/' AGENTS.md",
+        "sed -i 's/AGENTS.md/new/' ordinary.md",
+        "python3 -c \"p='AGENTS.md'; open(p,'r').read()\"",
+        "python3 -c \"p='AGENTS.md'; p.write_text('rule')\"",
+        "python3 -c \"p='AGENTS.md'; open('other.md','w').write(p)\"",
+        "python3 -c \"p='AGENTS.md'; print(\\\"open(p,'w')\\\")\"",
+        "cat <<'PY'\nopen('AGENTS.md','w').write('rule')\nPY",
+        "python3 - <<'PY'\ndef example():\n    open('AGENTS.md','w').write('rule')\nPY",
+    ],
+)
+def test_non_agent_document_writes_and_examples_do_not_warn(tmp_path: pathlib.Path, command: str) -> None:
+    assert "agent-toolkit:writing-standards" not in _search_warning(_bash(command, "writing"), _plan_file_state_env(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("tool", "tool_input"),
+    [
+        ("Write", {"file_path": "AGENTS.md", "content": "rule"}),
+        ("Edit", {"file_path": ".claude/rules/x.md", "old_string": "old", "new_string": "new"}),
+        ("MultiEdit", {"file_path": "CLAUDE.md", "edits": [{"old_string": "old", "new_string": "new"}]}),
+        (
+            "apply_patch",
+            {"command": "*** Begin Patch\n*** Update File: AGENTS.md\n*** Move to: ordinary.md\n@@\n-old\n+new\n*** End Patch"},
+        ),
+        (
+            "apply_patch",
+            {"command": "*** Begin Patch\n*** Update File: ordinary.md\n*** Move to: AGENTS.md\n@@\n-old\n+new\n*** End Patch"},
+        ),
+    ],
+)
+def test_edit_tool_agent_document_writing_and_skill_context(tmp_path: pathlib.Path, tool: str, tool_input: dict) -> None:
+    env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "writing", "agent-toolkit:writing-standards")
+    payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "writing"}
+    assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
+    payload["agent_id"] = "child"
+    assert "agent-toolkit:writing-standards" in _search_warning(payload, env)
+    assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
 
 
 def test_search_warning_joins_other_warnings(tmp_path: pathlib.Path) -> None:

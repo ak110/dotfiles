@@ -380,7 +380,9 @@ CodexではSkillの起動を観測できず解除の契機が無いため、注�
 
 ## PreToolUseの個別設計
 
-### commit帰属trailerの確認
+### commitメッセージの空行と帰属trailerの確認
+
+通常のcommitで最終メッセージを確定できる場合は、件名と本文の間の空行を確認する。2行目が空行でない複数行メッセージを遮断し、件名の直後へ空行を加える操作を案内する。本文の取得は帰属検査と共用し、`-m`・`--message`・`-F`・heredocと複数の`-m`の段落連結を扱う。件名だけの入力と正しい空行は許可する。identityの不在と帰属設定の無効化は書式検査を免除しない。reuse・reedit・amendのno-edit・fixup・squashと、ファイルや実行位置から本文を確定できない入力は既存の対象外条件を保つ。
 
 通常の`git commit`では、実行位置、最終メッセージ、実行turnの観測identityを確定できる場合だけ帰属trailerを確認する。Claude Codeは`attribution.commit`の`{model}`と`{effort}`を置き換えないため、確認しないと誤った帰属行がpushまで残る（2026年10月6日に4件のcommitで推論量の欠落と誤りを観測した）。Claude Codeの期待値は、推論量をhook入力の`effort.level`、モデルを記録の`message.model`の最後の観測値から求める。hook入力が`agent_id`を持つ場合はsubagentの記録（`<session_id>/subagents/agent-<agent_id>.jsonl`）のモデルを使い、一意に解決できなければ確認しない。PreToolUseの時点ではそのturnの応答がまだ記録に無いため、セッションの最初のツール呼び出しがcommitの場合はモデルを観測できず確認しない。2026年10月6日にClaude Code 2.1.291の`claude -p`で、最初の呼び出しのcommitが通り、別のコマンドの後のcommitが遮断されることを確かめた。hook入力とBashの環境はモデルを持たないため、この区間の期待値を得る手段が無い。最終メッセージは`-m`に加え、`-F -`・`--file=-`へ同じコマンドのheredocで渡した本文と、`-F <path>`で指定した存在するファイルから読む。エージェントのcommitの多くは`-F -`のheredocで作成されるためである。Claude Codeではフックから観測できるuser・project・local設定を優先順位どおり解決する。最上位の`attribution.commit`が空文字なら、明示的な帰属無効化として確認しない。`--amend --no-edit`、fixup、検索・引用中の文字列、人間がagent session外で実行するcommit、入力を確定できない呼び出しも対象外とする。
 
@@ -451,7 +453,7 @@ Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取
 | Codexの`SKILL.md`の読取を起動済みとして記録する | 読取の方法、分割、出力の省略、成否の区別を新たに扱い、正当な読取を取りこぼすと同じ誤警告が残る |
 
 表へスキルを加える場合は、操作の判定関数とその正例・負例のテストを同じ変更単位で加え、費用の比較を別に行う。
-同じ構造を持つスキルには`agent-toolkit:check-execution`、`agent-toolkit:commit`、`agent-toolkit:writing-standards`がある。
+同じ構造を持つスキルには`agent-toolkit:check-execution`、`agent-toolkit:commit`がある。
 `agent-toolkit:delegation`と`agent-toolkit:external-write-review`も同じ構造を持つ。いずれも観測事象への寄与と費用を確かめていないため登録していない。
 
 2026年10月7日に`agent-toolkit:bugfix`を登録した。WI投入担当が観測した欠陥を起点とする要求の原因分析を同スキルを起動せずに起草した記録が、原因分析を書いた45件中12件あった（`incidents-validation.md`「WI投入とAWI起草の欠陥」）。
@@ -462,6 +464,10 @@ Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取
 同日に`agent-toolkit:managed-temp`も登録した。`.git`を含む個別の領域へ参照される保存物を置き、領域の回収で失った事象があり（`incidents-data-security.md`「データ破壊と喪失」）、置き場所の規定は同スキルにある。
 記録のうち`atk managed-temp create`を実行した134セッションで同スキルを起動したのは7セッションだった。判定はBashのコマンド文字列で確定し、`for … ; do atk …`と`d=$(atk …)`の形も検出するため、区間の先頭のトークンではなく`managed-temp`・`create`の連続とその直前で判定する。
 `cleanup`と`list`は置き場所を選ぶ操作でないため除く。回収の時点の警告は削除を止めないため置かない。
+
+2026年10月8日に`agent-toolkit:writing-standards`を登録した。対象はエージェント向け文書へのWrite・Edit・MultiEdit・apply_patchと、書込先を静的に確定できるBash操作である。移動は元と先の両方を既存の文書パス判定へ渡す。Bashはリダイレクト・tee・sedの直接更新と、Pythonの文字列リテラルまたは代入から確定するopenの書込・Path.writeを扱う。読取や実行されない例、別ファイルへの書込を、同じ入力に文書名が現れたことだけで警告しない。既存の主体別記録を再利用し、Codexの除外も保つ。編集の直前へ基準の所在を届ける目的であり、新しい遮断や専用状態は設けない。
+
+成功した前景Bashのgit commit・git push後には、PostToolUseがメインへcompletion-reportの既存の起動条件を通知する。失敗、背景、dry-run、help、委譲先を除き、複合コマンドでも1呼出につき1通知にまとめる。後続のcommit・pushでも条件を確認できるよう、配送済みの状態は保存しない。作業途中のGit操作を作業完了とみなす通知にはしない。
 
 ### AskUserQuestion前に読む資料の未読の警告
 
@@ -541,17 +547,18 @@ modが`$.clock.every`と`$.prompt.submit`で定期再確認そのものを行い
 
 Claude Codeでは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIがモデルの原文ではなく要約（progress updateの要約）へ置き換えて返す。原文は画面にもtranscriptにも残らず、メインは届いたとみなして作業を続ける。根拠は`audit-records.md`の「agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年10月6日」、事象は`incidents-validation.md`の2026年10月6日の項にある。
 
-ツールの入力は要約されないため、ターンの途中で原文どおり届ける内容をツールの入力で運ぶ。Function hooks module（`agent-toolkit/hooks/send_to_user.tsx`、`register.ts`から登録）は次を行う。
+ツールの入力は要約されないため、途中報告と最後の回答の両方をツールの入力で運ぶ。確認質問は既存の質問手段を使う。Function hooks module（`agent-toolkit/hooks/send_to_user.tsx`、`register.ts`から登録）は次を行う。
 
-- `session.start`で`$.tool.register`により`send_to_user`（入力は必須の文字列`message`だけ）を登録する。モデルは`mcp__agent-toolkit__send_to_user`の名前で呼ぶ
+- `session.start`で`$.tool.register`により`send_to_user`（入力は必須の文字列`message`だけ）を`isDeferred: false`で登録する。モデルは初回要求から`mcp__agent-toolkit__send_to_user`の名前で呼ぶ。遅延一覧にだけ現れる環境では、その完全名を`ToolSearch`の`select:`で指定する
 - `tool.check`でこのツールの呼び出しを許可する。途中の報告のたびに権限確認の画面が出ると作業が止まるためである
-- `tool.call`で短い確認応答を返す
+- `tool.call`は描画と共通の`messageOf`で入力を検査し、文字列だけに短い成功応答を返す。不正入力は未表示として拒否し、文字列`message`による再呼出を案内する。空文字は文字列として受理する。inputSchemaだけでは実行時の入力を保証できないためである
 - `ui.render`の`ToolUse`でこのツールの行を`message`の`Markdown`要素で描き、他のツールの行は後続へ渡して描き替えない
 - `ui.render`の`ToolResult`では、このツールの成功結果を空の`Box`で描く。本文は`ToolUse`に表示済みなので、成功確認を重ねて表示しない。成功文字列との一致には依存せず、他ツールとエラー結果は後続へ渡す。terminalとdesktopに同じ条件を適用し、モデルへ返す`tool.call`の確認応答は保つ
 
+常時登録を選ぶ理由は、どの報告でも必要になる小さな1ツールの定義を初回から渡すだけで、ToolSearchの選択漏れを除けるためである。短い登録名とモデル側の完全名は別の層の名前であり、再起動や別名の追加では呼出名の不一致を解消しない。
 ツールの登録と表示を同じmoduleに置くため、moduleを読み込まないClaude Code（管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が無い環境）とCodexにはツールが現れない。その環境のメインは`rules-main.claude-code.md`「ツールの入出力」に従い、届ける内容をターンを終える応答の本文へ書く。
 Claude Code 2.1.292では、hooks.jsonの`modules`は1件だけを受け付け、同じイベントで条件を持たないhookは1回だけ登録できる。`$`を渡せるのは同じファイルで宣言した関数に限られる。このため`register.ts`が唯一のmoduleとして`session.start`を1つにまとめ、`session_exit.ts`と`send_to_user.tsx`の`register`を呼ぶ。両ファイルが共有する値はツールの定義と`$`を受け取らない関数に限る。
-transcriptからユーザーへ届いた本文を数える処理は4つある。`user_response_advisor.py`、`termination_evidence.py`の`visible_messages`、`_common/response_language_check.py`と、振り返りの証拠抽出の`assistant`の出来事である。証拠抽出の処理は`session_evidence_extract.py`にある。これらは`_common/transcript.py`の`visible_text_blocks`で`send_to_user`の`message`を本文に含める。名前の前置部分はmoduleの登録が決めるため、末尾の`__send_to_user`で判定する。
+transcriptから可視本文を読むStop判定、言語判定と振り返りの証拠は、`_common/transcript.py`の`visible_text_blocks`で`send_to_user`の`message`を本文に含める。末尾の問いの判定は成功した送信結果と空の最終応答を透過し、人間の入力・作業ツール・APIエラーを越えて過去の問いを再利用しない。振り返りの証拠抽出は送信を作業ツールの境界から除き、同じrecordでも本文より後に作業があるかで途中と最終を区別する。詳細照会は送信本文を全文で返し、他のツール入力や結果を混入させない。名前の前置部分はmoduleの登録が決めるため、本文抽出では末尾の`__send_to_user`で判定する。
 
 却下した代替案は次のとおりである。
 

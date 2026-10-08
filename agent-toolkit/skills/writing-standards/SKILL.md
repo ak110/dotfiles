@@ -28,7 +28,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 既存ファイルをEdit・Writeで編集・上書きする時（コード、文書、エージェント向け文書を問わない） | `references/file-editing.md` |
+| 既存ファイルをEdit・Writeで編集・上書きする時、またはスクリプトで複数ファイルを機械変換する時（コード、文書、エージェント向け文書を問わない） | `references/file-editing.md` |
 | 成果物、ユーザーへの報告と回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` |
 | セッション記録の集計・分析 | `references/session-records.md` |
@@ -88,7 +88,7 @@ description: >
 | コードを編集する時点と、依存の追加・更新をする時 | `references/implementation-time.md` |
 | 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する場合、およびコードレビューを実施する場合 | `references/design-heuristics.md` |
 | 依存の追加・更新をする時 | `references/dependency-management.md` |
-| MCPサーバーのツール、説明、応答を設計、実装、変更またはレビューする時 | `references/mcp-server-design.md` |
+| MCPサーバーまたはFunction hooksなどホスト登録ツールの説明、引数、実行応答を設計、実装、変更またはレビューする時 | `references/mcp-server-design.md` |
 | テストコードを書く時とレビューする時、および条件分岐と判定条件を新設または変更する時 | `references/testing.md` |
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等） | `references/encoding.md` |
 | 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時 | `references/independent-html.md` |

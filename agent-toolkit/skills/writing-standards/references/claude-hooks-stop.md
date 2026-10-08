@@ -42,8 +42,9 @@ Stop・SubagentStopの`additionalContext`と`decision: "block"`の違いは`addi
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks-stop.md：入力：2026年9月4日」にある。
 現行版の入力に`background_tasks`が現れない場合は本項を失効させ、その版の観測として書き直す。
 
-報告本文が発話されたかの判定は、Stop入力の`last_assistant_message`を主な入力とし、それ以前の途中報告に限って現行形式のtranscriptからassistantの可視本文だけを取り出す限定用途とする。
-Claude Codeはassistantの`text`要素、Codexは`response_item`の`message`のうち`role`が`assistant`で`channel`が無いか`final`・`commentary`の`output_text`を可視本文とする。
+報告本文が送達されたかの判定は、Stop入力の`last_assistant_message`と現行形式のtranscriptからassistantの可視本文だけを取り出す限定用途とする。
+Claude Codeはassistantの`text`要素と`mcp__agent-toolkit__send_to_user`の文字列`message`を可視本文とする。
+Codexは`response_item`の`message`のうち`role`が`assistant`で`channel`が無いか`final`・`commentary`の`output_text`を可視本文とする。
 思考、ツール結果、人間入力、サイドチェーンと委譲先の記録は可視本文から除く。
 形式を読めない記録と取得できない記録は未発話と扱わず、判定できなかったことをStop判定ログへ残して許可する。
 工程の完了はtranscriptから推定せず、終了工程の証拠から判定する。
@@ -75,8 +76,8 @@ CodexのStopは`termination_order_advisor`だけを実行する。他のStop判�
 PreToolUseとPostToolUse（Claude CodeではPostToolUseFailureを含む）が実際の呼び出しと応答を、UserPromptSubmitが人間の入力を供給する。
 Stopの`termination_order_advisor`は同じ証拠とメインの可視発話を消費する。
 証拠とする呼び出しは`atk run-script session-review-prepare`である。シェルのコマンドから`agent-toolkit/agent_toolkit/_common/shell_segments.py`の`extract_execution_segments`が取り出した実行位置にある場合だけ識別する。検索語や引用の中のコマンド名は呼び出しの対象外とする。
-報告段階はStop入力の`last_assistant_message`とtranscriptのassistant可視本文のH2から取得する。作業完了・振り返り結果・AWI投入結果の見出しで段階を区別し、本文には`agent-toolkit:completion-report`が定める報告本文の判定だけを適用する。取得不能は診断を残して非遮断とする。現在の作業を中止・置換・技術的不成立と記録した場合も、他の作業に残る報告段階は判定する。
+報告段階はStop入力の`last_assistant_message`とtranscriptのassistant可視本文のH2から取得する。作業完了・振り返り結果の予告・振り返り結果・AWI投入結果の見出しで段階を区別し、本文には`agent-toolkit:completion-report`が定める報告本文の判定だけを適用する。予告後はAWI投入結果を待ち、旧形式の予定行を持つ振り返り結果も同様に扱う。固定の完了文そのものを新たな遮断条件にしない。取得不能は診断を残して非遮断とする。現在の作業を中止・置換・技術的不成立と記録した場合も、他の作業に残る報告段階は判定する。
 Stopは報告段階が残る作業に対し、その作業が待つ非同期対象が生存する間だけ終了を許可する。待機対象とするのは、作業が起動したagents_serverのsessionと、作業の開始以後にtranscriptへ起動が記録された非同期対象とする。非同期対象には背景Agent・MCPのバックグラウンドタスク・未配送の完了通知と、結果を待つ公開の待機コマンド（`atk agents wait`・`wait_ci.py`）を実行する背景Bashを含める。作業の開始より前から動くタスクと、作業内で背景起動した待機コマンドでないBash（開発サーバーなどの常駐コマンド）は待機対象から外し、報告の不足があれば遮断する。常駐コマンドは終了せず完了通知による再開も来ないため、待機対象に含めると報告が欠けたまま終了する。作業との対応はStop側で判定し、他のhookがセッション全体の継続判定に使う`background_tasks.is_pending_async_work`の意味を保つ。
-報告は直接発話し、起草ファイルや確認コマンドの出力を送達の証拠へ使わない。作業はユーザーの入力、呼び出しの単位、開始と判断記録で区切り、全段階を満たした作業の後に新しい入力が届いてから始まった呼び出しは新しい作業へ割り当てる。
+報告は主体別の送達規範に従い、起草ファイルや確認コマンドの出力を送達の証拠へ使わない。作業はユーザーの入力、呼び出しの単位、開始と判断記録で区切り、全段階を満たした作業の後に新しい入力が届いてから始まった呼び出しは新しい作業へ割り当てる。
 中止・置換・開始・再開・確認待ち・委譲先の待機・技術的不成立は、メインが`atk run-script termination-evidence`で記録する判断として扱う。判断の意味はメインが決め、記録処理は原入力の由来と全文の一致、対象の実在と主体を確かめる。Stopの継続入力、`atk-auto`、構造上の生成標識を持つ入力と`source`が`user`以外の入力は、人間の根拠から除く。完了の申告を記録する操作は設けない。
 証拠を読めない場合（状態の破損、旧版の未供給、期限回収後）は完了とも未完了とも扱わず、Stop判定ログへ診断を残して遮断しない。証拠の再供給で回復できる。

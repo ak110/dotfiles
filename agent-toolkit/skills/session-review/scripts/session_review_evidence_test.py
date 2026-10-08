@@ -70,6 +70,36 @@ def test_send_to_user_message_is_assistant_event(tmp_path: pathlib.Path) -> None
     ]
 
 
+@pytest.mark.parametrize("work_position", ["none", "before", "after", "next-entry"])
+def test_sent_final_result_uses_work_order(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], work_position: str
+) -> None:
+    """送信を報告として扱い、後続の作業だけで途中発話へ戻す。"""
+    sent = {"type": "tool_use", "id": "sent", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": "結果の報告"}}
+    work = {"type": "tool_use", "id": "work", "name": "Bash", "input": {"command": "pwd"}}
+    blocks = [work, sent] if work_position == "before" else [sent, work] if work_position == "after" else [sent]
+    entries = [{"type": "assistant", "message": {"role": "assistant", "content": blocks}}]
+    if work_position == "next-entry":
+        entries.append({"type": "assistant", "message": {"role": "assistant", "content": [work]}})
+    entries.append(
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "sent", "content": "ユーザーの画面へ表示した。"},
+                ],
+            },
+        }
+    )
+    transcript = _write_transcript(tmp_path, entries)
+    assert evidence.main([str(transcript)]) == 0
+    events = read_jsonl(capsys)
+    report = next(event for event in events if event.get("text") == "結果の報告")
+    assert report["kind"] == ("assistant" if work_position in {"after", "next-entry"} else "final-result")
+    assert (report.get("phase") == "commentary") is (work_position in {"after", "next-entry"})
+
+
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,

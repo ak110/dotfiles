@@ -6,7 +6,7 @@ PreToolUse、UserPromptSubmitおよびStopフックが参照して判定に使�
 本モジュールは実行後の観測と警告だけを行い、操作を遮断しない。
 
 編集入力は`_hook_tool_input`が共通の操作記録へ正規化する。
-Codexでは成功した`apply_patch`だけが本フックへ届く。
+Codexから届く正規化済みの入力も同じ操作記録を使う。
 
 検出対象:
 
@@ -31,6 +31,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。
 11. `AskUserQuestion`の自由記述の回答へ、UserPromptSubmitと同じ現物確認の注記を返す (AskUserQuestion)
 12. ホストの上限を超えて退避した出力の抜粋を、未読と保存先、次の操作を示す本文へ置き換える
     `updatedToolOutput` (Bash / PowerShell。`persisted_output`が判定する)
+13. メインが成功した前景Bashでcommit・pushを行った後に、completion-reportの起動条件を通知する
 """
 
 import json
@@ -39,6 +40,7 @@ import shlex
 import sys
 
 from agent_toolkit._atk import run_script as _run_script
+from agent_toolkit._common.bash_invocations import extract_bash_invocations
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
@@ -50,10 +52,12 @@ from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._hooks import tool_input as _hook_tool_input
 from agent_toolkit._hooks import uwi_completion as _uwi_completion
 from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
+from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 from agent_toolkit._hooks.pretooluse.agent_checks import _PLAN_MODE_SKILL_NAMES
+from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens
 from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 # このスクリプトの hook 識別子。
@@ -440,6 +444,74 @@ def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None
     _record_bash_response_state(session_id, command, payload.get("tool_response"))
 
 
+def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
+    """メインの成功した前景Git操作の近傍へ、完了報告の起動条件を届ける。"""
+    response = payload.get("tool_response")
+    if (
+        not is_main_agent_context(payload)
+        or tool_input.get("run_in_background")
+        or _background_task_id_from_response(response) is not None
+        or isinstance(response, dict)
+        and (response.get("exit_code", 0) != 0 or response.get("interrupted"))
+    ):
+        return None
+    command = tool_input.get("command")
+    if not isinstance(command, str):
+        return None
+    for invocation in extract_bash_invocations(command):
+        parsed = _git_subcommand_tokens(invocation.segment)
+        if invocation.background or not invocation.arguments_known or parsed is None or parsed[0] not in {"commit", "push"}:
+            continue
+        arguments = parsed[1]
+        options = iter(arguments)
+        excluded = False
+        value_options = {
+            "-m",
+            "--message",
+            "-F",
+            "--file",
+            "-C",
+            "--reuse-message",
+            "-c",
+            "--reedit-message",
+            "--author",
+            "--date",
+            "--cleanup",
+            "-t",
+            "--template",
+            "--trailer",
+            "--fixup",
+            "--squash",
+            "--pathspec-from-file",
+            "--repo",
+            "--receive-pack",
+            "--exec",
+            "-o",
+            "--push-option",
+        }
+        for option in options:
+            if option == "--":
+                break
+            if option in value_options:
+                next(options, None)
+            elif option in {"--dry-run", "--help", "-h"} or parsed[0] == "push" and option == "-n":
+                excluded = True
+                break
+        prefix = invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)]
+        if excluded or "--help" in prefix:
+            continue
+        operation = (
+            f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/SKILL.md'}`を読む"
+            if is_codex_payload(payload)
+            else "Skillで`agent-toolkit:completion-report`を起動する"
+        )
+        return _llm_notice(
+            f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
+            tag="notice",
+        )
+    return None
+
+
 def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str, event_name: str) -> list[str]:
     """ツールの種類ごとに実行結果をセッション状態へ記録し、コーディングエージェントへ返す通知を返す。"""
     # 所有の根拠は、自セッションのツール呼び出しの応答がバックグラウンドタスク識別子を返したことである。
@@ -492,6 +564,8 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
     elif tool_name != "PowerShell":
         # PowerShellは退避した出力の置き換え（`main`）だけを対象とする
         _observe_bash_tool(payload, session_id, tool_input)
+        if tool_name == "Bash" and (completion_notice := _completion_report_notice(payload, tool_input)) is not None:
+            notices.append(completion_notice)
     return notices
 
 
