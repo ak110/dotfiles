@@ -7,8 +7,9 @@ import sys
 from collections.abc import Iterable, Iterator, Mapping
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import filters as _wi_filters
-from agent_toolkit._atk.wi.constants import WI_TYPES, normalized_wi_type, unrepairable_entry_next_action
+from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPES, normalized_wi_type, unrepairable_entry_next_action
 from agent_toolkit._atk.wi.formatters import parse_source, parse_target_repo
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter, write_entry_text
 from agent_toolkit._git import remote as _git_remote
@@ -158,6 +159,55 @@ def count_awi(awi_dir: pathlib.Path, target_repo: str | None = None) -> int:
 
 type EntryRecord = tuple[pathlib.Path, str, str, str, str | None]
 """`iter_entries`が返す1件（パス、対象repo、本文、状態、種別）。"""
+
+
+def validate_named_filenames(private_notes: pathlib.Path, filenames: list[str]) -> list[tuple[str, str]]:
+    """全状態から探す明示名を検証し、要求名と正規化した名前を要求順に返す。"""
+    for filename in filenames:
+        parts = filename.replace("\\", "/").split("/")
+        if len(parts) == 2 and parts[0] in WI_STATES and parts[1] not in ("", ".", ".."):
+            _outcome.report_failure(
+                f"状態名付きのファイル名は受理しない: {filename}",
+                next_action=f"状態名を除いたファイル名を指定する: {parts[1]}（showは全状態フォルダを探索する）",
+            )
+            sys.exit(2)
+    names = _wi_filenames.dedup_positional_filenames(filenames, "show")
+    return [(name, _wi_filenames.validate_filename(name, private_notes / WI_STATES[0]).name) for name in names]
+
+
+def read_named_entries(
+    private_notes: pathlib.Path,
+    filenames: list[tuple[str, str]],
+    *,
+    target_repo: str | Iterable[str] | None,
+    entry_type: Iterable[str] = ("all",),
+    source: str | Iterable[str] | None = None,
+) -> tuple[list[EntryRecord], list[str]]:
+    """検証済みの指定名を状態の優先順で読み、該当項目と見つからない要求名を返す。
+
+    明示名の照会では状態と回答有無を検索条件にしない。同期と表示は呼出側が担う。
+    """
+    matcher = _wi_filters.TargetRepoMatcher(target_repo)
+    kinds = set(entry_type)
+    selected: list[EntryRecord] = []
+    missing: list[str] = []
+    for requested, normalized in filenames:
+        for state in WI_STATES:
+            path = private_notes / state / normalized
+            if not path.exists():
+                continue
+            text = path.read_text(encoding="utf-8")
+            kind = entry_type_of(path, text)
+            if "all" not in kinds and kind not in kinds:
+                continue
+            repo = parse_target_repo(text)
+            if not matcher.matches(repo) or not _wi_filters.source_matches_any(parse_source(text), source):
+                continue
+            selected.append((path, repo, text, state, kind))
+            break
+        else:
+            missing.append(requested)
+    return selected, missing
 
 
 def select_entries(

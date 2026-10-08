@@ -50,7 +50,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk run-command": {
         "summary": "外部コマンドの全出力と終了状態を保持する",
-        "description": "目的: MCPによる実行手段を持たない有限終了の外部コマンドについて、標準出力と標準エラーの全量および実際の終了状態を保持する。\n利用場面: formatter、linter、testerなどを直接起動し、両ストリームの全量と終了状態を同時に必要とするとき。対話型、常駐、端末制御および追従表示には使わない。\n対象と出力: `--`以後をshellで再解釈せずargvとして起動し、登録済みmanaged-tempの別ファイルへ両ストリームをバイト列のまま保存する。標準出力へargv、cwd、child_exit_code、timed_out、signal、stdout_path、stderr_pathと両ファイルの行数・バイト数を持つJSON objectを1件出力する。自然終了0〜255は同じ終了コード、signalは128+signal番号、timeoutは124、子を開始しないwrapper異常は125を返す。\n前提: `--cwd`は実在する絶対ディレクトリ、`--timeout`は正の秒数とする。pipelineや複数行codeはscriptへ保存し、そのscriptのargvを渡す。\n復元・後始末: 保存先は`atk managed-temp list`と`cleanup`で管理し、未回収でも保持期限後に自動削除される。",
+        "description": "目的: MCPによる実行手段を持たない有限終了の外部コマンドについて、標準出力と標準エラーの全量および実際の終了状態を保持する。\n利用場面: formatter、linter、testerなどの実行や手動観測で、両ストリームの全量と終了状態を記録して後続担当へ渡すとき。対話型、常駐、端末制御および追従表示には使わない。\n対象と出力: `--`以後をshellで再解釈せずargvとして起動し、登録済みmanaged-tempの別ファイルへ両ストリームをバイト列のまま保存する。argv、cwd、child_exit_code、timed_out、signal、stdout_path、stderr_pathと両ファイルの行数・バイト数を持つJSON objectを同じ領域のrecord.jsonへUTF-8で保存し、保存先の絶対パスrecord_pathを含む同じJSONを標準出力へ1件出力する。自然終了0〜255は同じ終了コード、signalは128+signal番号、timeoutは124、wrapper異常は125を返す。JSON保存失敗では125と診断を返し、record_pathはnull、子の結果と両出力パスは保持する。\n前提: `--cwd`は実在する絶対ディレクトリ、`--timeout`は正の秒数とする。pipelineや複数行codeはscriptへ保存し、そのscriptのargvを渡す。\n復元・後始末: 保存先は`atk managed-temp list`と`cleanup`で管理し、未回収でも保持期限後に自動削除される。",
         "epilog": "実行例:\n\n  atk run-command --cwd /absolute/repository -- pytest -q",
     },
     "atk run-skill": {

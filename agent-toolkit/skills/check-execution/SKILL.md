@@ -25,12 +25,12 @@ description: >
 
 ## 統合実行ツール経由の起動
 
-- 対象プロジェクトが統合実行ツール（`pyfltr`など）を採用する場合は、formatter、linter、testerおよびプロジェクト固有のチェックツールを個別に直接起動せず、その統合実行ツールのサブコマンド経由で実行する。設定で無効化したツールも直接起動すれば動作するため、設定による無効化は直接起動への防御にならない。特定のファイルだけを対象にする場合も同じ形でパスを渡す。対象プロジェクトの規範がデバッガー、最小再現、環境ごとの原因の特定などの用途で直接起動を認める場合は、その用途に限り直接起動する
-- 統合実行ツールがチェック実行用のMCPツールを公開している場合は、そのMCPツールを優先する。pyfltrのチェック実行はMCPの`run`を使う。MCPを利用できず、有限終了する外部チェックの標準出力・標準エラーの全量と終了状態を一体で保持する場合だけ、対象worktreeで`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`を使う。pipelineまたは複数行codeは`agent-toolkit/rules/02-agent-operations.md`に従ってmanaged-temp内のscriptへ保存し、そのscriptをshellで再解釈せずargvとして渡す
+- プロジェクトが採用する統合実行ツール（`pyfltr`など）を使い、対象を限定する場合も同じ統合実行ツールへパスを渡す。個別の直接起動は、プロジェクト規範が認めるデバッグ・最小再現・原因特定などの用途に限る。設定による無効化は直接起動を防がない
+- チェック実行用MCPを優先し、pyfltrでは`run`を使う。MCPを利用できず有限終了する外部チェックの両出力全量と終了状態を保持する場合、および有限終了する手動観測では、対象worktreeで`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`を使う。返却JSONの`record_path`が指す保存JSONから実行条件・子終了状態・両出力へ到達できるため、その絶対パスと両出力パスを検証記録へ渡す。保存失敗は非0と診断で確認する。pipeline・複数行codeは`agent-toolkit/rules/02-agent-operations.md`に従いmanaged-temp内のscriptへ保存し、shellで再解釈せずargvとして渡す
 - シェルからCLIを直接実行する場合は、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「背景ジョブの起動形（Claude Code）」が定める長時間コマンドの前景実行に従う
 
 ## pyfltrの起動形
 
-- 名前が確定したチェックコマンドの有効状態、実行器、実効コマンドライン、実行ファイルの解決結果を調べる場合は、最初に`pyfltr command-info <command> --output-format=jsonl`でそのコマンドの実効設定を取得する。引数と返却フィールドは`pyfltr command-info --help`の説明に従う。未知のコマンド名の探索、pyfltrの導入およびチェックの実行には、それぞれの目的に対応する既存の呼び出し手段（CLI・MCPツールなど）を使う
+- 名前が確定したチェックの実効設定（有効状態・実行器・コマンドライン・実行ファイルの解決）は、最初に`pyfltr command-info <command> --output-format=jsonl`で取得する。引数と返却欄は`pyfltr command-info --help`に従う。探索・導入・実行にはそれぞれの既存CLI・MCPを使う
 - pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。この定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
-- サブコマンドの使い分け、オプションの受理形式、JSONL出力のレコード種別とフィールドの解釈、失敗ツールの再実行手段、ツール解決の失敗への対処は、`pyfltr <サブコマンド> --help`の出力とMCPツールのスキーマで確認する。これらが扱わない設定リファレンスと新規プロジェクトへの導入手順は<https://ak110.github.io/pyfltr/llms.txt>を取得し、そのページからたどって参照する
+- 使い分け・入出力形式・失敗時の再実行と解決は`pyfltr <サブコマンド> --help`とMCPスキーマで確認する。未掲載の設定・導入手順は<https://ak110.github.io/pyfltr/llms.txt>からたどる

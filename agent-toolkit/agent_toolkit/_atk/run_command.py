@@ -97,6 +97,7 @@ def dispatch(args: argparse.Namespace) -> int:
     signal_number: int | None = None
     wrapper_exit_code = _EXIT_WRAPPER_FAILURE
     failure: str | None = None
+    directory: pathlib.Path | None = None
     try:
         directory = managed_temp.create_managed_temp("atk-command")
         stdout_path = (directory / "stdout.bin").resolve()
@@ -126,21 +127,27 @@ def dispatch(args: argparse.Namespace) -> int:
     except (OSError, managed_temp.ManagedTempError) as error:
         failure = f"保存の準備または完了に失敗した: {error}"
 
-    print(
-        json.dumps(
-            _metadata(
-                argv=argv,
-                cwd=cwd,
-                child_exit_code=child_exit_code,
-                timed_out=timed_out,
-                signal_number=signal_number,
-                stdout_path=stdout_path,
-                stderr_path=stderr_path,
-            ),
-            ensure_ascii=False,
-            sort_keys=True,
-        )
+    metadata = _metadata(
+        argv=argv,
+        cwd=cwd,
+        child_exit_code=child_exit_code,
+        timed_out=timed_out,
+        signal_number=signal_number,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
     )
+    metadata["record_path"] = None
+    if directory is not None:
+        record_path = (directory / "record.json").resolve()
+        metadata["record_path"] = str(record_path)
+        try:
+            with record_path.open("x", encoding="utf-8") as stream:
+                stream.write(json.dumps(metadata, ensure_ascii=False, sort_keys=True) + "\n")
+        except OSError as error:
+            metadata["record_path"] = None
+            wrapper_exit_code = _EXIT_WRAPPER_FAILURE
+            failure = f"実行結果JSONを保存できない: {error}"
+    print(json.dumps(metadata, ensure_ascii=False, sort_keys=True))
     if wrapper_exit_code == 0:
         outcome.report_success("外部コマンドが終了した", outcome.ResultKind.VALUE_OUTPUT)
     else:

@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import argparse
 import collections
+import contextlib
 import dataclasses
+import io
 import json
 import os
 import pathlib
@@ -27,6 +29,9 @@ import tempfile
 import typing
 
 from agent_toolkit._atk import review_table
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import repo as _wi_repo
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import markdown_headings, requirement_units
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
@@ -127,30 +132,30 @@ def _repository_root() -> pathlib.Path:
     return pathlib.Path(result.stdout.strip()).resolve()
 
 
-def _show_wi(filename: str, repository: pathlib.Path) -> str:
-    """生成側が返す保存先または非エージェントの直接本文からWIを取得する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[3]
-    launcher = plugin_root / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
-    result = subprocess.run(
-        [str(launcher), "wi", "show", filename, f"--target-repo={repository}", "--skip-pull"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=30,
-    )
-    if result.returncode != 0:
-        raise ValueError(f"{filename}: WI本文を取得できません: {result.stderr.strip()}")
-    saved = [line.removeprefix("保存先: ").strip() for line in result.stdout.splitlines() if line.startswith("保存先: ")]
-    if not saved:
-        return result.stdout
-    if len(saved) != 1 or not pathlib.Path(saved[0]).is_absolute():
-        raise ValueError(f"{filename}: WI本文の保存先を確定できません: {result.stdout}")
-    try:
-        return pathlib.Path(saved[0]).read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
-        raise ValueError(f"{filename}: WI本文の保存先を読めません: {saved[0]}: {error}") from error
+class _WiOutputs(dict[str, str]):
+    """検査中に必要となったWIだけを共通読取で取得し、同じ検査内で再利用する。"""
+
+    def __init__(self, repository: pathlib.Path) -> None:
+        super().__init__()
+        self.repository = repository
+        self.private_notes: pathlib.Path | None = None
+        self.repo_id: str | None = None
+
+    def __missing__(self, filename: str) -> str:
+        try:
+            if self.private_notes is None:
+                self.private_notes = _wi_sync.ensure_environment(pathlib.Path.home())
+                self.repo_id = _wi_repo.resolve_repo_id(str(self.repository))
+            names = _wi_entries.validate_named_filenames(self.private_notes, [filename])
+            selected, missing = _wi_entries.read_named_entries(self.private_notes, names, target_repo=self.repo_id)
+        except SystemExit as error:
+            raise ValueError(f"{filename}: WI本文を取得できません（保存先または入力の診断を確認する）") from error
+        if missing:
+            raise ValueError(f"{filename}: WI本文を取得できません: 対象リポジトリの全状態フォルダに存在しない")
+        path, repo, text, state, _kind = selected[0]
+        output = f"## target_repo: {repo}\n### {path.name} [{state}]\n{text}"
+        self[filename] = output
+        return output
 
 
 def _wi_body(output: str, filename: str) -> tuple[dict[str, str], list[str]]:
@@ -557,7 +562,9 @@ def _repository_reference(
     return _unresolved_reference(repository, head, matches)
 
 
-def _check_reference_locations(payload: dict[str, object], repository: pathlib.Path, expected_head: str) -> list[str]:
+def _check_reference_locations(
+    payload: dict[str, object], repository: pathlib.Path, expected_head: str, wi_outputs: dict[str, str]
+) -> list[str]:
     """両配列の全達成行で、WIまたは明示されたファイルの見出し・行を確認する。
 
     ルートから解決できないリポジトリ内の相対参照は、対象commitの追跡ファイルのうちパス末尾が一致するものを数え、1件に決まれば
@@ -583,7 +590,7 @@ def _check_reference_locations(payload: dict[str, object], repository: pathlib.P
                 if path not in contents:
                     try:
                         if is_wi:
-                            _, wi_body = _wi_body(_show_wi(candidate, repository), candidate)
+                            _, wi_body = _wi_body(wi_outputs[candidate], candidate)
                             contents[path] = "\n".join(wi_body).encode("utf-8")
                         else:
                             contents[path] = _repository_reference(candidate, path, repository, head, tracked)
@@ -745,10 +752,8 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
     return list(dict.fromkeys(errors))
 
 
-def _load_wi(reference: str, repository: pathlib.Path, wi_outputs: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+def _load_wi(reference: str, _repository: pathlib.Path, wi_outputs: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     """WI本文を取得結果の保持から再利用して、frontmatterと本文へ分ける。"""
-    if reference not in wi_outputs:
-        wi_outputs[reference] = _show_wi(reference, repository)
     return _wi_body(wi_outputs[reference], reference)
 
 
@@ -1322,20 +1327,18 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
         return errors
     try:
         repository = _repository_root()
+        wi_outputs = _WiOutputs(repository)
         errors.extend(_check_reviewed_heads(payload, repository, expected_head))
-        errors.extend(_check_reference_locations(payload, repository, expected_head))
+        errors.extend(_check_reference_locations(payload, repository, expected_head, wi_outputs))
         errors.extend(_check_shared_evidence(payload, repository))
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return [str(exc)]
     condition_rows = payload["wi_conditions"]
     requirement_rows = payload["user_requirements"]
     assert isinstance(condition_rows, list) and isinstance(requirement_rows, list)
-    wi_outputs: dict[str, str] = {}
     errors.extend(_check_exemptions(payload, repository, wi_outputs))
     for filename in filenames:
         try:
-            if filename not in wi_outputs:
-                wi_outputs[filename] = _show_wi(filename, repository)
             expected, requirements = _expected_rows(wi_outputs[filename], filename)
         except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             errors.append(str(exc))
@@ -1699,9 +1702,10 @@ def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str],
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return [str(exc)], 0, 0
     additions: dict[str, list[dict[str, str]]] = {section: [] for section in REQUIRED_FIELDS}
+    wi_outputs = _WiOutputs(repository)
     for filename in dict.fromkeys(filenames):
         try:
-            expected, requirements = _expected_rows(_show_wi(filename, repository), filename)
+            expected, requirements = _expected_rows(wi_outputs[filename], filename)
         except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             errors.append(str(exc))
             continue
@@ -1838,16 +1842,91 @@ def _main_rewrite_map(parser: argparse.ArgumentParser, args: argparse.Namespace)
     return 0
 
 
+def _batch_arguments(value: object) -> tuple[str, list[str]]:
+    """一組のレビュー返却を、既存の単一検査の引数へ損失なく対応付ける。"""
+    fields = {"plan", "evidence", "wi", "reviewed_head", "review_table", "round", "plans", "input_records"}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError(f"レビュー入力組には{', '.join(sorted(fields))}を指定する")
+    for name in ("plan", "evidence", "reviewed_head", "review_table"):
+        if not isinstance(value[name], str) or not value[name].strip():
+            raise ValueError(f"{name}には空でない文字列を指定する")
+    for name in ("wi", "plans", "input_records"):
+        if not isinstance(value[name], list) or any(not isinstance(item, str) or not item for item in value[name]):
+            raise ValueError(f"{name}には文字列の配列を指定する")
+    if not isinstance(value["round"], int) or isinstance(value["round"], bool) or value["round"] < 1:
+        raise ValueError("roundには正の整数を指定する")
+    args = [
+        value["evidence"],
+        *value["wi"],
+        "--expected-head",
+        value["reviewed_head"],
+        "--review-table",
+        value["review_table"],
+        "--round",
+        str(value["round"]),
+        "--return-result",
+    ]
+    for option, field in (("--plan", "plans"), ("--input-record", "input_records")):
+        for path in value[field]:
+            args.extend((option, path))
+    return value["plan"], args
+
+
+def _check_batch(path: pathlib.Path) -> int:
+    """組ごとの単一検査を完了させ、固定返却の全行と診断を計画に対応付けて返す。"""
+    if not path.is_absolute():
+        raise ValueError("--batchには入力JSONの絶対パスを指定する")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(data, dict)
+        or set(data) != {"version", "reviews"}
+        or not isinstance(data["version"], int)
+        or isinstance(data["version"], bool)
+        or data["version"] != 1
+        or not isinstance(data["reviews"], list)
+        or not data["reviews"]
+    ):
+        raise ValueError("一括検査の入力にはversion: 1と空でないreviews配列を指定する")
+    failed = False
+    for index, value in enumerate(data["reviews"], start=1):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        plan = value.get("plan") if isinstance(value, dict) else None
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:
+                plan, args = _batch_arguments(value)
+                result = main(args)
+            except (OSError, UnicodeError, ValueError) as error:
+                print(f"失敗: 入力組{index}: {error}", file=sys.stderr)
+                result = 1
+            except SystemExit as error:
+                result = error.code if isinstance(error.code, int) else 1
+        failed = failed or result != 0
+        print(
+            json.dumps(
+                {
+                    "plan": plan,
+                    "exit_code": result,
+                    "result": stdout.getvalue().splitlines(),
+                    "diagnostics": stderr.getvalue().splitlines(),
+                },
+                ensure_ascii=False,
+            )
+        )
+    return int(failed)
+
+
 def main(argv: list[str] | None = None) -> int:
     """`完成条件証拠`と対象WI名を受け取り、基準を満たすか判定するか雛形を書き込んで結果を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "evidence",
+        nargs="?",
         type=pathlib.Path,
         metavar="PATH",
         help="`完成条件証拠`（JSON）の絶対パス。証拠要求なしの返却生成では『なし』",
     )
     parser.add_argument("wi", nargs="*", help="対象WIのファイル名。計画だけのレビューでは省略する")
+    parser.add_argument("--batch", type=pathlib.Path, metavar="PATH", help="レビュー返却ごとの入力組を持つJSONの絶対パス")
     parser.add_argument(
         "--review-table", type=pathlib.Path, metavar="PATH", help="返却の件数を取得するレビュー指摘管理表の絶対パス"
     )
@@ -1888,6 +1967,28 @@ def main(argv: list[str] | None = None) -> int:
         "commit参照だけを書き換える。判定とreviewed_headは変えないため、更新後に各行を新しいHEADで再判定する",
     )
     args = parser.parse_args(argv)
+    if args.batch is not None:
+        if any(
+            (
+                args.evidence,
+                args.wi,
+                args.review_table,
+                args.round,
+                args.plan,
+                args.input_record,
+                args.return_result,
+                args.expected_head,
+                args.template,
+                args.rewrite_map,
+            )
+        ):
+            parser.error("--batchは単一検査・雛形生成・参照更新の引数と同時に指定できません")
+        try:
+            return _check_batch(args.batch)
+        except (OSError, UnicodeError, ValueError) as error:
+            parser.error(str(error))
+    if args.evidence is None:
+        parser.error("完成条件証拠の絶対パスか--batchを指定してください")
     if args.rewrite_map is not None:
         return _main_rewrite_map(parser, args)
     no_evidence = str(args.evidence) == "なし"
