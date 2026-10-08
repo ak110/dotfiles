@@ -6,11 +6,10 @@ import contextlib
 import logging
 import os
 import pathlib
-import warnings
 from collections.abc import AsyncGenerator
 from typing import Annotated, Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
 from agent_toolkit._agents_server import claude as claude_backend
@@ -20,7 +19,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server.launch_requests import task_document_label, task_document_request, validate_start_inputs
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
-from agent_toolkit._agents_server.mcp_transport import AgentsServerFastMCP
+from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
 from agent_toolkit._agents_server.responses import REPLY_NEXT_ACTIONS, public_start_response, resolve_display_label
 from agent_toolkit._agents_server.tool_descriptions import (
     COMMAND_DESCRIPTION,
@@ -41,11 +40,6 @@ from agent_toolkit._agents_server.tool_descriptions import (
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
 
-try:
-    from pydantic_settings.exceptions import IncompleteFieldDefinitionWarning
-except ImportError:  # pragma: no cover - mcpの依存版が警告型を公開しない場合
-    IncompleteFieldDefinitionWarning = None  # type: ignore[assignment,misc]
-
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
@@ -53,7 +47,7 @@ _MANAGER = AgentsServerManager()
 
 
 @contextlib.asynccontextmanager
-async def _mcp_lifespan(_server: FastMCP[Any]) -> AsyncGenerator[None]:
+async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
     _LOG.info("manager activateを開始します")
     try:
         _MANAGER.activate()
@@ -73,30 +67,27 @@ async def _mcp_lifespan(_server: FastMCP[Any]) -> AsyncGenerator[None]:
         _LOG.info("manager closeが完了しました")
 
 
-with warnings.catch_warnings():
-    if IncompleteFieldDefinitionWarning is not None:
-        warnings.simplefilter("ignore", IncompleteFieldDefinitionWarning)
-    mcp = AgentsServerFastMCP(
-        "agents_server",
-        instructions=schema_text(
-            "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
-            "Claude Codeからの委譲は`Agent`ツールではなく本サーバーを標準とする。"
-            "`Agent`ツールを使う場合は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める。\n"
-            "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業、自由本文の委譲、読み取り専用の探索、"
-            "確定済みの書込、コマンド実行を選ぶ。入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
-            "終端と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
-            "`wait`はsession_idの位置引数を取らず、登録済みsessionの終端を待ち、応答の時点で終端したsessionの結果を返す。"
-            "返った結果はその場で処理し、残りのsessionは同じコマンドを再発行して待つ。"
-            "全件の終端まで戻らないループやスクリプトで待機を包まない。"
-            "`list`は最小状態、`show`は個別の診断情報を返す。"
-            "継続は`send_message`、実行中turnの中断は`kill`、終端済みsessionの明示的な破棄は`stop`で行う。\n"
-            "`start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
-            "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
-            "観測を試みていない作業を残したままターンを終えると、その作業を観測する主体が残らない。",
-            kind=KIND_MCP_INSTRUCTIONS,
-        ),
-        lifespan=_mcp_lifespan,
-    )
+mcp = AgentsServerMCP(
+    "agents_server",
+    instructions=schema_text(
+        "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
+        "Claude Codeからの委譲は`Agent`ツールではなく本サーバーを標準とする。"
+        "`Agent`ツールを使う場合は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める。\n"
+        "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業、自由本文の委譲、読み取り専用の探索、"
+        "確定済みの書込、コマンド実行を選ぶ。入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
+        "終端と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
+        "`wait`はsession_idの位置引数を取らず、登録済みsessionの終端を待ち、応答の時点で終端したsessionの結果を返す。"
+        "返った結果はその場で処理し、残りのsessionは同じコマンドを再発行して待つ。"
+        "全件の終端まで戻らないループやスクリプトで待機を包まない。"
+        "`list`は最小状態、`show`は個別の診断情報を返す。"
+        "継続は`send_message`、実行中turnの中断は`kill`、終端済みsessionの明示的な破棄は`stop`で行う。\n"
+        "`start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
+        "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
+        "観測を試みていない作業を残したままターンを終えると、その作業を観測する主体が残らない。",
+        kind=KIND_MCP_INSTRUCTIONS,
+    ),
+    lifespan=_mcp_lifespan,
+)
 
 
 @mcp.tool(name="start", description=START_DESCRIPTION, structured_output=True)

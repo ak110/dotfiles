@@ -5,6 +5,13 @@
 
 ## backend構成と起動
 
+MCP Python SDK 2系の`MCPServer`が6ツールの登録、入力スキーマと構造化応答を所有する。
+stdioの送受信は公開lowlevel `Server`と`stdio_server`へ接続し、登録側の`list_tools`・`call_tool`を使う。
+通常の`MCPServer.run`では既存のstream監視を挿入できないため、この接続でinitializeの受信、応答送信の成功・失敗と未完了終了を診断する。
+Managerのactivate・closeも同じlowlevelサーバーのlifespanへ接続する。
+SDKのprivateサーバー属性へ依存する案と、ツール定義やスキーマ生成を二重に持つ案は採らない。
+ツール処理の`ToolError`は理由と次の操作を持つエラー応答へ変換し、SDKが返す構造化成功応答と区別する。
+
 `agents_server`はClaude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
 `start`の`model_type`に対応する工程別モデル設定でCodex backendまたはClaude backendを選択し、各backendの実行主体を
 共有のsession状態機械、待機通知および結果配送境界へ接続する。Codex backendは公式stdio App Serverを

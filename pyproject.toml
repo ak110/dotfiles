@@ -14,7 +14,7 @@ dependencies = [
     "httpx",
     "libarchive-c",
     "markdown-it-py[linkify]>=4.0.0",
-    "mcp>=1.28.1,<2",
+    "mcp>=2.0.0,<3",
     "mdit-py-plugins>=0.6",
     "natsort",
     "numpy",
@@ -76,14 +76,6 @@ build-backend = "hatchling.build"
 # サプライチェーン攻撃対策: 公開直後の新バージョンは1日待ってから取り込む
 exclude-newer = "1 day"
 exclude-newer-package = { pyfltr = false, pytilpack = false }
-# semgrepがmcpを完全一致でピン留めしており、単一バージョン解決の下で
-# プロジェクト全体のmcpが脆弱版に固定されるため上書きする。
-# 上書き後もsemgrepは1.166.0のまま維持され静的解析が正常動作することを実機で確認済み。
-# mcp 2.0.0で`mcp.server.fastmcp`が削除され`mcp.server.mcpserver`へ改称されたため上限を設ける。
-# 本リポジトリのMCPサーバースクリプトがmcpを直接importするため、上限なしの指定は推移依存の解決へ破壊的変更を持ち込む。
-# 上限の解除条件: mcpをピン留めする上流パッケージ（現時点はsemgrep）のピンが2系を含む版へ更新され、
-# その版で`uv lock`が上限なしでも解決できることを実測した時点で`<2`を外す。
-override-dependencies = ["mcp>=1.28.1,<2"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["pytools"]

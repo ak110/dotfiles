@@ -48,7 +48,7 @@ async def test_tool_descriptions_fit_claude_code_truncation_and_describe_every_a
     assert len(mcp_tools.mcp.instructions or "") <= 2048
     for tool in await mcp_tools.mcp.list_tools():
         assert len(tool.description or "") <= 2048, tool.name
-        for name, schema in tool.inputSchema.get("properties", {}).items():
+        for name, schema in tool.input_schema.get("properties", {}).items():
             assert schema.get("description"), f"{tool.name}.{name}"
 
 
@@ -78,6 +78,6 @@ async def test_tool_input_schema_is_unchanged_by_error_wrapping() -> None:
     """例外を包む共通層を通しても、ツールの引数と説明文はツール関数の定義から生成される。"""
     tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
 
-    assert set(tools["send_message"].inputSchema["properties"]) == {"session_id", "prompt", "timeout"}
-    assert tools["send_message"].inputSchema["required"] == ["session_id", "prompt"]
+    assert set(tools["send_message"].input_schema["properties"]) == {"session_id", "prompt", "timeout"}
+    assert tools["send_message"].input_schema["required"] == ["session_id", "prompt"]
     assert "reply_failed" in (tools["send_message"].description or "")

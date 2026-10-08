@@ -1,4 +1,4 @@
-"""stdio上のMCPの初期化の節目を診断ログへ残し、ツールの例外を次の操作付きのエラー本文へ変えるFastMCPの拡張。"""
+"""SDKのツール登録と公開stdio接続を結び、初期化とツールエラーを診断する。"""
 
 from __future__ import annotations
 
@@ -7,15 +7,26 @@ import inspect
 import logging
 import typing
 from collections.abc import Callable
-from typing import Any, cast
+from contextlib import AbstractAsyncContextManager
+from typing import Any
 
 from anyio.abc import ObjectReceiveStream, ObjectSendStream
-from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.context import ServerRequestContext
+from mcp.server.lowlevel import Server
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
-from mcp.types import Icon, ToolAnnotations
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    Icon,
+    InputRequiredResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    ToolAnnotations,
+)
 
 from agent_toolkit._agents_server.session_errors import DelegateBackendError, SessionInitializationTimeoutError
 from agent_toolkit._agents_server.tool_descriptions import KIND_MCP_TOOL, schema_text
@@ -31,17 +42,17 @@ class _InitializationLogTracker:
         self._pending_request_ids: set[str | int] = set()
 
     def receive(self, message: SessionMessage | Exception) -> None:
-        root = getattr(getattr(message, "message", None), "root", None)
+        root = getattr(message, "message", None)
         if getattr(root, "method", None) != "initialize":
             return
         request_id = getattr(root, "id", None)
         if not isinstance(request_id, (str, int)):
             return
         self._pending_request_ids.add(request_id)
-        _LOG.info("FastMCP initializeを受信しました: request_id=%s", request_id)
+        _LOG.info("MCP initializeを受信しました: request_id=%s", request_id)
 
     def sent(self, message: SessionMessage) -> None:
-        root = getattr(message.message, "root", None)
+        root = message.message
         request_id = getattr(root, "id", None)
         if request_id not in self._pending_request_ids:
             return
@@ -49,22 +60,22 @@ class _InitializationLogTracker:
         error = getattr(root, "error", None)
         if error is not None:
             _LOG.error(
-                "FastMCP initialize応答が失敗しました: request_id=%s exception_type=%s exception=%s",
+                "MCP initialize応答が失敗しました: request_id=%s exception_type=%s exception=%s",
                 request_id,
                 type(error).__name__,
                 getattr(error, "message", error),
             )
             return
-        _LOG.info("FastMCP initialize応答が完了しました: request_id=%s", request_id)
+        _LOG.info("MCP initialize応答が完了しました: request_id=%s", request_id)
 
     def send_failed(self, message: SessionMessage, exc: BaseException) -> None:
-        root = getattr(message.message, "root", None)
+        root = message.message
         request_id = getattr(root, "id", None)
         if request_id not in self._pending_request_ids:
             return
         self._pending_request_ids.remove(request_id)
         _LOG.error(
-            "FastMCP initialize応答の送信に失敗しました: request_id=%s exception_type=%s exception=%s",
+            "MCP initialize応答の送信に失敗しました: request_id=%s exception_type=%s exception=%s",
             request_id,
             type(exc).__name__,
             exc,
@@ -73,17 +84,31 @@ class _InitializationLogTracker:
     def transport_closed(self) -> None:
         for request_id in sorted(self._pending_request_ids, key=str):
             _LOG.error(
-                "FastMCP initializeが未完了のままtransportが終了しました: "
+                "MCP initializeが未完了のままtransportが終了しました: "
                 "request_id=%s exception_type=RuntimeError exception=transport closed before initialize response",
                 request_id,
             )
         self._pending_request_ids.clear()
 
 
+class _ReceiveStream(typing.Protocol):
+    """SDKとanyioに共通する受信streamの公開操作。"""
+
+    async def receive(self) -> SessionMessage | Exception: ...
+    async def aclose(self) -> None: ...
+
+
+class _SendStream(typing.Protocol):
+    """SDKとanyioに共通する送信streamの公開操作。"""
+
+    async def send(self, item: SessionMessage) -> None: ...
+    async def aclose(self) -> None: ...
+
+
 class _InitializationLoggingReceiveStream(ObjectReceiveStream[SessionMessage | Exception]):
     def __init__(
         self,
-        stream: ObjectReceiveStream[SessionMessage | Exception],
+        stream: _ReceiveStream,
         tracker: _InitializationLogTracker,
     ) -> None:
         self._stream = stream
@@ -99,7 +124,7 @@ class _InitializationLoggingReceiveStream(ObjectReceiveStream[SessionMessage | E
 
 
 class _InitializationLoggingSendStream(ObjectSendStream[SessionMessage]):
-    def __init__(self, stream: ObjectSendStream[SessionMessage], tracker: _InitializationLogTracker) -> None:
+    def __init__(self, stream: _SendStream, tracker: _InitializationLogTracker) -> None:
         self._stream = stream
         self._tracker = tracker
 
@@ -139,8 +164,8 @@ def _unexpected_error_next_action(error: Exception) -> str:
 def _actionable_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
     """ツール関数の例外を、理由と次の操作の2行を本文とするツールのエラーへ変える。
 
-    FastMCPは例外の`str()`をエラー本文へ使う。共通の例外型の`str()`は理由だけを返すため、
-    ここで次の操作の行を加えないと委譲元へ届かない。入力スキーマはFastMCPが`__wrapped__`の署名から生成するため変わらない。
+    共通の例外型の`str()`は理由だけを返すため、ここで次の操作を加える。
+    入力スキーマはMCPServerが`__wrapped__`の署名から生成する。
     """
 
     @functools.wraps(fn)
@@ -159,8 +184,20 @@ def _actionable_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-class AgentsServerFastMCP(FastMCP[Any]):
-    """stdio上のinitialize節目を診断ログへ残し、ツールの説明文へ境界と例外の次の操作を付けるFastMCP。"""
+class AgentsServerMCP(MCPServer[None]):
+    """SDKに登録を任せ、診断streamとManagerのlifespanを公開transportへ接続する。"""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        instructions: str,
+        lifespan: Callable[[MCPServer[None]], AbstractAsyncContextManager[None]],
+    ) -> None:
+        super().__init__(name, instructions=instructions)
+        self._agents_lifespan = lifespan
+        self._agents_name = name
+        self._agents_instructions = instructions
 
     @typing.override
     def add_tool(  # noqa: PLR0913 -- 上位の署名をそのまま受け取る
@@ -191,20 +228,38 @@ class AgentsServerFastMCP(FastMCP[Any]):
             structured_output,
         )
 
+    async def _list_registered_tools(
+        self, _context: ServerRequestContext[None], _params: PaginatedRequestParams | None
+    ) -> ListToolsResult:
+        return ListToolsResult(tools=await self.list_tools())
+
+    async def _call_registered_tool(
+        self, _context: ServerRequestContext[None], params: CallToolRequestParams
+    ) -> CallToolResult | InputRequiredResult:
+        try:
+            return await self.call_tool(params.name, params.arguments or {})
+        except ToolError as error:
+            text = str(error)
+            if "次の操作:" not in text:
+                text = with_next_action(text, "ツールの説明で引数の受理形式を確かめて再発行する")
+            return CallToolResult(content=[TextContent(type="text", text=text)], is_error=True)
+
+    @typing.override
     async def run_stdio_async(self) -> None:
+        server = Server(
+            self._agents_name,
+            instructions=self._agents_instructions,
+            lifespan=lambda _server: self._agents_lifespan(self),
+            on_list_tools=self._list_registered_tools,
+            on_call_tool=self._call_registered_tool,
+        )
         tracker = _InitializationLogTracker()
         async with stdio_server() as (read_stream, write_stream):
             try:
-                await self._mcp_server.run(
-                    cast(
-                        MemoryObjectReceiveStream[SessionMessage | Exception],
-                        _InitializationLoggingReceiveStream(read_stream, tracker),
-                    ),
-                    cast(
-                        MemoryObjectSendStream[SessionMessage],
-                        _InitializationLoggingSendStream(write_stream, tracker),
-                    ),
-                    self._mcp_server.create_initialization_options(),
+                await server.run(
+                    _InitializationLoggingReceiveStream(read_stream, tracker),
+                    _InitializationLoggingSendStream(write_stream, tracker),
+                    server.create_initialization_options(),
                 )
             finally:
                 tracker.transport_closed()
