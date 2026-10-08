@@ -21,6 +21,7 @@ SCRIPT_PATHS = {
     "pick-wi-check": pathlib.Path("skills/process-wi/scripts/check_selection.py"),
     "termination-evidence": pathlib.Path("agent_toolkit/_hooks/termination_evidence.py"),
     "exec-review-evidence-check": pathlib.Path("skills/review-standards/scripts/check_exec_review_evidence.py"),
+    "verification-record": pathlib.Path("skills/review-standards/scripts/update_verification_record.py"),
     "review-contract": pathlib.Path("skills/review-standards/scripts/review_contract.py"),
     "review-impact": pathlib.Path("skills/review-standards/scripts/review_impact.py"),
     "record-stall-detection": pathlib.Path("skills/delegation/scripts/record_stall_detection.py"),

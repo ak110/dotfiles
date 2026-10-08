@@ -406,6 +406,10 @@ async def test_reader_fit_public_start_accepts_declared_review_inputs(
     prompt = manager.start.await_args.args[1]
     assert all(f"{key}: {value}" in prompt for key, value in params.items())
     manager.start.reset_mock()
+    missing_scope = {key: value for key, value in params.items() if key != "修正範囲"}
+    with pytest.raises(ActionableError, match="修正範囲"):
+        await mcp_tools.start(str(tmp_path), subagent_md_path=str(task), extra_params=missing_scope)
+    manager.start.assert_not_awaited()
     with pytest.raises(ActionableError, match="宣言"):
         await mcp_tools.start(str(tmp_path), subagent_md_path=str(task), extra_params={**params, "追加説明": "全体を再走査"})
     manager.start.assert_not_awaited()
@@ -433,12 +437,15 @@ async def test_exec_review_public_start_accepts_previous_revision(
 
 
 @pytest.mark.asyncio
-async def test_defect_investigation_uses_high_tier_model(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存不良の調査担当は`start`から`high_tier`で起動し、委譲プロンプトへ`<役割名>.subagent.md`の出所と対象の不良を載せる。
+@pytest.mark.parametrize("task_name", ["defect-investigation.subagent.md", "pick-wi.subagent.md"])
+async def test_public_start_uses_high_tier_model(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, task_name: str
+) -> None:
+    """調査担当とpickerは段位省略の`start`から`high_tier`で起動し、出所と入力を載せる。
 
     工程別モデルの対応が欠けると`start`が起動を拒否し、段位を誤ると調査を上位モデルで行えない。
     """
-    task_document = launch_requests._SHARE_DIRECTORY / "defect-investigation.subagent.md"
+    task_document = launch_requests._SHARE_DIRECTORY / task_name
     manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path)
@@ -451,7 +458,28 @@ async def test_defect_investigation_uses_high_tier_model(tmp_path: pathlib.Path,
     assert model_type == "high_tier"
     assert cwd == str(tmp_path)
     assert str(task_document) in prompt
-    assert f"対象の不良: {extra_params['対象の不良']}" in prompt
+    assert all(f"{key}: {value}" in prompt for key, value in extra_params.items())
+
+
+@pytest.mark.asyncio
+async def test_public_picker_resolves_high_tier_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """段位省略のpickerが保存設定の上位候補を解決し、backendへ渡す。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL", "claude:opus/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_MEDIUM_TIER_MODEL", "claude:sonnet/medium")
+    manager, _backend = _manager_with_fake("claude")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    task_document = launch_requests._SHARE_DIRECTORY / "pick-wi.subagent.md"
+    try:
+        response = await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path=str(task_document),
+            extra_params=_observed_input_params(task_document.name, tmp_path),
+        )
+        session = manager.sessions[response["session_id"]]
+        assert (session.engine, session.model, session.effort) == ("claude", "opus", "high")
+        assert session.model_type == "high_tier"
+    finally:
+        await manager.close()
 
 
 def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

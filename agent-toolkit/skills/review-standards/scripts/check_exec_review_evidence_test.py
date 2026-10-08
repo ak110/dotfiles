@@ -904,14 +904,8 @@ def test_restated_conditions_do_not_make_shared_evidence_distinct(
 @pytest.mark.parametrize(
     ("first", "second", "texts", "awis"),
     [
-        # 異なる行範囲、入力値、観測内容は、条件文を付け足していても行固有の観測として残る。
+        # 異なる行範囲と観測内容は、条件文を付け足していても行固有の観測として残る。
         ("{record}:1 で保存を観測。確認対象: {text}", "{record}:2 で保存を観測。確認対象: {text}", ("保存", "再読込"), "cross"),
-        (
-            "入力値1で{record}#観測 を確認。確認対象: {text}",
-            "入力値2で{record}#観測 を確認。確認対象: {text}",
-            ("保存", "再読込"),
-            "cross",
-        ),
         ("{record}#観測 で保存が成功（{text}）", "{record}#観測 で再読込後に保持（{text}）", ("保存", "再読込"), "cross"),
         # 具体的なテスト名と成功結果は、異なるWIの要求へ共用できる。
         (
@@ -937,7 +931,7 @@ def test_restated_conditions_do_not_make_shared_evidence_distinct(
         # 文の一部として原文を含む語は観測内容として残る。
         ("{record}#観測 で{text}が成功", "{record}#観測 で{text}が成功", ("保存", "再読込"), "cross"),
     ],
-    ids=["line-range", "input-value", "observation", "test-result", "sibling", "same-wi", "embedded"],
+    ids=["line-range", "observation", "test-result", "sibling", "same-wi", "embedded"],
 )
 def test_restated_condition_rule_keeps_legitimate_shared_evidence(
     tmp_path: pathlib.Path,
@@ -997,27 +991,97 @@ def test_public_command_rejects_shared_evidence_with_only_terminal_condition_num
     [
         ("入力値1を観測", "入力値2を観測"),
         ("3件を確認", "4件を確認"),
-        ("test_case_1: 成功", "test_case_2: 成功"),
         ("観測した（試行1の結果）", "観測した（試行2の結果）"),
         ("観測した（条件1)", "観測した（条件2)"),
         ("観測した(条件1）", "観測した(条件2）"),
     ],
 )
-def test_public_command_preserves_meaningful_numbers_in_evidence(
+def test_public_command_rejects_unprotected_number_differences(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     first_evidence: str,
     second_evidence: str,
 ) -> None:
-    """末尾の独立した条件番号以外の数値差は観測内容として保持する。"""
+    """入力値・件数・試行番号だけの違いは行固有の観測と扱わない。"""
     rows = [_condition(FIRST_WI, "保存"), _condition(SECOND_WI, "再読込")]
     rows[0]["evidence"], rows[1]["evidence"] = first_evidence, second_evidence
     _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
     path = tmp_path / "evidence.json"
     _write_evidence(path, rows)
 
+    assert _check(path, FIRST_WI) == 1
+    assert "参照の外の整数" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+@pytest.mark.parametrize("label", ["条項番号={}", "完成条件 {}", "判定単位番号 {}", "No.{}"])
+def test_public_shared_evidence_ignores_unprotected_integers(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], section: str, label: str
+) -> None:
+    """両配列で整数の付け方を変えても、異なるWIの同じ参照の共用を拒否する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
+    record = tmp_path / "観測.md"
+    record.write_text("# 観測\n保存と再読込。\n", encoding="utf-8")
+    factory = _condition if section == "wi_conditions" else _requirement
+    rows = [factory(FIRST_WI, "保存"), factory(SECOND_WI, "再読込")]
+    for index, row in enumerate(rows, 1):
+        row["evidence"] = f"{record}#観測 で操作を確認。{label.format(index)}"
+    path = tmp_path / "evidence.json"
+    _write_evidence(
+        path,
+        rows if section == "wi_conditions" else [_condition(FIRST_WI, "保存")],
+        rows if section == "user_requirements" else [],
+    )
+    assert _check(path, FIRST_WI) == 1
+    diagnostic = capsys.readouterr().err
+    assert all(f"{section}[{index}].evidence" in diagnostic for index in (0, 1))
+    assert "参照の外の整数" in diagnostic and "証拠不足へ再判定" in diagnostic
+
+
+@pytest.mark.parametrize(
+    "references", [(":1", ":2"), ("#観測1", "#観測2"), ("test_case_1: 成功", "test_case_2: 成功"), ("abcdef1", "abcdef2")]
+)
+def test_public_shared_evidence_keeps_reference_differences(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], references: tuple[str, str]
+) -> None:
+    """位置・見出し・テスト・commit参照の整数は共用比較で保持する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
+    record = tmp_path / "観測.md"
+    record.write_text("# 観測1\n# 観測2\n", encoding="utf-8")
+    rows = [_condition(FIRST_WI, "保存"), _condition(SECOND_WI, "再読込")]
+    for row, reference in zip(rows, references, strict=True):
+        row["evidence"] = f"{record}{reference} で確認" if reference[0] in ":#" else f"{reference} を確認"
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
     assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
+
+
+def test_plan_only_requirements_match_record(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同文別出所の計画要求を雛形から判定まで保ち、片方の欠落を拒否することを確かめる。"""
+    _mock_wi(monkeypatch, tmp_path, {})
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "## 実施内容\n\n| 実施内容 | 由来 | 採否 | 根拠 |\n| --- | --- | --- | --- |\n"
+        "| 要約 | ユーザー指示 | 採用 | 原文を採用する |\n\n## 変更履歴\n\n"
+        "### ユーザー発言1\n\n```text\n保存する。\n```\n\n### ユーザー発言2\n\n```text\n保存する。\n```\n",
+        encoding="utf-8",
+    )
+    path = tmp_path / "evidence.json"
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=[str(path), "--plan", str(plan), "--template"]
+    )
+    assert run_script.dispatch(args) == 0
+    data = _judge_all(path)
+    assert [row["requirement"] for row in data["user_requirements"]] == ["保存する。", "保存する。"]
+    args.script_args = [str(path), "--plan", str(plan), "--expected-head", REVIEWED_HEAD]
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+    data["user_requirements"].pop()
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert run_script.dispatch(args) == 1
+    assert "ユーザー発言2" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -2687,7 +2751,7 @@ def _judge_all(path: pathlib.Path) -> dict[str, list[dict[str, str]]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     for section in ("wi_conditions", "user_requirements"):
         for index, row in enumerate(data[section], start=1):
-            row.update(outcome="達成", evidence=f"{section}の{index}行目を観測した結果", reviewed_head=REVIEWED_HEAD)
+            row.update(outcome="達成", evidence=f"test_{section}_{index}: 成功", reviewed_head=REVIEWED_HEAD)
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     return data
 
@@ -2761,7 +2825,11 @@ def test_rows_filled_as_template_guides_pass_source_and_reference_checks(
     capsys.readouterr()
     data = json.loads(path.read_text(encoding="utf-8"))
     for index, row in enumerate([*data["wi_conditions"], *data["user_requirements"]], start=1):
-        row.update(outcome="達成", evidence=f"{index}件目: 観測記録 {record}#観測 の結果", reviewed_head=REVIEWED_HEAD)
+        row.update(
+            outcome="達成",
+            evidence=f"test_observation_{index}: 成功。観測記録 {record}#観測 の結果",
+            reviewed_head=REVIEWED_HEAD,
+        )
     for row in data["user_requirements"]:
         if row["awi"] == FIRST_WI and row["requirement"] in {_OBSERVATION, _OBSERVATION_TAIL}:
             row.update(

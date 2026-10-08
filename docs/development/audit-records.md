@@ -292,6 +292,12 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 
 2026年9月20日、Git 2.43.0で`git rev-parse --short=7 HEAD HEAD~1`が標準エラーへ`fatal: Needed a single revision`を書いて終了コード128となることを確認した。PowerShell 7.6.0では、未引用の`git rev-parse --verify HEAD^{commit}`が同じエラーと終了コード128を返し、単一引用符で囲んだ`git rev-parse --verify 'HEAD^{commit}'`が完全OIDと終了コード0を返した。再検証は同じrepositoryで1件と2件のrevisionを渡した`--short=7`の終了状態を比較し、PowerShellでpeel式の引用有無によるGitの受理結果を比較する。
 
+## agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月8日
+
+Git 2.47.3で、`commit.verbose=true`を設定した隔離リポジトリ2つへ同じ変更をstageし、`#`で始まる行だけを取り除く同じ`GIT_EDITOR`で`--fixup=amend:<sha>`を実行した。`--no-verbose`付きでは`git log -1 --format=%B`の本文に`diff --git`が無く、外した対照では差分が本文へ入った。両方とも終了コード0、作業ツリーはcleanだった。
+
+再検証では新規の隔離リポジトリで初期commitを作成し、`git config commit.verbose true`を設定する。ファイルを変更してstageし、編集バッファの各行を読み、`#`で始まる行だけを除いて保存するスクリプトを`GIT_EDITOR`へ指定する。`git commit --no-verbose --fixup=amend:<初期commit>`と、別の同一条件のリポジトリで`--no-verbose`を除いた起動を比較し、前記の本文の差を確認する。
+
 ## agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日
 
 2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>は通常のサブエージェントを独立文脈、forkを親の会話履歴の継承として区別する。Codex CLI 0.157.1の`spawn_agent`スキーマも`fork_turns`で渡す履歴を選べる。再検証は各ホストの通常起動と全履歴forkの入力契約を比較する。
@@ -378,6 +384,12 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 ## agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終端」：所有資源の回収：2026年9月3日
 
 2026年9月3日にgit version 2.43.0で、upstreamを設定した専用branchをローカルの`develop`へ統合した直後に`branch -d`が未統合として拒否されることを確認した。再検証は`git branch -vv`で追跡先を確認して同じ状態の`branch -d`の終了コードを観測する。
+
+## agent-toolkit/skills/review-standards/SKILL.md：レビュー指摘管理表の共通操作：2026年10月8日
+
+agent-toolkit 2.199.0の基準commitは`3b3932b5`で、review-table実装の差分は無い。公開CLIで、通常名と`ci-3b3932b.exec-review.tsv`の表をそれぞれ`atk review-table init <パス>`で作成した。両方とも終了コード0で、`wc -c <パス>`は0バイトを示した。`atk review-table validate <パス>`も両方が終了コード0で、応答欄を含めた検証結果は0件だった。ヘッダーと仮の行は追加していない。
+
+再検証ではmanaged-tempへ異なる通常名とCI名のパスを用意し、前記のinit、バイト数確認、validateを順に実行する。列の順序と旧形式の読み取り互換は`atk review-table --help`で確認する。
 
 ## agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月7日
 

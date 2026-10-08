@@ -68,11 +68,11 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
   通常の`--fixup=<sha>`は件名が`fixup! <統合先の件名>`のコミットを生成する
   指定名`reword`に対応する目印は`amend!`であり、`reword!`という目印は存在しない
 - エディターへ渡されるバッファは1行目が`amend! <統合先の件名>`、
-  空行で区切られて統合先の全メッセージが続く構造であり、差し替えてよいのは3行目以降である。
+  空行で区切られて統合先の全メッセージが続き、その後にGitのコメント行が付く構造である。Gitはコメント行を取り除く。差し替えてよいのは3行目以降である。
   1行目の目印と統合先の件名はそのまま残す。書き換えるとautosquashの対象から外れる
 - `--fixup`は`-m`・`-F`と併用できない
   （`fatal: options '-m' and '--fixup:reword' cannot be used together`で失敗する）。
-  非対話環境では`GIT_EDITOR`へ1行目を保持したまま以降を差し替える処理を指定する
+  非対話環境では`GIT_EDITOR`へ1行目を保持したまま以降を差し替える処理を指定する。`amend:`は`git commit --no-verbose --fixup=amend:<sha>`で実行する。`commit.verbose=true`でも差分を編集バッファへ付けず、コメントを削除するエディターを使っても差分がcommit本文へ混入しないようにする
 - autosquashを実行する場合は、fixup作成前に最古fixup対象と履歴書換え前の元HEADを7文字以上の一意な短縮OIDで保持し、Git操作の直前に対象リポジトリで解決する。
   `git rev-list --first-parent --reverse <最古fixup対象>^..<元HEAD>`でrebase範囲のfirst-parent全OIDを確定する。
   `git rev-list --first-parent --merges <最古fixup対象>^..<元HEAD>`でmerge commitが無いことを確認する。
@@ -94,6 +94,8 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
   autosquashの直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独のBash呼び出しで再度実行する
 - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
   追加または更新する`Co-Authored-By:`を統合後に1回だけ残す
+
+非対話amend fixupの対照観測は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月8日」にある。
 
 ## 失敗時の扱い
 

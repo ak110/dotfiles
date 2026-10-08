@@ -85,6 +85,135 @@ def _dispatch(*args: str) -> int:
     return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
 
 
+def _overlap_record(path: str, judgment: str = "交わらない") -> dict[str, typing.Any]:
+    """2レーンの共有パスに対する定義と判定を返す。"""
+    return {
+        "レーン1": "lane-01",
+        "レーン2": "lane-02",
+        "共通パス": path,
+        "レーン1の定義": ["入力の検査"],
+        "レーン2の定義": ["結果の表示"],
+        "判定": judgment,
+    }
+
+
+@pytest.mark.parametrize("section", ["書込対象", "公開工程の書込対象"])
+@pytest.mark.parametrize("entry", ["LOGS_DIR", "AZURE_CLIENT_ID", "access.log", "src", "a.md", "src/new.py"])
+def test_public_selection_rejects_non_paths(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    section: str,
+    entry: str,
+) -> None:
+    """書込区分では識別子・存在しない新設先・末尾/なしディレクトリを拒否する。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変更する。")
+    item = {"WI": "a.md", "レーン": "lane-01", "書込対象": [], "書き込まない反映先": ["README.md"], section: [entry]}
+    path = _write_selection(tmp_path / "selection.yaml", [item])
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 1
+    diagnostic = capsys.readouterr().err
+    assert f"a.md: `{section}`のパスの不正: {entry}" in diagnostic
+    assert "次の操作:" in diagnostic
+    assert "反映先に明示された新設先" in diagnostic
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ("missing", 1),
+        ("separate", 0),
+        ("same-definition", 1),
+        ("extra-path", 1),
+        ("duplicate", 1),
+        ("reversed-duplicate", 1),
+        ("serial-separate", 1),
+        ("serial-intersect", 0),
+        ("parallel-intersect", 1),
+        ("serial-unshared", 1),
+        ("extra-lane", 1),
+        ("missing-definition", 2),
+    ],
+)
+def test_public_selection_contract_cases(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    expected: int,
+) -> None:
+    """構造化した共有記録と実際のパス・段階・先行関係の整合を公開コマンドで確かめる。"""
+    repo, notes = env
+    shared = "src/model.py"
+    other = "README.md" if case == "serial-unshared" else shared
+    _awi(notes, "a.md", f"`{shared}`を変更する。")
+    _awi(notes, "b.md", f"`{other}`を変更する。")
+    costs: list[dict[str, typing.Any]] = [{"レーン": "lane-01"}, {"レーン": "lane-02"}]
+    if case.startswith("serial-"):
+        costs[1].update({"段階": 2, "先行レーン": ["lane-01"]})
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": [shared]},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": [other]},
+        ],
+        costs,
+    )
+    record = _overlap_record(shared, "交わる" if case.endswith("intersect") else "交わらない")
+    records = [] if case in {"missing", "serial-unshared"} else [record]
+    if case == "same-definition":
+        record["レーン2の定義"] = record["レーン1の定義"]
+    elif case == "extra-path":
+        record["共通パス"] = "README.md"
+    elif case == "extra-lane":
+        record["レーン2"] = "lane-03"
+    elif case == "missing-definition":
+        del record["レーン2の定義"]
+    elif case in {"duplicate", "reversed-duplicate"}:
+        records.append(dict(record))
+        if case == "reversed-duplicate":
+            records[1].update({"レーン1": "lane-02", "レーン2": "lane-01"})
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["レーン間の重なり"] = records
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) == expected
+    diagnostic = capsys.readouterr().err
+    assert ("次の操作:" in diagnostic) == bool(expected)
+    if case in {"serial-unshared", "serial-separate"}:
+        assert "根拠の無い直列化" in diagnostic
+
+
+def test_public_selection_preserves_path_context(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ファイル直後の識別子を除き、コマンド内ディレクトリと明示した新設先は受理する。"""
+    repo, notes = env
+    _write_files(repo, "docs/guide.md", "docs/ops/a.md", "src/a.py")
+    _awi(
+        notes,
+        "a.md",
+        "`docs/guide.md`の`views.user.public`の許可行は変えない。"
+        "`src/a.py`の`globalThis.config`を使う。`git grep -n foo -- docs/ops`は一致0件。",
+    )
+    body = (notes / "processing/a.md").read_text(encoding="utf-8")
+    assert check_selection.reflected_paths(body, repo) == {"docs/guide.md", "src/a.py", "docs/ops/"}
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["docs/guide.md"], "書き込まない反映先": ["src/a.py", "docs/ops/"]}],
+    )
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    assert capsys.readouterr().err == ""
+    _awi(notes, "a.md", "`src/`の`a.py`・`new.py`と、`docs/guide.md`・`new.md`を変更する。")
+    body = (notes / "processing/a.md").read_text(encoding="utf-8")
+    reflected = {"src/", "src/a.py", "src/new.py", "docs/guide.md", "docs/new.md"}
+    assert check_selection.reflected_paths(body, repo) == reflected
+    _write_selection(path, [{"WI": "a.md", "レーン": "lane-01", "書込対象": sorted(reflected - {"src/"})}])
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    assert capsys.readouterr().err == ""
+
+
 @pytest.mark.parametrize("wi_type", ["awi", "uwi"])
 @pytest.mark.parametrize("code", [False, True])
 @pytest.mark.parametrize("suffix", ["", ":42", ":42-58", "#節", "#API.method"])
@@ -148,7 +277,7 @@ def test_public_check_limits_body_scope(
 @pytest.mark.parametrize(
     ("violation", "expected", "code"),
     [
-        ("overlap", "重複パスの根拠不足", 1),
+        ("overlap", "重複パスの記録不足", 1),
         ("resume", "同じ再開計画を別レーン", 1),
         ("stage", "後段には先行レーン", 1),
         ("public", "`公開工程の書込対象`の根拠不足", 1),
@@ -943,17 +1072,17 @@ def test_reflected_paths_from_mixed_notations(env: tuple[pathlib.Path, pathlib.P
 @pytest.mark.parametrize(
     ("paths", "same_lane", "rationale", "expected"),
     [
-        (("src/model.py", "src/model.py"), False, "src/model.pyの異なる定義", 0),
+        (("src/model.py", "src/model.py"), False, "src/model.pyの異なる定義", 1),
         (("src/model.py", "src/model.py"), False, "別の対象", 1),
-        (("src/", "src/model.py"), False, "src/model.pyの異なる定義", 0),
+        (("src/", "src/model.py"), False, "src/model.pyの異なる定義", 1),
         (("src/", "src/model.py"), False, "src/の異なる定義", 1),
-        (("src/", "src/models/"), False, "src/models/の異なる定義", 0),
+        (("src/", "src/models/"), False, "src/models/の異なる定義", 1),
         (("src/", "src/models/"), False, "src/models-old/の定義", 1),
         (("src/", "src-old/model.py"), False, "別対象", 0),
         (("src/model.py", "src/model.py"), True, "同じレーンで直列化", 0),
     ],
 )
-def test_public_check_requires_shared_path_in_both_lane_rationales(
+def test_public_check_rejects_rationale_only_overlaps(
     legacy: bool,
     paths: tuple[str, str],
     same_lane: bool,
@@ -963,8 +1092,9 @@ def test_public_check_requires_shared_path_in_both_lane_rationales(
     env: tuple[pathlib.Path, pathlib.Path],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開名から新旧入力のパス包含と双方の根拠を確かめ、似た名前と同じレーンを区別する。"""
+    """新旧欄名とも自由文だけでは共有を受理せず、似た名前と同じレーンは共有から外す。"""
     repo, notes = env
+    (repo / "src/models").mkdir()
     for name, path in zip(("a.md", "b.md"), paths, strict=True):
         _awi(notes, name, f"`{path}`を書き込む。")
     decisions_key, wi_key, lane_key, files_key, costs_key, rationale_key = (
@@ -999,11 +1129,11 @@ def test_public_check_requires_shared_path_in_both_lane_rationales(
 
     err = capsys.readouterr().err
     if expected:
-        assert "a.md（lane-01）とb.md（lane-02）" in err
-        assert "重複パスの根拠不足" in err
+        assert "lane-01とlane-02" in err
+        assert "重複パスの記録不足" in err
         assert paths[1] in err
         assert "次の操作:" in err
-        assert "同じレーンへまとめる" in err
+        assert "双方の定義と判定" in err
     else:
         assert not err
 
@@ -1015,7 +1145,7 @@ def test_overlap_rejects_rationale_missing_on_either_side(
     env: tuple[pathlib.Path, pathlib.Path],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """片方の根拠だけが共通パスを持つ場合も、根拠が不足するレーンを示す。"""
+    """片方の自由文だけが共通パスを持っても、構造化記録の不足を示す。"""
     repo, notes = env
     for name in ("a.md", "b.md"):
         _awi(notes, name, "`src/model.py`を書き込む。")
@@ -1032,7 +1162,7 @@ def test_overlap_rejects_rationale_missing_on_either_side(
     )
 
     assert check_selection.main(["--work-dir", str(repo), str(selection)]) == 1
-    assert f"src/model.py（{missing_lane}）" in capsys.readouterr().err
+    assert "重複パスの記録不足: src/model.py" in capsys.readouterr().err
 
 
 def test_public_check_accepts_zero_candidate_selection(
@@ -1075,6 +1205,10 @@ def test_public_check_model_and_stage_selection_contract(
                 {"レーン": "lane-02", "段階": 2, "先行レーン": prior, "根拠": "後段"},
             ],
         )
+        if second_lane == "lane-02":
+            data = yaml.safe_load(selection.read_text(encoding="utf-8"))
+            data["レーン間の重なり"] = [_overlap_record("src/model.py", "交わる")]
+            selection.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
         code = _dispatch("--work-dir", str(repo), str(selection))
         return code, capsys.readouterr().err
 
@@ -1083,7 +1217,7 @@ def test_public_check_model_and_stage_selection_contract(
     code, err = run("lane-02", {"実行レビュー担当": "codex:gpt-6-sol/medium"}, [])
     assert code == 1
     assert "lane-02: 後段には先行レーンを指定する" in err
-    assert "重複パスの根拠不足" in err
+    assert "依存がない" in err
 
     code, err = run("lane-01", {"実装担当": "codex:gpt-6-sol/medium"}, ["lane-01"])
     assert code == 1
@@ -1420,17 +1554,19 @@ def test_public_command_prints_lane_summary_on_success(
     _awi(notes, "d.md", "`docs/development/design.md`を変える。")
     selection: dict[str, typing.Any]
     if layout == "staged":
+        _awi(notes, "d.md", "`src/model.py`を変える。")
         selection = {
             "選定": [
                 {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
                 {"WI": "b.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
-                {"WI": "d.md", "レーン": "lane-02", "書込対象": ["docs/development/design.md"]},
+                {"WI": "d.md", "レーン": "lane-02", "書込対象": ["src/model.py"]},
                 {"WI": "c.md", "レーン": "なし", "書込対象": []},
             ],
             "レーンの所要時間": [
                 {"レーン": "lane-01", "実装秒数": 900, "統合秒数": 120, "根拠": "先行"},
                 {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"], "実装秒数": 300.5, "統合秒数": 30, "根拠": "後段"},
             ],
+            "レーン間の重なり": [_overlap_record("src/model.py", "交わる")],
         }
     elif layout == "legacy":
         selection = {

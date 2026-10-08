@@ -150,8 +150,8 @@ Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は�
 
 | キー | 対応する起動 |
 | --- | --- |
-| `high_tier_model` | 計画・実装・修正・AWI投入・公開工程の終端・自動コードレビュー監査 |
-| `medium_tier_model` | WI選定・実行レビュー・プロンプト評価・`model_type="medium_tier"`を指定した`start`の`explore` |
+| `high_tier_model` | WI選定・計画・実装・修正・AWI投入・公開工程の終端・自動コードレビュー監査 |
+| `medium_tier_model` | 実行レビュー・プロンプト評価・`model_type="medium_tier"`を指定した`start`の`explore` |
 | `low_tier_model` | `model_type`を省略した`start`の`explore`と`shell`・軽量な`mode:`を宣言した`<役割名>.subagent.md`の`task` |
 | `write_model` | `start`の`write` |
 | `orchestrate_model` | `atk wi process-loop`・`atk run-skill` |

@@ -82,7 +82,6 @@ FILE_REFERENCE_FORM = (
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
 WHITESPACE = re.compile(r"\s+")
-WI_HEADER = re.compile(r"^### (\d{8}-\d{6}-\d{3}\.md) \[[^]]+\]$")
 EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|(?P<plain>[^\s`\[\]（）「」、。]+)")
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
 # 地の文の1語から切り出す参照。パスは最後の拡張子までとし、拡張子の直後がパスの続きでない位置で終える。
@@ -125,14 +124,15 @@ TEST_RESULT = re.compile(
 )
 
 
-def _repository_root() -> pathlib.Path:
+def repository_root() -> pathlib.Path:
+    """公開操作を起動したGit作業ツリーのルートを返す。"""
     result = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False, timeout=30)
     if result.returncode != 0:
         raise ValueError(f"対象リポジトリを特定できません: {result.stderr.strip()}")
     return pathlib.Path(result.stdout.strip()).resolve()
 
 
-class _WiOutputs(dict[str, str]):
+class WiOutputs(dict[str, str]):
     """検査中に必要となったWIだけを共通読取で取得し、同じ検査内で再利用する。"""
 
     def __init__(self, repository: pathlib.Path) -> None:
@@ -142,6 +142,7 @@ class _WiOutputs(dict[str, str]):
         self.repo_id: str | None = None
 
     def __missing__(self, filename: str) -> str:
+        """未取得のWI本文を対象リポジトリのキューから読み込む。"""
         try:
             if self.private_notes is None:
                 self.private_notes = _wi_sync.ensure_environment(pathlib.Path.home())
@@ -158,84 +159,10 @@ class _WiOutputs(dict[str, str]):
         return output
 
 
-def _wi_body(output: str, filename: str) -> tuple[dict[str, str], list[str]]:
-    lines = output.splitlines()
-    starts = [index for index, line in enumerate(lines) if WI_HEADER.fullmatch(line) and line.startswith(f"### {filename} ")]
-    if len(starts) != 1:
-        raise ValueError(f"{filename}: WI本文の見出しを一意に取得できません")
-    start = starts[0] + 1
-    end = next(
-        (
-            index
-            for index in range(start, len(lines))
-            if WI_HEADER.fullmatch(lines[index]) or lines[index].startswith("## target_repo:")
-        ),
-        len(lines),
-    )
-    if lines[start] != "---":
-        raise ValueError(f"{filename}: frontmatterを取得できません")
-    frontmatter_end = next((index for index in range(start + 1, end) if lines[index] == "---"), None)
-    if frontmatter_end is None:
-        raise ValueError(f"{filename}: frontmatterが閉じられていません")
-    frontmatter = dict(line.split(": ", 1) for line in lines[start + 1 : frontmatter_end] if ": " in line)
-    return frontmatter, lines[frontmatter_end + 1 : end]
-
-
-def _section(body: list[str], heading: str) -> list[str] | None:
-    start = next((index for index, line in enumerate(body) if line == heading), None)
-    if start is None:
-        return None
-    end = next((index for index in range(start + 1, len(body)) if body[index].startswith("## ")), len(body))
-    return body[start + 1 : end]
-
-
-def _normalize_condition(text: str) -> str:
-    """完成条件の行頭記号と前後の空白を除く。"""
-    return requirement_units.LIST_ITEM.sub("", text.strip()).strip()
-
-
-def _condition_units(content: list[str], filename: str) -> list[str]:
-    lines = requirement_units.HTML_COMMENT.sub("", "\n".join(content)).splitlines()
-    items = [_normalize_condition(line) for line in lines if requirement_units.LIST_ITEM.match(line.strip())]
-    if items:
-        return items
-    paragraph = " ".join(line.strip() for line in lines if line.strip())
-    if paragraph:
-        return [paragraph]
-    raise ValueError(f"{filename}: 『完成条件』節が空です")
-
-
-def _expected_rows(output: str, filename: str) -> tuple[list[str], list[tuple[str, str]]]:
-    """WI本文から、完成条件の原文と、出所付きの原文要求単位を、証拠の判定と雛形が共有する期待行として返す。
-
-    原文要求単位は、完成条件節を持つAWIでは`## ユーザーコメント`、UWIでは`## 回答`、完成条件節の無いAWIでは本文から取る。
-    """
-    frontmatter, body = _wi_body(output, filename)
-    kind = frontmatter.get("type")
-    if kind not in {"awi", "uwi"}:
-        raise ValueError(f"{filename}: WIのtypeが不正です")
-    conditions = _section(body, "## 完成条件")
-    if kind == "awi" and conditions is not None:
-        # `## ユーザー指摘の逐語引用`は投入元のセッションへの発話であり、そのセッションで解決済みとして扱う。
-        # 達成を確かめるのは処理側へ宛てた`## ユーザーコメント`だけとし、逐語引用は完成条件を解釈する根拠に留める。
-        comment = _section(body, "## ユーザーコメント")
-        requirements = [(unit, f"{filename}#ユーザーコメント") for unit in requirement_units.requirement_units(comment or [])]
-        return _condition_units(conditions, filename), requirements
-    if kind == "awi" and "source" in frontmatter:
-        raise ValueError(f"{filename}: 『完成条件』節がありません")
-    if kind == "uwi":
-        answer = _section(body, "## 回答")
-        requirements = [(unit, f"{filename}#回答") for unit in requirement_units.requirement_units(answer or [])]
-        if not requirements:
-            raise ValueError(f"{filename}: 『回答』節が空です")
-        return [], requirements
-    result = _section(body, "## 処理結果")
-    if result is not None:
-        body = body[: body.index("## 処理結果")]
-    requirements = [(unit, f"{filename}#本文") for unit in requirement_units.requirement_units(body)]
-    if not requirements:
-        raise ValueError(f"{filename}: 原文本文が空です")
-    return [], requirements
+_wi_body = requirement_units.wi_body
+_section = requirement_units.section
+_normalize_condition = requirement_units.normalize_condition
+_expected_rows = requirement_units.expected_rows
 
 
 def _row_label(row: object, section: str, index: int) -> str:
@@ -249,7 +176,7 @@ def _row_label(row: object, section: str, index: int) -> str:
     return f"{awi or '計画由来'}: {position}" if isinstance(awi, str) else position
 
 
-def _validate_structure(data: object) -> tuple[dict[str, typing.Any], list[str]]:
+def validate_structure(data: object) -> tuple[dict[str, typing.Any], list[str]]:
     """最上位、配列、行と必須項目の型を確かめる。判定値の内容は問わない。"""
     errors: list[str] = []
     if not isinstance(data, dict):
@@ -269,7 +196,7 @@ def _validate_structure(data: object) -> tuple[dict[str, typing.Any], list[str]]
 
 
 def _validate_schema(data: object) -> tuple[dict[str, typing.Any], list[str]]:
-    payload, errors = _validate_structure(data)
+    payload, errors = validate_structure(data)
     if errors or not payload:
         return payload, errors
     for section in REQUIRED_FIELDS:
@@ -652,12 +579,12 @@ def _evidence_body(row: dict[str, str], field: str) -> str:
         wrapped = rf"(?:（\s*{marker}\s*）|\(\s*{marker}\s*\)|{marker}(?=$|[\s、,;；。|）)]))"
         evidence = re.sub(rf"[\s、,;；|]*{wrapped}[\s、,;；|]*", " ", evidence)
     # 条件番号だけを行別の識別標識として末尾へ足した根拠も、同じ本文として比較する。
-    # 説明付きの括弧、範囲・件数・入力値などの数字は観測内容なので保持する。
+    # その他の整数の正規化は、参照領域を区別できる共用比較側で行う。
     evidence = re.sub(r"[\s。．]*(?:（\s*条件\d+\s*）|\(\s*条件\d+\s*\))\s*[。．]?\s*$", "", evidence)
     return evidence.strip()
 
 
-def _shared_body(row: dict[str, str], field: str) -> str:
+def _shared_body(row: dict[str, str], field: str, repository: pathlib.Path) -> str:
     """共用の比較に使う根拠を、`_evidence_body`からその行の条件文・要求原文の再掲も除いて返す。
 
     再掲は区切りか括弧で前後の語から切り離された原文とし、直前のコロン付きラベル（`確認対象: `など）、
@@ -679,14 +606,23 @@ def _shared_body(row: dict[str, str], field: str) -> str:
         rf"{separator}*(?:(?:^|(?<={separator}))(?:{RESTATEMENT_LABEL})?(?:{bracketed}|{restated})|{bracketed})"
         rf"(?={separator}|$){separator}*"
     )
-    return re.sub(pattern, " ", evidence).strip()
+    evidence = re.sub(pattern, " ", evidence).strip()
+    protected = [False] * len(evidence)
+    for match in [
+        *_file_references(evidence, repository),
+        *TEST_RESULT.finditer(evidence),
+        *COMMIT_REFERENCE.finditer(evidence),
+    ]:
+        protected[match.start() : match.end()] = [True] * (match.end() - match.start())
+    return re.sub(r"\d+", lambda match: match.group() if any(protected[match.start() : match.end()]) else "<整数>", evidence)
 
 
-def _review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list[str]:
+def review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list[str]:
     """明示WIと計画の実施内容がWI由来として挙げる項目を、出現順を保った和集合として返す。"""
     filenames = list(explicit)
     for plan in plans:
-        section = _section(plan.read_text(encoding="utf-8").splitlines(), "## 実施内容")
+        text = plan.read_text(encoding="utf-8")
+        section = _section(text.splitlines(), "## 実施内容")
         if section is None:
             continue
         for table in extract_tables(list(enumerate(section, start=1))):
@@ -699,6 +635,8 @@ def _review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list
                 origin = row[origin_index]
                 if origin.startswith(("人間由来のWI (", "エージェント由来のWI (")):
                     filenames.extend(WI_FILENAME.findall(origin))
+                elif origin == "ユーザー指示" and not requirement_units.plan_requirements(text, str(plan)):
+                    raise ValueError(f"{plan}: ユーザー指示の逐語発言が変更履歴にありません")
     return list(dict.fromkeys(filenames))
 
 
@@ -720,7 +658,7 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
         assert isinstance(rows, list)
         for index, row in enumerate(rows):
             if row["outcome"] == "達成":
-                body = re.sub(r"\s+", " ", _shared_body(row, field)).strip()
+                body = re.sub(r"\s+", " ", _shared_body(row, field, repository)).strip()
                 groups[body].append((section, index, row["awi"], row[field]))
                 test_results[section, index] = bool(TEST_RESULT.search(body))
     errors: list[str] = []
@@ -731,7 +669,7 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
         if any(awi != other_awi and text != other_text for _, awi, text in units for _, other_awi, other_text in units):
             reason = (
                 f"異なるWIの異なる要求単位で同じ達成根拠を共用しています: {evidence!r}。"
-                "各行の要求を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
+                "参照の外の整数の違いは書き分けとして扱わない。各行の要求を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
             )
         elif _is_reference_only(evidence, repository):
             reason = (
@@ -1316,7 +1254,9 @@ def _quoted_units(units: typing.Iterable[str]) -> str:
     return "、".join(f"「{unit}」" for unit in units)
 
 
-def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: str) -> list[str]:
+def check_evidence(
+    path: pathlib.Path, filenames: list[str], *, expected_head: str, plans: list[pathlib.Path] | None = None
+) -> list[str]:
     """証拠ファイルと対象WIが基準を満たすか判定し、診断を全件返す。"""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -1326,8 +1266,8 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
     if errors:
         return errors
     try:
-        repository = _repository_root()
-        wi_outputs = _WiOutputs(repository)
+        repository = repository_root()
+        wi_outputs = WiOutputs(repository)
         errors.extend(_check_reviewed_heads(payload, repository, expected_head))
         errors.extend(_check_reference_locations(payload, repository, expected_head, wi_outputs))
         errors.extend(_check_shared_evidence(payload, repository))
@@ -1372,6 +1312,15 @@ def check_evidence(path: pathlib.Path, filenames: list[str], *, expected_head: s
                     f"（期待 {len(requirements)} 行、実数 {matched} 行、不足: {_quoted_units(missing.elements())}）。"
                     f"{template}で不足した要求を原文どおり`user_requirements`へ追記し、追加した行を判定して記入する"
                 )
+    for plan in plans or []:
+        try:
+            expected_plan = requirement_units.plan_requirements(plan.read_text(encoding="utf-8"), str(plan))
+        except (OSError, UnicodeError, ValueError) as exc:
+            errors.append(str(exc))
+            continue
+        present = collections.Counter((row["requirement"], row["origin"]) for row in requirement_rows if not row["awi"])
+        missing = collections.Counter(expected_plan) - present
+        errors.extend(f"{origin}: 計画の原文要求の証拠が不足しています: {unit}" for unit, origin in missing.elements())
     return errors
 
 
@@ -1583,6 +1532,7 @@ def check_return_result(
     table_path: pathlib.Path,
     round_value: int,
     input_paths: list[pathlib.Path],
+    plans: list[pathlib.Path] | None = None,
 ) -> tuple[list[str], int]:
     """未応答件数と達成を要する行の整合を返却生成の直前に確かめる。
 
@@ -1591,7 +1541,7 @@ def check_return_result(
     完成条件証拠そのものを`location`にした未応答の指摘（`_circular_issue_errors`）もerrorとする。
     """
     try:
-        repository = _repository_root()
+        repository = repository_root()
         head = _commit_oid(repository, expected_head)
         if not table_path.is_absolute():
             raise ValueError("レビュー指摘管理表には絶対パスを指定する")
@@ -1604,7 +1554,7 @@ def check_return_result(
         if filenames:
             return ["対象WIがあるレビューには完成条件証拠を作成する。--templateで生成して各行を記入する"], unanswered
         return [], unanswered
-    errors = [*check_evidence(evidence_path, filenames, expected_head=head), *circular]
+    errors = [*check_evidence(evidence_path, filenames, expected_head=head, plans=plans), *circular]
     if errors or unanswered:
         return errors, unanswered
     payload = json.loads(evidence_path.read_text(encoding="utf-8"))
@@ -1682,7 +1632,9 @@ def return_lines(
     return [*lines, *rows]
 
 
-def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str], int, int]:
+def write_template(
+    path: pathlib.Path, filenames: list[str], plans: list[pathlib.Path] | None = None
+) -> tuple[list[str], int, int]:
     """不足する期待行を判定欄が空の雛形として`完成条件証拠`へ追記し、診断、追加行数、保持行数を返す。
 
     再レビューでも記入済みの行を失わないよう、既存の行は内容と順序を保ち、不足分だけを各配列の末尾へ加える。
@@ -1693,54 +1645,23 @@ def write_template(path: pathlib.Path, filenames: list[str]) -> tuple[list[str],
         data = json.loads(text) if text.strip() else {"wi_conditions": [], "user_requirements": []}
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return [f"`完成条件証拠`を読めません: {exc}"], 0, 0
-    payload, errors = _validate_structure(data)
+    payload, errors = validate_structure(data)
     if errors:
         return errors, 0, 0
     kept = sum(len(payload[section]) for section in REQUIRED_FIELDS)
     try:
-        repository = _repository_root()
+        repository = repository_root()
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return [str(exc)], 0, 0
-    additions: dict[str, list[dict[str, str]]] = {section: [] for section in REQUIRED_FIELDS}
-    wi_outputs = _WiOutputs(repository)
-    for filename in dict.fromkeys(filenames):
-        try:
-            expected, requirements = _expected_rows(wi_outputs[filename], filename)
-        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-            errors.append(str(exc))
-            continue
-        present = collections.Counter(
-            _normalize_condition(row["condition"]) for row in payload["wi_conditions"] if row["awi"] == filename
+    try:
+        expected = requirement_units.record_rows(
+            WiOutputs(repository),
+            filenames,
+            [(str(plan), plan.read_text(encoding="utf-8")) for plan in plans or []],
         )
-        for number, condition in enumerate(expected, start=1):
-            if present[condition] > 0:
-                present[condition] -= 1
-                continue
-            source = f"{filename}#完成条件 {number}"
-            additions["wi_conditions"].append(
-                {"awi": filename, "condition": condition, "outcome": "", "source": source, "evidence": "", "reviewed_head": ""}
-            )
-        present = collections.Counter(row["requirement"] for row in payload["user_requirements"] if row["awi"] == filename)
-        for requirement, origin in requirements:
-            if present[requirement] > 0:
-                present[requirement] -= 1
-                continue
-            additions["user_requirements"].append(
-                {
-                    "awi": filename,
-                    "requirement": requirement,
-                    "origin": origin,
-                    "outcome": "",
-                    "source": origin,
-                    "evidence": "",
-                    "reviewed_head": "",
-                }
-            )
-    if errors:
-        return errors, 0, 0
-    for section, rows in additions.items():
-        payload[section].extend(rows)
-    added = sum(len(rows) for rows in additions.values())
+    except (OSError, UnicodeError, subprocess.TimeoutExpired, ValueError) as exc:
+        return [str(exc)], 0, 0
+    added = requirement_units.append_missing_rows(payload, expected)
     _write_evidence_file(path, payload)
     return [], added, kept
 
@@ -1769,7 +1690,7 @@ def rewrite_references(path: pathlib.Path, map_path: pathlib.Path) -> tuple[list
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return [f"`完成条件証拠`を読めません: {exc}"], 0, 0
-    payload, errors = _validate_structure(data)
+    payload, errors = validate_structure(data)
     if errors:
         return errors, 0, 0
     olds = {old.lower(): new for old, new in replacements.items()}
@@ -2002,7 +1923,7 @@ def main(argv: list[str] | None = None) -> int:
     if any(not path.is_absolute() or not path.is_file() for path in [*args.plan, *args.input_record]):
         parser.error("--planと--input-recordには実在する通常ファイルの絶対パスを指定する")
     try:
-        filenames = _review_wi_filenames(args.wi, args.plan)
+        filenames = review_wi_filenames(args.wi, args.plan)
     except (OSError, UnicodeError, ValueError) as error:
         parser.error(str(error))
     if args.template:
@@ -2010,7 +1931,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--templateは返却生成と別に実行する。雛形を記入してから返却の整合を確かめる")
         if args.expected_head is not None:
             parser.error("--templateと--expected-headは同時に指定できません。雛形の出力後に--expected-headだけを付けて判定する")
-        errors, added, kept = write_template(args.evidence, filenames)
+        errors, added, kept = write_template(args.evidence, filenames, args.plan)
         if errors:
             for error in errors:
                 print(f"失敗: {error}", file=sys.stderr)
@@ -2046,9 +1967,10 @@ def main(argv: list[str] | None = None) -> int:
             table_path=args.review_table,
             round_value=args.round,
             input_paths=[*plan_paths, *input_record_paths],
+            plans=plan_paths,
         )
     else:
-        errors = check_evidence(args.evidence, filenames, expected_head=args.expected_head)
+        errors = check_evidence(args.evidence, filenames, expected_head=args.expected_head, plans=args.plan)
     for error in errors:
         print(f"失敗: {error}", file=sys.stderr)
     if errors:

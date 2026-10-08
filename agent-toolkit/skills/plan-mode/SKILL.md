@@ -66,3 +66,4 @@ description: >
 ## メインによる起動の実装と終端
 
 実装、実行レビュー、終端の工程は読込表の`references/main-launch.md`に従う。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、名前付き入力`未判定検証記録`は同書冒頭の規定に従って渡す。
+記録は`atk run-script verification-record -- --output <未判定検証記録JSONの絶対パス> --plan <計画の絶対パス>`で生成する。WI直渡しには`--wi <WIファイル名>`を反復できる。根拠の一覧・追記・置換とレビュー修正後の再生成は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の「完成条件証拠の検証記録」の公開操作に従い、更新済みJSONの絶対パスを実行レビューへ渡す。
