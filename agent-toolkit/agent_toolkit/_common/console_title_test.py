@@ -63,7 +63,7 @@ def test_uses_windows_api_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     entered: list[str] = []
 
     @contextlib.contextmanager
-    def fake_branch(title: str) -> typing.Iterator[None]:
+    def fake_branch(title: str) -> typing.Generator[None]:
         entered.append(title)
         yield
 

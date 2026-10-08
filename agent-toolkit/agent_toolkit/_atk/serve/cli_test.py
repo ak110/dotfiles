@@ -608,7 +608,7 @@ async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
     """状態指定時は表示対象へ作用し、省略時はprocessing優先を維持する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)

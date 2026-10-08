@@ -16,7 +16,7 @@ from agent_toolkit._agents_server import resume_waits, state
 from agent_toolkit._agents_server import session_registry as subject
 from agent_toolkit._common import state_paths
 from agent_toolkit._common import wait_schedule as _wait_schedule
-from agent_toolkit._testing.agents_server_support import install_backend
+from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
 
 
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
@@ -157,7 +157,8 @@ async def test_observing_wait_keeps_record_and_stop_releases_it(
     monkeypatch.setattr(_wait_schedule, "get_wait_timeout", lambda _request_bucket: 0.0)
     subject.publish("child-session", terminal=True, engine="codex", cwd=str(tmp_path))
     manager = server_manager.AgentsServerManager(status_writer=None)
-    install_backend(manager, "codex", _ReleaseOnlyBackend())
+    backend = FakeBackend(manager.sessions, "codex")
+    install_backend(manager, "codex", backend)
     parent = state.SessionState("parent-session", str(tmp_path), engine="codex")
     parent.live_child_session_ids.add("child-session")
     resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
@@ -166,7 +167,8 @@ async def test_observing_wait_keeps_record_and_stop_releases_it(
     await manager.wait()
 
     assert subject.resolve("child-session").state is subject.Resolution.TERMINAL
-    assert parent.terminal_child_session_ids == {"child-session"}
+    assert backend.send_calls == 1
+    assert "child-session" in backend.prompts[0]
 
     await manager.stop("child-session")
 
@@ -198,20 +200,6 @@ async def test_retention_expiry_releases_record(
     assert released.state is subject.Resolution.RELEASED
     assert released.released_reason == "retention_expired"
     await manager.close()
-
-
-class _ReleaseOnlyBackend:
-    """自動再開の配送とbackend資源の解放だけを受け取るテスト用backend。"""
-
-    async def send_message(self, session: state.SessionState, prompt: str) -> dict[str, object]:
-        del session, prompt
-        return {"delivery": "reply_started"}
-
-    async def release_session(self, session_id: str) -> None:
-        del session_id
-
-    async def close(self) -> None:
-        """外部資源を持たないため何もしない。"""
 
 
 @pytest.mark.parametrize("session_id", ["", "../child", "child/session"])

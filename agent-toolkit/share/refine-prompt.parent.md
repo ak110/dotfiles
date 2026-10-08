@@ -4,7 +4,7 @@
 起動対象: refine-prompt.subagent.md
 ```
 
-`agent-toolkit:refine-prompt`を実行する主体が、本書に従ってプロンプト評価担当を起動し、指摘を受領する。
+`agent-toolkit:refine-prompt`を実行するエージェントが、本書に従ってプロンプト評価担当を起動し、指摘を受領する。
 プロンプト評価担当の手順と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`が定める。
 
 ## 起動

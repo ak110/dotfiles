@@ -142,6 +142,8 @@ _REMOVED_CONFIG_KEYS: tuple[removal_registry.Registered[str], ...] = (
 # share/claude_settings_json_managed.* から廃止した配列項目を列挙する。
 # union マージは削除を反映しないため、ここで明示的に除去する。
 _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[removal_registry.Registered[tuple[str, str]], ...] = (
+    # 拒否後の承認前再発行を廃止したため、配布先に残る旧許可も除去する。
+    removal_registry.Registered(("autoMode.allow", "Reconsidered Retry Approval: "), datetime.date(2026, 10, 8)),
     # 2026-08: agents_serverへ移行したため旧Codex App Serverの許可項目を除去
     removal_registry.Registered(
         ("permissions.allow", "mcp__plugin_agent-toolkit_codex_app_server__"), datetime.date(2026, 8, 24)

@@ -206,7 +206,7 @@ def _windows_path_handle(
     access: int,
     *,
     allow_reparse: bool = False,
-) -> typing.Iterator[tuple[int, _ByHandleFileInformation]]:
+) -> typing.Generator[tuple[int, _ByHandleFileInformation]]:
     """再解析ポイントを追跡しないパスハンドルと属性を返す。"""
     kernel32 = _windows_dll("kernel32")
     create_file = kernel32.CreateFileW
@@ -250,7 +250,7 @@ def _windows_path_handle(
 @contextlib.contextmanager
 def _windows_security_update_handle(
     path: pathlib.Path,
-) -> typing.Iterator[tuple[int, _ByHandleFileInformation, bool]]:
+) -> typing.Generator[tuple[int, _ByHandleFileInformation, bool]]:
     """所有者更新可否を判定した単一のセキュリティ更新用ハンドルを返す。"""
     full_access = _WINDOWS_READ_CONTROL | _WINDOWS_WRITE_DAC | _WINDOWS_WRITE_OWNER
     minimal_access = _WINDOWS_READ_CONTROL | _WINDOWS_WRITE_DAC

@@ -7,7 +7,7 @@ Git操作、内部比較、報告、記録または成果物で用いる識別�
 Git commitにこうした識別子がない場合は、`git rev-parse --short=7 <revision>`が返した7文字以上の一意な短縮OIDを用いる。
 `--short=7`は少なくとも7文字の一意なprefixを返し、`--short`だけの最小長は`core.abbrev`の実効値に従う。観測結果は`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月14日」にある。
 `git rev-parse --short=7`は1回につきrevisionを1件だけ渡す。複数のrevisionを扱う場合はrevisionごとに個別実行し、入力と出力の対応を保持する。複数のrevisionを同じ呼び出しへ渡すと`fatal: Needed a single revision`で失敗する。
-値は実行結果として得たものをそのまま使う。記憶や推測で組み立てた識別子は別対象への操作を招き、受け取った主体が実在しない対象を待つ。
+値は実行結果として得たものをそのまま使う。記憶や推測で組み立てた識別子は別対象への操作を招き、受け取ったエージェントが実在しない対象を待つ。
 
 revisionへpeel式を付ける場合は、その式全体を実行shellで単一引数にする。PowerShellでは`git rev-parse --verify 'HEAD^{commit}'`のように単一引用符で囲み、caretと波括弧をPowerShellの解釈から保護する。この引用規則は、前段のrevision件数の制約とは別に適用する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月20日」にある。
 

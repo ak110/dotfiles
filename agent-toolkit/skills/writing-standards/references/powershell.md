@@ -10,20 +10,16 @@
   - 非ASCII文字を含むスクリプトはUTF-8 BOM付きで保存する
    （Windows PowerShell 5.1はBOMを持たないファイルをANSIコードページとして読み、日本語が文字化けするため）
 - 基本スタイル
-  - 冒頭に`Set-StrictMode -Version Latest`と`$ErrorActionPreference = 'Stop'`を記述する
-  - 命名規則:
-    - cmdlet・関数は`Verb-Noun`（PascalCase）
-    - 変数は`$camelCase`
-    - 承認済み動詞（`Get-Verb`）を使う
+  - StrictMode LatestとErrorActionPreference Stopを基本とし、失敗を検出する
+  - cmdlet・関数は承認済み動詞のVerb-Noun（PascalCase）、変数はcamelCaseにそろえる
 - エラーハンドリング
-  - `try`／`catch`／`finally`を使う
-  - non-terminating errorをキャッチするために`-ErrorAction Stop`を指定する
+  - 例外の原因を保ち、資源を確実に回収する。捕捉が必要なnon-terminating errorはErrorAction Stopで例外化する
   - ネイティブexe（`powercfg`・`reg`・`git`・`winget`・`chezmoi`・`uv`等）の呼び出し直後で
     `$LASTEXITCODE`を判定し非ゼロなら`throw`する
     - `$ErrorActionPreference = 'Stop'`はネイティブexeの非ゼロ終了を例外化しないため必要となる
     - 例外: `try/catch`で意図的に失敗を抑止する`best-effort`呼び出しは判定対象外
 - パス操作
-  - `Join-Path`でパスを組み立てる（努力目標。文字列結合では区切り文字の重複と欠落が起きやすいため）
+  - パスの構造を保つJoin-Pathを基本とする（努力目標。区切り文字の重複と欠落を避ける）
 - COM操作
   - PowerShell 5.1のCOM遅延バインディングでは型変換エラーやDISP_E_TYPEMISMATCH（HRESULT `0x80020005`）が返ることがある
     - エラー例: `型 "int" の "2" 値を型 "Object" に変換できません`

@@ -608,7 +608,7 @@ async def test_edit_and_answer_apis_detect_external_changes(
     """取得後の外部更新を409で保護し、最新値と従来形式の更新を許可する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -870,7 +870,7 @@ def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     calls: list[str] = []
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -1034,7 +1034,7 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
     """本文frontmatterにtarget_repoがあれば対象リポジトリ指定を省略できる。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)

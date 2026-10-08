@@ -8,8 +8,8 @@ import tempfile
 from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi.constants import WI_STATES
+from agent_toolkit._atk.wi.formatters import parse_type
 from agent_toolkit._common import private_notes as _private_notes
 
 
@@ -173,7 +173,7 @@ def make_filename_completer(
             for path in state_dir.iterdir():
                 if path.suffix != ".md" or not path.name.startswith(prefix):
                     continue
-                if entry_type is not None and _wi_entries.parse_type(path.read_text(encoding="utf-8")) != entry_type:
+                if entry_type is not None and parse_type(path.read_text(encoding="utf-8")) != entry_type:
                     continue
                 candidates.append(path.name)
         return sorted(candidates)

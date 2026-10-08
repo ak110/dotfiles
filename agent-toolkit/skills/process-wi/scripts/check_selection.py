@@ -88,7 +88,7 @@ _PATH_TOKEN_RE = re.compile(
     r"(?<![A-Za-z0-9_./:$~<\-])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]*"
     r"|(?<![A-Za-z0-9_./:$~<\-])[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+"
 )
-_LIST_GAP_RE = re.compile(r"(?:\s*(?:の|と|および|ならびに|、|・|,))+\s*")
+_LIST_GAP_RE = re.compile(r"(?:\s*(?:と|および|ならびに|、|・|,))+\s*")
 # 語の直後に続くと、その語がグロブや波括弧展開の途中で途切れたことを示す記号。
 _GLOB_CHARS = frozenset("*?[{")
 # 新設先として採るファイル名は、拡張子までそろった完全な名前に限る。
@@ -323,11 +323,12 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     for segments in _inline_runs(text):
         run = "".join(segment.text for segment in segments)
         directory: str | None = None
+        explicit_directory = False
         last_end = 0
         for start, end in _path_tokens(segments, work_dir):
             candidate = _normalize_candidate(run[start:end])
             gap = run[last_end:start]
-            if directory is not None and not _LIST_GAP_RE.fullmatch(gap):
+            if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or explicit_directory and gap.strip() == "の"):
                 directory = None
             last_end = end
             if candidate is None or run[end : end + 1] in _GLOB_CHARS:
@@ -339,12 +340,14 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
                     directory = None
                     continue
                 paths.add(resolved)
+                explicit_directory = resolved.endswith("/")
                 directory = resolved if resolved.endswith("/") else resolved.rsplit("/", 1)[0] + "/"
                 continue
             if (work_dir / candidate).is_file():
                 paths.add(candidate)
             elif directory is not None and (resolved := _repository_path(directory + candidate, work_dir)) is not None:
                 paths.add(resolved)
+            explicit_directory = False
     return paths
 
 
@@ -469,7 +472,7 @@ def _inline_runs(text: str) -> list[list[_Segment]]:
 
 def _normalize_candidate(candidate: str) -> str | None:
     """インラインコードの内容をリポジトリ相対パスの候補へ整え、パスでなければ`None`を返す。"""
-    value = _LINE_SUFFIX_RE.sub("", candidate.strip())
+    value = _LINE_SUFFIX_RE.sub("", candidate.strip().split("#", 1)[0])
     if not value or any(char.isspace() for char in value):
         return None
     if value.startswith(_NON_PATH_PREFIXES) or any(fragment in value for fragment in _NON_PATH_FRAGMENTS):
@@ -557,18 +560,26 @@ def _check_public_write_rationales(items: list[dict[str, object]], costs: list[d
     return errors
 
 
-def check(selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: pathlib.Path) -> list[str]:
-    """選定結果の全項目を確かめ、違反の行を返す。"""
+def check(
+    selection_file: pathlib.Path, work_dir: pathlib.Path, private_notes: pathlib.Path, body_wis: set[str] | None = None
+) -> list[str]:
+    """指定した集合の本文と選定全体の関係を確かめ、違反の行を返す。省略時は全本文を検査する。"""
     selection = load_selection(selection_file)
     items = typing.cast(list[dict[str, object]], _selection.decisions(selection))
     costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
+    unknown = (body_wis or set()) - {str(item[_selection.WI_KEY]) for item in items}
+    if unknown:
+        raise InputError(
+            f"`--body-wi`に選定結果に無いWIがある: {', '.join(sorted(unknown))}",
+            next_action="`--body-wi`へ全体YAMLに含まれる追加WIのファイル名を指定して再実行する",
+        )
     if not private_notes.is_dir():
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
     conditions = load_norm_conditions(work_dir)
     errors: list[str] = []
     for decision in items:
         awi = typing.cast(str, decision[_selection.WI_KEY])
-        if decision[_selection.LANE_KEY] == _LANE_NONE:
+        if decision[_selection.LANE_KEY] == _LANE_NONE or body_wis is not None and awi not in body_wis:
             continue
         write_files = _string_list(decision, _selection.WRITE_FILES_KEY)
         public_write_files = _string_list(decision, _selection.PUBLIC_WRITE_FILES_KEY)
@@ -853,7 +864,7 @@ def _string_list(decision: dict[str, object], key: str) -> list[str]:
     return typing.cast(list[str], decision.get(key, []))
 
 
-def summary_lines(selection: dict[str, object]) -> list[str]:
+def summary_lines(selection: dict[str, object], body_wis: set[str] | None = None) -> list[str]:
     """確認を通った選定結果から、レーン構成の要約行を返す。
 
     WIファイル名は入力順に全件を示す。段階と先行レーンの省略は読み取り契約の省略時の値（1と空の列）で示し、
@@ -886,6 +897,13 @@ def summary_lines(selection: dict[str, object]) -> list[str]:
             f"実装秒数 {seconds[0]}、統合秒数 {seconds[1]}、WI {json.dumps(names, ensure_ascii=False)}"
         )
     lines.append(f"レーン: なし: {json.dumps(unassigned, ensure_ascii=False)}")
+    checked = [
+        str(item[_selection.WI_KEY])
+        for item in items
+        if item[_selection.LANE_KEY] != _LANE_NONE and (body_wis is None or str(item[_selection.WI_KEY]) in body_wis)
+    ]
+    lines.append(f"本文検査対象: {json.dumps(checked, ensure_ascii=False)}")
+    lines.append("形式・抽出パスの被覆と全体の関係を確認した。分類と配分の意味はWIの元本文と限定調査の結果で検収する。")
     return lines
 
 
@@ -906,10 +924,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("selection_file", type=pathlib.Path, metavar="PATH", help="pickerが保存した選定結果の絶対パス")
     parser.add_argument("--work-dir", type=pathlib.Path, metavar="DIR", default=None, help="対象リポジトリの絶対パス")
+    parser.add_argument("--body-wi", action="append", metavar="WI", help="本文検査するWIファイル名。反復指定可、省略時は全件")
     args = parser.parse_args(argv)
+    body_wis = set(args.body_wi) if args.body_wi is not None else None
     try:
         work_dir = _resolve_work_dir(args.work_dir)
-        errors = check(args.selection_file, work_dir, _plan_file.private_notes_root())
+        errors = check(args.selection_file, work_dir, _plan_file.private_notes_root(), body_wis)
     except InputError as error:
         _next_action.report(error.reason, next_action=error.next_action)
         return 2
@@ -918,8 +938,9 @@ def main(argv: list[str] | None = None) -> int:
     if errors:
         print(
             _next_action.next_action_line(
-                "未被覆のパスは`書込対象`へ加えるか、書き込まない場合は`書き込まない反映先`へ加える。"
-                "広すぎる範囲は反映先が挙げる個別のパスへ置き換える。不正な`書き込まない反映先`は除く。"
+                "該当WIの元本文へ戻り、変更要求と限定調査から書込・参照・除外・公開工程所有の区分を判断し直す。"
+                "抽出パスや存在だけで区分を決めず、未被覆・広すぎる範囲・不正な除外をその判断に従って直す。"
+                "変更領域が変われば、競合とレーン配分も再評価する。"
                 "区分間で重複するパスは所有する1区分だけへ残す。`公開工程の書込対象`の根拠不足は、"
                 "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する。"
                 "プロジェクト規範の指定の不足は、`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が"
@@ -929,7 +950,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    print("\n".join(summary_lines(load_selection(args.selection_file))))
+    print("\n".join(summary_lines(load_selection(args.selection_file), body_wis)))
     return 0
 
 

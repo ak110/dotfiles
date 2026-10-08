@@ -1,7 +1,7 @@
 # rules-main.codex.md: Codexのメインエージェントだけに適用する規範
 
 本文書はCodexのSessionStartでCodexのメインエージェントだけへ配送され、`rules-main.md`の後に置かれる。
-Codexの全主体に適用する差分は`rules-common.codex.md`が扱う。
+Codexの全てのエージェントに適用する差分は`rules-common.codex.md`が扱う。
 
 ## 言語
 

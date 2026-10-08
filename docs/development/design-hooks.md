@@ -547,6 +547,7 @@ Claude Codeでは、同じ応答でツール呼び出しより前に置いた地
 - `tool.check`でこのツールの呼び出しを許可する。途中の報告のたびに権限確認の画面が出ると作業が止まるためである
 - `tool.call`で短い確認応答を返す
 - `ui.render`の`ToolUse`でこのツールの行を`message`の`Markdown`要素で描き、他のツールの行は後続へ渡して描き替えない
+- `ui.render`の`ToolResult`では、このツールの成功結果を空の`Box`で描く。本文は`ToolUse`に表示済みなので、成功確認を重ねて表示しない。成功文字列との一致には依存せず、他ツールとエラー結果は後続へ渡す。terminalとdesktopに同じ条件を適用し、モデルへ返す`tool.call`の確認応答は保つ
 
 ツールの登録と表示を同じmoduleに置くため、moduleを読み込まないClaude Code（管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が無い環境）とCodexにはツールが現れない。その環境のメインは`rules-main.claude-code.md`「ツールの入出力」に従い、届ける内容をターンを終える応答の本文へ書く。
 Claude Code 2.1.292では、hooks.jsonの`modules`は1件だけを受け付け、同じイベントで条件を持たないhookは1回だけ登録できる。`$`を渡せるのは同じファイルで宣言した関数に限られる。このため`register.ts`が唯一のmoduleとして`session.start`を1つにまとめ、`session_exit.ts`と`send_to_user.tsx`の`register`を呼ぶ。両ファイルが共有する値はツールの定義と`$`を受け取らない関数に限る。

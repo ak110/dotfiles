@@ -22,6 +22,7 @@ SCRIPT_PATHS = {
     "termination-evidence": pathlib.Path("agent_toolkit/_hooks/termination_evidence.py"),
     "exec-review-evidence-check": pathlib.Path("skills/review-standards/scripts/check_exec_review_evidence.py"),
     "review-contract": pathlib.Path("skills/review-standards/scripts/review_contract.py"),
+    "review-impact": pathlib.Path("skills/review-standards/scripts/review_impact.py"),
     "record-stall-detection": pathlib.Path("skills/delegation/scripts/record_stall_detection.py"),
     "session-review-evidence": pathlib.Path("skills/session-review/scripts/session_review_evidence.py"),
     "session-review-prepare": pathlib.Path("skills/session-review/scripts/session_review_prepare.py"),

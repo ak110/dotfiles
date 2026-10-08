@@ -6,7 +6,7 @@ import contextlib
 import io
 import pathlib
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from typing import TextIO
 
 from agent_toolkit._atk import outcome
@@ -78,7 +78,7 @@ def auto_save(
     after_save: Callable[[pathlib.Path], None] | None = None,
     force_stdout: bool = False,
     discard_directory: Callable[[pathlib.Path], None] | None = None,
-) -> Iterator[None]:
+) -> Generator[None]:
     """有限終了の両出力を保持し、ファイル消費のあるstdoutは実行前に保存先を開く。
 
     waitの結果を消費する前に保存を準備し、保存不能なら本体を開始しない。

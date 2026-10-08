@@ -53,8 +53,8 @@ EditとWriteが要求する読取状態は`file-editing.md`「ファイル更新
 - Claude CodeのRead・Edit・WriteはUTF-8を前提とし、非UTF-8（CP932など）のファイルを直接扱えない
 - EditはCRLF改行とUTF-8 BOMを透過的に維持するため、既存ファイルの編集にはEditを使う
 - Writeは常にLF改行・BOMなしで書くため、CRLFとBOMが消失する。CRLFやBOMを要するファイルをWriteで書いた場合は、改行とBOMを別途復元する
-- CRLF・BOM付きの新規ファイルはBashで書く（例: `printf '\xEF\xBB\xBF' > file && cat <<'EOF' | sed 's/$/\r/' >> file`）
+- CRLF・BOM付きの新規ファイルはBash経由で作成し、改行とBOMを明示して書く
 - 非UTF-8のファイルは`iconv`でUTF-8へ変換し、変換後のファイルをReadで読んでからEditで編集して元の文字コードへ戻すか、Pythonでバイト列を置換する
   - iconvの往復: 読み取りは`iconv -f <元の文字コード> -t utf-8 <ファイル>`、編集はUTF-8へ変換したファイルをReadで読んでからEditかWriteで編集し、`iconv -f utf-8 -t <元の文字コード>`で戻す。新規作成はUTF-8で書いてから同じ変換で戻す
-  - Pythonによるバイト列の置換: iconvの往復より手順が短く、CRLFも維持できる。単純置換・行追加・日本語コメントの変更のいずれにも使える。雛形は`from pathlib import Path; p=Path('<ファイル>'); data=p.read_bytes(); p.write_bytes(data.replace(old, new))`とし、`old`と`new`は元の文字コードで符号化したバイト列にする。行追加は「直前行＋`\r\n`＋新規行＋`\r\n`」の形で`old`の末尾に`b'\r\n'`を含めて置換する
+  - Pythonによるバイト置換では、置換前後を元の文字コードで符号化し、行末のCRLFを含めて維持する。文字コード変換による往復が不要な編集に使える
 - `.gitattributes`の`eol=crlf`は改行だけを管理し、BOMを復元しない

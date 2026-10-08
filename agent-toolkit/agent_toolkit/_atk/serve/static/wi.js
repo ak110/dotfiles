@@ -1306,15 +1306,16 @@ async function transitionDetail(action) {
   if ((action === 'adopt' || action === 'reject') && currentEntry.state === 'hold') payload.state = 'hold';
   const note = byId('decision-note').value.trim();
   if (note && (action === 'adopt' || action === 'reject')) payload.note = note;
-  const label = {
-    adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除', 'return-to-inbox': 'inboxへ戻す'
+  const completedAction = {
+    adopt: '採用しました', reject: '却下しました', hold: '保留しました', unhold: '保留解除しました',
+    'return-to-inbox': 'inboxへ戻しました'
   }[action];
   try {
     await (runDetailMutation(`transition-${action}`, {
       container: byId('detail-shell'),
       button: byId(action === 'adopt' || action === 'reject' ? `confirm-${action}-button` : `${action}-button`),
       busyLabel: '処理中'
-    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}), `${key}を${label}しました。`));
+    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}), `${key}を${completedAction}。`));
   } catch (error) {
     deliverOperationMessage(`${key}を処理できませんでした。 ${error.message}`, true);
   }

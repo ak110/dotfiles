@@ -41,7 +41,7 @@ _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
 
 
 @contextlib.contextmanager
-def _exclusive_file_lock(path: pathlib.Path) -> typing.Iterator[None]:
+def _exclusive_file_lock(path: pathlib.Path) -> typing.Generator[None]:
     """`path`をロックファイルとしてプロセス間の排他ロックを保持する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+", encoding="utf-8") as handle:

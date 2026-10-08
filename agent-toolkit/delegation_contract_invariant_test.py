@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from agent_toolkit._agents_server import task_documents
+from agent_toolkit._agents_server import launch_prompts, task_documents
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
 
@@ -248,6 +248,33 @@ def test_distributed_delegation_contract_is_complete() -> None:
     assert not errors, "\n".join(errors)
 
 
+def _assert_role_models_registered(share: pathlib.Path) -> None:
+    """起動の受付対象となる役割文書にモデル種別が登録されていることを確かめる。"""
+    missing = sorted(path.name for path in share.glob("*.subagent.md") if path.name not in launch_prompts.TASK_MODEL_TYPES)
+    assert not missing, f"モデル種別が未登録の役割文書: {', '.join(missing)}"
+
+
+def test_distributed_roles_have_model_types() -> None:
+    """役割の追加時にテスト側の対象リストを更新せず、全配布役割の登録を検査する。"""
+    _assert_role_models_registered(pathlib.Path(__file__).resolve().parent / "share")
+
+
+@pytest.mark.parametrize("rename", [False, True])
+def test_unregistered_added_or_renamed_role_reports_filename(tmp_path: pathlib.Path, rename: bool) -> None:
+    """登録済みの集合は通り、文書だけの追加・改名は不足する名前を示して失敗する。"""
+    registered_name = next(iter(launch_prompts.TASK_MODEL_TYPES))
+    registered = tmp_path / registered_name
+    registered.write_text("# 登録済みの役割\n", encoding="utf-8")
+    _assert_role_models_registered(tmp_path)
+    missing = tmp_path / "unregistered-role.subagent.md"
+    if rename:
+        registered.rename(missing)
+    else:
+        missing.write_text("# 未登録の役割\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match=r"未登録の役割文書: unregistered-role\.subagent\.md"):
+        _assert_role_models_registered(tmp_path)
+
+
 def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> None:
     """未判定記録の直接配送と完成条件証拠の単一所有者を固定する。"""
     root = pathlib.Path(__file__).resolve().parent
@@ -417,7 +444,8 @@ def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
     assert "後段の分割不能条件と同じ規則で`再開位置`の計画識別を比較" in picker
     assert "同じ計画を持つ既存レーンの識別子と計画識別" in picker
     assert "その既存レーンへの割当を費用比較より先に確定" in addition
-    assert "追記後の`選定結果の出力先ファイル`へ`atk run-script pick-wi-check`を再実行" in addition
+    assert "追記後の全体YAMLへ`atk run-script pick-wi-check --" in addition
+    assert "--body-wi <追加WI名>" in addition
     assert "そのレーンへの割当を分割不能条件として費用比較より先に確定" in lanes
     assert "その計画を別レーンへ割り当てず" in lanes
 

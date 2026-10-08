@@ -424,7 +424,7 @@ def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     """一括取り込みで使うロック・remote同期・commitを無効化する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -447,7 +447,7 @@ def _patch_comment_edit_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     """ユーザーコメントAPIテストでGit同期だけを無効化する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -460,7 +460,7 @@ def _disable_wi_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """WI画面の操作がprivate-notesで行うロック・pull・commit・pushを、何もしない処理へ差し替える。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)

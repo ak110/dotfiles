@@ -897,7 +897,7 @@ class ClaudeServerManager:
                     retrieved = None
                     active_future = command[2]
                     if (
-                        command[0] in {"prompt", "interrupt"}
+                        command[0] == "interrupt"
                         and session is not None
                         and session.awaiting_auto_resume
                         and message_task is not None
@@ -969,7 +969,7 @@ class ClaudeServerManager:
             else:
                 if session.awaiting_auto_resume:
                     # モデルのturnは終わっており、Claude Code CLIはturnの外で受けた中断要求へ`ResultMessage`を返さない。
-                    # 保留した結果をそのまま確定し、以後の再開turnは読まない（保留中に`prompt`を受けた場合と同じ扱い）。
+                    # 保留した結果をそのまま確定し、以後の再開turnは読まない。
                     self._finalize_pending_result(session)
                     iterator = None
                 if not future.done():
@@ -978,17 +978,24 @@ class ClaudeServerManager:
             return iterator
         if future.cancelled():
             return iterator
-        if session.awaiting_auto_resume:
+        if session.awaiting_auto_resume and session.auto_resume_deadline is None:
             self._finalize_pending_result(session)
             iterator = None
-        kind = "reply" if session.terminal else "steer"
-        previous_result = session.previous_result() if kind == "reply" else None
+        held = resume_waits.HeldTurn.capture(session)
+        kind = "reply" if session.terminal or held is not None else "steer"
+        previous_result = session.previous_result() if kind == "reply" and held is None else None
         try:
             if kind == "reply":
-                begin_reply(session)
+                begin_reply(session, preserve_waits=held is not None)
             await client.query(prompt)
         except Exception as exc:
-            if kind == "reply":
+            if held is not None:
+                held.restore(session)
+                if iterator is None:
+                    iterator = aiter(client.receive_messages())
+                if not future.done():
+                    future.set_result(("reply_failed", None))
+            elif kind == "reply":
                 self._record_failure(session, exc)
                 if not future.done():
                     future.set_result(("reply_failed", previous_result))
@@ -1004,7 +1011,8 @@ class ClaudeServerManager:
         session.retention_deadline = None
         session.touch()
         await self._notify_waiters()
-        return aiter(client.receive_messages()) if kind == "reply" else iterator
+        # 保留中は同じ受信を続ける。追送中に到着した完了通知を読取taskの取消で失わない。
+        return aiter(client.receive_messages()) if kind == "reply" and iterator is None else iterator
 
     @staticmethod
     def _result_values(session: SessionState, message: Any) -> dict[str, Any]:

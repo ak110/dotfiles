@@ -106,7 +106,7 @@ def open_image_with_exif(path: pathlib.Path) -> tuple[PIL.Image.Image, bool]:
 
 
 @contextlib.contextmanager
-def _truncated_images_enabled() -> typing.Iterator[None]:
+def _truncated_images_enabled() -> typing.Generator[None]:
     """`PIL.ImageFile.LOAD_TRUNCATED_IMAGES` を True にして実行するコンテキスト。"""
     prev = PIL.ImageFile.LOAD_TRUNCATED_IMAGES
     # ty は初期値 ``False`` をリテラル型として推論し、True 代入を拒否するが、

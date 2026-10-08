@@ -1,8 +1,8 @@
 # 規範の配送範囲
 
-本書はエージェント向け文書の置き場所を選ぶ主体と、ある主体へ届く規範を確かめる主体へ、規範と資料がどの起動区分の主体へ届くかを示す配送範囲表を提供する。常時規範の定義と置き場所の分類は`agent-documents-basics.md`「置き場所と配送」が定める。
+本書はエージェント向け文書の置き場所を選ぶエージェントと、あるエージェントへ届く規範を確かめるエージェントへ、規範と資料がどの起動区分のエージェントへ届くかを示す配送範囲表を提供する。常時規範の定義と置き場所の分類は`agent-documents-basics.md`「置き場所と配送」が定める。
 
-配送範囲表は、常時規範、配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどの主体へ届くかを示す次の表である。値は実装から取る。取得元は`agent_toolkit/`配下の`_hooks/rules_context.py`と`_agents_server/`の`launch_prompts.py`・`claude.py`・`codex.py`・`antigravity.py`と、`scripts/sync_codex_agents.py`である。規定を置く文書を選ぶときと、ある主体へ届く規範を確かめるときにこの表を使う。表の値と実装が一致しない場合は実装を正として表を直す
+配送範囲表は、常時規範、配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどのエージェントへ届くかを示す次の表である。値は実装から取る。取得元は`agent_toolkit/`配下の`_hooks/rules_context.py`と`_agents_server/`の`launch_prompts.py`・`claude.py`・`codex.py`・`antigravity.py`と、`scripts/sync_codex_agents.py`である。規定を置く文書を選ぶときと、あるエージェントへ届く規範を確かめるときにこの表を使う。表の値と実装が一致しない場合は実装を正として表を直す
 
 | 文書 | Claude Codeのメイン | Codexのメイン | `Agent`ツールのサブエージェント | `agents_server`の`task`・`delegate`（Claude） | `agents_server`の`task`・`delegate`（Codex） | `agents_server`の`task`・`delegate`（Antigravity） | `explore`・`write`・`shell`（Claude） | `explore`・`write`・`shell`（Codex） | `explore`・`write`・`shell`（Antigravity） | Codexの組み込み委譲先 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -23,6 +23,6 @@
 
 Codexの列の`rules/`配下と`share/rules-common.codex.md`の値は`~/.codex/AGENTS.md`を配置した環境に限る（Codex単体のインストーラーはこのファイルを配置しない）。
 Antigravityの委譲先は起動区分によらず`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読む。
-ユーザーが`~/.claude/rules/`に置いた規範ファイルの行の読込指示は、Codexのメインと組み込み委譲先へは`~/.claude/rules/`直下の`*.local.md`に限る。`~/.claude/rules/myprojects.md`のようにClaude Code向けに配布するファイルは`agents_server`の委譲先へだけ届く。`~/.claude/CLAUDE.md`はこの行の連結の対象外とし、Claudeの各起動区分へはユーザー設定の読込元から、Codexの主体へは`~/.codex/AGENTS.md`の読込指示で届く。
+ユーザーが`~/.claude/rules/`に置いた規範ファイルの行の読込指示は、Codexのメインと組み込み委譲先へは`~/.claude/rules/`直下の`*.local.md`に限る。`~/.claude/rules/myprojects.md`のようにClaude Code向けに配布するファイルは`agents_server`の委譲先へだけ届く。`~/.claude/CLAUDE.md`はこの行の連結の対象外とし、Claudeの各起動区分へはユーザー設定の読込元から、Codexのエージェントへは`~/.codex/AGENTS.md`の読込指示で届く。
 Antigravityの列とプロジェクト規範・スキルの行は実機の観測から取った。
 観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日」にある。

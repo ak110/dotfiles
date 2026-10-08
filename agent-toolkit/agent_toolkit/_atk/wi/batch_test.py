@@ -10,7 +10,7 @@ import argparse
 import contextlib
 import datetime
 import pathlib
-from collections.abc import Iterator
+from collections.abc import Generator
 
 import pytest
 
@@ -41,7 +41,7 @@ def _patch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     messages: list[str] = []
 
     @contextlib.contextmanager
-    def lock(*_args: object, **_kwargs: object) -> Iterator[None]:
+    def lock(*_args: object, **_kwargs: object) -> Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)

@@ -208,6 +208,9 @@ class FakeBackend:
     async def send_message(self, session: state.SessionState, prompt: str) -> dict[str, Any]:
         self.prompts.append(prompt)
         self.send_calls += 1
+        if resume_waits.HeldTurn.capture(session) is not None:
+            state.begin_reply(session, preserve_waits=True)
+            return {"delivery": self.delivery}
         if session.terminal:
             previous = session.previous_result()
             state.begin_reply(session)

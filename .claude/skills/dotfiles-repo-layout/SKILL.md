@@ -19,11 +19,11 @@ description: >
 
 - dotfilesユーザー: chezmoiソース・`bin`・`pytools`等を自分の環境にインストールして使う人
 - agent-toolkitユーザー: `agent-toolkit`プラグインをマーケットプレイス経由で使う人（dotfilesユーザー含む）
-- dotfilesユーザーとagent-toolkitユーザーはどちらもエンドユーザーの部分集合であり、コーディングエージェントへ指示するユーザー（`agent-toolkit/rules/01-agent.md`「役割分担」）との兼任を妨げない
+- dotfilesユーザーとagent-toolkitユーザーはどちらもエンドユーザーの部分集合であり、エージェントへ指示するユーザー（`agent-toolkit/rules/01-agent.md`「役割分担」）との兼任を妨げない
   - 配布ルール（`~/.claude/rules/agent-toolkit/`）も導入済み前提で記述してよい
-- 全プロジェクト編集者: あらゆるプロジェクトで編集作業をするコーディングエージェント
+- 全プロジェクト編集者: あらゆるプロジェクトで編集作業をするエージェント
   - 配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
-- dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント
+- dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するエージェント
   - 全プロジェクト編集者の対象に加え、リポジトリ直下の`.claude/`と`AGENTS.md`もロードする
    （Claude Codeは`CLAUDE.md`と`CLAUDE.local.md`が無いプロジェクトで`AGENTS.md`を直接読む。観測の内容は`docs/development/audit-records.md`の「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」にある）
 

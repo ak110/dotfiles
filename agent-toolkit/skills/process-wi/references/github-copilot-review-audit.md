@@ -1,6 +1,6 @@
 # 自動コードレビュー監査
 
-`agent-toolkit:process-wi`の自動コードレビュー監査を担当する主体が、対象GitHubリポジトリの成果物を変更せずに実行する。
+`agent-toolkit:process-wi`の自動コードレビュー監査を担当するエージェントが、対象GitHubリポジトリの成果物を変更せずに実行する。
 本書でいう成果物は、対象リポジトリの追跡ファイルとその履歴を指す。
 Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿、threadの解決およびDependabotアラートの却下は成果物の変更に当たらず、本書が定める範囲で監査担当が実行する。
 本書はCopilot由来のレビュー指摘を「対象」から「判定済みの記録」までの節で、Dependabotアラートを「Dependabotアラート」節で扱う。

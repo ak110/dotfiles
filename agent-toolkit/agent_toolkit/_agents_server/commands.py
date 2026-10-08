@@ -24,7 +24,7 @@ from agent_toolkit._agents_server import (
     shared_layout,
     shared_roots,
     state,
-    status_file,
+    status_reader,
     wait_output_tracking,
 )
 from agent_toolkit._agents_server.notify import send_notification
@@ -660,43 +660,16 @@ def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] |
 def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:
     """ルートsession配下の状態ファイルを統合し、開始順のsession一覧を返す。"""
     results = shared_layout.results_directory(root_session_id)
-    by_id: dict[str, dict[str, Any]] = {}
-    for path in shared_layout.list_status_files(root_session_id):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            continue
-        if not _status_payload_is_current(payload):
-            continue
-        raw_sessions = payload.get("sessions") if isinstance(payload, dict) else None
-        if not isinstance(raw_sessions, list):
-            continue
-        for raw in raw_sessions:
-            if not isinstance(raw, dict) or not isinstance(raw.get("session_id"), str):
-                continue
-            session = dict(raw)
-            session["owner_status_file"] = path.name
-            session["result_available"] = (results / f"{session['session_id']}.json").is_file()
-            _add_output_activity(session)
-            previous = by_id.get(session["session_id"])
-            if previous is None or str(previous.get("updated_at", "")) <= str(session.get("updated_at", "")):
-                by_id[session["session_id"]] = session
+    by_id = status_reader.load_root(root_session_id).sessions
+    for session in by_id.values():
+        session["result_available"] = (results / f"{session['session_id']}.json").is_file()
+        _add_output_activity(session)
     return sorted(by_id.values(), key=lambda session: str(session.get("started_at", "")))
 
 
 def _status_payload_is_current(payload: Any) -> bool:
     """heartbeatを持つ状態が有効期限内であるかを返す。"""
-    heartbeat_at = payload.get("heartbeat_at") if isinstance(payload, dict) else None
-    if not isinstance(heartbeat_at, str):
-        return True
-    try:
-        heartbeat = datetime.datetime.fromisoformat(heartbeat_at)
-    except ValueError:
-        return False
-    if heartbeat.tzinfo is None:
-        return False
-    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=status_file.HEARTBEAT_EXPIRY_SECONDS)
-    return heartbeat >= cutoff
+    return not isinstance(payload, dict) or status_reader.heartbeat_is_current(payload, status_reader.heartbeat_cutoff())
 
 
 def _add_output_activity(session: dict[str, Any]) -> None:

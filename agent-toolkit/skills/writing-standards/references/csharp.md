@@ -4,9 +4,7 @@
 
 ## 言語スタイル
 
-- .NETバージョン
-  - 現行のLTS以降を前提にする
-  - プロジェクト設定では`<Nullable>enable</Nullable>`と`<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`を有効にする
+- 現行の.NET LTS以降を前提とし、NullableとTreatWarningsAsErrorsを有効にする
 - 非同期処理
   - `async void`は使わない（例外が捕捉できないため）
     - 例外としてWinForms／WPFのイベントハンドラのみ許容し、その場合はハンドラ内で例外をキャッチする（捕捉しない例外がプロセスを終了させるため）
@@ -20,8 +18,8 @@
 - リソース管理
   - イベントの発行元が購読側より長く生存する場合は、`+=`で購読したイベントハンドラを対応する`-=`で必ず解除する
    （解除し忘れると購読先オブジェクトがGC対象にならず、メモリーリークや多重発火の原因になるため）
-- EF Coreでは`Include`でeager loadingを明示するか`Select`で射影する（暗黙の遅延ロードによるN+1クエリを防ぐため）
-- ドキュメントコメントはXMLドキュメント（`///`）で書き、公開APIには`<summary>`を記述する（内容が自明な場合は省略してよい）
+- EF Coreは取得量とN+1を考慮し、eager loadingと射影を選ぶ
+- XMLドキュメントで公開APIの意図をsummaryへ記述する。自明な内容は省略してよい
 - セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。C#での対応は次のとおり
   - SQLは`SqlCommand.Parameters`／Dapper／EF Coreのパラメーター化クエリを使う
   - `Process.Start`は`ProcessStartInfo.ArgumentList`で引数を渡す
@@ -32,11 +30,8 @@
 
 - テストフレームワークは、対象プロジェクトが既に採用するものへそろえる。
   新規に選ぶ場合は、`dotnet test`で実行でき、並列実行とデータ駆動テストを標準で持つものを選ぶ（`xUnit`など）
-- 非同期処理の完了待ちは`ManualResetEventSlim`／`CountdownEvent`／`TaskCompletionSource`等のイベント駆動同期を使う
-  - `Thread.Sleep`／`Task.Delay`による固定待機は避ける
-- モック／スタブは、インターフェースからテスト用の実装を生成でき、呼び出し引数を検証できるライブラリを使う（`NSubstitute`・`Moq`など）
-  - 外部依存はインターフェース経由で注入し、テスト時に差し替える
-- 時刻は`TimeProvider`（.NET 8以降）を注入し、テストでは`FakeTimeProvider`で固定する
-- ファイルI/Oのテストには一意な一時ディレクトリ（`Path.GetTempPath()` + `Guid.NewGuid()`）を使い、
-  `try`／`finally`で確実にクリーンアップする
+- 非同期処理は固定待機に頼らず、完了を観測できる決定論的な同期で確かめる
+- 外部依存はインターフェース経由で差し替え、必要な呼出契約を検証する
+- 時刻は`TimeProvider`（.NET 8以降）等で注入し、テストの時間を制御する
+- ファイルI/Oは一時領域へ隔離し、終了時に回収する
 - テストプロジェクト名は`xxx.Tests`の規約に揃える

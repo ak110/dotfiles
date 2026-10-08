@@ -180,6 +180,7 @@ def test_windows_locking_processes_classify_and_record_restart_state(
     assert powershell is not None
     text = _read(WINDOWS_TEMPLATE)
     classifier_start = text.index("$escapedMediaRemoteBin =")
+    prologue = text[text.index("$originalOutputEncoding = [Console]::OutputEncoding") : text.index("try {")]
     classifier_end = text.index("\n# uv tool venv", classifier_start)
     classifier = text[classifier_start:classifier_end]
     start = text.index("if ($needsReinstall) {")
@@ -198,6 +199,7 @@ def test_windows_locking_processes_classify_and_record_restart_state(
             """Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 """
+            + prologue
             + setup
             + """
 $stopped = @()
@@ -233,6 +235,7 @@ function Start-Sleep {
             [powershell, "-NoProfile", "-NonInteractive", "-File", str(script)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
 
@@ -371,6 +374,7 @@ def test_expected_shims_cover_project_scripts(template: Path, suffix: str, patte
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 

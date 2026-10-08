@@ -6,37 +6,14 @@ import sys
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import entries as _wi_entries
-from agent_toolkit._atk.wi import filenames as _wi_filenames
-from agent_toolkit._atk.wi import filters as _wi_filters
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
-from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_UWI, WI_TYPES
+from agent_toolkit._atk.wi.constants import WI_TYPE_UWI, WI_TYPES
 from agent_toolkit._atk.wi.formatters import (
     body_summary,
-    parse_source,
-    parse_target_repo,
     uwi_body_summary,
 )
 from agent_toolkit._atk.wi.repo import resolve_repo_id
-
-
-def _state_prefixed_filename_hint(filename: str) -> str | None:
-    """`<状態名>/<ファイル名>`形式の入力に対する案内文を返す。該当しない場合は`None`を返す。
-
-    `show`は5状態フォルダすべてを探索するため、状態名を含む入力は受理しない。
-    共通のファイル名検証は`不正なファイル名`としか示さず正しい入力形式を判断できないため、
-    この形式に限って再実行方法を案内する。共通検証自体は緩和しない。
-    """
-    parts = filename.replace("\\", "/").split("/")
-    if len(parts) != 2 or parts[0] not in WI_STATES:
-        return None
-    remainder = parts[1]
-    if not remainder or remainder in (".", ".."):
-        return None
-    return f"状態名を除いたファイル名を指定する: {remainder}（showは全状態フォルダを探索する）"
-
-
-_STATE_PREFIX_REASON = "状態名付きのファイル名は受理しない"
 
 
 def _summary_line(text: str, kind: str | None) -> str:
@@ -76,15 +53,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if not args.filenames and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")
     summary_only = getattr(args, "summary_only", False)
-    for filename in args.filenames:
-        hint = _state_prefixed_filename_hint(filename)
-        if hint is not None:
-            _outcome.report_failure(f"{_STATE_PREFIX_REASON}: {filename}", next_action=hint)
-            sys.exit(2)
-    filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "show")
-    validated_filenames = [
-        (filename, _wi_filenames.validate_filename(filename, private_notes / WI_STATES[0]).name) for filename in filenames
-    ]
+    validated_filenames = _wi_entries.validate_named_filenames(private_notes, args.filenames)
     if not args.skip_pull:
         with _wi_sync.repo_lock(private_notes):
             _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
@@ -93,30 +62,9 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if validated_filenames:
         # 省略時に使う条件は対象集合を走査する照会のためのものであり、ファイル名で一意に指定した項目へは適用しない。
         explicit_repos = () if getattr(args, "target_repo_defaulted", False) else resolved_repos
-        repo_matcher = _wi_filters.TargetRepoMatcher(explicit_repos)
-        selected_by_name: list[tuple[pathlib.Path, str, str, str, str | None]] = []
-        missing: list[str] = []
-        for requested_filename, normalized_filename in validated_filenames:
-            selected_entry: tuple[pathlib.Path, str, str, str, str | None] | None = None
-            for state in WI_STATES:
-                path = private_notes / state / normalized_filename
-                if not path.exists():
-                    continue
-                text = path.read_text(encoding="utf-8")
-                kind = _wi_entries.entry_type_of(path, text)
-                if "all" not in args.type and kind not in args.type:
-                    continue
-                target_repo = parse_target_repo(text)
-                if not repo_matcher.matches(target_repo):
-                    continue
-                if not _wi_filters.source_matches_any(parse_source(text), args.source):
-                    continue
-                selected_entry = (path, target_repo, text, state, kind)
-                break
-            if selected_entry is None:
-                missing.append(requested_filename)
-            else:
-                selected_by_name.append(selected_entry)
+        selected_by_name, missing = _wi_entries.read_named_entries(
+            private_notes, validated_filenames, target_repo=explicit_repos, entry_type=args.type, source=args.source
+        )
         if missing:
             for filename in missing:
                 _outcome.report_failure(

@@ -8,7 +8,7 @@ import json
 import pathlib
 from collections.abc import Coroutine
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -1074,15 +1074,20 @@ async def test_show_reports_held_result_and_live_background_tasks(
 
 
 @pytest.mark.asyncio
-async def test_send_message_finalizes_pending_result_before_starting_reply(
+@pytest.mark.parametrize("mixed", [False, True])
+async def test_send_message_preserves_background_and_mixed_waits(
+    mixed: bool,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保留中の継続入力は初回結果をprevious_resultとして新しいturnを始める。"""
+    """保留中の追送で背景taskを維持し、古い待機表明を結果として渡さない。"""
     client = ControlledClaudeClient("claude-send")
-    manager, backend = _manager(client, monkeypatch)
+    manager, _backend = _manager(client, monkeypatch)
     try:
         session = await _start(manager, tmp_path, monkeypatch)
+        if mixed:
+            session_registry.publish("mixed-child", terminal=False)
+            _emit_child_start(client, "mixed-child")
         client.emit(TaskStartedMessage("task-1"))
         client.emit(ResultMessage("初回結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
@@ -1090,20 +1095,181 @@ async def test_send_message_finalizes_pending_result_before_starting_reply(
         response = await manager.send_message(session.session_id, "続行", timeout=1)
 
         assert response["delivery"] == "reply_started"
-        assert response["previous_result"]["agent_message"] == "初回結果"
-        assert response["previous_result"]["error"] == {"unfinishedBackgroundTasks": ["task-1"], "heldResultFinalized": True}
+        assert "previous_result" not in response
         assert session.status == "running"
         assert session.auto_resume_consumed is False
         assert set(session.live_tasks) == {"task-1"}
         assert [delivery_payload(value) for value in client.queries] == ["調査", "続行"]
 
+        client.emit(ResultMessage("追送後も待機"))
+        await _await_state(lambda: session.awaiting_auto_resume)
         client.emit(TaskUpdatedMessage("task-1", "completed"))
-        client.emit(ResultMessage("reply結果"))
-        result = await _wait_with_timeout(manager, 1)
+        if mixed:
+            session_registry.publish("mixed-child", terminal=True)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        if mixed:
+            await _await_state(lambda: len(client.queries) == 3)
+        client.emit(ResultMessage("reply結果", origin={"kind": "task-notification"}))
+        result = await wait_task
         assert result["agent_message"] == "reply結果"
         assert "error" not in result
     finally:
-        await backend.close()
+        await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("completion_order", ["before", "during", "after"])
+async def test_send_message_wait_survives_failure_and_completion_order(
+    completion_order: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """失敗した追送を再試行しても子と背景wait出力を保持し、到着順によらず完了を一度だけ届ける。"""
+    client = ControlledClaudeClient("claude-send-retry")
+    manager, _backend = _manager(client, monkeypatch)
+    child = "send-retry-child"
+    output = tmp_path / "wait-output.txt"
+    output.write_text("", encoding="utf-8")
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        session_registry.publish(child, terminal=False)
+        _emit_child_start(client, child)
+        client.emit(AssistantMessage([SimpleNamespace(id="wait", name="Bash", input={"command": "atk agents wait"})]))
+        client.emit(
+            UserMessage(
+                [
+                    SimpleNamespace(
+                        tool_use_id="wait",
+                        content=f"Command running in background with ID: wait-job. Output is being written to: {output}.",
+                    )
+                ]
+            )
+        )
+        client.emit(ResultMessage("待機中"))
+        await _await_state(lambda: session.awaiting_auto_resume)
+        original_query = client.query
+        monkeypatch.setattr(client, "query", AsyncMock(side_effect=RuntimeError("配送拒否")))
+        failed = await manager.send_message(session.session_id, "追加指示", timeout=1)
+        assert failed["delivery"] == "reply_failed"
+        assert "previous_result" not in failed
+        assert session.awaiting_auto_resume and not session.result_available
+        assert session.live_child_session_ids == {child}
+        assert session.agents_wait_background_outputs == {str(output)}
+
+        async def query(prompt: str) -> None:
+            if completion_order == "during":
+                session_registry.publish(child, terminal=True)
+            await original_query(prompt)
+
+        monkeypatch.setattr(client, "query", query)
+        if completion_order == "before":
+            session_registry.publish(child, terminal=True)
+        for _ in range(2):
+            response = await manager.send_message(session.session_id, "追加指示", timeout=1)
+            assert "previous_result" not in response
+            assert session.live_child_session_ids == {child}
+            assert session.agents_wait_background_outputs == {str(output)}
+            client.emit(ResultMessage("追送後の待機"))
+            await _await_state(lambda: session.awaiting_auto_resume)
+        if completion_order == "after":
+            session_registry.publish(child, terminal=True)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        await _await_state(lambda: len(client.queries) == 4)
+        client.emit(ResultMessage("子の結果を確認した"))
+        result = await wait_task
+        assert result["agent_message"] == "子の結果を確認した"
+        assert "error" not in result
+        assert len(client.queries) == 4
+        assert "agent_message" not in await _wait_with_timeout(manager, 0)
+        assert session.result_delivered
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("completion_order", ["before", "during", "after"])
+async def test_send_message_preserves_child_wait_until_completion(
+    completion_order: str,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Codexの公開追送を失敗・反復しても子を追跡し、保留結果の公開と同じ完了の二重配送を避ける。"""
+    manager, backend, session, _writer = _codex_parent_with_child(tmp_path)
+    child = "codex-send-child"
+
+    class Client:
+        """既存のCodex JSON-RPC契約でthread再開とturn開始の受理を制御する。"""
+
+        closed = False
+        reader_failure = None
+        fail = True
+        turns = 0
+
+        async def request(self, method: str, _params: Any, *, on_sent: Any = None) -> dict[str, Any]:
+            if method == "thread/resume":
+                return {"thread": {"id": session.session_id}}
+            assert method == "turn/start"
+            if self.fail:
+                raise codex_backend.JsonRpcResponseError(method, -32602, "配送拒否")
+            if completion_order == "during":
+                session_registry.publish(child, terminal=True)
+            self.turns += 1
+            if on_sent is not None:
+                on_sent()
+            return {"turn": {"id": f"turn-{self.turns + 1}"}}
+
+        async def close(self) -> None:
+            self.closed = True
+
+    client = Client()
+    backend.client = cast(codex_backend.JsonRpcProcess, client)
+    session_registry.publish(child, terminal=False)
+    try:
+        await _complete_codex_turn_with_child(backend, session, child)
+        failed = await manager.send_message(session.session_id, "追加指示", timeout=1)
+        assert failed["delivery"] == "reply_failed"
+        assert "previous_result" not in failed
+        assert session.awaiting_auto_resume and not session.result_available
+        assert session.live_child_session_ids == {child}
+        client.fail = False
+        if completion_order == "before":
+            session_registry.publish(child, terminal=True)
+        for _ in range(2):
+            response = await manager.send_message(session.session_id, "追加指示", timeout=1)
+            assert response["delivery"] == "reply_started"
+            assert "previous_result" not in response
+            assert session.live_child_session_ids == {child}
+            await backend._handle_notification(
+                {
+                    "method": "turn/completed",
+                    "params": {"threadId": session.session_id, "turn": {"id": session.turn_id, "status": "completed"}},
+                }
+            )
+            assert session.awaiting_auto_resume
+        if completion_order == "after":
+            session_registry.publish(child, terminal=True)
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
+        await _await_state(lambda: client.turns == 3)
+        await backend._handle_notification(
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": session.session_id,
+                    "turn": {
+                        "id": session.turn_id,
+                        "status": "completed",
+                        "items": [{"type": "agentMessage", "id": "final", "text": "子の結果を確認した"}],
+                    },
+                },
+            }
+        )
+        result = await wait_task
+        assert result["agent_message"] == "子の結果を確認した"
+        assert "error" not in result
+        assert client.turns == 3
+        assert "agent_message" not in await _wait_with_timeout(manager, 0)
+        assert session.result_delivered
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio

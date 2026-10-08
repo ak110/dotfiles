@@ -45,6 +45,7 @@ from agent_toolkit._agents_server.state import (
     ModelCandidate,
     SessionResumeState,
     SessionState,
+    remove_lifecycle_listener,
     remove_terminal_listener,
     remove_touch_listener,
 )
@@ -689,6 +690,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         self._publish_closed_sessions()
         remove_terminal_listener(self._carry_over_unavailable_candidate)
         remove_terminal_listener(self._record_pending_unobserved_child_sessions)
+        remove_lifecycle_listener(self._record_resources)
         if self._status_writer is not None:
             remove_touch_listener(self._status_writer.schedule)
             self._status_writer.deactivate()

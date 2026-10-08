@@ -50,6 +50,17 @@ ModelCandidate = tuple[str, str, str]
 LaunchKind = task_documents.LaunchKind
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()
 _TERMINAL_LISTENERS: set[Callable[[SessionState], None]] = set()
+_LIFECYCLE_LISTENERS: set[Callable[[SessionState, str], None]] = set()
+
+
+def add_lifecycle_listener(listener: Callable[[SessionState, str], None]) -> None:
+    """稼働の開始と結果確定の通知先を登録する。"""
+    _LIFECYCLE_LISTENERS.add(listener)
+
+
+def remove_lifecycle_listener(listener: Callable[[SessionState, str], None]) -> None:
+    """稼働の開始と結果確定の通知先を解除する。"""
+    _LIFECYCLE_LISTENERS.discard(listener)
 
 
 def add_touch_listener(listener: Callable[[], None]) -> None:
@@ -299,6 +310,7 @@ class SessionState:
     _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_launch_info: session_registry.LaunchInfo | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
+    _lifecycle_running: bool = dataclasses.field(default=False, repr=False)
 
     @property
     def terminal(self) -> bool:
@@ -407,6 +419,16 @@ class SessionState:
         else:
             self.retention_deadline = None
         registry_terminal = self.result_available
+        event = None
+        if self.status == "running" and not self._lifecycle_running:
+            self._lifecycle_running = True
+            event = "start"
+        elif registry_terminal and self._lifecycle_running:
+            self._lifecycle_running = False
+            event = "terminal"
+        if event is not None:
+            for lifecycle_listener in tuple(_LIFECYCLE_LISTENERS):
+                lifecycle_listener(self, event)
         # 再開ではbackendが再生成したsessionを公開した後に起動情報を写すため、起動情報の変化でも公開し直す。
         launch_info = session_registry.LaunchInfo.of(self)
         if (
@@ -583,7 +605,7 @@ def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[
     return result
 
 
-def initialize_turn(session: SessionState, *, reset_progress: bool = True) -> None:
+def initialize_turn(session: SessionState, *, reset_progress: bool = True, preserve_waits: bool = False) -> None:
     """新しいturnの開始前に共有状態を初期化する。"""
     session.turn_id = ""
     session.status = "running"
@@ -602,14 +624,15 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True) -> No
     session.interrupt_requested = False
     session.turn_completed = False
     session.failure_pending_completion = False
-    session.live_child_session_ids.clear()
-    session.terminal_child_session_ids.clear()
-    session.agents_wait_background_outputs.clear()
-    session.child_tool_uses.clear()
+    if not preserve_waits:
+        session.live_child_session_ids.clear()
+        session.terminal_child_session_ids.clear()
+        session.agents_wait_background_outputs.clear()
+        session.child_tool_uses.clear()
+        session.auto_resume_consumed = False
     session.pending_tool_uses.clear()
     session.last_action = ""
     session.awaiting_auto_resume = False
-    session.auto_resume_consumed = False
     session.auto_resume_deadline = None
     session.pending_result = None
     session.finalized_at = None
@@ -620,10 +643,10 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True) -> No
     session.touch()
 
 
-def begin_reply(session: SessionState) -> None:
+def begin_reply(session: SessionState, *, preserve_waits: bool = False) -> None:
     """終端済みsessionの新しいturnを開始する準備をする。"""
     session.turn_seq += 1
-    initialize_turn(session, reset_progress=False)
+    initialize_turn(session, reset_progress=False, preserve_waits=preserve_waits)
     session.reply_attempted = True
     session.reply_turn_started = False
     session.touch()

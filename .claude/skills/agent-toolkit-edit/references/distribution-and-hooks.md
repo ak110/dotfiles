@@ -95,17 +95,13 @@ Pythonモジュールを保持し続ける。このため、`agent-toolkit/agent
 
 自動化手段の選定は`agent-toolkit:writing-standards`の振り分け規定と本節に従う。
 
-PreToolUseフックの配置先は複数ある。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
-類似チェックが既に片方に存在する場合は、そちらへ統合する（努力目標。定義を1か所にすると改訂も1か所で済む）。
-両方に該当すると判断した場合は、そのチェックがdotfiles固有の運用前提（配布先ディレクトリ構成・個人の命名規約など）へ
-依存するかで判定し、依存しないものをプラグインへ置く。
+PreToolUseは、dotfiles固有の運用前提（配布先構成・個人の命名など）への依存で配置を決める。依存する機能は個人フック、依存しない汎用機能はプラグインへ置く。
+類似チェックがある側への統合を優先する（努力目標。定義と改訂箇所を1か所にする）。
 
 - `pytools/claude_hook/pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる。
-  dotfiles固有の運用前提（`~/.claude/`がchezmoi配布先、個人の命名規約など）に依存するチェック向け。
   配置した場合は`share/claude_settings_json_managed.posix.json`および同`win32.json`の
   `matcher`に新しいツール名を追加する必要があるか確認する
 - `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`経由で他者にも配布される。
-  汎用的な制約・自動化（一般的な文字化け検出、PowerShell互換性チェックなど）向け。
   配置した場合は`SKILL.md`「バージョン更新」の手順に従う
 - agent-toolkitの公開スクリプトは`uv run --project <plugin root> --locked --no-default-groups <対象>`形式で呼び出す。
   対象は`agent-toolkit/hooks/hooks.json`、MCP manifest、`agent-toolkit/bin/atk`および`agent-toolkit/skills/*/scripts/`配下のスクリプトである。
@@ -145,9 +141,8 @@ PostToolUseは成功した開始ツール`start`（全`mode`。統合前の旧�
 
 ## 複数hook共存時の識別子
 
-agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
-自身のhookメッセージを他hookから判別するため、`atk-auto`要素の`source`へagent-toolkitでは接頭辞の無い生成元名を置く。agent-toolkit以外の生成元は`<所有者>/<生成元>`の形で区別する。
-XML境界と属性の規約は`agent-toolkit:writing-standards`の`references/claude-hooks-messages.md`「コーディングエージェント宛てメッセージの標識」に従う。
+同一イベントで共存するhookを識別するため、`atk-auto`の`source`はagent-toolkitなら接頭辞の無い生成元名、他の生成元なら`<所有者>/<生成元>`とする。
+XML境界と属性の規約は`agent-toolkit:writing-standards`の`references/claude-hooks-messages.md`「エージェント宛てメッセージの標識」に従う。
 
 ## marketplace管理
 

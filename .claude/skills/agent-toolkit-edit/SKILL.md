@@ -10,7 +10,7 @@ description: >
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex）
 
-本スキルは`agent-toolkit/`配下の配布物と`.claude-plugin/marketplace.json`を編集する主体へ、ファイル構成と参照方向、付帯作業の扱い、版数更新と編集手順、配布と同期の手順を提供する。
+本スキルは`agent-toolkit/`配下の配布物と`.claude-plugin/marketplace.json`を編集するエージェントへ、ファイル構成と参照方向、付帯作業の扱い、版数更新と編集手順、配布と同期の手順を提供する。
 エージェント向け文書の改訂に共通する手順（編集前に読む記録、規範を削除・縮小するときの消失確認など）は`dotfiles-norm-edit`が扱う。
 
 ## 読込表
@@ -34,9 +34,8 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 - ルールファイルの配布先と同期の仕組みは`dotfiles-repo-layout`「ディレクトリ構造の注意」が扱う。編集は配布元の`agent-toolkit/rules/`へ行う
 - `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保ち、メインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く
   （`scripts/gen_install_files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
-  - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範とホスト別規範
-- `agent-toolkit/share/rules-common.codex.md`: Codexの全主体（メイン、サブエージェントおよび委譲先）向けの規範
+- `agent-toolkit/share/rules-common.codex.md`: Codexの全てのエージェント（メイン、サブエージェントおよび委譲先）向けの規範
 - `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範。Codex委譲先の固有差分が必要になった場合は`rules-subagent.codex.md`を追加する
   振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
@@ -48,12 +47,8 @@ WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.sub
 dotfilesの`pytools/`のコードはagent-toolkitの`_`で始まるprivateなサブパッケージもimportしてよい。
 pytoolsはagent-toolkitを同じリポジトリからpath依存のeditable導入で解決し、両者の版がずれないためである。
 agent-toolkit側でprivateなモジュールを移動・改名する変更では、同じ変更単位で`pytools/`のimportもそろえる。
-配置先は「いつコンテキストへ読み込ませたいか」で判断する。
-
-- 常時ロードする指針と特定タスクでのみ必要な指針の振り分けは`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」に従う
-- 配置先は規範の成立条件が依存する対象で判定し、表層識別子はその判定の入力から外す
-- プロジェクト固有のツール、データ、命名、CI、運用手順へ依存する内容はプロジェクト側へ置く
-- 固有要素を同種の任意要素へ置換しても判定基準、工程順序、停止条件が成立する内容だけを配布物候補とする
+配置は読込時点と成立条件の依存先で決め、表層識別子だけでは決めない。常時・タスク別の振り分けは`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」に従う。
+プロジェクト固有の前提（ツール・データ・命名・CI・運用など）に依存する内容はプロジェクト側へ置く。固有要素を同種の任意要素へ置換しても判定・工程順・停止条件が成立する内容だけを配布物候補とする。
 
 ## 付帯作業の扱い
 
@@ -71,13 +66,9 @@ agent-toolkit側でprivateなモジュールを移動・改名する変更では
 
 ## 配布物としての記述方針
 
-配布先のエンドユーザーは本リポジトリのdotfilesユーザーとは限らないため、手元プロジェクト固有の前提は条件付きで書く。
+配布先をdotfilesユーザーに限定せず、設定値・ディレクトリ構成など異なり得る前提は条件付きで書く。
 
-- 自己言及的な表現・特定設定値の前提・特定ディレクトリ構成の前提を決め打ちせず、
-  異なり得る条件は条件付き表現（「`～`設定が有効な場合、」など）で書く
-- 仕様参照としてのルール名・設定キー名・選択肢の説明は記述してよい
-- 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述する。
-  エンドユーザー環境側の連携設計（個人フックとの優先順序など）は記述の対象から外す
+- docstring・コメント・本文は配布物自身の挙動・仕様を扱い、個人フックとの連携などエンドユーザー環境側の設計は含めない。仕様参照のルール名・設定キー名・選択肢の説明は記述してよい
 - 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く（努力目標。素のスキル名は同名スキルの探索を招く）。
   `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
   サブエージェント名は起動指示・地の文とも短縮せず完全名称で書く
@@ -104,7 +95,7 @@ agent-toolkit側でprivateなモジュールを移動・改名する変更では
 
 ## スキル間の連携
 
-`agent-toolkit/skills/single-lane-process/`配下以外の`agent-toolkit/`配下のエージェント向け文書は、`single-lane-process`を名指ししない（努力目標。共通側が読み替え先を知らない一方向依存に保つと、改訂が片側で済む）。共通契約と`agent-toolkit:process-wi`側は読み替え先を知らない一方向の依存とし、`single-lane-process`側から共通契約を参照して上書きを定める。エンドユーザーが起動名を知る必要がある`docs/`配下の案内と方針記録は対象外とする。
+`single-lane-process`側が共通契約を参照して上書きを定める一方向の依存にする。そのため、`agent-toolkit/skills/single-lane-process/`以外の`agent-toolkit/`配下のエージェント向け文書は`single-lane-process`を名指ししない（努力目標。共通側の改訂を不要にする）。起動名を伝える`docs/`配下の案内と方針記録は対象外とする。
 
 ## バージョン更新
 
@@ -125,7 +116,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 `agent-toolkit/`配下を編集する手順は次のとおりとする。push前の版数更新は必須である（同じバージョンでは`claude plugin update`が「最新です」と返しエンドユーザーへ配信されないため）。
 
 1. 本節の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`で版数を更新する。
-   実行する主体と時点は`references/version-bump.md`「plan modeでの取り扱い」に従う。
+   実行するエージェントと時点は`references/version-bump.md`「plan modeでの取り扱い」に従う。
    `agent-toolkit:process-wi`のレーンは実行せず版数区分を計画へ記録し、終端担当が全レーンのマージ後に1回実行する
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
 3. Agent Plugins・Codex向け派生JSONを前掲の生成器で同期する
@@ -166,6 +157,6 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。変�
 
 `agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:writing-standards`の
 `references/session-state-and-flags.md`に置く。フラグを追加・変更する際は同ファイルを更新する。
-`agent-toolkit:writing-standards`は文章・コードの作成基準を持ち、hook実装の基準もここに含む。エージェントの行動自体の規範は、実行主体別ルールまたは作業別スキルに置く。
+`agent-toolkit:writing-standards`は文章・コードの作成基準を持ち、hook実装の基準もここに含む。エージェントの行動自体の規範は、役割別ルールまたは作業別スキルに置く。
 
 hookの実装・編集とセッション状態の設計・変更では`agent-toolkit:writing-standards`を起動する。

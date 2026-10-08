@@ -99,3 +99,32 @@ def test_unparsable_frontmatter_guides_to_report_instead_of_edit(
 
     assert f"`atk wi show {path.name}`" in next_action
     assert "書式を直す" not in next_action
+
+
+def test_named_read_preserves_request_order_filters_and_state_priority(tmp_path: pathlib.Path) -> None:
+    """明示名の共通読取は要求順と状態順を保ち、条件外の項目を不在へ分ける。"""
+    first, second, absent = (f"20261008-000000-00{index}.md" for index in (1, 2, 3))
+    for state in _wi_constants.WI_STATES:
+        (tmp_path / state).mkdir()
+    for index, state in enumerate(_wi_constants.WI_STATES[:2]):
+        (tmp_path / state / first).write_text(
+            f"---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\n---\n# 候補{index}\n",
+            encoding="utf-8",
+        )
+    (tmp_path / _wi_constants.WI_STATES[-1] / second).write_text(
+        "---\ntarget_repo: github.com/example/bar\ntype: uwi\nsource: user\n---\n# 別項目\n",
+        encoding="utf-8",
+    )
+    names = _wi_entries.validate_named_filenames(tmp_path, [second, first, first, absent])
+    selected, missing = _wi_entries.read_named_entries(tmp_path, names, target_repo=None)
+    assert [item[0].name for item in selected] == [second, first]
+    assert selected[1][3] == _wi_constants.WI_STATES[0]
+    assert missing == [absent]
+    selected, missing = _wi_entries.read_named_entries(
+        tmp_path, names, target_repo="github.com/example/foo", entry_type=("awi",), source="agent"
+    )
+    assert [item[0].name for item in selected] == [first]
+    assert missing == [second, absent]
+    selected, missing = _wi_entries.read_named_entries(tmp_path, names, target_repo=None, source="user")
+    assert [item[0].name for item in selected] == [second]
+    assert missing == [first, absent]

@@ -56,11 +56,14 @@ def _restore_session_listeners() -> Any:
     """
     touch_listeners = set(state._TOUCH_LISTENERS)
     terminal_listeners = set(state._TERMINAL_LISTENERS)
+    lifecycle_listeners = set(state._LIFECYCLE_LISTENERS)
     yield
     state._TOUCH_LISTENERS.clear()
     state._TOUCH_LISTENERS.update(touch_listeners)
     state._TERMINAL_LISTENERS.clear()
     state._TERMINAL_LISTENERS.update(terminal_listeners)
+    state._LIFECYCLE_LISTENERS.clear()
+    state._LIFECYCLE_LISTENERS.update(lifecycle_listeners)
 
 
 @pytest.fixture

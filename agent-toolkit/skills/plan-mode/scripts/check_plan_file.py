@@ -51,18 +51,20 @@ type _ClassifiedWarning = tuple[_WarningKind, str]
 
 
 def _check_lane_selection(
-    text: str,
+    plans: tuple[tuple[pathlib.Path | None, str], ...],
     selection_file: pathlib.Path,
     lane: str,
     prior_plans: tuple[pathlib.Path, ...],
     work_dir: pathlib.Path,
 ) -> list[str]:
-    """選定済みWI集合と人間由来行の根拠が計画に対応するか確かめる。
+    """選定済みWI集合と人間由来行の根拠が計画の集合に対応するか確かめる。
 
     計画と比べる集合は、指定レーンのうち`再開位置`を持たない（キーが無いか値が`なし`の）選定結果の項目とする。
     旧欄名で書かれた選定結果も`agent_toolkit._plan.selection`で新しい欄名へそろえて読む。
     再開位置を持つ項目は再開位置が指す既存計画で続け、新しい計画の対象にしないためである。
     不一致は、割り当てた要求を実行とレビューへ渡せない致命的な問題としてerrorにする。
+    `plans`は今回確かめる計画（初回に分割した計画の集合では全件）の本文と、診断の先頭に付けるパスの組とする。
+    1件だけを確かめる場合はパスを`None`にして従来と同じ診断を返す。
     """
     selection = yaml.safe_load(selection_file.read_text(encoding="utf-8"))
     items = _selection.decisions(selection)
@@ -89,11 +91,17 @@ def _check_lane_selection(
     if not expected:
         return [f"レーン{lane}の全WIが再開位置を持ち、新しい計画の対象となるWIが無い。再開位置が指す既存計画で続ける"]
 
-    metadata, metadata_errors = structure.parse_plan_metadata(text)
-    if metadata_errors:
-        return metadata_errors
     errors: list[str] = []
-    related = list(metadata.related_wi) if metadata is not None else []
+    related: list[tuple[str, str]] = []
+    for label, text in plans:
+        metadata, metadata_errors = structure.parse_plan_metadata(text)
+        if metadata_errors:
+            errors.extend(_labeled(label, error) for error in metadata_errors)
+            continue
+        if metadata is not None:
+            related.extend(metadata.related_wi)
+    if errors and len(plans) == 1:
+        return errors
     for prior_plan in prior_plans:
         if not prior_plan.is_absolute():
             raise ValueError(f"先行計画は絶対パスで指定する: {prior_plan}")
@@ -118,12 +126,25 @@ def _check_lane_selection(
             "計画メタ情報の`関連WI`を、選定結果のうち再開位置を持たないそのレーンのWIへそろえる"
         )
 
+    for label, text in plans:
+        errors.extend(_labeled(label, error) for error in _missing_human_reasons(text))
+    return errors
+
+
+def _labeled(label: pathlib.Path | None, message: str) -> str:
+    """計画の集合を確かめる場合に、診断の先頭へ対象の計画のパスを付ける。"""
+    return message if label is None else f"{label}: {message}"
+
+
+def _missing_human_reasons(text: str) -> list[str]:
+    """`## 実施内容`の人間由来の行のうち、`根拠`が空か`-`の行を診断として返す。"""
     headings = structure.extract_headings(text)
     section_index = structure.find_heading_index(headings, 2, structure.PLAN_H2_ACTION)
     if section_index is None:
-        return errors
+        return []
     start, end = structure.heading_subtree_range(headings, section_index)
     lines = structure.lines_within(list(structure.iter_markdown_body_lines(text)), start, end)
+    errors: list[str] = []
     for table in structure.extract_tables(lines):
         if table.header != structure.PLAN_HUMAN_ACTION_TABLE_HEADER:
             continue
@@ -709,7 +730,7 @@ def check(
             raise ValueError("選定結果の出力先ファイルは絶対パス、レーン識別子はlane-NN形式で指定する")
         if plan_path in prior_plans or len(prior_plans) != len(set(prior_plans)):
             raise ValueError("追加計画と先行計画に同じファイルを重複指定できない")
-        errors.extend(_check_lane_selection(text, selection_file, lane, prior_plans, work_dir))
+        errors.extend(_check_lane_selection(((None, text),), selection_file, lane, prior_plans, work_dir))
     if reject_progress_log_rows and structure.has_progress_log_rows(text):
         errors.append(f"`## {progress_heading}`は起草時に内容行を置かない")
     warnings: list[str] = []
@@ -720,6 +741,63 @@ def check(
             warnings.append(message)
             if warning_details is not None:
                 warning_details.append((kind, message))
+    return errors, warnings
+
+
+def check_plan_set(
+    plan_paths: tuple[pathlib.Path, ...],
+    work_dir: pathlib.Path,
+    *,
+    reject_migration_warnings: bool = False,
+    reject_progress_log_rows: bool = False,
+    selection_file: pathlib.Path | None = None,
+    lane: str | None = None,
+    prior_plans: tuple[pathlib.Path, ...] = (),
+    agent_rule_paths: tuple[str, ...] = (),
+    warning_details: list[_ClassifiedWarning] | None = None,
+) -> tuple[list[str], list[str]]:
+    """初回に分割した複数の計画を1回で確かめ、診断の先頭へ対象の計画のパスを付けて返す。
+
+    各計画の構造・行数・移行警告は`check`と同じ規則で個別に判定する。
+    選定レーンのWI集合は、全ての計画と先行計画の`関連WI`の和集合と1回で比べる。
+    1計画ずつ先行計画を指定して確かめると、まだ確かめていない後続計画のWIが集合に入らず途中の計画で不一致になるためである。
+    返却予定のエージェント向け文書のパスは、いずれかの計画の本文にあれば受理する。
+    文書を変更する計画だけがそのパスを持つため、全計画へ一律には求めない。
+    """
+    resolved = [path.resolve() for path in (*plan_paths, *prior_plans)]
+    if len(resolved) != len(set(resolved)):
+        raise ValueError("確かめる計画と先行計画に同じファイルを重複指定できない")
+    if (selection_file is None) != (lane is None):
+        raise ValueError("選定結果の出力先ファイルとレーン識別子は組で指定する")
+    if prior_plans and selection_file is None:
+        raise ValueError("先行計画は選定結果の出力先ファイルとレーン識別子とともに指定する")
+    errors: list[str] = []
+    warnings: list[str] = []
+    texts: list[tuple[pathlib.Path | None, str]] = []
+    for plan_path in plan_paths:
+        plan_details: list[_ClassifiedWarning] = []
+        plan_errors, plan_warnings = check(
+            plan_path,
+            work_dir,
+            reject_migration_warnings=reject_migration_warnings,
+            reject_progress_log_rows=reject_progress_log_rows,
+            warning_details=plan_details,
+        )
+        errors.extend(_labeled(plan_path, error) for error in plan_errors)
+        warnings.extend(_labeled(plan_path, warning) for warning in plan_warnings)
+        if warning_details is not None:
+            warning_details.extend(plan_details)
+        texts.append((plan_path, plan_path.read_text(encoding="utf-8")))
+    errors.extend(
+        f"返却予定のエージェント向け文書のパスがどの計画の本文にもない: {relative}。"
+        "編集対象のパスを、その文書を変更する計画の本文へ明記し、同じ一覧でもう一度確かめる"
+        for relative in agent_rule_paths
+        if not any(relative in text for _path, text in texts)
+    )
+    if selection_file is not None and lane is not None:
+        if not selection_file.is_absolute() or re.fullmatch(r"lane-\d{2}", lane) is None:
+            raise ValueError("選定結果の出力先ファイルは絶対パス、レーン識別子はlane-NN形式で指定する")
+        errors.extend(_check_lane_selection(tuple(texts), selection_file, lane, prior_plans, work_dir))
     return errors, warnings
 
 
@@ -748,7 +826,16 @@ def _origin_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
 def main(argv: list[str] | None = None) -> int:
     """コマンドライン引数を解析し、計画が基準を満たすか確かめる。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("plan_file", type=pathlib.Path, metavar="PATH", help="検証する計画ファイル（`<計画名>.md`）の絶対パス")
+    parser.add_argument(
+        "plan_file",
+        type=pathlib.Path,
+        nargs="+",
+        metavar="PATH",
+        help=(
+            "検証する計画ファイル（`<計画名>.md`）の絶対パス。初回に分割した計画の集合は全件を並べ、"
+            "各計画の構造と選定レーンへのWIの対応を1回で確かめる"
+        ),
+    )
     parser.add_argument(
         "--work-dir",
         type=pathlib.Path,
@@ -785,17 +872,32 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = parser.parse_args(argv)
         warning_details: list[_ClassifiedWarning] = []
-        errors, warnings = check(
-            args.plan_file,
-            args.work_dir,
-            reject_migration_warnings=args.reject_migration_warnings,
-            reject_progress_log_rows=args.reject_progress_log_rows,
-            selection_file=args.selection_file,
-            lane=args.lane,
-            prior_plans=tuple(args.prior_plan or ()),
-            agent_rule_paths=tuple(args.agent_rule_path or ()),
-            warning_details=warning_details,
-        )
+        prior_plans = tuple(args.prior_plan or ())
+        agent_rule_paths = tuple(args.agent_rule_path or ())
+        if len(args.plan_file) == 1:
+            errors, warnings = check(
+                args.plan_file[0],
+                args.work_dir,
+                reject_migration_warnings=args.reject_migration_warnings,
+                reject_progress_log_rows=args.reject_progress_log_rows,
+                selection_file=args.selection_file,
+                lane=args.lane,
+                prior_plans=prior_plans,
+                agent_rule_paths=agent_rule_paths,
+                warning_details=warning_details,
+            )
+        else:
+            errors, warnings = check_plan_set(
+                tuple(args.plan_file),
+                args.work_dir,
+                reject_migration_warnings=args.reject_migration_warnings,
+                reject_progress_log_rows=args.reject_progress_log_rows,
+                selection_file=args.selection_file,
+                lane=args.lane,
+                prior_plans=prior_plans,
+                agent_rule_paths=agent_rule_paths,
+                warning_details=warning_details,
+            )
     except (OSError, UnicodeDecodeError, yaml.YAMLError, ValueError) as error:
         _next_action.report(
             f"計画を確認するための入力を読み込めない: {error}",

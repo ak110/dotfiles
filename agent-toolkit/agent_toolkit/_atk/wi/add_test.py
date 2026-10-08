@@ -12,7 +12,7 @@ import pathlib
 import re
 import subprocess
 import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from typing import Any, cast
 
 import pytest
@@ -889,7 +889,7 @@ def test_add_reloads_saved_details_while_holding_lock(
     lock_state = {"held": False}
 
     @contextlib.contextmanager
-    def tracked_lock(*_args: object, **_kwargs: object) -> Iterator[None]:
+    def tracked_lock(*_args: object, **_kwargs: object) -> Generator[None]:
         lock_state["held"] = True
         try:
             yield

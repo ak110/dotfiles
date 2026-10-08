@@ -23,7 +23,7 @@ import json
 import pathlib
 import tempfile
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from typing import TextIO
 
 from agent_toolkit._common import transcript as _transcript
@@ -65,7 +65,7 @@ def _lock_path(path: pathlib.Path) -> pathlib.Path:
 
 
 @contextlib.contextmanager
-def _locked_state(path: pathlib.Path) -> Iterator[None]:
+def _locked_state(path: pathlib.Path) -> Generator[None]:
     """状態ファイルと同じセッション別ロックを取得して処理を実行する。"""
     lock_file: TextIO
     path.parent.mkdir(parents=True, exist_ok=True)

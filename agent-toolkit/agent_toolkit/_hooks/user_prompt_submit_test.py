@@ -16,7 +16,7 @@ import time
 import pytest
 
 from agent_toolkit._common import automated_prompt
-from agent_toolkit._hooks import user_prompt_submit
+from agent_toolkit._hooks import posttooluse, user_prompt_submit
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
@@ -28,17 +28,9 @@ _NOTICE_PATTERN = re.compile(
     r'(?=[^>]*\skind="notice")[^>]*>\n',
 )
 _NOTICE_BOUNDARY_PATTERN = re.compile(r"</?atk-auto\b[^>]*>")
-_EXPECTED_VERIFICATION_NOTICE_BODY = (
-    "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙し、"
-    "それぞれの内容を現物（原文・実装・規範・実行結果・対象の目的を定める仕様・設計記録）と比べて確かめてから応答する。"
-    "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動する。"
-    "不具合の有無・原因・直し方を述べるか確認で提案する場合も、述べる前に起動する。"
-    "対処を委譲先やAWIへ委ねる場合も含む。"
-    "現物と比べて確かめられない場合は同意も変更もしない。"
-    "いずれも含まないと判定した発話では、現物との比較を要さないと判断して次の工程へ進む。"
-    "稼働中の依頼がある場合は、未完了工程が元の依頼の目的に対応するか確かめてから次に実行する工程を確定する。"
-    "同じ論点で修正が続く場合は意図と要件への影響を確かめ、確定できないときだけユーザー確認する。"
-)
+# 注記の文意は定義の読解で確かめ、ここでは通常発話へ同じ定義の本文がそのまま届くことを確かめる。
+# 本文を写した期待値は文面の変更に追随させるだけで、届いた判断の正しさを検出しないため使わない。
+_EXPECTED_VERIFICATION_NOTICE_BODY = posttooluse.VERIFICATION_NOTICE_BODY
 
 
 def _notice_bodies(context: str) -> list[str]:

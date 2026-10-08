@@ -97,7 +97,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 
 ## 失敗時の扱い
 
-本節の`pre_fixup`・`fixup`・`autosquash`・`amend`の各phase名と、続行できない理由を返す返却は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める実装担当の契約の値とする。この契約を受け取っていない主体は、続行できない理由の返却に代えて同じ観測結果を委譲元へ報告する。
+本節の`pre_fixup`・`fixup`・`autosquash`・`amend`の各phase名と、続行できない理由を返す返却は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める実装担当の契約の値とする。この契約を受け取っていないエージェントは、続行できない理由の返却に代えて同じ観測結果を委譲元へ報告する。
 
 `pre_fixup`・`fixup`・`autosquash`・`amend`のいずれかが失敗した場合は、失敗の事実と観測結果を委譲元へ返して同じ指摘の履歴統合を終える。復旧操作と再試行は委譲元の判断を得てから行う。失敗時点の履歴とindexの状態は失敗の種別ごとに異なり、状態を確定しない復旧操作と再試行はcommitの消失を招く。
 `--no-update-refs`を付けずにrebaseを実行したことを観測した場合は、local branch refsを列挙し、事前に保持したOIDと比べる。base branchを含む作業branch以外のrefが移動していた場合は、移動したref、変更前後のOIDおよび復旧操作に必要な許可を委譲元へ返し、自らrefを復旧しない。

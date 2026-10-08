@@ -40,7 +40,7 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
 
 
 @contextlib.contextmanager
-def _curl_env_overrides() -> collections.abc.Iterator[dict[str, str] | None]:
+def _curl_env_overrides() -> collections.abc.Generator[dict[str, str] | None]:
     """Windowsで失効確認先の不達を許すcurl設定を用意し、子プロセスへ渡す環境上書きを返す。
 
     curlは`-q`が無いと最初に`CURL_HOME`配下の`.curlrc`を読む。公式インストーラーに加えて

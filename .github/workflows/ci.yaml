@@ -195,25 +195,17 @@ jobs:
         if: steps.owner.outputs.owns == 'true'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
-      - name: agent-toolkit環境の事前構築
-        if: steps.owner.outputs.owns == 'true'
-        # ランチャーへ到達するテストが初回起動でagent-toolkit/.venvを構築すると、Windowsランナーのcopy方式の
-        # 導入時間がテストごとの60秒上限へ算入されるため、構築をテストより前に済ませる。
-        # 指定はagent-toolkit/bin/atk.cmdのuv runと同じにし、ランチャーがこの環境をそのまま使えるようにする。
-        # 「Windows境界テスト」へ追加する実ランチャー到達テストもこの環境を使う。
-        shell: pwsh
-        working-directory: ${{ env.DOTFILES_DIR }}
-        run: uv sync --project agent-toolkit --locked --no-default-groups
       - name: Windows境界テスト
         if: steps.owner.outputs.owns == 'true'
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
           uv run --python 3.14 pytest -q
+          post_apply_template_test.py
           agent-toolkit/agent_toolkit/_atk/managed_temp
           agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
           agent-toolkit/agent_toolkit/_plan/structure
-          agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py::test_public_command_runs_platform_launcher
+          agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py::test_public_command_reads_wi_in_process
       - name: 公開入口ランチャーの動作確認
         if: steps.owner.outputs.owns == 'true'
         shell: pwsh

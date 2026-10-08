@@ -12,6 +12,7 @@ import logging
 import pathlib
 from typing import Any
 
+from agent_toolkit._agents_server import status_reader
 from agent_toolkit._agents_server.notice_inbox import take_notices
 from agent_toolkit._agents_server.retained_results import read_retained_result, take_result
 from agent_toolkit._agents_server.shared_layout import (
@@ -41,7 +42,7 @@ from agent_toolkit._common.atomic_file import atomic_write
 _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")
 
 HEARTBEAT_INTERVAL_SECONDS = 30
-HEARTBEAT_EXPIRY_SECONDS = 120
+HEARTBEAT_EXPIRY_SECONDS = status_reader.HEARTBEAT_EXPIRY_SECONDS
 
 
 def live_writer_holds_session(session_id: str, state_root: pathlib.Path | None = None) -> bool:
@@ -89,6 +90,11 @@ class StatusFileWriter:
         self._published_results: set[str] = set()
         self._projected_host_session_id: str | None = None
         self._active = False
+
+    @property
+    def state_root(self) -> pathlib.Path | None:
+        """同じ共有状態を診断するときに使う状態ディレクトリを返す。"""
+        return self._state_root
 
     @property
     def path(self) -> pathlib.Path:
@@ -429,8 +435,8 @@ def _read_live_status_file(path: pathlib.Path, cutoff: datetime.datetime) -> tup
     読めないファイルと失効したファイルは`None`を返す。生存の印を持たないファイルは失効を判定できないため読む。
     """
     try:
-        payload: Any = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        payload = status_reader.read_payload(path)
+    except (OSError, UnicodeError, ValueError):
         return None
     if not isinstance(payload, dict) or payload.get("version") != 1:
         return None
@@ -439,13 +445,10 @@ def _read_live_status_file(path: pathlib.Path, cutoff: datetime.datetime) -> tup
     if (host is not None and not isinstance(host, str)) or not isinstance(sessions, list):
         return None
     heartbeat_at = payload.get("heartbeat_at")
-    if heartbeat_at is not None:
-        try:
-            heartbeat = datetime.datetime.fromisoformat(heartbeat_at) if isinstance(heartbeat_at, str) else None
-        except ValueError:
-            return None
-        if heartbeat is None or heartbeat.tzinfo is None or heartbeat < cutoff:
-            return None
+    if heartbeat_at is not None and not isinstance(heartbeat_at, str):
+        return None
+    if not status_reader.heartbeat_is_current(payload, cutoff):
+        return None
     return host, [
         (item["session_id"], item["status"])
         for item in sessions

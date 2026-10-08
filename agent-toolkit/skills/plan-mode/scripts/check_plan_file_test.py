@@ -709,21 +709,33 @@ def _run_lane_check_with_resumed(
     related: tuple[str, ...],
     decisions: list[dict[str, str]],
 ) -> tuple[int, str]:
-    """再開位置を含む選定結果をそのまま`plan-check`のCLIに渡し、終了コードと標準エラーを返す。
-
-    CLIは由来を比べるWIファイルをprivate-notesから探すため、実行環境の実物に依存しないよう
-    一時のprivate-notesへ計画の人間由来行が指すWIファイルを置く。
-    """
-    private_notes = work_dir / "private-notes"
-    inbox = private_notes / "inbox"
-    inbox.mkdir(parents=True)
-    (inbox / _plan_fixture.WI_FILES[0][0]).write_text("---\nstatus: inbox\n---\n\n# 要求\n\n本文。\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+    """再開位置を含む選定結果をそのまま`plan-check`のCLIに渡し、終了コードと標準エラーを返す。"""
     plan_path = work_dir / "plan.md"
     plan_path.write_text(
         _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=tuple((name, "要求") for name in related)),
         encoding="utf-8",
     )
+    return _run_plan_cli(work_dir, monkeypatch, [plan_path], decisions, (_plan_fixture.WI_FILES[0][0],))
+
+
+def _run_plan_cli(
+    work_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plans: typing.Sequence[pathlib.Path],
+    decisions: list[dict[str, str]],
+    wi_names: typing.Iterable[str],
+    *extra: str,
+) -> tuple[int, str]:
+    """計画を公開CLIへ1回渡し、終了コードと標準エラーを返す。
+
+    CLIは由来を比べるWIファイルをprivate-notesから探すため、実行環境の実物に依存しないよう
+    一時のprivate-notesへ計画の人間由来行が指すWIファイルを置く。
+    """
+    inbox = work_dir / "private-notes" / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    for name in wi_names:
+        (inbox / name).write_text("---\nstatus: inbox\n---\n\n# 要求\n\n本文。\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(work_dir / "private-notes"))
     selection_path = work_dir / "selection.yaml"
     selection_path.write_text(yaml.safe_dump({"decisions": decisions}, allow_unicode=True), encoding="utf-8")
     stderr = io.StringIO()
@@ -737,7 +749,8 @@ def _run_lane_check_with_resumed(
                 "lane-01",
                 "--work-dir",
                 str(work_dir),
-                str(plan_path),
+                *extra,
+                *(str(plan) for plan in plans),
             ]
         )
     return code, stderr.getvalue()
@@ -853,6 +866,153 @@ def test_cli_accepts_prior_plan_for_added_lane_wi(repo: tuple[pathlib.Path, str]
         )
         == 0
     )
+
+
+_SET_AWIS = ("20260831-000000-101.md", "20260831-000000-102.md", "20260831-000000-103.md")
+
+
+def _write_set_plan(work_dir: pathlib.Path, name: str, awi: str, *, padding: int = 0) -> pathlib.Path:
+    """1件のAWIを担当する自己完結した現行形式の計画を書き、そのパスを返す。
+
+    実施内容の人間由来の行も担当AWIを指すように置き換え、計画ごとの関連WIと由来を一致させる。
+    `padding`行の本文を加えると、計画の行数の警告の境界を計画ごとに作成できる。
+    """
+    content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((awi, "分割した要求"),)).replace(
+        _plan_fixture.WI_FILES[0][0], awi
+    )
+    if padding:
+        content = content.replace("対象の公開契約を更新する。", "\n".join(["対象の公開契約を更新する。"] * padding), 1)
+    path = work_dir / name
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _run_set_cli(
+    work_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plans: typing.Sequence[pathlib.Path],
+    decisions: list[dict[str, str]],
+    *extra: str,
+) -> tuple[int, str]:
+    """計画の集合を公開CLIへ1回渡す。集合の各計画が由来に使うWI本文を一時のprivate-notesへ置く。"""
+    wi_names = {*_SET_AWIS, _RESUMED_AWI, "20260831-000000-104.md"}
+    return _run_plan_cli(work_dir, monkeypatch, plans, decisions, wi_names, *extra)
+
+
+def _set_decisions(*names: str) -> list[dict[str, str]]:
+    return [{"awi": name, "lane": "lane-01"} for name in names]
+
+
+def test_cli_checks_initial_plan_set_once(repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """初回に分割した3計画を1回の公開CLIで確かめ、各計画の構造とレーンのWI集合が一致すれば成功する。
+
+    先行計画の逐次指定ではまだ確かめていない後続計画のWIが集合に入らず途中の計画で失敗するため、集合を1回で受け取る。
+    """
+    work_dir, _base = repo
+    plans = [_write_set_plan(work_dir, f"plan-{index}.md", awi) for index, awi in enumerate(_SET_AWIS)]
+    code, stderr = _run_set_cli(work_dir, monkeypatch, plans, _set_decisions(*_SET_AWIS))
+    assert code == 0, stderr
+    assert not stderr
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_fragments"),
+    [
+        ("broken-structure", ("plan-1.md: ",)),
+        ("missing-wi", ("欠落=['20260831-000000-104.md']",)),
+        ("extra-wi", ("余剰=['20260831-000000-103.md']",)),
+        ("duplicate-wi", ("計画間で関連WIが重複する", "20260831-000000-101.md")),
+        ("missing-reason", ("plan-2.md: 人間由来行の根拠がない",)),
+    ],
+)
+def test_cli_plan_set_reports_failing_plan_or_wi(
+    repo: tuple[pathlib.Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected_fragments: tuple[str, ...],
+) -> None:
+    """集合の任意の1計画の構造不備と、WIの不足・余分・計画間の重複・根拠の欠落を、原因の計画かWIを示して失敗にする。"""
+    work_dir, _base = repo
+    awis: list[str] = list(_SET_AWIS)
+    selected: list[str] = list(_SET_AWIS)
+    if case == "duplicate-wi":
+        awis[2] = awis[0]
+        selected = selected[:2]
+    plans = [_write_set_plan(work_dir, f"plan-{index}.md", awi) for index, awi in enumerate(awis)]
+    if case == "broken-structure":
+        text = plans[1].read_text(encoding="utf-8")
+        plans[1].write_text(text.replace(f"## {_plan_format.PLAN_H2_TERMINATION}\n", "", 1), encoding="utf-8")
+    elif case == "missing-wi":
+        selected.append("20260831-000000-104.md")
+    elif case == "extra-wi":
+        selected = selected[:2]
+    elif case == "missing-reason":
+        text = plans[2].read_text(encoding="utf-8")
+        plans[2].write_text(text.replace(_plan_fixture.WI_ACTION_REASON, "-", 1), encoding="utf-8")
+    code, stderr = _run_set_cli(work_dir, monkeypatch, plans, _set_decisions(*selected))
+    assert code == 1, stderr
+    for fragment in expected_fragments:
+        assert fragment in stderr, stderr
+
+
+def test_cli_plan_set_excludes_resumed_and_includes_prior_plan(
+    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """再開位置を持つ項目を集合から外し、凍結済み先行計画の関連WIを和集合へ含めて判定する。"""
+    work_dir, _base = repo
+    prior = _write_set_plan(work_dir, "prior.md", _SET_AWIS[0])
+    plans = [_write_set_plan(work_dir, f"plan-{index}.md", awi) for index, awi in enumerate(_SET_AWIS[1:])]
+    decisions = [*_set_decisions(*_SET_AWIS), _RESUMED_DECISION]
+    code, stderr = _run_set_cli(work_dir, monkeypatch, plans, decisions, "--prior-plan", str(prior))
+    assert code == 0, stderr
+    assert not stderr
+
+
+def test_cli_plan_set_rejects_duplicate_paths(repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """確かめる計画どうし、確かめる計画と先行計画に同じファイルを指定した入力は入力誤り（終了コード2）にする。"""
+    work_dir, _base = repo
+    plans = [_write_set_plan(work_dir, f"plan-{index}.md", awi) for index, awi in enumerate(_SET_AWIS[:2])]
+    code, stderr = _run_set_cli(work_dir, monkeypatch, [*plans, plans[0]], _set_decisions(*_SET_AWIS[:2]))
+    assert code == 2, stderr
+    code, stderr = _run_set_cli(work_dir, monkeypatch, plans, _set_decisions(*_SET_AWIS[:2]), "--prior-plan", str(plans[1]))
+    assert code == 2, stderr
+
+
+def test_cli_plan_set_accepts_agent_rule_path_in_any_plan(
+    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """返却予定のエージェント向け文書は、その文書を変更する計画にだけあれば受理し、どの計画にも無ければ失敗にする。"""
+    work_dir, _base = repo
+    plans = [_write_set_plan(work_dir, f"plan-{index}.md", awi) for index, awi in enumerate(_SET_AWIS[:2])]
+    documented = "agent-toolkit/skills/search/SKILL.md"
+    text = plans[1].read_text(encoding="utf-8")
+    plans[1].write_text(text.replace("対象の公開契約を更新する。", f"`{documented}`を更新する。", 1), encoding="utf-8")
+    decisions = _set_decisions(*_SET_AWIS[:2])
+    code, stderr = _run_set_cli(work_dir, monkeypatch, plans, decisions, "--agent-rule-path", documented)
+    assert code == 0, stderr
+    missing = "agent-toolkit/skills/" + "absent-skill/SKILL.md"
+    code, stderr = _run_set_cli(work_dir, monkeypatch, plans, decisions, "--agent-rule-path", missing)
+    assert code == 1, stderr
+    assert f"どの計画の本文にもない: {missing}" in stderr
+
+
+@pytest.mark.parametrize(("total_lines", "warned"), [(1200, False), (1201, True)])
+def test_cli_plan_set_keeps_line_warning_boundary_per_plan(
+    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, total_lines: int, warned: bool
+) -> None:
+    """集合の中でも行数の警告を計画ごとに判定し、1200行は警告せず1201行は対象の計画を示して警告する。"""
+    work_dir, _base = repo
+    base_lines = len(_write_set_plan(work_dir, "probe.md", _SET_AWIS[0]).read_text(encoding="utf-8").splitlines())
+    (work_dir / "probe.md").unlink()
+    plans = [
+        _write_set_plan(work_dir, "plan-0.md", _SET_AWIS[0], padding=total_lines - base_lines + 1),
+        _write_set_plan(work_dir, "plan-1.md", _SET_AWIS[1]),
+    ]
+    assert len(plans[0].read_text(encoding="utf-8").splitlines()) == total_lines
+    code, stderr = _run_set_cli(work_dir, monkeypatch, plans, _set_decisions(*_SET_AWIS[:2]))
+    assert code == 0, stderr
+    assert (f"[warn] {plans[0]}: 計画の行数が閾値を超えている" in stderr) is warned, stderr
+    assert str(plans[1]) not in stderr
 
 
 @pytest.mark.parametrize("root", ("", "-"))

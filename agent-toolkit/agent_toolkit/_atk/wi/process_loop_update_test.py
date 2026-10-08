@@ -740,7 +740,7 @@ def test_has_upstream_diff_acquires_repo_lock_for_target(monkeypatch: pytest.Mon
     acquired: list[pathlib.Path] = []
 
     @contextlib.contextmanager
-    def fake_repo_lock(repo_path: pathlib.Path, **_kwargs: object) -> collections.abc.Iterator[None]:
+    def fake_repo_lock(repo_path: pathlib.Path, **_kwargs: object) -> collections.abc.Generator[None]:
         acquired.append(repo_path)
         yield
 

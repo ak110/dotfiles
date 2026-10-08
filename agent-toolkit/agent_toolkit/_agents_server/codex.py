@@ -887,10 +887,11 @@ class AppServerManager:
         """実行中turnへ追加指示を送り、終端競合時は同じthreadのreplyを開始する。"""
         validate_prompt(prompt)
         async with session.turn_control_lock:
-            if session.awaiting_auto_resume and session.pending_result is not None:
-                # 保留中の追加指示は、保留した結果を確定してから同じsessionのreplyとして配送する。
-                # 確定した結果は`previous_result`で返すため、終端結果ファイルへは公開しない。
+            if session.awaiting_auto_resume and session.auto_resume_deadline is None and session.pending_result is not None:
                 resume_waits.finalize_pending_result(session, touch=False)
+            if session.awaiting_auto_resume and session.pending_result is not None:
+                delivery, status, _ = await self._start_reply_locked(session, prompt)
+                return {"delivery": delivery, "previous_result": {}, **status}
             if session.terminal:
                 previous_result = self._capture_result(session)
                 delivery, status, error = await self._start_reply_locked(session, prompt)
@@ -990,7 +991,8 @@ class AppServerManager:
         prompt: str,
     ) -> tuple[str, dict[str, Any], BaseException | None]:
         """lock取得済みのsessionへreplyを開始し、公開状態と失敗分類を返す。"""
-        self._begin_reply(session)
+        held = resume_waits.HeldTurn.capture(session)
+        begin_reply(session, preserve_waits=held is not None)
         try:
             client = await self._ensure_client()
             writer_session_id = await self._resume_thread(
@@ -1000,15 +1002,34 @@ class AppServerManager:
             )
             if writer_session_id is not None:
                 self._writer_session_ids[session.session_id] = writer_session_id
+        except asyncio.CancelledError:
+            if held is not None:
+                held.restore(session)
+            raise
         except Exception as exc:
+            if held is not None:
+                held.restore(session)
+                await self._notify_waiters()
+                return "reply_failed", session.public_status(), exc
             await self._mark_failed(session, exc, retryable=True)
             return "reply_failed", session.public_status(), exc
         try:
             await self._start_turn(session, prompt, client)
+        except asyncio.CancelledError:
+            if held is not None and not session.turn_start_sent:
+                held.restore(session)
+            elif held is not None:
+                session.turn_start_ambiguous = True
+                session.touch()
+            raise
         except Exception as exc:
             if self._turn_start_response_is_ambiguous(client, exc):
                 await self._mark_turn_start_ambiguous(session, exc)
                 return "reply_ambiguous", session.public_status(), None
+            if held is not None:
+                held.restore(session)
+                await self._notify_waiters()
+                return "reply_failed", session.public_status(), exc
             await self._mark_failed(session, exc, retryable=False)
             return "reply_failed", session.public_status(), exc
         return "reply_started", session.public_status(), None

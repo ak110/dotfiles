@@ -11,7 +11,7 @@ Claude Codeは公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>
 取得方法は`host-official-references.md`の「公式リファレンス（Claude Code）」が定める。
 Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次資料とする。
 参照対象は入力ペイロード仕様（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`等）と出力形式仕様とする。
-参照したセクション名は計画ファイルの実装者向け領域へ引用する（努力目標。計画を読む実装者とレビュー担当が根拠の節をたどれるようにするため）。
+参照したセクション名は計画ファイルの実装者向け領域へ引用する（努力目標。計画を読む実装担当とレビュー担当が根拠の節をたどれるようにするため）。
 payload設計は、上記の一次資料が示す仕様から確定する。
 
 - 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutにホスト別契約の応答JSONを出力する。exit codeは0で正常完了とする

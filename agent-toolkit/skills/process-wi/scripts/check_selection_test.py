@@ -85,6 +85,167 @@ def _dispatch(*args: str) -> int:
     return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
 
 
+@pytest.mark.parametrize("wi_type", ["awi", "uwi"])
+@pytest.mark.parametrize("code", [False, True])
+@pytest.mark.parametrize("suffix", ["", ":42", ":42-58", "#節", "#API.method"])
+def test_public_check_distinguishes_file_references(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    wi_type: str,
+    code: bool,
+    suffix: str,
+) -> None:
+    """参照位置と定義名をファイルへ混入せず、元ファイルの被覆不足だけを公開入口から返す。"""
+    repo, notes = env
+    reference = "src/model.py" + suffix
+    if code:
+        reference = f"`{reference}`"
+    body = f"{reference}の`Worker.run`と`Service.start`を修正する。"
+    heading = "## 反映内容と反映先" if wi_type == "awi" else "## 回答"
+    (notes / "processing" / "a.md").write_text(f"---\ntype: {wi_type}\n---\n\n{heading}\n\n{body}\n", encoding="utf-8")
+    path = tmp_path / "selection.yaml"
+    for covered in (False, True):
+        _write_selection(path, [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"] if covered else []}])
+        assert _dispatch(str(path), "--work-dir", str(repo)) == (0 if covered else 1)
+        result = capsys.readouterr()
+        errors = [line for line in result.err.splitlines() if line.startswith("a.md:")]
+        assert errors == ([] if covered else ["a.md: 未被覆: src/model.py"])
+
+
+def test_public_check_limits_body_scope(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """指定外の本文を取得せず、追加した処理対象WIだけの違反と成功要約、省略時の全件検査を保つ。"""
+    repo, notes = env
+    _awi(notes, "new.md", "`src/model.py`を変更する。")
+    _awi(notes, "second.md", "`README.md`を変更する。")
+    decisions: list[dict[str, typing.Any]] = [
+        {"WI": "old.md", "レーン": "lane-01", "書込対象": []},
+        {"WI": "new.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+        {"WI": "second.md", "レーン": "lane-01", "書込対象": []},
+        {"WI": "none.md", "レーン": "なし", "書込対象": []},
+    ]
+    path = _write_selection(tmp_path / "selection.yaml", decisions)
+    args = (str(path), "--work-dir", str(repo))
+    scope = ("--body-wi", "new.md", "--body-wi", "second.md", "--body-wi", "new.md", "--body-wi", "none.md")
+    assert _dispatch(*args, *scope) == 1
+    result = capsys.readouterr()
+    assert "second.md: 未被覆: README.md" in result.err
+    assert "old.md:" not in result.err
+    assert "元本文へ戻り" in result.err
+    decisions[2]["書込対象"] = ["README.md"]
+    _write_selection(path, decisions)
+    assert _dispatch(*args, *scope) == 0
+    result = capsys.readouterr()
+    assert result.err == ""
+    assert '本文検査対象: ["new.md", "second.md"]' in result.out
+    assert "分類と配分の意味はWIの元本文" in result.out
+    assert _dispatch(*args) == 1
+    assert "old.md: 本文を特定できない" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("violation", "expected", "code"),
+    [
+        ("overlap", "重複パスの根拠不足", 1),
+        ("resume", "同じ再開計画を別レーン", 1),
+        ("stage", "後段には先行レーン", 1),
+        ("public", "`公開工程の書込対象`の根拠不足", 1),
+        ("structure", "未知の欄", 2),
+        ("model-type", "担当別のengine:model/effort", 2),
+        ("model-conflict", "実装担当のモデル指定が衝突", 1),
+    ],
+)
+def test_public_check_keeps_global_checks(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    violation: str,
+    expected: str,
+    code: int,
+) -> None:
+    """本文の指定外にある不正でも、選定全体の関係と入力構造の違反を見落とさない。"""
+    repo, notes = env
+    _awi(notes, "new.md", "`README.md`を変更する。")
+    old: dict[str, typing.Any] = {"WI": "old.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}
+    other: dict[str, typing.Any] = {"WI": "other.md", "レーン": "lane-02", "書込対象": []}
+    new = {"WI": "new.md", "レーン": "lane-03", "書込対象": ["README.md"]}
+    costs: list[dict[str, typing.Any]] = [{"レーン": f"lane-0{number}"} for number in range(1, 4)]
+    if violation == "overlap":
+        other["書込対象"] = ["src/model.py"]
+    elif violation == "resume":
+        old["再開位置"] = other["再開位置"] = "/plans/shared.md"
+    elif violation == "stage":
+        costs[0]["段階"] = 2
+    elif violation == "public":
+        old["公開工程の書込対象"] = ["README.md"]
+    elif violation == "structure":
+        old["unknown"] = True
+    elif violation == "model-type":
+        old["担当モデル"] = {"実装担当": "invalid"}
+    else:
+        other["レーン"] = "lane-01"
+        costs.pop(1)
+        old["担当モデル"] = {"実装担当": "codex:first/high"}
+        other["担当モデル"] = {"実装担当": "codex:second/high"}
+    path = _write_selection(tmp_path / "selection.yaml", [old, other, new], costs)
+    assert _dispatch(str(path), "--work-dir", str(repo), "--body-wi", "new.md") == code
+    result = capsys.readouterr()
+    assert expected in result.err
+    assert "本文を特定できない" not in result.err
+    assert result.out == ""
+
+
+@pytest.mark.parametrize("violation", ["coverage", "classification", "norm-spec"])
+def test_public_check_applies_body_rules_only_to_selected_wis(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    violation: str,
+) -> None:
+    """本文由来の被覆・区分・規範指定の違反を持つ同じ項目を、指定ありと指定なしで比較する。"""
+    repo, notes = env
+    _awi(notes, "old.md", "`src/model.py`を変更する。")
+    _awi(notes, "new.md", "`README.md`を変更する。")
+    old: dict[str, typing.Any] = {"WI": "old.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}
+    if violation == "coverage":
+        old["書込対象"] = []
+        expected = "未被覆"
+    elif violation == "classification":
+        old["書き込まない反映先"] = ["src/model.py"]
+        expected = "区分間の重複"
+    else:
+        (repo / "pyproject.toml").write_text(
+            '[[tool.agent-toolkit.pick-wi-check.norm-spec]]\nname = "仕様"\npaths = ["src/"]\nrequire-text = ["設計を読む"]\n',
+            encoding="utf-8",
+        )
+        expected = "プロジェクト規範の指定の不足"
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [old, {"WI": "new.md", "レーン": "lane-01", "書込対象": ["README.md"]}],
+    )
+    args = (str(path), "--work-dir", str(repo))
+    assert _dispatch(*args, "--body-wi", "new.md") == 0
+    assert capsys.readouterr().err == ""
+    assert _dispatch(*args, "--body-wi", "old.md") == 1
+    assert f"old.md: {expected}" in capsys.readouterr().err
+    assert _dispatch(*args) == 1
+    assert f"old.md: {expected}" in capsys.readouterr().err
+
+
+def test_public_check_rejects_unknown_body_wi(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """集合の指定誤りは本文違反とは区別して終了コード2と未知のWI名を返す。"""
+    repo, _notes = env
+    path = _write_selection(tmp_path / "selection.yaml", [])
+    assert _dispatch(str(path), "--work-dir", str(repo), "--body-wi", "missing.md") == 2
+    result = capsys.readouterr()
+    assert "`--body-wi`に選定結果に無いWIがある: missing.md" in result.err
+    assert result.out == ""
+
+
 def test_reports_uncovered_broad_and_invalid_exclusion(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -750,10 +911,12 @@ def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short
     assert capsys.readouterr().err == ""
 
 
-def test_reflected_paths_exist_or_name_complete_new_files(env: tuple[pathlib.Path, pathlib.Path]) -> None:
-    """多様な表記を混ぜた反映先から抽出した全パスが、実在するか、親の実在する完全なファイル名である。
+def test_reflected_paths_from_mixed_notations(env: tuple[pathlib.Path, pathlib.Path]) -> None:
+    """多様な表記を混ぜた反映先から、本文が指すファイルと範囲だけを抽出する。
 
-    抽出の字句規則を変えてグロブの断片、不在の範囲、拡張子の欠けた名前を抽出するようになると失敗する。
+    グロブの断片、不在の範囲、拡張子の欠けた名前、ファイルの「の」に続く定義名（`Worker.run`など）を
+    抽出すると、期待する集合に無い架空のパスが加わって失敗する。架空のパスがpickerへ渡ると、
+    pickerは本文が書き込まないパスを`書込対象`か`書き込まない反映先`へ分類させられる。
     """
     repo, _notes = env
     _track(repo, *_PLUGIN_SHARE_FILES)
@@ -762,16 +925,18 @@ def test_reflected_paths_exist_or_name_complete_new_files(env: tuple[pathlib.Pat
         "変更対象はsrc/model.pyとdocs/development/design.mdである。"
         "`share/rules-*.md`、`agent-toolkit/share/rules-*.md`、`share/exec-review.{parent,subagent}.md`、`src/*.py`を改める。"
         "略記の`rules/`・`UCR/`・`share/pick-wi.parent.md`、範囲`src/`と`missing/`、"
-        "src/のmodel.py・new_module.py・draft、`docs/development/new.md`と`docs/development/new.`も扱う。\n"
+        "src/のmodel.py・new_module.py・draft、`docs/development/new.md`と`docs/development/new.`も扱う。"
+        "src/model.pyのWorker.runと`src/model.py:42`の`Service.start`も直す。\n"
     )
 
-    paths = check_selection.reflected_paths(body, repo)
-
-    assert "agent-toolkit/share/pick-wi.parent.md" in paths
-    for path in paths:
-        target = repo / path
-        complete_new_file = re.fullmatch(r"[^/]*[^/.]\.[A-Za-z0-9]+", path.rsplit("/", 1)[-1]) and target.parent.is_dir()
-        assert target.exists() or complete_new_file, path
+    assert check_selection.reflected_paths(body, repo) == {
+        "agent-toolkit/share/pick-wi.parent.md",
+        "docs/development/design.md",
+        "docs/development/new.md",
+        "src/",
+        "src/model.py",
+        "src/new_module.py",
+    }
 
 
 @pytest.mark.parametrize("legacy", [False, True])

@@ -1,6 +1,6 @@
-# rules-common.codex.md: Codexの全主体に適用する規範
+# rules-common.codex.md: Codexの全てのエージェントに適用する規範
 
-本文書はCodexの`AGENTS.md`としてCodexの全主体（メインエージェント、サブエージェントおよび委譲先）へ配送され、`agent-toolkit/rules/`配下の常時規範と同じ拘束力を持つ。
+本文書はCodexの`AGENTS.md`としてCodexの全てのエージェント（メインエージェント、サブエージェントおよび委譲先）へ配送され、`agent-toolkit/rules/`配下の常時規範と同じ拘束力を持つ。
 Codex固有の公開能力と常時規範との差分を扱う。Codexのメインエージェントだけに適用する差分は`rules-main.codex.md`が扱う。
 
 ## Codex固有の入出力
@@ -21,7 +21,7 @@ Codex固有の公開能力と常時規範との差分を扱う。Codexのメイ�
 
 ## Claude Code向けに置かれた規範の読込
 
-Claude Codeが自動で読み込む規範のうち本文書へ埋め込まれていないものは、Codexの主体も読み、各ファイルが定める適用範囲に作業が入る条文に従う。Claude Codeと同じ作業を同じ規範の下で進めるためである。
+Claude Codeが自動で読み込む規範のうち本文書へ埋め込まれていないものは、Codexのエージェントも読み、各ファイルが定める適用範囲に作業が入る条文に従う。Claude Codeと同じ作業を同じ規範の下で進めるためである。
 
 - プロジェクト直下の`.agents/skills/`、`AGENTS.md`がない場合の`CLAUDE.md`、`CLAUDE.local.md`および作業に該当する`.claude/rules/`を読む
 - ユーザー単位の`~/.claude/CLAUDE.md`と、`~/.claude/rules/`直下の`*.local.md`（実行ホストごとにユーザーが置く規範）は、存在する場合に作業の開始時に読む

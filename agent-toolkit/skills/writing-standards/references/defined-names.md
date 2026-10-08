@@ -36,7 +36,8 @@
 
 | 名前 | 指示対象 | 定義元 |
 | --- | --- | --- |
-| ユーザー | エージェントへ指示する人 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
+| ユーザー | エージェントへ要求・指示・判断を与える人 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
+| エージェント | ユーザーの要求に応じて調査・判断・作業をするコーディングエージェント（メインエージェント・サブエージェント・委譲先） | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | エンドユーザー | 成果物を使う人 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | 選定工程 | process-wiの工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | レーン工程 | process-wiの工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
@@ -83,11 +84,11 @@
 | 委譲の要否判定 | 委譲の判定 | `agent-toolkit/skills/delegation/references/routing.md` |
 | 元担当 | 既存の委譲先 | `agent-toolkit/skills/delegation/references/codex-runtime.md`「後続操作の共通先行条件」 |
 | 独立文脈レビュー | レビューの形態 | `agent-toolkit/skills/delegation/references/routing.md`「会話を引き継ぐ委譲」 |
-| 委譲元 | 委譲の主体 | `agent-toolkit/skills/delegation/SKILL.md` |
-| 委譲先 | 委譲の主体 | `agent-toolkit/skills/delegation/SKILL.md` |
+| 委譲元 | 委譲先を起動したエージェント | `agent-toolkit/skills/delegation/SKILL.md` |
+| 委譲先 | 委譲元が起動したエージェント | `agent-toolkit/skills/delegation/SKILL.md` |
 | 委譲プロンプト | 委譲の指示 | `agent-toolkit/skills/delegation/references/base-contract.md` |
 | 返却値 | 委譲先の出力 | `agent-toolkit/skills/delegation/references/base-contract.md` |
-| エージェント向け文書 | 文書の種別 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
+| エージェント向け文書 | エージェントが直接読み込む文書の種別 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
 | 読込表 | 文書内の表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「読込表」 |
 | 配送範囲表 | 文書内の表 | `agent-toolkit/skills/writing-standards/references/delivery-scope.md`冒頭 |
 | 常時規範 | 規範の種別 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |

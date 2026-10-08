@@ -56,4 +56,11 @@ export function register(on: On): void {
     const { Markdown } = $.ui.resolve(e);
     return <Markdown text={message} />;
   });
+
+  // 成功結果はモデルへ返し、画面には本文の行だけを残す。エラーは後続の描画で示す。
+  on("ui.render", { component: "ToolResult" }, ($, e, next) => {
+    if (e.props.tool !== fullName($.plugin.name) || e.props.isErrored) return next(e);
+    const { Box } = $.ui.resolve(e);
+    return <Box />;
+  });
 }

@@ -12,7 +12,7 @@ import typing
 
 
 @contextlib.contextmanager
-def exclusive_file_lock(path: pathlib.Path) -> typing.Iterator[None]:
+def exclusive_file_lock(path: pathlib.Path) -> typing.Generator[None]:
     """`path`をロックファイルとしてプロセス間の排他ロックを保持する。
 
     ロックファイルの親ディレクトリが無ければ作成する。

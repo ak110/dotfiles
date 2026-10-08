@@ -17,7 +17,7 @@ Claude Codeが表示する`Stop hook error: JSON validation failed`はプロン�
 `/goal`を設定したセッションでは、その表示がコマンド型hookの出力形式とは無関係に現れる。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日」にある。
 
-PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一の通知手段として使う。各フィールドがターン継続を強制するかは後掲の表に従う。
+PreToolUse・PostToolUse・UserPromptSubmitでエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一の通知手段として使う。各フィールドがターン継続を強制するかは後掲の表に従う。
 stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 `systemMessage`はユーザーの判断・操作に影響する情報通知に限って使う。決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象は通知の対象に含めない。
 Stop/SubagentStopでそのターン継続を強制する用途は、エラーとして遮断する場合（振り返り誘導等）に`decision: "block"`＋`reason`を、フックの想定内の助言に`hookSpecificOutput.additionalContext`を採用する。
@@ -25,14 +25,14 @@ Stop/SubagentStopでそのターン継続を強制する用途は、エラーと
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | コーディングエージェント | 行動を促す主要な通知手段。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
-| `hookSpecificOutput.updatedToolOutput` | コーディングエージェント | PostToolUseでモデルへ渡すツール結果の置き換え。同じイベントの複数のhookは元の出力に並行して動き、最後に返った置き換えが採られる |
-| `reason` | コーディングエージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
-| `permissionDecisionReason` | deny時はコーディングエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
+| `hookSpecificOutput.additionalContext` | エージェント | 行動を促す主要な通知手段。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
+| `hookSpecificOutput.updatedToolOutput` | エージェント | PostToolUseでモデルへ渡すツール結果の置き換え。同じイベントの複数のhookは元の出力に並行して動き、最後に返った置き換えが採られる |
+| `reason` | エージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
+| `permissionDecisionReason` | deny時はエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
 | `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
 | `decision.*` | PermissionRequest専用 | 許可・拒否の決定。`hookSpecificOutput`直下に置く |
 
-deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届くため、重複表示を避けて片方に統一する（努力目標。両方へ書くと同じ本文を2回読ませるため）。
+deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもエージェントに届くため、重複表示を避けて片方に統一する（努力目標。両方へ書くと同じ本文を2回読ませるため）。
 
 `decision: "block"`の挙動はイベント別に異なる。
 Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。

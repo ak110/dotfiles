@@ -169,7 +169,7 @@ def test_index_uses_nanosecond_mtime_and_size_as_invalidation_key(
         return original_stat(candidate, *args, **kwargs)
 
     @contextlib.contextmanager
-    def scandir(directory: pathlib.Path) -> typing.Iterator[list[types.SimpleNamespace]]:
+    def scandir(directory: pathlib.Path) -> typing.Generator[list[types.SimpleNamespace]]:
         with original_scandir(directory) as entries:
             yield [
                 types.SimpleNamespace(name=entry.name, path=entry.path, stat=reported_stat, is_symlink=entry.is_symlink)
@@ -210,7 +210,7 @@ def _report_fixed_stat(
         return original_stat(candidate, *args, **kwargs)
 
     @contextlib.contextmanager
-    def scandir(directory: pathlib.Path) -> typing.Iterator[list[typing.Any]]:
+    def scandir(directory: pathlib.Path) -> typing.Generator[list[typing.Any]]:
         with original_scandir(directory) as entries:
             yield [
                 types.SimpleNamespace(name=entry.name, path=entry.path, stat=reported_stat, is_symlink=entry.is_symlink)

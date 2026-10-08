@@ -33,15 +33,13 @@
 
 ### 単体テスト
 
-- 単体テストは対象モジュール末尾の`#[cfg(test)] mod tests { ... }`に配置し、最低限に留める
-- 同期点の待機（`testing.md`「安定性: flakyテスト防止」）には、`thread::sleep`のポーリングではなく`crossbeam-channel::recv_timeout`などの確定待機を使う
-- `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`（Rust 1.79+）でcompile-timeに行う
+- 単体テストは対象モジュール末尾の`#[cfg(test)]`のtestsモジュールに配置し、最低限に留める
+- 同期点は完了を観測できる決定論的な待機で確かめ、`thread::sleep`のポーリングへ置き換えない（`testing.md`「安定性: flakyテスト防止」）
+- `#[repr(C)]`構造体のABI契約はサイズとオフセットをコンパイル時に検証する（inline constはRust 1.79以降）
   （努力目標。実行時テストより早いビルド時に検出できるため）
 
 ### 統合テスト
 
 統合テストはクレートルート直下の`tests/`ディレクトリ配下に置く。
 
-- パラメーター化テストは`rstest`の`#[rstest]` + `#[case]`を使う
-- プロパティベースの網羅検証が有効な場合は`proptest`を検討する
-- ベンチマークは`criterion`を使う（標準の`#[bench]`はnightly限定）
+- 表駆動の検証には`rstest`、性質による検証が有効なら`proptest`、性能の測定には`criterion`を選ぶ（標準の`#[bench]`はnightly限定）

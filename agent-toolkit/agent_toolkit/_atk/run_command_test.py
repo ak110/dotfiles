@@ -14,6 +14,7 @@ import time
 import pytest
 
 from agent_toolkit._atk import run_command
+from agent_toolkit._testing import git_repository
 
 
 def _run(
@@ -23,14 +24,22 @@ def _run(
     argv: list[str],
     *,
     timeout: float | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> tuple[int, dict[str, object], str]:
     directory = tmp_path / "managed"
-    directory.mkdir()
+    directory.mkdir(exist_ok=True)
+    for previous in directory.iterdir():
+        previous.unlink()
     monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: directory)
-    args = argparse.Namespace(command_argv=["--", *argv], cwd=tmp_path.resolve(), timeout=timeout)
+    args = argparse.Namespace(command_argv=["--", *argv], cwd=(cwd or tmp_path).resolve(), timeout=timeout)
     result = run_command.dispatch(args)
     captured = capsys.readouterr()
-    return result, json.loads(captured.out), captured.err
+    metadata = json.loads(captured.out)
+    record = pathlib.Path(metadata["record_path"])
+    assert record.is_absolute()
+    assert record.parent == directory
+    assert json.loads(record.read_text(encoding="utf-8")) == metadata
+    return result, metadata, captured.err
 
 
 def test_success_preserves_streams_and_metadata(
@@ -43,6 +52,8 @@ def test_success_preserves_streams_and_metadata(
     assert result == 0
     assert metadata["argv"] == command
     assert metadata["cwd"] == str(tmp_path.resolve())
+    assert metadata["git_head"] is None
+    assert metadata["git_status"] is None
     assert metadata["child_exit_code"] == 0
     assert metadata["timed_out"] is False
     assert metadata["signal"] is None
@@ -60,14 +71,32 @@ def test_nonzero_child_exit_code_is_propagated(
         monkeypatch,
         tmp_path,
         capsys,
-        [sys.executable, "-c", "import sys; print('before'); sys.exit(37)"],
+        [sys.executable, "-c", "import sys; print('before'); print('problem', file=sys.stderr); sys.exit(37)"],
     )
 
     assert result == 37
     assert metadata["child_exit_code"] == 37
     assert metadata["timed_out"] is False
     assert pathlib.Path(str(metadata["stdout_path"])).read_bytes() == b"before\n"
+    assert pathlib.Path(str(metadata["stderr_path"])).read_bytes() == b"problem\n"
     assert stderr.startswith("失敗: 外部コマンドが終了コード37で終了した\n")
+
+
+def test_short_atk_result_is_available_from_saved_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """短い公開atk照会も保存JSONだけから実行条件と出力へ到達できる。"""
+    monkeypatch.setenv("PYTHONPATH", str(pathlib.Path(run_command.__file__).resolve().parents[2]))
+    command = [sys.executable, "-m", "agent_toolkit.atk", "config", "get", "state_dir"]
+    result, metadata, _stderr = _run(monkeypatch, tmp_path, capsys, command, timeout=60)
+    assert result == 0
+    saved = json.loads(pathlib.Path(str(metadata["record_path"])).read_text(encoding="utf-8"))
+    assert saved["argv"] == command
+    assert saved["cwd"] == str(tmp_path.resolve())
+    assert saved["child_exit_code"] == 0
+    output = pathlib.Path(saved["stdout_path"]).read_text(encoding="utf-8").strip()
+    assert output and pathlib.Path(output).is_absolute()
+    assert pathlib.Path(saved["stderr_path"]).is_file()
 
 
 def test_timeout_returns_124_and_keeps_partial_output(
@@ -170,6 +199,28 @@ def test_empty_command_is_wrapper_failure(
     assert "実行するCOMMANDがありません" in captured.err
 
 
+def test_record_write_failure_preserves_child_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """記録の保存だけが失敗しても子の終了状態と両出力へ到達できる。"""
+    monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: tmp_path)
+    (tmp_path / "record.json").mkdir()
+    args = argparse.Namespace(
+        command_argv=["--", sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr); sys.exit(7)"],
+        cwd=tmp_path.resolve(),
+        timeout=30,
+    )
+
+    assert run_command.dispatch(args) == 125
+    captured = capsys.readouterr()
+    metadata = json.loads(captured.out)
+    assert metadata["record_path"] is None
+    assert metadata["child_exit_code"] == 7
+    assert pathlib.Path(metadata["stdout_path"]).read_bytes() == b"out\n"
+    assert pathlib.Path(metadata["stderr_path"]).read_bytes() == b"err\n"
+    assert "実行結果JSONを保存できない" in captured.err
+
+
 def test_command_without_separator_is_wrapper_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -183,3 +234,36 @@ def test_command_without_separator_is_wrapper_failure(
     assert result == 125
     assert captured.out == ""
     assert "`--`以後" in captured.err
+
+
+def test_records_worktree_head_and_uncommitted_state_before_running(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Git作業ツリーで実行すると、起動直前のHEADと未commit・未追跡の状態を保存JSONへ残す。
+
+    観測を後から別の版へ適用できるかは、実行した版と未commitの入力で決まる。HEADだけを残すと、
+    未commitの変更を実行した記録を、HEADの内容を実行した結果と取り違える。
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.init_repository(repo)
+    git_repository.git_output(repo, "config", "user.email", "test@example.com")
+    git_repository.git_output(repo, "config", "user.name", "Test")
+    (repo / "tracked.txt").write_text("base\n", encoding="utf-8")
+    git_repository.git_output(repo, "add", "tracked.txt")
+    git_repository.git_output(repo, "commit", "-qm", "base")
+    head = git_repository.git_output(repo, "rev-parse", "HEAD")
+    command = [sys.executable, "-c", "print('ok')"]
+
+    result, metadata, stderr = _run(monkeypatch, tmp_path, capsys, command, cwd=repo)
+    assert result == 0
+    assert metadata["git_head"] == head
+    assert metadata["git_status"] == []
+    assert stderr == "成功: 外部コマンドが終了した\n"
+
+    (repo / "tracked.txt").write_text("changed\n", encoding="utf-8")
+    (repo / "untracked.txt").write_text("input\n", encoding="utf-8")
+    result, metadata, _stderr = _run(monkeypatch, tmp_path, capsys, command, cwd=repo)
+    assert result == 0
+    assert metadata["git_head"] == head
+    assert metadata["git_status"] == [" M tracked.txt", "?? untracked.txt"]

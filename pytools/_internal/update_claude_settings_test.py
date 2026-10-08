@@ -2029,6 +2029,7 @@ class TestRetiredAutoModeAllowLabels:
     """
 
     _RETIRED_LABELS = (
+        "Reconsidered Retry Approval",
         "Session-Owned Amend",
         "Exit-Session Termination",
         "AWI-Originated Gate Revision",

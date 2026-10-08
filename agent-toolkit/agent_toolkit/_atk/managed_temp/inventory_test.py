@@ -872,7 +872,7 @@ class TestManagedTempWindows:
         @contextlib.contextmanager
         def replace_before_security_update(
             path: pathlib.Path,
-        ) -> typing.Iterator[tuple[int, managed_temp_windows_security._ByHandleFileInformation, bool]]:
+        ) -> typing.Generator[tuple[int, managed_temp_windows_security._ByHandleFileInformation, bool]]:
             if path != target:
                 with original_update_handle(path) as opened:
                     yield opened

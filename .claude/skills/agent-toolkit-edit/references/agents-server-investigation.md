@@ -13,10 +13,11 @@ Claude Codeの作業ディレクトリのスラッグは、そのディレクト
 `agents_server`の診断ログのうち、MCPサーバーの起動・終了とinitializeの節目は`_agents_server/mcp_tools.py`と`mcp_transport.py`が書く。
 候補ごとの初期化の開始・完了・再試行と候補の切替は`_agents_server/manager.py`が書く。
 sessionの状態遷移（`session_transition`）は`manager.py`、`manager_registry.py`、`manager_resume.py`と`state.py`が書く。
+開始・終端の資源記録（`resource_snapshot`）は共通の状態遷移から`resource_snapshot.py`が書く。
 
 | 記録 | 所在の組み立て方 | 読み取れる事実 |
 | --- | --- | --- |
-| `agents_server`の診断ログ | 診断ログのディレクトリ直下の`agents-server.log`。`RotatingFileHandler`が世代管理する | 起動ごとの`engine`、`launch_kind`、`model_type`、初期化の成否と再試行、sessionの状態遷移 |
+| `agents_server`の診断ログ | 診断ログのディレクトリ直下の`agents-server.log`。`RotatingFileHandler`が世代管理する | 起動ごとの`engine`、`launch_kind`、`model_type`、初期化の成否と再試行、sessionの状態遷移、開始・終端時の稼働数とホスト資源 |
 | 委譲先のCLIの診断ログ | 診断ログのディレクトリ直下の`delegate-debug`配下。ファイル名はUTC時刻、session識別子、`launch_kind`をハイフンで連ねた`.log`。session識別子は初期化の完了時に名前へ入るため、初期化へ到達しなかった起動の記録はその部分を持たない。保持世代を超えた記録は次の起動時に削除される | SessionStart hookの完了、MCPサーバーの接続、機能フラグの取得、skillsの送信、`[engine] turn 1 start`への到達、セッション間メッセージの保留 |
 | Claude Codeが委譲先ごとに残すMCPサーバー接続ログ | Claude CLIのキャッシュディレクトリ配下の`<作業ディレクトリのスラッグ>/mcp-logs-<サーバー名>/<起動時刻>.jsonl`。Windowsでは`%LOCALAPPDATA%\claude-cli-nodejs\Cache`がそのキャッシュディレクトリとなる | 委譲先が起動した各MCPサーバーの接続完了時刻と接続の失敗 |
 | 委譲先のセッションのトランスクリプト | `~/.claude/projects/<作業ディレクトリのスラッグ>/<session識別子>.jsonl` | 委譲先が受け取った指示と返した応答。初期化を完了しなかった委譲先はこのファイルを作成しないため、不在そのものが初期化未到達の証拠になる |
@@ -30,6 +31,16 @@ sessionの状態遷移（`session_transition`）は`manager.py`、`manager_regis
 1. `agents_server`の診断ログで、対象の起動が実際に使った`engine`と`launch_kind`を確認する。前提に置くのはこの診断ログの値とし、症状からの推定はその代わりから外す。
 2. 委譲先のCLIの診断ログを、成功する起動と失敗する起動の双方で採取して比べる。失敗した起動が止まった位置は、この2つの差分から確定する。
 3. 差が現れた位置を、SDKのオプションと環境を外部プロセスで再現して特定する。
+
+## 資源記録の読み方
+
+資源との関係を調べるときは、resource_snapshotの時刻、root/session識別子とturn番号を状態遷移へ対応させる。
+running_totalとrunning_by_rootは同じ状態ディレクトリで観測したrunningの数であり、待機中と孫sessionも含む。
+発生元の最新状態を反映するため、開始は自身を含み、終端は自身を除く。稼働中の追送では開始記録を増やさない。
+counts_completeがfalseなら集計は不完全で、確定値はnull、読めた範囲はobserved_running_*に入る。state_read_failuresとunavailable_fieldsで欠損の理由を確認する。
+load_average_1_5_15はホスト全体の1・5・15分load、available_memory_bytesはホストの利用可能メモリーである。Windowsのloadは未取得として理由を残す。
+これらは非原子的な観測であり、agents_serverや個々のsessionのCPU・メモリー寄与は確定しない。因果関係の判断には同条件の比較が必要である。
+resource_snapshot_failedは計測自体の失敗を表し、session処理の失敗とは区別する。ログは既存の2 MiB・バックアップ3世代で回転する。
 
 ## 外部プロセスでの再現
 

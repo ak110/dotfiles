@@ -17,11 +17,7 @@
   - 可能な限りトップレベルでimportする（循環参照や初期化順による問題を避ける場合に限りブロック内も可）
     - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す設計上の解消を優先する
      （片方を関数内importにするのも局所対処であり、恒常化は避ける）
-- 型ヒントはpublic関数・CLI境界・fixture・戻り値を持つprivate関数に書く（努力目標。型チェックの網羅と読み手の理解を保つため）。
-  本文中だけで完結する短いローカル変数は型推論に任せてよい
-  - `typing.List`ではなく`list`を使う。`dict`や`tuple`・`set`等も同様
-  - `typing.Optional`ではなく`| None`を使う
-  - 関数をオーバーライドする場合は`typing.override`デコレーターを付ける（努力目標。基底メソッドの改名・削除を型チェックで検出するため）
+- 公開境界と非自明な型を型ヒントで明確にし、対応版の型構文・型推論・`typing.override`で互換性と網羅性を確かめる
   - `@typing.final`でオーバーライドを禁止されたメソッドは、サブクラス実装の都合で除去しない
     サブクラスで挙動を変える必要がある場合は、抽象メソッド側での委譲など実装側で吸収する設計を検討する
 - docstringはGoogle Style。自明なArgs, Returns, Raisesは省略する
@@ -31,18 +27,12 @@
 
 ### 標準ライブラリとログ
 
-- ログは`logging`を使う
-  - `logger = logging.getLogger(__name__)`でモジュールごとに取得
-  - `exc_info=True`指定時は例外をメッセージへ含めず簡潔に（例: `logger.error("〇〇処理エラー", exc_info=True)`）
-    - 頻繁に発生する例外に限り`logger.warning(f"〇〇失敗: {e}")`のように文字列化して出力する
-  - 一度のエラーで複数回ログが出力されたり、逆に一度もログが出なかったりすることが無いよう注意する
-- 日付関連の処理は`datetime`を使う
-- ファイル関連の処理は`pathlib`を基本とする
-  - パス操作とファイルの開閉は、`os`モジュールより`Path.open`等の`pathlib`を優先する（努力目標。パス操作の表記をそろえるため）
+- 標準機能を使い、ログは`logging`、日時は`datetime`、パスとファイル操作は`pathlib`を基本とする
+- 診断は原因を追跡できる粒度で一度だけ残し、同じ例外の重複記録や記録されない失敗を避ける
 - 新規にテーブルデータの処理ライブラリを選ぶ場合は、`pandas`に代えて`polars`を選ぶ。既存プロジェクトでは採用済みのライブラリにそろえる
-- 例外の再送出は`raise`（引数なし）を使い、`raise e`は使わない（スタックトレースが書き換わるため）
+- 例外の再送出で元のスタックトレースと原因を失わない
 - インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く（lint対策）
-- `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
+- `Literal`の分岐は`assert_never`などで型による網羅性を確かめる
 - `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）
   - 数値型を厳格に限定するときは`type(x) is int`または`isinstance(x, int) and not isinstance(x, bool)`で除外する
   - `isinstance(value, type(reference))`形式の型一致チェックでも、`reference`が`int`値のときに`bool`値も一致と判定される
@@ -136,15 +126,8 @@
     - 集約方式: `tests/<module>_test.py`にまとめる
       （配布除外を設定不要で実現できる一方、ソースとテストの対応関係を辿りにくい）
 - テストフレームワークは対象プロジェクトが採用するものへそろえ、新規に選ぶ場合は`pytest`を使う
-- 網羅性のため、必要に応じて`@pytest.mark.parametrize`を使う
-  - 用途は同一ロジックを異なる入力データで反復実行する場合とする（努力目標。シナリオごとの分岐はテストの意図を読み取りにくくするため）
-    - テスト本体では`if param == "...":`のようなシナリオごとの分岐を避ける
-  - シナリオごとに処理が分岐する場合は独立したテスト関数に分割する
-- テスト関数内で使用しないfixture（副作用のみが必要な場合）は
-  `@pytest.mark.usefixtures("fixture_name")`を使う
-  - `@pytest.mark.parametrize(..., indirect=True)`との併用も可
-  - デコレーター順序（外側から内側）:
-    `parametrize` → `asyncio` → `usefixtures`
+- 決定論的な入力と読み取れるシナリオを保ち、同じ操作の入力差には`parametrize`、副作用だけを使うfixtureには`usefixtures`を選ぶ
+- デコレーター順序は外側から`parametrize` → `asyncio` → `usefixtures`とする
 - 空コレクションとの等価比較（`assert x == []`・`assert d == {}`など）はpylintの
   `use-implicit-booleaness-not-comparison`で警告されるため、`assert not x`と書く
   - 中身まで含めた比較が必要な場合は`assert x == [expected]`のように具体的な期待値を書く
@@ -156,16 +139,13 @@
 ### Fixtureのコーディングルール
 
 - 関数名: `_`で始める、テストから参照する場合は`name`で別名指定
-- scope: 可能な限り広いスコープ（session → package → module → function）
-- autouse: モジュール単位は積極的に使い、package／session単位は副作用に注意する
-- 型ヒント: 書く範囲は「import・型・docstring」の型ヒントの項に従う。複数値を返すfixtureでは型エイリアスまたはdataclassを定義する
+- scopeとautouseは、入力の隔離と後始末を保てる範囲で共有し、テスト間の状態依存を持ち込まない
+- 型ヒントは「import・型・docstring」に従い、複数の戻り値は型エイリアスやdataclassで意味を明確にする
 
 ### 非同期テスト
 
-- `pytest-asyncio`を使う
-  - `asyncio_mode = "strict"`を推奨（マーカーの付け忘れを検出できる）
-  - テスト関数には`@pytest.mark.asyncio`を明示する
-  - 非同期fixtureには`@pytest_asyncio.fixture`を使う（`@pytest.fixture` + `async def`では動作しない）
+- `pytest-asyncio`で非同期処理の完了と後始末を検証する
+- `asyncio_mode = "strict"`を推奨し、テストには`@pytest.mark.asyncio`、非同期fixtureには`@pytest_asyncio.fixture`を明示する。strictモードでは`@pytest.fixture`と`async def`の組合せは動作しない
 
 ### 環境変数・設定ディレクトリのテスト隔離
 
@@ -204,16 +184,6 @@
 
 ## Python新構文と導入バージョン
 
-対象コードのPythonバージョンが該当PEPの導入バージョン以上の場合、その構文を正規構文として受理する。
-
-| PEP | 構文 | 導入バージョン | 例 |
-| --- | --- | --- | --- |
-| PEP 758 | `except`・`except*`の括弧省略 | 3.14 | `except ValueError, TypeError:` |
-| PEP 654 | Exception Groupsと`except*` | 3.11 | `except* ValueError:` |
-| PEP 604 | Union型の`\|`記法 | 3.10 | `def f(x: int \| str) -> None: ...` |
-| PEP 695 | type parameter構文 | 3.12 | `type Alias = int`、`class C[T]: ...` |
-| PEP 634 | 構造的パターンマッチ | 3.10 | `match x: case _: ...` |
-| PEP 701 | f-string拡張 | 3.12 | `f"{'inner'}"`（同一引用符の入れ子） |
-
-PEPバージョン情報は`peps.python.org`公式メタデータの`Python-Version`値を典拠とする。
-PEP 758の`as`節使用時は従来通り括弧必須とする（`except (ValueError, TypeError) as e:`）。
+構文の受理は対象コードの対応版と、`peps.python.org`公式メタデータの`Python-Version`を基準にする。
+Python 3.14のPEP 758は`except`・`except*`の括弧省略を認めるが、`as`節を使う場合は括弧が必要である。
+同版のPEP 750のt-stringは「入力検証とセキュリティ」のレンダラに関する条件に従う。

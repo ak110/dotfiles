@@ -11,7 +11,7 @@ from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
-from agent_toolkit._atk.wi.formatters import parse_target_repo
+from agent_toolkit._atk.wi.formatters import parse_target_repo, parse_type
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
@@ -238,7 +238,7 @@ def edit_entry(
         if previous == content:
             return False
         previous_type = _wi_entries.entry_type_of(path, previous)
-        new_type = _wi_entries.parse_type(content)
+        new_type = parse_type(content)
         if new_type != previous_type:
             _outcome.report_failure(
                 f"typeは変更も欠落もできない（現在値: {previous_type}）: {filename}",
@@ -288,7 +288,7 @@ def append_entry(
         if previous_bytes == content:
             return False
         previous_type = _wi_entries.entry_type_of(path, previous)
-        new_type = _wi_entries.parse_type(updated)
+        new_type = parse_type(updated)
         if new_type != previous_type:
             _outcome.report_failure(
                 f"typeは変更も欠落もできない（現在値: {previous_type}）: {filename}",

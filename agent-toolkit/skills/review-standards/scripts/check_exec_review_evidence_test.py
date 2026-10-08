@@ -14,6 +14,9 @@ import check_exec_review_evidence  # pylint: disable=import-error
 import pytest
 
 from agent_toolkit._atk import review_table, run_script
+from agent_toolkit._atk.wi import entries as wi_entries
+from agent_toolkit._atk.wi import repo as wi_repo
+from agent_toolkit._atk.wi import sync as wi_sync
 from agent_toolkit._testing import git_repository
 
 FIRST_WI = "20260928-192559-001.md"
@@ -67,17 +70,25 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
                 return subprocess.CompletedProcess(args, 1, stdout=b"", stderr=b"file is absent")
             value = str(tmp_path) if "--show-toplevel" in args else REVIEWED_HEAD
             return subprocess.CompletedProcess(args, 0, stdout=f"{value}\n", stderr="")
-        filename = args[3]
-        requested.append(filename)
-        if filename not in bodies:
-            return subprocess.CompletedProcess(args, 1, stdout="", stderr=f"失敗: {filename}はありません")
-        assert not any(arg.startswith("--output-file") for arg in args)
-        output = tmp_path / (filename + ".stdout")
-        output.write_text(f"## target_repo: example\n### {filename} [processing]\n---\n{bodies[filename]}", encoding="utf-8")
-        # エージェント環境の`atk`は長い本文を標準出力へ書かないため、証拠を確かめる処理は保存先だけを読む必要がある。
-        return subprocess.CompletedProcess(args, 0, stdout=f"保存先: {output}\n行数: 1\n", stderr="")
+        raise AssertionError(f"WI取得で子CLIを起動した: {args}")
+
+    def read_named(
+        _notes: pathlib.Path, names: list[tuple[str, str]], **_kwargs: object
+    ) -> tuple[list[wi_entries.EntryRecord], list[str]]:
+        selected: list[wi_entries.EntryRecord] = []
+        missing: list[str] = []
+        for filename, normalized in names:
+            requested.append(filename)
+            if filename not in bodies:
+                missing.append(filename)
+            else:
+                selected.append((tmp_path / normalized, "example", f"---\n{bodies[filename]}", "processing", "awi"))
+        return selected, missing
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(wi_sync, "ensure_environment", lambda _home: tmp_path)
+    monkeypatch.setattr(wi_repo, "resolve_repo_id", lambda _repo: "example")
+    monkeypatch.setattr(wi_entries, "read_named_entries", read_named)
     return requested
 
 
@@ -1909,22 +1920,15 @@ def test_public_command_rejects_partly_updated_review_heads(
         tmp_path, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "新対象"
     )
     current = git_repository.git_output(tmp_path, "rev-parse", "HEAD")
-    real_run = subprocess.run
-
-    def fake_wi(args: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
-        if args[0] == "git":
-            check = kwargs.pop("check", False)
-            return real_run(args, check=check, **kwargs)
-        assert not any(arg.startswith("--output-file") for arg in args)
-        output = tmp_path / "generated-wi.stdout"
-        output.write_text(
-            f"### {FIRST_WI} [processing]\n---\ntype: awi\nsource: agent\n---\n## 完成条件\n- 完成\n",
-            encoding="utf-8",
-        )
-        return subprocess.CompletedProcess(args, 0, stdout=f"保存先: {output}\n", stderr="")
-
+    notes = tmp_path / "private-notes"
+    (notes / "processing").mkdir(parents=True)
+    (notes / "processing" / FIRST_WI).write_text(
+        "---\ntype: awi\nsource: agent\ntarget_repo: example\n---\n## 完成条件\n- 完成\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(wi_sync, "ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(wi_repo, "resolve_repo_id", lambda _repo: "example")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(subprocess, "run", fake_wi)
     evidence = tmp_path / "evidence.json"
     conditions = [{**_condition(FIRST_WI, "完成"), "reviewed_head": current}]
     requirements = [
@@ -2272,6 +2276,35 @@ def test_rewrite_map_updates_commit_references_only(tmp_path: pathlib.Path, caps
     assert {row["reviewed_head"] for row in data["wi_conditions"]} == {REVIEWED_HEAD}
 
 
+def test_rewrite_map_keeps_acquired_version_held_by_observation_file(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """取得版を観測ファイルの参照で書いた行は、参照の更新後も取得版を元の値のまま読める。
+
+    取得版を`evidence`へOIDで書くと、対応表の旧OIDとして新しい版へ置き換わり、旧版で実行した観測が
+    新しい版で実行した記録として読める。観測ファイルの参照で示せば、置換は現行の成果物を指すOIDにだけ及ぶ。
+    """
+    evidence, rewrite_map = tmp_path / "evidence.json", tmp_path / "rewrite.json"
+    record = tmp_path / "atk-command-x" / "record.json"
+    record.parent.mkdir()
+    record_text = json.dumps({"git_head": _OLD_FULL, "git_status": [], "child_exit_code": 0})
+    record.write_text(record_text, encoding="utf-8")
+    rewrite_map.write_text(json.dumps({_OLD_FULL: _NEW_FULL}), encoding="utf-8")
+    conditions = [
+        {
+            **_condition(FIRST_WI, "保存"),
+            "evidence": f"取得版は{record}のgit_head。test_save 成功。対象のcommit {_OLD_FULL} から変化なし",
+        }
+    ]
+    _write_evidence(evidence, conditions, [])
+    assert run_script.dispatch(_rewrite_args(evidence, rewrite_map)) == 0, capsys.readouterr().err
+    data = json.loads(evidence.read_text(encoding="utf-8"))
+    assert data["wi_conditions"][0]["evidence"] == (
+        f"取得版は{record}のgit_head。test_save 成功。対象のcommit {_NEW_FULL} から変化なし"
+    )
+    assert record.read_text(encoding="utf-8") == record_text
+
+
 @pytest.mark.parametrize(
     "rewrite_map",
     [
@@ -2572,10 +2605,10 @@ def test_unresolved_reference_reports_root_and_candidates(
     assert _check_reference(evidence, head, "skills/first/SKILL.md:1 で確認") == 0, capsys.readouterr().err
 
 
-def test_public_command_runs_platform_launcher(
+def test_public_command_reads_wi_in_process(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """subprocessを置き換えず、OS別のランチャーから空白を含むパスのWIを取得し、証拠の過不足を判定する。"""
+    """空白を含む保存先のWIを共通読取で取得し、子CLIなしで証拠の過不足を判定する。"""
     root = tmp_path / "work dir"
     notes = root / "private notes"
     repository = root / "target repo"
@@ -2600,11 +2633,29 @@ def test_public_command_runs_platform_launcher(
         script_name="exec-review-evidence-check", script_args=["--", str(path), FIRST_WI, "--expected-head", head]
     )
     _write_evidence(path, [], rows)
+    real_run = subprocess.run
+
+    def forbid_child_cli(args: typing.Any, **kwargs: typing.Any) -> subprocess.CompletedProcess[typing.Any]:
+        assert pathlib.Path(args[0]).name in {"git", "git.exe"}, f"WI取得で子CLIを起動した: {args}"
+        check = kwargs.pop("check", False)
+        return real_run(args, check=check, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", forbid_child_cli)
     assert run_script.dispatch(args) == 0, capsys.readouterr().err
 
     _write_evidence(path, [], rows[:1])
     assert run_script.dispatch(args) == 1
     assert f"不足: 「{_FENCED_REQUIREMENTS[1]}」" in capsys.readouterr().err
+
+    (notes / "inbox" / FIRST_WI).write_text(
+        f"---\ntarget_repo: github.com/example/other\ntype: awi\n---\n\n{body}", encoding="utf-8"
+    )
+    assert run_script.dispatch(args) == 1
+    assert "WI本文を取得できません" in capsys.readouterr().err
+
+    (notes / "inbox" / FIRST_WI).unlink()
+    assert run_script.dispatch(args) == 1
+    assert "WI本文を取得できません" in capsys.readouterr().err
 
 
 _TEMPLATE_BODIES = {
@@ -3064,3 +3115,73 @@ def test_background_record_in_plan_or_review_table_is_accepted(
     _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], _background_rows(source))
     capsys.readouterr()
     assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
+
+
+def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """実Gitの異なるHEAD・roundと入力配列を保持し、部分失敗も全組の結果と原文で返す。"""
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    git_repository.init_repository(repository)
+    git_repository.git_output(repository, "remote", "add", "origin", "https://github.com/example/foo.git")
+    heads = []
+    for message in ("初期", "追加"):
+        git_repository.git_output(
+            repository, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", message
+        )
+        heads.append(git_repository.git_output(repository, "rev-parse", "HEAD"))
+    notes = tmp_path / "private notes"
+    (notes / "processing").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.chdir(repository)
+    condition = "保存内容を全て読み直して実行条件と終了状態と対象ファイルの対応がそれぞれ一致することを後続担当が確認できる"
+    original = "未達の観測結果を短縮せずに返す。" * 12
+    reviews: list[dict[str, typing.Any]] = []
+    evidence_before: dict[pathlib.Path, bytes] = {}
+    for index, (filename, head) in enumerate(zip((FIRST_WI, SECOND_WI), heads, strict=True), start=1):
+        (notes / "processing" / filename).write_text(
+            f"---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n# 題\n\n## 完成条件\n- {condition}\n", encoding="utf-8"
+        )
+        evidence, table = tmp_path / f"evidence{index}.json", tmp_path / f"review{index}.tsv"
+        row = {**_condition(filename, condition), "reviewed_head": head, "outcome": "未達", "evidence": original}
+        _write_evidence(evidence, [row])
+        evidence_before[evidence] = evidence.read_bytes()
+        review_table.init(table)
+        review_table.add(table, str(index), "exec-review", "実装", "保存処理を直す", "実装")
+        plan, record = tmp_path / f"plan{index}.md", tmp_path / f"record{index}.md"
+        plan.write_text("# 計画\n", encoding="utf-8")
+        record.write_text("# 入力記録\n", encoding="utf-8")
+        reviews.append(
+            {
+                "plan": str(plan),
+                "evidence": str(evidence),
+                "wi": [filename],
+                "reviewed_head": head,
+                "review_table": str(table),
+                "round": index,
+                "plans": [str(plan)],
+                "input_records": [str(record)] if index == 2 else [],
+            }
+        )
+    batch = tmp_path / "batch.json"
+    batch.write_text(json.dumps({"version": 1, "reviews": reviews}), encoding="utf-8")
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(batch)])
+    capsys.readouterr()
+
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+    results = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [result["exit_code"] for result in results] == [0, 0]
+    for review, result in zip(reviews, results, strict=True):
+        assert result["plan"] == review["plan"]
+        assert f"レビューしたHEAD: {review['reviewed_head']}" in result["result"]
+        assert f"計画のパス: {json.dumps(review['plans'])}" in result["result"]
+        assert f"入力記録のパス: {json.dumps(review['input_records'])}" in result["result"]
+        assert any(original in line for line in result["result"])
+    reviews[0]["reviewed_head"] = heads[1]
+    batch.write_text(json.dumps({"version": 1, "reviews": reviews}), encoding="utf-8")
+    assert run_script.dispatch(args) == 1
+    results = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [result["exit_code"] for result in results] == [1, 0]
+    assert results[0]["diagnostics"]
+    assert all(path.read_bytes() == before for path, before in evidence_before.items())

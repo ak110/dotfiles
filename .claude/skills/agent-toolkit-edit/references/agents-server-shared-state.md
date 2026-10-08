@@ -2,8 +2,8 @@
 
 `agents_server`の状態はMCPサーバーのメモリー、状態ディレクトリのファイル、フックが記録するセッション状態およびstatuslineが読む射影の4つの表現に分かれる。
 実行主体ごとに更新できる範囲が異なるため、挙動を確定する際は関係する全ての処理の流れを読む。単一の処理だけを読むと、別の処理が同じ状態を更新しない事実を見逃す。
-`agent-toolkit/agent_toolkit/agents_server_mcp.py`と`agent-toolkit/agent_toolkit/_agents_server/`配下を変更または調査する主体は、着手前に本書を読む。
-`rust/claude-statusline/src/agents_server.rs`を扱う主体も同じとする。
+`agent-toolkit/agent_toolkit/agents_server_mcp.py`と`agent-toolkit/agent_toolkit/_agents_server/`配下を変更または調査するエージェントは、着手前に本書を読む。
+`rust/claude-statusline/src/agents_server.rs`を扱うエージェントも同じとする。
 
 ## 実行主体
 
@@ -32,7 +32,7 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
 | session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | MCPサーバーだけ |
-| statusline・CLI向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show`、同じルートに属する他のMCPサーバー（稼働中の子孫を持つ終端sessionの表示判定） | そのルートに属する各MCPサーバー。各MCPサーバーは自身のファイルだけを書く |
+| statusline・CLI向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show`、同じルートに属する他のMCPサーバー（稼働中の子孫を持つ終端sessionの表示判定）、全ルートを読む資源記録 | そのルートに属する各MCPサーバー。各MCPサーバーは自身のファイルだけを書く |
 | 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイルの`host_session_id`を委譲元のsession識別子へ解決する主体、PostToolUseフック、`atk agents wait` | そのsessionを起動したMCPサーバー |
 | 状態ファイルの生存の印`heartbeat_at` | 状態ファイルを書き込むMCPサーバー | statusline、同じルートに属する他のMCPサーバー | その状態ファイルを書き込むMCPサーバー |
 | 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在。CLIが回収途中の結果は下記のrun別退避物へ移る | MCPサーバー、`atk agents wait`、statusline | MCPサーバー（作成と削除）、待機CLI（自身の書込主体が公開した結果だけを削除） |
@@ -56,6 +56,8 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | 配置とsession識別子の検証 | `shared_layout.py` |
 | ルートと書込主体の識別、索引（`aliases`・`hosts`） | `shared_roots.py` |
 | statusline・CLI向けの状態ファイルの出力 | `status_file.py` |
+| 一覧と資源記録の共有読取・生存判定・session重複排除 | `status_reader.py` |
+| 開始・終端の稼働数とホスト資源の診断記録 | `resource_snapshot.py` |
 | 終端結果の保持と回収 | `retained_results.py` |
 | CLI待機の対象登録 | `wait_targets.py` |
 | 上り通知の回収 | `notice_inbox.py` |
@@ -66,7 +68,7 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 sessionの`created_at`は最初の開始時刻で、turnごとに更新する`started_at`と別に保持する。`label`と`prompt`も`start`の時点で決まる。これら3項目を再開と再起動をまたいで保持する起動情報とし、項目の集合は`agent-toolkit/agent_toolkit/_agents_server/session_registry.py`の`LaunchInfo`が1か所で定める。MCPサーバーのメモリーを基準とし、状態ファイルとsession登録簿（版数2の任意項目）へ射影する。再開したsessionは登録簿または退避した再開情報の値を`LaunchInfo`の項目ごとに引き継ぐ。項目を持たない旧形式の登録簿から再開した場合、`label`と`prompt`は空文字列とし、`created_at`は再開時刻から数え直す。
 `start`と`send_message`の公開応答へは、開始したsessionと配送先のsessionがメモリーに保持する`label`を返す。委譲元が起動応答と追送応答だけで`session_id`と担当名を対応付け、追送の宛先を確かめられるようにするためである。
 
-ClaudeのAPI失敗が連続する間と、Codexの過負荷（`serverOverloaded`）による自動継続を待つ間の`api_error`は、いずれもMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ射影する。過負荷の待機中の記録は待機を予定したCodex backendの終端処理が作成し、MCPサーバーが継続のturnを送った時点で削除する。待機の予定時刻と連鎖の回数もMCPサーバーのメモリーだけに置き、状態ファイルへは`api_error`の形でだけ射影する。API失敗の合成メッセージは活動時刻を進めず、状態ファイルの更新だけを通知する。`show`・`list`とCLIは共通の活動射影から失敗の経過を算出し、正常なassistantメッセージで記録を削除する。生のエラー本文は共有状態へ保存しない。
+ClaudeのAPI失敗が連続する間と、Codexの過負荷（`serverOverloaded`）による自動継続を待つ間の`api_error`はいずれもMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ射影する。過負荷の待機中の記録は待機を予定したCodex backendの終端処理が作成し、MCPサーバーが継続のturnを送った時点で削除する。待機の予定時刻と連鎖の回数もMCPサーバーのメモリーだけに置き、状態ファイルへは`api_error`の形でだけ射影する。API失敗の合成メッセージは活動時刻を進めず、状態ファイルの更新だけを通知する。`show`・`list`とCLIは共通の活動射影から失敗の経過を算出し、正常なassistantメッセージで記録を削除する。生のエラー本文は共有状態へ保存しない。
 
 Claude CodeのWeekly limitと5時間の利用上限の解除待ちもMCPサーバーの`SessionState`を正とする。Claudeが報告した最後の利用枠（`usage_limit`）はClaude backendが`RateLimitEvent`から記録し、初期化より前に届いた報告もsessionの作成時に引き継ぐ。turnが待機対象の拒否で終わると、Claude backendが結果を保留し、`api_error`へ種別`usage_limit`、利用枠の種類（`limit_type`）と解除予定時刻（`resets_at`）を記録する。次の継続の時刻と待機の回数はメモリーだけに置く。MCPサーバーの常駐監視が予定時刻に同じsessionへ継続を送り、正常なモデル出力で利用枠の記録と`api_error`を削除する。保留中の結果は`auto_resume_deadline`と保持期限の対象にしない。状態ファイルと`show`・`list`・CLIへは`limit_type`と`resets_at`を`api_error`の公開項目として射影する。
 
@@ -80,6 +82,14 @@ MCPサーバーは`start`、`send_message`、`list`の応答へ、自身の状�
 `atk agents list`と`atk agents wait`は索引または現行識別子自身の状態ディレクトリからルートsessionとの対応を確認する。対応を確認できず対象が0件の場合は、CLIが解決したrootを示し、MCPの`list`を1回呼んで同じCLIを再実行する復旧手順を返す。対応確認済みの空状態は通常の空状態として扱う。
 `atk agents notify`は委譲先から`AGENT_TOOLKIT_OWNER_SESSION`で所有者sessionを直接解決するため、索引の読み取りを省く。
 子から親へ通知する場合は宛先を所有者sessionから解決する。現行のsession識別子から解決すると、宛先が自分自身になるためである。
+
+資源記録はsession開始・終端時に同じ状態ディレクトリの全rootを読み、重複sessionと失効した状態ファイルを一覧と同じ判定で除く。
+発生元が所有するsessionは最新のメモリー状態で上書きする。記録の保存先は既存のagents-server.logとする。
+集計は非原子的な観測であり、読取失敗は完全性の欠損として記録する。loadと利用可能メモリーはホスト全体の値であり、session固有の消費量との区別を保つ。
+
+子session・背景taskの完了待ちの保留中へ追送しても、待機対象の識別子と保存出力の対応は保持する。
+旧turnの保留結果は公開せず、新しいturnと未完了作業の寿命を分ける。配送失敗時も観測対象を残して再試行できる。
+回収した対象だけを追跡から外し、同じ完了による自動再開は一度に限定する。kill・期限・ストリーム終端による明示確定と、利用上限・過負荷の継続は別の境界として扱う。期限を持たない利用上限・過負荷の保留への追送は従来どおり保留結果を確定し、待機対象が残れば`heldResultFinalized`を付ける。
 
 ## 判定を確定する前に確認すること
 
