@@ -300,8 +300,3 @@ def direct_pytest_targets(workflow: dict[str, object]) -> list[str]:
                 if not token.startswith("-") and ("/" in token or token.endswith(".py"))
             )
     return targets
-
-
-def flag_options(tokens: list[str]) -> set[str]:
-    """値を取る`--project`を除いた`--`始まりのオプションを返す。"""
-    return {token for token in tokens if token.startswith("--") and token != "--project"}
