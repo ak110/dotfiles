@@ -9,6 +9,7 @@ import shlex
 import sys
 
 from agent_toolkit._agents_server.state import LaunchKind
+from agent_toolkit._agents_server.tool_descriptions import EXPLORE_CAPABILITIES
 from agent_toolkit._common import message_format
 
 TASK_MODEL_TYPES = {
@@ -82,7 +83,9 @@ CLAUDE_DELEGATE_SYSTEM_PROMPT = (
 )
 
 
-EXPLORE_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}", kind="explore")
+EXPLORE_SYSTEM_PROMPT = _normative(
+    f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}\n\n{EXPLORE_CAPABILITIES}", kind="explore"
+)
 
 
 SHELL_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}", kind="shell")

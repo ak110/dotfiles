@@ -27,6 +27,7 @@ from agent_toolkit._agents_server import (
     shared_roots,
     state,
     status_file,
+    tool_descriptions,
     tool_names,
 )
 from agent_toolkit._agents_server import manager as server_manager
@@ -155,6 +156,14 @@ def test_public_tools_expose_single_start_with_modes() -> None:
     stop_tool = mcp_tools.mcp._tool_manager.get_tool("stop")
     assert stop_tool is not None
     assert stop_tool.parameters["properties"].keys() == {"session_id"}
+
+
+def test_public_start_schema_delivers_explore_capabilities() -> None:
+    """登録済みの公開schemaが起動前に共通の能力説明を届ける。"""
+    start_tool = _start_tool()
+    capabilities = tool_descriptions.EXPLORE_CAPABILITIES
+    assert capabilities in start_tool.description[:2048]
+    assert capabilities in start_tool.parameters["properties"]["mode"]["description"]
 
 
 @pytest.mark.asyncio

@@ -49,6 +49,16 @@ StartMode = Literal["task", "delegate", "explore", "write", "shell"]
 """`start`の`mode`が受理する値。`tool_names.START_MODES`と同じ集合を保つ。"""
 
 
+EXPLORE_CAPABILITIES = (
+    "explore: ClaudeはRead・Glob・GrepのみでBashなし。"
+    "Codexは読み取り専用sandbox内のコマンド調査が可能。Antigravityは非対応。"
+    "Git履歴などのコマンド調査は`model_type`でCodex候補を明示するか、"
+    "確定コマンドはshell、自由な調査・判断はdelegateへ渡す。"
+    "shell・delegateはexploreの書込拒否の対象外。委譲元が対象と許可する操作を定める。"
+)
+"""起動前の説明とexplore委譲先へ配送する、エンジン別の能力と調査の選び方。"""
+
+
 # 各引数の説明は、委譲元がサーバーの`instructions`や外部のエージェント向け文書を読まずに、
 # 意味、書式、省略時の動作およびmodeごとの必須・禁止を判断できる内容にする。
 CWD_DESCRIPTION = parameter_description(
@@ -71,7 +81,7 @@ MODE_DESCRIPTION = parameter_description(
     "スキルの手順を要する作業にはtaskかdelegateを使う。\n"
     "explore: 読み取りが数回で確定する調査は自ら実行し、多数のファイルを横断する調査や大量の本文を読む調査を委譲する。"
     "委譲先はファイルを作成、変更および削除しないため、成果ファイルの出力を依頼しない。"
-    "委譲元の文脈へは結果の要約だけが入る。\n"
+    "委譲元の文脈へは結果の要約だけが入る。\n" + EXPLORE_CAPABILITIES + "\n"
     "write: 設計、調査、レビューおよび公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。"
     "読者が異なる文章は別の依頼にする。委譲先はファイルの読取・検索・作成・編集だけを行う。\n"
     "shell: 出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドを委譲し、"
@@ -175,45 +185,43 @@ START_MODE_EXAMPLES = {
 # 観測と結果受領の手順を先頭に置き、modeの選び方は`mode`の引数説明へ置いて上限内に収める。
 START_DESCRIPTION = "\n".join(
     (
-        "委譲先のsessionを開始する。agents_serverの唯一の起動ツールであり、`mode`で入力の形と起動条件を選ぶ。",
-        "返した`session_id`は同じ応答の中で実行ホストの`atk agents wait`を単独で開始して観測するか、"
-        "結果が不要なら`kill`で破棄する。`atk agents wait`は`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
+        "委譲先sessionを開始し、`mode`で入力と起動条件を選ぶ。",
+        "返した`session_id`は同じ応答で`atk agents wait`を単独実行して観測し、不要なら`kill`で破棄する。"
+        "waitは`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
         "`explore`はファイルを作成・変更・削除しない。全量コマンド出力の保存は`shell`へ、"
-        "成果ファイルを作成する調査は`delegate`へ渡し、返却本文は委譲元が保存する。",
+        "成果ファイルを作成する調査は`delegate`へ渡す。返却本文は委譲元が保存する。",
+        EXPLORE_CAPABILITIES,
         "",
         "| mode | 用途 | 必須の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
         "| `task`（省略時） | `share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path` | "
         "`<役割名>.subagent.md`の`mode:`、同ファイルに対応する工程別設定 |",
-        "| `delegate` | `<役割名>.subagent.md`の無い単発の作業を自由本文で委譲する | `prompt`・`model_type` | "
+        "| `delegate` | `<役割名>.subagent.md`の無い単発作業 | `prompt`・`model_type` | "
         "通常起動。委譲先向けの規範が届き、ClaudeとCodexではスキルを使える。"
         "Antigravityへは`rules/`配下とagent-toolkitのスキルが届かない |",
         "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`low_tier` |",
         "| `write` | 確定済みの文章起草と小規模な定型書込 | `prompt` | 軽量起動、`write` |",
         "| `shell` | コマンドを実行して結果を要約する | `command`・`summary_policy` | 軽量起動、`low_tier` |",
         "",
-        "modeごとの選び方は`mode`、受理しない入力は各引数の説明が示す。"
-        "入力の欠落とmodeが受理しない入力の混在は委譲先を起動せずに拒否し、受理する入力と次の呼び出し方を返す。"
-        "taskでは`<役割名>.subagent.md`の必須入力の欠落と宣言外の入力名も拒否し、該当する項目名と受理する項目名を返す。",
+        "選び方は`mode`、入力の制約は各引数の説明を参照する。"
+        "必須入力の欠落とmodeが受理しない入力の混在は起動せず拒否し、受理する入力と呼び出し方を返す。"
+        "taskの必須入力欠落と宣言外の入力名も拒否し、該当項目と受理する項目名を返す。",
         "",
-        "最小の呼び出し例（`cwd`は全modeで必須）:",
+        "例（`cwd`は全modeで必須）:",
         '- task: `{"cwd": "/repo", "subagent_md_path": "exec-review", "extra_params": {"計画": "/abs/plan.md"}}`',
         '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "high_tier"}`',
-        '- explore: `{"cwd": "/repo", "mode": "explore", "prompt": "<質問と調べる範囲>"}`',
-        '- write: `{"cwd": "/repo", "mode": "write", "prompt": "<成果物種別・読者・事実・根拠・反映先・完成形>", '
-        '"label": "write-awi"}`',
+        '- explore: `{"cwd": "/repo", "mode": "explore", "prompt": "<質問と範囲>"}`',
+        '- write: `{"cwd": "/repo", "mode": "write", "prompt": "<確定した書込依頼>"}`',
         '- shell: `{"cwd": "/repo", "mode": "shell", "command": "make test", '
         '"summary_policy": "終了コードと失敗したテスト名"}`',
         "",
-        "Claude Codeではメインの最初の`start`の処理中にmodが定期再確認を装着し、結果が会話へ届く。"
-        "装着失敗の通知が届いた場合と、通知もtaskも無いメインが`CronCreate`を使えて待機でターンを終える場合は、"
+        "Claude Codeのメイン初回`start`でmodが定期再確認を装着する。"
+        "装着失敗時と、通知もtaskも無く`CronCreate`を使えるメインが待機でターンを終える時は、"
         "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」に従って装着する。",
         "",
-        "応答は`session_id`、`status`、担当名の`label`を含み、"
-        "root sessionの識別子を保持する場合は`root_session_id`も加える。"
-        "利用上限などで起動できない候補は除外し、残る候補で起動する。"
-        "切り替えた場合だけ、除外した候補と根拠、採用した`engine`・`model`・`effort`を加える。"
-        "全候補が可用性またはagyのturn失敗で終端した場合は最後の候補の終端応答を返し、"
+        "応答は`session_id`・`status`・担当名の`label`と、保持する場合の`root_session_id`。"
+        "起動不能な候補を除外し、残る候補を試す。切替時だけ除外候補と根拠、採用した`engine`・`model`・`effort`を加える。"
+        "全候補が可用性またはagyのturn失敗で終端すると最後の終端応答を返す。"
         "最後のagy候補のbackend開始例外は除外理由を含む例外で返す。起動条件の詳細は`show`で取得する。",
     )
 )

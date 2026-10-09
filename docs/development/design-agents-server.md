@@ -178,6 +178,8 @@ timeout後は、送った継続要求の受理結果、またはその要求に�
 
 ### `explore`と`shell`
 
+起動前に能力を選べるよう、エンジン別のexplore能力とコマンド調査の選び方は`tool_descriptions.py`の`EXPLORE_CAPABILITIES`が定義する。`start`と`mode`の公開説明、および`launch_prompts.py`が組み立てるexplore委譲プロンプトは同じ定義を消費する。ClaudeのRead・Glob・GrepとCodexの読み取り専用コマンドの差を、共通のshare文書へコマンド利用の前提として書かない。コマンド調査はCodex候補の明示、確定コマンドのshell、自由調査のdelegateから選び、後二者にはexploreの書込拒否を課さない。説明ごとの複製と、説明に合わせてClaudeのBash権限を戻す案は、能力の乖離と権限の拡大を生むため採らない。
+
 `start`の`explore`は調査委譲の初期コンテキストと起動費用を減らし、実行側で書込を制限する。Codex backendは開始・再開へ`project_doc_max_bytes=0`と探索用指示、読み取り専用sandboxを渡し、後続turnでも読み取り専用と承認不要の拒否を保つ。MCPの実効設定を取得して全serverを無効にし、Apps・プラグイン・下位委譲も無効にする。実効設定を取得できない場合は起動を中止する。Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省く。提供する組込toolはRead・Glob・Grepに限定し、`--strict-mcp-config`で継承MCPを除き、承認を要する操作は待機せず拒否する。任意Bashや編集toolの事前承認を制限の代わりにしない。Antigravityは読み取り専用のexploreに対応しないため候補から除外する。探索結果は返却本文へ保持し、server自身のセッション記録保存とは区別する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。探索委譲を選ぶ条件は`agent-toolkit/rules/01-agent.md`、起動手段は`runtime-routing.md`を知識境界とする。
 
 `start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。共有するのは`low_tier_model`の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。Claudeの軽量起動explore・write・shellは全て`disallowed_tools=["Skill"]`を指定し、新規とresumeでSkillを明示除外する。通常起動にはこの除外を設けない。Skillが無い主体は警告に記載されたSKILL.mdをReadで全文読む。`explore`は`model_type`を省略すると`low_tier`を使い、軽量側の候補で判断材料が不足する調査だけ`medium_tier`を指定する。
