@@ -81,7 +81,7 @@ entries = [
    target_repo: 'github.com/example/a-very-long-repository-name',
    updated_at: '2026-08-07T10:11:00+00:00'}
 ];
-renderEntries([{filename: 'bad.md', reason: 'UTF-8として読み取れません'}], true);
+renderEntries([{state: 'inbox', filename: 'bad.md', reason: 'UTF-8として読み取れません'}], true);
 const announced = elements['result-status'].textContent;
 const warning = elements['list-warning'].textContent;
   const awiCells = elements['entry-list'].children[2].children[0].children;
@@ -119,7 +119,7 @@ process.stdout.write(JSON.stringify({
         "unanswered": "true",
         "unknownKind": "unknown",
         "count": "3件（未回答UWI 1件）",
-        "warning": "一覧から除外したファイル: bad.md（UTF-8として読み取れません）",
+        "warning": "［WI / node-test / /notes / inbox/bad.md］一覧から除外したファイル: UTF-8として読み取れません",
         "announced": "3件を表示",
         "kindState": ["awi", "inbox", "plan"],
         "targetLabel": "github.co…itory-name",
@@ -325,18 +325,18 @@ process.stdout.write(JSON.stringify({
         assert "詳細を閉じて開き直してから保存してください" in result[name]["alert"]
         assert result[name]["disabled"] is True
         assert result[name]["mode"] == ("answer" if name.startswith("answer") else "edit")
-    assert "保存できませんでした。 一般失敗" in result["saveGeneral"]["alert"]
-    assert "回答できませんでした。 一般失敗" in result["answerGeneral"]["alert"]
+    assert "保存できませんでした。 ［WI / node-test / /notes / inbox/entry.md］一般失敗" in result["saveGeneral"]["alert"]
+    assert "回答できませんでした。 ［WI / node-test / /notes / 回答保存］一般失敗" in result["answerGeneral"]["alert"]
     assert result["saveGeneral"]["input"] == "ユーザーの保存本文"
     assert result["answerGeneral"]["input"] == "ユーザーの回答"
     assert result["savePermission"] == {
-        "alert": "inbox/entry.mdを保存できませんでした。 権限がありません",
+        "alert": "inbox/entry.mdを保存できませんでした。 ［WI / node-test / /notes / inbox/entry.md］権限がありません",
         "disabled": False,
         "input": "ユーザーの保存本文",
         "mode": "edit",
     }
     assert result["answerPermission"] == {
-        "alert": "inbox/question.mdへ回答できませんでした。 権限がありません",
+        "alert": "inbox/question.mdへ回答できませんでした。 ［WI / node-test / /notes / 回答保存］権限がありません",
         "disabled": False,
         "input": "ユーザーの回答",
         "mode": "answer",
@@ -998,7 +998,7 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "listUrls": ["/atk/api/entries?type=all&status=adopted&answered=all&period=2w&page=1"],
         "rows": ["entry.md"],
-        "error": "候補取得失敗",
+        "error": "［WI / node-test / /notes / 対象リポジトリ一覧取得］候補取得失敗",
     }
 
 

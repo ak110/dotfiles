@@ -151,9 +151,11 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
     await item.click()
 
     preview = page.locator("#preview")
-    await playwright.async_api.expect(preview.get_by_role("status")).to_have_text(
+    await playwright.async_api.expect(preview.get_by_role("status")).to_contain_text(
         "選択した計画ファイルは移動または削除されたため表示できません。一覧を更新しました。"
     )
+    await playwright.async_api.expect(preview.get_by_role("status")).to_contain_text("計画 / browser-test /")
+    await playwright.async_api.expect(preview.get_by_role("status")).to_contain_text("plan.md")
     await playwright.async_api.expect(preview.get_by_role("button", name="再読み込み")).to_have_count(0)
     await playwright.async_api.expect(page.locator("#files .file")).to_have_count(0)
     await playwright.async_api.expect(page.locator("#copy-btn")).to_be_disabled()
@@ -178,13 +180,15 @@ async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile
     harness.plan_path.unlink()
     await first.click()
     message = "選択した計画ファイルは移動または削除されたため表示できません。一覧を更新しました。"
-    await playwright.async_api.expect(page.locator("#preview").get_by_role("status")).to_have_text(message)
+    await playwright.async_api.expect(page.locator("#preview").get_by_role("status")).to_contain_text(message)
     await page.locator("#plans-menu-btn").click()
 
     sidebar_status = page.locator("#plans-selection-status")
     opening_bounds = await sidebar_status.bounding_box()
     assert opening_bounds is not None and opening_bounds["x"] >= 0
-    await playwright.async_api.expect(sidebar_status).to_have_text(message)
+    await playwright.async_api.expect(sidebar_status).to_contain_text(message)
+    await playwright.async_api.expect(sidebar_status).to_contain_text("browser-test")
+    await playwright.async_api.expect(sidebar_status).to_contain_text("plan.md")
     await playwright.async_api.expect(sidebar_status).to_be_visible()
     await page.wait_for_function("""() => {
       const bounds = document.getElementById('plans-selection-status').getBoundingClientRect();
@@ -663,6 +667,8 @@ async def test_mermaid_error_stays_near_source_and_keeps_preview(screen_harness:
     error = harness.page.locator("#preview .diagram-mermaid .diagram-error")
     await error.wait_for(state="visible")
     assert "Mermaid図を描画できませんでした" in await error.inner_text()
+    assert "計画 / ブラウザー /" in await error.inner_text()
+    assert "plan.md" in await error.inner_text()
     assert await harness.page.locator("#preview .diagram-mermaid details").is_visible()
     source = await harness.page.locator("#preview .diagram-mermaid details pre").text_content()
     assert source is not None
@@ -682,6 +688,8 @@ async def test_mermaid_cdn_failure_stays_near_source_and_keeps_preview(screen_ha
     error = harness.page.locator("#preview .diagram-mermaid .diagram-error")
     await error.wait_for(state="visible")
     assert "Mermaidの読み込みに失敗しました" in await error.inner_text()
+    assert "計画 / ブラウザー /" in await error.inner_text()
+    assert "plan.md" in await error.inner_text()
     assert await harness.page.locator("#preview .diagram-mermaid details").is_visible()
     assert "本文-初回" in await harness.page.locator("#preview").inner_text()
     assert await harness.page.locator("#preview .diagram-svg img").is_visible()
@@ -709,3 +717,74 @@ async def test_forwarded_prefix_uses_cdn_for_mermaid(screen_harness: _ScreenHarn
         assert _MERMAID_CDN_URL in harness.requests
     finally:
         await harness.page.unroute(route_pattern, add_forwarded_prefix)
+
+
+@pytest.mark.asyncio
+async def test_root_warnings_distinguish_hosts_and_sources(multi_root_harness: _MultiRootHarness) -> None:
+    """同じ理由でもホストと保存元で区別し、内部のsource IDを表示しない。"""
+    harness = multi_root_harness
+    page = harness.page
+    roots = {
+        "browser-multi": {
+            serve_plans.NEW_SOURCE_ID: {"portable_root": "~/new"},
+            serve_plans.LEGACY_SOURCE_ID: {"portable_root": "~/legacy"},
+        },
+        "remote-host": {serve_plans.NEW_SOURCE_ID: {"portable_root": "~/new"}},
+    }
+    statuses = {
+        host: {source: {"status": "warning", "message": "同じ取得失敗"} for source in sources}
+        for host, sources in roots.items()
+    }
+    await page.route("**/api/plans/root-info", lambda route: route.fulfill(json=roots))
+    await page.route("**/api/plans/root-status", lambda route: route.fulfill(json=statuses))
+    await page.goto(harness.base_url + "/plans")
+    warnings = page.locator("#root-warnings")
+    await playwright.async_api.expect(warnings).to_contain_text("remote-host / ~/new")
+    await playwright.async_api.expect(warnings).to_contain_text("browser-multi / ~/new")
+    await playwright.async_api.expect(warnings).to_contain_text("browser-multi / ~/legacy")
+    assert (await warnings.inner_text()).count("同じ取得失敗") == 3
+    assert serve_plans.NEW_SOURCE_ID not in await warnings.inner_text()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["body", "clipboard", "svg"])
+async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harness: _ScreenHarness, failure: str) -> None:
+    """選択した計画の取得とブラウザー処理の失敗を、本文を保ちながら識別する。"""
+    harness = screen_harness
+    page = harness.page
+    if failure == "body":
+        await page.route("**/api/plans/file?*", lambda route: route.fulfill(status=503, body="同じ取得失敗"))
+    elif failure == "clipboard":
+        await page.add_init_script(
+            "Object.defineProperty(navigator, 'clipboard', {value: {writeText: async () => {throw new Error('書込拒否')}}})"
+        )
+    else:
+        harness.plan_path.write_text("# 図の失敗\n\n```svg\n<svg>broken\n```\n", encoding="utf-8")
+    await page.goto(harness.base_url + "/plans")
+    if failure == "clipboard":
+        await page.locator("#preview h1").wait_for(state="visible")
+        await page.locator("#copy-btn").click()
+    alert = page.locator("#preview [role=alert]" if failure != "svg" else "#preview .diagram-error")
+    await playwright.async_api.expect(alert).to_contain_text("plan.md")
+    await playwright.async_api.expect(alert).to_contain_text("browser-test")
+    await playwright.async_api.expect(alert).to_contain_text(str(harness.root))
+    await playwright.async_api.expect(alert).to_contain_text("ブラウザー" if failure != "body" else "計画ファイルの本文")
+    if failure == "clipboard":
+        await playwright.async_api.expect(alert).to_contain_text("書込拒否")
+        await playwright.async_api.expect(page.locator("#preview h1")).to_have_text("初回")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["list", "search"])
+async def test_plan_collection_failures_show_operation(screen_harness: _ScreenHarness, failure: str) -> None:
+    """集約取得にはserveホストと操作を示し、検索条件を失わせない。"""
+    harness = screen_harness
+    page = harness.page
+    route = "**/api/plans/files" if failure == "list" else "**/api/plans/search?*"
+    await page.route(route, lambda request: request.fulfill(status=503, body="取得失敗"))
+    await page.goto(harness.base_url + "/plans")
+    if failure == "search":
+        await page.locator("#plans-filter").fill("本文条件")
+    alert = page.locator("#plans-list-error" if failure == "list" else "#search-status")
+    await playwright.async_api.expect(alert).to_contain_text("browser-test")
+    await playwright.async_api.expect(alert).to_contain_text("一覧取得" if failure == "list" else "本文条件")

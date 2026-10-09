@@ -101,7 +101,12 @@ def render_index(
         root_dirs = {plans_context.hostname: local_root_info}
     # 3画面が共通に使う値（`BASE_PATH`とSSEの無通信判定時間）は`serve-bootstrap`へ、計画ファイル画面だけが
     # 使う値は`plans-bootstrap`へ置く。資産ファイルは要求ごとに変わらないため、要求ごとに変わる値だけを埋め込む。
-    serve_bootstrap = {"base_path": base_path, "stall_ms": int(_runtime.SSE_STALL_SEC * 1000)}
+    serve_bootstrap = {
+        "base_path": base_path,
+        "stall_ms": int(_runtime.SSE_STALL_SEC * 1000),
+        "host_name": plans_context.hostname,
+        "wi_root": str(quart.current_app.config["SERVE_STATE"].root),
+    }
     plans_bootstrap = {
         "local_host_name": plans_context.hostname,
         "root_dirs": root_dirs,

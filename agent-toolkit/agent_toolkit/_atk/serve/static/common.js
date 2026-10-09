@@ -6,6 +6,13 @@ const bootstrap = readBootstrap();
 
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSourceに前置する。
 export const BASE_PATH = typeof bootstrap.base_path === "string" ? bootstrap.base_path : "";
+export const SERVE_HOST = bootstrap.host_name || location.hostname;
+export const WI_ROOT = bootstrap.wi_root || "WI保存元";
+
+// 画面は対象の表示名を渡し、理由を変えずに発生元と対象を添える。
+export function diagnostic(screen, host, target, reason) {
+  return `［${screen} / ${host} / ${target}］${reason}`;
+}
 
 function readBootstrap() {
   const element = document.getElementById("serve-bootstrap");

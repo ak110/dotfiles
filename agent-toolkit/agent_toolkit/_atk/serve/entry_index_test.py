@@ -370,3 +370,15 @@ def test_target_repos_does_not_reparse_terminal_entries(
     assert operations.target_repos("active") == ["example/recent.md"]
     assert operations.target_repos("active") == ["example/recent.md"]
     assert len(heading_calls) == 1
+
+
+def test_warnings_distinguish_same_filename_in_different_states(tmp_path: pathlib.Path) -> None:
+    """同名の読取失敗を、走査した状態とともに返す。"""
+    for state in ("inbox", "adopted"):
+        (tmp_path / state).mkdir()
+        (tmp_path / state / "broken.md").write_bytes(b"\xff")
+    result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox", "adopted"))
+    assert not result
+    assert warnings == [
+        {"state": state, "filename": "broken.md", "reason": "UTF-8として読み取れません"} for state in ("inbox", "adopted")
+    ]

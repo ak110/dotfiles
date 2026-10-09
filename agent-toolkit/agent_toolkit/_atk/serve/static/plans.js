@@ -1,6 +1,6 @@
 // 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
 import {
-  BASE_PATH, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
+  BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
   resyncWhenVisible, setDrawerOpen, updateNavButtons
 } from "./common.js";
 import {registerScreen} from "./shell.js";
@@ -103,6 +103,17 @@ function rootEntries(host) {
 
 function rootInfo(host, source) {
   return rootEntries(host)[source || ""] || null;
+}
+
+function planTarget(host = selectedHost, source = selectedSource, path = selectedPath) {
+  const info = rootInfo(host, source);
+  const root = info?.portable_root || info?.root || "保存元未取得";
+  return path ? `${root}/${path}` : root;
+}
+
+function planDiagnostic(reason, browser = false) {
+  const target = browser ? `${selectedHost} / ${planTarget()}` : planTarget();
+  return diagnostic("計画", browser ? "ブラウザー" : selectedHost, target, reason);
 }
 
 function updateCopyPathButton(host, source) {
@@ -258,7 +269,7 @@ function renderRootWarnings() {
     for (const source of Object.keys(rootStatus[host] || {})) {
       const status = rootStatus[host][source];
       if (status && status.status === "warning" && status.message) {
-        messages.push("計画rootを利用できません: " + status.message);
+        messages.push(diagnostic("計画", host, planTarget(host, source, null), "計画rootを利用できません: " + status.message));
       }
     }
   }
@@ -295,7 +306,7 @@ async function refreshFiles() {
   } catch (error) {
     errorBox.replaceChildren();
     const message = document.createElement("span");
-    message.textContent = `計画ファイルの一覧を取得できません: ${error.message} `;
+    message.textContent = diagnostic("計画", SERVE_HOST, "一覧取得", `計画ファイルの一覧を取得できません: ${error.message} `);
     const retry = document.createElement("button");
     retry.type = "button";
     retry.textContent = "再読み込み";
@@ -323,10 +334,10 @@ async function searchFullText(query, generation) {
     serverSearchKeys = new Set(matched.map(fileKey));
     status.textContent = "";
     renderFiles();
-  } catch (_) {
+  } catch (error) {
     if (generation !== searchGeneration) return;
     serverSearchKeys = new Set();
-    status.textContent = "検索に失敗しました";
+    status.textContent = diagnostic("計画", SERVE_HOST, `本文検索: ${query}`, `検索に失敗しました: ${error.message}`);
     renderFiles();
   }
 }
@@ -492,7 +503,7 @@ function showDiagramError(figure, message) {
     error.className = "diagram-error";
     figure.appendChild(error);
   }
-  error.textContent = message;
+  error.textContent = planDiagnostic(message, true);
   error.hidden = false;
 }
 
@@ -523,7 +534,7 @@ function showPreviewError(message, retry) {
   appliedPreviewHtml = null;
   const alert = document.createElement("div");
   alert.setAttribute("role", "alert");
-  alert.textContent = `計画ファイルの本文を取得できません: ${message} `;
+  alert.textContent = planDiagnostic(`計画ファイルの本文を取得できません: ${message} `);
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "再読み込み";
@@ -532,9 +543,22 @@ function showPreviewError(message, retry) {
   preview.append(alert);
 }
 
+function showCopyError(message) {
+  const preview = document.getElementById("preview");
+  let alert = preview.querySelector(".copy-error");
+  if (!alert) {
+    alert = document.createElement("p");
+    alert.className = "copy-error";
+    alert.setAttribute("role", "alert");
+    preview.prepend(alert);
+  }
+  alert.textContent = message;
+}
+
 // 一覧の項目は外部操作（計画の保存による別rootへの移動や削除）で消え得る。同じ対象を再試行しても到達しないため、
 // 選択を解除して移動または削除済みを伝え、一覧を取り直す。
 function showMissingSelection() {
+  const message = planDiagnostic(MISSING_SELECTION_MESSAGE);
   selectedHost = null;
   selectedSource = "";
   selectedPath = null;
@@ -546,10 +570,10 @@ function showMissingSelection() {
   appliedPreviewHtml = null;
   const status = document.createElement("div");
   status.setAttribute("role", "status");
-  status.textContent = MISSING_SELECTION_MESSAGE;
+  status.textContent = message;
   preview.append(status);
   const sidebarStatus = document.getElementById("plans-selection-status");
-  sidebarStatus.textContent = MISSING_SELECTION_MESSAGE;
+  sidebarStatus.textContent = message;
   sidebarStatus.hidden = false;
   if (isMobileViewport()) document.getElementById("plans-sidebar").scrollTop = 0;
   void refreshFiles();
@@ -637,6 +661,9 @@ async function resyncFromServer() {
 
 async function copySelectedRaw() {
   if (!selectedPath || !selectedHost) return;
+  const target = planTarget();
+  const host = selectedHost;
+  let copying = false;
   const btn = document.getElementById("copy-btn");
   const wideLabel = btn.querySelector(".wide-label");
   const shortLabel = btn.querySelector(".short-label");
@@ -648,12 +675,14 @@ async function copySelectedRaw() {
     const res = await fetch(BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
     if (!res.ok) throw new Error("status " + res.status);
     const text = await (res.text());
+    copying = true;
     await (navigator.clipboard.writeText(text));
     wideLabel.textContent = "コピーしました";
     shortLabel.textContent = "完了";
   } catch (e) {
     wideLabel.textContent = "コピーに失敗しました";
     shortLabel.textContent = "失敗";
+    showCopyError(diagnostic("計画", copying ? "ブラウザー" : host, copying ? `${host} / ${target}` : target, `コピーに失敗しました: ${e.message}`));
   }
   setTimeout(() => {
     wideLabel.textContent = originalWide;
@@ -665,6 +694,7 @@ async function copySelectedPath() {
   if (!selectedPath || !selectedHost) return;
   const info = rootInfo(selectedHost, selectedSource);
   if (!info) return;
+  const target = `${selectedHost} / ${planTarget()}`;
   const btn = document.getElementById("copy-path-btn");
   const wideLabel = btn.querySelector(".wide-label");
   const shortLabel = btn.querySelector(".short-label");
@@ -693,6 +723,7 @@ async function copySelectedPath() {
   } catch (e) {
     wideLabel.textContent = "コピーに失敗しました";
     shortLabel.textContent = "失敗";
+    showCopyError(diagnostic("計画", "ブラウザー", target, `コピーに失敗しました: ${e.message}`));
   }
   setTimeout(() => {
     wideLabel.textContent = originalWide;

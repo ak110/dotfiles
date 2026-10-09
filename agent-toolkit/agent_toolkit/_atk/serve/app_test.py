@@ -99,7 +99,10 @@ await initialization;
 process.stdout.write(JSON.stringify({reloadError, initializationError: elements['operation-notice-message'].textContent}));
 """
     )
-    assert result == {"reloadError": "外部更新失敗", "initializationError": "初期化失敗"}
+    assert result == {
+        "reloadError": "［WI / node-test / /notes / 操作］外部更新失敗",
+        "initializationError": "［WI / node-test / /notes / 操作］初期化失敗",
+    }
 
 
 def test_assets_global_error_does_not_restore_refresh_after_later_error() -> None:
@@ -132,7 +135,7 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "focused": "operation-notice-close-button",
         "hidden": False,
-        "message": "同期中の後続エラー",
+        "message": "［WI / node-test / /notes / 操作］同期中の後続エラー",
     }
 
 
@@ -1253,7 +1256,7 @@ async def test_entries_api_keeps_readable_entries_and_reports_unreadable_files(t
     assert response.status_code == 200
     payload = await response.get_json()
     assert [item["filename"] for item in payload["entries"]] == ["readable.md"]
-    assert payload["warnings"] == [{"filename": "invalid.md", "reason": "UTF-8として読み取れません"}]
+    assert payload["warnings"] == [{"state": "inbox", "filename": "invalid.md", "reason": "UTF-8として読み取れません"}]
 
 
 @pytest.mark.asyncio
@@ -1716,7 +1719,8 @@ process.stdout.write(JSON.stringify({body: JSON.parse(call.options.body), toast:
     assert result["body"]["raw_text"] == "  show形式テキスト  "
     assert result["body"]["messages"] == ["show形式テキスト"]
     assert result["toast"] == (
-        "show形式の本文のため一括登録として取り込みました。1件を取り込みました。改名: old.md -> new.md"
+        "［WI / node-test / /notes / 項目登録］show形式の本文のため一括登録として取り込みました。"
+        "1件を取り込みました。改名: old.md -> new.md"
         " 使わなかった入力欄: target-repo、回答形式 警告: 依存先が不在"
     )
 

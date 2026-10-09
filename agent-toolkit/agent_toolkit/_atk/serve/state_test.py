@@ -119,17 +119,22 @@ process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
 """
     )
     assert result == {
-        "shown": {"message": "最初のエラー", "hidden": False},
-        "cleared": {"message": "最初のエラー", "hidden": True, "focused": "refresh-button"},
-        "redisplayed": {"message": "後続のエラー", "hidden": False},
+        "shown": {"message": "［WI / node-test / /notes / 操作］最初のエラー", "hidden": False},
+        "cleared": {
+            "message": "［WI / node-test / /notes / 操作］最初のエラー",
+            "hidden": True,
+            "focused": "refresh-button",
+        },
+        "redisplayed": {"message": "［WI / node-test / /notes / 操作］後続のエラー", "hidden": False},
         "failures": [
-            "一覧取得失敗",
-            "対象取得失敗",
-            "詳細取得失敗",
+            "［WI / node-test / /notes / 一覧取得］一覧取得失敗",
+            "［WI / node-test / /notes / 対象リポジトリ一覧取得］対象取得失敗",
+            "［WI / node-test / /notes / inbox/detail.md］詳細取得失敗",
+            "［WI / node-test / /notes / processing/ambiguous.md］"
             "ambiguous.mdの移動先を一意に特定できません。詳細を開き直してください。",
-            "SSE更新失敗",
-            "ダイアログ外失敗",
-            "初期化失敗",
+            "［WI / node-test / /notes / 操作］SSE更新失敗",
+            "［WI / node-test / /notes / 操作］ダイアログ外失敗",
+            "［WI / node-test / /notes / 操作］初期化失敗",
         ],
     }
 
@@ -323,7 +328,7 @@ process.stdout.write(JSON.stringify({
             "create": {"alert": "create失敗", "status": "", "pageHidden": True},
             "delete": {"alert": "delete失敗", "status": "", "pageHidden": True},
         },
-        "message": "保存完了",
+        "message": "［WI / node-test / /notes / 操作］保存完了",
         "error": "true",
         "role": "alert",
         "closeLabel": "操作通知を閉じる",
@@ -972,8 +977,12 @@ process.stdout.write(JSON.stringify({
         "rows": [],
         "notice": "",
         "status": "一致する項目はありません",
-        "shown": {"message": "補助検索に失敗", "hidden": False},
-        "cleared": {"message": "補助検索に失敗", "hidden": True, "focused": "refresh-button"},
+        "shown": {"message": "［WI / node-test / /notes / 一覧取得］補助検索に失敗", "hidden": False},
+        "cleared": {
+            "message": "［WI / node-test / /notes / 一覧取得］補助検索に失敗",
+            "hidden": True,
+            "focused": "refresh-button",
+        },
     }
 
 
@@ -1107,7 +1116,7 @@ process.stdout.write(JSON.stringify({
         "hiddenRepoFields": True,
         "contentLabel": "show形式テキスト（必須）",
         "body": {"text": "  show形式テキスト  "},
-        "toast": "1件を取り込みました。改名: old.md -> new.md 警告: 依存先が不在",
+        "toast": "［WI / node-test / /notes / 項目登録］1件を取り込みました。改名: old.md -> new.md 警告: 依存先が不在",
         "detailOpen": False,
     }
 

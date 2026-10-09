@@ -1,11 +1,15 @@
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
 import {
-  BASE_PATH, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
+  BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
   resyncWhenVisible, setDrawerOpen, updateNavButtons
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
 const ENGINE_LABELS = { claude: "Claude Code", codex: "Codex" };
+
+function sessionDiagnostic(entry, reason) {
+  return diagnostic("セッション", entry.host, `${ENGINE_LABELS[entry.engine] || entry.engine} / ${entry.path}`, reason);
+}
 const KIND_LABELS = {
   user: "ユーザー",
   developer: "開発者",
@@ -148,7 +152,7 @@ function renderSessions() {
     if (entry.warning) {
       const warning = document.createElement("div");
       warning.className = "session-warning";
-      warning.textContent = entry.warning;
+      warning.textContent = sessionDiagnostic(entry, entry.warning);
       item.append(warning);
     }
     // 子の無い行にも同じ幅の開閉欄を置き、子の有無で項目の開始位置がずれないようにする。
@@ -237,22 +241,24 @@ async function fetchList() {
     const currentKeys = new Set(sessions.map(sessionKey));
     for (const key of expandedKeys) if (!currentKeys.has(key)) expandedKeys.delete(key);
     if (selected && previousKeys.has(sessionKey(selected)) && !currentKeys.has(sessionKey(selected))) {
+      const message = sessionDiagnostic(selected, "選択したセッション記録は見つかりません。");
       selected = null;
       parentTrail = [];
       detailTitleEl.textContent = "";
       detailUsageEl.textContent = "";
-      detailEl.textContent = "選択したセッション記録は見つかりません。";
+      detailEl.textContent = message;
       if (location.pathname.endsWith("/sessions") && location.search) history.replaceState({atkSession: true}, "", location.pathname);
     }
     sessionRoots = payload.roots || [];
-    renderWarnings(warningsEl, (payload.warnings || []).map((warning) => `${warning.host}: ${warning.reason}`));
+    renderWarnings(warningsEl, (payload.warnings || []).map((warning) =>
+      diagnostic("セッション", warning.host, warning.path || warning.root || "記録一覧", warning.reason)));
     document.getElementById("sessions-list-error").hidden = true;
     renderSessions();
   } catch (error) {
     const box = document.getElementById("sessions-list-error");
     box.replaceChildren();
     const message = document.createElement("span");
-    message.textContent = `セッション一覧を取得できません: ${error.message} `;
+    message.textContent = diagnostic("セッション", SERVE_HOST, "一覧取得", `セッション一覧を取得できません: ${error.message} `);
     const retry = document.createElement("button");
     retry.type = "button";
     retry.textContent = "再読み込み";
@@ -430,14 +436,14 @@ function renderDetail(detail, preserved = null) {
     // サブエージェントが無い場合は何も表示しないため、有無を判定できなかったことは明示して区別する。
     const note = document.createElement("div");
     note.className = "secondary-text";
-    appendUnavailable(note, "サブエージェントの一覧を取得できません（リモートホストのdotfilesを更新すると表示されます）");
+    appendUnavailable(note, sessionDiagnostic(detail, "サブエージェントの一覧を取得できません（リモートホストのdotfilesを更新すると表示されます）"));
     detailEl.append(note);
   }
 
   if (detail.broken_lines > 0) {
     const broken = document.createElement("div");
     broken.className = "session-warning";
-    broken.textContent = `解析できない行が${detail.broken_lines}件あります`;
+    broken.textContent = sessionDiagnostic(detail, `解析できない行が${detail.broken_lines}件あります`);
     detailEl.append(broken);
   }
 
@@ -532,7 +538,7 @@ async function openSession(host, engine, path, trail = [], updateUrl = true) {
     detailEl.replaceChildren();
     const alert = document.createElement("div");
     alert.setAttribute("role", "alert");
-    alert.textContent = `セッションの詳細を取得できません: ${error.message} `;
+    alert.textContent = sessionDiagnostic({host, engine, path}, `セッションの詳細を取得できません: ${error.message} `);
     const retry = document.createElement("button");
     retry.type = "button";
     retry.textContent = "再読み込み";
