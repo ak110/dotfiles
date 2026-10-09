@@ -636,6 +636,14 @@ pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Py
 入れ子を独立した節へ移して各項目を1行に戻すと、再び一致0件であった。
 再検証は同じ順序付きリストについて入れ子を含む写しと含まない写しを作成し、`--commands=textlint`を指定した同じコマンドで一致件数を比べる。
 
+## agent-toolkit/skills/writing-standards/references/x-posts.md：投稿の同定と本文：2026年10月10日
+
+2026年10月10日、FxEmbedの公開原本を読解した。API版とURLは[API introduction](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)、v1の経路は[src/realms/api/router.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/realms/api/router.ts)、応答の`code`・`message`・`tweet`は[src/embed/status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)、本文・日時・写真の属性は[api-status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-status.ts)と[api-schemas.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-schemas.ts)へ対応付けた。v1は`/:handle/status/:id`、v2は`/2/`付きであり、資料のv1手順をv2の応答構造へ読み替えない。
+
+元ホストの取得条件はAWI `20261009-145842-001.md`が保持する資料に由来する。X直接取得のHTTP 402、APIのHTTP 307、pbs画像の取得成功とWindows curlの失効確認エラーはその環境の記録であり、本改訂時に同じ通信を再現した結果でも全ホスト共通の仕様でもない。
+
+再検証では前記原本のv1経路と応答生成を取得し、属性と版を比較する。通信を試す場合は公開投稿のURL・最終URL・HTTP状態・応答本文を保存し、`code`と`tweet`の成立を確認してから画像URLをmanaged-tempへ取得する。画像を実際に読んだホストと保存先を記録し、通信失敗の本文を画像や投稿の内容として扱わない。
+
 ## docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日
 
 2026年9月13日、Codex CLI 0.154.0でローカルmarketplaceを隔離`CODEX_HOME`へ導入して検証した。`agent-toolkit/`直下にAgent Plugins用`plugin.json`がある構成では、`.codex-plugin/plugin.json`のhook定義よりroot manifestが優先され、app-serverの`hooks/list`は0件を返した。root manifestを除いたwrapperから相対シンボリックリンクでhook・skill・実行資源へ接続した構成では、公式CLIのsnapshotに`.codex-plugin`だけが残り、リンク先は含まれなかった。全資源を通常ファイルとして含む`agent-toolkit-codex/`では、`hooks/list`が8イベントを返した。対象は`sessionStart`、`subagentStart`、`preToolUse`、`postToolUse`、`permissionRequest`、`userPromptSubmit`、`subagentStop`、`sessionEnd`である。project trustの有無で登録集合は変わらなかった。再検証ではCodex CLI 0.154.0で`scripts/sync_codex_plugin_manifests_test.py::test_codex_0154_registers_all_hooks_independent_of_project_trust`を実行する。隔離した2つの`CODEX_HOME`における登録集合、SessionStartの管理一時領域生成、SessionEndの回収を確認する。
