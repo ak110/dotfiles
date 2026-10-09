@@ -1073,6 +1073,29 @@ def test_accepts_legacy_verification_without_acceptance_scenario(repo: tuple[pat
     assert not errors, errors
 
 
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [("`pytest`<br>`make test`", 0), ("`pytest` 説明", 1), ("`pytest && make test`", 1), ("", 1)],
+)
+def test_public_plan_check_rejects_ambiguous_verification_cell(
+    repo: tuple[pathlib.Path, str], capsys: pytest.CaptureFixture[str], cell: str, expected: int
+) -> None:
+    """構造確認の公開操作も現行セルの説明・shell構文・空欄を拒否する。"""
+    work_dir, _base = repo
+    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(
+        "| 変更範囲の検証 | `pytest` |", f"| 変更範囲の検証 | {cell} |", 1
+    )
+    path = work_dir / "plan.md"
+    path.write_text(content, encoding="utf-8")
+    assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == expected
+    if expected:
+        assert "次の操作:" in capsys.readouterr().err
+    # 進行中の旧書式は実行時の確認と分け、従来どおり構造の読取を保持する。
+    legacy = content.replace("| 変更範囲の検証 |", "| 近接検証 |", 1)
+    path.write_text(legacy, encoding="utf-8")
+    assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == (1 if not cell else 0)
+
+
 def test_legacy_verification_name_is_readable_but_rejected_for_revision(repo: tuple[pathlib.Path, str]) -> None:
     """進行中の旧名は読めるが、新規作成・改訂では移行を求める。"""
     work_dir, _base = repo

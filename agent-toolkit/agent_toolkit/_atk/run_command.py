@@ -132,17 +132,8 @@ def _metadata(
     }
 
 
-def dispatch(args: argparse.Namespace) -> int:
-    """外部コマンドを実行し、保存結果のJSONと実際の終了状態を返す。"""
-    argv = list(args.command_argv)
-    if not argv or argv[0] != "--" or len(argv) == 1:
-        outcome.report_failure(
-            "`--`以後に実行するCOMMANDがありません", next_action="`atk run-command -- COMMAND [ARG...]`で再実行する"
-        )
-        return _EXIT_WRAPPER_FAILURE
-    argv.pop(0)
-
-    cwd = args.cwd if args.cwd is not None else pathlib.Path.cwd().resolve()
+def execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple[dict[str, Any], int, str | None]:
+    """有限の子実行と記録保存を行い、表示から独立した結果・終了コード・保存失敗を返す。"""
     child_env = dict(os.environ)
     strip_inherited_venv(child_env)
     git_head, git_status = _git_state(cwd)
@@ -164,7 +155,7 @@ def dispatch(args: argparse.Namespace) -> int:
                     argv, cwd=cwd, env=child_env, stdout=stdout_stream, stderr=stderr_stream
                 ) as process:
                     try:
-                        process.wait(timeout=args.timeout)
+                        process.wait(timeout=timeout)
                     except subprocess.TimeoutExpired:
                         timed_out = True
                         process.kill()
@@ -205,11 +196,24 @@ def dispatch(args: argparse.Namespace) -> int:
             metadata["record_path"] = None
             wrapper_exit_code = _EXIT_WRAPPER_FAILURE
             failure = f"実行結果JSONを保存できない: {error}"
+    return metadata, wrapper_exit_code, failure
+
+
+def dispatch(args: argparse.Namespace) -> int:
+    """外部コマンドを実行し、保存結果のJSONと実際の終了状態を返す。"""
+    argv = list(args.command_argv)
+    if not argv or argv[0] != "--" or len(argv) == 1:
+        outcome.report_failure(
+            "`--`以後に実行するCOMMANDがありません", next_action="`atk run-command -- COMMAND [ARG...]`で再実行する"
+        )
+        return _EXIT_WRAPPER_FAILURE
+    cwd = args.cwd if args.cwd is not None else pathlib.Path.cwd().resolve()
+    metadata, wrapper_exit_code, failure = execute(argv[1:], cwd, args.timeout)
     print(json.dumps(metadata, ensure_ascii=False, sort_keys=True))
     if wrapper_exit_code == 0:
         outcome.report_success("外部コマンドが終了した", outcome.ResultKind.VALUE_OUTPUT)
     else:
         detail = failure or f"外部コマンドが終了コード{wrapper_exit_code}で終了した"
-        paths = f"stdout={stdout_path}, stderr={stderr_path}"
+        paths = f"stdout={metadata['stdout_path']}, stderr={metadata['stderr_path']}"
         outcome.report_failure(detail, next_action=f"保存先を診断する: {paths}")
     return wrapper_exit_code

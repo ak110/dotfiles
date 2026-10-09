@@ -68,7 +68,7 @@ WIを入力に持つ実装commitとAWIの対応は、計画（計画なしでは
 
 取得: 終端担当などAWIを終端するエージェントは、`atk run-script plan-commits -- <記録> --worktree <worktree> --awi <AWI>`へ同じ記録と対象を渡す。記録とworktreeは絶対パスを使い、JSON Linesの`awi`・`commits`から現在のcommit集合を取得時点で一意な長さの短縮OIDで取得する。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら、その計画と同じstemの対応記録ファイルの読取りに使える。候補が複数ある場合は保存済み計画の実在パスを指定する。計画なしでは同じ`--handoff`・`--allowed-awi`を使う。取得した短縮OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。記録の欠落・対象外AWI・Gitで解決できないOID（一意に解決できない短縮OIDを含む）は生成側が補完してから再取得し、説明文や件名から対応を推定しない。
 
-履歴変更: rebase・autosquash・amendでWI実装commitのOIDが変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従って対応を追記する。書換えで検収した範囲全体の旧OIDから新OIDへの対応表と書換え前のHEADを、1回の`atk run-script plan-rewrite`へ渡す。同じ呼び出しへ、書換え範囲にWI実装commitを持つ全ての計画と引き継ぎ記録を渡す。同コマンドが記録ごとに該当する対応を選んで各対応記録ファイルへ追記し、記録済みOIDが対応表に無い場合は、どの記録も変えずに失敗する。
+履歴変更: WI実装commitのOIDが履歴書換えやcommit分割で変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」の形式で対応を追記する。書換えで検収した範囲全体の対応表と書換え前のHEADを、1回の`atk run-script plan-rewrite`へ渡す。同じ呼び出しへ、書換え範囲にWI実装commitを持つ全ての計画と引き継ぎ記録を渡す。同コマンドが記録ごとに該当する対応を選んで各対応記録ファイルへ追記し、記録済みOIDや分割時のAWI割当が不足する場合は、どの記録も変えずに失敗する。
 
 対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、計画の進捗ログまたは引き継ぎ記録に残した根拠を使い、commitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は対応記録ファイルと共に`atk plans commit`で保存する。
 

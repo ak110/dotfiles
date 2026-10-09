@@ -19,6 +19,7 @@ SCRIPT_PATHS = {
     "plan-progress": pathlib.Path("skills/plan-mode/scripts/append_progress_log.py"),
     "plan-commits": pathlib.Path("skills/plan-mode/scripts/get_plan_commits.py"),
     "plan-rewrite": pathlib.Path("skills/plan-mode/scripts/rewrite_plan_commits.py"),
+    "plan-verify": pathlib.Path("skills/plan-mode/scripts/run_plan_verifications.py"),
     "pick-wi-check": pathlib.Path("skills/process-wi/scripts/check_selection.py"),
     "termination-evidence": pathlib.Path("agent_toolkit/_hooks/termination_evidence.py"),
     "exec-review-evidence-check": pathlib.Path("skills/review-standards/scripts/check_exec_review_evidence.py"),

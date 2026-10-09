@@ -13,6 +13,7 @@ import pytest
 
 from agent_toolkit._atk import review_table, run_script
 from agent_toolkit._atk.wi import entries, repo, sync
+from agent_toolkit._testing import git_repository
 
 WI = "20261008-043514-001.md"
 
@@ -57,6 +58,26 @@ def _wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
             [],
         ),
     )
+
+
+def test_public_generation_guides_non_git_cwd_without_writing_and_recovers(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """未判定記録の生成も対象worktreeへ同じ引数を持ち込める案内を返す。"""
+    _wi(monkeypatch, tmp_path)
+    plan = _plan(tmp_path, "plan-user")
+    record = tmp_path / "pending.json"
+    monkeypatch.chdir(tmp_path)
+    argv = ["--output", str(record), "--plan", str(plan)]
+    assert _run(*argv) == 1
+    assert not record.exists()
+    assert "Git worktree" in capsys.readouterr().err
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    git_repository.init_repository(repository)
+    monkeypatch.chdir(repository)
+    assert _run(*argv) == 0
+    assert len(json.loads(record.read_text())["user_requirements"]) == 2
 
 
 @pytest.mark.parametrize("mode", ["wi", "plan-wi", "plan-user"])
@@ -104,6 +125,129 @@ def test_public_record_roundtrip(
     expected = first
     expected[chosen["section"]][1]["evidence"] = "別条件で再確認"
     assert final == expected
+
+
+def test_public_regeneration_adds_missing_row_and_keeps_existing_evidence(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同じoutputの再生成で不足行を補い、原文別出所の既存根拠を保持する。"""
+    plan = _plan(tmp_path, "plan-user")
+    record = tmp_path / "pending.json"
+    assert _run("--output", str(record), "--plan", str(plan)) == 0
+    assert _run("--output", str(record), "--list") == 0
+    listed = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text("修正前から保持する根拠", encoding="utf-8")
+    assert (
+        _run(
+            "--output",
+            str(record),
+            "--section",
+            "user_requirements",
+            "--row",
+            "2",
+            "--source",
+            listed[1]["source"],
+            "--evidence-file",
+            str(evidence),
+            "--mode",
+            "replace",
+        )
+        == 0
+    )
+    before = json.loads(record.read_text(encoding="utf-8"))["user_requirements"]
+    current = plan.read_text(encoding="utf-8")
+    plan.write_text(current + "\n### ユーザー発言3\n\n```text\n不足行を追加する。\n```\n", encoding="utf-8")
+    assert _run("--output", str(record), "--plan", str(plan)) == 0
+    after = json.loads(record.read_text(encoding="utf-8"))["user_requirements"]
+    assert after[:2] == before
+    assert after[2]["requirement"] == "不足行を追加する。"
+    assert all(row["outcome"] == row["reviewed_head"] == "" for row in after)
+
+
+def test_public_reference_updates_and_inheritance_reach_final_check(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """両配列へ単一・配列更新した新参照が未判定根拠の継承を経て最終確認まで到達する。"""
+    _wi(monkeypatch, tmp_path)
+    repository = git_repository.init_repository(tmp_path / "repo", files={"base.txt": "基準\n"}, commit_message="基準")
+    monkeypatch.chdir(repository)
+    head = git_repository.git_output(repository, "rev-parse", "HEAD")
+    plan = _plan(tmp_path, "plan-user")
+    record, template = tmp_path / "pending.json", tmp_path / "review.json"
+    assert _run("--output", str(record), "--wi", WI, "--plan", str(plan)) == 0
+    assert _run("--template", str(template), WI, "--plan", str(plan), name="exec-review-evidence-check") == 0
+    data = json.loads(record.read_text())
+    observation = tmp_path / "saved output.txt"
+    observation.write_text("保存結果\n再読込結果\n要求の保存結果\n要求の再確認結果\n", encoding="utf-8")
+    updates, judged = [], []
+    for section in ("wi_conditions", "user_requirements"):
+        for index, row in enumerate(data[section], 1):
+            number = index if section == "wi_conditions" else index + 2
+            evidence = tmp_path / f"{section}-{index}.txt"
+            evidence.write_text(f'stdout="{observation}:{number}": 観測した結果を確認\n', encoding="utf-8")
+            update = {
+                "section": section,
+                "row": index,
+                "source": row["source"],
+                "evidence_file": str(evidence),
+                "mode": "replace",
+            }
+            if index == 1:
+                assert (
+                    _run(
+                        "--output",
+                        str(record),
+                        "--section",
+                        section,
+                        "--row",
+                        str(index),
+                        "--source",
+                        row["source"],
+                        "--evidence-file",
+                        str(evidence),
+                        "--mode",
+                        "replace",
+                    )
+                    == 0
+                )
+            else:
+                updates.append(update)
+            judged.append(
+                {
+                    "section": section,
+                    "row": index,
+                    "source": row["source"],
+                    "verification_source": row["source"],
+                    "mode": "replace",
+                    "outcome": "達成",
+                    "reviewed_head": head,
+                }
+            )
+    update_path = tmp_path / "updates.json"
+    update_path.write_text(json.dumps(updates), encoding="utf-8")
+    assert _run("--output", str(record), "--updates-file", str(update_path)) == 0
+    preserved = record.read_bytes()
+    assert _run("--output", str(record), "--wi", WI, "--plan", str(plan)) == 0
+    assert record.read_bytes() == preserved
+    update_path.write_text(json.dumps(judged), encoding="utf-8")
+    assert (
+        _run(
+            str(template),
+            "--verification-record",
+            str(record),
+            "--updates-file",
+            str(update_path),
+            "--output",
+            str(template),
+            name="exec-review-evidence-check",
+        )
+        == 0
+    )
+    assert _run(str(template), WI, "--plan", str(plan), "--expected-head", head, name="exec-review-evidence-check") == 0, (
+        capsys.readouterr().err
+    )
+    assert record.read_bytes() == preserved
 
 
 @pytest.mark.parametrize("invalid", ["source", "row", "outcome", "reviewed_head", "json", "empty-evidence", "missing-argument"])

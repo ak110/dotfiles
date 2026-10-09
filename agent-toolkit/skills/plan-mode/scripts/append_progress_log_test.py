@@ -1,5 +1,6 @@
 """計画の進捗ログ追記処理を検証する。"""
 
+import argparse
 import datetime
 import json
 import pathlib
@@ -7,6 +8,7 @@ import pathlib
 import append_progress_log
 import pytest
 
+from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 
 
@@ -479,3 +481,53 @@ def test_help_describes_range_and_merge_rejection(capsys: pytest.CaptureFixture[
     output = "".join(capsys.readouterr().out.split())
     assert "--previous-headから現在のHEADまでに加わった全commit" in output
     assert "マージcommitを含む範囲は受け付けない" in output
+
+
+@pytest.mark.parametrize("handoff", [False, True])
+def test_public_progress_split_preserves_assignment_and_rejects_loss(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
+) -> None:
+    """分割表を進捗公開操作へ渡し、欠落時の無書込とWI別の継承を確認する。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.init_repository(repo)
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "base")
+    base = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "old")
+    old = git_repository.git_output(repo, "rev-parse", "HEAD")
+    wi_a, wi_b = "20261004-044311-001.md", "20261004-044247-001.md"
+    path = tmp_path / "record.md"
+    path.write_text("# 引き継ぎ\n" if handoff else _related_plan(wi_a, wi_b), encoding="utf-8")
+    common = [str(path), "--worktree", str(repo), "--awi", wi_a, "--awi", wi_b]
+    if handoff:
+        common += ["--handoff", "--allowed-awi", wi_a, "--allowed-awi", wi_b]
+
+    def dispatch(*extra: str) -> int:
+        return run_script.dispatch(argparse.Namespace(script_name="plan-progress", script_args=[*common, *extra]))
+
+    assert dispatch("--commit", old, "--previous-head", base, "--completed-step", "実装", "--result", "成功") == 0
+    git_repository.git_output(repo, "switch", "-c", "split", base)
+    destinations = []
+    for message in ("split-a", "split-b"):
+        git_repository.git_output(repo, "commit", "--allow-empty", "-m", message)
+        destinations.append(git_repository.git_output(repo, "rev-parse", "HEAD"))
+    attachment = path.with_name(path.stem + ".wi-commits.jsonl")
+    saved = path.read_bytes(), attachment.read_bytes()
+    replacement = tmp_path / "rewrite.json"
+    assigned = [{"commit": oid, "awi": [wi]} for oid, wi in zip(destinations, (wi_a, wi_b), strict=True)]
+    replacement.write_text(json.dumps({old: assigned[:1]}), encoding="utf-8")
+    capsys.readouterr()
+    assert dispatch("--rewrite-map", str(replacement), "--completed-step", "分割", "--result", "失敗") == 1
+    diagnostic = capsys.readouterr().err
+    assert wi_b in diagnostic and old[:7] in diagnostic and "次の操作:" in diagnostic
+    assert (path.read_bytes(), attachment.read_bytes()) == saved
+    replacement.write_text(json.dumps({old: assigned}), encoding="utf-8")
+    assert dispatch("--rewrite-map", str(replacement), "--completed-step", "分割", "--result", "成功") == 0
+    assert path.read_bytes().startswith(saved[0])
+    capsys.readouterr()
+    assert dispatch("--get-commits") == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert {row["awi"]: row["commits"] for row in records} == {
+        wi: [git_repository.git_output(repo, "rev-parse", "--short", oid)]
+        for oid, wi in zip(destinations, (wi_a, wi_b), strict=True)
+    }

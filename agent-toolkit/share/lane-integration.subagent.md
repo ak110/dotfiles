@@ -43,7 +43,7 @@
    atk run-script history-compare -- --operation rebase --work-dir <専用worktreeの絶対パス> --old-base <rebase前のベースOID> --old-head <rebase前の専用branchのHEAD> --new-base <統合先branchの現在HEAD> --new-head <rebase後の専用branchのHEAD> --output <managed-temp内の対応表JSONの絶対パス>
    ```
 
-9. 計画を持つ場合は計画ファイルの`## 検証`の`変更範囲の検証`行、計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを、rebase後の専用branchのHEADで再実行し、終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを確認する。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の`git range-diff`が担保する。失敗した場合は、読込表の行が示す同資料「統合後の変更範囲の検証の失敗」に従う。
+9. rebase後の専用branchのHEADを再検証する。計画を持つ場合は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <専用worktreeの絶対パス> --timeout <正の有限秒数>`を使う。計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを使う。計画ありでは直前に同じ入力の`--list`を確認し、実行後は全件のrecord_pathと両出力を読む。終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを確認する。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の`git range-diff`が担保する。失敗した場合は、読込表の行が示す同資料「統合後の変更範囲の検証の失敗」に従う。
 10. 対象リポジトリのプロジェクト規範に、統合後にだけ成立する検証があるか確認する。なければ手順11へ進む。ある場合は次の順で実行する。この検証は他のレーンの成果と合わせた状態でだけ成立するため、rebase前の変更範囲の検証では代替できない。専用branchのHEADは統合先branchの現在HEADの子孫であり、そのtreeはfast-forward後の統合先と同じになるため、fast-forwardの前に専用worktreeで実行する。統合先を変える前に失敗を確定すると、他のレーンが失敗した状態の統合先の上へ載ることを防げる。
     1. managed-tempの中に作業ディレクトリを確保し、標準出力と標準エラーの保存先を、その領域内の絶対パスとして`summary_policy`へ記す。
     2. 規範が定めるコマンドを、専用worktreeを`cwd`として`agents_server`の`start`（`mode`は`shell`）へ渡して1回実行する。委譲先には両方を保存して必要な範囲を読ませ、終了状態、警告の有無、両保存先と要約を返させる。

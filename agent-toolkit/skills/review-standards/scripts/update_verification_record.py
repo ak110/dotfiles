@@ -119,7 +119,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         run(args)
     except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:
-        next_action.report(str(error), next_action="入力と原文・出所を確認する。記録は変更していない。同じ操作を再実行する")
+        next_action.report(
+            str(error),
+            next_action=error.next_action
+            if isinstance(error, next_action.ActionableError)
+            else "入力と原文・出所を確認する。記録は変更していない。同じ操作を再実行する",
+        )
         return 1
     return 0
 

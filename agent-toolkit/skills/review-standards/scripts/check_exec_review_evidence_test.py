@@ -354,8 +354,9 @@ def _parsed_breakdown(output: str) -> list[str]:
 
 
 @pytest.mark.parametrize("layout", ["mixed", "all-achieved", "empty"])
+@pytest.mark.parametrize("show_all", [False, True])
 def test_return_result_reports_outcome_breakdown_and_nonachievement_rows(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], layout: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], layout: str, show_all: bool
 ) -> None:
     """返却が両配列の総数・判定値別件数と達成以外の全行を、指定WI集合外と計画由来の行も含めて切り詰めずに示す。
 
@@ -401,12 +402,20 @@ def test_return_result_reports_outcome_breakdown_and_nonachievement_rows(
             "--round",
             "2",
             "--return-result",
+            *(["--show-all-rows"] if show_all else []),
         ],
     )
     assert run_script.dispatch(args) == 0, capsys.readouterr().err
     output = capsys.readouterr().out
     assert "未解決の指摘数: 1\n" in output and f"完成条件証拠のパス: {path}\n" in output
     assert _parsed_breakdown(output) == _breakdown_lines(data)
+    displayed = [
+        json.loads(line.removeprefix("証拠の全行: ")) for line in output.splitlines() if line.startswith("証拠の全行: ")
+    ]
+    expected = [
+        {"配列": section, "行番号": index, **row} for section, rows in data.items() for index, row in enumerate(rows, 1)
+    ]
+    assert displayed == (expected if show_all else [])
 
 
 @pytest.mark.parametrize("source_suffix", ["#存在しない節", "#別の節", ":99-100"])
@@ -2263,10 +2272,95 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     return repository, head, tmp_path / "evidence.json"
 
 
+@pytest.mark.parametrize("operation", ["template", "check", "return", "none", "batch"])
+def test_non_git_cwd_guides_same_arguments_to_target_worktree(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    operation: str,
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+) -> None:
+    """Gitが必要な各公開操作は無書込で対象worktreeへの移動を案内し、同じ引数で回復する。"""
+    repository, head, evidence = reference_repository
+    _write_evidence(evidence, [{**_condition(FIRST_WI, "完成"), "reviewed_head": head, "evidence": "test_complete 成功"}])
+    table = tmp_path / "review.tsv"
+    review_table.init(table)
+    before = evidence.read_bytes()
+    base = [str(evidence), FIRST_WI]
+    if operation == "template":
+        argv = [*base, "--template"]
+    elif operation == "check":
+        argv = [*base, "--expected-head", head]
+    else:
+        argv = [
+            *(base if operation != "none" else ["なし"]),
+            "--expected-head",
+            head,
+            "--review-table",
+            str(table),
+            "--round",
+            "1",
+            "--return-result",
+        ]
+    if operation == "batch":
+        batch = tmp_path / "batch.json"
+        batch.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "reviews": [
+                        {
+                            "plan": "なし",
+                            "evidence": str(evidence),
+                            "wi": [FIRST_WI],
+                            "reviewed_head": head,
+                            "review_table": str(table),
+                            "round": 1,
+                            "plans": [],
+                            "input_records": [],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        argv = ["--batch", str(batch)]
+    monkeypatch.chdir(tmp_path)
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)
+    capsys.readouterr()
+    assert run_script.dispatch(args) == 1
+    captured = capsys.readouterr()
+    diagnostic = captured.out + captured.err
+    assert "Git worktree" in diagnostic and "同じ引数" in diagnostic
+    messages = json.loads(captured.out)["diagnostics"] if operation == "batch" else captured.err.splitlines()
+    actions = [line for line in messages if line.startswith("次の操作: ")]
+    assert len(actions) == 1 and "Git worktree" in actions[0] and "同じ引数" in actions[0], messages
+    assert "各行が示す箇所" not in diagnostic
+    assert evidence.read_bytes() == before and table.read_bytes() == b""
+    monkeypatch.chdir(repository)
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     ("reference", "expected"),
     [
         ("docs/record.md の結果を読んだ", 0),
+        ("stdout={outside}/.cache/out.txt:1: 観測説明", 0),
+        ('stdout="{repository}/docs/record.md:1" の結果', 0),
+        ("'{outside}/.cache/out.txt:1' の結果", 0),
+        ("stderr={outside}/.cache/missing.txt:1", 1),
+        ("test_save[$HOME/missing/x.md]: PASSED", 0),
+        ("`test_save[$HOME/missing/x.md]`: PASSED", 0),
+        ("test_save[{outside}/missing.md]: PASSED", 0),
+        ("test_save[docs/missing.md:1]: PASSED", 0),
+        ("`test_save[docs/missing.md:1]`: PASSED", 0),
+        ("docs/record.md::test_save[$HOME/missing/x.md]: PASSED", 0),
+        ("`docs/record.md::test_save[{outside}/missing.md:1]`: PASSED", 0),
+        ("test_save[docs/missing.md]: PASSED。docs/missing.md:1 で確認", 1),
+        ("`test_save[$HOME/missing/x.md]`: PASSED。docs/missing.md:1 で確認", 1),
+        ("docs/missing.md::test_save[$HOME/missing/x.md]: PASSED", 1),
+        ("stdout={outside}/.cache/out.txt:99", 1),
+        ("stdout={outside}/.cache/out.txt:1-", 1),
         ("原因をdocs/record.md:1で確認", 0),
         ("原因をdocs/missing.md:1で確認", 1),
         ("原因をdocs/record.md:15で確認", 1),
@@ -2393,6 +2487,20 @@ def _rewrite_args(evidence: pathlib.Path, rewrite_map: pathlib.Path) -> argparse
     return argparse.Namespace(
         script_name="exec-review-evidence-check", script_args=[str(evidence), "--rewrite-map", str(rewrite_map)]
     )
+
+
+def test_public_split_rewrites_evidence_to_all_destinations(tmp_path: pathlib.Path) -> None:
+    """AWI別の分割でも観測の旧参照を全対応先へ更新し、判定を保持する。"""
+    evidence, rewrite = tmp_path / "evidence.json", tmp_path / "map.json"
+    _write_evidence(evidence, [{**_condition(FIRST_WI, "保存"), "evidence": f"版 {_OLD_FULL} の結果"}])
+    rewrite.write_text(
+        json.dumps({_OLD_FULL: [{"commit": _NEW_FULL, "awi": [FIRST_WI]}, {"commit": "3" * 40, "awi": [SECOND_WI]}]}),
+        encoding="utf-8",
+    )
+    assert run_script.dispatch(_rewrite_args(evidence, rewrite)) == 0
+    row = json.loads(evidence.read_text())["wi_conditions"][0]
+    assert _NEW_FULL in row["evidence"] and "3" * 40 in row["evidence"] and _OLD_FULL not in row["evidence"]
+    assert row["outcome"] == "達成" and row["reviewed_head"] == REVIEWED_HEAD
 
 
 def test_rewrite_map_updates_commit_references_only(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -3320,7 +3428,7 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
         )
     batch = tmp_path / "batch.json"
     batch.write_text(json.dumps({"version": 1, "reviews": reviews}), encoding="utf-8")
-    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(batch)])
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(batch), "--show-all-rows"])
     capsys.readouterr()
 
     assert run_script.dispatch(args) == 0, capsys.readouterr().err
@@ -3332,6 +3440,14 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
         assert f"計画のパス: {json.dumps(review['plans'])}" in result["result"]
         assert f"入力記録のパス: {json.dumps(review['input_records'])}" in result["result"]
         assert any(original in line for line in result["result"])
+        full = [json.loads(line.removeprefix("証拠の全行: ")) for line in result["result"] if line.startswith("証拠の全行: ")]
+        assert full == [
+            {
+                "配列": "wi_conditions",
+                "行番号": 1,
+                **json.loads(pathlib.Path(review["evidence"]).read_text(encoding="utf-8"))["wi_conditions"][0],
+            }
+        ]
     reviews[0]["reviewed_head"] = heads[1]
     batch.write_text(json.dumps({"version": 1, "reviews": reviews}), encoding="utf-8")
     assert run_script.dispatch(args) == 1
