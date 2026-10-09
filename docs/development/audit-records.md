@@ -528,6 +528,12 @@ Writeのツール説明は「Overwriting an existing file you haven't Read will 
 Readを経ない取得手段（Bashのリダイレクトでの作成、`cp`での複製、変数を含むパスと複数コマンドの連結での表示、単独の`cat <絶対パス>`での表示、同じ内容の別パスのRead）ごとにEditを発行し、未読の既存ファイルへWriteを発行する。
 条件ごとに拒否の有無と文面、Readで読んだ後の同じ操作の成否を保存して比べる。版数は`claude --version`で取得する。
 
+## agent-toolkit/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月9日
+
+2026年10月9日、Codex CLI 0.162.0の公式ソース（タグ`rust-v0.162.0`）を読解した記録に基づく。`codex-rs/exec/src/cli.rs`の`--ephemeral`と`codex-rs/exec/src/lib.rs`の適用はセッションの永続化を抑止する。認証の経路は`codex-rs/login/src/auth/manager.rs`と`codex-rs/login/src/auth/storage.rs`にあり、ChatGPTトークンの期限が5分以内か、最後のrefreshから8日を超える条件で更新し、認証ストレージへ保存する。`--ephemeral`はこの更新・保存を抑止しない。実機でrefreshを新たに起こす観測は行っていない。
+
+再検証では同じ公式タグのCLIオプション、execへの適用、認証更新条件と保存経路を対応付けて読む。実測する場合は公開された状態隔離手段と通常認証の成立を先に確認し、同じ実体のmtimeなどを前後で比較する。外部認証情報を隔離先へ複製しない。通常利用と既存のテスト隔離へ一律の隔離を追加する根拠にはしない。
+
 ## agent-toolkit/skills/writing-standards/references/mcp-server-design.md：典拠と既存サーバーへの適用：2026年10月2日
 
 2026年10月2日、同書の典拠表の各資料を取得した。Claude Code公式資料（Claude Code 2.1.286の時点）の「For MCP server authors」は、ツール説明とserver instructionsを各2,048文字に切り詰めると記す。この値は`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変更できる。「MCP output limits and warnings」は1万トークンの警告と2万5千トークンの上限を記し、上限を変える`MAX_MCP_OUTPUT_TOKENS`と`_meta["anthropic/maxResultSizeChars"]`を示す。MCP 2025-11-25のSchema Referenceは`InitializeResult.instructions`をsystem promptへ加えてもよいヒントとし、`ToolAnnotations`の全項目をヒントとする。
