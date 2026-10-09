@@ -325,14 +325,22 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
             references.append(first)
             position = first.end()
     while True:
-        reference = next(
-            (
-                found
-                for boundary in JAPANESE_ASCII_PATH_BOUNDARY.finditer(evidence, max(position, start + 1), end)
-                if (found := PLAIN_REFERENCE.match(evidence, boundary.start(), end)) is not None
-            ),
-            None,
-        )
+        reference = None
+        for boundary in JAPANESE_ASCII_PATH_BOUNDARY.finditer(evidence, max(position, start + 1), end):
+            found = PLAIN_REFERENCE.match(evidence, boundary.start(), end)
+            if found is None:
+                continue
+            path, _ = _reference_parts(found)
+            # 地の文のスラッシュ語から次のファイル名までを1パスにせず、内側の始点を調べる。
+            # 日本語を含む実在パスは語全体を保持する。
+            if (
+                not _is_file(repository / path)
+                and JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, boundary.start() + 1, boundary.start() + len(path))
+                is not None
+            ):
+                continue
+            reference = found
+            break
         if reference is None:
             break
         references.append(reference)
