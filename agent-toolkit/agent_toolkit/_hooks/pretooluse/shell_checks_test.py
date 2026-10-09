@@ -14,6 +14,7 @@ import sys
 import pytest
 
 from agent_toolkit._hooks.pretooluse import shell_checks
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
@@ -793,10 +794,12 @@ class TestBashGitRevParseShortMultiple:
         assert "git rev-parse --short" not in result.stdout
 
     @pytest.mark.parametrize("options", [["--short"], ["--short=12"], ["--verify"], ["--verify", "--quiet"]])
-    def test_individual_revision_fix_succeeds(self, options: list[str]):
-        """案内した入力分割で元のoptionを保ったGit実行が成功する。"""
+    def test_individual_revision_fix_succeeds(self, options: list[str], tmp_path: pathlib.Path):
+        """履歴を自ら準備し、案内した入力分割で元のoptionを保ったGit実行が成功する。"""
+        repository = git_repository.init_repository(tmp_path / "repo", commit_message="最初のcommit")
+        git_repository.commit_all(repository, "次のcommit")
         for revision in ["HEAD", "HEAD~1"]:
-            result = subprocess.run(["git", "rev-parse", *options, revision], capture_output=True, text=True, check=False)
+            result = git_repository.run_git(repository, "rev-parse", *options, revision, check=False)
             assert result.returncode == 0, result.stderr
             assert result.stdout.strip()
 
