@@ -85,9 +85,10 @@ FILE_REFERENCE_FORM = (
 ELLIPSIS = re.compile(r"…+|\.{3,}")
 WHITESPACE = re.compile(r"\s+")
 EVIDENCE_REFERENCE = re.compile(
+    r"(?P<test>`?(?:[^\s`\[\]（）「」、。]+::)?test_\w+\[[^\n]*\])|"
     r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|"
     r"(?P<quoted>(?:[\w-]+=)?\"[^\"\n]+\"|(?:[\w-]+=)?'[^'\n]+')|"
-    r"(?P<test>(?:[^\s`\[\]（）「」、。]+::)?test_\w+\[[^\]\n]+\])|(?P<plain>[^\s`\[\]（）「」、。]+)"
+    r"(?P<plain>[^\s`\[\]（）「」、。]+)"
 )
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
 # 地の文の1語から切り出す参照。パスは最後の拡張子までとし、拡張子の直後がパスの続きでない位置で終える。
@@ -293,11 +294,31 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
     これらを候補にすると、正当な達成根拠が不在ファイルへの参照として拒否される。
     """
     matches = []
-    for word in EVIDENCE_REFERENCE.finditer(evidence):
+    for word in _evidence_words(evidence):
         for match in _plain_references(evidence, word, repository) if word.group("plain") is not None else [word]:
             if _is_explicit_reference(match, evidence, repository):
                 matches.append(match)
     return matches
+
+
+def _evidence_words(evidence: str) -> typing.Iterator[re.Match[str]]:
+    """試験のパラメーター内の記法を分割せず、外側の角括弧までを1語として返す。"""
+    position = 0
+    while (word := EVIDENCE_REFERENCE.search(evidence, position)) is not None:
+        if word.group("test") is not None:
+            depth = 0
+            for index in range(evidence.index("[", word.start(), word.end()), word.end()):
+                if evidence[index] == "[":
+                    depth += 1
+                elif evidence[index] == "]":
+                    depth -= 1
+                    if depth == 0:
+                        complete = EVIDENCE_REFERENCE.match(evidence, word.start(), index + 1)
+                        assert complete is not None
+                        word = complete
+                        break
+        yield word
+        position = word.end()
 
 
 def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Path) -> list[re.Match[str]]:
@@ -352,8 +373,8 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     """切り出した候補が、所在を確かめるファイル参照として明示されているかを返す。"""
     # pytestの角括弧内は試験の入力値であり、そこに現れるパスは根拠の所在を指さない。
     # nodeidのファイル接頭辞は通常の参照として保持し、パラメーター値だけを候補から外す。
-    original = next(value for value in match.groups() if value is not None).strip()
-    if re.fullmatch(r"test_\w+\[[^\]\n]+\]", original):
+    original = next(value for value in match.groups() if value is not None).strip().strip("`")
+    if re.fullmatch(r"test_\w+\[[^\n]*\]", original):
         return False
     candidate, location = _reference_parts(match)
     if "://" in candidate or candidate.startswith("~") or candidate == "/" or candidate in NON_FILE_PAIRS:
@@ -417,6 +438,8 @@ def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
 def _reference_parts(match: re.Match[str]) -> tuple[str, str]:
     """参照のパスと見出し・行位置を分け、見出し本文の空白とインライン記法を保つ。"""
     candidate = next(value for value in match.groups() if value is not None).strip()
+    if _reference_group(match, "test") is not None:
+        candidate = candidate.strip("`")
     candidate = re.sub(r"^[\w-]+=(?=[\"']?(?:/|[A-Za-z]:[\\/]))", "", candidate).strip("\"'")
     if candidate.startswith("<"):
         closing = candidate.find(">")
