@@ -387,6 +387,14 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 
 2026年9月4日、Claude Code 2.1.260で次の2点を確認した。終了コード7で終わる`run_in_background=true`のBashについて、起動結果が返した出力ファイルは出力の全量と`[exited with code 7]`を保持した。
 
+## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：進捗照会と結果回収：2026年10月10日
+
+Claude Code公式資料「Keep Claude working toward a goal」の「Background work defers evaluation」（<https://code.claude.com/docs/en/goal>、2026年10月10日取得）を読解した。背景のエージェントやシェルが稼働している間は評価を保留し、進捗を確認する通知と、完了結果による新しいターンを区別する仕様である。本改訂時にGoalを実機で起動した観測ではない。
+
+実機の出所はAWI `20261009-221751-001.md`が保持する2026年10月9日、Claude Code 2.1.295の記録である。session `642ea185-4e6b-48f2-bd00-2b7fe528b9ce`の1728行にGoal check-in、1733行に未完了の`atk agents wait`出力の`cat`、1735・1737行に2回目のblockと終了コード2がある。1734行の`list`は同じ応答で発行され、1745行に活動情報が返った。遮断後に新しく照会した因果にはしない。
+
+再検証は同じ公式節と、WIが指定する記録の行を取得する。hookの判定は`background_task_outputs_test.py`で、明示背景化・実行上限・手動移行の未完了出力を同一sessionで2回読む入力、完了通知を加えた入力、別パスを読む入力を比較する。2回とも警告でblockが空、完了後は警告も空であることを確認する。Goalの自然発生を待たず、進捗の照会を終端結果へ代用しない。
+
 ## agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終端」：所有資源の回収：2026年9月3日
 
 2026年9月3日にgit version 2.43.0で、upstreamを設定した専用branchをローカルの`develop`へ統合した直後に`branch -d`が未統合として拒否されることを確認した。再検証は`git branch -vv`で追跡先を確認して同じ状態の`branch -d`の終了コードを観測する。
