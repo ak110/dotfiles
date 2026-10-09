@@ -1,6 +1,6 @@
 """人間の発話の後に可視の応答本文が無いStopを遮断する。
 
-判定情報はtranscriptの要素種別と、textブロックと`send_to_user`の`message`の有無から確定する。
+判定情報はtranscriptの人間入力の印と、textブロックと`send_to_user`の`message`の有無から確定する。
 拡張思考の表示をエージェントから観測できないため、応答はユーザーへ届く本文の有無で判定する。
 ツール呼び出しより前の地の文が要約へ置き換わる事象をこの判定で検出することはしない。発話したつもりで届いていない事象は
 発話を契機とする判定では捉えられず、原文を`send_to_user`で運ぶ規範とツールで扱う（2026年10月6日、ユーザーの判断）。
@@ -55,7 +55,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         if prompt is not None:
             if "<task-notification>" in prompt:
                 needs_response = False
-            elif not entry.get("isMeta") and not _is_hook_input(prompt):
+            elif _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(prompt):
                 needs_response = True
         elif entry.get("type") == "assistant":
             text = transcript.visible_assistant_text(entry.get("message"))
@@ -89,3 +89,10 @@ def _input_text(entry: dict) -> str | None:
 def _is_hook_input(prompt: str) -> bool:
     """機械生成の境界を持つ入力を人間の発話から除く。"""
     return _message_format.starts_with_auto_element(prompt)
+
+
+def _is_human_input(entry: dict) -> bool:
+    """ホストが人間の入力として記録した要素だけを応答の契機にする。"""
+    source = entry.get("attachment") if entry.get("type") == "attachment" else entry
+    origin = source.get("origin") if isinstance(source, dict) else None
+    return isinstance(origin, dict) and origin.get("kind") == "human"

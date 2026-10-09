@@ -8,7 +8,10 @@ import pytest
 from agent_toolkit._hooks import stop
 
 _HUMAN = {"type": "user", "origin": {"kind": "human"}, "message": {"content": "進捗を報告して"}}
-_QUEUED = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "進捗を報告して"}}
+_QUEUED = {
+    "type": "attachment",
+    "attachment": {"type": "queued_command", "prompt": "進捗を報告して", "origin": {"kind": "human"}},
+}
 
 
 def _assistant(text: str) -> dict:
@@ -23,7 +26,10 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFix
     return json.loads(capsys.readouterr().out)
 
 
-@pytest.mark.parametrize("human", [_HUMAN, _QUEUED])
+@pytest.mark.parametrize(
+    "human",
+    [_HUMAN, _QUEUED, {**_HUMAN, "message": {"content": "<command-message>スキル起動</command-message>"}}],
+)
 @pytest.mark.parametrize("text", ["", " \n\t", "…", " … … \n"])
 def test_stop_blocks_unanswered_human_input(
     human: dict, text: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -79,15 +85,15 @@ def test_stop_accepts_task_notification_wait_turn(
     notification: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """完了通知を最新入力とする待機の回を人間の新しい発話として扱わない。"""
-    output = _stop([_HUMAN, _assistant("受領しました。"), notification, _assistant("…")], tmp_path, capsys)
+    output = _stop([_HUMAN, notification, _assistant("…")], tmp_path, capsys)
     assert output.get("decision") != "block"
 
 
 @pytest.mark.parametrize(
     "entry",
     [
-        {"type": "user", "isMeta": True, "message": {"content": "メタ情報"}},
-        {"type": "user", "message": {"content": '<atk-auto source="hook" kind="notice">通知</atk-auto>'}},
+        {**_HUMAN, "isMeta": True, "message": {"content": "メタ情報"}},
+        {**_HUMAN, "message": {"content": '<atk-auto source="hook" kind="notice">通知</atk-auto>'}},
         {"type": "user", "message": {"content": [{"type": "tool_result", "content": "結果"}]}},
     ],
 )
@@ -96,6 +102,35 @@ def test_stop_does_not_treat_machine_input_as_human(
 ) -> None:
     """人間の発話が無い入力で本文を強制しない。"""
     assert _stop([entry, _assistant("…")], tmp_path, capsys).get("decision") != "block"
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"type": "user", "message": {"content": "/compact"}},
+        {"type": "user", "isCompactSummary": True, "message": {"content": "This session is being continued"}},
+        {"type": "user", "message": {"content": "<command-name>/goal</command-name>"}},
+        {"type": "user", "message": {"content": "<local-command-stdout>結果</local-command-stdout>"}},
+        {
+            "type": "attachment",
+            "attachment": {"type": "queued_command", "origin": {"kind": "peer"}, "prompt": "<agent-message>完了"},
+        },
+        {
+            "type": "attachment",
+            "attachment": {"type": "queued_command", "origin": {"kind": "auto-continuation"}, "prompt": "継続"},
+        },
+        {"type": "user", "message": {"content": "This skill can only be invoked by Claude"}},
+        {"type": "user", "entrypoint": "sdk-py", "promptSource": "sdk", "message": {"content": "調査して"}},
+    ],
+    ids=["compact", "summary", "command", "stdout", "peer", "continuation", "skill-refusal", "sdk"],
+)
+def test_stop_accepts_scheduled_turn_after_machine_input(
+    entry: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AWI 20261009-093808-001のClaude Code 2.1.250～2.1.295の記録形を使う。"""
+    scheduled = {"type": "user", "isMeta": True, "scheduledTaskId": "scheduled-case", "message": {"content": "再確認"}}
+    output = _stop([entry, scheduled, _assistant("…")], tmp_path, capsys)
+    assert 'source="user_response_advisor"' not in output.get("reason", "")
 
 
 def test_stop_does_not_require_delegate_to_answer_user(
