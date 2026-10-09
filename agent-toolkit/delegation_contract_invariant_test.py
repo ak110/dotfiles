@@ -164,6 +164,15 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
     recipients = {path.name: path for path in sorted(share.glob("*.subagent.md"))}
     pairs: list[tuple[pathlib.Path, str]] = []
     errors: list[str] = []
+    for recipient in recipients.values():
+        content = recipient.read_text(encoding="utf-8")
+        table = _h2_section(content, "読込表") if "\n## 読込表\n" in content else ""
+        for line in content.splitlines():
+            if "起動" not in line or line.startswith("|"):
+                continue
+            for name in re.findall(r"share/([A-Za-z0-9_.-]+\.parent\.md)", line):
+                if name not in table:
+                    errors.append(f"起動手順の読込が欠けている: {recipient.name} -> {name}")
 
     for parent in parents:
         targets, valid_structure = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
@@ -983,3 +992,18 @@ def test_unclosed_marker_block_is_rejected(tmp_path: pathlib.Path) -> None:
     )
 
     assert "起動対象の構造が不正: task.parent.md" in _contract_errors(tmp_path)
+
+
+def test_delegated_launch_parent_must_be_in_read_table(tmp_path: pathlib.Path) -> None:
+    """委譲先自身が起動を委ねたparentを読まない欠陥を、文書どうしの接続から検出する。"""
+    _write_pair(tmp_path, parent_body=_parent_body())
+    recipient = tmp_path / "task.subagent.md"
+    original = recipient.read_text(encoding="utf-8")
+    instruction = "\n## 探索\n\n`${CLAUDE_PLUGIN_ROOT}/share/task.parent.md`に従って担当を起動する。\n"
+    recipient.write_text(original + instruction, encoding="utf-8")
+    error = "起動手順の読込が欠けている: task.subagent.md -> task.parent.md"
+    assert error in _contract_errors(tmp_path)
+    recipient.write_text(
+        original + "\n## 読込表\n\n| 起動前 | `${CLAUDE_PLUGIN_ROOT}/share/task.parent.md` |\n" + instruction, encoding="utf-8"
+    )
+    assert error not in _contract_errors(tmp_path)

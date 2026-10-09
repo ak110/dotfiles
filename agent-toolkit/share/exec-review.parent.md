@@ -129,11 +129,11 @@ Git管理外の変更元と変更前複製の対がある場合は、任意入�
 実行レビュー担当が`atk run-script exec-review-evidence-check`の`--return-result`で生成した固定形式を受け取り、次の順で受領を確認する。統合の指示の前にメインが同じ確認を再実行する場合（`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」）も、本節の引数の組み立てを使う。
 
 1. 返却された`レビューしたHEAD`、現在round、表と証拠のパス、`計画のパス`と`入力記録のパス`を同じレビューの入力として保持する。未解決件数は現在roundのexec-reviewの未応答から生成した値をそのまま使う。`<配列>の判定内訳`と`達成以外の行`は非達成行の所在へ到達する一覧として使い、各行の許容の判定は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」で原文と根拠を読んで行う
-2. メインの受領確認も同じコマンドを対象worktreeで単独実行し、引数は次のとおり組み立てる
-   - 同じ証拠・対象WIと`--review-table <表の絶対パス> --round <round> --return-result --show-all-rows`を渡す。証拠要求なしでは証拠の引数を`なし`とする
+2. `読者別探索`の申告を保持し、省略または文章成果物なしという申告を変更ファイルと`${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md`の起動条件へ対応付ける。不適切な省略なら同じレビュー担当へ読者別探索と再判定を求める。受領確認も同じコマンドを対象worktreeで単独実行し、引数は次のとおり組み立てる
+   - 同じ証拠・対象WIと`--review-table <表の絶対パス> --round <round> --return-result --show-all-rows --reader-fit-review '<返却された読者別探索の申告>'`を渡す。証拠要求なしでは証拠の引数を`なし`とする
    - 期待HEADは`--expected-head <レビューしたHEAD>`で渡す。再レビューを省いた修正の後でも、最後に実際にレビューした`レビューしたHEAD`を渡し、修正前後のOIDの対応から確定した統合入力HEADと区別する
    - 返却された各JSON配列を展開して計画を`--plan`、WI・CI・引き継ぎの記録を`--input-record`で反復指定する。委譲プロンプトへ本文で渡したWI記録とCI記録も、担当が自身の入力記録として保存したファイルを配列が指すため、配列のパスをそのまま使う。配列に無い既知の入力を補わず、返却前に確かめた入力集合を再現する
-   - 複数レビューは`atk run-script exec-review-evidence-check -- --batch <入力JSONの絶対パス>`で一括確認できる。入力は`version: 1`と`reviews`配列とし、各組へ`plan`（対応先）、`evidence`、`wi`配列、`reviewed_head`、`review_table`、`round`、返却どおりの`plans`配列と`input_records`配列を渡す。HEAD・round・配列を組間で統合しない。JSON Linesの各組の`exit_code`、固定返却全行の`result`、`diagnostics`を読み、1組でも非0なら全体も非0とする。証拠は更新しない
+   - 複数レビューは`atk run-script exec-review-evidence-check -- --batch <入力JSONの絶対パス>`で一括確認できる。入力は`version: 1`と`reviews`配列とし、各組へ`plan`（対応先）、`evidence`、`wi`配列、`reviewed_head`、`review_table`、`round`、返却どおりの`plans`配列、`input_records`配列、`reader_fit_review`（読者別探索の申告）を渡す。HEAD・round・配列・申告を組間で統合しない。JSON Linesの各組の`exit_code`、固定返却全行の`result`、`diagnostics`を読み、1組でも非0なら全体も非0とする。証拠は更新しない
 3. 未解決の件数が0件で、達成必須の全行が達成していることを確かめる。証拠要求なしも同じ操作で表の件数を得る。証拠ありでは全行の`reviewed_head`、WIの完成条件原文と要求単位の対応も同じ操作で確かめる。補足のフェンス付きコードブロックは背景資料として扱い、その内容を除いて要求単位を比べる
 4. `--show-all-rows`が返す両配列の各`証拠の全行`を1始まりの行番号と原文で対応付け、達成行を含むsource・evidence・reviewed_headを確認する。batchにも同じオプションを加え、各組のresultから取得する。全行表示は元JSONを変更せず、省略時の返却形式は維持する。長い出力は保存先から末尾まで読み、各参照先の入力・観測結果を確認する。表示とJSON形式の確認の成功だけで達成を受理しない
 5. 非0では報告されたWI名と不足内容をレビュー担当へ返す

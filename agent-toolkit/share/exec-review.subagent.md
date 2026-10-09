@@ -11,6 +11,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md` |
+| 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` |
 | 差分を判定する前 | `agent-toolkit:writing-standards`が変更ファイルの成果物種別ごとに定める資料。テストコードを含む差分では同スキルの`references/testing.md`を含める |
 | `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` |
 | `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:plan-mode`の`references/plan-restoration-contracts.md` |
@@ -128,13 +129,14 @@ plugin rootの配置からPython実行ファイルの絶対パスを組み立て
 前回本文の複製は上書きせず、現在のレビューが終了してから次の比較元へ切り替える。
 
 返却前の工程は次の順序で完了する。
+読者別探索の申告には、起動した読者ごとのsessionまたはlabelを記す。起動を省いた読者は読込表のreader-fit-review.parent.mdに基づく省略根拠を記し、文章成果物がない場合は`文章成果物なし`とする。複数の読者の結果は1行にまとめ、証拠要求なしでも`--reader-fit-review`へ渡す。再レビューも今回の起動・省略判断を申告する。
 
-1. `完成条件証拠`の未記入行（再レビューでは「再レビュー」のとおり全行）を本担当が原文と検証資料から判定し、`outcome`・`evidence`・`reviewed_head`を記入する。構造化試験・診断・未判定根拠の選択と複数行更新は`exec-review-recording.md`「JSONの形式と返却前の確認」の既存公開操作で行う。取得版・条件・原文の対応を確認して各行の判定とHEADを明示し、結果から達成を自動生成しない。保存先は未判定記録と別ファイルとし、更新後の完成条件証拠を後段へ渡す。空欄と参照の不整合は本担当の証拠として補い、レビューイーへの指摘に置き換えない
+1. `完成条件証拠`を`exec-review-recording.md`「JSONの形式と返却前の確認」の`--list`で読み、未記入行（再レビューでは「再レビュー」のとおり全行）を本担当が原文と検証資料から判定する。同節の既存更新配列で`outcome`・`evidence`・`reviewed_head`を明示する。構造化結果を選択する場合も、説明ファイルだけで記入する場合も同じ操作を使う。取得版・条件・原文の対応を確認し、結果から達成を自動生成しない。保存先は未判定記録と別ファイルとし、更新後の完成条件証拠を再読取して後段へ渡す。空欄と参照の不整合は本担当の証拠として補い、レビューイーへの指摘に置き換えない
 2. 実装差分について裏付けた指摘だけをレビュー指摘管理表へ登録し、表の構造を確認する。レビューイーが記入する応答を待つために工程を止めず、表の構造確認は`atk review-table validate <表の絶対パス> --allow-unanswered`で行う
 3. 次のコマンドで証拠を確かめて返却本文を生成し、標準出力、標準エラーと終了状態を確認する。継続セッションを返した場合は終端まで観測し、終了コード0で生成された返却本文だけをそのまま返す。非0なら診断箇所を本担当が直して再実行する
 
 ```bash
-atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス|なし> <対象WIファイル名...> --expected-head <レビュー対象HEAD> --review-table <表の絶対パス> --round <round> --return-result
+atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス|なし> <対象WIファイル名...> --expected-head <レビュー対象HEAD> --review-table <表の絶対パス> --round <round> --return-result --reader-fit-review '<読者別探索の申告>'
 ```
 
 計画を受領した場合は全計画を`--plan <絶対パス>`で反復指定する。WI・CI記録にある採否と後続工程を使う場合は「入力」で保存した入力記録を、委譲元から絶対パスで受領した引き継ぎ記録を使う場合はそのパスを、`--input-record <絶対パス>`で渡す。証拠要求なしでも同じ操作で表から件数を生成する。指摘のある正常なレビューもcompletedとして返せる。
@@ -154,6 +156,7 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス|
 状態: completed
 レビューしたHEAD: <レビューした対象HEADの7文字以上の一意な短縮OID>
 未解決の指摘数: <未解決指摘数>
+読者別探索: <起動した読者のsession・label、または省略した読者と根拠、または文章成果物なし>
 計画のパス: <確認に用いた計画の絶対パスのJSON配列>
 入力記録のパス: <確認に用いた入力記録の絶対パスのJSON配列>
 wi_conditionsの判定内訳: <総数と判定値別の件数のJSON>
