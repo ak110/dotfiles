@@ -496,6 +496,9 @@ main > .toolbar {
 }
 #screen-wi .entry-copy {
   grid-column: 5;
+  /* 完了文言とボタンの余白を常に予約し、題名へ割り当てた幅を変えない。 */
+  inline-size: 8rem;
+  padding-inline: 0.35rem;
   white-space: nowrap;
 }
 #screen-wi .entry-select:hover {

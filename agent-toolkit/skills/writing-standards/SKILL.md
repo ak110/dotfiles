@@ -30,6 +30,7 @@ description: >
 | --- | --- |
 | 既存ファイルをEdit・Writeで編集・上書きする時、またはスクリプトで複数ファイルを機械変換する時（コード、文書、エージェント向け文書を問わない） | `references/file-editing.md` |
 | 成果物、ユーザーへの報告と回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` |
+| Xの投稿本文・日時・添付写真を資料として読む前 | `references/x-posts.md` |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` |
 | セッション記録の集計・分析 | `references/session-records.md` |
 | 計画の起草、WIの実現方式の確定、実装の完了前および実行レビューで、変更後の成果物群の設計品質を評価する時（エージェント向け文書だけを変える場合を含む） | `references/design-heuristics.md` |

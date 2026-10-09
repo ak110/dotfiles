@@ -5,6 +5,7 @@ import dataclasses
 import datetime
 import functools
 import re
+import socket
 import threading
 import urllib.parse
 from typing import Any
@@ -251,6 +252,7 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
     for width, height, columns_visible in [(390, 844, False), (768, 1024, False), (1280, 800, False), (1920, 800, True)]:
         await page.set_viewport_size({"width": width, "height": height})
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        assert await page.locator(".entry-copy").first.evaluate("element => element.scrollWidth <= element.clientWidth")
         assert await page.locator(".entry-columns").is_visible() is columns_visible
         row = await _open_question(page)
         dialog = page.get_by_role("dialog", name="詳細")
@@ -351,7 +353,9 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
 
     await page.route("**/api/entries?*", fail_first_list_request)
     await page.locator("#refresh-button").click()
-    await playwright.async_api.expect(error_message).to_have_text("一覧取得失敗")
+    await playwright.async_api.expect(error_message).to_have_text(
+        f"［WI / {socket.gethostname()} / {browser_harness.root} / 一覧取得］一覧取得失敗"
+    )
     await playwright.async_api.expect(error_region).to_be_visible()
     await page.unroute("**/api/entries?*", fail_first_list_request)
     await close_button.focus()
@@ -369,7 +373,9 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
 
     await page.route("**/api/entries?*", fail_second_list_request)
     await page.locator("#refresh-button").click()
-    await playwright.async_api.expect(error_message).to_have_text("後続のエラー")
+    await playwright.async_api.expect(error_message).to_have_text(
+        f"［WI / {socket.gethostname()} / {browser_harness.root} / 一覧取得］後続のエラー"
+    )
     await playwright.async_api.expect(error_region).to_be_visible()
 
     metrics = await error_region.evaluate(
@@ -1438,7 +1444,8 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     warning = page.locator("#list-warning")
     await playwright.async_api.expect(warning).to_contain_text("unreadable.md")
-    warning_text = await warning.inner_text()
+    warning_text = await warning.text_content()
+    assert warning_text is not None
     style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
     normal = page.locator('.entry-select[data-key="inbox/normal.md"] .state-badge')
     for filename in ["verify.md", "plain.md", "question.md"]:
@@ -2343,6 +2350,8 @@ async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harnes
     [
         (320, None),
         (700, None),
+        (1024, None),
+        (1600, None),
         (1279, None),
         (1280, None),
         (1281, None),
@@ -2371,8 +2380,13 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
     await row.locator(".entry-copy").wait_for(state="visible")
     filename = await row.locator(".filename-cell").inner_text()
     summary = await row.locator(".summary-cell").inner_text()
+    original_selection = await row.locator(".entry-select").bounding_box()
+    original_summary = await row.locator(".summary-cell").bounding_box()
 
     async def assert_readable() -> None:
+        assert await row.locator(".entry-select").bounding_box() == original_selection
+        assert await row.locator(".summary-cell").bounding_box() == original_summary
+        assert await row.locator(".entry-copy").evaluate("element => element.scrollWidth <= element.clientWidth")
         metrics = await row.evaluate("""row => {
           const summary = row.querySelector('.summary-cell');
           const canvas = document.createElement('canvas');
@@ -2401,6 +2415,7 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
     await playwright.async_api.expect(page.locator("#result-status")).to_contain_text("コピーしました")
     await assert_readable()
     await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピー", timeout=4000)
+    await assert_readable()
     assert await page.locator("#detail-dialog").evaluate("element => element.open") is False
 
 
@@ -2416,6 +2431,7 @@ async def test_entry_copy_label_survives_list_reload(screen_harness: _ScreenHarn
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     row = page.locator("#entry-list .entry-row").first
     await row.locator(".entry-copy").wait_for(state="visible")
+    original_selection = await row.locator(".entry-select").bounding_box()
     release = asyncio.Event()
 
     async def hold_list_request(route: playwright.async_api.Route) -> None:
@@ -2427,11 +2443,14 @@ async def test_entry_copy_label_survives_list_reload(screen_harness: _ScreenHarn
     await page.evaluate("() => window.dispatchEvent(new Event('focus'))")
     await row.locator(".entry-copy").click()
     await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピーしました")
+    assert await row.locator(".entry-select").bounding_box() == original_selection
 
     release.set()
     await playwright.async_api.expect(page.locator("#entry-list .entry-copy[data-before-reload]")).to_have_count(0)
     await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピーしました")
+    assert await row.locator(".entry-select").bounding_box() == original_selection
     await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピー", timeout=4000)
+    assert await row.locator(".entry-select").bounding_box() == original_selection
     await page.unroute("**/api/entries?*", hold_list_request)
 
 
@@ -2735,3 +2754,54 @@ async def test_changed_detail_inputs_confirm_discard_and_unchanged_input_closes(
         await (await confirmation.value).accept()
         await click
         await playwright.async_api.expect(detail).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_work_item_warnings_identify_storage_state_and_file(screen_harness: _ScreenHarness) -> None:
+    """同名の除外警告を状態と保存元で区別する。"""
+    harness = screen_harness
+    page = harness.page
+    notes_root = harness.root.parent
+    (notes_root / "adopted" / "invalid.md").write_bytes(b"\xff")
+    await page.goto(harness.base_url + "/?status=all")
+    await _open_filters(page)
+    await page.locator("#state-filter").select_option("all")
+    warnings = page.locator("#list-warning")
+    await playwright.async_api.expect(warnings).to_contain_text("inbox/invalid.md")
+    await playwright.async_api.expect(warnings).to_contain_text("adopted/invalid.md")
+    await playwright.async_api.expect(warnings).to_contain_text(f"WI / browser-test / {notes_root}")
+
+
+@pytest.mark.asyncio
+async def test_work_item_copy_failure_survives_screen_switch(screen_harness: _ScreenHarness) -> None:
+    """コピーの失敗は画面を切り替えて戻った後も保存先・対象と理由を保持する。"""
+    harness = screen_harness
+    page = harness.page
+    await page.add_init_script(
+        "Object.defineProperty(navigator, 'clipboard', {value: {writeText: async () => {throw new Error('書込拒否')}}})"
+    )
+    await page.goto(harness.base_url + "/")
+    button = page.locator("#entry-list .entry-copy").first
+    await button.wait_for(state="visible")
+    target = await button.get_attribute("data-key")
+    assert target is not None
+    await button.click()
+    notice = page.locator("#operation-notice")
+    await playwright.async_api.expect(notice).to_contain_text(f"WI / ブラウザー / {harness.root.parent}")
+    await playwright.async_api.expect(notice).to_contain_text(target)
+    await page.locator('#screen-wi nav a[href="/plans"]').click()
+    await page.locator('#screen-plans nav a[href="/"]').click()
+    await playwright.async_api.expect(notice).to_be_visible()
+    await playwright.async_api.expect(notice).to_contain_text("書込拒否")
+
+
+@pytest.mark.asyncio
+async def test_work_item_list_failure_names_server_and_operation(screen_harness: _ScreenHarness) -> None:
+    """API取得失敗の理由を保ち、通知自身が保存先と一覧操作を示す。"""
+    harness = screen_harness
+    page = harness.page
+    await page.route("**/api/entries?*", lambda route: route.fulfill(status=503, json={"error": "同じ取得失敗"}))
+    await page.goto(harness.base_url + "/")
+    notice = page.locator("#operation-notice")
+    await playwright.async_api.expect(notice).to_contain_text(f"WI / browser-test / {harness.root.parent} / 一覧取得")
+    await playwright.async_api.expect(notice).to_contain_text("同じ取得失敗")

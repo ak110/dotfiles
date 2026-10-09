@@ -211,6 +211,11 @@ class SessionState:
     effort: str | None = None
     engine: str = "codex"
     fast_mode: bool | None = None
+    # Codex接続先は内部の再開条件だけへ写し、公開状態へ射影しない。
+    codex_model_provider: str | None = None
+    codex_subscription_provider: str | None = None
+    codex_attempted_provider_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
+    codex_provider_resume_pending: bool = False
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     label: str = ""
@@ -453,6 +458,8 @@ class SessionState:
                 model=self.model,
                 effort=self.effort,
                 fast_mode=self.fast_mode,
+                codex_model_provider=self.codex_model_provider,
+                codex_subscription_provider=self.codex_subscription_provider,
                 model_type=self.model_type,
                 launch_kind=self.launch_kind,
                 turn_seq=self.turn_seq,
@@ -519,6 +526,8 @@ class SessionResumeState:
     effort: str | None
     engine: str
     fast_mode: bool | None = None
+    codex_model_provider: str | None = None
+    codex_subscription_provider: str | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     # `label`・`prompt`・`created_at`は`session_registry.LaunchInfo`の項目であり、再開時はその定義から写す。
@@ -556,6 +565,8 @@ class SessionResumeState:
             effort=session.effort,
             engine=session.engine,
             fast_mode=session.fast_mode,
+            codex_model_provider=session.codex_model_provider,
+            codex_subscription_provider=session.codex_subscription_provider,
             status=session.status,
             agent_message=session.agent_message,
             error=session.error,
@@ -626,6 +637,7 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True, prese
     session.interrupt_requested = False
     session.turn_completed = False
     session.failure_pending_completion = False
+    session.codex_provider_resume_pending = False
     if not preserve_waits:
         session.live_child_session_ids.clear()
         session.terminal_child_session_ids.clear()

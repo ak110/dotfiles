@@ -126,6 +126,8 @@ atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え�
 
 同コマンドは全記録を検証してから書き込み、記録済みOIDが対応表に無い記録（今回の対応表の不足と過去の書換えの未追記を区別して示す）や対応表の誤りがあれば、どの記録も変えずに失敗する。`--plan`と`--handoff`は反復指定し、書換え対象を持たない記録は変更しない。旧対応の欠落や新OIDの不在は生成側で補う。現在の対応の取得は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。
 
+保存済み計画を`atk plans checkout`で取得して履歴へ追随させた担当は、その工程の末尾に更新した全計画バンドルを`atk plans commit`で再保存し、終了コードと警告から保存の成功を検収する。未終端のWIや延期adoptを持つ計画も保存する。保存先と時点の共通契約は`agent-toolkit:plan-mode`の`references/plan-file-storage.md`に従い、レーン・観測のみ・CIの既存の保存時点を保つ。
+
 ## 履歴確認の起動形
 
 本書が履歴の確認として求める`git log`は次の範囲限定の起動形で実行する。

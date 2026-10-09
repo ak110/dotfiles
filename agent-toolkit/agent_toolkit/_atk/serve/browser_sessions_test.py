@@ -985,3 +985,34 @@ async def test_session_without_user_message_appears_after_first_message(
     await playwright.async_api.expect(items).to_have_count(4, timeout=5000)
     await playwright.async_api.expect(listing).to_contain_text("/home/aki/silent-claude")
     await playwright.async_api.expect(listing).to_contain_text("/home/aki/silent-codex")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["list", "detail", "disappeared"])
+async def test_session_failures_preserve_host_engine_and_record(screen_harness: _ScreenHarness, failure: str) -> None:
+    """一覧失敗と選択記録の失敗・消失を、実ブラウザーの公開操作から識別する。"""
+    harness = screen_harness
+    page = harness.page
+    if failure == "list":
+        await page.route("**/api/sessions/list", lambda route: route.fulfill(status=503, json={"error": "同じ失敗"}))
+    elif failure == "detail":
+        await page.route("**/api/sessions/detail?*", lambda route: route.fulfill(status=503, json={"error": "同じ失敗"}))
+    await page.goto(harness.base_url + "/sessions")
+    if failure == "list":
+        alert = page.locator("#sessions-list-error")
+        await playwright.async_api.expect(alert).to_contain_text("browser-test / 一覧取得")
+        return
+    item = page.locator('#sessions .session-item[data-engine="claude"]').first
+    path = await item.get_attribute("data-path")
+    assert path is not None
+    await item.click()
+    if failure == "disappeared":
+        await page.locator("#detail .event").first.wait_for(state="visible")
+        await page.route(
+            "**/api/sessions/list", lambda route: route.fulfill(json={"sessions": [], "warnings": [], "roots": []})
+        )
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    alert = page.locator("#detail")
+    await playwright.async_api.expect(alert).to_contain_text("セッション / browser-test / Claude")
+    await playwright.async_api.expect(alert).to_contain_text(path)
+    await playwright.async_api.expect(alert).to_contain_text("見つかりません" if failure == "disappeared" else "取得できません")

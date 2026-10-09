@@ -231,7 +231,9 @@ globalThis.document = {{
 }};
 globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
 elements['serve-bootstrap'] = new Element('serve-bootstrap', 'SCRIPT');
-elements['serve-bootstrap'].textContent = JSON.stringify({{base_path: '/atk', stall_ms: 45000}});
+elements['serve-bootstrap'].textContent = JSON.stringify({{
+  base_path: '/atk', stall_ms: 45000, host_name: 'node-test', wi_root: '/notes'
+}});
 globalThis.window = globalThis;
 globalThis.confirm = () => true;
 globalThis.setTimeout = () => 1;

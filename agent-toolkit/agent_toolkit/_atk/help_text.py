@@ -234,7 +234,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config show": {
         "summary": "XDG関連パスと工程別モデル設定を一覧表示する（サブコマンド省略時も同じ動作）",
-        "description": "目的: XDG関連パス、工程別モデル設定と`codex_fast_mode`を`<キー>: <値>`で1キー1行ずつ表示する。参考一覧外のモデル名・effortは警告する。`codex_fast_mode`は`true`または`false`を返し、未設定では`false`である。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧、標準エラーへ警告を書く。設定は変更しない。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: XDG関連パス、工程別モデル設定、Codexの速度とAPI移行先を`<キー>: <値>`で1キー1行ずつ表示する。参考一覧外のモデル名・effortは警告する。`codex_fast_mode`の初期値は`false`、`codex_fallback_model_providers`の初期値は空である。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧、標準エラーへ警告を書く。設定は変更しない。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config show",
     },
     "atk config get": {
@@ -244,7 +244,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 工程別のモデル・推論の深さと、agents_serverのCodexの速度を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位の単一値であり、全てのセッションが共有する。\n前提: KEYは変更できるキー。`codex_fast_mode`のVALUEは`true`または`false`だけを受理し、未設定時は`false`である。他のキーのVALUEは`<claude|codex|agy>:<モデル>[/<effort>]`の形式で指定する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。複数候補はASCIIカンマ区切りで並べる。\n復元・後始末: 元の値へ戻す場合は、同じコマンドで以前の値を設定する。並行して稼働するセッションへも新しい値が波及する。",
+        "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 工程別のモデル・推論の深さと、agents_serverのCodexの速度・API移行先を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_fallback_model_providers`は空、または独立したAPI認証を使うCodex provider IDのASCIIカンマ区切り列を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。他のキーは`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列は空文字列を設定して解除する。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
         "epilog": "実行例:\n\n  atk config set high_tier_model codex:sol/medium",
     },
     "atk config apply-preset": {

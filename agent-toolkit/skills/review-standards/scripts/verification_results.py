@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import copy
 import json
 import pathlib
@@ -32,6 +33,15 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
     parser.epilog = SCHEMA
     parser.add_argument("--results-file", type=pathlib.Path, metavar="PATH", help="保存した結果の組を持つJSONの絶対パス")
     parser.add_argument("--list-results", action="store_true", help="テスト完全名・状態・版・所在と基準版との差を表示")
+    parser.add_argument(
+        "--results-summary", action="store_true", help="--list-resultsで状態・差・診断のまとまりと全識別子を表示"
+    )
+    parser.add_argument(
+        "--result-test", action="append", metavar="NAME", help="--list-resultsでこの完全テスト名の詳細だけを読む。反復可"
+    )
+    parser.add_argument(
+        "--result-diagnostic", action="append", metavar="ID", help="--list-resultsでこの診断識別子の詳細だけを読む。反復可"
+    )
     parser.add_argument(
         "--updates-file", type=pathlib.Path, metavar="PATH", help="出所と選択した根拠を持つ更新配列JSONの絶対パス"
     )
@@ -141,9 +151,68 @@ def load_results(path: pathlib.Path | None) -> dict[str, Any]:
     return {"tests": tests, "test_changes": changes, "diagnostics": diagnostics}
 
 
-def list_results(results: dict[str, Any]) -> None:
+def validate_display(args: argparse.Namespace) -> None:
+    """表示の選択を更新へ混入させず、要約と詳細の用途を分ける。"""
+    selecting = bool(args.result_test or args.result_diagnostic)
+    if (args.results_summary or selecting) and not args.list_results:
+        raise ValueError("--results-summary・--result-test・--result-diagnosticは--list-resultsと指定する")
+    if args.results_summary and selecting:
+        raise ValueError("要約と指定結果の詳細は別々に表示する")
+
+
+def _summary(results: dict[str, Any]) -> dict[str, Any]:
+    tests: dict[str, list[str]] = collections.defaultdict(list)
+    for name, value in results["tests"].items():
+        tests[value["status"]].append(name)
+    changes: dict[tuple, list[str]] = collections.defaultdict(list)
+    for value in results["test_changes"]:
+        changes[(value["change"], (value["before"] or {}).get("status"), (value["after"] or {}).get("status"))].append(
+            value["test"]
+        )
+    groups: dict[tuple, list[str]] = collections.defaultdict(list)
+    for identity, value in results["diagnostics"].items():
+        observed = value.get("after") if isinstance(value.get("after"), dict) else value.get("before")
+        observed = observed if isinstance(observed, dict) else {}
+        groups[
+            (value["change"], *(observed.get(key) for key in ("emitter", "rule", "type", "message")), value.get("reason"))
+        ].append(identity)
+    return {
+        "tests": [{"status": status, "count": len(names), "tests": names} for status, names in tests.items()],
+        "test_changes": [
+            {"change": key[0], "before_status": key[1], "after_status": key[2], "count": len(names), "tests": names}
+            for key, names in changes.items()
+        ],
+        "diagnostics": [
+            {
+                **dict(zip(("change", "emitter", "rule", "severity", "message", "reason"), key, strict=True)),
+                "count": len(ids),
+                "diagnostics": ids,
+            }
+            for key, ids in groups.items()
+        ],
+    }
+
+
+def list_results(results: dict[str, Any], args: argparse.Namespace) -> None:
     """一覧から担当が選べる識別子と所在を返す。"""
-    print(json.dumps(results, ensure_ascii=False, indent=2))
+    if args.results_summary:
+        displayed = _summary(results)
+    elif args.result_test or args.result_diagnostic:
+        names, identities = set(args.result_test or []), set(args.result_diagnostic or [])
+        known_names = results["tests"].keys() | {item["test"] for item in results["test_changes"]}
+        if names - known_names or identities - results["diagnostics"].keys():
+            raise ValueError(
+                f"指定した結果がありません: tests={sorted(names - known_names)}, "
+                f"diagnostics={sorted(identities - results['diagnostics'].keys())}"
+            )
+        displayed = {
+            "tests": {name: results["tests"][name] for name in results["tests"] if name in names},
+            "test_changes": [item for item in results["test_changes"] if item["test"] in names],
+            "diagnostics": {identity: value for identity, value in results["diagnostics"].items() if identity in identities},
+        }
+    else:
+        displayed = results
+    print(json.dumps(displayed, ensure_ascii=False, indent=2))
 
 
 def _observed_evidence(value: dict[str, Any]) -> str:

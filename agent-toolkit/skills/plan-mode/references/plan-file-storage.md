@@ -38,6 +38,7 @@ stemは計画メタ情報の`起動経路`ごとに次のとおりとし、`dd`�
 中断したレーンの再開は`agent-toolkit:process-wi`の`skills/process-wi/references/run-lanes.md`が定める。
 `~/.claude/plans`直下の各計画バンドルには、計画バンドルを所有するセッションを示す局所状態（計画の所有記録）が付き、`atk plans list`で所有セッションと最終更新時刻を一覧できる。
 自身が所有しない計画はそのまま残す。private-notesの計画ファイルの更新は`atk plans`の各コマンドで行う。
+保存済み計画をcheckoutして履歴書換えへ追随させた主体は、更新した全計画バンドルをその工程の末尾に`atk plans commit`で再保存する。未終端や延期adoptでも省かず、終了コード0と、未適用・未完了を示す警告がないことを検収する。この再保存は履歴追随した主体の責務である。レーンの実装途中・統合時、観測のみの再開、CI修正では既存の保存時点を使う。
 
 実行レビュー指摘管理表は計画ファイルと同じディレクトリへ`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として置く。
 計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。WIだけをレビュー基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`が返した値をそのまま用いる。

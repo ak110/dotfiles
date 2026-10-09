@@ -40,6 +40,7 @@ _LANE_COST_KEYS = frozenset(
         _IMPLEMENTATION_SECONDS_KEY,
         _INTEGRATION_SECONDS_KEY,
         _selection.RATIONALE_KEY,
+        _selection.INTEGRATION_STATE_KEY,
         "after_lanes",
         *_LEGACY_SECONDS_KEYS,
     }
@@ -53,6 +54,8 @@ _TOP_LEVEL_KEYS = frozenset(
         _BLOCKERS_KEY,
         _selection.LANE_OVERLAPS_KEY,
         _selection.SINGLE_STAGE_ESTIMATE_KEY,
+        _selection.INITIAL_ALLOCATION_KEY,
+        _selection.ADDED_WIS_KEY,
     }
 )
 _MODEL_ROLES = ("実装担当", "実行レビュー担当")
@@ -136,11 +139,167 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
         rationale = row.get(_selection.RATIONALE_KEY)
         if not isinstance(rationale, str) or not rationale.strip():
             errors.append(f"{label}: `{_selection.RATIONALE_KEY}`が空でない文字列ではない: {rationale!r}")
+        state = row.get(_selection.INTEGRATION_STATE_KEY, _selection.NOT_INTEGRATED)
+        if state not in (_selection.NOT_INTEGRATED, _selection.INTEGRATED):
+            errors.append(f"{label}: 統合状態は未統合か統合済みを指定する: {state!r}")
     blockers = selection.get(_BLOCKERS_KEY, [])
     if not is_string_list(blockers):
         errors.append(f"`{_BLOCKERS_KEY}`が文字列の列ではない: {blockers!r}")
     errors.extend(_overlap_structure_errors(selection.get(_selection.LANE_OVERLAPS_KEY, [])))
+    if _selection.INITIAL_ALLOCATION_KEY in selection:
+        errors.extend(_allocation_structure_errors(selection[_selection.INITIAL_ALLOCATION_KEY]))
+    added = selection.get(_selection.ADDED_WIS_KEY, [])
+    if not is_string_list(added) or len(added) != len(set(added)):
+        errors.append("追加WIは重複のないWIファイル名の列にする")
     return errors, model_errors
+
+
+def _allocation_structure_errors(value: object) -> list[str]:
+    """初回配分は追加後も検査できる集合・割当・成分を保持する。"""
+    if not isinstance(value, dict) or set(value) != {"候補WI", "レーン割当", "不可分成分"}:
+        return ["初回配分には候補WI・レーン割当・不可分成分の3欄を指定する"]
+    errors: list[str] = []
+    candidates, assignments, components = (value[key] for key in ("候補WI", "レーン割当", "不可分成分"))
+    if not is_string_list(candidates) or len(candidates) != len(set(candidates)):
+        errors.append("初回配分の候補WIは重複のないWIファイル名の列にする")
+    if not isinstance(assignments, dict) or any(
+        not isinstance(key, str) or not isinstance(lane, str) or not lane.strip() for key, lane in assignments.items()
+    ):
+        errors.append("初回配分のレーン割当はWIから空でないレーン名への写像にする")
+    if not isinstance(components, list):
+        return [*errors, "初回配分の不可分成分は列にする"]
+    for index, component in enumerate(components, 1):
+        label = f"初回配分の不可分成分{index}"
+        keys = {"WI", "結合条件", "実装秒数", "統合秒数"}
+        if not isinstance(component, dict) or set(component) != keys:
+            errors.append(f"{label}: 欄を{', '.join(sorted(keys))}へそろえる")
+            continue
+        names = component["WI"]
+        if not is_string_list(names) or not names or len(names) != len(set(names)):
+            errors.append(f"{label}: WIは空でない重複のない文字列の列にする")
+        for key in ("実装秒数", "統合秒数"):
+            if not is_non_negative_number(component[key]):
+                errors.append(f"{label}: {key}は補正後の0以上の数値にする")
+        edges = component["結合条件"]
+        if not isinstance(edges, list):
+            errors.append(f"{label}: 結合条件は列にする")
+            continue
+        for edge in edges:
+            if not isinstance(edge, dict) or set(edge) != {"WI1", "WI2", "種別", "根拠"}:
+                errors.append(f"{label}: 結合条件にはWI1・WI2・種別・根拠を指定する")
+            elif (
+                not all(isinstance(edge[key], str) and edge[key].strip() for key in ("WI1", "WI2"))
+                or edge["種別"] not in ("依存", "再開計画", "書込重複")
+                or not isinstance(edge["根拠"], dict)
+            ):
+                errors.append(f"{label}: 結合条件のWI・種別・構造化した根拠を直す")
+    return errors
+
+
+def allocation_errors(selection: dict[str, object]) -> list[str]:
+    """初回候補の上限と、独立成分の合算を除いた巨大成分の例外を検査する。"""
+    data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
+    assignments: dict[str, str] = data["レーン割当"]
+    candidates = set(data["候補WI"])
+    items = typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
+    selected = {item[_selection.WI_KEY] for item in items}
+    added = set(typing.cast(list[str], selection.get(_selection.ADDED_WIS_KEY, [])))
+    errors: list[str] = []
+    if not set(assignments) <= candidates or candidates & added or set(assignments) & added:
+        errors.append("初回候補・初回割当・追加WIの集合が矛盾する。初回の元候補と追加区分を直す")
+    if selected != set(assignments) | added:
+        errors.append("選定のWI集合が初回割当と追加WIの和に一致しない")
+    current = {item[_selection.WI_KEY]: item[_selection.LANE_KEY] for item in items}
+    if any(current.get(name) != lane for name, lane in assignments.items()):
+        errors.append("初回のレーン割当が現在の選定から失われている。初回の項目とレーンを保持する")
+    groups: list[dict[str, typing.Any]] = data["不可分成分"]
+    members = [name for group in groups for name in group["WI"]]
+    active = {name for name, lane in assignments.items() if lane != _LANE_NONE}
+    if set(members) != active or len(members) != len(set(members)):
+        errors.append("初回配分の不可分成分は初回の実施対象WIを過不足なく1回ずつ覆うようにする")
+    huge: list[set[str]] = []
+    for group in groups:
+        names = set(group["WI"])
+        links: dict[str, set[str]] = {name: set() for name in names}
+        for edge in group["結合条件"]:
+            first, second = edge["WI1"], edge["WI2"]
+            if first == second or first not in names or second not in names:
+                errors.append("結合条件のWIの組が不可分成分の異なる構成項目を指していない")
+                continue
+            if not valid_allocation_edge(edge):
+                errors.append(f"{first}と{second}: {edge['種別']}の結合根拠が成立しない")
+                continue
+            links[first].add(second)
+            links[second].add(first)
+        pending = [next(iter(names))]
+        visited: set[str] = set()
+        while pending:
+            name = pending.pop()
+            if name not in visited:
+                visited.add(name)
+                pending.extend(links[name] - visited)
+        if visited != names:
+            errors.append(f"不可分成分が有効な結合条件で連結していない: {sorted(names)}")
+        if len({assignments.get(name) for name in names}) != 1:
+            errors.append(f"不可分成分を複数の初回レーンへ分けている: {sorted(names)}")
+        if group["実装秒数"] + group["統合秒数"] > 6000:
+            huge.append(names)
+    count = len(candidates)
+    bound = (count + 9) // 10
+    lanes = set(assignments.values()) - {_LANE_NONE}
+    remainder = int(len(groups) > len(huge))
+    allowed = max(bound, len(huge) + remainder)
+    label = f"初回配分: N={count}、通常上限B={bound}、実レーン数={len(lanes)}、例外上限={allowed}"
+    if len(lanes) > allowed:
+        errors.append(f"{label}: レーン数が上限を超える。通常成分の時間均衡だけでは増設できない")
+    if len(lanes) > bound:
+        for names in huge:
+            lane = assignments.get(next(iter(names)))
+            lane_members = {name for name, assigned in assignments.items() if assigned == lane}
+            if lane_members != names:
+                errors.append(f"{label}: 巨大不可分成分の専用レーン{lane}に独立した他成分が混入している")
+    return errors
+
+
+def valid_allocation_edge(edge: dict[str, typing.Any]) -> bool:
+    """選定が保持する元入力の構造化根拠から結合の成立を判定する。意味の検収はメインが行う。"""
+    first, second, kind, evidence = (edge[key] for key in ("WI1", "WI2", "種別", "根拠"))
+    if kind == "依存":
+        return (
+            set(evidence) == {"リポジトリ1", "リポジトリ2", "依存元", "depends_on"}
+            and isinstance(evidence["リポジトリ1"], str)
+            and bool(evidence["リポジトリ1"].strip())
+            and evidence["リポジトリ1"] == evidence["リポジトリ2"]
+            and evidence["依存元"] in (first, second)
+            and is_string_list(evidence["depends_on"])
+            and (second if evidence["依存元"] == first else first) in evidence["depends_on"]
+        )
+    if kind == "再開計画":
+        return (
+            set(evidence) == {"計画1", "計画2"}
+            and isinstance(evidence["計画1"], str)
+            and bool(evidence["計画1"].strip())
+            and evidence["計画1"] == evidence["計画2"]
+            and evidence["計画1"] not in ("なし", "計画なし")
+        )
+    return (
+        set(evidence) == {"パス1", "パス2", "定義1", "定義2", "段階1", "段階2", "段階比較"}
+        and all(
+            is_string_list(evidence[key]) and evidence[key] and all(value.strip() for value in evidence[key])
+            for key in ("パス1", "パス2", "定義1", "定義2")
+        )
+        and bool(set(evidence["定義1"]) & set(evidence["定義2"]))
+        and any(
+            left == right or left.endswith("/") and right.startswith(left) or right.endswith("/") and left.startswith(right)
+            for left in evidence["パス1"]
+            for right in evidence["パス2"]
+        )
+        and all(isinstance(evidence[key], int) and not isinstance(evidence[key], bool) for key in ("段階1", "段階2"))
+        and evidence["段階1"] >= 1
+        and evidence["段階1"] == evidence["段階2"]
+        and isinstance(evidence["段階比較"], str)
+        and bool(evidence["段階比較"].strip())
+    )
 
 
 def _derived_structure_errors(label: str, records: object) -> list[str]:

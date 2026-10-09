@@ -65,12 +65,13 @@ class _BashToken:
     nested: tuple[str, ...] = ()
     assignment: bool = False
     static_value: str = ""
+    reserved: bool = False
 
 
 _BASH_REDIRECTION = re.compile(r"[0-9]*(?:&>>|&>|<<-|<<<|>>|<<|<>|<&|>&|>\||>|<)")
 
 
-_BASH_OPERATORS = ("&&", "||", "|&", ";;", ";", "&", "|", "(", ")", "{", "}", "\n")
+_BASH_OPERATORS = ("&&", "||", "|&", ";;&", ";;", ";&", ";", "&", "|", "(", ")", "{", "}", "\n")
 
 
 _UNKNOWN_BASH_WORD = "\x00"
@@ -208,6 +209,7 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
         nested=tuple(nested),
         assignment=ENV_ASSIGN_PATTERN.match("".join(pieces)) is not None,
         static_value=shlex.split("".join(static_pieces), posix=True)[0],
+        reserved="".join(pieces) == value,
     ), index
 
 
@@ -247,24 +249,34 @@ def _bash_substitution(command: str, start: int) -> tuple[str | None, int]:
 
 
 def _bash_command_list(
-    tokens: Sequence[_BashToken], start: int, closing: str | None = None
+    tokens: Sequence[_BashToken], start: int, closing: str | frozenset[str] | None = None
 ) -> tuple[list[BashInvocation], int]:
     """単純なコマンドと括弧・波括弧のグループへ接続を対応付ける。"""
     result: list[BashInvocation] = []
     pipeline_start = 0
     index = start
     while index < len(tokens):
-        if tokens[index].operator and tokens[index].value == closing:
+        if _bash_closes(tokens[index], closing):
             return result, index + 1
         if tokens[index].operator and tokens[index].value in {";", "\n", "&&", "||"}:
             pipeline_start = len(result)
             index += 1
             continue
-        grouped = tokens[index].operator and tokens[index].value in {"(", "{"}
-        if grouped:
+        compound = tokens[index].reserved and tokens[index].value in {"for", "select", "while", "until", "if", "case"}
+        function_body = _bash_function_body(tokens, index)
+        function = function_body is not None
+        grouped = compound or function or tokens[index].operator and tokens[index].value in {"(", "{"}
+        if compound:
+            current, index = _bash_compound(tokens, index)
+            words: list[_BashToken] = []
+        elif function:
+            assert function_body is not None
+            _, index = _bash_command_list(tokens, function_body + 1, ")" if tokens[function_body].value == "(" else "}")
+            current, words = [], []
+        elif grouped:
             inner_closing = ")" if tokens[index].value == "(" else "}"
             current, index = _bash_command_list(tokens, index + 1, inner_closing)
-            words: list[_BashToken] = []
+            words = []
         else:
             current = []
             words = []
@@ -284,7 +296,7 @@ def _bash_command_list(
             words.append(token)
             index += 1
         separator = tokens[index].value if index < len(tokens) else ""
-        if separator in {"(", "{", ")", "}"} and separator != closing:
+        if separator in {"(", "{", ")", "}"} and (index >= len(tokens) or not _bash_closes(tokens[index], closing)):
             raise ValueError("未対応のグループ境界")
         if not grouped:
             current = _bash_word_invocations(words)
@@ -299,7 +311,7 @@ def _bash_command_list(
             result[pipeline_start:] = [dataclasses.replace(item, background=True) for item in result[pipeline_start:]]
         if separator in {";", "\n", "&&", "||", "&"}:
             pipeline_start = len(result)
-        if separator == closing:
+        if index < len(tokens) and _bash_closes(tokens[index], closing):
             return result, index + 1
         if not separator:
             break
@@ -307,6 +319,79 @@ def _bash_command_list(
     if closing is not None:
         raise ValueError("閉じないグループ")
     return result, index
+
+
+def _bash_closes(token: _BashToken, closing: str | frozenset[str] | None) -> bool:
+    """引用された引数を節の終端へ変えず、演算子と予約語の境界だけを判定する。"""
+    values = frozenset({closing}) if isinstance(closing, str) else closing or frozenset()
+    return (token.operator or token.reserved) and token.value in values
+
+
+def _bash_function_body(tokens: Sequence[_BashToken], start: int) -> int | None:
+    """未実行の関数定義を、本体の波括弧またはサブシェルまで識別する。"""
+    keyword = tokens[start].reserved and tokens[start].value == "function"
+    index = start + int(keyword)
+    if index >= len(tokens) or tokens[index].operator:
+        return None
+    index += 1
+    parentheses = index + 1 < len(tokens) and [token.value for token in tokens[index : index + 2]] == ["(", ")"]
+    if not keyword and not parentheses:
+        return None
+    if parentheses:
+        index += 2
+    while index < len(tokens) and tokens[index].value == "\n":
+        index += 1
+    return index if index < len(tokens) and tokens[index].operator and tokens[index].value in {"{", "("} else None
+
+
+def _bash_compound(tokens: Sequence[_BashToken], start: int) -> tuple[list[BashInvocation], int]:
+    """複合文の条件と本体の実行位置を再帰解析し、文全体の接続は呼出側へ戻す。"""
+    kind = tokens[start].value
+    index = start + 1
+    result: list[BashInvocation] = []
+    if kind in {"for", "select", "case"}:
+        # 名前・反復値・caseの比較する値はコマンドではないが、能動的な置換は実行される。
+        boundary = "in" if kind == "case" else "do"
+        while index < len(tokens) and not _bash_closes(tokens[index], boundary):
+            for body in tokens[index].nested:
+                result.extend(dataclasses.replace(item, captured=True) for item in extract_bash_invocations(body))
+            index += 1
+        if index == len(tokens):
+            raise ValueError("閉じない複合文の前置部")
+        index += 1
+    if kind == "case":
+        while index < len(tokens):
+            while index < len(tokens) and tokens[index].value in {";", "\n", ";;", ";&", ";;&"}:
+                index += 1
+            if index < len(tokens) and _bash_closes(tokens[index], "esac"):
+                return result, index + 1
+            while index < len(tokens) and not (tokens[index].operator and tokens[index].value == ")"):
+                index += 1
+            if index == len(tokens):
+                break
+            branch, index = _bash_command_list(tokens, index + 1, frozenset({";;", ";&", ";;&", "esac"}))
+            result.extend(branch)
+            if tokens[index - 1].value == "esac":
+                return result, index
+        raise ValueError("閉じないcase文")
+    if kind == "if":
+        while True:
+            condition, index = _bash_command_list(tokens, index, "then")
+            result.extend(condition)
+            branch, index = _bash_command_list(tokens, index, frozenset({"elif", "else", "fi"}))
+            result.extend(branch)
+            ending = tokens[index - 1].value
+            if ending == "elif":
+                continue
+            if ending == "else":
+                branch, index = _bash_command_list(tokens, index, "fi")
+                result.extend(branch)
+            return result, index
+    if kind in {"while", "until"}:
+        condition, index = _bash_command_list(tokens, index, "do")
+        result.extend(condition)
+    body, index = _bash_command_list(tokens, index, "done")
+    return [*result, *body], index
 
 
 def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:

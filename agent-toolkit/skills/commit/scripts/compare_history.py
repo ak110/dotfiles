@@ -1,7 +1,7 @@
 """履歴操作の検収と完全OID対応表の生成。検収しない対応は保存しない。
 
 履歴は読み取りのみで、認可・公開済みの確認・操作の実行は呼出側が所有する。
-rebaseはrange-diffの全1対1一致、autosquashはtree・件数・制御件名・非対象patchの不変を検収する。
+rebaseは変更内容の一意な全1対1対応、autosquashはtree・件数・制御件名・非対象patchの不変を検収する。
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-import re
 import subprocess
 
 from agent_toolkit._atk import outcome
@@ -17,7 +16,6 @@ from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as git_command
 
 _CONTROL = ("fixup! ", "squash! ", "amend! ")
-_PAIR = re.compile(r"^\s*(\d+|-):\s+([0-9a-f]+|-+)\s+([=!<>])\s+(\d+|-):\s+([0-9a-f]+|-+)(?:\s|$)")
 
 
 def _git(work_dir: pathlib.Path, *args: str, data: str | None = None) -> str:
@@ -41,43 +39,22 @@ def _series(work_dir: pathlib.Path, base: str, head: str) -> list[str]:
     return commits
 
 
-def _patch_id(work_dir: pathlib.Path, oid: str) -> str:
-    patch = _git(work_dir, "show", "--format=", "--binary", "--no-ext-diff", "--no-textconv", oid)
-    output = _git(work_dir, "patch-id", "--stable", data=patch).split()
+def _patch_id(work_dir: pathlib.Path, oid: str, *, verbatim: bool = False) -> str:
+    options = ("--unified=0",) if verbatim else ()
+    patch = _git(work_dir, "show", "--format=", "--binary", "--no-ext-diff", "--no-textconv", *options, oid)
+    output = _git(work_dir, "patch-id", "--verbatim" if verbatim else "--stable", data=patch).split()
     return output[0] if output else "empty"
 
 
-def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str], old_base: str, new_base: str) -> dict[str, str]:
-    diff = _git(
-        work_dir,
-        "range-diff",
-        "--no-color",
-        "--no-dual-color",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--abbrev=64",
-        f"{old_base}..{old[-1]}",
-        f"{new_base}..{new[-1]}",
-    )
-    mapping: dict[str, str] = {}
-    for line in diff.splitlines():
-        pair = _PAIR.match(line)
-        if pair is None:
-            if line.strip():
-                raise ValueError(f"range-diffに完全一致以外の出力があります: {line}")
-            continue
-        old_index, old_oid, marker, new_index, new_oid = pair.groups()
-        if marker != "=" or old_index == "-" or new_index == "-":
-            raise ValueError(f"range-diffの対応が完全一致ではありません: {line}")
-        left, right = int(old_index) - 1, int(new_index) - 1
-        if not (0 <= left < len(old) and 0 <= right < len(new)) or (old[left], new[right]) != (old_oid, new_oid):
-            raise ValueError(f"系列とrange-diffのOID対応が不整合です: {line}")
-        if old_oid in mapping or new_oid in mapping.values():
-            raise ValueError(f"range-diffの対応が重複しています: {line}")
-        mapping[old_oid] = new_oid
-    if set(mapping) != set(old) or set(mapping.values()) != set(new):
-        raise ValueError(f"全1対1対応ではありません: old={old}, new={new}, mapping={mapping}")
-    return mapping
+def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str]) -> dict[str, str]:
+    old_ids = [_patch_id(work_dir, oid, verbatim=True) for oid in old]
+    new_ids = [_patch_id(work_dir, oid, verbatim=True) for oid in new]
+    if len(set(old_ids)) != len(old) or len(set(new_ids)) != len(new):
+        raise ValueError("変更内容が重複し、commitの対応が一意ではありません")
+    if set(old_ids) != set(new_ids):
+        raise ValueError(f"変更内容の全1対1対応ではありません: old={old}, new={new}")
+    destinations = dict(zip(new_ids, new, strict=True))
+    return {oid: destinations[patch] for oid, patch in zip(old, old_ids, strict=True)}
 
 
 def _autosquash(work_dir: pathlib.Path, old: list[str], new: list[str]) -> dict[str, str]:
@@ -141,11 +118,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         old = _series(args.work_dir, old_base, old_head)
         new = _series(args.work_dir, new_base, new_head)
-        mapping = (
-            _rebase(args.work_dir, old, new, old_base, new_base)
-            if args.operation == "rebase"
-            else _autosquash(args.work_dir, old, new)
-        )
+        mapping = _rebase(args.work_dir, old, new) if args.operation == "rebase" else _autosquash(args.work_dir, old, new)
         atomic_write(args.output, json.dumps(mapping, ensure_ascii=False, indent=2) + "\n")
     except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired) as error:
         outcome.report_failure(

@@ -68,6 +68,7 @@ def merge_selection(
     added_costs = _costs(added)
     costs = {str(row[_selection.LANE_KEY]): row for row in _costs(existing)}
     for row in added_costs:
+        row[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         lane = destination(str(row[_selection.LANE_KEY]))
         row[_selection.LANE_KEY] = lane
         row[_selection.PRIOR_LANES_KEY] = list(
@@ -77,6 +78,7 @@ def merge_selection(
         if prior is None:
             costs[lane] = row
             continue
+        prior[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         if prior.get(_selection.STAGE_KEY, 1) != row.get(_selection.STAGE_KEY, 1):
             raise ValueError(f"{lane}: 合流するレーンの段階が異なる。最終割当に合う入力へ直す")
         for key in _SECONDS.values():
@@ -125,6 +127,12 @@ def merge_selection(
         _selection.LANE_OVERLAPS_KEY: list(overlaps.values()),
         "続行できない理由": ["なし"],
     }
+    if _selection.INITIAL_ALLOCATION_KEY in existing:
+        result[_selection.INITIAL_ALLOCATION_KEY] = existing[_selection.INITIAL_ALLOCATION_KEY]
+    result[_selection.ADDED_WIS_KEY] = [
+        *typing.cast(list[str], existing.get(_selection.ADDED_WIS_KEY, [])),
+        *(str(item[_selection.WI_KEY]) for item in second),
+    ]
     # 全体配分の比較値は追加時に再確定した値だけを使う。
     if _selection.SINGLE_STAGE_ESTIMATE_KEY in added:
         result[_selection.SINGLE_STAGE_ESTIMATE_KEY] = added[_selection.SINGLE_STAGE_ESTIMATE_KEY]

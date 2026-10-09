@@ -117,7 +117,7 @@ class EntryIndex:
                 except FileNotFoundError:
                     continue
                 except OSError:
-                    warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
+                    warnings.append({"state": state, "filename": path.name, "reason": "ファイル情報を読み取れません"})
                     continue
                 cached = previous_cache.get(real_path)
                 reused = (
@@ -131,10 +131,10 @@ class EntryIndex:
                     except FileNotFoundError:
                         continue
                     except UnicodeDecodeError:
-                        warnings.append({"filename": path.name, "reason": "UTF-8として読み取れません"})
+                        warnings.append({"state": state, "filename": path.name, "reason": "UTF-8として読み取れません"})
                         continue
                     except OSError:
-                        warnings.append({"filename": path.name, "reason": "ファイルを読み取れません"})
+                        warnings.append({"state": state, "filename": path.name, "reason": "ファイルを読み取れません"})
                         continue
                     parsed_frontmatter = frontmatter.parse_frontmatter(text)
                     metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
@@ -154,7 +154,7 @@ class EntryIndex:
                     except FileNotFoundError:
                         continue
                     except OSError:
-                        warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
+                        warnings.append({"state": state, "filename": path.name, "reason": "ファイル情報を読み取れません"})
                         continue
                     if (current_stat.st_mtime_ns, current_stat.st_size) != (file_stat.st_mtime_ns, file_stat.st_size):
                         continue

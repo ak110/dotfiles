@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_toolkit._agents_server import (
+    codex_providers,
     compaction_metrics,  # pylint: disable=wrong-import-position
     engine_availability,
     result_projection,
@@ -552,9 +553,8 @@ class AppServerManager:
 
     @staticmethod
     def excludes_with_recorded_reason(reason: str) -> bool:
-        """記録済みの除外理由は全て候補を除外する根拠になる。"""
-        del reason
-        return True
+        """利用上限の旧記録だけは、設定したAPIと現在の利用可否で判定し直す。"""
+        return reason != "usageLimitExceeded" or not codex_providers.configured_candidates()
 
     def __init__(
         self,
@@ -713,6 +713,9 @@ class AppServerManager:
         validate_cwd(cwd)
         validate_model_effort(model, effort)
         client = await self._ensure_client()
+        selection = None
+        if codex_providers.configured_candidates():
+            selection = await codex_providers.select(client.request, cwd)
         params: dict[str, Any] = {
             "cwd": cwd,
             "approvalPolicy": "never",
@@ -727,9 +730,25 @@ class AppServerManager:
             owner_session_id = writer_session_id = None
         params["config"] = config
         params["developerInstructions"] = _developer_instructions(launch_kind)
+        attempted: set[str] = set()
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
-                thread_response = await client.request("thread/start", params)
+                thread_response = None
+                if selection is not None and selection.subscription and selection.ordinary_usage_allowed is False:
+                    for candidate in selection.candidates:
+                        attempted.add(candidate)
+                        params["modelProvider"] = candidate
+                        try:
+                            thread_response = await client.request("thread/start", params)
+                        except JsonRpcResponseError:
+                            _LOG.info("Codex接続先の開始が拒否されました: provider=%s", candidate)
+                            continue
+                        if thread_response.get("modelProvider") != candidate:
+                            raise AppServerError("thread/start did not confirm the requested connection")
+                        break
+                if thread_response is None:
+                    params.pop("modelProvider", None)
+                    thread_response = await client.request("thread/start", params)
         except TimeoutError as exc:
             diagnostic_method = getattr(client, "initialization_diagnostic", None)
             diagnostic = (
@@ -760,6 +779,9 @@ class AppServerManager:
             engine="codex",
             turn_seq=1,
             publish_registry=self._publish_registry,
+            codex_model_provider=(thread_response.get("modelProvider") or selection.primary) if selection else None,
+            codex_subscription_provider=selection.primary if selection is not None and selection.subscription else None,
+            codex_attempted_provider_ids=attempted,
         )
         self.sessions[session_id] = session
         initialize_turn(session)
@@ -788,6 +810,8 @@ class AppServerManager:
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
         turn_seq: int = 0,
         fast_mode: bool | None = None,
+        model_provider: str | None = None,
+        subscription_provider: str | None = None,
     ) -> SessionState:
         """保存済みthreadを再開して新しいturnを開始する。"""
         validate_cwd(cwd)
@@ -805,6 +829,8 @@ class AppServerManager:
             turn_seq=turn_seq + 1,
             fast_mode=fast_mode,
             publish_registry=self._publish_registry,
+            codex_model_provider=model_provider,
+            codex_subscription_provider=subscription_provider,
         )
         self.sessions[session_id] = session
         initialize_turn(session)
@@ -971,19 +997,37 @@ class AppServerManager:
     ) -> tuple[str, dict[str, Any], BaseException | None]:
         """lock取得済みのsessionへreplyを開始し、公開状態と失敗分類を返す。"""
         held = resume_waits.HeldTurn.capture(session)
-        begin_reply(session, preserve_waits=held is not None)
+        switch_needed = self._provider_failure(session)
+        session.codex_provider_resume_pending = False
+        previous_status = session.status
+        switched = False
         try:
+            if switch_needed:
+                # cold resumeも追送の排他区間。kill/stopへ終端結果として渡さない。
+                session.status = "starting"
+                session.touch()
             client = await self._ensure_client()
-            writer_session_id = await self._resume_thread(
-                session,
-                client,
-                self._writer_session_ids.get(session.session_id),
-            )
+            if switch_needed:
+                switched = await self._switch_provider(session, client)
+                if not switched or session.interrupt_requested:
+                    if held is not None and not session.interrupt_requested:
+                        resume_waits.finalize_pending_result(session)
+                    elif not session.interrupt_requested:
+                        session.status = previous_status
+                    session.touch()
+                    return "reply_failed", session.public_status(), None
+            begin_reply(session, preserve_waits=held is not None)
+            writer_session_id = self._writer_session_ids.get(session.session_id)
+            if not switched:
+                writer_session_id = await self._resume_thread(session, client, writer_session_id)
             if writer_session_id is not None:
                 self._writer_session_ids[session.session_id] = writer_session_id
         except asyncio.CancelledError:
             if held is not None:
                 held.restore(session)
+            elif switch_needed:
+                session.status = previous_status
+                session.touch()
             raise
         except Exception as exc:
             if held is not None:
@@ -1013,6 +1057,81 @@ class AppServerManager:
             return "reply_failed", session.public_status(), exc
         return "reply_started", session.public_status(), None
 
+    @staticmethod
+    def _provider_failure(session: SessionState, error: Any = None) -> bool:
+        """終端した利用上限と、移行済みAPIの不受理だけを代替試行へ接続する。"""
+        if not session.codex_subscription_provider or not session.turn_completed or session.turn_start_ambiguous:
+            return False
+        if session.codex_provider_resume_pending:
+            return True
+        result = session.pending_result
+        status = result["status"] if result is not None else session.status
+        if error is None:
+            error = result["error"] if result is not None else session.error
+        return status == "failed" and codex_providers.fallback_failure(
+            error, subscription=session.codex_model_provider == session.codex_subscription_provider
+        )
+
+    async def _switch_provider(self, session: SessionState, client: Any) -> bool:
+        """新しいturnを開始する前に、同じthreadを独立API認証の次候補へcold resumeする。"""
+        if session.turn_start_ambiguous or session.turn_start_sent and not session.turn_completed:
+            return False
+        selection = await codex_providers.select(client.request, session.cwd, primary=session.codex_model_provider)
+        if session.codex_model_provider:
+            session.codex_attempted_provider_ids.add(session.codex_model_provider)
+        if session.codex_subscription_provider:
+            session.codex_attempted_provider_ids.add(session.codex_subscription_provider)
+        original = session.codex_model_provider
+        for candidate in selection.candidates:
+            if candidate in session.codex_attempted_provider_ids:
+                continue
+            session.codex_attempted_provider_ids.add(candidate)
+            if session.interrupt_requested:
+                return False
+            try:
+                await self._close_for_provider_switch(session, client)
+                if session.interrupt_requested:
+                    return False
+                session.codex_model_provider = candidate
+                await self._resume_thread(session, client, self._writer_session_ids.get(session.session_id))
+            except JsonRpcResponseError:
+                session.codex_model_provider = original
+                _LOG.info("Codex接続先の再開が拒否されました: session_id=%s provider=%s", session.session_id, candidate)
+                continue
+            except (AppServerError, TimeoutError, OSError):
+                session.codex_model_provider = original
+                _LOG.info("Codex接続先の再開を確定できません: session_id=%s provider=%s", session.session_id, candidate)
+                return False
+            except BaseException:
+                session.codex_model_provider = original
+                raise
+            _LOG.info("Codex接続先を確定しました: session_id=%s provider=%s", session.session_id, candidate)
+            return True
+        return False
+
+    async def _close_for_provider_switch(self, session: SessionState, client: Any) -> None:
+        """Loaded threadの接続先が再利用されないよう、unsubscribeの閉鎖完了を待つ。"""
+        closed = asyncio.Event()
+        self._resume_close_events[session.session_id] = closed
+        try:
+            async with asyncio.timeout(DEFAULT_WAIT_TIMEOUT):
+                response = await client.request("thread/unsubscribe", {"threadId": session.session_id})
+                if response.get("status") != "unsubscribed":
+                    return
+                async with self._condition:
+                    await self._condition.wait_for(
+                        lambda: (
+                            closed.is_set()
+                            or session.interrupt_requested
+                            or getattr(client, "closed", False)
+                            or getattr(client, "reader_failure", None) is not None
+                        )
+                    )
+                if not closed.is_set() and not session.interrupt_requested:
+                    raise AppServerError("thread/unsubscribe did not complete the connection closure")
+        finally:
+            self._resume_close_events.pop(session.session_id, None)
+
     async def _resume_thread(
         self,
         session: SessionState,
@@ -1029,6 +1148,8 @@ class AppServerManager:
         }
         if session.model is not None:
             resume_params["model"] = session.model
+        if session.codex_model_provider is not None:
+            resume_params["modelProvider"] = session.codex_model_provider
         config = AppServerManager._base_thread_config(lightweight=session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
         owner_session_id = self._root_session_id
         if owner_session_id is not None:
@@ -1043,6 +1164,8 @@ class AppServerManager:
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
             raise AppServerError("thread/resume returned an unexpected thread.id")
+        if session.codex_model_provider is not None and resume_response.get("modelProvider") != session.codex_model_provider:
+            raise AppServerError("thread/resume did not confirm the requested connection")
         if owner_session_id is not None and writer_session_id is not None:
             shared_roots.write_host_alias(owner_session_id, writer_session_id, session.session_id)
         return writer_session_id
@@ -1138,6 +1261,12 @@ class AppServerManager:
         session.commentary = ""
         session.diff_changed = False
         session.error = {"message": str(error) or error.__class__.__name__}
+        failure = session.error.copy()
+        if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
+            # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
+            failure.update(error.data)
+        if session.codex_subscription_provider and session.codex_model_provider != session.codex_subscription_provider:
+            session.error = {"message": "Codex connection rejected the request"}
         session.agent_message = ""
         session.protocol_warnings = []
         session.reply_turn_started = False
@@ -1146,6 +1275,7 @@ class AppServerManager:
         session.interrupt_requested = False
         session.turn_completed = True
         session.failure_pending_completion = False
+        self._hold_provider_failure(session, failure)
         session.touch()
         await self._notify_waiters()
 
@@ -1213,6 +1343,22 @@ class AppServerManager:
     async def _notify_waiters(self) -> None:
         async with self._condition:
             self._condition.notify_all()
+
+    def _hold_provider_failure(self, session: SessionState, error: Any = None) -> bool:
+        """候補切替の間は失敗を公開せず、既存の監視から継続を一度だけ配送する。"""
+        if (
+            session.interrupt_requested
+            or not self._provider_failure(session, error)
+            or not codex_providers.configured_candidates()
+        ):
+            return False
+        resume_waits.begin_auto_resume_wait(
+            session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
+        )
+        session.auto_resume_deadline = None
+        session.codex_provider_resume_pending = True
+        session.status = "running"
+        return True
 
     async def _handle_notification(self, message: dict[str, Any]) -> None:
         """App Server通知をsession状態へ反映する。
@@ -1285,6 +1431,8 @@ class AppServerManager:
             session.failure_pending_completion = False
             if session.status not in TERMINAL_STATUSES:
                 session.status = "failed"
+            if session.status == "completed":
+                session.codex_attempted_provider_ids = {session.codex_model_provider} if session.codex_model_provider else set()
             # 背景実行の`atk agents wait`で回収済みの孫sessionは、保留の判定より前に追跡から外す。
             wait_output_tracking.consume_agents_wait_background_outputs(session)
             if resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
@@ -1301,6 +1449,8 @@ class AppServerManager:
                 unobserved_session_ids = set(session.live_child_session_ids)
                 session.live_child_session_ids.clear()
                 resume_waits.record_unobserved_sessions(session, unobserved_session_ids)
+            elif self._hold_provider_failure(session):
+                pass
             elif not resume_waits.is_overload_failure(session):
                 resume_waits.clear_overload_resume(session)
             elif (session.availability_checked or session.turn_seq > 1) and resume_waits.begin_overload_resume_wait(

@@ -1,6 +1,6 @@
 // ワークアイテム画面。キューの一覧・詳細・登録・編集・状態遷移を扱う。
 import {
-  BASE_PATH, connectEvents, renderList, renderWarnings, resyncWhenVisible
+  BASE_PATH, SERVE_HOST, WI_ROOT, diagnostic, connectEvents, renderList, renderWarnings, resyncWhenVisible
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -67,19 +67,41 @@ const deleteEntrySnapshot = entry => entry ? JSON.stringify([
 ]) : '';
 
 async function api(path, options = {}) {
+  const route = path.split('?')[0];
+  const entryMatch = route.match(/^\/api\/entries\/([^/]+)\/([^/]+)$/);
+  const operation = {
+    '/api/entries': options.method ? '項目登録' : '一覧取得',
+    '/api/repos': '対象リポジトリ一覧取得',
+    '/api/sync': 'Git同期',
+    '/api/entries/batch': '一括登録',
+    '/api/entries/answer': '回答保存',
+    '/api/entries/user-comment': 'ユーザーコメント保存',
+    '/api/entries/remove': '削除',
+    '/api/entries/adopt': '採用',
+    '/api/entries/reject': '却下',
+    '/api/entries/hold': '保留',
+    '/api/entries/unhold': '保留解除',
+    '/api/entries/return-to-inbox': 'inboxへ戻す'
+  }[route] || '詳細取得・保存';
+  const target = entryMatch ? entryMatch.slice(1).map(decodeURIComponent).join('/') : operation;
   const request = {
     ...options,
     headers: {'Content-Type': 'application/json', ...(options.headers || {})}
   };
-  const response = await fetch(BASE_PATH + path, request);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(payload.error || response.statusText || '通信に失敗しました。');
-    error.status = response.status;
-    error.payload = payload;
+  try {
+    const response = await fetch(BASE_PATH + path, request);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload.error || response.statusText || '通信に失敗しました。');
+      error.status = response.status;
+      error.payload = payload;
+      throw error;
+    }
+    return payload;
+  } catch (error) {
+    error.message = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / ${target}`, error.message);
     throw error;
   }
-  return payload;
 }
 
 function setTextMessage(id, message) {
@@ -118,6 +140,9 @@ function clearDialogMessages(dialogName) {
 }
 
 function showToast(message, isError = false) {
+  if (isError && !message.includes('［WI / ')) {
+    message = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / 操作`, message);
+  }
   const notice = byId('operation-notice');
   clearTimeout(noticeTimer);
   noticeOrigin = isError && pendingOperations.has('sync') ? byId('refresh-button') :
@@ -402,7 +427,7 @@ function renderEntry(entry) {
         if (current) current.textContent = 'コピー';
       }, COPIED_LABEL_MS);
     } catch (error) {
-      setGlobalError(`コピーに失敗しました。 ${error.message}`);
+      setGlobalError(diagnostic('WI', 'ブラウザー', `${WI_ROOT} / ${entryKey(entry)}`, `コピーに失敗しました。 ${error.message}`));
     }
   });
   item.append(button, copy);
@@ -472,7 +497,7 @@ function renderEntries(warnings = [], announce = false, searchFallback = false) 
   renderPagination();
   setTextMessage('list-fallback-notice', searchFallback ? SEARCH_FALLBACK_NOTICE : '');
   renderWarnings(byId('list-warning'), warnings.length
-    ? [`一覧から除外したファイル: ${warnings.map(item => `${item.filename}（${item.reason}）`).join('、')}`]
+    ? warnings.map(item => diagnostic('WI', SERVE_HOST, `${WI_ROOT} / ${item.state}/${item.filename}`, `一覧から除外したファイル: ${item.reason}`))
     : []);
   renderEmptyState();
   if (announce) {
@@ -1118,7 +1143,8 @@ async function reloadOpenDetailFromExternalChange() {
     }
     if (candidates.length > 1) {
       closeDetailDialog();
-      setGlobalError(`${filename}の移動先を一意に特定できません。詳細を開き直してください。`);
+      setGlobalError(diagnostic('WI', SERVE_HOST, `${WI_ROOT} / ${originalState}/${filename}`,
+        `${filename}の移動先を一意に特定できません。詳細を開き直してください。`));
       return;
     }
     resolvedEntry = candidates[0] || null;
@@ -1421,7 +1447,7 @@ function createResultMessage(isBatch, result) {
         ? ` 使わなかった入力欄: ${ignored.map(name => IGNORED_SINGLE_FIELD_LABELS[name] || name).join('、')}`
         : '')
     : (filenames[0] ? `${filenames[0]}を追加しました。` : '項目を追加しました。');
-  return warnings.length ? `${summary} 警告: ${warnings.join('、')}` : summary;
+  return warnings.length ? diagnostic('WI', SERVE_HOST, `${WI_ROOT} / 項目登録`, `${summary} 警告: ${warnings.join('、')}`) : summary;
 }
 
 async function createEntry(event) {
@@ -1676,7 +1702,7 @@ function subscribeEvents() {
     error: () => {
       byId('connection-status').dataset.connected = 'false';
       if (byId('connection-status').dataset.syncFailed === 'true') return;
-      byId('connection-status').textContent = '自動更新を再接続中';
+      byId('connection-status').textContent = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / 自動更新`, '自動更新を再接続中');
       byId('connection-status').hidden = false;
     },
     changed: () => {
@@ -1685,7 +1711,7 @@ function subscribeEvents() {
     'sync-error': () => {
       const status = byId('connection-status');
       status.dataset.syncFailed = 'true';
-      status.textContent = 'Git同期に失敗しました。今すぐ同期で再試行してください。';
+      status.textContent = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / Git同期`, 'Git同期に失敗しました。今すぐ同期で再試行してください。');
       status.hidden = false;
     },
     'sync-ok': () => {

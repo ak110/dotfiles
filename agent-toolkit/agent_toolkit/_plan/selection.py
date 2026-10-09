@@ -24,6 +24,21 @@ PRIOR_LANES_KEY = "先行レーン"
 LANE_OVERLAPS_KEY = "レーン間の重なり"
 SINGLE_STAGE_ESTIMATE_KEY = "単一段階案の完了見込み秒数"
 DERIVED_NEW_PATHS_KEY = "導出した新設先"
+INTEGRATION_STATE_KEY = "統合状態"
+NOT_INTEGRATED = "未統合"
+INTEGRATED = "統合済み"
+INITIAL_ALLOCATION_KEY = "初回配分"
+ADDED_WIS_KEY = "追加WI"
+
+
+def integrated_lanes(selection: object) -> set[str]:
+    """統合済みとして記録されたレーンを返す。省略した状態は未統合である。"""
+    return {
+        str(row[LANE_KEY])
+        for row in lane_costs(selection) or []
+        if isinstance(row, dict) and row.get(INTEGRATION_STATE_KEY) == INTEGRATED
+    }
+
 
 _LEGACY_DECISIONS_KEY = "decisions"
 

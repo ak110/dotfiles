@@ -75,6 +75,9 @@
 
 ## `atk agents wait`の応答の扱い
 
+`atk agents wait`のバックグラウンドタスクが未完了の間、進捗を確かめる場合はlist/showの活動情報を使う。途中の出力は進捗として扱い、終端結果は保持したバックグラウンドタスクの完了通知を受け取ってから出力を全量読み直して回収する。同じ結果を得るためにwaitを併走させることは避ける。Codexのcell IDとsession IDには前掲の同ターン回収を適用する。
+公式資料と元ホストの観測は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：進捗照会と結果回収：2026年10月10日」にある。
+
 - `atk agents wait`の応答の行の形式（JSON Lines、`session_id`と`label`、`agent_message_path`、`終端行:`の要約行）と待機の成立の判定は同CLIの`--help`に従う。依頼の判別には`label`を使う。失敗で終端した行は、要約行の`error`で原因を確かめ、`next_action`に従って次の操作を選ぶ。結果を回収できなかった終端sessionの原因は`show`の`error`で確かめる
 - 同じ書込主体の`atk agents wait`が既に稼働している場合、後発は`current.json`が示すrun識別子を固定し、先行待機のlock解放後にそのrunが保存した本文と終了コードを返す。先行待機と後発待機は同じ結果を各1回受け取る前景のCLIが本文を返した後の逐次待機は新しいrunへ進み、先行CLIが稼働中にlock競合した後発待機だけが先行runの本文を1回回収する。
   バックグラウンドタスクの完了通知が届いた後も同じ`atk agents wait`の実プロセスが残ることがあり、その間に起動した後続の待機も同じく先行するrun識別子を固定し、lock解放後に先行待機が保存した本文と終了コードを回収する

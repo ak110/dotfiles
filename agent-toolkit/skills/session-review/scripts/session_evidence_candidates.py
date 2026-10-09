@@ -985,8 +985,9 @@ def _event_without_cd_prefix(event: dict[str, Any]) -> dict[str, Any]:
     `cd`が失敗して後続のコマンドが意図した場所で動いていないため、前置を外さず記録どおりのイベントを返す。
     """
     output = event.get("diagnostic") if event.get("tool") == "CommandExecution" else event.get("text")
-    if isinstance(output, str) and any("cd:" in line for line in output.splitlines()):
+    if isinstance(output, str) and any("cd:" in line or "Set-Location" in line for line in output.splitlines()):
         return event
+    event = _event_without_powershell_wrapper(event)
     result = dict(event)
     operation = _json_object(str(event.get("operation", "")))
     if operation is not None and isinstance(operation.get("command"), str):
@@ -1009,7 +1010,178 @@ def _event_without_cd_prefix(event: dict[str, Any]) -> dict[str, Any]:
         stripped = _command_without_cd_prefix(args[2])
         if stripped is not None:
             result[key] = json.dumps([*args[:2], stripped, *args[3:]], ensure_ascii=False)
+    return _event_without_run_command_wrapper(result)
+
+
+def _event_with_command(event: dict[str, Any], args: list[str]) -> dict[str, Any]:
+    """判定用の引数だけを差し替え、元イベントは呼び出し側に保持する。"""
+    result = {**event, "command": json.dumps(args, ensure_ascii=False), "command_full": json.dumps(args, ensure_ascii=False)}
+    operation = _json_object(str(event.get("operation", "")))
+    if operation is not None:
+        result["operation"] = json.dumps({**operation, "command": shlex.join(args)}, ensure_ascii=False)
     return result
+
+
+def _event_without_powershell_wrapper(event: dict[str, Any]) -> dict[str, Any]:
+    """確定できる単独PowerShellコマンドだけを既存分類へ渡す。"""
+    args = _event_command_args(event)
+    if args and _basename(args[0]) in _SHELL_NAMES and len(args) == 3 and args[1] in {"-c", "-lc"}:
+        tokens = _shell_command_tokens(args[2])
+        args = [token.value for token in tokens] if tokens and not any(token.operator for token in tokens) else []
+    inner = _powershell_inner_args(args)
+    return _event_with_command(event, inner) if inner else event
+
+
+def _event_command_args(event: dict[str, Any]) -> list[str]:
+    raw = event.get("command_full", event.get("command"))
+    if isinstance(raw, str):
+        try:
+            args = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        return args if isinstance(args, list) and all(isinstance(arg, str) for arg in args) else []
+    operation = _json_object(str(event.get("operation", "")))
+    command = operation.get("command") if operation else None
+    tokens = _shell_command_tokens(command) if isinstance(command, str) else None
+    return [token.value for token in tokens] if tokens and not any(token.operator for token in tokens) else []
+
+
+def _powershell_inner_args(args: list[str]) -> list[str] | None:
+    """文字列Commandだけを解析する。PowerShell 7.5の引用規則を使い、展開や式は解釈しない。
+
+    典拠: https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_quoting_rules
+    """
+    if not args or args[0].replace("\\", "/").rsplit("/", 1)[-1].casefold() not in {
+        "powershell",
+        "powershell.exe",
+        "pwsh",
+        "pwsh.exe",
+    }:
+        return None
+    index = 1
+    while index < len(args):
+        option = args[index].casefold()
+        if option == "-command":
+            break
+        if option in {"-noprofile", "-nologo", "-noninteractive", "-sta", "-mta"}:
+            index += 1
+        elif option in {"-executionpolicy", "-windowstyle", "-inputformat", "-outputformat"} and index + 1 < len(args):
+            index += 2
+        else:
+            return None
+    if index + 2 != len(args) or args[index + 1] == "-":
+        return None
+    tokens = _powershell_command_tokens(args[index + 1])
+    if (
+        tokens
+        and len(tokens) >= 4
+        and tokens[0] == _ShellToken("cd", False)
+        and not tokens[1].operator
+        and not tokens[1].value.startswith("-")
+        and tokens[2] in {_ShellToken(";", True), _ShellToken("&&", True)}
+    ):
+        tokens = tokens[3:]
+    return [token.value for token in tokens] if tokens and not any(token.operator for token in tokens) else None
+
+
+def _powershell_command_tokens(command: str) -> list[_ShellToken] | None:
+    """引用された語と演算子を分ける。確定できないPowerShell式は候補へ残す。"""
+    tokens: list[_ShellToken] = []
+    word: list[str] = []
+    quote = ""
+    started = False
+    index = 0
+    while index < len(command):
+        char = command[index]
+        following = command[index + 1] if index + 1 < len(command) else ""
+        if quote and char == quote:
+            if following == quote:
+                word.append(char)
+                index += 2
+                continue
+            quote = ""
+        elif char == "`" and quote != "'":
+            if not following or following in "\r\n":
+                return None
+            word.append(
+                {"n": "\n", "r": "\r", "t": "\t", "0": "\0", "a": "\a", "b": "\b", "f": "\f", "v": "\v"}.get(
+                    following, following
+                )
+            )
+            index += 2
+            started = True
+            continue
+        elif char in "‘’“”" or char == "$" and quote != "'" or not quote and char in "{}()@#,":
+            return None
+        elif not quote and char in "'\"":
+            quote = char
+        elif not quote and char in ";|&<>\r\n":
+            if started:
+                tokens.append(_ShellToken("".join(word), False))
+                word, started = [], False
+            operator = char + following if following == char else char
+            tokens.append(_ShellToken(operator, True))
+            index += len(operator)
+            continue
+        elif not quote and char.isspace():
+            if started:
+                tokens.append(_ShellToken("".join(word), False))
+                word, started = [], False
+            index += 1
+            continue
+        else:
+            word.append(char)
+        started = True
+        index += 1
+    if quote:
+        return None
+    if started:
+        tokens.append(_ShellToken("".join(word), False))
+    return tokens
+
+
+def _event_without_run_command_wrapper(event: dict[str, Any]) -> dict[str, Any]:
+    """保存済み子結果の正常な包装だけを子コマンドへ帰属させる。"""
+    args = _event_command_args(event)
+    if args and _basename(args[0]) in _SHELL_NAMES and len(args) == 3 and args[1] in {"-c", "-lc"}:
+        tokens = _shell_command_tokens(args[2])
+        args = [token.value for token in tokens] if tokens and not any(token.operator for token in tokens) else []
+    if len(args) < 4 or _basename(args[0]) != "atk" or args[1] != "run-command" or "--" not in args[2:]:
+        return event
+    text = str(event.get("diagnostic") or event.get("text") or "")
+    results = [_json_object(line) for line in text.splitlines() if line.startswith("{")]
+    if len(results) != 1 or results[0] is None:
+        return event
+    result = results[0]
+    child = result.get("argv")
+    code = result.get("child_exit_code")
+    if (
+        not isinstance(child, list)
+        or not child
+        or not all(isinstance(arg, str) for arg in child)
+        or not isinstance(code, int)
+        or isinstance(code, bool)
+        or code != _failure_exit_code(event)
+        or result.get("timed_out") is not False
+        or "signal" not in result
+        or result["signal"] is not None
+        or not isinstance(result.get("record_path"), str)
+        or not result["record_path"]
+        or any(
+            not isinstance(result.get(key), int) or isinstance(result[key], bool) or result[key] < 0
+            for key in ("stdout_bytes", "stderr_bytes")
+        )
+        or child != args[args.index("--") + 1 :]
+    ):
+        return event
+    inner = _event_with_command(event, child)
+    inner["exit_code"] = code
+    # 検証の検出は出力を伴う。検索の否定では、子の診断が無いことをバイト数で保証する。
+    if result["stdout_bytes"] or result["stderr_bytes"]:
+        return inner if _is_check_detected(inner) else event
+    inner["diagnostic"] = ""
+    inner["text"] = f"Exit code {code}" if event.get("tool_name") == "Bash" else "CommandExecution failed"
+    return inner
 
 
 def _command_without_cd_prefix(command: str) -> str | None:
@@ -1471,6 +1643,17 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
                 display = args[2]
                 shell_unwrapped = True
             args = _shell_tokens(args[2])
+        elif (
+            not any(
+                "cd:" in line or "Set-Location" in line
+                for line in str(event.get("diagnostic") or event.get("text") or "").splitlines()
+            )
+            and (inner := _powershell_inner_args(args)) is not None
+        ):
+            if not shell_unwrapped:
+                display = args[-1]
+                shell_unwrapped = True
+            args = inner
         elif name == "uv" and len(args) >= 3 and args[1] == "run":
             index = 2
             while index < len(args) and args[index] in {"--frozen", "--locked", "--no-project"}:

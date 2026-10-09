@@ -338,11 +338,12 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                     "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。",
                     tag=_WARN_TAG,
                     fix=(
-                        "読み取った内容は途中経過であり、完了通知を受けた後に同じ出力ファイルを読み直してから結果として使う。"
-                        "完了通知を唯一の再開契機とし、独立して実行する工程が無ければターンを終える。"
+                        "読み取った途中経過は進捗の材料に限る。"
+                        "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使う。"
                     ),
                     removable_cause=True,
-                    escalate_on_repeat=True,
+                    # 途中経過の読取は進捗確認にも使う。反復だけでは結果の欠落を確定できない。
+                    escalate_on_repeat=False,
                 )
             )
     if is_codex and _reads_commit_message_rules(command, cwd):

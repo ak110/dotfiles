@@ -334,7 +334,10 @@ process.stdout.write(JSON.stringify({
         "ambiguous": {
             "detailOpen": False,
             "currentEntryIsNull": True,
-            "error": "same.mdの移動先を一意に特定できません。詳細を開き直してください。",
+            "error": (
+                "［WI / node-test / /notes / processing/same.md］"
+                "same.mdの移動先を一意に特定できません。詳細を開き直してください。"
+            ),
         },
     }
 
@@ -837,7 +840,7 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
     entries, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"status": "inbox"})
 
     assert [(entry["filename"], entry["kind"]) for entry in entries] == [("unknown.md", "unknown")]
-    assert warnings == [{"filename": "os-error.md", "reason": "ファイルを読み取れません"}]
+    assert warnings == [{"state": "inbox", "filename": "os-error.md", "reason": "ファイルを読み取れません"}]
 
 
 @pytest.mark.asyncio

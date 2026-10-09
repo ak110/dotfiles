@@ -203,6 +203,9 @@ def test_codex_operations_do_not_warn_or_record(tmp_path: pathlib.Path, payload:
         "uv run --frozen python -c \"from pathlib import Path; Path('.claude/rules/x.md').write_text('rule')\"",
         "python3 - <<'PY'\np='.claude/skills/server-log-review/SKILL.md'\nopen(p,'w').write('rule')\nPY",
         "python3 -c \"from pathlib import Path; p=Path('AGENTS.md'); p.write_bytes(b'rule')\"",
+        "for item in one; do printf rule > AGENTS.md; done",
+        "if test -f marker; then sed -i 's/old/new/' agent-toolkit/rules/01-agent.md; fi",
+        "case value in one) printf rule | tee .claude/skills/x/SKILL.md;; esac",
     ],
 )
 def test_agent_document_bash_writing_warns_once(tmp_path: pathlib.Path, command: str) -> None:

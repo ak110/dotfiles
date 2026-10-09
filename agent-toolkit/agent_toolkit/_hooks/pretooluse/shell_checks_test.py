@@ -743,6 +743,8 @@ class TestBashGitRevParseShortMultiple:
             "git rev-parse --short --sq-quote a b",
             "git rev-parse --verify HEAD HEAD~1",
             "git rev-parse --verify --quiet HEAD HEAD~1",
+            "for item in one; do git rev-parse --short HEAD HEAD~1; done",
+            "if test -f marker; then git rev-parse --verify HEAD HEAD~1; fi",
         ],
     )
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}])
@@ -825,6 +827,7 @@ class TestGitCommitAttribution:
         "command",
         [
             "git commit -m '変更'",
+            "while test -f marker; do git commit -m '変更'; done",
             "git commit -m '変更' -m 'Co-Authored-By: GPT-6.1 Sol / High <noreply@openai.com>'",
             "git commit -m '変更' -m 'Co-Authored-By: GPT-6 Sol / Medium <noreply@openai.com>'",
             f"git commit -m '変更' -m '{_trailer}' -m '{_trailer}'",
@@ -930,6 +933,7 @@ class TestBashOptionAfterTerminator:
             ("grep -rc -F -e 'X' -- --include", "--include"),
             ("rg -c -F --regexp=X -- --glob", "--glob"),
             ("grep -rc -F -f patterns.txt -- --include", "--include"),
+            ("case value in one) rg -l -F -- 'x' --glob '*.py' .;; esac", "--glob"),
         ],
     )
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
@@ -1016,6 +1020,14 @@ class TestBashAtkOutputLoss:
             "atk wi process-loop status > status.out",
             "atk wi process-loop --target-repo . instruct --body-file note.md 2>&1",
             "atk agents logs sample > logs.out",
+            "for item in one; do atk wi list; done | cat",
+            "for ((i=0;i<2;i++)); do atk wi list; done > out.log",
+            "select item in one; do atk wi list; done 2> errors.log",
+            "while test -f marker; do atk agents wait; done &",
+            "until test -f marker; do atk wi list; done |& cat",
+            "if test -f marker; then atk wi list; elif test -d marker; then git status; else cat marker; fi > out.log",
+            "case value in one) atk wi list;; esac | cat",
+            "for item in one; do if test -f marker; then atk wi list; fi; done 2>&1",
         ],
     )
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
@@ -1059,6 +1071,10 @@ class TestBashAtkOutputLoss:
             'bash -c "$COMMAND"',
             "printf data | head; atk agents wait",
             "atk agents wait; printf done &",
+            "for item in one; do atk wi list; done",
+            "if test -f marker; then atk serve; fi > serve.log 2>&1",
+            "unused() { atk wi list; }; git status",
+            "function unused { atk wi list; }; git status",
         ],
     )
     def test_atk_literal_and_supported_outputs_are_allowed(self, command: str) -> None:

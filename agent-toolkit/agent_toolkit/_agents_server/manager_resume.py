@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from agent_toolkit._agents_server import (
+    codex_providers,
     launch_requests,
     manager_registry,
     session_registry,
@@ -48,6 +49,18 @@ class ManagerResume(manager_registry.ManagerRegistry):
     async def _advance_child_session_wait(self, session: SessionState) -> None:
         """保留中の結果を、孫sessionの終端・過負荷と利用上限の待機の経過または保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
+            return
+        if session.codex_provider_resume_pending:
+            pending = session.pending_result
+            finalize_pending_result(session, touch=False)
+            try:
+                await self._backend(session.engine).send_message(session, wrap_delivery_body(codex_providers.CONTINUE_PROMPT))
+            except Exception:
+                session.status = pending["status"]
+                session.agent_message = pending["agent_message"]
+                session.error = pending["error"]
+                session.turn_completed = True
+                session.touch()
             return
         if session.overload_resume_at is not None:
             if asyncio.get_running_loop().time() >= session.overload_resume_at:
@@ -212,6 +225,12 @@ class ManagerResume(manager_registry.ManagerRegistry):
         backend = self._backend(resume_state.engine)
         try:
             await launch_requests.check_plugin_commands(resume_state.cwd)
+            provider_args: dict[str, Any] = {}
+            if resume_state.codex_model_provider is not None:
+                provider_args = {
+                    "model_provider": resume_state.codex_model_provider,
+                    "subscription_provider": resume_state.codex_subscription_provider,
+                }
             session = await backend.resume(
                 session_id,
                 prompt,
@@ -223,6 +242,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 excluded_candidates=resume_state.excluded_candidates,
                 turn_seq=resume_state.turn_seq,
                 fast_mode=resume_state.fast_mode,
+                **provider_args,
             )
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
             if self._status_writer is not None:
@@ -307,6 +327,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 effort=resume_state.effort,
                 engine=resume_state.engine,
                 model_type=resume_state.model_type,
+                codex_model_provider=resume_state.codex_model_provider,
+                codex_subscription_provider=resume_state.codex_subscription_provider,
                 launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
                 announced=True,

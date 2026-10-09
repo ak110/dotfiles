@@ -907,7 +907,7 @@ def test_assets_search_fallback_obeys_boundaries_and_keeps_filters() -> None:
 const fallbackNotice =
   '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
   'フィルターの選択値は変更していません。';
-const initialWarnings = [{filename: 'initial.md', reason: '初回警告'}];
+const initialWarnings = [{state: 'inbox', filename: 'initial.md', reason: '初回警告'}];
 const runCase = async (token, count) => {
   fetchCalls.length = 0;
   elements['search-input'].value = token;
@@ -1027,7 +1027,7 @@ process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, 
         assert result[name]["rows"] == []
         assert result[name]["notice"] == ""
         assert result[name]["noticeHidden"] is True
-        assert result[name]["warning"] == "一覧から除外したファイル: initial.md（初回警告）"
+        assert result[name]["warning"] == "［WI / node-test / /notes / inbox/initial.md］一覧から除外したファイル: 初回警告"
         assert result[name]["status"] == "一致する項目はありません"
         assert result[name]["urls"] == [
             f"/atk/api/entries?type=all&status=active&answered=all&period=2w&q={name}&page=1",

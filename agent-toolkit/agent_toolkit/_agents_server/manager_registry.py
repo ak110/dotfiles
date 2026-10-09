@@ -156,6 +156,8 @@ class ManagerRegistry(responses.ManagerResponses):
             terminal=True,
             engine=info.engine,
             fast_mode=info.fast_mode,
+            codex_model_provider=info.codex_model_provider,
+            codex_subscription_provider=info.codex_subscription_provider,
             cwd=info.cwd,
             model=info.model,
             effort=info.effort,
@@ -198,7 +200,9 @@ class ManagerRegistry(responses.ManagerResponses):
                     "そのsessionを起動したroot sessionで`atk agents wait`を実行して終端を観測する"
                 ),
             )
-        if resolution.state in {session_registry.Resolution.MISSING, session_registry.Resolution.RELEASED}:
+        if resolution.state is session_registry.Resolution.MISSING or (
+            resolution.state is session_registry.Resolution.RELEASED and resolution.resume_info is None
+        ):
             return None
         if resolution.state is session_registry.Resolution.UNREADABLE:
             raise ActionableError(
@@ -222,6 +226,8 @@ class ManagerRegistry(responses.ManagerResponses):
             effort=info.effort,
             engine=info.engine,
             fast_mode=info.fast_mode,
+            codex_model_provider=info.codex_model_provider,
+            codex_subscription_provider=info.codex_subscription_provider,
             model_type=info.model_type,
             launch_kind=info.launch_kind,
             **info.launch_info.as_kwargs(),

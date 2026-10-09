@@ -97,7 +97,7 @@ def _load(spec: object) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     for position, entry in enumerate(entries, 1):
         if not isinstance(entry, dict):
             raise ValueError(f"構造化診断の行が不正です: {path}: {position}")
-        if entry.get("kind") == "command":
+        if entry.get("kind") in {"header", "command", "summary"}:
             continue
         if entry.get("kind") not in {None, "diagnostic"}:
             raise ValueError(f"未知の構造化診断種別です: {path}: {position}")

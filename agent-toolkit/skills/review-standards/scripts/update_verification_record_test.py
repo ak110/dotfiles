@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import shlex
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -81,7 +82,7 @@ def test_public_generation_guides_non_git_cwd_without_writing_and_recovers(
 
 
 @pytest.mark.parametrize("mode", ["wi", "plan-wi", "plan-user"])
-def test_public_record_roundtrip(
+def test_public_generation_list_roundtrip(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: str
 ) -> None:
     """入力形ごとの原文集合が雛形と一致し、同文別出所の一方だけを更新・保持できる。"""
@@ -89,7 +90,7 @@ def test_public_record_roundtrip(
     record, template = tmp_path / "record.json", tmp_path / "template.json"
     plan = _plan(tmp_path, mode)
     args = ["--wi", WI] if mode == "wi" else ["--plan", str(plan)]
-    assert _run("--output", str(record), *args) == 0
+    assert _run("--output", str(record), *args, "--list") == 0
     first = json.loads(record.read_text(encoding="utf-8"))
     template_args = [WI] if mode == "wi" else ["--plan", str(plan)]
     assert _run("--template", str(template), *template_args, name="exec-review-evidence-check") == 0
@@ -120,7 +121,7 @@ def test_public_record_roundtrip(
     added = json.loads(record.read_text(encoding="utf-8"))
     assert added[chosen["section"]][1]["evidence"] == "保存操作で再読込値を観測\n別条件で再確認"
     assert _run(*update, "--mode", "replace") == 0
-    assert _run("--output", str(record), *args) == 0
+    assert _run("--output", str(record), *args, "--list") == 0
     final = json.loads(record.read_text(encoding="utf-8"))
     expected = first
     expected[chosen["section"]][1]["evidence"] = "別条件で再確認"
@@ -133,7 +134,7 @@ def test_public_regeneration_adds_missing_row_and_keeps_existing_evidence(
     """同じoutputの再生成で不足行を補い、原文別出所の既存根拠を保持する。"""
     plan = _plan(tmp_path, "plan-user")
     record = tmp_path / "pending.json"
-    assert _run("--output", str(record), "--plan", str(plan)) == 0
+    assert _run("--output", str(record), "--plan", str(plan), "--list") == 0
     assert _run("--output", str(record), "--list") == 0
     listed = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
     evidence = tmp_path / "evidence.txt"
@@ -158,7 +159,7 @@ def test_public_regeneration_adds_missing_row_and_keeps_existing_evidence(
     before = json.loads(record.read_text(encoding="utf-8"))["user_requirements"]
     current = plan.read_text(encoding="utf-8")
     plan.write_text(current + "\n### ユーザー発言3\n\n```text\n不足行を追加する。\n```\n", encoding="utf-8")
-    assert _run("--output", str(record), "--plan", str(plan)) == 0
+    assert _run("--output", str(record), "--plan", str(plan), "--list") == 0
     after = json.loads(record.read_text(encoding="utf-8"))["user_requirements"]
     assert after[:2] == before
     assert after[2]["requirement"] == "不足行を追加する。"
@@ -286,6 +287,124 @@ def test_public_record_rejects_invalid_update_without_write(
     assert "次の操作:" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("cwd_kind", ["outside", "other"])
+@pytest.mark.parametrize("mode", ["plan-wi", "plan-user", "mixed"])
+def test_public_generation_uses_plan_repository_from_other_cwd(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, cwd_kind: str, mode: str
+) -> None:
+    """対象メタ情報を持つ入力は周囲のGitやWI所属と混同しない。"""
+    _wi(monkeypatch, tmp_path)
+    target = git_repository.init_repository(tmp_path / "target")
+    other = git_repository.init_repository(tmp_path / "other") if cwd_kind == "other" else tmp_path
+    resolved = []
+
+    def resolve(path: str | pathlib.Path, **_kwargs: object) -> str:
+        resolved.append(pathlib.Path(path))
+        return "example" if pathlib.Path(path) == target else "wrong-repository"
+
+    monkeypatch.setattr(repo, "resolve_repo_id", resolve)
+    plan = _plan(tmp_path, "plan-user" if mode == "mixed" else mode)
+    plan.write_text(
+        f"## 概要\n\n### 計画メタ情報\n\n- 対象リポジトリ: `{target}`\n\n" + plan.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    record = tmp_path / "pending.json"
+    monkeypatch.chdir(other)
+    args = ["--output", str(record), "--plan", str(plan), "--list"]
+    if mode == "mixed":
+        args.extend(["--wi", WI])
+    assert _run(*args) == 0
+    data = json.loads(record.read_text(encoding="utf-8"))
+    assert len(data["wi_conditions"]) == (2 if mode in {"plan-wi", "mixed"} else 0)
+    assert len(data["user_requirements"]) == (0 if mode == "plan-wi" else 2)
+    assert bool(resolved) == (mode != "plan-user")
+    assert all(path == target for path in resolved)
+
+
+@pytest.mark.parametrize("invalid", ["different", "ambiguous", "duplicate-section", "not-git", "empty", "judged"])
+def test_public_generation_rejects_ambiguous_repository_without_write(tmp_path: pathlib.Path, invalid: str) -> None:
+    """対象不成立と判定済みを一覧生成でも拒否し、保存済み根拠を保持する。"""
+    target = git_repository.init_repository(tmp_path / "target")
+    plan = _plan(tmp_path, "plan-user")
+    prefix = f"## 概要\n\n### 計画メタ情報\n\n- 対象リポジトリ: `{target}`\n"
+    plan.write_text(prefix + "\n" + plan.read_text(encoding="utf-8"), encoding="utf-8")
+    record = tmp_path / "record.json"
+    assert _run("--output", str(record), "--plan", str(plan), "--list") == 0
+    payload = json.loads(record.read_text(encoding="utf-8"))
+    payload["user_requirements"][0]["evidence"] = "既存根拠"
+    if invalid == "judged":
+        payload["user_requirements"][0]["outcome"] = "達成"
+    _json(record, payload)
+    before = record.read_bytes()
+    args = ["--output", str(record), "--plan", str(plan), "--list"]
+    current = plan.read_text(encoding="utf-8")
+    if invalid == "different":
+        other = git_repository.init_repository(tmp_path / "other")
+        second = tmp_path / "other-plan.md"
+        second.write_text(current.replace(str(target), str(other)), encoding="utf-8")
+        args.extend(["--plan", str(second)])
+    elif invalid == "ambiguous":
+        plan.write_text(current.replace(prefix, prefix + "- 対象リポジトリ: `/別対象`\n"), encoding="utf-8")
+    elif invalid == "duplicate-section":
+        plan.write_text(current.replace(prefix, prefix + "\n### 計画メタ情報\n\n"), encoding="utf-8")
+    elif invalid in {"not-git", "empty"}:
+        plan.write_text(current.replace(f"`{target}`", f"`{tmp_path}`" if invalid == "not-git" else "``"), encoding="utf-8")
+    assert _run(*args) == 1
+    assert record.read_bytes() == before
+
+
+@pytest.mark.parametrize("operation", ["list", "update"])
+def test_public_missing_record_guides_generation(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], operation: str
+) -> None:
+    """失敗診断の生成入力付き操作を実行すると、保存行から根拠更新へ進める。"""
+    record = tmp_path / "pending output.json"
+    explanation = tmp_path / "evidence.txt"
+    explanation.write_text("観測した保存結果", encoding="utf-8")
+    args = (
+        ["--list"]
+        if operation == "list"
+        else [
+            "--section",
+            "user_requirements",
+            "--row",
+            "1",
+            "--source",
+            "未取得",
+            "--evidence-file",
+            str(explanation),
+            "--mode",
+            "replace",
+        ]
+    )
+    assert _run("--output", str(record), *args) == 1
+    diagnostic = capsys.readouterr().err
+    command = diagnostic.split("実行する: ", 1)[1].split("。WI直渡し", 1)[0]
+    argv = shlex.split(command)
+    assert argv[:4] == ["atk", "run-script", "verification-record", "--"]
+    argv[argv.index("--plan") + 1] = str(_plan(tmp_path, "plan-user"))
+    assert _run(*argv[4:]) == 0
+    row = json.loads(capsys.readouterr().out.splitlines()[0])
+    assert (
+        _run(
+            "--output",
+            str(record),
+            "--section",
+            row["section"],
+            "--row",
+            str(row["row"]),
+            "--source",
+            row["source"],
+            "--evidence-file",
+            str(explanation),
+            "--mode",
+            "replace",
+        )
+        == 0
+    )
+    assert json.loads(record.read_text())["user_requirements"][0]["evidence"] == "観測した保存結果"
+
+
 def _saved_diagnostics(tmp_path: pathlib.Path, diagnostics: list[dict], sources: dict[str, str], name: str) -> dict:
     """pyfltrの公開JSONL形式を有限コマンドで保存し、実行版と保存本文を付ける。"""
     producer = tmp_path / f"{name}_producer.py"
@@ -322,6 +441,171 @@ def _saved_diagnostics(tmp_path: pathlib.Path, diagnostics: list[dict], sources:
         "conditions": {"scope": ["対象"], "options": [], "dependencies": {}, "parallelism": 1, "environment": {"OS": "検証"}},
         "sources": paths,
     }
+
+
+def _saved_command(tmp_path: pathlib.Path, *argv: str) -> subprocess.CompletedProcess[str]:
+    """有限の公開実行でproducerの出力と実行記録を保存する。"""
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agent_toolkit.atk",
+            "run-command",
+            "--cwd",
+            str(tmp_path),
+            "--timeout",
+            "60",
+            "--",
+            sys.executable,
+            "-m",
+            *argv,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=90,
+    )
+
+
+def _saved_pyfltr(tmp_path: pathlib.Path) -> dict:
+    """実pyfltr runの全JSONLを公開実行記録とともに保存する。"""
+    if not (tmp_path / ".git").is_dir():
+        git_repository.init_repository(tmp_path, files={"base.txt": "基準\n"}, commit_message="基準")
+    ruff = pathlib.Path(sys.executable).parent / "ruff"
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.pyfltr]\nruff-format-by-check = false\nruff-check-path = " + json.dumps(str(ruff)) + "\n",
+        encoding="utf-8",
+    )
+    text = "print(undefined_value)\nprint(undefined_value)\n"
+    (tmp_path / "bad.py").write_text(text, encoding="utf-8")
+    result = _saved_command(
+        tmp_path,
+        "pyfltr",
+        "run",
+        "--commands=ruff-check",
+        "--enable=ruff-check",
+        "--no-fix",
+        "--no-quiet",
+        "--no-archive",
+        "--no-cache",
+        "--output-format=jsonl",
+        "--ruff-check-args=--select=F821",
+        "bad.py",
+    )
+    assert result.returncode == 1, (result.stdout, result.stderr)
+    saved = json.loads(result.stdout[result.stdout.index("{") :])
+    snapshot = tmp_path / "bad-source.txt"
+    snapshot.write_text(text, encoding="utf-8")
+    return {
+        "path": saved["stdout_path"],
+        "run_record": saved["record_path"],
+        "head": saved["git_head"],
+        "conditions": {
+            "scope": ["bad.py"],
+            "options": ["--select=F821"],
+            "dependencies": {},
+            "parallelism": 1,
+            "environment": {},
+        },
+        "sources": {"bad.py": str(snapshot)},
+    }
+
+
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+def test_public_run_diagnostics_roundtrip(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
+    """実producerの付帯レコードを保ったまま両コマンドで選択・記入し、不正なら保存しない。"""
+    spec = _saved_pyfltr(tmp_path)
+    original = pathlib.Path(spec["path"]).read_text(encoding="utf-8")
+    entries_in_run = [json.loads(line) for line in original.splitlines()]
+    assert {"header", "command", "diagnostic", "summary"} <= {entry["kind"] for entry in entries_in_run}
+    results = _json(tmp_path / "results.json", {"diagnostics": spec})
+    record = tmp_path / "pending.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user")), "--list") == 0
+    output = tmp_path / "review.json" if name == "exec-review-evidence-check" else record
+    if output != record:
+        output.write_bytes(record.read_bytes())
+    capsys.readouterr()
+    listing = ["--output", str(record)] if name == "verification-record" else []
+    assert _run(*listing, "--results-file", str(results), "--list-results", "--results-summary", name=name) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert len(summary["diagnostics"]) == 1
+    group = summary["diagnostics"][0]
+    assert group["count"] == 2 and group["rule"] == "F821"
+    selected = group["diagnostics"][1]
+    assert _run(*listing, "--results-file", str(results), "--list-results", "--result-diagnostic", selected, name=name) == 0
+    detail = json.loads(capsys.readouterr().out)["diagnostics"]
+    assert list(detail) == [selected]
+    observed = detail[selected]["after"]
+    source_entry = entries_in_run[observed["entry"] - 1]
+    assert source_entry["kind"] == "diagnostic"
+    assert source_entry["messages"][observed["message_position"] - 1]["msg"] == group["message"]
+    row = json.loads(record.read_text())["user_requirements"][0]
+    update = {"section": "user_requirements", "row": 1, "source": row["source"], "diagnostics": [selected], "mode": "replace"}
+    if output != record:
+        update.update(outcome="達成", reviewed_head=spec["head"])
+    updates = _json(tmp_path / "updates.json", [update])
+    args = ["--output", str(output)] if output == record else [str(output), "--output", str(output)]
+    assert _run(*args, "--results-file", str(results), "--updates-file", str(updates), name=name) == 0
+    final = json.loads(output.read_text())["user_requirements"][0]
+    assert f"after.entry: `{observed['entry']}`" in final["evidence"]
+    assert final["outcome"] == ("達成" if output != record else "")
+    assert final["reviewed_head"] == (spec["head"] if output != record else "")
+    before = output.read_bytes()
+    for invalid in [original + '{"kind":"unknown"}\n', original.replace('"messages":[', '"messages":null,"discarded":[')]:
+        invalid_path = tmp_path / "invalid.jsonl"
+        invalid_path.write_text(invalid, encoding="utf-8")
+        _json(results, {"diagnostics": {**spec, "path": str(invalid_path)}})
+        assert _run(*args, "--results-file", str(results), "--updates-file", str(updates), name=name) == 1
+        assert output.read_bytes() == before
+
+
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+def test_public_results_summary_and_selection(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
+    """状態・基準差の識別子から必要な詳細だけを読み、両コマンドで選択結果を記入する。"""
+    baseline = _saved_trial(tmp_path, "def test_old():\n    assert True\ndef test_changed():\n    assert True\n", "baseline")
+    current = _saved_trial(
+        tmp_path,
+        "import pytest\ndef test_passed():\n    assert True\ndef test_changed():\n    assert False\n"
+        '@pytest.fixture\ndef broken():\n    raise RuntimeError("条件")\ndef test_error(broken):\n    pass\n'
+        '@pytest.mark.skip(reason="条件")\ndef test_skipped():\n    pass\n',
+        "current",
+    )
+    results = _json(tmp_path / "results.json", {"junit": current, "baseline_junit": baseline})
+    record = tmp_path / "pending.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    listing = ["--output", str(record)] if name == "verification-record" else []
+    capsys.readouterr()
+    assert _run(*listing, "--results-file", str(results), "--list-results", "--results-summary", name=name) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert {item["status"]: item["count"] for item in summary["tests"]} == {"passed": 1, "failed": 1, "error": 1, "skipped": 1}
+    assert {item["change"] for item in summary["test_changes"]} == {"added", "deleted", "changed"}
+    changed = next(item for item in summary["test_changes"] if item["change"] == "changed")
+    assert (changed["before_status"], changed["after_status"]) == ("passed", "failed")
+    selected = next(item["tests"][0] for item in summary["tests"] if item["status"] == "passed")
+    assert _run(*listing, "--results-file", str(results), "--list-results", "--result-test", selected, name=name) == 0
+    detail = json.loads(capsys.readouterr().out)
+    assert list(detail["tests"]) == [selected]
+    assert detail["tests"][selected]["xml"] == current["xml"]
+    assert (
+        _run(*listing, "--results-file", str(results), "--list-results", "--result-test", "trial_test.py::test_old", name=name)
+        == 0
+    )
+    deleted = json.loads(capsys.readouterr().out)
+    assert not deleted["tests"] and deleted["test_changes"][0]["before"]["xml"] == baseline["xml"]
+    output = tmp_path / "review.json" if name == "exec-review-evidence-check" else record
+    if output != record:
+        output.write_bytes(record.read_bytes())
+    row = json.loads(record.read_text())["user_requirements"][0]
+    update = {"section": "user_requirements", "row": 1, "source": row["source"], "tests": [selected], "mode": "replace"}
+    if output != record:
+        update.update(outcome="達成", reviewed_head=_git(tmp_path, "rev-parse", "HEAD"))
+    updates = _json(tmp_path / "updates.json", [update])
+    args = ["--output", str(output)] if output == record else [str(output), "--output", str(output)]
+    assert _run(*args, "--results-file", str(results), "--updates-file", str(updates), name=name) == 0
+    assert f"`{selected}` passed" in json.loads(output.read_text())["user_requirements"][0]["evidence"]
+    before = output.read_bytes()
+    assert _run(*listing, "--results-file", str(results), "--list-results", "--result-test", "missing", name=name) == 1
+    assert output.read_bytes() == before
 
 
 def test_public_diagnostics_comparison_distinguishes_movement_multiplicity_and_incomparability(
@@ -383,6 +667,11 @@ def test_public_diagnostics_comparison_distinguishes_movement_multiplicity_and_i
     assert len([key for key in listed if key.startswith("unchanged:")]) == 3
     assert len([key for key in listed if key.startswith("added:")]) == 2
     assert len([key for key in listed if key.startswith("deleted:")]) == 1
+    assert _run("--output", str(output), "--results-file", str(results), "--list-results", "--results-summary") == 0
+    groups = json.loads(capsys.readouterr().out)["diagnostics"]
+    assert {identity for group in groups for identity in group["diagnostics"]} == listed.keys()
+    assert all(group["count"] == len(group["diagnostics"]) for group in groups)
+    assert any(group["change"] == "unchanged" and group["count"] == 2 for group in groups)
     payload = json.loads(output.read_text(encoding="utf-8"))
     updates = _json(
         tmp_path / "updates.json",
@@ -419,6 +708,10 @@ def test_public_diagnostics_comparison_distinguishes_movement_multiplicity_and_i
             assert not any(
                 item.get("after", {}).get("file") == "new.py" for key, item in compared.items() if key.startswith("unchanged:")
             )
+            assert _run("--output", str(output), "--results-file", str(results), "--list-results", "--results-summary") == 0
+            groups = json.loads(capsys.readouterr().out)["diagnostics"]
+            assert {identity for group in groups for identity in group["diagnostics"]} == compared.keys()
+            assert any(group["change"] == "incomparable" for group in groups)
 
 
 @pytest.mark.parametrize("invalid", ["missing-history", "missing-fence", "empty-utterance"])
@@ -479,32 +772,16 @@ def _saved_trial(tmp_path: pathlib.Path, text: str, name: str) -> dict[str, str]
     trial = tmp_path / "trial_test.py"
     trial.write_text(text, encoding="utf-8")
     xml = tmp_path / f"{name}.xml"
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "agent_toolkit.atk",
-            "run-command",
-            "--cwd",
-            str(tmp_path),
-            "--timeout",
-            "60",
-            "--",
-            sys.executable,
-            "-m",
-            "pytest",
-            "-v",
-            "-p",
-            "no:cacheprovider",
-            "-o",
-            "junit_family=xunit1",
-            f"--junitxml={xml}",
-            str(trial),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=90,
+    result = _saved_command(
+        tmp_path,
+        "pytest",
+        "-v",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "junit_family=xunit1",
+        f"--junitxml={xml}",
+        str(trial),
     )
     assert result.returncode in {0, 1}, result.stderr
     saved = json.loads(result.stdout[result.stdout.index("{") :])
