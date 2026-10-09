@@ -303,11 +303,12 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
         run = "".join(segment.text for segment in segments)
         directory: str | None = None
         explicit_directory = False
+        directory_particle = False
         last_end = 0
         for start, end in _path_tokens(segments, work_dir):
             candidate = _normalize_candidate(run[start:end])
             gap = run[last_end:start]
-            if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or explicit_directory and gap.strip() == "の"):
+            if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or directory_particle and gap.strip() == "の"):
                 directory = None
             last_end = end
             if candidate is None or run[end : end + 1] in _GLOB_CHARS:
@@ -320,13 +321,22 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
                     continue
                 paths.add(resolved)
                 explicit_directory = resolved.endswith("/")
+                directory_particle = explicit_directory
                 directory = resolved if resolved.endswith("/") else resolved.rsplit("/", 1)[0] + "/"
                 continue
             if (work_dir / candidate).is_file():
                 paths.add(candidate)
-            elif directory is not None and (resolved := _repository_path(directory + candidate, work_dir)) is not None:
+            elif (
+                directory is not None
+                and (
+                    resolved := _repository_path(
+                        directory + candidate, work_dir, abbreviated_name=None if explicit_directory else candidate
+                    )
+                )
+                is not None
+            ):
                 paths.add(resolved)
-            explicit_directory = False
+            directory_particle = False
     return paths
 
 
@@ -384,9 +394,10 @@ def _is_complete_ascii_part(value: str) -> bool:
     return value.endswith("/") or "." in value.rsplit("/", 1)[-1]
 
 
-def _repository_path(candidate: str, work_dir: pathlib.Path) -> str | None:
+def _repository_path(candidate: str, work_dir: pathlib.Path, *, abbreviated_name: str | None = None) -> str | None:
     """`/`を含む候補を、実在するパス・読み替えた追跡ファイル・新設先のいずれかへ解決する。
 
+    推測した親に実体が無い略記は元の名前を追跡ファイルの末尾と比べ、複数候補には明示を求める。
     いずれにも当たらない候補（不在のディレクトリ範囲、途切れた名前など）は`None`を返す。
     """
     target = work_dir / candidate
@@ -396,10 +407,16 @@ def _repository_path(candidate: str, work_dir: pathlib.Path) -> str | None:
         return candidate + "/"
     if target.is_file():
         return candidate
-    suffix = "/" + candidate
+    suffix = "/" + (abbreviated_name or candidate)
     matches = [path for path in _tracked_files(work_dir) if path.endswith(suffix)]
     if len(matches) == 1:
         return matches[0]
+    if abbreviated_name is not None and len(matches) > 1:
+        raise InputError(
+            f"略記 `{abbreviated_name}` の候補が複数ある: {', '.join(sorted(matches))}。"
+            "意図するファイルをリポジトリ相対パスで明示する",
+            next_action="本文の略記を意図するファイルのリポジトリ相対パスへ直し、選定を再検証する",
+        )
     return _new_file_path(candidate, work_dir)
 
 

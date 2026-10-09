@@ -1180,6 +1180,131 @@ def _track(repo: pathlib.Path, *relatives: str) -> None:
 _PLUGIN_SHARE_FILES = ("agent-toolkit/share/pick-wi.parent.md", "agent-toolkit/share/rules-main.md", "share/README.md")
 
 
+@pytest.mark.parametrize("wi_type", ["awi", "uwi"])
+@pytest.mark.parametrize("inline_code", [False, True])
+@pytest.mark.parametrize("following", ["test_model.py", "report.md"])
+def test_public_check_resolves_cross_directory_abbreviations(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    wi_type: str,
+    inline_code: bool,
+    following: str,
+) -> None:
+    """別親の一意実体を被覆し、分類されていない場合はその実体を診断する。"""
+    repo, notes = env
+    actual = f"tests/{following}"
+    _track(repo, actual)
+    first = "src/model.py"
+    names = [first, following]
+    if inline_code:
+        names = [f"`{name}`" for name in names]
+    section = "反映内容と反映先" if wi_type == "awi" else "回答"
+    body = f"---\ntype: {wi_type}\nsource: test\n---\n\n# 題\n\n## {section}\n\n{names[0]}と{names[1]}を変更する。\n"
+    (notes / "processing" / "short.md").write_text(body, encoding="utf-8")
+    selection = _write_selection(
+        tmp_path / "selection.yaml", [{"WI": "short.md", "レーン": "lane-01", "書込対象": [first, actual]}]
+    )
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+    _write_selection(selection, [{"WI": "short.md", "レーン": "lane-01", "書込対象": [first]}])
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
+    errors = capsys.readouterr().err
+    assert f"short.md: 未被覆: {actual}" in errors
+    assert f"src/{following}" not in errors
+
+
+@pytest.mark.parametrize("wi_type", ["awi", "uwi"])
+def test_public_check_reports_ambiguous_abbreviation_and_accepts_explicit_path(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    wi_type: str,
+) -> None:
+    """複数実体を任意選択せず候補を示し、本文を相対パスへ直すと正しい被覆へ戻る。"""
+    repo, notes = env
+    _track(repo, "tests/report.md", "archive/report.md")
+    section = "反映内容と反映先" if wi_type == "awi" else "回答"
+    prefix = f"---\ntype: {wi_type}\nsource: test\n---\n\n# 題\n\n## {section}\n\n"
+    wi = notes / "processing" / "ambiguous.md"
+    wi.write_text(prefix + "`src/model.py`と`report.md`を変更する。\n", encoding="utf-8")
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "ambiguous.md", "レーン": "lane-01", "書込対象": ["src/model.py", "tests/report.md"]}],
+    )
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) != 0
+    errors = capsys.readouterr().err
+    assert "tests/report.md" in errors and "archive/report.md" in errors
+    assert "リポジトリ相対パス" in errors
+    assert "src/report.md" not in errors
+    wi.write_text(prefix + "`src/model.py`と`tests/report.md`を変更する。\n", encoding="utf-8")
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("wi_type", ["awi", "uwi"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "src/のmodel.pyのWorker.runを変更する。",
+        "docs/のguide.mdのfoo.barと変更",
+        "`src/`の`model.py`の`Worker.run`を変更する。",
+        "`docs/`の`guide.md`の`foo.bar`と変更",
+        "src/のmodel.py・new_module.pyのWorker.runを変更する。",
+    ],
+)
+def test_public_check_excludes_definitions_after_directory_file_names(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    wi_type: str,
+    text: str,
+) -> None:
+    """明示dirの後でもファイルの「の」を定義名の区切りとして扱う。"""
+    repo, notes = env
+    _track(repo, "docs/guide.md")
+    section = "反映内容と反映先" if wi_type == "awi" else "回答"
+    body = f"---\ntype: {wi_type}\nsource: test\n---\n\n# 題\n\n## {section}\n\n{text}\n"
+    (notes / "processing" / "definitions.md").write_text(body, encoding="utf-8")
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "definitions.md", "レーン": "lane-01", "書込対象": []}],
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
+    errors = capsys.readouterr().err
+    assert "src/Worker.run" not in errors
+    assert "docs/foo.bar" not in errors
+    expected_file = "docs/guide.md" if "guide.md" in text else "src/model.py"
+    assert f"definitions.md: 未被覆: {expected_file}" in errors
+    if "new_module.py" in text:
+        assert "definitions.md: 未被覆: src/new_module.py" in errors
+    _write_selection(selection, [{"WI": "definitions.md", "レーン": "lane-01", "書込対象": ["src/", "docs/"]}])
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_public_check_preserves_explicit_directory_and_excludes_identifiers(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """明示dirでの新設は別親の同名候補と区別し、孤立語・glob・定義名を含めない。"""
+    repo, notes = env
+    _track(repo, "tests/new_module.py", "archive/new_module.py")
+    _awi(
+        notes,
+        "explicit.md",
+        "src/のmodel.py・new_module.pyと`docs/development/new.md`を変更する。\n\n"
+        "孤立したnew_module.py、`src/*.py`、`missing/`、`src/model.py`の`Worker.run`は追加対象外。",
+    )
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "explicit.md", "レーン": "lane-01", "書込対象": ["src/", "docs/development/new.md"]}],
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+
 def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short_path(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
