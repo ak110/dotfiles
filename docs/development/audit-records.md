@@ -671,6 +671,29 @@ ClaudeではJSの設定説明、Codexではfork_turnsのヘルプ文を含む全
 再検証は実体を同じ解決形で取得し、上記の語をdotfiles-developmentの一致行数と文脈取得の各コマンドへ渡す。
 ホスト版、検索ツール版、ロケール、所要時間と一致行数を保持し、文字列表より後ろにある文脈も使って判断する。
 
+## completion-report：最終報告送達後のターン終端：2026年10月9日
+
+出所はAWI `20261009-114045-001.md`の保存済み対照であり、本記録の作成時にモデルを再実行した結果ではない。Claude Codeメインがモデル`claude-opus-5-5`へ、同じ短い最終報告の送達入力と、送達後の地の文を省略記号だけで閉じる指示を加えた入力を各3回渡した。起動形は`claude -p --model claude-opus-5-5 --allowedTools mcp__agent-toolkit__send_to_user --output-format json`で、各JSONの`result`（送達後の最終地の文）を比較した。
+
+| 入力 | 追加説明 | 省略記号 | 終了状態 |
+| --- | --- | --- | --- |
+| 終端の具体化なし、3回 | 1回 | 2回 | 全件success、num_turns=2 |
+| 終端の具体化あり、3回 | 0回 | 3回 | 全件success、num_turns=2 |
+
+再検証は同じ報告本文を固定し、後段の終端指示の有無だけを変えて上記起動形で各群を実行し、JSONのresult・success・num_turnsを保存する。モデルとホスト版も取得時に記録する。これは具体化が作用した限定条件の観測であり、元の長い文脈の内的判断、一般発生率、将来の出力保証を示さない。元事象は記録`claude:ec92266f-e100-4186-b242-db41e17aca38`の426行が固定文付き送達、427行が表示成功、429行が追加要約であり、工程10の追加作業限定条文は336行に存在した。条文の不在を原因とはしない。
+
+## dotfiles-development：Git動作テストの状態準備：2026年10月9日
+
+出所はAWI `20261009-151649-001.md`の対照結果と、導入commit `b20e6f20514a381648c730bbf828e2f8ac9e3522`、修正commit `f071d6348670a39e797e9dc54f6276e1e9dad8f6`の実装である。対象は`agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks_test.py`の`TestBashGitRevParseShortMultiple.test_individual_revision_fix_succeeds`。入力は`git rev-parse`のoption `--short`、`--short=12`、`--verify`、`--verify --quiet`とrevision `HEAD`、`HEAD~1`の8組である。
+
+| 履歴条件 | HEADの4入力 | HEAD~1の4入力 |
+| --- | --- | --- |
+| 通常履歴 | 全件終了0 | 全件終了0 |
+| HEADを浅い境界とする深さ1相当 | 全件終了0 | optionの上記順に128・128・128・1 |
+
+再検証は一時repoに2commitを作成し、通常履歴と同じHEADを浅い境界とするrepoで上記8入力をそれぞれ実行する。対象repoを明示し、入力・履歴条件・終了コード・両出力を保存する。修正後のテストは`init_repository`と`commit_all`で必要な2commitを用意し、必須repo引数を`git -C`へ渡す`run_git`で検証する。`_testing/isolation.py:isolate_development_state`は設定と環境を隔離するが、cwdの変更やcommit生成は行わない。この違いを設定隔離の成功だけから履歴準備の成立へ読み替えない。
+CI run `37887505483`の失敗と`37889681072`の成功はAWIが参照する終端担当の確認記録に由来し、本記録の作成時のCI再照会ではない。
+
 ## プロジェクト指示のAGENTS.md対応：2026年9月20日
 
 2026年9月20日、Claude Code v2.1.277の公式リリースノート<https://github.com/anthropics/claude-code/releases/tag/v2.1.277>で、`CLAUDE.md`が無いプロジェクトで`AGENTS.md`を読む機能が追加されたことを確認した。再検証は同バージョンのリリースノートを読み、`AGENTS.md`対応の記載を確認する。
@@ -688,3 +711,29 @@ Because `CLAUDE.local.md` counts, adding one to keep your own uncommitted instru
 合言葉を書いた`AGENTS.md`と`CLAUDE.local.md`だけを置いたディレクトリでは、合言葉を答えなかった。
 `claudize`が置く`# CLAUDE.md`と`@AGENTS.md`の2行のアダプターを加えると、合言葉を答えた。
 再検証は同じ構成の一時ディレクトリで、アダプターの有無ごとに`claude -p`へ合言葉を尋ねる。
+
+## agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月9日
+
+Claude Code 2.1.295で、基準commit `4573be59230a11bdc9d717a1a1e03d994abf284f`に本機能の未commit差分を加えたプラグインを検証した。
+`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`を設定し、`--plugin-dir`に作業ツリーのagent-toolkitを指定した。
+
+対話UIでは、モデルが`compact_conversation`へ任意指示を渡した後に現在ターンを終えた。
+PTYに予約の受付と、その後の`Conversation compacted`・`Compacted`表示が保存された。
+人による`/compact`入力は無く、session `f616210b-3a9d-4a2e-a067-30a004973d93`は正常終了した。
+
+非対話では`claude -p --verbose --output-format stream-json --include-hook-events`を使用した。
+モデルがBashのバックグラウンドタスクで65秒待機を起動し、予約後にターンを終えた。
+同じsession `b276a7e9-9b4d-435c-b7fb-85010d6cd575`でPreCompact・PostCompactを観測した。
+その後にmanual compact境界とホストの圧縮成功結果が現れた。
+待機終了のtask-notificationから同じ会話が再開し、圧縮指示に指定した応答`COMPACT_BACKGROUND_RESUMED`を返して正常終了した。
+
+故障の試行は隔離プラグインの`command.run`呼び出し直前に一度だけ例外を注入した。
+実ホスト自身のコマンド拒否を観測した試行とは区別する。
+session `1e19cda7-eaf3-49dd-b96c-916c43f077d1`へ失敗原因と再予約可能の通知が届いた。
+モデルは再予約し、同じ会話でmanual compact境界と圧縮成功を観測して正常終了した。
+未完了予約の重複排除と成功後の再予約は、ツール登録から時計のコールバックまでを動かす結合試験でも確認した。
+
+再検証では隔離ディレクトリで作業ツリーのプラグインを読み込み、対話と非対話の両方でモデルへ予約を指示する。
+受付応答、ターン終了、ホストの圧縮成功を順に記録する。
+非対話はBashのバックグラウンドタスクと圧縮指示の応答文字列を組み合わせ、通知から同じsessionが続行することも確かめる。
+故障と再予約は隔離した検証用プラグインだけへ例外を注入して試し、製品のプラグインを改変しない。

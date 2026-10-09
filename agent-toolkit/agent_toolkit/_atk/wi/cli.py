@@ -386,7 +386,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     list_.add_argument(
         "--with-staleness",
         action="store_true",
-        help="picker向けにtarget_commit以後の履歴の鮮度情報をJSONへ加える。",
+        help="メイン向けにtarget_commit以後の履歴の鮮度情報をJSONへ加える。",
     )
     _add_mq_read_sync_args(list_)
     list_.set_defaults(subparser=list_)

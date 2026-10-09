@@ -802,7 +802,10 @@ def test_directory_range_matches_by_path_element(
     assert "a.md: 未被覆: src-old/model.py" in capsys.readouterr().err
 
 
-_RANGE_DESCRIPTION_FILES = ("agent-toolkit/share/pick-wi.subagent.md", "agent-toolkit/skills/search/SKILL.md")
+_RANGE_DESCRIPTION_FILES = (
+    "agent-toolkit/skills/process-wi/references/selection-format.md",
+    "agent-toolkit/skills/search/SKILL.md",
+)
 
 
 def test_range_description_needs_no_coverage_but_inner_paths_do(
@@ -810,7 +813,7 @@ def test_range_description_needs_no_coverage_but_inner_paths_do(
 ) -> None:
     """配下の個別パスも同じ節に挙げたディレクトリ範囲（範囲説明）は被覆を求めず、個別パスだけに被覆を求める。
 
-    範囲説明へ被覆を求めると、覆える区分が`書込対象`だけになり、pickerが広い範囲を`書込対象`へ入れて
+    範囲説明へ被覆を求めると、覆える区分が`書込対象`だけになり、メインが広い範囲を`書込対象`へ入れて
     全レーンが包含関係になる。最上位（インラインコードと文章中）、入れ子の範囲、UWIの本文の範囲を入力に使う。
     """
     repo, notes = env
@@ -820,7 +823,7 @@ def test_range_description_needs_no_coverage_but_inner_paths_do(
     _awi(
         notes,
         "range.md",
-        "対象リポジトリは`agent-toolkit/`配下とdocs/配下とする。`agent-toolkit/share/pick-wi.subagent.md`を変える。"
+        "対象リポジトリは`agent-toolkit/`配下とdocs/配下とする。`agent-toolkit/skills/process-wi/references/selection-format.md`を変える。"
         "`agent-toolkit/skills/`配下に限り、`agent-toolkit/skills/search/SKILL.md`の節を直す。"
         "`docs/development/design.md`も変える。",
     )
@@ -907,7 +910,7 @@ def test_selection_values_with_yaml_syntax_characters_round_trip(
 ) -> None:
     """書式例どおり単一引用符で囲んだ値は、コロン・括弧・引用符・改行を含んでも同じ構造で読める。
 
-    pickerの保存直後とメインの受領時は同じ公開コマンドで同じ欄と型を受理するため、
+    保存後の検査と追加統合は同じ公開コマンドで同じ欄と型を受理するため、
     ここで受理した選定結果は双方で同じ値として読まれる。
     """
     repo, notes = env
@@ -976,20 +979,20 @@ _FIX_ARGUMENTS = "`--work-dir`へ対象リポジトリの絶対パスを渡し�
             "  書込対象の候補: ['src/']\n"
             "レーンの所要時間:\n- レーン: 'lane-01'\n  実装秒数: 1\n  統合秒数: 1\n  根拠: '根拠'\n",
             "a.md: 未知の欄: 書込対象の候補",
-            "「出力」の欄名と型へ直して",
+            "「選定結果の書式」の欄名と型へ直して",
             id="unknown-key",
         ),
         pytest.param(
             "選定:\n- WI: 'a.md'\n  レーン: 'lane-01'\n  鮮度: {status: current}\n  書込対象: 'src/model.py'\n"
             "レーンの所要時間:\n- レーン: 'lane-01'\n  実装秒数: '1'\n  統合秒数: 1\n  根拠: '根拠'\n",
             "a.md: `書込対象`が文字列の列ではない",
-            "「出力」の欄名と型へ直して",
+            "「選定結果の書式」の欄名と型へ直して",
             id="field-type",
         ),
         pytest.param(
             "選定:\n- WI: 'a.md'\n  レーン: 'lane-01'\n  書込対象: ['src/model.py']\n",
             "a.md: 必須の欄がない: 鮮度",
-            "「出力」の欄名と型へ直して",
+            "「選定結果の書式」の欄名と型へ直して",
             id="missing-field",
         ),
     ],
@@ -1177,7 +1180,132 @@ def _track(repo: pathlib.Path, *relatives: str) -> None:
     git_repository.run_git(repo, "add", "-A")
 
 
-_PLUGIN_SHARE_FILES = ("agent-toolkit/share/pick-wi.parent.md", "agent-toolkit/share/rules-main.md", "share/README.md")
+_PLUGIN_SHARE_FILES = ("agent-toolkit/share/exec.parent.md", "agent-toolkit/share/rules-main.md", "share/README.md")
+
+
+@pytest.mark.parametrize("wi_type", ["awi", "uwi"])
+@pytest.mark.parametrize("inline_code", [False, True])
+@pytest.mark.parametrize("following", ["test_model.py", "report.md"])
+def test_public_check_resolves_cross_directory_abbreviations(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    wi_type: str,
+    inline_code: bool,
+    following: str,
+) -> None:
+    """別親の一意実体を被覆し、分類されていない場合はその実体を診断する。"""
+    repo, notes = env
+    actual = f"tests/{following}"
+    _track(repo, actual)
+    first = "src/model.py"
+    names = [first, following]
+    if inline_code:
+        names = [f"`{name}`" for name in names]
+    section = "反映内容と反映先" if wi_type == "awi" else "回答"
+    body = f"---\ntype: {wi_type}\nsource: test\n---\n\n# 題\n\n## {section}\n\n{names[0]}と{names[1]}を変更する。\n"
+    (notes / "processing" / "short.md").write_text(body, encoding="utf-8")
+    selection = _write_selection(
+        tmp_path / "selection.yaml", [{"WI": "short.md", "レーン": "lane-01", "書込対象": [first, actual]}]
+    )
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+    _write_selection(selection, [{"WI": "short.md", "レーン": "lane-01", "書込対象": [first]}])
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
+    errors = capsys.readouterr().err
+    assert f"short.md: 未被覆: {actual}" in errors
+    assert f"src/{following}" not in errors
+
+
+@pytest.mark.parametrize("wi_type", ["awi", "uwi"])
+def test_public_check_reports_ambiguous_abbreviation_and_accepts_explicit_path(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    wi_type: str,
+) -> None:
+    """複数実体を任意選択せず候補を示し、本文を相対パスへ直すと正しい被覆へ戻る。"""
+    repo, notes = env
+    _track(repo, "tests/report.md", "archive/report.md")
+    section = "反映内容と反映先" if wi_type == "awi" else "回答"
+    prefix = f"---\ntype: {wi_type}\nsource: test\n---\n\n# 題\n\n## {section}\n\n"
+    wi = notes / "processing" / "ambiguous.md"
+    wi.write_text(prefix + "`src/model.py`と`report.md`を変更する。\n", encoding="utf-8")
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "ambiguous.md", "レーン": "lane-01", "書込対象": ["src/model.py", "tests/report.md"]}],
+    )
+
+    assert _dispatch("--work-dir", str(repo), str(selection)) != 0
+    errors = capsys.readouterr().err
+    assert "tests/report.md" in errors and "archive/report.md" in errors
+    assert "リポジトリ相対パス" in errors
+    assert "src/report.md" not in errors
+    wi.write_text(prefix + "`src/model.py`と`tests/report.md`を変更する。\n", encoding="utf-8")
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("wi_type", ["awi", "uwi"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "src/のmodel.pyのWorker.runを変更する。",
+        "docs/のguide.mdのfoo.barと変更",
+        "`src/`の`model.py`の`Worker.run`を変更する。",
+        "`docs/`の`guide.md`の`foo.bar`と変更",
+        "src/のmodel.py・new_module.pyのWorker.runを変更する。",
+    ],
+)
+def test_public_check_excludes_definitions_after_directory_file_names(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    wi_type: str,
+    text: str,
+) -> None:
+    """明示dirの後でもファイルの「の」を定義名の区切りとして扱う。"""
+    repo, notes = env
+    _track(repo, "docs/guide.md")
+    section = "反映内容と反映先" if wi_type == "awi" else "回答"
+    body = f"---\ntype: {wi_type}\nsource: test\n---\n\n# 題\n\n## {section}\n\n{text}\n"
+    (notes / "processing" / "definitions.md").write_text(body, encoding="utf-8")
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "definitions.md", "レーン": "lane-01", "書込対象": []}],
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
+    errors = capsys.readouterr().err
+    assert "src/Worker.run" not in errors
+    assert "docs/foo.bar" not in errors
+    expected_file = "docs/guide.md" if "guide.md" in text else "src/model.py"
+    assert f"definitions.md: 未被覆: {expected_file}" in errors
+    if "new_module.py" in text:
+        assert "definitions.md: 未被覆: src/new_module.py" in errors
+    _write_selection(selection, [{"WI": "definitions.md", "レーン": "lane-01", "書込対象": ["src/", "docs/"]}])
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_public_check_preserves_explicit_directory_and_excludes_identifiers(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """明示dirでの新設は別親の同名候補と区別し、孤立語・glob・定義名を含めない。"""
+    repo, notes = env
+    _track(repo, "tests/new_module.py", "archive/new_module.py")
+    _awi(
+        notes,
+        "explicit.md",
+        "src/のmodel.py・new_module.pyと`docs/development/new.md`を変更する。\n\n"
+        "孤立したnew_module.py、`src/*.py`、`missing/`、`src/model.py`の`Worker.run`は追加対象外。",
+    )
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "explicit.md", "レーン": "lane-01", "書込対象": ["src/", "docs/development/new.md"]}],
+    )
+    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short_path(
@@ -1195,7 +1323,7 @@ def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short
         notes,
         "glob.md",
         "`agent-toolkit/`配下のうち`share/rules-*.md`と`share/exec-review.{parent,subagent}.md`、"
-        "略記の`rules/`と`share/pick-wi.parent.md`を改める。`docs/development/*.md`の記述は変えない。あわせて`src/model.py`と`src/new_module.py`も変える。",
+        "略記の`rules/`と`share/exec.parent.md`を改める。`docs/development/*.md`の記述は変えない。あわせて`src/model.py`と`src/new_module.py`も変える。",
     )
     selection = _write_selection(
         tmp_path / "selection.yaml", [{"WI": "glob.md", "レーン": "lane-01", "書込対象": ["agent-toolkit/", "src/model.py"]}]
@@ -1217,8 +1345,8 @@ def test_reflected_paths_from_mixed_notations(env: tuple[pathlib.Path, pathlib.P
     """多様な表記を混ぜた反映先から、本文が指すファイルと範囲だけを抽出する。
 
     グロブの断片、不在の範囲、拡張子の欠けた名前、ファイルの「の」に続く定義名（`Worker.run`など）を
-    抽出すると、期待する集合に無い架空のパスが加わって失敗する。架空のパスがpickerへ渡ると、
-    pickerは本文が書き込まないパスを`書込対象`か`書き込まない反映先`へ分類させられる。
+    抽出すると、期待する集合に無い架空のパスが加わって失敗する。架空のパスがメインへ渡ると、
+    メインは本文が書き込まないパスを`書込対象`か`書き込まない反映先`へ分類させられる。
     """
     repo, _notes = env
     _track(repo, *_PLUGIN_SHARE_FILES)
@@ -1226,13 +1354,13 @@ def test_reflected_paths_from_mixed_notations(env: tuple[pathlib.Path, pathlib.P
         "---\ntype: awi\nsource: test\n---\n\n# 題\n\n## 反映内容と反映先\n\n"
         "変更対象はsrc/model.pyとdocs/development/design.mdである。"
         "`share/rules-*.md`、`agent-toolkit/share/rules-*.md`、`share/exec-review.{parent,subagent}.md`、`src/*.py`を改める。"
-        "略記の`rules/`・`UCR/`・`share/pick-wi.parent.md`、範囲`src/`と`missing/`、"
+        "略記の`rules/`・`UCR/`・`share/exec.parent.md`、範囲`src/`と`missing/`、"
         "src/のmodel.py・new_module.py・draft、`docs/development/new.md`と`docs/development/new.`も扱う。"
         "src/model.pyのWorker.runと`src/model.py:42`の`Service.start`も直す。\n"
     )
 
     assert check_selection.reflected_paths(body, repo) == {
-        "agent-toolkit/share/pick-wi.parent.md",
+        "agent-toolkit/share/exec.parent.md",
         "docs/development/design.md",
         "docs/development/new.md",
         "src/",
@@ -1413,7 +1541,7 @@ def test_public_command_extracts_non_ascii_paths_whole(
     """インラインコードと文章中の非ASCIIを含むパスを末尾まで読み、個別のパスだけの`書込対象`を受理する。
 
     非ASCIIの手前で抽出が終わると、`docs/dev/`のような範囲や`docs/design/LLM`のような途中の名前が
-    反映先になり、pickerは実際には書かない範囲を`書込対象`へ置いて別レーンと重ねる。
+    反映先になり、メインは実際には書かない範囲を`書込対象`へ置いて別レーンと重ねる。
     """
     repo, notes = env
     _write_files(repo, *_NON_ASCII_FILES)
@@ -1532,8 +1660,8 @@ def _norm_spec_selection(
         (None, 1),
         ("なし", 1),
         ("", 1),
-        (f"agent-toolkit/share/pick-wi.parent.md。{_READ_REQUEST}", 1),
-        (f"agent-toolkit/share/pick-wi.parent.md、.claude/skills/edit/SKILL.md。{_READ_REQUEST}", 0),
+        (f"agent-toolkit/share/exec.parent.md。{_READ_REQUEST}", 1),
+        (f"agent-toolkit/share/exec.parent.md、.claude/skills/edit/SKILL.md。{_READ_REQUEST}", 0),
     ],
     ids=["omitted", "none", "empty", "partial", "complete"],
 )
@@ -1551,19 +1679,19 @@ def test_public_command_requires_project_norm_spec(
     """
     repo, notes = env
     (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
-    _write_files(repo, "agent-toolkit/share/pick-wi.parent.md", ".claude/skills/edit/SKILL.md", "scripts/tool.py")
-    _awi(notes, "norm.md", "`agent-toolkit/share/pick-wi.parent.md`と`.claude/skills/edit/SKILL.md`を変える。")
+    _write_files(repo, "agent-toolkit/share/exec.parent.md", ".claude/skills/edit/SKILL.md", "scripts/tool.py")
+    _awi(notes, "norm.md", "`agent-toolkit/share/exec.parent.md`と`.claude/skills/edit/SKILL.md`を変える。")
     _awi(notes, "code.md", "`scripts/tool.py`を変える。")
     decisions: list[dict[str, typing.Any]] = [
         {
             "WI": "norm.md",
             "レーン": "lane-01",
-            "書込対象": ["agent-toolkit/share/pick-wi.parent.md", ".claude/skills/edit/SKILL.md"],
+            "書込対象": ["agent-toolkit/share/exec.parent.md", ".claude/skills/edit/SKILL.md"],
         },
         {"WI": "code.md", "レーン": "lane-02", "書込対象": ["scripts/tool.py"]},
     ]
     selection = _norm_spec_selection(tmp_path, decisions, {"norm.md": spec})
-    # pickerの保存直後とメインの受領時は同じ入力へ同じコマンドを実行し、同じ判定を得る。
+    # 保存後の検査と追加統合は同じ入力の構造へ同じ判定を適用する。
     for _ in range(2):
         assert _dispatch("--work-dir", str(repo), str(selection)) == expected
         lines = [

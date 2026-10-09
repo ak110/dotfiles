@@ -1202,7 +1202,7 @@ async def test_sessions_detail_html_only_for_assistant(tmp_path: pathlib.Path) -
 
 @pytest.mark.asyncio
 async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> None:
-    """`needs_verify`はpickerと同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
+    """`needs_verify`はメインの選定と同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
 
     条件が広いと未着手や処理中の項目まで観測待ちとして示し、狭いと観測待ちの項目が未着手と区別できない。
     """

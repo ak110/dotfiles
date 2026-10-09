@@ -42,7 +42,6 @@
 | 選定工程 | process-wiの工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | レーン工程 | process-wiの工程 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | 公開工程 | process-wiの工程 | `agent-toolkit/skills/commit/references/publish.md`冒頭 |
-| picker | 選定工程の担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | 処理対象WI | 1回の実行で処理するAWI | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | レーン担当 | レーン工程の担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | レビュー修正担当 | レーン担当の担当種別 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |

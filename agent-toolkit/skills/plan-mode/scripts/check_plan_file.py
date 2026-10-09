@@ -42,7 +42,7 @@ _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
 # 閾値を超えても計画として成立し得るため、エラーではなく警告に留める。
 _PLAN_LINE_WARNING_THRESHOLD = 1200
 
-# 選定結果のdecisionが既存計画での再開を示すキーと、行を省略した場合に使う値（`pick-wi.subagent.md`「出力」）。
+# 選定結果のdecisionが既存計画での再開を示すキーと、行を省略した場合に使う値（`selection-format.md`「選定結果の書式」）。
 _RESUME_POSITION_KEY = "再開位置"
 _RESUME_POSITION_NONE = "なし"
 
@@ -843,7 +843,7 @@ def main(argv: list[str] | None = None) -> int:
         default=pathlib.Path.cwd(),
         help="計画メタ情報の`対象リポジトリ`と一致するかを確かめるGit作業ツリーのパス（省略すると現在のディレクトリを使う）",
     )
-    parser.add_argument("--selection-file", type=pathlib.Path, metavar="PATH", help="pickerが保存した選定結果の絶対パス")
+    parser.add_argument("--selection-file", type=pathlib.Path, metavar="PATH", help="メインが保存した選定結果の絶対パス")
     parser.add_argument("--lane", help="選定結果内のlane-NN形式のレーン識別子")
     parser.add_argument(
         "--agent-rule-path",
@@ -903,7 +903,7 @@ def main(argv: list[str] | None = None) -> int:
             f"計画を確認するための入力を読み込めない: {error}",
             next_action=(
                 "計画ファイル（位置引数）と`--prior-plan`へ実在するUTF-8の計画ファイルの絶対パスを、"
-                "`--selection-file`へpickerが保存したYAMLの絶対パスを、`--lane`へ`lane-NN`形式の識別子を渡して再実行する"
+                "`--selection-file`へメインが保存したYAMLの絶対パスを、`--lane`へ`lane-NN`形式の識別子を渡して再実行する"
             ),
         )
         return 2

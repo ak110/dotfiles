@@ -2,6 +2,6 @@
   "name": "mise-npm-install",
   "private": true,
   "dependencies": {
-    "aws-cdk": "2.1143.0"
+    "aws-cdk": "2.1144.0"
   }
 }

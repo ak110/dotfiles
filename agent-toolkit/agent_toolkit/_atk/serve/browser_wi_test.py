@@ -242,13 +242,13 @@ async def _wait_and_close_operation_notice(page: playwright.async_api.Page, text
 
 @pytest.mark.asyncio
 async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _BrowserHarness) -> None:
-    """代表3画面幅で横overflow、固定領域、タッチ寸法、Markdown表示を検証する。"""
+    """カード・列表示の画面幅で横overflow、固定領域、タッチ寸法、Markdown表示を検証する。"""
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await _open_filters(page)
 
-    for width, height, columns_visible in [(390, 844, False), (768, 1024, False), (1280, 800, True)]:
+    for width, height, columns_visible in [(390, 844, False), (768, 1024, False), (1280, 800, False), (1920, 800, True)]:
         await page.set_viewport_size({"width": width, "height": height})
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         assert await page.locator(".entry-columns").is_visible() is columns_visible
@@ -1958,6 +1958,71 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(320, 720), (700, 720), (1280, 720), (1280, 900)])
+@pytest.mark.parametrize("input_height", [None, 480])
+async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
+    browser_harness: _BrowserHarness, width: int, height: int, input_height: int | None
+) -> None:
+    """不正入力へ戻った直後に対応エラー全文を読め、本文をスクロールしても操作領域は固定される。"""
+    harness = browser_harness
+    page = harness.page
+    (harness.root / "inbox" / "long-entry.md").write_text(
+        "---\ntype: awi\ntarget_repo: example/repo\n---\n\n" + "長い先行本文\n\n" * 120,
+        encoding="utf-8",
+    )
+    await page.set_viewport_size({"width": width, "height": height})
+    for case in ("content", "choice", "both", "edit", "answer"):
+        await page.goto(harness.base_url + "/")
+        await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+        if case in {"content", "choice", "both"}:
+            await page.get_by_role("button", name="新規追加").click()
+            dialog = page.get_by_role("dialog", name="新規追加")
+            if case != "content":
+                await dialog.locator("#create-kind").select_option("uwi")
+                await dialog.locator("#create-question-type").select_option("choice")
+                await dialog.locator("#create-choices").fill("選択肢1")
+            if case == "choice":
+                await dialog.locator("#create-content").fill("確認する本文")
+            input_id = "create-choices" if case == "choice" else "create-content"
+            submit = "追加"
+        else:
+            key = "long-entry.md" if case == "edit" else "question.md"
+            await page.locator(f'.entry-select[data-key="inbox/{key}"]').click()
+            dialog = page.get_by_role("dialog", name="詳細")
+            await dialog.get_by_role("button", name="編集" if case == "edit" else "回答", exact=True).click()
+            input_id = "edit-content" if case == "edit" else "answer-input"
+            await dialog.locator(f"#{input_id}").fill("")
+            submit = "保存" if case == "edit" else "回答を保存"
+        field = dialog.locator(f"#{input_id}")
+        if input_height is not None:
+            await field.evaluate(
+                "(element, height) => { element.style.minHeight = '0'; element.style.height = `${height}px`; }",
+                input_height,
+            )
+        await dialog.get_by_role("button", name=submit, exact=True).click()
+        await playwright.async_api.expect(field).to_be_focused()
+        error = dialog.locator(f"#{input_id}-error")
+        await playwright.async_api.expect(error).to_be_visible()
+        metrics = await error.evaluate("""error => {
+          const body = error.closest('.dialog-body');
+          const bounds = body.getBoundingClientRect();
+          const message = error.getBoundingClientRect();
+          return {
+            top: message.top, bottom: message.bottom,
+            visibleTop: bounds.top + body.clientTop,
+            visibleBottom: bounds.top + body.clientTop + body.clientHeight
+          };
+        }""")
+        assert metrics["top"] >= metrics["visibleTop"], (case, metrics)
+        assert metrics["bottom"] <= metrics["visibleBottom"], (case, metrics)
+        header = await dialog.locator(".dialog-header").bounding_box()
+        footer = await dialog.locator(".dialog-footer").bounding_box()
+        await dialog.locator(".dialog-body").evaluate("element => { element.scrollTop = 0; }")
+        assert await dialog.locator(".dialog-header").bounding_box() == header
+        assert await dialog.locator(".dialog-footer").bounding_box() == footer
+
+
+@pytest.mark.asyncio
 async def test_create_failure_is_visible_inside_open_dialog(browser_harness: _BrowserHarness) -> None:
     """新規追加の失敗は開いたダイアログ内へ表示し、ページ通知を表示しない。"""
     page = browser_harness.page
@@ -2247,10 +2312,11 @@ async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harnes
         encoding="utf-8",
     )
     page = screen_harness.page
-    await page.set_viewport_size({"width": 1600, "height": 800})
+    await page.set_viewport_size({"width": 1920, "height": 800})
     await page.goto(screen_harness.base_url + "/")
     rows = page.locator("#entry-list .entry-row")
     await playwright.async_api.expect(rows).to_have_count(5)
+    await playwright.async_api.expect(page.locator(".entry-columns")).to_be_visible()
 
     metrics = await rows.evaluate_all(
         """rows => rows.map(row => {
@@ -2272,23 +2338,68 @@ async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harnes
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("width", "list_width"),
+    [
+        (320, None),
+        (700, None),
+        (1279, None),
+        (1280, None),
+        (1281, None),
+        (1320, None),
+        (1920, 1168),
+        (1920, 1169),
+        (1920, None),
+    ],
+)
 async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
     screen_harness: _ScreenHarness,
+    width: int,
+    list_width: int | None,
 ) -> None:
-    """一覧のコピー操作はファイル名と要約を写し、詳細選択を発生させない。"""
+    """狭幅・一覧自身の切替境界・広幅で、コピーの前後も題名を読めて横幅を超えない。"""
     page = screen_harness.page
+    await page.set_viewport_size({"width": width, "height": 800})
     await page.goto(screen_harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    if list_width is not None:
+        await page.locator(".entry-pane").evaluate(
+            "(element, width) => { element.style.boxSizing = 'content-box'; element.style.width = `${width}px`; }",
+            list_width,
+        )
     row = page.locator("#entry-list .entry-row").first
     await row.locator(".entry-copy").wait_for(state="visible")
     filename = await row.locator(".filename-cell").inner_text()
     summary = await row.locator(".summary-cell").inner_text()
+
+    async def assert_readable() -> None:
+        metrics = await row.evaluate("""row => {
+          const summary = row.querySelector('.summary-cell');
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          context.font = getComputedStyle(summary).font;
+          return {
+            width: summary.getBoundingClientRect().width,
+            prefixWidth: context.measureText(summary.textContent.slice(0, 6) + '…').width,
+            summaryTop: summary.getBoundingClientRect().top,
+            statusTop: row.querySelector('.status-cell').getBoundingClientRect().top
+          };
+        }""")
+        assert metrics["width"] >= metrics["prefixWidth"], metrics
+        assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        columns_visible = await page.locator(".entry-columns").is_visible()
+        assert columns_visible is (width == 1920 and list_width != 1168)
+        if not columns_visible:
+            assert metrics["summaryTop"] < metrics["statusTop"]
+
+    await assert_readable()
 
     await row.locator(".entry-copy").click()
 
     assert await page.evaluate("() => navigator.clipboard.readText()") == f"{filename} {summary}"
     await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピーしました")
     await playwright.async_api.expect(page.locator("#result-status")).to_contain_text("コピーしました")
+    await assert_readable()
     await playwright.async_api.expect(row.locator(".entry-copy")).to_have_text("コピー", timeout=4000)
     assert await page.locator("#detail-dialog").evaluate("element => element.open") is False
 

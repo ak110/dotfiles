@@ -1,6 +1,6 @@
 """選定結果の`書込対象`がWI本文の反映先パスを覆うか確かめる。
 
-pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と反映先`、または作業を求める回答済みUWIの
+メインは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と反映先`、または作業を求める回答済みUWIの
 質問と回答から手で書き写すため、反映先の一部を欠いた値や、個別ファイルの代わりに上位ディレクトリだけを書いた値がレーン分けへ渡り得る。
 本スクリプトは`レーン`が`なし`でない各項目について、反映先パスを文章とインラインコードから抽出し、
 `書込対象`・`公開工程の書込対象`・`書き込まない反映先`の3区分と選定全体の関係を確かめ、次の違反を報告する。
@@ -20,12 +20,12 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
   そのパスは書込区分の指定を優先し、範囲の残りを書き込まない扱いとする
 - `公開工程の書込対象`の根拠不足: 対象リポジトリの規範、節およびpathがレーンの根拠に無い
 - 別レーンの重複根拠不足: 共通ファイルまたは狭い方の範囲が双方のレーンの根拠に無い
-- 同じ再開計画の別レーン割当: pickerが出力した通常中断または観測のみの再開位置が同じ計画を指す項目を別レーンへ置いた
+- 同じ再開計画の別レーン割当: メインが出力した通常中断または観測のみの再開位置が同じ計画を指す項目を別レーンへ置いた
 - 導出記録の不正: 完全な新設名・要求の反映範囲・書込区分への対応が成立しない、または同じ新設先を重複宣言した
 - 段階案の比較値の欠落: 段階2以上の行があるのに単一段階案の完了見込み秒数が無い
 
 これらは共有書込の判定や配分の比較が成立しないため、違反として終了コード1を返す。
-分類と定義の独立性の意味判断はpickerとメインの読解へ委ねる。
+分類と定義の独立性の意味判断はメインの読解へ委ねる。
 
 `--work-dir`の`pyproject.toml`が`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`で`プロジェクト規範の指定`の条件を
 定める場合は、条件に当たる項目の指定の省略・`なし`・空文字列と、必要な対象パスや記載の欠落も違反として終了コード1を返す。
@@ -33,8 +33,8 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
 共有のスクリプトへプロジェクト固有のパスと文面を書くと、内容の所有者がプロジェクトから共有実装へ移るためである。
 表を持たないリポジトリには条件を課さない。設定の構文と型の誤りはチェックを開始できない入力として終了コード2を返す。
 
-被覆を比べる前に、選定結果をYAMLとして読み、`pick-wi.subagent.md`「出力」が定める欄名、必須の欄と値の型を確かめる。
-pickerの保存直後とメインの受領時はどちらも本スクリプトを実行するため、両者は同じ構造を受理する。
+被覆を比べる前に、選定結果をYAMLとして読み、`selection-format.md`「選定結果の書式」が定める欄名、必須の欄と値の型を確かめる。
+メインは保存直後に本スクリプトを実行して構造を検収する。
 チェックを開始できない入力には終了コード2を返し、内容の違反と区別する。
 終了コード2の失敗は原因で2群に分かれ、次の操作も群ごとに異なる。
 選定結果のYAML構文、欄名、必須の欄および値の型の誤りは、選定結果を直して同じコマンドを再実行する。
@@ -56,7 +56,7 @@ pickerの保存直後とメインの受領時はどちらも本スクリプト�
 
 UWIの本文がリポジトリ相対パスを明示しない場合、比べるパスが無いため違反を報告しない。
 この成功はUWIの書込範囲を検証した結果ではない。パスを明示しない回答の書込範囲は、
-pickerの限定調査とメインの読解による検収が確かめる。
+メインの限定調査と読解による検収が確かめる。
 """
 
 from __future__ import annotations
@@ -114,12 +114,12 @@ _LEGACY_SECONDS_KEYS = {"implementation_seconds": _IMPLEMENTATION_SECONDS_KEY, "
 _OBSERVATION_PLAN_RE = re.compile(r"計画:\s*([^）]+)")
 _ABSOLUTE_PLAN_RE = re.compile(r"(?<!\S)(/\S+?\.md)(?=$|[\s、。）])")
 
-_FIX_PATHS = "位置引数へpickerが保存した選定結果YAMLの絶対パスを、`--work-dir`へ対象リポジトリの絶対パスを渡して再実行する"
+_FIX_PATHS = "位置引数へメインが保存した選定結果YAMLの絶対パスを、`--work-dir`へ対象リポジトリの絶対パスを渡して再実行する"
 _FIX_PRIVATE_NOTES = "`atk config get private_notes`が返す場所が実在し読み取れることを確かめてから、同じコマンドを再実行する"
 _FIX_YAML = (
     "選定結果のYAML構文を直す。文字列の値を単一引用符で囲み、値の中の`'`は`''`と重ねて書き直してから、同じコマンドを再実行する"
 )
-_FIX_CONTENT = "選定結果の該当する欄を`pick-wi.subagent.md`「出力」の欄名と型へ直してから、同じコマンドを再実行する"
+_FIX_CONTENT = "選定結果の該当する欄を`selection-format.md`「選定結果の書式」の欄名と型へ直してから、同じコマンドを再実行する"
 _FIX_MODEL = "`担当モデル`は`実装担当`か`実行レビュー担当`のキーごとに`<claude|codex|agy>:<model>/<effort>`の値へ直す"
 
 
@@ -303,11 +303,12 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
         run = "".join(segment.text for segment in segments)
         directory: str | None = None
         explicit_directory = False
+        directory_particle = False
         last_end = 0
         for start, end in _path_tokens(segments, work_dir):
             candidate = _normalize_candidate(run[start:end])
             gap = run[last_end:start]
-            if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or explicit_directory and gap.strip() == "の"):
+            if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or directory_particle and gap.strip() == "の"):
                 directory = None
             last_end = end
             if candidate is None or run[end : end + 1] in _GLOB_CHARS:
@@ -320,13 +321,22 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
                     continue
                 paths.add(resolved)
                 explicit_directory = resolved.endswith("/")
+                directory_particle = explicit_directory
                 directory = resolved if resolved.endswith("/") else resolved.rsplit("/", 1)[0] + "/"
                 continue
             if (work_dir / candidate).is_file():
                 paths.add(candidate)
-            elif directory is not None and (resolved := _repository_path(directory + candidate, work_dir)) is not None:
+            elif (
+                directory is not None
+                and (
+                    resolved := _repository_path(
+                        directory + candidate, work_dir, abbreviated_name=None if explicit_directory else candidate
+                    )
+                )
+                is not None
+            ):
                 paths.add(resolved)
-            explicit_directory = False
+            directory_particle = False
     return paths
 
 
@@ -384,9 +394,10 @@ def _is_complete_ascii_part(value: str) -> bool:
     return value.endswith("/") or "." in value.rsplit("/", 1)[-1]
 
 
-def _repository_path(candidate: str, work_dir: pathlib.Path) -> str | None:
+def _repository_path(candidate: str, work_dir: pathlib.Path, *, abbreviated_name: str | None = None) -> str | None:
     """`/`を含む候補を、実在するパス・読み替えた追跡ファイル・新設先のいずれかへ解決する。
 
+    推測した親に実体が無い略記は元の名前を追跡ファイルの末尾と比べ、複数候補には明示を求める。
     いずれにも当たらない候補（不在のディレクトリ範囲、途切れた名前など）は`None`を返す。
     """
     target = work_dir / candidate
@@ -396,10 +407,16 @@ def _repository_path(candidate: str, work_dir: pathlib.Path) -> str | None:
         return candidate + "/"
     if target.is_file():
         return candidate
-    suffix = "/" + candidate
+    suffix = "/" + (abbreviated_name or candidate)
     matches = [path for path in _tracked_files(work_dir) if path.endswith(suffix)]
     if len(matches) == 1:
         return matches[0]
+    if abbreviated_name is not None and len(matches) > 1:
+        raise InputError(
+            f"略記 `{abbreviated_name}` の候補が複数ある: {', '.join(sorted(matches))}。"
+            "意図するファイルをリポジトリ相対パスで明示する",
+            next_action="本文の略記を意図するファイルのリポジトリ相対パスへ直し、選定を再検証する",
+        )
     return _new_file_path(candidate, work_dir)
 
 
@@ -727,7 +744,7 @@ def _check_lane_models(items: list[dict[str, object]]) -> list[str]:
 
 
 def _resume_plan_id(value: object) -> str | None:
-    """pickerが出力した再開位置から同一計画を表す値だけを正規化して返す。"""
+    """メインが出力した再開位置から同一計画を表す値だけを正規化して返す。"""
     if not isinstance(value, str) or not value.strip() or value.strip() in {_LANE_NONE, "計画なし"}:
         return None
     observation = _OBSERVATION_PLAN_RE.search(value)
@@ -943,7 +960,7 @@ def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
 def main(argv: list[str] | None = None) -> int:
     """コマンドライン引数を解析し、選定結果を確かめる。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("selection_file", type=pathlib.Path, metavar="PATH", help="pickerが保存した選定結果の絶対パス")
+    parser.add_argument("selection_file", type=pathlib.Path, metavar="PATH", help="メインが保存した選定結果の絶対パス")
     parser.add_argument("--work-dir", type=pathlib.Path, metavar="DIR", default=None, help="対象リポジトリの絶対パス")
     parser.add_argument("--body-wi", action="append", metavar="WI", help="本文検査するWIファイル名。反復指定可、省略時は全件")
     parser.add_argument("--merge", type=pathlib.Path, metavar="PATH", help="追加選定YAMLの絶対パス")

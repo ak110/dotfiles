@@ -105,6 +105,8 @@ def _return_args(path: pathlib.Path, table: pathlib.Path, *extra: str) -> argpar
             "--round",
             "2",
             "--return-result",
+            "--reader-fit-review",
+            "文章成果物なし",
             *extra,
         ],
     )
@@ -124,6 +126,8 @@ def _no_evidence_return_args(table: pathlib.Path, *extra: str) -> argparse.Names
             "2",
             *extra,
             "--return-result",
+            "--reader-fit-review",
+            "文章成果物なし",
         ],
     )
 
@@ -143,6 +147,8 @@ def _plan_return_args(path: pathlib.Path, table: pathlib.Path, plan: pathlib.Pat
             "--round",
             "2",
             "--return-result",
+            "--reader-fit-review",
+            "文章成果物なし",
         ],
     )
 
@@ -174,6 +180,7 @@ def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_af
     assert run_script.dispatch(_return_args(path, table)) == 0
     assert capsys.readouterr().out == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+        "読者別探索: 文章成果物なし\n"
         "計画のパス: []\n入力記録のパス: []\n"
         f"完成条件証拠のパス: {path}\n"
         'wi_conditionsの判定内訳: {"総数": 1, "証拠不足": 1}\n'
@@ -313,7 +320,8 @@ def test_return_result_without_evidence_generates_result_and_empty_input_arrays(
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table)) == 0
     assert capsys.readouterr().out == (
-        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n計画のパス: []\n入力記録のパス: []\n"
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n"
+        "読者別探索: 文章成果物なし\n計画のパス: []\n入力記録のパス: []\n"
         'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
 
@@ -403,6 +411,8 @@ def test_return_result_reports_outcome_breakdown_and_nonachievement_rows(
             "2",
             "--return-result",
             *(["--show-all-rows"] if show_all else []),
+            "--reader-fit-review",
+            "文章成果物なし",
         ],
     )
     assert run_script.dispatch(args) == 0, capsys.readouterr().err
@@ -2301,6 +2311,8 @@ def test_non_git_cwd_guides_same_arguments_to_target_worktree(
             "--round",
             "1",
             "--return-result",
+            "--reader-fit-review",
+            "文章成果物なし",
         ]
     if operation == "batch":
         batch = tmp_path / "batch.json"
@@ -2318,6 +2330,7 @@ def test_non_git_cwd_guides_same_arguments_to_target_worktree(
                             "round": 1,
                             "plans": [],
                             "input_records": [],
+                            "reader_fit_review": "文章成果物なし",
                         }
                     ],
                 }
@@ -3208,6 +3221,7 @@ def test_input_record_saved_outside_repository_is_resolved_by_template_and_retur
     assert run_script.dispatch(_no_evidence_return_args(table, "--input-record", str(record))) == 0
     assert capsys.readouterr().out == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+        "読者別探索: 文章成果物なし\n"
         f"計画のパス: []\n入力記録のパス: {json.dumps([str(record)])}\n"
         'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
@@ -3440,6 +3454,7 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
                 "round": index,
                 "plans": [str(plan)],
                 "input_records": [str(record)] if index == 2 else [],
+                "reader_fit_review": f"読者{index}: session-{index}",
             }
         )
     batch = tmp_path / "batch.json"
@@ -3453,6 +3468,7 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
     for review, result in zip(reviews, results, strict=True):
         assert result["plan"] == review["plan"]
         assert f"レビューしたHEAD: {review['reviewed_head']}" in result["result"]
+        assert f"読者別探索: {review['reader_fit_review']}" in result["result"]
         assert f"計画のパス: {json.dumps(review['plans'])}" in result["result"]
         assert f"入力記録のパス: {json.dumps(review['input_records'])}" in result["result"]
         assert any(original in line for line in result["result"])
@@ -3470,6 +3486,15 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
     results = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert [result["exit_code"] for result in results] == [1, 0]
     assert results[0]["diagnostics"]
+    reviews[0]["reviewed_head"] = heads[0]
+    reviews[0].pop("reader_fit_review")
+    batch.write_text(json.dumps({"version": 1, "reviews": reviews}), encoding="utf-8")
+    assert run_script.dispatch(args) == 1
+    results = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [result["exit_code"] for result in results] == [1, 0]
+    assert not results[0]["result"]
+    assert any("reader_fit_review" in line and "再実行" in line for line in results[0]["diagnostics"])
+    assert "読者別探索: 読者2: session-2" in results[1]["result"]
     assert all(path.read_bytes() == before for path, before in evidence_before.items())
 
 
@@ -3536,3 +3561,125 @@ def test_public_update_requires_explicit_outcomes_and_preserves_unselected_rows(
         script_args=[str(output), "--input-record", str(record), "--expected-head", head],
     )
     assert run_script.dispatch(checked) == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize("claim", [None, "", " \t", "読者\n省略"])
+def test_return_requires_reader_fit_claim(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], claim: str | None
+) -> None:
+    """申告なしの返却は、証拠なしでもcompletedを出力せず入力補完へ戻す。"""
+    args = _no_evidence_return_args(tmp_path / "review.tsv")
+    args.script_args = args.script_args[:-2]
+    if claim is not None:
+        args.script_args.extend(["--reader-fit-review", claim])
+    assert run_script.dispatch(args) != 0
+    result = capsys.readouterr()
+    assert not result.out and "--reader-fit-review" in result.err and "再実行" in result.err
+
+
+def test_list_then_explanation_update_both_sections(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """空欄・途中・判定済みを読み、表示の番号と出所をそのまま既存の説明ファイル更新へ渡せる。"""
+    path = tmp_path / "review.json"
+    conditions = [_condition(FIRST_WI, f"条件{index}") for index in range(3)]
+    requirements = [_requirement(FIRST_WI, f"要求{index}") for index in range(3)]
+    for rows in (conditions, requirements):
+        rows[0].update(outcome="", evidence="", reviewed_head="")
+        rows[1].update(evidence="", reviewed_head="")
+    _write_evidence(path, conditions, requirements)
+    before = path.read_bytes()
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=[str(path), "--list"])
+    assert run_script.dispatch(args) == 0
+    displayed = [json.loads(line.removeprefix("証拠の全行: ")) for line in capsys.readouterr().out.splitlines()]
+    assert displayed == [
+        {"配列": section, "行番号": index, **row}
+        for section, rows in (("wi_conditions", conditions), ("user_requirements", requirements))
+        for index, row in enumerate(rows, 1)
+    ]
+    for section in ("wi_conditions", "user_requirements"):
+        args.script_args = [str(path), "--list", "--section", section]
+        assert run_script.dispatch(args) == 0
+        assert [json.loads(line.removeprefix("証拠の全行: ")) for line in capsys.readouterr().out.splitlines()] == [
+            row for row in displayed if row["配列"] == section
+        ]
+        for number in (1, 3):
+            args.script_args = [str(path), "--list", "--section", section, "--row", str(number)]
+            assert run_script.dispatch(args) == 0
+            selected = json.loads(capsys.readouterr().out.removeprefix("証拠の全行: "))
+            assert selected == next(row for row in displayed if row["配列"] == section and row["行番号"] == number)
+    assert path.read_bytes() == before
+    explanation = tmp_path / "explanation.txt"
+    updates = tmp_path / "updates.json"
+    for mode, text, expected in (
+        ("replace", "保存を確認した", "保存を確認した"),
+        ("append", "再読込を確認した", "保存を確認した\n再読込を確認した"),
+        ("replace", "再判定した", "再判定した"),
+    ):
+        explanation.write_text(text, encoding="utf-8")
+        updates.write_text(
+            json.dumps(
+                [
+                    {
+                        "section": row["配列"],
+                        "row": row["行番号"],
+                        "source": row["source"],
+                        "outcome": "達成",
+                        "reviewed_head": REVIEWED_HEAD,
+                        "evidence_file": str(explanation),
+                        "mode": mode,
+                    }
+                    for row in displayed
+                    if row["行番号"] == 1
+                ]
+            ),
+            encoding="utf-8",
+        )
+        args.script_args = [str(path), "--updates-file", str(updates), "--output", str(path)]
+        assert run_script.dispatch(args) == 0, capsys.readouterr().err
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for section in ("wi_conditions", "user_requirements"):
+            assert payload[section][0]["evidence"] == expected
+            assert payload[section][0]["outcome"] == "達成"
+            assert payload[section][0]["reviewed_head"] == REVIEWED_HEAD
+            assert payload[section][1:] == (conditions if section == "wi_conditions" else requirements)[1:]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--row", "1"],
+        ["--section", "wi_conditions", "--row", "0"],
+        ["--section", "user_requirements", "--row", "2"],
+        ["--section", "other"],
+        ["--reader-fit-review", ""],
+        ["--return-result"],
+        ["--template"],
+        ["--updates-file", "/unused/updates.json"],
+    ],
+)
+def test_list_rejects_invalid_selection_and_mixed_operations(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], extra: list[str]
+) -> None:
+    path = tmp_path / "review.json"
+    _write_evidence(path, [_condition(FIRST_WI, "保存")])
+    before = path.read_bytes()
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=[str(path), "--list", *extra])
+    assert run_script.dispatch(args) != 0
+    result = capsys.readouterr()
+    assert not result.out and result.err
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("section", [None, "wi_conditions", "user_requirements"])
+def test_list_empty_arrays_without_wi_or_completed_judgment(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], section: str | None
+) -> None:
+    """空配列も返却判定やWI取得を要求せず読み、ファイルを保存し直さない。"""
+    path = tmp_path / "empty.json"
+    _write_evidence(path, [])
+    before = path.read_bytes()
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=[str(path), "--list"])
+    if section is not None:
+        args.script_args.extend(["--section", section])
+    assert run_script.dispatch(args) == 0
+    assert capsys.readouterr().out == ""
+    assert path.read_bytes() == before

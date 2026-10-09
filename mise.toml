@@ -26,7 +26,7 @@ linux-x64 = { asset_pattern = "lychee-x86_64-unknown-linux-musl.tar.gz" }
 # componentsを保つためinline tableではなく別テーブルで書く
 # （`mise upgrade --bump`はinline tableを単一の文字列へ平坦化してoptionsを失う）。
 [tools.rust]
-version = "1.98.1"
+version = "1.99.0"
 components = "rustfmt,clippy"
 
 [settings]

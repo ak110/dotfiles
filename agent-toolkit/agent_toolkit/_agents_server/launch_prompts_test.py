@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from agent_toolkit._agents_server import launch_prompts, state
+from agent_toolkit._agents_server import launch_prompts, state, tool_descriptions
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shellによる実行の受入例")
@@ -80,6 +80,16 @@ def test_launch_prompts_carry_normative_boundaries() -> None:
         assert prompt.endswith(f"</{launch_prompts.NORMATIVE_ELEMENT}>"), kind
     assert launch_prompts.AUTO_RESUME_NOTICE.startswith(f"<{launch_prompts.NORMATIVE_ELEMENT} ")
     assert 'kind="rules-subagent"' in launch_prompts.DELEGATE_SYSTEM_PROMPT
+
+
+def test_explore_capabilities_are_shared_with_public_schema() -> None:
+    """公開schemaと実際の委譲プロンプトへ同じ能力定義を配送する。"""
+    capabilities = tool_descriptions.EXPLORE_CAPABILITIES
+    assert capabilities in tool_descriptions.START_DESCRIPTION[:2048]
+    assert capabilities in tool_descriptions.MODE_DESCRIPTION
+    assert capabilities in launch_prompts.LAUNCH_SYSTEM_PROMPTS["explore"]
+    for kind in ("delegate", "shell", "write"):
+        assert capabilities not in launch_prompts.LAUNCH_SYSTEM_PROMPTS[kind]
 
 
 def test_all_launch_system_prompts_include_language_condition() -> None:

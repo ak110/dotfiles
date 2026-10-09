@@ -531,6 +531,13 @@ CodexのPostToolUseは`persistedOutputPath`を持たず（出力は退避では�
 
 ## Function hooks moduleの個別設計
 
+### メインの会話圧縮予約
+
+`compact_conversation`はClaude Codeのメインへ会話圧縮の予約入口を提供する。`register.ts`がセッション開始時に登録し、`compact_conversation.ts`が任意の文字列instructions、未完了予約の重複排除と失敗通知を所有する。Agentの呼出主体はagentId、agents_serverの委譲先は起動時のAGENT_TOOLKIT_OWNER_SESSION環境変数で対象から外す。Codexにはこのmodの入口を配らない。
+予約の応答とホストの圧縮完了を分けるのは、圧縮がターン終了後に実行されるためである。tool.callは受付を返し、clock.afterのコールバックからcommand.runのcompactを呼ぶ。成功時はホストの結果を使い、失敗時は予約状態を解除してprompt.submitで同じ会話へ原因と再予約の案内を届ける。予約状態はセッション限りの変数であり、解除入口、永続予約や監視を追加しない。
+知識境界として、圧縮の実装と成功結果はホスト、予約の入力と失敗処理はmod、process-wiの起動境界・背景待機・復元はrun-lanes.mdが持つ。tool.callの中で直接command.runを呼ぶ案はhook内のコマンド実行が拒否されるため採らない。turn.completeから同じ処理を呼ぶ案もその制約を残し、session.compactの直接呼出は利用可能な実行契約ではない。既存の終了要求へ混ぜる案は、再予約できる圧縮とセッションを終える操作の寿命が異なるため採らない。
+対話UIと非対話の結果、ホスト版と再検証手段はaudit-records.mdの会話圧縮予約の項に保持する。
+
 ### `start`の処理の中での定期再確認の装着
 
 2026年10月7日、`agents_server`の`start`での定期再確認の装着を、モデルが起動前に行う手順からClaude Codeのmod（`agent-toolkit/hooks/periodic_recheck.ts`）が`start`の処理の中で行う方式へ改めた。

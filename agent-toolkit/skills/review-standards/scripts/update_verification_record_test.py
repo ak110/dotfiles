@@ -628,12 +628,15 @@ def test_public_import_roundtrip_reaches_return_result(
             "--round",
             "1",
             "--return-result",
+            "--reader-fit-review",
+            "文章成果物なし",
             name="exec-review-evidence-check",
         )
         == 0
     ), capsys.readouterr().err
     returned = capsys.readouterr().out
     assert "状態: completed" in returned and "未解決の指摘数: 0" in returned
+    assert "読者別探索: 文章成果物なし" in returned
 
 
 @pytest.mark.parametrize("invalid", ["xml", "file", "duplicate", "head", "exit", "argv", "source", "row"])

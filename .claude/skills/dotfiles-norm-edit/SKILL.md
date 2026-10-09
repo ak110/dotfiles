@@ -5,13 +5,13 @@ description: >
   dotfilesリポジトリで`AGENTS.md`・`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`・
   `.claude/skills/`のエージェント向け文書を変更、削除または縮小するとき、変更した規範を自セッションへ適用するとき、
   規範を変更したセッションで会話圧縮の後に作業を続けるとき、変更済みまたは新設したスキルを起動するとき、
-  および`agent-toolkit:process-wi`のpickerがAWIごとの`プロジェクト規範の指定`を書くときに起動する。
+  および`agent-toolkit:process-wi`のメインがAWIごとの`プロジェクト規範の指定`を書くときに起動する。
 ---
 
 # dotfilesの規範の改訂
 
 本スキルは本リポジトリのエージェント向け文書を改訂するエージェントへ、編集前に読む記録、変更した規範の自セッション適用、
-pickerが書く`プロジェクト規範の指定`、規範を削除・縮小するときの消失確認を提供する。
+メインが書く`プロジェクト規範の指定`、規範を削除・縮小するときの消失確認を提供する。
 `agent-toolkit/`配下の配置、版数更新と配布の手順は`agent-toolkit-edit`が扱う。
 
 ## 読込表
@@ -49,11 +49,11 @@ pickerが書く`プロジェクト規範の指定`、規範を削除・縮小す
 除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥をそのセッションで是正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`が定める`是正済み資源:`の行で作業ツリー側の絶対パスを委譲プロンプトへ渡す。
 変更後の規範に従うとその作業を完遂できないと判明した場合は、規範どおり進めることより、その変更の設計見直しを優先する。
 
-## pickerが書くプロジェクト規範の指定
+## メインが書くプロジェクト規範の指定
 
-`agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`プロジェクト規範の指定`を書く。
-`プロジェクト規範の指定`の受け渡し形式は`agent-toolkit/share/pick-wi.subagent.md`が定める。
-pickerは記載を、リポジトリ直下の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`の条件から組み立てる。各条件は`paths`と`suffixes`か`agent-doc`で対象のパスを選び、`require-paths`は当たった対象ファイルのパス、`require-text`はその文字列を指定へ書くことを求める。`atk run-script pick-wi-check`が同じ設定で選定結果の指定の欠落を検出する。
+`agent-toolkit:process-wi`のセッションでは、選定工程のメインが処理対象のAWIごとに`プロジェクト規範の指定`を書く。
+`プロジェクト規範の指定`の受け渡し形式は`agent-toolkit/skills/process-wi/references/selection-format.md`が定める。
+メインは記載を、リポジトリ直下の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`の条件から組み立てる。各条件は`paths`と`suffixes`か`agent-doc`で対象のパスを選び、`require-paths`は当たった対象ファイルのパス、`require-text`はその文字列を指定へ書くことを求める。`atk run-script pick-wi-check`が同じ設定で選定結果の指定の欠落を検出する。
 「変更後の規範の自セッション適用」の対象となる規範を変更するAWIには、その変更の対象ファイルのリポジトリ相対パスを書く。どの条件にも当たらないAWIは`なし`とする。
 反映先に本リポジトリのエージェント向け文書を含むAWIには、その変更を確定するエージェント自身が計画の採否を確定する前に次を読む要求も書く。`docs/development/concepts.md`と`docs/development/incidents.md`は索引であり、全文を読む。加えて、索引にある分割ファイルの節へのリンクのうち、リンク名とその説明（`incidents.md`の区分名と定義、`concepts.md`の主題名など）が変更対象のファイル名、工程名または機能名を示すリンクを選び、リンク先の節を読む。リンクが見出し、表、一覧のどこに置かれていても、同じ基準で選ぶ。リンク名と説明で判定できない場合は、索引がリンクする分割ファイルを変更対象のファイル名・工程名・機能名で検索し、一致した節を読む。ユーザーが確定した方針の本文は分割ファイルにあり、索引の全文だけでは届かない。
 対象かどうかの判定は、そのAWIの書込対象と反映先のパスを`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真とするかで行い、設定では`agent-doc = true`の条件がこの判定を使う。

@@ -712,7 +712,6 @@ class ClaudeServerManager:
                 now = loop.time()
                 if session is not None and session.auto_resume_deadline is not None and session.auto_resume_deadline <= now:
                     self._finalize_pending_result(session)
-                    iterator = None
                     await self._notify_waiters()
                     continue
                 timeout: float | None = None
@@ -727,8 +726,28 @@ class ClaudeServerManager:
 
                 if iterator is not None and message_task is None:
                     message_task = asyncio.create_task(anext(iterator))
-                if command_task is None:
+                if command_task is None and retrieved is None:
                     command_task = asyncio.create_task(channel.get())
+                if retrieved is not None:
+                    # 新queryより前に既に届いたイベントを処理する。読取taskが新しい
+                    # イベントを待つ状態になったところで、保持していたコマンドを配送する。
+                    await asyncio.sleep(0)
+                    if message_task is None or not message_task.done():
+                        command = retrieved
+                        retrieved = None
+                        active_future = command[2]
+                        if (
+                            command[0] == "interrupt"
+                            and session is not None
+                            and session.awaiting_auto_resume
+                            and message_task is not None
+                        ):
+                            message_task.cancel()
+                            await asyncio.gather(message_task, return_exceptions=True)
+                            message_task = None
+                        iterator = await self._handle_command(client, session, command, iterator)
+                        active_future = None
+                        continue
                 pending = {task for task in (message_task, command_task) if task is not None}
                 if not pending:
                     raise RuntimeError("Claude session has no message stream or command queue")
@@ -736,7 +755,6 @@ class ClaudeServerManager:
                 if not done:
                     if session is not None and session.auto_resume_deadline is not None:
                         self._finalize_pending_result(session)
-                        iterator = None
                         await self._notify_waiters()
                         continue
                     if session is not None:
@@ -756,6 +774,7 @@ class ClaudeServerManager:
                         if (
                             session is not None
                             and session.awaiting_auto_resume
+                            and session.usage_limit_resume_at is None
                             and not resume_waits.has_pending_auto_resume_targets(session)
                         ):
                             self._finalize_pending_result(session)
@@ -775,6 +794,19 @@ class ClaudeServerManager:
                     else:
                         diagnostic.record_message(message)
                         name = _message_name(message)
+                        # 公開済みのturnの後始末も同じ受信列から回収する。新queryを送るまで
+                        # assistant/resultを公開済みの状態へ適用せず、旧結果の二重公開を防ぐ。
+                        if (
+                            session is not None
+                            and session.terminal
+                            and name
+                            in {
+                                "AssistantMessage",
+                                "StreamEvent",
+                                "ResultMessage",
+                            }
+                        ):
+                            continue
                         if name == "SystemMessage" and getattr(message, "subtype", None) == "init":
                             data = getattr(message, "data", {})
                             session_id = data.get("session_id") if isinstance(data, dict) else None
@@ -834,12 +866,12 @@ class ClaudeServerManager:
                                 session is not None
                                 and reported == "idle"
                                 and session.awaiting_auto_resume
+                                and session.usage_limit_resume_at is None
                                 and not resume_waits.has_pending_auto_resume_targets(session)
                             ):
                                 if held_from_task_notification:
                                     session.auto_resume_consumed = True
                                 self._finalize_pending_result(session)
-                                iterator = None
                                 await self._notify_waiters()
                         elif name == "RateLimitEvent":
                             # 利用枠の報告はモデル活動ではないため活動時刻を進めない。
@@ -886,10 +918,9 @@ class ClaudeServerManager:
                             # Weekly limitか5時間の利用上限による失敗は公開せず保留し、MCP層の常駐監視が
                             # 解除予定時刻に同じsessionへ継続を送る。以後のメッセージは継続のturnで読む。
                             if resume_waits.begin_usage_limit_wait(session, result):
-                                iterator = None
+                                pass
                             # 自動再開したturnもバックグラウンドタスクを残して待機を表明し得るため、
                             # `origin`によらず保留を判定する。
-                            # 確定後は以後のメッセージを読まないため、ここで確定すると後続の自動再開turnの結果を失う。
                             # 完了通知は`ResultMessage`より前にも届く。Stop hookの実行中にバックグラウンドタスクが終わると、
                             # その通知で追跡集合は空になるが、CLIは`ResultMessage`の後に通知の再開turnを開始する。
                             # 次のturnの有無はCLIの`idle`の報告だけが確定できるため、報告が`idle`になるまで保留し、
@@ -909,24 +940,8 @@ class ClaudeServerManager:
                                 if getattr(message, "origin", None) == {"kind": "task-notification"}:
                                     session.auto_resume_consumed = True
                                 self._finalize_turn(session, result)
-                                iterator = None
                             await self._notify_waiters()
 
-                if retrieved is not None:
-                    command = retrieved
-                    retrieved = None
-                    active_future = command[2]
-                    if (
-                        command[0] == "interrupt"
-                        and session is not None
-                        and session.awaiting_auto_resume
-                        and message_task is not None
-                    ):
-                        message_task.cancel()
-                        await asyncio.gather(message_task, return_exceptions=True)
-                        message_task = None
-                    iterator = await self._handle_command(client, session, command, iterator)
-                    active_future = None
         except asyncio.CancelledError:
             raise
         except BaseException as exc:
@@ -1001,7 +1016,6 @@ class ClaudeServerManager:
             return iterator
         if session.awaiting_auto_resume and session.auto_resume_deadline is None:
             self._finalize_pending_result(session)
-            iterator = None
         held = resume_waits.HeldTurn.capture(session)
         kind = "reply" if session.terminal or held is not None else "steer"
         previous_result = session.previous_result() if kind == "reply" and held is None else None
@@ -1023,7 +1037,7 @@ class ClaudeServerManager:
             elif not future.done():
                 future.set_exception(exc)
             await self._notify_waiters()
-            return None if session.result_available else iterator
+            return iterator
         if kind == "reply":
             if not future.done():
                 future.set_result(("reply_started", previous_result))

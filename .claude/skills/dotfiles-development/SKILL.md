@@ -131,6 +131,8 @@ Codexでは`~/.codex/docs/session-review-dotfiles.md`とする。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
   共通化が必要な場合は`agent-toolkit-edit`スキルの`references/distribution-and-hooks.md`「agent_toolkitパッケージの配置と層」が定めるテスト専用パッケージへ置く
 - テストはリポジトリ直下と`agent-toolkit/`の`conftest.py`が適用する`agent-toolkit/agent_toolkit/_testing/isolation.py`の隔離の下で動き、ホームと設定ディレクトリはテストごとの一時ディレクトリを指す。
+  HOME・設定・Git環境の隔離は、検証に必要な履歴・tag・branch・作業状態の準備とは別である。実Gitの動作を確かめるテストは、それらを自身の一時リポジトリへ準備し、全てのGit呼び出しで対象リポジトリを明示する。共通ヘルパー`agent-toolkit/agent_toolkit/_testing/git_repository.py`の`init_repository`・`commit_all`・`run_git`を使える。実行元リポジトリの不変条件を調べるテストの役割は保ち、全テストのcwdを一律に変えない。
+  履歴への依存が現れた対照と再検証手段は、`docs/development/audit-records.md`「dotfiles-development：Git動作テストの状態準備：2026年10月9日」にある。
   パッケージを取得して起動する外部ツール（pnpmの`dlx`、corepackなど）を実際に動かすテストは、同モジュールの`share_package_caches`で取得物の保存先だけをホストと共有する。
   共有しないと、テストのたびに空の保存先へ取得し直して所要が延びる
 - `pytools`パッケージ配布物にテストコードを含めないため、

@@ -164,6 +164,15 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
     recipients = {path.name: path for path in sorted(share.glob("*.subagent.md"))}
     pairs: list[tuple[pathlib.Path, str]] = []
     errors: list[str] = []
+    for recipient in recipients.values():
+        content = recipient.read_text(encoding="utf-8")
+        table = _h2_section(content, "読込表") if "\n## 読込表\n" in content else ""
+        for line in content.splitlines():
+            if "起動" not in line or line.startswith("|"):
+                continue
+            for name in re.findall(r"share/([A-Za-z0-9_.-]+\.parent\.md)", line):
+                if name not in table:
+                    errors.append(f"起動手順の読込が欠けている: {recipient.name} -> {name}")
 
     for parent in parents:
         targets, valid_structure = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
@@ -340,44 +349,45 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     assert actual_names == expected_names
 
 
-def test_wi_staleness_contract_reaches_picker_lane_and_execution_review() -> None:
+def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> None:
     """WI鮮度は選定、計画起草および計画なしレビューへ到達する。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
+    selection_text = _selection_documents(plugin_root)
     lane = _lane_planning_contract(plugin_root)
     review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
     criteria = (plugin_root / "skills" / "review-standards" / "references" / "reviewer.md").read_text(encoding="utf-8")
 
-    assert all("鮮度" in content for content in (picker, lane))
-    assert all("staleness" in content for content in (picker, review))
-    assert all("notice" in content for content in (picker, lane, criteria))
-    assert all("不一致" in content and "充足済み" in content and "巻戻し" in content for content in (picker, lane, criteria))
+    assert all("鮮度" in content for content in (selection_text, lane))
+    assert all("staleness" in content for content in (selection_text, review))
+    assert all("notice" in content for content in (selection_text, lane, criteria))
+    assert all(
+        "不一致" in content and "充足済み" in content and "巻戻し" in content for content in (selection_text, lane, criteria)
+    )
     assert "reviewer.md" in review
 
 
-def test_picker_explanation_contract_covers_questions_without_state_changes() -> None:
+def test_selection_explanation_contract_covers_questions_without_state_changes() -> None:
     """選定理由の説明は専用ペアへ分かれ、読み取り専用の軽量起動で選定結果とキュー状態を変更しない。
 
-    説明の手順が選定担当の文書に残ると、`start`は選定担当の必須入力を要求して説明担当を起動できない。
+    選定手順の文書と説明担当の起動契約を分け、`start`は説明専用ペアが宣言した必須入力を受け取る。
     説明担当の文書が状態を変える`atk wi`の操作を含むと、軽量起動の読み取り専用の契約と衝突する。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
     share = plugin_root / "share"
     explain = share / "pick-wi-explain.subagent.md"
     declaration = _declaration(explain)
-    picker = (share / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    question_route = _h2_section((share / "pick-wi.parent.md").read_text(encoding="utf-8"), "読込表")
+    selection_text = _selection_documents(plugin_root)
+    question_route = _h2_section(_selection_procedure(plugin_root), "読込表")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
 
     assert declaration.launch_kind == "explore"
     assert declaration.required == ("説明対象の選定結果の出力先ファイル", "選定理由への質問")
     assert "pick-wi-explain.parent.md" in question_route
-    assert "## 選定理由の説明" not in picker
-    assert not _declaration(share / "pick-wi.subagent.md").accepted & set(declaration.required)
+    assert "## 選定理由の説明" not in selection_text
     assert not re.search(
         r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explain.read_text(encoding="utf-8")
     )
-    assert "pick-wi.parent.md" in lanes and "包含理由、除外理由" in lanes
+    assert "selection-procedure.md" in lanes and "包含理由、除外理由" in lanes
 
 
 def _declaration(task_document: pathlib.Path) -> task_documents.TaskDocumentDeclaration:
@@ -420,32 +430,31 @@ def test_same_lane_dependency_contract_reaches_parent_and_run_lanes() -> None:
     生成・受領・実行のいずれかが別の順序を示すと、後続項目が依存先より先に処理される。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
-    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    selection_text = _selection_documents(plugin_root)
+    parent = _selection_procedure(plugin_root)
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
-    for document in (picker, parent, lanes):
+    for document in (selection_text, parent, lanes):
         assert "同じレーン" in document
-    assert "推移的な依存先" in _h2_section(picker, "処理対象の決定")
-    assert "推移的にたどる" in _h2_section(parent, "出力の受領")
+    assert "推移的な依存先" in _h2_section(selection_text, "処理対象の決定")
+    assert "推移的にたどる" in _h2_section(parent, "保存後の意味検収")
     assert "依存先が先行" in parent and "依存先から処理" in lanes
-    assert "候補と`選定`へ全項目を残す" in picker
-    assert "後続だけを開始せず依存待ちを維持" in picker
+    assert "候補と`選定`へ全項目を残す" in selection_text
+    assert "後続だけを開始せず依存待ちを維持" in selection_text
     assert "後続を依存待ち" in lanes
 
 
 def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
     """処理中の追加でも同じ再開計画を既存レーンから分離しない。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    selection_text = _selection_documents(plugin_root)
+    parent = _selection_procedure(plugin_root)
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
     addition = _h2_section(parent, "処理対象WIの追加")
 
-    assert "既存レーンのAWI、レーン識別子、`再開位置`" in picker
-    assert "後段の分割不能条件と同じ規則で`再開位置`の計画識別を比較" in picker
-    assert "同じ計画を持つ既存レーンの識別子と計画識別" in picker
-    assert "その既存レーンへの割当を費用比較より先に確定" in addition
-    assert "受領時と同じ統合操作" in addition
+    assert "後段の分割不能条件と同じ規則で`再開位置`の計画識別を比較" in selection_text
+    assert "同じ計画を持つ既存レーンの識別子と計画識別" in selection_text
+    assert "同じ再開計画を持つ既存レーンへの合流を費用比較より優先" in addition
+    assert "atk run-script pick-wi-check" in addition
     assert "--output <元の選定結果の出力先ファイル>" in addition
     assert "--body-wi <追加WI名>" in addition
     assert "そのレーンへの割当を分割不能条件として費用比較より先に確定" in lanes
@@ -466,19 +475,19 @@ def test_phase_specific_contract_layout_names_the_task_document() -> None:
     assert "その工程で起動するスキルの`references/`へ置く" in guideline
 
 
-def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
+def test_write_files_contract_reaches_selection_output_and_receipt() -> None:
     """選定で列挙した書込対象を受領側が比較できる。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
-    output = _h2_section(picker, "出力")
+    selection_text = _selection_documents(plugin_root)
+    parent = _selection_procedure(plugin_root)
+    output = _selection_format(plugin_root)
     output_format = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     fields = re.findall(r"^  ([^\s:]+):", output_format.split("レーンの所要時間:\n", maxsplit=1)[0], flags=re.MULTILINE)
     assert "書込対象" in fields
     assert "公開工程の書込対象" in fields
-    receipt = _h2_section(parent, "出力の受領")
+    receipt = _h2_section(parent, "保存後の意味検収")
     receipt = re.sub(r"```.*?```", "", receipt, flags=re.DOTALL)
-    generation = _h2_section(picker, "調査とレーン分け")
+    generation = _h2_section(selection_text, "調査とレーン分け")
     assert "`書込対象`" in receipt
     assert "`公開工程の書込対象`" in receipt
     assert "全レーン統合後の公開工程だけ" in output
@@ -493,20 +502,12 @@ def test_write_files_contract_reaches_picker_output_and_receipt() -> None:
     # 選定時と受領時の双方で、反映先と`書込対象`の対応を同じ公開コマンドで確かめる。
     assert "書き込まない反映先" in fields
     assert "`書き込まない反映先`" in output
-    assert "atk run-script pick-wi-check" in output and "atk run-script pick-wi-check" in receipt
+    assert "atk run-script pick-wi-check" in _h2_section(parent, "保存後の検査")
     assert "pick-wi-check" in run_script.SCRIPT_PATHS
-    reply = next(block for _, block in _text_blocks(output.splitlines()) if block[0].startswith("状態:"))
-    reply_fields = {line.partition(":")[0] for line in reply}
-    receiver_fields = set(re.findall(r"`([^`]+)`", receipt))
-    assert "書込対象の検査" in reply_fields
-    assert reply_fields <= receiver_fields
-    # 実行結果は委譲の返却へ渡し、選定YAMLのWI属性へ複製しない。
+    # 検査結果はWI属性へ複製せず、構造検査と意味検収を選定主体が保持する。
     assert "書込対象の検査" not in fields
-    assert "終了コード0" in output and "終了コード0" in receipt
-    assert "3行の返却は結果不明" in receipt
-    # 入力誤りの終了コード2は、選定結果の修正と引数・パスの修正を`次の操作:`で区別し、生成側と受領側が同じ案内に従う。
-    for document in (output, receipt):
-        assert "YAML" in document and "終了コード2" in document and "`次の操作:`" in document
+    check = _h2_section(parent, "保存後の検査")
+    assert "終了コード0" in check and "終了コード2" in check and "`次の操作:`" in check
 
 
 def _fixed_reply_errors(share: pathlib.Path) -> list[str]:
@@ -543,18 +544,18 @@ def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Pat
     assert _fixed_reply_errors(tmp_path) == ["unlimited.subagent.md"]
 
 
-def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
+def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     """反映後の観測の再開記録を、送信側と受信側が同じ節名、項目および再開区分の値で扱う。
 
-    セッション終了でメインがAWI本文へ追記する節を、pickerとメインの受領、レーン担当が同じ節名で読まないと、
+    セッション終了でメインがAWI本文へ追記する節を、selectionとメインの受領、レーン担当が同じ節名で読まないと、
     計画が`~/.claude/plans`に無い項目は再開位置を失い、続行できない理由の返却か再実装へ進む。
-    pickerが再開区分の値で観測のみの再開を判定しないと、再実装へ戻した項目を古い記録から観測だけで再開する。
+    selectionが再開区分の値で観測のみの再開を判定しないと、再実装へ戻した項目を古い記録から観測だけで再開する。
     テンプレートへ区分値を加えたときに採否の確定と終端区分がその値の扱いを持たないと、送った記録の扱いが定まらない。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
     finish = (plugin_root / "skills" / "process-wi" / "references" / "finish-session.md").read_text(encoding="utf-8")
-    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    selection_text = _selection_documents(plugin_root)
+    parent = _selection_procedure(plugin_root)
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
 
     templates = [block.split("```", maxsplit=1)[0] for block in finish.split("```markdown\n")[1:]]
@@ -568,7 +569,7 @@ def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
     prefix = "反映後の観測だけが残る"
     record = templates[kind_values.index(prefix)]
     fields = re.findall(r"^- ([^:]+): ", record, flags=re.MULTILINE)
-    assert f"`再開区分`が`{prefix}`の場合だけ" in _h2_section(picker, "処理対象の決定")
+    assert f"`再開区分`が`{prefix}`の場合だけ" in _h2_section(selection_text, "処理対象の決定")
     termination = _h2_section(lanes, "採否の確定と終端区分")
     assert all(f"`再開区分: {value}`" in termination for value in kind_values if value != prefix)
     # `atk serve`の一覧は同じ見出しと区分の行でneeds-verifyを表示する。書式の変更に判定が追随しないと失敗する。
@@ -577,23 +578,25 @@ def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
     assert {"実装commit", "残る完成条件", "観測手段", "観測できる最も早い時刻", "計画"} <= set(fields)
     assert "--append" in finish and "return-to-inbox" in finish and "--cooldown-until" in finish
 
-    template = _h2_section(picker, "出力").split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
+    template = _selection_format(plugin_root).split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     resume_line = next(line for line in template.splitlines() if line.startswith("  再開位置:"))
     observation = resume_line.split("観測のみの書式は「", maxsplit=1)[1]
     assert observation.startswith(prefix)
     assert f"`{heading}`" in observation and "計画: " in observation and "計画なし" in observation
-    assert f"`{heading}`" in _h2_section(picker, "処理対象の決定")
-    assert f"`{heading}`" in _h2_section(parent, "出力の受領") and f"`{prefix}`" in _h2_section(parent, "出力の受領")
+    assert f"`{heading}`" in _h2_section(selection_text, "処理対象の決定")
+    assert f"`{heading}`" in _h2_section(parent, "保存後の意味検収") and f"`{prefix}`" in _h2_section(
+        parent, "保存後の意味検収"
+    )
     lane_resume = _lane_planning_contract(plugin_root)
     assert f"`{heading}`" in lane_resume and f"`{prefix}`" in lane_resume
     assert all(field in lane_resume for field in ("実装commit", "残る完成条件", "観測手段"))
     assert "`計画なし`" in lane_resume and "マージなし" in lane_resume
     assert "再開記録" in _h2_section(lanes, "中断レーンの再開")
     # 計画パスの再開位置の検収は観測のみの値へ当てはめず、観測のみの書式は再開記録を読んだ項目だけに使う。
-    receipt = _h2_section(parent, "出力の受領")
-    assert f"再開位置が`{prefix}`で始まらない項目では" in receipt
+    receipt = _h2_section(parent, "保存後の意味検収")
+    assert f"再開位置を持ち、その値が`{prefix}`で始まらない項目では" in receipt
     assert "前文の計画ファイルの確認に代えて" in receipt
-    progress_only = _h2_section(picker, "処理対象の決定")
+    progress_only = _h2_section(selection_text, "処理対象の決定")
     assert "計画ファイルの絶対パスと残る工程の書式で`再開位置`へ記す" in progress_only
     assert "観測のみの書式は、AWI本文の再開記録を読んだ項目だけに使う" in progress_only
 
@@ -601,15 +604,15 @@ def test_observation_resume_record_reaches_picker_lane_and_receipt() -> None:
 def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     """後段の開始条件が選定、受領、実行へ届く。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    selection_text = _selection_documents(plugin_root)
+    parent = _selection_procedure(plugin_root)
     explanation = (plugin_root / "share" / "pick-wi-explain.subagent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
-    assert "  段階:" in picker and "  先行レーン:" in picker
+    assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent
     assert "現行HEADを基点" in lanes
     assert "統合完了を受領" in lanes
-    output = _h2_section(picker, "出力")
+    output = _selection_format(plugin_root)
     yaml_block = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     top_fields = set(re.findall(r"^([^\s:]+):", yaml_block, flags=re.MULTILINE))
     assert selection.SINGLE_STAGE_ESTIMATE_KEY in top_fields
@@ -619,19 +622,19 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:
     """省略値を含む割当条件が生成・受領・上流分岐で一致し、一律の非実装除外を拒否する。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    picker = (plugin_root / "share/pick-wi.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share/pick-wi.parent.md").read_text(encoding="utf-8")
+    selection_text = _selection_documents(plugin_root)
+    parent = _selection_procedure(plugin_root)
     lanes = (plugin_root / "skills/process-wi/references/run-lanes.md").read_text(encoding="utf-8")
-    output = _h2_section(picker, "出力")
+    output = _selection_format(plugin_root)
     rows = [[cell.strip() for cell in line.strip("|").split("|")] for line in output.splitlines() if line.startswith("| `")]
     contract = {row[0].split("`")[1]: row[1] for row in rows[1:] if len(row) == 3}
     assert contract == {"なし": "通常の`lane-NN`", "上流要求だけ": "`なし`", "混在": "通常の`lane-NN`"}
     assert "行の省略を含む" in output
     assert "書き込み前" in output and "省略時の値と省略を解決" in output
-    generation = _h2_section(picker, "反映先と上流投入")
-    receipt = _h2_section(parent, "出力の受領")
-    assert "「出力」の組合せ条件" in generation
-    assert "組合せ条件も検収" in receipt and "同一pickerへの再取得" in receipt
+    generation = _h2_section(selection_text, "反映先と上流投入")
+    receipt = _h2_section(parent, "保存後の意味検収")
+    assert "selection-format.md" in generation
+    assert "組合せ条件も検収" in receipt and "修正して再検査" in receipt
     assert "`上流要求だけ`（`レーン`が`なし`）" in _h2_section(lanes, "上流投入")
 
     def assert_no_blanket_exclusion(text: str) -> None:
@@ -983,3 +986,33 @@ def test_unclosed_marker_block_is_rejected(tmp_path: pathlib.Path) -> None:
     )
 
     assert "起動対象の構造が不正: task.parent.md" in _contract_errors(tmp_path)
+
+
+def test_delegated_launch_parent_must_be_in_read_table(tmp_path: pathlib.Path) -> None:
+    """委譲先自身が起動を委ねたparentを読まない欠陥を、文書どうしの接続から検出する。"""
+    _write_pair(tmp_path, parent_body=_parent_body())
+    recipient = tmp_path / "task.subagent.md"
+    original = recipient.read_text(encoding="utf-8")
+    instruction = "\n## 探索\n\n`${CLAUDE_PLUGIN_ROOT}/share/task.parent.md`に従って担当を起動する。\n"
+    recipient.write_text(original + instruction, encoding="utf-8")
+    error = "起動手順の読込が欠けている: task.subagent.md -> task.parent.md"
+    assert error in _contract_errors(tmp_path)
+    recipient.write_text(
+        original + "\n## 読込表\n\n| 起動前 | `${CLAUDE_PLUGIN_ROOT}/share/task.parent.md` |\n" + instruction, encoding="utf-8"
+    )
+    assert error not in _contract_errors(tmp_path)
+
+
+def _selection_procedure(plugin_root: pathlib.Path) -> str:
+    """選定と検収の同じ所有者が読む手順を取得する。"""
+    return (plugin_root / "skills/process-wi/references/selection-procedure.md").read_text(encoding="utf-8")
+
+
+def _selection_format(plugin_root: pathlib.Path) -> str:
+    """生成・消費が共有する書式の定義を取得する。"""
+    return (plugin_root / "skills/process-wi/references/selection-format.md").read_text(encoding="utf-8")
+
+
+def _selection_documents(plugin_root: pathlib.Path) -> str:
+    """書式と手順を使う契約の確認へ両定義を渡す。"""
+    return _selection_procedure(plugin_root) + "\n" + _selection_format(plugin_root)

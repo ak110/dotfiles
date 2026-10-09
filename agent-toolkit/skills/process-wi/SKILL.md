@@ -15,7 +15,8 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| pickerによる対象選定を開始する前（実行順2）と、処理対象WIをpickerへ追加する前 | `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md` |
+| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `references/selection-procedure.md` |
+| 選定YAMLを生成または消費する前 | `references/selection-format.md` |
 | 専用worktreeとレーンを作成する前（実行順3） | `references/run-lanes.md` |
 | レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
 | 不良またはユーザーの是正要求を受け取った時 | `references/immediate-fix.md` |
@@ -28,10 +29,9 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手
 WI作成、計画、実行および実行レビューの責務と受渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
 - **メイン**: `agent-toolkit/rules/01-agent.md`が定めるメインエージェントの短縮呼称
-- **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める。公開工程の定義は`agent-toolkit:commit`の`references/publish.md`冒頭にあり、本スキルではその工程を終端担当が担う
-- **picker**: 選定工程で処理対象のAWIを固定する担当
-- **処理対象WI**: pickerが選定時に固定した、`agent-toolkit:process-wi`の1回の実行で処理するAWI。処理中にユーザーが追加を明示したAWIを含む
-- **レーン**: pickerが固定した処理対象を割り当てる仮想的な処理単位。各レーンは専用branchと専用worktreeを1つ持つ（`references/run-lanes.md`「レーンと資源」が規定）
+- **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。それぞれ`references/selection-procedure.md`、`references/run-lanes.md`、`references/finish-session.md`が詳細を定める。公開工程の定義は`agent-toolkit:commit`の`references/publish.md`冒頭にあり、本スキルではその工程を終端担当が担う
+- **処理対象WI**: メインが選定時に固定した、`agent-toolkit:process-wi`の1回の実行で処理するAWI。処理中にユーザーが追加を明示したAWIを含む
+- **レーン**: メインが固定した処理対象を割り当てる仮想的な処理単位。各レーンは専用branchと専用worktreeを1つ持つ（`references/run-lanes.md`「レーンと資源」が規定）
 - **専用worktree**: 各レーンへ1つ割り当てるgit worktree
 - **レーン担当**: 各レーンの計画、実装、レビュー修正、履歴統合および主作業ツリーへの統合を同じthreadで担う担当。担当種別はレーン担当、レビュー修正担当、CI修正担当の3種とする（`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の操作区分が規定）
 - **主作業ツリー**: マージ先branchをチェックアウトしている作業ツリー。`atk wi process-loop`が起動したセッションでは、process-loopが上流branchから用意して子セッションを起動したworktree（起動時の作業ディレクトリ）が該当する
@@ -44,7 +44,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 - 計画のレビュー工程を置かず、実装後に要件・外部仕様水準の実行レビューを計画ごとに最終実装HEADで行う
 - 1つの専用worktreeへ書き込む主体は、そのレーンのレーン担当threadだけとし、レーン担当が主作業ツリーへ書き込むのは統合のときに限る。大規模な文単位修正の一時的な内部群は、別branchと別worktreeへ書込担当を1つずつ置き、レーン担当が検収と統合を担う
 - 人間由来の要求を全部または一部不採用にする場合は、ユーザーの確認またはUWIの回答を得てからその項目を終端する
-- 選定時に固定した処理対象WIを処理の終わりまで使い、ready一覧を再取得しない。例外として加える項目（ユーザーの明示追加、ユーザーが処理中に告げた回答済みUWIとその元項目、`## 即時対応`で確定したAWI）は、`references/run-lanes.md`「処理中に確定した必須是正レーン」に従ってpickerの追加出力の検収と割当を経て、元の選定結果へ追記してからレーンへ渡す
+- 選定時に固定した処理対象WIを処理の終わりまで使い、ready一覧を再取得しない。例外として加える項目（ユーザーの明示追加、ユーザーが処理中に告げた回答済みUWIとその元項目、`## 即時対応`で確定したAWI）を次の手順で扱う。`references/selection-procedure.md`「処理対象WIの追加」と`references/run-lanes.md`「処理中に確定した必須是正レーン」に従って追加出力の検収と割当を経て、元の選定結果へ追記してからレーンへ渡す
 - 対象リポジトリへpushするのは公開工程の終端担当だけとする
 - 公開工程の終端担当は対象リポジトリの公開差分へ起動する。前回の公開後に同じセッションで新しい成果がベースbranchへ統合された場合は、追加差分だけを入力として再起動し、セッション終了前に最新HEADのpushとCIを検収する（`references/finish-session.md`「公開状態の検収と再起動」）
 - 計画、レビュー指摘管理表およびworktreeは、それを使う全工程の完了後にだけ回収する
@@ -53,7 +53,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 ## 実行順
 
 1. 直前の同期結果を読み、このセッションでAWIの処理を完遂できるかを判定する。判定の手順は`## 直前の同期結果の検分`が定める。
-2. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`に従い、pickerによる対象選定と処理開始を開始する。あわせて`## 自動コードレビュー監査`に従って未処置対象を取得し、必要な場合に監査担当を起動する。
+2. `references/selection-procedure.md`に従い、メイン自身が対象選定と集合確定直後の処理開始を行う。選定を別名の担当へ委譲しない。あわせて`## 自動コードレビュー監査`に従って未処置対象を取得し、必要な場合に監査担当を起動する。
 3. `references/run-lanes.md`に従い、選定結果の段階と先行レーンに従って専用worktreeとレーンを作成し、レーン担当を起動する。後段は先行レーンの統合と資源解放を受領してから現行HEADを基点に作成する。
 4. 各レーンの計画または計画なしの準備結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「計画準備の受領」に従って受け取り、判断を要する場合だけ`実装開始`または`実装なし`を返す。
 5. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`へ従って実行レビューを収束させる。
@@ -72,11 +72,11 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 
 ## 自動コードレビュー監査
 
-自動コードレビュー監査とは、pickerと並行してGitHub CopilotのレビューとDependabotアラートを取得し、必要な処置を確定する工程を指す。
+自動コードレビュー監査とは、選定と並行してGitHub CopilotのレビューとDependabotアラートを取得し、必要な処置を確定する工程を指す。
 
-pickerと並行して、対象がGitHub上にある場合は対象リポジトリに`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。標準出力の`counts.reviews`、`counts.threads`および`counts.dependabot`がいずれも0で終了コード0なら監査担当を起動せず、3件数を監査省略の根拠として完了報告へ渡す。いずれかが1件以上なら監査担当を起動する。`dependabot.status`が`disabled`か`unauthorized`の場合も、その状態を完了報告へ渡す。コマンドが非0で終わった場合とJSONまたは件数を解釈できない場合も監査担当を起動する。
+選定の開始前に、対象がGitHub上にある場合は対象リポジトリに`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。標準出力の`counts.reviews`、`counts.threads`および`counts.dependabot`がいずれも0で終了コード0なら監査担当を起動せず、3件数を監査省略の根拠として完了報告へ渡す。いずれかが1件以上なら監査担当を起動し、メインの選定と並行させる。`dependabot.status`が`disabled`か`unauthorized`の場合も、その状態を完了報告へ渡す。コマンドが非0で終わった場合とJSONまたは件数を解釈できない場合も監査担当を起動する。
 
-`atk wi process-loop`はキューが空の待機中に未判定のDependabotアラートを見つけると、AWIを起票せずにprocess-wiを起動する。このときpickerは選定候補が0件の選定結果を返す。メインはその結果を正常な選定結果として受け取り、レーンを起動せずに監査の処置を確定し、`references/finish-session.md`「公開対象が無い場合の短絡」を経て終端する。監査が返した要修正を同じセッションで直す場合は「即時対応」に従う。
+`atk wi process-loop`はキューが空の待機中に未判定のDependabotアラートを見つけると、AWIを起票せずにprocess-wiを起動する。このときメインは選定候補0件の選定結果を保存する。正常な選定結果として扱い、レーンを起動せずに監査の処置を確定し、`references/finish-session.md`「公開対象が無い場合の短絡」を経て終端する。監査が返した要修正を同じセッションで直す場合は「即時対応」に従う。
 
 監査の処置と公開工程の開始の関係は`references/finish-session.md`冒頭が定める。新しいレビューの到着はprocess-wiの次の実行の監査で扱う。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
 

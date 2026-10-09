@@ -30,10 +30,10 @@
 | --- | --- | --- |
 | `inbox`→`hold` | `atk wi hold` | 項目を修正する主体が、その項目の修正が必要と判断した時点で自動処理から除外する。確認の回答を得られず元項目を進められないと判定した主体が、その時点で元項目を保留する |
 | `processing`→`hold` | `atk wi hold --state=processing <ファイル名>` | 項目を処理中のセッションが、確認の回答を得られず元項目を進められないと判定した時点で元項目を保留する。`--state=processing`を付けずにエージェント環境から実行した`atk wi hold`は`processing`の項目を保留せずに失敗する |
-| `hold`→`inbox` | `atk wi unhold` | 修正した主体が、保存本文の一致確認を終えた時点で自動処理へ戻す。`agent-toolkit:process-wi`のpickerが、回答を保存済みのUWIの本文が指す保留中の元項目を処理対象へ戻す。`agent-toolkit:process-wi`の外ではそのUWIを投入したセッションが回答を元の作業へ反映した後に戻す（手順は`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`「回答後の状態遷移」） |
-| `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のpickerが、処理対象を確定した直後に遷移させる。是正を求める回答が保存された事後承認型UWIと、回答が保留中の元項目での作業を求める事前承認型UWIも、その作業を実施するレーンの対象として同じ契機で遷移させる |
-| `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが、回答を保存済みで未終端のUWIをAWIの処理開始前に終端する。事後承認型UWIのうち回答が是正を求めないものも同じ契機で終端する |
-| `processing`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが回答済みUWIをAWIの処理開始前に終端するか、レーンがベースブランチへのマージ完了時または実装変更を伴わない充足の確定後にAWIを終端する。AWIの`adopt`では要求を反映した実装commitの短縮OIDを`--commit`へ渡し（完全OIDも受理する）、`## 処理結果`には短縮OIDと件名が残る。複数commitでは全OIDと要求単位を`--note`または`--note-file`へ渡す処理結果に残し、実装差分のない充足済みでは`--commit`を省いて根拠を同じ処理結果に残す（adoptのcommit対応付け） |
+| `hold`→`inbox` | `atk wi unhold` | 修正した主体が、保存本文の一致確認を終えた時点で自動処理へ戻す。`agent-toolkit:process-wi`のメインが、回答を保存済みのUWIの本文が指す保留中の元項目を処理対象へ戻す。`agent-toolkit:process-wi`の外ではそのUWIを投入したセッションが回答を元の作業へ反映した後に戻す（手順は`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`「回答後の状態遷移」） |
+| `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のメインが、処理対象を確定した直後に遷移させる。是正を求める回答が保存された事後承認型UWIと、回答が保留中の元項目での作業を求める事前承認型UWIも、その作業を実施するレーンの対象として同じ契機で遷移させる |
+| `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のメインが、回答を保存済みで未終端のUWIをAWIの処理開始前に終端する。事後承認型UWIのうち回答が是正を求めないものも同じ契機で終端する |
+| `processing`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のメインが回答済みUWIをAWIの処理開始前に終端するか、レーンがベースブランチへのマージ完了時または実装変更を伴わない充足の確定後にAWIを終端する。AWIの`adopt`では要求を反映した実装commitの短縮OIDを`--commit`へ渡し（完全OIDも受理する）、`## 処理結果`には短縮OIDと件名が残る。複数commitでは全OIDと要求単位を`--note`または`--note-file`へ渡す処理結果に残し、実装差分のない充足済みでは`--commit`を省いて根拠を同じ処理結果に残す（adoptのcommit対応付け） |
 | `processing`→`rejected` | `atk wi reject` | `agent-toolkit:process-wi`のレーンが、計画工程で確定した全要求の不採用についてメインが確認を終えた後に遷移させる |
 | `hold`→`adopted`または`rejected` | `atk wi adopt`・`atk wi reject` | 保留中の項目の採否が確定し、その項目で行う作業が残らない場合に、採否を確定した主体が`unhold`を経ずに終端する。`unhold`で戻すと、終端までの間に`atk wi process-loop`がその項目を取得し得るためである。元項目で作業を再開する場合は、後段の「回答済みUWIの取り込み」のとおり`unhold`で戻す |
 | `processing`→`inbox` | `atk wi return-to-inbox` | 上流リポジトリへ投入したAWIの終端を待つ項目を`inbox`へ戻す。手順は[cross-repository-submission.md](cross-repository-submission.md)が定める |
@@ -103,6 +103,6 @@ worktreeの絶対パスを`--target-repo`へ渡す。リポジトリの識別だ
 
 ## 回答済みUWIの取り込み
 
-回答を保存したUWIは、次にそのキューを処理する`agent-toolkit:process-wi`のpickerが処理対象へ加える。ユーザーが処理中の`agent-toolkit:process-wi`へ回答を告げた場合は、その実行の`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`「処理対象WIの追加」で同じ取り込みを行う。pickerはそのUWIと本文が指す保留中の元項目を同じ処理対象WIへ加えて同じレーンへ割り当て、操作の順序は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`に従う。そのレーンが回答を反映して元項目の採否を確定し、UWIと元項目の双方を終端する。回答が元項目での作業を要さない場合は、pickerがそのUWIを終端し、元項目だけを処理対象WIへ加える。
-同じ元項目のファイル名を本文に持つ未回答のactiveなUWIが残る間は、pickerはその元項目を`unhold`も処理対象WIへの追加もせず、回答済みのUWIも終端も選定もしない。同じ元項目を指すUWIが全て回答済みになった実行で、それらのUWIと元項目を同じレーンへ一度ずつ割り当てる。未回答のUWIの有無は`atk wi grep '<元項目のファイル名>' --type=uwi --answered=no --target-repo=<対象リポジトリの絶対パス> --skip-pull`の該当行で判定する。1件のUWIは1つの問いを持ち（`uwi-format.md`）、1つの元項目を複数のUWIが指すことがあるためである。
+回答を保存したUWIは、次にそのキューを処理する`agent-toolkit:process-wi`のメインが処理対象へ加える。ユーザーが処理中の`agent-toolkit:process-wi`へ回答を告げた場合は、その実行の`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」で同じ取り込みを行う。メインはそのUWIと本文が指す保留中の元項目を同じ処理対象WIへ加えて同じレーンへ割り当て、操作の順序は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`に従う。そのレーンが回答を反映して元項目の採否を確定し、UWIと元項目の双方を終端する。回答が元項目での作業を要さない場合は、メインがそのUWIを終端し、元項目だけを処理対象WIへ加える。
+同じ元項目のファイル名を本文に持つ未回答のactiveなUWIが残る間は、メインはその元項目を`unhold`も処理対象WIへの追加もせず、回答済みのUWIも終端も選定もしない。同じ元項目を指すUWIが全て回答済みになった実行で、それらのUWIと元項目を同じレーンへ一度ずつ割り当てる。未回答のUWIの有無は`atk wi grep '<元項目のファイル名>' --type=uwi --answered=no --target-repo=<対象リポジトリの絶対パス> --skip-pull`の該当行で判定する。1件のUWIは1つの問いを持ち（`uwi-format.md`）、1つの元項目を複数のUWIが指すことがあるためである。
 UWIは元項目のファイル名と回答に要る情報を保持し、再開工程はレーンが元項目の計画の進捗ログか引き継ぎ記録から読む。本節の扱いを「回答済みUWIの取り込み」と呼ぶ。

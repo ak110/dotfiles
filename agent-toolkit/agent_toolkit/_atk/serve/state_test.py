@@ -331,15 +331,21 @@ process.stdout.write(JSON.stringify({
 
 
 def test_field_errors_mark_and_focus_first_invalid_control() -> None:
-    """入力エラーを関連付け、最初の不正入力へフォーカスする。"""
+    """入力エラーを関連付け、最初の不正入力のフォーカスと対応エラーの表示を選ぶ。"""
     result = _run_node_ui(
         """
+const scrolled = [];
+elements['create-content'].setAttribute('aria-describedby', 'create-content-error');
+elements['create-content-error'].scrollIntoView = () => scrolled.push('create-content-error');
+elements['create-target'].setAttribute('aria-describedby', 'create-target-error');
+elements['create-target-error'].scrollIntoView = () => scrolled.push('create-target-error');
 setFieldError(elements['create-content'], elements['create-content-error'], '本文が必要です');
 setFieldError(elements['create-target'], elements['create-target-error'], '対象が必要です');
 const first = firstInvalid([elements['create-content'], elements['create-target']]);
 process.stdout.write(JSON.stringify({
   first: first.id,
   focused,
+  scrolled,
   contentInvalid: elements['create-content'].attributes['aria-invalid'],
   targetInvalid: elements['create-target'].attributes['aria-invalid'],
   contentError: elements['create-content-error'].textContent
@@ -349,6 +355,7 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "first": "create-content",
         "focused": "create-content",
+        "scrolled": ["create-content-error"],
         "contentInvalid": "true",
         "targetInvalid": "true",
         "contentError": "本文が必要です",

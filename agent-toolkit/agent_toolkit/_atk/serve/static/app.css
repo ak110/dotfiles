@@ -449,6 +449,7 @@ main > .toolbar {
   font-size: inherit;
 }
 #screen-wi .entry-pane {
+  container: wi-list / inline-size;
   min-height: 34rem;
 }
 #screen-wi .entry-columns,
@@ -877,7 +878,9 @@ main > .toolbar {
     transform: rotate(360deg);
   }
 }
-@media (max-width: 1279px) {
+/* 固定識別列・コピー完了文言・間隔を確保した後も、題名へ読み取れる幅を残す。
+   サイドバーとカードの余白を除いた一覧自身の幅で切り替える。 */
+@container wi-list (max-width: 73rem) {
   #screen-wi .entry-columns {
     display: none;
   }
@@ -904,6 +907,16 @@ main > .toolbar {
   #screen-wi .status-cell {
     grid-row: 2;
     flex-wrap: wrap;
+  }
+}
+/* 題名の先頭とコピー完了文言を横に置けない幅では、コピーを次の行へ置く。 */
+@container wi-list (max-width: 20rem) {
+  #screen-wi .entry-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #screen-wi .entry-copy {
+    grid-column: 1;
+    justify-self: end;
   }
 }
 @media (max-width: 700px) {

@@ -758,7 +758,7 @@ def _run_plan_cli(
 
 _NEW_AWI = _plan_fixture.WI_FILES[0][0]
 _RESUMED_AWI = "20260831-000000-002.md"
-# pickerがAWI本文の再開記録から返す観測のみの再開位置（`pick-wi.subagent.md`「出力」の書式）。
+# メインがAWI本文の再開記録から返す観測のみの再開位置（`selection-format.md`「選定結果の書式」の書式）。
 _OBSERVATION_RESUME = "反映後の観測だけが残る（再開記録: AWI本文の最後の`## 反映後の観測の再開記録`、計画: {plan}）"
 _RESUMED_DECISION = {
     "awi": _RESUMED_AWI,

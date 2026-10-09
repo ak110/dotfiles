@@ -447,11 +447,6 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             "レーン識別子: lane-01",
             handoff,
         ]
-    if task_name == "pick-wi.subagent.md":
-        return [
-            f"選定結果の出力先ファイル: {root / 'selection.json'}",
-            handoff,
-        ]
     if task_name == "lane-integration.subagent.md":
         return [
             "統合区分: マージあり",
@@ -966,6 +961,34 @@ class FakeClaudeClient:
 
     async def disconnect(self) -> None:
         self.disconnected = True
+
+
+class QueueClaudeClient(FakeClaudeClient):
+    """queryと背景イベントが同じ長命なSDK受信列へ入るクライアント。"""
+
+    def __init__(self, streams: list[list[Any]]) -> None:
+        super().__init__(streams)
+        self.messages: asyncio.Queue[Any] = asyncio.Queue()
+        self.readers = 0
+        self.receive_calls = 0
+
+    async def query(self, prompt: str) -> None:
+        await super().query(prompt)
+        for message in self.streams.pop(0):
+            self.messages.put_nowait(message)
+
+    def receive_messages(self):
+        self.receive_calls += 1
+
+        async def stream():
+            self.readers += 1
+            try:
+                while True:
+                    yield await self.messages.get()
+            finally:
+                self.readers -= 1
+
+        return stream()
 
 
 class DelayedClaudeClient(FakeClaudeClient):
