@@ -6,7 +6,7 @@
 
 ## AWI処理の開始時の横断同期
 
-個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、pickerの起動より前に`ak110-projects-operations`スキルを起動する。
+個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、メインの選定開始より前に`ak110-projects-operations`スキルを起動する。
 同期調査と依存更新の要否の判定結果は、そのセッションの後続の工程へ渡す。
 起動名はClaude Code・Codexとも`ak110-projects-operations`とする。Claude Codeでは`Skill`ツールから起動する。
 

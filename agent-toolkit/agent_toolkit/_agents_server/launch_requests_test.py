@@ -437,7 +437,6 @@ async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPat
         "external-write-review.subagent.md",
         "lane-integration.subagent.md",
         "pick-wi-explain.subagent.md",
-        "pick-wi.subagent.md",
         "reader-fit-review.subagent.md",
         "session-termination.subagent.md",
     ],
@@ -499,11 +498,11 @@ async def test_exec_review_public_start_accepts_previous_revision(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("task_name", ["defect-investigation.subagent.md", "pick-wi.subagent.md"])
+@pytest.mark.parametrize("task_name", ["defect-investigation.subagent.md", "exec.subagent.md"])
 async def test_public_start_uses_high_tier_model(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, task_name: str
 ) -> None:
-    """調査担当とpickerは段位省略の`start`から`high_tier`で起動し、出所と入力を載せる。
+    """調査担当とレーン担当は段位省略の`start`から`high_tier`で起動し、出所と入力を載せる。
 
     工程別モデルの対応が欠けると`start`が起動を拒否し、段位を誤ると調査を上位モデルで行えない。
     """
@@ -524,13 +523,13 @@ async def test_public_start_uses_high_tier_model(
 
 
 @pytest.mark.asyncio
-async def test_public_picker_resolves_high_tier_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """段位省略のpickerが保存設定の上位候補を解決し、backendへ渡す。"""
+async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """段位省略のレーン担当が保存設定の上位候補を解決し、backendへ渡す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL", "claude:opus/high")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_MEDIUM_TIER_MODEL", "claude:sonnet/medium")
     manager, _backend = _manager_with_fake("claude")
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    task_document = launch_requests._SHARE_DIRECTORY / "pick-wi.subagent.md"
+    task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
     try:
         response = await mcp_tools.start(
             str(tmp_path),

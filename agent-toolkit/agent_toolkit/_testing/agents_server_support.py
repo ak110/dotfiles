@@ -447,11 +447,6 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             "レーン識別子: lane-01",
             handoff,
         ]
-    if task_name == "pick-wi.subagent.md":
-        return [
-            f"選定結果の出力先ファイル: {root / 'selection.json'}",
-            handoff,
-        ]
     if task_name == "lane-integration.subagent.md":
         return [
             "統合区分: マージあり",

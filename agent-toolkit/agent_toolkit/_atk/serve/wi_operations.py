@@ -191,7 +191,7 @@ def _needs_verify(kind: str, state: str, text: str) -> bool:
     """反映後の観測だけが残るため`inbox`へ戻されたawiかを返す。
 
     process-wiは観測できる時刻より前の項目を`inbox`へ戻すため、保存状態だけでは未着手の項目と区別できない。
-    pickerと同じく、フェンス外のトップレベルH2の最後の再開記録の節が観測だけが残る区分を持つかで判定する。
+    メインと同じく、フェンス外のトップレベルH2の最後の再開記録の節が観測だけが残る区分を持つかで判定する。
     `processing`と`hold`は状態バッジが別の意味を示すため対象から外す。
     """
     if kind != wi_constants.WI_TYPE_AWI or state != wi_constants.WI_STATE_INBOX:

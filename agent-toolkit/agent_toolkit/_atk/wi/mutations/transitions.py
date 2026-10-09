@@ -630,7 +630,7 @@ def cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, n
     """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
 
     保留判定でprocessing化済みの対象を未処理状態へ戻す用途で使う
-    （`agent-toolkit:process-wi`のpicker起動契約「同一セッション中にUWIの回答を受領した場合」参照）。
+    （`agent-toolkit:process-wi`の選定手順「処理対象WIの追加」参照）。
     位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     if args.all:

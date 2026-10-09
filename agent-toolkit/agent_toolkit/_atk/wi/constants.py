@@ -16,7 +16,7 @@ OBSERVATION_RESUME_HEADING = "反映後の観測の再開記録"
 """反映後の観測だけが残るAWIへprocess-wiが追記する再開記録のH2見出し名。
 
 書式は`agent-toolkit/skills/process-wi/references/finish-session.md`のテンプレートが定め、
-pickerは最後の同名節を再開記録として読む。`atk serve`の一覧も同じ読み方で表示を決める。
+メインは最後の同名節を再開記録として読む。`atk serve`の一覧も同じ読み方で表示を決める。
 """
 
 OBSERVATION_ONLY_RESUME_LINE = "- 再開区分: 反映後の観測だけが残る"

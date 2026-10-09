@@ -32,7 +32,7 @@ user-invocable: false
 
 ユーザーは`atk wi add`、`agent-toolkit:add-awi-by-user`または`atk serve`のWI画面から要求を登録する。処理中のエージェントと`agent-toolkit:session-review`もWIを投入する。本文、由来、状態と依存は`agent-toolkit:wi-standards`が定める。登録済みの未終端WIを更新・修復するか採否を見直す場合の保留は`agent-toolkit:wi-standards`「状態と依存」に従う。
 
-自律モードの確認手段と、回答を得られない場合のUWIへの切替は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。UWIへ退避した確認には、ユーザーが`atk wi answer`または`atk serve`で回答する。回答済みUWIのうち、`source`が`run-skill`のものは同じ対象リポジトリと同じスキルの次回の`atk run-skill`の実行が取り込み、それ以外はprocess-wiの次の実行のpickerが保留中の元項目とともに取り込む。ユーザーが処理中のprocess-wiのセッションへ回答を告げた場合は、同じ実行の処理対象へ加える（`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`「処理対象WIの追加」）。取り込みと終端は`agent-toolkit:wi-standards`「状態と依存」と`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める。
+自律モードの確認手段と、回答を得られない場合のUWIへの切替は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。UWIへ退避した確認には、ユーザーが`atk wi answer`または`atk serve`で回答する。回答済みUWIのうち、`source`が`run-skill`のものは同じ対象リポジトリと同じスキルの次回の`atk run-skill`の実行が取り込み、それ以外はprocess-wiの次の実行のメインが保留中の元項目とともに取り込む。ユーザーが処理中のprocess-wiのセッションへ回答を告げた場合は、同じ実行の処理対象へ加える（`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」）。取り込みと終端は`agent-toolkit:wi-standards`「状態と依存」と`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`が定める。
 
 自律モードでも同スキル「確認要否の判定」を先に適用し、技術と既存認可で確定する事項は自ら実施して報告する。必要な確認では回答に依存する部分だけを保留し、他の作業を続ける。
 
