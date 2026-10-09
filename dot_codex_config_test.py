@@ -46,11 +46,12 @@ def test_config_template_applies_shared_limits_and_preserves_existing_values() -
     [
         "",
         "model_context_window = 1000000\nmodel_auto_compact_token_limit = 900000\n",
+        "model_context_window = 200000\nmodel_auto_compact_token_limit = 180000\n",
     ],
-    ids=["absent", "present"],
+    ids=["absent", "same", "different"],
 )
-def test_config_template_removes_context_overrides(context_config: str) -> None:
-    """コンテキスト設定の有無によらず固定を解除し、無関係なユーザー設定を保つ。"""
+def test_config_template_applies_context_overrides(context_config: str) -> None:
+    """コンテキスト設定の有無と値によらず指定値を反映し、無関係な設定を保つ。"""
     template = REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
     result = subprocess.run(
         ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(REPO_ROOT)],
@@ -64,8 +65,10 @@ def test_config_template_removes_context_overrides(context_config: str) -> None:
     )
     assert result.returncode == 0, result.stderr
     rendered = tomllib.loads(result.stdout)
-    assert "model_context_window" not in rendered
-    assert "model_auto_compact_token_limit" not in rendered
+    assert isinstance(rendered["model_context_window"], int)
+    assert rendered["model_context_window"] == 1000000
+    assert isinstance(rendered["model_auto_compact_token_limit"], int)
+    assert rendered["model_auto_compact_token_limit"] == 900000
     assert rendered["model"] == "gpt-test"
     assert rendered["features"]["user_feature"] is True
 
