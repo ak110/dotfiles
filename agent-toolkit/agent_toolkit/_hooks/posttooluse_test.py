@@ -561,6 +561,9 @@ def _run(
         "git commit -m message && git push",
         "git commit -n -m message",
         "git commit -m --help",
+        "for item in one; do git commit -m message; done",
+        "if test -f marker; then git commit -m message; elif test -d marker; then git push; fi",
+        "case value in one) git commit -m message;; esac",
     ],
 )
 def test_git_completion_operation_notifies_each_successful_call(

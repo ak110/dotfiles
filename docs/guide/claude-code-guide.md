@@ -138,6 +138,8 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `atk agents wait`は委譲先の終端を待ち、回収した結果を表示する。
 `agents_server`の公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）の入力と応答の契約は[design-agents-server.md](../development/design-agents-server.md)を参照。
 
+Bashの静的な検出は、for・算術for・select・while・until・if/elif/else・caseの条件と本体、入れ子、文全体のパイプ・リダイレクト・背景化にも及ぶ。引用やheredoc本文、算術式のデータ、未実行の関数定義と未確定の動的コマンドは実行位置とみなさない。
+
 ## 工程別モデル設定
 
 計画作成・実装・レビューではCodexの利用を標準とする。Codexが一時的に利用できない場合だけ、
