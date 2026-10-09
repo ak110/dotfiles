@@ -42,7 +42,9 @@ def merge_selection(
     names = [str(item[_selection.WI_KEY]) for item in [*first, *second]]
     if len(names) != len(set(names)):
         raise ValueError("同一WIを二重に追加できない")
-    if existing.get("続行できない理由") or added.get("続行できない理由"):
+    if any(
+        reason != "なし" for data in (existing, added) for reason in typing.cast(list[str], data.get("続行できない理由", []))
+    ):
         raise ValueError("続行できない理由を解消してから統合する")
     lanes = {str(item[_selection.LANE_KEY]) for item in second} - {"なし"}
     if (
@@ -121,7 +123,7 @@ def merge_selection(
         _selection.DECISIONS_KEY: [*first, *second],
         _selection.LANE_COSTS_KEY: list(costs.values()),
         _selection.LANE_OVERLAPS_KEY: list(overlaps.values()),
-        "続行できない理由": [],
+        "続行できない理由": ["なし"],
     }
     # 全体配分の比較値は追加時に再確定した値だけを使う。
     if _selection.SINGLE_STAGE_ESTIMATE_KEY in added:

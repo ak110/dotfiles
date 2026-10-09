@@ -149,7 +149,20 @@ def test_public_merge_combines_costs_and_both_definitions_once(
     assert set(overlap["レーン2の定義"]) == {"lane-02の節", "lane-04の節"}
 
 
-@pytest.mark.parametrize("case", ["duplicate-wi", "missing-map", "extra-map", "bad-map", "inconsistent-stage", "blocker"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "duplicate-wi",
+        "missing-map",
+        "extra-map",
+        "bad-map",
+        "inconsistent-stage",
+        "blocker",
+        "blocker-existing",
+        "mixed-existing",
+        "mixed-added",
+    ],
+)
 def test_public_merge_failure_preserves_all_files(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
@@ -170,6 +183,12 @@ def test_public_merge_failure_preserves_all_files(
         lane_map = []
     elif case == "inconsistent-stage":
         value["レーンの所要時間"][0]["段階"] = 2
+    elif case in ("blocker-existing", "mixed-existing"):
+        original = yaml.safe_load(existing.read_text(encoding="utf-8"))
+        original["続行できない理由"] = ["割当未確定"] if case == "blocker-existing" else ["なし", "割当未確定"]
+        existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
+    elif case == "mixed-added":
+        value["続行できない理由"] = ["なし", "割当未確定"]
     else:
         value["続行できない理由"] = ["割当未確定"]
     added.write_text(yaml.safe_dump(value, allow_unicode=True), encoding="utf-8")
@@ -184,6 +203,77 @@ def test_public_merge_failure_preserves_all_files(
     )
     assert "次の操作:" in capsys.readouterr().err
     assert all(path.read_bytes() == data for path, data in before.items())
+
+
+@pytest.mark.parametrize("marker_side", ["existing", "added", "both", "empty"])
+@pytest.mark.parametrize("new_lanes", [False, True])
+def test_public_merge_accepts_completion_marker_and_reuses_result(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    marker_side: str,
+    new_lanes: bool,
+) -> None:
+    """完了書式を両側と合流/新規追加で受理し、保存結果を次の既存入力へ渡す。"""
+    repo, existing, added = inputs
+    for side, path in (("existing", existing), ("added", added)):
+        if marker_side in (side, "both", "empty"):
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            data["続行できない理由"] = [] if marker_side == "empty" else ["なし"]
+            path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(
+        json.dumps({"lane-03": "lane-05", "lane-04": "lane-06"} if new_lanes else {"lane-03": "lane-01", "lane-04": "lane-02"}),
+        encoding="utf-8",
+    )
+    before = {path: path.read_bytes() for path in (existing, added, mapping)}
+    output = tmp_path / "whole.yaml"
+    assert (
+        _dispatch(
+            str(existing), "--merge", str(added), "--lane-map", str(mapping), "--output", str(output), "--work-dir", str(repo)
+        )
+        == 0
+    )
+    first = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert first["続行できない理由"] == ["なし"]
+    assert [item["WI"] for item in first["選定"]] == ["a.md", "b.md", "c.md", "d.md"]
+    assert all(path.read_bytes() == data for path, data in before.items())
+
+    (repo / "EXTRA.md").write_text("# 独立した反映先\n", encoding="utf-8")
+    (repo.parent / "notes/processing/e.md").write_text(
+        "---\ntype: awi\n---\n\n## 反映内容と反映先\n\n`EXTRA.md`を変える。\n", encoding="utf-8"
+    )
+    next_added = tmp_path / "next.yaml"
+    next_added.write_text(
+        yaml.safe_dump(
+            {
+                "選定": [{**_item("e.md", "lane-07"), "書込対象": ["EXTRA.md"]}],
+                "レーンの所要時間": [_cost("lane-07")],
+                "続行できない理由": ["なし"],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    next_map = tmp_path / "next-map.json"
+    next_map.write_text(json.dumps({"lane-07": "lane-07"}), encoding="utf-8")
+    assert (
+        _dispatch(
+            str(output),
+            "--merge",
+            str(next_added),
+            "--lane-map",
+            str(next_map),
+            "--output",
+            str(output),
+            "--work-dir",
+            str(repo),
+        )
+        == 0
+    )
+    final = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert final["続行できない理由"] == ["なし"]
+    assert final["選定"][:4] == first["選定"]
+    assert [item["WI"] for item in final["選定"]] == ["a.md", "b.md", "c.md", "d.md", "e.md"]
 
 
 def test_public_merge_adds_new_lane_and_transforms_predecessor(
