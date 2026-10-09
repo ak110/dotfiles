@@ -92,6 +92,8 @@ class ResumeInfo:
     # 再起動後に残存記録の終端を委譲先CLIの記録と照らすために使う。項目を持たない記録とCodex以外では`None`とする。
     turn_id: str | None = None
     fast_mode: bool | None = None
+    codex_model_provider: str | None = None
+    codex_subscription_provider: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -119,6 +121,8 @@ def publish(
     model: str | None = None,
     effort: str | None = None,
     fast_mode: bool | None = None,
+    codex_model_provider: str | None = None,
+    codex_subscription_provider: str | None = None,
     model_type: str | None = None,
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     turn_seq: int = 0,
@@ -167,6 +171,9 @@ def publish(
         payload["turn_id"] = turn_id
     if engine == "codex" and fast_mode is not None:
         payload["fast_mode"] = fast_mode
+    if engine == "codex" and codex_model_provider:
+        payload["codex_model_provider"] = codex_model_provider
+        payload["codex_subscription_provider"] = codex_subscription_provider
     path = registry_directory(state_root) / f"{session_id}.json"
     launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
     if launcher is not None:
@@ -197,7 +204,9 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
         reason = payload.get("released_reason")
         if reason not in _RELEASE_REASONS:
             return SessionResolution(Resolution.UNREADABLE)
-        return SessionResolution(Resolution.RELEASED, released_reason=reason, released_at=payload["updated_at"])
+        resume = payload.get("codex_resume_info")
+        info = _resume_info(resume) if isinstance(resume, dict) and resume.get("engine") == "codex" else None
+        return SessionResolution(Resolution.RELEASED, info, released_reason=reason, released_at=payload["updated_at"])
     if payload.get("version") == 1:
         if not isinstance(payload.get("terminal"), bool):
             return SessionResolution(Resolution.UNREADABLE)
@@ -211,9 +220,9 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
 
 
 def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path | None = None) -> None:
-    """所有側が解放したsessionの登録を、再開条件を持たない解放済みレコードへ置き換える。
+    """所有側の解放を記録し、APIへ移行したCodexの内部再開条件だけを保つ。
 
-    解放済みレコードは復元の対象にならず、7日超の共有状態の掃引で他のレコードと同じく回収される。
+    解放済みの公開区分は保持し、7日超の掃引で他のレコードと同じく回収する。
     """
     _validate_session_id(session_id)
     if reason not in _RELEASE_REASONS:
@@ -226,6 +235,21 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
         "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
     }
     launcher = _recorded_launcher(path)
+    resolution = resolve(session_id, state_root=state_root)
+    info = resolution.resume_info
+    if (
+        info is not None
+        and info.engine == "codex"
+        and info.codex_subscription_provider
+        and info.codex_model_provider
+        and info.codex_model_provider != info.codex_subscription_provider
+    ):
+        try:
+            prior = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            prior = {}
+        # 初回解放のv2と、既に解放したv3の両方で同じ内部再開条件を引き継ぐ。
+        payload["codex_resume_info"] = prior.get("codex_resume_info", prior)
     if launcher is not None:
         payload[LAUNCHER_KEY] = launcher
     atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
@@ -269,5 +293,11 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         turn_id=payload.get("turn_id") if isinstance(payload.get("turn_id"), str) and payload.get("turn_id") else None,
         fast_mode=payload.get("fast_mode")
         if payload["engine"] == "codex" and isinstance(payload.get("fast_mode"), bool)
+        else None,
+        codex_model_provider=payload.get("codex_model_provider")
+        if payload["engine"] == "codex" and isinstance(payload.get("codex_model_provider"), str)
+        else None,
+        codex_subscription_provider=payload.get("codex_subscription_provider")
+        if payload["engine"] == "codex" and isinstance(payload.get("codex_subscription_provider"), str)
         else None,
     )

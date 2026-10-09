@@ -72,6 +72,7 @@ _MUTABLE_KEY_DEFAULTS = {
     **_preset_settings("codex-balanced"),
     "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
     "codex_fast_mode": "false",
+    "codex_fallback_model_providers": "",
 }
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
@@ -138,12 +139,24 @@ def _validate_stage_model_candidates(value: str) -> None:
 
 
 def _validate_mutable_setting(key: str, value: str) -> None:
-    """Codexの速度は真偽値、それ以外の変更可能設定は既存のモデル候補書式で確かめる。"""
+    """速度、接続先列、モデル候補をそれぞれの受理形式で確かめる。"""
     if key == "codex_fast_mode":
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
+    elif key == "codex_fallback_model_providers":
+        parse_codex_provider_candidates(value)
     else:
         _validate_stage_model_candidates(value)
+
+
+def parse_codex_provider_candidates(value: str) -> tuple[str, ...]:
+    """接続先IDを空白除去・順序保持で読み、同じIDは一度だけ返す。"""
+    if not value.strip():
+        return ()
+    providers = tuple(part.strip() for part in value.split(","))
+    if any(not provider or any(char.isspace() for char in provider) for provider in providers):
+        raise ValueError("受理可能書式: 空文字列、またはprovider IDのASCIIカンマ区切り（空要素は不可）")
+    return tuple(dict.fromkeys(providers))
 
 
 def mutable_setting_default(key: str) -> str:
@@ -176,7 +189,7 @@ def resolve_mutable_setting(key: str) -> str:
         raise _next_action.ActionableError(
             f"{source}の値が不正です（値: {value}）。{error}", next_action=next_action
         ) from error
-    return value
+    return ",".join(parse_codex_provider_candidates(value)) if key == "codex_fallback_model_providers" else value
 
 
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
@@ -198,7 +211,7 @@ _UNKNOWN_CANDIDATE_NEXT_ACTION = "利用可否は実行時に各engineが判定�
 def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
     """参考一覧外の工程別モデル候補を警告の本文へ変換する。接頭辞は`report_warning`が付ける。"""
     warnings: list[str] = []
-    if key == "codex_fast_mode":
+    if key in {"codex_fast_mode", "codex_fallback_model_providers"}:
         return warnings
     for candidate in value.split(","):
         engine, model, effort = _parse_stage_model(candidate)
@@ -264,9 +277,12 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
         sys.exit(2)
     _report_candidate_warnings(_stage_model_candidate_warnings(args.key, args.value))
     config = _load_config()
-    config[args.key] = args.value
+    value = (
+        ",".join(parse_codex_provider_candidates(args.value)) if args.key == "codex_fallback_model_providers" else args.value
+    )
+    config[args.key] = value
     _save_config(config)
-    _outcome.report_success(f"設定を更新した: {args.key}={args.value}")
+    _outcome.report_success(f"設定を更新した: {args.key}={value}")
     env_name = _config_env_name(args.key)
     if os.environ.get(env_name, ""):
         _outcome.report_warning(

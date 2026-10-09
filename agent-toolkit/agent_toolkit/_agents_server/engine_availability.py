@@ -50,7 +50,7 @@ def failure_error(session: SessionState) -> Mapping[str, Any] | None:
 def error_info_reason(error: Mapping[str, Any]) -> str | None:
     """`codexErrorInfo`が可用性の失敗の区分であれば、その値を除外理由として返す。"""
     error_info = error.get("codexErrorInfo")
-    return str(error_info) if error_info in ENGINE_UNAVAILABLE_ERROR_INFO else None
+    return error_info if isinstance(error_info, str) and error_info in ENGINE_UNAVAILABLE_ERROR_INFO else None
 
 
 def waits_for_usage_limit(error: Mapping[str, Any]) -> bool:

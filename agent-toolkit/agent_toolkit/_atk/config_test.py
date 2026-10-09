@@ -53,7 +53,7 @@ class TestConfigShow:
         assert "private_notes:" in out
         for key in config_module._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
             assert f"{key}: {config_module.resolve_mutable_setting(key)}" in out
-        assert len(out.splitlines()) == 10
+        assert len(out.splitlines()) == 11
         assert ".resolved:" not in out
         assert "execute_model:" not in out
         assert "execute_fix_model:" not in out
@@ -140,6 +140,44 @@ class TestConfigShow:
         for key in ("explore_model", "explore_fast_model", "pick_wi_model", "execute_model", "execute_review_model"):
             assert f"{key}:" not in captured.out
         assert not captured.err
+
+
+@pytest.mark.parametrize(("value", "expected"), [("", ""), ("  ", ""), (" a, b,a ", "a,b")])
+def test_codex_provider_config_cli(tmp_path, capsys, monkeypatch, value, expected):
+    """provider列を公開CLIで正規化・保存・取得・解除し、モデルの警告を適用しない。"""
+    key = "codex_fallback_model_providers"
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["config", "set", key, value], home=tmp_path)
+    assert not capsys.readouterr().err
+    assert json.loads((tmp_path / "config" / "config.json").read_text(encoding="utf-8"))[key] == expected
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["config", "get", key], home=tmp_path)
+    assert capsys.readouterr().out == expected + "\n"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FALLBACK_MODEL_PROVIDERS", " b, c,b ")
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["config", "get", key], home=tmp_path)
+    assert capsys.readouterr().out == "b,c\n"
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_FALLBACK_MODEL_PROVIDERS")
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["config", "set", key, ""], home=tmp_path)
+    capsys.readouterr()
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["config", "get", key], home=tmp_path)
+    assert capsys.readouterr().out == "\n"
+
+
+@pytest.mark.parametrize("value", [",a", "a,", "a,,b", "a, ,b"])
+def test_codex_provider_empty_element_rejected(tmp_path, capsys, monkeypatch, value):
+    """保存値と環境変数の空候補を拒否し、設定ファイルの不在を保つ。"""
+    key = "codex_fallback_model_providers"
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["config", "set", key, value], home=tmp_path)
+    assert not (tmp_path / "config" / "config.json").exists()
+    capsys.readouterr()
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FALLBACK_MODEL_PROVIDERS", value)
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["config", "get", key], home=tmp_path)
+    assert not capsys.readouterr().out
 
 
 class TestCodexFastMode:
