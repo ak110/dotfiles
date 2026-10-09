@@ -564,6 +564,104 @@ def test_public_merge_requires_whole_selection_comparison(
             assert yaml.safe_load(existing.read_text(encoding="utf-8"))["単一段階案の完了見込み秒数"] == comparison
 
 
+@pytest.mark.parametrize("reassign", [False, True])
+@pytest.mark.parametrize("limited_body", [False, True])
+def test_public_merge_preserves_created_derived_paths(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    reassign: bool,
+    limited_body: bool,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """作成済みの旧判断を追加後も保持し、合流先だけを未統合へ戻して再統合できる。"""
+    repo, existing, added = inputs
+    (repo / "src").mkdir()
+    original = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    for index, item in enumerate(original["選定"]):
+        name = f"src/save{index}.py"
+        section = "書込対象" if index == 0 else "公開工程の書込対象"
+        item["書込対象"] = []
+        item[section] = [name]
+        item["導出した新設先"] = [{"パス": name, "反映範囲": "src/", "要求": "結果を保存する", "配置根拠": "保存用入口の配置"}]
+        (repo / name).write_text("# 保存入口\n", encoding="utf-8")
+        (repo.parent / "notes/processing" / item["WI"]).write_text(
+            "---\ntype: awi\n---\n\n## 反映内容と反映先\n\n`src/`へ保存用入口を新設する。\n", encoding="utf-8"
+        )
+    for cost in original["レーンの所要時間"]:
+        cost["統合状態"] = "統合済み"
+        cost["根拠"] = "対象リポジトリの規範AGENTS.mdの公開の節でsrc/save1.pyを所有する"
+    original["レーン間の重なり"] = []
+    existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
+    addition = yaml.safe_load(added.read_text(encoding="utf-8"))
+    addition["レーン間の重なり"] = [_overlap("lane-03", "lane-04")]
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-03": "lane-01" if reassign else "lane-03", "lane-04": "lane-04"}), encoding="utf-8")
+    extra = ["--body-wi", "c.md", "--body-wi", "d.md"] if limited_body else []
+    assert _merge_into_existing(repo, existing, added, mapping, *extra) == 0
+    result = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    for item, old in zip(result["選定"][:2], original["選定"], strict=True):
+        assert item["導出した新設先"] == old["導出した新設先"]
+        assert item["書込対象"] == old["書込対象"]
+        assert item["公開工程の書込対象"] == old.get("公開工程の書込対象", [])
+    states = {cost["レーン"]: cost["統合状態"] for cost in result["レーンの所要時間"]}
+    assert states["lane-01"] == ("未統合" if reassign else "統合済み")
+    assert states["lane-02"] == "統合済み"
+    target = "lane-01" if reassign else "lane-03"
+    assert states[target] == "未統合"
+    assert _dispatch(str(existing), "--work-dir", str(repo)) == 0
+    assert _dispatch(str(existing), "--mark-integrated", target, "--output", str(existing), "--work-dir", str(repo)) == 0
+    final = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    assert next(cost for cost in final["レーンの所要時間"] if cost["レーン"] == target)["統合状態"] == "統合済み"
+    assert final["選定"] == result["選定"]
+    assert not capsys.readouterr().err
+
+
+def test_public_merge_rejects_derived_directory_without_saving(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """導出先を通常ファイルでない実在先へ変えた場合も、旧選定と保存先を保持する。"""
+    repo, existing, added = inputs
+    (repo / "src/save.py").mkdir(parents=True)
+    original = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    original["選定"][0].update(
+        {
+            "書込対象": ["src/save.py"],
+            "導出した新設先": [{"パス": "src/save.py", "反映範囲": "src/", "要求": "保存入口", "配置根拠": "保存責務"}],
+        }
+    )
+    (repo.parent / "notes/processing/a.md").write_text(
+        "---\ntype: awi\n---\n\n## 反映内容と反映先\n\n`src/`へ保存用入口を新設する。\n", encoding="utf-8"
+    )
+    existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-03": "lane-03", "lane-04": "lane-04"}), encoding="utf-8")
+    before = existing.read_bytes()
+    assert _merge_into_existing(repo, existing, added, mapping) == 1
+    assert "導出した新設先" in capsys.readouterr().err
+    assert existing.read_bytes() == before
+
+
+def _merge_into_existing(
+    repo: pathlib.Path, existing: pathlib.Path, added: pathlib.Path, mapping: pathlib.Path, *extra: str
+) -> int:
+    """公開追加統合の保存先を既存入力にし、本文限定の有無も同じ操作へ渡す。"""
+    return _dispatch(
+        str(existing),
+        "--merge",
+        str(added),
+        "--lane-map",
+        str(mapping),
+        "--output",
+        str(existing),
+        "--work-dir",
+        str(repo),
+        *extra,
+    )
+
+
 def test_public_merge_preserves_derived_new_paths(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:

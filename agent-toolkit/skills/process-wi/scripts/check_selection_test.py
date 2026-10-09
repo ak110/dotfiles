@@ -610,6 +610,31 @@ def test_public_check_accepts_derived_new_paths(
     assert not capsys.readouterr().err
 
 
+@pytest.mark.parametrize("section", ["書込対象", "公開工程の書込対象"])
+def test_public_mark_integrated_preserves_created_derived_paths(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], section: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """新設先の作成をまたいでも、統合状態の反復保存と全WI対象の判定で判断履歴を保つ。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`src/`へ保存用入口を新設する。")
+    record = _derived("src/save.py")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "a.md", "レーン": "lane-01", "書込対象": [], section: [record["パス"]], "導出した新設先": [record]}],
+        [{"レーン": "lane-01", "根拠": "対象リポジトリの規範AGENTS.mdの公開の節でsrc/save.pyを所有する"}],
+    )
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    (repo / record["パス"]).write_text("# 保存入口\n", encoding="utf-8")
+    for _ in range(2):
+        assert _dispatch(str(path), "--work-dir", str(repo), "--mark-integrated", "lane-01", "--output", str(path)) == 0
+        result = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert result["レーンの所要時間"][0]["統合状態"] == "統合済み"
+        assert result["選定"][0]["導出した新設先"] == [record]
+        assert result["選定"][0][section] == [record["パス"]]
+        assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    assert not capsys.readouterr().err
+
+
 def test_public_check_derived_paths_from_answered_uwi(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -642,6 +667,7 @@ def test_public_check_derived_paths_from_answered_uwi(
         ("missing-write", 1),
         ("excluded-only", 1),
         ("duplicate", 1),
+        ("directory", 1),
         ("missing-individual", 1),
         ("remaining", 1),
     ],
@@ -678,6 +704,8 @@ def test_public_check_rejects_invalid_derived_new_paths(
             item["書き込まない反映先"] = [record["パス"]]
     elif case == "duplicate":
         item["導出した新設先"].append(dict(record))
+    elif case == "directory":
+        (repo / record["パス"]).mkdir()
     elif case == "missing-individual":
         _awi(notes, "a.md", "`src/`へ保存入口を新設し、`README.md`も変える。")
     else:
@@ -686,6 +714,10 @@ def test_public_check_rejects_invalid_derived_new_paths(
     assert _dispatch(str(path), "--work-dir", str(repo)) == code
     diagnostic = capsys.readouterr().err
     assert "次の操作:" in diagnostic
+    before = path.read_bytes()
+    assert _dispatch(str(path), "--work-dir", str(repo), "--mark-integrated", "lane-01", "--output", str(path)) == code
+    assert path.read_bytes() == before
+    assert "次の操作:" in capsys.readouterr().err
     if case in {"missing-individual", "remaining"}:
         assert "未被覆" in diagnostic
         item["書込対象"].append("README.md" if case == "missing-individual" else "docs/")

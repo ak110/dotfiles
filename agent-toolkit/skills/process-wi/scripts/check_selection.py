@@ -577,7 +577,7 @@ def _check_derived_paths(
             _normalize_candidate(path) == path
             and not any(char in path for char in "*?[]{}\\")
             and pathlib.PurePosixPath(path).as_posix() == path
-            and not (work_dir / path).exists()
+            and (not (work_dir / path).exists() or (work_dir / path).is_file())
             and _new_file_path(path, work_dir) == path
         )
         valid_scope = (
