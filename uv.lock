@@ -2,12 +2,9 @@ version = 1
 revision = 5
 requires-python = ">=3.13, <4.0"
 resolution-markers = [
-    "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version >= '3.15' and sys_platform != 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform != 'win32'",
-    "python_full_version < '3.14' and sys_platform == 'win32'",
-    "python_full_version < '3.14' and sys_platform != 'win32'",
+    "python_full_version >= '3.15'",
+    "python_full_version == '3.14.*'",
+    "python_full_version < '3.14'",
 ]
 
 [options]
@@ -1449,11 +1446,11 @@ wheels = [
 
 [[package]]
 name = "platformdirs"
-version = "4.12.3"
+version = "4.12.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/42/23/4a86fc741c38c5b69792a4ef954b281afa69bea9f083f881de1b0d23bc07/platformdirs-4.12.3.tar.gz", hash = "sha256:427fc0bb321ae0c5b037fa03238ca74820437be162e78b4848c4d4055b9b766c", size = 59538, upload-time = "2026-10-03T23:40:46.595Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/a1/d5f9002a70298c64a789779077d8dd90c10aa1f47fe40c86802df874f2a6/platformdirs-4.12.4.tar.gz", hash = "sha256:63743c02414e755de4e31b8f68125c1407495b86c5a006e203c01ff8b9924250", size = 60010, upload-time = "2026-10-07T23:30:32.426Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/9b/6ce1ead737fe496611bda600c263b9a11ae7bd8f41bb13f9bd7e0a2c37a4/platformdirs-4.12.3-py3-none-any.whl", hash = "sha256:080f3b39423b5abfca9a23d84c4e9795f54d395cd8459867a8ded44084fcd5f8", size = 32493, upload-time = "2026-10-03T23:40:45.104Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/ba/223e00b885e960edd5d4b4d178c88acce019bd5b83786093681b8c393492/platformdirs-4.12.4-py3-none-any.whl", hash = "sha256:78bfb9db2a8471ed7eebe3c3c932da413911042994e699b384fbb4493fa872d7", size = 32596, upload-time = "2026-10-07T23:30:30.825Z" },
 ]
 
 [[package]]
@@ -1648,7 +1645,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.22.0"
+version = "3.22.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1680,9 +1677,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0c/1b/06d44094c770da002d9204985a2764f3d48265fbbe6d9e302fe561e220e3/pyfltr-3.22.0.tar.gz", hash = "sha256:c59600dc15ffa6c30416ebac596af088ba9239289ed1514dc3fa0825ff017712", size = 955814, upload-time = "2026-10-08T10:11:58.966Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/d3/68a276f4e018642b47822e77011c4ae212a7bb4429aca806a2b0bdbce7a3/pyfltr-3.22.2.tar.gz", hash = "sha256:15de7217212f08b954af796a2fd3b80de5cbffd1bb77aa53ac732008ecbe0222", size = 968963, upload-time = "2026-10-09T06:48:46.991Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/b7/34bc346b979ddb3d1773ee957372fa9d8d7b4654d60c17275ab6007088cb/pyfltr-3.22.0-py3-none-any.whl", hash = "sha256:db98b7123e43fbe9fb4dbc6d2dee75531373134dea571bc63ce7573f8fb45ffa", size = 416356, upload-time = "2026-10-08T10:11:57.509Z" },
+    { url = "https://files.pythonhosted.org/packages/65/e5/af5446c5917f106771611767d9178f07ecf67de8172f0cb321cb9bdf51f4/pyfltr-3.22.2-py3-none-any.whl", hash = "sha256:f86f71ab0dfef2ac77d0cb6c373f845cc348e513d1e1a7e6bc346a2b2893223c", size = 420936, upload-time = "2026-10-09T06:48:45.251Z" },
 ]
 
 [[package]]
