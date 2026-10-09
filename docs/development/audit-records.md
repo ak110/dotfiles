@@ -682,6 +682,18 @@ ClaudeではJSの設定説明、Codexではfork_turnsのヘルプ文を含む全
 
 再検証は同じ報告本文を固定し、後段の終端指示の有無だけを変えて上記起動形で各群を実行し、JSONのresult・success・num_turnsを保存する。モデルとホスト版も取得時に記録する。これは具体化が作用した限定条件の観測であり、元の長い文脈の内的判断、一般発生率、将来の出力保証を示さない。元事象は記録`claude:ec92266f-e100-4186-b242-db41e17aca38`の426行が固定文付き送達、427行が表示成功、429行が追加要約であり、工程10の追加作業限定条文は336行に存在した。条文の不在を原因とはしない。
 
+## dotfiles-development：Git動作テストの状態準備：2026年10月9日
+
+出所はAWI `20261009-151649-001.md`の対照結果と、導入commit `b20e6f20514a381648c730bbf828e2f8ac9e3522`、修正commit `f071d6348670a39e797e9dc54f6276e1e9dad8f6`の実装である。対象は`agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks_test.py`の`TestBashGitRevParseShortMultiple.test_individual_revision_fix_succeeds`。入力は`git rev-parse`のoption `--short`、`--short=12`、`--verify`、`--verify --quiet`とrevision `HEAD`、`HEAD~1`の8組である。
+
+| 履歴条件 | HEADの4入力 | HEAD~1の4入力 |
+| --- | --- | --- |
+| 通常履歴 | 全件終了0 | 全件終了0 |
+| HEADを浅い境界とする深さ1相当 | 全件終了0 | optionの上記順に128・128・128・1 |
+
+再検証は一時repoに2commitを作成し、通常履歴と同じHEADを浅い境界とするrepoで上記8入力をそれぞれ実行する。対象repoを明示し、入力・履歴条件・終了コード・両出力を保存する。修正後のテストは`init_repository`と`commit_all`で必要な2commitを用意し、必須repo引数を`git -C`へ渡す`run_git`で検証する。`_testing/isolation.py:isolate_development_state`は設定と環境を隔離するが、cwdの変更やcommit生成は行わない。この違いを設定隔離の成功だけから履歴準備の成立へ読み替えない。
+CI run `37887505483`の失敗と`37889681072`の成功はAWIが参照する終端担当の確認記録に由来し、本記録の作成時のCI再照会ではない。
+
 ## プロジェクト指示のAGENTS.md対応：2026年9月20日
 
 2026年9月20日、Claude Code v2.1.277の公式リリースノート<https://github.com/anthropics/claude-code/releases/tag/v2.1.277>で、`CLAUDE.md`が無いプロジェクトで`AGENTS.md`を読む機能が追加されたことを確認した。再検証は同バージョンのリリースノートを読み、`AGENTS.md`対応の記載を確認する。
