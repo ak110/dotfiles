@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import shlex
 import subprocess
 
 import check_exec_review_evidence as review
@@ -17,6 +18,8 @@ import verification_results
 
 from agent_toolkit._common import next_action, requirement_units
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._git import command as git_command
+from agent_toolkit._plan.structure import parsing
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -26,7 +29,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--plan", type=pathlib.Path, metavar="PATH", action="append", default=[], help="計画の絶対パス。反復できる"
     )
-    parser.add_argument("--list", action="store_true", help="配列・1始まりの行番号・原文・出所をJSON Linesで表示する")
+    parser.add_argument(
+        "--list", action="store_true", help="入力付きなら生成・保存して一覧表示。入力なしなら既存記録の原文・出所・行番号を読む"
+    )
     parser.add_argument("--section", choices=("wi_conditions", "user_requirements"), help="更新する配列")
     parser.add_argument("--row", type=int, help="一覧の1始まりの行番号")
     parser.add_argument("--source", help="一覧で確認したsourceの完全一致文字列")
@@ -55,6 +60,7 @@ def run(args: argparse.Namespace) -> None:
     paths = [args.output, *args.plan, *([args.evidence_file] if args.evidence_file else [])]
     if any(not path.is_absolute() for path in paths):
         raise ValueError("ファイルは絶対パスで指定する")
+    verification_results.validate_display(args)
     results = verification_results.load_results(args.results_file)
     if args.list_results:
         if (
@@ -64,7 +70,7 @@ def run(args: argparse.Namespace) -> None:
             or any(value is not None for value in (args.section, args.row, args.source, args.evidence_file, args.mode))
         ):
             raise ValueError("--list-resultsは--results-fileと指定し、更新・原文一覧とは別に実行する")
-        verification_results.list_results(results)
+        verification_results.list_results(results, args)
         return
     updating = any(value is not None for value in (args.section, args.row, args.source, args.evidence_file, args.mode))
     if updating and any(value is None for value in (args.section, args.row, args.source, args.evidence_file, args.mode)):
@@ -74,17 +80,36 @@ def run(args: argparse.Namespace) -> None:
     if args.updates_file and (args.list or updating):
         raise ValueError("一括更新と単一行更新・一覧は別々に実行する")
     updating = updating or args.updates_file is not None
-    if (args.list or updating) and not args.output.is_file():
-        raise ValueError("一覧・更新の前に未判定検証記録を生成する")
+    generating = bool(args.wi or args.plan)
+    if (updating or args.list and not generating) and not args.output.is_file():
+        command = shlex.join(
+            [
+                "atk",
+                "run-script",
+                "verification-record",
+                "--",
+                "--output",
+                str(args.output),
+                "--plan",
+                "/絶対パス/計画.md",
+                "--list",
+            ]
+        )
+        raise next_action.ActionableError(
+            "未判定検証記録がありません。生成には--plan（計画の絶対パス）か--wi（WIファイル名）が必要です",
+            next_action=f"計画パスを実在する入力へ替えて実行する: {command}。WI直渡しでは--planを--wiとWI名へ替える",
+        )
     if not args.wi and not args.plan and not args.list and not updating:
         raise ValueError("生成には--wiか--planを指定する")
     payload = _load(args.output)
-    if args.wi or args.plan:
+    if generating:
+        plans = [(str(plan), plan.read_text(encoding="utf-8")) for plan in dict.fromkeys(args.plan)]
+        repository = _generation_repository(plans)
         filenames = review.review_wi_filenames(args.wi, args.plan)
         expected = requirement_units.record_rows(
-            review.WiOutputs(review.repository_root()),
+            review.WiOutputs(repository),
             filenames,
-            [(str(plan), plan.read_text(encoding="utf-8")) for plan in dict.fromkeys(args.plan)],
+            plans,
         )
         requirement_units.append_missing_rows(payload, expected)
     if args.updates_file:
@@ -100,8 +125,9 @@ def run(args: argparse.Namespace) -> None:
         if not value:
             raise ValueError("根拠ファイルが空です")
         row["evidence"] = "\n".join(part for part in (row["evidence"], value) if part) if args.mode == "append" else value
-    if not args.list:
+    if generating or not args.list:
         atomic_write(args.output, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    if not args.list:
         print(f"成功: 未判定検証記録を保存しました: {args.output}")
     else:
         for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
@@ -111,6 +137,29 @@ def run(args: argparse.Namespace) -> None:
                         {"section": section, "row": index, "original": row[field], "source": row["source"]}, ensure_ascii=False
                     )
                 )
+
+
+def _generation_repository(plans: list[tuple[str, str]]) -> pathlib.Path:
+    """計画の対象を優先し、指定の不成立をcwdの別キューで隠さない。"""
+    roots = set()
+    for filename, content in plans:
+        metadata, errors = parsing.parse_plan_metadata(content)
+        if errors:
+            raise ValueError(f"{filename}: {'。'.join(errors)}")
+        if metadata is None or "対象リポジトリ" not in metadata.values:
+            continue
+        target = pathlib.Path(metadata.values["対象リポジトリ"])
+        if not target.is_absolute():
+            raise ValueError(f"{filename}: 対象リポジトリはGit作業ツリーの絶対パスを指定する")
+        result = git_command.run(
+            ["-C", str(target), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False, timeout=30
+        )
+        if result.returncode or not result.stdout.strip():
+            raise ValueError(f"{filename}: 対象リポジトリを解決できません: {target}: {result.stderr.strip()}")
+        roots.add(pathlib.Path(result.stdout.strip()).resolve())
+    if len(roots) > 1:
+        raise ValueError("複数計画の対象リポジトリが異なります。同じ対象の計画だけを指定する")
+    return next(iter(roots)) if roots else review.repository_root()
 
 
 def main(argv: list[str] | None = None) -> int:

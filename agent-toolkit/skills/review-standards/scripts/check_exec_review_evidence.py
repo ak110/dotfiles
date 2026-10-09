@@ -1749,6 +1749,9 @@ def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
             args.reader_fit_review is not None,
             args.results_file,
             args.list_results,
+            args.results_summary,
+            args.result_test,
+            args.result_diagnostic,
             args.updates_file,
             args.verification_record,
             args.output,
@@ -2117,7 +2120,16 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--reader-fit-reviewは--return-resultと指定する。batchでは各組のreader_fit_reviewへ申告を記す")
     if args.show_all_rows and not (args.return_result or args.batch):
         parser.error("--show-all-rowsは--return-resultか--batchと指定する")
-    if args.results_file or args.list_results or args.updates_file or args.verification_record or args.output:
+    if (
+        args.results_file
+        or args.list_results
+        or args.updates_file
+        or args.verification_record
+        or args.output
+        or args.results_summary
+        or args.result_test
+        or args.result_diagnostic
+    ):
         if (
             args.batch
             or args.template
@@ -2129,11 +2141,12 @@ def main(argv: list[str] | None = None) -> int:
         ):
             parser.error("結果の取込みは雛形生成・参照更新・判定の確認・返却生成とは別に実行する")
         try:
+            verification_results.validate_display(args)
             results = verification_results.load_results(args.results_file)
             if args.list_results:
                 if args.results_file is None or args.updates_file or args.output:
                     raise ValueError("結果一覧には--results-fileだけを指定し、更新とは別に実行する")
-                verification_results.list_results(results)
+                verification_results.list_results(results, args)
                 return 0
             if args.evidence is None or args.updates_file is None or args.output is None:
                 raise ValueError("レビュー更新は入力証拠・--updates-file・--outputを指定する")

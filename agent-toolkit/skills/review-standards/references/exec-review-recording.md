@@ -3,7 +3,7 @@
 本書は実行レビュー担当が、指摘をレビュー指摘管理表へ登録し、完成条件証拠を作成して返却前に確かめる手順と、判定の値と根拠の記録の仕方を定める。判定の基準は`reviewer.md`「実行レビューの判定」が定める。
 
 未判定検証記録は実装担当またはメインが作成する入力、完成条件証拠は実行レビュー担当が作成する判定結果である。完成条件証拠の`outcome`、`evidence`および`reviewed_head`は実行レビュー担当だけが更新する。レビューイーへ不足する記録や根拠の補完を求めた場合も、補完後の判定と完成条件証拠への反映はレビュー担当が行う。証拠の判定と根拠の不足は本担当が記入して補う。証拠そのものを`location`にした指摘を登録すると、返却前に実行する`atk run-script exec-review-evidence-check`が現在roundの未応答の行として拒否する。
-未判定検証記録の生成・一覧・根拠の追記と置換は`atk run-script verification-record --`を使う。初回とレビュー修正後の操作、JSONの配送は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の「完成条件証拠の検証記録」に従う。同じWI・計画を渡した完成条件証拠の雛形と要求集合が一致するため、入力の根拠を確かめてから別ファイルの完成条件証拠へ判定を記入する。
+未判定検証記録の生成・一覧・根拠の追記と置換は`atk run-script verification-record --`を使う。初回は計画かWIと`--list`を渡し、保存と原文・出所・行番号の取得を同じ操作で行う。入力なしの一覧は既存記録の読取だけに使う。初回とレビュー修正後の操作、JSONの配送は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の「完成条件証拠の検証記録」に従う。同じWI・計画を渡した完成条件証拠の雛形と要求集合が一致するため、入力の根拠を確かめてから別ファイルの完成条件証拠へ判定を記入する。
 
 ## レビュー指摘管理表への登録
 
@@ -57,7 +57,7 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス>
 
 更新後は同じ`--list`で各行を確認し、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」のコマンドで返却前の確認へ進む。未判定検証記録の一覧は従来どおりverification-recordが担当し、返却の`--show-all-rows`は記入済み証拠の受領に使う。
 
-構造化試験と診断の取込みは、実装担当の`verification-record`と同じ結果指定JSONを使う。`atk run-script exec-review-evidence-check -- --help`の形式で、`--results-file <絶対JSON> --list-results`からテスト完全名・状態・版・所在と診断の比較を読み、取得版と条件が要求を直接満たすかを本担当が判定する。成功件数や比較の一致だけから達成を生成しない。
+構造化試験と診断の取込みは、実装担当の`verification-record`と同じ結果指定JSONを使う。pyfltrのrun JSON Linesはheader・command・summaryを含む保存結果全体を渡せる。`atk run-script exec-review-evidence-check -- --help`で形式を確認する。`--results-file <絶対JSON> --list-results --results-summary`で状態・基準差と診断のまとまり・重複数・全識別子を読む。`--results-summary`を`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復指定へ替え、必要な詳細と元結果の所在へ到達する。表示の追加指定を省けば従来の全詳細一覧を読める。取得版と条件が要求を直接満たすかを本担当が判定し、代表1件をまとまり全体の意味判断へ代用しない。比較不能を一致と扱わず、成功件数だけから達成を生成しない。
 雛形生成後、次の操作で指定行だけを更新する。更新配列は実装側と同じ`section`・1始まりの`row`・完全一致の`source`・選択する`tests`と`diagnostics`・`mode`を持ち、本担当が各行の`outcome`と`reviewed_head`の完全OIDを明示する。未判定根拠を選ぶ行は`verification_source`へその原文出所を指定する。同じ原文とWIの根拠だけを使い、`evidence_file`で行を満たす説明や手動観測を補える。不要な結果指定と未判定記録は省略できる。保存先は未判定記録と別ファイルにし、受領した完成条件証拠の同じパスへ原子的に更新できる。別の保存先も指定できる。不正な選択は全更新が拒否される。原文・出所・未選択行と未判定記録は元の内容を保持する。根拠は既存の参照書式でテスト名と結果、保存出力の箇所と実行記録を指し、取得版は実行記録に保持する。根拠の取込み後も次節以降の原文・内容・HEAD・共用の確認と返却前確認を実施する。
 
 ```text

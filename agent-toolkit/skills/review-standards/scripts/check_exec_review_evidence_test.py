@@ -25,6 +25,20 @@ REVIEWED_HEAD = "a" * 40
 LEGACY_UNIT_MARKER = "証拠行 {source}"
 
 
+@pytest.mark.parametrize("selector", [["--results-summary"], ["--result-test", "test"], ["--result-diagnostic", "observed:1"]])
+def test_public_result_selectors_require_listing_without_changing_evidence(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], selector: list[str]
+) -> None:
+    """表示限定の引数を通常判定や更新へ紛れ込ませず、証拠を保持する。"""
+    evidence = tmp_path / "evidence.json"
+    _write_evidence(evidence, [_condition(FIRST_WI, "保存する")])
+    before = evidence.read_bytes()
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=[str(evidence), *selector])
+    assert run_script.dispatch(args) == 1
+    assert "--list-resultsと指定する" in capsys.readouterr().err
+    assert evidence.read_bytes() == before
+
+
 def _condition(awi: str, condition: str) -> dict[str, str]:
     return {
         "awi": awi,
