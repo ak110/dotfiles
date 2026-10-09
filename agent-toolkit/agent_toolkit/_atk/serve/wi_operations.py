@@ -24,6 +24,7 @@ from agent_toolkit._atk.wi import filters as wi_filters
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import headings as wi_headings
 from agent_toolkit._atk.wi import mutations as awi_mutations
+from agent_toolkit._atk.wi import readiness as wi_readiness
 from agent_toolkit._atk.wi import repo as awi_repo
 from agent_toolkit._atk.wi import sync as wi_sync
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
@@ -168,12 +169,14 @@ def _entry(
     updated_at: str | None = None,
 ) -> dict[str, object]:
     answered = wi_uwi_scan.is_uwi_answered(text) if kind == wi_constants.WI_TYPE_UWI else None
+    cooldown = wi_readiness.parse_cooldown_until(metadata.get("cooldown_until"))
     return {
         "kind": kind,
         "state": state,
         "filename": path.name,
         "answered": answered,
         "needs_verify": _needs_verify(kind, state, text),
+        "cooldown_until": cooldown.isoformat() if cooldown is not None else None,
         "plan": kind == wi_constants.WI_TYPE_AWI and isinstance(metadata.get("plan_file"), str),
         "target_repo": _json_compatible(metadata.get("target_repo")),
         "source": _json_compatible(metadata.get("source")),

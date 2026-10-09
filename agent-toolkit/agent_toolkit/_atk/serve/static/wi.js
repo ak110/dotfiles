@@ -44,6 +44,8 @@ let detailMutationPending = false;
 let detailReloadDeferred = false;
 let deleteDialogEntrySnapshot = '';
 let searchTimer = null;
+let cooldownTimer = null;
+const entryStateDisplays = new Map();
 let currentPage = 1;
 let pagination = {page: 1, page_size: ENTRY_PAGE_SIZE, page_count: 1, total_count: 0};
 let knownUwiBaselineReady = false;
@@ -243,10 +245,45 @@ function stateLabel(state) { return STATE_LABELS[state] || state || '不明'; }
 // 反映後の観測だけが残るinboxのawiは、保存状態をinboxのまま、表示だけをneeds-verifyにする。
 // 状態フィルター・件数・操作の可否は保存状態で判定する。
 function displayStateLabel(entry) {
+  if (entry.state === 'inbox' && Date.parse(entry.cooldown_until) > Date.now()) return 'cooldown';
   return entry.needs_verify === true ? 'needs-verify' : STATE_LABELS[entry.state] || 'unknown';
 }
 function entryStateText(entry) {
   return `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${displayStateLabel(entry)}`;
+}
+
+function updateEntryStateDisplay(entry, button, badge) {
+  const label = displayStateLabel(entry);
+  badge.textContent = label;
+  badge.dataset.cooldown = String(label === 'cooldown');
+  if (label === 'cooldown') {
+    const parts = formatDateParts(entry.cooldown_until);
+    badge.title = `解除日時: ${parts.date} ${parts.time} JST`;
+  } else badge.removeAttribute('title');
+  button.setAttribute(
+    'aria-label',
+    [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
+      label, badge.title, entry.plan ? 'plan' : '',
+      entry.kind === 'uwi' && entry.answered === false ? '未回答' : '', entry.summary || '要約なし']
+      .filter(Boolean).join('、')
+  );
+}
+
+// 最も近い期限で状態表示だけを更新し、一覧警告・詳細の入力・フォーカスを保持する。
+function refreshCooldownDisplays() {
+  clearTimeout(cooldownTimer);
+  for (const {entry, button, badge} of entryStateDisplays.values()) updateEntryStateDisplay(entry, button, badge);
+  if (currentEntry) {
+    byId('detail-state').textContent = entryStateText(currentEntry);
+    if (byId('delete-dialog').open) byId('delete-state').textContent = entryStateText(currentEntry);
+  }
+  const remaining = [...entries, ...(currentEntry ? [currentEntry] : [])]
+    .filter(entry => entry.state === 'inbox')
+    .map(entry => Date.parse(entry.cooldown_until) - Date.now()).filter(value => value > 0);
+  if (remaining.length) {
+    // setTimeoutが扱える遅延の範囲で予約し、長い期限は次の予約で再判定する。
+    cooldownTimer = setTimeout(refreshCooldownDisplays, Math.min(...remaining, 2147483647));
+  }
 }
 
 function appendCell(row, className) {
@@ -329,13 +366,8 @@ function renderEntry(entry) {
     status.append(attention);
   }
   appendTextCell(button, 'summary-cell', entry.summary || entry.filename);
-  button.setAttribute(
-    'aria-label',
-    [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
-      displayStateLabel(entry),
-      entry.plan ? 'plan' : '',
-      unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
-  );
+  updateEntryStateDisplay(entry, button, badge);
+  entryStateDisplays.set(entryKey(entry), {entry, button, badge});
   button.addEventListener('click', event => {
     if (!isPlainPrimaryClick(event) || button.target) return;
     event.preventDefault();
@@ -419,7 +451,9 @@ function renderEntries(warnings = [], announce = false, searchFallback = false) 
   const list = byId('entry-list');
   const focusedKey = document.activeElement?.classList?.contains('entry-select')
     ? document.activeElement.dataset.key : null;
+  entryStateDisplays.clear();
   renderList(list, entries, entryKey, entry => renderEntry(entry));
+  refreshCooldownDisplays();
   if (focusedKey) {
     (entryButtonForKey(focusedKey) || list.querySelector('.entry-select') || byId('empty-clear-button')).focus();
   }
@@ -791,7 +825,10 @@ function renderMetadata(entry) {
   for (const item of metadataEntries(entry)) {
     const key = item.key;
     if (key?.type === 'str' && FRONTMATTER_EXCLUDED_KEYS.has(key.value)) continue;
-    appendMetadataItem(metadata, formatMetadataKey(key), item.value);
+    if (key?.type === 'str' && key.value === 'cooldown_until' && entry.cooldown_until) {
+      const deadline = formatDateParts(entry.cooldown_until);
+      appendMetadataItem(metadata, key.value, `${deadline.date} ${deadline.time} JST`);
+    } else appendMetadataItem(metadata, formatMetadataKey(key), item.value);
   }
   const parts = formatDateParts(entry.updated_at);
   appendMetadataItem(metadata, 'updated_at', parts.time ? `${parts.date} ${parts.time}` : parts.date);
@@ -873,6 +910,7 @@ function renderAnswerChoices(entry) {
 
 function displayEntry(entry) {
   currentEntry = entry;
+  refreshCooldownDisplays();
   detailRefreshRequired = false;
   byId('decision-note').value = '';
   setTextMessage('detail-alert', '');
@@ -1666,7 +1704,10 @@ function initializeApp() {
 
 async function init() {
   bindEvents();
-  resyncWhenVisible(() => initialization.then(() => reloadFromExternalChange()));
+  resyncWhenVisible(() => {
+    refreshCooldownDisplays();
+    return initialization.then(() => reloadFromExternalChange());
+  });
   if (window.matchMedia('(max-width: 700px)').matches) {
     document.querySelector('#screen-wi .filters details').open = false;
   }

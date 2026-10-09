@@ -281,7 +281,7 @@ def _parse_legacy_recheck_after(value: object) -> datetime.datetime | None:
     return parsed if parsed.tzinfo is not None else None
 
 
-def _parse_cooldown_until(value: object) -> datetime.datetime | None:
+def parse_cooldown_until(value: object) -> datetime.datetime | None:
     """再処理抑制期限をaware datetimeとして返す。"""
     if not isinstance(value, str) or not value:
         return None
@@ -439,7 +439,7 @@ def calculate_readiness(
         if entry.kind != WI_TYPE_AWI:
             invalid_cooldowns.add(entry.filename)
             continue
-        parsed_cooldown = _parse_cooldown_until(entry.cooldown_until)
+        parsed_cooldown = parse_cooldown_until(entry.cooldown_until)
         if parsed_cooldown is None:
             invalid_cooldowns.add(entry.filename)
         elif parsed_cooldown.astimezone(datetime.UTC) > now_utc:

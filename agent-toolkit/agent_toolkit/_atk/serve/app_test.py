@@ -1135,6 +1135,32 @@ async def test_add_choice_requires_two_options(tmp_path: pathlib.Path, monkeypat
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "deadline,expected",
+    [
+        ("2099-01-02T03:04:00+09:00", "2099-01-02T03:04:00+09:00"),
+        ("2020-01-02T03:04:00Z", "2020-01-02T03:04:00+00:00"),
+        ("2099-01-02T03:04:00", None),
+        ("bad", None),
+        ("", None),
+        (None, None),
+    ],
+)
+async def test_entries_cooldown_conditions(tmp_path: pathlib.Path, deadline: str | None, expected: str | None) -> None:
+    """一覧と詳細APIは同じ期限値を返し、不正値をnullにする。保存状態は変えない。"""
+    (tmp_path / "inbox").mkdir()
+    cooldown_line = f"cooldown_until: '{deadline}'\n" if deadline is not None else ""
+    (tmp_path / "inbox" / "cool.md").write_text(f"---\ntype: awi\n{cooldown_line}---\n\n# 冷却\n", encoding="utf-8")
+    client = _serve_app(tmp_path).test_client()
+    listed = await (await client.get("/api/entries?status=inbox&period=all")).get_json()
+    detail = await (await client.get("/api/entries/inbox/cool.md")).get_json()
+    assert len(listed["entries"]) == 1
+    assert listed["entries"][0]["cooldown_until"] == expected
+    assert detail["entry"]["cooldown_until"] == expected
+    assert detail["entry"]["state"] == "inbox"
+
+
+@pytest.mark.asyncio
 async def test_sessions_detail_html_only_for_assistant(tmp_path: pathlib.Path) -> None:
     """セッション詳細APIは本文を持つアシスタントの発言だけへ整形したHTMLを加え、`text`を残し、生HTMLを文字にする。
 
