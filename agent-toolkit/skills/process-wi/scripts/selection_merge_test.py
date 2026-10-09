@@ -89,8 +89,38 @@ def _allocation(assignments: dict[str, str], candidate_count: int = 1) -> dict[s
     return {
         "候補WI": [*assignments, *(f"unselected-{index}.md" for index in range(candidate_count - len(assignments)))],
         "レーン割当": assignments,
-        "不可分成分": [{"WI": [name], "結合条件": [], "実装秒数": 10, "統合秒数": 2} for name in assignments],
+        "不可分成分": [{"WI": [name], "結合条件": []} for name in assignments],
     }
+
+
+@pytest.mark.parametrize("case", ["room", "integrated", "empty", "body", "cost"])
+def test_public_merge_rejects_new_final_lane_with_room(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    """上限の空き・完了状態・本文限定・費用更新でも最終レーンを増設しない。"""
+    repo, existing, added = inputs
+    original = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    original["初回配分"] = _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 21)
+    if case == "integrated":
+        for row in original["レーンの所要時間"]:
+            row["統合状態"] = "統合済み"
+    if case == "empty":
+        original = {"選定": [], "レーンの所要時間": [], "初回配分": _allocation({}, 0)}
+    existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-03": "lane-99", "lane-04": "lane-01"}), encoding="utf-8")
+    extra = ["--body-wi", "c.md", "--body-wi", "d.md"] if case == "body" else []
+    if case == "cost":
+        costs = tmp_path / "costs.json"
+        costs.write_text(json.dumps({"lane-99": {"実装秒数": 1, "統合秒数": 1, "根拠": "更新"}}), encoding="utf-8")
+        extra = ["--lane-cost-updates", str(costs)]
+    before = {path: path.read_bytes() for path in (existing, added, mapping)}
+    assert _merge_into_existing(repo, existing, added, mapping, *extra) == 2
+    assert "既存選定にない" in capsys.readouterr().err
+    assert all(path.read_bytes() == value for path, value in before.items())
 
 
 @pytest.mark.parametrize("reassign", [False, True])
@@ -99,7 +129,7 @@ def test_merge_resets_reassigned_lane_state(
     tmp_path: pathlib.Path,
     reassign: bool,
 ) -> None:
-    """完了レーンとの同定義の追加を受理し、合流先だけは新しい実施の未統合へ戻す。"""
+    """既存名への合流で状態を戻し、未統合同士の同定義の交差を拒否する。"""
     repo, existing, added = inputs
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
     for row in original["レーンの所要時間"]:
@@ -107,20 +137,18 @@ def test_merge_resets_reassigned_lane_state(
     if reassign:
         for record in original["レーン間の重なり"]:
             record["判定"] = "交わる"
+            record["レーン1の定義"] = record["レーン2の定義"] = ["共通の契約"]
     existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
     data = yaml.safe_load(added.read_text(encoding="utf-8"))
     for record in data["レーン間の重なり"]:
-        if (
-            reassign
-            or "lane-01" in (record["レーン1"], record["レーン2"])
-            or "lane-02" in (record["レーン1"], record["レーン2"])
-        ):
+        if reassign:
             record["判定"] = "交わる"
+            record["レーン1の定義"] = record["レーン2の定義"] = ["共通の契約"]
     added.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
-    mapping.write_text(json.dumps({"lane-03": "lane-01" if reassign else "lane-03", "lane-04": "lane-04"}), encoding="utf-8")
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
     output = tmp_path / "whole.yaml"
-    # 再割当後の同段階交差は未統合同士として拒否する。新レーンだけなら完了履歴との交差を許す。
+    # 合流した両レーンは未統合となり、同段階で同一定義の交差を拒否する。
     before = existing.read_bytes()
     expected = 1 if reassign else 0
     assert (
@@ -148,7 +176,7 @@ def test_merge_preserves_initial_allocation_and_resets_only_destination(
         row["統合状態"] = "統合済み"
     existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
-    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-04"}), encoding="utf-8")
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-01"}), encoding="utf-8")
     assert (
         _dispatch(
             str(existing), "--merge", str(added), "--lane-map", str(mapping), "--output", str(existing), "--work-dir", str(repo)
@@ -157,7 +185,7 @@ def test_merge_preserves_initial_allocation_and_resets_only_destination(
     )
     result = yaml.safe_load(existing.read_text(encoding="utf-8"))
     states = {row["レーン"]: row["統合状態"] for row in result["レーンの所要時間"]}
-    assert states == {"lane-01": "未統合", "lane-02": "統合済み", "lane-04": "未統合"}
+    assert states == {"lane-01": "未統合", "lane-02": "統合済み"}
     assert result["初回配分"] == original["初回配分"]
     assert _dispatch(str(existing), "--work-dir", str(repo)) == 0
 
@@ -172,7 +200,7 @@ def test_merge_cannot_hide_initial_limit_violation(
     original["初回配分"]["候補WI"] = ["a.md", "b.md"]
     existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
-    mapping.write_text(json.dumps({"lane-03": "lane-03", "lane-04": "lane-04"}), encoding="utf-8")
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
     before = existing.read_bytes()
     assert (
         _dispatch(
@@ -327,12 +355,13 @@ def test_public_merge_accepts_completion_marker_and_reuses_result(
     )
     before = {path: path.read_bytes() for path in (existing, added, mapping)}
     output = tmp_path / "whole.yaml"
-    assert (
-        _dispatch(
-            str(existing), "--merge", str(added), "--lane-map", str(mapping), "--output", str(output), "--work-dir", str(repo)
-        )
-        == 0
-    )
+    assert _dispatch(
+        str(existing), "--merge", str(added), "--lane-map", str(mapping), "--output", str(output), "--work-dir", str(repo)
+    ) == (2 if new_lanes else 0)
+    if new_lanes:
+        assert all(path.read_bytes() == data for path, data in before.items())
+        assert not output.exists()
+        return
     first = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert first["続行できない理由"] == ["なし"]
     assert [item["WI"] for item in first["選定"]] == ["a.md", "b.md", "c.md", "d.md"]
@@ -355,7 +384,7 @@ def test_public_merge_accepts_completion_marker_and_reuses_result(
         encoding="utf-8",
     )
     next_map = tmp_path / "next-map.json"
-    next_map.write_text(json.dumps({"lane-07": "lane-07"}), encoding="utf-8")
+    next_map.write_text(json.dumps({"lane-07": "lane-01"}), encoding="utf-8")
     assert (
         _dispatch(
             str(output),
@@ -376,22 +405,27 @@ def test_public_merge_accepts_completion_marker_and_reuses_result(
     assert [item["WI"] for item in final["選定"]] == ["a.md", "b.md", "c.md", "d.md", "e.md"]
 
 
-def test_public_merge_adds_new_lane_and_transforms_predecessor(
+def test_public_merge_transforms_existing_predecessor(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
 ) -> None:
-    """後段の新レーンと先行参照を変換し、合流先の既存レーンを保持する。"""
+    """後段と先行参照を既存レーンへ変換して保存する。"""
     repo, existing, added = inputs
     existing.write_text(
         yaml.safe_dump(
             {
-                "選定": [_item("a.md", "lane-01")],
-                "レーンの所要時間": [_cost("lane-01")],
-                "初回配分": _allocation({"a.md": "lane-01"}),
+                "選定": [_item("a.md", "lane-01"), _item("b.md", "lane-02")],
+                "レーンの所要時間": [_cost("lane-01"), _cost("lane-02", **{"段階": 2, "先行レーン": ["lane-01"]})],
+                "初回配分": _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 11),
             }
         ),
         encoding="utf-8",
     )
+    old = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    record = _overlap("lane-01", "lane-02", "交わる")
+    record["レーン1の定義"] = record["レーン2の定義"] = ["共通の契約"]
+    old["レーン間の重なり"] = [record]
+    existing.write_text(yaml.safe_dump(old, allow_unicode=True), encoding="utf-8")
     overlap = _overlap("lane-03", "lane-04", "交わる")
     overlap["レーン1の定義"] = overlap["レーン2の定義"] = ["共通の契約"]
     added.write_text(
@@ -399,7 +433,13 @@ def test_public_merge_adds_new_lane_and_transforms_predecessor(
             {
                 "選定": [_item("c.md", "lane-03"), _item("d.md", "lane-04")],
                 "レーンの所要時間": [_cost("lane-03"), _cost("lane-04", **{"段階": 2, "先行レーン": ["lane-03"]})],
-                "レーン間の重なり": [overlap],
+                "レーン間の重なり": [
+                    overlap,
+                    *[
+                        {**record, "レーン1": left, "レーン2": right}
+                        for left, right in (("lane-01", "lane-04"), ("lane-03", "lane-02"))
+                    ],
+                ],
                 "単一段階案の完了見込み秒数": 30,
             },
             allow_unicode=True,
@@ -407,7 +447,7 @@ def test_public_merge_adds_new_lane_and_transforms_predecessor(
         encoding="utf-8",
     )
     mapping = tmp_path / "map.json"
-    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-05"}), encoding="utf-8")
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
     output = tmp_path / "result.yaml"
     assert (
         _dispatch(
@@ -417,7 +457,7 @@ def test_public_merge_adds_new_lane_and_transforms_predecessor(
     )
     result = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert result["レーンの所要時間"][1]["先行レーン"] == ["lane-01"]
-    assert result["選定"][2]["レーン"] == "lane-05"
+    assert result["選定"][3]["レーン"] == "lane-02"
 
 
 def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
@@ -470,17 +510,17 @@ def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
         encoding="utf-8",
     )
     second_map = tmp_path / "second-map.json"
-    second_map.write_text(json.dumps({"lane-03": "lane-05"}), encoding="utf-8")
+    second_map.write_text(json.dumps({"lane-03": "lane-01"}), encoding="utf-8")
     second_costs = tmp_path / "second-costs.json"
-    final_cost = {"実装秒数": 11, "統合秒数": 1, "根拠": "新規レーンの確定値"}
-    second_costs.write_text(json.dumps({"lane-05": final_cost}, ensure_ascii=False), encoding="utf-8")
+    final_cost = {"実装秒数": 11, "統合秒数": 1, "根拠": "既存レーンの確定値"}
+    second_costs.write_text(json.dumps({"lane-01": final_cost}, ensure_ascii=False), encoding="utf-8")
     assert _merge_with_costs(repo, output, additional, second_map, second_costs, output) == 0
     final = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert final["選定"][:4] == result["選定"]
     assert [item["WI"] for item in final["選定"]] == ["a.md", "b.md", "c.md", "d.md", "e.md"]
-    assert final["選定"][4]["レーン"] == "lane-05"
-    assert final["レーンの所要時間"][:2] == result["レーンの所要時間"]
-    assert final["レーンの所要時間"][2] == {"レーン": "lane-05", "先行レーン": [], "統合状態": "未統合", **final_cost}
+    assert final["選定"][4]["レーン"] == "lane-01"
+    assert final["レーンの所要時間"][1] == result["レーンの所要時間"][1]
+    assert final["レーンの所要時間"][0] == {"レーン": "lane-01", "先行レーン": [], "統合状態": "未統合", **final_cost}
     assert final["レーン間の重なり"] == result["レーン間の重なり"]
     assert all(path.read_bytes() == value for path, value in before.items())
 
@@ -525,20 +565,34 @@ def test_public_merge_requires_whole_selection_comparison(
 ) -> None:
     """旧比較値は流用せず、追加時に確定した全体値だけを保存する。本文限定でも拒否する。"""
     repo, existing, added = inputs
-    original: dict[str, object] = {"選定": [_item("a.md", "lane-01")], "レーンの所要時間": [_cost("lane-01")]}
-    original["初回配分"] = _allocation({"a.md": "lane-01"})
+    original: dict[str, object] = {
+        "選定": [_item("a.md", "lane-01"), _item("b.md", "lane-02")],
+        "レーンの所要時間": [_cost("lane-01"), _cost("lane-02", **{"段階": 2, "先行レーン": ["lane-01"]})],
+    }
+    original["初回配分"] = _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 11)
     if existing_comparison is not None:
         original["単一段階案の完了見込み秒数"] = existing_comparison
     existing.write_text(yaml.safe_dump(original), encoding="utf-8")
+    old = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    record = _overlap("lane-01", "lane-02", "交わる")
+    record["レーン1の定義"] = record["レーン2の定義"] = ["共通の契約"]
+    old["レーン間の重なり"] = [record]
+    existing.write_text(yaml.safe_dump(old, allow_unicode=True), encoding="utf-8")
     overlap = _overlap("lane-03", "lane-04", "交わる")
-    overlap["レーン1の定義"] = overlap["レーン2の定義"] = ["共有契約"]
+    overlap["レーン1の定義"] = overlap["レーン2の定義"] = ["共通の契約"]
     data: dict[str, object] = {
         "選定": [_item("c.md", "lane-03"), _item("d.md", "lane-04")],
         "レーンの所要時間": [_cost("lane-03"), _cost("lane-04", **{"段階": 2, "先行レーン": ["lane-03"]})],
-        "レーン間の重なり": [overlap],
+        "レーン間の重なり": [
+            overlap,
+            *[
+                {**record, "レーン1": left, "レーン2": right}
+                for left, right in (("lane-01", "lane-04"), ("lane-03", "lane-02"))
+            ],
+        ],
     }
     mapping = tmp_path / "map.json"
-    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-05"}), encoding="utf-8")
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
     for comparison in (None, 31):
         if comparison is not None:
             data["単一段階案の完了見込み秒数"] = comparison
@@ -596,7 +650,10 @@ def test_public_merge_preserves_created_derived_paths(
     addition["レーン間の重なり"] = [_overlap("lane-03", "lane-04")]
     added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
-    mapping.write_text(json.dumps({"lane-03": "lane-01" if reassign else "lane-03", "lane-04": "lane-04"}), encoding="utf-8")
+    mapping.write_text(
+        json.dumps({"lane-03": "lane-01" if reassign else "lane-02", "lane-04": "lane-01" if reassign else "lane-02"}),
+        encoding="utf-8",
+    )
     extra = ["--body-wi", "c.md", "--body-wi", "d.md"] if limited_body else []
     assert _merge_into_existing(repo, existing, added, mapping, *extra) == 0
     result = yaml.safe_load(existing.read_text(encoding="utf-8"))
@@ -606,8 +663,8 @@ def test_public_merge_preserves_created_derived_paths(
         assert item["公開工程の書込対象"] == old.get("公開工程の書込対象", [])
     states = {cost["レーン"]: cost["統合状態"] for cost in result["レーンの所要時間"]}
     assert states["lane-01"] == ("未統合" if reassign else "統合済み")
-    assert states["lane-02"] == "統合済み"
-    target = "lane-01" if reassign else "lane-03"
+    assert states["lane-02"] == ("統合済み" if reassign else "未統合")
+    target = "lane-01" if reassign else "lane-02"
     assert states[target] == "未統合"
     assert _dispatch(str(existing), "--work-dir", str(repo)) == 0
     assert _dispatch(str(existing), "--mark-integrated", target, "--output", str(existing), "--work-dir", str(repo)) == 0
@@ -637,7 +694,7 @@ def test_public_merge_rejects_derived_directory_without_saving(
     )
     existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
-    mapping.write_text(json.dumps({"lane-03": "lane-03", "lane-04": "lane-04"}), encoding="utf-8")
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
     before = existing.read_bytes()
     assert _merge_into_existing(repo, existing, added, mapping) == 1
     assert "導出した新設先" in capsys.readouterr().err
@@ -681,7 +738,7 @@ def test_public_merge_preserves_derived_new_paths(
     data["レーン間の重なり"] = []
     added.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
-    mapping.write_text(json.dumps({"lane-03": "lane-03", "lane-04": "lane-04"}), encoding="utf-8")
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
     output = tmp_path / "whole.yaml"
     assert (
         _dispatch(
@@ -691,6 +748,7 @@ def test_public_merge_preserves_derived_new_paths(
     )
     result = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert typing.cast(list[dict[str, object]], result["選定"])[2:] == [
-        {**item, "公開工程の書込対象": []} for item in data["選定"]
+        {**item, "レーン": {"lane-03": "lane-01", "lane-04": "lane-02"}[item["レーン"]], "公開工程の書込対象": []}
+        for item in data["選定"]
     ]
     assert _dispatch(str(output), "--work-dir", str(repo)) == 0

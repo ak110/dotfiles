@@ -70,7 +70,9 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   対象は`agents_server`、`atk wi process-loop`の可用性判定と`atk commit`であり、`overage`、他の429、529、認証・権限の失敗は従来の切替のままとする。
   待機は回数と総時間で打ち切らない。実装契約は[design-agents-runtime.md](design-agents-runtime.md#api失敗過負荷利用上限の待機)の「API失敗・過負荷・利用上限の待機」にあり、委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`「停滞の検知と巻き取り」が定める
 
-- `agents_server`のCodexはサブスクを通常接続とする環境で利用上限に達した場合、設定した独立API providerへ同じ会話を移す。
+- `agents_server`のCodex接続先はatk configの`codex_model_providers`へ優先順で並べ、先頭を主接続先とする。未設定ならconfig.tomlに従い代替試行しない。接続先の定義と認証はCodexが持つ
+  （2026年10月10日、ユーザー回答。主接続先と移行先の選択設定が2カ所へ分散する運用を避けるため）。
+  サブスクを先頭とする環境で利用上限に達した場合、後続の独立APIへ同じ会話を移す。
   回復後は新規sessionだけサブスクへ戻し、既にAPIへ移った会話はAPIを維持する。
   切替の事実とprovider名を委譲元の応答・通知・公開状態や継続指示へ加えない。
   サブスクのみ、サブスク＋API、APIのみの3環境に対応し、API主接続とその認証選択は尊重する。

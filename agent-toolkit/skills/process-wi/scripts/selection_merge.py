@@ -54,6 +54,13 @@ def merge_selection(
     ):
         raise ValueError("レーン対応は追加側の全対象レーンだけをキー、最終レーンを空でない文字列の値とする")
     mapping = typing.cast(dict[str, str], lane_map)
+    existing_lanes = {str(item[_selection.LANE_KEY]) for item in first} - {"なし"}
+    new_destinations = set(mapping.values()) - existing_lanes
+    if new_destinations:
+        raise ValueError(
+            f"追加の最終レーンが既存選定にない: {', '.join(sorted(new_destinations))}。"
+            "対応JSONの値を既存レーンへ直し、同じ担当の工程境界で追加する"
+        )
     if cost_updates is not None:
         errors = selection_contract.cost_update_errors(cost_updates, set(mapping.values()))
         if errors:
@@ -75,9 +82,7 @@ def merge_selection(
             dict.fromkeys(destination(value) for value in typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])))
         )
         prior = costs.get(lane)
-        if prior is None:
-            costs[lane] = row
-            continue
+        assert prior is not None
         prior[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         if prior.get(_selection.STAGE_KEY, 1) != row.get(_selection.STAGE_KEY, 1):
             raise ValueError(f"{lane}: 合流するレーンの段階が異なる。最終割当に合う入力へ直す")

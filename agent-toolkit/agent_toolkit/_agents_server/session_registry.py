@@ -240,7 +240,6 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
     if (
         info is not None
         and info.engine == "codex"
-        and info.codex_subscription_provider
         and info.codex_model_provider
         and info.codex_model_provider != info.codex_subscription_provider
     ):

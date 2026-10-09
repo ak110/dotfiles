@@ -554,7 +554,7 @@ class AppServerManager:
     @staticmethod
     def excludes_with_recorded_reason(reason: str) -> bool:
         """利用上限の旧記録だけは、設定したAPIと現在の利用可否で判定し直す。"""
-        return reason != "usageLimitExceeded" or not codex_providers.configured_candidates()
+        return reason != "usageLimitExceeded" or not codex_providers.has_provider_configuration()
 
     def __init__(
         self,
@@ -714,8 +714,10 @@ class AppServerManager:
         validate_model_effort(model, effort)
         client = await self._ensure_client()
         selection = None
-        if codex_providers.configured_candidates():
+        if codex_providers.has_provider_configuration():
             selection = await codex_providers.select(client.request, cwd)
+            if not codex_providers.has_provider_configuration():
+                selection = None
         params: dict[str, Any] = {
             "cwd": cwd,
             "approvalPolicy": "never",
@@ -734,20 +736,26 @@ class AppServerManager:
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
                 thread_response = None
-                if selection is not None and selection.subscription and selection.ordinary_usage_allowed is False:
-                    for candidate in selection.candidates:
+                if selection is not None and (selection.primary or selection.candidates):
+                    order = (selection.primary, *selection.candidates)
+                    if selection.subscription and selection.ordinary_usage_allowed is False:
+                        order = selection.candidates
+                    for candidate in order:
                         attempted.add(candidate)
-                        params["modelProvider"] = candidate
                         try:
-                            thread_response = await client.request("thread/start", params)
+                            thread_response = await client.request("thread/start", {**params, "modelProvider": candidate})
                         except JsonRpcResponseError:
                             _LOG.info("Codex接続先の開始が拒否されました: provider=%s", candidate)
+                            # 通常サブスクの一般的なRPC拒否をAPI課金へ変換しない。
+                            if candidate == selection.primary and selection.subscription:
+                                raise
                             continue
                         if thread_response.get("modelProvider") != candidate:
                             raise AppServerError("thread/start did not confirm the requested connection")
                         break
-                if thread_response is None:
-                    params.pop("modelProvider", None)
+                    if thread_response is None:
+                        raise AppServerError("Codex connection candidates were rejected")
+                else:
                     thread_response = await client.request("thread/start", params)
         except TimeoutError as exc:
             diagnostic_method = getattr(client, "initialization_diagnostic", None)
@@ -1060,7 +1068,7 @@ class AppServerManager:
     @staticmethod
     def _provider_failure(session: SessionState, error: Any = None) -> bool:
         """終端した利用上限と、移行済みAPIの不受理だけを代替試行へ接続する。"""
-        if not session.codex_subscription_provider or not session.turn_completed or session.turn_start_ambiguous:
+        if not session.codex_model_provider or not session.turn_completed or session.turn_start_ambiguous:
             return False
         if session.codex_provider_resume_pending:
             return True
@@ -1265,7 +1273,7 @@ class AppServerManager:
         if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
             # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
             failure.update(error.data)
-        if session.codex_subscription_provider and session.codex_model_provider != session.codex_subscription_provider:
+        if session.codex_model_provider and session.codex_model_provider != session.codex_subscription_provider:
             session.error = {"message": "Codex connection rejected the request"}
         session.agent_message = ""
         session.protocol_warnings = []
@@ -1349,7 +1357,7 @@ class AppServerManager:
         if (
             session.interrupt_requested
             or not self._provider_failure(session, error)
-            or not codex_providers.configured_candidates()
+            or not codex_providers.has_provider_configuration()
         ):
             return False
         resume_waits.begin_auto_resume_wait(

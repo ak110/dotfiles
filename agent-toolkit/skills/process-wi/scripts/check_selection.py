@@ -776,7 +776,7 @@ def load_selection(selection_file: pathlib.Path, *, additional: bool = False) ->
     errors, model_errors = selection_contract.structure_errors(selection)
     if isinstance(selection, dict) and not additional and _selection.INITIAL_ALLOCATION_KEY not in selection:
         errors.append(
-            "初回配分がない。初回候補WI・レーン割当・不可分成分の結合条件と補正後の秒数を、"
+            "初回配分がない。初回候補WI・レーン割当・不可分成分の構成WIと結合条件を、"
             "元候補と初回選定の記録から補い、selection-format.mdの初回配分の形式で再実行する"
         )
     if errors or model_errors:
