@@ -22,6 +22,8 @@ MODEL_TYPES_KEY = "担当モデル"
 STAGE_KEY = "段階"
 PRIOR_LANES_KEY = "先行レーン"
 LANE_OVERLAPS_KEY = "レーン間の重なり"
+SINGLE_STAGE_ESTIMATE_KEY = "単一段階案の完了見込み秒数"
+DERIVED_NEW_PATHS_KEY = "導出した新設先"
 
 _LEGACY_DECISIONS_KEY = "decisions"
 

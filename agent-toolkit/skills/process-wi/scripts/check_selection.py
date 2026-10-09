@@ -3,7 +3,7 @@
 pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と反映先`、または作業を求める回答済みUWIの
 質問と回答から手で書き写すため、反映先の一部を欠いた値や、個別ファイルの代わりに上位ディレクトリだけを書いた値がレーン分けへ渡り得る。
 本スクリプトは`レーン`が`なし`でない各項目について、反映先パスを文章とインラインコードから抽出し、
-`書込対象`・`公開工程の書込対象`・`書き込まない反映先`の3区分に照らして次の7区分の違反を報告する。
+`書込対象`・`公開工程の書込対象`・`書き込まない反映先`の3区分と選定全体の関係を確かめ、次の違反を報告する。
 抽出の対象は、AWIでは`## 反映内容と反映先`、frontmatterの`type`が`uwi`の項目ではfrontmatterを除く本文全体
 （質問、選択肢と帰結、判断材料、回答）とする。UWIは反映先の節を持たず、作業範囲が回答と判断材料に現れるためである。
 旧欄名（`decisions`、`awi`、`lane`、`write_files`、`excluded_paths`）で書かれた選定結果も同じ意味で読む。
@@ -21,8 +21,10 @@ pickerは`選定`の各項目の`書込対象`をAWI本文の`## 反映内容と
 - `公開工程の書込対象`の根拠不足: 対象リポジトリの規範、節およびpathがレーンの根拠に無い
 - 別レーンの重複根拠不足: 共通ファイルまたは狭い方の範囲が双方のレーンの根拠に無い
 - 同じ再開計画の別レーン割当: pickerが出力した通常中断または観測のみの再開位置が同じ計画を指す項目を別レーンへ置いた
+- 導出記録の不正: 完全な新設名・要求の反映範囲・書込区分への対応が成立しない、または同じ新設先を重複宣言した
+- 段階案の比較値の欠落: 段階2以上の行があるのに単一段階案の完了見込み秒数が無い
 
-7区分はいずれも、レーン分けと重なりの判定が実際の共有書込対象と異なる結果になるため、違反として終了コード1を返す。
+これらは共有書込の判定や配分の比較が成立しないため、違反として終了コード1を返す。
 分類と定義の独立性の意味判断はpickerとメインの読解へ委ねる。
 
 `--work-dir`の`pyproject.toml`が`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`で`プロジェクト規範の指定`の条件を
@@ -43,10 +45,14 @@ pickerの保存直後とメインの受領時はどちらも本スクリプト�
 対応JSONは追加のレーン識別子を最終レーン識別子へ対応付ける。型を確認したデータの合流はselection_merge.pyが担当し、
 本スクリプトは統合後の選定の全体検査が成功した場合だけ結果を原子的に保存する。
 `--body-wi`は本文の被覆検査を指定したWIへ限定する。レーンの参照・段階・重なりなどの関係検査は統合結果全体へ適用する。
+任意の`--lane-cost-updates <JSON>`は、追加レーンの最終割当に対して確定した実装秒数・統合秒数・根拠を渡す。
+段階2以上では最上位の`単一段階案の完了見込み秒数`を必須とする。統合時は追加YAMLで全体配分の比較値を再確定する。
+本文に新設名を明示しない要求は、`導出した新設先`の範囲と両書込区分への対応を確かめる。要求と配置根拠の意味はメインが検収する。
 
 違反が無い場合（終了コード0）だけ、標準出力へ選定の要約を書く。要約はWI総数、通常レーン数、レーンごとのWI件数・段階・
 先行レーン・実装秒数・統合秒数・WIファイル名の一覧と、`レーン: なし`の項目の一覧を持つ。受領側がレーン構成を出力ファイルを
 開かずに把握できるようにするためであり、根拠と分類の意味の検収は選定結果の本文の読解で行う。
+比較欄がある場合は同名の値行も要約へ含める。
 
 UWIの本文がリポジトリ相対パスを明示しない場合、比べるパスが無いため違反を報告しない。
 この成功はUWIの書込範囲を検証した結果ではない。パスを明示しない回答の書込範囲は、
@@ -69,6 +75,7 @@ import typing
 import unicodedata
 
 import markdown_it
+import selection_contract
 import yaml
 from selection_merge import merge_selection
 
@@ -101,53 +108,9 @@ _GLOB_CHARS = frozenset("*?[{")
 # 新設先として採るファイル名は、拡張子までそろった完全な名前に限る。
 _COMPLETE_FILE_NAME_RE = re.compile(r"[^/]*[^/.]\.[A-Za-z0-9]+")
 
-_STALENESS_KEY = "鮮度"
-_UPSTREAM_TARGETS_KEY = "上流投入先"
 _IMPLEMENTATION_SECONDS_KEY = "実装秒数"
 _INTEGRATION_SECONDS_KEY = "統合秒数"
-_BLOCKERS_KEY = "続行できない理由"
-_DECISION_STRING_KEYS = ("再開位置", "プロジェクト固有の公開後の操作の順序", "プロジェクト規範の指定", "上流投入", "上流要求")
-_DECISION_KEYS = frozenset(
-    {
-        _selection.WI_KEY,
-        _selection.LANE_KEY,
-        _STALENESS_KEY,
-        _selection.WRITE_FILES_KEY,
-        _selection.PUBLIC_WRITE_FILES_KEY,
-        _selection.MODEL_TYPES_KEY,
-        _selection.EXCLUDED_PATHS_KEY,
-        _UPSTREAM_TARGETS_KEY,
-        *_DECISION_STRING_KEYS,
-    }
-)
-_DECISION_REQUIRED_KEYS = (_selection.WI_KEY, _selection.LANE_KEY, _STALENESS_KEY, _selection.WRITE_FILES_KEY)
-# 旧形式の選定結果は秒数と先行レーンを英字の欄名で持つ。`_selection.lane_costs`が新しい欄名へそろえない欄名も、
-# 版の異なるpickerが書いた選定結果を未知の欄として拒否しないよう既知の欄に含める。
 _LEGACY_SECONDS_KEYS = {"implementation_seconds": _IMPLEMENTATION_SECONDS_KEY, "integration_seconds": _INTEGRATION_SECONDS_KEY}
-_LANE_COST_KEYS = frozenset(
-    {
-        _selection.LANE_KEY,
-        _selection.STAGE_KEY,
-        _selection.PRIOR_LANES_KEY,
-        _IMPLEMENTATION_SECONDS_KEY,
-        _INTEGRATION_SECONDS_KEY,
-        _selection.RATIONALE_KEY,
-        "after_lanes",
-        *_LEGACY_SECONDS_KEYS,
-    }
-)
-_TOP_LEVEL_KEYS = frozenset(
-    {
-        _selection.DECISIONS_KEY,
-        "decisions",
-        _selection.LANE_COSTS_KEY,
-        "lane_costs",
-        _BLOCKERS_KEY,
-        _selection.LANE_OVERLAPS_KEY,
-    }
-)
-_MODEL_ROLES = ("実装担当", "実行レビュー担当")
-_MODEL_TYPE_RE = re.compile(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+")
 _OBSERVATION_PLAN_RE = re.compile(r"計画:\s*([^）]+)")
 _ABSOLUTE_PLAN_RE = re.compile(r"(?<!\S)(/\S+?\.md)(?=$|[\s、。）])")
 
@@ -249,7 +212,7 @@ def _norm_condition_problems(entry: object) -> list[str]:
     problems.extend(
         f"`{key}`が文字列の配列ではない"
         for key in ("paths", "suffixes", "require-text")
-        if key in entry and not _is_string_list(entry[key])
+        if key in entry and not selection_contract.is_string_list(entry[key])
     )
     problems.extend(
         f"`{key}`が真偽値ではない"
@@ -517,9 +480,17 @@ def check_decision(
     public_write_files: list[str],
     excluded_paths: list[str],
     work_dir: pathlib.Path | None = None,
+    derived_new_paths: list[dict[str, str]] | None = None,
 ) -> list[str]:
     """選定結果の1件の項目の違反を、AWIのファイル名・区分・パスを含む行の一覧で返す。"""
     errors: list[str] = []
+    derived_paths: set[str] = set()
+    derived_scopes: set[str] = set()
+    if work_dir is not None:
+        derived_paths, derived_scopes, derived_errors = _check_derived_paths(
+            awi, reflected, [*write_files, *public_write_files], derived_new_paths or [], work_dir
+        )
+        errors.extend(derived_errors)
     if work_dir is not None:
         for name, entries in (
             (_selection.WRITE_FILES_KEY, write_files),
@@ -533,17 +504,17 @@ def check_decision(
                     or target.is_file()
                     and not entry.endswith("/")
                     or not target.exists()
-                    and entry in reflected
+                    and (entry in reflected or entry in derived_paths)
                 )
                 if not valid:
                     errors.append(
                         f"{awi}: `{name}`のパスの不正: {entry}。"
-                        "実在ファイル、末尾/付き実在ディレクトリ、または反映先に明示された新設先へ直す"
+                        "実在ファイル、末尾/付き実在ディレクトリ、本文明示または導出記録が正当な新設先へ直す"
                     )
     range_descriptions = {
         path for path in reflected if _is_range(path) and any(other != path and other.startswith(path) for other in reflected)
     }
-    for path in sorted(reflected - range_descriptions):
+    for path in sorted(reflected - range_descriptions - derived_scopes):
         if path in excluded_paths or any(_covers(entry, path) for entry in [*write_files, *public_write_files]):
             continue
         errors.append(f"{awi}: 未被覆: {path}")
@@ -571,6 +542,43 @@ def check_decision(
         }
         errors.extend(f"{awi}: 区分間の重複: {path}（`{first_name}`と`{second_name}`）" for path in sorted(overlaps))
     return errors
+
+
+def _check_derived_paths(
+    awi: str, reflected: set[str], writes: list[str], records: list[dict[str, str]], work_dir: pathlib.Path
+) -> tuple[set[str], set[str], list[str]]:
+    """導出記録のパス・範囲・書込への対応を確かめ、正当な範囲だけを被覆へ渡す。"""
+    paths: set[str] = set()
+    scopes: set[str] = set()
+    seen: set[str] = set()
+    errors: list[str] = []
+    for record in records:
+        path, scope = record["パス"], record["反映範囲"]
+        valid_path = (
+            _normalize_candidate(path) == path
+            and not any(char in path for char in "*?[]{}\\")
+            and pathlib.PurePosixPath(path).as_posix() == path
+            and not (work_dir / path).exists()
+            and _new_file_path(path, work_dir) == path
+        )
+        valid_scope = (
+            _normalize_candidate(scope) == scope
+            and scope.endswith("/")
+            and pathlib.PurePosixPath(scope).as_posix() + "/" == scope
+            and (work_dir / scope).is_dir()
+            and _covers(scope, path)
+            and (not any(_is_range(value) for value in reflected) or scope in reflected)
+        )
+        if not valid_path or not valid_scope or path in seen or path not in writes:
+            errors.append(
+                f"{awi}: `{_selection.DERIVED_NEW_PATHS_KEY}`の対応が不正: {path}（{scope}）。"
+                "重複を除き、新設パスを同じWIの反映範囲と書込区分へ対応付ける"
+            )
+        else:
+            paths.add(path)
+            scopes.add(scope)
+        seen.add(path)
+    return paths, scopes, errors
 
 
 def _check_public_write_rationales(items: list[dict[str, object]], costs: list[dict[str, object]]) -> list[str]:
@@ -643,11 +651,29 @@ def check(
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
         reflected = reflected_paths(body, work_dir)
-        errors.extend(check_decision(awi, reflected, write_files, public_write_files, excluded_paths, work_dir))
+        errors.extend(
+            check_decision(
+                awi,
+                reflected,
+                write_files,
+                public_write_files,
+                excluded_paths,
+                work_dir,
+                typing.cast(list[dict[str, str]], decision.get(_selection.DERIVED_NEW_PATHS_KEY, [])),
+            )
+        )
         errors.extend(check_norm_spec(awi, decision, reflected, conditions))
     errors.extend(_check_lane_models(items))
     errors.extend(_check_resume_plan_lanes(items))
     errors.extend(_check_lane_stages(items, costs))
+    if (
+        any(typing.cast(int, row.get(_selection.STAGE_KEY, 1)) >= 2 for row in costs)
+        and _selection.SINGLE_STAGE_ESTIMATE_KEY not in selection
+    ):
+        errors.append(
+            f"段階2以上の選定に`{_selection.SINGLE_STAGE_ESTIMATE_KEY}`がない。"
+            "比較した単一段階案の秒数を最上位へ、配分の説明を根拠へ書く"
+        )
     errors.extend(
         _check_lane_overlaps(
             items, costs, typing.cast(list[dict[str, object]], selection.get(_selection.LANE_OVERLAPS_KEY, []))
@@ -675,126 +701,13 @@ def load_selection(selection_file: pathlib.Path) -> dict[str, object]:
         selection = yaml.safe_load(text)
     except yaml.YAMLError as error:
         raise InputError(f"選定結果のYAML構文が不正: {selection_file}: {error}", next_action=_FIX_YAML) from error
-    errors, model_errors = _structure_errors(selection)
+    errors, model_errors = selection_contract.structure_errors(selection)
     if errors or model_errors:
         next_action = f"{_FIX_MODEL}。{_FIX_CONTENT}" if model_errors else _FIX_CONTENT
         raise InputError(
             "\n".join([f"選定結果の内容が不正: {selection_file}", *model_errors, *errors]), next_action=next_action
         )
     return typing.cast(dict[str, object], selection)
-
-
-def _structure_errors(selection: object) -> tuple[list[str], list[str]]:
-    """選定結果の構造の誤りを、`担当モデル`以外の誤りと`担当モデル`の誤りに分けて返す。
-
-    1回の実行で全ての誤りを返し、直すたびに次の誤りが現れる往復を避ける。
-    """
-    if not isinstance(selection, dict):
-        return ["最上位が写像ではない"], []
-    errors = [f"未知の欄: {key}" for key in selection if key not in _TOP_LEVEL_KEYS]
-    model_errors: list[str] = []
-    items = _selection.decisions(selection)
-    if items is None:
-        errors.append(f"`{_selection.DECISIONS_KEY}`の列がない")
-        items = []
-    for index, item in enumerate(items, start=1):
-        if not isinstance(item, dict):
-            errors.append(f"`{_selection.DECISIONS_KEY}`の{index}件目が写像ではない")
-            continue
-        label = item.get(_selection.WI_KEY) if isinstance(item.get(_selection.WI_KEY), str) else f"{index}件目"
-        errors.extend(f"{label}: 未知の欄: {key}" for key in item if key not in _DECISION_KEYS)
-        errors.extend(f"{label}: 必須の欄がない: {key}" for key in _DECISION_REQUIRED_KEYS if key not in item)
-        errors.extend(
-            f"{label}: `{key}`が文字列ではない: {item[key]!r}"
-            for key in (_selection.WI_KEY, _selection.LANE_KEY, *_DECISION_STRING_KEYS)
-            if key in item and not isinstance(item[key], str)
-        )
-        if _STALENESS_KEY in item and not isinstance(item[_STALENESS_KEY], dict):
-            errors.append(f"{label}: `{_STALENESS_KEY}`が写像ではない: {item[_STALENESS_KEY]!r}")
-        errors.extend(
-            f"{label}: `{key}`が文字列の列ではない: {item[key]!r}"
-            for key in (
-                _selection.WRITE_FILES_KEY,
-                _selection.PUBLIC_WRITE_FILES_KEY,
-                _selection.EXCLUDED_PATHS_KEY,
-            )
-            if key in item and not _is_string_list(item[key])
-        )
-        upstream_targets = item.get(_UPSTREAM_TARGETS_KEY, _LANE_NONE)
-        if upstream_targets != _LANE_NONE and not _is_string_list(upstream_targets):
-            errors.append(f"{label}: `{_UPSTREAM_TARGETS_KEY}`が文字列の列ではない: {upstream_targets!r}")
-        model_types = item.get(_selection.MODEL_TYPES_KEY, {})
-        if not isinstance(model_types, dict) or any(
-            role not in _MODEL_ROLES or not isinstance(value, str) or not _MODEL_TYPE_RE.fullmatch(value)
-            for role, value in model_types.items()
-        ):
-            model_errors.append(
-                f"{label}: `{_selection.MODEL_TYPES_KEY}`が担当別のengine:model/effortではない: {model_types!r}"
-            )
-    costs = _selection.lane_costs(selection)
-    if costs is None:
-        errors.append(f"`{_selection.LANE_COSTS_KEY}`の列がない")
-        costs = []
-    for index, row in enumerate(costs, start=1):
-        if not isinstance(row, dict):
-            errors.append(f"`{_selection.LANE_COSTS_KEY}`の{index}件目が写像ではない")
-            continue
-        label = row.get(_selection.LANE_KEY) if isinstance(row.get(_selection.LANE_KEY), str) else f"{index}件目"
-        errors.extend(f"{label}: 未知の欄: {key}" for key in row if key not in _LANE_COST_KEYS)
-        if not isinstance(row.get(_selection.LANE_KEY), str):
-            errors.append(f"{label}: `{_selection.LANE_KEY}`が文字列ではない")
-        stage = row.get(_selection.STAGE_KEY, 1)
-        if not isinstance(stage, int) or isinstance(stage, bool) or stage < 1:
-            errors.append(f"{label}: `{_selection.STAGE_KEY}`が1以上の整数ではない: {stage!r}")
-        prior = row.get(_selection.PRIOR_LANES_KEY, [])
-        if not _is_string_list(prior) or len(prior) != len(set(prior)):
-            errors.append(f"{label}: `{_selection.PRIOR_LANES_KEY}`が重複のない文字列の列ではない: {prior!r}")
-        for key in (_IMPLEMENTATION_SECONDS_KEY, _INTEGRATION_SECONDS_KEY):
-            legacy = next(name for name, current in _LEGACY_SECONDS_KEYS.items() if current == key)
-            value = row.get(key, row.get(legacy))
-            if not _is_non_negative_number(value):
-                errors.append(f"{label}: `{key}`が0以上の数値ではない: {value!r}")
-        rationale = row.get(_selection.RATIONALE_KEY)
-        if not isinstance(rationale, str) or not rationale.strip():
-            errors.append(f"{label}: `{_selection.RATIONALE_KEY}`が空でない文字列ではない: {rationale!r}")
-    blockers = selection.get(_BLOCKERS_KEY, [])
-    if not _is_string_list(blockers):
-        errors.append(f"`{_BLOCKERS_KEY}`が文字列の列ではない: {blockers!r}")
-    errors.extend(_overlap_structure_errors(selection.get(_selection.LANE_OVERLAPS_KEY, [])))
-    return errors, model_errors
-
-
-def _overlap_structure_errors(records: object) -> list[str]:
-    """重なりの各記録が所定の欄と型を持つか確かめる。空列の記録欠落は共有パスの処理で判定する。"""
-    if not isinstance(records, list):
-        return [f"`{_selection.LANE_OVERLAPS_KEY}`が列ではない"]
-    errors: list[str] = []
-    keys = {"レーン1", "レーン2", "共通パス", "レーン1の定義", "レーン2の定義", "判定"}
-    for index, record in enumerate(records, 1):
-        label = f"{_selection.LANE_OVERLAPS_KEY}の{index}件目"
-        if not isinstance(record, dict) or set(record) != keys:
-            errors.append(f"{label}: 欄を{', '.join(sorted(keys))}へそろえる")
-            continue
-        for key in ("レーン1", "レーン2", "共通パス"):
-            if not isinstance(record[key], str) or not record[key].strip():
-                errors.append(f"{label}: {key}が空でない文字列ではない")
-        for key in ("レーン1の定義", "レーン2の定義"):
-            value = record[key]
-            if not _is_string_list(value) or not value or any(not item.strip() for item in value):
-                errors.append(f"{label}: {key}が空でない定義の列ではない")
-        if record["判定"] not in ("交わる", "交わらない"):
-            errors.append(f"{label}: 判定は交わるか交わらないを指定する")
-    return errors
-
-
-def _is_string_list(value: object) -> typing.TypeGuard[list[str]]:
-    """値が文字列だけの列かを返す。"""
-    return isinstance(value, list) and all(isinstance(item, str) for item in value)
-
-
-def _is_non_negative_number(value: object) -> bool:
-    """値が真偽値以外の0以上の数値かを返す。"""
-    return isinstance(value, int | float) and not isinstance(value, bool) and value >= 0
 
 
 def _check_lane_models(items: list[dict[str, object]]) -> list[str]:
@@ -991,6 +904,8 @@ def summary_lines(selection: dict[str, object], body_wis: set[str] | None = None
         else:
             lanes.setdefault(lane, []).append(awi)
     lines = [f"WI総数: {len(items)}", f"通常レーン数: {len(lanes)}"]
+    if _selection.SINGLE_STAGE_ESTIMATE_KEY in selection:
+        lines.append(f"{_selection.SINGLE_STAGE_ESTIMATE_KEY}: {selection[_selection.SINGLE_STAGE_ESTIMATE_KEY]}")
     for lane, names in lanes.items():
         row = costs.get(lane, {})
         seconds = [
@@ -1034,11 +949,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--merge", type=pathlib.Path, metavar="PATH", help="追加選定YAMLの絶対パス")
     parser.add_argument("--lane-map", type=pathlib.Path, metavar="PATH", help="追加レーンから最終レーンへの対応JSON")
     parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した統合結果の保存先")
+    parser.add_argument(
+        "--lane-cost-updates", type=pathlib.Path, metavar="PATH", help="最終レーンの確定した秒数と根拠のJSON（統合時だけ）"
+    )
     args = parser.parse_args(argv)
     if any(value is not None for value in (args.merge, args.lane_map, args.output)) and not all(
         value is not None for value in (args.merge, args.lane_map, args.output)
     ):
         parser.error("--merge・--lane-map・--outputは組で指定する")
+    if args.lane_cost_updates is not None and args.merge is None:
+        parser.error("--lane-cost-updatesは--merge・--lane-map・--outputとともに指定する")
     body_wis = set(args.body_wi) if args.body_wi is not None else None
     try:
         work_dir = _resolve_work_dir(args.work_dir)
@@ -1046,12 +966,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.merge is not None:
             try:
                 mapping = json.loads(args.lane_map.read_text(encoding="utf-8"))
-                selection = merge_selection(selection, load_selection(args.merge), mapping)
+                updates = None
+                if args.lane_cost_updates is not None:
+                    updates = json.loads(args.lane_cost_updates.read_text(encoding="utf-8"))
+                    if not isinstance(updates, dict):
+                        raise ValueError("費用更新JSONは最終レーンから3欄への写像とする")
+                selection = merge_selection(selection, load_selection(args.merge), mapping, updates)
             except (OSError, ValueError) as error:
                 raise InputError(
-                    str(error), next_action="追加入力とレーン対応JSONを確認して同じ統合操作を再実行する"
+                    str(error), next_action="追加入力・レーン対応JSON・費用更新JSONを直して同じ統合操作を再実行する"
                 ) from error
-            structural, models = _structure_errors(selection)
+            structural, models = selection_contract.structure_errors(selection)
             if structural or models:
                 raise InputError("\n".join([*models, *structural]), next_action=_FIX_CONTENT)
         errors = check(args.selection_file, work_dir, _plan_file.private_notes_root(), body_wis, selection=selection)
@@ -1069,6 +994,8 @@ def main(argv: list[str] | None = None) -> int:
                 "書込対象の不正な要素は実在ファイル、末尾/付き実在ディレクトリ、または反映先に明示された新設先へ直す。"
                 "重なりの記録は共通パスごとに双方の定義と判定を1件残し、余剰・重複・欠落を直す。"
                 "同段階で交わる定義は統合または段階変更し、根拠の無い直列化は交わる記録に基づく先行関係へ直す。"
+                "段階2以上では`単一段階案の完了見込み秒数`へ比較した案の秒数を、根拠へ配分の説明を書く。"
+                "導出した新設先は新設パス・反映範囲・要求・配置根拠をそろえ、書込区分に個別パスを残す。"
                 "区分間で重複するパスは所有する1区分だけへ残す。`公開工程の書込対象`の根拠不足は、"
                 "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する。"
                 "プロジェクト規範の指定の不足は、`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が"
