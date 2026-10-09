@@ -193,7 +193,13 @@ function setFieldError(input, errorElement, message) {
 
 function firstInvalid(inputs) {
   const invalid = inputs.find(input => input.getAttribute('aria-invalid') === 'true');
-  if (invalid) invalid.focus();
+  if (invalid) {
+    invalid.focus();
+    const error = (invalid.getAttribute('aria-describedby') || '').split(/\s+/)
+      .map(byId).find(element => element && !element.hidden);
+    // 入力欄だけのfocusでは直後のエラーが本文領域の下へ隠れるため、対応エラーを余裕のある位置へ置く。
+    if (error) error.scrollIntoView({block: 'center', behavior: 'instant'});
+  }
   return invalid;
 }
 
