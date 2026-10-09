@@ -612,7 +612,7 @@ def test_save_worktree_reports_launcher_failure(monkeypatch: pytest.MonkeyPatch,
 
     assert update_dotfiles._save_worktree("test") is None  # pylint: disable=protected-access
     captured = capsys.readouterr()
-    assert "未コミット内容の退避を開始できませんでした" in captured.err
+    assert "未コミット内容の退避操作を開始できませんでした" in captured.err
     assert "Traceback" not in captured.err
 
 
@@ -1297,14 +1297,20 @@ def _patch_real_pull(monkeypatch: pytest.MonkeyPatch, local: pathlib.Path) -> No
 class TestGitConflictRecovery:
     """一時Git上流でcommit競合と未コミット復元競合からの回復を検証する。"""
 
+    @pytest.mark.parametrize("dirty", [False, True])
     def test_rebase_conflict_preserves_original_commit_and_tracks_upstream(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, dirty: bool
     ) -> None:
         local, seed, _remote = _create_git_pair(tmp_path)
         (local / "tracked.txt").write_text("local commit\n", encoding="utf-8")
         _git(local, "add", "tracked.txt")
         _git(local, "commit", "-m", "local")
         original_head = _git(local, "rev-parse", "HEAD")
+        if dirty:
+            (local / "staged.txt").write_text("staged\n", encoding="utf-8")
+            _git(local, "add", "staged.txt")
+            (local / "tracked.txt").write_text("unstaged\n", encoding="utf-8")
+            (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
         (seed / "tracked.txt").write_text("upstream\n", encoding="utf-8")
         _git(seed, "add", "tracked.txt")
         _git(seed, "commit", "-m", "upstream")
@@ -1320,6 +1326,8 @@ class TestGitConflictRecovery:
         assert _git(local, "rev-parse", "HEAD") == _git(local, "rev-parse", "@{upstream}")
         assert recovery == original_head
         assert (local / "tracked.txt").read_text(encoding="utf-8") == "upstream\n"
+        if dirty:
+            _assert_saved_changes_survive_gc(local, tmp_path)
 
     def test_dirty_restore_conflict_keeps_recoverable_ref_and_clean_upstream(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -1345,6 +1353,22 @@ class TestGitConflictRecovery:
         assert _git(local, "status", "--porcelain=v1") == ""
         assert _git(local, "rev-parse", "HEAD") == _git(local, "rev-parse", "@{upstream}")
         assert {"tracked.txt", "staged.txt", "untracked.txt"} <= set(saved_paths)
+        _assert_saved_changes_survive_gc(local, tmp_path)
+
+
+def _assert_saved_changes_survive_gc(local: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """未復元の3状態を別worktreeのGC後も復旧できる。"""
+    other = tmp_path / "gc-worktree"
+    _git(local, "worktree", "add", "-b", "gc-worktree", str(other))
+    _git(other, "reflog", "expire", "--expire=now", "--expire-unreachable=now", "--all")
+    _git(other, "gc", "--prune=now")
+    ref = _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree").splitlines()[0]
+    _git(other, "checkout", "--detach", f"main-worktree/{ref}^1")
+    _git(other, "stash", "apply", "--index", f"main-worktree/{ref}")
+    assert (other / "tracked.txt").read_text(encoding="utf-8") in {"dirty\n", "unstaged\n"}
+    assert (other / "staged.txt").read_text(encoding="utf-8") == "staged\n"
+    assert (other / "untracked.txt").read_text(encoding="utf-8") == "untracked\n"
+    assert "A  staged.txt" in _git(other, "status", "--porcelain=v1").splitlines()
 
 
 def _track_mise_lock(local: pathlib.Path, seed: pathlib.Path) -> None:
@@ -1358,6 +1382,78 @@ def _track_mise_lock(local: pathlib.Path, seed: pathlib.Path) -> None:
     _git(seed, "add", "mise.lock")
     _git(seed, "commit", "-m", "lock v2")
     _git(seed, "push")
+
+
+class TestStashLifecycle:
+    """更新の公開入口で復元・回収・旧退避保護の寿命を確認する。"""
+
+    @pytest.mark.parametrize("pull_code,cleanup_failure", [(0, False), (7, False), (0, True), (7, True)])
+    def test_restored_changes_survive_cleanup_outcome(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        pull_code: int,
+        cleanup_failure: bool,
+    ) -> None:
+        local, _seed, _remote = _create_git_pair(tmp_path)
+        (local / "tracked.txt").write_text("unstaged\n", encoding="utf-8")
+        (local / "staged.txt").write_text("staged\n", encoding="utf-8")
+        _git(local, "add", "staged.txt")
+        (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+        monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+        monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
+        monkeypatch.setattr(update_dotfiles, "_run_git_pull", lambda *_args, **_kwargs: pull_code)
+        monkeypatch.setattr(update_dotfiles, "_run_step", lambda *_args, **_kwargs: (0, ""))
+        monkeypatch.setattr(update_dotfiles, "_pause_codex_daemon", lambda: None)
+        run_stash = update_dotfiles._run_worktree_stash
+
+        def fail_drop(*arguments: str) -> subprocess.CompletedProcess[str] | None:
+            if cleanup_failure and arguments[0] == "drop":
+                return None
+            return run_stash(*arguments)
+
+        monkeypatch.setattr(update_dotfiles, "_run_worktree_stash", fail_drop)
+        assert update_dotfiles.main() == (pull_code or int(cleanup_failure))
+        assert (local / "tracked.txt").read_text(encoding="utf-8") == "unstaged\n"
+        assert (local / "staged.txt").read_text(encoding="utf-8") == "staged\n"
+        assert (local / "untracked.txt").read_text(encoding="utf-8") == "untracked\n"
+        assert set(_git(local, "status", "--porcelain=v1").splitlines()) == {
+            " M tracked.txt",
+            "A  staged.txt",
+            "?? untracked.txt",
+        }
+        refs = _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree", "refs/atk/worktree-stash").splitlines()
+        assert len(refs) == (2 if cleanup_failure else 0)
+        if cleanup_failure:
+            diagnostic = capsys.readouterr().err
+            ref = next(ref for ref in refs if ref.startswith("refs/worktree/"))
+            assert "復元は成功" in diagnostic
+            assert f"atk worktree-stash drop {ref}" in diagnostic
+            assert run_stash("drop", ref) is not None
+            assert _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree", "refs/atk/worktree-stash") == ""
+
+    def test_old_ref_is_protected_before_pull_gc(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        local, _seed, _remote = _create_git_pair(tmp_path)
+        (local / "tracked.txt").write_text("legacy\n", encoding="utf-8")
+        _git(local, "stash", "push")
+        ref = "refs/worktree/update-dotfiles-old"
+        _git(local, "update-ref", ref, _git(local, "rev-parse", "refs/stash"))
+        _git(local, "stash", "drop")
+        other = tmp_path / "other"
+        _git(local, "worktree", "add", "-b", "other", str(other))
+        monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+
+        def gc_during_pull(*_args: object, **_kwargs: object) -> int:
+            _git(other, "reflog", "expire", "--expire=now", "--expire-unreachable=now", "--all")
+            _git(other, "gc", "--prune=now")
+            return 0
+
+        monkeypatch.setattr(update_dotfiles, "_run_git_pull", gc_during_pull)
+        assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=30) == 0
+        _git(local, "stash", "apply", "--index", ref)
+        assert (local / "tracked.txt").read_text(encoding="utf-8") == "legacy\n"
 
 
 class TestMiseLockDiscard:
@@ -1401,11 +1497,18 @@ class TestMiseLockDiscard:
         monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
         _patch_real_pull(monkeypatch, local)
 
+        saved_paths: set[str] = set()
+        original_restore = update_dotfiles._restore_worktree
+
+        def observe_restore(ref: str) -> bool:
+            saved_paths.update(_git(local, "stash", "show", "--include-untracked", "--name-only", ref).splitlines())
+            return original_restore(ref)
+
+        monkeypatch.setattr(update_dotfiles, "_restore_worktree", observe_restore)
+
         result = _REAL_UPDATE_GIT_WITH_RECOVERY(1, 5, timeout=30)
 
-        worktree_refs = _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree").splitlines()
-        stash_ref = next(ref for ref in worktree_refs if ref.startswith("refs/worktree/update-dotfiles-"))
-        saved_paths = set(_git(local, "stash", "show", "--include-untracked", "--name-only", stash_ref).splitlines())
+        assert _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree", "refs/atk/worktree-stash") == ""
         assert result == 0
         assert {"tracked.txt", "staged.txt", "untracked.txt"} <= saved_paths
         assert "mise.lock" not in saved_paths

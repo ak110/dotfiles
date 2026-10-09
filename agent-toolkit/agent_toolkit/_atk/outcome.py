@@ -70,6 +70,7 @@ VALUE_OUTPUT_COMMANDS = frozenset(
     {
         "atk managed-temp create",
         "atk worktree-stash save",
+        "atk worktree-stash protect",
         "atk worktree-stash drop",
         "atk review-table init",
         "atk review-audit mark",

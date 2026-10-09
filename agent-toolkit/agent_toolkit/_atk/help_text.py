@@ -338,6 +338,11 @@ HELP: dict[str, dict[str, str]] = {
         "description": "目的: 現在のworktreeの未コミット変更と未追跡ファイルを、worktree固有のref`refs/worktree/<ラベル>`へ記録し、共有する`refs/stash`からは取り除く。\n利用場面: 複数のworktreeが並行する環境で退避が必要なとき。通常の`git stash push`は全worktreeが共有する`refs/stash`を動かすため用いない。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、退避を作成してworktree固有refへ記録し、作成した共有stashを取り除く。記録したref名を標準出力へ書く。退避の対象が無い場合と同じ名前のrefが既にある場合は終了コード2を返す。\n前提: `--label`はrefとして有効な文字列で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: `git stash apply --index refs/worktree/<ラベル>`で復元し、不要になったら`atk worktree-stash drop refs/worktree/<ラベル>`で削除する。途中で失敗した場合は退避物を削除せず、復旧に使う識別子を標準エラーへ書く。",
         "epilog": "実行例:\n\n  atk worktree-stash save --label=before-rebase",
     },
+    "atk worktree-stash protect": {
+        "summary": "旧worktree退避を共有GCから保護する",
+        "description": "目的: 既存の正常なworktree固有refを共有refでも保護し、別worktreeのGCによる内容消失を防ぐ。\n利用場面: 共有保護を持たない旧退避を引き続き保持するとき。\n対象と出力: 現在worktreeのrefs/worktree/<ラベル>を固定共通ロック内で共有保護へ記録する。固有refは削除・改名せず、同じ保護を繰り返しても正常終了する。識別子を標準出力へ書く。成功時は終了コード0、不正な識別子・refの不在・private-notesでの実行は終了コード2、オブジェクト欠損・照会失敗などのGit操作の失敗は終了コード1を返す。失敗時は対象付きで診断し、refを自動削除しない。\n前提: 正常なrefs/worktree/配下のrefを指定する。private-notesでは実行できない。\n復元・後始末: git stash apply --index <ref>で復元し、不要になった退避はatk worktree-stash drop <ref>で固有refと共有保護を回収する。",
+        "epilog": "実行例:\n\n  atk worktree-stash protect refs/worktree/before-rebase",
+    },
     "atk worktree-stash drop": {
         "summary": "退避識別子が現在指すOIDを固定ロック下で解決して削除する",
         "description": "目的: worktree固有refまたは共有stashの退避物を、固定ロック下で現在指しているOIDを解決してから削除する。\n利用場面: 復元済み、または不要と判断した退避物を取り除くとき。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、指定した識別子が現在指すOIDを解決する。worktree固有refは解決したOIDを条件に削除し、その間に他の処理がrefを書き換えていた場合は削除せず失敗する。共有stashは`git stash drop`で削除する。削除した識別子を標準出力へ書く。識別子が存在しない場合は終了コード2を返す。\n前提: 識別子は`refs/worktree/<ラベル>`か`stash@{<番号>}`の形式で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: 削除した退避物は復元できない。復元が必要な内容は、削除の前に`git stash apply`で取り出す。",
@@ -417,6 +422,19 @@ HELP["atk agents"]["description"] += (
     "終端済みsessionの破棄はstopを呼び出す。引数は各MCPツールの公開説明で確認する。"
     "これらはCLIから実行できない。CLIはwaitで待機・回収、notifyで委譲元への通知、"
     "listで一覧、showで詳細、logsで記録の表示を行う。"
+)
+HELP["atk worktree-stash save"]["description"] += (
+    "\nGC保護: 作成した退避はworktreeとラベルごとの共有refでも保護し、その成立後に今回の共有stashだけを取り除く。"
+    "共有保護に失敗した場合は共有stashを保持する。"
+)
+HELP["atk worktree-stash drop"]["description"] += (
+    "\n共有保護の回収: 固有refを先に削除してから対応する共有保護を削除する。"
+    "途中失敗で共有保護だけ残った場合も同じ識別子で再試行できる。他worktreeの同ラベル退避は変更しない。"
+)
+HELP["atk worktree-stash"]["description"] += (
+    "\nGC保護と回収: saveは退避を共有refでも保護する。旧退避はprotect <ref>で保護できる。"
+    "復元後のdropは固有refと対応する共有保護を回収する。update-dotfilesはpull前に旧update-dotfiles退避を保護し、"
+    "今回の退避だけ復元成功後に回収する。"
 )
 HELP["atk run-script"]["description"] += (
     "\n履歴の検収はhistory-compareでrebaseとautosquashを分け、検収済み完全OID対応表をplan-rewriteと証拠の--rewrite-mapへ渡す。"
