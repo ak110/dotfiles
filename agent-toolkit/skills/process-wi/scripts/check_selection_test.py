@@ -92,11 +92,7 @@ def _initial_allocation(decisions: list[dict[str, typing.Any]]) -> dict[str, obj
     return {
         "候補WI": candidates,
         "レーン割当": assignments,
-        "不可分成分": [
-            {"WI": [name], "結合条件": [], "実装秒数": 600, "統合秒数": 60}
-            for name, lane in assignments.items()
-            if lane != "なし"
-        ],
+        "不可分成分": [{"WI": [name], "結合条件": []} for name, lane in assignments.items() if lane != "なし"],
     }
 
 
@@ -209,15 +205,56 @@ def test_public_check_initial_lane_limit_boundaries(
     assert _dispatch(str(path), "--work-dir", str(repo)) == expected
 
 
-@pytest.mark.parametrize("case,expected", [("valid", 0), ("sixteen", 1), ("mixed", 1), ("ordinary", 1), ("broken-edge", 1)])
-def test_public_check_huge_component_exception(
+@pytest.mark.parametrize(
+    "count,initial,total", [(0, 0, 0), (0, 0, 1), (11, 2, 2), (11, 2, 3), (24, 3, 3), (24, 3, 4), (24, 4, 4)]
+)
+@pytest.mark.parametrize("integrated", [False, True])
+@pytest.mark.parametrize("seconds", [100, 6000, 6001])
+def test_public_check_absolute_limit_counts_all_lanes(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    count: int,
+    initial: int,
+    total: int,
+    integrated: bool,
+    seconds: int,
+) -> None:
+    """初回と追加後の全レーンを数え、完了・後段・見込み時間で上限を変えない。"""
+    repo, notes = env
+    decisions = []
+    for index in range(total):
+        name, target = f"all-{index}.md", f"target-{index}.md"
+        (repo / target).write_text("x", encoding="utf-8")
+        _awi(notes, name, f"`{target}`を変える。")
+        decisions.append({"WI": name, "レーン": f"lane-{index + 1:02}", "書込対象": [target]})
+    path = _write_selection(tmp_path / "all.yaml", decisions)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["初回配分"] = _initial_allocation(decisions[:initial])
+    data["初回配分"]["候補WI"] = [item["WI"] for item in decisions[:initial]] + [
+        f"candidate-{i}.md" for i in range(count - initial)
+    ]
+    data["追加WI"] = [item["WI"] for item in decisions[initial:]]
+    for row in data["レーンの所要時間"]:
+        row["実装秒数"] = seconds
+        if integrated:
+            row["統合状態"] = "統合済み"
+    if integrated and total > 1:
+        data["レーンの所要時間"][-1].update({"段階": 2, "先行レーン": ["lane-01"]})
+        data["単一段階案の完了見込み秒数"] = seconds
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    bound = {0: 0, 11: 2, 24: 3}[count]
+    assert _dispatch(str(path), "--work-dir", str(repo)) == (1 if total > bound else 0)
+
+
+@pytest.mark.parametrize("case,expected", [("valid", 1), ("sixteen", 1), ("mixed", 1), ("ordinary", 1), ("broken-edge", 1)])
+def test_public_check_large_components_keep_absolute_limit(
     env: tuple[pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     case: str,
     expected: int,
 ) -> None:
-    """独立成分の合算や混入ではなく、巨大不可分成分の分離だけを例外にする。"""
+    """巨大成分と独立成分の配分も候補件数から決まる上限へそろえる。"""
     repo, notes = env
     assignments = {"a.md": "lane-01", "b.md": "lane-01", "c.md": "lane-02", "d.md": "lane-03", "e.md": "lane-04"}
     if case == "mixed":
@@ -250,18 +287,12 @@ def test_public_check_huge_component_exception(
                     },
                 }
             ],
-            "実装秒数": 7000,
-            "統合秒数": 100,
         },
-        *(
-            {"WI": [name], "結合条件": [], "実装秒数": 6500 if case == "valid" else 100, "統合秒数": 0}
-            for name in assignments
-            if name not in ("a.md", "b.md")
-        ),
+        *({"WI": [name], "結合条件": []} for name in assignments if name not in ("a.md", "b.md")),
     ]
     if case == "ordinary":
-        groups[0] = {"WI": ["a.md"], "結合条件": [], "実装秒数": 3500, "統合秒数": 0}
-        groups.insert(1, {"WI": ["b.md"], "結合条件": [], "実装秒数": 3500, "統合秒数": 0})
+        groups[0] = {"WI": ["a.md"], "結合条件": []}
+        groups.insert(1, {"WI": ["b.md"], "結合条件": []})
     candidate_count = 16 if case == "sixteen" else len(assignments)
     data["初回配分"] = {
         "候補WI": [*assignments, *(f"candidate-{i}.md" for i in range(candidate_count - len(assignments)))],
@@ -348,12 +379,7 @@ def test_public_check_component_evidence_matches_source(
             evidence["パス1"] = evidence["パス2"] = ["src/model.py"]
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     data["初回配分"]["不可分成分"] = [
-        {
-            "WI": ["a.md", "b.md"],
-            "結合条件": [{"WI1": "a.md", "WI2": "b.md", "種別": kind, "根拠": evidence}],
-            "実装秒数": 7000,
-            "統合秒数": 100,
-        }
+        {"WI": ["a.md", "b.md"], "結合条件": [{"WI1": "a.md", "WI2": "b.md", "種別": kind, "根拠": evidence}]}
     ]
     path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     assert _dispatch(str(path), "--work-dir", str(repo)) == (0 if matches else 1)
@@ -1401,7 +1427,7 @@ def test_selection_values_with_yaml_syntax_characters_round_trip(
         "続行できない理由:\n"
         "- 'なし'\n"
         "初回配分:\n  候補WI: [a.md]\n  レーン割当: {a.md: lane-01}\n"
-        "  不可分成分:\n  - WI: [a.md]\n    結合条件: []\n    実装秒数: 600\n    統合秒数: 60\n",
+        "  不可分成分:\n  - WI: [a.md]\n    結合条件: []\n",
         encoding="utf-8",
     )
 
@@ -1887,7 +1913,8 @@ def test_public_check_rejects_rationale_only_overlaps(
                     },
                 ],
                 costs_key: [
-                    {lane_key: lane, rationale_key: rationale, seconds: 600, "統合秒数": 60} for lane in ("lane-01", "lane-02")
+                    {lane_key: lane, rationale_key: rationale, seconds: 600, "統合秒数": 60}
+                    for lane in (("lane-01",) if same_lane else ("lane-01", "lane-02"))
                 ],
                 "初回配分": _initial_allocation(
                     [

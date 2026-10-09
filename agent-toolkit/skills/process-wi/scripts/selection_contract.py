@@ -170,16 +170,13 @@ def _allocation_structure_errors(value: object) -> list[str]:
         return [*errors, "初回配分の不可分成分は列にする"]
     for index, component in enumerate(components, 1):
         label = f"初回配分の不可分成分{index}"
-        keys = {"WI", "結合条件", "実装秒数", "統合秒数"}
+        keys = {"WI", "結合条件"}
         if not isinstance(component, dict) or set(component) != keys:
-            errors.append(f"{label}: 欄を{', '.join(sorted(keys))}へそろえる")
+            errors.append(f"{label}: 欄を{', '.join(sorted(keys))}へそろえ、成分別の実装秒数・統合秒数を除く")
             continue
         names = component["WI"]
         if not is_string_list(names) or not names or len(names) != len(set(names)):
             errors.append(f"{label}: WIは空でない重複のない文字列の列にする")
-        for key in ("実装秒数", "統合秒数"):
-            if not is_non_negative_number(component[key]):
-                errors.append(f"{label}: {key}は補正後の0以上の数値にする")
         edges = component["結合条件"]
         if not isinstance(edges, list):
             errors.append(f"{label}: 結合条件は列にする")
@@ -197,7 +194,7 @@ def _allocation_structure_errors(value: object) -> list[str]:
 
 
 def allocation_errors(selection: dict[str, object]) -> list[str]:
-    """初回候補の上限と、独立成分の合算を除いた巨大成分の例外を検査する。"""
+    """初回候補から決まる上限を、初回割当と現在の全レーンへ適用する。"""
     data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
     assignments: dict[str, str] = data["レーン割当"]
     candidates = set(data["候補WI"])
@@ -217,7 +214,6 @@ def allocation_errors(selection: dict[str, object]) -> list[str]:
     active = {name for name, lane in assignments.items() if lane != _LANE_NONE}
     if set(members) != active or len(members) != len(set(members)):
         errors.append("初回配分の不可分成分は初回の実施対象WIを過不足なく1回ずつ覆うようにする")
-    huge: list[set[str]] = []
     for group in groups:
         names = set(group["WI"])
         links: dict[str, set[str]] = {name: set() for name in names}
@@ -242,22 +238,18 @@ def allocation_errors(selection: dict[str, object]) -> list[str]:
             errors.append(f"不可分成分が有効な結合条件で連結していない: {sorted(names)}")
         if len({assignments.get(name) for name in names}) != 1:
             errors.append(f"不可分成分を複数の初回レーンへ分けている: {sorted(names)}")
-        if group["実装秒数"] + group["統合秒数"] > 6000:
-            huge.append(names)
     count = len(candidates)
     bound = (count + 9) // 10
-    lanes = set(assignments.values()) - {_LANE_NONE}
-    remainder = int(len(groups) > len(huge))
-    allowed = max(bound, len(huge) + remainder)
-    label = f"初回配分: N={count}、通常上限B={bound}、実レーン数={len(lanes)}、例外上限={allowed}"
-    if len(lanes) > allowed:
-        errors.append(f"{label}: レーン数が上限を超える。通常成分の時間均衡だけでは増設できない")
-    if len(lanes) > bound:
-        for names in huge:
-            lane = assignments.get(next(iter(names)))
-            lane_members = {name for name, assigned in assignments.items() if assigned == lane}
-            if lane_members != names:
-                errors.append(f"{label}: 巨大不可分成分の専用レーン{lane}に独立した他成分が混入している")
+    current_lanes = set(current.values()) | {
+        row[_selection.LANE_KEY] for row in typing.cast(list[dict[str, typing.Any]], _selection.lane_costs(selection))
+    }
+    for scope, lanes in (("初回配分", set(assignments.values())), ("現在の全体配分", current_lanes)):
+        total = len(lanes - {_LANE_NONE})
+        if total > bound:
+            errors.append(
+                f"{scope}: N={count}、上限B={bound}、実レーン数={total}: レーン数が上限を超える。"
+                "統合済み・後段を含めて上限内のレーンへまとめ、複数成分は同じレーンで順に扱う"
+            )
     return errors
 
 
