@@ -64,6 +64,7 @@ Claude Codeでは、選定した全初期通常レーンの初回起動が完了
 4. 各項目の割当理由へ合計件数、実依存、再開計画、待ち時間、現在工程および書込所有権の判定を記録する
 
 割当の意味判断を終えたメインは、`selection-procedure.md`「処理対象WIの追加」の統合操作で、確定した対応JSONを使って元の選定結果へ保存する。全体検査の終了コード0と保存成功を受領してから追加分を渡す。
+既存レーンの統合状態を用い、統合済みレーンとの重なりだけなら同段階・先行指定なしで開始できる。双方の定義と判定の履歴は保持し、未統合同士には排他と先行関係を適用する。初回配分と追加区分の契約はselection-format.mdに従い、初回件数式は保存した初回割当に適用する。既存レーンへ新しい実施内容を合流した結果は未統合へ戻り、追加分の完了は改めて検収する。
 
 `選定結果の出力先ファイル`の割り当て先の`選定`へAWIを追加した時点で、現在工程の完了を待たずに、同じthreadへ開始まで含めた指示を1回送る。
 指示は追加AWI名、継続する専用worktreeとbranch、継続する引き継ぎ記録先、AWI本文と`プロジェクト規範の指定`を`選定結果の出力先ファイル`から取得する指示を持ち、現在工程を置換せずに、その完了後にturnを終えず追加した処理対象WIの計画起草へ進むことを伝える。最初の工程境界の届け方は指示で指定せず、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`がその形式に定める届け方に委ねる。メインの判断を待つ`計画作成完了`と`計画なし準備完了`は返却、非待機の`計画検査完了`は`atk agents notify`の通知であり、現在工程の結果はその本文の先頭に含まれる。返却を一律に求めると、非待機の境界でもレーン担当がturnを終えて次の指示まで実装が止まり、境界ごとの往復で着手の遅れと担当の再開費用が生じる。配送状態の意味と継続手段は`${CLAUDE_PLUGIN_ROOT}/skills/delegation/references/waiting-and-monitoring.md`に従う。
@@ -123,6 +124,13 @@ Claude Codeでは、選定した全初期通常レーンの初回起動が完了
 統合指示の前の確認は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」に従う。統合指示は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って同じレーン担当threadへ送る。
 
 統合結果のOID、計画保存およびAWI終端を検収した後、レーン担当の終端と外部プロセスの終了を確認する。専用worktree、専用branch、作成した場合のレーン用managed-tempは、それらを入力とする全工程が完了してから、メインが「レーンと資源」で記録した値を使って次の手順で回収する。対象リポジトリの規範がworktreeの撤去手順を定める場合は、その手順を`git worktree remove`より前に実行する。レーン担当の作業ディレクトリは回収対象のworktreeの内側にあるため、回収はメインが自ら行う。
+メインはこの検収と終端確認の後、資源回収・追加選定の前に、次の公開操作で選定YAMLの統合状態を保存する。実装完了や統合指示の送付の時点では未統合として保持する。
+
+```text
+atk run-script pick-wi-check -- <選定YAML> --mark-integrated <レーン識別子> --output <同じ選定YAML> --work-dir <対象リポジトリの絶対パス>
+```
+
+複数の検収済みレーンは`--mark-integrated`を反復して指定できる。同じレーンへの記録も反復できる。状態記録とmergeは別々に実行する。全体検査の成功後だけ原子的に保存され、未知レーン・入力不備・内容違反では保存先を保持する。終了コード0と保存成功を検収して既存の親引き継ぎへ記録し、非0では診断した入力を修正して同じ操作を再実行する。完了レーンと所属WIを履歴として保持したまま、状態に応じて重なりを判定する。
 
 - `マージあり`: `git -C <統合先worktree> symbolic-ref --short HEAD`が統合先branchと一致することを確かめる。`git -C <対象リポジトリ> worktree remove <専用worktree>`を専用branchの削除より先に実行する。続けて`git -C <統合先worktree> merge-base --is-ancestor <専用branch> <統合先branch>`の終了コード0で到達を確認し、`git -C <統合先worktree> branch -D <専用branch>`で削除する。削除には到達確認を経た`-D`だけを使う。専用branchにupstreamが設定されている場合、`-d`はローカルのマージ先ではなくupstreamを基準に統合を判定し、push前の統合を未統合として拒否する。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終端」：所有資源の回収：2026年9月3日」にある
 - `マージなし`: 専用worktreeで`git status --porcelain=v1`の出力が空であり、`git symbolic-ref --short HEAD`が専用branch名であることを確かめる。続けて`git -C <対象リポジトリ> worktree remove <専用worktree>`を実行する。その後、`git -C <統合先worktree> merge-base --is-ancestor <専用branch> <統合先branch>`を実行する。終了コード0は専用branchが統合先branchに無いcommitを持たないことを示し、その場合だけ`git -C <統合先worktree> branch -D <専用branch>`で削除する。終了コードが0でない場合は専用branchを削除しない

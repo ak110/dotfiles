@@ -84,6 +84,7 @@ from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan.structure import is_agent_doc_target_file as _is_agent_doc_target_file
@@ -284,7 +285,7 @@ class _Segment:
 def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
 
-    インラインコードは、内容が空白を含まず`/`か`.`を含む場合に内容全体を1つの候補とし、非ASCIIの文字を含む
+    インラインコードは、内容全体が解決可能なパスの場合に空白を含めて1つの候補とし、非ASCIIの文字を含む
     パス（`docs/dev/ログ監視.md`、`ログ/a.md`）も末尾まで読む。文章の中のパスはASCIIの文字で区切って探し、
     直後に文字か数字の非ASCII文字が続く場合は、その位置から伸ばした文字列のうち作業ツリーに実在する最長のパスを候補とする。
     実在するパスが無く、ASCIIの部分が`/`で終わらず最後の要素に`.`も持たない場合（`docs/design/LLM`）は、
@@ -350,8 +351,9 @@ def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple
         if (
             segment.code
             and content.strip()
-            and not any(char.isspace() or char in _GLOB_CHARS for char in content)
+            and not any(char in _GLOB_CHARS for char in content)
             and ("/" in content or "." in content)
+            and (_repository_path(content.strip(), work_dir) is not None or (work_dir / content.strip()).is_file())
         ):
             tokens.append((offset, offset + len(content)))
             offset += len(content)
@@ -471,7 +473,7 @@ def _inline_runs(text: str) -> list[list[_Segment]]:
 def _normalize_candidate(candidate: str) -> str | None:
     """インラインコードの内容をリポジトリ相対パスの候補へ整え、パスでなければ`None`を返す。"""
     value = _LINE_SUFFIX_RE.sub("", candidate.strip().split("#", 1)[0])
-    if not value or any(char.isspace() for char in value):
+    if not value:
         return None
     if value.startswith(_NON_PATH_PREFIXES) or any(fragment in value for fragment in _NON_PATH_FRAGMENTS):
         return None
@@ -697,10 +699,63 @@ def check(
         )
     )
     errors.extend(_check_public_write_rationales(items, costs))
+    errors.extend(selection_contract.allocation_errors(selection))
+    errors.extend(_check_allocation_sources(selection, private_notes))
     return errors
 
 
-def load_selection(selection_file: pathlib.Path) -> dict[str, object]:
+def _check_allocation_sources(selection: dict[str, object], private_notes: pathlib.Path) -> list[str]:
+    """成分の型付き根拠を元の依存・再開位置・書込対象へ対応付ける。"""
+    data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
+    items = {
+        item[_selection.WI_KEY]: item for item in typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
+    }
+    costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
+    stages = {row[_selection.LANE_KEY]: row.get(_selection.STAGE_KEY, 1) for row in costs}
+    sources: dict[str, dict[str, typing.Any]] = {}
+    errors: list[str] = []
+    for group in data["不可分成分"]:
+        for edge in group["結合条件"]:
+            first, second, kind, evidence = (edge[key] for key in ("WI1", "WI2", "種別", "根拠"))
+            if first not in items or second not in items or not selection_contract.valid_allocation_edge(edge):
+                continue
+            pair = (items[first], items[second])
+            if kind == "依存":
+                for name in (first, second):
+                    if name not in sources:
+                        try:
+                            source = _plan_file.find_wi_source(name, private_notes)
+                            parsed = None
+                            if source is not None:
+                                parsed = _wi_frontmatter.parse_frontmatter(source.read_text(encoding="utf-8"))
+                        except (OSError, UnicodeDecodeError) as error:
+                            raise InputError(
+                                f"依存元のWI本文を読み込めない: {name}: {error}", next_action=_FIX_PRIVATE_NOTES
+                            ) from error
+                        sources[name] = parsed[0] if parsed else {}
+                actual = sources[evidence["依存元"]].get("depends_on", [])
+                matches = actual == evidence["depends_on"] and all(
+                    isinstance(sources[name].get("target_repo"), str)
+                    and _git_remote.resolve_repo_identifier(sources[name]["target_repo"]) == evidence[f"リポジトリ{index}"]
+                    for index, name in enumerate((first, second), 1)
+                )
+            elif kind == "再開計画":
+                matches = all(
+                    _resume_plan_id(item.get("再開位置")) == pathlib.PurePosixPath(evidence[f"計画{index}"]).name
+                    for index, item in enumerate(pair, 1)
+                )
+            else:
+                matches = all(
+                    evidence[f"パス{index}"] == _string_list(item, _selection.WRITE_FILES_KEY)
+                    and evidence[f"段階{index}"] == stages.get(item[_selection.LANE_KEY])
+                    for index, item in enumerate(pair, 1)
+                )
+            if not matches:
+                errors.append(f"初回配分: {first}と{second}の{kind}の結合根拠が元入力と一致しない")
+    return errors
+
+
+def load_selection(selection_file: pathlib.Path, *, additional: bool = False) -> dict[str, object]:
     """選定結果を読み、YAML構文、欄名、必須の欄および値の型を確かめて返す。
 
     ファイルを開けない失敗はパスの誤りとして、読めた内容の誤りは選定結果の修正として、別の次の操作を付けて送出する。
@@ -719,6 +774,11 @@ def load_selection(selection_file: pathlib.Path) -> dict[str, object]:
     except yaml.YAMLError as error:
         raise InputError(f"選定結果のYAML構文が不正: {selection_file}: {error}", next_action=_FIX_YAML) from error
     errors, model_errors = selection_contract.structure_errors(selection)
+    if isinstance(selection, dict) and not additional and _selection.INITIAL_ALLOCATION_KEY not in selection:
+        errors.append(
+            "初回配分がない。初回候補WI・レーン割当・不可分成分の結合条件と補正後の秒数を、"
+            "元候補と初回選定の記録から補い、selection-format.mdの初回配分の形式で再実行する"
+        )
     if errors or model_errors:
         next_action = f"{_FIX_MODEL}。{_FIX_CONTENT}" if model_errors else _FIX_CONTENT
         raise InputError(
@@ -788,6 +848,7 @@ def _check_lane_stages(items: collections.abc.Sequence[object], costs: collectio
         if isinstance(item, dict) and isinstance(item.get(_selection.LANE_KEY), str) and item[_selection.LANE_KEY] != _LANE_NONE
     }
     rows: dict[str, tuple[int, list[str]]] = {}
+    integrated = _selection.integrated_lanes({_selection.LANE_COSTS_KEY: list(costs)})
     errors: list[str] = []
     for row in costs:
         if not isinstance(row, dict) or not isinstance(row.get(_selection.LANE_KEY), str):
@@ -797,16 +858,22 @@ def _check_lane_stages(items: collections.abc.Sequence[object], costs: collectio
             typing.cast(int, row.get(_selection.STAGE_KEY, 1)),
             typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])),
         )
-    ordered_stages = sorted({stage for stage, _ in rows.values()})
+    last_pending_stage = max((stage for lane, (stage, _) in rows.items() if lane not in integrated), default=0)
+    # 元配分の完了した前段は残し、完了済みの後段だけを新たな待機条件から外す。
+    ordered_stages = sorted({stage for stage, _ in rows.values() if stage <= last_pending_stage})
     for expected, stage in enumerate(ordered_stages, start=1):
         if stage != expected:
             errors.append(f"段階は1から連続する正整数を指定する: 段階{expected}がない")
             break
     for lane, (stage, prior) in rows.items():
-        if stage > 1 and not prior:
+        if lane not in integrated and stage > 1 and not prior:
             errors.append(f"{lane}: 後段には先行レーンを指定する")
         for predecessor in prior:
-            if predecessor not in lanes or predecessor not in rows or rows[predecessor][0] >= stage:
+            if (
+                predecessor not in lanes
+                or predecessor not in rows
+                or (lane not in integrated and predecessor not in integrated and rows[predecessor][0] >= stage)
+            ):
                 errors.append(f"{lane}: 先行レーン{predecessor}は前の段階の対象レーンでなければならない")
     return errors
 
@@ -843,6 +910,7 @@ def _check_lane_overlaps(
     errors: list[str] = []
     seen: set[tuple[str, str, str]] = set()
     dependencies: dict[str, set[str]] = {}
+    integrated = _selection.integrated_lanes({_selection.LANE_COSTS_KEY: list(costs)})
     for record in records:
         left, right = sorted((str(record["レーン1"]), str(record["レーン2"])))
         path = str(record["共通パス"])
@@ -861,6 +929,8 @@ def _check_lane_overlaps(
                 errors.append(f"{label}: 交わらない定義が同一。判定または定義を直す")
             continue
         left_stage = stages.get(left, (1, []))[0]
+        if left in integrated or right in integrated:
+            continue
         right_stage = stages.get(right, (1, []))[0]
         if left_stage == right_stage:
             errors.append(f"{label}: 同じ段階で定義が交わる。同じレーンへまとめるか先行関係と段階を直す")
@@ -870,7 +940,11 @@ def _check_lane_overlaps(
     for left, right, path in sorted(expected - seen):
         errors.append(f"{left}と{right}: 重複パスの記録不足: {path}。双方の定義と判定をレーン間の重なりへ1件記録する")
     for lane, (_, prior) in stages.items():
+        if lane in integrated:
+            continue
         for predecessor in prior:
+            if predecessor in integrated:
+                continue
             if not _reachable(lane, predecessor, dependencies):
                 errors.append(f"{lane}: 根拠の無い直列化: {predecessor}。交わる記録に基づく先行関係へ直す")
     actual = {lane: set(prior) for lane, (_, prior) in stages.items()}
@@ -967,11 +1041,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lane-map", type=pathlib.Path, metavar="PATH", help="追加レーンから最終レーンへの対応JSON")
     parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した統合結果の保存先")
     parser.add_argument(
+        "--mark-integrated", action="append", metavar="LANE", help="検収済みレーンの統合状態を記録する。反復指定可"
+    )
+    parser.add_argument(
         "--lane-cost-updates", type=pathlib.Path, metavar="PATH", help="最終レーンの確定した秒数と根拠のJSON（統合時だけ）"
     )
     args = parser.parse_args(argv)
-    if any(value is not None for value in (args.merge, args.lane_map, args.output)) and not all(
-        value is not None for value in (args.merge, args.lane_map, args.output)
+    if args.mark_integrated is not None and (args.merge is not None or args.lane_map is not None or args.output is None):
+        parser.error("--mark-integratedは--outputと組で指定し、--merge・--lane-mapと併用しない")
+    if (
+        args.mark_integrated is None
+        and any(value is not None for value in (args.merge, args.lane_map, args.output))
+        and not all(value is not None for value in (args.merge, args.lane_map, args.output))
     ):
         parser.error("--merge・--lane-map・--outputは組で指定する")
     if args.lane_cost_updates is not None and args.merge is None:
@@ -980,7 +1061,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         work_dir = _resolve_work_dir(args.work_dir)
         selection = load_selection(args.selection_file)
+        if args.mark_integrated is not None:
+            rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
+            unknown = set(args.mark_integrated) - {str(row[_selection.LANE_KEY]) for row in rows}
+            if unknown:
+                raise InputError(f"統合状態の対象レーンがない: {sorted(unknown)}", next_action=_FIX_CONTENT)
         if args.merge is not None:
+            assert args.lane_map is not None
             try:
                 mapping = json.loads(args.lane_map.read_text(encoding="utf-8"))
                 updates = None
@@ -988,7 +1075,7 @@ def main(argv: list[str] | None = None) -> int:
                     updates = json.loads(args.lane_cost_updates.read_text(encoding="utf-8"))
                     if not isinstance(updates, dict):
                         raise ValueError("費用更新JSONは最終レーンから3欄への写像とする")
-                selection = merge_selection(selection, load_selection(args.merge), mapping, updates)
+                selection = merge_selection(selection, load_selection(args.merge, additional=True), mapping, updates)
             except (OSError, ValueError) as error:
                 raise InputError(
                     str(error), next_action="追加入力・レーン対応JSON・費用更新JSONを直して同じ統合操作を再実行する"
@@ -1022,9 +1109,15 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    if args.output is not None and args.merge is not None:
+    if args.mark_integrated is not None:
+        rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
+        for row in rows:
+            if row[_selection.LANE_KEY] in args.mark_integrated:
+                row[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
+        selection[_selection.LANE_COSTS_KEY] = rows
+    if args.output is not None:
         try:
-            if args.output.resolve() == args.merge.resolve():
+            if args.merge is not None and args.output.resolve() == args.merge.resolve():
                 raise OSError("追加YAMLを保存先に指定できない")
             atomic_write(args.output, yaml.safe_dump(selection, allow_unicode=True, sort_keys=False))
         except OSError as error:

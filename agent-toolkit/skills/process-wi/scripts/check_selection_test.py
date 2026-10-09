@@ -40,11 +40,14 @@ def fixture_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tupl
     return repo, notes
 
 
-def _awi(notes: pathlib.Path, name: str, reflected: str, *, state: str = "processing") -> None:
+def _awi(
+    notes: pathlib.Path, name: str, reflected: str, *, state: str = "processing", dependencies: list[str] | None = None
+) -> None:
     """`## 反映内容と反映先`に`reflected`を持つAWI本文を保存する。"""
     (notes / state).mkdir(exist_ok=True)
+    metadata = yaml.safe_dump({"target_repo": "github.com/test/repo", "depends_on": dependencies or []})
     body = (
-        f"---\ntype: awi\nsource: test\n---\n\n# 題\n\n## 反映内容と反映先\n\n{reflected}\n\n"
+        f"---\ntype: awi\nsource: test\n{metadata}---\n\n# 題\n\n## 反映内容と反映先\n\n{reflected}\n\n"
         "## 完成条件\n\n- `outside.py`を変える\n"
     )
     (notes / state / name).write_text(body, encoding="utf-8")
@@ -70,10 +73,31 @@ def _write_selection(
         if "rationale" not in row:
             row.setdefault("根拠", "検査用の根拠")
     selection: dict[str, object] = {"decisions" if legacy else "選定": decisions, "レーンの所要時間": costs}
+    selection["初回配分"] = _initial_allocation(decisions)
     if any(isinstance(row.get("段階"), int) and row["段階"] >= 2 for row in costs):
         selection["単一段階案の完了見込み秒数"] = 1320
     path.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
     return path
+
+
+def _initial_allocation(decisions: list[dict[str, typing.Any]]) -> dict[str, object]:
+    """被覆のテスト入力には、独立したWIを通常上限内へ割り当てた初回情報を添える。"""
+    assignments = {str(item.get("WI", item.get("awi"))): str(item.get("レーン", item.get("lane"))) for item in decisions}
+    # 被覆などを検証する入力は、選定外候補も含む通常上限内の初回配分を使う。
+    lanes = set(assignments.values()) - {"なし"}
+    candidates = [
+        *assignments,
+        *(f"unselected-{index}.md" for index in range(max(0, 10 * (len(lanes) - 1) + 1 - len(assignments)))),
+    ]
+    return {
+        "候補WI": candidates,
+        "レーン割当": assignments,
+        "不可分成分": [
+            {"WI": [name], "結合条件": [], "実装秒数": 600, "統合秒数": 60}
+            for name, lane in assignments.items()
+            if lane != "なし"
+        ],
+    }
 
 
 def _run(tmp_path: pathlib.Path, repo: pathlib.Path, decisions: list[dict[str, typing.Any]]) -> int:
@@ -85,6 +109,417 @@ def _run(tmp_path: pathlib.Path, repo: pathlib.Path, decisions: list[dict[str, t
 def _dispatch(*args: str) -> int:
     """`atk run-script pick-wi-check`の公開名から検証を実行し、終了コードを返す。"""
     return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
+
+
+@pytest.mark.parametrize(
+    "stages,completed,expected",
+    [
+        ([1, 1, 3], [], 1),
+        ([1, 1, 3], [0], 1),
+        ([1, 2], [0], 0),
+        ([3, 1], [0], 0),
+        ([1, 2, 3], [0, 1], 0),
+        ([3], [0], 0),
+    ],
+)
+def test_public_check_stage_continuity_preserves_completed_prefix(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    stages: list[int],
+    completed: list[int],
+    expected: int,
+) -> None:
+    """未統合の段階飛びを拒否し、元配分の完了した前段から後段へ進める。"""
+    repo, notes = env
+    decisions = []
+    costs = []
+    for index, stage in enumerate(stages):
+        name, lane, target = f"stage-{index}.md", f"lane-{index + 1:02}", _REPO_FILES[index]
+        _awi(notes, name, f"`{target}`を変更する。")
+        decisions.append({"WI": name, "レーン": lane, "書込対象": [target]})
+        costs.append(
+            {
+                "レーン": lane,
+                "段階": stage,
+                "統合状態": "統合済み" if index in completed else "未統合",
+                "先行レーン": [f"lane-{prior + 1:02}" for prior in range(index) if stages[prior] < stage],
+            }
+        )
+    path = _write_selection(tmp_path / "stages.yaml", decisions, costs)
+    assert _dispatch(str(path), "--work-dir", str(repo)) == expected
+    if expected:
+        assert "段階2がない" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("state", ["未統合", "統合済み"])
+@pytest.mark.parametrize("violation", ["coverage", "broad", "classification", "norm-spec"])
+def test_public_check_completed_wi_keeps_body_validation(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+    violation: str,
+) -> None:
+    """完了履歴にも被覆・範囲・区分・規範指定の本文検査を適用する。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`src/model.py`を変更する。", state="adopt" if state == "統合済み" else "processing")
+    item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}
+    if violation == "coverage":
+        item["書込対象"] = []
+        diagnostic = "未被覆"
+    elif violation == "broad":
+        item["書込対象"] = ["src/"]
+        diagnostic = "広すぎる範囲"
+    elif violation == "classification":
+        item["書き込まない反映先"] = ["src/model.py"]
+        diagnostic = "区分間の重複"
+    else:
+        (repo / "pyproject.toml").write_text(
+            '[[tool.agent-toolkit.pick-wi-check.norm-spec]]\nname = "仕様"\npaths = ["src/"]\nrequire-text = ["設計を読む"]\n',
+            encoding="utf-8",
+        )
+        diagnostic = "プロジェクト規範の指定の不足"
+    path = _write_selection(tmp_path / "body.yaml", [item], [{"レーン": "lane-01", "統合状態": state}])
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 1
+    assert f"a.md: {diagnostic}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("count,lanes,expected", [(0, 0, 0), (1, 1, 0), (10, 1, 0), (10, 2, 1), (11, 2, 0)])
+def test_public_check_initial_lane_limit_boundaries(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    count: int,
+    lanes: int,
+    expected: int,
+) -> None:
+    """候補数の十件境界を選定件数から分け、初回の上限を公開入口で判定する。"""
+    repo, notes = env
+    decisions = []
+    for index in range(lanes):
+        name, lane = f"limit-{index}.md", f"lane-{index + 1:02}"
+        target = f"file-{index}.md"
+        (repo / target).write_text("x", encoding="utf-8")
+        _awi(notes, name, f"`{target}`を変える。")
+        decisions.append({"WI": name, "レーン": lane, "書込対象": [target]})
+    path = _write_selection(tmp_path / "limit.yaml", decisions)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["初回配分"]["候補WI"] = [item["WI"] for item in decisions] + [f"candidate-{i}.md" for i in range(count - lanes)]
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) == expected
+
+
+@pytest.mark.parametrize("case,expected", [("valid", 0), ("sixteen", 1), ("mixed", 1), ("ordinary", 1), ("broken-edge", 1)])
+def test_public_check_huge_component_exception(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    expected: int,
+) -> None:
+    """独立成分の合算や混入ではなく、巨大不可分成分の分離だけを例外にする。"""
+    repo, notes = env
+    assignments = {"a.md": "lane-01", "b.md": "lane-01", "c.md": "lane-02", "d.md": "lane-03", "e.md": "lane-04"}
+    if case == "mixed":
+        assignments["c.md"] = "lane-01"
+    if case == "sixteen":
+        assignments["d.md"] = "lane-02"
+        assignments["e.md"] = "lane-03"
+        assignments["f.md"] = "lane-04"
+    decisions = []
+    for index, (name, lane) in enumerate(assignments.items()):
+        target = f"target-{index}.md"
+        (repo / target).write_text("x", encoding="utf-8")
+        _awi(notes, name, f"`{target}`を変える。", dependencies=["a.md"] if name == "b.md" else [])
+        decisions.append({"WI": name, "レーン": lane, "書込対象": [target]})
+    path = _write_selection(tmp_path / "huge.yaml", decisions)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    groups = [
+        {
+            "WI": ["a.md", "b.md"],
+            "結合条件": [
+                {
+                    "WI1": "a.md",
+                    "WI2": "b.md",
+                    "種別": "依存",
+                    "根拠": {
+                        "リポジトリ1": "github.com/test/repo",
+                        "リポジトリ2": "github.com/test/repo",
+                        "依存元": "b.md",
+                        "depends_on": ["a.md"] if case != "broken-edge" else [],
+                    },
+                }
+            ],
+            "実装秒数": 7000,
+            "統合秒数": 100,
+        },
+        *(
+            {"WI": [name], "結合条件": [], "実装秒数": 6500 if case == "valid" else 100, "統合秒数": 0}
+            for name in assignments
+            if name not in ("a.md", "b.md")
+        ),
+    ]
+    if case == "ordinary":
+        groups[0] = {"WI": ["a.md"], "結合条件": [], "実装秒数": 3500, "統合秒数": 0}
+        groups.insert(1, {"WI": ["b.md"], "結合条件": [], "実装秒数": 3500, "統合秒数": 0})
+    candidate_count = 16 if case == "sixteen" else len(assignments)
+    data["初回配分"] = {
+        "候補WI": [*assignments, *(f"candidate-{i}.md" for i in range(candidate_count - len(assignments)))],
+        "レーン割当": assignments,
+        "不可分成分": groups,
+    }
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) == expected
+    if case == "sixteen":
+        output = capsys.readouterr().err
+        assert "N=16" in output and "B=2" in output and "実レーン数=4" in output
+
+
+@pytest.mark.parametrize("problem", ["missing", "duplicate-candidate", "missing-member", "wrong-kind", "wrong-type"])
+def test_public_check_rejects_invalid_allocation_evidence(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    problem: str,
+) -> None:
+    """情報の欠落と矛盾を、候補件数による推定で黙認しない。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変える。")
+    path = _write_selection(tmp_path / "invalid.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}])
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if problem == "missing":
+        del data["初回配分"]
+    elif problem == "duplicate-candidate":
+        data["初回配分"]["候補WI"].append("a.md")
+    elif problem == "missing-member":
+        data["初回配分"]["不可分成分"] = []
+    elif problem == "wrong-type":
+        data["初回配分"]["不可分成分"][0]["実装秒数"] = True
+    else:
+        data["初回配分"]["不可分成分"][0]["結合条件"] = [{"WI1": "a.md", "WI2": "b.md", "種別": "未知", "根拠": {}}]
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) != 0
+    output = capsys.readouterr().err
+    assert "初回配分" in output and "次の操作:" in output
+
+
+@pytest.mark.parametrize("kind", ["依存", "再開計画", "書込重複"])
+@pytest.mark.parametrize("matches", [True, False])
+def test_public_check_component_evidence_matches_source(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    kind: str,
+    matches: bool,
+) -> None:
+    """結合の構造だけを整えた偽の根拠は、元入力との対照で拒否する。"""
+    repo, notes = env
+    for name in ("a.md", "b.md"):
+        _awi(notes, name, "`README.md`を変える。", dependencies=["a.md"] if name == "b.md" else [])
+    plan = str(tmp_path / "shared.md")
+    path = _write_selection(
+        tmp_path / "component.yaml",
+        [{"WI": name, "レーン": "lane-01", "書込対象": ["README.md"], "再開位置": plan} for name in ("a.md", "b.md")],
+    )
+    evidences: dict[str, dict[str, typing.Any]] = {
+        "依存": {
+            "リポジトリ1": "github.com/test/repo",
+            "リポジトリ2": "github.com/test/repo",
+            "依存元": "b.md",
+            "depends_on": ["a.md"],
+        },
+        "再開計画": {"計画1": plan, "計画2": plan},
+        "書込重複": {
+            "パス1": ["README.md"],
+            "パス2": ["README.md"],
+            "定義1": ["f"],
+            "定義2": ["f"],
+            "段階1": 1,
+            "段階2": 1,
+            "段階比較": "同じ定義なので段階でも直列となる",
+        },
+    }
+    evidence = evidences[kind]
+    if not matches:
+        if kind == "依存":
+            evidence["depends_on"] = ["a.md", "invented.md"]
+        elif kind == "再開計画":
+            evidence["計画1"] = evidence["計画2"] = str(tmp_path / "other.md")
+        else:
+            evidence["パス1"] = evidence["パス2"] = ["src/model.py"]
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["初回配分"]["不可分成分"] = [
+        {
+            "WI": ["a.md", "b.md"],
+            "結合条件": [{"WI1": "a.md", "WI2": "b.md", "種別": kind, "根拠": evidence}],
+            "実装秒数": 7000,
+            "統合秒数": 100,
+        }
+    ]
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) == (0 if matches else 1)
+
+
+@pytest.mark.parametrize("state,expected", [(None, 1), ("未統合", 1), ("統合済み", 0)])
+def test_public_check_overlap_uses_integration_state(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    state: str | None,
+    expected: int,
+) -> None:
+    """同段階で同定義を書く対照は、統合済みの履歴だけを競合待ちから除く。"""
+    repo, notes = env
+    for name in ("a.md", "b.md"):
+        _awi(notes, name, "`README.md`を変える。")
+    path = _write_selection(
+        tmp_path / "state.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": ["README.md"]},
+        ],
+    )
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["レーン間の重なり"] = [
+        {
+            "レーン1": "lane-01",
+            "レーン2": "lane-02",
+            "共通パス": "README.md",
+            "レーン1の定義": ["f"],
+            "レーン2の定義": ["f"],
+            "判定": "交わる",
+        }
+    ]
+    if state is not None:
+        data["レーンの所要時間"][0]["統合状態"] = state
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) == expected
+
+
+def test_public_command_records_integrated_lane(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
+    """統合・終端検収後の記録を同じ公開保存入口へ渡し、反復と再入力も成功する。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変える。")
+    path = _write_selection(tmp_path / "state.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}])
+    for _ in range(2):
+        assert _dispatch(str(path), "--mark-integrated", "lane-01", "--output", str(path), "--work-dir", str(repo)) == 0
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["レーンの所要時間"][0]["統合状態"] == "統合済み"
+    assert data["選定"][0]["WI"] == "a.md"
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    before = path.read_bytes()
+    assert _dispatch(str(path), "--mark-integrated", "lane-99", "--output", str(path), "--work-dir", str(repo)) == 2
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("problem", ["unknown-state", "state-type", "unknown-prior", "uncovered", "invalid-path", "conflict"])
+def test_state_update_preserves_output_on_failure(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    problem: str,
+) -> None:
+    """不正な状態・完了履歴の未知参照・残る未統合競合は、既存の保存先を更新しない。"""
+    repo, notes = env
+    decisions = []
+    for number in (1, 2, 3):
+        name = f"{number}.md"
+        _awi(notes, name, "`README.md`を変える。")
+        decisions.append({"WI": name, "レーン": f"lane-0{number}", "書込対象": ["README.md"]})
+    path = _write_selection(tmp_path / "state.yaml", decisions)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if problem != "conflict":
+        data["選定"] = data["選定"][:1]
+        data["レーンの所要時間"] = data["レーンの所要時間"][:1]
+        data["初回配分"] = _initial_allocation(data["選定"])
+    row = data["レーンの所要時間"][0]
+    if problem in ("unknown-state", "state-type"):
+        row["統合状態"] = "完了" if problem == "unknown-state" else []
+    elif problem == "unknown-prior":
+        row["統合状態"] = "統合済み"
+        row["先行レーン"] = ["lane-99"]
+    elif problem in ("uncovered", "invalid-path"):
+        data["選定"][0]["書込対象"] = [] if problem == "uncovered" else ["docs/../README.md"]
+    else:
+        data["レーン間の重なり"] = [
+            {
+                "レーン1": left,
+                "レーン2": right,
+                "共通パス": "README.md",
+                "レーン1の定義": ["f"],
+                "レーン2の定義": ["f"],
+                "判定": "交わる",
+            }
+            for left, right in (("lane-01", "lane-02"), ("lane-01", "lane-03"), ("lane-02", "lane-03"))
+        ]
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    before = path.read_bytes()
+    assert _dispatch(str(path), "--mark-integrated", "lane-01", "--output", str(path), "--work-dir", str(repo)) != 0
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("same", [True, False])
+def test_public_command_spaced_paths_lane_overlap(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    same: bool,
+) -> None:
+    """空白入りの共有ファイルだけに双方の定義記録を要求する。"""
+    repo, notes = env
+    decisions = []
+    for index, name in enumerate(("a.md", "b.md")):
+        target = f"docs/file {0 if same else index}.md"
+        (repo / target).write_text("x", encoding="utf-8")
+        _awi(notes, name, f"`{target}`を変更する。")
+        decisions.append({"WI": name, "レーン": f"lane-0{index + 1}", "書込対象": [target]})
+    path = _write_selection(tmp_path / "spaced-lanes.yaml", decisions)
+    assert _dispatch(str(path), "--work-dir", str(repo)) == (1 if same else 0)
+
+
+@pytest.mark.parametrize("target", ["docs/file name.md", "assets dir/data.md", "日本語/別 ファイル.txt"])
+@pytest.mark.parametrize("quote", ["plain", "single", "double"])
+@pytest.mark.parametrize("field", ["書込対象", "公開工程の書込対象", "書き込まない反映先"])
+def test_public_command_accepts_spaced_paths(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    target: str,
+    quote: str,
+    field: str,
+) -> None:
+    """明示文字列の境界を維持し、YAMLの表記と書込区分によらず個別パスを受理する。"""
+    repo, notes = env
+    (repo / target).parent.mkdir(parents=True, exist_ok=True)
+    (repo / target).write_text("x", encoding="utf-8")
+    _awi(notes, "a.md", f"`{target}`を扱う。")
+    decision = {"WI": "a.md", "レーン": "lane-01", "書込対象": [], field: [target]}
+    path = _write_selection(tmp_path / "space.yaml", [decision])
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["レーンの所要時間"][0]["根拠"] = f"対象リポジトリの規範AGENTS.mdの公開工程の節がpath {target}を所有する"
+    text = yaml.safe_dump(data, allow_unicode=True)
+    literal = target if quote == "plain" else (f"'{target}'" if quote == "single" else json.dumps(target, ensure_ascii=False))
+    text = text.replace(f"- {target}\n", f"- {literal}\n")
+    path.write_text(text, encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+
+
+@pytest.mark.parametrize("case,expected", [("directory", 0), ("new", 0), ("uncovered", 1), ("broad", 1), ("duplicate", 1)])
+def test_public_command_checks_spaced_path_coverage_and_overlap(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    case: str,
+    expected: int,
+) -> None:
+    """空白入りの新設・範囲・分類にも同じ実在・被覆・過大範囲・重複条件を使う。"""
+    repo, notes = env
+    directory = "docs dir/"
+    (repo / directory).mkdir()
+    target = directory if case == "directory" else directory + "file name.md"
+    if case != "new":
+        (repo / directory / "file name.md").write_text("x", encoding="utf-8")
+    _awi(notes, "a.md", f"`{target}`を扱う。")
+    writes = [] if case == "uncovered" else [directory if case == "broad" else target]
+    decision = {"WI": "a.md", "レーン": "lane-01", "書込対象": writes}
+    if case == "duplicate":
+        decision["書き込まない反映先"] = [target]
+    path = _write_selection(tmp_path / "space.yaml", [decision])
+    assert _dispatch(str(path), "--work-dir", str(repo)) == expected
 
 
 @pytest.mark.parametrize("option", ["--merge", "--lane-map", "--output"])
@@ -932,7 +1367,9 @@ def test_selection_values_with_yaml_syntax_characters_round_trip(
         "\n"
         "    分割案: 2000秒'\n"
         "続行できない理由:\n"
-        "- 'なし'\n",
+        "- 'なし'\n"
+        "初回配分:\n  候補WI: [a.md]\n  レーン割当: {a.md: lane-01}\n"
+        "  不可分成分:\n  - WI: [a.md]\n    結合条件: []\n    実装秒数: 600\n    統合秒数: 60\n",
         encoding="utf-8",
     )
 
@@ -1420,6 +1857,12 @@ def test_public_check_rejects_rationale_only_overlaps(
                 costs_key: [
                     {lane_key: lane, rationale_key: rationale, seconds: 600, "統合秒数": 60} for lane in ("lane-01", "lane-02")
                 ],
+                "初回配分": _initial_allocation(
+                    [
+                        {"WI": "a.md", "レーン": "lane-01"},
+                        {"WI": "b.md", "レーン": "lane-01" if same_lane else "lane-02"},
+                    ]
+                ),
             },
             allow_unicode=True,
         ),
@@ -1469,14 +1912,14 @@ def test_overlap_rejects_rationale_missing_on_either_side(
 def test_public_check_accepts_zero_candidate_selection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """候補0件の選定結果は`選定: []`だけで受理し、通常のWI集合を別の欄で重ねて求めない。
+    """候補0件の選定結果は空の初回配分で受理する。
 
     候補0件のprocess-wiの1回の実行はアラート監査だけを行うため、受領側が選定結果を拒否すると監査へ進めない。
     """
     notes = tmp_path / "notes"
     (notes / "processing").mkdir(parents=True)
     path = tmp_path / "selection.yaml"
-    path.write_text(yaml.safe_dump({"選定": [], "レーンの所要時間": []}, allow_unicode=True), encoding="utf-8")
+    _write_selection(path, [])
     monkeypatch.setattr(check_selection._plan_file, "private_notes_root", lambda: notes)  # pylint: disable=protected-access
     assert check_selection.main([str(path), "--work-dir", str(tmp_path)]) == 0, capsys.readouterr().err
 
@@ -1884,6 +2327,7 @@ def test_public_command_prints_lane_summary_on_success(
         selection = {"選定": [], "レーンの所要時間": []}
     for item in selection.get("選定", selection.get("decisions", [])):
         item.setdefault("鮮度" if "WI" in item else "staleness", {"status": "current", "later_commit_count": 0})
+    selection["初回配分"] = _initial_allocation(selection.get("選定", selection.get("decisions", [])))
     path = tmp_path / "selection.yaml"
     path.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
 
