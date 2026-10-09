@@ -1401,6 +1401,62 @@ def test_uwi_requires_question_type_and_rejects_free_form(
     assert not list((notes / "inbox").iterdir())
 
 
+def _choice_argv(tmp_path: pathlib.Path, choices: list[str]) -> list[str]:
+    """同じ公開CLI入力へ選択肢を指定順に加える。"""
+    body = tmp_path / "choice.md"
+    body.write_text("どの案を選びますか？", encoding="utf-8")
+    argv = [
+        "wi",
+        "add",
+        "--target-repo=github.com/example/repo",
+        "--type=uwi",
+        "--source=agent",
+        "--question-type=choice",
+        "--body-file",
+        str(body),
+    ]
+    for value in choices:
+        argv.extend(["--choices", value])
+    return argv
+
+
+@pytest.mark.parametrize("choice_args", [["A,B,C"], ["A", "B", "C"], ["A", "B,C"]])
+def test_public_add_choice_variants(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, choice_args: list[str]) -> None:
+    """公開CLIの反復・混在指定は前の値を失わず、同じ順で保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    argv = _choice_argv(tmp_path, choice_args)
+    with pytest.raises(SystemExit) as finished:
+        atk.main(argv, home=tmp_path, now=_FIXED_DT)
+    assert finished.value.code == 0
+    saved = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+    parsed = frontmatter.parse_frontmatter(saved)
+    assert parsed is not None
+    assert parsed[0]["choices"] == "A,B,C"
+
+
+@pytest.mark.parametrize("choices", ["A", " , A, ", " , "])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_public_add_choice_requires_two_options(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    choices: str,
+    dry_run: bool,
+) -> None:
+    """通常投入とdry-runは非空2件未満を拒否し、キューを変更しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    argv = _choice_argv(tmp_path, [choices])
+    if dry_run:
+        argv.append("--dry-run")
+    with pytest.raises(SystemExit) as failed:
+        atk.main(argv, home=tmp_path, now=_FIXED_DT)
+    assert failed.value.code != 0
+    assert "2件以上" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
 def test_uwi_choice_question_type_is_saved_with_choices(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """選択肢形式のUWIは回答形式と選択肢をfrontmatterへ保存する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)

@@ -625,8 +625,6 @@ class Operations:
                     f"UWIの回答形式が不正か未指定です: {question_type}。"
                     "選択肢形式（choice）、はい／いいえ（yes-no）、事後承認（post-approval）を指定してください"
                 )
-            if question_type == "choice" and (choices is None or len(choices) < 2):
-                raise WebApiInputError("choice形式には2件以上のchoicesが必要です")
             if question_type != "choice" and choices is not None:
                 raise WebApiInputError("choicesはchoice形式でのみ指定できます")
         resolved_target_repo: str | None = None

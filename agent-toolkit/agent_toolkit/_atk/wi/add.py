@@ -568,9 +568,14 @@ def _validate_add_entries(
         )
     if normalized_target_repo is None:
         _verify_frontmatter_target_repos(parsed_messages)
-    if entry_type != WI_TYPE_AWI and question_type == "choice" and not choices:
+    if (
+        entry_type != WI_TYPE_AWI
+        and question_type == "choice"
+        and len([part for part in (choices or "").split(",") if part.strip()]) < 2
+    ):
         raise WebInputError(
-            "choice形式にはchoicesが必要です", next_action="`--choices`で選択肢を指定するか、別のquestion_typeを選ぶ"
+            "choice形式には非空の選択肢が2件以上必要です",
+            next_action="`--choices`で選択肢を2件以上指定するか、別のquestion_typeを選ぶ",
         )
     if entry_type == WI_TYPE_UWI and question_type == _constants.QUESTION_TYPE_POST_APPROVAL and choices is not None:
         raise WebInputError(
@@ -720,6 +725,7 @@ def cmd_add(
         raise
     dependency_dir = private_notes / WI_STATE_INBOX
     canonical_dependencies = _normalize_dependencies(args.depends_on, dependency_dir)
+    choices = ",".join(args.choices) if args.choices is not None else None
     saved_details: dict[str, dict[str, object | None]] = {}
     try:
         if args.dry_run:
@@ -728,7 +734,7 @@ def cmd_add(
                 target_repo=target_repo,
                 entry_type=args.type,
                 question_type=args.question_type,
-                choices=args.choices,
+                choices=choices,
                 target_commit=target_commit,
                 source=args.source,
             )
@@ -743,7 +749,7 @@ def cmd_add(
             entry_type=args.type,
             scope=args.scope,
             question_type=args.question_type,
-            choices=args.choices,
+            choices=choices,
             target_commit=target_commit,
             depends_on=canonical_dependencies,
             saved_details=saved_details,

@@ -1110,6 +1110,31 @@ _OBSERVATION_RECORD = "## 反映後の観測の再開記録\n\n- 再開区分: �
 
 
 @pytest.mark.asyncio
+async def test_add_choice_requires_two_options(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Webの通常投入は共通件数検証で拒否し、成功時は保存値を全件読み戻せる。"""
+    for name in _wi_constants.WI_STATES:
+        (tmp_path / name).mkdir()
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    client = _serve_app(tmp_path).test_client()
+    payload = {
+        "type": "uwi",
+        "target_repo": "github.com/example/repo",
+        "messages": ["どの案ですか？"],
+        "question_type": "choice",
+        "choices": ["A"],
+    }
+    rejected = await client.post("/api/entries", json=payload)
+    assert rejected.status_code == 400
+    assert "2件以上" in (await rejected.get_json())["error"]
+    assert not list((tmp_path / "inbox").iterdir())
+    accepted = await client.post("/api/entries", json={**payload, "choices": ["A", "B,C"]})
+    assert accepted.status_code == 201
+    filename = (await accepted.get_json())["filenames"][0]
+    detail = await (await client.get(f"/api/entries/inbox/{filename}")).get_json()
+    assert detail["entry"]["choices"] == ["A", "B", "C"]
+
+
+@pytest.mark.asyncio
 async def test_sessions_detail_html_only_for_assistant(tmp_path: pathlib.Path) -> None:
     """セッション詳細APIは本文を持つアシスタントの発言だけへ整形したHTMLを加え、`text`を残し、生HTMLを文字にする。
 
