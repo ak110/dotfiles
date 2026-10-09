@@ -37,13 +37,13 @@
 5. 子孫でない場合は、rebaseの前に、専用branchが統合先branchの現在HEADより先に持つ全commitが未pushであることを`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」の手段で確認する。1件でもpush済みの場合はrebaseせず、そのcommitの短縮OIDを`続行できない理由:`へ書いて返す。
 6. 未pushを確認した場合は、rebase前の専用branchのHEADの7文字以上の一意な短縮OIDを`引き継ぎ記録先`へ記録する。書換えコマンドとは別の呼び出しで、専用worktreeを作業ディレクトリとして`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」の`git log`を実行し、対象commitの状態を確認する。続けて同じworktreeで`git rebase <統合先branchの現在HEAD>`を実行し、専用branchを統合先branchの現在HEADの上へ載せ替える。rebaseの対象は専用worktree内の専用branchに限り、統合先branchと他のレーンの専用branchはそのまま保つ。
 7. rebaseが競合で停止した場合は、読込表の行が示す`agent-toolkit:process-wi`の`references/lane-integration-failure.md`「rebaseの競合」に従う。競合の解消と再レビューの指示はメインが所有する。
-8. rebaseが成功した場合は、次のコマンドを実行する。全commitの1対1対応と`range-diff`の全対応記号が`=`であることを同コマンドが検収し、完全OIDの旧新対応を保存する。非0の場合は手順9へ進まず、対象と診断を`続行できない理由:`へ書いて返す。比較と対応表の生成はこの公開操作へ集約する。
+8. rebaseが成功した場合は、次のコマンドを実行する。同コマンドは文脈を除いた`git show --format= --binary --no-ext-diff --no-textconv --unified=0`の差分を`git patch-id --verbatim`で比較し、変更内容の一意な全1対1対応を検収して完全OIDの旧新対応を保存する。件名・本文・周辺文脈・hunk位置の変化は拒否理由とせず、変更行の空白、パス・種類・モード・バイナリー内容の変化、commitの追加・欠落・曖昧な対応は拒否する。`range-diff`の表示記号だけを合否の基準にしない。非0の場合は手順9へ進まず、対象と診断を`続行できない理由:`へ書いて返す。比較と対応表の生成はこの公開操作へ集約する。
 
    ```text
    atk run-script history-compare -- --operation rebase --work-dir <専用worktreeの絶対パス> --old-base <rebase前のベースOID> --old-head <rebase前の専用branchのHEAD> --new-base <統合先branchの現在HEAD> --new-head <rebase後の専用branchのHEAD> --output <managed-temp内の対応表JSONの絶対パス>
    ```
 
-9. rebase後の専用branchのHEADを再検証する。計画を持つ場合は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <専用worktreeの絶対パス> --timeout <正の有限秒数>`を使う。計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを使う。計画ありでは直前に同じ入力の`--list`を確認し、実行後は全件のrecord_pathと両出力を読む。終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを確認する。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の`git range-diff`が担保する。失敗した場合は、読込表の行が示す同資料「統合後の変更範囲の検証の失敗」に従う。
+9. rebase後の専用branchのHEADを再検証する。計画を持つ場合は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <専用worktreeの絶対パス> --timeout <正の有限秒数>`を使う。計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを使う。計画ありでは直前に同じ入力の`--list`を確認し、実行後は全件のrecord_pathと両出力を読む。終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを確認する。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の変更内容の検収が担保する。失敗した場合は、読込表の行が示す同資料「統合後の変更範囲の検証の失敗」に従う。
 10. 対象リポジトリのプロジェクト規範に、統合後にだけ成立する検証があるか確認する。なければ手順11へ進む。ある場合は次の順で実行する。この検証は他のレーンの成果と合わせた状態でだけ成立するため、rebase前の変更範囲の検証では代替できない。専用branchのHEADは統合先branchの現在HEADの子孫であり、そのtreeはfast-forward後の統合先と同じになるため、fast-forwardの前に専用worktreeで実行する。統合先を変える前に失敗を確定すると、他のレーンが失敗した状態の統合先の上へ載ることを防げる。
     1. managed-tempの中に作業ディレクトリを確保し、標準出力と標準エラーの保存先を、その領域内の絶対パスとして`summary_policy`へ記す。
     2. 規範が定めるコマンドを、専用worktreeを`cwd`として`agents_server`の`start`（`mode`は`shell`）へ渡して1回実行する。委譲先には両方を保存して必要な範囲を読ませ、終了状態、警告の有無、両保存先と要約を返させる。

@@ -61,6 +61,7 @@ def test_rebase_cli_accepts_only_equal_complete_series(
     _git(repo, "checkout", "-b", "other", base)
     new_base = _commit(repo, "upstream.txt", "上流", "上流")
     _git(repo, "cherry-pick", first, old_head)
+    _git(repo, "commit", "--amend", "--no-verify", "-m", "変更内容は同じで説明だけ更新")
     new_first = _git(repo, "rev-parse", "HEAD~1")
     new_head = _git(repo, "rev-parse", "HEAD")
     _git(repo, "config", "diff.noprefix", str(no_prefix).lower())
@@ -79,6 +80,48 @@ def test_rebase_cli_accepts_only_equal_complete_series(
     assert _compare(repo, changed, "rebase", (base, old_head, new_base, _git(repo, "rev-parse", "HEAD"))) != 0
     assert not any(path.exists() for path in (missing, added, changed))
     assert "次の操作:" in capsys.readouterr().err
+
+
+def test_rebase_accepts_changed_context_and_hunk_position(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """上流による周辺行と位置の変化を、同じ変更行から区別する。"""
+    base = _commit(repo, "content.txt", "前\n対象\n後\n", "準備")
+    old_head = _commit(repo, "content.txt", "前\n修正\n後\n", "修正")
+    _git(repo, "checkout", "-b", "context", base)
+    new_base = _commit(repo, "content.txt", "追加\n前改訂\n対象\n後改訂\n", "上流")
+    new_head = _commit(repo, "content.txt", "追加\n前改訂\n修正\n後改訂\n", "別の説明")
+    output = tmp_path / "context.json"
+    assert _compare(repo, output, "rebase", (base, old_head, new_base, new_head)) == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == {old_head: new_head}
+
+
+@pytest.mark.parametrize("violation", ["whitespace", "path", "mode", "type", "binary", "ambiguous"])
+def test_rebase_rejects_content_and_ambiguous_correspondence(
+    repo: pathlib.Path, tmp_path: pathlib.Path, violation: str
+) -> None:
+    """表示上の類似で変更内容の差や曖昧なcommit対応を受理しない。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    old_head = _commit(repo, "content.txt", "value\n", "元")
+    if violation == "ambiguous":
+        _git(repo, "revert", "--no-edit", old_head)
+        old_head = _commit(repo, "content.txt", "value\n", "再追加")
+    _git(repo, "checkout", "-b", "different", base)
+    filename = "other.txt" if violation == "path" else "content.txt"
+    text = " value\n" if violation == "whitespace" else "value\n"
+    _commit(repo, filename, text, "新")
+    path = repo / filename
+    if violation == "mode":
+        path.chmod(0o755)
+    elif violation == "type":
+        path.unlink()
+        path.symlink_to("value")
+    elif violation == "binary":
+        path.write_bytes(b"value\x00\n")
+    if violation in {"mode", "type", "binary"}:
+        _git(repo, "add", "--", filename)
+        _git(repo, "commit", "--amend", "--no-verify", "--no-edit")
+    output = tmp_path / "rejected.json"
+    assert _compare(repo, output, "rebase", (base, old_head, base, _git(repo, "rev-parse", "HEAD"))) != 0
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("violation", ["tree", "count", "control", "patch", "ambiguous", "outside"])
@@ -122,6 +165,30 @@ def test_autosquash_rejects_each_independent_violation(
     assert expected in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("changed", [False, True])
+def test_rebase_compares_binary_payload(repo: pathlib.Path, tmp_path: pathlib.Path, changed: bool) -> None:
+    """バイナリー同士の比較でも同じ内容だけを受理し、対応表の保存を分ける。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    path = repo / "image.bin"
+    path.write_bytes(b"original\x00payload")
+    _git(repo, "add", "--", "image.bin")
+    _git(repo, "commit", "--no-verify", "-m", "元の画像")
+    old_head = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-b", "binary", base)
+    new_base = _commit(repo, "upstream.txt", "上流", "上流")
+    path.write_bytes(b"changed\x00payload" if changed else b"original\x00payload")
+    _git(repo, "add", "--", "image.bin")
+    _git(repo, "commit", "--no-verify", "-m", "説明の異なる画像")
+    new_head = _git(repo, "rev-parse", "HEAD")
+    output = tmp_path / "binary.json"
+    result = _compare(repo, output, "rebase", (base, old_head, new_base, new_head))
+    if changed:
+        assert result != 0 and not output.exists()
+    else:
+        assert result == 0
+        assert json.loads(output.read_text(encoding="utf-8")) == {old_head: new_head}
+
+
 @pytest.mark.parametrize("operation", ["rebase", "autosquash"])
 def test_generated_mapping_is_consumed_by_public_record_commands(
     repo: pathlib.Path,
@@ -140,16 +207,17 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
         "| --- | --- | --- |\n",
         encoding="utf-8",
     )
-    base = _git(repo, "rev-parse", "HEAD")
-    target = _commit(repo, "first.txt", "一", "一つ目")
+    base = _commit(repo, "first.txt", "前\n対象\n後\n", "対象を準備")
+    target = _commit(repo, "first.txt", "前\n一\n後\n", "一つ目")
     commit_mapping.append_event(plan, commit_mapping.commit_event(repo, "HEAD", base, [wi], {wi}))
-    old_head = _commit(repo, "first.txt", "一修正", "fixup! 一つ目")
+    old_head = _commit(repo, "first.txt", "前\n一修正\n後\n", "fixup! 一つ目")
     commit_mapping.append_event(plan, commit_mapping.commit_event(repo, "HEAD", target, [wi], {wi}))
     new_base = base
     if operation == "rebase":
         _git(repo, "checkout", "-b", "upstream", base)
-        new_base = _commit(repo, "upstream.txt", "上流", "上流")
-        _git(repo, "cherry-pick", target, old_head)
+        new_base = _commit(repo, "first.txt", "追加\n前改訂\n対象\n後改訂\n", "上流の文脈変更")
+        _commit(repo, "first.txt", "追加\n前改訂\n一\n後改訂\n", "一つ目の説明を訂正")
+        _commit(repo, "first.txt", "追加\n前改訂\n一修正\n後改訂\n", "修正の説明を訂正")
     else:
         _git(repo, "rebase", "--autosquash", "--no-update-refs", base)
     new_head = _git(repo, "rev-parse", "HEAD")
