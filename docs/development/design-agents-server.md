@@ -204,6 +204,8 @@ timeout後は、送った継続要求の受理結果、またはその要求に�
 
 ### `explore`と`shell`
 
+Codexの読取専用sandboxでは、uv経由のatkも起動時のキャッシュ書込で失敗し得る。能力の共有定義は、直接読取のcat・rgと、配送済みPythonの標準ライブラリによるUTF-8の文字単位分割を案内する。atk固有情報を代替の読取で確定できない場合は、委譲先が失敗コマンド・診断・未確認事項を返し、委譲元がshell・delegateまたは自身の実行で不足分を取得する。環境作成、権限拡大、再委譲による回避は案内しない。起動前の公開schemaと起動後のプロンプトが同じ定義を消費するため、説明文の複製は不要である。
+
 起動前に能力を選べるよう、エンジン別のexplore能力とコマンド調査の選び方は`tool_descriptions.py`の`EXPLORE_CAPABILITIES`が定義する。`start`と`mode`の公開説明、および`launch_prompts.py`が組み立てるexplore委譲プロンプトは同じ定義を消費する。ClaudeのRead・Glob・GrepとCodexの読み取り専用コマンドの差を、共通のshare文書へコマンド利用の前提として書かない。コマンド調査はCodex候補の明示、確定コマンドのshell、自由調査のdelegateから選び、後二者にはexploreの書込拒否を課さない。説明ごとの複製と、説明に合わせてClaudeのBash権限を戻す案は、能力の乖離と権限の拡大を生むため採らない。
 
 `start`の`explore`は調査委譲の初期コンテキストと起動費用を減らし、実行側で書込を制限する。Codex backendは開始・再開へ`project_doc_max_bytes=0`と探索用指示、読み取り専用sandboxを渡し、後続turnでも読み取り専用と承認不要の拒否を保つ。MCPの実効設定を取得して全serverを無効にし、Apps・プラグイン・下位委譲も無効にする。実効設定を取得できない場合は起動を中止する。Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省く。提供する組込toolはRead・Glob・Grepに限定し、`--strict-mcp-config`で継承MCPを除き、承認を要する操作は待機せず拒否する。任意Bashや編集toolの事前承認を制限の代わりにしない。Antigravityは読み取り専用のexploreに対応しないため候補から除外する。探索結果は返却本文へ保持し、server自身のセッション記録保存とは区別する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。探索委譲を選ぶ条件は`agent-toolkit/skills/delegation/references/routing.md`「コンテキスト消費が大きい調査の切り出し」、起動手段は`runtime-routing.md`を知識境界とする。検索の時点に読む`agent-toolkit:search`はこの条件への参照だけを持つ。
