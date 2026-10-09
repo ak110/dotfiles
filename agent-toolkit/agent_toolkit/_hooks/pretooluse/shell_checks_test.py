@@ -14,6 +14,7 @@ import sys
 import pytest
 
 from agent_toolkit._hooks.pretooluse import shell_checks
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
@@ -727,7 +728,7 @@ class TestBashUnquotedHeredocSubstitution:
 
 
 class TestBashGitRevParseShortMultiple:
-    """`git rev-parse --short`へ複数のrevisionを渡すコマンドの警告（warn）。"""
+    """通常modeの単一revision検証へ複数revisionを渡す操作の遮断。"""
 
     @pytest.mark.parametrize(
         "command",
@@ -740,23 +741,22 @@ class TestBashGitRevParseShortMultiple:
             'git rev-parse --short=7 A B && git status; echo "rc=$?"',
             "git rev-parse --short --since 2026-01-01 HEAD",
             "git rev-parse --short --sq-quote a b",
+            "git rev-parse --verify HEAD HEAD~1",
+            "git rev-parse --verify --quiet HEAD HEAD~1",
         ],
     )
-    def test_warns_multiple_revisions(self, command: str):
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "`git rev-parse --short`へ2つのリビジョン" in context
-        assert "`git rev-parse --short=7 <revision>`" in context
-        assert "終了コード128" in context
-        assert "`&&`で連結した後段は実行されず" in context
-        assert "`$?`は後段ではなくこの失敗" in context
+    @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}])
+    def test_warns_multiple_revisions(self, command: str, extra_payload: dict):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
+        assert result.returncode == 2
+        assert "単一リビジョン検証へ2つのリビジョン" in result.stderr
+        assert "<元のオプション> <revision>" in result.stderr
+        assert "終了コード128とは限らない" in result.stderr
 
     def test_redirection_is_not_counted_as_revision(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git rev-parse --short=7 HEAD~1 HEAD > /tmp/x"}})
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "`git rev-parse --short`へ2つのリビジョン（HEAD~1、HEAD）を渡している" in context
+        assert result.returncode == 2
+        assert "2つのリビジョン（HEAD~1、HEAD）" in result.stderr
 
     @pytest.mark.parametrize(
         "command",
@@ -779,12 +779,29 @@ class TestBashGitRevParseShortMultiple:
             "git rev-parse --short `git rev-parse HEAD`",
             "git rev-parse --short $(printf '%s' $(git rev-parse HEAD))",
             "git rev-parse --short $REVISION",
+            "git rev-parse --sq-quote --short a b",
+            "git rev-parse --parseopt --short a b",
+            "git rev-parse HEAD --short HEAD~1",
+            "git rev-parse --short HEAD~1..HEAD",
+            "git rev-parse --short -n 1 HEAD",
+            "git rev-parse --abbrev-ref HEAD HEAD~1",
+            "printf '%s' 'git rev-parse --short A B'",
         ],
     )
     def test_single_revision_or_other_command_not_warned(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "git rev-parse --short" not in result.stdout
+
+    @pytest.mark.parametrize("options", [["--short"], ["--short=12"], ["--verify"], ["--verify", "--quiet"]])
+    def test_individual_revision_fix_succeeds(self, options: list[str], tmp_path: pathlib.Path):
+        """履歴を自ら準備し、案内した入力分割で元のoptionを保ったGit実行が成功する。"""
+        repository = git_repository.init_repository(tmp_path / "repo", commit_message="最初のcommit")
+        git_repository.commit_all(repository, "次のcommit")
+        for revision in ["HEAD", "HEAD~1"]:
+            result = git_repository.run_git(repository, "rev-parse", *options, revision, check=False)
+            assert result.returncode == 0, result.stderr
+            assert result.stdout.strip()
 
 
 class TestGitCommitAttribution:

@@ -344,6 +344,12 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 再検証は同じ公開ヘルプを取得し、その回の読み取り可能な作業ツリーと通常ファイルを保持記録から解決して、
 上記の各コマンドへ渡す。cwd、コマンド、標準出力、標準エラーと終了コードを保存し、項目と受理形式を比べる。
 
+## agent-toolkit/skills/delegation/references/claude-code-runtime.md：一時領域と成果物の観測：2026年10月9日
+
+2026年10月9日10:49～10:50 JST、Claude Code 2.1.295で、メインが`Agent`を使って背景の委譲先1件を起動した。委譲先の作業は`sleep 5; echo`を4回実行するだけとした。稼働中の`output_file`へ`stat`と`stat -L`を対にして6秒間隔で3回実行した。リンク自体はサイズ153バイト・更新時刻10:49:55.606955323で固定だった。リンク先は通常ファイルで、サイズ231295、334100、337929バイト、更新時刻10:49:58、10:50:05、10:50:13へ進んだ。
+
+観測は対象worktreeのcleanなHEAD `6c062a92ac0be19953900a48b14337992fdda7ca`で`atk run-command`を使って保存され、子終了コード0、標準エラー0バイトだった。再検証ではClaude Codeの版を記録し、同じ背景作業を`Agent`で起動する。起動結果の`output_file`へ`stat -c '%s %y %F'`と`stat -L -c '%s %y %F'`を同じ間隔で対にして実行し、リンク自体とリンク先の値を比較する。補助観測の更新は終端判定へ代用しない。
+
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日
 
 2026年9月21日、Codex CLI 0.155.1で確認した。`spawn_agent`は`fork_turns`で会話履歴の引継ぎ範囲を選ぶ。起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。`send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終端待機、`interrupt_agent`は中断を担う。agent-toolkitのCodex hookを実起動したテストでは共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
@@ -406,6 +412,12 @@ agent-toolkit 2.199.0の基準commitは`3b3932b5`で、review-table実装の差�
 ## agent-toolkit/skills/search/SKILL.md：引数とシェルの扱い：2026年9月14日
 
 2026年9月14日、Git 2.43.0で実際に動かして確かめた。`grep.lineNumber=true`を指定した`git grep -h -m 1 -F -e <固定文字列> -- AGENTS.md`は`3:<本文>`を返し、同じ検索へ`--no-line-number`を指定すると`<本文>`だけを返した。再検証は`git -c grep.lineNumber=true grep -h -m 1 -F -e <固定文字列> -- <追跡ファイル>`と、`-h`を`--no-line-number`へ置き換えた検索の出力を比較する。
+
+## agent-toolkit/skills/search/SKILL.md：引数とシェルの扱い：2026年10月9日
+
+2026年10月9日、Claude Code 2.1.295のBashで`type grep`がシェル関数を返し、ugrep 7.8.4へ転送することを確認した記録に基づく。GNU grepは3.11だった。ignore・binaryの除外で一致する内容を持つ対象でも標準出力が空・終了コード1となった。`.{0,160}a.{0,160}`はugrepで複雑度エラーを標準エラーへ出し、標準出力は空・終了コード2だった。上限を小さくした`.{0,30}a.{0,30}`も終了コード2で、繰り返しを片側だけにした`a.{0,400}`は終了コード0だった。同じテキストへの`command grep -o -E '.{0,160}a.{0,160}'`は`a`を出力して終了コード0だった。この節のClaude関数の観測は入力WIが保持する対照記録に由来する。
+
+再検証ではClaude Bashで`type grep`と`grep --version`、`command grep --version`を取得する。専用領域に`a`を含む通常テキスト、ignore対象とbinary対象を用意し、関数の`grep`と`command grep`へ同じ対象・パターンを渡す。各標準出力・標準エラー・終了コードを保存して比較し、無出力の理由とパイプの後段で使う起動実体を区別する。
 
 ## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年9月16日
 
@@ -527,6 +539,12 @@ Writeのツール説明は「Overwriting an existing file you haven't Read will 
 再検証では管理対象一時領域に1行のファイルを準備し、主セッション、`Agent`ツールのサブエージェントおよび`agents_server`のClaudeの委譲先のそれぞれで発行する。
 Readを経ない取得手段（Bashのリダイレクトでの作成、`cp`での複製、変数を含むパスと複数コマンドの連結での表示、単独の`cat <絶対パス>`での表示、同じ内容の別パスのRead）ごとにEditを発行し、未読の既存ファイルへWriteを発行する。
 条件ごとに拒否の有無と文面、Readで読んだ後の同じ操作の成否を保存して比べる。版数は`claude --version`で取得する。
+
+## agent-toolkit/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月9日
+
+2026年10月9日、Codex CLI 0.162.0の公式ソース（タグ`rust-v0.162.0`）を読解した記録に基づく。`codex-rs/exec/src/cli.rs`の`--ephemeral`と`codex-rs/exec/src/lib.rs`の適用はセッションの永続化を抑止する。認証の経路は`codex-rs/login/src/auth/manager.rs`と`codex-rs/login/src/auth/storage.rs`にあり、ChatGPTトークンの期限が5分以内か、最後のrefreshから8日を超える条件で更新し、認証ストレージへ保存する。`--ephemeral`はこの更新・保存を抑止しない。実機でrefreshを新たに起こす観測は行っていない。
+
+再検証では同じ公式タグのCLIオプション、execへの適用、認証更新条件と保存経路を対応付けて読む。実測する場合は公開された状態隔離手段と通常認証の成立を先に確認し、同じ実体のmtimeなどを前後で比較する。外部認証情報を隔離先へ複製しない。通常利用と既存のテスト隔離へ一律の隔離を追加する根拠にはしない。
 
 ## agent-toolkit/skills/writing-standards/references/mcp-server-design.md：典拠と既存サーバーへの適用：2026年10月2日
 

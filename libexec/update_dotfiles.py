@@ -463,12 +463,12 @@ def _run_git_change(*arguments: str) -> bool:
     return result.returncode == 0
 
 
-def _save_worktree(label: str) -> str | None:
-    """未コミット内容をworktree固有refへ退避し、ref名を返す。"""
+def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | None:
+    """同じcheckoutの公開退避CLIを実行し、失敗時の診断を維持する。"""
     launcher = _SOURCE_ROOT / "agent-toolkit" / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
     try:
         result = subprocess.run(
-            [str(launcher), "worktree-stash", "save", f"--label={label}"],
+            [str(launcher), "worktree-stash", *arguments],
             cwd=_DOTFILES_ROOT,
             check=False,
             capture_output=True,
@@ -477,12 +477,20 @@ def _save_worktree(label: str) -> str | None:
             env=_child_env(),
         )
     except OSError as error:
-        logger.exception("worktree-stash saveの起動に失敗: worktree=%s launcher=%s", _DOTFILES_ROOT, launcher)
-        print(f"未コミット内容の退避を開始できませんでした ({_DOTFILES_ROOT}): {error}", file=sys.stderr)
+        logger.exception("worktree-stashの起動に失敗: worktree=%s launcher=%s", _DOTFILES_ROOT, launcher)
+        print(f"未コミット内容の退避操作を開始できませんでした ({_DOTFILES_ROOT}): {error}", file=sys.stderr)
         return None
     if result.returncode != 0:
         if result.stderr:
             sys.stderr.write(result.stderr)
+        return None
+    return result
+
+
+def _save_worktree(label: str) -> str | None:
+    """未コミット内容をworktree固有refへ退避し、ref名を返す。"""
+    result = _run_worktree_stash("save", f"--label={label}")
+    if result is None:
         return None
     ref = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
     if not ref.startswith("refs/worktree/"):
@@ -496,8 +504,34 @@ def _restore_worktree(ref: str) -> bool:
     """worktree固有refからindexを含む未コミット内容を復元する。"""
     restored = _run_git_change("stash", "apply", "--index", ref)
     if restored:
-        print(f"未コミット内容を復元しました。復旧用refは保持します: {ref}")
+        print(f"未コミット内容を復元しました: {ref}")
     return restored
+
+
+def _drop_restored_worktree(ref: str) -> bool:
+    """復元済みの今回退避だけ回収し、失敗時も復元済み内容を変更しない。"""
+    if _run_worktree_stash("drop", ref) is None:
+        print(
+            f"復元は成功しましたが退避の回収は未完了です: {ref}。"
+            f"復元済み内容は保持しています。atk worktree-stash drop {ref}で再試行してください。",
+            file=sys.stderr,
+        )
+        return False
+    print(f"復元済み退避を回収しました: {ref}")
+    return True
+
+
+def _protect_old_worktree_stashes() -> bool:
+    """現在worktreeの旧update-dotfiles退避を、pullに先立って共有GCから保護する。"""
+    result = _git_capture("for-each-ref", "--format=%(refname)", "refs/worktree/")
+    if result.returncode != 0 or result.stderr:
+        print(f"旧退避refを列挙できませんでした: {result.stderr.strip()}", file=sys.stderr)
+        return False
+    for ref in result.stdout.splitlines():
+        if ref.startswith("refs/worktree/update-dotfiles-") and _run_worktree_stash("protect", ref) is None:
+            print(f"旧退避を保護できなかったためpullを中止します: {ref}", file=sys.stderr)
+            return False
+    return True
 
 
 def _clean_saved_untracked(paths: tuple[str, ...]) -> bool:
@@ -517,6 +551,8 @@ def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) 
     """Git更新を実行し、競合時は復旧参照を保持して上流へ合わせる。"""
     if _git_operation_in_progress():
         print("既存のmergeまたはrebaseが進行中のため、更新を開始しません。", file=sys.stderr)
+        return 1
+    if not _protect_old_worktree_stashes():
         return 1
     if not _discard_mise_lock_changes():
         print("mise.lockの差分を破棄できなかったため、更新を中止します。", file=sys.stderr)
@@ -542,11 +578,14 @@ def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) 
     pull_code = _run_git_pull(step_no, total, timeout=timeout)
     rebase_in_progress = any(_git_path_exists(name) for name in ("rebase-merge", "rebase-apply"))
     if pull_code != 0 and not rebase_in_progress:
-        if stash_ref is not None and not _restore_worktree(stash_ref):
-            print(f"未コミット内容は{stash_ref}から復旧できます。", file=sys.stderr)
+        if stash_ref is not None:
+            if _restore_worktree(stash_ref):
+                _drop_restored_worktree(stash_ref)
+            else:
+                print(f"未コミット内容は{stash_ref}から復旧できます。", file=sys.stderr)
         return pull_code
     if pull_code == 0 and (stash_ref is None or _restore_worktree(stash_ref)):
-        return 0
+        return 0 if stash_ref is None or _drop_restored_worktree(stash_ref) else 1
 
     recovery_branch = f"update-dotfiles-recovery-{suffix}"
     if not _run_git_change("branch", recovery_branch, original_head):

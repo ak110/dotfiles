@@ -22,6 +22,7 @@ from collections.abc import Callable
 from typing import Any, Literal, cast
 
 from agent_toolkit._agents_server import (
+    claude_settings,
     engine_availability,
     result_projection,
     resume_waits,
@@ -240,6 +241,11 @@ class _CommandChannel:
                 future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
 
 
+# CLIのstdoutの1行にはモデルへ渡らないtool_use_result（EditのoriginalFile等）も含まれる。
+# CLIが編集できる最大1GiBのファイルと差分が収まる4GiBを指定する。事前のメモリー確保ではない。
+_MAX_BUFFER_SIZE = 4 * 1024**3
+
+
 def _build_options(
     cwd: str,
     model: str | None,
@@ -255,8 +261,10 @@ def _build_options(
     `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
     委譲先の印を追加する。
     共有状態を所有するManagerから受け取ったrootを委譲先へ渡す。
-    子Claudeが親と同じ設定の下で動くよう、親の`--settings`層を継承する。
-    親cmdlineを取得できない実行環境では継承せず、従来の設定層を維持する。
+    親の`--settings`層へ同じenvを合成し、ユーザー・project設定のenvより優先させる。
+    親を取得・解析できない場合はenvだけのsettingsを使う。
+    ファイル由来の設定はargvへ内容を展開せず、起動が所有する限定読取のファイルを渡す。
+    軽量起動はSkillを明示除外し、基準の参照にはReadを使う。
 
     起動区分によらず権限モードをbypass系にしない。Claude Codeのセッション間メッセージの受信方針は、
     受信側がbypass系であり送信側が権限モードを申告していない場合にそのメッセージを保留する。
@@ -292,6 +300,7 @@ def _build_options(
         # 起動直後の可用性待機をAPIの応答開始（`message_start`）で打ち切るため、部分出力のイベントを受け取る。
         "include_partial_messages": True,
         "env": env,
+        "max_buffer_size": _MAX_BUFFER_SIZE,
         "setting_sources": ["user"] if lightweight else ["user", "project"],
         "system_prompt": (
             f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}\n{python_runtime_instructions()}"
@@ -309,11 +318,11 @@ def _build_options(
         options["extra_args"] = {"debug-file": str(debug_file)}
     if (cli_path := shutil.which("claude")) is not None:
         options["cli_path"] = cli_path
-    if (settings := _parent_settings()) is not None:
-        options["settings"] = settings
+    options["settings"] = claude_settings.merge_settings(_parent_settings(), env, root_session_id)
     if lightweight:
         options.update(
             skills=[],
+            disallowed_tools=["Skill"],
             tools={"type": "preset", "preset": "claude_code"},
             allowed_tools=_LAUNCH_ALLOWED_TOOLS[launch_kind],
         )
@@ -321,12 +330,18 @@ def _build_options(
         options["tools"] = _LAUNCH_ALLOWED_TOOLS[launch_kind]
         options["mcp_servers"] = {}
         options.setdefault("extra_args", {}).update({"strict-mcp-config": None, "permission-prompts": "none"})
-    return ClaudeAgentOptions(**options)
+    try:
+        return ClaudeAgentOptions(**options)
+    except BaseException:
+        if isinstance(options["settings"], claude_settings.SettingsFile):
+            options["settings"].cleanup()
+        raise
 
 
 def check_dependencies() -> None:
     """Claude Agent SDKの依存を読み込み、optionsを構築する。"""
-    _build_options(str(pathlib.Path.cwd()), None, None)
+    options = _build_options(str(pathlib.Path.cwd()), None, None)
+    claude_settings.cleanup_settings(options)
 
 
 def _message_name(message: Any) -> str:
@@ -945,6 +960,7 @@ class ClaudeServerManager:
             if session is not None:
                 self._channels.pop(session.session_id, None)
             channel.close()
+            claude_settings.cleanup_settings(options)
 
     async def _handle_command(
         self,

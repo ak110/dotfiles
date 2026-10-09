@@ -15,8 +15,8 @@
 起動済みの記録はセッション状態キー`rules_context.OPERATION_SKILL_READY_KEY`へ、警告を返した時点と
 PostToolUse(Skill)の起動の観測時点で書く。
 
-警告の次の操作は、`Skill`での起動と、`Skill`を使えない主体が`SKILL.md`の絶対パスを`Read`で全文読む操作を併記する。
-`agents_server`の軽量起動（`explore`・`write`・`shell`）のClaudeの委譲先は`Skill`を使えず、スキルの一覧も届かないため、
+警告の次の操作は、`Skill`での起動と、自分のツール一覧に`Skill`が無い主体が`SKILL.md`を`Read`で全文読む操作を併記する。
+`agents_server`のClaudeの軽量起動（`explore`・`write`・`shell`）は`disallowed_tools`で`Skill`を除き、スキルの一覧も届かないため、
 警告が基準の本文へ到達する唯一の手掛かりになる。hookの入力は通常の委譲先と軽量起動を区別できないため、
 主体ごとに本文を書き分けず、両方の手段を同じ本文に示す。
 
@@ -36,7 +36,7 @@ import re
 from collections.abc import Callable, Sequence
 
 from agent_toolkit._common import shell_segments as _shell_segments
-from agent_toolkit._common.bash_invocations import extract_bash_invocations
+from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 from agent_toolkit._common.heredocs import heredoc_bodies
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.uv_arguments import is_python_token
@@ -281,14 +281,127 @@ def _sed_write_paths(arguments: tuple[str, ...]) -> list[str]:
     return paths if has_script else paths[1:]
 
 
+def _copy_write_paths(name: str, arguments: tuple[str, ...]) -> list[str]:
+    """転送先が明示されたコピー・移動・導入の書込先を返す。"""
+    if any(arg in {"--help", "--version"} for arg in arguments) or name == "install" and "-d" in arguments:
+        return []
+    operands: list[str] = []
+    directory: str | None = None
+    no_directory = False
+    index = 0
+    while index < len(arguments):
+        arg = arguments[index]
+        index += 1
+        if arg == "--":
+            operands.extend(arguments[index:])
+            break
+        if arg.startswith("--target-directory="):
+            directory = arg.split("=", 1)[1]
+        elif arg in {"--target-directory", "-t"}:
+            if index < len(arguments):
+                directory = arguments[index]
+            index += 1
+        elif arg in {"-T", "--no-target-directory"}:
+            no_directory = True
+        elif arg.startswith("-") and not arg.startswith("--"):
+            valued = "gmoSt" if name == "install" else "St" if name in {"cp", "mv"} else "e"
+            for position, char in enumerate(arg[1:], 1):
+                if char == "T" and name in {"cp", "mv", "install"}:
+                    no_directory = True
+                if char == "d" and name == "install":
+                    return []
+                if char in valued:
+                    value = arg[position + 1 :] or (arguments[index] if index < len(arguments) else "")
+                    if not arg[position + 1 :]:
+                        index += 1
+                    if char == "t":
+                        directory = value
+                    break
+        elif arg in {"--suffix", "--group", "--mode", "--owner", "--rsh", "--exclude", "--include"}:
+            index += 1
+        elif not arg.startswith("-"):
+            operands.append(arg)
+    if directory is None:
+        if len(operands) < 2:
+            return []
+        *sources, destination = operands
+        if no_directory or len(sources) == 1 and not destination.endswith("/"):
+            return [destination]
+        directory = destination
+    else:
+        sources = operands
+    return [directory.rstrip("/") + "/" + source.rstrip("/").rsplit("/", 1)[-1] for source in sources]
+
+
+def _perl_write_paths(arguments: tuple[str, ...]) -> list[str]:
+    """perlのin-place対象を返し、オプション値とprogramfile以降を旗として読まない。
+
+    必須値は連結部分または次の語を消費する。任意値は同じ語だけを使い、
+    -l/-0の数値部分の後に続く-piなどは旗として読む。
+    """
+    inplace = False
+    inline = False
+    operands: list[str] = []
+    index = 0
+    while index < len(arguments):
+        arg = arguments[index]
+        index += 1
+        if arg == "--" or arg == "-" or not arg.startswith("-"):
+            if arg != "--":
+                operands.append(arg)
+            operands.extend(arguments[index:])
+            break
+        if arg.startswith("--"):
+            return []
+        position = 1
+        while position < len(arg):
+            char = arg[position]
+            position += 1
+            if char == "i":
+                inplace = True
+                break
+            if char in "eEmMI":
+                inline = inline or char in "eE"
+                if position == len(arg):
+                    index += 1
+                break
+            if char in "CDFx":
+                break
+            if char in "l0":
+                number = re.match(
+                    r"x[0-9a-fA-F]+" if char == "0" and arg[position:].startswith("x") else r"[0-7]*", arg[position:]
+                )
+                if number is not None:
+                    position += len(number[0])
+            elif char == "d":
+                if arg[position:].startswith("t"):
+                    position += 1
+                if arg[position:].startswith(":"):
+                    break
+            elif char in "ch?vV" or char not in "afnpsSTtuUwWX":
+                return []
+    return (operands if inline else operands[1:]) if inplace else []
+
+
+def _static_write_path(path: str) -> str | None:
+    """最後の展開より後ろの絶対末尾だけを採用し、未知のbasenameを推定しない。"""
+    if STATIC_UNKNOWN not in path:
+        return path
+    suffix = path.rsplit(STATIC_UNKNOWN, 1)[1]
+    return suffix if suffix.startswith("/") else None
+
+
 def _bash_write_paths(command: str) -> list[str]:
-    """実行位置の書込コマンドと、確定したリダイレクト先を返す。本文を実行して解決しない。"""
+    """実行位置のリダイレクト・tee・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
+
+    静的な末尾だけを使い、本文と環境変数を実行して解決しない。
+    touch・ln・mkdir・truncate・gawk・spongeは本文の編集とは限らず、
+    書込先の指定にも別の解釈を要するため対象へ含めない。
+    """
     paths: list[str] = []
     for invocation in extract_bash_invocations(command):
-        paths.extend(target for target in invocation.outputs if isinstance(target, str))
-        if not invocation.arguments_known:
-            continue
-        tokens = invocation.segment.tokens
+        paths.extend(target for target in invocation.static_outputs if isinstance(target, str))
+        tokens = invocation.static_tokens
         name = pathlib.PurePath(tokens[0]).name
         if name == "tee":
             options = tokens[1 : tokens.index("--")] if "--" in tokens else tokens[1:]
@@ -296,6 +409,12 @@ def _bash_write_paths(command: str) -> list[str]:
                 paths.extend(arg for arg in tokens[1:] if not arg.startswith("-"))
         elif name == "sed":
             paths.extend(_sed_write_paths(tokens[1:]))
+        elif name in {"cp", "mv", "install", "rsync"}:
+            paths.extend(_copy_write_paths(name, tokens[1:]))
+        elif name == "perl":
+            paths.extend(_perl_write_paths(tokens[1:]))
+        elif name == "dd":
+            paths.extend(arg[3:] for arg in tokens[1:] if arg.startswith("of="))
         elif is_python_token(name) and len(tokens) > 2 and tokens[1] == "-c":
             paths.extend(_python_write_paths(tokens[2]))
     for body in heredoc_bodies(command):
@@ -305,7 +424,7 @@ def _bash_write_paths(command: str) -> list[str]:
             tokens = invocations[0].segment.tokens
             if is_python_token(pathlib.PurePath(tokens[0]).name) and tokens[1:] in {(), ("-",)}:
                 paths.extend(_python_write_paths(command[body.start : body.end]))
-    return paths
+    return [value for path in paths if (value := _static_write_path(path)) is not None]
 
 
 def _is_agent_document_writing(tool_name: str, tool_input: dict) -> bool:
@@ -378,7 +497,7 @@ def _warning(entry: OperationSkill) -> str:
         tag=_WARN_TAG,
         fix=(
             f"ツール`Skill`で`{entry.skill_name}`を起動し、同スキルの基準で今回の{entry.operation}の手段と範囲を確かめ直す。"
-            f"`Skill`を使えない主体（`agents_server`の`explore`・`write`・`shell`の委譲先など）は、"
+            f"ツール一覧に`Skill`が無い主体は、"
             f"{skill_md}を`Read`で全文読んで同じ基準を適用する。"
             f"基準に合わない{entry.operation}の結果は使わず、基準に合う{entry.operation}でやり直す。"
         ),

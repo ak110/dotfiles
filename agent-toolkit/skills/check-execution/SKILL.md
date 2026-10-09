@@ -25,6 +25,7 @@ description: >
 
 ## 統合実行ツール経由の起動
 
+- 確定した計画の変更範囲の検証は`atk run-script plan-verify -- --plan <絶対パス> --worktree <絶対パス> --timeout <正の有限秒数>`を使う。先に同じ入力の`--list`で順序とargvを確認する。失敗・timeout後も全件を実行するため、集約終了コードに加え、各record_pathと両出力を読んで判定する。検証行の書式は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証」に従う
 - プロジェクトが採用する統合実行ツール（`pyfltr`など）を使い、対象を限定する場合も同じ統合実行ツールへパスを渡す。個別の直接起動は、プロジェクト規範が認めるデバッグ・最小再現・原因特定などの用途に限る。設定による無効化は直接起動を防がない
 - チェック実行用MCPを優先し、pyfltrでは`run`を使う。MCPを利用できず有限終了する外部チェックの両出力全量と終了状態を保持する場合、および有限終了する手動観測では、対象worktreeで`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`を使う。返却JSONの`record_path`が指す保存JSONから実行条件・子終了状態・両出力へ到達できるため、その絶対パスと両出力パスを検証記録へ渡す。保存失敗は非0と診断で確認する。pipeline・複数行codeは`agent-toolkit/rules/02-agent-operations.md`に従いmanaged-temp内のscriptへ保存し、shellで再解釈せずargvとして渡す
 - シェルからCLIを直接実行する場合は、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「背景ジョブの起動形（Claude Code）」が定める長時間コマンドの前景実行に従う

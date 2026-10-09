@@ -18,6 +18,56 @@ WI_B = "20261007-040310-003.md"
 WI_S = "20261007-040310-004.md"
 
 
+@pytest.mark.parametrize("missing", [False, True])
+def test_public_split_assigns_each_awi_and_rejects_loss_before_writing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], missing: bool
+) -> None:
+    """実Gitの分割を公開rewriteから取得し、AWI欠落なら全記録のバイト列を保つ。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.init_repository(repo, initial_branch="main")
+    root = _commit(repo, "root")
+    plan = _plan(tmp_path / "plans/plan.md", [WI_A, WI_B])
+    old = _commit(repo, "combined")
+    _record(repo, plan, root, [WI_A, WI_B])
+    other = _handoff(tmp_path / "handoff.md")
+    _record(repo, other, root, [WI_A, WI_B])
+    git_repository.git_output(repo, "reset", "--hard", root)
+    first, second = _commit(repo, "first"), _commit(repo, "second")
+    rewrite = tmp_path / "split.json"
+    rewrite.write_text(
+        json.dumps({old: [{"commit": first, "awi": [WI_A]}, {"commit": second, "awi": [] if missing else [WI_B]}]}),
+        encoding="utf-8",
+    )
+    before = _snapshot([plan, other])
+    args = [
+        "--worktree",
+        str(repo),
+        "--previous-head",
+        old,
+        "--rewrite-map",
+        str(rewrite),
+        "--completed-step",
+        "分割",
+        "--result",
+        "AWIごとに継承",
+        "--plan",
+        str(plan),
+        "--handoff",
+        str(other),
+    ]
+    assert run_script.dispatch(argparse.Namespace(script_name="plan-rewrite", script_args=args)) == int(missing)
+    captured = capsys.readouterr()
+    if missing:
+        assert _snapshot([plan, other]) == before
+        assert WI_B in captured.err and old in captured.err and "次の操作" in captured.err
+        return
+    for wi, oid in ((WI_A, first), (WI_B, second)):
+        assert get_plan_commits.main([str(plan), "--worktree", str(repo), "--awi", wi]) == 0
+        assert json.loads(capsys.readouterr().out)["commits"] == [commit_mapping.short_oid(repo, oid)]
+
+
 def _commit(repo: pathlib.Path, message: str) -> str:
     """空のcommitを作成し、その完全OIDを返す。"""
     git_repository.git_output(

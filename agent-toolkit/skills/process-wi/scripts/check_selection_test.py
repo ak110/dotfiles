@@ -69,7 +69,9 @@ def _write_selection(
         row.setdefault("統合秒数", 60)
         if "rationale" not in row:
             row.setdefault("根拠", "検査用の根拠")
-    selection = {"decisions" if legacy else "選定": decisions, "レーンの所要時間": costs}
+    selection: dict[str, object] = {"decisions" if legacy else "選定": decisions, "レーンの所要時間": costs}
+    if any(isinstance(row.get("段階"), int) and row["段階"] >= 2 for row in costs):
+        selection["単一段階案の完了見込み秒数"] = 1320
     path.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
     return path
 
@@ -91,6 +93,169 @@ def test_merge_options_must_be_provided_together(tmp_path: pathlib.Path, option:
     with pytest.raises(SystemExit) as error:
         check_selection.main([str(tmp_path / "selection.yaml"), option, str(tmp_path / "other")])
     assert error.value.code == 2
+
+
+def test_cost_updates_require_merge(tmp_path: pathlib.Path) -> None:
+    """費用更新単独の呼出を、ファイル読込前に拒否する。"""
+    assert _dispatch(str(tmp_path / "selection.yaml"), "--lane-cost-updates", str(tmp_path / "updates.json")) == 2
+
+
+def test_public_check_requires_single_stage_estimate(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同じ段階案の比較値だけを変え、欠落拒否・0の受理・成功要約を観測する。"""
+    repo, notes = env
+    for wi in ("a.md", "b.md"):
+        _awi(notes, wi, "`src/model.py`を変える。")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": wi, "レーン": lane, "書込対象": ["src/model.py"]} for wi, lane in (("a.md", "lane-01"), ("b.md", "lane-02"))],
+        [{"レーン": "lane-01"}, {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"]}],
+    )
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["レーン間の重なり"] = [_overlap_record("src/model.py", "交わる")]
+    field = "単一段階案の完了見込み秒数"
+    for value, code in ((None, 1), (0, 0), (1320, 0)):
+        data.pop(field, None)
+        if value is not None:
+            data[field] = value
+        path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+        assert _dispatch(str(path), "--work-dir", str(repo), "--body-wi", "a.md") == code
+        result = capsys.readouterr()
+        if code:
+            assert field in result.err and "次の操作:" in result.err
+            assert "配分の説明" in result.err
+        else:
+            assert f"{field}: {value}" in result.out and not result.err
+    path = _write_selection(tmp_path / "single.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}])
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    assert field not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value", ["100", True, -1, [], None])
+def test_public_check_rejects_invalid_single_stage_estimate(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], value: object
+) -> None:
+    """比較値の不正型は段階の有無に依存せず入力違反とする。"""
+    repo, _notes = env
+    path = _write_selection(tmp_path / "selection.yaml", [])
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["単一段階案の完了見込み秒数"] = value
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 2
+    message = capsys.readouterr().err
+    assert "単一段階案の完了見込み秒数" in message and "型" in message and "次の操作:" in message
+
+
+def _derived(path: str, scope: str = "src/") -> dict[str, str]:
+    """名前を指定しない要求から限定調査で確定した新設先の記録を返す。"""
+    return {
+        "パス": path,
+        "反映範囲": scope,
+        "要求": "結果を保存する入口を新設する",
+        "配置根拠": "既存model.pyの保存処理と同じ配置にする",
+    }
+
+
+@pytest.mark.parametrize("section", ["書込対象", "公開工程の書込対象"])
+def test_public_check_accepts_derived_new_paths(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], section: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """名前のない要求から導出した個別新設は、同じ親の別レーンとも独立して受理する。"""
+    repo, notes = env
+    items = []
+    costs = []
+    for number in (1, 2):
+        wi, lane, new = f"a{number}.md", f"lane-0{number}", f"src/save{number}.py"
+        _awi(notes, wi, "`src/`の結果保存用の入口を新設する。")
+        items.append({"WI": wi, "レーン": lane, "書込対象": [], section: [new], "導出した新設先": [_derived(new)]})
+        costs.append({"レーン": lane, "根拠": f"対象リポジトリの規範AGENTS.mdの公開の節で{new}を所有する"})
+    path = _write_selection(tmp_path / "selection.yaml", items, costs)
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    assert not capsys.readouterr().err
+
+
+def test_public_check_derived_paths_from_answered_uwi(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """パスを示さない回答からも限定調査の範囲を渡せる。意味は本文と根拠で検収する。"""
+    repo, notes = env
+    (notes / "processing/u.md").write_text(
+        "---\ntype: uwi\n---\n\n## 回答\n\n結果を保存する入口も新設する。\n", encoding="utf-8"
+    )
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "u.md", "レーン": "lane-01", "書込対象": ["src/save.py"], "導出した新設先": [_derived("src/save.py")]}],
+    )
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    assert not capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "case,code",
+    [
+        ("missing-reason", 2),
+        ("unknown-field", 2),
+        ("not-list", 2),
+        ("empty", 2),
+        ("identifier", 1),
+        ("absolute", 1),
+        ("escape", 1),
+        ("glob", 1),
+        ("missing-parent", 1),
+        ("outside", 1),
+        ("missing-write", 1),
+        ("excluded-only", 1),
+        ("duplicate", 1),
+        ("missing-individual", 1),
+        ("remaining", 1),
+    ],
+)
+def test_public_check_rejects_invalid_derived_new_paths(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], case: str, code: int, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """根拠・パス・要求範囲・書込への対応の不成立と、他の反映先の被覆不足を区別する。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`src/`へ保存用入口を新設する。")
+    record = _derived("src/save.py")
+    item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": [record["パス"]], "導出した新設先": [record]}
+    if case == "missing-reason":
+        del record["配置根拠"]
+    elif case == "unknown-field":
+        record["unknown"] = "extra"
+    elif case == "not-list":
+        item["導出した新設先"] = record
+    elif case == "empty":
+        record["要求"] = " "
+    elif case in {"identifier", "absolute", "escape", "glob", "missing-parent", "outside"}:
+        record["パス"] = {
+            "identifier": "SAVE_NAME",
+            "absolute": "/save.py",
+            "escape": "../save.py",
+            "glob": "src/save?.py",
+            "missing-parent": "src/missing/save.py",
+            "outside": "src-old/save.py",
+        }[case]
+        item["書込対象"] = [record["パス"]]
+    elif case in {"missing-write", "excluded-only"}:
+        item["書込対象"] = []
+        if case == "excluded-only":
+            item["書き込まない反映先"] = [record["パス"]]
+    elif case == "duplicate":
+        item["導出した新設先"].append(dict(record))
+    elif case == "missing-individual":
+        _awi(notes, "a.md", "`src/`へ保存入口を新設し、`README.md`も変える。")
+    else:
+        _awi(notes, "a.md", "`src/`へ保存入口を新設し、`docs/`にも入口を新設する。")
+    path = _write_selection(tmp_path / "selection.yaml", [item])
+    assert _dispatch(str(path), "--work-dir", str(repo)) == code
+    diagnostic = capsys.readouterr().err
+    assert "次の操作:" in diagnostic
+    if case in {"missing-individual", "remaining"}:
+        assert "未被覆" in diagnostic
+        item["書込対象"].append("README.md" if case == "missing-individual" else "docs/")
+        _write_selection(path, [item])
+        assert _dispatch(str(path), "--work-dir", str(repo)) == 0
 
 
 def _overlap_record(path: str, judgment: str = "交わらない") -> dict[str, typing.Any]:
@@ -123,7 +288,7 @@ def test_public_selection_rejects_non_paths(
     diagnostic = capsys.readouterr().err
     assert f"a.md: `{section}`のパスの不正: {entry}" in diagnostic
     assert "次の操作:" in diagnostic
-    assert "反映先に明示された新設先" in diagnostic
+    assert "導出記録が正当な新設先" in diagnostic
 
 
 @pytest.mark.parametrize(
@@ -1575,6 +1740,7 @@ def test_public_command_prints_lane_summary_on_success(
                 {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"], "実装秒数": 300.5, "統合秒数": 30, "根拠": "後段"},
             ],
             "レーン間の重なり": [_overlap_record("src/model.py", "交わる")],
+            "単一段階案の完了見込み秒数": 1500,
         }
     elif layout == "legacy":
         selection = {

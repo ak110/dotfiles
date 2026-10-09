@@ -50,7 +50,9 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 条件を満たしたworktreeは、現在のブランチの追跡先を優先し、解決できない場合だけ`origin/HEAD`へ後退して得た上流ブランチへfetchとrebaseで追随させる。
 解決した上流ブランチはfetch・rebaseの内部だけで使用し、対象リポジトリごとに異なる公開先をセッションのプロンプトへ推測注入しない。公開操作と公開先の判断は、その運用を所有する主体へ委ねる。
 
-並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。ロック中にstash生成、`refs/worktree/<退避ラベル>`記録および生成分だけのdropを行う。既存の`refs/stash`先頭OIDは維持し、途中失敗時はstashまたはworktree固有refを削除せず復旧識別子を報告する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
+並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。ロック中にstashを生成し、`refs/worktree/<退避ラベル>`とworktree・label別の共有保護refを記録してから生成分だけのstashをdropする。固有refだけでは別worktreeのGCから到達できないため、共有する`refs/atk/worktree-stash/`配下へ同じOIDを保護する。既存の`refs/stash`先頭OIDは維持し、途中失敗時は復旧識別子と保護または共有stashを保持する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
+
+正常な旧固有refは`atk worktree-stash protect <ref>`で識別子を変えず保護できる。`update-dotfiles`はpull前に現在worktreeの旧`update-dotfiles-*`退避を全て保護し、欠損や保護失敗ではpullへ進まない。今回退避は`stash apply --index`の成功後だけ`drop <ref>`で回収する。pull失敗後の復元成功も回収し、復元競合とrebase競合では保持する。回収失敗は復元失敗と分け、復元済み内容をresetせず再試行を案内する。dropは固定ロック内で読取OIDを条件として固有ref、共有保護refの順に削除し、片側だけ残っても同じ識別子で再試行できる。他worktreeの同label退避と既存共有stashは回収しない。
 
 Claude Codeの`--worktree`へ置き換える案は、worktree隔離ガードがシェル構文を拒否するため採用しない。
 `atk`側でGit worktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。

@@ -2235,6 +2235,7 @@ class TestAddBatchOption:
             ["--scope=name"],
             ["--question-type=yes-no"],
             ["--choices=A,B"],
+            ["--choices=A", "--choices=B,C"],
             ["--depends-on=other.md"],
         ],
     )

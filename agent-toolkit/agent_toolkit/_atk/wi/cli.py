@@ -292,8 +292,12 @@ def _add_wi_add_parser(sub: Any) -> None:
     add.add_argument(
         "--choices",
         metavar="A,B,C",
+        action="append",
         default=None,
-        help="UWIの選択肢をASCIIカンマ区切りで指定する。`--question-type=choice`で必要となる。",
+        help=(
+            "UWIの選択肢を指定順に保存する。`--question-type=choice`で必要となる。"
+            "ASCIIカンマ区切り（--choices A,B,C）と反復指定（--choices A --choices B,C）を使える。"
+        ),
     )
     add.add_argument(
         "--depends-on",

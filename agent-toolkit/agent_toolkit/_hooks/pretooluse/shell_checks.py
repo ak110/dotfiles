@@ -440,17 +440,19 @@ _GIT_GREP_PATTERN_FILE_OPTIONS: frozenset[str] = frozenset({"-f", "--file"})
 
 # --- Bash: `git rev-parse --short`への複数revision ---
 
-_GIT_REV_PARSE_VALUED_OPTIONS = frozenset({"--default", "--prefix", "--git-path", "--resolve-git-dir"})
+_GIT_REV_PARSE_VALUED_OPTIONS = frozenset({"--default", "--prefix", "--git-path", "--resolve-git-dir", "-n"})
 """`man git-rev-parse`の値を別引数で取るオプション（git 2.43.0）。"""
 
 
 def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
-    """`git rev-parse`の引数が`--short`を持つ場合に、revisionとして渡された引数を返す。
+    """通常modeの単一revision検証へ渡す通常revisionを返す。
 
     `--`以降はパスとして扱い、revisionに数えない。リダイレクトの演算子と対象も数えない。
-    `--short`を持たない場合はNoneを返す。
+    検証指定より前のrevisionとrangeは数えず、先頭の専用modeは対象外とする。
     """
     has_short = False
+    if arguments and arguments[0] in {"--sq-quote", "--parseopt"}:
+        return None
     revisions: list[str] = []
     skip_value = False
     for token in strip_redirections(arguments):
@@ -462,21 +464,22 @@ def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
         if token in _GIT_REV_PARSE_VALUED_OPTIONS:
             skip_value = True
             continue
-        if token == "--short" or token.startswith("--short="):
+        if token in {"--short", "--verify"} or token.startswith("--short="):
             has_short = True
             continue
         if token.startswith("-"):
             continue
-        revisions.append(token)
+        if has_short and ".." not in token:
+            revisions.append(token)
     return revisions if has_short else None
 
 
 def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
-    """`git rev-parse --short`へ2つ以上のrevisionを渡すコマンドへ警告本文を返す。
+    """単一revision検証へ複数revisionを渡す実行を遮断する本文を返す。
 
     同コマンドは1回に1つのrevisionだけを受理し、複数を渡すと`fatal: Needed a single revision`で失敗する。
     条文で定めた後も同じ失敗が反復したため、実行の直前に判定する。
-    結果は再実行で是正できるため、遮断せず警告に留める。
+    入力だけで失敗が確定し、個別の取得で是正できるため実行前に遮断する。
     """
     for invocation in extract_bash_invocations(command):
         if not invocation.arguments_known:
@@ -488,13 +491,11 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
         revisions = _rev_parse_short_revisions(subcommand[1])
         if revisions is not None and len(revisions) >= 2:
             return _llm_notice(
-                f"`git rev-parse --short`へ{len(revisions)}つのリビジョン（{'、'.join(revisions)}）を渡している。"
-                "同コマンドは1回に1つのリビジョンだけを受理し、実行されると"
-                "`fatal: Needed a single revision`で終了コード128になる。"
-                "`&&`で連結した後段は実行されず、後に表示する`$?`は後段ではなくこの失敗を示し得る。"
-                "連結した結果を判断へ使う前に、各区間が実行されたかを確かめる。",
-                tag=_WARN_TAG,
-                fix="リビジョンごとに`git rev-parse --short=7 <revision>`を個別に実行し、入力と出力の対応を保つ。",
+                f"`git rev-parse`の単一リビジョン検証へ{len(revisions)}つのリビジョン（{'、'.join(revisions)}）を渡している。"
+                "`--short`または`--verify`は1回に1つのリビジョンだけを受理し、複数指定は失敗する。"
+                "`--quiet`によって診断と終了コードが変わるため、終了コード128とは限らない。",
+                fix="元の`--short`・`--short=<長さ>`・`--verify`などのオプションを保ち、リビジョンごとに"
+                "`git rev-parse <元のオプション> <revision>`を個別に実行して入力と出力の対応を保つ。",
                 removable_cause=True,
             )
     return None

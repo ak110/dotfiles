@@ -312,6 +312,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         lambda: _check_bash_process_kill_by_pattern(command),
         lambda: _check_bash_option_after_terminator(command),
         lambda: _check_bash_atk_output_loss(command),
+        lambda: _warn_git_rev_parse_short_multiple(command),
         lambda: _git_commit_message_format_error(command, cwd=cwd),
         lambda: _git_commit_attribution_error(
             command,
@@ -324,9 +325,6 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         if message is not None:
             return Decision(block=message)
     warnings: list[str] = operation_skill_warnings(payload, "Bash", tool_input, session_id, is_codex=is_codex)
-    rev_parse_warning = _warn_git_rev_parse_short_multiple(command)
-    if rev_parse_warning is not None:
-        warnings.append(rev_parse_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
     if drive_letter_path_warning is not None:
         warnings.append(drive_letter_path_warning)

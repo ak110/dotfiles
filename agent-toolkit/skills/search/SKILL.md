@@ -19,10 +19,12 @@ description: >
 4. 除外設定を反映したファイル一覧は`rg --files`、構造化した集計と全体件数の上限を要する検索はMCPまたはCLIの`pyfltr grep`等を使う
 
 利用中のホストで手段を利用できない場合も同じ対象性質から代替を選ぶ。
-`rg`と`git grep`のいずれかを利用できる場合は、再帰内容検索にその手段を使う。双方を利用できない場合は、`--include`・`--exclude`・`--exclude-dir`で対象を限定した`grep`を用い、出力先ファイルへ保存してから必要な範囲だけを読む。
+`rg`と`git grep`のいずれかを利用できる場合は、再帰内容検索にその手段を使う。双方を利用できない場合は、`--include`・`--exclude`・`--exclude-dir`で対象を限定した`command grep`を用い、出力先ファイルへ保存してから必要な範囲だけを読む。
 Git作業ツリー外のファイルから秘匿値と見られる値の有無、件数、所在、同一性を調べる検索は、`agent-toolkit:secret-files`が定める値を出力しない形で行う。
 
 ## 引数とシェルの扱い
+
+Claude CodeのBashでは`grep`がugrepへ転送するシェル関数になる場合がある。`type grep`で起動実体を確かめ、パイプの後段の`grep`も同じ関数の対象とする。ignoreやbinaryの除外による無出力・終了コード1を対象全体の不在と同一視しない。ugrepは上限付きの繰り返しを2つ含む`-E`の式（`.{0,160}a.{0,160}`や`.{0,30}a.{0,30}`など）で、複雑度エラーを標準エラーへ出力して終了コード2となり、標準出力が空になる場合がある。不在・件数の正確さ、除外対象の一致、有界反復の成否を確かめる場合は、関数を迂回する`command grep`を対照に使う。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/search/SKILL.md：引数とシェルの扱い：2026年10月9日」にある。
 
 `git grep`では、固定文字列の`-F`、拡張正規表現の`-E`またはPerl互換正規表現の`-P`を検索意図に応じて明示する。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月7日」にある。

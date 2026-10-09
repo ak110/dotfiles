@@ -65,7 +65,7 @@ def _check_writable(record: _Record, completed_step: str, result: str) -> None:
 def _plan_events(
     worktree: pathlib.Path,
     records: list[_Record],
-    rewrite: dict[str, str],
+    rewrite: commit_mapping.RewriteMap,
     previous_head: str,
     completed_step: str,
     result: str,
@@ -117,7 +117,8 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         required=True,
         help="書換えで検収した範囲全体の旧OIDから新OIDへの対応をJSONオブジェクトで保存したファイルの絶対パス。"
-        "WI対応を持たないcommitを含めてよい。OIDは短縮OIDか完全OID",
+        "WI対応を持たないcommitを含めてよい。OIDは短縮OIDか完全OID。分割は旧OIDの値に"
+        '[{"commit":"新OID","awi":["WIファイル名"]}]を指定し、全旧AWIを実際の変更先へ割り当てる',
     )
     parser.add_argument("--completed-step", required=True, help="完了した工程。追記する各記録の進捗の行へ書く")
     parser.add_argument("--result", required=True, help="結果・特記事項。追記する各記録の進捗の行へ書く")

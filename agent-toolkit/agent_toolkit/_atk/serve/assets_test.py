@@ -497,6 +497,7 @@ def test_operations_reads_local_entries_and_detail_without_pull(
         "filename": "entry.md",
         "answered": None,
         "needs_verify": False,
+        "cooldown_until": None,
         "plan": False,
         "target_repo": "example/repo",
         "source": "test",

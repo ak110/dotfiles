@@ -81,6 +81,7 @@ Bashツールで`run_in_background=true`により起動したコマンドと、�
 
 ## 一時領域と成果物の観測
 
+- `Agent`の`output_file`はセッションのJSONLへのシンボリックリンクになることがある。リンク自体を読む`stat`や`ls -l`のサイズ・更新時刻は固定でも、リンク先への追記は進み得る。補助観測にはリンク先を扱う`atk watch --file <output_file>`または`stat -L <output_file>`を使う。本文の読取はセッション記録を文脈へ取り込むため、進捗だけを知る用途には使わない。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/delegation/references/claude-code-runtime.md：一時領域と成果物の観測：2026年10月9日」にある
 - 成果物側の状況は`atk watch`を単独で実行して観測する。対象の指定、出力の項目および終了コードは`atk watch --help`に従う。
   このコマンドは成果物側の補助観測であり、稼働状態の判定には、成果物の更新時刻・行数・作業ツリーの差分件数・
   プロセス名の比較に代えて次の観測を用いる。

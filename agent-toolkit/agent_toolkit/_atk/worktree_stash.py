@@ -80,6 +80,47 @@ def _stash_oid(cwd: pathlib.Path) -> str | None:
     return _git_output(["rev-parse", "--verify", "refs/stash"], cwd)
 
 
+def _protection_ref(ref: str, cwd: pathlib.Path, common_dir: pathlib.Path) -> str | None:
+    """Gitのworktree識別子とlabelから、全worktreeのGCが参照する共有refを得る。"""
+    value = _git_output(["rev-parse", "--absolute-git-dir"], cwd)
+    if value is None:
+        _outcome.report_failure(f"worktree識別子を解決できない: {ref}", next_action="Gitの状態を確認して再実行する")
+        return None
+    git_dir = pathlib.Path(value).resolve()
+    owner = "main" if git_dir == common_dir else f"linked/{git_dir.name.encode('utf-8').hex()}"
+    return f"refs/atk/worktree-stash/{owner}/{ref.removeprefix('refs/worktree/')}"
+
+
+def _protect_ref(ref: str, shared_ref: str, oid: str, cwd: pathlib.Path) -> int:
+    """既存保護を上書きせず、旧値条件付きで共有保護を成立させる。呼出元が固定ロックを保持する。"""
+    object_check = _run_git(["cat-file", "-e", f"{oid}^{{commit}}"], cwd)
+    if object_check.returncode != 0:
+        _outcome.report_failure(
+            f"退避オブジェクトを確認できない: {ref}; oid={oid}; {object_check.stderr.strip()}",
+            next_action="退避refを削除せず、Gitのオブジェクトを復旧してからprotectを再実行する",
+        )
+        return 1
+    exists = _ref_exists(shared_ref, cwd)
+    if exists is None:
+        return 1
+    if exists:
+        if _git_output(["rev-parse", "--verify", shared_ref], cwd) == oid:
+            return 0
+        _outcome.report_failure(
+            f"共有保護が別の退避を指している: {ref}; protection={shared_ref}",
+            next_action="両refの退避内容を確認し、復旧してからdropを行う",
+        )
+        return 1
+    result = _run_git(["update-ref", shared_ref, oid, ""], cwd)
+    if result.returncode != 0:
+        _outcome.report_failure(
+            f"共有保護を記録できない: {ref}; protection={shared_ref}; oid={oid}; {result.stderr.strip()}",
+            next_action=f"共有stashを保持したまま、`atk worktree-stash protect {ref}`を再実行する",
+        )
+        return 1
+    return 0
+
+
 def _report_failure(
     message: str,
     *,
@@ -131,6 +172,9 @@ def save(
     common_dir = _common_dir(worktree)
     if common_dir is None:
         return 1
+    shared_ref = _protection_ref(ref, worktree, common_dir)
+    if shared_ref is None:
+        return 1
     lock_path = common_dir / _LOCK_NAME
     try:
         with lock_path.open("a+", encoding="utf-8") as lock_file:
@@ -143,6 +187,15 @@ def save(
                     _outcome.report_failure(
                         f"退避refが既に存在する: {ref}",
                         next_action=f"別のラベルを指定するか、`atk worktree-stash drop {ref}`で既存のrefを削除する",
+                    )
+                    return 2
+                shared_exists = _ref_exists(shared_ref, worktree)
+                if shared_exists is None:
+                    return 1
+                if shared_exists:
+                    _outcome.report_failure(
+                        f"前回の共有保護が残っている: {ref}; protection={shared_ref}",
+                        next_action=f"前回の退避を復旧し、`atk worktree-stash drop {ref}`で回収するか別のlabelを指定する",
                     )
                     return 2
                 before = _stash_oid(worktree)
@@ -172,6 +225,15 @@ def save(
                     )
                     return 1
                 ref_recorded = True
+                if _protect_ref(ref, shared_ref, after, worktree) != 0:
+                    _report_failure(
+                        "共有保護に失敗したため作成した共有stashを保持します",
+                        stash_oid=after,
+                        ref=ref,
+                        ref_recorded=True,
+                        cwd=worktree,
+                    )
+                    return 1
                 drop_result = _run_git(["stash", "drop", "stash@{0}"], worktree)
                 if drop_result.returncode != 0:
                     _report_failure(
@@ -196,6 +258,94 @@ def save(
             cwd=worktree,
         )
         return 1
+
+
+def protect(
+    identifier: str,
+    *,
+    cwd: pathlib.Path | None = None,
+    private_notes: pathlib.Path | None = None,
+) -> int:
+    """正常な旧worktree固有refを、復元識別子を変えず共有GCから保護する。"""
+    worktree = (cwd or pathlib.Path.cwd()).resolve()
+    if _is_queue_repository(worktree, private_notes):
+        _outcome.report_failure(_QUEUE_REPOSITORY_ERROR, next_action=_QUEUE_REPOSITORY_NEXT_ACTION)
+        return 2
+    if (
+        not identifier.startswith("refs/worktree/")
+        or _worktree_ref(identifier.removeprefix("refs/worktree/"), worktree) is None
+    ):
+        _outcome.report_failure(f"保護するrefが不正である: {identifier}", next_action="refs/worktree/配下のrefを指定する")
+        return 2
+    common_dir = _common_dir(worktree)
+    if common_dir is None:
+        return 1
+    shared_ref = _protection_ref(identifier, worktree, common_dir)
+    if shared_ref is None:
+        return 1
+    try:
+        with (common_dir / _LOCK_NAME).open("a+", encoding="utf-8") as lock_file:
+            _file_lock.acquire_lock(lock_file)
+            try:
+                exists = _ref_exists(identifier, worktree)
+                if exists is None:
+                    return 1
+                if not exists:
+                    _outcome.report_failure(
+                        f"保護する退避refが存在しない: {identifier}",
+                        next_action="実在するrefs/worktree/配下のrefを確認して指定し直す",
+                    )
+                    return 2
+                oid = _git_output(["rev-parse", "--verify", identifier], worktree)
+                if oid is None:
+                    _outcome.report_failure(
+                        f"保護する退避refを照会できない: {identifier}",
+                        next_action="refを削除せずGitの状態を確認して再実行する",
+                    )
+                    return 1
+                if _protect_ref(identifier, shared_ref, oid, worktree) != 0:
+                    return 1
+                _outcome.report_success(f"退避を保護した: {identifier}", _outcome.ResultKind.VALUE_OUTPUT)
+                print(identifier)
+                return 0
+            finally:
+                _file_lock.release_lock(lock_file)
+    except OSError as error:
+        _outcome.report_failure(f"退避用ロックを取得できない: {error}", next_action="原因を解消してprotectを再実行する")
+        return 1
+
+
+def _drop_ref(identifier: str, shared_ref: str, cwd: pathlib.Path) -> int:
+    """固有refを先に削除し、共有保護だけが残る状態も同じ識別子で回収する。"""
+    refs: list[tuple[str, str]] = []
+    for ref in (identifier, shared_ref):
+        exists = _ref_exists(ref, cwd)
+        if exists is None:
+            return 1
+        if exists:
+            oid = _git_output(["rev-parse", "--verify", ref], cwd)
+            if oid is None:
+                _outcome.report_failure(f"退避refを照会できない: {ref}", next_action="Gitの状態を確認してdropを再実行する")
+                return 1
+            refs.append((ref, oid))
+    if not refs:
+        _outcome.report_failure(f"退避識別子が存在しない: {identifier}", next_action="実在する識別子を確認して指定し直す")
+        return 2
+    if len(refs) == 2 and refs[0][1] != refs[1][1]:
+        _outcome.report_failure(
+            f"固有refと共有保護が別の退避を指している: {identifier}; protection={shared_ref}",
+            next_action="両退避の内容を復旧してから回収する",
+        )
+        return 1
+    for ref, oid in refs:
+        result = _run_git(["update-ref", "-d", ref, oid], cwd)
+        if result.returncode != 0:
+            _outcome.report_failure(
+                f"退避refを削除できない: {ref}; identifier={identifier}; protection={shared_ref}; {result.stderr.strip()}",
+                next_action=f"残る退避を保持し、`atk worktree-stash drop {identifier}`で回収を再試行する",
+            )
+            return 1
+    return 0
 
 
 def drop(
@@ -231,23 +381,24 @@ def drop(
         with lock_path.open("a+", encoding="utf-8") as lock_file:
             _file_lock.acquire_lock(lock_file)
             try:
-                oid = _git_output(["rev-parse", "--verify", identifier], worktree)
-                if oid is None:
-                    _outcome.report_failure(
-                        f"退避識別子が存在しない: {identifier}",
-                        next_action=(
-                            "`git stash list`または`git for-each-ref refs/worktree/`で実在する識別子を確認して指定し直す"
-                        ),
-                    )
-                    return 2
-                delete_args = ["update-ref", "-d", identifier, oid] if is_worktree_ref else ["stash", "drop", identifier]
-                deleted = _run_git(delete_args, worktree)
-                if deleted.returncode != 0:
-                    _outcome.report_failure(
-                        f"退避識別子を削除できない: {deleted.stderr.strip()}",
-                        next_action="`git status`でGitの状態を確認してから再実行する",
-                    )
-                    return 1
+                if is_worktree_ref:
+                    shared_ref = _protection_ref(identifier, worktree, common_dir)
+                    if shared_ref is None:
+                        return 1
+                    result = _drop_ref(identifier, shared_ref, worktree)
+                    if result != 0:
+                        return result
+                else:
+                    oid = _git_output(["rev-parse", "--verify", identifier], worktree)
+                    if oid is None:
+                        _outcome.report_failure(f"退避識別子が存在しない: {identifier}", next_action="git stash listで確認する")
+                        return 2
+                    deleted = _run_git(["stash", "drop", identifier], worktree)
+                    if deleted.returncode != 0:
+                        _outcome.report_failure(
+                            f"退避識別子を削除できない: {deleted.stderr.strip()}", next_action="Gitの状態を確認して再実行する"
+                        )
+                        return 1
                 _outcome.report_success(f"退避を削除した: {identifier}", _outcome.ResultKind.VALUE_OUTPUT)
                 print(identifier)
                 return 0
@@ -263,6 +414,8 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     subparsers = _atk_help.add_subcommands(parser, dest=command_dest)
     save_parser = _atk_help.add_command(subparsers, "save", **_atk_help.HELP["atk worktree-stash save"])
     save_parser.add_argument("--label", required=True, help="退避先refのラベル")
+    protect_parser = _atk_help.add_command(subparsers, "protect", **_atk_help.HELP["atk worktree-stash protect"])
+    protect_parser.add_argument("identifier", help="保護するworktree固有refの識別子")
     drop_parser = _atk_help.add_command(subparsers, "drop", **_atk_help.HELP["atk worktree-stash drop"])
     drop_parser.add_argument("identifier", help="削除するstashまたはworktree固有refの識別子")
 
@@ -279,6 +432,8 @@ def dispatch(
         return save(args.label, private_notes=private_notes)
     if command == "drop":
         return drop(args.identifier, private_notes=private_notes)
+    if command == "protect":
+        return protect(args.identifier, private_notes=private_notes)
     return 2
 
 

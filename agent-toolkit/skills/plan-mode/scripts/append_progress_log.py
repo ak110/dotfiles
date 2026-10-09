@@ -227,7 +227,8 @@ def main(argv: list[str] | None = None, *, description: str | None = None) -> in
         "--rewrite-map",
         type=pathlib.Path,
         metavar="PATH",
-        help="検収済みの旧OIDから新OIDへの対応をJSONオブジェクトで保存したファイルの絶対パス。OIDは短縮OIDか完全OID（JSON文字列そのものは受け取らない）",
+        help="検収済みの旧OIDから新OIDへの対応を保存したJSONファイルの絶対パス。OIDは短縮OIDか完全OID。"
+        '分割は旧OIDの値に[{"commit":"新OID","awi":["WIファイル名"]}]を指定し、全旧AWIを割り当てる',
     )
     operation.add_argument(
         "--get-commits", action="store_true", help="対象AWIの現在のcommit対応を短縮OIDのJSON Linesで取得する"

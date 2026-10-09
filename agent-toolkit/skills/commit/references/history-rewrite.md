@@ -106,13 +106,15 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 
 本節の`pre_fixup`・`fixup`・`autosquash`・`amend`の各phase名と、続行できない理由を返す返却は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める実装担当の契約の値とする。この契約を受け取っていないエージェントは、続行できない理由の返却に代えて同じ観測結果を委譲元へ報告する。
 
-`pre_fixup`・`fixup`・`autosquash`・`amend`のいずれかが失敗した場合は、失敗の事実と観測結果を委譲元へ返して同じ指摘の履歴統合を終える。復旧操作と再試行は委譲元の判断を得てから行う。失敗時点の履歴とindexの状態は失敗の種別ごとに異なり、状態を確定しない復旧操作と再試行はcommitの消失を招く。
+後述の条件を満たすautosquashの内容競合を除き、`pre_fixup`・`fixup`・`autosquash`・`amend`のいずれかが失敗した場合は、失敗の事実と観測結果を委譲元へ返して同じ指摘の履歴統合を終える。復旧操作と再試行は委譲元の判断を得てから行う。条件を満たす競合の`git rebase --continue`は開始済みの同じrebaseの続行であり、新しい履歴統合の再試行とは区別する。失敗時点の履歴とindexの状態は失敗の種別ごとに異なり、状態を確定しない復旧操作と再試行はcommitの消失を招く。
 `--no-update-refs`を付けずにrebaseを実行したことを観測した場合は、local branch refsを列挙し、事前に保持したOIDと比べる。base branchを含む作業branch以外のrefが移動していた場合は、移動したref、変更前後のOIDおよび復旧操作に必要な許可を委譲元へ返し、自らrefを復旧しない。
 ただし、autosquashが内容競合で停止した場合は、同じ実装担当が次の条件を満たす範囲に限って競合を解消してよい。競合箇所が採用済みの指摘に対する修正と統合先commitの変更だけから成り、解消後もその中間commitの公開契約を維持できることを条件とする。解消したパスだけをstageし、`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して履歴と継続対象を確認した直後に`git rebase --continue`を実行する。再び内容競合で停止した場合も同じ条件を改めて判定する。
 競合箇所へ担当外の変更が含まれる場合、修正の帰属を確定できない場合または中間commitの公開契約を維持できない場合は、競合をそのまま残して委譲元へ返す。
 失敗した操作、終了コード、標準エラー出力、失敗時点の`git status --short`および`git log --oneline -5`の観測結果を添えて続行できない理由を返す。
 
 ## WI実装commitの対応の継承
+
+対応表のJSONは1対1・多対1の`{"oldOID":"newOID"}`を維持する。commit分割は`{"oldOID":[{"commit":"newOID-A","awi":["WI-A.md"]},{"commit":"newOID-B","awi":["WI-B.md"]}]}`でAWI割当を明示する。WIは保存ファイル名、OIDはGitで一意に解決できる値を使う。同じAWIを複数の新commitへ割り当ててもよい。各記録の旧commitが持つ全AWIを割当で被覆し、新commitへ指定AWIだけを継承する。欠落時はAWI名・旧OID・補正する次の操作を返し、全記録と対応記録を変更しない。旧scalar・保存済みrewriteイベント・本文コメントは引き続き読める。検収済みの同じ対応表をplan-rewrite、plan-progressの`--rewrite-map`、完成条件証拠の`--rewrite-map`へ渡し、証拠の旧OID参照は全対応先へ更新する。
 
 WI実装commitの履歴を変更した担当は、`atk run-script history-compare`の検収成功時に保存された完全OIDの旧新対応表を使う。rebaseは`--operation rebase`、autosquashは`--operation autosquash`で、両系列のbaseを除くheadまでを指定する。WI対応を持たないcommitも含まれ、元commitとfixupが同じ新commitへ統合される場合は両方の旧OIDを含む。amendでは修正差分と変更範囲の検証で検収した旧新HEADの1対1対応を保存する。記録は短縮OIDで残り、同じ書換えの対応を受け取る他のコマンドにも同じファイルを渡す。
 

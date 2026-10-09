@@ -128,6 +128,7 @@ from agent_toolkit._plan.structure.references import (
     _check_reference_ids,
     _check_requirement_coverage,
 )
+from agent_toolkit._plan.structure.verification import commands_from_cell
 
 _NO_FIXED_H2_ERROR = (
     "固定H2が1件も無い。対象が計画ファイルか確かめる。"
@@ -1629,6 +1630,11 @@ def check_plan_single_file_structure(
                         f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}。"
                         f"{_EMPTY_CELL_FIX}"
                     )
+                elif table.row_labels() == PLAN_CURRENT_VERIFICATION_TABLE_ROWS:
+                    try:
+                        commands_from_cell(row[1])
+                    except ActionableError as error:
+                        errors.append(f"{table.row_location(index)}: {error.message}")
 
     termination_index = find_heading_index(headings, 2, PLAN_H2_TERMINATION)
     errors.extend(_check_termination_section(body, headings, termination_index))

@@ -1421,6 +1421,127 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
 
 
 @pytest.mark.asyncio
+async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserHarness) -> None:
+    """期限だけの経過で一覧・読み上げ・開いた詳細と削除確認の表示を戻す。"""
+    harness = browser_harness
+    page = harness.page
+    await page.clock.install(time=datetime.datetime(2099, 1, 2, tzinfo=datetime.UTC))
+    deadline = "2099-01-02T00:00:10+00:00"
+    record = "\n## 反映後の観測の再開記録\n\n- 再開区分: 反映後の観測だけが残る\n- 計画: 計画なし\n"
+    for filename, kind, extra in [("verify.md", "awi", record), ("plain.md", "awi", ""), ("question.md", "uwi", "")]:
+        (harness.root / "inbox" / filename).write_text(
+            f"---\ntype: {kind}\ncooldown_until: '{deadline}'\n---\n\n# 冷却\n" + extra, encoding="utf-8"
+        )
+    (harness.root / "inbox" / "normal.md").write_text("---\ntype: awi\n---\n\n通常\n", encoding="utf-8")
+    (harness.root / "inbox" / "unreadable.md").write_bytes(b"\xff")
+    await page.goto(harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    warning = page.locator("#list-warning")
+    await playwright.async_api.expect(warning).to_contain_text("unreadable.md")
+    warning_text = await warning.inner_text()
+    style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
+    normal = page.locator('.entry-select[data-key="inbox/normal.md"] .state-badge')
+    for filename in ["verify.md", "plain.md", "question.md"]:
+        row = page.locator(f'.entry-select[data-key="inbox/{filename}"]')
+        badge = row.locator(".state-badge")
+        await playwright.async_api.expect(badge).to_have_text("cooldown")
+        assert await badge.count() == 1
+        assert await badge.evaluate(style) == await normal.evaluate(style)
+        await playwright.async_api.expect(badge).to_have_attribute("title", "解除日時: 2099/01/02 09:00 JST")
+        assert "cooldown" in (await row.get_attribute("aria-label") or "").split("、")
+        await playwright.async_api.expect(row).to_have_attribute("aria-label", re.compile("解除日時: 2099/01/02 09:00 JST"))
+    await page.set_viewport_size({"width": 320, "height": 720})
+    question = page.locator('.entry-select[data-key="inbox/question.md"]')
+    # 各バッジの境界が狭幅の行内に収まり、内容も切り詰められない。
+    assert await question.locator(".status-cell").evaluate("""status => {
+        const row = status.closest('.entry-select').getBoundingClientRect();
+        return [...status.children].every(child => {
+            const bounds = child.getBoundingClientRect();
+            return bounds.left >= row.left && bounds.right <= row.right &&
+                child.scrollWidth <= child.clientWidth;
+        });
+    }""")
+    await question.focus()
+    await page.keyboard.press("Enter")
+    detail = page.get_by_role("dialog", name="詳細")
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("2099/01/02 09:00 JST")
+    await page.keyboard.press("Escape")
+    await page.locator('.entry-select[data-key="inbox/verify.md"]').click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / cooldown")
+    await detail.locator("#delete-button").click()
+    deletion = page.get_by_role("dialog", name="削除の確認")
+    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("awi / cooldown")
+    await page.clock.run_for(11000)
+    await playwright.async_api.expect(warning).to_have_text(warning_text)
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / needs-verify")
+    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("awi / needs-verify")
+    for filename, expected in [("verify.md", "needs-verify"), ("plain.md", "inbox"), ("question.md", "inbox")]:
+        row = page.locator(f'.entry-select[data-key="inbox/{filename}"]')
+        await playwright.async_api.expect(row.locator(".state-badge")).to_have_text(expected)
+        assert "cooldown" not in (await row.get_attribute("aria-label") or "").split("、")
+        assert await row.locator(".state-badge").get_attribute("title") is None
+        assert "解除日時:" not in (await row.get_attribute("aria-label") or "")
+
+
+@pytest.mark.asyncio
+async def test_cooldown_resyncs_after_changes_and_visibility(browser_harness: _BrowserHarness) -> None:
+    """期限変更・解除・復帰時の再取得でも保存状態によるフィルターと表示を保つ。"""
+    harness = browser_harness
+    page = harness.page
+    await page.clock.install(time=datetime.datetime(2099, 1, 2, tzinfo=datetime.UTC))
+    future = "2099-01-03T00:00:00+00:00"
+    for state_name in ["inbox", "hold", "processing", "adopted", "rejected"]:
+        (harness.root / state_name).mkdir(exist_ok=True)
+        (harness.root / state_name / f"{state_name}.md").write_text(
+            f"---\ntype: awi\ncooldown_until: '{future}'\n---\n\n# 件名\n", encoding="utf-8"
+        )
+    for name, deadline in [
+        ("now", "2099-01-02T00:00:00Z"),
+        ("past", "2020-01-02T00:00:00Z"),
+        ("naive", "2099-01-03T00:00:00"),
+        ("invalid", "bad"),
+        ("empty", ""),
+    ]:
+        (harness.root / "inbox" / f"{name}.md").write_text(
+            f"---\ntype: awi\ncooldown_until: '{deadline}'\n---\n\n# 件名\n", encoding="utf-8"
+        )
+    await page.goto(harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await _open_filters(page)
+    await page.locator("#state-filter").select_option("all")
+    for state_name in ["hold", "processing", "adopted", "rejected"]:
+        await playwright.async_api.expect(
+            page.locator(f'.entry-select[data-key="{state_name}/{state_name}.md"] .state-badge')
+        ).to_have_text(state_name)
+    for name in ["now", "past", "naive", "invalid", "empty"]:
+        await playwright.async_api.expect(page.locator(f'.entry-select[data-key="inbox/{name}.md"] .state-badge')).to_have_text(
+            "inbox"
+        )
+    await page.locator("#state-filter").select_option("inbox")
+    badge = page.locator('.entry-select[data-key="inbox/inbox.md"] .state-badge')
+    await playwright.async_api.expect(badge).to_have_text("cooldown")
+    target = harness.root / "inbox" / "inbox.md"
+    target.write_text("---\ntype: awi\n---\n\n# 件名\n", encoding="utf-8")
+    await page.evaluate("window.dispatchEvent(new Event('focus'))")
+    await playwright.async_api.expect(badge).to_have_text("inbox")
+    target.write_text(f"---\ntype: awi\ncooldown_until: '{future}'\n---\n\n# 件名\n", encoding="utf-8")
+    await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    await playwright.async_api.expect(badge).to_have_text("cooldown")
+    row_count = await page.locator("#entry-list .entry-select").count()
+    # 非表示中のタイマー停止を再現し、時刻だけを期限後へ進めて復帰する。
+    await page.evaluate("Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true})")
+    await page.clock.set_system_time(datetime.datetime(2099, 1, 4, tzinfo=datetime.UTC))
+    await page.evaluate("""() => {
+        Object.defineProperty(document, 'visibilityState', {value: 'visible', configurable: true});
+        document.dispatchEvent(new Event('visibilitychange'));
+    }""")
+    await playwright.async_api.expect(badge).to_have_text("inbox")
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(row_count)
+    assert target.is_file()
+
+
+@pytest.mark.asyncio
 async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
     browser_harness: _BrowserHarness,
 ) -> None:

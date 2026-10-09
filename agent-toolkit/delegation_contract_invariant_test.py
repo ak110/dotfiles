@@ -9,6 +9,7 @@ import pytest
 from agent_toolkit._agents_server import launch_prompts, task_documents
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
+from agent_toolkit._plan import selection
 
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 _REQUIRED_INPUT_PREFIX = "必須入力名:"
@@ -602,11 +603,17 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     plugin_root = pathlib.Path(__file__).resolve().parent
     picker = (plugin_root / "share" / "pick-wi.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "pick-wi.parent.md").read_text(encoding="utf-8")
+    explanation = (plugin_root / "share" / "pick-wi-explain.subagent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
     assert "  段階:" in picker and "  先行レーン:" in picker
     assert "先行統合条件" in parent
     assert "現行HEADを基点" in lanes
     assert "統合完了を受領" in lanes
+    output = _h2_section(picker, "出力")
+    yaml_block = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
+    top_fields = set(re.findall(r"^([^\s:]+):", yaml_block, flags=re.MULTILINE))
+    assert selection.SINGLE_STAGE_ESTIMATE_KEY in top_fields
+    assert all(f"`{selection.SINGLE_STAGE_ESTIMATE_KEY}`" in content for content in (parent, explanation))
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:

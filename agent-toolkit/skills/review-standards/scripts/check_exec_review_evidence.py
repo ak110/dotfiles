@@ -84,7 +84,12 @@ FILE_REFERENCE_FORM = (
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
 WHITESPACE = re.compile(r"\s+")
-EVIDENCE_REFERENCE = re.compile(r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|(?P<plain>[^\s`\[\]（）「」、。]+)")
+EVIDENCE_REFERENCE = re.compile(
+    r"(?P<test>`?(?:[^\s`\[\]（）「」、。]+::)?test_\w+\[[^\n]*\])|"
+    r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|"
+    r"(?P<quoted>(?:[\w-]+=)?\"[^\"\n]+\"|(?:[\w-]+=)?'[^'\n]+')|"
+    r"(?P<plain>[^\s`\[\]（）「」、。]+)"
+)
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
 # 地の文の1語から切り出す参照。パスは最後の拡張子までとし、拡張子の直後がパスの続きでない位置で終える。
 # パスの続きはASCIIの英数字・`_`・`-`・`/`・`\`と、直後に英数字か`_`が続くピリオド（`.test.ts`の途中など）とする。
@@ -130,8 +135,24 @@ def repository_root() -> pathlib.Path:
     """公開操作を起動したGit作業ツリーのルートを返す。"""
     result = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False, timeout=30)
     if result.returncode != 0:
-        raise ValueError(f"対象リポジトリを特定できません: {result.stderr.strip()}")
+        raise _next_action.ActionableError(
+            f"対象リポジトリを特定できません: {result.stderr.strip()}",
+            next_action="計画またはWIが対象とするGit worktreeへ移り、同じ引数で再実行する。記録は変更していない",
+        )
     return pathlib.Path(result.stdout.strip()).resolve()
+
+
+def _diagnostic(error: Exception) -> str:
+    """発生源が持つ回復操作を、診断一覧へ変換する時も保持する。"""
+    return error.message if isinstance(error, _next_action.ActionableError) else str(error)
+
+
+def _report_diagnostics(errors: list[str], *, next_action: str) -> None:
+    """原因側の回復案内を表示し、案内を持たない診断一覧には呼出元の次の操作を添える。"""
+    for error in errors:
+        print(f"失敗: {error}", file=sys.stderr)
+    if not any(line.startswith(_next_action.NEXT_ACTION_PREFIX) for error in errors for line in error.splitlines()):
+        print(_next_action.next_action_line(next_action), file=sys.stderr)
 
 
 class WiOutputs(dict[str, str]):
@@ -273,11 +294,31 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
     これらを候補にすると、正当な達成根拠が不在ファイルへの参照として拒否される。
     """
     matches = []
-    for word in EVIDENCE_REFERENCE.finditer(evidence):
+    for word in _evidence_words(evidence):
         for match in _plain_references(evidence, word, repository) if word.group("plain") is not None else [word]:
             if _is_explicit_reference(match, evidence, repository):
                 matches.append(match)
     return matches
+
+
+def _evidence_words(evidence: str) -> typing.Iterator[re.Match[str]]:
+    """試験のパラメーター内の記法を分割せず、外側の角括弧までを1語として返す。"""
+    position = 0
+    while (word := EVIDENCE_REFERENCE.search(evidence, position)) is not None:
+        if word.group("test") is not None:
+            depth = 0
+            for index in range(evidence.index("[", word.start(), word.end()), word.end()):
+                if evidence[index] == "[":
+                    depth += 1
+                elif evidence[index] == "]":
+                    depth -= 1
+                    if depth == 0:
+                        complete = EVIDENCE_REFERENCE.match(evidence, word.start(), index + 1)
+                        assert complete is not None
+                        word = complete
+                        break
+        yield word
+        position = word.end()
 
 
 def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Path) -> list[re.Match[str]]:
@@ -291,6 +332,10 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
     拡張子で終わるパスを持たない語は、語全体を候補として返す。
     """
     start, end = word.span("plain")
+    # 保存結果のラベルと引用符は参照の外側として扱い、返すspanもパスから始める。
+    prefix = re.match(r"(?:[\w-]+=)?[\"']?", evidence[start:end])
+    if prefix is not None:
+        start += prefix.end()
     first = PLAIN_REFERENCE.match(evidence, start, end)
     references: list[re.Match[str]] = []
     position = start
@@ -301,14 +346,22 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
             references.append(first)
             position = first.end()
     while True:
-        reference = next(
-            (
-                found
-                for boundary in JAPANESE_ASCII_PATH_BOUNDARY.finditer(evidence, max(position, start + 1), end)
-                if (found := PLAIN_REFERENCE.match(evidence, boundary.start(), end)) is not None
-            ),
-            None,
-        )
+        reference = None
+        for boundary in JAPANESE_ASCII_PATH_BOUNDARY.finditer(evidence, max(position, start + 1), end):
+            found = PLAIN_REFERENCE.match(evidence, boundary.start(), end)
+            if found is None:
+                continue
+            path, _ = _reference_parts(found)
+            # 地の文のスラッシュ語から次のファイル名までを1パスにせず、内側の始点を調べる。
+            # 日本語を含む実在パスは語全体を保持する。
+            if (
+                not _is_file(repository / path)
+                and JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, boundary.start() + 1, boundary.start() + len(path))
+                is not None
+            ):
+                continue
+            reference = found
+            break
         if reference is None:
             break
         references.append(reference)
@@ -318,6 +371,11 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
 
 def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path) -> bool:
     """切り出した候補が、所在を確かめるファイル参照として明示されているかを返す。"""
+    # pytestの角括弧内は試験の入力値であり、そこに現れるパスは根拠の所在を指さない。
+    # nodeidのファイル接頭辞は通常の参照として保持し、パラメーター値だけを候補から外す。
+    original = next(value for value in match.groups() if value is not None).strip().strip("`")
+    if re.fullmatch(r"test_\w+\[[^\n]*\]", original):
+        return False
     candidate, location = _reference_parts(match)
     if "://" in candidate or candidate.startswith("~") or candidate == "/" or candidate in NON_FILE_PAIRS:
         return False
@@ -380,12 +438,16 @@ def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
 def _reference_parts(match: re.Match[str]) -> tuple[str, str]:
     """参照のパスと見出し・行位置を分け、見出し本文の空白とインライン記法を保つ。"""
     candidate = next(value for value in match.groups() if value is not None).strip()
+    if _reference_group(match, "test") is not None:
+        candidate = candidate.strip("`")
+    candidate = re.sub(r"^[\w-]+=(?=[\"']?(?:/|[A-Za-z]:[\\/]))", "", candidate).strip("\"'")
     if candidate.startswith("<"):
         closing = candidate.find(">")
         if closing >= 0:
             candidate = candidate[1:closing] + candidate[closing + 1 :]
     if _reference_group(match, "plain") is not None:
-        candidate = candidate.rstrip(".,;)")
+        candidate = candidate.rstrip(".,;)\"'")
+    candidate = re.sub(r"(?<=\d):$", "", candidate)
     separator = re.search(r"::|#|:(?=[+-]?\d)", candidate)
     if separator is None:
         return candidate, ""
@@ -781,7 +843,7 @@ def _technical_judgment_reasons(
     try:
         frontmatter, _ = _load_wi(row["awi"], repository, wi_outputs)
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-        return [str(exc)]
+        return [_diagnostic(exc)]
     if "source" not in frontmatter:
         return [
             f"{row['awi']}はfrontmatterに`source`を持たない人間由来のWIのため、技術判断の記録では受理しません（ユーザー判断が必要です）"
@@ -1331,7 +1393,7 @@ def check_evidence(
         errors.extend(_check_reference_locations(payload, repository, expected_head, wi_outputs))
         errors.extend(_check_shared_evidence(payload, repository))
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-        return [str(exc)]
+        return [_diagnostic(exc)]
     condition_rows = payload["wi_conditions"]
     requirement_rows = payload["user_requirements"]
     assert isinstance(condition_rows, list) and isinstance(requirement_rows, list)
@@ -1608,7 +1670,7 @@ def check_return_result(
         records = _input_records(input_paths, repository, head)
         circular = [] if evidence_path is None else _circular_issue_errors(table_path, round_value, evidence_path, repository)
     except (OSError, UnicodeError, subprocess.TimeoutExpired, ValueError) as error:
-        return [str(error)], 0
+        return [_diagnostic(error)], 0
     if evidence_path is None:
         if filenames:
             return ["対象WIがあるレビューには完成条件証拠を作成する。--templateで生成して各行を記入する"], unanswered
@@ -1662,6 +1724,8 @@ def return_lines(
     plan_paths: list[pathlib.Path],
     input_record_paths: list[pathlib.Path],
     evidence_path: pathlib.Path | None,
+    *,
+    show_all_rows: bool = False,
 ) -> list[str]:
     """返却前の確認に成功した`--return-result`の返却行を返す。
 
@@ -1682,10 +1746,16 @@ def return_lines(
         payload = json.loads(evidence_path.read_text(encoding="utf-8"))
     outcome_order = [*JUDGMENT_ORDER, *dict.fromkeys(name for checks in EXEMPTIONS.values() for name in checks)]
     rows: list[str] = []
+    all_rows: list[str] = []
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         counts = collections.Counter(row["outcome"] for row in payload[section])
         breakdown = {"総数": len(payload[section]), **{name: counts[name] for name in outcome_order if counts[name]}}
         lines.append(f"{section}の判定内訳: {json.dumps(breakdown, ensure_ascii=False)}")
+        if show_all_rows:
+            all_rows.extend(
+                "証拠の全行: " + json.dumps({"配列": section, "行番号": index, **row}, ensure_ascii=False)
+                for index, row in enumerate(payload[section], start=1)
+            )
         rows.extend(
             "達成以外の行: "
             + json.dumps(
@@ -1703,7 +1773,7 @@ def return_lines(
             for index, row in enumerate(payload[section])
             if row["outcome"] != "達成"
         )
-    return [*lines, *rows]
+    return [*lines, *rows, *all_rows]
 
 
 def write_template(
@@ -1726,7 +1796,7 @@ def write_template(
     try:
         repository = repository_root()
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-        return [str(exc)], 0, 0
+        return [_diagnostic(exc)], 0, 0
     try:
         expected = requirement_units.record_rows(
             WiOutputs(repository),
@@ -1767,7 +1837,10 @@ def rewrite_references(path: pathlib.Path, map_path: pathlib.Path) -> tuple[list
     payload, errors = validate_structure(data)
     if errors:
         return errors, 0, 0
-    olds = {old.lower(): new for old, new in replacements.items()}
+    olds = {
+        old.lower(): "、".join(dict.fromkeys(oid for oid, _wis in commit_mapping.rewrite_destinations(new)))
+        for old, new in replacements.items()
+    }
     updated = count = 0
     for section in REQUIRED_FIELDS:
         for index, row in enumerate(payload[section]):
@@ -1867,7 +1940,7 @@ def _batch_arguments(value: object) -> tuple[str, list[str]]:
     return value["plan"], args
 
 
-def _check_batch(path: pathlib.Path) -> int:
+def _check_batch(path: pathlib.Path, *, show_all_rows: bool = False) -> int:
     """組ごとの単一検査を完了させ、固定返却の全行と診断を計画に対応付けて返す。"""
     if not path.is_absolute():
         raise ValueError("--batchには入力JSONの絶対パスを指定する")
@@ -1889,6 +1962,8 @@ def _check_batch(path: pathlib.Path) -> int:
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             try:
                 plan, args = _batch_arguments(value)
+                if show_all_rows:
+                    args.append("--show-all-rows")
                 result = main(args)
             except (OSError, UnicodeError, ValueError) as error:
                 print(f"失敗: 入力組{index}: {error}", file=sys.stderr)
@@ -1945,6 +2020,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--return-result", action="store_true", help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する"
     )
+    parser.add_argument("--show-all-rows", action="store_true", help="返却生成またはbatchへ両配列の全行を省略せず追加する")
     parser.add_argument(
         "--expected-head",
         help="最後に実際にレビューした対象commit。返却値reviewed_headを渡す。--templateを付けない判定では必須",
@@ -1963,6 +2039,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     verification_results.add_arguments(parser, reviewing=True)
     args = parser.parse_args(argv)
+    if args.show_all_rows and not (args.return_result or args.batch):
+        parser.error("--show-all-rowsは--return-resultか--batchと指定する")
     if args.results_file or args.list_results or args.updates_file or args.verification_record or args.output:
         if (
             args.batch
@@ -2021,7 +2099,7 @@ def main(argv: list[str] | None = None) -> int:
         ):
             parser.error("--batchは単一検査・雛形生成・参照更新の引数と同時に指定できません")
         try:
-            return _check_batch(args.batch)
+            return _check_batch(args.batch, show_all_rows=args.show_all_rows)
         except (OSError, UnicodeError, ValueError) as error:
             parser.error(str(error))
     if args.evidence is None:
@@ -2049,14 +2127,10 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--templateと--expected-headは同時に指定できません。雛形の出力後に--expected-headだけを付けて判定する")
         errors, added, kept = write_template(args.evidence, filenames, args.plan)
         if errors:
-            for error in errors:
-                print(f"失敗: {error}", file=sys.stderr)
-            print(
-                _next_action.next_action_line(
-                    "`完成条件証拠`は変更していない。各行が示す箇所を直して同じコマンドでもう一度実行する。"
-                    "WI本文を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめる"
-                ),
-                file=sys.stderr,
+            _report_diagnostics(
+                errors,
+                next_action="`完成条件証拠`は変更していない。各行が示す箇所を直して同じコマンドでもう一度実行する。"
+                "WI本文を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめる",
             )
             return 1
         print(
@@ -2087,23 +2161,24 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         errors = check_evidence(args.evidence, filenames, expected_head=args.expected_head, plans=args.plan)
-    for error in errors:
-        print(f"失敗: {error}", file=sys.stderr)
     if errors:
-        print(
-            _next_action.next_action_line(
-                "各行が示す箇所を`完成条件証拠`で直して同じコマンドでもう一度確かめる。"
-                "WI本文や節を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめ、"
-                "WI側が欠けている場合はWIの欠陥として報告する"
-            ),
-            file=sys.stderr,
+        _report_diagnostics(
+            errors,
+            next_action="各行が示す箇所を`完成条件証拠`で直して同じコマンドでもう一度確かめる。"
+            "WI本文や節を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめ、"
+            "WI側が欠けている場合はWIの欠陥として報告する",
         )
         return 1
     if args.return_result:
         print(
             "\n".join(
                 return_lines(
-                    args.expected_head, unanswered, plan_paths, input_record_paths, None if no_evidence else args.evidence
+                    args.expected_head,
+                    unanswered,
+                    plan_paths,
+                    input_record_paths,
+                    None if no_evidence else args.evidence,
+                    show_all_rows=args.show_all_rows,
                 )
             )
         )

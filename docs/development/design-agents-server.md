@@ -89,14 +89,19 @@ pickerの担当モデル、起動候補および終端後の観測identityを別
 ### プロンプトキャッシュの保持期間
 
 Claude Codeが起動する委譲先のプロンプトキャッシュ保持期間を未設定のままにせず、`share/claude_settings_json_managed.json`の`promptCacheTtl`と`subagentPromptCacheTtl`でメイン会話側とサブエージェント側の双方へ明示する。
-Claude Agent SDKで開始する`agents_server`のセッションは、この設定だけでは意図した保持期間にならない。このため`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`が環境変数で`mode`ごとに明示する。
-探索起動は設定読込元を空にするうえ、SDKのターンがmain conversationのrequest bucketとして扱われるため、main conversationのrequest bucketに対する未設定時の保持期間が適用される。連続する要求の間隔の中央値が6.3秒であり300秒を超える間隔が516件中1件しか発生しないため、5分でも失効せず、書き込み単価の低い5分を指定する。
+Claude Agent SDKで開始する`agents_server`のセッションは、この設定だけでは意図した保持期間にならない。このため`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`がenvとsettings.envへ同じ辞書から`mode`ごとの値を渡す。user・project設定のenvは子の環境変数を上書きするため、CLIの最優先settings層にも値を置く。SDK自身が読むイベント通知の印にはenvも必要である。
+軽量起動はユーザー設定を読み、SDKのターンがmain conversationのrequest bucketとして扱われるため、main conversationのrequest bucketに対する未設定時の保持期間が適用される。連続する要求の間隔の中央値が6.3秒であり300秒を超える間隔が516件中1件しか発生しないため、5分でも失効せず、書き込み単価の低い5分を指定する。
 通常起動は設定読込元を指定していても配下のサブエージェントへ`subagentPromptCacheTtl`が届かず5分で書き込むため、1時間を指定する。届かない原因は公開資料から特定できておらず未確定とする。
 このため、サブエージェント側の未設定時の保持期間が短いことを理由に委譲を減らす設計判断は採らない。
 キャッシュ効率を根拠として委譲構造を見直す場合は、設定値ではなく実際の計測値を根拠とする。
 Claude Codeでの計測値は`~/.claude/projects`配下のセッション記録から`message.usage.cache_creation`の`ephemeral_1h_input_tokens`と`ephemeral_5m_input_tokens`を担当ごとに集計して得る。
 集計に用いるフィールド名はClaude Code v2.1.258で確認した。
 2026年8月20日以降に開始し、サブエージェント側へ1時間を設定する前の649スレッドを対象とした集計では、Agentツール経由のサブエージェント全体は連続する要求の間隔が300秒を超える場合が3.26パーセントあり、その直後の要求が1件あたり約15万トークンを再度書き込む。保持期間を5分へ短縮するとこの再書き込みが復活する。1時間のトークン量に対する相対費用は5分の場合より4.45パーセント低いため、サブエージェント側の設定は1時間を維持する。
+
+### Claudeの起動設定と受信上限
+
+親の`--settings`がJSONなら他キーとenvの他キーを保ち、起動元の全envキーを上書きする。ファイルの場合は内容をargvへ展開せず、所有者だけが読める起動別の合成ファイルを渡す。不読・不正JSON・非objectの親は継承せずenvだけを使う。合成処理と回収は`_agents_server/claude_settings.py`が担当する。成功・失敗の接続終了と依存確認の終了で自身のファイルを回収し、異常終了後の残存物は既存のrootの7日掃引が回収する。
+CLIのstdoutのNDJSONの1行には、モデルへ渡らないtool_use_resultも含まれる。EditのoriginalFileがファイル全体を持つため、SDKの既定1MiBでは通常の編集だけで受信に失敗する。共通optionsは全起動区分・resumeへ4GiBのmax_buffer_sizeを渡す。CLIの最大編集可能サイズ1GiBと差分を収めるための値であり、事前に4GiBを確保する指定ではない。モデルへの出力量の指示ではこの受信失敗を防げない。
 
 ## 公開ツールの契約
 
@@ -175,7 +180,7 @@ timeout後は、送った継続要求の受理結果、またはその要求に�
 
 `start`の`explore`は調査委譲の初期コンテキストと起動費用を減らし、実行側で書込を制限する。Codex backendは開始・再開へ`project_doc_max_bytes=0`と探索用指示、読み取り専用sandboxを渡し、後続turnでも読み取り専用と承認不要の拒否を保つ。MCPの実効設定を取得して全serverを無効にし、Apps・プラグイン・下位委譲も無効にする。実効設定を取得できない場合は起動を中止する。Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省く。提供する組込toolはRead・Glob・Grepに限定し、`--strict-mcp-config`で継承MCPを除き、承認を要する操作は待機せず拒否する。任意Bashや編集toolの事前承認を制限の代わりにしない。Antigravityは読み取り専用のexploreに対応しないため候補から除外する。探索結果は返却本文へ保持し、server自身のセッション記録保存とは区別する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。探索委譲を選ぶ条件は`agent-toolkit/rules/01-agent.md`、起動手段は`runtime-routing.md`を知識境界とする。
 
-`start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。共有するのは`low_tier_model`の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。`explore`は`model_type`を省略すると`low_tier`を使い、軽量側の候補で判断材料が不足する調査だけ`medium_tier`を指定する。
+`start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。共有するのは`low_tier_model`の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。Claudeの軽量起動explore・write・shellは全て`disallowed_tools=["Skill"]`を指定し、新規とresumeでSkillを明示除外する。通常起動にはこの除外を設けない。Skillが無い主体は警告に記載されたSKILL.mdをReadで全文読む。`explore`は`model_type`を省略すると`low_tier`を使い、軽量側の候補で判断材料が不足する調査だけ`medium_tier`を指定する。
 この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`および`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`および組込tool presetを併用できる。その後、軽量起動の設定読込元は`0d7ffbbe6`（2026-09-23）でユーザー設定（`setting_sources=["user"]`）へ変えたため、この確認の空の設定読込元は現行の起動条件と異なる。この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
 
 ### 継続不能

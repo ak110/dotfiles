@@ -46,6 +46,7 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`、`send_message`、`list`など、`root_session_id`を明示する応答の値を操作名によらず使う） |
 | MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
 | 委譲先CLI自身の診断ログ | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<session識別子>-<起動区分>.log` | 初期化失敗を事後に調べる主体 | Claude backend（作成、初期化完了後の改名と、保持世代を超えた記録の削除） |
+| Claude起動別の合成settings | `<状態ディレクトリ>/<ルートsession識別子>/claude-settings/settings-<一意な値>.json`。rootを受領しない直接構築では`settings-<一意な値>`をrootとして使う | 当該起動のClaude CLI | Claude backendの`claude_settings.py`。親がファイルの場合だけ作成し、所有者のみ読める権限で親設定へ起動envを合成する。各起動は自分のファイルだけを接続終了・起動失敗・依存確認終了で回収する |
 | Antigravityの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、セッションのイベント経過を調べる主体 | Antigravity backend（公開stream-jsonイベントの追記） |
 | engineの可用性を理由に除外した候補（解除待ちの対象のClaude利用上限は記録せず、旧版の理由`429`のClaude候補は読み込み時に除外の根拠から外す） | `<状態ディレクトリ>/unavailable-candidates.json` | 起動の候補列を解決するMCPサーバー | その状態ディレクトリを共有する各MCPサーバー（ファイルロック下の読み書き） |
 
@@ -54,6 +55,7 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | 対象 | モジュール |
 | --- | --- |
 | 配置とsession識別子の検証 | `shared_layout.py` |
+| Claude起動の設定合成と所有ファイルの回収 | `claude_settings.py` |
 | ルートと書込主体の識別、索引（`aliases`・`hosts`） | `shared_roots.py` |
 | statusline・CLI向けの状態ファイルの出力 | `status_file.py` |
 | 一覧と資源記録の共有読取・生存判定・session重複排除 | `status_reader.py` |
