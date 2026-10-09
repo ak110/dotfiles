@@ -711,3 +711,29 @@ Because `CLAUDE.local.md` counts, adding one to keep your own uncommitted instru
 合言葉を書いた`AGENTS.md`と`CLAUDE.local.md`だけを置いたディレクトリでは、合言葉を答えなかった。
 `claudize`が置く`# CLAUDE.md`と`@AGENTS.md`の2行のアダプターを加えると、合言葉を答えた。
 再検証は同じ構成の一時ディレクトリで、アダプターの有無ごとに`claude -p`へ合言葉を尋ねる。
+
+## agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月9日
+
+Claude Code 2.1.295で、基準commit `4573be59230a11bdc9d717a1a1e03d994abf284f`に本機能の未commit差分を加えたプラグインを検証した。
+`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`を設定し、`--plugin-dir`に作業ツリーのagent-toolkitを指定した。
+
+対話UIでは、モデルが`compact_conversation`へ任意指示を渡した後に現在ターンを終えた。
+PTYに予約の受付と、その後の`Conversation compacted`・`Compacted`表示が保存された。
+人による`/compact`入力は無く、session `f616210b-3a9d-4a2e-a067-30a004973d93`は正常終了した。
+
+非対話では`claude -p --verbose --output-format stream-json --include-hook-events`を使用した。
+モデルがBashのバックグラウンドタスクで65秒待機を起動し、予約後にターンを終えた。
+同じsession `b276a7e9-9b4d-435c-b7fb-85010d6cd575`でPreCompact・PostCompactを観測した。
+その後にmanual compact境界とホストの圧縮成功結果が現れた。
+待機終了のtask-notificationから同じ会話が再開し、圧縮指示に指定した応答`COMPACT_BACKGROUND_RESUMED`を返して正常終了した。
+
+故障の試行は隔離プラグインの`command.run`呼び出し直前に一度だけ例外を注入した。
+実ホスト自身のコマンド拒否を観測した試行とは区別する。
+session `1e19cda7-eaf3-49dd-b96c-916c43f077d1`へ失敗原因と再予約可能の通知が届いた。
+モデルは再予約し、同じ会話でmanual compact境界と圧縮成功を観測して正常終了した。
+未完了予約の重複排除と成功後の再予約は、ツール登録から時計のコールバックまでを動かす結合試験でも確認した。
+
+再検証では隔離ディレクトリで作業ツリーのプラグインを読み込み、対話と非対話の両方でモデルへ予約を指示する。
+受付応答、ターン終了、ホストの圧縮成功を順に記録する。
+非対話はBashのバックグラウンドタスクと圧縮指示の応答文字列を組み合わせ、通知から同じsessionが続行することも確かめる。
+故障と再予約は隔離した検証用プラグインだけへ例外を注入して試し、製品のプラグインを改変しない。

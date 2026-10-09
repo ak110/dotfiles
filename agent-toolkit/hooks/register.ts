@@ -1,5 +1,6 @@
 import type { Register } from "claude-code";
 
+import { COMPACT_CONVERSATION_TOOL, register as registerCompactConversation } from "./compact_conversation.ts";
 import { register as registerPeriodicRecheck } from "./periodic_recheck.ts";
 import { register as registerSendToUser, SEND_TO_USER_TOOL } from "./send_to_user.tsx";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
@@ -10,6 +11,7 @@ export const register: Register = (on) => {
   on("session.start", async ($, e, next) => {
     // ツールは最初の発話より前に一覧へ載るよう、`next`より前に登録する。
     await $.tool.register(SEND_TO_USER_TOOL);
+    if (!(await $.env.get("AGENT_TOOLKIT_OWNER_SESSION"))) await $.tool.register(COMPACT_CONVERSATION_TOOL);
     const result = await next(e);
     // `atk agents-exit-session`の終了要求を受け付ける準備ができたことを示す印を書き、前の要求を消費済みにする。
     const sessionId = await $.session.id();
@@ -24,6 +26,7 @@ export const register: Register = (on) => {
     return result;
   });
   registerSessionExit(on);
+  registerCompactConversation(on);
   registerSendToUser(on);
   registerPeriodicRecheck(on);
 };

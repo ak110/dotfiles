@@ -84,7 +84,7 @@ def _allowed_unresolved_reference_counts(
     return allowed_counts
 
 
-def _tracked_source_paths(root: pathlib.Path) -> list[pathlib.Path]:
+def _tracked_source_paths(root: pathlib.Path, suffixes: frozenset[str] = _SOURCE_SUFFIXES) -> list[pathlib.Path]:
     """Git追跡ファイルのうち検査対象の拡張子を持つ相対パスを返す。"""
     result = subprocess.run(
         ["git", "ls-files", "-z"],
@@ -95,9 +95,7 @@ def _tracked_source_paths(root: pathlib.Path) -> list[pathlib.Path]:
     return sorted(
         pathlib.Path(raw.decode("utf-8"))
         for raw in result.stdout.split(b"\0")
-        if raw
-        and pathlib.Path(raw.decode("utf-8")).suffix in _SOURCE_SUFFIXES
-        and (root / pathlib.Path(raw.decode("utf-8"))).is_file()
+        if raw and pathlib.Path(raw.decode("utf-8")).suffix in suffixes and (root / pathlib.Path(raw.decode("utf-8"))).is_file()
     )
 
 
@@ -616,7 +614,7 @@ def _unresolved_audit_body_references(content: str) -> list[str]:
 def test_audit_record_headings_are_referenced() -> None:
     """監査記録の各H2見出しを、索引元の条文またはコードが同じ文字列で指す。"""
     root = pathlib.Path(__file__).resolve().parent
-    unreferenced = _unreferenced_audit_headings(root, _tracked_source_paths(root))
+    unreferenced = _unreferenced_audit_headings(root, _tracked_source_paths(root, _SOURCE_SUFFIXES | {".ts", ".tsx"}))
     assert not unreferenced, (
         "参照元を持たない監査記録の見出し（常時規範を指す見出しは条文へ索引の文を置かず、見出しのファイルと節名を条文の現在の所在へ直す。"
         "それ以外は索引元へ索引の1文を置くか、索引先の無い記録を削除する）:\n" + "\n".join(unreferenced)
