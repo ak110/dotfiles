@@ -413,6 +413,12 @@ agent-toolkit 2.199.0の基準commitは`3b3932b5`で、review-table実装の差�
 
 2026年9月14日、Git 2.43.0で実際に動かして確かめた。`grep.lineNumber=true`を指定した`git grep -h -m 1 -F -e <固定文字列> -- AGENTS.md`は`3:<本文>`を返し、同じ検索へ`--no-line-number`を指定すると`<本文>`だけを返した。再検証は`git -c grep.lineNumber=true grep -h -m 1 -F -e <固定文字列> -- <追跡ファイル>`と、`-h`を`--no-line-number`へ置き換えた検索の出力を比較する。
 
+## agent-toolkit/skills/search/SKILL.md：引数とシェルの扱い：2026年10月9日
+
+2026年10月9日、Claude Code 2.1.295のBashで`type grep`がシェル関数を返し、ugrep 7.8.4へ転送することを確認した記録に基づく。GNU grepは3.11だった。ignore・binaryの除外で一致する内容を持つ対象でも標準出力が空・終了コード1となった。`.{0,160}a.{0,160}`はugrepで複雑度エラーを標準エラーへ出し、標準出力は空・終了コード2だった。上限を小さくした`.{0,30}a.{0,30}`も終了コード2で、繰り返しを片側だけにした`a.{0,400}`は終了コード0だった。同じテキストへの`command grep -o -E '.{0,160}a.{0,160}'`は`a`を出力して終了コード0だった。この節のClaude関数の観測は入力WIが保持する対照記録に由来する。
+
+再検証ではClaude Bashで`type grep`と`grep --version`、`command grep --version`を取得する。専用領域に`a`を含む通常テキスト、ignore対象とbinary対象を用意し、関数の`grep`と`command grep`へ同じ対象・パターンを渡す。各標準出力・標準エラー・終了コードを保存して比較し、無出力の理由とパイプの後段で使う起動実体を区別する。
+
 ## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年9月16日
 
 条文は2026年10月6日まで`llm-characteristics.md`「知識の想起」にあり、同ファイルの撤去に伴って`agent-documents-basics.md`「語調と現行規則の表現」の理由へ移った。
