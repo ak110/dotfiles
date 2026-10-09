@@ -36,12 +36,14 @@ from agent_toolkit._testing.agents_server_support import (
     FakeClaudeClient,
     InterruptAwareClaudeClient,
     MultipleBlockAssistantMessage,
+    QueueClaudeClient,
     ResultMessage,
     StreamEvent,
     SynchronizedFailingClaudeClient,
     SystemMessage,
     _assert_no_forbidden_keys,
     _complete,
+    _rejected_stream,
     _start_claude_until_available,
     _without_root,
     install_backend,
@@ -1070,6 +1072,92 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
     assert not manager.expired_sessions
     assert manager.sessions[session.session_id].status == "running"
     await backend.close()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.parametrize("old_events", ["none", "result", "assistant_result", "idle_result", "result_idle"])
+@pytest.mark.parametrize("prompt", ["再レビュー", "後続作業"])
+@pytest.mark.asyncio
+async def test_claude_reply_drains_old_events_before_new_query(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, old_events: str, prompt: str
+) -> None:
+    """共通SDK受信列の旧イベントを新指示の完了へ誤帰属させない。"""
+    client = QueueClaudeClient(
+        [
+            [SystemMessage("claude-queue"), AssistantMessage("初回"), ResultMessage("初回完了")],
+            [AssistantMessage("新指示"), ResultMessage("新指示完了")],
+        ]
+    )
+    manager = server_manager.AgentsServerManager()
+    backend = claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
+    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    install_backend(manager, "claude", backend)
+    manager._wait_timeouts["main"] = 1
+    try:
+        session = await backend.start("初回", str(tmp_path))
+        initial = await asyncio.wait_for(manager.wait(), timeout=2)
+        assert initial["agent_message"] == "初回完了"
+        idle = SystemMessage("claude-queue")
+        idle.subtype = "session_state_changed"
+        idle.data = {"state": "idle"}
+        events_by_kind: dict[str, list[Any]] = {
+            "none": [],
+            "result": [ResultMessage("旧完了")],
+            "assistant_result": [AssistantMessage("旧後始末"), ResultMessage("旧完了")],
+            "idle_result": [idle, ResultMessage("旧完了")],
+            "result_idle": [ResultMessage("旧完了"), idle],
+        }
+        events = events_by_kind[old_events]
+        for event in events:
+            client.messages.put_nowait(event)
+        reply = await asyncio.wait_for(manager.send_message(session.session_id, prompt), timeout=2)
+        assert reply["delivery"] == "reply_started"
+        result = await asyncio.wait_for(manager.wait(), timeout=2)
+        assert result["agent_message"] == "新指示完了"
+        assert session.turn_seq == 2
+        assert len(client.queries) == 2
+        assert client.queries[0] == "初回"
+        assert f"\n{prompt}\n" in client.queries[1]
+        assert client.messages.empty()
+        assert client.receive_calls == 1
+        assert session.result_delivered
+    finally:
+        await backend.close()
+    assert client.readers == 0
+    assert client.disconnected
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_usage_limit_idle_keeps_shared_stream_result_pending(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """継続受信でCLIのidleが届いても、利用上限の解除待ちを終端結果にしない。"""
+    idle = SystemMessage("claude-limited-queue")
+    idle.subtype = "session_state_changed"
+    idle.data = {"state": "idle"}
+    client = QueueClaudeClient(
+        [_rejected_stream("seven_day", None, before_init=False, session_id="claude-limited-queue") + [idle]]
+    )
+    manager = server_manager.AgentsServerManager()
+    backend = claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
+    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    install_backend(manager, "claude", backend)
+
+    async def wait_for_idle() -> None:
+        while session.cli_turn_state != "idle":
+            await asyncio.sleep(0)
+
+    try:
+        session = await backend.start("初回", str(tmp_path))
+        await asyncio.wait_for(wait_for_idle(), timeout=2)
+        assert session.awaiting_auto_resume
+        assert session.usage_limit_resume_at is not None
+        assert not session.result_available
+        assert client.messages.empty()
+    finally:
+        await backend.close()
+    assert client.disconnected and client.readers == 0
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

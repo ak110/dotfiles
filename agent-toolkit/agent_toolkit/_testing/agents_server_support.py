@@ -968,6 +968,34 @@ class FakeClaudeClient:
         self.disconnected = True
 
 
+class QueueClaudeClient(FakeClaudeClient):
+    """queryと背景イベントが同じ長命なSDK受信列へ入るクライアント。"""
+
+    def __init__(self, streams: list[list[Any]]) -> None:
+        super().__init__(streams)
+        self.messages: asyncio.Queue[Any] = asyncio.Queue()
+        self.readers = 0
+        self.receive_calls = 0
+
+    async def query(self, prompt: str) -> None:
+        await super().query(prompt)
+        for message in self.streams.pop(0):
+            self.messages.put_nowait(message)
+
+    def receive_messages(self):
+        self.receive_calls += 1
+
+        async def stream():
+            self.readers += 1
+            try:
+                while True:
+                    yield await self.messages.get()
+            finally:
+                self.readers -= 1
+
+        return stream()
+
+
 class DelayedClaudeClient(FakeClaudeClient):
     """init後の通常メッセージ間隔を遅延できる偽クライアント。"""
 
