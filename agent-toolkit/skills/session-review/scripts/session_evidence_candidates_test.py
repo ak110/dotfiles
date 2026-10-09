@@ -1264,3 +1264,21 @@ def test_process_loop_goal_matches_launch_prompt_body() -> None:
     prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access
 
     assert PROCESS_WI_GOAL_BODY in prompt
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        (r"rg 'a''b' 'C:\work\docs'", ["rg", "a'b", r"C:\work\docs"]),
+        ('rg "a`"b" "C:\\work\\docs"', ["rg", 'a"b', r"C:\work\docs"]),
+        ("rg a`|b '&&'", ["rg", "a|b", "&&"]),
+        ("rg '$literal' docs", ["rg", "$literal", "docs"]),
+        ("rg $expanded docs", None),
+        ("rg needle docs | cat", None),
+        ("rg 'unclosed", None),
+    ],
+)
+def test_powershell_arguments_keep_their_quote_and_path_contract(command: str, expected: list[str] | None) -> None:
+    """分類の公開結果だけでは分からない検索語とWindowsパスのデータ同一性を確かめる。"""
+    actual = evidence_candidates._powershell_inner_args(["pwsh", "-Command", command])  # pylint: disable=protected-access
+    assert actual == expected
