@@ -1,6 +1,7 @@
 """Claude backendと共有する自動再開状態の契約を検証する。"""
 
 import asyncio
+import json
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
@@ -17,6 +18,7 @@ import pytest
 
 from agent_toolkit._agents_server import (
     claude,
+    claude_settings,
     launch_prompts,
     resume_waits,
     session_errors,
@@ -112,28 +114,143 @@ def test_settings_from_cmdline(cmdline: bytes, expected: str | None) -> None:
     assert claude._settings_from_cmdline(cmdline) == expected  # pylint: disable=protected-access
 
 
-@pytest.mark.parametrize("settings", [None, "/tmp/settings.json"])
+@pytest.mark.parametrize("settings_kind", ["none", "json", "file", "missing", "invalid", "array"])
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "write", "shell"])
 def test_build_options_inherits_parent_settings(
     monkeypatch: pytest.MonkeyPatch,
-    settings: str | None,
+    tmp_path: pathlib.Path,
+    settings_kind: str,
+    launch_kind: claude.LaunchKind,
 ) -> None:
-    """親cmdlineのsettings検出時だけSDKオプションへ同値を渡す。
-
-    未検出時はsettingsキーを渡さず、従来のsetting_sourcesによる解決を維持する。
-    """
+    """全起動で親の他項目を保ち、SDKへ付与する全envをsettingsへも優先して渡す。"""
     captured: dict[str, object] = {}
 
     class Options:
         def __init__(self, **kwargs: object) -> None:
             captured.update(kwargs)
+            self.settings = kwargs["settings"]
+
+    parent = {"env": {"CLAUDE_CODE_PROMPT_CACHE_TTL": "1h", "OTHER": "secret-parent-value"}, "disableAllHooks": True}
+    path = tmp_path / "parent.json"
+    path.write_text(json.dumps(parent), encoding="utf-8")
+    settings = {
+        "none": None,
+        "json": json.dumps(parent),
+        "file": str(path),
+        "missing": str(tmp_path / "missing"),
+        "invalid": "{bad-json",
+        "array": "[]",
+    }[settings_kind]
 
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", types.SimpleNamespace(ClaudeAgentOptions=Options))
     monkeypatch.setattr(claude, "_parent_settings", lambda: settings)
+    monkeypatch.setattr(claude_settings, "state_dir", lambda: tmp_path / "state")
 
-    claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
+    options = claude._build_options(str(tmp_path), "model", "medium", launch_kind=launch_kind, root_session_id="root")
+    merged = captured["settings"]
+    assert isinstance(merged, str)
+    if isinstance(merged, claude_settings.SettingsFile):
+        merged_path = pathlib.Path(merged)
+        assert merged_path.stat().st_mode & 0o077 == 0
+        value = json.loads(merged_path.read_text(encoding="utf-8"))
+        assert "secret-parent-value" not in merged
+    else:
+        value = json.loads(merged)
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert all(value["env"][key] == item for key, item in env.items())
+    if settings_kind in {"json", "file"}:
+        assert value["env"]["OTHER"] == "secret-parent-value"
+        assert value["disableAllHooks"] is True
+    else:
+        assert set(value) == {"env"}
+    claude_settings.cleanup_settings(options)
+    if isinstance(merged, claude_settings.SettingsFile):
+        assert not pathlib.Path(merged).exists()
 
-    assert captured.get("settings") == settings
-    assert ("settings" in captured) is (settings is not None)
+
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "write", "shell"])
+@pytest.mark.parametrize("session_id", [None, "saved"])
+def test_build_options_buffer_and_skill_contract(
+    monkeypatch: pytest.MonkeyPatch, launch_kind: claude.LaunchKind, session_id: str | None
+) -> None:
+    captured = _capture_options(monkeypatch)
+    claude._build_options("/repo", None, None, session_id, launch_kind)
+    buffer_size = captured["max_buffer_size"]
+    assert isinstance(buffer_size, int) and buffer_size > 1073741824
+    assert captured.get("disallowed_tools", []) == ([] if launch_kind == "delegate" else ["Skill"])
+
+
+def test_settings_files_have_independent_ownership(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    monkeypatch.setattr(claude_settings, "state_dir", lambda: tmp_path / "state")
+    parent = tmp_path / "parent.json"
+    parent.write_text('{"env":{"OTHER":"parent"}}', encoding="utf-8")
+    first = claude_settings.merge_settings(str(parent), {"KEY": "first"}, "root")
+    second = claude_settings.merge_settings(str(parent), {"KEY": "second"}, "root")
+    assert first != second
+    claude_settings.cleanup_settings(SimpleNamespace(settings=first))
+    assert not pathlib.Path(first).exists()
+    assert pathlib.Path(second).exists()
+    claude_settings.cleanup_settings(SimpleNamespace(settings=second))
+    assert parent.exists()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [None, "factory", "connect"])
+async def test_settings_file_lives_until_backend_disconnect(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, failure: str | None
+) -> None:
+    """CLIの設定読取と切断までファイルを保ち、正常終了と起動失敗で自身の分を回収する。"""
+    parent = tmp_path / "parent.json"
+    parent.write_text('{"env":{"OTHER":"parent"}}', encoding="utf-8")
+    monkeypatch.setattr(claude, "_parent_settings", lambda: str(parent))
+    monkeypatch.setattr(claude_settings, "state_dir", lambda: tmp_path / "state")
+    paths: list[pathlib.Path] = []
+
+    class Client(FakeClaudeClient):
+        async def connect(self) -> None:
+            assert paths[0].exists()
+            if failure == "connect":
+                raise RuntimeError("connect failed")
+            await super().connect()
+
+        async def disconnect(self) -> None:
+            assert paths[0].exists()
+            await super().disconnect()
+
+    client = Client([[SystemMessage("settings-lifetime"), ResultMessage("完了")]])
+
+    def factory(options: Any) -> Client:
+        paths.append(pathlib.Path(options.settings))
+        assert paths[0].exists()
+        if failure == "factory":
+            raise RuntimeError("factory failed")
+        return client
+
+    manager = claude.ClaudeServerManager(client_factory=factory)
+    try:
+        if failure is None:
+            await manager.start("調査", str(tmp_path))
+            assert paths[0].exists()
+        else:
+            with pytest.raises(RuntimeError, match=f"{failure} failed"):
+                await manager.start("調査", str(tmp_path))
+    finally:
+        await manager.close()
+    assert not paths[0].exists()
+    assert parent.exists()
+
+
+def test_dependency_check_reclaims_its_settings_file(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """CLIを起動しない依存確認も、生成した合成ファイルを保持しない。"""
+    parent = tmp_path / "parent.json"
+    parent.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(claude, "_parent_settings", lambda: str(parent))
+    monkeypatch.setattr(claude_settings, "state_dir", lambda: tmp_path / "state")
+    claude.check_dependencies()
+    assert not list((tmp_path / "state").rglob("settings-*.json"))
+    assert parent.exists()
 
 
 def _capture_options(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:

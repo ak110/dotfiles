@@ -11,6 +11,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._agents_server import claude as claude_backend
+from agent_toolkit._agents_server import claude_settings
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
@@ -129,7 +130,7 @@ _LIGHTWEIGHT_SEARCH_PAYLOADS = [
     ids=[f"{kind}-{payload['tool_name']}" for kind, payload in _LIGHTWEIGHT_SEARCH_PAYLOADS],
 )
 def test_claude_warning_offers_skill_md_read_for_sessions_without_skill(
-    tmp_path: pathlib.Path, launch_kind: str, payload: dict
+    tmp_path: pathlib.Path, launch_kind: claude_backend.LaunchKind, payload: dict
 ) -> None:
     """Claudeの警告は`Skill`の起動と、`Skill`を使えない主体が実在する`SKILL.md`を`Read`で読む操作を併記する。
 
@@ -138,7 +139,9 @@ def test_claude_warning_offers_skill_md_read_for_sessions_without_skill(
     """
     allowed_tools = claude_backend._LAUNCH_ALLOWED_TOOLS[launch_kind]  # pylint: disable=protected-access
     assert "Read" in allowed_tools
-    assert "Skill" not in allowed_tools
+    options = claude_backend._build_options(str(tmp_path), None, None, launch_kind=launch_kind)  # pylint: disable=protected-access
+    assert "Skill" in options.disallowed_tools
+    claude_settings.cleanup_settings(options)
     assert payload["tool_name"] in allowed_tools
     env = {**_plan_file_state_env(tmp_path), "AGENT_TOOLKIT_DELEGATED_SESSION": "1"}
 
@@ -146,6 +149,7 @@ def test_claude_warning_offers_skill_md_read_for_sessions_without_skill(
 
     assert warning.startswith(_WARN_OPENING)
     assert f"ツール`Skill`で`{_SEARCH_SKILL}`を起動し" in warning
+    assert "ツール一覧に`Skill`が無い主体" in warning
     assert f"`{_SEARCH_SKILL_MD}`）を`Read`で全文読んで" in warning
     assert _SEARCH_SKILL_MD.is_file()
 
@@ -258,12 +262,158 @@ def test_edit_tool_agent_document_writing_and_skill_context(tmp_path: pathlib.Pa
 
 
 def test_search_warning_joins_other_warnings(tmp_path: pathlib.Path) -> None:
-    result = _run(_bash("git rev-parse --short A B; rg x", "s"), _plan_file_state_env(tmp_path))
+    result = _run(_bash("rg x; printf rule > AGENTS.md", "s"), _plan_file_state_env(tmp_path))
     assert result.returncode == 0
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     assert context.count(_WARN_OPENING) == 2
     assert f"`{_SEARCH_SKILL}`" in context
-    assert "`git rev-parse --short`" in context
+    assert "agent-toolkit:writing-standards" in context
+
+
+_WRITE_FORMS = [
+    "printf rule > {path}",
+    "printf rule >> {path}",
+    "printf rule 2>>{path}",
+    "tee {path}",
+    "tee -a {path}",
+    "sed -i 's/a/b/' {path}",
+    "sed --in-place -e 's/a/b/' {path}",
+    "cp ordinary.md {path}",
+    "cp -t {directory} AGENTS.md",
+    "mv ordinary.md {path}",
+    "install -m 644 ordinary.md {path}",
+    "rsync ordinary.md {path}",
+    "perl -pi -e 's/a/b/' {path}",
+    "dd if=ordinary.md of={path}",
+    "python3 -c \"open('{literal}', 'w').write('rule')\"",
+    "python3 -c \"from pathlib import Path; Path('{literal}').write_text('rule')\"",
+]
+
+
+@pytest.mark.parametrize("form", _WRITE_FORMS)
+@pytest.mark.parametrize("prefix", ["", "/repo/", "~/", "$HOME/", '"$HOME/', "${HOME}/"])
+def test_bash_static_document_suffix_warns_once(tmp_path: pathlib.Path, form: str, prefix: str) -> None:
+    """展開される先頭と操作形式を組み合わせ、公開hookの初回警告と反復0回を検証する。"""
+    closing_quote = '"' if prefix.startswith('"') else ""
+    path = prefix + ".claude/rules/AGENTS.md" + closing_quote
+    directory = prefix + ".claude/rules/" + closing_quote
+    literal = prefix.replace('"', "") + ".claude/rules/AGENTS.md"
+    command = form.format(path=path, directory=directory, literal=literal)
+    env = _plan_file_state_env(tmp_path)
+    payload = _bash(command, "static-writing")
+    assert "agent-toolkit:writing-standards" in _search_warning(payload, env)
+    assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
+
+
+@pytest.mark.parametrize("form", _WRITE_FORMS)
+@pytest.mark.parametrize("prefix", ["", "/repo/", "~/", "$HOME/", '"$HOME/', "${HOME}/"])
+def test_bash_static_ordinary_suffix_does_not_warn(tmp_path: pathlib.Path, form: str, prefix: str) -> None:
+    """同じ操作と各展開表記でも通常文書の書込は警告しない。"""
+    closing_quote = '"' if prefix.startswith('"') else ""
+    command = form.replace("AGENTS.md", "README.md").format(
+        path=prefix + "docs/README.md" + closing_quote,
+        directory=prefix + "docs/" + closing_quote,
+        literal=prefix.replace('"', "") + "docs/README.md",
+    )
+    assert "agent-toolkit:writing-standards" not in _search_warning(_bash(command, "ordinary"), _plan_file_state_env(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sed -i -e '1d' ~/.claude/rules/x.md",
+        "cat >> ~/.claude/rules/x.md <<'EOF'\nrule\nEOF",
+        'echo rule > "$HOME/.claude/rules/x.md"',
+        "printf rule | tee -a ${HOME}/AGENTS.md",
+        "python3 -c \"open('$HOME/.claude/rules/x.md','a').write('x')\"",
+        "sed -i 's/a/b/' \"$REPO\"/.claude/skills/x/SKILL.md",
+        "cp a.md /home/shimoyama/.claude/rules/x.md",
+        "cp a.md ~/.claude/rules/x.md",
+        "cp -t ~/.claude/rules x.md",
+        "cp a.md b.md ~/.claude/rules/",
+        "mv draft.md .claude/rules/x.md",
+        'install -m 644 a.md "$HOME/.claude/rules/x.md"',
+        "rsync a.md ~/.claude/rules/x.md",
+        "perl -pi -e 's/a/b/' ~/.claude/rules/x.md",
+        "dd if=a.md of=$HOME/.claude/rules/x.md",
+        "cp -T ordinary.md $HOME/AGENTS.md",
+        "cp a.md AGENTS.md $HOME/",
+        "mv -S .bak ordinary.md $HOME/AGENTS.md",
+        "install -g group -o owner -m 644 ordinary.md $HOME/AGENTS.md",
+        "cp --target-directory=$HOME/ AGENTS.md",
+        "rsync ordinary.md AGENTS.md $HOME/",
+        "perl -i.bak script.pl $HOME/AGENTS.md",
+        "perl -i -E 'say 1' $HOME/AGENTS.md",
+    ],
+)
+def test_bash_document_write_option_boundaries(tmp_path: pathlib.Path, command: str) -> None:
+    assert "agent-toolkit:writing-standards" in _search_warning(_bash(command, "options"), _plan_file_state_env(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf rule > $FILE",
+        "printf rule > $HOME/AGENTS.$EXT",
+        "tee $HOME/*.md",
+        "cp AGENTS.md ordinary.md",
+        "cp ordinary.md $DEST",
+        "cp -S AGENTS.md ordinary.md other.md",
+        "cp -aT AGENTS.md ordinary/",
+        "cp --help AGENTS.md",
+        "cp AGENTS.md /tmp/AGENTS.md.bak",
+        "mv AGENTS.md ordinary.md",
+        "install -d AGENTS.md",
+        "install -vd .claude/rules agent-toolkit/rules",
+        "install --help AGENTS.md",
+        "rsync AGENTS.md ordinary.md",
+        "perl -e 'print 1' AGENTS.md",
+        "dd if=AGENTS.md of=ordinary.md",
+        "echo 'cp ordinary.md AGENTS.md'",
+        "touch AGENTS.md",
+        "ln ordinary.md AGENTS.md",
+    ],
+)
+def test_bash_document_write_negative_boundaries(tmp_path: pathlib.Path, command: str) -> None:
+    assert "agent-toolkit:writing-standards" not in _search_warning(_bash(command, "negative"), _plan_file_state_env(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("options", "writes"),
+    [
+        ("-MFile::Basename -ne 'print'", False),
+        ("-M File::Basename -ne 'print'", False),
+        ("-mFile::Basename -ne 'print'", False),
+        ("-Ilib -ne 'print'", False),
+        ("-I include -ne 'print'", False),
+        ("-Fi -ne 'print'", False),
+        ("-Ci -ne 'print'", False),
+        ("-xi -ne 'print'", False),
+        ("-d:File::Basename -ne 'print'", False),
+        ("tool.pl --id", False),
+        ("tool.pl -i", False),
+        ("-- tool.pl -i", False),
+        ("-ne 'print' --id", False),
+        ("-cpi -e 's/a/b/'", False),
+        ("-pi -e 's/a/b/'", True),
+        ("-i.bak tool.pl", True),
+        ("-i -E 'say 1'", True),
+        ("-MFile::Basename -pi -e 's/a/b/'", True),
+        ("-I include -pi -e 's/a/b/'", True),
+        ("-lpi -e 's/a/b/'", True),
+        ("-l077pi -e 's/a/b/'", True),
+        ("-0777pi -e 's/a/b/'", True),
+        ("-0x0Api -e 's/a/b/'", True),
+        ("-dpi -e 's/a/b/'", True),
+    ],
+)
+def test_perl_document_write_option_and_program_boundaries(tmp_path: pathlib.Path, options: str, writes: bool) -> None:
+    """公開hookで値中のiとprogramfile後の旗を除き、有効なin-place編集だけを警告する。"""
+    payload = _bash(f"perl {options} ~/.claude/rules/x.md", "perl-options")
+    env = _plan_file_state_env(tmp_path)
+    warning = _search_warning(payload, env)
+    assert ("agent-toolkit:writing-standards" in warning) is writes
+    assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
 
 
 _BUGFIX_SKILL = "agent-toolkit:bugfix"

@@ -40,6 +40,8 @@ class BashInvocation:
     outputs: tuple[_OutputTarget, _OutputTarget] = (1, 2)
     background: bool = False
     captured: bool = False
+    static_tokens: tuple[str, ...] = ()
+    static_outputs: tuple[_OutputTarget, _OutputTarget] = (1, 2)
 
     @property
     def output_pipe(self) -> bool:
@@ -62,6 +64,7 @@ class _BashToken:
     known: bool = True
     nested: tuple[str, ...] = ()
     assignment: bool = False
+    static_value: str = ""
 
 
 _BASH_REDIRECTION = re.compile(r"[0-9]*(?:&>>|&>|<<-|<<<|>>|<<|<>|<&|>&|>\||>|<)")
@@ -71,6 +74,7 @@ _BASH_OPERATORS = ("&&", "||", "|&", ";;", ";", "&", "|", "(", ")", "{", "}", "\
 
 
 _UNKNOWN_BASH_WORD = "\x00"
+STATIC_UNKNOWN = "\ue000"
 
 
 def extract_bash_invocations(command: str) -> list[BashInvocation]:
@@ -125,6 +129,7 @@ def _bash_tokens(command: str) -> list[_BashToken]:
 def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
     """1つの語の引用と展開を区別し、静的な値と置換の本文を返す。"""
     pieces: list[str] = []
+    static_pieces: list[str] = []
     nested: list[str] = []
     quote: str | None = None
     known = True
@@ -136,11 +141,13 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
                 raise ValueError("閉じないエスケープ")
             if command[index + 1] != "\n":
                 pieces.append(command[index : index + 2])
+                static_pieces.append(command[index : index + 2])
             index += 2
             continue
         if char == quote:
             quote = None
             pieces.append(char)
+            static_pieces.append(char)
             index += 1
             continue
         if quote != "'" and (
@@ -152,7 +159,23 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
             if body is not None:
                 nested.append(body)
             pieces.append(_UNKNOWN_BASH_WORD)
+            static_pieces.append(STATIC_UNKNOWN)
             known = False
+            continue
+        if (
+            quote != "'"
+            and char == "$"
+            and index + 1 < len(command)
+            and (command[index + 1].isalnum() or command[index + 1] in "_@*#?!-$")
+        ):
+            end = index + 2
+            if command[index + 1].isalpha() or command[index + 1] == "_":
+                while end < len(command) and (command[end].isalnum() or command[end] == "_"):
+                    end += 1
+            pieces.append(command[index:end])
+            static_pieces.append(STATIC_UNKNOWN)
+            known = False
+            index = end
             continue
         if quote is None and char in {"'", '"'}:
             quote = char
@@ -168,6 +191,7 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
         ):
             known = False
         pieces.append(char)
+        static_pieces.append(STATIC_UNKNOWN if quote is None and (char in "*?[" or (char == "~" and index == start)) else char)
         index += 1
     if quote is not None or not pieces:
         raise ValueError("閉じない引用または未対応の語")
@@ -179,7 +203,11 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
         assignment = ENV_ASSIGN_PATTERN.match(value)
         value = (assignment.group() if assignment else "") + _UNKNOWN_BASH_WORD
     return _BashToken(
-        value, known=known, nested=tuple(nested), assignment=ENV_ASSIGN_PATTERN.match("".join(pieces)) is not None
+        value,
+        known=known,
+        nested=tuple(nested),
+        assignment=ENV_ASSIGN_PATTERN.match("".join(pieces)) is not None,
+        static_value=shlex.split("".join(static_pieces), posix=True)[0],
     ), index
 
 
@@ -261,7 +289,11 @@ def _bash_command_list(
         if not grouped:
             current = _bash_word_invocations(words)
         outputs = _bash_output_targets(redirects, separator)
-        current = [_inherit_bash_outputs(item, outputs) for item in current]
+        static_outputs = _bash_output_targets(
+            [(operator, dataclasses.replace(word, value=word.static_value, known=True)) for operator, word in redirects],
+            separator,
+        )
+        current = [_inherit_bash_outputs(item, outputs, static_outputs) for item in current]
         result.extend(current)
         if separator == "&":
             result[pipeline_start:] = [dataclasses.replace(item, background=True) for item in result[pipeline_start:]]
@@ -293,7 +325,9 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
         if shell is not None and known:
             result.extend(extract_bash_invocations(shell))
         else:
-            result.append(BashInvocation(segment, known))
+            result.append(
+                BashInvocation(segment, known, static_tokens=tuple(word.static_value for word in words[-len(segment.tokens) :]))
+            )
     for word in words:
         for body in word.nested:
             result.extend(dataclasses.replace(item, captured=True) for item in extract_bash_invocations(body))
@@ -322,13 +356,23 @@ def _bash_output_targets(redirects: Sequence[tuple[str, _BashToken]], separator:
     return outputs[1], outputs[2]
 
 
-def _inherit_bash_outputs(invocation: BashInvocation, outputs: tuple[_OutputTarget, _OutputTarget]) -> BashInvocation:
+def _inherit_bash_outputs(
+    invocation: BashInvocation,
+    outputs: tuple[_OutputTarget, _OutputTarget],
+    static_outputs: tuple[_OutputTarget, _OutputTarget],
+) -> BashInvocation:
     """グループの出力先を、内側で上書きされていない接続へ渡す。"""
     inherited = tuple(
         outputs[value - 1] if isinstance(value, int) and not (invocation.captured and value == 1) else value
         for value in invocation.outputs
     )
-    return dataclasses.replace(invocation, outputs=(inherited[0], inherited[1]))
+    static_inherited = tuple(
+        static_outputs[value - 1] if isinstance(value, int) and not (invocation.captured and value == 1) else value
+        for value in invocation.static_outputs
+    )
+    return dataclasses.replace(
+        invocation, outputs=(inherited[0], inherited[1]), static_outputs=(static_inherited[0], static_inherited[1])
+    )
 
 
 def _active_substitutions(body: str) -> list[str]:
