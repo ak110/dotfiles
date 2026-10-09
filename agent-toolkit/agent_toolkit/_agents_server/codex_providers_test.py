@@ -109,7 +109,7 @@ class ProviderClient(FakeCodexClient):
 def configure_provider_environment(monkeypatch):
     """資格情報は架空のAPI値だけとし、開発機の設定を消費しない。"""
     monkeypatch.setenv(
-        config._config_env_name("codex_fallback_model_providers"), "missing,no-auth,shared-token,paid-a,paid-a,paid-b"
+        config._config_env_name("codex_model_providers"), "openai,missing,no-auth,shared-token,paid-a,paid-a,paid-b"
     )
     monkeypatch.setenv("TEST_PROVIDER_KEY", "isolated-fake-api-key")
     monkeypatch.delenv("UNSET_PROVIDER_KEY", raising=False)
@@ -179,6 +179,9 @@ async def test_provider_environment_start(
     del provider_environment
     client = ProviderClient()
     client.primary, client.account_type, client.allowed = primary, account, allowed
+    monkeypatch.setenv(
+        config._config_env_name("codex_model_providers"), f"{primary},missing,no-auth,shared-token,paid-a,paid-b"
+    )
     backend = backend_with_client(monkeypatch, client)
     try:
         session = await backend.start("元の作業", str(tmp_path), None, None, launch_kind=launch_kind)
@@ -440,7 +443,7 @@ async def test_restored_api_provider_ignores_changed_configuration(monkeypatch, 
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     publish_api_session(tmp_path)
     session_registry.release("provider-thread", reason="stopped")
-    monkeypatch.setenv(config._config_env_name("codex_fallback_model_providers"), "")
+    monkeypatch.setenv(config._config_env_name("codex_model_providers"), "")
     root = manager.AgentsServerManager()
     client = ProviderClient()
     backend = backend_with_client(monkeypatch, client, root)
@@ -501,7 +504,7 @@ async def test_empty_provider_configuration_keeps_current_resume_settings(
     monkeypatch, tmp_path, provider_response, resume_provider_response
 ):
     """移行設定が空なら応答の接続先を固定せず、再開時の通常設定を使う。"""
-    monkeypatch.setenv(config._config_env_name("codex_fallback_model_providers"), "")
+    monkeypatch.setenv(config._config_env_name("codex_model_providers"), "")
     client = ProviderClient()
     original_request = client.request
 
@@ -563,3 +566,148 @@ async def test_turn_start_failure_keeps_provider_details_private(monkeypatch, tm
         assert "private-value" not in public and "paid-a" not in public and "paid-b" not in public
     finally:
         await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_provider_order_overrides_codex_default(monkeypatch, tmp_path, provider_environment):
+    """Codexの通常接続がAPIでも明示列の先頭でサブスクを開始する。"""
+    del provider_environment
+    client = ProviderClient()
+    client.primary = "paid-b"
+    backend = backend_with_client(monkeypatch, client)
+    try:
+        session = await backend.start("優先順の作業", str(tmp_path))
+        assert client.connection == "openai"
+        assert session.codex_subscription_provider == "openai"
+        await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
+        response = await backend.send_message(session, "続き")
+        assert response["delivery"] == "reply_started"
+        assert client.connection == "paid-a"
+        assert session.session_id == "thread-codex"
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("next_order", ["paid-a,openai,paid-b", "paid-b,paid-a"])
+async def test_api_primary_uses_ordered_api_candidates(monkeypatch, tmp_path, provider_environment, next_order):
+    """API先頭の確定失敗は後続APIへ進み、ChatGPTへ戻らない。"""
+    del provider_environment
+    monkeypatch.setenv(config._config_env_name("codex_model_providers"), "paid-a,openai,paid-b")
+    client = ProviderClient()
+    backend = backend_with_client(monkeypatch, client)
+    try:
+        session = await backend.start("API優先の作業", str(tmp_path))
+        assert client.connection == "paid-a" and session.codex_subscription_provider is None
+        assert not any(method == "account/rateLimits/read" for method, _ in client.requests)
+        monkeypatch.setenv(config._config_env_name("codex_model_providers"), next_order)
+        await complete(backend, session, {"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 401}}})
+        assert session.codex_provider_resume_pending
+        response = await backend.send_message(session, "続き")
+        assert response["delivery"] == "reply_started" and client.connection == "paid-b"
+        assert [params["modelProvider"] for method, params in client.requests if method == "thread/resume"] == ["paid-b"]
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", ["paid-a", "missing,paid-a,paid-b"])
+async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, provider_environment, order):
+    """無効候補と開始拒否から指定順だけを試し、通常接続へ戻らない。"""
+    del provider_environment
+    monkeypatch.setenv(config._config_env_name("codex_model_providers"), order)
+    client = ProviderClient()
+    client.reject.add("paid-a")
+    backend = backend_with_client(monkeypatch, client)
+    try:
+        if order == "paid-a":
+            with pytest.raises(codex.AppServerError, match="candidates were rejected"):
+                await backend.start("拒否するAPI", str(tmp_path))
+        else:
+            session = await backend.start("後続のAPI", str(tmp_path))
+            assert session.codex_model_provider == "paid-b"
+        assert [params["modelProvider"] for method, params in client.requests if method == "thread/start"] == (
+            ["paid-a"] if order == "paid-a" else ["paid-a", "paid-b"]
+        )
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("old", ["", "paid-a,paid-b"])
+async def test_legacy_provider_setting_migrates_once(monkeypatch, tmp_path, old):
+    """保存旧列を実効主接続先で移し、明示空と無関係な設定を保つ。"""
+    monkeypatch.setenv("TEST_PROVIDER_KEY", "isolated-fake-api-key")
+    monkeypatch.delenv(config._config_env_name("codex_model_providers"), raising=False)
+    monkeypatch.delenv(config._config_env_name("codex_fallback_model_providers"), raising=False)
+    config._save_config({"codex_fallback_model_providers": old, "codex_fast_mode": "true"})
+    client = ProviderClient()
+    client.primary = "paid-b"
+    backend = backend_with_client(monkeypatch, client)
+    try:
+        session = await backend.start("旧設定の移行", str(tmp_path))
+        stored = config._load_config()
+        assert stored == {"codex_model_providers": "paid-b,paid-a" if old else "", "codex_fast_mode": "true"}
+        assert session.codex_model_provider == ("paid-b" if old else None)
+        client.primary = "openai"
+        assert config.migrate_codex_provider_setting("openai") == (("paid-b", "paid-a") if old else ())
+        assert config._load_config() == stored
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_environment_does_not_override_new_empty(monkeypatch, tmp_path):
+    """新しい明示空は旧envを無効にし、旧env単独の移行は保存しない。"""
+    monkeypatch.delenv(config._config_env_name("codex_model_providers"), raising=False)
+    monkeypatch.setenv(config._config_env_name("codex_fallback_model_providers"), "paid-a")
+    monkeypatch.setenv("TEST_PROVIDER_KEY", "isolated-fake-api-key")
+    config._save_config({"codex_model_providers": ""})
+    client = ProviderClient()
+    backend = backend_with_client(monkeypatch, client)
+    try:
+        session = await backend.start("新設定の空", str(tmp_path))
+        assert session.codex_model_provider is None
+        config._save_config({})
+        selection = await codex_providers.select(client.request, str(tmp_path))
+        assert selection.primary == "openai" and selection.candidates == ("paid-a",)
+        assert config._load_config() == {}
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["stopped", "retention_expired"])
+async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path, reason):
+    """サブスク履歴のない主APIも解放後の公開追送で同じ接続先を維持する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    session_registry.publish(
+        "provider-thread", terminal=True, engine="codex", cwd=str(tmp_path), codex_model_provider="paid-b", status="completed"
+    )
+    session_registry.release("provider-thread", reason=reason)
+    root = manager.AgentsServerManager()
+    client = ProviderClient()
+    backend = backend_with_client(monkeypatch, client, root)
+    install_backend(root, "codex", backend)
+    try:
+        response = await root.send_message("provider-thread", "APIの続き")
+        assert response["delivery"] == "reply_started"
+        assert client.connection == "paid-b"
+        assert root.sessions["provider-thread"].codex_subscription_provider is None
+    finally:
+        await root.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_provider_migration_save_failure_keeps_original(monkeypatch, tmp_path):
+    """移行の保存失敗で旧設定を失わず、後で再実行できる。"""
+    config._save_config({"codex_fallback_model_providers": "paid-a", "codex_fast_mode": "true"})
+    before = config._config_file_path().read_text()
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("migration storage unavailable")
+
+    monkeypatch.setattr(config, "atomic_write", fail_write)
+    with pytest.raises(OSError, match="migration storage unavailable"):
+        await codex_providers.select(ProviderClient().request, str(tmp_path))
+    assert config._config_file_path().read_text() == before

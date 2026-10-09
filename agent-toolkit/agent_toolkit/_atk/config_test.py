@@ -145,7 +145,7 @@ class TestConfigShow:
 @pytest.mark.parametrize(("value", "expected"), [("", ""), ("  ", ""), (" a, b,a ", "a,b")])
 def test_codex_provider_config_cli(tmp_path, capsys, monkeypatch, value, expected):
     """provider列を公開CLIで正規化・保存・取得・解除し、モデルの警告を適用しない。"""
-    key = "codex_fallback_model_providers"
+    key = "codex_model_providers"
     with pytest.raises(SystemExit, match="0"):
         atk.main(["config", "set", key, value], home=tmp_path)
     assert not capsys.readouterr().err
@@ -153,11 +153,11 @@ def test_codex_provider_config_cli(tmp_path, capsys, monkeypatch, value, expecte
     with pytest.raises(SystemExit, match="0"):
         atk.main(["config", "get", key], home=tmp_path)
     assert capsys.readouterr().out == expected + "\n"
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FALLBACK_MODEL_PROVIDERS", " b, c,b ")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", " b, c,b ")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["config", "get", key], home=tmp_path)
     assert capsys.readouterr().out == "b,c\n"
-    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_FALLBACK_MODEL_PROVIDERS")
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["config", "set", key, ""], home=tmp_path)
     capsys.readouterr()
@@ -169,15 +169,45 @@ def test_codex_provider_config_cli(tmp_path, capsys, monkeypatch, value, expecte
 @pytest.mark.parametrize("value", [",a", "a,", "a,,b", "a, ,b"])
 def test_codex_provider_empty_element_rejected(tmp_path, capsys, monkeypatch, value):
     """保存値と環境変数の空候補を拒否し、設定ファイルの不在を保つ。"""
-    key = "codex_fallback_model_providers"
+    key = "codex_model_providers"
     with pytest.raises(SystemExit, match="2"):
         atk.main(["config", "set", key, value], home=tmp_path)
     assert not (tmp_path / "config" / "config.json").exists()
     capsys.readouterr()
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FALLBACK_MODEL_PROVIDERS", value)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", value)
     with pytest.raises(SystemExit, match="2"):
         atk.main(["config", "get", key], home=tmp_path)
     assert not capsys.readouterr().out
+
+
+@pytest.mark.parametrize("operation", ["get", "set"])
+def test_retired_codex_provider_key_is_rejected(tmp_path, capsys, operation):
+    """旧キーへの公開操作を拒否し、新形式の主接続先指定を案内する。"""
+    arguments = ["config", operation, "codex_fallback_model_providers"]
+    if operation == "set":
+        arguments.append("paid-a")
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(arguments, home=tmp_path)
+    result = capsys.readouterr()
+    assert "codex_model_providers" in result.err
+    assert not (tmp_path / "config" / "config.json").exists()
+
+
+def test_new_codex_provider_setting_removes_legacy(tmp_path, capsys):
+    """新しい明示空で旧保存値を除き、他の設定を保持する。"""
+    path = tmp_path / "config" / "config.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"codex_fallback_model_providers": "paid-a", "codex_fast_mode": "true"}))
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["config", "get", "codex_model_providers"], home=tmp_path)
+    assert "移行" in capsys.readouterr().err
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["config", "set", "codex_model_providers", ""], home=tmp_path)
+    assert not capsys.readouterr().err
+    assert json.loads(path.read_text()) == {"codex_model_providers": "", "codex_fast_mode": "true"}
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["config", "show"], home=tmp_path)
+    assert not capsys.readouterr().err
 
 
 class TestCodexFastMode:

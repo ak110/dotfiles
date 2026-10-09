@@ -20,6 +20,7 @@ from agent_toolkit._common import codex_models
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.atomic_file import atomic_write
 
 _CONFIG_FILENAME = "config.json"
 
@@ -72,7 +73,7 @@ _MUTABLE_KEY_DEFAULTS = {
     **_preset_settings("codex-balanced"),
     "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
     "codex_fast_mode": "false",
-    "codex_fallback_model_providers": "",
+    "codex_model_providers": "",
 }
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
@@ -123,7 +124,7 @@ def _save_config(config: dict[str, str]) -> None:
     """変更可能設定をJSONファイルへ永続化する。"""
     path = _config_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write(path, json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
 
 def _config_env_name(key: str) -> str:
@@ -143,7 +144,7 @@ def _validate_mutable_setting(key: str, value: str) -> None:
     if key == "codex_fast_mode":
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
-    elif key == "codex_fallback_model_providers":
+    elif key == "codex_model_providers":
         parse_codex_provider_candidates(value)
     else:
         _validate_stage_model_candidates(value)
@@ -157,6 +158,66 @@ def parse_codex_provider_candidates(value: str) -> tuple[str, ...]:
     if any(not provider or any(char.isspace() for char in provider) for provider in providers):
         raise ValueError("受理可能書式: 空文字列、またはprovider IDのASCIIカンマ区切り（空要素は不可）")
     return tuple(dict.fromkeys(providers))
+
+
+_LEGACY_CODEX_PROVIDER_KEY = "codex_fallback_model_providers"
+
+
+def legacy_codex_provider_setting() -> tuple[tuple[str, ...], bool] | None:
+    """新設定がない場合だけ旧列と、保存値からの移行かを返す。"""
+    stored = _load_config()
+    if os.environ.get(_config_env_name("codex_model_providers")) or "codex_model_providers" in stored:
+        return None
+    legacy_env = os.environ.get(_config_env_name(_LEGACY_CODEX_PROVIDER_KEY))
+    if legacy_env:
+        return parse_codex_provider_candidates(legacy_env), False
+    if _LEGACY_CODEX_PROVIDER_KEY in stored:
+        return parse_codex_provider_candidates(stored[_LEGACY_CODEX_PROVIDER_KEY]), True
+    return None
+
+
+def migrate_codex_provider_setting(primary: str) -> tuple[str, ...]:
+    """実効主接続先が得られた後に旧列を移行し、他の設定を保持する。"""
+    legacy = legacy_codex_provider_setting()
+    if legacy is None:
+        return parse_codex_provider_candidates(resolve_mutable_setting("codex_model_providers"))
+    candidates, persisted = legacy
+    order = tuple(dict.fromkeys((primary, *candidates))) if candidates else ()
+    if persisted:
+        stored = _load_config()
+        # 照会中に新しい値が保存された場合は、旧値の移行で上書きしない。
+        if "codex_model_providers" in stored:
+            return parse_codex_provider_candidates(stored["codex_model_providers"])
+        stored["codex_model_providers"] = ",".join(order)
+        stored.pop(_LEGACY_CODEX_PROVIDER_KEY, None)
+        _save_config(stored)
+    return order
+
+
+def _report_legacy_codex_provider_setting() -> None:
+    """未移行の保存値を、推測した先頭を表示せず案内する。"""
+    if legacy_codex_provider_setting() is not None:
+        _outcome.report_warning(
+            "旧Codex接続先設定が残っています。新規Codex起動時に実効主接続先を補って移行します",
+            next_action=(
+                "agents_serverで新規Codex sessionを起動するか、"
+                "`atk config set codex_model_providers <VALUE>`で優先順を指定する。"
+                "旧環境変数はAGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERSへ新形式の値で置き換える"
+            ),
+        )
+
+
+def _reject_legacy_codex_provider_key(keys: list[str]) -> None:
+    """旧キーを新規の公開設定として受理せず、置換先を示す。"""
+    if _LEGACY_CODEX_PROVIDER_KEY in keys:
+        _outcome.report_failure(
+            "設定キーcodex_fallback_model_providersはcodex_model_providersへ置き換わりました",
+            next_action=(
+                "`atk config set codex_model_providers 'openai,custom'`のように主接続先を先頭に指定する。"
+                "未移行の保存値は新規Codex起動時に自動移行する"
+            ),
+        )
+        sys.exit(2)
 
 
 def mutable_setting_default(key: str) -> str:
@@ -189,7 +250,7 @@ def resolve_mutable_setting(key: str) -> str:
         raise _next_action.ActionableError(
             f"{source}の値が不正です（値: {value}）。{error}", next_action=next_action
         ) from error
-    return ",".join(parse_codex_provider_candidates(value)) if key == "codex_fallback_model_providers" else value
+    return ",".join(parse_codex_provider_candidates(value)) if key == "codex_model_providers" else value
 
 
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
@@ -211,7 +272,7 @@ _UNKNOWN_CANDIDATE_NEXT_ACTION = "利用可否は実行時に各engineが判定�
 def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
     """参考一覧外の工程別モデル候補を警告の本文へ変換する。接頭辞は`report_warning`が付ける。"""
     warnings: list[str] = []
-    if key in {"codex_fast_mode", "codex_fallback_model_providers"}:
+    if key in {"codex_fast_mode", "codex_model_providers"}:
         return warnings
     for candidate in value.split(","):
         engine, model, effort = _parse_stage_model(candidate)
@@ -228,6 +289,7 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 
 def _cmd_config_show(home: pathlib.Path) -> None:
     """showサブコマンド: 設定値を1キー1行で表示する。"""
+    _report_legacy_codex_provider_setting()
     settings = _resolved_settings(home)
     warnings: list[str] = []
     for key, value in settings.items():
@@ -246,8 +308,10 @@ def _report_candidate_warnings(warnings: list[str]) -> None:
 
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
     """getサブコマンド: 1件以上の設定値を表示する。未知キーはexit 2。"""
-    settings = _resolved_settings(home)
     requested_keys = cast(list[str], args.key)
+    _reject_legacy_codex_provider_key(requested_keys)
+    _report_legacy_codex_provider_setting()
+    settings = _resolved_settings(home)
     unknown_keys = [key for key in requested_keys if key not in settings]
     if unknown_keys:
         _outcome.report_failure(
@@ -261,6 +325,7 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
 
 def _cmd_config_set(args: argparse.Namespace) -> None:
     """setサブコマンド: 変更可能設定を更新する。対象外キーはexit 2。"""
+    _reject_legacy_codex_provider_key([args.key])
     if args.key not in _MUTABLE_KEY_DEFAULTS:
         _outcome.report_failure(
             f"変更できない設定キーを指定した: {args.key}",
@@ -277,10 +342,10 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
         sys.exit(2)
     _report_candidate_warnings(_stage_model_candidate_warnings(args.key, args.value))
     config = _load_config()
-    value = (
-        ",".join(parse_codex_provider_candidates(args.value)) if args.key == "codex_fallback_model_providers" else args.value
-    )
+    value = ",".join(parse_codex_provider_candidates(args.value)) if args.key == "codex_model_providers" else args.value
     config[args.key] = value
+    if args.key == "codex_model_providers":
+        config.pop(_LEGACY_CODEX_PROVIDER_KEY, None)
     _save_config(config)
     _outcome.report_success(f"設定を更新した: {args.key}={value}")
     env_name = _config_env_name(args.key)

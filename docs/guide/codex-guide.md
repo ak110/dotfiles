@@ -129,13 +129,17 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 
 ### CodexのサブスクとAPI接続先
 
-サブスクだけを使う場合は、CodexへChatGPTログインし、`model_provider`を省略するか`"openai"`にする。
-`atk config set codex_fallback_model_providers ''`で自動移行を無効にする（初期値も空）。
-サブスクとAPIを併用する場合は、独立したAPI認証を使う接続先をCodexの`config.toml`へ定義する。
+`agents_server`の接続先の選択順は、`atk config`の`codex_model_providers`だけで指定する。
+新キーが未設定で旧キーの保存値と旧環境変数もない場合は、Codexの`config.toml`の実効`model_provider`と認証に従い、APIへ自動移行しない。
+新キーへ空文字列を保存し、新環境変数を解除した場合も同じ動作になる。
+旧設定だけが残る場合は、後述の手順で新しい設定へ移行する。
+列を指定した場合は先頭を優先し、後続を代替接続先として使う。Codex側の`model_provider`を同時に変更する必要はない。
+
+サブスクだけを使う場合はCodexへChatGPTログインし、通常設定の`model_provider`を省略するか`"openai"`にする。
+`atk config set codex_model_providers ''`で通常設定へ戻せる。
+サブスクとAPIを併用する場合は、APIの定義だけをCodexの`config.toml`へ置く。
 
 ```toml
-model_provider = "openai"
-
 [model_providers.custom]
 name = "my-server"
 base_url = "https://my-server.example.com/v1"
@@ -144,24 +148,38 @@ env_key = "MY_SERVER_API_KEY"
 requires_openai_auth = false
 ```
 
-APIキーを環境変数`MY_SERVER_API_KEY`へ設定してからホストを起動し、
-`atk config set codex_fallback_model_providers 'custom'`で利用上限時の移行先を指定する。
-複数なら`'custom,another'`のようにASCIIカンマで希望順に並べる。前後空白は除かれ、重複は一度だけ試す。
-空要素は受理しない。`atk config get codex_fallback_model_providers`で実効値を確認できる。
-`AGENT_TOOLKIT_CONFIG_CODEX_FALLBACK_MODEL_PROVIDERS`の空でない値は保存値より優先されるため、
-解除時はこの変数も外す。provider定義のIDと設定値を揃える。
+APIキーを環境変数`MY_SERVER_API_KEY`へ設定してホストを起動し、次のコマンドで選択順を指定する。
+ChatGPTのtokenをAPIキーとして使わない。接続先の定義と認証はCodexが所有し、atkへ複製しない。
 
-APIだけを使う場合も、上のprovider定義とAPIキーの環境変数が必要である。
-`model_provider`を`"custom"`へ変更し、API移行先の設定`codex_fallback_model_providers`は空のままにする。
-標準OpenAI providerをAPIキー認証で使う場合もCodexの認証選択をそのまま使う。
-API主接続を設定した環境でChatGPTログインを試すことはない。
+```bash
+atk config set codex_model_providers 'openai,custom'
+atk config get codex_model_providers
+```
 
-自動移行は`agents_server`がCodexへ解決した全`mode`とその会話の継続にだけ作用する。
-直接起動のCodex、`atk run-skill`と`atk wi process-loop`には作用しない。
-サブスクの利用枠が使えない現在値または終端した利用上限失敗で、設定順に独立したAPI候補を試す。
-回復後は新規sessionだけサブスクへ戻り、既にAPIへ移った会話は設定解除・保持期限・stop・
-サーバー再起動を跨ぐ再開でも同じAPIを使う。API側の利用料金は接続先の課金規則に従い、継続にも発生する。
-切替の診断は人向けの`agents-server.log`へ記録し、委譲元の応答や継続指示へは追加しない。
+ChatGPTログインの`openai`を先に使い、確定した利用上限で`custom`へ同じ会話を移す。
+APIだけを使う場合は`atk config set codex_model_providers 'custom'`とする。
+APIを優先して別のAPIへ代替する場合は`'custom,another'`とし、各IDをCodexへ定義する。
+標準OpenAI providerをAPIキー認証で使う場合はCodexの既存の認証選択に従う。
+API会話からChatGPTへは戻さない。API主接続の認証・モデル不受理等も、後続APIだけを順に一度ずつ試す。
+
+前後空白と重複を除き、空要素とID内空白は拒否する。
+未定義または独立したAPI認証のない候補は除外し、全候補が使えなければ失敗で終端する。
+指定外の通常接続は候補として使わない。
+`AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS`の空でない値は保存値より優先するため、解除時はこの変数も外す。
+
+旧キー`codex_fallback_model_providers`の保存値だけがある場合は、最初の新規Codex起動でその作業ディレクトリの
+実効主接続先を旧列の先頭へ補い、新キーへ自動移行する。空の旧値は空の新値へ移る。
+新キーを明示した場合はその値を優先し、旧保存キーを除く。旧キーへのset/getは置換先を案内して拒否する。
+移行前のget/showでは移行待ちを表示する。旧環境変数`AGENT_TOOLKIT_CONFIG_CODEX_FALLBACK_MODEL_PROVIDERS`だけがある場合も
+同じ形で解釈するが、外側の環境は書き換えず保存値にも転記しない。ホスト環境の変数名と値を新形式へ置き換える。
+旧環境変数は明示した新設定を上書きしない。
+
+適用先は`agents_server`がCodexへ解決した全`mode`とその会話の継続である。
+直接Codex、`atk run-skill`、`atk wi process-loop`の起動設定は変えない。
+現在アカウントの確定した利用枠不使用、または終端した利用上限失敗だけでサブスクからAPIへ移す。
+回復後は新規sessionだけが指定列の先頭へ戻り、既存API会話は列変更・設定解除・保持期限・stop・
+サーバー再起動を跨ぐ再開でも選択済みAPIを使う。API料金は接続先の課金規則に従い、継続にも発生する。
+切替の診断は人向けの`agents-server.log`へ記録し、委譲元の応答や継続指示へ加えない。
 
 ## フックの信頼確認
 

@@ -31,7 +31,15 @@ class ProviderSelection:
 
 def configured_candidates() -> tuple[str, ...]:
     """atkの変更可能設定を接続先列として解決する。"""
-    return atk_config.parse_codex_provider_candidates(atk_config.resolve_mutable_setting("codex_fallback_model_providers"))
+    legacy = atk_config.legacy_codex_provider_setting()
+    if legacy is not None:
+        return legacy[0]
+    return atk_config.parse_codex_provider_candidates(atk_config.resolve_mutable_setting("codex_model_providers"))
+
+
+def has_provider_configuration() -> bool:
+    """明示列か旧形式の移行入力がある場合だけCodex設定を評価する。"""
+    return bool(configured_candidates()) or atk_config.legacy_codex_provider_setting() is not None
 
 
 def independent_api_auth(provider: dict[str, Any]) -> bool:
@@ -60,26 +68,41 @@ async def select(
     request: Callable[..., Awaitable[dict[str, Any]]], cwd: str, *, primary: str | None = None
 ) -> ProviderSelection:
     """cwdを含むCodex設定と現在の認証種別から接続先を選ぶ。"""
-    configured = configured_candidates()
     response = await request("config/read", {"cwd": cwd, "includeLayers": False})
     effective = response.get("config")
     if not isinstance(effective, dict):
         raise ValueError("Codexの実効接続先設定を取得できません")
     default = effective.get("model_provider") or "openai"
-    selected = primary or default
+    legacy = atk_config.legacy_codex_provider_setting()
+    configured = atk_config.migrate_codex_provider_setting(default)
+    if legacy is not None:
+        _LOG.info("Codex接続先設定を新しい優先順へ移行しました: source=%s", "saved" if legacy[1] else "environment")
+    selected = primary or (configured[0] if configured else default)
     providers = effective.get("model_providers", {})
     providers = providers if isinstance(providers, dict) else {}
     auth = await request("account/read", {"refreshToken": False})
     account = auth.get("account")
-    definition = providers.get(default, {})
-    requires_auth = definition.get("requires_openai_auth", default == "openai") if isinstance(definition, dict) else False
+    definition = providers.get(selected, {})
+    requires_auth = definition.get("requires_openai_auth", selected == "openai") if isinstance(definition, dict) else False
     subscription = bool(requires_auth and isinstance(account, dict) and account.get("type") == "chatgpt")
+
+    def usable_api(candidate: str) -> bool:
+        definition = providers.get(candidate)
+        if candidate == "openai" and isinstance(account, dict) and account.get("type") == "apiKey":
+            return True
+        return isinstance(definition, dict) and independent_api_auth(definition)
+
+    if primary is None and configured and not subscription and not usable_api(selected):
+        _LOG.info("Codex接続先を除外しました: provider=%s reason=undefined_or_no_independent_api_auth", selected)
+        selected = next((candidate for candidate in configured[1:] if usable_api(candidate)), "")
+        if not selected:
+            raise ValueError("Codexの指定した接続先に利用可能なAPI認証がありません")
+    remainder = configured[configured.index(selected) + 1 :] if primary is None and selected in configured else configured
     candidates = []
-    for candidate in configured:
-        provider = providers.get(candidate)
-        if candidate == selected or subscription and candidate == default:
+    for candidate in remainder:
+        if candidate == selected:
             continue
-        if not isinstance(provider, dict) or not independent_api_auth(provider):
+        if not usable_api(candidate):
             _LOG.info("Codex接続先を除外しました: provider=%s reason=undefined_or_no_independent_api_auth", candidate)
             continue
         candidates.append(candidate)
