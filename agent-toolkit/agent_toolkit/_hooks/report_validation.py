@@ -25,10 +25,21 @@ _SCHEDULED_MARKERS = ("AWI登録予定:", "投入予定:")
 _LEGACY_IMPLEMENTED = re.compile(r"（同一セッションで実装済み:\s*[^）\s][^）]*）")
 _LEGACY_SCHEDULED = re.compile(r"（投入予定:\s*[^）\s][^）]*）")
 _IMPLEMENTED = re.compile(r"- 実装済み: (.+?); 根拠: (.+)")
-_NO_PREVENTION = re.compile(r"- 再発防止策なし: (.+?); 評価した案: (.+?); 採らない理由: (.+?); 反復: (.+)")
+_NO_PREVENTION = re.compile(
+    r"- 再発防止策なし: (.+?); Q影響: (.+?); Qに影響しない根拠: (.+?); 評価した案: (.+?); 採らない理由: (.+?); 反復: (.+)"
+)
+"""`再発防止策なし`の行の欄。Q影響の欄の値と区分の定義は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」が持つ。"""
+_NO_PREVENTION_ALLOWED_Q = "なし"
+"""再発防止策なしで終えられるQ影響の欄の値。Qに影響する問題（判定が分かれる問題を含む）は策なしで終えられない。"""
 _CANDIDATE_ID = re.compile(r"(?<![0-9A-Za-z])c\d{4}(?![0-9])")
 _TRAILING_IDS = re.compile(r"[（(][^（）()]*(?<![0-9A-Za-z])c\d{4}[^（）()]*[）)]\s*$")
-_EXCLUSION_CATEGORIES = ("single-inquiry", "non-changing-request", "unexplained-refusal", "necessary-confirmation")
+_EXCLUSION_CATEGORIES = (
+    "single-inquiry",
+    "non-changing-request",
+    "unexplained-refusal",
+    "necessary-confirmation",
+    "own-secret-exposure",
+)
 """再発防止策が必須の候補を`判定済み`で見送るときに根拠の先頭へ書く除外区分。
 
 定義は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」が持つ。
@@ -99,6 +110,26 @@ def _measure_error(item: str) -> str | None:
     return f"行の先頭へ区分（AWI登録予定・AWI登録・AWI登録済み・実装済み）を書き、区分に応じた根拠を添える: {item}"
 
 
+def _no_prevention_errors(item: str) -> list[str]:
+    """`再発防止策なし`の行が、C・Dだけの問題であることを示すQ影響の欄と根拠を含む全ての欄を持つかを判定する。
+
+    判定は欄の値だけで行い、本文からQへの影響を推測しない。
+    """
+    fields = _NO_PREVENTION.fullmatch(_TRAILING_IDS.sub("", item).rstrip())
+    if fields is None or not all(value.strip() for value in fields.groups()):
+        return [
+            "再発防止策なしの行へQ影響・Qに影響しない根拠・評価した案・採らない理由・反復を"
+            f"`; Q影響: なし; Qに影響しない根拠: `の順の欄で書く: {item}"
+        ]
+    if fields.group(2).strip() != _NO_PREVENTION_ALLOWED_Q:
+        return [
+            "Qに影響する問題は再発防止策なしで終えられない。`agent-toolkit:bugfix`の`references/root-cause-analysis.md`"
+            "「QとC・Dの区別」に従って根本原因へ作用する手段を確定して`### 確定した問題と対策`へ書くか、"
+            f"成立する手段が無ければ未達として`未確定`の行で照会・再現・残る理由を書く: {item}"
+        ]
+    return []
+
+
 def _mandatory_errors(measures: list[str], skipped: list[str], prepare: dict[str, Any]) -> list[str]:
     """再発防止策が必須の候補を、確定した対策の行と許される見送りの行のいずれかで扱ったかを判定する。"""
     mandatory = prepare.get("mandatory_candidates")
@@ -130,7 +161,7 @@ def _mandatory_errors(measures: list[str], skipped: list[str], prepare: dict[str
             elif line.startswith("- 再発防止策なし: "):
                 records = [name for name in similar.get(candidate_id, []) if isinstance(name, str)]
                 fields = _NO_PREVENTION.fullmatch(_TRAILING_IDS.sub("", line).rstrip())
-                repeat = fields.group(4) if fields is not None else ""
+                repeat = fields.group(6) if fields is not None else ""
                 if records and not any(name in repeat for name in records):
                     errors.append(
                         f"再発防止策が必須の候補{candidate_id}の`再発防止策なし`の反復の欄へ、過去の同種記録"
@@ -161,9 +192,7 @@ def validate_report(text: str, stage: str, prepare: dict[str, Any] | None = None
             if fields is None or not all(value.strip() for value in fields.groups()):
                 errors.append(f"未確定行へ照会・再現・残る理由を書く: {item}")
         elif item.startswith("- 再発防止策なし: "):
-            fields = _NO_PREVENTION.fullmatch(_TRAILING_IDS.sub("", item).rstrip())
-            if fields is None or not all(value.strip() for value in fields.groups()):
-                errors.append(f"再発防止策なしの行へ評価した案・採らない理由・反復を書く: {item}")
+            errors.extend(_no_prevention_errors(item))
     if stage in {"review-preview", "review-result"} and prepare is not None:
         errors.extend(_mandatory_errors(measures, skipped, prepare))
     if stage == "review-submission" and has_scheduled(text):
