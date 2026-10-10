@@ -437,6 +437,12 @@ warn_redundant_casts = true
 warn_unused_configs = true
 show_error_codes = true
 
+[tool.ty.analysis]
+# zstandardはPython 3.14未満だけへ導入する依存であり、3.15で行う静的検査の環境には存在しない。
+# tyは解析する版をrequires-pythonの下限（3.13）とするため、3.13向けの分岐のimportを解決しようとする。
+# 行内の`ty: ignore`はzstandardを導入済みの環境で未使用の抑制として警告されるため、ここで許可する。
+allowed-unresolved-imports = ["zstandard"]
+
 [tool.typos.default.extend-words]
 # gitエイリアス名（ba = branch --all）・CSSクラス名（.pl-ba）
 ba = "ba"
