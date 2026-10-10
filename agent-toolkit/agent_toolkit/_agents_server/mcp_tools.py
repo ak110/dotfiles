@@ -27,6 +27,7 @@ from agent_toolkit._agents_server.tool_descriptions import (
     EXTRA_PARAMS_DESCRIPTION,
     KIND_MCP_INSTRUCTIONS,
     LABEL_DESCRIPTION,
+    LIGHTWEIGHT_MODE_SELECTION,
     MODE_DESCRIPTION,
     MODEL_TYPE_DESCRIPTION,
     PROMPT_DESCRIPTION,
@@ -75,6 +76,9 @@ mcp = AgentsServerMCP(
         "`Agent`ツールを使う場合は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める。\n"
         "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業、自由本文の委譲、読み取り専用の探索、"
         "確定済みの書込、コマンド実行を選ぶ。入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
+        f"{LIGHTWEIGHT_MODE_SELECTION}\n"
+        "task・delegate: 独立した文脈での評価、モデルの使い分けまたは並列化の利益がある作業を委譲する。"
+        "要否の判定は`agent-toolkit:delegation`の`references/routing.md`「要否判定」に従う。\n"
         "終端と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
         "`wait`はsession_idの位置引数を取らず、登録済みsessionの終端を待ち、応答の時点で終端したsessionの結果を返す。"
         "返った結果はその場で処理し、残りのsessionは同じコマンドを再発行して待つ。"

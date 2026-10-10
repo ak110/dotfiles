@@ -25,7 +25,7 @@ Codexネイティブ委譲は`spawn_agent`で起動し、`send_message`は稼働
 
 ## agents_serverの起動
 
-agents_serverの`start`（全`mode`）はCodexネイティブ委譲とは別の仕組みであり、対応する`model_type`からengine、modelおよびeffortを解決する。通常起動の`start`（`task`の通常起動と`delegate`）は`_agents_server/launch_prompts.py`が共通の`rules-subagent.md`をsystem promptへ加える。軽量な探索・書込・shell実行へ届く規範は`agent-toolkit:writing-standards`の`references/delivery-scope.md`の配送範囲表が示し、そこで届かない制約は委譲プロンプトが持つ。可用性失敗時の候補切替はサーバーへ委ね、委譲元の起動は最初の1回に限る。継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start`の`shell`、読取専用探索は`start`の`explore`を使い、`start`の説明が示す採算の目安に従う。
+agents_serverの`start`（全`mode`）はCodexネイティブ委譲とは別の仕組みであり、対応する`model_type`からengine、modelおよびeffortを解決する。通常起動の`start`（`task`の通常起動と`delegate`）は`_agents_server/launch_prompts.py`が共通の`rules-subagent.md`をsystem promptへ加える。軽量な探索・書込・shell実行へ届く規範は`agent-toolkit:writing-standards`の`references/delivery-scope.md`の配送範囲表が示し、そこで届かない制約は委譲プロンプトが持つ。可用性失敗時の候補切替はサーバーへ委ね、委譲元の起動は最初の1回に限る。継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start`の`shell`、読取専用探索は`start`の`explore`を使い、agents_serverのserver instructionsが示す採算の目安に従う。
 
 工程別モデル設定のキーを持つ工程は`runtime-routing.md`でengineを解決する。`engine=claude`をCodexの`spawn_agent`へ置換せず、CodexからClaudeへは対応する`model_type`でagents_serverを使う。指定engineの実行手段がなければ同書の未完了として返すか、続行できない理由を返す。
 

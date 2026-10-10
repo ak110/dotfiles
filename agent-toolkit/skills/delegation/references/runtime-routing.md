@@ -184,7 +184,7 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 
 ## 実装担当とworktree
 
-- 書込主体の交代は`references/mandatory-rules.md`、同じレーンの一時的な文単位修正群の分割と統合は`references/routing.md`「委譲単位の確定」が定める
+- 同じworktreeの書込の分担と交代は`references/mandatory-rules.md`「作業ツリーの保護」、同じレーンの一時的な内部群の分割と統合は`references/routing.md`「委譲単位の確定」が定める
 - レーン担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する。
   新規レビュー修正担当を起動する場合はレーン担当の終端確認後に修正の引き継ぎ記録と現行のdirty差分を比べて渡す。同一threadを継続する場合は書込主体が変わらないため終端確認を要さない
 - 作業ディレクトリの渡し方と委譲先の解決、git操作の形は`references/sending.md`「起動と観測」に従う
