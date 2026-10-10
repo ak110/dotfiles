@@ -1138,8 +1138,10 @@ async def test_add_choice_requires_two_options(tmp_path: pathlib.Path, monkeypat
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("state_name", ["inbox", "hold"])
+@pytest.mark.parametrize("kind", ["awi", "uwi"])
 @pytest.mark.parametrize(
-    "deadline,expected",
+    "deadline,awi_expected",
     [
         ("2099-01-02T03:04:00+09:00", "2099-01-02T03:04:00+09:00"),
         ("2020-01-02T03:04:00Z", "2020-01-02T03:04:00+00:00"),
@@ -1149,18 +1151,30 @@ async def test_add_choice_requires_two_options(tmp_path: pathlib.Path, monkeypat
         (None, None),
     ],
 )
-async def test_entries_cooldown_conditions(tmp_path: pathlib.Path, deadline: str | None, expected: str | None) -> None:
-    """一覧と詳細APIは同じ期限値を返し、不正値をnullにする。保存状態は変えない。"""
-    (tmp_path / "inbox").mkdir()
+async def test_entries_cooldown_conditions(
+    tmp_path: pathlib.Path,
+    state_name: str,
+    kind: str,
+    deadline: str | None,
+    awi_expected: str | None,
+) -> None:
+    """一覧と詳細APIは冷却期限をAWIの有効な日時だけで返し、保存値と保存状態は詳細から読める。
+
+    UWIへ有効な日時を返すと、着手可否判定が不正期限とする項目を画面が冷却中と示す。
+    """
+    (tmp_path / state_name).mkdir()
     cooldown_line = f"cooldown_until: '{deadline}'\n" if deadline is not None else ""
-    (tmp_path / "inbox" / "cool.md").write_text(f"---\ntype: awi\n{cooldown_line}---\n\n# 冷却\n", encoding="utf-8")
+    (tmp_path / state_name / "cool.md").write_text(f"---\ntype: {kind}\n{cooldown_line}---\n\n# 冷却\n", encoding="utf-8")
     client = _serve_app(tmp_path).test_client()
-    listed = await (await client.get("/api/entries?status=inbox&period=all")).get_json()
-    detail = await (await client.get("/api/entries/inbox/cool.md")).get_json()
+    listed = await (await client.get(f"/api/entries?status={state_name}&period=all")).get_json()
+    expected = awi_expected if kind == "awi" else None
     assert len(listed["entries"]) == 1
     assert listed["entries"][0]["cooldown_until"] == expected
+    detail = await (await client.get(f"/api/entries/{state_name}/cool.md")).get_json()
     assert detail["entry"]["cooldown_until"] == expected
-    assert detail["entry"]["state"] == "inbox"
+    assert detail["entry"]["state"] == state_name
+    stored = {item["key"]["value"]: item["value"] for item in detail["entry"]["frontmatter_entries"]}
+    assert stored.get("cooldown_until") == deadline
 
 
 @pytest.mark.asyncio

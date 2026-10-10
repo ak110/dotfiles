@@ -1428,7 +1428,10 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
 
 @pytest.mark.asyncio
 async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserHarness) -> None:
-    """期限だけの経過で一覧・読み上げ・開いた詳細と削除確認の表示を戻す。"""
+    """AWIは期限だけの経過で一覧・読み上げ・開いた詳細と削除確認の表示を戻し、UWIは期限によらず保存状態を示す。
+
+    冷却期限を適用するのはAWIだけである。UWIを冷却中と示すと、ユーザーの判断を待つ項目を時間経過で解消する待機として案内する。
+    """
     harness = browser_harness
     page = harness.page
     await page.clock.install(time=datetime.datetime(2099, 1, 2, tzinfo=datetime.UTC))
@@ -1448,7 +1451,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     assert warning_text is not None
     style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
     normal = page.locator('.entry-select[data-key="inbox/normal.md"] .state-badge')
-    for filename in ["verify.md", "plain.md", "question.md"]:
+    for filename in ["verify.md", "plain.md"]:
         row = page.locator(f'.entry-select[data-key="inbox/{filename}"]')
         badge = row.locator(".state-badge")
         await playwright.async_api.expect(badge).to_have_text("cooldown")
@@ -1457,8 +1460,13 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
         await playwright.async_api.expect(badge).to_have_attribute("title", "解除日時: 2099/01/02 09:00 JST")
         assert "cooldown" in (await row.get_attribute("aria-label") or "").split("、")
         await playwright.async_api.expect(row).to_have_attribute("aria-label", re.compile("解除日時: 2099/01/02 09:00 JST"))
-    await page.set_viewport_size({"width": 320, "height": 720})
     question = page.locator('.entry-select[data-key="inbox/question.md"]')
+    await playwright.async_api.expect(question.locator(".state-badge")).to_have_text("inbox")
+    assert await question.locator(".state-badge").get_attribute("title") is None
+    question_label = await question.get_attribute("aria-label") or ""
+    assert "cooldown" not in question_label.split("、")
+    assert "解除日時:" not in question_label
+    await page.set_viewport_size({"width": 320, "height": 720})
     # 各バッジの境界が狭幅の行内に収まり、内容も切り詰められない。
     assert await question.locator(".status-cell").evaluate("""status => {
         const row = status.closest('.entry-select').getBoundingClientRect();
@@ -1471,11 +1479,19 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     await question.focus()
     await page.keyboard.press("Enter")
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("2099/01/02 09:00 JST")
-    await page.keyboard.press("Escape")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / inbox")
+    # 保存済みの期限は詳細のメタデータに保存値のまま残り、解除日時としては示さない。
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text(deadline)
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).not_to_contain_text("2099/01/02 09:00 JST")
+    await detail.locator("#delete-button").click()
+    deletion = page.get_by_role("dialog", name="削除の確認")
+    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("uwi / inbox")
+    await deletion.locator("#delete-close-button").click()
+    await detail.locator("#detail-close-button").click()
     await page.locator('.entry-select[data-key="inbox/verify.md"]').click()
     detail = page.get_by_role("dialog", name="詳細")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / cooldown")
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("2099/01/02 09:00 JST")
     await detail.locator("#delete-button").click()
     deletion = page.get_by_role("dialog", name="削除の確認")
     await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("awi / cooldown")

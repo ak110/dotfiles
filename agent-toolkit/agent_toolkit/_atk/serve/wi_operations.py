@@ -169,7 +169,8 @@ def _entry(
     updated_at: str | None = None,
 ) -> dict[str, object]:
     answered = wi_uwi_scan.is_uwi_answered(text) if kind == wi_constants.WI_TYPE_UWI else None
-    cooldown = wi_readiness.parse_cooldown_until(metadata.get("cooldown_until"))
+    # 画面用の期限は着手可否判定と同じ適用条件で返す。保存値は詳細の`frontmatter_entries`が別に返す。
+    cooldown = wi_readiness.applicable_cooldown_until(kind, metadata.get("cooldown_until"))
     return {
         "kind": kind,
         "state": state,

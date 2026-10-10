@@ -281,9 +281,14 @@ def _parse_legacy_recheck_after(value: object) -> datetime.datetime | None:
     return parsed if parsed.tzinfo is not None else None
 
 
-def parse_cooldown_until(value: object) -> datetime.datetime | None:
-    """再処理抑制期限をaware datetimeとして返す。"""
-    if not isinstance(value, str) or not value:
+def applicable_cooldown_until(kind: str | None, value: object) -> datetime.datetime | None:
+    """保存された再処理抑制期限のうち、冷却期限として適用できる日時を返す。
+
+    期限を適用するのはAWIだけとする。UWIはユーザーの判断を待つ項目であり、時間経過で解消する待機へ変えない。
+    AWI以外の種別、空・解析不能・タイムゾーンなしの値では`None`を返す。
+    着手可否判定と`atk serve`の画面用の期限はこの判定を共有し、日時の解析だけを再利用して種別の条件を省かない。
+    """
+    if kind != WI_TYPE_AWI or not isinstance(value, str) or not value:
         return None
     try:
         parsed = datetime.datetime.fromisoformat(value)
@@ -436,10 +441,7 @@ def calculate_readiness(
     for entry in active:
         if entry.frontmatter_broken or not entry.cooldown_present:
             continue
-        if entry.kind != WI_TYPE_AWI:
-            invalid_cooldowns.add(entry.filename)
-            continue
-        parsed_cooldown = parse_cooldown_until(entry.cooldown_until)
+        parsed_cooldown = applicable_cooldown_until(entry.kind, entry.cooldown_until)
         if parsed_cooldown is None:
             invalid_cooldowns.add(entry.filename)
         elif parsed_cooldown.astimezone(datetime.UTC) > now_utc:

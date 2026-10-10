@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from agent_toolkit._atk.serve import wi_operations
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
@@ -93,6 +94,35 @@ class TestReadiness:
         assert result.invalid_cooldowns == ("uwi.md",)
         assert not result.cooldown_pending
         assert result.actionable_count == 1
+
+    def test_readiness_and_serve_api_share_cooldown_applicability(self, tmp_path: pathlib.Path) -> None:
+        """同じ未来期限を持つAWIとUWIで、着手可否と画面用APIが同じ種別条件を使う。
+
+        画面用APIが日時の解析だけで期限を返すと、着手可否が不正期限とするUWIを画面が冷却中と示す。
+        """
+        deadline = "2099-01-02T00:00:10+00:00"
+        write_awi(tmp_path, "awi.md", cooldown_until=deadline)
+        write_uwi(tmp_path, "uwi.md")
+        uwi_path = tmp_path / "inbox/uwi.md"
+        uwi_path.write_text(
+            uwi_path.read_text(encoding="utf-8").replace("type: uwi\n", f"type: uwi\ncooldown_until: '{deadline}'\n"),
+            encoding="utf-8",
+        )
+
+        result = _wi_readiness.calculate_readiness(
+            tmp_path,
+            "github.com/example/repo",
+            now=datetime.datetime(2099, 1, 2, tzinfo=datetime.UTC),
+        )
+        entries, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"status": "inbox"})
+
+        assert result.cooldown_pending == ("awi.md",)
+        assert result.invalid_cooldowns == ("uwi.md",)
+        assert not warnings
+        assert {entry["filename"]: entry["cooldown_until"] for entry in entries} == {
+            "awi.md": deadline,
+            "uwi.md": None,
+        }
 
     def test_pending_cooldown_suppresses_existing_repairs_until_deadline(self, tmp_path: pathlib.Path) -> None:
         """期限前は既存修復診断を抑制し、期限到達後に再び有効化する。"""
