@@ -2,10 +2,14 @@
 
 本文全体（frontmatter含む）の正規表現検索・大文字小文字無視・各種フィルター
 （target-repo・type・status・answered・source）・該当0件時のexit 1・不正な正規表現時のexit 2の
-単体テストを集約する。共通ヘルパーは`atk_test.py`から再利用する。
+単体テストに加え、件数・ファイル名・要約の出力形式と固定文字列の検索が行の列挙と同じ項目選択へ
+作用することを確かめるテストを集約する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+import collections
+import json
 import pathlib
+import re
 import subprocess
 
 import pytest
@@ -358,3 +362,227 @@ class TestGrepInvalidRegex:
         assert "正規表現が不正です" in captured.err
         # 構文の確かめ方とエスケープを次の操作として続ける。
         assert "エスケープして再実行する" in captured.err.split("\n次の操作: ", 1)[1]
+
+
+def _run_wi(
+    argv: list[str],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[int | str | None, str, str]:
+    """`atk wi <argv>`を実行し、終了コード・標準出力・標準エラーを返す。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", *argv, "--skip-pull"], home=tmp_path)
+    captured = capsys.readouterr()
+    return exc_info.value.code, captured.out, captured.err
+
+
+def _write_output_form_queue(tmp_path: pathlib.Path) -> None:
+    """出力形式の検証用に、状態・種別・投入元・対象リポジトリ・回答状況の異なる項目を置く。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "multi.md", body="# 複数行の項目\n\nneedle first\nunrelated\nNeedle second\nneedle third")
+    _write_awi_file(notes, "single.md", body="# 1行の項目\n\nneedle only", source="session-review")
+    _write_awi_file(notes, "none.md", body="# 一致しない項目\n\nbar")
+    _write_awi_file(notes, "other-repo.md", target_repo="github.com/example/other", body="# 別リポジトリ\n\nneedle")
+    _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="needle unanswered")
+    _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="needle answered", answer="回答あり\n")
+    adopted_dir = notes / "adopted"
+    adopted_dir.mkdir()
+    _write_awi_file(notes, "adopted.md", body="# 終端済み\n\nneedle").rename(adopted_dir / "adopted.md")
+
+
+class TestGrepOutputForms:
+    """grepサブコマンド: 件数・ファイル名・要約の出力形式が行の列挙と同じ項目と一致行を扱う。
+
+    保証する契約は、各形式が行の列挙と同じ選択条件と行単位の一致判定で項目を選ぶことである。
+    形式ごとの処理が選択条件か一致判定を別に実装すると、行の列挙から数えた値と一致しなくなる。
+    """
+
+    @pytest.mark.parametrize(
+        "condition",
+        [
+            ["needle", "--target-repo=all"],
+            ["needle", "--target-repo=all", "--state=all"],
+            ["needle", "--target-repo=all", "--type=awi"],
+            ["needle", "--target-repo=all", "--type=uwi", "--answered=no"],
+            ["needle", "--target-repo=all", "--source=session-review"],
+            ["needle", "--target-repo=github.com/example/foo"],
+            ["needle", "--target-repo=all", "--ignore-case"],
+        ],
+    )
+    def test_grep_output_forms_match_default_selection(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        condition: list[str],
+    ) -> None:
+        """3形式の出力が行の列挙の項目ごとの行数と一致し、一致行の本文を含まない。"""
+        _write_output_form_queue(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        code, default_out, _ = _run_wi(["grep", *condition], tmp_path, capsys)
+        assert code == 0
+        default_lines = default_out.splitlines()
+        assert all(re.fullmatch(r"[^:]+\.md:\d+:.*", line) for line in default_lines)
+        expected_counts = collections.Counter(line.split(":", 1)[0] for line in default_lines)
+        expected_order = list(expected_counts)
+
+        for option in ("-c", "--count"):
+            code, out, _ = _run_wi(["grep", option, *condition], tmp_path, capsys)
+            assert code == 0
+            assert out.splitlines() == [f"{name}:{count}" for name, count in expected_counts.items()]
+
+        for option in ("-l", "--files-with-matches"):
+            code, out, _ = _run_wi(["grep", option, *condition], tmp_path, capsys)
+            assert code == 0
+            assert out.splitlines() == expected_order
+
+        code, out, _ = _run_wi(["grep", "--summary-only", *condition], tmp_path, capsys)
+        assert code == 0
+        records = [json.loads(line) for line in out.splitlines()]
+        assert [record["filename"] for record in records] == expected_order
+        assert {record["filename"]: record["match_count"] for record in records} == dict(expected_counts)
+        # 一致行の本文は返さない（UWIの要約は質問本文の先頭行のため、AWIの本文行で確かめる）。
+        assert "needle first" not in out
+
+    def test_grep_summary_matches_list_summary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--summary-only`の`filename`と`summary`は`atk wi list --summary-only`の同じ項目と同じ値になる。"""
+        _write_output_form_queue(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        code, list_out, _ = _run_wi(["list", "--summary-only", "--state=all", "--target-repo=all"], tmp_path, capsys)
+        assert code in (0, None)
+        list_summaries = {record["filename"]: record["summary"] for record in map(json.loads, list_out.splitlines())}
+        code, out, _ = _run_wi(["grep", "--summary-only", "needle", "--state=all", "--target-repo=all"], tmp_path, capsys)
+        assert code == 0
+        records = [json.loads(line) for line in out.splitlines()]
+        assert len(records) == 6
+        for record in records:
+            assert set(record) == {"filename", "summary", "match_count"}
+            assert record["summary"] == list_summaries[record["filename"]]
+
+    @pytest.mark.parametrize("option", ["-c", "--count", "-l", "--files-with-matches", "--summary-only"])
+    def test_grep_output_form_no_match_exits_1(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        option: str,
+    ) -> None:
+        """一致0件は行の列挙と同じく標準エラーの`該当0件: `と終了コード1になる。"""
+        _write_output_form_queue(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        code, out, err = _run_wi(["grep", option, "nonexistent", "--target-repo=all"], tmp_path, capsys)
+
+        assert code == 1
+        assert out == ""
+        assert any(line.startswith("該当0件: ") for line in err.splitlines())
+
+    @pytest.mark.parametrize(
+        "options",
+        [["-c", "-l"], ["--count", "--summary-only"], ["--files-with-matches", "--summary-only"]],
+    )
+    def test_grep_output_forms_are_mutually_exclusive(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        options: list[str],
+    ) -> None:
+        """2つの出力形式の併用は使い方の誤りとして終了コード2になる。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "grep", *options, "needle", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "not allowed with argument" in capsys.readouterr().err
+
+
+class TestGrepFixedStrings:
+    """grepサブコマンド: `-F`・`--fixed-strings`でPATTERNを文字そのものとして扱う。
+
+    保証する契約は、固定文字列の指定がパターンの解釈だけを変え、選択条件と出力は`-F`を指定しない場合と同じ処理を使うことである。
+    """
+
+    @staticmethod
+    def _write_queue(tmp_path: pathlib.Path) -> None:
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "bracket.md", body="text[1] 文字\ntext1 文字")
+        _write_awi_file(notes, "pipe.md", body="a|b\na only\nb only\nA|B")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="a|b in uwi")
+
+    @pytest.mark.parametrize("option", ["-F", "--fixed-strings"])
+    def test_grep_fixed_strings_matches_escaped_regex(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        option: str,
+    ) -> None:
+        """記号を含む語の固定文字列検索は、エスケープした正規表現と同じ行を返す。"""
+        self._write_queue(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        code, fixed_out, _ = _run_wi(["grep", option, "text[1] 文字"], tmp_path, capsys)
+        assert code == 0
+        escaped_code, escaped_out, _ = _run_wi(["grep", r"text\[1\] 文字"], tmp_path, capsys)
+        assert escaped_code == 0
+        assert fixed_out == escaped_out
+        assert fixed_out.splitlines() == ["bracket.md:6:text[1] 文字"]
+
+    def test_grep_fixed_strings_matches_literal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`-F`の`a|b`は文字列そのものに一致し、`-F`なしでは正規表現の選択として一致する。"""
+        self._write_queue(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        code, out, _ = _run_wi(["grep", "-F", "a|b", "--type=awi"], tmp_path, capsys)
+        assert code == 0
+        assert out.splitlines() == ["pipe.md:6:a|b"]
+
+        code, out, _ = _run_wi(["grep", "a|b", "--type=awi"], tmp_path, capsys)
+        assert code == 0
+        assert "pipe.md:7:a only" in out.splitlines()
+        assert "pipe.md:8:b only" in out.splitlines()
+
+    def test_grep_fixed_strings_with_ignore_case_and_filters(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`-F`と`-i`の併用は大文字小文字を無視し、`--type`は`-F`なしと同じ項目へ作用する。"""
+        self._write_queue(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        code, out, _ = _run_wi(["grep", "-F", "-i", "a|b", "--type=awi"], tmp_path, capsys)
+        assert code == 0
+        assert out.splitlines() == ["pipe.md:6:a|b", "pipe.md:9:A|B"]
+
+        code, out, _ = _run_wi(["grep", "-F", "-l", "a|b", "--type=uwi"], tmp_path, capsys)
+        assert code == 0
+        assert out.splitlines() == [f"{_FIXED_TIMESTAMP}-001.md"]
+
+    def test_grep_fixed_strings_no_match_exits_1(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`-F`で一致しない語は`該当0件: `と終了コード1になる。正規表現として不正な語もエラーにならない。"""
+        self._write_queue(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        code, out, err = _run_wi(["grep", "-F", "[invalid(regex"], tmp_path, capsys)
+
+        assert code == 1
+        assert out == ""
+        assert any(line.startswith("該当0件: ") for line in err.splitlines())
