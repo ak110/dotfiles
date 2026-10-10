@@ -4,6 +4,11 @@
 保存済み計画へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから追記し、`atk plans commit`で保存する。
 `--commit`と`--rewrite-map`の対応は、計画（`--handoff`では引き継ぎ記録）と同じディレクトリで同じstemの
 `<stem>.wi-commits.jsonl`へ短縮OIDで記録し、本文には進捗の行だけを追記する。
+
+進捗だけの追記は計画Markdownと`--completed-step`・`--result`を渡す。
+commit対応の記録は、これらに`--commit`・`--previous-head`・`--awi`・絶対パスの`--worktree`を加える。
+`--handoff`はcommit対応の記録・履歴更新・取得に使い、対象集合を`--allowed-awi`で渡す。
+引き継ぎ記録へ進捗だけを残す場合は、通常のファイル編集で更新する。
 """
 
 from __future__ import annotations
@@ -210,7 +215,13 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
 def main(argv: list[str] | None = None, *, description: str | None = None) -> int:
     """CLIから進捗ログの追記を開始する。`description`は別名の公開コマンドのヘルプ説明。"""
     parser = argparse.ArgumentParser(description=description or __doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("plan_file", type=pathlib.Path, metavar="PATH", help="更新する計画ファイルのパス")
+    parser.add_argument(
+        "plan_file",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="入力の計画Markdownのパス。--handoffでは引き継ぎ記録Markdown。"
+        "commit対応は同じstemのJSONLから読み、JSONL自体をこの位置引数には渡さない",
+    )
     parser.add_argument("--completed-step", help="完了した工程（記録時は必須）")
     parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
     operation = parser.add_mutually_exclusive_group()
@@ -233,9 +244,21 @@ def main(argv: list[str] | None = None, *, description: str | None = None) -> in
     operation.add_argument(
         "--get-commits", action="store_true", help="対象AWIの現在のcommit対応を短縮OIDのJSON Linesで取得する"
     )
-    parser.add_argument("--awi", action="append", help="対応する、または取得するAWIファイル名。反復指定")
-    parser.add_argument("--worktree", type=pathlib.Path, metavar="DIR", help="実装commitを確認する対象worktreeの絶対パス")
-    parser.add_argument("--handoff", action="store_true", help="計画なしの引き継ぎ記録について同じ対応を記録・取得する")
+    parser.add_argument(
+        "--awi", action="append", help="対応する、または取得するAWIファイル名。--commitと取得では必須。複数対象は反復指定"
+    )
+    parser.add_argument(
+        "--worktree",
+        type=pathlib.Path,
+        metavar="DIR",
+        help="commit対応の記録・履歴更新・取得で必須となる対象worktreeの絶対パス",
+    )
+    parser.add_argument(
+        "--handoff",
+        action="store_true",
+        help="計画なしの引き継ぎ記録についてcommit対応を記録・履歴更新・取得する。"
+        "--commit、--rewrite-mapまたは取得の操作と組で使う。進捗だけの追記は通常のファイル編集で行う",
+    )
     parser.add_argument("--allowed-awi", action="append", help="引き継ぎ記録の対象AWI全件。--handoffでは反復指定が必須")
     args = parser.parse_args(argv)
     failure_title = "commit対応を取得できません" if args.get_commits else "進捗ログを更新できません"

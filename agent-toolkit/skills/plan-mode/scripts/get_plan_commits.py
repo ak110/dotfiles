@@ -1,4 +1,10 @@
-"""計画または引き継ぎ記録と同じstemの対応記録ファイルから、AWIごとの現在の実装commitを短縮OIDのJSON Linesで取得する。"""
+"""計画または引き継ぎ記録のMarkdownを入力し、AWIごとの現在の実装commitを短縮OIDのJSON Linesで取得する。
+
+位置引数はMarkdownであり、同じstemのJSONLは対応データの保存先である。
+対象AWIを`--awi`、対象worktreeの絶対パスを`--worktree`で指定する。どちらも取得には必須。
+引き継ぎ記録では`--handoff`と、その記録の対象AWI全件の`--allowed-awi`も渡す。
+取得は記録を変更せず、`--completed-step`と`--result`は不要である。
+"""
 
 import sys
 
