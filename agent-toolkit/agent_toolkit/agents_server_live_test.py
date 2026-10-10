@@ -1,11 +1,16 @@
-"""agents_serverの実backendによるバックグラウンドタスク完了後の自動再開を検証する。"""
+"""agents_serverの実backendによる自動再開とCodex接続先の切替を検証する。"""
 
+import collections.abc
+import http.server
+import json
 import pathlib
+import threading
+from typing import Any
 
 import pytest
 
+from agent_toolkit._agents_server import codex_providers, mcp_tools
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import mcp_tools
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._testing import isolation
 
@@ -93,3 +98,227 @@ async def test_live_grandchild_wait_resumes_same_session(
         assert session.turn_seq == 2
     finally:
         await manager.close()
+
+
+# 擬似APIの接続先名とテスト用のAPIキーの環境変数。後続候補の判定（`codex_providers.independent_api_auth`）は
+# `env_key`の環境変数が設定済みであることを独立したAPI認証として扱う。
+_PRIMARY_PROVIDER = "pseudo_primary"
+_FALLBACK_PROVIDER = "pseudo_fallback"
+_PSEUDO_API_KEY_ENV = "AGENT_TOOLKIT_LIVE_TEST_PSEUDO_API_KEY"
+_SWITCH_TASK_MARKER = "PROVIDER_SWITCH_TASK"
+_PRE_SWITCH_RESPONSE = "PRE_SWITCH_RESPONSE"
+_ENCRYPTED_REASONING = "PSEUDO_ENCRYPTED_REASONING"
+_TOOL_CALL_ID = "call_provider_switch"
+# コマンドの実行結果にだけ現れる文字列。引数の文字列と区別するため、実行時に連結させる。
+_TOOL_OUTPUT = "PROVIDER_SWITCH_TOOL_OUTPUT"
+_TOOL_COMMAND = "printf 'PROVIDER_SWITCH_%s' TOOL_OUTPUT"
+_SWITCH_COMPLETED = "PROVIDER_SWITCH_COMPLETED"
+
+
+class _PseudoResponsesApi:
+    """loopbackだけで待ち受け、受けた`/responses`要求の本文を接続先ごとに記録するResponses API互換の擬似API。
+
+    主接続先はツール呼び出しを返し、その実行結果を含む要求へ利用上限のHTTP 429を返す。
+    後続接続先は最終応答を返してturnを完了させる。
+    応答の形はCodex CLI 0.162.1が解釈するResponses APIのSSEイベント
+    （`response.created`・`response.output_item.done`・`response.completed`）と、
+    同版が`usageLimitExceeded`へ分類する429本文（`error.type`が`usage_limit_reached`）に合わせる。
+    """
+
+    def __init__(self) -> None:
+        self.requests: list[tuple[str, dict[str, Any]]] = []
+        self._lock = threading.Lock()
+        api = self
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandlerが呼ぶ名前
+                parts = self.path.strip("/").split("/")
+                if len(parts) != 3 or parts[1:] != ["v1", "responses"]:
+                    self.send_error(404)
+                    return
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+                api.record(parts[0], body)
+                if parts[0] == _PRIMARY_PROVIDER and _has_item(body, "function_call_output"):
+                    payload = json.dumps(
+                        {"error": {"type": "usage_limit_reached", "message": "The usage limit has been reached"}}
+                    ).encode()
+                    self.send_response(429)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+                if parts[0] == _PRIMARY_PROVIDER:
+                    output = [
+                        {
+                            "type": "reasoning",
+                            "id": "rs_provider_switch",
+                            "summary": [],
+                            "encrypted_content": _ENCRYPTED_REASONING,
+                        },
+                        _assistant_message(_PRE_SWITCH_RESPONSE),
+                        _tool_call(body),
+                    ]
+                else:
+                    output = [_assistant_message(_SWITCH_COMPLETED)]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                events = [
+                    {"type": "response.created", "response": {"id": "resp_provider_switch"}},
+                    *({"type": "response.output_item.done", "item": item} for item in output),
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_provider_switch",
+                            "usage": {
+                                "input_tokens": 0,
+                                "input_tokens_details": None,
+                                "output_tokens": 0,
+                                "output_tokens_details": None,
+                                "total_tokens": 0,
+                            },
+                        },
+                    },
+                ]
+                for event in events:
+                    self.wfile.write(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n".encode())
+                self.wfile.flush()
+
+            def log_message(self, *args: Any, **kwargs: Any) -> None:
+                del args, kwargs
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def base_url(self, provider: str) -> str:
+        return f"http://127.0.0.1:{self.server.server_address[1]}/{provider}/v1"
+
+    def record(self, provider: str, body: dict[str, Any]) -> None:
+        with self._lock:
+            self.requests.append((provider, body))
+
+    def bodies(self, provider: str) -> list[dict[str, Any]]:
+        with self._lock:
+            return [body for name, body in self.requests if name == provider]
+
+    def __enter__(self) -> "_PseudoResponsesApi":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self._thread.join()
+
+
+def _has_item(body: dict[str, Any], item_type: str) -> bool:
+    return any(item.get("type") == item_type for item in body.get("input", []))
+
+
+def _assistant_message(text: str) -> dict[str, Any]:
+    return {
+        "type": "message",
+        "role": "assistant",
+        "id": f"msg_{text.lower()}",
+        "content": [{"type": "output_text", "text": text, "annotations": []}],
+    }
+
+
+def _tool_call(body: dict[str, Any]) -> dict[str, Any]:
+    """要求が公開したシェル系ツールの引数形式で、`_TOOL_COMMAND`を実行させる呼び出しを返す。"""
+    names = {tool.get("name") for tool in body.get("tools", [])}
+    if "exec_command" in names:
+        name, arguments = "exec_command", {"cmd": _TOOL_COMMAND}
+    elif "shell_command" in names:
+        name, arguments = "shell_command", {"command": _TOOL_COMMAND}
+    else:
+        name, arguments = "shell", {"command": ["bash", "-lc", _TOOL_COMMAND]}
+    return {"type": "function_call", "name": name, "arguments": json.dumps(arguments), "call_id": _TOOL_CALL_ID}
+
+
+def _message_texts(items: collections.abc.Iterable[dict[str, Any]], role: str) -> list[str]:
+    return [
+        "".join(part.get("text", "") for part in item.get("content", []))
+        for item in items
+        if item.get("type") == "message" and item.get("role") == role
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("share_package_caches")
+async def test_live_codex_provider_switch_resends_history(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    host_environ: collections.abc.Callable[[], dict[str, str]],
+) -> None:
+    """利用上限で失敗したCodex会話が同じthreadのまま後続接続先へ切り替わり、切替前の履歴を再送して完了する。
+
+    隔離した`CODEX_HOME`へ擬似APIを指す2つの接続先を置き、実際の`codex app-server`を`start`から起動する。
+    切替後の接続先が受けた最初の要求に、切替前の入力・応答・推論項目・ツール呼び出しと実行結果および続行指示が
+    含まれなければ、後続接続先は履歴を失った会話を続けることになる。
+    """
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    work = tmp_path / "work"
+    work.mkdir()
+    with _PseudoResponsesApi() as api:
+        providers = "".join(
+            f"""
+[model_providers.{name}]
+name = "{name}"
+base_url = "{api.base_url(name)}"
+wire_api = "responses"
+env_key = "{_PSEUDO_API_KEY_ENV}"
+requires_openai_auth = false
+request_max_retries = 0
+stream_max_retries = 0
+"""
+            for name in (_PRIMARY_PROVIDER, _FALLBACK_PROVIDER)
+        )
+        (codex_home / "config.toml").write_text(providers, encoding="utf-8")
+        # HOMEと設定ディレクトリは隔離したまま、PATH上の`codex`と`uv`だけを使えるようにする。
+        monkeypatch.setenv("PATH", host_environ()["PATH"])
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+        monkeypatch.setenv(_PSEUDO_API_KEY_ENV, "pseudo-api-key")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", f"{_PRIMARY_PROVIDER},{_FALLBACK_PROVIDER}")
+        monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "gpt-5.4", "low")])
+        manager = server_manager.AgentsServerManager()
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        try:
+            await mcp_tools.start(
+                str(work),
+                mode="delegate",
+                prompt=f"{_SWITCH_TASK_MARKER}: シェルでコマンドを1回実行して結果を報告せよ。",
+                model_type="low_tier",
+            )
+            result = await manager.wait()
+            # 待機上限へ達した応答は`running`を返すため、終端まで同じ待機を繰り返す。
+            for _ in range(10):
+                if result["status"] != "running":
+                    break
+                result = await manager.wait()
+        finally:
+            await manager.close()
+        primary = api.bodies(_PRIMARY_PROVIDER)
+        fallback = api.bodies(_FALLBACK_PROVIDER)
+
+    assert result["status"] == "completed", result
+    assert result["agent_message"].strip() == _SWITCH_COMPLETED, result
+    # 主接続先はツール実行結果を含む要求で上限に達した。
+    assert primary, api.requests
+    assert _has_item(primary[-1], "function_call_output"), primary[-1]
+    assert fallback, api.requests
+    items = fallback[0]["input"]
+    user_texts = _message_texts(items, "user")
+    assert any(_SWITCH_TASK_MARKER in text for text in user_texts), user_texts
+    assert _PRE_SWITCH_RESPONSE in _message_texts(items, "assistant"), items
+    assert any(item.get("type") == "reasoning" and item.get("encrypted_content") == _ENCRYPTED_REASONING for item in items), (
+        items
+    )
+    assert any(item.get("type") == "function_call" and item.get("call_id") == _TOOL_CALL_ID for item in items), items
+    outputs = [item for item in items if item.get("type") == "function_call_output" and item.get("call_id") == _TOOL_CALL_ID]
+    assert outputs, items
+    assert _TOOL_OUTPUT in json.dumps(outputs[0].get("output"), ensure_ascii=False), outputs
+    # 続行指示は切替前の履歴の後に置かれた最後のuser入力である。
+    assert codex_providers.CONTINUE_PROMPT in user_texts[-1], user_texts
