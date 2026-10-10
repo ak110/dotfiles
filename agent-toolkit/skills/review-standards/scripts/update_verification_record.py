@@ -12,6 +12,7 @@ import json
 import pathlib
 import shlex
 import subprocess
+import typing
 
 import check_exec_review_evidence as review
 import verification_results
@@ -117,22 +118,26 @@ def run(args: argparse.Namespace) -> None:
             plans,
         )
         requirement_units.append_missing_rows(payload, expected)
-    if direct:
-        updates = verification_results.updates_for_arguments(payload, args)
-        payload = verification_results.updated_payload(payload, None, results, updates=updates)
-    elif args.updates_file:
-        payload = verification_results.updated_payload(payload, args.updates_file, results)
-    elif updating:
-        rows = payload[args.section]
-        if not 1 <= args.row <= len(rows):
-            raise ValueError("--rowが対象配列に存在しません。--listで行番号と出所を確認する")
-        row = rows[args.row - 1]
-        if row["source"] != args.source:
-            raise ValueError("--sourceが指定行と一致しません。--listで行番号と出所を確認する")
-        value = args.evidence_file.read_text(encoding="utf-8").strip()
-        if not value:
-            raise ValueError("根拠ファイルが空です")
-        row["evidence"] = "\n".join(part for part in (row["evidence"], value) if part) if args.mode == "append" else value
+    if updating:
+        row_check = _row_check(args.plan)
+        if direct:
+            updates = verification_results.updates_for_arguments(payload, args)
+            payload = verification_results.updated_payload(payload, None, results, updates=updates, row_check=row_check)
+        elif args.updates_file:
+            payload = verification_results.updated_payload(payload, args.updates_file, results, row_check=row_check)
+        else:
+            rows = payload[args.section]
+            if not 1 <= args.row <= len(rows):
+                raise ValueError("--rowが対象配列に存在しません。--listで行番号と出所を確認する")
+            row = rows[args.row - 1]
+            if row["source"] != args.source:
+                raise ValueError("--sourceが指定行と一致しません。--listで行番号と出所を確認する")
+            value = args.evidence_file.read_text(encoding="utf-8").strip()
+            if not value:
+                raise ValueError("根拠ファイルが空です")
+            row["evidence"] = "\n".join(part for part in (row["evidence"], value) if part) if args.mode == "append" else value
+            if errors := row_check(args.section, args.row, row):
+                raise verification_results.reference_failure(errors)
     if generating or not args.list:
         atomic_write(args.output, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     if not args.list:
@@ -145,6 +150,38 @@ def run(args: argparse.Namespace) -> None:
                         {"section": section, "row": index, "original": row[field], "source": row["source"]}, ensure_ascii=False
                     )
                 )
+
+
+def _row_check(plan_paths: list[pathlib.Path]) -> typing.Callable[[str, int, dict[str, str]], list[str]]:
+    """保存する行の根拠へ返却前の確認と同じ参照の解決を適用し、解決できない参照の診断を返す関数を返す。
+
+    リポジトリの起点は生成と同じく計画の対象リポジトリ、無ければcwdのworktreeとする。
+    対象worktreeのHEADの追跡ファイルに加えて作業ツリーのファイルも受理する。
+    """
+    references = review.saving_reference_check(
+        lambda: _generation_repository([(str(plan), plan.read_text(encoding="utf-8")) for plan in dict.fromkeys(plan_paths)]),
+        worktree=True,
+    )
+    head = _head(references.repository)
+
+    def row_check(section: str, number: int, row: dict[str, str]) -> list[str]:
+        return references.row_errors(row, section, review.saved_row_label(row, section, number), head)
+
+    return row_check
+
+
+def _head(repository: pathlib.Path | None) -> str:
+    """参照を解決する対象worktreeのHEADを完全OIDで返す。commitが無い場合は作業ツリーだけで解決させる。"""
+    if repository is None:
+        return "HEAD"
+    result = git_command.run(
+        ["-C", str(repository), "rev-parse", "--verify", "HEAD^{commit}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    return result.stdout.strip() if result.returncode == 0 else "HEAD"
 
 
 def _generation_repository(plans: list[tuple[str, str]]) -> pathlib.Path:

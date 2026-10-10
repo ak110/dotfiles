@@ -2291,6 +2291,89 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     return repository, head, tmp_path / "evidence.json"
 
 
+def _pending_row(evidence: str = "") -> dict[str, list[dict[str, str]]]:
+    """判定欄が空の1行の記録を返す。"""
+    row = {**_condition(FIRST_WI, "完成"), "outcome": "", "evidence": evidence, "reviewed_head": ""}
+    return {"wi_conditions": [row], "user_requirements": []}
+
+
+def _judge_first_row(evidence: pathlib.Path, head: str, *extra: str) -> int:
+    """完成条件証拠の1行目を達成と判定し、同じ証拠へ保存する公開操作の終了コードを返す。"""
+    args = [str(evidence), "--select-row", "wi_conditions:1", "--row-outcome", "wi_conditions:1", "達成"]
+    args.extend(["--reviewed-head", head, "--mode", "replace", "--output", str(evidence), *extra])
+    return run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=args))
+
+
+@pytest.mark.parametrize("route", ["evidence-file", "verification-row"])
+@pytest.mark.parametrize(
+    ("text", "reference"),
+    [
+        ("{outside}、同dir/stdout.bin を確認した", "dir/stdout.bin"),
+        ("出力値はnested/note.mdだった", "nested/note.md"),
+        ("docs/new.md:1 の見出しを確認した", "docs/new.md:1"),
+        ("abc1234:docs/record.md の本文を確認した", "abc1234:docs/record.md"),
+    ],
+    ids=["same-dir", "plain-value", "worktree-only", "commit-path"],
+)
+def test_public_review_update_rejects_unresolved_references(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    route: str,
+    text: str,
+    reference: str,
+) -> None:
+    """判定記入は達成行の根拠を判定したcommitで解決し、解決できない参照を全件示して証拠を変えない。
+
+    `--evidence-file`の本文も`--verification-row`で継承する未判定根拠も同じ規則で確かめる。
+    作業ツリーだけにあるファイルは判定したcommitに無いため、未判定記録と異なり受理しない。
+    """
+    repository, head, evidence = reference_repository
+    (repository / "docs/new.md").write_text("# 新規\n", encoding="utf-8")
+    body = text.format(outside=repository.parent / ".cache/out.txt")
+    extra: list[str] = []
+    if route == "evidence-file":
+        evidence.write_text(json.dumps(_pending_row(), ensure_ascii=False), encoding="utf-8")
+        explanation = repository.parent / "explanation.txt"
+        explanation.write_text(body, encoding="utf-8")
+        extra = ["--evidence-file", str(explanation)]
+    else:
+        evidence.write_text(json.dumps(_pending_row(), ensure_ascii=False), encoding="utf-8")
+        pending = repository.parent / "pending.json"
+        pending.write_text(json.dumps(_pending_row(body), ensure_ascii=False), encoding="utf-8")
+        extra = ["--verification-record", str(pending), "--verification-row", "wi_conditions:1", "wi_conditions:1"]
+    before = evidence.read_bytes()
+    capsys.readouterr()
+    assert _judge_first_row(evidence, head, *extra) == 1
+    assert evidence.read_bytes() == before
+    error = capsys.readouterr().err
+    assert f"{FIRST_WI}: wi_conditions[0]（行番号1）.evidence: 参照『{reference}』" in error
+    assert "記録を変更していません" in error
+
+
+def test_public_saved_evidence_passes_return_check(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """保存操作が受理した根拠を達成とした証拠は、同じcommitの返却前の確認で参照の所在のエラーを返さない。"""
+    repository, head, evidence = reference_repository
+    pending = repository.parent / "pending.json"
+    pending.write_text(json.dumps(_pending_row(), ensure_ascii=False), encoding="utf-8")
+    observation = repository.parent / "observation.txt"
+    observation.write_text(f"{repository.parent / '.cache/out.txt'}と docs/record.md:3 の本文を確認した", encoding="utf-8")
+    source = _pending_row()["wi_conditions"][0]["source"]
+    record_args = ["--output", str(pending), "--section", "wi_conditions", "--row", "1", "--source", source]
+    record_args.extend(["--evidence-file", str(observation), "--mode", "replace"])
+    assert run_script.dispatch(argparse.Namespace(script_name="verification-record", script_args=record_args)) == 0
+    evidence.write_text(json.dumps(_pending_row(), ensure_ascii=False), encoding="utf-8")
+    inherit = ["--verification-record", str(pending), "--verification-row", "wi_conditions:1", "wi_conditions:1"]
+    assert _judge_first_row(evidence, head, *inherit) == 0
+    capsys.readouterr()
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=[str(evidence), FIRST_WI, "--expected-head", head]
+    )
+    assert run_script.dispatch(args) == 0
+    assert "参照『" not in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("operation", ["template", "check", "return", "none", "batch"])
 def test_non_git_cwd_guides_same_arguments_to_target_worktree(
     tmp_path: pathlib.Path,

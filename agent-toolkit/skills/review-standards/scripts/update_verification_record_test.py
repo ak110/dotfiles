@@ -287,6 +287,97 @@ def test_public_record_rejects_invalid_update_without_write(
     assert "次の操作:" in capsys.readouterr().err
 
 
+def _reference_record(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[pathlib.Path, str, pathlib.Path]:
+    """追跡ファイル・作業ツリーだけのファイル・リポジトリ外の記録を持つ対象worktreeで、未判定記録を生成する。"""
+    repository = git_repository.init_repository(
+        tmp_path / "repo", files={"docs/tracked.md": "# 記録\n本文\n"}, commit_message="基準"
+    )
+    # 作業ツリーにだけある未commitのファイル。実装担当は未commitの状態で結果を記録する。
+    (repository / "docs/new.md").write_text("# 新規\n", encoding="utf-8")
+    saved = tmp_path / "saved"
+    saved.mkdir()
+    (saved / "record.json").write_text("{}\n", encoding="utf-8")
+    monkeypatch.chdir(repository)
+    record = tmp_path / "pending.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    source = json.loads(record.read_text(encoding="utf-8"))["user_requirements"][0]["source"]
+    return record, source, saved
+
+
+def _update_route(route: str, record: pathlib.Path, source: str, evidence: pathlib.Path) -> list[str]:
+    """未判定記録の3つの更新方法（`--select-row`、`--updates-file`、従来の`--section`・`--row`）で、1行目へ根拠を追記する引数を返す。"""
+    if route == "select-row":
+        return [
+            "--output",
+            str(record),
+            "--select-row",
+            "user_requirements:1",
+            "--evidence-file",
+            str(evidence),
+            "--mode",
+            "append",
+        ]
+    if route == "updates-file":
+        update = {"section": "user_requirements", "row": 1, "source": source, "evidence_file": str(evidence), "mode": "append"}
+        return ["--output", str(record), "--updates-file", str(_json(evidence.with_suffix(".json"), [update]))]
+    return [
+        *("--output", str(record), "--section", "user_requirements", "--row", "1", "--source", source),
+        *("--evidence-file", str(evidence), "--mode", "append"),
+    ]
+
+
+@pytest.mark.parametrize("route", ["select-row", "updates-file", "legacy"])
+@pytest.mark.parametrize(
+    ("text", "reference"),
+    [
+        ("{saved}/record.json、同dir/stdout.bin を確認した", "dir/stdout.bin"),
+        ("出力値はnested/note.mdだった", "nested/note.md"),
+    ],
+    ids=["same-dir", "plain-value"],
+)
+def test_public_update_rejects_unresolved_references(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    route: str,
+    text: str,
+    reference: str,
+) -> None:
+    """返却前の確認が拒否する参照を、未判定記録の3つの更新方法が保存の時点で全件示して拒否し、記録を変えない。
+
+    `nested/note.md`は追跡ファイルにも作業ツリーにも無い値であり、地の文の値を参照として扱う検出条件は変えない。
+    """
+    record, source, saved = _reference_record(tmp_path, monkeypatch)
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(text.format(saved=saved), encoding="utf-8")
+    before = record.read_bytes()
+    capsys.readouterr()
+    assert _run(*_update_route(route, record, source, evidence)) == 1
+    assert record.read_bytes() == before
+    error = capsys.readouterr().err
+    assert f"user_requirements[0]（行番号1）.evidence: 参照『{reference}』" in error
+    assert "`evidence`のファイル参照は、対象worktreeのルートからの相対パスか絶対パスで書き" in error
+    assert "直すのはその行の`evidence`だけ" in error
+    assert "次の操作:" in error
+
+
+@pytest.mark.parametrize("route", ["select-row", "updates-file", "legacy"])
+@pytest.mark.parametrize(
+    "text",
+    ["保存結果は{saved}/record.jsonにある", "docs/tracked.md:2 の本文を確認した", "docs/new.md:1 の見出しを確認した"],
+    ids=["absolute", "tracked", "worktree-only"],
+)
+def test_public_update_accepts_resolved_references(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, route: str, text: str
+) -> None:
+    """絶対パスの実在ファイル、HEADの追跡ファイル、作業ツリーだけにあるファイルの参照は保存する。"""
+    record, source, saved = _reference_record(tmp_path, monkeypatch)
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(text.format(saved=saved), encoding="utf-8")
+    assert _run(*_update_route(route, record, source, evidence)) == 0
+    assert json.loads(record.read_text(encoding="utf-8"))["user_requirements"][0]["evidence"] == text.format(saved=saved)
+
+
 @pytest.mark.parametrize("cwd_kind", ["outside", "other"])
 @pytest.mark.parametrize("mode", ["plan-wi", "plan-user", "mixed"])
 def test_public_generation_uses_plan_repository_from_other_cwd(
@@ -568,8 +659,11 @@ def test_public_run_diagnostics_roundtrip(tmp_path: pathlib.Path, capsys: pytest
 
 
 @pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
-def test_public_results_summary_and_selection(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
+def test_public_results_summary_and_selection(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
     """状態・基準差の識別子から必要な詳細だけを読み、両コマンドで選択結果を記入する。"""
+    monkeypatch.chdir(tmp_path)
     baseline = _saved_trial(tmp_path, "def test_old():\n    assert True\ndef test_changed():\n    assert True\n", "baseline")
     current = _saved_trial(
         tmp_path,
@@ -766,9 +860,10 @@ def _json(path: pathlib.Path, value: object) -> pathlib.Path:
 
 @pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
 def test_public_selected_row_imports_saved_results_without_transcribing_source(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
 ) -> None:
     """保存XMLを直接指定し、同文別出所の一方だけを更新して不正行の部分保存を拒否する。"""
+    monkeypatch.chdir(tmp_path)
     trial = _saved_trial(tmp_path, "def test_saved():\n    assert True\n", "selected")
     pending = tmp_path / "pending.json"
     assert _run("--output", str(pending), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
@@ -893,6 +988,9 @@ def _saved_trial(tmp_path: pathlib.Path, text: str, name: str) -> dict[str, str]
         _git(tmp_path, "commit", "--allow-empty", "--no-verify", "-m", "基準")
     trial = tmp_path / "trial_test.py"
     trial.write_text(text, encoding="utf-8")
+    # 根拠へ写す試験名のファイルを、判定記入と返却前の確認が解決する版の追跡ファイルにする。
+    _git(tmp_path, "add", "trial_test.py")
+    _git(tmp_path, "commit", "--allow-empty", "--no-verify", "--quiet", "-m", name)
     xml = tmp_path / f"{name}.xml"
     result = _saved_command(
         tmp_path,
@@ -912,9 +1010,10 @@ def _saved_trial(tmp_path: pathlib.Path, text: str, name: str) -> dict[str, str]
 
 
 def test_public_import_uses_junit_states_and_updates_selected_rows(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """実XMLの状態・クラス・パラメーターと基準版との差を公開操作で関連付ける。"""
+    monkeypatch.chdir(tmp_path)
     before = _saved_trial(tmp_path, "def test_old():\n    assert True\ndef test_changed():\n    assert True\n", "before")
     after = _saved_trial(
         tmp_path,
