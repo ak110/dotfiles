@@ -252,6 +252,35 @@ def test_initial_apply_failure_preserves_child_output_and_stops_update(
     assert sum("update-ref" in arguments for arguments in calls) == 1
 
 
+@pytest.mark.parametrize(("old_pin", "expected"), [("3.13\n", "3.13"), (None, None)])
+def test_initial_apply_pins_old_python_version(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, old_pin: str | None, expected: str | None
+) -> None:
+    """初期適用だけ旧commitの`.python-version`へ固定し、更新は固定せずに実行する。"""
+    uv = tmp_path / "uv"
+    uv.write_bytes(b"test-uv")
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _name: str(uv))
+    monkeypatch.delenv("UV_PYTHON", raising=False)
+    child_envs: dict[str, dict[str, str]] = {}
+
+    def runner(arguments, **kwargs):
+        if "ls-tree" in arguments:
+            return subprocess.CompletedProcess(arguments, 0, stdout=".python-version\n" if old_pin else "", stderr="")
+        if "old-oid:.python-version" in arguments:
+            assert old_pin is not None
+            return subprocess.CompletedProcess(arguments, 0, stdout=old_pin, stderr="")
+        if arguments[0] == "chezmoi":
+            child_envs["initial"] = kwargs["env"]
+        elif arguments[0] in {"bash", "cmd.exe"}:
+            child_envs["upgrade"] = kwargs["env"]
+        return _git_answers(arguments)
+
+    upgrade.run_upgrade_check(tmp_path, "linux", runner=runner, profile_env=_profile_env(tmp_path))
+
+    assert child_envs["initial"].get("UV_PYTHON") == expected
+    assert "UV_PYTHON" not in child_envs["upgrade"]
+
+
 def test_verify_updated_oid_rejects_mismatch() -> None:
     """更新後OIDが検証開始時の現行OIDと異なる場合は失敗する。"""
     with pytest.raises(upgrade.UpgradeCheckError, match="expected=current actual=other"):
