@@ -1,4 +1,5 @@
 import type { On } from "claude-code";
+import { automatedMessage } from "./automated_message.ts";
 
 const TOOL_NAME = "compact_conversation";
 
@@ -40,7 +41,7 @@ export function register(on: On): void {
         pending = false;
       } catch (error) {
         pending = false;
-        await $.prompt.submit({ text: `会話圧縮の予約実行に失敗した。予約状態は解除済みで再予約できる。原因: ${String(error)}` });
+        await $.prompt.submit({ text: automatedMessage("compact-conversation", "warn", `会話圧縮の予約実行に失敗した。予約状態は解除済みで再予約できる。原因: ${String(error)}`) });
       }
     });
     return { result: "会話圧縮を予約した。まだ完了していない。現在のターンを終えてホストの圧縮結果を待つ。" };

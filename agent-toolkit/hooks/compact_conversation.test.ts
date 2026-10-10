@@ -40,6 +40,8 @@ test("実行拒否は同じ会話へ通知し、失敗後に再予約できる",
   await $.tool.call({ tool: TOOL });
   await clock.advance(0);
   expect(prompts.length).toBe(1);
+  expect(prompts[0]?.startsWith('<atk-auto source="compact-conversation" kind="warn">\n')).toBe(true);
+  expect(prompts[0]?.endsWith("\n</atk-auto>")).toBe(true);
   // hookの例外はホストが次の実装へ渡す。実装が無い拒否が呼出元へ届く。
   expect(prompts[0]).toMatch("no implementation for command.run");
   await $.tool.call({ tool: TOOL });

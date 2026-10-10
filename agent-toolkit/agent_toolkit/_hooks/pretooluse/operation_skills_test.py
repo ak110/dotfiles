@@ -206,6 +206,9 @@ def test_codex_operations_do_not_warn_or_record(tmp_path: pathlib.Path, payload:
         "for item in one; do printf rule > AGENTS.md; done",
         "if test -f marker; then sed -i 's/old/new/' agent-toolkit/rules/01-agent.md; fi",
         "case value in one) printf rule | tee .claude/skills/x/SKILL.md;; esac",
+        "time for item in one; do cp ordinary.md AGENTS.md; done",
+        "! if test -f marker; then cp ordinary.md .claude/rules/local.md; fi",
+        "coproc WORKER if test -f marker; then cp -t .claude/rules AGENTS.md; fi",
     ],
 )
 def test_agent_document_bash_writing_warns_once(tmp_path: pathlib.Path, command: str) -> None:

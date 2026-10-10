@@ -138,7 +138,9 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `atk agents wait`は委譲先の終端を待ち、回収した結果を表示する。
 `agents_server`の公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）の入力と応答の契約は[design-agents-server.md](../development/design-agents-server.md)を参照。
 
-Bashの静的な検出は、for・算術for・select・while・until・if/elif/else・caseの条件と本体、入れ子、文全体のパイプ・リダイレクト・背景化にも及ぶ。引用やheredoc本文、算術式のデータ、未実行の関数定義と未確定の動的コマンドは実行位置とみなさない。未完了の背景出力の読取は進捗確認として警告にとどめ、反復しても遮断しない。終端結果は完了後に同じ保存先の全量を読み直して確認する。
+Bashの静的な検出は、for・算術for・select・while・until・if/elif/else・caseの条件と本体、入れ子、文全体のパイプ・リダイレクト・背景化にも及ぶ。未引用の予約語前置`time`・`time -p`・`!`・`coproc`を共通解析で扱い、coprocの暗黙の出力パイプと背景実行を保持する。引用やheredoc本文、算術式のデータ、未実行の関数定義と未確定の動的コマンドは実行位置とみなさない。未完了の背景出力の読取は進捗確認として警告にとどめ、反復しても遮断しない。終端結果は完了後に同じ保存先の全量を読み直して確認する。
+
+Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内し、一般の保存本文には`atk read-file`を使う。
 
 振り返りの準備後や最終報告後に、新しい`気付いた改善点:`の行が残っている場合、Stopは未取込みの行と次の操作を示す。
 その行を振り返りの準備・分析へ取り込み、結果報告を更新すると終了へ進める。
@@ -431,11 +433,11 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する | 対応 | 対応 |
 | plugin `Stop/stop` | 報告が足りないまま作業を終えようとすると、足りない報告段階と報告本文の不備を示して同じターンを続けさせる。委譲先や待機コマンドを待つ間は終了を許す | 対応 | 対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 発話の内容を現物で確かめる手順や、発話に応じて適用する規範の所在を示す注記を返す | 対応 | 対応 |
-| plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応 | 対応 |
+| plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をログへ記録する | 対応 | 非対応 |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した場合も、そのタスクをバックグラウンドタスクの記録へ残す | 対応 | 非対応 |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応 |
-| plugin `StopFailure/stopfailure_notifier` | APIエラーでターンが終わったことをベルとデスクトップ通知で伝える | 対応 | 非対応 |
+| plugin `StopFailure/stopfailure_notifier` | APIエラーでターンが終わったとき、発火内容とセッション記録の要約をログへ残す | 対応 | 非対応 |
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づき、編集前にチェックする | 対応 | 非対応 |
 
 各フックの判定条件と、Codexでの対応範囲の詳細は[design-hooks.md](../development/design-hooks.md)「フックごとの処理とCodexの対応範囲」を参照。

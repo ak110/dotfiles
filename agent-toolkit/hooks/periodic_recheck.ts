@@ -1,4 +1,5 @@
 import type { EngineInterface, On } from "claude-code";
+import { automatedMessage } from "./automated_message.ts";
 
 // `agents_server`の`start`の処理の中で、メインの定期再確認のtaskを`CronCreate`で装着し、結果をメインの会話へ届ける。
 // モデルが起動前に`atk wait-schedule`と`CronCreate`を呼ぶ手順は装着漏れを残し、起動までの呼び出しも増やすため、
@@ -25,7 +26,7 @@ const WAIT_SCHEDULE_TIMEOUT_MS = 60_000;
 // 装着の結果は保持するtask IDを伝えるだけで対処を要さないため`notice`、
 // 装着できなかった事実はモデルが自ら装着して原因を除けるため`warn`とする。
 function notice(kind: "notice" | "warn", body: string): string {
-  return `<atk-auto source="periodic-recheck" kind="${kind}">\n${body}\n</atk-auto>`;
+  return automatedMessage("periodic-recheck", kind, body);
 }
 
 function notMounted(reason: string): string {

@@ -8,7 +8,7 @@ TypeScriptの定数に置くと、モデルはplugin rootを解決してファ�
 1行目の標識`PERIODIC_RECHECK_MARKER`も本モジュールが定め、UserPromptSubmitフックはこの標識で発火を機械注入と判定する。
 `atk`とフックの双方が読むため、`_hooks`ではなく`_common`に置く。
 待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程は、工程が進むと事実と一致しなくなるため本文へ含めない。
-セッション固有の経過時間起動の義務は、taskを持つ主体が測定コマンドと判定閾値をこの本文の後へ加えてtaskを作成し直す
+セッション固有の経過時間起動の義務は、taskを持つ主体が測定コマンドと判定閾値を同じ要素の終了タグの前へ加えてtaskを作成し直す
 （`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」）。
 """
 
@@ -29,8 +29,7 @@ LEGACY_PERIODIC_RECHECK_MARKER = _message_format.opening_tag(
 )
 """旧形式の役割標識。過去に装着したtaskの発火を同じく機械注入と判定するために読む。"""
 
-PERIODIC_RECHECK_PROMPT_LINES: tuple[str, ...] = (
-    PERIODIC_RECHECK_MARKER,
+_PERIODIC_RECHECK_BODY_LINES: tuple[str, ...] = (
     "定期再確認の発火である。待機中の対象を次の順に再確認する。",
     "1. 待機対象を記録側から列挙する。agents_serverのsessionは保持した`session_id`と`atk agents list`、"
     "バックグラウンドタスクは起動結果が返した識別子と出力ファイル、その他は計画ファイルや引き継ぎ記録など"
@@ -41,7 +40,7 @@ PERIODIC_RECHECK_PROMPT_LINES: tuple[str, ...] = (
     '4. 成果物の状況は、その回の記録から解決したGit作業ツリーなら`atk watch --worktree "$worktree_path"`、'
     '通常のファイルなら`atk watch --file "$artifact_path"`で補う。'
     "終端は待機対象ごとの終了状態と完了通知から判定する。",
-    "5. このpromptの末尾に経過時間起動の義務の行がある場合は、"
+    "5. このpromptの終了タグの前に経過時間起動の義務の行がある場合は、"
     "各行の測定コマンドで経過を測定し、判定閾値へ到達した義務を実行する。"
     "行が無い場合も、そのセッションに適用される経過時間起動の義務（定期報告、cooldown解除、期限監視、"
     "投入済みで未回答のUWIの`atk wi`による回答確認など）を記録と規範から確かめ、"
@@ -53,4 +52,7 @@ PERIODIC_RECHECK_PROMPT_LINES: tuple[str, ...] = (
     "`references/waiting-and-monitoring.md`「完了通知を待ってターンを終える場合」に従う。",
 )
 
-PERIODIC_RECHECK_PROMPT = "\n".join(PERIODIC_RECHECK_PROMPT_LINES)
+PERIODIC_RECHECK_PROMPT = _message_format.auto_message(
+    "\n".join(_PERIODIC_RECHECK_BODY_LINES), source="periodic-recheck", kind="periodic-recheck"
+)
+PERIODIC_RECHECK_PROMPT_LINES: tuple[str, ...] = tuple(PERIODIC_RECHECK_PROMPT.splitlines())

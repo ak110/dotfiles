@@ -5,8 +5,10 @@ subprocessで起動しexit code・stderr・stdoutを検証する。
 
 import json
 import pathlib
+import shlex
 import sys
 import textwrap
+from typing import Any
 
 import pytest
 
@@ -31,6 +33,146 @@ from agent_toolkit._testing.pretooluse_support import (
 
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
+
+
+def _original_record(tmp_path: pathlib.Path, root_kind: str, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """設定したホームの原記録を用意し、個人の記録へアクセスしない。"""
+    claude = tmp_path / "claude-config"
+    codex = tmp_path / "codex-home"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    root = claude / "projects/project" if root_kind == "claude" else codex / "sessions/2026/10/10"
+    root.mkdir(parents=True)
+    path = root / ("session.jsonl" if root_kind == "claude" else "rollout-session.jsonl")
+    path.write_text('{"type":"assistant","message":{"content":[]}}\n', encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("root_kind", ["claude", "codex"])
+@pytest.mark.parametrize("codex", [False, True], ids=["claude-hook", "codex-hook"])
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "read",
+        "grep-directory",
+        "cat",
+        "sed",
+        "awk",
+        "rg",
+        "grep-pattern-option",
+        "head",
+        "read-file",
+        "relative",
+        "substitution",
+        "inline-open",
+        "inline-path",
+        "inline-variable",
+        "script-argument",
+    ],
+)
+def test_original_record_access_is_guided_through_shared_pretooluse(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    root_kind: str,
+    codex: bool,
+    operation: str,
+) -> None:
+    """両ホストの各公開ツールから、設定ホームと静的な読取を既存の証拠照会へ接続する。"""
+    path = _original_record(tmp_path, root_kind, monkeypatch)
+    quoted = shlex.quote(str(path))
+    commands = {
+        "cat": f"cat -- {quoted} | cat",
+        "sed": f"sed -n '1,2p' -- {quoted}",
+        "awk": f"awk '{{print}}' {quoted}",
+        "rg": f"rg -n -F -- assistant {quoted}",
+        "grep-pattern-option": f"grep -e assistant -- {quoted}",
+        "head": f"head -n 2 {quoted}",
+        "read-file": f"atk read-file --max-bytes 12000 -- {quoted}",
+        "relative": f"cd {shlex.quote(str(path.parent))} && cat {shlex.quote(path.name)}",
+        "substitution": f"printf '%s' \"$(cat {quoted})\"",
+        "inline-open": "python3 -c " + shlex.quote(f"open({str(path)!r}).read()"),
+        "inline-path": "python3 -c " + shlex.quote(f"from pathlib import Path; Path({str(path)!r}).read_text()"),
+        "inline-variable": "uv run --frozen python -c " + shlex.quote(f"p={str(path)!r}; open(p).read()"),
+        "script-argument": f"python3 analyze.py {quoted}",
+    }
+    tool_name = "Read" if operation == "read" else "Grep" if operation == "grep-directory" else "Bash"
+    tool_input = (
+        {"file_path": str(path)}
+        if tool_name == "Read"
+        else {"pattern": "assistant", "path": str(path.parent)}
+        if tool_name == "Grep"
+        else {"command": commands[operation]}
+    )
+    payload = {
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "cwd": str(tmp_path),
+        **({"turn_id": "codex-turn"} if codex else {}),
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr()
+    assert not captured.err
+    context = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+    assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
+    assert "session-review-evidence" in context and "session-records.md" in context
+    assert "--transcript" in context and "--tool-calls" in context and "--fixed-string" in context
+
+
+@pytest.mark.parametrize("codex", [False, True], ids=["claude-hook", "codex-hook"])
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "attributes",
+        "find",
+        "mention",
+        "search-pattern",
+        "search-option",
+        "dedicated",
+        "inline-mention",
+        "inline-attributes",
+        "inline-unexecuted",
+        "inline-string-method",
+        "script-without-input",
+        "ordinary",
+        "derived",
+        "unknown",
+    ],
+)
+def test_non_original_body_access_does_not_receive_record_warning(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    codex: bool,
+    operation: str,
+) -> None:
+    """属性・言及・正式照会・派生物・一般JSONL・未知の入力を原記録参照へ推定しない。"""
+    path = _original_record(tmp_path, "claude", monkeypatch)
+    quoted = shlex.quote(str(path))
+    commands = {
+        "attributes": f"ls {quoted}",
+        "find": f"find {shlex.quote(str(path.parent))} -name '*.jsonl'",
+        "mention": f"printf '%s' {quoted}",
+        "search-pattern": f"rg -F -- {quoted} ordinary.txt",
+        "search-option": f"rg --glob {quoted} -- assistant ordinary.txt",
+        "dedicated": f"atk run-script session-review-evidence -- --transcript {quoted} --fixed-string assistant",
+        "inline-mention": "python3 -c " + shlex.quote(f"print({str(path)!r})"),
+        "inline-attributes": "python3 -c " + shlex.quote(f"from pathlib import Path; Path({str(path)!r}).exists()"),
+        "inline-unexecuted": "python3 -c " + shlex.quote(f"def example(): open({str(path)!r}).read()"),
+        "inline-string-method": "python3 -c " + shlex.quote(f"p={str(path)!r}; p.read_text()"),
+        "script-without-input": "python3 analyze.py",
+        "ordinary": f"cat {shlex.quote(str(tmp_path / 'ordinary.jsonl'))}",
+        "derived": f"cat {shlex.quote(str(tmp_path / 'bundle/conversation.jsonl'))}",
+        "unknown": "cat $RECORD",
+    }
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": commands[operation]},
+        "cwd": str(tmp_path),
+        **({"turn_id": "codex-turn"} if codex else {}),
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert "session-review-evidence" not in capsys.readouterr().out
 
 
 def _claude_assistant_line(model: str, effort: str | None = "medium") -> dict[str, object]:
@@ -77,6 +219,75 @@ def test_codex_commit_uses_observed_identity_from_hook_payload(capsys: pytest.Ca
 
     assert pretooluse.main(json.dumps(payload)) == 2
     assert "Co-Authored-By: GPT-6.1 Sol / Medium <noreply@openai.com>" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude", "codex"])
+@pytest.mark.parametrize(
+    "command, code",
+    [
+        ("git status", 0),
+        ("printf '%s' 'git commit -m example'", 0),
+        ("git commit --amend --no-edit", 0),
+        ("git commit --fixup HEAD", 0),
+        ("git commit --squash=HEAD", 0),
+        ("git commit -F missing.txt", 0),
+        ("git commit -m '件名\n本文'", 2),
+    ],
+)
+def test_bash_without_valid_commit_message_does_not_acquire_attribution_inputs(
+    command: str, code: int, extra_payload: dict[str, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """対象本文が無いか書式不正なら、帰属固有のidentity・記録・設定の取得へ進まない。"""
+
+    def unexpected(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("帰属の対象が無いBashで依存情報を取得した")
+
+    monkeypatch.setattr(pretooluse, "_hook_observed_identity", unexpected)
+    monkeypatch.setattr(pretooluse, "_claude_commit_attribution_disabled", unexpected)
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}, "isSidechain": True, **extra_payload}
+    assert pretooluse.main(json.dumps(payload)) == code
+    captured = capsys.readouterr()
+    assert ("空行" in captured.err) == (code == 2)
+
+
+@pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude", "codex"])
+@pytest.mark.parametrize("option", ["-F", "--file", "--file="])
+def test_commit_message_file_is_read_once_for_format_and_attribution(
+    tmp_path: pathlib.Path,
+    option: str,
+    extra_payload: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """同じファイルの本文を、書式確認と観測identityの帰属確認で共用する。"""
+    message = tmp_path / "message.txt"
+    author = (
+        "GPT-6.1 Sol / Medium <noreply@openai.com>" if extra_payload else "Claude Opus 5.5 / Medium <noreply@anthropic.com>"
+    )
+    message.write_text(f"fix: 変更\n\nCo-Authored-By: {author}\n", encoding="utf-8")
+    original = pathlib.Path.read_text
+    reads = 0
+
+    def read(path: pathlib.Path, *args: Any, **kwargs: Any) -> str:
+        nonlocal reads
+        if path == message:
+            reads += 1
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read)
+    separator = "" if option.endswith("=") else " "
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": f"git commit {option}{separator}message.txt"},
+        "cwd": str(tmp_path),
+        "model": "gpt-6.1-sol" if extra_payload else "claude-opus-5-5",
+        "effort": {"level": "medium"},
+        "isSidechain": True,
+        **extra_payload,
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    capsys.readouterr()
+    assert reads == 1
 
 
 @pytest.mark.parametrize("reader", ["cat --", "sed -n '1,200p'", "awk '{print}'", "atk read-file --"])
