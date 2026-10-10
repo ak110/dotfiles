@@ -212,6 +212,27 @@ _ADHOC_OUTPUT_PROCESSOR = re.compile(r"(?<![\w.-])(?:jq|awk|gawk|cut|sed|python(
 _CANDIDATE_CONTEXT_FIELDS = ("assistant_context", "user_response", "wi_file", "wi_state", "wi_section")
 """候補へ写す判断材料の項目。確認の質問・選択肢・回答と、記入元のWIの所在を候補一覧へ載せるために使う。"""
 
+FAILURE_CANDIDATE_KINDS = frozenset({"command-failure", "tool-failure"})
+"""失敗署名で集約する候補種別。"""
+
+FAILURE_EVENT_FIELDS = (
+    "tool",
+    "tool_name",
+    "exit_code",
+    "text",
+    "diagnostic",
+    "diagnostic_last_line",
+    "operation",
+    "command",
+    "command_full",
+    "record",
+    "line",
+)
+"""`failure_candidate_exclusion`と`failure_signature`が読むイベントの欄。
+
+失敗候補の`failure_event`へ代表イベントから写し、失敗署名の台帳はこの欄を保存して読込時に判定し直す。
+"""
+
 
 _REPORT_UWI_QUESTION = re.compile(r"の作業結果と振り返りについて、この対応で問題ありませんか？$")
 """`agent-toolkit:completion-report`が投入する報告用UWIの冒頭の問い。報告用UWIは確認ではないため候補から除く。"""
@@ -457,17 +478,25 @@ def _candidate_events(
             ):
                 excluded["hook-notice-represented"] += 1
                 continue
-            # 除外の判定は終了コードを帰属させるコマンドで行い、候補の署名と表示は記録どおりのコマンドで行う。
-            attributed = _event_without_cd_prefix(event) if candidate_kind in {"command-failure", "tool-failure"} else event
-            if candidate_kind == "tool-failure" and _is_normal_negative_tool_failure(attributed):
-                excluded["normal-negative-result"] += 1
-                continue
-            if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_atk_no_match(attributed):
-                excluded["normal-negative-result"] += 1
-                continue
-            if candidate_kind in {"command-failure", "tool-failure"} and _is_normal_nonterminal_result(attributed):
-                excluded["normal-nonterminal-result"] += 1
-                continue
+            event_kind = candidate_kind
+            if candidate_kind in FAILURE_CANDIDATE_KINDS:
+                # hook通知へ置き換える失敗は置き換え前の結果の区分だけを適用し、失敗候補としての区分を適用しない。
+                hook_event = (
+                    _hook_originated_event(candidate_kind, event, hook_notice_origins)
+                    if candidate_kind == "tool-failure"
+                    else None
+                )
+                exclusion = (
+                    failure_candidate_exclusion(candidate_kind, event)
+                    if hook_event is None
+                    else _failure_result_exclusion(candidate_kind, _event_without_cd_prefix(event))
+                )
+                if exclusion is not None:
+                    excluded[exclusion] += 1
+                    continue
+                if hook_event is not None:
+                    event_kind, event = "hook-notice", hook_event
+                    normalized_text = " ".join(str(event["text"]).split())
             if candidate_kind == "delegate-return" and _is_normal_delegate_return(
                 event, shell=record in shell_records, resumed=record in resumed_records
             ):
@@ -476,8 +505,7 @@ def _candidate_events(
             if candidate_kind == "warning" and _style_diagnostics.is_body_style_diagnostic_warning(normalized_text):
                 excluded["wi-style-diagnostic"] += 1
                 continue
-            event_kind = candidate_kind
-            if candidate_kind in {"warning", "tool-failure"}:
+            if candidate_kind == "warning":
                 hook_event = _hook_originated_event(candidate_kind, event, hook_notice_origins)
                 if hook_event is not None:
                     event_kind, event = "hook-notice", hook_event
@@ -497,18 +525,6 @@ def _candidate_events(
                 elif exclusion is not None:
                     excluded[exclusion] += 1
                     continue
-            if candidate_kind == "command-failure" and _is_help_command_failure(event):
-                excluded["command-help"] += 1
-                continue
-            if candidate_kind == "command-failure" and _is_normal_negative_result(attributed):
-                excluded["normal-negative-result"] += 1
-                continue
-            if event_kind == "tool-failure" and _TRANSIENT_CLASSIFIER_ERROR in normalized_text:
-                excluded["runtime-transient"] += 1
-                continue
-            if event_kind in {"command-failure", "tool-failure"} and _is_check_detected(attributed):
-                excluded["check-detected"] += 1
-                continue
             if event_kind == "hook-notice":
                 exclusion = _hook_notice_candidate_exclusion(event.get("tag"))
                 if exclusion is not None:
@@ -518,8 +534,8 @@ def _candidate_events(
                     excluded["response-language-notice"] += 1
                     continue
             key = _candidate_key(event_kind, event, normalized_text)
-            if event_kind in {"command-failure", "tool-failure"}:
-                event["failure_signature"], event["failure_summary"] = _failure_signature(event_kind, event)
+            if event_kind in FAILURE_CANDIDATE_KINDS:
+                event["failure_signature"], event["failure_summary"] = failure_signature(event_kind, event)
             groups.setdefault(key, []).append(event)
 
     selected_groups: list[tuple[tuple[str, ...], list[dict[str, Any]], int, int]] = []
@@ -574,9 +590,10 @@ def _candidate_events(
         for field in _CANDIDATE_CONTEXT_FIELDS:
             if field in events[0]:
                 candidate[field] = events[0][field]
-        if key and key[0] in {"command-failure", "tool-failure"}:
+        if key and key[0] in FAILURE_CANDIDATE_KINDS:
             candidate["failure_signature"] = events[0]["failure_signature"]
             candidate["failure_summary"] = events[0]["failure_summary"]
+            candidate["failure_event"] = {field: events[0][field] for field in FAILURE_EVENT_FIELDS if field in events[0]}
         if _is_bounded_hook_group(key):
             candidate["occurrence_count"] = occurrence_count
             candidate["omitted_locator_count"] = omitted_locator_count
@@ -946,6 +963,44 @@ def _initial_skill_input_locators(
     if not body_text.startswith("<skill>") or f"<name>{skill_name}</name>" not in body_text:
         return None, None
     return (main_record_id, int(request["line"])), (main_record_id, int(body["line"]))
+
+
+def failure_candidate_exclusion(candidate_kind: str, event: dict[str, Any]) -> str | None:
+    """失敗候補から除く区分を、1件のイベントの欄（`FAILURE_EVENT_FIELDS`）だけで判定して返す。除かない場合は`None`を返す。
+
+    候補の抽出と失敗署名の台帳の読込が同じ判定を使い、除外規則の改訂を記録済みの台帳にも次の準備から適用する。
+    同じ位置のhook通知との対応で決まる区分（`hook-notice-represented`とhook通知への置き換え）は、
+    1件のイベントでは判定できないため呼び出し側が扱う。
+    """
+    # 除外の判定は終了コードを帰属させるコマンドで行い、候補の署名と表示は記録どおりのイベントで行う。
+    attributed = _event_without_cd_prefix(event)
+    exclusion = _failure_result_exclusion(candidate_kind, attributed)
+    if exclusion is not None:
+        return exclusion
+    if candidate_kind == "command-failure" and _is_help_command_failure(event):
+        return "command-help"
+    if candidate_kind == "command-failure" and _is_normal_negative_result(attributed):
+        return "normal-negative-result"
+    text = event.get("text")
+    if candidate_kind == "tool-failure" and isinstance(text, str) and _TRANSIENT_CLASSIFIER_ERROR in " ".join(text.split()):
+        return "runtime-transient"
+    if _is_check_detected(attributed):
+        return "check-detected"
+    return None
+
+
+def _failure_result_exclusion(candidate_kind: str, attributed: dict[str, Any]) -> str | None:
+    """終了コードを帰属させたイベントが正常な否定結果か待機継続である場合に、その区分を返す。
+
+    hook通知へ置き換える失敗にも適用するため、`failure_candidate_exclusion`から分けている。
+    """
+    if candidate_kind == "tool-failure" and _is_normal_negative_tool_failure(attributed):
+        return "normal-negative-result"
+    if _is_normal_atk_no_match(attributed):
+        return "normal-negative-result"
+    if _is_normal_nonterminal_result(attributed):
+        return "normal-nonterminal-result"
+    return None
 
 
 def _is_help_command_failure(event: dict[str, Any]) -> bool:
@@ -1702,7 +1757,7 @@ def _failure_diagnostic(event: dict[str, Any]) -> str:
     return next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
 
 
-def _failure_signature(candidate_kind: str, event: dict[str, Any]) -> tuple[str, str]:
+def failure_signature(candidate_kind: str, event: dict[str, Any]) -> tuple[str, str]:
     """可変値を除いた失敗署名と、`candidates.md`へ表示するコマンド・診断を返す。"""
     name, subcommand, display, _ = _failure_command_parts(event)
     code = _failure_exit_code(event)
@@ -1766,7 +1821,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
             _candidate_mechanism(candidate_kind, event),
         )
     if candidate_kind in {"command-failure", "tool-failure"}:
-        return candidate_kind, _failure_signature(candidate_kind, event)[0]
+        return candidate_kind, failure_signature(candidate_kind, event)[0]
     if candidate_kind == "escalation":
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
     if candidate_kind == "adhoc-processing":

@@ -14,11 +14,12 @@ import subprocess
 import sys
 
 import pytest
+import session_evidence_candidates as evidence_candidates  # pylint: disable=import-error
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit._common import response_language_check, state_paths
 from agent_toolkit._testing import delegated_threads
-from agent_toolkit._testing.failure_records import failure_entries
+from agent_toolkit._testing.failure_records import bash_failure_entries, failure_entries
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
 _LONG_INTERVENTION = "そうじゃなくて、対象は全部です。" + "理由の説明。" * 400 + "最後まで読んで。"
@@ -391,6 +392,9 @@ def test_failure_variable_values_share_signature(
             assert len(saved) == index + 1
             assert {row["session_id"] for row in saved} == {f"session-{number}" for number in range(index + 1)}
             assert {row["failure_signature"] for row in saved} == signatures
+            assert {row["candidate_kind"] for row in saved} == {failure_kind}
+            current = next(row for row in saved if row["session_id"] == f"session-{index}")
+            assert current["failure_event"] == failures[0]["failure_event"]
             if index == 0:
                 assert result["candidate_total"] == 0
                 assert result["excluded_counts"]["single-session-failure"] == 1
@@ -435,6 +439,73 @@ def test_prepare_recomputes_legacy_failure_ledger(tmp_path: pathlib.Path, capsys
         assert sorted(counts.values()) == [1, 1, 1, 1, 2, 2]
         assert {item["session_id"] for item in saved} == {item["session_id"] for item in records}
         assert {item["observed_at"] for item in saved} == {"2026-09-05T00:00:00+00:00"}
+
+
+def test_failure_ledger_rejudges_records_with_current_exclusions(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """台帳の記録へ抽出と同じ除外判定を読込時に適用し、現在の判定が除く記録を反復に数えず台帳からも除く。
+
+    除外規則を後から広げても、判定の結論だけを保持する台帳では旧規則で記録した失敗が30日の期限まで反復に数えられる。
+    旧規則で記録された状態を、判定に使う欄を持つ記録として台帳へ置いて再現する。
+    """
+    no_match = "Exit code 1\n該当0件: 条件に一致するWIは無い"
+    excluded_session = tmp_path / "excluded-session.jsonl"
+    entries: list[dict] = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
+    entries.extend(bash_failure_entries("atk wi grep 台帳", no_match, "single"))
+    entries.extend(bash_failure_entries("cd /repo; atk wi grep 台帳", no_match, "cd-prefixed"))
+    entries.extend(bash_failure_entries("atk agents wait", "Exit code 3\n待機中: 1件", "wait"))
+    excluded_session.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    excluded_dir = tmp_path / "excluded-work"
+    excluded_dir.mkdir()
+    assert prepare.main(["--transcript", str(excluded_session), "--work-dir", str(excluded_dir)], now=_FIXED_NOW) == 0
+    assert json.loads(capsys.readouterr().out)["candidate_total"] == 0
+    timeline = [
+        json.loads(line) for line in (excluded_dir / "bundle" / "timeline.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    failures = [event for event in timeline if event.get("kind") == "failed-tool"]
+    assert len(failures) == 3
+    ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
+    excluded_records = []
+    for event in failures:
+        failure_event = {field: event[field] for field in evidence_candidates.FAILURE_EVENT_FIELDS if field in event}
+        signature, summary = evidence_candidates.failure_signature("tool-failure", failure_event)
+        excluded_records.append(
+            {
+                "failure_signature": signature,
+                "session_id": "excluded-session",
+                "observed_at": "2026-09-05T00:00:00+00:00",
+                "failure_summary": summary,
+                "candidate_kind": "tool-failure",
+                "failure_event": failure_event,
+            }
+        )
+    ledger.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n" for record in excluded_records), encoding="utf-8")
+
+    chained = "atk wi grep 台帳; atk wi grep 失敗署名"
+    for index, session in enumerate(("chained-a", "chained-b")):
+        transcript = tmp_path / f"{session}.jsonl"
+        entries = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
+        entries.extend(bash_failure_entries(chained, no_match, "chained"))
+        transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+        work = tmp_path / f"{session}-work"
+        work.mkdir()
+        assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+        result = json.loads(capsys.readouterr().out)
+        bundle = [json.loads(line) for line in (work / "bundle" / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+        chained_failures = [row for row in bundle if row.get("candidate_kind") == "tool-failure"]
+        assert len(chained_failures) == 1
+        # 除かれる単独の`atk wi grep`の記録は、連結した失敗と同じ署名を持つ。
+        assert chained_failures[0]["failure_signature"] == excluded_records[0]["failure_signature"]
+        if index == 0:
+            assert result["candidate_total"] == 0
+            assert result["excluded_counts"]["single-session-failure"] == 1
+        else:
+            assert result["candidate_counts"] == {"tool-failure": 1}
+            assert "2セッション" in pathlib.Path(result["candidates_path"]).read_text(encoding="utf-8")
+        saved = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+        assert {item["session_id"] for item in saved} == {f"chained-{name}" for name in "ab"[: index + 1]}
+        assert all(item["failure_event"] and item["candidate_kind"] == "tool-failure" for item in saved)
 
 
 @pytest.mark.parametrize("delivery", ["text", "send", "codex"])
@@ -1164,6 +1235,7 @@ def test_parallel_prepare_keeps_both_sessions_in_failure_ledger(tmp_path: pathli
     ledger = state_home / "agent-toolkit" / "session-review" / "failure-signatures.jsonl"
     records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
     assert {item["session_id"] for item in records} == {"parallel-a", "parallel-b"}
+    assert all(item["candidate_kind"] == "command-failure" and item["failure_event"] for item in records)
 
 
 @pytest.mark.parametrize("linked_worktree", [False, True])

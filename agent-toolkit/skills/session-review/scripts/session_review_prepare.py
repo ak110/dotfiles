@@ -592,12 +592,16 @@ def _candidates_document(
 
 
 def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: datetime.datetime) -> tuple[dict[str, int], int]:
-    """排他下で過去30日の失敗署名を更新し、署名ごとの最上位セッション数を返す。"""
+    """排他下で過去30日の失敗署名を更新し、署名ごとの最上位セッション数を返す。
+
+    判定に使うイベントの欄（`failure_event`）を持つ記録は、読込のたびに抽出と同じ除外判定と署名計算で判定し直し、
+    現在の判定が除く記録を数えず書き戻しからも除く。欄を持たない旧形式の記録は保存済みの代表診断から署名だけを再計算する。
+    """
     path = _state_paths.state_dir() / "session-review" / "failure-signatures.jsonl"
     lock_path = path.with_name(path.name + ".lock")
     cutoff = now.astimezone(datetime.UTC) - datetime.timedelta(days=_FAILURE_LEDGER_DAYS)
     skipped = 0
-    records: dict[tuple[str, str], dict[str, str]] = {}
+    records: dict[tuple[str, str], dict[str, Any]] = {}
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+", encoding="utf-8") as lock:
@@ -633,25 +637,27 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
                         continue
                     if timestamp >= cutoff:
                         try:
-                            signature = session_evidence_candidates.recalculate_failure_signature(signature, summary)
+                            judged = _rejudge_failure_record(item)
                         except ValueError:
                             skipped += 1
                             continue
-                        item["failure_signature"] = signature
-                        records.setdefault((signature, recorded_session), item)
+                        if judged is None:
+                            continue
+                        records.setdefault((judged["failure_signature"], recorded_session), judged)
                 for candidate in candidates:
                     signature = candidate.get("failure_signature")
                     if not isinstance(signature, str):
                         continue
-                    records.setdefault(
-                        (signature, session_id),
-                        {
-                            "failure_signature": signature,
-                            "session_id": session_id,
-                            "observed_at": now.astimezone(datetime.UTC).isoformat(),
-                            "failure_summary": str(candidate.get("failure_summary", "診断なし")),
-                        },
-                    )
+                    record = {
+                        "failure_signature": signature,
+                        "session_id": session_id,
+                        "observed_at": now.astimezone(datetime.UTC).isoformat(),
+                        "failure_summary": str(candidate.get("failure_summary", "診断なし")),
+                    }
+                    if isinstance(candidate.get("failure_event"), dict):
+                        record["candidate_kind"] = str(candidate.get("candidate_kind", ""))
+                        record["failure_event"] = candidate["failure_event"]
+                    records.setdefault((signature, session_id), record)
                 payload = "".join(json.dumps(item, ensure_ascii=False) + "\n" for _, item in sorted(records.items()))
                 atomic_file.atomic_write(path, payload)
             finally:
@@ -661,6 +667,27 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
         return {}, skipped
     counts = collections.Counter(signature for signature, _ in records)
     return dict(counts), skipped
+
+
+def _rejudge_failure_record(item: dict[str, Any]) -> dict[str, Any] | None:
+    """台帳の1記録を現在の判定で判定し直し、数える記録を返す。現在の判定が除く記録は`None`を返す。
+
+    記録時の判定の結論だけを保持すると、除外規則を後から広げても30日の期限まで反復の計数に残るため、
+    判定に使う欄を保持する記録は抽出と同じ関数で判定し直す。形式が不正な記録は`ValueError`を送出する。
+    """
+    event = item.get("failure_event")
+    if event is None:
+        signature = session_evidence_candidates.recalculate_failure_signature(
+            item["failure_signature"], item["failure_summary"]
+        )
+        return {**item, "failure_signature": signature}
+    candidate_kind = item.get("candidate_kind")
+    if not isinstance(event, dict) or candidate_kind not in session_evidence_candidates.FAILURE_CANDIDATE_KINDS:
+        raise ValueError("判定に使う欄が不正")
+    if session_evidence_candidates.failure_candidate_exclusion(candidate_kind, event) is not None:
+        return None
+    signature, summary = session_evidence_candidates.failure_signature(candidate_kind, event)
+    return {**item, "failure_signature": signature, "failure_summary": summary}
 
 
 def _select_repeated_failures(
