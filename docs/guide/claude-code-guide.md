@@ -157,13 +157,15 @@ Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は�
 
 | キー | 対応する起動 |
 | --- | --- |
-| `high_tier_model` | 計画・実装・修正・AWI投入・公開工程の終端・自動コードレビュー監査 |
+| `high_tier_model` | 計画・実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査 |
 | `medium_tier_model` | 実行レビュー・プロンプト評価・`model_type="medium_tier"`を指定した`start`の`explore` |
 | `low_tier_model` | `model_type`を省略した`start`の`explore`と`shell`・軽量な`mode:`を宣言した`<役割名>.subagent.md`の`task` |
 | `write_model` | `start`の`write` |
 | `orchestrate_model` | `atk wi process-loop`・`atk run-skill` |
 | `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、未設定時は`false`） |
 | `codex_model_providers` | `agents_server`のCodex接続先を主接続先から優先順で並べるID列。空ならCodex通常設定・代替なし |
+
+新しい候補や評価軸を導く調査と案出しは、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。既に決めた問いの所在・値・件数などの機械的な事実確認と区別し、両者を含む依頼は`high_tier`を使う。`explore`の指定省略時の`low_tier`と実行レビューの`medium_tier`は変えない。
 
 `atk config show`はパス4行、モデル設定5行、速度とAPI provider列を各1行で表示する。`atk config get`は設定値を返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。

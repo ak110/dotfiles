@@ -82,7 +82,11 @@ MODE_DESCRIPTION = parameter_description(
     "スキルの手順を要する作業にはtaskかdelegateを使う。\n"
     "explore: 読み取りが数回で確定する調査は自ら実行し、多数のファイルを横断する調査や大量の本文を読む調査を委譲する。"
     "委譲先はファイルを作成、変更および削除しないため、成果ファイルの出力を依頼しない。"
-    "委譲元の文脈へは結果の要約だけが入る。\n" + EXPLORE_CAPABILITIES + "\n"
+    "委譲元の文脈へは結果の要約だけが入る。"
+    "新しい候補・評価軸を導く調査と案出しは、exploreでもdelegateでもmodel_type=high_tierを明示する。"
+    "既に決めた問いの所在・値・件数などの機械的な事実確認と区別し、混合する依頼はhigh_tierを使う。\n"
+    + EXPLORE_CAPABILITIES
+    + "\n"
     "write: 設計、調査、レビューおよび公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。"
     "読者が異なる文章は別の依頼にする。委譲先はファイルの読取・検索・作成・編集だけを行う。\n"
     "shell: 出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドを委譲し、"
@@ -155,7 +159,9 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`low_tier`、writeが`write`の設定を使う。"
-    "軽量側の候補では判断材料が不足する調査には、exploreで`medium_tier`を指定する。"
+    "新しい候補・評価軸を導く調査と案出しは、explore・delegateを問わず`high_tier`を明示する。"
+    "機械的な事実確認と区別し、両者が混在する依頼も`high_tier`を使う。"
+    "機械的な事実確認で軽量側の候補では判断材料が不足する調査には、exploreで`medium_tier`を指定する。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"
 )
 
