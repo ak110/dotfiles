@@ -20,11 +20,13 @@
     - 型チェック: 現在のClaude Codeの型宣言を使い、`npx --yes -p typescript@5.9.3 tsc --project <設定ファイル> --pretty false`を実行する。型宣言はホスト同梱の`plugin-authoring`スキルを起動したときにClaude Codeがそのスキルの基準ディレクトリへ書く`types/claude-code.d.ts`、またはモジュールを読み込んだプラグインの`.claude-plugin/types/`から得る。設定ファイルはmanaged-tempへ置き、`include`へ型宣言と`agent-toolkit/hooks/`の`*.ts`・`*.tsx`を挙げる。`compilerOptions`は型宣言の冒頭が示す値へ`allowImportingTsExtensions: true`を加えたものとする（モジュール間のimportが拡張子`.ts`を持つため）。設定ファイルと型宣言はリポジトリへ追加しない
     - モジュールテスト: `claude plugin test <worktree>/agent-toolkit`。プラグインのルートを渡す（`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからず失敗する）
   - 名前の削除・改名の全体静的確認: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
-  - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
+  - Python版指定（`.python-version`、`.github/workflows/ci.yaml`のmatrixのPython版）かCIのcontainer jobの依存導入（同ファイルの`ネイティブ依存インストール`stepの導入パッケージ）を変えた場合: `make ci-deps-check`。CIと同じcontainer imageの中で、CIと同じ依存導入と`uv sync --all-groups --all-extras`をmatrixの各Python版で実行し、ローカルのCコンパイラーとヘッダーではビルドできてもCIのimageでは失敗するsdistなどを、push前に検出する。imageと導入パッケージとPython版は`Makefile`の変数が持ち、`ci_workflow_test.py`がCI定義との一致を確かめる。dockerとimageの取得を要し、1版あたり約1分かかる。どちらも変えない変更では実行しない
+  - 統合後の検証: fast-forwardの前に専用worktreeで`make sync`を実行してから、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
 
 ## push前のチェックとCIだけが実行するチェック
 
 - 公開前の全体検証は`agent-toolkit:commit`が公開工程の着手時に読ませる資料の「検証とCI」に従う。push前にはCIが実行しないチェックを選ぶ。変更ファイルだけでは検出できない、複数ファイル間の関係に起因する問題も全体を対象に確かめる。本リポジトリでは次を実行する
+  - 最初に環境同期: `make sync`。リポジトリ直下と`agent-toolkit/`の仮想環境を`uv.lock`が選ぶパッケージ集合と`.python-version`の版へそろえ、CIの新しい環境と同じ条件で後続のチェックを動かす。Python版指定もCIの依存導入も変えないpushで加わる手順はこの同期だけである
   - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version --enable=statusline-version`
   - レーンをまたぐ重複実装は片側の変更ファイルだけでは比較できないため、全体を検出: `uv run --frozen pyfltr run --commands=arid`
   - Pythonの型と静的参照の整合を変更ファイルの外も含めて確かめる: `uv run --frozen pyfltr run --commands=ty`
