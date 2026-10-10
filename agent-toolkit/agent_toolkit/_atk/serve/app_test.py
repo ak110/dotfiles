@@ -883,7 +883,7 @@ async def test_answer_api_returns_saved_post_approval_state(
     """回答APIは肯定だけを採用し、是正・追記を残した実際の保存先を返す。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -1055,7 +1055,7 @@ async def test_answer_and_remove_apis_return_edit_conflict_when_concurrent_chang
     """別主体が移動した回答・削除対象を409競合として保全する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
         if answer_inbox.exists():
             answer_inbox.rename(processing / answer_inbox.name)
         elif remove_inbox.exists():
@@ -1451,7 +1451,7 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
         raise AssertionError(value)
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
         yield
 
     monkeypatch.setattr(awi_repo, "resolve_repo_id", resolve)
@@ -1828,7 +1828,7 @@ def _patch_single_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     """単件登録と一括取り込みのどちらの処理でもロック・remote同期・commitを無効化する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
