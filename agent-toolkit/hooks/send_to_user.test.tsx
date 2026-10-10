@@ -1,9 +1,9 @@
-import type { On } from "claude-code";
-import { type Engine, expect, mock, test } from "claude-code/testing";
+import { expect, mock, test } from "claude-code/testing";
 
 // send_to_userの呼び出しの行が`message`の全文を`Markdown`で描き、他のツールの行を描き替えないことを検証する。
 // 行を描き替えないと、ツール入力で運んだ原文がユーザーの画面へ届かず、要約に置き換わる地の文と同じ欠落が残る。
-// 委譲先の各印では登録・許可・成功応答をしないことも検証する。委譲先の応答は委譲元へ返り、画面へは届かない。
+// 委譲先の各印では許可も成功応答もしないことも検証する。委譲先の応答は委譲元へ返り、画面へは届かない。
+// 委譲先への登録の除外は`delegated_session.test.ts`が検証する。
 
 const PLUGIN = "agent-toolkit";
 const TOOL = `mcp__${PLUGIN}__send_to_user`;
@@ -63,31 +63,7 @@ const DELEGATED_ENVS: Readonly<Record<string, string>>[] = [
   { AGENT_TOOLKIT_DELEGATED_SESSION: "1", AGENT_TOOLKIT_OWNER_SESSION: "owner" },
 ];
 
-// `session.start`を呼び、登録されたツール名を返す。
-async function registeredTools($: Engine, on: On): Promise<string[]> {
-  const names: string[] = [];
-  on("session.start", (_$, e) => ({ cwd: e.cwd }));
-  on("session.id", () => ({ value: "session-1" }));
-  on("fs.write", () => ({ value: undefined }));
-  on("tool.register", (_$, e) => {
-    names.push(e.name);
-    return { value: { tool: e.name } };
-  });
-  await $.session.start({ cwd: "/work", surface: null, isInteractive: false });
-  return names;
-}
-
-test("メインのsession.startはsend_to_userを登録する", async ($, on) => {
-  mock.env(on, {});
-  expect(await registeredTools($, on)).toContain("send_to_user");
-});
-
 for (const env of DELEGATED_ENVS) {
-  test(`委譲先（${JSON.stringify(env)}）のsession.startはsend_to_userを登録しない`, async ($, on) => {
-    mock.env(on, env);
-    expect(await registeredTools($, on)).not.toContain("send_to_user");
-  });
-
   test(`委譲先（${JSON.stringify(env)}）のsend_to_userは許可も表示済みの応答もしない`, async ($, on) => {
     mock.env(on, env);
     expect((await $.tool.check({ tool: TOOL, input: { message: MESSAGE } })).decision).toBe("deny");

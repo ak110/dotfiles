@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from "claude-code";
 
-import { COMPACT_CONVERSATION_TOOL, register as registerCompactConversation } from "./compact_conversation.ts";
+import { COMPACT_CONVERSATION_DELEGATED_DENY, COMPACT_CONVERSATION_TOOL, register as registerCompactConversation } from "./compact_conversation.ts";
 import { register as registerPeriodicRecheck } from "./periodic_recheck.ts";
 import { register as registerSendToUser, SEND_TO_USER_DELEGATED_DENY, SEND_TO_USER_TOOL } from "./send_to_user.tsx";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
@@ -20,6 +20,7 @@ async function isDelegated($: EngineInterface): Promise<boolean> {
 // メイン用ツールの名前と、委譲先からの呼び出しへ返す拒否の本文。委譲先の結果は画面ではなく委譲元へ返る。
 const MAIN_ONLY_TOOLS: Readonly<Record<string, string>> = {
   [SEND_TO_USER_TOOL.name]: SEND_TO_USER_DELEGATED_DENY,
+  [COMPACT_CONVERSATION_TOOL.name]: COMPACT_CONVERSATION_DELEGATED_DENY,
 };
 
 function delegatedDeny(plugin: string, tool: string): string | undefined {
@@ -30,19 +31,21 @@ function delegatedDeny(plugin: string, tool: string): string | undefined {
 export const register: Register = (on) => {
   // 同じmoduleの同じイベントでは先に登録したhookが先に判定するため、メイン用ツールの各機能の許可より前に置く。
   // 判定が失敗した場合は従来の各機能の判定へ渡し、メインの報告手段を止めない。
-  on("tool.check", { tool: /__send_to_user$/ }, async ($, e, next) => {
+  on("tool.check", { tool: /__(send_to_user|compact_conversation)$/ }, async ($, e, next) => {
     const reason = delegatedDeny($.plugin.name, e.tool);
     return reason !== undefined && (await isDelegated($)) ? { decision: "deny", reason } : next(e);
   }).catch(($, e, next) => next(e));
-  on("tool.call", { tool: /__send_to_user$/ }, async ($, e, next) => {
+  on("tool.call", { tool: /__(send_to_user|compact_conversation)$/ }, async ($, e, next) => {
     const reason = delegatedDeny($.plugin.name, e.tool);
     return reason !== undefined && (await isDelegated($)) ? { deny: reason } : next(e);
   }).catch(($, e, next) => next(e));
   on("session.start", async ($, e, next) => {
     // ツールは最初の発話より前に一覧へ載るよう、`next`より前に登録する。
-    // send_to_userはメイン用ツールであり、結果本文を委譲元へ返す委譲先には登録しない。
-    if (!(await isDelegated($))) await $.tool.register(SEND_TO_USER_TOOL);
-    if (!(await $.env.get("AGENT_TOOLKIT_OWNER_SESSION"))) await $.tool.register(COMPACT_CONVERSATION_TOOL);
+    // 両ツールはメイン用ツールであり、委譲先には登録しない。
+    if (!(await isDelegated($))) {
+      await $.tool.register(SEND_TO_USER_TOOL);
+      await $.tool.register(COMPACT_CONVERSATION_TOOL);
+    }
     const result = await next(e);
     // `atk agents-exit-session`の終了要求を受け付ける準備ができたことを示す印を書き、前の要求を消費済みにする。
     const sessionId = await $.session.id();
