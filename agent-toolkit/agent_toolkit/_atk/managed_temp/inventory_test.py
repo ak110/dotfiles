@@ -202,8 +202,8 @@ def test_force_remove_preserves_non_directory_replacement_and_registry(
     target.rename(displaced)
     outside = tmp_path / f"outside-{replacement}"
     outside.mkdir()
-    sentinel = outside / "keep.txt"
-    sentinel.write_text("keep", encoding="utf-8")
+    kept_file = outside / "keep.txt"
+    kept_file.write_text("keep", encoding="utf-8")
     if replacement == "symlink":
         target.symlink_to(outside, target_is_directory=True)
     else:
@@ -218,7 +218,7 @@ def test_force_remove_preserves_non_directory_replacement_and_registry(
         assert target.resolve() == outside
     else:
         assert target.read_text(encoding="utf-8") == "keep"
-    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert kept_file.read_text(encoding="utf-8") == "keep"
     assert registry.read_text(encoding="utf-8") == registry_body
 
 
@@ -1051,13 +1051,13 @@ class TestManagedTempWindows:
         target = subject.create_managed_temp("windows-reparse")
         outside = tmp_path / "outside"
         outside.mkdir()
-        sentinel = outside / "sentinel.txt"
-        sentinel.write_text("keep", encoding="utf-8")
+        kept_file = outside / "sentinel.txt"
+        kept_file.write_text("keep", encoding="utf-8")
         junction = target / "junction"
         _make_junction(junction, outside)
         with pytest.raises(subject.ManagedTempError, match="reparse point"):
             subject.cleanup_managed_temp(target)
-        assert sentinel.read_text(encoding="utf-8") == "keep"
+        assert kept_file.read_text(encoding="utf-8") == "keep"
         assert target.exists()
 
     def test_cleanup_accepts_a_junction_within_the_managed_root(
@@ -1070,8 +1070,8 @@ class TestManagedTempWindows:
         target = subject.create_managed_temp("windows-junction")
         destination = target.parent / "junction-destination"
         destination.mkdir()
-        sentinel = destination / "keep.txt"
-        sentinel.write_text("keep", encoding="utf-8")
+        kept_file = destination / "keep.txt"
+        kept_file.write_text("keep", encoding="utf-8")
         _make_junction(target / "junction", destination)
         registry = managed_temp_registry._registry_path(target)
 
@@ -1079,7 +1079,7 @@ class TestManagedTempWindows:
 
         assert not target.exists()
         assert not registry.exists()
-        assert sentinel.read_text(encoding="utf-8") == "keep"
+        assert kept_file.read_text(encoding="utf-8") == "keep"
 
     def test_cleanup_accepts_nested_junctions_independent_of_enumeration_order(
         self,
@@ -1139,8 +1139,8 @@ class TestManagedTempWindows:
         outside = tmp_path / "outside-junction-destination"
         destination.mkdir()
         outside.mkdir()
-        sentinel = outside / "keep.txt"
-        sentinel.write_text("keep", encoding="utf-8")
+        kept_file = outside / "keep.txt"
+        kept_file.write_text("keep", encoding="utf-8")
         junction = target / "junction"
         _make_junction(junction, destination)
         registry = managed_temp_registry._registry_path(target)
@@ -1161,7 +1161,7 @@ class TestManagedTempWindows:
 
         assert target.exists()
         assert registry.exists()
-        assert sentinel.read_text(encoding="utf-8") == "keep"
+        assert kept_file.read_text(encoding="utf-8") == "keep"
 
     def test_cleanup_resumes_a_quarantine_containing_an_accepted_junction(
         self,
