@@ -157,8 +157,44 @@ def platform_entrypoint(repo: pathlib.Path, platform_name: str) -> list[str]:
     raise UpgradeCheckError(f"未対応のプラットフォームである: {platform_name}")
 
 
+def _parent_mise_data_dirs(environ: Mapping[str, str], platform_name: str) -> list[pathlib.Path]:
+    """親プロセスの環境変数からmiseのデータディレクトリの候補を返す。
+
+    順序と既定値はmise公式文書のディレクトリ表（https://mise.jdx.dev/directories.html ）に合わせる。
+    """
+    if mise_data_dir := environ.get("MISE_DATA_DIR"):
+        dirs = [pathlib.Path(mise_data_dir)]
+    elif xdg_data_home := environ.get("XDG_DATA_HOME"):
+        dirs = [pathlib.Path(xdg_data_home) / "mise"]
+    else:
+        home_value = environ.get("USERPROFILE" if platform_name == "windows" else "HOME")
+        home = pathlib.Path(home_value) if home_value else pathlib.Path.home()
+        dirs = [home / ".local" / "share" / "mise"]
+    if platform_name == "windows" and (local_app_data := environ.get("LOCALAPPDATA")):
+        dirs.append(pathlib.Path(local_app_data) / "mise")
+    return dirs
+
+
+def _without_mise_entries(path_value: str, mise_dirs: Sequence[pathlib.Path]) -> str:
+    """`PATH`の値から、miseのデータディレクトリの`shims`と`installs`配下の要素を除く。"""
+    excluded = [
+        os.path.normcase(os.path.abspath(directory / name)) for directory in mise_dirs for name in ("shims", "installs")
+    ]
+
+    def is_excluded(entry: str) -> bool:
+        normalized = os.path.normcase(os.path.abspath(entry))
+        return any(normalized == base or normalized.startswith(base + os.sep) for base in excluded)
+
+    return os.pathsep.join(entry for entry in path_value.split(os.pathsep) if not (entry and is_excluded(entry)))
+
+
 def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name: str) -> dict[str, str]:
-    """ユーザー環境から状態を分離し、ランチャーが参照するuvを配置する。"""
+    """ユーザー環境から状態を分離し、ランチャーが参照するuvを配置する。
+
+    `XDG_DATA_HOME`の差し替えで、子の中のmiseは親が導入したツールを認識しない。
+    親のmiseのshimやツールを子が名前で起動すると、shimと検証homeの実行ファイルの間でexecが往復して止まらないため、
+    子へ渡す`PATH`から親のmiseのデータディレクトリ配下を除く。
+    """
     uv_name = "uv.exe" if platform_name == "windows" else "uv"
     uv_target = home / ".local" / "bin" / uv_name
     uv_target.parent.mkdir(parents=True, exist_ok=True)
@@ -169,6 +205,8 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
     # 専用binはinstallerが作成するため、ここでは作成しない。
     codex_bin = home / ".local" / "share" / "codex" / "bin" if platform_name == "windows" else uv_target.parent
     env = os.environ.copy()
+    # 差し替える前の親の環境変数から、親のmiseのデータディレクトリを求める。
+    mise_dirs = _parent_mise_data_dirs(env, platform_name)
     # 可視binの上書きを継承すると、installerが検証home外のjunctionを作成・更新する。
     env.pop("HERDR_INSTALL_DIR", None)
     visible_bins = [str(codex_bin), str(uv_target.parent)]
@@ -200,7 +238,8 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
             "PYTHONIOENCODING": "utf-8",
         }
     )
-    env["PATH"] = os.pathsep.join((*dict.fromkeys(visible_bins), env.get("PATH", "")))
+    parent_path = _without_mise_entries(env.get("PATH", ""), mise_dirs)
+    env["PATH"] = os.pathsep.join((*dict.fromkeys(visible_bins), parent_path))
     return env
 
 
@@ -294,14 +333,16 @@ def run_upgrade_check(
     Windowsでは`HKCU\\Environment`を検証前の状態へ戻し、両プラットフォームで通常profile側の監視ディレクトリの
     直下の項目名を前後で比べる。差分があれば、隔離の漏れとして検証の時点で失敗させる。
     """
+    # 名前解決は親のmiseのshimを返し得るため、このスクリプトを起動したuv本体を環境変数`UV`から取る。
+    # uvは0.6.0以降、起動した全ての子プロセスへ`UV`を渡す（https://docs.astral.sh/uv/reference/environment/ ）。
+    uv_path = os.environ.get("UV")
+    if not uv_path:
+        raise UpgradeCheckError("環境変数UVが無い。uv run --script scripts/check_update_dotfiles_upgrade.py で起動し直す。")
     current_oid = _git_value(source_repo, "rev-parse", "HEAD", runner=runner)
     old_oid = resolve_old_commit(source_repo, current_oid, runner=runner)
     if old_oid == current_oid:
         raise UpgradeCheckError("72時間前以前の別commitを取得できなかった。履歴の全量取得を確認する。")
     print(f"更新検証を開始する: old={old_oid} current={current_oid}")
-    uv_path = shutil.which("uv")
-    if uv_path is None:
-        raise UpgradeCheckError("PATH上にuvが見つからない。")
 
     if platform_name == "windows" and registry is None:
         registry = WindowsUserEnvironment()
