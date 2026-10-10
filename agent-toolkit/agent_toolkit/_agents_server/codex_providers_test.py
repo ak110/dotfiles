@@ -634,49 +634,6 @@ async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, prov
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("old", ["", "paid-a,paid-b"])
-async def test_legacy_provider_setting_migrates_once(monkeypatch, tmp_path, old):
-    """保存旧列を実効主接続先で移し、明示空と無関係な設定を保つ。"""
-    monkeypatch.setenv("TEST_PROVIDER_KEY", "isolated-fake-api-key")
-    monkeypatch.delenv(config._config_env_name("codex_model_providers"), raising=False)
-    monkeypatch.delenv(config._config_env_name("codex_fallback_model_providers"), raising=False)
-    config._save_config({"codex_fallback_model_providers": old, "codex_fast_mode": "true"})
-    client = ProviderClient()
-    client.primary = "paid-b"
-    backend = backend_with_client(monkeypatch, client)
-    try:
-        session = await backend.start("旧設定の移行", str(tmp_path))
-        stored = config._load_config()
-        assert stored == {"codex_model_providers": "paid-b,paid-a" if old else "", "codex_fast_mode": "true"}
-        assert session.codex_model_provider == ("paid-b" if old else None)
-        client.primary = "openai"
-        assert config.migrate_codex_provider_setting("openai") == (("paid-b", "paid-a") if old else ())
-        assert config._load_config() == stored
-    finally:
-        await backend.close()
-
-
-@pytest.mark.asyncio
-async def test_legacy_environment_does_not_override_new_empty(monkeypatch, tmp_path):
-    """新しい明示空は旧envを無効にし、旧env単独の移行は保存しない。"""
-    monkeypatch.delenv(config._config_env_name("codex_model_providers"), raising=False)
-    monkeypatch.setenv(config._config_env_name("codex_fallback_model_providers"), "paid-a")
-    monkeypatch.setenv("TEST_PROVIDER_KEY", "isolated-fake-api-key")
-    config._save_config({"codex_model_providers": ""})
-    client = ProviderClient()
-    backend = backend_with_client(monkeypatch, client)
-    try:
-        session = await backend.start("新設定の空", str(tmp_path))
-        assert session.codex_model_provider is None
-        config._save_config({})
-        selection = await codex_providers.select(client.request, str(tmp_path))
-        assert selection.primary == "openai" and selection.candidates == ("paid-a",)
-        assert config._load_config() == {}
-    finally:
-        await backend.close()
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("reason", ["stopped", "retention_expired"])
 async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path, reason):
     """サブスク履歴のない主APIも解放後の公開追送で同じ接続先を維持する。"""
@@ -696,18 +653,3 @@ async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path
         assert root.sessions["provider-thread"].codex_subscription_provider is None
     finally:
         await root.close()
-
-
-@pytest.mark.asyncio
-async def test_legacy_provider_migration_save_failure_keeps_original(monkeypatch, tmp_path):
-    """移行の保存失敗で旧設定を失わず、後で再実行できる。"""
-    config._save_config({"codex_fallback_model_providers": "paid-a", "codex_fast_mode": "true"})
-    before = config._config_file_path().read_text()
-
-    def fail_write(*_args, **_kwargs):
-        raise OSError("migration storage unavailable")
-
-    monkeypatch.setattr(config, "atomic_write", fail_write)
-    with pytest.raises(OSError, match="migration storage unavailable"):
-        await codex_providers.select(ProviderClient().request, str(tmp_path))
-    assert config._config_file_path().read_text() == before

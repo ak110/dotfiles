@@ -130,9 +130,8 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 ### CodexのサブスクとAPI接続先
 
 `agents_server`の接続先の選択順は、`atk config`の`codex_model_providers`だけで指定する。
-新キーが未設定で旧キーの保存値と旧環境変数もない場合は、Codexの`config.toml`の実効`model_provider`と認証に従い、APIへ自動移行しない。
-新キーへ空文字列を保存し、新環境変数を解除した場合も同じ動作になる。
-旧設定だけが残る場合は、後述の手順で新しい設定へ移行する。
+未設定の場合は、Codexの`config.toml`の実効`model_provider`と認証に従い、APIへ自動移行しない。
+空文字列を保存し、対応する環境変数を解除した場合も同じ動作になる。
 列を指定した場合は先頭を優先し、後続を代替接続先として使う。Codex側の`model_provider`を同時に変更する必要はない。
 
 サブスクだけを使う場合はCodexへChatGPTログインし、通常設定の`model_provider`を省略するか`"openai"`にする。
@@ -166,13 +165,6 @@ API会話からChatGPTへは戻さない。API主接続の認証・モデル不�
 未定義または独立したAPI認証のない候補は除外し、全候補が使えなければ失敗で終端する。
 指定外の通常接続は候補として使わない。
 `AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS`の空でない値は保存値より優先するため、解除時はこの変数も外す。
-
-旧キー`codex_fallback_model_providers`の保存値だけがある場合は、最初の新規Codex起動でその作業ディレクトリの
-実効主接続先を旧列の先頭へ補い、新キーへ自動移行する。空の旧値は空の新値へ移る。
-新キーを明示した場合はその値を優先し、旧保存キーを除く。旧キーへのset/getは置換先を案内して拒否する。
-移行前のget/showでは移行待ちを表示する。旧環境変数`AGENT_TOOLKIT_CONFIG_CODEX_FALLBACK_MODEL_PROVIDERS`だけがある場合も
-同じ形で解釈するが、外側の環境は書き換えず保存値にも転記しない。ホスト環境の変数名と値を新形式へ置き換える。
-旧環境変数は明示した新設定を上書きしない。
 
 適用先は`agents_server`がCodexへ解決した全`mode`とその会話の継続である。
 直接Codex、`atk run-skill`、`atk wi process-loop`の起動設定は変えない。
