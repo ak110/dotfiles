@@ -510,24 +510,16 @@ def check_decision(
             awi, reflected, [*write_files, *public_write_files], derived_new_paths or [], work_dir
         )
         errors.extend(derived_errors)
-    if work_dir is not None:
+        declared = {record["パス"] for record in derived_new_paths or []}
         for name, entries in (
             (_selection.WRITE_FILES_KEY, write_files),
             (_selection.PUBLIC_WRITE_FILES_KEY, public_write_files),
         ):
             for entry in entries:
-                target = work_dir / entry
-                valid = _normalize_candidate(entry) == entry and (
-                    target.is_dir()
-                    and entry.endswith("/")
-                    or target.is_file()
-                    and not entry.endswith("/")
-                    or not target.exists()
-                    and (entry in reflected or entry in derived_paths)
-                )
-                if not valid:
+                failure = _write_path_failure(entry, work_dir, reflected, derived_paths, declared)
+                if failure is not None:
                     errors.append(
-                        f"{awi}: `{name}`のパスの不正: {entry}。"
+                        f"{awi}: `{name}`のパスの不正: {entry}: {failure}。"
                         "実在ファイル、末尾/付き実在ディレクトリ、本文明示または導出記録が正当な新設先へ直す"
                     )
     range_descriptions = {
@@ -541,9 +533,9 @@ def check_decision(
     for entry in [*write_files, *public_write_files]:
         if not _is_range(entry):
             continue
-        inner = [path for path in reflected if path != entry and path.startswith(entry)]
+        inner = sorted(path for path in reflected if path != entry and path.startswith(entry))
         if inner and not any(entry.startswith(scope) for scope in reflected_ranges):
-            errors.append(f"{awi}: 広すぎる範囲: {entry}")
+            errors.append(f"{awi}: 広すぎる範囲: {entry}（配下の本文の反映先: {', '.join(inner)}）")
     errors.extend(f"{awi}: 書き込まない反映先の不正: {path}" for path in excluded_paths if path not in reflected)
     sections = (
         (_selection.WRITE_FILES_KEY, write_files),
@@ -571,26 +563,17 @@ def _check_derived_paths(
     scopes: set[str] = set()
     seen: set[str] = set()
     errors: list[str] = []
+    body_scopes = sorted(value for value in reflected if _is_range(value))
     for record in records:
         path, scope = record["パス"], record["反映範囲"]
-        valid_path = (
-            _normalize_candidate(path) == path
-            and not any(char in path for char in "*?[]{}\\")
-            and pathlib.PurePosixPath(path).as_posix() == path
-            and (not (work_dir / path).exists() or (work_dir / path).is_file())
-            and _new_file_path(path, work_dir) == path
-        )
-        valid_scope = (
-            _normalize_candidate(scope) == scope
-            and scope.endswith("/")
-            and pathlib.PurePosixPath(scope).as_posix() + "/" == scope
-            and (work_dir / scope).is_dir()
-            and _covers(scope, path)
-            and (not any(_is_range(value) for value in reflected) or scope in reflected)
-        )
-        if not valid_path or not valid_scope or path in seen or path not in writes:
+        failures = _derived_record_failures(path, scope, body_scopes, work_dir)
+        if path in seen:
+            failures.append("同じパスを重複して宣言している")
+        if path not in writes:
+            failures.append("書込区分（`書込対象`・`公開工程の書込対象`）に同じパスが無い")
+        if failures:
             errors.append(
-                f"{awi}: `{_selection.DERIVED_NEW_PATHS_KEY}`の対応が不正: {path}（{scope}）。"
+                f"{awi}: `{_selection.DERIVED_NEW_PATHS_KEY}`の対応が不正: {path}（{scope}）: {'; '.join(failures)}。"
                 "重複を除き、新設パスを同じWIの反映範囲と書込区分へ対応付ける"
             )
         else:
@@ -598,6 +581,55 @@ def _check_derived_paths(
             scopes.add(scope)
         seen.add(path)
     return paths, scopes, errors
+
+
+def _derived_record_failures(path: str, scope: str, body_scopes: list[str], work_dir: pathlib.Path) -> list[str]:
+    """導出記録1件のパスと反映範囲について、成立しない条件を比べた値とともに返す。"""
+    failures: list[str] = []
+    if (
+        _normalize_candidate(path) != path
+        or any(char in path for char in "*?[]{}\\")
+        or pathlib.PurePosixPath(path).as_posix() != path
+    ):
+        failures.append("パスが正規化したリポジトリ相対パスではない")
+    elif (work_dir / path).exists() and not (work_dir / path).is_file():
+        failures.append("パスの実在先が通常ファイルではない")
+    elif _new_file_path(path, work_dir) != path:
+        failures.append("パスが実在する親ディレクトリと拡張子を持つ完全な新設名ではない")
+    if (
+        _normalize_candidate(scope) != scope
+        or not scope.endswith("/")
+        or pathlib.PurePosixPath(scope).as_posix() + "/" != scope
+        or not (work_dir / scope).is_dir()
+    ):
+        failures.append("反映範囲が末尾/付きの実在ディレクトリではない")
+    elif not _covers(scope, path):
+        failures.append("反映範囲がパスを含まない")
+    elif body_scopes and scope not in body_scopes:
+        failures.append(f"反映範囲が本文のディレクトリ範囲のいずれでもない: 本文の範囲={', '.join(body_scopes)}")
+    return failures
+
+
+def _write_path_failure(
+    entry: str, work_dir: pathlib.Path, reflected: set[str], derived_paths: set[str], declared: set[str]
+) -> str | None:
+    """書込区分の要素1件が成立しない条件を返す。成立する場合は`None`を返す。"""
+    target = work_dir / entry
+    if _normalize_candidate(entry) != entry:
+        return "正規化したリポジトリ相対パスではない"
+    if target.is_dir():
+        return None if entry.endswith("/") else "実在ディレクトリだが末尾/が無い"
+    if target.is_file():
+        return None if not entry.endswith("/") else "実在ファイルだが末尾/が付く"
+    if target.exists():
+        return "実在先がファイルでもディレクトリでもない"
+    if entry in reflected or entry in derived_paths:
+        return None
+    if entry in declared:
+        return (
+            "未作成のパスで、同じWIの`導出した新設先`の記録が不正なため新設先として受理しない（その記録の診断を直す対象とする）"
+        )
+    return "未作成のパスで、本文の反映先にも`導出した新設先`にも無い"
 
 
 def _check_public_write_rationales(items: list[dict[str, object]], costs: list[dict[str, object]]) -> list[str]:
@@ -705,21 +737,26 @@ def check(
 
 
 def _check_allocation_sources(selection: dict[str, object], private_notes: pathlib.Path) -> list[str]:
-    """成分の型付き根拠を元の依存・再開位置・書込対象へ対応付ける。"""
+    """依存と再開計画の型付き根拠を元のWIのfrontmatterと選定の再開位置へ対応付け、一致しない欄と両方の値を示す。"""
     data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
     items = {
         item[_selection.WI_KEY]: item for item in typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
     }
-    costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
-    stages = {row[_selection.LANE_KEY]: row.get(_selection.STAGE_KEY, 1) for row in costs}
+    writes, stages = selection_contract.current_write_stages(selection)
     sources: dict[str, dict[str, typing.Any]] = {}
     errors: list[str] = []
     for group in data["不可分成分"]:
         for edge in group["結合条件"]:
             first, second, kind, evidence = (edge[key] for key in ("WI1", "WI2", "種別", "根拠"))
-            if first not in items or second not in items or not selection_contract.valid_allocation_edge(edge):
+            # 書込重複は成立の判定が選定の現在値を使うため、比べる元入力を持たない。
+            if (
+                kind == "書込重複"
+                or first not in items
+                or second not in items
+                or selection_contract.allocation_edge_failures(edge, writes, stages)
+            ):
                 continue
-            pair = (items[first], items[second])
+            mismatches: list[str] = []
             if kind == "依存":
                 for name in (first, second):
                     if name not in sources:
@@ -733,25 +770,25 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
                                 f"依存元のWI本文を読み込めない: {name}: {error}", next_action=_FIX_PRIVATE_NOTES
                             ) from error
                         sources[name] = parsed[0] if parsed else {}
-                actual = sources[evidence["依存元"]].get("depends_on", [])
-                matches = actual == evidence["depends_on"] and all(
-                    isinstance(sources[name].get("target_repo"), str)
-                    and _git_remote.resolve_repo_identifier(sources[name]["target_repo"]) == evidence[f"リポジトリ{index}"]
-                    for index, name in enumerate((first, second), 1)
-                )
-            elif kind == "再開計画":
-                matches = all(
-                    _resume_plan_id(item.get("再開位置")) == pathlib.PurePosixPath(evidence[f"計画{index}"]).name
-                    for index, item in enumerate(pair, 1)
-                )
+                source_name = evidence["依存元"]
+                actual = sources[source_name].get("depends_on", [])
+                if actual != evidence["depends_on"]:
+                    mismatches.append(f"depends_on: 根拠={evidence['depends_on']}、{source_name}のfrontmatter={actual}")
+                for index, name in enumerate((first, second), 1):
+                    repository = sources[name].get("target_repo")
+                    resolved = _git_remote.resolve_repo_identifier(repository) if isinstance(repository, str) else None
+                    if resolved != evidence[f"リポジトリ{index}"]:
+                        mismatches.append(
+                            f"リポジトリ{index}: 根拠={evidence[f'リポジトリ{index}']}、{name}のtarget_repo={resolved}"
+                        )
             else:
-                matches = all(
-                    evidence[f"パス{index}"] == _string_list(item, _selection.WRITE_FILES_KEY)
-                    and evidence[f"段階{index}"] == stages.get(item[_selection.LANE_KEY])
-                    for index, item in enumerate(pair, 1)
-                )
-            if not matches:
-                errors.append(f"初回配分: {first}と{second}の{kind}の結合根拠が元入力と一致しない")
+                for index, name in enumerate((first, second), 1):
+                    planned = _resume_plan_id(items[name].get("再開位置"))
+                    recorded = pathlib.PurePosixPath(evidence[f"計画{index}"]).name
+                    if planned != recorded:
+                        mismatches.append(f"計画{index}: 根拠の計画={recorded}、{name}の再開位置の計画={planned}")
+            if mismatches:
+                errors.append(f"初回配分: {first}と{second}の{kind}の結合根拠が元入力と一致しない: {'; '.join(mismatches)}")
     return errors
 
 

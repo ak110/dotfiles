@@ -95,7 +95,8 @@ def test_public_generation_uses_candidate_facts_and_typed_edges_once(
     assert initial["不可分成分"][0]["WI"] == names
     generated = initial["不可分成分"][0]["結合条件"][0]["根拠"]
     if kind == "書込重複":
-        assert generated["パス1"] == ["src/model.py"] and generated["段階2"] == 1
+        # パスと段階は選定が所有するため、根拠は意味判断の3欄だけを持つ。
+        assert set(generated) == {"定義1", "定義2", "段階比較"}
     elif kind == "依存":
         assert generated["depends_on"] == [names[0]] and generated["リポジトリ1"] == "github.com/test/repo"
     else:

@@ -342,14 +342,16 @@ def test_public_check_component_evidence_matches_source(
     kind: str,
     matches: bool,
 ) -> None:
-    """結合の構造だけを整えた偽の根拠は、元入力との対照で拒否する。"""
+    """結合の構造だけを整えた偽の根拠は、元入力との対照で拒否する。書込重複は選定の現在値で判定する。"""
     repo, notes = env
-    for name in ("a.md", "b.md"):
-        _awi(notes, name, "`README.md`を変える。", dependencies=["a.md"] if name == "b.md" else [])
+    # 書込重複の不一致は、根拠ではなく現在の`書込対象`が重ならない入力で表す。
+    targets = {"a.md": "README.md", "b.md": "src/model.py" if kind == "書込重複" and not matches else "README.md"}
+    for name, target in targets.items():
+        _awi(notes, name, f"`{target}`を変える。", dependencies=["a.md"] if name == "b.md" else [])
     plan = str(tmp_path / "shared.md")
     path = _write_selection(
         tmp_path / "component.yaml",
-        [{"WI": name, "レーン": "lane-01", "書込対象": ["README.md"], "再開位置": plan} for name in ("a.md", "b.md")],
+        [{"WI": name, "レーン": "lane-01", "書込対象": [target], "再開位置": plan} for name, target in targets.items()],
     )
     evidences: dict[str, dict[str, typing.Any]] = {
         "依存": {
@@ -359,15 +361,7 @@ def test_public_check_component_evidence_matches_source(
             "depends_on": ["a.md"],
         },
         "再開計画": {"計画1": plan, "計画2": plan},
-        "書込重複": {
-            "パス1": ["README.md"],
-            "パス2": ["README.md"],
-            "定義1": ["f"],
-            "定義2": ["f"],
-            "段階1": 1,
-            "段階2": 1,
-            "段階比較": "同じ定義なので段階でも直列となる",
-        },
+        "書込重複": {"定義1": ["f"], "定義2": ["f"], "段階比較": "同じ定義なので段階でも直列となる"},
     }
     evidence = evidences[kind]
     if not matches:
@@ -375,14 +369,215 @@ def test_public_check_component_evidence_matches_source(
             evidence["depends_on"] = ["a.md", "invented.md"]
         elif kind == "再開計画":
             evidence["計画1"] = evidence["計画2"] = str(tmp_path / "other.md")
-        else:
-            evidence["パス1"] = evidence["パス2"] = ["src/model.py"]
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     data["初回配分"]["不可分成分"] = [
         {"WI": ["a.md", "b.md"], "結合条件": [{"WI1": "a.md", "WI2": "b.md", "種別": kind, "根拠": evidence}]}
     ]
     path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     assert _dispatch(str(path), "--work-dir", str(repo)) == (0 if matches else 1)
+
+
+def _generated_overlap_selection(tmp_path: pathlib.Path, repo: pathlib.Path, notes: pathlib.Path) -> pathlib.Path:
+    """生成付き保存の公開操作で、書込重複の辺を持つ選定YAMLを作成してそのパスを返す。"""
+    _awi(notes, "a.md", "`src/model.py`と`README.md`を変える。")
+    _awi(notes, "b.md", "`src/model.py`を変える。")
+    candidates = tmp_path / "candidates.jsonl"
+    candidates.write_text(
+        "".join(
+            json.dumps({"filename": name, "staleness": {"status": "current", "later_commit_count": 0}}) + "\n"
+            for name in ("a.md", "b.md")
+        ),
+        encoding="utf-8",
+    )
+    judgments = tmp_path / "judgments.yaml"
+    judgments.write_text(
+        yaml.safe_dump(
+            {
+                "選定": [
+                    {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py", "README.md"]},
+                    {"WI": "b.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
+                ],
+                "レーンの所要時間": [{"レーン": "lane-01", "実装秒数": 600, "統合秒数": 60, "根拠": "同じ定義を順に書く"}],
+                "結合条件": [
+                    {
+                        "WI1": "a.md",
+                        "WI2": "b.md",
+                        "種別": "書込重複",
+                        "根拠": {"定義1": ["model"], "定義2": ["model"], "段階比較": "同じ定義を同段階で書く"},
+                    }
+                ],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    path = tmp_path / "selection.yaml"
+    assert _dispatch(str(judgments), "--candidate-file", str(candidates), "--output", str(path), "--work-dir", str(repo)) == 0
+    return path
+
+
+def _update_items(path: pathlib.Path, update: typing.Callable[[dict[str, dict[str, typing.Any]]], None]) -> dict[str, object]:
+    """保存済み選定YAMLの`選定`の項目をWI名で更新して保存し、変更前の`初回配分`を返す。"""
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    update({item["WI"]: item for item in data["選定"]})
+    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    return data["初回配分"]
+
+
+@pytest.mark.parametrize("change", ["append", "reorder"])
+def test_write_targets_can_be_extended_after_save(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], change: str
+) -> None:
+    """保存後の書込対象の追加と並べ替えは、初回配分を書き換えずに終了コード0となる。"""
+    repo, notes = env
+    path = _generated_overlap_selection(tmp_path, repo, notes)
+    initial = yaml.safe_load(path.read_text(encoding="utf-8"))["初回配分"]
+
+    def update(items: dict[str, dict[str, typing.Any]]) -> None:
+        if change == "append":
+            items["b.md"]["書込対象"].append("docs/development/design.md")
+        else:
+            items["a.md"]["書込対象"].reverse()
+
+    assert _update_items(path, update) == initial
+    capsys.readouterr()
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0, capsys.readouterr().err
+
+
+def test_write_overlap_edge_reports_missing_overlap(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """両端の書込対象が重ならなくなった書込重複の辺は、2つのWI名と重ならない値を示して拒否する。"""
+    repo, notes = env
+    path = _generated_overlap_selection(tmp_path, repo, notes)
+
+    def update(items: dict[str, dict[str, typing.Any]]) -> None:
+        items["a.md"]["書込対象"] = ["README.md"]
+        items["a.md"]["書き込まない反映先"] = ["src/model.py"]
+
+    _update_items(path, update)
+    capsys.readouterr()
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 1
+    lines = [line for line in capsys.readouterr().err.splitlines() if "結合根拠が成立しない" in line]
+    assert len(lines) == 1
+    assert "a.md" in lines[0] and "b.md" in lines[0] and "重ならない" in lines[0]
+    assert "README.md" in lines[0] and "src/model.py" in lines[0]
+
+
+def test_legacy_write_overlap_evidence_is_accepted(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """変更前の版が根拠へ複製したパスと段階は受理し、判定には使わない。"""
+    repo, notes = env
+    path = _generated_overlap_selection(tmp_path, repo, notes)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    evidence = data["初回配分"]["不可分成分"][0]["結合条件"][0]["根拠"]
+    # 変更前の生成付き保存が書いた形。値は保存後に書込対象を並べ替えた状態と一致しない。
+    evidence.update({"パス1": ["README.md", "src/model.py"], "パス2": ["src/model.py"], "段階1": 1, "段階2": 1})
+    data["選定"][0]["書込対象"].append("docs/development/design.md")
+    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    capsys.readouterr()
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0, capsys.readouterr().err
+
+
+def _diagnostic(output: str, marker: str) -> str:
+    """診断出力の違反行から`marker`を含む行を1行だけ選んで返す。"""
+    lines = [line for line in output.splitlines() if marker in line and not line.startswith("次の操作:")]
+    assert len(lines) == 1, output
+    return lines[0]
+
+
+@pytest.mark.parametrize(
+    "case,marker,expected",
+    [
+        ("derived-body-scope", "`導出した新設先`の対応が不正", ["本文の範囲", "docs/development/"]),
+        ("derived-body-scope", "`書込対象`のパスの不正", ["src/save.py", "`導出した新設先`の記録が不正"]),
+        ("derived-duplicate", "`導出した新設先`の対応が不正", ["重複して宣言"]),
+        (
+            "derived-missing-write",
+            "`導出した新設先`の対応が不正",
+            ["書込区分（`書込対象`・`公開工程の書込対象`）に同じパスが無い"],
+        ),
+        ("derived-directory", "`導出した新設先`の対応が不正", ["通常ファイルではない"]),
+        ("derived-missing-parent", "`導出した新設先`の対応が不正", ["完全な新設名", "src/missing/save.py"]),
+        ("derived-scope-outside", "`導出した新設先`の対応が不正", ["反映範囲がパスを含まない", "docs/"]),
+        ("broad", "広すぎる範囲", ["src/", "src/model.py"]),
+        ("edge-definitions", "結合根拠が成立しない", ["定義が交わらない", "入力", "出力"]),
+        ("edge-dependency", "結合根拠が成立しない", ["depends_on", "a.md", "b.md"]),
+        ("source-dependency", "結合根拠が元入力と一致しない", ["depends_on", "invented.md", "frontmatter"]),
+        ("source-plan", "結合根拠が元入力と一致しない", ["計画1", "other.md", "shared.md"]),
+    ],
+)
+def test_compound_diagnostics_name_failed_condition(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    marker: str,
+    expected: list[str],
+) -> None:
+    """複数の条件をまとめた判定の診断行は、成立しなかった条件と直すのに要る値を含む。"""
+    repo, notes = env
+    plan = str(tmp_path / "shared.md")
+    if case.startswith("derived"):
+        record = _derived("src/missing/save.py" if case == "derived-missing-parent" else "src/save.py")
+        item: dict[str, typing.Any] = {
+            "WI": "a.md",
+            "レーン": "lane-01",
+            "書込対象": [record["パス"]],
+            "導出した新設先": [record],
+        }
+        body = "`src/`へ保存用入口を新設する。"
+        if case == "derived-body-scope":
+            body = "`docs/development/`へ保存用入口を新設する。"
+        elif case == "derived-duplicate":
+            item["導出した新設先"].append(dict(record))
+        elif case == "derived-missing-write":
+            item["書込対象"] = []
+        elif case == "derived-directory":
+            (repo / record["パス"]).mkdir()
+        elif case == "derived-scope-outside":
+            record["反映範囲"] = "docs/"
+            body = "保存用入口を新設する。"
+        _awi(notes, "a.md", body)
+        path = _write_selection(tmp_path / "selection.yaml", [item])
+    elif case == "broad":
+        _awi(notes, "a.md", "`src/model.py`を変える。")
+        path = _write_selection(tmp_path / "selection.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/"]}])
+    else:
+        for name in ("a.md", "b.md"):
+            _awi(notes, name, "`README.md`を変える。", dependencies=["a.md"] if name == "b.md" else [])
+        path = _write_selection(
+            tmp_path / "selection.yaml",
+            [{"WI": name, "レーン": "lane-01", "書込対象": ["README.md"], "再開位置": plan} for name in ("a.md", "b.md")],
+        )
+        evidences: dict[str, dict[str, typing.Any]] = {
+            "edge-definitions": {"定義1": ["入力"], "定義2": ["出力"], "段階比較": "同段階で書く"},
+            "edge-dependency": {
+                "リポジトリ1": "github.com/test/repo",
+                "リポジトリ2": "github.com/test/repo",
+                "依存元": "b.md",
+                "depends_on": ["c.md"],
+            },
+            "source-dependency": {
+                "リポジトリ1": "github.com/test/repo",
+                "リポジトリ2": "github.com/test/repo",
+                "依存元": "b.md",
+                "depends_on": ["a.md", "invented.md"],
+            },
+            "source-plan": {"計画1": str(tmp_path / "other.md"), "計画2": str(tmp_path / "other.md")},
+        }
+        evidence = evidences[case]
+        kind = {"edge-definitions": "書込重複", "source-plan": "再開計画"}.get(case, "依存")
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data["初回配分"]["不可分成分"] = [
+            {"WI": ["a.md", "b.md"], "結合条件": [{"WI1": "a.md", "WI2": "b.md", "種別": kind, "根拠": evidence}]}
+        ]
+        path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 1
+    line = _diagnostic(capsys.readouterr().err, marker)
+    for value in expected:
+        assert value in line, line
 
 
 @pytest.mark.parametrize("state,expected", [(None, 1), ("未統合", 1), ("統合済み", 0)])

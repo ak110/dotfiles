@@ -60,6 +60,9 @@ _TOP_LEVEL_KEYS = frozenset(
         _selection.ADDED_WIS_KEY,
     }
 )
+_WRITE_OVERLAP_KEYS = frozenset({"定義1", "定義2", "段階比較"})
+# 変更前の版が書込重複の根拠へ複製した欄。保存済みの選定YAMLを読めるよう受理し、判定には使わない。
+_LEGACY_WRITE_OVERLAP_KEYS = _WRITE_OVERLAP_KEYS | {"パス1", "パス2", "段階1", "段階2"}
 _MODEL_ROLES = ("実装担当", "実行レビュー担当")
 _MODEL_TYPE_RE = re.compile(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+")
 
@@ -120,11 +123,10 @@ def generate_selection(
     if len(assignments) != len(decisions):
         raise ValueError("レーン割当は意味判断として全WIへ明示する")
     by_name = {item[_selection.WI_KEY]: item for item in decisions}
-    stages = {row[_selection.LANE_KEY]: row.get(_selection.STAGE_KEY, 1) for row in costs if isinstance(row, dict)}
     raw_edges = judgments.get("結合条件", [])
     if not isinstance(raw_edges, list):
         raise ValueError("結合条件はメインが確定したWIの組と種別・定義の列で指定する")
-    edges = [_generated_edge(edge, by_name, stages, metadata, resume_plan) for edge in raw_edges]
+    edges = [_generated_edge(edge, by_name, metadata, resume_plan) for edge in raw_edges]
     members = [name for name, lane in assignments.items() if lane != _LANE_NONE]
     links: dict[str, set[str]] = {name: set() for name in members}
     for edge in edges:
@@ -156,7 +158,6 @@ def generate_selection(
 def _generated_edge(
     value: object,
     decisions: dict[str, dict[str, typing.Any]],
-    stages: dict[typing.Any, typing.Any],
     metadata: Callable[[str], dict[str, typing.Any]],
     resume_plan: Callable[[object], str | None],
 ) -> dict[str, typing.Any]:
@@ -168,11 +169,10 @@ def _generated_edge(
         raise ValueError("結合条件のWIと根拠を判断入力の選定へ対応付ける")
     evidence = edge["根拠"]
     if kind == "書込重複":
-        if set(evidence) != {"定義1", "定義2", "段階比較"}:
-            raise ValueError("書込重複の判断は定義1・定義2・段階比較だけを指定する。パスと段階は生成する")
-        for index, name in enumerate((first, second), 1):
-            evidence[f"パス{index}"] = copy.deepcopy(decisions[name].get(_selection.WRITE_FILES_KEY, []))
-            evidence[f"段階{index}"] = stages.get(decisions[name].get(_selection.LANE_KEY), 1)
+        # パスと段階は選定の`書込対象`と`段階`が所有し、`pick-wi-check`の実行時にその現在値から重なりを判定する。
+        # 根拠へ複製すると、保存後の書込対象の追加で全ての辺を同時に書き換える必要が生じる。
+        if set(evidence) != _WRITE_OVERLAP_KEYS:
+            raise ValueError("書込重複の判断は定義1・定義2・段階比較だけを指定する。パスと段階は選定の現在値から判定する")
     elif kind == "再開計画":
         if evidence:
             raise ValueError("再開計画の根拠は空写像で指定する。各WIの再開位置から生成する")
@@ -352,6 +352,7 @@ def allocation_errors(selection: dict[str, object]) -> list[str]:
     active = {name for name, lane in assignments.items() if lane != _LANE_NONE}
     if set(members) != active or len(members) != len(set(members)):
         errors.append("初回配分の不可分成分は初回の実施対象WIを過不足なく1回ずつ覆うようにする")
+    writes, stages = current_write_stages(selection)
     for group in groups:
         names = set(group["WI"])
         links: dict[str, set[str]] = {name: set() for name in names}
@@ -360,8 +361,9 @@ def allocation_errors(selection: dict[str, object]) -> list[str]:
             if first == second or first not in names or second not in names:
                 errors.append("結合条件のWIの組が不可分成分の異なる構成項目を指していない")
                 continue
-            if not valid_allocation_edge(edge):
-                errors.append(f"{first}と{second}: {edge['種別']}の結合根拠が成立しない")
+            failures = allocation_edge_failures(edge, writes, stages)
+            if failures:
+                errors.append(f"{first}と{second}: {edge['種別']}の結合根拠が成立しない: {'; '.join(failures)}")
                 continue
             links[first].add(second)
             links[second].add(first)
@@ -385,45 +387,84 @@ def allocation_errors(selection: dict[str, object]) -> list[str]:
     return errors
 
 
-def valid_allocation_edge(edge: dict[str, typing.Any]) -> bool:
-    """選定が保持する元入力の構造化根拠から結合の成立を判定する。意味の検収はメインが行う。"""
+def current_write_stages(selection: dict[str, object]) -> tuple[dict[str, list[str]], dict[str, int]]:
+    """書込重複の判定に使う、選定の現在の各WIの`書込対象`と、そのWIのレーンの`段階`を返す。"""
+    items = typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
+    costs = typing.cast(list[dict[str, typing.Any]], _selection.lane_costs(selection))
+    lane_stages = {row[_selection.LANE_KEY]: row.get(_selection.STAGE_KEY, 1) for row in costs}
+    writes = {item[_selection.WI_KEY]: list(item.get(_selection.WRITE_FILES_KEY, [])) for item in items}
+    stages = {item[_selection.WI_KEY]: lane_stages.get(item[_selection.LANE_KEY], 1) for item in items}
+    return writes, stages
+
+
+def allocation_edge_failures(edge: dict[str, typing.Any], writes: dict[str, list[str]], stages: dict[str, int]) -> list[str]:
+    """結合の辺が成立しない条件を、比べた値とともに列で返す。空列は成立を表す。
+
+    書込重複は根拠の定義と段階比較に加え、両端のパスの重なりと段階の一致を選定の現在値（`writes`・`stages`）から判定する。
+    依存と再開計画は根拠が保持する元入力の値から判定し、元入力との一致は呼出側が確かめる。意味の検収はメインが行う。
+    """
     first, second, kind, evidence = (edge[key] for key in ("WI1", "WI2", "種別", "根拠"))
     if kind == "依存":
-        return (
-            set(evidence) == {"リポジトリ1", "リポジトリ2", "依存元", "depends_on"}
-            and isinstance(evidence["リポジトリ1"], str)
-            and bool(evidence["リポジトリ1"].strip())
-            and evidence["リポジトリ1"] == evidence["リポジトリ2"]
-            and evidence["依存元"] in (first, second)
-            and is_string_list(evidence["depends_on"])
-            and (second if evidence["依存元"] == first else first) in evidence["depends_on"]
-        )
+        return _dependency_edge_failures(first, second, evidence)
     if kind == "再開計画":
-        return (
-            set(evidence) == {"計画1", "計画2"}
-            and isinstance(evidence["計画1"], str)
-            and bool(evidence["計画1"].strip())
-            and evidence["計画1"] == evidence["計画2"]
-            and evidence["計画1"] not in ("なし", "計画なし")
-        )
-    return (
-        set(evidence) == {"パス1", "パス2", "定義1", "定義2", "段階1", "段階2", "段階比較"}
-        and all(
-            is_string_list(evidence[key]) and evidence[key] and all(value.strip() for value in evidence[key])
-            for key in ("パス1", "パス2", "定義1", "定義2")
-        )
-        and bool(set(evidence["定義1"]) & set(evidence["定義2"]))
-        and any(
-            left == right or left.endswith("/") and right.startswith(left) or right.endswith("/") and left.startswith(right)
-            for left in evidence["パス1"]
-            for right in evidence["パス2"]
-        )
-        and all(isinstance(evidence[key], int) and not isinstance(evidence[key], bool) for key in ("段階1", "段階2"))
-        and evidence["段階1"] >= 1
-        and evidence["段階1"] == evidence["段階2"]
-        and isinstance(evidence["段階比較"], str)
-        and bool(evidence["段階比較"].strip())
-    )
+        keys = {"計画1", "計画2"}
+        if set(evidence) != keys:
+            return [_evidence_keys_failure(evidence, keys)]
+        failures = []
+        plans = (evidence["計画1"], evidence["計画2"])
+        if not all(isinstance(plan, str) and plan.strip() for plan in plans):
+            failures.append(f"計画1・計画2が空でない文字列ではない: {plans[0]!r}、{plans[1]!r}")
+        elif plans[0] != plans[1]:
+            failures.append(f"計画1と計画2が異なる: {plans[0]}、{plans[1]}")
+        elif plans[0] in ("なし", "計画なし"):
+            failures.append(f"計画が再開計画を指さない: {plans[0]}")
+        return failures
+    if set(evidence) not in (_WRITE_OVERLAP_KEYS, _LEGACY_WRITE_OVERLAP_KEYS):
+        return [_evidence_keys_failure(evidence, _WRITE_OVERLAP_KEYS)]
+    failures = [
+        f"{key}が空でない文字列の空でない列ではない: {evidence[key]!r}"
+        for key in ("定義1", "定義2")
+        if not is_string_list(evidence[key]) or not evidence[key] or any(not value.strip() for value in evidence[key])
+    ]
+    if not failures and not set(evidence["定義1"]) & set(evidence["定義2"]):
+        failures.append(f"定義が交わらない: 定義1={evidence['定義1']}、定義2={evidence['定義2']}")
+    if not isinstance(evidence["段階比較"], str) or not evidence["段階比較"].strip():
+        failures.append(f"段階比較が空: {evidence['段階比較']!r}")
+    left, right = writes.get(first, []), writes.get(second, [])
+    if not any(_paths_overlap(one, other) for one in left for other in right):
+        failures.append(f"両端の`書込対象`のパスが重ならない: {first}={left}、{second}={right}")
+    if stages.get(first, 1) != stages.get(second, 1):
+        failures.append(f"両端のレーンの段階が異なる: {first}={stages.get(first, 1)}、{second}={stages.get(second, 1)}")
+    return failures
+
+
+def _dependency_edge_failures(first: str, second: str, evidence: dict[str, typing.Any]) -> list[str]:
+    keys = {"リポジトリ1", "リポジトリ2", "依存元", "depends_on"}
+    if set(evidence) != keys:
+        return [_evidence_keys_failure(evidence, keys)]
+    failures = []
+    repositories = (evidence["リポジトリ1"], evidence["リポジトリ2"])
+    if not isinstance(repositories[0], str) or not repositories[0].strip():
+        failures.append(f"リポジトリ1が空でない文字列ではない: {repositories[0]!r}")
+    elif repositories[0] != repositories[1]:
+        failures.append(f"リポジトリ1とリポジトリ2が異なる: {repositories[0]}、{repositories[1]!r}")
+    source = evidence["依存元"]
+    if source not in (first, second):
+        failures.append(f"依存元が両端のWIではない: 依存元={source!r}、両端={first}、{second}")
+    elif not is_string_list(evidence["depends_on"]):
+        failures.append(f"depends_onが文字列の列ではない: {evidence['depends_on']!r}")
+    elif (target := second if source == first else first) not in evidence["depends_on"]:
+        failures.append(f"依存元{source}のdepends_onが他端{target}を含まない: depends_on={evidence['depends_on']}")
+    return failures
+
+
+def _evidence_keys_failure(evidence: dict[str, typing.Any], expected: typing.AbstractSet[str]) -> str:
+    return f"根拠の欄が{'・'.join(sorted(expected))}ではない: 実際の欄={'・'.join(sorted(map(str, evidence)))}"
+
+
+def _paths_overlap(left: str, right: str) -> bool:
+    """同じパスか、末尾`/`の範囲が他方を含むかを返す。"""
+    return left == right or left.endswith("/") and right.startswith(left) or right.endswith("/") and left.startswith(right)
 
 
 def _derived_structure_errors(label: str, records: object) -> list[str]:
