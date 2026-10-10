@@ -25,5 +25,7 @@
 ## 実行のしかた
 
 - 計画で確定した検証行は`atk run-script plan-verify -- --plan <絶対パス> --worktree <絶対パス> --timeout <正の有限秒数>`で保存付きで実行する。直前の`--list`で全対象と順序が実差分を含むことを確認し、各record_pathと両出力を検証対象へ対応付ける。計画行の入力形式は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証」が所有する
+- plan-verifyが保存した結果まとめの`results_path`を`atk run-command --records-file <絶対パス>`へ渡す。計画なしの保存済み実行は`--record <record_path>`を反復して読む。どちらも子を再実行せず、順序とargv・cwd・取得版・Git状態・子とwrapperの終了状態・両出力へ到達する。旧記録の`unrecorded`は未記録として保持し、読取失敗・欠損・破損を成功と扱わない
+- 保存結果の試験・診断を完成条件へ対応付けるときは、試験は両証拠CLIの`--junit-xml`と`--junit-record`から読む。診断は`--diagnostics-file`と`--diagnostics-record`・`--diagnostics-conditions`・必要な`--diagnostics-source`から結果を読む。`--list-results --results-summary`と完全テスト名・診断識別子の詳細を読んで意味を判定し、`--select-row <配列:N>`と`--result-test`・`--result-diagnostic`・`--evidence-file`・`--mode`で要求行へ保存する。原文とsourceの転記や手製の結果指定・更新配列JSONを要しない。診断の比較条件と保存時本文は取得時の保存物を使う
 - 初回の変更範囲の検証では、変更ファイルに適用できるチェックを全て動かす。修正後の再実行では、失敗したチェックだけに限定してよい
 - 並行する別の書込主体が新しい呼び出し元を加えると結果が変わる検証（共有契約やパッケージ外の呼び出し元を変えた変更の検証、全体を走査するチェック）は、プロジェクト規範が統合後の検証として定める場合に、統合時にも実行する

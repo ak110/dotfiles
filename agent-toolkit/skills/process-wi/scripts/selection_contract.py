@@ -1,9 +1,11 @@
-"""選定結果の既知欄と型を公開入口で確認する。本文とレーンの関係は呼出側で判定する。"""
+"""候補情報と意味判断から選定の定型欄を生成し、既知の欄と型を確認する。本文との関係は呼出側が判定する。"""
 
 from __future__ import annotations
 
+import copy
 import re
 import typing
+from collections.abc import Callable
 
 from agent_toolkit._plan import selection as _selection
 
@@ -60,6 +62,142 @@ _TOP_LEVEL_KEYS = frozenset(
 )
 _MODEL_ROLES = ("実装担当", "実行レビュー担当")
 _MODEL_TYPE_RE = re.compile(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+")
+
+
+def generate_selection(
+    judgments: object,
+    candidates: list[dict[str, typing.Any]],
+    metadata: Callable[[str], dict[str, typing.Any]],
+    resume_plan: Callable[[object], str | None],
+    *,
+    additional: bool = False,
+) -> dict[str, object]:
+    """意味判断を保持し、候補情報と確定入力から定型欄を生成する。分類とモデルは推測しない。"""
+    if not isinstance(judgments, dict):
+        raise ValueError("判断入力は選定・レーンの所要時間・結合条件を持つ写像で指定する")
+    if set(judgments) - (_TOP_LEVEL_KEYS | {"結合条件", "除外候補"}):
+        raise ValueError("判断入力に未知の欄がある。selection-format.mdの生成入力へそろえる")
+    if _selection.INITIAL_ALLOCATION_KEY in judgments:
+        raise ValueError("初回配分は生成側が候補と判断から作成するため、判断入力から除く")
+    facts: dict[str, dict[str, typing.Any]] = {}
+    for candidate in candidates:
+        name = candidate.get("filename")
+        if not isinstance(name, str) or not name or name in facts or not isinstance(candidate.get("staleness"), dict):
+            raise ValueError("候補情報はfilenameとstalenessを持つ重複のない一覧にする")
+        facts[name] = candidate
+    items = _selection.decisions(judgments)
+    costs = _selection.lane_costs(judgments)
+    if items is None or costs is None:
+        raise ValueError("選定とレーンの所要時間は意味判断として列で指定する。0件も空列を明示する")
+    generated: dict[str, object] = copy.deepcopy(judgments)
+    for key in ("結合条件", "除外候補", "decisions", "lane_costs"):
+        generated.pop(key, None)
+    decisions: list[dict[str, typing.Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get(_selection.WI_KEY), str):
+            raise ValueError("各判断へWIファイル名を指定する")
+        name = item[_selection.WI_KEY]
+        if name not in facts or name in seen or _STALENESS_KEY in item:
+            raise ValueError(f"{name}: 候補にないWI、重複判断、または手で転記した鮮度がある")
+        seen.add(name)
+        decisions.append(dict(copy.deepcopy(item), **{_STALENESS_KEY: copy.deepcopy(facts[name]["staleness"])}))
+    generated[_selection.DECISIONS_KEY] = decisions
+    generated[_selection.LANE_COSTS_KEY] = copy.deepcopy(costs)
+    if additional:
+        if judgments.get("結合条件"):
+            raise ValueError("追加入力へ初回の結合条件を加えない。元の初回履歴を保持する")
+        return generated
+    excluded = judgments.get("除外候補", [])
+    if (
+        not is_string_list(excluded)
+        or len(excluded) != len(set(excluded))
+        or set(excluded) - facts.keys()
+        or set(excluded) & seen
+    ):
+        raise ValueError("除外候補は候補にある未選定WIだけを重複なく指定する")
+    assignments = {item[_selection.WI_KEY]: item[_selection.LANE_KEY] for item in decisions if _selection.LANE_KEY in item}
+    if len(assignments) != len(decisions):
+        raise ValueError("レーン割当は意味判断として全WIへ明示する")
+    by_name = {item[_selection.WI_KEY]: item for item in decisions}
+    stages = {row[_selection.LANE_KEY]: row.get(_selection.STAGE_KEY, 1) for row in costs if isinstance(row, dict)}
+    raw_edges = judgments.get("結合条件", [])
+    if not isinstance(raw_edges, list):
+        raise ValueError("結合条件はメインが確定したWIの組と種別・定義の列で指定する")
+    edges = [_generated_edge(edge, by_name, stages, metadata, resume_plan) for edge in raw_edges]
+    members = [name for name, lane in assignments.items() if lane != _LANE_NONE]
+    links: dict[str, set[str]] = {name: set() for name in members}
+    for edge in edges:
+        first, second = edge["WI1"], edge["WI2"]
+        if first not in links or second not in links or first == second:
+            raise ValueError("結合条件は実施する異なるWIの組へ対応付ける")
+        links[first].add(second)
+        links[second].add(first)
+    remaining = set(members)
+    groups = []
+    while remaining:
+        seed = next(name for name in members if name in remaining)
+        connected = _connected_members(links, seed)
+        groups.append(
+            {
+                "WI": [name for name in members if name in connected],
+                "結合条件": [edge for edge in edges if edge["WI1"] in connected],
+            }
+        )
+        remaining -= connected
+    generated[_selection.INITIAL_ALLOCATION_KEY] = {
+        "候補WI": [name for name in facts if name not in excluded],
+        "レーン割当": assignments,
+        "不可分成分": groups,
+    }
+    return generated
+
+
+def _generated_edge(
+    value: object,
+    decisions: dict[str, dict[str, typing.Any]],
+    stages: dict[typing.Any, typing.Any],
+    metadata: Callable[[str], dict[str, typing.Any]],
+    resume_plan: Callable[[object], str | None],
+) -> dict[str, typing.Any]:
+    if not isinstance(value, dict) or set(value) != {"WI1", "WI2", "種別", "根拠"}:
+        raise ValueError("結合条件はWI1・WI2・種別・根拠の4欄で指定する")
+    edge = copy.deepcopy(value)
+    first, second, kind = (edge[key] for key in ("WI1", "WI2", "種別"))
+    if first not in decisions or second not in decisions or not isinstance(edge["根拠"], dict):
+        raise ValueError("結合条件のWIと根拠を判断入力の選定へ対応付ける")
+    evidence = edge["根拠"]
+    if kind == "書込重複":
+        if set(evidence) != {"定義1", "定義2", "段階比較"}:
+            raise ValueError("書込重複の判断は定義1・定義2・段階比較だけを指定する。パスと段階は生成する")
+        for index, name in enumerate((first, second), 1):
+            evidence[f"パス{index}"] = copy.deepcopy(decisions[name].get(_selection.WRITE_FILES_KEY, []))
+            evidence[f"段階{index}"] = stages.get(decisions[name].get(_selection.LANE_KEY), 1)
+    elif kind == "再開計画":
+        if evidence:
+            raise ValueError("再開計画の根拠は空写像で指定する。各WIの再開位置から生成する")
+        for index, name in enumerate((first, second), 1):
+            evidence[f"計画{index}"] = resume_plan(decisions[name].get("再開位置"))
+    elif kind == "依存":
+        if set(evidence) != {"依存元"} or evidence["依存元"] not in (first, second):
+            raise ValueError("依存の判断は両WIのどちらが依存元かを指定する")
+        evidence["depends_on"] = copy.deepcopy(metadata(evidence["依存元"]).get("depends_on", []))
+        for index, name in enumerate((first, second), 1):
+            evidence[f"リポジトリ{index}"] = metadata(name).get("target_repo", "")
+    else:
+        raise ValueError("結合条件の種別は依存・再開計画・書込重複のいずれかを明示する")
+    return edge
+
+
+def _connected_members(links: dict[str, set[str]], start: str) -> set[str]:
+    pending = [start]
+    visited: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name not in visited:
+            visited.add(name)
+            pending.extend(links[name] - visited)
+    return visited
 
 
 def structure_errors(selection: object) -> tuple[list[str], list[str]]:
@@ -227,13 +365,7 @@ def allocation_errors(selection: dict[str, object]) -> list[str]:
                 continue
             links[first].add(second)
             links[second].add(first)
-        pending = [next(iter(names))]
-        visited: set[str] = set()
-        while pending:
-            name = pending.pop()
-            if name not in visited:
-                visited.add(name)
-                pending.extend(links[name] - visited)
+        visited = _connected_members(links, next(iter(names)))
         if visited != names:
             errors.append(f"不可分成分が有効な結合条件で連結していない: {sorted(names)}")
         if len({assignments.get(name) for name in names}) != 1:

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import psutil
 
+from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import host_homes as _host_homes
 
@@ -293,6 +294,12 @@ def request_termination(
 
 def main() -> int:
     """終了要求の実行証跡を出力し、現在の識別情報が一致すると確認した単一PIDだけを停止する。"""
+    cleanup = _lane.cleanup_session(_lane.current_session_id())
+    if cleanup["retained"]:
+        _outcome.report_warning(
+            "終了時に回収できないレーン資源を保持した",
+            next_action=f"{cleanup.get('result_path')}の理由を解消し、同じ所有sessionでatk lane deleteを実行する",
+        )
 
     def _before_signal(target: Target) -> None:
         _outcome.report_success(
@@ -301,7 +308,13 @@ def main() -> int:
         )
         print(
             json.dumps(
-                {"exit_session_invoked": True, "status": "terminating", "host": target.host, "pid": target.pid},
+                {
+                    "exit_session_invoked": True,
+                    "status": "terminating",
+                    "host": target.host,
+                    "pid": target.pid,
+                    "lane_cleanup": cleanup,
+                },
                 separators=(",", ":"),
             ),
             flush=True,
@@ -311,11 +324,13 @@ def main() -> int:
     if status == "terminating":
         return 0
     if status == "unsupported":
-        print(json.dumps({"exit_session_invoked": True, "status": "unsupported"}, separators=(",", ":")))
+        print(
+            json.dumps({"exit_session_invoked": True, "status": "unsupported", "lane_cleanup": cleanup}, separators=(",", ":"))
+        )
         _outcome.report_warning("現在の対話CLI本体を一意に識別できない", next_action="/exitまたは/quitを入力して終了する")
         return 0
     if status == "changed":
-        print(json.dumps({"exit_session_invoked": True, "status": "changed"}, separators=(",", ":")))
+        print(json.dumps({"exit_session_invoked": True, "status": "changed", "lane_cleanup": cleanup}, separators=(",", ":")))
         _outcome.report_warning(
             "終了対象が識別後に変化したため停止しない",
             next_action="`atk agents-exit-session`を再実行するか、/exitを入力して終了する",
@@ -328,7 +343,13 @@ def main() -> int:
     )
     print(
         json.dumps(
-            {"exit_session_invoked": True, "status": "exit_requested", "host": target.host, "pid": target.pid},
+            {
+                "exit_session_invoked": True,
+                "status": "exit_requested",
+                "host": target.host,
+                "pid": target.pid,
+                "lane_cleanup": cleanup,
+            },
             separators=(",", ":"),
         ),
         flush=True,

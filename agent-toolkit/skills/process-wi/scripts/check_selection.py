@@ -645,7 +645,7 @@ def check(
             f"`--body-wi`に選定結果に無いWIがある: {', '.join(sorted(unknown))}",
             next_action="`--body-wi`へ全体YAMLに含まれる追加WIのファイル名を指定して再実行する",
         )
-    if not private_notes.is_dir():
+    if items and not private_notes.is_dir():
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
     conditions = load_norm_conditions(work_dir)
     errors: list[str] = []
@@ -755,7 +755,57 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
     return errors
 
 
-def load_selection(selection_file: pathlib.Path, *, additional: bool = False) -> dict[str, object]:
+def _candidate_records(path: pathlib.Path) -> list[dict[str, typing.Any]]:
+    """取得済みwi listのJSON LinesまたはJSON配列を読む。新しい候補照会は行わない。"""
+    try:
+        text = path.read_text(encoding="utf-8")
+        if not text.strip():
+            return []
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = [json.loads(line) for line in text.splitlines() if line.strip()]
+        if isinstance(data, dict):
+            data = [data]
+        if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+            raise ValueError("候補情報はJSON LinesまたはJSON objectの配列で指定する")
+        return data
+    except (OSError, UnicodeError, ValueError) as error:
+        raise InputError(
+            f"取得済み候補情報を読めない: {path}: {error}",
+            next_action="--with-stalenessで取得済みのwi listの保存先を--candidate-fileへ指定する",
+        ) from error
+
+
+def _generate_selection(judgments: object, candidates: pathlib.Path, *, additional: bool) -> dict[str, object]:
+    @functools.cache
+    def metadata(name: str) -> dict[str, typing.Any]:
+        source = _plan_file.find_wi_source(name, _plan_file.private_notes_root())
+        if source is None:
+            raise InputError(f"生成に使うWI本文が無い: {name}", next_action=_FIX_PRIVATE_NOTES)
+        parsed = _wi_frontmatter.parse_frontmatter(source.read_text(encoding="utf-8"))
+        header = dict(parsed[0]) if parsed else {}
+        repo = header.get("target_repo")
+        if isinstance(repo, str):
+            header["target_repo"] = _git_remote.resolve_repo_identifier(repo)
+        return header
+
+    try:
+        return selection_contract.generate_selection(
+            judgments, _candidate_records(candidates), metadata, _resume_plan_id, additional=additional
+        )
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError) as error:
+        raise InputError(
+            str(error), next_action="候補情報と意味判断をselection-format.mdの生成入力へそろえて再実行する"
+        ) from error
+
+
+def load_selection(
+    selection_file: pathlib.Path,
+    *,
+    additional: bool = False,
+    candidate_file: pathlib.Path | None = None,
+) -> dict[str, object]:
     """選定結果を読み、YAML構文、欄名、必須の欄および値の型を確かめて返す。
 
     ファイルを開けない失敗はパスの誤りとして、読めた内容の誤りは選定結果の修正として、別の次の操作を付けて送出する。
@@ -773,6 +823,8 @@ def load_selection(selection_file: pathlib.Path, *, additional: bool = False) ->
         selection = yaml.safe_load(text)
     except yaml.YAMLError as error:
         raise InputError(f"選定結果のYAML構文が不正: {selection_file}: {error}", next_action=_FIX_YAML) from error
+    if candidate_file is not None:
+        selection = _generate_selection(selection, candidate_file, additional=additional)
     errors, model_errors = selection_contract.structure_errors(selection)
     if isinstance(selection, dict) and not additional and _selection.INITIAL_ALLOCATION_KEY not in selection:
         errors.append(
@@ -1041,16 +1093,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lane-map", type=pathlib.Path, metavar="PATH", help="追加レーンから最終レーンへの対応JSON")
     parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した統合結果の保存先")
     parser.add_argument(
+        "--candidate-file",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="取得済み候補JSONL。初回はPATH、追加は--mergeの意味判断から選定を生成する",
+    )
+    parser.add_argument(
         "--mark-integrated", action="append", metavar="LANE", help="検収済みレーンの統合状態を記録する。反復指定可"
     )
     parser.add_argument(
         "--lane-cost-updates", type=pathlib.Path, metavar="PATH", help="最終レーンの確定した秒数と根拠のJSON（統合時だけ）"
     )
     args = parser.parse_args(argv)
+    if args.candidate_file is not None and (args.mark_integrated is not None or args.output is None):
+        parser.error("--candidate-fileは--outputと組で指定し、--mark-integratedと併用しない")
     if args.mark_integrated is not None and (args.merge is not None or args.lane_map is not None or args.output is None):
         parser.error("--mark-integratedは--outputと組で指定し、--merge・--lane-mapと併用しない")
     if (
         args.mark_integrated is None
+        and not (args.candidate_file is not None and args.merge is None and args.lane_map is None)
         and any(value is not None for value in (args.merge, args.lane_map, args.output))
         and not all(value is not None for value in (args.merge, args.lane_map, args.output))
     ):
@@ -1060,7 +1121,7 @@ def main(argv: list[str] | None = None) -> int:
     body_wis = set(args.body_wi) if args.body_wi is not None else None
     try:
         work_dir = _resolve_work_dir(args.work_dir)
-        selection = load_selection(args.selection_file)
+        selection = load_selection(args.selection_file, candidate_file=args.candidate_file if args.merge is None else None)
         if args.mark_integrated is not None:
             rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
             unknown = set(args.mark_integrated) - {str(row[_selection.LANE_KEY]) for row in rows}
@@ -1075,7 +1136,8 @@ def main(argv: list[str] | None = None) -> int:
                     updates = json.loads(args.lane_cost_updates.read_text(encoding="utf-8"))
                     if not isinstance(updates, dict):
                         raise ValueError("費用更新JSONは最終レーンから3欄への写像とする")
-                selection = merge_selection(selection, load_selection(args.merge, additional=True), mapping, updates)
+                addition = load_selection(args.merge, additional=True, candidate_file=args.candidate_file)
+                selection = merge_selection(selection, addition, mapping, updates)
             except (OSError, ValueError) as error:
                 raise InputError(
                     str(error), next_action="追加入力・レーン対応JSON・費用更新JSONを直して同じ統合操作を再実行する"

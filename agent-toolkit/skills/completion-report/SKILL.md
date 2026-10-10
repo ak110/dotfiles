@@ -44,7 +44,7 @@ description: >
    反映しない場合は、その理由と、ユーザーが自分で反映するために必要な操作を報告へ含める。反映した場合は、再反映の有無と稼働確認の結果を報告する。
 
    本スキルを起動した工程が反映を先行して始められるのは、反映が対象リポジトリへ書き込まず、公開の入力を生成せず、読み取る成果物と排他資源が公開操作と競合しない場合に限る。
-2. メイン自身が`atk managed-temp create`で個別に作成した`.git`を含む領域（`agent-toolkit:managed-temp`の例外用途）があれば、`atk managed-temp cleanup`で回収する。セッションのmanaged-tempとその中のファイルは回収しない。
+2. メイン自身が`atk managed-temp create`で個別に作成した`.git`を含む領域（`agent-toolkit:managed-temp`の例外用途）があれば、`atk managed-temp cleanup`で回収する。process-wiの登録済みレーン資源はこの時点で回収せず、追加と振り返り後の工程に備えて保持する。全工程・外部プロセスの終了後、通常終了の`atk agents-exit-session`またはprocess-loopの子終了後が`atk lane delete`と同じ条件で回収する。未統合・dirty・稼働中・不明・部分失敗の対象は成果と理由・残る操作を保存して保持し、次回開始時の`atk lane delete --list`から再判定する。セッションのmanaged-tempとその中の証拠・引き継ぎ記録は回収しない。
 3. そのセッションでユーザーが確定した判断を`agent-toolkit/rules/01-agent.md`「協調と自律」の保存対象と比較し、保存されていない判断は保存またはAWIの投入を完了させる。保存の前に`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」の、程度の限定と確度を保持する箇条と確度を伴う発話の保存を扱う箇条を適用する。
 4. 協調モードで対象リポジトリへcommitした成果があり、確認済みの公開範囲がcommitより先へ及ぶ場合は、`agent-toolkit:commit`の`references/publish.md`に従ってその範囲の公開を完了する。`agent-toolkit:process-wi`と`agent-toolkit:single-lane-process`は自身の工程で公開するため、この分岐を重ねない。
 5. `references/report-formats.md`「作業完了報告のフォーマット」に従い、実施した公開範囲とリリース判定の結果を含む作業完了報告を、冒頭の送達手段で1回届ける。出力だけで応答を終えず、同じ応答で手順6の起動へ進む。

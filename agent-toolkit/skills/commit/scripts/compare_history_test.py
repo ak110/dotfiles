@@ -256,14 +256,16 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
         "source": f"{wi} 完成条件1",
         "outcome": "達成",
         "reviewed_head": old_head,
-        "evidence": f"対象commit {target} と修正commit {old_head}",
+        "evidence": f"現行commit:{target} と修正commit:{old_head}。取得版 {target} と比較元 {old_head}",
     }
     evidence.write_text(json.dumps({"wi_conditions": [original], "user_requirements": []}), encoding="utf-8")
     with pytest.raises(SystemExit) as raised:
         atk.main(["run-script", "exec-review-evidence-check", "--", str(evidence), "--rewrite-map", str(mapping)])
     assert raised.value.code == 0
     updated = json.loads(evidence.read_text(encoding="utf-8"))["wi_conditions"][0]
-    assert updated["evidence"] == f"対象commit {pairs[target]} と修正commit {pairs[old_head]}"
+    assert updated["evidence"] == (
+        f"現行commit:{pairs[target]} と修正commit:{pairs[old_head]}。取得版 {target} と比較元 {old_head}"
+    )
     assert updated["reviewed_head"] == old_head and updated["outcome"] == "達成"
     assert mapping.read_bytes() == before
     capsys.readouterr()

@@ -8,6 +8,7 @@ import sys
 import time
 import uuid
 
+from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk.wi import process_loop_control as _pl_control
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
@@ -183,6 +184,8 @@ def run_process_session(
     # 追加指示はセッションを実際に起動する反復でだけ消費する。
     # AWIが0件で変更検知を待つ反復はここへ到達しないため、保持したまま次の起動へ残る。
     launch_env = _pl_env.session_env(env, orchestrator)
+    lane_session_id = str(uuid.uuid4())
+    launch_env[_lane.SESSION_ENV] = lane_session_id
     instruction = _process_loop_log.consume_instructions()
     if instruction:
         launch_env[_pl_env.PROCESS_LOOP_INSTRUCTION_ENV] = instruction
@@ -197,6 +200,13 @@ def run_process_session(
     except OSError as error:
         _process_loop_log.append("session_launch_failed", error=type(error).__name__, detail=str(error))
         raise
+    cleanup = _lane.cleanup_session(lane_session_id)
+    _process_loop_log.append("lane_cleanup", **cleanup)
+    if cleanup["retained"]:
+        _next_action.report(
+            f"子セッション終了後に未回収のレーン資源を保持した: {cleanup.get('result_path')}",
+            next_action=f"残存理由を解消し、atk lane delete --session-id {lane_session_id}を実行する",
+        )
     _pl_env.reset_console()
     _console_title.set_console_title("atk wi process-loop")
     _process_loop_log.append(

@@ -37,6 +37,9 @@ dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、P
 
 同じJSONを両出力と同じ領域の`record.json`へ保存し、`record_path`で絶対パスを返す。短いコマンド結果でも、後続担当は保存JSONだけから実行条件と両出力を取得できる。JSON保存に失敗した場合はwrapper異常125と診断を返し、`record_path`をnullにする。子の終了状態と取得済み出力は残す。stdoutだけへ返す方式では呼出側が記録ファイルを再作成する必要があり、別の記録CLIでは同じ項目の所有が分かれるため、既存のmetadata生成へ保存を加えた。
 
+保存JSONは子のchild_exit_codeとは別にwrapper_exit_codeとfailureを持つ。自然終了、timeout、signal、起動失敗、保存不能を後続担当が同じ記録から区別するためであり、保存不能では返却値だけに125とfailureを保持して保存済みと主張しない。
+終了済み結果は同じrun-commandの`--record`の反復、またはplan-verifyが保存する`results_path`を`--records-file`へ渡して読む。子を再実行せず、各argv・cwd・取得版・Git状態・両終了状態・出力パスと全文を返す。旧記録に無い値はunrecordedとして扱い、欠損・破損と読取失敗はerrorsと非0で区別する。plan-verifyは実行順とコマンド・保存先の対応を1つの結果まとめへ原子的に保存する。読取のための検証再実行、独立した読取CLI、呼び出し側の手製解析は、取得版の取り違えと反復加工を残すため採らない。
+
 子の環境は親の環境を複製し、共通の`strip_inherited_venv`で起動元の`VIRTUAL_ENV`と対応するPATHのbin・Scripts要素を取り除く。
 親の環境、無関係の値、PATHの順序と空要素は保持する。別プロジェクトのuvや通常の子コマンドが、atkを起動したpluginの仮想環境へ誘導されることを防ぐためである。
 process-loopと委譲サーバーにも使う共通処理へ接続し、run-command専用の環境除去規則は持たない。

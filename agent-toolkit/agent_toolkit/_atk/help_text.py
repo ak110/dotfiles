@@ -69,7 +69,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk run-command": {
         "summary": "外部コマンドの全出力と終了状態を保持する",
-        "description": "目的: MCPによる実行手段を持たない有限終了の外部コマンドについて、標準出力と標準エラーの全量および実際の終了状態を保持する。\n利用場面: formatter、linter、testerなどの実行や手動観測で、両ストリームの全量と終了状態を記録して後続担当へ渡すとき。対話型、常駐、端末制御および追従表示には使わない。\n対象と出力: `--`以後をshellで再解釈せずargvとして起動し、登録済みmanaged-tempの別ファイルへ両ストリームをバイト列のまま保存する。argv、cwd、git_head（起動直前のcwdの作業ツリーのHEAD）、git_status（同じ時点の`git status --porcelain=v1 --untracked-files=all`の行の配列。Git作業ツリーの外では両方null）、child_exit_code、timed_out、signal、stdout_path、stderr_pathと両ファイルの行数・バイト数を持つJSON objectを同じ領域のrecord.jsonへUTF-8で保存し、保存先の絶対パスrecord_pathを含む同じJSONを標準出力へ1件出力する。自然終了0〜255は同じ終了コード、signalは128+signal番号、timeoutは124、wrapper異常は125を返す。JSON保存失敗では125と診断を返し、record_pathはnull、子の結果と両出力パスは保持する。\n前提: `--cwd`は実在する絶対ディレクトリ、`--timeout`は正の秒数とする。pipelineや複数行codeはscriptへ保存し、そのscriptのargvを渡す。\n復元・後始末: 保存先は`atk managed-temp list`と`cleanup`で管理し、未回収でも保持期限後に自動削除される。",
+        "description": "目的: MCPによる実行手段を持たない有限終了の外部コマンドについて、標準出力と標準エラーの全量および実際の終了状態を保持する。\n利用場面: formatter、linter、testerなどの実行や手動観測で、両ストリームの全量と終了状態を記録して後続担当へ渡すとき。対話型、常駐、端末制御および追従表示には使わない。\n対象と出力: `--`以後をshellで再解釈せずargvとして起動し、登録済みmanaged-tempの別ファイルへ両ストリームをバイト列のまま保存する。argv、cwd、git_head（起動直前のcwdの作業ツリーのHEAD）、git_status（同じ時点の`git status --porcelain=v1 --untracked-files=all`の行の配列。Git作業ツリーの外では両方null）、child_exit_code、wrapper_exit_code（この操作の終了コード）、failure（起動または保存失敗の理由。無ければnull）、timed_out、signal、stdout_path、stderr_pathと両ファイルの行数・バイト数を持つJSON objectを同じ領域のrecord.jsonへUTF-8で保存し、保存先の絶対パスrecord_pathを含む同じJSONを標準出力へ1件出力する。自然終了0〜255は同じ終了コード、signalは128+signal番号、timeoutは124、wrapper異常は125を返す。JSON保存失敗では125と診断を返し、record_pathはnull、子の結果と両出力パスは保持する。\n読取: --record <保存JSONの絶対パス>を反復するか、--records-file <plan-verifyの結果まとめJSON>を渡すと子を起動せずに読む。recordsには各取得版・Git状態・argv・cwd・子とwrapperの終了状態、両出力の所在と内容を返す。旧記録に無いwrapper_exit_codeとfailureはnullとunrecordedで示し、欠損・破損・保存失敗はerrorsと終了125で返す。読取と子の実行指定は混在させない。\n前提: `--cwd`は実在する絶対ディレクトリ、`--timeout`は正の秒数とする。pipelineや複数行codeはscriptへ保存し、そのscriptのargvを渡す。\n復元・後始末: 保存先は`atk managed-temp list`と`cleanup`で管理し、未回収でも保持期限後に自動削除される。",
         "epilog": "実行例:\n\n  atk run-command --cwd /absolute/repository -- pytest -q",
     },
     "atk run-skill": {
@@ -309,6 +309,21 @@ HELP: dict[str, dict[str, str]] = {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
         "description": "目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude CodeまたはCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
         "epilog": "実行例:\n\n  atk agents-exit-session",
+    },
+    "atk lane": {
+        "summary": "レーン資源の作成と終了時回収を管理する",
+        "description": "目的: 専用worktree・branchと所有sessionを同じ操作で登録し、session終了時に安全な資源を回収する。\n利用場面: process-wiのレーンを準備するとき、終了後の残存資源を再回収するとき。\n対象と出力: createは準備済み資源とrecord_path、deleteはremoved・retainedとresult_pathをJSONで返す。所有登録と回収結果への参照は状態ディレクトリのlanes/<session_id>/へ置く。回収結果は専用資源の外のmanaged-tempへ保存し、既存の7日保持へ委ねる。delete --listは全sessionの登録と前回結果を読み、削除しない。\n前提: 所有sessionは環境から解決し、解決できない場合は--session-idを指定する。\n復元・後始末: 統合後も資源を保持し、agents-exit-sessionとprocess-loopの子終了後がdeleteと同じ回収を行う。保持した対象は結果の理由を解消してdeleteを再実行する。",
+        "epilog": "実行例:\n\n  atk lane create --repo /absolute/repo --base-branch develop --lane lane-01 --selection-file /absolute/pick-wi.yaml\n  atk lane delete",
+    },
+    "atk lane create": {
+        "summary": "レーン専用資源を準備して所有と回収入力を登録する",
+        "description": "目的: レーンの専用worktreeとbranchを作成し、終了時回収の入力を登録する。\n利用場面: 初期レーンを起動する前、統合済みレーンを同じ資源で再開するとき。\n対象と出力: repo・base-branch・lane・selection-fileを受け取り、専用branch・worktree・managed-tempと所有session、record_pathをJSONで返す。同じ登録の準備済み資源は再利用する。\n前提: --worktreeを省略すると個別managed-tempの直下にwtを作成する。--commands-fileはcreate・prepare・deleteをキーとするJSON objectで、値はshellを使わないargv配列。各引数の{repo}・{worktree}・{branch}・{lane}を資源の値へ展開し、repoをcwdとして実行する。create手順は指定worktreeをGitへ登録し、prepareは必要な前提ファイルと環境を準備する。各手順は--timeoutの正の有限上限（省略600秒）を持ち、実行記録と両出力を保存する。--reuse-recordは終端を確認した別sessionの登録を新所有sessionへ移して成果を再利用する。\n復元・後始末: 失敗時は資源と登録を保持して回復へ使う。統合後に選定の統合状態を保存し、session終了時に回収する。",
+        "epilog": "実行例:\n\n  atk lane create --repo /absolute/repo --base-branch develop --lane lane-01 --selection-file /absolute/pick-wi.yaml",
+    },
+    "atk lane delete": {
+        "summary": "所有sessionの安全なレーン資源をまとめて回収する",
+        "description": "目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: Git登録と所有記録が一致し、担当と外部プロセスが終了し、worktreeがcleanで、branchが統合先へ到達し、選定の統合状態が統合済みであること。確認不能は保持する。\n復元・後始末: 固有delete手順、worktree、branch、個別managed-tempの順で回収する。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
+        "epilog": "実行例:\n\n  atk lane delete --session-id <作成した所有session>",
     },
     "atk managed-temp": {
         "summary": "managed-tempのディレクトリを作成・列挙・後始末する",

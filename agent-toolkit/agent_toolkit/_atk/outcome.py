@@ -76,6 +76,8 @@ VALUE_OUTPUT_COMMANDS = frozenset(
         "atk review-audit mark",
         "atk agents-exit-session",
         "atk run-command",
+        "atk lane create",
+        "atk lane delete",
     }
 )
 """値出力型のリーフサブコマンド。標準出力は値と構造化データのままとし、成功行を標準エラーへ書く。"""

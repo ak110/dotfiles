@@ -29,7 +29,7 @@
 
 1. 計画の進捗ログが示す実装担当の検証結果と要求単位ごとの未判定検証記録を読む。CI記録・WI記録を受領した場合は、委譲プロンプトから受領して`exec-review.subagent.md`「入力」で入力記録へ保存した本文の検証結果も読む。各記録の出所・根拠の現物を独立に確認し、一致する根拠を使う。不一致・不足は本書の`証拠不足`の判定と指摘の登録で扱う
 2. 雛形を出力する。対象WI集合が非空の場合は、WI本文を取得し、行の判定に入る前に`atk run-script exec-review-evidence-check -- --template <完成条件証拠の絶対パス> <計画外の対象WIファイル名...> --plan <計画の絶対パス...>`を実行する。計画が無い場合は`--plan`を省く。対象WIが無い場合も同じ`--plan`付き操作で、変更履歴のユーザー発言の逐語原文から出所付きの要求行を生成して判定する。CI・WI記録だけが入力となる場合は`--plan`の代わりに、`exec-review.subagent.md`「入力」で保存した入力記録を`--input-record <入力記録の絶対パス>`で渡す
-3. 次節の読取操作で配列・行番号・原文・出所を取得し、同節の更新配列で`完成条件証拠`として受領したJSONへ各行の`outcome`・確認した`evidence`・`reviewed_head`を記入する。実装担当の空欄の記録を完成条件証拠へ流用しない。更新後も読取で記入内容を確かめ、返却前に確認する。空欄が残ると返却前に実行する`atk run-script exec-review-evidence-check`が拒否する
+3. 次節の読取操作で配列・行番号・原文・出所を取得し、同節の行選択と公開引数で`完成条件証拠`として受領したJSONへ各行の`outcome`・確認した`evidence`・`reviewed_head`を記入する。実装担当の空欄の記録を完成条件証拠へ流用しない。更新後も読取で記入内容を確かめ、返却前に確認する。空欄が残ると返却前に実行する`atk run-script exec-review-evidence-check`が拒否する
 4. 再レビューでは既存行を保持し、同じファイルを再判定する
 
 雛形を出力するコマンドは計画の関連WIも対象WI集合へ加え、続く規定が定める完成条件と原文要求単位の行を、返却前の確認と同じ規則で原文と出所付きにして出力する。`outcome`・`evidence`・`reviewed_head`は空欄にする。出力先が未作成か空配列でもそのまま実行する。記入済みの行は保持され、不足する行だけが追加されるため、初回レビュー、再レビューと引き継ぎ再レビューの各ラウンドで実行する。雛形の`source`は原文の所在であり、失効・割当外・背景の行では後掲の規定どおりに書き換える。計画だけの要求は`## 変更履歴`の`### ユーザー発言N`直下の`text`ブロックから抽出し、原文には実施内容の要約ではなく、この逐語発言を使う。
@@ -45,24 +45,17 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス>
 atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --list --section user_requirements --row 1
 ```
 
-表示の配列名・行番号・sourceを更新配列へそのまま渡す。説明UTF-8ファイルだけで判定根拠を記入する場合は、次の例の出所を表示値に置き換える。HEADをレビューした完全OIDに、説明ファイルをその行を直接満たす根拠に置き換えてから、managed-tempの更新配列JSONへ保存する。両配列の各行を同じ配列に並べられる。再判定では`mode`を`append`か`replace`にして根拠を追記・置換し、outcomeとreviewed_headも明示する。
-
-```json
-[{"section":"user_requirements","row":1,"source":"表示のsource","outcome":"達成","reviewed_head":"レビューした完全OID","evidence_file":"/絶対/説明.txt","mode":"replace"}]
-```
+表示の配列名と1始まり行番号を`--select-row <配列:N>`へ渡し、sourceは処理側が現行行から取得する。説明だけで記入する場合は、次の操作へその行を直接満たす説明ファイルと、本担当が判定した完全OIDを指定する。各選択行へ`--row-outcome`を明示し、appendかreplaceで根拠を追記・置換する。失効・割当外・背景で判断根拠の所在へsourceを変更する場合だけ、`--row-source <配列:N> <所在>`も明示する。所在の受理条件と意味の判定は本書の各判定値の規定に従う。
 
 ```text
-atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --updates-file <更新配列JSONの絶対パス> --output <同じ完成条件証拠の絶対パス>
+atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --select-row user_requirements:1 --row-outcome user_requirements:1 達成 --reviewed-head <レビューした完全OID> --evidence-file <説明の絶対パス> --mode replace --output <同じ完成条件証拠の絶対パス>
 ```
 
-更新後は同じ`--list`で各行を確認し、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」のコマンドで返却前の確認へ進む。未判定検証記録の一覧は従来どおりverification-recordが担当し、返却の`--show-all-rows`は記入済み証拠の受領に使う。
-
-構造化試験と診断の取込みは、実装担当の`verification-record`と同じ結果指定JSONを使う。pyfltrのrun JSON Linesはheader・command・summaryを含む保存結果全体を渡せる。`atk run-script exec-review-evidence-check -- --help`で形式を確認する。`--results-file <絶対JSON> --list-results --results-summary`で状態・基準差と診断のまとまり・重複数・全識別子を読む。`--results-summary`を`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復指定へ替え、必要な詳細と元結果の所在へ到達する。表示の追加指定を省けば従来の全詳細一覧を読める。取得版と条件が要求を直接満たすかを本担当が判定し、代表1件をまとまり全体の意味判断へ代用しない。比較不能を一致と扱わず、成功件数だけから達成を生成しない。
-雛形生成後、次の操作で指定行だけを更新する。更新配列は実装側と同じ`section`・1始まりの`row`・完全一致の`source`・選択する`tests`と`diagnostics`・`mode`を持ち、本担当が各行の`outcome`と`reviewed_head`の完全OIDを明示する。未判定根拠を選ぶ行は`verification_source`へその原文出所を指定する。同じ原文とWIの根拠だけを使い、`evidence_file`で行を満たす説明や手動観測を補える。不要な結果指定と未判定記録は省略できる。保存先は未判定記録と別ファイルにし、受領した完成条件証拠の同じパスへ原子的に更新できる。別の保存先も指定できる。不正な選択は全更新が拒否される。原文・出所・未選択行と未判定記録は元の内容を保持する。根拠は既存の参照書式でテスト名と結果、保存出力の箇所と実行記録を指し、取得版は実行記録に保持する。根拠の取込み後も次節以降の原文・内容・HEAD・共用の確認と返却前確認を実施する。
-
-```text
-atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --results-file <結果指定JSONの絶対パス> --verification-record <未判定記録の絶対パス> --updates-file <更新配列JSONの絶対パス> --output <同じ完成条件証拠の絶対パス>
-```
+構造化試験は`--junit-xml <保存XML> --junit-record <実行記録>`で指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で直接指定する。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を渡す。pyfltrのrun JSON Linesはheader・command・summaryを含む全体を使う。形式は`atk run-script exec-review-evidence-check -- --help`で読む。
+これらの保存物へ`--list-results --results-summary`を加え、状態・基準差と診断のまとまり・重複数・全識別子を読む。`--results-summary`を`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復指定へ替えて詳細・取得版・所在を読み、代表1件を全件の意味判断へ代用しない。取得版と条件が行を直接満たすかを本担当が判定し、比較不能を一致と扱わず、成功件数だけから達成を生成しない。
+記入時は`--list-results`を外し、同じ保存物と識別子を`--select-row`、`--mode`、選択行ごとの`--row-outcome`と`--reviewed-head`へ接続する。結果指定と更新値は公開引数から組み立てる。既存の`--results-file`・`--updates-file`も受理し、JSON入力のsource不一致拒否を保持する。
+未判定根拠を選ぶ場合は`--verification-record <未判定記録の絶対パス> --verification-row <選択行の配列:N> <未判定行の配列:N>`を指定する。同じ原文・WI・出所の要求単位からだけ継承し、必要な説明と手動観測は`--evidence-file`で補う。不要な保存結果・未判定記録は省略できる。保存先は未判定記録と別の完成条件証拠とし、同じ証拠のパスへ原子的に更新できる。別出力も指定でき、不正な行が1件でもあれば全保存を拒否する。原文・未選択行・未判定記録は保持する。
+更新後は同じ`--list`から記入内容を読み、本書の原文・内容・HEAD・共用の確認と`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」の返却前確認へ進む。根拠は既存の参照書式でテスト名と結果・保存出力の箇所・実行記録を指す。未判定記録の一覧はverification-record、返却の`--show-all-rows`は記入済み証拠の受領に使う。
 
 JSONの最上位は`{"wi_conditions": [...], "user_requirements": [...]}`とする。`wi_conditions`の各要素は`awi`、`condition`、`outcome`、`source`、`evidence`、`reviewed_head`を持つ。`condition`には`## 完成条件`の各項目の原文を逐語で置き、`evidence`にはその行を直接満たす根拠（ファイルと行、テスト名と結果、観測記録の所在など）だけを置く。WI単位の根拠を全行へ写す書き方は採らない。条件が観測手段（特定のコマンドの出力、画面、hookの通知など）を名指しする行の判定は`reviewer.md`「実行レビューの判定」の観測手段の段落に従い、`evidence`へはその手段の観測結果を書く。`user_requirements`の各要素は`awi`、`requirement`、`origin`、`outcome`、`source`、`evidence`、`reviewed_head`を持ち、`origin`で発言の所在を示す。WI本文からの行は`awi`へそのファイル名を置き、計画だけからの行は`awi`を空文字列とし、`origin`へ計画内の所在を置く。
 `完成条件証拠`を返す前に、対象WIの完成条件の各要求単位と`wi_conditions`の行を原文で比べる。完成条件節のない正規WIの原文と回答、ユーザーコメント、計画の`ユーザー指示`行から得た各要求単位も`user_requirements`の行と比べる。各単位に対応する行を1件以上置き、行の判定と証拠参照を確認してから返す。原文の一文に含まれる複数の意味上の要求と例示・要件の区別は機械的な最低行数に委ねず、自身で比べる。WIにも計画にも元のユーザー発言が無い場合は`user_requirements`の行を要求しない。計画に含むWIと計画外のWIの双方に適用する。
@@ -162,10 +155,10 @@ JSONの最上位は`{"wi_conditions": [...], "user_requirements": [...]}`とす�
 
 保存済みのテスト出力や手動観測を、取得した版と異なるレビュー対象版の根拠に使う場合は、記録が示す取得時の版と実行条件（`atk run-command`の保存JSONの`cwd`・`git_head`・`git_status`、インストール済みの別実体を実行した場合はその実体の版）を読む。
 取得時の版から現在の版までに、結果に作用する内容と条件（テスト対象と依存するファイル、入力、実行環境）が変わったかを差分で判定する。
-変わっていない記録は、取得版がレビュー対象の祖先でなくても根拠に使い、`evidence`へ取得時の版を保持する観測ファイル（保存JSONの絶対パスなど）の参照と、適用できる理由を書く。取得時の版はOIDではなく観測ファイルの参照で示す。`--rewrite-map`は`evidence`の中で対応表の旧OIDに一致する語を区別なく新OIDへ置き換えるため、OIDで書いた取得版は新しい版で実行した記録として読める形へ書き換わる。
+変わっていない記録は、取得版がレビュー対象の祖先でなくても根拠に使い、`evidence`へ取得時の版を保持する観測ファイル（保存JSONの絶対パスなど）の参照と、適用できる理由を書く。取得時の版は観測ファイルの参照から読む。地の文へ併記した裸のOIDも取得版として保持する。現行成果物を指す参照だけを`commit:<OID>`で書き、`--rewrite-map`へ渡す。両配列のこの標識だけを更新し、分割した各対応先もcommit:で残す。裸のOID、HEAD・git_head・比較元、観測ファイル、判定とreviewed_headは変更しない。既存自由文を推測して新形式へ移さず、曖昧・不正な対応は部分保存を拒否する。
 適用の可否は、祖先関係、旧新OIDの対応、`git range-diff`の`=`ではなく、結果に作用する内容と条件の差で決める。パッチ系列の対応は、実行したtree全体と結果に作用する条件の同一性を示さないためである。
 結果に作用する内容か条件が変わった行と、取得時の版を特定できない行は`証拠不足`とし、影響する行だけの追加観測を実装担当へ求める。履歴そのものを試す検証は、treeが同じでも履歴の変化が結果に作用するため取り直す。
-`reviewed_head`には実際に判定したレビュー対象版を書く。取得版は観測ファイルだけが保持し、`--rewrite-map`による更新は`evidence`中の現行の成果物を指すOIDへ及ぶ。
+`reviewed_head`には実際に判定したレビュー対象版を書く。取得版は観測ファイルと併記した裸のOIDが保持し、`--rewrite-map`による更新は`evidence`中の現行成果物を指すcommit:参照だけへ及ぶ。根拠共用のCOMMIT_REFERENCEによる数字の保護は別の責務として維持する。
 
 ファイルで達成根拠を示す場合は、絶対パスか対象worktreeからの相対パスを記す。
 ファイル名だけや途中からのパス（pytestのノードID、サブプロジェクトの作業ディレクトリからのパスなど）は、レビュー対象commitの追跡ファイルのうちパス末尾がパス要素の単位で一致するものが1件に決まる場合だけ受理される。0件か2件以上の場合は確認コマンドが解決の基準と候補を示すため、その行の`evidence`だけを候補のいずれかのworktreeからの相対パスか絶対パスへ直し、`condition`と`requirement`はWI原文のまま保つ。

@@ -54,6 +54,7 @@ from agent_toolkit._atk import commit as _commit_cmd  # noqa: E402
 from agent_toolkit._atk import config as _config_cmd  # noqa: E402
 from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
 from agent_toolkit._atk import info as _info
+from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
 from agent_toolkit._atk import outcome as _outcome  # noqa: E402
 from agent_toolkit._atk import output_file as _output_file  # noqa: E402
@@ -175,6 +176,7 @@ _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None
     ("wait-schedule", _wait_schedule_cmd.build_parser),
     ("agents", _agents.build_parser),
     ("agents-exit-session", _agents_exit_session.build_parser),
+    ("lane", _lane.build_parser),
     ("managed-temp", functools.partial(_managed_temp.build_parser, command_dest="managed_temp_subcommand")),
     ("worktree-stash", functools.partial(_worktree_stash.build_parser, command_dest="worktree_stash_subcommand")),
     ("watch", _watch.build_parser),
@@ -353,6 +355,7 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     "wait-schedule": lambda invocation: _wait_schedule_cmd.dispatch(invocation.args),
     "agents": lambda invocation: _agents.dispatch(invocation.args),
     "agents-exit-session": lambda invocation: _agents_exit_session.dispatch(invocation.args),
+    "lane": lambda invocation: _lane.dispatch(invocation.args),
     "run-script": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _run_script.dispatch),
     "run-command": lambda invocation: _run_command.dispatch(invocation.args),
     "read-file": lambda invocation: _read_file.dispatch(invocation.args),

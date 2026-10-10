@@ -11,16 +11,16 @@ test("受付と重複の応答後に一度だけ圧縮し、完了後は再予�
     return { text: "圧縮完了" };
   });
   expect((await $.tool.check({ tool: TOOL, input: {} })).decision).toBe("allow");
-  const first = await $.tool.call({ tool: TOOL, instructions: "引き継ぎ記録から再開" });
+  const first = await $.tool.call({ tool: TOOL });
   expect(first.result).toMatch("まだ完了していない");
   const duplicate = await $.tool.call({ tool: TOOL });
   expect(duplicate.result).toMatch("追加していない");
   expect(calls).toEqual([]);
   await clock.advance(0);
-  expect(calls).toEqual([{ command: "compact", args: "引き継ぎ記録から再開" }]);
+  expect(calls).toEqual([{ command: "compact", args: "" }]);
   await $.tool.call({ tool: TOOL });
   await clock.advance(0);
-  expect(calls).toEqual([{ command: "compact", args: "引き継ぎ記録から再開" }, { command: "compact", args: "" }]);
+  expect(calls).toEqual([{ command: "compact", args: "" }, { command: "compact", args: "" }]);
 });
 
 test("実行拒否は同じ会話へ通知し、失敗後に再予約できる", async ($, on) => {
@@ -50,7 +50,7 @@ test("実行拒否は同じ会話へ通知し、失敗後に再予約できる",
   expect(prompts.length).toBe(1);
 });
 
-test("不正な指示とサブエージェントからの呼び出しは予約しない", async ($, on) => {
+test("サブエージェントからの呼び出しは予約しない", async ($, on) => {
   mock.env(on, {});
   const clock = mock.clock(on);
   let calls = 0;
@@ -58,7 +58,6 @@ test("不正な指示とサブエージェントからの呼び出しは予約�
     calls++;
     return {};
   });
-  expect((await $.tool.call({ tool: TOOL, instructions: 3 })).deny).toMatch("文字列");
   expect((await $.tool.call({ tool: TOOL, agentId: "child" })).deny).toMatch("メイン");
   await clock.advance(0);
   expect(calls).toBe(0);

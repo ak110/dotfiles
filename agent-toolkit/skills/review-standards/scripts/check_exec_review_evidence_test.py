@@ -2532,22 +2532,31 @@ def _rewrite_args(evidence: pathlib.Path, rewrite_map: pathlib.Path) -> argparse
     )
 
 
-def test_public_split_rewrites_evidence_to_all_destinations(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+def test_public_split_rewrites_evidence_to_all_destinations(tmp_path: pathlib.Path, section: str) -> None:
     """AWI別の分割でも観測の旧参照を全対応先へ更新し、判定を保持する。"""
     evidence, rewrite = tmp_path / "evidence.json", tmp_path / "map.json"
-    _write_evidence(evidence, [{**_condition(FIRST_WI, "保存"), "evidence": f"版 {_OLD_FULL} の結果"}])
+    factory = _condition if section == "wi_conditions" else _requirement
+    rows = [{**factory(FIRST_WI, "保存"), "evidence": f"取得版{_OLD_FULL}。対象commit:{_OLD_FULL} の結果"}]
+    _write_evidence(evidence, rows if section == "wi_conditions" else [], rows if section == "user_requirements" else [])
     rewrite.write_text(
         json.dumps({_OLD_FULL: [{"commit": _NEW_FULL, "awi": [FIRST_WI]}, {"commit": "3" * 40, "awi": [SECOND_WI]}]}),
         encoding="utf-8",
     )
     assert run_script.dispatch(_rewrite_args(evidence, rewrite)) == 0
-    row = json.loads(evidence.read_text())["wi_conditions"][0]
-    assert _NEW_FULL in row["evidence"] and "3" * 40 in row["evidence"] and _OLD_FULL not in row["evidence"]
+    row = json.loads(evidence.read_text())[section][0]
+    assert f"commit:{_NEW_FULL}" in row["evidence"] and "commit:" + "3" * 40 in row["evidence"]
+    assert f"取得版{_OLD_FULL}" in row["evidence"] and f"commit:{_OLD_FULL}" not in row["evidence"]
     assert row["outcome"] == "達成" and row["reviewed_head"] == REVIEWED_HEAD
+    rewrite.write_text(json.dumps({_NEW_FULL: "4" * 40, "3" * 40: "5" * 40}), encoding="utf-8")
+    assert run_script.dispatch(_rewrite_args(evidence, rewrite)) == 0
+    updated = json.loads(evidence.read_text())[section][0]
+    assert "commit:" + "4" * 40 in updated["evidence"] and "commit:" + "5" * 40 in updated["evidence"]
+    assert f"取得版{_OLD_FULL}" in updated["evidence"]
 
 
 def test_rewrite_map_updates_commit_references_only(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """両配列のevidenceのうち、旧OIDとその一意な短縮だけを新OIDへ置換し、他の値と判定・reviewed_headを保持する。
+    """明示した現行参照とその一意な短縮だけを更新し、取得版と判定・reviewed_headを保持する。
 
     置換結果の再置換、パスや長い識別子の一部分の置換、reviewed_headの書換えがあると、
     参照更新だけのはずの操作が根拠や判定対象を別の内容へ変える。
@@ -2556,23 +2565,31 @@ def test_rewrite_map_updates_commit_references_only(tmp_path: pathlib.Path, caps
     # 新OIDを旧OIDとしても持つ対応で、置換結果の再置換が起きないことを確かめる。
     rewrite_map.write_text(json.dumps({_OLD_FULL: _NEW_FULL, _OLD_SHORT: _NEW_SHORT, _NEW_FULL: "3" * 40}), encoding="utf-8")
     conditions = [
-        {**_condition(FIRST_WI, "保存"), "evidence": f"commit {_OLD_FULL[:7]} で test_save 成功、{_OLD_FULL} を確認"},
+        {**_condition(FIRST_WI, "保存"), "evidence": f"commit:{_OLD_FULL[:7]} で test_save 成功、取得版{_OLD_FULL} を確認"},
         {
             **_condition(FIRST_WI, "再読込"),
             "outcome": "証拠不足",
-            "evidence": f"`{_OLD_SHORT}`の差分、docs/{_OLD_FULL[:7]}.md、{'9' * 40}、x{_OLD_FULL[:7]}y、{_OLD_FULL}0000",
+            "evidence": f"`commit:{_OLD_SHORT}`の差分、docs/{_OLD_FULL[:7]}.md、{'9' * 40}、x{_OLD_FULL[:7]}y、{_OLD_FULL}0000",
         },
     ]
-    requirements = [{**_requirement(FIRST_WI, "保存して"), "reviewed_head": _OLD_FULL, "evidence": "対応表に無い 7777777"}]
+    requirements = [
+        {
+            **_requirement(FIRST_WI, "保存して"),
+            "reviewed_head": _OLD_FULL,
+            "evidence": f"HEAD={_OLD_FULL}、git_head={_OLD_FULL}、比較元{_OLD_FULL}、現行commit:{_OLD_FULL}",
+        }
+    ]
     _write_evidence(evidence, conditions, requirements)
     assert run_script.dispatch(_rewrite_args(evidence, rewrite_map)) == 0, capsys.readouterr().err
-    assert "更新した行 2 行、置換 3 件" in capsys.readouterr().out
+    assert "更新した行 3 行、置換 3 件" in capsys.readouterr().out
     data = json.loads(evidence.read_text(encoding="utf-8"))
-    assert data["wi_conditions"][0]["evidence"] == f"commit {_NEW_FULL} で test_save 成功、{_NEW_FULL} を確認"
+    assert data["wi_conditions"][0]["evidence"] == f"commit:{_NEW_FULL} で test_save 成功、取得版{_OLD_FULL} を確認"
     assert data["wi_conditions"][1]["evidence"] == (
-        f"`{_NEW_SHORT}`の差分、docs/{_OLD_FULL[:7]}.md、{'9' * 40}、x{_OLD_FULL[:7]}y、{_OLD_FULL}0000"
+        f"`commit:{_NEW_SHORT}`の差分、docs/{_OLD_FULL[:7]}.md、{'9' * 40}、x{_OLD_FULL[:7]}y、{_OLD_FULL}0000"
     )
-    assert data["user_requirements"] == requirements
+    assert data["user_requirements"] == [
+        {**requirements[0], "evidence": requirements[0]["evidence"].replace(f"commit:{_OLD_FULL}", f"commit:{_NEW_FULL}")}
+    ]
     assert [row["outcome"] for row in data["wi_conditions"]] == ["達成", "証拠不足"]
     assert {row["reviewed_head"] for row in data["wi_conditions"]} == {REVIEWED_HEAD}
 
@@ -2580,11 +2597,7 @@ def test_rewrite_map_updates_commit_references_only(tmp_path: pathlib.Path, caps
 def test_rewrite_map_keeps_acquired_version_held_by_observation_file(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """取得版を観測ファイルの参照で書いた行は、参照の更新後も取得版を元の値のまま読める。
-
-    取得版を`evidence`へOIDで書くと、対応表の旧OIDとして新しい版へ置き換わり、旧版で実行した観測が
-    新しい版で実行した記録として読める。観測ファイルの参照で示せば、置換は現行の成果物を指すOIDにだけ及ぶ。
-    """
+    """観測ファイルの取得版と地の文の取得版を保ち、現行成果物への明示参照だけ更新する。"""
     evidence, rewrite_map = tmp_path / "evidence.json", tmp_path / "rewrite.json"
     record = tmp_path / "atk-command-x" / "record.json"
     record.parent.mkdir()
@@ -2594,14 +2607,14 @@ def test_rewrite_map_keeps_acquired_version_held_by_observation_file(
     conditions = [
         {
             **_condition(FIRST_WI, "保存"),
-            "evidence": f"取得版は{record}のgit_head。test_save 成功。対象のcommit {_OLD_FULL} から変化なし",
+            "evidence": f"取得版は{record}のgit_head={_OLD_FULL}。test_save 成功。対象のcommit:{_OLD_FULL} から変化なし",
         }
     ]
     _write_evidence(evidence, conditions, [])
     assert run_script.dispatch(_rewrite_args(evidence, rewrite_map)) == 0, capsys.readouterr().err
     data = json.loads(evidence.read_text(encoding="utf-8"))
     assert data["wi_conditions"][0]["evidence"] == (
-        f"取得版は{record}のgit_head。test_save 成功。対象のcommit {_NEW_FULL} から変化なし"
+        f"取得版は{record}のgit_head={_OLD_FULL}。test_save 成功。対象のcommit:{_NEW_FULL} から変化なし"
     )
     assert record.read_text(encoding="utf-8") == record_text
 
@@ -2627,8 +2640,8 @@ def test_rewrite_map_rejects_ambiguous_or_invalid_map_without_partial_write(
     _write_evidence(
         evidence,
         [
-            {**_condition(FIRST_WI, "保存"), "evidence": f"commit {_OLD_FULL} を確認"},
-            {**_condition(FIRST_WI, "再読込"), "evidence": "commit abc1234 を確認"},
+            {**_condition(FIRST_WI, "保存"), "evidence": f"commit:{_OLD_FULL} を確認"},
+            {**_condition(FIRST_WI, "再読込"), "evidence": "commit:abc1234 を確認"},
         ],
     )
     before = evidence.read_bytes()
@@ -2649,7 +2662,7 @@ def test_rewrite_map_does_not_bypass_rejudgment(
     row = {
         **_condition(FIRST_WI, "完成"),
         "reviewed_head": old_head,
-        "evidence": f"commit {old_head[:9]} の docs/record.md:1 を確認",
+        "evidence": f"commit:{old_head[:9]} の docs/record.md:1 を確認",
     }
     _write_evidence(evidence, [row])
     assert run_script.dispatch(_rewrite_args(evidence, rewrite_map)) == 0, capsys.readouterr().err
@@ -2660,7 +2673,7 @@ def test_rewrite_map_does_not_bypass_rejudgment(
     assert run_script.dispatch(check) == 1
     assert "reviewed_head" in capsys.readouterr().err
     data = json.loads(evidence.read_text(encoding="utf-8"))
-    assert data["wi_conditions"][0]["evidence"] == f"commit {new_head} の docs/record.md:1 を確認"
+    assert data["wi_conditions"][0]["evidence"] == f"commit:{new_head} の docs/record.md:1 を確認"
     data["wi_conditions"][0]["reviewed_head"] = new_head
     evidence.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     assert run_script.dispatch(check) == 0, capsys.readouterr().err

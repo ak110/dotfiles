@@ -116,6 +116,8 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 
 対応表のJSONは1対1・多対1の`{"oldOID":"newOID"}`を維持する。commit分割は`{"oldOID":[{"commit":"newOID-A","awi":["WI-A.md"]},{"commit":"newOID-B","awi":["WI-B.md"]}]}`でAWI割当を明示する。WIは保存ファイル名、OIDはGitで一意に解決できる値を使う。同じAWIを複数の新commitへ割り当ててもよい。各記録の旧commitが持つ全AWIを割当で被覆し、新commitへ指定AWIだけを継承する。欠落時はAWI名・旧OID・補正する次の操作を返し、全記録と対応記録を変更しない。旧scalar・保存済みrewriteイベント・本文コメントは引き続き読める。検収済みの同じ対応表をplan-rewrite、plan-progressの`--rewrite-map`、完成条件証拠の`--rewrite-map`へ渡し、証拠の旧OID参照は全対応先へ更新する。
 
+完成条件証拠と未判定検証記録のevidenceは、現行成果物への`commit:<OID>`参照だけを対応表で更新する。分割した全対応先も各commit:標識を保持し、次回の更新へ同じ操作で渡す。裸のOID、過去の取得版のHEAD・git_head・比較元、観測ファイルと判定・reviewed_headは保持する。既存自由文を推測して標識へ移さず、曖昧・不正な入力は部分保存を拒否する。OIDの対応だけで観測を新しい版に適用せず、結果に作用する内容と条件が変わった行だけを再観測する。根拠共用のCOMMIT_REFERENCEは、この履歴参照の更新と別の責務として維持する。
+
 WI実装commitの履歴を変更した担当は、`atk run-script history-compare`の検収成功時に保存された完全OIDの旧新対応表を使う。rebaseは`--operation rebase`、autosquashは`--operation autosquash`で、両系列のbaseを除くheadまでを指定する。WI対応を持たないcommitも含まれ、元commitとfixupが同じ新commitへ統合される場合は両方の旧OIDを含む。amendでは修正差分と変更範囲の検証で検収した旧新HEADの1対1対応を保存する。記録は短縮OIDで残り、同じ書換えの対応を受け取る他のコマンドにも同じファイルを渡す。
 
 書換えの直前のHEADと保存したファイルを、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す。記録・worktree・対応表は絶対パスで渡し、`--rewrite-map`にはJSON文字列ではなくファイルの絶対パスを渡す。同じ修正系列で書換えを繰り返す間は、毎回同じ記録の集合を渡す。
