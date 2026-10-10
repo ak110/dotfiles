@@ -78,7 +78,7 @@ worktreeの絶対パスを`--target-repo`へ渡す。リポジトリの識別だ
 
 `depends_on`は`atk wi set-dependencies <filename> --depends-on <filename>`で登録する。同コマンドは`inbox`、`processing`および`hold`の項目の依存を更新する。依存の更新は保存状態を変えないため、「保留と本文修正」が定める`hold`の区間の内側で本文と依存の双方を確定できる。依存の定義はメタデータとし、本文の記述は`ready`と`blocked`の導出判定の外にある。
 
-`cooldown_until`は`atk wi edit <filename> --cooldown-until <タイムゾーン付きISO 8601日時>`で`inbox`または`hold`の項目へ設定する。空文字列の指定で解除する。`processing`の項目では設定と解除の双方を拒否し、`--body-file`のfrontmatterへ同キーを書いても変更できない。時間経過による解除の根拠は「着手不能要因の分類」に従う。
+`cooldown_until`はAWIだけが持つ。初回投入では`atk wi add --cooldown-until <タイムゾーン付きISO 8601日時>`を使い、複数の`--body-file`へ同じ期限を保存する。空・不正日時・タイムゾーンなし、UWI・batchとの併用と通常本文のfrontmatterによる指定は拒否する。既存の`inbox`または`hold`のAWIには`atk wi edit <filename> --cooldown-until <日時>`で設定し、この編集だけは空文字列で解除できる。`processing`の項目では設定と解除の双方を拒否し、`--body-file`のfrontmatterへ同キーを書いても変更できない。期限以後は依存などの着手不能要因がなければ`ready`となる。時間経過による解除の根拠は「着手不能要因の分類」に従う。
 
 ## 着手不能要因の分類
 

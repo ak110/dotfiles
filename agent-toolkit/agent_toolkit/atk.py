@@ -148,6 +148,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
         "--choices",
         "--target-repo",
         "--depends-on",
+        "--cooldown-until",
         "--body-file",
     }
     while candidate_index < len(argv) and argv[candidate_index].startswith("-"):

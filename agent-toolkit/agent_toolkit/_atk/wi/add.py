@@ -69,6 +69,7 @@ def read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[
         "target_repo": data.get("target_repo"),
         "target_commit": data.get("target_commit"),
         "depends_on": depends_on,
+        "cooldown_until": data.get("cooldown_until"),
         "source": data.get("source"),
         "extra_frontmatter": {key: value for key, value in data.items() if key not in _RESERVED_FRONTMATTER_KEYS},
     }
@@ -84,6 +85,8 @@ def print_entry_details(details: dict[str, object | None]) -> None:
         "、".join(str(value) for value in depends_on) if isinstance(depends_on, (list, tuple)) and depends_on else "なし"
     )
     print(f"    depends_on: {rendered_dependencies}")
+    cooldown_until = details.get("cooldown_until")
+    print(f"    cooldown_until: {cooldown_until if cooldown_until is not None else 'なし'}")
     source = details["source"]
     print(f"    source: {source if source is not None else 'なし'}")
     extra_frontmatter = details["extra_frontmatter"]
@@ -317,45 +320,42 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
             raise _target_repo_error(raw_target_repo, error) from error
 
 
-_RESERVED_FRONTMATTER_KEYS = (
-    "target_repo",
-    "target_commit",
-    "type",
-    "source",
-    "origin_session",
-    "origin_locator",
-    "scope",
-    "question_type",
-    "choices",
-    "plan_file",
-    "queue_schedule",
-    "depends_on",
-    "cooldown_until",
-    "repair_target",
-    "repair_kind",
-    "reservation",
-    "reservation_companion",
-    "target_commit_history",
-    "submitter_session",
-)
-"""frontmatter生成で単一箇所（`add_entries`）が専有するキー。
+_RESERVED_ADD_KEY_NEXT_ACTIONS = {
+    "type": "--typeで指定する",
+    "scope": "--scopeで指定する",
+    "question_type": "--question-typeで指定する",
+    "choices": "--choicesで指定する",
+    "depends_on": "--depends-onで指定する",
+    "cooldown_until": "--cooldown-untilで指定する",
+    "target_commit": "atkによる対象HEADの自動取得に任せる",
+    "submitter_session": "atkによる投入元セッションの自動取得に任せる",
+    "origin_session": "通常新規投入では除き、移行・復元では--batchを使う",
+    "origin_locator": "通常新規投入では除き、移行・復元では--batchを使う",
+    "plan_file": "通常新規投入では除き、移行・復元では--batchを使う",
+    "queue_schedule": "通常新規投入では除き、移行・復元では--batchを使う",
+    "reservation": "通常新規投入では除き、移行・復元では--batchを使う",
+    "reservation_companion": "通常新規投入では除き、移行・復元では--batchを使う",
+    "target_commit_history": "通常新規投入では除き、移行・復元では--batchを使う",
+    "repair_target": "通常新規投入では除き、修復UWIの生成処理に任せる",
+    "repair_kind": "通常新規投入では除き、修復UWIの生成処理に任せる",
+}
+"""通常新規投入が採用しない管理キーと、指定方法の対応。保存前に存在自体を拒否する。"""
+_RESERVED_FRONTMATTER_KEYS = ("target_repo", "source", *_RESERVED_ADD_KEY_NEXT_ACTIONS)
+"""生成側が所有するキー。target_repoとsourceだけは入力値を優先して採用する。"""
 
-出力frontmatterはCLIが生成するキーを単一の値へ確定させ、入力メッセージのfrontmatterへ
-同名キーが含まれていても`frontmatter_data.update()`による辞書更新で
-入力値を除外する。このうち`target_repo`・`source`は明示された入力側の値を
-CLIオプションより優先して採用するが、`target_repo`は`resolve_repo_id_or_raise`で正規化してから
-保存する。
-`type`・`scope`・`question_type`・`choices`はCLIオプション
-（`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
-`origin_session`・`origin_locator`は旧形式のキーとして予約し、新規投入時に引き継がない。
-`submitter_session`は`atk wi add --type=uwi`を実行したセッションの識別子であり、回答済みUWIの通知を
-投入元のセッションへ限る`_hooks.uwi_completion`だけが読む。要求の由来の判定には使わず、
-本文のfrontmatterからの指定を採用しない。
-`target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`cooldown_until`・`repair_target`・`repair_kind`・
-`reservation`・`reservation_companion`・`target_commit_history`はユーザーによる直接指定を禁止し、
-CLIが管理する識別情報、依存、修復UWI、旧形式の内部metadataとして予約する。
-`plan_file`は廃止した計画ファイル付きの型で保存された項目のメタデータであり、読取互換として残し、新しい項目へは書かせない。
-"""
+
+def normalize_cooldown_until(value: str) -> str:
+    """投入と編集の外部入力を、タイムゾーン付きISO 8601日時へ正規化する。"""
+    next_action = "--cooldown-untilへ空でないタイムゾーン付きISO 8601日時を指定する"
+    try:
+        deadline = datetime.datetime.fromisoformat(value)
+    except (TypeError, ValueError) as error:
+        raise WebInputError(
+            "cooldown_untilはタイムゾーン付きISO 8601日時で指定してください", next_action=next_action
+        ) from error
+    if deadline.tzinfo is None or deadline.utcoffset() is None:
+        raise WebInputError("cooldown_untilはタイムゾーン付きISO 8601日時で指定してください", next_action=next_action)
+    return deadline.isoformat()
 
 
 def _resolve_submitter_session() -> str | None:
@@ -383,6 +383,7 @@ def _add_entries_locked(
     repair_targets: list[str | None] | None = None,
     repair_kinds: list[str | None] | None = None,
     depends_on: tuple[str, ...] = (),
+    cooldown_until: str | None = None,
     submitter_session: str | None = None,
 ) -> list[tuple[str, str]]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
@@ -444,6 +445,8 @@ def _add_entries_locked(
             logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
             if depends_on:
                 frontmatter_data["depends_on"] = list(depends_on)
+            if cooldown_until is not None:
+                frontmatter_data["cooldown_until"] = cooldown_until
         content = _frontmatter.normalize_newlines(_frontmatter.serialize_frontmatter(frontmatter_data, logical_body))
         _frontmatter.write_entry_text(inbox_dir / filename, content)
         if entry_type != WI_TYPE_AWI:
@@ -466,6 +469,7 @@ def add_entries(
     choices: str | None = None,
     target_commit: str | None = None,
     depends_on: tuple[str, ...] = (),
+    cooldown_until: str | None = None,
     lock_timeout: float = -1,
     saved_details: dict[str, dict[str, object | None]] | None = None,
     skip_remote_sync: bool = False,
@@ -480,7 +484,7 @@ def add_entries(
     `_wi_sync.repo_lock`取得前に全件の型・非空・解決可否を検証する。
     `submitter_session`はUWI種別のfrontmatterへだけ保存する。
     """
-    parsed_messages, normalized_target_repo = _validate_add_entries(
+    parsed_messages, normalized_target_repo, normalized_cooldown = _validate_add_entries(
         messages=messages,
         target_repo=target_repo,
         entry_type=entry_type,
@@ -488,6 +492,7 @@ def add_entries(
         choices=choices,
         target_commit=target_commit,
         source=source,
+        cooldown_until=cooldown_until,
     )
     with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
         _wi_sync.ensure_mutation_allowed(private_notes)
@@ -505,6 +510,7 @@ def add_entries(
             choices=choices,
             target_commit=target_commit,
             depends_on=depends_on,
+            cooldown_until=normalized_cooldown,
             submitter_session=submitter_session,
         )
         generated = [filename for filename, _content in written]
@@ -535,10 +541,18 @@ def _validate_add_entries(
     choices: str | None,
     target_commit: str | None,
     source: str | None = None,
-) -> tuple[list[tuple[dict[str, object], str]], str | None]:
+    cooldown_until: str | None = None,
+) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
     """保存前の入力検証を行い、正規化済みの値を返す。"""
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください", next_action="本文を1件以上指定して再投入する")
+    normalized_cooldown = None
+    if cooldown_until is not None:
+        if entry_type != WI_TYPE_AWI:
+            raise WebInputError(
+                "cooldown_untilはAWIでのみ指定できる", next_action="--cooldown-untilを外すか--type=awiで投入する"
+            )
+        normalized_cooldown = normalize_cooldown_until(cooldown_until)
     if target_commit is not None and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
         raise WebInputError(
             "target_commitは解決済みの40桁または64桁OIDで指定してください",
@@ -560,6 +574,14 @@ def _validate_add_entries(
         )
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
     for frontmatter, body in parsed_messages:
+        rejected_keys = [key for key in _RESERVED_ADD_KEY_NEXT_ACTIONS if key in frontmatter]
+        if rejected_keys:
+            raise WebInputError(
+                "本文frontmatterでは指定できない予約キーです: " + "、".join(rejected_keys),
+                next_action="。".join(
+                    f"frontmatterから{key}を除き、{_RESERVED_ADD_KEY_NEXT_ACTIONS[key]}" for key in rejected_keys
+                ),
+            )
         require_agent_awi_sections(
             body,
             frontmatter,
@@ -582,7 +604,7 @@ def _validate_add_entries(
             "post-approval形式の選択肢は固定です",
             next_action="--choicesを外して再投入する",
         )
-    return parsed_messages, normalized_target_repo
+    return parsed_messages, normalized_target_repo, normalized_cooldown
 
 
 def read_body_files(paths: list[str]) -> list[str]:
@@ -737,6 +759,7 @@ def cmd_add(
                 choices=choices,
                 target_commit=target_commit,
                 source=args.source,
+                cooldown_until=getattr(args, "cooldown_until", None),
             )
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
@@ -752,6 +775,7 @@ def cmd_add(
             choices=choices,
             target_commit=target_commit,
             depends_on=canonical_dependencies,
+            cooldown_until=getattr(args, "cooldown_until", None),
             saved_details=saved_details,
             submitter_session=_resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
         )
