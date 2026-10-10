@@ -9,10 +9,7 @@ pyfltrの`commands_summary.needs_action.warning`はコマンド結果の区分�
 
 試験結果では、成功時も既存の所要出力（pytestのduration、pyfltrの`slow_tests`など）を読み、
 setup・本体・後始末の所要を、保証する契約と必要な仕事量へ対応付ける。
-合否と所要の妥当性を別々に判定する。不要な仕事や同条件の観測からの増大に加え、
-準備・待機・外部取得や起動が支配的な結果は、条件をそろえて原因を調べ是正する。
-順位や一律の秒数だけで欠陥と判定せず、契約と仕事量の対応を根拠にする。
-既存出力で判断できる対象は追加測定を繰り返さず、所要出力が不足する不審な対象だけ追加で測定する。
+原因を調べて是正を選ぶ前に`agent-toolkit:bugfix`を起動する。`agent-toolkit:bugfix`の`SKILL.md`「所要の原因調査」で、合否と別に妥当性を判定する。
 速度と時間上限の選定は`agent-toolkit:writing-standards`の`references/testing.md`「速度」に従い、
 観測した所要、保証する契約、妥当性と対処の判断を検証結果へ残す。
 

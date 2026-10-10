@@ -63,7 +63,7 @@ MANDATORY_KINDS = frozenset({"user-intervention", "confirmation-request", "wi-us
 """再発防止策を必須とする候補種別。
 
 ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
-`agent-toolkit:session-review`の`references/analysis.md`「ユーザー介入の判定規則」の除外区分に当たる場合を除き、
+`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」の除外区分に当たる場合を除き、
 前例の有無によらず再発防止策を要する。必須であることを参照資料の読込に依存させないよう候補一覧と1行JSONへ示し、
 Stopの報告本文の判定が候補IDで追跡する。
 """
