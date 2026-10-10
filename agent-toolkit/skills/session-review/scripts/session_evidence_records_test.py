@@ -215,7 +215,7 @@ def test_reconciliation_repeats_until_no_main_user_intervention_is_added(
 
     assert evidence.main([str(transcript), "--observation-boundary", "2026-09-01T00:00:02Z"]) == 0
     initial_events = read_jsonl(capsys, raw=True)
-    known_locators = {(event["record"], event["line"]) for event in initial_events}
+    known_locators = {(event["record"], event["line"]) for event in initial_events if "line" in event}
     additions_by_reconciliation = []
     for boundary in [
         "2026-09-01T00:00:04Z",
@@ -632,7 +632,7 @@ def test_explicit_codex_home_applies_to_parent_and_delegate_records(
 
     assert evidence.main(["--codex-thread-id", parent_id, "--codex-home", str(explicit_home)]) == 0
 
-    events = read_jsonl(capsys, raw=True)
+    events = [event for event in read_jsonl(capsys, raw=True) if event["kind"] == "user"]
     assert events == [
         {
             "kind": "user",

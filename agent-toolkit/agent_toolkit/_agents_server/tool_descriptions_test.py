@@ -9,6 +9,7 @@ import pytest
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import (
     mcp_tools,
+    tool_descriptions,
     tool_names,
 )
 from agent_toolkit._testing.agents_server_support import (
@@ -57,6 +58,16 @@ def test_instructions_keep_server_overview_without_argument_specification() -> N
     instructions = mcp_tools.mcp.instructions or ""
     for legacy in tool_names.LEGACY_START_MODES:
         assert legacy not in instructions, legacy
+
+
+def test_lightweight_selection_reaches_instructions_and_mode_schema() -> None:
+    """独立した2つの配送先が同じ判断基準を持ち、開始前の文脈の上限へ収まる。"""
+    selection = tool_descriptions.LIGHTWEIGHT_MODE_SELECTION
+    instructions = mcp_tools.mcp.instructions or ""
+    mode = _start_tool().parameters["properties"]["mode"]["description"]
+    assert selection in instructions
+    assert selection in mode
+    assert len(instructions) <= 2048
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:

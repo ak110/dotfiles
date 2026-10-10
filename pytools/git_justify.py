@@ -1,6 +1,9 @@
 # PYTHON_ARGCOMPLETE_OK
 """Gitの履歴改変スクリプト。"""
 
+# 営業時間を使わない呼出しでは、休日と営業時間の依存を読み込まない。
+__lazy_modules__ = {"businesstimedelta", "holidays"}
+
 import argparse
 import datetime
 import os
@@ -12,22 +15,6 @@ import businesstimedelta
 import holidays
 
 from pytools._internal.cli import enable_completion
-
-businesshrs = businesstimedelta.Rules(
-    [
-        businesstimedelta.WorkDayRule(
-            start_time=datetime.time(9),
-            end_time=datetime.time(18),
-            working_days=[0, 1, 2, 3, 4],
-        ),
-        businesstimedelta.LunchTimeRule(
-            start_time=datetime.time(12),
-            end_time=datetime.time(12, 45),
-            working_days=[0, 1, 2, 3, 4],
-        ),
-        businesstimedelta.HolidayRule(holidays.country_holidays("JP")),
-    ]
-)
 
 
 def main() -> None:
@@ -71,6 +58,25 @@ def _get_commits(start_commit: str, end_commit: str) -> list[str]:
     return commits  # 最新から順に過去へ
 
 
+def _business_hours() -> businesstimedelta.Rules:
+    """営業時間を使う計算の直前に、従来の昼休みと日本の休日の規則を作成する。"""
+    return businesstimedelta.Rules(
+        [
+            businesstimedelta.WorkDayRule(
+                start_time=datetime.time(9),
+                end_time=datetime.time(18),
+                working_days=[0, 1, 2, 3, 4],
+            ),
+            businesstimedelta.LunchTimeRule(
+                start_time=datetime.time(12),
+                end_time=datetime.time(12, 45),
+                working_days=[0, 1, 2, 3, 4],
+            ),
+            businesstimedelta.HolidayRule(holidays.country_holidays("JP")),
+        ]
+    )
+
+
 def _adjust_dates(
     start_date: datetime.datetime,
     end_date: datetime.datetime,
@@ -78,13 +84,14 @@ def _adjust_dates(
     no_business: bool,
 ) -> list[datetime.datetime]:
     """日付を均等に分配し、少しランダムにずらす"""
-    span = end_date - start_date if no_business else businesshrs.difference(start_date, end_date).timedelta
+    businesshrs = None if no_business else _business_hours()
+    span = end_date - start_date if businesshrs is None else businesshrs.difference(start_date, end_date).timedelta
     interval_sec = span.total_seconds() / num_commits
     rand_range = int(interval_sec / 2)
     dates: list[datetime.datetime] = []
     for i in range(num_commits):
         offset_sec = int(i * interval_sec + random.randrange(rand_range))
-        if no_business:
+        if businesshrs is None:
             d: datetime.datetime = end_date - datetime.timedelta(seconds=offset_sec)
         else:
             delta = businesstimedelta.BusinessTimeDelta(businesshrs, seconds=offset_sec)

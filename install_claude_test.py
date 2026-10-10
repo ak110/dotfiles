@@ -536,8 +536,8 @@ def test_cleans_stage_directory_on_download_failure(kind: str, tmp_path: pathlib
     stub_bin, stub_log = make_command_stubs(tmp_path)
     rules_dir = home / ".claude" / "rules" / "agent-toolkit"
     rules_dir.mkdir(parents=True)
-    sentinel = rules_dir / "01-agent.md"
-    sentinel.write_text("# 既存内容\n", encoding="utf-8")
+    kept_file = rules_dir / "01-agent.md"
+    kept_file.write_text("# 既存内容\n", encoding="utf-8")
 
     result = run_installer(
         kind,
@@ -549,7 +549,7 @@ def test_cleans_stage_directory_on_download_failure(kind: str, tmp_path: pathlib
     )
 
     assert result.returncode != 0
-    assert sentinel.read_text(encoding="utf-8") == "# 既存内容\n"
+    assert kept_file.read_text(encoding="utf-8") == "# 既存内容\n"
     stage_root = home / ".claude" / "rules-stage"
     assert not stage_root.exists() or not list(stage_root.iterdir())
 

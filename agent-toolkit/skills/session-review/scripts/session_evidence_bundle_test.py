@@ -69,7 +69,9 @@ def test_observation_boundary_does_not_apply_to_delegate_records(
     assert evidence.main(base) == 0
 
     events = read_jsonl(capsys, raw=True)
-    assert [event["text"] for event in events if event["record"] == "claude:transcript/agent-child"] == [
+    assert [
+        event["text"] for event in events if event["kind"] == "user" and event["record"] == "claude:transcript/agent-child"
+    ] == [
         "境界前の委譲先記録",
         "境界後の委譲先結果",
     ]
@@ -427,6 +429,7 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
         "failed-tool": 1,
         "agent-completion": 1,
         "final-result": 1,
+        "record-provenance": 1,
     }
     serialized = json.dumps(bundle_events, ensure_ascii=False)
     assert "作業中" not in serialized

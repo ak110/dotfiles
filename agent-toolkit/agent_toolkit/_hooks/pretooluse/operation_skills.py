@@ -34,6 +34,7 @@ import pathlib
 import re
 from collections.abc import Callable, Sequence
 
+from agent_toolkit._common import shell_cwd
 from agent_toolkit._common import shell_segments as _shell_segments
 from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 from agent_toolkit._common.heredocs import heredoc_bodies
@@ -304,7 +305,7 @@ def _static_write_path(path: str) -> str | None:
     return suffix if suffix.startswith("/") else None
 
 
-def _bash_write_paths(command: str) -> list[str]:
+def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
     """実行位置のリダイレクト・tee・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
 
     静的な末尾だけを使い、本文と環境変数を実行して解決しない。
@@ -312,32 +313,66 @@ def _bash_write_paths(command: str) -> list[str]:
     書込先の指定にも別の解釈を要するため対象へ含めない。
     """
     paths: list[str] = []
+    current = shell_cwd.CwdResolution(cwd or "", bool(cwd))
+
+    def append_paths(found: list[str], base: shell_cwd.CwdResolution) -> None:
+        for raw in found:
+            value = _static_write_path(raw)
+            if value is None:
+                continue
+            path = pathlib.Path(value).expanduser()
+            if cwd is None:
+                paths.append(value)
+            elif path.is_absolute():
+                paths.append(str(path.resolve()))
+            elif base.resolved:
+                paths.append(str((pathlib.Path(base.path) / path).resolve()))
+
     for invocation in extract_bash_invocations(command):
-        paths.extend(target for target in invocation.static_outputs if isinstance(target, str))
+        change = shell_cwd.resolve_cwd_change(list(invocation.segment.tokens), current)
+        if change is not None:
+            current = change
+            continue
+        found = [target for target in invocation.static_outputs if isinstance(target, str)]
         tokens = invocation.static_tokens
         name = pathlib.PurePath(tokens[0]).name
         if name == "tee":
             options = tokens[1 : tokens.index("--")] if "--" in tokens else tokens[1:]
             if not any(arg in {"--help", "--version"} for arg in options):
-                paths.extend(arg for arg in tokens[1:] if not arg.startswith("-"))
+                found.extend(arg for arg in tokens[1:] if not arg.startswith("-"))
         elif name == "sed":
-            paths.extend(_sed_write_paths(tokens[1:]))
+            found.extend(_sed_write_paths(tokens[1:]))
         elif name in {"cp", "mv", "install", "rsync"}:
-            paths.extend(_copy_write_paths(name, tokens[1:]))
+            found.extend(_copy_write_paths(name, tokens[1:]))
         elif name == "perl":
-            paths.extend(_perl_write_paths(tokens[1:]))
+            found.extend(_perl_write_paths(tokens[1:]))
         elif name == "dd":
-            paths.extend(arg[3:] for arg in tokens[1:] if arg.startswith("of="))
+            found.extend(arg[3:] for arg in tokens[1:] if arg.startswith("of="))
         elif is_python_token(name) and len(tokens) > 2 and tokens[1] == "-c":
-            paths.extend(_python_write_paths(tokens[2]))
+            found.extend(_python_write_paths(tokens[2]))
+        append_paths(found, current)
     for body in heredoc_bodies(command):
         header = command[: body.start].rstrip("\r\n").rsplit("\n", 1)[-1]
         invocations = extract_bash_invocations(header)
         if len(invocations) == 1:
             tokens = invocations[0].segment.tokens
             if is_python_token(pathlib.PurePath(tokens[0]).name) and tokens[1:] in {(), ("-",)}:
-                paths.extend(_python_write_paths(command[body.start : body.end]))
-    return [value for path in paths if (value := _static_write_path(path)) is not None]
+                base = shell_cwd.CwdResolution(cwd or "", bool(cwd))
+                for preceding in extract_bash_invocations(command[: body.start]):
+                    change = shell_cwd.resolve_cwd_change(list(preceding.segment.tokens), base)
+                    if change is not None:
+                        base = change
+                append_paths(_python_write_paths(command[body.start : body.end]), base)
+    return paths
+
+
+def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
+    """入力から確定した書込先を、操作時点のcwdに対応する絶対パスで返す。"""
+    if tool_name == "Bash":
+        command = tool_input.get("command")
+        return _bash_write_paths(command, cwd) if isinstance(command, str) else []
+    operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
+    return [str(pathlib.Path(operation.path).resolve()) for operation in operations or [] if operation.path]
 
 
 def _is_agent_document_writing(tool_name: str, tool_input: dict) -> bool:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime
 import os
 import pathlib
 import subprocess
@@ -41,7 +40,6 @@ _EDITABLE_STATE_NEXT_ACTION = (
     "inbox・processing・holdの項目を指定する。終端した項目は"
     "`atk wi hold <ファイル名> --state <adopted|rejected>`（現在の状態を指定）でholdへ戻してから編集する"
 )
-_COOLDOWN_FORMAT_NEXT_ACTION = "--cooldown-untilへタイムゾーン付きISO 8601日時（例: 2026-10-01T09:00:00+09:00）を指定する"
 _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
     "depends_on": "frontmatterからdepends_onを除き、依存は`atk wi set-dependencies`で更新する",
     "target_commit": "frontmatterからtarget_commitを除いて再実行する（target_commitはatkが記録する）",
@@ -302,19 +300,7 @@ def _apply_cooldown_edit(content: str, value: str) -> str:
         )
     data, body = parsed
     if value:
-        try:
-            deadline = datetime.datetime.fromisoformat(value)
-        except ValueError as error:
-            raise WebInputError(
-                "cooldown_untilはタイムゾーン付きISO 8601日時で指定してください",
-                next_action=_COOLDOWN_FORMAT_NEXT_ACTION,
-            ) from error
-        if deadline.tzinfo is None or deadline.utcoffset() is None:
-            raise WebInputError(
-                "cooldown_untilはタイムゾーン付きISO 8601日時で指定してください",
-                next_action=_COOLDOWN_FORMAT_NEXT_ACTION,
-            )
-        data["cooldown_until"] = deadline.isoformat()
+        data["cooldown_until"] = _add.normalize_cooldown_until(value)
     else:
         data.pop("cooldown_until", None)
     return _frontmatter.serialize_frontmatter(data, body)

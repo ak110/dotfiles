@@ -19,7 +19,7 @@ def _replace_checks(monkeypatch: pytest.MonkeyPatch, results: dict[str, tuple[st
     """各判定の`evaluate`を指定結果へ置き換える。"""
     for module_name, result in results.items():
         module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
-        monkeypatch.setattr(module, "evaluate", lambda _payload, result=result: result)
+        monkeypatch.setattr(module, "evaluate", lambda _payload, result=result, **kwargs: result)
 
 
 def _state_path(directory: pathlib.Path, session_id: str) -> pathlib.Path:
@@ -72,6 +72,18 @@ def test_notifications_are_aggregated_without_block(monkeypatch: pytest.MonkeyPa
             "hookEventName": "Stop",
             "additionalContext": "通知1\n\n通知2",
         }
+    }
+
+
+def test_yield_keeps_other_notifications(monkeypatch: pytest.MonkeyPatch) -> None:
+    """通知配送のための終了でも、他の判定が返したwarn本文を応答に残す。"""
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    _replace_checks(
+        monkeypatch, {"termination_order_advisor": ("notify", "自編集のwarn"), "queued_notification_advisor": ("yield", "")}
+    )
+    assert stop.evaluate("{}") == {
+        "continue": False,
+        "hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": "自編集のwarn"},
     }
 
 
@@ -223,16 +235,15 @@ def test_stop_evaluations_scan_transcript_once(
     [(False, False), (True, False), (False, True)],
     ids=["main", "stop-hook-active", "delegated"],
 )
-def test_stop_reports_queued_task_notification_output_file(
+@pytest.mark.parametrize("block", [False, True])
+def test_queued_notifications_yield_without_overriding_block(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     stop_hook_active: bool,
     delegated: bool,
+    block: bool,
 ) -> None:
-    """キューに残る完了通知のtask-idと出力ファイルを、Stopの応答が実行主体へ示す。
-
-    他の判定の遮断がある場合は`reason`、無い場合は`additionalContext`へ本文が入る。
-    """
+    """他の遮断が無い未配送通知は、追加の警告応答を生まずホストへ戻す。"""
     _set_state_directory(monkeypatch, tmp_path)
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
@@ -242,6 +253,9 @@ def test_stop_reports_queued_task_notification_output_file(
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     plan_save_advisor = importlib.import_module("agent_toolkit._hooks.plan_save_advisor")
     monkeypatch.setattr(plan_save_advisor, "working_plans_root", lambda: tmp_path / "plans")
+    _replace_checks(monkeypatch, {"user_response_advisor": ("notify_user", "ユーザー宛て通知")})
+    if block:
+        _replace_checks(monkeypatch, {"pending_question_advisor": ("block", "別の遮断")})
     _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
     _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
     output_file = str(tmp_path / "tasks" / "b6n4gipz5.output")
@@ -267,9 +281,16 @@ def test_stop_reports_queued_task_notification_output_file(
 
     result = stop.evaluate(payload)
 
-    hook_output = result.get("hookSpecificOutput")
-    text = hook_output["additionalContext"] if isinstance(hook_output, dict) else result.get("reason")
-    assert isinstance(text, str)
-    assert "b6n4gipz5" in text
-    assert output_file in text
-    assert "出力ファイルを読んで結果を受け取り" in text
+    assert result["systemMessage"] == "ユーザー宛て通知"
+    if block:
+        assert result["decision"] == "block"
+        reason = result["reason"]
+        assert isinstance(reason, str)
+        assert "別の遮断" in reason
+        assert output_file in reason
+        assert "continue" not in result
+    else:
+        assert result == {"continue": False, "systemMessage": "ユーザー宛て通知"}
+        state = _read_state(tmp_path, "queued-stop")
+        assert not state.get("queued_notification_notified_ids")
+        assert not state.get("warn_notice_counts")

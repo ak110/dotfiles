@@ -1,6 +1,9 @@
 # PYTHON_ARGCOMPLETE_OK
 """指定フォルダ内の画像ファイルのサイズの分布を調べるスクリプト。"""
 
+# ヘルプ・補完では画像処理を行わない。旧Pythonでは通常のimportとして動く。
+__lazy_modules__ = {"numpy", "tqdm", "bashplotlib.histogram", "pytools.imageconverter"}
+
 import argparse
 import logging
 import pathlib

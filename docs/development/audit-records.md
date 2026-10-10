@@ -99,6 +99,37 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。分割前の最大の文書`agent-toolkit/skills/wi-standards/SKILL.md`（60,005バイト）は16,945トークンだった。分割後の137件では、最大が13,176トークン（`skills/plan-mode/references/plan-file-standards.md`、45,749バイト）だった。1トークンあたりバイト数の最小は3.10（`skills/plan-mode/references/legacy-plan-file-standards.md`）だった。配布設定`share/codex_config.toml`（当時は`scripts/codex_config.toml`）の`tool_output_token_limit`は20000である。20,000トークンと3.10バイトの積は約62,000バイトであり、実行セルが本文へ付加する分の余裕を取って閾値を48KiB（49,152バイト）とした。48KiBの文書は最悪の比率でも約15,900トークンで、上限に対して約4,000トークンの余裕が残る。
 再検証では同じ集合をo200k_baseで数えて1トークンあたりバイト数の最小値を測り直し、配布設定の`tool_output_token_limit`との積が閾値と付加分の余裕を上回るか確かめる。
 
+## agent-toolkit/agent_toolkit/_hooks/stop.py：未配送通知を次ターンへ返す：2026年10月10日
+
+Claude Code 2.1.296の非対話CLIで、goalなし・ありの専用sessionを1件ずつ起動した。
+対象版は基準commit `fb5cbb72380af87aa26c302816b0c87efdb17004`へ本変更の未commit差分を加えた作業ツリーである。
+配布するStopの起動コマンドを一時settingsへ登録し、実際のstdin・応答・終了コードを保存した。
+各sessionはBashで固定文字列を1回だけ背景出力し、Read前に待機を表明した。
+両方でStopは終了0の`continue: false`を返した後、同じsessionがtask-notificationによる次ターンで再開した。
+Readは背景の出力ファイルの全量と`[exited with code 0]`を取得し、最終結果は`terminal_reason: completed`だった。
+goalありでは実際の`Goal set`、待機時の未充足評価、結果受領後の正常終端を保存した。
+追加のgoal観測では`--debug-file`を指定した。
+同じ条件の評価は待機時に`ok: false`、通知からの再開後に`ok: true`となり、その後にsessionのStop評価hookが除去された。
+この追加観測の実行記録は`atk-command-t1dania1/record.json`、詳細索引は`session-4bef2h87/goal-evaluation-observation.json`にある。
+背景コマンドの再発行と追加のユーザー入力は無かった。
+
+証拠索引は管理対象一時領域の`session-4bef2h87/delivery-observations.json`で、各条件のargv・session・両出力・StopログとCLI終了を保持する。
+外側の実行記録は`atk-command-pez6xwtn/record.json`へ保存した。
+再検証は`claude --version`と`--help`を確認し、専用sessionで同じBash・Readの順序を指示する。
+起動には次の公開引数を使う。
+
+```sh
+claude -p --session-id <専用UUID> --setting-sources '' --strict-mcp-config \
+  --settings <Stop登録JSON> --tools Bash,Read --allowedTools 'Bash(printf *)' Read \
+  --output-format stream-json --include-hook-events --verbose <指示本文>
+```
+
+goalありは公開された`/goal`を先頭に置き、設定・評価・同一sessionの再開を併せて確認する。
+Stopの応答だけやホストのtask_notificationだけを、モデルによる結果受領の代用にしない。
+他のblockとの合成は`stop_test.py`が扱い、本実機観測はblockなしのBash結果に限る。
+上流の修正やIssue投稿は行わない。
+上流改善後に同条件で警告による継続が通知配送を妨げなくなったことを確認して、回避の撤去を判断する。
+
 ## agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日
 
 Stopで報告の不足を判定する変更（`4862700e1`）の要求を起草した時点で、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
@@ -423,7 +454,7 @@ agent-toolkit 2.199.0の基準commitは`3b3932b5`で、review-table実装の差�
 
 ## agent-toolkit/skills/search/SKILL.md：引数とシェルの扱い：2026年10月9日
 
-2026年10月9日、Claude Code 2.1.295のBashで`type grep`がシェル関数を返し、ugrep 7.8.4へ転送することを確認した記録に基づく。GNU grepは3.11だった。ignore・binaryの除外で一致する内容を持つ対象でも標準出力が空・終了コード1となった。`.{0,160}a.{0,160}`はugrepで複雑度エラーを標準エラーへ出し、標準出力は空・終了コード2だった。上限を小さくした`.{0,30}a.{0,30}`も終了コード2で、繰り返しを片側だけにした`a.{0,400}`は終了コード0だった。同じテキストへの`command grep -o -E '.{0,160}a.{0,160}'`は`a`を出力して終了コード0だった。この節のClaude関数の観測は入力WIが保持する対照記録に由来する。
+2026年10月9日、Claude Code 2.1.295のBashで`type grep`がシェル関数を返し、ugrep 7.8.4へ転送することを確認した記録に基づく。GNU grepは3.11だった。ignore・binaryの除外で一致する内容を持つ対象でも標準出力が空・終了コード1となった。`.{0,160}a.{0,160}`はugrepで複雑度エラーを標準エラーへ出力し、標準出力は空・終了コード2だった。上限を小さくした`.{0,30}a.{0,30}`も終了コード2で、繰り返しを片側だけにした`a.{0,400}`は終了コード0だった。同じテキストへの`command grep -o -E '.{0,160}a.{0,160}'`は`a`を出力して終了コード0だった。この節のClaude関数の観測は入力WIが保持する対照記録に由来する。
 
 再検証ではClaude Bashで`type grep`と`grep --version`、`command grep --version`を取得する。専用領域に`a`を含む通常テキスト、ignore対象とbinary対象を用意し、関数の`grep`と`command grep`へ同じ対象・パターンを渡す。各標準出力・標準エラー・終了コードを保存して比較し、無出力の理由とパイプの後段で使う起動実体を区別する。
 
@@ -757,3 +788,11 @@ session `1e19cda7-eaf3-49dd-b96c-916c43f077d1`へ失敗原因と再予約可能�
 受付応答、ターン終了、ホストの圧縮成功を順に記録する。
 非対話はBashのバックグラウンドタスクと保存記録の再開操作を組み合わせ、圧縮後の領域通知からparent-handoff.mdへ到達し、通知から同じsessionと担当・監視対象が続行することも確かめる。任意指示で応答文字列を渡さない。
 故障と再予約は隔離した検証用プラグインだけへ例外を注入して試し、製品のプラグインを改変しない。
+
+## Python 3.15対応時の依存導入
+
+2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。使用イメージは`ghcr.io/ak110/pyfltr`のdigest `sha256:224003f281050887c053eb24f14137970df5225b1b2c99af61b960fab43d8103`である。PyYAML 6.0.3のビルドは成功しており、ビルド発生だけを失敗と判定できない。同入力の更新commit `80d4be7`ではpydantic-core 2.50.0にcp315 wheelがある。この過去のCIの観測は入力WIに由来し、本レーンのローカル成功とは区別する。
+
+[uvのビルド失敗の公式説明](https://docs.astral.sh/uv/reference/troubleshooting/build-failures/#why-does-uv-build-a-package)では、導入環境に合うwheelが無ければsdistをビルドする。[CIキャッシュの説明](https://docs.astral.sh/uv/concepts/cache/#caching-in-continuous-integration)では、ソースからビルドしたwheelもキャッシュする。ローカルでの成功は、別のCI環境のビルド用ツールとキャッシュの成立を保証しない。
+
+再検証では該当jobの全ログとcommitのlockfileを取得し、Python版、OS・アーキテクチャ、イメージdigest、ビルド開始と終了状態を対応付ける。同じイメージとPython版の隔離環境で、プロジェクトの同期コマンドを既存wheelキャッシュに依存せず実行し、ビルド要件を確認する。互換wheelを持つ版への更新とCIで必要なビルド用ツールを用意する案を比較し、純Pythonのビルドと環境マーカーにより導入されない依存を区別する。

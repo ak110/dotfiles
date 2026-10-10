@@ -4,6 +4,9 @@
 元 C# 実装は grep 部分が未実装だったため、`psutil` でクロスプラットフォームに実装する。
 """
 
+# 検索しないヘルプ・補完経路ではプロセス列挙の依存を読み込まない。
+__lazy_modules__ = {"psutil"}
+
 import argparse
 import fnmatch
 import logging

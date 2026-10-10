@@ -18,6 +18,7 @@ from session_evidence_candidates import (
 from session_evidence_extract import (
     _clip,
     _CollectedRecord,
+    _collection_events,
     _default_events,
     _error_event,
     _unresolved_events,
@@ -86,9 +87,10 @@ def _bundle_events(
         ], 2
     resolved = directory.resolve()
     timeline = _default_events(collected, [])
-    warnings = _warning_collection_events(collected, [])
-    stats = _stats_events(collected, compaction_record_dir)
-    hook_notices = _hook_notice_events([record for item in collected for record in item.records])
+    metadata = _collection_events(collected, [])
+    warnings = [*metadata, *_warning_collection_events(collected, [])]
+    stats = [*metadata, *_stats_events(collected, compaction_record_dir)]
+    hook_notices = [*metadata, *_hook_notice_events([record for item in collected for record in item.records])]
     main_record = next(item for item in collected if item.role == "main")
     candidates = _candidate_events(
         timeline,

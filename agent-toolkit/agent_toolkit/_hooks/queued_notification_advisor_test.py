@@ -5,6 +5,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import queued_notification_advisor as subject
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
@@ -148,6 +149,20 @@ def test_second_stop_for_same_notification_is_silent(tmp_path: pathlib.Path) -> 
 
     assert _evaluate(transcript)[0] == "notify"
     assert _evaluate(transcript, stop_hook_active=True) == ("approve", "")
+
+
+@pytest.mark.parametrize("previous_warning", [False, True])
+def test_delivery_includes_warned_notifications_without_updating_warning_state(
+    tmp_path: pathlib.Path, previous_warning: bool
+) -> None:
+    """現在の未配送を使って配送へ戻し、その判定で警告状態を増やさない。"""
+    transcript = _write_transcript(tmp_path, [_queue("enqueue", _notification())])
+    if previous_warning:
+        assert _evaluate(transcript)[0] == "notify"
+    before = read_state("queued-session")
+    payload = json.dumps({"session_id": "queued-session", "transcript_path": str(transcript)})
+    assert subject.evaluate(payload, allow_delivery=True) == ("yield", "")
+    assert read_state("queued-session") == before
 
 
 def test_new_notification_after_notified_one_is_reported_alone(tmp_path: pathlib.Path) -> None:

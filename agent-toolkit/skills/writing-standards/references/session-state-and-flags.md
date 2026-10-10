@@ -132,6 +132,9 @@ process-loopが起動した会話の最上位のStopでは、`agent-toolkit/agen
   寿命と継承はセッション状態ファイルと同じとし、別会話から継承した値は`session_id`の一致を確かめてから使う
   - 待機の許可: 報告段階が残る作業が待つ非同期対象の生存中にStopが待機を許可する条件は`claude-hooks-stop.md`「終了工程の証拠」が定める。本キーはその判定の記録元として作業の開始位置（UserPromptSubmitが記録したtranscriptの大きさ）を保持し、Stopがその判定の利用先として読む
   - 委譲先へのwait判断: `async_targets`と所有者を確認し、観測義務とは別に有効なCLI待機所有権・対象登録を共通の読取処理で確認する。`pending_observation`が偽でも待機が有効なら保持し、両方が終わると不足判定へ戻る
+  - 自編集: Claude Codeメインの成功したEdit・Writeと、既存の抽出で静的に確定したBash書込先を、作業ごとの`edits`へリポジトリと相対パスで対応付ける。Stopはその集合だけを終了時のGit状態と比べ、他主体の差分を取り込まない
+  - 公開範囲と到達: メインが原入力または適用済み認可から判断した範囲を`publish_scope`へ記録し、成功したcompletion-reportの起動を`completion_report`へ記録する。公開範囲の記録手順は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`が定める
+  - 原入力と再入: `last_human_input`は最後の人間入力を保持し、自動通知で再開しても元の依頼への帰属を保つ。`--context`は現在の会話のその入力と作業の識別子だけを返す。`self_edit_warned`は実際にwarnを返した未確定作業の対象を保持し、同じ対象の再入で反復せずblockへ昇格させない。これらの寿命と継承は本キーと同じで、公開範囲・到達の証拠と現在のGit状態から不要な判定を除く
 
 ## 通知反復系
 
@@ -170,7 +173,8 @@ process-loopが起動した会話の最上位のStopでは、`agent-toolkit/agen
 - `queued_notification_notified_ids`: Stopの`queued_notification_advisor.py`が、最上位transcriptのキューに残る未配送の完了通知について案内した通知の識別子を重複なく記録する。
   Agent・Taskの起動記録に対応する通知では返却メッセージの利用を、それ以外では出力ファイルの読取を案内する。
   識別子は`<task-id>`、無い場合は`<tool-use-id>`、いずれも無い場合は通知本文とする。
-  同フックが、同じ通知への案内を1回に限る判定に読む。案内を繰り返すと、同フック自体がツールを呼ばないターンの継続を反復させるためである。
+  他のStop判定のblockがある場合だけ、同じ通知への警告を1回に限る判定に読む。警告を繰り返すと、同フック自体がツールを呼ばないターンの継続を反復させるためである。
+  blockが無い場合は案内済みかによらず現在の未配送通知を使い、ホストの配送による次ターンへ進む。警告回数と本キーの更新は実際に警告する場合に限る。
   セッション終了まで保持し、リセット処理は設けない
 - `task_stop_blocked_at`: PreToolUse(TaskStop)が遮断した時刻のPOSIX秒を記録し、同フックが再実行許可窓の判定に読む。
   セッション終了まで保持し、リセット処理は設けない

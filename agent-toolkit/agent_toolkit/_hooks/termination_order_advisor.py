@@ -34,6 +34,7 @@ from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.background_tasks import async_launch_offsets, is_pending_async_work, pending_async_task_ids
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
+from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.stop_session import append_stop_log
 from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 from agent_toolkit._hooks.transcript_scan import entry_in_scan_scope, iter_assistant_blocks, read_transcript_entries_cached
@@ -64,6 +65,7 @@ _TERMINATION_SEQUENCES: tuple[tuple[tuple[str, frozenset[str]], tuple[tuple[str,
 _MISSING_STEP_TEMPLATE = "{target}の終了手順が未完了である。次の順で残りの工程を実行する: {remaining}"
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
+_warning = _notice_formatter(_HOOK_ID, default_tag="warn")
 
 
 def _successful_tool_use_ids(entries: list[dict]) -> set[str]:
@@ -238,13 +240,17 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     path_for_async = raw_path if isinstance(raw_path, str) else ""
     available = termination_evidence.observe_reports(payload)
     pending = termination_evidence.pending_work(payload) if available else []
+    self_edits = termination_evidence.unresolved_self_edits(payload) if available else {}
     unprocessed = {
         work_id: lines for work_id, work in pending if (lines := termination_evidence.unprocessed_improvements(payload, work))
     }
     deficient = {
         work_id
         for work_id, work in pending
-        if termination_evidence.report_violations(work) or termination_evidence.missing_stages(work) or work_id in unprocessed
+        if termination_evidence.report_violations(work)
+        or termination_evidence.missing_stages(work)
+        or work_id in unprocessed
+        or work_id in self_edits
     }
     if deficient:
         waiting = _waiting_work_ids(payload, session_id, path_for_async, deficient)
@@ -293,12 +299,28 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             ),
         )
 
+    remaining_edits = {work_id: self_edits[work_id] for work_id, _work in pending if work_id in self_edits}
+
+    def self_edit_result() -> tuple[str, str]:
+        if not remaining_edits:
+            return "approve", ""
+        termination_evidence.record_self_edit_warning(payload, remaining_edits)
+        return "notify", _warning(
+            "リポジトリ内の自編集が未コミットで残り、同じ作業の公開範囲が未確定で完了処理にも到達していない。\n"
+            + "\n".join(f"作業 {work_id}: {', '.join(paths)}" for work_id, paths in remaining_edits.items())
+            + "\n"
+            + termination_evidence.decision_hint(payload),
+            fix="`agent-toolkit:user-confirmation-and-report`で依頼・回答・適用済み認可から公開範囲を判定し、原入力と結果を終了工程の証拠へ渡すか、`agent-toolkit:completion-report`へ進む。",
+            removable_cause=False,
+            escalate_on_repeat=False,
+        )
+
     if is_codex_payload(payload):
         return "approve", ""
 
     if payload.get("stop_hook_active") is not True:
         append_stop_log(session_id, "approve_not_reentrant", {})
-        return "approve", ""
+        return self_edit_result()
 
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
@@ -322,7 +344,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     if not missing_bodies:
         append_stop_log(session_id, "approve_termination_order_satisfied", {})
-        return "approve", ""
+        return self_edit_result()
 
     append_stop_log(session_id, "block_termination_order", {"count": len(missing_bodies)})
     reason = _block_notice(

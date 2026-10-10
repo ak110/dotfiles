@@ -3,6 +3,9 @@
 `atk.py`は`build_parser`で`atk wi`配下を登録し、`prepare_args`・`validate_args`で引数を確定してから`dispatch`を呼ぶ。
 """
 
+# ヘルプ・補完器登録では処理モジュールを使わず、必要な定数だけを参照する。
+__lazy_modules__ = {"agent_toolkit._atk", "agent_toolkit._atk.wi", "agent_toolkit._atk.wi.mutations"}
+
 import argparse
 import datetime
 import math
@@ -250,7 +253,7 @@ def _add_wi_add_parser(sub: Any) -> None:
             "ファイル名は取り込み先と衝突しない限り元名を維持する。"
             "対象リポジトリは各エントリのfrontmatterのtarget_repoだけを用いる。"
             "--type・--scope・--question-type・--choices・--depends-on・"
-            "--target-repo・--sourceとは併用できない。"
+            "--cooldown-until・--target-repo・--sourceとは併用できない。"
             "show形式は可逆な直列化ではないため、本文が完全なshow形式エントリの引用を含む場合に"
             "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行・"
             "構造見出し（`# awi`・`# uwi`・`## target_repo: ...`）と同形の末尾行を"
@@ -305,6 +308,16 @@ def _add_wi_add_parser(sub: Any) -> None:
         action="append",
         default=None,
         help="AWIが処理完了を待つキュー項目。--type=awiでのみ指定でき、複数回指定できる。",
+    )
+    add.add_argument(
+        "--cooldown-until",
+        metavar="DATETIME",
+        default=None,
+        help=(
+            "通常AWIの初回保存へ冷却期限を設定する。タイムゾーン付きISO 8601日時を指定し、"
+            "複数の--body-fileへ共通適用する。空文字列・UWI・--batchとの併用は拒否する。"
+            "本文frontmatterのcooldown_untilでは指定できない。"
+        ),
     )
     add.add_argument(
         "--source",
@@ -1023,6 +1036,7 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--question-type", args.question_type),
                 ("--choices", args.choices),
                 ("--depends-on", args.depends_on),
+                ("--cooldown-until", args.cooldown_until),
                 ("--target-repo", args.target_repo),
                 ("--source", args.source),
                 ("REPO_PATH", args.repo_path_override),
@@ -1094,16 +1108,16 @@ def validate_args(args: argparse.Namespace) -> None:
 def dispatch(args: argparse.Namespace, *, home: pathlib.Path, now: datetime.datetime) -> int:
     """`atk wi`のサブコマンドを実行し、終了コードを返す。"""
     sub = args.wi_subcommand
-    process_loop_state_dispatch = {
-        "abort": _process_loop_control.cmd_process_loop_abort,
-        "abort-cancel": _process_loop_control.cmd_process_loop_abort_cancel,
-        "status": _process_loop_control.cmd_process_loop_status,
-        "instruct": lambda: _process_loop_control.cmd_process_loop_instruct(args.body),
-        "instruct-cancel": _process_loop_control.cmd_process_loop_instruct_cancel,
-    }
     process_loop_subcommand = getattr(args, "process_loop_subcommand", None)
     if sub == "process-loop" and process_loop_subcommand is not None:
         # これらの操作はprivate-notesを必要としないため、環境の用意より前で処理する。
+        process_loop_state_dispatch = {
+            "abort": _process_loop_control.cmd_process_loop_abort,
+            "abort-cancel": _process_loop_control.cmd_process_loop_abort_cancel,
+            "status": _process_loop_control.cmd_process_loop_status,
+            "instruct": lambda: _process_loop_control.cmd_process_loop_instruct(args.body),
+            "instruct-cancel": _process_loop_control.cmd_process_loop_instruct_cancel,
+        }
         process_loop_state_dispatch[process_loop_subcommand]()
         return 0
     private_notes = _wi_sync.ensure_environment(home)

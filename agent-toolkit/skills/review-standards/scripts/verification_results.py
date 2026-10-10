@@ -11,6 +11,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
+import accepted_review_evidence
 import verification_diagnostics
 from verification_diagnostics import path_value, run_record
 
@@ -25,6 +26,9 @@ SCHEMA = (
     '"tests":["相対file::Class::test[param]"],"diagnostics":["added:1"],'
     '"evidence_file":"/絶対/説明.txt","mode":"append"}]。'
     "レビューはoutcomeとreviewed_headも各行で明示し、verification_sourceに未判定記録の出所を指定できる。判定は結果から自動生成しない。"
+    'レビュー更新だけはaccepted_source:{"path":"/絶対/受理済み.json","section":"wi_conditions","row":1}も受ける。'
+    "同じ要求単位の判定済み行への参照とevidence_fileの説明だけをmode replaceで保存し、未判定継承・結果取込みとは分ける。"
+    "選択結果の根拠は保存物の同じ組の参照をまとめ、各テスト名・状態・case、診断の差の種類・entry・message_positionを全件残す。"
 )
 
 
@@ -109,6 +113,20 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
         )
         parser.add_argument(
             "--verification-record", type=pathlib.Path, metavar="PATH", help="選択できる未判定検証記録の絶対パス"
+        )
+        parser.add_argument(
+            "--accepted-evidence",
+            type=pathlib.Path,
+            metavar="PATH",
+            help="受理済みの完成条件証拠の絶対パス。根拠本文を複製せず判定済み行を参照する",
+        )
+        parser.add_argument(
+            "--accepted-row",
+            action="append",
+            nargs=2,
+            metavar=("TARGET", "ACCEPTED"),
+            help="選択行SECTION:Nと同じ配列の受理済み行SECTION:Nの対応。"
+            "--accepted-evidence・--evidence-file・--mode replaceと指定する",
         )
         parser.add_argument(
             "--output", type=pathlib.Path, metavar="PATH", help="未判定記録と異なる完成条件証拠の絶対パス。入力証拠を更新できる"
@@ -287,6 +305,15 @@ def updates_for_arguments(
     outcomes = dict(outcome_pairs)
     inherited = dict(inherited_pairs)
     sources = dict(source_pairs)
+    accepted_pairs = getattr(args, "accepted_row", None) or []
+    accepted = dict(accepted_pairs)
+    accepted_path = getattr(args, "accepted_evidence", None)
+    if len(accepted) != len(accepted_pairs) or set(accepted) - set(selectors):
+        raise ValueError("--accepted-rowは選択行へ重複なく指定する")
+    if bool(accepted) != (accepted_path is not None):
+        raise ValueError("--accepted-rowと--accepted-evidenceは組で指定する")
+    if accepted and (not reviewing or args.evidence_file is None or args.mode != "replace"):
+        raise ValueError("受理済み判定の参照はレビュー更新で--evidence-fileと--mode replaceを指定する")
     if len(outcomes) != len(outcome_pairs) or len(inherited) != len(inherited_pairs) or len(sources) != len(source_pairs):
         raise ValueError("行の判定と未判定行への対応は重複なく指定する")
     if reviewing and set(outcomes) != set(selectors):
@@ -319,6 +346,11 @@ def updates_for_arguments(
                 if old_section != section:
                     raise ValueError("未判定根拠は同じ配列の同じ要求単位を選ぶ")
                 update["verification_source"] = pending[old_section][old_number - 1]["source"]
+            if selector in accepted:
+                source_selector = re.fullmatch(r"(wi_conditions|user_requirements):([0-9]+)", accepted[selector])
+                if source_selector is None or source_selector[1] != section or selector in inherited:
+                    raise ValueError("受理済み行は未判定根拠の継承と分け、同じ配列のSECTION:Nを指定する")
+                update["accepted_source"] = {"path": str(accepted_path), "section": section, "row": int(source_selector[2])}
         updates.append(update)
     return updates
 
@@ -390,25 +422,44 @@ def list_results(results: dict[str, Any], args: argparse.Namespace) -> None:
     print(json.dumps(displayed, ensure_ascii=False, indent=2))
 
 
-def _observed_evidence(value: dict[str, Any]) -> str:
-    """既存の参照書式で保存結果を指し、版と詳細は取得時の記録に保持する。"""
-    if "test" in value:
-        lines = [f"`{value['test']}` {value['status']}"]
-        fields = ("xml", "case", "run_record", "child_exit_code", "stdout", "stderr")
-    else:
-        lines = [f"診断比較: {value['change']}"]
-        fields = ()
+def _observed_evidence(values: list[dict[str, Any]]) -> str:
+    """同じ保存物の参照を集合でまとめ、各結果の完全名・状態と固有の位置を残す。"""
+    groups: dict[tuple, list[dict[str, Any]]] = {}
+    fields = ("xml", "run_record", "child_exit_code", "stdout", "stderr")
+    for value in values:
+        if "test" in value:
+            key = ("test", *(value[field] for field in fields))
+        else:
+            key = (
+                "diagnostic",
+                *(
+                    value.get(side, {}).get(field) if isinstance(value.get(side), dict) else None
+                    for side in ("before", "after")
+                    for field in ("path", "run_record")
+                ),
+            )
+        groups.setdefault(key, []).append(value)
+    lines: list[str] = []
+    for number, (key, items) in enumerate(groups.items(), start=1):
+        lines.append(f"保存物の組{number}:")
+        if key[0] == "test":
+            lines.extend(f"{field}: `{items[0][field]}`" for field in fields)
+            lines.extend(f"`{item['test']}` {item['status']}、case: `{item['case']}`" for item in items)
+            continue
         for side in ("before", "after"):
-            observed = value.get(side)
+            observed = items[0].get(side)
             if isinstance(observed, dict):
-                # ファイル・行・本文は保存診断のentryとmessage_positionから読む。
-                # 改名・削除前のfileを現在版の参照として解決させない。
-                lines.extend(f"{side}.{key}: `{observed[key]}`" for key in ("path", "entry", "message_position", "run_record"))
-            elif isinstance(observed, str):
-                lines.append(f"{side}: `{observed}`")
-        if "reason" in value:
-            lines.append(f"比較不能の理由: {value['reason']}")
-    lines.extend(f"{key}: `{value[key]}`" for key in fields)
+                lines.extend(f"{side}.{field}: `{observed[field]}`" for field in ("path", "run_record"))
+        for item in items:
+            lines.append(f"診断比較: {item['change']}")
+            for side in ("before", "after"):
+                observed = item.get(side)
+                if isinstance(observed, dict):
+                    lines.extend(f"{side}.{field}: `{observed[field]}`" for field in ("entry", "message_position"))
+                elif isinstance(observed, str):
+                    lines.append(f"{side}: `{observed}`")
+            if "reason" in item:
+                lines.append(f"比較不能の理由: {item['reason']}")
     return "\n".join(lines)
 
 
@@ -433,7 +484,7 @@ def updated_payload(
     seen: set[tuple[str, int]] = set()
     allowed = {"section", "row", "source", "tests", "diagnostics", "evidence_file", "mode"}
     if reviewing:
-        allowed |= {"outcome", "reviewed_head", "verification_source", "new_source"}
+        allowed |= {"outcome", "reviewed_head", "verification_source", "new_source", "accepted_source"}
     for update in updates:
         if not isinstance(update, dict) or set(update) - allowed or not {"section", "row", "source", "mode"} <= set(update):
             raise ValueError("更新行の項目が不正です。ヘルプの更新JSONの形式を確認する")
@@ -457,6 +508,7 @@ def updated_payload(
         ):
             raise ValueError(f"出所か更新modeが一致しません: {section}[{number}]")
         evidence = []
+        observed_results: list[dict[str, Any]] = []
         for field, collection in (("tests", results["tests"]), ("diagnostics", results["diagnostics"])):
             selected = update.get(field, [])
             if (
@@ -468,10 +520,35 @@ def updated_payload(
             for key in selected:
                 if key not in collection:
                     raise ValueError(f"選択した{field}がありません: {key}。--list-resultsで確認する")
-                evidence.append(_observed_evidence(collection[key]))
+                observed_results.append(collection[key])
+        if observed_results:
+            evidence.append(_observed_evidence(observed_results))
         if "evidence_file" in update:
             evidence.append(path_value(update["evidence_file"]).read_text(encoding="utf-8").strip())
         if reviewing:
+            if "accepted_source" in update:
+                reference = update["accepted_source"]
+                if (
+                    update["mode"] != "replace"
+                    or "evidence_file" not in update
+                    or observed_results
+                    or "verification_source" in update
+                ):
+                    raise ValueError("受理済み判定の参照は説明と置換だけで記録し、結果の取込み・未判定継承と分ける")
+                if (
+                    not isinstance(reference, dict)
+                    or set(reference) != {"path", "section", "row"}
+                    or reference["section"] != section
+                    or not isinstance(reference["row"], int)
+                    or isinstance(reference["row"], bool)
+                    or not isinstance(reference["path"], str)
+                ):
+                    raise ValueError("accepted_sourceには同じ配列のpath・section・rowを指定する")
+                if not evidence or not any(item.strip() for item in evidence):
+                    raise ValueError("受理済み判定を参照する理由を空でない説明ファイルへ書く")
+                evidence.insert(
+                    0, accepted_review_evidence.reference(pathlib.Path(reference["path"]), section, reference["row"], row)
+                )
             if (
                 not isinstance(update.get("outcome"), str)
                 or update.get("outcome") not in (outcomes or {}).get(section, set())

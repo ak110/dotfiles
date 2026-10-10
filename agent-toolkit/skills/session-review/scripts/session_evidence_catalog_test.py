@@ -283,7 +283,7 @@ def test_tool_calls_with_catalog_include_delegates_outside_root_within_window(
         == 0
     )
 
-    *calls, summary = read_jsonl(capsys, raw=True)
+    *calls, summary = [event for event in read_jsonl(capsys, raw=True) if event["kind"] != "record-provenance"]
     assert [(call["session_id"], call["record"], call["call_id"]) for call in calls] == [
         ("parent-session", "claude:parent-session", "bash-embed"),
         ("parent-session", "claude:parent-session/agent-child", "read-1"),

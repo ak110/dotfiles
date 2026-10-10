@@ -1635,8 +1635,8 @@ class TestManagedTempPosix:
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         outside = tmp_path / "outside"
         outside.mkdir()
-        sentinel = outside / "sentinel.txt"
-        sentinel.write_text("keep", encoding="utf-8")
+        kept_file = outside / "sentinel.txt"
+        kept_file.write_text("keep", encoding="utf-8")
         target = subject.create_managed_temp("nested")
         nested = target / "one" / "two"
         nested.mkdir(parents=True)
@@ -1646,7 +1646,7 @@ class TestManagedTempPosix:
         subject.cleanup_managed_temp(target)
 
         assert not target.exists()
-        assert sentinel.read_text(encoding="utf-8") == "keep"
+        assert kept_file.read_text(encoding="utf-8") == "keep"
 
     def test_root_replacement_before_isolation_preserves_both_trees(
         self,

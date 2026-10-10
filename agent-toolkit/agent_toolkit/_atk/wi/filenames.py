@@ -1,5 +1,8 @@
 """WIのファイル名の検証、重複除去、採番と補完候補。"""
 
+# 補完器の登録だけでは本文を解析しない。
+__lazy_modules__ = {"agent_toolkit._atk.wi.formatters"}
+
 import functools
 import os
 import pathlib

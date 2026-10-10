@@ -6,6 +6,9 @@ push・CI完了待機を経てrelease.yamlをworkflow_dispatchで起動する。
 省略時はヘルプと未リリースコミット一覧を表示する。
 """
 
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"yaml"}
+
 import argparse
 import collections.abc
 import json

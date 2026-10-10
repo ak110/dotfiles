@@ -68,7 +68,7 @@ def read_jsonl(capsys: pytest.CaptureFixture[str], *, raw: bool = False) -> list
             if key != "record" and not (key == "next_action" and event.get("kind") == "error")
         }
         for event in events
-        if not (event.get("kind") == "summary" and "record" in event)
+        if event.get("kind") != "record-provenance" and not (event.get("kind") == "summary" and "record" in event)
     ]
 
 

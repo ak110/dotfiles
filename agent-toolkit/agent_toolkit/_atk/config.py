@@ -4,6 +4,9 @@ XDG関連パス（設定・状態・データ各ディレクトリ、private-not
 工程別モデル設定の確認・変更を提供する。
 """
 
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"platformdirs"}
+
 import argparse
 import json
 import os
@@ -160,66 +163,6 @@ def parse_codex_provider_candidates(value: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(providers))
 
 
-_LEGACY_CODEX_PROVIDER_KEY = "codex_fallback_model_providers"
-
-
-def legacy_codex_provider_setting() -> tuple[tuple[str, ...], bool] | None:
-    """新設定がない場合だけ旧列と、保存値からの移行かを返す。"""
-    stored = _load_config()
-    if os.environ.get(_config_env_name("codex_model_providers")) or "codex_model_providers" in stored:
-        return None
-    legacy_env = os.environ.get(_config_env_name(_LEGACY_CODEX_PROVIDER_KEY))
-    if legacy_env:
-        return parse_codex_provider_candidates(legacy_env), False
-    if _LEGACY_CODEX_PROVIDER_KEY in stored:
-        return parse_codex_provider_candidates(stored[_LEGACY_CODEX_PROVIDER_KEY]), True
-    return None
-
-
-def migrate_codex_provider_setting(primary: str) -> tuple[str, ...]:
-    """実効主接続先が得られた後に旧列を移行し、他の設定を保持する。"""
-    legacy = legacy_codex_provider_setting()
-    if legacy is None:
-        return parse_codex_provider_candidates(resolve_mutable_setting("codex_model_providers"))
-    candidates, persisted = legacy
-    order = tuple(dict.fromkeys((primary, *candidates))) if candidates else ()
-    if persisted:
-        stored = _load_config()
-        # 照会中に新しい値が保存された場合は、旧値の移行で上書きしない。
-        if "codex_model_providers" in stored:
-            return parse_codex_provider_candidates(stored["codex_model_providers"])
-        stored["codex_model_providers"] = ",".join(order)
-        stored.pop(_LEGACY_CODEX_PROVIDER_KEY, None)
-        _save_config(stored)
-    return order
-
-
-def _report_legacy_codex_provider_setting() -> None:
-    """未移行の保存値を、推測した先頭を表示せず案内する。"""
-    if legacy_codex_provider_setting() is not None:
-        _outcome.report_warning(
-            "旧Codex接続先設定が残っています。新規Codex起動時に実効主接続先を補って移行します",
-            next_action=(
-                "agents_serverで新規Codex sessionを起動するか、"
-                "`atk config set codex_model_providers <VALUE>`で優先順を指定する。"
-                "旧環境変数はAGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERSへ新形式の値で置き換える"
-            ),
-        )
-
-
-def _reject_legacy_codex_provider_key(keys: list[str]) -> None:
-    """旧キーを新規の公開設定として受理せず、置換先を示す。"""
-    if _LEGACY_CODEX_PROVIDER_KEY in keys:
-        _outcome.report_failure(
-            "設定キーcodex_fallback_model_providersはcodex_model_providersへ置き換わりました",
-            next_action=(
-                "`atk config set codex_model_providers 'openai,custom'`のように主接続先を先頭に指定する。"
-                "未移行の保存値は新規Codex起動時に自動移行する"
-            ),
-        )
-        sys.exit(2)
-
-
 def mutable_setting_default(key: str) -> str:
     """変更可能な設定の初期値を返す。未知のキーは`KeyError`を送出する。"""
     return _MUTABLE_KEY_DEFAULTS[key]
@@ -289,7 +232,6 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 
 def _cmd_config_show(home: pathlib.Path) -> None:
     """showサブコマンド: 設定値を1キー1行で表示する。"""
-    _report_legacy_codex_provider_setting()
     settings = _resolved_settings(home)
     warnings: list[str] = []
     for key, value in settings.items():
@@ -309,8 +251,6 @@ def _report_candidate_warnings(warnings: list[str]) -> None:
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
     """getサブコマンド: 1件以上の設定値を表示する。未知キーはexit 2。"""
     requested_keys = cast(list[str], args.key)
-    _reject_legacy_codex_provider_key(requested_keys)
-    _report_legacy_codex_provider_setting()
     settings = _resolved_settings(home)
     unknown_keys = [key for key in requested_keys if key not in settings]
     if unknown_keys:
@@ -325,7 +265,6 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
 
 def _cmd_config_set(args: argparse.Namespace) -> None:
     """setサブコマンド: 変更可能設定を更新する。対象外キーはexit 2。"""
-    _reject_legacy_codex_provider_key([args.key])
     if args.key not in _MUTABLE_KEY_DEFAULTS:
         _outcome.report_failure(
             f"変更できない設定キーを指定した: {args.key}",
@@ -344,8 +283,6 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
     config = _load_config()
     value = ",".join(parse_codex_provider_candidates(args.value)) if args.key == "codex_model_providers" else args.value
     config[args.key] = value
-    if args.key == "codex_model_providers":
-        config.pop(_LEGACY_CODEX_PROVIDER_KEY, None)
     _save_config(config)
     _outcome.report_success(f"設定を更新した: {args.key}={value}")
     env_name = _config_env_name(args.key)

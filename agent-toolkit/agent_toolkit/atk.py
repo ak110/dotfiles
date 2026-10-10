@@ -36,10 +36,19 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 managed-tempの掃引）と、サブコマンドの登録表・実行の登録表だけを持つ。
 """
 
+# Python 3.15では使うサブコマンドだけを読み込み、下限版では従来どおりのimportを使う。
+__lazy_modules__ = {
+    "agent_toolkit._agents_server",
+    "agent_toolkit._atk",
+    "agent_toolkit._atk.serve",
+    "agent_toolkit._atk.wi",
+    "agent_toolkit._common",
+    "agent_toolkit._plan",
+}
+
 import argparse
 import dataclasses
 import datetime
-import functools
 import hashlib
 import os
 import pathlib
@@ -139,6 +148,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
         "--choices",
         "--target-repo",
         "--depends-on",
+        "--cooldown-until",
         "--body-file",
     }
     while candidate_index < len(argv) and argv[candidate_index].startswith("-"):
@@ -161,31 +171,34 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     return new_argv, str(candidate_path)
 
 
+# 関数の参照もlazy importを解決するため、登録時ではなく呼び出し時に属性へ触れる。
+# pylint: disable=unnecessary-lambda
 _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None]], ...] = (
-    ("info", _info.build_parser),
-    ("commit", _commit_cmd.build_parser),
-    ("setup-project", _setup_project.build_parser),
-    ("wi", _wi_cli.build_parser),
-    ("run-script", _run_script.build_parser),
-    ("run-command", _run_command.build_parser),
-    ("read-file", _read_file.build_parser),
-    ("run-skill", _run_skill.build_parser),
-    ("plans", _plans.build_parser),
-    ("serve", _serve_command.build_parser),
-    ("config", _config_cmd.build_parser),
-    ("wait-schedule", _wait_schedule_cmd.build_parser),
-    ("agents", _agents.build_parser),
-    ("agents-exit-session", _agents_exit_session.build_parser),
-    ("lane", _lane.build_parser),
-    ("managed-temp", functools.partial(_managed_temp.build_parser, command_dest="managed_temp_subcommand")),
-    ("worktree-stash", functools.partial(_worktree_stash.build_parser, command_dest="worktree_stash_subcommand")),
-    ("watch", _watch.build_parser),
+    ("info", lambda parser: _info.build_parser(parser)),
+    ("commit", lambda parser: _commit_cmd.build_parser(parser)),
+    ("setup-project", lambda parser: _setup_project.build_parser(parser)),
+    ("wi", lambda parser: _wi_cli.build_parser(parser)),
+    ("run-script", lambda parser: _run_script.build_parser(parser)),
+    ("run-command", lambda parser: _run_command.build_parser(parser)),
+    ("read-file", lambda parser: _read_file.build_parser(parser)),
+    ("run-skill", lambda parser: _run_skill.build_parser(parser)),
+    ("plans", lambda parser: _plans.build_parser(parser)),
+    ("serve", lambda parser: _serve_command.build_parser(parser)),
+    ("config", lambda parser: _config_cmd.build_parser(parser)),
+    ("wait-schedule", lambda parser: _wait_schedule_cmd.build_parser(parser)),
+    ("agents", lambda parser: _agents.build_parser(parser)),
+    ("agents-exit-session", lambda parser: _agents_exit_session.build_parser(parser)),
+    ("lane", lambda parser: _lane.build_parser(parser)),
+    ("managed-temp", lambda parser: _managed_temp.build_parser(parser, command_dest="managed_temp_subcommand")),
+    ("worktree-stash", lambda parser: _worktree_stash.build_parser(parser, command_dest="worktree_stash_subcommand")),
+    ("watch", lambda parser: _watch.build_parser(parser)),
 )
 """トップレベルのサブコマンドと引数を登録する関数の対応。`review-table`・`review-audit`は自身でサブコマンドを登録する。"""
+# pylint: enable=unnecessary-lambda
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """`atk`トップレベルargparseパーサーを構築する。"""
+def _build_parser(command: str | None = None) -> argparse.ArgumentParser:
+    """全コマンドを列挙し、指定時はそのコマンドだけの引数を登録する。"""
     parser = _atk_help.create_root_parser(
         "atk",
         description=_atk_help.ROOT_DESCRIPTION,
@@ -198,9 +211,17 @@ def _build_parser() -> argparse.ArgumentParser:
         show_help_when_missing=True,
     )
     for name, register in _PARSER_REGISTRATIONS:
-        register(_atk_help.add_command(top, name, **_atk_help.HELP[f"atk {name}"]))
-    _review_table.build_parser(top)
-    _review_audit.build_parser(top)
+        subparser = _atk_help.add_command(top, name, **_atk_help.HELP[f"atk {name}"])
+        if command is None or name == command:
+            register(subparser)
+    for name, register in (
+        ("review-table", lambda: _review_table.build_parser(top)),
+        ("review-audit", lambda: _review_audit.build_parser(top)),
+    ):
+        if command is None or name == command:
+            register()
+        else:
+            _atk_help.add_command(top, name, **_atk_help.HELP[f"atk {name}"])
     return parser
 
 
@@ -287,7 +308,7 @@ class _OutputAsFile:
 _OUTPUT_AS_FILE_CALLS = (
     _OutputAsFile(
         applies=lambda args: args.command == "agents" and args.agents_subcommand == "wait",
-        after_save=_agents.summarize_saved_wait,
+        after_save=lambda path: _agents.summarize_saved_wait(path),  # pylint: disable=unnecessary-lambda  # 保存対象だけ読み込む
         reason="回収前に保存先を開き、保存できない場合に未受領の結果を消費しない。保存後は通知・終端の内訳と本文を表示する",
     ),
     _OutputAsFile(
@@ -306,7 +327,7 @@ _OUTPUT_AS_FILE_CALLS = (
             and args.script_name == "session-review-evidence"
             and "--user-events" in args.script_args
         ),
-        after_save=_user_events_summary.summarize_saved_user_events,
+        after_save=lambda path: _user_events_summary.summarize_saved_user_events(path),  # pylint: disable=unnecessary-lambda  # 保存対象だけ読み込む
         reason="逐語引用の出所ファイルとしてWI投入担当へ渡す。保存後は発話ごとの記録位置と本文の冒頭を表示する",
     ),
 )
@@ -344,12 +365,15 @@ def _dispatch_managed_temp(invocation: _Invocation) -> int:
     return _managed_temp.dispatch(args, command_dest="managed_temp_subcommand")
 
 
+# parserと同じく、登録時の属性参照による一括読込を避ける。
+# pylint: disable=unnecessary-lambda
 _EARLY_COMMANDS: dict[str, Callable[[argparse.Namespace], int | None]] = {
-    "info": _info.dispatch,
-    "commit": _commit_cmd.dispatch,
-    "setup-project": _setup_project.dispatch,
+    "info": lambda args: _info.dispatch(args),
+    "commit": lambda args: _commit_cmd.dispatch(args),
+    "setup-project": lambda args: _setup_project.dispatch(args),
 }
 """managed-tempの掃引と`atk wi`の引数の確定より前に実行するサブコマンド。Noneを返すと終了コードを指定せず戻る。"""
+# pylint: enable=unnecessary-lambda
 
 _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     "wait-schedule": lambda invocation: _wait_schedule_cmd.dispatch(invocation.args),
@@ -387,14 +411,14 @@ def main(
     """エントリポイント。"""
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
     _outcome.force_utf8_stdio()
-    parser = _build_parser()
-    # bash補完（argcomplete）は配布物内で直接遅延importして呼び出す。
-    # `pytools._internal.cli`依存を避け、agent-toolkitプラグインの独立性を保つため。
-    import argcomplete  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # 補完起動時のみ必要なので遅延importする
-
-    argcomplete.autocomplete(parser)
     raw_argv = argv if argv is not None else sys.argv[1:]
     raw_argv = _resolve_legacy_top_level_command(raw_argv)
+    parser = _build_parser(None if "_ARGCOMPLETE" in os.environ else (raw_argv[0] if raw_argv else ""))
+    # argcomplete自身と同じ起動条件で読み込み、プラグイン単独で補完を実行する。
+    if "_ARGCOMPLETE" in os.environ:
+        import argcomplete  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        argcomplete.autocomplete(parser)
     raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
     if not _output_capture_active and is_agent_environment() and any(flag in raw_argv for flag in ("--help", "-h")):
         with _output_file.auto_save(lambda: _managed_temp.create_managed_temp("atk-output")):

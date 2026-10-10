@@ -180,31 +180,20 @@ def test_codex_provider_empty_element_rejected(tmp_path, capsys, monkeypatch, va
     assert not capsys.readouterr().out
 
 
-@pytest.mark.parametrize("operation", ["get", "set"])
-def test_retired_codex_provider_key_is_rejected(tmp_path, capsys, operation):
-    """旧キーへの公開操作を拒否し、新形式の主接続先指定を案内する。"""
-    arguments = ["config", operation, "codex_fallback_model_providers"]
-    if operation == "set":
-        arguments.append("paid-a")
-    with pytest.raises(SystemExit, match="2"):
-        atk.main(arguments, home=tmp_path)
-    result = capsys.readouterr()
-    assert "codex_model_providers" in result.err
-    assert not (tmp_path / "config" / "config.json").exists()
-
-
-def test_new_codex_provider_setting_removes_legacy(tmp_path, capsys):
-    """新しい明示空で旧保存値を除き、他の設定を保持する。"""
+def test_codex_provider_setting_clear_preserves_other_settings(tmp_path, capsys):
+    """公開操作で接続先列を解除し、独立した速度設定を保持する。"""
     path = tmp_path / "config" / "config.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"codex_fallback_model_providers": "paid-a", "codex_fast_mode": "true"}))
+    path.write_text(json.dumps({"codex_model_providers": "paid-a", "codex_fast_mode": "true"}), encoding="utf-8")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["config", "get", "codex_model_providers"], home=tmp_path)
-    assert "移行" in capsys.readouterr().err
+    initial = capsys.readouterr()
+    assert initial.out == "paid-a\n"
+    assert not initial.err
     with pytest.raises(SystemExit, match="0"):
         atk.main(["config", "set", "codex_model_providers", ""], home=tmp_path)
     assert not capsys.readouterr().err
-    assert json.loads(path.read_text()) == {"codex_model_providers": "", "codex_fast_mode": "true"}
+    assert json.loads(path.read_text(encoding="utf-8")) == {"codex_model_providers": "", "codex_fast_mode": "true"}
     with pytest.raises(SystemExit, match="0"):
         atk.main(["config", "show"], home=tmp_path)
     assert not capsys.readouterr().err

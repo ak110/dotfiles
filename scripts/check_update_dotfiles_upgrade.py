@@ -140,6 +140,14 @@ def resolve_old_commit(repo: pathlib.Path, current_oid: str, *, runner: Runner =
     return _git_value(repo, "rev-list", "-1", f"--before=@{cutoff}", current_oid, runner=runner)
 
 
+def old_python_pin(repo: pathlib.Path, old_oid: str, *, runner: Runner = subprocess.run) -> str | None:
+    """旧commitの`.python-version`が指定するPythonを返す。旧commitが持たない場合は`None`を返す。"""
+    listed = _run(("git", "-C", repo, "ls-tree", "--name-only", old_oid, "--", ".python-version"), runner=runner)
+    if not listed.stdout.strip():
+        return None
+    return _git_value(repo, "show", f"{old_oid}:.python-version", runner=runner)
+
+
 def platform_entrypoint(repo: pathlib.Path, platform_name: str) -> list[str]:
     """旧checkout内で起動するプラットフォーム別の公開ランチャーを返す。"""
     if platform_name == "windows":
@@ -360,7 +368,13 @@ def _run_isolated_upgrade(
         create_local_remote(source_repo, bare_repo, old_oid, runner=runner)
         _run(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
         env = _isolated_env(home, pathlib.Path(uv_path), platform_name)
-        _run(("chezmoi", "init", f"--source={checkout}", "--apply"), cwd=checkout, env=env, runner=runner)
+        # 検証を起動したuvが導入したPython（現行の`.python-version`の版）は検証homeからも選択できる。
+        # 版を固定しない旧版のuv環境構築はその中で最新の版を選ぶため、旧版のlockがwheelを持たない新しい版で
+        # 旧版を構築してしまう。旧版を使っていた時点の状態を再現するため、初期適用だけ旧版の基準版へ固定する。
+        initial_env = dict(env)
+        if (pin := old_python_pin(source_repo, old_oid, runner=runner)) is not None:
+            initial_env["UV_PYTHON"] = pin
+        _run(("chezmoi", "init", f"--source={checkout}", "--apply"), cwd=checkout, env=initial_env, runner=runner)
         _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
         _run(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
         actual_oid = _git_value(checkout, "rev-parse", "HEAD", runner=runner)

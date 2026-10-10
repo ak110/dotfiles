@@ -8,6 +8,7 @@
 
 import argparse
 import contextlib
+import datetime
 import pathlib
 import re
 import subprocess
@@ -22,6 +23,7 @@ from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: dis
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import (
     frontmatter,  # noqa: E402  # pylint: disable=wrong-import-position
+    readiness,
     style_diagnostics,  # noqa: E402  # pylint: disable=wrong-import-position
 )
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -677,7 +679,6 @@ def test_cmd_add_omits_origin_metadata(
         ),
         ({"AGENT_TOOLKIT_OWNER_SESSION": "mcp-0123abcd"}, WI_TYPE_UWI, "質問本文", None),
         ({}, WI_TYPE_UWI, "質問本文", None),
-        ({}, WI_TYPE_UWI, "---\nsubmitter_session: forged-session\n---\n\n質問本文", None),
         ({"CLAUDE_CODE_SESSION_ID": "main-session"}, "awi", "本文", None),
     ],
 )
@@ -693,7 +694,7 @@ def test_cmd_add_records_submitter_session_only_for_uwi(
 
     回答済みUWIの通知は保存した値で宛先を決めるため、委譲先の投入分は委譲元の値、
     会話へ対応しないプロセス専用の値と未解決の場合はキーを持たない状態にする。
-    本文のfrontmatterで指定した値は宛先を偽れないよう採用しない。
+    本文のfrontmatterによる宛先指定の拒否は予約キーの入力テストで確かめる。
     """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
@@ -1023,11 +1024,11 @@ def test_flat_add_operation_omits_commit_for_frontmatter_repo_override(
     assert "target_commit:" not in content
 
 
-def test_flat_add_operation_drops_input_target_commit(
+def test_flat_add_operation_rejects_input_target_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """投入時の入力のtarget_commitを保存せず、システム確定値だけを採用する。"""
+    """自動記録するtarget_commitの本文指定は、保存前に拒否する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -1035,18 +1036,16 @@ def test_flat_add_operation_drops_input_target_commit(
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     message = f"---\ntarget_commit: {'f' * 40}\n---\n\n本文"
 
-    generated = add_module.add_entries(
-        notes,
-        messages=[message],
-        target_repo="github.com/example/repo",
-        target_commit=_FIXED_HEAD_COMMIT,
-        source=None,
-        now=_FIXED_DT,
-    )
-
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
-    assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
-    assert f"target_commit: {'f' * 40}" not in content
+    with pytest.raises(WebInputError, match="target_commit"):
+        add_module.add_entries(
+            notes,
+            messages=[message],
+            target_repo="github.com/example/repo",
+            target_commit=_FIXED_HEAD_COMMIT,
+            source=None,
+            now=_FIXED_DT,
+        )
+    assert not list((notes / "inbox").iterdir())
 
 
 @pytest.mark.parametrize("invalid_commit", ["abc123", "g" * 40, "a" * 41])
@@ -1154,11 +1153,11 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
     assert body.strip() == _AGENT_AWI_BODY
 
 
-def test_flat_add_operation_drops_input_queue_schedule(
+def test_flat_add_operation_rejects_input_queue_schedule(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """投入時の入力のqueue_scheduleを保存内容へ引き継がない。"""
+    """通常投入でqueue_scheduleを指定すると、保存前にbatchの利用を案内する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -1168,23 +1167,26 @@ def test_flat_add_operation_drops_input_queue_schedule(
         "---\ntarget_repo: github.com/example/repo\nqueue_schedule:\n  type: normal\nalert_keys: github-run:1\n---\n\n本文\n"
     )
 
-    generated = add_module.add_entries(
-        notes,
-        messages=[message],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-    )
-
-    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
-    assert parsed is not None
-    assert "queue_schedule" not in parsed[0]
-    assert parsed[0]["alert_keys"] == "github-run:1"
+    with pytest.raises(WebInputError, match="queue_schedule") as error:
+        add_module.add_entries(
+            notes,
+            messages=[message],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+        )
+    assert "--batch" in error.value.next_action
+    assert not list((notes / "inbox").iterdir())
 
 
 @pytest.mark.parametrize(
     ("reserved_key", "reserved_value"),
     [
+        ("type", "awi"),
+        ("scope", "agent"),
+        ("question_type", "yes-no"),
+        ("choices", "A,B"),
+        ("depends_on", "[]"),
         ("repair_target", "broken.md"),
         ("repair_kind", "frontmatter"),
         ("cooldown_until", "2026-08-15T00:00:00+00:00"),
@@ -1197,13 +1199,15 @@ def test_flat_add_operation_drops_input_queue_schedule(
         ("plan_file", "$(atk config get private_notes)/plans/2026/09/forged.md"),
     ],
 )
-def test_flat_add_operation_drops_input_repair_metadata(
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+def test_flat_add_operation_rejects_reserved_metadata_atomically(
     reserved_key: str,
     reserved_value: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    entry_type: str,
 ) -> None:
-    """投入時の入力の修復UWI予約キーを保存内容へ引き継がない。"""
+    """予約キーの本文指定は、複数本文のどの位置でも全件を保存前に拒否する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -1213,18 +1217,19 @@ def test_flat_add_operation_drops_input_repair_metadata(
         f"---\ntarget_repo: github.com/example/repo\n{reserved_key}: {reserved_value}\nalert_keys: github-run:1\n---\n\n本文\n"
     )
 
-    generated = add_module.add_entries(
-        notes,
-        messages=[message],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-    )
-
-    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
-    assert parsed is not None
-    assert reserved_key not in parsed[0]
-    assert parsed[0]["alert_keys"] == "github-run:1"
+    for messages in ([message, "正常本文"], ["正常本文", message]):
+        with pytest.raises(WebInputError, match=reserved_key) as error:
+            add_module.add_entries(
+                notes,
+                messages=messages,
+                target_repo="github.com/example/repo",
+                source=None,
+                now=_FIXED_DT,
+                entry_type=entry_type,
+                question_type="yes-no" if entry_type == WI_TYPE_UWI else None,
+            )
+        assert error.value.next_action
+        assert not list((notes / "inbox").iterdir())
 
 
 def test_add_operation_does_not_infer_plan_file_from_body(
@@ -2527,3 +2532,114 @@ def test_editor_nonzero_exit_guides_body_file(
     stderr = capsys.readouterr().err
     assert stderr.startswith("失敗: エディターが終了コード1で終了した\n次の操作: 本文は保存していない。")
     assert "--body-file" in stderr
+
+
+@pytest.mark.parametrize("deadline", [None, "2026-01-02T03:04:05Z", "2026-01-02T12:04:05+09:00"])
+def test_public_add_cooldown_first_save_and_readiness(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], deadline: str | None
+) -> None:
+    """公開CLIの複数本文が初回から同じ期限を持ち、期限ちょうどに着手可能となる。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "1件目")
+    second = tmp_path / "second.md"
+    second.write_text("2件目", encoding="utf-8")
+    argv = ["wi", "add", "--target-repo", args.target_repo, "--body-file", args.body_file[0], "--body-file", str(second)]
+    if deadline is not None:
+        argv.extend(("--cooldown-until", deadline))
+    with pytest.raises(SystemExit) as finished:
+        atk.main(argv, home=tmp_path, now=_FIXED_DT)
+    assert finished.value.code == 0
+    paths = sorted((notes / "inbox").glob("*.md"))
+    assert len(paths) == 2
+    expected = datetime.datetime.fromisoformat(deadline).isoformat() if deadline else None
+    for path in paths:
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0].get("cooldown_until") == expected
+    output = capsys.readouterr().out
+    assert f"cooldown_until: {expected or 'なし'}" in output
+    boundary = datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.UTC)
+    names = tuple(path.name for path in paths)
+    for delta in (-1, 0, 1):
+        result = readiness.calculate_readiness(notes, args.target_repo, now=boundary + datetime.timedelta(seconds=delta))
+        assert result.ready == (() if deadline and delta < 0 else names)
+        assert result.cooldown_pending == (names if deadline and delta < 0 else ())
+
+
+@pytest.mark.parametrize("deadline", ["", "not-a-date", "2026-01-02", "2026-01-02T03:04:05"])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_public_add_rejects_invalid_cooldown_without_saving(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], deadline: str, dry_run: bool
+) -> None:
+    """期限の空・構文不正・timezone欠落は通常投入とdry-runの双方で拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "本文")
+    argv = ["wi", "add", "--target-repo", args.target_repo, "--body-file", args.body_file[0], "--cooldown-until", deadline]
+    if dry_run:
+        argv.append("--dry-run")
+    with pytest.raises(SystemExit) as failed:
+        atk.main(argv, home=tmp_path, now=_FIXED_DT)
+    assert failed.value.code != 0
+    assert "cooldown" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+@pytest.mark.parametrize("reserved_key", ["type", "target_commit", "queue_schedule"])
+@pytest.mark.parametrize("entrypoint", ["cli", "dry-run", "web"])
+def test_registration_rejects_reserved_metadata_before_any_save(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reserved_key: str,
+    entrypoint: str,
+) -> None:
+    """CLIとWebからの登録で、後続本文の予約キーを拒否して先行本文も保存しない。"""
+    from agent_toolkit._atk.serve import wi_operations  # pylint: disable=import-outside-toplevel
+
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "正常本文")
+    invalid = f"---\n{reserved_key}: forged\n---\n\n拒否対象本文\n"
+    if entrypoint == "web":
+        with pytest.raises(WebInputError, match=reserved_key) as rejected:
+            wi_operations.Operations(notes).add(["正常本文", invalid], entry_type="awi", target_repo=args.target_repo)
+        assert rejected.value.next_action
+    else:
+        second = tmp_path / "reserved.md"
+        second.write_text(invalid, encoding="utf-8")
+        argv = [
+            "wi",
+            "add",
+            "--target-repo",
+            args.target_repo,
+            "--body-file",
+            args.body_file[0],
+            "--body-file",
+            str(second),
+        ]
+        if entrypoint == "dry-run":
+            argv.append("--dry-run")
+        with pytest.raises(SystemExit) as rejected_cli:
+            atk.main(argv, home=tmp_path, now=_FIXED_DT)
+        assert rejected_cli.value.code != 0
+        assert reserved_key in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+@pytest.mark.parametrize("mode", ["uwi", "batch"])
+def test_public_add_rejects_cooldown_for_unsupported_mode(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: str
+) -> None:
+    """UWIとbatchには期限オプションを適用しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "本文")
+    argv = ["wi", "add", "--body-file", args.body_file[0], "--cooldown-until", "2026-01-02T03:04:05Z"]
+    argv.extend(["--batch"] if mode == "batch" else ["--type=uwi", "--question-type=yes-no", "--target-repo", args.target_repo])
+    with pytest.raises(SystemExit) as failed:
+        atk.main(argv, home=tmp_path, now=_FIXED_DT)
+    assert failed.value.code != 0
+    assert "cooldown" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())

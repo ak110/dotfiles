@@ -10,6 +10,7 @@ import io
 import logging
 import pathlib
 import re
+import sys
 import tarfile
 
 from pytools._internal import log_format, post_apply_outcome, winutils
@@ -38,6 +39,8 @@ _REQUIRED_PACKAGES = [
 
 _INSTALL_DIR = pathlib.Path.home() / ".local" / "lib" / "libarchive"
 _HTTP_TIMEOUT = 60.0
+# 展開後のtarを全量メモリへ置くため、壊れた入力や想定外の巨大パッケージで際限なく確保しないよう上限を設ける。
+_MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
@@ -78,7 +81,6 @@ def _download_dlls() -> bool:
     """MSYS2リポジトリからDLLを取得して配置する。最新版を検出できないパッケージがあれば偽を返す。"""
     # Windows専用処理の関数内ローカル依存のため遅延import。
     import httpx  # pylint: disable=import-outside-toplevel
-    import zstandard  # pylint: disable=import-outside-toplevel
 
     _INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     with httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
@@ -92,7 +94,7 @@ def _download_dlls() -> bool:
                 return False
             logger.info(log_format.format_status("libarchive", f"downloading {filename}"))
             data = client.get(f"{_MSYS2_REPO}{filename}").content
-            _extract_dlls(data, zstandard)
+            _extract_dlls(data)
     return True
 
 
@@ -118,10 +120,29 @@ def _pick_latest(index_html: str, prefix: str) -> str | None:
     return max(matches)
 
 
-def _extract_dlls(pkg_data: bytes, zstandard_mod) -> None:
+def _decompress_zst(data: bytes) -> bytes:
+    """zstd圧縮された単一フレームを上限付きで展開する。
+
+    Python 3.14以降は標準ライブラリの`compression.zstd`を使う。
+    サードパーティーの`zstandard`は新しいPythonのwheelを遅れて提供し、
+    wheelが無い版ではCコンパイラーを要するsdistビルドになるため、3.13だけで使う。
+    """
+    if sys.version_info >= (3, 14):
+        from compression import zstd  # pylint: disable=import-outside-toplevel
+
+        decompressor = zstd.ZstdDecompressor()
+        raw = decompressor.decompress(data, max_length=_MAX_DECOMPRESSED_SIZE)
+        if not decompressor.eof:
+            raise ValueError(f"展開後のサイズが上限 {_MAX_DECOMPRESSED_SIZE} バイトを超えるか、zstdフレームが不完全")
+        return raw
+    import zstandard  # pylint: disable=import-outside-toplevel,import-error
+
+    return zstandard.ZstdDecompressor().decompress(data, max_output_size=_MAX_DECOMPRESSED_SIZE)
+
+
+def _extract_dlls(pkg_data: bytes) -> None:
     """pkg.tar.zst のバイト列を展開し、DLL だけを `_INSTALL_DIR` へ配置する。"""
-    decompressor = zstandard_mod.ZstdDecompressor()
-    raw = decompressor.decompress(pkg_data, max_output_size=512 * 1024 * 1024)
+    raw = _decompress_zst(pkg_data)
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as tar:
         for member in tar.getmembers():
             if not member.isfile():

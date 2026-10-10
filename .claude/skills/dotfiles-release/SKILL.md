@@ -3,7 +3,7 @@ name: dotfiles-release
 user-invocable: false
 description: >
   dotfilesリポジトリで`develop`から`master`へのリリースPRを作成・マージするとき、
-  日次リリース条件の判定と実施を`agent-toolkit:process-wi`または公開範囲を既存の判断基準どおりとした協調モードで行うとき、
+  日次リリース条件の判定と実施を`agent-toolkit:process-wi`または公開まで認可された協調モードで行うとき、
   `rust/claude-statusline/`の変更に伴う`Cargo.toml`のversion更新を判定するときに起動する。
 ---
 
@@ -21,7 +21,7 @@ description: >
 ## developとmasterのリリース運用
 
 - 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
-  - `agent-toolkit:process-wi`と、公開範囲を「既存の判断基準どおり」と回答した協調モードの作業では、次の条件が成立する場合に`develop`から`master`へのリリースPRを作成し、マージまで実施する。判定と実施はメインが担う。導入の経緯と根拠は[日次リリースの自動実施](../../../docs/development/operations.md#日次リリースの自動実施)にある
+  - `agent-toolkit:process-wi`と、`ak110-projects-operations`「リリース運用」の恒常的認可または明示指定により公開まで扱う協調モードの作業では、次の条件が成立する場合に`develop`から`master`へのリリースPRを作成し、マージまで実施する。公開範囲の明示指定を優先する。判定と実施はメインが担う。導入の経緯と根拠は[日次リリースの自動実施](../../../docs/development/operations.md#日次リリースの自動実施)にある
     - 実施条件: 公開工程のpushとCI成功を確認した後、`agent-toolkit:commit`のGit識別子規定に従って`origin/develop`と`origin/master`を解決し、両者のcommitが異なる。変更の消費主体で限定せず、エージェント向けの変更だけでもリリースPRへ進める
     - 条件が成立しない場合は両branchが同じcommitを指していることを報告し、PRを作成しない
     - 実施する場合は、同じheadとbaseのopen PRを調べる。1件ならそのPRを再利用する。0件ならmanaged-tempの中へPR本文を保存し、投稿の直前に`agent-toolkit:external-write-review`を起動してから作成する。複数件の場合は対象を推測せず、候補の番号とURLを報告して停止する。タイトルにはそのセッションの変更の主題を1文で書く。本文は`agent-toolkit:writing-standards`の`references/writing.md`「人間向け文章の共通規定」に従う。`gh`の受理形式は操作直前のヘルプで確定する

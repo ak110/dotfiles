@@ -89,8 +89,7 @@ Codexの接続先は工程別モデル候補と別に扱う。`codex_model_provi
 疎な通知、使用率、解除予定時刻は回復の代用にしない。APIの認証・モデル不受理等は後続APIへ有限に進む。
 サブスクの一般的な失敗はAPI課金への移行にしない。
 
-旧キーの保存値は新キーがない場合だけ、初回の新規Codex起動で実効主接続先を先頭へ補って保存形式を移行する。
-新しい明示値を優先し、他の設定を保つ。旧環境変数は外側の所有状態なので同じ列へ解釈するだけで保存しない。
+接続先の入力は`codex_model_providers`と対応する環境変数だけが持ち、保存形式の移行や旧入力の解釈は行わない。2026年10月10日のユーザー回答により旧設定を撤去した。通常のget/setは他の未知キーと同じ診断を使い、無関係な保存設定の保持と実ユーザーの設定・認証を変更しない境界を保つ。
 定義・認証をatkへ複製する案は秘密の保持先と同期費用を増やし、Codex設定だけへ順序も移す案は
 atkの1キーで選ぶ操作を成立させないため採らない。選択順と接続先定義をそれぞれの所有者へ分ける。
 
@@ -206,11 +205,15 @@ timeout後は、送った継続要求の受理結果、またはその要求に�
 
 ### `explore`と`shell`
 
+探索とコマンド分離を選ぶ量の目安は、tool_descriptions.pyのLIGHTWEIGHT_MODE_SELECTIONが1つの定義として持ち、server instructionsとstartのmodeの引数説明が同じ文を使う。
+ツール検索の前に届くserver instructionsへ基準を置き、自ら読むか委譲するかの判断に先行させる。常時規範を増やす案は読込費用が増えるため、遅延して取得するstartの説明だけへ基準を置く案はこの判断時点に届かないため採らない。
+委譲元の起動から受領までの義務はdelegation/SKILL.md「explore・shellの起動」へまとめ、共有資料は節名で参照する。起動のたびに共有資料の全文を読む案は、探索や出力分離が節約する量と同程度以上の文脈を先に消費するため採らない。作業全体の分割を判定する時点は、1件の探索・コマンドの起動とは分けてrouting.mdへ到達させる。
+
 Codexの読取専用sandboxでは、uv経由のatkも起動時のキャッシュ書込で失敗し得る。能力の共有定義は、直接読取のcat・rgと、配送済みPythonの標準ライブラリによるUTF-8の文字単位分割を案内する。atk固有情報を代替の読取で確定できない場合は、委譲先が失敗コマンド・診断・未確認事項を返し、委譲元がshell・delegateまたは自身の実行で不足分を取得する。環境作成、権限拡大、再委譲による回避は案内しない。起動前の公開schemaと起動後のプロンプトが同じ定義を消費するため、説明文の複製は不要である。
 
 起動前に能力を選べるよう、エンジン別のexplore能力とコマンド調査の選び方は`tool_descriptions.py`の`EXPLORE_CAPABILITIES`が定義する。`start`と`mode`の公開説明、および`launch_prompts.py`が組み立てるexplore委譲プロンプトは同じ定義を消費する。ClaudeのRead・Glob・GrepとCodexの読み取り専用コマンドの差を、共通のshare文書へコマンド利用の前提として書かない。コマンド調査はCodex候補の明示、確定コマンドのshell、自由調査のdelegateから選び、後二者にはexploreの書込拒否を課さない。説明ごとの複製と、説明に合わせてClaudeのBash権限を戻す案は、能力の乖離と権限の拡大を生むため採らない。
 
-`start`の`explore`は調査委譲の初期コンテキストと起動費用を減らし、実行側で書込を制限する。Codex backendは開始・再開へ`project_doc_max_bytes=0`と探索用指示、読み取り専用sandboxを渡し、後続turnでも読み取り専用と承認不要の拒否を保つ。MCPの実効設定を取得して全serverを無効にし、Apps・プラグイン・下位委譲も無効にする。実効設定を取得できない場合は起動を中止する。Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省く。提供する組込toolはRead・Glob・Grepに限定し、`--strict-mcp-config`で継承MCPを除き、承認を要する操作は待機せず拒否する。任意Bashや編集toolの事前承認を制限の代わりにしない。Antigravityは読み取り専用のexploreに対応しないため候補から除外する。探索結果は返却本文へ保持し、server自身のセッション記録保存とは区別する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。探索委譲を選ぶ条件は`agent-toolkit/skills/delegation/references/routing.md`「コンテキスト消費が大きい調査の切り出し」、起動手段は`runtime-routing.md`を知識境界とする。検索の時点に読む`agent-toolkit:search`はこの条件への参照だけを持つ。
+`start`の`explore`は調査委譲の初期コンテキストと起動費用を減らし、実行側で書込を制限する。Codex backendは開始・再開へ`project_doc_max_bytes=0`と探索用指示、読み取り専用sandboxを渡し、後続turnでも読み取り専用と承認不要の拒否を保つ。MCPの実効設定を取得して全serverを無効にし、Apps・プラグイン・下位委譲も無効にする。実効設定を取得できない場合は起動を中止する。Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省く。提供する組込toolはRead・Glob・Grepに限定し、`--strict-mcp-config`で継承MCPを除き、承認を要する操作は待機せず拒否する。任意Bashや編集toolの事前承認を制限の代わりにしない。Antigravityは読み取り専用のexploreに対応しないため候補から除外する。探索結果は返却本文へ保持し、server自身のセッション記録保存とは区別する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。1件の探索を選ぶ条件はserver instructionsの採算の目安、作業全体の分割と探索への切り出しは`agent-toolkit/skills/delegation/references/routing.md`、起動から受領は同スキルのSKILL.mdの同名節を知識境界とする。検索の時点に読む`agent-toolkit:search`は切り出しの条件への参照を持つ。
 
 `start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。共有するのは`low_tier_model`の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。Claudeの軽量起動explore・write・shellは全て`disallowed_tools=["Skill"]`を指定し、新規とresumeでSkillを明示除外する。通常起動にはこの除外を設けない。Skillが無い主体は警告に記載されたSKILL.mdをReadで全文読む。`explore`は`model_type`を省略すると`low_tier`を使う。新しい候補・評価軸を導く調査と案出しは、`explore`・`delegate`を問わず`high_tier`を明示する。既に決めた問いの所在・値・件数などの機械的な事実確認は区別し、混合する依頼は`high_tier`を使う。機械的な事実確認で軽量側の候補では判断材料が不足する場合は`medium_tier`を指定する。実行レビューの工程別割当は維持し、調査の段位を起動方法だけで選ぶ案は採らない。
 この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`および`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`および組込tool presetを併用できる。その後、軽量起動の設定読込元は`0d7ffbbe6`（2026-09-23）でユーザー設定（`setting_sources=["user"]`）へ変えたため、この確認の空の設定読込元は現行の起動条件と異なる。この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。

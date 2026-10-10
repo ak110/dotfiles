@@ -1026,6 +1026,8 @@ def test_public_import_roundtrip_reaches_return_result(
             str(table),
             "--round",
             "1",
+            "--review-start",
+            head,
             "--return-result",
             "--reader-fit-review",
             "文章成果物なし",

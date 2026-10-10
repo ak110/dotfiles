@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import pathlib
+import subprocess
 from typing import Any, cast
 
 from agent_toolkit._agents_server import tool_names
@@ -20,8 +21,12 @@ from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import transcript as _transcript
+from agent_toolkit._common.process_loop_session import is_process_loop_session
 from agent_toolkit._common.shell_segments import extract_execution_segments
+from agent_toolkit._git import command as git_command
 from agent_toolkit._hooks import agent_id, agents_server_observations, report_validation
+from agent_toolkit._hooks.host import is_codex_payload
+from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
 from agent_toolkit._hooks.stop_session import append_stop_log
 
 STATE_KEY = "termination_evidence"
@@ -60,8 +65,12 @@ def _data(state: dict[str, Any], session_id: str) -> dict[str, Any]:
 
 def _compact(data: dict[str, Any]) -> None:
     """現在の証拠と遅延応答に必要な参照だけを保持する。"""
-    referenced: set[str] = {data.get("last_input", "")}
+    referenced: set[str] = {data.get("last_input", ""), data.get("last_human_input", "")}
     for work in data["works"].values():
+        if work.get("publish_scope") or work.get("completion_report"):
+            work.pop("edits", None)
+            work.pop("self_edit_warned", None)
+        referenced.add(work.get("publish_scope", {}).get("input_id", ""))
         decisions = work.get("decisions", [])
         if decisions:
             work["decisions"] = decisions[-1:]
@@ -94,7 +103,7 @@ def _new_work(data: dict[str, Any], reference: str) -> tuple[str, dict[str, Any]
         "prepare": [],
         "async_targets": {},
         "offset": data["inputs"].get(reference, {}).get("offset", 0),
-        "input_at_last_call": data.get("last_input"),
+        "input_at_last_call": data.get("last_human_input", data.get("last_input")),
     }
     data["works"][work_id] = work
     data["current_work"] = work_id
@@ -118,7 +127,7 @@ def _finished(data: dict[str, Any], work: dict[str, Any]) -> bool:
         bool(work.get("reports"))
         and not missing_stages(work)
         and not report_violations(work)
-        and data.get("last_input") != work.get("input_at_last_call")
+        and data.get("last_human_input", data.get("last_input")) != work.get("input_at_last_call")
     )
 
 
@@ -131,11 +140,29 @@ def _position(payload: dict[str, Any]) -> int:
 
 
 def _invocations(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    tool_input = payload.get("tool_input")
+    if (
+        payload.get("tool_name") == "Skill"
+        and isinstance(tool_input, dict)
+        and tool_input.get("skill") in {"agent-toolkit:completion-report", "completion-report"}
+    ):
+        return [{"kind": "completion"}]
+    if not is_codex_payload(payload) and isinstance(tool_input, dict) and isinstance(payload.get("cwd"), str):
+        paths = written_paths(payload.get("tool_name", ""), tool_input, payload["cwd"])
+        if paths and (repository := _git_root(payload["cwd"])) is not None:
+            relative = sorted(
+                {
+                    path.relative_to(repository).as_posix()
+                    for value in paths
+                    if (path := pathlib.Path(value)).is_relative_to(repository)
+                }
+            )
+            if relative:
+                return [{"kind": "edit", "repository": str(repository), "paths": relative}]
     if payload.get("tool_name") in {
         namespace + operation for namespace in tool_names.MCP_NAMESPACES for operation in tool_names.RECORDED_START_OPERATIONS
     }:
         return [{"kind": "async"}]
-    tool_input = payload.get("tool_input")
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     if payload.get("tool_name") != "Bash" or not isinstance(command, str):
         return []
@@ -162,6 +189,93 @@ def _invocations(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if operation == "session-review-prepare":
             calls.append({"kind": "prepare"})
     return calls
+
+
+def _git_root(cwd: str) -> pathlib.Path | None:
+    """書込時の作業ディレクトリが属するGitリポジトリだけを解決する。"""
+    try:
+        result = git_command.run(
+            ["rev-parse", "--show-toplevel"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return pathlib.Path(result.stdout.strip()).resolve() if result.returncode == 0 and result.stdout.strip() else None
+
+
+def _uncommitted_paths(repository: str, paths: list[str]) -> list[str] | None:
+    """成功した自編集の対象だけを現在のGit状態と比べる。"""
+    try:
+        result = git_command.run(
+            ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", *paths],
+            cwd=repository,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode:
+        return None
+    fields = result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
+    changed = []
+    index = 0
+    while index < len(fields):
+        field = fields[index]
+        index += 1
+        if len(field) < 4:
+            continue
+        if field[3:] in paths:
+            changed.append(field[3:])
+        if "R" in field[:2] or "C" in field[:2]:
+            index += 1
+    return sorted(set(changed))
+
+
+def unresolved_self_edits(payload: dict[str, Any]) -> dict[str, list[str]]:
+    """協調Claudeメインの、公開範囲と完了処理が未確定の自編集を返す。"""
+    if is_codex_payload(payload) or not agent_id.is_main_agent_context(payload):
+        return {}
+    state = session_state.read_state(payload["session_id"])
+    if state.get("process_wi_skill_invoked") or is_process_loop_session(payload["session_id"], os.environ):
+        return {}
+    data = state.get(STATE_KEY)
+    if not isinstance(data, dict):
+        return {}
+    unresolved = {}
+    for work_id, work in pending_work(payload):
+        reference = data.get("inputs", {}).get(work.get("reference"), {})
+        if reference.get("human") is not True or work.get("publish_scope") or work.get("completion_report"):
+            continue
+        changed: list[str] = []
+        for repository, paths in work.get("edits", {}).items():
+            current = _uncommitted_paths(repository, paths)
+            if current is None:
+                append_stop_log(
+                    payload["session_id"], "self_edit_state_unavailable", {"work_id": work_id, "repository": repository}
+                )
+                continue
+            changed.extend(str(pathlib.Path(repository) / path) for path in current)
+        if changed and work.get("self_edit_warned") != changed:
+            unresolved[work_id] = changed
+    return unresolved
+
+
+def record_self_edit_warning(payload: dict[str, Any], pending: dict[str, list[str]]) -> None:
+    """実際に案内する作業の対象を記録し、同じ状態の再入で警告を反復しない。"""
+
+    def update(state: dict[str, Any]) -> dict[str, Any]:
+        works = _data(state, payload["session_id"])["works"]
+        for work_id, paths in pending.items():
+            if work_id in works:
+                works[work_id]["self_edit_warned"] = paths
+        return state
+
+    session_state.update_state(payload["session_id"], update)
 
 
 # 両ホストのPostToolUseの`tool_response`の形（CodexのBashでは終了コードを含まない出力文字列）と、
@@ -222,6 +336,8 @@ def observe_user(payload_text: str) -> None:
             reference = f"input-{data['sequence']}"
         data["inputs"][reference] = {"text": prompt, "human": human, "offset": _position(payload)}
         data["last_input"] = reference
+        if human:
+            data["last_human_input"] = reference
         _compact(data)
         return state
 
@@ -243,6 +359,11 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
     failed = payload.get("hook_event_name") == "PostToolUseFailure" or (
         isinstance(code, int) and not isinstance(code, bool) and code != 0
     )
+    if invocations and invocations[0]["kind"] in {"edit", "completion"}:
+        if not after:
+            return
+        if failed:
+            invocations = []
     if not invocations and not (after and failed):
         # 工程外の成功した呼び出しは状態を読み書きせず、全ツール呼び出しの排他更新を避ける。
         return
@@ -268,9 +389,9 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
             if current is None or _last_decision(current[1]) in {"cancel", "replace"} or _finished(data, current[1]):
                 if invocations[0]["kind"] == "async":
                     return state
-                current = _new_work(data, data.get("last_input", tool_id))
+                current = _new_work(data, data.get("last_human_input", data.get("last_input", tool_id)))
             work_id, work = current
-            work["input_at_last_call"] = data.get("last_input")
+            work["input_at_last_call"] = data.get("last_human_input", data.get("last_input"))
             data["sequence"] += 1
             records = [
                 {
@@ -285,6 +406,19 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
             data["calls"][tool_id] = records
             work["calls"].append(tool_id)
         if not after:
+            return state
+        if records[0]["kind"] in {"edit", "completion"}:
+            record: dict[str, Any] = records[0]
+            record["observed"] = True
+            work = data["works"][record["work_id"]]
+            if not failed:
+                if record["kind"] == "completion":
+                    work["completion_report"] = True
+                else:
+                    known = work.setdefault("edits", {}).setdefault(record["repository"], [])
+                    paths: list[str] = record["paths"]
+                    known.extend(path for path in paths if path not in known)
+            _compact(data)
             return state
         if records[0]["kind"] == "async":
             started: Any = response
@@ -359,7 +493,7 @@ def observe_reports(payload: dict[str, Any]) -> bool:
         if current is not None and _last_decision(current[1]) in {"cancel", "replace", "blocked"}:
             available = True
             return state
-        reference = data.get("last_input", payload["session_id"])
+        reference = data.get("last_human_input", data.get("last_input", payload["session_id"]))
         if current is None or _finished(data, current[1]):
             offset = data["inputs"].get(reference, {}).get("offset", 0)
         else:
@@ -458,7 +592,7 @@ def record_decision(document: dict[str, Any]) -> str:
     if (
         not isinstance(session_id, str)
         or not session_id
-        or action not in {"start", "cancel", "replace", "resume", "wait", "blocked"}
+        or action not in {"start", "cancel", "replace", "resume", "wait", "blocked", "publish-scope"}
     ):
         raise ValueError("session_idと受理する判断のactionを指定する")
     if not agent_id.is_main_agent_context({"agent_id": document.get("agent_id", "main")}):
@@ -510,6 +644,18 @@ def record_decision(document: dict[str, Any]) -> str:
             if json.dumps(records[0]["response"], ensure_ascii=False, sort_keys=True) != document.get("quote"):
                 raise ValueError("実際の失敗応答全体をJSONのquoteへ渡す")
             evidence["call_id"] = call_id
+        elif action == "publish-scope" and document.get("origin") == "standing-authorization":
+            policy = document.get("policy_file")
+            reference = data["inputs"].get(document.get("input_id"))
+            if not isinstance(reference, dict) or reference.get("human") is not True:
+                raise ValueError("適用済み認可を使う作業の人間入力のinput_idを渡す")
+            if (
+                not isinstance(policy, str)
+                or not pathlib.Path(policy).is_absolute()
+                or pathlib.Path(policy).read_text(encoding="utf-8") != document.get("quote")
+            ):
+                raise ValueError("適用済み認可の実在するpolicy_fileと原文全体を渡す")
+            evidence = {"policy_file": policy, "input_id": document.get("input_id")}
         else:
             reference = data["inputs"].get(document.get("input_id"))
             if (
@@ -519,14 +665,39 @@ def record_decision(document: dict[str, Any]) -> str:
             ):
                 raise ValueError("原入力のinput_idと全文のquoteを渡す。生成入力は判断の人間の根拠にできない")
             evidence["input_id"] = document["input_id"]
-        if action == "start":
+        if action == "publish-scope":
+            if document.get("scope") not in {
+                "既存の判断基準どおり",
+                "push・CIまで",
+                "commitまで",
+                "commitしない",
+            } or document.get("origin") not in {"instruction", "answer", "standing-authorization"}:
+                raise ValueError("公開範囲のscopeと原入力のoriginを指定する")
+            selected = document.get("work_id", "")
+            if selected:
+                work = data["works"].get(selected)
+                if not isinstance(work, dict):
+                    raise ValueError("実在するwork_idを指定する")
+            else:
+                selected, work = _new_work(data, document.get("input_id", data.get("last_input", "")))
+            work["publish_scope"] = {
+                "scope": document["scope"],
+                "origin": document["origin"],
+                "reason": document["reason"],
+                **evidence,
+            }
+            if document["origin"] == "standing-authorization":
+                work["publish_scope"]["policy_text"] = document["quote"]
+            work["input_at_last_call"] = data.get("last_human_input", data.get("last_input"))
+        elif action == "start":
             selected, work = _new_work(data, document["input_id"])
         else:
             selected = document.get("work_id", "")
             work = data["works"].get(selected)
             if not isinstance(work, dict):
                 raise ValueError("実在するwork_idを指定する")
-        work["decisions"].append({"action": action, **evidence, "reason": document["reason"]})
+        if action != "publish-scope":
+            work["decisions"].append({"action": action, **evidence, "reason": document["reason"]})
         if action == "resume":
             data["current_work"] = selected
         _compact(data)
@@ -600,7 +771,7 @@ def pending_work(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
 def decision_hint(payload: dict[str, Any]) -> str:
     """判断記録に必要な会話と直近のユーザー入力の識別子を、不足の通知へ添える本文として返す。"""
     data = session_state.read_state(payload["session_id"]).get(STATE_KEY)
-    last = data.get("last_input") if isinstance(data, dict) else None
+    last = data.get("last_human_input", data.get("last_input")) if isinstance(data, dict) else None
     entry = data.get("inputs", {}).get(last) if isinstance(data, dict) else None
     lines = [f"判断記録の`session_id`: {payload['session_id']}"]
     if isinstance(entry, dict) and entry.get("human") is True:
@@ -664,15 +835,49 @@ def visible_messages(payload: dict[str, Any], offset: int) -> list[str] | None:
 def main(argv: list[str] | None = None) -> int:
     """判断記録用のJSONファイルを既存run-scriptから受理する。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    operation = parser.add_mutually_exclusive_group(required=True)
+    operation.add_argument(
         "--decision-file",
-        required=True,
         type=pathlib.Path,
         metavar="PATH",
         help="判断記録のJSONオブジェクトを保存したファイルのパス（JSON文字列そのものは受け取らない）",
     )
+    operation.add_argument(
+        "--context", action="store_true", help="現在のClaude Codeメインの人間入力と作業の識別子をJSONで取得する"
+    )
     args = parser.parse_args(argv)
     try:
+        if args.context:
+            session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+            if not session_id or not agent_id.is_main_agent_context({}):
+                raise ValueError("--contextは現在のClaude Codeメインで実行する")
+            data = session_state.read_state(session_id).get(STATE_KEY)
+            if (
+                not isinstance(data, dict)
+                or data.get("session_id") != session_id
+                or data.get("version") != 1
+                or not isinstance(data.get("works"), dict)
+            ):
+                raise ValueError("現在の会話の終了工程の証拠をまだ観測していない")
+            input_id = data.get("last_human_input", data.get("last_input")) if isinstance(data, dict) else None
+            entry = data.get("inputs", {}).get(input_id) if isinstance(data, dict) else None
+            if not isinstance(entry, dict) or entry.get("human") is not True:
+                raise ValueError("現在の作業の人間入力をまだ観測していない")
+            current = _current_work(data)
+            work_id = (
+                current[0]
+                if current is not None
+                and not _finished(data, current[1])
+                and _last_decision(current[1]) not in {"cancel", "replace"}
+                else None
+            )
+            print(
+                json.dumps(
+                    {"session_id": session_id, "input_id": input_id, "quote": entry["text"], "work_id": work_id},
+                    ensure_ascii=False,
+                )
+            )
+            return 0
         document = json.loads(args.decision_file.read_text(encoding="utf-8"))
         if not isinstance(document, dict):
             raise ValueError("判断記録はJSONオブジェクトで渡す")

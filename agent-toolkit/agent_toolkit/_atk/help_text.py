@@ -440,6 +440,14 @@ HELP["atk agents"]["description"] += (
     "これらはCLIから実行できない。CLIはwaitで待機・回収、notifyで委譲元への通知、"
     "listで一覧、showで詳細、logsで記録の表示を行う。"
 )
+HELP["atk wi add"]["description"] += (
+    "\n冷却期限: 通常AWIは--cooldown-untilへタイムゾーン付きISO 8601日時を指定し、"
+    "初回保存から期限を持たせる。複数の--body-fileへ同じ期限を保存する。"
+    "空・不正日時・タイムゾーンなし、UWI・--batchとの併用は拒否する。"
+    "通常本文のfrontmatterで受理する管理キーはtarget_repoとsourceだけであり、"
+    "cooldown_untilなど他の予約キーはキー名と次の操作を示して全件の保存前に拒否する。"
+    "一般キーは保持し、--batchは既存の原文保持を使う。"
+)
 HELP["atk worktree-stash save"]["description"] += (
     "\nGC保護: 作成した退避はworktreeとラベルごとの共有refでも保護し、その成立後に今回の共有stashだけを取り除く。"
     "共有保護に失敗した場合は共有stashを保持する。"

@@ -1,6 +1,6 @@
-"""セッション振り返りの入力を抽出し、会話の流れ、`candidates.md`およびセッション統計を作業ディレクトリへ書く。
+"""セッション振り返りの入力を抽出し、会話・比較材料・候補・統計を作業ディレクトリへ書く。
 
-1回の実行で証拠bundleを抽出し、メインが同じセッション内で読む3つの文書を書いて、所在と件数を1行のJSONで返す。
+1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在と読取範囲を1行のJSONで返す。
 会話の流れはメイン記録の発話、ツール呼び出しおよび失敗の標識を時系列で並べ、メインが最初に全範囲を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
 `candidates.md`は1候補を1行の要約と記録位置で示す。全文が要る候補だけを、
@@ -42,6 +42,15 @@ from agent_toolkit._git import command as _git_command
 CONVERSATION_FILENAME = "conversation.md"
 CANDIDATES_FILENAME = "candidates.md"
 STATS_FILENAME = "stats.md"
+COMPARISON_FILENAME = "comparison-materials.md"
+
+_CONVERSATION_RANGE_BYTES = 32_000
+"""1回の読取の包装を含めてもホストの返却予算へ収まる本文量。
+
+2026年10月10日のCodex CLI 0.162.1は40,000バイト相当の10,000推定トークンで切り詰めた。
+Claude Code 2.1.296のReadは25,000トークンで拒否し、行番号を含む高密度の記録は
+1トークンあたり2.06バイトだった。JSONの引用符と包装に余裕を残す量を選んでいる。
+"""
 
 _UTTERANCE_FULL_LIMIT = 1000
 _UTTERANCE_EDGE_LENGTH = 500
@@ -94,7 +103,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--work-dir",
         metavar="PATH",
         required=True,
-        help="メインがmanaged-tempに作成したディレクトリの絶対パス。3つの文書と証拠bundleをこの直下へ書く。",
+        help="メインがmanaged-tempに作成したディレクトリの絶対パス。会話・比較材料・候補・統計と証拠bundleを書く。",
     )
     parser.add_argument(
         "--target-repo",
@@ -261,6 +270,70 @@ def _omitted_improvement_lines(text: str) -> list[str]:
             kept.append(line.strip())
         start = end
     return kept
+
+
+def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """発話と呼び出し・失敗を分断しない、全行を覆う読取範囲を返す。"""
+    lines = text.splitlines(keepends=True)
+    timestamps = {f"{event['record']}:{event['line']}": event.get("timestamp") for event in events}
+    boundaries = [0]
+    fence_length = 0
+    sizes = [0]
+    for index, line in enumerate(lines):
+        sizes.append(sizes[-1] + len(line.encode("utf-8")))
+        if not fence_length and index and line.startswith(("## ユーザー（", "## アシスタント（", "- ツール呼び出し（")):
+            boundaries.append(index)
+        fence = re.match(r"^(`{3,})([^`]*)$", line.rstrip("\n"))
+        if fence is not None:
+            if not fence_length:
+                fence_length = len(fence[1])
+            elif len(fence[1]) >= fence_length and not fence[2].strip():
+                fence_length = 0
+    boundaries.append(len(lines))
+    spans: list[tuple[int, int]] = []
+    start = 0
+    for end in boundaries[1:]:
+        previous = spans[-1][1] if spans else 0
+        if sizes[end] - sizes[start] > _CONVERSATION_RANGE_BYTES and previous > start:
+            spans[-1] = (start, previous)
+            start = previous
+            spans.append((start, end))
+        elif spans:
+            spans[-1] = (start, end)
+        else:
+            spans.append((start, end))
+    result: list[dict[str, Any]] = []
+    for start, end in spans:
+        locators: list[str] = []
+        in_fence = 0
+        for line in lines[start:end]:
+            fence = re.match(r"^(`{3,})([^`]*)$", line.rstrip("\n"))
+            if fence is not None:
+                if not in_fence:
+                    in_fence = len(fence[1])
+                elif len(fence[1]) >= in_fence and not fence[2].strip():
+                    in_fence = 0
+                continue
+            if in_fence:
+                continue
+            utterance = re.match(r"^## (?:ユーザー|アシスタント)（([^、]+)、([^）]+)）", line)
+            call = re.match(r"^(?:- ツール呼び出し|  - 失敗)（([^）]+)）", line)
+            if utterance:
+                locators.append(utterance[2])
+            elif call:
+                locators.append(call[1])
+        result.append(
+            {
+                "start_line": start + 1,
+                "end_line": end,
+                "utf8_bytes": sizes[end] - sizes[start],
+                "first_locator": locators[0] if locators else None,
+                "last_locator": locators[-1] if locators else None,
+                "first_timestamp": timestamps.get(locators[0]) if locators else None,
+                "last_timestamp": timestamps.get(locators[-1]) if locators else None,
+            }
+        )
+    return result
 
 
 def _readable_entry_text(text: str) -> str:
@@ -662,6 +735,11 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
         f"- コンパクション: {compaction.get('count', 0)}回、合計{compaction.get('total_duration_seconds', 0)}秒"
         f"（所要時間不明{compaction.get('duration_unknown_count', 0)}回）"
     )
+    lines.extend(f"  - 記録{record}: {count}回" for record, count in compaction.get("by_record", {}).items())
+    lines.extend(
+        f"  - {item['record']}:{item['line']}: {item.get('timestamp') or '時刻なし'}"
+        for item in by_kind.get("stats-compaction", [])
+    )
     threads = by_kind.get("stats-agent-thread", [])
     if threads:
         lines.extend(["", "| thread | 実行系 | 観測identity | 経過秒 | 応答回数 |", "| --- | --- | --- | --- | --- |"])
@@ -790,10 +868,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     conversation_path = work_dir / CONVERSATION_FILENAME
     candidates_path = work_dir / CANDIDATES_FILENAME
     stats_path = work_dir / STATS_FILENAME
-    conversation_path.write_text(
-        _conversation_document(conversation, detail_command) + _comparison_document(comparison, detail_command),
-        encoding="utf-8",
-    )
+    comparison_path = work_dir / COMPARISON_FILENAME
+    conversation_text = _conversation_document(conversation, detail_command)
+    conversation_path.write_text(conversation_text, encoding="utf-8")
+    comparison_path.write_text(_comparison_document(comparison, detail_command), encoding="utf-8")
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)
     candidates, single_failures, summary, ledger_skipped = _select_repeated_failures(candidates, summary, session_id, current)
@@ -830,6 +908,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     record = {
         "work_dir": str(work_dir),
         "conversation_path": str(conversation_path),
+        "conversation_ranges": _conversation_ranges(conversation_text, conversation),
+        "comparison_materials_path": str(comparison_path),
         "candidates_path": str(candidates_path),
         "stats_path": str(stats_path),
         "reference_document": str(reference_document) if reference_document is not None else None,
@@ -858,11 +938,16 @@ def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> s
         "",
         "## 委譲入力・規範読込の比較材料",
         "",
+        "各記録の行を記録別に並べる。記録をまたいだ時系列ではない。",
         "explicit-readは明示された対象、opaque-commandは命令文字列だけの観測であり、読了した資料は推定しない。"
         "入力文字数は観測した直接本文だけ、結果文字数は記録の返却本文の量である。"
         "ファイル参照の本文量、自動配送、現在のファイルサイズ、token量を取得量へ代用しない。",
     ]
+    previous_record: str | None = None
     for event in events:
+        if event["record"] != previous_record:
+            lines.extend(["", f"### {event['record']}（{event['role']}）", ""])
+            previous_record = event["record"]
         locator = f"{event['record']}:{event['line']}"
         result = f"{event['record']}:{event['result_line']}" if event.get("result_line") is not None else "未確認"
         body_count = event.get("observed_body_characters")

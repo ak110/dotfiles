@@ -6,6 +6,9 @@
 ストリーミング書き込みする。
 """
 
+# 生成経路だけで進捗表示を必要とする。旧Pythonでは従来のimportとなる。
+__lazy_modules__ = {"tqdm"}
+
 import argparse
 import logging
 import pathlib

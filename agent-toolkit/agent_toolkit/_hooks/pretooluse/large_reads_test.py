@@ -7,11 +7,14 @@ import json
 import pathlib
 import re
 import shlex
+import stat
+import types
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._hooks import pretooluse
+from agent_toolkit._hooks.pretooluse import dispatch
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read
 
 _THRESHOLD = 48 * 1024
@@ -20,7 +23,6 @@ _THRESHOLD = 48 * 1024
 @pytest.mark.parametrize(
     "command",
     [
-        "cat -- large.txt",
         "sed -n '2,3p' large.txt",
         "atk read-file -- large.txt",
         "atk read-file --start 0 --max-bytes 12000 -- large.txt",
@@ -33,6 +35,115 @@ def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.P
     command = f"cd {target.parent} && {command}"
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
     assert check_large_bash_read(command, str(tmp_path), is_codex=True) is None
+
+
+@pytest.mark.parametrize("command", ["cat", "cat -n", "less -N", "more -d", "sed -n p", "awk '{print}'"])
+@pytest.mark.parametrize("multiple", [False, True])
+def test_allowed_reads_do_not_open_regular_files(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, command: str, multiple: bool
+) -> None:
+    """許可に必要な合計容量はメタデータから求め、通常ファイルの本文は開かない。"""
+    first = _sized_file(tmp_path, 10, "first.txt")
+    second = _sized_file(tmp_path, 20, "second.txt")
+    # sed・awkは既存の単体取得の契約であり、複数ファイルは本文表示コマンドで検証する。
+    operands = [first, second] if multiple and not command.startswith(("sed", "awk")) else [first]
+
+    def reject_open(self: pathlib.Path, *args: object, **kwargs: object) -> None:
+        raise AssertionError(f"許可の判定が本文を開いた: {self}")
+
+    monkeypatch.setattr(pathlib.Path, "open", reject_open)
+    assert _codex_read(shlex.join(shlex.split(command) + [str(path) for path in operands]), tmp_path) is None
+
+
+@pytest.mark.parametrize("size", [100, _THRESHOLD + 1])
+def test_zero_metadata_size_uses_content(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, size: int) -> None:
+    """サイズ0の仮想ファイルも、閾値前後の内容量で許可と遮断を決める。"""
+    target = _sized_file(tmp_path, size)
+    original = pathlib.Path.stat
+
+    def zero_size(self: pathlib.Path, *args, **kwargs):
+        if self == target:
+            return types.SimpleNamespace(st_mode=stat.S_IFREG, st_size=0)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "stat", zero_size)
+    notice = _codex_read(f"cat {target}", tmp_path)
+    assert (notice is not None) == (size > _THRESHOLD)
+    if notice:
+        assert f"{size}バイト" in notice
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat --",
+        "cat -n",
+        "cat -nE",
+        "cat --number --show-ends",
+        "less -N",
+        "less -x 4 --",
+        "less -J",
+        "more -d --",
+        "more --lines=20 --",
+        "more -e",
+        "more --exit-on-eof",
+        "more -20",
+    ],
+)
+def test_full_read_options_and_delivery(tmp_path: pathlib.Path, command: str) -> None:
+    """通常の表示指定でも、配送と遮断の双方が終端・cwd・合計容量を解釈する。"""
+    first = _sized_file(tmp_path / "nested", 30 * 1024, "-first.txt")
+    second = _sized_file(first.parent, 20 * 1024, "second.txt")
+    # ハイフン始まりの名前には、指定済みならその終端を使う。
+    suffix = "" if command.endswith("--") else " --"
+    value = f"cd {first.parent} && {command}{suffix} {first.name} {second.name}"
+    assert list(bash_read_paths(value, str(tmp_path), include_partial=True)) == [(first, second)]
+    notice = _codex_read(value, tmp_path)
+    assert notice is not None
+    assert "合計: 51200バイト" in notice
+    assert "atk read-file" in notice
+
+
+@pytest.mark.parametrize(
+    "command", ["cat --help", "cat --version", "cat --unknown", "less --help", "less -Z", "more --version"]
+)
+def test_non_read_options_are_not_inferred_as_full_reads(tmp_path: pathlib.Path, command: str) -> None:
+    target = _sized_file(tmp_path, _THRESHOLD + 1)
+    assert _codex_read(f"{command} {target}", tmp_path) is None
+    assert not list(bash_read_paths(f"{command} {target}", str(tmp_path), include_partial=True))
+
+
+@pytest.mark.parametrize("command", ["cat -n --", "cat --number --", "less -x 4 --", "more -d --", "sed -n '1,2p'"])
+def test_commit_rule_delivery_uses_shared_option_parsing(tmp_path: pathlib.Path, command: str) -> None:
+    """通常オプションと範囲読取の実在する帰属資料を、配送する判定まで渡す。"""
+    directory = tmp_path / "plugin/skills/commit/references"
+    directory.mkdir(parents=True)
+    target = directory / "message.md"
+    target.write_text("commitの記述規則", encoding="utf-8")
+    invocation = f"cd {directory} && {command} message.md"
+    assert dispatch._reads_commit_message_rules(invocation, str(tmp_path))  # pylint: disable=protected-access
+    assert not dispatch._reads_commit_message_rules(  # pylint: disable=protected-access
+        f"{command} other.md", str(directory)
+    )
+
+
+@pytest.mark.parametrize("operation", ["stat", "open"])
+def test_unavailable_content_does_not_create_a_block(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    """メタデータまたは本文を取得できない対象は、既存の判定不能の境界を保つ。"""
+    target = _sized_file(tmp_path, _THRESHOLD + 1)
+    original = getattr(pathlib.Path, operation)
+
+    def unavailable(path: pathlib.Path, *args, **kwargs):
+        if path == target:
+            raise OSError("読取不能")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, operation, unavailable)
+    assert _codex_read(f"cat -- {target}", tmp_path) is None
+    assert _codex_read(f"cat -- {tmp_path / 'missing.txt'}", tmp_path) is None
+    assert _codex_read(f"cat -- {tmp_path}", tmp_path) is None
 
 
 def _sized_file(tmp_path: pathlib.Path, size: int, name: str = "large.txt", line_bytes: int = 100) -> pathlib.Path:

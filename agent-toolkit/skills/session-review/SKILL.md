@@ -38,10 +38,11 @@ description: >
    atk run-script session-review-prepare -- --codex-thread-id <thread ID> --work-dir <作業ディレクトリの絶対パス> --target-repo <対象リポジトリの絶対パス>
    ```
 
-   このコマンドは証拠bundleを抽出し、作業ディレクトリへ会話の流れ（`conversation.md`。メイン記録の発話、ツール呼び出しおよび失敗したツール結果の標識を時系列で並べる）、問題候補（`candidates.md`）、セッション統計（`stats.md`）を書く。`stats.md`は律速となったagent threadごとの内訳の節を含む。キューはそのまま保つ。
-   標準出力の1行JSONは、3つの文書の所在（`conversation_path`、`candidates_path`、`stats_path`）と、対象リポジトリ固有の振り返り参照文書（`reference_document`。無ければnull）を持つ。また、準備時刻（`prepared_at`）と発話件数（`utterance_counts`）を持つ。候補件数（`candidate_total`と種別ごとの`candidate_counts`）、除外件数（`excluded_counts`）、発生記録の読飛ばし行数（`failure_ledger_skipped`）も含む。Stopは再発防止策が必須の候補のID（`mandatory_candidates`）と候補ごとの過去の同種記録のファイル名（`similar_records`）を、振り返り結果報告の行と照らして使う。経過秒（`elapsed_seconds`）とコンパクション回数（`compaction_count`）は所要時間の分析へ使う。
+   このコマンドは証拠bundleを抽出し、作業ディレクトリへ4文書を書く。会話の流れ（`conversation.md`）はメイン記録の発話、ツール呼び出しと失敗したツール結果の標識を時系列で並べる。ほかに比較材料（`comparison-materials.md`）、問題候補（`candidates.md`）、セッション統計（`stats.md`）を書く。`stats.md`は律速となったagent threadごとの内訳の節を含む。キューはそのまま保つ。
+   標準出力の1行JSONは、4つの文書の所在（`conversation_path`、`comparison_materials_path`、`candidates_path`、`stats_path`）と、対象リポジトリ固有の振り返り参照文書（`reference_document`。無ければnull）を持つ。また、準備時刻（`prepared_at`）と発話件数（`utterance_counts`）を持つ。候補件数（`candidate_total`と種別ごとの`candidate_counts`）、除外件数（`excluded_counts`）、発生記録の読飛ばし行数（`failure_ledger_skipped`）も含む。Stopは再発防止策が必須の候補のID（`mandatory_candidates`）と候補ごとの過去の同種記録のファイル名（`similar_records`）を、振り返り結果報告の行と照らして使う。経過秒（`elapsed_seconds`）とコンパクション回数（`compaction_count`）は所要時間の分析へ使う。
    終了コードが0でない場合と、標準出力が1行のJSONではない場合は`references/analysis-failure.md`の手順へ進む。
-   `conversation.md`には委譲入力・規範読込の比較材料、`stats.md`にはメインと全担当のtokens・cache・応答回数の概要と計数定義も載る。
+   `comparison-materials.md`は委譲入力・規範読込の比較材料を記録別の参照資料として示す。対象・時点・記録位置から詳細照会の全文位置を選ぶために使う。時系列はメイン記録の会話の流れから読む。`stats.md`にはメインと全担当のtokens・cache・応答回数の概要と計数定義、記録ごとの圧縮回数と各回の記録位置・時刻も載る。
+   JSONの`conversation_ranges`は会話の全行を重複と欠落なく覆う。各範囲の`start_line`・`end_line`は両端を含む1始まりの行番号、`utf8_bytes`は改行を含む量、`first_locator`・`last_locator`と`first_timestamp`・`last_timestamp`は範囲内の最初と最後の位置・時刻で、取得できない値はnullとなる。
    `candidates.md`と`stats.md`の未確認範囲、および1行JSONの`unconfirmed_scope`は未解決の記録と識別子を得られない呼び出しを区別して示す。
    これは候補件数とは別の確認範囲である。
    JSONの`improvement_lines`と`candidates.md`の取り込んだ改善点は、記録の全文から抽出した実際の行を持つ。
@@ -51,7 +52,8 @@ description: >
    - 規範自体の適否もQCDから見直す。読込・準備が目的の操作前に積み上がった区間をツール呼び出しから探し、`references/analysis.md`「規範適用による目的逸脱」で判定する。
    - メインと委譲先が作業中に伝えた`気付いた改善点:`で始まる行は、会話の流れから全件を問題の列挙へ含める。
    - 成功した操作、正常な返却、訂正されなかった成果も、目的・利用結果・契約・代替手段・総費用と比べる。比較の観点と必要な証拠は`references/analysis.md`「比較して探す観点」を使い、表の外にも同じ比較を適用する。委譲入力、規範読込と非律速担当の費用は準備文書の概要から全文位置を選ぶ。
-   - ホストが1回で読める量を超える場合は、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」と`agent-toolkit/share/rules-common.codex.md`「Codex固有の入出力」の分割取得に従って範囲を分ける。同一セッションで確認済みの区間は、記録の識別子・範囲・内容の同一性と、問題の有無・根拠を保持できる場合に再利用する。会話圧縮や再実行の後も、この条件を満たす既読区間を一律には読み直さず、追加・変更・未確認・根拠不足の区間を読む。
+   - 成功した作業の準備、実行、検収、後始末、値の転記、工程境界と離れた区間の反復も簡略化の手掛かりにする。各操作が守る成果とその要求元を確かめ、責務を持つ側への統合、既存機構の利用、操作の除去などで同じ品質を保てるか比べる。候補抽出の標識や失敗が無い操作も同じ比較の対象にする。
+   - 全範囲の読取単位には準備JSONの`conversation_ranges`が返す行番号をそのまま使う。Claude CodeのReadでは`offset=start_line`、`limit=end_line-start_line+1`、行範囲を扱うコマンドでは同じ両端を指定する。単独の発話・呼び出しが上限を超える例外やホストの拒否で読めない範囲だけ分割する。その取得は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」と`agent-toolkit/share/rules-common.codex.md`「Codex固有の入出力」に従う。同一セッションで確認済みの区間は、記録の識別子・範囲・内容の同一性と、問題の有無・根拠を保持できる場合に再利用する。会話圧縮や再実行の後も、この条件を満たす既読区間を再利用し、追加・変更・未確認・根拠不足の区間を読む。
    - 読取専用の担当へ連続する範囲を分担できる。対象記録、範囲、前後の境界、観点を限定せず問題を探す目的、返す根拠位置と未確認範囲を渡す。メインは各返却が対象範囲を覆うか、境界をまたぐ問題と判定の不一致があるかを自ら確かめる。候補に一致した抜粋だけの読取へ狭めない。原因と対策は同じセッションでメインが統合する。
    - `reference_document`が値を持つ場合は、読込表の行に従ってその文書を読み、対象リポジトリ固有の振り返り観点と所要時間目標を解決する。
 3. `candidates.md`を通読の補助として読み、通読で見つけた問題との対応付けと、通読では得られない事象の追加に使う。通読では得られない事象は、直近30日の複数セッションで反復した失敗署名、hook通知の発生源と件数、除外件数、委譲先を含むその場のコードによる加工（`adhoc-processing`）、委譲先の内部である。候補に対応しない通読の問題と成功した作業の改善機会も独立して扱い、通読の結果と候補から選別する。公開待機中に調査とAWI原稿を準備した場合は、正式な候補選別の結果と公開後の現行状態に照らして採否を確定する。公開結果へ依存する問題は、結果が確定した後の本工程で調べる。選別と工程4の確定の判断基準は`references/analysis.md`を適用する。比較に必要な材料が概要から欠ける場合も、候補の有無によらず`--detail`・`--tool-calls`・`--grep`で照会する。所要時間と全担当の費用には`stats.md`を使う。

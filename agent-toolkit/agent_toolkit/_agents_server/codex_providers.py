@@ -31,15 +31,12 @@ class ProviderSelection:
 
 def configured_candidates() -> tuple[str, ...]:
     """atkの変更可能設定を接続先列として解決する。"""
-    legacy = atk_config.legacy_codex_provider_setting()
-    if legacy is not None:
-        return legacy[0]
     return atk_config.parse_codex_provider_candidates(atk_config.resolve_mutable_setting("codex_model_providers"))
 
 
 def has_provider_configuration() -> bool:
-    """明示列か旧形式の移行入力がある場合だけCodex設定を評価する。"""
-    return bool(configured_candidates()) or atk_config.legacy_codex_provider_setting() is not None
+    """明示した接続先列がある場合だけCodex設定を評価する。"""
+    return bool(configured_candidates())
 
 
 def independent_api_auth(provider: dict[str, Any]) -> bool:
@@ -73,10 +70,7 @@ async def select(
     if not isinstance(effective, dict):
         raise ValueError("Codexの実効接続先設定を取得できません")
     default = effective.get("model_provider") or "openai"
-    legacy = atk_config.legacy_codex_provider_setting()
-    configured = atk_config.migrate_codex_provider_setting(default)
-    if legacy is not None:
-        _LOG.info("Codex接続先設定を新しい優先順へ移行しました: source=%s", "saved" if legacy[1] else "environment")
+    configured = configured_candidates()
     selected = primary or (configured[0] if configured else default)
     providers = effective.get("model_providers", {})
     providers = providers if isinstance(providers, dict) else {}

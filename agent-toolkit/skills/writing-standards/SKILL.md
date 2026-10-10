@@ -88,7 +88,7 @@ description: >
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設または変更する時 | `references/design-time.md` |
 | コードを編集する時点と、依存の追加・更新をする時 | `references/implementation-time.md` |
 | 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する場合、およびコードレビューを実施する場合 | `references/design-heuristics.md` |
-| 依存の追加・更新をする時 | `references/dependency-management.md` |
+| 依存の追加・更新、またはPythonの対応版を追加する時（CI・開発環境の版指定変更を含む） | `references/dependency-management.md` |
 | MCPサーバーまたはFunction hooksなどホスト登録ツールの説明、引数、実行応答を設計、実装、変更またはレビューする時 | `references/mcp-server-design.md` |
 | テストコードを書く時とレビューする時、および条件分岐と判定条件を新設または変更する時 | `references/testing.md` |
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等） | `references/encoding.md` |

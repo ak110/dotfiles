@@ -1,13 +1,16 @@
 ---
 name: delegation
 description: >
-  サブエージェントまたは委譲先を起動、観測、継続もしくは巻き取るとき、または停滞検知・複数のエージェントの調整が必要な場合に起動し、委譲の共通契約と実行手段ごとの契約を提供する。
+  作業へ着手する前に担当範囲の一部を委譲先へ分けるかと委譲単位を判定する時
+  （計画の起草前、独立した複数の作業単位か長い工程を含む作業の着手前）、
+  サブエージェントまたは委譲先を起動、観測、継続もしくは巻き取るとき、または停滞検知・複数のエージェントの調整が必要な場合に起動する。
 user-invocable: false
 ---
 
 # 委譲
 
 本規範群では、委譲先を起動したエージェントを委譲元と呼ぶ。委譲先は実行環境の`Agent`ツールで起動する子（サブエージェント）と`agents_server`で起動する子sessionの総称とする。
+委譲先がさらに起動したエージェントも、起動したエージェントを基準に委譲先と呼び、「孫」「子孫」は基準となるエージェントを同じ文に示す場合だけ使う。
 
 本スキルは委譲の開始、委譲先の選択、継続、停滞検知および複数のエージェントの調整の手順を提供する。
 委譲先が行う用途固有の作業は、委譲先が読む`<役割名>.subagent.md`またはagent定義に従う。
@@ -19,19 +22,21 @@ user-invocable: false
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| Codexで委譲、待機、状態確認または中断へ着手する前 | `references/codex-runtime.md` |
-| 委譲元が、`<役割名>.parent.md`が起動手順を定めない委譲（`start`の`delegate`・`explore`・`write`・`shell`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/base-contract.md`、`references/mandatory-rules.md`、`references/sending.md` |
-| 委譲元が、`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.parent.md`が起動手順と必須入力を逐語で定めていない委譲を開始する前と、確定した委譲単位の構成を変更する前 | `references/routing.md` |
+| Codexで委譲、待機、状態確認または中断へ着手する前（agents_serverのexplore・shellの起動から受領までを除く） | `references/codex-runtime.md` |
+| 委譲元が、`<役割名>.parent.md`が起動手順を定めない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/base-contract.md`、`references/mandatory-rules.md`、`references/sending.md` |
+| 作業へ着手する前に、担当範囲の一部を委譲先へ分けるかと委譲単位を判定する時（計画の起草前、独立した複数の作業単位か長い工程を含む作業の着手前） | `references/routing.md` |
+| 委譲元が、`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.parent.md`が起動手順と必須入力を逐語で定めていない委譲を開始する前（explore・shellを除く）と、確定した委譲単位の構成を変更する前 | `references/routing.md` |
+| agents_serverのexplore・shellを起動する前 | 本書「explore・shellの起動」 |
 | 委譲元が`<役割名>.parent.md`を持つ委譲を起動する前 | 起動する`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`と、同書の読込表が条件付きで挙げる資料 |
-| 委譲先とモデルを選ぶ時点（`<役割名>.parent.md`を持つ起動で`model_type`を指定しない場合を除く） | `references/runtime-routing.md` |
-| Claude Codeで`Agent`ツールの委譲先かバックグラウンドタスクを最初に起動する前、定期再確認を自ら装着する前（装着できなかった通知を受けた場合と、装着の通知も定期再確認のtaskも無い場合）、およびClaude Code固有の手順を確定する時 | `references/claude-code-runtime.md` |
+| 委譲先とモデルを選ぶ時点（explore・shellと、`<役割名>.parent.md`を持つ起動で`model_type`を指定しない場合を除く） | `references/runtime-routing.md` |
+| Claude Codeで次のいずれかを行う時（explore・shellの起動から受領までの操作は全て除き、本書の同名節に従う）: `Agent`ツールの委譲先かバックグラウンドタスクの最初の起動、定期再確認の自らの装着（装着失敗の通知を受けた場合と、装着通知も定期再確認のtaskも無い場合）、Claude Code固有の手順の確定。各操作の前に読む | `references/claude-code-runtime.md` |
 | 完了通知および待機・停滞を確定する時 | `references/waiting-and-monitoring.md` |
 | `atk agents wait`が終了コード4・8・10または待機対象0件の非0で終わった時、待機の呼び出しがホストの上限で失敗した時、委譲先か自身のツール呼び出しが終端statusを返さずに終わった時、`agents_server`のMCPサーバーが再起動した後 | `references/wait-anomalies.md` |
 | 稼働中の委譲先へ追送する前 | `references/base-contract.md` |
-| 同じworktreeへ後続の書込担当を起動する前 | `references/mandatory-rules.md` |
-| 委譲元が委譲先の完了報告を受領して検収する前 | `references/receiving.md`、`references/mandatory-rules.md` |
+| 同じworktreeへ後続または並列の書込担当を起動する前（shellを除く。shellは本書「explore・shellの起動」に従う） | `references/mandatory-rules.md` |
+| 委譲元が委譲先の完了報告を受領して検収する前（explore・shellを除く） | `references/receiving.md`、`references/mandatory-rules.md` |
 | 委譲先が、委譲プロンプトで`引き継ぎ記録先`を受け取って最初の記録を書く前 | `references/handoff-record.md` |
-| 実行工程を委譲するときの受領の取り決めを確定する時 | `起動経路`に対応するエージェント向け文書（`agent-toolkit:process-wi`による起動では同スキルの`references/run-lanes.md`、`agent-toolkit:plan-mode`による直接起動では同スキルのSKILL.md） |
+| 実行工程を委譲するときの受領の取り決めを確定する時（explore・shellを除く） | `起動経路`に対応するエージェント向け文書（`agent-toolkit:process-wi`による起動では同スキルの`references/run-lanes.md`、`agent-toolkit:plan-mode`による直接起動では同スキルのSKILL.md） |
 | 指摘の採否と修正を確定する時 | `agent-toolkit:review-standards`を起動し、同スキルの`references/reviewee.md` |
 
 ## 送信
@@ -45,6 +50,38 @@ user-invocable: false
 起動前の入力・実在・版の確認は`references/base-contract.md`、`agents_server`の`start`と返された`session_id`の観測は`references/sending.md`「起動と観測」が定める。
 
 `<役割名>.parent.md`を持つ委譲は、本節の手順に代えて「`<役割名>.parent.md`を持つ委譲の起動」に従う。
+explore・shellは次の同名節に従う。
+
+## explore・shellの起動
+
+1件の調査やコマンドを自ら行うかexplore・shellへ委ねるかは、agents_serverのserver instructionsの採算の目安で判定する。
+この判断だけでは作業の分割を判定する行のrouting.mdの全文読みを成立させない。
+本節に両modeの起動から受領までの必須義務をまとめる。
+括弧内の参照先は詳細を確かめるための所在であり、その節や資料全体を追加で読む義務を課さない。
+
+- 起動前に対象、読取・書込権限、完成条件と返す観測値を確定する。委譲先が読む既存の絶対パスを実在するものへ解決し、比較基準と実行する版を確かめる。大きな本文の調査には読み取りツールの範囲指定を渡し、切り詰めと上限到達を網羅性の根拠にしない（base-contract.md「起動前の確認」「分離実行の受領物」）。
+- 入力は命令1文と必要な値で構成し、原要求、対象、完成条件、返却形式と基準記録を渡す。配送済みの制約、経緯、推測と既存記録の転記を加えず、自ら裏付けていない値を未検証として区別する。exploreへ成果ファイルの生成を求めず、返却本文は委譲元が保存する（base-contract.md「入力の適格性と追送」、sending.md「委譲プロンプトの構成」「未検証情報の取り扱い」）。
+- 公開されたstartの説明とスキーマで各modeの入力・能力を確かめ、cwdへ作業ディレクトリの絶対パスを渡す。exploreはprompt、shellはcommandとsummary_policyを用いる。スキルの手順が必要な作業はtask・delegateへ渡す（sending.md「起動と観測」）。
+- model_typeの指定が無ければ両modeの工程別設定を使う。新しい候補・評価軸を導く調査はhigh_tierを明示し、WIがモデルを指定した場合はその指定を使う。受領時に指定・起動候補と観測した実値を区別する（runtime-routing.md「工程別モデル設定」）。
+- exploreは対象を変更しない。shellの書込先は生成物も含めて他の担当と交わらない集合へ確定する。同じ担当の交代は先行担当の終端後に行う。commit・Git hook・indexと履歴の操作、全体の整形・生成同期・依存更新・環境構築は全担当の終端後に呼び出し元が直列に行う。担当ごとのcommitや書き換えを伴う検証が必要な場合と、書込先を確定できない場合は別worktreeとbranchへ分ける（mandatory-rules.md「作業ツリーの保護」）。軽量起動に配送されないプロジェクト固有の指示と、コマンドの入力境界・終了状態・両出力の保持を渡す（base-contract.md「起動前の確認」、sending.md「権限と成果物の取り決め」）。
+- 起動が返したsession_idを保持し、atk agents waitで終端と結果本文を受け取る。待機の発行形、終了コード、背景化と通知後の受領は読込表のwaiting-and-monitoring.mdを使う。ホスト別の待機は次の「軽量起動のホスト別待機」に従う。
+- 終端後に対象の差分と結果・診断を確かめ、指定した返却形式と対象・権限・完成条件との一致を検収する。件数・不在・網羅性は省略されていない取得から判定し、事実の主張は実物の根拠で裏付ける。受領前の値だけで完了とせず、不足する結果は同じ担当へ戻す（receiving.md「返却形式の適合確認」「終端と報告内容の確認」、sending.md「権限と成果物の取り決め」）。
+
+### 軽量起動のホスト別待機
+
+本節にexplore・shellで必要なホスト別操作をまとめる。括弧内の参照先は詳細確認の所在であり、追加の読込義務を課さない。
+
+Codexでは、`functions.exec`内の起動応答が`root_session_id`を返した場合は保持し、ランタイム間の識別子の受渡しとして`atk agents wait`の`--root-session-id`へ渡す。これは待機対象のsession集合を指定する引数ではない。
+待機CLIと外側の実行セルを別々に回収する。CLIへ待機対象やtimeoutを指定せず、外側のcell IDはfunctions.wait、exec_commandのsession IDはwrite_stdinで同じターンに回収する。
+外側がyieldした間は同じCLIを再発行せず、CLI自身が上限へ達しrunningを返した後に次の待機を発行する（codex-runtime.md「agents_serverの二層待機」）。
+
+Claude Codeのメインでは、最初のstartにmodが定期再確認を装着して返すtask IDを保持する。
+装着失敗の通知を受けた場合と、装着通知もCronListの該当taskも無い場合は、CronCreate・CronList・CronDeleteを使えるときだけ自ら装着する。
+atk wait-schedule --request-bucket main --format jsonを1回実行し、返ったcronとpromptを変更せずCronCreateへ渡し、recurring: trueで1件作成する。
+所有taskはpromptの1行目の標識`<atk-auto source="periodic-recheck" kind="periodic-recheck">`と保持したIDで確認する。再開・会話圧縮後もCronListの実在taskと比べ、一意に確認できないtaskの操作や重複作成は行わない。
+未完了の対象がある間は同じtaskを再利用し、全対象の終端後に保持したIDをCronDeleteへ渡す。定期promptは待機CLIが所有する対象を再照会せず、終端はCLIの結果と完了通知から確定する。
+固有の経過時間起動の義務がある場合は、義務ごとの測定コマンドと閾値を共通promptの終了タグの前へ加え、所有taskを削除して同じ開始標識で作成し直す。
+各Cronツールを使えない場合とatk wait-scheduleの失敗時は、背景タイマーを加えず完了通知による待機を保つ。Agentツールのサブエージェントは装着せず、agents_serverで起動された独立sessionのメインは同じ装着条件を使う（claude-code-runtime.md「待機中の定期再確認と背景転換」）。
 
 ## `<役割名>.parent.md`を持つ委譲の起動
 
@@ -95,6 +132,9 @@ user-invocable: false
   再起動時は完了済み工程・試行済みのアプローチ・観測できた失敗事象を委譲プロンプトへ引き継ぎ、続きから再開させる
 
 ## 受領と検収
+
+explore・shellの受領と検収は「explore・shellの起動」の最終項に従う。
+以下はそれ以外の委譲を対象とする。
 
 委譲先の完了報告は次の順で受領して検収する。各工程の細則は`references/receiving.md`の同名の節が定める。
 

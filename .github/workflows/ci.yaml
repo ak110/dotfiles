@@ -200,7 +200,7 @@ jobs:
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
-          uv run --python 3.14 pytest -q
+          uv run --python 3.15 pytest -q
           post_apply_template_test.py
           agent-toolkit/agent_toolkit/_atk/managed_temp
           agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
@@ -211,7 +211,7 @@ jobs:
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
-          uv run --frozen --python 3.14 pytest -v -p no:cacheprovider
+          uv run --frozen --python 3.15 pytest -v -p no:cacheprovider
           bin/atk_launcher_test.py
           bin/update_dotfiles_launcher_test.py
       - name: chezmoi 適用
@@ -262,11 +262,14 @@ jobs:
             check: pytest
             check-name: python-lint (3.13)
           - python-version: "3.14"
-            check: lint
-            check-name: python-lint (3.14)
-          - python-version: "3.14"
             check: pytest
             check-name: pytest (3.14)
+          - python-version: "3.15"
+            check: lint
+            check-name: python-lint (3.15)
+          - python-version: "3.15"
+            check: pytest
+            check-name: pytest (3.15)
     env:
       # 開発モード: DeprecationWarning などの隠れた問題を早期検出する
       PYTHONDEVMODE: "1"
@@ -295,7 +298,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.owner.outputs.owns == 'true'
       - name: ユーザー設定から隔離したlockfile検証
-        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.14' && matrix.check == 'lint'
+        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'lint'
         run: |
           set -euo pipefail
           config_dir="$(mktemp -d)"
@@ -344,8 +347,8 @@ jobs:
         if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.13' && matrix.check == 'pytest'
         run: pyfltr ci --commands=pytest
 
-      - name: Python 3.14 pytest以外の検査
-        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.14' && matrix.check == 'lint'
+      - name: Python 3.15 pytest以外の検査
+        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'lint'
         env:
           # cargo-fmt/cargo-clippy はrust-lint jobで専用実行するため python-lint 側では
           # 除外する（ccを含むRustビルドツールチェーンをcontainer imageに追加せずに済む）
@@ -358,6 +361,10 @@ jobs:
 
       - name: Python 3.14 pytest
         if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.14' && matrix.check == 'pytest'
+        run: pyfltr ci --commands=pytest
+
+      - name: Python 3.15 pytest
+        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
         run: pyfltr ci --commands=pytest
 
       - name: Prune uv cache for CI
@@ -381,7 +388,7 @@ jobs:
       # サプライチェーン攻撃対策: uv が lockfile を常に尊重する
       UV_FROZEN: "1"
       # 実ブラウザーE2Eは最新のPythonで実行する
-      UV_PYTHON: "3.14"
+      UV_PYTHON: "3.15"
     steps:
       # developからmasterへのrelease pull requestかどうかをjobごとに1回だけ求め、後続stepのifはこの出力を参照する。
       - name: 共通CI所有の判定

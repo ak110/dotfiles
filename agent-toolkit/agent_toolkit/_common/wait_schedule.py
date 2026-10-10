@@ -22,6 +22,9 @@ Claude Agent SDKで開始したセッションのターンは、main conversatio
 収めるため、上限を指定しない場合は待機を240秒までとする。上限には2割の余裕を取り、実行環境の版ごとの変動を吸収する。
 """
 
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"pytilpack.jsonc"}
+
 import json
 import os
 import subprocess

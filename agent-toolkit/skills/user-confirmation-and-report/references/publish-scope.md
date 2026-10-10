@@ -17,3 +17,16 @@
 
 依頼文が公開範囲を指定している場合は、その指定を適用する。調査だけの依頼、成果物をWIへ限定する`agent-toolkit:add-awi-by-user`の起動中、自律モードは追加質問の対象外とする。自律モードでは各スキルが定める公開工程を使う。
 計画を作成する作業では回答を`## 要件・外部仕様`と`## 終端工程`へ記録する。後続の公開工程は`agent-toolkit:commit`の`references/publish.md`が定める。
+
+Claude Codeの協調モードのメインは、同じ作業の公開範囲が指定・回答・適用済み認可から確定した時点で、原入力と判断結果を終了工程の証拠へ渡す。
+原入力の識別子は`atk run-script termination-evidence -- --context`で現在の会話から取得する。
+返った`session_id`・`input_id`・`quote`と既存の`work_id`を使い、原入力の内容を要約や推測した識別子へ替えない。
+JSONファイルへ`session_id`・`action: "publish-scope"`・`scope`・`origin`・`input_id`・原文全体の`quote`・判断理由の`reason`を記す。
+`atk run-script termination-evidence -- --decision-file <JSONの絶対パス>`へそのファイルを渡す。
+`scope`は前掲の4つの選択肢の値とし、`commitしない`も確定済みの範囲として渡す。
+`origin`は依頼文の指定なら`instruction`、回答なら`answer`、適用済み認可なら`standing-authorization`とする。
+適用済み認可では`policy_file`へその文書の絶対パスを、`quote`へその現行本文全体を、`input_id`へ認可を適用する作業の人間入力の識別子を渡す。
+処理は原入力の由来と全文の一致を確かめ、意味判断と認可の適否はメインが確定する。
+既存作業への回答は同じ`work_id`へ対応付け、独立した新しい作業は既存の`start`判断で区切ってから、その作業へ公開範囲を渡す。
+作業をまだ作成していない場合だけ`work_id`を省略すると、原入力に属する作業を作成して返す。
+記録には確定した範囲を渡し、成功した記録の`work_id`を後続工程へ引き継ぐ。

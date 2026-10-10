@@ -13,6 +13,7 @@ from session_evidence_extract import (
     _ENV_ASSIGNMENT,
     _basename,
     _CollectedRecord,
+    _collection_events,
     _detect_runtime,
     _error_event,
     _extract_records,
@@ -21,9 +22,9 @@ from session_evidence_extract import (
     _parse_timestamp,
     _payload_command_tokens,
     _Record,
+    _role_document,
     _Runtime,
     _shell_tokens,
-    _unresolved_events,
     _UnresolvedRecord,
 )
 from session_evidence_records import (
@@ -316,6 +317,7 @@ def _catalog_events(
                 "kind": "catalog-parent",
                 "runtime": runtime,
                 "session_id": parent.item.record_id,
+                "role_document": _role_document(parent.item),
                 "started_at": parent.start_text or "unknown",
                 "finished_at": parent.end_text or "unknown",
                 "cwd": _catalog_value(parent.item.records, "cwd", "originalCwd"),
@@ -362,10 +364,12 @@ def _catalog_tool_call_events(
         return [scan], 2
     events: list[dict[str, Any]] = []
     unresolved: list[_UnresolvedRecord] = []
+    all_collected: dict[str, _CollectedRecord] = {}
     for parent in scan.parents:
         collected, parent_unresolved = _collect_records(str(parent.item.path), parent.item.records, None, boundary)
         unresolved.extend(parent_unresolved)
         for item in collected:
+            all_collected.setdefault(item.record_id, item)
             for event in _tool_call_events(item, tools, pattern):
                 try:
                     timestamp = _parse_timestamp(event["timestamp"]) if isinstance(event["timestamp"], str) else None
@@ -374,10 +378,11 @@ def _catalog_tool_call_events(
                 if timestamp is not None and since < timestamp <= boundary:
                     events.append({**event, "session_id": parent.item.record_id})
     events = _sorted_tool_call_events(events)
-    summary = _tool_call_summary(events)
+    collected_records = list(all_collected.values())
+    summary = _tool_call_summary(events, collected_records)
     summary["by_session"] = dict(sorted(collections.Counter(str(event["session_id"]) for event in events).items()))
     summary["scan_root"] = str(scan.root)
     summary["since"] = since.isoformat()
     summary["observation_boundary"] = boundary.isoformat()
     summary["parent_record_count"] = len(scan.parents)
-    return [*events, *_unresolved_events(unresolved), summary], 0
+    return [*events, *_collection_events(collected_records, unresolved), summary], 0

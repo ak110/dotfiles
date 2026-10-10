@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
+from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import runtime_inserted as _runtime_inserted
 from agent_toolkit._common import transcript as _transcript
@@ -960,10 +961,10 @@ def _handback_messages(content: Any) -> list[str]:
 
 
 def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """最終結果への置換と連番付けを行う。
+    """1turnの最終結果への置換と連番付けを行う。
 
     Claude Codeのサブエージェントは報告本文を`SubagentHandback`の引数で渡し、その後に定型文だけを書く。
-    同呼び出しを持つ記録では、最後の同呼び出しの本文を最終結果とする。
+    同呼び出しを持つturnでは、最後の同呼び出しの本文を最終結果とする。
     """
     handbacks = [event for event in events if event.get("handback")]
     if handbacks:
@@ -990,7 +991,29 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
     runtime = _detect_runtime(entries)
     if runtime is None:
         return _fallback()
-    return _finalize(_extract_for_runtime(entries, runtime, lines))
+    numbers = lines if lines is not None else list(range(1, len(entries) + 1))
+    events: list[dict[str, Any]] = []
+    start = 0
+    for index, entry in enumerate(entries):
+        if _turn_finished(entry, runtime):
+            events.extend(_finalize(_extract_for_runtime(entries[start : index + 1], runtime, numbers[start : index + 1])))
+            start = index + 1
+    if start < len(entries):
+        events.extend(_finalize(_extract_for_runtime(entries[start:], runtime, numbers[start:])))
+    for sequence, event in enumerate(events, start=1):
+        event["sequence"] = sequence
+    return events
+
+
+def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
+    """既存のホストの終端記録を使い、後続turnの作業を先行返却の分類から切り離す。"""
+    if runtime == "codex":
+        payload = entry.get("payload")
+        return entry.get("type") == "event_msg" and isinstance(payload, dict) and payload.get("type") == "task_complete"
+    if runtime == "claude":
+        message = entry.get("message")
+        return entry.get("type") == "assistant" and isinstance(message, dict) and message.get("stop_reason") == "end_turn"
+    return entry.get("event") == "result"
 
 
 def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
@@ -1089,6 +1112,83 @@ def _started_after_boundary(records: list[_Record], boundary: datetime.datetime)
 def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
     """解決できなかった委譲先を機械可読イベントへ変換する。"""
     return [{"kind": item.kind, "record": item.record_id, "line": item.line} for item in unresolved]
+
+
+def _role_document(item: _CollectedRecord) -> str | None:
+    """最初の配送本文の役割文書を読み、圧縮後の再掲で起動時の役割を上書きしない。"""
+    for record in item.records:
+        message = record.entry.get("message")
+        payload = record.entry.get("payload")
+        texts: list[str] = []
+        if record.entry.get("type") == "user" and isinstance(message, dict):
+            texts = _text_blocks(message.get("content"))
+        elif isinstance(payload, dict) and payload.get("type") == "message" and payload.get("role") == "user":
+            texts = _codex_text_blocks(payload.get("content"))
+        for text in texts:
+            found = re.search(r"(?m)^次の文書の手順を実行せよ（出所: [^\n]*[/\\]([^/\\\n]+)\.subagent\.md）。", text)
+            if found:
+                return found[1]
+        if texts and not _is_runtime_generated(record.entry) and not all(_is_runtime_inserted_text(text) for text in texts):
+            return None
+    return None
+
+
+def _launch_mode(item: _CollectedRecord, collected: list[_CollectedRecord]) -> str | None:
+    """起動結果と対応する親の呼び出し入力からmodeを得る。"""
+    if item.role == "subagent":
+        return item.agent_type
+    parent = next((source for source in collected if source.record_id == item.source_record), None)
+    if parent is None or item.source_line is None:
+        return None
+    source = next((record.entry for record in parent.records if record.line == item.source_line), {})
+    payload = source.get("payload")
+    if isinstance(payload, dict) and isinstance(payload.get("item"), dict):
+        call = payload["item"]
+        arguments = call.get("arguments")
+        if isinstance(arguments, dict):
+            return _agents_server_tool_names.start_mode(str(call.get("tool", "")), arguments)
+    ids: set[str] = set()
+    message = source.get("message")
+    if isinstance(message, dict) and isinstance(message.get("content"), list):
+        ids = {
+            str(block["tool_use_id"]) for block in message["content"] if isinstance(block, dict) and block.get("tool_use_id")
+        }
+    if isinstance(payload, dict) and payload.get("call_id"):
+        ids.add(str(payload["call_id"]))
+    for record in parent.records:
+        message = record.entry.get("message")
+        if isinstance(message, dict) and isinstance(message.get("content"), list):
+            for block in message["content"]:
+                if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("id") in ids:
+                    inputs = block.get("input")
+                    if isinstance(inputs, dict):
+                        return _agents_server_tool_names.start_mode(str(block.get("name", "")).rsplit("__", 1)[-1], inputs)
+        call = record.entry.get("payload")
+        if isinstance(call, dict) and call.get("call_id") in ids and call.get("type") in {"function_call", "custom_tool_call"}:
+            arguments = call.get("arguments")
+            inputs = arguments if isinstance(arguments, dict) else _json_object(arguments)
+            if inputs is not None:
+                return _agents_server_tool_names.start_mode(str(call.get("name", "")).rsplit("__", 1)[-1], inputs)
+    return None
+
+
+def _collection_events(collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
+    """全収集照会が同じ記録由来と未解決の対象を出力する。"""
+    return [
+        *(
+            {
+                "kind": "record-provenance",
+                "record": item.record_id,
+                "role": item.role,
+                "source_record": item.source_record,
+                "source_line": item.source_line,
+                "mode": _launch_mode(item, collected),
+                "role_document": _role_document(item),
+            }
+            for item in collected
+        ),
+        *_unresolved_events(unresolved),
+    ]
 
 
 def _scannable_records(records: list[_Record]) -> list[_Record]:
@@ -1288,5 +1388,5 @@ def _default_events(collected: list[_CollectedRecord], unresolved: list[_Unresol
     events: list[dict[str, Any]] = []
     for item in collected:
         events.extend(_events_with_record(_extract_records(item.records), item.record_id))
-    events.extend(_unresolved_events(unresolved))
+    events.extend(_collection_events(collected, unresolved))
     return events

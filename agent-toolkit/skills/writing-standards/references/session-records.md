@@ -97,6 +97,9 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 - 位置が確定したレコードの構造だけを調べる: `--record-schema`をlocatorごとに反復する。値が必要なら`--detail`を使う
 - ツール呼び出しを呼び出し単位で列挙し、ツール名と代表入力で選んで数える（複数セッションはカタログ走査と併用する）: `--tool-calls`。発話とツール呼び出しを混ぜた1セッションのメイン記録の時系列は、`--bundle`が書く`conversation.jsonl`で得る
 
+通常表示・warn・grep・fixed-string・tool-calls・hook-notices・statsとbundleの要約は、全収集記録の`record-provenance`を返す。同イベントの`record`・`role`・`source_record`・`source_line`・`mode`・`role_document`を読む。親を収集していない情報と役割文書が無い値はnullとして扱う。
+役割別の呼び出し件数は`--tool-calls`の`tool-call-summary.by_role`を使う。`document:<役割名>`は最初の配送の役割文書、`record:<role>`は役割文書を持たない記録の収集区分である。各内訳の`count`・`by_tool`と起動入力の`by_mode`から、役割別の件数と起動した委譲先のmodeを同じ照会で読む。カタログと併用した場合も収集したroot外の委譲先を含める。
+
 単一transcriptの`--detail`と`--record-schema`は併用でき、各オプションへ反復指定した全locatorの本文と構造を返す。
 結果は`kind`、`record`と`line`で区別する。
 片方のlocatorが不正な場合もエラーと次の操作を返し、終了コード2で終える。
