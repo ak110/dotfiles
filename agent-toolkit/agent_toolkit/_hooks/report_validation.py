@@ -1,5 +1,8 @@
 """可視発話の報告見出しと、completion-reportが定める報告本文の判定を扱う。"""
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"agent_toolkit._common.markdown_headings", "markdown_it", "typing"}
+
 import re
 from typing import Any
 

@@ -16,6 +16,9 @@ frontmatterの`submitter_session`がフック入力の`session_id`と一致す�
 実行されるまで観測できない。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"agent_toolkit._atk.wi", "agent_toolkit._common.session_state", "agent_toolkit._git", "subprocess"}
+
 import subprocess
 
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan

@@ -72,6 +72,27 @@ Write / Edit / MultiEdit / apply_patch:
 
 from __future__ import annotations
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._common",
+    "agent_toolkit._common.runtime_identity",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._hooks",
+    "agent_toolkit._hooks.host",
+    "agent_toolkit._hooks.notice",
+    "agent_toolkit._hooks.pretooluse.agent_checks",
+    "agent_toolkit._hooks.pretooluse.confirmation_reads",
+    "agent_toolkit._hooks.pretooluse.content_checks",
+    "agent_toolkit._hooks.pretooluse.decision",
+    "agent_toolkit._hooks.pretooluse.large_reads",
+    "agent_toolkit._hooks.pretooluse.notices",
+    "agent_toolkit._hooks.pretooluse.operation_skills",
+    "agent_toolkit._hooks.pretooluse.shell_checks",
+    "agent_toolkit._hooks.pretooluse.task_document_launch",
+    "agent_toolkit._hooks.pretooluse.warning_context",
+    "dataclasses",
+}
+
 import dataclasses
 import json
 import os

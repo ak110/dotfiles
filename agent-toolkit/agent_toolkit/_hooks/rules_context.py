@@ -12,6 +12,16 @@ Claude Codeはhook 1件の出力を10,000文字で切り詰める。条文の欠
 
 from __future__ import annotations
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._common.delegated_session",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._hooks.agent_id",
+    "agent_toolkit._hooks.message_format",
+    "typing",
+    "urllib.parse",
+}
+
 import json
 import os
 import pathlib

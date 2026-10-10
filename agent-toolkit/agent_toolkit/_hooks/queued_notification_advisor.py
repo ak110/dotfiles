@@ -24,6 +24,9 @@ Bashと種別を判別できない通知には`<task-id>`と`<output-file>`を�
 除外せず案内する。Codexのtranscriptは`queue-operation`を持たないため、Codexでは発火しない。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"agent_toolkit._common.session_state", "agent_toolkit._hooks", "agent_toolkit._hooks.stop_session"}
+
 import re
 
 from agent_toolkit._common.session_state import read_state, update_state

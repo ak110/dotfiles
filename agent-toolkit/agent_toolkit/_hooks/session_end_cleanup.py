@@ -21,6 +21,13 @@ SessionStartが作成するセッションのmanaged-tempも、同じ理由でSe
 
 from __future__ import annotations
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._agents_server",
+    "agent_toolkit._atk.agents_exit_session",
+    "agent_toolkit._common.session_state",
+}
+
 import json
 import sys
 

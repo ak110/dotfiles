@@ -34,6 +34,24 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 13. メインが成功した前景Bashでcommit・pushを行った後に、completion-reportの起動条件を通知する
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._atk",
+    "agent_toolkit._common.bash_invocations",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._common.shell_segments",
+    "agent_toolkit._common.shell_tokens",
+    "agent_toolkit._common.task_stop_state",
+    "agent_toolkit._hooks",
+    "agent_toolkit._hooks.agent_id",
+    "agent_toolkit._hooks.host",
+    "agent_toolkit._hooks.pretooluse",
+    "agent_toolkit._hooks.pretooluse.agent_checks",
+    "agent_toolkit._hooks.pretooluse.shell_checks",
+    "agent_toolkit._plan.path_kinds",
+    "shlex",
+}
+
 import json
 import re
 import shlex

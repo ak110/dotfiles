@@ -46,6 +46,19 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 
 from __future__ import annotations
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._common",
+    "agent_toolkit._common.delegated_session",
+    "agent_toolkit._common.periodic_recheck",
+    "agent_toolkit._common.process_loop_session",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._hooks",
+    "agent_toolkit._hooks.host",
+    "agent_toolkit._plan.path_kinds",
+    "time",
+}
+
 import json
 import os
 import pathlib

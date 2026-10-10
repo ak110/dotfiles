@@ -16,6 +16,18 @@ r"""`~/.claude/plans`に残る計画バンドルの保存確認Stopフック。
 委譲先での実行可否: 委譲先は委譲元が所有する計画バンドルを保存できないため、hook入力と環境印で除外する。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._common.process_loop_session",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._hooks.agent_id",
+    "agent_toolkit._hooks.background_tasks",
+    "agent_toolkit._hooks.stop_session",
+    "agent_toolkit._plan.locations",
+    "agent_toolkit._plan.owner_records",
+    "agent_toolkit._plan.path_kinds",
+}
+
 import os
 import pathlib
 
