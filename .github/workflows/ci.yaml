@@ -314,11 +314,11 @@ jobs:
         if: steps.owner.outputs.owns == 'true'
         # actions/cacheはPATH上のzstdを使ってキャッシュを圧縮するため、キャッシュの復元より前に導入する。
         # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
-        # libarchive13 の共有ライブラリを必要とする。zstandardのsdistビルドにはCコンパイラーが必要。
+        # libarchive13 の共有ライブラリを必要とする。
         run: |
           set -euo pipefail
           apt-get update
-          apt-get install -y --no-install-recommends poppler-utils libarchive13 zstd gcc
+          apt-get install -y --no-install-recommends poppler-utils libarchive13 zstd
 
 
       - name: chezmoi インストール
@@ -414,11 +414,11 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: ネイティブ依存インストール
         if: steps.owner.outputs.owns == 'true'
-        # make setup-browserと、Python 3.15向けzstandardのsdistビルドに必要な道具を導入する。
+        # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
         run: |
           set -euo pipefail
           apt-get update
-          apt-get install -y --no-install-recommends make gcc
+          apt-get install -y --no-install-recommends make
       - name: Install dependencies
         if: steps.owner.outputs.owns == 'true'
         run: uv sync --all-groups --all-extras

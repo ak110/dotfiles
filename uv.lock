@@ -1947,7 +1947,7 @@ dependencies = [
     { name = "send2trash" },
     { name = "tqdm" },
     { name = "wand" },
-    { name = "zstandard" },
+    { name = "zstandard", marker = "python_full_version < '3.14'" },
 ]
 
 [package.dev-dependencies]
@@ -1991,7 +1991,7 @@ requires-dist = [
     { name = "send2trash" },
     { name = "tqdm" },
     { name = "wand", specifier = ">=0.7.0" },
-    { name = "zstandard" },
+    { name = "zstandard", marker = "python_full_version < '3.14'" },
 ]
 
 [package.metadata.requires-dev]

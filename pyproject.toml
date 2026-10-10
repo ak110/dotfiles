@@ -34,7 +34,7 @@ dependencies = [
     "send2trash",
     "tqdm",
     "wand>=0.7.0",
-    "zstandard",
+    "zstandard; python_version < '3.14'",
 ]
 
 [project.scripts]
