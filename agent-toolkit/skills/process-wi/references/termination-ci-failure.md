@@ -4,6 +4,8 @@
 
 ## 検証またはCIの失敗
 
+計画を基準とする修正系列の実行レビューでは、取得した計画の進捗ログに記録された受理済み証拠が後続担当から読める場合、その絶対パスを任意入力`受理済みの完成条件証拠`へ渡す。省略時と行が無い場合は`なし`とする。未判定検証記録とは別の入力であり、参照を使う条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。
+
 最初の失敗からCI成功または本タスクの終端までを1つの修正系列（`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正系列」）として扱う。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装および期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
 
 修正が必要な場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。原因commitに対応する計画が保存済みの場合は、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める`入力計画`の取得と修正系列の終端での再保存は終端担当が行う。取得した計画の`private-notes/plans/`からの相対パスと再保存の結果は引き継ぎ記録へ残す。同じworktreeへ別の書込主体を並存させず、書込主体はこの修正担当1つとする。CI修正担当から修正commitと検証結果を受領し、版数、manifest、生成同期、pushおよびCI確認を再判定する。

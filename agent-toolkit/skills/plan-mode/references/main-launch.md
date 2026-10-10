@@ -3,6 +3,7 @@
 本書は`agent-toolkit:plan-mode`をメインが起動した場合の、計画作成後の実装、実行レビュー、保存と報告の工程を定める。
 
 メインによる起動では、要求を受け取ったメインが計画の起草、実装、実行レビューの反映および保存までを自ら所有する。
+実行レビューが収束し受領確認を終えた完成条件証拠の絶対パスを、計画の進捗ログへ`受理済みの完成条件証拠`として保存する。後続の計画基準レビューには、読める保存先を同名の任意入力へ渡す。省略時と行が無い場合は`なし`とし、参照の適用条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。
 専用worktreeを作成せず、要求を受け取った時点の作業ディレクトリが属する作業ツリーで、メインが自ら実装する。
 
 1. `agent-toolkit:writing-standards`の該当資料を読み、計画の`## 要件・外部仕様`に従って実装する。実装前の資料はplan-modeの読込表の「メインが自ら実装に着手する直前」の行に従う。Git管理外のファイルを変更する場合は最初の変更より前に変更前複製を作成し、証拠要求ありでは実装の完了前に未判定検証記録JSONを作成して、複製の対とJSONの絶対パスを計画の`## 進捗ログ`へ残す。`### 受入シナリオ`の各行に対応する公開された呼び出し手段（コマンド・画面・API・hookなど）を通る結合・E2Eテストを実装単位へ含めて変更範囲の検証で実行し、シナリオ別のテスト名と合否を検証結果へ記録する。手動観測とテスト出力は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「操作の直前に判定する前提」の保存手順で、実行した版（HEADと未commit・未追跡の状態）とともにmanaged-tempの中へ保存する。実装後のamendなどで取得版が変わった記録の再利用は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。最後の実装commitの前に変更後の差分へ`agent-toolkit:writing-standards`の`references/design-heuristics.md`「設計品質の劣化確認」で評価し、劣化を同じ工程で是正して観点ごとの結論を検証結果へ残す。`## 検証`の変更範囲を検証し、commitする。実装単位ごとのcommitとコミットメッセージは`agent-toolkit:commit`に従う

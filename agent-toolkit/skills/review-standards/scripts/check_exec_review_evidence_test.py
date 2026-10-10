@@ -106,18 +106,21 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
     return requested
 
 
+def _review_options(head: str, table: pathlib.Path, round_value: int = 2) -> list[str]:
+    """表・対象版・開始時点の共通入力を返し、再レビューだけ前回の組を加える。"""
+    options = ["--expected-head", head, "--review-table", str(table), "--round", str(round_value), "--review-start", head]
+    if round_value >= 2:
+        options.extend(["--previous-review-start", head, "--previous-review-head", head])
+    return options
+
+
 def _return_args(path: pathlib.Path, table: pathlib.Path, *extra: str) -> argparse.Namespace:
     return argparse.Namespace(
         script_name="exec-review-evidence-check",
         script_args=[
             str(path),
             FIRST_WI,
-            "--expected-head",
-            REVIEWED_HEAD,
-            "--review-table",
-            str(table),
-            "--round",
-            "2",
+            *_review_options(REVIEWED_HEAD, table),
             "--return-result",
             "--reader-fit-review",
             "文章成果物なし",
@@ -132,12 +135,7 @@ def _no_evidence_return_args(table: pathlib.Path, *extra: str) -> argparse.Names
         script_name="exec-review-evidence-check",
         script_args=[
             "なし",
-            "--expected-head",
-            REVIEWED_HEAD,
-            "--review-table",
-            str(table),
-            "--round",
-            "2",
+            *_review_options(REVIEWED_HEAD, table),
             *extra,
             "--return-result",
             "--reader-fit-review",
@@ -154,12 +152,7 @@ def _plan_return_args(path: pathlib.Path, table: pathlib.Path, plan: pathlib.Pat
             str(path),
             "--plan",
             str(plan),
-            "--expected-head",
-            REVIEWED_HEAD,
-            "--review-table",
-            str(table),
-            "--round",
-            "2",
+            *_review_options(REVIEWED_HEAD, table),
             "--return-result",
             "--reader-fit-review",
             "文章成果物なし",
@@ -195,6 +188,7 @@ def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_af
     assert capsys.readouterr().out == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
         "読者別探索: 文章成果物なし\n"
+        f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
         "計画のパス: []\n入力記録のパス: []\n"
         f"完成条件証拠のパス: {path}\n"
         'wi_conditionsの判定内訳: {"総数": 1, "証拠不足": 1}\n'
@@ -335,7 +329,9 @@ def test_return_result_without_evidence_generates_result_and_empty_input_arrays(
     assert run_script.dispatch(_no_evidence_return_args(table)) == 0
     assert capsys.readouterr().out == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n"
-        "読者別探索: 文章成果物なし\n計画のパス: []\n入力記録のパス: []\n"
+        "読者別探索: 文章成果物なし\n"
+        f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
+        "計画のパス: []\n入力記録のパス: []\n"
         'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
 
@@ -417,12 +413,7 @@ def test_return_result_reports_outcome_breakdown_and_nonachievement_rows(
             *wi,
             "--input-record",
             str(record),
-            "--expected-head",
-            REVIEWED_HEAD,
-            "--review-table",
-            str(table),
-            "--round",
-            "2",
+            *_review_options(REVIEWED_HEAD, table),
             "--return-result",
             *(["--show-all-rows"] if show_all else []),
             "--reader-fit-review",
@@ -439,6 +430,10 @@ def test_return_result_reports_outcome_breakdown_and_nonachievement_rows(
     expected = [
         {"配列": section, "行番号": index, **row} for section, rows in data.items() for index, row in enumerate(rows, 1)
     ]
+    for row in expected:
+        if row["outcome"] != "達成" and row["evidence"]:
+            row.pop("evidence")
+            row["evidence_reference"] = {"display": "達成以外の行", "section": row["配列"], "row": row["行番号"]}
     assert displayed == (expected if show_all else [])
 
 
@@ -2318,12 +2313,7 @@ def test_non_git_cwd_guides_same_arguments_to_target_worktree(
     else:
         argv = [
             *(base if operation != "none" else ["なし"]),
-            "--expected-head",
-            head,
-            "--review-table",
-            str(table),
-            "--round",
-            "1",
+            *_review_options(head, table, 1),
             "--return-result",
             "--reader-fit-review",
             "文章成果物なし",
@@ -2340,6 +2330,7 @@ def test_non_git_cwd_guides_same_arguments_to_target_worktree(
                             "evidence": str(evidence),
                             "wi": [FIRST_WI],
                             "reviewed_head": head,
+                            "review_start": head,
                             "review_table": str(table),
                             "round": 1,
                             "plans": [],
@@ -3249,6 +3240,7 @@ def test_input_record_saved_outside_repository_is_resolved_by_template_and_retur
     assert capsys.readouterr().out == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
         "読者別探索: 文章成果物なし\n"
+        f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
         f"計画のパス: []\n入力記録のパス: {json.dumps([str(record)])}\n"
         'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
@@ -3477,11 +3469,16 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
                 "evidence": str(evidence),
                 "wi": [filename],
                 "reviewed_head": head,
+                "review_start": head,
+                "previous_review_start": heads[0] if index == 2 else None,
+                "previous_review_head": heads[0] if index == 2 else None,
                 "review_table": str(table),
                 "round": index,
                 "plans": [str(plan)],
                 "input_records": [str(record)] if index == 2 else [],
-                "reader_fit_review": f"読者{index}: session-{index}",
+                "reader_fit_review": json.dumps(
+                    {"files": {}, "external": f"読者{index}: session-{index}"}, ensure_ascii=False, separators=(",", ":")
+                ),
             }
         )
     batch = tmp_path / "batch.json"
@@ -3504,7 +3501,14 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
             {
                 "配列": "wi_conditions",
                 "行番号": 1,
-                **json.loads(pathlib.Path(review["evidence"]).read_text(encoding="utf-8"))["wi_conditions"][0],
+                **{
+                    key: value
+                    for key, value in json.loads(pathlib.Path(review["evidence"]).read_text(encoding="utf-8"))["wi_conditions"][
+                        0
+                    ].items()
+                    if key != "evidence"
+                },
+                "evidence_reference": {"display": "達成以外の行", "section": "wi_conditions", "row": 1},
             }
         ]
     reviews[0]["reviewed_head"] = heads[1]
@@ -3521,7 +3525,7 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
     assert [result["exit_code"] for result in results] == [1, 0]
     assert not results[0]["result"]
     assert any("reader_fit_review" in line and "再実行" in line for line in results[0]["diagnostics"])
-    assert "読者別探索: 読者2: session-2" in results[1]["result"]
+    assert f"読者別探索: {reviews[1]['reader_fit_review']}" in results[1]["result"]
     assert all(path.read_bytes() == before for path, before in evidence_before.items())
 
 

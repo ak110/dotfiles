@@ -9,6 +9,7 @@
 本書が定める範囲は起動、入力生成、レビュー修正およびレビュー指摘管理表の保存とする。レビュー分類と判定手順を再定義しない。
 
 全起動で名前付き入力`未判定検証記録`を渡す。証拠要求ありでは実装担当またはメインが作成したJSONの実在し読取可能な絶対パス、証拠要求なしでは`なし`とする。起動前に値を確定し、進捗ログや引き継ぎからレビュー担当に探索させない。引き継ぎ再レビューでも初回値を保持する。JSONの作成手順は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の、`atk run-script exec-review-evidence-check -- --template`で雛形を生成する段落が定める。メインが自ら実装した場合は、メインが同じ手順で実装の完了前に作成する。根拠にするテスト出力と手動観測は、同書「操作の直前に判定する前提」の保存手順で実行した版（HEADと未commit・未追跡の状態）とともに保存する。
+任意入力`受理済みの完成条件証拠`へ、同じ計画の進捗ログに保存した受理済み証拠のうち、後続担当が読めるJSONの絶対パスを渡す。省略時と行が無い場合は`なし`とする。未判定検証記録と分け、参照を使える条件と判定は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。
 
 画面差分では並列画面レビュー（`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`「用語」）とし、ユーザビリティレビュー担当の起動と検収は`${CLAUDE_PLUGIN_ROOT}/share/usability-review.parent.md`に従う。
 
@@ -129,14 +130,18 @@ Git管理外の変更元と変更前複製の対がある場合は、任意入�
 実行レビュー担当が`atk run-script exec-review-evidence-check`の`--return-result`で生成した固定形式を受け取り、次の順で受領を確認する。統合の指示の前にメインが同じ確認を再実行する場合（`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」）も、本節の引数の組み立てを使う。
 
 1. 返却された`レビューしたHEAD`、現在round、表と証拠のパス、`計画のパス`と`入力記録のパス`を同じレビューの入力として保持する。未解決件数は現在roundのexec-reviewの未応答から生成した値をそのまま使う。`<配列>の判定内訳`と`達成以外の行`は非達成行の所在へ到達する一覧として使い、各行の許容の判定は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」で原文と根拠を読んで行う
-2. `読者別探索`の申告を保持し、省略または文章成果物なしという申告を変更ファイルと`${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md`の起動条件へ対応付ける。不適切な省略なら同じレビュー担当へ読者別探索と再判定を求める。受領確認も同じコマンドを対象worktreeで単独実行し、引数は次のとおり組み立てる
+2. `読者別探索`のファイル別JSON申告と`レビュー開始時点`、`前回確認版の開始時点`、`前回確認版HEAD`を同じレビューの値として保持する。対象Markdown集合と省略の可否は返却生成と同じコマンドに確認させ、不成立なら同じ担当へ不足ファイルの読者別探索と再判定を求める。受領確認も同じコマンドを対象worktreeで単独実行し、引数は次のとおり組み立てる
    - 同じ証拠・対象WIと`--review-table <表の絶対パス> --round <round> --return-result --show-all-rows --reader-fit-review '<返却された読者別探索の申告>'`を渡す。証拠要求なしでは証拠の引数を`なし`とする
    - 期待HEADは`--expected-head <レビューしたHEAD>`で渡す。再レビューを省いた修正の後でも、最後に実際にレビューした`レビューしたHEAD`を渡し、修正前後のOIDの対応から確定した統合入力HEADと区別する
+   - `--review-start <レビュー開始時点>`を渡す。2回目以降は返却された`--previous-review-start <前回確認版の開始時点> --previous-review-head <前回確認版HEAD>`も渡し、rebase後も前回値を今回値で代用しない
    - 返却された各JSON配列を展開して計画を`--plan`、WI・CI・引き継ぎの記録を`--input-record`で反復指定する。委譲プロンプトへ本文で渡したWI記録とCI記録も、担当が自身の入力記録として保存したファイルを配列が指すため、配列のパスをそのまま使う。配列に無い既知の入力を補わず、返却前に確かめた入力集合を再現する
-   - 複数レビューは`atk run-script exec-review-evidence-check -- --batch <入力JSONの絶対パス>`で一括確認できる。入力は`version: 1`と`reviews`配列とし、各組へ`plan`（対応先）、`evidence`、`wi`配列、`reviewed_head`、`review_table`、`round`、返却どおりの`plans`配列、`input_records`配列、`reader_fit_review`（読者別探索の申告）を渡す。HEAD・round・配列・申告を組間で統合しない。JSON Linesの各組の`exit_code`、固定返却全行の`result`、`diagnostics`を読み、1組でも非0なら全体も非0とする。証拠は更新しない
+   - 複数レビューは`atk run-script exec-review-evidence-check -- --batch <入力JSONの絶対パス>`で一括確認できる。入力は`version: 1`と`reviews`配列とする。各組へ`plan`（対応先）、`evidence`、`wi`配列、`reviewed_head`、`review_table`、`round`を渡す。返却どおりの`plans`配列、`input_records`配列、`reader_fit_review`（読者別探索の申告）と`review_start`も渡す。2回目以降は`previous_review_start`と`previous_review_head`も渡す。HEAD・round・配列・申告を組間で統合しない。JSON Linesの各組の`exit_code`、固定返却全行の`result`、`diagnostics`を読み、1組でも非0なら全体も非0とする。証拠は更新しない
 3. 未解決の件数が0件で、達成必須の全行が達成していることを確かめる。証拠要求なしも同じ操作で表の件数を得る。証拠ありでは全行の`reviewed_head`、WIの完成条件原文と要求単位の対応も同じ操作で確かめる。補足のフェンス付きコードブロックは背景資料として扱い、その内容を除いて要求単位を比べる
 4. `--show-all-rows`が返す両配列の各`証拠の全行`を1始まりの行番号と原文で対応付け、達成行を含むsource・evidence・reviewed_headを確認する。batchにも同じオプションを加え、各組のresultから取得する。全行表示は元JSONを変更せず、省略時の返却形式は維持する。長い出力は保存先から末尾まで読み、各参照先の入力・観測結果を確認する。表示とJSON形式の確認の成功だけで達成を受理しない
 5. 非0では報告されたWI名と不足内容をレビュー担当へ返す
+
+全行表示で`evidence`の代わりに`evidence_reference`がある行では、その参照から根拠の全文を読む。`display`（`達成以外の行`か`証拠の全行`）、`section`と1始まりの`row`が先行行を指す。先行行も参照なら同じようにたどる。表示だけの重複除去であり、保存JSONの本文と判定は保つ。
+受領確認と原文・根拠の検収を満たした証拠の絶対パスを、計画の進捗ログへ記録する。後続レビューの任意入力はその保存先から渡す。
 
 全体不採用のWIでは、未応答件数によらず初回から各条件が未達で、evidenceにreject終端と計画の実施内容の不採用根拠の所在があることを返却前確認の受領条件とする。欠けた記録は同じレビュー担当が補完する。
 この確認を満たした未応答1件以上のcompletedは、レビューが完了して修正へ渡す正常な返却として受領する。レビュー担当の完了と指摘の収束を分け、未応答0件の返却に限って達成必須の非達成行との整合を確認する。原文の補足のフェンスは背景資料として読み、根拠が各条件を直接満たすか、非達成を許容する意味と範囲が元の採否・後続工程に対応するかは本文を読んで検収する。
