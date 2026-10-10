@@ -11,6 +11,8 @@ import sys
 from agent_toolkit._atk import outcome
 
 RESPONSE_BYTES = 4096
+MAX_RESPONSE_BYTES = 16 * 1024
+"""返却自体が通常出力の自動保存へ回らない範囲の最大予算。"""
 
 
 def first_read_command(path: pathlib.Path) -> str:
@@ -21,6 +23,12 @@ def first_read_command(path: pathlib.Path) -> str:
 def build_parser(parser: argparse.ArgumentParser) -> None:
     """本文読取の位置と対象を登録する。"""
     parser.add_argument("--start", type=int, default=0, help="取得を始める0以上の文字位置。省略時は0。")
+    parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=RESPONSE_BYTES,
+        help=f"JSONと末尾改行を含む返却全体のUTF-8バイト予算。省略時は{RESPONSE_BYTES}、最大{MAX_RESPONSE_BYTES}。",
+    )
     parser.add_argument("path", type=pathlib.Path, help="UTF-8ファイルの絶対パス。")
 
 
@@ -50,11 +58,19 @@ def dispatch(args: argparse.Namespace) -> int:
     except (OSError, UnicodeError, ValueError) as error:
         outcome.report_failure(str(error), next_action="実在するUTF-8ファイルの絶対パスと、本文内の0以上の--startを指定する")
         return 2
+    minimum_end = min(len(text), args.start + 1)
+    minimum_bytes = len(_response(text, args.start, minimum_end).encode("utf-8"))
+    if not minimum_bytes <= args.max_bytes <= MAX_RESPONSE_BYTES:
+        outcome.report_failure(
+            f"返却予算{args.max_bytes}バイトでは取得できません（必要な最小予算{minimum_bytes}、最大予算{MAX_RESPONSE_BYTES}）",
+            next_action=f"--max-bytesに{minimum_bytes}以上{MAX_RESPONSE_BYTES}以下を指定し、内側と外側の出力予算にも収める",
+        )
+        return 2
     low = args.start
-    high = min(len(text), low + RESPONSE_BYTES)
+    high = min(len(text), low + args.max_bytes)
     while low < high:
         middle = (low + high + 1) // 2
-        if len(_response(text, args.start, middle).encode("utf-8")) <= RESPONSE_BYTES:
+        if len(_response(text, args.start, middle).encode("utf-8")) <= args.max_bytes:
             low = middle
         else:
             high = middle - 1

@@ -35,15 +35,17 @@ HELP: dict[str, dict[str, str]] = {
             "目的: 長い本文を文字と改行を保って取得する。\n"
             "利用場面: 全文取得が出力上限で失敗した後、またはatkが返した保存先の本文を読むとき。\n"
             "対象と出力: UTF-8ファイルの絶対パスを指定する。text、start、end、next、eofを持つJSONを返す。"
-            "末尾の改行とJSONのエスケープを含む返却全体は4096 UTF-8バイト以内。"
+            "末尾の改行とJSONのエスケープを含む一回分の返却予算は指定なしで4096 UTF-8バイト。"
+            "--max-bytesで最大16384バイトまで指定できる。"
             "位置はデコード後の文字数で、endは取得末尾を含まない。"
             "textを連結し、nextを--startへ渡してeofがtrueになるまで取得する。終端のnextはnull。"
             "空ファイルと末尾位置も空のtextで終端を示す。\n"
             "前提: 通常のファイルは事前に容量を測らず全文取得から始める。"
-            "負の位置、末尾を超える位置、相対パス、不在と非UTF-8は非0で拒否する。\n"
+            "内側のコマンドと外側の実行セルの受信予算の双方へ収まる--max-bytesを選ぶ。"
+            "負の位置、末尾を超える位置、相対パス、不在、非UTF-8、最大予算超過と取得を前進させられない予算は非0で拒否する。\n"
             "復元・後始末: 読取だけを行い、取得状態を保存しないため不要。"
         ),
-        "epilog": "実行例:\n\n  atk read-file -- /absolute/path/to/file.txt\n  atk read-file --start 1000 -- /absolute/path/to/file.txt",
+        "epilog": "実行例:\n\n  atk read-file -- /absolute/path/to/file.txt\n  atk read-file --max-bytes 12000 --start 1000 -- /absolute/path/to/file.txt",
     },
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",

@@ -97,8 +97,18 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str
     if include_partial and name == "atk" and tokens[1:2] == ("read-file",) and "--" in tokens:
         separator = tokens.index("--")
         options = tokens[2:separator]
-        if not options or (len(options) == 2 and options[0] == "--start" and options[1].isdigit()):
-            return tuple(tokens[separator + 1 :]) if len(tokens) == separator + 2 else ()
+        index = 0
+        while index < len(options):
+            option, equals, value = options[index].partition("=")
+            if option not in {"--start", "--max-bytes"}:
+                return ()
+            if not equals:
+                index += 1
+                value = options[index] if index < len(options) else ""
+            if not value.isdigit():
+                return ()
+            index += 1
+        return tuple(tokens[separator + 1 :]) if len(tokens) == separator + 2 else ()
     return ()
 
 

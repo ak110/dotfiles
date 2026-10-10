@@ -17,7 +17,16 @@ from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_l
 _THRESHOLD = 48 * 1024
 
 
-@pytest.mark.parametrize("command", ["cat -- large.txt", "sed -n '2,3p' large.txt", "atk read-file -- large.txt"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat -- large.txt",
+        "sed -n '2,3p' large.txt",
+        "atk read-file -- large.txt",
+        "atk read-file --start 0 --max-bytes 12000 -- large.txt",
+        "atk read-file --max-bytes=12000 --start=0 -- large.txt",
+    ],
+)
 def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.Path, command: str) -> None:
     """配送の追加読取形は同じパスを得るが、既存の大量読取遮断を増やさない。"""
     target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
