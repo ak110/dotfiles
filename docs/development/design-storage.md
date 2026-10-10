@@ -79,6 +79,12 @@ Windowsのreparse pointは一律に拒否せず、リンクオブジェクトの
 
 `atk managed-temp`は領域の真正性と更新時刻だけを知り、キューの処理状況は知らない。対応AWIのファイル名は登録情報へ記録するが、削除判定には使わない。キューの状態を判定へ持ち込むと、キューに依存しない現行構成が崩れるためである。削除の実行を明示指定に限る案は、呼び忘れによる蓄積という観測事象を解消しないため採用しない。
 
+### レーン資源の終了時回収
+
+process-wiのレーン資源の寿命は、通常の一時成果物とは分けて`atk lane create/delete`が所有する。createは準備前にsession・lane・Git共通ディレクトリ・統合先・専用branch・worktree・個別領域・選定原本・固有手順を登録し、prepareの保存結果から準備済みを返す。統合後も追加に使うため保持し、deleteは全登録の先行判定と削除直前の再判定から安全な対象だけを回収する。担当と外部プロセスの終端、clean、Git登録一致、選定の統合済みとbranch到達を要し、名前やOSアカウントだけで所有を決めない。
+通常終了とprocess-loopの子終了後が同じ回収へ接続し、固有撤去・worktree・branch・個別領域の順を保つ。未統合・dirty・稼働中・不明・部分失敗は資源と登録、理由と残る操作を保持する。登録と回収結果への参照は`state_dir`のlanes配下、結果本文は専用資源の外の通常managed-tempへ置き、既存の7日保持へ委ねる。保存先を確保して全登録の判定を保存してから削除するため、記録準備の失敗では資源を残す。次回開始時はdelete --listで未解決の登録と前回結果を読み、同じ入力で残る処理を再開する。明示reuse-recordはGit登録と稼働の一致から終端済み資源を新しい所有sessionへ移し、成果を保持する。
+この登録はレーン資源の作成側が保持する回収入力であり、引き継ぎ側へ同じ値の手書き台帳を要求しない。turnごとのSessionEnd回収と公開前回収は同じthreadの追加を失い、別の恒常監視と独自の結果保持期限は既存の登録・終了境界・managed-tempの寿命と重複するため採らない。主作業ツリー、セッションのmanaged-temp、証拠と他sessionの未登録資源は回収対象にしない。
+
 ## MQ管理リポジトリの分岐回復
 
 private-notesのGit操作と分岐回復に実行時に適用する規範は、[`agent-toolkit:wi-standards`の`repository-scope.md`](../../agent-toolkit/skills/wi-standards/references/repository-scope.md)が定める。

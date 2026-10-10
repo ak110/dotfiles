@@ -28,6 +28,9 @@ user-invocable: false
 
 ユーザーは`atk wi process-loop abort`で停止を、`atk wi process-loop instruct`で次の1セッションだけへ渡す指示を、`atk wi process-loop status`で状態を確認する。各コマンドの受理形式は`atk wi process-loop --help`と各サブコマンドのヘルプで確認する。
 
+process-wiでは、メインが候補本文から分類と配分を判断し、取得済み候補と意味判断を`pick-wi-check`へ渡して定型欄の生成・確認・保存を1回で行う。保存済み選定YAMLから`atk lane create`へレーンを渡し、準備後に同じ担当threadが計画から統合までを担う。意味判断、レーン数上限、単一writer、独立した実行レビュー、直列統合、計画保存とWI終端は各工程に残す。
+専用worktreeとbranchは統合後も追加に備えて保持し、通常終了の`atk agents-exit-session`またはprocess-loopの子終了後に`atk lane delete`と同じ安全条件で回収する。次回の開始時は`atk lane delete --list`から残存登録と前回結果を読み、未統合・dirty・稼働中・不明の成果を保って再判定する。セッションのmanaged-tempと証拠は専用資源の回収対象から外す。
+
 ## 登録、回答、振り返り
 
 ユーザーは`atk wi add`、`agent-toolkit:add-awi-by-user`または`atk serve`のWI画面から要求を登録する。処理中のエージェントと`agent-toolkit:session-review`もWIを投入する。本文、由来、状態と依存は`agent-toolkit:wi-standards`が定める。登録済みの未終端WIを更新・修復するか採否を見直す場合の保留は`agent-toolkit:wi-standards`「状態と依存」に従う。

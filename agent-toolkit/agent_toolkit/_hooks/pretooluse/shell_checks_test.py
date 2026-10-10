@@ -821,7 +821,7 @@ class TestGitCommitAttribution:
         ],
     )
     def test_accepts_exactly_one_observed_identity_trailer(self, command: str) -> None:
-        assert shell_checks._git_commit_attribution_error(command, self._identity) is None
+        assert shell_checks._git_commit_attribution_error(shell_checks._git_commit_messages(command), self._identity) is None
 
     @pytest.mark.parametrize(
         "command",
@@ -834,7 +834,7 @@ class TestGitCommitAttribution:
         ],
     )
     def test_rejects_missing_mismatched_or_duplicate_trailer(self, command: str) -> None:
-        error = shell_checks._git_commit_attribution_error(command, self._identity)
+        error = shell_checks._git_commit_attribution_error(shell_checks._git_commit_messages(command), self._identity)
         assert error is not None
         assert self._trailer in error
 
@@ -852,15 +852,17 @@ class TestGitCommitAttribution:
         ],
     )
     def test_skips_non_new_or_unresolved_messages_and_literals(self, command: str) -> None:
-        assert shell_checks._git_commit_attribution_error(command, self._identity) is None
+        assert shell_checks._git_commit_attribution_error(shell_checks._git_commit_messages(command), self._identity) is None
 
     def test_skips_when_host_identity_is_unobserved(self) -> None:
-        assert shell_checks._git_commit_attribution_error("git commit -m '変更'", None) is None
+        assert (
+            shell_checks._git_commit_attribution_error(shell_checks._git_commit_messages("git commit -m '変更'"), None) is None
+        )
 
     def test_skips_when_commit_attribution_is_explicitly_disabled(self) -> None:
         assert (
             shell_checks._git_commit_attribution_error(
-                "git commit -m '変更'",
+                shell_checks._git_commit_messages("git commit -m '変更'"),
                 self._identity,
                 attribution_disabled=True,
             )
@@ -882,7 +884,10 @@ class TestGitCommitMessageFormat:
     )
     def test_rejects_missing_blank_line(self, tmp_path: pathlib.Path, command: str) -> None:
         (tmp_path / "message.txt").write_text("件名\n本文\n", encoding="utf-8")
-        assert shell_checks._git_commit_message_format_error(command, cwd=str(tmp_path)) is not None
+        assert (
+            shell_checks._git_commit_message_format_error(shell_checks._git_commit_messages(command, cwd=str(tmp_path)))
+            is not None
+        )
 
     @pytest.mark.parametrize(
         "command",
@@ -905,7 +910,30 @@ class TestGitCommitMessageFormat:
     )
     def test_accepts_valid_and_unresolved_messages(self, tmp_path: pathlib.Path, command: str) -> None:
         (tmp_path / "message.txt").write_text("件名\n本文\n", encoding="utf-8")
-        assert shell_checks._git_commit_message_format_error(command, cwd=str(tmp_path)) is None
+        assert (
+            shell_checks._git_commit_message_format_error(shell_checks._git_commit_messages(command, cwd=str(tmp_path))) is None
+        )
+
+
+@pytest.mark.parametrize(
+    "command, expected",
+    [
+        ("time for item in one; do atk wi list > /dev/null; done", "結果と終了状態"),
+        ("time -- atk x | cat", "結果と終了状態"),
+        ("time -p -- atk x | cat", "結果と終了状態"),
+        ("! if test -f marker; then git rev-parse --short HEAD HEAD~1; fi", "単一リビジョン検証"),
+        ("time -p case value in one) rg -- needle --glob '*.py' .;; esac", "オプション終端"),
+        ("! time -p while test -f marker; do git commit -m '件名\n本文'; done", "空行"),
+        ("coproc WORKER if test -f marker; then atk wi list; fi", "結果と終了状態"),
+        ("coproc atk agents wait", "結果と終了状態"),
+    ],
+)
+@pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
+def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, extra_payload: dict[str, str]) -> None:
+    """共通解析の前置分岐が、公開hookの出力・Git・オプション検査まで到達する。"""
+    result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
+    assert result.returncode == 2
+    assert expected in result.stderr
 
 
 class TestBashOptionAfterTerminator:

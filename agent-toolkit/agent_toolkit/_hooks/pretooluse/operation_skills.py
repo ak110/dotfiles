@@ -29,7 +29,6 @@ Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取
 
 from __future__ import annotations
 
-import ast
 import dataclasses
 import pathlib
 import re
@@ -47,6 +46,7 @@ from agent_toolkit._hooks import tool_input as _tool_input
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
+from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
 from agent_toolkit._plan.structure import is_agent_doc_target_file
 
 _llm_notice = _notice_formatter("pretooluse")
@@ -164,95 +164,8 @@ def _is_managed_temp_create(tool_name: str, tool_input: dict) -> bool:
 
 
 def _python_write_paths(code: str) -> list[str]:
-    """実行する直列の文から、リテラルと単純代入で確定できるPythonの書込先を返す。"""
-    try:
-        module = ast.parse(code)
-    except SyntaxError:
-        return []
-    values: dict[str, str] = {}
-    path_variables: set[str] = set()
-    paths: list[str] = []
-
-    def is_path(node: ast.AST) -> bool:
-        if isinstance(node, ast.Name):
-            return node.id in path_variables
-        return isinstance(node, ast.Call) and (
-            isinstance(node.func, ast.Name)
-            and node.func.id == "Path"
-            or isinstance(node.func, ast.Attribute)
-            and node.func.attr == "Path"
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "pathlib"
-        )
-
-    def literal(node: ast.AST) -> str | None:
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            return node.value
-        if isinstance(node, ast.Name):
-            return values.get(node.id)
-        if (
-            isinstance(node, ast.Call)
-            and node.args
-            and (
-                isinstance(node.func, ast.Name)
-                and node.func.id == "Path"
-                or isinstance(node.func, ast.Attribute)
-                and node.func.attr == "Path"
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "pathlib"
-            )
-        ):
-            return literal(node.args[0])
-        return None
-
-    def inspect(node: ast.AST) -> None:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            return
-        if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id == "open" and node.args:
-                mode = (
-                    node.args[1]
-                    if len(node.args) > 1
-                    else next((item.value for item in node.keywords if item.arg == "mode"), ast.Constant("r"))
-                )
-                if any(char in (literal(mode) or "") for char in "wax+") and (path := literal(node.args[0])) is not None:
-                    paths.append(path)
-            elif (
-                isinstance(node.func, ast.Attribute)
-                and node.func.attr in {"write_text", "write_bytes"}
-                and is_path(node.func.value)
-            ):
-                if (path := literal(node.func.value)) is not None:
-                    paths.append(path)
-        for child in ast.iter_child_nodes(node):
-            inspect(child)
-
-    def statements(nodes: list[ast.stmt]) -> None:
-        for node in nodes:
-            if isinstance(node, (ast.Assign, ast.AnnAssign)):
-                if node.value is not None:
-                    inspect(node.value)
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-                value = literal(node.value) if node.value is not None else None
-                path_value = node.value is not None and is_path(node.value)
-                for target in targets:
-                    if isinstance(target, ast.Name):
-                        values.pop(target.id, None)
-                        path_variables.discard(target.id)
-                        if value is not None:
-                            values[target.id] = value
-                            if path_value:
-                                path_variables.add(target.id)
-            elif isinstance(node, ast.Expr):
-                inspect(node.value)
-            elif isinstance(node, ast.With):
-                for item in node.items:
-                    inspect(item.context_expr)
-                statements(node.body)
-            # 分岐・関数定義などは、入力だけで実行を確定できないため走査しない。
-
-    statements(module.body)
-    return paths
+    """読取と共用する直列の解析から、静的なPythonの書込先を返す。"""
+    return python_file_paths(code, writing=True)
 
 
 def _sed_write_paths(arguments: tuple[str, ...]) -> list[str]:

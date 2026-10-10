@@ -13,7 +13,7 @@ const START_TEXT = '{"session_id": "s1", "status": "running"}';
 type Job = { id: string; prompt: string };
 
 // `atk wait-schedule --format json`が返すpromptの代わり。本文の内容はPython側の定義が持ち、modは受け取った本文をそのまま渡す。
-const SCHEDULE_PROMPT = `${PERIODIC_RECHECK_MARKER}\n定期再確認の発火である。`;
+const SCHEDULE_PROMPT = `${PERIODIC_RECHECK_MARKER}\n定期再確認の発火である。\n</atk-auto>`;
 
 type Options = {
   jobs?: Job[];
@@ -78,6 +78,7 @@ test("main start creates one task from json: taskを持たないメインのstar
   expect(result.context?.length).toBe(1);
   expect(result.context?.[0]).toContain("task ID: cron-main");
   expect(result.context?.[0]).toContain('kind="notice"');
+  expect(result.context?.[0]?.endsWith("\n</atk-auto>")).toBe(true);
 });
 
 test("同じ実行主体の続くstartはtaskを増やさず通知もしない", async ($, on) => {
@@ -132,6 +133,15 @@ test("cron式を得られなければCronCreateを呼ばずに案内を届ける
   expect(recorded.calls).toEqual(["start", "CronList"]);
   expect(result.context?.[0]).toContain("cron式と標識付きのpromptを返さなかった");
   expect(result.context?.[0]).toContain("wait-schedule failed");
+  expect(result.context?.[0]?.startsWith('<atk-auto source="periodic-recheck" kind="warn">\n')).toBe(true);
+  expect(result.context?.[0]?.endsWith("\n</atk-auto>")).toBe(true);
+});
+
+test("終了境界内に義務を追加したpromptも標識で識別し、そのままCronCreateへ渡す", async ($, on) => {
+  const prompt = `${PERIODIC_RECHECK_MARKER}\n定期再確認\n測定コマンド: date +%s; 判定閾値: 3600秒\n</atk-auto>`;
+  const recorded = engine(on, { prompt });
+  await $.tool.call(START_INPUT);
+  expect(recorded.created[0]?.prompt).toBe(prompt);
 });
 
 test("JSONでない出力ではCronCreateを呼ばずに案内を届ける", async ($, on) => {

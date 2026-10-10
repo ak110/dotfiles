@@ -164,13 +164,8 @@ _TRANSIENT_CLASSIFIER_ERROR = "The server-side auto mode classifier gave no verd
 _FAILURE_PATH = re.compile(r"(?<!\w)(?:~?/|[A-Za-z]:[\\/])[^\s'\"`]+")
 
 
-_FAILURE_QUOTED = re.compile(r"(['\"`]).*?\1")
-
-
-_FAILURE_HASH = re.compile(r"\b[0-9a-fA-F]{7,64}\b")
-
-
-_FAILURE_NUMBER = re.compile(r"\d+")
+_FAILURE_RECORD_ID = re.compile(r"\b(?:codex|claude|agy):[A-Za-z0-9_-]+(?::\d+)?")
+_FAILURE_UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE)
 
 
 _CHECK_COMMANDS = frozenset(
@@ -1716,16 +1711,34 @@ def _failure_signature(candidate_kind: str, event: dict[str, Any]) -> tuple[str,
         diagnostic = _HOOK_FAILURE_PREFIX.sub("", diagnostic, count=1)
     if diagnostic == "CommandExecution failed" and not display:
         diagnostic = ""
-    normalized = " ".join(diagnostic.split()).casefold()
-    normalized = _FAILURE_QUOTED.sub("<arg>", normalized)
-    normalized = _FAILURE_PATH.sub("<path>", normalized)
-    normalized = _FAILURE_HASH.sub("<hash>", normalized)
-    normalized = _FAILURE_NUMBER.sub("<num>", normalized)
+    normalized = normalize_failure_diagnostic(diagnostic)
     if not normalized:
         normalized = display or f"{event.get('record', '')}:{event.get('line', '')}"
     signature = json.dumps([candidate_kind, name, subcommand, code, normalized], ensure_ascii=False, separators=(",", ":"))
     summary = f"{display or name}（終了コード{code if code is not None else '不明'}）: {diagnostic or '診断なし'}"
     return signature, summary
+
+
+def normalize_failure_diagnostic(diagnostic: str) -> str:
+    """診断の理由を残し、対象と識別できるパス・記録ID・UUIDだけを一般化する。"""
+    normalized = " ".join(diagnostic.split()).casefold()
+    normalized = _FAILURE_RECORD_ID.sub("<record>", normalized)
+    normalized = _FAILURE_UUID.sub("<uuid>", normalized)
+    return _FAILURE_PATH.sub("<path>", normalized)
+
+
+def recalculate_failure_signature(signature: str, summary: str) -> str:
+    """既存台帳の署名軸と保存済み代表診断から、現在の理由の正規化で署名を再計算する。"""
+    parts = json.loads(signature)
+    if not isinstance(parts, list) or len(parts) != 5:
+        raise ValueError("失敗署名の軸が不正")
+    diagnostic = re.search(r"（終了コード(?:\d+|不明)）: (.*)\Z", summary, re.DOTALL)
+    if diagnostic is None:
+        raise ValueError("失敗の代表診断の形式が不正")
+    normalized = normalize_failure_diagnostic(diagnostic[1])
+    if normalized and normalized != "診断なし":
+        parts[4] = normalized
+    return json.dumps(parts, ensure_ascii=False, separators=(",", ":"))
 
 
 def _is_check_detected(event: dict[str, Any]) -> bool:

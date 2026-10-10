@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import datetime
 import json
+import pathlib
 import re
 from typing import Any, NamedTuple
 
@@ -42,6 +43,98 @@ def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
         }
         for call in _record_tool_calls(records)
     ]
+
+
+def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """正常な委譲・規範読込も比較できる事実と全文位置を、欠陥の採点をせず返す。"""
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        entries = {record.line: record.entry for record in item.records}
+        for call in _record_tool_calls(item.records):
+            name = call.tool.rsplit("__", 1)[-1]
+            delegate = name in {"Agent", "Task", "spawn_agent", "followup_task", "send_message"} or (
+                "agents_server" in call.tool and name in {"start", "send_message"}
+            )
+            explicit_read = name in {"Read", "read_file", "Skill"}
+            opaque = name in {"Bash", "exec", "exec_command", "functions.exec", "functions.exec_command"}
+            if not (delegate or explicit_read or opaque):
+                continue
+            inputs = _recorded_input(entries[call.line], call.call_id)
+            body = next(
+                (inputs[key] for key in ("prompt", "message", "instructions") if isinstance(inputs.get(key), str)),
+                None,
+            )
+            paths = {
+                key: value
+                for key, value in inputs.items()
+                if isinstance(value, str) and key != "subagent_md_path" and (key.endswith("file") or key.endswith("path"))
+            }
+            named_inputs = inputs.get("extra_params")
+            if isinstance(named_inputs, dict):
+                paths.update(
+                    (f"extra_params.{key}", value)
+                    for key, value in named_inputs.items()
+                    if isinstance(value, str)
+                    and (pathlib.PurePosixPath(value).is_absolute() or pathlib.PureWindowsPath(value).is_absolute())
+                )
+            result = _recorded_result(entries[call.result_line], call.call_id) if call.result_line is not None else None
+            event = {
+                "kind": "comparison-material",
+                "record": item.record_id,
+                "role": item.role,
+                "line": call.line,
+                "result_line": call.result_line,
+                "timestamp": call.timestamp,
+                "tool": call.tool,
+                "category": "delegation" if delegate else "explicit-read" if explicit_read else "opaque-command",
+                "target": paths or ({"skill": inputs["skill"]} if isinstance(inputs.get("skill"), str) else {}),
+                "input_form": "file-reference" if delegate and paths else "direct-body" if body is not None else "command",
+                "observed_body_characters": len(body) if body is not None else None,
+                "recorded_result_characters": len(result) if result is not None else None,
+                "summary": _clip(call.text, _CONVERSATION_INPUT_LIMIT),
+            }
+            events.append(event)
+    return events
+
+
+def _recorded_input(entry: dict[str, Any], call_id: str | None) -> dict[str, Any]:
+    """明示されたツール入力だけを取得し、shellやJavaScriptの命令を読了の事実へ変換しない。"""
+    message = entry.get("message", {})
+    if isinstance(message, dict) and isinstance(message.get("content"), list):
+        for block in message["content"]:
+            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("id") == call_id:
+                value = block.get("input")
+                return value if isinstance(value, dict) else {}
+    payload = entry.get("payload", {})
+    if isinstance(payload, dict):
+        raw = payload.get("arguments", payload.get("input"))
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str):
+            try:
+                value = json.loads(raw)
+            except ValueError:
+                return {}
+            return value if isinstance(value, dict) else {}
+    return {}
+
+
+def _recorded_result(entry: dict[str, Any], call_id: str | None) -> str | None:
+    """対応する結果本文の文字列を返し、取得量を現在のファイルサイズから推定しない。"""
+    message = entry.get("message", {})
+    if isinstance(message, dict) and isinstance(message.get("content"), list):
+        for block in message["content"]:
+            if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id") == call_id:
+                content = block.get("content")
+                if isinstance(content, str):
+                    return content
+                if isinstance(content, list):
+                    return "\n".join(
+                        part["text"] for part in content if isinstance(part, dict) and isinstance(part.get("text"), str)
+                    )
+    payload = entry.get("payload", {})
+    value = payload.get("output") if isinstance(payload, dict) else None
+    return value if isinstance(value, str) else None
 
 
 class _ToolCall(NamedTuple):
@@ -134,7 +227,7 @@ def _codex_call_input(name: str, payload: dict[str, Any]) -> str:
     if hint is not None:
         return hint
     arguments = payload.get("arguments")
-    return arguments if isinstance(arguments, str) else ""
+    return arguments if isinstance(arguments, str) else raw if isinstance(raw, str) else ""
 
 
 def _tool_call_events(item: _CollectedRecord, tools: list[str] | None, pattern: re.Pattern[str] | None) -> list[dict[str, Any]]:

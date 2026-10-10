@@ -45,7 +45,68 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
     parser.add_argument(
         "--updates-file", type=pathlib.Path, metavar="PATH", help="出所と選択した根拠を持つ更新配列JSONの絶対パス"
     )
+    parser.add_argument(
+        "--select-row",
+        action="append",
+        metavar="SECTION:N",
+        help="根拠を保存する配列と1始まり行番号。反復可。sourceは処理が取得する",
+    )
+    for prefix in ("junit", "baseline-junit"):
+        parser.add_argument(
+            f"--{prefix}-xml", type=pathlib.Path, metavar="PATH", help="保存したJUnit XML。対応する-recordと指定する"
+        )
+        parser.add_argument(f"--{prefix}-record", type=pathlib.Path, metavar="PATH", help="JUnitを取得したrun-commandの記録")
+    for prefix in ("diagnostics", "baseline-diagnostics"):
+        parser.add_argument(
+            f"--{prefix}-file",
+            type=pathlib.Path,
+            metavar="PATH",
+            help="保存した構造化診断。対応する-record・-conditionsと指定する",
+        )
+        parser.add_argument(
+            f"--{prefix}-record",
+            type=pathlib.Path,
+            metavar="PATH",
+            help="診断を取得したrun-commandの記録。取得版もこの記録から読む",
+        )
+        parser.add_argument(
+            f"--{prefix}-conditions",
+            type=pathlib.Path,
+            metavar="PATH",
+            help="取得時のscope・options・dependencies・parallelism・environmentを持つ保存JSON",
+        )
+        parser.add_argument(
+            f"--{prefix}-source",
+            action="append",
+            nargs=2,
+            metavar=("FILE", "SNAPSHOT"),
+            help="相対ファイルと保存時本文の絶対パス。反復可",
+        )
     if reviewing:
+        parser.add_argument("--evidence-file", type=pathlib.Path, metavar="PATH", help="選択行へ保存する説明のUTF-8ファイル")
+        parser.add_argument("--mode", choices=("append", "replace"), help="選択行の根拠の追記か置換")
+        parser.add_argument(
+            "--row-outcome",
+            action="append",
+            nargs=2,
+            metavar=("SECTION:N", "OUTCOME"),
+            help="選んだ各行の明示判定。全選択行へ反復指定する",
+        )
+        parser.add_argument("--reviewed-head", help="全選択行を判定した対象版の完全OID")
+        parser.add_argument(
+            "--row-source",
+            action="append",
+            nargs=2,
+            metavar=("SECTION:N", "SOURCE"),
+            help="失効・割当外・背景の判断根拠の所在へ選択行のsourceを変更する。反復可",
+        )
+        parser.add_argument(
+            "--verification-row",
+            action="append",
+            nargs=2,
+            metavar=("TARGET", "PENDING"),
+            help="選択行SECTION:Nと未判定記録のSECTION:Nの対応。反復可",
+        )
         parser.add_argument(
             "--verification-record", type=pathlib.Path, metavar="PATH", help="選択できる未判定検証記録の絶対パス"
         )
@@ -120,11 +181,11 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
     return results
 
 
-def load_results(path: pathlib.Path | None) -> dict[str, Any]:
+def load_results(path: pathlib.Path | None, *, specification: dict[str, Any] | None = None) -> dict[str, Any]:
     """保存試験と診断を所有するモジュールで読み、差を付ける。"""
-    if path is None:
+    if path is None and not specification:
         return {"tests": {}, "test_changes": [], "diagnostics": {}}
-    spec = load_json(path)
+    spec = load_json(path) if path is not None else specification
     allowed = {"junit", "baseline_junit", "diagnostics", "baseline_diagnostics"}
     if not isinstance(spec, dict) or not spec or set(spec) - allowed:
         raise ValueError("結果JSONにはjunit・baseline_junit・diagnostics・baseline_diagnosticsの組を指定する")
@@ -151,13 +212,127 @@ def load_results(path: pathlib.Path | None) -> dict[str, Any]:
     return {"tests": tests, "test_changes": changes, "diagnostics": diagnostics}
 
 
+def results_for_arguments(args: argparse.Namespace) -> dict[str, Any]:
+    """対応する保存物を公開引数から組み立て、既存の取込みと比較へ渡す。"""
+    specification: dict[str, Any] = {}
+    for prefix in ("junit", "baseline_junit"):
+        xml = getattr(args, prefix + "_xml", None)
+        record = getattr(args, prefix + "_record", None)
+        if xml is None and record is None:
+            continue
+        if xml is None or record is None:
+            raise ValueError(f"{prefix}のXMLと実行記録は組で指定する")
+        specification[prefix] = {"xml": str(xml), "run_record": str(record)}
+    for prefix in ("diagnostics", "baseline_diagnostics"):
+        path, record, conditions = (getattr(args, prefix + suffix, None) for suffix in ("_file", "_record", "_conditions"))
+        sources = getattr(args, prefix + "_source", None)
+        if all(value is None for value in (path, record, conditions, sources)):
+            continue
+        if path is None or record is None or conditions is None:
+            raise ValueError(f"{prefix}の診断・実行記録・保存条件は組で指定する")
+        if sources and len({pair[0] for pair in sources}) != len(sources):
+            raise ValueError(f"{prefix}の保存時本文は各ファイルへ一意に指定する")
+        _record_path, observed = run_record(str(record))
+        specification[prefix] = {
+            "path": str(path),
+            "run_record": str(record),
+            "head": observed["git_head"],
+            "conditions": load_json(conditions),
+            "sources": dict(sources or []),
+        }
+    if specification and args.results_file is not None:
+        raise ValueError("--results-fileと保存物の直接指定は別々に使う")
+    return load_results(args.results_file, specification=specification)
+
+
+def has_result_specification(args: argparse.Namespace) -> bool:
+    """JSONか保存物の直接指定があるかを両消費側で同じ条件から判定する。"""
+    return args.results_file is not None or any(
+        getattr(args, prefix + suffix, None) is not None
+        for prefixes, suffixes in (
+            (("junit", "baseline_junit"), ("_xml", "_record")),
+            (("diagnostics", "baseline_diagnostics"), ("_file", "_record", "_conditions", "_source")),
+        )
+        for prefix in prefixes
+        for suffix in suffixes
+    )
+
+
+def _row_selector(payload: dict[str, Any], value: str) -> tuple[str, int]:
+    section, separator, raw = value.partition(":")
+    if not separator or section not in {"wi_conditions", "user_requirements"} or not raw.isdecimal():
+        raise ValueError("行選択はwi_conditions:Nまたはuser_requirements:Nで指定する")
+    number = int(raw)
+    if not 1 <= number <= len(payload[section]):
+        raise ValueError(f"選択行が存在しません: {value}。--listで行番号を確認する")
+    return section, number
+
+
+def updates_for_arguments(
+    payload: dict[str, Any],
+    args: argparse.Namespace,
+    *,
+    reviewing: bool = False,
+    pending: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """選んだ行の原文・出所を現在の記録から取得し、選択した結果へ対応付ける。"""
+    selectors = args.select_row or []
+    if not selectors or len(selectors) != len(set(selectors)) or args.mode not in {"append", "replace"}:
+        raise ValueError("重複のない--select-rowと--modeを指定する")
+    if args.updates_file is not None:
+        raise ValueError("--select-rowと--updates-fileは別々に使う")
+    outcome_pairs = getattr(args, "row_outcome", None) or []
+    inherited_pairs = getattr(args, "verification_row", None) or []
+    source_pairs = getattr(args, "row_source", None) or []
+    outcomes = dict(outcome_pairs)
+    inherited = dict(inherited_pairs)
+    sources = dict(source_pairs)
+    if len(outcomes) != len(outcome_pairs) or len(inherited) != len(inherited_pairs) or len(sources) != len(source_pairs):
+        raise ValueError("行の判定と未判定行への対応は重複なく指定する")
+    if reviewing and set(outcomes) != set(selectors):
+        raise ValueError("--row-outcomeで全選択行の判定を明示する")
+    if set(inherited) - set(selectors):
+        raise ValueError("--verification-rowの対応先は--select-rowで選んだ行を指定する")
+    if set(sources) - set(selectors):
+        raise ValueError("--row-sourceは--select-rowで選んだ行へ指定する")
+    updates = []
+    for selector in selectors:
+        section, number = _row_selector(payload, selector)
+        update: dict[str, Any] = {
+            "section": section,
+            "row": number,
+            "source": payload[section][number - 1]["source"],
+            "mode": args.mode,
+            "tests": args.result_test or [],
+            "diagnostics": args.result_diagnostic or [],
+        }
+        if args.evidence_file is not None:
+            update["evidence_file"] = str(args.evidence_file)
+        if reviewing:
+            update.update(outcome=outcomes[selector], reviewed_head=args.reviewed_head)
+            if selector in sources:
+                update["new_source"] = sources[selector]
+            if selector in inherited:
+                if pending is None:
+                    raise ValueError("--verification-rowは--verification-recordと指定する")
+                old_section, old_number = _row_selector(pending, inherited[selector])
+                if old_section != section:
+                    raise ValueError("未判定根拠は同じ配列の同じ要求単位を選ぶ")
+                update["verification_source"] = pending[old_section][old_number - 1]["source"]
+        updates.append(update)
+    return updates
+
+
 def validate_display(args: argparse.Namespace) -> None:
     """表示の選択を更新へ混入させず、要約と詳細の用途を分ける。"""
     selecting = bool(args.result_test or args.result_diagnostic)
-    if (args.results_summary or selecting) and not args.list_results:
+    direct = bool(getattr(args, "select_row", None))
+    if args.results_summary and not args.list_results or selecting and not (args.list_results or direct):
         raise ValueError("--results-summary・--result-test・--result-diagnosticは--list-resultsと指定する")
     if args.results_summary and selecting:
         raise ValueError("要約と指定結果の詳細は別々に表示する")
+    if args.list_results and direct:
+        raise ValueError("結果一覧と選択行の更新は別々に実行する")
 
 
 def _summary(results: dict[str, Any]) -> dict[str, Any]:
@@ -239,22 +414,26 @@ def _observed_evidence(value: dict[str, Any]) -> str:
 
 def updated_payload(
     payload: dict[str, Any],
-    updates_path: pathlib.Path,
+    updates_path: pathlib.Path | None,
     results: dict[str, Any],
     *,
     reviewing: bool = False,
     pending: dict[str, Any] | None = None,
     outcomes: dict[str, Any] | None = None,
+    updates: object | None = None,
 ) -> dict[str, Any]:
     """全行の契約を確かめてから複製へ反映し、不正入力では一行も保存しない。"""
-    updates = load_json(updates_path)
+    if updates is not None and updates_path is not None:
+        raise ValueError("更新JSONと直接行選択は別々に使う")
+    if updates is None:
+        updates = load_json(updates_path) if updates_path is not None else None
     if not isinstance(updates, list) or not updates:
         raise ValueError("更新JSONは空でない配列が必要です")
     result = copy.deepcopy(payload)
     seen: set[tuple[str, int]] = set()
     allowed = {"section", "row", "source", "tests", "diagnostics", "evidence_file", "mode"}
     if reviewing:
-        allowed |= {"outcome", "reviewed_head", "verification_source"}
+        allowed |= {"outcome", "reviewed_head", "verification_source", "new_source"}
     for update in updates:
         if not isinstance(update, dict) or set(update) - allowed or not {"section", "row", "source", "mode"} <= set(update):
             raise ValueError("更新行の項目が不正です。ヘルプの更新JSONの形式を確認する")
@@ -305,9 +484,15 @@ def updated_payload(
                 if len(matches) != 1 or matches[0].get("outcome") or matches[0].get("reviewed_head"):
                     raise ValueError("選択した未判定根拠の出所が一意ではありません")
                 original = "condition" if section == "wi_conditions" else "requirement"
-                if matches[0][original] != row[original] or matches[0]["awi"] != row["awi"]:
+                if matches[0][original] != row[original] or matches[0]["awi"] != row["awi"] or source != row["source"]:
                     raise ValueError("未判定根拠は同じ要求単位を選択する")
                 evidence.append(matches[0]["evidence"])
+            if "new_source" in update:
+                if update["outcome"] not in {"失効", "割当外", "背景"}:
+                    raise ValueError("new_sourceは失効・割当外・背景の判断根拠へ変更する場合だけ指定する")
+                if not isinstance(update["new_source"], str) or not update["new_source"].strip():
+                    raise ValueError("判断根拠のnew_sourceは空でない所在を指定する")
+                row["source"] = update["new_source"]
             row["outcome"], row["reviewed_head"] = update["outcome"], update["reviewed_head"]
         elif row.get("outcome") or row.get("reviewed_head"):
             raise ValueError("判定済み入力へ未判定根拠を保存できません")

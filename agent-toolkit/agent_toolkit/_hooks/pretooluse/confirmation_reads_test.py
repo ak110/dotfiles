@@ -2,7 +2,8 @@
 
 PreToolUseの統合フックをsubprocessで起動し、transcriptの読取の記録に応じた警告の有無を検証する。
 transcriptのエントリの形は、Claude Code 2.1.291の`~/.claude/projects`配下の記録（`tool_use`ブロックを持つ
-`assistant`エントリと、`type`が`system`・`subtype`が`compact_boundary`のエントリ）から写した。
+`assistant`エントリ、呼出IDに対応する`tool_result`を持つ`user`エントリと、
+`type`が`system`・`subtype`が`compact_boundary`のエントリ）から写した。
 """
 
 from __future__ import annotations
@@ -26,12 +27,32 @@ _QUESTION_INPUT = {
 def _read(path: pathlib.Path) -> dict:
     return {
         "type": "assistant",
-        "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": str(path)}}]},
+        "message": {
+            "content": [{"type": "tool_use", "id": f"read-{path.name}", "name": "Read", "input": {"file_path": str(path)}}]
+        },
     }
 
 
 def _bash(command: str) -> dict:
-    return {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": command}}]}}
+    return {
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": "bash-read", "name": "Bash", "input": {"command": command}}]},
+    }
+
+
+def _result(tool_id: str, *, error: bool = False) -> dict:
+    return {
+        "type": "user",
+        "message": {"content": [{"type": "tool_result", "tool_use_id": tool_id, "content": "取得した本文", "is_error": error}]},
+    }
+
+
+def _successful_read(path: pathlib.Path) -> list[dict]:
+    return [_read(path), _result(f"read-{path.name}")]
+
+
+def _successful_bash(command: str) -> list[dict]:
+    return [_bash(command), _result("bash-read")]
 
 
 _COMPACT = {"type": "system", "subtype": "compact_boundary"}
@@ -45,6 +66,7 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
         "tool_input": _QUESTION_INPUT,
         "session_id": "confirmation-reads",
         "transcript_path": str(transcript),
+        "cwd": str(tmp_path),
         **extra,
     }
 
@@ -53,9 +75,19 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
     ("entries", "unread"),
     [
         pytest.param([], [_APPROVAL, _CHOICE], id="both-unread"),
-        pytest.param([_read(_CHOICE)], [_APPROVAL], id="approval-unread"),
-        pytest.param([_bash(f"cat {_APPROVAL}")], [_CHOICE], id="choice-unread"),
-        pytest.param([_read(_APPROVAL), _read(_CHOICE), _COMPACT], [_APPROVAL, _CHOICE], id="read-before-compaction"),
+        pytest.param(_successful_read(_CHOICE), [_APPROVAL], id="approval-unread"),
+        pytest.param(_successful_bash(f"cat {_APPROVAL}"), [_CHOICE], id="choice-unread"),
+        pytest.param(
+            [*_successful_read(_APPROVAL), *_successful_read(_CHOICE), _COMPACT],
+            [_APPROVAL, _CHOICE],
+            id="read-before-compaction",
+        ),
+        pytest.param([_read(_APPROVAL), _result("read-approval-scope.md", error=True)], [_APPROVAL, _CHOICE], id="failed-read"),
+        pytest.param([_read(_APPROVAL)], [_APPROVAL, _CHOICE], id="read-without-result"),
+        pytest.param(
+            [_bash(f"cat {_APPROVAL} {_CHOICE}"), _result("bash-read", error=True)], [_APPROVAL, _CHOICE], id="failed-bash"
+        ),
+        pytest.param([_bash(f"cat {_APPROVAL} {_CHOICE}")], [_APPROVAL, _CHOICE], id="bash-without-result"),
     ],
 )
 def test_unread_reference_warns_without_blocking(
@@ -80,14 +112,54 @@ def test_unread_reference_warns_without_blocking(
 @pytest.mark.parametrize(
     "entries",
     [
-        pytest.param([_COMPACT, _read(_APPROVAL), _read(_CHOICE)], id="read-after-compaction"),
-        pytest.param([_bash(f"cat {_APPROVAL} {_CHOICE}")], id="bash"),
+        pytest.param([_COMPACT, *_successful_read(_APPROVAL), *_successful_read(_CHOICE)], id="read-after-compaction"),
+        pytest.param(_successful_bash(f"cat {_APPROVAL} {_CHOICE}"), id="bash"),
+        pytest.param(_successful_bash(f"cat -- {_APPROVAL} {_CHOICE}"), id="bash-terminator"),
+        pytest.param(
+            _successful_bash(f"cd {_SKILL_REFERENCES} && cat approval-scope.md choice-construction.md"), id="bash-relative"
+        ),
+        pytest.param(
+            [*_successful_bash(f"atk read-file --max-bytes 12000 -- {_APPROVAL}"), *_successful_read(_CHOICE)],
+            id="budgeted-read-file",
+        ),
     ],
 )
 def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]) -> None:
     result = _run(_payload(tmp_path, entries))
     assert result.returncode == 0
     assert _WARNING not in _additional_context(result)
+
+
+@pytest.mark.parametrize(
+    "operation", ["printf '%s'", "ls", "test -e", "python3 -c \"print('approval-scope.md choice-construction.md')\""]
+)
+def test_name_mentions_and_attributes_do_not_suppress_warning(tmp_path: pathlib.Path, operation: str) -> None:
+    """成功しても対象本文を読まない操作では、未取得資料の警告を保持する。"""
+    entries = _successful_bash(f"{operation} '{_APPROVAL}' '{_CHOICE}'")
+    result = _run(_payload(tmp_path, entries))
+    assert result.returncode == 0
+    context = _additional_context(result)
+    assert _WARNING in context and str(_APPROVAL) in context and str(_CHOICE) in context
+
+
+@pytest.mark.parametrize("tool", ["Read", "Bash"])
+def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.Path, tool: str) -> None:
+    """別の場所の同名資料への成功した読取を、hookが案内する資料の取得へ変換しない。"""
+    other = tmp_path / "other/skills/user-confirmation-and-report/references/approval-scope.md"
+    other.parent.mkdir(parents=True)
+    other.write_text("別資料", encoding="utf-8")
+    entries = _successful_read(other) if tool == "Read" else _successful_bash(f"cat {other}")
+    assert _WARNING in _additional_context(_run(_payload(tmp_path, entries)))
+
+
+def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path: pathlib.Path) -> None:
+    """圧縮をまたぐ未完了の読取結果を除き、圧縮後の成功だけで不足を解消する。"""
+    entries = [_read(_APPROVAL), _COMPACT, _result("read-approval-scope.md"), *_successful_read(_CHOICE)]
+    first = _run(_payload(tmp_path, entries))
+    assert _WARNING in _additional_context(first)
+    assert str(_APPROVAL) in _additional_context(first)
+    assert str(_CHOICE) not in _additional_context(first)
+    assert _WARNING not in _additional_context(_run(_payload(tmp_path, [*entries, *_successful_read(_APPROVAL)])))
 
 
 def test_non_main_or_unreadable_context_does_not_warn(tmp_path: pathlib.Path) -> None:

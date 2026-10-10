@@ -10,7 +10,7 @@
 | 実行主体 | 実体 | 寿命 |
 | --- | --- | --- |
 | MCPサーバー | 起動スクリプト`agent-toolkit/agent_toolkit/agents_server_mcp.py`。MCPツールは`_agents_server/mcp_tools.py`、sessionの管理は`_agents_server/manager.py`と`manager_*.py`が持つ | ホストがMCPサーバーを起動する単位ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける。各プロセスが保持するsessionの集合は独立する |
-| `atk`のCLI | `atk agents wait`、`atk agents notify`、`atk agents list`、`atk agents show`、`atk agents logs` | 呼び出しごとの短命プロセス。現行のsession識別子を得る |
+| `atk`のCLI | `atk agents wait`、`atk agents notify`、`atk agents list`、`atk agents show`、`atk agents logs`、`atk lane create/delete` | 呼び出しごとの短命プロセス。現行のsession識別子を得る。レーン回収は既存のsession登録を読むだけとする |
 | フック | `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`。観測の記録の書き込みと読み取りは`_hooks/agents_server_observations.py`が持つ | イベントごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 | statusline | `rust/claude-statusline` | 描画ごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 
@@ -41,7 +41,7 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`と`current.json` | 先行waitへ合流する後続`atk agents wait` | 先行waitが`running`と`published`および再待機が必要かを示す`continuable`を書き、結果を返した後続waitが`consumed`を書く |
 | CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`と`notices/<通知ファイル>` | 中断後に同じrunを再開する`atk agents wait` | 待機CLI。結果は所有者を確認した排他区間で、通知は原本の削除前に退避する |
 | CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop時の未観測作業の助言 | PostToolUseフック（子sessionの開始とreply再開時の追加。`atk agents wait`と同じく索引を経たルートへ登録する）、`atk agents wait`（待機開始時の追加と回収・破棄時の削除）。助言側は読むだけとする |
-| 全sessionの終端登録と再開情報、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait`、`atk serve`のセッション一覧（ローカルとリモートヘルパー。委譲元だけを親子付けに読む） | そのsessionを所有するMCPサーバー（停止時の終端公開を含む）。所有者のいない`running`のCodexの記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件） |
+| 全sessionの終端登録と再開情報、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait`、`atk serve`のセッション一覧（ローカルとリモートヘルパー。委譲元だけを親子付けに読む）、`atk lane create/delete`（専用worktreeを使う担当のcwd・terminalから終端を判定する） | そのsessionを所有するMCPサーバー（停止時の終端公開を含む）。所有者のいない`running`のCodexの記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件） |
 | Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | `atk run-script session-review-evidence` | agents_serverのCodex backend |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait` | `atk agents notify`が作成し、MCP待機とCLI待機が回収時に削除する |
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`、`send_message`、`list`など、`root_session_id`を明示する応答の値を操作名によらず使う） |
@@ -78,6 +78,7 @@ Claude CodeのWeekly limitと5時間の利用上限の解除待ちもMCPサー�
 Codexの接続先選択順は`codex_model_providers`が持ち、先頭APIの不受理とサブスク利用上限から後続APIへ移す間も既存の結果保留と監視を使う。空設定の会話は通常のCodex設定に従う。選択済みproviderは同じ会話の再開へ渡し、主接続先の設定変更と利用枠の回復は新規起動だけへ適用し、後続候補は次の代替試行で現行列から選ぶ。現在アカウントの利用可否はApp Serverの照会から新規起動ごとに得て、別の永続台帳を置かない。候補の診断だけを人向けログへ記録する。接続先の設定とcold resumeの契約は`docs/guide/codex-guide.md`と`docs/development/design-agents-server.md`にある。
 
 状態ディレクトリは`atk config get state_dir`が返すディレクトリ配下の`agents-server`とする。
+レーン資源の所有登録と回収結果への参照は、`atk config get state_dir`配下の`lanes/<所有session>/`へ別に置く。`_atk/lane.py`が作成・明示再利用・回収を所有し、通常終了とprocess-loopの子終了後も同じ処理を使う。session登録簿の場所は`_common/session_launchers.py`から解決し、レーン管理の操作はcwd・terminalの読取に限り、MCPサーバーが状態と終端登録の更新を所有する。回収結果は専用worktreeの外のmanaged-tempへ保存し、その既存保持期限へ委ねる。未解決の資源登録は保持し、解決済みのレーン登録だけを回収処理が除く。
 内部の保存項目と公開応答の項目は別に扱う。活動は`seconds_since_activity`、API失敗は種別・HTTP状態・経過時間（利用上限の解除待ちでは種類と解除予定時刻も）を公開し、集計回数と初回時刻は内部の保持に使う。CLI一覧は識別子・状態・ラベル・直近操作・結果保留・開始時刻と活動診断へ限定する。MCPの通常応答には絶対活動時刻を載せず、`show(verbose=True)`で更新・出力時刻と実行条件を示す。結果のturn番号と確定時刻、通知の送信時刻は保存と整列に残し、回収する公開応答から除く。用途別の射影で内部追加の流入を防ぎ、所有者確認と耐久退避は従来の入力を使う。
 診断ログのディレクトリは`agents-server.log`を置く階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
 Antigravityのイベント処理を調査するときは、上表の公開イベントログを参照する。書き込みに失敗した場合はbackendの警告ログを参照し、イベント処理の終端状態はsession状態から判定する。

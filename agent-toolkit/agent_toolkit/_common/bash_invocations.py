@@ -262,6 +262,9 @@ def _bash_command_list(
             pipeline_start = len(result)
             index += 1
             continue
+        index, coprocess = _bash_pipeline_prefixes(tokens, index)
+        if index >= len(tokens) or _bash_closes(tokens[index], closing):
+            raise ValueError("前置の後ろにコマンドがない")
         compound = tokens[index].reserved and tokens[index].value in {"for", "select", "while", "until", "if", "case"}
         function_body = _bash_function_body(tokens, index)
         function = function_body is not None
@@ -300,12 +303,15 @@ def _bash_command_list(
             raise ValueError("未対応のグループ境界")
         if not grouped:
             current = _bash_word_invocations(words)
-        outputs = _bash_output_targets(redirects, separator)
+        outputs = _bash_output_targets(redirects, separator, coprocess=coprocess)
         static_outputs = _bash_output_targets(
             [(operator, dataclasses.replace(word, value=word.static_value, known=True)) for operator, word in redirects],
             separator,
+            coprocess=coprocess,
         )
         current = [_inherit_bash_outputs(item, outputs, static_outputs) for item in current]
+        if coprocess:
+            current = [dataclasses.replace(item, background=True) for item in current]
         result.extend(current)
         if separator == "&":
             result[pipeline_start:] = [dataclasses.replace(item, background=True) for item in result[pipeline_start:]]
@@ -319,6 +325,44 @@ def _bash_command_list(
     if closing is not None:
         raise ValueError("閉じないグループ")
     return result, index
+
+
+def _bash_pipeline_prefixes(tokens: Sequence[_BashToken], start: int) -> tuple[int, bool]:
+    """文種の分岐より前に予約語を消費し、coprocの名前を実行位置から除く。"""
+    index = start
+    coprocess = False
+    while index < len(tokens) and tokens[index].reserved and tokens[index].value in {"time", "!", "coproc"}:
+        kind = tokens[index].value
+        index += 1
+        if kind == "time" and index < len(tokens) and tokens[index].reserved and tokens[index].value == "-p":
+            index += 1
+        if kind == "time" and index < len(tokens) and tokens[index].reserved and tokens[index].value == "--":
+            index += 1
+        if kind == "coproc":
+            coprocess = True
+            # 単純コマンドの先頭語は名前ではない。名前を置ける複合文だけで1語を消費する。
+            if index + 1 < len(tokens) and not tokens[index].operator and _bash_prefixed_compound(tokens, index + 1):
+                index += 1
+    return index, coprocess
+
+
+def _bash_prefixed_compound(tokens: Sequence[_BashToken], start: int) -> bool:
+    """名前付きcoprocの後ろが、予約語前置を含む複合コマンドかを判定する。"""
+    index = start
+    while index < len(tokens) and tokens[index].reserved and tokens[index].value in {"time", "!"}:
+        kind = tokens[index].value
+        index += 1
+        if kind == "time" and index < len(tokens) and tokens[index].reserved and tokens[index].value == "-p":
+            index += 1
+        if kind == "time" and index < len(tokens) and tokens[index].reserved and tokens[index].value == "--":
+            index += 1
+    return index < len(tokens) and (
+        tokens[index].operator
+        and tokens[index].value in {"(", "{"}
+        or tokens[index].reserved
+        and tokens[index].value in {"for", "select", "while", "until", "if", "case"}
+        or _bash_function_body(tokens, index) is not None
+    )
 
 
 def _bash_closes(token: _BashToken, closing: str | frozenset[str] | None) -> bool:
@@ -419,9 +463,11 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
     return result
 
 
-def _bash_output_targets(redirects: Sequence[tuple[str, _BashToken]], separator: str) -> tuple[_OutputTarget, _OutputTarget]:
+def _bash_output_targets(
+    redirects: Sequence[tuple[str, _BashToken]], separator: str, *, coprocess: bool = False
+) -> tuple[_OutputTarget, _OutputTarget]:
     """リダイレクトを左から適用し、後段へ実際に渡る出力を求める。"""
-    outputs: dict[int, _OutputTarget] = {1: _BashOutput.PIPE if separator in PIPE_SEPARATORS else 1, 2: 2}
+    outputs: dict[int, _OutputTarget] = {1: _BashOutput.PIPE if coprocess or separator in PIPE_SEPARATORS else 1, 2: 2}
     for raw, operand in redirects:
         operator = raw.lstrip("0123456789")
         fd = int(raw[: len(raw) - len(operator)] or ("0" if operator.startswith("<") else "1"))

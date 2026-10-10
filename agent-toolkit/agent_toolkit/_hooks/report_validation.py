@@ -28,7 +28,7 @@ _TRAILING_IDS = re.compile(r"[（(][^（）()]*(?<![0-9A-Za-z])c\d{4}[^（）()]
 _EXCLUSION_CATEGORIES = ("single-inquiry", "non-changing-request", "unexplained-refusal", "necessary-confirmation")
 """再発防止策が必須の候補を`判定済み`で見送るときに根拠の先頭へ書く除外区分。
 
-定義は`agent-toolkit:session-review`の`references/analysis.md`「ユーザー介入の判定規則」が持つ。
+定義は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」が持つ。
 """
 _UNRESEARCHED = ("照会していない", "未照会", "未調査", "未確定", "確定できない")
 

@@ -21,6 +21,7 @@ from agent_toolkit._hooks import (
     termination_order_advisor,
     user_prompt_submit,
 )
+from agent_toolkit._testing import delegated_threads
 
 WORK_COMPLETE = "## 作業完了報告\n\n完了した。\n\n### 成果\n\n- 変更した\n\n### 投入したWI\n\n- なし\n"
 REVIEW_RESULT = "## 振り返り結果報告\n\n### 振り返り\n\n- session-review未実施: 成果を再利用したため起動省略\n"
@@ -43,7 +44,11 @@ def supply_report(directory: pathlib.Path, text: str, stage: str, call_id: str) 
     with transcript.open("a", encoding="utf-8") as stream:
         stream.write(
             json.dumps(
-                {"uuid": call_id, "type": "assistant", "message": {"content": [{"type": "text", "text": text}]}},
+                {
+                    "uuid": call_id,
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
+                },
                 ensure_ascii=False,
             )
             + "\n"
@@ -60,6 +65,256 @@ def stop_payload(directory: pathlib.Path, visible: str) -> str:
             "last_assistant_message": visible,
         }
     )
+
+
+def _supply_prepare(
+    directory: pathlib.Path,
+    call_id: str,
+    *,
+    candidates: list[str] | None = None,
+    improvements: list[str] | None = None,
+    failed: bool = False,
+) -> dict[str, Any]:
+    """実際の準備応答の形を、公開hook入力で同じ作業へ供給する。"""
+    outputs = {}
+    for key in ("conversation_path", "candidates_path", "stats_path"):
+        path = directory / f"{call_id}-{key}.md"
+        path.write_text("準備した入力", encoding="utf-8")
+        outputs[key] = str(path)
+    payload: dict[str, Any] = {
+        "session_id": "evidence-test",
+        "tool_name": "Bash",
+        "tool_use_id": call_id,
+        "transcript_path": str(directory / "transcript.jsonl"),
+        "tool_input": {"command": "atk run-script session-review-prepare -- --transcript /record --work-dir /work"},
+    }
+    termination_evidence.observe_tool(json.dumps(payload), after=False)
+    payload["tool_response"] = {
+        "stdout": json.dumps(
+            {
+                **outputs,
+                "prepared_at": "2026-10-10T00:00:00Z",
+                "mandatory_candidates": candidates or [],
+                "improvement_lines": improvements or [],
+            }
+        ),
+        "exit_code": 1 if failed else 0,
+    }
+    termination_evidence.observe_tool(json.dumps(payload), after=True)
+    return payload["tool_response"]
+
+
+def _result_for(candidate: str) -> str:
+    return (
+        "## 振り返り結果報告\n\n### 対策を見送った問題\n\n"
+        f"- 判定済み: 状態の照会; 根拠: single-inquiry: 状態だけを尋ねた（{candidate}）\n"
+    )
+
+
+@pytest.mark.parametrize("old_heading", ["振り返り結果の予告", "振り返り結果報告", "AWI投入結果報告"])
+def test_reports_after_latest_prepare(tmp_path: pathlib.Path, old_heading: str) -> None:
+    """新しい成功準備より前の報告を、再取込して最新候補の不足へ使わない。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    _supply_prepare(tmp_path, "first", candidates=["c0001"])
+    old = _result_for("c0001").replace("振り返り結果報告", old_heading)
+    supply_report(tmp_path, old, "review-result", "old")
+    _supply_prepare(tmp_path, "second", candidates=["c0002"])
+    supply_report(tmp_path, _result_for("c0002"), "review-result", "new")
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, _result_for("c0002")))
+    assert decision == "approve", reason
+    work = termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "")))[0][1]
+    assert "work-complete" in work["reports"]
+    assert "review-preview" not in work["reports"] and "review-submission" not in work["reports"]
+
+
+def test_latest_report_and_submission_requirements(tmp_path: pathlib.Path) -> None:
+    """最新の不足は残し、古い投入結果で新しい予告の後工程を充足しない。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    _supply_prepare(tmp_path, "first")
+    supply_report(tmp_path, "## AWI投入結果報告\n\n投入した。", "review-submission", "old-submission")
+    _supply_prepare(tmp_path, "second", candidates=["c0002"])
+    preview = "## 振り返り結果の予告\n\n### 確定した問題と対策\n\n- AWI登録予定: 新しい対策（c0002）\n"
+    supply_report(tmp_path, preview, "review-preview", "new-preview")
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, preview))
+    assert decision == "block" and "review-submission" in reason
+    supply_report(tmp_path, _result_for("c0009"), "review-result", "missing")
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, _result_for("c0009")))
+    assert decision == "block" and "c0002" in reason
+
+
+def test_failed_prepare_keeps_successful_report_boundary(tmp_path: pathlib.Path) -> None:
+    """再準備の失敗は、成功した準備と報告・作業完了の対応を失わせない。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    _supply_prepare(tmp_path, "first", candidates=["c0001"])
+    supply_report(tmp_path, _result_for("c0001"), "review-result", "result")
+    _supply_prepare(tmp_path, "failed", candidates=["c0002"], failed=True)
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, _result_for("c0001")))
+    assert decision == "approve", reason
+    work = termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "")))[0][1]
+    assert work["prepare"][-1]["result"]["mandatory_candidates"] == ["c0001"]
+    assert "work-complete" in work["reports"]
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+@pytest.mark.parametrize("delivery", ["text", "send", "codex"])
+def test_unprepared_and_late_improvements(tmp_path: pathlib.Path, delivery: str, *, prepared: bool) -> None:
+    """未準備と最終報告後の新しい行を、可視本文・送信・Codexの同じStop入力から回収する。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    if prepared:
+        _supply_prepare(tmp_path, "first")
+    supply_report(tmp_path, REVIEW_RESULT, "review-result", "result")
+    improvement = "気付いた改善点: 同じ資料を何度も読む作業がある"
+    if delivery == "send":
+        entry = {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "tool_use", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": improvement}}]
+            },
+        }
+    elif delivery == "codex":
+        entry = {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "channel": "final",
+                "content": [{"type": "output_text", "text": improvement}],
+            },
+        }
+    else:
+        entry = {"type": "assistant", "message": {"content": [{"type": "text", "text": improvement}]}}
+    with (tmp_path / "transcript.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, improvement))
+    assert decision == "block" and improvement in reason and "工程1" in reason
+    _supply_prepare(tmp_path, "second", improvements=[improvement])
+    supply_report(tmp_path, REVIEW_RESULT, "review-result", "new-result")
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, improvement))[0] == "approve"
+
+
+def test_prepare_failure_allows_evidenced_blocked_decision(tmp_path: pathlib.Path) -> None:
+    """新しい改善点の再準備が不成立なら、実際の失敗応答で既存の技術的不成立の判断へ進める。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    _supply_prepare(tmp_path, "first")
+    supply_report(tmp_path, REVIEW_RESULT, "review-result", "result")
+    improvement = "気付いた改善点: 追加で分析する行"
+    supply_report(tmp_path, improvement, "review-result", "late")
+    response = _supply_prepare(tmp_path, "failed", failed=True)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, improvement))[0] == "block"
+    termination_evidence.record_decision(
+        {
+            "session_id": "evidence-test",
+            "action": "blocked",
+            "work_id": "work-1",
+            "call_id": "failed",
+            "quote": json.dumps(response, ensure_ascii=False, sort_keys=True),
+            "reason": "再準備を実行できない",
+        }
+    )
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, improvement))[0] == "approve"
+
+
+def test_real_prepare_and_stop_share_consumed_improvements(tmp_path: pathlib.Path) -> None:
+    """同じ記録を実際の準備CLIとStopへ渡し、取込み後の再掲と引用だけでは循環しない。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    transcript = tmp_path / "transcript.jsonl"
+    improvement = "気付いた改善点: この記録で準備とStopを対照する"
+    for index in range(2):
+        directory = tmp_path / f"prepare-{index}"
+        directory.mkdir()
+        arguments = ["--transcript", str(transcript), "--work-dir", str(directory)]
+        payload: dict[str, Any] = {
+            "session_id": "evidence-test",
+            "tool_name": "Bash",
+            "tool_use_id": f"prepare-{index}",
+            "transcript_path": str(transcript),
+            "tool_input": {
+                "command": f"atk run-script session-review-prepare -- --transcript {transcript} --work-dir {directory}"
+            },
+        }
+        termination_evidence.observe_tool(json.dumps(payload), after=False)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            assert run_script.dispatch(argparse.Namespace(script_name="session-review-prepare", script_args=arguments)) == 0
+        result = json.loads(output.getvalue())
+        assert result["improvement_lines"] == ([] if index == 0 else [improvement])
+        payload["tool_response"] = {"stdout": output.getvalue(), "exit_code": 0}
+        termination_evidence.observe_tool(json.dumps(payload), after=True)
+        supply_report(tmp_path, REVIEW_RESULT, "review-result", f"result-{index}")
+        if index == 0:
+            supply_report(tmp_path, improvement, "review-result", "late")
+            assert termination_order_advisor.evaluate(stop_payload(tmp_path, improvement))[0] == "block"
+    copied = improvement + "\n```text\n気付いた改善点: 文書の例\n```"
+    supply_report(tmp_path, copied, "review-result", "copy")
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, copied))[0] == "approve"
+
+
+@pytest.mark.parametrize("delivery", ["text", "send", "codex"])
+def test_late_delegate_improvements(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, delivery: str) -> None:
+    """準備後の正常返却をメインが中継し、実準備に含めてから同じStopで終了する。"""
+    threads = delegated_threads.write_delegated_threads(tmp_path)
+    monkeypatch.setenv("HOME", str(threads.home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(threads.home / ".claude"))
+    monkeypatch.setenv("CODEX_HOME", str(threads.codex_home))
+    transcript = tmp_path / "transcript.jsonl"
+    parent_entries = threads.transcript.read_text(encoding="utf-8").splitlines()
+    assert json.loads(parent_entries[-1])["message"]["content"] == "終了"
+    # 費用計測用fixtureの追加ユーザー発話は、この正常返却のシナリオには含めない。
+    transcript.write_text("\n".join(parent_entries[:-1]) + "\n", encoding="utf-8")
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    _supply_prepare(tmp_path, "first")
+    supply_report(tmp_path, REVIEW_RESULT, "review-result", "result")
+    improvement = "気付いた改善点: 正常な委譲返却で追加された機会"
+    body = "実装完了\n" + "説明。" * 1000 + "\n" + improvement + "\n" + "補足。" * 1000
+    delegated_threads.append_return(threads, body, delivery)
+    # 元の返却と、メインが既存の中継契約で届ける実際の報告を区別する。
+    returned = {
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "wait", "content": body}]},
+    }
+    with transcript.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(returned, ensure_ascii=False) + "\n")
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, ""))[0] == "approve"
+    supply_report(tmp_path, body, "review-result", "relay")
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, ""))
+    assert decision == "block" and improvement in reason and "工程1" in reason
+    directory = tmp_path / "second-prepare"
+    directory.mkdir()
+    arguments = ["--transcript", str(transcript), "--work-dir", str(directory)]
+    payload: dict[str, Any] = {
+        "session_id": "evidence-test",
+        "tool_name": "Bash",
+        "tool_use_id": "second",
+        "transcript_path": str(transcript),
+        "tool_input": {"command": f"atk run-script session-review-prepare -- --transcript {transcript} --work-dir {directory}"},
+    }
+    termination_evidence.observe_tool(json.dumps(payload), after=False)
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        assert run_script.dispatch(argparse.Namespace(script_name="session-review-prepare", script_args=arguments)) == 0
+    result = json.loads(output.getvalue())
+    assert result["improvement_lines"] == [improvement]
+    assert improvement in pathlib.Path(result["candidates_path"]).read_text(encoding="utf-8")
+    payload["tool_response"] = {"stdout": output.getvalue(), "exit_code": 0}
+    termination_evidence.observe_tool(json.dumps(payload), after=True)
+    supply_report(tmp_path, REVIEW_RESULT, "review-result", "updated-result")
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, ""))
+    assert decision == "approve", reason
+
+
+def test_consumed_improvements_and_quotes(tmp_path: pathlib.Path) -> None:
+    """準備済みの再掲と、文書・コード・生成通知の引用を新しい改善点へ数えない。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    improvement = "気付いた改善点: 既に準備へ含めた行"
+    _supply_prepare(tmp_path, "first", improvements=[improvement])
+    supply_report(tmp_path, REVIEW_RESULT, "review-result", "result")
+    text = (
+        f"{improvement}\n```text\n気付いた改善点: コードの例\n```\n"
+        "> 気付いた改善点: 引用の例\n"
+        '<atk-auto source="notice" kind="notice">\n気付いた改善点: 生成通知の例\n</atk-auto>'
+    )
+    supply_report(tmp_path, text, "review-result", "copies")
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, text))[0] == "approve"
 
 
 def test_first_stop_requires_following_visible_result(tmp_path: pathlib.Path) -> None:
@@ -109,6 +364,24 @@ def test_generated_input_cannot_cancel_work(tmp_path: pathlib.Path) -> None:
                 "reason": "中止の解釈",
             }
         )
+
+
+def test_plugin_origin_is_not_human_termination_input(tmp_path: pathlib.Path) -> None:
+    """同形のコマンドを生成元だけで分け、人間の入力と回答を判断の根拠へ残す。"""
+    supply_report(tmp_path, WORK_COMPLETE, "work-complete", "complete")
+    for identity, origin in (("plugin", {"kind": "plugin"}), ("human", {"kind": "human"})):
+        termination_evidence.observe_user(
+            json.dumps(
+                {
+                    "session_id": "evidence-test",
+                    "turn_id": identity,
+                    "prompt": "/compact",
+                    "origin": origin,
+                }
+            )
+        )
+        state = session_state.read_state("evidence-test")[termination_evidence.STATE_KEY]
+        assert state["inputs"][identity]["human"] is (identity == "human")
 
 
 def test_cancel_and_new_start_do_not_share_same_path_results(tmp_path: pathlib.Path) -> None:

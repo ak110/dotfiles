@@ -518,7 +518,16 @@ def test_public_run_diagnostics_roundtrip(tmp_path: pathlib.Path, capsys: pytest
     original = pathlib.Path(spec["path"]).read_text(encoding="utf-8")
     entries_in_run = [json.loads(line) for line in original.splitlines()]
     assert {"header", "command", "diagnostic", "summary"} <= {entry["kind"] for entry in entries_in_run}
-    results = _json(tmp_path / "results.json", {"diagnostics": spec})
+    conditions = _json(tmp_path / "conditions.json", spec["conditions"])
+    result_args = [
+        "--diagnostics-file",
+        spec["path"],
+        "--diagnostics-record",
+        spec["run_record"],
+        "--diagnostics-conditions",
+        str(conditions),
+        *[part for name, snapshot in spec["sources"].items() for part in ("--diagnostics-source", name, snapshot)],
+    ]
     record = tmp_path / "pending.json"
     assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user")), "--list") == 0
     output = tmp_path / "review.json" if name == "exec-review-evidence-check" else record
@@ -526,26 +535,24 @@ def test_public_run_diagnostics_roundtrip(tmp_path: pathlib.Path, capsys: pytest
         output.write_bytes(record.read_bytes())
     capsys.readouterr()
     listing = ["--output", str(record)] if name == "verification-record" else []
-    assert _run(*listing, "--results-file", str(results), "--list-results", "--results-summary", name=name) == 0
+    assert _run(*listing, *result_args, "--list-results", "--results-summary", name=name) == 0
     summary = json.loads(capsys.readouterr().out)
     assert len(summary["diagnostics"]) == 1
     group = summary["diagnostics"][0]
     assert group["count"] == 2 and group["rule"] == "F821"
     selected = group["diagnostics"][1]
-    assert _run(*listing, "--results-file", str(results), "--list-results", "--result-diagnostic", selected, name=name) == 0
+    assert _run(*listing, *result_args, "--list-results", "--result-diagnostic", selected, name=name) == 0
     detail = json.loads(capsys.readouterr().out)["diagnostics"]
     assert list(detail) == [selected]
     observed = detail[selected]["after"]
     source_entry = entries_in_run[observed["entry"] - 1]
     assert source_entry["kind"] == "diagnostic"
     assert source_entry["messages"][observed["message_position"] - 1]["msg"] == group["message"]
-    row = json.loads(record.read_text())["user_requirements"][0]
-    update = {"section": "user_requirements", "row": 1, "source": row["source"], "diagnostics": [selected], "mode": "replace"}
+    update_args = ["--select-row", "user_requirements:1", "--result-diagnostic", selected, "--mode", "replace"]
     if output != record:
-        update.update(outcome="達成", reviewed_head=spec["head"])
-    updates = _json(tmp_path / "updates.json", [update])
+        update_args.extend(["--row-outcome", "user_requirements:1", "達成", "--reviewed-head", spec["head"]])
     args = ["--output", str(output)] if output == record else [str(output), "--output", str(output)]
-    assert _run(*args, "--results-file", str(results), "--updates-file", str(updates), name=name) == 0
+    assert _run(*args, *result_args, *update_args, name=name) == 0
     final = json.loads(output.read_text())["user_requirements"][0]
     assert f"after.entry: `{observed['entry']}`" in final["evidence"]
     assert final["outcome"] == ("達成" if output != record else "")
@@ -554,8 +561,9 @@ def test_public_run_diagnostics_roundtrip(tmp_path: pathlib.Path, capsys: pytest
     for invalid in [original + '{"kind":"unknown"}\n', original.replace('"messages":[', '"messages":null,"discarded":[')]:
         invalid_path = tmp_path / "invalid.jsonl"
         invalid_path.write_text(invalid, encoding="utf-8")
-        _json(results, {"diagnostics": {**spec, "path": str(invalid_path)}})
-        assert _run(*args, "--results-file", str(results), "--updates-file", str(updates), name=name) == 1
+        invalid_args = [*result_args]
+        invalid_args[invalid_args.index("--diagnostics-file") + 1] = str(invalid_path)
+        assert _run(*args, *invalid_args, *update_args, name=name) == 1
         assert output.read_bytes() == before
 
 
@@ -754,6 +762,120 @@ def test_public_record_ignores_history_heading_inside_fence(tmp_path: pathlib.Pa
 def _json(path: pathlib.Path, value: object) -> pathlib.Path:
     path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+def test_public_selected_row_imports_saved_results_without_transcribing_source(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    """保存XMLを直接指定し、同文別出所の一方だけを更新して不正行の部分保存を拒否する。"""
+    trial = _saved_trial(tmp_path, "def test_saved():\n    assert True\n", "selected")
+    pending = tmp_path / "pending.json"
+    assert _run("--output", str(pending), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    original = json.loads(pending.read_text(encoding="utf-8"))
+    review = name == "exec-review-evidence-check"
+    output = tmp_path / "review.json" if review else pending
+    if review:
+        output.write_bytes(pending.read_bytes())
+    args = [str(output), "--output", str(output)] if review else ["--output", str(output)]
+    result_args = ["--junit-xml", trial["xml"], "--junit-record", trial["run_record"]]
+    capsys.readouterr()
+    listing = [] if review else ["--output", str(pending)]
+    assert _run(*listing, *result_args, "--list-results", "--results-summary", name=name) == 0
+    summary = json.loads(capsys.readouterr().out)
+    test_name = summary["tests"][0]["tests"][0]
+    evidence = tmp_path / "explanation.txt"
+    evidence.write_text("公開呼出しで保存結果を観測した。", encoding="utf-8")
+    update_args = [
+        *result_args,
+        "--select-row",
+        "user_requirements:2",
+        "--result-test",
+        test_name,
+        "--evidence-file",
+        str(evidence),
+        "--mode",
+        "replace",
+    ]
+    judgment = (
+        ["--row-outcome", "user_requirements:2", "達成", "--reviewed-head", _git(tmp_path, "rev-parse", "HEAD")]
+        if review
+        else []
+    )
+    assert _run(*args, *update_args, *judgment, name=name) == 0
+    updated = json.loads(output.read_text(encoding="utf-8"))
+    assert updated["user_requirements"][0] == original["user_requirements"][0]
+    chosen = updated["user_requirements"][1]
+    assert chosen["source"] == original["user_requirements"][1]["source"]
+    assert f"`{test_name}` passed" in chosen["evidence"]
+    assert evidence.read_text(encoding="utf-8") in chosen["evidence"]
+    assert chosen["outcome"] == ("達成" if review else "")
+    assert bool(chosen["reviewed_head"]) == review
+    if review:
+        before = output.read_bytes()
+        source_args = ["--row-source", "user_requirements:2", str(evidence)]
+        assert _run(*args, *update_args, *judgment, *source_args, name=name) == 1
+        assert output.read_bytes() == before
+        exemption = ["--row-outcome", "user_requirements:2", "背景", "--reviewed-head", _git(tmp_path, "rev-parse", "HEAD")]
+        assert _run(*args, *update_args, *exemption, *source_args, name=name) == 0
+        changed = json.loads(output.read_text(encoding="utf-8"))
+        assert changed["user_requirements"][1]["source"] == str(evidence)
+        assert changed["user_requirements"][1]["origin"] == original["user_requirements"][1]["origin"]
+        assert changed["user_requirements"][0] == original["user_requirements"][0]
+    before = output.read_bytes()
+    assert _run(*args, *update_args, "--select-row", "user_requirements:99", *judgment, name=name) == 1
+    assert output.read_bytes() == before
+
+
+def test_public_review_selected_row_inherits_only_same_requirement(tmp_path: pathlib.Path) -> None:
+    """同文でも出所が異なる行の継承を拒否し、対応する未判定行からの継承だけ保存する。"""
+    pending, review = tmp_path / "pending.json", tmp_path / "review.json"
+    plan = _plan(tmp_path, "plan-user")
+    repository = git_repository.init_repository(tmp_path / "repo", commit_message="基準")
+    head = git_repository.git_output(repository, "rev-parse", "HEAD")
+    assert _run("--output", str(pending), "--plan", str(plan)) == 0
+    evidence = tmp_path / "observed.txt"
+    evidence.write_text("保存済み観測を参照する根拠", encoding="utf-8")
+    assert (
+        _run(
+            "--output",
+            str(pending),
+            "--select-row",
+            "user_requirements:2",
+            "--evidence-file",
+            str(evidence),
+            "--mode",
+            "append",
+        )
+        == 0
+    )
+    assert _run("--template", str(review), "--plan", str(plan), name="exec-review-evidence-check") == 0
+    args = [
+        str(review),
+        "--output",
+        str(review),
+        "--verification-record",
+        str(pending),
+        "--select-row",
+        "user_requirements:2",
+        "--mode",
+        "replace",
+        "--row-outcome",
+        "user_requirements:2",
+        "達成",
+        "--reviewed-head",
+        head,
+    ]
+    before = review.read_bytes()
+    assert (
+        _run(*args, "--verification-row", "user_requirements:2", "user_requirements:1", name="exec-review-evidence-check") == 1
+    )
+    assert review.read_bytes() == before
+    assert (
+        _run(*args, "--verification-row", "user_requirements:2", "user_requirements:2", name="exec-review-evidence-check") == 0
+    )
+    row = json.loads(review.read_text(encoding="utf-8"))["user_requirements"][1]
+    assert evidence.read_text(encoding="utf-8") in row["evidence"]
 
 
 def _git(path: pathlib.Path, *args: str) -> str:

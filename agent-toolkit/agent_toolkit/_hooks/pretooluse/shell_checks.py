@@ -353,9 +353,9 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
         yield "\n\n".join(messages)
 
 
-def _git_commit_message_format_error(command: str, *, cwd: str = "") -> str | None:
+def _git_commit_message_format_error(messages: Iterable[str]) -> str | None:
     """件名の次に内容が続く通常commitで、2行目の空行欠落を返す。"""
-    for message in _git_commit_messages(command, cwd=cwd):
+    for message in messages:
         lines = message.splitlines()
         if len(lines) > 1 and lines[1].strip():
             return "commitの件名と本文の間に空行がありません。件名の次に空行を1行入れて再実行する。"
@@ -363,17 +363,16 @@ def _git_commit_message_format_error(command: str, *, cwd: str = "") -> str | No
 
 
 def _git_commit_attribution_error(
-    command: str,
+    messages: Iterable[str],
     identity: RuntimeIdentity | None,
     *,
     attribution_disabled: bool = False,
-    cwd: str = "",
 ) -> str | None:
     """通常commitが観測identityのtrailerをちょうど1件持つか確認する。"""
     if attribution_disabled or identity is None or identity.source != "observed":
         return None
     expected = co_author_trailer(identity)
-    for message in _git_commit_messages(command, cwd=cwd):
+    for message in messages:
         trailers = [line for line in message.splitlines() if line.startswith("Co-Authored-By:")]
         if trailers != [expected]:
             return f"通常commitの帰属trailerが実行turnの観測identityと一致しません。必要なtrailer: {expected}"

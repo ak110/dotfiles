@@ -7,7 +7,7 @@
 
 1. `x.com/<ユーザー名>/status/<投稿ID>`または`twitter.com`の同形式からユーザー名と投稿IDを読む。`/photo/1`などの末尾は写真表示を指し、同じ投稿IDの投稿として扱う。
 2. `t.co`の短縮URLは、公開されたWeb取得手段でリダイレクト先を確認してから同定する。転送先を取得できない場合は投稿のURLを推測せず、未取得の範囲を記録する。
-3. `https://api.fxtwitter.com/<ユーザー名>/status/<投稿ID>`へアクセスし、HTTP状態とJSONの`code`を確認する。リダイレクトの場合は応答が示す転送先を取得し、最終応答を確認する。成功応答の`tweet.text`を本文、`tweet.created_at`を投稿日時として読む。`tweet.media.photos[].url`は添付写真の取得先である。写真がない場合や取得失敗を、本文・写真を読了した状態と区別する。
+3. `https://api.fxtwitter.com/<ユーザー名>/status/<投稿ID>`へアクセスし、HTTP状態とJSONの`code`を確認する。リダイレクトの場合は応答が示す転送先を取得し、最終応答を確認する。最終HTTP状態が200かつJSONの`code`が数値の200の場合だけ、`tweet.text`を本文、`tweet.created_at`を投稿日時として採用する。`tweet.media.photos[].url`は添付写真の取得先である。通信失敗、HTTPの非200、`code`の非200・欠落・型の不一致、JSONの解析失敗では投稿を未取得として扱い、取得手段、状態、得られた診断と未取得の範囲を報告する。両方が200でも、必要な本文・日時・写真URLの属性が欠ける場合は、その属性を未取得とする。成功応答で写真の一覧が空か写真媒体がない場合は「写真なし」であり、取得失敗と区別する。本文の取得と写真の取得・読了も別々に記録する。
 
 このURLはFxTwitterのv1形式である。`/2/`を含むv2形式と区別し、v1の属性へ対応付けて読む。
 参照先は[FxEmbedのAPI説明](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)と[応答実装](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)である。

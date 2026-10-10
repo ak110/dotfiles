@@ -68,7 +68,8 @@ def test_public_plan_executes_all_commands_and_unwraps_recording(
     assert len(json.loads(capsys.readouterr().out)) == 4
     assert not log.exists()
     assert _run(plan, repo) == 1
-    results = json.loads(capsys.readouterr().out)
+    saved = json.loads(capsys.readouterr().out)
+    results = saved["results"]
     assert [row["state"] for row in results] == ["success", "failure", "timeout", "success"]
     assert [row["exit_code"] for row in results] == [0, 7, 124, 0]
     assert log.read_text(encoding="utf-8") == "with spacefailwaitlast"
@@ -77,6 +78,20 @@ def test_public_plan_executes_all_commands_and_unwraps_recording(
         assert record["git_head"] == head and record["git_status"] == []
         assert record["argv"][0] == sys.executable and record["argv"] == result["argv"]
         assert pathlib.Path(record["stdout_path"]).is_file() and pathlib.Path(record["stderr_path"]).is_file()
+    assert pathlib.Path(saved["results_path"]).is_file()
+    assert saved["records"] == [row["record_path"] for row in results] and not saved["unrecorded"]
+    assert (
+        run_command.dispatch(
+            argparse.Namespace(
+                records_file=pathlib.Path(saved["results_path"]), record=None, command_argv=[], cwd=None, timeout=None
+            )
+        )
+        == 0
+    )
+    read = json.loads(capsys.readouterr().out)
+    assert [row["wrapper_exit_code"] for row in read["records"]] == [0, 7, 124, 0]
+    assert read["records"][2]["timed_out"]
+    assert log.read_text(encoding="utf-8") == "with spacefailwaitlast"
 
 
 @pytest.mark.parametrize(

@@ -18,6 +18,7 @@ import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-
 
 from agent_toolkit._common import response_language_check, state_paths
 from agent_toolkit._testing import delegated_threads
+from agent_toolkit._testing.failure_records import failure_entries
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
 _LONG_INTERVENTION = "そうじゃなくて、対象は全部です。" + "理由の説明。" * 400 + "最後まで読んで。"
@@ -139,6 +140,320 @@ def test_response_language_notices_are_excluded_from_candidates(
     assert "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取った" in candidates
     assert "  - 記録位置: claude:22222222-3333-4444-5555-666666666666:6" in candidates
     assert "累計2回以上" not in candidates
+
+
+def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """正常な直接本文・参照ファイル・明示読取と命令文字列の観測限界を、通常の準備から得る。"""
+    entries = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
+    body = "担当する作業の説明。" * 300
+    calls = [
+        (
+            "mcp__plugin_agent-toolkit_agents_server__start",
+            {"cwd": "/repo", "mode": "delegate", "model_type": "high_tier", "prompt": body},
+        ),
+        (
+            "mcp__plugin_agent-toolkit_agents_server__start",
+            {
+                "cwd": "/repo",
+                "subagent_md_path": "refine-prompt",
+                "extra_params": {"対象プロンプト": "/inputs/task.md", "シナリオ": "なし"},
+            },
+        ),
+        ("Read", {"file_path": "/rules/shared.md"}),
+        ("Skill", {"skill": "agent-toolkit:search"}),
+        ("Bash", {"command": "cat /rules/other.md"}),
+    ]
+    for index, (tool, inputs) in enumerate(calls):
+        entries.extend(
+            [
+                {
+                    "type": "assistant",
+                    "timestamp": "2026-09-06T12:00:00Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": tool,
+                                "id": f"call-{index}",
+                                "input": inputs,
+                            }
+                        ],
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": f"call-{index}",
+                                "content": "記録した結果本文",
+                            }
+                        ],
+                    },
+                },
+            ]
+        )
+    transcript = tmp_path / "comparison.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    work = _work_dir(tmp_path)
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+    record = json.loads(capsys.readouterr().out)
+    materials = [
+        json.loads(line) for line in (work / "bundle" / "comparison-materials.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert materials[0]["observed_body_characters"] == len(body)
+    assert materials[0]["input_form"] == "direct-body"
+    assert materials[1]["input_form"] == "file-reference" and materials[1]["observed_body_characters"] is None
+    assert materials[2]["target"] == {"file_path": "/rules/shared.md"}
+    assert materials[2]["recorded_result_characters"] == len("記録した結果本文")
+    assert materials[3]["target"] == {"skill": "agent-toolkit:search"}
+    assert materials[4]["category"] == "opaque-command" and not materials[4]["target"]
+    conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
+    assert "claude:comparison:2" in conversation and "claude:comparison:3" in conversation
+    assert "/inputs/task.md" in conversation and "/rules/shared.md" in conversation
+    assert record["candidate_total"] == 0
+
+
+@pytest.mark.parametrize("has_identifier", [False, True])
+def test_prepare_unresolved_scope(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, has_identifier: bool) -> None:
+    """抽出から準備まで両未解決種別を通し、文書と1行JSONへ同じ対象を届ける。"""
+    result = {"session_id": "22222222-3333-4444-8555-666666666666"} if has_identifier else {"status": "completed"}
+    entries = [
+        {"type": "user", "message": {"role": "user", "content": "依頼"}},
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "mcp__plugin_agent-toolkit_agents_server__start",
+                        "id": "start",
+                        "input": {"mode": "delegate", "prompt": "作業を行う"},
+                    }
+                ],
+            },
+        },
+        {
+            "type": "user",
+            "toolUseResult": result,
+            "mcpMeta": {"structuredContent": result},
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "start",
+                        "content": json.dumps(result),
+                    }
+                ]
+            },
+        },
+    ]
+    if not has_identifier:
+        entries = [
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "mcp__agents_server__start",
+                    "call_id": "start",
+                    "arguments": {"engine": "codex"},
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "custom_tool_call_output", "call_id": "start", "output": {"status": "done"}},
+            },
+        ]
+    transcript = tmp_path / "unresolved.jsonl"
+    transcript.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
+    work = _work_dir(tmp_path)
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+    output = capsys.readouterr().out
+    assert len(output.splitlines()) == 1
+    record = json.loads(output)
+    kind = "unresolved-record" if has_identifier else "unresolved-delegation"
+    assert len(record["unconfirmed_scope"]) == 1
+    event = record["unconfirmed_scope"][0]
+    assert event["kind"] == kind and event["line"] == 3 and event["record"]
+    for key in ("candidates_path", "stats_path"):
+        document = pathlib.Path(record[key]).read_text(encoding="utf-8")
+        assert json.dumps(event, ensure_ascii=False) in document
+    assert record["candidate_total"] == 0 and not record["mandatory_candidates"]
+
+
+def test_prepare_all_participant_costs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """全担当の原始費用と計数定義を示し、Codexのcacheを総入力へ重ねて足さない。"""
+    threads = delegated_threads.write_delegated_threads(tmp_path)
+    monkeypatch.setenv("HOME", str(threads.home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(threads.home / ".claude"))
+    monkeypatch.setenv("CODEX_HOME", str(threads.codex_home))
+    claude = threads.home / ".claude" / "projects" / "repo" / f"{delegated_threads.CLAUDE_THREAD_ID}.jsonl"
+    for path, values in ((threads.transcript, (10, 7, 2, 4)), (claude, (20, 9, 3, 6))):
+        usage = dict(
+            zip(
+                ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"), values, strict=True
+            )
+        )
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "id": "usage",
+                            "usage": usage,
+                            "content": [{"type": "text", "text": "完了"}],
+                        },
+                    }
+                )
+                + "\n"
+            )
+    codex = next(threads.codex_home.rglob("*.jsonl"))
+    usage = {
+        "input_tokens": 100,
+        "cached_input_tokens": 40,
+        "cache_write_input_tokens": 5,
+        "output_tokens": 30,
+        "reasoning_output_tokens": 10,
+        "total_tokens": 130,
+    }
+    with codex.open("a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps(
+                {
+                    "type": "response_item",
+                    "payload": {"type": "token_count", "info": {"total_token_usage": usage, "last_token_usage": usage}},
+                }
+            )
+            + "\n"
+        )
+    work = _work_dir(tmp_path)
+    assert prepare.main(["--transcript", str(threads.transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+    record = json.loads(capsys.readouterr().out)
+    stats = [json.loads(line) for line in (work / "bundle" / "stats.jsonl").read_text(encoding="utf-8").splitlines()]
+    total = next(event for event in stats if event["kind"] == "stats-total")
+    assert total["tokens"] == {
+        "input_tokens": 90,
+        "output_tokens": 46,
+        "cache_creation_input_tokens": 10,
+        "cache_read_input_tokens": 50,
+    }
+    document = pathlib.Path(record["stats_path"]).read_text(encoding="utf-8")
+    assert (
+        delegated_threads.MAIN_SESSION_ID in document
+        and delegated_threads.CLAUDE_THREAD_ID in document
+        and delegated_threads.CODEX_THREAD_ID in document
+    )
+    assert '"cached_input_tokens": 40' in document and '"input_tokens": 100' in document
+    assert '"input_tokens": 10' in document and '"input_tokens": 20' in document
+
+
+@pytest.mark.parametrize("failure_kind", ["command-failure", "tool-failure"])
+def test_failure_variable_values_share_signature(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], failure_kind: str
+) -> None:
+    """別セッションの新規失敗でパス・UUID・記録IDだけを変え、反復をセッション単位で数える。"""
+    signatures = set()
+    ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
+    for index in range(3):
+        diagnostic = (
+            f"対象 /records/session-{index}/input.jsonl がない。"
+            f"uuid=11111111-2222-4333-8444-{index:012d}、記録=claude:session-{index}:7"
+        )
+        entries: list[dict] = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
+        entries.extend(failure_entries(failure_kind, diagnostic, "failed"))
+        transcript = tmp_path / f"session-{index}.jsonl"
+        transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+        work = tmp_path / f"prepared-{index}"
+        work.mkdir()
+        for _ in range(2):
+            assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+            result = json.loads(capsys.readouterr().out)
+            bundle = [
+                json.loads(line) for line in (work / "bundle" / "candidates.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            failures = [row for row in bundle if row.get("candidate_kind") == failure_kind]
+            assert len(failures) == 1
+            signatures.add(failures[0]["failure_signature"])
+            assert len(signatures) == 1
+            saved = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+            assert len(saved) == index + 1
+            assert {row["session_id"] for row in saved} == {f"session-{number}" for number in range(index + 1)}
+            assert {row["failure_signature"] for row in saved} == signatures
+            if index == 0:
+                assert result["candidate_total"] == 0
+                assert result["excluded_counts"]["single-session-failure"] == 1
+            else:
+                assert result["candidate_counts"] == {failure_kind: 1}
+                document = pathlib.Path(result["candidates_path"]).read_text(encoding="utf-8")
+                assert f"{index + 1}セッション" in document
+
+
+def test_prepare_recomputes_legacy_failure_ledger(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """旧集約の4セッションを保存した理由で1・2・1へ分け、再準備で重ねず時刻を保つ。"""
+    ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
+    ledger.parent.mkdir(parents=True)
+    diagnostics = [
+        '{"error":"併用拒否"}',
+        '{"error":"記録ID不明","record":"claude:first"}',
+        '{"error":"記録ID不明","record":"claude:second"}',
+        "記録ファイル不在: /records/missing.jsonl",
+    ]
+    records = [
+        {
+            "failure_signature": json.dumps([kind, "atk", "session-review-evidence", 2, "{<arg>:<arg>}"], ensure_ascii=False),
+            "session_id": f"{kind}-{index}",
+            "observed_at": "2026-09-05T00:00:00+00:00",
+            "failure_summary": f"atk run-script session-review-evidence（終了コード2）: {diagnostic}",
+        }
+        for kind in ("command-failure", "tool-failure")
+        for index, diagnostic in enumerate(diagnostics)
+    ]
+    ledger.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records), encoding="utf-8")
+    transcript = tmp_path / "no-failure.jsonl"
+    transcript.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": "依頼"}}) + "\n", encoding="utf-8")
+    work = _work_dir(tmp_path)
+    for _ in range(2):
+        assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+        result = json.loads(capsys.readouterr().out)
+        assert result["failure_ledger_skipped"] == 0
+        saved = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+        counts: dict[str, int] = {}
+        for item in saved:
+            counts[item["failure_signature"]] = counts.get(item["failure_signature"], 0) + 1
+        assert sorted(counts.values()) == [1, 1, 1, 1, 2, 2]
+        assert {item["session_id"] for item in saved} == {item["session_id"] for item in records}
+        assert {item["observed_at"] for item in saved} == {"2026-09-05T00:00:00+00:00"}
+
+
+@pytest.mark.parametrize("delivery", ["text", "send", "codex"])
+def test_delegate_improvements_reach_prepare(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], delivery: str
+) -> None:
+    """正常返却の省略区間も、元の全文から抽出した行と記録位置で準備へ含める。"""
+    threads = delegated_threads.write_delegated_threads(tmp_path)
+    monkeypatch.setenv("HOME", str(threads.home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(threads.home / ".claude"))
+    monkeypatch.setenv("CODEX_HOME", str(threads.codex_home))
+    improvement = "気付いた改善点: 正常な委譲返却に含まれる新しい機会"
+    body = "説明。" * 1000 + "\n" + improvement + "\n" + "補足。" * 1000
+    delegated_threads.append_return(threads, body, delivery)
+    work = _work_dir(tmp_path)
+    assert prepare.main(["--transcript", str(threads.transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+    record = json.loads(capsys.readouterr().out)
+    assert record["improvement_lines"] == [improvement]
+    assert improvement in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
 
 
 def _git_repository(path: pathlib.Path) -> pathlib.Path:

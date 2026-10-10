@@ -7,8 +7,9 @@ import json
 import pathlib
 from typing import TypedDict
 
-from agent_toolkit._atk import run_command
+from agent_toolkit._atk import managed_temp, run_command
 from agent_toolkit._common import next_action
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._plan.structure.verification import plan_commands
 
 
@@ -29,10 +30,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--worktree", type=pathlib.Path, metavar="DIR", required=True, help="検証するGit worktreeの絶対パス")
     parser.add_argument("--timeout", type=float, required=True, help="各検証の正の有限上限秒数")
     parser.add_argument("--list", action="store_true", help="子を起動せずコマンドとargvを列挙する")
+    parser.add_argument(
+        "--records-output",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="保存結果のまとまりの絶対パス。省略するとmanaged-tempへ保存する",
+    )
     args = parser.parse_args(argv)
     try:
         if not args.plan.is_absolute() or not args.worktree.is_absolute() or not args.worktree.is_dir():
             raise ValueError("--planと--worktreeは実在する対象の絶対パスで指定する")
+        if args.records_output is not None and not args.records_output.is_absolute():
+            raise ValueError("--records-outputは絶対パスで指定する")
         command_parser = argparse.ArgumentParser(exit_on_error=False)
         run_command.build_parser(command_parser)
         # run-commandと同じ入力契約でtimeout・cwd・wrapper内のargvを確かめる。
@@ -72,10 +81,30 @@ def main(argv: list[str] | None = None) -> int:
                 "exit_code": exit_code,
                 "record_path": record["record_path"],
                 "failure": failure,
+                "record": record,
             }
         )
         failed = failed or exit_code != 0
-    print(json.dumps(results, ensure_ascii=False))
+    try:
+        output = args.records_output or managed_temp.create_managed_temp("plan-verify-results") / "results.json"
+        payload = {
+            "version": 1,
+            "results": results,
+            "records": [result["record_path"] for result in results if result["record_path"] is not None],
+            "unrecorded": [result["order"] for result in results if result["record_path"] is None],
+            "results_path": str(output),
+        }
+        atomic_write(output, json.dumps(payload, ensure_ascii=False) + "\n")
+    except (OSError, managed_temp.ManagedTempError) as error:
+        next_action.report(str(error), next_action="各実行の保存先を保持し、結果の保存先を直して記録を回復する")
+        print(
+            json.dumps(
+                {"results": results, "records": [row["record_path"] for row in results if row["record_path"]]},
+                ensure_ascii=False,
+            )
+        )
+        return 2
+    print(json.dumps(payload, ensure_ascii=False))
     return int(failed)
 
 

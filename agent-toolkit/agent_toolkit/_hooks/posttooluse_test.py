@@ -564,6 +564,9 @@ def _run(
         "for item in one; do git commit -m message; done",
         "if test -f marker; then git commit -m message; elif test -d marker; then git push; fi",
         "case value in one) git commit -m message;; esac",
+        "time for item in one; do git commit -m message; done",
+        "! if test -f marker; then git push; fi",
+        "time -p { git commit -m message; }",
     ],
 )
 def test_git_completion_operation_notifies_each_successful_call(
@@ -598,6 +601,8 @@ def test_git_completion_operation_notifies_each_successful_call(
         "background",
         "moved-background",
         "shell-background",
+        "coproc",
+        "named-coproc",
         "agent",
         "delegate",
         "dry-run",
@@ -613,6 +618,8 @@ def test_git_completion_notice_excludes_non_completion_operations(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     commands = {
         "shell-background": "git push &",
+        "coproc": "coproc git push",
+        "named-coproc": "coproc WORKER if test -f marker; then git push; fi",
         "dry-run": "git push --dry-run",
         "help": "git commit --help",
         "global-help": "git --help push",
@@ -756,11 +763,20 @@ def test_answer_without_user_text_receives_no_notice(tmp_path: pathlib.Path, too
     assert result.stdout == ""
 
 
-def test_hooks_json_routes_ask_user_question_to_posttooluse() -> None:
-    """PostToolUseの登録がAskUserQuestionを被覆しないと、前2件の処理へ入力が届かない。"""
-    hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
-    matchers = [entry["matcher"].split("|") for entry in hooks]
-    assert any("AskUserQuestion" in names for names in matchers)
+def _registered_posttooluse_names(event: str = "PostToolUse") -> set[str]:
+    """現在の完全一致matcherが選択するツール集合を返す。"""
+    hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"][event]
+    return {name for entry in hooks for name in entry["matcher"].split("|")}
+
+
+def test_hooks_json_routes_tool_specific_processing_to_posttooluse() -> None:
+    """ツール別処理を持つ現行Claude入力群が登録から到達する。"""
+    tool_names = {"AskUserQuestion", "Skill", "Agent", "Task", "TaskStop", "Bash", "PowerShell", "Write", "Edit", "MultiEdit"}
+    tool_names.update(
+        f"mcp__plugin_agent-toolkit_agents_server__{operation}"
+        for operation in ("start", "send_message", "kill", "stop", "list", "show")
+    )
+    assert tool_names <= _registered_posttooluse_names()
 
 
 def _shell_payload(tool_name: str, response: dict) -> dict:
@@ -826,15 +842,10 @@ def test_shell_output_without_persisted_path_is_left_unchanged(
     assert "updatedToolOutput" not in result.stdout
 
 
-def test_hooks_json_routes_shell_tools_to_posttooluse() -> None:
-    """PostToolUseの登録がBashとPowerShellを被覆しないと、退避した出力の置き換えへ入力が届かない。"""
-    hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
-    matchers = [entry["matcher"].split("|") for entry in hooks]
-    assert any({"Bash", "PowerShell"} <= set(names) for names in matchers)
-
-
-def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.Path) -> None:
-    """成功したTaskStopの対象記録だけを消費する。"""
+@pytest.mark.parametrize("event", ["PostToolUse", "PostToolUseFailure", "PermissionDenied"])
+@pytest.mark.parametrize("id_field", ["task_id", "shell_id"])
+def test_registered_task_stop_consumes_only_successful_target(tmp_path: pathlib.Path, event: str, id_field: str) -> None:
+    """登録の選択から停止対象の消費までを検証し、失敗・拒否と別対象を保持する。"""
     session_id = "task-stop-consume"
     state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     state_path.write_text(
@@ -844,12 +855,14 @@ def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.
         ),
         encoding="utf-8",
     )
-    result = _run(
-        {"session_id": session_id, "tool_name": "TaskStop", "tool_input": {"task_id": "task-1"}},
-        state_dir=tmp_path,
-    )
-    assert result.returncode == 0
-    assert _read_state(tmp_path, session_id)["stall_detection_completed_at_by_task"] == {"task-2": 2.0}
+    if "TaskStop" in _registered_posttooluse_names(event):
+        result = _run(
+            {"hook_event_name": event, "session_id": session_id, "tool_name": "TaskStop", "tool_input": {id_field: "task-1"}},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+    expected = {"task-2": 2.0} if event == "PostToolUse" else {"task-1": 1.0, "task-2": 2.0}
+    assert _read_state(tmp_path, session_id)["stall_detection_completed_at_by_task"] == expected
 
 
 @pytest.mark.parametrize("tool_name", ["Agent", "Task"])

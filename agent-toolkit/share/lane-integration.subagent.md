@@ -1,6 +1,6 @@
 # レーン統合タスク
 
-必要な計画の起草と実装を担当したレーン担当threadが、専用branchの統合、作成した計画の最終化およびAWIの終端を行う。pushと専用worktreeの回収は行わず、委譲元が担う。
+必要な計画の起草と実装を担当したレーン担当threadが、専用branchの統合、作成した計画の最終化およびAWIの終端を行う。pushは委譲元が担う。専用worktreeとbranchは統合後も追加に備えて保持し、全工程・外部プロセスの終了後に所有登録から回収する通常終了とprocess-loopの子終了後へ渡す。
 
 ## 読込表
 
@@ -43,7 +43,7 @@
    atk run-script history-compare -- --operation rebase --work-dir <専用worktreeの絶対パス> --old-base <rebase前のベースOID> --old-head <rebase前の専用branchのHEAD> --new-base <統合先branchの現在HEAD> --new-head <rebase後の専用branchのHEAD> --output <managed-temp内の対応表JSONの絶対パス>
    ```
 
-9. rebase後の専用branchのHEADを再検証する。計画を持つ場合は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <専用worktreeの絶対パス> --timeout <正の有限秒数>`を使う。計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを使う。計画ありでは直前に同じ入力の`--list`を確認し、実行後は全件のrecord_pathと両出力を読む。終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを確認する。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の変更内容の検収が担保する。失敗した場合は、読込表の行が示す同資料「統合後の変更範囲の検証の失敗」に従う。
+9. rebase後の専用branchのHEADを再検証する。計画を持つ場合は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <専用worktreeの絶対パス> --timeout <正の有限秒数>`を使う。計画なしの場合は引き継ぎ記録に確定した変更範囲の検証コマンドを使う。計画ありでは直前に同じ入力の`--list`を確認し、保存した結果まとめの`results_path`を`atk run-command --records-file <絶対パス>`へ渡す。計画なしは`--record <record_path>`を反復して読む。子を再実行せず全件の取得版・Git状態・子とwrapperの終了状態・両出力を判定し、旧記録の未記録と保存・読取失敗を成功にしない。終了コード0と、後掲「検証結果の警告の判定」で阻害に当たる警告が無いことを確認する。各commitの内容の不変は、受領した`実行レビュー済みHEAD`との一致確認と手順8の変更内容の検収が担保する。失敗した場合は、読込表の行が示す同資料「統合後の変更範囲の検証の失敗」に従う。
 10. 対象リポジトリのプロジェクト規範に、統合後にだけ成立する検証があるか確認する。なければ手順11へ進む。ある場合は次の順で実行する。この検証は他のレーンの成果と合わせた状態でだけ成立するため、rebase前の変更範囲の検証では代替できない。専用branchのHEADは統合先branchの現在HEADの子孫であり、そのtreeはfast-forward後の統合先と同じになるため、fast-forwardの前に専用worktreeで実行する。統合先を変える前に失敗を確定すると、他のレーンが失敗した状態の統合先の上へ載ることを防げる。
     1. managed-tempの中に作業ディレクトリを確保し、標準出力と標準エラーの保存先を、その領域内の絶対パスとして`summary_policy`へ記す。
     2. 規範が定めるコマンドを、専用worktreeを`cwd`として`agents_server`の`start`（`mode`は`shell`）へ渡して1回実行する。委譲先には両方を保存して必要な範囲を読ませ、終了状態、警告の有無、両保存先と要約を返させる。
@@ -52,7 +52,7 @@
 11. 統合先branchを専用branchへfast-forwardできることを確認し、`git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`でマージ先branchを更新しない。`receive.denyCurrentBranch`の省略時の値`refuse`が、チェックアウト中のbranchへのref更新を拒否するためである。この時点でもfast-forwardが成立しない場合は、merge commitとcherry-pickで独自解決せず続行できない理由を返す。
 12. マージ後の統合先branchの7文字以上の一意な短縮OIDを取得する。
 
-手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で対応を追記する。その手段へは、`history-compare`が保存した対応表をそのまま`--rewrite-map`へ渡し、手順6で引き継ぎ記録先へ記録したrebase前のHEADと、統合する全ての計画または引き継ぎ記録も1回で渡す。完成条件証拠のOID参照更新にも同じ対応表を使う。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
+手順8の履歴検収後に、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段で対応を追記する。その手段へは、`history-compare`が保存した対応表をそのまま`--rewrite-map`へ渡し、手順6で引き継ぎ記録先へ記録したrebase前のHEADと、統合する全ての計画または引き継ぎ記録も1回で渡す。完成条件証拠と未判定検証記録の参照更新にも同じ対応表を使い、evidenceの`commit:<OID>`だけを更新する。分割の各対応先もcommit:標識を保ち、裸の取得版OID・HEAD・git_head・比較元、観測ファイルと判定・reviewed_headは保持する。既存自由文を推測して新形式へ移さず、結果に作用する内容・条件の差がある行だけを再観測し、根拠更新は両証拠CLIの保存物直接指定と`--select-row`へ接続する。AWI集合が新OIDへ継承され、統合後も現在のOIDを取得できる。
 
 ### 検証結果の警告の判定
 

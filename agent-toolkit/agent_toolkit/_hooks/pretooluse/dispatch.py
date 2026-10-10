@@ -110,7 +110,7 @@ from agent_toolkit._hooks.pretooluse.agent_checks import (
 from agent_toolkit._hooks.pretooluse.confirmation_reads import unread_reference_warning
 from agent_toolkit._hooks.pretooluse.content_checks import _collect_edit_operation_warnings, _warn_mojibake
 from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read
+from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, session_record_reference_warning
 from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _llm_notice
 from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings
 from agent_toolkit._hooks.pretooluse.shell_checks import (
@@ -120,6 +120,7 @@ from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_unquoted_heredoc_substitution,
     _git_commit_attribution_error,
     _git_commit_message_format_error,
+    _git_commit_messages,
     _warn_git_rev_parse_short_multiple,
     _warn_windows_drive_letter_path,
 )
@@ -234,12 +235,14 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return _decide_bash_tool(payload, tool_input, session_id, is_codex=is_codex)
     if tool_name == "TaskStop":
         return Decision(block=_check_task_stop(session_id, tool_input))
-    skill_warnings = tuple(operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex))
-    if tool_name in _SEARCH_TOOL_NAMES:
-        return Decision(notices=skill_warnings)
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
-    return dataclasses.replace(_decide_edit_tool(tool_name, tool_input, cwd), notices=skill_warnings)
+    notices = tuple(operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex))
+    if record_warning := session_record_reference_warning(tool_name, tool_input, cwd):
+        notices += (record_warning,)
+    if tool_name in _SEARCH_TOOL_NAMES:
+        return Decision(notices=notices)
+    return dataclasses.replace(_decide_edit_tool(tool_name, tool_input, cwd), notices=notices)
 
 
 def _emit(decision: Decision, pending_notices: list[str]) -> int:
@@ -313,18 +316,21 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         lambda: _check_bash_option_after_terminator(command),
         lambda: _check_bash_atk_output_loss(command),
         lambda: _warn_git_rev_parse_short_multiple(command),
-        lambda: _git_commit_message_format_error(command, cwd=cwd),
-        lambda: _git_commit_attribution_error(
-            command,
-            _hook_observed_identity(payload, is_codex=is_codex),
-            attribution_disabled=not is_codex and _claude_commit_attribution_disabled(cwd),
-            cwd=cwd,
-        ),
     ):
         message = block()
         if message is not None:
             return Decision(block=message)
+    messages = tuple(_git_commit_messages(command, cwd=cwd))
+    format_error = _git_commit_message_format_error(messages)
+    if format_error is not None:
+        return Decision(block=format_error)
+    if messages and (is_codex or not _claude_commit_attribution_disabled(cwd)):
+        attribution_error = _git_commit_attribution_error(messages, _hook_observed_identity(payload, is_codex=is_codex))
+        if attribution_error is not None:
+            return Decision(block=attribution_error)
     warnings: list[str] = operation_skill_warnings(payload, "Bash", tool_input, session_id, is_codex=is_codex)
+    if record_warning := session_record_reference_warning("Bash", tool_input, cwd):
+        warnings.append(record_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
     if drive_letter_path_warning is not None:
         warnings.append(drive_letter_path_warning)

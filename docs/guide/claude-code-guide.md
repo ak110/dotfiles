@@ -138,7 +138,14 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `atk agents wait`は委譲先の終端を待ち、回収した結果を表示する。
 `agents_server`の公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）の入力と応答の契約は[design-agents-server.md](../development/design-agents-server.md)を参照。
 
-Bashの静的な検出は、for・算術for・select・while・until・if/elif/else・caseの条件と本体、入れ子、文全体のパイプ・リダイレクト・背景化にも及ぶ。引用やheredoc本文、算術式のデータ、未実行の関数定義と未確定の動的コマンドは実行位置とみなさない。未完了の背景出力の読取は進捗確認として警告にとどめ、反復しても遮断しない。終端結果は完了後に同じ保存先の全量を読み直して確認する。
+Bashの静的な検出は、for・算術for・select・while・until・if/elif/else・caseの条件と本体、入れ子、文全体のパイプ・リダイレクト・背景化にも及ぶ。未引用の予約語前置`time`・`time -p`・`!`・`coproc`を共通解析で扱い、coprocの暗黙の出力パイプと背景実行を保持する。引用やheredoc本文、算術式のデータ、未実行の関数定義と未確定の動的コマンドは実行位置とみなさない。未完了の背景出力の読取は進捗確認として警告にとどめ、反復しても遮断しない。終端結果は完了後に同じ保存先の全量を読み直して確認する。
+
+Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内し、一般の保存本文には`atk read-file`を使う。
+
+振り返りの準備後や最終報告後に、新しい`気付いた改善点:`の行が残っている場合、Stopは未取込みの行と次の操作を示す。
+その行を振り返りの準備・分析へ取り込み、結果報告を更新すると終了へ進める。
+取込み済みの行の再掲と、文書・コードの引用や生成通知の標識だけでは再実行を求めない。
+再準備後の報告は最新の成功した準備に対応する本文で判定し、古い予告の再送は求めない。
 
 ## 工程別モデル設定
 
@@ -152,13 +159,15 @@ Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は�
 
 | キー | 対応する起動 |
 | --- | --- |
-| `high_tier_model` | 計画・実装・修正・AWI投入・公開工程の終端・自動コードレビュー監査 |
+| `high_tier_model` | 計画・実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査 |
 | `medium_tier_model` | 実行レビュー・プロンプト評価・`model_type="medium_tier"`を指定した`start`の`explore` |
 | `low_tier_model` | `model_type`を省略した`start`の`explore`と`shell`・軽量な`mode:`を宣言した`<役割名>.subagent.md`の`task` |
 | `write_model` | `start`の`write` |
 | `orchestrate_model` | `atk wi process-loop`・`atk run-skill` |
 | `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、未設定時は`false`） |
 | `codex_model_providers` | `agents_server`のCodex接続先を主接続先から優先順で並べるID列。空ならCodex通常設定・代替なし |
+
+新しい候補や評価軸を導く調査と案出しは、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。既に決めた問いの所在・値・件数などの機械的な事実確認と区別し、両者を含む依頼は`high_tier`を使う。`explore`の指定省略時の`low_tier`と実行レビューの`medium_tier`は変えない。
 
 `atk config show`はパス4行、モデル設定5行、速度とAPI provider列を各1行で表示する。`atk config get`は設定値を返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
@@ -236,7 +245,10 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 
 AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼したい内容を要求として登録する。
 登録した要求は、調査・計画・実装・レビュー・公開まで順に自動で処理される。
-選定はClaude CodeとCodexのどちらもメインが直接行い、別の選定担当は起動しない。圧縮ツールが提供されるClaude Codeでは全初期通常レーンの初回起動後に一度だけ会話を圧縮する。複数段階なら最後の段階の全起動後に行い、通知後、メインが同じ工程を続ける。予約後の待機は背景で開始してターンを終える。ツールが無い環境では、その旨を記録して圧縮せず待機する。Codex、通常0件、段階間、追加レーンと公開待機では、この圧縮を起動しない。
+選定はClaude CodeとCodexのどちらもメインが直接行い、別の選定担当は起動しない。候補本文から分類・割当・モデル・配置根拠を判断し、取得済み候補と意味判断をpick-wi-checkへ渡して定型欄の生成・確認・保存を1回で行う。意味判断と要求の被覆、レーン数上限、同じ担当thread、単一writer、実行レビューと直列統合は維持する。
+圧縮ツールが提供されるClaude Codeでは、各段階の全初期通常レーンの初回起動後と、終端担当の起動後の長時間待機前に会話圧縮を予約する。独立した工程を先に開始し、セッションのmanaged-temp直下のparent-handoff.mdへ再開状態を保存する。引数なしで予約し、背景待機を始めてターンを終える。受付は圧縮完了と区別し、通知後に保存記録から同じ工程へ戻る。ツールが無い環境では、その旨を記録して通常の待機へ進む。Codex、通常0件、処理中の追加レーン起動と実行レビュー待機は予約の対象外とする。
+
+レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・不明・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。
 要件を本文だけで説明できる作業に向く。
 要求を登録するときは、先行する要求の成果が無いと安全に実施できないか完成を判定できない場合だけ、その先行する要求への依存を設定する。
 
@@ -280,6 +292,7 @@ AWIが常時発生しないリポジトリでは、常駐実行を起動せず�
 起動したセッションの中で、調査から実装、レビュー、公開までが進む。
 計画を要するAWIが含まれる場合も、同じセッションの中で計画の作成から実装まで進む。
 複数の対象リポジトリを扱う場合は、計画と実行レビューを対象worktreeごとに分ける。同じ対象worktreeの計画対象と直接実装対象は、同じ実行レビューでまとめて確認する。
+Claude Codeではpush後のCI待機でも、独立した公開工程を先に開始し、対象commit・監視入力・baseline・保存出力と後続工程をparent-handoff.mdへ保存して同じ圧縮予約手順を使う。通知後も同じ監視対象と保存結果から続ける。
 
 自律型とまとめ処理型は、AWIの発生頻度と常駐実行の要否で選ぶ。
 常駐実行を動かし続けるだけのAWIが継続して発生する場合は自律型を選ぶ。
@@ -424,11 +437,11 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する | 対応 | 対応 |
 | plugin `Stop/stop` | 報告が足りないまま作業を終えようとすると、足りない報告段階と報告本文の不備を示して同じターンを続けさせる。委譲先や待機コマンドを待つ間は終了を許す | 対応 | 対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 発話の内容を現物で確かめる手順や、発話に応じて適用する規範の所在を示す注記を返す | 対応 | 対応 |
-| plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検証する | 非対応 | 対応 |
+| plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をログへ記録する | 対応 | 非対応 |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した場合も、そのタスクをバックグラウンドタスクの記録へ残す | 対応 | 非対応 |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応 |
-| plugin `StopFailure/stopfailure_notifier` | APIエラーでターンが終わったことをベルとデスクトップ通知で伝える | 対応 | 非対応 |
+| plugin `StopFailure/stopfailure_notifier` | APIエラーでターンが終わったとき、発火内容とセッション記録の要約をログへ残す | 対応 | 非対応 |
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づき、編集前にチェックする | 対応 | 非対応 |
 
 各フックの判定条件と、Codexでの対応範囲の詳細は[design-hooks.md](../development/design-hooks.md)「フックごとの処理とCodexの対応範囲」を参照。
@@ -512,7 +525,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `atk agents-exit-session`: ユーザー指示時または自律モードのスキル完遂時に、現在のClaude CodeまたはCodexの対話セッションへ終了を要求するCLI。管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeでは、ターンの完了後に`/exit`を実行してセッション記録の末尾まで残す。moduleが読み込まれていないClaude CodeとCodexでは従来のプロセス停止方式を使う。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
-- `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、任意の文字列`instructions`に保持する情報や再開指示を渡せる。省略すると追加指示なしで圧縮する。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に継続する
+- `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。必要な再開状態はセッションのmanaged-temp直下のparent-handoff.mdへ保存し、圧縮後の領域通知からその記録を読む。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
 - `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
 - `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。途中の回答や割り込みへの返答の後に残りの報告段階へ進まない停止と、報告本文に不備がある停止はStopフックが遮断して戻す。報告本文の不備は、対策行に根拠（AWIのファイル名・投入予定・同一セッションの実装）が無いこと、見送りの判定済み行の根拠の欠落か未確定、未確定行の照会・再現・残る理由の欠落、AWI投入結果報告に残った投入予定の4つである。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う

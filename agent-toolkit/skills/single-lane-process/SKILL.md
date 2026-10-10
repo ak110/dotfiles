@@ -19,6 +19,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 | 計画対象がある場合に計画を起草する前（実行順3） | `agent-toolkit:plan-mode`のSKILL.mdと同スキルの`references/plan-file-standards.md` |
 | 計画あり・なしのどちらでも、メインが自ら実装に着手する直前（実行順4） | `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`未判定検証記録`の段落と「起動」の`Git管理外の変更`の段落 |
 | 対象worktreeごとに公開する前（実行順8） | `agent-toolkit:commit`を起動し、同スキルの`references/publish.md` |
+| Claude Codeでpush後のCI監視の待機へ入る前（実行順8） | `agent-toolkit:delegation`の`references/waiting-and-monitoring.md` |
 
 ## agent-toolkit:process-wiの規定の読み替え
 
@@ -69,5 +70,5 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 7. 各計画について`atk run-script plan-progress --`で完了判定を`## 進捗ログ`へ記録し、計画構造の自動チェックの成功を確認してから計画バンドルを保存する。
 8. 各WIを採否に応じて`adopt`または`reject`し、対象worktreeごとに`agent-toolkit:commit`を起動し、読込表の行の`references/publish.md`に従って公開する。`adopt`では`agent-toolkit:wi-standards`「状態と依存」のcommit対応付けを使い、`--target-repo`は実行順2に従う。複数の対象リポジトリでは成果依存を保ち、独立した対象のpushを先に全件終えてからCI監視を並行開始する。対象リポジトリ、ref、baselineおよび監視識別子を対応付け、全識別子の終端を待って結果を個別に回収する。CI成功を入力にするプロジェクト固有の公開後の操作は、その対象の成功後に行う。待機中は結果を入力とせず同じ書込資源を占有しないプロジェクト固有の公開後の操作を進めてよい。
    開発マシン上の常時稼働サーバーへの反映は、`agent-toolkit:completion-report`の`SKILL.md`「工程」の常時稼働サーバーへの反映の段落が定める反映手段と稼働確認手段を持つ対象で、実装・レビューが収束したHEADを使える場合にCI待機と並行して始める。並行して始められる条件は同段落に従う。反映したHEADの完全OID、反映コマンドの終了状態と稼働確認の結果を保持して完了報告へ渡す。後続のcommitによる差分は完了報告の同段落で判定する。
-   Claude Codeでは、全ての未終端識別子を条件とする1つの`Monitor`のuntil-loopで終端を待つ。待機はこの`Monitor`に任せ、固定時間の`sleep`と状態変化の無い空の`ReadNotifications`の反復を省く（努力目標。状態変化の無い照会の往復を避ける）。
+   Claude Codeでは、独立したpush群の監視と並行するサーバー反映などを開始してから、CI待機で会話圧縮を予約する。セッションのmanaged-temp直下の`parent-handoff.md`へ再開状態を保存する。固定したWIと対象worktree・開始HEADの対応表、計画集合と保存状態、WIと実装commitの対応と採否の到達点を記録する。対象repo・forge・ref・source ref・完全OID・baselineと、監視識別子・出力先の対応を記録する。未回収集合、並行反映のHEADと到達点、CI後の操作と依存順も記録する。予約と通知後の復元は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyのバックグラウンドタスクを保ち、Monitorで前景を占有せずにターンを終える。通知後は同じ入力と保存出力からCI結果を回収し、公開後の操作へ進む。CI定義の無い対象にはこの圧縮境界を設けない。Codexと圧縮ツールが無い環境では既存の待機契約を使う。
 9. 一時的なレビュー指摘管理表を正式な保存または回収契約に従って処理し、`agent-toolkit:completion-report`で報告する。

@@ -3,7 +3,7 @@
 `agent-toolkit:user-confirmation-and-report`の読込表は、確認要否を判定する前と選択肢を組む前に
 `references/approval-scope.md`と`references/choice-construction.md`を全文読むと定める。
 確認を組む時点はスキルの起動から離れ、読込表の行が想起されないまま確認が発行された。
-本判定はtranscriptの最後の会話圧縮より後に2資料の読取の操作があるかだけを確かめ、読んだ内容の理解は判定しない。
+本判定は最後の会話圧縮より後の対象資料の読取操作と成功結果を対応付け、読んだ内容の理解は判定しない。
 
 判定の結論は警告とし、遮断せず反復しても昇格させない。`AskUserQuestion`の入力はトークン数が多いことが多く、
 遮断して再発行させる損失が大きいためである（2026年10月6日、ユーザーの確認回答）。
@@ -14,12 +14,15 @@
 from __future__ import annotations
 
 import json
+import pathlib
 
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._hooks import agent_id as _agent_id
 from agent_toolkit._hooks import plugin_resources as _plugin_resources
+from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
+from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths
 
 _llm_notice = _notice_formatter("pretooluse")
 
@@ -27,34 +30,61 @@ _SKILL = "user-confirmation-and-report"
 _REFERENCES = ("references/approval-scope.md", "references/choice-construction.md")
 
 
-def _is_compact_boundary(line: str) -> bool:
-    try:
-        entry = json.loads(line)
-    except (json.JSONDecodeError, ValueError):
-        return False
-    return isinstance(entry, dict) and entry.get("type") == "system" and entry.get("subtype") == "compact_boundary"
-
-
-def _read_references(lines: list[str]) -> set[str]:
-    """最後の会話圧縮より後に`Read`か`Bash`で読取を行った資料の相対パスを返す。"""
-    start = max((index + 1 for index, line in enumerate(lines) if _is_compact_boundary(line)), default=0)
+def _read_references(lines: list[str], *, cwd: str = "") -> set[str]:
+    """圧縮より後の対象資料の読取操作と成功結果を、呼出IDで対応付ける。"""
+    targets = {
+        reference: (pathlib.Path(__file__).resolve().parents[3] / "skills" / _SKILL / reference).resolve()
+        for reference in _REFERENCES
+    }
+    pending: dict[str, set[str]] = {}
     found: set[str] = set()
-    for _, block in _transcript.iter_assistant_content_blocks(lines[start:]):
-        if block.get("type") != "tool_use":
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
             continue
-        tool_input = block.get("input")
-        if not isinstance(tool_input, dict):
+        if not isinstance(entry, dict) or not _transcript_scan.entry_in_scan_scope(entry, include_sidechain=False):
             continue
-        name = block.get("name")
-        for reference in _REFERENCES:
-            if name == "Read":
-                file_path = tool_input.get("file_path")
-                if isinstance(file_path, str) and file_path.replace("\\", "/").endswith(f"{_SKILL}/{reference}"):
-                    found.add(reference)
-            elif name == "Bash":
-                command = tool_input.get("command")
-                if isinstance(command, str) and reference.rsplit("/", 1)[-1] in command:
-                    found.add(reference)
+        if entry.get("type") == "system" and entry.get("subtype") == "compact_boundary":
+            pending.clear()
+            found.clear()
+            continue
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else ():
+            if not isinstance(block, dict):
+                continue
+            if entry.get("type") == "user" and block.get("type") == "tool_result":
+                tool_id = block.get("tool_use_id")
+                if not isinstance(tool_id, str):
+                    continue
+                reference_set = pending.pop(tool_id, set())
+                if block.get("is_error") is not True:
+                    found.update(reference_set)
+            elif entry.get("type") == "assistant" and block.get("type") == "tool_use":
+                tool_id = block.get("id")
+                tool_input = block.get("input")
+                if not isinstance(tool_id, str) or not isinstance(tool_input, dict):
+                    continue
+                paths: list[pathlib.Path] = []
+                if block.get("name") == "Read" and isinstance(tool_input.get("file_path"), str):
+                    candidate = pathlib.Path(tool_input["file_path"]).expanduser()
+                    if candidate.is_absolute():
+                        paths.append(candidate)
+                elif block.get("name") == "Bash" and isinstance(tool_input.get("command"), str):
+                    base = entry.get("cwd", cwd)
+                    paths.extend(
+                        path
+                        for group in bash_read_paths(
+                            tool_input["command"], base if isinstance(base, str) else cwd, include_partial=True
+                        )
+                        for path in group
+                    )
+                matched = {
+                    reference for reference, target in targets.items() if any(path.resolve() == target for path in paths)
+                }
+                if matched:
+                    pending[tool_id] = matched
     return found
 
 
@@ -68,7 +98,9 @@ def unread_reference_warning(payload: dict, tool_name: str) -> str | None:
     lines = _transcript.read_transcript_lines(transcript_path)
     if lines is None:
         return None
-    unread = [reference for reference in _REFERENCES if reference not in _read_references(lines)]
+    cwd = payload.get("cwd")
+    read = _read_references(lines, cwd=cwd if isinstance(cwd, str) else "")
+    unread = [reference for reference in _REFERENCES if reference not in read]
     if not unread:
         return None
     shown = "、".join(_plugin_resources.skill_reference(_SKILL, reference) for reference in unread)

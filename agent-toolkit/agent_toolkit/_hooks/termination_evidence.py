@@ -317,6 +317,9 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
                 record["unavailable"] = "複数の呼び出しの出力を分離できない"
                 continue
             if record["kind"] == "prepare":
+                if failed:
+                    record["invalid"] = True
+                    continue
                 try:
                     result = json.loads(text)
                 except (json.JSONDecodeError, ValueError):
@@ -330,7 +333,8 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
                     )
                     and isinstance(result.get("prepared_at"), str)
                 ):
-                    work["prepare"].append({"call_id": tool_id, "result": result})
+                    work["prepare"].append({"call_id": tool_id, "result": result, "offset": _position(payload)})
+                    work["reports"] = {stage: report for stage, report in work["reports"].items() if stage == "work-complete"}
                 else:
                     record["invalid"] = True
                 continue
@@ -366,11 +370,29 @@ def observe_reports(payload: dict[str, Any]) -> bool:
             return state
         available = True
         reports = report_validation.reports_from_messages(messages)
-        if not reports:
+        improvements = [line for message in messages for line in runtime_inserted.reported_improvement_lines(message)]
+        if not reports and not improvements:
             return state
         if current is None or _finished(data, current[1]):
             current = _new_work(data, reference)
         work = current[1]
+        prepared = work.get("prepare", [])
+        if prepared:
+            review_offset = prepared[-1].get("offset", offset)
+            recorded_payload = {key: value for key, value in payload.items() if key != "last_assistant_message"}
+            recent = visible_messages(recorded_payload, review_offset)
+            prior = visible_messages(recorded_payload, offset)
+            if recent is None or prior is None:
+                append_stop_log(payload["session_id"], "termination_reports_unavailable", {})
+                return state
+            last = payload.get("last_assistant_message")
+            if isinstance(last, str) and (last in recent or last not in prior):
+                recent.append(last)
+            current_reports = report_validation.reports_from_messages(recent)
+            reports = {
+                **{stage: text for stage, text in reports.items() if stage == "work-complete"},
+                **{stage: text for stage, text in current_reports.items() if stage != "work-complete"},
+            }
         work["reports"] = {stage: report for stage, report in work["reports"].items() if "call_id" not in report}
         work["reports"].update({stage: {"text": text} for stage, text in reports.items()})
         _compact(data)
@@ -378,6 +400,27 @@ def observe_reports(payload: dict[str, Any]) -> bool:
 
     session_state.update_state(payload["session_id"], update)
     return available
+
+
+def unprocessed_improvements(payload: dict[str, Any], work: dict[str, Any]) -> list[str]:
+    """現在の可視本文と成功した準備の包含を比べ、再掲を除いた追加の行を返す。"""
+    messages = visible_messages(payload, work.get("offset", 0))
+    if messages is None:
+        return []
+    included = {
+        line
+        for _work_id, item in session_works(payload)
+        for prepared in item.get("prepare", [])
+        for line in prepared["result"].get("improvement_lines", [])
+    }
+    return list(
+        dict.fromkeys(
+            line
+            for message in messages
+            for line in runtime_inserted.reported_improvement_lines(message)
+            if line not in included
+        )
+    )
 
 
 def report_violations(work: dict[str, Any]) -> list[str]:
@@ -456,7 +499,11 @@ def record_decision(document: dict[str, Any]) -> str:
             if (
                 not isinstance(records, list)
                 or len(records) != 1
-                or records[0].get("kind") != "failure"
+                or not (
+                    records[0].get("kind") == "failure"
+                    or records[0].get("kind") == "prepare"
+                    and (records[0].get("invalid") or records[0].get("unavailable"))
+                )
                 or records[0].get("work_id") != document.get("work_id")
             ):
                 raise ValueError("対象作業の実際の失敗call_idを指定する")

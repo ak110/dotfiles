@@ -61,10 +61,10 @@ def run(args: argparse.Namespace) -> None:
     if any(not path.is_absolute() for path in paths):
         raise ValueError("ファイルは絶対パスで指定する")
     verification_results.validate_display(args)
-    results = verification_results.load_results(args.results_file)
+    results = verification_results.results_for_arguments(args)
     if args.list_results:
         if (
-            args.results_file is None
+            not verification_results.has_result_specification(args)
             or args.updates_file
             or args.list
             or any(value is not None for value in (args.section, args.row, args.source, args.evidence_file, args.mode))
@@ -72,14 +72,19 @@ def run(args: argparse.Namespace) -> None:
             raise ValueError("--list-resultsは--results-fileと指定し、更新・原文一覧とは別に実行する")
         verification_results.list_results(results, args)
         return
-    updating = any(value is not None for value in (args.section, args.row, args.source, args.evidence_file, args.mode))
+    direct = bool(args.select_row)
+    if direct and any(value is not None for value in (args.section, args.row, args.source)):
+        raise ValueError("--select-rowと従来の--section・--row・--sourceは別々に使う")
+    updating = not direct and any(
+        value is not None for value in (args.section, args.row, args.source, args.evidence_file, args.mode)
+    )
     if updating and any(value is None for value in (args.section, args.row, args.source, args.evidence_file, args.mode)):
         raise ValueError("更新には--section・--row・--source・--evidence-file・--modeを全て指定する")
-    if args.list and updating:
+    if args.list and (updating or direct):
         raise ValueError("一覧と更新は別々に実行する")
-    if args.updates_file and (args.list or updating):
+    if args.updates_file and (args.list or updating or direct):
         raise ValueError("一括更新と単一行更新・一覧は別々に実行する")
-    updating = updating or args.updates_file is not None
+    updating = updating or direct or args.updates_file is not None
     generating = bool(args.wi or args.plan)
     if (updating or args.list and not generating) and not args.output.is_file():
         command = shlex.join(
@@ -112,7 +117,10 @@ def run(args: argparse.Namespace) -> None:
             plans,
         )
         requirement_units.append_missing_rows(payload, expected)
-    if args.updates_file:
+    if direct:
+        updates = verification_results.updates_for_arguments(payload, args)
+        payload = verification_results.updated_payload(payload, None, results, updates=updates)
+    elif args.updates_file:
         payload = verification_results.updated_payload(payload, args.updates_file, results)
     elif updating:
         rows = payload[args.section]

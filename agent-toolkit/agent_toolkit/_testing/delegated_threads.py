@@ -115,3 +115,28 @@ def write_delegated_threads(directory: pathlib.Path) -> DelegatedThreads:
         ],
     )
     return DelegatedThreads(transcript, home, codex_home)
+
+
+def append_return(threads: DelegatedThreads, body: str, delivery: str) -> None:
+    """Claude本文・送信またはCodexの正常返却を、既存の委譲先記録へ追記する。"""
+    if delivery == "codex":
+        child = next(threads.codex_home.rglob("*.jsonl"))
+        entry = {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "channel": "final",
+                "content": [{"type": "output_text", "text": body}],
+            },
+        }
+    else:
+        child = threads.home / ".claude" / "projects" / "repo" / f"{CLAUDE_THREAD_ID}.jsonl"
+        block = (
+            {"type": "text", "text": body}
+            if delivery == "text"
+            else {"type": "tool_use", "name": "mcp__agent-toolkit__send_to_user", "id": "send", "input": {"message": body}}
+        )
+        entry = {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
+    with child.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(entry, ensure_ascii=False) + "\n")

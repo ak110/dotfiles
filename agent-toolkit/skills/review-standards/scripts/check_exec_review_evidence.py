@@ -3,7 +3,7 @@
 異なる要求へ参照先のない根拠を写すと条件別の検収が成立しないため、errorとして扱う。
 参照内容が実際に各条件を満たすかはレビュー担当が判定する。
 
-`--rewrite-map`は履歴書換え後に、両配列の`evidence`にあるcommit参照だけを旧新OIDの対応表で書き換える。
+`--rewrite-map`は履歴書換え後に、両配列の`evidence`にある`commit:<OID>`の明示参照だけを対応表で書き換える。
 判定と`reviewed_head`は変えず、参照を更新した証拠の各行は新しいHEADで再判定する。
 
 `--template`は証拠の判定と同じ規則で期待行を求め、`完成条件証拠`に不足する行を判定欄が空の雛形として追記する。
@@ -126,6 +126,7 @@ REFERENCE_LABEL = re.compile(r"[^\s、。，,.;；:：\0]{1,20}[:：]\s*(?=\0)")
 USER_EVENT_SOURCE = re.compile(r"(?P<path>(?:[A-Za-z]:[\\/]|/)[^\s`「」]+)[`\s]+(?P<record>[^\s`「」]+):(?P<line>\d+)(?!\d)")
 # 根拠の地の文に独立して現れるcommit参照。パスの要素（`docs/abc1234.md`）と長い識別子の一部分は対象にしない。
 COMMIT_REFERENCE = re.compile(r"(?<![\w./\\-])[0-9a-fA-F]{7,64}(?![\w/\\-]|\.\w)")
+CURRENT_COMMIT_REFERENCE = re.compile(r"(?<![A-Za-z0-9_./\\-])commit:([0-9a-fA-F]{7,64})(?![A-Za-z0-9_/\\-]|\.[A-Za-z0-9_])")
 TEST_RESULT = re.compile(
     r"(?<!\w)test_[\w]+(?:\[[^\]\n]+\])?(?:`)?\s*(?::|：|=|は|が|\s)\s*(?:成功|合格|PASS(?:ED)?|passed)(?!\w)"
 )
@@ -1748,6 +1749,14 @@ def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
             args.input_record,
             args.reader_fit_review is not None,
             args.results_file,
+            verification_results.has_result_specification(args),
+            args.select_row,
+            args.evidence_file,
+            args.mode,
+            args.row_outcome,
+            args.row_source,
+            args.reviewed_head,
+            args.verification_row,
             args.list_results,
             args.results_summary,
             args.result_test,
@@ -1874,7 +1883,7 @@ def _write_evidence_file(path: pathlib.Path, payload: dict[str, typing.Any]) -> 
 def rewrite_references(path: pathlib.Path, map_path: pathlib.Path) -> tuple[list[str], int, int]:
     """両配列の`evidence`のcommit参照を旧新OIDの対応表で書き換え、診断、更新した行数、置換件数を返す。
 
-    参照は16進の語として独立したOIDに限り、パスの要素や長い識別子の一部分は置換しない。旧OIDとの一致は
+    現行成果物の明示参照commit:<OID>だけを更新し、取得版・比較元・標識のない自由文のOIDを保持する。旧OIDとの一致は
     前方一致で比べ、旧commitがGitに無くても対応表だけで置換できるようにする。1つの参照が複数の旧OIDに一致する
     場合は対応を決められないため、証拠を変えずに診断を返す。置換は元の文字列へ1回だけ適用し、置換後の値を
     再び置換しない。判定と`reviewed_head`は保持し、再判定は実行レビュー担当が新しいHEADで行う。
@@ -1891,7 +1900,9 @@ def rewrite_references(path: pathlib.Path, map_path: pathlib.Path) -> tuple[list
     if errors:
         return errors, 0, 0
     olds = {
-        old.lower(): "、".join(dict.fromkeys(oid for oid, _wis in commit_mapping.rewrite_destinations(new)))
+        old.lower(): "、".join(
+            "commit:" + oid for oid in dict.fromkeys(oid for oid, _wis in commit_mapping.rewrite_destinations(new))
+        )
         for old, new in replacements.items()
     }
     updated = count = 0
@@ -1901,7 +1912,7 @@ def rewrite_references(path: pathlib.Path, map_path: pathlib.Path) -> tuple[list
 
             def replace(match: re.Match[str], label: str = _row_label(row, section, index)) -> str:
                 nonlocal found
-                token = match.group().lower()
+                token = match.group(1).lower()
                 # 参照が旧OIDの短縮形か、参照が完全OIDで旧OIDがその短縮形の場合だけ一致とする。
                 hits = {old for old in olds if old.startswith(token) or (len(token) in (40, 64) and token.startswith(old))}
                 if len(hits) > 1:
@@ -1914,7 +1925,7 @@ def rewrite_references(path: pathlib.Path, map_path: pathlib.Path) -> tuple[list
                 found += 1
                 return olds[hits.pop()]
 
-            text = COMMIT_REFERENCE.sub(replace, row["evidence"])
+            text = CURRENT_COMMIT_REFERENCE.sub(replace, row["evidence"])
             if found:
                 row["evidence"] = text
                 updated += 1
@@ -2100,7 +2111,7 @@ def main(argv: list[str] | None = None) -> int:
         type=pathlib.Path,
         metavar="PATH",
         help="履歴書換えの旧OIDから新OIDへの対応表（JSONオブジェクト）の絶対パス。判定せず、両配列のevidenceの"
-        "commit参照だけを書き換える。判定とreviewed_headは変えないため、更新後に各行を新しいHEADで再判定する",
+        "commit:<OID>の明示参照だけを書き換え、取得版と比較元のOIDを保持する。判定とreviewed_headは変えないため、更新後に各行を新しいHEADで再判定する",
     )
     verification_results.add_arguments(parser, reviewing=True)
     args = parser.parse_args(argv)
@@ -2122,6 +2133,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--show-all-rowsは--return-resultか--batchと指定する")
     if (
         args.results_file
+        or verification_results.has_result_specification(args)
+        or args.select_row
+        or args.evidence_file
+        or args.mode
+        or args.row_outcome
+        or args.row_source
+        or args.reviewed_head
+        or args.verification_row
         or args.list_results
         or args.updates_file
         or args.verification_record
@@ -2142,14 +2161,14 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("結果の取込みは雛形生成・参照更新・判定の確認・返却生成とは別に実行する")
         try:
             verification_results.validate_display(args)
-            results = verification_results.load_results(args.results_file)
+            results = verification_results.results_for_arguments(args)
             if args.list_results:
-                if args.results_file is None or args.updates_file or args.output:
+                if not verification_results.has_result_specification(args) or args.updates_file or args.output:
                     raise ValueError("結果一覧には--results-fileだけを指定し、更新とは別に実行する")
                 verification_results.list_results(results, args)
                 return 0
-            if args.evidence is None or args.updates_file is None or args.output is None:
-                raise ValueError("レビュー更新は入力証拠・--updates-file・--outputを指定する")
+            if args.evidence is None or not (args.updates_file or args.select_row) or args.output is None:
+                raise ValueError("レビュー更新は入力証拠・--select-row（または--updates-file）・--outputを指定する")
             if args.verification_record and args.output.resolve() == args.verification_record.resolve():
                 raise ValueError("レビュー出力は未判定記録と別ファイルへ保存する")
             payload, errors = validate_structure(verification_results.load_json(args.evidence))
@@ -2159,8 +2178,13 @@ def main(argv: list[str] | None = None) -> int:
                 errors.extend(pending_errors)
             if errors:
                 raise ValueError("。".join(errors))
+            updates = (
+                verification_results.updates_for_arguments(payload, args, reviewing=True, pending=pending)
+                if args.select_row
+                else None
+            )
             payload = verification_results.updated_payload(
-                payload, args.updates_file, results, reviewing=True, pending=pending, outcomes=SECTION_OUTCOMES
+                payload, args.updates_file, results, reviewing=True, pending=pending, outcomes=SECTION_OUTCOMES, updates=updates
             )
             verification_results.save(args.output, payload)
         except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:

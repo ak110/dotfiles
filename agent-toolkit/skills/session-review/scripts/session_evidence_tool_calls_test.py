@@ -19,6 +19,35 @@ from agent_toolkit._testing.session_evidence_support import (
 )
 
 
+def test_custom_exec_preserves_opaque_input(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Codexのfreeform入力を保持し、命令文字列から読了した資料を推定しない。"""
+    script = 'await tools.exec_command({cmd: "cat /rules/read.md"});'
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "functions.exec",
+                    "call_id": "exec",
+                    "input": script,
+                },
+            }
+        ],
+    )
+    assert evidence.main([str(transcript), "--tool-calls"]) == 0
+    events = read_jsonl(capsys, raw=True)
+    assert next(event for event in events if event["kind"] == "tool-call")["text"] == script
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    event = json.loads((bundle / "comparison-materials.jsonl").read_text(encoding="utf-8"))
+    assert event["category"] == "opaque-command" and not event["target"]
+    assert event["summary"] == script and event["observed_body_characters"] is None
+
+
 def test_tool_calls_lists_main_and_delegate_calls_in_time_order(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

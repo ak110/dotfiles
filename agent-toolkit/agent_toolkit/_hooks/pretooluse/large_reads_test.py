@@ -17,7 +17,16 @@ from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_l
 _THRESHOLD = 48 * 1024
 
 
-@pytest.mark.parametrize("command", ["cat -- large.txt", "sed -n '2,3p' large.txt", "atk read-file -- large.txt"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat -- large.txt",
+        "sed -n '2,3p' large.txt",
+        "atk read-file -- large.txt",
+        "atk read-file --start 0 --max-bytes 12000 -- large.txt",
+        "atk read-file --max-bytes=12000 --start=0 -- large.txt",
+    ],
+)
 def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.Path, command: str) -> None:
     """配送の追加読取形は同じパスを得るが、既存の大量読取遮断を増やさない。"""
     target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
@@ -172,3 +181,31 @@ def test_dispatch_codex_blocks_bash_full_read(tmp_path: pathlib.Path, capsys) ->
     err = capsys.readouterr().err
     assert str(target) in err
     assert "atk read-file -- " in err
+
+
+@pytest.mark.parametrize("multiple", [False, True])
+def test_large_original_record_is_guided_to_evidence_query(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    multiple: bool,
+) -> None:
+    """原記録の大容量遮断では専用照会を案内し、通常本文のページ分割へ誘導しない。"""
+    codex = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    record = codex / "sessions/2026/10/10/rollout-session.jsonl"
+    record.parent.mkdir(parents=True)
+    entry = {
+        "type": "assistant",
+        "message": {"id": "reply", "role": "assistant", "content": [{"type": "text", "text": "本文" * 10000}]},
+    }
+    record.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+    extra = _sized_file(tmp_path, 100, "ordinary.txt")
+    command = "cat " + shlex.quote(str(record)) + (" " + shlex.quote(str(extra)) if multiple else "")
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path), "turn_id": "codex-turn"}
+    assert pretooluse.main(json.dumps(payload)) == 2
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "session-review-evidence" in captured.err
+    assert "--transcript" in captured.err
+    assert "atk read-file" not in captured.err

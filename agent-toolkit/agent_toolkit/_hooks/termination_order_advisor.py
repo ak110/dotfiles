@@ -238,10 +238,13 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     path_for_async = raw_path if isinstance(raw_path, str) else ""
     available = termination_evidence.observe_reports(payload)
     pending = termination_evidence.pending_work(payload) if available else []
+    unprocessed = {
+        work_id: lines for work_id, work in pending if (lines := termination_evidence.unprocessed_improvements(payload, work))
+    }
     deficient = {
         work_id
         for work_id, work in pending
-        if termination_evidence.report_violations(work) or termination_evidence.missing_stages(work)
+        if termination_evidence.report_violations(work) or termination_evidence.missing_stages(work) or work_id in unprocessed
     }
     if deficient:
         waiting = _waiting_work_ids(payload, session_id, path_for_async, deficient)
@@ -257,6 +260,15 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         f"作業 {work_id}: {error}" for work_id, work in pending for error in termination_evidence.report_violations(work)
     ]
     delivery = "可視の発話本文" if is_codex_payload(payload) else "mcp__agent-toolkit__send_to_user（無い環境では発話本文）"
+    late_lines = [line for work_id, _work in pending for line in unprocessed.get(work_id, [])]
+    if late_lines:
+        return "block", _block_notice(
+            "振り返りの準備へ未取込みの改善点がある。\n" + "\n".join(dict.fromkeys(late_lines)),
+            fix=(
+                "`agent-toolkit:session-review`の工程1から新しい行を取り込む準備を行い、"
+                "追加範囲を分析して結果報告を更新してから終了する。取込み済みの行は重ねて分析しない。"
+            ),
+        )
     if violations:
         return "block", _block_notice(
             "報告本文の要求を満たしていない。\n" + "\n".join(violations),

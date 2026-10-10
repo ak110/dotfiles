@@ -44,6 +44,39 @@ def test_direct_cli_returns_events_for_stream_redirection(
     }
 
 
+@pytest.mark.parametrize("schema_locators", [["main:1"], ["main:2"], ["main:1", "main:2"]])
+def test_combined_locator_queries(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], schema_locators: list[str]
+) -> None:
+    """本文と構造を同じ収集記録から取得し、反復指定した結果も単独照会と一致する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "message": {"role": "user", "content": text}} for text in ("最初の入力", "追加の入力")],
+    )
+    detail_args = ["--detail", "main:1", "--detail", "main:2"]
+    schema_args = [argument for locator in schema_locators for argument in ("--record-schema", locator)]
+    assert evidence.main([str(transcript), *detail_args]) == 0
+    details = read_jsonl(capsys)
+    assert evidence.main([str(transcript), *schema_args]) == 0
+    schemas = read_jsonl(capsys)
+    assert evidence.main([str(transcript), *detail_args, *schema_args]) == 0
+    combined = read_jsonl(capsys)
+    assert combined == [*details, *schemas]
+    assert {event["kind"] for event in combined} == {"detail", "record-schema"}
+
+
+def test_combined_locator_query_errors(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """片方の解決失敗を成功で隠さず、成功した側の結果も返す。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+    assert evidence.main([str(transcript), "--detail", "main:1", "--record-schema", "main:999"]) == 2
+    events = read_jsonl(capsys, raw=True)
+    assert any(event["kind"] == "detail" for event in events)
+    errors = [event for event in events if event["kind"] == "error"]
+    assert errors and all(event.get("next_action") for event in errors)
+    assert evidence.main([str(transcript), "--detail", "main:1", "--record-schema", "main:1", "--stats"]) == 2
+    assert any(event["kind"] == "error" for event in read_jsonl(capsys))
+
+
 def test_output_file_option_is_removed(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit, match="2"):
         evidence.main(["unused.jsonl", "--output-file", "relative.jsonl"])

@@ -25,6 +25,7 @@ import sys
 import unicodedata
 from typing import Any
 
+import session_evidence_candidates  # pylint: disable=import-error
 import session_review_evidence  # pylint: disable=import-error
 
 from agent_toolkit._atk import run_script
@@ -35,6 +36,7 @@ from agent_toolkit._common import atomic_file, file_lock
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.runtime_inserted import IMPROVEMENT_MARKER as _IMPROVEMENT_MARKER
 from agent_toolkit._git import command as _git_command
 
 CONVERSATION_FILENAME = "conversation.md"
@@ -49,11 +51,6 @@ _UTTERANCE_EDGE_LENGTH = 500
 流れをたどるには先頭と末尾で足り、全文が要る発話は記録位置から照会する。
 ツール呼び出しと失敗の標識は1行（`_SUMMARY_LENGTH`字まで）で載せ、発話とは別の書式で区別する。
 """
-_IMPROVEMENT_MARKER = "気付いた改善点:"
-"""作業中に気付いた改善の機会をメインと委譲先が1行で伝える行の先頭。
-
-振り返りは工程2でこの行を全件拾うため、長い発話の省略区間にあっても会話の流れへ残す。
-"""
 _SUMMARY_LENGTH = 200
 """`candidates.md`の1行の要約、対象のツール呼び出しおよび直前のアシスタント発話、会話の流れのツール呼び出しと失敗の標識へ載せる文字数。
 
@@ -66,7 +63,7 @@ MANDATORY_KINDS = frozenset({"user-intervention", "confirmation-request", "wi-us
 """再発防止策を必須とする候補種別。
 
 ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
-`agent-toolkit:session-review`の`references/analysis.md`「ユーザー介入の判定規則」の除外区分に当たる場合を除き、
+`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」の除外区分に当たる場合を除き、
 前例の有無によらず再発防止策を要する。必須であることを参照資料の読込に依存させないよう候補一覧と1行JSONへ示し、
 Stopの報告本文の判定が候補IDで追跡する。
 """
@@ -158,15 +155,30 @@ def _read_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> str | None:
-    """`atk run-script session-review-evidence`の集約実行で証拠bundleを作成する。失敗時は診断の文字列を返す。
-
-    `atk run-script session-review-evidence`は標準出力へ要約イベントを書くため、1行JSONの出力契約を保つよう取り込んで破棄する。
-    """
+def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> tuple[str | None, list[dict[str, Any]]]:
+    """bundleの成功時も未解決通知を受け渡し、走査全量と最終JSONへ混ぜない。"""
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):
         exit_code = session_review_evidence.main([*session_arguments, "--bundle", str(bundle_dir)])
-    return None if exit_code == 0 else captured.getvalue() or f"atk run-script session-review-evidenceの終了コード: {exit_code}"
+    if exit_code != 0:
+        return captured.getvalue() or f"atk run-script session-review-evidenceの終了コード: {exit_code}", []
+    try:
+        events = [json.loads(line) for line in captured.getvalue().splitlines() if line.strip()]
+    except ValueError as error:
+        return str(error), []
+    return None, [event for event in events if event.get("kind") in {"unresolved-record", "unresolved-delegation"}]
+
+
+def _unconfirmed_lines(events: list[dict[str, Any]]) -> list[str]:
+    """候補件数と区別した確認範囲を、全ての準備文書へ同じ集合で示す。"""
+    lines = ["", "## 未確認範囲", ""]
+    if not events:
+        return [*lines, "未解決の対象は無い。", ""]
+    return [
+        *lines,
+        *(f"- {event['kind']}: {json.dumps(event, ensure_ascii=False)}" for event in events),
+        "",
+    ]
 
 
 def _fence(body: str, info: str = "text") -> list[str]:
@@ -547,6 +559,12 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
                         skipped += 1
                         continue
                     if timestamp >= cutoff:
+                        try:
+                            signature = session_evidence_candidates.recalculate_failure_signature(signature, summary)
+                        except ValueError:
+                            skipped += 1
+                            continue
+                        item["failure_signature"] = signature
                         records.setdefault((signature, recorded_session), item)
                 for candidate in candidates:
                     signature = candidate.get("failure_signature")
@@ -606,6 +624,31 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
         "",
         f"- 経過秒: {total.get('elapsed_seconds', 'unknown')}秒（セッションの最初の記録から準備時点まで）",
     ]
+    lines.extend(
+        [
+            "",
+            "## メイン・全担当の費用",
+            "",
+            "Claude Codeのinput_tokensは新規入力で、cache_creation_input_tokensとcache_read_input_tokensは別成分。"
+            "Codexのinput_tokensはcached_input_tokensを含む総入力で、reasoning_output_tokensはoutput_tokensに含まれる。"
+            "stats-totalは共通の4成分へ変換して合算済みであり、個別の原始値と重ねて足さない。",
+            "tokensと応答回数は記録で観測した値だけを示し、不在は未確認とする。",
+        ]
+    )
+    main_record = next(iter(by_kind.get("stats-summary", [])), {}).get("record", "main")
+    for item in stats:
+        if item.get("kind") not in {"stats-summary", "stats-subagent", "stats-agent-thread"}:
+            continue
+        owner = item.get("record", item.get("thread", item.get("agent", "メイン")))
+        if item.get("line") is not None:
+            location = f"{item.get('agent', main_record)}:{item['line']}"
+        else:
+            location = item.get("record", item.get("agent", f"{item.get('engine', '未確認')}:{owner}"))
+        tokens = json.dumps(item.get("tokens", "未確認"), ensure_ascii=False)
+        lines.append(
+            f"- {owner}（{item.get('engine', '未確認')}）: tokens={tokens}、"
+            f"応答回数={item.get('api_messages', '未確認')}、記録または起動位置={location}"
+        )
     critical = next(iter(by_kind.get("stats-critical-path", [])), None)
     if critical is not None:
         segments = "、".join(f"{item.get('owner')} {item.get('exclusive_seconds')}秒" for item in critical.get("segments", []))
@@ -719,13 +762,15 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     session_arguments = [str(transcript_path)] if transcript_path is not None else ["--codex-thread-id", args.codex_thread_id]
     bundle_dir = work_dir / "bundle"
     bundle_dir.mkdir(exist_ok=True)
-    if (failure := _extract_bundle(session_arguments, bundle_dir)) is not None:
+    failure, unresolved = _extract_bundle(session_arguments, bundle_dir)
+    if failure is not None:
         return _missing("bundle", failure)
     try:
         candidate_rows = _read_jsonl(bundle_dir / "candidates.jsonl")
         stats = _read_jsonl(bundle_dir / "stats.jsonl")
         timeline = _read_jsonl(bundle_dir / "timeline.jsonl")
         conversation = _read_jsonl(bundle_dir / "conversation.jsonl")
+        comparison = _read_jsonl(bundle_dir / "comparison-materials.jsonl")
         candidates = [row for row in candidate_rows if row.get("kind") == "candidate"]
         summary = next((row for row in candidate_rows if row.get("kind") == "candidate-summary"), {})
         evidence_by_id = {
@@ -745,7 +790,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     conversation_path = work_dir / CONVERSATION_FILENAME
     candidates_path = work_dir / CANDIDATES_FILENAME
     stats_path = work_dir / STATS_FILENAME
-    conversation_path.write_text(_conversation_document(conversation, detail_command), encoding="utf-8")
+    conversation_path.write_text(
+        _conversation_document(conversation, detail_command) + _comparison_document(comparison, detail_command),
+        encoding="utf-8",
+    )
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)
     candidates, single_failures, summary, ledger_skipped = _select_repeated_failures(candidates, summary, session_id, current)
@@ -760,11 +808,18 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         )
         for item in similar_targets
     }
+    unconfirmed_text = "\n".join(_unconfirmed_lines(unresolved))
+    improvement_rows = [
+        f"- {event['record']}:{event['line']}: {line}" for event in timeline for line in event.get("reported_improvements", [])
+    ]
+    improvement_text = "\n## 取り込んだ改善点\n\n" + "\n".join(improvement_rows) + "\n" if improvement_rows else ""
     candidates_path.write_text(
-        _candidates_document(candidates, summary, evidence_by_id, timeline, detail_command, single_failures, similar_by_id),
+        _candidates_document(candidates, summary, evidence_by_id, timeline, detail_command, single_failures, similar_by_id)
+        + unconfirmed_text
+        + improvement_text,
         encoding="utf-8",
     )
-    stats_path.write_text(_stats_document(stats), encoding="utf-8")
+    stats_path.write_text(_stats_document(stats) + unconfirmed_text, encoding="utf-8")
 
     reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
     total = next((event for event in stats if event.get("kind") == "stats-total"), {})
@@ -788,11 +843,40 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             candidate_id: [filename for filename, _state, _title in records] for candidate_id, records in similar_by_id.items()
         },
         "failure_ledger_skipped": ledger_skipped,
+        "unconfirmed_scope": unresolved,
+        "improvement_lines": list(dict.fromkeys(line for event in timeline for line in event.get("reported_improvements", []))),
         "elapsed_seconds": total.get("elapsed_seconds"),
         "compaction_count": compaction.get("count", 0),
     }
     print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
     return 0
+
+
+def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> str:
+    """正常な操作を比較する事実と全文位置を示し、量の多寡と欠陥の判定を分ける。"""
+    lines = [
+        "",
+        "## 委譲入力・規範読込の比較材料",
+        "",
+        "explicit-readは明示された対象、opaque-commandは命令文字列だけの観測であり、読了した資料は推定しない。"
+        "入力文字数は観測した直接本文だけ、結果文字数は記録の返却本文の量である。"
+        "ファイル参照の本文量、自動配送、現在のファイルサイズ、token量を取得量へ代用しない。",
+    ]
+    for event in events:
+        locator = f"{event['record']}:{event['line']}"
+        result = f"{event['record']}:{event['result_line']}" if event.get("result_line") is not None else "未確認"
+        body_count = event.get("observed_body_characters")
+        result_count = event.get("recorded_result_characters")
+        lines.append(
+            f"- {event['category']} {event['tool']}、担当={event['record']}（{event['role']}）、"
+            f"時点={event.get('timestamp') or '未確認'}、形式={event['input_form']}、"
+            f"直接本文={body_count if body_count is not None else '未確認'}字、"
+            f"記録の結果本文={result_count if result_count is not None else '未確認'}字、"
+            f"対象={json.dumps(event['target'], ensure_ascii=False)}、入力={locator}、結果={result}、"
+            f"代表入力={_one_line(str(event.get('summary', '')))}"
+        )
+    lines.extend(["", f"全文と参照先は`{detail_command} --detail <入力または結果の記録位置>`から取得する。", ""])
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

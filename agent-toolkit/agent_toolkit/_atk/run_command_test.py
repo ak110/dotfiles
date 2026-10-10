@@ -62,6 +62,7 @@ def test_public_command_records_exit_modes(tmp_path: pathlib.Path, exit_code: in
     assert metadata["argv"] == argv
     assert metadata["cwd"] == str(tmp_path)
     assert metadata["child_exit_code"] == exit_code
+    assert metadata["wrapper_exit_code"] == exit_code and metadata["failure"] is None
     assert pathlib.Path(metadata["stdout_path"]).read_text(encoding="utf-8") == "out\n"
     assert pathlib.Path(metadata["stderr_path"]).read_text(encoding="utf-8") == "err\n"
 
@@ -224,6 +225,7 @@ def test_timeout_returns_124_and_keeps_partial_output(
     )
 
     assert result == 124
+    assert metadata["wrapper_exit_code"] == 124
     assert metadata["timed_out"] is True
     assert pathlib.Path(str(metadata["stdout_path"])).read_bytes() == b"before\n"
 
@@ -240,6 +242,7 @@ def test_signal_exit_returns_128_plus_signal(
     )
 
     assert result == 128 + signal.SIGTERM
+    assert metadata["wrapper_exit_code"] == 128 + signal.SIGTERM
     assert metadata["child_exit_code"] == -signal.SIGTERM
     assert metadata["signal"] == signal.SIGTERM
 
@@ -251,6 +254,7 @@ def test_start_failure_returns_125_with_empty_saved_streams(
 
     assert result == 125
     assert metadata["child_exit_code"] is None
+    assert metadata["wrapper_exit_code"] == 125 and metadata["failure"]
     assert pathlib.Path(str(metadata["stdout_path"])).read_bytes() == b""
     assert pathlib.Path(str(metadata["stderr_path"])).read_bytes() == b""
 
@@ -316,9 +320,25 @@ def test_record_write_failure_preserves_child_result(
     metadata = json.loads(captured.out)
     assert metadata["record_path"] is None
     assert metadata["child_exit_code"] == 7
+    assert metadata["wrapper_exit_code"] == 125 and "保存できない" in metadata["failure"]
     assert pathlib.Path(metadata["stdout_path"]).read_bytes() == b"out\n"
     assert pathlib.Path(metadata["stderr_path"]).read_bytes() == b"err\n"
     assert "実行結果JSONを保存できない" in captured.err
+
+
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_stream_preparation_failure_returns_saved_wrapper_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], stream: str
+) -> None:
+    """出力先を開けない失敗も例外で終わらず、起動前の失敗と未取得の属性を保存する。"""
+    monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: tmp_path)
+    (tmp_path / f"{stream}.bin").mkdir()
+    args = argparse.Namespace(command_argv=["--", sys.executable, "-c", "print('child')"], cwd=tmp_path, timeout=30)
+    assert run_command.dispatch(args) == 125
+    metadata = json.loads(capsys.readouterr().out)
+    assert metadata["child_exit_code"] is None and metadata["wrapper_exit_code"] == 125
+    assert metadata["failure"] and metadata[f"{stream}_lines"] is None and metadata[f"{stream}_bytes"] is None
+    assert json.loads(pathlib.Path(metadata["record_path"]).read_text(encoding="utf-8")) == metadata
 
 
 def test_command_without_separator_is_wrapper_failure(
@@ -367,3 +387,72 @@ def test_records_worktree_head_and_uncommitted_state_before_running(
     assert result == 0
     assert metadata["git_head"] == head
     assert metadata["git_status"] == [" M tracked.txt", "?? untracked.txt"]
+
+
+def test_public_read_many_records_keeps_child_wrapper_outputs_and_never_reruns(
+    tmp_path: pathlib.Path,
+) -> None:
+    """保存済みの成功・失敗・旧記録をそのまま読み、終了状態の役割と両出力を分ける。"""
+    counter = tmp_path / "count.txt"
+    script = (
+        "import pathlib,sys;p=pathlib.Path(sys.argv[1]);"
+        "p.write_text(p.read_text()+'x' if p.exists() else 'x');"
+        "print('child-out');print('child-err',file=sys.stderr);sys.exit(int(sys.argv[2]))"
+    )
+    records = []
+    for code in (0, 7):
+        _result, metadata = _public_command(
+            ["--", sys.executable, "-c", script, str(counter), str(code)], tmp_path, dict(os.environ)
+        )
+        records.append(metadata["record_path"])
+    legacy = tmp_path / "legacy.json"
+    previous = json.loads(pathlib.Path(records[0]).read_text(encoding="utf-8"))
+    previous.pop("wrapper_exit_code")
+    previous.pop("failure")
+    legacy.write_text(json.dumps(previous), encoding="utf-8")
+    bundle = tmp_path / "results.json"
+    bundle.write_text(json.dumps({"records": records}), encoding="utf-8")
+    env = {**os.environ, "PYTHONPATH": str(pathlib.Path(run_command.__file__).resolve().parents[2])}
+    result = subprocess.run(
+        [sys.executable, "-m", "agent_toolkit.atk", "run-command", "--records-file", str(bundle), "--record", str(legacy)],
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    read = json.loads(result.stdout)
+    assert not read["errors"] and counter.read_text(encoding="utf-8") == "xx"
+    assert [row["child_exit_code"] for row in read["records"]] == [0, 7, 0]
+    assert [row["wrapper_exit_code"] for row in read["records"]] == [0, 7, None]
+    assert set(read["records"][2]["unrecorded"]) == {"wrapper_exit_code", "failure"}
+    assert all(row["stdout"] == "child-out\n" and row["stderr"] == "child-err\n" for row in read["records"])
+
+
+def test_saved_record_read_reports_corruption_without_starting_child(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """破損した保存記録を終了成功や子の失敗へ変換せず、読取の失敗として返す。"""
+    path = tmp_path / "corrupt.json"
+    path.write_text("{", encoding="utf-8")
+    args = argparse.Namespace(record=[path], records_file=None, command_argv=[], cwd=None, timeout=None)
+    assert run_command.dispatch(args) == 125
+    saved = json.loads(capsys.readouterr().out)
+    assert not saved["records"] and saved["errors"][0]["record_path"] == str(path)
+
+
+@pytest.mark.parametrize("results", [{}, [{}], [{"record_path": "/absolute/missing.json"}]])
+def test_saved_result_bundle_rejects_broken_shape_or_mismatched_order(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], results: object
+) -> None:
+    """結果まとめの欠損や保存先の不一致を、空の成功結果と区別して拒否する。"""
+    path = tmp_path / "corrupt-bundle.json"
+    path.write_text(json.dumps({"records": [], "results": results}), encoding="utf-8")
+    args = argparse.Namespace(record=[], records_file=path, command_argv=[], cwd=None, timeout=None)
+    assert run_command.dispatch(args) == 125
+    captured = capsys.readouterr()
+    assert not captured.out and "results" in captured.err
