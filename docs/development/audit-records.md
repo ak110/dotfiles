@@ -454,7 +454,7 @@ agent-toolkit 2.199.0の基準commitは`3b3932b5`で、review-table実装の差�
 
 ## agent-toolkit/skills/search/SKILL.md：引数とシェルの扱い：2026年10月9日
 
-2026年10月9日、Claude Code 2.1.295のBashで`type grep`がシェル関数を返し、ugrep 7.8.4へ転送することを確認した記録に基づく。GNU grepは3.11だった。ignore・binaryの除外で一致する内容を持つ対象でも標準出力が空・終了コード1となった。`.{0,160}a.{0,160}`はugrepで複雑度エラーを標準エラーへ出し、標準出力は空・終了コード2だった。上限を小さくした`.{0,30}a.{0,30}`も終了コード2で、繰り返しを片側だけにした`a.{0,400}`は終了コード0だった。同じテキストへの`command grep -o -E '.{0,160}a.{0,160}'`は`a`を出力して終了コード0だった。この節のClaude関数の観測は入力WIが保持する対照記録に由来する。
+2026年10月9日、Claude Code 2.1.295のBashで`type grep`がシェル関数を返し、ugrep 7.8.4へ転送することを確認した記録に基づく。GNU grepは3.11だった。ignore・binaryの除外で一致する内容を持つ対象でも標準出力が空・終了コード1となった。`.{0,160}a.{0,160}`はugrepで複雑度エラーを標準エラーへ出力し、標準出力は空・終了コード2だった。上限を小さくした`.{0,30}a.{0,30}`も終了コード2で、繰り返しを片側だけにした`a.{0,400}`は終了コード0だった。同じテキストへの`command grep -o -E '.{0,160}a.{0,160}'`は`a`を出力して終了コード0だった。この節のClaude関数の観測は入力WIが保持する対照記録に由来する。
 
 再検証ではClaude Bashで`type grep`と`grep --version`、`command grep --version`を取得する。専用領域に`a`を含む通常テキスト、ignore対象とbinary対象を用意し、関数の`grep`と`command grep`へ同じ対象・パターンを渡す。各標準出力・標準エラー・終了コードを保存して比較し、無出力の理由とパイプの後段で使う起動実体を区別する。
 
@@ -788,3 +788,11 @@ session `1e19cda7-eaf3-49dd-b96c-916c43f077d1`へ失敗原因と再予約可能�
 受付応答、ターン終了、ホストの圧縮成功を順に記録する。
 非対話はBashのバックグラウンドタスクと保存記録の再開操作を組み合わせ、圧縮後の領域通知からparent-handoff.mdへ到達し、通知から同じsessionと担当・監視対象が続行することも確かめる。任意指示で応答文字列を渡さない。
 故障と再予約は隔離した検証用プラグインだけへ例外を注入して試し、製品のプラグインを改変しない。
+
+## Python 3.15対応時の依存導入
+
+2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。使用イメージは`ghcr.io/ak110/pyfltr`のdigest `sha256:224003f281050887c053eb24f14137970df5225b1b2c99af61b960fab43d8103`である。PyYAML 6.0.3のビルドは成功しており、ビルド発生だけを失敗と判定できない。同入力の更新commit `80d4be7`ではpydantic-core 2.50.0にcp315 wheelがある。この過去のCIの観測は入力WIに由来し、本レーンのローカル成功とは区別する。
+
+[uvのビルド失敗の公式説明](https://docs.astral.sh/uv/reference/troubleshooting/build-failures/#why-does-uv-build-a-package)では、導入環境に合うwheelが無ければsdistをビルドする。[CIキャッシュの説明](https://docs.astral.sh/uv/concepts/cache/#caching-in-continuous-integration)では、ソースからビルドしたwheelもキャッシュする。ローカルでの成功は、別のCI環境のビルド用ツールとキャッシュの成立を保証しない。
+
+再検証では該当jobの全ログとcommitのlockfileを取得し、Python版、OS・アーキテクチャ、イメージdigest、ビルド開始と終了状態を対応付ける。同じイメージとPython版の隔離環境で、プロジェクトの同期コマンドを既存wheelキャッシュに依存せず実行し、ビルド要件を確認する。互換wheelを持つ版への更新とCIで必要なビルド用ツールを用意する案を比較し、純Pythonのビルドと環境マーカーにより導入されない依存を区別する。
