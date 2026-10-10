@@ -1,4 +1,4 @@
-"""キューに残る完了通知について、起動したツールの種別に適した結果の受領を案内するStopフック。
+"""未配送の完了通知をホストへ配送し、他のStop遮断が残る場合だけ受領を案内する。
 
 バックグラウンドタスクがターンの終了より前に完了すると、その完了通知は`queue-operation`の`enqueue`として
 最上位transcriptのキューへ入る。Stopフックや`/goal`の目標評価がターンを継続させても、
@@ -7,7 +7,8 @@
 実行主体が完了通知の到着を待ってツールを呼ばずにターンを終えると、継続のたびに同じ状態が続く。
 Agent・Taskの起動記録に対応する通知には返却メッセージの利用を案内する。
 Bashと種別を判別できない通知には`<task-id>`と`<output-file>`を示し、出力ファイルの読取を促す。
-ファイル読取はツール呼び出しであるため、通知の配送と結果の受領が同じターンで起きる。
+他のStop遮断が無ければ、Stop集約がcontinue=falseでターンを終了し、通知由来の次ターンへ戻す。
+遮断が残る場合は、そのターンで実行できる結果受領を案内する。
 
 キューの解析規則は`background_tasks.queued_task_notification_contents`を`background_tasks.is_pending_async_work`と共有する。
 ユーザーが入力欄へ取り戻した入力（`popAll`・`popOne`）は同じ本文の要素1件として除く。
@@ -15,12 +16,8 @@ Bashと種別を判別できない通知には`<task-id>`と`<output-file>`を�
 該当する要素が無い場合だけ先頭とする。ホストは先頭以外の要素を先に取り出すことがあるためである。
 発火条件はキューの状態だけとし、`/goal`の有無、待機コマンドの種類および実行主体を条件に含めない。
 
-遮断せず`notify`で返す。出力ファイルの読取は同じターンで実行できるが、読むかどうかと読んだ後の工程は
-実行主体が決めるためである。`stop_hook_active`では抑止しない。未配送の通知が残る場面の多くは、
-既に別の判定か目標評価がターンを継続させた後の再呼び出しであり、抑止すると目的の場面で案内が出ない。
-同じ通知への案内は1回に限り、案内済みの識別子をセッション状態へ保持する。
-`/goal`の無いセッションで案内を繰り返すと、本フック自体がツールを呼ばない継続を反復させるためである。
-1回に限れば、実行主体がツールを呼ばなくても次のStopでターンが終わり、ホストが通知を配送する。
+配送へ戻す場合は案内済みの通知も含め、警告の回数と案内済み状態を更新しない。
+遮断が残る場合の警告は同じ通知へ1回だけ返し、状態へ識別子を保持する。
 通知の識別には`<task-id>`、無い場合は`<tool-use-id>`、いずれも無い場合は通知本文を用いる。
 
 委譲先での実行可否: 出力ファイルの読取は委譲先も実行でき、委譲先のStopにも同じキューが現れるため、
@@ -114,7 +111,7 @@ def _record_notified(session_id: str, keys: list[str]) -> None:
     update_state(session_id, _mutator)
 
 
-def evaluate(payload_text: str) -> tuple[str, str]:
+def evaluate(payload_text: str, *, allow_delivery: bool = False) -> tuple[str, str]:
     """未配送の完了通知の案内要否と、案内する場合の本文を返す。"""
     resolved = parse_stop_session(payload_text, lambda: None)
     if resolved is None:
@@ -131,10 +128,13 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     for content in _background_tasks.queued_task_notification_contents(entries):
         for notification in _notification_elements(content):
             key = _notification_key(notification)
-            if key not in notified and key not in pending:
+            if key not in pending and (allow_delivery or key not in notified):
                 pending[key] = notification
     if not pending:
         return "approve", ""
+
+    if allow_delivery:
+        return "yield", ""
 
     _record_notified(session_id, list(pending))
     agent_notifications = [

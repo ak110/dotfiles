@@ -14,6 +14,7 @@ import pytest
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import termination_evidence, termination_order_advisor, user_prompt_submit
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import _write_transcript
 
 
@@ -585,3 +586,361 @@ def test_background_wait_exempts_only_work_that_started_it(tmp_path: pathlib.Pat
     assert decision == "block"
     assert "作業 work-1: review-result" in reason
     assert f"作業 {second}" not in reason
+
+
+def _self_edit_setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[dict, pathlib.Path]:
+    """Claudeの協調作業と実Gitの基準版を、ホストの設定と分離して用意する。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    for key in (
+        "AGENT_TOOLKIT_DELEGATED_SESSION",
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    _clear_caches()
+    repository = git_repository.init_repository(tmp_path / "repo", files={"README.md": "元の本文\n"}, commit_message="基準")
+    trace = _write_transcript(tmp_path, [])
+    payload = {
+        "session_id": "self-edit",
+        "transcript_path": str(trace),
+        "cwd": str(repository),
+        "last_assistant_message": "",
+        "background_tasks": [],
+        "stop_hook_active": False,
+    }
+    termination_evidence.observe_user(json.dumps({**payload, "prompt_id": "request", "prompt": "READMEを編集する"}))
+    return payload, repository
+
+
+def _record_self_edit(payload: dict, target: pathlib.Path, *, tool: str = "Edit", failed: bool = False) -> None:
+    if tool == "Bash":
+        tool_input = {"command": f"sed -i 's/元/新/' {target}"}
+    else:
+        tool_input = {"file_path": str(target), "old_string": "元", "new_string": "新", "content": "新しい本文\n"}
+    invocation = {**payload, "tool_name": tool, "tool_input": tool_input, "tool_use_id": "edit-call"}
+    termination_evidence.observe_tool(json.dumps(invocation), after=False)
+    target.write_text("新しい本文\n", encoding="utf-8")
+    termination_evidence.observe_tool(
+        json.dumps(
+            {
+                **invocation,
+                "hook_event_name": "PostToolUseFailure" if failed else "PostToolUse",
+                "tool_response": {"exit_code": 1 if failed else 0},
+            }
+        ),
+        after=True,
+    )
+
+
+@pytest.mark.parametrize("tool", ["Edit", "Write", "Bash"])
+def test_unresolved_self_edits_warn_at_first_stop(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool: str) -> None:
+    """成功した自編集だけから初回Stopを案内し、同じ状態の再入で反復・昇格しない。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    _record_self_edit(payload, repository / "README.md", tool=tool)
+    decision, body = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "notify"
+    assert 'kind="warn"' in body
+    assert "公開範囲" in body and "completion-report" in body
+    assert "commitを" not in body
+    payload["stop_hook_active"] = True
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+
+
+@pytest.mark.parametrize("origin", ["instruction", "answer", "standing-authorization"])
+@pytest.mark.parametrize("scope", ["既存の判断基準どおり", "push・CIまで", "commitまで", "commitしない"])
+def test_public_scope_evidence_exempts_self_edits(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, origin: str, scope: str
+) -> None:
+    """原入力または適用済み認可から確定した範囲を、JSON記録用の公開コマンドで同じ作業へ接続する。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    _record_self_edit(payload, repository / "README.md")
+    quote = f"公開範囲は{scope}とする"
+    termination_evidence.observe_user(json.dumps({**payload, "prompt_id": "scope-answer", "prompt": quote}))
+    work_id = termination_evidence.session_works(payload)[-1][0]
+    document = {
+        "session_id": "self-edit",
+        "work_id": work_id,
+        "action": "publish-scope",
+        "input_id": "scope-answer",
+        "quote": quote,
+        "reason": "原入力の範囲を適用",
+        "origin": origin,
+        "scope": scope,
+    }
+    if origin == "standing-authorization":
+        policy = tmp_path / "policy.md"
+        policy.write_text(quote, encoding="utf-8")
+        document["policy_file"] = str(policy)
+    decision_file = tmp_path / "decision.json"
+    decision_file.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    assert termination_evidence.main(["--decision-file", str(decision_file)]) == 0
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "other-diff",
+        "outside",
+        "script",
+        "failed",
+        "committed",
+        "restored",
+        "completion",
+        "wait",
+        "codex",
+        "delegated",
+        "autonomous",
+    ],
+)
+def test_self_edit_warning_excludes_resolved_and_unowned_changes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """無関係な差分・解消済みの編集・正常待機と対象外ホストを未完了にしない。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    target = tmp_path / "outside.md" if case == "outside" else repository / "README.md"
+    if case == "script":
+        termination_evidence.observe_tool(
+            json.dumps(
+                {
+                    **payload,
+                    "tool_name": "Bash",
+                    "tool_use_id": "script-call",
+                    "tool_input": {"command": "python arbitrary.py"},
+                    "tool_response": {"exit_code": 0},
+                }
+            ),
+            after=True,
+        )
+        target.write_text("変化\n", encoding="utf-8")
+    else:
+        _record_self_edit(payload, target, failed=case == "failed")
+    if case == "other-diff":
+        target.write_text("元の本文\n", encoding="utf-8")
+        (repository / "other.md").write_text("他主体の差分\n", encoding="utf-8")
+    elif case == "committed":
+        git_repository.commit_all(repository, "編集")
+    elif case == "restored":
+        target.write_text("元の本文\n", encoding="utf-8")
+    elif case == "completion":
+        termination_evidence.observe_tool(
+            json.dumps(
+                {
+                    **payload,
+                    "tool_name": "Skill",
+                    "tool_input": {"skill": "agent-toolkit:completion-report"},
+                    "tool_use_id": "completion-call",
+                    "tool_response": "起動",
+                }
+            ),
+            after=True,
+        )
+    elif case == "wait":
+        _append_entries(pathlib.Path(payload["transcript_path"]), _background_bash_entries("toolu_wait", "wait-task"))
+        payload["background_tasks"] = [{"id": "wait-task", "type": "shell"}]
+        _clear_caches()
+    elif case == "codex":
+        payload["turn_id"] = "codex-turn"
+    elif case == "delegated":
+        payload["agent_id"] = "child"
+    elif case == "autonomous":
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+
+
+def test_scope_does_not_carry_into_next_editing_work(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """前の作業の公開範囲を、次の依頼による自編集へ流用しない。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    _record_self_edit(payload, repository / "README.md")
+    work_id = termination_evidence.session_works(payload)[-1][0]
+    termination_evidence.record_decision(
+        {
+            "session_id": "self-edit",
+            "work_id": work_id,
+            "action": "publish-scope",
+            "input_id": "request",
+            "quote": "READMEを編集する",
+            "reason": "依頼へ範囲を適用",
+            "origin": "instruction",
+            "scope": "commitしない",
+        }
+    )
+    termination_evidence.observe_user(json.dumps({**payload, "prompt_id": "next", "prompt": "次の編集をする"}))
+    termination_evidence.record_decision(
+        {
+            "session_id": "self-edit",
+            "action": "start",
+            "input_id": "next",
+            "quote": "次の編集をする",
+            "reason": "独立した次の作業",
+        }
+    )
+    next_call = {
+        **payload,
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(repository / "next.md"), "content": "次の本文"},
+        "tool_use_id": "next-edit",
+        "tool_response": {"exit_code": 0},
+    }
+    (repository / "next.md").write_text("次の本文", encoding="utf-8")
+    termination_evidence.observe_tool(json.dumps(next_call), after=True)
+    assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "notify"
+
+
+def test_self_edit_warning_preserves_existing_termination_block(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """自編集のwarnが、再入時の別の終了契約のblockを上書きしない。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    _record_self_edit(payload, repository / "README.md")
+    _append_entries(
+        pathlib.Path(payload["transcript_path"]),
+        [_skill_entry("agent-toolkit:add-awi-by-user"), _tool_result_entry("toolu_skill")],
+    )
+    payload["stop_hook_active"] = True
+    _clear_caches()
+    decision, body = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "block"
+    assert "agent-toolkit:completion-report" in body
+
+
+def test_generated_notification_keeps_human_editing_request(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """人間の依頼後の自動通知で再開しても、その依頼に属する自編集を判定する。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    termination_evidence.observe_user(
+        json.dumps(
+            {
+                **payload,
+                "prompt_id": "notification",
+                "source": "plugin",
+                "prompt": '<atk-auto source="host" kind="notice">完了通知</atk-auto>',
+            }
+        )
+    )
+    _record_self_edit(payload, repository / "README.md")
+    assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "notify"
+
+
+def test_scope_of_separate_work_keeps_prior_unresolved_edit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """独立した作業の開始を記録した場合、次の公開範囲が前の未確定編集を覆わない。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    _record_self_edit(payload, repository / "README.md")
+    prompt = "次の独立した作業"
+    termination_evidence.observe_user(json.dumps({**payload, "prompt_id": "next", "prompt": prompt}))
+    next_work = termination_evidence.record_decision(
+        {"session_id": "self-edit", "action": "start", "input_id": "next", "quote": prompt, "reason": "独立した作業"}
+    )
+    target = repository / "next.md"
+    target.write_text("次の本文", encoding="utf-8")
+    termination_evidence.observe_tool(
+        json.dumps(
+            {
+                **payload,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": "次の本文"},
+                "tool_use_id": "next-call",
+                "tool_response": {"exit_code": 0},
+            }
+        ),
+        after=True,
+    )
+    termination_evidence.record_decision(
+        {
+            "session_id": "self-edit",
+            "action": "publish-scope",
+            "work_id": next_work,
+            "input_id": "next",
+            "quote": prompt,
+            "reason": "次の作業だけを扱う",
+            "origin": "instruction",
+            "scope": "commitしない",
+        }
+    )
+    decision, body = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "notify"
+    assert str(repository / "README.md") in body
+    assert str(target) not in body
+
+
+def test_public_context_supplies_exact_input_for_scope_recording(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """変更前でも原入力を公開コマンドで取得し、同じ入力だけを公開範囲の記録へ渡せる。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "self-edit")
+    assert termination_evidence.main(["--context"]) == 0
+    context = json.loads(capsys.readouterr().out)
+    assert context == {"session_id": "self-edit", "input_id": "request", "quote": "READMEを編集する", "work_id": None}
+    document = {
+        **context,
+        "action": "publish-scope",
+        "scope": "commitしない",
+        "origin": "instruction",
+        "reason": "依頼へ既存の範囲を適用",
+    }
+    source = tmp_path / "scope.json"
+    source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    assert termination_evidence.main(["--decision-file", str(source)]) == 0
+    _record_self_edit(payload, repository / "README.md")
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+
+
+def test_scope_metadata_keeps_cancelled_work_cancelled(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開範囲の証拠は、既存の中止判断を取り下げる操作ではない。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    _record_self_edit(payload, repository / "README.md")
+    work_id = termination_evidence.session_works(payload)[-1][0]
+    termination_evidence.observe_user(json.dumps({**payload, "prompt_id": "cancel", "prompt": "作業を中止する"}))
+    termination_evidence.record_decision(
+        {
+            "session_id": "self-edit",
+            "work_id": work_id,
+            "action": "cancel",
+            "input_id": "cancel",
+            "quote": "作業を中止する",
+            "reason": "中止指示",
+        }
+    )
+    termination_evidence.observe_user(json.dumps({**payload, "prompt_id": "scope", "prompt": "公開せずcommitしない"}))
+    termination_evidence.record_decision(
+        {
+            "session_id": "self-edit",
+            "work_id": work_id,
+            "action": "publish-scope",
+            "input_id": "scope",
+            "quote": "公開せずcommitしない",
+            "reason": "中止した作業の範囲",
+            "origin": "answer",
+            "scope": "commitしない",
+        }
+    )
+    assert not termination_evidence.pending_work(payload)
+
+
+def test_failed_edit_keeps_existing_failure_evidence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """編集の失敗を自編集へ計上せず、技術的不成立の原証拠としては保持する。"""
+    payload, repository = _self_edit_setup(tmp_path, monkeypatch)
+    work_id = termination_evidence.record_decision(
+        {
+            "session_id": "self-edit",
+            "action": "start",
+            "input_id": "request",
+            "quote": "READMEを編集する",
+            "reason": "編集する作業",
+        }
+    )
+    _record_self_edit(payload, repository / "README.md", failed=True)
+    assert (
+        termination_evidence.record_decision(
+            {
+                "session_id": "self-edit",
+                "work_id": work_id,
+                "action": "blocked",
+                "call_id": "edit-call",
+                "quote": json.dumps({"exit_code": 1}, ensure_ascii=False, sort_keys=True),
+                "reason": "編集が失敗した",
+            }
+        )
+        == work_id
+    )

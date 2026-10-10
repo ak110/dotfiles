@@ -10,6 +10,8 @@
 ターンを終える仕様の内側で、打ち切りの事実を記録して終了を許可する。
 
 委譲先での実行可否: 各判定モジュールが個別に適用可否を判断するため、エントリーポイント自体は除外せず実行できる。
+未配送通知を次ターンへ返す実機観測と再検証は、`docs/development/audit-records.md`の
+「agent-toolkit/agent_toolkit/_hooks/stop.py：未配送通知を次ターンへ返す：2026年10月10日」にある。
 """
 
 import importlib
@@ -57,10 +59,15 @@ def evaluate(payload_text: str) -> dict[str, object]:
     blocking_checks: list[str] = []
     notifications: list[str] = []
     user_messages: list[str] = []
+    yield_for_delivery = False
     for module_name in CODEX_CHECK_MODULE_NAMES if is_codex_payload(payload) else CHECK_MODULE_NAMES:
         try:
             module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
-            decision, body = module.evaluate(payload_text)
+            decision, body = (
+                module.evaluate(payload_text, allow_delivery=not block_reasons)
+                if module_name == "queued_notification_advisor"
+                else module.evaluate(payload_text)
+            )
         except Exception as exc:  # noqa: BLE001 -- 1判定の故障で他の終了判定を失わないため広範に捕捉
             print(
                 f"[stop/{module_name}] 想定外エラー: {type(exc).__name__}: {exc}",
@@ -74,6 +81,8 @@ def evaluate(payload_text: str) -> dict[str, object]:
             notifications.append(body)
         elif decision == "notify_user":
             user_messages.append(body)
+        elif decision == "yield":
+            yield_for_delivery = True
 
     def _finalize(result: dict[str, object]) -> dict[str, object]:
         """ユーザー宛ての本文がある場合に`systemMessage`を添えて返す。"""
@@ -109,16 +118,13 @@ def evaluate(payload_text: str) -> dict[str, object]:
         return _finalize({"decision": "block", "reason": "\n\n".join([*block_reasons, *notifications])})
     if session_id:
         update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
+    result: dict[str, object] = {"continue": False} if yield_for_delivery else {}
     if notifications:
-        return _finalize(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "Stop",
-                    "additionalContext": "\n\n".join(notifications),
-                }
-            }
-        )
-    return _finalize({})
+        result["hookSpecificOutput"] = {
+            "hookEventName": "Stop",
+            "additionalContext": "\n\n".join(notifications),
+        }
+    return _finalize(result)
 
 
 def _approve() -> None:
