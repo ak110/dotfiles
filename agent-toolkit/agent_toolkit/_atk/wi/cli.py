@@ -738,7 +738,10 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "--cooldown-until",
         metavar="DATETIME",
         default=None,
-        help="inbox・holdの再処理抑制期限をタイムゾーン付きISO 8601日時で設定する。空文字列で解除する。",
+        help=(
+            "inbox・holdのAWIの再処理抑制期限をタイムゾーン付きISO 8601日時で設定する。"
+            "空文字列で解除する。UWIでは空文字列による解除だけを受け付ける。"
+        ),
     )
     edit.add_argument(
         "--dry-run",
