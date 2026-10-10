@@ -33,7 +33,9 @@ def test_direct_cli_returns_events_for_stream_redirection(
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
     assert evidence.main([str(transcript)]) == 0
 
-    assert json.loads(capsys.readouterr().out) == {
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [event["kind"] for event in events] == ["user", "record-provenance"]
+    assert events[0] == {
         "kind": "user",
         "runtime_inserted": False,
         "text": "入力",
@@ -586,7 +588,8 @@ def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
     output = capsys.readouterr()
     assert output.err == ""
     lines = output.out.splitlines()
-    assert len(lines) == 1
+    assert len(lines) == 2
+    assert json.loads(lines[1])["kind"] == "record-provenance"
     assert json.loads(lines[0]) == {
         "kind": "user",
         "runtime_inserted": False,

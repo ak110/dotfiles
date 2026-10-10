@@ -58,7 +58,7 @@ def test_tool_calls_lists_main_and_delegate_calls_in_time_order(
 
     assert evidence.main([str(transcript), "--tool-calls"]) == 0
 
-    *calls, summary = read_jsonl(capsys, raw=True)
+    *calls, summary = [event for event in read_jsonl(capsys, raw=True) if event["kind"] != "record-provenance"]
     assert [(call["record"], call["line"], call["tool"], call["call_id"], call["result_line"]) for call in calls] == [
         ("claude:parent-session", 2, "Bash", "bash-self", 3),
         ("claude:parent-session", 4, "Bash", "bash-embed", 5),
@@ -81,6 +81,11 @@ def test_tool_calls_lists_main_and_delegate_calls_in_time_order(
         "count": 7,
         "by_tool": {"Bash": 3, "Read": 1, "apply_patch": 1, "exec_command": 1, "mcp__agents_server__start": 1},
         "by_record": {"claude:parent-session": 4, "claude:parent-session/agent-child": 1, codex_record: 2},
+        "by_role": {
+            "record:main": {"count": 4, "by_tool": {"Bash": 3, "mcp__agents_server__start": 1}, "by_mode": {"task": 1}},
+            "record:subagent": {"count": 1, "by_tool": {"Read": 1}, "by_mode": {}},
+            "record:session": {"count": 2, "by_tool": {"apply_patch": 1, "exec_command": 1}, "by_mode": {}},
+        },
     }
 
 
@@ -96,16 +101,16 @@ def test_tool_calls_select_by_tool_and_whole_input_regex(
         )
         == 0
     )
-    *calls, summary = read_jsonl(capsys, raw=True)
+    *calls, summary = [event for event in read_jsonl(capsys, raw=True) if event["kind"] != "record-provenance"]
     assert [call["call_id"] for call in calls] == ["bash-self"]
     assert summary["count"] == 1
 
     assert evidence.main([str(transcript), "--tool-calls", "--input-regex", "session-review-evidence"]) == 0
-    *calls, _ = read_jsonl(capsys, raw=True)
+    *calls, _ = [event for event in read_jsonl(capsys, raw=True) if event["kind"] != "record-provenance"]
     assert [call["call_id"] for call in calls] == ["bash-self", "bash-embed"]
 
     assert evidence.main([str(transcript), "--tool-calls", "--tool", "Read", "--tool", "exec_command", "--tool", "Bas"]) == 0
-    *calls, summary = read_jsonl(capsys, raw=True)
+    *calls, summary = [event for event in read_jsonl(capsys, raw=True) if event["kind"] != "record-provenance"]
     assert [call["call_id"] for call in calls] == ["read-1", "c-exec"]
     assert summary["by_tool"] == {"Read": 1, "exec_command": 1}
 
@@ -116,7 +121,7 @@ def test_tool_call_locators_round_trip_to_detail(
     """`record`と`line`は呼び出しの入力全体、`record`と`result_line`は結果の本文を`--detail`で返す。"""
     transcript = tool_call_session(tmp_path, monkeypatch, "echo done")
     assert evidence.main([str(transcript), "--tool-calls", "--tool", "Bash", "--tool", "exec_command"]) == 0
-    *calls, _ = read_jsonl(capsys, raw=True)
+    *calls, _ = [event for event in read_jsonl(capsys, raw=True) if event["kind"] != "record-provenance"]
     embed = next(call for call in calls if call["call_id"] == "bash-embed")
     codex_exec = next(call for call in calls if call["call_id"] == "c-exec")
 

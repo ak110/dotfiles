@@ -211,9 +211,9 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
     assert materials[2]["recorded_result_characters"] == len("記録した結果本文")
     assert materials[3]["target"] == {"skill": "agent-toolkit:search"}
     assert materials[4]["category"] == "opaque-command" and not materials[4]["target"]
-    conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
-    assert "claude:comparison:2" in conversation and "claude:comparison:3" in conversation
-    assert "/inputs/task.md" in conversation and "/rules/shared.md" in conversation
+    comparison = pathlib.Path(record["comparison_materials_path"]).read_text(encoding="utf-8")
+    assert "claude:comparison:2" in comparison and "claude:comparison:3" in comparison
+    assert "/inputs/task.md" in comparison and "/rules/shared.md" in comparison
     assert record["candidate_total"] == 0
 
 
@@ -472,7 +472,7 @@ def _git_repository(path: pathlib.Path) -> pathlib.Path:
 def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """1回の実行で3つの文書を作業ディレクトリへ書き、所在と件数を1行JSONで返し、キューを変更しない。
+    """1回の実行で文書を作業ディレクトリへ書き、所在と件数を1行JSONで返し、キューを変更しない。
 
     振り返りはメインが同じセッション内で分析する。
     `atk run-script session-review-prepare`がAWIを投入すると、キューへ未分析の項目が残る。
@@ -527,7 +527,7 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
 
     stats = pathlib.Path(record["stats_path"]).read_text(encoding="utf-8")
     assert "- 経過秒: 60秒（セッションの最初の記録から準備時点まで）" in stats
-    assert not list(work_dir.glob("*material*"))
+    assert pathlib.Path(record["comparison_materials_path"]).is_file()
 
 
 def test_prepare_lists_offered_answer_as_mandatory_confirmation(

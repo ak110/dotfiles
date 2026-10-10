@@ -47,6 +47,8 @@ from session_evidence_extract import (
     _BOUNDARY_NEXT_ACTION,
     _ELAPSED_UNTIL_NEXT_ACTION,
     _SINCE_NEXT_ACTION,
+    _CollectedRecord,
+    _collection_events,
     _default_events,
     _error_event,
     _load_records,
@@ -95,9 +97,9 @@ _HOOK_RECORD_NOTE = (
 """hookの記録の有無を照会する引数の説明へ加える、記録が残る条件。"""
 
 
-def _print_events(events: list[dict[str, Any]]) -> None:
+def _print_events(events: list[dict[str, Any]], *, collected: list[_CollectedRecord] | None = None) -> None:
     """イベント列を1イベント1 JSONのJSONLとして標準出力へ書く。"""
-    for event in events:
+    for event in [*(_collection_events(collected, []) if collected is not None else []), *events]:
         print(json.dumps(event, ensure_ascii=False))
 
 
@@ -127,7 +129,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "transcriptから振り返り用の時系列証拠を抽出・照会する。--statsは経過時間、トークン消費、"
             "ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を返す。"
             "メイン記録・補助記録ともセッション全体を対象とする。"
-            "stats-toolの合計秒は並列実行分を含むため壁時計時間とは一致しない。" + _CLAUDE_ONLY_NOTE
+            "stats-toolの合計秒は並列実行分を含むため壁時計時間とは一致しない。"
         )
     )
     parser.add_argument(
@@ -203,6 +205,8 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="REGEX",
         help="エントリ内の全本文（hook通知を含む。管理用フィールドと"
         "本スクリプト自身の実行記録は除く）を正規表現で検索し、"
+        "キー名とtypeなどの管理用フィールドの値は検索しない。会話圧縮は--statsのstats-compactionから得る。"
+        "委譲先の一致も含み、record-provenanceの記録由来から区別できる。"
         "一致行と一致エントリ数を照会する。各一致行は元記録行の時刻`timestamp`（無ければnull）を持つ。" + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
@@ -222,7 +226,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="TEXT",
         help="大小文字を区別する固定文字列ごとに、既存`--grep`と同じ論理entryの一致件数と全locatorだけを返す。"
-        "本文は返さず、0件も文字列ごとに明示する。複数指定ではオプションを繰り返す。" + _HOOK_RECORD_NOTE,
+        "本文は返さず、0件も文字列ごとに明示する。複数指定ではオプションを繰り返す。"
+        "キー名とtypeなどの管理用フィールドの値は検索しない。会話圧縮は--statsのstats-compactionから得る。"
+        "委譲先の一致も含み、record-provenanceの記録由来から区別できる。" + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
         "--record-schema",
@@ -240,7 +246,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "コンパクションの発生位置と回数は`stats-compaction`と`stats-compaction-total`が返す。"
         "`elapsed_seconds`は記録の最初と最後の差であり、turnの完了を持つ記録では最初のturnの開始から"
         "最後のturnの完了までの`turn_elapsed_seconds`、完了時刻の`last_turn_completed_at`、"
-        "完了後に続く記録の`after_last_turn_seconds`を併せて返す。" + _CLAUDE_ONLY_NOTE,
+        "完了後に続く記録の`after_last_turn_seconds`を併せて返す。",
     )
     parser.add_argument(
         "--hook-notices",
@@ -296,6 +302,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="メイン記録と全ての委譲先の記録（Claude Code形式とCodex形式）のツール呼び出しを、1件ずつ`tool-call`イベント"
         "（`record`・`line`・`timestamp`・`tool`・`call_id`・切り詰めない代表入力`text`・結果の記録行`result_line`）で"
         "時刻順に返し、末尾の`tool-call-summary`で件数、ツール名ごとと記録ごとの件数を返す。"
+        "`by_role`は役割文書がある記録を`document:<役割名>`、無い記録を`record:<role>`へまとめ、"
+        "各内訳の`count`・`by_tool`・起動入力の`by_mode`を同じ照会で返す。"
+        "`record-provenance`は全収集記録の親の由来・起動mode・役割文書を示し、未取得の値はnullとなる。"
         "`record`と`line`、または`record`と`result_line`を`--detail <記録>:<行番号>`へ渡すと入力と結果の全文を得られる。"
         "本スクリプト自身の呼び出しも含める。カタログ走査と併用すると、窓の中の親セッションごとに、"
         "走査rootの外の委譲先を含む記録から`timestamp`が`--since`より後で`--observation-boundary`以前の呼び出しを"
@@ -520,10 +529,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.bundle is not None:
         events, exit_code = _bundle_events(collected, unresolved, Path(args.bundle), compaction_record_dir)
-        _print_events(events)
+        _print_events(events, collected=collected)
         return exit_code
     if args.warn:
-        _print_events(_warning_collection_events(collected, unresolved))
+        _print_events(_warning_collection_events(collected, unresolved), collected=collected)
         return 0
     if args.grep is not None:
         try:
@@ -532,7 +541,7 @@ def main(argv: list[str] | None = None) -> int:
             return _print_error(
                 f"正規表現が不正: {error}", next_action="`--grep`の正規表現の構文（括弧の対応、エスケープ）を直して再実行する"
             )
-        _print_events(_grep_collection_events(collected, unresolved, pattern))
+        _print_events(_grep_collection_events(collected, unresolved, pattern), collected=collected)
         return 0
     if args.detail is not None or args.record_schema is not None:
         events = []
@@ -548,25 +557,26 @@ def main(argv: list[str] | None = None) -> int:
         _print_events(events)
         return exit_code
     if args.fixed_string is not None:
-        _print_events(_fixed_string_collection_events(collected, unresolved, args.fixed_string))
+        _print_events(_fixed_string_collection_events(collected, unresolved, args.fixed_string), collected=collected)
         return 0
     if args.context_at is not None:
         events, exit_code = _context_at_events(collected, args.context_at, args.phrase or [])
         _print_events(events)
         return exit_code
     if args.stats:
-        _print_events([*_stats_events(collected, compaction_record_dir), *_unresolved_events(unresolved)])
+        _print_events([*_stats_events(collected, compaction_record_dir), *_unresolved_events(unresolved)], collected=collected)
         return 0
     if args.hook_notices:
         _print_events(
-            [*_hook_notice_events([record for item in collected for record in item.records]), *_unresolved_events(unresolved)]
+            [*_hook_notice_events([record for item in collected for record in item.records]), *_unresolved_events(unresolved)],
+            collected=collected,
         )
         return 0
     if args.user_events:
         _print_events(_user_events_since(collected, since))
         return 0
     if args.tool_calls:
-        _print_events(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern))
+        _print_events(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern), collected=collected)
         return 0
 
     _print_events(_default_events(collected, unresolved))
