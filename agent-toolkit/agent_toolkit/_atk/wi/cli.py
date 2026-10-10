@@ -3,6 +3,9 @@
 `atk.py`は`build_parser`で`atk wi`配下を登録し、`prepare_args`・`validate_args`で引数を確定してから`dispatch`を呼ぶ。
 """
 
+# ヘルプ・補完器登録では処理モジュールを使わず、必要な定数だけを参照する。
+__lazy_modules__ = {"agent_toolkit._atk", "agent_toolkit._atk.wi", "agent_toolkit._atk.wi.mutations"}
+
 import argparse
 import datetime
 import math
@@ -1094,16 +1097,16 @@ def validate_args(args: argparse.Namespace) -> None:
 def dispatch(args: argparse.Namespace, *, home: pathlib.Path, now: datetime.datetime) -> int:
     """`atk wi`のサブコマンドを実行し、終了コードを返す。"""
     sub = args.wi_subcommand
-    process_loop_state_dispatch = {
-        "abort": _process_loop_control.cmd_process_loop_abort,
-        "abort-cancel": _process_loop_control.cmd_process_loop_abort_cancel,
-        "status": _process_loop_control.cmd_process_loop_status,
-        "instruct": lambda: _process_loop_control.cmd_process_loop_instruct(args.body),
-        "instruct-cancel": _process_loop_control.cmd_process_loop_instruct_cancel,
-    }
     process_loop_subcommand = getattr(args, "process_loop_subcommand", None)
     if sub == "process-loop" and process_loop_subcommand is not None:
         # これらの操作はprivate-notesを必要としないため、環境の用意より前で処理する。
+        process_loop_state_dispatch = {
+            "abort": _process_loop_control.cmd_process_loop_abort,
+            "abort-cancel": _process_loop_control.cmd_process_loop_abort_cancel,
+            "status": _process_loop_control.cmd_process_loop_status,
+            "instruct": lambda: _process_loop_control.cmd_process_loop_instruct(args.body),
+            "instruct-cancel": _process_loop_control.cmd_process_loop_instruct_cancel,
+        }
         process_loop_state_dispatch[process_loop_subcommand]()
         return 0
     private_notes = _wi_sync.ensure_environment(home)

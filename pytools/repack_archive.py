@@ -6,6 +6,19 @@
 一元管理する。
 """
 
+# 設定モデルの定義は即時に保ち、展開・画像処理などの依存は使うまで遅延する。
+__lazy_modules__ = {
+    "natsort",
+    "pytilpack.pathlib",
+    "pytilpack.zipfile",
+    "send2trash",
+    "tqdm",
+    "yaml",
+    "pdf2image",
+    "pdf2image.exceptions",
+    "pytools",
+}
+
 import argparse
 import fnmatch
 import functools
@@ -30,7 +43,8 @@ from pdf2image import convert_from_path
 from pdf2image.exceptions import PDFInfoNotInstalledError
 
 from pytools import imageconverter, rename
-from pytools._internal.cli import enable_completion, setup_logging
+from pytools._internal import repack_archive_args
+from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -123,19 +137,10 @@ class _CompiledRules:
         return path.is_file() and any(fnmatch.fnmatch(rel.name, pattern) for pattern in self.ignore_file_patterns)
 
 
-def main() -> None:
+def main(args: argparse.Namespace | None = None) -> None:
     """アーカイブをgv向けに前処理して無圧縮ZIPへ再パックするエントリポイント。"""
-    parser = argparse.ArgumentParser(description="アーカイブ・PDF を gv 向けに前処理する")
-    parser.add_argument("-c", "--config", type=pathlib.Path, help="YAML 設定ファイル")
-    parser.add_argument(
-        "-b", "--backup-dir", type=pathlib.Path, help="バックアップ先 (省略時: 対象ファイルのあるディレクトリ/bk)"
-    )
-    parser.add_argument("--no-trash", action="store_true", help="バックアップをゴミ箱送りしない")
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("targets", nargs="+", type=pathlib.Path)
-    enable_completion(parser)
-    args = parser.parse_args()
+    if args is None:
+        args = repack_archive_args.parse_args()
 
     setup_logging(verbose=args.verbose)
 

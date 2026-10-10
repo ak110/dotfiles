@@ -1,5 +1,8 @@
 """Herdr公式直接インストール版を導入または更新する。"""
 
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"httpx"}
+
 import collections.abc
 import contextlib
 import logging

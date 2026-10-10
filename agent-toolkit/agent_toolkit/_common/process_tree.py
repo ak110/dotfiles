@@ -11,6 +11,9 @@ CLIのプロセスが終了すると子孫の親が変わり、そのPIDを起�
 プロセス名の部分一致とパターン一致で対象集合を広げない。
 """
 
+# 回収しない呼出し元では、プロセス管理の依存を読み込まない。
+__lazy_modules__ = {"psutil"}
+
 import contextlib
 import logging
 import time

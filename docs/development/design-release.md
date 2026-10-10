@@ -16,12 +16,13 @@ repository設定ではマージコミットを有効にし、squash merge、reba
 GitHubのdefault branchは`master`のまま維持する。
 
 `master-release-pr`という固定名のactiveなbranch rulesetを1件だけ使用する。
-rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の9必須check、削除禁止およびforce push禁止を設定する。
+rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の10必須check、削除禁止およびforce push禁止を設定する。Python 3.15対応の公開工程で、旧`python-lint (3.14)`を新しいcheck集合へ同期する。
 
 - `test-linux`
 - `test-windows`
 - `python-lint (3.13)`
-- `python-lint (3.14)`
+- `python-lint (3.15)`
+- `pytest (3.15)`
 - `rust-lint`
 - `statusline-version`
 - `browser-e2e`
@@ -39,12 +40,12 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 `bin/update-dotfiles.cmd`を起動する。公開ランチャーの終了コードが0で、更新後checkoutの`git rev-parse --short=7 HEAD`が
 検証開始時の現行HEADと一致した場合だけ成功とする。実行中のOSアカウントのHOMEと外部remoteは変更対象にしない。
 
-| イベント | head repository | head branch | base branch | 共通8 jobの実処理所有者 | 表示名 |
+| イベント | head repository | head branch | base branch | 共通9 jobの実処理所有者 | 表示名 |
 | --- | --- | --- | --- | --- | --- |
-| `push` | base repository | 任意 | 該当なし | `push` run | 8件のrequired check名 |
-| `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 8件の`(non-owner)`名 |
-| `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 8件のrequired check名 |
-| `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 8件のrequired check名 |
+| `push` | base repository | 任意 | 該当なし | `push` run | 9件のrequired check名 |
+| `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 9件の`(non-owner)`名 |
+| `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 9件のrequired check名 |
+| `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 9件のrequired check名 |
 
 共通jobの先頭の判定stepが、release pull requestかどうか（同一repositoryのheadが`develop`、baseが`master`のpull request）を1回だけ求めて出力し、非所有markerと後続stepの条件はその出力を参照する。
 release pull requestでは、非所有markerだけを成功させ、checkoutを含む既存実処理を実行しない。
@@ -52,19 +53,19 @@ release pull requestでは、非所有markerだけを成功させ、checkoutを�
 判定stepと非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、Windowsの共通jobは`pwsh`、その他の共通jobは`bash`を明示する。
 `rust-lint`は既存jobの`defaults.run.working-directory`を維持し、判定stepと非所有markerだけがworkspace rootを明示してその指定を上書きする。
 
-job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の8件の表示名を保証できない。
+job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の9件の表示名を保証できない。
 共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。
 pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示すが、check runの`head_sha`はstatusを関連付けるpull request head commitを示すため、両者を同一視しない。
 `master`が`develop`の祖先であり、release merge commitのtreeが`develop` headのtreeと同一になるrelease invariantを、共通CIの実処理を`develop`の`push` runへ帰属させる根拠とする。
 
 実ブラウザーE2Eは、共通`python-lint`から分離した`browser-e2e` jobが所有する。
-同jobはPython 3.14でPlaywright Chromiumを導入し、`agent-toolkit/agent_toolkit/_atk/serve/`配下の`browser`マーカーを持つ実ブラウザーテストだけを実行する。
-分離により、律速となる`python-lint (3.14)`からChromiumの導入とE2Eの実行時間を外したうえで、最新のPythonでのE2E実行を維持する。
+同jobはPython 3.15でPlaywright Chromiumを導入し、`agent-toolkit/agent_toolkit/_atk/serve/`配下の`browser`マーカーを持つ実ブラウザーテストだけを実行する。
+分離により、`python-lint (3.15)`からChromiumの導入とE2Eの実行時間を外したうえで、最新のPythonでのE2E実行を維持する。
 `browser-e2e`は他の共通jobと同じ非所有markerの構成を採用し、required checkへ加えることでE2Eの失敗がマージを遮断する状態を保つ。
 
 Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有し、`test-windows`はWindows固有pytest、公開ランチャー、通常profileへのchezmoi適用とpost-applyの確認を所有する。両job間に依存関係を置かず、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
 
-`python-lint`のmatrixは`python-lint (3.13)`、`python-lint (3.14)`、`pytest (3.14)`の3要素である。Python 3.14のpytest以外の確認とpytestを別runnerで並行し、cache keyにPython版と実行種別の両方を含める。
+`python-lint`のmatrixは`python-lint (3.13)`、`pytest (3.14)`、`python-lint (3.15)`、`pytest (3.15)`の4要素である。3.13・3.14は互換性のpytestを担い、3.15のpytest以外の確認とpytestを別runnerで並行する。cache keyにPython版と実行種別の両方を含める。
 
 statuslineのCargo versionとbase・head versionおよびtagの確認は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branchおよびrelease条件を追加の限定に使わない。
@@ -75,9 +76,9 @@ push起点を加えるのは、版数更新の抜けをrelease pull requestの�
 
 ### rulesetの更新手順
 
-ruleset `21524717`のrequired checkは共通8名と`statusline-version`の9件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
+ruleset `21524717`のrequired checkは共通9名と`statusline-version`の10件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
 ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを確認する。確認した完全IDは、送信前後の個別GETとPUTのURLパス`repos/ak110/dotfiles/rulesets/21524717`へ固定する。
-ruleset更新の本文はmanaged-tempの中のJSONファイルへ保存し、送信前に保存したJSONファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、9件のrequired check名を検証する。
+ruleset更新の本文はmanaged-tempの中のJSONファイルへ保存し、送信前に保存したJSONファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、10件のrequired check名を検証する。
 検証に成功した同じファイルを`gh api --method PUT --input <検証したJSONファイルの絶対パス> repos/ak110/dotfiles/rulesets/21524717`へ渡す。擬似端末の標準入力を更新本文の搬送に使わない。
 更新要求が失敗した場合は、追加のPUTを実行する前に対象rulesetを個別GETで再取得する。再取得した現行状態が更新前状態と完全に一致し、送信するJSONファイルの内容が検証時から変化しておらず、失敗の原因が本文の搬送であって送信方法をファイル入力へ是正できることを確認できる場合だけ、同じ本文の再送を1回だけ許可する。
 現行状態を取得できない場合、現行状態が更新前状態と一致しない場合、更新後の確認が期待値と一致しない場合は再送せず、更新前状態と現行状態を保持して続行できない理由を返して終端する。

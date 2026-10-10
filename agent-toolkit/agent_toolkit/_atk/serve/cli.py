@@ -1,5 +1,8 @@
 """`atk serve`の起動処理。"""
 
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"hypercorn.asyncio", "hypercorn.config", "agent_toolkit._atk.serve", "agent_toolkit._atk.wi"}
+
 import asyncio
 import contextlib
 import logging

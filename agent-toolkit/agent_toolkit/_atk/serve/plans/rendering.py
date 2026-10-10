@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"pygments.lexers"}
+
 import collections
 import collections.abc
 import html as html_lib

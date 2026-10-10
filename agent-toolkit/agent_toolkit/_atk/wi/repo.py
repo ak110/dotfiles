@@ -1,5 +1,12 @@
 """`atk wi`の対象リポジトリの識別子の解決と、ローカル作業ツリーとの対応。"""
 
+# parserの定数参照と、実際のキュー操作の依存を分ける。
+__lazy_modules__ = {
+    "agent_toolkit._atk.wi",
+    "agent_toolkit._atk.wi.formatters",
+    "agent_toolkit._atk.wi.web_input",
+}
+
 import pathlib
 import re
 import sys

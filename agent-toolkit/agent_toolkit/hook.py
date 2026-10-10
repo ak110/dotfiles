@@ -23,6 +23,9 @@ hook定義でも同じ処理が実行される。配布先の定義を追随さ�
 標準エラー出力で不整合を観測できるようにする。
 """
 
+# 正常な呼出しで使わない診断とdump用の依存を、Python 3.15では必要になるまで読み込まない。
+__lazy_modules__ = {"datetime", "traceback", "agent_toolkit._hooks.notice"}
+
 import contextlib
 import datetime
 import importlib
@@ -54,8 +57,6 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
 # 例外時に`_approve()`で終了を許可する対象。出力形式はStop系モジュールの実装へ委ねる。
 _APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop"})
 
-_llm_notice = _notice_formatter("hook")
-
 
 def _configure_standard_output() -> None:
     """標準出力と標準エラーをUTF-8へ統一する。"""
@@ -82,7 +83,7 @@ def main(argv: list[str]) -> int:
     known_subcommands = "|".join(sorted(_SUBCOMMANDS))
     if not argv:
         print(
-            _llm_notice(
+            _notice_formatter("hook")(
                 f"usage: hook.py <{known_subcommands}>",
                 tag="warn",
                 fix="フック定義の起動コマンドへ現行のサブコマンド名を渡す。",
@@ -93,7 +94,7 @@ def main(argv: list[str]) -> int:
         return 0
     if argv[0] not in _SUBCOMMANDS:
         print(
-            _llm_notice(
+            _notice_formatter("hook")(
                 f"hook定義と実装が不整合: 未知のサブコマンド'{argv[0]}'を受領した。現行のサブコマンド: {known_subcommands}。",
                 tag="warn",
                 fix=(
@@ -112,7 +113,7 @@ def main(argv: list[str]) -> int:
         payload_text = payload_bytes.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         print(
-            _llm_notice(
+            _notice_formatter("hook")(
                 f"stdinのUTF-8デコードに失敗したためフック処理を通過させる: {exc}",
                 tag="warn",
                 fix="対応不要（フック処理を通過させて継続した）。",
@@ -142,7 +143,7 @@ def main(argv: list[str]) -> int:
         location = f" ({pathlib.Path(frame.filename).name}:{frame.lineno})" if frame is not None else ""
         label = argv[0]
         print(
-            _llm_notice(
+            _notice_formatter("hook")(
                 f"[{label}] 想定外エラー: {type(exc).__name__}: {exc}{location}",
                 tag="warn",
                 fix="対応不要（フック処理を通過させて継続した）。再発する場合はagent-toolkitの不具合としてユーザーへ報告する。",

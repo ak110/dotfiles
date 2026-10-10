@@ -157,20 +157,21 @@ def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[s
     assert any(step.get("name") == "公開入口ランチャーの動作確認" for step in workflow_steps(windows))
 
 
-def test_python_314_pytest_is_an_independent_matrix_job(workflow_data: dict[str, object]) -> None:
-    """Python 3.14のpytestとそれ以外の検査は、表示名とcache keyの異なるmatrix要素で実行する。"""
+def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str, object]) -> None:
+    """最新基準版のlintとpytestを分離し、下限版と前版のpytestを維持する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
     strategy = workflow_mapping(job["strategy"])
     matrix = workflow_mapping(strategy["matrix"])
     include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
     assert include == [
         {"python-version": "3.13", "check": "pytest", "check-name": "python-lint (3.13)"},
-        {"python-version": "3.14", "check": "lint", "check-name": "python-lint (3.14)"},
         {"python-version": "3.14", "check": "pytest", "check-name": "pytest (3.14)"},
+        {"python-version": "3.15", "check": "lint", "check-name": "python-lint (3.15)"},
+        {"python-version": "3.15", "check": "pytest", "check-name": "pytest (3.15)"},
     ]
     steps = workflow_steps(job)
-    lint = next(step for step in steps if step.get("name") == "Python 3.14 pytest以外の検査")
-    pytest_step = next(step for step in steps if step.get("name") == "Python 3.14 pytest")
+    lint = next(step for step in steps if step.get("name") == "Python 3.15 pytest以外の検査")
+    pytest_step = next(step for step in steps if step.get("name") == "Python 3.15 pytest")
     assert lint["run"] == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version"
     assert pytest_step["run"] == "pyfltr ci --commands=pytest"
     cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))

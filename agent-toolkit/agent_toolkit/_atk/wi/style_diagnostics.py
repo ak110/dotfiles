@@ -1,5 +1,8 @@
 """WI本文を保存する前に口語表現とダッシュの警告を集める。"""
 
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"pyfltr.colloquial"}
+
 import re
 
 from pyfltr.colloquial import check as colloquial

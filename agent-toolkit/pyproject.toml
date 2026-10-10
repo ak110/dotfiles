@@ -4,6 +4,12 @@ version = "0.1.0"
 description = "Coding agent workflow toolkit"
 # 配布先のエンドユーザー環境はリポジトリ直下より広い版を含むため、下限を3.12とする。
 requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+]
 dependencies = [
     "argcomplete",
     "claude-agent-sdk>=0.2.144,<0.3",
@@ -62,8 +68,8 @@ ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra
 # pyfltrは設定を省略した場合、`ruff-format`で整形する前に`ruff check --fix --unsafe-fixes`を実行する。
 # `make test`で担当範囲外のファイルを自動修正しないよう、直下と同じくlintの自動修正を無効にする。
 ruff-format-by-check = false
-# pylintを直列で実行すると本subprojectのモジュール数では律速になるため、直下と同じ並列度を指定する。
-pylint-args = ["--jobs=4"]
+# dillがPython 3.15のcodeオブジェクトに対応するまで、直下と同じくpylintの直列実行を使う。
+# 対応版の公開後に並列実行へ戻す。
 pytest-fast-targets = ["*_invariant_test.py"]
 pytest-always-targets = ["*_invariant_test.py"]
 

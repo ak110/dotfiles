@@ -17,6 +17,9 @@ post-applyテンプレートがpytoolsの再導入のために停止した場合
 ハングの原因は未特定である。`launch.vbs`と実行ファイルのパスは本モジュールだけが持つ。
 """
 
+# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"psutil"}
+
 import logging
 import os
 import pathlib

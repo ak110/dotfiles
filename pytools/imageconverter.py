@@ -5,6 +5,9 @@
 CLIからは`py-imageconverter`コマンドとして、他モジュールからは`convert_directory`関数として呼び出せる。
 """
 
+# 画像処理・進捗表示は引数解析の後だけで必要となる。
+__lazy_modules__ = {"natsort", "numpy", "PIL.Image", "PIL.ImageFile", "PIL.ImageOps", "tqdm"}
+
 import argparse
 import contextlib
 import dataclasses

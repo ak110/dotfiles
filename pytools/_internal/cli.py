@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 
 
 def setup_logging(verbose: bool = False, *, fmt: str = "%(message)s") -> None:
@@ -18,12 +19,14 @@ def enable_completion(parser: argparse.ArgumentParser) -> None:
 
     対応するコマンドのソース先頭に`# PYTHON_ARGCOMPLETE_OK`マーカーを置き、
     `parser.parse_args()`の直前で呼び出す。
-    `_COMPLETE`系の環境変数が設定されているシェル補完起動時のみargcompleteが介入し、
+    `_ARGCOMPLETE`が設定されているシェル補完起動時のみargcompleteを読み込み、
     通常実行ではno-opとなる。`argcomplete`未導入環境でもImportErrorを無視してno-op化するため、
     extrasを欠いた状態でも動作できる。
     補完スクリプトの実体は`completions/_pytools.bash`で、将来的に
     `argcomplete`から別実装（shtab等）へ切り替える際は本関数のみ差し替える。
     """
+    if "_ARGCOMPLETE" not in os.environ:
+        return
     try:
         import argcomplete  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # 補完起動時のみ必要なので遅延importする。
     except ImportError:

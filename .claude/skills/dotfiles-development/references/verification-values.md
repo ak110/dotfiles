@@ -29,13 +29,14 @@
   - レーンをまたぐ重複実装は片側の変更ファイルだけでは比較できないため、全体を検出: `uv run --frozen pyfltr run --commands=arid`
   - Pythonの型と静的参照の整合を変更ファイルの外も含めて確かめる: `uv run --frozen pyfltr run --commands=ty`
   - 複数ファイルにまたがるimport循環は一部ファイルだけでは検出できない。次のコマンドで全体の循環importを検出する。 `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`
-- `make test`が実行するツール集合とCIの`python-lint (3.14)`ジョブの差は、同ジョブが`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version`で無効化するチェックである。Python 3.14のpytestは`pytest (3.14)`ジョブが所有する。
+- `make test`が実行するツール集合とCIの`python-lint (3.15)`ジョブの差は、同ジョブが`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version`で無効化するチェックである。Python 3.15のpytestは`pytest (3.15)`ジョブが所有する。
   次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
   - `test-windows`ジョブ: Windows実機でのchezmoi適用、Windows固有のテストと公開ランチャー確認
   - `update-dotfiles-upgrade (windows)`ジョブ: Windows旧版からのupdate-dotfiles更新検証
   - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
   - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
   - `pytest (3.14)`ジョブ: Python 3.14でのpytest
+  - `pytest (3.15)`ジョブ: Python 3.15でのpytest
   - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
   - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
 

@@ -1,5 +1,8 @@
 """pytools共通の汎用処理（実行ファイルの解決、サブプロセス実行、JSONの読み込みと原子的な書き込み、dotfilesルートの解決）。"""
 
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"pytilpack.jsonc"}
+
 import contextlib
 import json
 import logging

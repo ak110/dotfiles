@@ -5,6 +5,9 @@
 C#版のサブコマンド名・引数・出力を維持し、`EcoUtilities`コマンドの差し替えで流用できるようにする。
 """
 
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"httpx"}
+
 import argparse
 import datetime
 import errno
@@ -22,7 +25,7 @@ from pathlib import Path
 import httpx
 import pydantic
 
-from pytools._internal.cli import enable_completion
+from pytools._internal import ecoutilities_args
 
 _RANDOM_TAKE = 64
 _BLOCK_SIZE = 256
@@ -31,39 +34,10 @@ _RE_QUOTED = re.compile(r"""(href|src)\s*=\s*["']([^"']+)["']""")
 _HTTP_TIMEOUT = 30.0
 
 
-def main() -> None:
+def main(args: argparse.Namespace | None = None) -> None:
     """サブコマンドを解釈して各処理へ委譲するエントリポイント。"""
-    parser = argparse.ArgumentParser(prog="EcoUtilities", description="ファイル整理・クロール用のユーティリティ集。")
-    sub = parser.add_subparsers(dest="mode", metavar="mode")
-
-    p_ymf = sub.add_parser("YearMonthFolder256", help="年月ごと＋256ファイル単位でフォルダーへ振り分ける。")
-    p_ymf.add_argument("dirs", nargs="+", help="対象ディレクトリ。")
-
-    p_def = sub.add_parser("DeleteEmptyFolders", help="空フォルダーを削除する。")
-    p_def.add_argument("dirs", nargs="+", help="対象ディレクトリ。")
-
-    p_fix = sub.add_parser("FixGVBByFileName", help="gvb内のパスをファイル名一致で付け替える。")
-    p_fix.add_argument("gvb_dir", help="gvbファイルのフォルダー。")
-    p_fix.add_argument("data_dir", help="データフォルダー。")
-
-    p_dtc = sub.add_parser("DisposeTCBookmarks", help="ブックマークを接頭辞ごとに整理する。")
-    p_dtc.add_argument("path", help="対象フォルダー。")
-
-    p_rl = sub.add_parser("RandomList", help="ランダム抽出してリストを出力する（省略時はcp932）。")
-    p_rl.add_argument("dir", help="対象フォルダー。")
-    p_rl.add_argument("list_path", help="出力先リストファイル。")
-    p_rl.add_argument("--encoding", default="cp932", help="出力エンコーディング（省略時: cp932）。")
-
-    p_rm = sub.add_parser("RandomM3U8", help="ランダム抽出してm3u8を出力する（省略時はBOM付きUTF-8）。")
-    p_rm.add_argument("dir", help="対象フォルダー。")
-    p_rm.add_argument("list_path", help="出力先リストファイル。")
-    p_rm.add_argument("--encoding", default="utf-8-sig", help="出力エンコーディング（省略時: utf-8-sig）。")
-
-    p_dc = sub.add_parser("DownloadCustom", help="設定ファイルに従いサイトをクロールしてダウンロードする。")
-    p_dc.add_argument("sites_file", nargs="?", default="Sites.xml", help="サイト設定XML（省略時: Sites.xml）。")
-
-    enable_completion(parser)
-    args = parser.parse_args()
+    if args is None:
+        args = ecoutilities_args.parse_args()
 
     if args.mode is None:
         print("Usage: EcoUtilities mode ...")
