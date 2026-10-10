@@ -131,9 +131,18 @@ Codexでは`~/.codex/docs/session-review-dotfiles.md`とする。
   `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
   共通化が必要な場合は`agent-toolkit-edit`スキルの`references/distribution-and-hooks.md`「agent_toolkitパッケージの配置と層」が定めるテスト専用パッケージへ置く
 - テストはリポジトリ直下と`agent-toolkit/`の`conftest.py`が適用する`agent-toolkit/agent_toolkit/_testing/isolation.py`の隔離の下で動き、ホームと設定ディレクトリはテストごとの一時ディレクトリを指す。
-  実際の外部ランタイムやCLIの子プロセス起動をテストへ新設・変更するときは、起動に必要なホスト設定を同モジュールの`host_environ`で子へ渡すか、`restore_host_environment`で戻す。
-  テスト対象自身の設定と状態は隔離したまま保つ。
-  変更範囲の検証では、CIが使う設定依存のランチャー（miseのshimなど）からも対象テストを実行し、実行ファイルを直接呼ぶ場合だけ成功する環境指定の不足を検出する。
+  実際の外部ランタイムやCLIの子プロセス起動をテストへ新設・変更するときは、起動に必要なホスト設定を同モジュールの`host_environ()`で組み立て、子の`env`へ渡す。
+  子へ環境を渡せない起動方法では、`restore_host_environment(monkeypatch)`でテストプロセス自身のHOME・設定ディレクトリ・PATHを隔離前へ戻す。
+  この方法を選ぶテストは、テスト対象の設定と状態を別の一時領域へ明示して隔離を保つ。
+  変更範囲の検証では、[CI設定](../../../.github/workflows/ci.yaml)の対象jobとその実行環境が使うランチャーからも対象テストを実行する。
+  miseのshimは、隔離前に`mise doctor --json`の`dirs.shims`から場所を取得する。
+  次の例はuvによるPATH変更の後にshimを先頭へ置き、対象ランタイムの解決先を確認して同じPythonプロセスでpytestを起動する。
+  最後の2引数を対象ランタイム名とテストのパスへ替え、修正前の失敗対照と対応付けて環境指定の不足を検出できることを確かめる。
+
+  ```sh
+  uv run --frozen python -c 'import json, os, pathlib, shutil, subprocess, sys, pytest; shims = json.loads(subprocess.check_output(["mise", "doctor", "--json"], text=True, encoding="utf-8"))["dirs"]["shims"]; os.environ["PATH"] = shims + os.pathsep + os.environ["PATH"]; resolved = shutil.which(sys.argv[1]); assert resolved and pathlib.Path(resolved).parent == pathlib.Path(shims), resolved; print("runtime:", resolved); raise SystemExit(pytest.main(["-v", "-n", "0", "-p", "no:cacheprovider", *sys.argv[2:]]))' node agent-toolkit/agent_toolkit/_hooks/message_format_test.py
+  ```
+
   HOME・設定・Git環境の隔離は、検証に必要な履歴・tag・branch・作業状態の準備とは別である。実Gitの動作を確かめるテストは、それらを自身の一時リポジトリへ準備し、全てのGit呼び出しで対象リポジトリを明示する。共通ヘルパー`agent-toolkit/agent_toolkit/_testing/git_repository.py`の`init_repository`・`commit_all`・`run_git`を使える。実行元リポジトリの不変条件を調べるテストの役割は保ち、全テストのcwdを一律に変えない。
   履歴への依存が現れた対照と再検証手段は、`docs/development/audit-records.md`「dotfiles-development：Git動作テストの状態準備：2026年10月9日」にある。
   パッケージを取得して起動する外部ツール（pnpmの`dlx`、corepackなど）を実際に動かすテストは、同モジュールの`share_package_caches`で取得物の保存先だけをホストと共有する。
