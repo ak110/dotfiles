@@ -12,6 +12,7 @@ import os
 import pathlib
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 import session_evidence_candidates as evidence_candidates  # pylint: disable=import-error
@@ -19,6 +20,7 @@ import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-
 
 from agent_toolkit._common import response_language_check, state_paths
 from agent_toolkit._testing import delegated_threads
+from agent_toolkit._testing import session_evidence_support as support
 from agent_toolkit._testing.failure_records import bash_failure_entries, failure_entries
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
@@ -990,6 +992,7 @@ def test_prepare_lists_adhoc_processing_per_record_without_failure_selection(
     record_id = "claude:11111111-2222-3333-4444-555555555555"
     assert (
         f"- c0001 adhoc-processing（発生2件）: 記録{record_id}のその場のコードによる加工\n"
+        f"  - 記録の由来: {record_id}=メイン\n"
         f"  - {record_id}:2: sed -n 2p {saved_output}\n"
         f"  - {record_id}:4: python3 -c 'import sys; sys.exit(3)'\n"
     ) in candidates
@@ -1309,3 +1312,82 @@ def test_prepare_reports_missing_items(
     assert captured.out == ""
     assert captured.err.splitlines()[0] == "不足: evidence_script"
     assert captured.err.splitlines()[1].startswith("次の操作: `atk run-script session-review-prepare --")
+
+
+def _delegate_adhoc_session(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """メインがCodexの委譲先（役割文書exec、mode task）を起動し、委譲先がその場のコードを実行したセッションを書く。
+
+    記録の形は`agent_toolkit._testing.session_evidence_support`のCodex rollout（2026年10月4日の記録）を写す。
+    """
+    parent = support.tool_call_session(tmp_path, monkeypatch, "rg needle")
+    entries = [json.loads(line) for line in parent.read_text(encoding="utf-8").splitlines()]
+    entries[5]["message"]["content"][0]["input"]["mode"] = "task"
+    support.write_jsonl(parent, entries)
+    codex = next((tmp_path / "codex").rglob("*.jsonl"))
+    entries = [json.loads(line) for line in codex.read_text(encoding="utf-8").splitlines()]
+    entries[1:1] = [
+        support.codex_item(
+            "2026-10-06T00:00:05Z",
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "次の文書の手順を実行せよ（出所: /plugin/share/exec.subagent.md）。\n作業"}
+                ],
+            },
+        ),
+        support.codex_item(
+            "2026-10-06T00:00:06Z",
+            {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "c-py",
+                "arguments": '{"cmd": "python3 -c \'print(2)\'"}',
+            },
+        ),
+        support.codex_item("2026-10-06T00:00:06.500Z", {"type": "function_call_output", "call_id": "c-py", "output": "2"}),
+    ]
+    support.write_jsonl(codex, entries)
+    return parent
+
+
+def test_prepare_adds_record_provenance_to_candidate_locations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """委譲先の記録にある候補の記録位置へ、役割文書・起動mode・起動元とその役割を添える。
+
+    要約の文言（コマンドやパス）から実行主体を推させないための契約であり、期待値は同じbundleの
+    `record-provenance`の項目（`role_document`、`mode`、`source_record`）から導く。
+    """
+    parent = _delegate_adhoc_session(tmp_path, monkeypatch)
+
+    exit_code = prepare.main(["--transcript", str(parent), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW)
+
+    assert exit_code == 0, capsys.readouterr().err
+    record = json.loads(capsys.readouterr().out)
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    delegate = f"codex:{support.TOOL_CALL_THREAD}"
+    heading = next(line for line in candidates.splitlines() if f"記録{delegate}のその場のコードによる加工" in line)
+    provenance = candidates.splitlines()[candidates.splitlines().index(heading) + 1]
+    assert provenance.startswith(f"  - 記録の由来: {delegate}=役割文書exec・mode task・起動元claude:parent-session:")
+    assert provenance.endswith("（メイン）")
+
+
+def test_prepare_marks_candidate_locations_without_provenance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """由来を持たない証拠bundle（`record-provenance`を出力する前の版で作成した記録など）では、取得できなかったことを示す。"""
+    parent = _delegate_adhoc_session(tmp_path, monkeypatch)
+    original = prepare._read_jsonl  # pylint: disable=protected-access
+
+    def read_without_provenance(path: pathlib.Path) -> list[dict[str, Any]]:
+        return [event for event in original(path) if event.get("kind") != "record-provenance"]
+
+    monkeypatch.setattr(prepare, "_read_jsonl", read_without_provenance)
+
+    exit_code = prepare.main(["--transcript", str(parent), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW)
+
+    assert exit_code == 0, capsys.readouterr().err
+    record = json.loads(capsys.readouterr().out)
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    assert f"  - 記録の由来: codex:{support.TOOL_CALL_THREAD}=由来を取得できなかった" in candidates

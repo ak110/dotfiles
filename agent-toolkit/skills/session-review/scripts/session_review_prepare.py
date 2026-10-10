@@ -3,7 +3,7 @@
 1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在と読取範囲を1行のJSONで返す。
 会話の流れはメイン記録の発話、ツール呼び出しおよび失敗の標識を時系列で並べ、メインが最初に全範囲を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
-`candidates.md`は1候補を1行の要約と記録位置で示す。全文が要る候補だけを、
+`candidates.md`は1候補を1行の要約と、記録の由来（役割文書、起動mode、起動元）を添えた記録位置で示す。全文が要る候補だけを、
 メインが`atk run-script session-review-evidence`の`--detail`で照会する。
 
 本スクリプトはデータ取得を目的とし、合否を判定しないため、
@@ -73,7 +73,8 @@ MANDATORY_KINDS = frozenset({"user-intervention", "confirmation-request", "wi-us
 
 ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
 `agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」の除外区分に当たる場合を除き、
-前例の有無によらず再発防止策を要する。必須であることを参照資料の読込に依存させないよう候補一覧と1行JSONへ示し、
+前例の有無によらず再発防止策を要する。再発防止策なしで終えられるのは同書「QとC・Dの区別」のC・Dだけの問題に限る。
+必須であることを参照資料の読込に依存させないよう候補一覧と1行JSONへ示し、
 Stopの報告本文の判定が候補IDで追跡する。
 """
 _SIMILAR_RECORD_KINDS = frozenset({"user-intervention", "wi-user-response"})
@@ -410,6 +411,41 @@ def _candidate_bodies(candidate: dict[str, Any], evidence: dict[str, Any]) -> tu
     return bodies, bodies[0] if bodies else str(candidate.get("text", ""))
 
 
+def _provenance_text(records: list[str], timeline: list[dict[str, Any]]) -> str:
+    """記録ごとの由来（役割文書、起動mode、起動元の記録とその役割文書）を、同じbundleの`record-provenance`から示す。
+
+    候補の要約の文言（引数のパスやコマンド）からは実行主体を推せないため、記録位置へ由来を添えて
+    読み手が別の照会をせずに実行主体を確かめられるようにする。由来の無い記録は取得できなかったことを示す。
+    """
+    provenance = {
+        str(event["record"]): event
+        for event in timeline
+        if event.get("kind") == "record-provenance" and isinstance(event.get("record"), str)
+    }
+
+    def describe(record: str) -> str:
+        item = provenance.get(record)
+        if item is None:
+            return f"{record}=由来を取得できなかった"
+        source = item.get("source_record")
+        if not isinstance(source, str):
+            return f"{record}={'メイン' if item.get('role') == 'main' else '起動元なし'}"
+        parent = provenance.get(source)
+        if parent is None:
+            parent_text = "起動元の由来を取得できなかった"
+        elif parent.get("role") == "main" and not parent.get("source_record"):
+            parent_text = "メイン"
+        else:
+            parent_text = f"役割文書{parent.get('role_document') or 'なし'}"
+        line = item.get("source_line")
+        return (
+            f"{record}=役割文書{item.get('role_document') or 'なし'}・mode {item.get('mode') or '不明'}・"
+            f"起動元{source}{f':{line}' if line is not None else ''}（{parent_text}）"
+        )
+
+    return "由来: " + "; ".join(describe(record) for record in dict.fromkeys(records))
+
+
 def _candidate_lines(
     candidate: dict[str, Any],
     evidence: dict[str, Any],
@@ -426,7 +462,10 @@ def _candidate_lines(
     occurrence = candidate.get("occurrence_count", candidate.get("count", 1))
     if kind == "adhoc-processing":
         record = candidate["locators"][0]["record"]
-        lines = [f"- {candidate['candidate_id']} {kind}（発生{occurrence}件）: 記録{record}のその場のコードによる加工"]
+        lines = [
+            f"- {candidate['candidate_id']} {kind}（発生{occurrence}件）: 記録{record}のその場のコードによる加工",
+            f"  - 記録の{_provenance_text([str(record)], timeline)}",
+        ]
         lines.extend(
             f"  - {call['record']}:{call['line']}: {_one_line(str(call.get('text', ''))) or '（入力なし）'}"
             for call in candidate.get("calls", [])
@@ -453,7 +492,11 @@ def _candidate_lines(
     else:
         locators = ", ".join(f"{locator['record']}:{locator['line']}" for locator in candidate["locators"])
         omitted = candidate.get("omitted_locator_count", 0)
-        lines.append(f"  - 記録位置: {locators}" + (f"（同じ種類の{omitted}件は省略）" if omitted else ""))
+        lines.append(
+            f"  - 記録位置: {locators}"
+            + (f"（同じ種類の{omitted}件は省略）" if omitted else "")
+            + f"。{_provenance_text([str(locator['record']) for locator in candidate['locators']], timeline)}"
+        )
     lines.extend(_question_answer_lines(candidate))
     lines.extend(f"  - 対象: {_tool_use_summary(event)}" for event in events if event.get("kind") == "tool-use")
     if kind == "hook-notice":
