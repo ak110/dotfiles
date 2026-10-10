@@ -12,6 +12,7 @@ import pathlib
 import subprocess
 import sys
 import types
+from collections.abc import Callable
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -204,7 +205,10 @@ def test_notify_saved_delivery_reaches_shared_receiver(tmp_path: pathlib.Path) -
     assert attributes["source"] == "agents-notify" and attributes["from"] == "delegate:child"
 
 
-def test_typescript_mod_emitted_values_reach_python_shared_receiver(tmp_path: pathlib.Path) -> None:
+def test_typescript_mod_emitted_values_reach_python_shared_receiver(
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
     """実modの失敗通知・装着通知と別入力の包装を、Pythonの実際の受信判定へ渡す。"""
     hooks = pathlib.Path(__file__).resolve().parents[2] / "hooks"
     script = tmp_path / "mod-deliveries.mjs"
@@ -258,6 +262,7 @@ process.stdout.write(JSON.stringify(bodies));
         text=True,
         encoding="utf-8",
         timeout=30,
+        env=host_environ(),
         check=False,
     )
     assert result.returncode == 0, result.stderr
