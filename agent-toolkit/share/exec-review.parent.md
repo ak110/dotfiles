@@ -137,7 +137,7 @@ Git管理外の変更元と変更前複製の対がある場合は、任意入�
    - 返却された各JSON配列を展開して計画を`--plan`、WI・CI・引き継ぎの記録を`--input-record`で反復指定する。委譲プロンプトへ本文で渡したWI記録とCI記録も、担当が自身の入力記録として保存したファイルを配列が指すため、配列のパスをそのまま使う。配列に無い既知の入力を補わず、返却前に確かめた入力集合を再現する
    - 複数レビューは`atk run-script exec-review-evidence-check -- --batch <入力JSONの絶対パス>`で一括確認できる。入力は`version: 1`と`reviews`配列とする。各組へ`plan`（対応先）、`evidence`、`wi`配列、`reviewed_head`、`review_table`、`round`を渡す。返却どおりの`plans`配列、`input_records`配列、`reader_fit_review`（読者別探索の申告）と`review_start`も渡す。2回目以降は`previous_review_start`と`previous_review_head`も渡す。HEAD・round・配列・申告を組間で統合しない。JSON Linesの各組の`exit_code`、固定返却全行の`result`、`diagnostics`を読み、1組でも非0なら全体も非0とする。証拠は更新しない
 3. 未解決の件数が0件で、達成必須の全行が達成していることを確かめる。証拠要求なしも同じ操作で表の件数を得る。証拠ありでは全行の`reviewed_head`、WIの完成条件原文と要求単位の対応も同じ操作で確かめる。補足のフェンス付きコードブロックは背景資料として扱い、その内容を除いて要求単位を比べる
-4. `--show-all-rows`が返す両配列の各`証拠の全行`を1始まりの行番号と原文で対応付け、達成行を含むsource・evidence・reviewed_headを確認する。batchにも同じオプションを加え、各組のresultから取得する。全行表示は元JSONを変更せず、省略時の返却形式は維持する。長い出力は保存先から末尾まで読み、各参照先の入力・観測結果を確認する。表示とJSON形式の確認の成功だけで達成を受理しない
+4. `--show-all-rows`が先に返す`証拠の行一覧`で両配列の全行の判定・原文・`source`を1始まりの行番号で対応付けてから、各`証拠の全行`の達成行を含むsource・evidence・reviewed_headを確認する。batchにも同じオプションを加え、各組のresultから取得する。個別の行を読み直す場合は、出力を加工せずに`atk run-script exec-review-evidence-check -- <証拠の絶対パス> --list --section <配列> --row <N>`で読み、複数行は`--row`を反復して1回で取得する。全行表示は元JSONを変更せず、省略時の返却形式は維持する。長い出力は保存先から末尾まで読み、各参照先の入力・観測結果を確認する。表示とJSON形式の確認の成功だけで達成を受理しない
 5. 非0では報告されたWI名と不足内容をレビュー担当へ返す
 
 全行表示で`evidence`の代わりに`evidence_reference`がある行では、その参照から根拠の全文を読む。`display`（`達成以外の行`か`証拠の全行`）、`section`と1始まりの`row`が先行行を指す。先行行も参照なら同じようにたどる。表示だけの重複除去であり、保存JSONの本文と判定は保つ。

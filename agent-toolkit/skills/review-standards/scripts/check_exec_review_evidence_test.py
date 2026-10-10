@@ -437,6 +437,154 @@ def test_return_result_reports_outcome_breakdown_and_nonachievement_rows(
     assert displayed == (expected if show_all else [])
 
 
+def _index_rows(lines: list[str]) -> list[dict[str, typing.Any]]:
+    """出力行から`証拠の行一覧`をJSONとして読む。"""
+    return [json.loads(line.removeprefix("証拠の行一覧: ")) for line in lines if line.startswith("証拠の行一覧: ")]
+
+
+def _assert_index_before_bodies(lines: list[str], data: dict[str, list[dict[str, str]]], sections: list[str]) -> None:
+    """一覧が全行表示より前に全行を1回ずつ根拠なしで並べ、行番号・原文が全行表示と一致し、全行表示が従来どおりであることを確かめる。"""
+    index_positions = [number for number, line in enumerate(lines) if line.startswith("証拠の行一覧: ")]
+    body_positions = [number for number, line in enumerate(lines) if line.startswith("証拠の全行: ")]
+    assert index_positions and body_positions and max(index_positions) < min(body_positions)
+    index = _index_rows(lines)
+    fields = {"wi_conditions": "condition", "user_requirements": "requirement"}
+    assert index == [
+        {
+            "配列": section,
+            "行番号": number,
+            "WI": row["awi"],
+            "判定": row["outcome"],
+            "source": row["source"],
+            fields[section]: row[fields[section]],
+        }
+        for section in sections
+        for number, row in enumerate(data[section], 1)
+    ]
+    full = _full_rows("\n".join(lines))
+    assert [(row["配列"], row["行番号"], row[fields[row["配列"]]]) for row in full] == [
+        (row["配列"], row["行番号"], row[fields[row["配列"]]]) for row in index
+    ]
+    seen: dict[str, dict[str, typing.Any]] = {}
+    expected = []
+    for section in sections:
+        for number, row in enumerate(data[section], 1):
+            value: dict[str, typing.Any] = {"配列": section, "行番号": number, **row}
+            if row["evidence"] in seen:
+                value.pop("evidence")
+                value["evidence_reference"] = seen[row["evidence"]]
+            elif row["evidence"]:
+                seen[row["evidence"]] = {"display": "証拠の全行", "section": section, "row": number}
+            expected.append(value)
+    assert full == expected
+
+
+def test_public_show_all_rows_lists_rows_before_bodies(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """返却・batch・--listの全行表示と配列だけの指定が、根拠を持たない全行の一覧を先に示す。
+
+    受領者が保存出力を加工せずに全行の判定・原文・出所を見渡し、選んだ行の根拠へ進めることを確かめる。
+    """
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    path, table = tmp_path / "evidence.json", tmp_path / "plan.exec-review.tsv"
+    review_table.init(table)
+    shared = "test_save_settings 成功と test_reload_settings 成功"
+    conditions = [
+        {**_condition(FIRST_WI, "保存"), "evidence": shared},
+        {**_condition(FIRST_WI, "再読込"), "evidence": shared},
+        {**_condition(SECOND_WI, "別条件"), "outcome": "未達", "evidence": "別WIの観測"},
+    ]
+    requirements = [{**_requirement(FIRST_WI, "保存して"), "outcome": "証拠不足", "evidence": "未観測"}]
+    _write_evidence(path, conditions, requirements)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    review_table.add(table, "2", "exec-review", "agent-toolkit/impl.py:3", "保存の観測を補う", "仕様")
+    record = tmp_path / "input.md"
+    record.write_text("# 記録\n", encoding="utf-8")
+    options = [*_review_options(REVIEWED_HEAD, table), "--return-result", "--reader-fit-review", "文章成果物なし"]
+    single = [str(path), FIRST_WI, "--input-record", str(record), *options]
+    capsys.readouterr()
+    assert check_exec_review_evidence.main([*single, "--show-all-rows"]) == 0, capsys.readouterr().err
+    lines = capsys.readouterr().out.splitlines()
+    # 返却の全行表示は達成以外の行の後に置かれるため、同一根拠の参照の起点は既存の規則のまま比べる。
+    full = _full_rows("\n".join(lines))
+    assert [row.get("evidence_reference", {}).get("display") for row in full] == [
+        None,
+        "証拠の全行",
+        "達成以外の行",
+        "達成以外の行",
+    ]
+    assert _index_rows(lines)
+    assert max(n for n, line in enumerate(lines) if line.startswith("証拠の行一覧: ")) < min(
+        n for n, line in enumerate(lines) if line.startswith("証拠の全行: ")
+    )
+    evidence_list = _listed(path, capsys)
+    assert _index_rows(lines) == _index_rows(evidence_list)
+    assert check_exec_review_evidence.main(single) == 0
+    assert "証拠の行一覧:" not in capsys.readouterr().out
+    batch = tmp_path / "batch.json"
+    batch.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "reviews": [
+                    {
+                        "plan": str(tmp_path / "plan.md"),
+                        "evidence": str(path),
+                        "wi": [FIRST_WI],
+                        "reviewed_head": REVIEWED_HEAD,
+                        "review_start": REVIEWED_HEAD,
+                        "previous_review_start": REVIEWED_HEAD,
+                        "previous_review_head": REVIEWED_HEAD,
+                        "review_table": str(table),
+                        "round": 2,
+                        "plans": [],
+                        "input_records": [str(record)],
+                        "reader_fit_review": "文章成果物なし",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert check_exec_review_evidence.main(["--batch", str(batch), "--show-all-rows"]) == 0
+    (result,) = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert result["result"] == lines
+    _assert_index_before_bodies(evidence_list, data, ["wi_conditions", "user_requirements"])
+    for section in ("wi_conditions", "user_requirements"):
+        assert check_exec_review_evidence.main([str(path), "--list", "--section", section]) == 0
+        _assert_index_before_bodies(capsys.readouterr().out.splitlines(), data, [section])
+
+
+def _listed(path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> list[str]:
+    """`--list`の全行表示の出力行を返す。"""
+    assert check_exec_review_evidence.main([str(path), "--list"]) == 0
+    return capsys.readouterr().out.splitlines()
+
+
+def test_public_list_returns_selected_rows_in_full(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """`--row`の反復で選んだ各行の根拠を同一根拠も参照にせず1回で返し、単一指定の出力は従来どおりに保つ。"""
+    path = tmp_path / "evidence.json"
+    shared = "test_save_settings 成功"
+    conditions = [
+        {**_condition(FIRST_WI, "保存"), "evidence": shared},
+        {**_condition(FIRST_WI, "再読込"), "evidence": "test_reload 成功"},
+        {**_condition(FIRST_WI, "削除"), "evidence": shared},
+    ]
+    _write_evidence(path, conditions)
+    expected = [
+        "証拠の全行: " + json.dumps({"配列": "wi_conditions", "行番号": number, **conditions[number - 1]}, ensure_ascii=False)
+        for number in (3, 1)
+    ]
+    capsys.readouterr()
+    assert check_exec_review_evidence.main([str(path), "--list", "--section", "wi_conditions", "--row", "3", "--row", "1"]) == 0
+    assert capsys.readouterr().out.splitlines() == expected
+    assert check_exec_review_evidence.main([str(path), "--list", "--section", "wi_conditions", "--row", "3"]) == 0
+    assert capsys.readouterr().out == expected[0] + "\n"
+    assert check_exec_review_evidence.main([str(path), "--list", "--section", "wi_conditions", "--row", "1", "--row", "4"]) == 1
+    assert "--rowには--sectionと" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("source_suffix", ["#存在しない節", "#別の節", ":99-100"])
 def test_return_result_does_not_use_unreferenced_section_as_permission(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], source_suffix: str
@@ -3691,6 +3839,11 @@ def test_return_requires_reader_fit_claim(
     assert not result.out and "--reader-fit-review" in result.err and "再実行" in result.err
 
 
+def _full_rows(output: str) -> list[dict[str, typing.Any]]:
+    """全行表示の出力から`証拠の全行`の各行だけをJSONとして読み、先頭の`証拠の行一覧`を比較から外す。"""
+    return [json.loads(line.removeprefix("証拠の全行: ")) for line in output.splitlines() if line.startswith("証拠の全行: ")]
+
+
 def test_list_then_explanation_update_both_sections(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """空欄・途中・判定済みを読み、表示の番号と出所をそのまま既存の説明ファイル更新へ渡せる。"""
     path = tmp_path / "review.json"
@@ -3703,7 +3856,7 @@ def test_list_then_explanation_update_both_sections(tmp_path: pathlib.Path, caps
     before = path.read_bytes()
     args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=[str(path), "--list"])
     assert run_script.dispatch(args) == 0
-    displayed = [json.loads(line.removeprefix("証拠の全行: ")) for line in capsys.readouterr().out.splitlines()]
+    displayed = _full_rows(capsys.readouterr().out)
     assert displayed == [
         {"配列": section, "行番号": index, **row}
         for section, rows in (("wi_conditions", conditions), ("user_requirements", requirements))
@@ -3712,9 +3865,7 @@ def test_list_then_explanation_update_both_sections(tmp_path: pathlib.Path, caps
     for section in ("wi_conditions", "user_requirements"):
         args.script_args = [str(path), "--list", "--section", section]
         assert run_script.dispatch(args) == 0
-        assert [json.loads(line.removeprefix("証拠の全行: ")) for line in capsys.readouterr().out.splitlines()] == [
-            row for row in displayed if row["配列"] == section
-        ]
+        assert _full_rows(capsys.readouterr().out) == [row for row in displayed if row["配列"] == section]
         for number in (1, 3):
             args.script_args = [str(path), "--list", "--section", section, "--row", str(number)]
             assert run_script.dispatch(args) == 0

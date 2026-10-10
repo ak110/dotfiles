@@ -1812,20 +1812,51 @@ def _display_row(
 def evidence_rows(
     payload: dict[str, typing.Any],
     section: str | None = None,
-    row_number: int | None = None,
+    row_numbers: list[int] | None = None,
     *,
     seen: dict[str, dict[str, typing.Any]] | None = None,
 ) -> list[str]:
-    """返却と途中読取で、更新入力と同じ配列・1始まりの番号を表示する。"""
+    """返却と途中読取で、更新入力と同じ配列・1始まりの番号を表示する。
+
+    全行表示と配列だけの指定では、根拠を除いた`証拠の行一覧`を全行分先に並べ、続けて`証拠の全行`を並べる。
+    受領者が全行の判定・原文・出所を見渡してから、選んだ行の根拠を読めるようにするためである。
+    行番号の指定では一覧を付けず、指定した各行の全文を同一根拠の参照へ置き換えずに返す。
+    """
     sections = [section] if section else list(REQUIRED_FIELDS)
-    if row_number is not None and (section is None or not 1 <= row_number <= len(payload[section])):
+    if row_numbers is not None and (section is None or any(not 1 <= number <= len(payload[section]) for number in row_numbers)):
         raise ValueError("--rowには--sectionと、その配列に存在する1始まりの行番号を指定する")
-    references = (seen if seen is not None else {}) if row_number is None else None
-    return [
-        _display_row({"配列": name, "行番号": index, **row}, name, index, "証拠の全行", references)
+    if row_numbers is not None:
+        assert section is not None
+        return [
+            _display_row(
+                {"配列": section, "行番号": number, **payload[section][number - 1]}, section, number, "証拠の全行", None
+            )
+            for number in dict.fromkeys(row_numbers)
+        ]
+    references = seen if seen is not None else {}
+    index_lines = [
+        "証拠の行一覧: "
+        + json.dumps(
+            {
+                "配列": name,
+                "行番号": index,
+                "WI": row["awi"],
+                "判定": row["outcome"],
+                "source": row["source"],
+                accepted_review_evidence.FIELDS[name]: row[accepted_review_evidence.FIELDS[name]],
+            },
+            ensure_ascii=False,
+        )
         for name in sections
         for index, row in enumerate(payload[name], start=1)
-        if row_number is None or index == row_number
+    ]
+    return [
+        *index_lines,
+        *(
+            _display_row({"配列": name, "行番号": index, **row}, name, index, "証拠の全行", references)
+            for name in sections
+            for index, row in enumerate(payload[name], start=1)
+        ),
     ]
 
 
@@ -2226,7 +2257,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--show-all-rows",
         action="store_true",
-        help="返却生成またはbatchへ両配列の全行を追加する。同一の空でない根拠は先行表示の配列・1始まり行番号をevidence_referenceで示す",
+        help="返却生成またはbatchへ両配列の全行を追加する。先に根拠を除いた全行の`証拠の行一覧`（配列・1始まり行番号・WI・判定・source・原文）、"
+        "続けて`証拠の全行`を並べる。同一の空でない根拠は先行表示の配列・1始まり行番号をevidence_referenceで示す。"
+        "選んだ行の全文は--list --section --rowの反復で読む",
     )
     parser.add_argument(
         "--reader-fit-review",
@@ -2239,10 +2272,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--list",
         action="store_true",
-        help="判定途中でも両配列の原文・出所・判定・根拠・HEADを読む。同一根拠は先行表示を指し、--sectionと--rowの単一指定では全文を返す",
+        help="判定途中でも原文・出所・判定・根拠・HEADを読む。全行と--sectionだけの指定では先に根拠を除いた`証拠の行一覧`を並べ、"
+        "同一根拠は先行表示を指す。--rowを指定すると指定した各行の全文を返す",
     )
     parser.add_argument("--section", choices=list(REQUIRED_FIELDS), help="--listで読む配列")
-    parser.add_argument("--row", type=int, help="--listで読む1始まりの行番号。--sectionと指定する")
+    parser.add_argument(
+        "--row",
+        type=int,
+        action="append",
+        help="--listで全文を読む1始まりの行番号。--sectionと指定し、複数行は反復する",
+    )
     parser.add_argument(
         "--expected-head",
         help="最後に実際にレビューした対象commit。返却値reviewed_headを渡す。--templateを付けない判定では必須",
