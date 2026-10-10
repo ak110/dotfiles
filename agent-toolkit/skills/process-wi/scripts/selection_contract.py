@@ -7,6 +7,7 @@ import re
 import typing
 from collections.abc import Callable
 
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import selection as _selection
 
 _LANE_NONE = "なし"
@@ -64,6 +65,18 @@ _WRITE_OVERLAP_KEYS = frozenset({"定義1", "定義2", "段階比較"})
 # 変更前の版が書込重複の根拠へ複製した欄。保存済みの選定YAMLを読めるよう受理し、判定には使わない。
 _LEGACY_WRITE_OVERLAP_KEYS = _WRITE_OVERLAP_KEYS | {"パス1", "パス2", "段階1", "段階2"}
 _MODEL_ROLES = ("実装担当", "実行レビュー担当")
+_NEXT_ALLOCATION_SETS = "`初回配分`の`候補WI`・`レーン割当`と`追加WI`を、初回の元候補と初回確定後の追加の区分へ直す"
+_NEXT_SELECTED_SET = "初回割当にあるWIの項目を`選定`に残し、初回確定後に加えたWIを`追加WI`へ記録する"
+_NEXT_INITIAL_LANE = "`選定`の初回割当にある項目の`レーン`を、`初回配分`の`レーン割当`と同じ値へ戻す"
+_NEXT_COMPONENT_COVER = "`不可分成分`が初回の実施対象WIを過不足なく1回ずつ覆うよう、初回選定の結合条件の記録から直す"
+_NEXT_EDGE_PAIR = "結合条件の`WI1`・`WI2`を、同じ不可分成分の異なる構成WIへ直す"
+_NEXT_EDGE_FAILURE = (
+    "診断行が示す条件を直す。書込重複は両端の`書込対象`とレーンの`段階`を、"
+    "依存と再開計画は根拠を元のWIのfrontmatterと`再開位置`の値へそろえる"
+)
+_NEXT_COMPONENT_LINK = "不可分成分の構成WIを有効な結合条件で連結させるか、初回選定の記録から成分を分け直す"
+_NEXT_COMPONENT_LANE = "不可分成分の全WIを同じ初回レーンへ割り当てる"
+_NEXT_LANE_BOUND = "統合済み・後段を含めて上限内のレーンへまとめ、複数成分は同じレーンで順に扱う"
 _MODEL_TYPE_RE = re.compile(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+")
 
 
@@ -331,7 +344,7 @@ def _allocation_structure_errors(value: object) -> list[str]:
     return errors
 
 
-def allocation_errors(selection: dict[str, object]) -> list[str]:
+def allocation_errors(selection: dict[str, object]) -> list[_next_action.ActionableError]:
     """初回候補から決まる上限を、初回割当と現在の全レーンへ適用する。"""
     data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
     assignments: dict[str, str] = data["レーン割当"]
@@ -339,19 +352,24 @@ def allocation_errors(selection: dict[str, object]) -> list[str]:
     items = typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
     selected = {item[_selection.WI_KEY] for item in items}
     added = set(typing.cast(list[str], selection.get(_selection.ADDED_WIS_KEY, [])))
-    errors: list[str] = []
+    errors: list[_next_action.ActionableError] = []
+    violation = _next_action.ActionableError
     if not set(assignments) <= candidates or candidates & added or set(assignments) & added:
-        errors.append("初回候補・初回割当・追加WIの集合が矛盾する。初回の元候補と追加区分を直す")
+        errors.append(violation("初回候補・初回割当・追加WIの集合が矛盾する", next_action=_NEXT_ALLOCATION_SETS))
     if selected != set(assignments) | added:
-        errors.append("選定のWI集合が初回割当と追加WIの和に一致しない")
+        errors.append(violation("選定のWI集合が初回割当と追加WIの和に一致しない", next_action=_NEXT_SELECTED_SET))
     current = {item[_selection.WI_KEY]: item[_selection.LANE_KEY] for item in items}
     if any(current.get(name) != lane for name, lane in assignments.items()):
-        errors.append("初回のレーン割当が現在の選定から失われている。初回の項目とレーンを保持する")
+        errors.append(violation("初回のレーン割当が現在の選定から失われている", next_action=_NEXT_INITIAL_LANE))
     groups: list[dict[str, typing.Any]] = data["不可分成分"]
     members = [name for group in groups for name in group["WI"]]
     active = {name for name, lane in assignments.items() if lane != _LANE_NONE}
     if set(members) != active or len(members) != len(set(members)):
-        errors.append("初回配分の不可分成分は初回の実施対象WIを過不足なく1回ずつ覆うようにする")
+        errors.append(
+            violation(
+                "初回配分の不可分成分が初回の実施対象WIを過不足なく1回ずつ覆っていない", next_action=_NEXT_COMPONENT_COVER
+            )
+        )
     writes, stages = current_write_stages(selection)
     for group in groups:
         names = set(group["WI"])
@@ -359,19 +377,30 @@ def allocation_errors(selection: dict[str, object]) -> list[str]:
         for edge in group["結合条件"]:
             first, second = edge["WI1"], edge["WI2"]
             if first == second or first not in names or second not in names:
-                errors.append("結合条件のWIの組が不可分成分の異なる構成項目を指していない")
+                errors.append(
+                    violation("結合条件のWIの組が不可分成分の異なる構成項目を指していない", next_action=_NEXT_EDGE_PAIR)
+                )
                 continue
             failures = allocation_edge_failures(edge, writes, stages)
             if failures:
-                errors.append(f"{first}と{second}: {edge['種別']}の結合根拠が成立しない: {'; '.join(failures)}")
+                errors.append(
+                    violation(
+                        f"{first}と{second}: {edge['種別']}の結合根拠が成立しない: {'; '.join(failures)}",
+                        next_action=_NEXT_EDGE_FAILURE,
+                    )
+                )
                 continue
             links[first].add(second)
             links[second].add(first)
         visited = _connected_members(links, next(iter(names)))
         if visited != names:
-            errors.append(f"不可分成分が有効な結合条件で連結していない: {sorted(names)}")
+            errors.append(
+                violation(f"不可分成分が有効な結合条件で連結していない: {sorted(names)}", next_action=_NEXT_COMPONENT_LINK)
+            )
         if len({assignments.get(name) for name in names}) != 1:
-            errors.append(f"不可分成分を複数の初回レーンへ分けている: {sorted(names)}")
+            errors.append(
+                violation(f"不可分成分を複数の初回レーンへ分けている: {sorted(names)}", next_action=_NEXT_COMPONENT_LANE)
+            )
     count = len(candidates)
     bound = (count + 9) // 10
     current_lanes = set(current.values()) | {
@@ -381,8 +410,10 @@ def allocation_errors(selection: dict[str, object]) -> list[str]:
         total = len(lanes - {_LANE_NONE})
         if total > bound:
             errors.append(
-                f"{scope}: N={count}、上限B={bound}、実レーン数={total}: レーン数が上限を超える。"
-                "統合済み・後段を含めて上限内のレーンへまとめ、複数成分は同じレーンで順に扱う"
+                violation(
+                    f"{scope}: N={count}、上限B={bound}、実レーン数={total}: レーン数が上限を超える",
+                    next_action=_NEXT_LANE_BOUND,
+                )
             )
     return errors
 
