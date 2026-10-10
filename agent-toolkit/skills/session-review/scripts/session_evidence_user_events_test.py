@@ -17,6 +17,44 @@ from agent_toolkit._testing.session_evidence_support import (
 )
 
 
+@pytest.mark.parametrize("command", ["/compact", "/compact 指示", "/status"])
+@pytest.mark.parametrize("content_array", [False, True])
+def test_plugin_origin_and_human_inputs(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], command: str, *, content_array: bool
+) -> None:
+    """Claude Code 2.1.295のorigin付き記録と同形の人間入力を、生成元だけ変えて対照する。"""
+    content = [{"type": "text", "text": command}] if content_array else command
+    entries = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
+    for origin in (
+        {"kind": "plugin", "name": "agent-toolkit"},
+        {"kind": "plugin", "name": "別プラグイン"},
+        {"kind": "human"},
+        None,
+    ):
+        entry = {"type": "user", "message": {"role": "user", "content": content}}
+        if origin is not None:
+            entry["origin"] = origin
+        entries.append(entry)
+    transcript = _write_transcript(tmp_path, entries)
+    assert evidence.main([str(transcript), "--user-events"]) == 0
+    users = [event for event in read_jsonl(capsys) if event["kind"] == "user"]
+    assert [event["text"] for event in users] == ["依頼", command, command]
+    assert [event["line"] for event in users] == [1, 4, 5]
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    conversation = [json.loads(line) for line in (bundle / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [event["text"] for event in conversation if event.get("role") == "user"] == ["依頼", command, command]
+    candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert all(
+        locator["line"] not in {2, 3}
+        for event in candidates
+        if event.get("candidate_kind") == "user-intervention"
+        for locator in event["locators"]
+    )
+
+
 @pytest.mark.usefixtures("local_time_jst")
 @pytest.mark.parametrize("since", ["2026-10-07T00:00:00", "2026-10-07"])
 def test_since_without_timezone_is_local_time(

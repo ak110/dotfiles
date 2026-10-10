@@ -53,6 +53,18 @@ def _tracker(tmp_path: pathlib.Path, collector: _Collector) -> session_watch.Rec
     )
 
 
+def test_summary_skips_plugin_origin_and_keeps_human(tmp_path: pathlib.Path) -> None:
+    """pluginの同形コマンドを先頭発話へ使わず、後続の人間のコマンドを選ぶ。"""
+    records = [
+        {"type": "user", "origin": {"kind": "plugin", "name": "別プラグイン"}, "message": {"content": "/status"}},
+        {"type": "user", "origin": {"kind": "human"}, "message": {"content": "/status"}},
+    ]
+    plugin = _write(tmp_path / "plugin.jsonl", records[:1])
+    human = _write(tmp_path / "human.jsonl", records)
+    assert session_watch.summary_fields(plugin, "claude")[1] is None
+    assert session_watch.summary_fields(human, "claude")[1] == "/status"
+
+
 def test_summary_fields_distinguishes_no_user_record_from_textless_user_message(tmp_path: pathlib.Path) -> None:
     """発話の有無は発話行の存在で判定し、最初の発話が本文を持たない記録は発話ありとする。"""
     operational = _write(tmp_path / "a.jsonl", [{"type": "mode", "cwd": "/w"}, {"type": "system", "subtype": "x"}])

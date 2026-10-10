@@ -681,7 +681,11 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
     if "elapsed_seconds" in summary:
         total_event["elapsed_seconds"] = summary["elapsed_seconds"]
     events = [total_event]
-    events.append({"kind": "stats-summary", **summary} if summary else {"kind": "stats-summary", "text": "集計対象なし"})
+    events.append(
+        {"kind": "stats-summary", "engine": runtime, "record": main_record.record_id, **summary}
+        if summary
+        else {"kind": "stats-summary", "text": "集計対象なし"}
+    )
 
     events.extend(_stats_breakdown_events(main_records, runtime))
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
@@ -692,7 +696,7 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
         subagent_total: dict[str, int] = {key: 0 for key in _CLAUDE_TOKEN_KEYS}
         for subagent in subagents:
             sub_summary = _stats_summary_data(subagent.records, "claude")
-            row: dict[str, Any] = {"agent": subagent.record_id, **sub_summary}
+            row: dict[str, Any] = {"agent": subagent.record_id, "engine": "claude", **sub_summary}
             if subagent.agent_type:
                 row["agent_type"] = subagent.agent_type
             row["elapsed_seconds"] = sub_summary.get("elapsed_seconds", 0)

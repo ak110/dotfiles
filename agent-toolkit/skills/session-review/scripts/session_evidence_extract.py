@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
 from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common import runtime_inserted as _runtime_inserted
 from agent_toolkit._common import transcript as _transcript
+from agent_toolkit._common.runtime_inserted import IMPROVEMENT_MARKER as _IMPROVEMENT_MARKER
 from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
 from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
 
@@ -24,9 +26,6 @@ _MAX_TEXT_LENGTH = 2000
 
 
 _OMISSION_MARK = "…[省略]"
-
-
-_IMPROVEMENT_MARKER = "気付いた改善点:"
 
 
 # Claude Codeのサブエージェントが報告本文を委譲元へ渡すツールの名前。
@@ -312,6 +311,10 @@ def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] |
     if not clipped:
         return None
     event: dict[str, Any] = {"kind": kind, "text": clipped}
+    if kind == "assistant":
+        improvements = _runtime_inserted.reported_improvement_lines(text)
+        if improvements:
+            event["reported_improvements"] = improvements
     if kind == "user":
         event["runtime_inserted"] = runtime_inserted
     if tool:

@@ -12,7 +12,37 @@ import session_review_evidence as evidence
 from agent_toolkit._agents_server import tool_descriptions
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
+from agent_toolkit._testing.failure_records import failure_entries
 from agent_toolkit._testing.helpers import _write_transcript
+
+
+@pytest.mark.parametrize("failure_kind", ["command-failure", "tool-failure"])
+def test_failure_reasons_are_distinct(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], failure_kind: str) -> None:
+    """同じコマンド・終了コードでも理由は区別し、対象値だけの差を共通署名へまとめる。"""
+    diagnostics = [
+        '{"error":"併用拒否"}',
+        '{"error":"記録不明","record":"claude:first"}',
+        '{"error":"記録不明","record":"claude:second"}',
+        "理由 '値7'",
+        "理由 '値8'",
+        "理由 deadbeef",
+        "理由 deadface",
+        "対象 /a/first がない",
+        "対象 /b/second がない",
+    ]
+    entries = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
+    for index, diagnostic in enumerate(diagnostics):
+        entries.extend(failure_entries(failure_kind, diagnostic, f"call-{index}"))
+    transcript = _write_transcript(tmp_path, entries)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    rows = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    failures = [row for row in rows if row.get("candidate_kind") == failure_kind]
+    assert len(failures) == 7
+    assert len({row["failure_signature"] for row in failures}) == 7
+    assert sum(row["count"] for row in failures) == 9
 
 
 def _answer_event(line: int, answers: list[str], *, intervention: bool = False) -> dict[str, object]:

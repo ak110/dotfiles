@@ -54,6 +54,17 @@ def _codex_message_record(*, role: str, item_type: str, text: str) -> dict[str, 
     }
 
 
+def test_display_distinguishes_plugin_origin_from_human() -> None:
+    """同形のコマンドでもplugin起点だけをinjectedの表示イベントへ分類する。"""
+    records = [
+        {**_claude_user_text_record("/compact 指示"), "origin": {"kind": "plugin", "name": "別プラグイン"}},
+        {**_claude_user_text_record("/compact 指示"), "origin": {"kind": "human"}},
+        _claude_user_text_record("/compact 指示"),
+    ]
+    events, _totals = session_record_format.claude_events(records)
+    assert [event.kind for event in events] == ["injected", "user", "user"]
+
+
 class TestCandidatePaths:
     def test_lists_claude_and_codex_records(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         claude_home = tmp_path / "claude"

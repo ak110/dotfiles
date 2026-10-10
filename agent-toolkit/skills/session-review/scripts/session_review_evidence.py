@@ -230,7 +230,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="RECORD:LINE",
         help="指定したlocatorの元JSON recordについてkey pathと観測したJSON型だけを返す。"
-        "record由来の値と本文は返さない。複数指定ではオプションを繰り返す。locator解決とエラーは`--detail`と共通とする。",
+        "record由来の値と本文は返さない。複数指定ではオプションを繰り返す。`--detail`と併用でき、"
+        "双方の全locatorをkind・record・lineで識別して返す。他の照会とは併用しない。",
     )
     parser.add_argument(
         "--stats",
@@ -334,9 +335,8 @@ def _single_transcript_query_modes(args: argparse.Namespace) -> tuple[bool, ...]
     return (
         args.warn,
         args.grep is not None,
-        args.detail is not None,
+        args.detail is not None or args.record_schema is not None,
         args.fixed_string is not None,
-        args.record_schema is not None,
         args.stats,
         args.hook_notices,
         args.bundle is not None,
@@ -376,8 +376,8 @@ def main(argv: list[str] | None = None) -> int:
     if sum(query_modes) > 1:
         return _print_error(
             "--warn・--grep・--detail・--fixed-string・--record-schema・--stats・--hook-notices・--bundle・--elapsed-until・"
-            "--user-events・--context-at・--tool-callsは併用できない",
-            next_action="`--warn`・`--grep`などの照会の指定を1回に1つだけにして、照会ごとに別々に実行する",
+            "--user-events・--context-at・--tool-callsは、--detailと--record-schemaの組以外では併用できない",
+            next_action="本文と構造は`--detail`・`--record-schema`を併用できる。他の照会は1回に1つだけ指定して再実行する",
         )
     catalog_root = args.catalog_claude_project or args.catalog_codex_history
     catalog_runtime: _Runtime | None = (
@@ -534,17 +534,22 @@ def main(argv: list[str] | None = None) -> int:
             )
         _print_events(_grep_collection_events(collected, unresolved, pattern))
         return 0
-    if args.detail is not None:
-        events, exit_code = _detail_collection_events(collected, args.detail)
+    if args.detail is not None or args.record_schema is not None:
+        events = []
+        exit_code = 0
+        for locators, query in (
+            (args.detail, _detail_collection_events),
+            (args.record_schema, _record_schema_collection_events),
+        ):
+            if locators is not None:
+                results, code = query(collected, locators)
+                events.extend(results)
+                exit_code = max(exit_code, code)
         _print_events(events)
         return exit_code
     if args.fixed_string is not None:
         _print_events(_fixed_string_collection_events(collected, unresolved, args.fixed_string))
         return 0
-    if args.record_schema is not None:
-        events, exit_code = _record_schema_collection_events(collected, args.record_schema)
-        _print_events(events)
-        return exit_code
     if args.context_at is not None:
         events, exit_code = _context_at_events(collected, args.context_at, args.phrase or [])
         _print_events(events)
