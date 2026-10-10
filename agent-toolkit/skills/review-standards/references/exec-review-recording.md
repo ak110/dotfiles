@@ -107,10 +107,17 @@ JSONの最上位は`{"wi_conditions": [...], "user_requirements": [...]}`とす�
 
 - 対象AWIのファイル名と`## ユーザーコメント`の所在
 - 関連UWIのファイル名と`## 回答`の所在
-- 会話中のユーザー発話の所在: `atk run-script session-review-evidence -- ... --user-events`の出力ファイルの絶対パスと、その直後の`<record>:<line>`（例: `claude:<セッションID>:625`）。`record`と`line`は出力ファイルのJSONレコードの`record`欄と`line`欄の値であり、`line`は元のセッション記録での行位置を指す。`record`には欄の値をコロンも含めてそのまま書き、発話は`atk run-script session-review-evidence -- --user-events-file <元の保存ファイルの絶対パス> --user-event-at <record>:<line>`で取得する。出所には照会出力の物理行ではなく元の保存ファイルと元の欄の組を保持する（選び方は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の出所の項）。否定した要求単位は、発話本文（確認回答の書式では回答と自由記述の値）から「」で囲んだ逐語で書く
+- 会話中のユーザー発話の所在: `session-review-evidence --user-events`の元の出力ファイルの絶対パスと、その直後の`<record>:<line>`（例: `claude:<セッションID>:625`）。`record`・`line`はJSONレコードの同名欄の値であり、`line`は元のセッション記録の行位置を指す。record内のコロンもそのまま保持する。否定した要求単位は、発話本文（確認回答では回答と自由記述）から「」で囲んだ逐語で書く
 - メインの技術判断の記録の所在: 計画確定前は、今回レビューへ渡された計画の絶対パスと`## 実施内容`の根拠欄。対象AWIのエージェント由来の行に対象AWI・対象条件・`メインの技術判断`・外す根拠を記録する。実装着手後は、その判断を記録したレビュー指摘管理表の絶対パス。表には対象AWIのファイル名と`メインの技術判断`の文字列を含む行がある。計画の記録が揃う場合は表への転記を要求しない。この根拠は`source`を持つエージェント由来のAWIの`wi_conditions`の行だけに使い、`user_requirements`の行には使わない
 
 最初の3種はいずれも`agent-toolkit:wi-standards`「由来と承認」の明示由来のうち、ユーザー自身の記入か記録位置付きの逐語発話に当たる。同節の明示由来のうち関連計画の実施内容の由来は、エージェントが書いた記録のためユーザー判断の根拠から外す。前項の計画の技術判断とは区別する。技術判断の記録は、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の「技術判断で外せる完成条件」に当たる条件だけを外す。
+
+会話の証拠を使う担当は、受領した対象発話の逐語内容とメイン自身のセッションIDまたはthread IDを使う。
+必要時に`atk run-script session-review-evidence -- --claude-session-id <受領したID> --user-events`か`--codex-thread-id <受領したID> --user-events`で出所を確定する。
+同文反復は受領した時点・文脈と元の記録位置で区別する。
+取得済みの出所と指定組は再抽出せず、`atk run-script session-review-evidence -- --user-events-file <元の保存ファイルの絶対パス> --user-event-at <record>:<line>`で全欄を読む。
+構造化確認の質問・全選択肢・選択回答・自由記述の対応を保ち、ユーザー由来の判断は回答と自由記述から確定する。
+根拠の出所には元の保存ファイルと元のrecord・lineを使い、照会出力の物理行番号と区別する。取得不能・不一致・一意に特定できない入力は証拠を確定せず、具体的な不足を委譲元へ返す。
 
 計画かレビュー指摘管理表の不採用行は`evidence`へ記録し、ユーザー判断の参照先と区別する。
 ユーザー判断も技術判断の記録もない条件除外の要請は委譲元へ返し、委譲元が技術判断かユーザー判断で確定した後に失効の可否を確定する。
