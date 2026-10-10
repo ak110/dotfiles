@@ -51,9 +51,10 @@ StartMode = Literal["task", "delegate", "explore", "write", "shell"]
 
 EXPLORE_CAPABILITIES = (
     "explore: ClaudeはRead/Glob/Grep（Bashなし）、Codexは読取専用sandbox、Antigravity非対応。"
-    "Codexでは読取用atkもuvのキャッシュ書込で起動に失敗し得る。"
+    "Codexでもatk（atk read-file含む）はuvのキャッシュ書込を拒否され起動しない。"
+    "atkでしか得られない資料は委譲元が保存したファイルで渡す。"
     "読取・検索はcat/rg、UTF-8文字分割は配送済みPython標準ライブラリを使う。"
-    "atk固有情報を確定できなければ失敗コマンド・診断・未確認事項を委譲元へ返す。環境作成・権限拡大・再委譲は禁止。"
+    "資料で確定できなければ未確認事項を委譲元へ返す。環境作成・権限拡大・再委譲は禁止。"
     "Git等はmodel_typeのCodex候補、確定操作はshell、自由な判断はdelegateへ。"
     "後2者は書込拒否外、対象・許可操作は委譲元が定める。"
 )
@@ -202,7 +203,7 @@ START_DESCRIPTION = "\n".join(
         "委譲先sessionを開始し、`mode`で入力と起動条件を選ぶ。",
         "返した`session_id`は同じ応答で`atk agents wait`を単独実行して観測し、不要なら`kill`で破棄する。"
         "waitは`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
-        "exploreはファイル作成・変更・削除禁止。全量保存はshell、成果ファイル生成の調査はdelegateへ。返却は委譲元が保存する。",
+        "exploreは書込禁止。全量保存はshell、成果ファイル生成の調査はdelegateへ。返却は委譲元が保存する。",
         EXPLORE_CAPABILITIES,
         "",
         "| mode | 用途 | 必須の入力 | 起動条件と`model_type`省略時の設定 |",
@@ -217,8 +218,7 @@ START_DESCRIPTION = "\n".join(
         "| `shell` | コマンド実行と結果の要約 | `command`・`summary_policy` | 軽量起動、`low_tier` |",
         "",
         "選び方は`mode`、制約は各引数を参照。"
-        "必須入力の欠落とmode外の入力は起動せず拒否し、受理する入力と呼び出し方を返す。"
-        "taskは必須入力欠落と宣言外の入力名も拒否し、該当・受理項目名を返す。",
+        "必須入力の欠落、mode外の入力とtaskの宣言外の入力名は起動せず拒否し、該当・受理する入力と呼び出し方を返す。",
         "",
         "例（`cwd`は全modeで必須）:",
         '- task: `{"cwd": "/repo", "subagent_md_path": "exec-review", "extra_params": {"計画": "/abs/plan.md"}}`',

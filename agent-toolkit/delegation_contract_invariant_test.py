@@ -381,13 +381,37 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
 
     assert declaration.launch_kind == "explore"
-    assert declaration.required == ("説明対象の選定結果の出力先ファイル", "選定理由への質問")
+    assert declaration.required == (
+        "説明対象の選定結果の出力先ファイル",
+        "activeなWI本文の保存先",
+        "選定理由への質問",
+    )
     assert "pick-wi-explain.parent.md" in question_route
     assert "## 選定理由の説明" not in selection_text
     assert not re.search(
         r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explain.read_text(encoding="utf-8")
     )
     assert "selection-procedure.md" in lanes and "包含理由、除外理由" in lanes
+
+
+def test_explore_task_documents_do_not_run_atk() -> None:
+    """`mode: explore`を宣言する`<役割名>.subagent.md`は、委譲先に実行させる`atk`のコマンドを含まない。
+
+    exploreの委譲先はCodexの読取専用sandboxでもClaudeのRead・Glob・Grepでも`atk`を起動できない。
+    入力や手順が`atk`の実行を求めると、委譲先は資料を取得できないまま続行不能を返す。
+    """
+    share = pathlib.Path(__file__).resolve().parent / "share"
+    explore_documents = [path for path in sorted(share.glob("*.subagent.md")) if _declaration(path).launch_kind == "explore"]
+    errors = [
+        f"{path.name}:{number}: 委譲先に`atk`の実行を求めている。"
+        "`atk`でしか得られない資料は、委譲元が取得して保存したファイルの絶対パスを受け取る入力へ改める"
+        for path in explore_documents
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if "`atk " in line
+    ]
+
+    assert explore_documents
+    assert not errors, "\n".join(errors)
 
 
 def _declaration(task_document: pathlib.Path) -> task_documents.TaskDocumentDeclaration:
