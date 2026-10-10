@@ -944,3 +944,17 @@ def test_failed_edit_keeps_existing_failure_evidence(tmp_path: pathlib.Path, mon
         )
         == work_id
     )
+
+
+def test_windows_edit_paths_match_git_status_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windowsの書込先も、Git状態が返すスラッシュ区切りの相対パスで対応付ける。"""
+    repository = pathlib.PureWindowsPath("C:/repo")
+    target = repository / "nested/note.md"
+    with monkeypatch.context() as context:
+        context.setattr(termination_evidence, "written_paths", lambda *_args: [str(target)])
+        context.setattr(termination_evidence, "_git_root", lambda _cwd: repository)
+        context.setattr(pathlib, "Path", pathlib.PureWindowsPath)
+        invocations = termination_evidence._invocations(  # pylint: disable=protected-access
+            {"tool_name": "Write", "tool_input": {"file_path": str(target)}, "cwd": str(repository)}
+        )
+    assert invocations == [{"kind": "edit", "repository": str(repository), "paths": ["nested/note.md"]}]

@@ -152,7 +152,7 @@ def _invocations(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if paths and (repository := _git_root(payload["cwd"])) is not None:
             relative = sorted(
                 {
-                    str(path.relative_to(repository))
+                    path.relative_to(repository).as_posix()
                     for value in paths
                     if (path := pathlib.Path(value)).is_relative_to(repository)
                 }
