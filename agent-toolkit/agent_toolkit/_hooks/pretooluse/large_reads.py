@@ -14,6 +14,7 @@ import ast
 import os
 import pathlib
 import re
+import stat
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
@@ -22,7 +23,8 @@ from agent_toolkit._common import host_homes, shell_cwd, shell_segments
 from agent_toolkit._common.bash_invocations import extract_bash_invocations
 from agent_toolkit._common.uv_arguments import is_python_token
 from agent_toolkit._hooks import plugin_resources
-from agent_toolkit._hooks.notice import block_formatter, formatter
+from agent_toolkit._hooks.notice import formatter
+from agent_toolkit._hooks.pretooluse.notices import _block_notice
 
 # Codexの配布設定の出力上限`tool_output_token_limit = 20000`（トークン）と、
 # agent-toolkitのMarkdownで測った1トークンあたりバイト数の最小値3.10の積は約62,000バイトである。
@@ -32,7 +34,6 @@ from agent_toolkit._hooks.notice import block_formatter, formatter
 _DEFAULT_BYTE_THRESHOLD = 48 * 1024
 _BYTE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_BYTES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
-_block_notice = block_formatter("pretooluse")
 _notice = formatter("pretooluse")
 
 
@@ -71,23 +72,84 @@ def _resolve_path(value: str, cwd: str) -> pathlib.Path:
     return path if path.is_absolute() else pathlib.Path(cwd) / path
 
 
+def _display_operands(name: str, tokens: Sequence[str]) -> tuple[str, ...]:
+    """既知の本文表示オプションとその値を除き、終端後はファイル名として扱う。"""
+    flags = {
+        "cat": "AbeEnstTuv",
+        "less": "aABcCdeEfFgGiIJKLmMnNqQrRsSuUwWX~",
+        "more": "deflpcsu",
+    }[name]
+    values = {"less": "bjhoxzPp", "more": "n"}.get(name, "")
+    long_flags = {
+        "cat": {"show-all", "number-nonblank", "show-ends", "number", "squeeze-blank", "show-tabs", "show-nonprinting"},
+        "less": {
+            "LINE-NUMBERS",
+            "line-numbers",
+            "chop-long-lines",
+            "RAW-CONTROL-CHARS",
+            "raw-control-chars",
+            "quit-if-one-screen",
+            "no-init",
+            "ignore-case",
+            "IGNORE-CASE",
+            "squeeze-blank-lines",
+        },
+        "more": {"silent", "logical", "no-pause", "print-over", "clean-print", "squeeze", "plain", "exit-on-eof"},
+    }[name]
+    long_values = {
+        "less": {"buffers", "jump-target", "max-back-scroll", "max-forw-scroll", "tabs", "window", "pattern", "prompt"},
+        "more": {"lines"},
+    }.get(name, set())
+    operands: list[str] = []
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        index += 1
+        if token == "--":
+            operands.extend(tokens[index:])
+            break
+        if token.startswith("--"):
+            option, equals, value = token[2:].partition("=")
+            if option in long_flags and not equals:
+                continue
+            if option not in long_values:
+                return ()
+            if not equals:
+                if index >= len(tokens):
+                    return ()
+                index += 1
+            elif not value:
+                return ()
+        elif token.startswith("-"):
+            if token == "-":
+                return ()
+            if name == "more" and token[1:].isdigit():
+                continue
+            for position, option in enumerate(token[1:], 1):
+                if option in values:
+                    if position == len(token) - 1:
+                        if index >= len(tokens):
+                            return ()
+                        index += 1
+                    break
+                if option not in flags:
+                    return ()
+        elif token.startswith("+") and name in {"less", "more"}:
+            return ()
+        else:
+            operands.append(token)
+    if any(any(marker in operand for marker in ("<", ">", "$(", "`")) for operand in operands):
+        return ()
+    return tuple(operands)
+
+
 def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str, ...]:
     """全文取得と、配送だけが対象とする範囲取得のファイル引数を返す。"""
     if not tokens:
         return ()
     name = pathlib.PurePath(tokens[0]).name
-    operands = tokens[1:]
-    if include_partial and operands[:1] == ("--",):
-        operands = operands[1:]
-    if (
-        len(tokens) >= 2
-        and name in _FULL_READ_COMMANDS
-        and all(
-            not operand.startswith("-") and not any(marker in operand for marker in ("<", ">", "$(", "`"))
-            for operand in operands
-        )
-    ):
-        return tuple(operands)
+    if name in _FULL_READ_COMMANDS:
+        return _display_operands(name, tokens)
     if (
         len(tokens) == 4
         and name == "sed"
@@ -408,16 +470,30 @@ def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> 
         return None
     byte_threshold = _byte_threshold()
     for paths in bash_read_paths(command, cwd):
-        path_counts: list[tuple[pathlib.Path, _ReadPlan]] = []
+        sizes: list[tuple[pathlib.Path, int, _ReadPlan | None]] = []
         for path in paths:
-            measurement = _measure_and_plan(path)
+            try:
+                metadata = path.stat()
+            except OSError:
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                continue
+            if metadata.st_size > 0:
+                sizes.append((path, metadata.st_size, None))
+            elif (measurement := _measure_and_plan(path)) is not None:
+                # procfsなどのサイズ0の通常ファイルは、内容量をメタデータから確定できない。
+                sizes.append((path, measurement.byte_count, measurement))
+        if sum(size for _path, size, _plan in sizes) <= byte_threshold:
+            continue
+        path_counts = []
+        for path, _size, cached in sizes:
+            measurement = cached or _measure_and_plan(path)
             if measurement is not None:
                 path_counts.append((path, measurement))
-        if not path_counts:
+        if sum(plan.byte_count for _path, plan in path_counts) <= byte_threshold:
             continue
-        if sum(plan.byte_count for _path, plan in path_counts) > byte_threshold:
-            if len(path_counts) == 1:
-                path, plan = path_counts[0]
-                return _large_read_notice(path, plan, byte_threshold)
-            return _large_multi_read_notice(path_counts, byte_threshold)
+        if len(path_counts) == 1:
+            path, plan = path_counts[0]
+            return _large_read_notice(path, plan, byte_threshold)
+        return _large_multi_read_notice(path_counts, byte_threshold)
     return None

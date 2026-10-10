@@ -31,9 +31,7 @@ from markdown_it.token import Token
 
 from agent_toolkit._agents_server import task_documents
 from agent_toolkit._agents_server import tool_names as _tool_names
-from agent_toolkit._hooks.notice import block_formatter
-
-_block_notice = block_formatter("pretooluse")
+from agent_toolkit._hooks.pretooluse.notices import _block_notice
 
 START_TOOLS: frozenset[str] = frozenset(
     f"{namespace}{operation}" for namespace in _tool_names.MCP_NAMESPACES for operation in _tool_names.START_OPERATIONS

@@ -358,7 +358,10 @@ def _git_commit_message_format_error(messages: Iterable[str]) -> str | None:
     for message in messages:
         lines = message.splitlines()
         if len(lines) > 1 and lines[1].strip():
-            return "commitの件名と本文の間に空行がありません。件名の次に空行を1行入れて再実行する。"
+            return _block_notice(
+                "`commit`の件名と本文の間の空行が欠けている。",
+                fix="件名の次に空行を1行入れて再実行する。",
+            )
     return None
 
 
@@ -375,7 +378,10 @@ def _git_commit_attribution_error(
     for message in messages:
         trailers = [line for line in message.splitlines() if line.startswith("Co-Authored-By:")]
         if trailers != [expected]:
-            return f"通常commitの帰属trailerが実行turnの観測identityと一致しません。必要なtrailer: {expected}"
+            return _block_notice(
+                f"通常`commit`の`Co-Authored-By:`が実行ターンで観測したモデルと異なる。必要な行: {expected}",
+                fix="観測したモデルに対応する上記の`Co-Authored-By:`を1行だけ入れて再実行する。",
+            )
     return None
 
 
@@ -489,13 +495,12 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
             continue
         revisions = _rev_parse_short_revisions(subcommand[1])
         if revisions is not None and len(revisions) >= 2:
-            return _llm_notice(
+            return _block_notice(
                 f"`git rev-parse`の単一リビジョン検証へ{len(revisions)}つのリビジョン（{'、'.join(revisions)}）を渡している。"
                 "`--short`または`--verify`は1回に1つのリビジョンだけを受理し、複数指定は失敗する。"
                 "`--quiet`によって診断と終了コードが変わるため、終了コード128とは限らない。",
                 fix="元の`--short`・`--short=<長さ>`・`--verify`などのオプションを保ち、リビジョンごとに"
                 "`git rev-parse <元のオプション> <revision>`を個別に実行して入力と出力の対応を保つ。",
-                removable_cause=True,
             )
     return None
 

@@ -9,6 +9,7 @@ from agent_toolkit._hooks import message_format as _message_format
 
 _WARN_REPEAT_THRESHOLD = 2
 _WARN_TAG = "warn"
+_PRETOOLUSE_RESULT = "この呼び出しは全体を実行していない（同じ呼び出しに含まれる他のコマンドや処理を含む）。"
 _warning_context: dict[str, object] = {"session_id": "", "blocks": []}
 
 
@@ -91,12 +92,14 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
     return format_notice
 
 
-def block_formatter(hook_id: str) -> Callable[..., str]:
+def block_formatter(hook_id: str, *, pretooluse: bool = False) -> Callable[..., str]:
     """`hook_id`を固定し、解消手段を必須とするblock通知整形関数を返す。"""
 
     def format_block(body: str, *, fix: str) -> str:
         if not fix.strip():
             raise ValueError("block通知のfixは空文字列以外で指定する必要がある")
+        if pretooluse:
+            body = f"{body}\n{_PRETOOLUSE_RESULT}"
         return _message_format.llm_notice(_next_action.with_next_action(body, fix), hook_id, tag="block")
 
     return format_block
@@ -126,7 +129,8 @@ def warning_formatter(hook_id: str) -> Callable[..., str]:
         count = _increment_warn_notice_count(session_id, f"{hook_id}|{cause}")
         removable_count = _increment_warn_notice_count(session_id, f"{hook_id}|{cause}|removable") if removable_cause else 0
         if escalate_on_repeat and removable_count >= _WARN_REPEAT_THRESHOLD:
-            block = block_formatter(hook_id)(
+            # 昇格した通知はPreToolUseのconsume_warning_blocksだけが実行を遮断する。
+            block = block_formatter(hook_id, pretooluse=True)(
                 f"{body}\nこの通知は同一セッションで{removable_count}件目である。同じ原因の操作を遮断した。",
                 fix=fix,
             )
