@@ -575,6 +575,18 @@ class TestExampleInvestigationNotice:
         assert "自ら調査へ着手する前に" in bodies[0]
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+    @pytest.mark.parametrize("word_form", ["洗い出して", "洗い出せるか", "洗い出そう", "探して"])
+    def test_investigation_word_stems_cover_inflections(
+        self, tmp_path: pathlib.Path, host_fields: dict, word_form: str
+    ) -> None:
+        """原WIが指定した部分文字列は活用形でも注記を返す。"""
+        result = _run(
+            {"session_id": "example-inflections", "prompt": f"例えば通信経路を{word_form}", **host_fields},
+            state_dir=tmp_path,
+        )
+        assert len(self._example_bodies(result)) == 1
+
+    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize(
         "prompt",
         [
