@@ -250,7 +250,6 @@ def _message_texts(items: collections.abc.Iterable[dict[str, Any]], role: str) -
 async def test_live_codex_provider_switch_resends_history(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    host_environ: collections.abc.Callable[[], dict[str, str]],
 ) -> None:
     """利用上限で失敗したCodex会話が同じthreadのまま後続接続先へ切り替わり、切替前の履歴を再送して完了する。
 
@@ -277,8 +276,8 @@ stream_max_retries = 0
             for name in (_PRIMARY_PROVIDER, _FALLBACK_PROVIDER)
         )
         (codex_home / "config.toml").write_text(providers, encoding="utf-8")
-        # HOMEと設定ディレクトリは隔離したまま、PATH上の`codex`と`uv`だけを使えるようにする。
-        monkeypatch.setenv("PATH", host_environ()["PATH"])
+        # miseのshimがホストの設定を読めるよう、HOME・設定ディレクトリ・PATHをまとめて戻す。
+        isolation.restore_host_environment(monkeypatch)
         monkeypatch.setenv("CODEX_HOME", str(codex_home))
         monkeypatch.setenv(_PSEUDO_API_KEY_ENV, "pseudo-api-key")
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", f"{_PRIMARY_PROVIDER},{_FALLBACK_PROVIDER}")
