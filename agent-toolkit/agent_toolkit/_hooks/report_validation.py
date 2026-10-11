@@ -151,8 +151,10 @@ def _mandatory_errors(measures: list[str], skipped: list[str], prepare: dict[str
             continue
         for line in (item for item in skipped if mentions(item)):
             if line.startswith("- 判定済み: "):
-                reason = line.split("; 根拠: ", maxsplit=1)[1] if "; 根拠: " in line else ""
-                if not reason.strip().startswith(_EXCLUSION_CATEGORIES):
+                raw_reason = line.split("; 根拠: ", maxsplit=1)[1] if "; 根拠: " in line else ""
+                reason = _TRAILING_IDS.sub("", raw_reason).strip()
+                category, separator, observation = reason.partition(": ")
+                if category not in _EXCLUSION_CATEGORIES or not separator or not observation.strip():
                     errors.append(
                         f"再発防止策が必須の候補{candidate_id}を判定済みで見送る場合は、根拠の先頭へ除外区分"
                         f"（{'、'.join(_EXCLUSION_CATEGORIES)}）を書く。当たらない場合は対策を確定するか"
@@ -193,6 +195,11 @@ def validate_report(text: str, stage: str, prepare: dict[str, Any] | None = None
                 errors.append(f"未確定行へ照会・再現・残る理由を書く: {item}")
         elif item.startswith("- 再発防止策なし: "):
             errors.extend(_no_prevention_errors(item))
+        elif item != "- なし":
+            errors.append(
+                "対策を見送った問題の行を判定済み・未確定・再発防止策なしの区分へ直すか、"
+                f"対象が無い場合は`- なし`を書く: {item}"
+            )
     if stage in {"review-preview", "review-result"} and prepare is not None:
         errors.extend(_mandatory_errors(measures, skipped, prepare))
     if stage == "review-submission" and has_scheduled(text):

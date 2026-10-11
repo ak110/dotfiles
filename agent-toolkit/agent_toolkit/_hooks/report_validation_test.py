@@ -89,6 +89,7 @@ def test_stop_uses_visible_headings_for_each_host(
         "### 対策を見送った問題\n- 再発防止策なし: 問題; 評価した案: 案; 採らない理由: 理由",
         "### 対策を見送った問題\n- 再発防止策なし: 問題; Q影響: あり; Qに影響しない根拠: 根拠; 評価した案: 案; "
         "採らない理由: 理由; 反復: 一致なし",
+        "### 対策を見送った問題\n- 見送り: 根拠を示さない判断",
     ],
 )
 def test_stop_rejects_required_evidence_violation(host: str, heading: str, body: str) -> None:
