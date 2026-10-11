@@ -1990,6 +1990,9 @@ async def test_create_dialog_choice_validation_precedes_only_single_entry(browse
     dialog = page.get_by_role("dialog", name="新規追加")
     await dialog.locator("#create-kind").select_option("uwi")
     await dialog.locator("#create-question-type").select_option("choice")
+    await playwright.async_api.expect(dialog.locator("label[for='create-choices']")).to_have_text(
+        "選択肢（1行1件、2件以上必須）"
+    )
     await dialog.locator("#create-target").fill("example/repo")
     await dialog.locator("#create-content").fill("質問の本文")
     choices = dialog.locator("#create-choices")
@@ -2000,6 +2003,8 @@ async def test_create_dialog_choice_validation_precedes_only_single_entry(browse
     assert harness.operations.add_calls == []
 
     await choices.fill("第一\n第二")
+    await playwright.async_api.expect(dialog.locator("#create-choices-error")).to_be_hidden()
+    await playwright.async_api.expect(choices).not_to_have_attribute("aria-invalid", "true")
     async with page.expect_request(lambda request: request.url.endswith("/api/entries") and request.method == "POST") as info:
         await dialog.get_by_role("button", name="追加").click()
     single_payload = (await info.value).post_data_json
@@ -2017,6 +2022,14 @@ async def test_create_dialog_choice_validation_precedes_only_single_entry(browse
     )
     await dialog.locator("#create-content").fill(show_text)
     await playwright.async_api.expect(dialog.locator("#create-choices")).to_have_value("")
+    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_be_visible()
+    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_contain_text("一括取り込みします")
+    await playwright.async_api.expect(dialog.locator("#uwi-fields")).to_be_hidden()
+    await playwright.async_api.expect(dialog.locator("#create-repo-fields")).to_be_hidden()
+    await dialog.locator("#create-content").fill("単件の本文")
+    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_be_hidden()
+    await playwright.async_api.expect(dialog.locator("#uwi-fields")).to_be_visible()
+    await dialog.locator("#create-content").fill(show_text)
     async with page.expect_request(
         lambda request: request.url.endswith("/api/entries") and request.method == "POST", timeout=3000
     ) as info:
