@@ -29,129 +29,60 @@ description: >
 
 ### 作業ツリーの準備
 
-- 専用worktreeや回収予定の検証用複製を準備するエージェントは、実行前に本スキルを起動する。次項のmise trust手順を適用した後、準備する作業ツリーのrootで`env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras`を実行し、その作業ツリーの`.venv`へ依存を同期する。終了コードと全出力を検収し、失敗した環境は準備完了として渡さない。
-  - `mise run bootstrap`、`mise bootstrap`、`make setup`は恒久作業ツリーの初期導入に使う。回収予定の作業場所ではローカル依存の同期だけを行い、`uv tool install --editable`、`prek install`、`git config --local commit.template`を準備へ含めない。共有CLIの導入元と共通Git設定が、その作業場所の回収後も存続する必要があるためである。Git hookとtemplateは既存設定を使う。
-  - ローカル依存の同期と共有登録の比較の観測・再検証手段は、`docs/development/audit-records.md`「dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日」にある。
-- 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、`XDG_STATE_HOME`などで状態ディレクトリを差し替えてmiseを起動する作業場所は、その作業場所を作成したエージェントが検証の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
-  - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録は不要である
-  - 検証用の複製では、複製先の`mise.toml`の絶対パスを指定して`mise trust`を実行する
-  - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、自動チェックへ与えるのと同じ環境変数を与えて`mise trust`を実行する
-  - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため、信頼登録の手段から外す
-- 専用worktreeの変更を`atk`で動かす場合（`atk serve`で画面を確かめる場合を含む）は、起動時のcwdで動く版が決まる。
-  PATH上の`atk`は複製元の`bin/atk`であり、cwdが同じリポジトリのworktree（その配下のディレクトリを含む）にあれば、
-  そのworktreeの`agent-toolkit/bin/atk`へ委譲する。
-  `agent-toolkit`は`atk`のconsole scriptを持たないため、`uv run atk`もPATH上の`atk`へ解決され、同じ選択になる。
-  cwdがGit外か別リポジトリにある場合は複製元の`agent-toolkit/bin/atk`が動くため、
-  対象worktreeの外から改修版を動かすときは`<worktreeの絶対パス>/agent-toolkit/bin/atk`を絶対パスで起動する。
-  `uv run`の中から起動すると、uvが`VIRTUAL_ENV=... does not match the project environment path <パス>/agent-toolkit/.venv`と警告する。
-  この警告は動作を妨げず、`<パス>`（cwd配下なら相対パス）は実際に動く`agent-toolkit`の位置を示す。
-  改修版を動かすつもりで複製元の絶対パスが表示された場合は、cwdか起動パスを直して起動し直す
+- 専用worktreeや回収予定の検証用複製は、mise trustを済ませた後に依存を同期し、成功を確かめてから渡す。同期はその作業ツリーのrootで`env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras`を実行する
+  - 回収予定の作業場所ではローカル依存の同期だけを行い、Git hookとtemplateは既存設定を使う。共有CLIの導入元と共通Git設定は回収後も存続する必要があるためである。`mise run bootstrap`・`mise bootstrap`・`make setup`、`uv tool install --editable`、`prek install`、`git config --local commit.template`は恒久作業ツリーの初期導入に限る。観測と再検証手段は`docs/development/audit-records.md`「dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日」にある
+- miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下に保持される。そのため複製元と異なる絶対パスで`mise.toml`を解決する作業場所や、`XDG_STATE_HOME`などで状態ディレクトリを差し替える作業場所は、作成したエージェントが検証の起動前に`mise trust`を済ませる
+  - linked worktreeは複製元の信頼を共有するため、複製元リポジトリルートの`mise.toml`へ1回実行すれば十分である。検証用の複製は複製先の`mise.toml`の絶対パスを指定し、状態ディレクトリを差し替えた環境は自動チェックと同じ環境変数を与えて実行する
+  - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
+- 専用worktreeの変更を`atk`で動かす場合（`atk serve`を含む）は、起動時のcwdで動く版が決まる。PATH上の`atk`（複製元の`bin/atk`）は、cwdが同じリポジトリのworktree配下ならそのworktreeの`agent-toolkit/bin/atk`へ委譲し、Git外や別リポジトリなら複製元の版を動かす。`uv run atk`も同じ選択になる。worktreeの外から改修版を動かすときは`<worktreeの絶対パス>/agent-toolkit/bin/atk`を起動する。`uv run`の中では`VIRTUAL_ENV=... does not match the project environment path <パス>/agent-toolkit/.venv`の警告が出るが無害で、`<パス>`が実際に動く版の位置を示す
 
 ### 自動チェックと依存更新
 
-- `make update`: 読込表の行が挙げるtargetの実処理の更新対象に変更対象が含まれる場合だけ候補にする。対象ファイル名や更新時刻は候補判定の入力から外す。現行の対象は依存更新（リポジトリ直下の`uv.lock`と`agent-toolkit/uv.lock`）、prek autoupdate、mise lock、pinactアクション更新および全テスト実行であり、`rust/claude-statusline/Cargo.lock`は対象外とする
-  - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
-- ローカルで全体検証が必要な場合の実行方法: `make test`
-  - 全体検証を始める際は`agent-toolkit:check-execution`を起動し、標準出力と標準エラーを保存して検収できる手段（例: `agents_server`の`start`の`shell`へ`make test`を渡す）で実行する。出力の保存先を確保してから実行し、保存済みの標準出力と標準エラーで検収する
-  - `make test`（`uv run --frozen pyfltr run --no-fix`）はlintで自動修正しない。
-    ただしpyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は
-    `--no-fix`を付けても対象ファイルを書き換え、書き換えた場合も終了コード0で成功扱いになる。
-    書き換えの対象は、整形結果が現在の内容と異なるファイル、`prek`が`.pre-commit-config.yaml`の
-    テキスト整形hookで扱うファイル、および生成物の同期先である。
-    コミット範囲を確定する前に`git status`で自分の変更以外の差分の有無を確認する。
-    自動修正が必要な場合は`make format`（`uv run --frozen pyfltr fast`）を使う
-  - 特定ファイルに限定する場合はMCP経由の`run`へそのファイルのパスを渡す。
-    MCPを利用できない場合は`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。
-    初回の変更範囲の検証ではMCPの`commands`とCLIの`--commands`を指定しない。
-    修正後に失敗したチェックだけを再実行する場合は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を、CLIでは`--commands=mypy,ruff-check`を渡す
-  - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
-    `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
-    `pytest`へ`-o addopts=''`を渡して`pyproject.toml`の`addopts`を解除する場合は、`-p no:cacheprovider`を併記する
-  - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新またはその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
-  - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
-    `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子は記憶や短縮形からではなく、取得した一覧の値を使う
+- `make update`は、読込表のtargetの実処理の更新対象に変更対象が含まれる場合だけ候補にする。現行の対象は`uv.lock`と`agent-toolkit/uv.lock`の依存更新、prek autoupdate、mise lock、pinactアクション更新、全テストで、`rust/claude-statusline/Cargo.lock`は対象外である。GitHub Actionsのハッシュピンだけなら`make update-actions`
+- 全体検証は`make test`（`uv run --frozen pyfltr run --no-fix`）。`agent-toolkit:check-execution`を起動し、標準出力と標準エラーを保存して検収できる手段（例: `agents_server`の`start`の`shell`）で実行する
+  - pyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は`--no-fix`でもファイルを書き換え、終了コード0で終わる。コミット範囲を確定する前に`git status`で自分以外の差分を確かめる。自動修正は`make format`（`uv run --frozen pyfltr fast`）で行う
+- 特定ファイルに限定する検証は、MCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。初回は`commands`（CLIは`--commands`）を指定せず、修正後の再実行だけ失敗したチェックへ限定する
+- デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。`-o`と`-p`は`pytest`のオプションで、`pyfltr run`へ渡すと終了コード2で終わる。`-o addopts=''`で`addopts`を解除する場合は`-p no:cacheprovider`を併記する
+- `.venv`を再作成し得る自動チェック（`uv run --python`による版切替、依存更新など）は、同じ仮想環境パスでは直列に実行する。並列にする場合は自動チェックごとに別の仮想環境パスを明示する
+- pyfltrの所要時間を比べる場合は、`uv run --frozen pyfltr list-runs`で取得したrun識別子を`uv run --frozen pyfltr show-run <run_id>`へ渡す
 
 ### 画面とブラウザー
 
-- 新規Linux環境では、ユーザーが自分の端末から`make setup-browser`でChromiumとシステム依存を初期導入する。
-  Ubuntu/DebianでPowerShell検証が必要な場合も、ユーザーが自分の端末から`make setup-pwsh`で初期導入する
-- エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
-- `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
-  実ブラウザーテストを変更した場合は`make test-browser`を実行する
-- 画面の実描画には、ブラウザー操作ツールに加えて、リポジトリ直下の`pyproject.toml`が依存に持つPython版Playwright（`uv run --frozen python`から`playwright`を使うスクリプト）を使える。
-  ブラウザー本体は`make setup-browser`が導入し、導入済みの版は`~/.cache/ms-playwright`で確かめる
+- `make setup-browser`（Chromiumとシステム依存）と`make setup-pwsh`（Ubuntu/DebianのPowerShell）は、ユーザーが自分の端末で実行する初期導入である。エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
+- `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、実ブラウザーテストを変更した場合は`make test-browser`を実行する
+- 画面の実描画には、ブラウザー操作ツールのほか、`pyproject.toml`が依存に持つPython版Playwright（`uv run --frozen python`から使う）を使える。導入済みのブラウザーは`~/.cache/ms-playwright`で確かめる
 
 ## ホスト本体のバイナリの検索
 
-本体の検索は、ホスト機能の公式ドキュメントと提供元の公開Issueトラッカーにある既知の報告の確認を補う手段である。挙動の結論と回避策の採否はそれらの確認と合わせて行い、基準は`agent-toolkit:writing-standards`の`references/investigation.md`と`agent-toolkit:bugfix`の`SKILL.md`「直接的原因と事象時点の確定」にある。
+本体の検索は、ホスト機能の公式ドキュメントと提供元の公開Issueトラッカーにある既知の報告の確認を補う手段である。結論と回避策の採否はそれらと合わせて決める。基準は`agent-toolkit:writing-standards`の`references/investigation.md`と`agent-toolkit:bugfix`の`SKILL.md`「直接的原因と事象時点の確定」にある。
 
-Claude Code本体は`B=$(readlink -f "$(command -v claude)")`、Codex本体は
-`C=$(readlink -f "$(command -v codex)")`で実体パスを解決する。
-特定のClaude Code版を調べる場合は`~/.local/share/claude/versions/<版>`を指定する。
-
-最初に`timeout 60 rg -a -c -F -- '<語>' "$B"`で一致行数を得る。
-文脈は`timeout 60 rg -a -o -- '.{0,200}<語>.{0,200}' "$B"`を使い、標準出力と標準エラーを
-managed-tempのファイルへ保存してから必要な範囲を読む。Codexには同じ形で`"$C"`を渡す。
-文脈を得る式の語は正規表現として引用し、語に含まれる正規表現の記号をエスケープする。
-両操作の終了コードと所要時間も保持し、上限による打切りは該当なしと区別して扱う。
-
-`-m`は一致行数を限定する。ファイルの先頭側は文字列表の断片で、JSソースの一致は後ろにも現れる。
-一致行数が少なければ`-m`を付けず全件を保存する。`.`は改行と不正なUTF-8バイトで止まるため、
-文字列表の一致では文脈が指定長より短くなることがある。
-
-この用途の標準は`rg`とする。Claude CodeのBashツールでは`grep`が組込みugrepを呼ぶシェル関数に
-置き換わる。WI起草時の観測ではugrepとGNU grepの両方で、UTF-8ロケールの`.{0,N}`による
-文脈取得が30秒で終わらなかった。固定長の`.\{N\}`は前後の文脈がN文字に満たない一致を除き、
-終了まで約2秒の回と120秒を超える回があったため、件数・文脈の取得と上限を上記へそろえる。
-観測と再検証手段は`docs/development/audit-records.md`の「dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日」にある。
+- 実体は`B=$(readlink -f "$(command -v claude)")`、`C=$(readlink -f "$(command -v codex)")`で解決する。特定のClaude Code版は`~/.local/share/claude/versions/<版>`を指定する
+- 件数は`timeout 60 rg -a -c -F -- '<語>' "$B"`、文脈は`timeout 60 rg -a -o -- '.{0,200}<語>.{0,200}' "$B"`で得る（文脈の語は正規表現としてエスケープする）。出力はmanaged-tempへ保存してから読む。上限による打切りを該当なしと区別する
+- 一致はファイル先頭側の文字列表の断片と後方のJSソースの両方に現れるため、件数が少なければ`-m`を付けず全件を保存する。`.`は改行と不正なUTF-8で止まるため、文脈が指定長より短いことがある
+- `rg`を使う。Claude CodeのBashツールの`grep`は組込みugrepへ置き換わり、ugrepとGNU grepのどちらも`.{0,N}`の文脈取得が30秒で終わらなかった。観測と再検証手段は`docs/development/audit-records.md`「dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日」にある
 
 ## 振り返りの参照文書
 
-`agent-toolkit:session-review`の振り返りでメインが読む本リポジトリ固有の参照文書は、Claude Codeでは`~/.claude/docs/session-review-dotfiles.md`とする。
-Codexでは`~/.codex/docs/session-review-dotfiles.md`とする。
-同文書はセッションの所要時間目標と本リポジトリ固有の振り返り観点を保持する。
-配布元は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`である。
+`agent-toolkit:session-review`でメインが読む本リポジトリ固有の参照文書は、所要時間目標と固有の振り返り観点を持つ。Claude Codeでは`~/.claude/docs/session-review-dotfiles.md`、Codexでは`~/.codex/docs/session-review-dotfiles.md`である。配布元は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`である。
 
 ## テスト配置
 
-- テストを置く場所は、確かめる対象のできるだけ近くから選ぶ。Pythonモジュールの動作を確かめるテストは、
-  そのモジュールと同じディレクトリの`<name>_test.py`とする。文書・設定・スクリプトの実物を読むテストは、
-  その実物と同じディレクトリか、対象群を包含する最も近いディレクトリへ置く。
-  fixtureで文書などの入力を作成して実装を呼ぶテストは、実装の動作テストとして実装の近くへ残す。
-  収集や配布の制約で近くへ置けない場合は、成立する最も近い場所を選び、その理由を対象テストファイルのモジュールdocstringへ記す
-- 複数領域の既存成果物の不変条件を確かめるPythonテストは、ファイル名を`*_invariant_test.py`として識別する。
-  rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこのファイル名で対象を選び、`pyfltr fast`が実行する。
-  通常の動作テストと混在するときは、不変条件のテストだけを近接する`*_invariant_test.py`へ分離し、通常テストをfastの対象に含めない。
-  検証対象の探索は`agent-toolkit:check-execution`の`references/verification-scope.md`に従い、
-  個々のテストと編集対象の対応表を規範へ増やさない
-- テスト共通ヘルパーは`pytools/`配下では`pytools/_internal/_test_helpers.py`、リポジトリ直下のテストでは直下の`_test_helpers.py`、
-  `scripts/`配下のテストでは`scripts/_scripts_test_helpers.py`へ集約し、テスト間で共有する関数と定数はこれらの補助モジュールからimportする。
-  pytestのprependモードでは直下と`scripts/`がともに`sys.path`へ入り、同名のトップレベルモジュールは先に読み込んだ方だけが残るため、
-  両ディレクトリの補助モジュールには互いに異なる名前を付ける。
-  `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照せず、
-  共通化が必要な場合は`agent-toolkit-edit`スキルの`references/distribution-and-hooks.md`「agent_toolkitパッケージの配置と層」が定めるテスト専用パッケージへ置く
-- テストはリポジトリ直下と`agent-toolkit/`の`conftest.py`が適用する`agent-toolkit/agent_toolkit/_testing/isolation.py`の隔離の下で動き、ホームと設定ディレクトリはテストごとの一時ディレクトリを指す。
-  実際の外部ランタイムやCLIの子プロセス起動をテストへ新設・変更するときは、起動に必要なホスト設定を同モジュールの`host_environ()`で組み立て、子の`env`へ渡す。
-  子へ環境を渡せない起動方法では、`restore_host_environment(monkeypatch)`でテストプロセス自身のHOME・設定ディレクトリ・PATHを隔離前へ戻す。
-  この方法を選ぶテストは、テスト対象の設定と状態を別の一時領域へ明示して隔離を保つ。
-  変更範囲の検証では、[CI設定](../../../.github/workflows/ci.yaml)の対象jobとその実行環境が使うランチャーからも対象テストを実行する。
-  miseのshimは、隔離前に`mise doctor --json`の`dirs.shims`から場所を取得する。
-  次の例はuvによるPATH変更の後にshimを先頭へ置き、対象ランタイムの解決先を確認して同じPythonプロセスでpytestを起動する。
-  最後の2引数を対象ランタイム名とテストのパスへ替え、修正前の失敗対照と対応付けて環境指定の不足を検出できることを確かめる。
+- テストは確かめる対象のできるだけ近くへ置く。Pythonモジュールの動作テストは同じディレクトリの`<name>_test.py`、文書・設定・スクリプトの実物を読むテストはその実物と同じディレクトリか対象群を包含する最も近いディレクトリへ置く。fixtureで入力を作成して実装を呼ぶテストは実装の近くへ置く。近くへ置けない場合は成立する最も近い場所を選び、理由をモジュールdocstringへ記す
+- 複数領域の既存成果物の不変条件を確かめるテストは`*_invariant_test.py`と名付ける。rootと`agent-toolkit/`の`pyproject.toml`の`pytest-fast-targets`がこの名前で選び、`pyfltr fast`が実行するため、通常の動作テストは別ファイルに分ける。検証対象の探索は`agent-toolkit:check-execution`の`references/verification-scope.md`に従い、テストと編集対象の対応表を規範へ増やさない
+- テスト共通ヘルパーは`pytools/`では`pytools/_internal/_test_helpers.py`、リポジトリ直下では`_test_helpers.py`、`scripts/`では`scripts/_scripts_test_helpers.py`に置く。直下と`scripts/`はともに`sys.path`へ入るため、補助モジュールには互いに異なる名前を付ける。`agent-toolkit/`のテストは配布物の独立性のため`pytools/_internal/`への参照を避ける。共通化は`agent-toolkit-edit`の`references/distribution-and-hooks.md`「agent_toolkitパッケージの配置と層」のテスト専用パッケージへ置く
+- テストは`agent-toolkit/agent_toolkit/_testing/isolation.py`の隔離の下で動き、ホームと設定ディレクトリはテストごとの一時ディレクトリを指す。実Gitの動作を確かめるテストは、履歴・tag・branch・作業状態を自身の一時リポジトリへ準備し、全てのGit呼び出しで対象リポジトリを明示する。`_testing/git_repository.py`の`init_repository`・`commit_all`・`run_git`を使える。実行元リポジトリの不変条件を調べるテストのため、全テストのcwdは実行元のまま保つ。再検証手段は`docs/development/audit-records.md`「dotfiles-development：Git動作テストの状態準備：2026年10月9日」にある
+- 実際の外部ランタイムやCLIを子プロセスで起動するテストを新設・変更するときは、同モジュールの`host_environ()`で起動に必要なホスト設定を組み立てて子の`env`へ渡す。子へ環境を渡せない起動方法では`restore_host_environment(monkeypatch)`でテストプロセス自身のHOME・設定ディレクトリ・PATHを隔離前へ戻し、テスト対象の設定と状態は別の一時領域へ明示して隔離を保つ。
+  変更範囲の検証では、[CI設定](../../../.github/workflows/ci.yaml)の対象jobの実行環境が使うランチャーからも対象テストを実行する。
+  miseのshimの場所は隔離前に`mise doctor --json`の`dirs.shims`から得る。次の例はuvによるPATH変更の後にshimを先頭へ置き、対象ランタイムの解決先を確かめて同じPythonプロセスでpytestを起動する。最後の2引数を対象ランタイム名とテストのパスへ替え、修正前の失敗対照と対応付けて環境指定の不足を検出できることを確かめる。
 
   ```sh
   uv run --frozen python -c 'import json, os, pathlib, shutil, subprocess, sys, pytest; shims = json.loads(subprocess.check_output(["mise", "doctor", "--json"], text=True, encoding="utf-8"))["dirs"]["shims"]; os.environ["PATH"] = shims + os.pathsep + os.environ["PATH"]; resolved = shutil.which(sys.argv[1]); assert resolved and pathlib.Path(resolved).parent == pathlib.Path(shims), resolved; print("runtime:", resolved); raise SystemExit(pytest.main(["-v", "-n", "0", "-p", "no:cacheprovider", *sys.argv[2:]]))' node agent-toolkit/agent_toolkit/_hooks/message_format_test.py
   ```
 
-  HOME・設定・Git環境の隔離は、検証に必要な履歴・tag・branch・作業状態の準備とは別である。実Gitの動作を確かめるテストは、それらを自身の一時リポジトリへ準備し、全てのGit呼び出しで対象リポジトリを明示する。共通ヘルパー`agent-toolkit/agent_toolkit/_testing/git_repository.py`の`init_repository`・`commit_all`・`run_git`を使える。実行元リポジトリの不変条件を調べるテストの役割は保ち、全テストのcwdを一律に変えない。
-  履歴への依存が現れた対照と再検証手段は、`docs/development/audit-records.md`「dotfiles-development：Git動作テストの状態準備：2026年10月9日」にある。
-  パッケージを取得して起動する外部ツール（pnpmの`dlx`、corepackなど）を実際に動かすテストは、同モジュールの`share_package_caches`で取得物の保存先だけをホストと共有する。
-  共有しないと、テストのたびに空の保存先へ取得し直して所要が延びる
-- `pytools`パッケージ配布物にテストコードを含めないため、
-  `[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を除外する
-- `scripts/`配下はpytestのprependモードで`sys.path`へ自動追加されるためテストから直接importできる。
-  importしたいスクリプトはアンダースコア区切りで命名し、shebang付きスクリプトは`chmod +x`する
+- パッケージを取得して起動する外部ツール（pnpmの`dlx`、corepackなど）を動かすテストは、同モジュールの`share_package_caches`で取得物の保存先だけをホストと共有する
+- `pytools`の配布物には`[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を含めない
+- `scripts/`配下はpytestのprependモードで`sys.path`へ入るためテストから直接importできる。importするスクリプトはアンダースコア区切りで命名し、shebang付きスクリプトは`chmod +x`する
 
 ## コミットメッセージ方針と.gitmessage
 
-`<plugin root>/skills/commit/references/message.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化の対象から外す。
+`<plugin root>/skills/commit/references/message.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させ、SSOT化の対象から外す。

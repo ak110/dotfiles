@@ -1,15 +1,15 @@
 # 終端担当の検証またはCIの失敗
 
-本書は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の終端担当が、全体検証かCIの失敗を受けたときの修正系列の扱い、CI修正担当の起動、実行レビューの起動とpushの更新を定める。
+本書は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の終端担当が、全体検証かCIの失敗を受けたときの修正系列、CI修正担当と実行レビューの起動、pushの更新を定める。
 
 ## 検証またはCIの失敗
 
-計画を基準とする修正系列の実行レビューでは、取得した計画の進捗ログに記録された受理済み証拠が後続担当から読める場合、その絶対パスを任意入力`受理済みの完成条件証拠`へ渡す。省略時と行が無い場合は`なし`とする。未判定検証記録とは別の入力であり、参照を使う条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。
+計画を基準とする修正系列の実行レビューでは、取得した計画の進捗ログに記録された受理済み証拠が後続担当から読める場合、その絶対パスを任意入力`受理済みの完成条件証拠`へ渡す（無ければ`なし`）。未判定検証記録とは別の入力であり、参照を使う条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。
 
-最初の失敗からCI成功または本タスクの終端までを1つの修正系列（`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正系列」）として扱う。`agent-toolkit:bugfix`を起動してログの該当箇所、参照実装および期待値から直接的原因を確定し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める項目を持つCI記録を保持する。
+最初の失敗からCI成功または本タスクの終端までを1つの修正系列（`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正系列」）として扱う。`agent-toolkit:bugfix`を起動してログ、参照実装、期待値から直接的原因を確定し、`ci-failure-handling.md`が定める項目を持つCI記録を保持する。
 
-修正が必要な場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。原因commitに対応する計画が保存済みの場合は、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`が定める`入力計画`の取得と修正系列の終端での再保存は終端担当が行う。取得した計画の`private-notes/plans/`からの相対パスと再保存の結果は引き継ぎ記録へ残す。同じworktreeへ別の書込主体を並存させず、書込主体はこの修正担当1つとする。CI修正担当から修正commitと検証結果を受領し、版数、manifest、生成同期、pushおよびCI確認を再判定する。
+修正が必要なら`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、主作業ツリーを対象worktreeとする`CI修正担当`を起動する。書込主体はこの修正担当1つとする。原因commitに対応する保存済みの計画がある場合は、`ci-failure-handling.md`の`入力計画`の取得と修正系列の終端での再保存を終端担当が行い、取得した計画の`private-notes/plans/`からの相対パスと再保存の結果を引き継ぎ記録へ残す。修正commitと検証結果を受領したら、版数、manifest、生成同期、push、CI確認を判定し直す。
 
-`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正系列」が定める実行レビューの起動条件に当たる修正では、実行レビューを1件起動する。起動は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従う。原因commitに対応する計画があれば`レビュー基準: 計画`、無ければ`レビュー基準: CI記録`とする。計画では計画ファイルを渡す。CI記録では7項目に加えて`修正系列の開始時のHEAD`と`原因commitOID`を渡す。`修正系列の開始時のHEAD`はその修正系列を始めた時点のHEADの7文字以上の一意な短縮OIDとし同じ修正系列で継続する。`原因commitOID`は今回の原因commitの7文字以上の一意な短縮OIDとし、再帰的CI失敗では7項目と同時に更新する。名前付き入力`未判定検証記録`は同書冒頭の規定に従って渡す。同じ修正系列では同じレビュー指摘管理表を継続する。`レビュー基準: 計画`の表は計画の再保存で計画と共に保存される。`レビュー基準: CI記録`の表は計画の再保存と同じく`agent-toolkit:bugfix`の`references/ci-failure-handling.md`の`入力計画`の段落に従って修正系列の終端で終端担当が保存し、保存の結果を引き継ぎ記録へ残す。
+`ci-failure-handling.md`「修正系列」の起動条件に当たる修正では、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビューを1件起動する。原因commitに対応する計画があれば`レビュー基準: 計画`で計画ファイルを渡す。無ければ`レビュー基準: CI記録`とし、7項目に加えて`修正系列の開始時のHEAD`（修正系列の開始時点のHEADの7文字以上の一意な短縮OID。系列の間は変えない）と`原因commitOID`（今回の原因commitの7文字以上の一意な短縮OID。再帰的なCI失敗では7項目と同時に更新する）を渡す。名前付き入力`未判定検証記録`は同書冒頭の規定に従って渡す。同じ修正系列では同じレビュー指摘管理表を続け、`レビュー基準: 計画`の表は計画の再保存とともに、`レビュー基準: CI記録`の表は修正系列の終端で`入力計画`の段落に従って終端担当が保存し、結果を引き継ぎ記録へ残す。
 
-各修正が是正した失敗を、ログの該当箇所と直接的原因へ対応付ける。修正系列の回数へ数えるのは、この対応付けができた修正に限り、原因commitへ取り込んだ修正も1回として数える。ユーザー割り込みまたは独立事象へのcommitは修正系列の回数へ含めない。CI修正担当が修正を原因commitへ取り込んだ場合は、同じbranchを`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の「原因commitへ取り込む区分」が定める、期待値を明示した`--force-with-lease`で更新する。続けて、書き換え後の対象HEADと新しいbaselineでCIを再確認する。本タスクがpushする範囲はこれまでどおりとする。キュー操作は、まだ`adopt`していないAWIだけへ行う。
+修正系列の回数に数えるのは、是正した失敗をログの該当箇所と直接的原因へ対応付けられた修正だけとし、原因commitへ取り込んだ修正も1回と数える。ユーザー割り込みや独立事象へのcommitは数えない。CI修正担当が修正を原因commitへ取り込んだ場合は、`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の「原因commitへ取り込む区分」が定める、期待値を明示した`--force-with-lease`で同じbranchを更新する。続けて書き換え後のHEADと新しいbaselineでCIを確認し直す。pushする範囲は変えず、キュー操作はまだ`adopt`していないAWIだけへ行う。

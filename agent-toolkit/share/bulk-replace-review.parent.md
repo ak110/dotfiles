@@ -9,10 +9,7 @@
 
 ## 起動
 
-置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をセッションのmanaged-temp（`agent-toolkit:managed-temp`）のファイルへ保存する。
-その後、1件のレビュー担当を起動する。
-
-`agents_server`の`start`を次の引数で呼ぶ。
+置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をmanaged-temp（`agent-toolkit:managed-temp`）のファイルへ保存し、`agents_server`の`start`を次の引数で呼んで1件起動する。
 
 | 引数 | 値 |
 | --- | --- |
@@ -21,8 +18,6 @@
 | `extra_params` | 次の名前付き入力だけ |
 
 - `差分ファイル`: 保存した差分ファイルの絶対パス
-
-行数の事前提供は要しない。行数付きの入力も渡せる。必要な行数は読む担当が実体から取得する。
 
 ## 受領
 

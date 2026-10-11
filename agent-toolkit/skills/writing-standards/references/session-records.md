@@ -14,66 +14,38 @@ Codexでは`type`が`compacted`のレコードに、所要時間を除いた情�
 
 ## Claude Codeの記録
 
-- 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、セッション本体の記録であるメイン記録）と
-  深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`、サブエージェント記録）の2値のみである。
-  孫エージェントの記録も祖先セッション直下へフラット格納されるため、深さは常に4である
-- `<project>`の名前はセッションを開始した作業ディレクトリの絶対パスから導かれる（英数字以外の文字を`-`へ置き換えた形）。
-  worktreeなど複製元と別のディレクトリで開始したセッションの記録は、複製元とは別の`<project>`に置かれる。
-  セッションIDから記録を探す場合は`find ~/.claude/projects -maxdepth 2 -name '<session-uuid>.jsonl'`で所在を1件に確定し、
-  得たパスを引用して後続のコマンドへ渡す。対象リポジトリの`<project>`ディレクトリだけを探すと記録が見つからないことがあり、
-  グロブの展開結果を引用せずに渡すと複数の語へ分かれて後続のコマンドが標準入力を待ち続けるためである
-- 同一事象が親セッションと子セッションの記録へ重複して現れる構造を先に確認し、
-  重複を除外したうえで件数を確定する
-- セッション単位の事象（起動・完了報告等）を数える用途では深さ2限定が有効だが、
-  サブエージェント内部のイベント（ツール呼び出し等）は深さ2限定では取りこぼす。
-  用いる場合は適用条件を明示する
-- サブエージェントの起動を1件ずつ数える用途では`subagents/*.meta.json`の
-  `agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`を典拠とする
-- `parentAgentId`は`spawnDepth`が2以上の記録にだけ現れる。深さ1のサブエージェントは親がセッション本体でありこの欄を持たないため、階層を復元する用途では`spawnDepth`を併用する
-- 記録から特定の性質を持つ行を抽出する処理では、抽出対象の領域を格納場所と次の区別の両方で決める。
-  その領域の値が実行したツール自身の出力か、ツールが読み取った外部の内容かを、記録の構造から取得した値で区別する。
-  ツールが読み取ったファイルの本文は実行結果と同じ領域に入るため、書式の一致だけで判定すると
-  その本文に含まれる例示が実行時の事象として報告される
-- 文面を持つ`thinking`ブロックには、ツール呼び出しの間の地の文をサーバーが要約したもの（ナレーション要約）が含まれ、書き手の原文でも拡張思考の全文でもない。
-  このため`thinking`の文面の形、長さ、語は、原文の性質を数える集計の対象から外す。
+- 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、メイン記録）と深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`、サブエージェント記録）だけであり、孫エージェントの記録も祖先セッション直下へフラットに置かれる
+- `<project>`の名前はセッションを開始した作業ディレクトリの絶対パスの英数字以外を`-`へ置き換えた形であり、worktreeなどで開始したセッションは複製元と別の`<project>`に置かれる。セッションIDから探す場合は`find ~/.claude/projects -maxdepth 2 -name '<session-uuid>.jsonl'`で所在を1件に確定し、得たパスを引用して渡す（引用しないグロブ展開が複数語へ分かれると後続のコマンドが標準入力を待ち続ける）
+- 同一事象が親と子の記録へ重複して現れるため、重複を除いてから件数を確定する。深さ2に限るとサブエージェント内部のイベント（ツール呼び出し等）を取りこぼすため、限る場合は適用条件を明示する
+- サブエージェントの起動を数える典拠は`subagents/*.meta.json`の`agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`とする。`parentAgentId`は`spawnDepth`が2以上の記録にだけ現れるため、階層の復元には`spawnDepth`を併用する
+- 特定の性質を持つ行を抽出する処理では、値がツール自身の出力か、ツールが読み取った外部の内容かを記録の構造から区別する（読み取ったファイルの本文は実行結果と同じ領域に入るため、書式の一致だけで判定すると本文中の例示まで実行時の事象と数える）
+- 文面を持つ`thinking`ブロックはツール呼び出しの間の地の文をサーバーが要約したもの（ナレーション要約）を含み、書き手の原文でも拡張思考の全文でもない。その形、長さ、語は原文の性質を数える集計から外す。
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：Claude Codeの記録：2026年10月6日」にある
 
 ## スキル起動の判定
 
-Claude Codeの記録では、スキルの起動を`Skill`ツールの結果レコードで判定する。
-`type`が`user`のレコードの`message.content`にある`tool_result`要素の`content`が`Launching skill: <スキル名>`と完全一致することを条件とする。
-同じ起動の要求側は`type`が`assistant`のレコードの`tool_use`要素であり、`name`が`Skill`、`input.skill`がスキル名を持つ。
-判定にはこの完全一致を用いる。スキル名の部分一致による検索では、利用可能なスキルの一覧を持つ`attachment`型のレコードが多数一致するためである。
+Claude Codeの記録では、`type`が`user`のレコードの`message.content`にある`tool_result`要素の`content`が`Launching skill: <スキル名>`と完全一致することで判定する。要求側は`type`が`assistant`の`tool_use`要素で、`name`が`Skill`、`input.skill`がスキル名を持つ。スキル名の部分一致は、利用可能なスキルの一覧を持つ`attachment`型のレコードに多数一致する。
 
-Codexの記録には、スキルの起動を一意に示すレコードが無い。
-Codexはスキルを`SKILL.md`の読み取りとして実行するため、スキル名は利用可能なスキルの一覧、文脈の再掲、および`SKILL.md`のパスを含むコマンドの入出力へ現れる。
-Codexでスキルの起動を判定する場合は、そのスキルの起動を依頼したプロンプト本文の包含だけを条件とする。
-判定の対象は、`type`が`response_item`、`payload.type`が`message`、`payload.role`が`user`のレコードの`content`にある`input_text`要素の`text`とする。
-最初のuser役のレコードは実行環境が挿入する前置きであるため、判定は本文の包含だけで行う。
-このプロンプト本文を経ない起動は判定不能として扱う。
+Codexの記録にはスキルの起動を一意に示すレコードが無い（`SKILL.md`の読み取りとして実行され、スキル名は一覧、文脈の再掲、パスを含むコマンドの入出力に現れる）。
+Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.role`が`user`のレコードの`content`にある`input_text`要素の`text`が、起動を依頼したプロンプト本文を含むことだけを条件とする。最初のuser役のレコードは実行環境が挿入する前置きである。このプロンプト本文を経ない起動は判定不能として扱う。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：スキル起動の判定：2026年9月10日」にある。
 
 ## 集計値の典拠
 
-セッション記録から集計したトークン量、リクエスト数または所要時間を成果物へ書く場合とユーザーへ提示する場合は、`atk run-script session-review-evidence`の出力を典拠とする。
-起動形は`atk run-script session-review-evidence -- <引数>`とする。
-振り返りの全候補は同コマンドの`--bundle`が生成する`candidates.jsonl`から取る。`atk run-script session-review-prepare`はこれを`candidates.md`へ整形する。
-トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付けて実行する。
-自作の集計は典拠として扱わない。
-Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれて同じ`usage`を持つため、同一`message.id`の重複を除かずに合算した値は実際の消費量より大きくなる。`atk run-script session-review-evidence`はこの重複を最後の`usage`だけへ畳み込んだ値を返す。
-`--elapsed-until`が返す`elapsed_seconds`はセッションの最初のレコードの時刻から指定した時刻までの差であり、その時刻より後に実施する工程を含まない。
-`--stats`が返す総量と工程別の内訳は基準が異なる。
-総量の`elapsed_seconds`はセッションの最初と最後のレコードの時刻差であり、抽出した時点より後の工程を含まない。
-工程別の`stats-tool`が示す秒はツール呼び出しごとの区間であり、親セッションと委譲先が並行して動く区間は重複して計上される。
-このため工程別の合計は総量を超えることがある。
-比率を提示する場合は、この基準差を同じ本文へ併記する。
+セッション記録から集計したトークン量、リクエスト数、所要時間を成果物やユーザーへの提示に書く場合は、`atk run-script session-review-evidence -- <引数>`の出力を典拠とし、自作の集計は典拠にしない。
+トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付ける。振り返りの全候補は`--bundle`が生成する`candidates.jsonl`から取り、`atk run-script session-review-prepare`がこれを`candidates.md`へ整形する。
+
+- Claude Codeの記録では1回のAPI応答が同じ`usage`を持つ複数のレコードへ分かれる。同コマンドは同一`message.id`を最後の`usage`へ畳み込んだ値を返す
+- `--elapsed-until`の`elapsed_seconds`はセッションの最初のレコードから指定時刻までの差であり、その後の工程を含まない
+- `--stats`の総量の`elapsed_seconds`は最初と最後のレコードの時刻差である。工程別の`stats-tool`の秒はツール呼び出しごとの区間で、親と委譲先の並行区間を重複して数えるため、合計が総量を超えることがある。比率を示す場合はこの基準差を併記する
+
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：集計値の典拠：2026年9月3日」にある。
 
-集計値を判断の根拠に使う前に、その値の始点と終点、数え方が判断に必要な量と一致するかを確かめる。次の3つは一致しない例として観測されている。
+集計値を判断の根拠に使う前に、始点・終点と数え方が判断に必要な量と一致するかを確かめる。一致しなかった観測例は次のとおり。
 
-- 委譲先の所要時間を比べる場合は、`stats-agent-thread`と`stats-subagent`の`turn_elapsed_seconds`（最初のturnの開始から最後のturnの完了まで）を使う。`elapsed_seconds`は記録の最後までの差であり、turnの完了後に残るプロセスや待機の記録（`after_last_turn_seconds`）を含むため、その区間を所要時間に数えない
-- `agent-toolkit:process-wi`の複数回の実行を集計して現行の工程を評価する場合は、集計期間内にその工程を定める文書（スキル、`<役割名>.subagent.md`、規範）が変わったかを`git log --since=<期間の開始> -- <文書のパス>`などの変更履歴で確かめる。変わっていれば、変更後の記録だけを現行の値とする
-- 同じファイルを行範囲に分けて取得した回数は、1回の読了として数える。分割取得を別々の読み取りと数えると、読み直しの回数を過大に見積もる
+- 委譲先の所要時間は`stats-agent-thread`と`stats-subagent`の`turn_elapsed_seconds`で比べる。`elapsed_seconds`はturn完了後に残るプロセスや待機（`after_last_turn_seconds`）を含む
+- `agent-toolkit:process-wi`の複数回の実行から現行の工程を評価する場合は、期間内にその工程を定める文書が変わったかを`git log --since=<期間の開始> -- <文書のパス>`などで確かめ、変わっていれば変更後の記録だけを現行の値とする
+- 同じファイルを行範囲に分けて取得した回数は1回の読了と数える
 
 ## 複数セッションの比較結果
 
@@ -87,31 +59,25 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 
 ## 本文の検索
 
-セッション記録から本文を取得する場合は、`atk run-script session-review-evidence -- <引数>`を用いる。
-対象はClaude CodeとCodexの記録に含まれるユーザー発話、ツール結果、警告と委譲記録とする。
-記録の指定方法と各照会modeが返す内容は`atk run-script session-review-evidence -- --help`に従い、照会modeは目的で選ぶ。
+セッション記録（ユーザー発話、ツール結果、警告と委譲記録）から本文を取得する場合は`atk run-script session-review-evidence -- <引数>`を使い、記録の指定方法と照会modeの内容は`-- --help`に従って目的で選ぶ。
 
 - 検索語から該当箇所を探す: `--grep`
 - 位置が確定している記録の本文を読む: `--detail`
-- 複数の固定文字列を別々に数え、本文を含めず一致entry数と全locatorだけを得る: `--fixed-string`を文字列ごとに反復する。正規表現へ結合しない
-- 位置が確定したレコードの構造だけを調べる: `--record-schema`をlocatorごとに反復する。値が必要なら`--detail`を使う
-- ツール呼び出しを呼び出し単位で列挙し、ツール名と代表入力で選んで数える（複数セッションはカタログ走査と併用する）: `--tool-calls`。発話とツール呼び出しを混ぜた1セッションのメイン記録の時系列は、`--bundle`が書く`conversation.jsonl`で得る
+- 複数の固定文字列の一致entry数と全locatorだけを得る: `--fixed-string`を文字列ごとに反復する（正規表現へ結合しない）
+- 位置が確定したレコードの構造だけを調べる: `--record-schema`
+- ツール呼び出しを呼び出し単位で列挙する: `--tool-calls`（1セッションの発話とツール呼び出しの時系列は`--bundle`が書く`conversation.jsonl`）
 
-通常表示・warn・grep・fixed-string・tool-calls・hook-notices・statsとbundleの要約は、全収集記録の`record-provenance`を返す。同イベントの`record`・`role`・`source_record`・`source_line`・`mode`・`role_document`を読む。親を収集していない情報と役割文書が無い値はnullとして扱う。
-役割別の呼び出し件数は`--tool-calls`の`tool-call-summary.by_role`を使う。`document:<役割名>`は最初の配送の役割文書、`record:<role>`は役割文書を持たない記録の収集区分である。各内訳の`count`・`by_tool`と起動入力の`by_mode`から、役割別の件数と起動した委譲先のmodeを同じ照会で読む。カタログと併用した場合も収集したroot外の委譲先を含める。
+通常表示・warn・grep・fixed-string・tool-calls・hook-notices・statsとbundleの要約は、全収集記録の`record-provenance`を返す。同イベントの`record`・`role`・`source_record`・`source_line`・`mode`・`role_document`を読む。親を収集していない情報と役割文書が無い値はnullである。
+役割別の呼び出し件数と起動した委譲先のmodeは、`--tool-calls`の`tool-call-summary.by_role`（`document:<役割名>`は最初の配送の役割文書、`record:<role>`は役割文書を持たない記録の収集区分）の`count`・`by_tool`・`by_mode`から読む。カタログと併用した場合も収集したroot外の委譲先を含む。
 
-単一transcriptの`--detail`と`--record-schema`は併用でき、各オプションへ反復指定した全locatorの本文と構造を返す。
-結果は`kind`、`record`と`line`で区別する。
-片方のlocatorが不正な場合もエラーと次の操作を返し、終了コード2で終える。
-それ以外の照会modeの組み合わせ、カタログ走査・保存済み発話照会・`--bundle`との組み合わせは、入力形式ごとの排他条件に従う。
+単一transcriptでは`--detail`と`--record-schema`を併用でき、反復指定した全locatorの本文と構造を`kind`・`record`・`line`で区別して返す。不正なlocatorがあればエラーと次の操作を返して終了コード2で終える。それ以外の照会modeどうし、およびカタログ走査・保存済み発話照会・`--bundle`との組み合わせは入力形式ごとの排他条件に従う。
+
 生成側が返す`保存先:`の絶対パスから全量を読み、出所の引き渡しにも同じファイルを使う。
-本節の手段は`atk run-script session-review-evidence`に限り、検索対象を限定しないJSONLファイル群への汎用CLIによる検索と、セッション記録および`candidates.md`の標準出力への全量表示は対象としない。
-記録は行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を適用するとマッチングの上限に達するためである。
-`atk run-script session-review-evidence`が受理しない調査には、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。
+JSONLファイル群への汎用CLIでの無限定の検索と、記録や`candidates.md`の標準出力への全量表示はしない（行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を当てるとマッチングの上限に達する）。同コマンドが受理しない調査には`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。
 
 ## 暗号化された値
 
-次の値は提供元が暗号化して返す値である。裏付けと判別には値の有無と所在だけを使い、デコードと内部構造の解析を対象から外す。提供元の公式文書が値を開いて解釈しないよう定めているためである。
+次の値は提供元が暗号化して返す値であり、提供元の公式文書が開いて解釈しないよう定めているため、裏付けと判別には値の有無と所在だけを使い、デコードと内部構造の解析はしない。
 
 - Claude Codeの記録の`thinking`ブロックの`signature`と`redacted_thinking`ブロックの`data`
 - Codexの記録で`payload.type`が`reasoning`のレコードの`encrypted_content`
@@ -120,7 +86,6 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 
 ## 進捗更新の判別
 
-ツール呼び出しの間の進捗更新（公式文書の「progress update」。Claude Code本体の内部名は`narration`）を判別する場合は、公式文書「Thinking」の節「Progress updates between tool calls」が定める条件を使う。
-リクエストの`display`が`"updates"`の応答では文面が空でない`thinking`ブロックを進捗更新とする。
-記録はリクエストの`display`の値を持たない。このため値を設定やホストの送信条件から確かめた範囲だけを判別済みとし、残りは判別不能として件数を分ける。
-同じ監査記録が節「Progress updates between tool calls」の観測も持つ。
+公式文書「Thinking」の節「Progress updates between tool calls」の条件で、ツール呼び出しの間の進捗更新（公式文書の「progress update」、Claude Code本体の内部名は`narration`）を判別する。
+リクエストの`display`が`"updates"`の応答で文面が空でない`thinking`ブロックを進捗更新とする。
+記録は`display`の値を持たないため、設定やホストの送信条件から値を確かめた範囲だけを判別済みとし、残りは判別不能として件数を分ける。この節の観測も前節と同じ監査記録にある。

@@ -9,8 +9,7 @@ description: >
 
 # pytilpackの使い方
 
-本スキルはpytilpackの構成とAPIに関する知識を提供する。
-pytilpackはPythonのユーティリティ集で、各種ライブラリ向けの拡張とフレームワーク非依存の汎用モジュールを提供する。
+pytilpackはPythonのユーティリティ集で、各種ライブラリ向けの拡張とフレームワーク非依存の汎用モジュールを`import pytilpack.<対象ライブラリ名または汎用モジュール名>`（`pytilpack.httpx`、`pytilpack.cache`など）で提供する。
 
 ## 読込表
 
@@ -20,19 +19,7 @@ pytilpackはPythonのユーティリティ集で、各種ライブラリ向け�
 | --- | --- |
 | 収録モジュール、CLIのサブコマンド、extras要件またはAPIの詳細が必要なとき | <https://ak110.github.io/pytilpack/llms.txt>をWebFetchで取得し、そこからたどる対象モジュールのページ（例: `https://ak110.github.io/pytilpack/api/functools/index.md`）だけを個別に取得する。収録モジュールとCLIのサブコマンドは版により増減するため本ファイルへ列挙しない |
 
-## 基本的なimport方式
+## 導入とextras
 
-既存プロジェクトで利用する場合:
-
-```python
-import pytilpack.xxx
-```
-
-`xxx`には対象ライブラリ名（`httpx`、`pathlib`等）または汎用モジュール名（`cache`、`sse`等）が入る。
-新規プロジェクトへは`uv add pytilpack`で追加し、extrasが必要なら`uv add "pytilpack[babel,sqlalchemy]"`のように指定する。
-
-## モジュール分類
-
-モジュールは、追加依存なしまたは軽量依存で利用できる標準・軽量依存モジュールと、
-対象ライブラリの拡張を提供しextras指定を要するライブラリ用ユーティリティに分かれる。
-ライブラリ用ユーティリティ（Babel・SQLAlchemyなど）は、`pyproject.toml`の依存指定に必要なextras名を含める。
+新規プロジェクトへは`uv add pytilpack`で追加する。
+ライブラリ用ユーティリティ（Babel・SQLAlchemyなど）はextrasを要するため、`uv add "pytilpack[babel,sqlalchemy]"`のように依存指定へextras名を含める。

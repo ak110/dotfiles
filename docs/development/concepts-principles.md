@@ -363,6 +363,11 @@ E-M2は恒常コストに見合う案が無い判断も技術判断として終�
   現行の規定は`agent-toolkit:writing-standards`の`references/writing.md`「読み手別の追加注意点」が定義元であり、
   `agent-documents-basics.md`、`agent-documents-additions.md`、`agent-toolkit:delegation`の`references/base-contract.md`、
   `agent-toolkit:plan-mode`の`references/plan-file-standards.md`、`agent-toolkit:wi-standards`の`references/awi-body.md`と`references/drafting-completion.md`が参照する
+- エージェント向け文書は、読み手のエージェントが広い知識を持つ前提で書き、常識的に判断できることを細かく手順化しない。
+  細かすぎる手順は「書かれた手順以外はやってはならない」という先入観を生んで品質を下げ、文章量に比例して費用も増やすためである。
+  手順として書くのは目的、守る価値、硬い制約、プロジェクト固有の事実、実際に誤った箇所に限る。
+  2026年10月11日のユーザー指示「常識的に判断できるようなことを微に入り細に穿つ説明をすべきではない」による。同じ指示で既存のエージェント向け文書全体の手順記述を削減した。
+  現行の規定は`agent-toolkit:writing-standards`の`references/writing.md`「読み手別の追加注意点」と`references/agent-documents-additions.md`「削減の判定根拠」にある
 - 工程・レビュー・検証・判定・担当などの名前はその場で作成せず、定義して統一する（2026年10月2日、ユーザー指示）。
   方針は次の7点とする。定義を読まなくても指す対象が分かる自然な語を選ぶ。一般的な語（独立、root、固定、管理など）に独自の意味を持たせず、別々の概念に似た名前を付けない。
   識別子（スキル名、コマンド名、ファイル名、定数名など）がある対象は識別子で書く。ユーザーが名付けた名前と`atk serve`の画面などエンドユーザーが目にする場所の名前は残す。
