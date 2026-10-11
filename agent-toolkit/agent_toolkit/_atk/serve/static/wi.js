@@ -1459,11 +1459,13 @@ async function createEntry(event) {
   const message = rawContent.trim();
   const targetRepo = byId('create-target').value.trim();
   const choiceValues = byId('create-choices').value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+  // show形式の候補は単件用の選択肢検証を保留し、保存形式の確定と本文検証をサーバーへ渡す。
+  const showFormatHint = /^### \S+\.md(?: \[[^\]\n]*\])?\n---$/m.test(rawContent.replace(/\r\n?/g, '\n'));
   setFieldError(
     byId('create-content'), byId('create-content-error'),
     message ? '' : (isBatch ? 'show形式テキストを入力してください。' : '本文を入力してください。')
   );
-  const choiceInvalid = type === 'uwi' && byId('create-question-type').value === 'choice' && choiceValues.length < 2;
+  const choiceInvalid = !showFormatHint && type === 'uwi' && byId('create-question-type').value === 'choice' && choiceValues.length < 2;
   setFieldError(byId('create-choices'), byId('create-choices-error'), choiceInvalid ? '選択肢を2件以上入力してください。' : '');
   if (firstInvalid([byId('create-content'), byId('create-choices')])) return;
   // 単件でも未trimの入力を添え、show形式の本文ならサーバーが原文のまま一括登録へ切り替える。

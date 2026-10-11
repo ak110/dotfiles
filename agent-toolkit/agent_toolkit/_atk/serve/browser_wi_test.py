@@ -1981,6 +1981,58 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
 
 
 @pytest.mark.asyncio
+async def test_create_dialog_choice_validation_precedes_only_single_entry(browser_harness: _BrowserHarness) -> None:
+    """単件の選択肢は検証し、show形式ではサーバーの形式判定へ原文を渡す。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.get_by_role("button", name="新規追加").click()
+    dialog = page.get_by_role("dialog", name="新規追加")
+    await dialog.locator("#create-kind").select_option("uwi")
+    await dialog.locator("#create-question-type").select_option("choice")
+    await dialog.locator("#create-target").fill("example/repo")
+    await dialog.locator("#create-content").fill("質問の本文")
+    choices = dialog.locator("#create-choices")
+    await choices.fill("一択")
+    await dialog.get_by_role("button", name="追加").click()
+    await playwright.async_api.expect(dialog.locator("#create-choices-error")).to_have_text("選択肢を2件以上入力してください。")
+    await playwright.async_api.expect(choices).to_be_focused()
+    assert harness.operations.add_calls == []
+
+    await choices.fill("第一\n第二")
+    async with page.expect_request(lambda request: request.url.endswith("/api/entries") and request.method == "POST") as info:
+        await dialog.get_by_role("button", name="追加").click()
+    single_payload = (await info.value).post_data_json
+    assert isinstance(single_payload, dict)
+    assert single_payload["choices"] == ["第一", "第二"]
+    await dialog.wait_for(state="hidden")
+    assert harness.operations.add_calls[-1]["messages"] == ["質問の本文"]
+    await page.locator('.entry-select[data-key="inbox/created-1-0.md"]').wait_for(state="visible")
+
+    await page.get_by_role("button", name="新規追加").click()
+    await dialog.locator("#create-kind").select_option("uwi")
+    await dialog.locator("#create-question-type").select_option("choice")
+    show_text = (
+        "## target_repo: batch/repo\n### pasted.md [inbox]\n---\ntarget_repo: batch/repo\ntype: awi\n---\n\n貼り付けた本文\n"
+    )
+    await dialog.locator("#create-content").fill(show_text)
+    await playwright.async_api.expect(dialog.locator("#create-choices")).to_have_value("")
+    async with page.expect_request(
+        lambda request: request.url.endswith("/api/entries") and request.method == "POST", timeout=3000
+    ) as info:
+        await dialog.get_by_role("button", name="追加").click()
+    show_payload = (await info.value).post_data_json
+    assert isinstance(show_payload, dict)
+    assert show_payload["raw_text"] == show_text
+    await dialog.wait_for(state="hidden")
+    assert harness.operations.batch_calls[-1] == show_text
+    assert (harness.root / "inbox" / "pasted.md").read_text(encoding="utf-8") == (
+        "---\ntarget_repo: batch/repo\ntype: awi\n---\n\n貼り付けた本文\n"
+    )
+    await page.locator('.entry-select[data-key="inbox/pasted.md"]').wait_for(state="visible")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(320, 720), (700, 720), (1280, 720), (1280, 900)])
 @pytest.mark.parametrize("input_height", [None, 480])
 async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
