@@ -513,7 +513,7 @@ def test_background_wait_of_work_allows_turn_end_until_collected(
 def test_resident_background_command_of_work_does_not_exempt_missing_reports(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, command: str
 ) -> None:
-    """作業内で背景起動した常駐コマンドは待機対象ではなく、報告不足を免除しない。
+    """作業内で背景起動した常駐コマンドは待機対象に数えず、報告不足を免除しない。
 
     常駐コマンドは終了せず完了通知による再開も来ないため、免除すると報告が欠けたまま終了する。
     """

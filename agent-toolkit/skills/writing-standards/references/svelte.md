@@ -21,7 +21,7 @@
 
 - DB・ファイルアクセスはserver load（`+page.server.ts`/`+layout.server.ts`）へ置く。universal load（`+page.ts`/`+layout.ts`）はブラウザー実行と直列化の条件で選び、秘密情報を扱わない
 - 両者が同一ルートに共存する場合、server loadの戻り値がuniversal loadの`data`引数として渡される実行順序仕様を前提に設計する（誤った前提は`data`未定義エラーを招くため）
-- フォーム送信・データ変更操作は`fetch`ではなくform actions（`+page.server.ts`の`actions`）を優先する（プログレッシブエンハンスメントとCSRF対策に標準で対応するため）
+- フォーム送信・データ変更操作にはform actions（`+page.server.ts`の`actions`）を優先して使う（プログレッシブエンハンスメントとCSRF対策に標準で対応するため）
 - APIキー・DB接続文字列などの秘密情報はサーバー専用モジュール（`+page.server.ts`・`+layout.server.ts`・`+server.ts`・サーバーフック・`$lib/server`配下）でのみ扱う。それ以外はブラウザでも実行され得る
 
 ## SSR前提の実装

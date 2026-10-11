@@ -68,7 +68,7 @@ def _remove_link_like(path: Path) -> None:
     if path.is_symlink():
         path.unlink()
     else:
-        # Windowsのディレクトリジャンクションはunlinkではなくrmdirで除去する。
+        # Windowsのディレクトリジャンクションはrmdirで除去する。
         path.rmdir()
 
 

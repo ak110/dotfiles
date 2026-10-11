@@ -37,7 +37,7 @@ SubagentStop判定ではsidechainを含める。
 完了の判定には複数キーによるフォールバック解決を使い、どのキーでも解決できない通知または停止結果は
 永続ログへ明示出力して未解決状態を可視化する（起動時に記録した全background taskが
 完了通知または停止成功結果のいずれかで完了集合へ解決できることを不変条件として維持する）。
-判定は起動集合の非空ではなく`launched - completed`のremainder非空で行う
+判定は`launched - completed`のremainder非空で行う
 （起動集合の非空判定では完了通知の消化後も真を返し続け、以後の素の状態表明がすべてbypassされる）。
 
 判定根拠の常時ログは`stop_session.append_stop_log`へ書き、詳細stderr出力（`_emit_debug`）は
@@ -1060,8 +1060,8 @@ def collect_background_task_id_tool_use_ids(
 def _collect_monitor_task_ids(entries: list[dict], *, include_sidechain: bool = False) -> set[str]:
     """transcript全行から、Monitorツール起動に一意に対応する`taskId`の集合を返す。
 
-    `toolUseResult.taskId`キーはMonitor専用ではなく、他のツール
-    （`success`・`updatedFields`・`statusChange`キーを伴う形で観測）も同じキー名を使う
+    `toolUseResult.taskId`キーは、Monitorに加えて他のツール
+    （`success`・`updatedFields`・`statusChange`キーを伴う形で観測）も同じキー名で使う
     （実transcript調査で確認済み）。そのため`taskId`キーの存在だけでMonitor由来と判定せず、
     対応する`tool_use_id`（`extract_tool_result_id`で解決）がassistant側`tool_use`ブロックの
     `name == "Monitor"`と一致する場合に限りMonitor由来として収集する。

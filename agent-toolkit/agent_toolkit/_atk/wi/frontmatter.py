@@ -22,7 +22,7 @@ class _LiteralScalarLoader(_SafeLoaderBase):  # pylint: disable=too-many-ancesto
     """暗黙の型推論を行わず、スカラーノードの字面をそのまま`str`として構築するローダー。
 
     bool・int・float・null・timestampの各タグで標準的に使うコンストラクターを、
-    型変換済みのPythonオブジェクトではなく`construct_scalar`が返すノード文字列
+    `construct_scalar`が返すノード文字列
     （引用符解決後の生のYAML字面）へ差し替える。マッピング・シーケンスの構築は
     選択した安全な基底ローダーの標準動作を維持するため、入れ子構造そのものは保持される。
     """

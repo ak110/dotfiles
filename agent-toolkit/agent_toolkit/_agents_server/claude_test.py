@@ -407,7 +407,7 @@ def test_only_assistant_messages_without_api_error_count_as_model_output() -> No
 
 
 def test_api_error_does_not_advance_activity() -> None:
-    """API失敗の再試行はモデル活動でなく、正常メッセージで失敗記録が消える。"""
+    """API失敗の再試行はモデル活動に数えず、正常メッセージで失敗記録が消える。"""
     session = state.SessionState("session-1", "/tmp")
     session.updated_at = "2000-01-01T00:00:00+00:00"
     failure = types.SimpleNamespace(
@@ -436,7 +436,7 @@ def test_api_error_does_not_advance_activity() -> None:
 
 
 def test_initialization_diagnostic_identifies_received_messages() -> None:
-    """初期化診断は受信メッセージを種別だけでなく内容で識別できる形で保持する。"""
+    """初期化診断は受信メッセージを種別と内容で識別できる形で保持する。"""
     diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access
 
     diagnostic.record_message(types.SimpleNamespace(subtype="SessionStart"))

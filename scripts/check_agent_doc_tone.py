@@ -72,6 +72,7 @@ _DENIED_PATTERNS = {
 # 文脈によって対象と動作が伝わりにくい語。正確な専門語や承認済みの呼称として使う場合もあるため警告に留める。
 _METAPHORICAL = "metaphorical"
 _ABSTRACT = "abstract"
+_CONTRAST = "contrast"
 _CAUTION_PATTERNS = {
     "経路": (r"経路", _ABSTRACT),
     "入口": (r"入口", _METAPHORICAL),
@@ -93,6 +94,11 @@ _CAUTION_PATTERNS = {
     "線引き": (r"線引き", _METAPHORICAL),
     "破綻": (r"破綻", _ABSTRACT),
     "ゲート": (r"ゲート", _METAPHORICAL),
+    # 対比フレーミングの代表的な構文。`01-agent.md`「使用言語」が禁止し、逐語引用などの残す用法があるため警告とする。
+    "ではなく": (r"ではなく", _CONTRAST),
+    "むしろ": (r"むしろ", _CONTRAST),
+    "単なる": (r"単なる", _CONTRAST),
+    "というより": (r"というより", _CONTRAST),
 }
 _CAUTION_MESSAGES = {
     _METAPHORICAL: (
@@ -103,6 +109,10 @@ _CAUTION_MESSAGES = {
     _ABSTRACT: (
         "文脈によって、実際の操作、判定対象、条件または結果が変わり得る。"
         "正確な専門語または定義済みの名称でなければ、実際の操作、判定対象、条件または結果を書き分ける"
+    ),
+    _CONTRAST: (
+        "否定する側を並べる対比フレーミングは、読み手に否定側の解釈を経由させる。"
+        "逐語引用でなければ、伝える内容を肯定文で直接書き、肯定文から読み取れない制約だけを独立した文で書く"
     ),
 }
 _TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, pattern in _DENIED_PATTERNS.items())
@@ -400,9 +410,16 @@ def _term_matches(path: pathlib.Path, text: str, patterns: tuple[tuple[str, re.P
             (line, name)
             for line, fragment in fragments
             for name, pattern in patterns
-            if pattern.search(_without_structural_labels(fragment))
+            if pattern.search(_term_text(name, _without_structural_labels(fragment)))
         }
     )
+
+
+def _term_text(name: str, text: str) -> str:
+    """対比の構文は「」と`で囲んだ引用・例示を除いた文から探す。"""
+    if name in _CAUTION_PATTERNS and _CAUTION_PATTERNS[name][1] == _CONTRAST:
+        return _QUOTED_DATA_PATTERN.sub(lambda match: " " * len(match.group()), text)
+    return text
 
 
 def _term_target(path: pathlib.Path, roots: list[pathlib.Path]) -> bool:

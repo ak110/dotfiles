@@ -67,12 +67,12 @@ def test_unknown_config_key_logs_warning(
 
 
 def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
-    """高さを決めるビューポート単位を無印`vh`ではなく`svh`で書く。
+    """高さを決めるビューポート単位を`svh`で書く。
 
     無印`vh`は大ビューポート基準のため、モバイルのブラウザーUI展開時に
     ダイアログの外枠が可視領域を超え、ヘッダーとフッターが隠れる。
-    `dvh`ではなく`svh`を採用するのは、スクロールに伴うブラウザーUIの伸縮で
-    枠の高さが再レイアウトされることを避け、常に可視な下限側へ収めるためである。
+    `dvh`はスクロールに伴うブラウザーUIの伸縮で枠の高さを再レイアウトするため、
+    常に可視な下限側へ収める`svh`を採用する。
     """
     assert not re.findall(r"\dvh\b", assets.CSS)
     assert "100svh" in assets.CSS

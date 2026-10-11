@@ -23,7 +23,7 @@ linux-x64 = { asset_pattern = "lychee-x86_64-unknown-linux-musl.tar.gz" }
 # `latest`のような曖昧な版指定の解決でmise.lockの確定バージョンより優先されるため、
 # lockの版が導入されず、lock自体も導入済みの版へ書き換えられる。版を明示してこの解決経路を
 # 通さない。版の更新は`make update`が`mise upgrade --bump`で行う。
-# componentsを保つためinline tableではなく別テーブルで書く
+# componentsを保つため別テーブルで書く
 # （`mise upgrade --bump`はinline tableを単一の文字列へ平坦化してoptionsを失う）。
 [tools.rust]
 version = "1.99.0"

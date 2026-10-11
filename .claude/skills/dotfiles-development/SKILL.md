@@ -69,7 +69,7 @@ description: >
     `pytest`へ`-o addopts=''`を渡して`pyproject.toml`の`addopts`を解除する場合は、`-p no:cacheprovider`を併記する
   - 同じ作業ツリーで`uv run --python`によるPython版切替、依存更新またはその他の`.venv`再作成を起こし得る自動チェックは、同じ仮想環境パスへの並列実行を避ける。Python 3.13と3.14を同じ`.venv`で自動チェックする場合は直列に実行する。並列実行する場合は自動チェックごとに異なる仮想環境パスを明示する
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
-    `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子は記憶や短縮形からではなく、取得した一覧の値を使う
+    `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子には取得した一覧の値を使う
 
 ### 画面とブラウザー
 

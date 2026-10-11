@@ -86,7 +86,7 @@ def _require_type(path: pathlib.Path, text: str) -> str | None:
         return None
     entry_type = normalized_wi_type(parsed[0].get("type"))
     if entry_type is None:
-        # 終了コード2で処理を打ち切るため、警告ではなく失敗行で返す。
+        # 終了コード2で処理を打ち切るため、失敗行で返す。
         _outcome.report_failure(
             f"frontmatterのtypeが不正または欠落している（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}",
             next_action=unrepairable_entry_next_action(path.name),

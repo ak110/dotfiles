@@ -224,7 +224,7 @@ function updateFileItem(item, file) {
 }
 
 function renderFiles() {
-  // ファイル一覧を差分更新する。innerHTMLの全消去ではなく既存ノードを再利用することで、
+  // ファイル一覧を差分更新する。既存ノードを再利用することで、
   // ファイル数が多い環境でのフィルタ入力遅延・スクロール位置のジャンプを抑える。
   // DOM化対象はフィルタ後の先頭`visibleLimit`件のみ。未描画分は末尾の番兵を`IntersectionObserver`で
   // 検出して段階拡張する（数百件規模の差分更新コストを抑えるため）。
@@ -278,7 +278,7 @@ function renderRootWarnings() {
 
 function setupSentinelObserver() {
   // 末尾の番兵が可視範囲に入ったら表示上限を1ステップ拡張する。
-  // `root`をaside（一覧をスクロールするコンテナー）に指定して、ビューポートではなく
+  // `root`をaside（一覧をスクロールするコンテナー）に指定して、
   // スクロールコンテナー内での可視性を判定する。
   // `rootMargin`で末尾到達前に先読みし、スクロール停止前に拡張が完了するようにする。
   const sentinel = document.getElementById("files-sentinel");
@@ -798,7 +798,7 @@ function bindScreenEvents() {
   });
   document.getElementById("preview").addEventListener("click", (event) => {
     // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけから選択できる。
-    // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
+    // 本文は表示のたびに差し替わるので、親要素への委譲で受け取る。
     const link = event.target.closest("a[data-plan-path]");
     if (!link || !isPlainPrimaryClick(event) || link.target) return;
     event.preventDefault();

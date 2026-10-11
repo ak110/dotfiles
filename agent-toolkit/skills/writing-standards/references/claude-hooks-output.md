@@ -21,7 +21,7 @@ PreToolUse・PostToolUse・UserPromptSubmitでエージェントに行動を促�
 stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 `systemMessage`はユーザーの判断・操作に影響する情報通知に限って使う。決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象は通知の対象に含めない。
 Stop/SubagentStopでそのターン継続を強制する用途は、エラーとして遮断する場合（振り返り誘導等）に`decision: "block"`＋`reason`を、フックの想定内の助言に`hookSpecificOutput.additionalContext`を採用する。
-永続ログはstderr出力ではなく`_hooks.stop_session.append_stop_log`等の専用APIに集約する。
+永続ログは`_hooks.stop_session.append_stop_log`等の専用APIに集約する。
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
@@ -54,7 +54,7 @@ block・warn・noticeの本文の整形（整形関数、`fix`の要否、種別
 確認ダイアログを抑制したい場合はPermissionRequestイベントで`decision.behavior: "allow"`を返す。
 
 `updatedInput`による入力書き換えの効果は入力値の変更までとし、確認ダイアログの発生はそのまま残る。
-ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う。
+ダイアログを伴う値を拒否する必要がある場合はブロックで扱う。
 
 組み込みdenyルールは`allow`でも上書きできないが、確認ダイアログ（ask相当）はスキップできる。
 

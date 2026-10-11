@@ -786,7 +786,7 @@ class TestProcessLoopPromptAndEnv:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Codex候補は標準エラーの内容ではなく終了コード0だけで可用と判定する。"""
+        """Codex候補は終了コード0だけで可用と判定する。"""
         _setup_notes(tmp_path)
         set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/medium,claude:sonnet/high")
         myrepo = tmp_path / "myrepo"
@@ -972,7 +972,7 @@ class TestProcessLoopPromptAndEnv:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """process-loopも保存値ではなく環境変数の候補列を共通解決関数から取得する。"""
+        """process-loopも環境変数の候補列を共通解決関数から取得する。"""
         _setup_notes(tmp_path)
         set_orchestrate_model(tmp_path, "claude:sonnet/high")
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", "codex:gpt-5.6-terra/low")

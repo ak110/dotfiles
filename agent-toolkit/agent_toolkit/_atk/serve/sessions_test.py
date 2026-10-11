@@ -546,7 +546,7 @@ def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> No
     assert summary.first_user_message is None
     assert detail["started_at"] is None
     assert detail["usage"] == {"input_tokens": None, "output_tokens": None}
-    # サブエージェント記録が無い場合は空配列ではなくnullとし、「0件」と区別する。
+    # サブエージェント記録が無い場合はnullとし、「0件」と区別する。
     assert detail["subagents"] is None
     # ローカルの記録は保存先を直接読むため、有無の判定自体は常に成立する。
     assert detail["subagents_unavailable"] is False

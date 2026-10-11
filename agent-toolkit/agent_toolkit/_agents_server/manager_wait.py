@@ -72,7 +72,7 @@ class ManagerWait(manager_resume.ManagerResume):
         保持中のsessionの最終活動時刻と停滞の印は`show`が返す。待機せずに現状態を確認する場合は`show`を発行する。
         以下の`/goal`の条件に該当しない場合は、本ツールを前景で発行する。
         委譲元のセッションに`/goal`が設定され、未完了のバックグラウンドタスクが本ツールの呼び出しを移したものだけになる場合は、
-        公開MCP toolではなく、`atk agents wait`を実行ホストの前景またはバックグラウンドタスクとして起動する。
+        `atk agents wait`を実行ホストの前景またはバックグラウンドタスクとして起動する。
         委譲先がバックグラウンドタスクを残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
         委譲元はバックグラウンドタスクの完了後に`send_message`で再開を指示しない。
         終端前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
@@ -80,7 +80,7 @@ class ManagerWait(manager_resume.ManagerResume):
         受領した終端結果のsessionを破棄する場合は`stop`を発行する。
         終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
         委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でもその通知を`notices`へ載せて復帰する。
-        再待機の要否は`notices`の有無ではなく`status`で判定する。
+        再待機の要否は`status`で判定する。
         `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
         応答へ載せた通知は回収済みとして再び返さない。
         """

@@ -990,7 +990,7 @@ async def test_show_reports_another_writer_for_running_registry_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿が実行中として保持する識別子は、喪失ではなく別主体の実行中として案内する。"""
+    """登録簿が実行中として保持する識別子は、別主体の実行中として案内する。"""
     manager, _ = _manager_with_fake("codex")
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)

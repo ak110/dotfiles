@@ -7,7 +7,7 @@ PostToolUseの`updatedToolOutput`で`stdout`を通知の本文へ置き換える
 受け取る本文から元の出力の先頭が消える。保存先のファイルは元の全量を保持する。
 
 退避の有無はホストが`tool_response`へ付ける`persistedOutputPath`で判定し、上限値をhook側で再実装しない。
-CodexのPostToolUseは`persistedOutputPath`を持たない（出力は退避ではなく切り詰めで返る）ため発動しない。
+CodexのPostToolUseは`persistedOutputPath`を持たない（出力は切り詰めて返る）ため発動しない。
 """
 
 from agent_toolkit._common import next_action as _next_action

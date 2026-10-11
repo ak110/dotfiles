@@ -855,7 +855,7 @@ class TestManifestCheck:
         assert result.returncode == 0
         assert "pyproject.toml" in _additional_context(result)
         assert "uv add" in _additional_context(result)
-        # 編集警告はstderrではなくadditionalContextへ集約する。
+        # 編集警告はadditionalContextへ集約し、stderrは空のままとする。
         assert result.stderr == ""
 
     def test_pyproject_toml_tool_section_edit_is_silent(self):

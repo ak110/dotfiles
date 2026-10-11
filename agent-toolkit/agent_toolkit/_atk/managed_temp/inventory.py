@@ -464,7 +464,7 @@ def _cutoff_ns(now: datetime.datetime, max_age_days: int) -> int:
 def _latest_update_and_git_paths(path: pathlib.Path) -> tuple[int, list[pathlib.Path]]:
     """領域自身と配下の最終更新時刻（ナノ秒）と、配下にある`.git`のパスを返す。
 
-    作成時刻ではなく配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
+    配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
     """
     latest_mtime_ns = path.stat().st_mtime_ns
     git_paths: list[pathlib.Path] = []

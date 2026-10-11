@@ -358,7 +358,7 @@ class _StepSpec:
     全ステップを先行工程とする指定、`platforms`は実行対象の`sys.platform`値（空なら全OS）を表す。
     `host_resources`は、HOMEで解決されない実機の共有資源（systemdのユーザーマネージャー、`/dev/shm`など）を
     操作するステップであることを表す。HOMEを差し替えた実行（手動観測やテスト）ではこのステップを実行しない。
-    `systemctl --user`はHOMEではなく`XDG_RUNTIME_DIR`とD-Busで接続先を決めるため、HOMEの差し替えでは隔離できない。
+    `systemctl --user`は`XDG_RUNTIME_DIR`とD-Busで接続先を決めるため、HOMEの差し替えでは隔離できない。
     `run`の戻り値と失敗の分類の基準は`post_apply_outcome.PostApplyOutcome`が定める。
     対象OSは`platforms`だけで宣言し、`run`の側では対象OSを判定しない。
     """

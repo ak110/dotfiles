@@ -1161,7 +1161,7 @@ def test_later_wait_starts_new_run_for_changed_targets(
     capsys: pytest.CaptureFixture[str],
     status: str,
 ) -> None:
-    """対象が変わった後続waitは先行runではなく新規runを開始する。"""
+    """対象が変わった後続waitは新規runを開始する。"""
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-2"}])
     run_directory, _ = _write_current_wait_run(tmp_path, target="session-1", status=status)
 

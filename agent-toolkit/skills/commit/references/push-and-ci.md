@@ -34,9 +34,9 @@ CIを判定する場合は、次の3工程で監視用の証拠を作成する�
    手順3で確定したrefspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す。
    `--source-ref`へ渡すのはこの左辺だけとし、refspecの右辺`<destination>`、destination ref、remote-tracking refは別の値として扱う。
    baseline作成時に補助スクリプトがsource refをcommitへ再帰的にpeelし、完全長commit SHAを保存する
-   - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを保存する
+   - annotated tagとlightweight tagのどちらでもpeeledしたcommit SHAを保存する
    - pushできるのはcommitへpeelできるrefに限る。peelできないrefではbaseline作成が失敗する
-   - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
+   - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがpush単位で起動する
 3. 読み込んだ本文書の絶対パスからplugin rootを確定する。
    確定した各`(destination ref, source ref)`について、push前に`uv run --project <plugin-root> --locked --no-default-groups <plugin-root>/agent_toolkit/wait_ci.py`を
    `--write-baseline <この節の第1工程で保持した領域の絶対パス>/<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行し、baseline JSONを保存する。

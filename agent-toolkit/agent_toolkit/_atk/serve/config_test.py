@@ -977,7 +977,7 @@ async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, mon
         operations=_Operations(tmp_path),
     )
     async with app.test_app():  # ty: ignore[invalid-context-manager]
-        # 実時間の経過ではなく初回呼び出しの成立を待ち、起動を確認する。
+        # 初回呼び出しの成立を待ち、起動を確認する。
         await asyncio.wait_for(called.wait(), timeout=5)
 
     # 停止の成立は、`after_serving`の完了後に呼び出し回数が増えないことで確認する。

@@ -124,7 +124,7 @@ def create_managed_temp(
         if root_descriptor is not None:
             created_metadata = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
             if not stat.S_ISDIR(created_metadata.st_mode):
-                raise ManagedTempError(f"管理対象が作成中に通常ディレクトリではなくなった: {path}")
+                raise ManagedTempError(f"管理対象が作成中に通常ディレクトリから別の種類へ変わった: {path}")
             created_identity = (created_metadata.st_dev, created_metadata.st_ino)
         _validate_root(root_path, explicit=explicit_root, expected=validated_root)
         if os.name == "posix":

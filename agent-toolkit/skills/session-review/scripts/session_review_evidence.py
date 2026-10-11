@@ -288,7 +288,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--user-event-at",
         metavar="RECORD:LINE",
         help="保存済み出力のrecord欄とline欄の値の組。末尾のコロンで区切り、record内のコロンは保持する。"
-        "一致する全イベントを入力順・全文で返す。lineは元記録の正の整数位置で、出力の物理行番号ではない。",
+        "一致する全イベントを入力順・全文で返す。lineは元記録の正の整数位置を指す。出力の物理行番号とは別の値である。",
     )
     parser.add_argument(
         "--since",

@@ -211,7 +211,7 @@ Bashと種別を判別できない通知では、task-idと出力ファイルの
 CLIの前景の短いtimeoutへ替える案とgoalの有無を別のフラグへ記録する案も、既存のキューとホスト配送で結果を受領できるため採らない。
 Claude Code本体の修正と上流への投稿は行わず、ホストが継続応答へ未配送通知を自然に取り込めるようになった時点で、この回避を撤去する。
 常時規範へ「目標評価の指摘を受けたら出力ファイルを読む」旨を追記する案は採らない。常時規範への追記の条件に当たらず、目標評価の理由文が「未完了」と述べるため実行主体が条文を想起しても誤った前提と競合する。フックは実在する出力ファイルのパスを示すため、実行主体の判断に依存しない。
-`/goal`のあるセッションで外側の`timeout`を付けた前景の待機へ切り替える案も採らない。待機の規範は外側の`timeout`の連結を禁じ、バックグラウンドタスクでの待機は稼働中の延期が正しく働くことを観測済みであり、空転の原因ではない。
+`/goal`のあるセッションで外側の`timeout`を付けた前景の待機へ切り替える案も採らない。待機の規範は外側の`timeout`の連結を禁じ、バックグラウンドタスクでの待機は稼働中の延期が正しく働くことを観測済みであるため、空転の原因から除外できる。
 `busy_loop_guard.py`で未配送の通知を無進捗として数え、閾値でセッションを停止する案も採らない。停止はprocess-wiの実行そのものを失わせる一方、結果は出力ファイルに既に存在し、1回のツール呼び出しで回復できる。
 
 ### 計画保存の確認
@@ -250,10 +250,10 @@ LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ�
 
 2026年10月3日のCodexで、振り返りの準備と通読の後に応答を終え、分析と最終報告の再開にユーザーの指示を要した。同じ日に、構造確認に合格した振り返り結果を最終回答へ載せず、AWI登録の説明だけで終えた事象もあった。どちらも続行と発話の規範は配送されていた。ユーザーは対策を文書の追記だけに頼る再発防止を否定し、Stopフックでの対策を提案した。
 既存の`termination_order_advisor`は起動順だけを再入時に判定して初回Stopを許可し、`user_response_advisor`は可視本文の有無だけを調べるため、どちらの不足も検出できなかった。
-本機構が判定するのは規範の想起ではなく、実際の準備結果と可視発話から機械的に確定する不足である。現行の判定基準は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にあり、旧基準からの変更の経緯は「全件確認の経緯（2026年9月26日）」にある。
+本機構が判定するのは、実際の準備結果と可視発話から機械的に確定する不足である。現行の判定基準は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にあり、旧基準からの変更の経緯は「全件確認の経緯（2026年9月26日）」にある。
 
 判定と保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`へ集約する。PreToolUse・PostToolUse・UserPromptSubmitは既存のエントリーポイントから準備結果・呼び出しと人間の入力を供給する。Stopの集約は既存の例外隔離と連続block上限を保ち、`termination_order_advisor`が可視発話の報告見出しと、`agent-toolkit:completion-report`が定義する報告本文の判定で不足を示す。起草・確認・再出力は報告ごとに同じ本文の二重出力とツールの往復を必要とするため除去し、直接発話へ移した。言い回しへ判定を広げる案は、許容された不備のたびに報告全体の再発話を必要とするため採らない。
-作業の同一性は報告ファイルのパスではなく、入力、呼び出し、開始と判断記録で区切る。同じパスを使う新しい仕事へ古い中止や充足を流用すると、不足を見逃すためである。
+作業の同一性は入力、呼び出し、開始と判断記録で区切る。報告ファイルのパスは区切りに使わない。同じパスを使う新しい仕事へ古い中止や充足を流用すると、不足を見逃すためである。
 協調モードのClaude Codeメインの一般の変更は、成功した編集ツールと静的に確定したBash書込先を同じ作業の証拠へ接続する。
 Stopはその対象だけを現在のGit状態と比べ、公開範囲の指定・回答・適用済み認可もcompletion-reportへの到達も無い未コミットの自編集を、初回からwarnで案内する。
 意味判断はメインへ保ち、現在の原入力を返す`termination-evidence --context`と同じ所有者のJSON記録で確定した公開範囲を渡す。commitしない範囲も確定済みとし、未コミットだけを理由にcommitを求めない。
@@ -373,7 +373,7 @@ UserPromptSubmitで、直前の通常発話からの経過時間が閾値以上�
 状態と判定の保守を増やすため採らない。`agent-toolkit:user-confirmation-and-report`の`description`へ認識の不一致と繰り返しの咎めを起動契機として置くことで、hookの検出外でもモデルの判断で起動できる。
 
 `agent-toolkit:user-confirmation-and-report`は、同スキルの内容が文脈に無い状態で受けた実ユーザー発話の前に起動する契機を持つ。
-この契機は発話の内容ではなく会話の状態（セッション開始、`/clear`、会話圧縮）で決まり、descriptionを読んだモデルの自主的な判断だけでは最初の発話の起動漏れが残った。
+この契機は会話の状態（セッション開始、`/clear`、会話圧縮）で決まり、descriptionを読んだモデルの自主的な判断だけでは最初の発話の起動漏れが残った。
 そこでSessionStartの`source`が`startup`・`clear`・`compact`で委譲先でない場合に起動待ちの状態（`user_confirmation_skill_pending`）を記録し、UserPromptSubmitがその状態で届いた実ユーザー発話へ起動を促す注記を返す。PostToolUse(Skill)が同スキルの起動で状態を解除する。
 判定入力はSessionStartの`source`、既存の機械注入判定およびSkill呼び出しの記録だけであり、発話の意味を判定しない。
 CodexではSkillの起動を観測できず解除の契機が無いため、注記を返した時点で状態を解除し、文脈1つにつき1回だけ返す。
@@ -424,7 +424,7 @@ Claude Codeのメインが調査を`Agent`ツールで委譲し、待機の定�
 条文はセッション開始時の文脈にあったが、ツールを選ぶ時点と起動の直前に読まれる文面に手掛かりが無かった。
 そこで、選択の時点の語彙と起動直前の文面へ手掛かりを置き、hookは使わない。
 常時規範`agent-toolkit/rules/01-agent.md`「委譲の要否判定」は比べる相手として`Agent`ツールの名前を含める。
-`agents_server`のサーバー`instructions`は`Agent`ツールではなく本サーバーを標準とすることを示す。
+`agents_server`のサーバー`instructions`は本サーバーを標準とすることを示す。
 `start`の公開説明は、`CronCreate`を使える実行主体が最初の呼び出しの前に定期再確認を装着することを示す。
 Claude Codeはツールを遅延読み込みし、スキーマを取得する最初の呼び出しの直前に`start`の説明を読む。
 `agent-toolkit:delegation`はClaude Codeで`Agent`ツールの委譲先かバックグラウンドタスクを最初に起動する前と、定期再確認を自ら装着する前に`references/claude-code-runtime.md`を読む契機を持つ。`agents_server`の通常起動と軽量起動の設定読込先の違いは、委譲先とモデルを選ぶ時点に読む`references/runtime-routing.md`「実行手段」が持つ。
@@ -493,7 +493,7 @@ Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取
 `agent-toolkit:writing-standards`の`references/investigation.md`などの読込は、外部の挙動を書くかが本文の意味に依存し機械的に判定できないため登録しない。
 
 同日に`agent-toolkit:managed-temp`も登録した。`.git`を含む個別の領域へ参照される保存物を置き、領域の回収で失った事象があり（`incidents-data-security.md`「データ破壊と喪失」）、置き場所の規定は同スキルにある。
-記録のうち`atk managed-temp create`を実行した134セッションで同スキルを起動したのは7セッションだった。判定はBashのコマンド文字列で確定し、`for … ; do atk …`と`d=$(atk …)`の形も検出するため、区間の先頭のトークンではなく`managed-temp`・`create`の連続とその直前で判定する。
+記録のうち`atk managed-temp create`を実行した134セッションで同スキルを起動したのは7セッションだった。判定はBashのコマンド文字列で確定し、`for … ; do atk …`と`d=$(atk …)`の形も検出するため、`managed-temp`・`create`の連続とその直前で判定する。
 `cleanup`と`list`は置き場所を選ぶ操作でないため除く。回収の時点の警告は削除を止めないため置かない。
 
 2026年10月8日に`agent-toolkit:writing-standards`を登録した。対象はエージェント向け文書へのWrite・Edit・MultiEdit・apply_patchと、書込先を静的に確定できるBash操作である。移動は元と先の両方を既存の文書パス判定へ渡す。Bashはリダイレクト・tee・sedの直接更新と、Pythonの文字列リテラルまたは代入から確定するopenの書込・Path.writeを扱う。読取や実行されない例、別ファイルへの書込を、同じ入力に文書名が現れたことだけで警告しない。既存の主体別記録を再利用し、Codexの除外も保つ。編集の直前へ基準の所在を届ける目的であり、新しい遮断や専用状態は設けない。
@@ -538,7 +538,7 @@ Claude CodeのBashとPowerShellは、出力が上限（`bashOutputMaxChars`、�
 退避の有無はホストが付ける`persistedOutputPath`で判定し、上限値をhook側で再実装しない。PowerShellもBashと同じ出力スキーマと上限を持つため`hooks.json`の`matcher`へ加えた。
 `updatedToolOutput`を選んだのは、本体の出力スキーマがこの項目を「Replaces the tool output before it is sent to the model」と説明し、`updatedMCPToolOutput`より全ツールへ働く項目として案内しているためである。既存のPostToolUseの起動に相乗りし、新しいイベントの登録、セッション状態および起動を加えない。
 同じ呼び出しで他の分岐が`additionalContext`を返す場合は、1つのJSONへ両方を入れる。transcriptの`toolUseResult.stdout`も置き換えた本文になるため、`session_review_evidence.py`は`persistedOutputPath`が実在するファイルを指せばその内容を検索と警告の抽出の実体とする。
-CodexのPostToolUseは`persistedOutputPath`を持たず（出力は退避ではなく切り詰めで返る）、置き換えは発動しない。
+CodexのPostToolUseは`persistedOutputPath`を持たず（出力は切り詰めて返る）、置き換えは発動しない。
 
 あわせて`share/claude_settings_json_managed.json`へ`bashOutputMaxChars`を配布し、エージェント向け文書の通常の取得が退避されないようにした。値の導出と観測は`operations.md`「Claude CodeのBash出力の上限」にある。
 62,000バイトを超える出力は退避され、この置き換えの対象となる。
@@ -585,7 +585,7 @@ modが`$.clock.every`と`$.prompt.submit`で定期再確認そのものを行い
 
 ### send_to_userツール
 
-Claude Codeでは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIがモデルの原文ではなく要約（progress updateの要約）へ置き換えて返す。原文は画面にもtranscriptにも残らず、メインは届いたとみなして作業を続ける。根拠は`audit-records.md`の「agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年10月6日」、事象は`incidents-validation.md`の2026年10月6日の項にある。
+Claude Codeでは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIが要約（progress updateの要約）へ置き換えて返す。原文は画面にもtranscriptにも残らず、メインは届いたとみなして作業を続ける。根拠は`audit-records.md`の「agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年10月6日」、事象は`incidents-validation.md`の2026年10月6日の項にある。
 
 ツールの入力は要約されないため、途中報告と最後の回答の両方をツールの入力で運ぶ。確認質問は既存の質問手段を使う。Function hooks module（`agent-toolkit/hooks/send_to_user.tsx`、`register.ts`から登録）は次を行う。
 
@@ -607,7 +607,7 @@ transcriptから可視本文を読むStop判定、言語判定と振り返りの
 | `agents_server`へツールを置く | MCPサーバーは画面へ描く手段を持たない。moduleを読み込まない環境でも成功を返し、原文を描かないまま届いたことになる。2026年10月6日にユーザーがmoduleへ置く選択肢を選んだ |
 | 本体の組込み`SendUserMessage`を`--brief`か`CLAUDE_CODE_PEWTER_OWL_TOOL`で有効にする | `--brief`は通常の本文を画面から隠し全ての返答をツールへ求める。環境変数は公開された契約ではない |
 | `$.ui.log`で本文を通知として表示する | 試作の画面で改行が崩れた薄い表示になった |
-| `showThinkingSummaries`を`true`にする | ユーザーの設定を変え、表示されるのも原文ではなく要約である |
+| `showThinkingSummaries`を`true`にする | ユーザーの設定を変え、表示されるのも要約である |
 | 報告でターンを終え、後続を次の応答で再開する | 2026年10月6日の確認でユーザーが選ばなかった |
 | `CLAUDE_CODE_THINKING_DISPLAY_UPDATES=false`か`CLAUDE_CODE_TURN_UPDATES`を設定する | 公開ドキュメントで記載を確認していない。前者はprogress updateが文面の空のまま返る側になり、後者は最後の本文の要約を促すだけで途中の原文を届けない |
 | 署名を解析して要約を検出するStop hook | 署名を読む手順を使わない方針（2026年10月7日）と、要約への置換をhookで検出しない判断（2026年10月6日、ユーザー）に反する |
@@ -630,7 +630,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。`send_to_user`ツールで送った本文も本文として数える。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する。報告段階が残る作業は、その作業が起動した委譲先や、背景で実行した待機コマンド（`atk agents wait`・`wait_ci.py`）を待つ間だけ終了を許す。作業を始める前から動いている無関係なバックグラウンドタスクと、作業内で背景起動した開発サーバーなどの常駐コマンドは、報告の不足を免除しない。それ以外は直接発話の報告見出しと準備結果から、足りない報告段階と報告本文の不備（対策行にAWIのファイル名・投入予定・同一セッションの実装根拠が無い、見送りの判定済み行に根拠が無いか根拠が未確定、未確定行に照会・再現・残る理由が欠ける、AWI投入結果報告に投入予定が残る）を示す | 対応 | 対応。`termination_order_advisor`だけを実行し、`decision`と`reason`だけを返す |
-| plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じて発話の内容を現物で確かめる手順を示す注記を返す。実ユーザー発話に全角`！！`がある場合は`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す注記を返し、半角`!!`だけの本文と機械注入は対象から除く。この注記は感情の判定ではなく、認識を確かめるきっかけである。セッションの開始（新規と`/clear`）と会話圧縮の後は、`agent-toolkit:user-confirmation-and-report`が起動されていない間に届いた実ユーザー発話へ同スキルの起動を促す注記を返す。委譲先のセッション、`resume`と`fork`による再開・分岐、機械注入のターンは対象から除く。実ユーザー発話が例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ場合は、範囲語か開放列挙を伴う調査依頼であれば例示を除いた独立した調査を委ねる規範（`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」の該当項と`agent-toolkit:delegation`の`references/routing.md`）の所在を示す注記を返す。コードブロック、インラインコードおよび`>`で始まる引用行の中の語は判定に数えず、機械注入のターンと委譲先のセッションは対象から除く。これらの注記は発話の内容を現物で確かめる手順を示す注記と同じ出力にまとめ、初回や短い間隔の発話でも届く | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、同スキルが起動されるまで発話ごとに返す。例示と調査の語を併せ持つ発話への注記は該当する発話ごとに返す | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、開始・圧縮のたびに最初の実ユーザー発話へ1回だけ返す。例示と調査の語を併せ持つ発話への注記はClaude Codeと同じ条件で発話ごとに返す |
+| plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じて発話の内容を現物で確かめる手順を示す注記を返す。実ユーザー発話に全角`！！`がある場合は`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す注記を返し、半角`!!`だけの本文と機械注入は対象から除く。この注記は認識を確かめるきっかけである。セッションの開始（新規と`/clear`）と会話圧縮の後は、`agent-toolkit:user-confirmation-and-report`が起動されていない間に届いた実ユーザー発話へ同スキルの起動を促す注記を返す。委譲先のセッション、`resume`と`fork`による再開・分岐、機械注入のターンは対象から除く。実ユーザー発話が例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ場合は、範囲語か開放列挙を伴う調査依頼であれば例示を除いた独立した調査を委ねる規範（`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」の該当項と`agent-toolkit:delegation`の`references/routing.md`）の所在を示す注記を返す。コードブロック、インラインコードおよび`>`で始まる引用行の中の語は判定に数えず、機械注入のターンと委譲先のセッションは対象から除く。これらの注記は発話の内容を現物で確かめる手順を示す注記と同じ出力にまとめ、初回や短い間隔の発話でも届く | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、同スキルが起動されるまで発話ごとに返す。例示と調査の語を併せ持つ発話への注記は該当する発話ごとに返す | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、開始・圧縮のたびに最初の実ユーザー発話へ1回だけ返す。例示と調査の語を併せ持つ発話への注記はClaude Codeと同じ条件で発話ごとに返す |
 | plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した応答にもタスク識別子が含まれる場合は、バックグラウンドタスクの所有記録へ保存する。失敗を成功済み検証として記録しない | 対応 | 非対応。対応するイベントが存在しない |
@@ -652,7 +652,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 
 書き込み側のフックは観測したイベントだけを知り、読み取り側のフックは必要なフラグだけを判定材料にする。
 状態ファイルは会話本文、成果物の内容または工程全体の進捗を正式な記録として保持しない。
-成果物の適否は、状態フラグではなく対象ファイルと正式な検証結果から確認する。
+成果物の適否は、対象ファイルと正式な検証結果から確認する。
 
 `formatter`と`warning_formatter`が反復判定に用いる累積件数も、後続判定に必要な小さな観測値として同じ状態ファイルへ置く。
 キーは`hook_id`と原因識別子の対とし、値にはセッションごとの発生件数を保存する。セッション終了まで保持し、リセット手段は設けない。
@@ -666,7 +666,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 
 ## 通知本文の仕様とエージェント向け文書の長さの追随検出
 
-`agent-toolkit`の通知本文と常時読み込むエージェント向け文書を変更した主体が、変更の時点で追随すべき対象を把握できるようにすることを目的とする。変更箇所と直接接続していないテストや上限が全体チェックで失敗する事象を、統合の後ではなく編集の時点へ移す。
+`agent-toolkit`の通知本文と常時読み込むエージェント向け文書を変更した主体が、変更の時点で追随すべき対象を把握できるようにすることを目的とする。変更箇所と直接接続していないテストや上限が全体チェックで失敗する事象の検出を、統合の後から編集の時点へ移す。
 構造の理由は、同じ外部仕様を固定する箇所を1か所へ集約する点にある。ユーザーが直接読む本文へのチェックは`agent-toolkit/agent_toolkit/_hooks/pretooluse/dispatch.py`の`_decide_user_facing_text_tool`へ集約する。適用対象は同ファイルの`_USER_FACING_TEXT_TOOL_NAMES`だけで定める。
 エージェント向け文書の合計長は、上限の超過を検出した時点で文書ごとの長さと超過分を失敗本文へ示す。上限超過時の診断本文は`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`が組み立てる。
 知識境界として、上限値は`rules_context.py`の`CLAUDE_CODE_OUTPUT_LIMIT`が持ち、超過時の診断本文はテスト側が持つ。

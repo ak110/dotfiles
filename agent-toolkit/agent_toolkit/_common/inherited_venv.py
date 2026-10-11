@@ -26,8 +26,8 @@ VENV_BIN_DIR_NAMES: tuple[str, ...] = ("bin", "Scripts")
 def strip_inherited_venv(env: MutableMapping[str, str]) -> None:
     """起動元ツールのplugin仮想環境を渡された環境から取り除く。
 
-    除去対象は`PATH`の全要素ではなく、除去する`VIRTUAL_ENV`の値から導いた
-    コマンド格納ディレクトリと一致する要素だけとする。
+    除去対象は、除去する`VIRTUAL_ENV`の値から導いたコマンド格納ディレクトリと
+    一致する`PATH`の要素だけとする。
     POSIXの`PATH`では空要素がカレントディレクトリを表すため、空要素は解決順序を保つよう残す。
     """
     venv_roots = [value for key in INHERITED_VENV_ENV_KEYS if (value := env.get(key))]

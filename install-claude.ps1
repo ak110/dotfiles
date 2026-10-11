@@ -336,7 +336,7 @@ function Install-AtkWrapper {
 @echo off
 setlocal enabledelayedexpansion
 set "LATEST="
-rem ディレクトリ名の辞書順ではなく、[version]型の自然順で最新実体を選択する。
+rem [version]型の自然順で最新実体を選択する。
 for /f "usebackq delims=" %%A in (`powershell.exe -NoProfile -NonInteractive -Command "$root = Join-Path $env:USERPROFILE '.claude\plugins\cache'; Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | ForEach-Object { $plugin = Join-Path $_.FullName 'agent-toolkit'; if (Test-Path -LiteralPath $plugin -PathType Container) { Get-ChildItem -LiteralPath $plugin -Directory | ForEach-Object { $candidate = Join-Path $_.FullName 'bin\atk.cmd'; if (Test-Path -LiteralPath $candidate -PathType Leaf) { [PSCustomObject]@{ Version = [version]$_.Name; Path = $candidate } } } } } | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty Path"`) do (
     if not defined LATEST set "LATEST=%%A"
 )

@@ -24,7 +24,7 @@
 
 ## CSP対応・セキュリティ
 
-- Content Security Policyで`unsafe-eval`を許可できない環境では標準ビルドではなく`@alpinejs/csp`ビルドを使う。標準ビルドはテンプレート式の評価に`eval`相当の機構を使うため、`script-src`に`nonce`ベースの`strict-dynamic`のみを許可する構成と両立しない
+- Content Security Policyで`unsafe-eval`を許可できない環境では`@alpinejs/csp`ビルドを使う。標準ビルドはテンプレート式の評価に`eval`相当の機構を使うため、`script-src`に`nonce`ベースの`strict-dynamic`のみを許可する構成と両立しない
 - CSPビルド利用時は複雑なインライン式を避け、ロジックを`Alpine.data()`の関数・getterへ抽出する（CSPビルドの評価器はJavaScript式の安全なサブセットのみを解釈するため）
 - `x-html`はユーザー入力・外部由来の信頼できないデータへ使わない（`innerHTML`へ直接反映するためXSSに直結する）。テキストの表示には自動エスケープされる`x-text`・テキスト補間を使う
 - `$el.insertAdjacentHTML()`等のDOM直接操作による代替HTML注入も同様に避ける（`x-html`と同一のXSSリスクを持ち、CSPビルドではサポート対象外）。HTML挿入が必要な場合はサニタイズ処理を経由した信頼済み文字列に限定する

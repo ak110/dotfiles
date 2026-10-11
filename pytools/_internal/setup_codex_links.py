@@ -22,7 +22,7 @@ _LINKS: dict[str, str] = {
     "docs": ".chezmoi-source/dot_claude/docs",
 }
 # `agent-toolkit/rules`は配布先で`atk-auto`の境界を付けた本文へ書き換えるため、
-# リンクではなく`sync_agent_toolkit_rules`の同期で配る。
+# `sync_agent_toolkit_rules`の同期で配る。
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:

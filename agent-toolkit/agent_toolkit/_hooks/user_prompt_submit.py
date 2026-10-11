@@ -124,7 +124,7 @@ _REALIGN_NOTICE_BODY = (
 )
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出し", "洗い出す", "探し", "チェック", "レビュー")
-# フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、ユーザー自身の依頼文ではなく
+# フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、ユーザーが
 # 貼り付けた素材であるため、例示の語と調査を求める語の判定から外す。
 _QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
 
@@ -308,7 +308,7 @@ def main(payload_text: str) -> int:
     # スラッシュコマンドで始まる発話もユーザー自身の入力であり、注記の対象に含める。
     # 除外するのは機械が生成してユーザー入力欄へ入る本文だけとする。
     is_normal_prompt = not machine_injected
-    # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
+    # 発火条件は受領側が除去できないため、いずれも情報提示の区分で配送する。
     notices: list[str] = []
     if is_normal_prompt and first_line.startswith(command_prefix):
         command = first_line[len(command_prefix) :].split(maxsplit=1)

@@ -9,7 +9,7 @@
 - エントリCSSは`@import "tailwindcss";`の1行で読み込む（`@tailwind base/components/utilities`はv4で廃止）
 - 色・フォント・ブレークポイント・イージング等のトークンは`@theme { --color-brand-500: oklch(...); }`のようにCSS変数として定義する（生成される全ユーティリティとネイティブCSS変数の双方から同一トークンを参照できるため）
 - 標準で提供されるカラーパレットを丸ごと置き換える場合は`--color-*: initial;`で初期化してから独自パレットを定義する（標準で提供される色との混在による命名衝突・意図しない残存を避けるため）
-- ダークモードの判定基準を変更する場合は`@custom-variant dark (&:where(.dark, .dark *));`のようにCSSで`dark`バリアントを再定義する（v4では`darkMode`設定キーではなくCSS側で制御するため）
+- ダークモードの判定基準を変更する場合は`@custom-variant dark (&:where(.dark, .dark *));`のようにCSSで`dark`バリアントを再定義する（v4ではCSS側で制御するため）
 - プレフィックスが必要な場合は`@import "tailwindcss" prefix(tw);`を使う（`@config`経由の互換設定に頼らない）
 
 ## ユーティリティファースト運用

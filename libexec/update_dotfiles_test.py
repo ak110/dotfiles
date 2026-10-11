@@ -594,7 +594,7 @@ def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatc
 
 
 def test_save_worktree_uses_repository_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
-    """worktree退避はPATH上の裸のatkではなく作業コピーのランチャーを使う。"""
+    """worktree退避は作業コピーのランチャーを使う。PATH上の裸のatkは使わない。"""
     calls: list[list[str]] = []
     monkeypatch.setattr(
         subprocess,
@@ -1167,7 +1167,7 @@ def test_git_pull_preserves_terminal_interaction(
 ) -> None:
     """上限の有無にかかわらず、子が制御端末から入力を受け取る。
 
-    上限ありのテストは上限の到達ではなく端末入力の受け渡しを検査するため、
+    上限ありのテストは端末入力の受け渡しを検査するため、
     並行実行の負荷でも到達しない秒数を渡す。上限の到達側は
     `test_git_pull_timeout_terminates_stream_holding_descendant`が検査する。
     """

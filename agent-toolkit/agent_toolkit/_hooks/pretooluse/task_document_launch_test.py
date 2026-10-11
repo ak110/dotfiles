@@ -103,7 +103,7 @@ def test_quoted_execution_command_passes(tool_name: str, mode: str | None, quote
 
 @pytest.mark.parametrize(("tool_name", "mode"), [("mcp__agents_server__start", "write"), ("Task", None)])
 def test_execution_uses_its_document_after_other_reference(tool_name: str, mode: str | None, tmp_path: pathlib.Path) -> None:
-    """先に出た読解対象ではなく、引用の外の実行命令の対象について是正を案内する。"""
+    """先に読解対象が出ていても、引用の外の実行命令の対象について是正を案内する。"""
     task = _SHARE_DIR / "reader-fit-review.subagent.md"
     prompt = f"読解対象: {_EXEC_DOCUMENT}\n{task}の手順を実行せよ。\n成果物: {tmp_path / 'guide.md'}\n"
     result = _invoke(tool_name, prompt, tmp_path, mode)

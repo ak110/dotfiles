@@ -65,4 +65,4 @@ PlaywrightのライブラリとE2E環境では、managed-tempへ直接保存す�
 
 - [W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/): 通常文字4.5:1、大きな文字と情報を伝える非テキスト要素3:1、SC 2.5.8の操作対象24×24 CSS px。
 - [web.dev Core Web Vitals](https://web.dev/articles/vitals): LCP 2.5秒、INP 200ms、CLS 0.1の良好域。
-- [Apple Human Interface Guidelines: Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons): タッチ操作領域44×44 ptの目安。CSS pxへの等価換算ではなく、主要操作の余裕を設計する参考値とする。
+- [Apple Human Interface Guidelines: Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons): タッチ操作領域44×44 ptの目安。主要操作の余裕を設計する参考値とする。

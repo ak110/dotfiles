@@ -560,7 +560,7 @@ def test_git_head_rejects_non_oid_with_status_guidance(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """管理repoのHEADがOIDでない場合はtracebackではなく、状態を確認するコマンドを持つ入力エラーにする。"""
+    """管理repoのHEADがOIDでない場合は、状態を確認するコマンドを持つ入力エラーにする。"""
     monkeypatch.setattr(
         subprocess,
         "run",

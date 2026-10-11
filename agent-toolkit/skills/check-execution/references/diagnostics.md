@@ -3,7 +3,7 @@
 本書は検証したエージェントが、診断本文と警告を基準版との差で判定し、結果と不足を報告先へ返す基準を定める。
 
 検証したエージェントは、終了コードと要約に加え、診断本文、実行時警告、未到達・未適用・未完了を示す出力を読む。
-pyfltrの`commands_summary.needs_action.warning`はコマンド結果の区分の件数であり、個々の診断のwarning件数ではない。
+pyfltrの`commands_summary.needs_action.warning`はコマンド結果の区分の件数である。個々の診断のwarning件数とは別の値である。
 この値が0でも診断本文を読み、変更行への指摘の有無を確かめる。
 出力契約の確認記録は`docs/development/audit-records.md`の「agent-toolkit/skills/check-execution/references/diagnostics.md：検証結果の診断と警告の判定：2026年10月3日」にある。
 

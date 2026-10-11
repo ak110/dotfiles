@@ -63,7 +63,7 @@ def _print_targets(targets: list[pathlib.Path]) -> None:
 
     シンボリックリンクは `touch_path` がリンク自身を処理するため、
     表示側も `is_symlink()` を含めて判定する（参照先消失時の挙動を実処理と揃える）。
-    `lstat` を使い、リンクの場合は参照先ではなくリンク自身の mtime を表示する。
+    `lstat` を使い、リンクの場合はリンク自身の mtime を表示する。
     """
     print("対象ファイル：")
     for target in targets:

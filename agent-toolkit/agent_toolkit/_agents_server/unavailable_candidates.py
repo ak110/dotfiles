@@ -24,7 +24,7 @@ def unavailable_candidates_path(state_root: pathlib.Path | None = None) -> pathl
     """可用性を理由に除外した候補の記録ファイルを返す。
 
     `list_root_session_ids`は`agents-server`直下のディレクトリをルートsession識別子として列挙するため、
-    この階層へはディレクトリではなく単一のファイルとして置く。
+    この階層へは単一のファイルとして置く。
     """
     root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "unavailable-candidates.json"

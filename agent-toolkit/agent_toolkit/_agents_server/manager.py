@@ -206,7 +206,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             else:
                 session.touch()
             await self._await_start_outcome(session)
-            # 以後に過負荷で終端したturnは候補切替ではなく同じsessionの自動継続で扱う。
+            # 以後に過負荷で終端したturnは同じsessionの自動継続で扱う。
             session.availability_checked = True
             response: dict[str, Any] = {
                 "session_id": session.session_id,

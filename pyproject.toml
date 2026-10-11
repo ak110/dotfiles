@@ -136,7 +136,7 @@ ruff-format-by-check = false
 # 対応版の公開後に並列実行へ戻す。
 # リポジトリ直下、agent-toolkit/およびagent-toolkit/agent_toolkit/の`conftest.py`は、いずれもトップレベルの
 # モジュール`conftest`へ解決されるため、mypyが"Duplicate module named"を報告して検査全体を中断する。
-# 除外指定はパスではなくファイル名で一致するため、3件の`conftest.py`をまとめてmypyの対象から外す。
+# 除外指定はファイル名で一致するため、3件の`conftest.py`をまとめてmypyの対象から外す。
 # 3件ともruff・pylint・pyright・tyが引き続き検査する。
 mypy-exclude = ["conftest.py"]
 shellcheck = true

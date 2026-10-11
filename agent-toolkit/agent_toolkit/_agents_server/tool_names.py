@@ -11,7 +11,7 @@ session-reviewの`atk run-script session-review-evidence`に分かれるため�
 その呼び出しに対して働かない（孫sessionが追跡対象へ入らない、親sessionが自動再開しない、
 振り返りの証拠抽出が委譲先を収集しないなど）。起動ツールの集合と`agents_server`の登録ツールの一致は
 `_agents_server/mcp_tools_test.py`が確かめる。
-起動の種類は`start`の`mode`で選ぶため、種類に応じた判定は操作名ではなく`start_mode`の返り値を使う。
+起動の種類は`start`の`mode`で選ぶため、種類に応じた判定は`start_mode`の返り値を使う。
 """
 
 from collections.abc import Mapping

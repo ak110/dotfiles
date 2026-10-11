@@ -84,7 +84,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
   この範囲のfirst-parent全OIDについて、fixup作成前に下記の「プッシュ済み判定」で公開済み判定を完了する。
   `git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`で範囲内のOIDと件名を列挙する。
   各fixup対象コミットの件名が範囲内で一意かをfixup作成前に判定する。
-  件名が範囲内で一意でない対象への通常のfixupは、`git commit --fixup=<sha>`ではなく`git commit -m 'fixup! <対象の完全OID>'`で作成する。`git rebase --autosquash`は`fixup!`の後の語をcommitのハッシュとしても解決するため、件名の重複によらず統合先が1件に定まる。`amend:`・`reword:`の対象件名が範囲内で一意でない場合は、fixupを作成せず`## 失敗時の扱い`に従う。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。遮断条件は件名先頭の完全一致とし、部分一致と件名途中の一致は対象から外れる。
+  件名が範囲内で一意でない対象への通常のfixupは、`git commit -m 'fixup! <対象の完全OID>'`で作成する。`git commit --fixup=<sha>`は件名を`fixup!`の後へ置くため使わない。`git rebase --autosquash`は`fixup!`の後の語をcommitのハッシュとしても解決するため、件名の重複によらず統合先が1件に定まる。`amend:`・`reword:`の対象件名が範囲内で一意でない場合は、fixupを作成せず`## 失敗時の扱い`に従う。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。遮断条件は件名先頭の完全一致とし、部分一致と件名途中の一致は対象から外れる。
   範囲列挙、merge確認、元HEADの確定、公開済み判定、OIDと件名の列挙または件名の一意性の判定のいずれかの実行に失敗した場合は、fixupを作成せずautosquashを中止し、`## 失敗時の扱い`に従う。
   範囲にmergeが含まれる場合も同じ扱いとする。
   この事前判定後も、autosquash直前の再判定をTOCTOU対策として実行する
@@ -120,7 +120,7 @@ autosquash成功後の2回目のpush済み判定対象をそのOIDへ置換す�
 
 WI実装commitの履歴を変更した担当は、`atk run-script history-compare`の検収成功時に保存された完全OIDの旧新対応表を使う。rebaseは`--operation rebase`、autosquashは`--operation autosquash`で、両系列のbaseを除くheadまでを指定する。WI対応を持たないcommitも含まれ、元commitとfixupが同じ新commitへ統合される場合は両方の旧OIDを含む。amendでは修正差分と変更範囲の検証で検収した旧新HEADの1対1対応を保存する。記録は短縮OIDで残り、同じ書換えの対応を受け取る他のコマンドにも同じファイルを渡す。
 
-書換えの直前のHEADと保存したファイルを、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す。記録・worktree・対応表は絶対パスで渡し、`--rewrite-map`にはJSON文字列ではなくファイルの絶対パスを渡す。同じ修正系列で書換えを繰り返す間は、毎回同じ記録の集合を渡す。
+書換えの直前のHEADと保存したファイルを、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す。記録・worktree・対応表は絶対パスで渡し、`--rewrite-map`にはファイルの絶対パスを渡す。同じ修正系列で書換えを繰り返す間は、毎回同じ記録の集合を渡す。
 
 ```text
 atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え前のHEAD> --rewrite-map <対応表のJSONファイルの絶対パス> --completed-step <工程> --result <結果> --plan <計画>... --handoff <引き継ぎ記録>...

@@ -58,7 +58,7 @@ async def run_helper(cmd: list[str], timeout: float) -> str:
     return stdout.decode("utf-8")
 
 
-class ServeStopping(Exception):  # noqa: N818  # 失敗ではなく停止要求による打ち切りを表すため`Error`を付けない
+class ServeStopping(Exception):  # noqa: N818  # 停止要求による打ち切りを表すため`Error`を付けない
     """サーバーの停止要求を受けて読み取り専用の走査を打ち切ったことを示す。"""
 
 

@@ -512,7 +512,7 @@ _RETIRED_TERMS = (
 
 
 # 規範の再構築の判定台帳は、基準commitの条文の先頭を逐語で抜粋した記録であり、撤去前の名称を含む。
-# 撤去語ごとの許容箇所ではなく、全ての撤去語に共通する許容箇所として扱う。
+# 全ての撤去語に共通する許容箇所として扱う。
 _VERBATIM_RECORD_LOCATIONS = (_AllowedLocation("docs/development/norm-restructure/*.tsv"),)
 
 

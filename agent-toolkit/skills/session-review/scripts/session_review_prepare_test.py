@@ -533,7 +533,7 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
 def test_prepare_lists_offered_answer_as_mandatory_confirmation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """選択肢のlabelをそのまま選び自由記述の無い確認回答を、ユーザー介入ではなく確認の候補として載せる。
+    """選択肢のlabelをそのまま選び自由記述の無い確認回答を、確認の候補として載せる。
 
     介入として数えると是正を含まない回答まで介入として分析する。除外すると不要だった確認が件数だけになり、
     確認の要否を振り返る入力から消える。確認の候補は再発防止策が必須の候補として1行JSONにも示す。

@@ -131,7 +131,7 @@ def latest_main_assistant_entry(transcript_path: str) -> dict | None:
 def iter_assistant_content_blocks(lines: list[str]) -> collections.abc.Iterator[tuple[int, dict]]:
     """非sidechain assistantエントリの`content`配下dict要素を`(行位置, block)`で順に返す。
 
-    `iter_latest_assistant_messages`と異なり、末尾からの直前ターン限定ではなく全行を前方から走査する。
+    全行を前方から走査する。`iter_latest_assistant_messages`は末尾から直前ターンだけを走査する。
     """
     for position, line in enumerate(lines):
         try:

@@ -69,7 +69,7 @@ jobs:
           test -f ~/.vimrc
           test -f ~/.claude/rules/agent-toolkit/01-agent.md
           test -f ~/.ssh/config
-          # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEをシェル変数ではなく文字列リテラルとして検索する
+          # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEを展開せず文字列リテラルとして検索する
           grep -qF '$HOME/dotfiles/bin' ~/.bashrc
 
   update-dotfiles-upgrade-windows:

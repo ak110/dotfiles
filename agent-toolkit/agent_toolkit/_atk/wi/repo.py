@@ -39,9 +39,7 @@ def resolve_local_worktree(value: str | None) -> pathlib.Path:
     if value is not None:
         local_path = pathlib.Path(value).expanduser()
         if not local_path.exists():
-            _outcome.report_failure(
-                f"ローカルパスとして存在しない: {value}", next_action="URLではなく実在するローカルパスを指定する"
-            )
+            _outcome.report_failure(f"ローカルパスとして存在しない: {value}", next_action="実在するローカルパスを指定する")
             sys.exit(2)
         return local_path.resolve()
 

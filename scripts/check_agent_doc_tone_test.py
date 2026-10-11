@@ -172,6 +172,7 @@ def test_cli_rejects_terms_in_explanations(
         ("焼き込んだ。\n", "焼く"),
         ("崩した。\n", "崩す"),
         ("疑った。\n", "疑う"),
+        ("文字列ではなく整数を指定する。\n", "ではなく"),
     ],
 )
 def test_cli_warns_caution_terms_without_failing(
@@ -214,9 +215,16 @@ def test_cli_explains_every_caution_term(
     assert category in {  # pylint: disable=protected-access
         check_agent_doc_tone._METAPHORICAL,  # pylint: disable=protected-access
         check_agent_doc_tone._ABSTRACT,  # pylint: disable=protected-access
+        check_agent_doc_tone._CONTRAST,  # pylint: disable=protected-access
     }
     assert reason in warning
     assert direction in warning
+
+
+def test_cli_ignores_quoted_contrast_example(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """「」で引用した対比の例示は警告しない。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, "「AではなくB」の構文を禁止する。\n"))]) == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_cli_ignores_approved_replacement_term(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -70,7 +70,7 @@ def _marker_values(path: pathlib.Path, prefix: str, *, recipient: bool) -> tuple
 
 
 def _contains_exact_name(content: str, name: str) -> bool:
-    """項目名が長い別名の一部ではなく、逐語の単位として現れる場合に真を返す。"""
+    """項目名が前後に名前の続きを伴わない逐語の単位として現れる場合に真を返す。"""
     pattern = rf"(?<![{_NAME_CONTINUATION}]){re.escape(name)}(?![{_NAME_CONTINUATION}])"
     return re.search(pattern, content) is not None
 

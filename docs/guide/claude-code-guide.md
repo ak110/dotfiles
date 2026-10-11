@@ -547,7 +547,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
 
 「ツールキットのインストール」のワンライナーを再実行すると更新される。
 dotfiles（chezmoi）管理下のマシンでは`chezmoi apply`を実行しても更新できる。
-いずれの単体インストーラーも初回導入専用ではない。`agents_server`はClaude CodeまたはCodex pluginが
+いずれの単体インストーラーも初回導入と更新の両方に使える。`agents_server`はClaude CodeまたはCodex pluginが
 セッション単位でstdioプロセスとして所有するため、共有daemonの再起動は行わない。
 Codex plugin本体の更新で既存セッションへ反映できない場合は、Codex pluginの案内に従い、
 進行中の作業を回収してから新しいセッションを開始する。

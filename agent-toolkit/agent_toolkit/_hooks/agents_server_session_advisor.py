@@ -5,7 +5,7 @@
 PostToolUseがその応答と呼出主体を`agents_server_sessions`へ記録し、
 本フックは`pending_observation`が真で、呼出主体が一致する記録だけを警告対象にする。
 
-判定対象は結果の回収状態ではなく、観測を試みていない作業の有無である。
+判定対象は観測を試みていない作業の有無である。
 観測義務を解消する条件は次の4つとする。
 第1に、`atk agents wait`が待機所有権を保持し、そのsessionを待機対象として登録している間は観測中として扱う。
 第2に、同コマンドの終了後はPostToolUseが`pending_observation`を解消する。

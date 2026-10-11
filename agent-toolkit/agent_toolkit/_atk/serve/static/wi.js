@@ -351,7 +351,7 @@ function entrySelectionFromUrl() {
   return state && filename ? {state, filename} : null;
 }
 
-// 一覧は再読込のたびに全行を再生成するため、コピー直後の表示は行の要素ではなく項目の識別子に対応付けて保持する。
+// 一覧は再読込のたびに全行を再生成するため、コピー直後の表示は項目の識別子に対応付けて保持する。
 const COPIED_LABEL_MS = 2000;
 const copiedLabelDeadlines = new Map();
 

@@ -198,7 +198,7 @@ def test_detail_mode_returns_persisted_body_from_tool_use_result(
     capsys: pytest.CaptureFixture[str],
     content: str,
 ) -> None:
-    """本文が退避されたtool_resultでは、退避通知ではなく実行結果側の本文を詳細として返す。"""
+    """本文が退避されたtool_resultでは、実行結果側の本文を詳細として返す。"""
     transcript = _write_transcript(
         tmp_path,
         [

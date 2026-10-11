@@ -42,9 +42,9 @@ from agent_toolkit._hooks.transcript_scan import entry_in_scan_scope, iter_assis
 _HOOK_ID = "termination_order_advisor"
 
 # 表示用の代表名（`agent-toolkit:`修飾つき）と、プレフィックス付き・素の両表記を受理する名前集合の対。
-# 代表名はアルファベット順による自動選出ではなく明示指定とする
+# 代表名は明示指定とする
 # （`add-awi-by-user`は`agent-toolkit:add-awi-by-user`より辞書順で先に位置するため、
-# 自動選出では修飾を除いた表記を選んでしまう）。
+# アルファベット順の自動選出では修飾を除いた表記を選んでしまう）。
 _PROCESS_WI = ("agent-toolkit:process-wi", frozenset({"agent-toolkit:process-wi", "process-wi"}))
 _ADD_AWI_BY_USER = (
     "agent-toolkit:add-awi-by-user",

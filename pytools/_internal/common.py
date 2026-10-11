@@ -101,7 +101,7 @@ def find_dotfiles_root() -> Path | None:
 def format_cli_error(result: subprocess.CompletedProcess[str] | None) -> str:
     """CLI 失敗時のログに付ける stderr/stdout の簡潔な連結文字列を返す。
 
-    Claude Code CLI は本質的なエラーメッセージを stderr 側ではなく stdout に書き込むことがあり、
+    Claude Code CLI は本質的なエラーメッセージを stdout に書き込むことがあり、
     stderr のみでは原因特定が難しい。双方を併記してログに載せる。
     """
     if result is None:

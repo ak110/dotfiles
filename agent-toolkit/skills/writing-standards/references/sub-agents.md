@@ -142,7 +142,7 @@ Codexで前記の選定条件がforkを選ぶ場合は、`spawn_agent`の`fork_t
 名簿の監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月13日」にある。
 
 委譲元は定義本文を読まないまま委譲プロンプトを組み立てる。
-起動に必要な入力の項目は、定義本文ではなく委譲元の手順へ書く。
+起動に必要な入力の項目は、委譲元の手順へ書く。
 
 ## 手順設計時の確認
 

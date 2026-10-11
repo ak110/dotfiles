@@ -557,7 +557,7 @@ class TestListMalformedFrontmatter:
             assert not captured.err
         else:
             assert not captured.out
-            # 終了コード2で打ち切るため、警告ではなく失敗行と次の操作で返す。
+            # 終了コード2で打ち切るため、失敗行と次の操作で返す。
             assert "失敗: frontmatterのtypeが不正または欠落" in captured.err
             assert "atk wi edit" in captured.err.split("\n次の操作: ", 1)[1]
 

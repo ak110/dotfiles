@@ -60,8 +60,9 @@ version bumpを伴う計画では、Claude Code向けの定義元2ファイル�
 生成コマンドが扱う派生物（派生manifest、`agent-toolkit/rules/`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など生成器の出力全般）は、変更説明へ重複して含めない（努力目標。派生物は生成器が保証するため列挙は重複になる）。
 version・description欄の有無や実際の差分有無を問わず、変更説明には定義元のファイルを記載する。
 派生物の完全性は生成コマンドの実行と生成器出力との一致確認で保証する。
-Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
+Agent Plugins・Codex向けmanifestは、
 定義元の更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、同スクリプトの`--check`で差分が生じないことを確かめる。
+`agent_toolkit_bump.py`はこれらのmanifestを直接更新しない。
 bumpの完了条件は、実装開始時点の版との増加比較で判定せず、
 公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、および定義元2ファイルと派生manifestの`version`が一致することで判定する。
 既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。

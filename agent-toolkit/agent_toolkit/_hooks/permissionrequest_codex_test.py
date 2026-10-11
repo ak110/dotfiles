@@ -220,7 +220,7 @@ def test_allows_cleanup_from_registered_root_after_temp_root_change(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Codex側cleanupが現在の一時rootではなく登録pathの親rootを検証する。"""
+    """Codex側cleanupが登録pathの親rootを検証する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[2]
     shared_root = tmp_path / "shared-root"
     current_root = tmp_path / "current-root"

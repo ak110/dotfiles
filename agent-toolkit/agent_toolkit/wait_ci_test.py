@@ -971,7 +971,7 @@ class TestFollowCancelled:
         )
 
     def test_follow_registration_grace_ending_on_job_failure_returns_gh_error(self):
-        """後続SHA登録猶予末の直近ジョブ取得失敗は、3回連続失敗ではなく1回の呼び出しのみで即時GH_ERRORとする。"""
+        """後続SHA登録猶予末の直近ジョブ取得失敗は、1回の呼び出しの失敗だけで即時GH_ERRORとする。"""
         cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
         follow = [_run(db_id=2, head_sha="sha2")]
         calls = {"n": 0}
@@ -1257,7 +1257,7 @@ class TestFollowCancelled:
 
 
 class TestExplicitFollowSourceRef:
-    """cancelled後のローカル探索がdestination refではなくsource refを使うことを確認する。"""
+    """cancelled後のローカル探索がsource refを使うことを確認する。"""
 
     def test_ancestor_check_uses_explicit_source_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[list[str]] = []
@@ -1503,7 +1503,7 @@ class TestNextActionOnNonZeroExit:
         assert "gh run view 302 --repo owner/repository --log-failed" in _next_action(capsys.readouterr().err)
 
     def test_gitlab_failure_guidance_uses_job_trace(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """GitLabの失敗jobにはrun IDではなく検出したjob IDでtrace取得を案内する。"""
+        """GitLabの失敗jobには検出したjob IDでtrace取得を案内する。"""
         assert (
             _run_wait(
                 lambda _sha: [_run(db_id=303, status="in_progress", conclusion=None)],

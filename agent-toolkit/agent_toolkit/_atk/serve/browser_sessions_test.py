@@ -949,7 +949,7 @@ async def test_session_empty_state_distinguishes_records_without_user_messages(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
 ) -> None:
-    """発話を含む記録が1件も無いときは、記録の不在ではなく発話を含む記録が無いことと、自動で加わることを示す。"""
+    """発話を含む記録が1件も無いときは、発話を含む記録が無いことと、自動で加わることを示す。"""
     shutil.rmtree(tmp_path / "claude")
     shutil.rmtree(tmp_path / "codex")
     _append_jsonl(tmp_path / "claude" / "projects" / "-home-aki-silent" / "silent.jsonl", [{"type": "permission-mode"}])
