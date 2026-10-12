@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from pathlib import Path
 
@@ -48,6 +49,25 @@ def test_custom_commands_declare_fast() -> None:
         "変更したファイルだけで判定でき数秒以内で終わるチェックは`fast = true`とし、commit時のpre-commitで実行する。"
         "全体を走査するチェックや、途中のcommitを止めてはならない事情があるチェックは`fast = false`とし、"
         "その理由をコメントに書く。"
+    )
+
+
+def test_custom_command_error_patterns_capture_severity() -> None:
+    # pyfltrは`error-pattern`の`severity`グループを任意とし、無い場合は診断の重大度を持たない。
+    # JSONL・SARIF・GitHub Actionsの注釈は重大度の無い診断を各自の省略時の値で分類するため、
+    # 終了コードに影響しない警告と失敗の原因を本文の文言でしか区別できなくなる。
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    commands = config["tool"]["pyfltr"]["custom-commands"]
+
+    missing = sorted(
+        name
+        for name, definition in commands.items()
+        if "error-pattern" in definition and "severity" not in re.compile(definition["error-pattern"]).groupindex
+    )
+    assert not missing, (
+        f"pyproject.tomlのカスタムコマンド{missing}の`error-pattern`が名前付きグループ`severity`を持たない。"
+        "検査器の診断の各行へpyfltrが解釈する重大度の語（`error`・`warning`・`info`など）を含めて出力し、"
+        "`error-pattern`の`(?P<severity>...)`で取り出す。"
     )
 
 

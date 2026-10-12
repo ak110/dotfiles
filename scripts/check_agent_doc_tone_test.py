@@ -111,10 +111,12 @@ _DENSITY_BODY = (
 
 
 def _diagnostic_lines(output: str, path: pathlib.Path) -> list[tuple[int, str]]:
-    """標準エラーの診断から対象ファイルの行番号と本文を取り出す。"""
+    """標準エラーの診断から対象ファイルの行番号と本文を取り出し、全件が`error`の重大度を持つことを確かめる。"""
     diagnostics: list[tuple[int, str]] = []
     for row in output.splitlines():
-        line, _, message = row.removeprefix(f"{path}:").partition(": ")
+        line, _, rest = row.removeprefix(f"{path}:").partition(": ")
+        severity, _, message = rest.partition(": ")
+        assert severity == "error", row
         diagnostics.append((int(line), message))
     return diagnostics
 
@@ -231,7 +233,7 @@ def test_cli_rejects_terms_in_explanations(
     assert check_agent_doc_tone.main([str(path)]) == 1
 
     output = capsys.readouterr()
-    assert f"{path}:{line}:" in output.err
+    assert f"{path}:{line}: error: " in output.err
     assert term in output.err
     assert "書き直す" in output.err
 
@@ -257,7 +259,8 @@ def test_cli_warns_caution_terms_without_failing(
     assert check_agent_doc_tone.main([str(path)]) == 0
 
     output = capsys.readouterr()
-    assert f"{path}:1: 警告: 「{term}」" in output.err
+    assert f"{path}:1: warning: 警告: 「{term}」" in output.err
+    assert "（終了コードには影響しない）" in output.err
 
 
 @pytest.mark.parametrize(
@@ -306,8 +309,8 @@ def test_cli_fails_on_denied_term_beside_caution_term(tmp_path: pathlib.Path, ca
     assert check_agent_doc_tone.main([str(path)]) == 1
 
     output = capsys.readouterr().err
-    assert f"{path}:1: 「既定」" in output
-    assert f"{path}:1: 警告: 「経路」" in output
+    assert f"{path}:1: error: 「既定」" in output
+    assert f"{path}:1: warning: 警告: 「経路」" in output
 
 
 @pytest.mark.parametrize(
@@ -395,7 +398,7 @@ def test_read_error_is_a_positioned_diagnostic(tmp_path: pathlib.Path, capsys: p
 
     assert check_agent_doc_tone.main([str(path)]) == 2
 
-    assert capsys.readouterr().err.startswith(f"{path}:1: 入力を読み取れない:")
+    assert capsys.readouterr().err.startswith(f"{path}:1: error: 入力を読み取れない:")
 
 
 def test_parse_error_is_a_positioned_diagnostic(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -405,7 +408,7 @@ def test_parse_error_is_a_positioned_diagnostic(tmp_path: pathlib.Path, capsys: 
     assert check_agent_doc_tone.main([str(path)]) == 2
 
     diagnostic = capsys.readouterr().err
-    assert diagnostic.startswith(f"{path}:2: 入力の構文を読み取れない:")
+    assert diagnostic.startswith(f"{path}:2: error: 入力の構文を読み取れない:")
 
 
 def test_fixture_values_are_data_but_comments_are_explanations(tmp_path: pathlib.Path) -> None:
@@ -640,3 +643,8 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
         if "否定形で終わる文: " in message["msg"] or "数えた「当該」: " in message["msg"]
     ]
     assert element_lines == expected_density_lines, decoded
+    # 消費側が本文を解析せずに区別できるよう、注意語は`warning`、それ以外の全診断は`error`の重大度を持つ。
+    messages = [message for record in records if record["kind"] == "diagnostic" for message in record["messages"]]
+    for message in messages:
+        expected_severity = "warning" if message["msg"].startswith("警告: ") else "error"
+        assert message.get("severity") == expected_severity, message

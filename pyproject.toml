@@ -318,8 +318,9 @@ args = [
     "--term-root", "scripts/check_agent_doc_tone.py",
     "--term-root", "scripts/check_agent_doc_tone_test.py",
 ]
-# 終了コードに影響しない語の警告も、位置付きの診断として表示する。
-error-pattern = '^(?P<file>.+?):(?P<line>\d+): (?P<message>.+)$'
+# 終了コードに影響しない語の警告も位置付きの診断として取り込み、終了コード1の原因になる診断と
+# 重大度（error・warning）で区別する。JSONLなどの消費側は本文の文言を解析せずに両者を分けられる。
+error-pattern = '^(?P<file>.+?):(?P<line>\d+): (?P<severity>error|warning): (?P<message>.+)$'
 targets = [
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "AGENTS.md",

@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import ast
 import dataclasses
+import enum
 import io
 import json
 import pathlib
@@ -702,9 +703,29 @@ def _print_report(metrics: list[Metrics]) -> None:
         )
 
 
-def _emit_diagnostic(path: pathlib.Path, line: int, message: str) -> None:
-    """pyfltrが解析する位置付き診断を標準エラーへ書く。"""
-    print(f"{path}:{max(1, line)}: {message}", file=sys.stderr)
+class Severity(enum.StrEnum):
+    """pyfltrが`error-pattern`の`severity`グループとして解釈する診断の重大度。"""
+
+    ERROR = "error"
+    WARNING = "warning"
+
+
+class _Diagnostics:
+    """位置付き診断を標準エラーへ書き、書いた診断の重大度から終了コードを導く。"""
+
+    def __init__(self) -> None:
+        self._has_error = False
+
+    def emit(self, path: pathlib.Path, line: int, severity: Severity, message: str) -> None:
+        """pyfltrが解析する`<パス>:<行番号>: <重大度>: <本文>`の診断を1行書く。"""
+        if severity is Severity.ERROR:
+            self._has_error = True
+        print(f"{path}:{max(1, line)}: {severity}: {message}", file=sys.stderr)
+
+    @property
+    def returncode(self) -> int:
+        """`error`の診断を1件でも書いていれば1、無ければ0を返す。"""
+        return 1 if self._has_error else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -721,46 +742,48 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    diagnostics = _Diagnostics()
     contents: list[tuple[pathlib.Path, str]] = []
     for path in args.paths:
         try:
             contents.append((path, path.read_text(encoding="utf-8")))
         except (OSError, UnicodeError) as error:
-            _emit_diagnostic(path, 1, f"入力を読み取れない: {error}。指定したファイルと文字コードを確認する。")
+            diagnostics.emit(path, 1, Severity.ERROR, f"入力を読み取れない: {error}。指定したファイルと文字コードを確認する。")
             return 2
     metrics = [Metrics(path, text) for path, text in contents if path.suffix == ".md" and not _is_excluded(path)]
     if args.report:
         _print_report(metrics)
         return 0
 
-    failed = False
     for path, text in contents:
         try:
             if _term_target(path, args.term_root or []):
                 for line, term in term_violations(path, text):
-                    failed = True
-                    _emit_diagnostic(path, line, f"「{term}」を説明に使用している。対象と動作が分かる文へ書き直す。")
+                    diagnostics.emit(
+                        path, line, Severity.ERROR, f"「{term}」を説明に使用している。対象と動作が分かる文へ書き直す。"
+                    )
                 for line, term in term_cautions(path, text):
-                    _emit_diagnostic(
+                    diagnostics.emit(
                         path,
                         line,
+                        Severity.WARNING,
                         f"警告: 「{term}」を説明に使用している。{_CAUTION_MESSAGES[_CAUTION_PATTERNS[term][1]]}"
                         "（終了コードには影響しない）。",
                     )
         except (SyntaxError, tokenize.TokenError, json.JSONDecodeError, tomllib.TOMLDecodeError) as error:
-            _emit_diagnostic(
+            diagnostics.emit(
                 path,
                 getattr(error, "lineno", 1) or 1,
+                Severity.ERROR,
                 f"入力の構文を読み取れない: {error}。入力の構文を修正して再実行する。",
             )
             return 2
     for metric in metrics:
         for density in metric.exceeded_metrics():
-            failed = True
-            _emit_diagnostic(metric.path, 1, density.summary())
+            diagnostics.emit(metric.path, 1, Severity.ERROR, density.summary())
             for line, message in density.element_messages():
-                _emit_diagnostic(metric.path, line, message)
-    return 1 if failed else 0
+                diagnostics.emit(metric.path, line, Severity.ERROR, message)
+    return diagnostics.returncode
 
 
 if __name__ == "__main__":
