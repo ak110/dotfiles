@@ -8,6 +8,9 @@ Hook実装はホストごとの公式契約へ適合させ、Claude Code固有�
 一次資料はClaude Codeが<https://code.claude.com/docs/ja/hooks.md>（取得方法は`host-official-references.md`の「公式リファレンス（Claude Code）」）、Codexが<https://learn.chatgpt.com/docs/hooks>である。入力ペイロード（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`など）と出力形式はこれらから確定し、参照した節名を計画ファイルの実装者向け領域へ引用する（努力目標）。
 
 - 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutにホスト別契約の応答JSONを出力する。exit codeは0で正常完了とする
+- 失敗時の扱い（Claude Code v2.1.295以降のcommand・HTTP hook）: hookが判定を返す前に失敗した場合に操作を続けるか遮断するかを、`onFailure`の`"continue"`（指定なしの場合）と`"block"`で選ぶ。失敗はホストが検出する起動不能、timeout、0と2以外の終了コード、解析または検証できない出力、HTTPの接続失敗と2xx以外の応答を指し、hookが正常に判定して遮断・警告を返す場合とは別に選ぶ。
+  `"block"`はhookが故障している間も操作を止める必要があるかで選ぶ。故障中に全ての対象操作が止まる費用と、判定なしで通す損失の比較は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」に従う。
+  hook自身が例外を捕捉して終了コード0を返す場合（`agent-toolkit/agent_toolkit/hook.py`の`main`など）はホストが失敗を検出しないため、`onFailure`では遮断できない。`Stop`・`SubagentStop`・`TaskCompleted`・`TeammateIdle`と、`async`または`asyncRewake`の背景command hookでは効果が無い。対象と限界の詳細は公式の[Block the action when a hook fails](https://code.claude.com/docs/en/hooks#block-the-action-when-a-hook-fails)にある
 - `${CLAUDE_PLUGIN_ROOT}`: Claude Codeが現プラグインのルートへ置換する。Codexもplugin hookの`command`内では置換するが、通常のスキル実行では置換しないため、スキル本文から実行するコマンドには読み込んだSKILL.mdの絶対パスから確定したplugin rootを用いる
 - Codexの信頼確認: plugin同梱フックも定義の変更後は`/hooks`で内容を確認して信頼する。信頼するまでCodexはそのフックをスキップする
 - 呼出主体の判別: サブエージェントとメイン会話の区別には共通入力の`agent_id`を使う。`transcript_path`はサブエージェント内で発火したフックでもメインセッションの記録を指し、サブエージェント自身の記録を指すのは`SubagentStop`の`agent_transcript_path`だけである。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日」にある
