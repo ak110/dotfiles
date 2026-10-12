@@ -23,13 +23,12 @@ from agent_toolkit._agents_server import (
     launch_requests,
     mcp_tools,
     resume_waits,
-    session_registry,
     tool_descriptions,
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
     _REAL_PLUGIN_PREFLIGHT,

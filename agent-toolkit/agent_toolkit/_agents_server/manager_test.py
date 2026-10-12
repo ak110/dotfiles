@@ -21,7 +21,6 @@ from agent_toolkit._agents_server import (
     responses,
     result_projection,
     session_errors,
-    session_registry,
     shared_layout,
     shared_roots,
     state,
@@ -31,7 +30,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_support import (
     _LAUNCHER_ENVIRONMENT_NAMES,

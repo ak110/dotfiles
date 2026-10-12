@@ -322,6 +322,8 @@ async def show_session(
     `unobservedSessions`に識別子を持つ。`unobservedSessions`だけでは保留の確定と区別できない。
     終端したsessionが空でない`error`を保持する場合は、`error`を返す。失敗の原因と次の操作の判断に使える。
     共有の登録簿だけから復元したsessionは`error`を保持しないため返さず、原因は`atk agents wait`の終端行で受け取る。
+    ただし所有するagents_serverが終端を公開せずに終了し、turnを実行するプロセスも存在しないsessionは、
+    `status`を`interrupted`とし、`error`の`interruptionReason`が`owner_processes_exited`を示す。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """

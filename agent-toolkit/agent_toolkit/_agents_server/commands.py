@@ -31,6 +31,7 @@ from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import output_file, session_record_format
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._common import session_registry
 from agent_toolkit._common.next_action import report, with_next_action
 
 _WATCH_INTERVAL_SECONDS = 2.0
@@ -343,6 +344,8 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
     if selected is None and root_session_id is not None:
         selected = _retained_session(root_session_id, args.session_id)
     if selected is None:
+        selected = _registry_session(args.session_id)
+    if selected is None:
         report(
             f"unknown session: {args.session_id}",
             next_action=(
@@ -654,6 +657,36 @@ def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] |
     if "agent_message" in result:
         session["agent_message"] = result["agent_message"]
     _add_output_activity(session)
+    return session
+
+
+def _registry_session(session_id: str) -> dict[str, Any] | None:
+    """状態ファイルに無いsessionを、session登録簿の解決結果（実行中か終端）から表示する。
+
+    所有するagents_serverの状態ファイルが失われたsessionも、登録簿が実行中か、実行プロセスの不在による中断かを示せる。
+    """
+    if not shared_layout.valid_session_id(session_id):
+        return None
+    resolution = session_registry.resolve(session_id)
+    info = resolution.resume_info
+    if info is None or resolution.state not in {session_registry.Resolution.RUNNING, session_registry.Resolution.TERMINAL}:
+        return None
+    session: dict[str, Any] = {
+        "session_id": session_id,
+        "status": "running" if resolution.state is session_registry.Resolution.RUNNING else info.status,
+        "result_available": False,
+        "cwd": info.cwd,
+        "engine": info.engine,
+        "model": info.model,
+        "effort": info.effort,
+        "model_type": info.model_type,
+        "launch_kind": info.launch_kind,
+        **{key: value for key, value in info.launch_info.as_kwargs().items() if value is not None},
+    }
+    if info.started_at is not None:
+        session["started_at"] = info.started_at
+    if resolution.interruption is not None:
+        session["error"] = session_registry.interruption_error(resolution.interruption)
     return session
 
 

@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import codex, codex_providers, manager, session_registry
+from agent_toolkit._agents_server import codex, codex_providers, manager
 from agent_toolkit._atk import config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeCodexClient, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")

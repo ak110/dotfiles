@@ -834,6 +834,7 @@ class ClaudeServerManager:
                                     publish_registry=self._publish_registry,
                                 )
                                 self.sessions[session_id] = session
+                                session.attach_executor(diagnostic.child_pid)
                                 session.usage_limit = early_usage_limit
                                 session.cli_turn_state = early_cli_turn_state
                                 session.status = "starting" if expected_session_id is None else "running"

@@ -76,7 +76,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_common/process_tree.py",
         "_agents_server/state.py",
         "_agents_server/status_file.py",
-        "_agents_server/session_registry.py",
+        "_common/session_registry.py",
         "_common/atomic_file.py",
         "_atk/config.py",
         "_atk/help_text.py",

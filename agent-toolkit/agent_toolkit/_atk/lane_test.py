@@ -16,7 +16,7 @@ import yaml
 from agent_toolkit import atk
 from agent_toolkit._atk import agents_exit_session, lane, managed_temp
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import session_launchers, state_paths
+from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository
 
 
@@ -113,14 +113,13 @@ def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
     assert json.loads(pathlib.Path(deleted["result_path"]).read_text(encoding="utf-8"))["removed"] == ["lane-01"]
 
 
-@pytest.mark.parametrize("condition", ["unintegrated", "dirty", "unmerged", "active-session"])
+@pytest.mark.parametrize("condition", ["unintegrated", "dirty", "unmerged", "active-session", "identity-less-session"])
 def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
 ) -> None:
     """判定不能・未完了を削除せず、成立した後は同じ公開操作で回収する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
-    registry = session_launchers.registry_directory(state_paths.state_dir()) / "child.json"
     if condition == "unintegrated":
         _selection(selected, integrated=False)
     elif condition == "dirty":
@@ -128,9 +127,11 @@ def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolv
     elif condition == "unmerged":
         git_repository.commit_all(worktree, "未統合の成果")
     else:
-        registry.parent.mkdir(parents=True, exist_ok=True)
-        # session_registry.publishが生成するcwd・terminalの契約から入力を作成する。
-        registry.write_text(json.dumps({"session_id": "child", "cwd": str(worktree), "terminal": False}), encoding="utf-8")
+        # 生存するプロセスを記録した実行中の記録と、識別を持たない実行中の記録は、どちらも担当の終了を確認できない。
+        owner = session_registry.owner_process()
+        assert owner is not None
+        processes = (owner,) if condition == "active-session" else ()
+        session_registry.publish("child", terminal=False, cwd=str(worktree), processes=processes)
     code, held, _stderr = _invoke(capsys, "delete")
     assert code == 1 and held["retained"] and worktree.is_dir()
     assert pathlib.Path(record["record_path"]).is_file()
@@ -147,7 +148,24 @@ def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolv
     elif condition == "unmerged":
         git_repository.run_git(repo, "merge", "--ff-only", record["branch"])
     else:
-        registry.write_text(json.dumps({"session_id": "child", "cwd": str(worktree), "terminal": True}), encoding="utf-8")
+        session_registry.publish("child", terminal=True, cwd=str(worktree))
+    code, deleted, stderr = _invoke(capsys, "delete")
+    assert code == 0, stderr
+    assert deleted["removed"] == ["lane-01"]
+
+
+def test_delete_treats_session_whose_recorded_processes_exited_as_finished(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """所有側が終端を公開せずに終了し、記録した全プロセスが存在しない担当は終了として回収する。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as exited:
+        identity = session_registry.ProcessIdentity.of(exited.pid)
+        exited.wait()
+    assert identity is not None
+    session_registry.publish("child", terminal=False, cwd=str(worktree), processes=(identity,))
+    assert lane._session_activity(worktree.resolve()) is None  # pylint: disable=protected-access
     code, deleted, stderr = _invoke(capsys, "delete")
     assert code == 0, stderr
     assert deleted["removed"] == ["lane-01"]

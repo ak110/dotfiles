@@ -15,13 +15,12 @@ from agent_toolkit._agents_server import (
     commands,
     logging_config,
     resource_snapshot,
-    session_registry,
     shared_roots,
     status_file,
 )
 from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._atk import config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, _complete, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")

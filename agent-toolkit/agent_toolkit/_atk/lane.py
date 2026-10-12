@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"psutil", "yaml"}
+__lazy_modules__ = {"agent_toolkit._common.session_registry", "psutil", "yaml"}
 
 import argparse
 import contextlib
@@ -20,7 +20,7 @@ import psutil
 import yaml
 
 from agent_toolkit._atk import help_text, managed_temp, outcome, run_command
-from agent_toolkit._common import atomic_file, file_lock, session_launchers, state_paths
+from agent_toolkit._common import atomic_file, file_lock, session_launchers, session_registry, state_paths
 from agent_toolkit._git import command as git_command
 from agent_toolkit._plan import selection
 
@@ -314,22 +314,30 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
 
 
 def _session_activity(worktree: pathlib.Path) -> str | None:
-    """保存済みの終端登録から、その作業ツリーを使う担当の終了を判定する。"""
-    directory = session_launchers.registry_directory(state_paths.state_dir())
+    """session登録簿の解決結果から、その作業ツリーを使う担当の終了を判定する。
+
+    終端の判定は`session_registry.resolve`に従い、所有側が終端を公開せずに終了して実行プロセスも
+    存在しない記録は終了した担当として扱う。
+    """
+    state_root = state_paths.state_dir()
+    directory = session_launchers.registry_directory(state_root)
     if not directory.exists():
         return None
     for path in directory.glob("*.json"):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
+        try:
+            resolution = session_registry.resolve(path.stem, state_root=state_root)
+        except ValueError as exc:
+            raise ValueError(f"担当登録の形式を確認できない: {path}") from exc
+        if resolution.state is session_registry.Resolution.UNREADABLE:
             raise ValueError(f"担当登録の形式を確認できない: {path}")
-        cwd = payload.get("cwd")
+        info = resolution.resume_info
         if (
-            isinstance(cwd, str)
-            and cwd
-            and pathlib.Path(cwd).resolve().is_relative_to(worktree)
-            and payload.get("terminal") is not True
+            resolution.state is session_registry.Resolution.RUNNING
+            and info is not None
+            and info.cwd
+            and pathlib.Path(info.cwd).resolve().is_relative_to(worktree)
         ):
-            return f"担当の終了を確認できない: {payload.get('session_id', path.stem)}"
+            return f"担当の終了を確認できない: {path.stem}"
     return None
 
 

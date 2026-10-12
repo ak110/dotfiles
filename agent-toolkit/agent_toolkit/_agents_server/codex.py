@@ -206,6 +206,12 @@ def _response_turn_id(response: Any) -> str | None:
     return turn_id if isinstance(turn_id, str) and turn_id else None
 
 
+def _client_pid(client: Any) -> int | None:
+    """App Serverのクライアントが起動した子プロセスのpidを返す。起動前と子プロセスを持たない代替では`None`を返す。"""
+    pid = getattr(getattr(client, "process", None), "pid", None)
+    return pid if isinstance(pid, int) and not isinstance(pid, bool) else None
+
+
 class JsonRpcProcess:
     """stdio App Serverとの要求・応答を多重化するクライアント。"""
 
@@ -792,6 +798,7 @@ class AppServerManager:
             codex_attempted_provider_ids=attempted,
         )
         self.sessions[session_id] = session
+        session.attach_executor(_client_pid(client))
         initialize_turn(session)
         session.status = "starting"
         session.touch()
@@ -841,6 +848,7 @@ class AppServerManager:
             codex_subscription_provider=subscription_provider,
         )
         self.sessions[session_id] = session
+        session.attach_executor(_client_pid(client))
         initialize_turn(session)
         try:
             writer_session_id = await self._resume_thread(
@@ -1314,6 +1322,8 @@ class AppServerManager:
     async def _start_turn(self, session: SessionState, prompt: str, client: JsonRpcProcess | None = None) -> None:
         if client is None:
             client = await self._ensure_client()
+        # 再起動したApp Serverでturnを始める場合も、実行するプロセスの識別を登録簿へ反映する。
+        session.attach_executor(_client_pid(client))
         params: dict[str, Any] = {
             "threadId": session.session_id,
             "input": [{"type": "text", "text": prompt}],

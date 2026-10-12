@@ -13,10 +13,10 @@ import pytest
 
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import resume_waits, state
-from agent_toolkit._agents_server import session_registry as subject
+from agent_toolkit._common import session_registry as subject
 from agent_toolkit._common import state_paths
 from agent_toolkit._common import wait_schedule as _wait_schedule
-from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
+from agent_toolkit._testing.agents_server_support import FakeBackend, exited_process_identity, install_backend
 
 
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
@@ -207,3 +207,65 @@ def test_registry_rejects_invalid_session_id(session_id: str, tmp_path: pathlib.
     """登録簿ディレクトリ外を指し得る識別子を拒否する。"""
     with pytest.raises(ValueError, match="invalid session_id"):
         subject.publish(session_id, terminal=False, state_root=tmp_path)
+
+
+def test_running_record_whose_recorded_processes_exited_resolves_as_interrupted(tmp_path: pathlib.Path) -> None:
+    """記録した全プロセスが存在しない`running`の記録は、登録簿を書き換えずに`interrupted`の終端と解決する。
+
+    同じpidでも起動時刻が異なるプロセスは、記録したプロセスの再利用として不在に数える。
+    """
+    owner = subject.owner_process()
+    assert owner is not None
+    reused_pid = subject.ProcessIdentity(owner.pid, owner.create_time - 1.0)
+    subject.publish(
+        "orphaned",
+        terminal=False,
+        engine="claude",
+        cwd=str(tmp_path),
+        processes=(exited_process_identity(), reused_pid),
+        state_root=tmp_path,
+    )
+    path = subject.registry_directory(tmp_path) / "orphaned.json"
+    before = path.read_bytes()
+
+    resolution = subject.resolve("orphaned", state_root=tmp_path)
+
+    assert resolution.state is subject.Resolution.TERMINAL
+    assert resolution.inferred_terminal is True
+    assert resolution.interruption == subject.OWNER_PROCESSES_EXITED
+    assert resolution.resume_info is not None and resolution.resume_info.status == "interrupted"
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("recorded", ["one-live", "none"], ids=["live-process", "identity-less"])
+def test_running_record_with_live_process_or_without_identity_stays_running(recorded: str, tmp_path: pathlib.Path) -> None:
+    """記録したプロセスが1つでも同じ起動時刻で存在する記録と、識別を持たない記録は従来どおり実行中とする。"""
+    owner = subject.owner_process()
+    assert owner is not None
+    processes = (exited_process_identity(), owner) if recorded == "one-live" else ()
+    subject.publish("running", terminal=False, cwd=str(tmp_path), processes=processes, state_root=tmp_path)
+
+    resolution = subject.resolve("running", state_root=tmp_path)
+
+    assert resolution.state is subject.Resolution.RUNNING
+    assert resolution.inferred_terminal is False
+    assert resolution.interruption is None
+
+
+def test_session_publishes_owner_and_executor_processes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """sessionは所有プロセスと実行プロセスの識別を公開し、実行プロセスを起動し直すと記録を更新する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    owner = subject.owner_process()
+    assert owner is not None
+    session = state.SessionState("published", str(tmp_path), engine="claude", publish_registry=True)
+    session.attach_executor(owner.pid)
+    session.touch()
+    path = subject.registry_directory(tmp_path) / "published.json"
+    recorded = json.loads(path.read_text(encoding="utf-8"))["processes"]
+    assert recorded == [{"pid": owner.pid, "create_time": owner.create_time}] * 2
+
+    restarted = exited_process_identity()
+    session.executor_process = restarted
+    session.touch()
+    recorded = json.loads(path.read_text(encoding="utf-8"))["processes"]
+    assert recorded[1] == {"pid": restarted.pid, "create_time": restarted.create_time}

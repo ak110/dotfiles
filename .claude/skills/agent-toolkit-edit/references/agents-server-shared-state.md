@@ -39,7 +39,7 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`と`current.json` | 先行waitへ合流する後続`atk agents wait` | 先行waitが`running`と`published`および再待機が必要かを示す`continuable`を書き、結果を返した後続waitが`consumed`を書く |
 | CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`と`notices/<通知ファイル>` | 中断後に同じrunを再開する`atk agents wait` | 待機CLI。結果は所有者を確認した排他区間で、通知は原本の削除前に退避する |
 | CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop時の未観測作業の助言 | PostToolUseフック（子sessionの開始とreply再開時の追加。`atk agents wait`と同じく索引を経たルートへ登録する）、`atk agents wait`（待機開始時の追加と回収・破棄時の削除）。助言側は読むだけとする |
-| 全sessionの終端登録と再開情報、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait`、`atk serve`のセッション一覧（ローカルとリモートヘルパー。委譲元だけを親子付けに読む）、`atk lane create/delete`（専用worktreeを使う担当のcwd・terminalから終端を判定する） | そのsessionを所有するMCPサーバー（停止時の終端公開を含む）。所有者のいない`running`のCodexの記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件） |
+| 全sessionの終端登録と再開情報、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（pidと起動時刻）、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait`、`atk agents show`（状態ファイルに無いsessionの実行中・終端）、`atk serve`のセッション一覧（ローカルとリモートヘルパー。委譲元だけを親子付けに読む）、`atk lane create/delete`（専用worktreeを使う担当のcwdと、`session_registry.resolve`の解決結果から終了を判定する）。いずれも`session_registry.resolve`で解決し、実行プロセスの不在による中断を同じく扱う | そのsessionを所有するMCPサーバー（停止時の終端公開と、委譲先CLIを起動し直した時点の識別の更新を含む）。所有者のいない`running`の記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件） |
 | Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | `atk run-script session-review-evidence` | agents_serverのCodex backend |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait` | `atk agents notify`が作成し、MCP待機とCLI待機が回収時に削除する |
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`、`send_message`、`list`など、`root_session_id`を明示する応答の値を操作名によらず使う） |
@@ -64,9 +64,9 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | 上り通知の回収 | `notice_inbox.py` |
 | 除外した候補の記録 | `unavailable_candidates.py` |
 | 保持期限を過ぎた状態の掃引 | `shared_sweep.py` |
-| 全sessionの終端登録 | `session_registry.py` |
+| 全sessionの終端登録と、実行プロセスの不在による中断の解決 | `../_common/session_registry.py`（`atk lane`も読むため、層の順序で前にある`_common`へ置く） |
 
-sessionの`created_at`は最初の開始時刻で、turnごとに更新する`started_at`と別に保持する。`label`と`prompt`も`start`の時点で決まる。これら3項目を再開と再起動をまたいで保持する起動情報とし、項目の集合は`agent-toolkit/agent_toolkit/_agents_server/session_registry.py`の`LaunchInfo`が1か所で定める。MCPサーバーのメモリーを基準とし、状態ファイルとsession登録簿（版数2の任意項目）へ射影する。再開したsessionは登録簿または退避した再開情報の値を`LaunchInfo`の項目ごとに引き継ぐ。項目を持たない旧形式の登録簿から再開した場合、`label`と`prompt`は空文字列とし、`created_at`は再開時刻から数え直す。
+sessionの`created_at`は最初の開始時刻で、turnごとに更新する`started_at`と別に保持する。`label`と`prompt`も`start`の時点で決まる。これら3項目を再開と再起動をまたいで保持する起動情報とし、項目の集合は`agent-toolkit/agent_toolkit/_common/session_registry.py`の`LaunchInfo`が1か所で定める。MCPサーバーのメモリーを基準とし、状態ファイルとsession登録簿（版数2の任意項目）へ射影する。再開したsessionは登録簿または退避した再開情報の値を`LaunchInfo`の項目ごとに引き継ぐ。項目を持たない旧形式の登録簿から再開した場合、`label`と`prompt`は空文字列とし、`created_at`は再開時刻から数え直す。
 `start`と`send_message`の公開応答へは、開始したsessionと配送先のsessionがメモリーに保持する`label`を返す。委譲元が起動応答と追送応答だけで`session_id`と担当名を対応付け、追送の宛先を確かめられるようにするためである。
 
 ClaudeのAPI失敗が連続する間と、Codexの過負荷（`serverOverloaded`）による自動継続を待つ間の`api_error`はいずれもMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ射影する。過負荷の待機中の記録は待機を予定したCodex backendの終端処理が作成し、MCPサーバーが継続のturnを送った時点で削除する。待機の予定時刻と連鎖の回数もMCPサーバーのメモリーだけに置き、状態ファイルへは`api_error`の形でだけ射影する。API失敗の合成メッセージは活動時刻を進めず、状態ファイルの更新だけを通知する。`show`・`list`とCLIは共通の活動射影から失敗の経過を算出し、正常なassistantメッセージで記録を削除する。生のエラー本文は共有状態へ保存しない。
@@ -112,7 +112,7 @@ MCPサーバーの起動時とSessionEndでは、配下の全ファイルの最�
 
 明示列で選択したAPI会話は、API主接続とサブスクからの移行のどちらでも、stopと保持期限の経過による解放後に解放済み記録の内部再開情報から復元する。
 
-- 再起動をまたぐsessionの解決はsession登録簿に従う。statusline向け状態ファイルは書込主体を解決できる処理だけで作成されるため、解決の入力から外す。登録簿が終端を示さないsessionは、別プロセスがturnを実行している可能性を排除できないため再開しない。所有側は停止時に、backendの停止で終わった未終端のturnを`interrupted`として登録簿と結果ファイルへ公開し、記録を終端へ進める。それでも`running`のまま残ったCodexの記録は、照会したMCPサーバーが次の2条件をともに確かめた場合だけ終端を公開して復元へ進む。生存の印が有効な状態ファイルがどれもそのsessionを載せていないことと、自身のCodex App Serverへの`thread/read`が登録簿の`turn_id`のturn（項目の無い記録では全turn）の終端を示し、後続に進行中のturnが無いことである。引き継ぐ側が行うのは終端の公開だけとし、解放済みへの置き換えは所有側に残す。
+- 再起動をまたぐsessionの解決はsession登録簿に従う。statusline向け状態ファイルは書込主体を解決できる処理だけで作成されるため、解決の入力から外す。登録簿が終端を示さないsessionは、別プロセスがturnを実行している可能性を排除できないため再開しない。所有側は停止時に、backendの停止で終わった未終端のturnを`interrupted`として登録簿と結果ファイルへ公開し、記録を終端へ進める。それでも`running`のまま残った記録は、`session_registry.resolve`が記録されたプロセスの識別で判定する。記録された全プロセスが存在しない（pidが無いか、同じpidの起動時刻が異なる）記録は、登録簿を書き換えずに`interrupted`の終端と中断の理由として解決し、全ての読む主体が終端として扱う。プロセスが1つでも存在する記録と、識別を持たない記録（識別の導入前に書かれた記録）は実行中のままとする。照会したMCPサーバーは、生存の印が有効な状態ファイルがどれもそのsessionを載せていない場合に限り、この中断をengineを問わず登録簿へ公開して復元へ進む。Codexの記録は、同じ前提で自身のCodex App Serverへの`thread/read`が登録簿の`turn_id`のturn（項目の無い記録では全turn）の終端を示し、後続に進行中のturnが無い場合も、その終端状態を公開する。引き継ぐ側が行うのは終端の公開だけとし、解放済みへの置き換えは所有側に残す。
 - 登録簿のレコードが不在、解放済みまたは読取不能である場合は、同じ識別子の終端結果ファイルを確認し、そのファイルが終端を示す場合は終端として扱う。解放済みと不在は所有側の解放と7日超の掃引のいずれからも生じ、終端結果の在否と独立するため、終端結果の有無の判定には結果ファイルを用いる。解放済みの公開判定と待機対象の解放・実行中の判定は不在と同じに扱う。明示列で選択したAPI会話の復元だけは、解放済み記録の内部再開情報を消費し、同じproviderをbackendへ渡す。古い記録と他engineの復元条件は従来のままとする。
 
 ## 本書の更新が必要になる変更

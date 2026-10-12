@@ -20,7 +20,6 @@ from agent_toolkit._agents_server import (
     agents_wait,
     result_projection,
     resume_waits,
-    session_registry,
     shared_layout,
     shared_roots,
     state,
@@ -32,7 +31,7 @@ from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import claude_usage_limit, state_paths
+from agent_toolkit._common import claude_usage_limit, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     _LAUNCH_VALUES,
     _OVERLOAD_ERROR,

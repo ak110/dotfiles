@@ -26,7 +26,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
     BlockingContinuationClaudeClient,
@@ -714,6 +714,34 @@ def test_claude_dependency_check_builds_options_without_client(monkeypatch: pyte
     claude.check_dependencies()
 
     assert calls == [(str(pathlib.Path.cwd()), None, None)]
+
+
+class _TransportClient(FakeClaudeClient):
+    """SDKの転送が起動したCLIの子プロセスを持つ偽クライアント。"""
+
+    def __init__(self, streams: list[list[Any]], *, pid: int) -> None:
+        super().__init__(streams)
+        self._transport = SimpleNamespace(_process=SimpleNamespace(pid=pid))
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_claude_start_records_owner_and_cli_processes(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """登録簿の記録は、所有プロセスとSDKの転送が起動したClaude CLIの識別を持つ。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    owner = session_registry.owner_process()
+    assert owner is not None
+    client = _TransportClient([[SystemMessage("claude-recorded"), ResultMessage("完了")]], pid=owner.pid)
+    options = SimpleNamespace(system_prompt={"type": "preset", "preset": "claude_code"})
+    manager = claude.ClaudeServerManager(client_factory=lambda _options: client, publish_registry=True)
+    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
+    try:
+        session = await manager.start("調査", str(tmp_path))
+        record = session_registry.registry_directory() / f"{session.session_id}.json"
+        processes = json.loads(record.read_text(encoding="utf-8"))["processes"]
+    finally:
+        await manager.close()
+    assert processes == [{"pid": owner.pid, "create_time": owner.create_time}] * 2
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

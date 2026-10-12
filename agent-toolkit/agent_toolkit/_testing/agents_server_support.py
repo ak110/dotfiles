@@ -7,6 +7,8 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+import subprocess
+import sys
 import typing
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -21,7 +23,6 @@ from agent_toolkit._agents_server import (
     mcp_tools,
     resume_waits,
     session_errors,
-    session_registry,
     shared_layout,
     shared_roots,
     state,
@@ -31,7 +32,7 @@ from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 
 
@@ -1311,6 +1312,15 @@ def _publish_orphaned_codex(
     session_registry.publish(
         session_id, terminal=False, engine="codex", cwd=str(tmp_path), turn_seq=3, status="running", turn_id=turn_id
     )
+
+
+def exited_process_identity() -> session_registry.ProcessIdentity:
+    """識別を取得した後に終了させた実プロセスの識別を返す。所有側と委譲先CLIがともに終了した記録を作成するテストで使う。"""
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as process:
+        identity = session_registry.ProcessIdentity.of(process.pid)
+        process.wait()
+    assert identity is not None
+    return identity
 
 
 _OVERLOAD_ERROR = {

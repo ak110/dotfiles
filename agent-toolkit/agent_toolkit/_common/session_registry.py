@@ -2,6 +2,10 @@
 
 所有側のagents_serverがsessionを解放した場合は、レコードを削除せず解放済みレコードへ置き換える。
 照会した別プロセスが「所有側が正常に解放した」と「どのagents_serverにも記録が無い」を区別できるようにするためである。
+
+実行中のレコードは、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別を持つ。
+所有側が終端を公開せずに終了した場合、照会側は記録された全プロセスの不在から終端（`interrupted`）と解決する。
+この判定はレコードを書き換えず解決の結果として返し、書込は所有側と引き継ぎの処理に残す。
 """
 
 from __future__ import annotations
@@ -10,9 +14,13 @@ import dataclasses
 import datetime
 import enum
 import json
+import os
 import pathlib
 import re
+from collections.abc import Sequence
 from typing import Any, Literal
+
+import psutil
 
 from agent_toolkit._common import session_launchers as _session_launchers
 from agent_toolkit._common import state_paths as _state_paths
@@ -23,6 +31,13 @@ _STATUSES = frozenset({"starting", "running", "completed", "failed", "interrupte
 ReleaseReason = Literal["retention_expired", "stopped"]
 _RELEASE_REASONS: frozenset[str] = frozenset({"retention_expired", "stopped"})
 LAUNCHER_KEY = _session_launchers.LAUNCHER_KEY
+InterruptionReason = Literal["owner_processes_exited"]
+OWNER_PROCESSES_EXITED: InterruptionReason = "owner_processes_exited"
+_INTERRUPTION_MESSAGES: dict[str, str] = {
+    OWNER_PROCESSES_EXITED: (
+        "the owning agents_server exited without publishing the terminal state, and no process running the turn remains"
+    ),
+}
 
 
 class Resolution(enum.StrEnum):
@@ -33,6 +48,50 @@ class Resolution(enum.StrEnum):
     MISSING = "missing"
     UNREADABLE = "unreadable"
     RELEASED = "released"
+
+
+@dataclasses.dataclass(frozen=True)
+class ProcessIdentity:
+    """turnを実行し得るプロセスを、pidの再利用と区別できる起動時刻（`psutil`の`create_time`）とともに識別する。"""
+
+    pid: int
+    create_time: float
+
+    @classmethod
+    def of(cls, pid: int | None) -> ProcessIdentity | None:
+        """実在するプロセスの識別を返し、取得できなければ`None`を返す。"""
+        if pid is None:
+            return None
+        try:
+            return cls(pid, psutil.Process(pid).create_time())
+        except psutil.Error:
+            return None
+
+    def exists(self) -> bool:
+        """同じpidと起動時刻のプロセスが終了していなければ真を返す。照会を拒否された場合は存在するものとして扱う。"""
+        try:
+            process = psutil.Process(self.pid)
+            return process.create_time() == self.create_time and process.status() != psutil.STATUS_ZOMBIE
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            return False
+        except psutil.Error:
+            return True
+
+
+_OWNER_PROCESS: ProcessIdentity | None = None
+
+
+def owner_process() -> ProcessIdentity | None:
+    """登録簿を書くagents_server自身のプロセスの識別を返す。fork後は取得し直す。"""
+    global _OWNER_PROCESS  # pylint: disable=global-statement
+    if _OWNER_PROCESS is None or _OWNER_PROCESS.pid != os.getpid():
+        _OWNER_PROCESS = ProcessIdentity.of(os.getpid())
+    return _OWNER_PROCESS
+
+
+def interruption_error(reason: InterruptionReason) -> dict[str, str]:
+    """解決が示す中断の理由を、公開応答の`error`の形で返す。"""
+    return {"message": _INTERRUPTION_MESSAGES[reason], "interruptionReason": reason}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -105,6 +164,11 @@ class SessionResolution:
     # `RELEASED`の場合だけ、解放の理由と時刻（UTCのISO 8601）を保持する。
     released_reason: ReleaseReason | None = None
     released_at: str | None = None
+    # 終端の理由が中断の判別値を持つ場合だけ保持する。記録上は`running`のまま実行プロセスの不在から
+    # 終端と解決した場合と、その終端を引き継いで公開した記録の両方で設定する。
+    interruption: InterruptionReason | None = None
+    # 記録上は`running`で、記録された全プロセスの不在から終端と解決した場合に真とする。登録簿へ未公開であることを示す。
+    inferred_terminal: bool = False
 
 
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -131,11 +195,15 @@ def publish(
     started_at: str | None = None,
     session_updated_at: str | None = None,
     turn_id: str | None = None,
+    processes: Sequence[ProcessIdentity] = (),
+    interruption: InterruptionReason | None = None,
     launcher_session_id: str | None = None,
     state_root: pathlib.Path | None = None,
 ) -> None:
     """sessionの終端可否と再開条件を原子的に公開する。
 
+    `processes`は所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別で、`resolve`が実行中の記録の
+    終端を判定する入力になる。`interruption`は実行プロセスの不在から引き継いだ終端の理由を残す。
     `launcher_session_id`はsessionを作成した時点の委譲元sessionの識別子である。
     省略した場合は既存のレコードが持つ値を引き継ぐ。`atk serve`の一覧が、親のセッション記録に
     起動結果が残らない委譲先の親を結ぶために読むため、状態の更新で失わないようにする。
@@ -169,6 +237,10 @@ def publish(
         payload["session_updated_at"] = session_updated_at
     if turn_id:
         payload["turn_id"] = turn_id
+    if processes:
+        payload["processes"] = [{"pid": process.pid, "create_time": process.create_time} for process in processes]
+    if interruption is not None:
+        payload["interruption"] = interruption
     if engine == "codex" and fast_mode is not None:
         payload["fast_mode"] = fast_mode
     if engine == "codex" and codex_model_provider:
@@ -185,7 +257,11 @@ _recorded_launcher = _session_launchers.read_launcher
 
 
 def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> SessionResolution:
-    """登録済みsessionを終端・実行中・解放済み・不在・読取不能へ区分して返す。"""
+    """登録済みsessionを終端・実行中・解放済み・不在・読取不能へ区分して返す。
+
+    `running`の記録がプロセスの識別を持ち、記録された全プロセスが存在しない場合は、所有側が終端を公開せずに
+    終了したものとして`interrupted`の終端と解決する。1つでも存在する記録と識別を持たない記録は実行中とする。
+    """
     _validate_session_id(session_id)
     path = registry_directory(state_root) / f"{session_id}.json"
     try:
@@ -216,7 +292,40 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
     info = _resume_info(payload)
     if info is None:
         return SessionResolution(Resolution.UNREADABLE)
-    return SessionResolution(Resolution.TERMINAL if payload["terminal"] else Resolution.RUNNING, info)
+    if payload["terminal"]:
+        interruption = payload.get("interruption")
+        return SessionResolution(
+            Resolution.TERMINAL, info, interruption=interruption if interruption in _INTERRUPTION_MESSAGES else None
+        )
+    processes = _recorded_processes(payload)
+    if processes and not any(process.exists() for process in processes):
+        return SessionResolution(
+            Resolution.TERMINAL,
+            dataclasses.replace(info, status="interrupted"),
+            interruption=OWNER_PROCESSES_EXITED,
+            inferred_terminal=True,
+        )
+    return SessionResolution(Resolution.RUNNING, info)
+
+
+def _recorded_processes(payload: dict[str, Any]) -> tuple[ProcessIdentity, ...]:
+    """記録されたプロセスの識別を返す。項目が無いか形式が不正な記録は識別を持たないものとして空を返す。"""
+    entries = payload.get("processes")
+    if not isinstance(entries, list) or not entries:
+        return ()
+    processes: list[ProcessIdentity] = []
+    for entry in entries:
+        pid = entry.get("pid") if isinstance(entry, dict) else None
+        create_time = entry.get("create_time") if isinstance(entry, dict) else None
+        if (
+            not isinstance(pid, int)
+            or isinstance(pid, bool)
+            or not isinstance(create_time, (int, float))
+            or isinstance(create_time, bool)
+        ):
+            return ()
+        processes.append(ProcessIdentity(pid, float(create_time)))
+    return tuple(processes)
 
 
 def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path | None = None) -> None:
