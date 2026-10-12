@@ -61,7 +61,7 @@ COMPLETION_REPORT = "completion-report"
 """起動証拠を確かめるスキルの短縮名。"""
 
 TARGET_SKILLS = ("process-wi", "add-awi-by-user")
-"""開始した時点で成果作業となるスキルの短縮名。適用条件は`completion-report/SKILL.md`冒頭の成果作業に従う。"""
+"""開始した時点で成果作業となるスキルの短縮名。適用条件は`completion-report/SKILL.md`「Stop hookの判定」の成果作業に従う。"""
 
 _READ_PROGRAMS = frozenset({"cat", "sed", "head", "nl", "less", "more", "bat", "type", "get-content", "gc"})
 """Codexが`SKILL.md`を表示する読取コマンド。検索・抽出のコマンドは本文全体を返さないため含めない。"""
