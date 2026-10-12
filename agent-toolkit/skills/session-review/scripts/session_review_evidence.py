@@ -48,10 +48,10 @@ from session_evidence_extract import (
     _ELAPSED_UNTIL_NEXT_ACTION,
     _SINCE_NEXT_ACTION,
     _CollectedRecord,
-    _collection_events,
     _default_events,
     _error_event,
     _load_records,
+    _referenced_provenance_events,
     _Runtime,
     _unresolved_events,
 )
@@ -98,8 +98,11 @@ _HOOK_RECORD_NOTE = (
 
 
 def _print_events(events: list[dict[str, Any]], *, collected: list[_CollectedRecord] | None = None) -> None:
-    """イベント列を1イベント1 JSONのJSONLとして標準出力へ書く。"""
-    for event in [*(_collection_events(collected, []) if collected is not None else []), *events]:
+    """イベント列を1イベント1 JSONのJSONLとして標準出力へ書く。
+
+    `collected`を渡すと、イベント列が参照する記録とその起動元の`record-provenance`を前置する。
+    """
+    for event in [*(_referenced_provenance_events(collected, events) if collected is not None else []), *events]:
         print(json.dumps(event, ensure_ascii=False))
 
 
@@ -304,7 +307,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "時刻順に返し、末尾の`tool-call-summary`で件数、ツール名ごとと記録ごとの件数を返す。"
         "`by_role`は役割文書がある記録を`document:<役割名>`、無い記録を`record:<role>`へまとめ、"
         "各内訳の`count`・`by_tool`・起動入力の`by_mode`を同じ照会で返す。"
-        "`record-provenance`は全収集記録の親の由来・起動mode・役割文書を示し、未取得の値はnullとなる。"
+        "`record-provenance`は`tool-call`が参照する記録とその起動元の記録について、親の由来・起動mode・役割文書を示し、"
+        "未取得の値はnullとなる。"
         "`record`と`line`、または`record`と`result_line`を`--detail <記録>:<行番号>`へ渡すと入力と結果の全文を得られる。"
         "本スクリプト自身の呼び出しも含める。カタログ走査と併用すると、窓の中の親セッションごとに、"
         "走査rootの外の委譲先を含む記録から`timestamp`が`--since`より後で`--observation-boundary`以前の呼び出しを"

@@ -13,7 +13,6 @@ from session_evidence_extract import (
     _ENV_ASSIGNMENT,
     _basename,
     _CollectedRecord,
-    _collection_events,
     _detect_runtime,
     _error_event,
     _extract_records,
@@ -22,9 +21,11 @@ from session_evidence_extract import (
     _parse_timestamp,
     _payload_command_tokens,
     _Record,
+    _referenced_provenance_events,
     _role_document,
     _Runtime,
     _shell_tokens,
+    _unresolved_events,
     _UnresolvedRecord,
 )
 from session_evidence_records import (
@@ -385,4 +386,4 @@ def _catalog_tool_call_events(
     summary["since"] = since.isoformat()
     summary["observation_boundary"] = boundary.isoformat()
     summary["parent_record_count"] = len(scan.parents)
-    return [*events, *_collection_events(collected_records, unresolved), summary], 0
+    return [*events, *_referenced_provenance_events(collected_records, events), *_unresolved_events(unresolved), summary], 0
