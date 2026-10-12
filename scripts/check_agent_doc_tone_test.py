@@ -91,6 +91,80 @@ def test_main_reports_violation_and_returns_one(tmp_path: pathlib.Path, capsys: 
     assert "否定形終端率" in captured
 
 
+_DENSITY_BODY = (
+    "---\n"
+    "title: 例\n"
+    "---\n"
+    "<!-- 注記の1行目\n"
+    "注記の2行目\n"
+    "-->\n"
+    "前置きの文である。対象は変更しない。\n"
+    "- 結合する項目は変更し\n"
+    "ない。\n"
+    "値を読む。値は書かない。\n"
+    "当該の値を記録する。当該の行を読む。\n" + "観測した値を記録する。\n" * 15
+)
+"""前方に複数行のHTMLコメントとfrontmatterを置き、1行に複数の文がある行と句点の無い箇条書きの行を含む入力。
+
+文数22、否定形で終わる文は7行目・9行目・10行目の3文、「当該」は11行目の2回である。
+"""
+
+
+def _diagnostic_lines(output: str, path: pathlib.Path) -> list[tuple[int, str]]:
+    """標準エラーの診断から対象ファイルの行番号と本文を取り出す。"""
+    diagnostics: list[tuple[int, str]] = []
+    for row in output.splitlines():
+        line, _, message = row.removeprefix(f"{path}:").partition(": ")
+        diagnostics.append((int(line), message))
+    return diagnostics
+
+
+def test_density_lists_every_counted_element_with_physical_line(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """密度の指標ごとに、数えた要素を入力ファイルの物理行の位置付きで全件列挙する。"""
+    path = _write(tmp_path, _DENSITY_BODY)
+
+    assert check_agent_doc_tone.main([str(path)]) == 1
+
+    diagnostics = _diagnostic_lines(capsys.readouterr().err, path)
+    negative = [(line, message) for line, message in diagnostics if "否定形で終わる文: " in message]
+    assert [line for line, _ in negative] == [7, 9, 10]
+    assert "「対象は変更しない。」" in negative[0][1]
+    assert "「ない。」" in negative[1][1]
+    assert "「値は書かない。」" in negative[2][1]
+    subject = [line for line, message in diagnostics if "数えた「当該」: " in message]
+    assert subject == [11, 11]
+    summaries = [message for line, message in diagnostics if line == 1]
+    assert any(
+        "否定形終端率 13.6%（上限 8%、3/22文）" in message and "少なくとも2件を書き換える" in message for message in summaries
+    )
+    assert any("「当該」の出現率 9.1%（上限 3%、2回/22文）" in message and "少なくとも2件" in message for message in summaries)
+
+
+def test_density_rewriting_required_sentences_clears_the_metric(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """要約が示す最少件数の文を、文数を変えずに肯定形へ書き換えると、その指標の診断は出力されない。"""
+    body = _DENSITY_BODY.replace("対象は変更しない。", "対象を保つ。").replace("値は書かない。", "値を保つ。")
+    path = _write(tmp_path, body)
+
+    check_agent_doc_tone.main([str(path)])
+
+    output = capsys.readouterr().err
+    assert "否定形" not in output
+    assert "数えた「当該」" in output
+
+
+@pytest.mark.parametrize("body", [_DENSITY_BODY.replace("観測した値を記録する。\n" * 15, ""), "観測した値を記録する。" * 30])
+def test_density_elements_are_not_listed_within_threshold(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """文数20未満のファイルと上限以下のファイルでは、要素ごとの診断を出力しない。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 0
+    assert capsys.readouterr().err == ""
+
+
 def test_main_accepts_compliant_document(tmp_path: pathlib.Path) -> None:
     """閾値を満たすファイルは終了コード0で終わる。"""
     path = _write(tmp_path, "対象を実際に動かしてから確定する。観測した値を計画へ書く。\n")
@@ -399,6 +473,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
         "invalid_application_encoding",
         "expected_returncode",
         "expected_output",
+        "expected_density_lines",
     ),
     [
         (
@@ -410,6 +485,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             False,
             1,
             ["正本", "既定", "照合", "tone-examples.md", "new_module.py", "helper.py"],
+            [],
         ),
         (
             "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
@@ -419,6 +495,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             '{"input_path": "照合.md"}',
             False,
             0,
+            [],
             [],
         ),
         (
@@ -430,6 +507,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             False,
             0,
             ['"kind": "diagnostic"', "new_module.py", '"line": 1', "警告: 「検査」"],
+            [],
         ),
         (
             "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
@@ -440,6 +518,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             False,
             1,
             ["警告: 「入口」", "否定形終端率", '"line": 1'],
+            [1] * 20,
         ),
         (
             "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
@@ -450,6 +529,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             False,
             1,
             ["入力の構文を読み取れない", "config.json", '"line": 2', '"rc": 2'],
+            [],
         ),
         (
             "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
@@ -460,9 +540,21 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             True,
             1,
             ["入力を読み取れない", "new_module.py", '"line": 1', '"rc": 2'],
+            [],
+        ),
+        (
+            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            'print("是正本文")\n',
+            "",
+            _DENSITY_BODY,
+            '{"input_path": "照合.md"}',
+            False,
+            1,
+            ["否定形終端率 13.6%", "「値は書かない。」", "「当該」の出現率 9.1%"],
+            [7, 9, 10, 11, 11],
         ),
     ],
-    ids=["violations", "compliant", "caution", "caution-and-density", "parse-error", "read-error"],
+    ids=["violations", "compliant", "caution", "caution-and-density", "parse-error", "read-error", "density-positions"],
 )
 # 子処理の時間上限（120秒）より大きいテスト単位の上限を置き、停止時は子処理の時間切れとして報告させる。
 # CIで全チェックを並行して実行するジョブでは子処理に約40秒を要したため、子処理の上限は観測値の約3倍とする。
@@ -477,6 +569,7 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
     invalid_application_encoding: bool,
     expected_returncode: int,
     expected_output: list[str],
+    expected_density_lines: list[int],
 ) -> None:
     """通常の登録対象を通るチェックが、例の良い文と新しいコードの説明へ到達し、警告の語を位置付きの診断として表示する。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
@@ -535,3 +628,15 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
     decoded = json.dumps(records, ensure_ascii=False)
     for expected in expected_output:
         assert expected in decoded
+    density_messages = [
+        message
+        for record in records
+        if record["kind"] == "diagnostic" and record["file"].endswith("density.md")
+        for message in record["messages"]
+    ]
+    element_lines = [
+        message["line"]
+        for message in density_messages
+        if "否定形で終わる文: " in message["msg"] or "数えた「当該」: " in message["msg"]
+    ]
+    assert element_lines == expected_density_lines, decoded
