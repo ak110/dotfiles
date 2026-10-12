@@ -2046,6 +2046,31 @@ async def test_create_dialog_choice_validation_precedes_only_single_entry(browse
 
 
 @pytest.mark.asyncio
+async def test_create_dialog_show_text_after_preface_stays_single_entry(browser_harness: _BrowserHarness) -> None:
+    """先頭エントリより前に説明文がある本文はサーバーと同じく単件として扱い、単件の入力欄と検証を保つ。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.get_by_role("button", name="新規追加").click()
+    dialog = page.get_by_role("dialog", name="新規追加")
+    await dialog.locator("#create-kind").select_option("uwi")
+    await dialog.locator("#create-question-type").select_option("choice")
+    await dialog.locator("#create-target").fill("example/repo")
+    await dialog.locator("#create-content").fill(
+        "次の項目について確認したい。\n\n"
+        "### pasted.md [inbox]\n---\ntarget_repo: batch/repo\ntype: awi\n---\n\n貼り付けた本文\n"
+    )
+    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_be_hidden()
+    await playwright.async_api.expect(dialog.locator("#uwi-fields")).to_be_visible()
+    await playwright.async_api.expect(dialog.locator("#create-repo-fields")).to_be_visible()
+    await dialog.locator("#create-choices").fill("一択")
+    await dialog.get_by_role("button", name="追加").click()
+    await playwright.async_api.expect(dialog.locator("#create-choices-error")).to_have_text("選択肢を2件以上入力してください。")
+    assert harness.operations.add_calls == []
+    assert harness.operations.batch_calls == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(320, 720), (700, 720), (1280, 720), (1280, 900)])
 @pytest.mark.parametrize("input_height", [None, 480])
 async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(

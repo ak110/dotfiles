@@ -1424,8 +1424,11 @@ function updateCreateFields() {
   }
 }
 
+// サーバーの`is_show_batch_format`と同じく、先頭エントリより前に構造行（空行・種別見出し・target_repo見出し）だけを許す。
 function isShowFormatCandidate(content) {
-  return /^### \S+\.md(?: \[[^\]\n]*\])?\n---$/m.test(content.replace(/\r\n?/g, '\n'));
+  const lines = content.replace(/\r\n?/g, '\n').split('\n');
+  const first = lines.findIndex((line, index) => /^### \S+\.md(?: \[[^\]]*\])?$/.test(line) && lines[index + 1] === '---');
+  return first >= 0 && lines.slice(0, first).every(line => !line || /^# (?:awi|uwi)$/.test(line) || /^## target_repo: .*$/.test(line));
 }
 
 function choiceValues() {
