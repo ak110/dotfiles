@@ -28,6 +28,9 @@ SESSION_ENV = "AGENT_TOOLKIT_LANE_SESSION_ID"
 _ID = re.compile(r"[A-Za-z0-9_-]+\Z")
 _LANE = re.compile(r"lane-[0-9]{2}\Z")
 _TIMEOUT = 120
+# --worktreeを省略した作成先は主作業ツリーからの相対で固定し、session・日時・呼出し元を識別へ含めない。
+_PLACEMENT = pathlib.PurePosixPath(".claude/worktrees")
+_IGNORE_PATTERN = "/.claude/worktrees/"
 
 
 def current_session_id() -> str | None:
@@ -88,6 +91,58 @@ def _worktrees(repo: pathlib.Path) -> dict[str, str]:
         elif current and line.startswith("branch refs/heads/"):
             entries[current] = line[18:]
     return entries
+
+
+def _main_worktree(repo: pathlib.Path) -> pathlib.Path:
+    """Linked worktreeから呼んでも、同じGitリポジトリの主作業ツリーへ解決する。"""
+    block = _git(repo, "worktree", "list", "--porcelain").split("\n\n", 1)[0].splitlines()
+    if not block or not block[0].startswith("worktree ") or "bare" in block:
+        raise ValueError("repoが主作業ツリーを持たない。--worktreeで作成先を指定する")
+    return pathlib.Path(block[0][9:]).resolve()
+
+
+def _exclude_placement(main: pathlib.Path) -> None:
+    """主作業ツリーの状態へ固定作成先が未追跡として現れないよう、info/excludeへ加える。"""
+    check = git_command.run(
+        ["check-ignore", "-q", f"{_PLACEMENT}/"], main, capture_output=True, text=True, check=False, timeout=_TIMEOUT
+    )
+    if check.returncode == 0:
+        return
+    if check.returncode != 1:
+        raise ValueError(f"git check-ignoreが終了{check.returncode}: {check.stderr.strip()}")
+    exclude = pathlib.Path(_git(main, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude"))
+    existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    if _IGNORE_PATTERN not in existing.splitlines():
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        prefix = "" if not existing or existing.endswith("\n") else "\n"
+        with exclude.open("a", encoding="utf-8") as stream:
+            stream.write(f"{prefix}{_IGNORE_PATTERN}\n")
+
+
+def _fixed_worktree(repo: pathlib.Path, lane: str) -> pathlib.Path:
+    return _main_worktree(repo).joinpath(*_PLACEMENT.parts, f"process-wi-{lane}")
+
+
+def _release_fixed(worktree: pathlib.Path, session_id: str) -> None:
+    """固定作成先を保持する別sessionの登録を、既存の回収条件を満たす場合だけ回収する。"""
+    root = state_paths.state_dir() / "lanes"
+    for path in sorted(root.glob("*/lane-*.json")) if root.exists() else []:
+        owner = path.parent.name
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError):
+            # 読めない登録は所有を判定できない。作成先の実体の有無で上書きを防ぐ。
+            continue
+        if owner == session_id or not isinstance(record, dict) or record.get("worktree") != str(worktree):
+            continue
+        result = cleanup_session(owner, only=path)
+        if path.exists():
+            reasons = [held["reason"] for held in result["retained"] if held["record_path"] == str(path)]
+            raise ValueError(
+                f"固定作成先{worktree}を別sessionの登録が保持している: {'; '.join(reasons) or '回収が未完了'}。"
+                f"成果を引き継ぐ場合は--reuse-record {path}を指定し、"
+                f"回収する場合は理由を解消して`atk lane delete --session-id {owner}`を実行してから再実行する"
+            )
 
 
 def _commands(path: pathlib.Path | None) -> dict[str, list[str]]:
@@ -190,6 +245,10 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
     common = _common(repo)
     commands = _commands(args.commands_file)
     source, source_owner = _reuse_source(args, session_id)
+    fixed = None if args.worktree else _fixed_worktree(repo, args.lane)
+    if fixed is not None and source is None and not (_directory(session_id) / f"{args.lane}.json").exists():
+        # 別sessionの所有ロックを取るため、自sessionのロックより前に前回資源を回収する。
+        _release_fixed(fixed, session_id)
     owners = {session_id}
     if source_owner is not None:
         owners.add(source_owner)
@@ -218,14 +277,19 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
         _git(repo, "check-ref-format", "--branch", branch)
         if branch in _branches(repo):
             raise ValueError(f"専用branchが既にある: {branch}。所有登録のあるレーンを再利用するか別名を指定する")
-        if args.worktree:
-            temp = None
+        if fixed is None:
             worktree = args.worktree.resolve()
+            if worktree.exists():
+                raise ValueError(f"作成先が既にある: {worktree}。未使用の作成先を指定する")
         else:
-            temp = managed_temp.create_managed_temp(args.lane)
-            worktree = temp / "wt"
-        if worktree.exists():
-            raise ValueError(f"作成先が既にある: {worktree}。未使用の作成先を指定する")
+            worktree = fixed
+            if worktree.exists() or str(worktree) in _worktrees(repo):
+                raise ValueError(
+                    f"固定作成先に所有登録の無い資源がある: {worktree}。"
+                    "内容とGit登録を確認し、成果を保存してから移動または削除して再実行する"
+                )
+            _exclude_placement(_main_worktree(repo))
+            worktree.parent.mkdir(parents=True, exist_ok=True)
         record: dict[str, typing.Any] = {
             "session_id": session_id,
             "lane": args.lane,
@@ -234,7 +298,8 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
             "base_branch": args.base_branch,
             "branch": branch,
             "worktree": str(worktree),
-            "managed_temp": str(temp) if temp else None,
+            # 旧配置の登録だけが個別managed-tempを持ち、回収時に同じ値を使う。
+            "managed_temp": None,
             "selection_file": str(args.selection_file.resolve()),
             "commands": commands,
             "procedure_timeout": args.timeout,
@@ -320,14 +385,19 @@ def _eligible(record: dict[str, typing.Any]) -> str | None:
     return None
 
 
-def cleanup_session(session_id: str | None) -> dict[str, typing.Any]:
-    """全登録を先に判定し、安全な対象だけを回収する。結果は削除対象の外へ保持する。"""
+def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None) -> dict[str, typing.Any]:
+    """全登録を先に判定し、安全な対象だけを回収する。結果は削除対象の外へ保持する。
+
+    onlyを指定すると、その登録だけを同じ条件で判定・回収する。
+    """
     result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": []}
     if session_id is None or not _directory(session_id).exists():
         return result
     with _locked(session_id) as directory:
         records: list[tuple[pathlib.Path, dict[str, typing.Any]]] = []
         for path in sorted(directory.glob("lane-*.json")):
+            if only is not None and path != only:
+                continue
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if record["session_id"] != session_id or path.stem != record["lane"]:
@@ -432,7 +502,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     create_parser.add_argument("--lane", required=True, help="lane-NN。")
     create_parser.add_argument("--selection-file", type=pathlib.Path, required=True, help="統合状態を読む選定YAML。")
     create_parser.add_argument("--branch", help="専用branch名。省略するとsessionとlaneから決める。")
-    create_parser.add_argument("--worktree", type=pathlib.Path, help="固有作成手順が使う絶対作成先。")
+    create_parser.add_argument(
+        "--worktree", type=pathlib.Path, help="任意の絶対作成先。省略すると主作業ツリーの固定作成先を使う。"
+    )
     create_parser.add_argument("--commands-file", type=pathlib.Path, help="create・prepare・deleteのargvを持つJSON。")
     create_parser.add_argument("--reuse-record", type=pathlib.Path, help="終端済みの担当が使っていた資源のrecord_path。")
     create_parser.add_argument(

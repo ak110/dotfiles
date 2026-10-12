@@ -406,7 +406,7 @@ Claude Codeの委譲・背景処理の待機は、機械的な完了通知で待
 
 ## セッションの終了
 
-レーン資源の作成と所有登録、固有create・prepare・deleteの手順はatk lane createが持つ。メインは準備結果と両出力を検収してから担当を起動し、統合後も同じ資源を追加に使えるよう保持する。通常終了のagents-exit-sessionとprocess-loopの子終了後は、全登録の判定、全工程・外部プロセスの終了、clean・Git登録一致・統合先到達を確認する同じcleanupへ接続する。未統合・dirty・稼働中・不明・途中失敗は成果と登録を残し、同じdeleteは残る処理から再開する。登録は専用資源の外、回収結果は通常のmanaged-tempへ置いて7日の保持へ委ね、次回開始時にdelete --listから残存を読む。turnごとのSessionEndで回収する案は担当の再開に使う資源を失い、公開前回収は追加ごとの再作成を生むため採らない。セッションのmanaged-temp・証拠・主作業ツリーと他sessionの未登録資源は対象外とする。
+レーン資源の作成と所有登録、配置の決定、固有create・prepare・deleteの手順はatk lane createが持ち、既定の作成先は主作業ツリーの.claude/worktrees/process-wi-lane-NNに固定する。メインは準備結果と両出力を検収してから担当を起動し、統合後も同じ資源を追加に使えるよう保持する。通常終了のagents-exit-sessionとprocess-loopの子終了後は、全登録の判定、全工程・外部プロセスの終了、clean・Git登録一致・統合先到達を確認する同じcleanupへ接続する。未統合・dirty・稼働中・不明・途中失敗は成果と登録を残し、同じdeleteは残る処理から再開する。登録は専用資源の外、回収結果は通常のmanaged-tempへ置いて7日の保持へ委ね、次回開始時にdelete --listから残存を読む。turnごとのSessionEndで回収する案は担当の再開に使う資源を失い、公開前回収は追加ごとの再作成を生むため採らない。セッションのmanaged-temp・証拠・主作業ツリーと他sessionの未登録資源は対象外とする。
 
 調査・採否と通常型の計画化は、Claude CodeとCodexのいずれでもメインが下流担当を直接起動する共通手順を使う。
 委譲先の起動失敗を別の起動手段へ迂回せず、失敗として返す。

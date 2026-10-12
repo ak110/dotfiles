@@ -317,12 +317,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk lane create": {
         "summary": "レーン専用資源を準備して所有と回収入力を登録する",
-        "description": "目的: レーンの専用worktreeとbranchを作成し、終了時回収の入力を登録する。\n利用場面: 初期レーンを起動する前、統合済みレーンを同じ資源で再開するとき。\n対象と出力: repo・base-branch・lane・selection-fileを受け取り、専用branch・worktree・managed-tempと所有session、record_pathをJSONで返す。同じ登録の準備済み資源は再利用する。\n前提: --worktreeを省略すると個別managed-tempの直下にwtを作成する。--commands-fileはcreate・prepare・deleteをキーとするJSON objectで、値はshellを使わないargv配列。各引数の{repo}・{worktree}・{branch}・{lane}を資源の値へ展開し、repoをcwdとして実行する。create手順は指定worktreeをGitへ登録し、prepareは必要な前提ファイルと環境を準備する。各手順は--timeoutの正の有限上限（省略600秒）を持ち、実行記録と両出力を保存する。--reuse-recordは終端を確認した別sessionの登録を新所有sessionへ移して成果を再利用する。\n復元・後始末: 失敗時は資源と登録を保持して回復へ使う。統合後に選定の統合状態を保存し、session終了時に回収する。",
+        "description": "目的: レーンの専用worktreeとbranchを作成し、終了時回収の入力を登録する。\n利用場面: 初期レーンを起動する前、統合済みレーンを同じ資源で再開するとき。\n対象と出力: repo・base-branch・lane・selection-fileを受け取り、専用branch・worktreeと所有session、record_pathをJSONで返す。同じ登録の準備済み資源は再利用する。\n前提: --worktreeを省略すると、同じGitリポジトリの主作業ツリーの.claude/worktrees/process-wi-<lane>を作成先とし、linked worktreeから呼んでも同じパスへ解決する。固定作成先を別sessionの登録が保持する場合は、回収条件を満たせば回収してから同じパスへ再作成し、未統合・dirty・稼働中の資源と所有登録の無い資源は変更せず理由と回復操作を返して終了2とする。--commands-fileはcreate・prepare・deleteをキーとするJSON objectで、値はshellを使わないargv配列。各引数の{repo}・{worktree}・{branch}・{lane}を資源の値へ展開し、repoをcwdとして実行する。create手順は指定worktreeをGitへ登録し、prepareは必要な前提ファイルと環境を準備する。各手順は--timeoutの正の有限上限（省略600秒）を持ち、実行記録と両出力を保存する。--reuse-recordは終端を確認した別sessionの登録を新所有sessionへ移して成果を再利用し、旧配置（個別managed-temp）の登録も同じ作成先のまま引き継ぐ。\n復元・後始末: 失敗時は資源と登録を保持して回復へ使う。統合後に選定の統合状態を保存し、session終了時に回収する。",
         "epilog": "実行例:\n\n  atk lane create --repo /absolute/repo --base-branch develop --lane lane-01 --selection-file /absolute/pick-wi.yaml",
     },
     "atk lane delete": {
         "summary": "所有sessionの安全なレーン資源をまとめて回収する",
-        "description": "目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: Git登録と所有記録が一致し、担当と外部プロセスが終了し、worktreeがcleanで、branchが統合先へ到達し、選定の統合状態が統合済みであること。確認不能は保持する。\n復元・後始末: 固有delete手順、worktree、branch、個別managed-tempの順で回収する。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
+        "description": "目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: Git登録と所有記録が一致し、担当と外部プロセスが終了し、worktreeがcleanで、branchが統合先へ到達し、選定の統合状態が統合済みであること。確認不能は保持する。\n復元・後始末: 固有delete手順、worktree、branch、旧配置の登録が持つ個別managed-tempの順で回収する。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
         "epilog": "実行例:\n\n  atk lane delete --session-id <作成した所有session>",
     },
     "atk managed-temp": {
