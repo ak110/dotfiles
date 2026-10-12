@@ -816,6 +816,8 @@ def test_persisted_shell_output_excerpt_is_replaced_by_unread_notice(tmp_path: p
     updated = output["updatedToolOutput"]
     assert excerpt not in updated["stdout"]
     assert saved in updated["stdout"] and "50000" in updated["stdout"] and "次の操作:" in updated["stdout"]
+    # 次の操作は、Claude Code 2.1.296のReadが全文取得に受け付ける入力（`allow_large: true`）を名指しする。
+    assert "allow_large: true" in updated["stdout"]
     assert {key: value for key, value in updated.items() if key != "stdout"} == {
         key: value for key, value in payload["tool_response"].items() if key != "stdout"
     }

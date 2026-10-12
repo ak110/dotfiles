@@ -533,8 +533,14 @@ Claude CodeのBashとPowerShellは、出力が上限（`bashOutputMaxChars`、�
 `02-agent-operations.md`の`Read`の箇条は残りを読むよう定めていたが、条件の主語が`Read`であり、Bashで読んだ結果へ当てはめる想起だけに依存していた。
 
 そこで`posttooluse.py`が、`tool_response`に空でない文字列の`persistedOutputPath`を持つBashとPowerShellの結果へ`hookSpecificOutput.updatedToolOutput`を返す（判定と本文は`persisted_output.py`）。
-返す値は`tool_response`の写しの`stdout`だけを、退避したことと保存先の絶対パス、元の出力のバイト数および保存先を末尾まで読む次の操作を示す本文へ置き換え、`stderr`・`persistedOutputPath`・`persistedOutputSize`などの項目を保つ。
+返す値は`tool_response`の写しの`stdout`だけを、退避したことと保存先の絶対パス、元の出力のバイト数および次の操作を示す本文へ置き換え、`stderr`・`persistedOutputPath`・`persistedOutputSize`などの項目を保つ。
+次の操作の行では、保存先を`Read`で範囲を指定せず`allow_large: true`を付けて読み、`PARTIAL view`の部分取得かエラーが返った場合だけ残りを`offset`と`limit`で読むよう案内する。全体を使わない場合は対象を限定して取り直す選択肢も示す。
 ホストは置き換えた値を`Preview`として示すため、受け取る本文から元の出力の先頭が消え、抜粋を全体として扱う余地が無くなる。保存先のファイルは元の全量を保持する。
+
+Claude Code 2.1.296の`Read`は`allow_large: true`を受け付け、通常の上限（25,000トークン、全文で256KB）の代わりにコンテキストの空きに応じた量を1回で返す。
+観測は`audit-records.md`「agent-toolkit/rules/02-agent-operations.md：出力の保持と観測：2026年10月12日」にある。
+保存先の読取をこの`Read`へ移し、通常上限に合わせた分割や`atk read-file`の返却JSONの連結を案内しない。
+一方、未読の通知は保持する。`Read`の上限の緩和は、Bash・PowerShellの退避と、届いた抜粋を全量と誤認することのどちらも防がないためである。
 退避の有無はホストが付ける`persistedOutputPath`で判定し、上限値をhook側で再実装しない。PowerShellもBashと同じ出力スキーマと上限を持つため`hooks.json`の`matcher`へ加えた。
 `updatedToolOutput`を選んだのは、本体の出力スキーマがこの項目を「Replaces the tool output before it is sent to the model」と説明し、`updatedMCPToolOutput`より全ツールへ働く項目として案内しているためである。既存のPostToolUseの起動に相乗りし、新しいイベントの登録、セッション状態および起動を加えない。
 同じ呼び出しで他の分岐が`additionalContext`を返す場合は、1つのJSONへ両方を入れる。transcriptの`toolUseResult.stdout`も置き換えた本文になるため、`session_review_evidence.py`は`persistedOutputPath`が実在するファイルを指せばその内容を検索と警告の抽出の実体とする。
@@ -553,7 +559,7 @@ CodexのPostToolUseは`persistedOutputPath`を持たず（出力は退避では�
 | 次のツール呼び出しで保存先を読んだかを判定して警告・遮断する | 置き換えの後は全体と誤認される抜粋が残らないため防ぐ誤りが無く、件数や対象を限定して取り直す正当な操作を誤検出する |
 | `large_reads.py`の全文取得の判定をClaude Codeへ広げる | 未読8件のうち`cat`へ複数ファイルを渡す単純な形の3件しか静的に判定できない |
 | Bashの退避を失敗として返す | 同じ版の設定スキーマにその設定が無い。置き換えでツール結果そのものが未読を示す形にする |
-| 上限を最大の128,000にする | 1回のツール出力が約41,000トークンとなり、Codexへ配布する上限（20,000トークン）と`Read`の上限（25,000トークン）を超える |
+| 上限を最大の128,000にする | 1回のツール出力が約41,000トークンとなり、Codexへ配布する上限（20,000トークン）を超える。退避した全量は`Read`の`allow_large: true`で読めるため、上限を上げて退避を避ける利点も小さい |
 
 ## Function hooks moduleの個別設計
 

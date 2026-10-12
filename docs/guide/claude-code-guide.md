@@ -140,7 +140,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 Bashの静的な検出は、for・算術for・select・while・until・if/elif/else・caseの条件と本体、入れ子、文全体のパイプ・リダイレクト・背景化にも及ぶ。未引用の予約語前置`time`・`time -p`・`!`・`coproc`を共通解析で扱い、coprocの暗黙の出力パイプと背景実行を保持する。引用やheredoc本文、算術式のデータ、未実行の関数定義と未確定の動的コマンドは実行位置とみなさない。未完了の背景出力の読取は進捗確認として警告にとどめ、反復しても遮断しない。終端結果は完了後に同じ保存先の全量を読み直して確認する。
 
-Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内し、一般の保存本文には`atk read-file`を使う。
+Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内する。原記録以外の保存本文は、Claude Codeでは`Read`に`allow_large: true`を指定して全文を読み、Codexでは`atk read-file`で終端まで読む。
 
 振り返りの準備後や最終報告後に、新しい`気付いた改善点:`の行が残っている場合、Stopは未取込みの行と次の操作を示す。
 その行を振り返りの準備・分析へ取り込み、結果報告を更新すると終了へ進める。
