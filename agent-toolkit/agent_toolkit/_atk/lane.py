@@ -22,15 +22,13 @@ import yaml
 from agent_toolkit._atk import help_text, managed_temp, outcome, run_command
 from agent_toolkit._common import atomic_file, file_lock, session_launchers, session_registry, state_paths
 from agent_toolkit._git import command as git_command
+from agent_toolkit._git import worktree_exclude
 from agent_toolkit._plan import selection
 
 SESSION_ENV = "AGENT_TOOLKIT_LANE_SESSION_ID"
 _ID = re.compile(r"[A-Za-z0-9_-]+\Z")
 _LANE = re.compile(r"lane-[0-9]{2}\Z")
 _TIMEOUT = 120
-# --worktreeを省略した作成先は主作業ツリーからの相対で固定し、session・日時・呼出し元を識別へ含めない。
-_PLACEMENT = pathlib.PurePosixPath(".claude/worktrees")
-_IGNORE_PATTERN = "/.claude/worktrees/"
 
 
 def current_session_id() -> str | None:
@@ -103,24 +101,15 @@ def _main_worktree(repo: pathlib.Path) -> pathlib.Path:
 
 def _exclude_placement(main: pathlib.Path) -> None:
     """主作業ツリーの状態へ固定作成先が未追跡として現れないよう、info/excludeへ加える。"""
-    check = git_command.run(
-        ["check-ignore", "-q", f"{_PLACEMENT}/"], main, capture_output=True, text=True, check=False, timeout=_TIMEOUT
-    )
-    if check.returncode == 0:
-        return
-    if check.returncode != 1:
-        raise ValueError(f"git check-ignoreが終了{check.returncode}: {check.stderr.strip()}")
-    exclude = pathlib.Path(_git(main, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude"))
-    existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
-    if _IGNORE_PATTERN not in existing.splitlines():
-        exclude.parent.mkdir(parents=True, exist_ok=True)
-        prefix = "" if not existing or existing.endswith("\n") else "\n"
-        with exclude.open("a", encoding="utf-8") as stream:
-            stream.write(f"{prefix}{_IGNORE_PATTERN}\n")
+    try:
+        worktree_exclude.ensure_excluded(main)
+    except worktree_exclude.ExcludeError as error:
+        raise ValueError(f"固定作成先の除外を設定できない（{error}）。`git status`と`info/exclude`を確認する") from error
 
 
 def _fixed_worktree(repo: pathlib.Path, lane: str) -> pathlib.Path:
-    return _main_worktree(repo).joinpath(*_PLACEMENT.parts, f"process-wi-{lane}")
+    # --worktreeを省略した作成先は主作業ツリーからの相対で固定し、session・日時・呼出し元を識別へ含めない。
+    return _main_worktree(repo).joinpath(*worktree_exclude.WORKTREE_PARENT.parts, f"process-wi-{lane}")
 
 
 def _release_fixed(worktree: pathlib.Path, session_id: str) -> None:
