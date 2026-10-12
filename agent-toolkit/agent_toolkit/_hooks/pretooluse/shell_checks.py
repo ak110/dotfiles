@@ -2,6 +2,19 @@ r"""PreToolUse統合フックのうち、Bashコマンドを遮断する条件�
 
 from __future__ import annotations
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._common.bash_invocations",
+    "agent_toolkit._common.heredocs",
+    "agent_toolkit._common.runtime_identity",
+    "agent_toolkit._common.shell_segments",
+    "agent_toolkit._common.shell_tokens",
+    "agent_toolkit._hooks.notice",
+    "agent_toolkit._hooks.pretooluse.notices",
+    "collections.abc",
+    "shlex",
+}
+
 import pathlib
 import re
 import shlex

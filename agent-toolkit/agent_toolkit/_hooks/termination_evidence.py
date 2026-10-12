@@ -7,6 +7,25 @@
 
 from __future__ import annotations
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._agents_server",
+    "agent_toolkit._atk.wi",
+    "agent_toolkit._atk.wi.constants",
+    "agent_toolkit._atk.wi.frontmatter",
+    "agent_toolkit._common",
+    "agent_toolkit._common.process_loop_session",
+    "agent_toolkit._common.shell_segments",
+    "agent_toolkit._git",
+    "agent_toolkit._hooks",
+    "agent_toolkit._hooks.host",
+    "agent_toolkit._hooks.pretooluse.operation_skills",
+    "agent_toolkit._hooks.stop_session",
+    "argparse",
+    "subprocess",
+    "typing",
+}
+
 import argparse
 import json
 import os

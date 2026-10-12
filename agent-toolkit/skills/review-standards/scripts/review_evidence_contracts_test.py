@@ -208,9 +208,9 @@ def test_public_selected_results_group_shared_artifacts(
 ) -> None:
     """両証拠CLIで共有するXML・実行記録を一度だけ書き、全試験名とcaseを残す。"""
     repository = git.init_repository(tmp_path / "repo", commit_message="基準")
-    head = git.git_output(repository, "rev-parse", "HEAD")
     monkeypatch.chdir(repository)
-    spec = _trial(repository, "trial")
+    spec = _trial(repository, "trial", tracked=True)
+    head = git.git_output(repository, "rev-parse", "HEAD")
     before = _diagnostics(repository, tmp_path, "before")
     after = _diagnostics(repository, tmp_path, "after")
     results_path = tmp_path / "results.json"

@@ -10,6 +10,20 @@ Claude Codeはホストが上限超過を`PARTIAL view`または退避ファイ�
 
 from __future__ import annotations
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._atk",
+    "agent_toolkit._common",
+    "agent_toolkit._common.bash_invocations",
+    "agent_toolkit._common.uv_arguments",
+    "agent_toolkit._hooks",
+    "agent_toolkit._hooks.pretooluse.notices",
+    "ast",
+    "collections.abc",
+    "re",
+    "stat",
+}
+
 import ast
 import os
 import pathlib

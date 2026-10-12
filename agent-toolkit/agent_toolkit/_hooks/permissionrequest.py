@@ -14,6 +14,9 @@ Claude Codeの確認ダイアログを無条件に許可する。
 deny規則またはask規則に一致する要求の確認は、本フックでは抑止できない。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"agent_toolkit._common", "agent_toolkit._plan", "datetime"}
+
 import contextlib
 import datetime
 import json

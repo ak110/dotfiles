@@ -7,9 +7,8 @@ description: >
 
 # 外部サービスへの投稿前レビュー
 
-本スキルは投稿後に第三者へ届く文面を、起草者と独立した読み取り専用の担当が投稿前に検証する手順を提供する。
-投稿するエージェントが対象の判定、レビューの依頼、指摘の採否および投稿を担う。
-投稿操作の認可は`agent-toolkit:user-confirmation-and-report`に従って判定する。
+第三者へ届く文面を、投稿前に起草者と独立した読み取り専用の担当に検証させる。
+対象の判定、レビューの依頼、指摘の採否と投稿は投稿するエージェントが担い、投稿操作の認可は`agent-toolkit:user-confirmation-and-report`で判定する。
 
 ## 読込表
 
@@ -22,5 +21,5 @@ description: >
 ## 対象
 
 第三者が読む外部サービスへエージェントが起草または加筆した人間向け文面を対象とする。
-ユーザーが逐語で渡した文面、git push、コミットメッセージおよびprivate-notesのWI本文は対象外とする。
-git pushとコミットメッセージは`agent-toolkit:commit`、WI本文は`agent-toolkit:wi-standards`とWI投入担当（`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`）の契約に従う。
+ユーザーが逐語で渡した文面、git push、コミットメッセージ（`agent-toolkit:commit`）は対象外とする。
+private-notesのWI本文も対象外であり、`agent-toolkit:wi-standards`と`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従う。

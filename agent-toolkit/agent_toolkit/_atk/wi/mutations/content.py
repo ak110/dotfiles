@@ -290,16 +290,29 @@ def _resolve_edit_message(args: argparse.Namespace) -> str | None:
         sys.exit(1)
 
 
-def _apply_cooldown_edit(content: str, value: str) -> str:
-    """再処理抑制期限をfrontmatterへ設定し、空文字列では削除する。"""
+def _apply_cooldown_edit(content: str, value: str, filename: str) -> str:
+    """再処理抑制期限をAWIのfrontmatterへ設定し、空文字列では種別によらず削除する。
+
+    期限を適用するのはAWIだけであり、他の種別へ保存すると着手可否判定が不正期限として扱う。
+    空文字列による削除は、保存済みの不正期限を修復できるよう種別と保存値の妥当性を問わず受理する。
+    """
     parsed = _frontmatter.parse_frontmatter(content)
     if parsed is None:
         raise WebInputError(
             "frontmatterが破損しているため期限を変更できません",
-            next_action=_BROKEN_STORED_NEXT_ACTION.format(name="<FILE>"),
+            next_action=_BROKEN_STORED_NEXT_ACTION.format(name=filename),
         )
     data, body = parsed
     if value:
+        entry_type = _constants.normalized_wi_type(data.get("type"))
+        if entry_type != WI_TYPE_AWI:
+            raise WebInputError(
+                f"再処理抑制期限を設定できるのはAWIだけです（この項目の種別: {entry_type or '不明'}）",
+                next_action=(
+                    "AWIを指定して再実行する。この項目に保存済みの期限を除く場合は"
+                    f"`atk wi edit {filename} --cooldown-until ''`で解除する"
+                ),
+            )
         data["cooldown_until"] = _add.normalize_cooldown_until(value)
     else:
         data.pop("cooldown_until", None)
@@ -421,7 +434,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         edited = original
     if args.cooldown_until is not None:
         try:
-            edited = _apply_cooldown_edit(edited, args.cooldown_until)
+            edited = _apply_cooldown_edit(edited, args.cooldown_until, path.name)
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)

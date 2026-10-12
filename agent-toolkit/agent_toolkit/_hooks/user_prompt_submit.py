@@ -46,6 +46,19 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 
 from __future__ import annotations
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._common",
+    "agent_toolkit._common.delegated_session",
+    "agent_toolkit._common.periodic_recheck",
+    "agent_toolkit._common.process_loop_session",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._hooks",
+    "agent_toolkit._hooks.host",
+    "agent_toolkit._plan.path_kinds",
+    "time",
+}
+
 import json
 import os
 import pathlib
@@ -123,7 +136,7 @@ _REALIGN_NOTICE_BODY = (
     "次の操作: `agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめる。"
 )
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
-_INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出し", "洗い出す", "探し", "チェック", "レビュー")
+_INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
 # フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、ユーザー自身の依頼文ではなく
 # 貼り付けた素材であるため、例示の語と調査を求める語の判定から外す。
 _QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)

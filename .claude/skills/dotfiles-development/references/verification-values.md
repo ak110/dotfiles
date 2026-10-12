@@ -4,56 +4,48 @@
 
 ## 変更範囲の検証の値
 
-- 変更範囲の検証の対象は`agent-toolkit:check-execution`が定める変更範囲の検証の類型で選ぶ。本リポジトリで使う値は次のとおり
-  - 横断テスト: `SKILL.md`「テスト配置」が定める`*_invariant_test.py`であり、`pyfltr fast`が実行する。変更範囲の検証へ`uv run --frozen pyfltr fast --commands=pytest`（対象ファイルを渡さずリポジトリrootで実行する）を含め、rootと`agent-toolkit/`の両方の横断テストを実行する。commit時にもprekが起動する`pyfltr fast`が同じ横断テストを自動実行するが、検証の後に動くため変更範囲の検証の結果には使わない。fastの前提と再検証の手段は`docs/development/audit-records.md`「.claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日」が持つ
-  - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、変更した挙動に対応するhook固有の`<hook名>_test.py`が期待値を持つ
-  - 共有契約を変えた場合の検証単位全体: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`。対象の変更は、`agent-toolkit/agent_toolkit/_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、または複数の`atk`サブコマンドが共有する処理・出力の契約の変更である。`agents_server`のMCPツールと`atk agents wait`が公開する応答の変更も対象に含める。
-    共有する処理・出力の契約は、変更前か変更後に異なる2つ以上のサブコマンドから実際に呼ばれる処理の挙動と、共通出力の内容・書式・条件・有無を指す。公開する応答の変更は、応答の項目の内容・書式・条件・有無の変更を指す。同じ応答の項目をMCP層、CLIの待機および自動再開後の応答のテストが別々のファイルで確かめるためである。いずれも内部のコメント・空白だけの変更は含めない
-  - 配布物の版指定をエンドユーザーの環境の解決方法で確かめるテスト: `install_sh_test.py`。隔離したHOMEへ配布設定を展開し、実際のuvと配布する公開待機設定でpost-applyの`uv tool install`とpyfltr MCPのウォームアップを実行する。次のいずれかを変えた場合は、変更範囲の検証へ`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。
-    - `agent-toolkit/.mcp.json`の版指定（生成物の`agent-toolkit/mcp.json`と`agent-toolkit/.mcp.codex.json`を含む）
-    - リポジトリ直下と`agent-toolkit/`の`pyproject.toml`の`dependencies`
-    - `.chezmoi-source/`の導入・更新処理がパッケージマネージャーへ渡す版指定
+変更範囲の検証の対象は`agent-toolkit:check-execution`の類型で選ぶ。本リポジトリでの値は次のとおり。
 
-    `pytools/_internal/warmup_pyfltr_mcp_test.py`は`uvx`を代替実行ファイルへ置き換えるため、版指定を解決できるかを確かめない
-  - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportする場所は`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`
-  - Function hooks module: `agent-toolkit/hooks/`の`*.ts`・`*.tsx`（テストの`*.test.ts`・`*.test.tsx`を含む）を変更した場合は、変更範囲の検証へ次の2つを含める。`make test`のpyfltrは`tsc`を有効にしておらず、CIはClaude Codeを導入しないため、どちらもこの2つを実行しない
-    - 型チェック: 現在のClaude Codeの型宣言を使い、`npx --yes -p typescript@5.9.3 tsc --project <設定ファイル> --pretty false`を実行する。型宣言はホスト同梱の`plugin-authoring`スキルを起動したときにClaude Codeがそのスキルの基準ディレクトリへ書く`types/claude-code.d.ts`、またはモジュールを読み込んだプラグインの`.claude-plugin/types/`から得る。設定ファイルはmanaged-tempへ置き、`include`へ型宣言と`agent-toolkit/hooks/`の`*.ts`・`*.tsx`を挙げる。`compilerOptions`は型宣言の冒頭が示す値へ`allowImportingTsExtensions: true`を加えたものとする（モジュール間のimportが拡張子`.ts`を持つため）。設定ファイルと型宣言はリポジトリへ追加しない
-    - モジュールテスト: `claude plugin test <worktree>/agent-toolkit`。プラグインのルートを渡す（`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからず失敗する）
-  - 名前の削除・改名の全体静的確認: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さず`agent-toolkit/`を含むリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
-  - 統合後の検証: fast-forwardの前に専用worktreeで、共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`と`ty`を1回実行する。`uv run --frozen pyfltr run --commands=arid`も同じ時点で実行する。rebase後の組合せはcommit時には確かめられないため、同じfastの対象選択を使う
+- 横断テスト: `SKILL.md`「テスト配置」の`*_invariant_test.py`。変更範囲の検証へ`uv run --frozen pyfltr fast --commands=pytest`（対象ファイルを渡さずリポジトリrootで実行）を含め、rootと`agent-toolkit/`の両方を実行する。commit時のprekも同じfastを動かすが、検証の後なので変更範囲の検証の結果には使わない。前提と再検証手段は`docs/development/audit-records.md`「.claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日」にある
+- 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、hook固有の`<hook名>_test.py`が期待値を持つ
+- 共有契約を変えた場合: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`。対象は`_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、2つ以上の`atk`サブコマンドが呼ぶ処理や共通出力の契約の変更である。`agents_server`のMCPツールと`atk agents wait`の公開応答の項目（内容・書式・条件・有無）の変更も含む。同じ応答の項目をMCP層、CLIの待機、自動再開後の応答のテストが別ファイルで確かめるためである。コメント・空白だけの変更は含めない
+- 配布物の版指定: 次のいずれかを変えた場合は`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。このテストは隔離したHOMEで実際のuvを使い、post-applyの`uv tool install`とpyfltr MCPのウォームアップを実行する。`pytools/_internal/warmup_pyfltr_mcp_test.py`は`uvx`を置き換えるため版指定の解決を確かめない
+  - `agent-toolkit/.mcp.json`の版指定（生成物の`agent-toolkit/mcp.json`と`agent-toolkit/.mcp.codex.json`を含む）
+  - リポジトリ直下と`agent-toolkit/`の`pyproject.toml`の`dependencies`
+  - `.chezmoi-source/`の導入・更新処理がパッケージマネージャーへ渡す版指定
+- パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportするのは`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`
+- Function hooks module: `agent-toolkit/hooks/`の`*.ts`・`*.tsx`（`*.test.ts`・`*.test.tsx`を含む）を変更した場合は次の2つを含める。`make test`は`tsc`を有効にしておらず、CIはClaude Codeを導入しないため、どちらも実行しない
+  - 型チェック: `npx --yes -p typescript@5.9.3 tsc --project <設定ファイル> --pretty false`。型宣言は、ホスト同梱の`plugin-authoring`スキルの起動時にClaude Codeがその基準ディレクトリへ書く`types/claude-code.d.ts`か、モジュールを読み込んだプラグインの`.claude-plugin/types/`から得る。設定ファイルはmanaged-tempへ置き、`include`に型宣言と`agent-toolkit/hooks/`の`*.ts`・`*.tsx`を挙げる。`compilerOptions`は型宣言の冒頭が示す値に`allowImportingTsExtensions: true`を加える。設定ファイルと型宣言はリポジトリへ追加しない
+  - モジュールテスト: `claude plugin test <worktree>/agent-toolkit`（プラグインのルートを渡す。`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからず失敗する）
+- 名前の削除・改名の全体静的確認: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さずリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
+- Python版指定（`.python-version`、`.github/workflows/ci.yaml`のmatrixのPython版）かCIのcontainer jobの依存導入（同ファイルの`ネイティブ依存インストール`step）を変えた場合: `make ci-deps-check`。CIと同じimageの中でmatrixの各Python版の依存導入と`uv sync`を再現し、ローカルではビルドできてもCIでは失敗するsdistなどをpush前に検出する。imageと導入パッケージと版は`Makefile`の変数が持ち、`ci_workflow_test.py`がCI定義との一致を確かめる。dockerを要し1版あたり約1分かかる
+- 統合後の検証: rebase後の組合せはcommit時に確かめられないため、fast-forwardの前に専用worktreeで`make sync`の後に次を1回実行する。共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`、`ty`、`uv run --frozen pyfltr run --commands=arid`
 
 ## push前のチェックとCIだけが実行するチェック
 
-- 公開前の全体検証は`agent-toolkit:commit`が公開工程の着手時に読ませる資料の「検証とCI」に従う。push前にはCIが実行しないチェックを選ぶ。変更ファイルだけでは検出できない、複数ファイル間の関係に起因する問題も全体を対象に確かめる。本リポジトリでは次を実行する
-  - CIのpyfltr実行が無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version --enable=statusline-version`
-  - レーンをまたぐ重複実装は片側の変更ファイルだけでは比較できないため、全体を検出: `uv run --frozen pyfltr run --commands=arid`
-  - Pythonの型と静的参照の整合を変更ファイルの外も含めて確かめる: `uv run --frozen pyfltr run --commands=ty`
-  - 複数ファイルにまたがるimport循環は一部ファイルだけでは検出できない。次のコマンドで全体の循環importを検出する。 `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`
-- `make test`が実行するツール集合とCIの`python-lint (3.15)`ジョブの差は、同ジョブが`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version`で無効化するチェックである。Python 3.15のpytestは`pytest (3.15)`ジョブが所有する。
-  次の自動チェックはローカルの`make test`では実行されず、それぞれのジョブやコマンドで実行する
-  - `test-windows`ジョブ: Windows実機でのchezmoi適用、Windows固有のテストと公開ランチャー確認
-  - `update-dotfiles-upgrade (windows)`ジョブ: Windows旧版からのupdate-dotfiles更新検証
-  - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
-  - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
-  - `pytest (3.14)`ジョブ: Python 3.14でのpytest
-  - `pytest (3.15)`ジョブ: Python 3.15でのpytest
-  - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
-  - `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
+公開前の全体検証は`agent-toolkit:commit`が公開工程で読ませる資料の「検証とCI」に従い、CIが実行しないチェックと、変更ファイルだけでは検出できない複数ファイル間の問題を全体で確かめる。本リポジトリでは次を実行する。
+
+- 最初に環境同期: `make sync`。仮想環境を`uv.lock`と`.python-version`へそろえ、CIの新しい環境と同じ条件で後続のチェックを動かす
+- CIのpyfltrが無効化するチェック: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version --enable=statusline-version`
+- レーンをまたぐ重複実装: `uv run --frozen pyfltr run --commands=arid`
+- 型と静的参照の整合: `uv run --frozen pyfltr run --commands=ty`
+- 複数ファイルにまたがる循環import: `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`
+
+`make test`とCIの`python-lint (3.15)`ジョブの差は、同ジョブが`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version`で無効化するチェックである。Python 3.15のpytestは`pytest (3.15)`ジョブが所有する。次はローカルの`make test`では実行されない。
+
+- `test-windows`ジョブ: Windows実機でのchezmoi適用、Windows固有のテストと公開ランチャー確認
+- `update-dotfiles-upgrade (windows)`ジョブ: Windows旧版からのupdate-dotfiles更新検証
+- `test-linux`ジョブ: `install.sh`とchezmoiの実適用
+- `python-lint (3.13)`ジョブ: Python 3.13でのpytest
+- `pytest (3.14)`ジョブ: Python 3.14でのpytest
+- `pytest (3.15)`ジョブ: Python 3.15でのpytest
+- `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
+- `browser-e2e`ジョブ: 実ブラウザーテスト（ローカルでは`make test-browser`）
 
 ## agent-doc-tone
 
-- `make test`はlinter`agent-doc-tone`を含む。
-  commit時のpre-commitも、ステージした変更ファイルのうち対象に当たるものへ`agent-doc-tone`を実行し、3語の検出でcommitを止める。
-  単独では`uv run --frozen pyfltr run --commands=agent-doc-tone`で起動する。
-  対象はエージェントが実行時に読むMarkdown（`AGENTS.md`・`agent-toolkit/`のrules・skills・share・
-  `.chezmoi-source/dot_claude/`・`.claude/skills/`）とする。
-  文体の密度を測り、閾値を超えたファイルを指標付きで報告する。
-  測る指標と閾値は`scripts/check_agent_doc_tone.py`のdocstringが定める。
-  `agent-toolkit/`の説明文はMarkdownの本文・見出し・表に加え、コードのコメント・docstring・表示文・注入文を語の判定の対象とする。
-  `agent-toolkit:writing-standards`の表記規則が説明に使わないと定める3語が戻った場合は、ファイルと行を示して非0で終える。
-  文脈によって対象と動作が伝わりにくい語（判定する語は同スクリプトの`_CAUTION_PATTERNS`が定める）は、ファイルと行を示す警告を標準エラーへ出力する。警告だけの場合は終了コード0で終える。
-  警告は文脈で対象と動作が伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。
-  引用、意図的な悪い例、検出用データと保存形式の名称は説明文と区別し、良い例と通常の説明は判定する。
-  報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で
-  指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換えて密度を下げる。
-  語の再使用は`agent-toolkit:writing-standards`が定めるtextlint指摘の修正方針に従って文全体を書き直す
+- `make test`とcommit時のpre-commit（ステージした対象ファイル）が`agent-doc-tone`を実行する。単独では`uv run --frozen pyfltr run --commands=agent-doc-tone`で起動する
+- 対象はエージェントが実行時に読むMarkdown（`AGENTS.md`・`agent-toolkit/`のrules・skills・share・`.chezmoi-source/dot_claude/`・`.claude/skills/`）である。`agent-toolkit/`ではコードのコメント・docstring・表示文・注入文も語の判定の対象とする
+- 文体の密度が閾値を超えたファイルを指標付きで報告する（指標と閾値は`scripts/check_agent_doc_tone.py`のdocstring）。`agent-toolkit:writing-standards`の表記規則が説明に使わないと定める3語が戻ると、ファイルと行を示して非0で終える（pre-commitはcommitを止める）
+- 文脈で対象と動作が伝わりにくい語（同スクリプトの`_CAUTION_PATTERNS`）は警告だけで終了コード0とする。文脈で伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。引用、意図的な悪い例、検出用データ、保存形式の名称は説明文と区別する
+- 報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換える。語の再使用は`agent-toolkit:writing-standards`のtextlint指摘の修正方針に従い文全体を書き直す

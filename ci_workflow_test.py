@@ -1,6 +1,7 @@
 """CI workflowの静的契約を検証する。"""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -295,3 +296,31 @@ def test_windows_mozilla_step_disables_only_mozilla_tasks(
     for line in expected_lines:
         assert line in lines
     assert unexpected not in result.stdout
+
+
+def _makefile_variable(name: str) -> str:
+    text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    match = re.search(rf"^{re.escape(name)} := (.+)$", text, flags=re.MULTILINE)
+    assert match is not None, name
+    return match.group(1).strip()
+
+
+def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) -> None:
+    """`make ci-deps-check`がCIのpython-lint jobと同じimage・導入パッケージ・Python版で依存導入を再現する。
+
+    CI定義だけを変えた場合も、Makefileの値との不一致でpush前の再現手段のずれを検出する。
+    """
+    job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
+    container = workflow_mapping(job["container"])
+    assert _makefile_variable("CI_CONTAINER_IMAGE") == container["image"]
+
+    install = next(step for step in workflow_steps(job) if step.get("name") == "ネイティブ依存インストール")
+    install_lines = [line.strip() for line in str(install["run"]).splitlines() if "apt-get install" in line]
+    assert len(install_lines) == 1
+    packages = install_lines[0].split("--no-install-recommends", 1)[1].split()
+    assert _makefile_variable("CI_NATIVE_PACKAGES").split() == packages
+
+    matrix = workflow_mapping(workflow_mapping(job["strategy"])["matrix"])
+    include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
+    versions = sorted({str(entry["python-version"]) for entry in include}, key=lambda value: tuple(map(int, value.split("."))))
+    assert _makefile_variable("CI_PYTHON_VERSIONS").split() == versions

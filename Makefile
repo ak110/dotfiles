@@ -6,6 +6,12 @@ export UV_FROZEN := 1
 # 個別テストの合否の根拠に使えるようにする。`-o addopts=''`はpyproject.tomlの並列実行などの設定を外す。
 PYTEST_RUN = uv run pytest -v -o addopts='' -p no:cacheprovider
 
+# CIのpython-lint jobが使うcontainer image、`ネイティブ依存インストール`stepの導入パッケージとmatrixのPython版。
+# `ci-deps-check`がこの値でCIの依存導入を再現し、ci_workflow_test.pyがci.yamlとの一致を確かめる。
+CI_CONTAINER_IMAGE := ghcr.io/ak110/pyfltr:latest
+CI_NATIVE_PACKAGES := poppler-utils libarchive13 zstd
+CI_PYTHON_VERSIONS := 3.13 3.14 3.15
+
 help:
 	@cat Makefile
 
@@ -69,15 +75,37 @@ setup-pwsh:
 	sudo apt-get install --yes powershell
 	pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck"
 
+# リポジトリ直下とagent-toolkitの仮想環境を、ロックファイルが選ぶパッケージ集合とCIの基準Python版へそろえる。
+# `uv sync`は余分なパッケージを除き、`--python`は版の異なる既存の仮想環境を削除して指定の版で構築する。
+# `uv run`の自動同期は余分なパッケージを残し既存の仮想環境のPython版も保つため、この同期に代えない。
+sync:
+	uv sync --all-groups --all-extras --python "$$(cat .python-version)"
+	uv sync --project agent-toolkit --all-groups --all-extras --python "$$(cat .python-version)"
+
+# CIのcontainer jobと同じimageの中で、CIと同じ依存導入と各Python版の`uv sync`を実行する。
+# 作業ツリーは読み取り専用でマウントし、container内へ仮想環境とビルド生成物を除いて複製してから同期する。
+# 書込みマウントで同期すると、container内のrootが作業ツリーの所有者を書き換えるためである。
+ci-deps-check:
+	docker run --rm --user root --entrypoint bash --volume "$(CURDIR):/src:ro" --env UV_FROZEN=1 \
+		"$(CI_CONTAINER_IMAGE)" -euo pipefail -c '\
+		apt-get update; \
+		apt-get install -y --no-install-recommends $(CI_NATIVE_PACKAGES); \
+		for version in $(CI_PYTHON_VERSIONS); do \
+			rm -rf /work; mkdir /work; \
+			tar -C /src --exclude=.venv --exclude=node_modules --exclude=target -cf - . | tar -C /work -xf -; \
+			echo "uv sync: Python $$version"; \
+			(cd /work && UV_PYTHON=$$version uv sync --all-groups --all-extras); \
+		done'
+
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
-format:
+format: sync
 	uv run --frozen pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 # `--no-fix`はlinterの自動修正段を抑止する。コミット可否を判定するゲートが判定対象の作業ツリーを
 # 書き換えないようにし、担当範囲外のファイルへ差分が出ないようにする。
 # 自動修正が必要な場合は`make format`を使う。
-test:
+test: sync
 	uv run --frozen pyfltr run --no-fix
 
 # 実ブラウザーテストを日常実行
@@ -90,4 +118,4 @@ test-browser:
 test-agents-live:
 	$(PYTEST_RUN) -m live_agents agent-toolkit/agent_toolkit/agents_server_live_test.py
 
-.PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh format test test-browser test-agents-live
+.PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh sync ci-deps-check format test test-browser test-agents-live

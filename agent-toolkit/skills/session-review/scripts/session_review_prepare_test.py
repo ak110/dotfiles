@@ -12,13 +12,16 @@ import os
 import pathlib
 import subprocess
 import sys
+from typing import Any
 
 import pytest
+import session_evidence_candidates as evidence_candidates  # pylint: disable=import-error
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit._common import response_language_check, state_paths
 from agent_toolkit._testing import delegated_threads
-from agent_toolkit._testing.failure_records import failure_entries
+from agent_toolkit._testing import session_evidence_support as support
+from agent_toolkit._testing.failure_records import bash_failure_entries, failure_entries
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
 _LONG_INTERVENTION = "そうじゃなくて、対象は全部です。" + "理由の説明。" * 400 + "最後まで読んで。"
@@ -391,6 +394,9 @@ def test_failure_variable_values_share_signature(
             assert len(saved) == index + 1
             assert {row["session_id"] for row in saved} == {f"session-{number}" for number in range(index + 1)}
             assert {row["failure_signature"] for row in saved} == signatures
+            assert {row["candidate_kind"] for row in saved} == {failure_kind}
+            current = next(row for row in saved if row["session_id"] == f"session-{index}")
+            assert current["failure_event"] == failures[0]["failure_event"]
             if index == 0:
                 assert result["candidate_total"] == 0
                 assert result["excluded_counts"]["single-session-failure"] == 1
@@ -435,6 +441,73 @@ def test_prepare_recomputes_legacy_failure_ledger(tmp_path: pathlib.Path, capsys
         assert sorted(counts.values()) == [1, 1, 1, 1, 2, 2]
         assert {item["session_id"] for item in saved} == {item["session_id"] for item in records}
         assert {item["observed_at"] for item in saved} == {"2026-09-05T00:00:00+00:00"}
+
+
+def test_failure_ledger_rejudges_records_with_current_exclusions(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """台帳の記録へ抽出と同じ除外判定を読込時に適用し、現在の判定が除く記録を反復に数えず台帳からも除く。
+
+    除外規則を後から広げても、判定の結論だけを保持する台帳では旧規則で記録した失敗が30日の期限まで反復に数えられる。
+    旧規則で記録された状態を、判定に使う欄を持つ記録として台帳へ置いて再現する。
+    """
+    no_match = "Exit code 1\n該当0件: 条件に一致するWIは無い"
+    excluded_session = tmp_path / "excluded-session.jsonl"
+    entries: list[dict] = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
+    entries.extend(bash_failure_entries("atk wi grep 台帳", no_match, "single"))
+    entries.extend(bash_failure_entries("cd /repo; atk wi grep 台帳", no_match, "cd-prefixed"))
+    entries.extend(bash_failure_entries("atk agents wait", "Exit code 3\n待機中: 1件", "wait"))
+    excluded_session.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    excluded_dir = tmp_path / "excluded-work"
+    excluded_dir.mkdir()
+    assert prepare.main(["--transcript", str(excluded_session), "--work-dir", str(excluded_dir)], now=_FIXED_NOW) == 0
+    assert json.loads(capsys.readouterr().out)["candidate_total"] == 0
+    timeline = [
+        json.loads(line) for line in (excluded_dir / "bundle" / "timeline.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    failures = [event for event in timeline if event.get("kind") == "failed-tool"]
+    assert len(failures) == 3
+    ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
+    excluded_records = []
+    for event in failures:
+        failure_event = {field: event[field] for field in evidence_candidates.FAILURE_EVENT_FIELDS if field in event}
+        signature, summary = evidence_candidates.failure_signature("tool-failure", failure_event)
+        excluded_records.append(
+            {
+                "failure_signature": signature,
+                "session_id": "excluded-session",
+                "observed_at": "2026-09-05T00:00:00+00:00",
+                "failure_summary": summary,
+                "candidate_kind": "tool-failure",
+                "failure_event": failure_event,
+            }
+        )
+    ledger.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n" for record in excluded_records), encoding="utf-8")
+
+    chained = "atk wi grep 台帳; atk wi grep 失敗署名"
+    for index, session in enumerate(("chained-a", "chained-b")):
+        transcript = tmp_path / f"{session}.jsonl"
+        entries = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
+        entries.extend(bash_failure_entries(chained, no_match, "chained"))
+        transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+        work = tmp_path / f"{session}-work"
+        work.mkdir()
+        assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+        result = json.loads(capsys.readouterr().out)
+        bundle = [json.loads(line) for line in (work / "bundle" / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+        chained_failures = [row for row in bundle if row.get("candidate_kind") == "tool-failure"]
+        assert len(chained_failures) == 1
+        # 除かれる単独の`atk wi grep`の記録は、連結した失敗と同じ署名を持つ。
+        assert chained_failures[0]["failure_signature"] == excluded_records[0]["failure_signature"]
+        if index == 0:
+            assert result["candidate_total"] == 0
+            assert result["excluded_counts"]["single-session-failure"] == 1
+        else:
+            assert result["candidate_counts"] == {"tool-failure": 1}
+            assert "2セッション" in pathlib.Path(result["candidates_path"]).read_text(encoding="utf-8")
+        saved = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+        assert {item["session_id"] for item in saved} == {f"chained-{name}" for name in "ab"[: index + 1]}
+        assert all(item["failure_event"] and item["candidate_kind"] == "tool-failure" for item in saved)
 
 
 @pytest.mark.parametrize("delivery", ["text", "send", "codex"])
@@ -919,6 +992,7 @@ def test_prepare_lists_adhoc_processing_per_record_without_failure_selection(
     record_id = "claude:11111111-2222-3333-4444-555555555555"
     assert (
         f"- c0001 adhoc-processing（発生2件）: 記録{record_id}のその場のコードによる加工\n"
+        f"  - 記録の由来: {record_id}=メイン\n"
         f"  - {record_id}:2: sed -n 2p {saved_output}\n"
         f"  - {record_id}:4: python3 -c 'import sys; sys.exit(3)'\n"
     ) in candidates
@@ -1164,6 +1238,7 @@ def test_parallel_prepare_keeps_both_sessions_in_failure_ledger(tmp_path: pathli
     ledger = state_home / "agent-toolkit" / "session-review" / "failure-signatures.jsonl"
     records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
     assert {item["session_id"] for item in records} == {"parallel-a", "parallel-b"}
+    assert all(item["candidate_kind"] == "command-failure" and item["failure_event"] for item in records)
 
 
 @pytest.mark.parametrize("linked_worktree", [False, True])
@@ -1237,3 +1312,82 @@ def test_prepare_reports_missing_items(
     assert captured.out == ""
     assert captured.err.splitlines()[0] == "不足: evidence_script"
     assert captured.err.splitlines()[1].startswith("次の操作: `atk run-script session-review-prepare --")
+
+
+def _delegate_adhoc_session(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """メインがCodexの委譲先（役割文書exec、mode task）を起動し、委譲先がその場のコードを実行したセッションを書く。
+
+    記録の形は`agent_toolkit._testing.session_evidence_support`のCodex rollout（2026年10月4日の記録）を写す。
+    """
+    parent = support.tool_call_session(tmp_path, monkeypatch, "rg needle")
+    entries = [json.loads(line) for line in parent.read_text(encoding="utf-8").splitlines()]
+    entries[5]["message"]["content"][0]["input"]["mode"] = "task"
+    support.write_jsonl(parent, entries)
+    codex = next((tmp_path / "codex").rglob("*.jsonl"))
+    entries = [json.loads(line) for line in codex.read_text(encoding="utf-8").splitlines()]
+    entries[1:1] = [
+        support.codex_item(
+            "2026-10-06T00:00:05Z",
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "次の文書の手順を実行せよ（出所: /plugin/share/exec.subagent.md）。\n作業"}
+                ],
+            },
+        ),
+        support.codex_item(
+            "2026-10-06T00:00:06Z",
+            {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "c-py",
+                "arguments": '{"cmd": "python3 -c \'print(2)\'"}',
+            },
+        ),
+        support.codex_item("2026-10-06T00:00:06.500Z", {"type": "function_call_output", "call_id": "c-py", "output": "2"}),
+    ]
+    support.write_jsonl(codex, entries)
+    return parent
+
+
+def test_prepare_adds_record_provenance_to_candidate_locations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """委譲先の記録にある候補の記録位置へ、役割文書・起動mode・起動元とその役割を添える。
+
+    要約の文言（コマンドやパス）から実行主体を推させないための契約であり、期待値は同じbundleの
+    `record-provenance`の項目（`role_document`、`mode`、`source_record`）から導く。
+    """
+    parent = _delegate_adhoc_session(tmp_path, monkeypatch)
+
+    exit_code = prepare.main(["--transcript", str(parent), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW)
+
+    assert exit_code == 0, capsys.readouterr().err
+    record = json.loads(capsys.readouterr().out)
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    delegate = f"codex:{support.TOOL_CALL_THREAD}"
+    heading = next(line for line in candidates.splitlines() if f"記録{delegate}のその場のコードによる加工" in line)
+    provenance = candidates.splitlines()[candidates.splitlines().index(heading) + 1]
+    assert provenance.startswith(f"  - 記録の由来: {delegate}=役割文書exec・mode task・起動元claude:parent-session:")
+    assert provenance.endswith("（メイン）")
+
+
+def test_prepare_marks_candidate_locations_without_provenance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """由来を持たない証拠bundle（`record-provenance`を出力する前の版で作成した記録など）では、取得できなかったことを示す。"""
+    parent = _delegate_adhoc_session(tmp_path, monkeypatch)
+    original = prepare._read_jsonl  # pylint: disable=protected-access
+
+    def read_without_provenance(path: pathlib.Path) -> list[dict[str, Any]]:
+        return [event for event in original(path) if event.get("kind") != "record-provenance"]
+
+    monkeypatch.setattr(prepare, "_read_jsonl", read_without_provenance)
+
+    exit_code = prepare.main(["--transcript", str(parent), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW)
+
+    assert exit_code == 0, capsys.readouterr().err
+    record = json.loads(capsys.readouterr().out)
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    assert f"  - 記録の由来: codex:{support.TOOL_CALL_THREAD}=由来を取得できなかった" in candidates

@@ -738,7 +738,10 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "--cooldown-until",
         metavar="DATETIME",
         default=None,
-        help="inbox・holdの再処理抑制期限をタイムゾーン付きISO 8601日時で設定する。空文字列で解除する。",
+        help=(
+            "inbox・holdのAWIの再処理抑制期限をタイムゾーン付きISO 8601日時で設定する。"
+            "空文字列で解除する。UWIでは空文字列による解除だけを受け付ける。"
+        ),
     )
     edit.add_argument(
         "--dry-run",
@@ -770,8 +773,36 @@ def _add_mq_edit_parsers(sub: Any) -> None:
 def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     """検索・回答・外部差分コミットサブコマンドを登録する。"""
     grep = _atk_help.add_command(sub, "grep", **_atk_help.HELP["atk wi grep"])
-    grep.add_argument("pattern", metavar="PATTERN", help="Pythonの正規表現（reモジュール）として解釈する検索パターン。")
+    grep.add_argument(
+        "pattern",
+        metavar="PATTERN",
+        help="検索パターン。`-F`を指定しない場合はPythonの正規表現（reモジュール）として、指定した場合は固定文字列として解釈する。",
+    )
     grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
+    grep.add_argument(
+        "-F",
+        "--fixed-strings",
+        action="store_true",
+        help="PATTERNの全文字を文字そのものとして扱い、その文字列を含む行を一致とする。`-i`と併用できる。",
+    )
+    output = grep.add_mutually_exclusive_group()
+    output.add_argument(
+        "-c",
+        "--count",
+        action="store_true",
+        help="一致した項目ごとに`<ファイル名>:<一致行数>`を出力する（値は項目ごとの一致行数）。",
+    )
+    output.add_argument(
+        "-l",
+        "--files-with-matches",
+        action="store_true",
+        help="一致した項目のファイル名だけを出力する。",
+    )
+    output.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="一致した項目ごとに`filename`・`summary`・`match_count`を持つ1件1行のJSON Linesを出力する。",
+    )
     grep.add_argument(
         "--type", choices=("all", *_wi_constants.WI_TYPES), default="all", help="出力対象種別。省略時は全種別を表示する。"
     )

@@ -35,6 +35,16 @@ LLM宛て出力は`_hook_notice`のblock専用整形関数経由で整形し、
 委譲先での実行可否: 委譲先は最上位セッションの終了工程を実行できないため、hook入力と環境印で除外する。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._atk.agents_exit_session",
+    "agent_toolkit._common.process_loop_session",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._hooks.agent_id",
+    "agent_toolkit._hooks.background_tasks",
+    "agent_toolkit._hooks.stop_session",
+}
+
 import os
 
 from agent_toolkit._atk.agents_exit_session import function_hook_paths

@@ -1428,7 +1428,10 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
 
 @pytest.mark.asyncio
 async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserHarness) -> None:
-    """期限だけの経過で一覧・読み上げ・開いた詳細と削除確認の表示を戻す。"""
+    """AWIは期限だけの経過で一覧・読み上げ・開いた詳細と削除確認の表示を戻し、UWIは期限によらず保存状態を示す。
+
+    冷却期限を適用するのはAWIだけである。UWIを冷却中と示すと、ユーザーの判断を待つ項目を時間経過で解消する待機として案内する。
+    """
     harness = browser_harness
     page = harness.page
     await page.clock.install(time=datetime.datetime(2099, 1, 2, tzinfo=datetime.UTC))
@@ -1448,7 +1451,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     assert warning_text is not None
     style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
     normal = page.locator('.entry-select[data-key="inbox/normal.md"] .state-badge')
-    for filename in ["verify.md", "plain.md", "question.md"]:
+    for filename in ["verify.md", "plain.md"]:
         row = page.locator(f'.entry-select[data-key="inbox/{filename}"]')
         badge = row.locator(".state-badge")
         await playwright.async_api.expect(badge).to_have_text("cooldown")
@@ -1457,8 +1460,13 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
         await playwright.async_api.expect(badge).to_have_attribute("title", "解除日時: 2099/01/02 09:00 JST")
         assert "cooldown" in (await row.get_attribute("aria-label") or "").split("、")
         await playwright.async_api.expect(row).to_have_attribute("aria-label", re.compile("解除日時: 2099/01/02 09:00 JST"))
-    await page.set_viewport_size({"width": 320, "height": 720})
     question = page.locator('.entry-select[data-key="inbox/question.md"]')
+    await playwright.async_api.expect(question.locator(".state-badge")).to_have_text("inbox")
+    assert await question.locator(".state-badge").get_attribute("title") is None
+    question_label = await question.get_attribute("aria-label") or ""
+    assert "cooldown" not in question_label.split("、")
+    assert "解除日時:" not in question_label
+    await page.set_viewport_size({"width": 320, "height": 720})
     # 各バッジの境界が狭幅の行内に収まり、内容も切り詰められない。
     assert await question.locator(".status-cell").evaluate("""status => {
         const row = status.closest('.entry-select').getBoundingClientRect();
@@ -1471,11 +1479,19 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     await question.focus()
     await page.keyboard.press("Enter")
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("2099/01/02 09:00 JST")
-    await page.keyboard.press("Escape")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / inbox")
+    # 保存済みの期限は詳細のメタデータに保存値のまま残り、解除日時としては示さない。
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text(deadline)
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).not_to_contain_text("2099/01/02 09:00 JST")
+    await detail.locator("#delete-button").click()
+    deletion = page.get_by_role("dialog", name="削除の確認")
+    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("uwi / inbox")
+    await deletion.locator("#delete-close-button").click()
+    await detail.locator("#detail-close-button").click()
     await page.locator('.entry-select[data-key="inbox/verify.md"]').click()
     detail = page.get_by_role("dialog", name="詳細")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / cooldown")
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("2099/01/02 09:00 JST")
     await detail.locator("#delete-button").click()
     deletion = page.get_by_role("dialog", name="削除の確認")
     await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("awi / cooldown")
@@ -1962,6 +1978,96 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
     assert (harness.root / "inbox" / "auto-imported.md").read_text(encoding="utf-8") == (
         "---\ntarget_repo: batch/repo\ntype: awi\n---\n\n自動切替の本文  \n"
     )
+
+
+@pytest.mark.asyncio
+async def test_create_dialog_choice_validation_precedes_only_single_entry(browser_harness: _BrowserHarness) -> None:
+    """単件の選択肢は検証し、show形式ではサーバーの形式判定へ原文を渡す。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.get_by_role("button", name="新規追加").click()
+    dialog = page.get_by_role("dialog", name="新規追加")
+    await dialog.locator("#create-kind").select_option("uwi")
+    await dialog.locator("#create-question-type").select_option("choice")
+    await playwright.async_api.expect(dialog.locator("label[for='create-choices']")).to_have_text(
+        "選択肢（1行1件、2件以上必須）"
+    )
+    await dialog.locator("#create-target").fill("example/repo")
+    await dialog.locator("#create-content").fill("質問の本文")
+    choices = dialog.locator("#create-choices")
+    await choices.fill("一択")
+    await dialog.get_by_role("button", name="追加").click()
+    await playwright.async_api.expect(dialog.locator("#create-choices-error")).to_have_text("選択肢を2件以上入力してください。")
+    await playwright.async_api.expect(choices).to_be_focused()
+    assert harness.operations.add_calls == []
+
+    await choices.fill("第一\n第二")
+    await playwright.async_api.expect(dialog.locator("#create-choices-error")).to_be_hidden()
+    await playwright.async_api.expect(choices).not_to_have_attribute("aria-invalid", "true")
+    async with page.expect_request(lambda request: request.url.endswith("/api/entries") and request.method == "POST") as info:
+        await dialog.get_by_role("button", name="追加").click()
+    single_payload = (await info.value).post_data_json
+    assert isinstance(single_payload, dict)
+    assert single_payload["choices"] == ["第一", "第二"]
+    await dialog.wait_for(state="hidden")
+    assert harness.operations.add_calls[-1]["messages"] == ["質問の本文"]
+    await page.locator('.entry-select[data-key="inbox/created-1-0.md"]').wait_for(state="visible")
+
+    await page.get_by_role("button", name="新規追加").click()
+    await dialog.locator("#create-kind").select_option("uwi")
+    await dialog.locator("#create-question-type").select_option("choice")
+    show_text = (
+        "## target_repo: batch/repo\n### pasted.md [inbox]\n---\ntarget_repo: batch/repo\ntype: awi\n---\n\n貼り付けた本文\n"
+    )
+    await dialog.locator("#create-content").fill(show_text)
+    await playwright.async_api.expect(dialog.locator("#create-choices")).to_have_value("")
+    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_be_visible()
+    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_contain_text("一括取り込みします")
+    await playwright.async_api.expect(dialog.locator("#uwi-fields")).to_be_hidden()
+    await playwright.async_api.expect(dialog.locator("#create-repo-fields")).to_be_hidden()
+    await dialog.locator("#create-content").fill("単件の本文")
+    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_be_hidden()
+    await playwright.async_api.expect(dialog.locator("#uwi-fields")).to_be_visible()
+    await dialog.locator("#create-content").fill(show_text)
+    async with page.expect_request(
+        lambda request: request.url.endswith("/api/entries") and request.method == "POST", timeout=3000
+    ) as info:
+        await dialog.get_by_role("button", name="追加").click()
+    show_payload = (await info.value).post_data_json
+    assert isinstance(show_payload, dict)
+    assert show_payload["raw_text"] == show_text
+    await dialog.wait_for(state="hidden")
+    assert harness.operations.batch_calls[-1] == show_text
+    assert (harness.root / "inbox" / "pasted.md").read_text(encoding="utf-8") == (
+        "---\ntarget_repo: batch/repo\ntype: awi\n---\n\n貼り付けた本文\n"
+    )
+    await page.locator('.entry-select[data-key="inbox/pasted.md"]').wait_for(state="visible")
+
+
+@pytest.mark.asyncio
+async def test_create_dialog_show_text_after_preface_stays_single_entry(browser_harness: _BrowserHarness) -> None:
+    """先頭エントリより前に説明文がある本文はサーバーと同じく単件として扱い、単件の入力欄と検証を保つ。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.get_by_role("button", name="新規追加").click()
+    dialog = page.get_by_role("dialog", name="新規追加")
+    await dialog.locator("#create-kind").select_option("uwi")
+    await dialog.locator("#create-question-type").select_option("choice")
+    await dialog.locator("#create-target").fill("example/repo")
+    await dialog.locator("#create-content").fill(
+        "次の項目について確認したい。\n\n"
+        "### pasted.md [inbox]\n---\ntarget_repo: batch/repo\ntype: awi\n---\n\n貼り付けた本文\n"
+    )
+    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_be_hidden()
+    await playwright.async_api.expect(dialog.locator("#uwi-fields")).to_be_visible()
+    await playwright.async_api.expect(dialog.locator("#create-repo-fields")).to_be_visible()
+    await dialog.locator("#create-choices").fill("一択")
+    await dialog.get_by_role("button", name="追加").click()
+    await playwright.async_api.expect(dialog.locator("#create-choices-error")).to_have_text("選択肢を2件以上入力してください。")
+    assert harness.operations.add_calls == []
+    assert harness.operations.batch_calls == []
 
 
 @pytest.mark.asyncio

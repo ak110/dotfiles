@@ -557,6 +557,95 @@ def _repository_reference(
     return _unresolved_reference(repository, head, matches)
 
 
+class ReferenceCheck:
+    """1行の`evidence`の明示されたファイル参照を抽出して解決し、解決できない参照の診断を返す。
+
+    返却前の確認と、根拠を保存する全ての公開操作（未判定検証記録の更新と完成条件証拠の判定記入）が同じ規則を使う。
+    保存操作が別の規則を持つと、保存時に受理した根拠が返却前の確認で初めて拒否され、根拠を書いた担当とは別の担当が書き直す。
+    `worktree`を真にすると、対象版で解決できないリポジトリ内の参照も作業ツリーのファイルで解決できたものとして扱う。
+    未判定検証記録は実装担当が未commitの状態で記録するためであり、対象版での解決は返却前の確認が改めて確かめる。
+    `repository`が`None`の場合（Git作業ツリーを特定できない保存操作）は、リポジトリ外の絶対参照だけを解決し、
+    それ以外の参照には`repository_error`を理由として示す。参照を含まない根拠の保存はGitを要しない。
+    """
+
+    RETRY = "実際に読んだ対象版の箇所へ参照を訂正するか、観測が不足する行を証拠不足へ再判定する"
+
+    def __init__(
+        self,
+        repository: pathlib.Path | None,
+        wi_outputs: dict[str, str] | None = None,
+        *,
+        worktree: bool = False,
+        repository_error: str = "",
+    ) -> None:
+        self.repository = repository
+        self.wi_outputs = wi_outputs if wi_outputs is not None else WiOutputs(repository) if repository else {}
+        self.worktree = worktree
+        self.repository_error = repository_error
+        self._contents: dict[tuple[str, pathlib.Path], bytes | str] = {}
+        self._headings: dict[tuple[str, pathlib.Path], set[str]] = {}
+        self._tracked: dict[str, list[str]] = {}
+
+    def row_errors(self, row: dict[str, str], section: str, label: str, head: str) -> list[str]:
+        """行の`evidence`のうち、`head`の追跡ファイルかリポジトリ外の実ファイルで解決できない参照を全件返す。"""
+        base = self.repository or pathlib.Path.cwd()
+        body = accepted_review_evidence.without_references(_evidence_body(row, accepted_review_evidence.FIELDS[section]))
+        errors: list[str] = []
+        for match in _file_references(body, base):
+            candidate, location = _reference_parts(match)
+            is_wi = WI_FILENAME.fullmatch(candidate) is not None
+            # abspathは..を整理するが、現在のリンク先で対象commitのパスを変えない。
+            path = pathlib.Path(os.path.abspath(base / candidate))
+            key = (head, path)
+            if key not in self._contents:
+                self._contents[key] = self._content(candidate, path, head, is_wi)
+            content = self._contents[key]
+            reason: str | None = content if isinstance(content, str) else None
+            if isinstance(content, bytes):
+                try:
+                    if location.startswith("#") and key not in self._headings:
+                        text = content.decode("utf-8")
+                        self._headings[key] = {
+                            title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)
+                        }
+                    reason = _reference_location_error(content, location, self._headings.get(key, set()))
+                    if reason is not None and is_wi:
+                        reason = f"WIの節または行を確かめてください: {reason}"
+                except UnicodeError as exc:
+                    reason = f"参照先をUTF-8として読めません: {exc}"
+                if reason is not None:
+                    reason = f"{reason}。{self.RETRY}"
+            if reason is not None and is_wi and "WIの節または行" not in reason:
+                reason = f"WI名または節を確かめてください: {reason}"
+            if reason is not None:
+                errors.append(f"{label}.evidence: 参照『{candidate}{location}』: {reason}")
+        return errors
+
+    def _content(self, candidate: str, path: pathlib.Path, head: str, is_wi: bool) -> bytes | str:
+        """参照先の内容を読み、読めない場合は次の操作を含む理由を返す。"""
+        repository = self.repository
+        if repository is None and (is_wi or not pathlib.Path(candidate).is_absolute()):
+            return f"リポジトリ内の参照を解決する対象worktreeを特定できません（{self.repository_error}）。{self.RETRY}"
+        try:
+            if is_wi:
+                _, wi_body = _wi_body(self.wi_outputs[candidate], candidate)
+                return "\n".join(wi_body).encode("utf-8")
+            if repository is None:
+                return path.read_bytes()
+            resolved = _repository_reference(candidate, path, repository, head, self._tracked.setdefault(head, []))
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+            resolved = f"{exc}。{self.RETRY}"
+        if (
+            isinstance(resolved, str)
+            and self.worktree
+            and repository is not None
+            and path.is_relative_to(repository)
+            and _is_file(path)
+        ):
+            return path.read_bytes()
+        return resolved
+
+
 def _check_reference_locations(
     payload: dict[str, object], repository: pathlib.Path, expected_head: str, wi_outputs: dict[str, str]
 ) -> list[str]:
@@ -566,53 +655,31 @@ def _check_reference_locations(
     そのファイルの見出し・行を確かめる。0件か2件以上なら、解決の基準と候補を診断へ示して拒否する。
     """
     head = _commit_oid(repository, expected_head)
-    contents: dict[pathlib.Path, bytes | str] = {}
-    headings: dict[pathlib.Path, set[str]] = {}
-    tracked: list[str] = []
+    check = ReferenceCheck(repository, wi_outputs)
     errors: list[str] = accepted_review_evidence.check(payload)
-    retry = "実際に読んだ対象版の箇所へ参照を訂正するか、観測が不足する行を証拠不足へ再判定する"
-    for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
+    for section in REQUIRED_FIELDS:
         rows = payload[section]
         assert isinstance(rows, list)
         for index, row in enumerate(rows):
-            if row["outcome"] != "達成":
-                continue
-            body = accepted_review_evidence.without_references(_evidence_body(row, field))
-            for match in _file_references(body, repository):
-                candidate, location = _reference_parts(match)
-                is_wi = WI_FILENAME.fullmatch(candidate) is not None
-                # abspathは..を整理するが、現在のリンク先で対象commitのパスを変えない。
-                path = pathlib.Path(os.path.abspath(repository / candidate))
-                if path not in contents:
-                    try:
-                        if is_wi:
-                            _, wi_body = _wi_body(wi_outputs[candidate], candidate)
-                            contents[path] = "\n".join(wi_body).encode("utf-8")
-                        else:
-                            contents[path] = _repository_reference(candidate, path, repository, head, tracked)
-                    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-                        contents[path] = f"{exc}。{retry}"
-                content = contents[path]
-                reason: str | None = content if isinstance(content, str) else None
-                if isinstance(content, bytes):
-                    try:
-                        if location.startswith("#") and path not in headings:
-                            text = content.decode("utf-8")
-                            headings[path] = {
-                                title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)
-                            }
-                        reason = _reference_location_error(content, location, headings.get(path, set()))
-                        if reason is not None and is_wi:
-                            reason = f"WIの節または行を確かめてください: {reason}"
-                    except UnicodeError as exc:
-                        reason = f"参照先をUTF-8として読めません: {exc}"
-                    if reason is not None:
-                        reason = f"{reason}。{retry}"
-                if reason is not None and is_wi and "WIの節または行" not in reason:
-                    reason = f"WI名または節を確かめてください: {reason}"
-                if reason is not None:
-                    errors.append(f"{_row_label(row, section, index)}.evidence: 参照『{candidate}{location}』: {reason}")
+            if row["outcome"] == "達成":
+                errors.extend(check.row_errors(row, section, _row_label(row, section, index), head))
     return errors
+
+
+def saving_reference_check(resolve: typing.Callable[[], pathlib.Path], *, worktree: bool = False) -> ReferenceCheck:
+    """保存操作の参照の解決を、各操作が現在使うリポジトリの起点から組み立てる。
+
+    起点を特定できなくても参照を含まない根拠は保存できるよう、失敗の理由を保持して参照の解決時にだけ示す。
+    """
+    try:
+        return ReferenceCheck(resolve(), worktree=worktree)
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        return ReferenceCheck(None, worktree=worktree, repository_error=str(error))
+
+
+def saved_row_label(row: dict[str, str], section: str, number: int) -> str:
+    """保存操作の診断の行見出しを、返却前の確認と同じ`<配列>[<添字>]`と、行選択に使う1始まりの行番号で組み立てる。"""
+    return f"{_row_label(row, section, number - 1)}（行番号{number}）"
 
 
 def _has_evidence_reference(evidence: str, repository: pathlib.Path) -> bool:
@@ -1745,20 +1812,51 @@ def _display_row(
 def evidence_rows(
     payload: dict[str, typing.Any],
     section: str | None = None,
-    row_number: int | None = None,
+    row_numbers: list[int] | None = None,
     *,
     seen: dict[str, dict[str, typing.Any]] | None = None,
 ) -> list[str]:
-    """返却と途中読取で、更新入力と同じ配列・1始まりの番号を表示する。"""
+    """返却と途中読取で、更新入力と同じ配列・1始まりの番号を表示する。
+
+    全行表示と配列だけの指定では、根拠を除いた`証拠の行一覧`を全行分先に並べ、続けて`証拠の全行`を並べる。
+    受領者が全行の判定・原文・出所を見渡してから、選んだ行の根拠を読めるようにするためである。
+    行番号の指定では一覧を付けず、指定した各行の全文を同一根拠の参照へ置き換えずに返す。
+    """
     sections = [section] if section else list(REQUIRED_FIELDS)
-    if row_number is not None and (section is None or not 1 <= row_number <= len(payload[section])):
+    if row_numbers is not None and (section is None or any(not 1 <= number <= len(payload[section]) for number in row_numbers)):
         raise ValueError("--rowには--sectionと、その配列に存在する1始まりの行番号を指定する")
-    references = (seen if seen is not None else {}) if row_number is None else None
-    return [
-        _display_row({"配列": name, "行番号": index, **row}, name, index, "証拠の全行", references)
+    if row_numbers is not None:
+        assert section is not None
+        return [
+            _display_row(
+                {"配列": section, "行番号": number, **payload[section][number - 1]}, section, number, "証拠の全行", None
+            )
+            for number in dict.fromkeys(row_numbers)
+        ]
+    references = seen if seen is not None else {}
+    index_lines = [
+        "証拠の行一覧: "
+        + json.dumps(
+            {
+                "配列": name,
+                "行番号": index,
+                "WI": row["awi"],
+                "判定": row["outcome"],
+                "source": row["source"],
+                accepted_review_evidence.FIELDS[name]: row[accepted_review_evidence.FIELDS[name]],
+            },
+            ensure_ascii=False,
+        )
         for name in sections
         for index, row in enumerate(payload[name], start=1)
-        if row_number is None or index == row_number
+    ]
+    return [
+        *index_lines,
+        *(
+            _display_row({"配列": name, "行番号": index, **row}, name, index, "証拠の全行", references)
+            for name in sections
+            for index, row in enumerate(payload[name], start=1)
+        ),
     ]
 
 
@@ -2159,7 +2257,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--show-all-rows",
         action="store_true",
-        help="返却生成またはbatchへ両配列の全行を追加する。同一の空でない根拠は先行表示の配列・1始まり行番号をevidence_referenceで示す",
+        help="返却生成またはbatchへ両配列の全行を追加する。先に根拠を除いた全行の`証拠の行一覧`（配列・1始まり行番号・WI・判定・source・原文）、"
+        "続けて`証拠の全行`を並べる。同一の空でない根拠は先行表示の配列・1始まり行番号をevidence_referenceで示す。"
+        "選んだ行の全文は--list --section --rowの反復で読む",
     )
     parser.add_argument(
         "--reader-fit-review",
@@ -2172,10 +2272,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--list",
         action="store_true",
-        help="判定途中でも両配列の原文・出所・判定・根拠・HEADを読む。同一根拠は先行表示を指し、--sectionと--rowの単一指定では全文を返す",
+        help="判定途中でも原文・出所・判定・根拠・HEADを読む。全行と--sectionだけの指定では先に根拠を除いた`証拠の行一覧`を並べ、"
+        "同一根拠は先行表示を指す。--rowを指定すると指定した各行の全文を返す",
     )
     parser.add_argument("--section", choices=list(REQUIRED_FIELDS), help="--listで読む配列")
-    parser.add_argument("--row", type=int, help="--listで読む1始まりの行番号。--sectionと指定する")
+    parser.add_argument(
+        "--row",
+        type=int,
+        action="append",
+        help="--listで全文を読む1始まりの行番号。--sectionと指定し、複数行は反復する",
+    )
     parser.add_argument(
         "--expected-head",
         help="最後に実際にレビューした対象commit。返却値reviewed_headを渡す。--templateを付けない判定では必須",
@@ -2277,8 +2383,23 @@ def main(argv: list[str] | None = None) -> int:
                 if args.select_row
                 else None
             )
+            references = saving_reference_check(repository_root)
+
+            def row_check(section: str, number: int, row: dict[str, str]) -> list[str]:
+                # 返却前の確認と同じく達成行だけを、その行を判定したcommitで解決する。
+                if row["outcome"] != "達成":
+                    return []
+                return references.row_errors(row, section, saved_row_label(row, section, number), row["reviewed_head"])
+
             payload = verification_results.updated_payload(
-                payload, args.updates_file, results, reviewing=True, pending=pending, outcomes=SECTION_OUTCOMES, updates=updates
+                payload,
+                args.updates_file,
+                results,
+                reviewing=True,
+                pending=pending,
+                outcomes=SECTION_OUTCOMES,
+                updates=updates,
+                row_check=row_check,
             )
             verification_results.save(args.output, payload)
         except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:

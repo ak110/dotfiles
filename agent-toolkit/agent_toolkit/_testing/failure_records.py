@@ -21,26 +21,27 @@ def failure_entries(kind: str, diagnostic: str, call_id: str) -> list[dict[str, 
                 },
             }
         ]
+    return bash_failure_entries("atk run-script session-review-evidence", diagnostic, call_id)
+
+
+def bash_failure_entries(command: str, output: str, call_id: str) -> list[dict[str, Any]]:
+    """ClaudeのBashが`command`を実行して失敗し、`output`をツール結果として返した記録を返す。
+
+    Claude Code 2.1.288の記録では、非0終了の結果本文は`Exit code <N>`の行と出力を改行でつないだ形である。
+    """
     return [
         {
             "type": "assistant",
             "message": {
                 "role": "assistant",
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "name": "Bash",
-                        "id": call_id,
-                        "input": {"command": "atk run-script session-review-evidence"},
-                    }
-                ],
+                "content": [{"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}}],
             },
         },
         {
             "type": "user",
             "message": {
                 "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": call_id, "is_error": True, "content": diagnostic}],
+                "content": [{"type": "tool_result", "tool_use_id": call_id, "is_error": True, "content": output}],
             },
         },
     ]

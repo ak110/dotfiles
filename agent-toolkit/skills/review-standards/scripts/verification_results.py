@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import collections.abc
 import copy
 import json
 import pathlib
@@ -472,8 +473,14 @@ def updated_payload(
     pending: dict[str, Any] | None = None,
     outcomes: dict[str, Any] | None = None,
     updates: object | None = None,
+    row_check: collections.abc.Callable[[str, int, dict[str, Any]], list[str]] | None = None,
 ) -> dict[str, Any]:
-    """全行の契約を確かめてから複製へ反映し、不正入力では一行も保存しない。"""
+    """全行の契約を確かめてから複製へ反映し、不正入力では一行も保存しない。
+
+    `row_check`は更新後の各行を配列名・1始まりの行番号とともに受け取り、その行の根拠の診断を返す。
+    呼出元が返却前の確認と同じ参照の解決を渡し、1件でも診断があれば全件を示して一行も保存しない。
+    本モジュールは返却前の確認のモジュールから読まれるため、その規則を直接importせず引数で受け取る。
+    """
     if updates is not None and updates_path is not None:
         raise ValueError("更新JSONと直接行選択は別々に使う")
     if updates is None:
@@ -482,6 +489,7 @@ def updated_payload(
         raise ValueError("更新JSONは空でない配列が必要です")
     result = copy.deepcopy(payload)
     seen: set[tuple[str, int]] = set()
+    order: list[tuple[str, int]] = []
     allowed = {"section", "row", "source", "tests", "diagnostics", "evidence_file", "mode"}
     if reviewing:
         allowed |= {"outcome", "reviewed_head", "verification_source", "new_source", "accepted_source"}
@@ -500,6 +508,7 @@ def updated_payload(
         if (section, number) in seen:
             raise ValueError(f"同じ要求行の更新が重複しています: {section}[{number}]")
         seen.add((section, number))
+        order.append((section, number))
         row = result[section][number - 1]
         if (
             update["source"] != row["source"]
@@ -577,7 +586,18 @@ def updated_payload(
         if not value:
             raise ValueError(f"根拠が空です: {section}[{number}]")
         row["evidence"] = "\n".join(item for item in (row["evidence"], value) if item) if update["mode"] == "append" else value
+    if row_check is not None:
+        errors = [error for section, number in order for error in row_check(section, number, result[section][number - 1])]
+        if errors:
+            raise reference_failure(errors)
     return result
+
+
+def reference_failure(errors: list[str]) -> ValueError:
+    """保存操作が解決できない参照を全件示して拒否する例外を、未判定検証記録と完成条件証拠の全ての更新で同じ文面にして返す。"""
+    return ValueError(
+        f"保存する根拠に解決できない参照が{len(errors)}件あるため、記録を変更していません。\n" + "\n".join(errors)
+    )
 
 
 def save(path: pathlib.Path, payload: dict[str, Any]) -> None:

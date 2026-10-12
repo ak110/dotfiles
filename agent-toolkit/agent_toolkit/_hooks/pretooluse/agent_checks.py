@@ -2,6 +2,23 @@ r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_server
 
 from __future__ import annotations
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._common",
+    "agent_toolkit._common.delegated_session",
+    "agent_toolkit._common.file_lock",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._common.task_stop_state",
+    "agent_toolkit._hooks",
+    "agent_toolkit._hooks.notice",
+    "agent_toolkit._hooks.pretooluse.decision",
+    "agent_toolkit._hooks.pretooluse.notices",
+    "datetime",
+    "re",
+    "tempfile",
+    "time",
+}
+
 import datetime
 import json
 import os

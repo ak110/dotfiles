@@ -87,6 +87,9 @@ def test_stop_uses_visible_headings_for_each_host(
         "### 確定した問題と対策\n- 実装済み: 対策の要旨だけ",
         "### 確定した問題と対策\n- AWI登録: 対策のタイトルだけ",
         "### 対策を見送った問題\n- 再発防止策なし: 問題; 評価した案: 案; 採らない理由: 理由",
+        "### 対策を見送った問題\n- 再発防止策なし: 問題; Q影響: あり; Qに影響しない根拠: 根拠; 評価した案: 案; "
+        "採らない理由: 理由; 反復: 一致なし",
+        "### 対策を見送った問題\n- 見送り: 根拠を示さない判断",
     ],
 )
 def test_stop_rejects_required_evidence_violation(host: str, heading: str, body: str) -> None:
@@ -132,10 +135,47 @@ def test_accepts_measure_reference_and_tolerates_layout(measure: str) -> None:
         "## 振り返り結果報告\n- 別の要約: 任意\n- 成果ファイル: /some/path\n"
         "### 対策を見送った問題\n- なし\n- 判定済み: 問題; 根拠: 同じ条件で確認済み\n"
         "- 未確定: 問題; 照会: 原記録を照会; 再現: 同じ条件を実行; 残る理由: 外部応答の欠落\n"
-        "- 再発防止策なし: 問題; 評価した案: 手順の追記; 採らない理由: 恒常コストが大きい; 反復: 一致なし\n"
+        "- 再発防止策なし: 準備の照会の反復; Q影響: なし; Qに影響しない根拠: 渡す結果を変えず所要だけが増える; "
+        "評価した案: 手順の追記; 採らない理由: 恒常コストが短縮量を上回る; 反復: 一致なし\n"
         "### 確定した問題と対策\n" + measure
     )
     assert not report_validation.validate_report(text, "review-result")
+
+
+@pytest.mark.parametrize(
+    ("line", "accepted"),
+    [
+        # C・Dだけの問題で、Qに影響しない根拠を持つ策なしは受理する。
+        (
+            "- 再発防止策なし: 準備の照会の反復; Q影響: なし; Qに影響しない根拠: 渡す結果を変えず所要だけが増える; "
+            "評価した案: 手順の追記; 採らない理由: 恒常コストが短縮量を上回る; 反復: 一致なし",
+            True,
+        ),
+        # Qに影響する問題を恒常コストのため策なしとする行は受理しない。
+        (
+            "- 再発防止策なし: 英語の短い状態報告; Q影響: あり; Qに影響しない根拠: 無し; "
+            "評価した案: 発話の遮断; 採らない理由: 恒常コストが大きい; 反復: 一致なし",
+            False,
+        ),
+        # 判定が分かれる問題もQに影響する問題として扱うため、「なし」以外の値は受理しない。
+        (
+            "- 再発防止策なし: 問題; Q影響: 不明; Qに影響しない根拠: 根拠; 評価した案: 案; 採らない理由: 理由; 反復: 一致なし",
+            False,
+        ),
+        # Q影響の欄を欠く行（欄を加える前の書式）は受理しない。
+        ("- 再発防止策なし: 問題; 評価した案: 手順の追記; 採らない理由: 恒常コストが大きい; 反復: 一致なし", False),
+        # Qに影響しない根拠が空の行は受理しない。
+        (
+            "- 再発防止策なし: 問題; Q影響: なし; Qに影響しない根拠:  ; 評価した案: 案; 採らない理由: 理由; 反復: 一致なし",
+            False,
+        ),
+    ],
+)
+def test_no_prevention_requires_cd_only_problem_with_reason(line: str, accepted: bool) -> None:
+    """再発防止策なしの行は、Q影響の欄が「なし」で根拠を持つ場合だけ受理し、文章からQへの影響を推測しない。"""
+    text = "## 振り返り結果報告\n### 対策を見送った問題\n" + line + "\n"
+    errors = report_validation.validate_report(text, "review-result")
+    assert (not errors) is accepted, errors
 
 
 def test_code_fence_heading_is_not_report() -> None:

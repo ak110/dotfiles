@@ -98,9 +98,9 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi show 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles --skip-pull",
     },
     "atk wi grep": {
-        "summary": "本文を正規表現で検索して該当行を列挙する",
-        "description": "目的: 対象範囲のキュー項目の本文全体をPythonの正規表現で検索し、ファイル名、行番号、該当行を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。\n対象と出力: private-notesを読み取り、標準出力へ`<ファイル名>:<行番号>:<該当行>`の形式で書く。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。ファイルは変更しない。\n前提: PATTERNはPythonのreモジュールが解釈できる正規表現として与える。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": '現在の重複確認にはactiveを、過去の存在確認にはallを指定し、本文を比べて一致を確かめる。\n\n実行例:\n\n  atk wi grep "worktree-stash" --state=active\n  atk wi grep "worktree-stash" --state=all',
+        "summary": "本文を正規表現か固定文字列で検索して該当行または一致した項目を列挙する",
+        "description": "目的: 対象範囲のキュー項目の本文全体をPythonの正規表現か固定文字列で検索し、該当行、または一致した項目の件数・ファイル名・要約を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。キュー全体から候補を探すときは`--summary-only`で候補と表題を先に得て、本文は`atk wi show`で読む。\n対象と出力: private-notesを読み取り、標準出力へ書く。出力形式を指定しない場合は該当行ごとの`<ファイル名>:<行番号>:<該当行>`の形式である。`-c`・`--count`は一致した項目ごとに`<ファイル名>:<一致行数>`を書き、値は項目ごとの一致行数で`atk wi list --count`の総件数（整数1つ）とは異なる。`-l`・`--files-with-matches`は一致した項目のファイル名だけを書く。`--summary-only`は一致した項目ごとに`atk wi list --summary-only`と同じ`filename`・`summary`へ一致行数の`match_count`を加えた1件1行のJSON Linesを書く。3つの形式は併用できない。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。ファイルは変更しない。\n前提: PATTERNは、`-F`・`--fixed-strings`を指定しない場合はPythonのreモジュールが解釈できる正規表現として、指定した場合は固定文字列として解釈する。識別子、パス、本文の一部などの語を探すときは`-F`を付け、記号を正規表現として使うときだけ`-F`を付けない。\n復元・後始末: 読み取りだけを行うため不要。",
+        "epilog": '現在の重複確認にはactiveを、過去の存在確認にはallを指定し、`--summary-only`で得た候補の本文を`atk wi show`で比べて一致を確かめる。\n\n実行例:\n\n  atk wi grep --summary-only -F "worktree-stash" --state=active\n  atk wi grep --summary-only -F "worktree-stash" --state=all\n  atk wi grep -F "text[1] 文字" --state=all\n  atk wi grep "worktree-stash|stash-pop" --state=active',
     },
     "atk wi start-processing": {
         "summary": "AWIまたはUWIをprocessingへ移して処理中にする",
@@ -139,7 +139,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。更新原稿を保存前に確かめるとき（`--dry-run`）。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。エージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdだけで使い、タイムゾーン付きISO 8601日時を渡す。空文字列で期限を解除する。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。エージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。エージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。`--dry-run`はFILENAMEと`--body-file`による本文置換を保存と同じ取り込みと検証にかけ、成立したら保存せずに成功の1行を書いて終了する。拒否では保存と同じ終了コード、理由および次の操作を返す。未pushのcommitの送信、対象ファイルの書き換え、commitとpushを行わず、private-notesとremoteを変えない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。更新原稿を保存前に確かめるとき（`--dry-run`）。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。エージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdのAWIへタイムゾーン付きISO 8601日時を渡して期限を設定し、空文字列で期限を解除する。UWIへの日時の指定は拒否し、保存済みの期限は空文字列で解除できる。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。エージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。エージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。`--dry-run`はFILENAMEと`--body-file`による本文置換を保存と同じ取り込みと検証にかけ、成立したら保存せずに成功の1行を書いて終了する。拒否では保存と同じ終了コード、理由および次の操作を返す。未pushのcommitの送信、対象ファイルの書き換え、commitとpushを行わず、private-notesとremoteを変えない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/tmp/awi-body.md",
     },
     "atk wi set-dependencies": {

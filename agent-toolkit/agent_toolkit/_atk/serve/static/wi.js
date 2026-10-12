@@ -1410,13 +1410,33 @@ function resetCreateForm() {
 function updateCreateFields() {
   const kind = byId('create-kind').value;
   const isBatch = kind === 'batch';
+  const showFormatHint = !isBatch && isShowFormatCandidate(byId('create-content').value);
   const isUwi = kind === 'uwi';
-  const isChoice = isUwi && byId('create-question-type').value === 'choice';
-  byId('uwi-fields').hidden = !isUwi;
+  const isChoice = isUwi && !showFormatHint && byId('create-question-type').value === 'choice';
+  byId('create-mode-hint').hidden = !showFormatHint;
+  byId('uwi-fields').hidden = !isUwi || showFormatHint;
   byId('choice-fields').hidden = !isChoice;
   // 一括登録は各エントリのfrontmatterの値だけを用いるため、対象リポジトリ欄を隠す。
-  byId('create-repo-fields').hidden = isBatch;
-  byId('create-content-label').textContent = isBatch ? 'show形式テキスト（必須）' : '本文（必須）';
+  byId('create-repo-fields').hidden = isBatch || showFormatHint;
+  byId('create-content-label').textContent = isBatch || showFormatHint ? 'show形式テキスト（必須）' : '本文（必須）';
+  if (!isChoice || choiceValues().length >= 2) {
+    setFieldError(byId('create-choices'), byId('create-choices-error'), '');
+  }
+}
+
+// サーバーの`is_show_batch_format`と同じく、先頭エントリより前に構造行（空行・種別見出し・target_repo見出し）だけを許す。
+function isShowFormatCandidate(content) {
+  const lines = content.replace(/\r\n?/g, '\n').split('\n');
+  const first = lines.findIndex((line, index) => /^### \S+\.md(?: \[[^\]]*\])?$/.test(line) && lines[index + 1] === '---');
+  return first >= 0 && lines.slice(0, first).every(line => !line || /^# (?:awi|uwi)$/.test(line) || /^## target_repo: .*$/.test(line));
+}
+
+function choiceValues() {
+  return byId('create-choices').value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+}
+
+function updateCreateChoices() {
+  if (choiceValues().length >= 2) setFieldError(byId('create-choices'), byId('create-choices-error'), '');
 }
 
 function openCreateDialog(origin = null) {
@@ -1458,12 +1478,14 @@ async function createEntry(event) {
   const rawContent = byId('create-content').value;
   const message = rawContent.trim();
   const targetRepo = byId('create-target').value.trim();
-  const choiceValues = byId('create-choices').value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+  const choices = choiceValues();
+  // show形式の候補は単件用の選択肢検証を保留し、保存形式の確定と本文検証をサーバーへ渡す。
+  const showFormatHint = isShowFormatCandidate(rawContent);
   setFieldError(
     byId('create-content'), byId('create-content-error'),
     message ? '' : (isBatch ? 'show形式テキストを入力してください。' : '本文を入力してください。')
   );
-  const choiceInvalid = type === 'uwi' && byId('create-question-type').value === 'choice' && choiceValues.length < 2;
+  const choiceInvalid = !showFormatHint && type === 'uwi' && byId('create-question-type').value === 'choice' && choices.length < 2;
   setFieldError(byId('create-choices'), byId('create-choices-error'), choiceInvalid ? '選択肢を2件以上入力してください。' : '');
   if (firstInvalid([byId('create-content'), byId('create-choices')])) return;
   // 単件でも未trimの入力を添え、show形式の本文ならサーバーが原文のまま一括登録へ切り替える。
@@ -1474,7 +1496,7 @@ async function createEntry(event) {
       const scope = byId('create-scope').value.trim();
       if (scope) payload.scope = scope;
       payload.question_type = byId('create-question-type').value;
-      if (payload.question_type === 'choice') payload.choices = choiceValues;
+      if (payload.question_type === 'choice') payload.choices = choices;
     }
   }
   clearDialogMessages('create');
@@ -1677,6 +1699,8 @@ function bindEvents() {
   byId('delete-button').addEventListener('click', openDeleteDialog);
   byId('create-kind').addEventListener('change', updateCreateFields);
   byId('create-question-type').addEventListener('change', updateCreateFields);
+  byId('create-content').addEventListener('input', updateCreateFields);
+  byId('create-choices').addEventListener('input', updateCreateChoices);
   byId('create-form').addEventListener('submit', createEntry);
   byId('delete-form').addEventListener('submit', deleteEntry);
   attachDialogCloseHandlers('detail-dialog', 'detail-close-button', closeDetailDialog);

@@ -17,6 +17,9 @@ Stopの連続遮断上限は共通のStop処理に任せ、独自の状態や上
 agent_idと委譲先の環境印でサブエージェントと委譲先を除く。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"agent_toolkit._common", "agent_toolkit._hooks.host"}
+
 import json
 
 from agent_toolkit._common import message_format as _message_format

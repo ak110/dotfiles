@@ -26,6 +26,18 @@ Stopの戻り値は`approve`とし、ターンの継続は強制しない。
 委譲先での実行可否: hook入力と委譲先の環境印で判定し、委譲先では何もしない。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._atk",
+    "agent_toolkit._atk.wi",
+    "agent_toolkit._common.process_loop_session",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._hooks.agent_id",
+    "agent_toolkit._hooks.background_tasks",
+    "agent_toolkit._hooks.stop_session",
+    "agent_toolkit._hooks.transcript_scan",
+}
+
 import os
 
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session

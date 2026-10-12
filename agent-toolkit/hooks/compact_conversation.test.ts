@@ -63,13 +63,22 @@ test("サブエージェントからの呼び出しは予約しない", async ($
   expect(calls).toBe(0);
 });
 
-test("agents_serverの委譲先からは圧縮を予約しない", async ($, on) => {
-  mock.env(on, { AGENT_TOOLKIT_OWNER_SESSION: "owner" });
-  const clock = mock.clock(on);
-  let calls = 0;
-  on("command.run", () => { calls++; return { text: "圧縮完了" }; });
-  expect((await $.tool.check({ tool: TOOL, input: {} })).decision).toBe("deny");
-  expect((await $.tool.call({ tool: TOOL })).deny).toMatch("メイン");
-  await clock.advance(0);
-  expect(calls).toBe(0);
-});
+// `delegated_session.py`の`is_delegated`が委譲先と判定する印の組合せ。委譲先への登録の除外は`delegated_session.test.ts`が検証する。
+const DELEGATED_ENVS: Readonly<Record<string, string>>[] = [
+  { AGENT_TOOLKIT_DELEGATED_SESSION: "1" },
+  { AGENT_TOOLKIT_OWNER_SESSION: "owner" },
+  { AGENT_TOOLKIT_DELEGATED_SESSION: "1", AGENT_TOOLKIT_OWNER_SESSION: "owner" },
+];
+
+for (const env of DELEGATED_ENVS) {
+  test(`委譲先（${JSON.stringify(env)}）からは圧縮を許可も予約もしない`, async ($, on) => {
+    mock.env(on, env);
+    const clock = mock.clock(on);
+    let calls = 0;
+    on("command.run", () => { calls++; return { text: "圧縮完了" }; });
+    expect((await $.tool.check({ tool: TOOL, input: {} })).decision).toBe("deny");
+    expect((await $.tool.call({ tool: TOOL })).deny).toMatch("メイン");
+    await clock.advance(0);
+    expect(calls).toBe(0);
+  });
+}

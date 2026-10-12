@@ -9,10 +9,9 @@ description: >
 
 # 計画モード
 
-本スキルは調査から計画ファイルの作成、実装および`起動経路`の値ごとの終端までの工程制御を定める。
-計画工程とメインによる起動時の実行工程の責務は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
-計画ファイルの成果物契約は`references/plan-file-standards.md`、WI本文の要求と由来は`agent-toolkit:wi-standards`が定める。実装と実行レビューの内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.subagent.md`が定める。
-計画は要件・外部仕様の水準で書き、レビューは実装後の実行レビューだけで行う。計画の起草者が続けて実装し、実行レビューは要件・外部仕様の水準を対象とする。
+本スキルは調査から計画ファイルの作成、実装および`起動経路`の値ごとの終端までの工程を定める。
+工程の責務は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`、計画ファイルの成果物契約は`references/plan-file-standards.md`が定める。WI本文の要求と由来は`agent-toolkit:wi-standards`、実装と実行レビューの内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.subagent.md`が定める。
+計画は要件・外部仕様の水準で書き、起草者が続けて実装する。レビューは実装後の実行レビューだけで行う。
 
 ## 読込表
 
@@ -30,29 +29,26 @@ description: >
 
 ## 確認と起動経路
 
-確認要否、質問手順とUWIへの退避は`agent-toolkit:user-confirmation-and-report`が定める。協調モードでメインが本スキルを起動した場合は、同スキルの`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返し、その後に計画ファイルを起草する。
-入力のWIが確定した判断は確認し直さない。
-`agent-toolkit:process-wi`のレーン担当として起動された場合は、確認事項を`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」で委譲元へ返し、回答を受け取ってから工程を続ける。UWIの登録は委譲元が行う。計画の起草と待機の境界は`agent-toolkit:process-wi`の`references/lane-planning.md`が定める。
+確認の要否と手順、UWIへの退避は`agent-toolkit:user-confirmation-and-report`が定める。協調モードでメインが起動した場合は、同スキルの`references/grilling.md`に従ってユーザーとの共通理解に達してから起草する。入力のWIが確定した判断は確認し直さない。
+`agent-toolkit:process-wi`のレーン担当は、確認事項を`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」で委譲元へ返し、回答を受けてから続ける（UWIの登録は委譲元が行う）。起草と待機の境界は`agent-toolkit:process-wi`の`references/lane-planning.md`が定める。
 
 ## 計画ファイルの作成要否
 
-変更作業では原則として計画を作成し、要求の採否・恒久化・リファクタリング・再開情報を後続エージェントへ渡す。ユーザーの承認資料とはしない。バグ対応では原因分析資料（WIの`## 原因分析`または計画ファイル（バグ））との対応を保つため常に作成する。
-
-省略はバグ対応ではなく、既存の値・文字列の差し替えで完結し、恒久化・リファクタリング候補が構造上生じない場合に限る。省略時の実行レビューは起動元の工程が定める。
+変更作業では原則として計画を作成し、要求の採否・恒久化・リファクタリング・再開情報を後続へ渡す（ユーザーの承認資料ではない）。バグ対応は原因分析資料（WIの`## 原因分析`か計画ファイル（バグ））との対応を保つため常に作成する。
+省略できるのは、バグ対応ではなく、既存の値・文字列の差し替えで完結し、恒久化・リファクタリング候補が構造上生じない場合に限る。省略時の実行レビューは起動元の工程が定める。
 
 ## 進め方
 
-本スキルの起動後に対象規範配下（`agent-toolkit/`等のエージェント向け文書）を編集するのは、計画ファイルを作成した後とする。
+本スキルの起動後にエージェント向け文書（`agent-toolkit/`など）を編集するのは、計画ファイルを作成した後とする。
 
-1. 変更対象・外部仕様・テスト・検証を確定するために調査する。規範、定義と利用側、生成・配布、類似実装を手掛かりに必要範囲を定め、WIの確定事項は`references/plan-file-standards.md`「計画ファイルの構成」の関連WIの規定で参照し、再調査しない
-   - 作業種別が`バグ対応`の計画のうち、入力にWIが無い計画とWIの原因分析を訂正または追加する計画では、手順2の確認より前に`agent-toolkit:bugfix`を起動し、同スキル「初動と拡張原因分析の判定」に従って直接的原因を確定し、「対策の選定」で原因側の案と症状側の案を比較する。WIの原因分析を用いる場合も、症状側の対処を確認する前に同じ対策選定を適用する
-   - 参照する側と別発生源（`references/plan-file-standards.md`「要件・外部仕様」）をたどり、`## 要件・外部仕様`の変更対象・追随範囲へ書く
-   - 出力・診断件数・分岐結果を完了条件に使う場合は、生成主体と消費先、分岐の有効化条件、是正前の状態と是正後の期待値を対応付ける
-   - 是正前の状態と期待値が同じ条件、対象分岐が無効な条件および成功時に抑制される生出力の不在は識別条件にせず、公開状態または直接の契約テストを使う
-   - 依頼・WIの明示的な禁止条件（操作・機構・副作用）と採用手段は`## 実施内容`の同じ概念行へ書き、両者を比べられるようにする
-2. 計画の変更対象または採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し（入力のWIが確定した事項は列挙の対象から外す）、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。実装中に新たに生じた同種の判断にも本手順を適用する。確認の手段と`起動経路`の値ごとの扱いは「確認と起動経路」に従う
-3. 読込表の`references/plan-file-standards.md`「初回起草の雛形」をコピーして案件の値を記入し、全項を満たす原稿を`atk run-script plan-create --`で作成する。作業種別が`バグ対応`の計画のうち、入力にWIが無い計画とWIの原因分析を訂正または追加する計画では、計画担当が手順1で起動した`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の条件に従って計画ファイル（バグ）を先に埋める。WIの`## 原因分析`をそのまま用いる場合は計画ファイル（バグ）を作成せず、計画はWIファイル名で参照する
-4. メインによる起動では`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行する。`agent-toolkit:process-wi`のレーン担当は`agent-toolkit:process-wi`の`references/lane-planning.md`が定める選定結果とレーン識別子付きの形で単独実行する。いずれも直接返った終了コード0を確認する
+1. 変更対象・外部仕様・テスト・検証を確定するために調査する。WIの確定事項は`references/plan-file-standards.md`「計画ファイルの構成」に従って参照し、再調査しない
+   - 作業種別が`バグ対応`で、入力にWIが無いかWIの原因分析を訂正・追加する計画では、手順2の確認より前に`agent-toolkit:bugfix`を起動し、直接的原因を確定して「対策の選定」で原因側と症状側の案を比べる。WIの原因分析を用いる場合も、症状側の対処を確認する前に同じ対策選定を適用し、類似見直しの母集団、QとC・Dの区別、処置の層と完了の判定が同スキルの`references/root-cause-analysis.md`の基準を満たすかを確かめる。満たさない部分は原因分析の追加として扱う
+   - 参照する側と別発生源（`references/plan-file-standards.md`「要件・外部仕様」）をたどり、変更対象・追随範囲を`## 要件・外部仕様`へ書く
+   - 出力・診断件数・分岐結果を完了条件に使う場合は、生成主体と消費先、分岐の有効化条件、是正前の状態と是正後の期待値を対応付ける。是正前後で同じ値になる条件、対象分岐が無効な条件、成功時に抑制される出力の不在は識別条件にせず、公開状態か直接の契約テストを使う
+   - 依頼・WIの明示的な禁止条件と採用手段は`## 実施内容`の同じ行へ書き、比べられるようにする
+2. 変更対象や採用方針を左右する未確定判断を依存関係とともに列挙し（WIが確定した事項は除く）、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。実装中に生じた同種の判断も同じ。手段は「確認と起動経路」に従う
+3. `references/plan-file-standards.md`「初回起草の雛形」に案件の値を記入し、`atk run-script plan-create --`で作成する。バグ対応で入力にWIが無いかWIの原因分析を訂正・追加する計画では、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`に従って計画ファイル（バグ）を先に埋める。WIの`## 原因分析`をそのまま用いる場合は計画ファイル（バグ）を作成せずWIファイル名で参照する
+4. メインによる起動では`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行する。レーン担当は`agent-toolkit:process-wi`の`references/lane-planning.md`が定める選定結果とレーン識別子付きの形で単独実行する。いずれも終了コード0を確かめる
 5. `起動経路`の値に対応する次の1行だけを実施する
 
 | `起動経路` | 手順4の後に実施すること |
@@ -60,10 +56,9 @@ description: >
 | `agent-toolkit:plan-mode`のメインによる起動 | 「メインによる起動の実装と終端」に従う |
 | `agent-toolkit:process-wi`のレーン担当としての起動 | `agent-toolkit:process-wi`の`references/lane-planning.md`が定める待機条件と、条件に応じた報告・通知・実装の手順に従う |
 
-実行工程の計画ファイルの扱いと、実装中に生じた要件・外部仕様の判断の記録は、`references/plan-file-standards.md`の計画凍結に従う。
-中断後に再開するエージェントが読む対象と順序は`references/plan-file-standards.md`「進捗ログ」が定める。
+実装着手後の計画ファイルの扱いと要件判断の記録は`references/plan-file-standards.md`の計画凍結に、中断後の再開は同書「進捗ログ」に従う。
 
 ## メインによる起動の実装と終端
 
-実装、実行レビュー、終端の工程は読込表の`references/main-launch.md`に従う。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、名前付き入力`未判定検証記録`は同書冒頭の規定に従って渡す。
-記録は`atk run-script verification-record -- --output <未判定検証記録JSONの絶対パス> --plan <計画の絶対パス>`で生成する。WI直渡しには`--wi <WIファイル名>`を反復できる。根拠の一覧・追記・置換とレビュー修正後の再生成は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の「完成条件証拠の検証記録」の公開操作に従い、更新済みJSONの絶対パスを実行レビューへ渡す。
+実装、実行レビュー、終端は`references/main-launch.md`に従う。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、名前付き入力`未判定検証記録`は同書冒頭の規定どおり渡す。
+記録は`atk run-script verification-record -- --output <未判定検証記録JSONの絶対パス> --plan <計画の絶対パス>`で生成する（WI直渡しには`--wi <WIファイル名>`を反復できる）。根拠の追記・置換とレビュー修正後の再生成は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の「完成条件証拠の検証記録」に従い、更新したJSONの絶対パスを実行レビューへ渡す。

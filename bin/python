@@ -1,0 +1,11 @@
+#!/bin/bash
+# python3だけを提供するLinuxで、エージェントや既存ツールが`python`を前提に起動する処理を成立させる。
+# PATH上の`python3`へ引数をそのまま渡し、その終了コードを返す。
+# `.bashrc`は~/dotfiles/binをPATHの末尾へ追加するため、PATHの前方にある`python`
+# （仮想環境、mise、OSパッケージなど）が常に優先され、それらが無い場合だけ本スクリプトが選ばれる。
+# WindowsのcmdとPowerShellは拡張子の無いファイルを起動しないため、Linux専用とする。
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "python: python3がPATH上に見つからない" >&2
+    exit 127
+fi
+exec python3 "$@"

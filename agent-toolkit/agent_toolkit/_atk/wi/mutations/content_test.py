@@ -526,7 +526,8 @@ class TestCooldownEdit:
         assert failure.value.code == 1
         assert path.read_text(encoding="utf-8") == original
 
-    def test_rejects_processing(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize("value", ["", "2999-01-01T00:00:00+00:00"])
+    def test_rejects_processing(self, value: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "entry.md", body="本文", source="test")
         (notes / "processing").mkdir(exist_ok=True)
@@ -535,9 +536,94 @@ class TestCooldownEdit:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as failure:
-            atk.main(["wi", "edit", "entry.md", "--cooldown-until", ""], home=tmp_path)
+            atk.main(["wi", "edit", "entry.md", "--cooldown-until", value], home=tmp_path)
         assert failure.value.code == 2
         assert path.read_text(encoding="utf-8") == original
+
+    @pytest.mark.parametrize("state", ["inbox", "hold"])
+    def test_awi_accepts_past_datetime_and_update_with_body_file(
+        self, state: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """AWIへは経過済みの日時も設定でき、本文ファイルとの併用で期限と本文を同時に更新できる。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "entry.md", body="本文", source="test")
+        if state == "hold":
+            (notes / state).mkdir(exist_ok=True)
+            path = path.rename(notes / state / path.name)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as set_exit:
+            atk.main(["wi", "edit", "entry.md", "--cooldown-until", "2000-01-01T09:00:00+09:00"], home=tmp_path)
+        assert set_exit.value.code == 0
+        with pytest.raises(SystemExit) as update_exit:
+            atk.main(
+                [*_edit_body_args(tmp_path, "entry.md", "編集後"), "--cooldown-until", "2999-01-01T00:00:00+00:00"],
+                home=tmp_path,
+            )
+        assert update_exit.value.code == 0
+
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["cooldown_until"] == "2999-01-01T00:00:00+00:00"
+        assert parsed[1].strip() == "編集後"
+
+    @pytest.mark.parametrize("state", ["inbox", "hold"])
+    @pytest.mark.parametrize("value", ["2999-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00"])
+    @pytest.mark.parametrize("with_body", [False, True])
+    def test_rejects_uwi_datetime_without_saving(
+        self,
+        state: str,
+        value: str,
+        with_body: bool,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """UWIへの日時の指定は未来・経過済みを問わず拒否し、併用した本文も保存しない。
+
+        UWIへ期限を保存すると、着手可否判定はその期限を不正期限として扱い、ユーザーの判断待ちを修復対象へ変える。
+        """
+        notes = _setup_notes(tmp_path)
+        path = _write_uwi_entry(notes, "question.md")
+        if state == "hold":
+            (notes / state).mkdir(exist_ok=True)
+            path = path.rename(notes / state / path.name)
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        args = _edit_body_args(tmp_path, "question.md", "変更後の質問") if with_body else ["wi", "edit", "question.md"]
+
+        with pytest.raises(SystemExit) as failure:
+            atk.main([*args, "--cooldown-until", value], home=tmp_path)
+
+        assert failure.value.code == 1
+        assert path.read_text(encoding="utf-8") == original
+        lines = capsys.readouterr().err.splitlines()
+        failure_index = next(index for index, line in enumerate(lines) if line.startswith("失敗: "))
+        assert "AWI" in lines[failure_index]
+        # 受信側が次に選べる操作（AWIでの設定と、保存済み期限の空文字列による解除）を受け取れること。
+        assert lines[failure_index + 1].startswith("次の操作: ")
+        assert "atk wi edit question.md --cooldown-until ''" in lines[failure_index + 1]
+
+    @pytest.mark.parametrize("state", ["inbox", "hold"])
+    @pytest.mark.parametrize("stored", ["2999-01-01T00:00:00+00:00", "bad"])
+    def test_clears_uwi_cooldown_and_keeps_question_and_answer(
+        self, state: str, stored: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """UWIに保存済みの期限は空文字列で解除でき、質問・回答と他のメタデータを保つ。"""
+        notes = _setup_notes(tmp_path)
+        frontmatter = "target_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\nsource: test"
+        path = _write_uwi_entry(notes, "question.md", frontmatter=f"{frontmatter}\ncooldown_until: '{stored}'")
+        expected = _write_uwi_entry(notes, "expected.md", frontmatter=frontmatter).read_text(encoding="utf-8")
+        if state == "hold":
+            (notes / state).mkdir(exist_ok=True)
+            path = path.rename(notes / state / path.name)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as clear_exit:
+            atk.main(["wi", "edit", "question.md", "--cooldown-until", ""], home=tmp_path)
+
+        assert clear_exit.value.code == 0
+        assert path.read_text(encoding="utf-8") == expected
 
 
 class TestEditBodyFile:

@@ -1,101 +1,64 @@
 # pushとCI通過確認
 
-pushするエージェントがpush先、更新ref、基準情報、CI監視、
-証拠用一時領域のライフサイクルを所有する。通常commit、stage、messageは親スキル、
-CI失敗の帰属と原因分析は`agent-toolkit:bugfix`に従う。
+pushするエージェントがpush先、更新ref、基準情報、CI監視、証拠用一時領域を所有する。通常commit、stage、messageは親スキル、CI失敗の帰属と原因分析は`agent-toolkit:bugfix`に従う。
 
 ## 公開状態の4項目
 
-ベースbranchの公開を確かめる次の4項目を「公開状態の4項目」と呼ぶ。これらは判定の時点で現在のGit状態から再取得し、全て成立した場合だけ公開済みと判定する。これらの取得には、`.git`内部のパス探索と複数のrefを1回へ渡す`git rev-parse --short`を使わない。
+ベースbranchの公開を確かめる次の4項目を「公開状態の4項目」と呼ぶ。判定の時点で現在のGit状態から取得し、全て成立した場合だけ公開済みとする。取得には前記のコマンドを使い、`.git`内部のパス探索と、複数のrefを1回へ渡す`git rev-parse --short`を避ける。
 
-1. `git -C <対象リポジトリの絶対パス> status --porcelain=v2 --branch`の`# branch.head`の値がベースbranch名と一致する
+1. `git -C <対象リポジトリの絶対パス> status --porcelain=v2 --branch`の`# branch.head`がベースbranch名と一致する
 2. 同じ出力で`#`で始まらない行が0件である
-3. 同じ出力の`# branch.ab`のahead値が`+0`である。追跡refが無く`# branch.ab`を取得できない場合は不成立とする
-4. `git -C <対象リポジトリの絶対パス> status`にrebase・merge・cherry-pickの進行中を示す表示が無い
+3. 同じ出力の`# branch.ab`のahead値が`+0`である（追跡refが無く取得できなければ不成立）
+4. `git -C <対象リポジトリの絶対パス> status`にrebase・merge・cherry-pickの進行中の表示が無い
 
 ## push前
 
-直前に`git commit --amend`または`git commit --fixup`を実行した作業ツリーでは、pushの前に`git status --short`を単独で実行し、追跡ファイルの未コミット差分が残っていないことを確認する。差分が残る場合はその差分を確定してからpushへ進む。
+- pushの許可（計画に記録した元の要求か確認回答、委譲プロンプト、ユーザー指示）が対象リポジトリと対象branchを含むことを確かめる。amendやfixupの直後は未コミット差分が残っていないことも確かめる
+- `git fetch`後に上流との差分を双方向で確かめ、上流が進んでいれば追随して検証をやり直す
+- push方式はdry-runで確定する。`git remote -v`、現在branch、追跡branch、`push.default`と承認済みdestinationから、引数なしpushの到達先を判定する。
+  承認済みdestinationへ届くと確定すれば引数なしの`git push --dry-run --porcelain`を使う。届かないか判定できなければ`<remote> <source>:refs/heads/<destination>`を明示したdry-runを使う（引数なしpushの失敗が設定から確定する構成では引数なしのdry-runを省く）。
+  成功したdry-runの全status lineが承認済みremote・destinationへのrefspecを示す場合だけ、その方式でpushする。拒否・失敗予定のrefや承認外のremote・destinationがあればpushを中止する
 
-1. pushの許可（計画に記録した元の要求または確認回答・委譲元の委譲プロンプト・ユーザー指示のいずれか）が
-   対象リポジトリと対象branchを含むことを確認する
-2. `git fetch`後に上流との差分を双方向で確認する。上流が進んでいる場合は追随後に検証をやり直す
-3. `git remote -v`、`git branch --show-current`、追跡branch、有効な`push.default`と明示された承認済みdestinationから、引数なしpushの到達先を先に判定する。`push.default=simple`で現在branch名と追跡branch名が異なる場合や追跡branchが無い場合など、引数なしpushの失敗が確定する構成では、そのdry-runを省く。承認済みの`<remote> <source>:refs/heads/<destination>`を明示した`git push --dry-run --porcelain`を最初に試す。引数なしpushが承認済みdestinationへ到達すると確定する場合は、引数なしdry-runを最初に実行する。設定だけで判定できない場合は、引数なしdry-runを試し、失敗するか意図したrefspecを示さなければ明示dry-runを続ける。
+CI定義の有無は、pushするcommitのtreeで`git -C <対象リポジトリの絶対パス> ls-tree -r --name-only <pushするcommit> -- .gitlab-ci.yml .github/workflows`により判定する（forgeによらない）。終了コード0で出力0行ならCI定義なしとし、baselineと監視を省いて終端状態を「CI定義なし」とする。終了コードが0以外なら原因を確かめて判定し直す。
+委譲元がCI通過をこのセッションで判定しないと明示した場合も、baselineと監視を省く。
 
-   成功したdry-runの全status lineが承認済みremote・destinationへのrefspecを示す場合だけ、その方式を選ぶ。拒否や失敗予定のref、または承認範囲と異なるremote・destinationがあればpushしない。明示指定ではremote、source、完全なdestination refをすべて書き、実際のpushも成功したdry-runと同じ方式を使う
+CIを判定する場合は、push前に次のとおりbaselineを作成する。
 
-CIを判定する場合は、pushするcommitのtreeでCI定義の有無を`git -C <対象リポジトリの絶対パス> ls-tree -r --name-only <pushするcommit> -- .gitlab-ci.yml .github/workflows`で判定する。forgeによらず同じ判定を使う。終了コード0で出力が0行の場合はCI定義が無いため、次の3工程と「pushと監視」のbaselineによる監視を省き、push結果を判定した後の終端状態を「CI定義なし」とする。終了コードが0以外の場合は原因を確かめてから判定し直す。
+1. セッションのmanaged-temp（`agent-toolkit:managed-temp`）にpushごとの別ディレクトリを作成する
+2. 削除refを除く更新refごとに、確定したrefspecの左辺`<source>`をそのまま`--source-ref`へ渡す（右辺、destination ref、remote-tracking refは別の値）。補助スクリプトはsource refをcommitまで再帰的にpeelし（annotated・lightweight tagとも）、完全長commit SHAを保存する。commitへpeelできないrefではbaseline作成が失敗する
+3. 読み込んだ本文書の絶対パスからplugin rootを確定する。`(destination ref, source ref)`ごとに次を実行する（`wait_ci.py`の所在は`<plugin-root>/agent_toolkit/`であり、`<plugin-root>/skills/commit/scripts/`とは別）
 
-委譲元がそのpushのCI通過をこのセッションで判定しないと明示した場合は、次の3工程を省き、「pushと監視」のpush結果判定へ進む。
-CIを判定する場合は、次の3工程で監視用の証拠を作成する。
+   ```text
+   uv run --project <plugin-root> --locked --no-default-groups <plugin-root>/agent_toolkit/wait_ci.py --write-baseline <手順1の領域>/<更新refごとに一意なファイル名>.json
+   ```
 
-1. セッションのmanaged-temp（`agent-toolkit:managed-temp`）の中へ、pushごとに別のディレクトリを作成し、その絶対パスを保持する
-2. 削除refを除き、更新refごとにsource refを1件確定する。
-   手順3で確定したrefspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す。
-   `--source-ref`へ渡すのはこの左辺だけとし、refspecの右辺`<destination>`、destination ref、remote-tracking refは別の値として扱う。
-   baseline作成時に補助スクリプトがsource refをcommitへ再帰的にpeelし、完全長commit SHAを保存する
-   - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを保存する
-   - pushできるのはcommitへpeelできるrefに限る。peelできないrefではbaseline作成が失敗する
-   - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
-3. 読み込んだ本文書の絶対パスからplugin rootを確定する。
-   確定した各`(destination ref, source ref)`について、push前に`uv run --project <plugin-root> --locked --no-default-groups <plugin-root>/agent_toolkit/wait_ci.py`を
-   `--write-baseline <この節の第1工程で保持した領域の絶対パス>/<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行し、baseline JSONを保存する。
-   `wait_ci.py`は直前のコマンドで確定したパスにあり、
-   `<plugin-root>/skills/commit/scripts/`には無い
-
-CIを判定する場合はbaseline作成、push、監視の順で実行する。
-baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`をすべて指定する。
-`--repo`にはリポジトリ識別子（`owner/repo`、またはホストを含むURL）を渡す。作業ツリーなどのローカルパスは別の入力として扱う。
-引数の詳細は`--help`で確認する。
-単一refと複数refのいずれでも、GitHubとGitLabの両方で、選定済みforgeを`--forge <github|gitlab>`へ明示する。
-複数refでは組ごとに別のbaselineを作成し、1件が失敗した場合も他のbaselineの作成と監視を続ける。
+baseline作成と監視では`--repo`（`owner/repo`かホストを含むURL。ローカルパスではない）、`--forge <github|gitlab>`、`--ref`、`--source-ref`をすべて指定する。その他の引数は`--help`で確かめる。複数refでは組ごとにbaselineを作成し、1件が失敗しても他を続ける。
 
 ## pushと監視
 
-1. 標準指定ではremote名とbranch名を明示せず`git push`を単独で実行する。
-   明示指定では、成功したdry-runから`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`を渡す
-2. push成功後、保存した各baselineに対して同スクリプトを`--baseline`付きで実行する
-   - CI通過をこのセッションで判定しない場合は、`--baseline`を実行せずに後始末へ進む
-   - GitHub Actionsでは、対象workflowの直近の成功runから開始時刻と終了時刻を取得する。`gh`の入力と出力形式は実行直前のヘルプで確定する
-   - `updatedAt - startedAt`の実績へ登録猶予と変動分の余裕を加えて総待機時間を決める
-   - 対象workflowの成功runが取得できない場合と実績を算出できない場合は270秒を使う
-   - baselineごとに確定した総待機時間を指定する。終了コード6（新規失敗・未終端あり）と2（timeout）では同じ引数で呼び直し、それ以外を待機の終端として扱う
-   - 背景実行で起動する場合は、ホストのツールがコマンドを時間で停止する上限を総待機時間より長くする。引数を省略した場合の上限と指定できる最大値はホストのツール説明が示す値を使い、省略した場合の上限が総待機時間より長ければその引数を省略し、短ければ総待機時間より長い値を指定する。総待機時間より先にホストが止めると、スクリプトは判定結果の終了コードを返せず、同じbaselineでの待ち直しが要る
-   - ホストが実行ハンドルのyield・再開を提供する場合は、60秒未満の観測間隔で同一processへ再接続する
-   - 起動した処理は同じprocessのまま維持する。進捗表示のために短い`--timeout`の別processへ分割する形と、実行中のplugin root更新を契機に置換する形は、いずれも判定対象の実行を取りこぼす
-   - push前のbaselineが無い場合または別の主体がpushしたcommitを待つ場合は、対象の40桁の完全長commit SHAを
-     `--wait-sha`へ渡し、managed-temp内のその待機専用JSONを`--failure-record`へ指定する。この起動形は対象SHAの全実行を判定対象とする
-   - baseline方式はpush前に存在した実行IDを除外するため、自身のpushにより新しく登録された実行だけを判定対象とする
-   - GitLabでは、親pipelineに加えて同一projectのbridgeが再帰的に指すdownstream pipelineとそのジョブを判定対象とし、入れ子の下流も親の待機結果へ反映する
-   - 別projectのdownstream pipelineは対象外とする
-3. CIを判定する場合は、全対象が終了コード0で完了した場合だけCI通過と判定する。
-   終了コードの意味は後掲の表に従う。
-   出力が空の場合や成功完了マーカーが無い場合は未判定として直接の確認へ切り替える。
-   判定対象はbaselineへ保存した完全長SHAに対する実行とし、source refがpush後に進んだ場合も同じSHAで判定する。
-   GitHubでpushへ帰属しない自動更新として除外するのは、`event`が`dynamic`かつworkflow名が`Dependabot Updates`である実行に限る。
-   同名workflowの手動実行と、他workflowの`dynamic`実行は判定対象へ含める。
-   登録猶予の終了後に登録された実行も判定対象に含む。
-   登録猶予は、実行が1件も登録されないまま終わる場合を区別するための待機であり、
-   判定対象を確定する期限ではない
-4. 終了コード6を受けた時点で`agent-toolkit:bugfix`を起動し、並行して同じbaseline・引数で呼び直す。既報の失敗は再度の早期返却を起こさず、新しい失敗か全体終端まで待つ。終了コード1も同スキルで対処する。証拠の取得、帰属、原因および拡張原因分析の要否は同スキルのCI失敗分析契約に従う
-5. 元のbaselineの待機が終端（6と2以外）を返し、終端の出力が示す失敗集合全体を修正範囲へ含めてから再pushする。監視不能などで失敗集合を取得できなかった場合は、その原因を解消して終端の集合を取得する。CI失敗の修正方法を、push先と修正対象のcommitによって次の2区分から選ぶ。修正後はどちらの区分でも同じbranchへ再pushする。そのpush用の新しいbaselineを作成し、`wait_ci.py --baseline`で再監視する。再監視ではCI失敗を起こしたjobが新しいpushの判定対象に含まれるかを確かめる。含まれない場合の扱いは`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正commitが必要なCI失敗を修正するエージェント」の修正系列の定義に従う。
-   - 原因commitへ取り込む区分: 次の全てが成立する場合は、修正を原因のcommitへ取り込む（amendか、fixupとautosquash）。同じbranchは`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように期待値を明示した形で更新する。背景の`git fetch`で追跡refが進むと、期待値を省いた`--force-with-lease`の保護が働かない。取り込みの実行手順は`agent-toolkit:commit`の`references/history-rewrite.md`の「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」に従う
-     - push先のbranchが、remoteのHEADが指すbranch（`git ls-remote --symref <remote> HEAD`が示すbranch）と異なる
-     - push先のbranchが、対象リポジトリの規範（`AGENTS.md`など）が直接pushまたはforce pushを禁じるbranchに当たらない
-     - 操作の直前に`git fetch --all --prune`を実行する。その後、書き換える最古のcommitに対する`git for-each-ref --contains=<そのcommit> refs/heads/ refs/remotes/`の出力が、push先のlocal branchとその追跡refだけである。他のbranch、worktreeが保持するbranch、別remoteから到達できる場合は書き換えない
-   - 通常commitを使う区分: 前項のいずれかが成立しない場合は、同じbranchへの通常commitとして追加し、force pushを使わない。ベースbranchへ直接pushする運用はこの区分に当たる。forgeの保護設定でforce pushが拒否された場合も、push失敗として扱い、通常commitで修正し直す
-   - 原因commitへ取り込む区分でも`## push前`手順3のdry-runを同じ明示形で実行する。強制更新を示すstatus lineは、前項の3条件を満たし承認済みdestinationへの更新である場合だけ承認済みとして扱う。CI記録には書き換え前後のOID、tree・親・件名の対応、`git range-diff`の結果と是正した原因の対応を残す
-6. 診断目的で対象jobを再実行した後も、保存済みの同一baselineに対して`wait_ci.py --baseline`を再起動し、待機はこのスクリプトへ委ねる。自作の待機ループは、baselineが定める判定対象を再現しないため、待機手段として使わない。
-   許容された再実行後も失敗が残る場合は、CI未通過を終端状態として確定する。
-   完了報告と採否記録には、未通過であることと帰属判定を記録する。
-   `atk run-script plan-progress --`で計画ファイルの`## 進捗ログ`へも同じ内容を記録する。
-   対象workflowが同一concurrency groupで`cancel-in-progress: true`を有効にしている場合、
-   再実行の終端前の新規pushは先行runを`cancelled`にし、非決定性とCI通過の判定根拠を失わせる。
-   判定に用いるrunの終端を確定してから次のpushを行う
+1. 引数なし方式では`git push`を単独で実行し、明示方式では成功したdry-runから`--dry-run --porcelain`だけを除いた同じ引数でpushする
+2. push成功後、各baselineに対して`wait_ci.py --baseline`を実行する（CI通過をこのセッションで判定しない場合は実行せず後始末へ進む）
+   - 総待機時間は、GitHub Actionsでは対象workflowの直近の成功runの`updatedAt - startedAt`へ登録猶予と変動分の余裕を加えて決め、取得・算出できなければ270秒とする。`gh`の入出力形式は実行直前のヘルプで確かめる
+   - 終了コード6と2では同じ引数で呼び直し、それ以外を待機の終端とする
+   - 背景実行では、ホストがコマンドを時間で停止する上限を総待機時間より長くする。先に止められるとスクリプトは判定結果を返せなくなる。実行ハンドルのyield・再開がある場合は60秒未満の間隔で同一processへ再接続し、processを短い`--timeout`へ分割したりplugin root更新を契機に置き換えたりしない
+   - push前のbaselineが無い場合と別の主体がpushしたcommitを待つ場合は、40桁の完全長SHAを`--wait-sha`へ、managed-temp内の待機専用JSONを`--failure-record`へ渡す。この形は対象SHAの全実行を判定し、baseline方式は自身のpushで新しく登録された実行だけを判定する
+   - GitLabでは同一projectのbridgeが再帰的に指すdownstream pipelineとジョブも判定対象とし、別projectのdownstreamは対象外とする
+3. 全対象が終了コード0で完了した場合だけCI通過とする。出力が空か成功完了マーカーが無ければ未判定として直接確かめる。判定対象はbaselineに保存したSHAの実行であり、push後にsource refが進んでも同じSHAで判定する。登録猶予後に登録された実行も含む（猶予は実行が1件も登録されない場合を区別するための待機であり、判定対象の期限とは別物である）。GitHubで除外するのは`event`が`dynamic`かつworkflow名が`Dependabot Updates`の実行だけとする
+4. 終了コード6を受けたら`agent-toolkit:bugfix`を起動し、並行して同じbaseline・引数で呼び直す。終了コード1も同スキルで対処する
+5. 修正では元のbaselineの待機が終端した出力の失敗集合全体を範囲に含めてから再pushする（失敗集合を取得できなければその原因を先に解消する）。
+   再pushごとに新しいbaselineを作成して再監視し、失敗したjobが新しいpushの判定対象に含まれるかを確かめる。
+   含まれない場合は`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正commitが必要なCI失敗を修正するエージェント」の修正系列の定義に従う。修正方法は次の2区分から選ぶ
+   - 原因commitへ取り込む区分: 次の全てが成立する場合は、修正を原因commitへ取り込む（amendか、fixupとautosquash）。
+     更新は`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように期待値を明示して行う（期待値を省くと、背景の`git fetch`で追跡refが進んだ時点で保護が無効になる）。
+     実行手順は`references/history-rewrite.md`の「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」に従う
+     - push先branchが、remoteのHEADが指すbranch（`git ls-remote --symref <remote> HEAD`）と異なる
+     - push先branchが、対象リポジトリの規範（`AGENTS.md`など）が直接pushかforce pushを禁じるbranchではない
+     - 操作直前の`git fetch --all --prune`後、書き換える最古のcommitに対する`git for-each-ref --contains=<そのcommit> refs/heads/ refs/remotes/`の出力がpush先のlocal branchとその追跡refだけである
+   - 通常commitを使う区分: 前項のいずれかが成立しない場合（ベースbranchへ直接pushする運用を含む）は、同じbranchへ通常commitを追加し、force pushを避ける。forgeの保護設定でforce pushが拒否された場合も通常commitで修正し直す
+   - 取り込む区分でも`## push前`のdry-runを同じ明示形で実行し、強制更新のstatus lineは3条件を満たす承認済みdestinationへの更新である場合だけ承認済みとする。CI記録には書き換え前後のOID、tree・親・件名の対応、`git range-diff`の結果と是正した原因の対応を残す
+6. 診断のために対象jobを再実行した後も、同じbaselineで`wait_ci.py --baseline`を再起動して待機を任せる（自作の待機ループはbaselineの判定対象を再現できないため避ける）。許容された再実行後も失敗が残る場合はCI未通過を終端状態とし、未通過と帰属判定を完了報告、採否記録、`atk run-script plan-progress --`で計画の`## 進捗ログ`へ記録する。対象workflowが同一concurrency groupで`cancel-in-progress: true`の場合、再実行の終端前に新しくpushすると先行runが`cancelled`になり判定根拠を失うため、終端を確定してから次のpushを行う
 
-`--baseline`によるCI通過の判定が終わるまで、同じコミットに対する`gh workflow run`などのworkflow手動起動は待つ。
-`wait_ci.py`はbaselineに無い同一コミットの実行も判定対象へ含めるため、手動起動したworkflowの失敗がCI失敗として返る。
-リリース、配備その他のworkflowの手動起動は、CI通過を確定した後に行う。
+`--baseline`による判定が終わるまで、同じコミットに対する`gh workflow run`などの手動起動は待つ。`wait_ci.py`はbaselineに無い同一コミットの実行も判定対象に含めるため、手動起動の失敗がCI失敗として返る。リリースや配備のworkflowはCI通過の確定後に起動する。
 
 `wait_ci.py`の終了コードは次のとおり。
 
@@ -114,4 +77,4 @@ baseline作成と監視では`--repo`、`--forge`、`--ref`、`--source-ref`を�
 
 CI成功、CI定義なし、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
 `agent-toolkit:process-wi`の終端担当は、これらの終端状態の名前を返却の`CIの結果`の値に使う。
-追加pushでは新しいディレクトリとbaselineを作成する。原因commitへ取り込んだ修正のforce pushにも同じく適用する。
+追加push（原因commitへ取り込んだ修正のforce pushを含む）では新しいディレクトリとbaselineを作成する。

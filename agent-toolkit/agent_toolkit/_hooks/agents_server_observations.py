@@ -8,6 +8,18 @@ Stopの未観測作業の警告（`agents_server_session_advisor`）・Stopの�
 記録の形を知るモジュールを1つにし、書き手と読み手の食い違いを防ぐ。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._atk.wi",
+    "agent_toolkit._common",
+    "agent_toolkit._common.file_lock",
+    "agent_toolkit._common.session_state",
+    "agent_toolkit._common.shell_segments",
+    "agent_toolkit._common.shell_tokens",
+    "agent_toolkit._hooks.agent_id",
+    "agent_toolkit._hooks.tracked_model_types",
+}
+
 import dataclasses
 import json
 import os

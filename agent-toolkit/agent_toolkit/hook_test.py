@@ -4,6 +4,8 @@
 区別して扱うことを検証する。読込失敗では素のtracebackだけを標準エラー出力へ書き、
 `main()`実行中の例外では要約1行とtracebackを書いたうえでStop共通処理の空JSON応答を返す。
 Stopとprocess-loopを呼び出した場合の親子セッションの中断処理も検証する。
+Python 3.15の遅延読み込みでは、公開hookが処理分岐で使わない依存を読み込まずに同じ応答を返すことと、
+同一プロセスで反復して呼んでも状態に従って応答が変わることを検証する。
 """
 
 # 共通entrypointとのサブコマンド契約をテスト側にも固定するため意図的に重複する。
@@ -463,3 +465,167 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     assert "systemMessage" in parent_responses[-1]
     assert abort_path.exists()
     assert termination_calls == ["requested"]
+
+
+# 公開hookを子プロセスで実行し、終了時点の`sys.modules`を記録する。`eager`ではPEP 810の
+# `sys.set_lazy_imports_filter`で全ての遅延読み込みを無効化する。PEP 810が記す`-X lazy_imports=none`は
+# Python 3.15.0が`expected 'all' or 'normal'`で拒否するため、同じ効果を持つ公開APIを対照に使う。
+_MODULE_RECORDING_RUNNER = """\
+import os
+import runpy
+import sys
+
+mode, record, script, *arguments = sys.argv[1:]
+if mode == "eager":
+    sys.set_lazy_imports_filter(lambda *_: False)
+sys.argv = [script, *arguments]
+sys.path[0] = os.path.dirname(script)
+code = 0
+try:
+    runpy.run_path(script, run_name="__main__")
+except SystemExit as exc:
+    code = exc.code
+with open(record, "w", encoding="utf-8") as file:
+    file.write("\\n".join(sorted(sys.modules)))
+sys.exit(code)
+"""
+
+# 終了工程の観測などが対象外の入力でも読み込んでいた、委譲・バックグラウンドタスク・報告解析・シェル判定の依存。
+_UNUSED_BRANCH_MODULES = (
+    "agent_toolkit._agents_server.state",
+    "agent_toolkit._hooks.agents_server_observations",
+    "agent_toolkit._hooks.background_tasks",
+    "agent_toolkit._hooks.pretooluse.shell_checks",
+    "agent_toolkit._hooks.report_validation",
+)
+
+
+def _run_with_module_record(
+    tmp_path: pathlib.Path, mode: str, subcommand: str, payload: bytes
+) -> tuple[subprocess.CompletedProcess[bytes], set[str]]:
+    """公開hookを子プロセスで実行し、応答と読み込んだモジュール名を返す。"""
+    runner = tmp_path / "record_modules.py"
+    runner.write_text(_MODULE_RECORDING_RUNNER, encoding="utf-8")
+    record = tmp_path / f"modules-{mode}.txt"
+    env = os.environ.copy()
+    env["TMPDIR"] = str(tmp_path)
+    env.pop("AGENT_TOOLKIT_DELEGATED_SESSION", None)
+    env.pop("AGENT_TOOLKIT_OWNER_SESSION", None)
+    result = subprocess.run(
+        [sys.executable, str(runner), mode, str(record), str(_SCRIPT), subcommand],
+        input=payload,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    return result, set(record.read_text(encoding="utf-8").splitlines())
+
+
+@pytest.mark.skipif(sys.version_info < (3, 15), reason="遅延読み込みはPython 3.15以上だけが行う")
+class TestLazyDependencyLoading:
+    """公開hookが処理分岐で使わない依存を読み込まず、遅延を無効化した場合と同じ応答を返すことを検証する。"""
+
+    @pytest.mark.parametrize("subcommand", _SUBCOMMANDS)
+    def test_each_hook_loads_fewer_modules_with_same_response(self, tmp_path: pathlib.Path, subcommand: str) -> None:
+        lazy, lazy_modules = _run_with_module_record(tmp_path, "lazy", subcommand, b"{}")
+        eager, eager_modules = _run_with_module_record(tmp_path, "eager", subcommand, b"{}")
+
+        assert (lazy.returncode, lazy.stdout, lazy.stderr) == (eager.returncode, eager.stdout, eager.stderr)
+        assert len(lazy_modules) < len(eager_modules)
+        # session_idを持たない入力はどのhookでも委譲・バックグラウンドタスク・報告解析へ到達しない。
+        assert not set(_UNUSED_BRANCH_MODULES) & lazy_modules
+
+    @pytest.mark.parametrize(
+        ("tool_name", "tool_input", "used_modules"),
+        [
+            ("Read", {"file_path": "read-target.txt"}, ()),
+            ("Bash", {"command": "ls"}, ("agent_toolkit._hooks.pretooluse.shell_checks",)),
+        ],
+        ids=["normal", "bash-pass"],
+    )
+    def test_pretooluse_skips_dependencies_of_unused_branches(
+        self,
+        tmp_path: pathlib.Path,
+        tool_name: str,
+        tool_input: dict[str, str],
+        used_modules: tuple[str, ...],
+    ) -> None:
+        target = tmp_path / "read-target.txt"
+        target.write_text("内容\n", encoding="utf-8")
+        resolved_input = {key: str(target) if key == "file_path" else value for key, value in tool_input.items()}
+        payload = json.dumps(
+            {"session_id": "lazy-session", "cwd": str(tmp_path), "tool_name": tool_name, "tool_input": resolved_input}
+        ).encode("utf-8")
+
+        lazy, lazy_modules = _run_with_module_record(tmp_path, "lazy", "pretooluse", payload)
+        eager, eager_modules = _run_with_module_record(tmp_path, "eager", "pretooluse", payload)
+
+        assert (lazy.returncode, lazy.stdout, lazy.stderr) == (0, b"", b"")
+        assert (eager.returncode, eager.stdout, eager.stderr) == (0, b"", b"")
+        assert len(lazy_modules) < len(eager_modules)
+        unused = set(_UNUSED_BRANCH_MODULES) - set(used_modules)
+        assert unused <= eager_modules
+        assert not unused & lazy_modules
+
+
+def _call_hook_in_process(monkeypatch: pytest.MonkeyPatch, subcommand: str, payload: dict[str, object]) -> str:
+    """公開hookの`main`を同一プロセスで呼び、標準出力を返す。"""
+    output = io.StringIO()
+    with monkeypatch.context() as context:
+        stdin = io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode("utf-8")), encoding="utf-8")
+        context.setattr(sys, "stdin", stdin)
+        with contextlib.redirect_stdout(output):
+            assert _hook.main([subcommand]) == 0
+    return output.getvalue()
+
+
+def test_repeated_calls_in_one_process_follow_input_and_session_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """依存を読み込んだ後の反復呼び出しでも、警告の記録と未配送通知の判定が入力と状態に従う。"""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    empty_transcript = tmp_path / "empty.jsonl"
+    empty_transcript.write_text("", encoding="utf-8")
+
+    def pretooluse(session_id: str, command: str) -> str:
+        return _call_hook_in_process(
+            monkeypatch,
+            "pretooluse",
+            {
+                "session_id": session_id,
+                "transcript_path": str(empty_transcript),
+                "cwd": str(tmp_path),
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+            },
+        )
+
+    # 検索スキルを起動しない検索の警告は、同じセッションでは初回だけ返り、別のセッションでは再び返る。
+    first = pretooluse("repeat-session", "grep -rn needle .")
+    context = json.loads(first)["hookSpecificOutput"]["additionalContext"]
+    assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
+    assert not pretooluse("repeat-session", "ls")
+    assert not pretooluse("repeat-session", "grep -rn needle .")
+    assert json.loads(pretooluse("other-session", "grep -rn needle ."))["hookSpecificOutput"]["additionalContext"] == context
+
+    # 未配送の完了通知が残るtranscriptでは配送のためにターンを終え、残らないtranscriptでは何も返さない。
+    # キューの記録の形は`_hooks/queued_notification_advisor_test.py`の生成と同じとする。
+    notification = (
+        "<task-notification>\n<task-id>repeat-task</task-id>\n"
+        "<output-file>/tmp/repeat-task.output</output-file>\n<status>completed</status>\n</task-notification>"
+    )
+    queued = tmp_path / "queued.jsonl"
+    queued.write_text(
+        json.dumps({"type": "queue-operation", "operation": "enqueue", "content": notification}) + "\n", encoding="utf-8"
+    )
+
+    def stop(transcript: pathlib.Path) -> dict[str, Any]:
+        output = _call_hook_in_process(monkeypatch, "stop", {"session_id": "stop-session", "transcript_path": str(transcript)})
+        return cast(dict[str, Any], json.loads(output))
+
+    assert stop(queued) == {"continue": False}
+    assert stop(empty_transcript) == {}
+    assert stop(queued) == {"continue": False}

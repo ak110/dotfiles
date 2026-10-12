@@ -329,6 +329,32 @@ Git 2.47.3で、`commit.verbose=true`を設定した隔離リポジトリ2つへ
 
 再検証では新規の隔離リポジトリで初期commitを作成し、`git config commit.verbose true`を設定する。ファイルを変更してstageし、編集バッファの各行を読み、`#`で始まる行だけを除いて保存するスクリプトを`GIT_EDITOR`へ指定する。`git commit --no-verbose --fixup=amend:<初期commit>`と、別の同一条件のリポジトリで`--no-verbose`を除いた起動を比較し、前記の本文の差を確認する。
 
+## agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月11日
+
+uv 0.13.0で、`UV_PROJECT_ENVIRONMENT`で隔離した仮想環境を使い、dotfilesのリポジトリ直下と`agent-toolkit/`のプロジェクトを`UV_FROZEN=1`のもとで同期した。
+リポジトリ直下をPython 3.15で`uv sync --all-groups --all-extras`した環境へ、ロックファイルに無い`toolz`を`uv pip install`で加えた。
+この環境では`uv run`の後も`import toolz`が成功し、続く`uv sync --all-groups --all-extras`の後は`ModuleNotFoundError`になった。
+`agent-toolkit/`をPython 3.14で構築した環境は、`--python`を付けない`uv sync`と`uv run`の後も3.14のままで、`uv sync --python 3.15`の後は3.15になった。
+`agent-toolkit/`は`.python-version`を持たないため、`--python`を渡さない同期は既存の仮想環境をリポジトリ直下の基準版で構築し直さない。
+
+再検証の手順を次に示す。`<作業ツリー>`はdotfilesの作業ツリーの絶対パスとする。`ROOT_ENV`と`AT_ENV`には作業ツリーの外に用意した一時ディレクトリの中の、まだ存在しないパスを設定する。`UV_FROZEN=1`を設定したシェルで、コードブロックの行を順に実行する。
+`ROOT_ENV`はリポジトリ直下のプロジェクト、`AT_ENV`は`agent-toolkit/`のプロジェクトの仮想環境で、各`uv`の呼び出しへ`UV_PROJECT_ENVIRONMENT`で渡す。
+`uv run`で実行した`import toolz`が`toolz present`を出力し、続く`uv sync`の後に`$ROOT_ENV/bin/python`で実行した`import toolz`が`ModuleNotFoundError`で失敗すれば、余分なパッケージの残存と除去を再現できている。
+`agent-toolkit/`の版が`--python`を付けない同期と`uv run`の後に`(3, 14)`のままで、`--python 3.15`の同期の後に`(3, 15)`となれば、版の保持と再構築を再現できている。
+
+```sh
+UV_PROJECT_ENVIRONMENT="$ROOT_ENV" uv sync --project <作業ツリー> --all-groups --all-extras --python 3.15
+uv pip install --python "$ROOT_ENV/bin/python" toolz
+UV_PROJECT_ENVIRONMENT="$ROOT_ENV" uv run --project <作業ツリー> python -c 'import toolz; print("toolz present")'
+UV_PROJECT_ENVIRONMENT="$ROOT_ENV" uv sync --project <作業ツリー> --all-groups --all-extras --python 3.15
+"$ROOT_ENV/bin/python" -c 'import toolz'
+UV_PROJECT_ENVIRONMENT="$AT_ENV" uv sync --project <作業ツリー>/agent-toolkit --all-groups --all-extras --python 3.14
+UV_PROJECT_ENVIRONMENT="$AT_ENV" uv sync --project <作業ツリー>/agent-toolkit --all-groups --all-extras
+UV_PROJECT_ENVIRONMENT="$AT_ENV" uv run --project <作業ツリー>/agent-toolkit python -c 'import sys; print(sys.version_info[:2])'
+UV_PROJECT_ENVIRONMENT="$AT_ENV" uv sync --project <作業ツリー>/agent-toolkit --all-groups --all-extras --python 3.15
+"$AT_ENV/bin/python" -c 'import sys; print(sys.version_info[:2])'
+```
+
 ## agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日
 
 2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>は通常のサブエージェントを独立文脈、forkを親の会話履歴の継承として区別する。Codex CLI 0.157.1の`spawn_agent`スキーマも`fork_turns`で渡す履歴を選べる。再検証は各ホストの通常起動と全履歴forkの入力契約を比較する。

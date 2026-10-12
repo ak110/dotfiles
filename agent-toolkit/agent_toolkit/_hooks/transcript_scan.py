@@ -4,6 +4,9 @@
 Stop時の書き込み完了の待機、走査範囲（sidechainの扱い）とtool_use・tool_resultの取り出しを担う。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {"agent_toolkit._common", "collections.abc", "time"}
+
 import collections.abc
 import json
 import time

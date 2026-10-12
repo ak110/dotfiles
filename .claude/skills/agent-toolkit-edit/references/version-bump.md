@@ -1,83 +1,49 @@
 # バージョン更新の詳細手順
 
-`.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」節の詳細手順を集約する。
-対象範囲は同節が定める。`.chezmoi-source/`配下のchezmoi配布物・`bin/`配下のCLIラッパー・`scripts/`配下のヘルパースクリプトは
-本規定の対象外とし、`agent_toolkit_bump.py`も更新せず版数を据え置く。
+`.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」節の詳細を集約する。
+`.chezmoi-source/`配下のchezmoi配布物、`bin/`配下のCLIラッパー、`scripts/`配下のヘルパースクリプトだけの変更は対象外とし、版数を据え置く。
 
 ## 判定基準
 
-エンドユーザーに届く振る舞いが変わるものは必ずbumpし、判断に迷う場合はbumpする。
-コメント・docstringのみ、`*_test.py`のみ、入出力が不変なリファクタリング、誤字・スタイル調整はbumpせず版数を据え置く。
+エンドユーザーに届く振る舞いが変わるものは必ずbumpし、迷う場合もbumpする。
+コメント・docstringのみ、`*_test.py`のみ、入出力が不変なリファクタリング、誤字・スタイル調整は版数を据え置く。
 
 - PATCH（`+0.0.1`）: 軽微な修正（不具合・フック・検出・文言、既存見出し内の規範の補強など）
 - MINOR（`+0.1.0`）: 機能追加・検出範囲の大幅拡大・description変更・節新設など、規模の大きい変更
-- MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がある場合だけ実行する
-  （規定は`agent-toolkit:commit`の`references/publish.md`「版数と生成物」が定める）
-- 現行版が`major.minor.patch`の数値3要素で表せない非SemVerの場合は、文字列の辞書順・
-  桁数・接尾辞からPATCH/MINOR/MAJORを推測せず、プロジェクト固有の対応表またはユーザーの
-  明示指定がある場合だけその区分を適用する。
-  どちらも無い場合はbumpを行わず判定不能として報告する
+- MAJOR（`+1.0.0`）: ユーザーの明示指示がある場合だけ（規定は`agent-toolkit:commit`の`references/publish.md`「版数と生成物」）
+- 現行版が`major.minor.patch`の数値3要素で表せない場合は、プロジェクト固有の対応表かユーザーの明示指定がある場合だけ区分を適用し、無ければbumpせず判定不能として報告する
 
 ## 競合解決と統合後の確認
 
-rebase・merge時に`version`が競合した場合は、`(major, minor, patch)`の数値タプルが大きい方を採用する。
-採用値を定義元2ファイル（`agent-toolkit/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`）へ反映する。
-反映後に`scripts/sync_codex_plugin_manifests.py`でAgent Plugins・Codex向け派生manifestを同期し、
-`scripts/sync_codex_plugin_manifests.py --check`で派生物を変更せず整合性を確かめる。
-終了コードは最新なら0、不整合なら1、引数誤用なら2とする。
-定義元の`version`・`description`と派生manifestの一致は同スクリプトの判定を使い、個別比較を重ねない（努力目標。同じ値の確認の重複を避ける）。
+rebase・merge時に`version`が競合した場合は、`(major, minor, patch)`の数値タプルが大きい方を採用する。採用した値は定義元2ファイル（`agent-toolkit/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`）へ反映する。続けて`scripts/sync_codex_plugin_manifests.py`で派生manifestを同期する。整合は`scripts/sync_codex_plugin_manifests.py --check`（最新なら0、不整合なら1、引数誤用なら2）で確かめ、同スクリプトの判定に一本化する。
 
-rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの統合先と現在の定義元ファイルの`version`値を比較する。
-自分の未公開コミットにエンドユーザーの振る舞いを変えるplugin変更が残り、両者の値が同じ場合は、
-統合後の版を基準として「判定基準」節に従うbumpを再実行する
-（別の作業が同じ版へ先にbumpし、Gitが非競合として統合したときに配信されない事態を防ぐ）。
+rebase・merge後は競合の有無にかかわらず、公開済みの統合先と定義元の`version`を比較する。未公開のcommitにエンドユーザーの振る舞いを変える変更が残り値が同じなら、統合後の版を基準に再bumpする（別の作業が同じ版へ先にbumpし、非競合で統合されると配信されないため）。
 
 ## 未プッシュ範囲での統合
 
-`scripts/agent_toolkit_bump.py`は既存bump以下の種別指定をno-op扱いとするため、
-未プッシュ範囲では後続編集ごとの追加bumpは不要である（努力目標。同じ種別以下の指定は変化しない）。格上げが必要な場合だけ上位種別を指定する。
-`git push`実行後の追加commitは新たな未プッシュ範囲として扱い、エンドユーザー振る舞い変更を含む場合は再度bumpする。
+`scripts/agent_toolkit_bump.py`は未プッシュ範囲の既存bump以下の種別指定をno-opにするため、後続編集ごとの追加bumpは不要で、格上げが要る場合だけ上位種別を指定する。`git push`後の追加commitは新たな未プッシュ範囲として扱う。
 
 ## Codex導入後のrootの再確認
 
-Codexプラグインの導入版が変わった場合、保持済みのplugin rootを再利用せず再解決する。
-`codex plugin list --json`の`pluginId == "agent-toolkit@ak110-dotfiles"`項目から現行の導入版を取得し、
-plugin cache directory配下の新versionのrootを解決し直す。
-再解決したroot配下でplugin manifestの`version`が導入版と一致することと、
-利用する後続スクリプトの実在を確認してから使う。
-確認できない場合は旧rootへフォールバックせず未完了として扱う
-（`source.path`は配布元を示す値であり、導入cache rootの更新には使用せず、新versionのrootを解決して用いる）。
+Codexプラグインの導入版が変わった場合は、保持済みのplugin rootを破棄して再解決する。
+`codex plugin list --json`の`pluginId == "agent-toolkit@ak110-dotfiles"`から導入版を取得し、plugin cache directory配下の新versionのrootを解決し直す。そのrootのplugin manifestの`version`が導入版と一致し、使うスクリプトが実在することを確かめてから使い、確かめられなければ旧rootへ戻さず未完了とする（`source.path`は配布元を示す値であり、cache rootの解決には新versionのrootを使う）。
 
 ## plan modeでの取り扱い
 
-本節の前段が定める一般則は、単一のworktreeで実装する計画へ適用する。
-`agent-toolkit:process-wi`が起動したレーンでは、レーン数によらず本節末尾の特則が前段に優先する。
+単一のworktreeで実装する計画には本節の一般則を、`agent-toolkit:process-wi`のレーンには末尾の特則を適用する。
 
-計画では`## 要件・外部仕様`へ種別（PATCH／MINOR／MAJORまたは`bump不要`）と「判定基準」に基づく根拠を記す。
-具体的な版数と既存bumpとの統合は`scripts/agent_toolkit_bump.py`へ委ね、要否や既存bumpとの差分の調査は省く（努力目標。ツールと重複する調査を避ける）。bumpする実装では検証前に`scripts/agent_toolkit_bump.py {種別}`を実行する。
-version bumpを伴う計画では、Claude Code向けの定義元2ファイルを`## 要件・外部仕様`の変更説明へ含める。
-正式な生成コマンドと生成器出力との一致確認は`## 検証`へ記載する。
-生成コマンドが扱う派生物（派生manifest、`agent-toolkit/rules/`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など生成器の出力全般）は、変更説明へ重複して含めない（努力目標。派生物は生成器が保証するため列挙は重複になる）。
-version・description欄の有無や実際の差分有無を問わず、変更説明には定義元のファイルを記載する。
-派生物の完全性は生成コマンドの実行と生成器出力との一致確認で保証する。
-Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
-定義元の更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、同スクリプトの`--check`で差分が生じないことを確かめる。
-bumpの完了条件は、実装開始時点の版との増加比較で判定せず、
-公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、および定義元2ファイルと派生manifestの`version`が一致することで判定する。
-既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。
-`agent-toolkit:process-wi`の各レーンは、bump種別（`bump不要`を含む）と「判定基準」に基づく選定根拠、MAJORの場合は認可根拠を計画へ記録し、版数更新コマンドを実行しない。
-AWI本文の版数区分は、起草時にその要求だけを見た判定である。メインはprocess-wiの同じ実行で統合した変更へ「判定基準」を適用し、AWI単独の区分より上位の変更があれば上位区分を`bump種別`として終端担当へ渡す。終端担当が全レーンのマージ後に`scripts/agent_toolkit_bump.py`を1回実行する。
-版数更新を完成条件に持つAWIは`agent-toolkit/share/lane-integration.subagent.md`の延期`adopt`に従い、終端担当が版数、派生manifestと公開結果を検収した後に終端する。
-統合ブランチのpush前に上流進行を観測してrebaseした場合は、
-rebase後の公開済み統合先と手元の定義元ファイルのversionを「競合解決と統合後の確認」節の基準で再比較する。
-未公開の振る舞い変更が公開済みと同じversionのまま残る場合は、終端担当が再bumpとmanifest同期を行う。
+- 計画の`## 要件・外部仕様`へ種別（PATCH／MINOR／MAJORまたは`bump不要`）と「判定基準」に基づく根拠を書く。具体的な版数と既存bumpとの統合は`scripts/agent_toolkit_bump.py`へ委ねる。bumpする実装では検証前に`scripts/agent_toolkit_bump.py {種別}`を実行する
+- bumpを伴う計画では、差分の有無を問わず定義元2ファイルを変更説明へ含める。生成器が保証する派生物（派生manifest、`agent-toolkit/rules/`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など）は変更説明へ列挙せず、正式な生成コマンドと生成器出力との一致確認を`## 検証`へ書く。派生manifestは定義元の更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、`--check`で確かめる
+- bumpの完了条件は、公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれ、定義元2ファイルと派生manifestの`version`が一致することとする。既存の未プッシュbumpで足り、`scripts/agent_toolkit_bump.py`が無変更・終了コード0で終わる場合も完了とする
+
+`agent-toolkit:process-wi`の特則:
+
+- 各レーンはbump種別（`bump不要`を含む）と根拠、MAJORなら認可根拠を計画へ記録し、版数更新コマンドを実行しない
+- AWI本文の版数区分は起草時にその要求だけを見た判定である。メインは同じ実行で統合した変更全体へ「判定基準」を適用し、上位の区分があればそれを`bump種別`として終端担当へ渡す。終端担当が全レーンのマージ後に`scripts/agent_toolkit_bump.py`を1回実行する
+- 版数更新を完成条件に持つAWIは`agent-toolkit/share/lane-integration.subagent.md`の延期`adopt`に従い、終端担当が版数、派生manifest、公開結果を検収した後に終端する
+- 統合ブランチのpush前に上流の進行でrebaseした場合は、「競合解決と統合後の確認」の基準で再比較し、必要なら終端担当が再bumpとmanifest同期を行う
 
 ## 新規CLI公開時の疎通確認
 
-配布物プラグインで新規CLI・新規コマンド・新規ラッパースクリプトを公開する変更を対象とする計画では、
-計画の`## 要件・外部仕様`に、エンドユーザー環境で新CLIを起動できるまでの導入手順を含める。
-対象はインストールスクリプト・post-apply処理・PATH配置手法・bash補完登録・Windowsペアファイル同期とする。
-判断基準はプラグイン単体のエンドユーザーがPATH追加・環境変数の設定以外の追加設定なしで新CLIを起動できるかとする。
-プラグインの`bin/`配下CLIの実配置先はバージョン付きcache directoryとなる。
-このため、dotfiles配布のエンドユーザーは`.bashrc`のPATH追加、プラグイン単体のエンドユーザーは
-`install-claude.sh`/`install-claude.ps1`が配置する動的解決ラッパーで吸収する。
+配布物プラグインで新規CLI・コマンド・ラッパースクリプトを公開する計画では、`## 要件・外部仕様`にエンドユーザー環境で起動できるまでの導入手順（インストールスクリプト、post-apply処理、PATH配置、bash補完登録、Windowsペアファイル）を含める。基準は、プラグイン単体のエンドユーザーがPATH追加・環境変数設定以外の追加設定なしで起動できることである。
+プラグインの`bin/`の実配置先はバージョン付きcache directoryになる。dotfilesのエンドユーザーは`.bashrc`のPATH追加、プラグイン単体のエンドユーザーは`install-claude.sh`/`install-claude.ps1`が置く動的解決ラッパーでこれを吸収する。

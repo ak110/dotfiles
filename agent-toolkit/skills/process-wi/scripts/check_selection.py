@@ -25,6 +25,7 @@
 - 段階案の比較値の欠落: 段階2以上の行があるのに単一段階案の完了見込み秒数が無い
 
 これらは共有書込の判定や配分の比較が成立しないため、違反として終了コード1を返す。
+各違反は理由と次の操作の組で生成し、出力では違反の理由の行の後に、出力に現れた違反の次の操作だけを1回ずつまとめた行を置く。
 分類と定義の独立性の意味判断はメインの読解へ委ねる。
 
 `--work-dir`の`pyproject.toml`が`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`で`プロジェクト規範の指定`の条件を
@@ -128,6 +129,53 @@ class InputError(_next_action.ActionableError):
     """チェックを開始できない入力の問題。送出側が原因に合う次の操作を持つ。"""
 
 
+# 終了コード1の違反は理由と次の操作の組で生成し、`main`は出力に現れた違反の次の操作だけを1回ずつ出力する。
+# 次の操作を違反の生成箇所に持たせると、違反の種類を加えたときも次の操作を欠いた違反を生成できない。
+Violation = _next_action.ActionableError
+
+_NEXT_WRITE_PATH = (
+    "`書込対象`・`公開工程の書込対象`の不正な要素を、実在ファイル、末尾/付き実在ディレクトリ、"
+    "本文明示の新設先または正当な`導出した新設先`の個別パスへ直す"
+)
+_NEXT_UNCOVERED = (
+    "未被覆の反映先は、該当WIの元本文の変更要求と限定調査から`書込対象`・`公開工程の書込対象`・"
+    "`書き込まない反映先`のいずれか1区分へ分類する。抽出パスや存在だけで区分を決めず、"
+    "変更領域が変われば競合とレーン配分も再評価する"
+)
+_NEXT_BROAD = "広すぎる範囲を、診断行が示す配下の本文の反映先の個別パスへ置き換える"
+_NEXT_EXCLUDED = "`書き込まない反映先`から本文の反映先に無いパスを除く"
+_NEXT_SECTION_OVERLAP = "区分間で重複するパスは、所有する1区分だけへ残す"
+_NEXT_DERIVED = (
+    "`導出した新設先`の記録を診断行が示す条件に合わせて直す。新設パスは実在する親ディレクトリと拡張子を持つ完全な名前にし、"
+    "反映範囲を本文のディレクトリ範囲へ対応させ、同じパスを1件だけ記録して書込区分へ個別に置く"
+)
+_NEXT_NORM_SPEC = (
+    "`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が定める条件に従い、"
+    "該当項目の`プロジェクト規範の指定`へ欠けた記載を書く"
+)
+_NEXT_PUBLIC_RATIONALE = (
+    "`レーンの所要時間`の`根拠`へ、`公開工程の書込対象`を所有させる対象リポジトリの規範、節およびpathを記録する"
+)
+_NEXT_MISSING_BODY = "`atk wi list`の出力で対象のWIファイル名を確かめ、選定の`WI`をprivate-notesにあるファイル名へ直す"
+_NEXT_SINGLE_STAGE = (
+    "比較した単一段階案の秒数を最上位の`単一段階案の完了見込み秒数`へ、配分の説明を`レーンの所要時間`の`根拠`へ書く"
+)
+_NEXT_SOURCE_MISMATCH = "一致しない欄を、元のWIのfrontmatterの`depends_on`・`target_repo`と選定の`再開位置`が示す計画の値へ直す"
+_NEXT_LANE_MODEL = "同じレーンの項目の`担当モデル`の`実装担当`を1つの値へそろえるか、指定の異なる項目を別のレーンへ割り当てる"
+_NEXT_RESUME_PLAN = "同じ再開計画を指す項目を同じレーンへまとめる"
+_NEXT_STAGE_SEQUENCE = "`レーンの所要時間`の`段階`を1から欠番なく連続する値へ直す"
+_NEXT_PRIOR_MISSING = "段階2以上のレーンの`先行レーン`へ、開始前に統合する前段のレーンを挙げる"
+_NEXT_PRIOR_INVALID = "`先行レーン`を、選定に存在し自レーンより前の段階にあるレーンへ直す"
+_NEXT_OVERLAP_DUPLICATE = "`レーン間の重なり`の記録を共通パスごとに1件へ直す"
+_NEXT_OVERLAP_SURPLUS = "`レーン間の重なり`の記録を、実際に`書込対象`を共有するレーンの組と共通パスへ直す"
+_NEXT_OVERLAP_SAME_DEFINITION = "`判定`を`交わる`へ直すか、両レーンの定義を互いに独立した値へ直す"
+_NEXT_OVERLAP_SAME_STAGE = "定義が交わる2つのレーンを同じレーンへまとめるか、`段階`と`先行レーン`で順に処理する"
+_NEXT_OVERLAP_MISSING = "共通パスごとに双方の定義と判定を`レーン間の重なり`へ1件記録する"
+_NEXT_PRIOR_UNFOUNDED = "`先行レーン`から、交わる重なりの記録に基づかないレーンを除く"
+_NEXT_PRIOR_REQUIRED = "交わる重なりの記録が示す前段のレーンを`先行レーン`へ記録する"
+_NEXT_RERUN = "直した後に同じコマンドで確かめる"
+
+
 _NORM_SPEC_KEY = "プロジェクト規範の指定"
 _NORM_CONFIG_TABLE = ("tool", "agent-toolkit", "pick-wi-check")
 _NORM_CONDITION_KEYS = frozenset({"name", "paths", "suffixes", "agent-doc", "require-paths", "require-text"})
@@ -227,7 +275,9 @@ def _norm_condition_problems(entry: object) -> list[str]:
     return problems
 
 
-def check_norm_spec(awi: str, decision: dict[str, object], reflected: set[str], conditions: list[NormCondition]) -> list[str]:
+def check_norm_spec(
+    awi: str, decision: dict[str, object], reflected: set[str], conditions: list[NormCondition]
+) -> list[Violation]:
     """条件に当たる項目の`プロジェクト規範の指定`が、条件の求める記載を持つか確かめて違反の行を返す。
 
     対象のパスは、書込区分のパスと、`書き込まない反映先`に覆われない反映先のパスとする。
@@ -241,22 +291,30 @@ def check_norm_spec(awi: str, decision: dict[str, object], reflected: set[str], 
     candidates = sorted({*write_paths, *(path for path in reflected if not any(_covers(entry, path) for entry in excluded))})
     spec = decision.get(_NORM_SPEC_KEY)
     filled = isinstance(spec, str) and spec.strip() not in {"", _LANE_NONE}
-    errors: list[str] = []
+    errors: list[Violation] = []
     for condition in conditions:
         matched = [path for path in candidates if condition.matches(path)]
         if not matched:
             continue
         if not filled:
             errors.append(
-                f"{awi}: プロジェクト規範の指定の不足: {condition.name}（{', '.join(matched)}が当たる）: "
-                f"`{_NORM_SPEC_KEY}`が省略・`なし`・空文字列のいずれか"
+                Violation(
+                    f"{awi}: プロジェクト規範の指定の不足: {condition.name}（{', '.join(matched)}が当たる）: "
+                    f"`{_NORM_SPEC_KEY}`が省略・`なし`・空文字列のいずれか",
+                    next_action=_NEXT_NORM_SPEC,
+                )
             )
             continue
         assert isinstance(spec, str)
         missing = [*(path for path in matched if condition.require_paths and path not in spec)]
         missing.extend(text for text in condition.require_text if text not in spec)
         if missing:
-            errors.append(f"{awi}: プロジェクト規範の指定の不足: {condition.name}: 欠けた記載: {', '.join(missing)}")
+            errors.append(
+                Violation(
+                    f"{awi}: プロジェクト規範の指定の不足: {condition.name}: 欠けた記載: {', '.join(missing)}",
+                    next_action=_NEXT_NORM_SPEC,
+                )
+            )
     return errors
 
 
@@ -500,9 +558,9 @@ def check_decision(
     excluded_paths: list[str],
     work_dir: pathlib.Path | None = None,
     derived_new_paths: list[dict[str, str]] | None = None,
-) -> list[str]:
-    """選定結果の1件の項目の違反を、AWIのファイル名・区分・パスを含む行の一覧で返す。"""
-    errors: list[str] = []
+) -> list[Violation]:
+    """選定結果の1件の項目の違反を、AWIのファイル名・区分・パスを含む理由と次の操作の組の一覧で返す。"""
+    errors: list[Violation] = []
     derived_paths: set[str] = set()
     derived_scopes: set[str] = set()
     if work_dir is not None:
@@ -510,41 +568,36 @@ def check_decision(
             awi, reflected, [*write_files, *public_write_files], derived_new_paths or [], work_dir
         )
         errors.extend(derived_errors)
-    if work_dir is not None:
+        declared = {record["パス"] for record in derived_new_paths or []}
         for name, entries in (
             (_selection.WRITE_FILES_KEY, write_files),
             (_selection.PUBLIC_WRITE_FILES_KEY, public_write_files),
         ):
             for entry in entries:
-                target = work_dir / entry
-                valid = _normalize_candidate(entry) == entry and (
-                    target.is_dir()
-                    and entry.endswith("/")
-                    or target.is_file()
-                    and not entry.endswith("/")
-                    or not target.exists()
-                    and (entry in reflected or entry in derived_paths)
-                )
-                if not valid:
-                    errors.append(
-                        f"{awi}: `{name}`のパスの不正: {entry}。"
-                        "実在ファイル、末尾/付き実在ディレクトリ、本文明示または導出記録が正当な新設先へ直す"
-                    )
+                failure = _write_path_failure(entry, work_dir, reflected, derived_paths, declared)
+                if failure is not None:
+                    errors.append(Violation(f"{awi}: `{name}`のパスの不正: {entry}: {failure}", next_action=_NEXT_WRITE_PATH))
     range_descriptions = {
         path for path in reflected if _is_range(path) and any(other != path and other.startswith(path) for other in reflected)
     }
     for path in sorted(reflected - range_descriptions - derived_scopes):
         if path in excluded_paths or any(_covers(entry, path) for entry in [*write_files, *public_write_files]):
             continue
-        errors.append(f"{awi}: 未被覆: {path}")
+        errors.append(Violation(f"{awi}: 未被覆: {path}", next_action=_NEXT_UNCOVERED))
     reflected_ranges = [path for path in reflected if _is_range(path)]
     for entry in [*write_files, *public_write_files]:
         if not _is_range(entry):
             continue
-        inner = [path for path in reflected if path != entry and path.startswith(entry)]
+        inner = sorted(path for path in reflected if path != entry and path.startswith(entry))
         if inner and not any(entry.startswith(scope) for scope in reflected_ranges):
-            errors.append(f"{awi}: 広すぎる範囲: {entry}")
-    errors.extend(f"{awi}: 書き込まない反映先の不正: {path}" for path in excluded_paths if path not in reflected)
+            errors.append(
+                Violation(f"{awi}: 広すぎる範囲: {entry}（配下の本文の反映先: {', '.join(inner)}）", next_action=_NEXT_BROAD)
+            )
+    errors.extend(
+        Violation(f"{awi}: 書き込まない反映先の不正: {path}", next_action=_NEXT_EXCLUDED)
+        for path in excluded_paths
+        if path not in reflected
+    )
     sections = (
         (_selection.WRITE_FILES_KEY, write_files),
         (_selection.PUBLIC_WRITE_FILES_KEY, public_write_files),
@@ -559,39 +612,35 @@ def check_decision(
             # 書き込まない範囲が書込区分のパスを真に含む組は、範囲の残りを書き込まない選定として受理する。
             and not (second_name == _selection.EXCLUDED_PATHS_KEY and first != second and _covers(second, first))
         }
-        errors.extend(f"{awi}: 区分間の重複: {path}（`{first_name}`と`{second_name}`）" for path in sorted(overlaps))
+        errors.extend(
+            Violation(f"{awi}: 区分間の重複: {path}（`{first_name}`と`{second_name}`）", next_action=_NEXT_SECTION_OVERLAP)
+            for path in sorted(overlaps)
+        )
     return errors
 
 
 def _check_derived_paths(
     awi: str, reflected: set[str], writes: list[str], records: list[dict[str, str]], work_dir: pathlib.Path
-) -> tuple[set[str], set[str], list[str]]:
+) -> tuple[set[str], set[str], list[Violation]]:
     """導出記録のパス・範囲・書込への対応を確かめ、正当な範囲だけを被覆へ渡す。"""
     paths: set[str] = set()
     scopes: set[str] = set()
     seen: set[str] = set()
-    errors: list[str] = []
+    errors: list[Violation] = []
+    body_scopes = sorted(value for value in reflected if _is_range(value))
     for record in records:
         path, scope = record["パス"], record["反映範囲"]
-        valid_path = (
-            _normalize_candidate(path) == path
-            and not any(char in path for char in "*?[]{}\\")
-            and pathlib.PurePosixPath(path).as_posix() == path
-            and (not (work_dir / path).exists() or (work_dir / path).is_file())
-            and _new_file_path(path, work_dir) == path
-        )
-        valid_scope = (
-            _normalize_candidate(scope) == scope
-            and scope.endswith("/")
-            and pathlib.PurePosixPath(scope).as_posix() + "/" == scope
-            and (work_dir / scope).is_dir()
-            and _covers(scope, path)
-            and (not any(_is_range(value) for value in reflected) or scope in reflected)
-        )
-        if not valid_path or not valid_scope or path in seen or path not in writes:
+        failures = _derived_record_failures(path, scope, body_scopes, work_dir)
+        if path in seen:
+            failures.append("同じパスを重複して宣言している")
+        if path not in writes:
+            failures.append("書込区分（`書込対象`・`公開工程の書込対象`）に同じパスが無い")
+        if failures:
             errors.append(
-                f"{awi}: `{_selection.DERIVED_NEW_PATHS_KEY}`の対応が不正: {path}（{scope}）。"
-                "重複を除き、新設パスを同じWIの反映範囲と書込区分へ対応付ける"
+                Violation(
+                    f"{awi}: `{_selection.DERIVED_NEW_PATHS_KEY}`の対応が不正: {path}（{scope}）: {'; '.join(failures)}",
+                    next_action=_NEXT_DERIVED,
+                )
             )
         else:
             paths.add(path)
@@ -600,14 +649,63 @@ def _check_derived_paths(
     return paths, scopes, errors
 
 
-def _check_public_write_rationales(items: list[dict[str, object]], costs: list[dict[str, object]]) -> list[str]:
+def _derived_record_failures(path: str, scope: str, body_scopes: list[str], work_dir: pathlib.Path) -> list[str]:
+    """導出記録1件のパスと反映範囲について、成立しない条件を比べた値とともに返す。"""
+    failures: list[str] = []
+    if (
+        _normalize_candidate(path) != path
+        or any(char in path for char in "*?[]{}\\")
+        or pathlib.PurePosixPath(path).as_posix() != path
+    ):
+        failures.append("パスが正規化したリポジトリ相対パスではない")
+    elif (work_dir / path).exists() and not (work_dir / path).is_file():
+        failures.append("パスの実在先が通常ファイルではない")
+    elif _new_file_path(path, work_dir) != path:
+        failures.append("パスが実在する親ディレクトリと拡張子を持つ完全な新設名ではない")
+    if (
+        _normalize_candidate(scope) != scope
+        or not scope.endswith("/")
+        or pathlib.PurePosixPath(scope).as_posix() + "/" != scope
+        or not (work_dir / scope).is_dir()
+    ):
+        failures.append("反映範囲が末尾/付きの実在ディレクトリではない")
+    elif not _covers(scope, path):
+        failures.append("反映範囲がパスを含まない")
+    elif body_scopes and scope not in body_scopes:
+        failures.append(f"反映範囲が本文のディレクトリ範囲のいずれでもない: 本文の範囲={', '.join(body_scopes)}")
+    return failures
+
+
+def _write_path_failure(
+    entry: str, work_dir: pathlib.Path, reflected: set[str], derived_paths: set[str], declared: set[str]
+) -> str | None:
+    """書込区分の要素1件が成立しない条件を返す。成立する場合は`None`を返す。"""
+    target = work_dir / entry
+    if _normalize_candidate(entry) != entry:
+        return "正規化したリポジトリ相対パスではない"
+    if target.is_dir():
+        return None if entry.endswith("/") else "実在ディレクトリだが末尾/が無い"
+    if target.is_file():
+        return None if not entry.endswith("/") else "実在ファイルだが末尾/が付く"
+    if target.exists():
+        return "実在先がファイルでもディレクトリでもない"
+    if entry in reflected or entry in derived_paths:
+        return None
+    if entry in declared:
+        return (
+            "未作成のパスで、同じWIの`導出した新設先`の記録が不正なため新設先として受理しない（その記録の診断を直す対象とする）"
+        )
+    return "未作成のパスで、本文の反映先にも`導出した新設先`にも無い"
+
+
+def _check_public_write_rationales(items: list[dict[str, object]], costs: list[dict[str, object]]) -> list[Violation]:
     """公開工程所有の各pathを、対象リポジトリ規範の節へ対応付けた根拠だけに限定する。"""
     rationales = {
         row[_selection.LANE_KEY]: row.get(_selection.RATIONALE_KEY, "")
         for row in costs
         if isinstance(row, dict) and isinstance(row.get(_selection.LANE_KEY), str)
     }
-    errors: list[str] = []
+    errors: list[Violation] = []
     for item in items:
         lane = item.get(_selection.LANE_KEY)
         rationale = rationales.get(lane, "") if isinstance(lane, str) else ""
@@ -620,8 +718,10 @@ def _check_public_write_rationales(items: list[dict[str, object]], costs: list[d
                 or "節" not in rationale
             ):
                 errors.append(
-                    f"{item.get(_selection.WI_KEY, 'WI不明')}: `{_selection.PUBLIC_WRITE_FILES_KEY}`の根拠不足: {path}。"
-                    "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する"
+                    Violation(
+                        f"{item.get(_selection.WI_KEY, 'WI不明')}: `{_selection.PUBLIC_WRITE_FILES_KEY}`の根拠不足: {path}",
+                        next_action=_NEXT_PUBLIC_RATIONALE,
+                    )
                 )
     return errors
 
@@ -633,8 +733,8 @@ def check(
     body_wis: set[str] | None = None,
     *,
     selection: dict[str, object] | None = None,
-) -> list[str]:
-    """指定した集合の本文と選定全体の関係を確かめ、違反の行を返す。省略時は全本文を検査する。"""
+) -> list[Violation]:
+    """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。"""
     if selection is None:
         selection = load_selection(selection_file)
     items = typing.cast(list[dict[str, object]], _selection.decisions(selection))
@@ -648,7 +748,7 @@ def check(
     if items and not private_notes.is_dir():
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
     conditions = load_norm_conditions(work_dir)
-    errors: list[str] = []
+    errors: list[Violation] = []
     for decision in items:
         awi = typing.cast(str, decision[_selection.WI_KEY])
         if decision[_selection.LANE_KEY] == _LANE_NONE or body_wis is not None and awi not in body_wis:
@@ -663,7 +763,12 @@ def check(
                 f"private-notesを走査できない: {private_notes}: {error}", next_action=_FIX_PRIVATE_NOTES
             ) from error
         if source is None:
-            errors.append(f"{awi}: 本文を特定できない: private-notes（{private_notes}）の状態ディレクトリに無い")
+            errors.append(
+                Violation(
+                    f"{awi}: 本文を特定できない: private-notes（{private_notes}）の状態ディレクトリに無い",
+                    next_action=_NEXT_MISSING_BODY,
+                )
+            )
             continue
         try:
             body = source.read_text(encoding="utf-8")
@@ -690,8 +795,7 @@ def check(
         and _selection.SINGLE_STAGE_ESTIMATE_KEY not in selection
     ):
         errors.append(
-            f"段階2以上の選定に`{_selection.SINGLE_STAGE_ESTIMATE_KEY}`がない。"
-            "比較した単一段階案の秒数を最上位へ、配分の説明を根拠へ書く"
+            Violation(f"段階2以上の選定に`{_selection.SINGLE_STAGE_ESTIMATE_KEY}`がない", next_action=_NEXT_SINGLE_STAGE)
         )
     errors.extend(
         _check_lane_overlaps(
@@ -704,22 +808,27 @@ def check(
     return errors
 
 
-def _check_allocation_sources(selection: dict[str, object], private_notes: pathlib.Path) -> list[str]:
-    """成分の型付き根拠を元の依存・再開位置・書込対象へ対応付ける。"""
+def _check_allocation_sources(selection: dict[str, object], private_notes: pathlib.Path) -> list[Violation]:
+    """依存と再開計画の型付き根拠を元のWIのfrontmatterと選定の再開位置へ対応付け、一致しない欄と両方の値を示す。"""
     data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
     items = {
         item[_selection.WI_KEY]: item for item in typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
     }
-    costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
-    stages = {row[_selection.LANE_KEY]: row.get(_selection.STAGE_KEY, 1) for row in costs}
+    writes, stages = selection_contract.current_write_stages(selection)
     sources: dict[str, dict[str, typing.Any]] = {}
-    errors: list[str] = []
+    errors: list[Violation] = []
     for group in data["不可分成分"]:
         for edge in group["結合条件"]:
             first, second, kind, evidence = (edge[key] for key in ("WI1", "WI2", "種別", "根拠"))
-            if first not in items or second not in items or not selection_contract.valid_allocation_edge(edge):
+            # 書込重複は成立の判定が選定の現在値を使うため、比べる元入力を持たない。
+            if (
+                kind == "書込重複"
+                or first not in items
+                or second not in items
+                or selection_contract.allocation_edge_failures(edge, writes, stages)
+            ):
                 continue
-            pair = (items[first], items[second])
+            mismatches: list[str] = []
             if kind == "依存":
                 for name in (first, second):
                     if name not in sources:
@@ -733,25 +842,30 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
                                 f"依存元のWI本文を読み込めない: {name}: {error}", next_action=_FIX_PRIVATE_NOTES
                             ) from error
                         sources[name] = parsed[0] if parsed else {}
-                actual = sources[evidence["依存元"]].get("depends_on", [])
-                matches = actual == evidence["depends_on"] and all(
-                    isinstance(sources[name].get("target_repo"), str)
-                    and _git_remote.resolve_repo_identifier(sources[name]["target_repo"]) == evidence[f"リポジトリ{index}"]
-                    for index, name in enumerate((first, second), 1)
-                )
-            elif kind == "再開計画":
-                matches = all(
-                    _resume_plan_id(item.get("再開位置")) == pathlib.PurePosixPath(evidence[f"計画{index}"]).name
-                    for index, item in enumerate(pair, 1)
-                )
+                source_name = evidence["依存元"]
+                actual = sources[source_name].get("depends_on", [])
+                if actual != evidence["depends_on"]:
+                    mismatches.append(f"depends_on: 根拠={evidence['depends_on']}、{source_name}のfrontmatter={actual}")
+                for index, name in enumerate((first, second), 1):
+                    repository = sources[name].get("target_repo")
+                    resolved = _git_remote.resolve_repo_identifier(repository) if isinstance(repository, str) else None
+                    if resolved != evidence[f"リポジトリ{index}"]:
+                        mismatches.append(
+                            f"リポジトリ{index}: 根拠={evidence[f'リポジトリ{index}']}、{name}のtarget_repo={resolved}"
+                        )
             else:
-                matches = all(
-                    evidence[f"パス{index}"] == _string_list(item, _selection.WRITE_FILES_KEY)
-                    and evidence[f"段階{index}"] == stages.get(item[_selection.LANE_KEY])
-                    for index, item in enumerate(pair, 1)
+                for index, name in enumerate((first, second), 1):
+                    planned = _resume_plan_id(items[name].get("再開位置"))
+                    recorded = pathlib.PurePosixPath(evidence[f"計画{index}"]).name
+                    if planned != recorded:
+                        mismatches.append(f"計画{index}: 根拠の計画={recorded}、{name}の再開位置の計画={planned}")
+            if mismatches:
+                errors.append(
+                    Violation(
+                        f"初回配分: {first}と{second}の{kind}の結合根拠が元入力と一致しない: {'; '.join(mismatches)}",
+                        next_action=_NEXT_SOURCE_MISMATCH,
+                    )
                 )
-            if not matches:
-                errors.append(f"初回配分: {first}と{second}の{kind}の結合根拠が元入力と一致しない")
     return errors
 
 
@@ -839,10 +953,10 @@ def load_selection(
     return typing.cast(dict[str, object], selection)
 
 
-def _check_lane_models(items: list[dict[str, object]]) -> list[str]:
+def _check_lane_models(items: list[dict[str, object]]) -> list[Violation]:
     """同一レーンで両立しない実装モデル指定を拒否する。"""
     assigned: dict[str, tuple[str, str]] = {}
-    errors: list[str] = []
+    errors: list[Violation] = []
     for item in items:
         models = typing.cast(dict[str, str], item.get(_selection.MODEL_TYPES_KEY, {}))
         lane = item.get(_selection.LANE_KEY)
@@ -851,7 +965,12 @@ def _check_lane_models(items: list[dict[str, object]]) -> list[str]:
             continue
         previous = assigned.setdefault(lane, (str(item[_selection.WI_KEY]), model))
         if previous[1] != model:
-            errors.append(f"{lane}: 実装担当のモデル指定が衝突: {previous[0]}={previous[1]}、{item[_selection.WI_KEY]}={model}")
+            errors.append(
+                Violation(
+                    f"{lane}: 実装担当のモデル指定が衝突: {previous[0]}={previous[1]}、{item[_selection.WI_KEY]}={model}",
+                    next_action=_NEXT_LANE_MODEL,
+                )
+            )
     return errors
 
 
@@ -873,10 +992,10 @@ def _resume_plan_id(value: object) -> str | None:
     return pathlib.PurePosixPath(candidate).name
 
 
-def _check_resume_plan_lanes(items: list[dict[str, object]]) -> list[str]:
+def _check_resume_plan_lanes(items: list[dict[str, object]]) -> list[Violation]:
     """同じ再開計画を指す項目が複数レーンへ分かれた選定を拒否する。"""
     assigned: dict[str, tuple[str, str]] = {}
-    errors: list[str] = []
+    errors: list[Violation] = []
     for item in items:
         lane = item.get(_selection.LANE_KEY)
         plan = _resume_plan_id(item.get("再開位置"))
@@ -886,13 +1005,15 @@ def _check_resume_plan_lanes(items: list[dict[str, object]]) -> list[str]:
         previous = assigned.setdefault(plan, (awi, lane))
         if previous[1] != lane:
             errors.append(
-                f"同じ再開計画を別レーンへ割り当てている: {plan}: "
-                f"{previous[0]}（{previous[1]}）と{awi}（{lane}）。同じレーンへまとめる"
+                Violation(
+                    f"同じ再開計画を別レーンへ割り当てている: {plan}: {previous[0]}（{previous[1]}）と{awi}（{lane}）",
+                    next_action=_NEXT_RESUME_PLAN,
+                )
             )
     return errors
 
 
-def _check_lane_stages(items: collections.abc.Sequence[object], costs: collections.abc.Sequence[object]) -> list[str]:
+def _check_lane_stages(items: collections.abc.Sequence[object], costs: collections.abc.Sequence[object]) -> list[Violation]:
     """後段の開始条件が先行レーンの統合順序を守るか確かめる。"""
     lanes = {
         item[_selection.LANE_KEY]
@@ -901,7 +1022,7 @@ def _check_lane_stages(items: collections.abc.Sequence[object], costs: collectio
     }
     rows: dict[str, tuple[int, list[str]]] = {}
     integrated = _selection.integrated_lanes({_selection.LANE_COSTS_KEY: list(costs)})
-    errors: list[str] = []
+    errors: list[Violation] = []
     for row in costs:
         if not isinstance(row, dict) or not isinstance(row.get(_selection.LANE_KEY), str):
             continue
@@ -915,24 +1036,29 @@ def _check_lane_stages(items: collections.abc.Sequence[object], costs: collectio
     ordered_stages = sorted({stage for stage, _ in rows.values() if stage <= last_pending_stage})
     for expected, stage in enumerate(ordered_stages, start=1):
         if stage != expected:
-            errors.append(f"段階は1から連続する正整数を指定する: 段階{expected}がない")
+            errors.append(Violation(f"段階が1から連続しない: 段階{expected}がない", next_action=_NEXT_STAGE_SEQUENCE))
             break
     for lane, (stage, prior) in rows.items():
         if lane not in integrated and stage > 1 and not prior:
-            errors.append(f"{lane}: 後段には先行レーンを指定する")
+            errors.append(Violation(f"{lane}: 段階{stage}の後段に先行レーンがない", next_action=_NEXT_PRIOR_MISSING))
         for predecessor in prior:
             if (
                 predecessor not in lanes
                 or predecessor not in rows
                 or (lane not in integrated and predecessor not in integrated and rows[predecessor][0] >= stage)
             ):
-                errors.append(f"{lane}: 先行レーン{predecessor}は前の段階の対象レーンでなければならない")
+                errors.append(
+                    Violation(
+                        f"{lane}: 先行レーン{predecessor}が選定に無いか、前の段階のレーンではない",
+                        next_action=_NEXT_PRIOR_INVALID,
+                    )
+                )
     return errors
 
 
 def _check_lane_overlaps(
     items: collections.abc.Sequence[object], costs: collections.abc.Sequence[object], records: list[dict[str, object]]
-) -> list[str]:
+) -> list[Violation]:
     """全共有パスに記録があり、段階・先行関係が交わる定義に従うか確かめる。"""
     stages = {
         row[_selection.LANE_KEY]: (row.get(_selection.STAGE_KEY, 1), row.get(_selection.PRIOR_LANES_KEY, []))
@@ -959,7 +1085,7 @@ def _check_lane_overlaps(
             if _covers(first, second) or _covers(second, first)
         }
         expected.update((lanes[0], lanes[1], path) for path in overlaps)
-    errors: list[str] = []
+    errors: list[Violation] = []
     seen: set[tuple[str, str, str]] = set()
     dependencies: dict[str, set[str]] = {}
     integrated = _selection.integrated_lanes({_selection.LANE_COSTS_KEY: list(costs)})
@@ -969,28 +1095,28 @@ def _check_lane_overlaps(
         key = (left, right, path)
         label = f"{left}と{right}: {path}"
         if key in seen:
-            errors.append(f"{label}: 重なりの記録が重複。共通パスごとに1件へ直す")
+            errors.append(Violation(f"{label}: 重なりの記録が重複", next_action=_NEXT_OVERLAP_DUPLICATE))
         seen.add(key)
         if key not in expected:
-            errors.append(f"{label}: 余剰の重なりの記録。実際の共有パスとレーンの組へ直す")
+            errors.append(Violation(f"{label}: 余剰の重なりの記録", next_action=_NEXT_OVERLAP_SURPLUS))
             continue
         if record["判定"] == "交わらない":
             first = typing.cast(list[str], record["レーン1の定義"])
             second = typing.cast(list[str], record["レーン2の定義"])
             if {value.strip() for value in first} & {value.strip() for value in second}:
-                errors.append(f"{label}: 交わらない定義が同一。判定または定義を直す")
+                errors.append(Violation(f"{label}: 交わらない判定の定義が同一", next_action=_NEXT_OVERLAP_SAME_DEFINITION))
             continue
         left_stage = stages.get(left, (1, []))[0]
         if left in integrated or right in integrated:
             continue
         right_stage = stages.get(right, (1, []))[0]
         if left_stage == right_stage:
-            errors.append(f"{label}: 同じ段階で定義が交わる。同じレーンへまとめるか先行関係と段階を直す")
+            errors.append(Violation(f"{label}: 同じ段階で定義が交わる", next_action=_NEXT_OVERLAP_SAME_STAGE))
         else:
             earlier, later = (left, right) if left_stage < right_stage else (right, left)
             dependencies.setdefault(later, set()).add(earlier)
     for left, right, path in sorted(expected - seen):
-        errors.append(f"{left}と{right}: 重複パスの記録不足: {path}。双方の定義と判定をレーン間の重なりへ1件記録する")
+        errors.append(Violation(f"{left}と{right}: 重複パスの記録不足: {path}", next_action=_NEXT_OVERLAP_MISSING))
     for lane, (_, prior) in stages.items():
         if lane in integrated:
             continue
@@ -998,12 +1124,14 @@ def _check_lane_overlaps(
             if predecessor in integrated:
                 continue
             if not _reachable(lane, predecessor, dependencies):
-                errors.append(f"{lane}: 根拠の無い直列化: {predecessor}。交わる記録に基づく先行関係へ直す")
+                errors.append(Violation(f"{lane}: 根拠の無い直列化: {predecessor}", next_action=_NEXT_PRIOR_UNFOUNDED))
     actual = {lane: set(prior) for lane, (_, prior) in stages.items()}
     for lane, predecessors in dependencies.items():
         for predecessor in predecessors:
             if not _reachable(lane, predecessor, actual):
-                errors.append(f"{lane}: 交わる先行レーン{predecessor}への依存がない。先行レーンへ記録する")
+                errors.append(
+                    Violation(f"{lane}: 交わる先行レーン{predecessor}への依存がない", next_action=_NEXT_PRIOR_REQUIRED)
+                )
     return errors
 
 
@@ -1150,26 +1278,11 @@ def main(argv: list[str] | None = None) -> int:
         _next_action.report(error.reason, next_action=error.next_action)
         return 2
     for error in errors:
-        print(error, file=sys.stderr)
+        print(error.reason, file=sys.stderr)
     if errors:
-        print(
-            _next_action.next_action_line(
-                "該当WIの元本文へ戻り、変更要求と限定調査から書込・参照・除外・公開工程所有の区分を判断し直す。"
-                "抽出パスや存在だけで区分を決めず、未被覆・広すぎる範囲・不正な除外をその判断に従って直す。"
-                "変更領域が変われば、競合とレーン配分も再評価する。"
-                "書込対象の不正な要素は実在ファイル、末尾/付き実在ディレクトリ、または反映先に明示された新設先へ直す。"
-                "重なりの記録は共通パスごとに双方の定義と判定を1件残し、余剰・重複・欠落を直す。"
-                "同段階で交わる定義は統合または段階変更し、根拠の無い直列化は交わる記録に基づく先行関係へ直す。"
-                "段階2以上では`単一段階案の完了見込み秒数`へ比較した案の秒数を、根拠へ配分の説明を書く。"
-                "導出した新設先は新設パス・反映範囲・要求・配置根拠をそろえ、書込区分に個別パスを残す。"
-                "区分間で重複するパスは所有する1区分だけへ残す。`公開工程の書込対象`の根拠不足は、"
-                "レーンの所要時間の根拠へ対象リポジトリの規範、節およびpathを記録する。"
-                "プロジェクト規範の指定の不足は、`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が"
-                "定める条件に従い、該当項目の`プロジェクト規範の指定`へ欠けた記載を書く。"
-                "直した後に同じコマンドで確かめる"
-            ),
-            file=sys.stderr,
-        )
+        # 同じ次の操作を持つ違反が複数あっても、その次の操作は最初に現れた位置で1回だけ出力する。
+        actions = list(dict.fromkeys(error.next_action for error in errors))
+        print(_next_action.next_action_line("。".join([*actions, _NEXT_RERUN])), file=sys.stderr)
         return 1
     if args.mark_integrated is not None:
         rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))

@@ -39,6 +39,9 @@ def main() -> None:
         parser.error("Start date must be earlier than end date")
 
     commits = _get_commits(start_commit, end_commit)
+    if len(commits) == 0:
+        print("No commits to justify.")
+        sys.exit(0)
     dates = _adjust_dates(start_date, end_date, len(commits), args.no_business)
 
     for commit, date in zip(commits, dates, strict=True):
@@ -84,13 +87,17 @@ def _adjust_dates(
     no_business: bool,
 ) -> list[datetime.datetime]:
     """日付を均等に分配し、少しランダムにずらす"""
+    if num_commits == 0:
+        return []
     businesshrs = None if no_business else _business_hours()
     span = end_date - start_date if businesshrs is None else businesshrs.difference(start_date, end_date).timedelta
     interval_sec = span.total_seconds() / num_commits
     rand_range = int(interval_sec / 2)
     dates: list[datetime.datetime] = []
     for i in range(num_commits):
-        offset_sec = int(i * interval_sec + random.randrange(rand_range))
+        # 配分間隔が2秒未満で候補幅が0になる短い区間では、ずらさず均等配分だけを行う
+        jitter_sec = random.randrange(rand_range) if rand_range > 0 else 0
+        offset_sec = int(i * interval_sec + jitter_sec)
         if businesshrs is None:
             d: datetime.datetime = end_date - datetime.timedelta(seconds=offset_sec)
         else:

@@ -25,6 +25,18 @@ CodexではClaude Code形式のSkill記録を根拠へ使わない。
 委譲先での実行可否: 委譲先は最上位セッションが起動する終了手順の起動順を確かめる対象ではないため、hook入力と環境印で除外する。
 """
 
+# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
+__lazy_modules__ = {
+    "agent_toolkit._common.shell_segments",
+    "agent_toolkit._common.shell_tokens",
+    "agent_toolkit._hooks",
+    "agent_toolkit._hooks.agent_id",
+    "agent_toolkit._hooks.background_tasks",
+    "agent_toolkit._hooks.host",
+    "agent_toolkit._hooks.stop_session",
+    "agent_toolkit._hooks.transcript_scan",
+}
+
 import pathlib
 
 from agent_toolkit._common.shell_segments import extract_execution_segments

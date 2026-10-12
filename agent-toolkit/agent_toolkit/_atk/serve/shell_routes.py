@@ -316,7 +316,7 @@ def _subscription_stream(
     shutdown = current_state.shutdown_requested
 
     @pytilpack.sse.generator()
-    async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
+    async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE, None]:
         queue = await subscribe()
         try:
             while True:

@@ -1,7 +1,10 @@
 """委譲先セッションの印となる環境変数の名前と、その判定。
 
 委譲先を起動する側（agents_server）と判定する側（hook、`atk`）が同じ名前と条件を使うため、
-環境変数名と判定を本モジュールだけに置く。
+Pythonの環境変数名と判定を本モジュールだけに置く。
+Function hooks moduleはPythonの関数を呼べないため、`agent-toolkit/hooks/register.ts`の`isDelegated`が同じ条件を持つ。
+条件を変える場合は両方を変える。両者の環境変数名の一致は`delegated_session_env_invariant_test.py`が、
+判定結果の一致は`delegated_session.test.ts`が確かめる。
 """
 
 from collections.abc import Mapping
