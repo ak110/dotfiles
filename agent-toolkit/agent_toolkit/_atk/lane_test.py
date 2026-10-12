@@ -363,9 +363,9 @@ def test_fixed_placement_keeps_previous_unfinished_resource_and_returns_recovery
     elif condition == "unintegrated":
         _selection(selected, integrated=False)
     else:
-        registry = session_launchers.registry_directory(state_paths.state_dir()) / "child.json"
-        registry.parent.mkdir(parents=True, exist_ok=True)
-        registry.write_text(json.dumps({"session_id": "child", "cwd": str(worktree), "terminal": False}), encoding="utf-8")
+        owner = session_registry.owner_process()
+        assert owner is not None
+        session_registry.publish("child", terminal=False, cwd=str(worktree), processes=(owner,))
     code, _result, stderr = _create_in(capsys, monkeypatch, "next-session", repo, selected)
     assert code == 2
     assert f"--reuse-record {original['record_path']}" in stderr
