@@ -89,6 +89,6 @@ completion-reportが報告する前に、公開状態の4項目（`agent-toolkit
 ## 完了報告と終了
 
 公開工程の完了後に`agent-toolkit:completion-report`を起動する。完了報告と振り返りを報告用UWIとして保存し、`atk wi add`・`atk wi edit`の成功報告と警告の検収（`agent-toolkit:wi-standards`の`SKILL.md`「投入と取得」）が成立してからセッションを終了する。振り返りが失敗した場合も未完了部分を同じUWIへ明示し、重複するUWIを投入しない。
-自律モードのユーザーへの伝達は報告用UWIの保存の検収で完了する（Stop hookが可視発話に本文を求めるのは協調モードの報告に限る）。作業完了報告の後に振り返りの結果報告へ進まない停止は自律モードでも遮断され、対処は`agent-toolkit:completion-report`の工程の末尾に従う。
+自律モードのユーザーへの伝達は報告用UWIの保存の検収で完了する（Stop hookが可視発話に本文を求めるのは協調モードの報告に限る）。Stop hookは`agent-toolkit:completion-report`の起動の有無だけを判定するため、作業完了報告の後に振り返りの結果報告まで進むことは、メインが同スキルの工程に従って確かめる。
 
 通常終了の`atk agents-exit-session`が、所有sessionのレーン資源を`atk lane delete`と同じ条件で回収する。process-loopでは子sessionの終了後、正常・異常判定と再起動判断より前に同じ条件で回収する。返された回収結果の保存先と未回収対象を検収し、保持理由を解消できない対象は成果を保って報告へ残す。回収の失敗をホスト終了要求の成功で隠さず、次回開始時の`atk lane delete --list`へ引き継ぐ。

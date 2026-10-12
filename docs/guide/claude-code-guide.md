@@ -462,7 +462,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文を文脈へ追加する | 対応 | 対応 |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する | 対応 | 対応 |
-| plugin `Stop/stop` | 成果作業（WI処理・AWI登録の開始、リポジトリの編集、計画・WIの保存、commit・push）の後に`agent-toolkit:completion-report`を起動しないまま終えようとすると、起動と残りの工程への続行を案内して同じターンを続けさせる。報告本文は判定しない。委譲先や待機コマンドを待つ間は終了を許す | 対応 | 対応 |
+| plugin `Stop/stop` | 成果作業（WI処理・AWI登録の開始、リポジトリの編集、計画・WIの保存、commit・push）の後に`agent-toolkit:completion-report`を起動しないまま終えようとすると、起動と残りの工程への続行を案内して同じターンを続けさせる。報告本文は判定しない。作業内で起動した委譲先や背景のコマンドを待つ間は終了を許すため、終了しない常駐コマンド（開発サーバーなど）の実行中は起動忘れを検出しない | 対応 | 対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 発話の内容を現物で確かめる手順や、発話に応じて適用する規範の所在を示す注記を返す | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をログへ記録する | 対応 | 非対応 |
