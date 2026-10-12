@@ -1,8 +1,8 @@
 """本作業のセッションを起動する前の、モデル候補の解決・可用性判定・利用上限の待機と子環境の整理。
 
-`atk wi process-loop`と`atk run-skill`はどちらも`orchestrate_model`の候補列から本作業のClaude Code
-またはCodexを選ぶ。候補の解決、副作用の無い可用性判定、Claudeの利用上限の解除待ちおよび正常終了の判定を
-本モジュールへ集め、両コマンドから同じ関数を呼ぶ。コマンドごとに異なるのは端末タイトル、可用性判定の
+`atk wi process-loop`と`atk run-skill`はどちらも、`orchestrate_engine`のengine順と各engineの上位段位モデルから
+組んだ候補列で本作業のClaude CodeまたはCodexを選ぶ。
+候補の解決、副作用の無い可用性判定、Claudeの利用上限の解除待ちおよび正常終了の判定を本モジュールへ集め、両コマンドから同じ関数を呼ぶ。コマンドごとに異なるのは端末タイトル、可用性判定の
 プロンプトの生成元、利用上限の待機の記録先と失敗時の案内の文言だけであり、呼び出し側が`ProbeContext`で渡す。
 """
 
@@ -253,7 +253,8 @@ def _probe_candidate(
         _notify(
             context,
             f"モデル候補の可用性判定に失敗しました（engineを起動できません: {error}）: {candidate}",
-            "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える",
+            "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_engine <engine順>`か"
+            "`atk config set <engine>_high_tier_model <モデル>`で候補を変える",
         )
         return None, (orchestrator, 1, f"engineを起動できません: {error}")
     _console_title.set_console_title(context.title)
@@ -273,6 +274,7 @@ def _probe_candidate(
     _notify(
         context,
         f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}",
-        "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える",
+        "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_engine <engine順>`か"
+        "`atk config set <engine>_high_tier_model <モデル>`で候補を変える",
     )
     return None, (orchestrator, failure_code, reason)

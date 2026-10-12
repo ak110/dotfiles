@@ -76,7 +76,8 @@ _TASK_DOCUMENT_DEFECT_NEXT_ACTION = (
 
 MODEL_TYPE_NEXT_ACTION = (
     "`model_type`へ段位名（例: `high_tier`）か`<claude|codex|agy>:<model>[/<effort>]`の候補列を指定する。"
-    "段位名に対応する候補は`atk config get <段位名>_model`で確かめる"
+    "段位名に対応するモデルは`atk config get <engine>_<段位名>_model`（例: `claude_high_tier_model`）、"
+    "engine順は`atk config show`で確かめる"
 )
 
 

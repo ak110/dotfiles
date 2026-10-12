@@ -325,7 +325,8 @@ def dispatch(args: argparse.Namespace) -> int:
     outcome.report_failure(
         "利用できるモデル候補がありません",
         next_action=(
-            "スキップした理由を確認し、`atk config set <段位>_model <VALUE>`（段位を指定しない場合は`medium_tier`）で"
+            "スキップした理由を確認し、`atk config set <engine>_<段位>_model <VALUE>`"
+            "（段位を指定しない場合は`medium_tier`、engine順は`base_engine`）で"
             "起動できる候補を追加するか、`--model-type`に別の候補を指定して再実行する"
         ),
     )
