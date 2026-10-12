@@ -125,7 +125,7 @@ async def test_live_explore_reads_file_and_continues_same_session(
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
-        lambda _model_type: [("claude", "sonnet[1m]", "medium")],
+        lambda _model_type, **_kwargs: [("claude", "sonnet[1m]", "medium")],
     )
     start_text, continue_text = EXPLORE_READ_INPUT.texts
     try:
