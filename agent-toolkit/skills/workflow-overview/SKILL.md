@@ -27,7 +27,7 @@ user-invocable: false
 - 定期実行型: ユーザーがcronなどへ`atk run-skill`を登録し、WIキューを経由せずにスキル1件を自律モードで1回ずつ実行する。結果は報告用UWI、判断が要る対応は事前承認型UWIで届く。これらのUWIは`source`が`run-skill`、`scope`がスキル名であり、process-wiの選定とprocess-loopの起動件数から除く。
 
 process-wiでは、メインが候補本文から分類と配分を判断し、取得済み候補と意味判断を`pick-wi-check`へ渡して定型欄の生成・確認・保存を1回で行う。保存済み選定YAMLから`atk lane create`へレーンを渡し、準備後に同じ担当threadが計画から統合までを担う。意味判断、レーン数上限、単一writer、独立した実行レビュー、直列統合、計画保存とWI終端は各工程に残す。
-専用worktreeは対象リポジトリの主作業ツリーの`.claude/worktrees/process-wi-<レーン識別子>`に固定され、対象リポジトリごとに1つだけ起動するprocess-wiの反復でもパスが増えない。専用worktreeとbranchは統合後も追加に備えて保持し、通常終了の`atk agents-exit-session`またはprocess-loopの子終了後に`atk lane delete`と同じ安全条件で回収する。次回の開始時は`atk lane delete --list`から残存登録と前回結果を読み、未統合・dirty・稼働中・不明の成果を保って再判定する。セッションのmanaged-tempと証拠は専用資源の回収対象から外す。
+レーンの専用worktreeは対象リポジトリの主作業ツリーの`.claude/worktrees/process-wi-<レーン識別子>`に固定され、対象リポジトリごとに1つだけ起動するprocess-wiの反復でもパスが増えない。レーンのworktreeとbranchは統合後も追加に備えて保持し、通常終了の`atk agents-exit-session`またはprocess-loopの子終了後に`atk lane delete`と同じ安全条件で回収する。次回の開始時は`atk lane delete --list`から残存登録と前回結果を読み、未統合・dirty・稼働中・不明の成果を保って再判定する。セッションのmanaged-tempと証拠は専用資源の回収対象から外す。
 
 ## 登録、回答、振り返り
 
