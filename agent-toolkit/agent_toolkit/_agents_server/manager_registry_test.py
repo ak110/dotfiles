@@ -192,7 +192,7 @@ async def test_fallback_start_and_verbose_show_publish_codex_speed(
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
-        lambda _kind: [
+        lambda _kind, **_kwargs: [
             ("claude", "first", "high"),
             ("codex", "second", "medium"),
         ],

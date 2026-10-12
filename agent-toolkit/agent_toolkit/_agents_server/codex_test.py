@@ -1482,7 +1482,9 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
     install_backend(manager, "codex", backend)
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "gpt-test", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "gpt-test", "high")]
+    )
     response = await manager.start("plan", "調査", str(tmp_path))
     assert response == {
         "session_id": "thread-codex",

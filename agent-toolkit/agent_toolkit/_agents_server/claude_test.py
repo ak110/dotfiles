@@ -830,7 +830,9 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
 
     try:
-        monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("claude", "model", "high")])
+        monkeypatch.setattr(
+            _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("claude", "model", "high")]
+        )
         start_response = await manager.start("plan", "調査", str(tmp_path))
         response = await manager.kill(start_response["session_id"], timeout=1)
         assert response["status"] == "interrupted"

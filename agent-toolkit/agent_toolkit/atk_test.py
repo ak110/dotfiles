@@ -203,8 +203,10 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     env = _isolated_cli_environ(host_environ, tmp_path)
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
     # `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、系列名を含まない値を与える。
+    values = {"codex_fast_mode": "false", "write_model": "claude:opus/medium", "codex_model_providers": ""}
     for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
-        env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = "false" if key == "codex_fast_mode" else "claude:opus/medium"
+        default = "claude" if key.endswith("_engine") else "opus/medium"
+        env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = values.get(key, default)
     # Gitの作業ツリー外で起動し、`--target-repo`を省略した場合も対象を限定しない状態にする。
     with subprocess.Popen(  # noqa: S603
         ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],

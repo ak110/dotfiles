@@ -35,7 +35,7 @@ def _manager(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: st
     )
     manager = AgentsServerManager(writer)
     install_backend(manager, engine, FakeBackend(manager.sessions, engine))
-    monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda _name: [(engine, "model", "high")])
+    monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda _name, **_kwargs: [(engine, "model", "high")])
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     return manager
 

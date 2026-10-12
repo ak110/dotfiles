@@ -107,34 +107,32 @@ def session_env(env: dict[str, str], orchestrator: str, *, platform: str = os.na
 
 
 def resolve_specs(*, rerun_action: str) -> list[tuple[str, str, str]]:
-    """orchestrate_model設定を候補ごとの(orchestrator, model, effort)として返す。
+    """orchestrate用途のengine順とhigh段位のモデル設定を候補ごとの(orchestrator, model, effort)として返す。
 
-    書式不正（設定ファイルの手編集等）の場合は修正手順を案内してexit 2で終了する。
+    設定値の書式不正、旧モデル設定の移行の停止、旧環境変数の残存の場合は修正手順を案内してexit 2で終了する。
     effort未指定は`medium`を補完する。`rerun_action`は候補を変えた後に行う操作の案内とする。
     """
     try:
-        value = _config.resolve_mutable_setting("orchestrate_model")
-    except ValueError as error:
-        default = _config.mutable_setting_default("orchestrate_model")
-        raw_value = _config.raw_mutable_setting("orchestrate_model")
-        _next_action.report(
-            f"orchestrate_modelの設定値が不正です（現在の設定値: {raw_value}）。{error}。",
-            next_action=(
-                f"`atk config set orchestrate_model {default}`のように"
-                "`<claude|codex>:<model>[/<effort>]`形式の候補列で修正してください。"
-            ),
-        )
+        candidates = _config.parse_unresolved_model_candidates("orchestrate")
+    except _next_action.ActionableError as error:
+        _next_action.report(f"orchestrateのモデル設定を読めません。{error}", next_action=error.next_action)
         sys.exit(2)
     try:
-        return _config.resolve_model_candidates("orchestrate")
+        return _config.resolve_catalog(candidates)
     except ValueError as error:
         _next_action.report(
-            f"orchestrate_modelのCodexモデル解決に失敗しました（設定値: {value}）。{error}",
+            f"orchestrateのCodexモデル解決に失敗しました（候補: {_format_candidates(candidates)}）。{error}",
             next_action=(
-                f"`codex`へのログインを確認するか、`atk config set orchestrate_model <候補列>`で候補を変えてから{rerun_action}"
+                "`codex`へのログインを確認するか、`atk config set codex_high_tier_model <モデル>`または"
+                f"`atk config set orchestrate_engine <engine順>`で候補を変えてから{rerun_action}"
             ),
         )
         sys.exit(2)
+
+
+def _format_candidates(candidates: list[tuple[str, str, str]]) -> str:
+    """候補の3つ組を`<engine>:<model>/<effort>`のカンマ区切りで返す。"""
+    return ",".join(f"{engine}:{model}/{effort}" for engine, model, effort in candidates)
 
 
 def select_available(

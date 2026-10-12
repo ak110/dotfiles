@@ -35,6 +35,7 @@ _SHARE_DIRECTORY = plugin_root.SERVER_PLUGIN_ROOT / "share"
 
 
 _TASK_MODEL_TYPES = launch_prompts.TASK_MODEL_TYPES
+_TASK_USAGES = launch_prompts.TASK_USAGES
 
 
 _TASK_DOCUMENT_SUFFIX = task_documents.TASK_DOCUMENT_SUFFIX
@@ -301,12 +302,13 @@ def _default_handoff_path() -> pathlib.Path | None:
 def task_document_request(
     subagent_md_path: str,
     extra_params: Mapping[str, str],
-) -> tuple[str, str, LaunchKind, pathlib.Path | None]:
-    """`<役割名>.subagent.md`と名前付き入力からmodel種別、委譲プロンプト、`mode:`の値およびサーバーが用意した引き継ぎ記録先を返す。
+) -> tuple[str, str | None, str, LaunchKind, pathlib.Path | None]:
+    """`<役割名>.subagent.md`と名前付き入力からmodel種別、用途、委譲プロンプト、`mode:`の値およびサーバーが用意した引き継ぎ記録先を返す。
 
+    用途は役割に対応する値で、対応が無い場合は`None`（段位ごとの用途を使う）とする。
     `<役割名>.subagent.md`が`引き継ぎ記録先`を必須入力とし、`extra_params`がこれを持たない場合は、
-    拒否せずに`（新規）`の記録先を用意して委譲プロンプトへ加え、その絶対パスを4要素目で返す。
-    委譲元が値を渡した場合と、宣言を読めない場合の4要素目は`None`とする。
+    拒否せずに`（新規）`の記録先を用意して委譲プロンプトへ加え、その絶対パスを5要素目で返す。
+    委譲元が値を渡した場合と、宣言を読めない場合の5要素目は`None`とする。
     """
     task_document = _resolve_task_document_path(subagent_md_path).resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
@@ -362,4 +364,4 @@ def task_document_request(
     if extra_params:
         prompt_lines.append("入力:")
         prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())
-    return model_type, "\n".join(prompt_lines), launch_kind, handoff_path
+    return model_type, _TASK_USAGES.get(task_document.name), "\n".join(prompt_lines), launch_kind, handoff_path

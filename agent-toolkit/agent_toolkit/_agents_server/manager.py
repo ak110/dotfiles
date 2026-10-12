@@ -98,6 +98,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         model_type: str,
         *,
         launch_kind: LaunchKind,
+        usage: str | None = None,
     ) -> tuple[list[ModelCandidate], dict[ModelCandidate, str]]:
         """起動条件を検証し、除外後の候補列を設定順で返す。
 
@@ -105,7 +106,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         除外後に候補が残らない場合は、記録を無視して全候補を設定順で返す。
         """
         try:
-            candidates = _atk_config.parse_unresolved_model_candidates(model_type)
+            candidates = _atk_config.parse_unresolved_model_candidates(model_type, usage=usage)
         except ValueError as error:
             raise ActionableError(str(error), next_action=MODEL_TYPE_NEXT_ACTION) from error
         if codex_models.needs_catalog(candidates):
@@ -148,8 +149,12 @@ class AgentsServerManager(manager_wait.ManagerWait):
         *,
         launch_kind: LaunchKind = "delegate",
         label: str | None = None,
+        usage: str | None = None,
     ) -> dict[str, Any]:
-        """工程別モデル設定の候補を先頭から試し、起動できたturnを返す。
+        """モデル設定の候補を先頭から試し、起動できたturnを返す。
+
+        段位名の`model_type`は`usage`の用途のengine順に段位モデル設定を並べた候補を使う。
+        `usage`の省略時は段位ごとの用途（上位はbase、中位はreview、軽量はchores）を使う。
 
         起動直後にengineの可用性を理由として終端した候補とagyの失敗候補を
         除外集合へ加えて次候補へ進む。agy以外のbackend起動例外では候補を進めない。
@@ -162,6 +167,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         candidates, excluded = await self._resolve_start_candidates(
             model_type,
             launch_kind=launch_kind,
+            usage=usage,
         )
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
@@ -394,11 +400,13 @@ class AgentsServerManager(manager_wait.ManagerWait):
         model_type: str | None = None,
     ) -> dict[str, Any]:
         """探索専用の軽量な起動条件でturnを開始する。"""
+        resolved_type = model_type or tool_names.START_MODE_MODEL_TYPES["explore"]
         return await self.start(
-            model_type or tool_names.START_MODE_MODEL_TYPES["explore"],
+            resolved_type,
             prompt,
             cwd,
             launch_kind="explore",
+            usage=tool_names.start_mode_usage("explore", resolved_type),
             label=resolve_display_label(label, "explore"),
         )
 
@@ -413,11 +421,13 @@ class AgentsServerManager(manager_wait.ManagerWait):
     ) -> dict[str, Any]:
         """コマンド実行専用の軽量な起動条件でturnを開始する。"""
         validate_shell_request(command, summary_policy)
+        resolved_type = model_type or tool_names.START_MODE_MODEL_TYPES["shell"]
         return await self.start(
-            model_type or tool_names.START_MODE_MODEL_TYPES["shell"],
+            resolved_type,
             shell_prompt(command, summary_policy),
             cwd,
             launch_kind="shell",
+            usage=tool_names.start_mode_usage("shell", resolved_type),
             label=resolve_display_label(label, shell_default_label(command)),
         )
 
@@ -430,11 +440,13 @@ class AgentsServerManager(manager_wait.ManagerWait):
         model_type: str | None = None,
     ) -> dict[str, Any]:
         """対象、読者、事実と根拠が確定済みの文章起草・書込turnを開始する。"""
+        resolved_type = model_type or tool_names.START_MODE_MODEL_TYPES["write"]
         return await self.start(
-            model_type or tool_names.START_MODE_MODEL_TYPES["write"],
+            resolved_type,
             prompt,
             cwd,
             launch_kind="write",
+            usage=tool_names.start_mode_usage("write", resolved_type),
             label=resolve_display_label(label, "write"),
         )
 

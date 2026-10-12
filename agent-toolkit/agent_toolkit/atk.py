@@ -15,13 +15,13 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq set-dependencies: 既存AWIの明示依存の更新
 - mq edit: `--body-file`による非対話編集または$EDITORによる保存ファイル全体の編集
 - mq answer: UWIへの回答
-- mq process-loop: `orchestrate_model`設定に従いClaude CodeまたはCodexの新規セッションへ
+- mq process-loop: orchestrate用途のモデル設定に従いClaude CodeまたはCodexの新規セッションへ
   `/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
   待機中と各セッションの開始前は無効化しない限りCI失敗（定期実行の失敗を含む）を自動検出してAWI投入し、
   待機中に未判定のDependabotアラートがあればprocess-wiを1回実行させて監査させる（`--no-alerts`で無効化）
 - mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: process-loopへの中断要求と追加指示を操作する
-- config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
+- config show/get/set/apply-preset: XDG関連パス・モデル設定の確認・変更
 - plans commit/list: 現行計画またはCI対応レビュー指摘管理表の保存と作業中計画の一覧
 - managed-temp create/cleanup: managed-tempのディレクトリの作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する

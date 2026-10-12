@@ -255,7 +255,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         "--model-type",
         default="medium_tier",
         metavar="TYPE",
-        help="モデル段位名またはengine:model[/effort]のカンマ区切り候補列。省略時はmedium_tierを使う。",
+        help="モデル段位名またはengine:model[/effort]のカンマ区切り候補列。段位名はbase_engineのengine順に段位のモデルを並べる。省略時はmedium_tierを使う。",
     )
     parser.add_argument("additional_prompt", nargs="?", help="フォーマットや差分の追加指示。")
 
@@ -282,7 +282,7 @@ def dispatch(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             additional_prompt=args.additional_prompt or "",
         )
-        candidates = config.resolve_model_candidates(args.model_type)
+        candidates = config.resolve_model_candidates(args.model_type, usage="base")
     except _next_action.ActionableError as error:
         outcome.report_failure(f"commitを開始できません: {error}", next_action=error.next_action)
         return 2

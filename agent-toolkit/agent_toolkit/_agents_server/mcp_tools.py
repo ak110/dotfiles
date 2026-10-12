@@ -119,12 +119,13 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     if mode == "task":
         assert subagent_md_path is not None
         params = extra_params or {}
-        task_model_type, task_prompt, launch_kind, handoff_path = task_document_request(subagent_md_path, params)
+        task_model_type, task_usage, task_prompt, launch_kind, handoff_path = task_document_request(subagent_md_path, params)
         response = await _MANAGER.start(
             model_type or task_model_type,
             task_prompt,
             cwd,
             launch_kind=launch_kind,
+            usage=task_usage,
             label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
         )
         if handoff_path is not None:

@@ -170,12 +170,12 @@ def _home_path() -> str:
 
 
 def _stage_model_env(tmp_path: pathlib.Path, value: str) -> dict[str, str]:
-    """工程別モデル設定を隔離したXDG設定ディレクトリへ保存する。"""
+    """実行レビューが使うreview用途のengine順を隔離したXDG設定ディレクトリへ保存する。"""
     config_home = tmp_path / "config"
     config_dir = config_home / "agent-toolkit"
     config_dir.mkdir(parents=True)
     (config_dir / "config.json").write_text(
-        json.dumps({"medium_tier_model": value}),
+        json.dumps({"review_engine": value}),
         encoding="utf-8",
     )
     return {"XDG_CONFIG_HOME": str(config_home)}

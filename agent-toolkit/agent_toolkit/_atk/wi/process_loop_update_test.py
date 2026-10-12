@@ -27,6 +27,7 @@ from agent_toolkit._testing.process_loop_support import (
     fake_run_with_remote_url,
     isolate_process_loop_commands,
     raise_system_exit_0,
+    set_orchestrate_model,
 )
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -516,12 +517,7 @@ class TestWaitLoopAutoRestart:
         tmp_path: pathlib.Path,
     ) -> None:
         """Codex正常終了後の再起動で設定を使い、廃止オプションを引き継がずresumeだけを除去する。"""
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["config", "set", "orchestrate_model", "codex:gpt-5.6-sol/high"],
-                home=tmp_path,
-            )
-        assert exc_info.value.code == 0
+        set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/high")
         _, execv_calls = self._run_until_stop(
             monkeypatch,
             tmp_path,

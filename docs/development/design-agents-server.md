@@ -13,7 +13,7 @@ SDKのprivateサーバー属性へ依存する案と、ツール定義やスキ�
 ツール処理の`ToolError`は理由と次の操作を持つエラー応答へ変換し、SDKが返す構造化成功応答と区別する。
 
 `agents_server`はClaude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
-`start`の`model_type`に対応する工程別モデル設定でCodex backendまたはClaude backendを選択し、各backendの実行主体を
+`start`の`model_type`と起動の用途に対応する工程別モデル設定でCodex backendまたはClaude backendを選択し、各backendの実行主体を
 共有のsession状態機械、待機通知および結果配送境界へ接続する。Codex backendは公式stdio App Serverを
 セッション単位で所有し、Claude backendはClaude Agent SDKのclientをセッション単位で所有する。
 共有daemonや永続job registryは使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、
@@ -151,7 +151,7 @@ Claude backendの資源解放では、SDKクライアントの切断を所有タ
 却下した代替案は、上限超過で次候補へ進める案と、再試行を設けず1回の上限超過で例外を返す案である。
 前者は候補を消費しても同じ待機を反復し、後者は一時的な遅延で成立する起動を委譲元の再発行へ委ねるため採用しない。
 
-`delegate`は工程別モデル設定のキー名から`_model`を除いた必須の`model_type`と`prompt`を受け取り、専用の`<役割名>.subagent.md`を用意できない単発の作業に使う。サーバーは`model_type`に対応する`atk config`の候補列からengine、modelおよびeffortを解決し、
+`delegate`は段位名（`high_tier`など）か`write`・`orchestrate`か候補列の必須の`model_type`と`prompt`を受け取り、専用の`<役割名>.subagent.md`を用意できない単発の作業に使う。サーバーは`model_type`の段位のモデルを、段位ごとの用途（上位はbase、中位はreview、軽量はchores）のengine順に並べた`atk config`の候補列からengine、modelおよびeffortを解決し、
 候補を切り替えた場合は採用した値を応答へ含める。可用性に起因する失敗を観測した委譲元は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
 `delegate`以外の`mode`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
 
@@ -218,7 +218,7 @@ exploreでatkを起動できるようにする案は採らない。atkはuvの�
 
 `start`の`explore`は調査委譲の初期コンテキストと起動費用を減らし、実行側で書込を制限する。Codex backendは開始・再開へ`project_doc_max_bytes=0`と探索用指示、読み取り専用sandboxを渡し、後続turnでも読み取り専用と承認不要の拒否を保つ。MCPの実効設定を取得して全serverを無効にし、Apps・プラグイン・下位委譲も無効にする。実効設定を取得できない場合は起動を中止する。Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省く。提供する組込toolはRead・Glob・Grepに限定し、`--strict-mcp-config`で継承MCPを除き、承認を要する操作は待機せず拒否する。任意Bashや編集toolの事前承認を制限の代わりにしない。Antigravityは読み取り専用のexploreに対応しないため候補から除外する。探索結果は返却本文へ保持し、server自身のセッション記録保存とは区別する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。1件の探索を選ぶ条件はserver instructionsの採算の目安、作業全体の分割と探索への切り出しは`agent-toolkit/skills/delegation/references/routing.md`、起動から受領は同スキルのSKILL.mdの同名節を知識境界とする。検索の時点に読む`agent-toolkit:search`は切り出しの条件への参照を持つ。
 
-`start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。共有するのは`low_tier_model`の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。Claudeの軽量起動explore・write・shellは全て`disallowed_tools=["Skill"]`を指定し、新規とresumeでSkillを明示除外する。通常起動にはこの除外を設けない。Skillが無い主体は警告に記載されたSKILL.mdをReadで全文読む。`explore`は`model_type`を省略すると`low_tier`を使う。新しい候補・評価軸を導く調査と案出しは、`explore`・`delegate`を問わず`high_tier`を明示する。既に決めた問いの所在・値・件数などの機械的な事実確認は区別し、混合する依頼は`high_tier`を使う。機械的な事実確認で軽量側の候補では判断材料が不足する場合は`medium_tier`を指定する。実行レビューの工程別割当は維持し、調査の段位を起動方法だけで選ぶ案は採らない。
+`start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。共有するのはchores用途の軽量段位の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。Claudeの軽量起動explore・write・shellは全て`disallowed_tools=["Skill"]`を指定し、新規とresumeでSkillを明示除外する。通常起動にはこの除外を設けない。Skillが無い主体は警告に記載されたSKILL.mdをReadで全文読む。`explore`は`model_type`を省略すると`low_tier`を使う。新しい候補・評価軸を導く調査と案出しは、`explore`・`delegate`を問わず`high_tier`を明示する。既に決めた問いの所在・値・件数などの機械的な事実確認は区別し、混合する依頼は`high_tier`を使う。機械的な事実確認で軽量側の候補では判断材料が不足する場合は`medium_tier`を指定する。実行レビューの工程別割当は維持し、調査の段位を起動方法だけで選ぶ案は採らない。
 この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`および`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`および組込tool presetを併用できる。その後、軽量起動の設定読込元は`0d7ffbbe6`（2026-09-23）でユーザー設定（`setting_sources=["user"]`）へ変えたため、この確認の空の設定読込元は現行の起動条件と異なる。この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
 
 ### 継続不能
@@ -330,7 +330,7 @@ session識別子は`--output-format stream-json`が返す`init`イベントの�
 
 工程別モデル設定とpresetへは加えない。
 `_atk/config.py`の`_STAGE_MODEL_PATTERN`と`_KNOWN_MODELS`だけを広げ、
-`_MODEL_SETTING_CATEGORIES`・`_CATEGORY_ENGINE_MODELS`・`_PRESET_ENGINE_ORDERS`は変えない。
+段位モデルと用途別engine順の設定（`_TIER_MODEL_DEFAULTS`・`_PRESET_ENGINE_ORDERS`）は変えない。
 Antigravity CLIは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
 Antigravity CLIは工程別モデル設定の候補列に入らない。委譲先が失敗で終端した場合は、`agent-toolkit/agent_toolkit/_agents_server/antigravity.py`の`unavailable_reason`が標準エラー出力か失敗の本文を除外理由として返し、記録した除外理由は全てそのengineを除外する根拠になる。
 

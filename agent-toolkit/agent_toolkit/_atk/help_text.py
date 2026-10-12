@@ -74,7 +74,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk run-skill": {
         "summary": "定期実行から任意のスキルを自律モードで1回実行する",
-        "description": "目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_model`の候補から可用な候補を選び（Claudeの利用上限は解除まで待つ）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と`orchestrate_model`の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 30日を超えたログは各実行の開始時に削除する。ロックは実行の終了時に解放する。",
+        "description": "目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_engine`のengine順にengine別のhigh段位モデル設定を並べた候補から可用な候補を選び（Claudeの利用上限は解除まで待つ）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と`orchestrate_model`の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 30日を超えたログは各実行の開始時に削除する。ロックは実行の終了時に解放する。",
         "epilog": "実行例:\n\n  atk run-skill --target-repo /absolute/path/to/repo my-skill\n  atk run-skill --args '対象: web' --timeout 7200 agent-toolkit:process-wi\n\ncronへ登録する例（標準出力を破棄し、失敗行だけをcronのメール通知へ渡す）:\n\n  PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin\n  0 3 */3 * * atk run-skill --target-repo /home/user/repo my-skill >/dev/null",
     },
     "atk wi": {
@@ -169,7 +169,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop": {
         "summary": "AWIを消化し続けるprocess-loopを開始する",
-        "description": "目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行するprocess-loopを開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_model設定で決まるオーケストレーターを起動する。待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せずprocess-wiを1回実行させ、その実行の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、初回のセッション起動をその再開へ差し替える。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。`--auto-resume`と`--resume`は同時指定できない。\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
+        "description": "目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行するprocess-loopを開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_engineのengine順とengine別のhigh段位モデル設定で決まるオーケストレーターを起動する。待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せずprocess-wiを1回実行させ、その実行の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、初回のセッション起動をその再開へ差し替える。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。`--auto-resume`と`--resume`は同時指定できない。\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
         "epilog": "実行例:\n\n  atk wi process-loop --worktree",
     },
     "atk wi process-loop abort": {
@@ -230,13 +230,13 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk serve --port=28766\n  atk serve logs --follow",
     },
     "atk config": {
-        "summary": "XDG関連パスと工程別モデル設定を確認・変更する",
-        "description": "目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、工程別モデル設定を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と、プリセット名を指定した`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
+        "summary": "XDG関連パスとモデル設定を確認・変更する",
+        "description": "目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、モデル設定（engine別・段位別のモデルと用途別のengine順）を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と、プリセット名を指定した`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。廃止した旧モデル設定（high_tier_model・medium_tier_model・low_tier_model・orchestrate_model）の保存値は、show・getと設定からの候補解決の初回に新しいキーへ一括移行する。新しいキーで表せない旧値は移行せず、競合と修正する新キーを示して停止するため、示された新キーを`set`で保存してから再実行する。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
         "epilog": "実行例:\n\n  atk config show\n  atk config get private_notes",
     },
     "atk config show": {
-        "summary": "XDG関連パスと工程別モデル設定を一覧表示する（サブコマンド省略時も同じ動作）",
-        "description": "目的: XDG関連パス、工程別モデル設定、Codexの速度と接続先の優先順を`<キー>: <値>`で1キー1行ずつ表示する。参考一覧外のモデル名・effortは警告する。`codex_fast_mode`の初期値は`false`、`codex_model_providers`の初期値は空である。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧、標準エラーへ警告を書く。設定は変更しない。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "summary": "XDG関連パスとモデル設定を一覧表示する（サブコマンド省略時も同じ動作）",
+        "description": "目的: XDG関連パス、モデル設定、Codexの速度と接続先の優先順を`<キー>: <値>`で1キー1行ずつ表示する。モデル設定はClaudeのhigh・medium・low、Codexのhigh・medium・low、base・review・chores・orchestrateのengine順、write_modelの順に並べる。参考一覧外のモデル名・effortは警告する。`codex_fast_mode`の初期値は`false`、`codex_model_providers`の初期値は空である。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧、標準エラーへ警告を書く。設定は変更しない。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config show",
     },
     "atk config get": {
@@ -246,12 +246,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 工程別のモデル・推論の深さと、agents_serverのCodexの速度・接続先の優先順を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。他のキーは`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列は空文字列を設定して解除する。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
-        "epilog": "実行例:\n\n  atk config set high_tier_model codex:sol/medium",
+        "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: engine別・段位別のモデル・推論の深さ、用途別のengine順、日本語文章の起草に使うwrite_model、agents_serverのCodexの速度・接続先の優先順を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。`<claude|codex>_<high|medium|low>_tier_model`はengine接頭辞を付けない単一の`<モデル>[/<effort>]`を受理し、effort省略時は`medium`を使う。`<base|review|chores|orchestrate>_engine`は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切り列を受理する。`write_model`は`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧モデル設定の移行で停止した場合も、示された新キーをこのコマンドで保存して復旧する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列は空文字列を設定して解除する。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
+        "epilog": "実行例:\n\n  atk config set codex_high_tier_model sol/medium\n  atk config set review_engine claude,codex",
     },
     "atk config apply-preset": {
-        "summary": "工程別モデル設定をプリセットから一括保存する（`show`または省略で全プリセットの値を表示する）",
-        "description": "目的: 工程別モデル設定の対象キーを1回の実行で一括保存する。`show`の指定時と引数の省略時は、保存せずに4プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodexまたはclaudeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ工程別候補を保存し、保存した各キーと値を標準出力へ表示する。Codex候補は系列名で保存する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
+        "summary": "用途別engine順をプリセットから一括保存する（`show`または省略で全プリセットの値を表示する）",
+        "description": "目的: base・review・chores・orchestrateの用途別engine順の4キーを1回の実行で一括保存する。engine別・段位別のモデル設定とwrite_modelは変更しない。`show`の指定時と引数の省略時は、保存せずに5プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodexまたはclaudeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ用途別engine順を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
         "epilog": "実行例:\n\n  atk config apply-preset show\n  atk config apply-preset codex-balanced",
     },
     "atk wait-schedule": {

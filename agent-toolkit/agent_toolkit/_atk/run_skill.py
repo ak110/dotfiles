@@ -69,7 +69,8 @@ _TITLE = "atk run-skill"
 _LOG_DIRNAME = "run-skill"
 _PATH_ACTION = (
     "定期実行の環境変数`PATH`へ`atk`・`claude`・`codex`の実行ファイルの場所を加える（crontabでは`PATH=...`の行を置く）。"
-    "PATHに問題が無い場合は`atk config set orchestrate_model <候補列>`で候補を変える"
+    "PATHに問題が無い場合は`atk config set orchestrate_engine <engine順>`か"
+    "`atk config set <engine>_high_tier_model <モデル>`で候補を変える"
 )
 
 

@@ -90,7 +90,7 @@ async def test_live_launch_waits_for_automatic_resume(
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
-        lambda _model_type: [("claude", "sonnet[1m]", "medium")],
+        lambda _model_type, **_kwargs: [("claude", "sonnet[1m]", "medium")],
     )
     live_input = BACKGROUND_RESUME_INPUTS[mode]
     try:
@@ -176,7 +176,7 @@ async def test_live_grandchild_wait_resumes_same_session(
     cwd = str(pathlib.Path(__file__).parents[2])
     # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
     isolation.restore_host_environment(monkeypatch)
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [candidate])
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
     try:
         started = await mcp_tools.start(cwd, mode="delegate", prompt=GRANDCHILD_INPUT.texts[0], model_type="high_tier")
         session = manager.sessions[started["session_id"]]
@@ -372,7 +372,9 @@ stream_max_retries = 0
         monkeypatch.setenv("CODEX_HOME", str(codex_home))
         monkeypatch.setenv(_PSEUDO_API_KEY_ENV, "pseudo-api-key")
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", f"{_PRIMARY_PROVIDER},{_FALLBACK_PROVIDER}")
-        monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "gpt-5.4", "low")])
+        monkeypatch.setattr(
+            _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "gpt-5.4", "low")]
+        )
         manager = server_manager.AgentsServerManager()
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         try:

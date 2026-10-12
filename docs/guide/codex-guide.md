@@ -13,7 +13,7 @@ Codex向け`AGENTS.md`、共有ルールの同期、共有スキルのリンク�
 次のコマンドはCodexの対話UIを起動し、対象リポジトリのAWIを継続して処理する。
 
 ```bash
-atk config set orchestrate_model codex:gpt-6-sol/medium
+atk config set orchestrate_engine codex,claude
 atk wi process-loop
 ```
 

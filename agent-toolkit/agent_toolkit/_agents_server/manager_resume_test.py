@@ -79,7 +79,7 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
 ) -> None:
     """結果保持期限後の再開でも探索フラグと除外集合を維持する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     manager, backend = _manager_with_fake("codex")
     original_start = backend.start
 
@@ -651,7 +651,9 @@ async def test_wait_delivers_child_session_result_without_kill(
     子sessionの登録簿レコードが残らない場合も、共有の終端結果ファイルから終端を判定する。
     """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("claude", "model", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("claude", "model", "high")]
+    )
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -839,7 +841,9 @@ async def test_overloaded_turn_resumes_same_session_and_publishes_resumed_result
     tmp_path: pathlib.Path,
 ) -> None:
     """起動後の過負荷は失敗を公開せず、待機の後に同じsessionで継続し、継続したturnの結果を終端結果として返す。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m: [("codex", "gpt-6.1-sol", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: [("codex", "gpt-6.1-sol", "high")]
+    )
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     monkeypatch.setattr(resume_waits, "OVERLOAD_RESUME_DELAYS_SECONDS", (0.0, 0.0, 0.0))
     manager = server_manager.AgentsServerManager()
@@ -868,7 +872,9 @@ async def test_overload_wait_is_visible_as_running_with_api_error(
     tmp_path: pathlib.Path,
 ) -> None:
     """待機中の`show`と`list`は`running`、`api_error`の種別`serverOverloaded`と結果の保留を返す。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m: [("codex", "gpt-6.1-sol", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: [("codex", "gpt-6.1-sol", "high")]
+    )
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     monkeypatch.setattr(resume_waits, "OVERLOAD_RESUME_DELAYS_SECONDS", (3600.0, 3600.0, 3600.0))
     manager = server_manager.AgentsServerManager()
@@ -897,7 +903,9 @@ async def test_overload_limit_publishes_last_failure_and_excludes_candidate(
     tmp_path: pathlib.Path,
 ) -> None:
     """3回の継続も過負荷で終われば、最後の失敗を現行の形で公開し、候補を次回の除外対象に記録する。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m: [("codex", "gpt-6.1-sol", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: [("codex", "gpt-6.1-sol", "high")]
+    )
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     monkeypatch.setattr(resume_waits, "OVERLOAD_RESUME_DELAYS_SECONDS", (0.0, 0.0, 0.0))
     manager = server_manager.AgentsServerManager()
@@ -925,7 +933,7 @@ async def test_overload_within_availability_check_switches_candidate(
 ) -> None:
     """起動の可用性確認の間に過負荷で終端した候補は、自動継続せず次の候補への切替で扱う。"""
     candidates = [("codex", "gpt-6.1-sol", "high"), ("codex", "gpt-6-sol", "high")]
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m: candidates)
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: candidates)
     manager = server_manager.AgentsServerManager()
     _install_backend(manager, "codex", UnavailableStartBackend(manager.sessions, "codex", error=dict(_OVERLOAD_ERROR)))
 

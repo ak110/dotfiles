@@ -150,34 +150,61 @@ Stopはこの行の有無と報告本文を判定しない。
 計画作成・実装・レビューではCodexの利用を標準とする。Codexが一時的に利用できない場合だけ、
 Claude Codeのサブエージェントを代替として使用する。
 
-工程別モデル設定の各キーは、`<engine>:<model>[/<effort>]`をASCIIカンマで区切った複数候補を受け取る。
-先頭の候補から順に起動を試み、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
+モデルの選定とClaude・Codexの配分は別々のキーで設定する。
+engineごとの段位のモデル（6キー）を変えると、そのengineと段位を使う起動のモデルだけが変わる。
+用途ごとのengine順（4キー）を変えると、モデルを変えずにClaudeとCodexのどちらを先に使うかだけが変わる。
+起動時は用途のengine順に従って各engineの段位のモデルを並べ、先頭の候補から順に起動を試す。
+モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
 Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は次の候補へ進まず、解除まで待って同じClaudeで作業を続ける。`agents_server`、`atk wi process-loop`、`atk run-skill`および`atk commit`のいずれも手動での再送は要らず、待機中は解除待ちの種類と解除予定時刻を`show`・`list`・statuslineまたは端末へ示す。待機を止める場合は`agents_server`では`kill`、CLIでは中断操作を使う。
-変更できるキーと対応する起動は次のとおり。
+変更できるキーは次のとおりで、`atk config show`もこの順に表示する。
 
-| キー | 対応する起動 |
+| キー | 値と対応する起動 |
 | --- | --- |
-| `high_tier_model` | 計画・実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査 |
-| `medium_tier_model` | 実行レビュー・プロンプト評価・`model_type="medium_tier"`を指定した`start`の`explore` |
-| `low_tier_model` | `model_type`を省略した`start`の`explore`と`shell`・軽量な`mode:`を宣言した`<役割名>.subagent.md`の`task` |
-| `write_model` | `start`の`write` |
-| `orchestrate_model` | `atk wi process-loop`・`atk run-skill` |
+| `claude_high_tier_model` | Claudeの上位モデル（未設定時は`opus[1m]/medium`） |
+| `claude_medium_tier_model` | Claudeの中位モデル（未設定時は`sonnet[1m]/medium`） |
+| `claude_low_tier_model` | Claudeの軽量モデル（未設定時は`haiku/medium`） |
+| `codex_high_tier_model` | Codexの上位モデル（未設定時は`sol/medium`） |
+| `codex_medium_tier_model` | Codexの中位モデル（未設定時は`terra/medium`） |
+| `codex_low_tier_model` | Codexの軽量モデル（未設定時は`luna/medium`） |
+| `base_engine` | 計画・実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
+| `review_engine` | 実行レビューとユーザビリティレビュー（中位）のengine順 |
+| `chores_engine` | 一括置換後レビュー・外部書込レビュー・読者適合レビュー・WI説明・`start`の`explore`と`shell`（省略時は軽量）のengine順 |
+| `orchestrate_engine` | `atk wi process-loop`・`atk run-skill`（上位）のengine順 |
+| `write_model` | `start`の`write`。日本語の文章力で選ぶ候補列で、段位と配分に属さない |
 | `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、未設定時は`false`） |
 | `codex_model_providers` | `agents_server`のCodex接続先を主接続先から優先順で並べるID列。空ならCodex通常設定・代替なし |
 
-新しい候補や評価軸を導く調査と案出しは、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。既に決めた問いの所在・値・件数などの機械的な事実確認と区別し、両者を含む依頼は`high_tier`を使う。`explore`の指定省略時の`low_tier`と実行レビューの`medium_tier`は変えない。
+段位のモデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
+engine順は`codex`と`claude`の一方または両方を重複なしでASCIIカンマ区切りに並べる。
+`write_model`は`<engine>:<model>[/<effort>]`をASCIIカンマで区切った候補列で書く。
+新しい候補や評価軸を導く調査と案出しは、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。既に決めた問いの所在・値・件数などの機械的な事実確認と区別し、両者を含む依頼は`high_tier`を使う。`explore`の指定省略時の軽量と実行レビューの中位は変えない。
 
-`atk config show`はパス4行、モデル設定5行、速度とAPI provider列を各1行で表示する。`atk config get`は設定値を返し、provider列では前後空白と重複を除く。
+`atk config show`はパス4行、モデルと配分の10行、`write_model`、速度とAPI provider列を各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
 Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`agents_server`の`show`で確認できる。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数に空でない値を設定すると、`atk config show`と`atk config get`は環境変数の値を返す。
 委譲の起動にもこの値を使う。環境変数は保存済みの設定より優先し、変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
-`atk config apply-preset <プリセット名>`は`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`の4キーを1回の実行で一括保存する。`write_model`・`codex_fast_mode`・`codex_model_providers`はプリセットの対象外とする。
-受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
-`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに4プリセットそれぞれが保存する4キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
+`atk config apply-preset <プリセット名>`は`base_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`の4キーを1回の実行で一括保存する。段位のモデル、`write_model`・`codex_fast_mode`・`codex_model_providers`は変更しない。
+
+| プリセット | `base_engine` | `review_engine` | `chores_engine` | `orchestrate_engine` |
+| --- | --- | --- | --- | --- |
+| `codex-balanced` | `codex,claude` | `claude,codex` | `codex,claude` | `claude,codex` |
+| `codex-near-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `claude,codex` |
+| `codex-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` |
+| `claude-balanced` | `claude,codex` | `codex,claude` | `codex,claude` | `claude,codex` |
+| `claude-primary` | `claude,codex` | `claude,codex` | `claude,codex` | `claude,codex` |
+
+balancedのプリセットでは、レビューを作業と別のengineで先に試し、小さい作業はCodexを先に使う。
+`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに5プリセットそれぞれが保存する4キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
 未知の名前を指定した実行は終了コード2で終わり、受理する値を表示する。
-設定を保存していない環境では`codex-balanced`と同じ候補列を使う。
+設定を保存していない環境では`codex-balanced`と同じengine順を使う。
+
+以前の`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`は廃止した。
+保存済みの値は、`atk config show`・`atk config get`か委譲などでモデル候補を初めて取得したときに、モデルとengine順を新しいキーへまとめて移し、以前のキーを設定ファイルから除く。
+同じengineと段位へ異なるモデルを設定していた場合、agyの候補を含む場合、1つのキーに同じengineを複数並べていた場合は移行せずに停止し、競合した以前のキーと直すべき新しいキーを表示する。
+表示された新しいキーを`atk config set`で設定してから同じ操作をやり直すと、残りの値が移行される。以前のキーの値はそれまで設定ファイルに残る。
+以前のキーの環境変数（`AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL`など）が設定されていると委譲などの起動が止まるため、表示された新しいキーの環境変数へ置き換える。
 
 CodexのAPI移行先は工程別モデル候補とは別の設定である。サブスクのみ、サブスク＋API、APIのみの
 設定と解除、API認証と課金は[Codex利用ガイド](codex-guide.md#codexのサブスクとapi接続先)を参照する。
@@ -255,9 +282,9 @@ AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼した�
 `atk wi process-loop`から起動したセッションでは、事前に承認を要する事項が回答期限付きの質問として表示されることもあり、期限内に回答が無ければUWIへ移る。
 UWIの確認と回答は後述の「UWIへの回答と状態確認」の操作で行う。
 
-オーケストレーター・モデル・effortは`atk config`の`orchestrate_model`へ設定する。
-書式は`<claude|codex>:<model>[/<effort>]`をASCIIカンマで区切った候補列で、前述の工程別モデル設定と同じく先頭の候補から順に起動を試す。
-設定していない場合は`claude:opus[1m]/medium,codex:sol/medium`を使う。
+オーケストレーターの順序は`atk config`の`orchestrate_engine`、モデル・effortは`claude_high_tier_model`と`codex_high_tier_model`へ設定する。
+前述の工程別モデル設定と同じく、engine順に並べた候補の先頭から順に起動を試す。
+設定していない場合はClaudeの`opus[1m]/medium`、Codexの`sol/medium`の順に使う。
 Claude Codeを使う場合は設定を変更せず、次のコマンドを実行する。
 
 ```bash
@@ -267,7 +294,7 @@ atk wi process-loop
 Codexへ切り替える場合は、設定を保存してから起動する。常駐中に保存した設定は、次のセッションの起動前に反映される。
 
 ```bash
-atk config set orchestrate_model codex:gpt-6-sol/medium
+atk config set orchestrate_engine codex,claude
 atk wi process-loop
 ```
 

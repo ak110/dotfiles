@@ -59,7 +59,7 @@ def build_process_loop_prompt() -> str:
 
 
 def resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
-    """orchestrate_model設定を候補ごとの(orchestrator, model, effort)として返す。"""
+    """orchestrate用途のモデル設定を候補ごとの(orchestrator, model, effort)として返す。"""
     return _orchestrator.resolve_specs(rerun_action="process-loopを再起動する")
 
 
@@ -145,7 +145,7 @@ def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "")
         next_action=(
             "オーケストレーターのセッション記録（Claude Codeは`~/.claude/projects`配下、Codexは`~/.codex/sessions`配下）"
             "で原因を確認し、解消してからprocess-loopを再起動する。モデル候補の問題なら"
-            "`atk config set orchestrate_model <候補列>`で候補を変える"
+            "`atk config set orchestrate_engine <engine順>`か`atk config set <engine>_high_tier_model <モデル>`で候補を変える"
         ),
     )
     sys.exit(returncode)

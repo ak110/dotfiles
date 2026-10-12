@@ -530,7 +530,7 @@ async def _carry_over_late_unavailability(
     candidates: list[tuple[str, str, str]],
 ) -> tuple[server_manager.AgentsServerManager, FakeBackend]:
     """開始確認の上限後に候補が失敗した状態まで進め、利用できるbackendへ差し替える。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     manager = server_manager.AgentsServerManager()
     delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
@@ -1177,7 +1177,9 @@ async def _start_claude_until_available(
 ) -> tuple[dict[str, Any], float, bool]:
     """指定メッセージの後に結果を返さないClaude sessionを`start`で起動し、応答、所要秒数、モデル出力の観測を返す。"""
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", availability_timeout)
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("claude", "model", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("claude", "model", "high")]
+    )
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     client = OpenStreamClaudeClient([messages])
     manager = server_manager.AgentsServerManager()
@@ -1232,7 +1234,7 @@ def _recording_candidates(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """候補列の解決へ渡った`model_type`を記録し、常に同じ候補を返す。"""
     requested: list[str] = []
 
-    def fake_parse(model_type: str) -> list[tuple[str, str, str]]:
+    def fake_parse(model_type: str, **_kwargs: str | None) -> list[tuple[str, str, str]]:
         requested.append(model_type)
         return [("codex", "model", "high")]
 
@@ -1414,7 +1416,7 @@ async def _usage_limited_manager(
 ) -> tuple[server_manager.AgentsServerManager, FakeClaudeClient, FakeBackend]:
     """先頭のClaude候補が利用上限で拒否され、後続にCodex候補を持つ起動条件のManagerを返す。"""
     candidates = [("claude", "opus", "high"), ("codex", "gpt-6.1-sol", "high")]
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m: candidates)
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 5.0)
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     client = FakeClaudeClient(streams)

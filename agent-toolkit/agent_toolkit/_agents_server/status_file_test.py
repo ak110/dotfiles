@@ -829,7 +829,7 @@ async def test_manager_without_writer_does_not_create_status_files(
 
 def _use_candidates(monkeypatch: pytest.MonkeyPatch, *candidates: tuple[str, str, str]) -> None:
     """session開始時に解決するモデル候補列を固定する。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: list(candidates))
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: list(candidates))
 
 
 def _status_writer(tmp_path: pathlib.Path) -> subject.StatusFileWriter:

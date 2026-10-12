@@ -210,7 +210,7 @@ async def _start(
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
-        lambda _model_type: [("claude", "model", "high")],
+        lambda _model_type, **_kwargs: [("claude", "model", "high")],
     )
     response = await manager.start("plan", "調査", str(tmp_path))
     return manager.sessions[response["session_id"]]
