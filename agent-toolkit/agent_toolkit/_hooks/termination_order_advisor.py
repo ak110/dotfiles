@@ -1,32 +1,25 @@
-r"""多段終了手順の起動順が要求を満たすかStopフックで確かめる。
+r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了をStopフックで検出する。
 
-`agent-toolkit:process-wi`と`agent-toolkit:add-awi-by-user`は、
-本体の作業を終える際に固定の終了工程列（`agent-toolkit:completion-report`、
-`agent-toolkit:process-wi`だけはこれに続けて`atk agents-exit-session`）を順に実行する契約を持つ。
-本フックは対象スキルの最新の起動以後に、要求される終了工程が要求順で実行されたかを
-transcriptのSkillの成功結果とBashツール起動記録から判定する。
+成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、
+計画の保存、WIの保存、commit・pushの実行）を行った作業に、同じ作業の開始以後の起動証拠が無ければ、
+初回Stopからcompletion-reportの起動と残工程への続行を案内して遮断する。
+起動証拠はClaude Codeでは成功したSkill呼び出し、Codexでは実際の入力と結果が示す`SKILL.md`の読取とし、
+`termination_evidence`が観測した記録だけを使う。報告本文の見出し・区切り・区分・候補IDは判定に使わない。
+起動後の工程の完遂と報告の内容はcompletion-reportの規範が扱い、本フックは確かめない。
 
-実際の報告の可視発話・振り返り準備の結果が供給された作業は、初回Stopから不足を判定する。
-対象スキルの起動が無く、工程証拠も無いセッションではapproveする。
-最新の対象スキル起動より前の終了工程の起動は充足の判定へ流用しない。
-終了工程の起動順が要求と逆である場合も未充足として扱う。
+中止・置換・技術的不成立と記録した作業と、確認の回答や委譲先の結果を待つ作業は遮断しない。
+成果作業が待つ非同期対象が生存している場合も遮断しない。待機対象は作業が起動したagents_serverのsessionと、
+作業の開始以後に起動した結果待ちの背景Bash（`atk agents wait`・`wait_ci.py`）・背景Agent・
+MCPのバックグラウンドタスク・未配送の完了通知とする。作業の開始より前から動く無関係なタスクと、
+作業内で起動した待機コマンドでない背景Bash（開発サーバーなどの常駐コマンド）は待機として扱わない。
+証拠やセッション記録（transcript）を読み取れない場合は遮断せず、Stop判定ログへ確かめられないことを記録する。
 
-Claude Codeの旧版の起動順判定は、工程結果が未供給の場合の再入回へ維持する。
-CodexではClaude Code形式のSkill記録を根拠へ使わない。
-
-報告段階が残る作業は、その作業が待つ非同期対象が生存している場合だけ遮断しない。
-待機対象は作業が起動したagents_serverのsessionと、作業の開始以後に起動した結果待ちの背景Bash（`atk agents wait`・
-`wait_ci.py`）・背景Agent・MCPのバックグラウンドタスク・未配送の完了通知とする。作業の開始より前から動く無関係なタスクと、
-作業内で起動した待機コマンドでない背景Bash（開発サーバーなどの常駐コマンド）は報告不足を免除しない。
-報告段階の不足が無い場合は`is_pending_async_work`の判定を維持し、継続中の非同期作業があれば起動順を判定しない。
-現在の作業を中止・置換・技術的不成立と記録しても、他の作業に残る報告段階は判定する。
-セッション記録（transcript）を読み取れない場合は遮断せず、Stop判定ログへ確かめられないことを記録する。
-
-委譲先での実行可否: 委譲先は最上位セッションが起動する終了手順の起動順を確かめる対象ではないため、hook入力と環境印で除外する。
+委譲先での実行可否: 委譲先はcompletion-reportの適用対象ではないため、hook入力と環境印で除外する。
 """
 
 # 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
 __lazy_modules__ = {
+    "agent_toolkit._atk",
     "agent_toolkit._common.shell_segments",
     "agent_toolkit._common.shell_tokens",
     "agent_toolkit._hooks",
@@ -39,122 +32,21 @@ __lazy_modules__ = {
 
 import pathlib
 
+from agent_toolkit._atk import run_script as _run_script
 from agent_toolkit._common.shell_segments import extract_execution_segments
-from agent_toolkit._common.shell_tokens import is_agents_exit_session_command, is_agents_wait_command
+from agent_toolkit._common.shell_tokens import is_agents_wait_command
 from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.background_tasks import async_launch_offsets, is_pending_async_work, pending_async_task_ids
+from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.stop_session import append_stop_log
 from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 from agent_toolkit._hooks.transcript_scan import entry_in_scan_scope, iter_assistant_blocks, read_transcript_entries_cached
 
 _HOOK_ID = "termination_order_advisor"
 
-# 表示用の代表名（`agent-toolkit:`修飾つき）と、プレフィックス付き・素の両表記を受理する名前集合の対。
-# 代表名はアルファベット順による自動選出ではなく明示指定とする
-# （`add-awi-by-user`は`agent-toolkit:add-awi-by-user`より辞書順で先に位置するため、
-# 自動選出では修飾を除いた表記を選んでしまう）。
-_PROCESS_WI = ("agent-toolkit:process-wi", frozenset({"agent-toolkit:process-wi", "process-wi"}))
-_ADD_AWI_BY_USER = (
-    "agent-toolkit:add-awi-by-user",
-    frozenset({"agent-toolkit:add-awi-by-user", "add-awi-by-user"}),
-)
-_COMPLETION_REPORT = (
-    "agent-toolkit:completion-report",
-    frozenset({"agent-toolkit:completion-report", "completion-report"}),
-)
-_EXIT_SESSION = ("atk agents-exit-session", frozenset({"atk agents-exit-session"}))
-
-# 起動順を確かめるスキルの(代表名, 名前集合)と、その最新起動以後に要求順で起動される必要がある終了工程の列。
-_TERMINATION_SEQUENCES: tuple[tuple[tuple[str, frozenset[str]], tuple[tuple[str, frozenset[str]], ...]], ...] = (
-    (_PROCESS_WI, (_COMPLETION_REPORT, _EXIT_SESSION)),
-    (_ADD_AWI_BY_USER, (_COMPLETION_REPORT,)),
-)
-
-_MISSING_STEP_TEMPLATE = "{target}の終了手順が未完了である。次の順で残りの工程を実行する: {remaining}"
-
 _block_notice = _block_notice_formatter(_HOOK_ID)
-_warning = _notice_formatter(_HOOK_ID, default_tag="warn")
-
-
-def _successful_tool_use_ids(entries: list[dict]) -> set[str]:
-    """非sidechainのuserエントリから成功したツール起動IDを返す。"""
-    successful_ids: set[str] = set()
-    for entry in entries:
-        if entry.get("type") != "user" or not entry_in_scan_scope(entry, include_sidechain=False):
-            continue
-        message = entry.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict) or block.get("type") != "tool_result":
-                continue
-            tool_use_id = block.get("tool_use_id")
-            if isinstance(tool_use_id, str) and block.get("is_error") is not True:
-                successful_ids.add(tool_use_id)
-    return successful_ids
-
-
-def _skill_invocations(entries: list[dict]) -> list[str]:
-    """成功したSkillとBash終了工程の起動を時系列順で返す。"""
-    successful_ids = _successful_tool_use_ids(entries)
-    invocations: list[str] = []
-    for block in iter_assistant_blocks(entries):
-        if block.get("type") != "tool_use":
-            continue
-        tool_input = block.get("input")
-        if not isinstance(tool_input, dict):
-            continue
-        if block.get("name") == "Skill":
-            tool_use_id = block.get("id")
-            if not isinstance(tool_use_id, str) or tool_use_id not in successful_ids:
-                continue
-            skill_name = tool_input.get("skill")
-            if isinstance(skill_name, str) and skill_name:
-                invocations.append(skill_name)
-            continue
-        if block.get("name") != "Bash":
-            continue
-        command = tool_input.get("command")
-        if not isinstance(command, str):
-            continue
-        if any(
-            segment.resolved and is_agents_exit_session_command(segment.tokens)
-            for segment in extract_execution_segments(command)
-        ):
-            invocations.append("atk agents-exit-session")
-    return invocations
-
-
-def _last_index_matching(invocations: list[str], names: frozenset[str]) -> int | None:
-    """`names`のいずれかに一致する最後の起動の位置を返す。一致が無ければ`None`。"""
-    for index in range(len(invocations) - 1, -1, -1):
-        if invocations[index] in names:
-            return index
-    return None
-
-
-def _missing_step_index(
-    invocations: list[str],
-    target_index: int,
-    required_sequence: tuple[tuple[str, frozenset[str]], ...],
-) -> int:
-    """`target_index`より後で、`required_sequence`を要求順に満たせた個数を返す。
-
-    満たせた個数が`len(required_sequence)`と等しければ全充足を意味する。
-    """
-    pointer = 0
-    for invocation in invocations[target_index + 1 :]:
-        if pointer >= len(required_sequence):
-            break
-        _, names = required_sequence[pointer]
-        if invocation in names:
-            pointer += 1
-    return pointer
 
 
 def _work_order(work_id: str, work: dict) -> tuple[int, int]:
@@ -182,7 +74,7 @@ def _is_wait_command(command: str) -> bool:
 def _non_wait_bash_ids(entries: list[dict]) -> set[str]:
     """待機コマンドを含まないBash起動の`tool_use_id`と、その起動結果の`backgroundTaskId`を返す。
 
-    常駐コマンドは終了しないため完了通知による再開が来ず、その生存を作業の待機として扱うと報告不足が残る。
+    常駐コマンドは終了しないため完了通知による再開が来ず、その生存を作業の待機として扱うと起動不足が残る。
     """
     identifiers: set[str] = set()
     for block in iter_assistant_blocks(entries):
@@ -238,7 +130,7 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """終了手順順序の判定結果と、遮断する場合の理由を返す。"""
+    """completion-reportの起動証拠の判定結果と、遮断する場合の理由を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -247,120 +139,49 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if not is_main_agent_context(payload):
         append_stop_log(session_id, "approve_delegated_session", {})
         return "approve", ""
+    if not termination_evidence.evidence_available(payload):
+        return "approve", ""
+
+    missing = {
+        work_id: kinds
+        for work_id, work in termination_evidence.pending_work(payload)
+        if (kinds := termination_evidence.missing_completion(work))
+    }
+    if not missing:
+        append_stop_log(session_id, "approve_completion_report_satisfied", {})
+        return "approve", ""
 
     raw_path = payload.get("transcript_path", "")
-    path_for_async = raw_path if isinstance(raw_path, str) else ""
-    available = termination_evidence.observe_reports(payload)
-    pending = termination_evidence.pending_work(payload) if available else []
-    self_edits = termination_evidence.unresolved_self_edits(payload) if available else {}
-    unprocessed = {
-        work_id: lines for work_id, work in pending if (lines := termination_evidence.unprocessed_improvements(payload, work))
-    }
-    deficient = {
-        work_id
-        for work_id, work in pending
-        if termination_evidence.report_violations(work)
-        or termination_evidence.missing_stages(work)
-        or work_id in unprocessed
-        or work_id in self_edits
-    }
-    if deficient:
-        waiting = _waiting_work_ids(payload, session_id, path_for_async, deficient)
-        if waiting == deficient:
-            append_stop_log(session_id, "approve_pending_async_for_work", {"count": len(waiting)})
-            return "approve", ""
-        pending = [(work_id, work) for work_id, work in pending if work_id in deficient - waiting]
-    elif is_pending_async_work(path_for_async, session_id, background_tasks=payload.get("background_tasks")):
-        append_stop_log(session_id, "approve_pending_async", {})
+    transcript_path = raw_path if isinstance(raw_path, str) else ""
+    if transcript_path and not pathlib.Path(transcript_path).is_file():
+        append_stop_log(session_id, "approve_transcript_unreadable", {"reason": "作業の待機対象を確認できない"})
+        return "approve", ""
+    waiting = _waiting_work_ids(payload, session_id, transcript_path, set(missing))
+    remaining = {work_id: kinds for work_id, kinds in missing.items() if work_id not in waiting}
+    if not remaining:
+        append_stop_log(session_id, "approve_pending_async_for_work", {"count": len(waiting)})
         return "approve", ""
 
-    violations = [
-        f"作業 {work_id}: {error}" for work_id, work in pending for error in termination_evidence.report_violations(work)
-    ]
-    delivery = "可視の発話本文" if is_codex_payload(payload) else "mcp__agent-toolkit__send_to_user（無い環境では発話本文）"
-    late_lines = [line for work_id, _work in pending for line in unprocessed.get(work_id, [])]
-    if late_lines:
-        return "block", _block_notice(
-            "振り返りの準備へ未取込みの改善点がある。\n" + "\n".join(dict.fromkeys(late_lines)),
-            fix=(
-                "`agent-toolkit:session-review`の工程1から新しい行を取り込む準備を行い、"
-                "追加範囲を分析して結果報告を更新してから終了する。取込み済みの行は重ねて分析しない。"
-            ),
-        )
-    if violations:
-        return "block", _block_notice(
-            "報告本文の要求を満たしていない。\n" + "\n".join(violations),
-            fix=f"列挙した行の根拠・対策の対応・実際の投入結果を直し、報告を{delivery}で届ける。",
-        )
-    missing_evidence = [
-        f"作業 {work_id}: {', '.join(termination_evidence.missing_stages(work))}"
-        for work_id, work in pending
-        if termination_evidence.missing_stages(work)
-    ]
-    if missing_evidence:
-        append_stop_log(session_id, "block_missing_termination_evidence", {"count": len(missing_evidence)})
-        return "block", _block_notice(
-            "終了工程の実行結果が不足している。\n"
-            + "\n".join(missing_evidence)
-            + "\n"
-            + termination_evidence.decision_hint(payload),
-            fix=(
-                f"不足する段階の報告を{delivery}で届ける。"
-                "中止・置換・待機・技術的不成立は原証拠と対象の`work_id`を"
-                "`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ渡す。"
-            ),
-        )
-
-    remaining_edits = {work_id: self_edits[work_id] for work_id, _work in pending if work_id in self_edits}
-
-    def self_edit_result() -> tuple[str, str]:
-        if not remaining_edits:
-            return "approve", ""
-        termination_evidence.record_self_edit_warning(payload, remaining_edits)
-        return "notify", _warning(
-            "リポジトリ内の自編集が未コミットで残り、同じ作業の公開範囲が未確定で完了処理にも到達していない。\n"
-            + "\n".join(f"作業 {work_id}: {', '.join(paths)}" for work_id, paths in remaining_edits.items())
-            + "\n"
-            + termination_evidence.decision_hint(payload),
-            fix="`agent-toolkit:user-confirmation-and-report`で依頼・回答・適用済み認可から公開範囲を判定し、原入力と結果を終了工程の証拠へ渡すか、`agent-toolkit:completion-report`へ進む。",
-            removable_cause=False,
-            escalate_on_repeat=False,
-        )
-
-    if is_codex_payload(payload):
-        return "approve", ""
-
-    if payload.get("stop_hook_active") is not True:
-        append_stop_log(session_id, "approve_not_reentrant", {})
-        return self_edit_result()
-
-    raw_transcript = payload.get("transcript_path", "")
-    transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
-    if not transcript_path or not pathlib.Path(transcript_path).is_file():
-        append_stop_log(session_id, "approve_transcript_unreadable", {"reason": "起動順を確認できない"})
-        return "approve", ""
-
-    entries = read_transcript_entries_cached(transcript_path)
-    invocations = _skill_invocations(entries)
-
-    missing_bodies: list[str] = []
-    for (target_label, target_names), required_sequence in _TERMINATION_SEQUENCES:
-        target_index = _last_index_matching(invocations, target_names)
-        if target_index is None:
-            continue
-        pointer = _missing_step_index(invocations, target_index, required_sequence)
-        if pointer >= len(required_sequence):
-            continue
-        remaining = "→".join(label for label, _ in required_sequence[pointer:])
-        missing_bodies.append(_MISSING_STEP_TEMPLATE.format(target=target_label, remaining=remaining))
-
-    if not missing_bodies:
-        append_stop_log(session_id, "approve_termination_order_satisfied", {})
-        return self_edit_result()
-
-    append_stop_log(session_id, "block_termination_order", {"count": len(missing_bodies)})
-    reason = _block_notice(
-        "\n\n".join(missing_bodies),
-        fix="列挙した終了工程を指定順で実行してから終了する。",
+    works = dict(termination_evidence.session_works(payload))
+    lines = [f"作業 {work_id}: {'、'.join(kinds)}" for work_id, kinds in remaining.items()]
+    for work_id in remaining:
+        if edits := termination_evidence.unscoped_self_edits(payload, works.get(work_id, {})):
+            lines.append(f"作業 {work_id}の公開範囲が未確定の未コミットの編集: {', '.join(edits)}")
+    operation = (
+        f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/SKILL.md'}`を読み"
+        if is_codex_payload(payload)
+        else "Skillで`agent-toolkit:completion-report`を起動し"
     )
-    return "block", reason
+    append_stop_log(session_id, "block_completion_report_missing", {"count": len(remaining)})
+    return "block", _block_notice(
+        "成果作業を行ったが、同じ作業で`agent-toolkit:completion-report`の起動を確認できない。\n"
+        + "\n".join(lines)
+        + "\n"
+        + termination_evidence.decision_hint(payload),
+        fix=(
+            f"作業を完了して終える場合は{operation}、同スキルの工程の残り（作業完了報告、振り返り、最終報告、"
+            "呼び出し元が定める終端工程）へ進む。"
+            "ユーザーの中止・置換、確認の回答や委譲先の結果の待機、技術的不成立で終える場合は、"
+            "原証拠と対象の`work_id`を`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ渡す。"
+        ),
+    )

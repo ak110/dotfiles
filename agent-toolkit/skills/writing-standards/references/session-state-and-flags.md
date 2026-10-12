@@ -100,15 +100,16 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
 
 ## 終了工程系
 
-- `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が終了工程の証拠を作業単位で保持する。中身は作業ごとの可視発話の報告、振り返りの準備結果、呼び出し、判断記録、遅れて返る応答を元の作業へ対応付けるための未完了の呼び出しと、判断の根拠となる人間の入力である。
-  PreToolUse・PostToolUse・UserPromptSubmitが呼び出しと人間の入力を更新し、Stopの`termination_order_advisor`が可視発話を取得して報告段階と報告本文の判定の違反を読む。構造確認の受理本文と送達フラグは保持の対象外とする。
+- `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が終了工程の証拠を作業単位で保持する。中身は作業ごとの成果作業の種類、completion-reportの起動証拠、呼び出し、判断記録、遅れて返る応答を元の作業へ対応付けるための未完了の呼び出しと、判断の根拠となる人間の入力である。
+  PreToolUse・PostToolUse・UserPromptSubmitが呼び出しと人間の入力を更新し、Stopの`termination_order_advisor`が成果作業と起動証拠の対応を読む。報告本文、完了の自己申告と起動済みを示す独自のフラグは保持の対象外とする。
   解決済みの呼び出しと入力は更新のたびに除き、版や形式が異なる値は破棄してStop判定ログへ診断を残す。
   寿命と継承はセッション状態ファイルと同じとし、別会話から継承した値は`session_id`の一致を確かめてから使う
-  - 待機の許可: 報告段階が残る作業が待つ非同期対象の生存中にStopが待機を許可する条件は`claude-hooks-stop.md`「終了工程の証拠」が定める。本キーは作業の開始位置（UserPromptSubmitが記録したtranscriptの大きさ）を保持し、Stopがその判定に読む
+  - 成果作業と起動証拠: 成功した対象スキルの開始、リポジトリへの自編集、計画の保存、WIの保存、commit・pushを`deliverables`へ記録する。成功したcompletion-reportのSkill起動（Claude Code）と、結果が本文を返した`SKILL.md`の読取（Codex）は`completion_report`へ記録する。起動証拠を得た作業へ新しい人間の入力の後に成果作業が届いた場合は新しい作業を始める
+  - 待機の許可: 成果作業が待つ非同期対象の生存中にStopが待機を許可する条件は`claude-hooks-stop.md`「終了工程の証拠」が定める。本キーは作業の開始位置（UserPromptSubmitが記録したtranscriptの大きさ）を保持し、Stopがその判定に読む
   - 委譲先へのwait判断: `async_targets`と所有者を確認し、観測義務とは別に有効なCLI待機所有権・対象登録を共通の読取処理で確認する。`pending_observation`が偽でも待機が有効なら保持し、両方が終わると不足判定へ戻る
-  - 自編集: Claude Codeメインの成功したEdit・Writeと、既存の抽出で静的に確定したBash書込先を、作業ごとの`edits`へリポジトリと相対パスで記録する。Stopはその集合だけを終了時のGit状態と比べ、他主体の差分を取り込まない
-  - 公開範囲と到達: メインが原入力または適用済み認可から判断した範囲を`publish_scope`へ、成功したcompletion-reportの起動を`completion_report`へ記録する。記録手順は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`が定める
-  - 原入力と再入: `last_human_input`は最後の人間入力を保持し、自動通知で再開しても元の依頼への帰属を保つ。`--context`は現在の会話のその入力と作業の識別子だけを返す。`self_edit_warned`は実際にwarnを返した未確定作業の対象を保持し、同じ対象の再入でwarnを反復せずblockへ昇格させない。寿命と継承は本キーと同じで、公開範囲・到達の証拠と現在のGit状態から不要な判定を除く
+  - 自編集: 成功したEdit・Write・`apply_patch`と、既存の抽出で静的に確定したBash書込先を、作業ごとの`edits`へリポジトリと相対パスで記録する。Claude Codeの協調モードのメインでは、Stopがその集合だけを終了時のGit状態と比べて公開範囲が未確定の編集を遮断の通知へ添え、他主体の差分を取り込まない
+  - 公開範囲: メインが原入力または適用済み認可から判断した範囲を`publish_scope`へ記録する。記録手順は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`が定める
+  - 原入力と再入: `last_human_input`は最後の人間入力を保持し、自動通知で再開しても元の依頼への帰属を保つ。`--context`は現在の会話のその入力と作業の識別子だけを返す。寿命と継承は本キーと同じで、公開範囲・起動証拠と現在のGit状態から不要な判定を除く
 
 ## 通知反復系
 

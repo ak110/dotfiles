@@ -44,7 +44,7 @@ description: >
 
    標準出力の1行JSONは各文書の所在（`conversation_path`、`comparison_materials_path`、`candidates_path`、`stats_path`）と`reference_document`（無ければnull）を持つ。
    ほかに`prepared_at`、`utterance_counts`、`candidate_total`・`candidate_counts`、`excluded_counts`、`failure_ledger_skipped`を持つ。
-   さらに`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`を持つ。Stopは`mandatory_candidates`と`similar_records`を振り返り結果報告の行と照らす。
+   さらに`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`を持つ。両者の候補を振り返り結果報告でどの行に書くかは`agent-toolkit:completion-report`の`references/report-formats.md`が定める。
    `conversation_ranges`は会話の全行を重複・欠落なく覆う読取単位で、各範囲の`start_line`・`end_line`は両端を含む1始まりの行番号、`utf8_bytes`は改行込みの量、`first_locator`・`last_locator`と`first_timestamp`・`last_timestamp`は範囲内の最初と最後の位置・時刻（取得できなければnull）である。
    `improvement_lines`と`candidates.md`の取り込んだ改善点は、記録の全文から抽出した実際の行を持つ。
 2. `candidates.md`より先に`conversation.md`の全範囲を確認し、観点を限定せず問題と改善機会を列挙する。全範囲を覆う責任と最終判断はメインが持つ。

@@ -75,7 +75,7 @@ MANDATORY_KINDS = frozenset({"user-intervention", "confirmation-request", "wi-us
 `agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」の除外区分に当たる場合を除き、
 前例の有無によらず再発防止策を要する。再発防止策なしで終えられるのは同書「QとC・Dの区別」のC・Dだけの問題に限る。
 必須であることを参照資料の読込に依存させないよう候補一覧と1行JSONへ示し、
-Stopの報告本文の判定が候補IDで追跡する。
+振り返り結果報告は各候補の扱いを候補IDで示す（書式は`agent-toolkit:completion-report`の`references/report-formats.md`）。
 """
 _SIMILAR_RECORD_KINDS = frozenset({"user-intervention", "wi-user-response"})
 """過去の同種記録を添える候補種別。ユーザーの発話を本文に持つ種別に限る。"""

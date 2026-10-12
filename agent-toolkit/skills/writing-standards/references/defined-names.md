@@ -74,7 +74,6 @@
 | ユーザー確認 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | ユーザーへの報告 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | 要件・意図の曖昧さ | 確認を要する事項 | `agent-toolkit/skills/user-confirmation-and-report/SKILL.md`「確認要否の判定」 |
-| 報告本文の判定 | Stop hookの判定 | `agent-toolkit/skills/completion-report/SKILL.md`「工程」 |
 | 3段判定 | 判断の順序 | `agent-toolkit/rules/01-agent.md`「QCDと3段判定」 |
 | 委譲の要否判定 | 委譲の判定 | `agent-toolkit/skills/delegation/references/routing.md` |
 | 元担当 | 既存の委譲先 | `agent-toolkit/skills/delegation/references/codex-runtime.md`「後続操作の共通先行条件」 |

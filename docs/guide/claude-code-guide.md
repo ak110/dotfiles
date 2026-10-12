@@ -142,10 +142,8 @@ Bashの静的な検出は、for・算術for・select・while・until・if/elif/e
 
 Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内する。原記録以外の保存本文は、Claude Codeでは`Read`に`allow_large: true`を指定して全文を読み、Codexでは`atk read-file`で終端まで読む。
 
-振り返りの準備後や最終報告後に、新しい`気付いた改善点:`の行が残っている場合、Stopは未取込みの行と次の操作を示す。
-その行を振り返りの準備・分析へ取り込み、結果報告を更新すると終了へ進める。
-取込み済みの行の再掲と、文書・コードの引用や生成通知の標識だけでは再実行を求めない。
-再準備後の報告は最新の成功した準備に対応する本文で判定し、古い予告の再送は求めない。
+振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は、`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
+Stopはこの行の有無と報告本文を判定しない。
 
 ## 工程別モデル設定
 
@@ -437,7 +435,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文を文脈へ追加する | 対応 | 対応 |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する | 対応 | 対応 |
-| plugin `Stop/stop` | 報告が足りないまま作業を終えようとすると、足りない報告段階と報告本文の不備を示して同じターンを続けさせる。委譲先や待機コマンドを待つ間は終了を許す | 対応 | 対応 |
+| plugin `Stop/stop` | 成果作業（WI処理・AWI登録の開始、リポジトリの編集、計画・WIの保存、commit・push）の後に`agent-toolkit:completion-report`を起動しないまま終えようとすると、起動と残りの工程への続行を案内して同じターンを続けさせる。報告本文は判定しない。委譲先や待機コマンドを待つ間は終了を許す | 対応 | 対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 発話の内容を現物で確かめる手順や、発話に応じて適用する規範の所在を示す注記を返す | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をログへ記録する | 対応 | 非対応 |
@@ -537,7 +535,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。必要な再開状態はセッションのmanaged-temp直下のparent-handoff.mdへ保存し、圧縮後の領域通知からその記録を読む。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
 - `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
-- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。途中の回答や割り込みへの返答の後に残りの報告段階へ進まない停止と、報告本文に不備がある停止はStopフックが遮断して戻す。報告本文の不備は、対策行に根拠（AWIのファイル名・投入予定・同一セッションの実装）が無いこと、見送りの判定済み行の根拠の欠落か未確定、未確定行の照会・再現・残る理由の欠落、AWI投入結果報告に残った投入予定の4つである。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。成果作業の後に本スキルを起動しないまま終える停止はStopフックが遮断して起動を促す。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめ、Stopフックは報告本文を判定しない。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う
 - `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 
