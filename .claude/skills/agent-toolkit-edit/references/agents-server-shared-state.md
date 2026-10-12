@@ -78,7 +78,7 @@ Codexの接続先選択順は`codex_model_providers`が持つ。先頭APIの不�
 モデル候補の設定は`atk config get config_dir`が返すディレクトリ配下の`config.json`が持ち、MCPサーバーは起動ごとに読む。旧モデル設定（`high_tier_model`など4キー）が保存されている場合は、候補解決か`atk config show`・`get`を最初に行った主体（MCPサーバーまたは`atk`のCLI）が同じファイルを一括移行で書き換える。移行結果は保存値だけから決まるため、複数の主体が同時に移行しても同じ内容になる。
 
 状態ディレクトリは`atk config get state_dir`が返すディレクトリ配下の`agents-server`とする。
-レーン資源の所有登録と回収結果への参照は、同じ`state_dir`配下の`lanes/<所有session>/`へ別に置く。`_atk/lane.py`が作成・明示再利用・回収を所有し、通常終了とprocess-loopの子終了後も同じ処理を使う。session登録簿の場所は`_common/session_launchers.py`から解決し、レーン管理はcwd・terminalを読むだけとし、状態と終端登録の更新はMCPサーバーが所有する。回収結果は専用worktreeの外のmanaged-tempへ保存し、その既存保持期限へ委ねる。未解決の資源登録は保持し、回収処理が除くのは解決済みのレーン登録だけとする。
+レーン資源の所有登録と回収結果への参照は、同じ`state_dir`配下の`lanes/<所有session>/`へ別に置く。`_atk/lane.py`が作成・明示再利用・回収を所有し、通常終了とprocess-loopの子終了後も同じ処理を使う。レーン管理はsession登録簿を`_common/session_registry.py`の`resolve`の解決結果（実行中かとcwd）で読むだけとし、状態と終端登録の更新はMCPサーバーが所有する。回収結果は専用worktreeの外のmanaged-tempへ保存し、その既存保持期限へ委ねる。未解決の資源登録は保持し、回収処理が除くのは解決済みのレーン登録だけとする。
 内部の保存項目と公開応答の項目は別に扱う。活動は`seconds_since_activity`、API失敗は種別・HTTP状態・経過時間（利用上限の解除待ちでは種類と解除予定時刻も）を公開し、集計回数と初回時刻は内部の保持に使う。CLI一覧は識別子・状態・ラベル・直近操作・結果保留・開始時刻と活動診断へ限定する。MCPの通常応答には絶対活動時刻を載せず、`show(verbose=True)`で更新・出力時刻と実行条件を示す。結果のturn番号と確定時刻、通知の送信時刻は保存と整列に残し、回収する公開応答から除く。用途別の射影で内部追加の流入を防ぎ、所有者確認と耐久退避は従来の入力を使う。
 診断ログのディレクトリは`agents-server.log`を置く階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
 Antigravityのイベント処理を調査するときは、上表の公開イベントログを参照する。書き込みに失敗した場合はbackendの警告ログを参照し、イベント処理の終端状態はsession状態から判定する。
