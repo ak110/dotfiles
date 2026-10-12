@@ -1,156 +1,114 @@
 # 自動コードレビュー監査
 
-`agent-toolkit:process-wi`の自動コードレビュー監査を担当するエージェントが、対象GitHubリポジトリの成果物を変更せずに実行する。
-本書でいう成果物は、対象リポジトリの追跡ファイルとその履歴を指す。
-Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿、threadの解決およびDependabotアラートの却下は成果物の変更に当たらず、本書が定める範囲で監査担当が実行する。
-本書はCopilot由来のレビュー指摘を「対象」から「判定済みの記録」までの節で、Dependabotアラートを「Dependabotアラート」節で扱う。
-監査は呼び出し時点の保存結果を1回読むだけで完了する。新しいレビューの生成要求と到着の能動的な待機は、本監査の対象外とする。
+`agent-toolkit:process-wi`の自動コードレビュー監査を担当するエージェントが、対象GitHubリポジトリの成果物（追跡ファイルとその履歴）を変更せずに行う。
+Pull Requestのreview threadへの返信、コメント投稿、threadの解決、Dependabotアラートの却下は成果物の変更に当たらず、本書が定める範囲で監査担当が行う。
+監査は呼び出し時点の状態を1回読んで完了し、新しいレビューの生成要求や到着の待機は監査の範囲外とする。
 
 ## 対象
 
-状態（open・closed・merged）を問わず全Pull Requestのreviewを列挙し、判定対象に残るCopilot由来のreview本文を取得する。
-inline commentもreview threadも伴わずreview本文だけが到着する場合があり、未解決threadの有無で列挙を限定すると、その本文を取得できないためである。
-Copilot由来のinline commentとreview threadは、未解決のreview threadを持つPull Requestだけを対象に取得する。
-解決済みのthreadだけを持つPull Requestは、その時点で未処置のinline commentを持たない。
-要修正としてAWIへ記録した指摘のthreadは未解決のまま残り、以降も対象に入り続ける。
-Copilot由来の判定条件は、authorの`__typename`が`Bot`であることと、authorのloginに`copilot`を大文字小文字を区別せず含むことの双方が成立することとする。login名だけで判定すると、その文字列を含む人間のアカウントの指摘へ自動返信と解決を書き込む。
+状態（open・closed・merged）を問わず全Pull Requestのreviewを列挙し、判定対象に残るCopilot由来のreview本文を取得する（inline commentもthreadも伴わない本文だけのreviewがあるため、列挙は未解決threadの有無によらず行う）。
+Copilot由来のinline commentとreview threadは、未解決のreview threadを持つPull Requestだけから取得する。要修正としてAWIへ記録した指摘のthreadは未解決のまま残り、以降も対象に入る。
+Copilot由来とするのは、authorの`__typename`が`Bot`で、かつloginが大文字小文字を区別せず`copilot`を含む場合とする。login名だけで判定すると、その文字列を含む人間のアカウントの指摘へ返信と解決を書き込む。
 
 ## 取得
 
-通常の監査の入力は、`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`が定める`pending取得結果`である。`reviews`には未判定のCopilot由来reviewのPR番号とdatabaseId、`threads`には未解決のCopilot由来threadを持つPR番号が入る。監査担当は`reviews`の各本文を後掲のREST APIで取得し、`threads`の各PRだけinline commentを取得する。判定済みreviewの除外とpagination終端の確認にはコマンドの成功結果を用いる。
+通常は`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`の`pending取得結果`を入力とする。`reviews`には未判定のCopilot由来reviewのPR番号とdatabaseId、`threads`には未解決のCopilot由来threadを持つPR番号が入る。`reviews`の各本文を後掲のREST APIで取得し、`threads`の各PRだけinline commentを取得する。
 
-pendingコマンドが失敗して委譲元からJSONを受け取れない場合は、以下の横断GraphQLクエリーとPR単位のクエリーを使って監査対象を取得する。失敗時も監査対象を直接取得して判定する。
+pendingのJSONを受け取れない場合は、次のGraphQLクエリーで監査対象を直接取得する。reviewの列挙とreview threadの取得はそれぞれ独立に、`pageInfo.hasNextPage`が偽になるまで直前の`endCursor`を`-F cursor=<END_CURSOR>`で渡して取得する（初回は`cursor`を渡さない）。
 
-全reviewの列挙と、review threadの解決状態による対象判定は、独立した接続として扱い、それぞれpaginationの終端まで取得する。
-いずれの接続も初回は`cursor`を渡さず、`pageInfo.hasNextPage`が真の場合は直前の`pageInfo.endCursor`を`-F cursor=<END_CURSOR>`で渡して偽になるまで取得する。
-Pull Request単位のクエリーは横断クエリーの結果とは独立した取得として扱う。
-
-全Pull Requestの番号、`reviews`の先頭ページおよび`reviewThreads`の先頭ページを、次の横断GraphQLクエリーで取得する。
+全Pull Requestの番号と`reviews`・`reviewThreads`の先頭ページ:
 
 ```sh
 gh api graphql -F owner=<OWNER> -F name=<REPO> -f query='query($owner:String!,$name:String!,$cursor:String){repository(owner:$owner,name:$name){pullRequests(first:100,after:$cursor,states:[OPEN,CLOSED,MERGED]){nodes{number reviews(first:20){nodes{databaseId author{__typename login}} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{databaseId author{__typename login}}}} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}'
 ```
 
-`reviews`の`pageInfo.hasNextPage`が真のPull Requestは、次のクエリーでreviewを終端まで列挙し直す。
+`reviews`の`hasNextPage`が真のPull Request:
 
 ```sh
 gh api graphql -F owner=<OWNER> -F name=<REPO> -F number=<PR> -f query='query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(first:100,after:$cursor){nodes{databaseId author{__typename login}} pageInfo{hasNextPage endCursor}}}}}'
 ```
 
-`reviewThreads`の`pageInfo.hasNextPage`が真のPull Requestは、次のクエリーでreview threadを終端まで取得し直す。
-未解決threadの有無は、その取得が終端へ到達した時点で確定する。
-thread内のcomment本文は後掲のREST APIから取得し、GraphQLではthread ID、解決状態、
-REST commentとの対応に使うdatabaseIdおよび先頭commentのauthorを取得する。
-authorはCopilot由来の判定に用いる。
+`reviewThreads`の`hasNextPage`が真のPull Request（未解決threadの有無は終端まで取得して確定する。GraphQLではthread ID、解決状態、REST commentと対応付けるdatabaseId、先頭commentのauthorだけを得る）:
 
 ```sh
 gh api graphql -F owner=<OWNER> -F name=<REPO> -F number=<PR> -f query='query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved comments(first:1){nodes{databaseId author{__typename login}}}} pageInfo{hasNextPage endCursor}}}}}'
 ```
 
-GraphQLで代替した場合は両方の接続が終端へ到達した後、未解決のreview threadを持つPull Request番号を`<PR>`へ置換し、inline commentを全ページ取得する。pendingのJSONを受け取った場合は`threads`のPR番号を使う。
+未解決のreview threadを持つPull Request（pendingのJSONでは`threads`のPR番号）について、inline commentを全ページ取得する。
 
 ```sh
 gh api --paginate 'repos/{owner}/{repo}/pulls/<PR>/comments?per_page=100'
 ```
 
-監査を完了と判定できるのは、実行した全REST APIが終了コード0で終わり、pendingコマンドの成功、またはGraphQLによる代替取得での`pageInfo`取得とpagination終端を確認できた場合とする。
-各ページとREST APIの標準出力はmanaged-tempの中の別々のJSONファイルへ保存し、保存したファイルからページの終端、件数およびdatabaseIdを確認する。端末に表示された出力を件数や網羅性の根拠にしない。
+各ページとREST APIの標準出力はmanaged-temp内の別々のJSONファイルへ保存し、終端、件数、databaseIdは保存したファイルから確かめる。監査の完了は、実行した全REST APIが終了コード0で、pendingコマンドの成功かGraphQLのpagination終端を確かめられた場合に限る。
 
 ## 判定
 
-pendingのJSONを受け取った場合は、`reviews`の各reviewを判定対象とし、`threads`の各PRをinline commentの取得対象とする。JSONを受け取れずGraphQLで代替した場合だけ、判定前に`atk review-audit list --repo <OWNER>/<REPO>`で判定済みreview本文のdatabaseIdを取得する。この代替手順では列挙した全reviewのdatabaseIdとauthorからCopilot由来のreviewを特定し、判定済みのdatabaseIdと一致するreviewを除く。除いたdatabaseIdの一覧と件数を委譲元へ返す。全Pull Requestのreviewの列挙は本記録の有無で変えない。
-判定対象に残ったreviewの`<PR>`と`<REVIEW_ID>`へPull Request番号とdatabaseIdを渡し、本文を1件ずつ取得する。同じセッションで`gh api`の受理形式が未確定の場合は、実行前に`gh api --help`で確かめる。各応答の`id`が取得予定のdatabaseIdと一致することを確認する。
+GraphQLで代替した場合だけ、判定前に`atk review-audit list --repo <OWNER>/<REPO>`で判定済みreview本文のdatabaseIdを取得し、列挙したCopilot由来のreviewから除く。除いたdatabaseIdの一覧と件数を委譲元へ返す。
+判定対象のreview本文は1件ずつ次で取得し、応答の`id`が予定のdatabaseIdと一致することを確かめる。列挙したCopilot由来reviewのID集合は、除外した集合と本文を取得した集合へ過不足なく分ける。
 
 ```sh
 gh api 'repos/{owner}/{repo}/pulls/<PR>/reviews/<REVIEW_ID>' > <managed-tempの中のJSONファイル>
 ```
 
-保存した列挙結果のCopilot由来reviewのID集合を、除外したID集合と本文を取得したID集合へ過不足なく分ける。判定済み本文の取得は行わない。
-
-判定の対象に残った各指摘を現行成果物、過去の採否および根拠と比べ、要修正、是正済み、根拠付き対応不要のいずれかへ分類する。
-review本文が概要と進行状況だけを述べ、成果物への処置を求める記述を1つも含まない場合は、その本文を指摘なしと分類する。
-指摘なしの分類は本文全体に対して行い、本文へ含まれる個々の指摘の分類とは別の単位として扱う。
-要修正は所在と対処案を返し、同一セッションの是正とAWIへの記録は委譲元が確定する。
-是正済みまたは根拠付き対応不要と分類した指摘は、「判定結果のGitHubへの記録」に従って分類と根拠をGitHubへ残す。
-全Pull RequestのCopilot由来のreview本文と、未解決threadを持つPull RequestのCopilot由来のinline commentについて、所在、分類および処置をメインへ返す。inline commentの取得対象へ入らなかったPull Request番号も併せて返す。
+各指摘を現行成果物、過去の採否、根拠と比べ、要修正、是正済み、根拠付き対応不要のいずれかへ分類する。review本文が概要と進行状況だけで処置を求める記述を含まない場合は、本文全体を指摘なしとする（個々の指摘の分類とは別の単位）。
+要修正は所在と対処案を返し、是正とAWIへの記録は委譲元が決める。是正済みと根拠付き対応不要は「判定結果のGitHubへの記録」に従ってGitHubへ残す。全review本文とinline commentの所在、分類、処置と、inline commentの取得対象へ入らなかったPull Request番号を返す。
 
 ## 判定結果のGitHubへの記録
 
-是正済みまたは根拠付き対応不要と分類した指摘は、監査担当が分類と根拠を対象GitHubリポジトリへ書き込む。
-判定根拠は本節が投稿する本文が保持し、`atk review-audit`の判定記録（`review-audit.json`）は索引として扱う。
-この書き込みは、操作、対象および範囲を明示した人間由来のWI `20260908-090053-001.md`で承認済みであり、監査のたびの確認は不要である。
-同WIが保持するユーザー発言は次のとおりである。
+是正済みまたは根拠付き対応不要と分類した指摘だけ、監査担当が分類と根拠を対象GitHubリポジトリへ書き込み、threadを解決する。要修正のthreadは未解決のまま残し、指摘なしのreview本文には書き込まない。判定根拠は投稿する本文が持ち、`review-audit.json`は索引として扱う。
+この書き込みは、操作、対象、範囲を明示した人間由来のWI `20260908-090053-001.md`で承認済みであり、監査ごとの確認は不要である。同WIが保持するユーザー発言は次のとおりである。
 
 ```text
 判断結果がどこにも残らないのはいまいちだね。PRのレビュー指摘に対して「コメントしてCloseする」みたいな操作は無いの？
 ```
 
-書き込みと解決の対象は、是正済みと根拠付き対応不要に分類した指摘に限る。要修正と分類した指摘のthreadは未解決のまま残す。
-指摘なしと分類したreview本文も書き込みの対象から外す。書き込む根拠が本文に存在せず、投稿してもPull Requestを読む主体の判断材料が増えないためである。
+返信とコメントは文面をファイルへ保存し、投稿の直前に`agent-toolkit:external-write-review`を起動して、レビュー結果を反映した文面だけを投稿する。本文には対象の指摘の識別子（review本文はdatabaseId、threadは対象ファイルと行）、分類、根拠（確認した現行成果物の位置か対応不要の理由）を書く。
 
-監査担当はreview threadへの返信とPull Requestへのコメントのそれぞれについて、文面を保存した後、投稿の直前に`agent-toolkit:external-write-review`を起動する。
-レビュー結果を反映した文面だけを投稿する。
-
-未解決のreview threadでは、解決の前に分類と根拠をそのthreadへ返信し、返信の成功を確認してからthreadを解決する。
-返信の本文はファイルへ保存して渡し、コマンド文字列とは別の入力として扱う。
+未解決のreview threadでは、返信の成功を確かめてから解決する。
 
 ```sh
 gh api graphql -F threadId=<THREAD_ID> -F body=@<BODY_FILE> -f query='mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{url}}}'
 gh api graphql -F threadId=<THREAD_ID> -f reason=<RESOLUTION_REASON> -f query='mutation($threadId:ID!,$reason:PullRequestReviewThreadResolutionReason!){resolveReviewThread(input:{threadId:$threadId,resolutionReason:$reason}){thread{isResolved}}}'
 ```
 
-`<RESOLUTION_REASON>`へ渡す値は分類ごとに次の表で一意に定まる。値の定義は本表に従い、実行例は書式の参考として読む。
+`<RESOLUTION_REASON>`は分類ごとに次の値とする。読み取り型`PullRequestReviewThread`は`resolutionReason`を返さないため、後続の判定は解決状態と本表から導く。
 
 | 分類 | `<RESOLUTION_REASON>` |
 | --- | --- |
 | 是正済み | `ADDRESSED` |
 | 根拠付き対応不要 | `WONT_FIX` |
 
-読み取り型`PullRequestReviewThread`は`resolutionReason`を返さないため、後続の判定は解決状態と本表から導く。
-
-threadを伴わないreview本文では、分類と根拠をそのPull Requestへコメントとして投稿する。
+threadを伴わないreview本文では、Pull Requestへコメントとして投稿する。
 
 ```sh
 gh pr comment <PR> --repo <OWNER>/<REPO> --body-file <BODY_FILE>
 ```
 
-返信とコメントの本文には、対象の指摘を一意に示す識別子、確定した分類、およびその分類の根拠を書く。
-識別子はreview本文ではdatabaseId、review threadでは対象ファイルと行とする。
-根拠には確認した現行成果物の位置、または対応不要と判断した理由を書く。
-
-記録済みとして扱うのは書き込みが終了コード0で終わった指摘に限り、非0で終了した指摘は「判定済みの記録」の対象からも外す。
+記録済みとして扱うのは書き込みが終了コード0で終わった指摘に限り、非0の指摘は「判定済みの記録」からも外す。
 
 ## 判定済みの記録
 
-「判定結果のGitHubへの記録」の書き込みが成功したreview本文のdatabaseIdと、指摘なしと分類したreview本文のdatabaseIdを、`atk review-audit mark --repo <OWNER>/<REPO> <ID>...`で記録する。
-指摘なしの本文を記録すると、その本文が以降の監査で判定の対象から外れ、同じ本文の読解の反復を避けられる。
-要修正と分類したreview本文のdatabaseIdは、その指摘を記録したAWIが終端するまで判定の対象に残す。是正後の監査でその本文を是正済みと判定し、分類と根拠をGitHubへ記録するためである。
-記録するdatabaseIdはreview本文のものに限る。inline commentは未解決threadの解決状態が同じ役割を果たす。
-記録の読み書きは`atk review-audit`だけで行う。記録ファイルのパス解決と保存形式をこのコマンドが定め、別の手段で同じファイルを読み書きすると形式が分岐するためである。
-記録先は対象GitHubリポジトリの外にある状態ディレクトリであり、本記録は成果物を変更しない制約の対象に当たらない。
-本記録は分類の再導出を省く索引であり、分類と根拠はGitHubへ残す記録が保持する。成果物の変更により再判定が必要になった指摘は、その変更に対する新しいreviewが別のdatabaseIdで到着するため、記録の無効化を経ずに再判定できる。
+書き込みが成功したreview本文と、指摘なしと分類したreview本文のdatabaseIdを、`atk review-audit mark --repo <OWNER>/<REPO> <ID>...`で記録する（以降の監査で同じ本文を読み直さないため）。
+要修正のreview本文は、そのAWIが終端するまで判定対象に残す（是正後の監査で是正済みとしてGitHubへ記録するため）。記録するのはreview本文のdatabaseIdに限り、inline commentはthreadの解決状態が同じ役割を果たす。
+記録の読み書きは`atk review-audit`だけで行う（パスと保存形式はこのコマンドが定める）。記録先は対象リポジトリの外の状態ディレクトリであり、成果物を変更しない制約の対象外とする。成果物の変更で再判定が要る指摘は、新しいreviewが別のdatabaseIdで届くため、記録を無効化しなくても再判定される。
 
 ## Dependabotアラート
 
-対象GitHubリポジトリでopenのDependabotアラートのうち、判定済みとして記録されていないものを判定し、削除済みマニフェストに紐づく誤検知を却下する。
-process-wiの実行ごとの監査で拾うことで、キューが空かどうかにかかわらずアラートが処理の対象に入る。
+対象GitHubリポジトリでopenのDependabotアラートのうち判定済みとして記録されていないものを判定し、削除済みマニフェストに紐づく誤検知を却下する。
 
 ### 取得と判定区分
 
-通常の監査は、`atk review-audit pending`のJSONの`dependabot`と`counts.dependabot`を入力とする。
-`dependabot.alerts`の各要素は番号、`manifest_path`、パッケージ、エコシステム、修正版（`first_patched_version`。無い場合はnull）および`category`を持つ。
-`category`はマニフェストが`default_branch`で指定されたbranchに実在しなければ`inaccurate`、実在すれば`manifest_present`である。
-`dependabot.status`が`disabled`（機能が無効）または`unauthorized`（権限不足。`message`に応答本文）の場合は判定せず、その状態を委譲元へ返す。
+通常は`atk review-audit pending`のJSONの`dependabot`と`counts.dependabot`を入力とする。`dependabot.alerts`の各要素は番号、`manifest_path`、パッケージ、エコシステム、修正版（`first_patched_version`。無ければnull）、`category`を持つ。`category`はマニフェストが`default_branch`のbranchに無ければ`inaccurate`、あれば`manifest_present`である。`dependabot.status`が`disabled`（機能が無効）か`unauthorized`（権限不足。`message`に応答本文）なら判定せず、その状態を返す。
 
-pendingのJSONを受け取れない場合は、次の手順で監査担当が直接取得する。各応答はmanaged-tempの中のJSONファイルへ保存し、保存したファイルから件数と値を確認する。
+pendingのJSONを受け取れない場合は直接取得する。各応答はmanaged-temp内のJSONファイルへ保存し、件数と値は保存したファイルから確かめる。
 
-1. `gh api --paginate --slurp 'repos/<OWNER>/<REPO>/dependabot/alerts?state=open&per_page=100'`で全ページを取得する。HTTP 403の本文が「Dependabot alerts are disabled for this repository.」なら機能が無効、それ以外の403なら権限不足として扱い、判定しない
-2. `atk review-audit list --repo <OWNER>/<REPO>`が返す`dependabot:<番号>`の番号を判定済みとして除く
-3. `gh api 'repos/<OWNER>/<REPO>'`の`default_branch`から対象のbranch名を得る
-4. 残る各アラートの`dependency.manifest_path`について`gh api 'repos/<OWNER>/<REPO>/contents/<manifest_path>?ref=<branch名>'`を実行する。HTTP 404なら`default_branch`で指定されたbranchに不在、終了コード0なら実在とする。それ以外の失敗は取得失敗として監査を未完了にする
+1. `gh api --paginate --slurp 'repos/<OWNER>/<REPO>/dependabot/alerts?state=open&per_page=100'`で全ページを取得する。HTTP 403の本文が「Dependabot alerts are disabled for this repository.」なら機能無効、それ以外の403なら権限不足として判定しない
+2. `atk review-audit list --repo <OWNER>/<REPO>`が返す`dependabot:<番号>`を判定済みとして除く
+3. `gh api 'repos/<OWNER>/<REPO>'`の`default_branch`からbranch名を得る
+4. 残る各アラートの`dependency.manifest_path`について`gh api 'repos/<OWNER>/<REPO>/contents/<manifest_path>?ref=<branch名>'`を実行し、HTTP 404なら不在、終了コード0なら実在とする。それ以外の失敗は監査を未完了にする
 
-判定区分と処置は次の表のとおりとする。
-process-wiの実行のベースbranchは、対象リポジトリ（起動時の`cwd`）で処理対象としているbranchを指す。
+ベースbranchは、対象リポジトリ（起動時の`cwd`）でprocess-wiが処理対象としているbranchを指す。
 
 | 区分 | 条件 | 処置 |
 | --- | --- | --- |
@@ -158,23 +116,19 @@ process-wiの実行のベースbranchは、対象リポジトリ（起動時の`
 | 是正済み | マニフェストは`default_branch`で指定されたbranchに実在するが、process-wiの実行のベースbranchの同じマニフェストが対象パッケージを修正版以上へ更新済みか、そのマニフェストがベースbranchに無い | GitHubへは書き込まない。`default_branch`で指定されたbranchへの反映でアラートが`fixed`になるのを待つ |
 | 要修正 | 上記のいずれにも当たらない。修正版が無い場合もこの区分とする | 番号、マニフェスト、パッケージ、修正版、対処案（依存更新。修正版が無い場合はその旨）を委譲元へ返す |
 
-是正済みの判定では、ベースbranchのマニフェストを`git show <ベースbranch>:<manifest_path>`で読み、対象パッケージの版を修正版と比べる。版を比べられない場合は要修正として返す。
+是正済みの判定では`git show <ベースbranch>:<manifest_path>`で版を修正版と比べ、比べられなければ要修正とする。
 
 ### 却下
 
-誤検知と判定したアラートは、監査担当が`PATCH /repos/<OWNER>/<REPO>/dependabot/alerts/<番号>`で却下する。
-値は`state=dismissed`と`dismissed_reason=inaccurate`とし、`dismissed_comment`（280文字以内）へ`default_branch`で指定されたbranchに該当マニフェストが無いことを根拠として書く。
+誤検知のアラートは`state=dismissed`、`dismissed_reason=inaccurate`で却下し、`dismissed_comment`（280文字以内）へ`default_branch`のbranchに該当マニフェストが無いことを根拠として書く。
 
 ```sh
 gh api --method PATCH 'repos/<OWNER>/<REPO>/dependabot/alerts/<番号>' -f state=dismissed -f dismissed_reason=inaccurate -F dismissed_comment=@<COMMENT_FILE>
 ```
 
-`dismissed_comment`はアラートを閲覧できる第三者が読むため、文面を保存した後、送信の直前に`agent-toolkit:external-write-review`を起動し、レビュー結果を反映した文面だけを送る。キュー項目の識別子は書かない。
-非0で終了した却下は判定済みの記録から外し、結果を委譲元へ返す。記録から外したアラートはprocess-wiの次の実行で未判定として再び拾われる。誤って却下したアラートは`state=open`で戻せる。
+`dismissed_comment`は第三者が読むため、文面を保存して送信の直前に`agent-toolkit:external-write-review`を起動し、反映した文面だけを送る。文面にはキュー項目の識別子を含めず、アラートの根拠だけを書く。非0で終わった却下は判定済みの記録から外して結果を返す（次の実行で再び拾われる）。誤って却下したアラートは`state=open`で戻せる。
 
-この却下は人間由来のWI `20260930-175957-001.md`で承認済みであり、監査のたびの確認は不要である。
-承認範囲は`default_branch`で指定されたbranchに実在しないマニフェストに紐づくアラートを`inaccurate`で却下することに限る。是正済みと要修正の区分はGitHubへ書き込まない。
-同WIが保持するユーザー発言と確認回答は次のとおりである。
+この却下は人間由来のWI `20260930-175957-001.md`で承認済みであり、監査ごとの確認は不要である。承認範囲は`default_branch`のbranchに実在しないマニフェストに紐づくアラートを`inaccurate`で却下することに限り、是正済みと要修正はGitHubへ書き込まない。同WIが保持するユーザー発言と確認回答は次のとおりである。
 
 ```text
 dotfiles向けDependabot alertsが出てる気がするんだけどこれって自動で対応されないんだっけ？ (対応して＆対応する仕掛け入れて）
@@ -190,7 +144,4 @@ PRレビュー指摘を拾うスクリプトにそっちもチェックして拾
 
 ### 判定したアラートの記録
 
-却下が成功したアラート、是正済みと判定したアラート、要修正として返したアラートの番号を、`atk review-audit mark --repo <OWNER>/<REPO> dependabot:<番号>...`で記録する。
-記録したアラートは以降のpendingから除かれ、`atk wi process-loop`の待機中確認も同じアラートを理由にprocess-wiの実行を起動しない。
-要修正のアラートは、委譲元が同じセッションで是正するかAWIへ記録して扱う。
-要修正のアラートも記録するのは、是正が`default_branch`で指定されたbranchへ反映されるとGitHubがアラートを`fixed`にするため再判定を要さず、記録しないと`atk wi process-loop`が同じアラートを理由にprocess-wiの実行を起動し続けるためである。要修正のreview本文を判定対象に残す「判定済みの記録」の扱いは、GitHubへの記録を監査担当が行うreview本文に限る。
+却下が成功したアラート、是正済みのアラート、要修正として返したアラートの番号を`atk review-audit mark --repo <OWNER>/<REPO> dependabot:<番号>...`で記録する。記録したアラートは以降のpendingから除かれ、`atk wi process-loop`も同じアラートでprocess-wiを起動しなくなる。要修正も記録するのは、是正が`default_branch`へ反映されればGitHubがアラートを`fixed`にするため再判定が要らず、記録しないとprocess-loopが同じアラートで起動し続けるためである。要修正のアラートは委譲元が同じセッションで是正するかAWIへ記録する。

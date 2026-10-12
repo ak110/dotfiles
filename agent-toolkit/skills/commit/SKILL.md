@@ -12,8 +12,7 @@ description: >
 
 # コミット運用とコミットメッセージ
 
-本スキルはgit commitの操作手順とコミットメッセージの記述規約を提供する。
-最初に`references/git-identifier.md`を全文読む。
+git commitの運用とコミットメッセージの規約を定める。最初に`references/git-identifier.md`を全文読む。
 
 ## 読込表
 
@@ -36,42 +35,32 @@ push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルの`refere
 
 ## 通常commit
 
-コミット数はセッションや計画ごとに固定せず、変更目的、依存関係、レビュー、revert時の理解しやすさを
-基準に境界を決める。計画の想定commit単位がある場合はその単位を起点とし、各単位で実装、変更範囲の検証、
-差分確認、commitを反復する。各中間`HEAD`も、その時点の公開契約とテストを満たす状態にする（努力目標。bisectとrevertで各commitを単独で扱えるようにするため）。
-`agent-toolkit/rules/01-agent.md`が定める付帯作業は、関連する開発のcommitへ含めた場合も、関連する開発と同じ変更目的として扱う。
+コミットの境界は変更目的、依存関係、レビューとrevertのしやすさで決め、計画に想定commit単位があればそれを起点にする。各中間`HEAD`もその時点の公開契約とテストを満たす状態にする（努力目標。bisectとrevertで各commitを単独で扱えるようにするため）。
+`agent-toolkit/rules/01-agent.md`が定める付帯作業は、関連する開発のcommitへ含めた場合も関連する開発と同じ変更目的として扱う。
 
-コミットはメインが所有する。サブエージェントは明示的に許可された場合、または`exec.subagent.md`の正規手順として
-指定された場合だけcommitできる。`git push`は委譲先へ明示された場合を除き委譲元が所有する。
+コミットはメインが所有する。サブエージェントは明示的に許可された場合か`exec.subagent.md`の正規手順の場合だけcommitでき、`git push`は委譲先へ明示された場合を除き委譲元が所有する。
 
-別セッションが同一リポジトリへコミットしうる前提で作業する。
-コミットの前にベースコミットを再確認する（努力目標）。
-再確認したベースコミットのOIDが記録時と異なる場合の続行可否は、`agent-toolkit/rules/02-agent-operations.md`「作業中に観測したリポジトリ状態変化の扱い」節で判定する。
-ステージする対象は自セッションの担当範囲に限り、ユーザーの未コミット変更はそのまま残す。
-他セッションの未完成の変更を巻き込むとコミットが技術的に成立しない。
+別セッションが同じリポジトリへコミットしうる前提で、自セッションの担当範囲だけをstageし、ユーザーや他セッションの未コミット変更は残す。commit前にベースコミットが記録時から変わっていた場合の続行可否は`agent-toolkit/rules/02-agent-operations.md`「作業中に観測したリポジトリ状態変化の扱い」で判定する。
 
-commit直前に次を実施する。
+commit前に、現在の単位だけがstageされ意図した変更を含むこと、format・lint・testが警告なく通ること、競合解決後は競合マーカー（`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`）が無いことを確かめる。対象プロジェクトの規範が検証の関門をCIと定めている場合は、CIが無条件に実行するチェックをローカルの確認から外す。
+解除条件付きの暫定回避を含むcommitでは、`agent-toolkit:bugfix`「対策の選定」が求める保存済みAWIに正式対応・解除条件・復帰後の結果と、時間経過・外部公開待ちの冷却期限が残っていることを確かめ、不足は同じWI投入手順で保存してからcommitする。
 
-1. `git status --short`、`git diff --cached`、`git diff`で現在の単位だけがstage済みであることを確認する
-2. 計画記載の目的およびファイル群別の変更説明と、実装中に目的への帰属と必要性を確認した追加変更を、差分と特徴的な文字列で確認する。解除条件付きの暫定回避があれば、`agent-toolkit:bugfix`「対策の選定」が要求する保存済みAWIと対応し、正式対応・解除条件・復帰後の結果と、時間経過・外部公開待ちの冷却期限が残っていることを確かめる。不足は同じWI投入手順で保存してからcommitする
-3. format、lint、testの結果と警告ゼロを確認する。対象プロジェクトの規範が検証の関門をCIと定め、ローカル検証の完了を後続工程の条件から外すと宣言している場合は、CIが無条件に実行するチェックを本項の対象から外し、CIが実行しないチェックだけを確認する
-4. 競合解決後は`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`で競合マーカーが無いことを確認する
-5. 本文またはtrailerを持つコミットメッセージでは、第2行が空行であることを確認する。件名だけのメッセージでは本項を適用しない
-
-commit時に本来実行されるGit hookまたはhook管理ツール内の対象チェックを省略・迂回する操作には、同じ適用条件を課す。対象には`--no-verify`と`-n`、必要なhookが実行されなくなる`core.hooksPath`の指定（`-c core.hooksPath=/dev/null`など）、`SKIP=<hook名>`などの環境変数による対象チェックの省略を含む。適用条件はpre-commitのstashが競合し、かつ対象ファイルを正式な手順で検証済みであることとする。検証省略やhook失敗の回避は、この適用条件に含めない。プロジェクト規範が個別に認める`SKIP=<hook名>`の運用はその規範に従う。条件を満たして迂回した場合は、その手段と理由をcommit後の報告へ記す。
+commit時のGit hookやhook管理ツールのチェックを省略・迂回する操作は、pre-commitのstashが競合し、かつ対象ファイルを正式な手順で検証済みの場合に限る。
+対象は`--no-verify`・`-n`、`-c core.hooksPath=/dev/null`など必要なhookを外す指定、`SKIP=<hook名>`である。検証省略やhook失敗の回避には使わない。プロジェクト規範が個別に認める`SKIP=<hook名>`はその規範に従う。迂回した場合は手段と理由をcommit後の報告へ記す。
 
 ## WI実装commitの対応
 
-WIを入力に持つ実装commitとAWIの対応は、計画（計画なしでは引き継ぎ記録）と同じディレクトリで同じstemを持つ対応記録ファイル`<stem>.wi-commits.jsonl`だけへ構造化して残し、記録・取得・履歴変更の各操作を本節の手段で行う。対応記録ファイルは`atk run-script plan-progress`と`atk run-script plan-rewrite`が書き、`atk run-script plan-commits`が読む。commitは記録時と取得時に対象worktreeで一意な長さの短縮OIDで表し、入力には短縮OIDと完全OIDのどちらも渡せる。各工程の文書は、操作する時点、使う記録とworktree、工程固有の入力だけを持ち、手順は本節を参照する。
+WIを入力に持つ実装commitとAWIの対応は、計画（計画なしでは引き継ぎ記録）と同じディレクトリ・同じstemの対応記録ファイル`<stem>.wi-commits.jsonl`だけへ構造化して残す。書くのは`atk run-script plan-progress`と`atk run-script plan-rewrite`、読むのは`atk run-script plan-commits`である。commitは一意な長さの短縮OIDで表し、入力には短縮OIDと完全OIDのどちらも渡せる。各工程の文書は操作の時点、使う記録とworktree、工程固有の入力だけを持ち、手順は本節を参照する。オプションの詳細は各コマンドの`--help`に従い、計画・引き継ぎ記録とworktreeは絶対パス、AWIはファイル名で渡す。
 
-記録: 実装commitの作成前に対応AWI集合と現在のHEADのOIDを取得する。`git commit`を単独で実行して終了コード0を確認し、成功後に新しいHEADのOIDを取得する。記録へ進むのはcommitが成功した場合に限る。通常実装・レビュー修正・CI修正の各commitで、作成前HEAD、新HEAD、worktreeと全対応AWIを`atk run-script plan-progress`へ渡し、計画（計画なしでは引き継ぎ記録）の対応記録ファイルへ記録する。1回の操作（範囲指定のcherry-pickやfast-forwardマージなど）で複数のcommitを加えた場合は、操作の直前のHEADを作成前HEAD、操作後のHEADを新HEADとして渡すと、その間に加わった全commitを1回で記録できる。範囲内のcommitが異なるAWI集合に対応する場合は、AWI集合ごとに取り込みの操作を分け、それぞれの操作の前後のHEADで記録する。マージcommitを含む範囲は記録できないため、マージを使わずに取り込む。各値を渡すオプションと計画なしの場合の指定は同コマンドの`--help`に従い、計画とworktreeは絶対パス、AWIはファイル名で渡す。
+記録: 実装commitの作成前に対応AWI集合と現在のHEADを取得し、`git commit`を単独で実行して成功した場合だけ、作成前HEAD、新HEAD、worktreeと全対応AWIを`atk run-script plan-progress`へ渡す。通常実装・レビュー修正・CI修正のcommitのいずれも記録する。cherry-pickやfast-forwardなど1回の操作で複数commitを加えた場合は操作前後のHEADで一括記録できる。範囲内のcommitが異なるAWI集合に対応するなら取り込みをAWI集合ごとに分ける。マージcommitを含む範囲は記録できないため、マージを使わずに取り込む。
 
-取得: 終端担当などAWIを終端するエージェントは、`atk run-script plan-commits`へ計画Markdown（計画なしでは引き継ぎ記録Markdown）を位置引数として渡す。同じstemのJSONLは対応データの保存先であり、位置引数へ渡すMarkdownとは役割が異なる。対象AWI・絶対パスworktreeと、計画なしの場合に必要な指定は同コマンドの`--help`に従う。出力のJSON Linesの`awi`・`commits`から現在のcommit集合を取得時点で一意な長さの短縮OIDで取得する。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら、その計画と同じstemの対応記録ファイルの読取りに使える。候補が複数ある場合は保存済み計画の実在パスを指定する。取得した短縮OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。記録の欠落・対象外AWI・Gitで解決できないOID（一意に解決できない短縮OIDを含む）は生成側が補完してから再取得し、説明文や件名から対応を推定しない。
+取得: AWIを終端するエージェントは`atk run-script plan-commits`へ計画Markdown（計画なしでは引き継ぎ記録Markdown）を位置引数として渡し、出力のJSON Linesの`awi`・`commits`から現在のcommit集合を短縮OIDで取得する。同じstemのJSONLは保存先であり、位置引数には渡さない。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら使え、複数あれば保存済み計画の実在パスを指定する。取得した短縮OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。記録の欠落・対象外AWI・解決できないOIDは生成側が補完してから再取得し、説明文や件名から対応を推定しない。
 
-履歴変更: WI実装commitのOIDが履歴書換えやcommit分割で変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」の形式で対応を追記する。書換えで検収した範囲全体の対応表と書換え前のHEADを、1回の`atk run-script plan-rewrite`へ渡す。同じ呼び出しへ、書換え範囲にWI実装commitを持つ全ての計画と引き継ぎ記録を渡す。同コマンドが記録ごとに該当する対応を選んで各対応記録ファイルへ追記し、記録済みOIDや分割時のAWI割当が不足する場合は、どの記録も変えずに失敗する。
+履歴変更: WI実装commitのOIDが履歴書換えやcommit分割で変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従う。
+検収した対応表と書換え前のHEADを、書換え範囲にWI実装commitを持つ全ての計画と引き継ぎ記録とともに1回の`atk run-script plan-rewrite`へ渡す。不足があれば同コマンドはどの記録も変えずに失敗する。
 
-対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIはこの対応記録の対象外とし、計画の進捗ログまたは引き継ぎ記録に残した根拠を使い、commitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は対応記録ファイルと共に`atk plans commit`で保存する。
+対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIは対応記録の対象外とし、進捗ログか引き継ぎ記録の根拠を使ってcommitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は対応記録ファイルと共に`atk plans commit`で保存する。
 
 ## コミットメッセージ
 
-コミットメッセージは、件名の形式、type、description、本文と`Co-Authored-By:`を読込表の`references/message.md`に従って書く。計画ファイルやPR説明へコミットメッセージ案を書く場合も同じ基準を適用する。
+件名の形式、type、description、本文と`Co-Authored-By:`は`references/message.md`に従う。計画ファイルやPR説明へ書くコミットメッセージ案にも同じ基準を適用する。

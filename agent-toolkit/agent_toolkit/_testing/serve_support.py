@@ -171,7 +171,7 @@ const ids = [
   'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button', 'user-comment-button',
   'user-comment-panel', 'user-comment-input', 'user-comment-input-error', 'save-user-comment-button',
   'create-dialog', 'create-form', 'create-close-button', 'create-alert', 'create-status',
-  'create-kind', 'create-content', 'create-content-label', 'create-content-error',
+  'create-kind', 'create-content', 'create-content-label', 'create-mode-hint', 'create-content-error',
   'create-repo-fields', 'create-target',
   'create-target-error', 'uwi-fields', 'create-scope',
   'create-question-type', 'choice-fields', 'create-choices', 'create-choices-error',

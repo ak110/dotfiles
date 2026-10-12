@@ -6,184 +6,82 @@
 
 ### import・型・docstring
 
-- importについて
-  - 可能な限り`import xxx`形式で書く（`from xxx import yyy`ではない）
-  - `import xxx as yyy`の別名は元の名前より読みやすいか実行上の必要性がある場合に使う
-    <例>
-    広く定着した略称としての`np`
-    名前衝突の回避
-    互換APIの差し替え
-    </例>
-  - 可能な限りトップレベルでimportする（循環参照や初期化順による問題を避ける場合に限りブロック内も可）
-    - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す設計上の解消を優先する
-     （片方を関数内importにするのも局所対処であり、恒常化は避ける）
-- 公開境界と非自明な型を型ヒントで明確にし、対応版の型構文・型推論・`typing.override`で互換性と網羅性を確かめる
-  - `@typing.final`でオーバーライドを禁止されたメソッドは、サブクラス実装の都合で除去しない
-    サブクラスで挙動を変える必要がある場合は、抽象メソッド側での委譲など実装側で吸収する設計を検討する
-- docstringはGoogle Style。自明なArgs, Returns, Raisesは省略する
-  - `ruff`のD規則（pydocstyle由来のD100〜D107等）が有効なプロジェクトでは、自明な内容でも
-    public関数（D103）・モジュール（D100）・クラス（D101）等のdocstring省略はlintエラーになる。
-    最小限の1行サマリーに留めるか、設計を歪めない範囲で関数を`_`接頭辞のprivate化に切り替える
+- importは可能な限り`import xxx`形式で、トップレベルに書く。`import xxx as yyy`の別名は読みやすさか実行上の必要性（定着した略称`np`、名前衝突の回避、互換APIの差し替えなど）がある場合に使う
+- 循環参照は関数内importやTYPE_CHECKINGガードの恒常化ではなく、共通依存を別モジュールへ切り出して解消する
+- 公開境界と非自明な型を型ヒントで明確にする。`@typing.final`のメソッドはサブクラスの都合で外さず、抽象メソッド側への委譲などで吸収する
+- docstringはGoogle Styleとし、自明なArgs, Returns, Raisesは省略する。`ruff`のD規則が有効なプロジェクトでは自明でも公開関数・モジュール・クラスのdocstring省略がlintエラーになるため、1行サマリーに留めるか`_`接頭辞でprivate化する
 
 ### 標準ライブラリとログ
 
-- 標準機能を使い、ログは`logging`、日時は`datetime`、パスとファイル操作は`pathlib`を基本とする
-- 診断は原因を追跡できる粒度で一度だけ残し、同じ例外の重複記録や記録されない失敗を避ける
-- 新規にテーブルデータの処理ライブラリを選ぶ場合は、`pandas`に代えて`polars`を選ぶ。既存プロジェクトでは採用済みのライブラリにそろえる
-- 例外の再送出で元のスタックトレースと原因を失わない
-- インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く（lint対策）
-- `Literal`の分岐は`assert_never`などで型による網羅性を確かめる
-- `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）
-  - 数値型を厳格に限定するときは`type(x) is int`または`isinstance(x, int) and not isinstance(x, bool)`で除外する
-  - `isinstance(value, type(reference))`形式の型一致チェックでも、`reference`が`int`値のときに`bool`値も一致と判定される
+- ログは`logging`、日時は`datetime`、パスとファイル操作は`pathlib`を基本とする
+- 新規にテーブルデータの処理ライブラリを選ぶ場合は`pandas`に代えて`polars`を選ぶ。既存プロジェクトでは採用済みのものにそろえる
+- インターフェースの都合で未使用の引数は、関数先頭で`del xxx # noqa`と書く
+- `Literal`の分岐は`assert_never`などで網羅性を確かめる
+- `isinstance(x, int)`と`isinstance(value, type(reference))`は`bool`値も真と判定する。数値型を厳格に限定するときは`bool`を除外する
 
 ### 入力検証とセキュリティ
 
-- 入力バリデーション: API境界や外部入力は型駆動でバリデーションする（`pydantic` v2等を活用する）
-- セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Pythonでの対応は次のとおり
-  - 評価系は`eval()`／`exec()`／`compile()`であり、`ast.literal_eval()`や専用パーサーで代替する
-  - 安全でない復元は`pickle`／`shelve`と`yaml.load()`であり、`json`／`msgpack`／`yaml.safe_load()`で代替する
-  - `subprocess`は引数をリスト形式で渡し、`shell=True`を避ける
-  - SQLは必ずパラメーター化クエリを使う（f-stringやformat等で組み立てない）
-  - 一時ファイルは`tempfile`モジュールを使う（予測可能なパスへの手動作成は競合・権限昇格のリスクあり）
-  - セキュリティ用途（トークン生成・パスワードリセット等）の乱数は`secrets`モジュールを使う
-  - PEP 750テンプレート文字列（`t"..."`、Python 3.14+）自体は注入対策にならない。安全性は後段のレンダラやAPI側に依存するため、SQL／HTML生成では対応レンダラと組み合わせて使う
+- API境界や外部入力は型駆動でバリデーションする（`pydantic` v2など）
+- セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Pythonでは評価系（`eval()`・`exec()`）、安全でない復元（`pickle`・`yaml.load()`）、`shell=True`、文字列で組み立てたSQL、予測可能な一時ファイルパス、セキュリティ用途での`random`を避ける
+- PEP 750テンプレート文字列（`t"..."`、Python 3.14+）の安全性は後段のレンダラに依存するため、SQL・HTML生成では対応するレンダラと組み合わせる
 
 ### 実行環境
 
-- PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
-  - cwdに`pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶと、
-    プロジェクトをインストール対象として扱う
-  - スクリプトがプロジェクトへ依存しない場合は`uv run --no-project --script <path>`で
-    プロジェクトを参照せずに実行する
-  - `.python-version`ファイルが存在する場合、スクリプトの`requires-python`より
-    `.python-version`の指定が優先される
-    - 該当Pythonが利用環境に無いと`error: No interpreter found for Python <ver>`で失敗する
-    - `--no-project`では回避できないため`uv run --python <ver> --script <path>`で明示指定する
-  - `uv run --script`のvenvキャッシュはスクリプトパスに依存し得る。
-    依存メタデータが同一でもパスが異なるスクリプトはvenvを再構築し、パッケージ・解決結果のキャッシュは共有される。
-    公式資料はキャッシュキーを規定していない。
-    hook等の制限時間内実行が必要なスクリプトを事前ウォームアップする場合は、
-    パス非依存を前提にせず、実行時に参照される実パスを対象にする。
-    監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/python.md：実行環境：2026年8月17日」にある
+- PEP 723 uv script（`#!/usr/bin/env -S uv run --script`と`# /// script`ブロック）の注意点
+  - `pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶとプロジェクトをインストール対象として扱う。プロジェクトへ依存しないスクリプトは`uv run --no-project --script <path>`で実行する
+  - `.python-version`はスクリプトの`requires-python`より優先され、該当Pythonが無いと`error: No interpreter found for Python <ver>`で失敗する。`--no-project`では回避できないため`uv run --python <ver> --script <path>`で指定する
+  - `uv run --script`のvenvキャッシュはスクリプトパスに依存し得る（キャッシュキーは公式資料に規定が無い）。制限時間内の実行が必要なスクリプトを事前ウォームアップする場合は、実行時に参照される実パスを対象にする。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/python.md：実行環境：2026年8月17日」にある
 - project lockfileを使う`uv run`では、lockfileを更新しない指定（`--frozen`または`--locked`）を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
-- PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけlockfileを更新しない指定を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
-- script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する場合は、`uv lock --script <スクリプトの絶対パス>`でscript lockfileを作成してからlockfileを更新しない指定を付ける
-- `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
-  `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
-  - `appname`単独指定は不可
-  - Windowsでは`appauthor`が省略されると、自動で`appname`と同じ値が補完され、
-    配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
-  - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
-  - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
+- `uv run --script`では、script lockfileがある場合だけlockfileを更新しない指定を付ける。script lockfileが無い対象へ`--frozen`を指定すると`Unable to find lockfile for Python script`で終了コード2になる。依存解決を固定するなら`uv lock --script <スクリプトの絶対パス>`で作成してから付ける
+- `platformdirs`の`user_config_dir`・`user_cache_dir`・`user_data_dir`などでは`appauthor=False`を明示する。省略するとWindowsで`appauthor`に`appname`が補完され、`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
 
 ### argparseとCLIエントリポイント
 
-- 新しいオプション名を既存のパーサーまたは共通の`add_argument`登録へ加える前に、対象の名前空間で同じ綴りを固定文字列検索する。
-  同じ綴りが別の概念へ既に割り当てられている場合は、そのパーサーを共通登録の対象から外すか、新しいオプションへ別名を選ぶ。
-  同じ名前空間への重複登録は、起動時のオプション衝突を招く
-- `argparse`で`action="append"`を使う場合、引数が指定されないときの値は`default=None`にする
-  - 非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が合わず例外になる
-  - list（例: `[]`）を渡すと毎回初期要素として混入する
-  - 環境変数フォールバックを実装するときは`parse_args`後に手動で解決し、`None`なら環境変数から初期化、それ以外はそのまま使う
-- `argparse`のオプションへ後から値の解決元（環境変数・設定ファイル等）を追加する場合も、
-  `add_argument`の`type`引数（`type=int`・`type=float`等）は維持する
-  - `type`を外して全解決元の値を文字列で受け取り後段で変換する設計に変更すると、
-    CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える
-  - 指定なしの場合に値を決める処理は別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
-    parse段階の型変換と指定なしの場合に値を決める処理を分離する
-- CLIエントリポイント関数（コマンドラインから直接呼ばれる関数）は`_main`等のprivate命名ではなく`main`として公開し、
-  成功パスも含めて終了コードを`sys.exit(exit_code)`で明示するか、`-> int`を返して`sys.exit(main())`へ渡す形を基本とする。
-  テストが公開関数を呼んで全パスの終了コードを検証できる状態を保つためである
-  - private関数を直接呼ぶテストはpylintの`W0212: protected-access`を招き、成功パスで早期`return`する設計では
-    `pytest.raises(SystemExit)`が`Failed: DID NOT RAISE <class 'SystemExit'>`で失敗するため
-- `[project.scripts]`の`module:main`参照を変更・追加したら、登録したコマンド名で起動して確認する
-  - `python -m <package>.<module>`はモジュール実行で`[project.scripts]`を経由せず、参照更新の確認にならない
+- 既存のパーサーまたは共通の`add_argument`登録へオプションを加える前に、対象の名前空間で同じ綴りを検索する。重複登録は起動時のオプション衝突を招く
+- `action="append"`の引数が指定されないときの値は`default=None`にする（非listでは型エラー、listでは初期要素が毎回混入する）。環境変数フォールバックは`parse_args`後に`None`の場合だけ解決する
+- オプションへ値の解決元（環境変数・設定ファイルなど）を追加しても`type=int`などの`type`引数は維持し、指定なしの場合の解決は別関数へ分ける（CLI直接指定時の早期型エラーを保つため）
+- CLIエントリポイント関数は`main`として公開し、成功パスも含めて終了コードを`sys.exit(exit_code)`で明示するか、`-> int`を返して`sys.exit(main())`へ渡す。テストが公開関数で全パスの終了コードを検証できる状態を保つ
+- `[project.scripts]`の`module:main`参照を変更・追加したら、登録したコマンド名で起動して確認する（`python -m`は`[project.scripts]`を経由しない）
 
 ## 静的解析の誤検出と抑制
 
-- lint指摘への対応は`implementation-time.md`「lintと機械チェック」に従う。Pythonでは`mypy`・`pyright`・`pylint`などが同じ箇所を重複検出することが多く、無視コメントがチェッカーごとに入り乱れるため、`assert`や`del`などの通常の構文で解消できる場合はそちらを選ぶ
-- `subprocess.run(..., capture_output=True)`の戻り値`proc.stdout`は静的解析（ty/mypy）で
-  `bytes | None`寄りに推論されるため、`.decode("utf-8")`で警告が出る
-  - 使う前に`assert isinstance(proc.stdout, bytes)`で型を限定すると以降の解析が通る
-  - `text=True`を指定する場合は`str`に推論されるが、`None`の可能性が残るため同様に限定する
-- 動的に`sys.path.insert()`してから内部モジュールをimportする箇所では、
-  pylintは`wrong-import-position`に加えて`import-error`も誤発火する。
-  抑制コメントは`# pylint: disable=wrong-import-position,import-error`の両方併記とする
-- 関数内importを意図的に行う箇所では、ruffの`PLC0415`とpylintの`import-outside-toplevel`が
-  別ルールで重複指摘する。
-  `# noqa: PLC0415  # pylint: disable=import-outside-toplevel`の形式で両方併記する
-- `ty`と`mypy`は型不一致抑制コメントの構文が別系統
-  `ty`は`# ty: ignore[<rule>]`、`mypy`は`# type: ignore[<code>]`を要求する。
-  プロジェクトで両方有効な場合は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`の形で同一行に併記する
+- lint指摘への対応は`implementation-time.md`「lintと機械チェック」に従う。Pythonでは複数のチェッカーが同じ箇所を重複検出しやすいため、`assert`や`del`などの通常の構文で解消できる場合はそちらを選ぶ
+- `subprocess.run(..., capture_output=True)`の`proc.stdout`は`bytes | None`寄りに推論される（`text=True`でも`None`が残る）。使う前に`assert isinstance(proc.stdout, bytes)`などで限定する
+- 動的な`sys.path.insert()`の後のimportでは、pylintが`wrong-import-position`と`import-error`の両方を誤発火するため`# pylint: disable=wrong-import-position,import-error`と併記する
+- 意図的な関数内importでは`# noqa: PLC0415  # pylint: disable=import-outside-toplevel`と併記する
+- `ty`と`mypy`の両方が有効な場合、型不一致の抑制は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`と同一行に併記する
 
 ## テストコード（pytest）
 
-- テストファイルの配置方式はプロジェクト方針に従う
-  - 方針が無い場合は規模・配布形態を踏まえて以下のいずれかを選ぶ
-    - 同居方式: ソース`<name>.py`と同一ディレクトリの`<name>_test.py`
-      （対応関係を辿りやすい一方、配布パッケージにテストを含めないための除外設定が必要になる）
-    - 集約方式: `tests/<module>_test.py`にまとめる
-      （配布除外を設定不要で実現できる一方、ソースとテストの対応関係を辿りにくい）
-- テストフレームワークは対象プロジェクトが採用するものへそろえ、新規に選ぶ場合は`pytest`を使う
-- 決定論的な入力と読み取れるシナリオを保ち、同じ操作の入力差には`parametrize`、副作用だけを使うfixtureには`usefixtures`を選ぶ
-- デコレーター順序は外側から`parametrize` → `asyncio` → `usefixtures`とする
-- 空コレクションとの等価比較（`assert x == []`・`assert d == {}`など）はpylintの
-  `use-implicit-booleaness-not-comparison`で警告されるため、`assert not x`と書く
-  - 中身まで含めた比較が必要な場合は`assert x == [expected]`のように具体的な期待値を書く
-- 大規模テストスイートを対象とするプロジェクトでは`pyfltr`の`command-timeout`を延伸する
-  - 具体値・延伸判定・計測手順は各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ
-    実際の計測結果に基づいて記録し、そこをSSOTとする（本ファイル側の数値記載はしない）
-  - `command-timeout`の省略時の値と挙動仕様は<https://ak110.github.io/pyfltr/llms.txt>から現行版の該当ページを取得して確認する
+- テストファイルの配置はプロジェクト方針に従う。方針が無い場合は、同居方式（`<name>.py`と同じディレクトリの`<name>_test.py`。配布除外の設定が要る）と集約方式（`tests/<module>_test.py`）から規模と配布形態で選ぶ
+- テストフレームワークは対象プロジェクトの採用へそろえ、新規に選ぶ場合は`pytest`を使う
+- 同じ操作の入力差には`parametrize`、副作用だけを使うfixtureには`usefixtures`を選ぶ。デコレーター順序は外側から`parametrize` → `asyncio` → `usefixtures`とする
+- 空コレクションの比較は`assert not x`と書く（`assert x == []`はpylintの`use-implicit-booleaness-not-comparison`で警告される）
+- 大規模テストスイートでは`pyfltr`の`command-timeout`を延伸する。具体値は本ファイルではなく、計測結果に基づいて各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ記録する。省略時の値と挙動は<https://ak110.github.io/pyfltr/llms.txt>から現行版を確認する
 
 ### Fixtureのコーディングルール
 
-- 関数名: `_`で始める、テストから参照する場合は`name`で別名指定
-- scopeとautouseは、入力の隔離と後始末を保てる範囲で共有し、テスト間の状態依存を持ち込まない
-- 型ヒントは「import・型・docstring」に従い、複数の戻り値は型エイリアスやdataclassで意味を明確にする
+- 関数名は`_`で始め、テストから参照する場合は`name`で別名を指定する
+- scopeとautouseは、入力の隔離と後始末を保てる範囲で共有する。複数の戻り値は型エイリアスやdataclassで意味を明確にする
 
 ### 非同期テスト
 
-- `pytest-asyncio`で非同期処理の完了と後始末を検証する
-- `asyncio_mode = "strict"`を推奨し、テストには`@pytest.mark.asyncio`、非同期fixtureには`@pytest_asyncio.fixture`を明示する。strictモードでは`@pytest.fixture`と`async def`の組合せは動作しない
+- `pytest-asyncio`は`asyncio_mode = "strict"`を推奨し、テストには`@pytest.mark.asyncio`、非同期fixtureには`@pytest_asyncio.fixture`を明示する。strictモードでは`@pytest.fixture`と`async def`の組合せは動作しない
 
 ### 環境変数・設定ディレクトリのテスト隔離
 
-環境変数フォールバックや設定ディレクトリを読み込むCLIをテストする場合、
-テスト環境のホームディレクトリや設定ディレクトリ変数がテストへ引き継がれると結果が不安定になる。
-
-- `monkeypatch.setenv`／`monkeypatch.delenv`で関連する全環境変数を`tmp_path`配下へ向ける
-  対象は対応する独自環境変数に加え、次の両系統を網羅する。
-  POSIX系設定ディレクトリ変数（`HOME`・`XDG_CONFIG_HOME`・`XDG_CACHE_HOME`・`XDG_DATA_HOME`等）。
-  Windows系設定ディレクトリ変数（`LOCALAPPDATA`・`APPDATA`・`USERPROFILE`・`PROGRAMDATA`等）。
-  `platformdirs`が参照し得る全変数を含める
-- 設定の読込元を1つでも隔離し損ねると開発者ホームの実設定を読み込んでしまうため、
-  そのCLIが設定を読む場所をプラットフォーム横断で洗い出してから一括で隔離するfixtureに集約する。
-  そのCLIが特定OS専用でも、テスト実行環境のOSと参照変数のOSが一致しない場合に隔離されない変数が残る
-- 隔離fixtureは`autouse=True`でそのテストモジュールに適用するか、
-  `@pytest.mark.usefixtures(...)`で明示適用する
+- 設定ディレクトリや環境変数を読み込むCLIのテストでは、そのCLIが設定を読む場所をプラットフォーム横断で洗い出し、`monkeypatch`で全てを`tmp_path`配下へ向けるfixtureへ集約する。独自の環境変数に加え、POSIX系（`HOME`・`XDG_CONFIG_HOME`・`XDG_CACHE_HOME`・`XDG_DATA_HOME`など）とWindows系（`LOCALAPPDATA`・`APPDATA`・`USERPROFILE`・`PROGRAMDATA`など）の両方を含める。特定OS専用のCLIでも、実行環境のOSと参照変数のOSが異なると隔離されない変数が残る
 
 ### monkeypatchによる関数差し替え
 
-- `monkeypatch.setattr`で差し替える代用関数は副作用と戻り値をlambda式に同居させず、
-  通常の`def`関数として定義して`return`文で戻り値を明示する
-- 代用関数のシグネチャは末尾に`**kwargs`を含め、対象APIへのキーワード引数追加に追従できるようにする
-  - 追加される引数名が事前に分かる場合は`<name>: object = None`形式の引数を併用してもよい
-- 対象APIへ引数を委譲する代用関数の`*args`・`**kwargs`の型注釈は`typing.Any`を使う
-  - 委譲先の呼び出し（`original_save(self, *args, **kwargs)`等）で型チェッカーが型不一致を報告するため
-  - 該当する型チェッカー: pyright（`reportArgumentType`）・ty（`invalid-argument-type`）・mypy（`arg-type`）
-  - 引数を委譲せず即`raise`等の単純なモックは`object`型でもよい
+- 代用関数は副作用と戻り値をlambda式に同居させず、通常の`def`関数として定義する
+- 代用関数のシグネチャは末尾に`**kwargs`を含め、対象APIの引数追加に追従させる。引数を委譲する代用関数の`*args`・`**kwargs`には`typing.Any`を付ける（`object`では委譲先の呼び出しでpyright・ty・mypyが型不一致を報告する）
 
 ### ロギング出力の検証
 
-- `caplog` fixtureはroot loggerへ伝搬した記録のみ捕捉するため、`propagate=False`のloggerでは捕捉できない
-- `capsys`で捕捉する場合も、`StreamHandler(sys.stdout)`をfixtureセットアップ時に追加すると
-  capsysのstdout差し替えタイミングとstream参照が一致せず失敗しやすい
-- 対処: 検証対象loggerへ記録蓄積用の`logging.Handler`サブクラスを直接追加し、
-  fixture終了時に`removeHandler`で取り除くパターンが安定する
+- `caplog`はroot loggerへ伝搬した記録のみ捕捉し、`propagate=False`のloggerは捕捉できない。`capsys`もfixtureで追加した`StreamHandler(sys.stdout)`とは参照がずれやすい。検証対象loggerへ記録蓄積用の`logging.Handler`を直接追加し、fixture終了時に取り除く形が安定する
 
 ## Python新構文と導入バージョン
 
 構文の受理は対象コードの対応版と、`peps.python.org`公式メタデータの`Python-Version`を基準にする。
 Python 3.14のPEP 758は`except`・`except*`の括弧省略を認めるが、`as`節を使う場合は括弧が必要である。
-同版のPEP 750のt-stringは「入力検証とセキュリティ」のレンダラに関する条件に従う。

@@ -1,37 +1,27 @@
 # Tailwind CSS記述スタイル
 
-本書はTailwind CSSを使うコードを書くエージェントとレビューするエージェントへ、v4系の設定、ユーティリティの運用、クラスの整列と動的クラス名で判断を誤りやすい箇所の基準を示す。
+本書はTailwind CSSを使うコードを書き、レビューするエージェントへ、v4系で判断を誤りやすい箇所の基準を示す。
 対象バージョン: Tailwind CSS v4系（参考実利用バージョン: 4.3）。v3からの移行点を含む公式ドキュメントは<https://tailwindcss.com/docs>を参照する。
 
 ## セットアップ・設定（v4のCSS-first設定）
 
-- `tailwind.config.js`を新規作成する代わりに、CSSファイル内の`@theme`ディレクティブでデザイントークンを定義する（努力目標。v4の標準であるCSS-first設定へそろえるため。JS設定ファイルは互換目的の`@config`経由で読み込まれる）
-- エントリCSSは`@import "tailwindcss";`の1行で読み込む（`@tailwind base/components/utilities`はv4で廃止）
-- 色・フォント・ブレークポイント・イージング等のトークンは`@theme { --color-brand-500: oklch(...); }`のようにCSS変数として定義する（生成される全ユーティリティとネイティブCSS変数の双方から同一トークンを参照できるため）
-- 標準で提供されるカラーパレットを丸ごと置き換える場合は`--color-*: initial;`で初期化してから独自パレットを定義する（標準で提供される色との混在による命名衝突・意図しない残存を避けるため）
-- ダークモードの判定基準を変更する場合は`@custom-variant dark (&:where(.dark, .dark *));`のようにCSSで`dark`バリアントを再定義する（v4では`darkMode`設定キーではなくCSS側で制御するため）
-- プレフィックスが必要な場合は`@import "tailwindcss" prefix(tw);`を使う（`@config`経由の互換設定に頼らない）
+- `tailwind.config.js`を新規作成せず、CSSの`@theme`でデザイントークンを定義する（努力目標。JS設定は互換目的の`@config`経由でだけ読まれる）
+- エントリCSSは`@import "tailwindcss";`で読み込む（`@tailwind base/components/utilities`はv4で廃止）
+- トークンは`@theme { --color-brand-500: oklch(...); }`のようにCSS変数として定義する（ユーティリティとCSS変数の双方から参照できる）。カスタムトークンも`--breakpoint-*`・`--color-*`などの名前空間へそろえる
+- 標準パレットを丸ごと置き換える場合は`--color-*: initial;`で初期化してから定義する
+- ダークモードの判定基準は`@custom-variant dark (&:where(.dark, .dark *));`のようにCSSで再定義する（v4に`darkMode`設定キーは無い）
+- プレフィックスは`@import "tailwindcss" prefix(tw);`で指定する
 
 ## ユーティリティファースト運用
 
-- ユーティリティを第一選択とし、反復する見た目はコンポーネントへまとめる。@applyによる二重管理を避ける
-- CSSモジュールやVue/Svelteの`<style>`ブロックなど別バンドルとして処理されるスタイルでは、`@apply`より`var(--color-blue-500)`のようなCSS変数の直接参照を優先する。これらでの`@apply`・`@variant`は`@reference`によるテーマ読み込みが別途必要でビルド性能も下がるため
+- ユーティリティを第一選択とし、反復する見た目はコンポーネントへまとめる。`@apply`による二重管理を避ける
+- CSSモジュールやVue/Svelteの`<style>`ブロックなど別バンドルのスタイルでは、`@apply`より`var(--color-blue-500)`のようなCSS変数の直接参照を優先する（`@apply`・`@variant`には`@reference`によるテーマ読み込みが要り、ビルド性能も下がる）
+- 反復する任意値はトークンへまとめ、特異度はセレクタと読込順で是正する。importantの常用で覆わない
 
 ## クラス整列
 
-- クラス整列はプロジェクトのformatterに委ねる（努力目標。手動整列との衝突を避ける）。選択は`implementation-time.md`の標準ツール表に従い、Prettierではprettier-plugin-tailwindcssを使う
+- クラス整列はプロジェクトのformatterに委ねる（努力目標）。選択は`implementation-time.md`の標準ツール表に従い、Prettierではprettier-plugin-tailwindcssを使う
 
 ## 動的クラス名の禁止
 
-- `` `bg-${color}-600` ``のような文字列連結・テンプレートリテラルでクラス名を生成しない（Tailwindはソースファイルをプレーンテキストとしてスキャンするため、実行時にしか確定しない名前は生成対象に含まれない）
-- 条件分岐やバリアントの対応表には、完全なクラス名を書く
-
-## レスポンシブ・ダークモード・カスタムテーマの推奨パターン
-
-- レスポンシブはモバイルファーストのbreakpoint、ダークモードはdarkバリアントで表し、専用CSSを分離しない
-- カスタムトークンも`@theme`とTailwindの名前空間（`--breakpoint-*`・`--color-*`等）へそろえる
-
-## アンチパターン
-
-- 反復する任意値はトークンへまとめ、特異度はセレクタと読込順から是正する。importantの常用で覆わない
-- クラス列はレイアウト・配色・状態の意味を読み取れる構造にする
+- `` `bg-${color}-600` ``のような連結でクラス名を生成せず、条件分岐や対応表には完全なクラス名を書く。Tailwindはソースをプレーンテキストとしてスキャンするため、実行時にしか確定しない名前は生成されない

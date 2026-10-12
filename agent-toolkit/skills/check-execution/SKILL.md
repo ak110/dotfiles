@@ -9,8 +9,7 @@ description: >
 # formatter・linter・testerの実行
 
 本スキルはformatter、linter、testerおよびプロジェクト固有のチェックツールを起動するエージェントへ、起動手段の選び方を提供する。
-各ツールの受理形式、出力形式、個別の対処は、そのツールのヘルプ、MCPツールのスキーマ、公式ドキュメントに従う。
-検証後は読込表の`references/diagnostics.md`の行に従い、診断本文と担当差分を使って結果を判定する。
+各ツールの受理形式と出力形式は、そのツールのヘルプ、MCPツールのスキーマ、公式ドキュメントに従う。
 
 ## 読込表
 
@@ -25,13 +24,12 @@ description: >
 
 ## 統合実行ツール経由の起動
 
-- 確定した計画の変更範囲の検証は`atk run-script plan-verify -- --plan <絶対パス> --worktree <絶対パス> --timeout <正の有限秒数>`を使う。先に同じ入力の`--list`で順序とargvを確認する。失敗・timeout後も全件を実行するため、集約終了コードに加え、各record_pathと両出力を読んで判定する。検証行の書式は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証」に従う
-- プロジェクトが採用する統合実行ツール（`pyfltr`など）を使い、対象を限定する場合も同じ統合実行ツールへパスを渡す。個別の直接起動は、プロジェクト規範が認めるデバッグ・最小再現・原因特定などの用途に限る。設定による無効化は直接起動を防がない
-- チェック実行用MCPを優先し、pyfltrでは`run`を使う。MCPを利用できず有限終了する外部チェックの両出力全量と終了状態を保持する場合、および有限終了する手動観測では、対象worktreeで`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`を使う。返却JSONの`record_path`が指す保存JSONから実行条件・子終了状態・両出力へ到達できるため、その絶対パスと両出力パスを検証記録へ渡す。保存失敗は非0と診断で確認する。pipeline・複数行codeは`agent-toolkit/rules/02-agent-operations.md`に従いmanaged-temp内のscriptへ保存し、shellで再解釈せずargvとして渡す
-- シェルからCLIを直接実行する場合は、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「背景ジョブの起動形（Claude Code）」が定める長時間コマンドの前景実行に従う
+- 確定した計画の変更範囲の検証は`atk run-script plan-verify -- --plan <絶対パス> --worktree <絶対パス> --timeout <正の有限秒数>`で実行する。先に同じ入力の`--list`で全対象と順序が実差分を含むことを確かめる。失敗・timeout後も全件を実行するため、集約終了コードに加えて各record_pathと両出力を読んで判定する。検証行の書式は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証」に従う
+- プロジェクトが採用する統合実行ツール（`pyfltr`など）を使い、対象を限定する場合も同じツールへパスを渡す。個別ツールの直接起動はデバッグ・最小再現・原因特定などプロジェクト規範が認める用途に限る
+- チェック実行用MCPを優先し、pyfltrでは`run`を使う。MCPを使えない外部チェックや手動観測で両出力と終了状態を残す場合は、`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`を使う。返却JSONの`record_path`（実行条件・子終了状態・両出力へ到達できる保存JSON）の絶対パスを検証記録へ渡す
 
 ## pyfltrの起動形
 
-- 名前が確定したチェックの実効設定（有効状態・実行器・コマンドライン・実行ファイルの解決）は、最初に`pyfltr command-info <command> --output-format=jsonl`で取得する。引数と返却欄は`pyfltr command-info --help`に従う。探索・導入・実行にはそれぞれの既存CLI・MCPを使う
-- pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。この定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
-- 使い分け・入出力形式・失敗時の再実行と解決は`pyfltr <サブコマンド> --help`とMCPスキーマで確認する。未掲載の設定・導入手順は<https://ak110.github.io/pyfltr/llms.txt>からたどる
+- 名前が確定したチェックの実効設定（有効状態・実行器・コマンドライン・実行ファイルの解決）は、最初に`pyfltr command-info <command> --output-format=jsonl`で取得する
+- 起動形は対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえ、定義が無ければ`uvx pyfltr`を使う
+- 使い分け・入出力形式・失敗時の再実行は`pyfltr <サブコマンド> --help`とMCPスキーマで確認する。未掲載の設定・導入手順は<https://ak110.github.io/pyfltr/llms.txt>からたどる

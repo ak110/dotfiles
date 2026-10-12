@@ -5,43 +5,27 @@
 ## 計画ファイルの保存と参照
 
 計画は1ファイル`<stem>.md`とし、計画ファイル（バグ）を作成する場合（`plan-file-standards.md`「バグ調査」の作成条件）だけ同じstemの`<stem>.bugs.md`を同じディレクトリへ置く。
-`atk plans commit`が保存する付属ファイルは計画ファイル（バグ）、実行レビュー指摘管理表およびWI実装commitの対応記録ファイル（`<stem>.wi-commits.jsonl`）だけとする。
-計画バンドルの定義は`plan-file-standards.md`冒頭の呼称の表が定める。
-計画stemで始まるそれ以外のファイルは保存されず、同じ操作で作業側から削除される。
-計画に属さない作業ファイルは、計画stemとは別の名前でmanaged-tempの中へ保存する。
-新規作成は`atk run-script plan-create --`を経由し、実装前の計画ファイルは`~/.claude/plans`直下へ作成する。
-作成処理は同じstemに属する全ファイルを排他的に確定し、読み戻しと計画構造の自動チェックに成功してからパスを返す。
-stemは計画メタ情報の`起動経路`ごとに次のとおりとし、`dd`は作成日、`HHmm`は作成時刻とする。同じstemが既にある場合は作成処理が`-<小文字16進数4桁>`を付けて再試行する。
+`atk plans commit`が保存する付属ファイルは計画ファイル（バグ）、実行レビュー指摘管理表、WI実装commitの対応記録ファイル（`<stem>.wi-commits.jsonl`）だけである（計画バンドルの定義は`plan-file-standards.md`冒頭の呼称の表）。計画stemで始まる他のファイルは保存されず、同じ操作で作業側から削除されるため、計画に属さない作業ファイルは別の名前でmanaged-tempへ置く。
+新規作成は`atk run-script plan-create --`を経由し、`~/.claude/plans`直下へ作成する。作成処理は同じstemの全ファイルを排他的に確定し、読み戻しと計画構造の自動チェックに成功してからパスを返す。
+stemは`起動経路`ごとに次のとおりとする（`dd`は作成日、`HHmm`は作成時刻）。同じstemがあれば作成処理が`-<小文字16進数4桁>`を付けて再試行する。
 
 | `起動経路` | stem |
 | --- | --- |
 | `agent-toolkit:process-wi`のレーン | `dd-HHmm_process-wi_レーンNN` |
 | `agent-toolkit:plan-mode`のメインによる起動 | `dd-HHmm_<日本語の簡潔な名詞>` |
 
-`~/.claude/plans`直下の計画ファイル名は、上表のstemに`.md`を続けた形と、保存先の正準形`dd-<名称>-<小文字16進数4桁>.md`の双方を受理する。保存先の正準形だけを満たす名前を自ら組み立てる必要はない。
+`~/.claude/plans`直下の計画ファイル名は、上表のstemに`.md`を続けた形と、保存先の正準形`dd-<名称>-<小文字16進数4桁>.md`の双方を受理する。正準形は保存時に生成されるため、上表のstemだけを使えばよい。
+レーンは作成処理へ`--lane lane-NN`（2桁のレーン番号）を渡し、日時（実行環境のローカルタイムゾーン）、接頭辞、番号は作成処理が組み立てる。メインによる起動では`--name <名称>`を渡し、日時接頭辞の無い名称にはUTCの日時が付き、`dd-HHmm_`接頭辞を持つ完全stemはそのまま使われる。
 
-`agent-toolkit:process-wi`のレーンは内部作成処理へ`--lane lane-NN`で委譲プロンプトのレーン識別子を渡す。`NN`は2桁のレーン番号とし、日付、時刻、固定接頭辞およびレーン番号は作成処理が組み立てる。
-この`起動経路`の日付と時刻には、作成処理を実行する環境のローカルタイムゾーンを用いる。
-`agent-toolkit:plan-mode`のメインによる起動では、内部作成処理へ`--name <名称>`を渡す。日時接頭辞を持たない名称では作成処理がUTCの日付と時刻を組み立て、既に`dd-HHmm_`接頭辞を持つ完全stemはそのまま用いる。
+計画本文から計画ファイル（バグ）とレビュー指摘管理表を参照するときは、固定接頭辞`~/.claude/plans/`とファイル名を使う。新規作成ではstem部分へ固定プレースホルダー`__PLAN_STEM__`を書き、作成処理が最終stemへ置換する（値は`${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/create_plan_files.py`の`PLAN_STEM_PLACEHOLDER`）。
+接頭辞後はファイル名1件だけとし、パス区切り文字、`..`、シェル式、Windows区切り文字を含めない。参照は接頭辞を展開せず、計画ファイルのディレクトリへファイル名を結合して解決する。既存計画の`$(atk config get private_notes)/`で始まる参照は読み取り互換として受理する。
 
-計画本文が参照する計画ファイル（バグ）とレビュー指摘管理表には、固定接頭辞`~/.claude/plans/`とファイル名を使う。
-新規作成では最終stemが未確定であるため、ファイル名のstem部分へ固定プレースホルダー`__PLAN_STEM__`を書く。
-作成処理がこの文字列を最終stemへ置換する。プレースホルダーの値は`${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/create_plan_files.py`の`PLAN_STEM_PLACEHOLDER`に従う。
-接頭辞後の値はファイル名1件だけとし、パス区切り文字、`..`、シェル式、Windows区切り文字を含めない。
-参照の解決では接頭辞を展開せず、参照を含む計画ファイルのディレクトリへファイル名を結合して実体を求める。
-既存計画の本文に残る`$(atk config get private_notes)/`から始まる参照は読み取り互換として受理する。
+計画は実行レビューの収束まで`~/.claude/plans`直下で更新し、収束後に`atk plans commit <~/.claude/plans直下のメイン計画ファイル名>`で`private-notes/plans/yyyy/MM/`へ移して保存する。計画ファイル、計画ファイル（バグ）、レビュー指摘管理表は同じcommitで保存される。
+`agent-toolkit:process-wi`のレーンが実行レビューの収束前に終端する場合も、保存の時点は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「計画最終化」とし、統合の記録を追記した後に1回保存する。実行レビューを持たない計画（観測のみの再開で取得した計画、`マージなし`の計画）も同じで、観測の完了と`計画検査完了`の通知は保存の時点に当たらない。
+保存済み計画は完了した作業の記録とし、次のセッションの実装には新しい計画を作成する。中断したレーンの再開は`agent-toolkit:process-wi`の`skills/process-wi/references/run-lanes.md`が定める。
+`~/.claude/plans`直下の各計画バンドルには所有セッションを示す局所状態（計画の所有記録）が付き、`atk plans list`で所有セッションと最終更新時刻を一覧できる。自身が所有しない計画はそのまま残す。private-notesの計画は`atk plans`の各コマンドで更新する。
+保存済み計画をcheckoutして履歴書換えへ追随させた主体は、その工程の末尾で更新した全計画バンドルを`atk plans commit`で再保存する。未終端や延期adoptでも省かず、終了コード0で未適用・未完了の警告がないことを検収する。レーンの実装途中・統合時、観測のみの再開、CI修正では既存の保存時点を使う。
 
-計画は実行レビューの収束時点まで`~/.claude/plans`直下で更新し、収束後に`atk plans commit <~/.claude/plans直下のメイン計画ファイル名>`で`private-notes/plans/yyyy/MM/`へ移動して保存する。
-同コマンドは計画ファイル、計画ファイル（バグ）およびレビュー指摘管理表を同じcommitで保存する。
-`agent-toolkit:process-wi`のレーンが実行レビューの収束前に終端する場合も、終端の時点は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「計画最終化」とし、統合の記録を追記した後に1回保存する。実行レビューを持たない計画（観測のみの再開で取得した計画、`マージなし`の計画）も同じであり、観測の完了と`計画検査完了`の通知は保存の時点に当たらない。
-保存済み計画は完了した作業の記録とし、次のセッションの実装入力には新しい計画を作成する。
-中断したレーンの再開は`agent-toolkit:process-wi`の`skills/process-wi/references/run-lanes.md`が定める。
-`~/.claude/plans`直下の各計画バンドルには、計画バンドルを所有するセッションを示す局所状態（計画の所有記録）が付き、`atk plans list`で所有セッションと最終更新時刻を一覧できる。
-自身が所有しない計画はそのまま残す。private-notesの計画ファイルの更新は`atk plans`の各コマンドで行う。
-保存済み計画をcheckoutして履歴書換えへ追随させた主体は、更新した全計画バンドルをその工程の末尾に`atk plans commit`で再保存する。未終端や延期adoptでも省かず、終了コード0と、未適用・未完了を示す警告がないことを検収する。この再保存は履歴追随した主体の責務である。レーンの実装途中・統合時、観測のみの再開、CI修正では既存の保存時点を使う。
-
-実行レビュー指摘管理表は計画ファイルと同じディレクトリへ`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として置く。
-計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。WIだけをレビュー基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`が返した値をそのまま用いる。
-前者は収束後に削除する。
-後者は修正系列の終端で`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
-この保存の時機は`agent-toolkit:bugfix`の`references/ci-failure-handling.md`の`入力計画`の段落が定める。
+実行レビュー指摘管理表は計画と同じディレクトリへ`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として置く。
+計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。名前は、WIだけを基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`の返り値をそのまま使う。
+前者は収束後に削除する。後者は修正系列の終端で`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。この保存の時機は`agent-toolkit:bugfix`の`references/ci-failure-handling.md`の`入力計画`の段落が定める。

@@ -6,7 +6,7 @@ agent-toolkitの文書に現れるClaude Codeのツール名は、Codexで次の
 
 | Claude Code | Codex相当 |
 | --- | --- |
-| `Agent` | `routing.md`「会話を引き継ぐ委譲」がforkを選ぶ場合は`spawn_agent`、それ以外は`runtime-routing.md`の通常の手順で`agents_server`へ委譲する |
+| `Agent` | `routing.md`「会話を引き継ぐ委譲」がforkを選ぶ場合は`spawn_agent`、それ以外は`runtime-routing.md`に従い`agents_server`へ委譲する |
 | `SendMessage` | 起動手段が返した識別子と継続操作を使う |
 | `TaskStop` | 起動手段の中断操作を使い、同じ識別子で停止を確認する |
 | `ToolSearch` | 公開ツール一覧または検索機能から利用可能な能力へ分解し、必須能力がなければ差し戻す |
@@ -19,36 +19,31 @@ agent-toolkitの文書に現れるClaude Codeのツール名は、Codexで次の
 | `EnterPlanMode`・`ExitPlanMode` | `agent-toolkit:plan-mode`の`references/codex-runtime.md`に従う |
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 公開能力がなければ、手動運用またはユーザーへの依頼へ切り替える |
 
-Codexネイティブ委譲は`spawn_agent`で起動し、`send_message`は稼働中の入力追加、`followup_task`は待機中または終端後の同一エージェントの継続、`wait_agent`は終端待機、`interrupt_agent`は起動したエージェントが所有する処理の中断に使う。`fork_turns`で渡す会話履歴と、Codexの`SubagentStart` hookが追加する`rules-subagent.md`は別契約である。会話履歴をforkしない場合も共通委譲先規範はhookから適用され、`AGENTS.md`は対象worktreeの自動読込の仕組みから適用される。Codex固有の委譲先規範が将来必要になった場合は、共通規範と別ファイルに置き、同じhook生成の仕組みでCodexだけへ追加する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日」にある。
+Codexネイティブ委譲は`spawn_agent`で起動し、`send_message`は稼働中の入力追加、`followup_task`は待機中か終端後の同一エージェントの継続、`wait_agent`は終端待機、`interrupt_agent`は自身が起動したエージェントの処理の中断に使う。`fork_turns`で渡す会話履歴と、`SubagentStart` hookが追加する`rules-subagent.md`は別の入力であり、forkしない場合も共通委譲先規範はhookから、`AGENTS.md`は対象worktreeの自動読込から届く。Codex固有の委譲先規範が必要になれば、共通規範と別ファイルに置き同じhook生成でCodexだけへ追加する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日」にある。
 
-`routing.md`「会話を引き継ぐ委譲」がforkを選ぶときは、`spawn_agent`の`fork_turns`を省略するか`"all"`にする。全履歴を渡す起動は親のモデルとreasoning effortを継承し、上書きは受け付けない。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日」にある。
+forkを選ぶときは`spawn_agent`の`fork_turns`を省略するか`"all"`にする。全履歴を渡す起動は親のモデルとreasoning effortを継承し、上書きを受け付けない。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日」にある。
 
 ## agents_serverの起動
 
-agents_serverの`start`（全`mode`）はCodexネイティブ委譲とは別の仕組みであり、対応する`model_type`からengine、modelおよびeffortを解決する。通常起動の`start`（`task`の通常起動と`delegate`）は`_agents_server/launch_prompts.py`が共通の`rules-subagent.md`をsystem promptへ加える。軽量な探索・書込・shell実行へ届く規範は`agent-toolkit:writing-standards`の`references/delivery-scope.md`の配送範囲表が示し、そこで届かない制約は委譲プロンプトが持つ。可用性失敗時の候補切替はサーバーへ委ね、委譲元の起動は最初の1回に限る。継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start`の`shell`、読取専用探索は`start`の`explore`を使い、agents_serverのserver instructionsが示す採算の目安に従う。
+`agents_server`の`start`（全`mode`）はCodexネイティブ委譲とは別の仕組みで、`model_type`からengine、model、effortを解決する。通常起動（`task`の通常起動と`delegate`）には`_agents_server/launch_prompts.py`が`rules-subagent.md`をsystem promptへ加える。軽量な探索・書込・shell実行へ届く規範は`agent-toolkit:writing-standards`の`references/delivery-scope.md`の配送範囲表が示し、届かない制約は委譲プロンプトが持つ。
+可用性失敗時の候補切替はサーバーへ委ね、委譲元の起動は1回に限る。継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start`の`shell`、読取専用探索は`explore`を、agents_serverのserver instructionsが示す採算の目安に従って使う。
 
-工程別モデル設定のキーを持つ工程は`runtime-routing.md`でengineを解決する。`engine=claude`をCodexの`spawn_agent`へ置換せず、CodexからClaudeへは対応する`model_type`でagents_serverを使う。指定engineの実行手段がなければ同書の未完了として返すか、続行できない理由を返す。
+工程別モデル設定のキーを持つ工程は`runtime-routing.md`でengineを解決する。`engine=claude`をCodexの`spawn_agent`へ置き換えず、Claudeへは対応する`model_type`で`agents_server`を使う。指定engineの実行手段がなければ未完了として返すか、続行できない理由を返す。
 
 ## 後続操作の共通先行条件
 
-元担当（同じ作業のために既に起動した委譲先）が存在しないCodexの初回起動は、`references/runtime-routing.md`「工程別モデル設定」の起動規定に従い許可する。
-元担当の回復・置換・再起動または代替起動を行う場合は、次の共通条件を満たす場合だけ許可する。
+元担当は、同じ作業のために既に起動した委譲先を指す。
+元担当の無い初回起動は`references/runtime-routing.md`「工程別モデル設定」に従う。client確立中か`thread/start`前に可用性失敗を観測し、状態照会でsession未生成かつ元担当不在を実際に確かめた場合（初回生成前失敗）の代替起動も初回起動として扱う。確かめられない場合と、sessionか元担当が生成された後の代替起動は次の条件に従う。
 
-Codexのclient確立中または`thread/start`前に可用性失敗を観測し、利用可能な状態照会でsession未生成かつ元担当不在を実際に確認できる場合を、初回生成前失敗とする。
-初回生成前失敗からの代替起動は、元担当不在の初回起動として`references/runtime-routing.md`「工程別モデル設定」の起動規定に含める。
-sessionか元担当のいずれかが生成された後に可用性失敗から代替起動する場合は、元担当の代替起動として共通条件を満たす場合だけ許可する。
-session未生成かつ元担当不在を実際に確認できない場合は、この例外を適用せず、元担当の代替起動として共通条件を満たす場合だけ許可する。
+元担当の回復、置換、再起動、代替起動および`interrupt_agent`による中断は、ユーザーの明示要求、終端か失敗への遷移、タスク契約上のキャンセル指定のいずれかを確認した場合に限る。回復・置換・再起動・代替起動では元担当の終端と書込所有権の解放も確かめる。
+`list_agents`が元担当を`running`と返している間はそのstatusを受け入れ、これらの操作を保留する。差分、HEAD、更新時刻、無応答、経過時間からの停滞の推定と、補助観測や催促は開始の根拠にしない。
 
-- Codexの`list_agents`が元担当を`running`として返している間は、そのstatusを受け入れ、回復、置換、再起動、代替起動および`interrupt_agent`による中断を保留する。補助観測と催促と、差分・HEAD・更新時刻・無応答・経過時間からの停滞の推定は、これらを開始する根拠に含めない
-- 元担当の回復・置換・再起動・代替起動と中断を行えるのは、ユーザーの明示要求、終端または失敗への遷移、タスク契約上のキャンセル指定の3根拠（この3つに限る）のいずれかを確認した場合だけである。回復・置換・再起動・代替起動では、元担当の終端と書込所有権の解放も確認する
-
-この共通条件は、元担当が存在するCodexの回復・置換・再起動および代替起動へ適用する。
-元担当を持たないレーン担当、独立したレビューまたはCI修正の起動には、`references/runtime-routing.md`「工程別モデル設定」の起動規定を適用する。
+元担当を持たないレーン担当、独立したレビュー、CI修正の起動は`references/runtime-routing.md`「工程別モデル設定」に従う。
 
 ## agents_serverの二層待機
 
-`functions.exec`の内側でagents_serverを起動し、`PostToolUse`がMCP応答を直接観測できない場合は、起動応答の`root_session_id`を保持し、`atk agents wait --root-session-id <値>`へ渡す。明示入力をランタイム間の識別子の受渡手段とする。CLIは明示した値について、状態ディレクトリの実在と確認済みのルートsessionとの一致を検証する。
+`functions.exec`の内側で`agents_server`を起動し、`PostToolUse`がMCP応答を直接観測できない場合は、起動応答の`root_session_id`を保持して`atk agents wait --root-session-id <値>`へ渡す。CLIは状態ディレクトリの実在と確認済みのルートsessionとの一致を検証する。
 
-`functions.exec`のような遅延実行ツールから`atk agents wait`を起動する場合、内側のCLIと外側の実行セルを別々の待機として扱う。CLIへタスク固有timeoutを渡さず、外側が`cell_id`を返した場合は同じ識別子を`functions.wait`へ渡す。CLI自身が待機上限へ達し対象が未終端なら、その結果を確認してから新しい待機を開始する。逐次待機と、先行CLIが稼働中にlock競合した後発待機の回収は`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
+`functions.exec`のような遅延実行ツールから`atk agents wait`を起動する場合は、内側のCLIと外側の実行セルを別々の待機として扱う。CLIへタスク固有timeoutを渡さず、外側が`cell_id`を返したら同じ識別子を`functions.wait`へ渡す。CLI自身が待機上限へ達し対象が未終端なら、その結果を確かめてから新しい待機を始める。逐次待機とlock競合した後発待機の回収は`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
 
-委譲先の成果物側だけを補助観測するときは、`atk watch --worktree [<ラベル>=]<絶対パス> --file [<ラベル>=]<絶対パス>`を単独で使う。session自体の稼働確認には起動手段の状態を用いる。
+委譲先の成果物側だけを補助観測するときは`atk watch --worktree [<ラベル>=]<絶対パス> --file [<ラベル>=]<絶対パス>`を単独で使い、session自体の稼働確認には起動手段の状態を使う。
