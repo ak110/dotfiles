@@ -198,16 +198,31 @@ def test_background_wait_of_work_allows_turn_end_until_collected(tmp_path: pathl
     assert decision == "block" and "commit" in reason
 
 
-@pytest.mark.parametrize("command", ["atk serve --port 8000", "pnpm run dev", "cd /repo && make watch"])
-def test_resident_background_command_of_work_does_not_exempt(tmp_path: pathlib.Path, command: str) -> None:
-    """作業内で背景起動した常駐コマンドは待機対象ではなく、起動不足を免除しない。"""
+@pytest.mark.parametrize("command", ["make test", "atk run-script plan-verify -- --plan /p.md --worktree /repo --timeout 600"])
+def test_background_command_of_work_allows_turn_end_until_notified(tmp_path: pathlib.Path, command: str) -> None:
+    """作業内で背景起動した有限のコマンドの実行中は終了を許し、完了通知の後は起動不足を示す。"""
     trace = tmp_path / "trace.jsonl"
     trace.touch()
-    _human_input("background-resident", trace, "request", "開発サーバーを起動して確かめる")
-    _commit("background-resident", trace)
-    _append_entries(trace, _background_bash_entries("toolu_server", "server", command))
-    payload = _payload("background-resident", str(trace), background_tasks=[{"id": "server", "type": "shell"}])
-    assert termination_order_advisor.evaluate(payload)[0] == "block"
+    _human_input("background-command", trace, "request", "全体検証を背景で実行して結果を待つ")
+    _commit("background-command", trace)
+    _append_entries(trace, _background_bash_entries("toolu_check", "check-task", command))
+    payload = json.loads(_payload("background-command", str(trace), background_tasks=[{"id": "check-task", "type": "shell"}]))
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+    notification = (
+        "<task-notification><tool-use-id>toolu_check</tool-use-id><task-id>check-task</task-id>"
+        "<status>completed</status></task-notification>"
+    )
+    _append_entries(
+        trace,
+        [
+            {"type": "user", "message": {"content": [{"type": "text", "text": notification}]}},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "検証の結果を受け取った。"}]}},
+        ],
+    )
+    payload["background_tasks"] = []
+    _clear_caches()
+    decision, reason = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "block" and "commit" in reason
 
 
 @pytest.mark.parametrize(
