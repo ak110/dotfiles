@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 # AWI投入
 
-本スキルはユーザーが手動起動したAWI登録の対話機能である。このセッションで編集できる成果物はWIの登録と更新に限る。対象リポジトリの実装、実装用worktreeの作成、AWIの`processing`への移動と実装担当の起動は、後続の`agent-toolkit:process-wi`が担う。
+本スキルはユーザーが手動起動したAWI登録の対話機能である。対象リポジトリについてこのセッションで編集できる成果物はWIの登録と更新に限り、リポジトリ内の恒久変更（実装、規範、文書、設定など）はWIへ渡す。WIの内容と同期が必要な操作も登録する要求へ含める。対象リポジトリの実装、実装用worktreeの作成、AWIの`processing`への移動と実装担当の起動は、後続の`agent-toolkit:process-wi`が担う。
 WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。本スキルは協調モードで動作する。
 
 ## 読込表
@@ -40,7 +40,7 @@ WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/w
 既存AWIの更新と判断した場合は、調査より先に手順1の保留を適用し、メインは本文を書き換えず、確定した変更内容と逐語本文を対象の`ファイル名`とともにWI投入担当へ渡す。
 起動後の「反映して」「修正して」、再発防止や完遂の要求はAWI本文への反映として扱う。成果物の制限の例外は、登録用一時入力の作成と`atk managed-temp`による後始末、対象リポジトリの規範が同じ工程で求める追跡先への記載、完成条件や採否が依存する値の測定と測定のための一時的な変更（`references/measurement.md`）とする。
 
-制限を超える成果物と操作の認可は`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い、ユーザー確認の回答で得る。外部の状態を変える操作（ホストの設定、外部サービスへの登録など）の主体や時機を問う確認では、この制限を全選択肢の共通前提にはしない。認可を得れば今実施できる操作は、今実施する案を選択肢へ含める（`agent-toolkit:user-confirmation-and-report`の`references/choice-construction.md`「候補の構成」）。ただし対象リポジトリの実装、実装用worktreeの作成、`processing`への移動と実装担当の起動は選択肢から除く。委譲する場合は、起動スキル、WIだけを許す成果物制限、session終端を委譲プロンプトへ含める。
+対象リポジトリ外の操作の依頼範囲、認可と確認要否は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」と`agent-toolkit:user-confirmation-and-report`「確認要否の判定」・`references/approval-scope.md`に従う。委譲する場合は、起動スキル、WIだけを許す成果物制限、session終端を委譲プロンプトへ含める。
 
 ## 完成条件
 
