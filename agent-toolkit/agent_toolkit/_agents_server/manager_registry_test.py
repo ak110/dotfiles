@@ -15,12 +15,13 @@ from typing import Any, cast
 import pytest
 
 import agent_toolkit._agents_server.commands as atk_agents
+from agent_toolkit import atk
 from agent_toolkit._agents_server import (
     agents_wait,
     manager_base,
     responses,
+    resume_waits,
     retained_results,
-    session_registry,
     shared_layout,
     shared_roots,
     state,
@@ -30,7 +31,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeBackend,
@@ -45,6 +46,7 @@ from agent_toolkit._testing.agents_server_support import (
     _publish_recovered_session,
     _show_through_tool,
     _without_body_path,
+    exited_process_identity,
     install_backend,
 )
 
@@ -190,7 +192,7 @@ async def test_fallback_start_and_verbose_show_publish_codex_speed(
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
-        lambda _kind: [
+        lambda _kind, **_kwargs: [
             ("claude", "first", "high"),
             ("codex", "second", "medium"),
         ],
@@ -1286,4 +1288,112 @@ async def test_orphaned_codex_record_is_taken_over_when_turn_has_ended(
     response = await manager.send_message(session_id, "続行")
     assert response["delivery"] == "reply_started"
     assert backend.resume_calls == [session_id]
+    await manager.close()
+
+
+_ORPHANED_SESSION_ID = "a0278936-c56f-4a22-9f34-2a5683019a57"
+
+
+def _publish_record_with_processes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    engine: str,
+    processes: tuple[session_registry.ProcessIdentity, ...],
+) -> None:
+    """所有するagents_serverと委譲先CLIの識別を持つ`running`の記録を、停止処理を経ずに残った形で保存する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    session_registry.publish(
+        _ORPHANED_SESSION_ID,
+        terminal=False,
+        engine=engine,
+        cwd=str(tmp_path),
+        turn_seq=2,
+        status="running",
+        processes=processes,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
+async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_path(
+    engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """所有プロセスと委譲先CLIがともに終了した`running`の記録は、次の照会のいずれでも`interrupted`の終端として扱う。
+
+    `atk agents show`は`unknown session`ではなく中断を返し、自動再開は終端した子として扱う。
+    MCPの`show`は終了の理由を`error`で返し、`send_message`は拒否せず通常の復元へ進む。
+    """
+    _publish_record_with_processes(monkeypatch, tmp_path, engine, (exited_process_identity(), exited_process_identity()))
+    record = session_registry.registry_directory() / f"{_ORPHANED_SESSION_ID}.json"
+    assert json.loads(record.read_text(encoding="utf-8"))["terminal"] is False
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "show", _ORPHANED_SESSION_ID])
+    shown_by_cli = json.loads(capsys.readouterr().out)
+    assert shown_by_cli["status"] == "interrupted"
+    assert shown_by_cli["error"]["interruptionReason"] == session_registry.OWNER_PROCESSES_EXITED
+    # 照会側の解決は登録簿を書き換えない。
+    assert json.loads(record.read_text(encoding="utf-8"))["terminal"] is False
+
+    parent_manager, parent_backend = _manager_with_fake("claude")
+    parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
+    parent.live_child_session_ids.add(_ORPHANED_SESSION_ID)
+    resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+    parent_manager.sessions[parent.session_id] = parent
+    await parent_manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
+    assert _ORPHANED_SESSION_ID not in parent.live_child_session_ids
+    assert any(f"終端したsession: {_ORPHANED_SESSION_ID}" in prompt for prompt in parent_backend.prompts)
+    await parent_manager.close()
+
+    manager = server_manager.AgentsServerManager(None)
+    backend = ThreadReadBackend(manager.sessions, None) if engine == "codex" else FakeBackend(manager.sessions, engine)
+    _install_backend(manager, engine, backend)
+
+    shown = await _show_through_tool(monkeypatch, manager, _ORPHANED_SESSION_ID)
+    assert shown["status"] == "interrupted"
+    assert shown["error"]["interruptionReason"] == session_registry.OWNER_PROCESSES_EXITED
+    published = json.loads(record.read_text(encoding="utf-8"))
+    assert published["terminal"] is True and published["status"] == "interrupted"
+    assert published["interruption"] == session_registry.OWNER_PROCESSES_EXITED
+
+    response = await manager.send_message(_ORPHANED_SESSION_ID, "続行")
+    assert response["delivery"] == "reply_started"
+    assert backend.resume_calls == [_ORPHANED_SESSION_ID]
+    if isinstance(backend, ThreadReadBackend):
+        assert not backend.read_calls
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_record_with_a_live_recorded_process_keeps_running_on_every_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """記録したプロセスが1つでも存在する記録は、同じ照会のいずれでも従来どおり別プロセスの実行中として扱う。"""
+    owner = session_registry.owner_process()
+    assert owner is not None
+    _publish_record_with_processes(monkeypatch, tmp_path, "claude", (exited_process_identity(), owner))
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "show", _ORPHANED_SESSION_ID])
+    assert json.loads(capsys.readouterr().out)["status"] == "running"
+
+    parent_manager, parent_backend = _manager_with_fake("claude")
+    parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
+    parent.live_child_session_ids.add(_ORPHANED_SESSION_ID)
+    resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+    parent_manager.sessions[parent.session_id] = parent
+    await parent_manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
+    assert _ORPHANED_SESSION_ID in parent.live_child_session_ids
+    assert not parent_backend.prompts
+    await parent_manager.close()
+
+    manager = server_manager.AgentsServerManager(None)
+    backend = FakeBackend(manager.sessions, "claude")
+    _install_backend(manager, "claude", backend)
+    with pytest.raises(ValueError, match="another writer"):
+        await _show_through_tool(monkeypatch, manager, _ORPHANED_SESSION_ID)
+    with pytest.raises(ValueError, match="error.recovery=turn_unobserved"):
+        await manager.send_message(_ORPHANED_SESSION_ID, "続行")
+    assert session_registry.resolve(_ORPHANED_SESSION_ID).state is session_registry.Resolution.RUNNING
+    assert not backend.resume_calls
     await manager.close()

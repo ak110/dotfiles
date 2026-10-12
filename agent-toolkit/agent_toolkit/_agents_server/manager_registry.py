@@ -12,7 +12,6 @@ from agent_toolkit._agents_server import (
     backends,
     responses,
     result_projection,
-    session_registry,
     shared_layout,
     state,
     status_file,
@@ -26,6 +25,7 @@ from agent_toolkit._agents_server.responses import (
 )
 from agent_toolkit._agents_server.session_errors import ActionableRuntimeError
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionResumeState, SessionState, has_uncollected_result
+from agent_toolkit._common import session_registry
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -116,14 +116,16 @@ class ManagerRegistry(responses.ManagerResponses):
         return resume_state
 
     async def take_over_orphaned_session(self, session_id: str) -> None:
-        """所有者のいない`running`の登録簿記録を、委譲先CLIの記録がturnの終端を示す場合だけ終端として公開する。
+        """所有者のいない`running`の登録簿記録を、turnの終端を確かめられる場合だけ終端として公開する。
 
         登録簿が終端を示さない記録は、別のプロセスがturnを実行している可能性を排除できないため再開しない。
-        ただし所有側が終端を公開せずに終了したCodexの記録は、その保護のままでは恒久的に回収できない。
-        そこで次の2条件をともに満たす場合だけ終端を公開し、後続の`show`と`send_message`が通常の復元へ進めるようにする。
-        生存の印が有効な状態ファイルがそのsessionを載せていないこと（書ける所有者がいない）と、
-        `thread/read`が元turn（記録が無い場合は全turn）の終端を示し、それより後に進行中のturnが無いことである。
-        経過時間だけでは終端と推定しない。照会の失敗、条件の不成立、Codex以外のengineでは何もせず、従来の拒否に委ねる。
+        ただし所有側が終端を公開せずに終了した記録は、その保護のままでは恒久的に回収できない。
+        そこで次のいずれかの場合に終端を公開し、後続の`show`と`send_message`が通常の復元へ進めるようにする。
+        1つはengineを問わず、記録された所有プロセスと実行プロセスが全て存在せず、`resolve`が`interrupted`の
+        終端と解決した場合である。もう1つは`ORPHAN_TAKEOVER`のengine（Codex）で、`thread/read`が元turn
+        （記録が無い場合は全turn）の終端を示し、それより後に進行中のturnが無い場合である。
+        どちらも生存の印が有効な状態ファイルがそのsessionを載せていない（書ける所有者がいない）ことを前提とする。
+        経過時間だけでは終端と推定しない。照会の失敗と条件の不成立では何もせず、従来の拒否に委ねる。
         """
         if (
             not shared_layout.valid_session_id(session_id)
@@ -135,22 +137,26 @@ class ManagerRegistry(responses.ManagerResponses):
             return
         resolution = session_registry.resolve(session_id)
         info = resolution.resume_info
-        if resolution.state is not session_registry.Resolution.RUNNING or info is None:
-            return
-        backend_type = backends.backend_class(info.engine)
-        if backend_type is None or not backend_type.ORPHAN_TAKEOVER:
+        if info is None or not (resolution.state is session_registry.Resolution.RUNNING or resolution.inferred_terminal):
             return
         if status_file.live_writer_holds_session(session_id):
             return
-        try:
-            turns = await backends.turn_history(self._backend(info.engine)).read_thread_turns(session_id)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            # 照会できない記録は引き継がず、従来どおり実行中の可能性があるものとして拒否する。
-            _LOG.warning("orphaned_session_takeover_skipped session_id=%s reason=%s", session_id, exc)
-            return
-        status = _terminal_turn_status(turns, info.turn_id)
-        if status is None:
-            return
+        status: Literal["completed", "failed", "interrupted"] | None
+        if resolution.inferred_terminal:
+            status = "interrupted"
+        else:
+            backend_type = backends.backend_class(info.engine)
+            if backend_type is None or not backend_type.ORPHAN_TAKEOVER:
+                return
+            try:
+                turns = await backends.turn_history(self._backend(info.engine)).read_thread_turns(session_id)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                # 照会できない記録は引き継がず、従来どおり実行中の可能性があるものとして拒否する。
+                _LOG.warning("orphaned_session_takeover_skipped session_id=%s reason=%s", session_id, exc)
+                return
+            status = _terminal_turn_status(turns, info.turn_id)
+            if status is None:
+                return
         session_registry.publish(
             session_id,
             terminal=True,
@@ -169,6 +175,7 @@ class ManagerRegistry(responses.ManagerResponses):
             started_at=info.started_at,
             session_updated_at=info.session_updated_at,
             turn_id=info.turn_id,
+            interruption=resolution.interruption,
         )
         _LOG.info(
             "session_transition event=terminal session_id=%s writer=takeover status=%s turn_seq=%d",
@@ -219,6 +226,10 @@ class ManagerRegistry(responses.ManagerResponses):
                 ),
             )
         persisted_result = self._status_writer.read_result(session_id) if self._status_writer is not None else None
+        # 実行プロセスの不在から中断と解決した記録は、結果ファイルを持たなくても終了の理由を`show`へ返す。
+        registry_error = (
+            session_registry.interruption_error(resolution.interruption) if resolution.interruption is not None else None
+        )
         resume_state = SessionResumeState(
             session_id=session_id,
             cwd=info.cwd,
@@ -236,7 +247,7 @@ class ManagerRegistry(responses.ManagerResponses):
             turn_seq=persisted_result["turn_seq"] if persisted_result is not None else info.turn_seq,
             status=persisted_result["status"] if persisted_result is not None else info.status,
             agent_message=persisted_result["agent_message"] if persisted_result is not None else "",
-            error=persisted_result.get("error") if persisted_result is not None else None,
+            error=persisted_result.get("error") if persisted_result is not None else registry_error,
             finalized_at=persisted_result["finalized_at"] if persisted_result is not None else None,
             result_delivered=persisted_result is None,
         )

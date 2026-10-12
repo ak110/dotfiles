@@ -428,6 +428,7 @@ class AntigravityManager:
     def _attach_session(self, session: SessionState, process: asyncio.subprocess.Process, turn_seq: int) -> None:
         self.sessions[session.session_id] = session
         self._processes[session.session_id] = process
+        session.attach_executor(process.pid)
         current_task = asyncio.current_task()
         if current_task is not None:
             self._task_sessions[current_task] = session.session_id

@@ -140,46 +140,71 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 Bashの静的な検出は、for・算術for・select・while・until・if/elif/else・caseの条件と本体、入れ子、文全体のパイプ・リダイレクト・背景化にも及ぶ。未引用の予約語前置`time`・`time -p`・`!`・`coproc`を共通解析で扱い、coprocの暗黙の出力パイプと背景実行を保持する。引用やheredoc本文、算術式のデータ、未実行の関数定義と未確定の動的コマンドは実行位置とみなさない。未完了の背景出力の読取は進捗確認として警告にとどめ、反復しても遮断しない。終端結果は完了後に同じ保存先の全量を読み直して確認する。
 
-Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内し、一般の保存本文には`atk read-file`を使う。
+Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内する。原記録以外の保存本文は、Claude Codeでは`Read`に`allow_large: true`を指定して全文を読み、Codexでは`atk read-file`で終端まで読む。
 
-振り返りの準備後や最終報告後に、新しい`気付いた改善点:`の行が残っている場合、Stopは未取込みの行と次の操作を示す。
-その行を振り返りの準備・分析へ取り込み、結果報告を更新すると終了へ進める。
-取込み済みの行の再掲と、文書・コードの引用や生成通知の標識だけでは再実行を求めない。
-再準備後の報告は最新の成功した準備に対応する本文で判定し、古い予告の再送は求めない。
+振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は、`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
+Stopはこの行の有無と報告本文を判定しない。
 
 ## 工程別モデル設定
 
 計画作成・実装・レビューではCodexの利用を標準とする。Codexが一時的に利用できない場合だけ、
 Claude Codeのサブエージェントを代替として使用する。
 
-工程別モデル設定の各キーは、`<engine>:<model>[/<effort>]`をASCIIカンマで区切った複数候補を受け取る。
-先頭の候補から順に起動を試み、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
+モデルの選定とClaude・Codexの配分は別々のキーで設定する。
+engineごとの段位のモデル（6キー）を変えると、そのengineと段位を使う起動のモデルだけが変わる。
+用途ごとのengine順（4キー）を変えると、モデルを変えずにClaudeとCodexのどちらを先に使うかだけが変わる。
+起動時は用途のengine順に従って各engineの段位のモデルを並べ、先頭の候補から順に起動を試す。
+モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
 Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は次の候補へ進まず、解除まで待って同じClaudeで作業を続ける。`agents_server`、`atk wi process-loop`、`atk run-skill`および`atk commit`のいずれも手動での再送は要らず、待機中は解除待ちの種類と解除予定時刻を`show`・`list`・statuslineまたは端末へ示す。待機を止める場合は`agents_server`では`kill`、CLIでは中断操作を使う。
-変更できるキーと対応する起動は次のとおり。
+変更できるキーは次のとおりで、`atk config show`もこの順に表示する。
 
-| キー | 対応する起動 |
+| キー | 値と対応する起動 |
 | --- | --- |
-| `high_tier_model` | 計画・実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査 |
-| `medium_tier_model` | 実行レビュー・プロンプト評価・`model_type="medium_tier"`を指定した`start`の`explore` |
-| `low_tier_model` | `model_type`を省略した`start`の`explore`と`shell`・軽量な`mode:`を宣言した`<役割名>.subagent.md`の`task` |
-| `write_model` | `start`の`write` |
-| `orchestrate_model` | `atk wi process-loop`・`atk run-skill` |
+| `claude_high_tier_model` | Claudeの上位モデル（未設定時は`opus[1m]/medium`） |
+| `claude_medium_tier_model` | Claudeの中位モデル（未設定時は`sonnet[1m]/medium`） |
+| `claude_low_tier_model` | Claudeの軽量モデル（未設定時は`haiku/medium`） |
+| `codex_high_tier_model` | Codexの上位モデル（未設定時は`sol/medium`） |
+| `codex_medium_tier_model` | Codexの中位モデル（未設定時は`terra/medium`） |
+| `codex_low_tier_model` | Codexの軽量モデル（未設定時は`luna/medium`） |
+| `base_engine` | 計画・実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
+| `review_engine` | 実行レビューとユーザビリティレビュー（中位）のengine順 |
+| `chores_engine` | 一括置換後レビュー・外部書込レビュー・読者適合レビュー・WI説明・`start`の`explore`と`shell`（省略時は軽量）のengine順 |
+| `orchestrate_engine` | `atk wi process-loop`・`atk run-skill`（上位）のengine順 |
+| `write_model` | `start`の`write`。日本語の文章力で選ぶ候補列で、段位と配分に属さない |
 | `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、未設定時は`false`） |
 | `codex_model_providers` | `agents_server`のCodex接続先を主接続先から優先順で並べるID列。空ならCodex通常設定・代替なし |
 
-新しい候補や評価軸を導く調査と案出しは、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。既に決めた問いの所在・値・件数などの機械的な事実確認と区別し、両者を含む依頼は`high_tier`を使う。`explore`の指定省略時の`low_tier`と実行レビューの`medium_tier`は変えない。
+段位のモデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
+engine順は`codex`と`claude`の一方または両方を重複なしでASCIIカンマ区切りに並べる。
+`write_model`は`<engine>:<model>[/<effort>]`をASCIIカンマで区切った候補列で書く。
+新しい候補や評価軸を導く調査と案出しは、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。既に決めた問いの所在・値・件数などの機械的な事実確認と区別し、両者を含む依頼は`high_tier`を使う。`explore`の指定省略時の軽量と実行レビューの中位は変えない。
 
-`atk config show`はパス4行、モデル設定5行、速度とAPI provider列を各1行で表示する。`atk config get`は設定値を返し、provider列では前後空白と重複を除く。
+`atk config show`はパス4行、モデルと配分の10行、`write_model`、速度とAPI provider列を各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
 Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`agents_server`の`show`で確認できる。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数に空でない値を設定すると、`atk config show`と`atk config get`は環境変数の値を返す。
 委譲の起動にもこの値を使う。環境変数は保存済みの設定より優先し、変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
-`atk config apply-preset <プリセット名>`は`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`の4キーを1回の実行で一括保存する。`write_model`・`codex_fast_mode`・`codex_model_providers`はプリセットの対象外とする。
-受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
-`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに4プリセットそれぞれが保存する4キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
+`atk config apply-preset <プリセット名>`は`base_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`の4キーを1回の実行で一括保存する。段位のモデル、`write_model`・`codex_fast_mode`・`codex_model_providers`は変更しない。
+
+| プリセット | `base_engine` | `review_engine` | `chores_engine` | `orchestrate_engine` |
+| --- | --- | --- | --- | --- |
+| `codex-balanced` | `codex,claude` | `claude,codex` | `codex,claude` | `claude,codex` |
+| `codex-near-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `claude,codex` |
+| `codex-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` |
+| `claude-balanced` | `claude,codex` | `codex,claude` | `codex,claude` | `claude,codex` |
+| `claude-primary` | `claude,codex` | `claude,codex` | `claude,codex` | `claude,codex` |
+
+balancedのプリセットでは、レビューを作業と別のengineで先に試し、小さい作業はCodexを先に使う。
+`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに5プリセットそれぞれが保存する4キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
 未知の名前を指定した実行は終了コード2で終わり、受理する値を表示する。
-設定を保存していない環境では`codex-balanced`と同じ候補列を使う。
+設定を保存していない環境では`codex-balanced`と同じengine順を使う。
+
+以前の`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`は廃止した。
+保存済みの値は、`atk config show`・`atk config get`か委譲などでモデル候補を初めて取得したときに、モデルとengine順を新しいキーへまとめて移し、以前のキーを設定ファイルから除く。
+同じengineと段位へ異なるモデルを設定していた場合、agyの候補を含む場合、1つのキーに同じengineを複数並べていた場合は移行せずに停止し、競合した以前のキーと直すべき新しいキーを表示する。
+表示された新しいキーを`atk config set`で設定してから同じ操作をやり直すと、残りの値が移行される。以前のキーの値はそれまで設定ファイルに残る。
+以前のキーの環境変数（`AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL`など）が設定されていると委譲などの起動が止まるため、表示された新しいキーの環境変数へ置き換える。
 
 CodexのAPI移行先は工程別モデル候補とは別の設定である。サブスクのみ、サブスク＋API、APIのみの
 設定と解除、API認証と課金は[Codex利用ガイド](codex-guide.md#codexのサブスクとapi接続先)を参照する。
@@ -248,7 +273,7 @@ AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼した�
 選定はClaude CodeとCodexのどちらもメインが直接行い、別の選定担当は起動しない。候補本文から分類・割当・モデル・配置根拠を判断し、取得済み候補と意味判断をpick-wi-checkへ渡して定型欄の生成・確認・保存を1回で行う。意味判断と要求の被覆、レーン数上限、同じ担当thread、単一writer、実行レビューと直列統合は維持する。
 圧縮ツールが提供されるClaude Codeでは、各段階の全初期通常レーンの初回起動後と、終端担当の起動後の長時間待機前に会話圧縮を予約する。独立した工程を先に開始し、セッションのmanaged-temp直下のparent-handoff.mdへ再開状態を保存する。引数なしで予約し、背景待機を始めてターンを終える。受付は圧縮完了と区別し、通知後に保存記録から同じ工程へ戻る。ツールが無い環境では、その旨を記録して通常の待機へ進む。Codex、通常0件、処理中の追加レーン起動と実行レビュー待機は予約の対象外とする。
 
-レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・不明・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。
+レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・不明・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。
 要件を本文だけで説明できる作業に向く。
 要求を登録するときは、先行する要求の成果が無いと安全に実施できないか完成を判定できない場合だけ、その先行する要求への依存を設定する。
 
@@ -257,9 +282,9 @@ AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼した�
 `atk wi process-loop`から起動したセッションでは、事前に承認を要する事項が回答期限付きの質問として表示されることもあり、期限内に回答が無ければUWIへ移る。
 UWIの確認と回答は後述の「UWIへの回答と状態確認」の操作で行う。
 
-オーケストレーター・モデル・effortは`atk config`の`orchestrate_model`へ設定する。
-書式は`<claude|codex>:<model>[/<effort>]`をASCIIカンマで区切った候補列で、前述の工程別モデル設定と同じく先頭の候補から順に起動を試す。
-設定していない場合は`claude:opus[1m]/medium,codex:sol/medium`を使う。
+オーケストレーターの順序は`atk config`の`orchestrate_engine`、モデル・effortは`claude_high_tier_model`と`codex_high_tier_model`へ設定する。
+前述の工程別モデル設定と同じく、engine順に並べた候補の先頭から順に起動を試す。
+設定していない場合はClaudeの`opus[1m]/medium`、Codexの`sol/medium`の順に使う。
 Claude Codeを使う場合は設定を変更せず、次のコマンドを実行する。
 
 ```bash
@@ -269,7 +294,7 @@ atk wi process-loop
 Codexへ切り替える場合は、設定を保存してから起動する。常駐中に保存した設定は、次のセッションの起動前に反映される。
 
 ```bash
-atk config set orchestrate_model codex:gpt-6-sol/medium
+atk config set orchestrate_engine codex,claude
 atk wi process-loop
 ```
 
@@ -437,7 +462,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文を文脈へ追加する | 対応 | 対応 |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する | 対応 | 対応 |
-| plugin `Stop/stop` | 報告が足りないまま作業を終えようとすると、足りない報告段階と報告本文の不備を示して同じターンを続けさせる。委譲先や待機コマンドを待つ間は終了を許す | 対応 | 対応 |
+| plugin `Stop/stop` | 成果作業（WI処理・AWI登録の開始、リポジトリの編集、計画・WIの保存、commit・push）の後に`agent-toolkit:completion-report`を起動しないまま終えようとすると、起動と残りの工程への続行を案内して同じターンを続けさせる。報告本文は判定しない。作業内で起動した委譲先や背景のコマンドを待つ間は終了を許すため、終了しない常駐コマンド（開発サーバーなど）の実行中は起動忘れを検出しない | 対応 | 対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 発話の内容を現物で確かめる手順や、発話に応じて適用する規範の所在を示す注記を返す | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をログへ記録する | 対応 | 非対応 |
@@ -537,7 +562,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。必要な再開状態はセッションのmanaged-temp直下のparent-handoff.mdへ保存し、圧縮後の領域通知からその記録を読む。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
 - `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
-- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。途中の回答や割り込みへの返答の後に残りの報告段階へ進まない停止と、報告本文に不備がある停止はStopフックが遮断して戻す。報告本文の不備は、対策行に根拠（AWIのファイル名・投入予定・同一セッションの実装）が無いこと、見送りの判定済み行の根拠の欠落か未確定、未確定行の照会・再現・残る理由の欠落、AWI投入結果報告に残った投入予定の4つである。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。成果作業の後に本スキルを起動しないまま終える停止はStopフックが遮断して起動を促す。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめ、Stopフックは報告本文を判定しない。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う
 - `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 

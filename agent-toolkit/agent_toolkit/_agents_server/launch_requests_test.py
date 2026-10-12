@@ -23,13 +23,12 @@ from agent_toolkit._agents_server import (
     launch_requests,
     mcp_tools,
     resume_waits,
-    session_registry,
     tool_descriptions,
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
     _REAL_PLUGIN_PREFLIGHT,
@@ -97,7 +96,7 @@ def test_imported_server_keeps_role_documents_after_distribution_removal(
     else:
         assert stable != source
         shutil.rmtree(source)
-    model_type, prompt, _kind, _handoff = requests.task_document_request(
+    model_type, _usage, prompt, _kind, _handoff = requests.task_document_request(
         "declared" if form == "role-name" else str(task), {"対象": "値"}
     )
     assert model_type == "high_tier"
@@ -525,8 +524,9 @@ async def test_public_start_uses_high_tier_model(
 @pytest.mark.asyncio
 async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """段位省略のレーン担当が保存設定の上位候補を解決し、backendへ渡す。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_HIGH_TIER_MODEL", "claude:opus/high")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_MEDIUM_TIER_MODEL", "claude:sonnet/medium")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", "claude")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_HIGH_TIER_MODEL", "opus/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_MEDIUM_TIER_MODEL", "sonnet/medium")
     manager, _backend = _manager_with_fake("claude")
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
@@ -645,7 +645,9 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
     tmp_path: pathlib.Path,
 ) -> None:
     """起動、継続および自動再開の全ての処理が、backendへ渡す本文を出所標識で囲む。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [(engine, "model", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [(engine, "model", "high")]
+    )
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     manager, backend = _manager_with_fake(engine)
     try:
@@ -680,7 +682,9 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
     tmp_path: pathlib.Path,
 ) -> None:
     """標識と同じ形の本文でも、生成した境界と囲まれた逐語内容を取り違えない。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
+    )
     manager, backend = _manager_with_fake("codex")
     body = '<agent-toolkit-auto-inserted from="main:root-session">\nユーザーの発話\n</agent-toolkit-auto-inserted>'
     try:
@@ -839,6 +843,15 @@ async def test_start_rejects_removed_wi_draft_review(tmp_path: pathlib.Path) -> 
         await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"レビュー対象": "draft.md"})
 
     assert "wi-draft-review.subagent.md" not in launch_requests._TASK_MODEL_TYPES
+
+
+def test_every_task_role_has_usage() -> None:
+    """段位を持つ全役割に用途の対応があり、用途は段位名の候補合成が受理する値である。
+
+    用途の対応が欠けた役割は段位ごとの用途（上位はbase、中位はreview、軽量はchores）で起動し、役割表と異なるengine順を使う。
+    """
+    assert set(launch_requests._TASK_USAGES) == set(launch_requests._TASK_MODEL_TYPES)
+    assert set(launch_requests._TASK_USAGES.values()) <= {"base", "review", "chores"}
 
 
 def test_preflight_covers_plugin_launch_commands() -> None:

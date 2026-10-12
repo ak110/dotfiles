@@ -14,7 +14,6 @@ from agent_toolkit._agents_server import (
     manager_base,
     record_paths,
     result_projection,
-    session_registry,
     state,
     status_file,
 )
@@ -25,6 +24,7 @@ from agent_toolkit._agents_server.state import (
     SessionResumeState,
     SessionState,
 )
+from agent_toolkit._common import session_registry
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.runtime_identity import distinct_identities
 

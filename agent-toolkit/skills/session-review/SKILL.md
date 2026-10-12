@@ -44,7 +44,7 @@ description: >
 
    標準出力の1行JSONは各文書の所在（`conversation_path`、`comparison_materials_path`、`candidates_path`、`stats_path`）と`reference_document`（無ければnull）を持つ。
    ほかに`prepared_at`、`utterance_counts`、`candidate_total`・`candidate_counts`、`excluded_counts`、`failure_ledger_skipped`を持つ。
-   さらに`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`を持つ。Stopは`mandatory_candidates`と`similar_records`を振り返り結果報告の行と照らす。
+   さらに`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`を持つ。両者の候補を振り返り結果報告でどの行に書くかは`agent-toolkit:completion-report`の`references/report-formats.md`が定める。
    `conversation_ranges`は会話の全行を重複・欠落なく覆う読取単位で、各範囲の`start_line`・`end_line`は両端を含む1始まりの行番号、`utf8_bytes`は改行込みの量、`first_locator`・`last_locator`と`first_timestamp`・`last_timestamp`は範囲内の最初と最後の位置・時刻（取得できなければnull）である。
    `improvement_lines`と`candidates.md`の取り込んだ改善点は、記録の全文から抽出した実際の行を持つ。
 2. `candidates.md`より先に`conversation.md`の全範囲を確認し、観点を限定せず問題と改善機会を列挙する。全範囲を覆う責任と最終判断はメインが持つ。
@@ -57,7 +57,7 @@ description: >
    - 連続する範囲を読取専用の担当へ分担できる。対象記録、範囲、前後の境界、観点を限定せず問題を探す目的、返す根拠位置と未確認範囲を渡し、メインは被覆、境界をまたぐ問題、判定の不一致を自ら確かめる。読取は候補に一致した抜粋に限らず範囲全体とする。
 3. `candidates.md`を通読の補助として読み、通読の問題との対応付けと、通読では得られない事象（直近30日の複数セッションで反復した失敗署名、hook通知の発生源と件数、除外件数、その場のコードによる加工（`adhoc-processing`）、委譲先の内部）の追加に使う。候補に対応しない通読の問題と成功した作業の改善機会も独立して扱う。選別と工程4の確定は`references/analysis.md`の基準による。ユーザー自身の秘匿値の露出とその対応を伝えた発話は、同書「一次選別」の除外区分`own-secret-exposure`の条件と例外（過剰反応自体の是正を求めた発話は分析へ送る）で判定する。確定や比較に要る材料が概要から欠ければ、候補の有無によらず`atk run-script session-review-evidence`の`--detail`・`--tool-calls`・`--grep`で照会する。所要時間と全担当の費用には`stats.md`を使う。公開待機中に準備した調査とAWI原稿は、正式な選別結果と公開後の状態に照らして採否を確定し、公開結果へ依存する問題は結果の確定後に調べる。
 4. 選別した問題ごとに、メインが自ら`agent-toolkit:bugfix`を起動し、事象、期待する契約、実際の結果、発生条件を入力として適用する（同じセッションで先に起動していても振り返りごとに改めて適用する。WI投入担当の分析はメインの原因分析の代わりにならない）。
-   1. 事項が既存の上位規範（`agent-toolkit/rules/01-agent.md`のQCDや「完遂と先送り」など）から導かれるか、条文の追加より除去・緩和・一般化で目的を達成できるかに答える。
+   1. 事項が既存の上位規範（`agent-toolkit/rules/01-agent.md`のQCDや「完遂と先送り」など）や対象の目的と常識から導かれるかに答える（`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「原因分析の品質確認」）。条文の追加より除去・緩和・一般化で目的を達成できるかに答える。
    2. 初動、拡張原因分析の判定、原因、類似見直しの結果、対策・横展開処置・再発防止策を証拠と比べ、原因と対策を1案へ確定する。
    3. 見送る問題も原因と比較を確定し、見送りの根拠が元の不成立、原因、比較の結果と対応することを`references/analysis.md`の基準で確かめる。
 5. 確定した原因と対策を要求として、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」の単位でWI投入担当へ渡す。

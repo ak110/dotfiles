@@ -37,7 +37,6 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 # 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
 __lazy_modules__ = {
     "agent_toolkit._atk",
-    "agent_toolkit._common.bash_invocations",
     "agent_toolkit._common.session_state",
     "agent_toolkit._common.shell_segments",
     "agent_toolkit._common.shell_tokens",
@@ -47,7 +46,6 @@ __lazy_modules__ = {
     "agent_toolkit._hooks.host",
     "agent_toolkit._hooks.pretooluse",
     "agent_toolkit._hooks.pretooluse.agent_checks",
-    "agent_toolkit._hooks.pretooluse.shell_checks",
     "agent_toolkit._plan.path_kinds",
     "shlex",
 }
@@ -58,7 +56,6 @@ import shlex
 import sys
 
 from agent_toolkit._atk import run_script as _run_script
-from agent_toolkit._common.bash_invocations import extract_bash_invocations
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
@@ -75,7 +72,6 @@ from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 from agent_toolkit._hooks.pretooluse.agent_checks import _PLAN_MODE_SKILL_NAMES
-from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens
 from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 # このスクリプトの hook 識別子。
@@ -474,60 +470,17 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
     ):
         return None
     command = tool_input.get("command")
-    if not isinstance(command, str):
+    if not isinstance(command, str) or not termination_evidence.published_git_operations(command):
         return None
-    for invocation in extract_bash_invocations(command):
-        parsed = _git_subcommand_tokens(invocation.segment)
-        if invocation.background or not invocation.arguments_known or parsed is None or parsed[0] not in {"commit", "push"}:
-            continue
-        arguments = parsed[1]
-        options = iter(arguments)
-        excluded = False
-        value_options = {
-            "-m",
-            "--message",
-            "-F",
-            "--file",
-            "-C",
-            "--reuse-message",
-            "-c",
-            "--reedit-message",
-            "--author",
-            "--date",
-            "--cleanup",
-            "-t",
-            "--template",
-            "--trailer",
-            "--fixup",
-            "--squash",
-            "--pathspec-from-file",
-            "--repo",
-            "--receive-pack",
-            "--exec",
-            "-o",
-            "--push-option",
-        }
-        for option in options:
-            if option == "--":
-                break
-            if option in value_options:
-                next(options, None)
-            elif option in {"--dry-run", "--help", "-h"} or parsed[0] == "push" and option == "-n":
-                excluded = True
-                break
-        prefix = invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)]
-        if excluded or "--help" in prefix:
-            continue
-        operation = (
-            f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/SKILL.md'}`を読む"
-            if is_codex_payload(payload)
-            else "Skillで`agent-toolkit:completion-report`を起動する"
-        )
-        return _llm_notice(
-            f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
-            tag="notice",
-        )
-    return None
+    operation = (
+        f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/SKILL.md'}`を読む"
+        if is_codex_payload(payload)
+        else "Skillで`agent-toolkit:completion-report`を起動する"
+    )
+    return _llm_notice(
+        f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
+        tag="notice",
+    )
 
 
 def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str, event_name: str) -> list[str]:

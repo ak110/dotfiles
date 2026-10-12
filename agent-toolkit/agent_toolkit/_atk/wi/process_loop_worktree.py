@@ -7,6 +7,7 @@ from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import worktree_exclude as _worktree_exclude
 
 # `--worktree`指定時またはgithub.com/ak110/dotfiles編集時は、影響範囲の大きい作業ツリー直接編集を避けるため
 # git worktreeを作成してセッションのcwdにする。worktree名は反復ごとに固定値とし、常駐ループの再起動を経ても
@@ -18,10 +19,7 @@ _DEFAULT_WORKTREE_NAME = "process-loop"
 
 
 # process-loopが作成するworktreeの配置先（対象リポジトリのroot相対）。
-_WORKTREE_PARENT_REL = pathlib.PurePosixPath(".claude/worktrees")
-
-
-_WORKTREE_IGNORE_PATTERN = "/.claude/worktrees/"
+_WORKTREE_PARENT_REL = _worktree_exclude.WORKTREE_PARENT
 
 
 def _git_output(args: list[str], cwd: pathlib.Path) -> str:
@@ -100,43 +98,26 @@ def _warn_worktree_preparation_failure(message: str, path: pathlib.Path, *, next
 
 def _ensure_worktree_excluded(local_path: pathlib.Path) -> bool:
     """worktree配置先の除外を確認し、必要な場合だけ`info/exclude`へ追加する。"""
-    check = _run_worktree_git(["check-ignore", "-q", f"{_WORKTREE_PARENT_REL}/"], local_path)
-    if check.returncode == 0:
-        return True
-    if check.returncode != 1:
-        _warn_worktree_preparation_failure(
-            "worktree配置先の除外判定に失敗した", local_path, next_action=_worktree_status_next_action(local_path)
-        )
-        return False
-
-    exclude_output = _git_output(["rev-parse", "--git-path", "info/exclude"], cwd=local_path)
-    exclude_path = _resolve_git_path(exclude_output, local_path)
-    if exclude_path is None:
-        _warn_worktree_preparation_failure(
-            "Gitの除外設定のパスを解決できなかった", local_path, next_action=_worktree_status_next_action(local_path)
-        )
-        return False
     try:
-        existing = exclude_path.read_text(encoding="utf-8") if exclude_path.exists() else ""
-        if _WORKTREE_IGNORE_PATTERN not in existing.splitlines():
-            exclude_path.parent.mkdir(parents=True, exist_ok=True)
-            prefix = "" if not existing or existing.endswith(("\n", "\r")) else "\n"
-            with exclude_path.open("a", encoding="utf-8") as exclude_file:
-                exclude_file.write(f"{prefix}{_WORKTREE_IGNORE_PATTERN}\n")
-    except (OSError, UnicodeError):
-        _warn_worktree_preparation_failure(
-            "Gitの除外設定を更新できなかった",
-            exclude_path,
-            next_action=f"{exclude_path}の書き込み権限を確認するか、`{_WORKTREE_IGNORE_PATTERN}`の行を手作業で追記する",
-        )
+        _worktree_exclude.ensure_excluded(local_path)
+    except _worktree_exclude.ExcludeError as error:
+        if error.stage == "write":
+            _warn_worktree_preparation_failure(
+                "Gitの除外設定を更新できなかった",
+                error.path,
+                next_action=(
+                    f"{error.path}の書き込み権限を確認するか、`{_worktree_exclude.IGNORE_PATTERN}`の行を手作業で追記する"
+                ),
+            )
+        else:
+            message = {
+                "check": "worktree配置先の除外判定に失敗した",
+                "path": "Gitの除外設定のパスを解決できなかった",
+            }.get(error.stage, "worktree配置先の除外を確認できなかった")
+            _warn_worktree_preparation_failure(message, local_path, next_action=_worktree_status_next_action(local_path))
         return False
-
-    check = _run_worktree_git(["check-ignore", "-q", f"{_WORKTREE_PARENT_REL}/"], local_path)
-    if check.returncode != 0:
-        _warn_worktree_preparation_failure(
-            "worktree配置先の除外を確認できなかった", local_path, next_action=_worktree_status_next_action(local_path)
-        )
-        return False
+    finally:
+        _console_title.set_console_title("atk wi process-loop")
     return True
 
 

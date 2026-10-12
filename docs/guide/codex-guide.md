@@ -13,7 +13,7 @@ Codex向け`AGENTS.md`、共有ルールの同期、共有スキルのリンク�
 次のコマンドはCodexの対話UIを起動し、対象リポジトリのAWIを継続して処理する。
 
 ```bash
-atk config set orchestrate_model codex:gpt-6-sol/medium
+atk config set orchestrate_engine codex,claude
 atk wi process-loop
 ```
 
@@ -200,7 +200,7 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 信頼後の`PreToolUse`は`apply_patch`が`uv.lock`などのlockfileを直接編集する場合、
 `uv add`などのパッケージ管理ツールでの更新を促す通知を返す。
 動作を確かめる場合は、`uv.lock`へ1行を加える変更を`apply_patch`で適用し、通知の有無を確認する。
-Stopは終了工程の証拠だけを判定する。振り返りの準備と直接発話の報告見出しから足りない報告段階と報告本文の不備を示し、`decision: "block"`と`reason`で同じターンを続けさせる。報告本文の不備は、対策行に根拠（AWIのファイル名・投入予定・同一セッションの実装）が無いこと、見送りの判定済み行の根拠の欠落か未確定、未確定行の照会・再現・残る理由の欠落、AWI投入結果報告に残った投入予定の4つである。対処と中止・待機の判断の記録は`agent-toolkit:completion-report`に従う。Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
+Stopは`agent-toolkit:completion-report`の呼び忘れだけを判定する。成果作業（WI処理・AWI登録の開始、リポジトリの編集、計画・WIの保存、commit・push）を行ったのに、同じ作業で同スキルの`SKILL.md`を読んだ結果が無い場合に、`decision: "block"`と`reason`で起動と残りの工程への続行を案内する。読取パスの文字列や失敗した読取は起動とみなさない。報告本文は判定せず、起動後の工程の完遂と報告の内容は同スキルの規範に従う。対処と中止・待機の判断の記録は`agent-toolkit:completion-report`に従う。Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
 
 ## Codex CLI本体
 

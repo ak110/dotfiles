@@ -1,8 +1,9 @@
-"""終了工程の実際の入力・本文の適合結果を保持し、同じ作業の不足を導出する。
+"""成果作業と`agent-toolkit:completion-report`の起動証拠を作業単位で保持する。
 
-各イベントはこの所有モジュールへ観測を渡す。完了の自己申告は受理せず、
-報告段階はメインの可視発話から取得する。意味上の中止・開始はメインが
-原入力と対象を結び付け、ここでは由来、引用、対象の一致を確かめる。
+各イベントはこの所有モジュールへ観測を渡す。成果作業は成功した対象スキルの開始、リポジトリへの自編集、
+計画の保存、WIの保存、commit・pushの実行記録から、起動証拠はClaude Codeの成功したSkill呼び出しと、
+Codexの実際の入力と結果が示す`SKILL.md`の読取から取得する。完了の自己申告と報告本文は受理しない。
+意味上の中止・開始はメインが原入力と対象を結び付け、ここでは由来、引用、対象の一致を確かめる。
 """
 
 from __future__ import annotations
@@ -14,13 +15,16 @@ __lazy_modules__ = {
     "agent_toolkit._atk.wi.constants",
     "agent_toolkit._atk.wi.frontmatter",
     "agent_toolkit._common",
+    "agent_toolkit._common.bash_invocations",
     "agent_toolkit._common.process_loop_session",
     "agent_toolkit._common.shell_segments",
     "agent_toolkit._git",
     "agent_toolkit._hooks",
     "agent_toolkit._hooks.host",
     "agent_toolkit._hooks.pretooluse.operation_skills",
+    "agent_toolkit._hooks.pretooluse.shell_checks",
     "agent_toolkit._hooks.stop_session",
+    "agent_toolkit._plan.path_kinds",
     "argparse",
     "subprocess",
     "typing",
@@ -31,7 +35,7 @@ import json
 import os
 import pathlib
 import subprocess
-from typing import Any, cast
+from typing import Any
 
 from agent_toolkit._agents_server import tool_names
 from agent_toolkit._atk.wi import uwi_scan
@@ -39,16 +43,56 @@ from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state
 from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common import transcript as _transcript
+from agent_toolkit._common.bash_invocations import extract_bash_invocations
 from agent_toolkit._common.process_loop_session import is_process_loop_session
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._git import command as git_command
-from agent_toolkit._hooks import agent_id, agents_server_observations, report_validation
+from agent_toolkit._hooks import agent_id, agents_server_observations
+from agent_toolkit._hooks import tool_input as _hook_tool_input
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
+from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens
 from agent_toolkit._hooks.stop_session import append_stop_log
+from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 STATE_KEY = "termination_evidence"
+
+COMPLETION_REPORT = "completion-report"
+"""起動証拠を確かめるスキルの短縮名。"""
+
+TARGET_SKILLS = ("process-wi", "add-awi-by-user")
+"""開始した時点で成果作業となるスキルの短縮名。適用条件は`completion-report/SKILL.md`「Stop hookの判定」の成果作業に従う。"""
+
+_READ_PROGRAMS = frozenset({"cat", "sed", "head", "nl", "less", "more", "bat", "type", "get-content", "gc"})
+"""Codexが`SKILL.md`を表示する読取コマンド。検索・抽出のコマンドは本文全体を返さないため含めない。"""
+
+_GIT_VALUE_OPTIONS = frozenset(
+    {
+        "-m",
+        "--message",
+        "-F",
+        "--file",
+        "-C",
+        "--reuse-message",
+        "-c",
+        "--reedit-message",
+        "--author",
+        "--date",
+        "--cleanup",
+        "-t",
+        "--template",
+        "--trailer",
+        "--fixup",
+        "--squash",
+        "--pathspec-from-file",
+        "--repo",
+        "--receive-pack",
+        "--exec",
+        "-o",
+        "--push-option",
+    }
+)
+"""`git commit`・`git push`の値を伴うオプション。値を除外語の判定へ混ぜないため、値のトークンを判定の対象から除く。"""
 
 
 def _parse(payload_text: str) -> dict[str, Any] | None:
@@ -74,11 +118,6 @@ def _data(state: dict[str, Any], session_id: str) -> dict[str, Any]:
             append_stop_log(session_id, "termination_evidence_unavailable", {"reason": "状態の版または形式が異なる"})
         current = {"version": 1, "session_id": session_id, "sequence": 0, "works": {}, "calls": {}, "inputs": {}}
         state[STATE_KEY] = current
-    works = current["works"]
-    assert isinstance(works, dict)
-    for work in works.values():
-        reports = work.get("reports", {})
-        work["reports"] = {stage: report for stage, report in reports.items() if "call_id" not in report}
     return current
 
 
@@ -88,20 +127,16 @@ def _compact(data: dict[str, Any]) -> None:
     for work in data["works"].values():
         if work.get("publish_scope") or work.get("completion_report"):
             work.pop("edits", None)
-            work.pop("self_edit_warned", None)
         referenced.add(work.get("publish_scope", {}).get("input_id", ""))
         decisions = work.get("decisions", [])
         if decisions:
             work["decisions"] = decisions[-1:]
             referenced.add(decisions[-1].get("input_id", ""))
         referenced.add(work["reference"])
-        retained = set(work.get("attempts", {}).values())
-        retained.update(item["call_id"] for item in work.get("prepare", [])[-1:])
+        retained = set(work.get("async_targets", {}).values())
         if decisions:
             retained.add(decisions[-1].get("call_id", ""))
         retained.add(work.get("failure_call", ""))
-        retained.update(work.get("async_targets", {}).values())
-        work["prepare"] = work.get("prepare", [])[-1:]
         for call_id in list(work["calls"]):
             records = data["calls"].get(call_id, [])
             if call_id not in retained and all(record.get("observed") for record in records):
@@ -115,11 +150,9 @@ def _new_work(data: dict[str, Any], reference: str) -> tuple[str, dict[str, Any]
     work_id = f"work-{data['sequence']}"
     work = {
         "reference": reference,
-        "reports": {},
-        "attempts": {},
         "calls": [],
         "decisions": [],
-        "prepare": [],
+        "deliverables": [],
         "async_targets": {},
         "offset": data["inputs"].get(reference, {}).get("offset", 0),
         "input_at_last_call": data.get("last_human_input", data.get("last_input")),
@@ -141,12 +174,9 @@ def _last_decision(work: dict[str, Any]) -> str:
 
 
 def _finished(data: dict[str, Any], work: dict[str, Any]) -> bool:
-    """全段階を満たした作業の後に新しい入力が届いたかを返し、後続の仕事へ古い充足を流用しない。"""
-    return (
-        bool(work.get("reports"))
-        and not missing_stages(work)
-        and not report_violations(work)
-        and data.get("last_human_input", data.get("last_input")) != work.get("input_at_last_call")
+    """起動証拠を得た作業の後に新しい入力が届いたかを返し、後続の仕事へ古い起動証拠を流用しない。"""
+    return bool(work.get("completion_report")) and data.get("last_human_input", data.get("last_input")) != work.get(
+        "input_at_last_call"
     )
 
 
@@ -158,34 +188,41 @@ def _position(payload: dict[str, Any]) -> int:
         return 0
 
 
-def _invocations(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    tool_input = payload.get("tool_input")
-    if (
-        payload.get("tool_name") == "Skill"
-        and isinstance(tool_input, dict)
-        and tool_input.get("skill") in {"agent-toolkit:completion-report", "completion-report"}
-    ):
-        return [{"kind": "completion"}]
-    if not is_codex_payload(payload) and isinstance(tool_input, dict) and isinstance(payload.get("cwd"), str):
-        paths = written_paths(payload.get("tool_name", ""), tool_input, payload["cwd"])
-        if paths and (repository := _git_root(payload["cwd"])) is not None:
-            relative = sorted(
-                {
-                    path.relative_to(repository).as_posix()
-                    for value in paths
-                    if (path := pathlib.Path(value)).is_relative_to(repository)
-                }
-            )
-            if relative:
-                return [{"kind": "edit", "repository": str(repository), "paths": relative}]
-    if payload.get("tool_name") in {
-        namespace + operation for namespace in tool_names.MCP_NAMESPACES for operation in tool_names.RECORDED_START_OPERATIONS
-    }:
-        return [{"kind": "async"}]
-    command = tool_input.get("command") if isinstance(tool_input, dict) else None
-    if payload.get("tool_name") != "Bash" or not isinstance(command, str):
-        return []
-    calls: list[dict[str, Any]] = []
+def _skill_name(value: object) -> str | None:
+    """Skillの名前から`agent-toolkit:`の修飾を除いた短縮名を返す。"""
+    if not isinstance(value, str) or not value:
+        return None
+    return value.removeprefix("agent-toolkit:")
+
+
+def published_git_operations(command: str) -> list[str]:
+    """Bashのコマンドが実行する`git commit`・`git push`を、試行・ヘルプ・背景実行を除いて返す。"""
+    operations: list[str] = []
+    for invocation in extract_bash_invocations(command):
+        parsed = _git_subcommand_tokens(invocation.segment)
+        if invocation.background or not invocation.arguments_known or parsed is None or parsed[0] not in {"commit", "push"}:
+            continue
+        arguments = parsed[1]
+        options = iter(arguments)
+        excluded = False
+        for option in options:
+            if option == "--":
+                break
+            if option in _GIT_VALUE_OPTIONS:
+                next(options, None)
+            elif option in {"--dry-run", "--help", "-h"} or parsed[0] == "push" and option == "-n":
+                excluded = True
+                break
+        prefix = invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)]
+        if not excluded and "--help" not in prefix:
+            operations.append(parsed[0])
+    return operations
+
+
+def _bash_operations(command: str) -> tuple[list[str], list[str]]:
+    """Bashのコマンドから、WI・計画を保存する操作と`SKILL.md`の読取対象のスキル名を返す。"""
+    saved: list[str] = []
+    read_skills: list[str] = []
     for segment in extract_execution_segments(command):
         if not segment.resolved or not segment.tokens:
             continue
@@ -194,20 +231,103 @@ def _invocations(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if name.startswith("python") and len(tokens) > 1 and not tokens[1].startswith("-"):
             tokens.pop(0)
             name = pathlib.PurePosixPath(tokens[0].replace("\\", "/")).name
-        arguments: list[str]
-        if name in {"atk", "atk.cmd", "atk.py"} and tokens[1:2] == ["run-script"] and len(tokens) > 2:
-            operation, arguments = tokens[2], tokens[3:]
-        elif name == "session_review_prepare.py":
-            operation, arguments = "session-review-prepare", tokens[1:]
-        else:
+        if "--help" in tokens or "-h" in tokens:
             continue
-        if arguments[:1] == ["--"]:
-            arguments = arguments[1:]
-        if "--help" in arguments or "-h" in arguments:
-            continue
-        if operation == "session-review-prepare":
-            calls.append({"kind": "prepare"})
-    return calls
+        if name in {"atk", "atk.cmd", "atk.py"}:
+            if tokens[1:2] == ["wi"] and tokens[2:3] in (["add"], ["edit"]):
+                saved.append("WIの保存")
+            elif tokens[1:3] == ["run-script", "plan-create"]:
+                saved.append("計画の保存")
+            elif tokens[1:2] == ["read-file"]:
+                read_skills.extend(_skill_paths(tokens[2:]))
+        elif name == "create_plan_files.py":
+            saved.append("計画の保存")
+        elif name.lower().removesuffix(".exe") in _READ_PROGRAMS:
+            read_skills.extend(_skill_paths(tokens[1:]))
+    return saved, read_skills
+
+
+def _skill_paths(arguments: list[str]) -> list[str]:
+    """引数のうち、起動証拠と成果作業の対象スキルの`SKILL.md`を指すパスのスキル名を返す。"""
+    names = []
+    for argument in arguments:
+        parts = pathlib.PurePosixPath(argument.replace("\\", "/")).parts
+        if (
+            len(parts) >= 3
+            and parts[-1] == "SKILL.md"
+            and parts[-3] == "skills"
+            and parts[-2] in {COMPLETION_REPORT, *TARGET_SKILLS}
+        ):
+            names.append(parts[-2])
+    return names
+
+
+def _read_succeeded(skill: str, text: str | None) -> bool:
+    """読取の結果が、そのスキルの`SKILL.md`の本文を返したかを返す。パスの文字列だけを根拠にしない。"""
+    return text is not None and f"name: {skill}" in _returned_text(text)
+
+
+def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[dict[str, Any]]:
+    """ツール呼び出しから、成果作業・起動証拠・非同期の待機対象の記録を返す。
+
+    成果作業と起動証拠は成功した応答の後だけで返す。非同期の待機対象は開始時点の作業へ対応付けるため、
+    開始前にも返す。
+    """
+    tool_name = payload.get("tool_name", "")
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return []
+    if tool_name in {
+        namespace + operation for namespace in tool_names.MCP_NAMESPACES for operation in tool_names.RECORDED_START_OPERATIONS
+    }:
+        return [{"kind": "async"}]
+    if not after or failed:
+        return []
+    codex = is_codex_payload(payload)
+    if tool_name == "Skill" and not codex:
+        skill = _skill_name(tool_input.get("skill"))
+        if skill == COMPLETION_REPORT:
+            return [{"kind": "completion"}]
+        if skill in TARGET_SKILLS:
+            return [{"kind": "deliverable", "labels": [f"agent-toolkit:{skill}の開始"]}]
+        return []
+    labels: list[str] = []
+    records: list[dict[str, Any]] = []
+    cwd = payload.get("cwd")
+    if isinstance(cwd, str):
+        paths = written_paths(tool_name, tool_input, cwd)
+        if paths and (repository := _git_root(cwd)) is not None:
+            relative = sorted(
+                {
+                    path.relative_to(repository).as_posix()
+                    for value in paths
+                    if (path := pathlib.Path(value)).is_relative_to(repository)
+                }
+            )
+            if relative:
+                records.append(
+                    {"kind": "deliverable", "labels": ["リポジトリの編集"], "repository": str(repository), "paths": relative}
+                )
+    operations = _hook_tool_input.parse_operations(tool_name, tool_input, cwd if isinstance(cwd, str) else "")
+    if any(operation.exists_after_apply and is_plan_main_file(operation.display_path) for operation in operations or []):
+        labels.append("計画の保存")
+    command = tool_input.get("command")
+    if tool_name == "Bash" and isinstance(command, str):
+        saved, read_skills = _bash_operations(command)
+        labels.extend(saved)
+        labels.extend(published_git_operations(command))
+        if codex:
+            text = _response_text(payload.get("tool_response"))
+            for skill in dict.fromkeys(read_skills):
+                if not _read_succeeded(skill, text):
+                    continue
+                if skill == COMPLETION_REPORT:
+                    records.append({"kind": "completion"})
+                else:
+                    labels.append(f"agent-toolkit:{skill}の開始")
+    if labels:
+        records.append({"kind": "deliverable", "labels": list(dict.fromkeys(labels))})
+    return records
 
 
 def _git_root(cwd: str) -> pathlib.Path | None:
@@ -255,50 +375,29 @@ def _uncommitted_paths(repository: str, paths: list[str]) -> list[str] | None:
     return sorted(set(changed))
 
 
-def unresolved_self_edits(payload: dict[str, Any]) -> dict[str, list[str]]:
-    """協調Claudeメインの、公開範囲と完了処理が未確定の自編集を返す。"""
+def unscoped_self_edits(payload: dict[str, Any], work: dict[str, Any]) -> list[str]:
+    """協調Claudeメインの作業が残す、公開範囲が未確定の未コミットの自編集を返す。"""
     if is_codex_payload(payload) or not agent_id.is_main_agent_context(payload):
-        return {}
+        return []
     state = session_state.read_state(payload["session_id"])
     if state.get("process_wi_skill_invoked") or is_process_loop_session(payload["session_id"], os.environ):
-        return {}
+        return []
     data = state.get(STATE_KEY)
-    if not isinstance(data, dict):
-        return {}
-    unresolved = {}
-    for work_id, work in pending_work(payload):
-        reference = data.get("inputs", {}).get(work.get("reference"), {})
-        if reference.get("human") is not True or work.get("publish_scope") or work.get("completion_report"):
+    reference = data.get("inputs", {}).get(work.get("reference"), {}) if isinstance(data, dict) else {}
+    if reference.get("human") is not True or work.get("publish_scope"):
+        return []
+    changed: list[str] = []
+    for repository, paths in work.get("edits", {}).items():
+        current = _uncommitted_paths(repository, paths)
+        if current is None:
+            append_stop_log(payload["session_id"], "self_edit_state_unavailable", {"repository": repository})
             continue
-        changed: list[str] = []
-        for repository, paths in work.get("edits", {}).items():
-            current = _uncommitted_paths(repository, paths)
-            if current is None:
-                append_stop_log(
-                    payload["session_id"], "self_edit_state_unavailable", {"work_id": work_id, "repository": repository}
-                )
-                continue
-            changed.extend(str(pathlib.Path(repository) / path) for path in current)
-        if changed and work.get("self_edit_warned") != changed:
-            unresolved[work_id] = changed
-    return unresolved
-
-
-def record_self_edit_warning(payload: dict[str, Any], pending: dict[str, list[str]]) -> None:
-    """実際に案内する作業の対象を記録し、同じ状態の再入で警告を反復しない。"""
-
-    def update(state: dict[str, Any]) -> dict[str, Any]:
-        works = _data(state, payload["session_id"])["works"]
-        for work_id, paths in pending.items():
-            if work_id in works:
-                works[work_id]["self_edit_warned"] = paths
-        return state
-
-    session_state.update_state(payload["session_id"], update)
+        changed.extend(str(pathlib.Path(repository) / path) for path in current)
+    return changed
 
 
 # 両ホストのPostToolUseの`tool_response`の形（CodexのBashでは終了コードを含まない出力文字列）と、
-# Stopの`last_assistant_message`と出力契約を公式Hooks仕様で確かめた監査記録は`docs/development/audit-records.md`の
+# Stopの出力契約を公式Hooks仕様で確かめた監査記録は`docs/development/audit-records.md`の
 # 「agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日」にある。
 def _response_text(response: object) -> str | None:
     if isinstance(response, str):
@@ -307,10 +406,10 @@ def _response_text(response: object) -> str | None:
         except (json.JSONDecodeError, ValueError):
             return response
         if isinstance(decoded, dict):
-            return _response_text(decoded)
+            return _response_text(decoded) or response
         return response
     if isinstance(response, dict):
-        for key in ("stdout", "output"):
+        for key in ("stdout", "output", "text"):
             value = response.get(key)
             if isinstance(value, str):
                 return value
@@ -318,7 +417,7 @@ def _response_text(response: object) -> str | None:
 
 
 def _returned_text(text: str) -> str:
-    # atk自身の全量保存を消費し、欠落したpreviewを準備結果の代用にしない。
+    # atk自身の全量保存を消費し、欠落したpreviewを読取結果の代用にしない。
     paths = [line.removeprefix("保存先: ").strip() for line in text.splitlines() if line.startswith("保存先: ")]
     if len(paths) == 1:
         path = pathlib.Path(paths[0])
@@ -370,7 +469,6 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
         return
     payload: dict[str, Any] = resolved_payload
     tool_id = payload.get("tool_use_id")
-    invocations = _invocations(payload)
     if not isinstance(tool_id, str) or not tool_id:
         return
     response = payload.get("tool_response")
@@ -378,11 +476,7 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
     failed = payload.get("hook_event_name") == "PostToolUseFailure" or (
         isinstance(code, int) and not isinstance(code, bool) and code != 0
     )
-    if invocations and invocations[0]["kind"] in {"edit", "completion"}:
-        if not after:
-            return
-        if failed:
-            invocations = []
+    invocations = _invocations(payload, after=after, failed=failed)
     if not invocations and not (after and failed):
         # 工程外の成功した呼び出しは状態を読み書きせず、全ツール呼び出しの排他更新を避ける。
         return
@@ -412,179 +506,57 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
             work_id, work = current
             work["input_at_last_call"] = data.get("last_human_input", data.get("last_input"))
             data["sequence"] += 1
-            records = [
-                {
-                    **invocation,
-                    "work_id": work_id,
-                    "turn_id": payload.get("turn_id"),
-                    "offset": _position(payload),
-                    "sequence": data["sequence"],
-                }
-                for invocation in invocations
-            ]
+            records = [{**invocation, "work_id": work_id, "sequence": data["sequence"]} for invocation in invocations]
             data["calls"][tool_id] = records
             work["calls"].append(tool_id)
         if not after:
             return state
-        if records[0]["kind"] in {"edit", "completion"}:
-            record: dict[str, Any] = records[0]
+        for record in records:
+            work = data["works"].get(record["work_id"])
+            if not isinstance(work, dict):
+                continue
             record["observed"] = True
-            work = data["works"][record["work_id"]]
-            if not failed:
-                if record["kind"] == "completion":
-                    work["completion_report"] = True
-                else:
+            if record["kind"] == "completion":
+                work["completion_report"] = True
+            elif record["kind"] == "deliverable":
+                known_labels = work.setdefault("deliverables", [])
+                known_labels.extend(label for label in record["labels"] if label not in known_labels)
+                if "repository" in record:
                     known = work.setdefault("edits", {}).setdefault(record["repository"], [])
-                    paths: list[str] = record["paths"]
-                    known.extend(path for path in paths if path not in known)
-            _compact(data)
-            return state
-        if records[0]["kind"] == "async":
-            started: Any = response
-            if isinstance(started, dict) and isinstance(started.get("structuredContent"), dict):
-                started = started["structuredContent"]
-            if isinstance(started, str):
-                try:
-                    started = json.loads(started)
-                except ValueError:
-                    started = None
-            if isinstance(started, dict) and isinstance(started.get("session_id"), str):
-                record = records[0]
-                record["observed"] = True
-                data["works"][record["work_id"]]["async_targets"][started["session_id"]] = tool_id
-            return state
-        text = _response_text(payload.get("tool_response"))
-        if text is None:
-            return state
-        text = _returned_text(text)
-        for raw_record in records:
-            record = cast(dict[str, Any], raw_record)
-            work = data["works"][record["work_id"]]
-            record["observed"] = True
-            record["response"] = payload.get("tool_response")
-            previous_call = work["attempts"].get(record["kind"])
-            if previous_call and data["calls"][previous_call][0]["sequence"] > record["sequence"]:
-                continue
-            work["attempts"][record["kind"]] = tool_id
-            if len(records) != 1:
-                record["unavailable"] = "複数の呼び出しの出力を分離できない"
-                continue
-            if record["kind"] == "prepare":
-                if failed:
-                    record["invalid"] = True
-                    continue
-                try:
-                    result = json.loads(text)
-                except (json.JSONDecodeError, ValueError):
-                    record["unavailable"] = "準備結果を読み取れない"
-                    continue
-                if (
-                    isinstance(result, dict)
-                    and all(
-                        isinstance(result.get(key), str) and pathlib.Path(result[key]).is_file()
-                        for key in ("conversation_path", "candidates_path", "stats_path")
-                    )
-                    and isinstance(result.get("prepared_at"), str)
-                ):
-                    work["prepare"].append({"call_id": tool_id, "result": result, "offset": _position(payload)})
-                    work["reports"] = {stage: report for stage, report in work["reports"].items() if stage == "work-complete"}
-                else:
-                    record["invalid"] = True
-                continue
+                    known.extend(path for path in record["paths"] if path not in known)
+            elif record["kind"] == "async":
+                started: Any = response
+                if isinstance(started, dict) and isinstance(started.get("structuredContent"), dict):
+                    started = started["structuredContent"]
+                if isinstance(started, str):
+                    try:
+                        started = json.loads(started)
+                    except ValueError:
+                        started = None
+                if isinstance(started, dict) and isinstance(started.get("session_id"), str):
+                    work["async_targets"][started["session_id"]] = tool_id
         _compact(data)
         return state
 
     session_state.update_state(payload["session_id"], update)
 
 
-def observe_reports(payload: dict[str, Any]) -> bool:
-    """現在の作業に属する可視発話の報告だけを取り込み、言い回しで段階を判定しない。
-
-    偽を返すのはtranscriptを読み取れない場合だけとする。現在の作業を中止・置換・技術的不成立と
-    記録した場合は報告を取り込まずに真を返し、他の作業に残る報告段階の判定を呼び出し元へ続けさせる。
-    """
-    available = False
-
-    def update(state: dict[str, Any]) -> dict[str, Any]:
-        nonlocal available
-        data = _data(state, payload["session_id"])
-        current = _current_work(data)
-        if current is not None and _last_decision(current[1]) in {"cancel", "replace", "blocked"}:
-            available = True
-            return state
-        reference = data.get("last_human_input", data.get("last_input", payload["session_id"]))
-        if current is None or _finished(data, current[1]):
-            offset = data["inputs"].get(reference, {}).get("offset", 0)
-        else:
-            offset = current[1].get("offset", 0)
-        messages = visible_messages(payload, offset)
-        if messages is None:
-            append_stop_log(payload["session_id"], "termination_reports_unavailable", {})
-            return state
-        available = True
-        reports = report_validation.reports_from_messages(messages)
-        improvements = [line for message in messages for line in runtime_inserted.reported_improvement_lines(message)]
-        if not reports and not improvements:
-            return state
-        if current is None or _finished(data, current[1]):
-            current = _new_work(data, reference)
-        work = current[1]
-        prepared = work.get("prepare", [])
-        if prepared:
-            review_offset = prepared[-1].get("offset", offset)
-            recorded_payload = {key: value for key, value in payload.items() if key != "last_assistant_message"}
-            recent = visible_messages(recorded_payload, review_offset)
-            prior = visible_messages(recorded_payload, offset)
-            if recent is None or prior is None:
-                append_stop_log(payload["session_id"], "termination_reports_unavailable", {})
-                return state
-            last = payload.get("last_assistant_message")
-            if isinstance(last, str) and (last in recent or last not in prior):
-                recent.append(last)
-            current_reports = report_validation.reports_from_messages(recent)
-            reports = {
-                **{stage: text for stage, text in reports.items() if stage == "work-complete"},
-                **{stage: text for stage, text in current_reports.items() if stage != "work-complete"},
-            }
-        work["reports"] = {stage: report for stage, report in work["reports"].items() if "call_id" not in report}
-        work["reports"].update({stage: {"text": text} for stage, text in reports.items()})
-        _compact(data)
-        return state
-
-    session_state.update_state(payload["session_id"], update)
-    return available
+def evidence_available(payload: dict[str, Any]) -> bool:
+    """現在の会話の証拠を読み取れるかを返す。別会話の継承値と旧版の状態は読み取れないとして記録する。"""
+    data = session_state.read_state(payload["session_id"]).get(STATE_KEY)
+    if data is None:
+        return True
+    if isinstance(data, dict) and data.get("session_id") == payload["session_id"] and data.get("version") == 1:
+        return True
+    append_stop_log(payload["session_id"], "termination_evidence_unavailable", {"reason": "状態の版または形式が異なる"})
+    return False
 
 
-def unprocessed_improvements(payload: dict[str, Any], work: dict[str, Any]) -> list[str]:
-    """現在の可視本文と成功した準備の包含を比べ、再掲を除いた追加の行を返す。"""
-    messages = visible_messages(payload, work.get("offset", 0))
-    if messages is None:
+def missing_completion(work: dict[str, Any]) -> list[str]:
+    """成果作業でありながら同じ作業に起動証拠が無い場合に、成果作業の種類を返す。"""
+    if work.get("completion_report"):
         return []
-    included = {
-        line
-        for _work_id, item in session_works(payload)
-        for prepared in item.get("prepare", [])
-        for line in prepared["result"].get("improvement_lines", [])
-    }
-    return list(
-        dict.fromkeys(
-            line
-            for message in messages
-            for line in runtime_inserted.reported_improvement_lines(message)
-            if line not in included
-        )
-    )
-
-
-def report_violations(work: dict[str, Any]) -> list[str]:
-    """同じ作業の発話本文へ、completion-reportが定める報告本文の判定だけを適用する。"""
-    prepare = work.get("prepare", [])
-    result = prepare[-1].get("result") if prepare and isinstance(prepare[-1], dict) else None
-    return [
-        error
-        for stage, report in work.get("reports", {}).items()
-        for error in report_validation.validate_report(report["text"], stage, result if isinstance(result, dict) else None)
-    ]
+    return list(work.get("deliverables", []))
 
 
 def _waiting_uwi(path_text: object, session_id: str, quote: object) -> pathlib.Path:
@@ -652,11 +624,7 @@ def record_decision(document: dict[str, Any]) -> str:
             if (
                 not isinstance(records, list)
                 or len(records) != 1
-                or not (
-                    records[0].get("kind") == "failure"
-                    or records[0].get("kind") == "prepare"
-                    and (records[0].get("invalid") or records[0].get("unavailable"))
-                )
+                or records[0].get("kind") != "failure"
                 or records[0].get("work_id") != document.get("work_id")
             ):
                 raise ValueError("対象作業の実際の失敗call_idを指定する")
@@ -763,7 +731,7 @@ def waits_on_delegated_session(payload: dict[str, Any], work: dict[str, Any]) ->
 
 
 def pending_work(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    """現在の会話の観測済み作業を返し、別会話の継承値を流用しない。"""
+    """現在の会話の観測済み作業のうち、中止・置換・技術的不成立・正当な待機に当たらないものを返す。"""
     state = session_state.read_state(payload["session_id"])
     pending: list[tuple[str, dict[str, Any]]] = []
     for work_id, work in _session_works(state, payload["session_id"]).items():
@@ -796,59 +764,6 @@ def decision_hint(payload: dict[str, Any]) -> str:
     if isinstance(entry, dict) and entry.get("human") is True:
         lines.append(f"直近のユーザー入力の`input_id`: {last}")
     return "\n".join(lines)
-
-
-def missing_stages(work: dict[str, Any]) -> list[str]:
-    """実際の準備結果と可視発話から残る報告段階を導出する。"""
-    data_calls = work.get("prepare", [])
-    reports = work.get("reports", {})
-    if not data_calls and not reports:
-        return []
-    if isinstance(reports.get("review-preview"), dict):
-        return [] if "review-submission" in reports else ["review-submission"]
-    result = reports.get("review-result")
-    if not isinstance(result, dict):
-        return ["review-result"]
-    scheduled = report_validation.has_scheduled(result["text"])
-    return ["review-submission"] if scheduled and "review-submission" not in reports else []
-
-
-def visible_messages(payload: dict[str, Any], offset: int) -> list[str] | None:
-    """現在の形式のassistant可視本文だけを取り出す。工程完了の推定には使わない。
-
-    Claude Codeの記録では`text`ブロックに加えて`send_to_user`の呼び出しの`message`を可視本文とする。
-    """
-    path = payload.get("transcript_path")
-    texts: list[str] = []
-    incomplete = False
-    if isinstance(path, str):
-        data = _transcript.read_transcript_bytes(path, offset=offset)
-        if data is None:
-            return None
-        for raw in data.splitlines(keepends=True):
-            try:
-                entry = json.loads(raw)
-            except (json.JSONDecodeError, UnicodeError):
-                incomplete = True
-                continue
-            if not isinstance(entry, dict) or entry.get("isSidechain") is True or entry.get("agent_id", "main") != "main":
-                continue
-            event = entry.get("payload", {})
-            if entry.get("type") == "response_item" and event.get("type") == "message" and event.get("role") == "assistant":
-                if event.get("channel") not in {None, "final", "commentary"}:
-                    continue
-                texts.extend(
-                    part["text"]
-                    for part in event.get("content", [])
-                    if isinstance(part, dict) and part.get("type") == "output_text" and isinstance(part.get("text"), str)
-                )
-            elif entry.get("type") == "assistant":
-                message = entry.get("message", {})
-                texts.extend(_transcript.visible_text_blocks(message.get("content")))
-    last = payload.get("last_assistant_message")
-    if isinstance(last, str):
-        texts.append(last)
-    return texts if not incomplete and (texts or isinstance(last, str)) else None
 
 
 def main(argv: list[str] | None = None) -> int:

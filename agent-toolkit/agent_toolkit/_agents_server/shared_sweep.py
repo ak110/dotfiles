@@ -7,8 +7,9 @@ import logging
 import pathlib
 import shutil
 
-from agent_toolkit._agents_server import compaction_metrics, session_registry
+from agent_toolkit._agents_server import compaction_metrics
 from agent_toolkit._agents_server.shared_layout import RESERVED_DIRECTORY_NAMES, valid_session_id
+from agent_toolkit._common import session_registry
 from agent_toolkit._common import state_paths as _state_paths
 
 STALE_SHARED_STATE_SECONDS = 7 * 24 * 60 * 60

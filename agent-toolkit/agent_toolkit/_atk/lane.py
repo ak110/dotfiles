@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"psutil", "yaml"}
+__lazy_modules__ = {"agent_toolkit._common.session_registry", "psutil", "yaml"}
 
 import argparse
 import contextlib
@@ -20,8 +20,9 @@ import psutil
 import yaml
 
 from agent_toolkit._atk import help_text, managed_temp, outcome, run_command
-from agent_toolkit._common import atomic_file, file_lock, session_launchers, state_paths
+from agent_toolkit._common import atomic_file, file_lock, session_launchers, session_registry, state_paths
 from agent_toolkit._git import command as git_command
+from agent_toolkit._git import worktree_exclude
 from agent_toolkit._plan import selection
 
 SESSION_ENV = "AGENT_TOOLKIT_LANE_SESSION_ID"
@@ -88,6 +89,49 @@ def _worktrees(repo: pathlib.Path) -> dict[str, str]:
         elif current and line.startswith("branch refs/heads/"):
             entries[current] = line[18:]
     return entries
+
+
+def _main_worktree(repo: pathlib.Path) -> pathlib.Path:
+    """Linked worktreeから呼んでも、同じGitリポジトリの主作業ツリーへ解決する。"""
+    block = _git(repo, "worktree", "list", "--porcelain").split("\n\n", 1)[0].splitlines()
+    if not block or not block[0].startswith("worktree ") or "bare" in block:
+        raise ValueError("repoが主作業ツリーを持たない。--worktreeで作成先を指定する")
+    return pathlib.Path(block[0][9:]).resolve()
+
+
+def _exclude_placement(main: pathlib.Path) -> None:
+    """主作業ツリーの状態へ固定作成先が未追跡として現れないよう、info/excludeへ加える。"""
+    try:
+        worktree_exclude.ensure_excluded(main)
+    except worktree_exclude.ExcludeError as error:
+        raise ValueError(f"固定作成先の除外を設定できない（{error}）。`git status`と`info/exclude`を確認する") from error
+
+
+def _fixed_worktree(repo: pathlib.Path, lane: str) -> pathlib.Path:
+    # --worktreeを省略した作成先は主作業ツリーからの相対で固定し、session・日時・呼出し元を識別へ含めない。
+    return _main_worktree(repo).joinpath(*worktree_exclude.WORKTREE_PARENT.parts, f"process-wi-{lane}")
+
+
+def _release_fixed(worktree: pathlib.Path, session_id: str) -> None:
+    """固定作成先を保持する別sessionの登録を、既存の回収条件を満たす場合だけ回収する。"""
+    root = state_paths.state_dir() / "lanes"
+    for path in sorted(root.glob("*/lane-*.json")) if root.exists() else []:
+        owner = path.parent.name
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError):
+            # 読めない登録は所有を判定できない。作成先の実体の有無で上書きを防ぐ。
+            continue
+        if owner == session_id or not isinstance(record, dict) or record.get("worktree") != str(worktree):
+            continue
+        result = cleanup_session(owner, only=path)
+        if path.exists():
+            reasons = [held["reason"] for held in result["retained"] if held["record_path"] == str(path)]
+            raise ValueError(
+                f"固定作成先{worktree}を別sessionの登録が保持している: {'; '.join(reasons) or '回収が未完了'}。"
+                f"成果を引き継ぐ場合は--reuse-record {path}を指定し、"
+                f"回収する場合は理由を解消して`atk lane delete --session-id {owner}`を実行してから再実行する"
+            )
 
 
 def _commands(path: pathlib.Path | None) -> dict[str, list[str]]:
@@ -190,6 +234,10 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
     common = _common(repo)
     commands = _commands(args.commands_file)
     source, source_owner = _reuse_source(args, session_id)
+    fixed = None if args.worktree else _fixed_worktree(repo, args.lane)
+    if fixed is not None and source is None and not (_directory(session_id) / f"{args.lane}.json").exists():
+        # 別sessionの所有ロックを取るため、自sessionのロックより前に前回資源を回収する。
+        _release_fixed(fixed, session_id)
     owners = {session_id}
     if source_owner is not None:
         owners.add(source_owner)
@@ -218,14 +266,19 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
         _git(repo, "check-ref-format", "--branch", branch)
         if branch in _branches(repo):
             raise ValueError(f"専用branchが既にある: {branch}。所有登録のあるレーンを再利用するか別名を指定する")
-        if args.worktree:
-            temp = None
+        if fixed is None:
             worktree = args.worktree.resolve()
+            if worktree.exists():
+                raise ValueError(f"作成先が既にある: {worktree}。未使用の作成先を指定する")
         else:
-            temp = managed_temp.create_managed_temp(args.lane)
-            worktree = temp / "wt"
-        if worktree.exists():
-            raise ValueError(f"作成先が既にある: {worktree}。未使用の作成先を指定する")
+            worktree = fixed
+            if worktree.exists() or str(worktree) in _worktrees(repo):
+                raise ValueError(
+                    f"固定作成先に所有登録の無い資源がある: {worktree}。"
+                    "内容とGit登録を確認し、成果を保存してから移動または削除して再実行する"
+                )
+            _exclude_placement(_main_worktree(repo))
+            worktree.parent.mkdir(parents=True, exist_ok=True)
         record: dict[str, typing.Any] = {
             "session_id": session_id,
             "lane": args.lane,
@@ -234,7 +287,8 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
             "base_branch": args.base_branch,
             "branch": branch,
             "worktree": str(worktree),
-            "managed_temp": str(temp) if temp else None,
+            # 旧配置の登録だけが個別managed-tempを持ち、回収時に同じ値を使う。
+            "managed_temp": None,
             "selection_file": str(args.selection_file.resolve()),
             "commands": commands,
             "procedure_timeout": args.timeout,
@@ -249,22 +303,30 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
 
 
 def _session_activity(worktree: pathlib.Path) -> str | None:
-    """保存済みの終端登録から、その作業ツリーを使う担当の終了を判定する。"""
-    directory = session_launchers.registry_directory(state_paths.state_dir())
+    """session登録簿の解決結果から、その作業ツリーを使う担当の終了を判定する。
+
+    終端の判定は`session_registry.resolve`に従い、所有側が終端を公開せずに終了して実行プロセスも
+    存在しない記録は終了した担当として扱う。
+    """
+    state_root = state_paths.state_dir()
+    directory = session_launchers.registry_directory(state_root)
     if not directory.exists():
         return None
     for path in directory.glob("*.json"):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
+        try:
+            resolution = session_registry.resolve(path.stem, state_root=state_root)
+        except ValueError as exc:
+            raise ValueError(f"担当登録の形式を確認できない: {path}") from exc
+        if resolution.state is session_registry.Resolution.UNREADABLE:
             raise ValueError(f"担当登録の形式を確認できない: {path}")
-        cwd = payload.get("cwd")
+        info = resolution.resume_info
         if (
-            isinstance(cwd, str)
-            and cwd
-            and pathlib.Path(cwd).resolve().is_relative_to(worktree)
-            and payload.get("terminal") is not True
+            resolution.state is session_registry.Resolution.RUNNING
+            and info is not None
+            and info.cwd
+            and pathlib.Path(info.cwd).resolve().is_relative_to(worktree)
         ):
-            return f"担当の終了を確認できない: {payload.get('session_id', path.stem)}"
+            return f"担当の終了を確認できない: {path.stem}"
     return None
 
 
@@ -320,14 +382,19 @@ def _eligible(record: dict[str, typing.Any]) -> str | None:
     return None
 
 
-def cleanup_session(session_id: str | None) -> dict[str, typing.Any]:
-    """全登録を先に判定し、安全な対象だけを回収する。結果は削除対象の外へ保持する。"""
+def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None) -> dict[str, typing.Any]:
+    """全登録を先に判定し、安全な対象だけを回収する。結果は削除対象の外へ保持する。
+
+    onlyを指定すると、その登録だけを同じ条件で判定・回収する。
+    """
     result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": []}
     if session_id is None or not _directory(session_id).exists():
         return result
     with _locked(session_id) as directory:
         records: list[tuple[pathlib.Path, dict[str, typing.Any]]] = []
         for path in sorted(directory.glob("lane-*.json")):
+            if only is not None and path != only:
+                continue
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if record["session_id"] != session_id or path.stem != record["lane"]:
@@ -432,7 +499,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     create_parser.add_argument("--lane", required=True, help="lane-NN。")
     create_parser.add_argument("--selection-file", type=pathlib.Path, required=True, help="統合状態を読む選定YAML。")
     create_parser.add_argument("--branch", help="専用branch名。省略するとsessionとlaneから決める。")
-    create_parser.add_argument("--worktree", type=pathlib.Path, help="固有作成手順が使う絶対作成先。")
+    create_parser.add_argument(
+        "--worktree", type=pathlib.Path, help="任意の絶対作成先。省略すると主作業ツリーの固定作成先を使う。"
+    )
     create_parser.add_argument("--commands-file", type=pathlib.Path, help="create・prepare・deleteのargvを持つJSON。")
     create_parser.add_argument("--reuse-record", type=pathlib.Path, help="終端済みの担当が使っていた資源のrecord_path。")
     create_parser.add_argument(

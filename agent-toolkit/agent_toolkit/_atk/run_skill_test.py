@@ -26,6 +26,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._common import claude_usage_limit
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 
 _FAKE_ENGINE = """\
 #!{python}
@@ -117,7 +118,7 @@ def _engine_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env
     monkeypatch.setenv("PATH", os.pathsep.join((str(bin_dir), os.environ.get("PATH", ""))))
     monkeypatch.setenv("FAKE_RECORD_DIR", str(records))
     monkeypatch.setenv("XDG_STATE_HOME", str(state))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", "claude:sonnet/high")
+    set_orchestrate_environment(monkeypatch, "claude:sonnet/high")
     for name in ("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "AGENT_TOOLKIT_RESTART_SPEC"):
         monkeypatch.delenv(name, raising=False)
     return _Env(repo=repo, records=records, state=state, bin_dir=bin_dir)
@@ -165,7 +166,7 @@ def test_tty_progress_arrives_before_child_exits(
     engine_env: _Env, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, skill: str, mode: str
 ) -> None:
     """公開CLIはstdoutをリダイレクトしても、終了前の開始情報・発言・toolだけをstderrへ到着順に出力する。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", f"{engine}:test-model/low")
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     progress_dir = tmp_path / "progress"
     progress_dir.mkdir()
     if engine == "claude":
@@ -364,7 +365,7 @@ def test_codex_session_receives_goal_without_slash_command(
     engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Codexは非対話起動で`/goal`を目標として扱わないため、`atk-auto`要素の目的文だけを渡す。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", "codex:gpt-5.6-sol/low")
+    set_orchestrate_environment(monkeypatch, "codex:gpt-5.6-sol/low")
 
     code, _out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
 
@@ -523,7 +524,7 @@ def test_usage_limit_retries_same_claude_candidate(
     engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """可用性判定がClaudeの利用上限を返した場合は次の候補へ進まず、解除を待って同じ候補を判定し直す。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", "claude:opus/high,codex:gpt-5.6-sol/low")
+    set_orchestrate_environment(monkeypatch, "claude:opus/high,codex:gpt-5.6-sol/low")
     monkeypatch.setenv("FAKE_PROBE_REJECT_COUNT", "1")
     sleeps: list[float] = []
     monkeypatch.setattr(orchestrator, "time", types.SimpleNamespace(sleep=sleeps.append, time=time.time))

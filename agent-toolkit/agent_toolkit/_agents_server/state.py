@@ -10,7 +10,7 @@ import typing
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from agent_toolkit._agents_server import session_registry, task_documents
+from agent_toolkit._agents_server import task_documents
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.result_projection import (
     action_detail,
@@ -18,7 +18,7 @@ from agent_toolkit._agents_server.result_projection import (
     progress_excerpt,
     with_result_next_action,
 )
-from agent_toolkit._common import claude_usage_limit
+from agent_toolkit._common import claude_usage_limit, session_registry
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
@@ -310,12 +310,16 @@ class SessionState:
     publish_registry: bool = dataclasses.field(default=False, repr=False)
     # sessionを作成した時点の委譲元sessionの識別子。登録簿へ公開し、`atk serve`の一覧が親子付けに使う。
     launcher_session_id: str | None = dataclasses.field(default=None, repr=False)
+    # turnを実行する委譲先CLIのプロセスの識別。所有するagents_serverの識別とともに登録簿へ公開し、
+    # 所有側が終端を公開せずに終了した記録を、照会側が全プロセスの不在から終端と判定する入力にする。
+    executor_process: session_registry.ProcessIdentity | None = dataclasses.field(default=None, repr=False)
     _published_registry_launcher: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
     _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_launch_info: session_registry.LaunchInfo | None = dataclasses.field(default=None, repr=False)
+    _published_registry_executor: session_registry.ProcessIdentity | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
     _lifecycle_running: bool = dataclasses.field(default=False, repr=False)
 
@@ -393,6 +397,12 @@ class SessionState:
             entries.append(entry)
         return entries
 
+    def attach_executor(self, pid: int | None) -> None:
+        """turnを実行する委譲先CLIのプロセスを記録する。プロセスを起動し直した場合は次の`touch`で登録簿を更新する。"""
+        if pid is None or (self.executor_process is not None and self.executor_process.pid == pid):
+            return
+        self.executor_process = session_registry.ProcessIdentity.of(pid)
+
     def reset_progress(self) -> None:
         """現在turnの進捗を初期化する。"""
         self._progress_text = ""
@@ -448,6 +458,7 @@ class SessionState:
                 or self.launcher_session_id != self._published_registry_launcher
                 or self.fast_mode != self._published_registry_fast_mode
                 or launch_info != self._published_registry_launch_info
+                or self.executor_process != self._published_registry_executor
             )
         ):
             session_registry.publish(
@@ -467,6 +478,9 @@ class SessionState:
                 started_at=self.started_at,
                 session_updated_at=self.updated_at,
                 turn_id=self.turn_id or None,
+                processes=tuple(
+                    process for process in (session_registry.owner_process(), self.executor_process) if process is not None
+                ),
                 status=typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
                 launcher_session_id=self.launcher_session_id,
             )
@@ -476,6 +490,7 @@ class SessionState:
             self._published_registry_status = self.status
             self._published_registry_fast_mode = self.fast_mode
             self._published_registry_launch_info = launch_info
+            self._published_registry_executor = self.executor_process
         if not registry_terminal:
             self._terminal_notified = False
         elif not self._terminal_notified:

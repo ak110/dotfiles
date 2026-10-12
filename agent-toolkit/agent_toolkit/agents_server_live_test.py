@@ -1,6 +1,11 @@
-"""agents_serverの実backendによる自動再開とCodex接続先の切替を検証する。"""
+"""agents_serverの実backendによる自動再開とCodex接続先の切替を検証する。
+
+各ケースの入力と、その入力の実行に要るツールは`LiveInput`で起動区分ごとに宣言する。
+宣言と起動設定の整合は課金不要の`agents_server_live_contract_test.py`が判定する。
+"""
 
 import collections.abc
+import dataclasses
 import http.server
 import json
 import pathlib
@@ -11,23 +16,72 @@ import pytest
 
 from agent_toolkit._agents_server import codex_providers, mcp_tools
 from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._testing import isolation
 
 pytestmark = pytest.mark.live_agents
 
 
-_PROMPT = """Bashツールで`sleep 2`を背景実行し、待たずにturnを終えよ。
-バックグラウンドタスクの完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。"""
+@dataclasses.dataclass(frozen=True)
+class LiveInput:
+    """live testが1つの起動区分へ渡す入力と、委譲先がその入力を実行するのに要るClaude Codeの組込ツール。
+
+    `texts`は委譲先へ届く本文（起動時と継続時の依頼、シェル実行の要約方針）を並べる。
+    `required_tools`は入力が要求する操作から決まり、起動区分の能力から逆算しない。
+    """
+
+    launch_kind: LaunchKind
+    texts: tuple[str, ...]
+    required_tools: frozenset[str]
+
+
+# Bash背景実行の完了通知による自動再開を確かめる入力。Bashを公開する起動区分だけへ渡す。
+BACKGROUND_RESUME_INPUTS: dict[str, LiveInput] = {
+    "delegate": LiveInput(
+        "delegate",
+        (
+            """Bashツールで`sleep 2`を背景実行し、待たずにturnを終えよ。
+バックグラウンドタスクの完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。""",
+        ),
+        frozenset({"Bash"}),
+    ),
+    "shell": LiveInput(
+        "shell",
+        ("Bashツールを背景実行し、完了通知で再開した後に`AUTO_RESUME_COMPLETED`だけを返す。",),
+        frozenset({"Bash"}),
+    ),
+}
+
+# 読取限定の探索起動へ渡す入力。新規起動と同じsessionへの継続の双方で既知のファイルを読ませる。
+# 読ませる内容は本文へ書かず、ファイルを読まなければ応答できない形にする。
+EXPLORE_READ_INPUT = LiveInput(
+    "explore",
+    (
+        "Readツールで`{path}`を読み、そのファイルの内容だけを最終応答にせよ。",
+        "Readツールで`{path}`を読み、そのファイルの内容だけを最終応答にせよ。",
+    ),
+    frozenset({"Read"}),
+)
+
+
+async def _wait_terminal(manager: server_manager.AgentsServerManager) -> dict[str, Any]:
+    """待機上限へ達した応答は`running`を返すため、終端まで同じ待機を繰り返す。"""
+    result = await manager.wait()
+    for _ in range(10):
+        if result["status"] != "running":
+            break
+        result = await manager.wait()
+    return result
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["delegate", "explore", "shell"])
+@pytest.mark.parametrize("mode", list(BACKGROUND_RESUME_INPUTS))
 async def test_live_launch_waits_for_automatic_resume(
     mode: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """公開する起動ツール`start`の3つのmodeが、再開指示なしでバックグラウンドタスク完了後の結果を返す。"""
+    """Bashを公開する起動ツール`start`のmodeが、再開指示なしでバックグラウンドタスク完了後の結果を返す。"""
     manager = server_manager.AgentsServerManager()
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     cwd = str(pathlib.Path(__file__).parents[2])
@@ -36,20 +90,14 @@ async def test_live_launch_waits_for_automatic_resume(
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
-        lambda _model_type: [("claude", "sonnet[1m]", "medium")],
+        lambda _model_type, **_kwargs: [("claude", "sonnet[1m]", "medium")],
     )
+    live_input = BACKGROUND_RESUME_INPUTS[mode]
     try:
         if mode == "delegate":
-            await mcp_tools.start(cwd, mode="delegate", prompt=_PROMPT, model_type="low_tier")
-        elif mode == "explore":
-            await mcp_tools.start(cwd, mode="explore", prompt=_PROMPT)
+            await mcp_tools.start(cwd, mode="delegate", prompt=live_input.texts[0], model_type="low_tier")
         else:
-            await mcp_tools.start(
-                cwd,
-                mode="shell",
-                command="sleep 2",
-                summary_policy="Bashツールを背景実行し、完了通知で再開した後に`AUTO_RESUME_COMPLETED`だけを返す。",
-            )
+            await mcp_tools.start(cwd, mode="shell", command="sleep 2", summary_policy=live_input.texts[0])
 
         result = await manager.wait()
 
@@ -59,10 +107,58 @@ async def test_live_launch_waits_for_automatic_resume(
         await manager.close()
 
 
-_GRANDCHILD_PROMPT = """`agents_server`の起動ツールで、コマンド`sleep 5`を実行して終了状態を要約させる委譲を1件起動せよ。
+@pytest.mark.asyncio
+async def test_live_explore_reads_file_and_continues_same_session(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """探索起動が既知のファイルを読んで内容を返し、同じsessionへの継続でも別のファイルを読んで返す。"""
+    manager = server_manager.AgentsServerManager()
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    # 作業ディレクトリの外の読取は権限確認を要するため、読ませるファイルを置く一時ディレクトリをcwdにする。
+    first = tmp_path / "first.txt"
+    first.write_text("EXPLORE_FIRST_CONTENT\n", encoding="utf-8")
+    second = tmp_path / "second.txt"
+    second.write_text("EXPLORE_CONTINUED_CONTENT\n", encoding="utf-8")
+    # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
+    isolation.restore_host_environment(monkeypatch)
+    monkeypatch.setattr(
+        _atk_config,
+        "parse_unresolved_model_candidates",
+        lambda _model_type, **_kwargs: [("claude", "sonnet[1m]", "medium")],
+    )
+    start_text, continue_text = EXPLORE_READ_INPUT.texts
+    try:
+        started = await mcp_tools.start(str(tmp_path), mode="explore", prompt=start_text.format(path=first))
+        session = manager.sessions[started["session_id"]]
+
+        result = await _wait_terminal(manager)
+        assert result["status"] == "completed", result
+        assert result["agent_message"].strip() == "EXPLORE_FIRST_CONTENT", result
+
+        reply = await mcp_tools.send_message(started["session_id"], continue_text.format(path=second))
+        assert reply["delivery"] == "reply_started", reply
+
+        result = await _wait_terminal(manager)
+        assert result["status"] == "completed", result
+        assert result["agent_message"].strip() == "EXPLORE_CONTINUED_CONTENT", result
+        assert session.turn_seq == 2
+    finally:
+        await manager.close()
+
+
+# 孫sessionの終端による自動再開を確かめる入力。MCPの起動ツールと`atk agents wait`の実行を要求するため、
+# 組込ツールとMCPを制限しない通常起動へ渡す。
+GRANDCHILD_INPUT = LiveInput(
+    "delegate",
+    (
+        """`agents_server`の起動ツールで、コマンド`sleep 5`を実行して終了状態を要約させる委譲を1件起動せよ。
 起動ツールが`mode`を受け取る場合は`start`へ`mode`の`shell`を渡し、受け取らない場合は`start_shell`を使う。
 起動の直後は`atk agents wait`を実行せず、`待機中: <起動したsession_id>`の1行だけを出力してターンを終えよ。
-自動的に再開したターンでは`atk agents wait`でその委譲の結果を回収し、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。"""
+自動的に再開したターンでは`atk agents wait`でその委譲の結果を回収し、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。""",
+    ),
+    frozenset({"Bash"}),
+)
 
 
 @pytest.mark.asyncio
@@ -80,17 +176,12 @@ async def test_live_grandchild_wait_resumes_same_session(
     cwd = str(pathlib.Path(__file__).parents[2])
     # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
     isolation.restore_host_environment(monkeypatch)
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [candidate])
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
     try:
-        started = await mcp_tools.start(cwd, mode="delegate", prompt=_GRANDCHILD_PROMPT, model_type="high_tier")
+        started = await mcp_tools.start(cwd, mode="delegate", prompt=GRANDCHILD_INPUT.texts[0], model_type="high_tier")
         session = manager.sessions[started["session_id"]]
 
-        result = await manager.wait()
-        # 待機上限へ達した応答は`running`を返すため、終端まで同じ待機を繰り返す。
-        for _ in range(10):
-            if result["status"] != "running":
-                break
-            result = await manager.wait()
+        result = await _wait_terminal(manager)
 
         assert result["status"] == "completed", result
         assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED", result
@@ -281,7 +372,9 @@ stream_max_retries = 0
         monkeypatch.setenv("CODEX_HOME", str(codex_home))
         monkeypatch.setenv(_PSEUDO_API_KEY_ENV, "pseudo-api-key")
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", f"{_PRIMARY_PROVIDER},{_FALLBACK_PROVIDER}")
-        monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "gpt-5.4", "low")])
+        monkeypatch.setattr(
+            _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "gpt-5.4", "low")]
+        )
         manager = server_manager.AgentsServerManager()
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         try:

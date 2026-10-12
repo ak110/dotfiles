@@ -76,7 +76,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_common/process_tree.py",
         "_agents_server/state.py",
         "_agents_server/status_file.py",
-        "_agents_server/session_registry.py",
+        "_common/session_registry.py",
         "_common/atomic_file.py",
         "_atk/config.py",
         "_atk/help_text.py",
@@ -175,7 +175,7 @@ async def test_session_label_prefers_argument_over_generated_value(
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
-        lambda _model_type: [("codex", "model", "high")],
+        lambda _model_type, **_kwargs: [("codex", "model", "high")],
     )
     manager, _ = _manager_with_fake("codex")
 
@@ -210,7 +210,7 @@ async def test_empty_session_label_falls_back_to_the_generated_value(
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
-        lambda _model_type: [("codex", "model", "high")],
+        lambda _model_type, **_kwargs: [("codex", "model", "high")],
     )
     manager, _ = _manager_with_fake("codex")
 
@@ -231,7 +231,9 @@ async def test_public_start_returns_label_of_started_session(
     応答に担当名が無いか別のsessionの値を返すと、複数の委譲先を起動した委譲元が`session_id`と担当を対応付けられず、
     追送を別の担当へ送る。明示・省略・空白の指定、taskの引き継ぎ記録付き応答、候補の切替と起動直後の失敗を含める。
     """
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
+    )
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-state")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
@@ -268,7 +270,7 @@ async def test_public_start_returns_label_of_started_session(
         assert manager.show_session(response["session_id"])["label"] == expected
 
     candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     switching, claude = _manager_with_fake("claude")
     _install_backend(switching, "codex", UnavailableStartBackend(switching.sessions, "codex"))
     monkeypatch.setattr(mcp_tools, "_MANAGER", switching)
@@ -293,7 +295,9 @@ async def test_send_message_returns_label_of_delivered_session(
     実行中turnへのsteer、終端後のreply、保持期限の経過後と破棄後の再開の各配送で、
     宛先以外のsessionや追送本文から担当名を返すと、委譲元は誤送を応答から検出できない。
     """
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
+    )
     manager, _ = _manager_with_fake("codex")
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     first = await manager.start("high_tier", "i568の投入", str(tmp_path), label="add-wi-568")
@@ -403,7 +407,9 @@ async def test_success_response_key_sets_for_all_tools(
     )
     manager = server_manager.AgentsServerManager(writer)
     _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "model", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
+    )
 
     started = await manager.start("plan", "調査", str(tmp_path))
     explored = await manager.start_explore("探索", str(tmp_path))
@@ -761,11 +767,11 @@ async def test_start_rejects_missing_and_mixed_mode_inputs_before_creating_sessi
 async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """公開境界から各modeの`launch_kind`、省略時のmodel_typeおよびlabelがManagerへ届く。"""
-    requested: list[str] = []
+    """公開境界から各modeの`launch_kind`、省略時のmodel_type、用途およびlabelがManagerへ届く。"""
+    requested: list[tuple[str, str | None]] = []
 
-    def candidates(model_type: str) -> list[tuple[str, str, str]]:
-        requested.append(model_type)
+    def candidates(model_type: str, *, usage: str | None = None) -> list[tuple[str, str, str]]:
+        requested.append((model_type, usage))
         return [("codex", "model", "high")]
 
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", candidates)
@@ -785,7 +791,13 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
         response = await mcp_tools.start(str(tmp_path), **arguments)
         shown[mode] = manager.show_session(response["session_id"])
 
-    assert requested == [launch_requests._TASK_MODEL_TYPES[task_document.name], "high_tier", "low_tier", "write", "low_tier"]
+    assert requested == [
+        (launch_requests._TASK_MODEL_TYPES[task_document.name], "base"),
+        ("high_tier", None),
+        ("low_tier", "chores"),
+        ("write", "base"),
+        ("low_tier", "chores"),
+    ]
     assert [call[2] for call in backend.start_calls] == ["delegate", "delegate", "explore", "write", "shell"]
     assert {mode: item["label"] for mode, item in shown.items()} == {
         "task": "lane-01-exec",

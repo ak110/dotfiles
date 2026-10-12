@@ -161,7 +161,7 @@ SESSION_ID_DESCRIPTION = parameter_description(
 
 
 MODEL_TYPE_DESCRIPTION = parameter_description(
-    "委譲先のモデルを選ぶ。モデル段位の種別（例: `high_tier`、`medium_tier`、`low_tier`、`write`）か、"
+    "委譲先のモデルを選ぶ。モデル段位の種別（例: `high_tier`、`medium_tier`、`low_tier`、`write`、`orchestrate`）か、"
     "ASCIIカンマ区切りの`<claude|codex|agy>:<model>[/<effort>]`の候補列"
     "（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）を指定する。"
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
@@ -170,6 +170,8 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "新しい候補・評価軸を導く調査と案出しは、explore・delegateを問わず`high_tier`を明示する。"
     "機械的な事実確認と区別し、両者が混在する依頼も`high_tier`を使う。"
     "機械的な事実確認で軽量側の候補では判断材料が不足する調査には、exploreで`medium_tier`を指定する。"
+    "段位名の候補は、`<役割名>.subagent.md`の役割かmodeで決まる用途のengine順に、engine別の段位のモデル設定を並べる。"
+    "`orchestrate`はorchestrate用途の上位段位を使う。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"
 )
 

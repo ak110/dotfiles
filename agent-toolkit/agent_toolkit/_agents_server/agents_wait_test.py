@@ -16,7 +16,6 @@ from agent_toolkit._agents_server import (
     notice_inbox,
     result_projection,
     retained_results,
-    session_registry,
     shared_layout,
     shared_roots,
     state,
@@ -24,9 +23,10 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import state_paths, wait_schedule
+from agent_toolkit._common import session_registry, state_paths, wait_schedule
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
+from agent_toolkit._testing.agents_server_support import exited_process_identity
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
@@ -1526,14 +1526,23 @@ def test_agents_wait_releases_registered_session_missing_from_registry(
     assert error is None
 
 
+@pytest.mark.parametrize("record", ["terminal", "processes-exited"])
 def test_agents_wait_releases_registered_session_terminal_in_registry(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    record: str,
 ) -> None:
-    """登録簿が終端を示し、結果も状態ファイルの行も無い待機対象を解放して待たずに終える。"""
+    """登録簿が終端を示し、結果も状態ファイルの行も無い待機対象を解放して待たずに終える。
+
+    所有プロセスと委譲先CLIがともに終了した`running`の記録も、解決が示す中断の終端として同じく扱う。
+    """
     state_root = wait_environment.parents[2]
     wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
-    session_registry.publish("session-1", terminal=True, status="interrupted", state_root=state_root)
+    if record == "terminal":
+        session_registry.publish("session-1", terminal=True, status="interrupted", state_root=state_root)
+    else:
+        processes = (exited_process_identity(), exited_process_identity())
+        session_registry.publish("session-1", terminal=False, processes=processes, state_root=state_root)
 
     with pytest.raises(SystemExit, match="10"):
         atk.main(["agents", "wait"])
@@ -1546,12 +1555,17 @@ def test_agents_wait_releases_registered_session_terminal_in_registry(
     assert error is None
 
 
+@pytest.mark.parametrize("record", ["terminal", "processes-exited"])
 def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
     monkeypatch: pytest.MonkeyPatch,
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    record: str,
 ) -> None:
-    """待機中に唯一の対象が結果を残さず終端した場合は、待機上限を待たずに対象不在で終える。"""
+    """待機中に唯一の対象が結果を残さず終端した場合は、待機上限を待たずに対象不在で終える。
+
+    所有プロセスと委譲先CLIがともに終了して`running`のまま残った記録も、同じく終端として扱う。
+    """
     state_root = wait_environment.parents[2]
     wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
     session_registry.publish("session-1", terminal=False, state_root=state_root)
@@ -1561,7 +1575,11 @@ def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
 
     def terminate_on_sleep(seconds: float) -> None:
         sleeps.append(seconds)
-        session_registry.publish("session-1", terminal=True, status="interrupted", state_root=state_root)
+        if record == "terminal":
+            session_registry.publish("session-1", terminal=True, status="interrupted", state_root=state_root)
+        else:
+            processes = (exited_process_identity(),)
+            session_registry.publish("session-1", terminal=False, processes=processes, state_root=state_root)
 
     monkeypatch.setattr(agents_wait.time, "sleep", terminate_on_sleep)
 

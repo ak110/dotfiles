@@ -19,10 +19,31 @@ DOTFILES_REPO_ID = _pl_worktree.DOTFILES_REPO_ID  # pylint: disable=protected-ac
 
 
 def set_orchestrate_model(tmp_path: pathlib.Path, value: str) -> None:
-    """テスト用の`orchestrate_model`を公開設定CLI経由で保存する。"""
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["config", "set", "orchestrate_model", value], home=tmp_path)
-    assert exc_info.value.code == 0
+    """テスト用のorchestrate候補列を、engine別のhigh段位モデルと`orchestrate_engine`へ分けて公開設定CLI経由で保存する。
+
+    各engineは候補列へ1回だけ現れる前提とする。
+    """
+    candidates = _config.parse_stage_model_candidates(value)
+    engines = [engine for engine, _model, _effort in candidates]
+    assert len(set(engines)) == len(engines), "同じengineを複数回含む候補列は設定で表せない"
+    settings = [(_config.tier_model_key(engine, "high"), f"{model}/{effort}") for engine, model, effort in candidates]
+    for key, setting in [*settings, ("orchestrate_engine", ",".join(engines))]:
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", key, setting], home=tmp_path)
+        assert exc_info.value.code == 0
+
+
+def set_orchestrate_environment(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """テスト用のorchestrate候補列を、engine別のhigh段位モデルと`orchestrate_engine`の環境変数へ分けて設定する。
+
+    各engineは候補列へ1回だけ現れる前提とする。
+    """
+    candidates = _config.parse_stage_model_candidates(value)
+    engines = [engine for engine, _model, _effort in candidates]
+    assert len(set(engines)) == len(engines), "同じengineを複数回含む候補列は設定で表せない"
+    for engine, model, effort in candidates:
+        monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{_config.tier_model_key(engine, 'high').upper()}", f"{model}/{effort}")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", ",".join(engines))
 
 
 def hook_debug_log(command: list[str]) -> pathlib.Path:

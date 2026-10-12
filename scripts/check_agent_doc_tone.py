@@ -7,7 +7,8 @@ r"""文体の密度と、説明に使用しない語の再使用を確認する�
 
 読み手は文脈にある文体を再生産するため、否定形の宣言や法令調の語が多い文書は、
 それを読んだ主体の成果物へ同じ文体と範囲外の追加要素を持ち込む。
-本スクリプトは当該密度をファイル単位で数え、閾値を超えたファイルを報告する。
+本スクリプトはこの密度をファイル単位で数える。閾値を超えた指標は、ファイルの1行目へ比率、件数と
+上限以下へ戻すのに必要な最少の書き換え件数を報告し、数えた文と「当該」を物理行の位置付きで全件列挙する。
 
 指標は次の3つとする。
 
@@ -28,6 +29,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import dataclasses
+import enum
 import io
 import json
 import pathlib
@@ -54,6 +57,8 @@ _SUBJECT_WORD = "当該"
 _MIN_SENTENCES_FOR_RATIO = 20
 _MAX_NEGATIVE_ENDING_RATIO = 0.08
 _MAX_SUBJECT_WORD_RATIO = 0.03
+_MAX_EXCERPT_LENGTH = 40
+_SUBJECT_WORD_CONTEXT = 10
 
 EXCLUDED_PATHS = (
     "agent-toolkit/skills/writing-standards/references/tone-examples.md",
@@ -410,27 +415,61 @@ def _term_target(path: pathlib.Path, roots: list[pathlib.Path]) -> bool:
     return not roots or any(path.resolve().is_relative_to(root.resolve()) for root in roots)
 
 
-def _strip_frontmatter(lines: list[str]) -> list[str]:
-    """先頭のYAML frontmatterを除いた行を返す。"""
+def _frontmatter_end(lines: list[str]) -> int:
+    """先頭のYAML frontmatterの次の行の添字を返し、frontmatterが無ければ0を返す。"""
     if not lines or lines[0].strip() != _FRONTMATTER_DELIMITER:
-        return lines
+        return 0
     for index, line in enumerate(lines[1:], start=1):
         if line.strip() == _FRONTMATTER_DELIMITER:
-            return lines[index + 1 :]
-    return lines
+            return index + 1
+    return 0
 
 
-def _prose_lines(text: str) -> list[str]:
-    """本文として数える行だけを返す。
+@dataclasses.dataclass(frozen=True)
+class _ProseLine:
+    """本文として数える1行と、入力ファイルの物理行での位置。
+
+    `spans`は`text`の各文字が由来する`source`の範囲を持つ。
+    インラインコードを置換語へ置き換えた文字は、コード全体の範囲を指す。
+    """
+
+    line: int
+    text: str
+    source: str
+    spans: tuple[tuple[int, int], ...]
+
+
+def _prose_line(line: int, source: str) -> _ProseLine:
+    """インラインコードを固定の置換語へ置き換え、各文字の由来を保持した行を返す。"""
+    text: list[str] = []
+    spans: list[tuple[int, int]] = []
+    position = 0
+    for match in _INLINE_CODE_PATTERN.finditer(source):
+        for index in range(position, match.start()):
+            text.append(source[index])
+            spans.append((index, index + 1))
+        text.append(_INLINE_CODE_PLACEHOLDER)
+        spans.extend([match.span()] * len(_INLINE_CODE_PLACEHOLDER))
+        position = match.end()
+    for index in range(position, len(source)):
+        text.append(source[index])
+        spans.append((index, index + 1))
+    return _ProseLine(line, "".join(text), source, tuple(spans))
+
+
+def _prose_lines(text: str) -> list[_ProseLine]:
+    """本文として数える行だけを、入力ファイルの物理行の行番号とともに返す。
 
     フェンス付きコードブロック、見出し行、表の行およびHTMLコメントを除き、
     箇条書きの記号と番号を取ってからインラインコードを固定の置換語へ置き換える。
+    HTMLコメントは含んでいた改行だけを残して除き、後続の行番号を保つ。
     """
-    without_comments = _HTML_COMMENT_PATTERN.sub("", text)
-    lines = _strip_frontmatter(without_comments.splitlines())
-    prose: list[str] = []
+    without_comments = _HTML_COMMENT_PATTERN.sub(lambda match: "\n" * match.group().count("\n"), text)
+    lines = without_comments.splitlines()
+    prose: list[_ProseLine] = []
     fence: str | None = None
-    for line in lines:
+    for index in range(_frontmatter_end(lines), len(lines)):
+        line = lines[index]
         fence_match = _FENCE_PATTERN.match(line)
         if fence_match is not None:
             marker = fence_match.group(1)[0]
@@ -446,52 +485,199 @@ def _prose_lines(text: str) -> list[str]:
         stripped = _LIST_MARKER_PATTERN.sub("", line).strip()
         if not stripped:
             continue
-        prose.append(_INLINE_CODE_PATTERN.sub(_INLINE_CODE_PLACEHOLDER, stripped))
+        prose.append(_prose_line(index + 1, stripped))
     return prose
+
+
+@dataclasses.dataclass(frozen=True)
+class Sentence:
+    """本文の1文と、その文が終わる物理行での文末の抜粋。"""
+
+    text: str
+    line: int
+    excerpt: str
+
+
+def _excerpt(source: str, start: int, end: int) -> str:
+    """行の`start`から`end`までを、長ければ末尾側を残して返す。"""
+    fragment = source[start:end].strip()
+    if len(fragment) > _MAX_EXCERPT_LENGTH:
+        return "…" + fragment[-_MAX_EXCERPT_LENGTH:]
+    return fragment
+
+
+def sentences_with_positions(text: str) -> list[Sentence]:
+    """本文を「。」で分割し、各文が終わる物理行と文末の抜粋を付けて返す。
+
+    句点の無い行は次の行と1文に結合されるため、文の終わる行は最後の文字を含む行とする。
+    """
+    prose = _prose_lines(text)
+    joined = "".join(item.text for item in prose)
+    # 連結した本文の各文字が由来する行の添字と、その行の中の位置。
+    origins = [(row, column) for row, item in enumerate(prose) for column in range(len(item.text))]
+    sentences: list[Sentence] = []
+    position = 0
+    for chunk in re.split(r"(?<=。)", joined):
+        start, end = position, position + len(chunk)
+        position = end
+        while start < end and joined[start].isspace():
+            start += 1
+        while end > start and joined[end - 1].isspace():
+            end -= 1
+        if start == end:
+            continue
+        row, last_column = origins[end - 1]
+        first_column = origins[start][1] if origins[start][0] == row else 0
+        item = prose[row]
+        excerpt = _excerpt(item.source, item.spans[first_column][0], item.spans[last_column][1])
+        sentences.append(Sentence(joined[start:end], item.line, excerpt))
+    return sentences
 
 
 def split_sentences(text: str) -> list[str]:
     """本文を「。」で分割した文の一覧を返す。"""
-    joined = "".join(_prose_lines(text))
-    sentences = [sentence.strip() for sentence in re.split(r"(?<=。)", joined)]
-    return [sentence for sentence in sentences if sentence]
+    return [sentence.text for sentence in sentences_with_positions(text)]
+
+
+@dataclasses.dataclass(frozen=True)
+class Occurrence:
+    """密度の指標が数えた1要素の物理行と、行の中で要素を区別する抜粋。"""
+
+    line: int
+    excerpt: str
+
+
+@dataclasses.dataclass(frozen=True)
+class DensityMetric:
+    """数えた要素の位置の一覧から件数と比率を導く密度の指標。
+
+    件数は`occurrences`の長さだけから導くため、位置を持たない指標は作成できない。
+    閾値超過の診断も同じ一覧から生成する。
+    """
+
+    name: str
+    unit: str
+    limit: float
+    action: str
+    element_label: str
+    occurrences: tuple[Occurrence, ...]
+    sentences: int
+
+    @property
+    def count(self) -> int:
+        """数えた要素の件数を返す。"""
+        return len(self.occurrences)
+
+    @property
+    def ratio(self) -> float:
+        """文数に対する要素の比率を返す。"""
+        return self.count / self.sentences if self.sentences else 0.0
+
+    def exceeded(self) -> bool:
+        """文数が判定の下限以上で、比率が上限を超えるかを返す。"""
+        return self.sentences >= _MIN_SENTENCES_FOR_RATIO and self.ratio > self.limit
+
+    def required_rewrites(self) -> int:
+        """文数を変えずに比率を上限以下へ戻すのに必要な最少の書き換え件数を返す。"""
+        remaining = self.count
+        while remaining > 0 and remaining / self.sentences > self.limit:
+            remaining -= 1
+        return self.count - remaining
+
+    def summary(self) -> str:
+        """比率、上限、件数と次の操作を1行で返す。"""
+        return (
+            f"{self.name} {self.ratio:.1%}（上限 {self.limit:.0%}、{self.count}{self.unit}/{self.sentences}文）。"
+            f"位置を列挙した{self.element_label}を{self.action}。"
+            f"文数を変えずに上限以下へ戻すには、少なくとも{self.required_rewrites()}件を書き換える。"
+        )
+
+    def element_messages(self) -> list[tuple[int, str]]:
+        """数えた要素ごとの行番号と診断の本文を返す。"""
+        return [
+            (
+                occurrence.line,
+                f"{self.name}の超過で数えた{self.element_label}: 「{occurrence.excerpt}」。{self.action}候補。",
+            )
+            for occurrence in self.occurrences
+        ]
+
+
+def _subject_word_occurrences(text: str) -> tuple[Occurrence, ...]:
+    """入力全体の「当該」の出現を、物理行と行の中の前後の抜粋とともに返す。"""
+    occurrences: list[Occurrence] = []
+    for match in re.finditer(re.escape(_SUBJECT_WORD), text):
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        line_end = text.find("\n", match.end())
+        line_end = len(text) if line_end == -1 else line_end
+        start = max(line_start, match.start() - _SUBJECT_WORD_CONTEXT)
+        end = min(line_end, match.end() + _SUBJECT_WORD_CONTEXT)
+        occurrences.append(Occurrence(text.count("\n", 0, match.start()) + 1, text[start:end].strip()))
+    return tuple(occurrences)
 
 
 class Metrics:
     """1ファイルの文体指標。"""
 
     def __init__(self, path: pathlib.Path, text: str) -> None:
-        sentences = split_sentences(text)
+        sentences = sentences_with_positions(text)
         self.path = path
         self.sentences = len(sentences)
-        self.negative_endings = sum(1 for sentence in sentences if _NEGATIVE_ENDING_PATTERN.search(sentence))
-        self.subject_words = text.count(_SUBJECT_WORD)
+        self.negative_ending = DensityMetric(
+            name="否定形終端率",
+            unit="",
+            limit=_MAX_NEGATIVE_ENDING_RATIO,
+            action="肯定形へ書き換える",
+            element_label="否定形で終わる文",
+            occurrences=tuple(
+                Occurrence(sentence.line, sentence.excerpt)
+                for sentence in sentences
+                if _NEGATIVE_ENDING_PATTERN.search(sentence.text)
+            ),
+            sentences=self.sentences,
+        )
+        self.subject_word = DensityMetric(
+            name="「当該」の出現率",
+            unit="回",
+            limit=_MAX_SUBJECT_WORD_RATIO,
+            action="指す対象を直接書く平易な語へ書き換える",
+            element_label="「当該」",
+            occurrences=_subject_word_occurrences(text),
+            sentences=self.sentences,
+        )
+
+    @property
+    def density_metrics(self) -> tuple[DensityMetric, ...]:
+        """閾値で判定する全ての密度の指標を返す。"""
+        return (self.negative_ending, self.subject_word)
+
+    @property
+    def negative_endings(self) -> int:
+        """否定形で終わる文の数を返す。"""
+        return self.negative_ending.count
+
+    @property
+    def subject_words(self) -> int:
+        """「当該」の出現数を返す。"""
+        return self.subject_word.count
 
     @property
     def negative_ending_ratio(self) -> float:
         """否定形で終わる文の割合を返す。"""
-        return self.negative_endings / self.sentences if self.sentences else 0.0
+        return self.negative_ending.ratio
 
     @property
     def subject_word_ratio(self) -> float:
         """文数に対する「当該」の出現率を返す。"""
-        return self.subject_words / self.sentences if self.sentences else 0.0
+        return self.subject_word.ratio
+
+    def exceeded_metrics(self) -> list[DensityMetric]:
+        """閾値を超えた密度の指標を返す。"""
+        return [metric for metric in self.density_metrics if metric.exceeded()]
 
     def violations(self) -> list[str]:
-        """閾値を満たさない指標の説明を返す。"""
-        problems: list[str] = []
-        if self.sentences >= _MIN_SENTENCES_FOR_RATIO:
-            if self.negative_ending_ratio > _MAX_NEGATIVE_ENDING_RATIO:
-                problems.append(
-                    f"否定形終端率 {self.negative_ending_ratio:.1%}（上限 {_MAX_NEGATIVE_ENDING_RATIO:.0%}、"
-                    f"{self.negative_endings}/{self.sentences}文）"
-                )
-            if self.subject_word_ratio > _MAX_SUBJECT_WORD_RATIO:
-                problems.append(
-                    f"「当該」の出現率 {self.subject_word_ratio:.1%}（上限 {_MAX_SUBJECT_WORD_RATIO:.0%}、"
-                    f"{self.subject_words}回/{self.sentences}文）"
-                )
-        return problems
+        """閾値を満たさない指標の要約を返す。"""
+        return [metric.summary() for metric in self.exceeded_metrics()]
 
 
 def _is_excluded(path: pathlib.Path) -> bool:
@@ -517,9 +703,29 @@ def _print_report(metrics: list[Metrics]) -> None:
         )
 
 
-def _emit_diagnostic(path: pathlib.Path, line: int, message: str) -> None:
-    """pyfltrが解析する位置付き診断を標準エラーへ書く。"""
-    print(f"{path}:{max(1, line)}: {message}", file=sys.stderr)
+class Severity(enum.StrEnum):
+    """pyfltrが`error-pattern`の`severity`グループとして解釈する診断の重大度。"""
+
+    ERROR = "error"
+    WARNING = "warning"
+
+
+class _Diagnostics:
+    """位置付き診断を標準エラーへ書き、書いた診断の重大度から終了コードを導く。"""
+
+    def __init__(self) -> None:
+        self._has_error = False
+
+    def emit(self, path: pathlib.Path, line: int, severity: Severity, message: str) -> None:
+        """pyfltrが解析する`<パス>:<行番号>: <重大度>: <本文>`の診断を1行書く。"""
+        if severity is Severity.ERROR:
+            self._has_error = True
+        print(f"{path}:{max(1, line)}: {severity}: {message}", file=sys.stderr)
+
+    @property
+    def returncode(self) -> int:
+        """`error`の診断を1件でも書いていれば1、無ければ0を返す。"""
+        return 1 if self._has_error else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -536,45 +742,48 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    diagnostics = _Diagnostics()
     contents: list[tuple[pathlib.Path, str]] = []
     for path in args.paths:
         try:
             contents.append((path, path.read_text(encoding="utf-8")))
         except (OSError, UnicodeError) as error:
-            _emit_diagnostic(path, 1, f"入力を読み取れない: {error}。指定したファイルと文字コードを確認する。")
+            diagnostics.emit(path, 1, Severity.ERROR, f"入力を読み取れない: {error}。指定したファイルと文字コードを確認する。")
             return 2
     metrics = [Metrics(path, text) for path, text in contents if path.suffix == ".md" and not _is_excluded(path)]
     if args.report:
         _print_report(metrics)
         return 0
 
-    failed = False
     for path, text in contents:
         try:
             if _term_target(path, args.term_root or []):
                 for line, term in term_violations(path, text):
-                    failed = True
-                    _emit_diagnostic(path, line, f"「{term}」を説明に使用している。対象と動作が分かる文へ書き直す。")
+                    diagnostics.emit(
+                        path, line, Severity.ERROR, f"「{term}」を説明に使用している。対象と動作が分かる文へ書き直す。"
+                    )
                 for line, term in term_cautions(path, text):
-                    _emit_diagnostic(
+                    diagnostics.emit(
                         path,
                         line,
+                        Severity.WARNING,
                         f"警告: 「{term}」を説明に使用している。{_CAUTION_MESSAGES[_CAUTION_PATTERNS[term][1]]}"
                         "（終了コードには影響しない）。",
                     )
         except (SyntaxError, tokenize.TokenError, json.JSONDecodeError, tomllib.TOMLDecodeError) as error:
-            _emit_diagnostic(
+            diagnostics.emit(
                 path,
                 getattr(error, "lineno", 1) or 1,
+                Severity.ERROR,
                 f"入力の構文を読み取れない: {error}。入力の構文を修正して再実行する。",
             )
             return 2
     for metric in metrics:
-        problems = metric.violations()
-        if problems:
-            failed = True
-            _emit_diagnostic(metric.path, 1, "、".join(problems))
-    return 1 if failed else 0
+        for density in metric.exceeded_metrics():
+            diagnostics.emit(metric.path, 1, Severity.ERROR, density.summary())
+            for line, message in density.element_messages():
+                diagnostics.emit(metric.path, line, Severity.ERROR, message)
+    return diagnostics.returncode
 
 
 if __name__ == "__main__":

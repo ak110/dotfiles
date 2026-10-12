@@ -31,7 +31,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
     CompletingInterruptClient,
@@ -85,6 +85,39 @@ class _TierClient:
             return {"thread": {"id": params.get("threadId", "tier-thread")}}
         assert method == "turn/start"
         return {"turn": {"id": f"turn-{len(self.requests)}"}}
+
+
+class _ProcessTierClient(_TierClient):
+    """App Serverの子プロセスを持つ偽クライアント。"""
+
+    def __init__(self, pid: int) -> None:
+        super().__init__()
+        self.process = SimpleNamespace(pid=pid)
+
+
+@pytest.mark.asyncio
+async def test_start_and_resume_record_owner_and_app_server_processes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """新規起動と再開の登録簿の記録は、所有プロセスとturnを実行するApp Serverの識別を持つ。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(subject._atk_config, "_config_dir", lambda: tmp_path / "config")
+    owner = session_registry.owner_process()
+    assert owner is not None
+    expected = [{"pid": owner.pid, "create_time": owner.create_time}] * 2
+    record = session_registry.registry_directory() / "tier-thread.json"
+    client = _ProcessTierClient(owner.pid)
+    manager = subject.AppServerManager({}, asyncio.Condition(), publish_registry=True)
+    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+
+    await manager.start("開始", str(tmp_path))
+    assert json.loads(record.read_text(encoding="utf-8"))["processes"] == expected
+
+    record.unlink()
+    restarted = subject.AppServerManager({}, asyncio.Condition(), publish_registry=True)
+    monkeypatch.setattr(restarted, "_ensure_client", AsyncMock(return_value=client))
+    await restarted.resume("tier-thread", state.ResumePrompt("再開"), str(tmp_path))
+    assert json.loads(record.read_text(encoding="utf-8"))["processes"] == expected
 
 
 @pytest.mark.asyncio
@@ -1449,7 +1482,9 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
     install_backend(manager, "codex", backend)
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", "gpt-test", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "gpt-test", "high")]
+    )
     response = await manager.start("plan", "調査", str(tmp_path))
     assert response == {
         "session_id": "thread-codex",

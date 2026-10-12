@@ -72,10 +72,65 @@ def _family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.
     return parent
 
 
+_MAIN = "claude:parent-session"
+_SUBAGENT = "claude:parent-session/agent-child"
+_TASK = f"codex:{support.TOOL_CALL_THREAD}"
+_SHELL = "codex:77777777-7777-4777-8777-777777777777"
+_LAUNCHER = {_SUBAGENT: _MAIN, _TASK: _MAIN, _SHELL: _TASK}
+"""`_family`が書く記録ごとの起動元。"""
+
+
+def _provenance(events: list[dict]) -> dict[str, dict]:
+    return {event["record"]: event for event in events if event["kind"] == "record-provenance"}
+
+
+def _referenced_with_launchers(events: list[dict]) -> set[str]:
+    """結果のイベントが`record`欄か配列要素の`record`欄で参照する記録と、その起動元を根まで集める。"""
+    records: set[str] = set()
+    for event in events:
+        if event["kind"] == "record-provenance":
+            continue
+        values = [event.get("record")]
+        for value in event.values():
+            if isinstance(value, list):
+                values.extend(item.get("record") for item in value if isinstance(item, dict))
+        records.update(value for value in values if isinstance(value, str))
+    for record in list(records):
+        while record in _LAUNCHER:
+            record = _LAUNCHER[record]
+            records.add(record)
+    return records
+
+
+def test_public_default_and_bundle_files_keep_all_record_provenance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """通常表示と`--bundle`が書くファイルは4記録全ての由来を持ち、欠けた役割文書はnullとして区別する。"""
+    parent = _family(tmp_path, monkeypatch)
+    assert evidence.main([str(parent)]) == 0
+    provenance = _provenance(support.read_jsonl(capsys, raw=True))
+    assert set(provenance) == {_MAIN, _SUBAGENT, _TASK, _SHELL}
+    main = provenance[_MAIN]
+    assert main["role"] == "main" and main["source_record"] is None and main["mode"] is None
+    subagent = provenance[_SUBAGENT]
+    assert subagent["mode"] == "Explore" and subagent["role_document"] is None
+    task = provenance[_TASK]
+    assert task["source_record"] == _MAIN and task["source_line"] == 7
+    assert task["mode"] == "task" and task["role_document"] == "exec"
+    shell = provenance[_SHELL]
+    assert shell["source_record"] == _TASK and shell["mode"] == "shell" and shell["role_document"] is None
+    output = tmp_path / "bundle"
+    output.mkdir()
+    assert evidence.main([str(parent), "--bundle", str(output)]) == 0
+    capsys.readouterr()
+    for filename in ("timeline.jsonl", "warnings.jsonl", "stats.jsonl", "hook-notices.jsonl"):
+        lines = (output / filename).read_text(encoding="utf-8").splitlines()
+        assert set(_provenance([json.loads(line) for line in lines])) == set(provenance), filename
+
+
 @pytest.mark.parametrize(
     "mode",
     [
-        [],
         ["--warn"],
         ["--grep", "needle"],
         ["--fixed-string", "needle"],
@@ -85,10 +140,10 @@ def _family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.
         ["--bundle"],
     ],
 )
-def test_public_query_modes_include_record_provenance(
+def test_public_query_modes_limit_record_provenance_to_referenced_records(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: list[str]
 ) -> None:
-    """同じ4記録の由来を全収集照会から読み、欠けた役割文書はnullとして区別する。"""
+    """照会の標準出力は、結果が参照する記録とその起動元の由来だけを返す。"""
     parent = _family(tmp_path, monkeypatch)
     arguments = list(mode)
     if arguments == ["--bundle"]:
@@ -97,23 +152,39 @@ def test_public_query_modes_include_record_provenance(
         arguments.append(str(output))
     assert evidence.main([str(parent), *arguments]) == 0
     events = support.read_jsonl(capsys, raw=True)
-    provenance = {event["record"]: event for event in events if event["kind"] == "record-provenance"}
-    assert len(provenance) == 4
-    main = provenance["claude:parent-session"]
-    assert main["role"] == "main" and main["source_record"] is None and main["mode"] is None
-    subagent = provenance["claude:parent-session/agent-child"]
-    assert subagent["mode"] == "Explore" and subagent["role_document"] is None
-    task = provenance[f"codex:{support.TOOL_CALL_THREAD}"]
-    assert task["source_record"] == "claude:parent-session" and task["source_line"] == 7
-    assert task["mode"] == "task" and task["role_document"] == "exec"
-    shell = provenance["codex:77777777-7777-4777-8777-777777777777"]
-    assert shell["source_record"] == task["record"] and shell["mode"] == "shell" and shell["role_document"] is None
+    assert set(_provenance(events)) == _referenced_with_launchers(events)
+
+
+@pytest.mark.parametrize(
+    ("phrase", "matched", "expected"),
+    [
+        # needleはメインのBashの入力とtaskの委譲先のコマンドにだけ現れる。
+        ("needle", {_MAIN, _TASK}, {_MAIN, _TASK}),
+        # shellの委譲先の発話にだけ現れ、起動元のtaskとメインを根までたどる。
+        ("記録を読む", {_SHELL}, {_SHELL, _TASK, _MAIN}),
+    ],
+)
+def test_public_fixed_string_omits_unmatched_delegate_provenance(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    phrase: str,
+    matched: set[str],
+    expected: set[str],
+) -> None:
+    """一致しない委譲先の由来を出力せず、一致した記録とその起動元の連鎖だけを返す。"""
+    parent = _family(tmp_path, monkeypatch)
+    assert evidence.main([str(parent), "--fixed-string", phrase]) == 0
+    events = support.read_jsonl(capsys, raw=True)
+    summary = next(event for event in events if event["kind"] == "fixed-string-summary")
+    assert {locator["record"] for locator in summary["locators"]} == matched
+    assert set(_provenance(events)) == expected
 
 
 def test_public_catalog_tool_calls_group_by_role_document(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """root外のexecの起動件数とmodeを一回のカタログ照会から取得する。"""
+    """root外のexecの起動件数とmodeを一回のカタログ照会から取得し、由来は呼び出しを持つ記録とその起動元に限る。"""
     parent = _family(tmp_path, monkeypatch)
     window = ["--since", "2026-10-06T00:00:00Z", "--observation-boundary", "2026-10-06T00:00:30Z"]
     assert evidence.main(["--catalog-claude-project", str(parent.parent), *window, "--tool-calls"]) == 0
@@ -122,6 +193,8 @@ def test_public_catalog_tool_calls_group_by_role_document(
     role = summary["by_role"]["document:exec"]
     assert role["by_tool"]["mcp__agents_server__start"] == 1
     assert role["by_mode"] == {"shell": 1}
+    # shellの委譲先はツールを呼ばないため、その由来は出力しない。
+    assert set(_provenance(events)) == _referenced_with_launchers(events) == {_MAIN, _SUBAGENT, _TASK}
     assert evidence.main(["--catalog-codex-history", str(tmp_path / "codex" / "sessions"), *window]) == 0
     events = support.read_jsonl(capsys, raw=True)
     root = next(event for event in events if event["kind"] == "catalog-parent")
@@ -150,7 +223,7 @@ def test_public_provenance_keeps_initial_delivery_role(
             ),
         ],
     )
-    assert evidence.main([str(parent), "--tool-calls"]) == 0
+    assert evidence.main([str(parent)]) == 0
     events = support.read_jsonl(capsys, raw=True)
     role = next(event for event in events if event["kind"] == "record-provenance")
     assert role["role_document"] == initial_role

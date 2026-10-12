@@ -16,9 +16,9 @@ import pytest
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import resume_waits, session_registry, shared_layout, shared_roots, state, status_file
+from agent_toolkit._agents_server import resume_waits, shared_layout, shared_roots, state, status_file
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import install_backend
 from agent_toolkit._testing.helpers import delivery_payload
 
@@ -210,7 +210,7 @@ async def _start(
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
-        lambda _model_type: [("claude", "model", "high")],
+        lambda _model_type, **_kwargs: [("claude", "model", "high")],
     )
     response = await manager.start("plan", "調査", str(tmp_path))
     return manager.sessions[response["session_id"]]

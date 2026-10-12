@@ -15,13 +15,12 @@ from agent_toolkit._agents_server import (
     commands,
     logging_config,
     resource_snapshot,
-    session_registry,
     shared_roots,
     status_file,
 )
 from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._atk import config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, _complete, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -36,7 +35,7 @@ def _manager(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: st
     )
     manager = AgentsServerManager(writer)
     install_backend(manager, engine, FakeBackend(manager.sessions, engine))
-    monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda _name: [(engine, "model", "high")])
+    monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda _name, **_kwargs: [(engine, "model", "high")])
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     return manager
 

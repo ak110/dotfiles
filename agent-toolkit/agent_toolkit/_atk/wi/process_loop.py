@@ -33,8 +33,8 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
     新規起動は対象リポジトリでprocess-wiを完遂する短い`/goal`条件を登録する。
     `--worktree[=NAME]`指定時は任意の対象リポジトリで、dotfiles対象時は無指定でも、
     `.claude/worktrees/<NAME>`のworktreeを上流へ追随させてからセッションを起動する。
-    オーケストレーター・model・effortは`orchestrate_model`設定（未指定なら`claude:opus[1m]/medium`）から
-    セッション起動反復ごとに候補列として解決する。本作業の前に副作用のない極小起動で候補を先頭から実際に試し、
+    オーケストレーター・model・effortは`orchestrate_engine`のengine順とengine別のhigh段位モデル設定
+    （未指定なら`claude:opus[1m]/medium,codex:sol/medium`）からセッション起動反復ごとに候補列として解決する。本作業の前に副作用のない極小起動で候補を先頭から実際に試し、
     最初に可用な候補をClaude CodeまたはCodexの新規起動とresumeの双方へ渡す。
     全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。

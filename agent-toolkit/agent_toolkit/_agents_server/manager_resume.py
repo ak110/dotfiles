@@ -11,7 +11,6 @@ from agent_toolkit._agents_server import (
     codex_providers,
     launch_requests,
     manager_registry,
-    session_registry,
     shared_layout,
 )
 from agent_toolkit._agents_server.launch_requests import (
@@ -29,6 +28,7 @@ from agent_toolkit._agents_server.resume_waits import (
 )
 from agent_toolkit._agents_server.state import ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs
+from agent_toolkit._common import session_registry
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 

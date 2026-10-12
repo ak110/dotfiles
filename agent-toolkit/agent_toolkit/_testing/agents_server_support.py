@@ -7,6 +7,8 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+import subprocess
+import sys
 import typing
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -21,7 +23,6 @@ from agent_toolkit._agents_server import (
     mcp_tools,
     resume_waits,
     session_errors,
-    session_registry,
     shared_layout,
     shared_roots,
     state,
@@ -31,7 +32,7 @@ from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 
 
@@ -529,7 +530,7 @@ async def _carry_over_late_unavailability(
     candidates: list[tuple[str, str, str]],
 ) -> tuple[server_manager.AgentsServerManager, FakeBackend]:
     """開始確認の上限後に候補が失敗した状態まで進め、利用できるbackendへ差し替える。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     manager = server_manager.AgentsServerManager()
     delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
@@ -1176,7 +1177,9 @@ async def _start_claude_until_available(
 ) -> tuple[dict[str, Any], float, bool]:
     """指定メッセージの後に結果を返さないClaude sessionを`start`で起動し、応答、所要秒数、モデル出力の観測を返す。"""
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", availability_timeout)
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("claude", "model", "high")])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("claude", "model", "high")]
+    )
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     client = OpenStreamClaudeClient([messages])
     manager = server_manager.AgentsServerManager()
@@ -1231,7 +1234,7 @@ def _recording_candidates(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """候補列の解決へ渡った`model_type`を記録し、常に同じ候補を返す。"""
     requested: list[str] = []
 
-    def fake_parse(model_type: str) -> list[tuple[str, str, str]]:
+    def fake_parse(model_type: str, **_kwargs: str | None) -> list[tuple[str, str, str]]:
         requested.append(model_type)
         return [("codex", "model", "high")]
 
@@ -1311,6 +1314,15 @@ def _publish_orphaned_codex(
     session_registry.publish(
         session_id, terminal=False, engine="codex", cwd=str(tmp_path), turn_seq=3, status="running", turn_id=turn_id
     )
+
+
+def exited_process_identity() -> session_registry.ProcessIdentity:
+    """識別を取得した後に終了させた実プロセスの識別を返す。所有側と委譲先CLIがともに終了した記録を作成するテストで使う。"""
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as process:
+        identity = session_registry.ProcessIdentity.of(process.pid)
+        process.wait()
+    assert identity is not None
+    return identity
 
 
 _OVERLOAD_ERROR = {
@@ -1404,7 +1416,7 @@ async def _usage_limited_manager(
 ) -> tuple[server_manager.AgentsServerManager, FakeClaudeClient, FakeBackend]:
     """先頭のClaude候補が利用上限で拒否され、後続にCodex候補を持つ起動条件のManagerを返す。"""
     candidates = [("claude", "opus", "high"), ("codex", "gpt-6.1-sol", "high")]
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m: candidates)
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 5.0)
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     client = FakeClaudeClient(streams)

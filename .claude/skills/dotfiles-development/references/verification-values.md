@@ -48,4 +48,4 @@
 - 対象はエージェントが実行時に読むMarkdown（`AGENTS.md`・`agent-toolkit/`のrules・skills・share・`.chezmoi-source/dot_claude/`・`.claude/skills/`）である。`agent-toolkit/`ではコードのコメント・docstring・表示文・注入文も語の判定の対象とする
 - 文体の密度が閾値を超えたファイルを指標付きで報告する（指標と閾値は`scripts/check_agent_doc_tone.py`のdocstring）。`agent-toolkit:writing-standards`の表記規則が説明に使わないと定める3語が戻ると、ファイルと行を示して非0で終える（pre-commitはcommitを止める）
 - 文脈で対象と動作が伝わりにくい語（同スクリプトの`_CAUTION_PATTERNS`）は警告だけで終了コード0とする。文脈で伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。引用、意図的な悪い例、検出用データ、保存形式の名称は説明文と区別する
-- 報告されたファイルは`uv run --frozen python scripts/check_agent_doc_tone.py --report <ファイルのパス>`で指標を確かめ、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換える。語の再使用は`agent-toolkit:writing-standards`のtextlint指摘の修正方針に従い文全体を書き直す
+- 密度超過では、1行目の診断が超過した指標ごとの比率、件数と上限以下へ戻すのに必要な最少の書き換え件数を示し、後続の診断が数えた否定形で終わる文と「当該」を物理行と抜粋付きで全件列挙する。列挙された位置から必要な件数の文を選び、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換える。語の再使用は`agent-toolkit:writing-standards`のtextlint指摘の修正方針に従い文全体を書き直す

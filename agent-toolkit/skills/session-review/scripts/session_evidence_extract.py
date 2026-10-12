@@ -1191,6 +1191,30 @@ def _collection_events(collected: list[_CollectedRecord], unresolved: list[_Unre
     ]
 
 
+def _referenced_provenance_events(collected: list[_CollectedRecord], events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """照会結果が参照する記録と、その`source_record`を根までたどった起動元の記録の`record-provenance`だけを返す。
+
+    参照は、イベントの`record`欄と、イベントが持つ配列（`locators`・`samples`など）の要素の`record`欄とする。
+    全収集記録の由来を前置すると、委譲先の多い記録では行数が結果を大きく上回り、結果が由来の行に埋もれるためである。
+    全記録の由来は通常表示と`--bundle`が書くファイルが保つ。
+    """
+    referenced: set[str] = set()
+    for event in events:
+        values: list[Any] = [event.get("record")]
+        for value in event.values():
+            if isinstance(value, list):
+                values.extend(item.get("record") for item in value if isinstance(item, dict))
+        referenced.update(value for value in values if isinstance(value, str))
+    sources = {item.record_id: item.source_record for item in collected}
+    pending = list(referenced)
+    while pending:
+        source = sources.get(pending.pop())
+        if source is not None and source not in referenced:
+            referenced.add(source)
+            pending.append(source)
+    return [event for event in _collection_events(collected, []) if event["record"] in referenced]
+
+
 def _scannable_records(records: list[_Record]) -> list[_Record]:
     """照会の走査対象から、本スクリプト自身の実行記録を除いたレコードを返す。
 

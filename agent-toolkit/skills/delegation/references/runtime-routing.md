@@ -23,26 +23,35 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 ## 工程別モデル設定
 
-次の工程では表のキーのモデル設定を使う。表の「起動直前に解決するエージェント」が指すメインは、`agent-toolkit:process-wi`のメインか`agent-toolkit:plan-mode`を起動したエージェントとする。
+次の工程では、表の用途のengine順に従ってengineごとの段位のモデル設定を並べた候補を使う。表の「起動直前に解決するエージェント」が指すメインは、`agent-toolkit:process-wi`のメインか`agent-toolkit:plan-mode`を起動したエージェントとする。
 
-| キー | 対応工程 | 起動直前に解決するエージェント | `codex`環境 | `claude`環境 |
+| 対応工程（呼び出し・役割） | 用途 | 段位 | 起動直前に解決するエージェント | 起動手段 |
 | --- | --- | --- | --- | --- |
-| `high_tier_model` | WIの選定とレーン分け、計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、新しい候補・評価軸を導く調査と案出し、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程 | 各担当を委譲するメイン（調査と案出しは委譲するエージェント） | `agents_server` MCP | `agents_server` MCP |
-| `medium_tier_model` | 実装後の実行レビュー、`model_type="medium_tier"`を指定した`start`の`explore` | 各担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `low_tier_model` | `start`の`explore`で指定がない場合、`start`の`shell`、`TASK_MODEL_TYPES`が`low_tier`へ対応付けた軽量種別の`<役割名>.subagent.md`を指定する起動 | 調査またはshellを委譲するエージェント | `agents_server` MCP | `agents_server` MCP |
-| `write_model` | `start`の`write`による文章起草 | 文章を委譲するエージェント | `agents_server` MCP | `agents_server` MCP |
-| `orchestrate_model` | `atk wi process-loop`の新しいセッション | process-loop | `atk` | `atk` |
+| WIの選定とレーン分け、計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程（`add-wi`・`copilot-review-audit`・`defect-investigation`・`exec`・`lane-integration`・`session-termination`の`task`、`delegate`の`high_tier`） | base | high | 各担当を委譲するメイン | `agents_server` MCP |
+| 新しい候補・評価軸を導く調査と案出し（`explore`・`delegate`の`high_tier`） | base | high | 委譲するエージェント | `agents_server` MCP |
+| 実装後の実行レビュー、ユーザビリティレビュー（`exec-review`・`usability-review`の`task`、`delegate`の`medium_tier`） | review | medium | 各担当を委譲するメイン | `agents_server` MCP |
+| プロンプト評価（`refine-prompt`の`task`） | base | medium | 評価を委譲するエージェント | `agents_server` MCP |
+| 小規模なレビューと小さい作業（`bulk-replace-review`・`external-write-review`・`reader-fit-review`・`pick-wi-explain`の`task`、`delegate`の`low_tier`、`explore`の省略時と`low_tier`・`medium_tier`指定、`shell`） | chores | 省略時はlow、明示時は指定した段位 | 調査、レビューまたはshellを委譲するエージェント | `agents_server` MCP |
+| `start`の`write`による文章起草（`model_type`の省略時と`write`） | - | `write_model`を直接使う | 文章を委譲するエージェント | `agents_server` MCP |
+| `start`の`write`へ段位を明示した起動 | base | 指定した段位 | 文章を委譲するエージェント | `agents_server` MCP |
+| `atk commit` | base | 省略時はmedium、明示時は指定した段位 | `atk` | `atk` |
+| `atk wi process-loop`の新しいセッション、`atk run-skill`、`model_type="orchestrate"` | orchestrate | high | process-loop、run-skillまたは委譲するエージェント | `atk`（`orchestrate`の指定は`agents_server` MCP） |
 
-設定値の書式は`<engine>:<model>[/<effort>]`（`engine`は`claude`、`codex`、`agy`）で、ASCIIカンマ区切りで複数の候補を並べると先頭から試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で、agyは起動・turnの失敗で次の候補へ進む。未設定時は`codex-balanced`プリセットの候補列、effort省略時は`medium`とする。
+設定は`atk config`のキーで持ち、各キーは独立に変えられる。
 
-- `codex:astra`、`codex:sol`、`codex:terra`、`codex:luna`は起動時にCodex App Serverの`model/list`から同系列の最新の完全IDへ解決する。指定effortを受理しない、系列が無い、一覧取得に失敗した場合は理由を示して停止する（推測したIDや旧版への置換は禁止）。バージョン付きのCodex完全IDは固定指定として扱い、Claudeとagyの候補の受理可否は各engineへ委ねる
-- `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない間は、保存済みの設定より優先する。`atk config set`は保存先だけを更新し、参考一覧に無い値も警告付きで受理する。`atk config show`は候補が参考一覧に無い場合に標準エラーへ警告を書く
-- `model_type`へは、表のキー名から`_model`を除いた種別のほか、設定値と同じ書式の候補列を直接渡せる（`delegate`では必須、他の`mode`では省略可）。直接渡すとサーバーは工程別設定を読まずその候補列を使う。起動区分は各`mode`（`task`では`<役割名>.subagent.md`の`mode:`）のままとする。恒常的な変更は`atk config set`で行う
+- 段位のモデル: `claude_high_tier_model`・`claude_medium_tier_model`・`claude_low_tier_model`・`codex_high_tier_model`・`codex_medium_tier_model`・`codex_low_tier_model`。値はengine接頭辞を付けない単一の`<model>[/<effort>]`で、effort省略時は`medium`とする。1個を変えると、そのengineと段位を使う工程のモデルだけが変わる
+- 用途のengine順: `base_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`。値は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切りで、先頭のengineから試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で次のengineへ進む
+- `write_model`: 日本語文章の起草に使う候補列で、段位と用途に属さない。書式は`<engine>:<model>[/<effort>]`（`engine`は`claude`、`codex`、`agy`）のASCIIカンマ区切りで、agyは起動・turnの失敗で次の候補へ進む
+- `atk config apply-preset <プリセット名>`は用途のengine順の4キーだけを保存し、段位のモデルと`write_model`を保持する。プリセットは`codex-balanced`・`codex-near-primary`・`codex-primary`・`claude-balanced`・`claude-primary`で、balancedのレビュー用途はbaseと逆のengineを先頭にする。未設定時は`codex-balanced`のengine順を使う
+- `codex`の段位モデルの`astra`、`sol`、`terra`、`luna`は起動時にCodex App Serverの`model/list`から同系列の最新の完全IDへ解決する。`write_model`の`codex:<系列名>`も同じとする。指定effortを受理しない、系列が無い、一覧取得に失敗した場合は理由を示して停止する（推測したIDや旧版への置換は禁止）。バージョン付きのCodex完全IDは固定指定として扱い、Claudeとagyの候補の受理可否は各engineへ委ねる
+- `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない間は、保存済みの設定より優先し、その値は保存しない。`atk config set`は保存先だけを更新し、参考一覧に無い値も警告付きで受理する。`atk config show`は値が参考一覧に無い場合に標準エラーへ警告を書く
+- `model_type`へは`high_tier`・`medium_tier`・`low_tier`・`orchestrate`・`write`のほか、`write_model`と同じ書式の候補列を直接渡せる（`delegate`では必須、他の`mode`では省略可）。`task`で段位を明示した場合は役割の用途を保って段位だけを変える。候補列を直接渡すとサーバーは設定を読まずその候補列を使う。起動区分は各`mode`（`task`では`<役割名>.subagent.md`の`mode:`）のままとする。恒常的な変更は`atk config set`で行う
+- 廃止した旧キー（`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`）の保存値は、`atk config show`・`get`と設定からの候補解決の初回に新しいキーへ一括移行する。新しいキーで表せない旧値（agyの候補、同じengineの複数候補、同じengineと段位へ対応する異なるモデル）があると移行せずに停止し、競合した旧キー・候補と修正する新キーを示す。示された新キーを`atk config set`で保存してから再実行する。旧キーの環境変数が空でない間は設定からの起動が止まるため、新キーの環境変数へ置き換える
 
 起動と確認は次のとおりとする。
 
-1. `agents_server`では`<役割名>.subagent.md`を`start`の`task`へ、自由本文と種別か候補列を`start`の`delegate`へ渡す。工程別モデル設定は`agent_toolkit/_agents_server/launch_prompts.py`の`TASK_MODEL_TYPES`が決め、設定の読込と候補の選択はサーバーが行う
-2. `Agent`ツールを使う場合は、起動直前に`atk config get <キー>`で設定値を取得し、先頭候補を`engine`、`model`、`effort`へ分解する。`engine`が`claude`でなければ未完了として返すか続行できない理由を返す。分解した値は表の`対応工程`を実行する委譲先の起動にだけ渡す（定義がモデルを固定する委譲先へ`model`を渡すと遮断される）
+1. `agents_server`では`<役割名>.subagent.md`を`start`の`task`へ、自由本文と種別か候補列を`start`の`delegate`へ渡す。役割の段位は`agent_toolkit/_agents_server/launch_prompts.py`の`TASK_MODEL_TYPES`、用途は同ファイルの`TASK_USAGES`が決め、設定の読込と候補の選択はサーバーが行う
+2. `Agent`ツールを使う場合は、起動直前に`atk config get <用途>_engine`で先頭のengineを取得する。続けて`atk config get <engine>_<段位>_tier_model`でそのengineのモデルとeffortを取得する（文章起草は`write_model`の先頭候補を分解する）。`engine`が`claude`でなければ未完了として返すか続行できない理由を返す。分解した値は表の`対応工程`を実行する委譲先の起動にだけ渡す（定義がモデルを固定する委譲先へ`model`を渡すと遮断される）
 3. 起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。終端時に`wait`の結果から`model_type`、`engine`、`model`、`effort`を確かめる。保持期限後の`show`を検収の前提にしない
 4. サーバーが候補列を使い尽くした場合は、設定外のengineへ自動で切り替えず、未完了として返すか続行できない理由を返す
 

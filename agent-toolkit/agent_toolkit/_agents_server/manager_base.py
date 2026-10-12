@@ -12,7 +12,6 @@ from typing import Any
 from agent_toolkit._agents_server import (
     backends,
     resource_snapshot,
-    session_registry,
     shared_layout,
     shared_roots,
     status_file,
@@ -28,6 +27,7 @@ from agent_toolkit._agents_server.state import (
     add_touch_listener,
     selected_candidate,
 )
+from agent_toolkit._common import session_registry
 
 
 @dataclasses.dataclass

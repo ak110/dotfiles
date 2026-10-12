@@ -122,20 +122,20 @@ def test_format_instructions_follow_repository_priority(tmp_path: Path) -> None:
     assert commit._format_instructions(repository) == commit._DEFAULT_FORMAT  # pylint: disable=protected-access
 
 
-def test_default_model_type_reaches_candidate_resolver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_model_type_reaches_candidate_resolver_with_base_usage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
-    received: list[str] = []
+    received: list[tuple[str, str | None]] = []
 
-    def resolve(model_type: str) -> list[tuple[str, str, str]]:
-        received.append(model_type)
+    def resolve(model_type: str, *, usage: str | None = None) -> list[tuple[str, str, str]]:
+        received.append((model_type, usage))
         return []
 
     monkeypatch.setattr(commit.config, "resolve_model_candidates", resolve)
     with pytest.raises(SystemExit, match="1"):
         atk.main(["commit"])
 
-    assert received == ["medium_tier"]
+    assert received == [("medium_tier", "base")]
 
 
 @pytest.mark.parametrize(
@@ -156,7 +156,7 @@ def test_candidates_skip_only_before_git_state_changes(
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
     candidates = [(first_engine, "first", "medium"), ("codex", "second", "medium")]
-    monkeypatch.setattr(commit.config, "resolve_model_candidates", lambda _value: candidates)
+    monkeypatch.setattr(commit.config, "resolve_model_candidates", lambda _value, **_kwargs: candidates)
     monkeypatch.setattr(commit, "_executable", lambda engine: f"/fake/{engine}")
     original_run = subprocess.run
     calls: list[str] = []
@@ -189,7 +189,7 @@ def _claude_then_codex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple
     monkeypatch.setattr(
         commit.config,
         "resolve_model_candidates",
-        lambda _value: [("claude", "sonnet", "high"), ("codex", "second", "medium")],
+        lambda _value, **_kwargs: [("claude", "sonnet", "high"), ("codex", "second", "medium")],
     )
     monkeypatch.setattr(commit, "_executable", lambda engine: f"/fake/{engine}")
     sleeps: list[float] = []
@@ -275,7 +275,7 @@ def test_missing_executable_uses_next_candidate(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr(
         commit.config,
         "resolve_model_candidates",
-        lambda _value: [("claude", "first", "medium"), ("codex", "second", "medium")],
+        lambda _value, **_kwargs: [("claude", "first", "medium"), ("codex", "second", "medium")],
     )
     monkeypatch.setattr(commit, "_executable", lambda engine: None if engine == "claude" else "/fake/codex")
     original_run = subprocess.run
@@ -319,7 +319,7 @@ def test_start_failure_names_git_status(
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
 
-    def fail(_value: str) -> list[tuple[str, str, str]]:
+    def fail(_value: str, **_kwargs: str) -> list[tuple[str, str, str]]:
         raise OSError("読み取り失敗")
 
     monkeypatch.setattr(commit.config, "resolve_model_candidates", fail)
@@ -341,7 +341,7 @@ def test_final_failure_names_recovery_operation(
     """状態を変えた失敗は状態の確認を、候補の枯渇は候補の追加を案内する。"""
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
-    monkeypatch.setattr(commit.config, "resolve_model_candidates", lambda _value: [("claude", "first", "medium")])
+    monkeypatch.setattr(commit.config, "resolve_model_candidates", lambda _value, **_kwargs: [("claude", "first", "medium")])
     monkeypatch.setattr(commit, "_executable", lambda engine: f"/fake/{engine}")
     original_run = subprocess.run
 

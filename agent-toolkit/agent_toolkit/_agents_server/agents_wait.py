@@ -19,12 +19,12 @@ from agent_toolkit._agents_server import (
     notice_inbox,
     result_projection,
     retained_results,
-    session_registry,
     shared_layout,
     shared_roots,
     wait_targets,
 )
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._common import session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import ActionableError, report, with_next_action

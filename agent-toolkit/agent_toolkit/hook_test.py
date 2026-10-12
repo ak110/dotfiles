@@ -490,13 +490,12 @@ with open(record, "w", encoding="utf-8") as file:
 sys.exit(code)
 """
 
-# 終了工程の観測などが対象外の入力でも読み込んでいた、委譲・バックグラウンドタスク・報告解析・シェル判定の依存。
+# 終了工程の観測などが対象外の入力でも読み込んでいた、委譲・バックグラウンドタスク・シェル判定の依存。
 _UNUSED_BRANCH_MODULES = (
     "agent_toolkit._agents_server.state",
     "agent_toolkit._hooks.agents_server_observations",
     "agent_toolkit._hooks.background_tasks",
     "agent_toolkit._hooks.pretooluse.shell_checks",
-    "agent_toolkit._hooks.report_validation",
 )
 
 

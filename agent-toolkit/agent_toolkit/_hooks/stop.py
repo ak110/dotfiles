@@ -37,7 +37,7 @@ CHECK_MODULE_NAMES = (
     "queued_notification_advisor",
 )
 
-# CodexのStopは終了工程の証拠だけを判定する。他の判定はClaude Codeの記録形式と通知手段を前提とするため適用しない。
+# CodexのStopはcompletion-reportの起動証拠だけを判定する。他の判定はClaude Codeの記録形式と通知手段を前提とするため適用しない。
 CODEX_CHECK_MODULE_NAMES = ("termination_order_advisor",)
 
 _CONSECUTIVE_BLOCK_LIMIT = 7

@@ -15,6 +15,7 @@ from typing import Any, NoReturn, cast
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.wi import process_loop as _process_loop
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
@@ -34,6 +35,7 @@ from agent_toolkit._testing.process_loop_support import (
     fake_run_with_remote_url,
     hook_debug_log,
     isolate_process_loop_commands,
+    set_orchestrate_environment,
     set_orchestrate_model,
 )
 from agent_toolkit.atk_test import _setup_notes
@@ -526,7 +528,7 @@ class TestProcessLoopPromptAndEnv:
         expected_model: str,
         expected_effort: str,
     ) -> None:
-        """`orchestrate_model`設定のmodelとeffortがClaude起動コマンドへ反映される。"""
+        """orchestrate用途のモデル設定のmodelとeffortがClaude起動コマンドへ反映される。"""
         _setup_notes(tmp_path)
         set_orchestrate_model(tmp_path, config_value)
         myrepo = tmp_path / "myrepo"
@@ -753,7 +755,12 @@ class TestProcessLoopPromptAndEnv:
     ) -> None:
         """effortだけが異なる候補を区別し、Claudeが値を無視した候補を不成立とする。"""
         _setup_notes(tmp_path)
-        set_orchestrate_model(tmp_path, "claude:sonnet/ultra,claude:sonnet/high")
+        # 同じengineの候補を2件並べる構成は設定で表せないため、候補列の取得結果を差し替える。
+        monkeypatch.setattr(
+            _config,
+            "parse_unresolved_model_candidates",
+            lambda *_a, **_kw: [("claude", "sonnet", "ultra"), ("claude", "sonnet", "high")],
+        )
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         probes: list[list[str]] = []
@@ -975,7 +982,7 @@ class TestProcessLoopPromptAndEnv:
         """process-loopも保存値ではなく環境変数の候補列を共通解決関数から取得する。"""
         _setup_notes(tmp_path)
         set_orchestrate_model(tmp_path, "claude:sonnet/high")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", "codex:gpt-5.6-terra/low")
+        set_orchestrate_environment(monkeypatch, "codex:gpt-5.6-terra/low")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         calls: list[list[str]] = []
@@ -1007,7 +1014,7 @@ class TestProcessLoopPromptAndEnv:
         _setup_notes(tmp_path)
         config_file = tmp_path / "config" / "config.json"
         config_file.parent.mkdir(parents=True)
-        config_file.write_text('{"orchestrate_model": "invalid"}\n', encoding="utf-8")
+        config_file.write_text('{"orchestrate_engine": "invalid"}\n', encoding="utf-8")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         session_calls: list[list[str]] = []
@@ -1024,8 +1031,8 @@ class TestProcessLoopPromptAndEnv:
         assert exc_info.value.code == 2
         assert not session_calls
         stderr = capsys.readouterr().err
-        assert "現在の設定値: invalid" in stderr
-        assert "atk config set orchestrate_model claude:opus[1m]/medium" in stderr
+        assert "設定キーorchestrate_engineの値が不正です（値: invalid）" in stderr
+        assert "atk config set orchestrate_engine <VALUE>" in stderr
 
     def test_resume_applied_to_first_session_only(
         self,
@@ -1566,7 +1573,7 @@ class TestProcessLoopReturncode:
         # 原因の確認先と候補の変更手段を次の操作として続ける。
         next_action = captured.err.split("\n次の操作: ", 1)[1]
         assert "セッション記録" in next_action
-        assert "atk config set orchestrate_model" in next_action
+        assert "atk config set orchestrate_engine" in next_action
 
     def test_codex_rejects_sigterm_style_returncodes(
         self,

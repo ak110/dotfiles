@@ -6,17 +6,17 @@
 
 選定結果の`段階`を昇順に処理し、同じ段階の独立レーンを並行起動する。`先行レーン`を持つ後段は、列挙した全レーンの統合完了を受領してから、統合先の現行HEADを基点にworktreeを作成する。単一段階なら全レーンを同時に作成して起動する。
 
-レーンごとの専用branch・専用worktree・個別managed-tempと所有登録は次の操作で作成する。
+レーンごとの専用branch・専用worktreeと所有登録は次の操作で作成する。専用worktreeは対象リポジトリの主作業ツリーの`.claude/worktrees/process-wi-<レーン識別子>`へ作成される。process-wiは対象リポジトリごとに1つだけ起動する前提で、配置はリポジトリとレーン識別子だけで決まり、別sessionやprocess-loopのworktreeから呼んでも同じパスになる。
 
 ```text
 atk lane create --repo <対象リポジトリの絶対パス> --base-branch <統合先branch> --lane <レーン識別子> --selection-file <選定YAMLの絶対パス>
 ```
 
-対象リポジトリが作成・環境準備・撤去の固有手順を定める場合は、create・prepare・deleteのargv配列を持つJSONを`--commands-file <絶対パス>`へ渡す。各argvの`{repo}`・`{worktree}`・`{branch}`・`{lane}`は作成側がshellを介さず展開する。固有作成先は`--worktree <絶対パス>`で指定し、前提ファイルの複製、mise trust、必要な依存同期はprepareへ含める。作成側は固有手順のdetached HEADを専用branchへ接続し、手順が無ければ個別managed-temp直下へworktreeを作成する。
+対象リポジトリが作成・環境準備・撤去の固有手順を定める場合は、create・prepare・deleteのargv配列を持つJSONを`--commands-file <絶対パス>`へ渡す。各argvの`{repo}`・`{worktree}`・`{branch}`・`{lane}`は作成側がshellを介さず展開する。`{worktree}`には固定作成先が渡る。前提ファイルの複製、mise trust、必要な依存同期はprepareへ含める。作成側は固有手順のdetached HEADを専用branchへ接続する。`--worktree <絶対パス>`は固定作成先と別の場所が必要な場合だけ指定し、その場合のパスは固定されない。
 
 所有session、Git共通ディレクトリ、専用branch、作成先、回収対象、選定原本、固有手順と実行記録は`record_path`の登録へ保存される。資源情報を手書きで再登録せず、親の`parent-handoff.md`には作成結果の所在と担当thread・引き継ぎ記録の対応を残す。メインは終了コード0・`ready`とprepareの保存済み両出力を読み、警告と環境準備の成立を判定してから担当を起動し、環境構築の結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の`環境構築`へ渡す。準備が失敗した資源は登録と成果を保持し、入力を是正して同じcreateで再開する。
 
-統合済みの資源もセッション終了まで保持し、同じレーンへの追加は同じcreateの返却から専用worktreeとbranchを再利用する。登録と回収結果は個別managed-tempの外に保持される。前回の強制終了などで残った登録は、process-wi開始時に`atk lane delete --list`で読み、担当とプロセスの終端を確かめてから同じ所有sessionのdeleteで再判定する。再開に使う場合は登録の`record_path`をcreateの`--reuse-record`へ渡して新しい所有sessionへ移す。回収は所有登録と現物が一致した専用資源に限り、主作業ツリーと登録のない資源は保持する。
+統合済みの資源もセッション終了まで保持し、同じレーンへの追加は同じcreateの返却から専用worktreeとbranchを再利用する。登録と回収結果は専用資源の外に保持される。前回の強制終了などで残った登録は、process-wi開始時に`atk lane delete --list`で読み、担当とプロセスの終端を確かめてから同じ所有sessionのdeleteで再判定する。再開に使う場合は登録の`record_path`をcreateの`--reuse-record`へ渡して新しい所有sessionへ移す。旧配置（個別managed-temp）の登録も同じ作成先のまま移せる。固定作成先を別sessionの登録が保持している場合、createは回収条件を満たす資源だけを回収して同じパスへ再作成する。未統合・dirty・稼働中の資源と所有登録の無い実体は変更せずに失敗し、理由と`--reuse-record`またはdeleteの回復操作を返す。回収は所有登録と現物が一致した専用資源に限り、主作業ツリーと登録のない資源は保持する。
 
 各レーンのレーン担当を最初に起動した直後に、`atk agents list --include-terminated`から起動結果の`session_id`と一致する項目の`created_at`を時差付きの`レーン開始時刻`としてレーンの資源記録へ保存する。`started_at`はturnの開始時刻であり、初回起動の起点には使えない。同じレーンを再起動・置換してもこの値を変えず、統合指示で`exec.parent.md`の同名入力として渡す。
 
@@ -122,7 +122,7 @@ atk run-script pick-wi-check -- <選定YAML> --mark-integrated <レーン識別�
 
 `--mark-integrated`は反復指定でき、同じレーンへの記録も反復できる。状態記録とmergeは別々に実行する。保存は全体検査の成功後だけ原子的に行われ、未知レーン・入力不備・内容違反では保存先が変わらない。終了コード0と保存成功を検収して`parent-handoff.md`へ記録し、非0なら入力を直して同じ操作を再実行する。完了レーンと所属WIは履歴として残り、重なりは状態に応じて判定される。
 
-資源の回収は終了時の`atk lane delete`が行う。登録全体を先に判定し、全工程と外部プロセスの終了、選定の統合済み、clean、Git共通ディレクトリと専用branchの登録一致、統合先への到達を削除直前にも確かめてから、固有撤去、worktree、到達を再確認したbranchの`-D`、個別managed-tempの順で回収する。未統合、dirty、稼働中、不明、途中失敗の対象は、理由と残る操作を回収対象の外へ保存し、再実行は残る処理から続ける。セッションのmanaged-tempと証拠はレーン用領域へ置かず、回収対象から外す。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が同じ回収へ接続し、turnごとのSessionEndでは回収しない。
+資源の回収は終了時の`atk lane delete`が行う。登録全体を先に判定し、全工程と外部プロセスの終了、選定の統合済み、clean、Git共通ディレクトリと専用branchの登録一致、統合先への到達を削除直前にも確かめてから、固有撤去、worktree、到達を再確認したbranchの`-D`、旧配置の登録が持つ個別managed-tempの順で回収する。未統合、dirty、稼働中、不明、途中失敗の対象は、理由と残る操作を回収対象の外へ保存し、再実行は残る処理から続ける。セッションのmanaged-tempと証拠は専用worktreeへ置かず、回収対象から外す。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が同じ回収へ接続し、turnごとのSessionEndでは回収しない。
 
 到達確認を経た`-D`でbranchを削除するのは、`-d`がupstreamを基準に判定し、push前のローカル統合を未統合として拒否するためである。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終端」：所有資源の回収：2026年9月3日」にある。
 

@@ -223,7 +223,9 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     )
     manager = server_manager.AgentsServerManager(writer)
     install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type: [("codex", None, None)])
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", None, None)]
+    )
     monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
     writer.activate()
 

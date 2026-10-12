@@ -1,8 +1,8 @@
 """本作業のセッションを起動する前の、モデル候補の解決・可用性判定・利用上限の待機と子環境の整理。
 
-`atk wi process-loop`と`atk run-skill`はどちらも`orchestrate_model`の候補列から本作業のClaude Code
-またはCodexを選ぶ。候補の解決、副作用の無い可用性判定、Claudeの利用上限の解除待ちおよび正常終了の判定を
-本モジュールへ集め、両コマンドから同じ関数を呼ぶ。コマンドごとに異なるのは端末タイトル、可用性判定の
+`atk wi process-loop`と`atk run-skill`はどちらも、`orchestrate_engine`のengine順と各engineの上位段位モデルから
+組んだ候補列で本作業のClaude CodeまたはCodexを選ぶ。
+候補の解決、副作用の無い可用性判定、Claudeの利用上限の解除待ちおよび正常終了の判定を本モジュールへ集め、両コマンドから同じ関数を呼ぶ。コマンドごとに異なるのは端末タイトル、可用性判定の
 プロンプトの生成元、利用上限の待機の記録先と失敗時の案内の文言だけであり、呼び出し側が`ProbeContext`で渡す。
 """
 
@@ -107,34 +107,32 @@ def session_env(env: dict[str, str], orchestrator: str, *, platform: str = os.na
 
 
 def resolve_specs(*, rerun_action: str) -> list[tuple[str, str, str]]:
-    """orchestrate_model設定を候補ごとの(orchestrator, model, effort)として返す。
+    """orchestrate用途のengine順とhigh段位のモデル設定を候補ごとの(orchestrator, model, effort)として返す。
 
-    書式不正（設定ファイルの手編集等）の場合は修正手順を案内してexit 2で終了する。
+    設定値の書式不正、旧モデル設定の移行の停止、旧環境変数の残存の場合は修正手順を案内してexit 2で終了する。
     effort未指定は`medium`を補完する。`rerun_action`は候補を変えた後に行う操作の案内とする。
     """
     try:
-        value = _config.resolve_mutable_setting("orchestrate_model")
-    except ValueError as error:
-        default = _config.mutable_setting_default("orchestrate_model")
-        raw_value = _config.raw_mutable_setting("orchestrate_model")
-        _next_action.report(
-            f"orchestrate_modelの設定値が不正です（現在の設定値: {raw_value}）。{error}。",
-            next_action=(
-                f"`atk config set orchestrate_model {default}`のように"
-                "`<claude|codex>:<model>[/<effort>]`形式の候補列で修正してください。"
-            ),
-        )
+        candidates = _config.parse_unresolved_model_candidates("orchestrate")
+    except _next_action.ActionableError as error:
+        _next_action.report(f"orchestrateのモデル設定を読めません。{error}", next_action=error.next_action)
         sys.exit(2)
     try:
-        return _config.resolve_model_candidates("orchestrate")
+        return _config.resolve_catalog(candidates)
     except ValueError as error:
         _next_action.report(
-            f"orchestrate_modelのCodexモデル解決に失敗しました（設定値: {value}）。{error}",
+            f"orchestrateのCodexモデル解決に失敗しました（候補: {_format_candidates(candidates)}）。{error}",
             next_action=(
-                f"`codex`へのログインを確認するか、`atk config set orchestrate_model <候補列>`で候補を変えてから{rerun_action}"
+                "`codex`へのログインを確認するか、`atk config set codex_high_tier_model <モデル>`または"
+                f"`atk config set orchestrate_engine <engine順>`で候補を変えてから{rerun_action}"
             ),
         )
         sys.exit(2)
+
+
+def _format_candidates(candidates: list[tuple[str, str, str]]) -> str:
+    """候補の3つ組を`<engine>:<model>/<effort>`のカンマ区切りで返す。"""
+    return ",".join(f"{engine}:{model}/{effort}" for engine, model, effort in candidates)
 
 
 def select_available(
@@ -255,7 +253,8 @@ def _probe_candidate(
         _notify(
             context,
             f"モデル候補の可用性判定に失敗しました（engineを起動できません: {error}）: {candidate}",
-            "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える",
+            "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_engine <engine順>`か"
+            "`atk config set <engine>_high_tier_model <モデル>`で候補を変える",
         )
         return None, (orchestrator, 1, f"engineを起動できません: {error}")
     _console_title.set_console_title(context.title)
@@ -275,6 +274,7 @@ def _probe_candidate(
     _notify(
         context,
         f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}",
-        "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_model <候補列>`で候補を変える",
+        "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_engine <engine順>`か"
+        "`atk config set <engine>_high_tier_model <モデル>`で候補を変える",
     )
     return None, (orchestrator, failure_code, reason)

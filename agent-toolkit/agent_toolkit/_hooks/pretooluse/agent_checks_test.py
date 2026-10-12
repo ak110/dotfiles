@@ -389,7 +389,7 @@ class TestTaskStopBlock:
 
 
 class TestExecuteReviewAlternateRouteAllowed:
-    """`medium_tier_model`が指すengineによらず実行レビューのAgent起動が通過する。"""
+    """`review_engine`が指すengineによらず実行レビューのAgent起動が通過する。"""
 
     @pytest.mark.parametrize("task_name", _EXECUTE_REVIEW_TASK_NAMES)
     def test_codex_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path, task_name: str) -> None:
@@ -401,11 +401,11 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "session_id": "execute-review-codex",
                 "isSidechain": True,
             },
-            env_overrides=_stage_model_env(tmp_path, "codex:gpt-5.6-sol/high"),
+            env_overrides=_stage_model_env(tmp_path, "codex,claude"),
         )
         assert result.returncode == 0
         assert "blocked:" not in result.stderr
-        assert "medium_tier_model" not in result.stderr
+        assert "review_engine" not in result.stderr
 
     def test_claude_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path) -> None:
         result = _run(
@@ -418,13 +418,13 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "session_id": "execute-review-claude",
                 "isSidechain": True,
             },
-            env_overrides=_stage_model_env(tmp_path, "claude:sonnet/medium"),
+            env_overrides=_stage_model_env(tmp_path, "claude,codex"),
         )
         assert result.returncode == 0
 
     def test_codex_setting_allows_main_session_agent(self, tmp_path: pathlib.Path) -> None:
         session_id = "execute-review-main"
-        env = _stage_model_env(tmp_path, "codex:gpt-5.6-sol/medium")
+        env = _stage_model_env(tmp_path, "codex")
         env.update(_plan_file_state_env(tmp_path))
         result = _run(
             {

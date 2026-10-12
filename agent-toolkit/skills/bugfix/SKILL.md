@@ -31,7 +31,7 @@ description: >
 | 実装担当の委譲先を確定する前 | `agent-toolkit:delegation`を起動し、同スキルの`references/runtime-routing.md` |
 | `agent-toolkit:writing-standards`の`references/testing.md`「分岐条件の効果の裏付け」による検証へ入る前 | 同スキルを起動し、`references/testing.md` |
 
-対策の深さは2つの判断で決まる。不在を原因へ採る前に既存の上位規範から導けるかを確かめること（`references/root-cause-analysis.md`「原因分析の品質確認」）と、条文の追加より除去・緩和・一般化を先に評価すること（`references/root-cause-analysis.md`「再発防止策」）である。
+対策の深さは2つの判断で決まる。1つは不在を原因へ採る前に上位規範や目的と常識から導けるかを確かめること（`references/root-cause-analysis.md`「原因分析の品質確認」）である。もう1つは条文の追加より除去・緩和・一般化を先に評価すること（`references/root-cause-analysis.md`「再発防止策」）である。
 
 ## 問題を見つけたときの対処
 

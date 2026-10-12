@@ -12,6 +12,7 @@ import pytest
 
 from agent_toolkit._agents_server import antigravity, launch_prompts, session_errors
 from agent_toolkit._agents_server import state as shared_state
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 
 _FAKE_AGY = """#!{python}
@@ -194,6 +195,41 @@ def test_send_message_starts_a_new_turn_on_the_same_conversation(
     assert session.session_id == "conv-1"
     assert session.turn_seq == 2
     assert session.agent_message.endswith("続けて短くして")
+
+
+def test_each_turn_records_owner_and_cli_processes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """登録簿の記録は所有プロセスとturnごとに起動したCLIの識別を持ち、継続のturnで起動し直したCLIへ更新する。"""
+    _install_fake_agy(tmp_path, monkeypatch)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
+    owner = session_registry.owner_process()
+    assert owner is not None
+
+    def recorded() -> list[dict[str, Any]]:
+        path = session_registry.registry_directory() / "conv-1.json"
+        return json.loads(path.read_text(encoding="utf-8"))["processes"]
+
+    async def scenario() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        manager = antigravity.AntigravityManager(publish_registry=True)
+        session = await manager.start("原稿を推敲して", str(tmp_path))
+        for _ in range(200):
+            if session.terminal:
+                break
+            await asyncio.sleep(0.02)
+        first = recorded()
+        await manager.send_message(session, "続けて短くして")
+        for _ in range(200):
+            if session.terminal:
+                break
+            await asyncio.sleep(0.02)
+        await manager.close()
+        return first, recorded()
+
+    first, second = asyncio.run(scenario())
+
+    owner_entry = {"pid": owner.pid, "create_time": owner.create_time}
+    assert first[0] == owner_entry and second[0] == owner_entry
+    assert len(first) == len(second) == 2
+    assert first[1] != second[1]
 
 
 def test_stream_events_are_saved_across_turns(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

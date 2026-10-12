@@ -383,9 +383,15 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
         path = bundle_dir / filename
         stored[filename] = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
         assert evidence.main([str(transcript), *single_args]) == 0
-        single = [event for event in read_jsonl(capsys, raw=True) if event["kind"] != "unresolved-record"]
-        assert stored[filename] == single
-        assert {"kind": "bundle-file", "path": str(path.resolve()), "count": len(single)} in bundle_events
+        # ファイルは全収集記録の由来を保ち、単独実行の標準出力は結果が参照する記録の由来だけを返すため、由来は別に比べる。
+        single = [
+            event for event in read_jsonl(capsys, raw=True) if event["kind"] not in {"unresolved-record", "record-provenance"}
+        ]
+        assert [event for event in stored[filename] if event["kind"] != "record-provenance"] == single
+        assert [event for event in stored[filename] if event["kind"] == "record-provenance"] == [
+            event for event in stored["timeline.jsonl"] if event["kind"] == "record-provenance"
+        ]
+        assert {"kind": "bundle-file", "path": str(path.resolve()), "count": len(stored[filename])} in bundle_events
 
     candidates = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
     candidate_items = [item for item in candidates if item["kind"] == "candidate"]
