@@ -47,6 +47,48 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス>
 構造化試験は`--junit-xml <保存XML> --junit-record <実行記録>`で指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で指定する。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を渡す。pyfltrのrun JSON Linesはheader・command・summaryを含む全体を使う。形式は`atk run-script exec-review-evidence-check -- --help`で読む。
 これらへ`--list-results --results-summary`を加えて状態・基準差と診断のまとまり・重複数・全識別子を読み、`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復で詳細・取得版・所在を読む。代表1件で全件の意味を判断せず、比較不能を一致と扱わず、成功件数だけから達成を生成しない。取得版と条件が行を直接満たすかは本担当が判定する。
 記入時は`--list-results`を外し、同じ保存物と識別子を`--select-row`・`--mode`・選択行ごとの`--row-outcome`と`--reviewed-head`へつなぐ。既存の`--results-file`・`--updates-file`も受理され、JSON入力のsource不一致は拒否される。
+
+更新配列を直接ファイルへ記入する場合は、一覧の配列名・1始まりの行番号・現行`source`を使う。例えば、`user_requirements`の1行目を手動観測で判定する更新JSONは次の形で保存する。`source`は一覧の値へ、`reviewed_head`は実際にレビューした完全OIDへ、`evidence_file`は行を直接満たす説明のUTF-8ファイルの絶対パスへ置き換える。
+
+```json
+[
+  {
+    "section": "user_requirements",
+    "row": 1,
+    "source": "一覧に表示された現行source",
+    "outcome": "達成",
+    "reviewed_head": "レビューした完全OID",
+    "evidence_file": "/absolute/path/observation.txt",
+    "mode": "replace"
+  }
+]
+```
+
+```text
+atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --updates-file <更新配列JSONの絶対パス> --output <同じ完成条件証拠の絶対パス>
+atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --list --section user_requirements --row 1
+```
+
+説明ファイルだけで記入する場合は`tests`・`diagnostics`、`--results-file`と構造化結果の指定を省略できる。初回更新後、根拠を訂正するときは説明ファイルを書き直して`mode: replace`で同じコマンドを実行する。再レビューも同じ証拠を一覧で読み、今回の判定と完全OIDを明示して更新する。追記する場合は`mode: append`を使う。
+出所変更では同じ更新行の`source`に変更前の一覧の値を保ち、`new_source`へ判断根拠の新しい所在を追加する。`outcome`は`wi_conditions`では`失効`、`user_requirements`では`失効`・`割当外`・`背景`のいずれかとし、所在と説明は「判定の値」「失効の根拠」に従う。例えば、ユーザー判断で要求が失効した場合は次の更新配列を直接記入し、前記の`--updates-file`のコマンドで保存する。例の各値を一覧、実際の判断の所在、レビューした完全OIDと不採用の説明ファイルへ置き換える。
+
+```json
+[
+  {
+    "section": "user_requirements",
+    "row": 1,
+    "source": "一覧に表示された変更前のsource",
+    "new_source": "関連UWIのファイル名と回答節、否定した要求単位",
+    "outcome": "失効",
+    "reviewed_head": "レビューした完全OID",
+    "evidence_file": "/absolute/path/rejection-reason.txt",
+    "mode": "replace"
+  }
+]
+```
+
+更新後の一覧にある新しい`source`を次の更新の選択値に使う。
+通常の判定は原文と出所を、全更新は未選択行の値を保持する。配列に不正な行指定や組合せが1件でもあれば、入力も出力も変更しない。保存時のJSONの再直列化による空白・改行の変化と、値の変更を区別する。
 未判定根拠を使う場合は`--verification-record <未判定記録の絶対パス> --verification-row <選択行の配列:N> <未判定行の配列:N>`を指定する。同じ原文・WI・出所の要求単位からだけ継承でき、説明と手動観測は`--evidence-file`で補う。保存先は未判定記録と別の完成条件証拠とし（同じ証拠のパスへ原子的に更新でき、別出力も指定できる）、不正な行が1件でもあれば全保存が拒否される。原文・未選択行・未判定記録は保持される。
 更新後は同じ`--list`で記入内容を読み、本書の原文・内容・HEAD・共用の確認と`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」の返却前確認へ進む。未判定記録の一覧はverification-record、返却の`--show-all-rows`は記入済み証拠の受領に使う。
 
@@ -88,6 +130,7 @@ JSONの最上位は`{"wi_conditions": [...], "user_requirements": [...]}`とす�
 - `割当外`: 所在の節の割当の語（`割当`・`割り当て`・`分割元の依頼全体`）を持つ行に割当先の表記が現れるかを確認コマンドが確かめる。`「」`の割当先はH1タイトルのほか要求内容を特定できる説明も受理する
 - `背景`: 分類の記録の行は背景とした原文の範囲を`「」`で引用し（中略は`…`）、同じ行に「背景」の語と理由を持つ。確認コマンドは所在、引用が要求単位を覆うこと、`evidence`の理由を確かめる。起草時の記録が無い単位は、計画の起草中なら計画担当が`## 実施内容`の根拠へ、実装着手後なら本担当がレビュー指摘管理表へ分類と範囲を記録してから使う。完成条件証拠へ`背景`と書くだけでは記録に当たらない。処理中の元AWIの本文の書換えは記録の手段から外す
 - `失効`: 失効した完成条件も`wi_conditions`へ1行ずつ残す
+- 出所を変更する更新JSONは、現行`source`で行を選び、前表の所在を`new_source`へ記入する。通常の判定へ`new_source`を付ける更新と、`wi_conditions`の`割当外`・`背景`は受理しない
 - `reviewed_head`: その行を実際に確認したレビュー対象commitを、返却する`レビューしたHEAD`と同じ対象をGitで解決できるOIDで置く。計画だけにある原文要求の行にも記録する
 
 ## 失効の根拠
@@ -100,6 +143,8 @@ JSONの最上位は`{"wi_conditions": [...], "user_requirements": [...]}`とす�
 - メインの技術判断の記録の所在: 計画確定前は、今回レビューへ渡された計画の絶対パスと`## 実施内容`の根拠欄（対象AWI・対象条件・`メインの技術判断`・外す根拠を記録した行）。実装着手後は、対象AWIのファイル名と`メインの技術判断`の文字列を含む行があるレビュー指摘管理表の絶対パス。計画の記録がそろう場合は表への転記を要しない。この根拠は`source`を持つエージェント由来のAWIの`wi_conditions`の行だけに使い、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「技術判断で外せる完成条件」に当たる条件だけを外す
 
 計画か表の不採用行は`evidence`へ書き、ユーザー判断の参照先と区別する。ユーザー判断も技術判断の記録も無い条件除外の要請は委譲元へ返し、委譲元が確定してから失効の可否を決める。
+
+失効への更新では一覧にある現行`source`を選択値とし、前記の判断の所在を`new_source`（直接引数では`--row-source`）へ渡す。不採用の根拠を説明ファイルへ記入して同時に保存し、更新後の一覧と返却前確認で判断の所在と根拠を確かめる。
 
 会話の証拠には、受領した対象発話の逐語内容とメイン自身のセッションIDまたはthread IDを使う。出所は必要時に`atk run-script session-review-evidence -- --claude-session-id <受領したID> --user-events`か`--codex-thread-id <受領したID> --user-events`で確定する。同文反復は受領した時点・文脈と元の記録位置で区別する。取得済みの出所は再抽出せず、`atk run-script session-review-evidence -- --user-events-file <元の保存ファイルの絶対パス> --user-event-at <record>:<line>`で全欄を読む。構造化確認では質問・全選択肢・選択回答・自由記述の対応を保ち、ユーザー由来の判断は回答と自由記述から確定する。取得不能・不一致・一意に特定できない入力では証拠を確定せず、具体的な不足を委譲元へ返す。
 

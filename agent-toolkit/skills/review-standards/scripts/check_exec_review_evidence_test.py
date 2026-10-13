@@ -3948,3 +3948,108 @@ def test_list_empty_arrays_without_wi_or_completed_judgment(
     assert run_script.dispatch(args) == 0
     assert capsys.readouterr().out == ""
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("section", "outcome"),
+    [
+        ("wi_conditions", "失効"),
+        ("user_requirements", "失効"),
+        ("user_requirements", "割当外"),
+        ("user_requirements", "背景"),
+    ],
+)
+def test_public_json_source_change_uses_current_source_and_preserves_other_values(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], section: str, outcome: str
+) -> None:
+    """一覧から選んで出所変更し、旧出所での再更新を拒否して新出所で根拠を訂正できる。"""
+    path = tmp_path / "review.json"
+    _write_evidence(path, [_condition(FIRST_WI, "保存する。")], [_requirement(FIRST_WI, "再読込する。")])
+    original = json.loads(path.read_text(encoding="utf-8"))
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=[str(path), "--list"])
+    assert run_script.dispatch(args) == 0
+    selected = next(row for row in _full_rows(capsys.readouterr().out) if row["配列"] == section)
+    explanation = tmp_path / "reason.txt"
+    explanation.write_text("判定根拠の記録を確認した。", encoding="utf-8")
+    update = {
+        "section": selected["配列"],
+        "row": selected["行番号"],
+        "source": selected["source"],
+        "new_source": "判断根拠の所在",
+        "outcome": outcome,
+        "reviewed_head": REVIEWED_HEAD,
+        "evidence_file": str(explanation),
+        "mode": "replace",
+    }
+    updates = tmp_path / "updates.json"
+    updates.write_text(json.dumps([update]), encoding="utf-8")
+    args.script_args = [str(path), "--updates-file", str(updates), "--output", str(path)]
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+    expected = json.loads(json.dumps(original))
+    expected[section][0].update(
+        source="判断根拠の所在", outcome=outcome, reviewed_head=REVIEWED_HEAD, evidence="判定根拠の記録を確認した。"
+    )
+    assert json.loads(path.read_text(encoding="utf-8")) == expected
+    before = path.read_bytes()
+    assert run_script.dispatch(args) == 1
+    assert path.read_bytes() == before
+    assert "出所" in capsys.readouterr().err
+    update["source"] = "判断根拠の所在"
+    update.pop("new_source")
+    explanation.write_text("根拠を訂正して再レビューした。", encoding="utf-8")
+    updates.write_text(json.dumps([update]), encoding="utf-8")
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+    expected[section][0]["evidence"] = "根拠を訂正して再レビューした。"
+    assert json.loads(path.read_text(encoding="utf-8")) == expected
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"outcome": "達成", "new_source": "新出所"},
+        {"outcome": "未達", "new_source": "新出所"},
+        {"outcome": "証拠不足", "new_source": "新出所"},
+        {"outcome": "割当外", "new_source": "新出所"},
+        {"outcome": "背景", "new_source": "新出所"},
+        {"new_source": " "},
+        {"new_source": 1},
+        {"source": "別の現行出所"},
+        {"row": 0},
+        {"row": True},
+        {"row": 3},
+        {"condition": "原文の書換え"},
+    ],
+)
+@pytest.mark.parametrize("in_place", [True, False])
+def test_public_json_invalid_source_change_never_saves_partial_updates(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], invalid: dict[str, typing.Any], in_place: bool
+) -> None:
+    """先頭が有効でも後続の不正行を含む配列は、入力と既存出力の両方を保持する。"""
+    path = tmp_path / "review.json"
+    _write_evidence(path, [_condition(FIRST_WI, "保存する。"), _condition(FIRST_WI, "再読込する。")])
+    rows = json.loads(path.read_text(encoding="utf-8"))["wi_conditions"]
+    explanation = tmp_path / "reason.txt"
+    explanation.write_text("判定理由を確認した。", encoding="utf-8")
+    updates = tmp_path / "updates.json"
+    valid = {
+        "section": "wi_conditions",
+        "row": 1,
+        "source": rows[0]["source"],
+        "outcome": "未達",
+        "reviewed_head": REVIEWED_HEAD,
+        "evidence_file": str(explanation),
+        "mode": "replace",
+    }
+    bad = {**valid, "row": 2, "source": rows[1]["source"], "outcome": "失効", "new_source": "新出所", **invalid}
+    updates.write_text(json.dumps([valid, bad]), encoding="utf-8")
+    output = path if in_place else tmp_path / "output.json"
+    if not in_place:
+        output.write_text("既存出力を保持\n", encoding="utf-8")
+    before = path.read_bytes(), output.read_bytes()
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[str(path), "--updates-file", str(updates), "--output", str(output)],
+    )
+    assert run_script.dispatch(args) == 1
+    assert (path.read_bytes(), output.read_bytes()) == before
+    assert capsys.readouterr().err

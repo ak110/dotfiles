@@ -126,6 +126,9 @@ WI本文は`_atk/wi/entries.py`の指定名読取を同一プロセスで呼ぶ�
 
 ### 未判定検証記録の公開操作
 
+完成条件証拠の未判定・判定済み行は`exec-review-evidence-check --list`で変更せず取得し、配列名・1始まりの行番号・原文・現行source・AWI・判定・reviewed_headを更新入力へ使える。更新配列はJSONファイルへ直接記入して`--updates-file`へ渡せる。手動観測は`evidence_file`だけを使い、試験結果の指定を省略できる。初回判定、根拠訂正、再レビューの記入例は`exec-review-recording.md`「JSONの形式と返却前の確認」に置く。
+更新JSONの`source`は現行行との完全一致による選択値で、`new_source`は保存する判断根拠の所在である。出所変更は`wi_conditions`の失効と`user_requirements`の失効・割当外・背景に限る。通常の判定は原文と出所を保持し、未判定検証記録の更新は判定も出所も変えない。不正な行を含む配列は入力と既存の出力を全て保持する。全検証後の原子的保存はJSONを再直列化するため、値の保持とバイト列の保持を区別する。独立した一覧コマンドや出所変更だけの操作を増やす案は、読取と更新の契約を分散させるため採らない。
+
 選んだ結果の根拠は、同じXML・実行記録・両出力の組の参照を1回だけ記し、完全テスト名・状態・caseを全件残す。診断もbefore・afterの側ごとに同じ保存物の組をまとめ、差の種類とentry・message_positionを各結果へ残す。単一結果ごとの整形は同じ保存物を反復して読む量を増やすため、両CLIが共有するverification_results.pyで集合から整形する。結果を省く案と異なる保存物をまとめる案は根拠の所属を失うため採らず、参照先の実在と共用根拠の判定を保持する。
 
 構造化結果は両既存公開操作の`--junit-xml`・`--junit-record`、`--diagnostics-file`・`--diagnostics-record`・`--diagnostics-conditions`・必要な`--diagnostics-source`から直接渡す。`--list-results`でテスト名・状態・取得版・所在と基準版との差を読み、担当が`--select-row <配列:N>`、完全テスト名・診断識別子、説明ファイルとmodeで根拠を選ぶ。原文とsourceは現行行から処理側が取得するため、結果指定JSONと更新配列の手製転記を要しない。既存の`--results-file`・`--updates-file`も受理し、sourceの不一致と不正行は全保存を拒否する。JUnitと`atk run-command`の実行記録を対応付ける`verification_results.py`が使うのは実行rootからのファイル・クラス・パラメーターとXMLの状態要素である。名前の状態語と総数から個別結果を推定しない。`verification_diagnostics.py`はpyfltrの構造化診断をGitの改名・保存時本文の対応行と発生条件へ対応付け、多重集合の差を返す。重複数、同件数の別内容、位置なし警告の実行固有値を区別し、対応不能は一致にしない。

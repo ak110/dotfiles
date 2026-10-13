@@ -23,6 +23,39 @@ def _run(*args: str, name: str = "verification-record") -> int:
     return run_script.dispatch(argparse.Namespace(script_name=name, script_args=list(args)))
 
 
+@pytest.mark.parametrize("extra", [{"new_source": "別の出所"}, {"outcome": "失効"}, {"reviewed_head": "a" * 40}])
+def test_pending_json_update_preserves_source_and_rejects_review_fields_atomically(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], extra: dict[str, str]
+) -> None:
+    """手動根拠だけで未判定行を更新し、後続行にレビュー欄があれば全保存を拒否する。"""
+    record = tmp_path / "pending.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    original = json.loads(record.read_text(encoding="utf-8"))
+    evidence = tmp_path / "observation.txt"
+    evidence.write_text("保存値を観測した。", encoding="utf-8")
+    update = {
+        "section": "user_requirements",
+        "row": 1,
+        "source": original["user_requirements"][0]["source"],
+        "evidence_file": str(evidence),
+        "mode": "replace",
+    }
+    updates = tmp_path / "updates.json"
+    updates.write_text(json.dumps([update]), encoding="utf-8")
+    args = ["--output", str(record), "--updates-file", str(updates)]
+    assert _run(*args) == 0, capsys.readouterr().err
+    expected = json.loads(json.dumps(original))
+    expected["user_requirements"][0]["evidence"] = "保存値を観測した。"
+    assert json.loads(record.read_text(encoding="utf-8")) == expected
+    evidence.write_text("追記する観測。", encoding="utf-8")
+    bad = {**update, "row": 2, "source": original["user_requirements"][1]["source"], **extra}
+    updates.write_text(json.dumps([{**update, "mode": "append"}, bad]), encoding="utf-8")
+    before = record.read_bytes()
+    assert _run(*args) == 1
+    assert record.read_bytes() == before
+    assert "更新行の項目" in capsys.readouterr().err
+
+
 def _plan(tmp_path: pathlib.Path, mode: str) -> pathlib.Path:
     path = tmp_path / "計画.md"
     origin = f"エージェント由来のWI ({WI})" if mode == "plan-wi" else "ユーザー指示"

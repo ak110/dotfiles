@@ -26,6 +26,9 @@ SCHEMA = (
     '不要な組は省略できる。更新JSONは配列: [{"section":"wi_conditions","row":1,"source":"一覧の完全一致値",'
     '"tests":["相対file::Class::test[param]"],"diagnostics":["added:1"],'
     '"evidence_file":"/絶対/説明.txt","mode":"append"}]。'
+    "sourceは現行行との完全一致による選択値。レビュー更新のnew_sourceは保存する新しい所在で、"
+    "wi_conditionsの失効、user_requirementsの失効・割当外・背景だけで指定できる。"
+    "説明ファイルだけの更新はtests・diagnosticsと結果指定を省略できる。"
     "レビューはoutcomeとreviewed_headも各行で明示し、verification_sourceに未判定記録の出所を指定できる。判定は結果から自動生成しない。"
     'レビュー更新だけはaccepted_source:{"path":"/絶対/受理済み.json","section":"wi_conditions","row":1}も受ける。'
     "同じ要求単位の判定済み行への参照とevidence_fileの説明だけをmode replaceで保存し、未判定継承・結果取込みとは分ける。"
