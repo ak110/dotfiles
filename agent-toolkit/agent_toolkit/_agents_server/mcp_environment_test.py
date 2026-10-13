@@ -14,7 +14,7 @@ def test_mcp_setting_names_follow_public_config_keys(
     with pytest.raises(SystemExit) as exited:
         atk.main(["config", "show"])
     assert exited.value.code == 0
-    keys = {line.partition(":")[0] for line in capsys.readouterr().out.splitlines()}
+    keys = {line.partition(" ")[0] for line in capsys.readouterr().out.splitlines()}
     keys -= {"config_dir", "state_dir", "data_dir", "private_notes"}
     setting_names = config.config_environment_variable_names()
     names = mcp_environment.environment_variable_names(setting_names)
