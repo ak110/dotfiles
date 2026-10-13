@@ -142,6 +142,19 @@ Bashの静的な検出は、for・算術for・select・while・until・if/elif/e
 
 Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内する。原記録以外の保存本文は、Claude Codeでは`Read`に`allow_large: true`を指定して全文を読み、Codexでは`atk read-file`で終端まで読む。
 
+カタログの親セッション一覧は`--catalog-workflow process-wi`の完全一致、`--catalog-known-workflow`のunknown以外、`--catalog-cwd-contains <文字列>`の条件で選べる。
+`--catalog-fields session_id,workflow,workflow_locator,started_at,tokens`を付けると行の種類を表す`kind`に続いて指定順の項目を返す。
+項目の指定を省くと全項目を返す。
+条件を併記すると全てに一致する行を返し、末尾の走査要約では走査した親セッションの記録数と選択した行数を区別できる。
+これらの指定は両runtimeに共通する。
+走査対象はClaude Codeでは`--catalog-claude-project`へprojectディレクトリ（`~/.claude/projects/<project>`）、Codexでは`--catalog-codex-history`へ履歴ディレクトリを渡して選ぶ。
+カタログの走査では走査期間の開始の`--since`と終了の`--observation-boundary`が必須であり、ISO 8601の時刻を渡す。
+次の例はClaude Codeのprojectから、`process-wi`の親セッションを5項目で一覧する。
+
+```sh
+atk run-script session-review-evidence -- --catalog-claude-project ~/.claude/projects/<project> --since 2026-10-01T00:00:00+09:00 --observation-boundary 2026-10-08T00:00:00+09:00 --catalog-workflow process-wi --catalog-fields session_id,workflow,workflow_locator,started_at,tokens
+```
+
 振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は、`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
 Stopはこの行の有無と報告本文を判定しない。
 

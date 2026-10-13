@@ -46,6 +46,40 @@ from session_evidence_tool_calls import (
 
 from agent_toolkit._agents_server import record_paths as _record_paths
 
+CATALOG_PARENT_FIELDS = (
+    "runtime",
+    "session_id",
+    "role_document",
+    "started_at",
+    "finished_at",
+    "cwd",
+    "branch",
+    "workflow",
+    "workflow_locator",
+    "tokens",
+    "descendant_count",
+    "successful_wi_operations",
+    "successful_wi_operation_count",
+)
+"""親セッションの表示で選択できる項目。kindはイベントの識別のため常に残す。"""
+
+
+class _CatalogSelection(NamedTuple):
+    """親セッションの行条件と表示項目。走査条件と要約には作用しない。"""
+
+    workflow: str | None = None
+    known_workflow: bool = False
+    cwd_contains: str | None = None
+    fields: tuple[str, ...] | None = None
+
+    def matches(self, event: dict[str, Any]) -> bool:
+        """指定した行条件の全てに一致するか返す。"""
+        return (
+            (self.workflow is None or event["workflow"] == self.workflow)
+            and (not self.known_workflow or event["workflow"] != "unknown")
+            and (self.cwd_contains is None or self.cwd_contains in event["cwd"])
+        )
+
 
 def _catalog_session_id(path: Path, records: list[_Record], runtime: _Runtime) -> str:
     """カタログ内記録のセッション識別子を返す。"""
@@ -304,6 +338,7 @@ def _catalog_events(
     runtime: _Runtime,
     since: datetime.datetime,
     boundary: datetime.datetime,
+    selection: _CatalogSelection | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """指定root内だけから比較用の親セッションカタログを生成する。"""
     scan = _catalog_scan(root, runtime, since, boundary)
@@ -332,18 +367,21 @@ def _catalog_events(
             }
         )
     events.sort(key=lambda event: (str(event["started_at"]), str(event["session_id"])))
-    events.append(
-        {
-            "kind": "catalog-summary",
-            "scan_root": str(scan.root),
-            "runtime": runtime,
-            "since": since.isoformat(),
-            "observation_boundary": boundary.isoformat(),
-            "parent_record_count": len(events),
-            "unresolved_record_count": scan.unresolved_count,
-        }
-    )
-    return events, 0
+    summary: dict[str, Any] = {
+        "kind": "catalog-summary",
+        "scan_root": str(scan.root),
+        "runtime": runtime,
+        "since": since.isoformat(),
+        "observation_boundary": boundary.isoformat(),
+        "parent_record_count": len(events),
+        "unresolved_record_count": scan.unresolved_count,
+    }
+    if selection is not None:
+        events = [event for event in events if selection.matches(event)]
+        summary["selected_parent_count"] = len(events)
+        if selection.fields is not None:
+            events = [{"kind": event["kind"], **{field: event[field] for field in selection.fields}} for event in events]
+    return [*events, summary], 0
 
 
 def _catalog_tool_call_events(

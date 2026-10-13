@@ -75,6 +75,22 @@ Claude Codeは現在のtranscript絶対パスを`atk run-script session-review-p
 
 `atk run-script session-review-evidence`は通常表示と警告、集計、hook通知の走査を1回の記録読み込みでまとめて行う集約実行を持つ。集約実行は走査ごとの全量に加えて`candidate-evidence.jsonl`を指定ディレクトリへ書き、標準出力へは走査ごとの要約だけを返す。同ファイルは候補IDと分析グループのヒント、全locator、各位置の有界な本文を持つ。`atk run-script session-review-prepare`は候補別証拠から`candidates.md`の要約と対象のツール呼び出しを組み立てる。`--detail`、`--grep`と候補別証拠の各イベントは元記録行の時刻を持ち、区間境界の時刻を記録の直接読取なしで確定できる。走査ごとに実行を分ける形と、全量ファイルを常に読む形は採用しない。処理する行数とバイト数、判断回数が候補数へ比例するためである。
 
+親セッションの比較用カタログは、`atk run-script session-review-evidence`の次の指定で行と表示項目を選べる。
+
+| 指定 | 値の形式 | 選択 |
+| --- | --- | --- |
+| `--catalog-workflow NAME` | workflow名 | workflowが完全一致する親行 |
+| `--catalog-known-workflow` | 値なし | workflowが`unknown`でない親行 |
+| `--catalog-cwd-contains TEXT` | 文字列 | cwdがその文字列を部分文字列として含む親行 |
+| `--catalog-fields FIELD,FIELD` | ASCIIカンマ区切りの項目名 | 指定順の表示項目。`kind`は常に先頭に残し、省略時は全項目 |
+
+行条件を併記した場合は全ての条件を満たす行（積集合）を返す。
+未知・空・重複の項目名を含む指定と、カタログの走査以外や`--tool-calls`と併用した指定は、次の操作を示す診断で拒否する。
+選択は`session_evidence_catalog.py`の生成済みの親行へ適用し、ClaudeとCodexで同じ並びと項目の指定順を使う。
+走査した親セッションの記録数と選択した行数は要約の別の項目にし、選択0件を走査全体の不在へ置き換えない。
+呼出し側に選択のスクリプトを持たせる案は、比較表示の組み立てと保守を各呼出し元へ分散させるため採らない。
+指定を省いた全項目の表示と、走査root・期間・未解決記録数の要約は維持する。
+
 `atk run-script session-review-evidence`の`--tool-calls`はツール呼び出しを単位として選び、呼び出しごとに列挙し、委譲先を含む記録と複数セッションにまたがって数える照会modeである。
 2026年10月6日にはあるセッションのメインと、同じ日に起動されたWI投入担当2件が、ツール呼び出しの時系列の列挙と計数のために記録のJSONLを読むスクリプトを計18本その場で書いた。
 そのうち正規表現で`--since`の値を取り出す集計は、スクリプトを編集するコマンドの本文まで97件中19件拾っていた。

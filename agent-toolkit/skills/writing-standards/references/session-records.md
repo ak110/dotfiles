@@ -49,6 +49,13 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 
 ## 複数セッションの比較結果
 
+カタログの親セッション行は`--catalog-workflow`の完全一致、`--catalog-known-workflow`のunknown以外、`--catalog-cwd-contains`の部分文字列で選べる。
+併記した行条件は全て満たす行を返す。
+`--catalog-fields`へ項目名をASCIIカンマで並べると、その順で項目を返し、指定を省くと全項目を返す。
+`kind`は行の種類を示すため常に残る。
+選択後も`catalog-summary`は走査範囲を保持し、走査した親セッションの記録数の`parent_record_count`と選択した行数の`selected_parent_count`を区別する。
+これらの指定はClaudeとCodexの親セッション一覧に共通し、`--tool-calls`による呼出し照会とは分けて使う。
+
 「最新」「該当なし」「全件」といった全称または終端を表す結論は、走査root、runtime、開始境界、観測境界および未解決記録数を同じ本文へ書き、その被覆範囲だけを対象とする。指定root外の記録、観測境界より後の記録および未解決記録は未確認範囲へ記録する。
 
 WIの処理件数は、成功結果まで記録された直接の`atk wi`操作を数え、操作ごとにセッション識別子と記録行のlocatorを残す。workflow名、cwd、branch、時刻、トークンまたは処理件数を記録から確定できない場合は`unknown`とする。
