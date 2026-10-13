@@ -12,6 +12,20 @@ from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk.wi import mutations as _atk_wi_mutations
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
+
+
+@pytest.fixture(name="remote_sync")
+def _remote_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gitを代替するテストでは、同期の前提となるupstreamの照会も同じ外部応答へ含める。"""
+    original = _atk_git_sync._run_git_result
+
+    def query(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
+        if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+            return subprocess.CompletedProcess(args, 0, "origin/main\n", "")
+        return original(args, cwd)
+
+    monkeypatch.setattr(_atk_git_sync, "_run_git_result", query)
 
 
 def _init_repo(root: pathlib.Path) -> None:
@@ -92,6 +106,11 @@ def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
     """対象外のstage済み差分をindexへ残したまま、対象だけをcommitする。"""
     repo = tmp_path / "repo"
     _init_repo(repo)
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    git_repository.init_bare_repository(origin)
+    git_repository.run_git(repo, "remote", "add", "origin", str(origin))
+    git_repository.run_git(repo, "push", "-u", "origin", "main")
     (repo / "target.txt").write_text("after\n", encoding="utf-8")
     (repo / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
     git_repository.run_git(repo, "add", "unrelated.txt")
@@ -120,13 +139,12 @@ def test_worktree_dirty_can_limit_status_to_target_paths(tmp_path: pathlib.Path)
 def test_pending_commit_count_distinguishes_remote_and_upstream_states(tmp_path: pathlib.Path) -> None:
     """remoteなし、upstream不明および未push件数を別の結果で返す。"""
     local_only = tmp_path / "local-only"
-    local_only.mkdir()
-    (local_only / _atk_git_sync.LOCAL_ONLY_MARKER).touch()
+    _init_repo(local_only)
     assert _atk_git_sync.pending_commit_count(local_only) == 0
 
     unresolved = tmp_path / "unresolved"
-    unresolved.mkdir()
-    assert _atk_git_sync.pending_commit_count(unresolved) is None
+    _init_repo(unresolved)
+    assert _atk_git_sync.pending_commit_count(unresolved) == 0
 
     origin = tmp_path / "origin.git"
     origin.mkdir()
@@ -143,6 +161,7 @@ def test_pending_commit_count_distinguishes_remote_and_upstream_states(tmp_path:
 
 
 @pytest.mark.parametrize("operation", ["pull", "push"])
+@pytest.mark.usefixtures("remote_sync")
 def test_sync_failure_reports_recovery_steps_and_preserves_exception(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -171,6 +190,7 @@ def test_sync_failure_reports_recovery_steps_and_preserves_exception(
     assert "失敗した`atk`操作を再実行" in stderr
 
 
+@pytest.mark.usefixtures("remote_sync")
 def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -178,7 +198,6 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     """履歴分岐と無関係なdirty差分が同時にある場合、rebaseせずpushを保留する。"""
     repo = tmp_path / "repo"
     repo.mkdir()
-    (repo / _atk_git_sync.LOCAL_ONLY_MARKER).unlink(missing_ok=True)
     calls: list[list[str]] = []
 
     def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
@@ -271,6 +290,7 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
     assert git_repository.run_git(local, "rev-list", "--left-right", "--count", "HEAD...@{u}").stdout.split() == ["0", "0"]
 
 
+@pytest.mark.usefixtures("remote_sync")
 def test_push_suppresses_output_of_recovered_first_push(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -301,6 +321,7 @@ def test_push_suppresses_output_of_recovered_first_push(
     assert capsys.readouterr().err == ""
 
 
+@pytest.mark.usefixtures("remote_sync")
 def test_push_reports_output_of_unresolved_first_push(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -330,6 +351,7 @@ def test_push_reports_output_of_unresolved_first_push(
     assert "private-notesのpushに失敗した" in stderr
 
 
+@pytest.mark.usefixtures("remote_sync")
 def test_pull_suppresses_output_of_recovered_first_merge(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -558,6 +580,7 @@ def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path:
         (" ! [rejected]        main -> main (fetch first)\n", "upstream", "atk wi pull"),
     ],
 )
+@pytest.mark.usefixtures("remote_sync")
 def test_sync_failure_classifies_git_output(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -612,3 +635,56 @@ def test_rebase_in_progress_error_keeps_reason_and_next_action(tmp_path: pathlib
     assert "git rebase --continue" not in str(exc_info.value)
     assert "git rebase --continue" in exc_info.value.next_action
     assert "git rebase --abort" in exc_info.value.next_action
+
+
+@pytest.mark.parametrize("configuration", ["local", "remote", "upstream"])
+def test_notes_cli_with_upstream_states(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    configuration: str,
+) -> None:
+    """実Gitの3構成で、公開CLIの保存、同期結果、注記、remoteへの到達を確かめる。"""
+    notes = tmp_path / "notes"
+    _init_repo(notes)
+    remote = tmp_path / "remote.git"
+    if configuration != "local":
+        remote.mkdir()
+        git_repository.init_bare_repository(remote)
+        git_repository.run_git(notes, "remote", "add", "origin", str(remote))
+        if configuration == "upstream":
+            git_repository.run_git(notes, "push", "-u", "origin", "main")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    source = tmp_path / "body.md"
+    source.write_text(AGENT_AWI_BODY, encoding="utf-8")
+
+    def invoke(*args: str) -> str:
+        with pytest.raises(SystemExit) as result:
+            atk.main(list(args), home=tmp_path, _output_capture_active=True)
+        assert result.value.code == 0
+        captured = capsys.readouterr()
+        if args[1] in {"add", "edit"}:
+            assert ("upstreamが無いため" in captured.err) == (configuration == "remote")
+            if configuration == "remote":
+                assert "branch --set-upstream-to=" in captured.err and "push -u" in captured.err
+        return captured.out
+
+    previous = git_repository.run_git(notes, "rev-parse", "HEAD").stdout
+    invoke("wi", "add", "--source", "agent", "--body-file", str(source), "--target-repo", "github.com/example/repo")
+    added = git_repository.run_git(notes, "rev-parse", "HEAD").stdout
+    assert added != previous
+    (entry,) = list((notes / "inbox").glob("*.md"))
+    source.write_text(AGENT_AWI_BODY.replace("本文", "変更後の本文", 1), encoding="utf-8")
+    invoke("wi", "edit", entry.name, "--body-file", str(source), "--target-repo", "github.com/example/repo")
+    edited = git_repository.run_git(notes, "rev-parse", "HEAD").stdout
+    assert edited != added
+    invoke("wi", "list", "--summary-only")
+    pulled = invoke("wi", "pull")
+    committed = invoke("wi", "commit")
+    if configuration != "upstream":
+        assert "remoteかupstreamが無いため" in pulled and "remoteかupstreamが無いため" in committed
+    if configuration == "upstream":
+        assert git_repository.run_git(remote, "rev-parse", "main").stdout == edited
+    elif configuration == "remote":
+        absent = subprocess.run(["git", "-C", str(remote), "rev-parse", "--verify", "main"], capture_output=True, check=False)
+        assert absent.returncode != 0

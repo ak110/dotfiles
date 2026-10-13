@@ -32,9 +32,6 @@ from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 
-LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
-"""自動生成されたremoteなしリポジトリを示すマーカー。"""
-
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
 """履歴分岐時に無関係な差分がある場合の確定通知。"""
 
@@ -211,8 +208,21 @@ def assert_repo_lock_held(repo_path: pathlib.Path) -> None:
 
 
 def has_remote(private_notes: pathlib.Path) -> bool:
-    """remote同期を行う通常リポジトリか判定する。"""
-    return not (private_notes / LOCAL_ONLY_MARKER).exists()
+    """現在のbranchのupstreamを解決でき、remote同期を行えるか判定する。"""
+    return _run_git_result(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], private_notes).returncode == 0
+
+
+def _report_missing_upstream(private_notes: pathlib.Path) -> None:
+    """remoteだけを設定した構成で、ローカル操作の後に同期を有効にする方法を示す。"""
+    remotes = _run_git_result(["remote"], private_notes)
+    if remotes.returncode == 0 and remotes.stdout.strip():
+        _next_action.report(
+            "注記: private-notesのupstreamが無いため、remoteと同期していない。ローカルの操作は継続する。",
+            next_action=(
+                f"`git -C {private_notes} branch --set-upstream-to=<remote>/<branch>`でupstreamを設定するか、"
+                f"`git -C {private_notes} push -u <remote> <branch>`でbranchを送信してから同期する"
+            ),
+        )
 
 
 def push_was_deferred(private_notes: pathlib.Path) -> bool:
@@ -288,6 +298,7 @@ def _pull_impl(
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):
+        _report_missing_upstream(private_notes)
         return
     run_git(["fetch"], private_notes)
     try:
@@ -592,6 +603,7 @@ def _push_pending_commits_impl(
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):
+        _report_missing_upstream(private_notes)
         return 0
     original_error: subprocess.CalledProcessError
     count = pending_commit_count(private_notes, result_runner=result_runner)

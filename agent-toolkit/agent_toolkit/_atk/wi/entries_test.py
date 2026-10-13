@@ -4,6 +4,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import readiness as _readiness
@@ -83,6 +84,44 @@ def test_typeless_entry_guides_to_report_instead_of_edit(tmp_path: pathlib.Path,
         assert f"`atk wi show {path.name}`" in next_action
         assert "ユーザーへ報告する" in next_action
         assert "でtypeを追記" not in next_action
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        _TYPELESS_ENTRY,
+        _TYPELESS_ENTRY.replace("---\n\n", "type: foo\n---\n\n"),
+        "---\ntarget_repo: [\n---\n\n# 本文\n",
+        "---\ntype: awi\n---\n\n# 本文\n",
+    ],
+)
+@pytest.mark.parametrize("state", ["inbox", "adopted"])
+def test_broken_entry_next_action_can_show_saved_content(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    content: str,
+    state: str,
+) -> None:
+    """不正な管理情報の項目でも、公開showが同じ保存本文を表示する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path))
+    directory = tmp_path / state
+    directory.mkdir()
+    filename = "20261013-000000-001.md"
+    (directory / filename).write_text(content, encoding="utf-8")
+    if "target_repo: [" in content or "target_repo:" not in content:
+        with pytest.raises(SystemExit):
+            _mutations_targets.entry_target_repo(directory / filename, content)
+        assert f"atk wi show {filename}" in _next_action_of(capsys)
+    with pytest.raises(SystemExit) as shown:
+        atk.main(["wi", "show", filename, "--skip-pull"], home=tmp_path, _output_capture_active=True)
+    assert shown.value.code == 0
+    assert content in capsys.readouterr().out
+    if "type: awi" not in content and "target_repo: [" not in content:
+        with pytest.raises(SystemExit) as listed:
+            atk.main(["wi", "list", "--state", "all", "--skip-pull"], home=tmp_path, _output_capture_active=True)
+        assert listed.value.code == 2
+        assert f"atk wi show {filename}" in capsys.readouterr().err
 
 
 def test_unparsable_frontmatter_guides_to_report_instead_of_edit(

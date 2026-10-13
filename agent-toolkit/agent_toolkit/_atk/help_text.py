@@ -11,6 +11,7 @@ argparseは追加設定が無ければ前者だけを設定でき、各コマン
 from __future__ import annotations
 
 import argparse
+import sys
 import textwrap
 import typing
 from collections.abc import Sequence
@@ -199,7 +200,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans": {
         "summary": "計画ファイルの取得・保存・一覧と参照の書き換え",
-        "description": "目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧と、保存済み計画の参照の書き換えも提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認、保存済み計画の参照を現行の表記へ書き換えるとき。保存の契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: `commit`と`rewrite-references`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "description": "目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧と、保存済み計画の参照の書き換えも提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認、保存済み計画の参照を現行の表記へ書き換えるとき。保存の契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: rewrite-referencesだけはprivate-notesのremoteとupstreamを要する。その他の操作は同期相手が無ければローカルだけで完了する。\n復元・後始末: `commit`と`rewrite-references`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans checkout": {
@@ -221,7 +222,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans rewrite-references": {
         "summary": "保存済み計画の付属ファイル参照を`plan-file-storage.md`の表記へそろえる",
-        "description": "目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、`plan-file-storage.md`が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして`--skip-push`を指定しなければpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
+        "description": "目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、`plan-file-storage.md`が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして`--skip-push`を指定しなければpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteとupstreamが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
         "epilog": "実行例:\n\n  atk plans rewrite-references",
     },
     "atk serve": {
@@ -558,9 +559,20 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
         args: Sequence[str] | None = None,
         namespace: argparse.Namespace | None = None,
     ) -> tuple[argparse.Namespace, list[str]]:
-        parsed, remaining = super().parse_known_args(args, namespace)
+        supplied = list(sys.argv[1:] if args is None else args)
+        parsed, remaining = super().parse_known_args(supplied, namespace)
         assert parsed is not None
         if remaining:
+            if "--" in supplied:
+                after_separator = supplied[supplied.index("--") + 1 :]
+                rejected = next((value for value in remaining if value != "--"), "--")
+                action = self._option_string_actions.get(rejected.partition("=")[0])
+                if action is not None and rejected in after_separator:
+                    with_value = "（値を取る場合はその値も一緒に）" if action.nargs != 0 else ""
+                    self.error(
+                        f"オプション{rejected}の位置が誤っています。"
+                        f"次の操作: {rejected}{with_value}を区切り記号`--`の前へ移して、同じコマンドを再実行する"
+                    )
             self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
         return parsed, remaining
 

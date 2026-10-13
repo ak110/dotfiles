@@ -46,7 +46,6 @@ def _init_local_notes(root: pathlib.Path) -> None:
     git_repository.run_git(root, "config", "user.name", "plans-test")
     git_repository.run_git(root, "config", "user.email", "plans-test@example.invalid")
     git_repository.run_git(root, "config", "core.quotePath", "false")
-    (root / ".agent-toolkit-local-only").touch()
     for state in ("inbox", "processing", "hold", "adopted", "rejected"):
         (root / state / ".gitkeep").parent.mkdir(parents=True)
         (root / state / ".gitkeep").touch()
@@ -57,9 +56,6 @@ def _init_local_notes(root: pathlib.Path) -> None:
 def _init_remote_notes(root: pathlib.Path, remote: pathlib.Path) -> None:
     """upstream付きprivate-notesを初期化する。"""
     _init_local_notes(root)
-    (root / ".agent-toolkit-local-only").unlink()
-    git_repository.run_git(root, "add", "-u")
-    git_repository.run_git(root, "commit", "-m", "enable remote")
     git_repository.init_bare_repository(remote)
     git_repository.run_git(root, "remote", "add", "origin", str(remote))
     git_repository.run_git(root, "push", "--set-upstream", "origin", "main")
@@ -71,6 +67,31 @@ def _clone_notes(remote: pathlib.Path, clone: pathlib.Path) -> None:
     git_repository.run_git(clone, "config", "user.name", "plans-test-clone")
     git_repository.run_git(clone, "config", "user.email", "plans-test-clone@example.invalid")
     git_repository.run_git(clone, "config", "core.quotePath", "false")
+
+
+@pytest.mark.parametrize("with_remote", [False, True])
+def test_rewrite_references_requires_upstream_and_help_matches(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], with_remote: bool
+) -> None:
+    """同期相手の無い移行を公開CLIで拒否し、両ヘルプがupstreamの必要性を示す。"""
+    notes = tmp_path / "notes"
+    _init_local_notes(notes)
+    if with_remote:
+        remote = tmp_path / "origin.git"
+        git_repository.init_bare_repository(remote)
+        git_repository.run_git(notes, "remote", "add", "origin", str(remote))
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    before = git_repository.git_output(notes, "rev-parse", "HEAD")
+    with pytest.raises(SystemExit) as rejected:
+        atk.main(["plans", "rewrite-references"], home=tmp_path)
+    assert rejected.value.code != 0
+    assert "remoteかupstreamが無い" in capsys.readouterr().err
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == before
+    for argv in (["plans", "--help"], ["plans", "rewrite-references", "--help"]):
+        with pytest.raises(SystemExit) as help_result:
+            atk.main(argv, home=tmp_path)
+        assert help_result.value.code == 0
+        assert "upstream" in capsys.readouterr().out
 
 
 def _preserved_times(path: pathlib.Path) -> tuple[float | None, int]:

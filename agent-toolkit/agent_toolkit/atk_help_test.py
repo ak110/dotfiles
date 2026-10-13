@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import pathlib
 from collections.abc import Iterator
 
@@ -194,6 +195,80 @@ def test_every_subcommand_rejects_unsupported_argument_with_accepted_options(
         )
         accepted = "・".join(options) if options else "なし"
         assert f"解釈できない引数: --unsupported。{target.prog}が受理するオプションは{accepted}" in error, command
+
+
+@pytest.mark.parametrize("option", [["--max-bytes", "16000"], ["--max-bytes=16000"], ["--start", "0"]])
+def test_misplaced_option_cli_guides_to_success(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    option: list[str],
+) -> None:
+    """配置を直す案内から、同じファイルと値を使う公開CLIの成功へ進める。"""
+    source = tmp_path / "本文.txt"
+    source.write_text("本文\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as rejected:
+        atk.main(["read-file", "--", str(source), *option], _output_capture_active=True)
+    assert rejected.value.code == 2
+    error = capsys.readouterr().err
+    assert option[0] in error and "区切り記号`--`の前へ移して" in error
+    with pytest.raises(SystemExit) as accepted:
+        atk.main(["read-file", *option, "--", str(source)], _output_capture_active=True)
+    assert accepted.value.code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["text"] == "本文\n" and result["eof"] is True
+
+
+def test_subcommand_misplaced_options_use_registered_actions(capsys: pytest.CaptureFixture[str]) -> None:
+    """コマンド木の値なしオプションでも、位置による拒否を未知名と区別する。"""
+    checked = 0
+    for command, parser, _summary in _walk_commands():
+        if command == "atk":
+            continue
+        arguments, target = _required_arguments(parser)
+        if any(isinstance(action, argparse._SubParsersAction) for action in target._actions):  # pylint: disable=protected-access
+            # サブコマンド名の誤りで先に拒否される入力は、余剰引数の診断へ到達しない。
+            continue
+        flags = [
+            name
+            for action in target._actions  # pylint: disable=protected-access
+            if action.nargs == 0
+            for name in action.option_strings
+            if name.startswith("--") and name != "--help"
+        ]
+        if not flags:
+            continue
+        for action in target._actions:  # pylint: disable=protected-access
+            if not action.option_strings and action.nargs == "?" and action.choices:
+                arguments.append(str(next(iter(action.choices))))
+        try:
+            parser.parse_args([*arguments, "--", flags[0]])
+        except SystemExit as error:
+            assert error.code == 2, command
+            diagnostic = capsys.readouterr().err
+            assert "区切り記号`--`の前へ移して" in diagnostic, (command, diagnostic)
+            checked += 1
+        else:
+            # 可変個数の位置引数やREMAINDERが受理した文字列は、配置の誤りではない。
+            assert not capsys.readouterr().err
+    assert checked > 5
+    for argv in (["agents", "logs", "--", "sample", "--follow"], ["serve", "logs", "--", "--follow"]):
+        with pytest.raises(SystemExit) as rejected:
+            atk._build_parser().parse_args(argv)  # pylint: disable=protected-access
+        assert rejected.value.code == 2
+        assert "--followを区切り記号`--`の前へ移して" in capsys.readouterr().err
+
+
+def test_consumed_and_forwarded_options_keep_their_meaning(capsys: pytest.CaptureFixture[str]) -> None:
+    """位置引数と子へ渡す引数は、登録名と同じ綴りでも移動させない。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access
+    assert parser.parse_args(["read-file", "--", "--max-bytes"]).path == pathlib.Path("--max-bytes")
+    parsed = parser.parse_args(["run-script", "writing-check-dash", "--", "--max-bytes", "100"])
+    assert "--max-bytes" in parsed.script_args
+    parser.parse_args(["run-command", "--", "echo", "--max-bytes", "100"])
+    assert not capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        parser.parse_args(["read-file", "--", "/example", "--unknown"])
+    assert "位置が誤っています" not in capsys.readouterr().err
 
 
 def test_wrapped_help_keeps_identifiers_intact(monkeypatch: pytest.MonkeyPatch) -> None:

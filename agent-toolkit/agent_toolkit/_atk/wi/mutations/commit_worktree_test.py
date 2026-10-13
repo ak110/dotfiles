@@ -5,7 +5,6 @@ import pathlib
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import git_sync
 from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._testing import git_repository
 
@@ -31,7 +30,6 @@ def test_commit_transition_from_outside_worktree(
     for state in WI_STATES:
         (notes / state).mkdir()
         (notes / state / ".gitkeep").touch()
-    (notes / git_sync.LOCAL_ONLY_MARKER).touch()
     source = notes / "processing/entry.md"
     original = "---\ntarget_repo: github.com/example/target\ntype: awi\nsource: test\n---\n\n要求\n"
     source.write_text(original, encoding="utf-8")

@@ -18,6 +18,19 @@ from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._testing import git_repository
 
 
+@pytest.fixture(name="remote_sync")
+def _remote_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gitを代替するテストへupstreamの公開照会の応答を加える。"""
+    original = _atk_git_sync._run_git_result  # pylint: disable=protected-access
+
+    def query(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
+        if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+            return subprocess.CompletedProcess(args, 0, "origin/main\n", "")
+        return original(args, cwd)
+
+    monkeypatch.setattr(_atk_git_sync, "_run_git_result", query)
+
+
 def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """WI共通処理のGit実行は成功時に標準出力と標準エラーへ書かない。"""
     _wi_sync.run_git(["init", "--initial-branch=main"], tmp_path)
@@ -117,6 +130,7 @@ class TestAssertRepoLockHeld:
             _wi_sync.commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
 
 
+@pytest.mark.usefixtures("remote_sync")
 class TestCommitAndPushRetry:
     """`commit_and_push`のpush失敗時再試行動作を検証する。"""
 
@@ -306,13 +320,14 @@ class TestExplicitUpstreamIntegration:
             == git_repository.run_git(new_copy, "rev-parse", "@{u}").stdout
         )
 
-    def test_sync_fails_when_upstream_is_unset(self, tmp_path: pathlib.Path) -> None:
-        """upstream未設定では暗黙の別refへ退避せず同期を失敗させる。"""
+    def test_sync_is_local_when_upstream_is_unset(self, tmp_path: pathlib.Path) -> None:
+        """upstream未設定では別refを使わずローカルの状態を保って同期を省く。"""
         _remote, old_copy, _new_copy = self._make_remote_and_clones(tmp_path)
         git_repository.run_git(old_copy, "branch", "--unset-upstream")
-
-        with pytest.raises(subprocess.CalledProcessError), _wi_sync.repo_lock(old_copy):  # pylint: disable=protected-access  # noqa: SLF001
+        original = git_repository.git_output(old_copy, "rev-parse", "HEAD")
+        with _wi_sync.repo_lock(old_copy):
             _wi_sync.pull(old_copy)  # pylint: disable=protected-access  # noqa: SLF001
+        assert git_repository.git_output(old_copy, "rev-parse", "HEAD") == original
 
     def test_recent_predicate_requires_upstream_ancestor_in_addition_to_time(
         self,
@@ -345,7 +360,6 @@ class TestExplicitUpstreamIntegration:
         """ローカル管理リポジトリはFETCH_HEADが直近でも再利用しない。"""
         local_only = tmp_path / "local-only"
         git_repository.init_repository(local_only, initial_branch="main")
-        (local_only / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         fetch_head = local_only / ".git" / "FETCH_HEAD"
         fetch_head.touch()
         os.utime(fetch_head, (1000.0, 1000.0))
@@ -403,7 +417,7 @@ class TestPrivateNotesAutoCreate:
         root = _wi_sync.ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
         assert root == tmp_path / "data" / "private-notes"
         assert (root / ".git").is_dir()
-        assert (root / _wi_sync.LOCAL_ONLY_MARKER).exists()  # pylint: disable=protected-access  # noqa: SLF001
+        assert not (root / ".agent-toolkit-local-only").exists()
         expected_state_dirs = (
             "inbox",
             "processing",
@@ -452,7 +466,6 @@ class TestPrivateNotesAutoCreate:
         home = tmp_path / "home"
         root = home / "private-notes"
         git_repository.init_repository(root)
-        (root / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         (root / "README.md").write_text("base\n", encoding="utf-8")
         git_repository.commit_all(root, "base")
         original_head = git_repository.git_output(root, "rev-parse", "HEAD")
@@ -472,7 +485,6 @@ class TestPrivateNotesAutoCreate:
         home = tmp_path / "home"
         root = home / "private-notes"
         git_repository.init_repository(root)
-        (root / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         (root / ".gitignore").write_text(f"tracked\n{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n", encoding="utf-8")
         git_repository.commit_all(root, "base")
         original_head = git_repository.git_output(root, "rev-parse", "HEAD")
@@ -497,11 +509,10 @@ _LEGACY_UWI = "---\ntarget_repo: github.com/example/repo\nquestion_type: free-fo
 def _init_legacy_repo(root: pathlib.Path, entries: dict[str, str]) -> None:
     """旧2階層レイアウトのローカル限定リポジトリを`root`へ作成する。
 
-    remote未設定を示すマーカーを置き、移行処理のpull・pushをスキップさせる。
+    remoteとupstreamを設定せず、移行処理をローカルだけで完了させる。
     `entries`はrepo root相対パスと本文の対応とする。
     """
     git_repository.init_repository(root, files={".gitignore": f"{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n", **entries})
-    (root / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
     git_repository.commit_all(root, "init")
 
 
@@ -604,24 +615,26 @@ class TestMigrateLegacyLayout:
 
 
 class TestHasRemote:
-    """`has_remote`のローカル限定マーカー判定を検証する。"""
+    """upstreamの有無を使い、既存のマーカーに判定を左右されない。"""
 
-    def test_true_when_marker_absent(self, tmp_path: pathlib.Path) -> None:
-        """マーカーファイルが無い場合はTrue（通常のremote設定済みリポジトリ扱い）。"""
-        assert _wi_sync.has_remote(tmp_path) is True  # pylint: disable=protected-access  # noqa: SLF001
-
-    def test_false_when_marker_present(self, tmp_path: pathlib.Path) -> None:
-        """マーカーファイルが存在する場合はFalse（ローカル限定自動生成リポジトリ扱い）。"""
-        (tmp_path / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
-        assert _wi_sync.has_remote(tmp_path) is False  # pylint: disable=protected-access  # noqa: SLF001
+    def test_legacy_marker_does_not_override_upstream(self, tmp_path: pathlib.Path) -> None:
+        """マーカーが残る既存リポジトリも、upstreamの設定で同期対象になる。"""
+        notes, remote = tmp_path / "notes", tmp_path / "remote.git"
+        git_repository.init_repository(notes, initial_branch="main", files={"entry.md": "本文\n"}, commit_message="initial")
+        marker = notes / ".agent-toolkit-local-only"
+        marker.touch()
+        assert not _wi_sync.has_remote(notes)
+        git_repository.init_bare_repository(remote)
+        git_repository.run_git(notes, "remote", "add", "origin", str(remote))
+        git_repository.run_git(notes, "push", "-u", "origin", "main")
+        assert _wi_sync.has_remote(notes) and marker.exists()
 
 
 class TestPullAndCommitPushSkipWithoutRemote:
     """remote未設定のローカル限定リポジトリではpull・pushをスキップすることを検証する。"""
 
     def test_pull_is_noop_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """マーカー付きディレクトリでは`pull`がremote同期を実行しない。"""
-        (tmp_path / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        """upstreamの無いディレクトリでは`pull`がremote同期を実行しない。"""
         calls: list[list[str]] = []
         monkeypatch.setattr(_wi_sync, "run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
         with _wi_sync.repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
@@ -629,8 +642,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
         assert not any(call[0] in ("fetch", "merge") for call in calls)
 
     def test_commit_and_push_skips_push_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """マーカー付きディレクトリでは`commit_and_push`がadd・commitのみ実行しpushしない。"""
-        (tmp_path / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        """upstreamの無いディレクトリでは`commit_and_push`がadd・commitのみ実行しpushしない。"""
         calls: list[list[str]] = []
         monkeypatch.setattr(_wi_sync, "run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
         with _wi_sync.repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
@@ -638,6 +650,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
         assert calls == [["add", "--all", "--", "inbox"], ["commit", "-m", "chore: test", "--", "inbox"]]
 
 
+@pytest.mark.usefixtures("remote_sync")
 class TestPullIfStale:
     """定期バックグラウンド更新のレート制限を検証する。"""
 
@@ -692,6 +705,7 @@ class TestPullIfStale:
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
 
 
+@pytest.mark.usefixtures("remote_sync")
 class TestPullWithRecentNotice:
     """読み取り専用操作の同期再利用・強制同期・移行契約を検証する。"""
 

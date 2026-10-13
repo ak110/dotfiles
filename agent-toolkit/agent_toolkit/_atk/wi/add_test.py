@@ -1575,7 +1575,11 @@ class TestAddOrderEditorFirst:
             atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
+        upstream_query = ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+        assert upstream_query in git_cmds
+        synchronization_and_save = [cmd for cmd in git_cmds if cmd != upstream_query]
+        assert synchronization_and_save[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
+        assert synchronization_and_save[2][:2] == ["git", "add"]
 
 
 class TestAddRepoPathOverrideCli:

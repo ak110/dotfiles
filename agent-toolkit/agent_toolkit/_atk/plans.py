@@ -1162,7 +1162,7 @@ def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float 
             _atk_git_sync.ensure_not_rebasing(private_notes)
             if not _atk_git_sync.has_remote(private_notes):
                 raise _wi_web_input.WebInputError(
-                    "remoteなしのprivate-notesでは参照表記の書き換えを実行できません",
+                    "remoteかupstreamが無いprivate-notesでは参照表記の書き換えを実行できません",
                     next_action=_no_remote_next_action(private_notes),
                 )
             if _atk_git_sync.is_worktree_dirty(private_notes):

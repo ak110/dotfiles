@@ -366,7 +366,7 @@ def cmd_commit(private_notes: pathlib.Path) -> None:
     result = commit_entries(private_notes)
     edited = "外部編集分をcommitした" if result.changed else "外部編集の差分は無い"
     if not result.has_remote:
-        push = "remoteが無いためpushしていない"
+        push = "remoteかupstreamが無いためpushしていない"
     elif result.pushed_commits is None:
         push = "pushを完了した（送信件数は取得できない）"
     elif result.pushed_commits == 0:

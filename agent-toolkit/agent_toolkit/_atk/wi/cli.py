@@ -1085,7 +1085,7 @@ def _pull_command(private_notes: pathlib.Path) -> None:
     with _wi_sync.repo_lock(private_notes):
         _wi_sync.pull(private_notes)
         has_remote = _atk_git_sync.has_remote(private_notes)
-    result = "remoteと同期した" if has_remote else "remoteが無いため同期していない"
+    result = "remoteと同期した" if has_remote else "remoteかupstreamが無いため同期していない"
     _outcome.report_success(f"private-notesを{result}: {private_notes.resolve()}")
 
 
