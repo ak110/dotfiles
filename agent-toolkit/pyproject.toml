@@ -114,6 +114,11 @@ ignore = ["D107", "D415"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.flake8-import-conventions]
+# 標準ライブラリはモジュール名で参照するため、datetimeも省略名へ置き換えない。
+# ICN001の検査は保ち、Ruffの省略名の初期値へプロジェクトの名前を対応付ける。
+extend-aliases = { datetime = "datetime" }
+
 [tool.ruff.lint.per-file-ignores]
 "**_test.py" = ["D"]
 "**/__init__.py" = ["D104"]
