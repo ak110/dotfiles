@@ -248,6 +248,8 @@ targets = [
     "agent-toolkit/hooks/*.py",
     "agent-toolkit/skills/*/*",
     "agent-toolkit/skills/*/*/*",
+    "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/*/*",
+    "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/__init__.py",
     "agent-toolkit/share/*",
     "agent-toolkit/hooks/*.json",
     "agent-toolkit/rules/*.md",

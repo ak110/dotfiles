@@ -463,6 +463,8 @@ HELP["atk worktree-stash"]["description"] += (
     "今回の退避だけ復元成功後に回収する。"
 )
 HELP["atk run-script"]["description"] += (
+    "\n多ターン試行はmulti-turn-trialsの--listで固定課題を選び、prepareで公開素材だけを複製し、"
+    "gradeで保存対話と提出物を採点する。機能合否、隠した要件の達成、対話判定を別々に結果JSONへ保存する。"
     "\n履歴の検収はhistory-compareでrebaseとautosquashを分け、検収済み完全OID対応表をplan-rewriteと証拠の--rewrite-mapへ渡す。"
     "verification-recordとexec-review-evidence-checkは--results-fileでJUnit・実行記録・構造化診断を読み、"
     "--list-resultsで選択して--updates-fileで複数の要求行へ根拠を保存する。各scriptの--helpが入力JSONの形式を示す。"

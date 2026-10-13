@@ -1,0 +1,225 @@
+{
+  "case": "weekday-queries",
+  "source": {
+    "url": "https://arxiv.org/html/2610.11559v1",
+    "section": "C.3.1 F1",
+    "adaptation": "失敗機構を小規模な自己完結コードへ具体化。第三者テスターと回答制約は追加要求による。"
+  },
+  "conditions": [
+    "questions-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "legacy",
+      "answer": "既存のweekday関数とquery(\"weekday\", day)はSunday=1を維持する。",
+      "question_condition": "既存番号や既存の問い合わせを変更してよいか質問したとき",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements",
+      "tests": [
+        "legacy-function",
+        "legacy-query"
+      ]
+    },
+    {
+      "id": "public-iso",
+      "answer": "新しいquery(\"iso-weekday\", day)を追加し、Monday=1、Sunday=7を返す。",
+      "question_condition": "新しい問い合わせの名前や公開方法を質問したとき",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements",
+      "tests": [
+        "public-iso"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "contract",
+      "description": "明示された番号変更と既存契約を確認し、別の公開問い合わせへ統合したか"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "questions-only",
+      "candidate": "\"\"\"曜日を公開問い合わせから返す課題。\"\"\"\n\nimport datetime\n\n\ndef weekday(day: str) -> int:\n    \"\"\"Sunday=1の曜日番号を返す。\"\"\"\n    return (datetime.date.fromisoformat(day).weekday() + 1) % 7 + 1\n\n\ndef query(kind: str, day: str) -> int:\n    \"\"\"公開問い合わせを実行する。\"\"\"\n    if kind == \"weekday\":\n        return weekday(day)\n    if kind == \"iso-weekday\":\n        return datetime.date.fromisoformat(day).isoweekday()\n    raise ValueError(kind)\n",
+      "dialogue": {
+        "case": "weekday-queries",
+        "condition": "questions-only",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "曜日を月曜から1、日曜を7にしてください。問い合わせから使えるようにしたいです。"
+          },
+          {
+            "role": "candidate",
+            "text": "既存のSunday=1は維持して、iso-weekdayという別問い合わせを追加しますか。"
+          },
+          {
+            "role": "user",
+            "text": "既存のweekday関数とquery(\"weekday\", day)はSunday=1を維持する。\n新しいquery(\"iso-weekday\", day)を追加し、Monday=1、Sunday=7を返す。"
+          },
+          {
+            "role": "candidate",
+            "text": "成果物を提出します。公開操作を検証しました。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [
+          {
+            "requirement": "legacy",
+            "question": {
+              "turn": 2,
+              "quote": "既存のSunday=1は維持して、iso-weekdayという別問い合わせを追加しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "既存のweekday関数とquery(\"weekday\", day)はSunday=1を維持する。"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "public-iso",
+            "question": {
+              "turn": 2,
+              "quote": "既存のSunday=1は維持して、iso-weekdayという別問い合わせを追加しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "新しいquery(\"iso-weekday\", day)を追加し、Monday=1、Sunday=7を返す。"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "contract",
+            "verdict": "適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "既存のSunday=1は維持して、iso-weekdayという別問い合わせを追加しますか。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "questions-only",
+      "candidate": "\"\"\"曜日を公開問い合わせから返す課題。\"\"\"\n\nimport datetime\n\n\ndef weekday(day: str) -> int:\n    \"\"\"Sunday=1の曜日番号を返す。\"\"\"\n    return datetime.date.fromisoformat(day).isoweekday()\n\n\ndef query(kind: str, day: str) -> int:\n    \"\"\"公開問い合わせを実行する。\"\"\"\n    if kind == \"weekday\":\n        return weekday(day)\n    raise ValueError(kind)\n",
+      "dialogue": {
+        "case": "weekday-queries",
+        "condition": "questions-only",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "曜日を月曜から1、日曜を7にしてください。問い合わせから使えるようにしたいです。"
+          },
+          {
+            "role": "candidate",
+            "text": "既存のSunday=1は維持して、iso-weekdayという別問い合わせを追加しますか。"
+          },
+          {
+            "role": "user",
+            "text": "既存のweekday関数とquery(\"weekday\", day)はSunday=1を維持する。\n新しいquery(\"iso-weekday\", day)を追加し、Monday=1、Sunday=7を返す。"
+          },
+          {
+            "role": "candidate",
+            "text": "変更しました。単体だけ確認して完了とします。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [
+          {
+            "requirement": "legacy",
+            "question": {
+              "turn": 2,
+              "quote": "既存のSunday=1は維持して、iso-weekdayという別問い合わせを追加しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "既存のweekday関数とquery(\"weekday\", day)はSunday=1を維持する。"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "public-iso",
+            "question": {
+              "turn": 2,
+              "quote": "既存のSunday=1は維持して、iso-weekdayという別問い合わせを追加しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "新しいquery(\"iso-weekday\", day)を追加し、Monday=1、Sunday=7を返す。"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "contract",
+            "verdict": "不適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 4,
+                "quote": "変更しました。単体だけ確認して完了とします。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

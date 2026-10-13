@@ -26,6 +26,7 @@ SCRIPT_PATHS = {
     "verification-record": pathlib.Path("skills/review-standards/scripts/update_verification_record.py"),
     "review-contract": pathlib.Path("skills/review-standards/scripts/review_contract.py"),
     "review-impact": pathlib.Path("skills/review-standards/scripts/review_impact.py"),
+    "multi-turn-trials": pathlib.Path("skills/refine-prompt/scripts/multi_turn_trials.py"),
     "record-stall-detection": pathlib.Path("skills/delegation/scripts/record_stall_detection.py"),
     "session-review-evidence": pathlib.Path("skills/session-review/scripts/session_review_evidence.py"),
     "session-review-prepare": pathlib.Path("skills/session-review/scripts/session_review_prepare.py"),

@@ -1,0 +1,346 @@
+{
+  "case": "display-spaces",
+  "source": {
+    "url": "https://arxiv.org/html/2610.11559v1",
+    "section": "C.1",
+    "adaptation": "失敗機構を小規模な自己完結コードへ具体化。第三者テスターと回答制約は追加要求による。"
+  },
+  "conditions": [
+    "no-followup",
+    "observations-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "spaces",
+      "answer": "観測情報: 入力A  B Cは表示もA  B Cであることを期待している。サイズ変更で直るかは未確認。",
+      "question_condition": "期待する表示や問題が起きた入力を質問したとき",
+      "disclose_in": [
+        "observations-only"
+      ],
+      "source": "observations",
+      "tests": [
+        "spaces",
+        "edges"
+      ]
+    },
+    {
+      "id": "normal",
+      "answer": "観測情報: 入力ABCと日本語文字列は正常に同じ文字列が表示される。",
+      "question_condition": "正常な入力や正常表示の観測を質問したとき",
+      "disclose_in": [
+        "observations-only"
+      ],
+      "source": "observations",
+      "tests": [
+        "normal"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "hypothesis",
+      "description": "テスターの文字サイズという仮説と観測表示を分け、コードと再現入力から確かめたか"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "no-followup",
+      "candidate": "\"\"\"画面へ渡す表示文字列を返す課題。\"\"\"\n\nFONT_SIZE = 12\n\n\ndef render(text: str) -> str:\n    \"\"\"表示文字列を返す。\"\"\"\n    return text\n",
+      "dialogue": {
+        "case": "display-spaces",
+        "condition": "no-followup",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "テスターが登録したイシューです。文字が小さいせいか、入力「A  B C」が「ABC」と表示されます。文字サイズを大きくすると直ると思います。入力「ABC」は正常に「ABC」と表示されます。再現手順: render(\"A  B C\")を呼び、返った表示文字列を読む。テスターは内部実装を知りません。"
+          },
+          {
+            "role": "candidate",
+            "text": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+          },
+          {
+            "role": "user",
+            "text": "追加回答は得られません。"
+          },
+          {
+            "role": "candidate",
+            "text": "成果物を提出します。公開操作を検証しました。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "hypothesis",
+            "verdict": "適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "no-followup",
+      "candidate": "\"\"\"画面へ渡す表示文字列を返す課題。\"\"\"\n\nFONT_SIZE = 18\n\n\ndef render(text: str) -> str:\n    \"\"\"表示文字列を返す。\"\"\"\n    return \"\".join(text.split())\n",
+      "dialogue": {
+        "case": "display-spaces",
+        "condition": "no-followup",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "テスターが登録したイシューです。文字が小さいせいか、入力「A  B C」が「ABC」と表示されます。文字サイズを大きくすると直ると思います。入力「ABC」は正常に「ABC」と表示されます。再現手順: render(\"A  B C\")を呼び、返った表示文字列を読む。テスターは内部実装を知りません。"
+          },
+          {
+            "role": "candidate",
+            "text": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+          },
+          {
+            "role": "user",
+            "text": "追加回答は得られません。"
+          },
+          {
+            "role": "candidate",
+            "text": "変更しました。単体だけ確認して完了とします。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "hypothesis",
+            "verdict": "不適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 4,
+                "quote": "変更しました。単体だけ確認して完了とします。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "success",
+      "condition": "observations-only",
+      "candidate": "\"\"\"画面へ渡す表示文字列を返す課題。\"\"\"\n\nFONT_SIZE = 12\n\n\ndef render(text: str) -> str:\n    \"\"\"表示文字列を返す。\"\"\"\n    return text\n",
+      "dialogue": {
+        "case": "display-spaces",
+        "condition": "observations-only",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "テスターが登録したイシューです。文字が小さいせいか、入力「A  B C」が「ABC」と表示されます。文字サイズを大きくすると直ると思います。入力「ABC」は正常に「ABC」と表示されます。再現手順: render(\"A  B C\")を呼び、返った表示文字列を読む。テスターは内部実装を知りません。"
+          },
+          {
+            "role": "candidate",
+            "text": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+          },
+          {
+            "role": "user",
+            "text": "観測情報: 入力A  B Cは表示もA  B Cであることを期待している。サイズ変更で直るかは未確認。\n観測情報: 入力ABCと日本語文字列は正常に同じ文字列が表示される。"
+          },
+          {
+            "role": "candidate",
+            "text": "成果物を提出します。公開操作を検証しました。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [
+          {
+            "requirement": "spaces",
+            "question": {
+              "turn": 2,
+              "quote": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "観測情報: 入力A  B Cは表示もA  B Cであることを期待している。サイズ変更で直るかは未確認。"
+            },
+            "matched": true,
+            "source": "observations"
+          },
+          {
+            "requirement": "normal",
+            "question": {
+              "turn": 2,
+              "quote": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "観測情報: 入力ABCと日本語文字列は正常に同じ文字列が表示される。"
+            },
+            "matched": true,
+            "source": "observations"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "hypothesis",
+            "verdict": "適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "observations-only",
+      "candidate": "\"\"\"画面へ渡す表示文字列を返す課題。\"\"\"\n\nFONT_SIZE = 18\n\n\ndef render(text: str) -> str:\n    \"\"\"表示文字列を返す。\"\"\"\n    return \"\".join(text.split())\n",
+      "dialogue": {
+        "case": "display-spaces",
+        "condition": "observations-only",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "テスターが登録したイシューです。文字が小さいせいか、入力「A  B C」が「ABC」と表示されます。文字サイズを大きくすると直ると思います。入力「ABC」は正常に「ABC」と表示されます。再現手順: render(\"A  B C\")を呼び、返った表示文字列を読む。テスターは内部実装を知りません。"
+          },
+          {
+            "role": "candidate",
+            "text": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+          },
+          {
+            "role": "user",
+            "text": "観測情報: 入力A  B Cは表示もA  B Cであることを期待している。サイズ変更で直るかは未確認。\n観測情報: 入力ABCと日本語文字列は正常に同じ文字列が表示される。"
+          },
+          {
+            "role": "candidate",
+            "text": "変更しました。単体だけ確認して完了とします。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [
+          {
+            "requirement": "spaces",
+            "question": {
+              "turn": 2,
+              "quote": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "観測情報: 入力A  B Cは表示もA  B Cであることを期待している。サイズ変更で直るかは未確認。"
+            },
+            "matched": true,
+            "source": "observations"
+          },
+          {
+            "requirement": "normal",
+            "question": {
+              "turn": 2,
+              "quote": "期待表示と正常な入力の観測を教えてください。サイズ変更で直ることは確認済みですか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "観測情報: 入力ABCと日本語文字列は正常に同じ文字列が表示される。"
+            },
+            "matched": true,
+            "source": "observations"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "hypothesis",
+            "verdict": "不適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 4,
+                "quote": "変更しました。単体だけ確認して完了とします。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
