@@ -13,6 +13,7 @@ import pathlib
 from typing import Any
 
 from agent_toolkit._agents_server import context_usage, status_reader
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.notice_inbox import take_notices
 from agent_toolkit._agents_server.retained_results import read_retained_result, take_result
 from agent_toolkit._agents_server.shared_layout import (
@@ -94,6 +95,8 @@ class StatusFileWriter:
         self._published_results: set[str] = set()
         self._projected_host_session_id: str | None = None
         self._active = False
+        self._write_lock = asyncio.Lock()
+        self._flush_tasks: set[asyncio.Task[None]] = set()
 
     @property
     def state_root(self) -> pathlib.Path | None:
@@ -154,8 +157,18 @@ class StatusFileWriter:
         self._flush_handle = loop.call_later(self._aggregate_seconds, self._flush_scheduled)
 
     def _flush_scheduled(self) -> None:
+        if not self._active:
+            return
+        if self._flush_handle is not None:
+            self._flush_handle.cancel()
+        self._flush_handle = None
+        task = asyncio.create_task(self._flush_scheduled_async())
+        self._flush_tasks.add(task)
+        task.add_done_callback(self._flush_tasks.discard)
+
+    async def _flush_scheduled_async(self) -> None:
         try:
-            self.flush()
+            await self.flush_async()
         except OSError:
             _LOG.exception(
                 "予約した共有状態の保存に失敗しました。次の状態更新またはheartbeatで再試行します: writer=%s sessions=%s",
@@ -169,10 +182,84 @@ class StatusFileWriter:
             return
         self._flush_handle = None
         self._remove_stale_status_files()
-        now = asyncio.get_running_loop().time()
         for session in self._sessions.values():
             session.publish_registration()
         self._write_terminal_results()
+        visible, now, payload = self._projection()
+        self._write_projection(payload)
+        self._schedule_retention(visible, now)
+
+    async def activate_async(self) -> None:
+        """初期化後の初回保存が完了してから書込を開始する。"""
+        try:
+            sweep_stale_shared_state(keep_root_session_id=self.root_session_id, state_root=self._state_root)
+        except OSError as exc:
+            _LOG.warning("共有状態の期限掃引を開始できませんでした: error=%s", exc)
+        self._active = True
+        self._remove_owned_and_expired_files()
+        await self.flush_async()
+
+    async def flush_async(self) -> None:
+        """登録・結果・表示を順に保存し、状態とタイマーの反映はloopで行う。"""
+        async with self._write_lock:
+            if not self._active:
+                return
+            if self._flush_handle is not None:
+                self._flush_handle.cancel()
+                self._flush_handle = None
+            self._remove_stale_status_files()
+            for session in tuple(self._sessions.values()):
+                await session.drain_registration()
+                await session.publish_registration_async()
+            for session in tuple(self._sessions.values()):
+                if session.result_delivered:
+                    self.delete_result(session.session_id, collector="status-sync")
+                elif session.result_available:
+                    if self.result_state(session.session_id) == "consumed":
+                        session.result_delivered = True
+                        self._published_results.discard(session.session_id)
+                    elif self.result_state(session.session_id) != "published":
+                        await self._write_terminal_result_async(session)
+            visible, now, payload = self._projection()
+            try:
+                await run_file_operation(atomic_write, self._path, json.dumps(payload, ensure_ascii=False) + "\n")
+            except OSError as error:
+                _LOG.exception("表示用状態の保存に失敗しました: writer=%s sessions=%s", self._path, sorted(self._sessions))
+                raise ProjectionWriteError(str(error)) from error
+            self._schedule_retention(visible, now)
+
+    async def drain(self, *, cancel_scheduled: bool = False) -> None:
+        """予約保存と通知からの登録公開を回収する。"""
+        await finish_task(asyncio.create_task(self._drain(cancel_scheduled=cancel_scheduled)))
+
+    async def _drain(self, *, cancel_scheduled: bool) -> None:
+        if cancel_scheduled:
+            for handle in (self._flush_handle, self._retention_handle):
+                if handle is not None:
+                    handle.cancel()
+            self._flush_handle = None
+            self._retention_handle = None
+        error: BaseException | None = None
+        while self._flush_tasks:
+            tasks = tuple(self._flush_tasks)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # 完了callbackがまだ実行されていなくても、回収したtaskを再び待たない。
+            self._flush_tasks.difference_update(tasks)
+            for result in results:
+                if error is None and isinstance(result, BaseException):
+                    error = result
+        async with self._write_lock:
+            results = await asyncio.gather(
+                *(session.drain_registration() for session in tuple(self._sessions.values())), return_exceptions=True
+            )
+            for result in results:
+                if error is None and isinstance(result, BaseException):
+                    error = result
+        if error is not None:
+            raise error
+
+    def _projection(self) -> tuple[list[SessionState | SessionResumeState], float, dict[str, Any]]:
+        now = asyncio.get_running_loop().time()
         # 稼働中の子孫を持つsessionは、自身の結果回収と表示期限によらず祖先の行として残す。
         # 結果の再公開や期限の延長はせず、子孫の終端後の次回flushで通常の判定へ戻る。
         live_hosts = _live_descendant_hosts(self._directory, self._path)
@@ -204,12 +291,14 @@ class StatusFileWriter:
             "updated_at": _updated_at(visible),
             "sessions": [_serialize_session(session) for session in visible],
         }
+        return visible, now, payload
+
+    def _write_projection(self, payload: dict[str, Any]) -> None:
         try:
             atomic_write(self._path, json.dumps(payload, ensure_ascii=False) + "\n")
         except OSError as error:
             _LOG.exception("表示用状態の保存に失敗しました: writer=%s sessions=%s", self._path, sorted(self._sessions))
             raise ProjectionWriteError(str(error)) from error
-        self._schedule_retention(visible, now)
 
     def deactivate(self) -> None:
         """予約を解除し、自身が所有する状態ファイルを削除する。"""
@@ -232,6 +321,22 @@ class StatusFileWriter:
             and not session.result_delivered
         ):
             self._write_terminal_result(session)
+
+    async def retain_result_async(self, session: SessionState | SessionResumeState) -> None:
+        """登録解放後も未回収の終端結果を、他の保存と直列に残す。"""
+        async with self._write_lock:
+            if (
+                session.finalized_at is not None
+                and session.status in TERMINAL_STATUSES
+                and not session.result_delivered
+                and self.result_state(session.session_id) == "unpublished"
+            ):
+                await self._write_terminal_result_async(session)
+
+    async def delete_result_async(self, session_id: str, *, collector: str) -> None:
+        """進行中の結果保存を待ってから削除する。"""
+        async with self._write_lock:
+            self.delete_result(session_id, collector=collector)
 
     def delete_result(self, session_id: str, *, collector: str) -> None:
         """回収済みまたは所有解除するsessionの終端結果を削除する。"""
@@ -327,6 +432,24 @@ class StatusFileWriter:
         atomic_write(directory / f"{session.session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
         self._published_results.add(session.session_id)
         _LOG.info("result_written session_id=%s writer=%s", session.session_id, self._identity.file_name)
+
+    async def _write_terminal_result_async(self, session: SessionState | SessionResumeState) -> None:
+        assert session.finalized_at is not None
+        assert session.retention_deadline is not None
+        turn = session.turn_seq, session.finalized_at
+        payload = terminal_result_payload(session)
+        payload["owner_status_file"] = self._identity.file_name
+        payload["session"] = _serialize_retained_session(session)
+        path = results_directory(self.root_session_id, self._state_root) / f"{session.session_id}.json"
+
+        def reflect(_result: None) -> None:
+            if turn != (session.turn_seq, session.finalized_at) or session.result_delivered:
+                path.unlink(missing_ok=True)
+                return
+            self._published_results.add(session.session_id)
+            _LOG.info("result_written session_id=%s writer=%s", session.session_id, self._identity.file_name)
+
+        await run_file_operation(atomic_write, path, json.dumps(payload, ensure_ascii=False) + "\n", on_success=reflect)
 
     def _remove_owned_and_expired_files(self) -> None:
         """自身の状態ファイルと保持期限を超えた通知だけを削除する。"""

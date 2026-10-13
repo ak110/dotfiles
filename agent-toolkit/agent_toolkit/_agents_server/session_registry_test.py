@@ -109,19 +109,23 @@ async def test_session_state_publishes_state_transitions(
 
     session.status = "starting"
     session.touch()
+    await session.drain_registration()
     first = json.loads((subject.registry_directory() / "published-session.json").read_text(encoding="utf-8"))
     assert first["status"] == "starting"
     session.status = "running"
     session.touch()
+    await session.drain_registration()
     first = json.loads((subject.registry_directory() / "published-session.json").read_text(encoding="utf-8"))
     assert first["status"] == "running"
     session.set_progress("進捗")
+    await session.drain_registration()
     second = json.loads((subject.registry_directory() / "published-session.json").read_text(encoding="utf-8"))
     assert second == first
 
     session.status = "completed"
     session.turn_completed = True
     session.touch()
+    await session.drain_registration()
     assert subject.resolve("published-session").state is subject.Resolution.TERMINAL
     restored = subject.resolve("published-session").resume_info
     assert restored is not None
@@ -137,11 +141,13 @@ async def test_speed_change_is_published_without_status_or_turn_change(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("speed-session", str(tmp_path), publish_registry=True)
     session.touch()
+    await session.drain_registration()
     initial = subject.resolve(session.session_id).resume_info
     assert initial is not None and initial.fast_mode is None
     for fast in (False, True, False):
         session.fast_mode = fast
         session.touch()
+        await session.drain_registration()
         info = subject.resolve(session.session_id).resume_info
         assert info is not None and info.fast_mode is fast
         assert state.SessionResumeState.from_session(session).fast_mode is fast
@@ -191,10 +197,12 @@ async def test_retention_expiry_releases_record(
     session.turn_completed = True
     session.touch()
     manager.sessions[session.session_id] = session
+    await session.drain_registration()
     assert subject.resolve("expiring-session").state is subject.Resolution.TERMINAL
 
     session.retention_deadline = asyncio.get_running_loop().time() - 1.0
     manager._expire_session(session.session_id)
+    await manager._wait_for_resource_release(session.session_id)
 
     released = subject.resolve("expiring-session")
     assert released.state is subject.Resolution.RELEASED

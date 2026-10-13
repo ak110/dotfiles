@@ -52,7 +52,7 @@ _MANAGER = AgentsServerManager()
 async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
     _LOG.info("manager activateを開始します")
     try:
-        _MANAGER.activate()
+        await _MANAGER.activate_async()
     except BaseException:
         _LOG.exception("manager activateに失敗しました: stage=manager_activate")
         raise

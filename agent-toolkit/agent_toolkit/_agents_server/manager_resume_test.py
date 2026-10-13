@@ -220,6 +220,8 @@ async def test_resumed_session_keeps_every_launch_info_item(
         "launched-session", str(tmp_path), engine="claude", turn_seq=2, publish_registry=True, **_LAUNCH_VALUES
     )
     _complete(session, message="前のturn")
+    # 再起動を模す前に、旧所有者が作成する登録の保存を完了する。
+    await session.drain_registration()
     prepare_resume(manager, session)
 
     assert _without_root(await manager.send_message(session.session_id, "続行")) == {

@@ -214,11 +214,13 @@ async def test_start_records_launcher_in_registry_and_keeps_it(
 
     assert json.loads(registry.read_text(encoding="utf-8"))["launcher_session_id"] == expected
     _complete(manager.sessions[session_id])
+    assert (await manager.wait())["status"] == "completed"
     assert json.loads(registry.read_text(encoding="utf-8"))["status"] == "completed"
     assert json.loads(registry.read_text(encoding="utf-8"))["launcher_session_id"] == expected
-    session_registry.release(session_id, reason="stopped")
+    await manager.stop(session_id)
     assert json.loads(registry.read_text(encoding="utf-8"))["launcher_session_id"] == expected
     assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
+    await manager.close()
 
 
 @pytest.mark.asyncio

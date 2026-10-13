@@ -229,6 +229,7 @@ class AntigravityManager:
     async def release_session(self, session: SessionState) -> None:
         """対象のsessionを所有するタスクとプロセスを終了する。"""
         await self._stop_owned_task(session.session_id)
+        await session.drain_registration()
 
     async def close(self) -> None:
         """所有中の全turnを終了する。"""
@@ -238,6 +239,9 @@ class AntigravityManager:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        for session in tuple(self.sessions.values()):
+            if session.engine == "agy":
+                await session.drain_registration()
 
     async def _stop_owned_task(self, session_id: str) -> None:
         task = next((item for item in self._tasks if self._task_sessions.get(item) == session_id), None)
@@ -293,7 +297,9 @@ class AntigravityManager:
         self._tasks.add(task)
         task.add_done_callback(self._forget_task)
         try:
-            return await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
+            initialized_session = await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
+            await initialized_session.drain_registration()
+            return initialized_session
         except TimeoutError as exc:
             await self._release_unstarted_task(task)
             raise SessionInitializationTimeoutError(
@@ -416,6 +422,7 @@ class AntigravityManager:
             if process is not None:
                 await _terminate(process)
             if session is not None:
+                await session.drain_registration()
                 self._processes.pop(session.session_id, None)
 
     def _append_event(self, session_id: str, payload: dict[str, Any]) -> None:

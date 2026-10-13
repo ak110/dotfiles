@@ -13,7 +13,7 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 
 - MCPサーバーの起動・終了とinitializeの節目: `_agents_server/mcp_tools.py`と`mcp_transport.py`
 - 候補ごとの初期化と候補の切替: `manager.py`。Codexの`explore`で読み取り専用sandboxが名前空間を作成できなかった候補は、モデルを呼ぶ前に除外理由`exploreSandboxNamespaceDenied`で警告を残し、`unavailable-candidates.json`へ記録して次候補へ進む
-- 開始後の保存失敗（登録簿、待機対象、状態ファイル）: `manager.py`と`state.py`。予約した保存とheartbeatの失敗は`status_file.py`と`manager_base.py`が、書込主体の状態ファイルとsession識別子の一覧とともに記録する。いずれもスタックを含み、置換元と置換先のパスは例外の本文にある。共通の置換（`_common/atomic_file.py`）はWindowsのWinError 5・32を1秒未満の有限回で再試行し、上限後と対象外のエラーでは旧本文を残して失敗を返す
+- 開始後の保存失敗（登録簿、待機対象、状態ファイル）: `manager.py`と`state.py`。予約した保存とheartbeatの失敗は`status_file.py`と`manager_base.py`が、書込主体の状態ファイルとsession識別子の一覧とともに記録する。いずれもスタックを含み、置換元と置換先のパスは例外の`add_note`による注記にある。共通の置換（`_common/atomic_file.py`）はWindowsのWinError 5・32を1秒未満の有限回で再試行し、上限後と対象外のエラーでは旧本文を残して失敗を返す
 - sessionの状態遷移（`session_transition`）: `manager.py`・`manager_registry.py`・`manager_resume.py`・`state.py`
 - 開始・終端の資源記録（`resource_snapshot`）: `resource_snapshot.py`
 

@@ -18,10 +18,12 @@ Claude Codeが同一プロセスのままsession識別子を切り替えた場�
 MCPサーバープロセスには`CLAUDE_PID`が渡らないため、Claude Codeプロセスを指す識別子を環境変数から解決できない。
 
 Codex CLIはstdio MCPサーバーへ親環境を限定して渡す。届くのはCodexの既定の許可リストにある変数、`env_vars`に列挙した名前のうち親環境に値がある変数、`env`で明示した値である。
-外側の`agents_server`は`thread/start`・`thread/resume`の`config.mcp_servers.agents_server`へ、`env`でルートsession識別子と書込主体識別子を配送し、`env_vars`でproxy設定の変数名を渡す。
-変数名の集合は`agent_toolkit/_common/proxy_environment.py`の`PROXY_ENVIRONMENT_VARIABLES`が持つ。
+外側の`agents_server`は`thread/start`・`thread/resume`の`config.mcp_servers.agents_server`へ、`env`でルートsession識別子と書込主体識別子を配送し、`env_vars`で保存先・公開設定・proxy設定の変数名を渡す。
+変数名の集合は`agent_toolkit/_common/mcp_environment.py`の`environment_variable_names`が持つ。proxy名もここへ集約し、`proxy_environment.py`は既存の名前を再公開する。
+保存先にはHOME、WindowsのUSERPROFILE・LOCALAPPDATA・APPDATA、XDGのSTATE・CONFIG・DATA・CACHEの各HOME、AGENT_TOOLKIT_PRIVATE_NOTES、CLAUDE_CONFIG_DIR、CODEX_HOMEを含める。公開設定の`AGENT_TOOLKIT_CONFIG_`名は`_atk/config.py`の`config_environment_variable_names`が現行の変更可能キーと旧キーの定義から具体名で返す。旧キーを配送するのは子でも拒否と置換案内を保つためであり、名前のwildcardや親環境の全複製は使わない。
 Codex向けプラグイン設定の生成器（`pytools/_internal/codex_plugin_manifests.py`）も、同じ集合を`agents_server`と`pyfltr`の`env_vars`へ射影する。
 配布設定は変数名だけを持ち、子へ届くのは親環境に値がある変数に限られる。`env_vars`はCodex向けの設定だけが持ち、Claude向けの`.mcp.json`とAgent Plugins向け`mcp.json`は従来の形式を保つ。
+通常起動・再開・多段委譲でも、呼出元が選んだ設定、キューと状態の名前空間を引き継ぐ。識別子は各起動の明示した値を使い、親の識別子や認証値を許可名の集合へ追加しない。
 MCPサーバーが起動するCodex App Server・Claude CLI・Antigravity CLIは親環境をコピーするため、この境界で渡した値を引き継ぐ。
 配送するルートはManagerが持つ`StatusFileWriter.root_session_id`である。環境にownerが無くManagerが生成したルートも、Codex App Serverの子環境、threadの開始・再開のMCP環境とhost索引、Claude SDKの新規・再開環境、Antigravityの子環境へ同じ入力として渡す。backendはこの入力から通知先の所有者を決める。Antigravityではルート配送だけを保証し、固有の通知元識別子の解決と通知成功は別の課題として扱う。計画の所有記録とUWIの投入元の解決はこの配送と別の契約であり、Managerが生成したプロセス専用のroot（`mcp-`で始まる識別子）は会話を表さないため、所有会話と投入元の記録から除く。判定は`agent-toolkit/agent_toolkit/_plan/owner_records.py`の`resolve_conversation_session_id`が持つ。
 CodexのPostToolUseフックは、所有session識別子があり環境変数から書込主体を解決できない場合、入力JSONの検証済み現行session識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当として補完する。PostToolUseフックと`atk agents wait`は`hosts`索引が存在する場合は委譲元のthreadから書込主体を逆引きし、状態ファイルと待機対象登録を同じ名前空間で扱う。索引が無い場合は補完した識別子をそのまま書込主体として使う。
@@ -137,12 +139,16 @@ MCPサーバーの起動時とSessionEndでは、配下の全ファイルの最�
 backendを開始した後の保存は、開始の成否と別の成否として扱う。
 `manager.py`の`_save_started_session`は次の保存の失敗を個別に`persistence_warnings`へ集め、起動応答に`session_id`・cwd・委譲元を残す。
 
-- session登録簿の更新（`SessionState.publish_registration`）
-- 状態ファイルの射影（`StatusFileWriter.flush`）
+- session登録簿の更新（`SessionState.publish_registration_async`）
+- 状態ファイルの射影（`StatusFileWriter.flush_async`）
 - 待機対象の登録（`wait_targets.retain_wait_targets`）。`flush`に失敗した起動だけが補う。`flush`が成功した起動は既存の状態ファイルとPostToolUseフックの登録を使う
 
 登録簿の更新は成功した値だけを公開済みとして覚えるため、次の状態更新と`flush`で再試行される。表示用の状態ファイルの置換失敗は`status_file.ProjectionWriteError`として終端結果の保存失敗と区別する。予約した`flush`とheartbeatの保存失敗はログへ残して次回の更新へ進む。
+非同期の保存は、パス・本文・登録情報をloop上で確定し、ファイル操作だけを`file_operations.run_file_operation`からworkerへ渡す。成功したsnapshotの反映と保持タイマーの操作もloopが所有し、共有session辞書やwriterをworkerへ渡さない。同期CLIの`atomic_write`と有限再試行の契約は保つ。
+loop上の`SessionState.touch`は登録公開をsessionごとのtaskへ集約し、保存中に値が変わった場合も最新の登録まで進める。起動・追送・結果配送の応答は必要な保存を待つ。writerは保存と削除を直列化し、公開済みまたは回収済みの結果を再保存せず、旧turnの保存成功を新turnへ反映しない。
 MCPサーバーの停止（`AgentsServerManager.close`）では終端の公開で生じた`ProjectionWriteError`だけをログへ残して後始末を続ける。終端結果の保存の`OSError`は呼び出し元へ伝えたうえで、listenerの解除と`StatusFileWriter.deactivate`を`finally`で行う。
+停止が取り消されても、保存taskとworkerの終了を回収し、終端公開と予約解除を終えてから自身の状態ファイルを削除する。保存失敗を成功として扱わず、停止後にworkerが状態ファイルを再作成することを防ぐ。
+drainは並行した保存の一部が失敗しても対象workerの全終了を先に回収し、登録公開も終えてから保持した失敗を呼び出し元へ伝える。
 共通の`atomic_write`は置換に失敗した例外へ置換元と置換先のパスを注記（`add_note`）するため、呼び出し側が記録するスタックにも両パスが残る。
 起動済みとして登録するのはbackendを開始したsessionだけであり、入力検証、候補の解決、backendの開始失敗による不成立は起動前の失敗として返す。
 

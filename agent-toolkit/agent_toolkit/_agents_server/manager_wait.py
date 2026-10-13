@@ -95,6 +95,12 @@ class ManagerWait(manager_resume.ManagerResume):
         advance_pending = True
 
         while True:
+            await self._drain_candidate_records()
+            for session_id in ordered_ids:
+                self._resolve_expired_session(session_id)
+                await self._wait_for_resource_release(session_id)
+            if self._status_writer is not None:
+                await self._status_writer.drain()
             for session_id in ordered_ids:
                 retained_response = self._retained_result_response(session_id, collector="mcp-wait")
                 if retained_response is not None:
@@ -103,7 +109,14 @@ class ManagerWait(manager_resume.ManagerResume):
                 if session is not None and advance_pending:
                     await self._advance_child_session_wait(session)
             advance_pending = False
+            for session in tuple(self.sessions.values()):
+                await session.drain_registration()
+            await self._drain_candidate_records()
+            if self._status_writer is not None:
+                await self._status_writer.drain()
             async with self._condition:
+                if self._candidate_tasks or any(session.registration_pending for session in self.sessions.values()):
+                    continue
                 terminal: list[SessionState] = []
                 for session_id in ordered_ids:
                     candidate = self.sessions.get(session_id)

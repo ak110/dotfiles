@@ -492,7 +492,9 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     assert set(server["env"]) == {"AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_STATUS_HOST_SESSION"}
     assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "root-session"
     assert server["default_tools_approval_mode"] == "approve"
-    assert server["env_vars"] == list(subject.proxy_environment.PROXY_ENVIRONMENT_VARIABLES)
+    assert server["env_vars"] == list(
+        subject.mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
+    )
     assert "AGENT_TOOLKIT_DELEGATED_SESSION" not in server["env"]
     assert aliases == [("root-session", server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"], "inner-thread")]
 
@@ -914,7 +916,7 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
         for config in configs:
             assert config["mcp_servers"]["agents_server"]["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == root
             assert config["mcp_servers"]["agents_server"]["env_vars"] == list(
-                subject.proxy_environment.PROXY_ENVIRONMENT_VARIABLES
+                subject.mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
             )
         environment = {**configs[0]["mcp_servers"]["agents_server"]["env"], "CODEX_THREAD_ID": session.session_id}
         assert send_notification("途中の観測", environment=environment, state_root=tmp_path) == 0

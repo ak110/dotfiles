@@ -78,11 +78,12 @@ backend側で個別に取り除く案が成立しないことにある。同じ�
 却下した代替案は、backendごとに除去処理を複製する案と、委譲先の各コマンド呼び出しで回避する案である。
 前者は同じ契約が複数箇所へ分かれ、後者は回避策を規範や委譲プロンプトへ書き足す恒常費が残る。
 
-Codexはstdio MCPサーバーへ親環境を限定して渡すため、proxy設定は`mcp_servers.<name>.env_vars`で継承を指定する。
+Codexはstdio MCPサーバーへ親環境を限定して渡すため、保存先・公開設定・proxy設定は`mcp_servers.<name>.env_vars`で継承を指定する。
 2026年10月13日に、Codexの委譲先から起動したCodexがproxy変数を失い`workspace routing discovery failed`で終端した。
-変数名の集合は`agent_toolkit/_common/proxy_environment.py`だけが持ち、Codex backendの開始・再開の内側MCP設定と、Codex向けプラグイン設定の生成器（`agents_server`と`pyfltr`）が同じ集合を消費する。
+変数名の集合は`agent_toolkit/_common/mcp_environment.py`が持ち、Codex backendの開始・再開の内側MCP設定と、Codex向けプラグイン設定の生成器（`agents_server`と`pyfltr`）が同じ集合を消費する。既存の`proxy_environment.py`は同じproxy名のtupleを再公開する。公開設定の具体名は`_atk/config.py`の`config_environment_variable_names`から引数で受け取り、共通層から設定CLIへの逆依存や設定名の手書き複製を持たない。
 生成する箇所ごとに名前を書くと、片方だけの追加で通信の前提が消費側まで届かなくなるためである。
 値は親環境にある場合だけCodexの継承機能へ任せ、配布設定へ保存しない。
+同じ境界でXDGなどの保存先と公開設定overrideを失うと、子の登録先と親CLIの読取先が分かれ、起動済みのsessionを見付けられない。必要な名前の具体列を内外のMCPへ渡し、通常起動・再開・多段でも呼出元が選んだ設定、キューと状態の名前空間を保つ。全environの複写、子での別名前空間の全探索や、保存先をHOMEへ強制する案は採らない。配送する名前の定義は共有状態の資料が示し、ownerと書込主体は各起動の明示した値を維持する。
 Claude向けとAgent Plugins向けのMCP定義へはCodex専用の`env_vars`を混ぜない。
 agents_serverが起動するCodex App Server・Claude CLI・Antigravity CLIは親環境をコピーするため、子側で値を復元する処理は持たない。
 却下した代替案は、chezmoiのCodexプラグイン方針へ置く案と、子プロセスがshell設定などから値を回復する案である。前者の設定型は通信設定を受理せず、後者はCodexの公開機能で同じ結果を得られる。

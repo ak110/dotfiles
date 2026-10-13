@@ -165,6 +165,11 @@ def _config_env_name(key: str) -> str:
     return f"{_CONFIG_ENV_PREFIX}{key.upper()}"
 
 
+def config_environment_variable_names() -> tuple[str, ...]:
+    """現行設定と、置換案内の対象である旧設定の環境変数名を返す。"""
+    return tuple(_config_env_name(key) for key in (*_MUTABLE_KEY_DEFAULTS, *_LEGACY_MODEL_KEYS))
+
+
 def tier_model_key(engine: str, tier: str) -> str:
     """engineと段位に対応するモデル設定キーを返す。"""
     return f"{engine}_{tier}_tier_model"

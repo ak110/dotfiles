@@ -1,15 +1,5 @@
-"""Codexのstdio MCP起動へ追加継承する通信環境の変数名。"""
+"""通信環境の変数名を、MCP環境配送の共通定義から再公開する。"""
 
-PROXY_ENVIRONMENT_VARIABLES = (
-    "http_proxy",
-    "https_proxy",
-    "no_proxy",
-    "all_proxy",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "ALL_PROXY",
-    "GLOBAL_AGENT_HTTP_PROXY",
-    "GLOBAL_AGENT_HTTPS_PROXY",
-    "GLOBAL_AGENT_NO_PROXY",
-)
+from agent_toolkit._common.mcp_environment import PROXY_ENVIRONMENT_VARIABLES
+
+__all__ = ["PROXY_ENVIRONMENT_VARIABLES"]

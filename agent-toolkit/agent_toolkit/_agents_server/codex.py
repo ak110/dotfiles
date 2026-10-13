@@ -38,6 +38,7 @@ from agent_toolkit._agents_server import (
     plugin_root as plugin_roots,
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_cwd, validate_model_effort, validate_prompt
 from agent_toolkit._agents_server.launch_prompts import (
     AUTO_RESUME_NOTICE,
@@ -60,8 +61,8 @@ from agent_toolkit._agents_server.wait_output_tracking import consume_agents_ser
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import (
     codex_models,
+    mcp_environment,
     process_tree,  # pylint: disable=wrong-import-position
-    proxy_environment,
 )
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import host_homes as _host_homes
@@ -610,7 +611,9 @@ class AppServerManager:
                         _delegated_session.OWNER_SESSION_ENV: owner_session_id,
                         "AGENT_TOOLKIT_STATUS_HOST_SESSION": writer_session_id,
                     },
-                    "env_vars": list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES),
+                    "env_vars": list(
+                        mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
+                    ),
                     "default_tools_approval_mode": "approve",
                 }
             }
@@ -793,7 +796,7 @@ class AppServerManager:
             raise AppServerError("thread/start returned no thread.id")
         session_id = thread["id"]
         if owner_session_id is not None and writer_session_id is not None:
-            shared_roots.write_host_alias(owner_session_id, writer_session_id, session_id)
+            await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session_id)
             self._writer_session_ids[session_id] = writer_session_id
         session = SessionState(
             session_id=session_id,
@@ -822,7 +825,9 @@ class AppServerManager:
                 await self._mark_turn_start_ambiguous(session, exc)
             else:
                 await self._mark_failed(session, exc, retryable=False)
+            await session.drain_registration()
             return session
+        await session.drain_registration()
         return session
 
     async def _probe_explore_sandbox(self, cwd: str) -> None:
@@ -923,6 +928,7 @@ class AppServerManager:
                 await self._mark_turn_start_ambiguous(session, exc)
             else:
                 await self._mark_failed(session, exc, retryable=False)
+        await session.drain_registration()
         return session
 
     async def _cancel_resume(self, session: SessionState) -> None:
@@ -1240,7 +1246,7 @@ class AppServerManager:
         if session.codex_model_provider is not None and resume_response.get("modelProvider") != session.codex_model_provider:
             raise AppServerError("thread/resume did not confirm the requested connection")
         if owner_session_id is not None and writer_session_id is not None:
-            shared_roots.write_host_alias(owner_session_id, writer_session_id, session.session_id)
+            await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session.session_id)
         return writer_session_id
 
     async def _request_thread_resume(self, client: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -1836,6 +1842,8 @@ class AppServerManager:
         client, self.client = self.client, None
         if client is not None:
             await client.close()
+        for session in self._codex_sessions():
+            await session.drain_registration()
 
 
 def _public_turn_status(status: Any) -> str:

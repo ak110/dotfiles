@@ -15,7 +15,8 @@ from typing import Any
 
 import pytest
 from agent_toolkit._agents_server import codex as codex_backend
-from agent_toolkit._common import proxy_environment
+from agent_toolkit._atk import config as toolkit_config
+from agent_toolkit._common import mcp_environment, proxy_environment
 from agent_toolkit._testing import isolation
 
 from pytools._internal import codex_plugin_manifests as subject
@@ -183,7 +184,9 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
         "mcpServers": {
             "pyfltr": {
                 **expected_mcp["mcpServers"]["pyfltr"],
-                "env_vars": list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES),
+                "env_vars": list(
+                    mcp_environment.environment_variable_names(toolkit_config.config_environment_variable_names())
+                ),
             },
             "agents_server": {
                 "type": "stdio",
@@ -197,7 +200,9 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "agent_toolkit/agents_server_mcp.py",
                 ],
                 "cwd": "./",
-                "env_vars": list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES),
+                "env_vars": list(
+                    mcp_environment.environment_variable_names(toolkit_config.config_environment_variable_names())
+                ),
             },
         },
     }
@@ -718,17 +723,20 @@ def test_atomic_write_failure_is_reported(manifest_root: Path, monkeypatch: pyte
 
 def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """共通名の追加が全Codex生成経路へ届き、共通入力とAgent Pluginsへ混入しない。"""
-    names = (*proxy_environment.PROXY_ENVIRONMENT_VARIABLES, "TEST_PROXY")
-    monkeypatch.setattr(proxy_environment, "PROXY_ENVIRONMENT_VARIABLES", names)
+    names = (*mcp_environment.PROXY_ENVIRONMENT_VARIABLES, "TEST_PROXY")
+    monkeypatch.setattr(mcp_environment, "PROXY_ENVIRONMENT_VARIABLES", names)
+    monkeypatch.setitem(toolkit_config._MUTABLE_KEY_DEFAULTS, "future_engine", "codex")  # pylint: disable=protected-access
+    expected_names = list(mcp_environment.environment_variable_names(toolkit_config.config_environment_variable_names()))
+    assert "AGENT_TOOLKIT_CONFIG_FUTURE_ENGINE" in expected_names
     source_before = (manifest_root / subject.MCP_SOURCE).read_bytes()
     subject.sync(manifest_root)
     codex = json.loads((manifest_root / subject.MCP_CODEX_TARGET).read_text(encoding="utf-8"))
     portable = json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text(encoding="utf-8"))
     for name in ("agents_server", "pyfltr"):
-        assert codex["mcpServers"][name]["env_vars"] == list(names)
+        assert codex["mcpServers"][name]["env_vars"] == expected_names
         assert "env_vars" not in portable["mcpServers"][name]
     backend = codex_backend.AppServerManager._agents_server_config("owner", "writer")  # pylint: disable=protected-access
-    assert backend["mcp_servers"]["agents_server"]["env_vars"] == list(names)
+    assert backend["mcp_servers"]["agents_server"]["env_vars"] == expected_names
     assert (manifest_root / subject.MCP_SOURCE).read_bytes() == source_before
 
 
@@ -766,7 +774,7 @@ def _proxy_endpoint() -> Iterator[tuple[str, list[str]]]:
 async def test_codex_stdio_inherits_proxy_environment(
     manifest_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, proxy_endpoint: tuple[str, list[str]]
 ) -> None:
-    """実CodexのMCP起動とその子へ限定継承し、専用proxyまで要求が届く。"""
+    """実Codexの起動・再開で保存先と公開overrideを保持し、専用proxyへ要求が届く。"""
     isolation.restore_host_environment(monkeypatch)
     proxy_url, requests = proxy_endpoint
     inherited = {
@@ -783,6 +791,18 @@ async def test_codex_stdio_inherits_proxy_environment(
     codex_home = tmp_path / "codex-home"
     codex_home.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    namespace = {
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+        "XDG_CACHE_HOME": str(tmp_path / "cache"),
+        "AGENT_TOOLKIT_PRIVATE_NOTES": str(tmp_path / "notes"),
+        "CLAUDE_CONFIG_DIR": str(tmp_path / "claude"),
+        "CODEX_HOME": str(codex_home),
+        "AGENT_TOOLKIT_CONFIG_BASE_ENGINE": "codex",
+    }
+    for name, value in namespace.items():
+        monkeypatch.setenv(name, value)
     monkeypatch.setattr(codex_backend, "APP_SERVER_WORKING_DIRECTORY", str(tmp_path))
     child = tmp_path / "proxy-child.py"
     child.write_text(
@@ -791,6 +811,7 @@ async def test_codex_stdio_inherits_proxy_environment(
         "response = urllib.request.urlopen('http://proxy-probe.invalid/resource', timeout=5).read().decode()\n"
         "Path(os.environ['OBS_PATH']).write_text(json.dumps({'env': {name: os.environ[name] for name in "
         f"{list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES)!r} if name in os.environ}}, "
+        f"'namespace': {{name: os.environ.get(name) for name in {list(namespace)!r}}}, "
         "'response': response}), encoding='utf-8')\n",
         encoding="utf-8",
     )
@@ -843,7 +864,7 @@ async def test_codex_stdio_inherits_proxy_environment(
                     diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
                 )
                 observation = json.loads(output.read_text(encoding="utf-8"))
-                assert observation == {"env": inherited, "response": "proxy-observed"}
+                assert observation == {"env": inherited, "namespace": namespace, "response": "proxy-observed"}
                 # モデルを呼ばず履歴を保存する0.162.1の公開実験APIで、cold resumeの入力を準備する。
                 await client.request(
                     "thread/inject_items",
@@ -870,7 +891,11 @@ async def test_codex_stdio_inherits_proxy_environment(
                 )
                 inventory = await client.request("mcpServerStatus/list", {"threadId": thread_id, "serverName": "probe"})
                 assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory)
-                assert json.loads(output.read_text(encoding="utf-8")) == {"env": inherited, "response": "proxy-observed"}
+                assert json.loads(output.read_text(encoding="utf-8")) == {
+                    "env": inherited,
+                    "namespace": namespace,
+                    "response": "proxy-observed",
+                }
                 await client.request("thread/unsubscribe", {"threadId": thread_id})
     finally:
         await client.close()

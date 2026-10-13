@@ -812,17 +812,17 @@ async def test_stop_republishes_result_after_retain_failure(
     session = state.SessionState("retain-retry", str(tmp_path), engine="codex", turn_seq=4)
     _complete(session, message="保持する結果")
     manager.sessions[session.session_id] = session
-    original_retain = writer.retain_result
+    original_retain = writer.retain_result_async
     retain_calls = 0
 
-    def fail_once(resume_state: state.SessionResumeState) -> None:
+    async def fail_once(resume_state: state.SessionResumeState) -> None:
         nonlocal retain_calls
         retain_calls += 1
         if retain_calls == 1:
             raise OSError("retain failed once")
-        original_retain(resume_state)
+        await original_retain(resume_state)
 
-    monkeypatch.setattr(writer, "retain_result", fail_once)
+    monkeypatch.setattr(writer, "retain_result_async", fail_once)
 
     with pytest.raises(
         RuntimeError,
@@ -1055,6 +1055,7 @@ async def test_other_manager_shows_saved_activity_and_lists_unknown_legacy_time(
     session.turn_completed = True
     session.touch()
     owner.sessions[session.session_id] = session
+    await owner.close()
     session_registry.publish("legacy-activity", terminal=True, cwd=str(tmp_path))
     observer, _ = _manager_with_fake("codex")
 
@@ -1154,6 +1155,7 @@ async def test_session_released_by_another_server_is_reported_as_released(
     owner.sessions[session_id] = session
     if release == "expire":
         owner._expire_session(session_id)
+        await owner.close()
     else:
         await owner.stop(session_id)
     observer, _ = _manager_with_fake("codex")
@@ -1236,6 +1238,7 @@ async def test_close_publishes_running_session_as_interrupted_for_restart(
     running.announced = True
     manager.sessions[session_id] = running
     running.touch()
+    await running.drain_registration()
     assert session_registry.resolve(session_id).state is session_registry.Resolution.RUNNING
 
     await manager.close()

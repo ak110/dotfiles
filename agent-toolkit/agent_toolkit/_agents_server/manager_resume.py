@@ -138,7 +138,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 return
             session.terminal_child_session_ids.difference_update(identifiers)
             if self._status_writer is not None:
-                self._status_writer.delete_result(session.session_id, collector="auto-resume")
+                await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
             return
 
         # 保留対象が背景taskの終端だけで消えた場合は確定しない。backendはその終端に続く再開turnの結果で
@@ -177,7 +177,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         session.api_error = None
         if self._status_writer is not None:
-            self._status_writer.delete_result(session.session_id, collector="auto-resume")
+            await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
 
     async def _resume_after_usage_limit(self, session: SessionState) -> None:
         """利用上限の解除予定時刻を迎えたsessionへ、同じ作業を続ける指示を新しいturnとして送る。
@@ -206,7 +206,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.touch()
             return
         if self._status_writer is not None:
-            self._status_writer.delete_result(session.session_id, collector="auto-resume")
+            await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
 
     def _pending_resume_status(self, pending: PendingResume) -> dict[str, Any]:
         """進行中の再開操作を通常のrunning状態として射影する。"""
@@ -246,11 +246,12 @@ class ManagerResume(manager_registry.ManagerRegistry):
             )
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
             if self._status_writer is not None:
-                self._status_writer.delete_result(session_id, collector="send-message")
+                await self._status_writer.delete_result_async(session_id, collector="send-message")
             if session.status == "starting":
                 session.status = "running"
             session.announced = True
             session.touch()
+            await session.drain_registration()
             _LOG.info(
                 "session_transition event=resume session_id=%s writer=mcp-manager status=%s turn_seq=%d",
                 session.session_id,

@@ -10,7 +10,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from agent_toolkit._common import proxy_environment
+from agent_toolkit._atk import config as toolkit_config
+from agent_toolkit._common import mcp_environment
 
 from pytools._internal import common
 
@@ -256,7 +257,9 @@ def _codex_mcp(source: dict[str, Any]) -> dict[str, Any]:
             }
         )
     for server in servers.values():
-        server["env_vars"] = list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES)
+        server["env_vars"] = list(
+            mcp_environment.environment_variable_names(toolkit_config.config_environment_variable_names())
+        )
     return projected
 
 

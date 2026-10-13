@@ -16,6 +16,7 @@ from agent_toolkit._agents_server import (
     state,
     status_file,
 )
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.responses import (
     EXPIRED_KILL_NEXT_ACTION,
     EXPIRED_SESSION_NEXT_ACTION,
@@ -157,7 +158,8 @@ class ManagerRegistry(responses.ManagerResponses):
             status = _terminal_turn_status(turns, info.turn_id)
             if status is None:
                 return
-        session_registry.publish(
+        await run_file_operation(
+            session_registry.publish,
             session_id,
             terminal=True,
             engine=info.engine,
@@ -483,6 +485,12 @@ class ManagerRegistry(responses.ManagerResponses):
             raise ActionableError("session_id must be a non-empty string", next_action=SESSION_ID_NEXT_ACTION)
         if session_id in self._pending_resumes:
             raise ActionableError(f"session is running: {session_id}", next_action=RUNNING_STOP_NEXT_ACTION)
+        current = self.sessions.get(session_id)
+        if current is not None:
+            await current.drain_registration()
+        await self._drain_candidate_records()
+        if self._status_writer is not None:
+            await self._status_writer.drain()
         stopped_state = self._resolve_stopped_session(session_id)
         if stopped_state is None:
             stopped_state = self._restore_registry_session(session_id)
@@ -517,15 +525,17 @@ class ManagerRegistry(responses.ManagerResponses):
         self.sessions.pop(session_id, None)
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions[session_id] = resume_state
-        session_registry.release(session_id, reason="stopped")
+        if session is not None:
+            await session.drain_registration()
+        await run_file_operation(session_registry.release, session_id, reason="stopped")
         if self._status_writer is not None:
             try:
                 if not keep_result:
                     self._status_writer.delete_wait_target(session_id)
                 if keep_result and result_state == "unpublished" and not self._status_writer.result_exists(session_id):
-                    self._status_writer.retain_result(resume_state)
+                    await self._status_writer.retain_result_async(resume_state)
                 elif not keep_result and (result_state == "published" or self._status_writer.result_exists(session_id)):
-                    self._status_writer.delete_result(session_id, collector="stop")
+                    await self._status_writer.delete_result_async(session_id, collector="stop")
                 self._status_writer.schedule()
             except Exception as exc:
                 raise ActionableRuntimeError(
@@ -548,7 +558,7 @@ class ManagerRegistry(responses.ManagerResponses):
             await self.stop(session_id, retain_result=True)
         return response
 
-    def _publish_closed_sessions(self) -> None:
+    async def _publish_closed_sessions(self) -> None:
         """backendの停止で終わった未終端のturnを`interrupted`へ遷移させ、登録簿と結果ファイルへ公開する。
 
         停止では所有側が自らturnを終了するため、ここで公開しないと登録簿が`running`のまま残る。
@@ -567,4 +577,6 @@ class ManagerRegistry(responses.ManagerResponses):
             session.touch()
         if self._status_writer is not None:
             # 集約予約を待たずに結果ファイルを書き、状態ファイルの無効化より前に終端結果を残す。
-            self._status_writer.flush()
+            await self._status_writer.flush_async()
+        for session in tuple(self.sessions.values()):
+            await session.drain_registration()

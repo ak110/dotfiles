@@ -559,6 +559,7 @@ class ClaudeServerManager:
     async def release_session(self, session: SessionState) -> None:
         """sessionを所有するタスクを終了し、SDKクライアントの接続を閉じる。"""
         await self._stop_owned_task(session.session_id)
+        await session.drain_registration()
 
     async def _start_owned_task(
         self,
@@ -624,6 +625,7 @@ class ClaudeServerManager:
             _LOG.error("Claude session初期化失敗: diagnostic=%s", diagnostic.public())
             raise
         diagnostic.debug_file = str(rename_debug_file_for_session(debug_file, session.session_id, launch_kind))
+        await session.drain_registration()
         return session
 
     async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:
@@ -1028,6 +1030,7 @@ class ClaudeServerManager:
                     residual, context=f"claude session_id={None if session is None else session.session_id}"
                 )
             if session is not None:
+                await session.drain_registration()
                 self._channels.pop(session.session_id, None)
             channel.close()
             claude_settings.cleanup_settings(options)
@@ -1220,3 +1223,6 @@ class ClaudeServerManager:
         disconnects = tuple(self._disconnects)
         if disconnects:
             await asyncio.gather(*disconnects, return_exceptions=True)
+        for session in tuple(self.sessions.values()):
+            if session.engine == "claude":
+                await session.drain_registration()

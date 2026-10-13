@@ -697,7 +697,8 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     remaining = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     assert session.session_id not in {item["session_id"] for item in remaining}
     await manager.close()
-    assert not shared_layout.status_directory("root", tmp_path).exists()
+    # 公開済み結果を回収した場合は共有claim lockが残るため、自身の射影の削除を判定する。
+    assert not writer.path.exists()
 
 
 @pytest.mark.asyncio

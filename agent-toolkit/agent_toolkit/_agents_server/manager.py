@@ -7,6 +7,7 @@ import contextlib
 import datetime
 import json
 import logging
+import sys
 from typing import Any
 
 from agent_toolkit._agents_server import (
@@ -20,6 +21,7 @@ from agent_toolkit._agents_server import (
     unavailable_candidates,
     wait_targets,
 )
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.input_validation import (
     validate_cwd,
     validate_model_effort,
@@ -87,6 +89,13 @@ class AgentsServerManager(manager_wait.ManagerWait):
             self._status_writer.activate()
             self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())
 
+    async def activate_async(self) -> None:
+        """初回保存を待ってから常駐監視を開始する。"""
+        if self._status_writer is not None:
+            await self._status_writer.activate_async()
+            self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())
+        self._auto_resume_task = asyncio.create_task(self._monitor_auto_resume())
+
     async def _monitor_auto_resume(self) -> None:
         """公開待機操作に依存せず、孫session終端後の自動再開を進める。"""
         while True:
@@ -107,8 +116,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
         除外中の候補は状態ディレクトリに保存した記録を読む。
         除外後に候補が残らない場合は、記録を無視して全候補を設定順で返す。
         """
+        await self._drain_candidate_records()
         try:
-            candidates = _atk_config.parse_unresolved_model_candidates(model_type, usage=usage)
+            candidates = await run_file_operation(_atk_config.parse_unresolved_model_candidates, model_type, usage=usage)
         except ValueError as error:
             raise ActionableError(str(error), next_action=MODEL_TYPE_NEXT_ACTION) from error
         if codex_models.needs_catalog(candidates):
@@ -195,7 +205,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 )
             except backends.StartCandidateUnavailable as exc:
                 excluded[candidate] = exc.reason
-                unavailable_candidates.record_unavailable_candidate(
+                await run_file_operation(
+                    unavailable_candidates.record_unavailable_candidate,
                     model_type,
                     launch_kind,
                     candidate,
@@ -225,7 +236,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             session.launcher_session_id = self._launcher_session_id()
             if session.status == "starting":
                 session.status = "running"
-            self._save_started_session(session)
+            await self._save_started_session(session)
             await self._await_start_outcome(session)
             # 以後に過負荷で終端したturnは候補切替ではなく同じsessionの自動継続で扱う。
             session.availability_checked = True
@@ -244,7 +255,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 response["root_session_id"] = self._status_writer.root_session_id
             unavailable_reason = self._unavailable_reason(session)
             if unavailable_reason is None:
-                unavailable_candidates.clear_unavailable_candidate(
+                await run_file_operation(
+                    unavailable_candidates.clear_unavailable_candidate,
                     model_type,
                     launch_kind,
                     candidate,
@@ -262,7 +274,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 session.label = display_label
                 session.prompt = prompt
                 session.announced = True
-                persistence_warnings = self._save_started_session(session)
+                persistence_warnings = await self._save_started_session(session)
                 if persistence_warnings:
                     response["persistence_warnings"] = persistence_warnings
                 _LOG.info(
@@ -284,7 +296,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             unavailable_session.label = display_label
             unavailable_session.prompt = prompt
             unavailable_session.announced = True
-            persistence_warnings = self._save_started_session(unavailable_session)
+            persistence_warnings = await self._save_started_session(unavailable_session)
             if persistence_warnings:
                 unavailable_response["persistence_warnings"] = persistence_warnings
             _LOG.info(
@@ -304,7 +316,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             ),
         )
 
-    def _save_started_session(self, session: SessionState) -> list[dict[str, str]]:
+    async def _save_started_session(self, session: SessionState) -> list[dict[str, str]]:
         """開始済みの情報を公開し、補助保存の失敗をsession不在へ変換しない。"""
         warnings: list[dict[str, str]] = []
         try:
@@ -312,15 +324,21 @@ class AgentsServerManager(manager_wait.ManagerWait):
         except OSError as error:
             _LOG.exception("開始済みsessionの共有状態更新に失敗: session_id=%s", session.session_id)
             warnings.append({"scope": "shared-state", "message": str(error)})
-        registration_error = session.publish_registration()
+        await session.drain_registration()
+        registration_error = await session.publish_registration_async()
         if registration_error is not None:
             warnings.append({"scope": "registration", "message": registration_error})
+        if session.announced:
+            try:
+                await self._drain_candidate_records()
+            except OSError as error:
+                warnings.append({"scope": "shared-state", "message": str(error)})
         writer = self._status_writer
         if writer is None:
             return warnings
         saved = False
         try:
-            writer.flush()
+            await writer.flush_async()
             saved = True
         except status_file.ProjectionWriteError as error:
             warnings.append({"scope": "projection", "message": str(error)})
@@ -332,7 +350,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
         if session.announced and not saved:
             # 正常時は既存の表示・hook登録を使い、表示へ届かない起動だけを同じ待機登録へ補う。
             try:
-                wait_targets.retain_wait_targets(
+                await run_file_operation(
+                    wait_targets.retain_wait_targets,
                     writer.root_session_id,
                     writer.path.name,
                     [session.session_id],
@@ -413,10 +432,11 @@ class AgentsServerManager(manager_wait.ManagerWait):
     async def _abandon_unavailable_session(self, session: SessionState) -> None:
         """次候補へ進む前に可用性失敗sessionの全資源を解放する。"""
         await self._backend(session.engine).release_session(session)
+        await session.drain_registration()
         self._cancel_retention_timer(session.session_id)
         self.sessions.pop(session.session_id, None)
         if self._status_writer is not None:
-            self._status_writer.delete_result(session.session_id, collector="start-unavailable")
+            await self._status_writer.delete_result_async(session.session_id, collector="start-unavailable")
             self._status_writer.schedule()
 
     async def _await_start_outcome(self, session: SessionState) -> None:
@@ -523,6 +543,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
     async def _deliver_message(self, session_id: str, prompt: str, timeout: float) -> dict[str, Any]:
         """`send_message`の配送本体。応答の`root_session_id`は呼び出し元が加える。"""
         validate_prompt(prompt)
+        await self._wait_for_resource_release(session_id)
+        if self._status_writer is not None:
+            await self._status_writer.drain()
         await self.take_over_orphaned_session(session_id)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ActionableError(
@@ -590,8 +613,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
                                 previous_result,
                             )
                     if self._status_writer is not None:
-                        self._status_writer.delete_result(session_id, collector="send-message")
+                        await self._status_writer.delete_result_async(session_id, collector="send-message")
                     delivery = result["delivery"]
+                    await session.drain_registration()
                     if delivery in {"reply_started", "reply_ambiguous"}:
                         session.reset_progress()
                     response: dict[str, Any] = {"delivery": delivery, "label": session.label}
@@ -606,6 +630,13 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 next_action="`atk agents wait`で状態を確認し、指示が届いていないと判断した場合だけ`send_message`を再送する",
             ) from exc
 
+    async def _kill_result_response_async(self, session: SessionState, *, kill_requested: bool) -> dict[str, Any]:
+        """回収をloopで確定し、競合する保存の終端と結果削除を待ってからkillの本文を返す。"""
+        response = self._kill_result_response(session, kill_requested=kill_requested)
+        if "agent_message" in response and self._status_writer is not None:
+            await self._status_writer.delete_result_async(session.session_id, collector="kill")
+        return response
+
     async def kill(
         self,
         session_id: str,
@@ -613,6 +644,18 @@ class AgentsServerManager(manager_wait.ManagerWait):
         stop: bool = False,
     ) -> dict[str, Any]:
         """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
+        observed_session = self.sessions.get(session_id)
+        observed_turn = (
+            None
+            if observed_session is None
+            else (observed_session.turn_seq, observed_session.terminal, observed_session.interrupt_requested)
+        )
+        await self._wait_for_resource_release(session_id)
+        session = self.sessions.get(session_id)
+        if session is not None:
+            await session.drain_registration()
+        if self._status_writer is not None:
+            await self._status_writer.drain()
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ActionableError(
                 "timeout must be non-negative", next_action="`timeout`を省略して270秒で待つか、0以上の秒数を指定する"
@@ -648,17 +691,21 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     next_action=KILL_NOT_DELIVERED_NEXT_ACTION,
                 ) from exc
             if interrupt_requested:
-                response = self._kill_result_response(session, kill_requested=True)
+                await session.drain_registration()
+                response = await self._kill_result_response_async(session, kill_requested=True)
                 return await self._stop_after_terminal_response(session_id, response, stop)
         else:
             expired_response = self._expired_kill_response(session_id)
             if expired_response is not None:
                 return await self._stop_after_terminal_response(session_id, expired_response, stop)
             session = self._get_session(session_id)
-        started_terminal = session.terminal
-        requested_before_call = session.interrupt_requested
+        if observed_session is session and observed_turn is not None and observed_turn[0] == session.turn_seq:
+            _, started_terminal, requested_before_call = observed_turn
+        else:
+            started_terminal = session.terminal
+            requested_before_call = session.interrupt_requested
         if started_terminal:
-            response = self._kill_result_response(session, kill_requested=False)
+            response = await self._kill_result_response_async(session, kill_requested=False)
             return await self._stop_after_terminal_response(session_id, response, stop)
 
         requested = requested_before_call
@@ -698,7 +745,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
                             next_action=KILL_NOT_DELIVERED_NEXT_ACTION,
                         ) from exc
                     if session.terminal:
-                        response = self._kill_result_response(session, kill_requested=False)
+                        await session.drain_registration()
+                        response = await self._kill_result_response_async(session, kill_requested=False)
                         return await self._stop_after_terminal_response(session_id, response, stop)
                 session.interrupt_requested = True
                 session.touch()
@@ -725,7 +773,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
             session.turn_control_lock.release()
 
         if not requested:
-            response = self._kill_result_response(session, kill_requested=False)
+            await session.drain_registration()
+            response = await self._kill_result_response_async(session, kill_requested=False)
             return await self._stop_after_terminal_response(session_id, response, stop)
         if timeout > 0:
             assert deadline is not None
@@ -740,18 +789,24 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     f"kill timed out: {session_id}; the interrupt request was delivered but the turn did not terminate",
                     next_action="中断要求は配送済みのため`kill`を再発行しない。`atk agents wait`で終端を観測する",
                 ) from exc
-        response = self._kill_result_response(session, kill_requested=True)
+        await session.drain_registration()
+        response = await self._kill_result_response_async(session, kill_requested=True)
         return await self._stop_after_terminal_response(session_id, response, stop)
 
     async def close(self) -> None:
         """初期化済みバックエンドを停止する。"""
+        await finish_task(asyncio.create_task(self._close()))
+
+    async def _close(self) -> None:
         remove_terminal_listener(self._schedule_session_expiry)
         remove_lifecycle_listener(self._cancel_expiry_on_start)
         for timer in self._retention_timers.values():
             timer.cancel()
         self._retention_timers.clear()
+        release_error: OSError | None = None
         if self._resource_release_tasks:
-            await asyncio.gather(*self._resource_release_tasks.values(), return_exceptions=True)
+            outcomes = await asyncio.gather(*self._resource_release_tasks.values(), return_exceptions=True)
+            release_error = next((outcome for outcome in outcomes if isinstance(outcome, OSError)), None)
             self._resource_release_tasks.clear()
         if self._auto_resume_task is not None:
             self._auto_resume_task.cancel()
@@ -773,13 +828,25 @@ class AgentsServerManager(manager_wait.ManagerWait):
         for backend in tuple(self._backends.values()):
             await backend.close()
         try:
-            self._publish_closed_sessions()
-        except status_file.ProjectionWriteError:
-            _LOG.exception("停止時の表示用状態保存に失敗しました。終端結果を保持して後始末を続けます")
+            try:
+                await self._publish_closed_sessions()
+            except status_file.ProjectionWriteError:
+                _LOG.exception("停止時の表示用状態保存に失敗しました。終端結果を保持して後始末を続けます")
+            if release_error is not None:
+                raise release_error
         finally:
             remove_terminal_listener(self._carry_over_unavailable_candidate)
             remove_terminal_listener(self._record_pending_unobserved_child_sessions)
             remove_lifecycle_listener(self._record_resources)
-            if self._status_writer is not None:
-                remove_touch_listener(self._status_writer.schedule)
-                self._status_writer.deactivate()
+            primary_error = sys.exception()
+            try:
+                await self._drain_candidate_records()
+            except OSError as error:
+                if primary_error is None:
+                    raise
+                primary_error.add_note(f"候補除外記録の保存にも失敗しました: {error}")
+            finally:
+                if self._status_writer is not None:
+                    remove_touch_listener(self._status_writer.schedule)
+                    await self._status_writer.drain(cancel_scheduled=True)
+                    self._status_writer.deactivate()
