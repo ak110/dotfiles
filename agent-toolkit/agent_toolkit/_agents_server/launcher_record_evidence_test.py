@@ -165,6 +165,137 @@ async def test_task_record_reaches_public_evidence(
         await current.close()
 
 
+def _write_observation_record(directory: pathlib.Path, engine: str) -> pathlib.Path:
+    """既存tool_call_sessionが写した実記録の形で、発話を持たない観測記録を作成する。
+
+    形式の出所は_testing/session_evidence_support.pyのclaude_call/claude_resultと、
+    tool_call_sessionの2026年10月4日Codex rollout由来のfunction_call/outputである。
+    """
+    command = "rg --files /isolated/repo"
+    result = "a.py\nb.py\n"
+    if engine == "claude":
+        entries = [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "observation-call", "name": "Bash", "input": {"command": command}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "observation-call", "content": result}],
+                },
+            },
+        ]
+    else:
+        entries = [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "observation-call",
+                    "arguments": json.dumps({"cmd": command}),
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "function_call_output", "call_id": "observation-call", "output": result},
+            },
+        ]
+    for index, entry in enumerate(entries, 1):
+        entry["timestamp"] = f"2026-10-13T00:00:0{index}Z"
+    path = directory / "observation-parent.jsonl"
+    path.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("engine", ("claude", "codex"))
+@pytest.mark.asyncio
+async def test_task_record_reaches_public_observation_evidence(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str
+) -> None:
+    """引用を持たない観測要求から、自動配送された記録のtool入力と結果の全文へ到達する。"""
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("CODEX_THREAD_ID", "observation-parent")
+    transcript = _write_observation_record(tmp_path, engine)
+    current = manager.AgentsServerManager(None)
+    backend = _ObservedBackend(current.sessions, "claude")
+    agents_server_support.install_backend(current, "claude", backend)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+    requested: list[str] = []
+
+    def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord:
+        requested.append(session_id)
+        return record_paths.SessionRecord(engine, (transcript,))
+
+    monkeypatch.setattr(record_paths, "find_session_record", find_record)
+    try:
+        started = await _start_task(
+            tmp_path,
+            "request=/repo=awi=観測の裏付け取得\n確定済みの観測: rg --filesの結果はa.pyとb.py。入力特徴は/isolated/repo。",
+        )
+        assert started["session_id"] == "claude-session"
+        context = _context(backend.prompts[0], tmp_path)
+        assert requested == ["observation-parent"]
+        assert context["status"] == "resolved"
+        assert context["launcher_session_id"] == "observation-parent"
+        assert context["record_engine"] == engine
+        arguments = ["--transcript", context["record_path"], "--tool-calls"]
+        saved, events = _evidence(arguments, capsys, tmp_path)
+        calls_path = saved.rename(tmp_path / "observed-tool-calls.jsonl")
+        calls = [event for event in events if event["kind"] == "tool-call"]
+        assert len(calls) == 1
+        call = calls[0]
+        expected_tool = "Bash" if engine == "claude" else "exec_command"
+        assert (call["tool"], call["call_id"], call["text"]) == (expected_tool, "observation-call", "rg --files /isolated/repo")
+        assert (call["record"], call["line"], call["result_line"]) == (f"{engine}:observation-parent", 1, 2)
+        detail_arguments = [
+            "--transcript",
+            context["record_path"],
+            "--detail",
+            f"{call['record']}:{call['line']}",
+            "--detail",
+            f"{call['record']}:{call['result_line']}",
+        ]
+        detail_saved, details = _evidence(detail_arguments, capsys, tmp_path)
+        details_path = detail_saved.rename(tmp_path / "observation-details.jsonl")
+        assert [(event["record"], event["line"]) for event in details] == [
+            (f"{engine}:observation-parent", 1),
+            (f"{engine}:observation-parent", 2),
+        ]
+        if engine == "claude":
+            assert details[0]["input"] == {"command": "rg --files /isolated/repo"}
+            assert details[1]["tool"] == "observation-call"
+            # Claudeのtool_result本文は公開照会で外側の空白を除いた形になる。
+            assert details[1]["text"] == "a.py\nb.py"
+        else:
+            input_payload = json.loads(details[0]["text"])["payload"]
+            assert json.loads(input_payload["arguments"]) == {"cmd": "rg --files /isolated/repo"}
+            result_payload = json.loads(details[1]["text"])["payload"]
+            assert result_payload == {"type": "function_call_output", "call_id": "observation-call", "output": "a.py\nb.py\n"}
+        assert not any(event["kind"] == "user" for event in events)
+        (tmp_path / "observation-extraction.json").write_text(
+            json.dumps(
+                {
+                    "arguments": arguments,
+                    "saved_output": str(calls_path),
+                    "events": events,
+                    "detail_arguments": detail_arguments,
+                    "detail_output": str(details_path),
+                    "details": details,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    finally:
+        await current.close()
+
+
 @pytest.mark.parametrize("engine", ("claude", "codex"))
 @pytest.mark.parametrize("availability", ("unresolved", "missing", "ambiguous"))
 @pytest.mark.asyncio
