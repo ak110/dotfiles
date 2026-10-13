@@ -2,12 +2,8 @@
 name = "agent-toolkit"
 version = "0.1.0"
 description = "Coding agent workflow toolkit"
-# 配布先のエンドユーザー環境はリポジトリ直下より広い版を含むため、下限を3.12とする。
-requires-python = ">=3.12"
+requires-python = ">=3.15"
 classifiers = [
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
@@ -59,12 +55,13 @@ dev = [
 [tool.pyfltr]
 preset = "latest"
 python = true
-# Python 3.14は本subprojectのテストsuiteが600秒の境界を超えるため、直下と同じ値をここでも指定する。
+# Python 3.15のCIテストは約437秒を要し、省略時の600秒では余裕が小さいため、直下と同じ値を指定する。
 command-timeout = 900
 ty = true
 # 直下は`scripts`と`agent-toolkit/skills/plan-mode/scripts`を探索パスへ加える。
 # 本subprojectからは後者だけがsubproject相対で解決できるため、そのパスだけを加える。
-ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "skills/plan-mode/scripts"]
+# linked worktreeの祖先にある複製元のprojectより、このcwdの現物とPython 3.15を優先する。
+ty-args = ["check", "--python-version", "3.15", "--extra-search-path", ".", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "skills/plan-mode/scripts"]
 # pyfltrは設定を省略した場合、`ruff-format`で整形する前に`ruff check --fix --unsafe-fixes`を実行する。
 # `make test`で担当範囲外のファイルを自動修正しないよう、直下と同じくlintの自動修正を無効にする。
 ruff-format-by-check = false
@@ -116,7 +113,7 @@ convention = "google"
 
 [tool.ruff.lint.flake8-import-conventions]
 # 標準ライブラリはモジュール名で参照するため、datetimeも省略名へ置き換えない。
-# ICN001の検査は保ち、Ruffの省略名の初期値へプロジェクトの名前を対応付ける。
+# ICN001の判定は保ち、Ruffの省略名の初期値へプロジェクトの名前を対応付ける。
 extend-aliases = { datetime = "datetime" }
 
 [tool.ruff.lint.per-file-ignores]

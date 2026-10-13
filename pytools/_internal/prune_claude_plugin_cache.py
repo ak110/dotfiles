@@ -40,7 +40,13 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     try:
         cache_resolved = cache_root.resolve()
     except OSError as error:
-        logger.warning(log_format.format_status(_TAG, f"cacheディレクトリを解決できないためスキップ: {error}"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                f"cacheディレクトリを解決できないためスキップ: {error}。"
+                f"旧版を保持して処理は継続します。{cache_root}のアクセス権を確認してupdate-dotfilesを再実行してください。",
+            )
+        )
         return post_apply_outcome.PostApplyOutcome()
     deadline = time.time() - GRACE_DAYS * 86400
     removed = 0
@@ -53,7 +59,16 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     removed += 1
             except OSError as error:
                 failures.append(f"{log_format.home_short(version_dir)} の削除に失敗: {error}")
-    return post_apply_outcome.PostApplyOutcome(changed=removed > 0, failure=" / ".join(failures) or None)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=removed > 0,
+        failure=" / ".join(failures) or None,
+        next_action=(
+            "表示された旧版ディレクトリを使うClaude Codeセッションを終了し、"
+            "書込権限を確認してupdate-dotfilesを再実行してください。"
+            if failures
+            else None
+        ),
+    )
 
 
 def _current_install_paths() -> dict[tuple[str, str], set[Path]] | None:
@@ -63,11 +78,24 @@ def _current_install_paths() -> dict[tuple[str, str], set[Path]] | None:
     except FileNotFoundError:
         return None
     except (OSError, json.JSONDecodeError) as error:
-        logger.warning(log_format.format_status(_TAG, f"plugin一覧の読み込みに失敗したため旧版削除をスキップ: {error}"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                f"plugin一覧の読み込みに失敗したため旧版削除をスキップ: {error}。"
+                f"旧版を保持して処理は継続します。{_INSTALLED_PLUGINS_PATH}のJSONと読取権限を確認し、"
+                "Claude Codeでplugin一覧を正常に読み込める状態にしてからupdate-dotfilesを再実行してください。",
+            )
+        )
         return None
     plugins = data.get("plugins") if isinstance(data, dict) else None
     if not isinstance(plugins, dict):
-        logger.warning(log_format.format_status(_TAG, "plugin一覧の構造が想定と異なるため旧版削除をスキップ"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                "plugin一覧の構造が想定と異なるため旧版削除をスキップ。旧版を保持して処理は継続します。"
+                f"{_INSTALLED_PLUGINS_PATH}の内容とClaude Codeの版を添えてdotfilesの作者へ報告してください。",
+            )
+        )
         return None
     result: dict[tuple[str, str], set[Path]] = {}
     for key, entries in plugins.items():
@@ -122,8 +150,13 @@ def _remove_version_dir(version_dir: Path, cache_resolved: Path) -> bool:
     """cache配下にあることを確認してから版ディレクトリを削除する。"""
     try:
         version_dir.resolve().relative_to(cache_resolved)
-    except (OSError, ValueError):
-        logger.warning(log_format.format_status(log_format.home_short(version_dir), "cache配下ではないため削除をスキップ"))
+    except OSError, ValueError:
+        logger.warning(
+            log_format.format_status(
+                log_format.home_short(version_dir),
+                "cache配下ではないため削除をスキップ。保護対象として保持したため対応不要です（処理は継続した）。",
+            )
+        )
         return False
     shutil.rmtree(version_dir)
     logger.info(log_format.format_status(log_format.home_short(version_dir), "旧版を削除"))
@@ -134,8 +167,7 @@ def _is_link_like(path: Path) -> bool:
     """シンボリックリンクまたはWindowsのディレクトリジャンクションかを返す。"""
     if path.is_symlink():
         return True
-    is_junction = getattr(path, "is_junction", None)
-    return bool(is_junction is not None and is_junction())
+    return path.is_junction()
 
 
 def _resolve(path: Path) -> Path:

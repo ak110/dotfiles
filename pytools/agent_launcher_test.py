@@ -137,7 +137,9 @@ def test_missing_claude_returns_127(capsys: pytest.CaptureFixture[str], tmp_path
     )
 
     assert result == 127
-    assert capsys.readouterr().err == "claudeコマンドが見つかりません。\n"
+    assert capsys.readouterr().err == (
+        "claudeコマンドが見つかりません。~/.local/binとPATHの導入先を確認し、update-dotfilesを再実行してください。\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -223,7 +225,9 @@ def test_codex_missing_returns_127(capsys: pytest.CaptureFixture[str], tmp_path:
             run=lambda _: pytest.fail("コマンドは実行されない"),
         )
 
-    assert capsys.readouterr().err == "codexコマンドが見つかりません。\n"
+    assert capsys.readouterr().err == (
+        "codexコマンドが見つかりません。~/.local/binとPATHの導入先を確認し、update-dotfilesを再実行してください。\n"
+    )
 
 
 def test_executable_search_keeps_symlink_path(
@@ -267,14 +271,14 @@ def test_argcomplete_writes_claude_options_to_fd8(tmp_path: pathlib.Path) -> Non
     claude_bin = tmp_path / ".local" / "bin" / "claude"
     claude_bin.parent.mkdir(parents=True)
     claude_bin.write_text(
-        "#!/bin/sh\nprintf '  --model <model>\\n  --permission-mode <mode>\\n'\n",
+        ("#!/bin/sh\nprintf '  --model <model>\\n  --permission-mode <mode>\\n'\n"),
         encoding="utf-8",
     )
     claude_bin.chmod(claude_bin.stat().st_mode | stat.S_IXUSR)
 
     launcher = tmp_path / "sonnet"
     launcher.write_text(
-        f"#!{sys.executable}\nfrom pytools.agent_launcher import main_sonnet\nmain_sonnet()\n",
+        (f"#!{sys.executable}\nfrom pytools.agent_launcher import main_sonnet\nmain_sonnet()\n"),
         encoding="utf-8",
     )
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)

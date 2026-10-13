@@ -105,7 +105,7 @@ async def _terminate(proc: asyncio.subprocess.Process) -> None:
         proc.terminate()
     try:
         await asyncio.shield(asyncio.wait_for(proc.wait(), timeout=_SSH_TERMINATE_TIMEOUT_SEC))
-    except (TimeoutError, asyncio.CancelledError):
+    except TimeoutError, asyncio.CancelledError:
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
         with contextlib.suppress(asyncio.CancelledError):
@@ -155,6 +155,8 @@ def remote_command_argv(bootstrap: str, op: str, args: list[str]) -> list[str]:
         "uv",
         "run",
         "--no-project",
+        "--python",
+        "3.15",
         "--with",
         '"watchdog>=6.0.0"',
         "--with",

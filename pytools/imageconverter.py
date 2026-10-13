@@ -92,7 +92,7 @@ def open_image_with_exif(path: pathlib.Path) -> tuple[PIL.Image.Image, bool]:
     else:
         try:
             img.load()
-        except (OSError, SyntaxError):
+        except OSError, SyntaxError:
             # シグネチャ判定は通過したが本体読み込みで失敗した場合は寛容モードで再試行する。
             # 寛容モードでも失敗した場合は元の例外型のまま伝播させる。
             with _truncated_images_enabled():
@@ -141,7 +141,14 @@ def main() -> None:
     for target in args.targets:
         expanded = _expand_target(target)
         if not expanded:
-            logger.warning("対象が見つからない: %s", target)
+            logger.warning(
+                (
+                    "対象が見つからない: %s。"
+                    "スキップして続行します。"
+                    "変換が必要なら存在する画像のパスまたは一致するパターンを指定してください。"
+                ),
+                target,
+            )
             continue
         for path in expanded:
             if path.suffix.lower() in _IGNORE_SUFFIXES:
@@ -163,7 +170,11 @@ def main() -> None:
     )
     has_error = any(severity == "error" for _, severity, _ in summary.events)
     if summary.success_count == 0:
-        logger.error("変換成功 0 件")
+        logger.error(
+            "変換成功 0 件。"
+            "入力パス・画像形式と上の失敗理由を確認し、py-imageconverterを再実行してください。"
+            "原本を保持するには--no-remove-failedを指定してください。"
+        )
     exit_code = 1 if (has_error or summary.success_count == 0) else 0
     sys.exit(exit_code)
 
@@ -368,7 +379,12 @@ def _convert_one(
                     img2.save(temp_path)
     except Exception as e:  # noqa: BLE001
         # Pillowが画像と認識したファイルのみ変換失敗扱いで`remove_failed`に従って削除する。
-        message = f"convert failed ({e})"
+        disposition = ("原本を削除します。バックアップから復元してください。") if remove_failed else "原本を保持します。"
+        message = (
+            f"convert failed ({e})。"
+            f"{disposition}画像と保存先の権限を確認し、原本を保持するにはpy-imageconverter "
+            f"--no-remove-failedで再実行してください。"
+        )
         tqdm.tqdm.write(f"{_format_log_path(path, log_root)}: {message}")
         if remove_failed:
             path.unlink()
@@ -379,7 +395,11 @@ def _convert_one(
     temp_path.rename(save_path)
     tqdm.tqdm.write(_format_log_path(save_path, log_root))
     if used_fallback:
-        message = "LOAD_TRUNCATED_IMAGES フォールバックで読み込んだ"
+        message = (
+            "LOAD_TRUNCATED_IMAGES フォールバックで読み込んだ。"
+            "変換は完了しました。"
+            "出力画像を開いて欠損を確認し、欠損があればバックアップから原本を再取得してください。"
+        )
         tqdm.tqdm.write(f"{_format_log_path(save_path, log_root)}: warning ({message})")
         return (save_path, "warning", message), True
     return None, True

@@ -1,8 +1,7 @@
 """セッション記録の一覧判定と変更監視を、サーバーとリモートヘルパーで共有する。
 
 サーバー側`sessions.py`と、SSH先で単独実行する`atk_serve_sessions_remote_helper.py`の双方が読み込む。
-ヘルパーはリモートホストのPython 3.10以上で標準ライブラリだけを前提に動くため、本モジュールは
-標準ライブラリだけをimportし、watchdogは監視の開始時に遅延importする。
+watchdogは監視の開始時に遅延importする。
 
 一覧に載せる記録は、ユーザー発話の記録行を1件以上持つものに限る。
 発話を持たない記録（Codexを起動しただけで入力しなかった記録など）は、選んでも本文がほぼ空になるためである。
@@ -461,7 +460,7 @@ class RecordWatch:
         class Handler(watchdog.events.FileSystemEventHandler):
             """watchdogのイベントを記録の変更へ変換する。"""
 
-            # リモートホストのPython 3.10でも読み込むため、3.12で導入された`typing.override`は付けない。
+            @typing.override
             def on_any_event(self, event: typing.Any) -> None:
                 watch.handle(event)
 

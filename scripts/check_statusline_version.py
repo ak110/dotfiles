@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """statusline（`rust/claude-statusline/`配下）の版数とタグの判定を1か所で持つ。
@@ -70,7 +70,10 @@ def _git(repo_root: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str
 
 def _require(result: subprocess.CompletedProcess[str], operation: str) -> str:
     if result.returncode != 0:
-        raise CheckError(f"{operation}に失敗した（終了コード{result.returncode}）: {result.stderr.strip()}")
+        raise CheckError(
+            f"{operation}に失敗した（終了コード{result.returncode}）: {result.stderr.strip()}。"
+            "Gitの接続・認証とCargoの依存導入を確認し、表示された原因を解消して同じ検証コマンドを再実行してください。"
+        )
     return result.stdout.strip()
 
 
@@ -108,7 +111,7 @@ def check(
     current = os.environ.get("CURRENT_SHA") or None
     base = _base_revision(repo_root, current)
     if not _has_changes(repo_root, base, current):
-        print("statuslineの変更がないため、版数検査を省略する。")
+        print("statuslineの変更がないため、版数検査を省略する。対応不要。")
         return None
 
     base_version = _read_version(_require(_git(repo_root, "show", f"{base}:{_MANIFEST}"), "基点のCargo.tomlの取得"))
@@ -122,7 +125,11 @@ def check(
     tag = f"statusline-v{current_version}"
     tag_result = _git(repo_root, "ls-remote", "--exit-code", "--refs", "origin", f"refs/tags/{tag}")
     if tag_result.returncode == 0:
-        return f"statuslineの版数に対応する既存タグがある: {tag}"
+        return (
+            f"statuslineの版数に対応する既存タグがある: {tag}。"
+            "rust/claude-statusline/Cargo.tomlのversionを未公開の版へ上げ、"
+            "同ディレクトリでcargo checkを実行してCargo.lockを更新してから再検査してください。"
+        )
     if tag_result.returncode != 2:
         _require(tag_result, f"タグ{tag}の照会")
     return None
@@ -140,7 +147,11 @@ def _release_tag_failure(repo_root: pathlib.Path, tag: str, current: str) -> tup
         return None, False
     current_commit = _require(_git(repo_root, "rev-parse", "--verify", f"{current}^{{commit}}"), "比較先commitの解決")
     if tagged.stdout.strip() != current_commit:
-        return f"既存タグが別のcommitを指している: {tag}", True
+        return (
+            f"既存タグが別のcommitを指している: {tag}。タグを上書きせず、"
+            "git ls-remote originと公開対象commitの情報を添えてリリース担当者へ報告してください。",
+            True,
+        )
     return None, True
 
 
@@ -153,7 +164,7 @@ def release_prepare(
     """`current`を第一親と比べてリリースの要否と版数を判定し、失敗理由と出力値を返す。"""
     base = _require(_git(repo_root, "rev-parse", "--verify", f"{current}^1"), "比較基点（第一親）の解決")
     if not _has_changes(repo_root, base, current):
-        print("statuslineの変更がないため、リリースを省略する。")
+        print("statuslineの変更がないため、リリースを省略する。対応不要。")
         return None, {"changed": "false", "version": "", "tag": ""}
     metadata = subprocess.run(list(metadata_command), cwd=repo_root, capture_output=True, text=True, check=False)
     _require(metadata, "cargo metadata --locked")

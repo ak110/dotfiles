@@ -43,16 +43,21 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """
     root = common.find_dotfiles_root()
     if root is None:
-        logger.info(log_format.format_status("user.env", "dotfiles ルートが見つからずスキップ"))
+        logger.info(
+            log_format.format_status("user.env", "dotfiles ルートが見つからずスキップ。配布元が無いため対応不要"),
+        )
         return post_apply_outcome.PostApplyOutcome()
     path = root / USER_ENV_RELATIVE
     if not path.is_file():
-        logger.info(log_format.format_status("user.env", f"{path} が無いためスキップ"))
+        logger.info(log_format.format_status("user.env", f"{path} が無いためスキップ。配布元が無いため対応不要"))
         return post_apply_outcome.PostApplyOutcome()
     try:
         entries = parse_user_env(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
-        return post_apply_outcome.PostApplyOutcome(failure=str(error))
+        return post_apply_outcome.PostApplyOutcome(
+            failure=str(error),
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
 
     changed = False
     failures: list[str] = []
@@ -69,4 +74,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         changed = True
     if changed:
         winutils.broadcast_environment_change()
-    return post_apply_outcome.PostApplyOutcome(changed=changed, failure=" / ".join(failures) or None)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=changed,
+        failure=" / ".join(failures) or None,
+        next_action="問題を解消した後に`update-dotfiles`を再実行する。" if failures else None,
+    )

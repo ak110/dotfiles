@@ -7,7 +7,7 @@ if ($args.Count -eq 1 -and $args[0] -eq '--help') {
     exit 0
 }
 if ($args.Count -gt 0) {
-    [Console]::Error.WriteLine('受理できない引数: ' + ($args -join ' '))
+    [Console]::Error.WriteLine('引数は指定しないか--helpを指定してください。受理できない引数: ' + ($args -join ' '))
     exit 2
 }
 
@@ -39,7 +39,7 @@ try {
     $result = [NativeMethods]::SetThreadExecutionState($awakeFlags)
 
     if ($result -eq 0) {
-        Write-Host 'keep-awake: SetThreadExecutionState の呼び出しに失敗しました。'
+        Write-Host 'keep-awake: SetThreadExecutionState の呼び出しに失敗しました。次の操作: Windowsでkeep-awakeを再実行し、再度失敗した場合はエラー内容をhttps://github.com/ak110/dotfiles/issuesへ報告してください。'
         exit 1
     }
 
@@ -49,7 +49,7 @@ try {
         $result = [NativeMethods]::SetThreadExecutionState($awakeFlags)
 
         if ($result -eq 0) {
-            Write-Host 'keep-awake: スリープ抑制の更新に失敗しました。'
+            Write-Host 'keep-awake: スリープ抑制の更新に失敗しました。処理は継続します。次の操作: Ctrl+Cで終了してkeep-awakeを再実行してください。'
         }
     }
 }

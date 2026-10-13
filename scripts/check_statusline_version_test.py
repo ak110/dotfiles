@@ -86,7 +86,11 @@ def test_existing_tag_for_new_version_fails(repo: pathlib.Path) -> None:
     _git(repo, "push", "origin", "statusline-v0.1.1")
     _write(repo, "rust/claude-statusline/Cargo.toml", _MANIFEST_TEMPLATE.format(version="0.1.1"))
 
-    assert _check(repo) == "statuslineの版数に対応する既存タグがある: statusline-v0.1.1"
+    assert _check(repo) == (
+        "statuslineの版数に対応する既存タグがある: statusline-v0.1.1。"
+        "rust/claude-statusline/Cargo.tomlのversionを未公開の版へ上げ、"
+        "同ディレクトリでcargo checkを実行してCargo.lockを更新してから再検査してください。"
+    )
 
 
 def test_cargo_metadata_failure_is_not_treated_as_success(repo: pathlib.Path) -> None:
@@ -140,7 +144,12 @@ def test_release_prepare_compares_with_first_parent(repo: pathlib.Path, change: 
     ("tag_on_head", "expected_failure"),
     [
         pytest.param(True, None, id="same-commit"),
-        pytest.param(False, "既存タグが別のcommitを指している: statusline-v0.1.1", id="other-commit"),
+        pytest.param(
+            False,
+            "既存タグが別のcommitを指している: statusline-v0.1.1。タグを上書きせず、"
+            "git ls-remote originと公開対象commitの情報を添えてリリース担当者へ報告してください。",
+            id="other-commit",
+        ),
     ],
 )
 def test_release_modes_accept_only_tag_on_current_commit(

@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """エージェント向け規範の再構築で使う判定台帳の骨格を、指定commitの文書から切り出す。

@@ -10,7 +10,7 @@ setlocal
 for /f "usebackq delims=" %%u in (`git remote get-url origin`) do set "OPEN_REPO_URL=%%u"
 
 if not defined OPEN_REPO_URL (
-    echo open-repo: git remote get-url origin が失敗しました 1>&2
+    echo open-repo: git remote get-url origin が失敗しました。次の操作: git remote -vでoriginの登録を確認し、必要なURLをgit remote add originで登録して再実行してください。 1>&2
     exit /b 1
 )
 
@@ -18,7 +18,7 @@ set "host="
 for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "$u=$env:OPEN_REPO_URL; if($u -match '^git@([^:]+):'){$Matches[1]; exit 0}; try{$uri=[Uri]$u; if($uri.Scheme -eq 'https'){$uri.Host; exit 0}}catch{}; exit 1"`) do set "host=%%h"
 
 if not defined host (
-    echo open-repo: 未対応のURL形式です 1>&2
+    echo open-repo: 未対応のURL形式です。git@HOST:pathまたはhttps://HOST/pathをoriginへ指定してください。次の操作: git remote -vで登録を確認するか、リポジトリのWebページをブラウザーで直接開いてください。 1>&2
     exit /b 1
 )
 
@@ -32,5 +32,5 @@ if /i "%host%"=="gitlab.com" (
     exit /b %ERRORLEVEL%
 )
 
-echo open-repo: 未対応のホストです: %host% 1>&2
+echo open-repo: 未対応のホストです: %host%。対応するホストはgithub.comとgitlab.comです。次の操作: git remote -vで登録を確認し、リポジトリのWebページをブラウザーで直接開いてください。 1>&2
 exit /b 1

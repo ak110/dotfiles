@@ -21,7 +21,7 @@ case "$remote_url" in
         host="${host%%/*}"
         ;;
     *)
-        echo "open-repo: 未対応のURL形式です。" >&2
+        echo "open-repo: 未対応のURL形式です。git@HOST:pathまたはhttps://HOST/pathをoriginへ指定してください。次の操作: git remote -vで登録を確認し、リポジトリのWebページをブラウザーで直接開いてください。" >&2
         exit 1
         ;;
 esac
@@ -34,7 +34,7 @@ case "$host" in
         exec glab repo view --web "$@"
         ;;
     *)
-        echo "open-repo: 未対応のホストです: ${host}" >&2
+        echo "open-repo: 未対応のホストです: ${host}。対応するホストはgithub.comとgitlab.comです。次の操作: git remote -vで登録を確認し、リポジトリのWebページをブラウザーで直接開いてください。" >&2
         exit 1
         ;;
 esac

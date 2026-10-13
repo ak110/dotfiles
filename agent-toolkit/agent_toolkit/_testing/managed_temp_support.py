@@ -43,11 +43,15 @@ def setattr_in_managed_temp_modules(monkeypatch: pytest.MonkeyPatch, name: str, 
     """パッケージと、名前を束縛する全サブモジュールで同じ値へ差し替える。
 
     各サブモジュールは定義元から名前を自らimportして束縛するため、1つのモジュールの差し替えは他へ届かない。
+    遅延importも変更前に解決し、解除時に各モジュールの元の値へ戻せるようにする。
     """
     targets: list[types.ModuleType] = [module for module in MANAGED_TEMP_MODULES if name in vars(module)]
     if hasattr(subject, name):
         targets.append(subject)
     assert targets, f"managed-tempのどのモジュールも{name}を持たない"
+    # 定義元を変えてから遅延importを解決すると、差し替え値が復元値として保存される。
+    for module in targets:
+        getattr(module, name)
     for module in targets:
         monkeypatch.setattr(module, name, value)
 

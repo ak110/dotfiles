@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["filelock>=3.30", "platformdirs>=4.0"]
 # ///
 """origin/developの変化または前回の未完了時にupdate-dotfilesを起動する。"""
@@ -44,7 +44,12 @@ def _git_output(args: list[str], *, label: str) -> str | None:
     """gitコマンドの標準出力を返し、失敗時は理由を表示する。"""
     result = _run(["git", "-C", str(_DOTFILES_ROOT), *args])
     if result.returncode != 0:
-        print(f"{label}の取得に失敗しました: exit {result.returncode}", file=sys.stderr)
+        print(
+            f"{label}の取得に失敗しました: exit {result.returncode}。自動更新は中止しました。"
+            f'git -C "{_DOTFILES_ROOT}" statusとgit branch -vvで状態を確認し、'
+            "原因を解消してupdate-dotfilesを実行してください。",
+            file=sys.stderr,
+        )
         return None
     return result.stdout.strip()
 
@@ -55,7 +60,11 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
     if branch is None:
         return 1
     if branch != "develop":
-        print(f"現在branchがdevelopではありません: {branch}", file=sys.stderr)
+        print(
+            f"現在branchがdevelopではありません: {branch}。作業内容を保存し、"
+            f'git -C "{_DOTFILES_ROOT}" switch developで切り替えてからupdate-dotfilesを実行してください。',
+            file=sys.stderr,
+        )
         return 1
 
     upstream = _git_output(
@@ -65,19 +74,30 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
     if upstream is None:
         return 1
     if upstream != _UPSTREAM:
-        print(f"upstreamが{_UPSTREAM}ではありません: {upstream}", file=sys.stderr)
+        print(
+            f"upstreamが{_UPSTREAM}ではありません: {upstream}。"
+            f'git -C "{_DOTFILES_ROOT}" branch --set-upstream-to={_UPSTREAM} developで設定して、'
+            "update-dotfilesを実行してください。",
+            file=sys.stderr,
+        )
         return 1
 
     remote_result = _run(["git", "-C", str(_DOTFILES_ROOT), "ls-remote", "--exit-code", "--refs", "origin", _UPSTREAM_REF])
     if remote_result.returncode != 0:
         print(
-            f"{_UPSTREAM_REF}の取得に失敗しました: exit {remote_result.returncode}",
+            f"{_UPSTREAM_REF}の取得に失敗しました: exit {remote_result.returncode}。自動更新は中止しました。"
+            f'git -C "{_DOTFILES_ROOT}" ls-remote origin {_UPSTREAM_REF}で接続と認証を確認し、'
+            "解消してからupdate-dotfilesを実行してください。",
             file=sys.stderr,
         )
         return 1
     lines = remote_result.stdout.splitlines()
     if not lines or not lines[0]:
-        print(f"{_UPSTREAM_REF}のcommit IDを取得できませんでした", file=sys.stderr)
+        print(
+            f"{_UPSTREAM_REF}のcommit IDを取得できませんでした。自動更新は中止しました。"
+            f'git -C "{_DOTFILES_ROOT}" ls-remote origin {_UPSTREAM_REF}で上流branchの存在を確認してください。',
+            file=sys.stderr,
+        )
         return 1
     upstream_commit = lines[0].split("\t", maxsplit=1)[0]
 
@@ -96,7 +116,11 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
 
     update_dotfiles = _DOTFILES_ROOT / "bin" / "update-dotfiles"
     if not update_dotfiles.is_file():
-        print(f"update-dotfilesが未配置です: {update_dotfiles}", file=sys.stderr)
+        print(
+            f"update-dotfilesが未配置です: {update_dotfiles}。"
+            f'git -C "{_DOTFILES_ROOT}" restore --source=HEAD -- bin/update-dotfilesで復元して再実行してください。',
+            file=sys.stderr,
+        )
         return 1
     if local_commit != upstream_commit:
         print(f"{_UPSTREAM}が変化しました: local {local_commit}, upstream {upstream_commit}")
@@ -105,7 +129,11 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
     try:
         pending_path.touch()
     except OSError as error:
-        print(f"自動更新の未完了状態を保存できません: {error}", file=sys.stderr)
+        print(
+            f"自動更新の未完了状態を保存できません: {error}。"
+            f"{pending_path.parent}の書込権限と空き容量を確認してupdate-dotfilesを実行してください。",
+            file=sys.stderr,
+        )
         return 1
     result = _run([str(update_dotfiles)], capture_output=False)
     if result.returncode != 0:
@@ -113,7 +141,11 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
     try:
         pending_path.unlink()
     except OSError as error:
-        print(f"自動更新の未完了状態を解除できません: {error}", file=sys.stderr)
+        print(
+            f"自動更新の未完了状態を解除できません: {error}。"
+            f"{pending_path}の削除権限を確認して次回の自動更新を待ってください。残した未完了状態で再試行します。",
+            file=sys.stderr,
+        )
         return 1
     return 0
 
@@ -128,10 +160,14 @@ def main(argv: list[str] | None = None) -> int:
         with filelock.FileLock(str(lock_path), timeout=_LOCK_TIMEOUT_SEC):
             return _update_if_needed(pending_path)
     except filelock.Timeout:
-        print("自動更新の排他ロックを取得できません。次回のタイマー起動で再試行します。", file=sys.stderr)
+        print("自動更新の排他ロックを取得できません。次回のタイマー起動で再試行します。対応不要です。", file=sys.stderr)
         return 1
     except (OSError, subprocess.SubprocessError) as error:
-        print(f"上流更新の確認に失敗しました: {error}", file=sys.stderr)
+        print(
+            f"上流更新の確認に失敗しました: {error}。自動更新は中止しました。"
+            "git statusで状態を確認し、表示された原因を解消してupdate-dotfilesを実行してください。",
+            file=sys.stderr,
+        )
         return 1
 
 

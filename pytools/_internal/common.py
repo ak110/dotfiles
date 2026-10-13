@@ -160,7 +160,14 @@ def run_subprocess(
     except (OSError, subprocess.SubprocessError) as e:
         label = tag or cmd[0]
         rest = " ".join(cmd[1:])
-        logger.info(log_format.format_status(label, f"`{rest}` 実行に失敗: {e}"))
+        logger.info(
+            log_format.format_status(
+                label,
+                f"`{rest}` 実行に失敗: {e}。"
+                "呼び出し元へ失敗を返して処理を継続した。"
+                "表示されたコマンドの実行ファイル・引数とアクセス権を確認して`update-dotfiles`を再実行する",
+            ),
+        )
         return None
 
 
@@ -184,17 +191,34 @@ def load_json_dict(
         return default
     except OSError as e:
         if tag is not None:
-            logger.info(log_format.format_status(tag, f"{path.name} の読み込みに失敗: {e}"))
+            logger.info(
+                log_format.format_status(
+                    tag,
+                    f"{path} の読み込みに失敗: {e}。このファイルの読み取り権限を修正して`update-dotfiles`を再実行する",
+                ),
+            )
         return None
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
         if tag is not None:
-            logger.info(log_format.format_status(tag, f"{path.name} の JSON 解析に失敗: {e}"))
+            logger.info(
+                log_format.format_status(
+                    tag,
+                    f"{path} の JSON 解析に失敗: {e}。"
+                    "このファイルをトップレベルがオブジェクトのJSONへ修正して`update-dotfiles`を再実行する",
+                ),
+            )
         return None
     if not isinstance(data, dict):
         if tag is not None:
-            logger.info(log_format.format_status(tag, f"{path.name} がトップレベル dict でないためスキップ"))
+            logger.info(
+                log_format.format_status(
+                    tag,
+                    f"{path} がトップレベル dict でないためスキップ。"
+                    "このファイルをトップレベルがオブジェクトのJSONへ修正して`update-dotfiles`を再実行する",
+                ),
+            )
         return None
     return cast("dict[str, object]", data)
 
@@ -212,7 +236,12 @@ def _atomic_write(
         path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         if tag is not None:
-            logger.info(log_format.format_status(tag, f"ディレクトリ作成に失敗: {e}"))
+            logger.info(
+                log_format.format_status(
+                    tag,
+                    f"ディレクトリ作成に失敗: {e}。{path.parent}の書き込み権限を修正して`update-dotfiles`を再実行する",
+                ),
+            )
         return False
     tmp_path: Path | None = None
     try:
@@ -232,7 +261,14 @@ def _atomic_write(
         return True
     except OSError as e:
         if tag is not None:
-            logger.info(log_format.format_status(tag, f"{path.name} の書き込みに失敗: {e}"))
+            logger.info(
+                log_format.format_status(
+                    tag,
+                    f"{path} の書き込みに失敗: {e}。"
+                    "このファイルと親ディレクトリの書き込み権限を修正し、"
+                    "ファイルを使用中のアプリを終了して`update-dotfiles`を再実行する",
+                ),
+            )
         if tmp_path is not None:
             with contextlib.suppress(OSError):
                 tmp_path.unlink()

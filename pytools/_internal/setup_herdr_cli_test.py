@@ -103,7 +103,10 @@ def test_run_defers_update_inside_herdr_when_existing_launcher_is_healthy(
         changed=False,
         notices=(
             post_apply_outcome.PostApplyNotice(
-                message="Herdrセッション内では自己更新できないため、更新を保留しました。",
+                message=(
+                    "Herdrセッション内では自己更新できないため、更新を保留しました。"
+                    "セッションから離脱した後、Herdr外の端末で次のコマンドを実行する。"
+                ),
                 command="herdr update",
             ),
         ),

@@ -165,8 +165,6 @@ def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     matrix = workflow_mapping(strategy["matrix"])
     include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
     assert include == [
-        {"python-version": "3.13", "check": "pytest", "check-name": "python-lint (3.13)"},
-        {"python-version": "3.14", "check": "pytest", "check-name": "pytest (3.14)"},
         {"python-version": "3.15", "check": "lint", "check-name": "python-lint (3.15)"},
         {"python-version": "3.15", "check": "pytest", "check-name": "pytest (3.15)"},
     ]

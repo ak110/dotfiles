@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """agent-toolkitプラグインのバージョンbumpツール。
@@ -45,7 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     if resolved is None:
         print(f"current version: {current}")
         print(
-            "基準版を確定できなかった（上流ブランチも origin/HEAD も解決できない）。既往のbumpを検出できないため増分しない。",
+            "基準版を確定できなかった（上流ブランチも origin/HEAD も解決できない）。既往のbumpを検出できないため増分しない。"
+            "git branch -vvで上流を確認し、git remote set-head origin --autoでorigin/HEADを設定してから"
+            "同じコマンドを再実行する。",
             file=sys.stderr,
         )
         return 1
@@ -65,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if BUMP_RANKS[requested] <= BUMP_RANKS[existing]:
-        print(f"既存の未プッシュbump種別（{existing}）が指定種別（{requested}）と同等以上のため何もしない。")
+        print(f"既存の未プッシュbump種別（{existing}）が指定種別（{requested}）と同等以上のため何もしない。対応不要。")
         print(f"  基準: {base}（{base_ref}）")
         print(f"  現在: {current}（既存bump: {existing}）")
         return 0
@@ -123,7 +125,11 @@ def infer_bump_kind(base: str, current: str) -> BumpKind | None:
         return "minor"
     if cm == bm and cn == bn and cp > bp:
         return "patch"
-    raise ValueError(f"想定外のバージョン差分: base={base} current={current}")
+    raise ValueError(
+        f"想定外のバージョン差分: base={base} current={current}。"
+        "patchは同じmajor/minorでpatchを増やし、minorは同じmajorでminorを増やしてpatch=0、"
+        "majorはmajorを増やしてminor=patch=0としてください。"
+    )
 
 
 def _read_current_version() -> str:
@@ -167,7 +173,7 @@ def _read_version_at(ref: str) -> str | None:
         return None
     try:
         return json.loads(result.stdout)["version"]
-    except (json.JSONDecodeError, KeyError):
+    except json.JSONDecodeError, KeyError:
         return None
 
 

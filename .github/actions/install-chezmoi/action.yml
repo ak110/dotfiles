@@ -36,6 +36,7 @@ runs:
           until installer=$(download_installer) &&
             sh -c "$installer" -- -b "$bin_dir"; do
             if [ "$attempt" -ge 3 ]; then
+              echo "::error::chezmoiの取得または導入が3回失敗しました。次の操作: このstepのcurl・インストーラーログを確認し、gh run rerun ${GITHUB_RUN_ID:-RUN_ID} --failedで失敗ジョブを再実行してください。" >&2
               return 1
             fi
             attempt=$((attempt + 1))

@@ -13,7 +13,7 @@ bom=$'\xef\xbb\xbf'
 for file in "$@"; do
     head=$(head -c 3 "$file")
     if [ "$head" != "$bom" ]; then
-        echo "FAIL: $file に UTF-8 BOM がありません" >&2
+        echo "FAIL: $file に UTF-8 BOM がありません。次の操作: このファイルをUTF-8 BOM付きで保存し直し、scripts/check-ps1-bom.shを再実行してください。" >&2
         fail=1
     fi
 done

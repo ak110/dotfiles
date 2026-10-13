@@ -2,10 +2,8 @@
 name = "pytools"
 version = "0.1.0"
 description = "Personal command-line tools"
-requires-python = ">=3.13,<4.0"
+requires-python = ">=3.15,<4.0"
 classifiers = [
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
@@ -34,7 +32,6 @@ dependencies = [
     "send2trash",
     "tqdm",
     "wand>=0.7.0",
-    "zstandard; python_version < '3.14'",
 ]
 
 [project.scripts]
@@ -121,11 +118,12 @@ require-text = ["docs/development/concepts.md", "docs/development/incidents.md",
 [tool.pyfltr]
 preset = "latest"
 python = true
-# Python 3.14はテストsuiteの実行時間が3.12/3.13に比べ25%程度長く、`command-timeout`を指定しない場合の600秒では境界を超えるためCIタイムアウトを延伸する
+# Python 3.15のCIテストは約437秒を要し、省略時の600秒では余裕が小さいためCIタイムアウトを延伸する。
 command-timeout = 900
 ty = true
-# scripts/・libexec/とagent-toolkit/skills/plan-mode/scripts/のモジュールを解決するため追加する
-ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "libexec", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
+# linked worktreeの祖先にある複製元のprojectが選ばれても、対象版と先頭の探索先をこのcwdへそろえる。
+# scripts/・libexec/とagent-toolkit/skills/plan-mode/scripts/のモジュールも解決する。
+ty-args = ["check", "--python-version", "3.15", "--extra-search-path", ".", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "libexec", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
 # pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
 # formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは
 # lintの自動修正を止められない。検査だけを行う`make test`が担当範囲外のファイルを
@@ -422,7 +420,7 @@ convention = "google"
 
 [tool.ruff.lint.flake8-import-conventions]
 # 標準ライブラリはモジュール名で参照するため、datetimeも省略名へ置き換えない。
-# ICN001の検査は保ち、Ruffの省略名の初期値へプロジェクトの名前を対応付ける。
+# ICN001の判定は保ち、Ruffの省略名の初期値へプロジェクトの名前を対応付ける。
 extend-aliases = { datetime = "datetime" }
 
 [tool.ruff.lint.per-file-ignores]
@@ -444,12 +442,6 @@ warn_no_return = true
 warn_redundant_casts = true
 warn_unused_configs = true
 show_error_codes = true
-
-[tool.ty.analysis]
-# zstandardはPython 3.14未満だけへ導入する依存であり、3.15で行う静的検査の環境には存在しない。
-# tyは解析する版をrequires-pythonの下限（3.13）とするため、3.13向けの分岐のimportを解決しようとする。
-# 行内の`ty: ignore`はzstandardを導入済みの環境で未使用の抑制として警告されるため、ここで許可する。
-allowed-unresolved-imports = ["zstandard"]
 
 [tool.typos.default.extend-words]
 # gitエイリアス名（ba = branch --all）・CSSクラス名（.pl-ba）

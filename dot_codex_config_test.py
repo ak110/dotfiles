@@ -3,6 +3,7 @@
 原本を置く`.chezmoi-source/`はpytestの通常の収集から外れる隠しディレクトリのため、リポジトリ直下へ置く。
 """
 
+import collections.abc
 import pathlib
 import subprocess
 import tomllib
@@ -10,6 +11,33 @@ import tomllib
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
+
+
+@pytest.mark.parametrize("existing", ["", 'personality = "friendly"\n', 'personality = "pragmatic"\n'])
+def test_config_template_disables_personality_and_reapplies(
+    existing: str, host_environ: collections.abc.Callable[[], dict[str, str]]
+) -> None:
+    """未設定と既存有効値を無効値へ更新し、未知値と再適用後の値を保持する。"""
+    template = REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
+    content = existing + 'model = "custom-model"\n[mcp_servers.custom]\ncommand = "custom-command"\n'
+    for _ in range(2):
+        result = subprocess.run(
+            ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(REPO_ROOT)],
+            input=content,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=host_environ(),
+            check=False,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        rendered = tomllib.loads(result.stdout)
+        assert rendered["personality"] == "none"
+        assert rendered["model"] == "custom-model"
+        assert rendered["mcp_servers"]["custom"]["command"] == "custom-command"
+        content = result.stdout
 
 
 def test_config_template_applies_shared_limits_and_preserves_existing_values() -> None:

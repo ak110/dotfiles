@@ -15,6 +15,7 @@ _WINDOWS_LAUNCHER = _ROOT / "bin" / "update-dotfiles.cmd"
 _LINUX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="BashランチャーはLinuxで検証する")
 _UPDATE_WARNING = (
     "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。"
+    "対応不要（dotfilesの更新処理は継続しました）。"
 )
 
 # 実更新中にcmd.exeが読み直す位置を再現する、block化前の公開ランチャー。
@@ -303,7 +304,8 @@ def test_path_uv_is_not_used_when_native_uv_is_absent(tmp_path: pathlib.Path) ->
 
     assert result.returncode == 127
     assert not calls
-    assert "公式インストーラーでuvを導入してください" in result.stderr
+    assert "https://docs.astral.sh/uv/getting-started/installation/" in result.stderr
+    assert "update-dotfilesを再実行してください" in result.stderr
 
 
 @_LINUX_ONLY
@@ -313,7 +315,8 @@ def test_missing_uv_returns_127(tmp_path: pathlib.Path) -> None:
 
     assert result.returncode == 127
     assert not calls
-    assert "公式インストーラーでuvを導入してください" in result.stderr
+    assert "https://docs.astral.sh/uv/getting-started/installation/" in result.stderr
+    assert "update-dotfilesを再実行してください" in result.stderr
 
 
 def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:

@@ -56,6 +56,7 @@ from pytools._internal import (
     sync_agent_toolkit_rules,
     sync_report,
     update_claude_settings,
+    update_gemini_settings,
     update_npmrc,
     update_vscode_settings,
     warmup_agents_server,
@@ -120,7 +121,11 @@ def _configure_logging() -> tuple[list[logging.Handler], int, bool]:
             encoding="utf-8",
         )
     except OSError as error:
-        print(f"  永続ログを開始できませんでした: {_UPDATE_LOG_PATH}: {error}", file=sys.stderr)
+        print(
+            f"  永続ログを開始できませんでした: {_UPDATE_LOG_PATH}: {error}。処理は継続します。"
+            f"次の操作: {_UPDATE_LOG_PATH.parent}の書込権限を確認し、update-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
     else:
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
@@ -391,7 +396,11 @@ def _cleanup_removed_paths() -> post_apply_outcome.PostApplyOutcome:
         logger.info(log_format.format_status("cleanup", "削除対象なし"))
     else:
         logger.info(log_format.format_status("cleanup", f"{total_removed} 件を削除した"))
-    return post_apply_outcome.PostApplyOutcome(changed=total_removed > 0, failure=" / ".join(failures) or None)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=total_removed > 0,
+        failure=" / ".join(failures) or None,
+        next_action="失敗した配布先の権限と使用中のプロセスを確認し、update-dotfilesを再実行する" if failures else None,
+    )
 
 
 def _sync_codex_plugin_manifests() -> post_apply_outcome.PostApplyOutcome:
@@ -471,6 +480,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     ),
     # settings.json（plugin導入）と~/.claude.json（MCP移行）を読んでマージして書き戻す。
     _StepSpec("Claude 設定", update_claude_settings.run, after=(_CLAUDE_PLUGIN, _LEGACY_CODEX_MCP)),
+    _StepSpec("Gemini 設定", update_gemini_settings.run),
     _StepSpec("libarchive (Windows)", install_libarchive.run, after=(_MISE,), platforms=_WINDOWS),
     # 開発版の取得はmise経由でcargoを使うため、Codex CLI工程のmise操作の後に行う。
     _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run, after=(_CODEX_CLI,)),
@@ -515,12 +525,20 @@ def main(
     if runner is None:
         root = common.find_dotfiles_root()
         if root is None:
-            print("dotfilesの実行ルートを特定できませんでした。", file=sys.stderr)
+            print(
+                "dotfilesの実行ルートを特定できませんでした。"
+                "次の操作: dotfilesのGit作業ツリーへ移動し、git statusを確認してdotfiles-post-applyを再実行してください。",
+                file=sys.stderr,
+            )
             sys.exit(2)
         git_result = common.run_subprocess(["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"])
         if git_result is None or git_result.returncode != 0:
             detail = common.format_cli_error(git_result)
-            print(f"正規のdotfilesルートを特定できませんでした: {root}: {detail}", file=sys.stderr)
+            print(
+                f"正規のdotfilesルートを特定できませんでした: {root}: {detail}。"
+                f'次の操作: git -C "{root}" statusでGit作業ツリーを確認し、dotfiles-post-applyを再実行してください。',
+                file=sys.stderr,
+            )
             sys.exit(2)
         canonical_root = Path(git_result.stdout.strip()).parent
         if root != canonical_root and not args.allow_non_canonical_root:
@@ -546,8 +564,9 @@ def main(
         _print_plugin_recommendations(recommendations)
         if failed:
             logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
+            logger.error("次の操作: %s", _post_apply_recovery_action())
             if persistent_log_ready:
-                logger.error("永続ログ: %s", _UPDATE_LOG_PATH)
+                logger.error("永続ログ: %s（末尾の失敗理由を確認してください）", _UPDATE_LOG_PATH)
         _print_post_apply_notices(notices)
         logger.info("post-apply終了: exit=%d", 1 if failed else 0)
         sys.exit(1 if failed else 0)
@@ -626,8 +645,8 @@ def _pytools_install_notices() -> list[post_apply_outcome.PostApplyNotice]:
     if not state:
         return []
     messages = {
-        "deferred": "pytoolsの再インストールを延期しました。",
-        "failed": "pytoolsの再インストールに失敗しました。",
+        "deferred": "pytoolsの再インストールを延期しました。使用中のプロセスを終了してupdate-dotfilesを再実行してください。",
+        "failed": "pytoolsの再インストールに失敗しました。失敗理由を確認してupdate-dotfilesを再実行してください。",
     }
     try:
         message = messages[state]
@@ -636,7 +655,7 @@ def _pytools_install_notices() -> list[post_apply_outcome.PostApplyNotice]:
     detail = os.environ.get("DOTFILES_PYTOOLS_INSTALL_DETAIL", "")
     if detail:
         message = f"{message} 詳細: {detail}"
-    return [post_apply_outcome.PostApplyNotice(message)]
+    return [post_apply_outcome.PostApplyNotice(message, command="update-dotfiles")]
 
 
 _step_log_state = threading.local()
@@ -668,6 +687,15 @@ class _StepOutcome:
     skip_reason: str | None = None
 
 
+def _post_apply_recovery_action() -> str:
+    """現在の実行が使う出力先から、失敗後の操作を案内する。"""
+    action = "失敗理由を確認し、update-dotfilesを再実行してください。"
+    for handler in logging.getLogger().handlers:
+        if isinstance(handler, logging.handlers.RotatingFileHandler):
+            return f"{action} 永続ログ {handler.baseFilename} の末尾を確認してください。"
+    return f"{action} 永続ログを開始できなかった場合は、この標準エラーの失敗理由を確認してください。"
+
+
 def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
     """1ステップを実行し、例外、戻り値、所要時間を共通形式へ変換する。
 
@@ -677,7 +705,7 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
     try:
         ret = step.run()
     except Exception as error:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
-        logger.exception("    %s: 失敗", step.name)
+        logger.exception("    %s: 失敗。次の操作: %s", step.name, _post_apply_recovery_action())
         failure = _StepResult(
             name=step.name,
             ok=False,
@@ -688,9 +716,11 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
         return failure, [], time.monotonic() - started_at
     if not isinstance(ret, post_apply_outcome.PostApplyOutcome):
         # 型注釈は実行時に検査されないため、契約に反する戻り値を工程の失敗として扱い、後続の集計を止めない。
-        ret = post_apply_outcome.PostApplyOutcome(failure=f"戻り値が PostApplyOutcome ではない: {ret!r}")
+        ret = post_apply_outcome.PostApplyOutcome(
+            failure=f"戻り値が PostApplyOutcome ではない: {ret!r}", next_action=_post_apply_recovery_action()
+        )
     if ret.failure is not None:
-        logger.error("    %s: 失敗: %s", step.name, ret.failure)
+        logger.error("    %s: 失敗: %s。次の操作: %s", step.name, ret.failure, ret.next_action)
         failure = _StepResult(name=step.name, ok=False, changed=ret.changed, notices=ret.notices, reason=ret.failure)
         return failure, list(ret.recommendations), time.monotonic() - started_at
     return (
@@ -744,7 +774,9 @@ def _resolve_predecessors(steps: Sequence[_StepSpec]) -> list[frozenset[int]]:
 
 
 _SKIP_OTHER_PLATFORM = "実行中のOSは対象外のため実行しない"
-_SKIP_SUBSTITUTED_HOME = "HOMEが実行ユーザーのホームと異なるため、実機の共有資源を操作せず実行しない"
+_SKIP_SUBSTITUTED_HOME = (
+    "HOMEが実行ユーザーのホームと異なるため、実機の共有資源を操作せず実行しない。対応不要（後続処理は継続する）"
+)
 
 
 def _home_is_substituted() -> bool:

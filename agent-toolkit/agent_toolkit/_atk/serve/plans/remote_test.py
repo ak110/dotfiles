@@ -193,8 +193,8 @@ async def test_rpc_timeout_error_names_operation_and_limit(tmp_path: pathlib.Pat
 async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを従来の起動形で起動し、失敗を標準エラー付きで示す。
 
-    起動形をセッション画面と共通の関数へ移したため、計画ファイル画面のbootstrap・op・argsが渡らないか、
-    `watchdog`・`platformdirs`が欠けると、リモートの計画ファイル一覧と本文を取得できなくなる。
+    計画ファイル画面のbootstrap・op・argsを共通の起動へ渡すことを確かめる。
+    共通argvのPython版と依存は、serve/remote_test.pyが独立した期待値で検証する。
     """
     sent: list[tuple[list[str], float]] = []
 
@@ -215,18 +215,7 @@ async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeyp
                 "-o",
                 "BatchMode=yes",
                 "remote-host",
-                "uv",
-                "run",
-                "--no-project",
-                "--with",
-                '"watchdog>=6.0.0"',
-                "--with",
-                '"platformdirs>=4.0"',
-                "python",
-                "-c",
-                f'"{plans.REMOTE_BOOTSTRAP}"',
-                "read",
-                "cGF0aA==",
+                *_atk_serve_remote.remote_command_argv(plans.REMOTE_BOOTSTRAP, "read", ["cGF0aA=="]),
             ],
             plans_roots.SSH_TIMEOUT_SEC,
         )

@@ -115,7 +115,11 @@ def _show_unreleased(parser: argparse.ArgumentParser) -> None:
     print()
     tag = _get_latest_release_tag()
     if tag is None:
-        print("直近のリリースタグが見つかりません（未リリースコミット一覧の表示をスキップ）。")
+        print(
+            "直近のリリースタグが見つかりません（未リリースコミット一覧の表示をスキップ）。"
+            "初回リリースなら対応不要です。"
+            "既存タグがある場合はgit fetch origin --tagsで取得して再実行してください。"
+        )
         return
     print(f"直近のリリースタグ: {tag}")
     print(f"未リリースコミット ({tag}..HEAD):")
@@ -261,8 +265,11 @@ def _wait_for_ci(git_root: Path) -> None:
         # ブランチフィルターやpath-filterで対象外の場合、push後にrunが登録されない。
         # CIなしと同等の扱いとし、警告のみで処理を継続する。
         logger.warning(
-            "コミット %s に対するCI runが見つかりません。ブランチフィルター等の対象外の可能性があるためCI待機をスキップする。",
+            "コミット %s に対するCI runが見つかりません。ブランチフィルター等の対象外の可能性があるためCI待機をスキップする。"
+            "処理は続行します。gh run list --commit=%sでrunを確認し、CI対象外なら対応不要です。"
+            "CIが必要ならworkflowのブランチ・パス条件を修正してください。",
             sha[:7],
+            sha,
         )
         return
 
@@ -350,13 +357,22 @@ def _run_gh_json_read(
                     return json.loads(result.stdout)
                 except json.JSONDecodeError as e:
                     detail = stderr or str(e)
-                    raise _ReleaserError(f"GitHub APIの応答を解析できませんでした: {detail}") from None
+                    raise _ReleaserError(
+                        f"GitHub APIの応答を解析できませんでした: {detail}。"
+                        f"gh auth statusと接続状態を確認し、releaserを再実行してください。"
+                    ) from None
             detail = stderr or f"終了コード {result.returncode}"
             if not _GH_TRANSIENT_ERROR_PATTERN.search(stderr):
-                raise _ReleaserError(f"GitHub APIから情報を取得できませんでした: {detail}")
+                raise _ReleaserError(
+                    f"GitHub APIから情報を取得できませんでした: {detail}。"
+                    f"gh auth statusと接続状態を確認し、releaserを再実行してください。"
+                )
 
         if attempt + 1 == attempts:
-            raise _ReleaserError(f"GitHub APIから情報を取得できませんでした: {detail}")
+            raise _ReleaserError(
+                f"GitHub APIから情報を取得できませんでした: {detail}。"
+                f"gh auth statusと接続状態を確認し、releaserを再実行してください。"
+            )
         delay_limit = float(2**attempt)
         sleep(random_uniform(0.0, delay_limit))
 
@@ -392,7 +408,9 @@ def _list_runs_for_commit(
         random_uniform=random_uniform,
     )
     if not isinstance(data, list):
-        raise _ReleaserError("GitHub APIのrun一覧応答が配列ではありません。")
+        raise _ReleaserError(
+            "GitHub APIのrun一覧応答が配列ではありません。gh run listで応答を確認し、releaserを再実行してください。"
+        )
     return data
 
 
@@ -420,7 +438,11 @@ def _wait_for_runs_complete(sha: str, release_name: str) -> list[dict[str, Any]]
             return non_release
         logger.info("CI完了待機中（進行中%d件）...", len(in_progress))
         time.sleep(_CI_COMPLETE_INTERVAL_SEC)
-    raise _ReleaserError("CI完了待機がタイムアウトしました。")
+    raise _ReleaserError(
+        f"CI完了待機がタイムアウトしました。"
+        f"gh run list --commit={sha}でrun IDを取得し、gh run view "
+        f"<id>で完了を確認してからreleaserを再実行してください。"
+    )
 
 
 def _check_runs_success(runs: list[dict[str, Any]]) -> None:
@@ -440,7 +462,11 @@ def _check_runs_success(runs: list[dict[str, Any]]) -> None:
     ]
     if failed:
         details = ", ".join(f"{n}: {c}" for n, c in failed)
-        raise _ReleaserError(f"CIに失敗しています: {details}")
+        raise _ReleaserError(
+            f"CIに失敗しています: {details}。"
+            "gh run listでrun IDを取得し、gh run view <id> --log-failedで原因を確認・修正してから"
+            "releaserを再実行してください。"
+        )
     logger.info("CIは全て成功しています。")
 
 
@@ -457,29 +483,50 @@ def _validate_release_workflow_dict(data: Any) -> None:
     `on`文字列キーと`True`キーの両方に対応する。
     """
     if not isinstance(data, dict):
-        raise _ReleaserError("release.yamlのトップレベルがマップではありません。")
+        raise _ReleaserError(
+            "release.yamlのトップレベルがマップではありません。"
+            ".github/workflows/release.yamlをYAMLのマップへ修正してreleaserを再実行してください。"
+        )
     on_section = data.get("on")
     if on_section is None:
         on_section = data.get(True)
     if not isinstance(on_section, dict):
-        raise _ReleaserError("release.yamlに`on`セクションが見つかりません。")
+        raise _ReleaserError(
+            "release.yamlに`on`セクションが見つかりません。"
+            ".github/workflows/release.yamlへon.workflow_dispatchを定義してreleaserを再実行してください。"
+        )
     workflow_dispatch = on_section.get("workflow_dispatch")
     if not isinstance(workflow_dispatch, dict):
-        raise _ReleaserError("release.yamlに`workflow_dispatch`がありません。")
+        raise _ReleaserError(
+            "release.yamlに`workflow_dispatch`がありません。"
+            ".github/workflows/release.yamlへon.workflow_dispatchを定義してreleaserを再実行してください。"
+        )
     inputs = workflow_dispatch.get("inputs")
     if not isinstance(inputs, dict):
-        raise _ReleaserError("release.yamlの`workflow_dispatch.inputs`がありません。")
+        raise _ReleaserError(
+            "release.yamlの`workflow_dispatch.inputs`がありません。"
+            ".github/workflows/release.yamlへon.workflow_dispatch.inputs.bumpを定義してreleaserを再実行してください。"
+        )
     bump = inputs.get("bump")
     if not isinstance(bump, dict):
-        raise _ReleaserError("release.yamlに`bump`入力がありません。")
+        raise _ReleaserError(
+            "release.yamlに`bump`入力がありません。"
+            ".github/workflows/release.yamlへon.workflow_dispatch.inputs.bumpを定義してreleaserを再実行してください。"
+        )
     options = bump.get("options")
     if not isinstance(options, list):
-        raise _ReleaserError("release.yamlの`bump.options`が不正です。")
+        raise _ReleaserError(
+            "release.yamlの`bump.options`が不正です。"
+            ".github/workflows/release.yamlのbump.optionsをPATCH・MINOR・MAJORを含む配列へ修正してreleaserを再実行してください。"
+        )
     required = {"PATCH", "MINOR", "MAJOR"}
     actual = {str(o) for o in options}
     missing = required - actual
     if missing:
-        raise _ReleaserError(f"release.yamlの`bump.options`に必要な値がありません: {sorted(missing)}")
+        raise _ReleaserError(
+            f"release.yamlの`bump.options`に必要な値がありません: {sorted(missing)}。"
+            f".github/workflows/release.yamlのbump.optionsへ不足値を追加してreleaserを再実行してください。"
+        )
 
 
 def _list_release_runs(
@@ -504,7 +551,11 @@ def _list_release_runs(
         random_uniform=random_uniform,
     )
     if not isinstance(data, list):
-        raise _ReleaserError("GitHub APIのrelease run一覧応答が配列ではありません。")
+        raise _ReleaserError(
+            "GitHub APIのrelease run一覧応答が配列ではありません。"
+            "gh run list --workflow=release.yamlで実行状態を確認してください。"
+            "確認前に再dispatchしないでください。"
+        )
     return data
 
 
@@ -540,7 +591,11 @@ def _wait_for_new_release_run(last_id: int | None) -> int:
                 logger.info("新規release run検出: id=%s", run_id)
                 return run_id
         time.sleep(_DISPATCH_RUN_APPEAR_INTERVAL_SEC)
-    raise _ReleaserError("dispatch後の新規runが検出できませんでした。")
+    raise _ReleaserError(
+        "dispatch後の新規runが検出できませんでした。"
+        "gh run list --workflow=release.yamlで実行状態を確認してください。"
+        "確認前に再dispatchしないでください。"
+    )
 
 
 def _view_run(
@@ -559,7 +614,9 @@ def _view_run(
         random_uniform=random_uniform,
     )
     if not isinstance(data, dict):
-        raise _ReleaserError("GitHub APIのrun状態応答がマップではありません。")
+        raise _ReleaserError(
+            f"GitHub APIのrun状態応答がマップではありません。gh run view {run_id}で実行状態を確認してください。"
+        )
     return data
 
 
@@ -593,15 +650,27 @@ def _watch_run(
         conclusion = state.get("conclusion")
         if status == "completed":
             if not isinstance(conclusion, str) or not conclusion:
-                raise _ReleaserError(f"release run {run_id} の完了結果を取得できませんでした。")
+                raise _ReleaserError(
+                    f"release run {run_id} の完了結果を取得できませんでした。gh run view {run_id}で完了結果を確認してください。"
+                )
             if conclusion in _ACCEPTABLE_CONCLUSIONS:
                 logger.info("release run %s が成功しました。", run_id)
                 return
-            raise _ReleaserError(f"release run {run_id} が失敗しました（conclusion={conclusion}）。")
+            raise _ReleaserError(
+                f"release run {run_id} が失敗しました（conclusion={conclusion}）。"
+                f"gh run view {run_id} --log-failedで原因を確認・修正してください。"
+            )
         if status not in _IN_PROGRESS_STATUSES:
-            raise _ReleaserError(f"release run {run_id} の状態を判定できませんでした（status={status}）。")
+            raise _ReleaserError(
+                f"release run {run_id} の状態を判定できませんでした（status={status}）。"
+                f"gh run view {run_id}で実行状態を確認してください。"
+            )
         if attempt + 1 == attempts:
-            raise _ReleaserError(f"release run {run_id} の状態取得が再試行上限に達しました。")
+            raise _ReleaserError(
+                f"release run {run_id} の状態取得が再試行上限に達しました。"
+                f"gh run view {run_id}で実行状態を確認してください。"
+                f"確認前に再dispatchしないでください。"
+            )
         delay_limit = float(2**attempt)
         sleep(random_uniform(0.0, delay_limit))
 
@@ -628,7 +697,12 @@ def _sync_local_repo() -> None:
     )
     remote = result.stdout.strip()
     if result.returncode != 0 or not remote:
-        raise _ReleaserError(f"ブランチ '{branch}' に上流ブランチが設定されていないため、ローカルリポジトリを同期できません。")
+        raise _ReleaserError(
+            f"ブランチ '{branch}' に上流ブランチが設定されていないため、ローカルリポジトリを同期できません。"
+            f"リリースは完了しています。"
+            f"git branch --set-upstream-to=<remote>/<branch>で上流を設定し、git "
+            f"fetch <remote> --tagsとgit merge --ff-only @{{upstream}}で同期してください。"
+        )
     subprocess.run(["git", "fetch", remote, "--tags", "--prune"], check=True)
     subprocess.run(["git", "merge", "--ff-only", "@{upstream}"], check=True)
 

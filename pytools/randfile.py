@@ -39,7 +39,11 @@ def main() -> None:
 def create(path: pathlib.Path, size: int, *, force: bool = False) -> None:
     """指定サイズのランダムバイト列ファイルを生成する。"""
     if path.exists() and not force:
-        raise FileExistsError(f"出力先ファイルが既に存在します: {path}")
+        raise FileExistsError(
+            f"出力先ファイルが既に存在します: {path}。"
+            f"存在しない出力先を指定してください。"
+            f"上書きしてよい場合だけ--forceを指定してください。"
+        )
     remaining = size
     with path.open("wb") as fp, tqdm.tqdm(total=size, unit="B", unit_scale=True, ascii=True, ncols=80) as pbar:
         while remaining > 0:

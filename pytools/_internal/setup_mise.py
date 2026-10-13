@@ -88,7 +88,13 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         _ensure_mise_installed()
         mise_bin = find_mise_binary()
         if mise_bin is None:
-            logger.info(log_format.format_status("mise", "未検出のためスキップ"))
+            logger.info(
+                log_format.format_status(
+                    "mise",
+                    "未検出のためスキップ。"
+                    "https://mise.jdx.dev/getting-started.html の手順でmiseを導入して`update-dotfiles`を再実行する",
+                ),
+            )
             return post_apply_outcome.PostApplyOutcome()
 
     changed = False
@@ -107,7 +113,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             changed |= _ensure_windows_user_path_has_shims()
         except _SettingError as error:
             failures.append(str(error))
-    return post_apply_outcome.PostApplyOutcome(changed=changed, failure=" / ".join(failures) or None)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=changed,
+        failure=" / ".join(failures) or None,
+        next_action="問題を解消した後に`update-dotfiles`を再実行する。" if failures else None,
+    )
 
 
 def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
@@ -132,10 +142,21 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
                 tag="mise",
             )
         except Exception as error:  # noqa: BLE001  # 導入失敗で後続のセットアップ全体を止めない
-            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {error}"))
+            logger.warning(
+                log_format.format_status(
+                    "mise",
+                    f"本体の導入に失敗: {error}。https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
+                ),
+            )
             return False
         if result is None or result.returncode != 0:
-            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {common.format_cli_error(result)}"))
+            logger.warning(
+                log_format.format_status(
+                    "mise",
+                    f"本体の導入に失敗: {common.format_cli_error(result)}。"
+                    "https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
+                ),
+            )
             return False
         return True
 
@@ -156,11 +177,22 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
             env_overrides={"MISE_INSTALL_PATH": str(Path.home() / ".local" / "bin" / "mise")},
         )
         if result is None or result.returncode != 0:
-            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {common.format_cli_error(result)}"))
+            logger.warning(
+                log_format.format_status(
+                    "mise",
+                    f"本体の導入に失敗: {common.format_cli_error(result)}。"
+                    "https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
+                ),
+            )
             return False
         return True
     except Exception as error:  # noqa: BLE001  # 取得・保存・実行の失敗を1件の警告へ集約する
-        logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {error}"))
+        logger.warning(
+            log_format.format_status(
+                "mise",
+                f"本体の導入に失敗: {error}。https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
+            ),
+        )
         return False
     finally:
         if temp_path is not None:
@@ -204,11 +236,18 @@ def _ensure_mise_up_to_date(mise_bin: Path) -> bool:
     """
     result = _run_mise(mise_bin, ["self-update", "-y"], timeout=_MISE_INSTALL_TIMEOUT)
     if result is None:
-        logger.info(log_format.format_status("mise", "`self-update` がタイムアウトまたは例外で中断"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                "`self-update` がタイムアウトまたは例外で中断。`mise self-update -y`を手動実行する",
+            ),
+        )
         return False
     if result.returncode != 0:
         stderr = result.stderr.strip()
-        logger.info(log_format.format_status("mise", f"`self-update` に失敗: {stderr}"))
+        logger.info(
+            log_format.format_status("mise", f"`self-update` に失敗: {stderr}。`mise self-update -y`を手動実行する"),
+        )
         return False
     logger.info(log_format.format_status("mise", "`self-update` を実行しました"))
     return True
@@ -240,12 +279,19 @@ def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
     # `dotfiles-post-apply`の単独実行ではtrustをスキップするためである。
     working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
     if not working_tree:
-        logger.info(log_format.format_status("mise", "CHEZMOI_WORKING_TREE 未設定のため trust をスキップ"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                "CHEZMOI_WORKING_TREE 未設定のため trust をスキップ。対象設定が無いため対応不要",
+            ),
+        )
         return False
 
     mise_toml = Path(working_tree) / "mise.toml"
     if not mise_toml.is_file():
-        logger.info(log_format.format_status("mise", f"{mise_toml} が無いため trust をスキップ"))
+        logger.info(
+            log_format.format_status("mise", f"{mise_toml} が無いため trust をスキップ。対象設定が無いため対応不要"),
+        )
         return False
 
     result = _run_mise(mise_bin, ["trust", str(mise_toml)])
@@ -266,13 +312,25 @@ def _ensure_global_node(mise_bin: Path) -> bool:
     result = _run_mise(mise_bin, ["ls", "--global", "--json"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
-        logger.info(log_format.format_status("mise", f"`ls --global --json` に失敗したため node 設定をスキップ: {stderr}"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                "`ls --global --json` に失敗したため node 設定をスキップ: "
+                f"{stderr}。"
+                "`mise use --global node@lts`を手動実行する",
+            ),
+        )
         return False
 
     try:
         data = json.loads(result.stdout) if result.stdout.strip() else {}
     except json.JSONDecodeError as e:
-        logger.info(log_format.format_status("mise", f"`ls --global --json` の出力 JSON を解析できずスキップ: {e}"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                f"`ls --global --json` の出力 JSON を解析できずスキップ: {e}。`mise use --global node@lts`を手動実行する",
+            ),
+        )
         return False
 
     if _has_global_node(data):
@@ -282,7 +340,12 @@ def _ensure_global_node(mise_bin: Path) -> bool:
     install_result = _run_mise(mise_bin, ["use", "--global", "node@lts"])
     if install_result is None or install_result.returncode != 0:
         stderr = install_result.stderr.strip() if install_result else ""
-        logger.info(log_format.format_status("mise", f"`use --global node@lts` に失敗: {stderr}"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                f"`use --global node@lts` に失敗: {stderr}。`mise use --global node@lts`を手動実行する",
+            ),
+        )
         return False
 
     logger.info(log_format.format_status("mise", "global に node@lts を設定しました"))
@@ -346,11 +409,26 @@ def _ensure_tools_installed(mise_bin: Path) -> bool:
         extra_env=_LOCKED_INSTALL_ENV,
     )
     if result is None:
-        logger.info(log_format.format_status("mise", "`install` がタイムアウトまたは例外で中断"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                "`install` がタイムアウトまたは例外で中断。"
+                "chezmoiの作業ツリーで`MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install`を実行する"
+                "（Windowsでは両環境変数を設定して`mise install`を実行する）",
+            ),
+        )
         return True
     if result.returncode != 0:
         stderr = result.stderr.strip()
-        logger.info(log_format.format_status("mise", f"`install` に失敗: {stderr}"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                f"`install` に失敗: {stderr}。"
+                "chezmoiの作業ツリーで`MISE_LOCKED=1 MISE_LOCKED_SCOPES=project "
+                "mise install`を実行する（Windowsでは両環境変数を設定して`mise "
+                "install`を実行する）",
+            ),
+        )
         return True
     logger.info(log_format.format_status("mise", "`install` を実行しました"))
     return True
@@ -387,8 +465,11 @@ def _ensure_tool_bin_paths_present(mise_bin: Path) -> bool:
             logger.warning(
                 log_format.format_status(
                     "mise",
-                    f"実行ファイルの配置先が無いが、導入先を特定できないため再導入しない: {directory}（処理は継続した）",
-                )
+                    "実行ファイルの配置先が無いが、導入先を特定できないため再導入しない: "
+                    f"{directory}（処理は継続した）。"
+                    "`mise bin-paths`と`mise ls --current --installed "
+                    "--json`で配置先と導入ツールを確認し、該当ツールを手動導入する",
+                ),
             )
             continue
         targets.setdefault(owner, []).append(directory)
@@ -406,7 +487,7 @@ def _ensure_tool_bin_paths_present(mise_bin: Path) -> bool:
                 log_format.format_status(
                     "mise",
                     f"`install --force {spec}` がタイムアウトまたは例外で中断。手動で`mise install --force {spec}`を実行する",
-                )
+                ),
             )
             continue
         if result.returncode != 0:
@@ -414,11 +495,14 @@ def _ensure_tool_bin_paths_present(mise_bin: Path) -> bool:
                 log_format.format_status(
                     "mise",
                     f"`install --force {spec}` に失敗: {result.stderr.strip()}。手動で`mise install --force {spec}`を実行する",
-                )
+                ),
             )
             continue
         logger.info(
-            log_format.format_status("mise", f"実行ファイルの配置先を再生成するため `install --force {spec}` を実行しました")
+            log_format.format_status(
+                "mise",
+                f"実行ファイルの配置先を再生成するため `install --force {spec}` を実行しました",
+            ),
         )
         changed = True
 
@@ -435,7 +519,7 @@ def _ensure_tool_bin_paths_present(mise_bin: Path) -> bool:
                 "mise",
                 f"{tool}の実行ファイルの配置先が再導入後も見つからない: {directory}。"
                 f"手動で`mise install --force {tool}@{version}`を実行する",
-            )
+            ),
         )
     return changed
 
@@ -446,15 +530,19 @@ def _missing_bin_paths(mise_bin: Path, cwd: Path | None) -> list[Path] | None:
     if result is None:
         logger.warning(
             log_format.format_status(
-                "mise", "`bin-paths` がタイムアウトまたは例外で中断したため配置先の確認を省いた（処理は継続した）"
-            )
+                "mise",
+                "`bin-paths` がタイムアウトまたは例外で中断したため配置先の確認を省いた（処理は継続した）。"
+                "`update-dotfiles`を再実行する",
+            ),
         )
         return None
     if result.returncode != 0:
         logger.warning(
             log_format.format_status(
-                "mise", f"`bin-paths` に失敗したため配置先の確認を省いた（処理は継続した）: {result.stderr.strip()}"
-            )
+                "mise",
+                "`bin-paths` に失敗したため配置先の確認を省いた（処理は継続した）。"
+                f"`update-dotfiles`を再実行する: {result.stderr.strip()}",
+            ),
         )
         return None
     return [Path(line.strip()) for line in result.stdout.splitlines() if line.strip() and not Path(line.strip()).is_dir()]
@@ -470,16 +558,18 @@ def _installed_tool_paths(mise_bin: Path, cwd: Path | None) -> dict[Path, tuple[
         logger.warning(
             log_format.format_status(
                 "mise",
-                "`ls --current --installed --json` がタイムアウトまたは例外で中断したため再導入を省いた（処理は継続した）",
-            )
+                "`ls --current --installed --json` がタイムアウトまたは例外で中断したため再導入を省いた（処理は継続した）。"
+                "`update-dotfiles`を再実行する",
+            ),
         )
         return None
     if result.returncode != 0:
         logger.warning(
             log_format.format_status(
                 "mise",
-                f"`ls --current --installed --json` に失敗したため再導入を省いた（処理は継続した）: {result.stderr.strip()}",
-            )
+                "`ls --current --installed --json` に失敗したため再導入を省いた（処理は継続した）。"
+                f"`update-dotfiles`を再実行する: {result.stderr.strip()}",
+            ),
         )
         return None
     try:
@@ -487,8 +577,10 @@ def _installed_tool_paths(mise_bin: Path, cwd: Path | None) -> dict[Path, tuple[
     except json.JSONDecodeError as error:
         logger.warning(
             log_format.format_status(
-                "mise", f"`ls --current --installed --json` の出力を解析できないため再導入を省いた（処理は継続した）: {error}"
-            )
+                "mise",
+                "`ls --current --installed --json` の出力を解析できないため再導入を省いた（処理は継続した）。"
+                f"`update-dotfiles`を再実行する: {error}",
+            ),
         )
         return None
     installs: dict[Path, tuple[str, str]] = {}
@@ -525,17 +617,37 @@ def _ensure_orphan_shims_removed(mise_bin: Path) -> bool:
     """
     prune = _run_mise(mise_bin, ["prune", "-y"], timeout=_MISE_INSTALL_TIMEOUT)
     if prune is None:
-        logger.info(log_format.format_status("mise", "`prune -y` がタイムアウトまたは例外で中断"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                "`prune -y` がタイムアウトまたは例外で中断。`mise prune -y`を手動実行する",
+            ),
+        )
         return False
     if prune.returncode != 0:
-        logger.info(log_format.format_status("mise", f"`prune -y` に失敗: {prune.stderr.strip()}"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                f"`prune -y` に失敗: {prune.stderr.strip()}。`mise prune -y`を手動実行する",
+            ),
+        )
         return False
     result = _run_mise(mise_bin, ["reshim", "--force"])
     if result is None:
-        logger.info(log_format.format_status("mise", "`reshim --force` がタイムアウトまたは例外で中断"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                "`reshim --force` がタイムアウトまたは例外で中断。`mise reshim --force`を手動実行する",
+            ),
+        )
         return False
     if result.returncode != 0:
-        logger.info(log_format.format_status("mise", f"`reshim --force` に失敗: {result.stderr.strip()}"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                f"`reshim --force` に失敗: {result.stderr.strip()}。`mise reshim --force`を手動実行する",
+            ),
+        )
         return False
     logger.info(log_format.format_status("mise", "`reshim --force` を実行しました"))
     return True
@@ -549,12 +661,22 @@ def _ensure_windows_user_path_has_shims() -> bool:
     """
     localappdata = os.environ.get("LOCALAPPDATA")
     if not localappdata:
-        logger.info(log_format.format_status("mise", "LOCALAPPDATA 環境変数が無いため shims 追加をスキップ"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                "LOCALAPPDATA 環境変数が無いため shims 追加をスキップ。対象設定が無いため対応不要",
+            ),
+        )
         return False
 
     shims_dir = Path(localappdata) / "mise" / "shims"
     if not shims_dir.is_dir():
-        logger.info(log_format.format_status("mise", f"{shims_dir} が無いため shims 追加をスキップ"))
+        logger.info(
+            log_format.format_status(
+                "mise",
+                f"{shims_dir} が無いため shims 追加をスキップ。対象設定が無いため対応不要",
+            ),
+        )
         return False
 
     try:

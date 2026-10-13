@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["pytilpack[quart]>=1.47.0"]
 # ///
 """install scriptのFILES一覧をagent-toolkit/rules/*.mdから自動生成する。"""
@@ -34,7 +34,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     for path, data, changed in outputs:
         if changed and not common.atomic_write_bytes(path, data, tag="install files"):
-            raise OSError(f"install scriptの書き込みに失敗: {path}")
+            raise OSError(
+                f"install scriptの書き込みに失敗: {path}。"
+                "書込権限と空き容量を確認して、uv run --frozen python scripts/gen_install_files.pyを再実行してください。"
+            )
     # 原子的書き込みは一時ファイルを生成して置き換えるため元ファイルの実行権限が失われる。
     # install-claude.shはshebangを持ちエンドユーザーがそのまま実行するファイルであり、
     # pre-commitのcheck-shebang-scripts-are-executableも実行権限を要求するため復元する。
@@ -83,7 +86,10 @@ def _encode_text(text: str, had_bom: bool, newline: str) -> bytes:
 def _replace_block(text: str, new_block: str, path: pathlib.Path) -> str:
     pattern = re.compile(rf"# {re.escape(_BEGIN)}.*?# {re.escape(_END)}", re.DOTALL)
     if not pattern.search(text):
-        raise SystemExit(f"marker not found in {path}")
+        raise SystemExit(
+            f"marker not found in {path}。「# {_BEGIN}」と「# {_END}」のマーカー行を元の位置へ復元し、"
+            "uv run --frozen python scripts/gen_install_files.pyを再実行してください。"
+        )
     return pattern.sub(new_block, text)
 
 

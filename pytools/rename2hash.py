@@ -59,7 +59,15 @@ def rename_to_hash(
         try:
             digest = _md5_of_file(file)
         except OSError as e:
-            logger.warning("%s: 読み込み失敗 (%s)", file, e)
+            logger.warning(
+                (
+                    "%s: 読み込み失敗 (%s)。"
+                    "このファイルを保持して続行します。"
+                    "読み取り権限と使用中のアプリを確認して再実行してください。"
+                ),
+                file,
+                e,
+            )
             continue
         new_name = f"{digest}{file.suffix}"
         new_path = file.with_name(new_name)

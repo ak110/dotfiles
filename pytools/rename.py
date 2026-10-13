@@ -77,7 +77,10 @@ def main() -> None:
             flags = re.IGNORECASE if args.ignore_case else 0
             rules.append(RenameRule(pattern=re.compile(pattern, flags=flags), replacement=replacement))
         if not rules:
-            parser.error("パターンファイルに有効なエントリがありません")
+            parser.error(
+                "パターンファイルに有効なエントリがありません。"
+                "UTF-8のTAB区切りで「正規表現<TAB>置換文字列」または「F/D<TAB>正規表現<TAB>置換文字列」の行を指定してください。"
+            )
         rename_tree(
             args.target_dir,
             rules,
@@ -124,7 +127,11 @@ def main() -> None:
             if not args.dry_run:
                 src_path.rename(dst_path)
         except OSError as e:
-            print(f"{src_path}: rename failed ({e})")
+            print(
+                f"{src_path}: rename failed ({e})。"
+                f"後続の処理は続行します。"
+                f"移動先の衝突・権限と使用中のアプリを確認して再実行してください。"
+            )
     sys.exit(0)
 
 
@@ -172,7 +179,14 @@ def load_pattern_file(path: pathlib.Path, *, ignore_case: bool = False) -> list[
                 )
             )
         else:
-            logger.warning("%s:%d: 書式が不正な行をスキップ", path, lineno)
+            logger.warning(
+                (
+                    "%s:%d: 書式が不正な行をスキップ。"
+                    "UTF-8のTAB区切りで「正規表現<TAB>置換文字列」または「F/D<TAB>正規表現<TAB>置換文字列」へ修正してください。"
+                ),
+                path,
+                lineno,
+            )
     return rules
 
 
@@ -240,19 +254,43 @@ def rename_tree(
             if new_name == path.name:
                 continue
             if not new_name:
-                logger.warning("置換後の名前が空になるためスキップ: %s", path)
+                logger.warning(
+                    (
+                        "置換後の名前が空になるためスキップ: %s。"
+                        "元の名前を保持します。"
+                        "改名が必要なら空にならない置換ルールへ修正して再実行してください。"
+                    ),
+                    path,
+                )
                 continue
             new_path = path.parent / new_name
             if enable_mkdir:
                 new_path.parent.mkdir(parents=True, exist_ok=True)
             if new_path.exists() and not overwrite:
-                logger.warning("既存のためスキップ: %s -> %s", path, new_path)
+                logger.warning(
+                    (
+                        "既存のためスキップ: %s -> %s。"
+                        "両方を保持します。"
+                        "内容を比較して衝突しない置換ルールへ修正してください。"
+                        "上書きしてよい場合だけ--overwriteを指定してください。"
+                    ),
+                    path,
+                    new_path,
+                )
                 continue
             print(f"{path.name} -> {new_name}")
             if not dry_run:
                 path.rename(new_path)
         except OSError as e:
-            logger.warning("%s: rename 失敗 (%s)", path, e)
+            logger.warning(
+                (
+                    "%s: rename 失敗 (%s)。"
+                    "後続の処理は続行します。"
+                    "移動先の衝突・権限と使用中のアプリを確認して再実行してください。"
+                ),
+                path,
+                e,
+            )
 
 
 if __name__ == "__main__":

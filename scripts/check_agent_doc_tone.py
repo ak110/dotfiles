@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["markdown-it-py>=4"]
 # ///
 r"""文体の密度と、説明に使用しない語の再使用を確認する。
@@ -175,7 +175,7 @@ def _markdown_fragments(text: str) -> Iterator[tuple[int, str]]:
             if token.info.strip() == "python":
                 try:
                     fragments = list(_python_fragments(token.content))
-                except (SyntaxError, tokenize.TokenError):
+                except SyntaxError, tokenize.TokenError:
                     # 部分的なコード例は単独のPythonとして成立しないため、記載された文を確認する。
                     fragments = list(_example_lines(token.content, 1))
                 yield from ((start + line - 1, fragment) for line, fragment in fragments)
@@ -748,7 +748,13 @@ def main(argv: list[str] | None = None) -> int:
         try:
             contents.append((path, path.read_text(encoding="utf-8")))
         except (OSError, UnicodeError) as error:
-            diagnostics.emit(path, 1, Severity.ERROR, f"入力を読み取れない: {error}。指定したファイルと文字コードを確認する。")
+            diagnostics.emit(
+                path,
+                1,
+                Severity.ERROR,
+                f"入力を読み取れない: {error}。指定したファイルの読取権限を確かめ、"
+                "文字コードの問題ならUTF-8で保存し直して同じコマンドを再実行する。",
+            )
             return 2
     metrics = [Metrics(path, text) for path, text in contents if path.suffix == ".md" and not _is_excluded(path)]
     if args.report:

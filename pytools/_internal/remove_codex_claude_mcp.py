@@ -14,7 +14,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """Claude MCP登録が存在すれば削除し、変更の有無を返す。"""
     codex = common.resolve_executable("codex")
     if codex is None:
-        logger.warning("codexコマンドが見つからないためClaude MCP登録を確認できません。手動で確認してください。")
+        logger.warning(
+            "codexコマンドが見つからないためClaude MCP登録を確認できません。"
+            "Codex導入後に手動で`codex mcp get claude`で登録を確認し、"
+            "残っていれば`codex mcp remove claude`を実行する。"
+        )
         return post_apply_outcome.PostApplyOutcome()
     result = common.run_subprocess(
         [str(codex), "mcp", "get", "claude", "--json"],
@@ -22,13 +26,19 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         tag="codex",
     )
     if result is None:
-        return post_apply_outcome.PostApplyOutcome(failure=f"Claude MCP登録の取得に失敗: {common.format_cli_error(result)}")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"Claude MCP登録の取得に失敗: {common.format_cli_error(result)}",
+            next_action="`codex mcp get claude`で登録を確認し、残っていれば`codex mcp remove claude`を実行する。",
+        )
     # 標準エラーは実行環境がNode.jsの警告などを付加し得る通路のため、完全一致では判定しない。
     # 終了コード1の条件は、無関係な失敗を未登録と誤判定しないために併せて維持する。
     if result.returncode == 1 and _NOT_FOUND_ERROR in (result.stderr or ""):
         return post_apply_outcome.PostApplyOutcome()
     if result.returncode != 0:
-        return post_apply_outcome.PostApplyOutcome(failure=f"Claude MCP登録の取得に失敗: {common.format_cli_error(result)}")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"Claude MCP登録の取得に失敗: {common.format_cli_error(result)}",
+            next_action="`codex mcp get claude`で登録を確認し、残っていれば`codex mcp remove claude`を実行する。",
+        )
 
     removal = common.run_subprocess(
         [str(codex), "mcp", "remove", "claude"],
@@ -36,5 +46,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         tag="codex",
     )
     if removal is None or removal.returncode != 0:
-        return post_apply_outcome.PostApplyOutcome(failure=f"Claude MCP登録の削除に失敗: {common.format_cli_error(removal)}")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"Claude MCP登録の削除に失敗: {common.format_cli_error(removal)}",
+            next_action="`codex mcp get claude`で登録を確認し、残っていれば`codex mcp remove claude`を実行する。",
+        )
     return post_apply_outcome.PostApplyOutcome(changed=True)

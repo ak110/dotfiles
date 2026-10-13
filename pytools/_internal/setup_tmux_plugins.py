@@ -21,7 +21,15 @@ _GIT_ORIGIN_BASE_ENV = "DOTFILES_TMUX_PLUGIN_ORIGIN_BASE"
 _GITHUB_PREFIX = "https://github.com/"
 
 
-def _effective_origin(plugin: "_Plugin") -> str:
+@dataclass(frozen=True)
+class _Plugin:
+    dest: Path
+    origin: str
+    pin: str
+    pin_is_tag: bool
+
+
+def _effective_origin(plugin: _Plugin) -> str:
     """テスト時に`origin`をローカルミラーへ差し替えるためのフック。
 
     環境変数`DOTFILES_TMUX_PLUGIN_ORIGIN_BASE`が設定されている場合、
@@ -33,14 +41,6 @@ def _effective_origin(plugin: "_Plugin") -> str:
         return plugin.origin
     suffix = plugin.origin.removeprefix(_GITHUB_PREFIX)
     return f"{base_override.rstrip('/')}/{suffix}"
-
-
-@dataclass(frozen=True)
-class _Plugin:
-    dest: Path
-    origin: str
-    pin: str
-    pin_is_tag: bool
 
 
 _PLUGINS: tuple[_Plugin, ...] = (
@@ -81,16 +81,18 @@ def _process_plugin(plugin: _Plugin) -> bool:
         logger.warning(
             log_format.format_status(
                 _TAG,
-                f"`.git`が無いためスキップ: {plugin.dest}",
-            )
+                f"`.git`が無いためスキップ: {plugin.dest}。"
+                "このディレクトリを別の場所へ退避して`update-dotfiles`を再実行すると再cloneされる",
+            ),
         )
         return False
     if not _origin_matches(plugin):
         logger.warning(
             log_format.format_status(
                 _TAG,
-                f"想定外の`origin`のためスキップ: {plugin.dest}",
-            )
+                f"想定外の`origin`のためスキップ: {plugin.dest}。"
+                "このディレクトリを別の場所へ退避して`update-dotfiles`を再実行すると再cloneされる",
+            ),
         )
         return False
     return _update(plugin)
@@ -112,7 +114,9 @@ def _clone(plugin: _Plugin) -> bool:
         tag=_TAG,
     )
     if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"clone失敗: {plugin.dest}"))
+        logger.warning(
+            log_format.format_status(_TAG, f"clone失敗: {plugin.dest}。`update-dotfiles`を再実行する"),
+        )
         return False
     logger.info(log_format.format_status(_TAG, f"clone: {plugin.dest} ({plugin.pin})"))
     return True
@@ -140,14 +144,24 @@ def _update_to_tag(plugin: _Plugin) -> bool:
         tag=_TAG,
     )
     if fetch is None or fetch.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"fetch失敗: {plugin.dest}: {common.format_cli_error(fetch)}"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                f"fetch失敗: {plugin.dest}: {common.format_cli_error(fetch)}。`update-dotfiles`を再実行する",
+            ),
+        )
         return False
     checkout = common.run_subprocess(
         ["git", "-C", str(plugin.dest), "checkout", "FETCH_HEAD"],
         tag=_TAG,
     )
     if checkout is None or checkout.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"checkout失敗: {plugin.dest}: {common.format_cli_error(checkout)}"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                f"checkout失敗: {plugin.dest}: {common.format_cli_error(checkout)}。`update-dotfiles`を再実行する",
+            ),
+        )
         return False
     logger.info(log_format.format_status(_TAG, f"更新: {plugin.dest} ({plugin.pin})"))
     return True
@@ -159,7 +173,12 @@ def _update_to_branch(plugin: _Plugin) -> bool:
         tag=_TAG,
     )
     if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"pull失敗: {plugin.dest}: {common.format_cli_error(result)}"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                f"pull失敗: {plugin.dest}: {common.format_cli_error(result)}。`update-dotfiles`を再実行する",
+            ),
+        )
         return False
     logger.info(log_format.format_status(_TAG, f"更新: {plugin.dest} ({plugin.pin})"))
     return True

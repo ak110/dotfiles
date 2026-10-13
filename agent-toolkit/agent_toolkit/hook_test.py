@@ -524,7 +524,6 @@ def _run_with_module_record(
     return result, set(record.read_text(encoding="utf-8").splitlines())
 
 
-@pytest.mark.skipif(sys.version_info < (3, 15), reason="遅延読み込みはPython 3.15以上だけが行う")
 class TestLazyDependencyLoading:
     """公開hookが処理分岐で使わない依存を読み込まず、遅延を無効化した場合と同じ応答を返すことを検証する。"""
 

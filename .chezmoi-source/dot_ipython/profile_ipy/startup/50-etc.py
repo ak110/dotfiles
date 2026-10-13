@@ -31,13 +31,13 @@ import joblib  # noqa
 try:
     import tensorflow as tf  # noqa
 except ImportError:
-    print("skip: import tensorflow as tf")
+    print("skip: import tensorflow as tf（対応不要: 他の初期化を続行します）")
 
 try:
     from bashplotlib.scatterplot import plot_scatter  # noqa
     from bashplotlib.histogram import plot_hist  # noqa
 except ImportError:
-    print("ImportError: bashplotlib")
+    print("ImportError: bashplotlib（対応不要: 他の初期化を続行します）")
 
 pytoolkit_home = os.environ.get("PYTOOLKIT_HOME")
 if pytoolkit_home is not None and pathlib.Path(pytoolkit_home).exists():
@@ -46,7 +46,7 @@ if pytoolkit_home is not None and pathlib.Path(pytoolkit_home).exists():
 try:
     import pytoolkit as tk  # noqa
 except ImportError:
-    print("skip: import pytoolkit as tk")
+    print("skip: import pytoolkit as tk（対応不要: 他の初期化を続行します）")
 del pytoolkit_home
 
 

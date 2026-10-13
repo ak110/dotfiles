@@ -25,7 +25,7 @@ _HIVES = {
 def main() -> None:
     """Windowsレジストリキーを.reg形式でエクスポートするエントリポイント。"""
     if sys.platform != "win32":
-        print("reg-export は Windows 専用です", file=sys.stderr)
+        print(("reg-export は Windows 専用です。対象レジストリがあるWindowsでregExportを実行してください。"), file=sys.stderr)
         sys.exit(1)
     parser = argparse.ArgumentParser(description="レジストリキーを .reg 形式でエクスポートする")
     parser.add_argument("key", help="例: HKCU\\Software\\MyApp")
@@ -52,7 +52,7 @@ def export_key(key_path: str) -> str:
     hive_alias, sub = key_path.split("\\", 1)
     hive_name = _HIVES.get(hive_alias.upper())
     if hive_name is None:
-        raise ValueError(f"未知のハイブ: {hive_alias}")
+        raise ValueError(f"未知のハイブ: {hive_alias}。{', '.join(_HIVES)}のいずれかを先頭に指定してください。")
     hive_constant = getattr(winreg, hive_name)
     lines = ["Windows Registry Editor Version 5.00", ""]
     _dump_key(winreg, hive_constant, sub, f"{hive_name}\\{sub}", lines)

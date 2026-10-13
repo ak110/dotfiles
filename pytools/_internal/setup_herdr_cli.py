@@ -84,15 +84,22 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
             env_overrides=env_overrides,
         )
         if reason:
-            logger.warning(log_format.format_status(_TAG, reason))
+            logger.warning(log_format.format_status(_TAG, f"{reason}。`update-dotfiles`を再実行する"))
             return post_apply_outcome.PostApplyOutcome()
     if result is None or (result.returncode != 0 and not update_deferred):
-        logger.warning(log_format.format_status(_TAG, f"導入または更新に失敗: {common.format_cli_error(result)}"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                f"導入または更新に失敗: {common.format_cli_error(result)}。`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     verification = common.run_subprocess([str(launcher), "--version"], timeout=30, tag=_TAG, env_overrides=env_overrides)
     if verification is None or verification.returncode != 0:
         detail = common.format_cli_error(verification)
-        logger.warning(log_format.format_status(_TAG, f"導入または更新後の確認に失敗: {detail}"))
+        logger.warning(
+            log_format.format_status(_TAG, f"導入または更新後の確認に失敗: {detail}。`update-dotfiles`を再実行する"),
+        )
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(launcher.parent)
     if update_deferred:
@@ -100,7 +107,7 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
             changed=False,
             notices=(
                 post_apply_outcome.PostApplyNotice(
-                    message="Herdrセッション内では自己更新できないため、更新を保留しました。",
+                    message="Herdrセッション内では自己更新できないため、更新を保留しました。セッションから離脱した後、Herdr外の端末で次のコマンドを実行する。",
                     command="herdr update",
                 ),
             ),

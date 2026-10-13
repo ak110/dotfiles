@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["pytilpack[quart]>=1.47.0"]
 # ///
 """Codex向けAGENTS.mdをベース記述とagent-toolkit rulesから生成する。"""
@@ -110,7 +110,10 @@ def sync(root: Path = REPO_ROOT) -> bool:
     if target.exists() and target.read_text(encoding="utf-8") == content:
         return False
     if not common.atomic_write_text(target, content, tag="codex agents"):
-        raise OSError(f"Codex AGENTS.mdの書き込みに失敗: {TARGET}")
+        raise OSError(
+            f"Codex AGENTS.mdの書き込みに失敗: {TARGET}。保存先の書込権限と空き容量を確認して、"
+            "uv run --frozen python scripts/sync_codex_agents.pyを再実行してください。"
+        )
     return True
 
 

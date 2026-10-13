@@ -42,8 +42,6 @@
 - `test-windows`ジョブ: Windows実機でのchezmoi適用、Windows固有のテストと公開ランチャー確認
 - `update-dotfiles-upgrade (windows)`ジョブ: Windows旧版からのupdate-dotfiles更新検証
 - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
-- `python-lint (3.13)`ジョブ: Python 3.13でのpytest
-- `pytest (3.14)`ジョブ: Python 3.14でのpytest
 - `pytest (3.15)`ジョブ: Python 3.15でのpytest
 - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検証
 - `browser-e2e`ジョブ: 実ブラウザーテスト（ローカルでは`make test-browser`）

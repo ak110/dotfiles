@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.15"
 # dependencies = ["filelock", "psutil", "platformdirs"]
 # ///
 """pytestの他スレッドを継承せず、端末テストを実行する専用プロセス。"""

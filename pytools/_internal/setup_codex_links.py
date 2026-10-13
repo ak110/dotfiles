@@ -29,7 +29,13 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """`~/.codex/`配下のリンクを冪等に生成する。リンクを作成できない場合は失敗と数える。"""
     dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
-        logger.info(log_format.format_status("codex links", "dotfiles ルートが見つからずスキップ"))
+        logger.info(
+            log_format.format_status(
+                "codex links",
+                "dotfiles ルートが見つからずスキップ。リンクが不要なら対応不要です。"
+                "リンクを使う場合はdotfilesの作業ツリー内でupdate-dotfilesを実行してください。",
+            )
+        )
         return post_apply_outcome.PostApplyOutcome()
 
     changed = False
@@ -44,13 +50,27 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             failures.append(f"通常ファイル／通常ディレクトリが存在するためリンクを作成できない: {dest}")
         except OSError as error:
             failures.append(f"パスの検査または同期に失敗: {dest}: {error}")
-    return post_apply_outcome.PostApplyOutcome(changed=changed, failure=" / ".join(failures) or None)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=changed,
+        failure=" / ".join(failures) or None,
+        next_action=(
+            "表示された配布先の通常ファイルやディレクトリを退避し、書込権限を確認してupdate-dotfilesを再実行してください。"
+            if failures
+            else None
+        ),
+    )
 
 
 def _process_link(dest: Path, target: Path) -> bool:
     """単一のリンクを処理し、新規作成または更新したら`True`を返す。"""
     if not target.exists():
-        logger.warning(log_format.format_status("codex links", f"配布元が存在しないためスキップ: {target}"))
+        logger.warning(
+            log_format.format_status(
+                "codex links",
+                f"配布元が存在しないためスキップ: {target}。リンクが不要なら対応不要です。"
+                "リンクを使う場合はupdate-dotfilesを再実行し、解消しない場合はこの配布元パスをdotfilesの作者へ報告してください。",
+            )
+        )
         return False
     changed = sync_directory_link(dest, target)
     if not changed:
@@ -79,9 +99,7 @@ def _is_link_like(path: Path) -> bool:
     """シンボリックリンクまたはディレクトリジャンクションかを判定する。"""
     if path.is_symlink():
         return True
-    # Path.is_junction() は Python 3.12 で追加された。
-    is_junction = getattr(path, "is_junction", None)
-    return bool(is_junction is not None and is_junction())
+    return path.is_junction()
 
 
 def _remove_link(path: Path) -> None:

@@ -42,8 +42,12 @@ def _do_dir(target_dir: pathlib.Path) -> None:
                 height_list.append(img.height)
                 with tqdm.tqdm.external_write_mode():
                     logger.info(f"{file.relative_to(target_dir)}: width={img.width} height={img.height}")
-        except Exception:
-            logger.info(f"{file.relative_to(target_dir)}: skip")
+        except Exception as exc:
+            logger.info(
+                f"{file.relative_to(target_dir)}: skip ({exc})。"
+                f"画像として読み込めないため集計から除外しました。"
+                f"対応不要（処理は継続した）。"
+            )
 
     width_list = np.array(width_list)
     height_list = np.array(height_list)

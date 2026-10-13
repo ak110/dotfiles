@@ -27,7 +27,10 @@ def create_app(token: str, send_key: Callable[[str], None] | None = None) -> qua
         # クエリ`?t=`はホーム画面追加用の初回URL、Cookie`mrt`はその後の常用経路。
         provided = quart.request.args.get("t") or quart.request.cookies.get(COOKIE_NAME)
         if provided != token:
-            return quart.Response("forbidden", status=401)
+            return quart.Response(
+                ("認証に失敗しました。Windows側でdotfiles-media-remote urlを実行し、表示されたURLを開いてください。"),
+                status=401,
+            )
         return None
 
     @app.get("/")

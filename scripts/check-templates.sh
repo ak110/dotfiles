@@ -11,7 +11,7 @@
 set -eu
 
 if ! command -v chezmoi >/dev/null 2>&1; then
-    echo "chezmoi not found, skipping template check" >&2
+    echo "chezmoiが見つからないためテンプレート検証を省略します。次の操作: mise use --global chezmoi@latestで導入し、scripts/check-templates.shを同じ対象へ再実行してください。" >&2
     exit 0
 fi
 
@@ -40,7 +40,7 @@ for file in "$@"; do
         --source="$source_dir" \
         --working-tree="$working_tree" \
         <"$file" >"$rendered" 2>"$errfile"; then
-        echo "FAIL [chezmoi template]: $file" >&2
+        echo "FAIL [chezmoi template]: $file。次の操作: この原本のテンプレート構文を修正し、scripts/check-templates.shを同じ対象へ再実行してください。" >&2
         cat "$errfile" >&2
         fail=1
         continue
@@ -50,7 +50,7 @@ for file in "$@"; do
     case "$file" in
     *.sh.tmpl)
         if ! bash -n "$rendered" 2>"$errfile"; then
-            echo "FAIL [bash -n]: $file" >&2
+            echo "FAIL [bash -n]: $file。次の操作: この原本のBash構文を修正し、scripts/check-templates.shを同じ対象へ再実行してください。" >&2
             cat "$errfile" >&2
             fail=1
             continue
@@ -58,7 +58,7 @@ for file in "$@"; do
         if command -v shellcheck >/dev/null 2>&1; then
             # 展開後ファイルはダミー変数による誤検出が生じやすいため WARN 扱いとする
             if ! shellcheck --severity=error "$rendered" 2>"$errfile"; then
-                echo "FAIL [shellcheck on rendered $file]:" >&2
+                echo "FAIL [shellcheck on rendered $file]: 次の操作: 以下のShellCheck診断を原本へ反映し、scripts/check-templates.shを同じ対象へ再実行してください。" >&2
                 cat "$errfile" >&2
                 fail=1
             fi
@@ -77,7 +77,7 @@ for file in "$@"; do
                         exit 1
                     }
                 " 2>"$errfile"; then
-                echo "FAIL [pwsh parse]: $file" >&2
+                echo "FAIL [pwsh parse]: $file。次の操作: この原本のPowerShell構文を修正し、scripts/check-templates.shを同じ対象へ再実行してください。" >&2
                 cat "$errfile" >&2
                 fail=1
             fi

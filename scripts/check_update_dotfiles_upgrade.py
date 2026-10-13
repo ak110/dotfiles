@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """約3日前のdotfilesから現行HEADへの実更新経路を隔離環境で検証する。"""
@@ -115,21 +115,30 @@ def _run(
     try:
         result = runner(command, cwd=cwd, env=env, check=False, capture_output=True, text=True, encoding="utf-8")
     except OSError as error:
-        raise UpgradeCheckError(f"子プロセスを起動できなかった: {command!r}: {error}") from error
+        raise UpgradeCheckError(
+            f"子プロセスを起動できなかった: {command!r}: {error}。"
+            "先頭の実行ファイルの導入状況・PATHと作業ディレクトリの権限を修正して検証を再実行する。"
+        ) from error
     if result.returncode == 0:
         return result
     if result.stdout:
         sys.stdout.write(result.stdout)
     if result.stderr:
         sys.stderr.write(result.stderr)
-    raise UpgradeCheckError(f"子プロセスが終了コード{result.returncode}で失敗した: {command!r}")
+    raise UpgradeCheckError(
+        f"子プロセスが終了コード{result.returncode}で失敗した: {command!r}。"
+        "直前の標準出力・標準エラーにあるGit・依存導入・chezmoi適用の問題を解消して検証を再実行する。"
+    )
 
 
 def _git_value(repo: pathlib.Path, *arguments: str, runner: Runner = subprocess.run) -> str:
     """Gitの標準出力を取得し、空値を拒否する。"""
     value = _run(("git", "-C", repo, *arguments), runner=runner).stdout.strip()
     if not value:
-        raise UpgradeCheckError(f"Gitが値を返さなかった: {arguments!r}")
+        raise UpgradeCheckError(
+            f"Gitが値を返さなかった: {arguments!r}。git logで対象commitと履歴を確認し、"
+            "浅いcloneならgit fetch --unshallowで履歴を取得して検証を再実行する。"
+        )
     return value
 
 
@@ -246,7 +255,10 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
 def verify_updated_oid(actual_oid: str, expected_oid: str) -> None:
     """更新後の完全OIDが検証開始時の現行OIDと一致することを確認する。"""
     if actual_oid != expected_oid:
-        raise UpgradeCheckError(f"更新後HEADが現行HEADと一致しない: expected={expected_oid} actual={actual_oid}")
+        raise UpgradeCheckError(
+            f"更新後HEADが現行HEADと一致しない: expected={expected_oid} actual={actual_oid}。"
+            "成功として扱わず、git pull工程のログと両commit IDを添えてdotfilesの作者へ報告する。"
+        )
 
 
 def create_local_remote(
@@ -341,7 +353,10 @@ def run_upgrade_check(
     current_oid = _git_value(source_repo, "rev-parse", "HEAD", runner=runner)
     old_oid = resolve_old_commit(source_repo, current_oid, runner=runner)
     if old_oid == current_oid:
-        raise UpgradeCheckError("72時間前以前の別commitを取得できなかった。履歴の全量取得を確認する。")
+        raise UpgradeCheckError(
+            "72時間前以前の別commitを取得できなかった。浅いcloneならgit fetch --unshallowで履歴を取得し、"
+            "git log --onelineで対象より72時間以上前の祖先があることを確認して検証を再実行する。"
+        )
     print(f"更新検証を開始する: old={old_oid} current={current_oid}")
 
     if platform_name == "windows" and registry is None:
@@ -386,7 +401,7 @@ def _leak_message(leaks: Sequence[pathlib.Path]) -> str:
         "書込主体として次の2つを確認する。\n"
         "  (1) 検証が起動した処理: どの環境変数から書込先を決めたかを調べ、`_isolated_env`で検証homeへ向ける。\n"
         "  (2) 検証と無関係なランナー側の常駐プロセスや予約タスク: 同じ実行者で動くため`_isolated_env`では解消しない。"
-        "`.github/workflows/ci.yaml`の`test-windows`などで、検証より前に発生源を止める。"
+        "`.github/workflows/ci.yaml`の`update-dotfiles-upgrade-windows`などで、検証より前に発生源を止める。"
     )
 
 
@@ -433,7 +448,12 @@ def main() -> int:
     try:
         run_upgrade_check(args.repo.resolve(), args.platform)
     except (OSError, ValueError, UpgradeCheckError) as error:
-        print(f"update-dotfiles旧版更新検証に失敗した: {error}", file=sys.stderr)
+        print(
+            f"update-dotfiles旧版更新検証に失敗した: {error}。上記の対処を行い、"
+            f'uv run --script scripts/check_update_dotfiles_upgrade.py --platform {args.platform} --repo "{args.repo}"'
+            "を再実行してください。解消しない場合はこの失敗ログをdotfilesの作者へ報告してください。",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

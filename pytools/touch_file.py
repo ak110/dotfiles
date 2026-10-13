@@ -93,7 +93,9 @@ def touch_path(path: pathlib.Path, time: datetime.datetime) -> None:
         for child in path.iterdir():
             touch_path(child, time)
     else:
-        logger.warning("対象が存在しません: %s", path)
+        logger.warning(
+            ("対象が存在しません: %s。スキップして続行します。更新が必要なら存在するパスを指定して再実行してください。"), path
+        )
 
 
 def _wait_keypress() -> None:

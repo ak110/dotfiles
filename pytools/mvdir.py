@@ -33,7 +33,14 @@ def _move_dir(src_dir, dest_dir):
                 p.rename(dest_dir / p.name)
             logger.info(p)
         except Exception:
-            logger.warning(f"Error: {p}", exc_info=True)
+            logger.warning(
+                (
+                    f"Error: {p}。"
+                    f"この項目をスキップして後続項目を処理します。"
+                    f"移動元と移動先の権限・使用中のアプリを確認して再実行してください。"
+                ),
+                exc_info=True,
+            )
     src_dir.rmdir()
 
 

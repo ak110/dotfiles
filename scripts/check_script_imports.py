@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検査する。
@@ -332,7 +332,14 @@ def _check_entry_script(entry_path: pathlib.Path, text: str, scripts_root: pathl
         try:
             tree = ast.parse(source, filename=str(source_path))
         except SyntaxError as exc:
-            problems.append(_problem(entry_path, source_path, f"構文解析に失敗: {exc}"))
+            problems.append(
+                _problem(
+                    entry_path,
+                    source_path,
+                    f"構文解析に失敗: {exc}。表示されたファイルのPython構文を修正し、"
+                    "uv run --frozen python scripts/check_script_imports.pyを再実行する。",
+                )
+            )
             continue
         imports[source_path] = _extract_imports(tree)
         for path in _inserted_search_paths(tree, source_path):
@@ -361,7 +368,13 @@ def _check_entry_script(entry_path: pathlib.Path, text: str, scripts_root: pathl
             if _resolved_files(reference, search_paths) is None:
                 unresolved.add((source_path, top_level))
     problems.extend(
-        _problem(entry_path, source_path, f"解決不能なimport `{top_level}`")
+        _problem(
+            entry_path,
+            source_path,
+            f"解決不能なimport `{top_level}`。外部依存なら起点のPEP 723 dependenciesへ追加し、"
+            "内部モジュールならimport先か探索パスを修正して"
+            "uv run --frozen python scripts/check_script_imports.pyを再実行する。",
+        )
         for source_path, top_level in sorted(unresolved, key=lambda item: (str(item[0]), item[1]))
     )
     return problems
@@ -399,9 +412,15 @@ def _check_agent_toolkit_layers() -> list[str]:
                 components = reference.name.split(".")
                 imported_layer = components[1] if components[0] == "agent_toolkit" and len(components) > 1 else components[0]
                 if imported_layer == "_testing" and not _is_test_support_module(source_path, scripts_root):
-                    problems.append(f"{_display_path(source_path)}: 非テストモジュールから`_testing`をimportしている")
+                    problems.append(
+                        f"{_display_path(source_path)}: 非テストモジュールから`_testing`をimportしている。"
+                        "本番でも使う部品を責務に合う本番のサブパッケージへ移し、その移動先からimportする。",
+                    )
                 elif imported_layer in order and layer in order and order[imported_layer] > order[layer]:
-                    problems.append(f"{_display_path(source_path)}: 層の順序に反して`{imported_layer}`をimportしている")
+                    problems.append(
+                        f"{_display_path(source_path)}: 層の順序に反して`{imported_layer}`をimportしている。"
+                        "双方が使う部品を前の層へ移し、呼出側のimportを移動先へそろえる。",
+                    )
     return problems
 
 
@@ -443,7 +462,10 @@ def _agent_toolkit_sources() -> tuple[list[_AgentToolkitSource], list[str]]:
             try:
                 tree = ast.parse(text, filename=str(path))
             except SyntaxError as exc:
-                problems.append(f"{_display_path(path)}: 構文解析に失敗: {exc}")
+                problems.append(
+                    f"{_display_path(path)}: 構文解析に失敗: {exc}。Python構文を修正し、"
+                    "uv run --frozen python scripts/check_script_imports.pyを再実行する。"
+                )
                 continue
             sources.append(_AgentToolkitSource(path, text, tree))
     return sources, problems
@@ -555,7 +577,10 @@ def _entry_layer_problems(source: _AgentToolkitSource) -> list[str]:
                 "次の操作: hook以外からも使う部品を前の層（`_common`など）へ移し、移動先からimportする"
             )
         elif components[1] == "_testing":
-            problems.append(f"{_display_path(source.path)}: 非テストモジュールから`_testing`をimportしている")
+            problems.append(
+                f"{_display_path(source.path)}: 非テストモジュールから`_testing`をimportしている。"
+                "本番でも使う部品を責務に合う本番のサブパッケージへ移し、その移動先からimportする。"
+            )
     return sorted(set(problems))
 
 
@@ -658,7 +683,11 @@ def _check_project_modules_have_no_pep723() -> list[str]:
         for path in sorted(root.rglob("*.py")):
             text = path.read_text(encoding="utf-8")
             if "# /// script" in text:
-                problems.append(f"{_display_path(path)}: uvプロジェクト配下にPEP 723宣言が残っている")
+                problems.append(
+                    f"{_display_path(path)}: uvプロジェクト配下にPEP 723宣言が残っている。"
+                    "`# /// script`から閉じる`# ///`までの宣言を削除し、"
+                    "uv run --frozen python scripts/check_script_imports.pyを再実行する。"
+                )
     return problems
 
 
@@ -702,15 +731,24 @@ def _check_project_scripts() -> list[str]:
         module, _sep, function = target.partition(":")
         module_file = _resolve_module_file(module)
         if module_file is None:
-            problems.append(f"[project.scripts] {name}: モジュールファイルが実在しない: {module}")
+            problems.append(
+                f"[project.scripts] {name}: モジュールファイルが実在しない: {module}。"
+                "pyproject.tomlの[project.scripts]で参照するmoduleを実在するモジュールへ修正して再検査する。"
+            )
             continue
         try:
             tree = ast.parse(module_file.read_text(encoding="utf-8"), filename=str(module_file))
         except SyntaxError as exc:
-            problems.append(f"[project.scripts] {name}: {module_file}の構文解析に失敗: {exc}")
+            problems.append(
+                f"[project.scripts] {name}: {module_file}の構文解析に失敗: {exc}。Python構文を修正し、"
+                "uv run --frozen python scripts/check_script_imports.pyを再実行する。"
+            )
             continue
         if function not in _top_level_bound_names(tree):
-            problems.append(f"[project.scripts] {name}: {module_file}に`{function}`の定義が見当たらない")
+            problems.append(
+                f"[project.scripts] {name}: {module_file}に`{function}`の定義が見当たらない。"
+                "pyproject.tomlの[project.scripts]で参照するfunctionを、定義または再exportされた関数へ修正して再検査する。"
+            )
     return problems
 
 

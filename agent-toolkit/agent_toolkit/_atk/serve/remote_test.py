@@ -79,6 +79,15 @@ def test_bootstrap_avoids_shell_metacharacters(bootstrap: str) -> None:
     assert not set(bootstrap) & set('"$%<>|&^\\')
 
 
+@pytest.mark.parametrize("bootstrap", [bootstrap for bootstrap, _ in _HELPERS])
+def test_remote_command_selects_supported_python(bootstrap: str) -> None:
+    """両ヘルパーのuv起動はシェルの特殊文字を使わずPython 3.15を指定する。"""
+    argv = serve_remote.remote_command_argv(bootstrap, "list", [])
+    index = argv.index("--python")
+    assert argv[index + 1] == "3.15"
+    assert not set(argv[index + 1]) & set("<>$%|&^")
+
+
 def _isolate_environment(home: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ホームディレクトリ・キャッシュ・PATHを一時ディレクトリへ隔離する。"""
     monkeypatch.setenv("HOME", str(home))

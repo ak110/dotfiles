@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["pytilpack[quart]>=1.47.0"]
 # ///
 """bash補完ファイル（`completions/_pytools.bash`・`agent-toolkit/completions/atk.bash`）を生成する。
@@ -93,7 +93,11 @@ def _write_if_changed(output: pathlib.Path, content: str, count: int) -> None:
     if output.exists() and output.read_text(encoding="utf-8") == content:
         return
     if not common.atomic_write_text(output, content, tag="bash completions"):
-        raise OSError(f"bash補完ファイルの書き込みに失敗: {output}")
+        raise OSError(
+            f"bash補完ファイルの書き込みに失敗: {output}。"
+            "保存先ディレクトリの書込権限と空き容量を確認して、"
+            "uv run --frozen python scripts/gen_completions.pyを再実行してください。"
+        )
     print(f"生成: {output.relative_to(_REPO_ROOT)} ({count}コマンド)")
 
 

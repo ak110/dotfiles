@@ -9,7 +9,7 @@
 set -eu
 
 if ! command -v pwsh >/dev/null 2>&1; then
-    echo "pwsh not found, skipping PSScriptAnalyzer" >&2
+    echo "pwshが見つからないためPSScriptAnalyzerを省略します。次の操作: Ubuntu/Debianではmake setup-pwshで導入し、scripts/run-psscriptanalyzer.shを同じ対象へ再実行してください。" >&2
     exit 0
 fi
 

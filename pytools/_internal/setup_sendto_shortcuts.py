@@ -36,7 +36,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """SendTo に対象ショートカットを冪等配置する。ショートカットを生成できない場合は失敗と数える。"""
     sendto_dir = _sendto_dir()
     if not sendto_dir.is_dir():
-        logger.info(log_format.format_status("SendTo", f"配置先が存在しません: {sendto_dir}"))
+        logger.info(
+            log_format.format_status(
+                "SendTo",
+                f"配置先が存在しません: {sendto_dir}。このWindowsフォルダーが無い環境では対応不要",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
 
     changed = False
@@ -46,7 +51,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         target = home / shortcut.target_relative
         lnk = sendto_dir / shortcut.lnk_name
         if not target.is_file():
-            logger.info(log_format.format_status("SendTo", f"ターゲット未配置のためスキップ: {target}"))
+            logger.info(
+                log_format.format_status(
+                    "SendTo",
+                    f"ターゲット未配置のためスキップ: {target}。`update-dotfiles`を再実行してpytoolsを導入する",
+                ),
+            )
             continue
         if _is_up_to_date(lnk, target):
             continue
@@ -55,7 +65,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             changed = True
         else:
             failures.append(f"ショートカット生成に失敗: {lnk}")
-    return post_apply_outcome.PostApplyOutcome(changed=changed, failure=" / ".join(failures) or None)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=changed,
+        failure=" / ".join(failures) or None,
+        next_action="問題を解消した後に`update-dotfiles`を再実行する。" if failures else None,
+    )
 
 
 def _sendto_dir() -> pathlib.Path:

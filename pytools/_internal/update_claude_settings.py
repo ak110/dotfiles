@@ -281,7 +281,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """Claude 設定ファイル 2 件をマージ更新する。書き込みの失敗と作業ツリーを解決できない場合は失敗と数える。"""
     dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
-        return post_apply_outcome.PostApplyOutcome(changed=False, failure="dotfilesの作業ツリーを解決できない")
+        return post_apply_outcome.PostApplyOutcome(
+            changed=False,
+            failure="dotfilesの作業ツリーを解決できない",
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
     managed_settings_path = dotfiles_root / _MANAGED_SETTINGS_RELATIVE
     overrides = _platform_overrides(managed_settings_path)
     changed_settings = update_claude_settings(
@@ -303,7 +307,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         if changed is None
     ]
     return post_apply_outcome.PostApplyOutcome(
-        changed=bool(changed_settings) or bool(changed_config), failure=" / ".join(failures) or None
+        changed=bool(changed_settings) or bool(changed_config),
+        failure=" / ".join(failures) or None,
+        next_action="問題を解消した後に`update-dotfiles`を再実行する。" if failures else None,
     )
 
 
@@ -747,7 +753,12 @@ def _warn_orphan_dotfiles_hook_commands(settings: dict, managed_path: Path) -> N
                     continue
                 # 配布原本に存在しないか確認
                 if command not in managed_commands:
-                    logger.warning(f"配布原本に存在しないフックコマンド（settings.json）: {command}")
+                    logger.warning(
+                        "配布原本に存在しないフックコマンド（settings.json）: "
+                        f"{command}。"
+                        "~/.claude/settings.jsonのhooksでこのコマンドの参照先を確認し、"
+                        "不要なら該当フックを削除する",
+                    )
 
 
 def _collect_hook_commands(data: dict, commands: set[str]) -> None:

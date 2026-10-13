@@ -78,14 +78,14 @@ def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:
     try:
         _, path = _validate_path_shape(pathlib.Path(path_arg))
         registry = _load_private_json(_registry_path(path))
-    except (OSError, ValueError, ManagedTempError):
+    except OSError, ValueError, ManagedTempError:
         return False
     if registry.get("path") != str(path) or os.path.lexists(path):
         return False
     if path.parent.exists():
         try:
             _validate_root(path.parent)
-        except (OSError, ValueError, ManagedTempError):
+        except OSError, ValueError, ManagedTempError:
             return False
     return True
 
@@ -117,7 +117,7 @@ def _entity_absence_is_confirmed(record: dict[str, typing.Any], path: pathlib.Pa
     try:
         root = _validate_root(path.parent)
         absent = _lstat_or_none(path) is None
-    except (OSError, ValueError, ManagedTempError):
+    except OSError, ValueError, ManagedTempError:
         return False
     return root.device == identity[0] and absent
 
@@ -302,7 +302,7 @@ def _marker_recovery_is_accepted(path_arg: pathlib.Path | str) -> bool:
                 os.close(directory_descriptor)
         else:
             marker = _load_private_json(path / _MARKER_NAME)
-    except (OSError, ManagedTempError):
+    except OSError, ManagedTempError:
         return False
     return _records_match(path, marker, marker, identity=identity)
 
@@ -493,7 +493,7 @@ def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
         return False
     try:
         first_line = git_path.read_text(encoding="utf-8").splitlines()[0]
-    except (OSError, UnicodeDecodeError, IndexError):
+    except OSError, UnicodeDecodeError, IndexError:
         # 内容を読めない場合は使用中かを判定できないため、削除せず残す側へ倒す。
         return True
     prefix = "gitdir:"
@@ -633,7 +633,7 @@ def _save_sweep_schedule(
     try:
         _write_private_json(temporary, value)
         os.replace(temporary, path)
-    except (OSError, ManagedTempError):
+    except OSError, ManagedTempError:
         with contextlib.suppress(OSError):
             temporary.unlink(missing_ok=True)
 
@@ -901,7 +901,7 @@ def _windows_reparse_entry(
         stored_target = os.readlink(path)
         target = _windows_stored_path(stored_target)
         root = _windows_stored_path(str(managed_root))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}") from None
     if not target.is_absolute() or not target.is_relative_to(root):
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}")
@@ -982,12 +982,7 @@ def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _Tre
                 ) from error
         if not attributes & stat.FILE_ATTRIBUTE_READONLY:
             raise error
-        # WindowsのPython 3.12の`os.chmod`は`follow_symlinks`を受け付けない。
-        # 対応版ではリンクを辿らず、非対応版では直前の通常ファイルとreparse pointの検証に委ねる。
-        if os.chmod in os.supports_follow_symlinks:
-            os.chmod(path, stat.S_IWRITE, follow_symlinks=False)
-        else:
-            os.chmod(path, stat.S_IWRITE)
+        os.chmod(path, stat.S_IWRITE, follow_symlinks=False)
         function(raw_path)
 
     shutil.rmtree(root, onexc=retry_readonly_file)

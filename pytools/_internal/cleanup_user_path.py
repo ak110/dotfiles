@@ -44,7 +44,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     try:
         system_value, _ = winutils.read_system_env_var("Path")
     except OSError as e:
-        return post_apply_outcome.PostApplyOutcome(failure=f"システム側 PATH の読み込みに失敗: {e}")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"システム側 PATH の読み込みに失敗: {e}",
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
 
     env_map = _collect_userprofile_env(os.environ)
 
@@ -67,15 +70,19 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         logger.warning(
             log_format.format_status(
                 _LOG_LABEL,
-                f"ユーザー PATH に存在しないエントリーを検出: {original} (展開: {expanded})",
-            )
+                f"ユーザー PATH に存在しないエントリーを検出: {original} "
+                f"(展開: {expanded})。"
+                "再導入の予定が無ければWindowsの「環境変数」でユーザーのPathからこのエントリーを削除する",
+            ),
         )
     for original, expanded, error in unresolved:
         logger.warning(
             log_format.format_status(
                 _LOG_LABEL,
-                f"ユーザー PATH のエントリーを検査できないため保持: {original} (展開: {expanded}): {error}",
-            )
+                "ユーザー PATH のエントリーを検査できないため保持: "
+                f"{original} (展開: {expanded}): {error}。"
+                "保持したため対応不要（処理は継続した）",
+            ),
         )
 
     # (4) 値型判定: 書き戻し値に % を含み、かつ既存が REG_SZ なら REG_EXPAND_SZ へ昇格する。
@@ -88,7 +95,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     try:
         winutils.write_user_env_var("Path", new_value, new_reg_type)
     except OSError as e:
-        return post_apply_outcome.PostApplyOutcome(failure=f"ユーザー PATH の書き込みに失敗: {e}")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"ユーザー PATH の書き込みに失敗: {e}",
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
     for original, new_entry in replacements:
         logger.info(log_format.format_status(_LOG_LABEL, f"ユーザー PATH を整理: {original} → {new_entry}"))
     for entry in removed:

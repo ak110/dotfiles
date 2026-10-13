@@ -92,7 +92,7 @@ def broadcast_environment_change() -> None:
             ctypes.byref(result),
         )
     except Exception as e:  # noqa: BLE001 -- 通知失敗は致命ではない
-        logger.info("環境変数変更のブロードキャストに失敗: %s", e)
+        logger.info("環境変数変更のブロードキャストに失敗: %s。変更を反映するため新しい端末を開き直す", e)
 
 
 def path_key(entry: str) -> str:

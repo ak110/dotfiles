@@ -43,7 +43,11 @@ def main() -> None:
             if not args.dry_run:
                 shutil.rmtree(path)
         except Exception as e:
-            print(f"{path}: rmtree failed ({e})")
+            print(
+                f"{path}: rmtree failed ({e})。"
+                f"後続の処理は続行します。"
+                f"残った内容と削除権限・使用中のアプリを確認して再実行してください。"
+            )
     sys.exit(0)
 
 

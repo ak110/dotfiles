@@ -68,11 +68,23 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     uv = common.resolve_uv_path()
     if uv is None:
-        logger.info(log_format.format_status("atk-serve", "uvが見つからないため設定を見送る"))
+        logger.info(
+            log_format.format_status(
+                "atk-serve",
+                "uvが見つからないため設定を見送る。"
+                "https://docs.astral.sh/uv/getting-started/installation/ の手順でuvを導入し、"
+                "`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     dotfiles = common.find_dotfiles_root()
     if dotfiles is None:
-        logger.info(log_format.format_status("atk-serve", "dotfilesルートが見つからないため設定を見送る"))
+        logger.info(
+            log_format.format_status(
+                "atk-serve",
+                "dotfilesルートが見つからないため設定を見送る。`update-dotfiles`を再実行して導入と設定をやり直す",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
 
     legacy_failure = _remove_legacy_unit()
@@ -97,7 +109,13 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         restart_needed=launcher_changed,
         journal_identifier="atk-serve-setup",
     )
-    return post_apply_outcome.PostApplyOutcome(changed=changed, failure=legacy_failure)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=changed,
+        failure=legacy_failure,
+        next_action=(
+            "`update-dotfiles`を再実行して旧unitの撤去とサービス設定をやり直す。" if legacy_failure is not None else None
+        ),
+    )
 
 
 def _remove_legacy_unit() -> str | None:

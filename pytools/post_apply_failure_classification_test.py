@@ -263,6 +263,11 @@ def _claude_settings_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     monkeypatch.setattr(common, "write_settings_hybrid", lambda *_args, **_kwargs: False)
 
 
+def _gemini_settings_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(common, "write_settings_hybrid", lambda *_args, **_kwargs: False)
+
+
 def _euryale_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     root = tmp_path / "dotfiles"
     manifest = root / "agent-toolkit" / ".claude-plugin" / "plugin.json"
@@ -358,6 +363,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "pyfltr MCPのuv環境ウォームアップ": [(_uvx_environment_build_fails, 0)],
     "旧Codex User scope MCP登録の移行": [(_legacy_codex_mcp_removal_fails, 1)],
     "Claude 設定": [(_claude_settings_write_fails, 1)],
+    "Gemini 設定": [(_gemini_settings_write_fails, 1)],
     "libarchive (Windows)": [(_libarchive_download_fails, 0)],
     "claude-statusline バイナリの取得": [(_statusline_build_fails, 0)],
     "atk serve 自動起動セットアップ (Linux)": [(_atk_serve_launcher_write_fails, 1)],
@@ -387,6 +393,7 @@ def test_failure_classification_per_step(
     name: str,
     simulation: _Simulation,
     exit_code: int,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """取得・導入の失敗はスキップで終了コード0、設定の書き換え・撤去の失敗は失敗で終了コード1になる。"""
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
@@ -404,6 +411,11 @@ def test_failure_classification_per_step(
     assert [failed["name"] for failed in failed_steps] == ([name] if exit_code else [])
     # 模した失敗とは別の不具合（属性の誤りなど）で失敗していないことを確かめる。
     assert not [failed for failed in failed_steps if (failed["reason"] or "").startswith(_PROGRAMMING_ERRORS)]
+    if failed_steps:
+        captured = capsys.readouterr()
+        assert "次の操作:" in captured.err
+        assert all(failed["reason"] and "失敗時の次の操作" not in failed["reason"] for failed in failed_steps)
+        assert "次の操作:" in (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
 
 
 def test_install_and_write_failures_in_one_step_are_classified_separately(

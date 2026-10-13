@@ -17,7 +17,7 @@ def _write_pep723_script(path: pathlib.Path, *, dependencies: list[str] | None =
     path.parent.mkdir(parents=True, exist_ok=True)
     deps = ", ".join(f'"{dep}"' for dep in (dependencies or []))
     header = (
-        f'#!/usr/bin/env -S uv run --script\n# /// script\n# requires-python = ">=3.12"\n# dependencies = [{deps}]\n# ///\n'
+        f'#!/usr/bin/env -S uv run --script\n# /// script\n# requires-python = ">=3.15"\n# dependencies = [{deps}]\n# ///\n'
     )
     path.write_text(f"{header}{body}\n", encoding="utf-8")
 

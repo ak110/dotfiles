@@ -11,7 +11,7 @@ if ($args.Count -eq 1 -and $args[0] -eq '--help') {
     exit 0
 }
 if ($args.Count -gt 0) {
-    [Console]::Error.WriteLine('受理できない引数: ' + ($args -join ' '))
+    [Console]::Error.WriteLine('引数は指定しないか-AutoElevatedまたは--helpを指定してください。受理できない引数: ' + ($args -join ' '))
     exit 2
 }
 
@@ -22,7 +22,7 @@ function Invoke-Native {
     )
     & $ScriptBlock
     if ($LASTEXITCODE -ne 0) {
-        throw ("{0} が失敗しました (exit={1})" -f $Description, $LASTEXITCODE)
+        throw ("{0} が失敗しました (exit={1})。次の操作: 管理者権限でoptimize-power-settingsを再実行し、再度失敗した場合は表示されたコマンドとエラーをhttps://github.com/ak110/dotfiles/issuesへ報告してください。" -f $Description, $LASTEXITCODE)
     }
 }
 
@@ -63,7 +63,7 @@ function Get-UsbSelectiveSuspendIndex {
     $setting = '48e6b7a6-50f5-4782-a5d4-53bb8f07e226'
     $output = & powercfg /query SCHEME_CURRENT $subgroup $setting 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
-        throw ("powercfg /query が失敗しました (exit={0})" -f $LASTEXITCODE)
+        throw ("powercfg /query が失敗しました (exit={0})。次の操作: 管理者権限の端末でpowercfg /queryを実行してエラーを確認し、optimize-power-settingsを再実行してください。" -f $LASTEXITCODE)
     }
     $matchList = [regex]::Matches($output, '0x([0-9a-fA-F]+)')
     return $matchList | ForEach-Object { [Convert]::ToInt32($_.Groups[1].Value, 16) }
@@ -110,7 +110,7 @@ function Disable-PerDeviceUsbPowerManagement {
             }
             catch {
                 $failureCount++
-                Write-Host ("per-device USB power management: レジストリ書き込み失敗 ({0}): {1}" -f $_.PSChildName, $_.Exception.Message)
+                Write-Host ("per-device USB power management: レジストリ書き込み失敗 ({0}): {1}。処理は継続します。次の操作: 表示されたUSBデバイスの権限を確認し、管理者権限でoptimize-power-settingsを再実行してください。" -f $_.PSChildName, $_.Exception.Message)
             }
         }
     }
@@ -134,13 +134,13 @@ function Disable-PerDeviceUsbPowerManagement {
             }
             catch {
                 $failureCount++
-                Write-Host ("per-device USB power management: WMI書き込み失敗 ({0}): {1}" -f $matched.FriendlyName, $_.Exception.Message)
+                Write-Host ("per-device USB power management: WMI書き込み失敗 ({0}): {1}。処理は継続します。次の操作: 表示されたUSBデバイスの状態を確認し、管理者権限でoptimize-power-settingsを再実行してください。" -f $matched.FriendlyName, $_.Exception.Message)
             }
         }
     }
     catch {
         $failureCount++
-        Write-Host ("per-device USB power management: WMI列挙失敗: {0}" -f $_.Exception.Message)
+        Write-Host ("per-device USB power management: WMI列挙失敗: {0}。処理は継続します。次の操作: 管理者権限の端末でGet-CimInstance -Namespace root/wmi -ClassName MSPower_DeviceEnableを実行して確認し、optimize-power-settingsを再実行してください。" -f $_.Exception.Message)
     }
 
     if ($writeCount -eq 0 -and $failureCount -eq 0) {
@@ -149,6 +149,9 @@ function Disable-PerDeviceUsbPowerManagement {
     else {
         Write-Host ("per-device USB power management: 書き込み {0} 件" -f $writeCount)
         Write-Host ("per-device USB power management: 失敗 {0} 件" -f $failureCount)
+        if ($failureCount -gt 0) {
+            Write-Host "次の操作: 上記のデバイスごとの失敗理由を確認し、管理者権限でoptimize-power-settingsを再実行してください。"
+        }
     }
 }
 
@@ -176,7 +179,7 @@ function Show-CurrentState {
 }
 
 if (-not (Test-IsAdministrator)) {
-    Write-Host "管理者権限が必要です。UAC で再起動します。"
+    Write-Host "管理者権限が必要です。UAC で再起動します。電源設定を変更する場合はUACを承認してください。キャンセルした場合は変更せず、管理者権限の端末からoptimize-power-settingsを再実行できます。"
     Invoke-SelfElevate
     exit 0
 }

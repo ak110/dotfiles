@@ -38,7 +38,9 @@
     "CLAUDE_CODE_SCROLL_SPEED": "3",
     "PLAYWRIGHT_MCP_OUTPUT_DIR": "__HOME__/.cache/playwright-mcp"
   },
+  "includeGitInstructions": false,
   "language": "japanese",
+  "outputStyle": "default",
   "permissions": {
     "allow": [
       "Bash",

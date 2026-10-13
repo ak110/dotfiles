@@ -109,7 +109,7 @@ _codex_plugin_state() {
     if ! plugin_json=$(codex plugin list --json); then
         return 1
     fi
-    uv run --no-config --no-project --python 3 python - "$CODEX_PLUGIN_ID" "$plugin_json" <<'PY'
+    uv run --no-config --no-project --python 3.15 python - "$CODEX_PLUGIN_ID" "$plugin_json" <<'PY'
 import json
 import sys
 
@@ -143,7 +143,7 @@ PY
 _codex_state_value() {
     local state="$1"
     local key="$2"
-    uv run --no-config --no-project --python 3 python - "$key" "$state" <<'PY'
+    uv run --no-config --no-project --python 3.15 python - "$key" "$state" <<'PY'
 import json
 import sys
 
@@ -160,7 +160,7 @@ _codex_expected_plugin_version() {
     if ! marketplace_json=$(codex plugin marketplace list --json); then
         return 1
     fi
-    uv run --no-config --no-project --python 3 python - "$marketplace_json" <<'PY'
+    uv run --no-config --no-project --python 3.15 python - "$marketplace_json" <<'PY'
 import json
 import pathlib
 import sys
@@ -270,7 +270,7 @@ _install_codex_plugin() {
 
 _claude_plugin_scripts() {
     [ -f "$CLAUDE_INSTALLED_PLUGINS" ] || return 0
-    uv run --no-config --no-project --python 3 python - "$CLAUDE_INSTALLED_PLUGINS" "$CODEX_PLUGIN_ID" <<'PY'
+    uv run --no-config --no-project --python 3.15 python - "$CLAUDE_INSTALLED_PLUGINS" "$CODEX_PLUGIN_ID" <<'PY'
 import json
 import pathlib
 import sys
@@ -341,7 +341,7 @@ _warm_agents_server() {
 
 _legacy_user_codex_mcp_status() {
     local config_path="$HOME/.claude.json"
-    uv run --no-config --no-project --python 3 python - "$config_path" <<'PY'
+    uv run --no-config --no-project --python 3.15 python - "$config_path" <<'PY'
 import json
 import pathlib
 import sys

@@ -110,7 +110,13 @@ def _run_model(
 ) -> int:
     command_bin = _resolve_command(command_name, home, resolve)
     if command_bin is None:
-        print(f"{command_name}コマンドが見つかりません。", file=sys.stderr)
+        print(
+            (
+                f"{command_name}コマンドが見つかりません。"
+                f"~/.local/binとPATHの導入先を確認し、update-dotfilesを再実行してください。"
+            ),
+            file=sys.stderr,
+        )
         return 127
 
     del which, isatty
@@ -118,7 +124,13 @@ def _run_model(
         try:
             os.execv(command_bin, [command_name, *model_args, *argv])
         except FileNotFoundError:
-            print(f"{command_name}コマンドが見つかりません。", file=sys.stderr)
+            print(
+                (
+                    f"{command_name}コマンドが見つかりません。"
+                    f"~/.local/binとPATHの導入先を確認し、update-dotfilesを再実行してください。"
+                ),
+                file=sys.stderr,
+            )
             return 127
     return run([command_bin, *model_args, *argv])
 

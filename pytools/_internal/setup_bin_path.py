@@ -53,4 +53,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if any_appended:
         # 追記時のみ環境変数変更をブロードキャストし、新規プロセスで即時反映させる。
         winutils.broadcast_environment_change()
-    return post_apply_outcome.PostApplyOutcome(changed=any_appended, failure=" / ".join(failures) or None)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=any_appended,
+        failure=" / ".join(failures) or None,
+        next_action="問題を解消した後に`update-dotfiles`を再実行する。" if failures else None,
+    )
