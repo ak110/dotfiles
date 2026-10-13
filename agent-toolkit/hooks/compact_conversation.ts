@@ -23,13 +23,8 @@ export const COMPACT_CONVERSATION_DELEGATED_DENY = "メインの会話で使う�
 export function register(on: On): void {
   // modはセッションごとに読み込まれる。予約中だけ状態を保持し、永続予約や解除入口は持たない。
   let pending = false;
-  on("tool.check", { tool: /__compact_conversation$/ }, ($, e, next) => {
-    if (e.tool !== `mcp__${$.plugin.name}__${TOOL_NAME}`) return next(e);
-    return e.agentId === undefined ? { decision: "allow" } : { decision: "deny", reason: "メインの会話で使うツール。" };
-  });
   on("tool.call", { tool: /__compact_conversation$/ }, ($, e, next) => {
     if (e.tool !== `mcp__${$.plugin.name}__${TOOL_NAME}`) return next(e);
-    if (e.agentId !== undefined) return { deny: "メインの会話で圧縮を予約する。" };
     if (pending) return { result: "未完了の圧縮予約があるため追加していない。現在のターンを終えてホストの結果を待つ。" };
     pending = true;
     // command.runはhook内で拒否されるため、hookが応答した後のタイマーから呼ぶ。

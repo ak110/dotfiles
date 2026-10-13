@@ -3,7 +3,7 @@ import type { On } from "claude-code";
 // Claude Codeは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIが返す要約（progress update）へ置き換えて表示する。
 // ツールの入力は要約されないため、ユーザーへ届ける本文をこのツールの`message`で運び、
 // 呼び出しの行を`message`の`Markdown`で描く。ツールの登録と表示を同じmoduleに置き、表示できる環境にだけツールが現れるようにする。
-// メイン用ツールであり、委譲先への登録と委譲先からの呼び出しは`register.ts`が除外する。
+// メイン用ツールであり、委譲先への登録と委譲先・サブエージェントからの呼び出しは`register.ts`が除外する。
 // 設計と不採用とした代替は`docs/development/design-hooks.md`「send_to_userツール」にある。
 
 const TOOL_NAME = "send_to_user";
@@ -40,15 +40,10 @@ export const SEND_TO_USER_TOOL = { name: TOOL_NAME, description: DESCRIPTION, in
 
 // 委譲先からの呼び出しへ`register.ts`が返す拒否の本文。表示済みとの応答を終端返却の代わりにさせない。
 export const SEND_TO_USER_DELEGATED_DENY =
-  "委譲先のセッションではユーザーの画面へ表示していない。委譲先の結果本文は委譲元へ返す必要があるため、" +
-  "このツールを使わず、報告する本文を全て終端の返却へ書く。";
+  "委譲先・サブエージェントからの呼び出しではユーザーの画面へ表示していない。結果本文は委譲元へ返す必要があるため、" +
+  "このツールを使わず、報告する本文を全て最終応答（終端の返却）へ書く。";
 
 export function register(on: On): void {
-  // 報告のたびに権限確認の画面が出ると作業が止まるため、このツールの呼び出しを許可する。
-  on("tool.check", ($, e, next) => (e.tool === fullName($.plugin.name) ? { decision: "allow" } : next(e))).catch(
-    ($, e, next) => next(e),
-  );
-
   // 判定が失敗した場合も他のツールの呼び出しを止めないよう、後続へ渡す。
   on("tool.call", ($, e, next) => {
     if (e.tool !== fullName($.plugin.name)) return next(e);

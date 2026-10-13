@@ -17,34 +17,34 @@ async function isDelegated($: EngineInterface): Promise<boolean> {
   return (await $.env.get("AGENT_TOOLKIT_DELEGATED_SESSION")) === "1" || Boolean(await $.env.get("AGENT_TOOLKIT_OWNER_SESSION"));
 }
 
-// メイン用ツールの名前と、委譲先からの呼び出しへ返す拒否の本文。委譲先の結果は画面ではなく委譲元へ返る。
-const MAIN_ONLY_TOOLS: Readonly<Record<string, string>> = {
-  [SEND_TO_USER_TOOL.name]: SEND_TO_USER_DELEGATED_DENY,
-  [COMPACT_CONVERSATION_TOOL.name]: COMPACT_CONVERSATION_DELEGATED_DENY,
-};
+// 登録と呼出主体の判定は同じ一覧を使う。ここへ追加したツールは全てメイン専用となり、
+// 各機能が登録条件やagentIdの判定を重ねる必要はない。
+const MAIN_ONLY_TOOLS = [
+  { tool: SEND_TO_USER_TOOL, deny: SEND_TO_USER_DELEGATED_DENY },
+  { tool: COMPACT_CONVERSATION_TOOL, deny: COMPACT_CONVERSATION_DELEGATED_DENY },
+] as const;
 
-function delegatedDeny(plugin: string, tool: string): string | undefined {
+function mainOnlyDeny(plugin: string, tool: string): string | undefined {
   const prefix = `mcp__${plugin}__`;
-  return tool.startsWith(prefix) ? MAIN_ONLY_TOOLS[tool.slice(prefix.length)] : undefined;
+  return tool.startsWith(prefix) ? MAIN_ONLY_TOOLS.find((entry) => entry.tool.name === tool.slice(prefix.length))?.deny : undefined;
 }
 
 export const register: Register = (on) => {
-  // 同じmoduleの同じイベントでは先に登録したhookが先に判定するため、メイン用ツールの各機能の許可より前に置く。
-  // 判定が失敗した場合は従来の各機能の判定へ渡し、メインの報告手段を止めない。
-  on("tool.check", { tool: /__(send_to_user|compact_conversation)$/ }, async ($, e, next) => {
-    const reason = delegatedDeny($.plugin.name, e.tool);
-    return reason !== undefined && (await isDelegated($)) ? { decision: "deny", reason } : next(e);
+  // ツール名のmatcherを別に列挙せず、登録一覧へ追加した全ツールに同じ判定を適用する。
+  on("tool.check", { tool: /^mcp__/ }, async ($, e, next) => {
+    const reason = mainOnlyDeny($.plugin.name, e.tool);
+    if (reason === undefined) return next(e);
+    return e.agentId !== undefined || (await isDelegated($)) ? { decision: "deny", reason } : { decision: "allow" };
   }).catch(($, e, next) => next(e));
-  on("tool.call", { tool: /__(send_to_user|compact_conversation)$/ }, async ($, e, next) => {
-    const reason = delegatedDeny($.plugin.name, e.tool);
-    return reason !== undefined && (await isDelegated($)) ? { deny: reason } : next(e);
+  on("tool.call", { tool: /^mcp__/ }, async ($, e, next) => {
+    const reason = mainOnlyDeny($.plugin.name, e.tool);
+    return reason !== undefined && (e.agentId !== undefined || (await isDelegated($))) ? { deny: reason } : next(e);
   }).catch(($, e, next) => next(e));
   on("session.start", async ($, e, next) => {
     // ツールは最初の発話より前に一覧へ載るよう、`next`より前に登録する。
-    // 両ツールはメイン用ツールであり、委譲先には登録しない。
+    // 登録一覧のツールはメイン用であり、委譲先には登録しない。
     if (!(await isDelegated($))) {
-      await $.tool.register(SEND_TO_USER_TOOL);
-      await $.tool.register(COMPACT_CONVERSATION_TOOL);
+      for (const { tool } of MAIN_ONLY_TOOLS) await $.tool.register(tool);
     }
     const result = await next(e);
     // `atk agents-exit-session`の終了要求を受け付ける準備ができたことを示す印を書き、前の要求を消費済みにする。

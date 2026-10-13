@@ -85,6 +85,15 @@ test("send_to_userの呼び出しは許可され、確認応答を返す", async
   expect(called.result).toBe("ユーザーの画面へ表示した。");
 });
 
+test("サブエージェントのsend_to_userは拒否し、結果本文を最終応答で委譲元へ返すよう案内する", async ($, on) => {
+  mock.env(on, {});
+  expect((await $.tool.check({ tool: TOOL, agentId: "child", input: { message: MESSAGE } })).decision).toBe("deny");
+  const called = await $.tool.call({ tool: TOOL, agentId: "child", message: MESSAGE });
+  expect(called.result).toBeUndefined();
+  expect(called.deny).toMatch("委譲元へ返す");
+  expect(called.deny).toMatch("最終応答");
+});
+
 test("send_to_userは文字列のmessageが無ければ表示済みと返さない", async ($, on) => {
   mock.env(on, {});
   for (const input of [{ text: MESSAGE }, {}, { message: null }, { message: 1 }, { message: {} }]) {
