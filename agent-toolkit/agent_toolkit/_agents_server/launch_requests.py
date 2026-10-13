@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import pathlib
@@ -211,6 +212,13 @@ def wrap_delivery_body(body: str) -> str:
     委譲先の解釈は`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」が定める。
     """
     return auto_message(body, source="agents-server", kind="delivery")
+
+
+def with_launcher_record(body: str, context: Mapping[str, Any]) -> str:
+    """taskの起動本文へ、サーバーが解決した直接の委譲元情報を添える。"""
+    notice = auto_message(json.dumps(dict(context), ensure_ascii=False), source="agents-server", kind="launcher-record")
+    source_line, separator, remainder = body.partition("\n")
+    return source_line + "\n\n" + notice + separator + remainder
 
 
 def _validate_required_prompt_inputs(

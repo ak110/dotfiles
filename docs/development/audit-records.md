@@ -637,6 +637,31 @@ pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Py
 - 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。全ツールの引数に説明が無い。`run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。`show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。説明の言語が日本語と英語で混在する。instructionsは未設定である
 - 仕様上の是正: 確定した該当なし。未確定として、workerプロセスからの結果JSONの読取に例外処理が無く、外部ツールがファイル記述子1へ直接書いた場合は汎用のエラー本文になる可能性がある（プロトコル違反ではない）。子プロセスの標準出力が常に取り込まれるかは確認していない
 
+## agent-toolkit/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日
+
+2026年10月13日、Claude Codeの公式リリースノートを`gh release view <タグ> -R anthropics/claude-code`で取得した。2つの版の変更項目は次のとおりである。
+
+```text
+v2.1.295: Changed MCP tool descriptions the model loads through tool search to be cut at 16,384 characters instead of 2,048
+v2.1.296: Changed the default limit on MCP tool descriptions sent up front and on MCP server instructions from 2,048 to 4,096 characters
+```
+
+取得元は[v2.1.295](https://github.com/anthropics/claude-code/releases/tag/v2.1.295)と[v2.1.296](https://github.com/anthropics/claude-code/releases/tag/v2.1.296)である。
+前掲の2026年10月2日の記録にある2,048文字は、Claude Code 2.1.286の時点の公式資料の観測であり、本記録はその値を置き換えずに新版の仕様を記録する。2026年10月11日の時点の公式MCPガイドには2,048文字の記述が残っていたため、版を特定したリリースノートを根拠とする。上限を変える`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`は2026年10月2日の公式資料の記述であり、新版での名称は再確認していない。引数の説明への適用は両リリースノートとも記していない。
+
+agents_serverは全説明とinstructionsを初期送信の4,096文字以内に保つ。検索後の16,384文字も同時に満たすため、検索の有無で説明を変えない。
+説明長とinstructions長は`agent-toolkit/agent_toolkit/_agents_server/tool_descriptions_test.py`の次の2件が確かめる。
+
+- `test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`
+- `test_lightweight_selection_reaches_instructions_and_mode_schema`
+
+説明の先頭4,096文字に`EXPLORE_CAPABILITIES`が届くことは次の2件が確かめる。
+
+- `launch_prompts_test.py::test_explore_capabilities_are_shared_with_public_schema`
+- `mcp_tools_test.py::test_public_start_schema_delivers_explore_capabilities`
+
+再検証は同じコマンドで後続版のリリースノートからMCPの説明とinstructionsの上限の変更項目を探し、公式MCPガイドの「For MCP server authors」と比べる。値が変わった場合は同書の「ホスト固有の条件」、`tool_descriptions.py`の`START_DESCRIPTION`直前のコメントと前記のテストを改める。
+
 ## agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 
 本表は2026年9月5日に実際に動かして確かめた結果である。次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つのサンプルファイルを作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`にかけた。
@@ -716,6 +741,13 @@ pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Py
 同日の追加読解では、API introductionのResponse FormatがHTTP状態とは別に`code`を確認する必要を説明し、v1の応答実装が数値の`code`、200の`OK`、401・404・503・500の失敗を分岐し、API応答のHTTP状態にも`code`を設定することを確認した。最終HTTP 200かつ数値のcode 200という採用条件を手順へ明示した。これは公式実装の読解であり、通信失敗や写真なしの実通信を新たに再現した記録ではない。
 
 再検証では前記原本のv1経路と応答生成を取得し、属性と版を比較する。通信を試す場合は公開投稿のURL・最終URL・HTTP状態・応答本文を保存し、最終HTTP 200と数値の`code` 200の両方、必要な`tweet`の属性の成立を確認してから画像URLをmanaged-tempへ取得する。HTTPだけの成功、codeの不一致・欠落・型の違い、通信とJSONの失敗、必要属性の欠落を未取得として区別する。成功応答で写真の一覧が空か写真媒体がない場合の「写真なし」と、写真の取得失敗も区別する。画像を実際に読んだホストと保存先を記録し、通信失敗の本文を画像や投稿の内容として扱わない。
+
+## docs/development/design-hooks.md：通知の整形と反復検出：2026年10月13日
+
+2026年10月13日、Claude Code 2.1.296の環境で公式の[Hooks reference](https://code.claude.com/docs/en/hooks)を取得した。「Common input fields」は`session_id`を現在のセッション識別子、`transcript_path`を会話のJSONへのパスとし、transcriptは非同期に書かれるため現在のturnの最新メッセージを含まない場合があると記す。「SessionStart」はmatcherを`startup`・`resume`（`--resume`、`--continue`、`/resume`）・`clear`・`compact`・`fork`とし、v2.1.214より前はforkしたセッションが`resume`を報告したと記す。
+`rules_context`はこの入力の`session_id`と`transcript_path`をClaude Codeのメインへの通知に使う。`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`が、会話ごと・切替ごとの入力と出力の対応と、managed-tempの作成失敗時の通知を確かめる。
+
+再検証は同じ資料の2節を取得して項目名とmatcherの値を比べ、制御したSessionStart入力をhook handlerへ渡して`additionalContext`の値を確かめる。項目名か値が変わった場合は`rules_context.py`の通知、`agent-toolkit/share/rules-main.claude-code.md`「自身の会話の記録」と同テストを改める。
 
 ## docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日
 

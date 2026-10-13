@@ -1,15 +1,123 @@
 """agent-toolkit/agent_toolkit/_hooks/agents_server_observations.py のテスト。"""
 
+import contextlib
+import io
 import json
+import os
 import pathlib
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import shared_layout
-from agent_toolkit._common import state_paths
-from agent_toolkit._hooks import agents_server_observations
+from agent_toolkit._agents_server import manager, mcp_tools, shared_layout, status_file
+from agent_toolkit._agents_server import state as server_state
+from agent_toolkit._common import atomic_file, session_state, state_paths
+from agent_toolkit._hooks import agents_server_observations, posttooluse, pretooluse
+from agent_toolkit._testing import agents_server_support
+
+
+class _WindowsAccessDenied(PermissionError):
+    """Windowsの`os.replace`が返すWinError 5と同じ識別値を持つ置換拒否。"""
+
+    winerror = 5
+
+
+class _RegisteredBackend(agents_server_support.FakeBackend):
+    """モデル出力を観測済みで、登録簿へ公開するsessionを返す。"""
+
+    async def start(self, *args: Any, **kwargs: Any) -> server_state.SessionState:
+        session = await super().start(*args, **kwargs)
+        session.model_output_observed = True
+        session.publish_registry = True
+        return session
+
+
+def _refuse_replace_into(monkeypatch: pytest.MonkeyPatch, destination: pathlib.Path) -> Callable[..., None]:
+    """指定先への置換だけを、Windowsの継続するアクセス拒否として共通保存の置換段階で失敗させ、元の置換を返す。"""
+    original = os.replace
+
+    def replace(source: Any, target: Any) -> None:
+        if pathlib.Path(target) != destination:
+            original(source, target)
+            return
+        error = _WindowsAccessDenied(13, "アクセスが拒否されました", str(source), None, str(target))
+        raise error
+
+    monkeypatch.setattr(atomic_file.os, "replace", replace)
+    return original
+
+
+def _hook(hook: Callable[[str], int], payload: dict[str, Any]) -> int:
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        return hook(json.dumps(payload, ensure_ascii=False))
+
+
+@pytest.mark.asyncio
+async def test_public_start_after_projection_failure_reaches_hook_records_and_send_message(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """表示保存に失敗した公開start応答から、PostToolUseが所有・cwd・待機登録を記録し、同じsessionへの追送が通る。"""
+    for key in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "observed-root")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("observed-root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    current = manager.AgentsServerManager(writer)
+    backend = _RegisteredBackend(current.sessions, "claude")
+    agents_server_support.install_backend(current, "claude", backend)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+    writer.activate()
+    writer.path.unlink(missing_ok=True)
+    original_replace = _refuse_replace_into(monkeypatch, writer.path)
+    tool_name = "mcp__plugin_agent-toolkit_agents_server__start"
+    start_input = {"mode": "delegate", "prompt": "処理", "cwd": str(tmp_path), "model_type": "claude:test/medium"}
+    try:
+        started = await mcp_tools.start(
+            mode="delegate", prompt=start_input["prompt"], cwd=str(tmp_path), model_type="claude:test/medium"
+        )
+        assert started["persistence_warnings"] and not writer.path.exists()
+        child = started["session_id"]
+        payload = {
+            "session_id": "observed-root",
+            "tool_name": tool_name,
+            "tool_use_id": "start-call",
+            "transcript_path": str(tmp_path / "transcript.jsonl"),
+            "cwd": str(tmp_path),
+            "tool_input": start_input,
+        }
+        assert _hook(pretooluse.main, payload) == 0
+        assert _hook(posttooluse.main, {**payload, "tool_response": {"structuredContent": started}}) == 0
+
+        recorded = session_state.read_state("observed-root")
+        assert agents_server_observations.session_cwd(recorded, child) == str(tmp_path)
+        record = agents_server_observations.session_record(recorded, child)
+        assert record is not None and record["owner_agent_id"] == "main" and record["pending_observation"] is True
+        assert agents_server_observations.pending_session_ids(recorded, "main") == [child]
+        assert (shared_layout.wait_targets_directory("observed-root", "root.json", tmp_path) / f"{child}.json").is_file()
+
+        send_input = {"session_id": child, "prompt": "続ける"}
+        send_payload = {
+            **payload,
+            "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
+            "tool_use_id": "send-call",
+            "tool_input": send_input,
+        }
+        assert _hook(pretooluse.main, send_payload) == 0
+        sent = await mcp_tools.send_message(child, "続ける")
+        assert sent["delivery"] == "steered" and backend.send_calls == 1
+        assert _hook(posttooluse.main, {**send_payload, "tool_response": {"structuredContent": sent}}) == 0
+        after_send = agents_server_observations.session_record(session_state.read_state("observed-root"), child)
+        assert after_send is not None and after_send["status"] == "running"
+        assert len(backend.start_calls) == 1
+    finally:
+        monkeypatch.setattr(atomic_file.os, "replace", original_replace)
+        await current.close()
 
 
 def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch: pytest.MonkeyPatch) -> None:

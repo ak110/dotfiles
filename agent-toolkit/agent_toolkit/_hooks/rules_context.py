@@ -198,6 +198,25 @@ def session_temp_notice(session_temp: pathlib.Path | str) -> str:
     )
 
 
+def _conversation_identity_notice(session_id: object, transcript_path: object) -> str:
+    """Claudeメイン自身の会話の所在を、SessionStartの入力値から通知する。"""
+    lines = [
+        f"この会話のセッションID: {session_id}"
+        if isinstance(session_id, str) and session_id
+        else "この会話のセッションID: 入力から取得できません。シェルのCLAUDE_CODE_SESSION_IDを使える場合はその値を使う。"
+    ]
+    if isinstance(transcript_path, str) and (
+        pathlib.PurePosixPath(transcript_path).is_absolute() or pathlib.PureWindowsPath(transcript_path).is_absolute()
+    ):
+        lines.append(f"この会話のtranscript: {transcript_path}")
+    else:
+        lines.append(
+            "この会話のtranscript: 絶対パスを入力から取得できません。特定済みIDをsession-review-evidenceの"
+            "--claude-session-idへ渡して記録を取得する。"
+        )
+    return "\n".join(lines)
+
+
 def _existing_session_temp(session_id: object) -> str | None:
     """SessionStartが作成済みのセッションのmanaged-tempを、新たに作成せずに解決する。
 
@@ -260,6 +279,9 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         delegated = is_delegated(os.environ)
         content = compose_session_start(source, delegated=delegated, host=host)
         session_id = payload.get("session_id")
+        if not delegated and host == "claude":
+            identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
+            content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:
             if source in _OPERATION_SKILL_RESET_SOURCES:
                 reset_main_operation_skill_ready(session_id)

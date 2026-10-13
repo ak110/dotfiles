@@ -15,8 +15,10 @@ from agent_toolkit._agents_server import (
     manager_wait,
     result_projection,
     state,
+    status_file,
     tool_names,
     unavailable_candidates,
+    wait_targets,
 )
 from agent_toolkit._agents_server.input_validation import (
     validate_cwd,
@@ -191,6 +193,23 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     launch_kind=launch_kind,
                     excluded_candidates=frozenset(excluded),
                 )
+            except backends.StartCandidateUnavailable as exc:
+                excluded[candidate] = exc.reason
+                unavailable_candidates.record_unavailable_candidate(
+                    model_type,
+                    launch_kind,
+                    candidate,
+                    exc.reason,
+                    now=datetime.datetime.now(datetime.UTC),
+                )
+                _LOG.warning(
+                    "モデル開始前の起動環境が成立しません: engine=%s model_type=%s launch_kind=%s reason=%s",
+                    engine,
+                    model_type,
+                    launch_kind,
+                    exc.reason,
+                )
+                continue
             except Exception as exc:
                 if not backend_type.START_FAILURE_EXCLUDES_CANDIDATE:
                     raise
@@ -206,11 +225,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             session.launcher_session_id = self._launcher_session_id()
             if session.status == "starting":
                 session.status = "running"
-                session.touch()
-                if self._status_writer is not None:
-                    self._status_writer.flush()
-            else:
-                session.touch()
+            self._save_started_session(session)
             await self._await_start_outcome(session)
             # 以後に過負荷で終端したturnは候補切替ではなく同じsessionの自動継続で扱う。
             session.availability_checked = True
@@ -247,9 +262,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 session.label = display_label
                 session.prompt = prompt
                 session.announced = True
-                session.touch()
-                if self._status_writer is not None:
-                    self._status_writer.flush()
+                persistence_warnings = self._save_started_session(session)
+                if persistence_warnings:
+                    response["persistence_warnings"] = persistence_warnings
                 _LOG.info(
                     "session_transition event=start session_id=%s writer=mcp-manager status=%s turn_seq=%d",
                     session.session_id,
@@ -269,9 +284,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
             unavailable_session.label = display_label
             unavailable_session.prompt = prompt
             unavailable_session.announced = True
-            unavailable_session.touch()
-            if self._status_writer is not None:
-                self._status_writer.flush()
+            persistence_warnings = self._save_started_session(unavailable_session)
+            if persistence_warnings:
+                unavailable_response["persistence_warnings"] = persistence_warnings
             _LOG.info(
                 "session_transition event=start session_id=%s writer=mcp-manager status=%s turn_seq=%d",
                 unavailable_session.session_id,
@@ -288,6 +303,45 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 "除外した候補は`excluded`の理由（CLIの導入・認証・利用上限など）を解消すると再び使える"
             ),
         )
+
+    def _save_started_session(self, session: SessionState) -> list[dict[str, str]]:
+        """開始済みの情報を公開し、補助保存の失敗をsession不在へ変換しない。"""
+        warnings: list[dict[str, str]] = []
+        try:
+            session.touch()
+        except OSError as error:
+            _LOG.exception("開始済みsessionの共有状態更新に失敗: session_id=%s", session.session_id)
+            warnings.append({"scope": "shared-state", "message": str(error)})
+        registration_error = session.publish_registration()
+        if registration_error is not None:
+            warnings.append({"scope": "registration", "message": registration_error})
+        writer = self._status_writer
+        if writer is None:
+            return warnings
+        saved = False
+        try:
+            writer.flush()
+            saved = True
+        except status_file.ProjectionWriteError as error:
+            warnings.append({"scope": "projection", "message": str(error)})
+        except OSError as error:
+            _LOG.exception(
+                "開始済みsessionの結果・共有状態保存に失敗: session_id=%s writer=%s", session.session_id, writer.path
+            )
+            warnings.append({"scope": "shared-state", "message": str(error)})
+        if session.announced and not saved:
+            # 正常時は既存の表示・hook登録を使い、表示へ届かない起動だけを同じ待機登録へ補う。
+            try:
+                wait_targets.retain_wait_targets(
+                    writer.root_session_id,
+                    writer.path.name,
+                    [session.session_id],
+                    writer.state_root,
+                )
+            except OSError as error:
+                _LOG.exception("開始済みsessionの待機登録に失敗: session_id=%s writer=%s", session.session_id, writer.path)
+                warnings.append({"scope": "wait-target", "message": str(error)})
+        return warnings
 
     async def _start_until_initialized(
         self,
@@ -718,10 +772,14 @@ class AgentsServerManager(manager_wait.ManagerWait):
             await asyncio.gather(*resume_tasks, return_exceptions=True)
         for backend in tuple(self._backends.values()):
             await backend.close()
-        self._publish_closed_sessions()
-        remove_terminal_listener(self._carry_over_unavailable_candidate)
-        remove_terminal_listener(self._record_pending_unobserved_child_sessions)
-        remove_lifecycle_listener(self._record_resources)
-        if self._status_writer is not None:
-            remove_touch_listener(self._status_writer.schedule)
-            self._status_writer.deactivate()
+        try:
+            self._publish_closed_sessions()
+        except status_file.ProjectionWriteError:
+            _LOG.exception("停止時の表示用状態保存に失敗しました。終端結果を保持して後始末を続けます")
+        finally:
+            remove_terminal_listener(self._carry_over_unavailable_candidate)
+            remove_terminal_listener(self._record_pending_unobserved_child_sessions)
+            remove_lifecycle_listener(self._record_resources)
+            if self._status_writer is not None:
+                remove_touch_listener(self._status_writer.schedule)
+                self._status_writer.deactivate()

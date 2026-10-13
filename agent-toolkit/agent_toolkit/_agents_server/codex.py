@@ -26,6 +26,7 @@ from typing import Any
 from agent_toolkit._agents_server import (
     codex_providers,
     compaction_metrics,  # pylint: disable=wrong-import-position
+    context_usage,
     engine_availability,
     result_projection,
     resume_waits,
@@ -60,6 +61,7 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import (
     codex_models,
     process_tree,  # pylint: disable=wrong-import-position
+    proxy_environment,
 )
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import host_homes as _host_homes
@@ -158,6 +160,14 @@ def _developer_instructions(launch_kind: LaunchKind) -> str:
 
 class AppServerError(session_errors.DelegateBackendError):
     """App Serverとの通信または要求検証に失敗した。"""
+
+
+class StartCandidateUnavailable(AppServerError):
+    """モデル開始前に確定し、資源を回収済みの候補不成立。"""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 class JsonRpcResponseError(AppServerError):
@@ -600,6 +610,7 @@ class AppServerManager:
                         _delegated_session.OWNER_SESSION_ENV: owner_session_id,
                         "AGENT_TOOLKIT_STATUS_HOST_SESSION": writer_session_id,
                     },
+                    "env_vars": list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES),
                     "default_tools_approval_mode": "approve",
                 }
             }
@@ -718,6 +729,8 @@ class AppServerManager:
         validate_prompt(prompt)
         validate_cwd(cwd)
         validate_model_effort(model, effort)
+        if launch_kind == "explore":
+            await self._probe_explore_sandbox(cwd)
         client = await self._ensure_client()
         selection = None
         if codex_providers.has_provider_configuration():
@@ -811,6 +824,50 @@ class AppServerManager:
                 await self._mark_failed(session, exc, retryable=False)
             return session
         return session
+
+    async def _probe_explore_sandbox(self, cwd: str) -> None:
+        """専用接続で読取専用コマンドを実行し、モデル開始前に接続を回収する。"""
+
+        async def ignore(_message: dict[str, Any]) -> None:
+            return None
+
+        client = JsonRpcProcess(ignore, ignore, root_session_id=self._root_session_id)
+        try:
+            async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                await client.start()
+                response = await client.request(
+                    "command/exec",
+                    {
+                        "command": [sys.executable, "-c", "pass"],
+                        "cwd": cwd,
+                        "sandboxPolicy": {"type": "readOnly"},
+                        "timeoutMs": 5000,
+                        "disableOutputCap": True,
+                    },
+                )
+        finally:
+            process = client.process
+            await client.close()
+            if process is not None and process.returncode is None:
+                raise AppServerError("explore sandbox probeのApp Server終了を確認できません")
+        exit_code = response.get("exitCode")
+        stderr = response.get("stderr")
+        stdout = response.get("stdout")
+        if (
+            isinstance(exit_code, bool)
+            or not isinstance(exit_code, int)
+            or not isinstance(stderr, str)
+            or not isinstance(stdout, str)
+        ):
+            raise AppServerError(f"command/exec returned an invalid sandbox probe response: {response}")
+        if exit_code == 0:
+            return
+        # 0.162.0で観測した単独実行の診断だけを分類し、モデルの自由本文は入力にしない。
+        if exit_code == 1 and any(
+            line.startswith("bwrap: No permissions to create a new namespace") for line in stderr.splitlines()
+        ):
+            raise StartCandidateUnavailable("exploreSandboxNamespaceDenied")
+        raise AppServerError(f"explore sandbox probe failed: exitCode={exit_code}; stderr={stderr}; stdout={stdout}")
 
     async def resume(
         self,
@@ -1389,6 +1446,18 @@ class AppServerManager:
         method = message.get("method")
         params = message.get("params")
         if not isinstance(method, str) or not isinstance(params, dict):
+            return
+        if method == "thread/tokenUsage/updated":
+            thread_id = params.get("threadId")
+            session = self.sessions.get(thread_id) if isinstance(thread_id, str) else None
+            if session is None or session.engine != "codex" or not session.turn_id or params.get("turnId") != session.turn_id:
+                return
+            usage = params.get("tokenUsage")
+            if not isinstance(usage, dict):
+                return
+            last = usage.get("last")
+            if isinstance(last, dict):
+                context_usage.record_context_usage(session, last.get("totalTokens"), usage.get("modelContextWindow"))
             return
         if method == "thread/closed":
             close_event = self._resume_close_events.get(_thread_id_from(params) or "")

@@ -23,6 +23,9 @@ from agent_toolkit._common.next_action import ActionableError
 CODEX_ENGINE = "codex"
 """Codexのengine名。モデルの一覧と`thread/read`はCodexのbackendだけが持つ。"""
 
+# backendからregistryへ逆依存させず、候補選択側へ同じ例外型を公開する。
+StartCandidateUnavailable = codex_backend.StartCandidateUnavailable
+
 
 class Backend(typing.Protocol):
     """engine別のbackendが満たす操作と性質。

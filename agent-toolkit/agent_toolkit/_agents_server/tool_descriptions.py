@@ -203,8 +203,9 @@ START_MODE_EXAMPLES = {
 }
 
 
-# Claude Codeはツール説明とserver instructionsを、設定を変えない状態で各2,048文字に切り詰める。
-# 観測と結果受領の手順を先頭に置き、modeの選び方は`mode`の引数説明へ置いて上限内に収める。
+# Claude Codeは初期送信のツール説明とserver instructionsを、設定を変えない状態で各4,096文字に切り詰める
+# （ツール検索で後から読む説明は16,384文字）。初期送信の上限内に収め、観測と結果受領の手順を先頭に置く。
+# modeの選び方は`mode`の引数説明へ置く。
 START_DESCRIPTION = "\n".join(
     (
         "委譲先sessionを開始し、`mode`で入力と起動条件を選ぶ。",
@@ -242,6 +243,7 @@ START_DESCRIPTION = "\n".join(
         "応答は`session_id`・`status`・担当名の`label`と、保持時の`root_session_id`。"
         "起動不能候補を除外して次を試す。切替時だけ除外候補と根拠、採用した`engine`・`model`・`effort`を加える。"
         "全候補が可用性かagyのturn失敗で終端すれば最後の終端応答を返す。"
-        "最後のagy候補のbackend開始例外は除外理由付きの例外で返す。起動条件の詳細は`show`で取得する。",
+        "最後のagy候補のbackend開始例外は除外理由付きの例外で返す。起動条件の詳細は`show`で取得する。"
+        "開始後の登録・保存が失敗した場合は`persistence_warnings`と、同じ`session_id`で続ける`next_action`を加える。",
     )
 )

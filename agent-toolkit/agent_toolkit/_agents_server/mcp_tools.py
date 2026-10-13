@@ -14,6 +14,7 @@ from pydantic import Field
 
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import (
+    launch_requests,
     logging_config,
     result_projection,
 )
@@ -120,6 +121,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         assert subagent_md_path is not None
         params = extra_params or {}
         task_model_type, task_usage, task_prompt, launch_kind, handoff_path = task_document_request(subagent_md_path, params)
+        task_prompt = launch_requests.with_launcher_record(task_prompt, _MANAGER.launcher_record_context())
         response = await _MANAGER.start(
             model_type or task_model_type,
             task_prompt,

@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 use crate::render::{
     display_width, format_elapsed, normalize_description, render_line, DEFAULT_COLUMNS,
 };
+use crate::subagent::format_tokens;
 
 const STATE_VERSION: u64 = 1;
 const HEARTBEAT_EXPIRY_SECONDS: i64 = 120;
@@ -42,6 +43,8 @@ struct Session {
     label: String,
     started_at: String,
     api_error: Option<ApiError>,
+    context_tokens: Option<Value>,
+    context_window: Option<Value>,
 }
 
 #[derive(Debug)]
@@ -249,6 +252,8 @@ fn parse_session(value: &Value) -> Option<Session> {
         label: required_string(object, "label")?,
         started_at: required_string(object, "started_at")?,
         api_error: object.get("api_error").and_then(parse_api_error),
+        context_tokens: object.get("context_tokens").cloned(),
+        context_window: object.get("context_window").cloned(),
     };
     DateTime::parse_from_rfc3339(&session.started_at).ok()?;
     Some(session)
@@ -342,6 +347,10 @@ pub(crate) fn render_state_files(
                 item.session.last_action.clone()
             };
             let mut right_parts = Vec::new();
+            let tokens = format_tokens(
+                item.session.context_tokens.as_ref(),
+                item.session.context_window.as_ref(),
+            );
             if let Some(usage_limit) = usage_limit {
                 let now_value = Value::String(now.to_rfc3339());
                 let remaining = usage_limit
@@ -372,8 +381,16 @@ pub(crate) fn render_state_files(
                 if let Some(elapsed) = format_elapsed(Some(&started_at), now) {
                     right_parts.push(elapsed);
                 }
+                if let Some(tokens) = tokens.as_ref() {
+                    right_parts.push(tokens.clone());
+                }
                 if !item.session.status.is_empty() {
                     right_parts.push(item.session.status.clone());
+                }
+            }
+            if api_error.is_some() {
+                if let Some(tokens) = tokens {
+                    right_parts.push(tokens);
                 }
             }
             render_line(
@@ -389,16 +406,36 @@ pub(crate) fn render_state_files(
 
 fn flatten_sessions(files: &[StateFile]) -> Vec<DisplaySession<'_>> {
     let mut used = vec![false; files.len()];
+    let mut attached = HashSet::new();
     let mut output = Vec::new();
     if let Some(root_index) = files
         .iter()
         .position(|file| file.file_name == "root.json" && file.host_session_id.is_none())
     {
-        append_file_sessions(root_index, 0, files, &mut used, &mut output);
+        append_file_sessions(root_index, 0, files, &mut used, &mut attached, &mut output);
+    }
+    let identifiers = files
+        .iter()
+        .flat_map(|file| {
+            file.sessions
+                .iter()
+                .map(|session| session.session_id.as_str())
+        })
+        .collect::<HashSet<_>>();
+    for (index, file) in files.iter().enumerate() {
+        if !used[index]
+            && file
+                .host_session_id
+                .as_deref()
+                .map_or(true, |host| !identifiers.contains(host))
+        {
+            let depth = usize::from(file.host_session_id.is_some());
+            append_file_sessions(index, depth, files, &mut used, &mut attached, &mut output);
+        }
     }
     for index in 0..files.len() {
         if !used[index] {
-            append_file_sessions(index, 1, files, &mut used, &mut output);
+            append_file_sessions(index, 1, files, &mut used, &mut attached, &mut output);
         }
     }
     output
@@ -409,6 +446,7 @@ fn append_file_sessions<'a>(
     depth: usize,
     files: &'a [StateFile],
     used: &mut [bool],
+    attached: &mut HashSet<String>,
     output: &mut Vec<DisplaySession<'a>>,
 ) {
     if used[file_index] {
@@ -418,6 +456,9 @@ fn append_file_sessions<'a>(
     let mut sessions = files[file_index].sessions.iter().collect::<Vec<_>>();
     sessions.sort_by(|left, right| left.started_at.cmp(&right.started_at));
     for session in sessions {
+        if !attached.insert(session.session_id.clone()) {
+            continue;
+        }
         output.push(DisplaySession { session, depth });
         let child_indexes = files
             .iter()
@@ -428,7 +469,7 @@ fn append_file_sessions<'a>(
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
         for child_index in child_indexes {
-            append_file_sessions(child_index, depth + 1, files, used, output);
+            append_file_sessions(child_index, depth + 1, files, used, attached, output);
         }
     }
 }
@@ -704,6 +745,104 @@ mod tests {
     }
 
     #[test]
+    fn shared_context_usage_examples_reach_all_rendered_statuses() {
+        let contract = serde_json::from_str::<Value>(STATE_CONTRACT).unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+        for case in contract["context_usage_cases"].as_array().unwrap() {
+            for status in ["running", "completed", "failed", "interrupted"] {
+                let mut row = status_session("usage", status, "2025-12-31T23:58:55+00:00");
+                row["context_tokens"] = case["tokens"].clone();
+                row["context_window"] = case["window"].clone();
+                let file = state_file("root.json", Value::Null, serde_json::json!([row]));
+                let lines = render_state_files(&[file], 160, now);
+                if let Some(expected) = case["formatted"].as_str() {
+                    assert!(
+                        lines[0].ends_with(&format!("1m5s · {expected} · {status}")),
+                        "{lines:?}"
+                    );
+                } else {
+                    assert!(lines[0].ends_with(&format!("1m5s · {status}")), "{lines:?}");
+                }
+            }
+        }
+        for error_type in ["rate_limit_error", "usage_limit"] {
+            let mut row = status_session("retry", "running", "2025-12-31T23:58:55+00:00");
+            row["context_tokens"] = serde_json::json!(53500);
+            row["context_window"] = serde_json::json!(1000000);
+            row["api_error"] = serde_json::json!({
+                "type": error_type, "http_status": 429,
+                "first_at": "2025-12-31T23:59:00+00:00", "count": 2,
+                "limit_type": "seven_day", "resets_at": "2026-01-01T01:00:00+00:00"
+            });
+            for width in [40, 80, 140] {
+                let file = state_file("root.json", Value::Null, serde_json::json!([row.clone()]));
+                let lines = render_state_files(&[file], width, now);
+                assert!(display_width(&lines[0]) <= width);
+                if width >= 80 {
+                    assert!(lines[0].ends_with("53.5k/5%"), "{lines:?}");
+                    assert!(
+                        lines[0].contains(if error_type == "usage_limit" {
+                            "解除まで"
+                        } else {
+                            "HTTP 429"
+                        }),
+                        "{lines:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_tree_fixture_uses_parent_ids_for_orphan_subtrees() {
+        let contract = serde_json::from_str::<Value>(STATE_CONTRACT).unwrap();
+        let files = contract["tree_files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| {
+                let rows = file["session_ids"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|id| {
+                        status_session(id.as_str().unwrap(), "running", "2025-12-31T23:59:00+00:00")
+                    })
+                    .collect::<Vec<_>>();
+                state_file(
+                    file["file_name"].as_str().unwrap(),
+                    file["host_session_id"].clone(),
+                    serde_json::json!(rows),
+                )
+            })
+            .collect::<Vec<_>>();
+        let displayed = flatten_sessions(&files);
+        assert_eq!(
+            displayed
+                .iter()
+                .map(|item| item.session.session_id.as_str())
+                .collect::<Vec<_>>(),
+            contract["tree_order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|id| id.as_str().unwrap())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            displayed.iter().map(|item| item.depth).collect::<Vec<_>>(),
+            contract["tree_depths"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|depth| depth.as_u64().unwrap() as usize)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn state_directory_resolves_only_alias_with_existing_target() {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -910,8 +1049,10 @@ mod tests {
             "count": 3,
         });
         let mut recovered = retrying.clone();
+        recovered["session_id"] = Value::String("recovered".to_string());
         recovered.as_object_mut().unwrap().remove("api_error");
         let mut overloaded = retrying.clone();
+        overloaded["session_id"] = Value::String("overloaded".to_string());
         overloaded["engine"] = Value::String("codex".to_string());
         overloaded["api_error"] = serde_json::json!({
             "type": "serverOverloaded",
@@ -920,8 +1061,10 @@ mod tests {
             "count": 2,
         });
         let mut terminal = retrying.clone();
+        terminal["session_id"] = Value::String("terminal".to_string());
         terminal["status"] = Value::String("completed".to_string());
         let mut malformed = retrying.clone();
+        malformed["session_id"] = Value::String("malformed".to_string());
         malformed["api_error"]["count"] = Value::String("3".to_string());
         let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
             .unwrap()
@@ -990,6 +1133,7 @@ mod tests {
             "resets_at": "2026-01-01T02:05:00+00:00",
         });
         let mut unknown_reset = waiting.clone();
+        unknown_reset["session_id"] = Value::String("unknown-reset".to_string());
         unknown_reset["api_error"]["limit_type"] = Value::String("five_hour".to_string());
         unknown_reset["api_error"]
             .as_object_mut()

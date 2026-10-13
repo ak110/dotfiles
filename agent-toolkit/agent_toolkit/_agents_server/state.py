@@ -299,6 +299,9 @@ class SessionState:
     updated_at: str = dataclasses.field(default_factory=utc_now)
     output_updated_at: str | None = None
     api_error: dict[str, Any] | None = None
+    # 累計課金量ではなく最新モデル文脈の観測値。未知は0で補完しない。
+    context_tokens: int | float | None = None
+    context_window: int | float | None = None
     # backend資源の解放期限。未回収の終端結果はこの期限を過ぎても保持する。
     retention_deadline: float | None = None
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
@@ -446,9 +449,32 @@ class SessionState:
         if event is not None:
             for lifecycle_listener in tuple(_LIFECYCLE_LISTENERS):
                 lifecycle_listener(self, event)
-        # 再開ではbackendが再生成したsessionを公開した後に起動情報を写すため、起動情報の変化でも公開し直す。
+        self.publish_registration()
+        if not registry_terminal:
+            self._terminal_notified = False
+        elif not self._terminal_notified:
+            self._terminal_notified = True
+            _LOG.info(
+                "session_transition event=terminal session_id=%s writer=state status=%s turn_seq=%d",
+                self.session_id,
+                self.status,
+                self.turn_seq,
+            )
+            for terminal_listener in tuple(_TERMINAL_LISTENERS):
+                terminal_listener(self)
+        for listener in tuple(_TOUCH_LISTENERS):
+            listener()
+
+    def publish_registration(self) -> str | None:
+        """登録簿を更新し、保存不成立でも開始済みのsessionと通知を失わせない。
+
+        成功した値だけを公開済みとして覚えるため、次の状態更新・flushでも保存を再試行できる。
+        この操作だけでは活動時刻を進めない。
+        """
+        registry_terminal = self.result_available
+        # 再開ではbackendの初回公開の後に起動情報を写すため、その変化でも更新する。
         launch_info = session_registry.LaunchInfo.of(self)
-        if (
+        if not (
             self.publish_registry
             and not self.result_delivered
             and (
@@ -461,6 +487,8 @@ class SessionState:
                 or self.executor_process != self._published_registry_executor
             )
         ):
+            return None
+        try:
             session_registry.publish(
                 self.session_id,
                 terminal=registry_terminal,
@@ -484,27 +512,17 @@ class SessionState:
                 status=typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
                 launcher_session_id=self.launcher_session_id,
             )
-            self._published_registry_launcher = self.launcher_session_id
-            self._published_registry_terminal = registry_terminal
-            self._published_registry_turn_seq = self.turn_seq
-            self._published_registry_status = self.status
-            self._published_registry_fast_mode = self.fast_mode
-            self._published_registry_launch_info = launch_info
-            self._published_registry_executor = self.executor_process
-        if not registry_terminal:
-            self._terminal_notified = False
-        elif not self._terminal_notified:
-            self._terminal_notified = True
-            _LOG.info(
-                "session_transition event=terminal session_id=%s writer=state status=%s turn_seq=%d",
-                self.session_id,
-                self.status,
-                self.turn_seq,
-            )
-            for terminal_listener in tuple(_TERMINAL_LISTENERS):
-                terminal_listener(self)
-        for listener in tuple(_TOUCH_LISTENERS):
-            listener()
+        except OSError as error:
+            _LOG.exception("session登録の保存に失敗しました: session_id=%s cwd=%s", self.session_id, self.cwd)
+            return str(error)
+        self._published_registry_launcher = self.launcher_session_id
+        self._published_registry_terminal = registry_terminal
+        self._published_registry_turn_seq = self.turn_seq
+        self._published_registry_status = self.status
+        self._published_registry_fast_mode = self.fast_mode
+        self._published_registry_launch_info = launch_info
+        self._published_registry_executor = self.executor_process
+        return None
 
     def public_status(self, *, include_result: bool = False) -> dict[str, Any]:
         """waitとkillが消費する状態を公開契約へ射影する。"""
@@ -553,6 +571,8 @@ class SessionResumeState:
     started_at: str | None = dataclasses.field(default_factory=utc_now)
     updated_at: str | None = dataclasses.field(default_factory=utc_now)
     output_updated_at: str | None = None
+    context_tokens: int | float | None = None
+    context_window: int | float | None = None
     turn_seq: int = 0
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
     status: str = ""
@@ -574,6 +594,8 @@ class SessionResumeState:
             started_at=session.started_at,
             updated_at=session.updated_at,
             output_updated_at=session.output_updated_at,
+            context_tokens=session.context_tokens,
+            context_window=session.context_window,
             turn_seq=session.turn_seq,
             excluded_candidates=session.excluded_candidates,
             model=session.model,

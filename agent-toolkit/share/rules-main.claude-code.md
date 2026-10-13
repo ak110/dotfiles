@@ -9,6 +9,12 @@
 - Windows版Claude CodeのBashツールは引用符付きheredocや単一引用符内でもコマンド中の`\\`を`\`へ縮めるため、エスケープ表記を含むコードはWriteツールでmanaged-tempの中のファイルへ保存してから実行する。
 - ユーザーへ届ける本文（途中報告、質問への回答、確認結果、判明した事実や原因、作業完了報告、振り返りの予告など）は`mcp__agent-toolkit__send_to_user`の`message`へ書く。拡張思考は表示を観測できず、地の文はAPIが要約へ置き換えることがあるため、送達として扱わない。確認質問は次節の`AskUserQuestion`を使う。Function hooks moduleの登録名は`send_to_user`、モデルから呼ぶ完全名は`mcp__agent-toolkit__send_to_user`であり、遅延ツール一覧にだけある場合はToolSearchへ`select:<完全名>`を渡して取得してから呼ぶ。ツールが提供されない環境では、ターンを終える応答の本文へ届ける内容を書く。委譲先への入力や記録へ「回答済み」と書けるのは、この送達手段で伝えた回答に限る。
 
+## 自身の会話の記録
+
+- 自身の会話のセッションIDとtranscriptの絶対パスは、SessionStartの通知にある「この会話のセッションID」「この会話のtranscript」の値を使う。会話圧縮・再開・clear・forkの後は新しく届いた値を使う。同じプロジェクトの記録の更新時刻順、cwdから推測したファイル名、MCPの`root_session_id`、委譲先のsession識別子では代用しない（別の会話の記録を選ぶため）。
+- 通知が取得できないと示した値は、Bash・PowerShellの`CLAUDE_CODE_SESSION_ID`で得るか、特定済みのIDを`atk run-script session-review-evidence -- --claude-session-id <ID>`へ渡して記録を解決する。
+- 委譲先へ自身の会話を証拠として渡す場合はこの値を使う。過去の会話と委譲先の記録は、対象として指定された識別子で取得する。
+
 ## ユーザー確認（`AskUserQuestion`）
 
 - `AskUserQuestion`を呼ぶ前に、`agent-toolkit:user-confirmation-and-report`の読込表の`references/approval-scope.md`と`references/choice-construction.md`を全文読む（会話圧縮の後は読み直す）。各質問へ同スキル「確認要否の判定」を適用し、確認を要しない質問は発行せず、自ら確定した案と根拠を発話本文で報告する。

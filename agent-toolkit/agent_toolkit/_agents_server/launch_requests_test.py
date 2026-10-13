@@ -11,7 +11,7 @@ import logging
 import pathlib
 import re
 import shutil
-from types import SimpleNamespace
+from types import SimpleNamespace as _SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -45,6 +45,14 @@ from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+class TaskManager(_SimpleNamespace):
+    """起動入力を記録する代役にも、taskが読む直接親の取得契約を持たせる。"""
+
+    def launcher_record_context(self) -> dict[str, str]:
+        """起動入力を比較する試験では、記録未解決の状態を明示する。"""
+        return {"status": "unresolved"}
 
 
 @pytest.mark.parametrize("placement", ["root-version", "ancestor-version", "checkout"])
@@ -126,7 +134,7 @@ async def test_start_rejects_prompt_missing_required_input(
         called = True
         return {"session_id": "session", "status": "running", "label": "担当"}
 
-    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(start=fake_start))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=fake_start))
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with pytest.raises(ValueError, match=rf"目的.*{re.escape(str(task_document))}"):
@@ -149,7 +157,7 @@ async def test_start_accepts_exec_review_prompt_with_documented_input_names(
         called = True
         return {"session_id": "session", "status": "running", "label": "担当"}
 
-    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(start=fake_start))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=fake_start))
     extra_params = _observed_input_params(task_document.name, tmp_path)
 
     response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
@@ -165,7 +173,7 @@ async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPat
     受理すると、`<役割名>.subagent.md`が定める手順を委譲元が委譲プロンプトへ書き足して起動できてしまう。
     """
     task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path) | {"追加指示": "検証はpytestで行う"}
 
@@ -197,7 +205,7 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
     tmp_path: pathlib.Path,
 ) -> None:
     """`<役割名>.subagent.md`の指定と入力名の誤りは、正しい渡し方か自由本文の`delegate`への切替を次の操作で示す。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     path = str(launch_requests._SHARE_DIRECTORY / document) if document == "exec.subagent.md" else document
 
@@ -219,7 +227,7 @@ async def test_start_resolves_role_name_to_own_plugin_root(
     委譲プロンプトの1行目の出所が別のrootを指すと、委譲元と委譲先が別の版の文書を使う。
     """
     task_document = (launch_requests._SHARE_DIRECTORY / "add-wi.subagent.md").resolve()
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     subagent_md_path = "add-wi" if form == "role-name" else str(task_document)
 
@@ -256,7 +264,7 @@ async def test_start_rejects_unresolvable_role_name_with_accepted_roles(
 
     受理すると、`share/`直下の外の文書や作業ディレクトリ相対の文書を委譲先へ渡せてしまう。
     """
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
     with pytest.raises(ValueError) as raised:
@@ -278,7 +286,7 @@ async def test_start_reports_missing_model_type_mapping_as_defect(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """工程別設定の対応が無い`<役割名>.subagent.md`は、欠陥の報告と自由本文の`delegate`への切替を次の操作で示す。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     monkeypatch.delitem(launch_requests._TASK_MODEL_TYPES, "exec.subagent.md")
 
@@ -297,7 +305,7 @@ async def test_start_reports_missing_model_type_mapping_as_defect(
 async def test_start_accepts_declared_optional_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """必須・任意入力名だけの`start`は起動し、委譲プロンプトは`入力:`見出しを持ち`追加指示:`を持たない。"""
     task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path) | {"環境構築": "完了済み"}
 
@@ -314,7 +322,7 @@ async def test_start_accepts_declared_optional_inputs(monkeypatch: pytest.Monkey
 async def test_start_rejects_removed_wait_exception_input(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """待機と再開の方針はサーバーが伝えるため、委譲元が渡す`待機表明の例外`は宣言外の入力として拒否する。"""
     task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
-    manager = SimpleNamespace(start=AsyncMock())
+    manager = TaskManager(start=AsyncMock())
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path) | {"待機表明の例外": "適用する"}
 
@@ -328,7 +336,7 @@ async def test_start_rejects_removed_wait_exception_input(monkeypatch: pytest.Mo
 async def test_start_rejects_removed_last_pushed_commit_input(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """終端担当はpush済みの範囲をベースbranchの追跡refから得るため、撤去した`直前にpushしたcommit`は宣言外の入力として拒否する。"""
     task_document = launch_requests._SHARE_DIRECTORY / "session-termination.subagent.md"
-    manager = SimpleNamespace(start=AsyncMock())
+    manager = TaskManager(start=AsyncMock())
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path) | {"直前にpushしたcommit": "abc1234"}
 
@@ -396,7 +404,7 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
 @pytest.mark.asyncio
 async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`mode:`行の無い`<役割名>.subagent.md`は通常委譲で起動し、不正な値は宣言を読めない扱いで通常委譲とする。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     task_document = _write_declared_task_document(tmp_path, "必須入力名: 対象\n任意入力名: 補足")
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "high_tier")
@@ -413,7 +421,7 @@ async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`mode:`へ改める前の`起動種別:`行を持つ旧形式の`<役割名>.subagent.md`も同じ値で読む。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     current = _write_declared_task_document(tmp_path / "current", "必須入力名: 対象\nmode: explore")
     legacy = _write_declared_task_document(tmp_path / "legacy", "必須入力名: 対象\n起動種別: explore")
@@ -455,7 +463,7 @@ async def test_reader_fit_public_start_accepts_declared_review_inputs(
 ) -> None:
     """親が渡す初回・再レビューの入力をstartで受理し、宣言外入力だけを拒否する。"""
     task = launch_requests._SHARE_DIRECTORY / "reader-fit-review.subagent.md"
-    manager = SimpleNamespace(
+    manager = TaskManager(
         start=AsyncMock(return_value={"session_id": "reader", "status": "running", "label": "reader-fit-review"})
     )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -481,9 +489,7 @@ async def test_exec_review_public_start_accepts_previous_revision(
 ) -> None:
     """引き継ぎ再レビューの比較元を宣言済み入力として委譲プロンプトへ配送する。"""
     task = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
-    manager = SimpleNamespace(
-        start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "exec-review"})
-    )
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "exec-review"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     params = {
         **_observed_input_params(task.name, tmp_path),
@@ -506,7 +512,7 @@ async def test_public_start_uses_high_tier_model(
     工程別モデルの対応が欠けると`start`が起動を拒否し、段位を誤ると調査を上位モデルで行えない。
     """
     task_document = launch_requests._SHARE_DIRECTORY / task_name
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path)
 
@@ -574,7 +580,7 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
         prompts.append(prompt)
         return {"session_id": "session", "status": "running", "label": "担当"}
 
-    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(start=fake_start))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=fake_start))
 
     response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
@@ -598,7 +604,7 @@ async def test_start_keeps_given_handoff_path_and_rejects_other_missing_inputs(
         prompts.append(prompt)
         return {"session_id": "session", "status": "running", "label": "担当"}
 
-    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(start=fake_start))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=fake_start))
 
     response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
@@ -627,7 +633,7 @@ async def test_start_warns_and_continues_without_required_input_marker(
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         return {"session_id": "session", "status": "running", "label": "担当"}
 
-    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(start=fake_start))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=fake_start))
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with caplog.at_level(logging.WARNING, logger="agent-toolkit.agents-server.mcp"):
@@ -714,7 +720,7 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         return {"status": "running"}
 
-    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(start=fake_start))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=fake_start))
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
     with pytest.raises(ValueError) as exc_info:
@@ -738,7 +744,7 @@ async def test_start_accepts_task_document_path_with_spaces(
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document.parent.mkdir()
     task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
@@ -763,7 +769,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document.parent.mkdir()
     task_document.write_text("手順: `${CLAUDE_PLUGIN_ROOT}/share/other.parent.md`を読む。\n", encoding="utf-8")
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "high_tier")
 
@@ -798,7 +804,7 @@ async def test_start_rejects_task_document_that_cannot_be_read(
             raise OSError("read failed")
         return original_read_text(path, encoding=encoding, errors=errors)
 
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "high_tier")

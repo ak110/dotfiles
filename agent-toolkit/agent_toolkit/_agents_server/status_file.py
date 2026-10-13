@@ -12,7 +12,7 @@ import logging
 import pathlib
 from typing import Any
 
-from agent_toolkit._agents_server import status_reader
+from agent_toolkit._agents_server import context_usage, status_reader
 from agent_toolkit._agents_server.notice_inbox import take_notices
 from agent_toolkit._agents_server.retained_results import read_retained_result, take_result
 from agent_toolkit._agents_server.shared_layout import (
@@ -64,6 +64,10 @@ def normalize_label(value: str) -> str:
     """依頼本文またはコマンドの最初の空でない行を表示用に正規化する。"""
     line = next((line for line in value.splitlines() if line.strip()), "")
     return " ".join(line.split())[:200]
+
+
+class ProjectionWriteError(OSError):
+    """終端結果の保存と区別する、表示用状態ファイルの置換不成立。"""
 
 
 class StatusFileWriter:
@@ -147,7 +151,17 @@ class StatusFileWriter:
         if not self._active or self._flush_handle is not None:
             return
         loop = asyncio.get_running_loop()
-        self._flush_handle = loop.call_later(self._aggregate_seconds, self.flush)
+        self._flush_handle = loop.call_later(self._aggregate_seconds, self._flush_scheduled)
+
+    def _flush_scheduled(self) -> None:
+        try:
+            self.flush()
+        except OSError:
+            _LOG.exception(
+                "予約した共有状態の保存に失敗しました。次の状態更新またはheartbeatで再試行します: writer=%s sessions=%s",
+                self._path,
+                sorted(self._sessions),
+            )
 
     def flush(self) -> None:
         """表示対象sessionをJSONへ射影して原子的に全置換する。"""
@@ -156,6 +170,8 @@ class StatusFileWriter:
         self._flush_handle = None
         self._remove_stale_status_files()
         now = asyncio.get_running_loop().time()
+        for session in self._sessions.values():
+            session.publish_registration()
         self._write_terminal_results()
         # 稼働中の子孫を持つsessionは、自身の結果回収と表示期限によらず祖先の行として残す。
         # 結果の再公開や期限の延長はせず、子孫の終端後の次回flushで通常の判定へ戻る。
@@ -188,7 +204,11 @@ class StatusFileWriter:
             "updated_at": _updated_at(visible),
             "sessions": [_serialize_session(session) for session in visible],
         }
-        atomic_write(self._path, json.dumps(payload, ensure_ascii=False) + "\n")
+        try:
+            atomic_write(self._path, json.dumps(payload, ensure_ascii=False) + "\n")
+        except OSError as error:
+            _LOG.exception("表示用状態の保存に失敗しました: writer=%s sessions=%s", self._path, sorted(self._sessions))
+            raise ProjectionWriteError(str(error)) from error
         self._schedule_retention(visible, now)
 
     def deactivate(self) -> None:
@@ -392,7 +412,7 @@ class StatusFileWriter:
         ]
         self._retention_handle = None
         if deadlines:
-            self._retention_handle = asyncio.get_running_loop().call_at(min(deadlines), self.flush)
+            self._retention_handle = asyncio.get_running_loop().call_at(min(deadlines), self._flush_scheduled)
 
 
 def _live_descendant_hosts(directory: pathlib.Path, own_path: pathlib.Path) -> set[str]:
@@ -488,6 +508,7 @@ def _serialize_retained_session(session: SessionState | SessionResumeState) -> d
         "started_at": session.started_at,
         "updated_at": session.updated_at,
         "output_updated_at": session.output_updated_at,
+        **context_usage.fields(session.context_tokens, session.context_window),
     }
 
 

@@ -146,7 +146,7 @@ JSONの最上位は`{"wi_conditions": [...], "user_requirements": [...]}`とす�
 
 失効への更新では一覧にある現行`source`を選択値とし、前記の判断の所在を`new_source`（直接引数では`--row-source`）へ渡す。不採用の根拠を説明ファイルへ記入して同時に保存し、更新後の一覧と返却前確認で判断の所在と根拠を確かめる。
 
-会話の証拠には、受領した対象発話の逐語内容とメイン自身のセッションIDまたはthread IDを使う。出所は必要時に`atk run-script session-review-evidence -- --claude-session-id <受領したID> --user-events`か`--codex-thread-id <受領したID> --user-events`で確定する。同文反復は受領した時点・文脈と元の記録位置で区別する。取得済みの出所は再抽出せず、`atk run-script session-review-evidence -- --user-events-file <元の保存ファイルの絶対パス> --user-event-at <record>:<line>`で全欄を読む。構造化確認では質問・全選択肢・選択回答・自由記述の対応を保ち、ユーザー由来の判断は回答と自由記述から確定する。取得不能・不一致・一意に特定できない入力では証拠を確定せず、具体的な不足を委譲元へ返す。
+会話の証拠には、受領した対象発話の逐語内容とメイン自身のセッションIDまたはthread IDを使う。メインはClaude Codeでは自身の値を`rules-main.claude-code.md`「自身の会話の記録」の取得元から渡し、担当は受領した値を自身の識別子やrootの識別子へ置き換えない。出所は必要時に`atk run-script session-review-evidence -- --claude-session-id <受領したID> --user-events`か`--codex-thread-id <受領したID> --user-events`で確定する。同文反復は受領した時点・文脈と元の記録位置で区別する。取得済みの出所は再抽出せず、`atk run-script session-review-evidence -- --user-events-file <元の保存ファイルの絶対パス> --user-event-at <record>:<line>`で全欄を読む。構造化確認では質問・全選択肢・選択回答・自由記述の対応を保ち、ユーザー由来の判断は回答と自由記述から確定する。取得不能・不一致・一意に特定できない入力では証拠を確定せず、具体的な不足を委譲元へ返す。
 
 ## 統合時の完成条件判定
 

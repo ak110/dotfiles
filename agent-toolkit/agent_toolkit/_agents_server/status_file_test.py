@@ -13,22 +13,31 @@ import typing
 
 import pytest
 
-from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import (
+    logging_config,
+    mcp_tools,
     retained_results,
     shared_layout,
     shared_roots,
     state,
 )
+from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import status_file as subject
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._testing.agents_server_support import install_backend
+from agent_toolkit._common import atomic_file, state_paths
+from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
 
 
 async def _wait_now(manager: server_manager.AgentsServerManager) -> dict[str, typing.Any]:
     """待機せずに現在の終端状態を返すwaitを発行する。"""
     manager._wait_timeouts["main"] = 0.0  # pylint: disable=protected-access
     return await manager.wait()
+
+
+class _WindowsAccessDenied(PermissionError):
+    """Windowsの`os.replace`が返すWinError 5と同じ識別値を持つ置換拒否。"""
+
+    winerror = 5
 
 
 @pytest.mark.asyncio
@@ -975,3 +984,149 @@ class _DelayedUnavailableStatusBackend(_FakeStatusBackend):
 
     async def close(self) -> None:
         await asyncio.gather(*self._pending)
+
+
+class _ReplaceRefusal:
+    """指定先への置換だけを、Windowsの継続するアクセス拒否として共通保存の置換段階で失敗させる。"""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, destination: pathlib.Path) -> None:
+        self.destination = destination
+        self.active = True
+        self._original = os.replace
+        monkeypatch.setattr(atomic_file.os, "replace", self._replace)
+
+    def _replace(self, source: typing.Any, target: typing.Any) -> None:
+        if not self.active or pathlib.Path(target) != self.destination:
+            self._original(source, target)
+            return
+        error = _WindowsAccessDenied(13, "アクセスが拒否されました", str(source), None, str(target))
+        raise error
+
+
+@pytest.fixture(name="diagnostic_log")
+def _diagnostic_log(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> typing.Iterator[pathlib.Path]:
+    """既存の診断ログ設定を隔離した状態ディレクトリへ向け、試験後に元のhandlerへ戻す。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    logger = logging.getLogger("agent-toolkit.agents-server")
+    saved = (list(logger.handlers), logger.propagate, logger.level)
+    log_path = logging_config.configure_logging()
+    yield log_path
+    for handler in tuple(logger.handlers):
+        if handler not in saved[0]:
+            logger.removeHandler(handler)
+            handler.close()
+    logger.handlers[:] = saved[0]
+    logger.propagate, logger.level = saved[1], saved[2]
+
+
+async def _until(condition: typing.Callable[[], bool], *, limit: float = 5.0) -> None:
+    """event loopを進めながら条件の成立を上限付きで待つ。"""
+    deadline = asyncio.get_running_loop().time() + limit
+    while not condition():
+        assert asyncio.get_running_loop().time() < deadline
+        await asyncio.sleep(0.01)
+
+
+def _replace_failure_logged(log_text: str, destination: pathlib.Path) -> bool:
+    """置換元の一時ファイルと置換先を、同じ失敗の診断として読めるかを返す。"""
+    source = f"'{destination.parent}/.{destination.name}."
+    return f"{source}" in log_text and f".tmp' -> '{destination}'" in log_text
+
+
+@pytest.mark.asyncio
+async def test_flush_failures_preserve_diagnostics_and_heartbeat(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, diagnostic_log: pathlib.Path
+) -> None:
+    """予約flushとheartbeatの置換失敗をスタック・両パス・書込主体・sessionとともに残し、次周期で保存を再開する。"""
+    monkeypatch.setattr(subject, "HEARTBEAT_INTERVAL_SECONDS", 0.01)
+    writer = subject.StatusFileWriter(
+        {},
+        shared_roots.StatusFileIdentity("root-session", "nested-host.json", "nested-host"),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = server_manager.AgentsServerManager(writer)
+    session = state.SessionState("session-1", str(tmp_path))
+    session.status = "running"
+    session.announced = True
+    manager.sessions[session.session_id] = session
+    manager.activate()
+    before = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
+    refusal = _ReplaceRefusal(monkeypatch, writer.path)
+    try:
+        writer.schedule()
+        messages = ("予約した共有状態の保存に失敗しました", "heartbeatの保存に失敗しました")
+        await _until(lambda: all(message in diagnostic_log.read_text(encoding="utf-8") for message in messages))
+        heartbeat_task = manager._heartbeat_task
+        assert heartbeat_task is not None and not heartbeat_task.done()
+        assert json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] == before
+        log_text = diagnostic_log.read_text(encoding="utf-8")
+        for message in messages:
+            line = next(line for line in log_text.splitlines() if message in line)
+            assert f"writer={writer.path}" in line and "session-1" in line
+        assert "Traceback (most recent call last)" in log_text
+        assert _replace_failure_logged(log_text, writer.path)
+
+        refusal.active = False
+        await _until(lambda: json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] > before)
+        assert not heartbeat_task.done()
+        assert not list(writer.path.parent.glob(f".{writer.path.name}.*.tmp"))
+    finally:
+        refusal.active = False
+        await manager.close()
+
+
+class _TerminalBeforeResponseBackend(FakeBackend):
+    """起動応答を返す前にturnが終端し、登録簿へ公開するsessionを返す。"""
+
+    async def start(self, *args: typing.Any, **kwargs: typing.Any) -> state.SessionState:
+        session = await super().start(*args, **kwargs)
+        session.publish_registry = True
+        session.status = "completed"
+        session.agent_message = "応答前の報告"
+        session.turn_completed = True
+        session.touch()
+        return session
+
+
+@pytest.mark.asyncio
+async def test_terminal_result_write_failure_is_not_reported_as_projection_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, diagnostic_log: pathlib.Path
+) -> None:
+    """終端結果の保存失敗を、起動応答・直接flush・予約flushで表示失敗と区別し、解消後に結果を保存する。"""
+    writer = subject.StatusFileWriter(
+        {},
+        shared_roots.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = server_manager.AgentsServerManager(writer)
+    install_backend(manager, "claude", _TerminalBeforeResponseBackend(manager.sessions, "claude"))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    writer.activate()
+    result_path = shared_layout.results_directory("root-session", tmp_path) / "claude-session.json"
+    refusal = _ReplaceRefusal(monkeypatch, result_path)
+    try:
+        started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
+        assert started["session_id"] == "claude-session" and started["status"] == "completed"
+        scopes = {warning["scope"] for warning in started["persistence_warnings"]}
+        assert "shared-state" in scopes and "projection" not in scopes
+        assert not result_path.exists()
+
+        with pytest.raises(OSError) as raised:
+            writer.flush()
+        assert not isinstance(raised.value, subject.ProjectionWriteError)
+        writer.schedule()
+        await _until(lambda: "予約した共有状態の保存に失敗しました" in diagnostic_log.read_text(encoding="utf-8"))
+        log_text = diagnostic_log.read_text(encoding="utf-8")
+        line = next(line for line in log_text.splitlines() if "開始済みsessionの結果・共有状態保存に失敗" in line)
+        assert "session_id=claude-session" in line and f"writer={writer.path}" in line
+        assert _replace_failure_logged(log_text, result_path)
+
+        refusal.active = False
+        writer.flush()
+        saved = json.loads(result_path.read_text(encoding="utf-8"))
+        assert saved["status"] == "completed" and saved["owner_status_file"] == "root.json"
+    finally:
+        refusal.active = False
+        await manager.close()

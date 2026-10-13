@@ -10,6 +10,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from agent_toolkit._common import proxy_environment
+
 from pytools._internal import common
 
 PLUGIN_SOURCE = Path("agent-toolkit/.claude-plugin/plugin.json")
@@ -253,6 +255,8 @@ def _codex_mcp(source: dict[str, Any]) -> dict[str, Any]:
                 "cwd": "./",
             }
         )
+    for server in servers.values():
+        server["env_vars"] = list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES)
     return projected
 
 

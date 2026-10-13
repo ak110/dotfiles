@@ -23,6 +23,7 @@ from typing import Any, Literal, cast
 
 from agent_toolkit._agents_server import (
     claude_settings,
+    context_usage,
     engine_availability,
     result_projection,
     resume_waits,
@@ -239,6 +240,43 @@ class _CommandChannel:
                 break
             if not future.done():
                 future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
+
+
+class _ContextUsageObserver:
+    """表示用の照会を受信列から分離し、更新中の古い応答を次の観測へ置換する。"""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self._revision = 0
+        self._task: asyncio.Task[None] | None = None
+
+    def request(self, session: SessionState) -> None:
+        self._revision += 1
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._observe(session))
+
+    async def _observe(self, session: SessionState) -> None:
+        while True:
+            revision = self._revision
+            turn_seq = session.turn_seq
+            try:
+                usage = await self._client.get_context_usage()
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                # 旧CLIの未対応や照会失敗で、起動とモデル出力の処理を失敗させない。
+                _LOG.debug("context_usage_unavailable session_id=%s error=%s", session.session_id, exc)
+                usage = {}
+            if revision != self._revision:
+                continue
+            if turn_seq == session.turn_seq:
+                usage = usage if isinstance(usage, dict) else {}
+                context_usage.record_context_usage(session, usage.get("totalTokens"), usage.get("rawMaxTokens"))
+            return
+
+    async def close(self) -> None:
+        if self._task is not None:
+            if not self._task.done():
+                self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
 
 
 # CLIのstdoutの1行にはモデルへ渡らないtool_use_result（EditのoriginalFile等）も含まれる。
@@ -678,6 +716,7 @@ class ClaudeServerManager:
         from claude_agent_sdk import TERMINAL_TASK_STATUSES
 
         client: Any = None
+        usage_observer: _ContextUsageObserver | None = None
         session: SessionState | None = None
         channel = _CommandChannel()
         iterator: Any = None
@@ -696,6 +735,7 @@ class ClaudeServerManager:
         try:
             diagnostic.stage = "creating_client"
             client = self._client_factory(options)
+            usage_observer = _ContextUsageObserver(client)
             diagnostic.stage = "connecting"
             await client.connect()
             diagnostic.capture_client(client)
@@ -847,6 +887,13 @@ class ClaudeServerManager:
                                     initialized.set_result(session)
                             elif session_id != session.session_id:
                                 raise session_errors.DelegateBackendError("Claude init message reported a different session_id")
+                            usage_observer.request(session)
+                        elif (
+                            name == "SystemMessage"
+                            and getattr(message, "subtype", None) == "compact_boundary"
+                            and session is not None
+                        ):
+                            usage_observer.request(session)
                         elif name == "SystemMessage" and getattr(message, "subtype", None) == "session_state_changed":
                             # CLIのturn状態の報告。`idle`は次のturnが発生しないことを示すため、保留中の結果を
                             # 確定してよい時点になる。ただしシェルのバックグラウンドタスクの稼働中も`idle`が届くため、
@@ -887,6 +934,8 @@ class ClaudeServerManager:
                             # 保留の前に`running`が報告済みで、次のturnの開始が出力でしか観測できない。
                             resume_waits.release_auto_resume_hold(session)
                             consume_assistant_message(session, message)
+                            if getattr(message, "error", None) is None:
+                                usage_observer.request(session)
                             await self._notify_waiters()
                         elif name == "StreamEvent" and session is not None:
                             # 失敗した要求はストリーミング応答を始めないため、応答開始を可用性の確定点とする。
@@ -896,6 +945,8 @@ class ClaudeServerManager:
                                 resume_waits.release_auto_resume_hold(session)
                                 session.model_output_observed = True
                                 await self._notify_waiters()
+                            elif isinstance(event, dict) and event.get("type") == "message_stop":
+                                usage_observer.request(session)
                         elif name == "UserMessage" and session is not None:
                             wait_output_tracking.consume_claude_agents_server_message(session, message)
                             session.touch()
@@ -914,6 +965,7 @@ class ClaudeServerManager:
                                 session.touch()
                                 await self._notify_waiters()
                         elif name == "ResultMessage" and session is not None:
+                            usage_observer.request(session)
                             wait_output_tracking.consume_agents_wait_background_outputs(session)
                             result = self._result_values(session, message)
                             # Weekly limitか5時間の利用上限による失敗は公開せず保留し、MCP層の常駐監視が
@@ -965,6 +1017,8 @@ class ClaudeServerManager:
             if active_future is not None and not active_future.done():
                 active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
             if client is not None:
+                if usage_observer is not None:
+                    await usage_observer.close()
                 # 子孫の列挙は切断より前に行う。切断で委譲先プロセスが終了すると子孫の親が変わり、
                 # 保持しているPIDを起点に辿れなくなるためである。
                 descendants = process_tree.collect_descendants(diagnostic.child_pid)

@@ -11,7 +11,7 @@ import shlex
 
 import pytest
 import yaml
-from agent_toolkit._agents_server import state, status_file
+from agent_toolkit._agents_server import context_usage, state, status_file
 
 from pytools._internal import setup_statusline_binary
 
@@ -36,6 +36,7 @@ async def test_status_file_writer_matches_state_fixture(tmp_path: pathlib.Path) 
     session.model_type = example["model_type"]
     session.label = example["label"]
     session.announced = True
+    context_usage.record_context_usage(session, example["context_tokens"], example["context_window"])
     writer = status_file.StatusFileWriter(
         {session.session_id: session},
         status_file.StatusFileIdentity("root-session", "root.json", "host-session"),

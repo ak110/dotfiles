@@ -11,6 +11,19 @@
         "pyfltr=false",
         "pyfltr",
         "mcp"
+      ],
+      "env_vars": [
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+        "all_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+        "GLOBAL_AGENT_HTTP_PROXY",
+        "GLOBAL_AGENT_HTTPS_PROXY",
+        "GLOBAL_AGENT_NO_PROXY"
       ]
     },
     "agents_server": {
@@ -24,7 +37,20 @@
         "--no-default-groups",
         "agent_toolkit/agents_server_mcp.py"
       ],
-      "cwd": "./"
+      "cwd": "./",
+      "env_vars": [
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+        "all_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+        "GLOBAL_AGENT_HTTP_PROXY",
+        "GLOBAL_AGENT_HTTPS_PROXY",
+        "GLOBAL_AGENT_NO_PROXY"
+      ]
     }
   }
 }

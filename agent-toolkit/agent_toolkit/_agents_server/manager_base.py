@@ -11,6 +11,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     backends,
+    record_paths,
     resource_snapshot,
     shared_layout,
     shared_roots,
@@ -158,7 +159,14 @@ class ManagerBase:
         assert self._status_writer is not None
         while True:
             await asyncio.sleep(status_file.HEARTBEAT_INTERVAL_SECONDS)
-            self._status_writer.flush()
+            try:
+                self._status_writer.flush()
+            except OSError:
+                _LOG.exception(
+                    "heartbeatの保存に失敗しました。次回の更新で再試行します: writer=%s sessions=%s",
+                    self._status_writer.path,
+                    sorted(self.sessions),
+                )
 
     def _backend(self, engine: str) -> backends.Backend:
         """engineのbackendを返す。初めて使うengineではbackendを生成して保持する。"""
@@ -210,6 +218,24 @@ class ManagerBase:
                 return launcher
         codex_thread_id = os.environ.get("CODEX_THREAD_ID")
         return codex_thread_id if codex_thread_id and shared_layout.valid_session_id(codex_thread_id) else None
+
+    def launcher_record_context(self) -> dict[str, Any]:
+        """直接の委譲元と、一意に解決した記録ファイルをtask本文へ渡す。"""
+        launcher = self._launcher_session_id()
+        if launcher is None:
+            return {"status": "unresolved"}
+        context: dict[str, Any] = {"launcher_session_id": launcher}
+        try:
+            record = record_paths.find_session_record(launcher)
+        except OSError as error:
+            _LOG.warning("委譲元の記録を取得できません: session_id=%s", launcher, exc_info=True)
+            return {**context, "status": "unreadable", "reason": str(error)}
+        if record is None or not record.paths:
+            return {**context, "status": "missing"}
+        context["record_engine"] = record.engine
+        if len(record.paths) != 1:
+            return {**context, "status": "ambiguous", "record_candidates": [str(p.resolve()) for p in record.paths]}
+        return {**context, "status": "resolved", "record_path": str(record.paths[0].resolve())}
 
     def _carry_over_unavailable_candidate(self, session: SessionState) -> None:
         """可用性を理由に終端した候補を、同じ起動条件の次回へ引き継ぐ。

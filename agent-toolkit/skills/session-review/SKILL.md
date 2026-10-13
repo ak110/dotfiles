@@ -30,7 +30,7 @@ description: >
 
 ## 工程
 
-1. セッションのmanaged-temp（`agent-toolkit:managed-temp`）の中へ実行ごとに異なる名前（`session-review-<時刻>`など）の作業ディレクトリを作成し、次のいずれかの形で1回実行する。Claude Codeでは現在のtranscriptの絶対パスを、Codexでは`CODEX_THREAD_ID`を渡す。`--target-repo`は対象リポジトリを確定できた場合だけ渡す。
+1. セッションのmanaged-temp（`agent-toolkit:managed-temp`）の中へ実行ごとに異なる名前（`session-review-<時刻>`など）の作業ディレクトリを作成し、次のいずれかの形で1回実行する。Claude Codeでは現在のtranscriptの絶対パス（`rules-main.claude-code.md`「自身の会話の記録」の取得元の値）を、Codexでは`CODEX_THREAD_ID`を渡す。`--target-repo`は対象リポジトリを確定できた場合だけ渡す。
 
    ```text
    atk run-script session-review-prepare -- --transcript <transcriptの絶対パス> --work-dir <作業ディレクトリの絶対パス> --target-repo <対象リポジトリの絶対パス>

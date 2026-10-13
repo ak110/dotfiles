@@ -19,7 +19,7 @@ import pathlib
 import typing
 from typing import Any
 
-from agent_toolkit._agents_server import engine_availability, result_projection, session_errors, shared_layout
+from agent_toolkit._agents_server import context_usage, engine_availability, result_projection, session_errors, shared_layout
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.launch_prompts import LAUNCH_SYSTEM_PROMPTS
@@ -374,6 +374,14 @@ class AntigravityManager:
                 if session is not None:
                     self._append_event(session.session_id, payload)
                 if kind == "step_update" and session is not None:
+                    if event_body.get("step_type") == "agent_response":
+                        usage = event_body.get("usage")
+                        usage = usage if isinstance(usage, dict) else {}
+                        total = context_usage.valid_number(usage.get("total_tokens"))
+                        cached = context_usage.valid_number(usage.get("cache_read_tokens"))
+                        context_usage.record_context_usage(
+                            session, total + cached if total is not None and cached is not None else None, None
+                        )
                     text = _event_text(event_body)
                     if text:
                         session.set_progress(text)

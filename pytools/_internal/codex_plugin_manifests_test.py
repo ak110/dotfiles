@@ -1,16 +1,21 @@
 """pytools._internal.codex_plugin_manifests のテスト。"""
 
+import asyncio
+import http.server
 import json
 import os
 import shlex
 import shutil
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from agent_toolkit._agents_server import codex as codex_backend
+from agent_toolkit._common import proxy_environment
 from agent_toolkit._testing import isolation
 
 from pytools._internal import codex_plugin_manifests as subject
@@ -176,7 +181,10 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     expected_codex_mcp = {
         **expected_mcp,
         "mcpServers": {
-            "pyfltr": expected_mcp["mcpServers"]["pyfltr"],
+            "pyfltr": {
+                **expected_mcp["mcpServers"]["pyfltr"],
+                "env_vars": list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES),
+            },
             "agents_server": {
                 "type": "stdio",
                 "command": "uv",
@@ -189,6 +197,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "agent_toolkit/agents_server_mcp.py",
                 ],
                 "cwd": "./",
+                "env_vars": list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES),
             },
         },
     }
@@ -705,3 +714,178 @@ def test_atomic_write_failure_is_reported(manifest_root: Path, monkeypatch: pyte
     monkeypatch.setattr(common, "atomic_write_text", lambda *args, **kwargs: False)
     with pytest.raises(OSError, match="書き込みに失敗"):
         subject.sync(manifest_root)
+
+
+def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """共通名の追加が全Codex生成経路へ届き、共通入力とAgent Pluginsへ混入しない。"""
+    names = (*proxy_environment.PROXY_ENVIRONMENT_VARIABLES, "TEST_PROXY")
+    monkeypatch.setattr(proxy_environment, "PROXY_ENVIRONMENT_VARIABLES", names)
+    source_before = (manifest_root / subject.MCP_SOURCE).read_bytes()
+    subject.sync(manifest_root)
+    codex = json.loads((manifest_root / subject.MCP_CODEX_TARGET).read_text(encoding="utf-8"))
+    portable = json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text(encoding="utf-8"))
+    for name in ("agents_server", "pyfltr"):
+        assert codex["mcpServers"][name]["env_vars"] == list(names)
+        assert "env_vars" not in portable["mcpServers"][name]
+    backend = codex_backend.AppServerManager._agents_server_config("owner", "writer")  # pylint: disable=protected-access
+    assert backend["mcp_servers"]["agents_server"]["env_vars"] == list(names)
+    assert (manifest_root / subject.MCP_SOURCE).read_bytes() == source_before
+
+
+@pytest.fixture(name="proxy_endpoint")
+def _proxy_endpoint() -> Iterator[tuple[str, list[str]]]:
+    """loopbackの専用proxyを試験全体で保持し、失敗時も回収する。"""
+    requests: list[str] = []
+
+    class ProxyHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            requests.append(self.path)
+            body = b"proxy-observed"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002  # pylint: disable=redefined-builtin
+            del format, args  # noqa
+
+    proxy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler)
+    proxy_thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+    proxy_thread.start()
+    try:
+        yield f"http://127.0.0.1:{proxy.server_port}", requests
+    finally:
+        proxy.shutdown()
+        proxy.server_close()
+        proxy_thread.join(timeout=5)
+    assert not proxy_thread.is_alive()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(shutil.which("codex") is None, reason="Codex CLIが存在しない")
+async def test_codex_stdio_inherits_proxy_environment(
+    manifest_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, proxy_endpoint: tuple[str, list[str]]
+) -> None:
+    """実CodexのMCP起動とその子へ限定継承し、専用proxyまで要求が届く。"""
+    isolation.restore_host_environment(monkeypatch)
+    proxy_url, requests = proxy_endpoint
+    inherited = {
+        "http_proxy": proxy_url,
+        "https_proxy": proxy_url,
+        "HTTP_PROXY": proxy_url,
+        "no_proxy": "localhost,127.0.0.1",
+        "GLOBAL_AGENT_HTTP_PROXY": proxy_url,
+    }
+    for name in proxy_environment.PROXY_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in inherited.items():
+        monkeypatch.setenv(name, value)
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setattr(codex_backend, "APP_SERVER_WORKING_DIRECTORY", str(tmp_path))
+    child = tmp_path / "proxy-child.py"
+    child.write_text(
+        "import json, os, urllib.request\n"
+        "from pathlib import Path\n"
+        "response = urllib.request.urlopen('http://proxy-probe.invalid/resource', timeout=5).read().decode()\n"
+        "Path(os.environ['OBS_PATH']).write_text(json.dumps({'env': {name: os.environ[name] for name in "
+        f"{list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES)!r} if name in os.environ}}, "
+        "'response': response}), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    launcher = tmp_path / "proxy-mcp.py"
+    launcher.write_text(
+        "import os, subprocess, sys\nfrom pathlib import Path\n"
+        "sys.stderr = open(os.environ['OBS_PATH'] + '.stderr', 'w', encoding='utf-8')\n"
+        "from mcp.server.mcpserver import MCPServer\n"
+        f"subprocess.run([sys.executable, {str(child)!r}], check=True, timeout=10)\n"
+        "server = MCPServer('proxy-probe')\n"
+        "@server.tool()\ndef observed() -> str:\n    return 'ready'\n"
+        "server.run(transport='stdio')\n",
+        encoding="utf-8",
+    )
+    subject.sync(manifest_root)
+    plugin_servers = json.loads((manifest_root / subject.MCP_CODEX_TARGET).read_text(encoding="utf-8"))["mcpServers"]
+    backend = codex_backend.AppServerManager._agents_server_config("owner", "writer")["mcp_servers"]["agents_server"]  # pylint: disable=protected-access
+    configurations = [plugin_servers["agents_server"], plugin_servers["pyfltr"], backend]
+    client = _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
+    processes: list[asyncio.subprocess.Process] = []
+    try:
+        async with asyncio.timeout(60):
+            await client.start()
+            assert client.process is not None
+            processes.append(client.process)
+            for index, configuration in enumerate(configurations):
+                output = tmp_path / f"child-{index}.json"
+                server = {
+                    **configuration,
+                    "command": sys.executable,
+                    "args": [str(launcher)],
+                    "cwd": str(tmp_path),
+                    "env": {**configuration.get("env", {}), "OBS_PATH": str(output)},
+                }
+                server.pop("type", None)
+                response = await client.request(
+                    "thread/start",
+                    {
+                        "cwd": str(tmp_path),
+                        "approvalPolicy": "never",
+                        "sandbox": "danger-full-access",
+                        "config": {"mcp_servers": {"probe": server}, "features": {"plugins": False, "apps": False}},
+                    },
+                )
+                thread_id = response["thread"]["id"]
+                inventory = await client.request("mcpServerStatus/list", {"threadId": thread_id, "serverName": "probe"})
+                assert inventory["data"], inventory
+                diagnostic = Path(str(output) + ".stderr")
+                assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory) + (
+                    diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
+                )
+                observation = json.loads(output.read_text(encoding="utf-8"))
+                assert observation == {"env": inherited, "response": "proxy-observed"}
+                # モデルを呼ばず履歴を保存する0.162.1の公開実験APIで、cold resumeの入力を準備する。
+                await client.request(
+                    "thread/inject_items",
+                    {
+                        "threadId": thread_id,
+                        "items": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "fixture"}]}],
+                    },
+                )
+                await client.close()
+                output.unlink()
+                client = _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
+                await client.start()
+                assert client.process is not None
+                processes.append(client.process)
+                await client.request(
+                    "thread/resume",
+                    {
+                        "threadId": thread_id,
+                        "cwd": str(tmp_path),
+                        "approvalPolicy": "never",
+                        "sandbox": "danger-full-access",
+                        "config": {"mcp_servers": {"probe": server}},
+                    },
+                )
+                inventory = await client.request("mcpServerStatus/list", {"threadId": thread_id, "serverName": "probe"})
+                assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory)
+                assert json.loads(output.read_text(encoding="utf-8")) == {"env": inherited, "response": "proxy-observed"}
+                await client.request("thread/unsubscribe", {"threadId": thread_id})
+    finally:
+        await client.close()
+    assert processes and all(process.returncode is not None for process in processes)
+    assert requests.count("http://proxy-probe.invalid/resource") == len(configurations) * 2
+
+
+async def _ignore_proxy_notification(_message: dict[str, Any]) -> None:
+    return None
+
+
+class _ProxyCodexClient(codex_backend.JsonRpcProcess):
+    """試験用履歴の注入だけに実験APIを有効化する。"""
+
+    async def request(self, method: str, params: dict[str, Any] | None = None, *, on_sent: Any = None) -> dict[str, Any]:
+        if method == "initialize":
+            params = {**(params or {}), "capabilities": {"experimentalApi": True}}
+        return await super().request(method, params, on_sent=on_sent)

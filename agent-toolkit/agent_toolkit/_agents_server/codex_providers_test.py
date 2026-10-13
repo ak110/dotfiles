@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -116,7 +117,7 @@ def configure_provider_environment(monkeypatch):
 
 
 def backend_with_client(monkeypatch, client, root=None):
-    """RPC以外は実backendを使う。"""
+    """接続先のRPCと探索環境の事前実行を隔離し、実backendで接続先を選ぶ。"""
     backend = codex.AppServerManager(root.sessions if root else {}, root._condition if root else asyncio.Condition())
     backend.client = client
     client.backend = backend
@@ -125,6 +126,8 @@ def backend_with_client(monkeypatch, client, root=None):
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
+    # 探索環境の成否はcodex_test.pyで専用接続から確かめる。ここは接続先の選択だけを扱う。
+    monkeypatch.setattr(backend, "_probe_explore_sandbox", AsyncMock())
     return backend
 
 

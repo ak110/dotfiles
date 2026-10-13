@@ -8,5 +8,7 @@ description: >
 # セッション記録のmarkdown出力
 
 `atk agents logs <対象> --format markdown`でClaude CodeとCodexの記録をmarkdownへ変換する。
-対象はセッション識別子、`--project-dir`、`--all`のいずれかで指定する。現在のセッションの識別子はClaude Codeでは`CLAUDE_CODE_SESSION_ID`、Codexでは`CODEX_THREAD_ID`にある。
+対象はセッション識別子、`--project-dir`、`--all`のいずれかで指定する。
+現在のセッションの識別子は、Claude Codeのメインでは`rules-main.claude-code.md`「自身の会話の記録」が案内するSessionStart通知の「この会話のセッションID」の値を使う。
+Claude Codeのそれ以外のエージェントでは`CLAUDE_CODE_SESSION_ID`、Codexでは`CODEX_THREAD_ID`を使う。
 範囲と出力内容（`--latest`、`--include-thinking`、`--include-subagents`、`--output-dir`など）は`atk agents logs --help`で選ぶ。

@@ -76,6 +76,6 @@ MCP仕様の要求は硬い制約として守る。開発元の推奨は利用�
 
 対象ホストにClaude Codeを含む場合は、次の制限と機能を設計の条件に加える。ほかのホストの制限は、そのホストの一次資料で確かめる。
 
-- Claude Codeは各ツールの説明と各サーバーのinstructionsを、設定を変えない状態で2,048文字に切り詰める（環境変数`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変更可）。引数の説明が同じ上限を受けるかは同資料からは確定できない
+- Claude Codeは、初期送信する各ツールの説明と各サーバーのinstructionsを、設定を変えない状態で4,096文字に切り詰める。ツール検索で後から読み込む説明の上限は16,384文字である。初期送信と検索後のどちらでも説明が欠けないよう、全説明を初期送信の上限内に収める。2026年10月2日に取得した公式資料は、上限を環境変数`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変更可能としているが、新版での名称は未確認である。引数の説明が同じ上限を受けるかは、参照した2つのリリースノートに記載が無く、未確定とする。版と典拠は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日」にある
 - ツール検索が有効な場合、セッション開始時に読み込まれるのはツール名とserver instructionsだけである。instructionsには、扱う作業の種類、ツールを探すべき場面、主な機能を書く
 - MCPツールの出力が1万トークンを超えると警告し、設定を変えない状態で2万5千トークンに制限する（環境変数`MAX_MCP_OUTPUT_TOKENS`で変更可）。本質的に大きな出力を返すツールは`tools/list`の`_meta["anthropic/maxResultSizeChars"]`で上限を上げられる（画像を返すツールには適用されない）

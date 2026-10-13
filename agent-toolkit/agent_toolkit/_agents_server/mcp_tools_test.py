@@ -162,7 +162,7 @@ def test_public_start_schema_delivers_explore_capabilities() -> None:
     """登録済みの公開schemaが起動前に共通の能力説明を届ける。"""
     start_tool = _start_tool()
     capabilities = tool_descriptions.EXPLORE_CAPABILITIES
-    assert capabilities in start_tool.description[:2048]
+    assert capabilities in start_tool.description[:4096]
     assert capabilities in start_tool.parameters["properties"]["mode"]["description"]
 
 

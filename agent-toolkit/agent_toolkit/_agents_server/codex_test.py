@@ -95,6 +95,30 @@ class _ProcessTierClient(_TierClient):
         self.process = SimpleNamespace(pid=pid)
 
 
+class _SandboxProbeClient:
+    """公開command/exec応答を模し、接続の回収を観測する。"""
+
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        self.process = None
+        self.closed = False
+        self.requests: list[tuple[str, dict[str, Any]]] = []
+        self.response: dict[str, Any] = {"exitCode": 0, "stderr": "", "stdout": ""}
+        self.error: BaseException | None = None
+
+    async def start(self) -> None:
+        return None
+
+    async def request(self, method: str, params: dict[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        assert method == "command/exec"
+        self.requests.append((method, params))
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+    async def close(self) -> None:
+        self.closed = True
+
+
 @pytest.mark.asyncio
 async def test_start_and_resume_record_owner_and_app_server_processes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -468,6 +492,7 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     assert set(server["env"]) == {"AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_STATUS_HOST_SESSION"}
     assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "root-session"
     assert server["default_tools_approval_mode"] == "approve"
+    assert server["env_vars"] == list(subject.proxy_environment.PROXY_ENVIRONMENT_VARIABLES)
     assert "AGENT_TOOLKIT_DELEGATED_SESSION" not in server["env"]
     assert aliases == [("root-session", server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"], "inner-thread")]
 
@@ -627,6 +652,7 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     client = _TierClient()
     manager = subject.AppServerManager(root_session_id="owner")
     monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(subject, "JsonRpcProcess", _SandboxProbeClient)
 
     await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
     start_params = next(params for method, params in client.requests if method == "thread/start")
@@ -887,6 +913,9 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
         assert len(configs) == 2
         for config in configs:
             assert config["mcp_servers"]["agents_server"]["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == root
+            assert config["mcp_servers"]["agents_server"]["env_vars"] == list(
+                subject.proxy_environment.PROXY_ENVIRONMENT_VARIABLES
+            )
         environment = {**configs[0]["mcp_servers"]["agents_server"]["env"], "CODEX_THREAD_ID": session.session_id}
         assert send_notification("途中の観測", environment=environment, state_root=tmp_path) == 0
         response = await manager.wait()
@@ -978,6 +1007,7 @@ async def test_codex_explore_limits_start_resume_and_followup(
         return explore_client
 
     monkeypatch.setattr(explore_manager, "_ensure_client", ensure_explore_client)
+    monkeypatch.setattr(subject, "JsonRpcProcess", _SandboxProbeClient)
     session = await explore_manager.start("調査", str(tmp_path), "model", "high", launch_kind="explore")
     await explore_manager._start_turn(session, "追送", cast(subject.JsonRpcProcess, explore_client))
     await explore_manager._resume_thread(session, explore_client)
@@ -1687,3 +1717,101 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
         assert not backend._background_tasks
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["success", "namespace", "other", "rpc", "timeout", "invalid", "wrong-code"])
+async def test_explore_sandbox_probe_distinguishes_failure_kinds(
+    failure: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開起動が確定した名前空間拒否だけを候補不成立へ渡し、probeを先に回収する。"""
+    probe = _SandboxProbeClient()
+    if failure in {"namespace", "wrong-code"}:
+        probe.response = {
+            "exitCode": 1 if failure == "namespace" else 124,
+            "stderr": "bwrap: No permissions to create a new namespace",
+            "stdout": "",
+        }
+    elif failure == "other":
+        probe.response = {"exitCode": 1, "stderr": "permission denied", "stdout": ""}
+    elif failure == "invalid":
+        probe.response = {"exitCode": True, "stderr": "", "stdout": ""}
+    elif failure == "rpc":
+        probe.error = subject.JsonRpcResponseError("command/exec", -32600, "request rejected")
+    elif failure == "timeout":
+        probe.error = TimeoutError("probe deadline")
+    monkeypatch.setattr(subject, "JsonRpcProcess", lambda *_args, **_kwargs: probe)
+    manager = subject.AppServerManager()
+    client = _TierClient()
+
+    async def ensure_client() -> _TierClient:
+        assert probe.closed
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    if failure == "success":
+        session = await manager.start("調査", str(tmp_path), launch_kind="explore")
+        assert session.session_id == "tier-thread"
+        assert [method for method, _params in client.requests] == ["thread/start", "turn/start"]
+    else:
+        error_type = (
+            subject.StartCandidateUnavailable
+            if failure == "namespace"
+            else (TimeoutError if failure == "timeout" else subject.AppServerError)
+        )
+        with pytest.raises(error_type) as raised:
+            await manager.start("調査", str(tmp_path), launch_kind="explore")
+        if failure == "namespace":
+            assert isinstance(raised.value, subject.StartCandidateUnavailable)
+            assert raised.value.reason == "exploreSandboxNamespaceDenied"
+        else:
+            assert not isinstance(raised.value, subject.StartCandidateUnavailable)
+        assert not manager.sessions and not client.requests
+    assert probe.closed
+    params = probe.requests[0][1]
+    assert params["cwd"] == str(tmp_path)
+    assert params["sandboxPolicy"] == {"type": "readOnly"}
+    assert params["disableOutputCap"] is True
+    assert params["timeoutMs"] > 0
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_context_usage_notification_is_session_scoped(tmp_path: pathlib.Path) -> None:
+    """0.162.1通知のlastだけを同じthread・turnへ配送し、累計と活動を混ぜない。"""
+    # codex-cli 0.162.1 generate-json-schemaのThreadTokenUsageUpdatedNotification。
+    session = state.SessionState("usage-thread", str(tmp_path), engine="codex", turn_id="usage-turn")
+    other = state.SessionState("other-thread", str(tmp_path), engine="codex", turn_id="other-turn")
+    manager = _InspectableAppServerManager({session.session_id: session, other.session_id: other})
+    initial_activity = session.updated_at
+
+    async def notify(thread: str, turn: str, tokens: Any, window: Any = 1000000) -> None:
+        await manager.handle_notification(
+            {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": thread,
+                    "turnId": turn,
+                    "tokenUsage": {
+                        "last": {"totalTokens": tokens},
+                        "total": {"totalTokens": 999999},
+                        "modelContextWindow": window,
+                    },
+                },
+            }
+        )
+
+    await notify(session.session_id, session.turn_id, 53500)
+    assert session.context_tokens == 53500 and session.context_window == 1000000
+    await notify("missing-thread", session.turn_id, 1)
+    await notify(other.session_id, session.turn_id, 2)
+    await notify(session.session_id, "old-turn", 3)
+    assert session.context_tokens == 53500 and other.context_tokens is None
+    await notify(session.session_id, session.turn_id, 1000)
+    assert session.context_tokens == 1000
+    await notify(session.session_id, session.turn_id, 0, None)
+    assert session.context_tokens == 0 and session.context_window is None
+    assert session.updated_at == initial_activity
+    await notify(session.session_id, session.turn_id, True)
+    assert session.context_tokens is None
+    await manager.close()

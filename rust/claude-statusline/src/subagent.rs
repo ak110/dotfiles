@@ -229,7 +229,7 @@ fn build_right_parts(task: &Map<String, Value>, now: DateTime<Utc>) -> Vec<Strin
 }
 
 /// トークン数と使用率%を`176.2k/18%`形式へ整形する。使用率算出不能時はトークン数のみ。
-fn format_tokens(
+pub(crate) fn format_tokens(
     token_count: Option<&Value>,
     context_window_size: Option<&Value>,
 ) -> Option<String> {
@@ -250,12 +250,15 @@ fn context_usage_pct(
     if window <= 0.0 {
         return None;
     }
-    Some(count / window * 100.0)
+    let percentage = count / window * 100.0;
+    percentage.is_finite().then_some(percentage)
 }
 
 fn as_number(value: Option<&Value>) -> Option<f64> {
     match value {
-        Some(Value::Number(n)) => n.as_f64(),
+        Some(Value::Number(n)) => n
+            .as_f64()
+            .filter(|value| value.is_finite() && *value >= 0.0),
         _ => None,
     }
 }

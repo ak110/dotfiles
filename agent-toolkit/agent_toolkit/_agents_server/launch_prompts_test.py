@@ -85,7 +85,7 @@ def test_launch_prompts_carry_normative_boundaries() -> None:
 def test_explore_capabilities_are_shared_with_public_schema() -> None:
     """公開schemaと実際の委譲プロンプトへ同じ能力定義を配送する。"""
     capabilities = tool_descriptions.EXPLORE_CAPABILITIES
-    assert capabilities in tool_descriptions.START_DESCRIPTION[:2048]
+    assert capabilities in tool_descriptions.START_DESCRIPTION[:4096]
     assert capabilities in tool_descriptions.MODE_DESCRIPTION
     assert capabilities in launch_prompts.LAUNCH_SYSTEM_PROMPTS["explore"]
     for kind in ("delegate", "shell", "write"):

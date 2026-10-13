@@ -16,6 +16,76 @@ from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_c
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
+@pytest.mark.parametrize("source", ("startup", "resume", "clear", "compact", "fork"))
+@pytest.mark.parametrize("temp_failure", (False, True))
+def test_session_start_delivers_current_conversation_identity(
+    source: str,
+    temp_failure: bool,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """会話切替と一時領域の成否を変えても、現在の入力のIDと絶対パスが対応して届く。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+
+    def make_temp(*_args: object, **_kwargs: object) -> pathlib.Path:
+        if temp_failure:
+            raise OSError("一時領域を作成できません")
+        return tmp_path
+
+    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", make_temp)
+    for session in ("conversation-a", "conversation-b"):
+        transcript = str(tmp_path / f"{session}.jsonl")
+        rules_context.main(
+            json.dumps(
+                {
+                    "hook_event_name": "SessionStart",
+                    "source": source,
+                    "session_id": session,
+                    "transcript_path": transcript,
+                }
+            )
+        )
+        output = _output(capsys)
+        assert f"この会話のセッションID: {session}" in output
+        assert f"この会話のtranscript: {transcript}" in output
+        other = "conversation-b" if session == "conversation-a" else "conversation-a"
+        assert f"この会話のセッションID: {other}" not in output
+        assert f"この会話のtranscript: {tmp_path / (other + '.jsonl')}" not in output
+
+
+@pytest.mark.parametrize("host,delegated", (("claude", True), ("codex", False), ("codex", True)))
+def test_conversation_identity_notice_is_limited_to_claude_main(
+    host: str,
+    delegated: bool,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Claude委譲先とCodexへメイン自身の記録取得の通知を配送しない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", lambda *_args, **_kwargs: tmp_path)
+    rules_context.main(
+        json.dumps(
+            {
+                "hook_event_name": "SessionStart",
+                "source": "startup",
+                "session_id": "conversation-a",
+                "transcript_path": str(tmp_path / "conversation-a.jsonl"),
+            }
+        ),
+        host=host,
+    )
+    raw = capsys.readouterr().out
+    output = json.loads(raw)["hookSpecificOutput"]["additionalContext"] if raw else ""
+    assert "この会話のセッションID:" not in output
+    assert "この会話のtranscript:" not in output
+
+
 def _output(capsys: pytest.CaptureFixture[str]) -> str:
     return json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
 

@@ -42,13 +42,14 @@ def test_start_description_selects_mode_and_lists_minimal_calls() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument() -> None:
-    """Claude Codeが設定を変えない状態で切り詰める2,048文字に説明を収め、全引数へ説明を付けて単体で呼び出せるようにする。
+    """Claude Codeが初期送信で切り詰める4,096文字に説明を収め、全引数へ説明を付けて単体で呼び出せるようにする。
 
-    出典はClaude Code公式資料「Connect Claude Code to tools via MCP」の「For MCP server authors」。
+    初期送信の上限内なら、ツール検索で後から読む説明の上限16,384文字も満たす。
+    出典はClaude Codeのv2.1.295（検索後16,384文字）とv2.1.296（初期送信とinstructions4,096文字）のリリースノート。
     """
-    assert len(mcp_tools.mcp.instructions or "") <= 2048
+    assert len(mcp_tools.mcp.instructions or "") <= 4096
     for tool in await mcp_tools.mcp.list_tools():
-        assert len(tool.description or "") <= 2048, tool.name
+        assert len(tool.description or "") <= 4096, tool.name
         for name, schema in tool.input_schema.get("properties", {}).items():
             assert schema.get("description"), f"{tool.name}.{name}"
 
@@ -67,7 +68,7 @@ def test_lightweight_selection_reaches_instructions_and_mode_schema() -> None:
     mode = _start_tool().parameters["properties"]["mode"]["description"]
     assert selection in instructions
     assert selection in mode
-    assert len(instructions) <= 2048
+    assert len(instructions) <= 4096
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:
