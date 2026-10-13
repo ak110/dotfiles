@@ -23,7 +23,7 @@ def read_retained_result(
     path = results_directory(root_session_id, state_root) / f"{session_id}.json"
     try:
         payload: Any = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+    except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
         return None
     if not isinstance(payload, dict) or payload.get("status") not in TERMINAL_STATUSES:
         return None
@@ -75,7 +75,7 @@ def take_result(
                 else:
                     try:
                         original = json.loads(path.read_text(encoding="utf-8"))
-                    except (OSError, UnicodeError, json.JSONDecodeError):
+                    except OSError, UnicodeError, json.JSONDecodeError:
                         original = None
                     if original == payload:
                         path.unlink()

@@ -404,7 +404,7 @@ def _records_match(
     if identity is not None:
         try:
             current_identity = _path_identity(path)
-        except (OSError, ManagedTempError):
+        except OSError, ManagedTempError:
             return False
         if os.name == "posix":
             if current_identity[1] != identity[1]:

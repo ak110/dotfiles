@@ -63,7 +63,7 @@ def main(payload_text: str) -> int:
     """StopFailure hookのエントリポイント。発火内容をログへ追記する。"""
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return 0
     if not isinstance(payload, dict):
         return 0

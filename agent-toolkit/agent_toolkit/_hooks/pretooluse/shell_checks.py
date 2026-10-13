@@ -448,7 +448,7 @@ def _read_commit_message_file(
         path = base / path
     try:
         return path.read_text(encoding="utf-8") if path.is_file() else None
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         return None
 
 

@@ -69,7 +69,7 @@ def _build_record(payload_text: str) -> dict[str, object]:
     """
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         payload = None
     if not isinstance(payload, dict):
         payload = {}

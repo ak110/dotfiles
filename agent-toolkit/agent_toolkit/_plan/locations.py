@@ -126,7 +126,7 @@ def _relative_to(path: pathlib.Path, root: pathlib.Path) -> pathlib.PurePath | N
     """pathがroot配下ならroot相対値を返す。"""
     try:
         return _resolve(path).relative_to(_resolve(root))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 

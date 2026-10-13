@@ -699,7 +699,7 @@ def _json_object(raw: Any) -> dict[str, Any] | None:
         return None
     try:
         parsed = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
     return parsed if isinstance(parsed, dict) else None
 
@@ -1064,7 +1064,7 @@ def _load_records(raw_path: str | None) -> list[_Record] | None:
             parsed = json.loads(line)
             if isinstance(parsed, dict):
                 records.append(_Record(number, line, parsed))
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
     return records
 

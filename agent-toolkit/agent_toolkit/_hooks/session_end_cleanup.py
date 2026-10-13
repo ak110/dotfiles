@@ -48,7 +48,7 @@ def main(payload_text: str) -> int:
     """
     try:
         payload = json.loads(payload_text or "{}")
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return 0
     if not isinstance(payload, dict) or payload.get("hook_event_name") != "SessionEnd":
         return 0

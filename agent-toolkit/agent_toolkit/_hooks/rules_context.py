@@ -227,7 +227,7 @@ def _existing_session_temp(session_id: object) -> str | None:
         return None
     try:
         entries = managed_temp.list_managed_temp(SESSION_TEMP_PREFIX, session_id=session_id)
-    except (managed_temp.ManagedTempError, OSError):
+    except managed_temp.ManagedTempError, OSError:
         return None
     if not entries:
         return None
@@ -294,7 +294,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     SESSION_TEMP_PREFIX,
                     session_id=session_id,
                 )
-            except (managed_temp.ManagedTempError, OSError):
+            except managed_temp.ManagedTempError, OSError:
                 pass
             else:
                 temp_context = _llm_notice(session_temp_notice(session_temp))

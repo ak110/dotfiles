@@ -373,7 +373,7 @@ class StatusFileWriter:
         path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
         try:
             payload: Any = json.loads(path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
             return None
         if (
             not isinstance(payload, dict)
@@ -497,7 +497,7 @@ class StatusFileWriter:
         path = hosts_directory(self.root_session_id, self._state_root) / f"{writer_session_id}.json"
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
             return writer_session_id
         host_session_id = payload.get("host_session_id") if isinstance(payload, dict) else None
         if (
@@ -520,7 +520,7 @@ class StatusFileWriter:
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 heartbeat_at = payload.get("heartbeat_at") if isinstance(payload, dict) else None
                 heartbeat = datetime.datetime.fromisoformat(heartbeat_at) if isinstance(heartbeat_at, str) else None
-            except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            except OSError, UnicodeError, json.JSONDecodeError, ValueError:
                 continue
             if heartbeat is not None and heartbeat.tzinfo is not None and heartbeat < cutoff:
                 path.unlink(missing_ok=True)
@@ -579,7 +579,7 @@ def _read_live_status_file(path: pathlib.Path, cutoff: datetime.datetime) -> tup
     """
     try:
         payload = status_reader.read_payload(path)
-    except (OSError, UnicodeError, ValueError):
+    except OSError, UnicodeError, ValueError:
         return None
     if not isinstance(payload, dict) or payload.get("version") != 1:
         return None

@@ -99,7 +99,7 @@ def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
             text=True,
             timeout=_GIT_STATE_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         status = None
     status_lines = status.stdout.splitlines() if status is not None and status.returncode == 0 else None
     if head is None or status_lines is None:

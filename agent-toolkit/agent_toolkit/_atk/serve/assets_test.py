@@ -650,7 +650,7 @@ async def test_answer_api_rejects_awi_entry(tmp_path: pathlib.Path, monkeypatch:
     """AWIエントリへの回答送信は拒否する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -683,7 +683,7 @@ async def test_answer_api_returns_edit_conflict_for_unreadable_expected_content(
     """回答対象の非UTF-8化を409競合へ正規化し、元のバイト列を保つ。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)

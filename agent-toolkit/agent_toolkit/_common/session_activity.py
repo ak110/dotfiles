@@ -72,7 +72,7 @@ def host_process() -> HostProcess | None:
         for process in psutil.Process().parents():
             if (engine := _engine(process)) is not None:
                 return HostProcess(engine, session_registry.ProcessIdentity(process.pid, process.create_time()))
-    except (psutil.Error, OSError):
+    except psutil.Error, OSError:
         pass
     return None
 
@@ -87,7 +87,7 @@ def host_processes() -> tuple[HostProcess, ...]:
                 continue
             if (engine := _engine(process)) is not None:
                 found.append(HostProcess(engine, session_registry.ProcessIdentity(process.pid, process.create_time())))
-        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         except psutil.AccessDenied:
             # 名前まで取得できるホストは、実行ファイルを読めなくても未登録候補へ残す。
@@ -202,7 +202,7 @@ def record_activity(
                 return
             try:
                 record = _read(path)
-            except (OSError, ValueError, UnicodeError):
+            except OSError, ValueError, UnicodeError:
                 record = {}
             host = host_process() if process is None else process
             prior_identity = _identity(record.get("process"))
@@ -277,7 +277,7 @@ def _codex_parent(record: Mapping[str, Any]) -> str | None:
         subagent = source.get("subagent", {}) if isinstance(source, dict) else {}
         spawn = subagent.get("thread_spawn", {}) if isinstance(subagent, dict) else {}
         return session_launchers.valid_launcher(spawn.get("parent_thread_id")) if isinstance(spawn, dict) else None
-    except (OSError, UnicodeError, ValueError):
+    except OSError, UnicodeError, ValueError:
         return None
 
 
@@ -385,7 +385,7 @@ def _turn_state(record: Mapping[str, Any], *, since: float | None = None) -> str
                     return "waiting"
                 if payload.get("type") in {"task_started", "user_message"}:
                     return "active"
-    except (OSError, UnicodeError, ValueError):
+    except OSError, UnicodeError, ValueError:
         pass
     return None
 
@@ -433,7 +433,7 @@ def scan_activity(
             continue
         try:
             registered = _read(path)
-        except (OSError, UnicodeError, ValueError):
+        except OSError, UnicodeError, ValueError:
             registered = {}
         identities = registered.get("processes", ())
         if isinstance(identities, list):

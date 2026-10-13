@@ -205,7 +205,7 @@ def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:
     try:
         with pathlib.Path(body_path).open(encoding="utf-8", newline="") as stream:
             return session_id, stream.read()
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         return None
 
 

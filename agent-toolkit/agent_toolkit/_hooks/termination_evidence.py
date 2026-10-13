@@ -100,7 +100,7 @@ _GIT_VALUE_OPTIONS = frozenset(
 def _parse(payload_text: str) -> dict[str, Any] | None:
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
     if not isinstance(payload, dict) or not isinstance(payload.get("session_id"), str) or not payload["session_id"]:
         return None
@@ -365,7 +365,7 @@ def _git_root(cwd: str, *, options: tuple[str, ...] = ()) -> pathlib.Path | None
             check=False,
             timeout=5,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return None
     return pathlib.Path(result.stdout.strip()).resolve() if result.returncode == 0 and result.stdout.strip() else None
 
@@ -380,7 +380,7 @@ def _uncommitted_paths(repository: str, paths: list[str]) -> list[str] | None:
             check=False,
             timeout=5,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return None
     if result.returncode:
         return None
@@ -427,7 +427,7 @@ def _response_text(response: object) -> str | None:
     if isinstance(response, str):
         try:
             decoded = json.loads(response)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             return response
         if isinstance(decoded, dict):
             return _response_text(decoded) or response
@@ -448,7 +448,7 @@ def _returned_text(text: str) -> str:
         if path.is_absolute():
             try:
                 return path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
+            except OSError, UnicodeError:
                 return ""
     return text
 
@@ -589,7 +589,7 @@ def missing_completion(work: dict[str, Any]) -> list[str]:
         try:
             if _omission_policy(omission, work) == omission.get("policy_text"):
                 return []
-        except (OSError, UnicodeError, ValueError):
+        except OSError, UnicodeError, ValueError:
             pass
     return list(work.get("deliverables", []))
 

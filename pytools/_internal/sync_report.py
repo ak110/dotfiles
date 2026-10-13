@@ -47,7 +47,7 @@ def read() -> dict[str, Any]:
     """保存済みの記録を返す。不在と破損はいずれも空のdictとして扱う。"""
     try:
         loaded = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     return loaded if isinstance(loaded, dict) else {}
 

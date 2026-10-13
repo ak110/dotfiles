@@ -44,7 +44,7 @@ def grep(pattern: str, *, regex: bool = False, ignore_case: bool = False) -> lis
     for proc in psutil.process_iter(["pid", "exe", "name"]):
         try:
             exe = proc.info.get("exe") or proc.info.get("name") or ""
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except psutil.NoSuchProcess, psutil.AccessDenied:
             continue
         if not exe:
             continue

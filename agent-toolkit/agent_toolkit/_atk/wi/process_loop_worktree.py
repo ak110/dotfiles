@@ -31,7 +31,7 @@ def _git_output(args: list[str], cwd: pathlib.Path) -> str:
     """gitコマンドの標準出力を返す。失敗時は空文字を返す。"""
     try:
         return _git_command.output(args, cwd)
-    except (OSError, subprocess.CalledProcessError):
+    except OSError, subprocess.CalledProcessError:
         return ""
     finally:
         _console_title.set_console_title("atk wi process-loop")
@@ -71,7 +71,7 @@ def _resolve_git_path(output: str, cwd: pathlib.Path) -> pathlib.Path | None:
         path = cwd / path
     try:
         return path.resolve()
-    except (OSError, RuntimeError):
+    except OSError, RuntimeError:
         return None
 
 
@@ -135,7 +135,7 @@ def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib
         return False
     try:
         resolved_worktree_path = worktree_path.resolve()
-    except (OSError, RuntimeError):
+    except OSError, RuntimeError:
         _warn_worktree_preparation_failure(
             "既存worktreeの実体パスを解決できない", worktree_path, next_action=_worktree_status_next_action(worktree_path)
         )

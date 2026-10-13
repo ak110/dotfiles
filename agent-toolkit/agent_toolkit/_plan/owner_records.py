@@ -84,7 +84,7 @@ def read_owner_session_id(main_plan_path: pathlib.Path | str) -> str | None:
     """
     try:
         record = json.loads(owner_record_path(main_plan_path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    except OSError, UnicodeDecodeError, json.JSONDecodeError:
         return None
     if not isinstance(record, dict):
         return None

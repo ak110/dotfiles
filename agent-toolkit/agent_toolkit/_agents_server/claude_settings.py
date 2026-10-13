@@ -29,7 +29,7 @@ def merge_settings(parent: str | None, env: dict[str, str], root: str | None) ->
     try:
         raw = pathlib.Path(parent).read_text(encoding="utf-8") if from_file and parent is not None else parent or "{}"
         value = json.loads(raw)
-    except (OSError, ValueError, UnicodeError):
+    except OSError, ValueError, UnicodeError:
         value = {}
     settings = value if isinstance(value, dict) else {}
     inherited = settings.get("env")

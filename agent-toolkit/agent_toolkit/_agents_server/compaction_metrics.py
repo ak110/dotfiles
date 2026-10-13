@@ -39,7 +39,7 @@ def append_compaction_record(
                 for line in path.read_text(encoding="utf-8").splitlines():
                     try:
                         existing = json.loads(line)
-                    except (json.JSONDecodeError, ValueError):
+                    except json.JSONDecodeError, ValueError:
                         continue
                     if isinstance(existing, dict) and existing.get("item_id") == item_id:
                         return

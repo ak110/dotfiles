@@ -134,7 +134,7 @@ def git_common_dir(repo_path: pathlib.Path) -> pathlib.Path:
         return repo_path
     try:
         result = _run_git_result(["rev-parse", "--git-common-dir"], repo_path)
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return repo_path
     if result.returncode != 0 or not result.stdout.strip():
         return repo_path
@@ -252,7 +252,7 @@ def is_rebase_in_progress(
     for name in ("rebase-merge", "rebase-apply"):
         try:
             path = _git_path(private_notes, name, result_runner=result_runner)
-        except (OSError, subprocess.SubprocessError):
+        except OSError, subprocess.SubprocessError:
             path = None
         if path is not None and path.exists():
             return True
@@ -442,7 +442,7 @@ def _divergence_details(
             fields = counts.stdout.split()
             if len(fields) == 2:
                 count_text = f"ローカルのみ{fields[0]}件、upstreamのみ{fields[1]}件"
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         pass
     reason_lines = [
         f"Git履歴が分岐している（{count_text}）: {private_notes}。"
@@ -453,7 +453,7 @@ def _divergence_details(
         if differences.returncode == 0 and differences.stdout.strip():
             reason_lines.append("内容差のあるファイル:")
             reason_lines.append(differences.stdout.rstrip())
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         pass
     return "\n".join(reason_lines)
 
@@ -491,7 +491,7 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
             private_notes,
         )
         names = [line for line in conflicts.stdout.splitlines() if line]
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         names = []
     _outcome.report_failure(
         "rebaseに失敗したため、rebase状態を保持した。自動abortは行っていない\n"
@@ -684,7 +684,7 @@ def _target_has_staged_changes(
         return None
     try:
         result = result_runner(["diff", "--cached", "--quiet", "--", *paths], private_notes)
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return None
     if result.returncode == 0:
         return False

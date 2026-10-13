@@ -59,7 +59,7 @@ def codex_processes() -> tuple[CodexProcess, ...]:
     for process in psutil.process_iter(["name", "exe", "cmdline", "uids", "status", "ppid"], ad_value=_ACCESS_DENIED):
         try:
             info = process.info
-        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         if getattr(info.get("uids"), "real", None) != uid or info.get("status") in _TERMINATED_STATUSES:
             continue

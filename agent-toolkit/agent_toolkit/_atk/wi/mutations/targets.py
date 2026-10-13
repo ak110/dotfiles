@@ -60,7 +60,7 @@ def candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
         result = _git_command.run(
             ["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False, timeout=_GIT_TIMEOUT_SECONDS
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return None
     output = result.stdout.strip()
     return pathlib.Path(output) if result.returncode == 0 and output else None
@@ -70,7 +70,7 @@ def _local_worktree_repo_id(local_worktree: pathlib.Path) -> str | None:
     """作業ツリーのoriginから対象リポジトリ識別子を返す。"""
     try:
         url = _git_remote.origin_url(local_worktree, timeout=_GIT_TIMEOUT_SECONDS)
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return None
     if url is None:
         return None
@@ -90,7 +90,7 @@ def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
             check=False,
             timeout=_GIT_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         result = None
     commit = result.stdout.strip() if result is not None and result.returncode == 0 else ""
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
@@ -113,7 +113,7 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> CommitMetada
             check=False,
             timeout=_GIT_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         result = None
     output = result.stdout.rstrip("\n") if result is not None and result.returncode == 0 else ""
     short_oid, separator, subject = output.partition("\0")

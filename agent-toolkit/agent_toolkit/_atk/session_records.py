@@ -71,7 +71,7 @@ def resolved_repo(cwd: str, cache: dict[str, str | None]) -> str | None:
         with contextlib.redirect_stderr(io.StringIO()):
             try:
                 cache[cwd] = resolve_repo_id(None, cwd=pathlib.Path(cwd))
-            except (OSError, SystemExit, ValueError):
+            except OSError, SystemExit, ValueError:
                 cache[cwd] = None
     return cache[cwd]
 

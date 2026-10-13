@@ -240,7 +240,7 @@ def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
         meta_path = path.with_name(f"{path.stem}.meta.json")
         try:
             raw_meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, ValueError):
+        except OSError, json.JSONDecodeError, ValueError:
             raw_meta = {}
         agent_type = raw_meta.get("agentType") if isinstance(raw_meta, dict) else None
         record_id = f"{source.record_id}/{path.stem}"

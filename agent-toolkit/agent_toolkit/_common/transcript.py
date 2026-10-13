@@ -40,7 +40,7 @@ def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iter
     for line in reversed(lines):
         try:
             entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             continue
         if entry.get("isApiErrorMessage"):
             return
@@ -81,7 +81,7 @@ def iter_latest_assistant_text_messages(transcript_path: str) -> collections.abc
     for line in reversed(lines):
         try:
             entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             continue
         if entry.get("isApiErrorMessage"):
             return
@@ -121,7 +121,7 @@ def latest_main_assistant_entry(transcript_path: str) -> dict | None:
     for line in reversed(lines):
         try:
             entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             continue
         if entry.get("type") == "assistant" and not entry.get("isSidechain"):
             return entry
@@ -136,7 +136,7 @@ def iter_assistant_content_blocks(lines: list[str]) -> collections.abc.Iterator[
     for position, line in enumerate(lines):
         try:
             entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             continue
         if entry.get("type") != "assistant" or entry.get("isSidechain"):
             continue
@@ -205,7 +205,7 @@ def read_transcript_entries(transcript_path: str) -> list[dict]:
     for line in read_transcript_lines(transcript_path) or []:
         try:
             entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             continue
         if isinstance(entry, dict):
             entries.append(entry)

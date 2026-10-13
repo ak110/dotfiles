@@ -1130,7 +1130,7 @@ def _resolve_sha(revision: str, subprocess_timeout: float) -> str | None:
             check=False,
             timeout=subprocess_timeout,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except FileNotFoundError, subprocess.TimeoutExpired:
         return None
     if result.returncode != 0:
         return None

@@ -173,7 +173,7 @@ class SessionsContext:
     codex_home: pathlib.Path
     remote_hosts: tuple[str, ...]
     runner: SshRunner
-    state: "SessionsState"
+    state: SessionsState
     # agents_serverのsession登録簿を置く状態ディレクトリ。登録簿の委譲元を一覧の親子付けに使う。
     state_dir: pathlib.Path | None = None
 
@@ -186,7 +186,7 @@ class SessionsState:
     lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock)
     # ホスト名 -> "connected"|"connecting"|"disconnected"。
     host_status: dict[str, str] = dataclasses.field(default_factory=dict)
-    clients: dict[str, "RemoteSessionClient"] = dataclasses.field(default_factory=dict)
+    clients: dict[str, RemoteSessionClient] = dataclasses.field(default_factory=dict)
     tasks: list[asyncio.Task[None]] = dataclasses.field(default_factory=list)
     # ローカルの記録rootの変更監視。`start_local_watch`が生成する。
     record_watch: session_watch.RecordWatch | None = None
@@ -195,7 +195,7 @@ class SessionsState:
     # ローカルの記録単位の解析結果。要求ごとの走査で変更のない記録を読み直さないために保持する。
     record_index: session_watch.RecordSummaryIndex = dataclasses.field(default_factory=session_watch.RecordSummaryIndex)
     # 進行中の一覧の取得（ローカルの走査とリモートの取得）。同時に届いた一覧の要求はこの1回の結果を共有する。
-    list_task: "asyncio.Future[tuple[list[SessionSummary], list[dict[str, str]]]] | None" = None
+    list_task: asyncio.Future[tuple[list[SessionSummary], list[dict[str, str]]]] | None = None
 
 
 def create_context(
@@ -322,7 +322,7 @@ def is_local_record_path(context: SessionsContext, raw: str) -> bool:
     for root in (context.claude_home / "projects", context.codex_home / "sessions"):
         try:
             target.relative_to(root.resolve())
-        except (ValueError, OSError):
+        except ValueError, OSError:
             continue
         return True
     return False
@@ -599,7 +599,7 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
     return entries, None
 
 
-def _retrieve_exception(task: "asyncio.Future[typing.Any]") -> None:
+def _retrieve_exception(task: asyncio.Future[typing.Any]) -> None:
     """待つ要求が残らずに終わった取得の例外を回収し、未回収の例外としてログへ出力しない。"""
     if not task.cancelled():
         task.exception()

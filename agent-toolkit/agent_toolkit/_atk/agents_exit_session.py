@@ -178,7 +178,7 @@ def _target(process: psutil.Process) -> Target | None:
         else:
             return None
         return Target(process.pid, host, process.create_time(), executable, stat.st_dev, stat.st_ino)
-    except (OSError, psutil.Error):
+    except OSError, psutil.Error:
         return None
 
 
@@ -212,7 +212,7 @@ def _same_process(target: Target) -> bool:
             and stat.st_dev == target.device
             and stat.st_ino == target.inode
         )
-    except (OSError, psutil.Error):
+    except OSError, psutil.Error:
         return False
 
 

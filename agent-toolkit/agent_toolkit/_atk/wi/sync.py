@@ -223,7 +223,7 @@ def _redundant_terminal_divergence(private_notes: pathlib.Path) -> bool:
         if not commits:
             return False
         return all(_terminal_commit_is_redundant(private_notes, commit) for commit in commits)
-    except (OSError, subprocess.SubprocessError, UnicodeError):
+    except OSError, subprocess.SubprocessError, UnicodeError:
         return False
 
 

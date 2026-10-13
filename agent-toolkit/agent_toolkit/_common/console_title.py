@@ -23,7 +23,7 @@ import typing
 
 
 @contextlib.contextmanager
-def console_title(title: str, *, stream: typing.TextIO | None = None) -> typing.Generator[None, None, None]:
+def console_title(title: str, *, stream: typing.TextIO | None = None) -> typing.Generator[None]:
     """ターミナルのウィンドウタイトルを`title`へ設定し、終了時に元へ戻す。
 
     ターミナルへ接続されていないときは何もしない。
@@ -73,7 +73,7 @@ def _isatty(stream: typing.TextIO) -> bool:
     """`stream`がターミナルへ接続されているかを判定する。"""
     try:
         return stream.isatty()
-    except (AttributeError, ValueError):
+    except AttributeError, ValueError:
         return False
 
 
@@ -105,7 +105,7 @@ def _set_windows_console_title(title: str) -> None:
 
 
 @contextlib.contextmanager
-def _windows_console_title(title: str) -> typing.Generator[None, None, None]:
+def _windows_console_title(title: str) -> typing.Generator[None]:
     """Windowsコンソールのタイトルを設定し、終了時に設定前のタイトルへ戻す。
 
     `ctypes.windll`はWindows専用属性のため`getattr`経由で取得して型解析を回避する。

@@ -73,7 +73,7 @@ class INPUT(ctypes.Structure):
     ]
 
 
-def _build_input(vk: int, flags: int) -> "INPUT":
+def _build_input(vk: int, flags: int) -> INPUT:
     """`INPUT`構造体を1件構築する（unionフィールド`ki`を初期化する）。
 
     `INPUT._anonymous_ = ("u",)`によりunion`u`のサブ`ki`を直接キーワード引数で渡せる。

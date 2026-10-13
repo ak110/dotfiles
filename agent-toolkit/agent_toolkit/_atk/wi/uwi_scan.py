@@ -120,7 +120,7 @@ def scan_active_uwis(root: pathlib.Path, target_repo: str) -> ActiveUwiScan:
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            except OSError, UnicodeDecodeError:
                 complete = False
                 continue
             parsed = parse_frontmatter(text)

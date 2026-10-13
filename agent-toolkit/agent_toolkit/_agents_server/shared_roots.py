@@ -105,7 +105,7 @@ def find_root_session_id_for_session(session_id: str, state_root: pathlib.Path |
         for path in list_status_files(root_session_id, state_root):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError):
+            except OSError, UnicodeError, json.JSONDecodeError:
                 continue
             sessions = payload.get("sessions") if isinstance(payload, dict) else None
             if isinstance(sessions, list) and any(
@@ -129,7 +129,7 @@ def resolve_conversation_root(
     alias_present = alias_path.is_file()
     try:
         payload = json.loads(alias_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+    except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
         direct = status_directory(current_session_id, state_root).is_dir()
         return ConversationRootResolution(
             current_session_id=current_session_id,
@@ -198,7 +198,7 @@ def write_root_alias(
         for path in directory.glob("*.json"):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError):
+            except OSError, UnicodeError, json.JSONDecodeError:
                 continue
             target = payload.get("root_session_id") if isinstance(payload, dict) else None
             if isinstance(target, str) and valid_session_id(target) and not status_directory(target, state_root).is_dir():
@@ -231,7 +231,7 @@ def resolve_status_owner_identity(
             continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
+        except OSError, UnicodeError, json.JSONDecodeError:
             continue
         if (
             isinstance(payload, dict)
@@ -243,7 +243,7 @@ def resolve_status_owner_identity(
         for path in list_status_files(identity.root_session_id, state_root):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError):
+            except OSError, UnicodeError, json.JSONDecodeError:
                 continue
             if isinstance(payload, dict) and payload.get("host_session_id") == identity.host_session_id:
                 writers.append(path.stem)

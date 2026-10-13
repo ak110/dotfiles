@@ -996,7 +996,7 @@ def _check_human_review_root(root: str, expected_round: str, decision: str) -> l
             for line in review_path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         )
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         has_round = False
     if not has_round:
         return [f"`## {PLAN_H2_ACTION}`の計画レビュー表に同じroundが無い: {review_path} round {expected_round}"]

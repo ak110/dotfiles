@@ -68,7 +68,7 @@ def resolve_target_repo(cwd: str) -> str | None:
     """
     try:
         url = _git_remote.origin_url(cwd, timeout=_GIT_TIMEOUT_SEC)
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return None
     if url is None:
         return None

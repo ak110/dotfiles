@@ -1259,13 +1259,13 @@ def _original_text(row: dict[str, str], repository: pathlib.Path, wi_outputs: di
     if row["awi"]:
         try:
             _, body = _load_wi(row["awi"], repository, wi_outputs)
-        except (OSError, subprocess.TimeoutExpired, ValueError):
+        except OSError, subprocess.TimeoutExpired, ValueError:
             return None
         return "\n".join(body)
     for plan in _plan_files(row["origin"]):
         try:
             return plan.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+        except OSError, UnicodeError:
             continue
     return None
 
@@ -1687,7 +1687,7 @@ def _names_path(text: str, target: pathlib.Path, repository: pathlib.Path) -> bo
             try:
                 if pathlib.Path(os.path.abspath(path)).resolve() == resolved:
                     return True
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 continue
     return False
 

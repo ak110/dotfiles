@@ -56,7 +56,7 @@ def _is_queue_repository(worktree: pathlib.Path, private_notes: pathlib.Path | N
                 return False
             value = pathlib.Path(result.stdout.strip())
             common_dirs.append(value.resolve() if value.is_absolute() else (repository / value).resolve())
-        except (OSError, RuntimeError):
+        except OSError, RuntimeError:
             return False
     return common_dirs[0] == common_dirs[1]
 

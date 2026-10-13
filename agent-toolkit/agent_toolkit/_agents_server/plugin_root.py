@@ -26,7 +26,7 @@ def _plugin_root_is_versioned(plugin_root: Path) -> bool:
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
     try:
         version = json.loads(manifest.read_text(encoding="utf-8")).get("version")
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+    except OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError:
         return False
     if not isinstance(version, str) or not version:
         return False

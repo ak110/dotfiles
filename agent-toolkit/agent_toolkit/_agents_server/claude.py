@@ -141,7 +141,7 @@ def _describe_child_processes(pid: int | None) -> list[str]:
         child_pids = {
             int(child) for task in task_dir.iterdir() for child in (task / "children").read_text(encoding="utf-8").split()
         }
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return []
     for child_pid in sorted(child_pids):
         try:

@@ -76,7 +76,7 @@ def reset_console(*, platform: str = os.name, stream: typing.TextIO | None = Non
     try:
         if not output.isatty():
             return
-    except (AttributeError, ValueError):
+    except AttributeError, ValueError:
         return
     executable = shutil.which("reset")
     if executable is not None:

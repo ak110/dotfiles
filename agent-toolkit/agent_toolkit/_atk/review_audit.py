@@ -83,7 +83,7 @@ def _read_records(path: Path) -> dict[str, dict[str, str]]:
     """記録を読み、解釈できないファイルと最上位が辞書でないファイルを空として扱う。"""
     try:
         records = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return {}
     if not isinstance(records, dict):
         return {}

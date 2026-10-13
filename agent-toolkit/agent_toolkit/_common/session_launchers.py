@@ -33,7 +33,7 @@ def read_launcher(path: pathlib.Path) -> str | None:
     """登録簿のレコード1件が持つ委譲元sessionの識別子を返す。読めない場合と項目を持たない場合は`None`を返す。"""
     try:
         payload: typing.Any = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except OSError, UnicodeError, json.JSONDecodeError:
         return None
     return valid_launcher(payload.get(LAUNCHER_KEY)) if isinstance(payload, dict) else None
 

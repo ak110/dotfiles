@@ -155,7 +155,7 @@ def _load_config() -> dict[str, str]:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except json.JSONDecodeError, OSError:
         return {}
     if not isinstance(data, dict):
         return {}

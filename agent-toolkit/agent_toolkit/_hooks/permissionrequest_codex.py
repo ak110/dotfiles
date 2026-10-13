@@ -62,7 +62,7 @@ def _tokens(command: str) -> list[str]:
 def _payload_object(payload_text: str) -> dict[str, typing.Any] | None:
     try:
         value = json.loads(payload_text)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return None
     return value if isinstance(value, dict) else None
 
@@ -131,7 +131,7 @@ def main(payload_text: str) -> int:
         if not target.is_absolute():
             return 0
         _managed_temp.validate_managed_temp(target)
-    except (OSError, ValueError, _managed_temp.ManagedTempError):
+    except OSError, ValueError, _managed_temp.ManagedTempError:
         return 0
     _allow()
     return 0

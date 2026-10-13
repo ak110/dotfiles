@@ -108,7 +108,7 @@ def _extract_agents_server_structured_response(tool_response: object) -> dict:
     if isinstance(tool_response, str):
         try:
             parsed = json.loads(tool_response)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return {}
         return parsed if isinstance(parsed, dict) else {}
     return {}

@@ -105,7 +105,7 @@ def _embedded_rule_paths() -> set[str]:
     agents_md = _host_homes.codex_home() / "AGENTS.md"
     try:
         text = agents_md.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         return set()
     return set(_BOUNDARY_PATH_PATTERN.findall(text))
 
@@ -1177,7 +1177,7 @@ class AppServerManager:
                 session.codex_model_provider = original
                 _LOG.info("Codex接続先の再開が拒否されました: session_id=%s provider=%s", session.session_id, candidate)
                 continue
-            except (AppServerError, TimeoutError, OSError):
+            except AppServerError, TimeoutError, OSError:
                 session.codex_model_provider = original
                 _LOG.info("Codex接続先の再開を確定できません: session_id=%s provider=%s", session.session_id, candidate)
                 return False

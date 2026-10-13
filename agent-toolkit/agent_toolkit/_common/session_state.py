@@ -158,7 +158,7 @@ def read_state(session_id: str) -> dict:
         return {}
     try:
         data = json.loads(state_path(session_id).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
+    except OSError, json.JSONDecodeError, ValueError:
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -184,7 +184,7 @@ def inherit_state_from_transcript(session_id: str, transcript_path: str) -> bool
             for line in _transcript.read_transcript_lines(transcript_path) or []:
                 try:
                     entry = json.loads(line)
-                except (json.JSONDecodeError, ValueError):
+                except json.JSONDecodeError, ValueError:
                     continue
                 if not isinstance(entry, dict):
                     continue
@@ -203,7 +203,7 @@ def inherit_state_from_transcript(session_id: str, transcript_path: str) -> bool
                     continue
                 try:
                     inherited = json.loads(predecessor_path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError, ValueError):
+                except OSError, json.JSONDecodeError, ValueError:
                     continue
                 if isinstance(inherited, dict):
                     candidates[predecessor] = inherited
@@ -318,7 +318,7 @@ def _read_locked(path: pathlib.Path) -> dict:
     """ロック取得後に状態ファイルを読み込む。不在・破損時は空辞書を返す。"""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
+    except OSError, json.JSONDecodeError, ValueError:
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -329,7 +329,7 @@ def _read_title_locked(path: pathlib.Path) -> dict | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
-    except (OSError, json.JSONDecodeError, ValueError):
+    except OSError, json.JSONDecodeError, ValueError:
         return None
     if not isinstance(data, dict):
         return None

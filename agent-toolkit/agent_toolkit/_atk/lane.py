@@ -121,7 +121,7 @@ def _release_fixed(worktree: pathlib.Path, session_id: str) -> None:
         owner = path.parent.name
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, ValueError):
+        except OSError, UnicodeError, ValueError:
             # 読めない登録は所有を判定できない。作成先の実体の有無で上書きを防ぐ。
             continue
         if owner == session_id or not isinstance(record, dict) or record.get("worktree") != str(worktree):
@@ -394,7 +394,7 @@ def _process_activity(worktree: pathlib.Path) -> str | None:
         # 所属の分からない別プロセスの取得失敗を、当該レーンの保持条件へ広げない。
         try:
             argv = process.cmdline()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except psutil.NoSuchProcess, psutil.AccessDenied:
             continue
         for argument in argv:
             candidate = pathlib.Path(argument.split("=", 1)[-1])

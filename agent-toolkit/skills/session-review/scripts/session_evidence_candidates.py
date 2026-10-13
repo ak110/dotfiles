@@ -317,7 +317,7 @@ def _wi_candidate_events(collected: list[_CollectedRecord], session_id: str) -> 
         for path in sorted(directory.glob("*.md")):
             try:
                 text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
+            except OSError, UnicodeError:
                 continue
             parsed = _parse_wi_frontmatter(text)
             metadata = parsed[0] if parsed is not None else {}

@@ -340,11 +340,11 @@ def test_git_timeout_kills_descendants_and_limits_output_recovery(
     killed: list[int] = []
 
     class Process:
-        def __init__(self, pid: int, children: list["Process"] | None = None) -> None:
+        def __init__(self, pid: int, children: list[Process] | None = None) -> None:
             self.pid = pid
             self._children = children or []
 
-        def children(self, *, recursive: bool) -> list["Process"]:
+        def children(self, *, recursive: bool) -> list[Process]:
             assert recursive
             return self._children
 

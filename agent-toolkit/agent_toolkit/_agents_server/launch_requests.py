@@ -291,7 +291,7 @@ def _default_handoff_path() -> pathlib.Path | None:
     if session_id is not None:
         try:
             entries = _managed_temp.list_managed_temp(_managed_temp.SESSION_TEMP_PREFIX, session_id=session_id)
-        except (_managed_temp.ManagedTempError, OSError):
+        except _managed_temp.ManagedTempError, OSError:
             entries = []
         recorded = entries[-1].get("path") if entries else None
         if isinstance(recorded, str) and pathlib.Path(recorded).is_dir():
@@ -299,7 +299,7 @@ def _default_handoff_path() -> pathlib.Path | None:
     if directory is None:
         try:
             directory = _managed_temp.create_managed_temp(_HANDOFF_TEMP_PREFIX)
-        except (_managed_temp.ManagedTempError, OSError):
+        except _managed_temp.ManagedTempError, OSError:
             _LOG.warning("省略された引き継ぎ記録先の代わりの記録先を用意できません", exc_info=True)
             return None
     while True:

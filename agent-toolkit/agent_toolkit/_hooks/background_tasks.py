@@ -164,11 +164,11 @@ def _pending_cache_key(
         transcript_state = None
     try:
         background_state = json.dumps(background_tasks, ensure_ascii=False, sort_keys=True)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         background_state = repr(background_tasks)
     try:
         stored_state = json.dumps(session_state, ensure_ascii=False, sort_keys=True)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         stored_state = repr(session_state)
     return transcript_path, session_id, background_state, stored_state, transcript_state
 
@@ -385,7 +385,7 @@ def async_launch_offsets(transcript_path: str) -> dict[str, int]:
         position += len(raw)
         try:
             entry = json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             continue
         if not isinstance(entry, dict) or not entry_in_scan_scope(entry, include_sidechain=False):
             continue
@@ -451,7 +451,7 @@ def _read_child_transcript_entries(transcript_path: str) -> list[dict] | None:
     for line in lines:
         try:
             entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             return None
         if not isinstance(entry, dict):
             return None
@@ -852,7 +852,7 @@ def _collect_nested_agent_launches(
         metadata_path = child_path.with_name(f"{child_path.stem}.meta.json")
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
         if not _is_direct_subagent_metadata(metadata):
             continue

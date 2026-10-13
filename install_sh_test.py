@@ -162,7 +162,7 @@ def _usable_uv_binary(home: pathlib.Path, isolated_path: str) -> pathlib.Path:
             result = subprocess.run(
                 [str(candidate), "--version"], env=env, capture_output=True, text=True, timeout=5, check=False
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except OSError, subprocess.TimeoutExpired:
             continue
         if result.returncode == 0 and result.stdout.startswith("uv "):
             return candidate

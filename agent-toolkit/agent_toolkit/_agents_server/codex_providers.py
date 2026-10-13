@@ -104,7 +104,7 @@ async def select(
     if subscription:
         try:
             usage = await request("account/rateLimits/read", {})
-        except (RuntimeError, OSError, TimeoutError):
+        except RuntimeError, OSError, TimeoutError:
             usage = {}
         # ordinaryUsageAllowedはactive accountへの検証済み欄。accountIdが明示される場合は
         # account/readのworkspaceRoutingと同じIDの結果だけを使い、疎通知を補完に使わない。

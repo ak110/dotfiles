@@ -79,7 +79,7 @@ def _user_settings_ttl(request_bucket: str) -> str | None:
     path = _host_homes.claude_config_dir() / "settings.json"
     try:
         settings = pytilpack.jsonc.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError):
+    except OSError, UnicodeError, ValueError:
         return None
     if not isinstance(settings, dict):
         return None
@@ -102,7 +102,7 @@ def _has_valid_subscription_status() -> bool:
             errors="replace",
             timeout=5,
         )
-    except (OSError, UnicodeError, subprocess.TimeoutExpired):
+    except OSError, UnicodeError, subprocess.TimeoutExpired:
         return False
     if result.returncode != 0 or not isinstance(result.stdout, str):
         return False

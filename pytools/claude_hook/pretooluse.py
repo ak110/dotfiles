@@ -46,7 +46,7 @@ def main(payload_text: str) -> int:
     """エントリポイント。exit code を返す（常に0）。"""
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         # 想定外入力ではフックを無効化する（実処理の破損を避ける安全側の判定）。
         return 0
 
@@ -221,13 +221,13 @@ def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Pat
         if not target.is_absolute():
             return False
         target = target.resolve(strict=False)
-    except (ValueError, OSError):
+    except ValueError, OSError:
         return False
     for base in _agent_toolkit_distribution_roots(dotfiles_root):
         try:
             target.relative_to(base.resolve(strict=False))
             return True
-        except (ValueError, OSError):
+        except ValueError, OSError:
             continue
     return False
 
@@ -273,7 +273,7 @@ def _list_pyproject_scripts(path: pathlib.Path) -> set[str]:
         return set()
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, tomllib.TOMLDecodeError):
+    except OSError, ValueError, tomllib.TOMLDecodeError:
         return set()
     project = data.get("project")
     if not isinstance(project, dict):

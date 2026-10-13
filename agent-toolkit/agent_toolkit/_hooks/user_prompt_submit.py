@@ -290,7 +290,7 @@ def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return 0
 
     if not isinstance(payload, dict):

@@ -34,7 +34,7 @@ def _read_unavailable_entries(path: pathlib.Path) -> list[dict[str, Any]]:
     """記録ファイルのうち、書式に適合する項目だけを返す。"""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+    except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
         return []
     if not isinstance(payload, dict) or payload.get("version") != 1:
         return []
@@ -48,7 +48,7 @@ def _unavailable_entry_is_live(entry: dict[str, Any], now: datetime.datetime) ->
     """最終除外時刻から保持期間内の項目かを返す。"""
     try:
         excluded_at = datetime.datetime.fromisoformat(str(entry.get("excluded_at")))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     if excluded_at.tzinfo is None:
         return False

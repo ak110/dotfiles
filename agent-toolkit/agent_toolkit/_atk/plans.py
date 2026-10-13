@@ -1115,7 +1115,7 @@ def _saved_plan_texts(private_notes: pathlib.Path) -> dict[pathlib.Path, str]:
             continue
         try:
             texts[path] = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        except OSError, UnicodeDecodeError:
             continue
     return texts
 
@@ -1205,7 +1205,7 @@ def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float 
                 raise _wi_web_input.WebInputError(
                     "書き換えcommitがremote branchへ到達したことを確認できません", next_action=_UNPUSHED_NEXT_ACTION
                 )
-        except (OSError, subprocess.SubprocessError, _wi_web_input.WebInputError):
+        except OSError, subprocess.SubprocessError, _wi_web_input.WebInputError:
             if start_head == _git_head(private_notes):
                 _restore_files(snapshot)
             raise

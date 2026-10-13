@@ -76,7 +76,7 @@ def _remove_created_target(
     try:
         if _path_identity(path) != created_identity:
             return
-    except (OSError, ManagedTempError):
+    except OSError, ManagedTempError:
         return
     with contextlib.suppress(OSError):
         path.rmdir()

@@ -58,7 +58,7 @@ def parse_stop_session(raw_stdin: str, approve: collections.abc.Callable[[], Non
     """
     try:
         payload = json.loads(raw_stdin)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         approve()
         return None
 

@@ -44,7 +44,7 @@ def observed_session_identity(session_id: str) -> dict[str, str] | None:
                     value = json.loads(raw)
                     if isinstance(value, dict):
                         entries.append(value)
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except OSError, UnicodeError, json.JSONDecodeError:
         return None
     identities = distinct_identities(entries, found.engine)
     return identities[-1].public() if identities else None

@@ -53,7 +53,7 @@ def is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
         return False
     try:
         manifest = json.loads((path.parent.parent / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except OSError, UnicodeError, json.JSONDecodeError:
         return False
     return isinstance(manifest, dict) and manifest.get("name") == "agent-toolkit"
 

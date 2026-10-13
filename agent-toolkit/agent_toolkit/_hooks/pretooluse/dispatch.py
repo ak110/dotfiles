@@ -155,7 +155,7 @@ def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
     """設定ファイルが`attribution.commit`を文字列として定義するかと、その値を返す。"""
     try:
         settings = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+    except OSError, UnicodeError, json.JSONDecodeError, ValueError:
         return False, None
     if not isinstance(settings, dict):
         return False, None
@@ -200,7 +200,7 @@ def main(payload_text: str) -> int:
     """
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         # 想定外入力ではフックを無効化（実処理の破損を避ける安全側の判定）
         return 0
 

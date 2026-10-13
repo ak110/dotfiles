@@ -54,7 +54,7 @@ def wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
         for line in reversed(lines):
             try:
                 entry = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
+            except json.JSONDecodeError, ValueError:
                 continue
             if entry.get("type") != "assistant" or entry.get("isSidechain"):
                 continue

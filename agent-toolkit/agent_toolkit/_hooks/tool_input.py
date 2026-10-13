@@ -162,7 +162,7 @@ def _read_text(path: str | None) -> str | None:
         return None
     try:
         return pathlib.Path(path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError, ValueError):
+    except OSError, UnicodeDecodeError, ValueError:
         return None
 
 
@@ -181,7 +181,7 @@ def _read_text_for_overwrite(path: str | None) -> tuple[str | None, bool]:
         return pathlib.Path(path).read_text(encoding="utf-8"), False
     except FileNotFoundError:
         return None, True
-    except (OSError, UnicodeDecodeError, ValueError):
+    except OSError, UnicodeDecodeError, ValueError:
         return None, False
 
 

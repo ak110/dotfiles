@@ -44,7 +44,7 @@ def _read_references(lines: list[str], *, cwd: str = "") -> set[str]:
     for line in lines:
         try:
             entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             continue
         if not isinstance(entry, dict) or not _transcript_scan.entry_in_scan_scope(entry, include_sidechain=False):
             continue

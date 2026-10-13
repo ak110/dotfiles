@@ -80,7 +80,7 @@ def _git_common_directory(git_directory: Path) -> Path:
     """
     try:
         raw = (git_directory / "commondir").read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         return git_directory
     if not raw:
         return git_directory
@@ -112,7 +112,7 @@ def _resolve_git_directory(root: Path) -> Path | None:
         return None
     try:
         marker, raw_path = dot_git.read_text(encoding="utf-8").strip().split(":", maxsplit=1)
-    except (OSError, UnicodeError, ValueError):
+    except OSError, UnicodeError, ValueError:
         return None
     if marker != "gitdir":
         return None

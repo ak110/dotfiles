@@ -31,7 +31,7 @@ class _Com:
         function = self.call_type(result, ctypes.c_void_p, *args)(table[index])
         return function(self.pointer, *values)
 
-    def reference(self, index: int, args: tuple[Any, ...], *values: Any) -> "_Com":
+    def reference(self, index: int, args: tuple[Any, ...], *values: Any) -> _Com:
         pointer = ctypes.c_void_p()
         _check(self.call(index, ctypes.c_int32, (*args, ctypes.POINTER(ctypes.c_void_p)), *values, ctypes.byref(pointer)))
         return _Com(pointer, self.call_type)
@@ -86,7 +86,7 @@ class UIAutomation:
         self.oleaut.SysFreeString.argtypes = [ctypes.c_void_p]
         self.oleaut.SysFreeString.restype = None
 
-    def __enter__(self) -> "UIAutomation":
+    def __enter__(self) -> UIAutomation:
         _check(self.ole32.CoInitializeEx(None, 0))  # COINIT_MULTITHREADED
         self.initialized = True
         try:

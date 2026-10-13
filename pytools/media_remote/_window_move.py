@@ -33,7 +33,7 @@ class WindowMover:
         self.worker: threading.Thread | None = None
         self.hooks: threading.Thread | None = None
 
-    def __enter__(self) -> "WindowMover":
+    def __enter__(self) -> WindowMover:
         self.running.set()
         ready = threading.Event()
         self.worker = threading.Thread(target=self._work, args=(ready,), name="media-window-worker")

@@ -561,7 +561,7 @@ def _past_wi_sections() -> list[tuple[str, str, str, list[set[str]]]]:
         for path in sorted(directory.glob("*.md")):
             try:
                 text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
+            except OSError, UnicodeError:
                 continue
             sections = _wi_sections.h2_sections(text)
             grams = [_ngrams(_normalize_for_similarity(sections[name])) for name in _SIMILAR_SECTIONS if sections.get(name)]
@@ -654,7 +654,7 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
                     lines = path.read_text(encoding="utf-8").splitlines()
                 except FileNotFoundError:
                     lines = []
-                except (OSError, UnicodeError):
+                except OSError, UnicodeError:
                     lines = []
                     skipped += 1
                 for line in lines:
@@ -675,7 +675,7 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
                         timestamp = datetime.datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
                         if timestamp.tzinfo is None:
                             raise ValueError("時刻のtimezoneが無い")
-                    except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+                    except KeyError, ValueError, TypeError, json.JSONDecodeError:
                         skipped += 1
                         continue
                     if timestamp >= cutoff:

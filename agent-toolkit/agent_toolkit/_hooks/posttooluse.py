@@ -237,7 +237,7 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
     """処理対象のPostToolUse payloadを検証して共通項目を返す。"""
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
     session_id = payload.get("session_id", "")
     if not isinstance(session_id, str) or not session_id:
@@ -558,7 +558,7 @@ def main(payload_text: str) -> int:
         print(f"終了工程の実行結果を取得できない: {error}", file=sys.stderr)
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         payload = None
     if not isinstance(payload, dict):
         payload = {}

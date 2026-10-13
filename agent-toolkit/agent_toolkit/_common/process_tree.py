@@ -44,7 +44,7 @@ def collect_descendants(pid: int | None) -> list[psutil.Process]:
         return []
     try:
         return psutil.Process(pid).children(recursive=True)
-    except (psutil.Error, OSError):
+    except psutil.Error, OSError:
         return []
 
 
@@ -90,7 +90,7 @@ def _holds_resources(process: psutil.Process) -> bool:
     """
     try:
         return process.status() != psutil.STATUS_ZOMBIE
-    except (psutil.Error, OSError):
+    except psutil.Error, OSError:
         return False
 
 
@@ -98,7 +98,7 @@ def _describe(process: psutil.Process) -> str:
     """PIDと起動コマンドで子孫プロセスを識別できる記述を返す。"""
     try:
         command = " ".join(process.cmdline())
-    except (psutil.Error, OSError):
+    except psutil.Error, OSError:
         command = ""
     return f"{process.pid}: {command}" if command else str(process.pid)
 

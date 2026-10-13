@@ -101,7 +101,7 @@ def _write_json(path: pathlib.Path, value: Mapping[str, Any]) -> None:
 def _read_json(path: pathlib.Path) -> dict[str, Any] | None:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+    except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
         return None
     return value if isinstance(value, dict) else None
 
@@ -672,7 +672,7 @@ def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
     """状態ファイルを解釈し、session一覧または`None`を返す。"""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+    except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
         return None
     sessions = value.get("sessions") if isinstance(value, dict) and value.get("version") == 1 else None
     if not isinstance(sessions, list):

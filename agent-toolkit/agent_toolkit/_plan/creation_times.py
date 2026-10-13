@@ -90,7 +90,7 @@ def _load_index() -> dict[str, typing.Any]:
     """インデックスを読み込む。不在・読み取り失敗・形式不正はいずれも空として扱う。"""
     try:
         payload = json.loads(_CREATION_TIME_INDEX_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return {}
     if not isinstance(payload, dict):
         return {}
@@ -110,7 +110,7 @@ def _load_legacy_entries() -> dict[tuple[str, str], tuple[float, pathlib.Path]]:
     for candidate in candidates:
         try:
             payload = json.loads(candidate.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except OSError, json.JSONDecodeError:
             continue
         if not isinstance(payload, dict):
             continue
