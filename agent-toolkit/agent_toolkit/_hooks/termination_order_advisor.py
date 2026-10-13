@@ -2,7 +2,7 @@ r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了�
 
 成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行）を行った作業に、同じ作業の開始以後の起動証拠が無ければ、
-初回Stopからcompletion-reportの起動と残工程への続行を案内して遮断する。
+有効なプロジェクト規範による省略が無ければ、初回Stopから起動と残工程への続行を案内して遮断する。
 起動証拠はClaude Codeでは成功したSkill呼び出し、Codexでは実際の入力と結果が示す`SKILL.md`の読取とし、
 `termination_evidence`が観測した記録だけを使う。報告本文の見出し・区切り・区分・候補IDは判定に使わない。
 起動後の工程の完遂と報告の内容はcompletion-reportの規範が扱い、本フックは確かめない。
@@ -132,7 +132,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         + "\n"
         + termination_evidence.decision_hint(payload),
         fix=(
-            f"作業を完了して終える場合は{operation}、同スキルの工程の残り（作業完了報告、振り返り、最終報告、"
+            "適用するプロジェクト規範で起動を省く場合は、"
+            f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/references/termination-evidence.md'}`を直接読み、"
+            "`omit-completion`を記録して通常の報告を届ける。"
+            f"起動が必要な作業を完了して終える場合は{operation}、同スキルの工程の残り（作業完了報告、振り返り、最終報告、"
             "呼び出し元が定める終端工程）へ進む。"
             "ユーザーの中止・置換、確認の回答や委譲先の結果の待機、技術的不成立で終える場合は、"
             "原証拠と対象の`work_id`を`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ渡す。"

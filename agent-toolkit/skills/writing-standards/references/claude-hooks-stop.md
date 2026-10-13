@@ -42,9 +42,12 @@ CodexのStopは`termination_order_advisor`だけを実行する。他のStop判�
 ## 終了工程の証拠
 
 判定と保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が所有する。設計の経緯と却下した案は`docs/development/design-hooks.md`「終了工程の証拠」にある。
+プロジェクト規範による省略を記録するメインは、`agent-toolkit:completion-report`を起動せず同スキルの`references/termination-evidence.md`を直接読む。
+意味と優先順位はメインが判断し、記録処理は規範全文と所在、観測した作業の対象、現在のメインと会話・入力の対応を確かめる。
+規範の変更、次の判断、新しい人間入力の後の成果作業では古い省略を流用せず、別作業の不足と自律終了の義務は維持する。
 
 - 供給と消費: PreToolUseとPostToolUse（Claude CodeではPostToolUseFailureを含む）が実際の呼び出しと応答を供給し、UserPromptSubmitが人間の入力を供給する。Stopの`termination_order_advisor`は同じ証拠だけを消費し、報告本文を読まない
-- 判定する範囲: 成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、計画の保存、WIの保存、commit・push）を行った作業を対象とする。同じ作業に`agent-toolkit:completion-report`の起動証拠が無い終了を、初回Stopから遮断する。起動後の工程の完遂、報告の内容と書式は判定せず、completion-reportの規範が扱う
+- 判定する範囲: 成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、計画の保存、WIの保存、commit・push）を行った作業を対象とする。起動を要する作業に`agent-toolkit:completion-report`の起動証拠が無い終了を、初回Stopから遮断する。適用するプロジェクト規範による有効な省略は、その作業の起動不足だけを免除する。起動後の工程の完遂、報告の内容と書式は判定せず、completion-reportの規範が扱う
 - 起動証拠: Claude Codeは成功したSkill呼び出し、CodexはBashへ正規化された読取コマンドの入力が`skills/completion-report/SKILL.md`を指し、その結果が同スキルのfrontmatterの`name`を含む読取とする。読取パスの文字列、起動するという発話、失敗・空の読取、検索の一致行、他の作業や委譲先の起動は証拠にしない。コマンドの対象は`agent-toolkit/agent_toolkit/_common/shell_segments.py`の`extract_execution_segments`が取り出した実行位置で識別し、検索語や引用の中のコマンド名は対象外とする
 - 待機の許可: 起動証拠を欠く作業でも、その作業が待つ非同期対象が生存する間は終了を許可する。待機対象は、作業が起動したagents_serverのsessionと、作業の開始以後に起動が記録された非同期対象（背景Agent・MCPのバックグラウンドタスク・未配送の完了通知・背景Bash）である。終了する背景Bashは完了通知でターンが再開し、その時点で改めて判定される。終了しない常駐コマンド（開発サーバーなど）の生存中は判定が再開せず、起動不足を検出できない。作業の開始前から動くタスクは待機対象から外す。作業との対応はStop側で判定し、他のhookが使う`background_tasks.is_pending_async_work`の意味を変えない
 - 作業の区切り: ユーザーの入力、呼び出しの単位、開始と判断記録で区切る。起動証拠を得た作業の後に新しい人間の入力があり、続けて成果作業が届いた場合は新しい作業とし、前の起動証拠を流用しない

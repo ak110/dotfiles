@@ -27,6 +27,7 @@ __lazy_modules__ = {
     "agent_toolkit._plan.path_kinds",
     "argparse",
     "subprocess",
+    "shlex",
     "typing",
 }
 
@@ -34,6 +35,7 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 from typing import Any
 
@@ -174,10 +176,10 @@ def _last_decision(work: dict[str, Any]) -> str:
 
 
 def _finished(data: dict[str, Any], work: dict[str, Any]) -> bool:
-    """起動証拠を得た作業の後に新しい入力が届いたかを返し、後続の仕事へ古い起動証拠を流用しない。"""
-    return bool(work.get("completion_report")) and data.get("last_human_input", data.get("last_input")) != work.get(
-        "input_at_last_call"
-    )
+    """起動・省略の証拠を得た作業の後に新しい入力が届いたかを返す。"""
+    return bool(work.get("completion_report") or work.get("omit_completion")) and data.get(
+        "last_human_input", data.get("last_input")
+    ) != work.get("input_at_last_call")
 
 
 def _position(payload: dict[str, Any]) -> int:
@@ -289,7 +291,10 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
         if skill == COMPLETION_REPORT:
             return [{"kind": "completion"}]
         if skill in TARGET_SKILLS:
-            return [{"kind": "deliverable", "labels": [f"agent-toolkit:{skill}の開始"]}]
+            record: dict[str, Any] = {"kind": "deliverable", "labels": [f"agent-toolkit:{skill}の開始"]}
+            if isinstance(payload.get("cwd"), str) and (repository := _git_root(payload["cwd"])) is not None:
+                record["repository"] = str(repository)
+            return [record]
         return []
     labels: list[str] = []
     records: list[dict[str, Any]] = []
@@ -326,15 +331,34 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
                 else:
                     labels.append(f"agent-toolkit:{skill}の開始")
     if labels:
-        records.append({"kind": "deliverable", "labels": list(dict.fromkeys(labels))})
+        record = {"kind": "deliverable", "labels": list(dict.fromkeys(labels))}
+        repository = _command_repository(command, cwd) if isinstance(command, str) and isinstance(cwd, str) else None
+        record["repository"] = str(repository) if repository is not None else None
+        records.append(record)
     return records
 
 
-def _git_root(cwd: str) -> pathlib.Path | None:
+def _command_repository(command: str, cwd: str) -> pathlib.Path | None:
+    """直接実行の対象を取得し、シェルの移動・前置代入で対象が不明な場合は推測しない。"""
+    invocations = extract_bash_invocations(command)
+    if len(invocations) != 1 or not invocations[0].arguments_known:
+        return None
+    tokens = invocations[0].segment.tokens
+    try:
+        if tuple(shlex.split(command)) != tokens:
+            return None
+    except ValueError:
+        return None
+    parsed = _git_subcommand_tokens(invocations[0].segment)
+    options = tokens[1 : len(tokens) - len(parsed[1]) - 1] if parsed is not None else ()
+    return _git_root(cwd, options=options)
+
+
+def _git_root(cwd: str, *, options: tuple[str, ...] = ()) -> pathlib.Path | None:
     """書込時の作業ディレクトリが属するGitリポジトリだけを解決する。"""
     try:
         result = git_command.run(
-            ["rev-parse", "--show-toplevel"],
+            [*options, "rev-parse", "--show-toplevel"],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -522,8 +546,12 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
                 known_labels = work.setdefault("deliverables", [])
                 known_labels.extend(label for label in record["labels"] if label not in known_labels)
                 if "repository" in record:
-                    known = work.setdefault("edits", {}).setdefault(record["repository"], [])
-                    known.extend(path for path in record["paths"] if path not in known)
+                    repositories = work.setdefault("repositories", [])
+                    if record["repository"] not in repositories:
+                        repositories.append(record["repository"])
+                    if "paths" in record:
+                        known = work.setdefault("edits", {}).setdefault(record["repository"], [])
+                        known.extend(path for path in record["paths"] if path not in known)
             elif record["kind"] == "async":
                 started: Any = response
                 if isinstance(started, dict) and isinstance(started.get("structuredContent"), dict):
@@ -553,10 +581,35 @@ def evidence_available(payload: dict[str, Any]) -> bool:
 
 
 def missing_completion(work: dict[str, Any]) -> list[str]:
-    """成果作業でありながら同じ作業に起動証拠が無い場合に、成果作業の種類を返す。"""
+    """起動証拠と有効な省略の双方を欠く成果作業の種類を返す。"""
     if work.get("completion_report"):
         return []
+    omission = work.get("omit_completion")
+    if isinstance(omission, dict) and omission.get("input_id") == work.get("input_at_last_call"):
+        try:
+            if _omission_policy(omission, work) == omission.get("policy_text"):
+                return []
+        except (OSError, UnicodeError, ValueError):
+            pass
     return list(work.get("deliverables", []))
+
+
+def _omission_policy(document: dict[str, Any], work: dict[str, Any]) -> str:
+    """観測した作業の単一リポジトリ内の規範を読み、対象への適用範囲を確かめる。"""
+    target = document.get("target_repo")
+    policy = document.get("policy_file")
+    if not isinstance(target, str) or not pathlib.Path(target).is_absolute():
+        raise ValueError("省略する作業のtarget_repoを絶対パスで渡す")
+    repository = pathlib.Path(target).resolve(strict=True)
+    observed = set(work.get("repositories", [])) | set(work.get("edits", {}))
+    if not work.get("deliverables") or observed != {str(repository)} or _git_root(str(repository)) != repository:
+        raise ValueError("省略は観測済みの成果作業が属する単一リポジトリのrootを指定する")
+    if not isinstance(policy, str) or not pathlib.Path(policy).is_absolute():
+        raise ValueError("プロジェクト規範のpolicy_fileを絶対パスで渡す")
+    path = pathlib.Path(policy).resolve(strict=True)
+    if not path.is_relative_to(repository):
+        raise ValueError("policy_fileは対象リポジトリ内の適用するプロジェクト規範を指定する")
+    return path.read_text(encoding="utf-8")
 
 
 def _waiting_uwi(path_text: object, session_id: str, quote: object) -> pathlib.Path:
@@ -583,7 +636,7 @@ def record_decision(document: dict[str, Any]) -> str:
     if (
         not isinstance(session_id, str)
         or not session_id
-        or action not in {"start", "cancel", "replace", "resume", "wait", "blocked", "publish-scope"}
+        or action not in {"start", "cancel", "replace", "resume", "wait", "blocked", "publish-scope", "omit-completion"}
     ):
         raise ValueError("session_idと受理する判断のactionを指定する")
     if not agent_id.is_main_agent_context({"agent_id": document.get("agent_id", "main")}):
@@ -591,6 +644,10 @@ def record_decision(document: dict[str, Any]) -> str:
     owner = _delegated_session.owner_session_id(os.environ)
     if owner and owner != session_id:
         raise ValueError("現在の会話のsession_idを指定する")
+    if action == "omit-completion":
+        current_session = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        if not agent_id.is_main_agent_context({}) or current_session != session_id:
+            raise ValueError("省略の判断は現在の会話のメインが記録する")
     if not isinstance(document.get("reason"), str) or not document["reason"].strip():
         raise ValueError("判断の理由を指定する")
     selected = ""
@@ -599,7 +656,28 @@ def record_decision(document: dict[str, Any]) -> str:
         nonlocal selected
         data = _data(state, session_id)
         evidence: dict[str, Any] = {}
-        if action == "wait":
+        if action == "omit-completion":
+            work = data["works"].get(document.get("work_id"))
+            reference = data["inputs"].get(document.get("input_id"))
+            if not isinstance(work, dict):
+                raise ValueError("実在するwork_idを指定する")
+            if (
+                not isinstance(reference, dict)
+                or reference.get("human") is not True
+                or document.get("input_id") != data.get("last_human_input")
+                or document.get("input_id") != work.get("input_at_last_call")
+            ):
+                raise ValueError("省略する観測済み作業の現在の人間入力のinput_idを渡す")
+            text = _omission_policy(document, work)
+            if text != document.get("quote"):
+                raise ValueError("適用するプロジェクト規範の原文全体をquoteへ渡す")
+            evidence = {
+                "input_id": document["input_id"],
+                "policy_file": document["policy_file"],
+                "target_repo": document["target_repo"],
+                "policy_text": text,
+            }
+        elif action == "wait":
             target = document.get("target_session_id")
             child = agents_server_observations.session_record(state, target)
             work_for_wait = data["works"].get(document.get("work_id"), {})
@@ -684,13 +762,24 @@ def record_decision(document: dict[str, Any]) -> str:
             if not isinstance(work, dict):
                 raise ValueError("実在するwork_idを指定する")
         if action != "publish-scope":
-            work["decisions"].append({"action": action, **evidence, "reason": document["reason"]})
+            work["decisions"].append(
+                {
+                    "action": action,
+                    **{key: value for key, value in evidence.items() if key != "policy_text"},
+                    "reason": document["reason"],
+                }
+            )
+        if action == "omit-completion":
+            work["omit_completion"] = evidence
+        else:
+            work.pop("omit_completion", None)
         if action == "resume":
             data["current_work"] = selected
         _compact(data)
         return state
 
-    session_state.update_state(session_id, update)
+    if not session_state.update_state(session_id, update):
+        raise ValueError("判断の証拠を読み書きできない。対象の実体と状態の保存先を確かめる")
     return selected
 
 

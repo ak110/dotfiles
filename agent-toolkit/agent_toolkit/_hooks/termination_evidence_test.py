@@ -544,3 +544,115 @@ def test_explicit_child_wait_rejection_is_not_uwi_guidance(tmp_path: pathlib.Pat
             }
         )
     assert "child-x" in str(error.value) and "UWI" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "quote",
+        "policy-outside",
+        "target",
+        "target-other",
+        "another-repo",
+        "work",
+        "session",
+        "agent",
+        "runtime-agent",
+        "input",
+        "old-input",
+        "generated",
+    ],
+)
+def test_omission_cli_rejects_unrelated_evidence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, invalid: str) -> None:
+    """省略の引用・対象・会話・担当・入力が実体と異なる場合は、CLIから不足を免除できない。"""
+    from agent_toolkit._testing import git_repository  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": "完了報告は指示まで省く。\n"})
+    trace = tmp_path / "transcript.jsonl"
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    human_input(tmp_path, "request", "成果を作成する")
+    termination_evidence.observe_tool(
+        json.dumps(
+            {
+                "session_id": "evidence-test",
+                "cwd": str(repository),
+                "tool_name": "Edit",
+                "tool_use_id": "edit",
+                "tool_input": {"file_path": str(repository / "CLAUDE.md")},
+                "tool_response": {"exit_code": 0},
+            }
+        ),
+        after=True,
+    )
+    document = {
+        "session_id": "evidence-test",
+        "action": "omit-completion",
+        "work_id": "work-1",
+        "input_id": "request",
+        "reason": "適用規範に従う",
+        "policy_file": str(repository / "CLAUDE.md"),
+        "quote": "完了報告は指示まで省く。\n",
+        "target_repo": str(repository),
+    }
+    if invalid == "quote":
+        document["quote"] = "異なる本文"
+    elif invalid == "policy-outside":
+        policy = tmp_path / "CLAUDE.md"
+        policy.write_text(document["quote"], encoding="utf-8")
+        document["policy_file"] = str(policy)
+    elif invalid == "target":
+        document["target_repo"] = str(tmp_path / "missing")
+    elif invalid == "target-other":
+        other = git_repository.init_repository(tmp_path / "other", files={"CLAUDE.md": document["quote"]})
+        document.update(target_repo=str(other), policy_file=str(other / "CLAUDE.md"))
+    elif invalid == "another-repo":
+        other = git_repository.init_repository(tmp_path / "other", files={"README.md": "別の成果\n"})
+        termination_evidence.observe_tool(
+            json.dumps(
+                {
+                    "session_id": "evidence-test",
+                    "cwd": str(repository),
+                    "tool_name": "Bash",
+                    "tool_use_id": "other-commit",
+                    "tool_input": {"command": f"git -C {other} commit -m 変更"},
+                    "tool_response": {"exit_code": 0},
+                }
+            ),
+            after=True,
+        )
+    elif invalid == "work":
+        document["work_id"] = "work-missing"
+    elif invalid == "session":
+        document["session_id"] = "another-session"
+    elif invalid == "agent":
+        document["agent_id"] = "child"
+    elif invalid == "runtime-agent":
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    elif invalid == "old-input":
+        human_input(tmp_path, "new-request", "別の依頼")
+    elif invalid == "generated":
+        termination_evidence.observe_user(
+            json.dumps(
+                {
+                    "session_id": "evidence-test",
+                    "prompt_id": "generated",
+                    "prompt": '<atk-auto source="stop" kind="notice">継続</atk-auto>',
+                }
+            )
+        )
+        document["input_id"] = "generated"
+    else:
+        document["input_id"] = "missing-input"
+    source = tmp_path / "omission.json"
+    source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        assert (
+            run_script.dispatch(
+                argparse.Namespace(script_name="termination-evidence", script_args=["--decision-file", str(source)])
+            )
+            == 2
+        )
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "成果を届けた。"))[0] == "block"
+    assert trace.is_file()
