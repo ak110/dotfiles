@@ -48,7 +48,7 @@ def _run_two_sessions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, e
     myrepo.mkdir()
     claude_calls: list[dict[str, Any]] = []
     monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
-    counts = iter([1, 1, 0])
+    counts = iter([1, 1, 1, 1, 0])
     monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
     def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
@@ -106,16 +106,19 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
         closed_descriptors: list[int] = []
         hook_descriptors: list[int] = []
+        open_hook_descriptors: set[int] = set()
         real_close = os.close
         real_fchmod = os.fchmod
 
         def record_fchmod(descriptor: int, mode: int) -> None:
             hook_descriptors.append(descriptor)
+            open_hook_descriptors.add(descriptor)
             real_fchmod(descriptor, mode)
 
         def record_close(descriptor: int) -> None:
-            if hook_descriptors and descriptor == hook_descriptors[-1]:
+            if descriptor in open_hook_descriptors:
                 closed_descriptors.append(descriptor)
+                open_hook_descriptors.remove(descriptor)
             real_close(descriptor)
 
         # 共通起動の掃引も`os.fchmod`で期限判定記録を書くため、掃引を外してhook診断ログの記述子だけを数える。
@@ -125,13 +128,13 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setattr(_process_loop.os, "fchmod", record_fchmod)
         monkeypatch.setattr(_process_loop.os, "close", record_close)
 
-        # 件数: 1回目は1件（claude起動）、2回目以降は0件（待機ループへ）
+        # 初回と開始直前は1件を保ち、子終了後に0件へ移して待機する。
         count_calls: list[int] = []
 
         def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
             del private_notes, target_repo
             count_calls.append(len(count_calls))
-            return 1 if len(count_calls) == 1 else 0
+            return 1 if len(count_calls) <= 2 else 0
 
         wait_calls: list[int] = []
 
@@ -358,7 +361,7 @@ class TestProcessLoopPromptAndEnv:
             monkeypatch.setenv("CLAUDE_CONFIG_DIR", configured)
         monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: tmp_path))
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
@@ -391,16 +394,19 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: 1)
         permission_descriptors: list[int] = []
+        open_permission_descriptors: set[int] = set()
         closed_descriptors: list[int] = []
         real_close = os.close
 
         def fail_fchmod(descriptor: int, _mode: int) -> None:
             permission_descriptors.append(descriptor)
+            open_permission_descriptors.add(descriptor)
             raise PermissionError("権限設定失敗")
 
         def record_close(descriptor: int) -> None:
-            if permission_descriptors and descriptor == permission_descriptors[-1]:
+            if descriptor in open_permission_descriptors:
                 closed_descriptors.append(descriptor)
+                open_permission_descriptors.remove(descriptor)
             real_close(descriptor)
 
         # 共通起動の掃引も`os.fchmod`で期限判定記録を書くため、掃引を外してhook診断ログの記述子だけを数える。
@@ -437,7 +443,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setenv("VIRTUAL_ENV", venv_root)
         monkeypatch.setenv("PATH", os.pathsep.join((f"{venv_root}/bin", f"{venv_root}/bin", "/usr/local/bin", "/usr/bin")))
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
 
         def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
             del private_notes, target_repo
@@ -548,7 +554,7 @@ class TestProcessLoopPromptAndEnv:
         def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
             del private_notes, target_repo
             count_calls.append(len(count_calls))
-            return 1 if len(count_calls) == 1 else 0
+            return 1 if len(count_calls) <= 2 else 0
 
         def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
             del private_notes, target_repo_id
@@ -613,7 +619,7 @@ class TestProcessLoopPromptAndEnv:
             return fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
 
@@ -690,7 +696,7 @@ class TestProcessLoopPromptAndEnv:
             logged.append((event, fields))
 
         monkeypatch.setattr(_process_loop._process_loop_log, "append", record_append)  # pylint: disable=protected-access  # noqa: SLF001
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
 
@@ -738,7 +744,7 @@ class TestProcessLoopPromptAndEnv:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
         monkeypatch.setattr(_process_loop.time, "sleep", sleeps.append)
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
 
@@ -777,7 +783,7 @@ class TestProcessLoopPromptAndEnv:
             return fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
 
@@ -811,7 +817,7 @@ class TestProcessLoopPromptAndEnv:
             return fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
 
@@ -964,7 +970,7 @@ class TestProcessLoopPromptAndEnv:
             return fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        counts = iter((1, 1, 0))
+        counts = iter((1, 1, 1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
 
@@ -994,7 +1000,7 @@ class TestProcessLoopPromptAndEnv:
             return fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
 
@@ -1131,7 +1137,7 @@ class TestProcessLoopPromptAndEnv:
             return base_fake_run(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        counts = iter([1, 1, 0])
+        counts = iter([1, 1, 1, 1, 0])
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
@@ -1185,7 +1191,7 @@ class TestProcessLoopPromptAndEnv:
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
-        counts = iter([1, 0])
+        counts = iter([1, 1, 0])
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
@@ -1222,7 +1228,7 @@ class TestProcessLoopPromptAndEnv:
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
-        counts = iter([1, 1, 0])
+        counts = iter([1, 1, 1, 1, 0])
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         select_calls: list[tuple[str, pathlib.Path]] = []
 
@@ -1263,7 +1269,7 @@ class TestProcessLoopPromptAndEnv:
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
-        counts = iter([1, 0])
+        counts = iter([1, 1, 0])
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def fail_if_called(*_args: object, **_kwargs: object) -> str:
@@ -1307,7 +1313,7 @@ class TestProcessLoopPromptAndEnv:
         myrepo.mkdir()
         codex_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, codex_calls, 0))
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def fake_wait_for_changes(*_args: object, **_kwargs: object) -> NoReturn:
@@ -1365,7 +1371,7 @@ class TestProcessLoopPromptAndEnv:
         myrepo.mkdir()
         codex_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, codex_calls, 0))
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def fake_wait_for_changes(*_args: object, **_kwargs: object) -> NoReturn:
@@ -1588,7 +1594,7 @@ class TestProcessLoopReturncode:
         myrepo.mkdir()
         codex_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, codex_calls, 15))
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def fake_wait_for_changes(*_args: object, **_kwargs: object) -> NoReturn:
@@ -1617,7 +1623,7 @@ class TestProcessLoopReturncode:
         myrepo.mkdir()
         codex_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, codex_calls, -15))
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def fake_wait_for_changes(*_args: object, **_kwargs: object) -> NoReturn:

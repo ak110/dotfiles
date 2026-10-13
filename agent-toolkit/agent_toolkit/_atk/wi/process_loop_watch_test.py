@@ -12,6 +12,8 @@ import watchdog.observers
 
 from agent_toolkit import atk
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk.wi import process_loop_control as _pl_control
+from agent_toolkit._atk.wi import process_loop_log as _pl_log
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -265,3 +267,50 @@ class TestProcessLoopWaitMessage:
             )
         captured = capsys.readouterr()
         assert "0件のため変更検知を待機します。" in captured.out
+
+
+@pytest.mark.parametrize("event", ["deadline", "activity-ended", "abort"])
+def test_start_wait_events(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    event: str,
+) -> None:
+    """開始待機が期限・活動終了・中断で復帰し、理由と期限を端末とログへ渡す。"""
+    notes = _setup_notes(tmp_path)
+    clock = [1000.0]
+    active = [True]
+    aborted = [False]
+    records: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(_pl_watch.time, "time", lambda: clock[0])
+    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: active[0])
+    monkeypatch.setattr(_pl_control, "consume_process_loop_abort", lambda: aborted[0])
+
+    def log(name: str, **fields: Any) -> None:
+        records.append((name, fields))
+
+    monkeypatch.setattr(_pl_log, "append", log)
+    waits: list[float] = []
+
+    def wait(_notes: pathlib.Path, _repo: str | None, *, timeout: float, **_kwargs: Any) -> bool:
+        waits.append(timeout)
+        assert 0 < timeout <= 600
+        assert len(waits) == 1
+        if event == "deadline":
+            clock[0] = 1600
+        elif event == "activity-ended":
+            active[0] = False
+        else:
+            aborted[0] = True
+        return False
+
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
+    result = _pl_watch.wait_for_start_permission(notes, {"github.com/example/myrepo"}, _pl_watch.StartGate(notes))
+    assert result is (event != "abort")
+    assert len(waits) == 1
+    assert records[0][0] == "start_wait"
+    assert records[0][1]["deadline"] == 1600
+    assert records[0][1]["reasons"]
+    output = capsys.readouterr().out
+    assert "活動" in output and "期限" in output
+    assert any(name == "start_wait_released" for name, _ in records) is (event != "abort")

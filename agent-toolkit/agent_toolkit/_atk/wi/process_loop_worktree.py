@@ -1,9 +1,14 @@
 """`atk wi process-loop`がセッションを起動する作業ツリーの準備と上流との同期。"""
 
+import hashlib
+import json
+import os
 import pathlib
 import subprocess
 
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
+from agent_toolkit._common import atomic_file, state_paths, worktree_hooks
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
@@ -185,6 +190,26 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     """
     branch = f"worktree-{worktree_name}"
     worktree_path = local_path / _WORKTREE_PARENT_REL / worktree_name
+    try:
+        project_hook = worktree_hooks.configured(local_path)
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        _warn_worktree_preparation_failure(str(error), local_path, next_action="対象のWorktreeCreate設定を修正して再試行する")
+        return None
+    hook_record = None
+    common = ""
+    if project_hook:
+        common = _git_output(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=local_path)
+        identifier = hashlib.sha256(json.dumps([common, worktree_name]).encode("utf-8")).hexdigest()
+        hook_record = state_paths.state_dir() / "process-loop-worktrees" / f"{identifier}.json"
+        if hook_record.exists():
+            try:
+                stored = json.loads(hook_record.read_text(encoding="utf-8"))
+                worktree_path = pathlib.Path(stored["worktree"])
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                _warn_worktree_preparation_failure(
+                    str(error), hook_record, next_action="保存されたhook作成記録を確認し修正する"
+                )
+                return None
     ref_check = _run_worktree_git(["check-ref-format", "--branch", branch], local_path)
     if ref_check.returncode != 0:
         _warn_worktree_preparation_failure(
@@ -193,7 +218,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
             next_action="`--worktree`へ英数字とハイフンからなる名前を指定してprocess-loopを再起動する",
         )
         return None
-    if not _ensure_worktree_excluded(local_path):
+    if not project_hook and not _ensure_worktree_excluded(local_path):
         return None
     upstream_branch = _git_output(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=local_path)
     if not upstream_branch:
@@ -258,7 +283,52 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         command = ["worktree", "add", str(worktree_path), branch]
         if not branch_exists:
             command = ["worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
-        created = _run_worktree_git(command, local_path)
+        if project_hook:
+            try:
+                registered = _run_worktree_git(["worktree", "list", "--porcelain", "-z"], local_path)
+                if registered.returncode != 0:
+                    raise ValueError(f"hook実行前のworktree登録を取得できない: {registered.stderr.strip()}")
+                existing_paths = {
+                    pathlib.Path(field.removeprefix("worktree ")).resolve()
+                    for field in registered.stdout.split("\0")
+                    if field.startswith("worktree ")
+                }
+                if not existing_paths:
+                    raise ValueError("hook実行前のworktree登録が空だった")
+                owner = os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "process-loop")
+                diagnostics = managed_temp.create_managed_temp("worktree-hook")
+                worktree_path = worktree_hooks.create(local_path, worktree_name, owner, diagnostics_directory=diagnostics)
+                if worktree_path.resolve() in existing_paths:
+                    raise ValueError("hookが既存の作業ツリーを返した")
+                assert hook_record is not None
+                atomic_file.atomic_write(
+                    hook_record,
+                    json.dumps(
+                        {
+                            "worktree": str(worktree_path),
+                            "repo": str(local_path),
+                            "branch": branch,
+                            "session_id": owner,
+                            "hook_diagnostics": str(diagnostics),
+                        }
+                    )
+                    + "\n",
+                )
+                if _git_output(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=worktree_path) != common:
+                    raise ValueError("hook作成先のGit共通ディレクトリが対象と異なる")
+                current = _git_output(["symbolic-ref", "--short", "HEAD"], cwd=worktree_path)
+                if current != branch:
+                    switched = _run_worktree_git(["switch", "-c", branch], worktree_path)
+                    if switched.returncode:
+                        raise ValueError(f"hook作成先のbranchを接続できない: {switched.stderr.strip()}")
+                created = subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            except (OSError, ValueError, KeyError, TypeError, managed_temp.ManagedTempError) as error:
+                _warn_worktree_preparation_failure(
+                    str(error), worktree_path, next_action="hook設定と途中資源・保存記録を確認し同じ対象で再試行する"
+                )
+                return None
+        else:
+            created = _run_worktree_git(command, local_path)
         if created.returncode != 0:
             _next_action.report(
                 f"worktreeの作成に失敗しました: {created.stderr.strip()}",
@@ -322,7 +392,14 @@ def prepare_session_target(
     if resume_pending:
         return local_path, prompt
     if worktree_name is None and target_repo_id != DOTFILES_REPO_ID:
-        return local_path, prompt
+        try:
+            if not worktree_hooks.configured(local_path):
+                return local_path, prompt
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            _warn_worktree_preparation_failure(
+                str(error), local_path, next_action="対象のWorktreeCreate設定を修正して再試行する"
+            )
+            return None
     # `--worktree`は使わない。CLIのworktree隔離ガードが、gitへの言及を問わず
     # ANSI-Cクォート・制御構造・コマンド置換など18種のシェル構文を拒否するため。
     effective_name = worktree_name or _DEFAULT_WORKTREE_NAME

@@ -393,6 +393,19 @@ def test_result_kinds_do_not_overlap() -> None:
     assert len(frozenset().union(*groups)) == total
 
 
+def test_lane_integrate_help_has_no_resource_side_effects(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """統合操作のヘルプを所有登録やGit照会なしで利用できる。"""
+    monkeypatch.chdir(tmp_path)
+    before = set(tmp_path.rglob("*"))
+    with pytest.raises(SystemExit) as ended:
+        atk.main(["lane", "integrate", "--help"])
+    assert ended.value.code == 0
+    assert not capsys.readouterr().err
+    assert set(tmp_path.rglob("*")) == before
+
+
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
     """一括操作を受理する状態遷移コマンドが`rm`と同じフィルター系引数を持つ。"""
     commands = {name: parser for name, parser, _summary in _walk_commands()}

@@ -7,6 +7,7 @@ from collections.abc import Iterable, Iterator
 from typing import Literal
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi.constants import (
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
@@ -401,6 +402,7 @@ def calculate_readiness(
     target_repo: str | None,
     *,
     now: datetime.datetime | None = None,
+    snapshot: tuple[_wi_entries.EntryRecord, ...] | None = None,
 ) -> ReadinessResult:
     """`active`全件と参照された終端項目から対象リポジトリの着手可否を算出する。"""
     if now is None:
@@ -410,7 +412,15 @@ def calculate_readiness(
     now_utc = now.astimezone(datetime.UTC)
     resolver_cache: dict[str, str | None] = {}
     canonical_target = _normalized_repo_or_none(target_repo, resolver_cache)
-    all_active = _load_queue_entries(private_notes, None, WI_PROCESSABLE_STATES, resolver_cache)
+    all_active = (
+        _load_queue_entries(private_notes, None, WI_PROCESSABLE_STATES, resolver_cache)
+        if snapshot is None
+        else tuple(
+            _queue_entry(path, repo, text, kind, resolver_cache)
+            for path, repo, text, state, kind in snapshot
+            if state in WI_PROCESSABLE_STATES
+        )
+    )
     active = (
         all_active
         if target_repo is None
@@ -426,7 +436,15 @@ def calculate_readiness(
     dependency_names = {
         dependency for dependencies in all_dependency_map.values() if dependencies is not None for dependency in dependencies
     }
-    terminal = _load_referenced_terminal_entries(private_notes, dependency_names, resolver_cache)
+    terminal = (
+        _load_referenced_terminal_entries(private_notes, dependency_names, resolver_cache)
+        if snapshot is None
+        else tuple(
+            _queue_entry(path, repo, text, kind, resolver_cache)
+            for path, repo, text, state, kind in snapshot
+            if state in (WI_STATE_ADOPTED, WI_STATE_REJECTED) and path.name in dependency_names
+        )
+    )
     existing_repairs = {
         (entry.repair_target_filename, entry.repair_kind)
         for entry in all_active

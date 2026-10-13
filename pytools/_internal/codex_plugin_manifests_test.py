@@ -275,9 +275,10 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     ]
                 }
             ],
+            "Interrupt": [{"hooks": [{"type": "command", "command": "atk-hook session_activity"}]}],
         }
     }
-    assert len(generated_hooks["hooks"]) == 9
+    assert len(generated_hooks["hooks"]) == 10
     assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"] == "atk-hook rules_context_codex"
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
@@ -336,7 +337,7 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
     if version != "codex-cli 0.154.0":
         pytest.skip(f"Codex 0.154.0専用のテスト: {version}")
 
-    expected = {event[0].lower() + event[1:] for event in subject.CODEX_HOOK_ALLOWLIST}
+    expected = {event[0].lower() + event[1:] for event in (*subject.CODEX_HOOK_ALLOWLIST, *subject.CODEX_ONLY_HOOKS)}
     observed: list[set[str]] = []
     for trust in (False, True):
         codex_home = tmp_path / ("trusted" if trust else "default")
@@ -485,7 +486,7 @@ def test_codex_projection_omits_events_without_allowlisted_handler(manifest_root
 
     generated = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))["hooks"]
     assert "PreCompact" not in generated
-    assert set(generated) == set(subject.CODEX_HOOK_ALLOWLIST)
+    assert set(generated) == set(subject.CODEX_HOOK_ALLOWLIST) | set(subject.CODEX_ONLY_HOOKS)
 
 
 def test_codex_projection_sets_additional_context_limit() -> None:

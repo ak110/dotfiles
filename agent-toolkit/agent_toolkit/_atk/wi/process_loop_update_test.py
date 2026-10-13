@@ -181,6 +181,7 @@ def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
+    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: False)
     monkeypatch.delenv(_RESTART_SPEC_ENV, raising=False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
 
@@ -959,7 +960,7 @@ class TestProcessLoopUpdateAndRestart:
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
         _setup_notes(tmp_path)
-        counts = iter([1, 1, 0])
+        counts = iter([1, 1, 1, 0])
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, [], 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(

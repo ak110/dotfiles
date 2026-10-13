@@ -138,6 +138,10 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
         output_command=_codex_hook_command("session_end_cleanup"),
     ),
 }
+# InterruptはCodexだけが生成するイベントで、Claude向け原本へ登録しない。
+CODEX_ONLY_HOOKS = {
+    "Interrupt": [{"hooks": [{"type": "command", "command": _codex_hook_command("session_activity")}]}],
+}
 # Codex 0.147.0が発火するhookイベント。handlerを持たないイベントは生成しない。
 CODEX_EVENTS = {
     "PreToolUse",
@@ -151,6 +155,7 @@ CODEX_EVENTS = {
     "PreCompact",
     "PostCompact",
     "PermissionRequest",
+    "Interrupt",
 }
 AGENT_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 AGENT_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
@@ -291,6 +296,7 @@ def _outputs(root: Path) -> dict[Path, str]:
             if not projected:
                 raise ValueError(f"許可済みハンドラーがhooks.jsonに存在しない: {event}")
             selected[event] = projected
+        selected.update(CODEX_ONLY_HOOKS)
 
     metadata = {key: plugin[key] for key in PLUGIN_METADATA_FIELDS}
     agent_plugin = {"$schema": AGENT_PLUGIN_SCHEMA, **metadata}

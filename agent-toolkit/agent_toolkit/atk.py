@@ -57,6 +57,7 @@ from collections.abc import Callable
 
 # pylint: disable=wrong-import-position,protected-access
 from agent_toolkit._agents_server import commands as _agents  # noqa: E402
+from agent_toolkit._agents_server import manager as _agents_manager
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
 from agent_toolkit._atk import cli_support as _cli_support
 from agent_toolkit._atk import commit as _commit_cmd  # noqa: E402
@@ -287,7 +288,11 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
         return False
     if args.command == "serve":
         return False
-    if args.command == "wi" and args.wi_subcommand == "process-loop" and getattr(args, "process_loop_subcommand", None) is None:
+    if (
+        args.command == "wi"
+        and args.wi_subcommand == "process-loop"
+        and getattr(args, "process_loop_subcommand", None) in (None, "all-repos")
+    ):
         return False
     return not (args.command == "agents" and args.agents_subcommand == "logs" and getattr(args, "follow", False))
 
@@ -396,7 +401,14 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     "plans": lambda invocation: _plans.dispatch_command(invocation.args, home=invocation.home),
     "review-table": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_table.dispatch),
     "review-audit": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_audit.dispatch),
-    "wi": lambda invocation: _wi_cli.dispatch(invocation.args, home=invocation.home, now=invocation.now),
+    "wi": lambda invocation: _wi_cli.dispatch(
+        invocation.args,
+        home=invocation.home,
+        now=invocation.now,
+        # 他のwi操作ではagents_server依存を読み込まない。
+        # pylint: disable=unnecessary-lambda
+        repository_manager_factory=lambda: _agents_manager.AgentsServerManager(),
+    ),
 }
 """共通の前処理の後に実行するサブコマンドと実行関数の対応。"""
 

@@ -11,6 +11,7 @@
 | --- | --- |
 | 版数更新、生成物、push前のチェック、push、CI確認または公開状態の判定に着手する前 | `agent-toolkit:commit`の`references/publish.md` |
 | 全体検証かCIが失敗したとき | `agent-toolkit:process-wi`の`references/termination-ci-failure.md` |
+| CI定義判定、baseline作成またはCI監視を完了できないとき | `agent-toolkit:commit`の`references/push-and-ci.md` |
 
 ## 入力
 
@@ -28,7 +29,7 @@
 
 ## 生成物とpush
 
-版数更新、生成物、push前に実行するチェックの選定と実行、push、CI確認、公開状態の判定は、`agent-toolkit:commit`を起動し、読込表の`references/publish.md`に従って実行する。受領した`bump種別`を入力に使い、CIの成功まで確かめる。
+版数更新、生成物、push前に実行するチェックの選定と実行、push、CI確認、公開状態の判定は、`agent-toolkit:commit`を起動し、読込表の`references/publish.md`に従って実行する。受領した`bump種別`を入力に使い、CIの成功か有効な不在証拠とローカル全体検証の成功を確かめる。
 
 ## プロジェクト固有の公開後の操作
 
@@ -52,11 +53,15 @@
 全体検証: <全体検証をCIの結果で判定した場合は「CI判定」。CIが実行しないチェックの集合を確定できない場合と対象リポジトリにCI定義が無い場合に、タスクランナーが定める全体検証をローカルで実行したときは「ローカル成功」>
 CIで検証したcommit: <CI対象commitの7文字以上の一意な短縮OID。`CIの結果`が`CI定義なし`ならCI定義の不在を確かめたcommitの短縮OID>
 ベースbranchのHEAD: <ベースbranchの追跡refが指す7文字以上の一意な短縮OID>
-CIの結果: <`agent-toolkit:commit`の`references/push-and-ci.md`「後始末」の終端状態の名前。CIが成功した場合は`CI成功`、CI定義が無い場合は`CI定義なし`と書く。`CI定義なし`は`全体検証`が「ローカル成功」の場合だけ返す>
+CIの結果: <CIが成功した場合はCI成功。CI定義なしは共通判定で不在を確定し、全体検証がローカル成功の場合だけ返す>
 ベースbranchの状態: <公開状態の4項目が成立した場合は「公開済み」。それ以外は項目名>
 版数: <更新後の版数または「bump不要」>
-実行した終端工程: <実行した工程と対象。`全体検証`が「ローカル成功」なら実行した全体検証のコマンド、終了コードおよび警告の有無、「CI判定」ならpush前に実行したCIが実行しないチェックと全体走査のチェックのコマンド、終了コードおよび警告の有無と、その集合を求めた根拠（プロジェクト規範の定めまたは`agent-toolkit:commit`の`references/publish.md`が定める4つの比較の結果）を必ず挙げる。`CIの結果`が`CI定義なし`なら、CI定義の不在を確かめたコマンド、終了コードと出力も挙げる。同じtreeで実行済みのため省いたチェックは、省いた理由と実行済みの結果の所在を挙げる。無い場合は「なし」>
+実行した終端工程: <実行した工程と対象。`全体検証`が「ローカル成功」なら実行した全体検証のコマンド、終了コードおよび警告の有無、「CI判定」ならpush前に実行したCIが実行しないチェックと全体走査のチェックのコマンド、終了コードおよび警告の有無と、その集合を求めた根拠（プロジェクト規範の定めまたは`agent-toolkit:commit`の`references/publish.md`が定める4つの比較の結果）を必ず挙げる。`CIの結果`が`CI定義なし`なら、`references/push-and-ci.md`「公開先に対応するCI定義の判定」で使ったforge・repository・commitと不在の取得・コマンド・終了状態・結果も挙げる。同じtreeで実行済みのため省いたチェックは、省いた理由と実行済みの結果の所在を挙げる。無い場合は「なし」>
 延期後にadoptしたAWI: <実際にadoptしたAWIファイル名のJSON文字列配列。反映後の新プロセスでしか観測できない条件が残る項目と、観測が完成条件を満たさなかった項目を含めない。無い場合は[]>
 ```
 
-続行不能時は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。完了報告はツール戻り値で1回返し、`SendMessage`では送らない。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
+続行不能時は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。
+CI照会不能の場合は、`references/push-and-ci.md`「CI照会不能の受渡し」の対象、診断、確認済み工程、残工程と再開位置を含める。
+1行に収まらない証拠は引き継ぎ記録へ保存し、その絶対パスを同じ行に示す。
+完了報告はツール戻り値で1回返し、`SendMessage`では送らない。
+想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。

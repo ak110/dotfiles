@@ -28,25 +28,36 @@
 `引き継ぎ記録先`はレーン担当の起動時に受領した値を継続する。書込先は受領した統合先worktreeとする。
 延期対象（判定は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/run-lanes.md`「採否の確定と終端区分」）は統合時に終端せず、`adoptを延期したAWIとcommit`で終端担当へ渡す。版数更新の完成条件も、全レーン統合後に終端担当が版数、派生manifestおよび公開結果を検収してから`adopt`する。
 
-## マージありの統合
+## 公開統合操作
 
-1. 専用worktreeがcleanであり、受領した`実行レビュー済みHEAD`と専用branchのHEADを`git rev-parse --short=7 <revision>`で正規化した値が一致することを確かめる。判定はこの2値だけで行い、レビュー指摘管理表の内容は使わない。
-2. 統合先worktreeの現在branchが統合先branchであり、別の書込主体とGitの中断状態が無いことを確かめる。統合先branchの現在HEAD（以下、統合前HEAD）と`git merge-base <専用branch> <統合先branch>`（rebase前のベースOID）を取得する。
-3. 専用branchのHEADが統合前HEADの子孫なら、rebaseせず手順6へ進む。
-4. 子孫でない場合はrebaseする。
-   - 前提: 統合前HEADより先にある専用branchの全commitが未pushであることを`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」で確かめる。push済みが1件でもあればrebaseせず、その短縮OIDを`続行できない理由:`で返す。
-   - rebase前の専用branchのHEADを`引き継ぎ記録先`へ記録し、同書「履歴確認の起動形」の`git log`を書換えとは別の呼び出しで実行してから、専用worktreeで`git rebase <統合前HEAD>`を実行する。書き換えるのは専用branchだけとする。
-   - 競合で停止したら、読込表の`lane-integration-failure.md`「rebaseの競合」に従う。
-   - 成功したら次のコマンドで検収し、旧新OIDの対応表を保存する。同コマンドは文脈を除いた`git show --format= --binary --no-ext-diff --no-textconv --unified=0`の差分を`git patch-id --verbatim`で比べ、変更内容の一意な全1対1対応を確かめる。件名・本文・周辺文脈・hunk位置の変化は許容し、変更行の空白、パス・種類・モード・バイナリー内容の変化、commitの追加・欠落・曖昧な対応は拒否する。合否は`range-diff`の表示記号ではなくこの対応で決める。非0なら診断を`続行できない理由:`で返す。
+受領した完成条件証拠を検収し、全計画と今回のWI集合、確定した採否・延期を順序付きmanifestへ保存する。Gitの所有確認、rebase、内容比較、再検証、ff、最終化と選定の統合状態更新は次の公開操作で実行する。
 
-   ```text
-   atk run-script history-compare -- --operation rebase --work-dir <専用worktreeの絶対パス> --old-base <rebase前のベースOID> --old-head <rebase前の専用branchのHEAD> --new-base <統合前HEAD> --new-head <rebase後の専用branchのHEAD> --output <managed-temp内の対応表JSONの絶対パス>
-   ```
+```text
+atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統合入力OID> --target-worktree <統合先worktreeの絶対パス> --target-branch <統合先branch> --manifest <manifestの絶対パス> --session-id <所有session>
+```
 
-5. rebase後のHEADで変更範囲の検証を再実行する。計画ありは`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <専用worktreeの絶対パス> --timeout <正の有限秒数>`を使う。直前に同じ入力の`--list`を確認し、実行後は保存した結果まとめの`results_path`を`atk run-command --records-file <絶対パス>`へ渡して読む。計画なしは引き継ぎ記録に確定した検証コマンドを使い、`--record <record_path>`の反復で読む。子は再実行せず、全件の取得版・Git状態・子とwrapperの終了状態・両出力を判定する。旧記録の未記録と保存・読取失敗は失敗として扱う。合否は後掲「検証結果の警告の判定」で決め、失敗は`lane-integration-failure.md`「統合後の変更範囲の検証の失敗」に従う。
-6. 対象リポジトリのプロジェクト規範に統合後にだけ成立する検証があれば、統合先を変える前に専用worktreeで実行する（専用branchは統合前HEADの子孫なので、treeはfast-forward後の統合先と同じになる）。規範のコマンドを、専用worktreeを`cwd`とする`agents_server`の`start`（`mode`は`shell`）で1回実行し、標準出力と標準エラーはmanaged-temp内に確保した保存先へ全量保存させる。保存済みの全量から後掲「検証結果の警告の判定」で合否を決める。不成立なら統合先を変えず、専用worktreeで是正commitを作成し、変更範囲の検証からやり直す。
-7. `git -C <統合先worktreeの絶対パス> merge --ff-only <専用branch>`でfast-forwardマージする。別の作業ツリーからの`git push`で統合先branchを更新しない（チェックアウト中のbranchへの更新は`receive.denyCurrentBranch`が拒否する）。fast-forwardできない場合はmerge commitやcherry-pickで解決せず、続行できない理由を返す。
-8. マージ後の統合先branchの短縮OIDを`統合後のHEAD`とする。
+manifestはJSON objectで、次の値を持つ。
+
+- `plans`: 全計画の順序付き配列。各項目は`name`（計画ファイル名）と`commands`（後掲「計画最終化」のplan-check・保存argv配列）を持つ。保存済みで進捗を追記していない計画は`commands: []`とし、`saved`へ同名の保存済み計画の絶対パスを指定する。計画なしは`[]`
+- `wis`: 選定の今回のレーンへ属する全WIの順序付き配列。各項目は`name`（WIファイル名）と`commands`（後掲「AWI行の終端」の確定済み終端argv配列）を持つ。延期・終端しない項目と既に終端した項目は`commands: []`とし、その区分と根拠を引き継ぎ記録へ残す
+- `verification`: 統合前に実行する検証argvの順序付き配列。計画ありは各計画のplan-verify、計画なしは引き継ぎ記録の確定済み検証を使う。統合後にだけ成立するプロジェクト検証も含める。rebaseした場合は新しいHEADで実行し、成功済みの同じ検証はff前に繰り返さない
+- `handoff`: 計画なしの場合に使う既存引き継ぎ記録の絶対パス。計画ありでは省略でき、省略時は引き継ぎ記録の追加入力を要しない
+
+各argvはshell文字列ではなく文字列配列とし、対象・OID・採否・完成条件証拠は受理済み入力から確定する。レビュー採否とWIごとのcommit対応はレーン担当が確定し、CLIへ渡す。計画の稼働時間、採否、証拠と進捗追記の値は以下の節で検収してからmanifestへ渡す。実行済み結果は所有登録の`integration.results`から読み、同じ操作を個別に再実行しない。
+
+### マージありの統合
+
+公開操作はclean、Git共通ディレクトリとbranch登録、レビュー対象HEADの一致と所有sessionを検収する。稼働中の合意した担当は`--writer-session <session_id>`を反復して指定する。登録された他担当の稼働とGit中断状態がある場合は成果を保持する。
+
+統合先HEADの子孫ならrebaseせずffへ進む。分岐している場合は書換え範囲の全commitがremote追跡refへ未到達であることを確認し、旧ベースとHEADを保存してrebaseする。push済み、競合、内容不一致、検証失敗では続行できない理由と所有記録を返す。競合は`lane-integration-failure.md`で処置し、同じCLIへ戻る。
+
+rebase後はhistory-compareによる一意な全1対1対応表と変更範囲の再検証結果を保存し、`phase: awaiting-validation`と終了コード1を返す。対応表、後掲の警告判定、WI実装commitと証拠の参照更新を検収してから、同じ入力に`--accept-rebased-head <返された完全new_head>`を加えて再開する。受理前に統合先を変更しない。
+
+Git統合前の失敗を是正してHEADか検証入力が変わった場合は、独立文脈レビューを受理した現在HEADと更新したmanifestへ`--restart-review`を加えて同じCLIから再開する。直前の進行と結果は`previous_integration`へ保持する。Git統合後はレビューHEADと対象集合を保ち、残る最終化だけを再開する。
+
+rebase対応表で確定したWI commitや、保存失敗の原因を直した未完了の最終化argvは、更新したmanifestと`--amend-finalization`で補完する。CLIはレビューHEAD・統合先・検証・引き継ぎ記録、全計画・WIの集合と順序、成功済みargvを保持する。検収待ちの受理は同時に`--accept-rebased-head`を指定し、Git統合済みではGitを再実行しない。
+
+ff後は`phase: git-integrated`を保存し、plans、wisの各argvを順に実行して成功済み操作を記録する。途中で保存・終端が失敗した場合、同じmanifestとレビュー対象HEADで再実行するとGit統合と成功済み操作を省いて残る最終化へ戻る。全操作の成立後にpick-wi-checkで選定全体を確認して統合状態を更新し、`phase: finalized`と終了コード0を返す。追加WIの統合では現在のレビュー対象HEADと累積した全計画・WI集合の新しいmanifestを使い、進行中の入力は変更しない。
 
 rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段の`--rewrite-map`へそのまま渡し、rebase前のHEADと統合する全ての計画または引き継ぎ記録も同じ1回で渡す。完成条件証拠と未判定検証記録の参照更新にも同じ対応表を使い、更新するのは`evidence`の`commit:<OID>`だけとする（分割の各対応先も`commit:`標識を保つ）。裸の取得版OID・HEAD・git_head・比較元、観測ファイル、判定と`reviewed_head`、既存自由文の形式はそのまま保持する。結果に作用する内容・条件の差がある行だけを再観測し、根拠の更新は両証拠CLIの保存物直接指定と`--select-row`で行う。
 
@@ -59,10 +70,12 @@ rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`�
 
 ## マージなしの統合
 
-実装commitを作成せず、統合先branchを統合開始時の状態のまま保つ。統合開始時の統合先branchの短縮OIDを`統合後のHEAD`とする。
+公開統合操作へ`--no-merge`を加え、`--reviewed-head`には今回の専用worktreeの現在OIDを渡す。統合先branchを統合開始時の状態のまま保ち、その短縮OIDを`統合後のHEAD`とする。
 未終端項目の計画を作業領域へ残す指示も、全計画を保存したうえでセッション終了時のメインが復元する扱いとする。
 
 ## 計画最終化
+
+本節はmanifestのplansへ渡す操作と値の検収基準である。各操作は公開統合操作から実行し、成功済み操作と保存先は所有登録へ保持する。
 
 受理した完成条件証拠がある計画は、そのJSONの絶対パスを`受理済みの完成条件証拠`として進捗ログへ残す（後続レビューの参照入力に使い、未判定検証記録と区別する）。
 
@@ -77,6 +90,8 @@ rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`�
 - `atk plans commit <計画ファイル名>`を計画ごとに単独実行し、保存した計画名と結果を直ちに引き継ぎ記録へ残す。途中で失敗したら保存済みと未保存を区別して返す。全計画の保存が終わるまで`統合完了`を返さない
 
 ## AWI行の終端
+
+本節で確定した採否と対応commitをmanifestのwisへ渡し、状態変更は公開統合操作から実行する。延期の判断と根拠は引き継ぎ記録へ保存する。
 
 計画または引き継ぎ記録に確定した採否と、受領した終端区分を適用する。
 

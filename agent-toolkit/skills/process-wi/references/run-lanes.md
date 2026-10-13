@@ -14,6 +14,8 @@ atk lane create --repo <対象リポジトリの絶対パス> --base-branch <統
 
 対象リポジトリが作成・環境準備・撤去の固有手順を定める場合は、create・prepare・deleteのargv配列を持つJSONを`--commands-file <絶対パス>`へ渡す。各argvの`{repo}`・`{worktree}`・`{branch}`・`{lane}`は作成側がshellを介さず展開する。`{worktree}`には固定作成先が渡る。前提ファイルの複製、mise trust、必要な依存同期はprepareへ含める。作成側は固有手順のdetached HEADを専用branchへ接続する。`--worktree <絶対パス>`は固定作成先と別の場所が必要な場合だけ指定し、その場合のパスは固定されない。
 
+対象のClaude Code設定にWorktreeCreateがある場合は、対象cwd・環境・公式イベント入力でhookを実行し、返却先を同じ所有登録へ保存する。作成hookを使う場合、作成はそのhookだけに委ねる。hookの失敗では診断と途中資源を保持して同じ操作から回復し、通常Git作成へ切り替えない。WorktreeRemoveが設定されていれば、終了時の回収は同じ対象設定と返却先を使う。前提ファイルの複製はhookまたはprepareが担う。
+
 所有session、Git共通ディレクトリ、専用branch、作成先、回収対象、選定原本、固有手順と実行記録は`record_path`の登録へ保存される。資源情報を手書きで再登録せず、親の`parent-handoff.md`には作成結果の所在と担当thread・引き継ぎ記録の対応を残す。メインは終了コード0・`ready`とprepareの保存済み両出力を読み、警告と環境準備の成立を判定してから担当を起動し、環境構築の結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の`環境構築`へ渡す。準備が失敗した資源は登録と成果を保持し、入力を是正して同じcreateで再開する。
 
 統合済みの資源もセッション終了まで保持し、同じレーンへの追加は同じcreateの返却から専用worktreeとbranchを再利用する。登録と回収結果は専用資源の外に保持される。前回の強制終了などで残った登録は、process-wi開始時に`atk lane delete --list`で読み、担当とプロセスの終端を確かめてから同じ所有sessionのdeleteで再判定する。再開に使う場合は登録の`record_path`をcreateの`--reuse-record`へ渡して新しい所有sessionへ移す。旧配置（個別managed-temp）の登録も同じ作成先のまま移せる。固定作成先を別sessionの登録が保持している場合、createは回収条件を満たす資源だけを回収して同じパスへ再作成する。未統合・dirty・稼働中の資源と所有登録の無い実体は変更せずに失敗し、理由と`--reuse-record`またはdeleteの回復操作を返す。回収は所有登録と現物が一致した専用資源に限り、主作業ツリーと登録のない資源は保持する。
@@ -64,7 +66,7 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 
 メインは`selection-procedure.md`「処理対象WIの追加」の公開mergeで仮名を既存名へ対応付け、全体確認の終了コード0と保存成功を検収してから追加分を渡す。合流先は未統合へ戻り、追加のないレーン・所属WI・初回情報は保持される。
 
-割当先が統合済みでも資源は保持されているため、同じ`atk lane create`で所有登録とGit登録の一致を確かめ、返された同じworktree・branchへ追加する。指示は準備済みの環境を保持した同じ担当threadと引き継ぎ記録へ送る。登録と現物が一致しない場合は成果を保持し、回復に必要な事実を返す。合流先は未統合へ戻るため、その状態では終了時にも回収しない。
+割当先が統合済みでも資源は保持されているため、同じ`atk lane create`で所有登録とGit登録の一致を確かめ、返された同じworktree・branchへ追加する。指示は準備済みの環境を保持した同じ担当threadと引き継ぎ記録へ送る。登録と現物が一致しない場合は成果を保持し、回復に必要な事実を返す。合流先は未統合へ戻るため、終了時も再統合が完了するまで資源を保持する。
 
 選定YAMLへ追加した時点で、現在工程の完了を待たずに同じthreadへ1回指示を送る。指示には追加WI名、専用worktreeとbranch、引き継ぎ記録、選定YAMLから本文と`プロジェクト規範の指定`を取得すること、現在工程を置換せず完了後にturnを終えず追加計画の起草へ進むことを含める。割当を見直すためだけに稼働中の担当を中断しない。
 工程境界の届け方は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`に委ね、返却を一律に求めない（非待機の`計画検査完了`は`atk agents notify`の通知であり、返却を求めると実装が止まる）。現在工程の結果は最初の追加工程境界の本文の先頭に入る。
@@ -112,15 +114,11 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 
 ## 統合とAWI終端
 
-統合前の確認は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」に従う。統合指示は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って同じレーン担当threadへ送る。
+統合前の確認は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」に従う。レーン担当へ委ねる統合の指示とメイン自身によるCLI実行の検収は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従う。
 
-統合結果のOID、計画保存、AWI終端を検収し、レーン担当の終端と外部プロセスの終了を確かめる。資源は回収せず、同じ担当threadへの追加に備えて保持する。検収と終端確認の後、追加選定の前に、次の公開操作で選定YAMLへ統合状態を記録する（実装完了や統合指示の送付の時点では未統合のまま）。
+Git統合、全計画保存、WI終端と選定の統合状態は`atk lane integrate`が同じ所有登録から実施する。呼出入力とmanifestの作成はレーン担当の`lane-integration.subagent.md`「公開統合操作」に従う。メイン自身が現行CLIを呼ぶ場合も、独立文脈レビューと完成条件判定を受理した同じ入力を使う。Git統合と統合状態の更新は、この公開操作にまとめる。
 
-```text
-atk run-script pick-wi-check -- <選定YAML> --mark-integrated <レーン識別子> --output <同じ選定YAML> --work-dir <対象リポジトリの絶対パス>
-```
-
-`--mark-integrated`は反復指定でき、同じレーンへの記録も反復できる。状態記録とmergeは別々に実行する。保存は全体検査の成功後だけ原子的に行われ、未知レーン・入力不備・内容違反では保存先が変わらない。終了コード0と保存成功を検収して`parent-handoff.md`へ記録し、非0なら入力を直して同じ操作を再実行する。完了レーンと所属WIは履歴として残り、重なりは状態に応じて判定される。
+終了コード0と`phase: finalized`、統合結果のOID、計画保存、AWI終端を検収し、`parent-handoff.md`へ記録する。`git-integrated`は最終化途中であり統合完了としない。失敗では同じmanifestとレビュー対象HEADで未完了工程から再開する。CLIは今回のWI集合と所有を検収し、全最終化操作が成立してから選定原本を原子的に統合済みへ更新する。担当が稼働中の統合には合意した現担当のsessionを指定し、回収では全担当と外部プロセスの終了を確認する。資源、完了レーンと所属WIは追加に備えて保持する。
 
 資源の回収は終了時の`atk lane delete`が行う。登録全体を先に判定し、全工程と外部プロセスの終了、選定の統合済み、clean、Git共通ディレクトリと専用branchの登録一致、統合先への到達を削除直前にも確かめてから、固有撤去、worktree、到達を再確認したbranchの`-D`、旧配置の登録が持つ個別managed-tempの順で回収する。未統合、dirty、稼働中、不明、途中失敗の対象は、理由と残る操作を回収対象の外へ保存し、再実行は残る処理から続ける。セッションのmanaged-tempと証拠は専用worktreeへ置かず、回収対象から外す。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が同じ回収へ接続し、turnごとのSessionEndでは回収しない。
 

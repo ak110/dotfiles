@@ -203,7 +203,12 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     env = _isolated_cli_environ(host_environ, tmp_path)
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
     # `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、系列名を含まない値を与える。
-    values = {"codex_fast_mode": "false", "write_model": "claude:opus/medium", "codex_model_providers": ""}
+    values = {
+        "codex_fast_mode": "false",
+        "write_model": "claude:opus/medium",
+        "codex_model_providers": "",
+        "process_loop_repositories": "[]",
+    }
     for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
         default = "claude" if key.endswith("_engine") else "opus/medium"
         env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = values.get(key, default)

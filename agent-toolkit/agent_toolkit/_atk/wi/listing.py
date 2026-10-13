@@ -1,6 +1,7 @@
 """`atk wi list`による一覧の表示（テキスト・JSON Lines・件数・要約）と着手可否の表示。"""
 
 import argparse
+import dataclasses
 import datetime
 import json
 import pathlib
@@ -8,12 +9,14 @@ import shutil
 import sys
 from collections.abc import Mapping
 
+from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import filters as _wi_filters
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
-from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI, WI_TYPES
+from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATES, WI_TYPE_UWI, WI_TYPES
 from agent_toolkit._atk.wi.formatters import (
     body_summary,
     display_width,
@@ -25,7 +28,89 @@ from agent_toolkit._atk.wi.formatters import (
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._atk.wi.readiness import ReadinessResult
 from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id
+from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._git import command as _git_command
+
+
+@dataclasses.dataclass(frozen=True)
+class RepositorySnapshot:
+    """1回のキュー取得から得た登録先の候補・診断と処理上限。"""
+
+    repository: _config.ConfiguredRepository
+    entries: tuple[_wi_entries.EntryRecord, ...]
+    readiness: ReadinessResult
+
+    @property
+    def candidates(self) -> tuple[_wi_entries.EntryRecord, ...]:
+        """通常除外後のprocessing全件とready・内部依存待ちのinboxを返す。"""
+        names = {*self.readiness.ready, *self.readiness.internal_dependency_waits}
+        return tuple(
+            entry
+            for entry in self.entries
+            if entry[3] in WI_PROCESSABLE_STATES
+            and (entry[3] == "processing" or entry[0].name in names)
+            and not (
+                entry[4] == WI_TYPE_UWI
+                and (parse_source(entry[2]) == _automated_prompt.SOURCE_RUN_SKILL or not _wi_uwi_scan.is_uwi_answered(entry[2]))
+            )
+        )
+
+    @property
+    def has_work(self) -> bool:
+        """通常候補または修復診断が担当の起動を必要とするか返す。"""
+        return bool(self.candidates or self.readiness.actionable_count)
+
+    @property
+    def lane_limit(self) -> int:
+        """候補数に対するリポジトリ別のレーン上限を返す。"""
+        return (len(self.candidates) + 9) // 10
+
+    def candidate_records(self) -> list[dict[str, object]]:
+        """担当へ渡す本文と鮮度を同じ取得済み候補から返す。"""
+        now = datetime.datetime.now(datetime.UTC)
+        return [
+            {
+                "filename": path.name,
+                "state": state,
+                "type": kind,
+                "target_repo": repo_id,
+                "ready": state in WI_PROCESSABLE_STATES and path.name in self.readiness.ready,
+                "blocked_reason": _blocked_reason(self.readiness, path.name) if path.name in self.readiness.blocked else None,
+                "source": parse_source(text),
+                "summary": uwi_body_summary(text, sys.maxsize) if kind == WI_TYPE_UWI else body_summary(text, sys.maxsize),
+                "body": text,
+                "staleness": _staleness(text, self.repository.worktree, now),
+            }
+            for path, repo_id, text, state, kind in self.entries
+            if state in WI_PROCESSABLE_STATES
+        ]
+
+
+def configured_repo_snapshot(
+    private_notes: pathlib.Path,
+    repositories: tuple[_config.ConfiguredRepository, ...] | None = None,
+) -> tuple[RepositorySnapshot, ...]:
+    """登録集合を固定し、一括読込したキューを対象ごとの依存判定へ渡す。"""
+    targets = _config.resolve_configured_repositories() if repositories is None else repositories
+    if not targets:
+        return ()
+    snapshot = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None))
+    return tuple(
+        RepositorySnapshot(
+            repository,
+            tuple(
+                entry
+                for entry in snapshot
+                if (entry[4] is None and index == 0) or _wi_filters.TargetRepoMatcher(repository.repo_id).matches(entry[1])
+            ),
+            _wi_readiness.calculate_readiness(
+                private_notes,
+                repository.repo_id,
+                snapshot=snapshot if index == 0 else tuple(entry for entry in snapshot if entry[4] is not None),
+            ),
+        )
+        for index, repository in enumerate(targets)
+    )
 
 
 def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> str:
@@ -218,6 +303,37 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if not args.skip_pull:
         with _wi_sync.repo_lock(private_notes):
             _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
+    if getattr(args, "configured_repos", False):
+        snapshots = configured_repo_snapshot(private_notes)
+        total = 0
+        for snapshot in snapshots:
+            states = _wi_filters.resolve_states(args.status)
+            kinds = {args.type} if isinstance(args.type, str) else set(args.type)
+            selected = [
+                entry
+                for entry in snapshot.entries
+                if entry[3] in states
+                and ("all" in kinds or entry[4] in kinds)
+                and _wi_filters.answered_matches(entry[4], entry[2], args.answered)
+                and _wi_filters.source_matches_any(parse_source(entry[2]), args.source)
+            ]
+            total += len(selected)
+            if args.count:
+                continue
+            if args.summary_only:
+                _print_summary_entries(selected)
+            elif getattr(args, "jsonl", False) or (is_agent_environment() and not getattr(args, "no_jsonl", False)):
+                _print_json_entries(
+                    selected,
+                    snapshot.readiness,
+                    include_staleness=getattr(args, "with_staleness", False),
+                    local_worktrees={snapshot.repository.repo_id: snapshot.repository.worktree},
+                )
+            else:
+                print_entries(selected, snapshot.readiness)
+        if args.count:
+            print(total)
+        return
     target_values = args.target_repo if isinstance(args.target_repo, list) else [args.target_repo] if args.target_repo else []
     resolved_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in target_values))
     readiness_target = resolved_repos[0] if len(resolved_repos) == 1 else None

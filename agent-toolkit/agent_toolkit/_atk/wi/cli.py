@@ -27,6 +27,7 @@ from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import grep as _grep
 from agent_toolkit._atk.wi import listing as _listing
 from agent_toolkit._atk.wi import process_loop as _process_loop
+from agent_toolkit._atk.wi import process_loop_all_repos as _process_loop_all_repos
 from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 from agent_toolkit._atk.wi import repo as _wi_repo
 from agent_toolkit._atk.wi import show as _show
@@ -347,6 +348,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
     # 省略したオプション名では一致と判定しない。
     list_ = _atk_help.add_command(sub, "list", allow_abbrev=False, **_atk_help.HELP["atk wi list"])
     _add_target_repo_arg(list_, multiple=True, allow_all=True)
+    list_.add_argument(
+        "--configured-repos",
+        action="store_true",
+        help="process_loop_repositoriesの登録集合を一括取得する。--target-repoとは併用できない。",
+    )
     list_.add_argument(
         "--type",
         choices=("all", *_wi_constants.WI_TYPES),
@@ -932,6 +938,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         ),
     )
     loop_sub = _atk_help.add_subcommands(loop, dest="process_loop_subcommand", required=False)
+    _atk_help.add_command(loop_sub, "all-repos", **_atk_help.HELP["atk wi process-loop all-repos"])
     _atk_help.add_command(loop_sub, "abort", **_atk_help.HELP["atk wi process-loop abort"])
     _atk_help.add_command(loop_sub, "abort-cancel", **_atk_help.HELP["atk wi process-loop abort-cancel"])
     _atk_help.add_command(loop_sub, "status", **_atk_help.HELP["atk wi process-loop status"])
@@ -1010,6 +1017,10 @@ def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentP
     明示指定と対象の補完を区別できないと、対象を一意に指定した照会まで通常の除外処理が適用される。
     """
     if args.command != "wi" or not hasattr(args, "target_repo"):
+        return
+    if getattr(args, "configured_repos", False):
+        if args.target_repo is not None:
+            parser.error("--configured-reposと--target-repoは同時に指定できません。")
         return
     raw = args.target_repo
     values = raw if isinstance(raw, list) else ([] if raw is None else [raw])
@@ -1136,11 +1147,17 @@ def validate_args(args: argparse.Namespace) -> None:
         _validate_uwi_add_args(args)
 
 
-def dispatch(args: argparse.Namespace, *, home: pathlib.Path, now: datetime.datetime) -> int:
+def dispatch(
+    args: argparse.Namespace,
+    *,
+    home: pathlib.Path,
+    now: datetime.datetime,
+    repository_manager_factory: _process_loop_all_repos.RepositoryManagerFactory | None = None,
+) -> int:
     """`atk wi`のサブコマンドを実行し、終了コードを返す。"""
     sub = args.wi_subcommand
     process_loop_subcommand = getattr(args, "process_loop_subcommand", None)
-    if sub == "process-loop" and process_loop_subcommand is not None:
+    if sub == "process-loop" and process_loop_subcommand not in (None, "all-repos"):
         # これらの操作はprivate-notesを必要としないため、環境の用意より前で処理する。
         process_loop_state_dispatch = {
             "abort": _process_loop_control.cmd_process_loop_abort,
@@ -1171,7 +1188,11 @@ def dispatch(args: argparse.Namespace, *, home: pathlib.Path, now: datetime.date
         "answer": lambda: _uwi.cmd_answer(args, private_notes),
         "commit": lambda: _mutation_targets.cmd_commit(private_notes),
         "pull": lambda: _pull_command(private_notes),
-        "process-loop": lambda: _process_loop.cmd_process_loop(args, private_notes),
+        "process-loop": lambda: (
+            _process_loop_all_repos.cmd_process_loop_all_repos(args, private_notes, manager_factory=repository_manager_factory)
+            if process_loop_subcommand == "all-repos"
+            else _process_loop.cmd_process_loop(args, private_notes)
+        ),
         "check-alerts": lambda: _alerts.cmd_check_alerts(args, private_notes, now),
     }
     try:

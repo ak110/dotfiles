@@ -187,7 +187,7 @@ class TestMiseLatestRefresh:
         monkeypatch.setattr(_process_loop.time, "monotonic", lambda: 0.0)
 
         def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-            returncode = 0 if command[0] == "claude" else update_returncode
+            returncode = update_returncode if pathlib.Path(command[0]).stem.lower() == "update-dotfiles" else 0
             return subprocess.CompletedProcess(command, returncode, "", "")
 
         monkeypatch.setattr(subprocess, "run", fake_run)

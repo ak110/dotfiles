@@ -283,11 +283,25 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 
 AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼したい内容を要求として登録する。
 登録した要求は、調査・計画・実装・レビュー・公開まで順に自動で処理される。
+開始前は別セッションが活動中なら処理可能WIの検出から10分を猶予する。
+共有private-notesへ新しいAWIかUWIが届くたびに、検出時点から10分へ延長する。
+延長の回数・累計時間に上限はなく、活動がなくなれば期限前でも開始判定へ戻る。
+終了済みのセッションと、稼働中の子エージェントがないユーザー応答待ちは猶予の理由にしない。
+当該ループ自身と子孫は除き、別ループや別リポジトリの活動も調べる。
+既存WIの編集・状態移動は新規到着として数えない。
+
+対象リポジトリに未回答UWIがあれば、保存済みUWIの最終更新から10分が経過するか全回答になるまで開始を待つ。
+holdとrun-skill由来もこの判定へ含め、回答後にadoptedへ移ったUWIの更新も反映する。
+活動猶予とUWI待機は同時に評価し、両方の解除後に処理可能集合を確認する。
+待機理由・期限・延長・開始は端末とprocess-loopのログで確認でき、待機中も`abort`で中断できる。
 選定はClaude CodeとCodexのどちらもメインが直接行い、別の選定担当は起動しない。候補本文から分類・割当・モデル・配置根拠を判断し、取得済み候補と意味判断をpick-wi-checkへ渡して定型欄の生成・確認・保存を1回で行う。意味判断と要求の被覆、レーン数上限、同じ担当thread、単一writer、実行レビューと直列統合は維持する。
 圧縮ツールが提供されるClaude Codeでは、各段階の全初期通常レーンの初回起動後と、終端担当の起動後の長時間待機前に会話圧縮を予約する。独立した工程を先に開始し、セッションのmanaged-temp直下のparent-handoff.mdへ再開状態を保存する。引数なしで予約し、背景待機を始めてターンを終える。受付は圧縮完了と区別し、通知後に保存記録から同じ工程へ戻る。ツールが無い環境では、その旨を記録して通常の待機へ進む。Codex、通常0件、処理中の追加レーン起動と実行レビュー待機は予約の対象外とする。
 
 レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・不明・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。
 要件を本文だけで説明できる作業に向く。
+1レーンの場合も隔離と独立文脈レビューを保ち、`atk lane integrate`が統合・計画保存・WI終端・統合済み記録をまとめて行う。
+途中失敗は進行記録と成果を残し、同じ入力で未完了の工程から再開する。
+操作の詳細は[run-lanes.md](../../agent-toolkit/skills/process-wi/references/run-lanes.md)を参照。
 要求を登録するときは、先行する要求の成果が無いと安全に実施できないか完成を判定できない場合だけ、その先行する要求への依存を設定する。
 
 自律型でも対話型と同じ基準で確認の要否を判定し、技術と既存認可で確定する事項はエージェントが実施して報告する。
@@ -313,6 +327,31 @@ atk wi process-loop
 
 dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk wi process-loop --worktree[=NAME]`を指定する。
 `NAME`を省略すると`process-loop`を使い、dotfilesリポジトリではオプションを指定しなくても自動的にworktreeを使う。
+
+複数リポジトリのWIを`atk wi process-loop`で継続して処理する場合は、ローカルworktreeの絶対パスをJSON配列で登録し、ホームから起動する。
+
+```bash
+atk config set process_loop_repositories '["/home/user/project-a", "/home/user/project-b"]'
+atk wi list --configured-repos
+atk wi process-loop all-repos
+```
+
+共通オプションは`atk wi process-loop --no-update all-repos`のように`all-repos`の前へ指定する。
+通常の`atk wi process-loop`は現在のリポジトリだけを処理する。
+登録が空配列なら待機し、登録外のリポジトリへのWI投入はできる。
+登録先を解決できない場合は表示された対象を直して再実行する。
+同じoriginの登録は先頭へまとめ、登録変更は次の取得へ反映する。
+
+all-reposは一括取得した候補を各対象cwdの通常delegateへ渡し、担当とユーザーの間を中継する。
+対象の規範・準備・監査・実装・Git・公開は各担当が扱い、レーン上限もリポジトリごとの候補数から求める。
+開始前の猶予は登録対象全体に作用し、開始後は1担当の失敗や所有待ちで別担当を止めない。
+通常起動と同じoriginの処理所有を共有し、対象のWorktreeCreate/Removeがあれば作成先と撤去へ反映する。
+設定済みhookが失敗した場合は診断と途中資源を保持する。
+`abort`・`status`・`instruct`は同じOSアカウントの制御である。
+`instruct`は単一起動では次の処理会話へ1回だけ渡る。
+all-reposでは次の起動集合で1回受領し、各担当へ中継して、その担当の対象に関する部分を適用する。
+再開は記録されたall-repos担当のsession IDを`--resume`へ指定する。
+詳細は[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)を参照。
 
 CI失敗だけを1回確認してAWIへ投入する場合は、エージェントが次のコマンドを呼べる。対象を省略すると現在の作業ツリーを使う。
 

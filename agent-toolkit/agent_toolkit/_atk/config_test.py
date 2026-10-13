@@ -120,6 +120,7 @@ class TestConfigShow:
             "write_model",
             "codex_fast_mode",
             "codex_model_providers",
+            "process_loop_repositories",
         ]
         for key in config_module._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
             assert f"{key} {config_module.resolve_mutable_setting(key)}" in out

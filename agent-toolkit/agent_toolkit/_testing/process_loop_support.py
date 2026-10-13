@@ -101,6 +101,7 @@ def isolate_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _path: True)
+    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: False)
     monkeypatch.setattr(
         codex_models,
         "list_models",

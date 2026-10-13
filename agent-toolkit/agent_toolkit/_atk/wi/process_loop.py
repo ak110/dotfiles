@@ -12,6 +12,7 @@ from agent_toolkit._atk.wi import process_loop_control as _pl_control
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._atk.wi import process_loop_mise as _pl_mise
+from agent_toolkit._atk.wi import process_loop_ownership as _pl_ownership
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
@@ -97,6 +98,24 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
     os.environ[_pl_env.PROCESS_LOOP_SESSION_ENV] = "1"
     os.environ.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
     env = _pl_env.child_env()
+    start_gate = _pl_watch.StartGate(private_notes)
+    active_ownership: _pl_ownership.Ownership | None = None
+
+    def finish_session_ownership(completed: bool) -> None:
+        """再起動より前に担当sessionを保持してoriginの所有を解放する。"""
+        nonlocal active_ownership
+        if active_ownership is None:
+            return
+        session_id = env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV)
+        if session_id:
+            active_ownership = _pl_ownership.update_session(
+                active_ownership,
+                session_id,
+                lane_session_id=env.get("AGENT_TOOLKIT_LANE_SESSION_ID"),
+            )
+        _pl_ownership.release(active_ownership, completed=completed)
+        active_ownership = None
+
     resume_pending = args.resume is not None
     refresh_before_session = not args.internal_dotfiles_updated
     with _console_title.console_title("atk wi process-loop"):
@@ -142,6 +161,22 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                             count = _wi_readiness.count_pending_entries(private_notes, target_repo=target_repo_id)
                     _process_loop_log.append("loop_iter_start", count=count)
                     if count > 0 or alert_session_pending:
+                        if not _pl_watch.wait_for_start_permission(private_notes, {target_repo_id}, start_gate):
+                            return
+                        # 回答・活動の変化で待機した間に候補が消える場合もある。
+                        count = _wi_readiness.count_pending_entries(private_notes, target_repo=target_repo_id)
+                        if count == 0 and not alert_session_pending:
+                            continue
+                        active_ownership = _pl_ownership.try_acquire(target_repo_id, worktree=local_path)
+                        if active_ownership is None:
+                            print("同じリポジトリを別のprocess-loopが処理中です。所有者の終了を待って再取得します。")
+                            _pl_watch.wait_for_changes(
+                                private_notes,
+                                target_repo_id,
+                                timeout=3.0,
+                                state_directories=(_pl_ownership.ownership_directory(),),
+                            )
+                            continue
                         refresh_before_session = False
                         current_resume_pending = resume_pending
                         if current_resume_pending:
@@ -154,6 +189,7 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                             resume_pending=current_resume_pending,
                         )
                         if prepared_target is None:
+                            finish_session_ownership(False)
                             print("worktree準備を再試行するまで変更検知を待機します。")
                             _pl_watch.wait_for_changes(private_notes, target_repo_id)
                             refresh_before_session = True
@@ -167,6 +203,7 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                         else:
                             print(f"未判定のDependabotアラートを検知。監査のため{orchestrator}へ委譲します。")
                         alert_session_pending = False
+                        start_gate.started()
                         if _pl_session.run_process_session(
                             args,
                             session_path,
@@ -177,6 +214,7 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                             effort=effort,
                             resume_pending=current_resume_pending,
                             dotfiles_root=dotfiles_root,
+                            on_session_finished=finish_session_ownership,
                         ):
                             return
                         continue
@@ -219,4 +257,5 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
             except KeyboardInterrupt:
                 print("Ctrl+Cを検知しました。常駐モードを終了します。")
         finally:
+            finish_session_ownership(False)
             _pl_env.restore_process_loop_env(previous_env_values)
