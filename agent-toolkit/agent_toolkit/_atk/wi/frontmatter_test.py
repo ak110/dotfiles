@@ -6,7 +6,11 @@ import typing
 import pytest
 import yaml
 
-from agent_toolkit._atk.wi import frontmatter
+from agent_toolkit import atk
+from agent_toolkit._atk.wi import entries, frontmatter
+from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
+from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 
 def test_write_entry_text_normalizes_crlf_without_text_mode(
@@ -28,6 +32,55 @@ def test_write_entry_text_normalizes_crlf_without_text_mode(
 def test_decode_entry_text_normalizes_crlf_and_cr() -> None:
     """UTF-8のCRLFと単独CRをLFへ正規化する。"""
     assert frontmatter.decode_entry_text(b"1\r\n2\r3\n") == "1\n2\n3\n"
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_bom_input_keeps_body_and_entry_operations(tmp_path: pathlib.Path, newline: str) -> None:
+    """BOMを構造だけから分離し、本文中の文字と指定名取得・保存の原文を保持する。"""
+    plain = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\ufeff本文\n途中\ufeffの文字\n"
+    decoded = frontmatter.decode_entry_text(("\ufeff" + plain).replace("\n", newline).encode("utf-8"))
+    assert frontmatter.parse_frontmatter(decoded) == frontmatter.parse_frontmatter(plain)
+    parsed = frontmatter.parse_frontmatter(decoded)
+    assert parsed is not None and parsed[1] == "\ufeff本文\n途中\ufeffの文字\n"
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    path = inbox / "20261013-000000-001.md"
+    frontmatter.write_entry_text(path, decoded)
+    assert path.read_bytes() == ("\ufeff" + plain).encode("utf-8")
+    records, missing = entries.read_named_entries(tmp_path, [(path.name, path.name)], target_repo=None)
+    assert not missing and records[0][4] == "awi"
+    assert records[0][2] == decoded
+
+
+@pytest.mark.parametrize("bom", ["", "\ufeff"])
+def test_public_wi_add_edit_show_accepts_bom(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], bom: str) -> None:
+    """公開CLIの投入・編集・表示が先頭BOMの有無で同じ管理情報と本文を扱う。"""
+    notes = _setup_notes(tmp_path)
+    git_repository.init_repository(notes, initial_branch="main")
+    git_repository.commit_all(notes, "初期状態")
+    body = tmp_path / "body.md"
+    body.write_text(bom + "---\nalert_keys: before\n---\n\n" + AGENT_AWI_BODY, encoding="utf-8")
+    with pytest.raises(SystemExit) as added:
+        atk.main(["wi", "add", "--target-repo=github.com/example/repo", "--body-file", str(body)], home=tmp_path, now=_FIXED_DT)
+    assert added.value.code == 0
+    path = next((notes / "inbox").glob("*.md"))
+    parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None and parsed[0]["alert_keys"] == "before"
+    body.write_text(bom + "---\nalert_keys: after\n---\n\n" + AGENT_AWI_BODY + "\n途中\ufeffの文字", encoding="utf-8")
+    with pytest.raises(SystemExit) as edited:
+        atk.main(
+            ["wi", "edit", path.name, "--target-repo=github.com/example/repo", "--body-file", str(body)],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+    assert edited.value.code == 0
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as shown:
+        atk.main(["wi", "show", path.name], home=tmp_path, now=_FIXED_DT)
+    assert shown.value.code == 0
+    output = capsys.readouterr().out
+    assert "alert_keys: after" in output and "途中\ufeffの文字" in output
+    assert "target_repo: github.com/example/repo" in output
 
 
 class TestParseFrontmatter:

@@ -5,6 +5,7 @@ import pathlib
 import pytest
 from pyfltr.colloquial import check as _colloquial_check
 
+from agent_toolkit._common import markdown_headings
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._plan.structure import constants as plan_constants
 from agent_toolkit._plan.structure import markdown as plan_markdown
@@ -38,6 +39,27 @@ def test_markdown_table_keeps_first_and_last_row_locations() -> None:
 
     assert table.row_location(0) == "9行目: | 先頭 | 一。 |"
     assert table.row_location(1) == "10行目: | 末尾 | 二。 |"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "# 主題\n本文中\ufeffの文字\n",
+        "## 節\n本文\n",
+        "---\nkey: value\n---\n# 主題\n",
+        "```text\n# 偽見出し\n```\n# 主題\n",
+    ],
+)
+def test_bom_structure_matches_plain_input(content: str) -> None:
+    """見出し・管理情報・先頭フェンスで同じ行位置を認識し、文中のBOMは保持する。"""
+    marked = "\ufeff" + content
+    assert plan_markdown.extract_headings(marked) == plan_markdown.extract_headings(content)
+    assert plan_markdown.markdown_body_start_index(marked) == plan_markdown.markdown_body_start_index(content)
+    assert plan_markdown.markdown_body_text(marked) == plan_markdown.markdown_body_text(content)
+    for level in (1, 2):
+        before = [(token.map, title) for token, title in markdown_headings.top_level_atx_headings(content, level)]
+        after = [(token.map, title) for token, title in markdown_headings.top_level_atx_headings(marked, level)]
+        assert after == before
 
 
 @pytest.mark.parametrize("index", [-1, 2])

@@ -84,6 +84,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     本文は区切り直後から末尾までを一切加工せず（先頭改行の除去も末尾改行の追加もせず）返す
     （本文が変化しないことは、`serialize_frontmatter`との往復後の本文文字列を直接比較して確認する）。
     """
+    text = text.removeprefix("\ufeff")
     if not text.startswith("---\n"):
         return None
     try:

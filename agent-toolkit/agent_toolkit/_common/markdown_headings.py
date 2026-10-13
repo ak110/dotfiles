@@ -13,7 +13,7 @@ def normalize_newlines(text: str) -> str:
 
 def parse_headings(text: str, level: int) -> list[tuple[Token, str]]:
     """指定レベルの見出しの開きtokenと本文を、出現順で返す。"""
-    tokens = _MARKDOWN.parse(normalize_newlines(text))
+    tokens = _MARKDOWN.parse(normalize_newlines(text.removeprefix("\ufeff")))
     headings: list[tuple[Token, str]] = []
     for index, token in enumerate(tokens[:-1]):
         if token.type != "heading_open" or token.tag != f"h{level}" or token.map is None:

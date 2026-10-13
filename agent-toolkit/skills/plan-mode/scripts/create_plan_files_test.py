@@ -4,6 +4,7 @@ import datetime
 import pathlib
 import time
 
+import check_plan_file
 import create_plan_files
 import pytest
 
@@ -151,6 +152,40 @@ def test_creates_single_file_with_supplied_stem(repo: pathlib.Path, tmp_path: pa
 
     assert path == tmp_path / "home/.claude/plans/13-0217_計画保存先移行.md"
     assert path.is_file()
+
+
+@pytest.mark.parametrize("bom", [False, True])
+def test_cli_accepts_bom_source_and_preserves_bytes(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    bom: bool,
+) -> None:
+    """BOMの有無によらず計画を作成・構造チェックでき、原稿と本文中の文字を保持する。"""
+    source, _ = _source(repo, tmp_path)
+    content = source.read_text(encoding="utf-8").replace("対象の公開契約を更新する。", "対象の公開\ufeff契約を更新する。", 1)
+    original = (("\ufeff" if bom else "") + content).encode("utf-8")
+    source.write_bytes(original)
+    assert (
+        create_plan_files.main(
+            [
+                "--source",
+                str(source),
+                "--name",
+                "13-0217_BOM受理",
+                "--home",
+                str(tmp_path / "home"),
+                "--work-dir",
+                str(repo),
+            ]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    path = pathlib.Path(captured.out.strip())
+    assert path.read_bytes() == original
+    errors, _warnings = check_plan_file.check(path, repo, home=tmp_path / "home", reject_migration_warnings=True)
+    assert not errors
 
 
 def test_named_plan_name_adds_utc_timestamp_to_bare_name() -> None:
