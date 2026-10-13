@@ -10,6 +10,12 @@ A-Bはフェンスの内容の先頭を1とし、改行も1文字として数え
 
 textフェンスの番号付け、文字範囲の数え方、確認回答の記録から回答と自由記述を取り出す規則は本スクリプトだけが持ち、
 起草規範はこのスクリプトの実行を案内する。終了コードは一致が0、不一致が1、引数の誤りと読めない入力が2である。
+
+`--import-spec PATH`は保存済みuser-eventsから引用節へ取り込む。PATHは選択オブジェクトのJSON配列で、
+各要素にsource（保存済みJSONLの絶対パス）、record、lineを指定する。同位置に複数イベントがある場合はsequenceも指定する。
+modeはfull、range（1始まり・両端を含むstart/end）、command-args、answerから選び、省略時はfullを使う。
+answerはassistant_contextの質問と全選択肢、user_responseの回答と自由記述を区別して生成する。
+全選択を検証してから引用節を更新し、一致と引用位置を返す。入力不成立と不一致では原稿を変更しない。
 """
 
 from __future__ import annotations
@@ -18,10 +24,14 @@ import argparse
 import dataclasses
 import json
 import pathlib
+import re
 import sys
+from typing import Literal
 
+import pydantic
+
+from agent_toolkit._common import atomic_file, requirement_units
 from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common import requirement_units
 
 QUOTE_HEADING = "## ユーザー指摘の逐語引用"
 ANSWER_LABELS = ("質問: ", "選択肢: ", "回答: ", "自由記述: ")
@@ -58,17 +68,155 @@ class Part:
     offset: int
 
 
-def _quote_fences(body: str) -> list[str]:
-    """逐語引用の節にある`text`フェンスの内容を出現順に返す。"""
-    lines = body.splitlines()
-    starts = [index for index, line in enumerate(lines) if line.rstrip() == QUOTE_HEADING]
+class Selection(pydantic.BaseModel):
+    """保存済みuserイベントから引用する対象と範囲。文字位置は1始まりの両端を含む。"""
+
+    model_config = pydantic.ConfigDict(extra="forbid", strict=True)
+
+    source: str
+    record: str
+    line: pydantic.PositiveInt
+    sequence: pydantic.PositiveInt | None = None
+    mode: Literal["full", "range", "command-args", "answer"] = "full"
+    start: pydantic.PositiveInt | None = None
+    end: pydantic.PositiveInt | None = None
+
+
+class _Option(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(strict=True)
+    label: str
+    description: str = ""
+
+
+class _Question(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(strict=True)
+    question: str
+    options: list[_Option]
+
+
+class _Response(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(strict=True)
+    answers: list[str]
+    notes: str = ""
+
+
+class _UserEvent(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(strict=True)
+    text: str
+    record: str
+    line: pydantic.PositiveInt
+    sequence: pydantic.PositiveInt | None = None
+    assistant_context: list[_Question] | None = None
+    user_response: list[_Response] | None = None
+
+
+def _answer_text(event: _UserEvent) -> str:
+    questions, responses = event.assistant_context, event.user_response
+    if not questions or not responses or len(questions) != len(responses):
+        raise InputError("answerには対応するassistant_contextとuser_responseが必要です")
+    values = [value for response in responses for value in [*response.answers, *([response.notes] if response.notes else [])]]
+    if "\n".join(values) != event.text:
+        raise InputError("user_responseの回答・自由記述がtextと一致しません。保存済みuser-eventsを取得し直してください")
+    lines: list[str] = []
+    for question, response in zip(questions, responses, strict=True):
+        lines.append(f"質問: {question.question}")
+        lines.extend(
+            f"選択肢: {option.label}" + (f": {option.description}" if option.description else "") for option in question.options
+        )
+        if response.answers:
+            lines.append("回答: " + "\n".join(response.answers))
+        if response.notes:
+            lines.append("自由記述: " + response.notes)
+    return "\n".join(lines)
+
+
+def _selected_text(selection: Selection, event: _UserEvent) -> str:
+    if selection.mode == "range":
+        if selection.start is None or selection.end is None or not 1 <= selection.start <= selection.end <= len(event.text):
+            raise InputError("rangeにはtext内の1始まり・両端を含むstartとendを指定してください")
+        content = event.text[selection.start - 1 : selection.end]
+    else:
+        if selection.start is not None or selection.end is not None:
+            raise InputError("startとendはmode=rangeだけで指定できます")
+        if selection.mode == "command-args":
+            arguments = re.findall(r"<command-args>(.*?)</command-args>", event.text, flags=re.DOTALL)
+            if len(arguments) != 1:
+                raise InputError("command-argsにはcommand-args要素が1件あるイベントを指定してください")
+            content = arguments[0]
+        elif selection.mode == "answer":
+            content = _answer_text(event)
+        else:
+            if event.user_response is not None or event.assistant_context is not None:
+                raise InputError("確認回答の全体にはmode=answerを指定し、質問と全選択肢も取り込んでください")
+            content = event.text
+    if not content.strip():
+        raise InputError("選択範囲が空です。ユーザーの値を含む範囲を指定してください")
+    return content
+
+
+def _import_quotes(body: str, spec_path: pathlib.Path) -> tuple[str, list[Original]]:
+    """全選択を検証し、引用節だけを置換した原稿と比較用原文を返す。"""
+    selections = pydantic.TypeAdapter(list[Selection]).validate_json(spec_path.read_bytes())
+    if not selections:
+        raise InputError("--import-specのJSON配列へ1件以上の選択を指定してください")
+    sources: dict[pathlib.Path, list[_UserEvent]] = {}
+    blocks: list[str] = []
+    originals: list[Original] = []
+    for selection in selections:
+        path = pathlib.Path(selection.source)
+        if not path.is_absolute():
+            raise InputError(f"選択のsourceには絶対パスを指定してください: {path}")
+        if path not in sources:
+            events = [json.loads(raw) for raw in path.read_text(encoding="utf-8-sig").splitlines() if raw.strip()]
+            if not all(isinstance(event, dict) for event in events):
+                raise InputError(f"保存済みuser-eventsのJSONLオブジェクトを指定してください: {path}")
+            sources[path] = [_UserEvent.model_validate(event) for event in events if event.get("kind") == "user"]
+        matches = [
+            event
+            for event in sources[path]
+            if event.record == selection.record
+            and event.line == selection.line
+            and (selection.sequence is None or event.sequence == selection.sequence)
+        ]
+        if len(matches) != 1:
+            raise InputError(
+                f"source={path} record={selection.record} line={selection.line}のイベントが{len(matches)}件です。"
+                "保存済み出力のrecord・lineを確かめ、複数件ならsequenceも指定してください"
+            )
+        event = matches[0]
+        content = _selected_text(selection, event)
+        original = Original(event.text, path, event.record, event.line)
+        originals.append(original)
+        # 原文に含まれるフェンスが引用を途中で閉じない長さにする。
+        fence = "`" * max(3, max((len(run) + 1 for run in re.findall(r"`+", content)), default=0))
+        location = original.location() + (f" sequence={event.sequence}" if event.sequence is not None else "")
+        blocks.append(f"{location}\n\n{fence}text\n{content}\n{fence}")
+    start, end = _quote_section(body)
+    return body[:start] + "\n" + "\n\n".join(blocks) + "\n\n" + body[end:], originals
+
+
+def _quote_section(body: str) -> tuple[int, int]:
+    """引用節の見出し直後と次のH2の文字位置を返す。フェンス内の見出しは除く。"""
+    lines = body.splitlines(keepends=True)
+    inside = {index for first, last, _ in requirement_units.fenced_blocks(lines) for index in range(first, last + 1)}
+    starts = [index for index, line in enumerate(lines) if index not in inside and line.rstrip() == QUOTE_HEADING]
     if len(starts) != 1:
         raise InputError(f"本文に『{QUOTE_HEADING.removeprefix('## ')}』の見出しが{len(starts)}件あります（1件が必要です）")
     start = starts[0] + 1
-    end = next((index for index in range(start, len(lines)) if lines[index].startswith("## ")), len(lines))
-    section = lines[start:end]
+    end = next(
+        (index for index in range(start, len(lines)) if index not in inside and lines[index].startswith("## ")), len(lines)
+    )
+    return sum(map(len, lines[:start])), sum(map(len, lines[:end]))
+
+
+def _quote_fences(body: str) -> list[str]:
+    """逐語引用の節にある`text`フェンスの内容を出現順に返す。"""
+    start, end = _quote_section(body)
+    section = body[start:end].splitlines(keepends=True)
     fences = [
-        "\n".join(section[first + 1 : last]) for first, last, info in requirement_units.fenced_blocks(section) if info == "text"
+        "".join(section[first + 1 : last]).removesuffix("\r\n" if section[first].endswith("\r\n") else "\n")
+        for first, last, info in requirement_units.fenced_blocks(section)
+        if info == "text"
     ]
     if not fences:
         raise InputError("逐語引用の節に言語指定`text`のフェンスがありません")
@@ -157,6 +305,8 @@ def check(body: str, originals: list[Original]) -> tuple[list[str], list[str]]:
         for part in parts:
             matched = next((original for original in originals if part.text in original.text), None)
             if matched is None:
+                matched = next((original for original in originals if part.text.replace("\r\n", "\n") in original.text), None)
+            if matched is None:
                 errors.append(f"text[{number}]の{part.label}が出所のどの原文の部分文字列でもありません")
             else:
                 output.append(f"text[{number}] {part.label}: 一致 {matched.location()}")
@@ -181,24 +331,42 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         action="append",
         default=None,
-        required=True,
         help="原文を保持するファイルの絶対パス。`atk run-script session-review-evidence -- ... --user-events`の出力か、"
         "原文そのものを持つファイル。複数の出所は反復して指定する",
     )
+    parser.add_argument(
+        "--import-spec",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="引用節を更新する選択JSON配列の絶対パス。各要素はsource（保存済みuser-eventsの絶対パス）、"
+        "record、line、任意のsequence、mode（full/range/command-args/answer）を持ち、mode省略時はfullを使う。"
+        "rangeは1始まり・両端を含むstart/endも指定する。配列順で取り込み、全件が原文と一致することを確かめて保存する",
+    )
     args = parser.parse_args(argv)
-    if any(not path.is_absolute() for path in [args.body, *args.source]):
-        parser.error("WI本文と--sourceには絶対パスを指定する")
+    if not args.source and args.import_spec is None:
+        parser.error("逐語引用と原文の比較には--source、取り込みには--import-specを指定する")
+    if args.source and args.import_spec is not None:
+        parser.error("--import-specは選択内のsourceを使うため、--sourceと同時に指定できません")
+    paths = [args.body, *(args.source or []), *([args.import_spec] if args.import_spec is not None else [])]
+    if any(not path.is_absolute() for path in paths):
+        parser.error("WI本文、--source、--import-specには絶対パスを指定する")
     try:
-        body = args.body.read_text(encoding="utf-8")
+        body = args.body.read_bytes().decode("utf-8")
     except (OSError, UnicodeError) as error:
         parser.error(f"WI本文を読めません: {args.body}: {error}")
     try:
-        originals = [original for path in args.source for original in _originals(path)]
+        if args.import_spec is not None:
+            body, originals = _import_quotes(body, args.import_spec)
+        else:
+            originals = [original for path in args.source for original in _originals(path)]
         output, errors = check(body, originals)
-    except InputError as error:
+        if args.import_spec is not None and not errors:
+            atomic_file.atomic_write(args.body, body)
+    except (InputError, OSError, UnicodeError, json.JSONDecodeError, pydantic.ValidationError) as error:
         _next_action.report(
             f"失敗: {error}",
-            next_action="WI本文と--sourceの絶対パスと内容を確かめ、同じコマンドを再実行する",
+            next_action="WI本文と出所の絶対パス・内容を確かめ、取り込みでは--import-specのsource・record・line・"
+            "sequence・mode・範囲を保存済みuser-eventsに合わせてから同じコマンドを再実行する",
         )
         return 2
     if errors:
