@@ -505,7 +505,6 @@ _REBASE_AGENT_AWI = "---\ntype: awi\ntarget_repo: github.com/example/repo\nsourc
 def _rebasing_notes(tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]) -> pathlib.Path:
     """各状態の項目をcommitし、rebaseの中間状態が残るWI保存リポジトリを作成する。"""
     notes = make_clean_repo(tmp_path, "notes")
-    (notes / ".agent-toolkit-local-only").touch()
     for state_name, filename, text in (
         ("inbox", "entry.md", _REBASE_AWI),
         ("inbox", "question.md", _REBASE_UWI),
@@ -645,9 +644,9 @@ async def test_commit_api_keeps_changed_boolean(
 ) -> None:
     """commit結果が詳細を持っても、Web APIは外部編集をcommitした真偽だけを返す。"""
     notes = make_clean_repo(tmp_path, "notes")
-    marker = notes / ".agent-toolkit-local-only"
-    marker.touch()
-    subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True, capture_output=True)
+    setup = notes / "setup.txt"
+    setup.write_text("初期状態\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", setup.name], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(notes), "commit", "-m", "local setup"], check=True, capture_output=True)
     client = _serve_app(notes).test_client()
     empty = await client.post("/api/entries/commit", json={})
@@ -1535,15 +1534,17 @@ fetchHandler = async () => {
   throw new Error('通信失敗');
 };
 byId('target-filter').value = 'github.com/x/alpha';
+    const before = byId('target-filter').children.map(option => option.value);
 await loadTargetRepos();
 process.stdout.write(JSON.stringify({
+      before,
   selected: byId('target-filter').value,
   values: byId('target-filter').children.map(option => option.value),
 }));
 """
     )
     assert result["selected"] == "github.com/x/alpha"
-    assert result["values"] == []
+    assert result["values"] == result["before"]
 
 
 def test_assets_keep_latest_list_when_entry_requests_finish_out_of_order() -> None:
@@ -1841,6 +1842,101 @@ def _patch_single_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
 def _serve_app(root: pathlib.Path) -> typing.Any:
     """指定したキュー管理ディレクトリを使う`atk serve`のアプリを返す。"""
     return serve_app.create_app(root, config.ServeConfig("127.0.0.1", 28766), state.ServeState(root))
+
+
+@pytest.mark.parametrize("entry_type", ["", "type: foo\n", "type: [awi]\n"])
+@pytest.mark.asyncio
+async def test_typeless_entries_keep_server_running(tmp_path: pathlib.Path, entry_type: str) -> None:
+    """不正typeの一覧・詳細・回答を処理した後も、同じアプリの正常要求が成立する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    broken = f"---\ntarget_repo: example/repo\n{entry_type}---\n\n欠落の本文\n"
+    (inbox / "broken.md").write_text(broken, encoding="utf-8")
+    (inbox / "normal.md").write_text(AWI_TEXT, encoding="utf-8")
+    client = _serve_app(tmp_path).test_client()
+    listed = await client.get("/api/entries?status=inbox&period=all")
+    assert listed.status_code == 200
+    items = (await listed.get_json())["entries"]
+    assert {item["filename"]: item["kind"] for item in items} == {"normal.md": "awi", "broken.md": "unknown"}
+    repos = await client.get("/api/repos")
+    assert repos.status_code == 200
+    detail = await client.get("/api/entries/inbox/broken.md")
+    assert detail.status_code == 200
+    assert (await detail.get_json())["entry"]["kind"] == "unknown"
+    assert (await detail.get_json())["entry"]["content"] == broken
+    answered = await client.post("/api/entries/answer", json={"filename": "broken.md", "answer": "回答", "state": "inbox"})
+    assert 400 <= answered.status_code < 600
+    error = (await answered.get_json())["error"]
+    assert "処理に失敗" in error and "標準エラー" in error and "atk serve logs" in error
+    assert (await client.get("/")).status_code == 200
+    assert (await client.get("/api/entries/inbox/normal.md")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_worker_exit_is_request_failure(tmp_path: pathlib.Path) -> None:
+    """管理情報と無関係な操作のSystemExitも共通ワーカーで変換する。"""
+
+    class ExitingOperations(wi_operations.Operations):
+        def target_repos(self, status: str = "active", *, now: datetime.datetime | None = None) -> list[str]:
+            raise SystemExit(2)
+
+    current = state.ServeState(tmp_path)
+    app = serve_app.create_app(
+        tmp_path, config.ServeConfig("127.0.0.1", 28766), current, operations=ExitingOperations(tmp_path)
+    )
+    client = app.test_client()
+    for _attempt in range(2):
+        response = await client.get("/api/repos")
+        assert 400 <= response.status_code < 600
+        assert "標準エラー" in (await response.get_json())["error"]
+        assert (await client.get("/")).status_code == 200
+
+
+def test_node_dom_matches_html_structure() -> None:
+    """本番HTMLのIDと、通知・フォーム・ヘッダーの構造が擬似DOMでも一致する。"""
+    result = _run_node_ui("""
+process.stdout.write(JSON.stringify({
+  ids: Object.keys(elements).filter(id => id !== 'toast').sort(),
+  header: controlGroups['app-header'].map(node => node.id),
+  notification: elements['operation-notice'].children.map(node => node.id),
+  closeClass: elements['detail-close-button'].className,
+  aria: elements['operation-notice-close-button'].getAttribute('aria-label'),
+  selected: ['kind-filter', 'state-filter', 'period-filter', 'answer-filter', 'create-kind', 'create-question-type']
+    .map(id => elements[id].value)
+}));
+""")
+    assert result["ids"] == sorted(re.findall(r'\bid="([^"]+)"', assets.HTML))
+    assert "notification-button" in result["header"]
+    assert result["notification"] == ["operation-notice-message", "operation-notice-close-button"]
+    assert result["closeClass"] == "dialog-close"
+    assert result["aria"] == "操作通知を閉じる"
+    assert result["selected"] == ["all", "active", "2w", "all", "awi", "yes-no"]
+
+
+def test_node_dom_uses_new_html_element(monkeypatch: pytest.MonkeyPatch) -> None:
+    """新しい入れ子のフォーム要素と属性を加えても、helperへの追記なしで取得できる。"""
+    added = (
+        '<form id="probe-form"><span><input id="probe-input" class="probe" aria-label="追随" /></span>'
+        '<select id="probe-select"><option value="first">先頭</option><option value="chosen" selected>選択</option></select>'
+        '<button id="probe-button" hidden disabled>実行</button></form>'
+    )
+    monkeypatch.setattr(assets, "HTML", assets.HTML + added)
+    result = _run_node_ui("""
+process.stdout.write(JSON.stringify({
+  controls: elements['probe-form'].querySelectorAll('input, select, textarea, button').map(node => node.id),
+  value: elements['probe-select'].value, className: elements['probe-input'].className,
+  aria: elements['probe-input'].getAttribute('aria-label'), hidden: elements['probe-button'].hidden,
+  disabled: elements['probe-button'].disabled
+}));
+""")
+    assert result == {
+        "controls": ["probe-input", "probe-select", "probe-button"],
+        "value": "chosen",
+        "className": "probe",
+        "aria": "追随",
+        "hidden": True,
+        "disabled": True,
+    }
 
 
 def _saved_files(root: pathlib.Path) -> dict[str, str]:

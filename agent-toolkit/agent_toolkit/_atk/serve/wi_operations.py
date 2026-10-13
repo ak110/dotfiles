@@ -19,7 +19,6 @@ from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import add as awi_add
 from agent_toolkit._atk.wi import batch as awi_batch
 from agent_toolkit._atk.wi import constants as wi_constants
-from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import filters as wi_filters
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import headings as wi_headings
@@ -458,7 +457,7 @@ class Operations:
             text = path.read_text(encoding="utf-8")
             parsed = frontmatter.parse_frontmatter(text)
             metadata = parsed[0] if parsed is not None else {}
-            kind = wi_entries.entry_type_from_metadata(path, metadata) if parsed is not None else None
+            kind = wi_constants.normalized_wi_type(metadata.get("type"))
             question_type, choices = _question_metadata(metadata, kind or "unknown")
             detail_entry = _entry(path, kind or "unknown", state, text, metadata)
             display_text = text

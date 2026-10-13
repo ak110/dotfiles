@@ -22,7 +22,6 @@ from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import runtime as serve_runtime
 from agent_toolkit._atk.wi import constants as _wi_constants
-from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment
@@ -528,23 +527,26 @@ async def test_read_routes_remain_available_during_entry_move(
     adopted.mkdir()
     entry = inbox / "entry.md"
     entry.write_text("---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8")
-    original_entry_type_from_metadata = _wi_entries.entry_type_from_metadata
+    original_normalized_wi_type = _wi_constants.normalized_wi_type
 
     async def race_request(path: str) -> typing.Any:
         started = threading.Event()
         release = threading.Event()
 
-        def entry_type_from_metadata(entry_path: pathlib.Path, metadata: typing.Mapping[str, object]) -> str:
+        def normalized_wi_type(value: object) -> str | None:
             started.set()
-            release.wait()
-            return original_entry_type_from_metadata(entry_path, metadata)
+            assert release.wait(timeout=5), "状態移動後の解放がありません"
+            return original_normalized_wi_type(value)
 
-        monkeypatch.setattr(_wi_entries, "entry_type_from_metadata", entry_type_from_metadata)
+        monkeypatch.setattr(_wi_constants, "normalized_wi_type", normalized_wi_type)
         request = asyncio.create_task(app.test_client().get(path))
-        await asyncio.to_thread(started.wait)
-        entry.rename(adopted / entry.name)
-        release.set()
-        return await request
+        try:
+            assert await asyncio.to_thread(started.wait, 5), "種別判定へ到達しません"
+            entry.rename(adopted / entry.name)
+        finally:
+            release.set()
+            response = await asyncio.wait_for(request, timeout=5)
+        return response
 
     app = serve_app.create_app(
         tmp_path,

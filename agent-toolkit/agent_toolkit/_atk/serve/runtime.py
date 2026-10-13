@@ -44,9 +44,19 @@ class BoundedWorkers:
     async def run[**P, R](self, function: typing.Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         """同期関数を有界ワーカーで実行する。"""
 
+        def invoke() -> R:
+            # SystemExitがasyncioのタスクへ届く前に、同期関数を呼ぶスレッドで要求の失敗へ変える。
+            try:
+                return function(*args, **kwargs)
+            except SystemExit as error:
+                raise _wi_operations.WebApiInputError(
+                    "処理に失敗しました。失敗理由はサーバーの標準エラー出力で確認する。"
+                    "user serviceで起動した場合は`atk serve logs`を実行する"
+                ) from error
+
         async def managed() -> R:
             async with self._semaphore:
-                return await asyncio.to_thread(function, *args, **kwargs)
+                return await asyncio.to_thread(invoke)
 
         return await asyncio.shield(asyncio.create_task(managed()))
 

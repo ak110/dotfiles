@@ -7,6 +7,12 @@
 変更範囲の検証の対象は`agent-toolkit:check-execution`の類型で選ぶ。本リポジトリでの値は次のとおり。
 
 - 横断テスト: `SKILL.md`「テスト配置」の`*_invariant_test.py`。変更範囲の検証へ`uv run --frozen pyfltr fast --commands=pytest`（対象ファイルを渡さずリポジトリrootで実行）を含め、rootと`agent-toolkit/`の両方を実行する。commit時のprekも同じfastを動かすが、検証の後なので変更範囲の検証の結果には使わない。前提と再検証手段は`docs/development/audit-records.md`「.claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日」にある
+- WI画面の資産と擬似DOM: `agent-toolkit/agent_toolkit/_testing/serve_support.py`の`_run_node_ui`が擬似DOMの構築と実行に読む資産が対象である。
+  対象は`agent-toolkit/agent_toolkit/_atk/serve/static/`の`common.js`・`wi.js`・`index.html`と、`serve_support.py`自身に限る。
+  `static/`配下のその他の資産の変更には本項を適用せず、他の項目と`agent-toolkit:check-execution`の類型で検証対象を選ぶ。
+  `uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit/_atk/serve`を含める。
+  共有ヘルパーを経由するテストが`app_test.py`・`assets_test.py`・`cli_test.py`・`config_test.py`・`state_test.py`へ分かれている。
+  変更ファイルの名前だけでは消費側を選べないため、serve全域を検証する
 - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、hook固有の`<hook名>_test.py`が期待値を持つ
 - 共有契約を変えた場合: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`。対象は`_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、2つ以上の`atk`サブコマンドが呼ぶ処理や共通出力の契約の変更である。`agents_server`のMCPツールと`atk agents wait`の公開応答の項目（内容・書式・条件・有無）の変更も含む。同じ応答の項目をMCP層、CLIの待機、自動再開後の応答のテストが別ファイルで確かめるためである。コメント・空白だけの変更は含めない
 - 配布物の版指定: 次のいずれかを変えた場合は`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。このテストは隔離したHOMEで実際のuvを使い、post-applyの`uv tool install`とpyfltr MCPのウォームアップを実行する。`pytools/_internal/warmup_pyfltr_mcp_test.py`は`uvx`を置き換えるため版指定の解決を確かめない

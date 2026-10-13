@@ -25,7 +25,7 @@ import threading
 import time
 import typing
 
-from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._atk.wi import frontmatter
 
 _TRUSTED_AGE_NS = 2_000_000_000
@@ -138,7 +138,7 @@ class EntryIndex:
                         continue
                     parsed_frontmatter = frontmatter.parse_frontmatter(text)
                     metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
-                    kind = _wi_entries.entry_type_from_metadata(path, metadata) if parsed_frontmatter is not None else None
+                    kind = wi_constants.normalized_wi_type(metadata.get("type"))
                     parsed = _ParsedFile(text=text, text_folded=text.casefold(), metadata=metadata, kind=kind)
                     cached = _CacheEntry(
                         mtime_ns=file_stat.st_mtime_ns,
