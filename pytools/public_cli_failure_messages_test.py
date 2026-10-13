@@ -199,7 +199,7 @@ def test_media_doctor_explains_missing_process_even_when_listener_exists(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """別listenerが起動勧告を消してもprocess欄に復旧操作が残る。"""
+    """別listenerが起動勧告を削除してもprocess欄に復旧操作が残る。"""
     monkeypatch.setattr(media_cli.sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     pid = media_cli.default_pid_path()
