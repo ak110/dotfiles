@@ -382,7 +382,7 @@ def _cmd_config_show(home: pathlib.Path) -> None:
     settings = _resolved_settings(home)
     warnings: list[str] = []
     for key, value in settings.items():
-        print(f"{key}: {value}")
+        print(f"{key} {value}")
         if key in _MUTABLE_KEY_DEFAULTS:
             warnings.extend(_stage_model_candidate_warnings(key, value))
     _report_candidate_warnings(warnings)
