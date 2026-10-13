@@ -499,6 +499,58 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     assert aliases == [("root-session", server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"], "inner-thread")]
 
 
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["start", "resume"])
+@pytest.mark.parametrize("configured", [False, True])
+async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
+    operation: str, configured: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """新規・再開のMCPは公開mise所在の名前を配送し、root・hostだけを明示値で上書きする。"""
+    names = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
+    values = {name: str(tmp_path / name.lower()) for name in names}
+    for name, value in values.items():
+        if configured:
+            monkeypatch.setenv(name, value)
+        else:
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MISE_UNPUBLISHED_DIR", "unpublished-location")
+    monkeypatch.setenv("DIAGNOSTIC_TOKEN", "synthetic-credential")
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "ambient-root")
+    monkeypatch.setenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", "ambient-host")
+    client = _TierClient()
+    manager = subject.AppServerManager(root_session_id="chosen-root")
+    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+    aliases: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(shared_roots, "write_host_alias", lambda root, writer, thread: aliases.append((root, writer, thread)))
+    try:
+        if operation == "start":
+            session = await manager.start("開始", str(tmp_path))
+        else:
+            session = await manager.resume("saved-thread", state.ResumePrompt("再開"), str(tmp_path))
+        params = next(params for method, params in client.requests if method == f"thread/{operation}")
+        server = params["config"]["mcp_servers"]["agents_server"]
+        assert set(names) <= set(server["env_vars"])
+        assert len(server["env_vars"]) == len(set(server["env_vars"]))
+        assert set(server["env"]) == {"AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_STATUS_HOST_SESSION"}
+        assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "chosen-root"
+        writer = server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"]
+        assert writer and writer != "ambient-host"
+        assert aliases == [("chosen-root", writer, session.session_id)]
+        assert not {
+            "MISE_UNPUBLISHED_DIR",
+            "DIAGNOSTIC_TOKEN",
+            "AGENT_TOOLKIT_OWNER_SESSION",
+            "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+            "AGENT_TOOLKIT_DELEGATED_SESSION",
+        } & set(server["env_vars"])
+        encoded = json.dumps(server)
+        assert not any(value in encoded for value in (*values.values(), "unpublished-location", "synthetic-credential"))
+        assert "ambient-root" not in encoded and "ambient-host" not in encoded
+    finally:
+        await manager.close()
+
+
 @pytest.mark.asyncio
 async def test_client_start_aborts_when_initialize_never_answers(monkeypatch: pytest.MonkeyPatch) -> None:
     """initializeの応答が返らない接続を上限で打ち切り、子プロセスを終了する。"""

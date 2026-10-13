@@ -21,6 +21,7 @@ Codex CLIはstdio MCPサーバーへ親環境を限定して渡す。届くの�
 外側の`agents_server`は`thread/start`・`thread/resume`の`config.mcp_servers.agents_server`へ、`env`でルートsession識別子と書込主体識別子を配送し、`env_vars`で保存先・公開設定・proxy設定の変数名を渡す。
 変数名の集合は`agent_toolkit/_common/mcp_environment.py`の`environment_variable_names`が持つ。proxy名もここへ集約し、`proxy_environment.py`は既存の名前を再公開する。
 保存先にはHOME、WindowsのUSERPROFILE・LOCALAPPDATA・APPDATA、XDGのSTATE・CONFIG・DATA・CACHEの各HOME、AGENT_TOOLKIT_PRIVATE_NOTES、CLAUDE_CONFIG_DIR、CODEX_HOMEを含める。公開設定の`AGENT_TOOLKIT_CONFIG_`名は`_atk/config.py`の`config_environment_variable_names`が現行の変更可能キーと旧キーの定義から具体名で返す。旧キーを配送するのは子でも拒否と置換案内を保つためであり、名前のwildcardや親環境の全複製は使わない。
+miseの設定・信頼状態・導入先・キャッシュの所在は`MISE_CONFIG_DIR`・`MISE_STATE_DIR`・`MISE_DATA_DIR`・`MISE_CACHE_DIR`の公開名で引き継ぎ、XDGを変更しても呼出元が選んだmiseの所在と信頼設定を保つ。
 Codex向けプラグイン設定の生成器（`pytools/_internal/codex_plugin_manifests.py`）も、同じ集合を`agents_server`と`pyfltr`の`env_vars`へ射影する。
 配布設定は変数名だけを持ち、子へ届くのは親環境に値がある変数に限られる。`env_vars`はCodex向けの設定だけが持ち、Claude向けの`.mcp.json`とAgent Plugins向け`mcp.json`は従来の形式を保つ。
 通常起動・再開・多段委譲でも、呼出元が選んだ設定、キューと状態の名前空間を引き継ぐ。識別子は各起動の明示した値を使い、親の識別子や認証値を許可名の集合へ追加しない。

@@ -24,3 +24,22 @@ def test_environment_names_do_not_capture_values(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "diagnostic-owner")
     assert mcp_environment.environment_variable_names(setting_names) == names
     assert not {"AGENT_TOOLKIT_CONFIG_UNPUBLISHED", "DIAGNOSTIC_TOKEN", "AGENT_TOOLKIT_OWNER_SESSION"} & set(names)
+
+
+@pytest.mark.parametrize("explicit_override", [False, True])
+def test_mise_directory_names_preserve_resolver_locations(monkeypatch: pytest.MonkeyPatch, explicit_override: bool) -> None:
+    """名前空間を配送しても、設定・信頼状態・導入先・cacheの明示した所在を失わない。"""
+    directories = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
+    values = {}
+    for index, name in enumerate(directories):
+        if explicit_override:
+            value = f"/diagnostic/mise-{index}"
+            monkeypatch.setenv(name, value)
+            values[name] = value
+        else:
+            monkeypatch.delenv(name, raising=False)
+    names = mcp_environment.environment_variable_names(())
+    assert set(directories) <= set(names)
+    assert all(names.count(name) == 1 for name in directories)
+    assert set(values.values()).isdisjoint(names)
+    assert {"XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"} <= set(names)
