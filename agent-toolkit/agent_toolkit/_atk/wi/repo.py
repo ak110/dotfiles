@@ -18,6 +18,7 @@ from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
+from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action
 from agent_toolkit._atk.wi.formatters import parse_target_repo, parse_type
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._git import command as _git_command
@@ -184,7 +185,7 @@ def verify_target_repo_content(path: pathlib.Path, content: str, normalized_expe
     if actual == "(unknown)":
         _outcome.report_failure(
             f"frontmatterにtarget_repoが無い: {path}",
-            next_action=f"`atk wi edit {path.name}`でtarget_repoを追記する。直せない場合はユーザーへ報告する",
+            next_action=unrepairable_entry_next_action(path.name),
         )
         sys.exit(2)
     normalized_actual = _git_remote.resolve_repo_identifier(actual)
