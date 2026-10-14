@@ -11,7 +11,7 @@ import socket
 import sys
 from urllib.parse import quote
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import hypercorn.asyncio
 lazy import hypercorn.config
 lazy import qrcode

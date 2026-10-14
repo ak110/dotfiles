@@ -22,7 +22,7 @@ import os
 import pathlib
 import subprocess
 
-# 他の処理では不要な依存を、使用時まで遅延する。
+# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import psutil
 
 from pytools._internal import common, host_roles, log_format, post_apply_outcome

@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import yaml
 
 from pytools._internal.cli import enable_completion, setup_logging

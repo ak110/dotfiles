@@ -11,7 +11,7 @@ import pathlib
 import subprocess
 import sys
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_mise

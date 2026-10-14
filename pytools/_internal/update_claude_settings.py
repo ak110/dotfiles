@@ -14,7 +14,7 @@ import sys
 import typing
 from pathlib import Path
 
-# 他の処理では不要な依存を、使用時まで遅延する。
+# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import pytilpack.jsonc
 
 from pytools._internal import (

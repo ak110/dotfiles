@@ -10,7 +10,7 @@ import webbrowser
 
 from pytools._internal.cli import enable_completion, setup_logging
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy from pytools.markdown_viewer import _render
 
 logger = logging.getLogger(__name__)
