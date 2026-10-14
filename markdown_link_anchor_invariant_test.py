@@ -1,8 +1,9 @@
 """追跡中のMarkdownのリンクのフラグメントが、リンク先の見出しから生成されるIDへ解決することを検査する。
 
-GitHubは見出しのIDを、英字を小文字にし、文字・結合文字・数字・連結句読点（Unicodeの一般カテゴリL・M・N・Pc）と
-ハイフン・空白以外の文字を除き、空白をハイフンへ置き換えて生成する。同じIDが2回目以降に現れる場合は`-1`、`-2`を付ける。
-見出しの文字列からIDを生成する前に、見出しの中のリンク記法はリンクの文字列へ、インラインコードは記号を除いた文字列へ置き換える。
+GitHubは見出しのIDを、描画した見出しの文字列（強調・リンク・インラインコードの記法を除いた文字列）から作る。
+英字を小文字にし、文字・結合文字・数字・連結句読点（Unicodeの一般カテゴリL・M・N・Pc）とハイフン・空白以外の文字を除き、
+空白をハイフンへ置き換える。生成済みのIDと同じになる場合は、生成済みのIDと衝突しない最小の`-1`、`-2`などを付ける。
+見出しの記法の解釈はmarkdown-it-pyのインライン解析で行い、エスケープした記号と単語内の`_`は文字として残す。
 検査対象は、リンク先がリポジトリ内のMarkdown（同じファイル内の`#...`を含む）であるフラグメント付きのリンクとする。
 フェンス付きコードブロックとインラインコードの内側、およびスキームを持つリンク先（`https:`など）は描画されたリンクにならないか、
 リンク先の見出しをリポジトリ内で取得できないため対象から外す。
@@ -19,6 +20,7 @@ import unicodedata
 import urllib.parse
 
 import pytest
+from markdown_it import MarkdownIt
 
 _FENCE_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})")
 _HEADING_PATTERN = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+(?P<text>.*?))?(?:[ \t]+#+)?[ \t]*$")
@@ -26,6 +28,7 @@ _INLINE_CODE_PATTERN = re.compile(r"(?P<ticks>`+)(?P<code>.+?)(?P=ticks)")
 _INLINE_LINK_PATTERN = re.compile(r"!?\[(?P<text>[^\]\n]*)\]\((?P<destination>[^)\n]*)\)")
 _LINK_TITLE_PATTERN = re.compile(r"^(?P<url>\S+)\s+(?:\"[^\"]*\"|'[^']*')$")
 _SCHEME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+_MARKDOWN = MarkdownIt("commonmark").enable("strikethrough")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -66,10 +69,21 @@ def _lines_outside_fences(content: str) -> list[tuple[int, str]]:
     return lines
 
 
+def _rendered_heading_text(text: str) -> str:
+    """見出しのインライン記法を解析し、描画される文字列だけを返す。"""
+    children = [child for token in _MARKDOWN.parseInline(text) for child in token.children or []]
+    parts: list[str] = []
+    for token in children:
+        if token.type in {"text", "code_inline", "image"}:
+            parts.append(token.content)
+        elif token.type in {"softbreak", "hardbreak"}:
+            parts.append(" ")
+    return "".join(parts)
+
+
 def _heading_slug(text: str) -> str:
     """見出しの文字列からGitHubと同じ規則でIDの基になる文字列を生成する。"""
-    text = _INLINE_LINK_PATTERN.sub(lambda match: match.group("text"), text)
-    text = _INLINE_CODE_PATTERN.sub(lambda match: match.group("code").strip(), text)
+    text = _rendered_heading_text(text)
     kept = (
         character
         for character in text.strip().lower()
@@ -81,7 +95,10 @@ def _heading_slug(text: str) -> str:
 
 
 def _heading_ids(content: str) -> set[str]:
-    """Markdownの見出しから生成される全てのIDを返す。重複したIDには出現順に`-1`、`-2`を付ける。"""
+    """Markdownの見出しから生成される全てのIDを返す。
+
+    生成済みのIDと同じになる見出しには、生成済みのIDと衝突しない最小の`-1`、`-2`などを付ける（github-sluggerと同じ規則）。
+    """
     ids: set[str] = set()
     counts: dict[str, int] = {}
     for _, line in _lines_outside_fences(content):
@@ -89,9 +106,11 @@ def _heading_ids(content: str) -> set[str]:
         if match is None:
             continue
         slug = _heading_slug(match.group("text") or "")
-        count = counts.get(slug, 0)
-        counts[slug] = count + 1
-        ids.add(slug if count == 0 else f"{slug}-{count}")
+        result = slug
+        while result in ids:
+            counts[slug] = counts.get(slug, 0) + 1
+            result = f"{slug}-{counts[slug]}"
+        ids.add(result)
     return ids
 
 
@@ -156,6 +175,18 @@ _TARGET_DOCUMENT = """# 索引の対象
 
 ## [リンク付きの節](other.md)と`atk wi`の節
 
+## *強調*した節
+
+## _装飾_
+
+## snake_caseと\\_記号\\_の節
+
+## 衝突
+
+## 衝突-1
+
+## 衝突
+
 ```markdown
 ## コードブロック内の節
 ```
@@ -180,6 +211,16 @@ _TARGET_DOCUMENT = """# 索引の対象
         ("[a](target.md#重複する節-2)", False),
         # 見出しのリンク記法はリンクの文字列へ、インラインコードは記号を除いた文字列へ置き換えてからIDを生成する
         ("[a](target.md#リンク付きの節とatk-wiの節)", True),
+        # 強調の記号はIDから除き、単語内の`_`とエスケープした`_`は文字として残す
+        ("[a](target.md#強調した節)", True),
+        ("[a](target.md#装飾)", True),
+        ("[a](target.md#_装飾_)", False),
+        ("[a](target.md#snake_caseと_記号_の節)", True),
+        # 生成済みのIDと同じになる3件目は、明示した`衝突-1`と重ならない`-2`を持つ
+        ("[a](target.md#衝突)", True),
+        ("[a](target.md#衝突-1)", True),
+        ("[a](target.md#衝突-2)", True),
+        ("[a](target.md#衝突-3)", False),
         # コードブロック内の見出しはIDを生成しない
         ("[a](target.md#コードブロック内の節)", False),
         # パーセントエンコードしたフラグメントはデコードしてから比べる

@@ -143,8 +143,11 @@ def _release_tag_failure(repo_root: pathlib.Path, tag: str, current: str) -> tup
     """originのタグを取得し、`current`以外を指すタグの失敗理由とタグの有無を返す。"""
     _require(_git(repo_root, "fetch", "--tags", "--force", "origin"), "git fetch --tags origin")
     tagged = _git(repo_root, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}")
-    if tagged.returncode != 0:
+    # `--quiet`はタグが無い場合だけ診断を出さずに終了1を返す。commit以外を指すタグ（終了1と診断）と
+    # 参照の読取失敗（終了128）は不在として扱わず、前提の失敗としてリリースを止める。
+    if tagged.returncode == 1 and not tagged.stderr.strip():
         return None, False
+    _require(tagged, f"タグ{tag}の照会")
     current_commit = _require(_git(repo_root, "rev-parse", "--verify", f"{current}^{{commit}}"), "比較先commitの解決")
     if tagged.stdout.strip() != current_commit:
         return (
