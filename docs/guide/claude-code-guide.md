@@ -177,7 +177,7 @@ Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は�
 段位のモデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
 engine順は`codex`と`claude`の一方または両方を重複なしでASCIIカンマ区切りに並べる。
 `write_model`は`<engine>:<model>[/<effort>]`をASCIIカンマで区切った候補列で書く。
-新しい候補や評価軸を導く調査と案出しは、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。既に決めた問いの所在・値・件数などの機械的な事実確認と区別し、両者を含む依頼は`high_tier`を使う。`explore`の指定省略時の軽量と実行レビューの中位は変えない。
+段位は作業の部分ごとに選ぶ。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、該当候補の抽出と非該当の判定）は、極力`explore`の指定省略時の軽量段位へ分け、対象が多ければ重複のない群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合は、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。両者を含む依頼も全体を`high_tier`にせず、走査を分けてから上位段位で判定する。工程別の割当（実装などの上位、実行レビューの中位）は変えない。
 
 `atk config show`はパス4行、モデルと配分の10行、`write_model`、速度とAPI provider列を各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
