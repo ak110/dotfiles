@@ -3,7 +3,7 @@
 本書はPowerShellスクリプトの記述スタイル基準と、Windows PowerShell 5.1互換を保つための注意点を定める。
 
 - Claude Codeツールの挙動と注意点
-  - 書込ツールごとの改行・BOMの扱いは`encoding.md`「書込ツールの改行・BOM保全」に従う。PS1ファイルはCRLFとBOMを要するため、既存ファイルの編集にはEditだけを使う
+  - 書込ツールごとの改行・BOMの扱いは`encoding.md`「書込ツールの改行・BOM保全」に従う。PS1ファイルはCRLFとBOMを要するため、既存ファイルはWriteを使わずEditで編集する
     - agent-toolkitプラグインはPS1へのLF-only書き込みへ警告を返すが、書き込み自体は成立する
 - Windows PowerShell 5.1互換性
   - `.gitattributes`で`*.ps1 text eol=crlf`を設定する
