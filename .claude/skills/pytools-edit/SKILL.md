@@ -22,9 +22,9 @@ description: >
 
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュール（`<name>.py`かサブパッケージ`<name>/`）を置き、bash補完（argcomplete）に対応する。サブパッケージは`__init__.py`が`_cli.py`の`main`を再エクスポートし、`project.scripts`はパッケージの`main`を参照する
 - privateなヘルパーは`pytools/_internal/`へ置く
-- 開発とCIの工程（prek・Makefile・pyfltr・CI）から起動するスクリプトは`scripts/`へ置く（エンドユーザー環境では実行しない）
+- 開発とCIの工程（prek・Makefile・pyfltr・CI）から起動するスクリプトは`scripts/`へ置く（エンドユーザー環境での実行は対象外）
 - 他のプログラムから起動され、`pytools`パッケージの外でエンドユーザー環境（LinuxとWindows）で動く実行ファイル（`bin/`のランチャー、chezmoiの後処理、systemd unit、hook定義からの起動など）は`libexec/`へ置き、両OSで動く書き方とする
-- `scripts/`と`libexec/`のPythonは`[project.scripts]`へ登録せず、PEP 723の単独実行スクリプトかプロジェクト環境で起動するスクリプトとして書く。wheelは`pytools`だけを含むため、`pytools`から`scripts/`・`libexec/`をimportしない
+- `scripts/`と`libexec/`のPythonは`[project.scripts]`へ登録せず、PEP 723の単独実行スクリプトかプロジェクト環境で起動するスクリプトとして書く。wheelは`pytools`だけを含むため、`pytools`から`scripts/`・`libexec/`へのimportは禁止する
 - 単純なコマンドラッパーは`scripts/new_bin_cmd.py <name> <command...>`で`bin/<name>`と`bin/<name>.cmd`のペアを生成する
 - 高頻度に起動するhook・statusLine相当のスクリプトは、Windowsでの`uv run`の起動コストを考え、ネイティブバイナリ化を第一候補として検討する（先行事例は`rust/claude-statusline/`）
 

@@ -51,8 +51,8 @@
 
 frontmatterに`source`を持つエージェント由来のWIの完成条件のうち、次の全てを満たすものはメインの技術判断で外せる。満たさない条件はユーザー判断の記録を探し、無ければユーザー確認する。
 
-- `agent-toolkit:wi-standards`「由来と承認」の明示由来（逐語引用、ユーザーコメント、UWI回答、出所付き対話回答）の要求単位に対応しない
-- 外すことが`agent-toolkit/rules/01-agent.md`「協調と自律」のユーザーが確定した判断の変更に当たらない
+- 完成条件の対象が、`agent-toolkit:wi-standards`「由来と承認」の明示由来（逐語引用、ユーザーコメント、UWI回答、出所付き対話回答）の要求単位の範囲外である
+- 外すことが`agent-toolkit/rules/01-agent.md`「協調と自律」のユーザーが確定した判断の変更の対象外である
 - `agent-toolkit:user-confirmation-and-report`「確認要否の判定」の3のユーザーだけが持つ値（選好、認可、外部の状態、手元に無い資料）に依存しない
 - Qに影響する問題の類似見直しと再発防止に必須の処置（`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直しと再発防止の完了」）を判定する条件ではない。費用や所要だけを理由に外さない
 

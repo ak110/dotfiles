@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 import sys
 import tomllib
+from collections.abc import Callable
 
 import check_agent_doc_tone
 import pytest
@@ -45,6 +46,65 @@ def test_split_sentences_excludes_non_prose_blocks() -> None:
     sentences = check_agent_doc_tone.split_sentences(text)
 
     assert sentences == ["本文の1文目である。", "本文の2文目である。", "箇条書きの文である。"]
+
+
+@pytest.mark.parametrize(
+    ("body", "expected", "lines", "negative"),
+    [
+        ("- 値は変えない\n- 値を記録する\n", ["値は変えない", "値を記録する"], [1, 2], 1),
+        ("値は変えない\n\n次の段落を読む\n", ["値は変えない", "次の段落を読む"], [1, 3], 1),
+        ("段落の文が\n折り返して続く。\n", ["段落の文が折り返して続く。"], [2], 0),
+        ("- 値は変え\n  ない\n- 結果を記録する\n", ["値は変えない", "結果を記録する"], [2, 3], 1),
+        ("> 値は変えない\n>\n> 結果を読む\n", ["値は変えない", "結果を読む"], [1, 3], 1),
+        ("値は変えない\n---\n\n本文を読む\n", ["本文を読む"], [4], 0),
+        ("    値は変えない\n\n次の段落を読む\n", ["値は変えない", "次の段落を読む"], [1, 3], 1),
+        (
+            "- 値は変えない\n  - 子の値を読む\n\n次の段落を読む\n",
+            ["値は変えない", "子の値を読む", "次の段落を読む"],
+            [1, 2, 4],
+            1,
+        ),
+    ],
+    ids=[
+        "items",
+        "paragraphs",
+        "wrapped-paragraph",
+        "wrapped-item",
+        "quote",
+        "setext-heading",
+        "indented-code",
+        "nested-items",
+    ],
+)
+def test_report_counts_markdown_blocks_and_preserves_physical_positions(
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+    body: str,
+    expected: list[str],
+    lines: list[int],
+    negative: int,
+) -> None:
+    """公開reportの文数と否定形終端にブロック末を含め、折返しの文末は物理行を指す。"""
+    path = _write(tmp_path, body, name="AGENTS.md")
+    arguments = ["uv", "run", "--frozen", "python", str(pathlib.Path(check_agent_doc_tone.__file__)), "--report", str(path)]
+
+    result = subprocess.run(
+        arguments, capture_output=True, text=True, encoding="utf-8", timeout=30, env=host_environ(), check=False
+    )
+
+    print(
+        json.dumps(
+            {"argv": arguments, "exit": result.returncode, "stdout": result.stdout, "stderr": result.stderr}, ensure_ascii=False
+        )
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    assert result.stdout.splitlines()[0].split("\t") == ["文数", "否定形終端", "当該", "ファイル"]
+    assert result.stdout.splitlines()[1].split("\t") == [str(len(expected)), str(negative), "0", str(path)]
+    sentences = check_agent_doc_tone.sentences_with_positions(body)
+    assert [sentence.text for sentence in sentences] == expected
+    assert [sentence.line for sentence in sentences] == lines
+    assert all(sentence.excerpt in body.splitlines()[sentence.line - 1] for sentence in sentences)
 
 
 def test_metrics_count_each_indicator(tmp_path: pathlib.Path) -> None:

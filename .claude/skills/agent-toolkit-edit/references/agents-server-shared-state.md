@@ -68,7 +68,7 @@ process-loopとレーン操作が共有する状態は、前表のagents-server�
 | Git統合と計画保存・WI終端の進行 | `lanes/<所有session>/<lane>.json`のintegration | `atk lane integrate`と回収判定 | `_atk/lane.py`。Git統合と成功済みの最終化を保存し、失敗後は残工程だけを再開する。全最終化と選定集合・統合状態の整合確認の成功後に統合済みを記録する。rebase対応表はmanaged-tempに保存し、レーン回収後も同じ保持期限で参照できる |
 
 `_common/session_parents.py`と`_common/session_activity.py`は前表のsession登録簿を読み、保存済みの委譲元とプロセス識別を活動判定に使う。
-両モジュールはMCPサーバーのSessionStateやsession登録簿を更新しない。
+MCPサーバーのSessionStateとsession登録簿の更新は、両モジュールの対象外である。
 
 状態ディレクトリ配下の読み書きは、`agent-toolkit/agent_toolkit/_agents_server/`配下の次のモジュールが担う。
 

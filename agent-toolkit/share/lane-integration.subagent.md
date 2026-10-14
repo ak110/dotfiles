@@ -43,7 +43,7 @@ manifestはJSON objectで、次の値を持つ。
 - `verification`: 統合前に実行する検証argvの順序付き配列。計画ありは各計画のplan-verify、計画なしは引き継ぎ記録の確定済み検証を使う。統合後にだけ成立するプロジェクト検証も含める。rebaseした場合は新しいHEADで実行し、成功済みの同じ検証はff前に繰り返さない
 - `handoff`: 計画なしの場合に使う既存引き継ぎ記録の絶対パス。計画ありでは省略でき、省略時は引き継ぎ記録の追加入力を要しない
 
-各argvはshell文字列ではなく文字列配列とし、対象・OID・採否・完成条件証拠は受理済み入力から確定する。レビュー採否とWIごとのcommit対応はレーン担当が確定し、CLIへ渡す。計画の稼働時間、採否、証拠と進捗追記の値は以下の節で検収してからmanifestへ渡す。実行済み結果は所有登録の`integration.results`から読み、同じ操作を個別に再実行しない。
+各argvはshell文字列ではなく文字列配列とし、対象・OID・採否・完成条件証拠は受理済み入力から確定する。レビュー採否とWIごとのcommit対応はレーン担当が確定し、CLIへ渡す。計画の稼働時間、採否、証拠と進捗追記の値は以下の節で検収してからmanifestへ渡す。実行済み結果は所有登録の`integration.results`から読み、同じ操作は個別の再実行対象から除く。
 
 ### マージありの統合
 
@@ -51,7 +51,7 @@ manifestはJSON objectで、次の値を持つ。
 
 統合先HEADの子孫ならrebaseせずffへ進む。分岐している場合は書換え範囲の全commitがremote追跡refへ未到達であることを確認し、旧ベースとHEADを保存してrebaseする。push済み、競合、内容不一致、検証失敗では続行できない理由と所有記録を返す。競合は`lane-integration-failure.md`で処置し、同じCLIへ戻る。
 
-rebase後はhistory-compareによる一意な全1対1対応表と変更範囲の再検証結果を保存し、`phase: awaiting-validation`と終了コード1を返す。対応表、後掲の警告判定、WI実装commitと証拠の参照更新を検収してから、同じ入力に`--accept-rebased-head <返された完全new_head>`を加えて再開する。受理前に統合先を変更しない。
+rebase後はhistory-compareによる一意な全1対1対応表と変更範囲の再検証結果を保存し、`phase: awaiting-validation`と終了コード1を返す。対応表、後掲の警告判定、WI実装commitと証拠の参照更新を検収してから、同じ入力に`--accept-rebased-head <返された完全new_head>`を加えて再開する。受理前は統合先を現状のまま保持する。
 
 Git統合前の失敗を是正してHEADか検証入力が変わった場合は、独立文脈レビューを受理した現在HEADと更新したmanifestへ`--restart-review`を加えて同じCLIから再開する。直前の進行と結果は`previous_integration`へ保持する。Git統合後はレビューHEADと対象集合を保ち、残る最終化だけを再開する。
 
@@ -87,7 +87,7 @@ rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`�
 - `atk run-script plan-progress --`で`## 進捗ログ`へ、統合区分、統合先branch、`統合後のHEAD`、実行レビューの収束、AWI終端前の状態、rebaseした場合は前後の短縮OIDの対応を追記する
 - 同じ追記へレーンの稼働時間と予測補正記録を残す。値は`レーン開始時刻`から統合完了までの総経過秒数（担当の置換があっても起点を変えない）とし、書式は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「進捗ログ」に従う。補正前の見込みと係数は保持した選定結果の根拠から取り、追加WIは累積予測を使い、不明なら不明と記す。同一レーンの複数計画には同じ値を記す。この記録は次回の選定がレーン配分の見込みを導く入力になる
 - 専用worktreeをcwdとして`atk run-script plan-check -- --reject-migration-warnings --work-dir <計画メタ情報の対象リポジトリ> <計画ファイルの絶対パス>`を単独実行し、終了コード0と警告の不在を確かめる。観測のみの再開で本文凍結を確かめた計画は、保存時に通過済みのため省く
-- `atk plans commit <計画ファイル名>`を計画ごとに単独実行し、保存した計画名と結果を直ちに引き継ぎ記録へ残す。途中で失敗したら保存済みと未保存を区別して返す。全計画の保存が終わるまで`統合完了`を返さない
+- `atk plans commit <計画ファイル名>`を計画ごとに単独実行し、保存した計画名と結果を直ちに引き継ぎ記録へ残す。途中で失敗したら保存済みと未保存を区別して返す。`統合完了`の返却は全計画の保存後に限る
 
 ## AWI行の終端
 

@@ -43,11 +43,7 @@ from collections.abc import Iterator
 import markdown_it
 
 _FRONTMATTER_DELIMITER = "---"
-_FENCE_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})")
-_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s")
-_TABLE_ROW_PATTERN = re.compile(r"^\s*\|")
 _HTML_COMMENT_PATTERN = re.compile(r"<!--.*?-->", re.DOTALL)
-_LIST_MARKER_PATTERN = re.compile(r"^\s*(?:[-*+]|[0-9]+\.)\s+")
 _INLINE_CODE_PATTERN = re.compile(r"`[^`]*`")
 _INLINE_CODE_PLACEHOLDER = "コード"
 
@@ -146,10 +142,15 @@ def _example_lines(text: str, start: int) -> Iterator[tuple[int, str]]:
         yield start + offset, line
 
 
+def _markdown_parser() -> markdown_it.MarkdownIt:
+    """語と文の判定で共用するMarkdownの構文解析器を返す。"""
+    return markdown_it.MarkdownIt("commonmark").enable("table")
+
+
 def _markdown_fragments(text: str) -> Iterator[tuple[int, str]]:
     """Markdownの構造から本文・見出し・表・自作の文を行番号付きで返す。"""
     quote_depth = 0
-    for token in markdown_it.MarkdownIt("commonmark").enable("table").parse(text):
+    for token in _markdown_parser().parse(text):
         if token.type == "blockquote_open":
             quote_depth += 1
         elif token.type == "blockquote_close":
@@ -445,36 +446,29 @@ def _prose_line(line: int, source: str) -> _ProseLine:
     return _ProseLine(line, "".join(text), source, tuple(spans))
 
 
-def _prose_lines(text: str) -> list[_ProseLine]:
-    """本文として数える行だけを、入力ファイルの物理行の行番号とともに返す。
+def _prose_blocks(text: str) -> Iterator[list[_ProseLine]]:
+    """段落・箇条の項目・引用の本文を、物理行の位置を持つブロックとして返す。
 
-    フェンス付きコードブロック、見出し行、表の行およびHTMLコメントを除き、
-    箇条書きの記号と番号を取ってからインラインコードを固定の置換語へ置き換える。
-    HTMLコメントは含んでいた改行だけを残して除き、後続の行番号を保つ。
+    構文解析が返す段落のinline本文とHTMLブロックを数える。
+    従来の除外はフェンス付きコードに限るため、字下げコードの本文も数える。
+    frontmatterとHTMLコメントは含んでいた改行を残して除き、後続の物理行を保つ。
+    見出し・表・フェンス付きコードの本文は除き、同じブロックの折返しを保持する。
     """
     without_comments = _HTML_COMMENT_PATTERN.sub(lambda match: "\n" * match.group().count("\n"), text)
     lines = without_comments.splitlines()
-    prose: list[_ProseLine] = []
-    fence: str | None = None
-    for index in range(_frontmatter_end(lines), len(lines)):
-        line = lines[index]
-        fence_match = _FENCE_PATTERN.match(line)
-        if fence_match is not None:
-            marker = fence_match.group(1)[0]
-            if fence is None:
-                fence = marker
-            elif fence == marker:
-                fence = None
-            continue
-        if fence is not None:
-            continue
-        if _HEADING_PATTERN.match(line) or _TABLE_ROW_PATTERN.match(line):
-            continue
-        stripped = _LIST_MARKER_PATTERN.sub("", line).strip()
-        if not stripped:
-            continue
-        prose.append(_prose_line(index + 1, stripped))
-    return prose
+    frontmatter_end = _frontmatter_end(lines)
+    body = "\n" * frontmatter_end + "\n".join(lines[frontmatter_end:])
+    previous_type = ""
+    for token in _markdown_parser().parse(body):
+        if token.map is not None and (
+            token.type == "inline" and previous_type == "paragraph_open" or token.type in {"html_block", "code_block"}
+        ):
+            yield [
+                _prose_line(token.map[0] + offset + 1, source.strip())
+                for offset, source in enumerate(token.content.splitlines())
+                if source.strip()
+            ]
+        previous_type = token.type
 
 
 @dataclasses.dataclass(frozen=True)
@@ -495,11 +489,15 @@ def _excerpt(source: str, start: int, end: int) -> str:
 
 
 def sentences_with_positions(text: str) -> list[Sentence]:
-    """本文を「。」で分割し、各文が終わる物理行と文末の抜粋を付けて返す。
+    """句点とMarkdownのブロック末で文を区切り、物理行と文末の抜粋を付けて返す。
 
-    句点の無い行は次の行と1文に結合されるため、文の終わる行は最後の文字を含む行とする。
+    同じブロックの折返し行は連結し、文の終わる行は最後の文字を含む物理行とする。
     """
-    prose = _prose_lines(text)
+    return [sentence for block in _prose_blocks(text) for sentence in _block_sentences(block)]
+
+
+def _block_sentences(prose: list[_ProseLine]) -> list[Sentence]:
+    """1ブロックの折返しを連結し、各文末の文字の由来から位置と抜粋を返す。"""
     joined = "".join(item.text for item in prose)
     # 連結した本文の各文字が由来する行の添字と、その行の中の位置。
     origins = [(row, column) for row, item in enumerate(prose) for column in range(len(item.text))]
@@ -523,7 +521,7 @@ def sentences_with_positions(text: str) -> list[Sentence]:
 
 
 def split_sentences(text: str) -> list[str]:
-    """本文を「。」で分割した文の一覧を返す。"""
+    """本文を句点とMarkdownのブロック末で分割した文の一覧を返す。"""
     return [sentence.text for sentence in sentences_with_positions(text)]
 
 

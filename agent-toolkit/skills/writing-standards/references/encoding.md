@@ -37,4 +37,4 @@ EditとWriteが要求する読取状態は`file-editing.md`「ファイル更新
 - EditはCRLF改行とUTF-8 BOMを維持するため、既存ファイルの編集にはEditを使う
 - Writeは常にLF改行・BOMなしで書く。CRLFやBOMを要するファイルをWriteで書いた場合は改行とBOMを復元し、新規作成はBash経由で改行とBOMを明示して書く
 - 非UTF-8のファイルは、`iconv -f <元の文字コード> -t utf-8`でUTF-8へ変換してReadで読んでからEditで編集し、`iconv -f utf-8 -t <元の文字コード>`で戻す（新規作成もUTF-8で書いてから戻す）。文字コードの往復が不要な編集は、Pythonで置換前後を元の文字コードで符号化してバイト列を置換し、行末のCRLFも維持する
-- `.gitattributes`の`eol=crlf`は改行だけを管理し、BOMを復元しない
+- `.gitattributes`の`eol=crlf`の管理対象は改行だけである（BOMの復元は対象外）

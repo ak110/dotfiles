@@ -36,7 +36,7 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 ## 資源記録の読み方
 
 - resource_snapshotは時刻、root/session識別子、turn番号で状態遷移へ対応させる
-- running_totalとrunning_by_rootは同じ状態ディレクトリで観測したrunningの数で、待機中と孫sessionも含む。開始は自身を含み、終端は自身を除く。稼働中の追送では開始記録を増やさない
+- running_totalとrunning_by_rootは同じ状態ディレクトリで観測したrunningの数で、待機中と孫sessionも含む。開始は自身を含み、終端は自身を除く。稼働中の追送は新しい開始記録の対象外とする
 - counts_completeがfalseなら集計は不完全で、確定値はnull、読めた範囲はobserved_running_*に入る。欠損理由はstate_read_failuresとunavailable_fieldsにある
 - load_average_1_5_15とavailable_memory_bytesはホスト全体の値で、Windowsのloadは未取得として理由を残す。非原子的な観測であり、個々のsessionの寄与や因果は同条件の比較なしに確定しない
 - resource_snapshot_failedは計測自体の失敗で、session処理の失敗とは別である。ログは2 MiB・バックアップ3世代で回転する
@@ -50,6 +50,6 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 
 - MCPサーバーのコードの変更は、そのMCPサーバーを再接続した時点で反映される。再接続なしに条件を変えるには、起動のたびに読む外部ファイルから条件を取る形にする
 - `start`の応答の`persistence_warnings`は保存の失敗を示す。開始の成否は`status`と`excluded_candidates`も確認し、全候補が除外された場合は返されたsessionを利用不能として扱う。正常に開始したsessionでは、同じ`session_id`で`show`・`send_message`・`atk agents wait`を使い、保存の失敗原因は診断ログで確かめる。保存失敗だけを理由に新しい委譲先を起動しない
-- claudeの委譲先が動く根拠は診断ログの`engine`から得る。`start`の`explore`の成功は、工程別モデル設定によってはcodexが選ばれるため根拠にならない
+- claudeの委譲先が動く根拠は診断ログの`engine`から得る。`start`の`explore`の成功は工程別モデル設定によってはcodexが選ばれるため根拠から除く
 - 委譲先のCLIは`--debug`を与えても標準エラーへ何も書かない。診断は`--debug-file`で採取する
 - 起動が`委譲先の作業ディレクトリでプラグインの起動コマンドが失敗した`で拒否された場合、原因は委譲先の作業ディレクトリで`uv`・`uvx`が動かないことにある。例外の`cwd`と標準エラーを読み、未trustのmise設定なら委譲元の手順（`agent-toolkit/skills/process-wi/references/selection-procedure.md`など）でtrustを準備する。それより前に起動した委譲先の接続失敗は、上表の接続失敗の記録を確認する

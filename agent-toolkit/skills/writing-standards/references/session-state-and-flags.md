@@ -70,12 +70,12 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
 ## 応答言語系
 
 - `english_warning_count`: `agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py`が、アシスタント応答の地の文を英語主体と判定した累計回数を記録し、強い通知への切り替えに読む。日本語判定と判定対象外の応答では維持する。セッション終了まで保持する
-- `english_warning_msg_id`: 同フックが直前に通知した応答のmessage IDを記録し、同じ応答への重複通知と二重加算の抑止に読む。セッション終了まで保持し、リセット処理は設けない
+- `english_warning_msg_id`: 同フックが直前に通知した応答のmessage IDを記録し、同じ応答への重複通知と二重加算の抑止に読む。セッション終了まで保持し、リセットは処理対象外とする
 - `language_reinjection_count`: 同フックが、Claude Codeのメインセッションで直前に日本語の応答指示を注入してからのツール呼び出し回数を記録し、再注入の間隔の判定に読む。間隔に達した呼び出しで途中注入用の指示を添えて0へ戻し、`agent-toolkit/agent_toolkit/_hooks/rules_context.py`もSessionStartで開始用の指示を注入した時点で0へ戻す。記録はClaude Codeのメインセッションに限り、セッション終了まで保持する
 
 ## plan系
 
-- `working_plan_save_notified`: `~/.claude/plans`に残る計画バンドルの保存確認を促した事実。`agent-toolkit/agent_toolkit/_hooks/plan_save_advisor.py`が記録し、再通知の抑止に読む。セッション終了まで保持し、リセットしない
+- `working_plan_save_notified`: `~/.claude/plans`に残る計画バンドルの保存確認を促した事実。`agent-toolkit/agent_toolkit/_hooks/plan_save_advisor.py`が記録し、再通知の抑止に読む。セッション終了まで保持し、リセットは処理対象外とする
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画構造の自動チェックの適用判定に使う
 - `current_plan_file_path`: PostToolUseが計画ファイルの編集時と公開された計画ファイル作成コマンドの出力からパスを記録し、PreToolUse(Skill)がplan-mode起動時に消去する。UserPromptSubmitが計画名の`sessionTitle`出力に読む
 - `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値。出力は値が存在しない間の1回に限り、通常状態JSONへ複製せず、専用の排他ロック下で再出力抑止記録へ先に保存できた呼び出しだけが出力する。期限回収と通常のSessionEndでは保持し、`clear`の場合だけ削除する
@@ -129,7 +129,7 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
 ## 通知反復系
 
 - `unregistered_managed_temp_fingerprint`: `atk`の共通エントリポイントが、登録を持たない管理対象の絶対パス集合を安定順で正規化した指紋。同じ集合を報告済みなら警告を省き、集合が変われば再度警告する。寿命はセッション状態ファイルと同じとする
-- `warn_notice_counts`: `warn`区分の通知の、`<hook_id>|<原因識別子>`ごとの累積件数。通知の整形処理が記録し、2件目以降の通知へ反復していることと件数を載せるために読む。診断処理が要旨を渡した通知では2件目以降の本文を要旨と件数へ短縮する。セッション終了まで保持し、リセットしない
+- `warn_notice_counts`: `warn`区分の通知の、`<hook_id>|<原因識別子>`ごとの累積件数。通知の整形処理が記録し、2件目以降の通知へ反復していることと件数を載せるために読む。診断処理が要旨を渡した通知では2件目以降の本文を要旨と件数へ短縮する。セッション終了まで保持し、リセットは処理対象外とする
 
 ## agents_server連携系
 

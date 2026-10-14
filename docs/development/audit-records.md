@@ -517,6 +517,10 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 再検証は`uv run --frozen python scripts/check_agent_doc_tone.py --report <対象ファイル>`で現行本文の指標を取得し、上記の値と比べる。
 再検証の契機は、規範文書の一括改訂と、文体の閾値の見直しとする。
 
+2026年10月14日、`scripts/check_agent_doc_tone.py`の文境界を、句点とMarkdown構文解析が返す本文ブロックの末尾へ変更した。同じブロックの折返しは連結し、文末の物理行と抜粋を保持する。frontmatter、HTMLコメント、フェンス付きコード、見出しと表の除外、インラインコードの置換語、8%・3%・20文の判定条件は維持した。従来数えていた字下げコードは引き続き数える。
+入力WIの基準期間の再測定は、最初のCodex由来commit `4cef410f8`より前のClaude由来787commitのMarkdown追加行をhunkごとに数えたものである。同じ集合で、句点だけの数え方は1400/16182文（8.65%）、ブロック末も数える方法は1879/22925文（8.20%）だった。この再測定値は入力WIの観測に由来し、2026年9月16日の区分ごとの記録と集計単位が異なるため、数え方による差だけを閾値維持の根拠とする。
+再検証では前掲の`--report`を使い、段落、句点の無い箇条の項目、引用内の段落を個別に数え、同じブロックの折返しを1文として数えることを確かめる。規範の一括改訂後は`uv run --frozen pyfltr run-for-agent --commands=agent-doc-tone`をパス指定なしで実行し、全対象への到達と密度超過の診断の不在を確認する。上記の旧値と比べる場合は数え方と集計単位をそろえる。
+
 ## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日
 
 配送範囲表のAntigravityの2列、作業ディレクトリのプロジェクト規範の行、agent-toolkitのスキルの行、Codexの列の`~/.codex/AGENTS.md`の配置条件の根拠である。
