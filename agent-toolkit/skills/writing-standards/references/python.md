@@ -22,7 +22,7 @@
 ### 入力検証とセキュリティ
 
 - API境界や外部入力は型駆動でバリデーションする（`pydantic` v2など）
-- セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Pythonでは評価系（`eval()`・`exec()`）、安全でない復元（`pickle`・`yaml.load()`）、`shell=True`、文字列で組み立てたSQL、予測可能な一時ファイルパス、セキュリティ用途での`random`を避ける
+- セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Pythonでは評価系の`eval`・`exec`、安全でない復元の`pickle`・`yaml.load`、shellによる実行、文字列で組み立てたSQL、予測可能な一時ファイルパスとセキュリティ用途の`random`の使用を避ける。外部入力は引数、SQLはパラメーターで渡し、一時ファイルは安全な生成API、セキュリティ用途の乱数はCSPRNGを使う
 - PEP 750テンプレート文字列（`t"..."`、Python 3.14+）の安全性は後段のレンダラに依存するため、SQL・HTML生成では対応するレンダラと組み合わせる
 
 ### 実行環境
@@ -56,7 +56,7 @@
 - テストファイルの配置はプロジェクト方針に従う。方針が無い場合は、同居方式（`<name>.py`と同じディレクトリの`<name>_test.py`。配布除外の設定が要る）と集約方式（`tests/<module>_test.py`）から規模と配布形態で選ぶ
 - テストフレームワークは対象プロジェクトの採用へそろえ、新規に選ぶ場合は`pytest`を使う
 - 同じ操作の入力差には`parametrize`、副作用だけを使うfixtureには`usefixtures`を選ぶ。デコレーター順序は外側から`parametrize` → `asyncio` → `usefixtures`とする
-- 空コレクションの比較は`assert not x`と書く（`assert x == []`はpylintの`use-implicit-booleaness-not-comparison`で警告される）
+- 空コレクションの比較は`assert not x`と書く。pylintの`use-implicit-booleaness-not-comparison`は空のリストとの等値比較より真偽値による判定を求める
 - 大規模テストスイートでは`pyfltr`の`command-timeout`を延伸する。具体値は本ファイルではなく、計測結果に基づいて各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ記録する。省略時の値と挙動は<https://ak110.github.io/pyfltr/llms.txt>から現行版を確認する
 
 ### Fixtureのコーディングルール

@@ -21,7 +21,7 @@
   - `.chezmoi-source/`の導入・更新処理がパッケージマネージャーへ渡す版指定
 - パッケージ外の呼び出し元: `agent-toolkit/`の外で`agent_toolkit`をimportするのは`pytools/`と`scripts/`である。`agent-toolkit/agent_toolkit/`配下の`*_test.py`以外のPythonファイルを変更した場合は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`
 - Function hooks module: `agent-toolkit/hooks/`の`*.ts`・`*.tsx`（`*.test.ts`・`*.test.tsx`を含む）を変更した場合は次の2つを含める。`make test`は`tsc`を有効にしておらず、CIはClaude Codeを導入しないため、どちらも実行しない
-  - 型チェック: `npx --yes -p typescript@5.9.3 tsc --project <設定ファイル> --pretty false`。型宣言は、ホスト同梱の`plugin-authoring`スキルの起動時にClaude Codeがその基準ディレクトリへ書く`types/claude-code.d.ts`か、モジュールを読み込んだプラグインの`.claude-plugin/types/`から得る。設定ファイルはmanaged-tempへ置き、`include`に型宣言と`agent-toolkit/hooks/`の`*.ts`・`*.tsx`を挙げる。`compilerOptions`は型宣言の冒頭が示す値に`allowImportingTsExtensions: true`を加える。設定ファイルと型宣言はリポジトリへ追加しない
+  - 型チェック: `npx --yes -p typescript@5.9.3 tsc --project <設定ファイル> --pretty false`。型宣言はホスト同梱の`plugin-authoring`スキルの起動時にClaude Codeがその基準ディレクトリへ書く`types/claude-code.d.ts`か、モジュールを読み込んだプラグインの`.claude-plugin/types/`から得る。設定ファイルはmanaged-tempへ置き、`include`に型宣言と`agent-toolkit/hooks/`の`*.ts`・`*.tsx`を挙げる。`compilerOptions`は型宣言の冒頭が示す値に`allowImportingTsExtensions: true`を加える。設定ファイルと型宣言はリポジトリへ追加しない
   - モジュールテスト: `claude plugin test <worktree>/agent-toolkit`（プラグインのルートを渡す。`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからず失敗する）
 - 名前の削除・改名の全体静的確認: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さずリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
 - Python版指定（`.python-version`、`.github/workflows/ci.yaml`のmatrixのPython版）かCIのcontainer jobの依存導入（同ファイルの`ネイティブ依存インストール`step）を変えた場合: `make ci-deps-check`。CIと同じimageの中でmatrixの各Python版の依存導入と`uv sync`を再現し、ローカルではビルドできてもCIでは失敗するsdistなどをpush前に検出する。imageと導入パッケージと版は`Makefile`の変数が持ち、`ci_workflow_test.py`がCI定義との一致を確かめる。dockerを要し1版あたり約1分かかる
@@ -50,6 +50,6 @@
 
 - `make test`とcommit時のpre-commit（ステージした対象ファイル）が`agent-doc-tone`を実行する。単独では`uv run --frozen pyfltr run --commands=agent-doc-tone`で起動する
 - 対象はエージェントが実行時に読むMarkdown（`AGENTS.md`・`agent-toolkit/`のrules・skills・share・`.chezmoi-source/dot_claude/`・`.claude/skills/`）である。`agent-toolkit/`ではコードのコメント・docstring・表示文・注入文も語の判定の対象とする
-- 文体の密度が閾値を超えたファイルを指標付きで報告する（指標と閾値は`scripts/check_agent_doc_tone.py`のdocstring）。`agent-toolkit:writing-standards`の表記規則が説明に使わないと定める3語が戻ると、ファイルと行を示して非0で終える（pre-commitはcommitを止める）
-- 文脈で対象と動作が伝わりにくい語（同スクリプトの`_CAUTION_PATTERNS`）は警告だけで終了コード0とする。文脈で伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。引用、意図的な悪い例、検出用データ、保存形式の名称は説明文と区別する
+- 文体の密度が閾値を超えたファイルを指標付きで報告する（指標と閾値は`scripts/check_agent_doc_tone.py`のdocstring）。同スクリプトの`_DENIED_PATTERNS`が持つ既存の検出条件へ説明文が一致すると、ファイルと行を示して非0で終える（pre-commitはcommitを止める）
+- 文脈で対象と動作が伝わりにくい語（同スクリプトの`_CAUTION_PATTERNS`）は警告だけで終了コード0とする。文脈で伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。自作の正しい例と説明は通常の検査へ渡し、引用の原文、検出用データと保存形式の名称は役割を区別して保持する
 - 密度超過では、1行目の診断が超過した指標ごとの比率、件数と上限以下へ戻すのに必要な最少の書き換え件数を示し、後続の診断が数えた否定形で終わる文と「当該」を物理行と抜粋付きで全件列挙する。列挙された位置から必要な件数の文を選び、否定形の宣言と法令調の指示語を肯定形と平易な語へ書き換える。語の再使用は`agent-toolkit:writing-standards`のtextlint指摘の修正方針に従い文全体を書き直す

@@ -185,14 +185,15 @@ def test_report_mode_prints_metrics_without_judging(tmp_path: pathlib.Path, caps
     assert lines[1].split("\t") == ["1", "1", "0", str(path)]
 
 
-def test_excluded_paths_are_skipped(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """意図的な違反例を収録するファイルは密度の判定から外す。"""
-    excluded = tmp_path / "agent-toolkit/skills/writing-standards/references/tone-examples.md"
-    excluded.parent.mkdir(parents=True)
-    excluded.write_text("その値を根拠にしない。\n", encoding="utf-8")
+@pytest.mark.parametrize("name", ["tone-examples.md", "tone-examples-llm-tone.md", "textlint-violations.md"])
+def test_norm_example_paths_are_checked(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
+    """例を置く各ファイルも密度の判定へ到達し、超過した指標を報告する。"""
+    example = tmp_path / "agent-toolkit/skills/writing-standards/references" / name
+    example.parent.mkdir(parents=True)
+    example.write_text("その値を根拠にしない。\n" * 20, encoding="utf-8")
 
-    assert check_agent_doc_tone.main([str(excluded)]) == 0
-    assert capsys.readouterr().out == ""
+    assert check_agent_doc_tone.main([str(example)]) == 1
+    assert "否定形終端率" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -204,6 +205,10 @@ def test_excluded_paths_are_skipped(tmp_path: pathlib.Path, capsys: pytest.Captu
         ("doc.md", "| 対象 |\n| --- |\n| 照合する値 |\n", "照合", 3),
         ("doc.md", "`正本`を参照する。\n", "正本", 1),
         ("doc.md", "```text\n既定の値を使う。\n```\n", "既定", 2),
+        ("doc.md", "```text\n悪い例: 正本を読む。\n```\n", "正本", 2),
+        ("doc.md", "```text\n冗長な例: 正本を読む。\n```\n", "正本", 2),
+        ("doc.md", "```text\n対象語: 正本\n```\n", "正本", 2),
+        ("doc.md", "```text\n解説: 「正本」を使う。\n```\n", "正本", 2),
         ("doc.md", "```python\nprint('照合する値')\n```\n", "照合", 2),
         ("doc.md", "<!-- 正本を参照する。 -->\n", "正本", 1),
         ("app.py", "# 既定の値を使う。\n", "既定", 1),
@@ -331,17 +336,11 @@ def test_cli_fails_on_denied_term_beside_caution_term(tmp_path: pathlib.Path, ca
         ("config.toml", '"正本" = "是正本文"\n'),
         ("doc.md", "> 他者が記した正本・既定・照合の説明。\n"),
         ("doc.md", "```text\n逐語引用: 正本を読む。\n既定の値を照合する。\n```\n"),
-        (
-            "doc.md",
-            "```text\n悪い例: 正本を照合する。\n"
-            "書き換え: 記録した値が入力と一致するか確かめる。\n"
-            "解説: 「正本」「照合」は語そのものを示す。\n```\n",
-        ),
         ("app_test.py", 'def test_fixture():\n    assert "正本" == "正本"\n'),
     ],
 )
 def test_cli_preserves_data_and_structural_names(tmp_path: pathlib.Path, name: str, body: str) -> None:
-    """文章ではない一致、他者の引用と意図的な違反入力を変更させない。"""
+    """文章ではない一致、他者の引用と検出用の入力を変更させない。"""
     path = _write(tmp_path, body, name=name)
 
     assert check_agent_doc_tone.main([str(path)]) == 0
@@ -375,7 +374,7 @@ def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> N
     """例のファイルとテストのファイルでも、説明文への再使用を検出する。"""
     example = tmp_path / "agent-toolkit/skills/writing-standards/references/tone-examples.md"
     example.parent.mkdir(parents=True)
-    example.write_text("```text\n悪い例: 正本を読む。\n書き換え: 正本を読む。\n```\n", encoding="utf-8")
+    example.write_text("```text\n例文: 正本を読む。\n説明: 「照合」を用いる。\n```\n", encoding="utf-8")
     test_file = _write(tmp_path, '# 正本を参照する。\nvalue = "照合"\n', name="app_test.py")
 
     assert check_agent_doc_tone.main([str(example)]) == 1
@@ -480,7 +479,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
     ),
     [
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 正本を読む。\n```\n",
+            "```text\n例文: 正本を読む。\n```\n",
             '# 既定の値を使う。\nprint("照合する値")\n',
             'raise RuntimeError("既定の値を照合できない")\n',
             "",
@@ -491,7 +490,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'from pathlib import Path\npath = Path("照合.md")\nprint("是正本文")\n',
             "",
             "",
@@ -502,7 +501,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             "# 入力を検査する。\nprint(1)\n",
             "",
             "",
@@ -513,7 +512,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'print("是正本文")\n',
             "",
             "入口を確認しない。" * 20,
@@ -524,7 +523,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [1] * 20,
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'print("是正本文")\n',
             "",
             "",
@@ -535,7 +534,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'print("是正本文")\n',
             "",
             "",
@@ -546,7 +545,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'print("是正本文")\n',
             "",
             _DENSITY_BODY,

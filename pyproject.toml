@@ -164,40 +164,26 @@ statusline-version = false
 markdownlint-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
     ".chezmoi-source/dot_claude/rules/myprojects-common.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
 ]
 textlint-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
 ]
 colloquial-check-exclude = [
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
     # 規範の再構築の判定台帳。基準commitの条文の逐語抜粋を記録として保持するため対象から外す。
     "docs/development/norm-restructure/*.tsv",
 ]
 typos-exclude = [
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
     # 規範の再構築の判定台帳。条文の先頭40字の抜粋と検索語が語の途中で終わるため対象から外す。
     "docs/development/norm-restructure/*.tsv",
-]
-prek-exclude = [
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
 ]
 textlint-args = ["--cache"]
 lychee-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
     # ベースパスを実行時に埋めるプレースホルダーを含むため、静的なリンク解決の対象にしない。
     "agent-toolkit/agent_toolkit/_atk/serve/static/index.html",
 ]
 # profile_ipy/はIPython自動生成プロファイルとして対象外とする。
-# 対比集の除外は各コマンドで保ち、agent-doc-toneは悪い例と説明文を区別して読む。
+# 自作の例と説明は通常の検査へ渡し、原文の引用と検出用データは役割を区別して読む。
 extend-exclude = [
     "*/profile_ipy/*",
     # agent-toolkit-codex/はGit追跡の有無を問わずagent-toolkit/から生成するため、生成元と重複検査しない。

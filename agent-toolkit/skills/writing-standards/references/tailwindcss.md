@@ -6,7 +6,7 @@
 ## セットアップ・設定（v4のCSS-first設定）
 
 - `tailwind.config.js`を新規作成せず、CSSの`@theme`でデザイントークンを定義する（努力目標。JS設定は互換目的の`@config`経由でだけ読まれる）
-- エントリCSSは`@import "tailwindcss";`で読み込む（`@tailwind base/components/utilities`はv4で廃止）
+- エントリCSSは`@import "tailwindcss";`で読み込む
 - トークンは`@theme { --color-brand-500: oklch(...); }`のようにCSS変数として定義する（ユーティリティとCSS変数の双方から参照できる）。カスタムトークンも`--breakpoint-*`・`--color-*`などの名前空間へそろえる
 - 標準パレットを丸ごと置き換える場合は`--color-*: initial;`で初期化してから定義する
 - ダークモードの判定基準は`@custom-variant dark (&:where(.dark, .dark *));`のようにCSSで再定義する（v4に`darkMode`設定キーは無い）
@@ -24,4 +24,4 @@
 
 ## 動的クラス名の禁止
 
-- `` `bg-${color}-600` ``のような連結でクラス名を生成せず、条件分岐や対応表には完全なクラス名を書く。Tailwindはソースをプレーンテキストとしてスキャンするため、実行時にしか確定しない名前は生成されない
+- 条件分岐や対応表には、`bg-red-600`のような完全なクラス名を書く。Tailwindはソースをプレーンテキストとしてスキャンするため、実行時にしか確定しない名前は生成されない

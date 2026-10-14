@@ -11,7 +11,7 @@
 ## アサーション
 
 - 観測可能な状態をweb-first assertionで検証し、一時点の判定で非同期の完了を代用しない
-- 固定時間待機（`page.waitForTimeout()`・`page.wait_for_timeout()`）と独自の待機ループは使わず、ロケーターの自動待機・actionabilityチェックまたは`expect().toPass()`で状態変化を待つ。根拠は`testing.md`「安定性: flakyテスト防止」にある
+- ロケーターの自動待機・actionabilityチェックまたは`expect().toPass()`で状態変化を待つ。固定時間待機のAPI（JavaScriptの`page.waitForTimeout`、Pythonの`page.wait_for_timeout`）と独自の待機ループは使わない。根拠は`testing.md`「安定性: flakyテスト防止」にある
 - 画面が操作によらず始める非同期処理（初期表示での自動選択と本文の取得、外部変更の通知による再読込、遅れて加わるスタイル、再描画による要素の置換など）は、その観測できる結果を待ってから外部状態の変更、寸法の測定、要求の記録へ進む。最初に可視になった要素を準備完了とみなさない。ローカルで通っても、負荷の高いCIでは処理の結果がテストの操作より後に届く
 
 ## テスト分離

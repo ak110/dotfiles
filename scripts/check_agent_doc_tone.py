@@ -19,10 +19,10 @@ r"""文体の密度と、説明に使用しない語の再使用を確認する�
 閾値は、Codexを使う前のClaude由来commitが追加した文の水準に置く。
 否定形終端率は8%、「当該」の出現率（出現数÷文数）は3%とし、文数が20以上のファイルへ適用する。
 
-説明文の語は文数によらず判定する。`notation-rules.md`が説明に使わないと定める語は、
-未対応なら要求を満たしていないため終了コード1を返す。文脈によって対象と動作が伝わりにくい語は
+説明文の語は文数によらず判定する。既存の失敗対象は`_DENIED_PATTERNS`が保持し、
+説明文へ再使用された場合は要求を満たしていないため終了コード1を返す。文脈によって対象と動作が伝わりにくい語は
 位置付きの警告として報告し、その語だけでは終了コードを変えない。
-密度の判定はMarkdownだけに適用する。引用・悪い例・検出データと構造名は文章と区別する。
+密度の判定はMarkdownだけに適用する。原文の引用・検出データと構造名は文章と区別する。
 """
 
 from __future__ import annotations
@@ -60,15 +60,8 @@ _MAX_SUBJECT_WORD_RATIO = 0.03
 _MAX_EXCERPT_LENGTH = 40
 _SUBJECT_WORD_CONTEXT = 10
 
-EXCLUDED_PATHS = (
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
-    "agent-toolkit/skills/writing-standards/references/textlint-violations.md",
-)
-"""意図的な違反例を収録するため密度の判定から除くファイル。"""
-
 # 語そのものを扱う判定用データ。説明文の同義語をここでは定めない。
-# 失敗させる語は`notation-rules.md`「日本語の表記ルール」が説明に使わないと定める語に限る。
+# 失敗対象の集合は、説明に戻った語を検出する既存の契約を保持する。
 _DENIED_PATTERNS = {
     "正本": r"(?<!是)正本|正本(?!文)",
     "既定": r"既定",
@@ -126,7 +119,6 @@ _STRUCTURAL_LABELS = (
     "選択肢と帰結",
     "前提を疑う観点",
 )
-_QUOTED_DATA_PATTERN = re.compile(r"「[^」]*」|`[^`]*`")
 # 選定結果の欄`プロジェクト固有の公開後の操作の順序`（旧欄名`terminal_order`）の値`既定`は保存形式の値として扱う。
 _TERMINAL_ORDER_VALUE_PATTERN = re.compile(
     r'((?:プロジェクト固有の公開後の操作の順序|terminal_order)[^\n]*?)(?:`既定`|「既定」|"既定")'
@@ -141,20 +133,16 @@ def _without_structural_labels(text: str) -> str:
 
 
 def _example_lines(text: str, start: int) -> Iterator[tuple[int, str]]:
-    """例の役割に応じて良い例と解説を返し、原文を示す行を保つ。"""
-    role = ""
+    """自作の例と説明を返し、明示された逐語引用を保持する。"""
+    quoted = False
     for offset, line in enumerate(text.splitlines()):
         stripped = line.strip()
-        if stripped.startswith(("悪い例:", "冗長な例:", "対象語:", "逐語引用:")):
-            role = "data"
-        elif stripped.startswith(("書き換え:", "良い例:", "例文:")):
-            role = "example"
-        elif stripped.startswith("解説:"):
-            role = "explanation"
-        if role == "data":
+        if stripped.startswith("逐語引用:"):
+            quoted = True
+        elif stripped.startswith(("書き換え:", "良い例:", "例文:", "解説:", "説明:")):
+            quoted = False
+        if quoted:
             continue
-        if role == "explanation":
-            line = _QUOTED_DATA_PATTERN.sub(lambda match: " " * len(match.group()), line)
         yield start + offset, line
 
 
@@ -680,12 +668,6 @@ class Metrics:
         return [metric.summary() for metric in self.exceeded_metrics()]
 
 
-def _is_excluded(path: pathlib.Path) -> bool:
-    """密度の判定から除く固定のファイルかを返す。"""
-    posix = path.as_posix()
-    return any(posix.endswith(excluded) for excluded in EXCLUDED_PATHS)
-
-
 def _print_report(metrics: list[Metrics]) -> None:
     """全ファイルの指標を表で標準出力へ書く。"""
     header = ("文数", "否定形終端", "当該", "ファイル")
@@ -756,7 +738,7 @@ def main(argv: list[str] | None = None) -> int:
                 "文字コードの問題ならUTF-8で保存し直して同じコマンドを再実行する。",
             )
             return 2
-    metrics = [Metrics(path, text) for path, text in contents if path.suffix == ".md" and not _is_excluded(path)]
+    metrics = [Metrics(path, text) for path, text in contents if path.suffix == ".md"]
     if args.report:
         _print_report(metrics)
         return 0
