@@ -2,23 +2,16 @@ r"""PreToolUse統合フックのうち、編集内容とユーザー向け本文
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.notice",
-    "agent_toolkit._hooks.pretooluse.notices",
-    "agent_toolkit._plan.path_kinds",
-}
-
 import pathlib
 import re
 
-from agent_toolkit._hooks import (
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
-from agent_toolkit._hooks.notice import _WARN_TAG
-from agent_toolkit._hooks.pretooluse.notices import _llm_notice
-from agent_toolkit._plan.path_kinds import is_plan_adjunct_file, is_plan_main_file
+lazy from agent_toolkit._hooks.notice import _WARN_TAG
+lazy from agent_toolkit._hooks.pretooluse.notices import _llm_notice
+lazy from agent_toolkit._plan.path_kinds import is_plan_adjunct_file, is_plan_main_file
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"

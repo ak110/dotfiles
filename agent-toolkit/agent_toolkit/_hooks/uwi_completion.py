@@ -16,15 +16,13 @@ frontmatterの`submitter_session`がフック入力の`session_id`と一致す�
 実行されるまで観測できない。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk.wi", "agent_toolkit._common.session_state", "agent_toolkit._git", "subprocess"}
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy import subprocess
 
-import subprocess
-
-from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
-from agent_toolkit._common.session_state import update_state
-from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
+lazy from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
+lazy from agent_toolkit._common.session_state import update_state
+lazy from agent_toolkit._git import remote as _git_remote
 
 STATE_KEY_ANSWERED = "uwi_answered_by_repo"
 """エージェント別・対象リポジトリID別の回答済みUWIファイル名を保持する状態キー。

@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk.managed_temp.windows_security"}
-
 import contextlib
 import datetime
 import os
@@ -29,7 +26,9 @@ from agent_toolkit._atk.managed_temp.registry import (
     is_valid_prefix,
 )
 from agent_toolkit._atk.managed_temp.validation import _validate_posix, _validate_windows, validate_managed_temp
-from agent_toolkit._atk.managed_temp.windows_security import _windows_identity, _windows_secure_path
+
+# 他の処理では不要な依存を、使用時まで遅延する。
+lazy from agent_toolkit._atk.managed_temp.windows_security import _windows_identity, _windows_secure_path
 
 SESSION_TEMP_PREFIX = "session"
 """SessionStartが会話ごとに作成するセッションのmanaged-tempの接頭辞。

@@ -159,7 +159,7 @@ def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[s
 
 
 def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str, object]) -> None:
-    """最新基準版のlintとpytestを分離し、下限版と前版のpytestを維持する。"""
+    """Python 3.15のlintとpytestを別のmatrix要素に分け、3.15以外の版を持たない。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
     strategy = workflow_mapping(job["strategy"])
     matrix = workflow_mapping(strategy["matrix"])

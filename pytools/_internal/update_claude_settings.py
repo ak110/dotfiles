@@ -5,9 +5,6 @@ OS別の差分（主にhookコマンドのshell/PowerShellラッパー）は
 `*.posix.json`/`*.win32.json`のオーバーライドで上乗せする。
 """
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"pytilpack.jsonc"}
-
 import copy
 import datetime
 import json
@@ -17,7 +14,8 @@ import sys
 import typing
 from pathlib import Path
 
-import pytilpack.jsonc
+# 他の処理では不要な依存を、使用時まで遅延する。
+lazy import pytilpack.jsonc
 
 from pytools._internal import (
     common,

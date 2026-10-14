@@ -12,29 +12,21 @@ Claude Codeはhook 1件の出力を10,000文字で切り詰める。条文の欠
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common.delegated_session",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.message_format",
-    "typing",
-    "urllib.parse",
-}
-
 import json
 import os
 import pathlib
-import urllib.parse
-from typing import Any
+
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy import urllib.parse
+lazy from typing import Any
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import message_format, plugin_environment
-from agent_toolkit._common.delegated_session import is_delegated
-from agent_toolkit._common.session_state import update_state
-from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
-from agent_toolkit._hooks.message_format import xml_message
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
+lazy from agent_toolkit._common.delegated_session import is_delegated
+lazy from agent_toolkit._common.session_state import update_state
+lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
+lazy from agent_toolkit._hooks.message_format import xml_message
 
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)

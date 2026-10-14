@@ -1,8 +1,5 @@
 """WIのファイル名の検証、重複除去、採番と補完候補。"""
 
-# 補完器の登録だけでは本文を解析しない。
-__lazy_modules__ = {"agent_toolkit._atk.wi.formatters"}
-
 import functools
 import os
 import pathlib
@@ -12,8 +9,10 @@ from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.constants import WI_STATES
-from agent_toolkit._atk.wi.formatters import parse_type
 from agent_toolkit._common import private_notes as _private_notes
+
+# 補完器の登録だけでは本文を解析しない。
+lazy from agent_toolkit._atk.wi.formatters import parse_type
 
 
 def normalize_md_filename(filename: str) -> str:

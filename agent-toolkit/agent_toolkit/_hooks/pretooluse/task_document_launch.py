@@ -23,18 +23,17 @@
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._hooks.pretooluse.notices", "markdown_it.token"}
-
 import pathlib
 import re
 
 import markdown_it
-from markdown_it.token import Token
+
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from markdown_it.token import Token
 
 from agent_toolkit._agents_server import task_documents
 from agent_toolkit._agents_server import tool_names as _tool_names
-from agent_toolkit._hooks.pretooluse.notices import _block_notice
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
 
 START_TOOLS: frozenset[str] = frozenset(
     f"{namespace}{operation}" for namespace in _tool_names.MCP_NAMESPACES for operation in _tool_names.START_OPERATIONS

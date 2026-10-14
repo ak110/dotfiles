@@ -5,20 +5,19 @@
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk", "ctypes", "shlex", "shutil", "subprocess", "typing"}
-
-import ctypes
 import json
 import os
 import pathlib
-import shlex
-import shutil
-import subprocess
-import typing
-from ctypes import wintypes
 
-from agent_toolkit._atk import managed_temp as _managed_temp
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy import ctypes
+lazy import shlex
+lazy import shutil
+lazy import subprocess
+lazy import typing
+lazy from ctypes import wintypes
+
+lazy from agent_toolkit._atk import managed_temp as _managed_temp
 
 
 def _windows_dll(name: str) -> typing.Any:

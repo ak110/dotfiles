@@ -1,8 +1,5 @@
 """コマンドライン引数解析とエントリーポイント。"""
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"pytools.markdown_viewer"}
-
 import argparse
 import hashlib
 import logging
@@ -12,7 +9,9 @@ import tempfile
 import webbrowser
 
 from pytools._internal.cli import enable_completion, setup_logging
-from pytools.markdown_viewer import _render
+
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy from pytools.markdown_viewer import _render
 
 logger = logging.getLogger(__name__)
 

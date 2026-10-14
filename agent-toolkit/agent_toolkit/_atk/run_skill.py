@@ -12,9 +12,6 @@ Stopの条件にするhookを有効にし、自ら最終応答で終わる非対
 
 from __future__ import annotations
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"filelock", "psutil"}
-
 import argparse
 import datetime
 import hashlib
@@ -27,8 +24,9 @@ import time
 import typing
 import uuid
 
-import filelock
-import psutil
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy import filelock
+lazy import psutil
 
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome

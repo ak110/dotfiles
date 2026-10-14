@@ -1,14 +1,12 @@
 """Claude Code公式ネイティブバイナリを導入または更新する。"""
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import logging
 import subprocess
 import sys
 from pathlib import Path
 
-import httpx
+# 他の処理では不要な依存を、使用時まで遅延する。
+lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 

@@ -17,26 +17,18 @@ r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了�
 委譲先での実行可否: 委譲先はcompletion-reportの適用対象ではないため、hook入力と環境印で除外する。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._atk",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.background_tasks",
-    "agent_toolkit._hooks.host",
-    "agent_toolkit._hooks.stop_session",
-}
-
 import pathlib
 
-from agent_toolkit._atk import run_script as _run_script
-from agent_toolkit._hooks import termination_evidence
-from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
-from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from agent_toolkit._atk import run_script as _run_script
+lazy from agent_toolkit._hooks import termination_evidence
+lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
+lazy from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
+lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 _HOOK_ID = "termination_order_advisor"
 

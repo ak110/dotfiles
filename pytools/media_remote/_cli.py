@@ -1,8 +1,5 @@
 """コマンドライン引数解析とエントリポイント。"""
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"hypercorn.asyncio", "hypercorn.config", "qrcode", "pytools.media_remote"}
-
 import argparse
 import asyncio
 import contextlib
@@ -14,13 +11,14 @@ import socket
 import sys
 from urllib.parse import quote
 
-import hypercorn.asyncio
-import hypercorn.config
-import qrcode
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy import hypercorn.asyncio
+lazy import hypercorn.config
+lazy import qrcode
 
 from pytools._internal import common
 from pytools._internal.cli import enable_completion
-from pytools.media_remote import _app, _token, _window_move
+lazy from pytools.media_remote import _app, _token, _window_move
 
 logger = logging.getLogger(__name__)
 

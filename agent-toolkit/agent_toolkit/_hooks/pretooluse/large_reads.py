@@ -10,35 +10,23 @@ Claude Codeはホストが上限超過を`PARTIAL view`または退避ファイ�
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._atk",
-    "agent_toolkit._common",
-    "agent_toolkit._common.bash_invocations",
-    "agent_toolkit._common.uv_arguments",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.pretooluse.notices",
-    "ast",
-    "collections.abc",
-    "re",
-    "stat",
-}
-
-import ast
 import os
 import pathlib
-import re
-import stat
-from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
-from agent_toolkit._atk import read_file
-from agent_toolkit._common import host_homes, shell_cwd, shell_segments
-from agent_toolkit._common.bash_invocations import extract_bash_invocations
-from agent_toolkit._common.uv_arguments import is_python_token
-from agent_toolkit._hooks import plugin_resources
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy import ast
+lazy import re
+lazy import stat
+lazy from collections.abc import Iterator, Sequence
+
 from agent_toolkit._hooks.notice import formatter
-from agent_toolkit._hooks.pretooluse.notices import _block_notice
+lazy from agent_toolkit._atk import read_file
+lazy from agent_toolkit._common import host_homes, shell_cwd, shell_segments
+lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
+lazy from agent_toolkit._common.uv_arguments import is_python_token
+lazy from agent_toolkit._hooks import plugin_resources
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
 
 # Codexの配布設定の出力上限`tool_output_token_limit = 20000`（トークン）と、
 # agent-toolkitのMarkdownで測った1トークンあたりバイト数の最小値3.10の積は約62,000バイトである。

@@ -5,9 +5,6 @@
 C#版のサブコマンド名・引数・出力を維持し、`EcoUtilities`コマンドの差し替えで流用できるようにする。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import argparse
 import datetime
 import errno
@@ -22,8 +19,10 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import httpx
 import pydantic
+
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy import httpx
 
 from pytools._internal import ecoutilities_args
 

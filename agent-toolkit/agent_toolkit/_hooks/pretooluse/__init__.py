@@ -1,12 +1,10 @@
 """PreToolUse統合フックの責務別実装。"""
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._hooks", "agent_toolkit._hooks.pretooluse"}
-
 import sys
 
-from agent_toolkit._hooks import termination_evidence
-from agent_toolkit._hooks.pretooluse import dispatch as _dispatch
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from agent_toolkit._hooks import termination_evidence
+lazy from agent_toolkit._hooks.pretooluse import dispatch as _dispatch
 
 
 def main(payload_text: str) -> int:

@@ -6,16 +6,14 @@
 ストリーミング書き込みする。
 """
 
-# 生成経路だけで進捗表示を必要とする。旧Pythonでは従来のimportとなる。
-__lazy_modules__ = {"tqdm"}
-
 import argparse
 import logging
 import pathlib
 import secrets
 import sys
 
-import tqdm
+# 生成経路だけで進捗表示を必要とする。
+lazy import tqdm
 
 from pytools._internal.cli import enable_completion
 

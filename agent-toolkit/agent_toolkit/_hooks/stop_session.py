@@ -5,16 +5,14 @@
 判定の詳細を調べるDEBUG相当の出力は`background_tasks`が環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`の指定時だけ標準エラーへ書く。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common.file_lock", "collections.abc", "tempfile", "time"}
-
-import collections.abc
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
 import json
 import pathlib
-import tempfile
-import time
+lazy import collections.abc
+lazy import tempfile
+lazy import time
 
-from agent_toolkit._common.file_lock import locked_rotate_and_append as _locked_rotate_and_append
+lazy from agent_toolkit._common.file_lock import locked_rotate_and_append as _locked_rotate_and_append
 
 
 def _stop_log_path(session_id: str) -> pathlib.Path:

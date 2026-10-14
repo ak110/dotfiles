@@ -46,47 +46,14 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._common.delegated_session",
-    "agent_toolkit._common.periodic_recheck",
-    "agent_toolkit._common.process_loop_session",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.host",
-    "agent_toolkit._plan.path_kinds",
-    "time",
-}
-
 import json
 import os
 import pathlib
 import re
 import sys
-import time
 
-from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._common.delegated_session import (
-    is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from agent_toolkit._common.periodic_recheck import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    LEGACY_PERIODIC_RECHECK_MARKER,
-    PERIODIC_RECHECK_MARKER,
-)
-from agent_toolkit._common.process_loop_session import (
-    is_process_loop_session,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    claim_session_title,
-    read_state,
-    update_state,
-)
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks import plugin_resources as _plugin_resources
-from agent_toolkit._hooks import termination_evidence
-from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy import time
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -98,7 +65,28 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     VERIFICATION_NOTICE_BODY,
     clear_user_confirmation_pending,
 )
-from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._common.delegated_session import (
+    is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+lazy from agent_toolkit._common.periodic_recheck import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    LEGACY_PERIODIC_RECHECK_MARKER,
+    PERIODIC_RECHECK_MARKER,
+)
+lazy from agent_toolkit._common.process_loop_session import (
+    is_process_loop_session,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    claim_session_title,
+    read_state,
+    update_state,
+)
+
+# pylint: disable-next=wrong-import-position,import-error
+lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
+lazy from agent_toolkit._hooks import termination_evidence
+lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:

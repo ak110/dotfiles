@@ -24,17 +24,16 @@ Bashと種別を判別できない通知には`<task-id>`と`<output-file>`を�
 除外せず案内する。Codexのtranscriptは`queue-operation`を持たないため、Codexでは発火しない。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common.session_state", "agent_toolkit._hooks", "agent_toolkit._hooks.stop_session"}
-
 import re
 
-from agent_toolkit._common.session_state import read_state, update_state
-from agent_toolkit._hooks import background_tasks as _background_tasks
-from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.stop_session import parse_stop_session
+
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._hooks import background_tasks as _background_tasks
+lazy from agent_toolkit._hooks import transcript_scan as _transcript_scan
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 
 _HOOK_ID = "queued_notification_advisor"
 _SESSION_STATE_KEY = "queued_notification_notified_ids"

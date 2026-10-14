@@ -3,9 +3,6 @@
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。
 """
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import contextlib
 import json
 import logging
@@ -17,8 +14,10 @@ import tempfile
 import typing
 from pathlib import Path
 
-import httpx
 import platformdirs
+
+# 他の処理では不要な依存を、使用時まで遅延する。
+lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common, winutils
 

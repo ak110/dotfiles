@@ -6,9 +6,6 @@ push・CI完了待機を経てrelease.yamlをworkflow_dispatchで起動する。
 省略時はヘルプと未リリースコミット一覧を表示する。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"yaml"}
-
 import argparse
 import collections.abc
 import json
@@ -21,7 +18,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-import yaml
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy import yaml
 
 from pytools._internal.cli import enable_completion, setup_logging
 

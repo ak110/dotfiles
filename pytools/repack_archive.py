@@ -6,19 +6,6 @@
 一元管理する。
 """
 
-# 設定モデルの定義は即時に保ち、展開・画像処理などの依存は使うまで遅延する。
-__lazy_modules__ = {
-    "natsort",
-    "pytilpack.pathlib",
-    "pytilpack.zipfile",
-    "send2trash",
-    "tqdm",
-    "yaml",
-    "pdf2image",
-    "pdf2image.exceptions",
-    "pytools",
-}
-
 import argparse
 import fnmatch
 import functools
@@ -32,19 +19,21 @@ import tempfile
 import typing
 import zipfile
 
-import natsort
 import pydantic
-import pytilpack.pathlib
-import pytilpack.zipfile
-import send2trash
-import tqdm
-import yaml
-from pdf2image import convert_from_path
-from pdf2image.exceptions import PDFInfoNotInstalledError
 
-from pytools import imageconverter, rename
+# 設定モデルの定義は即時に保ち、展開・画像処理などの依存は使うまで遅延する。
+lazy import natsort
+lazy import pytilpack.pathlib
+lazy import pytilpack.zipfile
+lazy import send2trash
+lazy import tqdm
+lazy import yaml
+lazy from pdf2image import convert_from_path
+lazy from pdf2image.exceptions import PDFInfoNotInstalledError
+
 from pytools._internal import repack_archive_args
 from pytools._internal.cli import setup_logging
+lazy from pytools import imageconverter, rename
 
 logger = logging.getLogger(__name__)
 

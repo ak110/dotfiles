@@ -14,17 +14,15 @@
 「agent-toolkit/agent_toolkit/_hooks/stop.py：未配送通知を次ターンへ返す：2026年10月10日」にある。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common.session_state", "agent_toolkit._hooks.host", "agent_toolkit._hooks.stop_session"}
-
 import importlib
 import json
 import sys
 
-from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._hooks.host import is_codex_payload
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
+lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 CHECK_MODULE_NAMES = (
     "busy_loop_guard",

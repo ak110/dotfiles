@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"psutil"}
-
 import argparse
 import json
 import os
@@ -16,7 +13,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-import psutil
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy import psutil
 
 from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import outcome as _outcome

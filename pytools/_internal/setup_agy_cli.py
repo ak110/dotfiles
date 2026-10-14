@@ -4,15 +4,13 @@
 導入の失敗は`post_apply_outcome.PostApplyOutcome`の分類に従い、警告1行を出力してスキップと数える。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import logging
 import os
 import sys
 from pathlib import Path
 
-import httpx
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 

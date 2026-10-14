@@ -1,13 +1,11 @@
 """Gemini CLIの管理設定をJSONCのユーザー設定へ反映する。"""
 
-__lazy_modules__ = {"pytilpack.jsonc"}
-
 import copy
 import json
 import logging
 from pathlib import Path
 
-import pytilpack.jsonc
+lazy import pytilpack.jsonc
 
 from pytools._internal import common, log_format, post_apply_outcome
 

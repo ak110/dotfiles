@@ -10,11 +10,9 @@ PostToolUseの`updatedToolOutput`で`stdout`を通知の本文へ置き換える
 CodexのPostToolUseは`persistedOutputPath`を持たない（出力は退避ではなく切り詰めで返る）ため発動しない。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common", "agent_toolkit._hooks"}
-
-from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._hooks import message_format as _message_format
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from agent_toolkit._common import next_action as _next_action
+lazy from agent_toolkit._hooks import message_format as _message_format
 
 _SHELL_TOOLS = frozenset({"Bash", "PowerShell"})
 _HOOK_ID = "posttooluse"

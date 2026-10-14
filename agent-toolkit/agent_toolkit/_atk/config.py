@@ -4,9 +4,6 @@ XDG関連パス（設定・状態・データ各ディレクトリ、private-not
 モデル設定（engine別・段位別のモデルと用途別のengine順）の確認・変更を提供する。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"platformdirs"}
-
 import argparse
 import dataclasses
 import json
@@ -16,7 +13,8 @@ import re
 import sys
 from typing import Any, cast
 
-import platformdirs
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy import platformdirs
 
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome

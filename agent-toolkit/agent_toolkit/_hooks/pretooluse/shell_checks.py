@@ -2,35 +2,24 @@ r"""PreToolUse統合フックのうち、Bashコマンドを遮断する条件�
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common.bash_invocations",
-    "agent_toolkit._common.heredocs",
-    "agent_toolkit._common.runtime_identity",
-    "agent_toolkit._common.shell_segments",
-    "agent_toolkit._common.shell_tokens",
-    "agent_toolkit._hooks.notice",
-    "agent_toolkit._hooks.pretooluse.notices",
-    "collections.abc",
-    "shlex",
-}
-
 import pathlib
 import re
-import shlex
 import sys
-from collections.abc import (
+
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy import shlex
+lazy from collections.abc import (
     Iterable,
     Sequence,
 )
 
-from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations, heredoc_command_substitutions
-from agent_toolkit._common.heredocs import mask_heredoc_bodies
-from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
-from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
-from agent_toolkit._common.shell_tokens import strip_redirections
-from agent_toolkit._hooks.notice import _WARN_TAG
-from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+lazy from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations, heredoc_command_substitutions
+lazy from agent_toolkit._common.heredocs import mask_heredoc_bodies
+lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
+lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
+lazy from agent_toolkit._common.shell_tokens import strip_redirections
+lazy from agent_toolkit._hooks.notice import _WARN_TAG
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 _GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
     {

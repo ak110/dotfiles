@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common.session_registry", "psutil", "yaml"}
-
 import argparse
 import contextlib
 import hashlib
@@ -18,14 +15,16 @@ import sys
 import typing
 from collections.abc import Generator
 
-import psutil
-import yaml
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy import psutil
+lazy import yaml
 
 from agent_toolkit._atk import help_text, managed_temp, outcome, run_command
-from agent_toolkit._common import atomic_file, file_lock, session_launchers, session_registry, state_paths, worktree_hooks
+from agent_toolkit._common import atomic_file, file_lock, session_launchers, state_paths, worktree_hooks
 from agent_toolkit._git import command as git_command
 from agent_toolkit._git import worktree_exclude
 from agent_toolkit._plan import selection
+lazy from agent_toolkit._common import session_registry
 
 SESSION_ENV = "AGENT_TOOLKIT_LANE_SESSION_ID"
 _ID = re.compile(r"[A-Za-z0-9_-]+\Z")

@@ -23,20 +23,19 @@ hook定義でも同じ処理が実行される。配布先の定義を追随さ�
 標準エラー出力で不整合を観測できるようにする。
 """
 
-# 正常な呼出しで使わない診断とdump用の依存を、Python 3.15では必要になるまで読み込まない。
-__lazy_modules__ = {"datetime", "traceback", "agent_toolkit._hooks.notice"}
-
 import contextlib
-import datetime
 import importlib
 import io
 import json
 import os
 import pathlib
 import sys
-import traceback
 
-from agent_toolkit._hooks.notice import formatter as _notice_formatter
+# 正常な呼出しで使わない診断とdump用の依存を、必要になるまで読み込まない。
+lazy import datetime
+lazy import traceback
+
+lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 _SUBCOMMANDS: frozenset[str] = frozenset(
     {

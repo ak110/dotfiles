@@ -3,9 +3,6 @@
 `atk.py`は`build_parser`で`atk wi`配下を登録し、`prepare_args`・`validate_args`で引数を確定してから`dispatch`を呼ぶ。
 """
 
-# ヘルプ・補完器登録では処理モジュールを使わず、必要な定数だけを参照する。
-__lazy_modules__ = {"agent_toolkit._atk", "agent_toolkit._atk.wi", "agent_toolkit._atk.wi.mutations"}
-
 import argparse
 import datetime
 import math
@@ -15,28 +12,29 @@ import subprocess
 import sys
 from typing import Any
 
-from agent_toolkit._atk import cli_support as _cli_support
-from agent_toolkit._atk import git_sync as _atk_git_sync
-from agent_toolkit._atk import help_text as _atk_help
-from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi import add as _add
-from agent_toolkit._atk.wi import alerts as _alerts
-from agent_toolkit._atk.wi import batch as _batch
-from agent_toolkit._atk.wi import constants as _wi_constants
-from agent_toolkit._atk.wi import filenames as _wi_filenames
-from agent_toolkit._atk.wi import grep as _grep
-from agent_toolkit._atk.wi import listing as _listing
-from agent_toolkit._atk.wi import process_loop as _process_loop
-from agent_toolkit._atk.wi import process_loop_all_repos as _process_loop_all_repos
-from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
-from agent_toolkit._atk.wi import repo as _wi_repo
-from agent_toolkit._atk.wi import show as _show
-from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._atk.wi import uwi as _uwi
-from agent_toolkit._atk.wi.mutations import content as _mutation_content
-from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies
-from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
-from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
+# ヘルプ・補完器登録では処理モジュールを使わず、必要な定数だけを参照する。
+lazy from agent_toolkit._atk import cli_support as _cli_support
+lazy from agent_toolkit._atk import git_sync as _atk_git_sync
+lazy from agent_toolkit._atk import help_text as _atk_help
+lazy from agent_toolkit._atk import outcome as _outcome
+lazy from agent_toolkit._atk.wi import add as _add
+lazy from agent_toolkit._atk.wi import alerts as _alerts
+lazy from agent_toolkit._atk.wi import batch as _batch
+lazy from agent_toolkit._atk.wi import constants as _wi_constants
+lazy from agent_toolkit._atk.wi import filenames as _wi_filenames
+lazy from agent_toolkit._atk.wi import grep as _grep
+lazy from agent_toolkit._atk.wi import listing as _listing
+lazy from agent_toolkit._atk.wi import process_loop as _process_loop
+lazy from agent_toolkit._atk.wi import process_loop_all_repos as _process_loop_all_repos
+lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
+lazy from agent_toolkit._atk.wi import repo as _wi_repo
+lazy from agent_toolkit._atk.wi import show as _show
+lazy from agent_toolkit._atk.wi import sync as _wi_sync
+lazy from agent_toolkit._atk.wi import uwi as _uwi
+lazy from agent_toolkit._atk.wi.mutations import content as _mutation_content
+lazy from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies
+lazy from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
+lazy from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
 
 _queue_filename_completer = _wi_filenames.make_filename_completer(_wi_constants.WI_STATES)
 

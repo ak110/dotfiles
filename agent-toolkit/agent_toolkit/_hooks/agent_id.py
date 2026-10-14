@@ -13,13 +13,12 @@ subagent call. Use this to distinguish subagent hook calls from main-thread call
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common.delegated_session", "collections.abc"}
-
 import os
-from collections.abc import Mapping
 
-from agent_toolkit._common.delegated_session import is_delegated
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from collections.abc import Mapping
+
+lazy from agent_toolkit._common.delegated_session import is_delegated
 
 MAIN_AGENT_ID = "main"
 """`agent_id`を持たないメイン会話の呼び出しへ与える識別子。"""

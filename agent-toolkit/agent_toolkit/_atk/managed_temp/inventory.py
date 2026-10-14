@@ -5,9 +5,6 @@
 
 from __future__ import annotations
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk.managed_temp.windows_security"}
-
 import contextlib
 import datetime
 import enum
@@ -52,7 +49,10 @@ from agent_toolkit._atk.managed_temp.validation import (
     _validate_windows,
     validate_managed_temp,
 )
-from agent_toolkit._atk.managed_temp.windows_security import (
+from agent_toolkit._common import file_lock
+
+# 他の処理では不要な依存を、使用時まで遅延する。
+lazy from agent_toolkit._atk.managed_temp.windows_security import (
     _WINDOWS_FILE_ATTRIBUTE_DIRECTORY,
     _WINDOWS_REPARSE_POINT,
     _windows_current_sid,
@@ -63,7 +63,6 @@ from agent_toolkit._atk.managed_temp.windows_security import (
     _windows_security_descriptor,
     _windows_sid_bytes,
 )
-from agent_toolkit._common import file_lock
 
 
 def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:

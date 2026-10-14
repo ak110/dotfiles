@@ -5,16 +5,14 @@
 Rustバイナリ直接起動へ置き換える。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import logging
 import os
 import pathlib
 import subprocess
 import sys
 
-import httpx
+# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_mise
 

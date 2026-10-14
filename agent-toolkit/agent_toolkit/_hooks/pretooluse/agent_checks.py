@@ -2,54 +2,39 @@ r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_server
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._common.delegated_session",
-    "agent_toolkit._common.file_lock",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._common.task_stop_state",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.notice",
-    "agent_toolkit._hooks.pretooluse.decision",
-    "agent_toolkit._hooks.pretooluse.notices",
-    "datetime",
-    "re",
-    "tempfile",
-    "time",
-}
-
-import datetime
 import json
 import os
 import pathlib
-import re
-import tempfile
-import time
+
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy import datetime
+lazy import re
+lazy import tempfile
+lazy import time
 
 from agent_toolkit._agents_server import (
     tool_names as _agents_server_tool_names,
 )
-from agent_toolkit._common import response_language_check as _response_language_check
-from agent_toolkit._common.delegated_session import is_delegated
-from agent_toolkit._common.file_lock import (
+lazy from agent_toolkit._common import response_language_check as _response_language_check
+lazy from agent_toolkit._common.delegated_session import is_delegated
+lazy from agent_toolkit._common.file_lock import (
     locked_rotate_and_append as _locked_rotate_and_append,
 )
-from agent_toolkit._common.session_state import (
+lazy from agent_toolkit._common.session_state import (
     read_state,
     update_state,
 )
-from agent_toolkit._common.task_stop_state import has_recent_completion, target_ids
-from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
-from agent_toolkit._hooks import (
+lazy from agent_toolkit._common.task_stop_state import has_recent_completion, target_ids
+lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
+lazy from agent_toolkit._hooks import (
     plugin_resources as _plugin_resources,
 )
-from agent_toolkit._hooks import (
+lazy from agent_toolkit._hooks import (
     rules_context as _rules_context,
 )
-from agent_toolkit._hooks.notice import _WARN_TAG
-from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+lazy from agent_toolkit._hooks.notice import _WARN_TAG
+lazy from agent_toolkit._hooks.pretooluse.decision import Decision
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 
 def _handle_language_check(payload: dict, session_id: str) -> str | None:

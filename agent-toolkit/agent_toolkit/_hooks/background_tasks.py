@@ -45,29 +45,20 @@ SubagentStop判定ではsidechainを含める。
 （last_tool・launched・pending・pending_ids・payload task件数・判定源）で、原因を特定する用途に限定する。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.stop_session",
-    "agent_toolkit._hooks.transcript_scan",
-    "collections",
-    "collections.abc",
-}
-
-import collections.abc
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
 import contextlib
 import json
 import os
 import pathlib
 import re
 import sys
-from collections import deque
+lazy import collections.abc
+lazy from collections import deque
 
-from agent_toolkit._common import transcript as _transcript
-from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.transcript_scan import (
+lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.transcript_scan import (
     entry_in_scan_scope,
     extract_tool_result_id,
     iter_assistant_blocks,

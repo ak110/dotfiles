@@ -29,40 +29,28 @@ Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._common.bash_invocations",
-    "agent_toolkit._common.heredocs",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._common.uv_arguments",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.pretooluse",
-    "agent_toolkit._hooks.pretooluse.large_reads",
-    "agent_toolkit._plan.structure",
-    "collections.abc",
-}
-
 import dataclasses
 import pathlib
 import re
-from collections.abc import Callable, Sequence
 
-from agent_toolkit._common import shell_cwd
-from agent_toolkit._common import shell_segments as _shell_segments
-from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
-from agent_toolkit._common.heredocs import heredoc_bodies
-from agent_toolkit._common.session_state import read_state, update_state
-from agent_toolkit._common.uv_arguments import is_python_token
-from agent_toolkit._hooks import agent_id as _agent_id
-from agent_toolkit._hooks import plugin_resources as _plugin_resources
-from agent_toolkit._hooks import rules_context as _rules_context
-from agent_toolkit._hooks import tool_input as _tool_input
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from collections.abc import Callable, Sequence
+
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
-from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
-from agent_toolkit._plan.structure import is_agent_doc_target_file
+lazy from agent_toolkit._common import shell_cwd
+lazy from agent_toolkit._common import shell_segments as _shell_segments
+lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
+lazy from agent_toolkit._common.heredocs import heredoc_bodies
+lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._common.uv_arguments import is_python_token
+lazy from agent_toolkit._hooks import agent_id as _agent_id
+lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
+lazy from agent_toolkit._hooks import rules_context as _rules_context
+lazy from agent_toolkit._hooks import tool_input as _tool_input
+lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
+lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
+lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
 
 _llm_notice = _notice_formatter("pretooluse")
 

@@ -8,54 +8,33 @@ Codexの実際の入力と結果が示す`SKILL.md`の読取から取得する�
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._agents_server",
-    "agent_toolkit._atk.wi",
-    "agent_toolkit._atk.wi.constants",
-    "agent_toolkit._atk.wi.frontmatter",
-    "agent_toolkit._common",
-    "agent_toolkit._common.bash_invocations",
-    "agent_toolkit._common.process_loop_session",
-    "agent_toolkit._common.shell_segments",
-    "agent_toolkit._git",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.host",
-    "agent_toolkit._hooks.pretooluse.operation_skills",
-    "agent_toolkit._hooks.pretooluse.shell_checks",
-    "agent_toolkit._hooks.stop_session",
-    "agent_toolkit._plan.path_kinds",
-    "argparse",
-    "subprocess",
-    "shlex",
-    "typing",
-}
-
-import argparse
 import json
 import os
 import pathlib
-import shlex
-import subprocess
-from typing import Any
 
-from agent_toolkit._agents_server import tool_names
-from agent_toolkit._atk.wi import uwi_scan
-from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
-from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
-from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state
-from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common.bash_invocations import extract_bash_invocations
-from agent_toolkit._common.process_loop_session import is_process_loop_session
-from agent_toolkit._common.shell_segments import extract_execution_segments
-from agent_toolkit._git import command as git_command
-from agent_toolkit._hooks import agent_id, agents_server_observations
-from agent_toolkit._hooks import tool_input as _hook_tool_input
-from agent_toolkit._hooks.host import is_codex_payload
-from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
-from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._plan.path_kinds import is_plan_main_file
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy import argparse
+lazy import shlex
+lazy import subprocess
+lazy from typing import Any
+
+lazy from agent_toolkit._agents_server import tool_names
+lazy from agent_toolkit._atk.wi import uwi_scan
+lazy from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
+lazy from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+lazy from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state
+lazy from agent_toolkit._common import delegated_session as _delegated_session
+lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
+lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._git import command as git_command
+lazy from agent_toolkit._hooks import agent_id, agents_server_observations
+lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
+lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
+lazy from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 STATE_KEY = "termination_evidence"
 

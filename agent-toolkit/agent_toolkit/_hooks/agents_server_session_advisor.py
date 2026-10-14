@@ -27,22 +27,16 @@ PostToolUseがその応答と呼出主体を`agents_server_sessions`へ記録し
 委譲先での実行可否: 委譲先も`wait`と`kill`を実行できるため、除外せず警告できる。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.stop_session",
-}
-
 import re
 
-from agent_toolkit._common.session_state import read_state
-from agent_toolkit._hooks import agents_server_observations as _observations
-from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.stop_session import parse_stop_session
+
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from agent_toolkit._common.session_state import read_state
+lazy from agent_toolkit._hooks import agents_server_observations as _observations
+lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 
 _HOOK_ID = "agents_server_session_advisor"
 _WARNING_BODY = (

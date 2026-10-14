@@ -1,28 +1,23 @@
 """`atk wi`の対象リポジトリの識別子の解決と、ローカル作業ツリーとの対応。"""
 
-# parserの定数参照と、実際のキュー操作の依存を分ける。
-__lazy_modules__ = {
-    "agent_toolkit._atk.wi",
-    "agent_toolkit._atk.wi.formatters",
-    "agent_toolkit._atk.wi.web_input",
-}
-
 import pathlib
 import re
 import sys
 import typing
 
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi import entries as _wi_entries
-from agent_toolkit._atk.wi import filenames as _wi_filenames
-from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action
-from agent_toolkit._atk.wi.formatters import parse_target_repo, parse_type
-from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
+
+# parserの定数参照と、実際のキュー操作の依存を分ける。
+lazy from agent_toolkit._atk.wi import entries as _wi_entries
+lazy from agent_toolkit._atk.wi import filenames as _wi_filenames
+lazy from agent_toolkit._atk.wi import frontmatter as _frontmatter
+lazy from agent_toolkit._atk.wi import sync as _wi_sync
+lazy from agent_toolkit._atk.wi import web_input as _wi_web_input
+lazy from agent_toolkit._atk.wi.formatters import parse_target_repo, parse_type
+lazy from agent_toolkit._atk.wi.web_input import WebInputError
 
 TARGET_REPO_ALL = "all"
 """`--target-repo`へ指定すると対象リポジトリを限定しない値。"""

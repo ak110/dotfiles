@@ -17,24 +17,17 @@
 委譲先での実行可否: 委譲先は`AskUserQuestion`を実行できないため、hook入力と環境印で除外する。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.stop_session",
-    "agent_toolkit._hooks.transcript_scan",
-    "collections.abc",
-}
-
 import re
-from collections.abc import Iterator
 
-from agent_toolkit._common import transcript as _transcript
-from agent_toolkit._hooks.agent_id import is_main_agent_context
+# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+lazy from collections.abc import Iterator
+
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
-from agent_toolkit._hooks.transcript_scan import read_transcript_entries_cached
+lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+lazy from agent_toolkit._hooks.transcript_scan import read_transcript_entries_cached
 
 _HOOK_ID = "pending_question_advisor"
 _block_notice = _block_notice_formatter(_HOOK_ID)
