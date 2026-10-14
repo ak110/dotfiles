@@ -279,7 +279,7 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("claude-plans-viewer.exe"), datetime.date(2026, 9, 2)),
         # 15c2e214 が atk serve 常駐用に生成したランチャー ~/.local/bin/atk は、1116f984 で
         # ~/.local/bin/atk-serve へ改名した際に旧名の削除が漏れて残存していた。
-        # dotfiles ホストでは ~/dotfiles/agent-toolkit/bin（Linux は .chezmoi-source/dot_bashrc、
+        # dotfiles ホストでは ~/dotfiles/agent-toolkit/scripts（Linux は .chezmoi-source/dot_bashrc、
         # Windows は pytools/_internal/setup_bin_path.py）が PATH へ登録されるため、PATH の先頭側にある
         # ~/.local/bin 配下の atk は作業ツリー版を覆い隠す。atk.cmd は install-claude.ps1 が同じ位置へ
         # 生成する Windows 版ラッパーであり、同じ理由で除去する。atk-serve と atk-hook は対象外とする。
@@ -484,7 +484,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("libarchive (Windows)", install_libarchive.run, after=(_MISE,), platforms=_WINDOWS),
     # 開発版の取得はmise経由でcargoを使うため、Codex CLI工程のmise操作の後に行う。
     _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run, after=(_CODEX_CLI,)),
-    # サービスの再起動で起動する`uv run --project <dotfiles>/agent-toolkit`が`agent-toolkit/.venv`を再同期するため、
+    # サービスの再起動は`<dotfiles>/agent-toolkit/scripts/launch.py`から配布物を起動するため、
     # `claude plugin install`・`update`が同じ`agent-toolkit/`を複製し終えてから実行する。
     _StepSpec(
         _ATK_SERVE,
